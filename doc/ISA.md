@@ -180,7 +180,6 @@ An instruction runs in this order:
 6. **Operation.** Compute the result r, plus carry and overflow (§5.1–§5.3).
 7. **Destination.** Write r as dest specifies (§4.2), using the registers as step 5 left them. Then apply the destination's side effect.
 8. **Flags.** Update the flags (§6).
-9. (Nothing to do for R0 or SR bit 24: by §4.3 they are 0 and 1 at every point.)
 
 Because step 5 runs before step 7, `MOVE @R1, R1++` with R1 = 0x40 stores 0x40 at address 0x41.
 

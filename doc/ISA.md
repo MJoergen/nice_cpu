@@ -187,7 +187,7 @@ The next instruction is fetched from PC as it stands after step 8. Interrupts ar
 
 ### 5.1 ALU instructions (bit 27 = 0)
 
-`cin` is the C flag if the instruction's C bit is set, and 0 otherwise. Only `SUB`, `MDBL`, `ADD` and `DBL` use it. All other ALU operations ignore the C bit.
+`cin` is the C flag as step 5 of §5 left it, if the instruction's C bit is set, and 0 otherwise. Only `SUB`, `MDBL`, `ADD` and `DBL` use it. All other ALU operations ignore the C bit.
 
 | Opcode | Mnemonic | Result r | C (if M = 1) | V (if M = 1) |
 |---|---|---|---|---|
@@ -249,7 +249,7 @@ The mnemonic shows the direction and where bits come from and go to:
 
 Bit 24 of the instruction (the top opcode bit) gives the direction: 0 = left, 1 = right.
 
-**Exact definition.** Let d = s0 and c = the C flag. Repeat n times:
+**Exact definition.** Let d = s0 and c = the C flag as step 5 of §5 left it. Repeat n times:
 
 - Left: out = d[31], d = (d << 1) OR fill.
 - Right: out = d[0], d = (d >> 1) OR (fill << 31).
@@ -268,7 +268,7 @@ The loop defines the result for every count, but hardware need not run it n time
 
 **The C flag after a shift:**
 - If M = 0, no shift changes C. The fill still reads C, but c is not written back.
-- If M = 1, the eight shifts whose bit shifted out goes to C set the C flag to c. With n = 0, c is the old C, so C is unchanged.
+- If M = 1, the eight shifts whose bit shifted out goes to C set the C flag to c. With n = 0, C is set to the value it had after step 5.
 - If M = 1, the other eight shifts set C = 0.
 
 With M = 1, V = 0 after any shift.

@@ -58,7 +58,10 @@ These are not visible as registers. They exist for interrupts (§7) and halting:
 |---|---|
 | `in_service` | 1 while an interrupt service routine runs, from interrupt entry until `RTI`. |
 | `saved_pc`, `saved_sr` | The PC and SR saved on interrupt entry and restored by `RTI`. |
+| `after_rti` | Set to 1 by `RTI`. Cleared to 0 when the next instruction completes. While it is 1, no IRQ or NMI is taken (§7.1). |
 | `halted` | 1 after `HALT`. Only reset clears it. |
+
+Pending interrupt requests (§7.1) are also state. How they are held is a hardware interface matter.
 
 ## 2. Instruction format
 
@@ -314,7 +317,7 @@ Before each instruction fetch, the processor checks for pending requests:
 - **IRQ** is taken if `in_service` = 0 and E = 1.
 - If both are pending, NMI goes first.
 - A halted processor takes no interrupts.
-- The instruction directly after an `RTI` always runs before the next interrupt is taken. So the interrupted program makes progress, and a request that arrived during the service routine waits at most one instruction after `RTI`.
+- No IRQ or NMI is taken while `after_rti` = 1, so the instruction directly after an `RTI` always runs first. That instruction may itself be an `INT`, which works normally. This guarantees that the interrupted program makes progress. A deferred NMI waits at most one instruction after `RTI`. A deferred IRQ does the same if E = 1 in the restored SR, and otherwise waits until software sets E.
 
 **Pending requests are deferred, never lost.** An NMI or IRQ that cannot be taken when it arrives stays pending until it is taken. That happens when `in_service` = 1, or for an IRQ when E = 0. Requests of the same kind that arrive while one is already pending may merge into one, so software must not rely on counting interrupts. A request still pending when the processor halts is never taken, because only reset restarts the processor.
 
@@ -348,6 +351,7 @@ To set the table address without touching the flags:
 1. SR ← saved_sr (bit 24 stays 1).
 2. PC ← saved_pc.
 3. in_service ← 0.
+4. after_rti ← 1.
 
 `RTI` executed while `in_service` = 0 halts the processor.
 
@@ -361,7 +365,8 @@ Because SR is restored, an interrupt routine may change any flag freely, E and I
 |---|---|
 | R0–R13, R15 | 0, so execution starts at address 0 |
 | R14 | `0x01000000`: only bit 24 set, so E = 0 (maskable interrupts off) and VBASE = 0 |
-| in_service, halted | 0 |
+| in_service, after_rti, halted | 0 |
+| Pending interrupt requests | none |
 | saved_pc, saved_sr | undefined |
 | Memory | not changed by reset |
 

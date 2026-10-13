@@ -178,7 +178,7 @@ An instruction runs in this order:
 4. **Control.** If the instruction is in the control class, run the command (§5.3) and end.
 5. **Sources.** Evaluate s0, then s1 (§4.1), including their side effects. Each step sees the registers as earlier steps left them.
 6. **Operation.** Compute the result r, plus carry and overflow (§5.1–§5.3).
-7. **Destination.** Write r as dest specifies (§4.2), using the registers as step 5 left them. Then apply the destination's side effect.
+7. **Destination.** Write r and apply the destination's side effect exactly as §4.2 specifies for its mode, starting from the registers as step 5 left them.
 8. **Flags.** Update the flags (§6).
 
 Because step 5 runs before step 7, `MOVE @R1, R1++` with R1 = 0x40 stores 0x40 at address 0x41.

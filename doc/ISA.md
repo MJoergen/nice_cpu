@@ -118,7 +118,7 @@ The condition is tested against SR as it was before the instruction started.
 
 In this document, "the M bit" always means instruction bit 25 (modify flags), and "the E flag" means SR bit 30. The 2004 sources call SR bit 30 M, so the assembler also accepts `?M` and `?!M` as aliases for `?E` and `?!E`.
 
-A skipped instruction still consumes its constant words, so PC moves past the whole instruction. A skipped instruction has no other effect: it reads no memory, writes nothing, applies no increments or decrements and changes no flags.
+A skipped instruction still consumes its constant words, so PC moves past the whole instruction. A skipped instruction has no other effect: it reads no operand from memory, writes nothing, applies no increments or decrements and changes no flags.
 
 ## 4. Addressing modes
 

@@ -285,6 +285,8 @@ Bits 20..8 must be 0, and bits 7..0 must be 0 except in `INT`. An instruction th
 
 The condition field applies, so `?Z HALT` halts only when Z = 1.
 
+Control instructions have no M bit and never update X, C, Z, N or V. `HALT` leaves SR unchanged, `INT` changes only I (§7.2), and `RTI` replaces SR with the saved copy (§7.4).
+
 ## 6. Flags
 
 If M = 1, and the destination is not R14 in a register-direct mode (000, 001 or 010), then after the destination is written:
@@ -299,7 +301,7 @@ If M = 1, and the destination is not R14 in a register-direct mode (000, 001 or 
 
 The flags are computed from the result r of the operation, not from the value stored by a `Rx++` or `Rx--` destination.
 
-If M = 0, the flags do not change. This holds for every instruction, shifts included.
+If M = 0, the flags do not change. This holds for every instruction, shifts included. Control instructions (§5.3) have no M bit and never update the flags.
 
 ## 7. Interrupts
 

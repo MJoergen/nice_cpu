@@ -312,8 +312,11 @@ Before each instruction fetch, the processor checks for pending requests:
 - **IRQ** is taken if `in_service` = 0 and E = 1.
 - If both are pending, NMI goes first.
 - A halted processor takes no interrupts.
+- The instruction directly after an `RTI` always runs before the next interrupt is taken. So the interrupted program makes progress, and a request that arrived during the service routine waits at most one instruction after `RTI`.
 
-When the processor accepts a request, the device supplies an 8-bit vector number v. How requests are signalled and acknowledged is a hardware interface matter, not part of the ISA.
+**Pending requests are deferred, never lost.** An NMI or IRQ that cannot be taken when it arrives stays pending until it is taken. That happens when `in_service` = 1, or for an IRQ when E = 0. Requests of the same kind that arrive while one is already pending may merge into one, so software must not rely on counting interrupts. A request still pending when the processor halts is never taken, because only reset restarts the processor.
+
+When the processor accepts a request, the device supplies an 8-bit vector number v. The ISA does not say how requests are signalled and acknowledged: edge or level, the handshake, and how a request is held pending are hardware interface matters. The rules above are what software sees.
 
 ### 7.2 Interrupt entry
 

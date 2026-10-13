@@ -183,7 +183,7 @@ An instruction runs in this order:
 
 Because step 5 runs before step 7, `MOVE @R1, R1++` with R1 = 0x40 stores 0x40 at address 0x41.
 
-The next instruction is fetched from PC as it stands after step 8. Interrupts are taken only between instructions (§7).
+The next instruction is fetched from PC as it stands after step 8. Interrupts are taken only between instructions (§7). §8.2 gives the exact memory accesses each step makes.
 
 ### 5.1 ALU instructions (bit 27 = 0)
 
@@ -374,6 +374,16 @@ Because SR is restored, an interrupt routine may change any flag freely, E and I
 
 - A read from an address with no memory or device behind it returns 0. A write to such an address is ignored.
 - Every instruction fetch sees all earlier writes. A store may change the next instruction or its constant words, and the change takes effect. An instruction that overwrites its own constant words does not see the change, because they were fetched in step 2.
+
+**Memory accesses are exact and in order.** Each memory access named in this document is performed exactly once, as a separate access, and in program order. No access is merged with another, dropped, repeated, reordered or performed speculatively. I/O devices may rely on this. For one instruction the accesses are:
+
+1. Read the instruction word.
+2. Read the constant words, if any, in the order dest, s0, s1.
+3. If the condition is false, there are no further accesses.
+4. Read s0 if its mode is 100–111, then s1 if its mode is 100–111. This applies even when the operation ignores the operand (§4.4). So `ADD R1, @R2, @R2` reads mem[R2] twice, and `MOVE R1, @R2, @R3`, if encoded, reads both words.
+5. Write the destination if its mode is 011–111. The destination is never read.
+
+Interrupt entry (§7.2), including `INT`, makes one read: the vector table entry. Control instructions make no accesses other than the instruction word.
 
 ### 8.3 Input and output
 

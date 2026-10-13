@@ -58,7 +58,7 @@ These are not visible as registers. They exist for interrupts (§7) and halting:
 |---|---|
 | `in_service` | 1 while an interrupt service routine runs, from interrupt entry until `RTI`. |
 | `saved_pc`, `saved_sr` | The PC and SR saved on interrupt entry and restored by `RTI`. |
-| `after_rti` | Set to 1 by `RTI`. Cleared to 0 when the next instruction completes. While it is 1, no IRQ or NMI is taken (§7.1). |
+| `after_rti` | Set to 1 by `RTI`. Cleared to 0 when the next instruction completes, whether or not its condition is true. While it is 1, no IRQ or NMI is taken (§7.1). |
 | `halted` | 1 after `HALT`. Only reset clears it. |
 
 Pending interrupt requests (§7.1) are also state. How they are held is a hardware interface matter.
@@ -287,7 +287,7 @@ Arithmetic shift right is two instructions: `C<0[M] R0, Rx, 1` copies the sign b
 
 Bits 20..8 must be 0, and bits 7..0 must be 0 except in `INT`. An instruction that breaks this is reserved and halts the processor.
 
-The condition field applies, so `?Z HALT` halts only when Z = 1.
+The condition field applies, so `?Z HALT` halts only when Z = 1. This includes reserved words: a reserved control word whose condition is false is skipped like any other instruction and does not halt the processor.
 
 Control instructions have no M bit and never update X, C, Z, N or V. `HALT` leaves SR unchanged, `INT` changes only I (§7.2), and `RTI` replaces SR with the saved copy (§7.4).
 

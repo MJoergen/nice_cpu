@@ -304,7 +304,7 @@ If M = 1, and the destination is not R14 in a register-direct mode (000, 001 or 
 
 The flags are computed from the result r of the operation, not from the value stored by a `Rx++` or `Rx--` destination.
 
-If M = 0, the flags do not change. This holds for every instruction, shifts included. Control instructions (§5.3) have no M bit and never update the flags.
+If M = 0, the flags do not change. This holds for every instruction, shifts included. Control instructions (§5.3) have no M bit and never compute flags from a result. `RTI` restores all of SR, the flags included, from the saved copy.
 
 ## 7. Interrupts
 

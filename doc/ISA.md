@@ -45,7 +45,7 @@ There are sixteen 32-bit registers, R0 to R15. Every register can be used with e
 | Z (bit 27) | Result was zero. |
 | C (bit 26) | Carry out of an addition, borrow out of a subtraction, or the bit shifted out by a shift. |
 | X (bit 25) | Result was all ones (`0xFFFFFFFF`, that is −1). |
-| 1 (bit 24) | Always 1. Writes cannot clear it. It makes condition select 0 mean "always" (§3). |
+| 1 (bit 24) | Always 1, at every point within an instruction. No write clears it (§4.3). It makes condition select 0 mean "always" (§3). |
 | VBASE (bits 23..0) | The upper 24 bits of the interrupt vector table address (§7.3). |
 
 Software can read and write every bit except bit 24. Instructions with the M bit set update only X, C, Z, N and V (§6). I, E and VBASE change only when software writes R14, on interrupt entry (I), and on `RTI`.
@@ -161,6 +161,7 @@ The destination is never read.
 - **R0** reads as 0 in every mode, at every point within an instruction. Writes to R0 and side effects on R0 are discarded. So `--R0` and `R0++` read 0, `@R0`, `@--R0` and `@R0++` all address word 0, as source or destination, and `c[R0]` is c.
 - **R15** read as an operand gives the address of the **next instruction**, after all of this instruction's constant words. The exception is when an earlier operand of the same instruction has already changed R15 with a side effect.
 - **R15** is an ordinary register in every mode. Any write to it is a jump, including a side effect such as `R15++`. If one instruction writes R15 more than once, the last write in the order of §5 wins.
+- **R14 bit 24** reads as 1 at every point within an instruction. Every write to R14, a side effect included, sets bit 24 to 1. So after reset (R14 = `0x01000000`), `MOVE R1, --R14` sets R14 and R1 to `0x01FFFFFF`, and `@--R14` addresses word `0x01FFFFFF`.
 - **R14** written as a register-direct destination (modes 000, 001 and 010) takes the written value, except that bit 24 stays 1. The flag update is skipped in that case (§6).
 
 ### 4.4 Unused operand fields
@@ -179,7 +180,7 @@ An instruction runs in this order:
 6. **Operation.** Compute the result r, plus carry and overflow (§5.1–§5.3).
 7. **Destination.** Write r as dest specifies (§4.2), using the registers as step 5 left them. Then apply the destination's side effect.
 8. **Flags.** Update the flags (§6).
-9. R0 is 0 and SR bit 24 is 1 again.
+9. (Nothing to do for R0 or SR bit 24: by §4.3 they are 0 and 1 at every point.)
 
 Because step 5 runs before step 7, `MOVE @R1, R1++` with R1 = 0x40 stores 0x40 at address 0x41.
 

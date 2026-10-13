@@ -262,12 +262,13 @@ The loop defines the result for every count, but hardware need not run it n time
 - **`C<C` and `C>C`** are 33-bit rotations of C and s0 together, so only n mod 33 matters.
 
 **The C flag after a shift:**
-- The eight shifts whose bit shifted out goes to C write c back to the C flag **whether or not M is set**. With n = 0, c is unchanged.
-- The other eight shifts set C = 0 if M = 1, and leave C alone if M = 0.
+- If M = 0, no shift changes C. The fill still reads C, but c is not written back.
+- If M = 1, the eight shifts whose bit shifted out goes to C set the C flag to c. With n = 0, c is the old C, so C is unchanged.
+- If M = 1, the other eight shifts set C = 0.
 
 With M = 1, V = 0 after any shift.
 
-Arithmetic shift right is two instructions: `C<0 R0, Rx, 1` copies the sign bit into C, then `C>0 Rx, Rx, n` shifts it in.
+Arithmetic shift right is two instructions: `C<0[M] R0, Rx, 1` copies the sign bit into C, then `C>0 Rx, Rx, n` shifts it in.
 
 ### 5.3 Control instructions (bits 27..26 = 11)
 
@@ -296,7 +297,7 @@ If M = 1, and the destination is not R14 in a register-direct mode (000, 001 or 
 
 The flags are computed from the result r of the operation, not from the value stored by a `Rx++` or `Rx--` destination.
 
-If M = 0, the flags do not change. The one exception is a shift whose bit shifted out goes to C (§5.2), which writes C either way. The R14 exception above applies to that write too.
+If M = 0, the flags do not change. This holds for every instruction, shifts included.
 
 ## 7. Interrupts
 
@@ -494,7 +495,7 @@ It executes as follows:
 | `ONE` | r = 1 (emulator and web page) | The 74181 background suggests all ones |
 | Flags with M = 1 | X, C, Z, N, V all rewritten, so logic ops clear C and V (emulator) | QNICE leaves C and V unchanged on logic ops |
 | Shift count | The full 32-bit count, no modulo (QNICE) | The emulator masks the count to 5 bits for every shift except `0<0` and `0>0` |
-| Shifts writing C | Always, for the eight shifts that send their bit shifted out to C (articles, web page) | The emulator writes C only when M = 1 |
+| Shifts writing C | Only when M = 1 (emulator) | The articles and the web page say the shifts that send their bit shifted out to C write it whatever M is. The 1999 multiplication example relies on that, so it needs `[M]` on its shifts. |
 | Writing R14 with M = 1 | The written value wins | The emulator overwrites it with the flags |
 | R0 | Always 0, even within an instruction | In the emulator, `--R0` reads −1 within one instruction |
 | Unused operand fields | Evaluated in full (emulator) | QNICE ignores them |

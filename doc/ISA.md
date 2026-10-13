@@ -130,7 +130,7 @@ A skipped instruction still consumes its constant words, so PC moves past the wh
 | 010 | `Rx++` | Rx before the increment | Rx ← Rx + 1 afterwards |
 | 011 | `c[Rx]`, or `c` for `c[R0]` | Rx + c | |
 | 100 | `@Rx` | mem[Rx] | |
-| 101 | `@--Rx` | mem[Rx − 1] | Rx ← Rx − 1 first |
+| 101 | `@--Rx` | mem[Rx], read after the decrement | Rx ← Rx − 1 first |
 | 110 | `@Rx++` | mem[Rx] | Rx ← Rx + 1 afterwards |
 | 111 | `@c[Rx]`, or `@c` for `@c[R0]` | mem[Rx + c] | |
 
@@ -155,7 +155,7 @@ The destination is never read.
 
 ### 4.3 Special registers in operands
 
-- **R0** reads as 0 in every mode, so `@R0` is address 0 and `c[R0]` is c. Writes to R0 and side effects on R0 are discarded. `--R0` still reads 0.
+- **R0** reads as 0 in every mode, at every point within an instruction. Writes to R0 and side effects on R0 are discarded. So `--R0` and `R0++` read 0, `@R0`, `@--R0` and `@R0++` all address word 0, as source or destination, and `c[R0]` is c.
 - **R15** read as an operand gives the address of the **next instruction**, after all of this instruction's constant words. The exception is when an earlier operand of the same instruction has already changed R15 with a side effect.
 - **R15** is an ordinary register in every mode. Any write to it is a jump, including a side effect such as `R15++`. If one instruction writes R15 more than once, the last write in the order of §5 wins.
 - **R14** written as a register-direct destination (modes 000, 001 and 010) takes the written value, except that bit 24 stays 1. The flag update is skipped in that case (§6).

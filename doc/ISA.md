@@ -34,12 +34,12 @@ There are sixteen 32-bit registers, R0 to R15. Every register can be used with e
 
 | Bit | 31 | 30 | 29 | 28 | 27 | 26 | 25 | 24 | 23..0 |
 |---|---|---|---|---|---|---|---|---|---|
-| Name | I | M | V | N | Z | C | X | 1 | VBASE |
+| Name | I | E | V | N | Z | C | X | 1 | VBASE |
 
 | Field | Meaning |
 |---|---|
 | I (bit 31) | Set to 1 by the hardware when an interrupt is taken (§7). |
-| M (bit 30) | Maskable interrupts are accepted only while M = 1. |
+| E (bit 30) | Interrupts enabled: maskable interrupts are accepted only while E = 1. |
 | V (bit 29) | Signed overflow. |
 | N (bit 28) | Result was negative (bit 31 of the result). |
 | Z (bit 27) | Result was zero. |
@@ -48,7 +48,7 @@ There are sixteen 32-bit registers, R0 to R15. Every register can be used with e
 | 1 (bit 24) | Always 1. Writes cannot clear it. It makes condition select 0 mean "always" (§3). |
 | VBASE (bits 23..0) | The upper 24 bits of the interrupt vector table address (§7.3). |
 
-Software can read and write every bit except bit 24. Instructions with the M bit set update only X, C, Z, N and V (§6). I, M and VBASE change only when software writes R14, on interrupt entry (I), and on `RTI`.
+Software can read and write every bit except bit 24. Instructions with the M bit set update only X, C, Z, N and V (§6). I, E and VBASE change only when software writes R14, on interrupt entry (I), and on `RTI`.
 
 ### 1.4 Hidden state
 
@@ -108,10 +108,12 @@ Every instruction, including control instructions, is conditional. It executes o
 | 011 | Z | `?Z` | `?!Z` |
 | 100 | N | `?N` | `?!N` |
 | 101 | V | `?V` | `?!V` |
-| 110 | M | `?M` | `?!M` |
+| 110 | E | `?E` | `?!E` |
 | 111 | I | `?I` | `?!I` |
 
 The condition is tested against SR as it was before the instruction started.
+
+In this document, "the M bit" always means instruction bit 25 (modify flags), and "the E flag" means SR bit 30. The 2004 sources call SR bit 30 M, so the assembler also accepts `?M` and `?!M` as aliases for `?E` and `?!E`.
 
 A skipped instruction still consumes its constant words, so PC moves past the whole instruction. A skipped instruction has no other effect: it reads no memory, writes nothing, applies no increments or decrements and changes no flags.
 
@@ -156,7 +158,7 @@ The destination is never read.
 - **R0** reads as 0 in every mode, so `@R0` is address 0 and `c[R0]` is c. Writes to R0 and side effects on R0 are discarded. `--R0` still reads 0.
 - **R15** read as an operand gives the address of the **next instruction**, after all of this instruction's constant words. The exception is when an earlier operand of the same instruction has already changed R15 with a side effect.
 - **R15** is an ordinary register in every mode. Any write to it is a jump, including a side effect such as `R15++`. If one instruction writes R15 more than once, the last write in the order of §5 wins.
-- **R14** written as a register-direct destination (modes 000, 001 and 010) takes the written value, except that bit 24 stays 1. The M flag update is skipped in that case (§6).
+- **R14** written as a register-direct destination (modes 000, 001 and 010) takes the written value, except that bit 24 stays 1. The flag update is skipped in that case (§6).
 
 ### 4.4 Unused operand fields
 
@@ -307,7 +309,7 @@ NICE has one maskable interrupt request (IRQ), one non-maskable interrupt reques
 
 Before each instruction fetch, the processor checks for pending requests:
 - **NMI** is taken if `in_service` = 0.
-- **IRQ** is taken if `in_service` = 0 and M = 1.
+- **IRQ** is taken if `in_service` = 0 and E = 1.
 - If both are pending, NMI goes first.
 - A halted processor takes no interrupts.
 
@@ -344,7 +346,7 @@ To set the table address without touching the flags:
 
 `RTI` executed while `in_service` = 0 halts the processor.
 
-Because SR is restored, an interrupt routine may change any flag freely, M and I included. An interrupt routine must save and restore any other registers it uses.
+Because SR is restored, an interrupt routine may change any flag freely, E and I included. An interrupt routine must save and restore any other registers it uses.
 
 ## 8. Reset, memory and I/O
 
@@ -353,7 +355,7 @@ Because SR is restored, an interrupt routine may change any flag freely, M and I
 | State | Value after reset |
 |---|---|
 | R0–R13, R15 | 0, so execution starts at address 0 |
-| R14 | `0x01000000`: only bit 24 set, so M = 0 (maskable interrupts off) and VBASE = 0 |
+| R14 | `0x01000000`: only bit 24 set, so E = 0 (maskable interrupts off) and VBASE = 0 |
 | in_service, halted | 0 |
 | saved_pc, saved_sr | undefined |
 | Memory | not changed by reset |
@@ -410,7 +412,7 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
 - **Comments.** A comment starts with `;` or `*` and runs to the end of the line.
 - **Separators.** Operands are separated by commas or whitespace.
 - **Labels.** A label is the first word on a line that is not a mnemonic or a directive. Its value is the address of what follows on that line.
-- **Conditions.** `?cond` is one of the condition codes in §3, such as `?Z` or `?!C`. Without one, the instruction is unconditional.
+- **Conditions.** `?cond` is one of the condition codes in §3, such as `?Z` or `?!C`. Without one, the instruction is unconditional. `?M`/`?!M` are accepted as aliases for `?E`/`?!E`.
 - **Modifiers.** `[M]` sets the M bit and `[C]` sets the C bit. `[CM]` and `[MC]` set both. `[C]` is accepted only on ALU instructions.
 - **Operand counts.** The assembler expects exactly the operands the instruction uses:
   - `ONE` takes dest only.
@@ -484,8 +486,9 @@ It executes as follows:
 
 | Topic | This specification | Sources that disagree |
 |---|---|---|
-| Condition field and SR layout | NEG at bit 31, SEL at 30..28; SR bits 31..24 = `I M V N Z C X 1` (2004 web page and emulator, same as QNICE) | Both articles: SEL at 31..29, NEG at 28, SR bit 31 = 1 |
-| Meaning of I and M | I = an interrupt was taken, M = maskable interrupts enabled (web page) | Articles: M = maskable interrupt occurred, I = enabled |
+| Condition field and SR layout | NEG at bit 31, SEL at 30..28; SR bits 31..24 = `I E V N Z C X 1` (2004 web page and emulator, same as QNICE) | Both articles: SEL at 31..29, NEG at 28, SR bit 31 = 1 |
+| Meaning of SR bits 31 and 30 | I = an interrupt was taken, E = maskable interrupts enabled (web page) | Articles: M = maskable interrupt occurred, I = enabled |
+| Name of SR bit 30 | E, so that M only ever means the instruction's modify-flags bit | Web page and emulator call it M, with condition `?M` |
 | Order of constant words | dest, s0, s1 (emulator and its binaries) | 1997 article: s1, s2, dest |
 | R15 as an operand | Address of the next instruction (1999 article, emulator, QNICE) | 1997 article: the current instruction |
 | Interrupt model | Hidden saved PC and SR, `RTI`, `INT`, no nesting (QNICE) | Articles and web page: R13 receives the return address and software nests interrupts |

@@ -38,14 +38,14 @@ There are sixteen 32-bit registers, R0 to R15. Every register can be used with e
 
 | Field | Meaning |
 |---|---|
-| 1 (bit 24) | Always 1. Writes cannot clear it. It makes condition select 0 mean "always" (§3). |
-| X (bit 25) | Result was all ones (`0xFFFFFFFF`, that is −1). |
-| C (bit 26) | Carry out of an addition, borrow out of a subtraction, or the bit shifted out by a shift. |
-| Z (bit 27) | Result was zero. |
-| N (bit 28) | Result was negative (bit 31 of the result). |
-| V (bit 29) | Signed overflow. |
-| M (bit 30) | Maskable interrupts are accepted only while M = 1. |
 | I (bit 31) | Set to 1 by the hardware when an interrupt is taken (§7). |
+| M (bit 30) | Maskable interrupts are accepted only while M = 1. |
+| V (bit 29) | Signed overflow. |
+| N (bit 28) | Result was negative (bit 31 of the result). |
+| Z (bit 27) | Result was zero. |
+| C (bit 26) | Carry out of an addition, borrow out of a subtraction, or the bit shifted out by a shift. |
+| X (bit 25) | Result was all ones (`0xFFFFFFFF`, that is −1). |
+| 1 (bit 24) | Always 1. Writes cannot clear it. It makes condition select 0 mean "always" (§3). |
 | VBASE (bits 23..0) | The upper 24 bits of the interrupt vector table address (§7.3). |
 
 Software can read and write every bit except bit 24. Instructions with the M bit set update only X, C, Z, N and V (§6). I, M and VBASE change only when software writes R14, on interrupt entry (I), and on `RTI`.

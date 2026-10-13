@@ -253,6 +253,7 @@ Bit 24 of the instruction (the top opcode bit) gives the direction: 0 = left, 1 
 
 - Left: out = d[31], d = (d << 1) OR fill.
 - Right: out = d[0], d = (d >> 1) OR (fill << 31).
+- Here `<<` and `>>` are logical shifts of the 32-bit value d: both shift in 0, and `>>` does not copy the sign bit.
 - Here fill is 0, 1, c, or out (for the rotations), as the table says.
 - If the bit shifted out goes to C, then c ← out.
 

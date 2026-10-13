@@ -386,7 +386,7 @@ Because SR is restored, an interrupt routine may change any flag freely, E and I
 4. Read s0 if its mode is 100–111, then s1 if its mode is 100–111. This applies even when the operation ignores the operand (§4.4). So `ADD R1, @R2, @R2` reads mem[R2] twice, and a `MOVE` whose unused s1 field holds `@R3` also reads mem[R3].
 5. Write the destination if its mode is 011–111. The destination is never read.
 
-Interrupt entry (§7.2), including `INT`, makes one read: the vector table entry. Control instructions make no accesses other than the instruction word.
+Interrupt entry (§7.2), including `INT`, makes one read: the vector table entry. Control instructions make no accesses other than the instruction word and `INT`'s vector read.
 
 ### 8.3 Input and output
 

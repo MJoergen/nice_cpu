@@ -371,6 +371,8 @@ Because SR is restored, an interrupt routine may change any flag freely, E and I
 | saved_pc, saved_sr | undefined |
 | Memory | not changed by reset |
 
+**NMI after reset.** E = 0 holds off IRQ, but nothing holds off NMI. After reset, VBASE = 0 and PC = 0, so word 0 is both the first instruction and vector table entry 0. An NMI that arrives before the boot code has set VBASE and filled the vector table jumps through whatever those words hold. The system must therefore keep NMI from being raised until software is ready for it. The ISA provides no mechanism for this.
+
 ### 8.2 Memory
 
 - A read from an address with no memory or device behind it returns 0. A write to such an address is ignored.

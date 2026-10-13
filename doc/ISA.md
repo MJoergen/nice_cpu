@@ -89,7 +89,7 @@ The all-zero word is `MOVE R0, R0` with condition "always", so it does nothing. 
 |---|---|---|
 | | mode | register number |
 
-Bit 6 of the field (mode bit 2) means "the operand is in memory".
+For source operands, bit 6 of the field (mode bit 2) means "the operand is in memory". Destinations differ in one case: mode 011 has bit 6 clear but still writes memory, because it is an alias of mode 111 (§4.2).
 
 ### 2.3 Constant words
 

@@ -216,7 +216,7 @@ The next instruction is fetched from PC as it stands after step 8. Interrupts ar
 
 ### 5.2 SHIFT instructions (bits 27..26 = 10)
 
-s0 is the value to shift. s1 is the count: the shift runs **n = s1 mod 32** steps.
+s0 is the value to shift. s1 is the count: the shift runs **n = s1** steps, using all 32 bits of s1 as an unsigned number (as in QNICE). There is no modulo.
 
 The mnemonic shows the direction and where bits come from and go to:
 - **Left shifts `A<B`**: B is the fill bit shifted into bit 0 (0, 1 or C), and A is where bit 31 goes (0 = discarded, C = the carry flag).
@@ -252,6 +252,14 @@ Bit 24 of the instruction (the top opcode bit) gives the direction: 0 = left, 1 
 - If the bit shifted out goes to C, then c ← out.
 
 r = d. Note that for `0<C` and `C>0`, c never changes, so every fill bit is the original C.
+
+The loop defines the result for every count, but hardware need not run it n times. The same results in closed form:
+
+- **Shifts with a fixed fill** (0, 1, or the original C; that is, every shift except the rotations and `C<C`/`C>C`):
+  - For n ≥ 32, the result is all fill bits.
+  - Where the bit shifted out goes to C, n = 32 leaves C = the last bit of s0 shifted out (bit 0 for a left shift, bit 31 for a right shift), and n > 32 leaves C = the fill bit.
+- **`<<<`, `C<<`, `>>>` and `>>C`** are 32-bit rotations, so only n mod 32 matters for the result. For `C<<` and `>>C` with n > 0, C ends up equal to the bit that was rotated last: bit 0 of r for `C<<`, and bit 31 of r for `>>C`.
+- **`C<C` and `C>C`** are 33-bit rotations of C and s0 together, so only n mod 33 matters.
 
 **The C flag after a shift:**
 - The eight shifts whose bit shifted out goes to C write c back to the C flag **whether or not M is set**. With n = 0, c is unchanged.
@@ -485,7 +493,7 @@ It executes as follows:
 | `MOVE`, `DEC` with the C bit | C bit ignored (emulator) | 1997 article: adds C |
 | `ONE` | r = 1 (emulator and web page) | The 74181 background suggests all ones |
 | Flags with M = 1 | X, C, Z, N, V all rewritten, so logic ops clear C and V (emulator) | QNICE leaves C and V unchanged on logic ops |
-| Shift count | s1 mod 32 for every shift | The emulator uses the full count for `0<0` and `0>0`; QNICE uses the full count |
+| Shift count | The full 32-bit count, no modulo (QNICE) | The emulator masks the count to 5 bits for every shift except `0<0` and `0>0` |
 | Shifts writing C | Always, for the eight shifts that send their bit shifted out to C (articles, web page) | The emulator writes C only when M = 1 |
 | Writing R14 with M = 1 | The written value wins | The emulator overwrites it with the flags |
 | R0 | Always 0, even within an instruction | In the emulator, `--R0` reads −1 within one instruction |

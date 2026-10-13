@@ -11,6 +11,9 @@ dependencies beyond the standard library. It implements the assembler syntax in
 This assembles every program in `test/` and compares the result with
 the expected `.bin` file.
 
+The script is fully type-annotated. `make typecheck` checks it with
+`mypy --strict` (install mypy first).
+
 ## Usage
 
     ./niceasm.py [-o output.bin] input.asm

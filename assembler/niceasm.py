@@ -11,17 +11,20 @@ size of every statement depends only on its operand modes, and .EQU
 definitions are collected before pass 1, so both passes agree on sizes.
 """
 
+from __future__ import annotations
+
 import argparse
 import os
 import re
 import sys
+from typing import Dict, List, Optional, Tuple
 
 MASK = 0xFFFFFFFF
 
 ALU, SHIFT, CTRL = range(3)
 
 # name: (class, opcode or control command, number of operands)
-MNEMONICS = {
+MNEMONICS: Dict[str, Tuple[int, int, int]] = {
     "MOVE": (ALU, 0x0, 2), "SUB": (ALU, 0x1, 3), "MDBL": (ALU, 0x2, 3),
     "ADD": (ALU, 0x3, 3), "DBL": (ALU, 0x4, 2), "DEC": (ALU, 0x5, 2),
     "NOT": (ALU, 0x6, 2), "NOR": (ALU, 0x7, 3), "IAND": (ALU, 0x8, 3),
@@ -55,16 +58,16 @@ class AsmError(Exception):
 
 
 class Assembler:
-    def __init__(self):
-        self.equs = {}     # name -> replacement text
-        self.labels = {}   # name -> address
-        self.words = {}    # address -> (word, line number)
+    def __init__(self) -> None:
+        self.equs: Dict[str, str] = {}                 # name -> replacement text
+        self.labels: Dict[str, int] = {}               # name -> address
+        self.words: Dict[int, Tuple[int, int]] = {}    # address -> (word, line number)
         self.pc = 0
         self.pass_no = 0
 
     # -- Symbols and expressions -------------------------------------------
 
-    def resolve(self, text):
+    def resolve(self, text: str) -> str:
         """Follows .EQU names until reaching text that is not one."""
         for _ in range(100):
             if text not in self.equs:
@@ -72,14 +75,14 @@ class Assembler:
             text = self.equs[text]
         raise AsmError(f"'{text}': .EQU definitions form a loop")
 
-    def register(self, text):
+    def register(self, text: str) -> Optional[int]:
         """Register number 0..15 if text (after .EQU) names one, else None."""
         m = REGISTER.match(self.resolve(text))
         if m and int(m.group(1)) <= 15:
             return int(m.group(1))
         return None
 
-    def term(self, t, depth):
+    def term(self, t: str, depth: int) -> int:
         if t[:1].isdigit():
             try:
                 if t[:2].lower() == "0x":
@@ -107,7 +110,7 @@ class Assembler:
             raise AsmError(f"undefined symbol '{t}'")
         return 0  # pass 1: value not needed yet
 
-    def expr(self, text, depth=0, must_be_known=False):
+    def expr(self, text: str, depth: int = 0, must_be_known: bool = False) -> int:
         """expr := ['-'|'+'] term {('+'|'-') term}, wrapping modulo 2^32."""
         saved = self.pass_no
         if must_be_known:
@@ -130,7 +133,7 @@ class Assembler:
 
     # -- Operands ----------------------------------------------------------
 
-    def operand(self, tok, is_dest):
+    def operand(self, tok: str, is_dest: bool) -> Tuple[int, Optional[int]]:
         """Returns (7-bit field, constant or None). See ISA.md section 4."""
         indirect = tok.startswith("@")
         p = tok[1:] if indirect else tok
@@ -160,9 +163,10 @@ class Assembler:
         m = re.match(r"(.*)\[(.*)\]$", p)
         if m:
             p = m.group(1)
-            reg = self.register(m.group(2))
-            if reg is None:
+            index = self.register(m.group(2))
+            if index is None:
                 raise AsmError(f"'{tok}': '{m.group(2)}' is not a register")
+            reg = index
         elif "[" in p:
             raise AsmError(f"'{tok}': bad index, expected c[Rx]")
         if not p:
@@ -171,7 +175,7 @@ class Assembler:
 
     # -- Output ------------------------------------------------------------
 
-    def emit(self, word, line_no):
+    def emit(self, word: int, line_no: int) -> None:
         if self.pass_no == 2:
             if self.pc in self.words:
                 raise AsmError(f"address 0x{self.pc:08x} is already used by line "
@@ -181,7 +185,7 @@ class Assembler:
 
     # -- Statements --------------------------------------------------------
 
-    def directive(self, d, args, line_no):
+    def directive(self, d: str, args: List[str], line_no: int) -> None:
         if d == ".ORG":
             if len(args) != 1:
                 raise AsmError(".ORG takes one address")
@@ -209,11 +213,11 @@ class Assembler:
         else:
             raise AsmError(f"'{d}' is not allowed here")
 
-    def instruction(self, cond, mtok, args, line_no):
+    def instruction(self, cond: int, mtok: str, args: List[str], line_no: int) -> None:
         m = re.match(r"([^\[]+)(?:\[(.*)\])?$", mtok)
-        name = m.group(1).upper() if m else ""
-        if name not in MNEMONICS:
+        if not m or m.group(1).upper() not in MNEMONICS:
             raise AsmError(f"unknown mnemonic '{mtok}'")
+        name = m.group(1).upper()
         cls, opcode, nops = MNEMONICS[name]
 
         mods = (m.group(2) or "").upper()
@@ -251,10 +255,10 @@ class Assembler:
                 self.emit(c, line_no)
 
     @staticmethod
-    def tokenize(text):
+    def tokenize(text: str) -> List[str]:
         """Splits at whitespace and commas. A comment starts with ';' or '*'.
         A quoted string is one token, quotes kept."""
-        tokens = []
+        tokens: List[str] = []
         pos = 0
         text = text.rstrip("\r\n")
         while pos < len(text):
@@ -270,11 +274,11 @@ class Assembler:
         return tokens
 
     @staticmethod
-    def is_keyword(tok):
+    def is_keyword(tok: str) -> bool:
         return (tok.startswith("?") or tok.upper() in DIRECTIVES
                 or tok.split("[")[0].upper() in MNEMONICS)
 
-    def line(self, text, line_no):
+    def line(self, text: str, line_no: int) -> None:
         try:
             tok = self.tokenize(text)
         except AsmError:
@@ -320,7 +324,7 @@ class Assembler:
             c = tok.pop(0)
             m = re.match(r"\?(!?)(.)$", c)
             flag = m.group(2).upper().replace("M", "E") if m else ""
-            if not flag or flag not in CONDITION_FLAGS:
+            if not m or flag not in CONDITION_FLAGS:
                 raise AsmError(f"bad condition '{c}'")
             cond = (m.group(1) == "!") << 3 | CONDITION_FLAGS.index(flag)
             if not tok:
@@ -335,9 +339,9 @@ class Assembler:
         else:
             self.instruction(cond, tok[0], tok[1:], line_no)
 
-    def run(self, lines, name):
+    def run(self, lines: List[str], name: str) -> List[str]:
         """Assembles lines. Returns a list of error messages."""
-        errors = []
+        errors: List[str] = []
         for self.pass_no in (0, 1, 2):
             if self.pass_no == 2 and errors:
                 break  # pass 2 would only repeat pass 1's errors
@@ -350,7 +354,7 @@ class Assembler:
         return errors
 
 
-def main():
+def main() -> None:
     ap = argparse.ArgumentParser(description="Assembler for the NICE processor.")
     ap.add_argument("input", help="assembly source (.asm)")
     ap.add_argument("-o", dest="output",
@@ -366,8 +370,8 @@ def main():
     asm = Assembler()
     errors = asm.run(lines, args.input)
     if errors:
-        for e in errors:
-            print(e, file=sys.stderr)
+        for msg in errors:
+            print(msg, file=sys.stderr)
         print(f"{len(errors)} error{'' if len(errors) == 1 else 's'}", file=sys.stderr)
         sys.exit(1)
 

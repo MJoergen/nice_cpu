@@ -11,7 +11,11 @@ test:
 	done
 	@rm -f test/*.out
 
+# Needs mypy (pip install mypy).
+typecheck:
+	$(PYTHON) -m mypy --strict niceasm.py
+
 clean:
 	rm -f test/*.out
 
-.PHONY: test clean
+.PHONY: test typecheck clean

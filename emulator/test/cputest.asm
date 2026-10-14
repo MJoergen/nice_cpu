@@ -19,8 +19,8 @@
 ; X = 0x02000000. E, I, and VBASE are 0, except where a check sets them.
 ;
 ; Lines whose comment starts with "never runs" are not executed, not even
-; as a skipped instruction. Every other line up to the final HALT is one
-; step. Run make bins after changing this file.
+; as a skipped instruction. Every other line up to the ?!Z HALT at pass is
+; one step. Run make bins after changing this file.
 
 SP      .EQU    R13
 PC      .EQU    R15

@@ -16,6 +16,14 @@
 -- instruction word itself, as the emulator does, rather than trusting the
 -- core's.
 --
+-- A skipped instruction prints "skipped". The writer still compares the
+-- core's registers with the values it expects, those of the step before
+-- with R15 at the next instruction, and prints any that differ, and any
+-- memory write or halt. The emulator never prints these after "skipped",
+-- so a core that changes anything on a skipped instruction fails the
+-- comparison. The registers printed at the end of the run are therefore
+-- always the core's own.
+--
 -- When a step halts the processor, or the step count reaches G_MAX_STEPS,
 -- the writer prints the "Halted" or "Stopped" line and the registers, as the
 -- emulator does at the end of a run. Then it closes the file, raises done_o,
@@ -146,8 +154,27 @@ begin
             end if;
 
             if retire_i.intr = '0' and retire_i.skipped = '1' then
+               -- A skipped instruction changes nothing but R15 (ISA.md §3).
+               -- Any other change is printed after "skipped", where the
+               -- emulator prints nothing, so that the comparison fails.
                write(step_l, string'(" skipped"));
                before_v(15) := next_pc(retire_i.addr, retire_i.iw);
+               for i in 0 to 15 loop
+                  if retire_i.regs(i) /= before_v(i) then
+                     write(step_l, " R" & integer'image(i) & "=" & hex(retire_i.regs(i)));
+                  end if;
+               end loop;
+
+               if retire_i.mem_we = '1' then
+                  write(step_l, " [" & hex(retire_i.mem_addr) & "]=" & hex(retire_i.mem_data));
+               end if;
+
+               halt_v := retire_i.halt;
+               if halt_v /= HALT_NONE then
+                  write(step_l, " " & halt_text(halt_v));
+               end if;
+
+               before_v := retire_i.regs;
             else
                for i in 0 to 14 loop
                   if retire_i.regs(i) /= before_v(i) then

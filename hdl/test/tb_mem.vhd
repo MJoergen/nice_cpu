@@ -199,6 +199,14 @@ begin
       check_dbus(X"FFFFFF00", X"00000000");
       check_true("console bytes after a read", console_count = 1);
 
+      -- The read counter: a data read returns the count and then counts
+      -- itself, a write sets the count, and the instruction port reads 0.
+      write_dbus(X"FFFFFF01", X"00000005");
+      check_dbus(X"FFFFFF01", X"00000005");
+      check_dbus(X"FFFFFF01", X"00000006");
+      check_ibus(X"FFFFFF01", X"00000000");
+      check_dbus(X"FFFFFF01", X"00000007");
+
       -- Both ports at one word in one cycle: the instruction port reads the
       -- value from before the write.
       ibus_cyc      <= '1';

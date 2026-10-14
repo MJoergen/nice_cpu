@@ -37,23 +37,26 @@ endef
 
 # tb_multicycle runs a program on the multicycle core. Its trace, output, and
 # exit status must equal those of "niceemu -t" on the same program, with the
-# same interrupt requests. The programs are the 2004 examples and the
-# emulator's probes, with the probes' interrupt options from
-# emulator/Makefile, and test/shift.asm, which runs every shift with the
-# counts that are hard to get right. The memory dumps of the probes are left
-# out, because the trace lists every memory write.
+# same interrupt requests. The programs are the 2004 examples and wrap from
+# the assembler's tests, the emulator's probes, with the probes' interrupt
+# options from emulator/Makefile, and test/shift.asm, which runs every shift
+# with the counts that are hard to get right. The memory dumps of the probes
+# are left out, because the trace lists every memory write. The data reads
+# are not in the trace, but the probe reads.asm counts them with the read
+# counter, and its registers show the counts. cputest and reads run a second
+# time with a memory that stalls in 30% of the cycles.
 EXAMPLES = count replicate print wrap
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest \
-  console screen iofetch
+  console screen iofetch reads reserved
 INTR_irq   = --nmi 2:1 --irq 2:2 --nmi 9:1 --irq 17:2 --nmi 17:1 --irq 100:2
 INTR_merge = --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
 INTR_after = --nmi 3:1 --nmi 10:1
 INTR_start = --nmi 0:3
 
-# $(1) is the name of the run, and $(2) the program.
+# $(1) is the name of the run, $(2) the program, and $(3) any more generics.
 define check_core
 	@($(GHDLRUN) tb_multicycle -gG_BIN_FILE=../$(2) -gG_TRACE_FILE=core_$(1).out \
-	  $(if $(INTR_$(1)),"-gG_INTERRUPTS=$(INTR_$(1))") > core_$(1).log 2>&1); \
+	  $(if $(INTR_$(1)),"-gG_INTERRUPTS=$(INTR_$(1))") $(3) > core_$(1).log 2>&1); \
 	  echo "exit $$?" >> $(BUILD)/core_$(1).out
 	@$(EMU) -t $(INTR_$(1)) $(2) > $(BUILD)/core_$(1).expected; \
 	  echo "exit $$?" >> $(BUILD)/core_$(1).expected
@@ -64,15 +67,18 @@ define check_core
 endef
 
 # Random programs from test/random_prog.py, each run for RANDOM_STEPS steps
-# with random interrupt requests, and compared in the same way.
+# with random interrupt requests, on a memory that stalls in RANDOM_STALL
+# percent of the cycles, and compared in the same way.
 RANDOM_SEEDS = $(shell seq 1 30)
 RANDOM_STEPS = 3000
+RANDOM_STALL = 30
 
 define check_random
 	@$(PYTHON) test/random_prog.py $(1) $(BUILD)/random_$(1).bin > $(BUILD)/random_$(1).opts
 	@o=$$(cat $(BUILD)/random_$(1).opts); \
 	  ($(GHDLRUN) tb_multicycle -gG_BIN_FILE=random_$(1).bin -gG_TRACE_FILE=random_$(1).out \
-	  -gG_MAX_STEPS=$(RANDOM_STEPS) $${o:+"-gG_INTERRUPTS=$$o"} > random_$(1).log 2>&1); \
+	  -gG_MAX_STEPS=$(RANDOM_STEPS) -gG_STALL=$(RANDOM_STALL) -gG_SEED=$(1) \
+	  $${o:+"-gG_INTERRUPTS=$$o"} > random_$(1).log 2>&1); \
 	  echo "exit $$?" >> $(BUILD)/random_$(1).out
 	@$(EMU) -t -n $(RANDOM_STEPS) $$(cat $(BUILD)/random_$(1).opts) $(BUILD)/random_$(1).bin \
 	  > $(BUILD)/random_$(1).expected; echo "exit $$?" >> $(BUILD)/random_$(1).expected
@@ -92,6 +98,8 @@ test: emulator analyse synth
 	$(foreach t,$(PROBES),$(call check_core,$(t),../emulator/test/$(t).bin))
 	@$(ASM) -o $(BUILD)/shift.bin test/shift.asm
 	$(call check_core,shift,$(BUILD)/shift.bin)
+	$(call check_core,cputest_stall,../emulator/test/cputest.bin,-gG_STALL=30)
+	$(call check_core,reads_stall,../emulator/test/reads.bin,-gG_STALL=30 -gG_SEED=7)
 	$(foreach t,$(RANDOM_SEEDS),$(call check_random,$(t)))
 
 analyse:

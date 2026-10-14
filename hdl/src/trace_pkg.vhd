@@ -17,7 +17,10 @@
 -- a) valid is '1' for one cycle per step, in program order.
 -- b) regs holds R0-R15 as getReg would read them: R0 is 0, and bit 24 of R14
 --    is 1 (ISA.md §4.3).
--- c) For a skipped instruction, only addr and iw are used. It never halts.
+-- c) For a skipped instruction, regs holds the values before the step, with
+--    R15 at the address after the instruction's constant words. mem_we is
+--    '0' and halt is HALT_NONE. The trace writer prints any departure, so
+--    that the comparison with the emulator fails.
 -- d) For an interrupt entry, addr, iw, skipped, the memory write, and halt are
 --    not used.
 -- e) A store to the console is accepted on the data bus no later than the

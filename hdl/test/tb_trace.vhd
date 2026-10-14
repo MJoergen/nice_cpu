@@ -205,7 +205,7 @@ begin
       regs_v(15) := X"00000009";
       instruction(X"00000006");
 
-      -- 3: ?Z MOVE R1, 1, skipped. Only the address and word are reported.
+      -- 3: ?Z MOVE R1, 1, skipped. Only R15 changes.
       regs_v(15) := X"0000000B";
       instruction(X"00000009", skipped => '1');
 

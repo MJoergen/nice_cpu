@@ -30,7 +30,10 @@ entity tb_multicycle is
       G_TRACE_FILE : string;
       G_TRACE      : boolean  := true;
       G_MAX_STEPS  : positive := 100_000_000;
-      G_INTERRUPTS : string   := ""
+      G_INTERRUPTS : string   := "";
+      -- The memory's stall rate in percent, and its seed (sim/wb_mem.vhd).
+      G_STALL      : natural  := 0;
+      G_SEED       : positive := 1
    );
 end entity tb_multicycle;
 
@@ -201,7 +204,9 @@ begin
 
    i_wb_mem : entity work.wb_mem
       generic map (
-         G_INIT_FILE => G_BIN_FILE
+         G_INIT_FILE => G_BIN_FILE,
+         G_STALL     => G_STALL,
+         G_SEED      => G_SEED
       )
       port map (
          clk_i           => clk,

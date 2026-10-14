@@ -9,18 +9,26 @@
 -- need no shared variable. When both ports reach the same word in one cycle,
 -- the instruction port reads the value from before the data port's write.
 --
--- Both ports are pipelined Wishbone slaves that never stall and acknowledge
--- each request in the next cycle.
+-- Both ports are pipelined Wishbone slaves. They acknowledge each request in
+-- the cycle after they accept it. With G_STALL = 0 they never stall. Otherwise
+-- each port raises STALL in a cycle with a chance of G_STALL percent, drawn
+-- from a pseudo-random sequence that G_SEED starts, so that a test can check
+-- that the core waits for a request to be accepted.
 --
 -- The I/O range, 0xFFFFFF00-0xFFFFFFFF, follows ISA.md §8.3:
 -- * The instruction port reads 0 there.
 -- * The console is at 0xFFFFFF00. A write puts bits 7..0 on console_data_o,
 --   with console_valid_o high, in the cycle the write is accepted, and stores
 --   nothing. A read returns 0.
+-- * The read counter is at 0xFFFFFF01, as in the emulator (ISA.md §8.3).
+--   A data read returns the number of data reads of it since the last write,
+--   and then counts itself. A write sets the count and stores nothing. It
+--   lets tests see the number and order of data reads (ISA.md §8.2).
 -- * The rest of the range is plain memory, as in the emulator.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) The masters hold CYC high from a request until its ACK.
+-- b) A master holds STB and the request while STALL is high.
 --
 -- RESET
 -- Synchronous. It drops the ACKs owed and leaves the memory as it is
@@ -29,11 +37,14 @@
 library ieee;
    use ieee.std_logic_1164.all;
    use ieee.numeric_std_unsigned.all;
+   use ieee.math_real.all;
    use std.textio.all;
 
 entity wb_mem is
    generic (
-      G_INIT_FILE : string
+      G_INIT_FILE : string;
+      G_STALL     : natural range 0 to 100 := 0;
+      G_SEED      : positive               := 1
    );
    port (
       clk_i           : in  std_logic;
@@ -42,7 +53,7 @@ entity wb_mem is
       -- Instruction bus: read only
       ibus_cyc_i      : in  std_logic;
       ibus_stb_i      : in  std_logic;
-      ibus_stall_o    : out std_logic;
+      ibus_stall_o    : out std_logic := '0';
       ibus_ack_o      : out std_logic := '0';
       ibus_addr_i     : in  std_logic_vector(31 downto 0);
       ibus_data_o     : out std_logic_vector(31 downto 0);
@@ -50,7 +61,7 @@ entity wb_mem is
       -- Data bus: read and write
       dbus_cyc_i      : in  std_logic;
       dbus_stb_i      : in  std_logic;
-      dbus_stall_o    : out std_logic;
+      dbus_stall_o    : out std_logic := '0';
       dbus_ack_o      : out std_logic := '0';
       dbus_we_i       : in  std_logic;
       dbus_addr_i     : in  std_logic_vector(31 downto 0);
@@ -67,14 +78,20 @@ architecture simulation of wb_mem is
 
    constant C_IO_BASE : std_logic_vector(31 downto 0) := X"FFFFFF00";
    constant C_CONSOLE : std_logic_vector(31 downto 0) := X"FFFFFF00";
+   constant C_COUNTER : std_logic_vector(31 downto 0) := X"FFFFFF01";
+
+   signal ibus_stall : std_logic := '0';
+   signal dbus_stall : std_logic := '0';
 
 begin
 
-   ibus_stall_o <= '0';
-   dbus_stall_o <= '0';
+   ibus_stall_o <= ibus_stall;
+   dbus_stall_o <= dbus_stall;
 
 
-   console_valid_o <= dbus_cyc_i and dbus_stb_i and dbus_we_i when dbus_addr_i = C_CONSOLE else
+   -- The cycle in which the data port accepts the store.
+   console_valid_o <= dbus_cyc_i and dbus_stb_i and dbus_we_i and not dbus_stall
+                         when dbus_addr_i = C_CONSOLE else
                       '0';
    console_data_o  <= dbus_data_i(7 downto 0);
 
@@ -84,6 +101,25 @@ begin
       type     t_page_ptr is access t_page;
       type     t_pages    is array (0 to 2 ** 20 - 1) of t_page_ptr;
       variable pages_v    : t_pages;
+      variable count_v    : std_logic_vector(31 downto 0) := (others => '0');
+      variable seed1_v    : positive                      := G_SEED;
+      variable seed2_v    : positive                      := 1;
+      variable ibus_acc_v : std_logic;
+      variable dbus_acc_v : std_logic;
+
+      -- '1' with a chance of G_STALL percent.
+      impure function draw_stall return std_logic is
+         variable r_v : real;
+      begin
+         if G_STALL = 0 then
+            return '0';
+         end if;
+         uniform(seed1_v, seed2_v, r_v);
+         if r_v * 100.0 < real(G_STALL) then
+            return '1';
+         end if;
+         return '0';
+      end function draw_stall;
 
       impure function mem_read(addr : std_logic_vector(31 downto 0)) return std_logic_vector is
          constant C_INDEX : natural := to_integer(addr(31 downto 12));
@@ -186,8 +222,12 @@ begin
       main_loop : loop
          wait until rising_edge(clk_i);
 
-         ibus_ack_o <= ibus_cyc_i and ibus_stb_i;
-         if ibus_cyc_i = '1' and ibus_stb_i = '1' then
+         -- A request is accepted in a cycle with STALL low.
+         ibus_acc_v := ibus_cyc_i and ibus_stb_i and not ibus_stall;
+         dbus_acc_v := dbus_cyc_i and dbus_stb_i and not dbus_stall;
+
+         ibus_ack_o <= ibus_acc_v;
+         if ibus_acc_v = '1' then
             if ibus_addr_i >= C_IO_BASE then
                ibus_data_o <= X"00000000";
             else
@@ -195,18 +235,26 @@ begin
             end if;
          end if;
 
-         dbus_ack_o <= dbus_cyc_i and dbus_stb_i;
-         if dbus_cyc_i = '1' and dbus_stb_i = '1' then
+         dbus_ack_o <= dbus_acc_v;
+         if dbus_acc_v = '1' then
             if dbus_we_i = '1' then
-               if dbus_addr_i /= C_CONSOLE then
+               if dbus_addr_i = C_COUNTER then
+                  count_v := dbus_data_i;
+               elsif dbus_addr_i /= C_CONSOLE then
                   mem_write(dbus_addr_i, dbus_data_i);
                end if;
             elsif dbus_addr_i = C_CONSOLE then
                dbus_data_o <= X"00000000";
+            elsif dbus_addr_i = C_COUNTER then
+               dbus_data_o <= count_v;
+               count_v     := count_v + 1;
             else
                dbus_data_o <= mem_read(dbus_addr_i);
             end if;
          end if;
+
+         ibus_stall <= draw_stall;
+         dbus_stall <= draw_stall;
 
          if rst_i = '1' then
             ibus_ack_o <= '0';

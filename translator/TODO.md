@@ -32,8 +32,15 @@ There are two main causes:
 Do these in order, one commit each. Each commit message and the README
 give the word counts before and after.
 
-1. **Deferred operands.** The operand stack records what each value is: a
-   constant, a local, or a value in its frame word. `local.get` and the
+1. **Deferred operands.** Done. `test/safe.zig` went from 12353 to 9941
+   words (19% less), and the float library from 29569 to 20317 (31%
+   less). Each count is every word of the translated module in the
+   program image, including the float library's 256-word stack. Values
+   are not written to their frame words before a call, since a call
+   cannot change the caller's locals. The README describes the rules.
+
+   The operand stack records what each value is: a constant, a local, or
+   a value in its frame word. `local.get` and the
    constants emit no code. The instruction that uses the value takes it
    as a NICE operand: `@-3[R12]` for a local, the number for a constant.
    A value is written to its frame word only when it must be:

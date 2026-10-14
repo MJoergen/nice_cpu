@@ -192,29 +192,29 @@ LIB_ASM = "___wasm_start MOVE R15, @R13++\n_main {}\n ADD @--R13, 2, R15\n MOVE 
 
 # Cases that must trap rather than return, and the first NICE instruction
 # of the code for the wasm instruction that traps, which R2 points at.
-# In main, an operand on the stack with nothing below it is at FP - 1. An
-# i32 above it is at FP - 2, and an i64 above an i64 at FP - 4 and FP - 3.
-TRAPS = {"growtrap": "MOVE R1, @-1[R12]",
+# The operands of these instructions are constants, which take no frame
+# words until they must (README.md).
+TRAPS = {"growtrap": "MOVE R1, 65536",
          "trunc_big": "MOVE R2, 0x4F000000",
          "trunc_small": "MOVE R2, 0x41E00000",
          "trunc_neg": "MOVE R2, 0x41F00000",
          "trunc_nan": "MOVE R2, 0x5F000000",
-         "libtrap": "MOVE R1, @-1[R12]",
+         "libtrap": "MOVE R1, 100",
          "safetrap": "MOVE R1, 1",
          "rusttrap": "MOVE R1, 1",
-         "indirectoob": "MOVE R5, @-2[R12]",
-         "indirectnull": "MOVE R5, @-2[R12]",
-         "indirecttype": "MOVE R5, @-3[R12]",
-         "filloob": "ADD[M] R1, @-1[R12], @-3[R12]",
-         "copyoob": "ADD[M] R1, @-1[R12], @-3[R12]",
-         "divzero": "MOVE[M] R0, @-2[R12]",
-         "divzero64": "OR[M] R0, @-4[R12], @-3[R12]",
-         "overflow": "MOVE[M] R0, @-2[R12]",
-         "overflow64": "OR[M] R0, @-4[R12], @-3[R12]",
+         "indirectoob": "MOVE R5, 4",
+         "indirectnull": "MOVE R5, 0",
+         "indirecttype": "MOVE R5, 1",
+         "filloob": "ADD[M] R1, 65533, 4",
+         "copyoob": "ADD[M] R1, 0, 2",
+         "divzero": "MOVE[M] R0, 0",
+         "divzero64": "OR[M] R0, 0, 0",
+         "overflow": "MOVE[M] R0, -1",
+         "overflow64": "OR[M] R0, -1, -1",
          "unreachable": "MOVE R1, 1",
-         "oob": "ADD[M] R1, @-1[R12], 1",
-         "oobcarry": "ADD[M] R1, @-1[R12], 1",
-         "nomemory": "MOVE R1, @-1[R12]"}
+         "oob": "ADD[M] R1, 65532, 1",
+         "oobcarry": "ADD[M] R1, -1, 1",
+         "nomemory": "MOVE R1, 0"}
 
 # Options for nicewasm.
 OPTIONS = {"unchecked": ["--no-bounds-checks"],
@@ -338,6 +338,128 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         exports(("main", 0, 0)),
         code((1, i32_const(5) + local_tee(0) + local_get(0) + ADD + i32_const(3) + local_set(0)
               + local_get(0) + ADD + i32_const(99) + DROP + NOP))), "", 13),
+    # Deferred values (README.md): a local.get leaves its local on the stack
+    # until it must be written to its frame word. x = 5, then x is set to 7
+    # with the old 5 still on the stack, then teed to 100 with the 7 still
+    # there: 5 - (7 - 100) + 100 = 198. Then x = 3 and y = 4 are swapped
+    # through the stack, x is set to itself, and y teed to itself: 198 +
+    # (4 << 8) + (3 << 4) = 1270. The low word of the i64 local L, 5, is
+    # still on the stack when L is set to 9: 1270 + 5 - 9 = 1266.
+    ("defer_set", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code(([I32, I32, I64],
+              i32_const(5) + local_set(0) + local_get(0) + i32_const(7) + local_set(0)
+              + local_get(0) + i32_const(100) + local_tee(0) + SUB + SUB + local_get(0) + ADD
+              + i32_const(3) + local_set(0) + i32_const(4) + local_set(1)
+              + local_get(0) + local_get(1) + local_set(0) + local_set(1)
+              + local_get(0) + local_set(0) + local_get(0) + i32_const(8) + SHL + ADD
+              + local_get(1) + local_tee(1) + i32_const(4) + SHL + ADD
+              + i64_const(0x1_00000005) + local_set(2) + local_get(2) + WRAP
+              + i64_const(9) + local_set(2) + local_get(2) + WRAP + SUB + ADD))), "", 1266),
+    # Deferred values and blocks. The 1000 stays on the stack, a constant,
+    # until the end. a = 1 is below a block that sets a = 10: 1 + 10 = 11.
+    # a is below a block that does not set it: + 10 = 21. br carries a, +
+    # 10 = 31. br_if carries a, is not taken, and a = 20 follows with the
+    # 10 still on the stack: + 10 = 41. A taken br_if carries 100: 141.
+    # br_table carries a to the outer block, past the inner block's + 7:
+    # 161. if and else give a (20), then 300: 481. An if without else
+    # passes a on (501), or adds 2000 to it (2521). A loop adds 1 to a
+    # three times: + 23 = 2544. + 1000 = 3544.
+    ("defer_blocks", module(
+        types(MAIN_TYPE, ([I32], [I32])),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((3, i32_const(1000)
+              + i32_const(1) + local_set(0) + local_get(0)
+              + block() + i32_const(1) + if_() + i32_const(10) + local_set(0) + END + END
+              + local_get(0) + ADD
+              + local_get(0) + block() + i32_const(0) + if_() + i32_const(30) + local_set(0)
+              + END + END + ADD
+              + block(I32) + local_get(0) + br(0) + END + ADD
+              + i32_const(0) + local_set(1)
+              + block(I32) + local_get(0) + local_get(1) + br_if(0)
+              + i32_const(20) + local_set(0) + END + ADD
+              + block(I32) + i32_const(100) + i32_const(1) + br_if(0) + DROP + i32_const(5)
+              + END + ADD
+              + block(I32) + block(I32) + local_get(0) + i32_const(1) + br_table([0, 1], 0)
+              + END + i32_const(7) + ADD + END + ADD
+              + i32_const(1) + if_(I32) + local_get(0) + ELSE + i32_const(3) + END + ADD
+              + i32_const(0) + if_(I32) + local_get(0) + ELSE + i32_const(300) + END + ADD
+              + local_get(0) + i32_const(0) + if_(typeidx(1)) + i32_const(2000) + ADD + END + ADD
+              + local_get(0) + i32_const(1) + if_(typeidx(1)) + i32_const(2000) + ADD + END + ADD
+              + i32_const(0) + local_set(2)
+              + local_get(0) + loop(typeidx(1)) + local_get(2) + i32_const(1) + ADD
+              + local_set(2) + i32_const(1) + ADD + local_get(2) + i32_const(3) + LT_U
+              + br_if(0) + END + ADD
+              + ADD))), "", 3544),
+    # Deferred values as the arguments of a call, and across it. g(a, b, c,
+    # d) = (a - wrap(b)) + (wrap(c) - d) + the high words of b and c, with a
+    # and b in R1-R3, and c and d on the stack. main passes 1000, its local
+    # L = 0x7_00000064, the constant 0x30_00002710, and its local x = 3:
+    # 900 + 9997 + 7 + 48 = 10952. x is also on the stack below the call,
+    # and is set to 77 after it: 3 + 10952 + 77 = 11032.
+    ("defer_call", module(
+        types(MAIN_TYPE, ([I32, I64, I64, I32], [I32])),
+        funcs(1, 0),
+        exports(("main", 0, 1)),
+        code((0, local_get(0) + local_get(1) + WRAP + SUB + local_get(2) + WRAP + local_get(3)
+              + SUB + ADD + local_get(1) + i64_const(32) + SHR_U64 + WRAP + ADD
+              + local_get(2) + i64_const(32) + SHR_U64 + WRAP + ADD),
+             ([I32, I64],
+              i32_const(3) + local_set(0) + i64_const(0x7_00000064) + local_set(1)
+              + local_get(0)
+              + i32_const(1000) + local_get(1) + i64_const(0x30_00002710) + local_get(0) + call(0)
+              + i32_const(77) + local_set(0) + ADD + local_get(0) + ADD))), "", 11032),
+    # Instructions that write their result where their first operand would
+    # be, with deferred operands. x = 5, L = 0x12345678_9ABCDEF0, and F has
+    # the bits 0x40000000_00000001. One bit each, so 23 ones:
+    ("defer_ops", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code(([I32, I32, I64, F64],
+              i32_const(5) + local_set(0) + i64_const(0x123456789ABCDEF0) + local_set(2)
+              + const(F64, 0x4000000000000001) + local_set(3)
+              + bits(1,
+                     # select, and x and L are unchanged
+                     local_get(0) + i32_const(9) + i32_const(0) + SELECT + i32_const(9) + EQ,
+                     local_get(0) + i32_const(9) + i32_const(1) + SELECT + i32_const(5) + EQ,
+                     local_get(2) + i64_const(7) + i32_const(1) + select_t(I64)
+                     + i64_const(0x123456789ABCDEF0) + EQ64,
+                     i64_const(7) + local_get(2) + i32_const(0) + select_t(I64)
+                     + i64_const(0x123456789ABCDEF0) + EQ64,
+                     local_get(0) + i32_const(5) + EQ,
+                     # neg, abs, and copysign, and F is unchanged
+                     local_get(3) + F64_NEG + I64_REINTERPRET_F64
+                     + i64_const(0xC000000000000001 - 2**64) + EQ64,
+                     local_get(3) + I64_REINTERPRET_F64 + i64_const(0x4000000000000001) + EQ64,
+                     const(F64, 0xC008000000000000) + F64_ABS + I64_REINTERPRET_F64
+                     + i64_const(0x4008000000000000) + EQ64,
+                     local_get(3) + const(F64, 0xBFF0000000000000) + F64_COPYSIGN
+                     + I64_REINTERPRET_F64 + i64_const(0xC000000000000001 - 2**64) + EQ64,
+                     # i64 shifts and rotates
+                     local_get(2) + i64_const(4) + SHL64 + i64_const(0x23456789ABCDEF00) + EQ64,
+                     local_get(2) + i64_const(36) + SHR_U64 + i64_const(0x01234567) + EQ64,
+                     i64_const(-2**63) + i64_const(4) + SHR_S64
+                     + i64_const(0xF800000000000000 - 2**64) + EQ64,
+                     local_get(2) + i64_const(8) + ROTL64 + i64_const(0x3456789ABCDEF012) + EQ64,
+                     local_get(2) + i64_const(8) + ROTR64
+                     + i64_const(0xF0123456789ABCDE - 2**64) + EQ64,
+                     # rem_s by -1, rem_s, div_u, and shl
+                     i32_const(7) + i32_const(-1) + b"\x6f" + i32_const(0) + EQ,
+                     local_get(0) + i32_const(3) + b"\x6f" + i32_const(2) + EQ,
+                     local_get(0) + i32_const(2) + b"\x6e" + i32_const(2) + EQ,
+                     local_get(0) + i32_const(33) + SHL + i32_const(10) + EQ,
+                     # extensions, wrap, and reinterpret
+                     i32_const(-2) + EXTEND_S + i64_const(-2) + EQ64,
+                     local_get(2) + WRAP + i32_const(0x9ABCDEF0 - 2**32) + EQ,
+                     local_get(2) + b"\xc2" + i64_const(-16) + EQ64,
+                     const(F32, 0x3F800000) + I32_REINTERPRET_F32 + i32_const(0x3F800000) + EQ,
+                     # L is still on the stack when it is set to 0
+                     local_get(2) + i64_const(0) + local_set(2)
+                     + i64_const(0x123456789ABCDEF0) + EQ64)))), "", 0x7FFFFF),
     # return takes the top value, 4, and leaves the 9 under it. The code
     # after it is never run.
     ("return", module(

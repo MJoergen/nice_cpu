@@ -15,7 +15,9 @@ Each function keeps its locals and its wasm operand stack in its frame on
 the NICE stack, addressed from FP (R12). An i32 or f32 takes one word,
 and an i64 or f64 two, low word first. The operand stack holds the type of each value, so
 every value has a fixed place in the frame, and every instruction is a few
-NICE instructions on frame words.
+NICE instructions on frame words. A constant or the value of a local is
+written to its place only when it must be; until then, the instructions
+that use it take the constant or the local as their operand.
 """
 
 from __future__ import annotations
@@ -236,6 +238,14 @@ class Frame:
     def label_types(self) -> List[int]:
         """The values that a branch to it takes."""
         return self.ft.params if self.op == LOOP else self.ft.results
+
+
+@dataclass
+class Deferred:
+    """A value on the operand stack that is not in its frame words yet: a
+    constant, or the value that a local holds."""
+    words: List[str]       # its words as source operands
+    local: Optional[int]   # the local whose value it is, or None for a constant
 
 
 @dataclass
@@ -1084,7 +1094,19 @@ class FunctionTranslator:
     """Translates one function. Local i starts at the frame word FP +
     local[i]. The operand stack starts at FP - n_slots and grows down: a
     value whose first word is stack word w, and which takes n words, starts
-    at FP - n_slots - w - n. A value's low word is at the lower address."""
+    at FP - n_slots - w - n. A value's low word is at the lower address.
+
+    A value on the operand stack may be deferred: a constant, or the value
+    of a local, that is not in its frame words yet. pop() gives such a
+    value's words as the constant or the local, so the instruction that
+    uses it takes it directly. A deferred value is written to its frame
+    words when it must be (settle()): before a local.set or local.tee
+    changes its local, at the start of a block for the values that the
+    block takes and for every value of a local, and at an else or end for
+    the results. A deferred constant below a block stays deferred through
+    the block, because nothing inside it can change the constant or reach
+    the value. So the values below a block are the same on every path
+    through it."""
 
     def __init__(self, t: Translator, idx: int, code: Code) -> None:
         self.t = t
@@ -1109,6 +1131,7 @@ class FunctionTranslator:
                 self.n_slots += SIZES[lt]
                 self.local.append(-self.n_slots)
         self.stack: List[int] = []  # the type of each value on the operand stack
+        self.deferred: List[Optional[Deferred]] = []  # and what it is, if it is deferred
         self.words = 0              # the words they take
         self.max_words = 0
         self.n_traps = 0
@@ -1118,42 +1141,78 @@ class FunctionTranslator:
         self.ret_label = f"{t.prefix}f{idx}.ret"
         self.ctrl = [Frame(0, self.ftype, 0, 0, self.ret_label)]
 
-    def push(self, t: int) -> List[str]:
-        """Pushes a value of type t and returns its words."""
+    def push(self, t: int, deferred: Optional[Deferred] = None) -> List[str]:
+        """Pushes a value of type t and returns its frame words. A deferred
+        value is not in them yet."""
         self.stack.append(t)
+        self.deferred.append(deferred)
         self.words += SIZES[t]
         self.max_words = max(self.max_words, self.words)
         return self.top()
 
     def top(self) -> List[str]:
-        """The words of the value on top of the operand stack."""
-        n = SIZES[self.stack[-1]]
-        start = -self.n_slots - self.words
-        return [operand(start + i) for i in range(n)]
+        """The frame words of the value on top of the operand stack."""
+        return self.slot(len(self.stack) - 1)
 
-    def pop(self, types: List[Optional[int]], at: int, what: str) -> List[List[str]]:
+    def slot(self, i: int) -> List[str]:
+        """The frame words of value i on the operand stack, counted from
+        the bottom."""
+        below = self.words - sum(SIZES[t] for t in self.stack[i:])
+        return self.slots([self.stack[i]], below)[0]
+
+    def pop(self, types: List[Optional[int]], at: int, what: str,
+            keep: bool = False) -> List[List[str]]:
         """Pops values of the given types, the last one from the top, and
-        returns their words. None accepts any type. Only the values pushed
-        inside the innermost block can be popped."""
-        if len(self.stack) - self.ctrl[-1].height < len(types):
+        returns their words as source operands. None accepts any type. Only
+        the values pushed inside the innermost block can be popped. With
+        keep, the values stay on the operand stack."""
+        n = len(types)
+        if len(self.stack) - self.ctrl[-1].height < n:
             raise WasmError(f"function {self.idx}: operand stack underflow", at)
         out: List[List[str]] = []
-        for want in reversed(types):
-            got = self.stack[-1]
+        for k, want in enumerate(types):
+            i = len(self.stack) - n + k
+            got = self.stack[i]
             if want is not None and got != want:
                 raise WasmError(f"function {self.idx}: {what} expects {type_name(want)},"
                                 f" found {type_name(got)}", at)
-            out.append(self.top())
-            self.words -= SIZES[got]
-            self.stack.pop()
-        return out[::-1]
+            d = self.deferred[i]
+            out.append(self.slot(i) if d is None else d.words)
+        if not keep:
+            for _ in range(n):
+                self.words -= SIZES[self.stack.pop()]
+                self.deferred.pop()
+        return out
+
+    def settle(self, i: int) -> None:
+        """Writes value i on the operand stack to its frame words, if it is
+        deferred."""
+        d = self.deferred[i]
+        if d is not None:
+            self.move(self.slot(i), d.words)
+            self.deferred[i] = None
+
+    def settle_top(self, types: List[int], at: int, what: str) -> None:
+        """Checks that the values on top of the operand stack have the
+        given types, and writes them to their frame words."""
+        self.pop(list(types), at, what, keep=True)
+        for i in range(len(self.stack) - len(types), len(self.stack)):
+            self.settle(i)
+
+    def settle_locals(self, local: Optional[int] = None) -> None:
+        """Writes the values of the given local, or of every local, to
+        their frame words."""
+        for i, d in enumerate(self.deferred):
+            if d is not None and d.local is not None and local in (None, d.local):
+                self.settle(i)
 
     def emit(self, mnemonic: str, *operands: str) -> None:
         self.body.append(instr(mnemonic, *operands))
 
     def move(self, dest: List[str], src: List[str]) -> None:
         for d, s in zip(dest, src):
-            self.emit("MOVE", d, s)
+            if d != s:
+                self.emit("MOVE", d, s)
 
     def call(self, label: str, ft: FuncType, at: int, what: str) -> None:
         """Calls label with the arguments on top of the operand stack, by
@@ -1219,8 +1278,9 @@ class FunctionTranslator:
 
     def reset(self, f: Frame, types: List[int]) -> None:
         """Leaves only the values below f and then values of the given
-        types on the operand stack."""
+        types, in their frame words, on the operand stack."""
         del self.stack[f.height:]
+        del self.deferred[f.height:]
         self.words = f.words
         for t in types:
             self.push(t)
@@ -1251,9 +1311,7 @@ class FunctionTranslator:
         the operand stack, and returns the moves that put them where f
         expects them: in its slots, or for the function in R1 and up."""
         types = f.label_types()
-        values = self.pop(list(types), at, what)
-        for t in types:
-            self.push(t)
+        values = self.pop(list(types), at, what, keep=True)
         if f.op == 0:
             regs = [f"R{k + 1}" for k in range(sum(SIZES[t] for t in types))]
             return list(zip(regs, [w for v in values for w in v]))
@@ -1268,7 +1326,8 @@ class FunctionTranslator:
 
     def end_block(self, f: Frame, at: int, what: str) -> None:
         """Checks that the operand stack holds exactly f's results, at else
-        and at end."""
+        and at end, and writes them to their frame words."""
+        self.settle_top(f.ft.results, at, what)
         self.pop(list(f.ft.results), at, what)
         if len(self.stack) != f.height:
             raise WasmError(f"function {self.idx}: values left on the operand stack at the {what}",
@@ -1343,8 +1402,7 @@ class FunctionTranslator:
         """Traps with code 5 unless the float on top of the operand stack,
         which stays there, has a magnitude below the limit for its sign
         (TRUNC_OPS). A NaN or an infinity is above every limit."""
-        (v,) = self.pop([src_t], at, what)
-        self.push(src_t)
+        (v,) = self.pop([src_t], at, what, keep=True)
         start = self.new_label()
         self.body.append(start)
         hi = v[-1]  # the word with the sign
@@ -1411,9 +1469,7 @@ class FunctionTranslator:
         address, n). With bounds checks, the ranges are checked before any
         byte is written, and a range out of bounds traps with code 2. Then
         the helper does the work."""
-        d, x, n = self.pop([I32, I32, I32], at, what)
-        for _ in range(3):
-            self.push(I32)
+        d, x, n = self.pop([I32, I32, I32], at, what, keep=True)
         start = self.new_label()
         self.body.append(start)
         if self.t.checks:
@@ -1438,9 +1494,8 @@ class FunctionTranslator:
         come the cases that wasm defines but C does not (§9.4): division by
         0 traps with code 3, and div_s of the most negative number by -1
         traps with code 4. rem_s by -1 is 0, without the call."""
-        a, b = self.pop([t, t], at, what)
-        self.push(t)
-        self.push(t)
+        a, b = self.pop([t, t], at, what, keep=True)
+        result = self.slot(len(self.stack) - 2)  # where a is, or would be
         start = self.new_label()
         self.body.append(start)
         if t == I32:
@@ -1468,9 +1523,9 @@ class FunctionTranslator:
             self.emit("?Z MOVE", "R15", self.trap_stub(4, start))
             self.body.append(ok)
         elif op == "rem_s":
-            # The result goes where a is.
+            # The result goes where the call puts it.
             done = self.new_label()
-            for w in a:
+            for w in result:
                 self.emit("?Z MOVE", w, "0")
             self.emit("?Z MOVE", "R15", done)
         routine = {"div_s": "__div", "div_u": "__udiv", "rem_s": "__mod", "rem_u": "__umod"}[op]
@@ -1608,33 +1663,35 @@ class FunctionTranslator:
         32 or more, or a "negative" one like 32 - n for n > 32, shifts out
         every bit (§5.2). That makes the logical shifts branch-free."""
         a, b = self.pop([I64, I64], at, what)
-        lo, hi = self.push(I64)  # the same words as a
+        lo, hi = self.push(I64)  # where a is, or would be
+        a_lo, a_hi = a           # a itself, which may be deferred
         if op in ("shl", "shr_u"):
             # shl: hi' = hi << n | lo >> (32 - n) | lo << (n - 32), lo' = lo << n.
             # shr_u is the mirror image, with the words swapped.
             near, far = (lo, hi) if op == "shl" else (hi, lo)
+            a_near, a_far = (a_lo, a_hi) if op == "shl" else (a_hi, a_lo)
             fwd, back = ("SHL", "SHR") if op == "shl" else ("SHR", "SHL")
             self.emit("AND", "R1", b[0], "63")                 # n
             self.emit("SUB", "R2", "32", "R1")
             self.emit("SUB", "R3", "R1", "32")
-            self.emit(back, "R4", near, "R2")
-            self.emit(fwd, "R2", near, "R3")
+            self.emit(back, "R4", a_near, "R2")
+            self.emit(fwd, "R2", a_near, "R3")
             self.emit("OR", "R4", "R4", "R2")
-            self.emit(fwd, "R2", far, "R1")
+            self.emit(fwd, "R2", a_far, "R1")
             self.emit("OR", far, "R4", "R2")
-            self.emit(fwd, near, near, "R1")
+            self.emit(fwd, near, a_near, "R1")
         elif op == "shr_s":
             # hi' = hi >>s n, which is all sign bits for n >= 32. lo' is
             # hi >>s (n - 32) for n >= 32, else lo >> n | hi << (32 - n).
             self.emit("AND", "R1", b[0], "63")                 # n
             self.emit("SUB", "R2", "R1", "32")
-            self.emit("C<0[M]", "R0", hi, "1")                 # C = the sign bit
-            self.emit("C>0", "R3", hi, "R2")
-            self.emit("C>0", "R4", hi, "R1")
+            self.emit("C<0[M]", "R0", a_hi, "1")               # C = the sign bit
+            self.emit("C>0", "R3", a_hi, "R2")
+            self.emit("C>0", "R4", a_hi, "R1")
             self.emit("SUB[M]", "R0", "R1", "32")              # C = n < 32
             self.emit("?C SUB", "R2", "32", "R1")
-            self.emit("?C SHR", "R3", lo, "R1")
-            self.emit("?C SHL", "R2", hi, "R2")
+            self.emit("?C SHR", "R3", a_lo, "R1")
+            self.emit("?C SHL", "R2", a_hi, "R2")
             self.emit("?C OR", "R3", "R3", "R2")
             self.emit("MOVE", lo, "R3")
             self.emit("MOVE", hi, "R4")
@@ -1647,10 +1704,10 @@ class FunctionTranslator:
                 count = "R1"
             self.emit("AND[M]", "R0", count, "32")             # Z = (n mod 64) < 32
             self.emit("AND", "R1", count, "31")                # k
-            self.emit("MOVE", "R2", lo)                        # x
-            self.emit("MOVE", "R3", hi)                        # y
-            self.emit("?!Z MOVE", "R2", hi)
-            self.emit("?!Z MOVE", "R3", lo)
+            self.emit("MOVE", "R2", a_lo)                      # x
+            self.emit("MOVE", "R3", a_hi)                      # y
+            self.emit("?!Z MOVE", "R2", a_hi)
+            self.emit("?!Z MOVE", "R3", a_lo)
             self.emit("SUB", "R4", "32", "R1")
             # lo' = x << k | y >> (32 - k), hi' = y << k | x >> (32 - k).
             self.emit("SHL", lo, "R2", "R1")
@@ -1793,6 +1850,10 @@ class FunctionTranslator:
                 pass
             elif op in (BLOCK, LOOP, IF):
                 cond_word = self.pop([I32], at, name)[0][0] if op == IF else ""
+                # The values below the block are the same on every path
+                # through it, and its parameters are in their frame words.
+                self.settle_locals()
+                self.settle_top(ft.params, at, name)
                 self.pop(list(ft.params), at, name)
                 f = Frame(op, ft, len(self.stack), self.words, self.new_label())
                 for t in ft.params:
@@ -1867,11 +1928,12 @@ class FunctionTranslator:
                     sel_type = self.stack[-1]
                 a, b = self.pop([sel_type, sel_type], at, name)  # underflow if None
                 assert sel_type is not None
-                # The result goes where the first value already is.
+                # The result goes where the first value is, or would be.
+                dest = self.push(sel_type)
+                self.move(dest, a)
                 self.emit("MOVE[M]", "R0", cond[0])
                 for k in range(len(a)):
-                    self.emit("?Z MOVE", a[k], b[k])
-                self.push(sel_type)
+                    self.emit("?Z MOVE", dest[k], b[k])
             elif op == 0x0F:  # return
                 self.ret(at, name)
                 self.emit("MOVE", "R15", self.ret_label)
@@ -1898,14 +1960,16 @@ class FunctionTranslator:
             elif op == 0x20:  # local.get
                 assert imm is not None
                 t, src = self.local_operand(imm, at)
-                self.move(self.push(t), src)
+                self.push(t, Deferred(src, imm))
             elif op in (0x21, 0x22):  # local.set, local.tee
                 assert imm is not None
                 t, dest = self.local_operand(imm, at)
                 (src,) = self.pop([t], at, name)
+                # The local's old value, wherever it is still on the stack.
+                self.settle_locals(imm)
                 self.move(dest, src)
                 if op == 0x22:
-                    self.push(t)
+                    self.push(t, Deferred(dest, imm))
             elif op == 0x23:  # global.get
                 assert imm is not None
                 t, src = self.global_operand(imm, at)
@@ -1920,8 +1984,7 @@ class FunctionTranslator:
             elif op in (0x41, 0x42, 0x43, 0x44):  # the constants
                 assert imm is not None
                 t = {0x41: I32, 0x42: I64, 0x43: F32, 0x44: F64}[op]
-                for d, w in zip(self.push(t), words(imm, t)):
-                    self.emit("MOVE", d, w)
+                self.push(t, Deferred(words(imm, t), None))
             elif op in (0x45, 0x50):  # i32.eqz, i64.eqz
                 t = I32 if op == 0x45 else I64
                 (a,) = self.pop([t], at, name)
@@ -2017,22 +2080,24 @@ class FunctionTranslator:
                         self.emit("?Z MOVE", d, "0")
             elif op in REINTERPRET_OPS:
                 src_t, dst_t = REINTERPRET_OPS[op]
+                deferred = self.deferred[-1] if len(self.stack) > self.ctrl[-1].height else None
                 self.pop([src_t], at, name)
-                self.push(dst_t)  # the same words, unchanged
+                self.push(dst_t, deferred)  # the same words, unchanged
             elif op in SIGN_OPS:
                 t, sign_op = SIGN_OPS[op]
                 values = self.pop([t, t] if sign_op == "copysign" else [t], at, name)
-                dest = self.push(t)  # the same words as the first value
-                a, top = values[0], values[0][-1]  # top: the word with the sign bit
+                dest = self.push(t)  # where the first value is, or would be
+                a = values[0]
+                self.move(dest[:-1], a[:-1])
+                top, a_top = dest[-1], a[-1]  # the word with the sign bit
                 if sign_op == "abs":
-                    self.emit("AND", top, top, "0x7FFFFFFF")
+                    self.emit("AND", top, a_top, "0x7FFFFFFF")
                 elif sign_op == "neg":
-                    self.emit("XOR", top, top, "0x80000000")
+                    self.emit("XOR", top, a_top, "0x80000000")
                 else:
                     self.emit("AND", "R1", values[1][-1], "0x80000000")
-                    self.emit("AND", top, top, "0x7FFFFFFF")
+                    self.emit("AND", top, a_top, "0x7FFFFFFF")
                     self.emit("OR", top, top, "R1")
-                assert dest == a
             elif op in LIB_OPS:
                 routine, (params, results) = LIB_OPS[op]
                 self.call(routine, FuncType(params, results), at, name)
@@ -2055,8 +2120,13 @@ class FunctionTranslator:
                     self.emit("MOVE", ext[1], "0")
                     self.emit("?N MOVE", ext[1], "-1")
             elif op == 0xA7:  # i32.wrap_i64
+                deferred = self.deferred[-1] if len(self.stack) > self.ctrl[-1].height else None
                 (a,) = self.pop([I64], at, name)
-                self.emit("MOVE", self.push(I32)[0], a[0])
+                if deferred is not None:
+                    # The low word of the constant or the local.
+                    self.push(I32, Deferred(a[:1], deferred.local))
+                else:
+                    self.emit("MOVE", self.push(I32)[0], a[0])
             elif op in (0xAC, 0xAD):  # i64.extend_i32_s, i64.extend_i32_u
                 # The i32 is in the word that becomes the high word, so the
                 # low word is written first.

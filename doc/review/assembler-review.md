@@ -2,6 +2,8 @@
 
 Reviewed on 2026-10-14: `assembler/niceasm.py` at commit 55a6913 ("niceasm: add type hints"), against `doc/ISA.md` §2, §4, §5.3, §10 and §11.
 
+**Status after commit 0670e53** ("niceasm: fix the issues from the adversarial review"), checked the same day: every item in sections 1, 2 and 4 is fixed, and each has a case in `test/errors.py` or a line in `test/encoding.asm`. Section 5 is the second round against the new code. It found one crash on an unrealistic input and a few message nits, nothing that affects correct programs.
+
 **How it was checked.** I read the code against the specification, confirmed that `make test` passes, checked the shift alias table and the control encodings by hand, and then ran about sixty one- to five-line probe programs through the assembler to see what it accepts, rejects and reports. The probe files were not kept; every input quoted below is complete and reproduces the result.
 
 ## Summary
@@ -140,3 +142,57 @@ Negative tests to add, one line each:
 - Bad condition, bad modifier, `[C]` on a shift, a modifier on a control instruction, a condition on a directive.
 - Unterminated string, number too large, bad number.
 - After the fixes above: a line starting with `,`, `R1 .EQU 5`, `.BLK -1`, `?1 .DAT 1`.
+
+## 5. Second round, commit 0670e53
+
+**How it was checked.** `make test` (six programs and 71 error cases) and `make typecheck` pass. I re-ran every probe from sections 1 and 2 and confirmed the new behaviour, then ran about forty new probes aimed at the rewritten parts: `.EQU` values that are whole operands, `.EQU` validation and loop detection in pass 0, `.BLK` stored as ranges with the overlap check, the comma-aware tokenizer, and the label-on-`.ORG` rule.
+
+### 5.1 Confirmed fixed
+
+- A line starting with `,` and an indented unterminated string are both reported.
+- `R1 .EQU 5`, `R16 .DAT 1` and `ADD .EQU 5` are rejected with a message that names the rule.
+- `.BLK -1` is an error. `.BLK 0x2000000` now runs in 14 MB instead of 4.7 GB.
+- `?1 .DAT 1` is an error.
+- The default output name never overwrites the input, and `-o` pointing at the input is refused.
+- `X .EQU @R2`, `X .EQU R1++` and `X .EQU 5[R4]` work as whole operands, and ISA.md §10.3 and the README now say what an `.EQU` may hold.
+- A bad `.EQU` value is reported once, on its own line, even if unused.
+- A label on a `.ORG` line names the new address, and ISA.md §10.1 says so.
+- Every message in the section 2 table is replaced. `LOOP MOV R1, R2` now reports `MOV` and says that `LOOP` is read as a label.
+- `.BLK` ranges are checked against words and other ranges in both orders, and a range that merely touches the next word is accepted.
+
+### 5.2 A crash
+
+`check_equs()` (line 185) recurses once per dependency. A chain of `.EQU` names written in reverse order, so that each depends on a name defined below it, recurses once per name. At 1200 names this exceeds Python's recursion limit of 1000 and the assembler dies with a traceback instead of an error message:
+
+    A1200 .EQU A1199
+    A1199 .EQU A1198
+    ...
+    A0    .EQU 7
+
+Fifty names in reverse order work. The forward order never recurses deeply, because each name is checked after its dependency. No real program has a chain this long, but a traceback is never the right output. An explicit stack, or catching `RecursionError` and reporting the name, would fix it.
+
+### 5.3 A false "loop" on long chains
+
+`resolve()` (line 83) gives up after 100 steps and reports a loop. A forward chain of 101 names is therefore rejected:
+
+    chain.asm:101: error: '7': .EQU definitions form a loop
+
+Two things are wrong with that line: it is not a loop, and the name quoted is the final value `7`, not an `.EQU` name. Real loops are now found by `check_equs()` before anything else runs, and bad names stop `resolve()` early, so the 100-step limit no longer catches anything that the loop check misses. It could be raised to the number of `.EQU` definitions, or dropped.
+
+### 5.4 Message nits
+
+| Input | Message | Problem |
+|---|---|---|
+| `X .EQU R1++` then `MOVE R2, --X` | `bad expression '--X'` | X stands for an operand. The messages for `X+1` and `INT X` say so; this one does not. The same for `X++`. |
+| `MOVE[M] [C] R1, R2` | `MOVE takes 2 operands, got 3` | The hint about a space before the modifier only fires when the mnemonic has no modifier of its own. |
+| `.ASCII_L 'abc' 'def'` | `text after the string 'abc': to put ' in a string, quote the string with "` | The extra token is a complete second string. The hint about quoting is wrong here. |
+| `A HALT` then `A .EQU 1` | line 1: `symbol 'A' is already defined on line 2` | True, since `.EQU` is processed first, but the reader expects the error on line 2. |
+
+### 5.5 Accepted without complaint
+
+- A comma directly after the mnemonic, label or condition: `MOVE , R1, R2`, `L , HALT` and `?Z , HALT`. The README says operands are separated by one comma. This comma separates nothing.
+- `X: .EQU 5` is still rejected with "bad symbol name 'X:'" while `X: HALT` is accepted. The README says a label may end with `:`, and an `.EQU` name is written in the label position.
+
+### 5.6 Tests
+
+`errors.py` covers every message from section 2 and every bug from section 1. Gaps worth one case each: a `.BLK` range overlapping a word emitted after it, two overlapping `.BLK` ranges, a `.BLK` that ends at `0xFFFFFFFF` exactly followed by a word at 0, and, after the fixes in 5.2 and 5.3, a long chain in each order.

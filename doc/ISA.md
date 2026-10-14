@@ -442,9 +442,10 @@ These rules let separately written C and assembly code call each other. Compiler
 | `float` | 1 | IEEE 754 single precision. |
 | `double`, `long double` | 2 | IEEE 754 double precision. |
 
+- No type has exactly 8 or 16 bits, so `<stdint.h>` has no `int8_t`, `int16_t`, `uint8_t`, or `uint16_t`. `int32_t` is `int`, and `int64_t` is `long long`.
 - A value of two words has its low word at the lower address. In a register pair, the lower-numbered register holds the low word.
-- Every type has an alignment of one word. Structure members follow each other in declaration order with no padding. A union's size is the size of its largest member.
-- Bit-fields are allocated from bit 0 upward within a word. A bit-field that does not fit in the rest of the current word starts a new word. A plain `int` bit-field is signed.
+- Every type has an alignment of one word. Structure members follow each other in declaration order. The only padding is the unused part of a word that holds bit-fields. A union's size is the size of its largest member.
+- Bit-fields are allocated from bit 0 upward within a word. A bit-field that does not fit in the rest of the current word starts a new word, and so does a member that is not a bit-field. A bit-field of width 0 ends the current word. A plain `int` bit-field is signed.
 - The null pointer is 0. Word 0 holds the first instruction (§8.1), so no C object is ever at address 0.
 
 **Registers.**
@@ -477,23 +478,24 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 
 - Arguments are assigned in order. A one-word argument goes in the next free register of R1–R4. A two-word argument goes in the next two free registers if both are free.
 - Once an argument does not fit, it and all later arguments go on the stack. A structure or union argument always goes on the stack, so all arguments after it do too.
-- In a call to a variadic function, every argument goes on the stack, the named ones included.
+- In a call to a variadic function, every argument goes on the stack, the named ones included. The one exception is the hidden result address, which is always in R1 (see Return values).
 - The caller pushes the stack arguments from last to first, so the first one ends up at the lowest address. A structure argument is copied onto the stack whole, with its first word at the lowest address. On entry, the first stack argument starts at mem[SP + 1], just above the return address.
 - The caller removes the stack arguments after the call, for example with `ADD SP, SP, n`.
-- A `float` argument stays a `float`, even in a call to a variadic or unprototyped function. `char` and `short` arguments need no promotion, because they are already one word.
+- In a call to a variadic or unprototyped function, a `float` argument is converted to `double` and passed as two words, as C requires. This applies to the arguments after the `...` and to every argument of an unprototyped call. `char` and `short` arguments need no code, because they are already one word.
 
 **Return values.**
 
 - A one-word value is returned in R1. A two-word value is returned in R1 (low word) and R2 (high word).
-- For a function that returns a structure or a union, the caller passes the address of space for the result as a hidden first argument, before all others. The callee stores the result there and returns that address in R1.
+- For a function that returns a structure or a union, the caller passes the address of space for the result in R1, as a hidden first argument. The other arguments then start at R2, or on the stack in a call to a variadic function. The callee stores the result there and returns that address in R1.
 
 **The stack.**
 
 - SP points at the last word pushed, and the stack grows down (§9.1). The ISA has no alignment rule, so neither does the stack.
 - There is no red zone. An interrupt routine may push onto the stack at any time, so the words below SP may change between any two instructions.
 - An interrupt routine must save and restore every register it uses (§7.4), R1–R6 included.
+- So a C function cannot be an interrupt routine by itself: it may change R1–R6, and it returns with `MOVE PC, @SP++`, not `RTI`. An assembly wrapper saves R1–R6, calls the C function, restores R1–R6, and executes `RTI`.
 
-**Frames.** A function needs no frame pointer. If it uses one, it must build the frame this way, so that a debugger can follow the chain of frames:
+**Frames.** A function needs no frame pointer. If it uses one, it must build the frame this way. A debugger can then follow the chain of frames through the functions that use one:
 
     MOVE @--SP, R12          ; save the caller's FP
     MOVE R12, SP             ; FP points at the saved FP
@@ -514,10 +516,22 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 
 **Symbol names.** The assembler's labels are case-sensitive, but they may not be mnemonics or register names (§10.1).
 
-- A C identifier `name` becomes the label `_name`. So `main` is `_main`, and a C function called `move` does not clash with the mnemonic `MOVE`.
-- Labels that the compiler makes for itself start with `L.`, for example `L.12`. No C identifier contains a `.`, so these cannot clash with C names.
+- A C function or variable `name` with external linkage gets the label `_name`. So `main` is `_main`, and a C function called `move` does not clash with the mnemonic `MOVE`. Names with internal linkage are covered below.
+- Every other label that the compiler emits contains a `.` (see Programs and units). No C identifier contains a `.`, so these cannot clash with external C names.
 
-**Runtime routines.** NICE has no multiply or divide instruction. The compiler calls these routines instead. They follow the rules above.
+**Programs and units.** There is no linker. A program is one assembly file, made by joining these files in this order: the start-up code, the compiled units, the translated wasm module if there is one (§9.4), and the runtime library. Every label and `.EQU` name must therefore be unique in the whole program. The assembler rejects a second definition.
+
+- Each compiled unit has a unit name, given when it is compiled, for example from the file name. It consists of letters, digits, and `_`, and it differs from the names of the other units in the program.
+- The compiler's own labels are `L.unit.n`, for example `L.main.12`.
+- A `static` function or variable at file scope gets the label `_name.unit`, for example `_count.main` for `static int count` in the unit `main`. A `static` variable inside a function gets one of the compiler's own labels.
+- Two units that define the same external name both define `_name`, and the assembler rejects the program, as a linker would.
+- Compiled and translated code writes R13 and R15 and defines no `.EQU` names. Hand-written files may define names such as `SP` and `PC`, but only one file may define each name.
+
+**Runtime routines.** NICE has no multiply or divide instruction, and no floating-point instructions. The compiler calls routines in the runtime library instead. They follow the rules above.
+
+- There is one runtime library, shared by the C compiler and the wasm translator (§9.4).
+- All its labels start with `__`. Their C names start with `_`, which C reserves for the implementation at file scope.
+- The table lists the routines for one-word integers. The runtime library's README lists all routines, including those for `long long`, floating point, and conversions between them.
 
 | Label | Result in R1 |
 |---|---|
@@ -527,7 +541,7 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 
 Division by zero is undefined in C, so these routines may return any value for it.
 
-**Start-up.** The start-up code sits at address 0. It sets SP to the top of the memory the program may use, calls `_main` with no arguments, and then executes `HALT` with `main`'s return value still in R1. Static data gets its initial values when the program image is loaded. Reset does not restore them.
+**Start-up.** The start-up code sits at address 0. It sets SP to one past the highest word the program may use, so that the first push lands on that word. If the program has a wasm module, it then calls `___wasm_start` (§9.4). Then it calls `_main` with no arguments, and then executes `HALT` with `main`'s return value still in R1. Static data gets its initial values when the program image is loaded. Reset does not restore them.
 
 **Example.** This function and call:
 
@@ -569,15 +583,15 @@ The WebAssembly specification defines what each wasm instruction does. A transla
 
 - Byte address *b* is bits 8·(*b* mod 4) + 7 to 8·(*b* mod 4) of the word at `MEMBASE` + ⌊*b* / 4⌋. Byte 0 of a word is its least significant byte, as in `.ASCII_B` (§10.3).
 - Wasm is little-endian, so an `i32` at a byte address that is a multiple of 4 is exactly one NICE word. An `i64` there is two words, low word first, as in §9.3.
-- The translator reserves enough words for the module's maximum memory size, or for a limit it chooses if the module sets none. A page is 65536 bytes, or 16384 words. `memory.grow` returns −1 if the new size would pass the reservation.
+- A page is 65536 bytes, or 16384 words. The translator reserves words for the memory up to a cap. The cap is at least the module's initial size and at most its maximum size, if it declares one. The translator chooses it, for example by an option, because a module may declare a maximum that no NICE system has room for. `memory.grow` returns −1 if the new size would pass the cap.
 - Active data segments are part of the program image, like C static data (§9.3).
 - The label `___wasm_memory` is `MEMBASE`, so C code can declare the memory as `extern unsigned __wasm_memory[];`.
 
 Memory accesses must give the results wasm defines:
 
 - An access may be at any byte address. The alignment hint in the instruction is not a promise, so an access that crosses a word boundary must still work. A translator may use a faster path when the address turns out to be a multiple of 4.
-- A store of fewer than 32 bits reads the word, changes the bytes, and writes it back.
-- An access that goes past the end of the current memory size traps. A translator may offer an option to leave out these checks. Then such an access uses the word that the formula above gives, wrapping modulo 2³².
+- A store that changes only part of a word reads the word, changes the bytes, and writes it back. Narrow stores do this, and so do `i32` and `i64` stores that are not at a multiple of 4. The read and the write are two accesses, so an interrupt routine that writes the same word between them loses its write.
+- An access that goes past the end of the current memory size traps. A translator may offer an option to leave out these checks. Then the byte address *b* is (base + offset) mod 2³², and the word address `MEMBASE` + ⌊*b* / 4⌋ also wraps modulo 2³².
 
 **Hardware access.** Linear memory cannot reach I/O devices or the rest of NICE memory. A module reaches them through these imports from the module `nice`. The translator replaces each call with the instruction shown:
 
@@ -585,6 +599,8 @@ Memory accesses must give the results wasm defines:
 |---|---|---|
 | `nice.peek` | `(i32) -> i32` | `MOVE R1, @R1`: read the NICE word at the given word address. |
 | `nice.poke` | `(i32, i32) -> ()` | `MOVE @R1, R2`: write the second argument to the NICE word at the first. |
+
+These exist to reach devices, so the §8.2 rule applies to them as to any instruction. Each call is performed exactly once and in program order, even when the result of a `peek` is not used.
 
 In Rust, they are declared in an `extern "C"` block with `#[link(wasm_import_module = "nice")]`.
 
@@ -605,7 +621,7 @@ The module's own stack is separate. Compilers for wasm keep the variables whose 
 - `call_indirect` traps if the index is past the end of the table, if the entry is empty, or if its type number differs from the type of the call. Otherwise it calls the address with the "through a register" sequence of §9.3.
 - A wasm function pointer is an index into this table, not a NICE address.
 
-**Traps.** A trap jumps to the label `__wasm_trap`, with a code in R1 and in R2 the address of the instruction that trapped:
+**Traps.** A trap jumps to the label `___wasm_trap`. R1 holds a code, and R2 holds the address of the first NICE instruction of the code for the wasm instruction that trapped:
 
 | R1 | Cause |
 |---|---|
@@ -617,34 +633,43 @@ The module's own stack is separate. Compilers for wasm keep the variables whose 
 | 6 | `call_indirect`: index past the end of the table, or an empty entry |
 | 7 | `call_indirect`: type mismatch |
 
-`__wasm_trap` is part of the runtime, and the program may supply its own. The default one is a `HALT`. It never returns into the module.
+`___wasm_trap` is part of the runtime library. Its default is a `HALT`. A program may supply its own, in assembly or as the C function `void __wasm_trap(int code, unsigned addr)`. It is entered by a jump, not a call, so mem[SP] is not a return address, and SP is wherever the trapping function left it. It must therefore not return.
 
 Running out of NICE stack is not detected, unlike in wasm. What happens then is undefined.
 
 **Imports and exports.**
 
-- An exported function or global whose name is a C identifier gets the label `_name`, as in §9.3. So C code calls an exported wasm function `sum` as `sum`. Other export names get no label.
+- An exported function or global whose name is a C identifier gets the label `_name`, as in §9.3. So C code calls an exported wasm function `sum` as `sum`. Names that start with `_` are reserved for the runtime library (§9.3), so they get no label, and neither do names that are not C identifiers.
 - A function imported from the module `env` is the §9.3 function `name`, at the label `_name`. Rust, Zig, and clang put their `extern` functions in `env` unless told otherwise.
-- The translator rejects imports from any module other than `env` and `nice`.
+- The translator accepts only function imports from `env`, and only `peek` and `poke` from `nice`. It rejects every other import. This includes imported globals, memories, and tables, such as those that `--import-memory` or position-independent code produce.
 - Labels that the translator makes for itself start with `W.`, for example `W.f12` for function 12. They cannot clash with C names, or with the C compiler's labels, which start with `L.`.
 
-**Pointers at the boundary with C.** A wasm pointer is a byte address in linear memory. A C pointer is a word address.
+**Pointers at the boundary with C.** A wasm pointer is a byte address in linear memory. A C pointer is a word address. Wasm has no pointer type, so the translator cannot tell a pointer from a number, and it converts nothing. A pointer from wasm reaches C as an integer that holds a byte address, and the C code converts it:
 
-- To pass a wasm pointer *p* to C, convert it to `__wasm_memory + p / 4`. This works only if *p* is a multiple of 4. C then sees the data packed four bytes to a word.
+- The C address of wasm byte address *p* is `__wasm_memory + p / 4`. This works only if *p* is a multiple of 4. C then sees the data packed four bytes to a word.
 - To pass C data to wasm, it must be in linear memory. The byte address of the word at C address *q* is (*q* − `__wasm_memory`) × 4.
 - Wasm code cannot reach C data outside linear memory, except through `nice.peek` and `nice.poke`.
+- Only `i32`, `i64`, `f32`, and `f64` values cross the boundary. Clang and Rust pass a structure in an `extern "C"` signature as a pointer into linear memory, so C receives a byte address there too.
+- Function pointers do not cross the boundary. A wasm function pointer is a table index, and a C function pointer is a NICE address.
 
-**Runtime routines.** The translator uses the §9.3 routines `__mul`, `__div`, `__mod`, `__udiv`, and `__umod` for `i32` arithmetic. It checks the cases that wasm defines but C leaves undefined before it calls them:
+**Runtime routines.** The translator uses the runtime library of §9.3, which it shares with the C compiler. For `i32` arithmetic it calls `__mul`, `__div`, `__mod`, `__udiv`, and `__umod`. Before it calls them, it checks the cases that wasm defines but C leaves undefined:
 
 - division or remainder by zero traps (code 3)
 - `div_s` of the most negative value by −1 traps (code 4)
 - `rem_s` of the most negative value by −1 is 0.
 
-Other runtime routines, for example for `i64` and floating point, also have names that start with `__`. The translator's README lists them.
+The routines for `i64` and floating point are in the same library and listed in its README.
 
-**Other differences from NICE.** Wasm takes shift and rotate counts modulo 32, or 64 for `i64`. NICE uses the full count (§5.2), so the translator must mask it first.
+**Other differences from NICE.**
 
-**Start-up.** The start-up code is that of §9.3. If the module has a start function, the start-up code calls it before it calls `_main`. Rust and Zig code supply `main` as an exported function, for example `#[no_mangle] pub extern "C" fn main() -> i32` in Rust or `export fn main() i32` in Zig.
+- Wasm takes shift and rotate counts modulo 32, or 64 for `i64`. NICE uses the full count (§5.2), so the translator must mask it first.
+- NICE has no arithmetic right shift, so `i32.shr_s` becomes the two-instruction sequence of §5.2.
+
+**Start-up.** The start-up code is that of §9.3. For a program with a wasm module, it calls `___wasm_start` before `_main`.
+
+- The translator always emits `___wasm_start`, a §9.3 function with no arguments and no result. It calls the module's start function, if there is one. Then it calls `__wasm_call_ctors`, if the module exports a function of that name. Otherwise it just returns.
+- Clang, Rust, and Zig emit no start function. Clang puts the calls to C++ constructors and `__attribute__((constructor))` functions in `__wasm_call_ctors`, so link with `--export=__wasm_call_ctors` to have them run. Rust and Zig need neither.
+- Rust and Zig code supply `main` as an exported function, for example `#[no_mangle] pub extern "C" fn main() -> i32` in Rust or `export fn main() i32` in Zig.
 
 **Example.** With R1 holding a byte address *b*, and no bounds check:
 

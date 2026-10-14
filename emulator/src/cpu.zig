@@ -99,6 +99,9 @@ pub const Memory = struct {
 
 pub const Error = std.Io.Writer.Error || error{OutOfMemory};
 
+/// The emulator's console output: the first I/O address (§8.3).
+pub const console_addr: u32 = 0xFFFF_FF00;
+
 pub const Cpu = struct {
     /// R0..R15. Read and write them through `getReg` and `setReg`, which
     /// apply the rules for R0 and R14 (§4.3).
@@ -120,6 +123,10 @@ pub const Cpu = struct {
     trace: ?*std.Io.Writer,
     /// The last memory write, for the trace.
     last_write: ?struct { addr: u32, value: u32 },
+    /// When set, a write to `console_addr` writes its low byte here
+    /// instead of to memory. This device belongs to the emulator, not to
+    /// the ISA (§8.3).
+    console: ?*std.Io.Writer,
 
     /// A processor after reset (§8.1), with empty memory allocated from `gpa`.
     pub fn init(gpa: std.mem.Allocator) Cpu {
@@ -135,6 +142,7 @@ pub const Cpu = struct {
             .irq_pending = null,
             .trace = null,
             .last_write = null,
+            .console = null,
         };
         cpu.reset();
         return cpu;
@@ -199,8 +207,11 @@ pub const Cpu = struct {
     }
 
     /// A memory write by the processor (§8.2).
-    pub fn write(self: *Cpu, addr: u32, value: u32) error{OutOfMemory}!void {
-        try self.mem.write(addr, value);
+    pub fn write(self: *Cpu, addr: u32, value: u32) Error!void {
+        if (addr == console_addr) {
+            if (self.console) |w| try w.writeByte(@truncate(value));
+        }
+        if (addr != console_addr or self.console == null) try self.mem.write(addr, value);
         self.last_write = .{ .addr = addr, .value = value };
     }
 
@@ -252,7 +263,7 @@ pub const Cpu = struct {
     /// Fetch and run one instruction (§5). Returns the instruction word, so
     /// that the trace need not read it a second time, and whether the
     /// condition was true.
-    fn execute(self: *Cpu) error{OutOfMemory}!struct { iw: u32, executed: bool } {
+    fn execute(self: *Cpu) Error!struct { iw: u32, executed: bool } {
         // 1. Fetch.
         const iw = self.fetch();
 
@@ -344,7 +355,7 @@ pub const Cpu = struct {
     }
 
     /// §4.2: write the result to the destination and apply its side effect.
-    fn destination(self: *Cpu, field: u7, c: u32, res: u32) error{OutOfMemory}!void {
+    fn destination(self: *Cpu, field: u7, c: u32, res: u32) Error!void {
         const r: u4 = @truncate(field);
         switch (@as(u3, @truncate(field >> 4))) {
             0b000 => self.setReg(r, res),
@@ -976,6 +987,27 @@ test "the whole address space exists and wraps (§1.1)" {
     // Writing 0 to an untouched page allocates nothing.
     try cpu.mem.write(0x8000_0000, 0);
     try testing.expectEqual(2, cpu.mem.pages.count());
+}
+
+test "the console takes the low byte of a write, and memory keeps nothing" {
+    // MOVE @0xFFFFFF00, 0x1234_5648 ("H"), MOVE @0xFFFFFF00, 0x69 ("i"),
+    // MOVE R1, @0xFFFFFF00, HALT.
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), console_addr, 0x1234_5648,
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), console_addr, 0x69,
+        alu_iw(.always, MOVE, .none, reg(1), ind_imm(0), reg(0)), console_addr,
+        HALT,
+    });
+    var buf: [8]u8 = undefined;
+    var w: std.Io.Writer = .fixed(&buf);
+    cpu.console = &w;
+    cpu.regs[1] = 7;
+    try runToHalt(&cpu);
+    try testing.expectEqualStrings("Hi", w.buffered());
+    try testing.expectEqual(0, cpu.regs[1]);
+    try testing.expectEqual(1, cpu.mem.pages.count()); // only the program's page
 }
 
 /// Run `cpu` for `n` steps, tracing into a buffer, and return the trace.

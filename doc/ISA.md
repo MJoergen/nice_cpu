@@ -402,6 +402,8 @@ I/O is memory-mapped. There are no I/O instructions. Addresses `0xFFFFFF00`–`0
 
 The 2004 emulator maps a character screen at `0x400`. That is a property of the emulator, not of the ISA.
 
+The emulator in this repository also maps a console at `0xFFFFFF00`. Each write prints bits 7..0 of the word, and a read returns 0. The FPGA implementation will have a UART at the same address. These are properties of those systems too, not of the ISA. Programs use the console for output. The screen remains for the 2004 programs.
+
 ## 9. Software conventions
 
 These are conventions, not hardware rules.

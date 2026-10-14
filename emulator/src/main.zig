@@ -7,7 +7,7 @@ const usage =
     \\Usage: niceemu [options] program.bin
     \\
     \\Runs the program from address 0 until it halts, then prints the
-    \\registers.
+    \\registers. A write to 0xFFFFFF00 prints its low byte on stdout.
     \\
     \\Options:
     \\  -t, --trace          Print one line per instruction.
@@ -229,6 +229,7 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
     try load(arena, &cpu, opts.path, text);
 
     if (opts.trace) cpu.trace = out;
+    cpu.console = out;
     // A step is one instruction, or the entry into an interrupt.
     var steps: u64 = 0;
     var next: usize = 0;

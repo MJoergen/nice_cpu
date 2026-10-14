@@ -703,6 +703,126 @@ def byte_copy() -> List[str]:
             instr("OR", f"{mem}[R5]", "R6", "R4")]
 
 
+def load_helper(n: int, signed: bool) -> List[str]:
+    """W.loadN, W.loadNu, or W.loadNs: loads the n bytes at byte address R1,
+    which is in the memory, into R1, or for n = 8 into R1 and R2, low word
+    first. A value of 1 or 2 bytes is extended to 32 bits, with its sign
+    for s. Uses R2-R6. A word of the memory holds four bytes, the lowest
+    address in the low byte (§9.4)."""
+    mem = "@___wasm_memory"
+    name = f"W.load{n}" + ("" if n >= 4 else "s" if signed else "u")
+    out = [f"; {name}: loads {n} byte{'s' if n > 1 else ''} from byte address R1.", name]
+    if n == 8:
+        return out + [
+            instr("SHR", "R5", "R1", "2"),               # word index
+            instr("AND[M]", "R3", "R1", "3"),            # byte in the word
+            instr("MOVE", "R1", f"{mem}[R5]"),
+            instr("MOVE", "R2", f"{mem}+1[R5]"),
+            instr("?Z MOVE", "R15", "@R13++"),
+            instr("SHL", "R3", "R3", "3"),               # s = 8 * byte
+            instr("SUB", "R4", "32", "R3"),              # 32 - s
+            instr("SHR", "R1", "R1", "R3"),
+            instr("SHL", "R6", "R2", "R4"),
+            instr("OR", "R1", "R1", "R6"),
+            instr("SHR", "R2", "R2", "R3"),
+            instr("SHL", "R6", f"{mem}+2[R5]", "R4"),
+            instr("OR", "R2", "R2", "R6"),
+            instr("MOVE", "R15", "@R13++")]
+    if n == 4:
+        return out + [
+            instr("SHR", "R2", "R1", "2"),
+            instr("AND[M]", "R3", "R1", "3"),
+            instr("MOVE", "R1", f"{mem}[R2]"),
+            instr("?Z MOVE", "R15", "@R13++"),
+            instr("SHL", "R3", "R3", "3"),
+            instr("SHR", "R1", "R1", "R3"),
+            instr("SUB", "R3", "32", "R3"),
+            instr("SHL", "R4", f"{mem}+1[R2]", "R3"),
+            instr("OR", "R1", "R1", "R4"),
+            instr("MOVE", "R15", "@R13++")]
+    out += [instr("SHR", "R2", "R1", "2"),
+            instr("AND", "R3", "R1", "3"),
+            instr("SHL", "R3", "R3", "3"),
+            instr("SHR", "R1", f"{mem}[R2]", "R3")]
+    if n == 2:
+        # Byte 3 of a word: the second byte is in the next word.
+        out += [instr("SUB[M]", "R0", "R3", "24"),
+                instr("?Z SHL", "R4", f"{mem}+1[R2]", "8"),
+                instr("?Z OR", "R1", "R1", "R4")]
+    out.append(instr("AND", "R1", "R1", str((1 << (8 * n)) - 1)))
+    if signed:
+        # (x XOR sign) - sign extends the sign bit of x.
+        sign = str(1 << (8 * n - 1))
+        out += [instr("XOR", "R1", "R1", sign), instr("SUB", "R1", "R1", sign)]
+    return out + [instr("MOVE", "R15", "@R13++")]
+
+
+def store_helper(n: int) -> List[str]:
+    """W.storeN: stores the low n bytes of R2, or for n = 8 R2 and R3, at
+    byte address R1, which is in the memory. Uses R1-R6. A word that the
+    store fills only in part is read, changed, and written back once."""
+    mem = "@___wasm_memory"
+    name = f"W.store{n}"
+    out = [f"; {name}: stores {n} byte{'s' if n > 1 else ''} at byte address R1.", name,
+           instr("SHR", "R4", "R1", "2")]                # word index
+    if n == 8:
+        return out + [
+            instr("AND[M]", "R1", "R1", "3"),            # byte in the word
+            instr("?Z MOVE", f"{mem}[R4]", "R2"),
+            instr("?Z MOVE", f"{mem}+1[R4]", "R3"),
+            instr("?Z MOVE", "R15", "@R13++"),
+            instr("SHL", "R1", "R1", "3"),               # s = 8 * byte
+            # The first word keeps its low s bits.
+            instr("SHL", "R5", "-1", "R1"),
+            instr("IAND", "R5", "R5", f"{mem}[R4]"),
+            instr("SHL", "R6", "R2", "R1"),
+            instr("OR", f"{mem}[R4]", "R5", "R6"),
+            # The middle word is all new.
+            instr("SUB", "R5", "32", "R1"),              # 32 - s
+            instr("SHR", "R2", "R2", "R5"),
+            instr("SHL", "R6", "R3", "R1"),
+            instr("OR", f"{mem}+1[R4]", "R2", "R6"),
+            # The last word keeps all but its low s bits.
+            instr("SHR", "R3", "R3", "R5"),
+            instr("SHR", "R6", "-1", "R5"),
+            instr("IAND", "R6", "R6", f"{mem}+2[R4]"),
+            instr("OR", f"{mem}+2[R4]", "R6", "R3"),
+            instr("MOVE", "R15", "@R13++")]
+    if n == 4:
+        return out + [
+            instr("AND[M]", "R3", "R1", "3"),
+            instr("?Z MOVE", f"{mem}[R4]", "R2"),
+            instr("?Z MOVE", "R15", "@R13++"),
+            instr("SHL", "R3", "R3", "3"),
+            instr("SHL", "R5", "-1", "R3"),
+            instr("IAND", "R5", "R5", f"{mem}[R4]"),
+            instr("SHL", "R6", "R2", "R3"),
+            instr("OR", f"{mem}[R4]", "R5", "R6"),
+            instr("SUB", "R3", "32", "R3"),
+            instr("SHR", "R5", "-1", "R3"),
+            instr("IAND", "R5", "R5", f"{mem}+1[R4]"),
+            instr("SHR", "R6", "R2", "R3"),
+            instr("OR", f"{mem}+1[R4]", "R5", "R6"),
+            instr("MOVE", "R15", "@R13++")]
+    mask = str((1 << (8 * n)) - 1)
+    out += [instr("AND", "R3", "R1", "3"),
+            instr("SHL", "R3", "R3", "3"),               # s = 8 * byte
+            instr("SHL", "R5", mask, "R3"),
+            instr("IAND", "R5", "R5", f"{mem}[R4]"),
+            instr("AND", "R6", "R2", mask),
+            instr("SHL", "R6", "R6", "R3"),
+            instr("OR", f"{mem}[R4]", "R5", "R6")]
+    if n == 2:
+        # Byte 3 of a word: the second byte goes in the next word.
+        out += [instr("SUB[M]", "R0", "R3", "24"),
+                instr("?!Z MOVE", "R15", "@R13++"),
+                instr("AND", "R5", f"{mem}+1[R4]", "0xFFFFFF00"),
+                instr("SHR", "R2", "R2", "8"),
+                instr("AND", "R2", "R2", "0xFF"),
+                instr("OR", f"{mem}+1[R4]", "R5", "R2")]
+    return out + [instr("MOVE", "R15", "@R13++")]
+
+
 # Functions that memory.fill and memory.copy call, emitted once each if a
 # function uses them. They take byte addresses and a byte count, which the
 # caller has checked. Each byte or whole word is a pass of a loop: a word
@@ -827,6 +947,13 @@ HELPERS: Dict[str, List[str]] = {
         instr("MOVE", "R15", "W.copy.bloop"),
     ],
 }
+for _n in (1, 2):
+    for _signed in (False, True):
+        HELPERS[f"W.load{_n}{'s' if _signed else 'u'}"] = load_helper(_n, _signed)
+for _n in (1, 2, 4, 8):
+    HELPERS[f"W.store{_n}"] = store_helper(_n)
+    if _n >= 4:
+        HELPERS[f"W.load{_n}"] = load_helper(_n, False)
 
 
 class Translator:
@@ -1362,11 +1489,30 @@ class FunctionTranslator:
             self.emit("?N XOR", d, d, "1")
             self.emit("?V XOR", d, d, "1")
 
-    def address(self, base: str, offset: int, n: int) -> None:
+    def const_value(self, i: int) -> Optional[int]:
+        """The value of the i32 on the operand stack i values from the top,
+        if it is a deferred constant, as an unsigned number."""
+        if len(self.stack) - self.ctrl[-1].height < i:
+            return None
+        d = self.deferred[-i]
+        if d is None or d.local is not None or self.stack[-i] != I32:
+            return None
+        return int(d.words[0]) & 0xFFFFFFFF
+
+    def address(self, base: str, offset: int, n: int, const: Optional[int]) -> Optional[int]:
         """Puts the byte address base + offset in R1. With bounds checks,
         traps with code 2 unless all n bytes there are in the memory. A
         trap's R2 is the start of this code, the first instruction of the
-        access (§9.4)."""
+        access (§9.4). If base is the constant const, and the n bytes are
+        in the initial memory or there are no bounds checks, returns the
+        address and emits no code."""
+        if const is not None:
+            addr = const + offset
+            if not self.t.checks:
+                return addr & 0xFFFFFFFF  # the address wraps modulo 2^32 (§9.4)
+            assert self.t.mem_bytes is not None
+            if addr + n <= self.t.mem_bytes:
+                return addr
         start = self.new_label()
         self.body.append(start)
         if not self.t.checks:
@@ -1375,7 +1521,7 @@ class FunctionTranslator:
                 self.emit("ADD", "R1", base, words(offset, I32)[0])
             else:
                 self.emit("MOVE", "R1", base)
-            return
+            return None
         trap = self.trap_stub(2, start)
         if offset:
             self.emit("ADD[M]", "R1", base, words(offset, I32)[0])
@@ -1387,7 +1533,7 @@ class FunctionTranslator:
             # memory.grow keeps up to date.
             self.emit("SUB[M]", "R0", "R1", f"@W.limit{n}")
             self.emit("?!C MOVE", "R15", trap)
-            return
+            return None
         # The first address at which n bytes do not fit.
         assert self.t.mem_bytes is not None
         limit = self.t.mem_bytes - n + 1
@@ -1396,6 +1542,31 @@ class FunctionTranslator:
         elif limit < 1 << 32:
             self.emit("SUB[M]", "R0", "R1", words(limit, I32)[0])
             self.emit("?!C MOVE", "R15", trap)
+        return None
+
+    def call_helper(self, name: str, cond: str = "") -> None:
+        """Calls one of the HELPERS, which is then emitted once."""
+        self.t.helpers.add(name)
+        self.emit(cond + "ADD", "@--R13", "2", "R15")
+        self.emit(cond + "MOVE", "R15", self.t.prefix + name[2:])
+
+    def fast_path(self, helper: str, setup: List[Tuple[str, str]], aligned: List[Tuple[str, ...]]) -> None:
+        """The access of 4 or 8 bytes at the byte address in R1. If R1 is
+        at a multiple of 4, the aligned instructions do it with the word
+        index in R2. Else the moves in setup prepare the helper's
+        arguments, and it is called and returns past them."""
+        call, back = self.new_label(), self.new_label()
+        self.emit("AND[M]", "R0", "R1", "3")
+        for dest, src in setup:
+            self.emit("?!Z MOVE", dest, src)
+        self.emit("?!Z ADD", "@--R13", f"{back}-{call}", "R15")
+        self.body.append(call)
+        self.t.helpers.add(helper)
+        self.emit("?!Z MOVE", "R15", self.t.prefix + helper[2:])
+        self.emit("SHR", "R2", "R1", "2")                  # word index
+        for mnemonic, *ops in aligned:
+            self.emit(mnemonic, *ops)
+        self.body.append(back)
 
     def trunc_check(self, src_t: int, dst_t: int, pos_limit: int, neg_limit: int, at: int,
                     what: str) -> None:
@@ -1543,119 +1714,71 @@ class FunctionTranslator:
                             " natural", at)
 
     def load(self, t: int, n: int, signed: bool, offset: int, at: int, what: str) -> None:
-        """Loads n bytes into a value of type t. A word of the memory holds
-        four bytes, the lowest address in the low byte (§9.4). An access
-        that is not at a multiple of 4 may need bytes from the next word,
-        which is read only then."""
+        """Loads n bytes into a value of type t. An access of 4 or 8 bytes
+        at a multiple of 4 reads whole words inline. Others call a helper
+        (load_helper), which leaves the value in R1, and R2 for n = 8."""
+        const = self.const_value(1)
         (base,) = self.pop([I32], at, what)
         dest = self.push(t)
-        self.address(base[0], offset, n)
+        addr = self.address(base[0], offset, n, const)
         mem = f"@{self.t.mem}"
-        self.emit("SHR", "R2", "R1", "2")                  # word index
-        if n == 8:
-            lo, hi = dest
-            done = self.new_label()
-            self.emit("AND[M]", "R3", "R1", "3")           # byte in the word
-            self.emit("MOVE", lo, f"{mem}[R2]")
-            self.emit("MOVE", hi, f"{mem}+1[R2]")
-            self.emit("?Z MOVE", "R15", done)
-            self.emit("SHL", "R3", "R3", "3")              # s = 8 * byte
-            self.emit("SUB", "R4", "32", "R3")             # 32 - s
-            self.emit("SHR", lo, lo, "R3")
-            self.emit("SHL", "R1", hi, "R4")
-            self.emit("OR", lo, lo, "R1")
-            self.emit("SHR", hi, hi, "R3")
-            self.emit("SHL", "R1", f"{mem}+2[R2]", "R4")
-            self.emit("OR", hi, hi, "R1")
-            self.body.append(done)
+        helper = f"W.load{n}" + ("" if n >= 4 else "s" if signed else "u")
+        if addr is not None and n >= 4 and addr % 4 == 0:
+            # A known address in the memory, at a multiple of 4.
+            word = f"{mem}+{addr // 4}"
+            if n == 8:
+                self.emit("MOVE", dest[0], word)
+                self.emit("MOVE", dest[1], f"{mem}+{addr // 4 + 1}")
+                return
+            src = word
+        else:
+            if addr is not None:
+                self.emit("MOVE", "R1", str(addr))
+                self.call_helper(helper)
+            elif n == 8:
+                self.fast_path(helper, [], [("MOVE", "R1", f"{mem}[R2]"),
+                                            ("MOVE", "R2", f"{mem}+1[R2]")])
+            elif n == 4:
+                self.fast_path(helper, [], [("MOVE", "R1", f"{mem}[R2]")])
+            else:
+                self.call_helper(helper)
+            if n == 8:
+                self.move(dest, ["R1", "R2"])
+                return
+            src = "R1"
+        if len(dest) == 1:
+            self.emit("MOVE", dest[0], src)
             return
-        # The n bytes go to the low bytes of R4, with other bytes above.
-        if n == 4:
-            self.emit("AND[M]", "R3", "R1", "3")
-            self.emit("MOVE", "R4", f"{mem}[R2]")
-            self.emit("?!Z SHL", "R3", "R3", "3")
-            self.emit("?!Z SHR", "R4", "R4", "R3")
-            self.emit("?!Z SUB", "R3", "32", "R3")
-            self.emit("?!Z SHL", "R1", f"{mem}+1[R2]", "R3")
-            self.emit("?!Z OR", "R4", "R4", "R1")
-        else:
-            self.emit("AND", "R3", "R1", "3")
-            self.emit("SHL", "R3", "R3", "3")
-            self.emit("SHR", "R4", f"{mem}[R2]", "R3")
-            if n == 2:
-                # Byte 3 of a word: the second byte is in the next word.
-                self.emit("SUB[M]", "R0", "R3", "24")
-                self.emit("?Z SHL", "R1", f"{mem}+1[R2]", "8")
-                self.emit("?Z OR", "R4", "R4", "R1")
-        # Extend to 32 bits, setting N for an i64's high word.
-        if n == 4:
-            self.emit("MOVE[M]" if signed else "MOVE", dest[0], "R4")
-        elif signed:
-            # (x XOR sign) - sign extends the sign bit of x.
-            sign = str(1 << (8 * n - 1))
-            self.emit("AND", "R4", "R4", str((1 << (8 * n)) - 1))
-            self.emit("XOR", "R4", "R4", sign)
-            self.emit("SUB[M]", dest[0], "R4", sign)
-        else:
-            self.emit("AND", dest[0], "R4", str((1 << (8 * n)) - 1))
-        if t == I64:
-            self.emit("MOVE", dest[1], "0")
-            if signed:
-                self.emit("?N MOVE", dest[1], "-1")
+        # Extend to 64 bits. A helper extends a value of 1 or 2 bytes to 32.
+        self.emit("MOVE[M]" if signed else "MOVE", dest[0], src)
+        self.emit("MOVE", dest[1], "0")
+        if signed:
+            self.emit("?N MOVE", dest[1], "-1")
 
     def store(self, t: int, n: int, offset: int, at: int, what: str) -> None:
-        """Stores the low n bytes of a value of type t. A store that does
-        not fill whole words reads each partial word, changes its bytes,
-        and writes it back (§9.4)."""
+        """Stores the low n bytes of a value of type t. An access of 4 or 8
+        bytes at a multiple of 4 writes whole words inline. Others call a
+        helper (store_helper) with the value in R2, and R3 for n = 8."""
+        const = self.const_value(2)
         base, value = self.pop([I32, t], at, what)
-        v = value[0]
-        self.address(base[0], offset, n)
+        addr = self.address(base[0], offset, n, const)
         mem = f"@{self.t.mem}"
-        self.emit("SHR", "R2", "R1", "2")                  # word index
-        if n >= 4:
-            done = self.new_label()
-            self.emit("AND[M]", "R3", "R1", "3")           # byte in the word
-            self.emit("?Z MOVE", f"{mem}[R2]", v)
-            if n == 8:
-                self.emit("?Z MOVE", f"{mem}+1[R2]", value[1])
-            self.emit("?Z MOVE", "R15", done)
-            self.emit("SHL", "R3", "R3", "3")              # s = 8 * byte
-            # The first word keeps its low s bits.
-            self.emit("SHL", "R4", "-1", "R3")
-            self.emit("IAND", "R4", "R4", f"{mem}[R2]")
-            self.emit("SHL", "R1", v, "R3")
-            self.emit("OR", f"{mem}[R2]", "R4", "R1")
-            self.emit("SUB", "R4", "32", "R3")             # 32 - s
-            last = f"{mem}+1[R2]"
-            if n == 8:
-                # The middle word is all new.
-                self.emit("SHR", "R1", v, "R4")
-                self.emit("SHL", "R3", value[1], "R3")
-                self.emit("OR", f"{mem}+1[R2]", "R1", "R3")
-                v = value[1]
-                last = f"{mem}+2[R2]"
-            # The last word keeps all but its low s bits.
-            self.emit("SHR", "R3", "-1", "R4")
-            self.emit("IAND", "R3", "R3", last)
-            self.emit("SHR", "R1", v, "R4")
-            self.emit("OR", last, "R3", "R1")
-            self.body.append(done)
+        words_n = 2 if n == 8 else 1
+        if addr is not None and n >= 4 and addr % 4 == 0:
+            for k in range(words_n):
+                self.emit("MOVE", f"{mem}+{addr // 4 + k}", value[k])
             return
-        mask = str((1 << (8 * n)) - 1)
-        self.emit("AND", "R3", "R1", "3")
-        self.emit("SHL", "R3", "R3", "3")                  # s = 8 * byte
-        self.emit("SHL", "R4", mask, "R3")
-        self.emit("IAND", "R4", "R4", f"{mem}[R2]")
-        self.emit("AND", "R1", v, mask)
-        self.emit("SHL", "R1", "R1", "R3")
-        self.emit("OR", f"{mem}[R2]", "R4", "R1")
-        if n == 2:
-            # Byte 3 of a word: the second byte goes in the next word.
-            self.emit("SUB[M]", "R0", "R3", "24")
-            self.emit("?Z AND", "R4", f"{mem}+1[R2]", "0xFFFFFF00")
-            self.emit("?Z SHR", "R1", v, "8")
-            self.emit("?Z AND", "R1", "R1", "0xFF")
-            self.emit("?Z OR", f"{mem}+1[R2]", "R4", "R1")
+        args = [(f"R{k + 2}", value[k]) for k in range(words_n)]
+        if addr is None and n >= 4:
+            self.fast_path(f"W.store{n}", args,
+                           [("MOVE", f"{mem}" + (f"+{k}" if k else "") + "[R2]", value[k])
+                            for k in range(words_n)])
+            return
+        if addr is not None:
+            self.emit("MOVE", "R1", str(addr))
+        for dest, src in args:
+            self.emit("MOVE", dest, src)
+        self.call_helper(f"W.store{n}")
 
     def shift64(self, op: str, at: int, what: str) -> None:
         """An i64 shift or rotate. The count is the low word of the second

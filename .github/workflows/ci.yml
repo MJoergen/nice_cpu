@@ -34,6 +34,8 @@ jobs:
         with:
           version: 0.15.2
       - run: make test
+      # The example programs of the introduction slides.
+      - run: make -C ../doc/intro test
       # The probe .bin files must match their .asm sources.
       - name: Check that the probe binaries are up to date
         run: |

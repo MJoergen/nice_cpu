@@ -23,6 +23,7 @@ it with the emulator. The pipelined core is not written yet.
 | Path | What it is |
 |---|---|
 | [doc/ISA.md](doc/ISA.md) | The instruction set: the specification for everything else here. |
+| [doc/intro/](doc/intro/nice_intro.pdf) | A beginner's introduction to NICE: slides, with example programs that assemble and run. |
 | [doc/MICROARCH.md](doc/MICROARCH.md) | A draft design note for the FPGA core. |
 | [doc/REFERENCES.md](doc/REFERENCES.md) | The NICE and QNICE sources the specification is based on. |
 | [doc/review/](doc/review/) | Notes on how each ISA decision was reached, and the reviews of the tools. ISA.md supersedes them. |
@@ -47,6 +48,7 @@ download page, pick 0.15.2 rather than the latest release or master.
     cd runtime && make test           # test the start-up code and runtime library
     cd translator && make test        # test the wasm translator
     cd hdl && make test               # test the multi-cycle core (needs GHDL)
+    cd doc/intro && make test         # run the example programs of the introduction
 
 To assemble and run a program:
 

@@ -1,0 +1,940 @@
+\documentclass{beamer}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+% Show -- << >> as typed in code, not as a dash and guillemets.
+\DisableLigatures[-,<,>]{encoding = T1, family = tt*}
+\usepackage{graphicx}
+\usetheme{Madrid}
+\setbeamertemplate{navigation symbols}{}
+%
+% Example programs: doc/intro/examples. "make test" assembles and runs them.
+% Every encoding on these slides was checked against niceasm and by hand.
+%
+\newcommand{\code}[1]{\texttt{#1}}
+%
+\title[NICE]{NICE -- a nice 32 bit architecture}
+\subtitle{An introduction for beginners}
+\author[nice\_cpu]{The nice\_cpu project}
+\institute[]{The NICE architecture is by Bernd Ulmann}
+\date{October 2026}
+\begin{document}
+ \begin{frame}
+  \titlepage
+ \end{frame}
+%
+   \begin{frame}
+    \frametitle{Goal}
+    Why another 32 bit processor? Why not just use a commodity one?
+    \begin{itemize}
+     \item First of all, there is nothing like understanding a CPU
+      down to the last bit -- and then building it yourself.
+     \item NICE (``NICE Is Charmingly Elegant'') was designed by
+      Bernd Ulmann and described in two articles, in 1997 \cite{nice}
+      and 1999 \cite{nice99}, and on a web page with an emulator in 2004
+      \cite{nice_html}.
+     \item In 2006, its 16 bit descendant QNICE (``Quite NICE'') followed
+      \cite{qnice}. QNICE runs on FPGAs today.
+     \item This project gives NICE a complete specification, an assembler,
+      an emulator, and a runtime library -- and next, an FPGA
+      implementation.
+     \item This introduction explains NICE step by step. It assumes you
+      know what a register and a memory address are, and nothing more.
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{Basics}
+    \begin{itemize}
+     \item 32 bit data and 32 bit addresses
+     \item Memory is \textbf{word addressed}: every address holds one
+      32 bit word. There are no bytes.
+     \item 16 registers of 32 bit, \code{R0}\dots\code{R15}
+     \item One instruction word, followed by zero to three constant words
+     \item Three operand instructions: \code{ADD R1, R2, R3} means
+      $\code{R1} := \code{R2} + \code{R3}$
+     \item Every operand can use every one of 8 addressing modes, so
+      memory to memory operations are normal
+     \item \textbf{Every} instruction is conditional
+     \item Small instruction set: 16 ALU operations, 16 shifts, and
+      3 control instructions
+     \item Flags change only when an instruction asks for it
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{Registers}
+    \begin{itemize}
+     \item A program sees 16 registers:
+      \begin{center}
+       \begin{tabular}{|c|c|c|c|c|c|c|}
+        \hline
+         \code{R0}&\code{R1}&\dots&\code{R12}&\code{R13}&\code{R14}&\code{R15}\\
+        \hline
+       \end{tabular}
+      \end{center}
+     \item Most are general purpose, but four are special:
+      \begin{description}
+       \item [\code{R0}:] Always reads as 0. Writes to it are thrown
+        away. This is handy for constants and comparisons.
+       \item [\code{R13}:] The stack pointer (\code{SP}), by convention
+        only. The hardware treats it like any other register.
+       \item [\code{R14}:] The status register (\code{SR}).
+       \item [\code{R15}:] The program counter (\code{PC}). Writing to it
+        is a jump.
+      \end{description}
+     \item Unlike QNICE, NICE has no register banks. A subroutine saves
+      the registers it uses on the stack.
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{The status register \code{R14}}
+    The upper 8 bits hold the flags. The lower 24 bits (\code{VBASE})
+    say where the interrupt vector table is:
+    \begin{center}
+     \begin{tabular}{|c|c|c|c|c|c|c|c||c|}
+      \hline
+       31&30&29&28&27&26&25&24&23\dots 0\\
+      \hline
+       \code{I}&\code{E}&\code{V}&\code{N}&\code{Z}&\code{C}&\code{X}&\code{1}&\code{VBASE}\\
+      \hline
+     \end{tabular}
+    \end{center}
+    \begin{description}
+     \item [\code{1}:] Always 1. This makes ``always'' a condition.
+     \item [\code{X}:] 1 if the last result was \code{0xFFFFFFFF}
+     \item [\code{C}:] Carry (or borrow) flag
+     \item [\code{Z}:] 1 if the last result was \code{0x00000000}
+     \item [\code{N}:] 1 if the last result was negative (bit 31 set)
+     \item [\code{V}:] 1 if the last operation caused a signed overflow
+     \item [\code{E}:] If 1, maskable interrupts are enabled
+     \item [\code{I}:] Set to 1 when an interrupt is taken
+    \end{description}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{Input/Output}
+    \begin{itemize}
+     \item All input and output is memory mapped, so there are no special
+      I/O instructions. A device is read and written like any memory word.
+     \item The upper 256 words of memory, \code{0xFFFFFF00} to
+      \code{0xFFFFFFFF}, are reserved for I/O devices.
+     \item The emulator has a console at \code{0xFFFFFF00}. Each word
+      written there prints one character, from bits 7..0:
+      \begin{center}
+       \code{MOVE @0xFFFFFF00, 0x41} \quad prints \code{A}
+      \end{center}
+     \item The FPGA implementation will have a UART at the same address.
+     \item Reading a memory address where nothing is connected returns 0.
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{Instruction set basics}
+    \begin{itemize}
+     \item Almost every instruction has three operands: one destination
+      and two sources, \textbf{destination first}:
+      \begin{center}
+       \code{SUB R1, R2, R3} \quad means \quad
+       $\code{R1} := \code{R2} - \code{R3}$
+      \end{center}
+      QNICE has it the other way round (\code{SUB R3, R1}), so take care.
+     \item The fields are called \code{dest}, \code{s0}, and \code{s1}.
+     \item Operations that need only one source, such as \code{MOVE} and
+      \code{NOT}, take \code{dest} and \code{s0}.
+     \item Two modifiers can follow the mnemonic:
+      \begin{description}
+       \item [\code{[M]}:] Modify the flags. Without it, the flags stay as
+        they are. \code{SUB[M] R1, R2, R3} sets \code{Z} if
+        \code{R2} = \code{R3}.
+       \item [\code{[C]}:] Use the carry flag as carry in (for
+        \code{ADD}, \code{SUB}, \code{MDBL}, and \code{DBL}).
+      \end{description}
+     \item A condition can come first: \code{?Z ADD R1, R1, 1} adds 1
+      only if \code{Z} is set.
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{Instruction format}
+    \begin{itemize}
+     \item ALU and shift instructions share one 32 bit format:
+      {\scriptsize
+      \begin{center}
+       \begin{tabular}{|c|c||c|c|c||c||c|c|c|}
+        \hline
+         31&30..28&27&26&25&24..21&20..14&13..7&6..0\\
+        \hline
+         \code{NEG}&\code{SEL}&\code{0}&\code{C}&\code{M}&\code{opcode}&\code{dest}&\code{s0}&\code{s1}\\
+         \code{NEG}&\code{SEL}&\code{1}&\code{0}&\code{M}&\code{opcode}&\code{dest}&\code{s0}&\code{s1}\\
+        \hline
+       \end{tabular}
+      \end{center}
+      }
+      \code{NEG} and \code{SEL} are the condition. Bits 27..26 are the
+      class: \code{0x} ALU, \code{10} shift, \code{11} control.
+     \item Each operand field is 7 bits, a mode and a register:
+      \begin{center}
+       \begin{tabular}{|c|c|}
+        \hline
+         3 bit&4 bit\\
+         \code{mode}&\code{register}\\
+        \hline
+       \end{tabular}
+      \end{center}
+     \item The control instructions use this format:
+      {\scriptsize
+      \begin{center}
+       \begin{tabular}{|c|c||c|c||c|c|c|}
+        \hline
+         31&30..28&27&26&25..21&20..8&7..0\\
+        \hline
+         \code{NEG}&\code{SEL}&\code{1}&\code{1}&\code{command}&\code{0}&\code{vector}\\
+        \hline
+       \end{tabular}
+      \end{center}
+      }
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{Conditional execution}
+    \begin{itemize}
+     \item \code{SEL} picks one of the upper 8 bits of \code{SR}.
+      The instruction runs only if that bit is 1, or with \code{NEG} = 1,
+      only if it is 0:
+      {\small
+      \begin{center}
+       \begin{tabular}{|c|c|l|l|}
+        \hline
+         \code{SEL}&Flag&Condition&With \code{NEG} = 1\\
+        \hline
+         \code{000}&\code{1}&\code{?1} or nothing (always)&\code{?!1} (never)\\
+         \code{001}&\code{X}&\code{?X}&\code{?!X}\\
+         \code{010}&\code{C}&\code{?C}&\code{?!C}\\
+         \code{011}&\code{Z}&\code{?Z}&\code{?!Z}\\
+         \code{100}&\code{N}&\code{?N}&\code{?!N}\\
+         \code{101}&\code{V}&\code{?V}&\code{?!V}\\
+         \code{110}&\code{E}&\code{?E}&\code{?!E}\\
+         \code{111}&\code{I}&\code{?I}&\code{?!I}\\
+        \hline
+       \end{tabular}
+      \end{center}
+      }
+     \item Because bit 24 of \code{SR} is always 1, \code{SEL} = 0 means
+      ``always''.
+     \item A skipped instruction does nothing at all, but the processor
+      still steps over its constant words.
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{List of instructions: ALU}
+    {\small
+    \begin{center}
+     \begin{tabular}{|c|ll|l|}
+      \hline
+       Opc&Instr&Operands&Effect\\
+      \hline
+       \code{0}&\code{MOVE}&\code{dest, s0}&\code{dest := s0}\\
+       \code{1}&\code{SUB}&\code{dest, s0, s1}&\code{dest := s0 - s1 (- C)}\\
+       \code{2}&\code{MDBL}&\code{dest, s0, s1}&\code{dest := s0 + (s0 AND s1) (+ C)}\\
+       \code{3}&\code{ADD}&\code{dest, s0, s1}&\code{dest := s0 + s1 (+ C)}\\
+       \code{4}&\code{DBL}&\code{dest, s0}&\code{dest := s0 + s0 (+ C)}\\
+       \code{5}&\code{DEC}&\code{dest, s0}&\code{dest := s0 - 1}\\
+       \code{6}&\code{NOT}&\code{dest, s0}&\code{dest := NOT s0}\\
+       \code{7}&\code{NOR}&\code{dest, s0, s1}&\code{dest := NOT (s0 OR s1)}\\
+       \code{8}&\code{IAND}&\code{dest, s0, s1}&\code{dest := (NOT s0) AND s1}\\
+       \code{9}&\code{NAND}&\code{dest, s0, s1}&\code{dest := NOT (s0 AND s1)}\\
+       \code{A}&\code{XOR}&\code{dest, s0, s1}&\code{dest := s0 XOR s1}\\
+       \code{B}&\code{IOR}&\code{dest, s0, s1}&\code{dest := (NOT s0) OR s1}\\
+       \code{C}&\code{XNOR}&\code{dest, s0, s1}&\code{dest := NOT (s0 XOR s1)}\\
+       \code{D}&\code{AND}&\code{dest, s0, s1}&\code{dest := s0 AND s1}\\
+       \code{E}&\code{ONE}&\code{dest}&\code{dest := 1}\\
+       \code{F}&\code{OR}&\code{dest, s0, s1}&\code{dest := s0 OR s1}\\
+      \hline
+     \end{tabular}
+    \end{center}
+    }
+    The carry in, \code{(+ C)} or \code{(- C)}, is used only with
+    \code{[C]}.
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{Some unusual operations}
+    \begin{itemize}
+     \item The operations come from the 74181, a classic ALU chip. That
+      explains a few odd ones:
+      \begin{description}
+       \item [\code{MDBL}:] ``Masked double'': doubles \code{s0} where
+        \code{s1} has ones. With \code{s1} = \code{0xFFFFFFFF} it is
+        $2 \cdot \code{s0}$.
+       \item [\code{IAND}, \code{IOR}:] AND and OR with \code{s0} inverted.
+        \code{IAND R1, R2, R1} clears in \code{R1} the bits that are set
+        in \code{R2}.
+       \item [\code{ONE}:] Sets \code{dest} to 1.
+      \end{description}
+     \item Some things are missing on purpose:
+      \begin{itemize}
+       \item There is no \code{CMP}. Subtract into \code{R0} instead,
+        which keeps only the flags (see ``Comparisons'').
+       \item There is no \code{JMP}. Write to \code{PC} instead.
+       \item There is no multiply or divide. The runtime library has
+        routines for that, such as \code{\_\_mul}.
+      \end{itemize}
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{List of instructions: shifts}
+    Shifts take the value in \code{s0} and the count in \code{s1}. The name
+    shows where the new bit comes from and where the old bit goes:
+    {\small
+    \begin{center}
+     \begin{tabular}{|c|l|l||c|l|l|}
+      \hline
+       Opc&Instr&Meaning&Opc&Instr&Meaning\\
+      \hline
+       \code{0}&\code{0<0}, \code{SHL}&shift in 0         &\code{8}&\code{0>0}, \code{SHR}&shift in 0\\
+       \code{1}&\code{0<1}&shift in 1                     &\code{9}&\code{1>0}&shift in 1\\
+       \code{2}&\code{0<C}&shift in \code{C}              &\code{A}&\code{C>0}&shift in \code{C}\\
+       \code{3}&\code{C<0}&in 0, out to \code{C}          &\code{B}&\code{0>C}&in 0, out to \code{C}\\
+       \code{4}&\code{C<1}&in 1, out to \code{C}          &\code{C}&\code{1>C}&in 1, out to \code{C}\\
+       \code{5}&\code{C<C}&rotate through \code{C}        &\code{D}&\code{C>C}&rotate through \code{C}\\
+       \code{6}&\code{<<<}, \code{ROL}&rotate             &\code{E}&\code{>>>}, \code{ROR}&rotate\\
+       \code{7}&\code{C<<}, \code{BPL}&rotate, copy to \code{C}&\code{F}&\code{>>C}, \code{BPR}&rotate, copy to \code{C}\\
+      \hline
+     \end{tabular}
+    \end{center}
+    }
+    \begin{itemize}
+     \item Left shifts are \code{A<B}: \code{B} goes into bit 0, and bit 31
+      goes to \code{A} (\code{0} means it is lost).
+     \item Right shifts are \code{A>B}: \code{A} goes into bit 31, and
+      bit 0 goes to \code{B}.
+     \item The bit goes to \code{C} only with \code{[M]}.
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{Shift examples}
+    \begin{itemize}
+     \item Multiply \code{R1} by 16:
+      \begin{center}
+       \code{SHL R1, R1, 4}
+      \end{center}
+     \item Unsigned divide \code{R1} by 2, and keep the remainder in
+      \code{C}:
+      \begin{center}
+       \code{0>C[M] R1, R1, 1}
+      \end{center}
+     \item Swap the two halves of \code{R1}:
+      \begin{center}
+       \code{ROL R1, R1, 16}
+      \end{center}
+     \item There is no arithmetic shift right, but two instructions do it.
+      The first copies the sign bit into \code{C} and throws the result
+      away in \code{R0}. The second shifts \code{C} in from the left:
+      \begin{center}
+       \begin{tabular}{l}
+        \code{C<0[M] R0, R1, 1}\\
+        \code{C>0~~~~R1, R1, 3}\\
+       \end{tabular}
+      \end{center}
+     \item The count uses all 32 bits of \code{s1}. A shift (but not a
+      rotation) by 32 or more shifts everything out.
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{Control instructions}
+    The control class has three commands, chosen by bits 25..21:
+    \begin{center}
+     \begin{tabular}{|l|l|l|l|}
+      \hline
+       Cmd bits&Command&Word&Description\\
+      \hline
+      \hline
+       \code{00000}&\code{HALT}&\code{0x0C000000}&Halt the processor\\
+       \code{00001}&\code{RTI}&\code{0x0C200000}&Return from interrupt\\
+       \code{00010}&\code{INT n}&\code{0x0C400000} + n&Software interrupt\\
+        &&&with vector n (0--255)\\
+      \hline
+     \end{tabular}
+    \end{center}
+    \begin{itemize}
+     \item All other commands are reserved. They halt the processor.
+     \item Control instructions are conditional too:
+      \code{?Z HALT} halts only if \code{Z} is set.
+     \item They never change the flags \code{X}, \code{C}, \code{Z},
+      \code{N}, or \code{V}, except that \code{RTI} restores all of
+      \code{SR}.
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{Affected condition bits}
+    With \code{[M]}, an instruction (W)rites the flags, or sets them to
+    (0). It (R)eads \code{C} when \code{C} is used as an input:
+    {\small
+    \begin{center}
+     \begin{tabular}{|l|c|c|c|c|c|}
+      \hline
+       Instruction&\code{V}&\code{N}&\code{Z}&\code{C}&\code{X}\\
+      \hline
+       \code{ADD}, \code{SUB}, \code{MDBL}, \code{DBL}&W&W&W&W, R with \code{[C]}&W\\
+       \code{DEC}&W&W&W&W&W\\
+       \code{MOVE}, \code{ONE}, and the logic operations&0&W&W&0&W\\
+       Shifts that send a bit to \code{C}&0&W&W&W&W\\
+       Other shifts&0&W&W&0&W\\
+       \code{HALT}, \code{INT}&&&&&\\
+       \code{RTI}&\multicolumn{5}{c|}{all restored}\\
+      \hline
+     \end{tabular}
+    \end{center}
+    }
+    \begin{itemize}
+     \item Without \code{[M]}, no flag changes.
+     \item The shifts that shift in \code{C} read it, with or without
+      \code{[M]}.
+     \item \code{MOVE[M] R0, R5} is a handy test: \code{Z}, \code{N},
+      and \code{X} then describe \code{R5}.
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{Comparisons}
+    There is no \code{CMP}, but \code{SUB[M]} into \code{R0} does the
+    same job. \code{SUB[M] R0, a, b} computes $a - b$, throws the result
+    away, and sets the flags:
+    \begin{center}
+     \begin{tabular}{|l|c|c|l|}
+      \hline
+       Condition&\code{Z}&\code{C}&Test\\
+      \hline
+       $a = b$&1&0&\code{?Z}\\
+       $a \neq b$&0&&\code{?!Z}\\
+       $a < b$, unsigned&0&1&\code{?C}\\
+       $a \geq b$, unsigned&&0&\code{?!C}\\
+      \hline
+     \end{tabular}
+    \end{center}
+    \begin{itemize}
+     \item For $a > b$, swap the operands: \code{SUB[M] R0, b, a}, then
+      \code{?C}.
+     \item Signed $a < b$ is \code{N} $\ne$ \code{V}. That takes more than
+      one conditional instruction to test.
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{Addressing modes: sources}
+    Every operand can use one of eight addressing modes. For the sources
+    \code{s0} and \code{s1}:
+    {\small
+    \begin{center}
+     \begin{tabular}{|c|l|l|}
+      \hline
+       Mode&Notation&Description\\
+      \hline
+       \code{000}&\code{Rx}&The contents of \code{Rx}\\
+       \code{001}&\code{--Rx}&Decrement \code{Rx}, then use it\\
+       \code{010}&\code{Rx++}&Use \code{Rx}, then increment it\\
+       \code{011}&\code{c[Rx]}&The number $\code{Rx} + c$\\
+       \code{100}&\code{@Rx}&The memory word at address \code{Rx}\\
+       \code{101}&\code{@--Rx}&Decrement \code{Rx}, then use the memory
+        word there\\
+       \code{110}&\code{@Rx++}&Use the memory word at \code{Rx}, then
+        increment \code{Rx}\\
+       \code{111}&\code{@c[Rx]}&The memory word at address $\code{Rx} + c$\\
+      \hline
+     \end{tabular}
+    \end{center}
+    }
+    \begin{itemize}
+     \item The \code{@} means ``in memory''. Mode bit 2 says the same.
+     \item \code{c} is a \textbf{constant word} that follows the
+      instruction word (modes \code{011} and \code{111}).
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{Addressing modes: destinations}
+    The destination \code{dest} uses the same eight modes:
+    {\small
+    \begin{center}
+     \begin{tabular}{|c|l|l|}
+      \hline
+       Mode&Notation&Description\\
+      \hline
+       \code{000}&\code{Rx}&Write \code{Rx}\\
+       \code{001}&\code{Rx--}&Write \code{Rx}, then decrement it\\
+       \code{010}&\code{Rx++}&Write \code{Rx}, then increment it\\
+       \code{011}&\code{c[Rx]}&Same as \code{@c[Rx]}\\
+       \code{100}&\code{@Rx}&Write the memory word at address \code{Rx}\\
+       \code{101}&\code{@--Rx}&Decrement \code{Rx}, then write the
+        memory word there\\
+       \code{110}&\code{@Rx++}&Write the memory word at \code{Rx}, then
+        increment \code{Rx}\\
+       \code{111}&\code{@c[Rx]}&Write the memory word at address
+        $\code{Rx} + c$\\
+      \hline
+     \end{tabular}
+    \end{center}
+    }
+    \begin{itemize}
+     \item The sources are read first (\code{s0}, then \code{s1}), and
+      the destination is written last.
+     \item The destination is never read, so \code{ADD @R1, @R1, 1} reads
+      the memory word once and writes it once.
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{Using constant operands}
+    A constant is a word that follows the instruction. The assembler
+    writes it for you:
+    \begin{itemize}
+     \item \code{c[R0]} is just \code{c}, because \code{R0} is always 0.
+      So this is how you write an \textbf{immediate} value:
+      \begin{center}
+       \code{MOVE R1, 0x1234}
+      \end{center}
+     \item \code{@c[R0]} is \code{@c}, a fixed (\textbf{absolute})
+      memory address:
+      \begin{center}
+       \code{MOVE @0x40, R1}
+      \end{center}
+     \item With a register, it is an \textbf{indexed} address, for example
+      the third word of a table that \code{R2} points to:
+      \begin{center}
+       \code{MOVE R1, @2[R2]}
+      \end{center}
+     \item One instruction can have up to three constants. They follow the
+      instruction word in the order \code{dest}, \code{s0}, \code{s1}.
+      \code{ADD @0x40, R1, 7} is three words long.
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{Addressing mode examples}
+    \begin{itemize}
+     \item Copy \code{R2} to \code{R1}:
+      \begin{center}
+       \code{MOVE R1, R2}
+      \end{center}
+     \item Store \code{R2} in the memory word that \code{R1} points to:
+      \begin{center}
+       \code{MOVE @R1, R2}
+      \end{center}
+     \item Using \code{R13} as the stack pointer, push \code{R1} onto the
+      stack, and pop it again:
+      \begin{center}
+       \code{MOVE @--R13, R1} \qquad \code{MOVE R1, @R13++}
+      \end{center}
+     \item Copy a word from one place in memory to another, and move both
+      pointers on -- all in one instruction:
+      \begin{center}
+       \code{MOVE @R2++, @R1++}
+      \end{center}
+     \item Add 1 to a counter in memory:
+      \begin{center}
+       \code{ADD @COUNT, @COUNT, 1}
+      \end{center}
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{Jumps}
+    \begin{itemize}
+     \item \code{R15} is the program counter. A jump is just a write to
+      \code{R15}. With \mbox{\code{PC .EQU R15}}:
+      \begin{center}
+       \begin{tabular}{ll}
+        \code{MOVE PC, LOOP}&Jump to \code{LOOP}\\
+        \code{?!Z MOVE PC, LOOP}&Jump if \code{Z} is not set\\
+        \code{ADD PC, PC, 10}&Jump forward by 10 words\\
+       \end{tabular}
+      \end{center}
+     \item When an instruction reads \code{R15}, it gets the address of the
+      \textbf{next} instruction, after all constant words.
+     \item So \code{ADD PC, PC, 10} jumps to 10 words after the end of the
+      \code{ADD}.
+     \item Any write to \code{R15} jumps, even with other addressing modes.
+      For example, \code{MOVE PC, @R13++} pops an address off the stack
+      and jumps there.
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{Subroutine calls}
+    \begin{itemize}
+     \item There is no call instruction. A call is two instructions, with
+      \mbox{\code{SP .EQU R13}}:
+      \begin{center}
+       \begin{tabular}{ll}
+        \code{ADD ~@--SP, 2, PC}&Push the return address\\
+        \code{MOVE PC, ROUTINE}&Jump to the subroutine\\
+       \end{tabular}
+      \end{center}
+     \item Why \code{2}? \code{PC} reads as the address after the
+      \code{ADD}, which is where the 2 word \code{MOVE} starts. The return
+      address is after the \code{MOVE}.
+     \item To return, pop the return address into the program counter:
+      \begin{center}
+       \code{MOVE PC, @SP++}
+      \end{center}
+     \item The stack grows down, and \code{SP} points at the last word
+      pushed.
+     \item By convention, arguments are passed in \code{R1}\dots\code{R4},
+      and the result comes back in \code{R1}. \code{R7}\dots\code{R13} must
+      be the same after the call as before.
+    \end{itemize}
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{Examples}
+    The following examples show how instructions are encoded:
+    {\footnotesize\setlength{\tabcolsep}{4pt}
+    \begin{center}
+     \begin{tabular}{|c|c|c|c|c|c|c|c||l|}
+      \hline
+       \code{NEG}&\code{SEL}&class, \code{C}&\code{M}&opcode&\code{dest}&\code{s0}&\code{s1}&Hex\\
+      \hline
+       \multicolumn{9}{|l|}{\code{MOVE R1, R2}}\\
+       \code{0}&\code{000}&\code{00}&\code{0}&\code{0000}&\code{0000001}&\code{0000010}&\code{0000000}&\code{0x00004100}\\
+      \hline
+       \multicolumn{9}{|l|}{\code{DEC[M] R2, R2}}\\
+       \code{0}&\code{000}&\code{00}&\code{1}&\code{0101}&\code{0000010}&\code{0000010}&\code{0000000}&\code{0x02A08100}\\
+      \hline
+       \multicolumn{9}{|l|}{\code{?!Z MOVE R15, 4}}\\
+       \code{1}&\code{011}&\code{00}&\code{0}&\code{0000}&\code{0001111}&\code{0110000}&\code{0000000}&\code{0xB003D800}\\
+       \multicolumn{8}{|r||}{constant word for \code{s0}}&\code{0x00000004}\\
+      \hline
+       \multicolumn{9}{|l|}{\code{SHR R1, R1, 4}}\\
+       \code{0}&\code{000}&\code{10}&\code{0}&\code{1000}&\code{0000001}&\code{0000001}&\code{0110000}&\code{0x090040B0}\\
+       \multicolumn{8}{|r||}{constant word for \code{s1}}&\code{0x00000004}\\
+      \hline
+       \multicolumn{9}{|l|}{\code{ADD @--R13, 2, R15}}\\
+       \code{0}&\code{000}&\code{00}&\code{0}&\code{0011}&\code{1011101}&\code{0110000}&\code{0001111}&\code{0x0077580F}\\
+       \multicolumn{8}{|r||}{constant word for \code{s0}}&\code{0x00000002}\\
+      \hline
+     \end{tabular}
+    \end{center}
+    }
+   \end{frame}
+%
+   \begin{frame}
+    \frametitle{A complete example}
+    One instruction can do a lot. This one is from the 2004 NICE web page:
+    \begin{center}
+     \code{?!Z ADD[M] @R3++, --R2, @0x12345678[R1]}
+    \end{center}
+    It is encoded as \code{0xB278C971}, followed by the constant
+    \code{0x12345678}. If \code{Z} is 0, it does this:
+    \begin{enumerate}
+     \item Decrement \code{R2}, and use it as \code{s0}.
+     \item Read the memory word at $\code{R1} + \code{0x12345678}$ as
+      \code{s1}.
+     \item Store $\code{s0} + \code{s1}$ at the address in \code{R3}, then
+      increment \code{R3}.
+     \item Update the flags \code{X}, \code{C}, \code{Z}, \code{N}, and
+      \code{V}.
+    \end{enumerate}
+    If \code{Z} is 1, it does nothing, and the program continues after the
+    constant word.
+   \end{frame}
+%
+  \begin{frame}[fragile]
+   \frametitle{Code example: {\scriptsize$\sum_{i=1}^{\mathtt{0x1000}}i$}}
+   The file \code{doc/intro/examples/sum.asm}, with the address and words
+   of each instruction:
+   {\scriptsize
+   \begin{verbatim}
+                            PC      .EQU    R15
+                                    .ORG    0
+00000000 00005800 00000000          MOVE    R1, 0
+00000002 00009800 00001000          MOVE    R2, 0x1000
+00000004 00604082           LOOP    ADD     R1, R1, R2
+00000005 02a08100                   DEC[M]  R2, R2
+00000006 b003d800 00000004      ?!Z MOVE    PC, LOOP
+00000008 0c000000                   HALT
+   \end{verbatim}
+   }
+   \begin{itemize}
+    \item \code{R1} collects the sum, and \code{R2} counts down from
+     \code{0x1000}.
+    \item \code{DEC[M]} sets \code{Z} when \code{R2} reaches 0. Until
+     then, \code{?!Z MOVE PC, LOOP} jumps back.
+    \item At the end, \code{R1} = \code{0x800800} = 4096 $\cdot$ 4097 / 2.
+   \end{itemize}
+  \end{frame}
+%
+  \begin{frame}[fragile]
+   \frametitle{Code example: copy a block of memory}
+   {\footnotesize
+   \begin{verbatim}
+PC      .EQU    R15
+        MOVE    R1, SRC         ; source pointer
+        MOVE    R2, DST         ; destination pointer
+        MOVE    R3, 5           ; word count
+LOOP    MOVE    @R2++, @R1++    ; copy a word, advance both pointers
+        DEC[M]  R3, R3
+    ?!Z MOVE    PC, LOOP
+        HALT
+
+SRC     .DAT    1, 2, 3, 4, 5
+DST     .BLK    5               ; 5 words of 0
+   \end{verbatim}
+   }
+   \begin{itemize}
+    \item Labels are words at the start of a line. Their value is an
+     address.
+    \item \code{.DAT} puts words into memory, and \code{.BLK} reserves
+     words that start as 0.
+    \item Everything after \code{;} is a comment.
+   \end{itemize}
+  \end{frame}
+%
+  \begin{frame}[fragile]
+   \frametitle{Code example: Hello, NICE!}
+   {\scriptsize
+   \begin{verbatim}
+SP      .EQU    R13
+PC      .EQU    R15
+CONSOLE .EQU    0xFFFFFF00
+
+        MOVE    SP, 0x1000      ; set up the stack
+        MOVE    R1, TEXT        ; the argument: the string's address
+        ADD     @--SP, 2, PC    ; push the return address ...
+        MOVE    PC, PUTS        ; ... and jump: a subroutine call
+        MOVE    @CONSOLE, 10    ; a newline
+        HALT
+
+; PUTS prints the string at R1. The string ends with a 0 word.
+PUTS    MOVE[M] R2, @R1++       ; next character, and set Z if it is 0
+    ?Z  MOVE    PC, @SP++       ; at the end: return
+        MOVE    @CONSOLE, R2    ; print the character
+        MOVE    PC, PUTS        ; and loop
+
+TEXT    .ASCII_L 'Hello, NICE!'
+   \end{verbatim}
+   }
+   \code{.ASCII\_L} stores one character per word and adds a 0 word at
+   the end. The conditional return \code{?Z MOVE PC, @SP++} needs no
+   branch around it.
+  \end{frame}
+%
+  \begin{frame}
+   \frametitle{Interrupts}
+   NICE has a simple interrupt scheme, the same as QNICE's:
+   \begin{itemize}
+    \item There are three kinds of interrupt: a maskable request
+     (\emph{IRQ}), a non-maskable request (\emph{NMI}), and the software
+     interrupt \code{INT n}.
+    \item IRQs are accepted only while the flag \code{E} is 1. After
+     reset it is 0.
+    \item When an interrupt is taken, the processor saves \code{PC} and
+     \code{SR} in two hidden registers, sets \code{I}, and jumps through
+     the vector table.
+    \item The interrupt service routine (\emph{ISR}) ends with \code{RTI},
+     which restores \code{PC} and \code{SR}. So the flags are safe, but
+     the ISR must save any other register it uses.
+    \item Interrupts cannot be nested. A request that arrives during an
+     ISR waits until the \code{RTI}.
+   \end{itemize}
+  \end{frame}
+%
+  \begin{frame}
+   \frametitle{The vector table}
+   \begin{itemize}
+    \item The vector table has 256 words. Word $v$ holds the address of the
+     ISR for vector $v$.
+    \item The device that requests an interrupt supplies the vector number.
+     \code{INT n} uses \code{n}.
+    \item The table starts at address $\code{VBASE} \cdot 256$, where
+     \code{VBASE} is bits 23..0 of \code{SR}.
+    \item So to put the table at \code{0x100} and then allow IRQs, with
+     \mbox{\code{SR .EQU R14}}:
+     \begin{center}
+      \begin{tabular}{ll}
+       \code{OR SR, SR, 1}&\code{VBASE} = 1\\
+       \code{OR SR, SR, 0x40000000}&\code{E} = 1\\
+      \end{tabular}
+     \end{center}
+    \item After reset, \code{PC} = 0 and \code{VBASE} = 0, so word 0 is
+     both the first instruction and vector table entry 0. Set \code{VBASE}
+     before you allow interrupts.
+   \end{itemize}
+  \end{frame}
+%
+  \begin{frame}[fragile]
+   \frametitle{Code example: an interrupt routine}
+   {\fontsize{7}{8}\selectfont
+   \begin{verbatim}
+SP      .EQU    R13
+SR      .EQU    R14
+PC      .EQU    R15
+CONSOLE .EQU    0xFFFFFF00
+
+        .ORG    0
+        MOVE    SP, 0x1000
+        OR      SR, SR, 1               ; VBASE = 1: the table is at 0x100
+        OR      SR, SR, 0x40000000      ; E = 1: accept IRQs
+        MOVE    R1, 20
+WAIT    DEC[M]  R1, R1                  ; count down from 20 ...
+    ?!Z MOVE    PC, WAIT                ; ... while the IRQs come in
+        MOVE    @CONSOLE, 10            ; a newline
+        HALT
+
+ISR     MOVE    @CONSOLE, 0x2A          ; print '*'
+        RTI                             ; restore PC and SR, and return
+
+        .ORG    0x105                   ; vector 5 of the table at 0x100
+        .DAT    ISR
+   \end{verbatim}
+   }
+   \code{niceemu --irq 5:5 --irq 12:5 irq.bin} raises two IRQs with vector
+   5, and prints \code{**}.
+  \end{frame}
+%
+  \begin{frame}
+   \frametitle{Soft- and hardware}
+   Everything is in the repository \code{github.com/MJoergen/nice\_cpu}:
+   \begin{itemize}
+    \item \code{doc/ISA.md}: The specification. When in doubt, it is
+     the authority.
+    \item \code{assembler/}: \code{niceasm}, the assembler, one Python 3
+     script.
+    \item \code{emulator/}: \code{niceemu}, the emulator, written in Zig.
+    \item \code{runtime/}: Start-up code and routines such as multiply,
+     divide, and floating point.
+    \item \code{translator/}: \code{nicewasm}, which translates
+     WebAssembly into NICE assembly. That way, C, Rust, and Zig programs
+     can run on NICE.
+    \item \code{hdl/}: The FPGA implementation in VHDL, which is just
+     starting.
+   \end{itemize}
+  \end{frame}
+%
+  \begin{frame}[fragile]
+   \frametitle{Using the assembler and the emulator}
+   Assemble the summation program and look at the result:
+   {\footnotesize
+   \begin{verbatim}
+$ assembler/niceasm.py -o sum.bin doc/intro/examples/sum.asm
+$ cat sum.bin
+00000000 00005800
+00000001 00000000
+00000002 00009800
+00000003 00001000
+...
+   \end{verbatim}
+   }
+   Run it. The emulator prints the registers when it halts:
+   {\footnotesize
+   \begin{verbatim}
+$ emulator/zig-out/bin/niceemu sum.bin
+Halted (HALT) after 12291 steps, PC=00000009
+R0  00000000 R1  00800800 R2  00000000 R3  00000000
+R4  00000000 R5  00000000 R6  00000000 R7  00000000
+R8  00000000 R9  00000000 R10 00000000 R11 00000000
+R12 00000000 R13 00000000 R14 09000000 R15 00000009
+   \end{verbatim}
+   }
+   \code{R14} = \code{0x09000000}: bit 24 is always set, and bit 27 is
+   \code{Z}.
+  \end{frame}
+%
+  \begin{frame}[fragile]
+   \frametitle{Watching a program run}
+   \code{--trace} prints one line per instruction: its address, its word,
+   and what it changed. \code{-n} stops after a number of steps:
+   {\footnotesize
+   \begin{verbatim}
+$ emulator/zig-out/bin/niceemu --trace -n 8 sum.bin
+00000000 00005800
+00000002 00009800 R2=00001000
+00000004 00604082 R1=00001000
+00000005 02a08100 R2=00000fff
+00000006 b003d800 R15=00000004
+00000004 00604082 R1=00001fff
+00000005 02a08100 R2=00000ffe
+00000006 b003d800 R15=00000004
+Stopped at the step limit after 8 steps, PC=00000004
+...
+   \end{verbatim}
+   }
+   \begin{itemize}
+    \item The first line changes nothing: \code{R1} was 0 already.
+    \item \code{R15} is shown only when an instruction jumps.
+    \item The FPGA implementation will write the same trace, so the two can
+     be compared line by line.
+   \end{itemize}
+  \end{frame}
+%
+  \begin{frame}
+   \frametitle{Things to remember}
+   \begin{itemize}
+    \item The destination comes first: \code{ADD dest, s0, s1}.
+    \item The flags change only with \code{[M]}.
+    \item Memory has words, not bytes. \code{.ASCII\_L} stores one
+     character per word.
+    \item \code{R0} is always 0, and \code{R15} reads as the address of the
+     next instruction.
+    \item A comparison is \code{SUB[M] R0, a, b}, a jump is a write to
+     \code{PC}, and a call is \code{ADD @--SP, 2, PC} followed by
+     \code{MOVE PC, label}.
+    \item Every instruction can be conditional, so short \code{if}s need
+     no jumps:
+     \begin{center}
+      \begin{tabular}{l}
+       \code{SUB[M] ~R0, R1, R2}\\
+       \code{?C~~MOVE R1, R2~~~~; R1 := max(R1, R2), unsigned}\\
+      \end{tabular}
+     \end{center}
+   \end{itemize}
+  \end{frame}
+%
+  \begin{frame}
+   \frametitle{Future plans}
+   \begin{itemize}
+    \item As of now (OCT-2026) the following exists:
+     \begin{itemize}
+      \item a complete specification of the instruction set,
+      \item an assembler and an emulator,
+      \item a runtime library, and
+      \item a WebAssembly translator, so that C, Rust, and Zig programs
+       can run on the emulator.
+     \end{itemize}
+    \item Next comes the \textbf{FPGA implementation}. It will run the
+     emulator's test programs and write the same trace.
+    \item A C compiler that targets NICE directly would be great, too.
+     The calling convention for one is already in \code{doc/ISA.md}.
+   \end{itemize}
+  \end{frame}
+%
+ \begin{frame}
+  \frametitle{Bibliography}
+  {\small
+  \begin{thebibliography}{9}
+   \bibitem{nice}
+    Bernd Ulmann, \emph{NICE -- an elegant and powerful 32-bit
+    architecture}, Computer Architecture News 25(4), SEP-1997.
+   \bibitem{nice99}
+    Bernd Ulmann, \emph{Designing a NICE processor}, Microprocessors and
+    Microsystems 23, 1999.
+   \bibitem{nice_html}
+    Bernd Ulmann, \emph{The NICE Processor Pages},
+    \code{http://www.vaxman.de/projects/nice/nice.html}, 2004.
+   \bibitem{qnice}
+    Bernd Ulmann, \emph{QNICE -- a nice 16 bit architecture},
+    \code{https://github.com/sy2002/QNICE-FPGA}.
+   \bibitem{isa}
+    \emph{NICE instruction set architecture}, \code{doc/ISA.md} in
+    \code{https://github.com/MJoergen/nice\_cpu}.
+  \end{thebibliography}
+  }
+ \end{frame}
+\end{document}

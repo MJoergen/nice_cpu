@@ -12,11 +12,12 @@ instruction, and memory-to-memory operands with pre-decrement, post-increment,
 and indexed addressing.
 
 The sources disagree in places and leave gaps, so the first step was to write
-a complete specification. The FPGA implementation will follow it. So far the
-repository holds the specification, an assembler, an emulator, and the
-start of a runtime library and of a WebAssembly translator. The `hdl/`
-directory holds a simple multi-cycle core and the test setup that compares
-it with the emulator. The pipelined core is not written yet.
+a complete specification. The FPGA implementation follows it. So far the
+repository holds the specification, an assembler, an emulator, a runtime
+library with integer and floating-point routines, and a WebAssembly
+translator that runs C, Zig, and Rust programs. The `hdl/` directory holds
+a simple multi-cycle core, which passes every comparison with the emulator,
+and the test setup for it. The pipelined core is not written yet.
 
 ## Contents
 
@@ -30,7 +31,7 @@ it with the emulator. The pipelined core is not written yet.
 | [assembler/](assembler/README.md) | `niceasm`, the assembler: one Python 3 script with no dependencies. |
 | [emulator/](emulator/README.md) | `niceemu`, the emulator, written in Zig. |
 | [runtime/](runtime/README.md) | The start-up code and runtime library for C and wasm programs. |
-| [translator/](translator/README.md) | `nicewasm`, which translates WebAssembly into NICE assembly. A first version. |
+| [translator/](translator/README.md) | `nicewasm`, which translates WebAssembly into NICE assembly. |
 | [hdl/](hdl/README.md) | The FPGA implementation in VHDL. So far a simple multi-cycle core, and the memory model and trace writer it is tested with. |
 
 ## Quick start

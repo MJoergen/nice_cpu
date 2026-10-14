@@ -12,7 +12,8 @@ where NICE allows it. This note concentrates on where NICE differs.
 A simple multi-cycle core, `hdl/src/multicycle.vhd`, comes first. It runs one
 instruction at a time, with the same buses, interrupt ports, and trace
 report as planned here. It passes steps 1 to 3 and 7 of the test order in
-§9. It is the working reference for the pipelined core
+§9, and the interrupt probes of step 5 with the requests at fixed steps.
+It is the working reference for the pipelined core
 ([hdl/README.md](../hdl/README.md)).
 
 ## 1. Decisions at a glance
@@ -238,7 +239,10 @@ the request signals to the hardware interface.
 ### 7.1 Register values
 
 R0 is not stored. SR's bit 24 is a constant 1. Every value read from register
-*x*, or produced by a side effect on *x*, goes through
+*x*, or produced by a side effect on *x*, goes through the function below.
+The multi-cycle core applies it on every write instead, which gives the same
+values.
+
 
     regval(x, v) = 0            if x = 0
                    v OR 2^24    if x = 14
@@ -319,17 +323,22 @@ is `hdl/sim/trace.vhd`.
 
 **The testbench** has a sparse dual-port memory model that loads `.bin` files,
 a console model that writes each byte into the trace stream when it is
-written (both in `hdl/sim/wb_mem.vhd`), and an interrupt source that raises a request once a given number of
-instructions have retired. Whether the core takes it before the next
-instruction or after one that had already issued a data read depends on the
-pipeline state (§6), so the trace cannot be predicted from the request step
-alone. Instead, the comparison script reads from the core's trace where each
-interrupt was taken, and runs the emulator with the matching `--irq STEP:VEC`
-or `--nmi STEP:VEC` options. The diff is then exact.
+written, a read counter that makes the number and order of data reads
+visible, and random stalls (all in `hdl/sim/wb_mem.vhd`), and an interrupt
+source that raises a request once a given number of instructions have
+retired. The multi-cycle core takes a request only between steps, so its
+test gives the emulator the same options and the diff is exact. For the
+pipelined core, whether it takes a request before the next instruction or
+after one that had already issued a data read depends on the pipeline state
+(§6), so the trace cannot be predicted from the request step alone. Its
+test will need a comparison script, not written yet, that reads from the
+core's trace where each interrupt was taken, and runs the emulator with the
+matching `--irq STEP:VEC` or `--nmi STEP:VEC` options. The diff is then
+exact.
 
 **Test order:**
 
-1. The 2004 examples: `count`, `replicate`, and `print`.
+1. The 2004 examples: `count`, `replicate`, and `print`, and `wrap`.
 2. The emulator probes in `emulator/test/`.
 3. `emulator/test/cputest.asm`.
 4. New hazard programs: back-to-back flag use, every pair of side effects on

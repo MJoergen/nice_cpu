@@ -15,8 +15,10 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
 - `runtime/`: start-up code and runtime routines in NICE assembly (ISA.md §9.3).
 - `translator/nicewasm.py`: wasm -> NICE assembly (ISA.md §9.4). Same rules as niceasm.py.
 - `hdl/`: VHDL-2008, GHDL. A simple multi-cycle core in `src/multicycle.vhd`,
-  `src/trace_pkg.vhd`, and the simulation-only memory model and trace writer
-  in `sim/`. No pipelined core yet. Style follows qnice_cpu's CODING_STYLE.md.
+  `src/trace_pkg.vhd`, the simulation-only memory model and trace writer
+  in `sim/`, and the testbenches, test programs, and random program
+  generator in `test/`. No pipelined core yet. Style follows qnice_cpu's
+  CODING_STYLE.md.
 
 ## Commands
 

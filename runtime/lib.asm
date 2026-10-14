@@ -1,6 +1,18 @@
 ; The NICE runtime library (doc/ISA.md §9.3). It goes last in the program.
 ; Every routine follows the C ABI of §9.3.
 
+; ___wasm_trap_vector: wasm traps jump through this word (§9.4). It holds
+; the default handler until a program stores its own.
+___wasm_trap_vector
+        .DAT    ___wasm_trap
+
+; ___wasm_trap: the default trap handler. It is the reserved control word
+; 0x0FE00000 (§5.3), which halts with R1 and R2 as the trap left them. The
+; emulator reports a reserved control instruction and exits with status 2,
+; so a trap does not look like the normal end of the program.
+___wasm_trap
+        .DAT    0x0FE00000
+
 ; __mul: R1 = R1 * R2, the low 32 bits. The same result serves signed and
 ; unsigned operands. Shift and add: each 1 bit of R2, from bit 0 up, adds
 ; R1 shifted left by that bit's position. Uses R2 and R3.

@@ -6,6 +6,8 @@
 
         .ORG    0
         MOVE    R13, 0xFFFFFF00         ; SP
+        MOVE    R1, R0                  ; argc = 0
+        MOVE    R2, R0                  ; argv = NULL
         ADD     @--R13, 2, R15          ; call main
         MOVE    R15, _main
         HALT                            ; R1 holds main's result

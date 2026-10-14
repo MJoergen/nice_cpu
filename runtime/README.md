@@ -20,8 +20,9 @@ example:
     assembler/niceasm.py full.asm
     emulator/zig-out/bin/niceemu full.bin
 
-The start-up code sets SP to `0xFFFFFF00`, calls `_main`, and halts with
-`main`'s result in R1. It is the only file that uses `.ORG`.
+The start-up code sets SP to `0xFFFFFF00`, calls `_main` with R1 = 0 and
+R2 = 0 (no `argc` or `argv`), and halts with `main`'s result in R1. It is
+the only file that uses `.ORG`.
 
 ## Routines
 
@@ -32,6 +33,13 @@ The start-up code sets SP to `0xFFFFFF00`, calls `_main`, and halts with
 A routine may change R1–R6 and the flags, as §9.3 allows. The table lists
 what each one actually changes. ISA.md §9.3 and §9.4 name more routines,
 such as `__div` and `__udiv`, that are not written yet.
+
+`lib.asm` also holds the wasm trap vector of ISA.md §9.4:
+
+| Label | What it is |
+|---|---|
+| `___wasm_trap_vector` | The word that wasm traps jump through. It starts as `___wasm_trap`. |
+| `___wasm_trap` | The default handler: the reserved control word `0x0FE00000`. It halts with the trap's code in R1 and address in R2. The emulator exits with status 2, not 0 as after `HALT`. |
 
 ## Test
 

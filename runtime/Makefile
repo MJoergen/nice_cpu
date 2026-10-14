@@ -5,11 +5,12 @@ EMU = ../emulator/zig-out/bin/niceemu
 # Each test/X.asm is joined with a start-up file and lib.asm into one
 # program, as ISA.md §9.3 describes. The program is assembled and run, and
 # the output and exit status are compared with test/X.expected.
-TESTS = start start_wasm mul
+TESTS = start start_wasm mul trap
 START_start_wasm = start_wasm.asm
+START_trap       = start_wasm.asm
 OPTS_start      = -d 0xfffffeff:1
-OPTS_start_wasm = -d 0x13:1 -d 0xfffffeff:1
-OPTS_mul        = -d 0x32:10
+OPTS_start_wasm = -d 0x1b:1 -d 0xfffffeff:1
+OPTS_mul        = -d 0x34:10
 
 define check
 	@cat $(or $(START_$(1)),start.asm) test/$(1).asm lib.asm > test/$(1).out.asm

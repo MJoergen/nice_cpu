@@ -160,3 +160,30 @@ Resolved on 2026-10-14:
 Left for later:
 
 - §1.6: an option for the memory cap, needed with `memory.grow`, and the zero loop's skipping of data segments. Neither instruction nor data segments are supported yet.
+
+## 7. Second round, commit 377a620
+
+Reviewed on 2026-10-14: `translator/nicewasm.py`, its tests and README, `runtime/`, and ISA.md §8.3, §9.3, and §9.4 at commit 377a620 ("Review: record how the wasm review was resolved"), which resolves §1 to §3 above as §6 says. The diff from the first version of the translator was read line by line for regressions, each resolved item was checked against the code and its test, every `make test` and `make typecheck` was run, and the translator was run on about twenty hostile or odd modules: padded and overlong LEB128 numbers, a memory of 0 pages, invalid mutability and export kinds, a start function that is an import, dead code after `unreachable` and `return`, an `i64` argument that would need R4 and R5, `local.set` on a stack parameter, and an import and an export of the same name.
+
+### 7.1 Confirmed fixed, with no regressions
+
+Every item in §6 is done as described. The typed operand stack puts an `i64` in two frame words, low word first, and `i32.wrap_i64` and the two extends write the words in the right order when the value stays in place. `assign_args` gives `i32` arguments the same places as the old code, and puts an `i64` on the stack when it would need R4 and R5, as §9.3 requires. The call sequence pushes stack arguments from frame words that the pushes cannot disturb. The trap sequence leaves R2 at its own first instruction, and the default handler halts the emulator with status 2. Names from the module and the file name reach comments only as printable ASCII. The four checks of §2 each have an `errors.py` case, and the start-up code passes R1 = 0 and R2 = 0. The old test cases pass unchanged.
+
+### 7.2 Bug: a 10-byte negative `i64` constant is rejected
+
+`Reader.leb` sign-extended the result only while the shift was below 64. A signed LEB128 number of 64 bits may take 10 bytes, and after the tenth the shift is 70, so the extension was skipped, the result was a positive number of 70 bits, and the range check reported "integer too large". The most negative `i64`, −2⁶³, has no shorter encoding, so `i64.const -9223372036854775808` and an `i64` global with that initial value could not be translated at all. Any negative constant padded to 10 bytes failed the same way. The guard is older than this review and did no harm while only 32-bit numbers were read.
+
+**Fixed** in this round: the guard is gone. The `i64min` case in `run.py` has the most negative `i64` as a constant and as a global's initial value, and −1 and 3 padded to 10 bytes. `errors.py` checks that a padding that does not repeat the sign is still "integer too large", for a 5-byte `i32` and a 10-byte `i64`, and that an eleventh byte is "integer too long".
+
+### 7.3 The library-module rules need two changes
+
+- §9.4 says a library module has no globals, and the translator rejects one that does. Both test modules, `sum5.wasm` from clang and `answer.wasm` from Zig, have `__stack_pointer` as global 0, although no function in either touches the shadow stack. Compiler-rt built by either toolchain will have it too, so the rule as written rejects every library module. The rule should allow globals that no instruction reads or writes.
+- §9.4 allows any number of library modules but gives the translator the fixed prefix `WL.`, so two modules both define `WL.f0`. The prefix needs the module's name, as `L.unit.n` has for C. §9.3 also still says that all the runtime library's labels start with `__`, which the `WL.` labels will not.
+
+Both are left for when library modules are implemented.
+
+### 7.4 Nits
+
+- An import and an export of the same name both become `_name`. Calls to the import then reach the module's own function, and a hand-written `_name` is a duplicate that the assembler reports with line numbers in the joined file, as duplicate exports were before §2.4. No toolchain produces this, and a check would cost one line.
+- Some invalid modules are accepted: a mutability byte other than 0 or 1, a memory or table export whose index does not exist, and untyped code after `return` or `unreachable`, which wasm validation still checks. None produces wrong code, but the README's claim that an invalid module is an error overstates it, and the dead-code case matters once blocks are added.
+- The README says translated code uses only R1–R4, R12, R13, and R15. The zero loop uses R5 and R6, and the `[M]` instructions write the flags. That is within §9.3, but the sentence is no longer true. The README also does not say that memory and table exports are ignored, and Zig always exports `memory`.

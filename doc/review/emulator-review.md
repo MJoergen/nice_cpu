@@ -204,3 +204,91 @@ The streaming-stdout change also holds: `(niceemu x.bin; echo) > log` keeps all 
 Checked on 2026-10-14. `make test` passes (28 error cases). Both nits of §7.2 are fixed: `niceemu -t x.bin | head -1` ends with status 141 and nothing on stderr, `niceemu x.bin > /dev/full` prints `niceemu: cannot write the output: NoSpaceLeft` with status 1, and the README names Python 3 and the full `make test` contents.
 
 One nit left: `-h` writes the usage with a plain `try writeAll`, so a closed pipe there would still surface as a raw `error: BrokenPipe` rather than go through `outputFailed`. Harmless in practice, since the usage is 600 bytes.
+
+## 9. Fourth round, commit dd42e91: `--irq` and `--nmi`
+
+Checked on 2026-10-14. The commit adds `--irq STEP:VEC` and `--nmi STEP:VEC` to `main.zig`, the probes `irq` and `merge`, seven `errors.py` cases, and a README section. `make test` passes (24 unit tests, 4 examples, 11 probes, 35 error cases).
+
+**How it was checked.** I read the diff against ISA.md §7 and §8.1, traced `irq.asm` and `merge.asm` by hand and compared every line with the `.expected` files, and then assembled eight more probes for the corners the two probes leave out: merging across steps, `INT`, `HALT`, a skipped instruction, and a second `RTI` as the instruction after `RTI`, an NMI before the first instruction, E cleared by the instruction after `RTI`, and E set inside a routine. Then I tried about ten odd command lines. Every input quoted below is complete and reproduces the result.
+
+### 9.1 Summary
+
+**The core and the CLI are right.** Both `.expected` files are correct: `irq` logs `B1 A1 A2 C1 C2 A3 B1 A4 B1 A5 C1 C2` in 26 steps, and `merge` takes vector 2 and halts in 5 steps with the IRQ still pending. The request loop raises every request at its step and never after a halt, the sort is stable, and the parser rejects every malformed value with a message that names the option. None of the eight extra probes found a divergence from ISA.md.
+
+What is left is in the words, not the code:
+
+- The README documents merging only for two requests at the same step, but any request of a kind already pending replaces it (§9.3).
+- ISA.md §7.1 says a deferred request "waits at most one instruction after `RTI`". That is not true when that instruction is an `INT`, halts, or clears E (§9.3).
+- ISA.md §1.4 defines `halted` as "1 after `HALT`" and forgets the three other halts (§9.3).
+- Four interrupt rules still have no test, among them the one the README now states and the §1.4 rule about a skipped instruction after `RTI` (§9.4).
+
+### 9.2 What is correct
+
+**Merging across steps.** With E = 0 until step 3:
+
+        MOVE    R14, 1          ; 0: VBASE = 1
+        MOVE    R1, 0           ; 1
+        MOVE    R2, 0           ; 2
+        OR      R14, R14, 0x40000000 ; 3: E = 1
+        HALT                    ; 4: IRQ taken before this
+    v5  MOVE    R1, 5
+        RTI
+    v6  MOVE    R1, 6
+        RTI
+        .ORG    0x105
+        .DAT    v5
+        .DAT    v6
+
+`--irq 1:5 --irq 3:6` takes `IRQ 06` and ends with R1 = 6; vector 5 is never seen. That is what `requestIrq` says it does ("requests that arrive while one is pending merge into one") and is within §7.1's "may merge".
+
+**`INT` as the instruction after `RTI`, with an NMI pending.** Vectors 1, 3, and 4 point at routines that log `BB`, `B3`, and `B4` at R13, and the main program is `INT 3`, `INT 4`, log `A1`, `HALT`. With `--nmi 3:1`, raised inside the first routine, the log is `B3 B4 A1 BB`: the `INT 4` runs first, as §7.1 says, the NMI waits through its routine because `in_service` = 1 again, the instruction after the second `RTI` runs, and only then is the NMI taken.
+
+**`HALT` as the instruction after `RTI`, with an NMI pending.** `INT 3`, `HALT`, routine `RTI`, with `--nmi 2:1`: the NMI is never taken, 4 steps, exit status 0. As §7.1 says for a halt.
+
+**A skipped instruction after `RTI` clears `after_rti`** (§1.4, "whether or not its condition is true"). `INT 3`, `?!1 MOVE R1, 0xA1`, `MOVE R2, 0xA2`, `HALT`, with `--nmi 2:1`: the trace shows `skipped` and then `NMI 01` directly, before the `MOVE R2`.
+
+**`RTI` after `RTI`.** `?!1 RTI` outside a routine is skipped and does not halt; a real `RTI` as the instruction after `RTI` halts with `RTI outside an interrupt routine`, exit status 2.
+
+**NMI before the first instruction.** With VBASE = 0 and `.DAT 0x20` at word 3, `-t --nmi 0:3` starts the trace with `NMI 03            R14=81000000 R15=00000020`: §8.1's warning that word 3 is both code and vector table, made visible.
+
+**E around `RTI`.** If the instruction after `RTI` clears E, a pending IRQ waits until software sets E again (`AND R14, R14, 0xBFFFFFFF`, `MOVE R1, 0xA1`, `OR R14, R14, 0x40000000`: the IRQ is taken after the `OR`). If the routine sets E and `RTI` restores E = 0, the IRQ is never taken.
+
+**The CLI.** `--irq 5:1:2` gives `bad number '1:2'`, `--irq=1:2` is an unknown option like `-d=`, `-n 2 --nmi 2:3` never raises the request, and `--nmi 0:0` takes vector 0 through word 0. Hex works in both fields. `std.sort.insertion` is documented as stable, so the "last wins" comment holds.
+
+### 9.3 Documentation
+
+**README, merging.** "Two requests of one kind raised at the same step merge, and the vector given last wins" is the special case. The rule the code implements, and the one a user of `--irq` needs, is: a request of a kind that is already pending replaces it, so the vector given last wins, whether the two were given for the same step or for different steps. The probe in §9.2 shows the difference. Say so, and make `merge.asm` show it (§9.4).
+
+**ISA.md §7.1, "waits at most one instruction".** The paragraph says: "A deferred NMI waits at most one instruction after `RTI`. A deferred IRQ does the same if E = 1 in the restored SR, and otherwise waits until software sets E." Three cases break it, all run in §9.2:
+
+- The instruction after `RTI` is an `INT`. The sentence before it says that works normally, but then the request waits through that routine too, and for the instruction after its `RTI`, and so on for every `INT` in that position.
+- The instruction after `RTI` halts. The request is never taken.
+- For an IRQ, the instruction after `RTI` clears E. Then E = 1 in the restored SR, but the IRQ waits.
+
+Suggested wording: "A deferred request is taken before the second instruction after `RTI`, unless the first one is an `INT` (then it waits for that routine's `RTI` as well), halts the processor, or, for an IRQ, leaves E = 0." That keeps the guarantee that matters, progress of the interrupted program, and drops the bound that does not hold.
+
+**ISA.md §1.4, `halted`.** "1 after `HALT`. Only reset clears it." Reserved control words (§5.3), `INT` inside a routine (§7.2), and `RTI` outside one (§7.4) also halt the processor, and the emulator's `HaltReason` has all four. Say "1 after `HALT` or any other halt (§5.3, §7.2, §7.4)".
+
+**README, "pending at reset".** "`--nmi 0:5` makes an NMI pending at reset" reads against §8.1's "Pending interrupt requests: none" after reset. The request is raised after reset and before the first instruction, which is what the probe shows. Say "before the first instruction".
+
+**README, what a step number is.** "Counted from 0 as in the step count that niceemu prints" is hard to use, because the printed number is a total. What a user needs: a request before step N is raised after N steps have run, so with `--trace` it comes before line N + 1, and `--nmi 0:v` comes before the first line.
+
+**README, "show each rule".** The `--nmi 0:5` rule is in neither probe, and `merge.asm` merges NMIs only. Either drop "each" or add the cases (§9.4).
+
+**README, "after the processor halts".** A request for step N is also never raised with `-n N`, when the processor does not halt. Trivial.
+
+### 9.4 Tests
+
+| Rule | Not tested | Suggested test |
+|---|---|---|
+| §1.4: a skipped instruction after `RTI` clears `after_rti` | Nothing. §2 above says it is so from reading the code, and only this round ran it. | A `?!1 MOVE` as the first instruction after a return point in `irq.asm`, or a unit test next to "no interrupt right after RTI". |
+| §7.1: `INT` as the instruction after `RTI` works normally, and a pending request waits through it | Nothing. | The `B3 B4 A1 BB` probe of §9.2. |
+| README: merging across steps | Nothing. `merge.asm` raises both NMIs at step 1. | `--irq 1:5 --irq 3:6` with E set after step 3, as in §9.2. |
+| README: `--nmi 0:v` | Nothing. Both probes start at step 1 or 2. | `-t --nmi 0:3` on the word-3 probe of §9.2; the first trace line is the check. |
+
+### 9.5 Nits
+
+- `requestNmi`'s doc comment lacks the sentence on merging that `requestIrq`'s has.
+- `std.fmt.parseInt` accepts `+5` and `1_0`, so `--irq 0:+5` and `--irq 0:1_0` are taken. The same holds for `-d` and `-n` since the first round; the README says only "decimal or 0x hex".
+- The numbers in the line comments of `irq.asm` and `merge.asm` (`; 0,1: VBASE = 1`) are word addresses, while the header comment of each file numbers steps. Both are bare numbers. "Words 0,1" would separate them.
+- Nothing shows a request that is still pending when the program stops. One line after the halt line, such as `Pending: IRQ 02`, would make the "never taken" rule visible instead of inferred from an absence.

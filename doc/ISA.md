@@ -425,6 +425,131 @@ The call works because PC reads as the address after `ADD`'s constant word, whic
 
 No single flag gives a signed comparison. A signed a < b is N XOR V after `SUB[M]`, which takes more than one conditional instruction to test.
 
+### 9.3 C ABI
+
+These rules let separately written C and assembly code call each other. Compilers, runtime libraries, and assembly code that calls or is called from C must follow them.
+
+**Data types.** A byte is one word, so `CHAR_BIT` is 32 and `sizeof` counts words.
+
+| Type | Words | Notes |
+|---|---|---|
+| `char`, `signed char`, `unsigned char` | 1 | Plain `char` is signed. |
+| `short`, `int`, `long`, and their unsigned forms | 1 | |
+| `_Bool` | 1 | 0 or 1. |
+| Enumerations | 1 | Same as `int`. |
+| Pointers, `size_t`, `ptrdiff_t` | 1 | A pointer is a word address. `size_t` is `unsigned int`, and `ptrdiff_t` is `int`. |
+| `long long`, `unsigned long long` | 2 | |
+| `float` | 1 | IEEE 754 single precision. |
+| `double`, `long double` | 2 | IEEE 754 double precision. |
+
+- A value of two words has its low word at the lower address. In a register pair, the lower-numbered register holds the low word.
+- Every type has an alignment of one word. Structure members follow each other in declaration order with no padding. A union's size is the size of its largest member.
+- Bit-fields are allocated from bit 0 upward within a word. A bit-field that does not fit in the rest of the current word starts a new word. A plain `int` bit-field is signed.
+- The null pointer is 0. Word 0 holds the first instruction (§8.1), so no C object is ever at address 0.
+
+**Registers.**
+
+| Register | Use | Preserved across a call |
+|---|---|---|
+| R0 | Zero | — |
+| R1–R4 | Arguments and return value | No |
+| R5–R6 | Scratch | No |
+| R7–R11 | Variables | Yes |
+| R12 | Frame pointer, FP, when a function uses one; otherwise a variable | Yes |
+| R13 | Stack pointer, SP (§9.1) | Yes |
+| R14 | SR: the flags X, C, Z, N, and V | No |
+| R14 | SR: I, E, and VBASE | Yes |
+| R15 | PC | — |
+
+A function may change a preserved register only if it restores it before it returns. Only code whose purpose is to change I, E, or VBASE, such as a routine that enables interrupts, may leave them changed.
+
+**Calls.** A call pushes the address of the instruction after the jump and then jumps. A return pops it into PC. The pushed address depends on the size of the jump instruction:
+
+| Call | Code |
+|---|---|
+| To a label | `ADD @--SP, 2, PC` then `MOVE PC, label` |
+| Through a register | `ADD @--SP, 1, PC` then `MOVE PC, Rx` |
+| Return | `MOVE PC, @SP++` |
+
+On entry to a function, mem[SP] is the return address. The return pops it, so after the call SP is the same as it was just before the call sequence.
+
+**Arguments.**
+
+- Arguments are assigned in order. A one-word argument goes in the next free register of R1–R4. A two-word argument goes in the next two free registers if both are free.
+- Once an argument does not fit, it and all later arguments go on the stack. A structure or union argument always goes on the stack, so all arguments after it do too.
+- In a call to a variadic function, every argument goes on the stack, the named ones included.
+- The caller pushes the stack arguments from last to first, so the first one ends up at the lowest address. A structure argument is copied onto the stack whole, with its first word at the lowest address. On entry, the first stack argument starts at mem[SP + 1], just above the return address.
+- The caller removes the stack arguments after the call, for example with `ADD SP, SP, n`.
+- A `float` argument stays a `float`, even in a call to a variadic or unprototyped function. `char` and `short` arguments need no promotion, because they are already one word.
+
+**Return values.**
+
+- A one-word value is returned in R1. A two-word value is returned in R1 (low word) and R2 (high word).
+- For a function that returns a structure or a union, the caller passes the address of space for the result as a hidden first argument, before all others. The callee stores the result there and returns that address in R1.
+
+**The stack.**
+
+- SP points at the last word pushed, and the stack grows down (§9.1). The ISA has no alignment rule, so neither does the stack.
+- There is no red zone. An interrupt routine may push onto the stack at any time, so the words below SP may change between any two instructions.
+- An interrupt routine must save and restore every register it uses (§7.4), R1–R6 included.
+
+**Frames.** A function needs no frame pointer. If it uses one, it must build the frame this way, so that a debugger can follow the chain of frames:
+
+    MOVE @--SP, R12          ; save the caller's FP
+    MOVE R12, SP             ; FP points at the saved FP
+    SUB  SP, SP, n           ; n words for locals and saved registers
+    ...
+    MOVE SP, R12             ; drop the locals
+    MOVE R12, @SP++          ; restore the caller's FP
+    MOVE PC, @SP++           ; return
+
+| Address | Contents |
+|---|---|
+| FP + 2 + k | Stack argument word k |
+| FP + 1 | Return address |
+| FP | The caller's FP |
+| FP − 1 to FP − n | Locals and saved registers, in an order the function chooses |
+
+**Variadic functions.** Since every argument is on the stack, `va_list` is a pointer to the next argument word. `va_start` sets it to the word after the last named argument. `va_arg` reads the argument there and advances the pointer by its size in words.
+
+**Symbol names.** The assembler's labels are case-sensitive, but they may not be mnemonics or register names (§10.1).
+
+- A C identifier `name` becomes the label `_name`. So `main` is `_main`, and a C function called `move` does not clash with the mnemonic `MOVE`.
+- Labels that the compiler makes for itself contain a `.`, for example `L.12`. No C identifier contains a `.`, so these cannot clash with C names.
+
+**Runtime routines.** NICE has no multiply or divide instruction. The compiler calls these routines instead. They follow the rules above.
+
+| Label | Result in R1 |
+|---|---|
+| `__mul` | R1 × R2, the low 32 bits. The same routine serves signed and unsigned operands. |
+| `__div`, `__mod` | Signed R1 / R2 and R1 % R2, rounding toward zero as C requires. |
+| `__udiv`, `__umod` | Unsigned R1 / R2 and R1 % R2. |
+
+Division by zero is undefined in C, so these routines may return any value for it.
+
+**Start-up.** The start-up code sits at address 0. It sets SP to the top of the memory the program may use, calls `_main` with no arguments, and then executes `HALT` with `main`'s return value still in R1. Static data gets its initial values when the program image is loaded. Reset does not restore them.
+
+**Example.** This function and call:
+
+    int f(int a, int b, int c, int d, int e) { return a + e; }
+    ...
+    x = f(1, 2, 3, 4, 5);
+
+compile to:
+
+    _f      ADD  R1, R1, @1[SP]  ; e is the first stack argument
+            MOVE PC, @SP++       ; return
+            ...
+            MOVE @--SP, 5        ; e goes on the stack
+            MOVE R1, 1           ; a to d go in registers
+            MOVE R2, 2
+            MOVE R3, 3
+            MOVE R4, 4
+            ADD  @--SP, 2, PC    ; call f
+            MOVE PC, _f
+            ADD  SP, SP, 1       ; remove e
+            MOVE @_x, R1         ; x = f(...)
+
 ## 10. Assembler syntax
 
 This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appendix B.

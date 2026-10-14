@@ -50,8 +50,8 @@ meant for comparing the FPGA core with the emulator.
 
 [doc/ISA.md](doc/ISA.md) covers the programmer's model, the instruction
 format, conditional execution, addressing modes, execution, flags,
-interrupts, reset, memory, I/O, software conventions, the assembler syntax,
-and the `.bin` object format. Where the sources disagree, it follows this
+interrupts, reset, memory, I/O, software conventions, the C ABI, the
+assembler syntax, and the `.bin` object format. Where the sources disagree, it follows this
 order:
 
 1. The intended behaviour of the 2004 emulator `NICE.pm` and web page (not

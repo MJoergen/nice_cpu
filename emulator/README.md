@@ -11,9 +11,12 @@ It needs Zig 0.15 (tested with 0.15.2).
     make          # unit tests, then the example programs
     make build    # just build zig-out/bin/niceemu
 
-`make test` runs the unit tests in `src/cpu.zig` and then the 2004 example
-programs in `../assembler/test/`, comparing each output with
-`test/X.expected`.
+`make test` runs the unit tests in `src/cpu.zig`, then the 2004 example
+programs in `../assembler/test/` and the probe programs `test/*.asm`,
+comparing the output and exit status of each with `test/X.expected`.
+Finally `test/errors.py` checks the error messages and exit statuses of the
+command line and the loader. The probes are assembled with niceasm, and
+`make bins` reassembles them after a change.
 
 ## Usage
 
@@ -21,7 +24,9 @@ programs in `../assembler/test/`, comparing each output with
 
 The program is loaded, the processor is reset (PC = 0) and it runs until it
 halts. Then the emulator prints why it stopped, the number of steps and the
-registers:
+registers. A step is one instruction, or the entry into an interrupt, so an
+NMI followed by `RTI` and `HALT` is 3 steps. The PC printed after a halt is
+the address after the halting instruction.
 
     $ zig-out/bin/niceemu ../assembler/test/count.bin
     Halted (HALT) after 12292 steps, PC=00000009
@@ -34,11 +39,19 @@ registers:
 | `-s`, `--screen` | After halting, print the 80×25 character screen at `0x400`. |
 | `-d`, `--dump ADDR:N` | After halting, print N memory words from ADDR. May be repeated. |
 | `-n`, `--max-steps N` | Stop after N steps. The default is 100000000. |
-| `-m`, `--mem-size N` | Words of memory from address 0. The default is `0x100000`. |
+| `-h`, `--help` | Print the usage on stdout. |
 
 The exit status is 0 after `HALT`, 2 after any other halt (a reserved control
 word, a nested `INT`, or `RTI` outside an interrupt routine), 3 at the step
-limit, and 1 for a usage or file error.
+limit, and 1 for a usage, file or memory error.
+
+## Program files
+
+A `.bin` file has one line per word, as niceasm writes it (ISA.md §10.4):
+an address and a word, both in hex, separated by blanks. niceasm writes 8
+digits; the loader accepts 1 to 8, in upper or lower case, and nothing else:
+no `0x` prefix, sign or `_`. Blank lines are ignored. Loading the same
+address twice and a file with no words are errors.
 
 ## Devices
 
@@ -48,9 +61,11 @@ in bits 7..0 and its colour above. Here the screen is ordinary memory, and
 `--screen` prints the characters when the program has halted. `print.asm`
 writes to it.
 
-Memory runs from address 0 up to `--mem-size`. Above that, reads return 0 and
-writes are ignored (ISA.md §8.2). Nothing is mapped at the I/O addresses
-`0xFFFFFF00`–`0xFFFFFFFF` yet.
+All 2³² words of memory exist, and addresses wrap from `0xFFFFFFFF` to 0
+(ISA.md §1.1). Memory is allocated in pages of 4096 words when a nonzero
+word is first written to them, so a program only costs the memory it
+touches. Nothing is mapped at the I/O addresses `0xFFFFFF00`–`0xFFFFFFFF`
+yet: they are ordinary memory.
 
 The core (`src/cpu.zig`) implements IRQ, NMI, `INT` and `RTI` (ISA.md §7).
 No device raises IRQ or NMI yet; the unit tests call `requestIrq` and
@@ -73,7 +88,9 @@ word, and then what it changed. These are the last lines for `count.bin`:
 - `[addr]=value` for a memory write.
 - `skipped` when the condition was false.
 - An interrupt taken between instructions prints `IRQ vv` or `NMI vv` and the
-  registers it changed.
+  registers it changed, lined up with the instruction lines:
+
+      NMI 06            R14=81000000 R15=00000040
 
 The format is meant for comparing the FPGA core with the emulator line by
 line.

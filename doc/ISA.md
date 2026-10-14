@@ -156,6 +156,8 @@ Mode 011 with R0 is how an immediate constant is written: `MOVE R1, 5`.
 
 The destination is never read.
 
+In modes 001 and 010 the write of r and the decrement or increment are two writes to Rx. For R14, each one sets bit 24 (§4.3), so `MOVE R14--, 0` leaves R14 = `0x01FFFFFF`, not `0xFFFFFFFF`.
+
 ### 4.3 Special registers in operands
 
 - **R0** reads as 0 in every mode, at every point within an instruction. Writes to R0 and side effects on R0 are discarded. So `--R0` and `R0++` read 0, `@R0`, `@--R0` and `@R0++` all address word 0, as source or destination, and `c[R0]` is c.
@@ -527,6 +529,7 @@ It executes as follows:
 | Unused operand fields | Evaluated in full (emulator) | QNICE ignores them |
 | Missing memory, I/O | Reads return 0; I/O at `0xFFFFFF00`–`0xFFFFFFFF` | Not specified anywhere |
 | SR bit 24 within an instruction | Always 1; every write to R14, side effects included, sets it (§4.3) | Not specified anywhere. The emulator forces it only before and after each instruction. |
+| `R14--` and `R14++` as destinations | r is written, then decremented or incremented, and each write sets bit 24 (§4.2) | Not specified anywhere |
 | Interrupt entry details | Entry sets I; NMI is taken before IRQ; NMI does not nest either (§7.1, §7.2) | Not specified anywhere. The articles have NMI and IRQ serviced "the same way". |
 | Pending interrupt requests | Deferred, never lost; same-kind requests may merge (§7.1) | Not specified anywhere |
 | Interrupts right after `RTI` | No IRQ or NMI until the instruction after `RTI` completes (`after_rti`, §7.1) | Not specified anywhere. QNICE guarantees the same progress. |

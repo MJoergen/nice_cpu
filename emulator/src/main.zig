@@ -14,11 +14,11 @@ const usage =
     \\  -s, --screen         Print the 80x25 character screen at 0x400.
     \\  -d, --dump ADDR:N    Print N memory words from ADDR. May be repeated.
     \\  -n, --max-steps N    Stop after N steps (default 100000000).
-    \\  -m, --mem-size N     Words of memory from address 0 (default 0x100000).
     \\  -h, --help           Print this help.
     \\
     \\Numbers may be decimal or 0x hex. Exit status: 0 after HALT, 1 on a
-    \\usage or file error, 2 after any other halt, 3 at the step limit.
+    \\usage, file or memory error, 2 after any other halt, 3 at the step
+    \\limit.
     \\
 ;
 
@@ -36,7 +36,6 @@ const Options = struct {
     screen: bool = false,
     dumps: []const Dump = &.{},
     max_steps: u64 = 100_000_000,
-    mem_size: u32 = 0x10_0000,
 };
 
 pub fn main() !void {
@@ -45,11 +44,19 @@ pub fn main() !void {
     const arena = arena_state.allocator();
 
     var out_buf: [64 * 1024]u8 = undefined;
-    var out_w = std.fs.File.stdout().writer(&out_buf);
+    // Streaming, not positional: when stdout is a file shared with other
+    // writers, as in `(niceemu x.bin; echo) > log`, the output must go
+    // where the file offset is.
+    var out_w = std.fs.File.stdout().writerStreaming(&out_buf);
     const out = &out_w.interface;
 
     const status = run(arena, out) catch |err| switch (err) {
         error.Usage, error.Load => 1,
+        error.OutOfMemory => blk: {
+            out.flush() catch {};
+            std.debug.print("niceemu: out of memory\n", .{});
+            break :blk 1;
+        },
         else => return err,
     };
     try out.flush();
@@ -61,8 +68,14 @@ fn fail(comptime fmt: []const u8, args: anytype) error{Usage} {
     return error.Usage;
 }
 
-fn parseNumber(s: []const u8) !u32 {
-    return std.fmt.parseInt(u32, s, 0) catch fail("bad number '{s}'", .{s});
+/// Parse the value `s` of option `opt`.
+fn parseNumber(comptime T: type, opt: []const u8, s: []const u8) !T {
+    // parseInt reports a negative number as an overflow.
+    if (std.mem.startsWith(u8, s, "-")) return fail("{s}: bad number '{s}'", .{ opt, s });
+    return std.fmt.parseInt(T, s, 0) catch |err| switch (err) {
+        error.Overflow => fail("{s}: '{s}' is larger than {d}", .{ opt, s, std.math.maxInt(T) }),
+        error.InvalidCharacter => fail("{s}: bad number '{s}'", .{ opt, s }),
+    };
 }
 
 fn parseArgs(arena: std.mem.Allocator) !Options {
@@ -72,7 +85,7 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "-m", "--mem-size" }) |o| {
+        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps" }) |o| {
             if (std.mem.eql(u8, arg, o)) break true;
         } else false;
         const value = if (takes_value) blk: {
@@ -82,7 +95,7 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
         } else "";
 
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
-            std.debug.print("{s}", .{usage});
+            try std.fs.File.stdout().writeAll(usage);
             std.process.exit(0);
         } else if (std.mem.eql(u8, arg, "-t") or std.mem.eql(u8, arg, "--trace")) {
             opts.trace = true;
@@ -90,15 +103,13 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
             opts.screen = true;
         } else if (std.mem.eql(u8, arg, "-d") or std.mem.eql(u8, arg, "--dump")) {
             const colon = std.mem.indexOfScalar(u8, value, ':') orelse
-                return fail("--dump wants ADDR:N, not '{s}'", .{value});
+                return fail("{s} wants ADDR:N, not '{s}'", .{ arg, value });
             try dumps.append(arena, .{
-                .addr = try parseNumber(value[0..colon]),
-                .len = try parseNumber(value[colon + 1 ..]),
+                .addr = try parseNumber(u32, arg, value[0..colon]),
+                .len = try parseNumber(u32, arg, value[colon + 1 ..]),
             });
         } else if (std.mem.eql(u8, arg, "-n") or std.mem.eql(u8, arg, "--max-steps")) {
-            opts.max_steps = try parseNumber(value);
-        } else if (std.mem.eql(u8, arg, "-m") or std.mem.eql(u8, arg, "--mem-size")) {
-            opts.mem_size = try parseNumber(value);
+            opts.max_steps = try parseNumber(u64, arg, value);
         } else if (arg.len > 1 and arg[0] == '-') {
             return fail("unknown option '{s}'\n\n{s}", .{ arg, usage });
         } else if (opts.path.len != 0) {
@@ -112,8 +123,11 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
     return opts;
 }
 
-/// Load a `.bin` file: one "AAAAAAAA WWWWWWWW" line per word.
-fn load(mem: []u32, path: []const u8, text: []const u8) error{Load}!void {
+/// Load a `.bin` file (doc/ISA.md §10.4): one "address word" line per word,
+/// each field 1 to 8 hex digits.
+fn load(arena: std.mem.Allocator, cpu: *Cpu, path: []const u8, text: []const u8) error{ Load, OutOfMemory }!void {
+    // The line that loaded each address, to report duplicates.
+    var loaded: std.AutoHashMapUnmanaged(u32, usize) = .empty;
     var lines = std.mem.splitScalar(u8, text, '\n');
     var line_no: usize = 0;
     while (lines.next()) |raw| {
@@ -122,19 +136,35 @@ fn load(mem: []u32, path: []const u8, text: []const u8) error{Load}!void {
         if (line.len == 0) continue;
         var it = std.mem.tokenizeAny(u8, line, " \t");
         const a = it.next().?;
-        const w = it.next() orelse "";
-        const addr = std.fmt.parseInt(u32, a, 16) catch null;
-        const word = std.fmt.parseInt(u32, w, 16) catch null;
-        if (addr == null or word == null or it.next() != null) {
-            std.debug.print("{s}:{d}: error: expected 'address word' in hex\n", .{ path, line_no });
-            return error.Load;
-        }
-        if (addr.? >= mem.len) {
-            std.debug.print("{s}:{d}: error: address {x:0>8} is beyond memory (see --mem-size)\n", .{ path, line_no, addr.? });
-            return error.Load;
-        }
-        mem[addr.?] = word.?;
+        const w = it.next() orelse
+            return loadError(path, line_no, "expected 'address word', found only '{s}'", .{a});
+        if (it.next()) |extra|
+            return loadError(path, line_no, "unexpected '{s}' after the word", .{extra});
+        const addr = try parseHex(path, line_no, a);
+        const word = try parseHex(path, line_no, w);
+        const gop = try loaded.getOrPut(arena, addr);
+        if (gop.found_existing)
+            return loadError(path, line_no, "address {x:0>8} is already loaded by line {d}", .{ addr, gop.value_ptr.* });
+        gop.value_ptr.* = line_no;
+        try cpu.mem.write(addr, word);
     }
+    if (loaded.count() == 0) {
+        std.debug.print("{s}: error: no words to load\n", .{path});
+        return error.Load;
+    }
+}
+
+fn parseHex(path: []const u8, line_no: usize, s: []const u8) error{Load}!u32 {
+    for (s) |c| {
+        if (!std.ascii.isHex(c)) return loadError(path, line_no, "'{s}' is not a hex number", .{s});
+    }
+    if (s.len > 8) return loadError(path, line_no, "'{s}' has more than 8 hex digits", .{s});
+    return std.fmt.parseInt(u32, s, 16) catch unreachable;
+}
+
+fn loadError(path: []const u8, line_no: usize, comptime fmt: []const u8, args: anytype) error{Load} {
+    std.debug.print("{s}:{d}: error: " ++ fmt ++ "\n", .{ path, line_no } ++ args);
+    return error.Load;
 }
 
 fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
@@ -144,17 +174,17 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
         std.debug.print("niceemu: cannot read {s}: {s}\n", .{ opts.path, @errorName(err) });
         return error.Load;
     };
-    const mem = try arena.alloc(u32, opts.mem_size);
-    @memset(mem, 0);
-    try load(mem, opts.path, text);
+    var cpu = Cpu.init(arena);
+    try load(arena, &cpu, opts.path, text);
 
-    var cpu = Cpu.init(mem);
     if (opts.trace) cpu.trace = out;
+    // A step is one instruction, or the entry into an interrupt.
     var steps: u64 = 0;
     while (!cpu.halted() and steps < opts.max_steps) : (steps += 1) {
         try cpu.step();
     }
 
+    // After a halt, PC is the address after the halting instruction.
     if (cpu.halted()) {
         try out.print("Halted ({s}) after {d} steps, PC={x:0>8}\n", .{ cpu.halt_reason.describe(), steps, cpu.regs[15] });
     } else {
@@ -179,7 +209,7 @@ fn printMemory(out: *std.Io.Writer, cpu: *const Cpu, d: Dump) !void {
     while (i < d.len) : (i += 1) {
         const addr = d.addr +% i;
         if (i % 8 == 0) try out.print("{x:0>8}:", .{addr});
-        try out.print(" {x:0>8}", .{cpu.read(addr)});
+        try out.print(" {x:0>8}", .{cpu.peek(addr)});
         if (i % 8 == 7 or i + 1 == d.len) try out.writeByte('\n');
     }
 }
@@ -191,7 +221,7 @@ fn printScreen(out: *std.Io.Writer, cpu: *const Cpu) !void {
     var last_row: usize = 0;
     for (&rows, 0..) |*row, y| {
         for (row, 0..) |*ch, x| {
-            const c: u8 = @truncate(cpu.read(@intCast(screen_base + y * screen_width + x)));
+            const c: u8 = @truncate(cpu.peek(@intCast(screen_base + y * screen_width + x)));
             ch.* = if (c > ' ' and c < 0x7F) c else ' ';
             if (ch.* != ' ') last_row = y + 1;
         }

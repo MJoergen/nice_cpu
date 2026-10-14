@@ -1,30 +1,53 @@
 ZIG ?= zig
+PYTHON ?= python3
 EMU = zig-out/bin/niceemu
-BIN = ../assembler/test
+ASM = ../assembler/test
 
-# The 2004 example programs, each run with its options and its output
+# Each program is run with its options, and its output and exit status are
 # compared with test/X.expected.
-TESTS = count replicate print
+#
+# The 2004 example programs, from the assembler's tests. Their .expected
+# files were checked by hand, not just copied from the emulator: count
+# takes 3 + 3*4096 + 1 = 12292 steps and leaves R1 = 4096*4097/2, and the
+# dump of replicate equals program words 0-9. wrap checks that a word at
+# 0xFFFFFFFF loads.
+EXAMPLES = count replicate print wrap
 OPTS_count     =
 OPTS_replicate = -d 0x10:10
 OPTS_print     = -s
+OPTS_wrap      = -d 0xffffffff:1
+
+# Probes of single rules of doc/ISA.md, in test/X.asm. The expected values
+# are in the comments of each program. Run make bins after changing one.
+PROBES = logic dest carry r15 cond rotate vbase selfmod addr
+OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
+OPTS_selfmod = -d 4:1
+OPTS_addr    = -d 0:1 -d 0x1fffff:1
 
 define check
-	@$(EMU) $(OPTS_$(1)) $(BIN)/$(1).bin > test/$(1).out
+	@$(EMU) $(OPTS_$(1)) $(2) > test/$(1).out; echo "exit $$?" >> test/$(1).out
 	@if cmp -s test/$(1).out test/$(1).expected; then echo "PASS $(1)"; \
 	else echo "FAIL $(1)"; diff test/$(1).expected test/$(1).out; exit 1; fi
 
 endef
 
+# The unit tests run in Debug, for its safety checks; niceemu itself is
+# built ReleaseSafe, which keeps the checks but runs much faster.
 test: build
 	$(ZIG) build test --summary all
-	$(foreach t,$(TESTS),$(call check,$(t)))
+	$(foreach t,$(EXAMPLES),$(call check,$(t),$(ASM)/$(t).bin))
+	$(foreach t,$(PROBES),$(call check,$(t),test/$(t).bin))
 	@rm -f test/*.out
+	@$(PYTHON) test/errors.py
 
 build:
 	$(ZIG) build -Doptimize=ReleaseSafe
 
+# Reassemble the probes with niceasm.
+bins:
+	@for t in $(PROBES); do $(PYTHON) ../assembler/niceasm.py test/$$t.asm || exit 1; done
+
 clean:
 	rm -rf zig-out .zig-cache test/*.out
 
-.PHONY: test build clean
+.PHONY: test build bins clean

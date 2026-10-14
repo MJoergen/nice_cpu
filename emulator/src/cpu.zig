@@ -40,13 +40,70 @@ pub const HaltReason = enum {
     }
 };
 
+/// The full 2³² words of memory (§1.1), held sparsely: a page is allocated
+/// on its first write of a nonzero word, and a word never written reads 0.
+pub const Memory = struct {
+    const page_bits = 12;
+    const Page = [1 << page_bits]u32;
+    const offset_mask: u32 = (1 << page_bits) - 1;
+
+    gpa: std.mem.Allocator,
+    pages: std.AutoHashMapUnmanaged(u20, *Page) = .empty,
+    last: ?struct { n: u20, page: *Page } = null,
+
+    pub fn init(gpa: std.mem.Allocator) Memory {
+        return .{ .gpa = gpa };
+    }
+
+    pub fn deinit(self: *Memory) void {
+        var it = self.pages.valueIterator();
+        while (it.next()) |page| self.gpa.destroy(page.*);
+        self.pages.deinit(self.gpa);
+    }
+
+    pub fn read(self: *Memory, addr: u32) u32 {
+        const page = self.lookup(@truncate(addr >> page_bits)) orelse return 0;
+        return page[addr & offset_mask];
+    }
+
+    /// `read` without updating the cache, for a `*const Memory`.
+    pub fn peek(self: *const Memory, addr: u32) u32 {
+        const page = self.pages.get(@truncate(addr >> page_bits)) orelse return 0;
+        return page[addr & offset_mask];
+    }
+
+    pub fn write(self: *Memory, addr: u32, value: u32) error{OutOfMemory}!void {
+        const n: u20 = @truncate(addr >> page_bits);
+        if (self.lookup(n)) |page| {
+            page[addr & offset_mask] = value;
+        } else if (value != 0) {
+            const page = try self.gpa.create(Page);
+            errdefer self.gpa.destroy(page);
+            try self.pages.put(self.gpa, n, page);
+            page.* = @splat(0);
+            page[addr & offset_mask] = value;
+        }
+    }
+
+    /// The page `n`, if it is allocated. Most accesses are to the page of
+    /// the one before, so that page is remembered.
+    fn lookup(self: *Memory, n: u20) ?*Page {
+        if (self.last) |last| {
+            if (last.n == n) return last.page;
+        }
+        const page = self.pages.get(n) orelse return null;
+        self.last = .{ .n = n, .page = page };
+        return page;
+    }
+};
+
+pub const Error = std.Io.Writer.Error || error{OutOfMemory};
+
 pub const Cpu = struct {
     /// R0..R15. Read and write them through `getReg` and `setReg`, which
     /// apply the rules for R0 and R14 (§4.3).
     regs: [16]u32,
-    /// Memory from address 0. Addresses at or beyond `mem.len` have nothing
-    /// behind them: reads return 0 and writes are ignored (§8.2).
-    mem: []u32,
+    mem: Memory,
 
     // Hidden state (§1.4).
     in_service: bool,
@@ -64,11 +121,11 @@ pub const Cpu = struct {
     /// The last memory write, for the trace.
     last_write: ?struct { addr: u32, value: u32 },
 
-    /// A processor after reset (§8.1), using `mem` as its memory.
-    pub fn init(mem: []u32) Cpu {
+    /// A processor after reset (§8.1), with empty memory allocated from `gpa`.
+    pub fn init(gpa: std.mem.Allocator) Cpu {
         var cpu: Cpu = .{
             .regs = undefined,
-            .mem = mem,
+            .mem = .init(gpa),
             .in_service = false,
             .after_rti = false,
             .saved_pc = 0,
@@ -81,6 +138,10 @@ pub const Cpu = struct {
         };
         cpu.reset();
         return cpu;
+    }
+
+    pub fn deinit(self: *Cpu) void {
+        self.mem.deinit();
     }
 
     pub fn reset(self: *Cpu) void {
@@ -124,12 +185,21 @@ pub const Cpu = struct {
         }
     }
 
-    pub fn read(self: *const Cpu, addr: u32) u32 {
-        return if (addr < self.mem.len) self.mem[addr] else 0;
+    /// A memory read by the processor (§8.2).
+    pub fn read(self: *Cpu, addr: u32) u32 {
+        return self.mem.read(addr);
     }
 
-    pub fn write(self: *Cpu, addr: u32, value: u32) void {
-        if (addr < self.mem.len) self.mem[addr] = value;
+    /// A look at memory from outside the processor, for dumps and tests.
+    /// Unlike `read`, it is not an access in the sense of §8.2, so once
+    /// devices are mapped it must not trigger their side effects.
+    pub fn peek(self: *const Cpu, addr: u32) u32 {
+        return self.mem.peek(addr);
+    }
+
+    /// A memory write by the processor (§8.2).
+    pub fn write(self: *Cpu, addr: u32, value: u32) error{OutOfMemory}!void {
+        try self.mem.write(addr, value);
         self.last_write = .{ .addr = addr, .value = value };
     }
 
@@ -139,9 +209,10 @@ pub const Cpu = struct {
 
     /// Take a pending interrupt if one may be taken, or else run one
     /// instruction. Does nothing once the processor has halted.
-    pub fn step(self: *Cpu) std.Io.Writer.Error!void {
+    pub fn step(self: *Cpu) Error!void {
         if (self.halted()) return;
         const before = self.regs;
+        self.last_write = null;
 
         // §7.1: interrupts are checked before each instruction fetch.
         if (!self.after_rti and !self.in_service) {
@@ -162,11 +233,9 @@ pub const Cpu = struct {
         // The instruction about to run clears after_rti when it completes,
         // unless it is itself an RTI, which sets it again.
         self.after_rti = false;
-        self.last_write = null;
         const pc = self.regs[15];
-        const iw = self.read(pc);
-        const executed = self.execute();
-        if (self.trace) |w| try self.traceInstruction(w, pc, iw, executed, before);
+        const ex = try self.execute();
+        if (self.trace) |w| try self.traceInstruction(w, pc, ex.iw, ex.executed, before);
     }
 
     /// §7.2: interrupt entry, for IRQ, NMI and INT.
@@ -179,9 +248,10 @@ pub const Cpu = struct {
         self.setReg(15, self.read(((sr & 0x00FF_FFFF) << 8) +% v));
     }
 
-    /// Fetch and run one instruction (§5). Returns false if its condition
-    /// was false.
-    fn execute(self: *Cpu) bool {
+    /// Fetch and run one instruction (§5). Returns the instruction word, so
+    /// that the trace need not read it a second time, and whether the
+    /// condition was true.
+    fn execute(self: *Cpu) error{OutOfMemory}!struct { iw: u32, executed: bool } {
         // 1. Fetch.
         const iw = self.fetch();
 
@@ -201,12 +271,12 @@ pub const Cpu = struct {
         }
 
         // 3. Condition, tested against SR as it was before the instruction.
-        if (self.flag(@as(u5, sr_one) + sel) ^ neg == 0) return false;
+        if (self.flag(@as(u5, sr_one) + sel) ^ neg == 0) return .{ .iw = iw, .executed = false };
 
         // 4. Control.
         if (class == 0b11) {
             self.control(iw);
-            return true;
+            return .{ .iw = iw, .executed = true };
         }
 
         // 5. Sources.
@@ -220,7 +290,7 @@ pub const Cpu = struct {
             alu(op, s0, s1, if ((iw >> 26) & 1 == 1) self.flag(sr_c) else 0);
 
         // 7. Destination.
-        self.destination(fields[0], consts[0], res.r);
+        try self.destination(fields[0], consts[0], res.r);
 
         // 8. Flags (§6).
         const dmode: u3 = @truncate(fields[0] >> 4);
@@ -234,7 +304,7 @@ pub const Cpu = struct {
             sr |= @as(u32, res.v) << sr_v;
             self.setReg(14, sr);
         }
-        return true;
+        return .{ .iw = iw, .executed = true };
     }
 
     fn fetch(self: *Cpu) u32 {
@@ -273,7 +343,7 @@ pub const Cpu = struct {
     }
 
     /// §4.2: write the result to the destination and apply its side effect.
-    fn destination(self: *Cpu, field: u7, c: u32, res: u32) void {
+    fn destination(self: *Cpu, field: u7, c: u32, res: u32) error{OutOfMemory}!void {
         const r: u4 = @truncate(field);
         switch (@as(u3, @truncate(field >> 4))) {
             0b000 => self.setReg(r, res),
@@ -285,14 +355,14 @@ pub const Cpu = struct {
                 self.setReg(r, res);
                 self.setReg(r, self.getReg(r) +% 1);
             },
-            0b011, 0b111 => self.write(self.getReg(r) +% c, res),
-            0b100 => self.write(self.getReg(r), res),
+            0b011, 0b111 => try self.write(self.getReg(r) +% c, res),
+            0b100 => try self.write(self.getReg(r), res),
             0b101 => {
                 self.setReg(r, self.getReg(r) -% 1);
-                self.write(self.getReg(r), res);
+                try self.write(self.getReg(r), res);
             },
             0b110 => {
-                self.write(self.getReg(r), res);
+                try self.write(self.getReg(r), res);
                 self.setReg(r, self.getReg(r) +% 1);
             },
         }
@@ -329,13 +399,15 @@ pub const Cpu = struct {
         }
     }
 
-    fn traceInterrupt(self: *Cpu, kind: []const u8, v: u8, before: [16]u32) std.Io.Writer.Error!void {
+    fn traceInterrupt(self: *const Cpu, kind: []const u8, v: u8, before: [16]u32) std.Io.Writer.Error!void {
         const w = self.trace orelse return;
-        try w.print("{s} {x:0>2}        ", .{ kind, v });
+        // Padded to the width of "pppppppp iiiiiiii", so that the changes
+        // line up with those of the instruction lines.
+        try w.print("{s} {x:0>2}           ", .{ kind, v });
         try self.traceChanges(w, before, null);
     }
 
-    fn traceInstruction(self: *Cpu, w: *std.Io.Writer, pc: u32, iw: u32, executed: bool, before: [16]u32) std.Io.Writer.Error!void {
+    fn traceInstruction(self: *const Cpu, w: *std.Io.Writer, pc: u32, iw: u32, executed: bool, before: [16]u32) std.Io.Writer.Error!void {
         try w.print("{x:0>8} {x:0>8}", .{ pc, iw });
         if (!executed) return w.writeAll(" skipped\n");
         // PC is listed only when it differs from the address after the
@@ -354,7 +426,7 @@ pub const Cpu = struct {
         return pc +% n;
     }
 
-    fn traceChanges(self: *Cpu, w: *std.Io.Writer, before: [16]u32, next_pc: ?u32) std.Io.Writer.Error!void {
+    fn traceChanges(self: *const Cpu, w: *std.Io.Writer, before: [16]u32, next_pc: ?u32) std.Io.Writer.Error!void {
         for (0..15) |i| {
             if (self.regs[i] != before[i]) try w.print(" R{d}={x:0>8}", .{ i, self.regs[i] });
         }
@@ -454,7 +526,7 @@ fn shift(op: u4, s0: u32, count: u32, c_in: u1) Result {
 const testing = std.testing;
 
 // Instruction encoders for the tests (§2).
-const Cond = enum(u4) { always = 0, x = 1, c = 2, z = 3, n = 4, v = 5, e = 6, i = 7, never = 8, nx = 9, nc = 10, nz = 11 };
+const Cond = enum(u4) { always, x, c, z, n, v, e, i, never, nx, nc, nz, nn, nv, ne, ni };
 
 fn alu_iw(cond: Cond, op: u4, cm: enum { none, m, c, cm }, d: u7, s0: u7, s1: u7) u32 {
     const bits: u32 = switch (cm) {
@@ -477,6 +549,9 @@ fn reg(r: u4) u7 {
     return r;
 }
 fn predec(r: u4) u7 {
+    return 0x10 | @as(u7, r);
+}
+fn postdec(r: u4) u7 {
     return 0x10 | @as(u7, r);
 }
 fn postinc(r: u4) u7 {
@@ -504,6 +579,12 @@ const MDBL = 0b0010;
 const ADD = 0b0011;
 const DEC = 0b0101;
 const NOT = 0b0110;
+const NOR = 0b0111;
+const IAND = 0b1000;
+const NAND = 0b1001;
+const XOR = 0b1010;
+const IOR = 0b1011;
+const XNOR = 0b1100;
 const AND = 0b1101;
 const ONE = 0b1110;
 const OR = 0b1111;
@@ -511,16 +592,26 @@ const HALT = 0x0C00_0000;
 const RTI = 0x0C20_0000;
 const INT = 0x0C40_0000;
 
-/// Load `program` at address 0 and run it until it halts.
-fn run(mem: []u32, program: []const u32) Cpu {
-    @memset(mem, 0);
-    @memcpy(mem[0..program.len], program);
-    var cpu = Cpu.init(mem);
+/// A processor with `words` loaded at `addr`.
+fn load(cpu: *Cpu, addr: u32, words: []const u32) !void {
+    for (words, 0..) |w, i| try cpu.mem.write(addr +% @as(u32, @intCast(i)), w);
+}
+
+fn runToHalt(cpu: *Cpu) !void {
     var steps: usize = 0;
     while (!cpu.halted()) : (steps += 1) {
         if (steps == 10_000) @panic("program did not halt");
-        cpu.step() catch unreachable;
+        try cpu.step();
     }
+}
+
+/// Load `program` at address 0 and run it until it halts. The caller
+/// deinits the result.
+fn run(program: []const u32) !Cpu {
+    var cpu = Cpu.init(testing.allocator);
+    errdefer cpu.deinit();
+    try load(&cpu, 0, program);
+    try runToHalt(&cpu);
     return cpu;
 }
 
@@ -528,42 +619,67 @@ fn flags(cpu: *const Cpu) u32 {
     return cpu.getReg(14) & flag_mask;
 }
 
-test "worked example of §11 and source order of §5" {
-    var mem: [0x100]u32 = undefined;
+test "source order of §5: MOVE @R1, R1++" {
     // MOVE R1, 0x40;  MOVE @R1, R1++;  HALT
-    const cpu = run(&mem, &.{
+    var cpu = try run(&.{
         alu_iw(.always, MOVE, .none, reg(1), imm(0), reg(0)), 0x40, // MOVE R1, 0x40
         alu_iw(.always, MOVE, .none, ind(1), postinc(1), reg(0)), // MOVE @R1, R1++
         HALT,
     });
-    try testing.expectEqual(0x40, cpu.read(0x41));
+    defer cpu.deinit();
+    try testing.expectEqual(0x40, cpu.peek(0x41));
     try testing.expectEqual(0x41, cpu.getReg(1));
-    // The §11 encoding.
-    try testing.expectEqual(0xB278C971, alu_iw(.nz, ADD, .m, ind_postinc(3), predec(2), ind_imm(1)));
+}
+
+test "worked example of §11" {
+    const iw = 0xB278C971;
+    try testing.expectEqual(iw, alu_iw(.nz, ADD, .m, ind_postinc(3), predec(2), ind_imm(1)));
+    // ?!Z ADD[M] @R3++, --R2, @0x12345678[R1], with R1 chosen so that the
+    // operand address wraps to 0x60.
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{
+        alu_iw(.always, MOVE, .none, reg(1), imm(0), reg(0)), @as(u32, 0x60) -% 0x12345678,
+        alu_iw(.always, MOVE, .none, reg(2), imm(0), reg(0)), 5,
+        alu_iw(.always, MOVE, .none, reg(3), imm(0), reg(0)), 0x80,
+        iw,                                                   0x12345678,
+        HALT,
+    });
+    try load(&cpu, 0x60, &.{10});
+    try runToHalt(&cpu);
+    try testing.expectEqual(4, cpu.getReg(2));
+    try testing.expectEqual(14, cpu.peek(0x80));
+    try testing.expectEqual(0x81, cpu.getReg(3));
+    try testing.expectEqual(0, flags(&cpu));
 }
 
 test "R14 bit 24 and MOVE R1, --R14 (§4.3)" {
-    var mem: [0x100]u32 = undefined;
-    const cpu = run(&mem, &.{ alu_iw(.always, MOVE, .none, reg(1), predec(14), reg(0)), HALT });
+    var cpu = try run(&.{ alu_iw(.always, MOVE, .none, reg(1), predec(14), reg(0)), HALT });
+    defer cpu.deinit();
     try testing.expectEqual(0x01FF_FFFF, cpu.getReg(1));
     try testing.expectEqual(0x01FF_FFFF, cpu.getReg(14));
 }
 
+test "MOVE R14--, 0: both writes set bit 24 (§4.2)" {
+    var cpu = try run(&.{ alu_iw(.always, MOVE, .none, postdec(14), reg(0), reg(0)), HALT });
+    defer cpu.deinit();
+    try testing.expectEqual(0x01FF_FFFF, cpu.getReg(14));
+}
+
 test "R0 reads 0 in every mode (§4.3)" {
-    var mem: [0x100]u32 = undefined;
     // MOVE R1, --R0;  MOVE R2, @--R0  (reads word 0)
-    const cpu = run(&mem, &.{
+    var cpu = try run(&.{
         alu_iw(.always, MOVE, .none, reg(1), predec(0), reg(0)),
         alu_iw(.always, MOVE, .none, reg(2), ind_predec(0), reg(0)),
         HALT,
     });
+    defer cpu.deinit();
     try testing.expectEqual(0, cpu.getReg(1));
-    try testing.expectEqual(mem[0], cpu.getReg(2));
+    try testing.expectEqual(cpu.peek(0), cpu.getReg(2));
     try testing.expectEqual(0, cpu.getReg(0));
 }
 
 test "R15 reads as the next instruction; call and return (§9.1)" {
-    var mem: [0x100]u32 = undefined;
     // 0: MOVE R13, 0x80         ; SP
     // 2: ADD @--R13, 2, R15     ; push return address 6
     // 4: MOVE R15, 8            ; call
@@ -571,7 +687,7 @@ test "R15 reads as the next instruction; call and return (§9.1)" {
     // 7: (unused)
     // 8: MOVE R1, 7
     // 10: MOVE R15, @R13++      ; return
-    const cpu = run(&mem, &.{
+    var cpu = try run(&.{
         alu_iw(.always, MOVE, .none, reg(13), imm(0), reg(0)), 0x80, // 0
         alu_iw(.always, ADD, .none, ind_predec(13), imm(0), reg(15)), 2, // 2
         alu_iw(.always, MOVE, .none, reg(15), imm(0), reg(0)), 8, // 4
@@ -580,24 +696,25 @@ test "R15 reads as the next instruction; call and return (§9.1)" {
         alu_iw(.always, MOVE, .none, reg(1), imm(0), reg(0)), 7, // 8
         alu_iw(.always, MOVE, .none, reg(15), ind_postinc(13), reg(0)), // 10
     });
+    defer cpu.deinit();
     try testing.expectEqual(7, cpu.getReg(1));
     try testing.expectEqual(0x80, cpu.getReg(13));
-    try testing.expectEqual(6, mem[0x7F]);
+    try testing.expectEqual(6, cpu.peek(0x7F));
     try testing.expectEqual(7, cpu.getReg(15));
 }
 
 test "skipped instruction consumes constants and has no effect (§3)" {
-    var mem: [0x100]u32 = undefined;
     // ?Z MOVE @0x50, R2++, @R3++  is skipped: Z = 0 after reset.
-    const cpu = run(&mem, &.{
+    var cpu = try run(&.{
         alu_iw(.z, MOVE, .none, imm(0), postinc(2), ind_postinc(3)), 0x50, // ?Z MOVE 0x50, R2++, @R3++
         alu_iw(.nz, MOVE, .none, reg(4), imm(0), reg(0)), 9, // ?!Z MOVE R4, 9
         HALT,
     });
+    defer cpu.deinit();
     try testing.expectEqual(0, cpu.getReg(2));
     try testing.expectEqual(0, cpu.getReg(3));
     try testing.expectEqual(9, cpu.getReg(4));
-    try testing.expectEqual(0, mem[0x50]);
+    try testing.expectEqual(0, cpu.peek(0x50));
 }
 
 test "ALU carry, borrow and overflow (§5.1)" {
@@ -610,12 +727,28 @@ test "ALU carry, borrow and overflow (§5.1)" {
     try testing.expectEqual(Result{ .r = 6 }, alu(MDBL, 3, 0xFFFF_FFFF, 0));
     try testing.expectEqual(Result{ .r = 3 }, alu(MDBL, 3, 0, 0));
     try testing.expectEqual(Result{ .r = 1 }, alu(ONE, 7, 7, 1));
+    // DEC and MOVE ignore the carry input.
+    try testing.expectEqual(Result{ .r = 4 }, alu(DEC, 5, 0, 1));
+    try testing.expectEqual(Result{ .r = 5 }, alu(MOVE, 5, 0, 1));
+}
+
+test "logic operations (§5.1)" {
+    const a = 0xF0F0_F0F0;
+    const b = 0xFF00_FF00;
+    try testing.expectEqual(0x0F0F_0F0F, alu(NOT, a, b, 1).r);
+    try testing.expectEqual(0x000F_000F, alu(NOR, a, b, 1).r);
+    try testing.expectEqual(0x0F00_0F00, alu(IAND, a, b, 1).r);
+    try testing.expectEqual(0x0FFF_0FFF, alu(NAND, a, b, 1).r);
+    try testing.expectEqual(0x0FF0_0FF0, alu(XOR, a, b, 1).r);
+    try testing.expectEqual(0xFF0F_FF0F, alu(IOR, a, b, 1).r);
+    try testing.expectEqual(0xF00F_F00F, alu(XNOR, a, b, 1).r);
+    try testing.expectEqual(0xF000_F000, alu(AND, a, b, 1).r);
+    try testing.expectEqual(0xFFF0_FFF0, alu(OR, a, b, 1).r);
 }
 
 test "flags with M (§6)" {
-    var mem: [0x100]u32 = undefined;
     // MOVE R1, 0xFFFFFFFF; ADD[M] R2, R1, 1 -> Z, C;  then ADD[CM] R3, R0, R0 -> 1
-    var cpu = run(&mem, &.{
+    var cpu = try run(&.{
         alu_iw(.always, MOVE, .none, reg(1), imm(0), reg(0)), 0xFFFF_FFFF, // MOVE R1, -1
         alu_iw(.always, ADD, .m, reg(2), reg(1), imm(0)), 1, // ADD[M] R2, R1, 1
         alu_iw(.always, ADD, .cm, reg(3), reg(0), reg(0)), // ADD[CM] R3, R0, R0
@@ -623,20 +756,23 @@ test "flags with M (§6)" {
     });
     try testing.expectEqual(1, cpu.getReg(3));
     try testing.expectEqual(0, flags(&cpu));
+    cpu.deinit();
 
     // MOVE[M] R1, -1 sets X and N; logic ops clear C.
-    cpu = run(&mem, &.{ alu_iw(.always, MOVE, .m, reg(1), imm(0), reg(0)), 0xFFFF_FFFF, HALT });
+    cpu = try run(&.{ alu_iw(.always, MOVE, .m, reg(1), imm(0), reg(0)), 0xFFFF_FFFF, HALT });
     try testing.expectEqual(1 << sr_x | 1 << sr_n, flags(&cpu));
+    cpu.deinit();
 
     // Flags come from r, not from the value an Rx++ destination stores.
-    cpu = run(&mem, &.{ alu_iw(.always, MOVE, .m, postinc(1), reg(0), reg(0)), HALT });
+    cpu = try run(&.{ alu_iw(.always, MOVE, .m, postinc(1), reg(0), reg(0)), HALT });
+    defer cpu.deinit();
     try testing.expectEqual(1, cpu.getReg(1));
     try testing.expectEqual(1 << sr_z, flags(&cpu));
 }
 
 test "explicit write to R14 beats the flag update (§6)" {
-    var mem: [0x100]u32 = undefined;
-    const cpu = run(&mem, &.{ alu_iw(.always, OR, .m, reg(14), reg(14), imm(0)), 0x4000_0000, HALT });
+    var cpu = try run(&.{ alu_iw(.always, OR, .m, reg(14), reg(14), imm(0)), 0x4000_0000, HALT });
+    defer cpu.deinit();
     try testing.expectEqual(0x4100_0000, cpu.getReg(14));
 }
 
@@ -666,30 +802,31 @@ test "shifts (§5.2)" {
     try testing.expectEqual(Result{ .r = 1, .c = 1 }, shift(0b0101, 0x8000_0000, 1, 1));
     try testing.expectEqual(Result{ .r = 0x1234_5678, .c = 1 }, shift(0b0101, 0x1234_5678, 33 * 7, 1));
     try testing.expectEqual(Result{ .r = 0x8000_0000, .c = 1 }, shift(0b1101, 1, 1, 1));
+    try testing.expectEqual(Result{ .r = 0x3000_0000, .c = 0 }, shift(0b1101, 0x8000_0000, 0xFFFF_FFFF, 1));
     // 0<C fills with the original C every step.
     try testing.expectEqual(Result{ .r = 0xF }, shift(0b0010, 0, 4, 1));
 }
 
 test "shifts write C only with M (§5.2)" {
-    var mem: [0x100]u32 = undefined;
     // C<1 R1, R2, 1 with R2 = 0x80000000, without and with M.
-    var cpu = run(&mem, &.{
+    var cpu = try run(&.{
         alu_iw(.always, MOVE, .none, reg(2), imm(0), reg(0)), 0x8000_0000, // MOVE R2, 0x80000000
         shift_iw(0b0100, false, reg(1), reg(2), imm(0)), 1, // C<1 R1, R2, 1
         HALT,
     });
     try testing.expectEqual(1, cpu.getReg(1));
     try testing.expectEqual(0, flags(&cpu));
-    cpu = run(&mem, &.{
+    cpu.deinit();
+    cpu = try run(&.{
         alu_iw(.always, MOVE, .none, reg(2), imm(0), reg(0)), 0x8000_0000, // MOVE R2, 0x80000000
         shift_iw(0b0100, true, reg(1), reg(2), imm(0)), 1, // C<1[M] R1, R2, 1
         HALT,
     });
+    defer cpu.deinit();
     try testing.expectEqual(1 << sr_c, flags(&cpu));
 }
 
 test "INT and RTI (§7)" {
-    var mem: [0x100]u32 = undefined;
     // VBASE = 0, so vector 3 is word 3.
     // 0: MOVE R15, 0x10
     // 2: (unused)
@@ -710,7 +847,8 @@ test "INT and RTI (§7)" {
     program[0x20] = alu_iw(.always, MOVE, .m, reg(1), ind(0), reg(0));
     program[0x21] = alu_iw(.always, MOVE, .none, reg(3), reg(14), reg(0));
     program[0x22] = RTI;
-    const cpu = run(&mem, &program);
+    var cpu = try run(&program);
+    defer cpu.deinit();
     try testing.expectEqual(.halt, cpu.halt_reason);
     try testing.expectEqual(program[0], cpu.getReg(2));
     // Inside the routine I was set; RTI restored SR.
@@ -719,14 +857,20 @@ test "INT and RTI (§7)" {
     try testing.expectEqual(false, cpu.in_service);
 }
 
-test "IRQ needs E, NMI does not, and neither is taken right after RTI (§7.1)" {
-    var mem: [0x100]u32 = undefined;
-    @memset(&mem, 0);
-    mem[5] = 0x40; // vector 5
-    mem[6] = 0x50; // vector 6
-    mem[0x40] = RTI;
-    mem[0x50] = RTI;
-    var cpu = Cpu.init(&mem);
+/// A processor with NOPs from address 0, vector 5 pointing at an RTI at
+/// 0x40 and vector 6 at an RTI at 0x50.
+fn interruptTestCpu() !Cpu {
+    var cpu = Cpu.init(testing.allocator);
+    errdefer cpu.deinit();
+    try load(&cpu, 5, &.{ 0x40, 0x50 });
+    try load(&cpu, 0x40, &.{RTI});
+    try load(&cpu, 0x50, &.{RTI});
+    return cpu;
+}
+
+test "IRQ needs E, NMI does not (§7.1)" {
+    var cpu = try interruptTestCpu();
+    defer cpu.deinit();
 
     cpu.requestIrq(5);
     try cpu.step(); // E = 0: a NOP at address 0 runs instead
@@ -737,36 +881,145 @@ test "IRQ needs E, NMI does not, and neither is taken right after RTI (§7.1)" {
     try cpu.step(); // NMI entry
     try testing.expectEqual(0x50, cpu.regs[15]);
     try testing.expectEqual(1, cpu.saved_pc);
+    try testing.expectEqual(0x8100_0000, cpu.getReg(14));
+}
 
-    cpu.setReg(14, cpu.getReg(14) | 1 << sr_e);
-    try cpu.step(); // RTI; the saved SR has E = 0
-    try testing.expectEqual(1, cpu.regs[15]);
-    cpu.saved_sr = 0; // irrelevant from here
+test "no interrupt right after RTI, and RTI restores E (§7.1, §7.4)" {
+    var cpu = try interruptTestCpu();
+    defer cpu.deinit();
+
     cpu.setReg(14, 1 << sr_e);
-    try cpu.step(); // after_rti: the NOP at 1 runs first
-    try testing.expectEqual(2, cpu.regs[15]);
+    cpu.requestNmi(6);
+    try cpu.step(); // NMI entry, saving E = 1
+    cpu.setReg(14, cpu.getReg(14) & ~@as(u32, 1 << sr_e));
+    cpu.requestIrq(5);
+    try cpu.step(); // RTI
+    try testing.expectEqual(0, cpu.regs[15]);
+    try testing.expectEqual(0x4100_0000, cpu.getReg(14));
+    try cpu.step(); // after_rti: the NOP at 0 runs first
+    try testing.expectEqual(1, cpu.regs[15]);
     try cpu.step(); // now the IRQ
     try testing.expectEqual(0x40, cpu.regs[15]);
+    try testing.expectEqual(1, cpu.saved_pc);
     try testing.expectEqual(null, cpu.irq_pending);
 }
 
+test "NMI before IRQ; the IRQ waits through the routine (§7.1)" {
+    var cpu = try interruptTestCpu();
+    defer cpu.deinit();
+
+    cpu.setReg(14, 1 << sr_e);
+    cpu.requestIrq(5);
+    cpu.requestNmi(6);
+    try cpu.step(); // the NMI
+    try testing.expectEqual(0x50, cpu.regs[15]);
+    try testing.expect(cpu.irq_pending != null);
+    try cpu.step(); // RTI, although the IRQ is pending
+    try testing.expectEqual(0, cpu.regs[15]);
+    try cpu.step(); // the NOP at 0
+    try cpu.step(); // the IRQ
+    try testing.expectEqual(0x40, cpu.regs[15]);
+    try testing.expectEqual(1, cpu.saved_pc);
+}
+
+test "HALT inside an interrupt routine, and INT inside one (§7.2)" {
+    // 0: INT 2;  2: .DAT 3 (vector 2);  3: HALT
+    var cpu = try run(&.{ INT + 2, 0, 3, HALT });
+    try testing.expectEqual(.halt, cpu.halt_reason);
+    try testing.expect(cpu.in_service);
+    cpu.deinit();
+    // 0: INT 2;  2: .DAT 3;  3: INT 2
+    cpu = try run(&.{ INT + 2, 0, 3, INT + 2 });
+    defer cpu.deinit();
+    try testing.expectEqual(.nested_int, cpu.halt_reason);
+}
+
+test "VBASE selects the vector table (§7.3)" {
+    // 0: MOVE R14, 1  (VBASE = 1: the table is at 0x100);  2: INT 2;  3: HALT
+    // 0x10: HALT;  0x102: .DAT 0x10
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{ alu_iw(.always, MOVE, .none, reg(14), imm(0), reg(0)), 1, INT + 2, HALT });
+    try load(&cpu, 0x10, &.{HALT});
+    try load(&cpu, 0x102, &.{0x10});
+    try runToHalt(&cpu);
+    try testing.expectEqual(0x11, cpu.regs[15]);
+    try testing.expectEqual(0x8100_0001, cpu.getReg(14));
+}
+
 test "reserved control words halt, unless skipped (§5.3)" {
-    var mem: [0x100]u32 = undefined;
-    var cpu = run(&mem, &.{ 0x0C00_0001, HALT });
+    var cpu = try run(&.{ 0x0C00_0001, HALT });
     try testing.expectEqual(.reserved, cpu.halt_reason);
-    cpu = run(&mem, &.{ 0x8C60_0000, HALT }); // never-executed command 3
+    cpu.deinit();
+    cpu = try run(&.{ 0x8C60_0000, HALT }); // never-executed command 3
     try testing.expectEqual(.halt, cpu.halt_reason);
     try testing.expectEqual(2, cpu.regs[15]);
-    cpu = run(&mem, &.{RTI});
+    cpu.deinit();
+    cpu = try run(&.{RTI});
+    defer cpu.deinit();
     try testing.expectEqual(.rti_outside_isr, cpu.halt_reason);
 }
 
-test "missing memory reads 0 and ignores writes (§8.2)" {
-    var mem: [0x10]u32 = undefined;
-    const cpu = run(&mem, &.{
-        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), 0x1000, 5, // MOVE 0x1000, 5
-        alu_iw(.always, MOVE, .none, reg(1), ind_imm(0), reg(0)), 0x1000, // MOVE R1, @0x1000
-        HALT,
+test "the whole address space exists and wraps (§1.1)" {
+    // 0xFFFFFFFF: MOVE @1[R1], 5, with the constants at 0 and 1:
+    // writes address 0 + R1, then runs on at 2.
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0xFFFF_FFFF, &.{alu_iw(.always, MOVE, .none, ind_imm(1), imm(0), reg(0))});
+    try load(&cpu, 0, &.{ 0xFFFF_FFFF, 5, HALT });
+    cpu.regs[15] = 0xFFFF_FFFF;
+    cpu.regs[1] = 1;
+    try runToHalt(&cpu);
+    try testing.expectEqual(5, cpu.peek(0));
+    try testing.expectEqual(3, cpu.regs[15]);
+    // Writing 0 to an untouched page allocates nothing.
+    try cpu.mem.write(0x8000_0000, 0);
+    try testing.expectEqual(2, cpu.mem.pages.count());
+}
+
+/// Run `cpu` for `n` steps, tracing into a buffer, and return the trace.
+fn traceSteps(cpu: *Cpu, buf: []u8, n: usize) ![]const u8 {
+    var w: std.Io.Writer = .fixed(buf);
+    cpu.trace = &w;
+    defer cpu.trace = null;
+    for (0..n) |_| try cpu.step();
+    return w.buffered();
+}
+
+test "trace: write, jump, skip and halt" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), 0x50, 7, // 0: MOVE @0x50, 7 (mode 011)
+        alu_iw(.always, MOVE, .none, reg(15), imm(0), reg(0)), 6, // 3: MOVE R15, 6
+        HALT, // 5
+        alu_iw(.z, MOVE, .none, reg(1), imm(0), reg(0)), 1, // 6: ?Z MOVE R1, 1
+        alu_iw(.always, DEC, .m, reg(2), reg(2), reg(0)), // 8: DEC[M] R2, R2
+        HALT, // 9
     });
-    try testing.expectEqual(0, cpu.getReg(1));
+    var buf: [512]u8 = undefined;
+    try testing.expectEqualStrings(
+        \\00000000 000c1800 [00000050]=00000007
+        \\00000003 0003d800 R15=00000006
+        \\00000006 30005800 skipped
+        \\00000008 02a08100 R2=ffffffff R14=17000000
+        \\00000009 0c000000 HALT
+        \\
+    , try traceSteps(&cpu, &buf, 5));
+}
+
+test "trace: an interrupt line shows no write of the instruction before (§7.2)" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), 0x50, 7, // 0: MOVE @0x50, 7
+    });
+    try load(&cpu, 6, &.{0x40}); // vector 6
+    var buf: [512]u8 = undefined;
+    try cpu.step();
+    cpu.requestNmi(6);
+    try testing.expectEqualStrings(
+        \\NMI 06            R14=81000000 R15=00000040
+        \\
+    , try traceSteps(&cpu, &buf, 1));
 }

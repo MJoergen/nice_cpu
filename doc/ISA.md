@@ -191,7 +191,7 @@ An instruction runs in this order:
 
 Because step 5 runs before step 7, `MOVE @R1, R1++` with R1 = 0x40 stores 0x40 at address 0x41.
 
-The next instruction is fetched from PC as it stands after step 8. Interrupts are taken only between instructions (§7). §8.2 gives the exact memory accesses each step makes.
+The next instruction is the one at PC as it stands after step 8. Interrupts are taken only between instructions (§7). Steps 1 and 2 are instruction fetches, and every other memory access is a data access. §8.2 defines the two kinds, and §8.3 says what a fetch from the I/O range reads.
 
 ### 5.1 ALU instructions (bit 27 = 0)
 
@@ -321,7 +321,7 @@ NICE has one maskable interrupt request (IRQ), one non-maskable interrupt reques
 
 ### 7.1 When an interrupt is taken
 
-Between instructions, the processor checks for pending requests:
+Before each instruction, the first one after reset included, the processor checks for pending requests:
 - **NMI** is taken if `in_service` = 0.
 - **IRQ** is taken if `in_service` = 0 and E = 1.
 - If both are pending, NMI goes first.
@@ -623,7 +623,7 @@ Memory accesses must give the results wasm defines:
 | `nice.peek` | `(i32) -> i32` | `MOVE R1, @R1`: read the NICE word at the given word address. |
 | `nice.poke` | `(i32, i32) -> ()` | `MOVE @R1, R2`: write the second argument to the NICE word at the first. |
 
-These exist to reach devices, so the §8.2 rule applies to them as to any instruction. Each call is performed exactly once and in program order, even when the result of a `peek` is not used.
+These exist to reach devices, so the §8.2 rule for data accesses applies to them as to any instruction. Each call is performed exactly once and in program order, even when the result of a `peek` is not used.
 
 In Rust, they are declared in an `extern "C"` block with `#[link(wasm_import_module = "nice")]`. In Zig, they are `extern "nice" fn peek(addr: u32) u32` and `extern "nice" fn poke(addr: u32, val: u32) void`. Zig must use `u32`, because the I/O addresses `0xFFFFFF00`–`0xFFFFFFFF` do not fit in an `i32`. Both types become `i32` in wasm.
 

@@ -392,6 +392,9 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # popcount(255) = 8. (signed char)128 = -128. 1 + 80 - 2333 + 71 + 8 -
     # 128 = -2301 = 0xFFFFF703.
     ("intops_c", "intops", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 0xFFFFF703),
+    # The sieve of Eratosthenes from clang, with get(i) = i + 100. There are
+    # 168 primes up to get(900) = 1000.
+    ("primes_c", "primes", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 168),
     # @memcpy, @memset, and @memmove from Zig, with get(i) = i + 100. buf
     # holds 0 to 39. buf[40..50] gets 3 to 12, which sum to 75, and
     # buf[50..60] ten 7s, 70. Then 0 to 19 move up by one, which overlaps,

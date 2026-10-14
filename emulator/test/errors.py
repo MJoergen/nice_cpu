@@ -38,6 +38,11 @@ CASES: List[Tuple[List[str], Optional[str], str]] = [
     (["--nmi", "-1:1", "BIN"], "00000000 0c000000", "niceemu: --nmi: bad number '-1'"),
     (["--irq", "0:256", "BIN"], "00000000 0c000000", "niceemu: --irq: '256' is larger than 255"),
     (["--nmi", "0:", "BIN"], "00000000 0c000000", "niceemu: --nmi: bad number ''"),
+    (["--irq", "0:+5", "BIN"], "00000000 0c000000", "niceemu: --irq: bad number '+5'"),
+    (["--irq", "0:1_0", "BIN"], "00000000 0c000000", "niceemu: --irq: bad number '1_0'"),
+    (["-n", "0b11", "BIN"], "00000000 0c000000", "niceemu: -n: bad number '0b11'"),
+    (["-d", "0x:1", "BIN"], "00000000 0c000000", "niceemu: -d: bad number '0x'"),
+    (["-d", "0xg:1", "BIN"], "00000000 0c000000", "niceemu: -d: bad number '0xg'"),
     (["does-not-exist.bin"], None, "niceemu: cannot read does-not-exist.bin: FileNotFound"),
     # Loader
     (["BIN"], "", "BIN: error: no words to load"),

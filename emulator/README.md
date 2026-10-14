@@ -26,7 +26,8 @@ The program is loaded, the processor is reset (PC = 0) and it runs until it
 halts. Then the emulator prints why it stopped, the number of steps, and the
 registers. A step is one instruction, or the entry into an interrupt, so an
 NMI followed by `RTI` and `HALT` is 3 steps. The PC printed after a halt is
-the address after the halting instruction.
+the address after the halting instruction. If an interrupt request is still
+pending at the end, a line such as `Pending: IRQ 05` follows the first line.
 
     $ zig-out/bin/niceemu ../assembler/test/count.bin
     Halted (HALT) after 12292 steps, PC=00000009
@@ -42,6 +43,8 @@ the address after the halting instruction.
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
 | `-h`, `--help` | Print the usage on stdout. |
+
+Numbers in options are decimal, or hex after `0x`, with no sign or `_`.
 
 The exit status is 0 after `HALT`, 2 after any other halt (a reserved control
 word, a nested `INT`, or `RTI` outside an interrupt routine), 3 at the step
@@ -73,13 +76,16 @@ yet: they are ordinary memory.
 
 The core (`src/cpu.zig`) implements IRQ, NMI, `INT`, and `RTI` (ISA.md §7).
 No device raises IRQ or NMI yet. Instead, `--irq` and `--nmi` raise a request
-at a chosen step, counted from 0 as in the step count that niceemu prints.
-`--nmi 0:5` makes an NMI pending at reset. A request is raised whether or not
-it can be taken. If it cannot, it stays pending, as ISA.md §7.1 says, and a
-request still pending at a halt is never taken. Two requests of one kind
-raised at the same step merge, and the vector given last wins. Requests for
-steps after the processor halts are never raised. The probes `test/irq.asm`
-and `test/merge.asm` show each rule.
+at a chosen step. A request for step N is raised after N steps have run, so
+with `--trace` it comes before line N + 1, and `--nmi 0:5` raises an NMI
+before the first instruction. A request is raised whether or not it can be
+taken. If it cannot, it stays pending, as ISA.md §7.1 says, and a request
+still pending at a halt is never taken. A request of a kind that is already
+pending replaces it, so the vector given last wins, whether the two were
+given for the same step or for different steps. Requests for steps that are
+never reached, because the processor halts or `-n` stops it, are never
+raised. The probes `test/irq.asm`, `test/merge.asm`, `test/after.asm`, and
+`test/start.asm` show these rules.
 
 ## Trace format
 

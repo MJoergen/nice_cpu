@@ -95,13 +95,19 @@ fn fail(comptime fmt: []const u8, args: anytype) error{Usage} {
     return error.Usage;
 }
 
-/// Parse the value `s` of option `opt`.
+/// Parse the value `s` of option `opt`: decimal, or hex after 0x.
 fn parseNumber(comptime T: type, opt: []const u8, s: []const u8) !T {
-    // parseInt reports a negative number as an overflow.
-    if (std.mem.startsWith(u8, s, "-")) return fail("{s}: bad number '{s}'", .{ opt, s });
-    return std.fmt.parseInt(T, s, 0) catch |err| switch (err) {
+    const hex = std.mem.startsWith(u8, s, "0x") or std.mem.startsWith(u8, s, "0X");
+    const base: u8 = if (hex) 16 else 10;
+    const digits = if (hex) s[2..] else s;
+    // parseInt would also take a sign and underscores.
+    if (digits.len == 0) return fail("{s}: bad number '{s}'", .{ opt, s });
+    for (digits) |c| {
+        _ = std.fmt.charToDigit(c, base) catch return fail("{s}: bad number '{s}'", .{ opt, s });
+    }
+    return std.fmt.parseInt(T, digits, base) catch |err| switch (err) {
         error.Overflow => fail("{s}: '{s}' is larger than {d}", .{ opt, s, std.math.maxInt(T) }),
-        error.InvalidCharacter => fail("{s}: bad number '{s}'", .{ opt, s }),
+        error.InvalidCharacter => unreachable,
     };
 }
 
@@ -242,6 +248,13 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
         try out.print("Halted ({s}) after {d} steps, PC={x:0>8}\n", .{ cpu.halt_reason.describe(), steps, cpu.regs[15] });
     } else {
         try out.print("Stopped at the step limit after {d} steps, PC={x:0>8}\n", .{ steps, cpu.regs[15] });
+    }
+    // A request still pending now was never taken (ISA.md §7.1).
+    if (cpu.nmi_pending != null or cpu.irq_pending != null) {
+        try out.writeAll("Pending:");
+        if (cpu.nmi_pending) |v| try out.print(" NMI {x:0>2}", .{v});
+        if (cpu.irq_pending) |v| try out.print(" IRQ {x:0>2}", .{v});
+        try out.writeByte('\n');
     }
     try printRegisters(out, &cpu);
     for (opts.dumps) |d| try printMemory(out, &cpu, d);

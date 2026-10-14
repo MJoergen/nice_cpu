@@ -164,7 +164,8 @@ pub const Cpu = struct {
         self.irq_pending = v;
     }
 
-    /// Raise the non-maskable interrupt request with vector `v`.
+    /// Raise the non-maskable interrupt request with vector `v`. Requests
+    /// that arrive while one is pending merge into one (§7.1).
     pub fn requestNmi(self: *Cpu, v: u8) void {
         self.nmi_pending = v;
     }

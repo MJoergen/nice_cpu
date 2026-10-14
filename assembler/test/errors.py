@@ -107,6 +107,13 @@ CASES: List[Tuple[str, str]] = [
     ("L , HALT", "1: error: ',' after 'L': a comma only separates operands"),
     ("?Z , HALT", "1: error: ',' after '?Z': a comma only separates operands"),
     ("X .EQU, 5", "1: error: ',' after '.EQU': a comma only separates operands"),
+    # Third round of the review
+    ("SP .EQU R13\nX .EQU 5[SP]\n .DAT X", "3: error: 'X' stands for the operand '5[SP]', not a number"),
+    ("SP .EQU R13\nX .EQU 5[SP]\n MOVE R1, X+1", "3: error: 'X' stands for the operand '5[SP]', not a number"),
+    ("SP .EQU R13\nX .EQU 5[SP]\n INT X", "3: error: 'X' stands for the operand '5[SP]', not a number"),
+    ("SP .EQU R13\nX .EQU 5[SP]\nY .EQU X+1\n .DAT Y", "3: error: 'X' stands for the operand '5[SP]', not a number"),
+    ("SP .EQU R13\nY .EQU SP+1\n .DAT Y", "2: error: 'SP' is a register where a number is expected"),
+    (" MOVE[M] [M] R1, R2", "1: error: 'MOVE[M] [M]': write each modifier once, in one bracket after the mnemonic"),
 ]
 
 

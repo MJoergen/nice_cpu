@@ -159,16 +159,19 @@ class Assembler:
         with an explicit stack, so a long chain cannot exhaust Python's. In
         pass 0 no label is known yet, so values are kept for check_equs()."""
         done: Dict[str, int] = self.equ_cache if self.pass_no == 0 else {}
+        checked: Set[str] = set()
         stack = [name]
         while stack:
             n = stack[-1]
+            if n not in done and n not in checked:
+                self.check_number(n)  # before its dependencies, so an error names n
+                checked.add(n)
             todo = [d for d in self.deps(n) if d not in done]
             if todo:
                 stack += todo
                 continue
             stack.pop()
             if n not in done:
-                self.check_number(n)
                 done[n] = self.value(self.equs[n], done)
         return done[name]
 
@@ -401,8 +404,12 @@ class Assembler:
             if m.group(2) is None:
                 raise AsmError(f"'{mtok} {args[0]}': write the modifier without a space, "
                                f"as {mtok}{args[0]}")
-            raise AsmError(f"'{mtok} {args[0]}': write all modifiers in one bracket, "
-                           f"as {m.group(1)}[{m.group(2)}{args[0].strip('[]')}]")
+            both = m.group(2) + args[0].strip("[]")
+            if both and len(set(both.upper())) == len(both) and set(both.upper()) <= set("MC"):
+                raise AsmError(f"'{mtok} {args[0]}': write all modifiers in one bracket, "
+                               f"as {m.group(1)}[{both}]")
+            raise AsmError(f"'{mtok} {args[0]}': write each modifier once, in one bracket "
+                           f"after the mnemonic")
         mods = (m.group(2) or "").upper()
         if m.group(2) is not None and (not mods or len(set(mods)) != len(mods)
                                        or set(mods) - set("MC")):

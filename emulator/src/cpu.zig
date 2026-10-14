@@ -99,8 +99,11 @@ pub const Memory = struct {
 
 pub const Error = std.Io.Writer.Error || error{OutOfMemory};
 
+/// The first address of the I/O range (§8.3).
+pub const io_base: u32 = 0xFFFF_FF00;
+
 /// The emulator's console output: the first I/O address (§8.3).
-pub const console_addr: u32 = 0xFFFF_FF00;
+pub const console_addr: u32 = io_base;
 
 pub const Cpu = struct {
     /// R0..R15. Read and write them through `getReg` and `setReg`, which
@@ -226,7 +229,7 @@ pub const Cpu = struct {
         const before = self.regs;
         self.last_write = null;
 
-        // §7.1: interrupts are checked before each instruction fetch.
+        // §7.1: interrupts are checked between instructions.
         if (!self.after_rti and !self.in_service) {
             if (self.nmi_pending) |v| {
                 self.nmi_pending = null;
@@ -319,8 +322,11 @@ pub const Cpu = struct {
         return .{ .iw = iw, .executed = true };
     }
 
+    /// An instruction fetch (§8.2). It never reaches the I/O range, where
+    /// it reads 0 (§8.3).
     fn fetch(self: *Cpu) u32 {
-        const word = self.read(self.regs[15]);
+        const pc = self.regs[15];
+        const word = if (pc >= io_base) 0 else self.read(pc);
         self.regs[15] +%= 1;
         return word;
     }
@@ -973,17 +979,17 @@ test "reserved control words halt, unless skipped (§5.3)" {
 }
 
 test "the whole address space exists and wraps (§1.1)" {
-    // 0xFFFFFFFF: MOVE @1[R1], 5, with the constants at 0 and 1:
-    // writes address 0 + R1, then runs on at 2.
+    // MOVE @1[R1], 5 with R1 = 0xFFFFFFFF writes address 0, which held the
+    // instruction word; then HALT at 3.
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
-    try load(&cpu, 0xFFFF_FFFF, &.{alu_iw(.always, MOVE, .none, ind_imm(1), imm(0), reg(0))});
-    try load(&cpu, 0, &.{ 0xFFFF_FFFF, 5, HALT });
-    cpu.regs[15] = 0xFFFF_FFFF;
-    cpu.regs[1] = 1;
+    try load(&cpu, 0, &.{ alu_iw(.always, MOVE, .none, ind_imm(1), imm(0), reg(0)), 1, 5, HALT });
+    try load(&cpu, 0xFFFF_FFFF, &.{7});
+    cpu.regs[1] = 0xFFFF_FFFF;
     try runToHalt(&cpu);
     try testing.expectEqual(5, cpu.peek(0));
-    try testing.expectEqual(3, cpu.regs[15]);
+    try testing.expectEqual(7, cpu.peek(0xFFFF_FFFF));
+    try testing.expectEqual(4, cpu.regs[15]);
     // Writing 0 to an untouched page allocates nothing.
     try cpu.mem.write(0x8000_0000, 0);
     try testing.expectEqual(2, cpu.mem.pages.count());
@@ -1008,6 +1014,24 @@ test "the console takes the low byte of a write, and memory keeps nothing" {
     try testing.expectEqualStrings("Hi", w.buffered());
     try testing.expectEqual(0, cpu.regs[1]);
     try testing.expectEqual(1, cpu.mem.pages.count()); // only the program's page
+}
+
+test "instruction fetches from the I/O range read 0 (§8.3)" {
+    // 0xFFFFFEFF: MOVE R1, c, with c at 0xFFFFFF00 holding 7. The constant
+    // is fetched from the I/O range, so R1 = 0. Then the HALT at 0xFFFFFF01
+    // is fetched as 0, a NOP, but a data read still sees it.
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0xFFFF_FEFF, &.{ alu_iw(.always, MOVE, .none, reg(1), imm(0), reg(0)), 7, HALT });
+    cpu.regs[15] = 0xFFFF_FEFF;
+    cpu.regs[1] = 9;
+    try cpu.step();
+    try testing.expectEqual(0, cpu.regs[1]);
+    try testing.expectEqual(0xFFFF_FF01, cpu.regs[15]);
+    try cpu.step();
+    try testing.expect(!cpu.halted());
+    try testing.expectEqual(0xFFFF_FF02, cpu.regs[15]);
+    try testing.expectEqual(HALT, cpu.read(0xFFFF_FF01));
 }
 
 /// Run `cpu` for `n` steps, tracing into a buffer, and return the trace.

@@ -100,6 +100,10 @@ The console stores nothing. Its output comes before the `Halted` line, and
 with `--trace` it is mixed in with the trace lines. `test/console.asm`
 writes to it. The FPGA core will have a UART at the same address.
 
+Instruction fetches from `0xFFFFFF00`–`0xFFFFFFFF` read 0, as ISA.md §8.3
+requires, whatever the memory there holds. So a program that runs into the
+I/O range runs through it as NOPs. `test/iofetch.asm` shows this.
+
 All 2³² words of memory exist, and addresses wrap from `0xFFFFFFFF` to 0
 (ISA.md §1.1). Memory is allocated in pages of 4096 words when a nonzero
 word is first written to them, so a program only costs the memory it

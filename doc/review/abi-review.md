@@ -148,3 +148,35 @@ ISA.md:645 lists only the shift count. NICE also has no arithmetic right shift, 
 - **Zero-initialised data.** `.BLK` ranges are expanded into zero words in the `.bin`, so the loader sets them.
 - **The data model.** Every type's size is a multiple of `char`, `long` holds at least 32 bits, and `long long` holds 64, so the model is permitted by C17 5.2.4.2.1. `unsigned char` promotes to `unsigned int`, which is also permitted.
 - **Return values.** The register rules for single-word and two-word results agree between §9.3 and §9.4, and "the lower-numbered register holds the low word" matches R1 low, R2 high.
+
+## 5. Second round
+
+Reviewed on 2026-10-14: `doc/ISA.md` §9.3 and §9.4 at commit da65885 ("ISA: fix the findings of the ABI review"), which addresses every item in §1 to §3 above. Each change was checked against the rest of ISA.md and the assembler. The rules now agree with C17 6.5.2.2 on `float` promotion, keep the hidden result pointer in R1 in both the argument and the return-value rules, use labels `L.unit.n` and `_name.unit` that the assembler accepts and that cannot clash with external names or with each other, name the trap label so that its C name follows the `_name` rule, and say what the review asked for on partial stores, unchecked addresses, `peek` and `poke`, the memory cap, imports, pointer conversion, `shr_s`, exact-width types, bit-fields, the frame chain, interrupt routines, and the initial SP.
+
+Three things in the new text need another pass, and there are three nits.
+
+### 5.1 The trap override contradicts the no-linker rule
+
+ISA.md:636 says `___wasm_trap` is in the runtime library with a `HALT` as its default, and that "a program may supply its own". ISA.md:522 says every label must be unique in the whole program, that the assembler rejects a second definition, and that the runtime library is always joined in. So a program that supplies its own `___wasm_trap` never assembles.
+
+**Fix.** Put the default in its own file of the runtime library, joined only when the program defines no `___wasm_trap`. Or have the trap jump through a vector word, `___wasm_trap_vector`, that holds the default's address and that a program may overwrite at run time.
+
+### 5.2 Hand-written files are missing from the join order
+
+ISA.md:522 lists the start-up code, the compiled units, the wasm module, and the runtime library. ISA.md:528 then says what hand-written files may define, and they are the "assembly code" that §9.3 exists for, but the order does not say where they go.
+
+The order also needs a rule on `.ORG`. A joined file that moves the location counter moves every file after it, the runtime library included.
+
+**Fix.** Add hand-written files to the order, for example with the compiled units, and say that only the start-up code may use `.ORG`.
+
+### 5.3 How the start-up code knows about the wasm module
+
+ISA.md:544: the start-up code is one fixed file at address 0, yet it calls `___wasm_start` only "if the program has a wasm module". That needs either two versions of the start-up code or an option when the program is joined.
+
+**Fix.** One sentence saying which.
+
+### 5.4 Nits
+
+- The examples at ISA.md:552 and the `i32.load` example still use `SP` and `PC`, though ISA.md:528 now says compiled code writes R13 and R15. Say the examples use the aliases for readability, or switch them.
+- ISA.md:652: clang's wasm C ABI, and Rust's since the spec ABI became the default in 1.87, pass a structure with a single scalar member as that scalar. Only larger structures go by pointer. The claim that only the four scalar types cross the boundary stays true.
+- ISA.md:670: `__wasm_call_ctors` starts with `_`, so by the export rule at ISA.md:640 it gets no label. The translator must call it by its own `W.` label. Worth a word, so that a reader does not look for `___wasm_call_ctors`.

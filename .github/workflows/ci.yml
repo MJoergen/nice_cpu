@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  assembler:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: assembler
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: pip install mypy
+      - run: make test
+      - run: make typecheck
+
+  emulator:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: emulator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      # Zig 0.15 is the only supported version (see README.md).
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      - run: make test
+      # The probe .bin files must match their .asm sources.
+      - name: Check that the probe binaries are up to date
+        run: |
+          make bins
+          git diff --exit-code -- test

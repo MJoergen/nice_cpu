@@ -128,7 +128,14 @@ CASES: List[Tuple[bytes, str]] = [
     (module(MAIN, funcs(0), memory(1), code((0, i32_const(0) + i32_const(0) + b"\x37\x03\x00"
                                               + i32_const(0)))),
      "function 0: i64.store expects i64, found i32"),
-    (one(i32_const(0) * 3 + b"\xfc\x0b\x00"), "function 0: memory.fill is not supported yet"),
+    (one(i32_const(0) * 3 + b"\xfc\x08\x00\x00"), "function 0: memory.init is not supported yet"),
+    (one(i32_const(0) * 3 + b"\xfc\x0b\x00"), "function 0: memory 0 does not exist"),
+    (module(MAIN, funcs(0), memory(1), code((0, i32_const(0) * 3 + b"\xfc\x0a\x00\x01"
+                                              + i32_const(0)))),
+     "function 0: memory 1 does not exist"),
+    (module(MAIN, funcs(0), memory(1), code((0, i32_const(0) * 2 + i64_const(0)
+                                              + b"\xfc\x0b\x00" + i32_const(0)))),
+     "function 0: memory.fill expects i32, found i64"),
     (one(b"\xfc\x63"), "function 0: opcode 0xfc 99 is not supported yet"),
     (one(i64_const(1)), "function 0: end expects i32, found i64"),
     (one(i64_const(1) + b"\x0f"), "function 0: return expects i32, found i64"),

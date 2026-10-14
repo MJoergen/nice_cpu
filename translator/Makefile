@@ -6,7 +6,7 @@ ZIG ?= zig
 # checked in, so make test needs no compiler; make wasm rebuilds them. The
 # options keep the linear memory to one page.
 C_TESTS = sum5 control memory data shifts intops
-ZIG_TESTS = answer datazig
+ZIG_TESTS = answer datazig bulk
 
 # Translate, assemble, and run each module in test/run.py, then check the
 # error messages in test/errors.py.

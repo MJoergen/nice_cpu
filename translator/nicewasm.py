@@ -526,11 +526,123 @@ def instr(mnemonic: str, *operands: str) -> str:
     return f"        {mnemonic + ' ':<8}{', '.join(operands)}".rstrip()
 
 
+def byte_copy() -> List[str]:
+    """Copies the byte at byte address R2 to byte address R1. Uses R4-R6."""
+    mem = "@___wasm_memory"
+    return [instr("SHR", "R4", "R2", "2"),
+            instr("AND", "R5", "R2", "3"),
+            instr("SHL", "R5", "R5", "3"),
+            instr("SHR", "R4", f"{mem}[R4]", "R5"),
+            instr("AND", "R4", "R4", "0xFF"),            # the byte
+            instr("SHR", "R5", "R1", "2"),
+            instr("AND", "R6", "R1", "3"),
+            instr("SHL", "R6", "R6", "3"),
+            instr("SHL", "R4", "R4", "R6"),
+            instr("SHL", "R6", "0xFF", "R6"),            # its place in the word
+            instr("IAND", "R6", "R6", f"{mem}[R5]"),
+            instr("OR", f"{mem}[R5]", "R6", "R4")]
+
+
+# Functions that memory.fill and memory.copy call, emitted once each if a
+# function uses them. They take byte addresses and a byte count, which the
+# caller has checked. Each byte or whole word is a pass of a loop: a word
+# when the addresses are at a multiple of 4 and 4 or more bytes are left.
+HELPERS: Dict[str, List[str]] = {
+    "W.fill": [
+        "; W.fill: sets the R3 bytes from byte address R1 to the low byte of R2.",
+        "W.fill",
+        instr("AND", "R2", "R2", "0xFF"),
+        instr("SHL", "R4", "R2", "8"),
+        instr("OR", "R2", "R2", "R4"),
+        instr("SHL", "R4", "R2", "16"),
+        instr("OR", "R2", "R2", "R4"),                   # the byte in all four places
+        "W.fill.loop",
+        instr("MOVE[M]", "R0", "R3"),
+        instr("?Z MOVE", "R15", "@R13++"),
+        instr("AND[M]", "R0", "R1", "3"),
+        instr("?!Z MOVE", "R15", "W.fill.byte"),
+        instr("SUB[M]", "R0", "R3", "4"),
+        instr("?C MOVE", "R15", "W.fill.byte"),
+        instr("SHR", "R4", "R1", "2"),
+        instr("MOVE", "@___wasm_memory[R4]", "R2"),
+        instr("ADD", "R1", "R1", "4"),
+        instr("SUB", "R3", "R3", "4"),
+        instr("MOVE", "R15", "W.fill.loop"),
+        "W.fill.byte",
+        instr("SHR", "R4", "R1", "2"),
+        instr("AND", "R5", "R1", "3"),
+        instr("SHL", "R5", "R5", "3"),
+        instr("SHL", "R5", "0xFF", "R5"),                # the byte's place in the word
+        instr("IAND", "R6", "R5", "@___wasm_memory[R4]"),
+        instr("AND", "R5", "R5", "R2"),
+        instr("OR", "@___wasm_memory[R4]", "R6", "R5"),
+        instr("ADD", "R1", "R1", "1"),
+        instr("SUB", "R3", "R3", "1"),
+        instr("MOVE", "R15", "W.fill.loop"),
+    ],
+    "W.copy": [
+        "; W.copy: copies the R3 bytes from byte address R2 to byte address R1.",
+        "; The ranges may overlap, so it copies from the end down if R2 < R1.",
+        "W.copy",
+        instr("SUB[M]", "R0", "R2", "R1"),
+        instr("?C MOVE", "R15", "W.copy.back"),
+        "W.copy.loop",
+        instr("MOVE[M]", "R0", "R3"),
+        instr("?Z MOVE", "R15", "@R13++"),
+        instr("XOR", "R4", "R1", "R2"),
+        instr("OR", "R4", "R4", "R1"),
+        instr("AND[M]", "R0", "R4", "3"),                # Z = both at a multiple of 4
+        instr("?!Z MOVE", "R15", "W.copy.byte"),
+        instr("SUB[M]", "R0", "R3", "4"),
+        instr("?C MOVE", "R15", "W.copy.byte"),
+        instr("SHR", "R4", "R2", "2"),
+        instr("SHR", "R5", "R1", "2"),
+        instr("MOVE", "@___wasm_memory[R5]", "@___wasm_memory[R4]"),
+        instr("ADD", "R1", "R1", "4"),
+        instr("ADD", "R2", "R2", "4"),
+        instr("SUB", "R3", "R3", "4"),
+        instr("MOVE", "R15", "W.copy.loop"),
+        "W.copy.byte",
+        *byte_copy(),
+        instr("ADD", "R1", "R1", "1"),
+        instr("ADD", "R2", "R2", "1"),
+        instr("SUB", "R3", "R3", "1"),
+        instr("MOVE", "R15", "W.copy.loop"),
+        "W.copy.back",
+        instr("ADD", "R1", "R1", "R3"),                  # one past each range
+        instr("ADD", "R2", "R2", "R3"),
+        "W.copy.bloop",
+        instr("MOVE[M]", "R0", "R3"),
+        instr("?Z MOVE", "R15", "@R13++"),
+        instr("XOR", "R4", "R1", "R2"),
+        instr("OR", "R4", "R4", "R1"),
+        instr("AND[M]", "R0", "R4", "3"),
+        instr("?!Z MOVE", "R15", "W.copy.bbyte"),
+        instr("SUB[M]", "R0", "R3", "4"),
+        instr("?C MOVE", "R15", "W.copy.bbyte"),
+        instr("SUB", "R1", "R1", "4"),
+        instr("SUB", "R2", "R2", "4"),
+        instr("SUB", "R3", "R3", "4"),
+        instr("SHR", "R4", "R2", "2"),
+        instr("SHR", "R5", "R1", "2"),
+        instr("MOVE", "@___wasm_memory[R5]", "@___wasm_memory[R4]"),
+        instr("MOVE", "R15", "W.copy.bloop"),
+        "W.copy.bbyte",
+        instr("SUB", "R1", "R1", "1"),
+        instr("SUB", "R2", "R2", "1"),
+        instr("SUB", "R3", "R3", "1"),
+        *byte_copy(),
+        instr("MOVE", "R15", "W.copy.bloop"),
+    ],
+}
+
+
 class Translator:
     def __init__(self, m: Module, data: bytes, checks: bool = True) -> None:
         self.m = m
         self.data = data
         self.checks = checks  # bounds checks on memory accesses
+        self.helpers: set[str] = set()  # the HELPERS that functions call
         self.labels: Dict[int, List[str]] = {}         # function index -> export labels
         self.global_labels: Dict[int, List[str]] = {}  # global index -> export labels
         self.ctors: Optional[int] = None
@@ -604,6 +716,8 @@ class Translator:
         for i, code in enumerate(self.m.codes):
             out.append("")
             out += FunctionTranslator(self, n_imports + i, code).run()
+        for name in sorted(self.helpers):
+            out += [""] + HELPERS[name]
         if self.m.globals:
             out += ["", "; Globals"]
             for i, g in enumerate(self.m.globals):
@@ -908,6 +1022,35 @@ class FunctionTranslator:
             self.emit("SUB[M]", "R0", "R1", words(limit, I32)[0])
             self.emit("?!C MOVE", "R15", trap)
 
+    def range_check(self, addr: str, n: str, trap: str) -> None:
+        """Jumps to trap unless the n bytes from byte address addr are all
+        in the memory. n may be 0, even at the end of the memory."""
+        assert self.t.m.memory_pages is not None
+        size = self.t.m.memory_pages * WORDS_PER_PAGE * 4
+        self.emit("ADD[M]", "R1", addr, n)
+        self.emit("?C MOVE", "R15", trap)          # addr + n passes 2^32
+        if size < 1 << 32:
+            self.emit("SUB[M]", "R0", "R1", words(size + 1, I32)[0])
+            self.emit("?!C MOVE", "R15", trap)
+
+    def bulk(self, helper: str, at: int, what: str) -> None:
+        """memory.fill or memory.copy. Both take (address, value or source
+        address, n). With bounds checks, the ranges are checked before any
+        byte is written, and a range out of bounds traps with code 2. Then
+        the helper does the work."""
+        d, x, n = self.pop([I32, I32, I32], at, what)
+        for _ in range(3):
+            self.push(I32)
+        start = self.new_label()
+        self.body.append(start)
+        if self.t.checks:
+            trap = self.trap_stub(2, start)
+            self.range_check(d[0], n[0], trap)
+            if helper == "W.copy":
+                self.range_check(x[0], n[0], trap)
+        self.t.helpers.add(helper)
+        self.call(helper, FuncType([I32, I32, I32], []), at, what)
+
     def trap_stub(self, code: int, start: str) -> str:
         """A stub after the epilogue that traps with the given code, and
         with R2 = start, the first instruction of the code for the wasm
@@ -1155,7 +1298,15 @@ class FunctionTranslator:
             if op == 0xFC:
                 sub = r.u32()
                 name = FC_OPCODES.get(sub, f"opcode 0xfc {sub}")
-                raise WasmError(f"function {self.idx}: {name} is not supported yet", at)
+                if sub not in (10, 11):  # memory.copy, memory.fill
+                    raise WasmError(f"function {self.idx}: {name} is not supported yet", at)
+                for _ in range(2 if sub == 10 else 1):
+                    mem_at = r.pos
+                    mem = r.u32()
+                    if mem != 0 or self.t.m.memory_pages is None:
+                        raise WasmError(f"function {self.idx}: memory {mem} does not exist",
+                                        mem_at)
+                op = 0x100 + sub
             imm: Optional[int] = None
             ft = FuncType([], [])
             targets: List[int] = []
@@ -1186,7 +1337,7 @@ class FunctionTranslator:
                 check_types(types, f"function {self.idx}: select", at)
                 sel_type = types[0]
             elif not (op in (0x00, 0x01, 0x05, 0x0B, 0x0F, 0x1A, 0x1B, 0x45, 0x50, 0xA7,
-                             0xAC, 0xAD)
+                             0xAC, 0xAD, 0x10A, 0x10B)
                       or op in DIV_OPS or op in LIB_OPS or op in EXTEND_OPS
                       or op in ALU_OPS or op in ALU64_OPS or op in CMP_OPS or op in CMP64_OPS
                       or op in SHIFT_OPS or op in SHIFT64_OPS):
@@ -1424,6 +1575,8 @@ class FunctionTranslator:
                 dest = self.push(I64)
                 for k, mnemonic in enumerate(ALU64_OPS[op]):
                     self.emit(mnemonic, dest[k], a[k], b[k])
+            elif op in (0x10A, 0x10B):  # memory.copy, memory.fill
+                self.bulk("W.copy" if op == 0x10A else "W.fill", at, name)
             elif op in LIB_OPS:
                 routine, (params, results) = LIB_OPS[op]
                 self.call(routine, FuncType(params, results), at, name)

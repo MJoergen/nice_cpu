@@ -35,6 +35,7 @@ from wasm import (I32_LOAD, I32_LOAD8_S, I32_LOAD8_U, I32_LOAD16_S, I32_LOAD16_U
                   I32_STORE8, I32_STORE16, I64_LOAD, I64_LOAD8_S, I64_LOAD8_U, I64_LOAD16_S,
                   I64_LOAD32_S, I64_LOAD32_U, I64_STORE, I64_STORE8, I64_STORE16,
                   I64_STORE32, MEMORY_GROW, MEMORY_SIZE, data, mem)
+from wasm import MEMORY_COPY, MEMORY_FILL
 from wasm import ROTL, ROTL64, ROTR, ROTR64, SHL, SHL64, SHR_S, SHR_S64, SHR_U, SHR_U64
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -82,6 +83,14 @@ def ld(op: int, addr: int, want: int, offset: int = 0) -> bytes:
             + (i64_const(want) + EQ64 if i64 else i32_const(want) + EQ))
 
 
+def fill(addr: int, value: int, n: int) -> bytes:
+    return i32_const(addr) + i32_const(value) + i32_const(n) + MEMORY_FILL
+
+
+def copy(dest: int, src: int, n: int) -> bytes:
+    return i32_const(dest) + i32_const(src) + i32_const(n) + MEMORY_COPY
+
+
 def st(op: int, addr: int, value: int) -> bytes:
     """Stores value at addr."""
     i64 = op in (I64_STORE, I64_STORE8, I64_STORE16, I64_STORE32)
@@ -125,7 +134,9 @@ def i64_un(op: int, a: int, want: int) -> bytes:
 # of the code for the wasm instruction that traps, which R2 points at.
 # In main, an operand on the stack with nothing below it is at FP - 1. An
 # i32 above it is at FP - 2, and an i64 above an i64 at FP - 4 and FP - 3.
-TRAPS = {"divzero": "MOVE[M] R0, @-2[R12]",
+TRAPS = {"filloob": "ADD[M] R1, @-1[R12], @-3[R12]",
+         "copyoob": "ADD[M] R1, @-1[R12], @-3[R12]",
+         "divzero": "MOVE[M] R0, @-2[R12]",
          "divzero64": "OR[M] R0, @-4[R12], @-3[R12]",
          "overflow": "MOVE[M] R0, @-2[R12]",
          "overflow64": "OR[M] R0, @-4[R12], @-3[R12]",
@@ -185,6 +196,11 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # popcount(255) = 8. (signed char)128 = -128. 1 + 80 - 2333 + 71 + 8 -
     # 128 = -2301 = 0xFFFFF703.
     ("intops_c", "intops", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 0xFFFFF703),
+    # @memcpy, @memset, and @memmove from Zig, with get(i) = i + 100. buf
+    # holds 0 to 39. buf[40..50] gets 3 to 12, which sum to 75, and
+    # buf[50..60] ten 7s, 70. Then 0 to 19 move up by one, which overlaps,
+    # so buf[20] = 19. 75 + 70 + 1000 * 19 = 19145.
+    ("bulk_zig", "bulk", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 19145),
     # Declared locals start at 0. dirty sets its 3 locals to 0x55, and clean
     # gets the same frame words, so without zeroing it returns 0x55 * 3 + 7.
     ("locals", module(
@@ -710,6 +726,71 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         funcs(0),
         exports(("main", 0, 0)),
         code((0, i64_const(-2**63) + i64_const(-1) + b"\x7f" + WRAP))), "", 4),
+    # memory.fill and memory.copy. The memory starts at 0. Each line is one
+    # bit. Little-endian, so bytes 00 AB AB AB are the word 0xABABAB00.
+    ("bulk", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, bits(0,
+            # AB, the low byte of 0x1AB, in bytes 1-6.
+            fill(1, 0x1AB, 6) + ld(I32_LOAD, 0, 0xABABAB00 - 2**32),
+            ld(I32_LOAD, 4, 0x00ABABAB),
+            ld(I32_LOAD8_U, 7, 0),
+            # 5A in bytes 9-21: three bytes, two whole words, two bytes.
+            fill(9, 0x5A, 13) + ld(I32_LOAD, 8, 0x5A5A5A00),
+            ld(I32_LOAD, 12, 0x5A5A5A5A),
+            ld(I32_LOAD, 16, 0x5A5A5A5A),
+            ld(I32_LOAD, 20, 0x00005A5A),
+            # 0 bytes: nothing.
+            fill(30, 7, 0) + ld(I32_LOAD, 28, 0),
+            # Bytes 64-75 are 11 22 ... CC. Copying bytes 65-74 to 129-138,
+            # at the same place in a word: three bytes, a word, three bytes.
+            st(I32_STORE, 64, 0x44332211) + st(I32_STORE, 68, 0x88776655 - 2**32)
+            + st(I32_STORE, 72, 0xCCBBAA99 - 2**32)
+            + copy(129, 65, 10) + ld(I32_LOAD, 128, 0x44332200),
+            ld(I32_LOAD, 132, 0x88776655 - 2**32),
+            ld(I32_LOAD, 136, 0x00BBAA99),
+            # Bytes 65-69 to 194-198, at another place in a word.
+            copy(194, 65, 5) + ld(I32_LOAD, 192, 0x33220000),
+            ld(I32_LOAD, 196, 0x00665544),
+            # Overlapping, down: bytes 259-266 to 257-264 in 11 22 ... CC at
+            # 256. Copied from the start, so each byte is read before it is
+            # overwritten: 11 44 55 66 77 88 99 AA BB AA BB CC.
+            st(I32_STORE, 256, 0x44332211) + st(I32_STORE, 260, 0x88776655 - 2**32)
+            + st(I32_STORE, 264, 0xCCBBAA99 - 2**32)
+            + copy(257, 259, 8) + ld(I32_LOAD, 256, 0x66554411),
+            ld(I32_LOAD, 260, 0xAA998877 - 2**32),
+            ld(I32_LOAD, 264, 0xCCBBAABB - 2**32),
+            # Overlapping, up: bytes 321-329 to 325-333 in 11 22 ... FF 00 at
+            # 320. Copied from the end: two bytes, a word, three bytes. The
+            # result is 11 22 33 44 55 22 33 44 55 66 77 88 99 AA FF 00.
+            st(I32_STORE, 320, 0x44332211) + st(I32_STORE, 324, 0x88776655 - 2**32)
+            + st(I32_STORE, 328, 0xCCBBAA99 - 2**32) + st(I32_STORE, 332, 0x00FFEEDD)
+            + copy(325, 321, 9) + ld(I32_LOAD, 324, 0x44332255),
+            ld(I32_LOAD, 328, 0x88776655 - 2**32),
+            ld(I32_LOAD, 332, 0x00FFAA99),
+            # The last 4 bytes, and 0 bytes at the end of the memory, which
+            # do not trap.
+            fill(65532, 0xEE, 4) + fill(65536, 1, 0) + copy(65536, 65536, 0)
+            + ld(I32_LOAD, 65532, 0xEEEEEEEE - 2**32),
+            # A check that fails.
+            ld(I32_LOAD, 28, 1))))), "", 0x1FFFFE),
+    # 4 bytes from 65533 pass the end of the memory, and so does a source of
+    # 2 bytes from 65535. Both trap with code 2.
+    ("filloob", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((0, fill(65533, 0, 4) + i32_const(0)))), "", 2),
+    ("copyoob", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((0, copy(0, 65535, 2) + i32_const(0)))), "", 2),
     # The start function sets g = g * 10 + 1, then __wasm_call_ctors sets
     # g = g * 10 + 2. In that order, g = 12.
     ("startup", module(

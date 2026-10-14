@@ -59,16 +59,16 @@ nicewasm aims at the default wasm32 feature set of Zig 0.15:
 `bulk-memory-opt`, `call-indirect-overlong`, `extended-const`,
 `multivalue`, `mutable-globals`, `nontrapping-fptoint`, and `sign-ext`.
 Clang's default set is a subset of it. A module built with
-`-mcpu=mvp` needs none of them. So far nicewasm decodes the `0xFC`
-instructions of `bulk-memory-opt` and `nontrapping-fptoint` only to name
-them in an error. It accepts only an `i32.const` or `i64.const` as a
+`-mcpu=mvp` needs none of them. Of `bulk-memory-opt`, nicewasm supports
+`memory.copy` and `memory.fill`. It decodes the other `0xFC`
+instructions, those of `nontrapping-fptoint` and the table instructions,
+only to name them in an error. It accepts only an `i32.const` or `i64.const` as a
 global's initial value, not the expressions of `extended-const`.
 
 Every Zig program built with ReleaseSafe or Debug uses a table,
 `call_indirect`, `br_table`, `select`, `memory.copy`, and `memory.fill`,
 and it traps with `unreachable`, even if its source has no function
-pointers. So the next features are `memory.copy` and `memory.fill`, and
-then `call_indirect`.
+pointers. So the next feature is `call_indirect`.
 
 ## Supported features
 
@@ -101,6 +101,11 @@ then `call_indirect`.
   byte address, and `memory.size`. An access out of bounds traps with
   code 2. The memory cannot grow yet, so `memory.grow` returns the size for
   0 pages and -1 otherwise.
+- **Bulk memory:** `memory.fill` and `memory.copy`, whose ranges may
+  overlap. Both check their ranges before they write a byte, and trap with
+  code 2 if a range passes the end of the memory. Each calls a function
+  that nicewasm emits once, `W.fill` or `W.copy`, which works a word at a
+  time where it can.
 - **Imports:** functions from `env`, whose names must be C identifiers. Each
   becomes a call to the label `_name`.
 - **Exports:** functions and globals get the label `_name`, as §9.4 says.
@@ -122,8 +127,9 @@ then `call_indirect`.
   not printable ASCII is left out, and so is any such character in the
   input file's name, so that a comment cannot become code.
 
-Not supported yet: the `0xFC` instructions, `f32` and `f64` loads and
-stores, the conversion trap (code 5) and the `call_indirect` traps, `call_indirect`, `nice.peek` and
+Not supported yet: the other `0xFC` instructions, `f32` and `f64` loads
+and stores, the conversion trap (code 5) and the `call_indirect` traps,
+`call_indirect`, `nice.peek` and
 `nice.poke`, passive data segments and `memory.init`, element segments,
 library modules (ISA.md §9.4),
 `f32`, and `f64`.
@@ -174,8 +180,9 @@ shifted together from, or split across, two words, or three for an
 unaligned `i64`. A store that changes only part of a word reads the word,
 changes its bytes, and writes it back once.
 
-The translated code itself uses only R1–R4, R12, R13, and R15, so R7–R11 keep their
-values across a call, as §9.3 requires.
+The translated code itself uses only R1–R4, R12, R13, and R15, so R7–R11
+keep their values across a call, as §9.3 requires. `W.fill` and `W.copy`
+also use R5 and R6, which a §9.3 function may change.
 
 ## Test
 

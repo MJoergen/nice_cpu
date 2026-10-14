@@ -213,3 +213,4 @@ def data(*segs: Tuple[int, bytes]) -> bytes:
     return section(11, vec([b"\0" + b"\x41" + s(off) + b"\x0b" + u(len(d)) + d for off, d in segs]))
 SHL, SHR_S, SHR_U, ROTL, ROTR = (bytes([op]) for op in range(0x74, 0x79))
 SHL64, SHR_S64, SHR_U64, ROTL64, ROTR64 = (bytes([op]) for op in range(0x86, 0x8B))
+MEMORY_COPY, MEMORY_FILL = b"\xfc\x0a\x00\x00", b"\xfc\x0b\x00"

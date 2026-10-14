@@ -1,4 +1,7 @@
 # nice_cpu
+
+[![CI](https://github.com/MJoergen/nice_cpu/actions/workflows/ci.yml/badge.svg)](https://github.com/MJoergen/nice_cpu/actions/workflows/ci.yml)
+
 An implementation of the NICE processor on an FPGA.
 
 NICE ("NICE Is Charmingly Elegant") is a 32-bit processor designed by

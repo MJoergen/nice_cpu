@@ -20,8 +20,9 @@ is then smaller and faster, but an access out of bounds reads or writes
 whatever NICE memory the address reaches. `--memory-pages N` lets
 `memory.grow` grow the memory up to N pages, the cap of ISA.md §9.4. N
 may not be below the memory's initial size or above its maximum, if it
-declares one. Without the option, the cap is the initial size. `--library` translates a
-library module instead, as described below. Errors are printed as
+declares one, and it must be below 65536. Without the option, the cap is
+the initial size. `--library` translates a library module instead, as
+described below. Errors are printed as
 `file:0xOFFSET: error: message`, where OFFSET is the byte offset in the
 module, or as `file: error: message` when there is no offset. The exit
 status is 1 after an error, and no output is written. nicewasm stops at the
@@ -31,13 +32,31 @@ The output is one assembly file. A program is made by joining it with the
 start-up code, the program's other files, and the runtime library, in the
 order of ISA.md §9.3. For example, for C code compiled with clang:
 
-    clang --target=wasm32 -O2 -nostdlib -Wl,--no-entry -Wl,--export=main \
+    clang --target=wasm32 -mbulk-memory -O2 -nostdlib -Wl,--no-entry -Wl,--export=main \
         -Wl,--allow-undefined -Wl,-z,stack-size=4096 -Wl,--initial-memory=65536 \
         -o prog.wasm prog.c
     translator/nicewasm.py prog.wasm
     cat runtime/start_wasm.asm prog.asm runtime/lib.asm > full.asm
     assembler/niceasm.py full.asm
     emulator/zig-out/bin/niceemu full.bin
+
+`-mbulk-memory` matters. Without it, clang turns every copy or fill that
+it does not inline, such as the assignment of a large structure, into a
+call to `memcpy`, `memset`, or `memmove`. With `-nostdlib`, these become
+imports from `env`, and the assembler stops with `undefined symbol
+'_memcpy'`. A C routine could not serve them anyway, since they take byte
+addresses in linear memory. With `-mbulk-memory`, clang emits
+`memory.copy` and `memory.fill` instead.
+
+C's `long double` and `__int128` are not supported. Clang implements them
+with calls to routines such as `__addtf3` and `__multi3`, which the
+runtime library does not have, and nicewasm rejects the imports. Zig's
+`f128` and `u128` work, because Zig puts its compiler_rt in the module.
+
+If the program has constructors, also link with
+`-Wl,--export=__wasm_call_ctors`, so that `___wasm_start` runs them once
+(ISA.md §9.4). Without it, wasm-ld runs them again before each call of an
+exported function.
 
 And for Zig:
 
@@ -89,7 +108,8 @@ overflow-checks` and `-C debug-assertions`.
 nicewasm aims at the default wasm32 feature set of Zig 0.15:
 `bulk-memory-opt`, `call-indirect-overlong`, `extended-const`,
 `multivalue`, `mutable-globals`, `nontrapping-fptoint`, and `sign-ext`.
-Clang's default set is a subset of it. Rust's default set adds all of
+Clang's default set, `mutable-globals` and `sign-ext`, is a subset of it,
+and so is the set with `-mbulk-memory`. Rust's default set adds all of
 `bulk-memory` and `reference-types`. Of those, rustc emits only
 `memory.copy`, `memory.fill`, and the `call_indirect` encoding, unless
 the program uses threads or `externref`. nicewasm rejects the rest, such
@@ -110,7 +130,7 @@ pointers. nicewasm supports all of them. A Rust program uses a table and
 The next step is smaller code. Every value on the wasm operand stack has
 a frame word, so most wasm instructions become a few NICE instructions
 with memory operands, of about three words each. A ReleaseSafe program
-is about 12000 words, and the float library about 30800. Using locals
+is about 12000 words, and the float library about 29600. Using locals
 and constants directly as operands, a shorter inline path for memory
 accesses, and helpers for `i64` shifts should shrink both by about a
 third, with no change to ISA.md §9.4. [TODO.md](TODO.md) has the
@@ -119,7 +139,7 @@ measurements and the plan.
 ## Supported features
 
 - **Types:** `i32`, `i64`, `f32`, and `f64`, in function types, locals,
-  and globals. A function has at most one result. An `i64` or `f64` takes
+  and globals. An `i64` or `f64` takes
   two words, low word first, and is passed in registers or on the stack by
   the rules of ISA.md §9.3. A float value is its bits, as in memory.
 - **Floats:** every `f32` and `f64` instruction. `const`, `load`, `store`,
@@ -162,8 +182,9 @@ measurements and the plan.
   code 2 if a range passes the end of the memory. Each calls a function
   that nicewasm emits once, `W.fill` or `W.copy`, which works a word at a
   time where it can.
-- **Imports:** functions from `env`, whose names must be C identifiers. Each
-  becomes a call to the label `_name`.
+- **Imports:** functions from `env`, whose names must be C identifiers
+  that do not start with `_` (ISA.md §9.4). Each becomes a call to the
+  label `_name`.
 - **Hardware access:** `nice.peek`, of type `(i32) -> i32`, and `nice.poke`,
   of type `(i32, i32) -> ()`, as ISA.md §9.4 says. Each call becomes one
   `MOVE` that reads or writes the NICE word at the given word address, even
@@ -172,9 +193,10 @@ measurements and the plan.
   table.
 - **Exports:** functions and globals get the label `_name`, as §9.4 says.
   Exporting an imported function is not supported.
-- **Globals:** mutable or not, with an `i32.const` or `i64.const` initial
-  value. `global.set` on an immutable global is an error.
-- **Memory:** one memory at `___wasm_memory`, at its initial size.
+- **Globals:** mutable or not, with an `i32.const`, `i64.const`,
+  `f32.const`, or `f64.const` initial value. `global.set` on an immutable global is an error.
+- **Memory:** one memory at `___wasm_memory`, with words reserved up to
+  the cap.
 - **Data segments:** active ones, whose offset is an `i32.const`. The words
   they set are `.DAT` words in the program image, and a word that a
   segment sets only part of has its other bytes 0. A later segment
@@ -198,7 +220,8 @@ measurements and the plan.
   not printable ASCII is left out, and so is any such character in the
   input file's name, so that a comment cannot become code.
 
-Not supported yet: passive data and element segments, `memory.init`,
+Not supported yet: function types with more than one result (a block
+type may have several), passive data and element segments, `memory.init`,
 `data.drop`, the table instructions such as `table.get` and `table.grow`,
 `ref.func` outside element segments, the tail calls `return_call` and
 `return_call_indirect`, SIMD, and exceptions.
@@ -220,8 +243,8 @@ module in these ways:
 - The labels nicewasm makes start with `WL.NAME.`, and its memory is at
   `WL.NAME.memory`. Every exported function gets the label `_name`, also
   when the name starts with `_`, so `__addsf3` becomes `___addsf3`.
-- There is no `___wasm_start`, and a start function, `memory.size`, and
-  `memory.grow` are errors. So is any float instruction that would call the
+- There is no `___wasm_start`, and a start function, an export
+  `__wasm_call_ctors`, `memory.size`, and `memory.grow` are errors. So is any float instruction that would call the
   float library, which a library module could be part of.
 - Only the start of the memory is reserved, and it is part of the program
   image, with the data segments in it. By default, that is up to the end of

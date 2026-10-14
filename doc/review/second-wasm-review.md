@@ -35,6 +35,8 @@ The WebAssembly specification requires IEEE 754 results with subnormals, and §9
 
 **Fix.** Either add a correctly rounded subnormal path to the two routines in `float.zig`, as `float.zig` already does for `sqrt` and the roundings, or record the departure in ISA.md Appendix B and the runtime README. In both cases add the first two lines of the table to the `float32` and `float64` cases in `run.py`, which have no division with a subnormal result today.
 
+**Resolved**: `float.zig` now has its own `__divsf3` and `__divdf3`, which divide the significands bit by bit and round once, also into the subnormals. They replace compiler_rt's and make `float.asm` about 1200 words smaller. They agreed with the host's division on 20 million random operands of each type, many of them subnormal, and with numpy on 797 random divisions through the translator, assembler, and emulator. `run.py` has the first two lines of the table for `f32`, and the last two for `f64`.
+
 ## 2. Gaps in the C toolchain
 
 ### 2.1 Struct copies import `memcpy`
@@ -45,11 +47,15 @@ With `-mbulk-memory`, LLVM emits `memory.copy` and `memory.fill` instead, and th
 
 **Fix.** Add `-mbulk-memory` to the clang command line in the translator's README and in the `wasm` target of its Makefile, and say why. The test programs happen not to need it, so `make wasm` does not catch the omission.
 
+**Resolved**: the README and the Makefile use `-mbulk-memory` and say why. Rebuilt with it, the C test modules differ only in their `target_features` section.
+
 ### 2.2 `long double` and `__int128` have no runtime routines
 
 In wasm32, `long double` is a 128-bit float and `__int128` exists, so clang imports `__addtf3`, `__multi3`, `__udivti3`, `__floatsitf`, `__fixtfsi`, and the like from `env`. The translator accepts them and the assembler fails on `___addtf3`. The failure is late and cryptic, and nothing in the README says these types are unsupported. Zig programs with `u128` and `f128` are fine, again because compiler_rt is inside the module.
 
 **Fix.** Say in the README that `long double` and `__int128` are not supported from C. §9.3 reserves names that start with `_` for the runtime library, so an `env` import whose name starts with `__` is a request for a runtime routine, and the translator could reject it with a message that names the type.
+
+**Resolved**: ISA.md §9.4 now says the translator rejects an `env` import whose name starts with `_`, and the translator names both types in the message. The README says they are not supported.
 
 ## 3. The specification and the translator
 
@@ -57,11 +63,15 @@ In wasm32, `long double` is a 128-bit float and `__int128` exists, so clang impo
 
 §9.4 says results go in registers by the rules for arguments, and that the translator rejects a function type whose results do not all fit in R1–R4. The translator rejects every type with more than one result, for functions, imports, and `call_indirect`; a block type with several results is fine. §9.4 leaves the supported features to the translator, so this is allowed, but the README lists "a function has at most one result" under the supported features and not under "not supported yet". Neither clang nor Zig emits such a type today, so this is a documentation point.
 
+**Resolved**: the README lists function types with more than one result under "not supported yet".
+
 ### 3.2 The reason given for `--export=__wasm_call_ctors` is wrong
 
 §9.4 says that clang puts constructor calls in `__wasm_call_ctors`, "so link with `--export=__wasm_call_ctors` to have them run". They run without the export: with `--no-entry` and no export, wasm-ld wraps every exported function in a function that calls `__wasm_call_ctors` first, visible in the name section as `main.command_export`. The constructors then run on every call of an exported function, which matters when C code calls more than one. With the export, wasm-ld does not wrap, and `___wasm_start` calls the constructors once. The advice is right and the reason should be this one. I confirmed both with a constructor that adds to a counter: it ran once in both builds.
 
 A library module may also export `__wasm_call_ctors`. The translator gives it the label `___wasm_call_ctors`, as it does every export of a library, and never calls it. Two library modules with constructors would define the label twice. No library module has constructors today, but the translator could reject the export as it rejects a start function.
+
+**Resolved**: §9.4 gives the reason above, and the translator README says it too. §9.4 and the translator now reject a library module that exports `__wasm_call_ctors`.
 
 ## 4. Documentation and tests
 
@@ -72,9 +82,13 @@ A library module may also export `__wasm_call_ctors`. The translator gives it th
 - The README's "Memory" bullet says the memory is "at its initial size", which the "Memory instructions" bullet above it contradicts. The `--memory-pages` paragraph also leaves out that the value must be below 65536.
 - The comment in `test/control.c` says nicewasm does not support a switch that clang turns into a table in linear memory. It does, since data segments were added: the lookup-table switch in my C program ran correctly at -O2.
 
+**Resolved**: all four are fixed. `test/data.c` now has a switch that clang turns into a lookup table, so the claim is tested.
+
 ### 4.2 Error paths without a test
 
 CLAUDE.md asks for a test for every rule. These messages have no case in `errors.py`: "unexpected end of data", "name is not valid UTF-8", "expected a function type (0x60)", "function body runs past the end of the section", "too many locals", and the command-line check "the output file would overwrite the input; use -o". The `WasmError` for `--memory-pages` with a library in `Translator.__init__` cannot be reached, because `main` exits with the same message first.
+
+**Resolved**: `errors.py` has a case for each message, and the unreachable check is gone.
 
 ### 4.3 Rust
 

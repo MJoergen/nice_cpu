@@ -5,7 +5,9 @@ RUSTC ?= rustc
 
 # The modules compiled from test/*.c, test/*.zig, and test/*.rs. Their .wasm files are
 # checked in, so make test needs no compiler; make wasm rebuilds them. The
-# options keep the linear memory to one page. ZIG_SAFE_TESTS are built with
+# options keep the linear memory to one page. -mbulk-memory makes clang
+# emit memory.copy and memory.fill, not imports of memcpy and memset that
+# nothing defines (see README.md). ZIG_SAFE_TESTS are built with
 # ReleaseSafe and a 16 KB stack, because Zig's panic handler puts a 4 KB
 # buffer on the stack.
 C_TESTS = sum5 control memory data shifts intops floats
@@ -29,7 +31,7 @@ typecheck:
 
 wasm:
 	@for t in $(C_TESTS); do \
-	  $(CLANG) --target=wasm32 -O2 -nostdlib -Wl,--no-entry -Wl,--export=main \
+	  $(CLANG) --target=wasm32 -mbulk-memory -O2 -nostdlib -Wl,--no-entry -Wl,--export=main \
 	    -Wl,--allow-undefined -Wl,-z,stack-size=4096 -Wl,--initial-memory=65536 \
 	    -o test/$$t.wasm test/$$t.c || exit 1; \
 	done

@@ -14,9 +14,9 @@ __attribute__((noinline)) unsigned gcd(unsigned a, unsigned b)
     return a;
 }
 
-// Each case does something different, so that clang cannot turn the
-// switch into a table in linear memory, which nicewasm does not support
-// yet.
+// Each case does something different, so that clang turns the switch
+// into a br_table, not a table of results in linear memory. data.c has
+// such a table.
 __attribute__((noinline)) int sw(int x, int y)
 {
     switch (x) {

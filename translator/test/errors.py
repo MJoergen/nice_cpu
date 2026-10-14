@@ -36,6 +36,15 @@ CASES: List[Tuple[bytes, str]] = [
     (module(funcs(), MAIN), "section 1 is out of order or repeated"),
     (module(MAIN, MAIN), "section 1 is out of order or repeated"),
     (module(section(14, b"")), "unknown section 14"),
+    (module(section(1, b"\x01")), "unexpected end of data"),
+    (module(section(7, b"\x01\x05ab")), "unexpected end of data"),
+    (module(section(7, b"\x01\x01\xff\x00\x00")), "name is not valid UTF-8"),
+    (module(section(1, b"\x01\x50\x00\x00")), "expected a function type (0x60)"),
+    (module(MAIN, funcs(0), section(10, b"\x01\x05\x00\x0b")),
+     "function body runs past the end of the section"),
+    # 50001 locals of type i32.
+    (module(MAIN, funcs(0), section(10, vec([u(6) + b"\x01" + u(50001) + b"\x7f\x0b"]))),
+     "too many locals"),
     (module(section(1, b"\x01\x60\x00\x00\x00")), "section 1 has 1 bytes left over"),
     (module(MAIN, funcs(0)), "the function and code sections differ in length (1 and 0)"),
     (module(MAIN, funcs(3)), "type index 3 is out of range"),
@@ -62,6 +71,9 @@ CASES: List[Tuple[bytes, str]] = [
      "import nice.load: the module 'nice' has only peek and poke"),
     (module(MAIN, imports(("env", "a-b", 0))),
      "import env.a-b: the name is not a C identifier, so it has no label"),
+    (module(MAIN, imports(("env", "__multi3", 0))),
+     "import env.__multi3: names that start with _ are reserved for the runtime library,"
+     " which has no routines for C's long double and __int128"),
     (module(types(([V128], [])), imports(("env", "f", 0))),
      "import env.f has type v128; only i32, i64, f32, and f64 are supported"),
     # Module contents
@@ -241,6 +253,9 @@ LIB = ["--library", "lib"]
 OPTION_CASES: List[Tuple[List[str], bytes, str]] = [
     (LIB, module(MAIN, funcs(0), start(0), code((0, i32_const(0)))),
      "a library module may not have a start function"),
+    # Nothing would call it.
+    (LIB, module(types(([], [])), funcs(0), exports(("__wasm_call_ctors", 0, 0)), code((0, b""))),
+     "a library module may not export __wasm_call_ctors"),
     # Float arithmetic calls the float library, which must not call itself.
     (LIB, module(types(([], [F32])), funcs(0), code((0, b"\x43\0\0\0\0" * 2 + b"\x92"))),
      "function 0: a library module may not use f32.add"),
@@ -309,7 +324,17 @@ def main() -> None:
                 print(f"FAIL: expected '{expected}'\n  got (exit {p.returncode}): {got}")
                 if os.path.exists(out):
                     os.remove(out)
-    n = len(CASES) + len(OPTION_CASES) + len(COMMAND_CASES)
+        # Without -o, the output of t.asm would be t.asm itself.
+        with open(out, "wb") as f:
+            f.write(module(MAIN))
+        p =subprocess.run([sys.executable, NICEWASM, out], capture_output=True, text=True)
+        expected = f"{out}: the output file would overwrite the input; use -o"
+        with open(out, "rb") as f:
+            unchanged = f.read() == module(MAIN)
+        if p.returncode != 1 or p.stderr.strip() != expected or not unchanged:
+            failed += 1
+            print(f"FAIL: expected '{expected}'\n  got (exit {p.returncode}): {p.stderr.strip()}")
+    n = len(CASES) + len(OPTION_CASES) + len(COMMAND_CASES) + 1
     print(f"{'FAIL' if failed else 'PASS'} errors ({n} cases)")
     if failed:
         sys.exit(1)

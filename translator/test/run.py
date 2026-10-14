@@ -258,8 +258,10 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # Initialized data from clang, with get(i) = i + 100. text is "Hello,
     # NICE!", so char_at(0) + char_at(7) = 'H' + 'N' = 72 + 78 = 150. table[2]
     # is 4, and bumping it by get(0) twice gives 104 + 204 = 308. counter is
-    # 0, not in a data segment, and bumps to 100. 150 + 308 + 100 = 558.
-    ("data_c", "data", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 558),
+    # 0, not in a data segment, and bumps to 100. lookup reads a table in a
+    # data segment: lookup(3) + lookup(2) = 1000 - 5 = 995, and lookup(6),
+    # past the table, is 0. 150 + 308 + 100 + 995 = 1553.
+    ("data_c", "data", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 1553),
     # The same from Zig, which puts its stack first and the data after it,
     # so ___wasm_start clears the words below and above the data. primes[5]
     # = 13, and state = 0x12345678 + 100 = 0x123456DC. 13 + 0x56DC = 0x56E9.

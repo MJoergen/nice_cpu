@@ -5,16 +5,15 @@ Implements the WebAssembly mapping of doc/ISA.md section 9.4. The output is
 one assembly file, to be joined with the start-up code, the program's other
 files, and the runtime library as section 9.3 describes.
 
-Usage: nicewasm.py [-o output.asm] [--no-bounds-checks] input.wasm
+Usage: nicewasm.py [-o output.asm] [--no-bounds-checks] [--memory-pages N]
+                   [--library NAME [--library-memory BYTES]] input.wasm
 
-This is a first version: it supports control flow, memory accesses, and
-some integer instructions, and only the i32 and i64 types. README.md lists
-what it supports. Anything else is rejected with an error, never
-translated wrongly.
+README.md lists the wasm features it supports. Anything else is rejected
+with an error, never translated wrongly.
 
 Each function keeps its locals and its wasm operand stack in its frame on
-the NICE stack, addressed from FP (R12). An i32 takes one word and an i64
-two, low word first. The operand stack holds the type of each value, so
+the NICE stack, addressed from FP (R12). An i32 or f32 takes one word,
+and an i64 or f64 two, low word first. The operand stack holds the type of each value, so
 every value has a fixed place in the frame, and every instruction is a few
 NICE instructions on frame words.
 """
@@ -483,6 +482,12 @@ def parse_section(m: Module, sec_id: int, s: Reader, sec_start: int) -> None:
                 raise WasmError(f"{what}: functions may be imported only from 'env' and 'nice'", at)
             if not C_IDENT.match(name):
                 raise WasmError(f"{what}: the name is not a C identifier, so it has no label", at)
+            if name.startswith("_"):
+                # Clang imports such names for routines that the runtime
+                # library does not have (§9.4), for example __multi3 for
+                # __int128 and __addtf3 for long double.
+                raise WasmError(f"{what}: names that start with _ are reserved for the runtime"
+                                " library, which has no routines for C's long double and __int128", at)
             ft = m.types[type_idx]
             check_types(ft.params + ft.results, what, at)
             if len(ft.results) > 1:
@@ -848,8 +853,6 @@ class Translator:
         # it is above the initial size, the size is a constant.
         self.cap = m.memory_pages
         if memory_pages is not None:
-            if library:
-                raise WasmError("--memory-pages: a library module cannot grow its memory")
             if m.memory_pages is None:
                 raise WasmError("--memory-pages: the module has no memory")
             if memory_pages < m.memory_pages:
@@ -877,7 +880,9 @@ class Translator:
                     raise WasmError(f"export {name}: function {idx} does not exist")
                 if idx < n_imports:
                     raise WasmError(f"export {name}: exporting an imported function is not supported")
-                if name == "__wasm_call_ctors" and not library:
+                if name == "__wasm_call_ctors":
+                    if library:
+                        raise WasmError("a library module may not export __wasm_call_ctors")
                     self.ctors = idx
             elif kind == 3 and idx >= len(m.globals):
                 raise WasmError(f"export {name}: global {idx} does not exist")

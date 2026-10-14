@@ -13,7 +13,8 @@ and indexed addressing.
 
 The sources disagree in places and leave gaps, so the first step was to write
 a complete specification. The FPGA implementation will follow it. So far the
-repository holds the specification, an assembler, and an emulator.
+repository holds the specification, an assembler, an emulator, and the
+start of a runtime library.
 
 ## Contents
 
@@ -24,6 +25,7 @@ repository holds the specification, an assembler, and an emulator.
 | [doc/review/](doc/review/) | Notes on how each ISA decision was reached, and the reviews of the tools. ISA.md supersedes them. |
 | [assembler/](assembler/README.md) | `niceasm`, the assembler: one Python 3 script with no dependencies. |
 | [emulator/](emulator/README.md) | `niceemu`, the emulator, written in Zig. |
+| [runtime/](runtime/README.md) | The start-up code and runtime library for C and wasm programs. |
 
 ## Quick start
 
@@ -37,6 +39,7 @@ download page, pick 0.15.2 rather than the latest release or master.
 
     cd assembler && make test         # test the assembler
     cd emulator && make test          # build and test the emulator
+    cd runtime && make test           # test the start-up code and runtime library
 
 To assemble and run a program:
 

@@ -39,3 +39,18 @@ jobs:
         run: |
           make bins
           git diff --exit-code -- test
+
+  runtime:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: runtime
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      - run: make test

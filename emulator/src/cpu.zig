@@ -105,6 +105,11 @@ pub const io_base: u32 = 0xFFFF_FF00;
 /// The emulator's console output: the first I/O address (§8.3).
 pub const console_addr: u32 = io_base;
 
+/// The emulator's read counter (§8.3): a data read returns the number of
+/// data reads of it since the last write, and then counts itself. A write
+/// sets the count. It lets tests see the data reads of §8.2.
+pub const counter_addr: u32 = io_base + 1;
+
 pub const Cpu = struct {
     /// R0..R15. Read and write them through `getReg` and `setReg`, which
     /// apply the rules for R0 and R14 (§4.3).
@@ -126,6 +131,8 @@ pub const Cpu = struct {
     trace: ?*std.Io.Writer,
     /// The last memory write, for the trace.
     last_write: ?struct { addr: u32, value: u32 },
+    /// The read counter at `counter_addr`.
+    read_count: u32,
     /// When set, a write to `console_addr` writes its low byte here
     /// instead of to memory. This device belongs to the emulator, not to
     /// the ISA (§8.3).
@@ -145,6 +152,7 @@ pub const Cpu = struct {
             .irq_pending = null,
             .trace = null,
             .last_write = null,
+            .read_count = 0,
             .console = null,
         };
         cpu.reset();
@@ -197,8 +205,13 @@ pub const Cpu = struct {
         }
     }
 
-    /// A memory read by the processor (§8.2).
+    /// A data read by the processor (§8.2).
     pub fn read(self: *Cpu, addr: u32) u32 {
+        if (addr == counter_addr) {
+            const n = self.read_count;
+            self.read_count +%= 1;
+            return n;
+        }
         return self.mem.read(addr);
     }
 
@@ -206,6 +219,7 @@ pub const Cpu = struct {
     /// Unlike `read`, it is not an access in the sense of §8.2, so once
     /// devices are mapped it must not trigger their side effects.
     pub fn peek(self: *const Cpu, addr: u32) u32 {
+        if (addr == counter_addr) return self.read_count;
         return self.mem.peek(addr);
     }
 
@@ -214,7 +228,11 @@ pub const Cpu = struct {
         if (addr == console_addr) {
             if (self.console) |w| try w.writeByte(@truncate(value));
         }
-        if (addr != console_addr or self.console == null) try self.mem.write(addr, value);
+        if (addr == counter_addr) {
+            self.read_count = value;
+        } else if (addr != console_addr or self.console == null) {
+            try self.mem.write(addr, value);
+        }
         self.last_write = .{ .addr = addr, .value = value };
     }
 
@@ -326,7 +344,7 @@ pub const Cpu = struct {
     /// it reads 0 (§8.3).
     fn fetch(self: *Cpu) u32 {
         const pc = self.regs[15];
-        const word = if (pc >= io_base) 0 else self.read(pc);
+        const word = if (pc >= io_base) 0 else self.mem.read(pc);
         self.regs[15] +%= 1;
         return word;
     }
@@ -1016,22 +1034,40 @@ test "the console takes the low byte of a write, and memory keeps nothing" {
     try testing.expectEqual(1, cpu.mem.pages.count()); // only the program's page
 }
 
-test "instruction fetches from the I/O range read 0 (§8.3)" {
-    // 0xFFFFFEFF: MOVE R1, c, with c at 0xFFFFFF00 holding 7. The constant
-    // is fetched from the I/O range, so R1 = 0. Then the HALT at 0xFFFFFF01
-    // is fetched as 0, a NOP, but a data read still sees it.
+test "the read counter counts data reads, and a write sets it" {
+    // MOVE @0xFFFFFF01, 5;  ADD R1, @0xFFFFFF01, @0xFFFFFF01;  HALT
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
-    try load(&cpu, 0xFFFF_FEFF, &.{ alu_iw(.always, MOVE, .none, reg(1), imm(0), reg(0)), 7, HALT });
+    try load(&cpu, 0, &.{
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), counter_addr, 5,
+        alu_iw(.always, ADD, .none, reg(1), ind_imm(0), ind_imm(0)), counter_addr, counter_addr,
+        HALT,
+    });
+    try runToHalt(&cpu);
+    try testing.expectEqual(5 + 6, cpu.regs[1]);
+    try testing.expectEqual(7, cpu.peek(counter_addr));
+    try testing.expectEqual(7, cpu.read_count);
+}
+
+test "instruction fetches from the I/O range read 0 (§8.3)" {
+    // 0xFFFFFEFF: MOVE R1, c, with c at 0xFFFFFF00 holding 7. The constant
+    // is fetched from the I/O range, so R1 = 0. Then the words at
+    // 0xFFFFFF01 (the read counter) and the HALT at 0xFFFFFF02 are fetched
+    // as 0, NOPs, but a data read still sees the HALT.
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0xFFFF_FEFF, &.{ alu_iw(.always, MOVE, .none, reg(1), imm(0), reg(0)), 7, 0, HALT });
     cpu.regs[15] = 0xFFFF_FEFF;
     cpu.regs[1] = 9;
     try cpu.step();
     try testing.expectEqual(0, cpu.regs[1]);
     try testing.expectEqual(0xFFFF_FF01, cpu.regs[15]);
     try cpu.step();
+    try cpu.step();
     try testing.expect(!cpu.halted());
-    try testing.expectEqual(0xFFFF_FF02, cpu.regs[15]);
-    try testing.expectEqual(HALT, cpu.read(0xFFFF_FF01));
+    try testing.expectEqual(0xFFFF_FF03, cpu.regs[15]);
+    try testing.expectEqual(0, cpu.read_count);
+    try testing.expectEqual(HALT, cpu.read(0xFFFF_FF02));
 }
 
 /// Run `cpu` for `n` steps, tracing into a buffer, and return the trace.

@@ -19,6 +19,9 @@ Finally `test/errors.py` checks the error messages and exit statuses of the
 command line and the loader. The probes are assembled with niceasm, and
 `make bins` reassembles them after a change.
 
+`test/reserved.asm` runs a reserved control word, which halts the
+processor with exit status 2.
+
 `test/cputest.asm` is a self-checking test of the whole instruction set:
 every opcode, shift, addressing mode, and condition, the flags, R0, R14, and
 R15, skipped instructions, `INT`, and `RTI`. It halts at the first check
@@ -87,7 +90,8 @@ address twice and a file with no words are errors.
 | `0xFFFF0000`–`0xFFFF07CF` | 2000 | Character screen, 80×25. Ordinary memory. With `-2004` it is at `0x00000400`–`0x00000BCF` instead. |
 | `0xFFFF07D0`–`0xFFFFFEFF` | 63280 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |
 | `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns 0. |
-| `0xFFFFFF01`–`0xFFFFFFFF` | 255 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
+| `0xFFFFFF01` | 1 | Read counter. A data read returns the number of data reads of it since the last write, and a write sets that number. |
+| `0xFFFFFF02`–`0xFFFFFFFF` | 254 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
 
 The screen has one word per character, with the character in bits 7..0 and
 its colour above. It is ordinary memory, and `--screen` prints the
@@ -99,6 +103,10 @@ programs, such as `print.asm`.
 The console stores nothing. Its output comes before the `Halted` line, and
 with `--trace` it is mixed in with the trace lines. `test/console.asm`
 writes to it. The FPGA core will have a UART at the same address.
+
+The read counter makes the data reads of ISA.md §8.2 visible: how many
+there are, and in which order. It stores nothing else, and `--dump` shows
+its count without counting. `test/reads.asm` uses it.
 
 Instruction fetches from `0xFFFFFF00`–`0xFFFFFFFF` read 0, as ISA.md §8.3
 requires, whatever the memory there holds. So a program that runs into the

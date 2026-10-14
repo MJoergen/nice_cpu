@@ -406,7 +406,7 @@ Instruction fetches never reach I/O devices. An instruction fetch from `0xFFFFFF
 
 The 2004 emulator maps a character screen at `0x400`. That is a property of the emulator, not of the ISA.
 
-The emulator in this repository maps the screen at `0xFFFF0000` instead, so that it does not overlap the code of programs longer than 1024 words. Its option `-2004` puts the screen back at `0x400` for the 2004 programs. It also maps a console at `0xFFFFFF00`. Each write prints bits 7..0 of the word, and a read returns 0. The FPGA implementation will have a UART at the same address. These are properties of those systems too, not of the ISA. Programs use the console for output.
+The emulator in this repository maps the screen at `0xFFFF0000` instead, so that it does not overlap the code of programs longer than 1024 words. Its option `-2004` puts the screen back at `0x400` for the 2004 programs. It also maps a console at `0xFFFFFF00`. Each write prints bits 7..0 of the word, and a read returns 0. The FPGA implementation will have a UART at the same address. At `0xFFFFFF01` the emulator and the simulation memory of the FPGA core map a read counter for tests. A data read of it returns the number of data reads of it since the last write to it, and a write sets that number. Tests use it to count the data accesses of §8.2. These are properties of those systems too, not of the ISA. Programs use the console for output.
 
 ## 9. Software conventions
 

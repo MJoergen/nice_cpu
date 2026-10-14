@@ -6,8 +6,9 @@ It is one Python 3 script with no dependencies beyond the standard library.
 The [WebAssembly specification](https://webassembly.github.io/spec/core/)
 defines the module format and what each instruction does.
 
-This is a first version. It supports only the features listed below. It
-rejects anything else with an error, rather than translating it wrongly.
+It supports the features listed below, which cover what clang, Zig, and
+Rust emit for their default wasm32 targets (see Target). It rejects
+anything else with an error, rather than translating it wrongly.
 
 ## Usage
 
@@ -188,15 +189,23 @@ measurements.
   that do not start with `_` (ISA.md §9.4). Each becomes a call to the
   label `_name`.
 - **Hardware access:** `nice.peek`, of type `(i32) -> i32`, and `nice.poke`,
-  of type `(i32, i32) -> ()`, as ISA.md §9.4 says. Each call becomes one
-  `MOVE` that reads or writes the NICE word at the given word address, even
-  if a `peek`'s result is not used. So `poke(0xFFFFFF00, c)` prints `c` on
+  of type `(i32, i32) -> ()`, as ISA.md §9.4 says. Each call makes exactly
+  one data access, a `MOVE` that reads or writes the NICE word at the given
+  word address, after the code that puts the address in a register. A
+  `peek` whose result is not used still makes its access. So `poke(0xFFFFFF00, c)` prints `c` on
   the console (ISA.md §8.3). They have no address, so they cannot be in a
   table.
 - **Exports:** functions and globals get the label `_name`, as §9.4 says.
-  Exporting an imported function is not supported.
+  A name that is not a C identifier gets no label, in a library module
+  too. Exports of the memory and of the table are ignored: the memory is at
+  `___wasm_memory`, and a function pointer is a table index. So the
+  `memory` export that Zig always emits does no harm. Exporting an imported
+  function is not supported, and an export may not have the name of an
+  `env` import, because the call to the import goes to the same label
+  `_name`.
 - **Globals:** mutable or not, with an `i32.const`, `i64.const`,
-  `f32.const`, or `f64.const` initial value. `global.set` on an immutable global is an error.
+  `f32.const`, or `f64.const` initial value. `global.set` on an immutable
+  global is an error, and so is a mutability byte other than 0 or 1.
 - **Memory:** one memory at `___wasm_memory`, with words reserved up to
   the cap.
 - **Data segments:** active ones, whose offset is an `i32.const`. The words
@@ -337,9 +346,9 @@ then calls the address in R5 with `ADD @--SP, 1, PC` and `MOVE PC, R5`,
 the "through a register" sequence of ISA.md §9.3. The arguments are in
 R1–R4 and on the stack, as for `call`.
 
-The translated code itself uses only R1–R5, R12, R13, and R15, so R7–R11
-keep their values across a call, as §9.3 requires. The helpers also use
-R6, which a §9.3 function may change.
+The translated functions use only R1–R5, R12, R13, and R15, so R7–R11
+keep their values across a call, as §9.3 requires. The helpers and
+`___wasm_start` also use R6, which a §9.3 function may change.
 
 ## Test
 

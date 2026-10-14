@@ -10,7 +10,7 @@ import sys
 import tempfile
 from typing import List, Tuple
 
-from wasm import table
+from wasm import call_indirect, table
 V128 = 0x7B  # a type nicewasm does not support
 from wasm import (ADD, ADD64, DROP, ELSE, END, F32, I32, I64, SELECT, block, br,
                   br_table, call, code, exports, funcs, global_get, global_set, globals_,
@@ -58,6 +58,10 @@ CASES: List[Tuple[bytes, str]] = [
      "import env.mem is a memory; only functions may be imported"),
     (module(section(2, vec([name("env") + name("sp") + b"\x03\x7f\x01"]))),
      "import env.sp is a global; only functions may be imported"),
+    (module(section(2, vec([name("env") + name("t") + b"\x01\x70\x00\x01"]))),
+     "import env.t is a table; only functions may be imported"),
+    (module(types(([], [I32, I32])), imports(("env", "f", 0))),
+     "import env.f: more than one result is not supported yet"),
     (module(MAIN, imports(("wasi", "fd_write", 0))),
      "import wasi.fd_write: functions may be imported only from 'env' and 'nice'"),
     (module(MAIN, imports(("nice", "peek", 0))),
@@ -77,6 +81,16 @@ CASES: List[Tuple[bytes, str]] = [
     (module(types(([V128], [])), imports(("env", "f", 0))),
      "import env.f has type v128; only i32, i64, f32, and f64 are supported"),
     # Module contents
+    (module(section(4, vec([b"\x70\x04" + u(1)]))), "a shared or 64-bit table is not supported"),
+    (module(section(6, vec([bytes([I32, 2]) + i32_const(0) + b"\x0b"]))),
+     "global 0: the mutability must be 0 or 1, not 2"),
+    # The import is called at _f, so the export would take its label.
+    (module(MAIN, imports(("env", "f", 0)), funcs(0), exports(("f", 0, 1)),
+            code((0, i32_const(0)))),
+     "export f: the import env.f has the same label _f"),
+    (module(types(([], [I32]), ([], [I32, I32])), funcs(0), table(1),
+            code((0, i32_const(0) + call_indirect(1) + DROP))),
+     "function 0: call_indirect: more than one result is not supported yet"),
     (module(memory(1), memory(1)), "section 5 is out of order or repeated"),
     (module(section(5, vec([b"\0\1", b"\0\1"]))), "a module may have only one memory"),
     (module(section(5, vec([b"\x03\x01\x01"]))), "a shared or 64-bit memory is not supported"),
@@ -261,6 +275,10 @@ OPTION_CASES: List[Tuple[List[str], bytes, str]] = [
      "function 0: a library module may not use f32.add"),
     (LIB, module(MAIN, funcs(0), code((0, b"\x43\0\0\0\0" + b"\xfc\x00"))),
      "function 0: a library module may not use i32.trunc_sat_f32_s"),
+    (LIB, module(MAIN, funcs(0), code((0, b"\x43\0\0\0\0" * 2 + b"\x5b"))),
+     "function 0: a library module may not use f32.eq"),
+    (LIB, module(MAIN, funcs(0), code((0, b"\x43\0\0\0\0" + b"\xa8"))),
+     "function 0: a library module may not use i32.trunc_f32_s"),
     (LIB, module(MAIN, funcs(0), memory(1), code((0, b"\x3f\x00"))),
      "function 0: a library module may not use memory.size"),
     (LIB, module(MAIN, funcs(0), memory(1), code((0, i32_const(0) + b"\x40\x00"))),

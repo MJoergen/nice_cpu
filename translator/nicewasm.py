@@ -527,7 +527,11 @@ def parse_section(m: Module, sec_id: int, s: Reader, sec_start: int) -> None:
             at = s.pos
             t = s.byte()
             check_types([t], f"global {i}", at)
-            mutable = s.byte() == 1
+            at = s.pos
+            mut = s.byte()
+            if mut not in (0, 1):
+                raise WasmError(f"global {i}: the mutability must be 0 or 1, not {mut}", at)
+            mutable = mut == 1
             at = s.pos
             # The constant instruction of the type, then end. extended-const
             # allows expressions, which are not supported.
@@ -1077,6 +1081,9 @@ class Translator:
         self.ctors: Optional[int] = None
         n_imports = len(m.imports)
         seen = set()
+        # An import from env is called at its label _name (§9.4), so an
+        # export may not take the same label.
+        imported = {imp.name for imp in m.imports if imp.module == "env"}
         for name, kind, idx in m.exports:
             if name in seen:
                 raise WasmError(f"export {name}: the name is exported twice")
@@ -1094,7 +1101,12 @@ class Translator:
                 raise WasmError(f"export {name}: global {idx} does not exist")
             # Names that start with _ are reserved for the runtime library,
             # so only a library module gives them labels (§9.4).
+            # Memory and table exports get no label: the memory is at
+            # ___wasm_memory, and a function pointer is a table index.
             if kind in (0, 3) and C_IDENT.match(name) and (library or not name.startswith("_")):
+                if name in imported:
+                    raise WasmError(f"export {name}: the import env.{name} has the same label"
+                                    f" _{name}")
                 (self.labels if kind == 0 else self.global_labels).setdefault(idx, []).append(f"_{name}")
         if m.start is not None and library:
             raise WasmError("a library module may not have a start function")

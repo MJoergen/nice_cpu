@@ -1156,8 +1156,11 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # nice.peek and nice.poke. cell() returns the address of a word that
     # starts as 7. main pokes 41 into it, then prints H, i, and a newline
     # on the console at 0xFFFFFF00, which prints bits 7..0 of each word, so
-    # 0x169 prints i. A peek whose result is dropped is still performed.
-    # peek of the word + 1 = 42.
+    # 0x169 prints i. A peek whose result is dropped is still performed:
+    # main pokes 0 into the emulator's read counter at 0xFFFFFF01 (-255),
+    # peeks it and drops the result, then returns peek of the word plus a
+    # second peek of the counter, which is 1 only if the first peek was
+    # made: 41 + 1 = 42.
     ("peekpoke", module(
         types(MAIN_TYPE, ([I32], [I32]), ([I32, I32], [])),
         imports(("nice", "peek", 1), ("nice", "poke", 2), ("env", "cell", 0)),
@@ -1168,8 +1171,9 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
               + i32_const(-256) + i32_const(ord("H")) + call(1)
               + i32_const(-256) + i32_const(0x169) + call(1)
               + i32_const(-256) + i32_const(10) + call(1)
-              + local_get(0) + call(0) + DROP
-              + local_get(0) + call(0) + i32_const(1) + ADD))),
+              + i32_const(-255) + i32_const(0) + call(1)
+              + i32_const(-255) + call(0) + DROP
+              + local_get(0) + call(0) + i32_const(-255) + call(0) + ADD))),
      "_cell MOVE R1, cell\n MOVE R15, @R13++\ncell .DAT 7\n", 42),
     # f32 and f64 values as bits, one bit each. 1.5 is 0x3FC00000, 2.0
     # 0x40000000, 3.0 0x40400000, and 1.0 as an f64 0x3FF0000000000000.

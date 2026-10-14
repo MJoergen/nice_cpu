@@ -3,6 +3,8 @@
 Translates a WebAssembly module into NICE assembly, following the
 WebAssembly mapping in [doc/ISA.md §9.4](../doc/ISA.md#94-webassembly-mapping).
 It is one Python 3 script with no dependencies beyond the standard library.
+The [WebAssembly specification](https://webassembly.github.io/spec/core/)
+defines the module format and what each instruction does.
 
 This is a first version. It supports only the features listed below. It
 rejects anything else with an error, rather than translating it wrongly.

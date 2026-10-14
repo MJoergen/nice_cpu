@@ -33,6 +33,7 @@ and the test setup for it. The pipelined core is not written yet.
 | [runtime/](runtime/README.md) | The start-up code and runtime library for C and wasm programs. |
 | [translator/](translator/README.md) | `nicewasm`, which translates WebAssembly into NICE assembly. |
 | [hdl/](hdl/README.md) | The FPGA implementation in VHDL. So far a simple multi-cycle core, and the memory model and trace writer it is tested with. |
+| [TODO.md](TODO.md) | The single list of open items, undecided questions, and ideas for later. |
 
 ## Quick start
 

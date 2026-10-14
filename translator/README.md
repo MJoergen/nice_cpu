@@ -136,7 +136,8 @@ float library 31% smaller (29569 to 20317). A short inline path for
 memory accesses made them 12% (to 8730) and 2.5% (to 19808) smaller
 again. Helpers for `i64` shifts, and short inline code for a shift by a
 constant, took them to 8670 and 18723. In all, `test/safe.zig` is 30%
-smaller and the float library 37%. [TODO.md](TODO.md) has the
+smaller and the float library 37%.
+[doc/review/code-size-plan.md](../doc/review/code-size-plan.md) has the
 measurements.
 
 ## Supported features

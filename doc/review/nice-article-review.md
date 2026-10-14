@@ -2,12 +2,12 @@
 
 Source: B. Ulmann, *NICE – an elegant and powerful 32-bit architecture*, Sept 8 1997 (journal pages 30–35, uploaded as `Bernds-NICE.pdf`).
 
-*Note: this review and the three files next to it record how the ISA decisions were reached. [../ISA.md](../ISA.md) is the specification and supersedes them.*
+*Note: this review and the other files in this directory record how the ISA decisions were reached. [../ISA.md](../ISA.md) is the specification and supersedes them.*
 
 Purpose: list everything a complete, implementable ISA specification must settle that the article gets wrong, leaves out, or leaves open.
 Page references are the journal page numbers printed at the bottom of each page (30–35).
 
-The repository `MJoergen/nice_cpu` currently holds only a README, so there is no prior material to reconcile with.
+When this review was written, the repository `MJoergen/nice_cpu` held only a README, so there was no prior material to reconcile with.
 
 ---
 

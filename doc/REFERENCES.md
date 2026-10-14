@@ -36,3 +36,6 @@ These record how each ISA decision was reached. [ISA.md](ISA.md) supersedes them
 - [review/gap-resolution.md](review/gap-resolution.md): each of the 60 items, checked against QNICE and the later sources.
 - [review/second-article-review.md](review/second-article-review.md): what the 1999 article resolves and contradicts.
 - [review/emulator-and-webpage-review.md](review/emulator-and-webpage-review.md): what the 2004 web page and emulator resolve and contradict, and the emulator's bugs.
+- [review/abi-review.md](review/abi-review.md): the review of the C ABI and the WebAssembly mapping, ISA.md §9.3 and §9.4.
+
+The tools were reviewed the same way: [review/assembler-review.md](review/assembler-review.md), [review/emulator-review.md](review/emulator-review.md), and [review/cputest-review.md](review/cputest-review.md). Where a tool review led to a new rule in ISA.md, Appendix B lists it.

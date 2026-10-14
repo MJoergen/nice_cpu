@@ -11,9 +11,10 @@ It needs Zig 0.15 (tested with 0.15.2), and Python 3 for `make test`.
     make          # unit tests, example and probe programs, test/errors.py
     make build    # just build zig-out/bin/niceemu
 
-`make test` runs the unit tests in `src/cpu.zig`, then the 2004 example
-programs in `../assembler/test/` and the probe programs `test/*.asm`,
-comparing the output and exit status of each with `test/X.expected`.
+`make test` runs the unit tests in `src/cpu.zig`, then the example programs
+in `../assembler/test/` (the three 2004 programs and `wrap`) and the probe
+programs `test/*.asm`, comparing the output and exit status of each with
+`test/X.expected`.
 Finally `test/errors.py` checks the error messages and exit statuses of the
 command line and the loader. The probes are assembled with niceasm, and
 `make bins` reassembles them after a change.
@@ -34,8 +35,10 @@ The program is loaded, the processor is reset (PC = 0) and it runs until it
 halts. Then the emulator prints why it stopped, the number of steps, and the
 registers. A step is one instruction, or the entry into an interrupt, so an
 NMI followed by `RTI` and `HALT` is 3 steps. The PC printed after a halt is
-the address after the halting instruction. If an interrupt request is still
-pending at the end, a line such as `Pending: IRQ 05` follows the first line.
+the address after the halting instruction. If the step limit stops the
+program first, the first line is `Stopped at the step limit after N steps,
+PC=...` instead. If an interrupt request is still pending at the end, a
+line such as `Pending: IRQ 05` follows the first line.
 
     $ zig-out/bin/niceemu ../assembler/test/count.bin
     Halted (HALT) after 12292 steps, PC=00000009
@@ -52,7 +55,14 @@ pending at the end, a line such as `Pending: IRQ 05` follows the first line.
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
 | `-h`, `--help` | Print the usage on stdout. |
 
-Numbers in options are decimal, or hex after `0x`, with no sign or `_`.
+Numbers in options are decimal, or hex after `0x` or `0X`, with no sign or
+`_`.
+
+`--dump` prints eight words per line, each line starting with the address of
+its first word. `--screen` prints `Screen:` and then one line per row,
+starting with `|`, with trailing blanks dropped from each row and blank rows
+dropped from the bottom. Characters outside printable ASCII show as blanks.
+Both come after the registers, the dumps first.
 
 The exit status is 0 after `HALT`, 2 after any other halt (a reserved control
 word, a nested `INT`, or `RTI` outside an interrupt routine), 3 at the step
@@ -111,6 +121,9 @@ word, and then what it changed. These are the last lines for `count.bin`:
   the address after the instruction's constant words, that is, after a jump.
 - `[addr]=value` for a memory write.
 - `skipped` when the condition was false.
+- The reason for a halt, at the end of the halting instruction's line: `HALT`,
+  or the same text as the `Halted (...)` line for the other halts, such as
+  `reserved control instruction`.
 - An interrupt taken between instructions prints `IRQ vv` or `NMI vv` and the
   registers it changed, lined up with the instruction lines:
 

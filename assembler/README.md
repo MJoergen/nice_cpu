@@ -20,9 +20,12 @@ The script is fully type-annotated. `make typecheck` checks it with
 
     ./niceasm.py [-o output.bin] input.asm
 
-Without `-o`, the output goes to `input.bin`, unless that is the input file
-itself. Errors are printed as `file:line: error: message`, and the exit status
-is 1 if there were any. No output is written if there is an error.
+Without `-o`, the output goes to `input.bin`. If that is the input file
+itself, the assembler refuses with a message. Errors in the program are
+printed as `file:line: error: message`, followed by a count of them. No
+output is written if there is an error. The exit status is 0 on success, 1
+after any error, and 2 for a bad command line, which also prints the usage.
+`-h` prints the usage.
 
 ## Output format
 

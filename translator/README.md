@@ -66,8 +66,9 @@ And for Zig:
 ReleaseSafe and Debug work too. They need `--stack 16384`, or at least
 more than 4096, if the program can panic: Zig's panic handler puts a
 4 KB buffer on the stack, and with too small a stack it traps with code
-2, out of bounds, before it reaches its own trap. A ReleaseSafe program
-is about 12000 words, and a Debug one about 44000.
+2, out of bounds, before it reaches its own trap. `test/safe.zig` is
+about 9900 words built with ReleaseSafe, and about 274000 built with
+Debug.
 
 `-fstrip` drops the DWARF sections, which make up almost all of a
 ReleaseSafe or Debug module. nicewasm ignores them, but they make the
@@ -127,14 +128,12 @@ and it traps with `unreachable`, even if its source has no function
 pointers. nicewasm supports all of them. A Rust program uses a table and
 `call_indirect` for `dyn` trait calls.
 
-The next step is smaller code. Every value on the wasm operand stack has
-a frame word, so most wasm instructions become a few NICE instructions
-with memory operands, of about three words each. A ReleaseSafe program
-is about 12000 words, and the float library about 29600. Using locals
-and constants directly as operands, a shorter inline path for memory
-accesses, and helpers for `i64` shifts should shrink both by about a
-third, with no change to ISA.md §9.4. [TODO.md](TODO.md) has the
-measurements and the plan.
+The next step is smaller code. Locals and constants are already used
+directly as operands, which made `test/safe.zig` 19% smaller (12353 to
+9941 words) and the float library 31% smaller (29569 to 20317 words). A
+shorter inline path for memory accesses and helpers for `i64` shifts
+should save more, with no change to ISA.md §9.4. [TODO.md](TODO.md) has
+the measurements and the plan.
 
 ## Supported features
 
@@ -265,6 +264,29 @@ the wasm operand stack, so each value has fixed frame words: one for an
 frame words. For example, `i32.add` is one `ADD` with three memory
 operands, and `i64.add` is `ADD[M]` on the low words and `ADD[C]` on the
 high words. The output has a comment for each wasm instruction.
+
+A constant, and a `local.get`, emit no code. nicewasm records the value
+on the operand stack as deferred, and the instruction that uses it takes
+the constant or the local's frame word as its operand. So `local.get a;
+local.get b; i32.add; local.set c` is `ADD @x, @a, @b` and `MOVE @c, @x`,
+where x is the sum's frame word. A deferred value is written to its frame
+words only when it must be:
+
+- before a `local.set` or `local.tee` changes the local it is the value of;
+- at the start of a block, for the values the block takes and for every
+  value of a local below it, so these are the same on every path through
+  the block. A constant below a block stays deferred, because nothing can
+  change it;
+- at an `else` or `end`, for the block's results.
+
+`select`, `abs`, `neg`, and `copysign` change only a part of their first
+operand, so they copy a deferred one to the result's frame words first.
+
+A branch moves deferred values to the frame words of its target, as it
+does any other value. A call takes deferred arguments directly, and
+deferred values below the arguments stay deferred, since a call cannot
+change this function's locals. `local.tee` leaves the local itself on
+the stack, and `i32.wrap_i64` of a deferred value is the low word of it.
 
 A block's values stay in the frame words where they already are. A
 branch moves the values it carries down to the words that the target

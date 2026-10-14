@@ -97,7 +97,7 @@ because compiler_rt's gives 0 when the quotient is subnormal.
 
 The routines use the words `WL.float.memory` as their own stack, 256
 words that are part of the program image. Assembled, `float.asm` is about
-29600 words.
+20300 words.
 
 `make float` rebuilds `float.wasm` from `float.zig`. It needs Zig 0.15,
 whose compiler_rt sources it copies next to `float.zig`. The routines must

@@ -53,9 +53,17 @@ give the word counts before and after.
    The frame layout, the calling convention, and ISA.md stay as they are.
    Expected saving: 15–25% of each program.
 
-2. **Memory accesses with a short inline path.** The bounds check and an
-   aligned 32-bit or 64-bit access stay inline. Unaligned and narrow
-   accesses call helpers that nicewasm emits once, as it does `W.fill`.
+2. **Memory accesses with a short inline path.** Done. `test/safe.zig`
+   went from 9941 to 8730 words (12% less), and the float library from
+   20317 to 19808 (2.5% less). An `i32.load` is now 12 words after its
+   bounds check, and an `i32.store` 13, as estimated, but `safe.zig`
+   saved about 1200 words, not 2000. An access at a constant address
+   that is known to be in bounds has no check, and is a `MOVE` for each
+   word when aligned.
+
+   The bounds check and an aligned 32-bit or 64-bit access stay inline.
+   Unaligned and narrow accesses call helpers that nicewasm emits once,
+   as it does `W.fill`.
    Expected: about 12 words for an `i32.load` and 14 for an `i32.store`,
    which saves about 2000 words in `safe.zig`.
 

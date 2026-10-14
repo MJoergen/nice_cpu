@@ -67,7 +67,7 @@ ReleaseSafe and Debug work too. They need `--stack 16384`, or at least
 more than 4096, if the program can panic: Zig's panic handler puts a
 4 KB buffer on the stack, and with too small a stack it traps with code
 2, out of bounds, before it reaches its own trap. `test/safe.zig` is
-about 9900 words built with ReleaseSafe, and about 274000 built with
+about 8700 words built with ReleaseSafe, and about 239000 built with
 Debug.
 
 `-fstrip` drops the DWARF sections, which make up almost all of a
@@ -128,12 +128,13 @@ and it traps with `unreachable`, even if its source has no function
 pointers. nicewasm supports all of them. A Rust program uses a table and
 `call_indirect` for `dyn` trait calls.
 
-The next step is smaller code. Locals and constants are already used
-directly as operands, which made `test/safe.zig` 19% smaller (12353 to
-9941 words) and the float library 31% smaller (29569 to 20317 words). A
-shorter inline path for memory accesses and helpers for `i64` shifts
-should save more, with no change to ISA.md §9.4. [TODO.md](TODO.md) has
-the measurements and the plan.
+The next step is smaller code. Two steps are done. Using locals and
+constants directly as operands made `test/safe.zig` 19% smaller (12353
+to 9941 words) and the float library 31% smaller (29569 to 20317). A
+short inline path for memory accesses made them 12% (to 8730) and 2.5%
+(to 19808) smaller again. Helpers for `i64` shifts should save more,
+with no change to ISA.md §9.4. [TODO.md](TODO.md) has the measurements
+and the plan.
 
 ## Supported features
 
@@ -307,12 +308,24 @@ rotate by 32 or more swaps the words first.
 
 A load or store first puts the byte address in R1 and checks that all its
 bytes are in the memory. A failed check jumps to a trap stub after the
-function's epilogue, which sets R2 to the start of the access code. Then
-R2 gets the word index and R3 the byte within the word. An access that
-fits in one word reads or writes only that word. Otherwise the value is
-shifted together from, or split across, two words, or three for an
-unaligned `i64`. A store that changes only part of a word reads the word,
-changes its bytes, and writes it back once.
+function's epilogue, which sets R2 to the start of the access code. An
+access of 4 or 8 bytes then tests whether R1 is at a multiple of 4. If
+it is, R2 gets the word index, and one `MOVE` for each word does the
+access. If it is not, the code calls a helper, `W.load4`, `W.load8`,
+`W.store4`, or `W.store8`, which returns past the aligned `MOVE`s. An
+access of 1 or 2 bytes always calls a helper, such as `W.load1u` or
+`W.store2`. A helper returns a loaded value in R1, or R1 and R2, and
+takes a value to store in R2, or R2 and R3. nicewasm emits each helper
+once, if a function uses it.
+
+In a helper, the value is shifted together from, or split across, two
+words, or three for an unaligned `i64`. A store that changes only part
+of a word reads the word, changes its bytes, and writes it back once.
+
+If the address is a constant, nicewasm adds the offset itself. If all
+the bytes are in the initial memory, or there are no bounds checks,
+there is no check, and an aligned access of 4 or 8 bytes is a `MOVE`
+for each word, such as `MOVE @x, @___wasm_memory+256`.
 
 `call_indirect` puts the table index in R5 and checks it against the
 table's size. It checks the entry's address for 0 and its type number,
@@ -321,8 +334,8 @@ the "through a register" sequence of ISA.md §9.3. The arguments are in
 R1–R4 and on the stack, as for `call`.
 
 The translated code itself uses only R1–R5, R12, R13, and R15, so R7–R11
-keep their values across a call, as §9.3 requires. `W.fill` and `W.copy`
-also use R6, which a §9.3 function may change.
+keep their values across a call, as §9.3 requires. The helpers also use
+R6, which a §9.3 function may change.
 
 ## Test
 

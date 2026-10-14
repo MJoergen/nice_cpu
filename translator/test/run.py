@@ -91,6 +91,16 @@ def ld(op: int, addr: int, want: int, offset: int = 0) -> bytes:
             + (i64_const(want) + EQ64 if i64 else i32_const(want) + EQ))
 
 
+def ld_dyn(op: int, addr: int, want: int, offset: int = 0) -> bytes:
+    """ld, with the address in local 1, so that it is not a constant."""
+    return i32_const(addr) + local_tee(1) + ld(op, addr, want, offset)[len(i32_const(addr)):]
+
+
+def st_dyn(op: int, addr: int, value: int) -> bytes:
+    """st, with the address in local 1."""
+    return i32_const(addr) + local_tee(1) + st(op, addr, value)[len(i32_const(addr)):]
+
+
 def fill(addr: int, value: int, n: int) -> bytes:
     return i32_const(addr) + i32_const(value) + i32_const(n) + MEMORY_FILL
 
@@ -231,6 +241,55 @@ CONSOLE = {"peekpoke": "Hi\n", "hello": "Hello, NICE!\n", "hello_rs": "Hello, Ru
 # Cases whose module is written to a file of another name. The newline
 # must not end the comment that names the source.
 FILE_NAMES = {"names": "names\n_main HALT.wasm"}
+
+def memory_checks(dyn: bool) -> List[bytes]:
+    """The checks of the memory cases. With dyn, each address is the value of
+    the local 1, not a constant, so it is known only when the code runs."""
+    ld_, st_ = (ld_dyn, st_dyn) if dyn else (ld, st)
+    return [
+        st_(I32_STORE, 0, 0x84838281 - 2**32) + st_(I32_STORE, 4, 0x88878685 - 2**32)
+        + st_(I32_STORE, 8, 0x0C0B0A09)
+        + ld_(I32_LOAD8_U, 1, 0x82),
+        ld_(I32_LOAD8_S, 2, 0x83 - 0x100),                   # -125
+        ld_(I32_LOAD16_U, 3, 0x8584),                        # bytes 3 and 4: two words
+        ld_(I32_LOAD16_U, 7, 0x0988),
+        ld_(I32_LOAD16_S, 1, 0x8382 - 0x10000),
+        ld_(I32_LOAD, 2, 0x86858483 - 2**32),
+        ld_(I32_LOAD, 4, 0x88878685 - 2**32),
+        ld_(I32_LOAD, 1, 0x09888786, offset=4),              # byte 5
+        ld_(I64_LOAD, 3, 0x0B0A0988_87868584),              # three words
+        ld_(I64_LOAD, 0, 0x88878685_84838281 - 2**64),
+        ld_(I64_LOAD32_S, 1, 0x85848382 - 2**32),
+        ld_(I64_LOAD32_U, 1, 0x85848382),
+        ld_(I64_LOAD8_S, 8, 9),
+        ld_(I64_LOAD16_S, 6, 0x8887 - 0x10000),
+        ld_(I64_LOAD8_U, 7, 0x88),
+        # Stores, from 16 on, which is 0. Bytes 16 to 23 are 00 11 22 33
+        # 44 55 66 77 after an aligned i64 store.
+        st_(I64_STORE, 16, 0x77665544_33221100) + ld_(I64_LOAD, 16, 0x77665544_33221100),
+        # Only the low 16 bits are stored, CD AB in bytes 19 and 20.
+        st_(I32_STORE16, 19, 0x5ABCD) + ld_(I64_LOAD, 16, 0x776655AB_CD221100),
+        # EF BE AD DE in bytes 21 to 24.
+        st_(I32_STORE, 21, 0xDEADBEEF - 2**32) + ld_(I64_LOAD, 16, 0xADBEEFAB_CD221100 - 2**64),
+        ld_(I32_LOAD, 24, 0xDE),
+        # 08 07 06 05 04 03 02 01 in bytes 26 to 33.
+        st_(I64_STORE, 26, 0x01020304_05060708) + ld_(I32_LOAD, 24, 0x070800DE),
+        ld_(I32_LOAD, 28, 0x03040506),
+        ld_(I32_LOAD, 32, 0x0102),
+        # AA in byte 25.
+        st_(I64_STORE8, 25, 0x1_000000AA) + ld_(I32_LOAD, 24, 0x0708AADE),
+        # CC BB in bytes 31 and 32.
+        st_(I64_STORE16, 31, 0x12345678_9ABCBBCC) + ld_(I32_LOAD, 28, 0xCC040506 - 2**32),
+        ld_(I32_LOAD, 32, 0x01BB),
+        # 44 33 22 11 in bytes 29 to 32.
+        st_(I64_STORE32, 29, 0x99_11223344) + ld_(I32_LOAD, 28, 0x22334406),
+        ld_(I32_LOAD, 32, 0x0111),
+        # FF in byte 35, and byte 36 is untouched.
+        st_(I32_STORE8, 35, 0x1FF) + ld_(I32_LOAD, 32, 0xFF000111 - 2**32),
+        ld_(I32_LOAD, 36, 0),
+        # A check that fails: byte 0 is 0x81.
+        ld_(I32_LOAD8_U, 0, 0x82)]
+
 
 # (name, module bytes or the name of test/X.wasm, hand-written assembly, R1)
 CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
@@ -719,55 +778,23 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
               + ADD))), "", 17),
     # Loads, on the bytes 81 82 83 84 | 85 86 87 88 | 09 0A 0B 0C at 0 to
     # 11, put there by aligned i32 stores. The words are little-endian, so
-    # the word at 0 is 0x84838281. Each line is one bit:
+    # the word at 0 is 0x84838281. Each check is one bit (memory_checks).
+    # The addresses are constants, so nicewasm knows them, and the aligned
+    # accesses of 4 and 8 bytes are a MOVE each.
     ("memory", module(
         types(MAIN_TYPE),
         funcs(0),
         memory(1),
         exports(("main", 0, 0)),
-        code((1, bits(0,
-            st(I32_STORE, 0, 0x84838281 - 2**32) + st(I32_STORE, 4, 0x88878685 - 2**32)
-            + st(I32_STORE, 8, 0x0C0B0A09)
-            + ld(I32_LOAD8_U, 1, 0x82),
-            ld(I32_LOAD8_S, 2, 0x83 - 0x100),                   # -125
-            ld(I32_LOAD16_U, 3, 0x8584),                        # bytes 3 and 4: two words
-            ld(I32_LOAD16_U, 7, 0x0988),
-            ld(I32_LOAD16_S, 1, 0x8382 - 0x10000),
-            ld(I32_LOAD, 2, 0x86858483 - 2**32),
-            ld(I32_LOAD, 4, 0x88878685 - 2**32),
-            ld(I32_LOAD, 1, 0x09888786, offset=4),              # byte 5
-            ld(I64_LOAD, 3, 0x0B0A0988_87868584),              # three words
-            ld(I64_LOAD, 0, 0x88878685_84838281 - 2**64),
-            ld(I64_LOAD32_S, 1, 0x85848382 - 2**32),
-            ld(I64_LOAD32_U, 1, 0x85848382),
-            ld(I64_LOAD8_S, 8, 9),
-            ld(I64_LOAD16_S, 6, 0x8887 - 0x10000),
-            ld(I64_LOAD8_U, 7, 0x88),
-            # Stores, from 16 on, which is 0. Bytes 16 to 23 are 00 11 22 33
-            # 44 55 66 77 after an aligned i64 store.
-            st(I64_STORE, 16, 0x77665544_33221100) + ld(I64_LOAD, 16, 0x77665544_33221100),
-            # Only the low 16 bits are stored, CD AB in bytes 19 and 20.
-            st(I32_STORE16, 19, 0x5ABCD) + ld(I64_LOAD, 16, 0x776655AB_CD221100),
-            # EF BE AD DE in bytes 21 to 24.
-            st(I32_STORE, 21, 0xDEADBEEF - 2**32) + ld(I64_LOAD, 16, 0xADBEEFAB_CD221100 - 2**64),
-            ld(I32_LOAD, 24, 0xDE),
-            # 08 07 06 05 04 03 02 01 in bytes 26 to 33.
-            st(I64_STORE, 26, 0x01020304_05060708) + ld(I32_LOAD, 24, 0x070800DE),
-            ld(I32_LOAD, 28, 0x03040506),
-            ld(I32_LOAD, 32, 0x0102),
-            # AA in byte 25.
-            st(I64_STORE8, 25, 0x1_000000AA) + ld(I32_LOAD, 24, 0x0708AADE),
-            # CC BB in bytes 31 and 32.
-            st(I64_STORE16, 31, 0x12345678_9ABCBBCC) + ld(I32_LOAD, 28, 0xCC040506 - 2**32),
-            ld(I32_LOAD, 32, 0x01BB),
-            # 44 33 22 11 in bytes 29 to 32.
-            st(I64_STORE32, 29, 0x99_11223344) + ld(I32_LOAD, 28, 0x22334406),
-            ld(I32_LOAD, 32, 0x0111),
-            # FF in byte 35, and byte 36 is untouched.
-            st(I32_STORE8, 35, 0x1FF) + ld(I32_LOAD, 32, 0xFF000111 - 2**32),
-            ld(I32_LOAD, 36, 0),
-            # A check that fails: byte 0 is 0x81.
-            ld(I32_LOAD8_U, 0, 0x82))))), "", 0x3FFFFFFE),
+        code((1, bits(0, *memory_checks(False))))), "", 0x3FFFFFFE),
+    # The same with addresses that are known only when the code runs, which
+    # take the inline path for an aligned access and the helpers otherwise.
+    ("memory_dyn", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((2, bits(0, *memory_checks(True))))), "", 0x3FFFFFFE),
     # Two pages: memory.size is 2, memory.grow 0 returns 2, and the memory
     # cannot grow, so memory.grow 1 returns -1. The last word and the last
     # 8 bytes are in bounds. 11111 = 0x1F.

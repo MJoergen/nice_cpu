@@ -9,6 +9,12 @@ The core is pipelined and has separate instruction and data buses, like
 [qnice_cpu](https://github.com/MJoergen/qnice_cpu). It reuses that design
 where NICE allows it. This note concentrates on where NICE differs.
 
+A simple multi-cycle core, `hdl/src/multicycle.vhd`, comes first. It runs one
+instruction at a time, with the same buses, interrupt ports, and trace
+report as planned here. It passes steps 1 to 3 and 7 of the test order in
+§9. It is the working reference for the pipelined core
+([hdl/README.md](../hdl/README.md)).
+
 ## 1. Decisions at a glance
 
 | Topic | Decision |

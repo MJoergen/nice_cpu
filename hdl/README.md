@@ -4,34 +4,92 @@ The FPGA implementation of NICE, in VHDL-2008. The design follows
 [doc/MICROARCH.md](../doc/MICROARCH.md), and [doc/ISA.md](../doc/ISA.md) is
 the specification.
 
-There is no core yet. So far this directory holds the test setup that the
-core will be checked with (MICROARCH.md §9): a memory model, a console, and a
-trace writer whose output can be compared with `niceemu --trace`.
+So far this directory holds a simple multi-cycle core, and the test setup
+that checks it (MICROARCH.md §9): a memory model, a console, and a trace
+writer whose output can be compared with `niceemu --trace`. The pipelined core
+of MICROARCH.md is not written yet. The multi-cycle core comes first, as a
+working reference for it.
 
 ## Contents
 
 | Path | What it is |
 |---|---|
+| [src/multicycle.vhd](src/multicycle.vhd) | The multi-cycle core. |
 | [src/trace_pkg.vhd](src/trace_pkg.vhd) | `t_retire`, the record in which the core reports each step to the trace writer. |
 | [sim/trace.vhd](sim/trace.vhd) | The trace writer. Simulation only. |
 | [sim/wb_mem.vhd](sim/wb_mem.vhd) | The memory model, with the console. Simulation only. |
 | [test/tb_mem.vhd](test/tb_mem.vhd) | A self-checking test of the memory model, which loads [test/mem.bin](test/mem.bin). |
 | [test/tb_trace.vhd](test/tb_trace.vhd) | A test of the trace writer, which stands in for the core and runs [test/trace.asm](test/trace.asm). |
+| [test/tb_multicycle.vhd](test/tb_multicycle.vhd) | Runs a program on the multi-cycle core, with an interrupt source, and writes its trace. |
+| [test/shift.asm](test/shift.asm) | Every shift, with the counts that are hard to get right. |
+| [test/random_prog.py](test/random_prog.py) | Writes random programs, and random interrupt requests for them. |
 
 ## Running the tests
 
 You need GHDL, Python 3, and Zig 0.15 for the emulator. Tested with
-GHDL 6.0.0-dev (mcode backend). The VHDL also runs under nvc.
+GHDL 6.0.0-dev and GHDL 4.1.0 (mcode backend). The memory model and the trace
+writer also run under nvc.
 
     cd hdl && make test
 
-`make test` builds the emulator, analyses the VHDL, and runs both tests.
-Everything it makes goes in `build/`. `make clean` removes it.
+`make test` builds the emulator, analyses the VHDL, checks that GHDL can
+synthesise the core (`ghdl --synth`), and runs the tests. Everything it makes
+goes in `build/`. `make clean` removes it.
 
 `tb_trace` runs four times, each against the emulator on the same program
 with the same NMI: with the full trace, without the trace, and stopped at two
 step limits. The output and exit status of each run must match the
 emulator's exactly.
+
+`tb_multicycle` runs these programs on the core. The trace, the output, and
+the exit status of each must match those of `niceemu -t` on the same program,
+with the same interrupt requests:
+
+- The 2004 examples `count`, `replicate`, `print`, and `wrap`.
+- The emulator's probes in `emulator/test/`, `cputest` among them, with the
+  interrupt options that `emulator/Makefile` gives them. Their memory dumps
+  are left out, because the trace lists every memory write.
+- `test/shift.asm`.
+- 30 random programs from `test/random_prog.py`, each stopped at 3000 steps.
+
+## The multi-cycle core
+
+`multicycle` runs one step at a time, either one instruction or one interrupt
+entry, in the order of ISA.md §5. It is meant to be simple and obviously
+right, not fast: an instruction takes about ten cycles.
+
+| State | What it does |
+|---|---|
+| `BOUNDARY` | Takes a pending NMI or IRQ (ISA.md §7.1), or starts an instruction. |
+| `FETCH` | Reads the instruction word, then each constant word, and increments R15 after each. |
+| `COND` | Tests the condition, and runs a control instruction. |
+| `SRC` | Evaluates s0, then s1, with their side effects. |
+| `EXEC` | Computes the result, writes the destination, and updates the flags. |
+| `VEC` | Reads the vector table entry for IRQ, NMI, and `INT`. |
+| `RETIRE` | Reports the step on `retire_o`. |
+
+It has the two Wishbone ports of the memory model: a read-only instruction
+bus and a data bus. Each access waits for its ACK before the core moves on.
+So data accesses are exact and in program order (ISA.md §8.2), and a store
+takes effect before the next instruction is fetched, which makes
+self-modifying code work.
+
+The registers are flip-flops. Every register write goes through one function
+that keeps R0 at 0 and bit 24 of R14 at 1 (ISA.md §4.3). The shifter uses the
+closed forms of ISA.md §5.2, and reduces the count mod 33 as MICROARCH.md
+§7.3 describes.
+
+Interrupt requests use valid/ready ports, with an 8-bit vector each. A device
+holds `valid` and the vector until the core raises `ready`. The core raises it
+for one cycle, in `BOUNDARY`, when it takes the request.
+
+`halted_o` is 1 once the core has halted. Only reset restarts it.
+
+In `tb_multicycle`, the generic `G_INTERRUPTS` takes the emulator's options,
+for example `--nmi 2:1 --irq 2:2`. A request for step S is raised once S
+steps have retired, as the emulator raises it before step S. A second request
+of the same kind replaces the vector of one still pending, as the emulator
+merges them.
 
 ## The memory model
 
@@ -68,6 +126,6 @@ halts, and 3 at the step limit.
 With `G_TRACE` false, it prints only the console output and the last lines,
 like `niceemu` without `--trace`.
 
-The emulator also prints a `Pending:` line for interrupt requests that were
-never taken. The writer does not, because the testbench has no interrupt
-source yet.
+After those lines, it prints a `Pending:` line for the interrupt requests
+that were never taken, as the emulator does. The testbench gives it the
+requests its interrupt source still holds.

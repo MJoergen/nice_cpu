@@ -15,7 +15,8 @@ The sources disagree in places and leave gaps, so the first step was to write
 a complete specification. The FPGA implementation will follow it. So far the
 repository holds the specification, an assembler, an emulator, and the
 start of a runtime library and of a WebAssembly translator. The `hdl/`
-directory holds the test setup for the FPGA core, but not yet the core.
+directory holds a simple multi-cycle core and the test setup that compares
+it with the emulator. The pipelined core is not written yet.
 
 ## Contents
 
@@ -29,7 +30,7 @@ directory holds the test setup for the FPGA core, but not yet the core.
 | [emulator/](emulator/README.md) | `niceemu`, the emulator, written in Zig. |
 | [runtime/](runtime/README.md) | The start-up code and runtime library for C and wasm programs. |
 | [translator/](translator/README.md) | `nicewasm`, which translates WebAssembly into NICE assembly. A first version. |
-| [hdl/](hdl/README.md) | The FPGA implementation in VHDL. So far the memory model and trace writer it will be tested with. |
+| [hdl/](hdl/README.md) | The FPGA implementation in VHDL. So far a simple multi-cycle core, and the memory model and trace writer it is tested with. |
 
 ## Quick start
 
@@ -45,7 +46,7 @@ download page, pick 0.15.2 rather than the latest release or master.
     cd emulator && make test          # build and test the emulator
     cd runtime && make test           # test the start-up code and runtime library
     cd translator && make test        # test the wasm translator
-    cd hdl && make test               # test the HDL test setup (needs GHDL)
+    cd hdl && make test               # test the multi-cycle core (needs GHDL)
 
 To assemble and run a program:
 

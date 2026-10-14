@@ -7,9 +7,9 @@ BUILD = build
 # executables, so paths given to it start with ../.
 GHDLRUN = cd $(BUILD) && $(GHDL) --elab-run --std=08
 
-SOURCES = src/trace_pkg.vhd
+SOURCES = src/trace_pkg.vhd src/multicycle.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd
-TEST_SOURCES = test/tb_mem.vhd test/tb_trace.vhd
+TEST_SOURCES = test/tb_mem.vhd test/tb_trace.vhd test/tb_multicycle.vhd
 
 # tb_trace stands in for the core and runs test/trace.asm. Each run's output
 # and exit status must equal those of the emulator on the same program, with
@@ -35,16 +35,73 @@ define check_trace
 
 endef
 
+# tb_multicycle runs a program on the multicycle core. Its trace, output, and
+# exit status must equal those of "niceemu -t" on the same program, with the
+# same interrupt requests. The programs are the 2004 examples and the
+# emulator's probes, with the probes' interrupt options from
+# emulator/Makefile, and test/shift.asm, which runs every shift with the
+# counts that are hard to get right. The memory dumps of the probes are left
+# out, because the trace lists every memory write.
+EXAMPLES = count replicate print wrap
+PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest \
+  console screen iofetch
+INTR_irq   = --nmi 2:1 --irq 2:2 --nmi 9:1 --irq 17:2 --nmi 17:1 --irq 100:2
+INTR_merge = --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
+INTR_after = --nmi 3:1 --nmi 10:1
+INTR_start = --nmi 0:3
+
+# $(1) is the name of the run, and $(2) the program.
+define check_core
+	@($(GHDLRUN) tb_multicycle -gG_BIN_FILE=../$(2) -gG_TRACE_FILE=core_$(1).out \
+	  $(if $(INTR_$(1)),"-gG_INTERRUPTS=$(INTR_$(1))") > core_$(1).log 2>&1); \
+	  echo "exit $$?" >> $(BUILD)/core_$(1).out
+	@$(EMU) -t $(INTR_$(1)) $(2) > $(BUILD)/core_$(1).expected; \
+	  echo "exit $$?" >> $(BUILD)/core_$(1).expected
+	@if cmp -s $(BUILD)/core_$(1).expected $(BUILD)/core_$(1).out; then echo "PASS multicycle $(1)"; \
+	else echo "FAIL multicycle $(1)"; cat $(BUILD)/core_$(1).log; \
+	  diff $(BUILD)/core_$(1).expected $(BUILD)/core_$(1).out | head -20; exit 1; fi
+
+endef
+
+# Random programs from test/random_prog.py, each run for RANDOM_STEPS steps
+# with random interrupt requests, and compared in the same way.
+RANDOM_SEEDS = $(shell seq 1 30)
+RANDOM_STEPS = 3000
+
+define check_random
+	@$(PYTHON) test/random_prog.py $(1) $(BUILD)/random_$(1).bin > $(BUILD)/random_$(1).opts
+	@o=$$(cat $(BUILD)/random_$(1).opts); \
+	  ($(GHDLRUN) tb_multicycle -gG_BIN_FILE=random_$(1).bin -gG_TRACE_FILE=random_$(1).out \
+	  -gG_MAX_STEPS=$(RANDOM_STEPS) $${o:+"-gG_INTERRUPTS=$$o"} > random_$(1).log 2>&1); \
+	  echo "exit $$?" >> $(BUILD)/random_$(1).out
+	@$(EMU) -t -n $(RANDOM_STEPS) $$(cat $(BUILD)/random_$(1).opts) $(BUILD)/random_$(1).bin \
+	  > $(BUILD)/random_$(1).expected; echo "exit $$?" >> $(BUILD)/random_$(1).expected
+	@if cmp -s $(BUILD)/random_$(1).expected $(BUILD)/random_$(1).out; then echo "PASS multicycle random $(1)"; \
+	else echo "FAIL multicycle random $(1)"; cat $(BUILD)/random_$(1).log; \
+	  diff $(BUILD)/random_$(1).expected $(BUILD)/random_$(1).out | head -20; exit 1; fi
+
+endef
+
 # tb_mem checks the memory model itself.
-test: emulator analyse
+test: emulator analyse synth
 	@($(GHDLRUN) tb_mem -gG_BIN_FILE=../test/mem.bin > tb_mem.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS tb_mem"; else echo "FAIL tb_mem"; cat $(BUILD)/tb_mem.log; exit 1; fi
 	@$(ASM) -o $(BUILD)/trace.bin test/trace.asm
 	$(foreach r,$(TRACE_RUNS),$(call check_trace,$(r)))
+	$(foreach t,$(EXAMPLES),$(call check_core,$(t),../assembler/test/$(t).bin))
+	$(foreach t,$(PROBES),$(call check_core,$(t),../emulator/test/$(t).bin))
+	@$(ASM) -o $(BUILD)/shift.bin test/shift.asm
+	$(call check_core,shift,$(BUILD)/shift.bin)
+	$(foreach t,$(RANDOM_SEEDS),$(call check_random,$(t)))
 
 analyse:
 	@mkdir -p $(BUILD)
 	cd $(BUILD) && $(GHDL) -a --std=08 $(addprefix ../,$(SOURCES) $(SIM_SOURCES) $(TEST_SOURCES))
+
+# Checks that GHDL can synthesise the core.
+synth: analyse
+	@cd $(BUILD) && $(GHDL) --synth --std=08 multicycle > multicycle_synth.vhd 2> synth.log; \
+	if [ $$? -eq 0 ]; then echo "PASS synth multicycle"; else echo "FAIL synth multicycle"; cat synth.log; exit 1; fi
 
 emulator:
 	$(MAKE) -C ../emulator build
@@ -52,4 +109,4 @@ emulator:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: test analyse emulator clean
+.PHONY: test analyse synth emulator clean

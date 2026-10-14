@@ -196,3 +196,23 @@ Two things are wrong with that line: it is not a loop, and the name quoted is th
 ### 5.6 Tests
 
 `errors.py` covers every message from section 2 and every bug from section 1. Gaps worth one case each: a `.BLK` range overlapping a word emitted after it, two overlapping `.BLK` ranges, a `.BLK` that ends at `0xFFFFFFFF` exactly followed by a word at 0, and, after the fixes in 5.2 and 5.3, a long chain in each order.
+
+## 6. Third round, commit 0de7cb7
+
+`make test` (90 cases) and `make typecheck` pass. Every item in section 5 is fixed: the reversed 1200-name chain assembles, a forward chain of any length is accepted, the four message nits and the two silent acceptances are handled, and the `.BLK` overlap orderings are tested.
+
+### 6.1 One message regression
+
+`equ_value()` (line 157) evaluates the names a value mentions before the name itself, and calls `check_number()` on each. When an `.EQU` whose value is an operand is used where a number is expected, the message now blames the register inside the operand instead of the name:
+
+    SP .EQU R13
+    X  .EQU 5[SP]
+       .DAT X
+
+    3: error: 'SP' is a register where a number is expected
+
+Commit 0670e53 said `'X' stands for the operand '5[SP]', not a number`, which is the message `X .EQU @R2` with `.DAT X+1` still gives, because `@R2` mentions no `.EQU` name. `MOVE R1, X+1` and `INT X` give the same wrong message. Calling `check_number(name)` on the requested name before walking its dependencies restores the old message, and `Y .EQU SP+1` keeps its correct one, since there the register really is a term.
+
+### 6.2 Nit
+
+`MOVE[M] [M] R1, R2` suggests `MOVE[MM]`, which is itself rejected as a bad modifier.

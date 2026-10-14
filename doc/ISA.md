@@ -48,7 +48,7 @@ There are sixteen 32-bit registers, R0 to R15. Every register can be used with e
 | 1 (bit 24) | Always 1, at every point within an instruction. No write clears it (§4.3). It makes condition select 0 mean "always" (§3). |
 | VBASE (bits 23..0) | The upper 24 bits of the interrupt vector table address (§7.3). |
 
-Software can read and write every bit except bit 24. Instructions with the M bit set update only X, C, Z, N and V (§6). I, E and VBASE change only when software writes R14, on interrupt entry (I), and on `RTI`.
+Software can read and write every bit except bit 24. Instructions with the M bit set update only X, C, Z, N, and V (§6). I, E, and VBASE change only when software writes R14, on interrupt entry (I), and on `RTI`.
 
 ### 1.4 Hidden state
 
@@ -118,7 +118,7 @@ The condition is tested against SR as it was before the instruction started.
 
 In this document, "the M bit" always means instruction bit 25 (modify flags), and "the E flag" means SR bit 30. The 2004 sources call SR bit 30 M, so the assembler also accepts `?M` and `?!M` as aliases for `?E` and `?!E`.
 
-A skipped instruction still consumes its constant words, so PC moves past the whole instruction. A skipped instruction has no other effect: it reads no operand from memory, writes nothing, applies no increments or decrements and changes no flags.
+A skipped instruction still consumes its constant words, so PC moves past the whole instruction. A skipped instruction has no other effect: it reads no operand from memory, writes nothing, applies no increments or decrements, and changes no flags.
 
 ## 4. Addressing modes
 
@@ -160,15 +160,15 @@ In modes 001 and 010 the write of r and the decrement or increment are two write
 
 ### 4.3 Special registers in operands
 
-- **R0** reads as 0 in every mode, at every point within an instruction. Writes to R0 and side effects on R0 are discarded. So `--R0` and `R0++` read 0, `@R0`, `@--R0` and `@R0++` all address word 0, as source or destination, and `c[R0]` is c.
+- **R0** reads as 0 in every mode, at every point within an instruction. Writes to R0 and side effects on R0 are discarded. So `--R0` and `R0++` read 0; `@R0`, `@--R0`, and `@R0++` all address word 0, as source or destination; and `c[R0]` is c.
 - **R15** read as an operand gives the address of the **next instruction**, after all of this instruction's constant words. The exception is when an earlier operand of the same instruction has already changed R15 with a side effect.
 - **R15** is an ordinary register in every mode. Any write to it is a jump, including a side effect such as `R15++`. If one instruction writes R15 more than once, the last write in the order of §5 wins.
 - **R14 bit 24** reads as 1 at every point within an instruction. Every write to R14, a side effect included, sets bit 24 to 1. So after reset (R14 = `0x01000000`), `MOVE R1, --R14` sets R14 and R1 to `0x01FFFFFF`, and `@--R14` addresses word `0x01FFFFFF`.
-- **R14** written as a register-direct destination (modes 000, 001 and 010) takes the written value, except that bit 24 stays 1. The flag update is skipped in that case (§6).
+- **R14** written as a register-direct destination (modes 000, 001, and 010) takes the written value, except that bit 24 stays 1. The flag update is skipped in that case (§6).
 
 ### 4.4 Unused operand fields
 
-Some operations ignore an operand: `MOVE`, `DBL`, `DEC` and `NOT` ignore s1, and `ONE` ignores s0 and s1. The field is still evaluated in full: it takes its constant word, reads memory and applies its side effect. The assembler encodes unused fields as `000 0000` (R0), so they have no effect.
+Some operations ignore an operand: `MOVE`, `DBL`, `DEC`, and `NOT` ignore s1, and `ONE` ignores s0 and s1. The field is still evaluated in full: it takes its constant word, reads memory, and applies its side effect. The assembler encodes unused fields as `000 0000` (R0), so they have no effect.
 
 ## 5. Instruction execution
 
@@ -189,7 +189,7 @@ The next instruction is fetched from PC as it stands after step 8. Interrupts ar
 
 ### 5.1 ALU instructions (bit 27 = 0)
 
-`cin` is the C flag as step 5 of §5 left it, if the instruction's C bit is set, and 0 otherwise. Only `SUB`, `MDBL`, `ADD` and `DBL` use it. All other ALU operations ignore the C bit.
+`cin` is the C flag as step 5 of §5 left it, if the instruction's C bit is set, and 0 otherwise. Only `SUB`, `MDBL`, `ADD`, and `DBL` use it. All other ALU operations ignore the C bit.
 
 | Opcode | Mnemonic | Result r | C (if M = 1) | V (if M = 1) |
 |---|---|---|---|---|
@@ -219,14 +219,14 @@ The next instruction is fetched from PC as it stands after step 8. Interrupts ar
 - Addition: V = 1 when both addends have the same sign and r has the other sign. For `MDBL` the addends are s0 and (s0 AND s1). For `DBL` both addends are s0.
 - Subtraction a − b: V = 1 when a and b have different signs and r's sign differs from a's. For `DEC`, b = 1, so V = 1 only when s0 = `0x80000000`.
 
-`MDBL` doubles s0 where s1 has ones: s1 = `0xFFFFFFFF` gives 2·s0 and s1 = 0 gives s0. It comes from the 74181 ALU chip, as do `IAND`, `IOR` and the other unusual operations.
+`MDBL` doubles s0 where s1 has ones: s1 = `0xFFFFFFFF` gives 2·s0 and s1 = 0 gives s0. It comes from the 74181 ALU chip, as do `IAND`, `IOR`, and the other unusual operations.
 
 ### 5.2 SHIFT instructions (bits 27..26 = 10)
 
 s0 is the value to shift. s1 is the count: the shift runs **n = s1** steps, using all 32 bits of s1 as an unsigned number (as in QNICE). There is no modulo.
 
 The mnemonic shows the direction and where bits come from and go to:
-- **Left shifts `A<B`**: B is the fill bit shifted into bit 0 (0, 1 or C), and A is where bit 31 goes (0 = discarded, C = the carry flag).
+- **Left shifts `A<B`**: B is the fill bit shifted into bit 0 (0, 1, or C), and A is where bit 31 goes (0 = discarded, C = the carry flag).
 - **Right shifts `A>B`**: A is the fill bit shifted into bit 31, and B is where bit 0 goes.
 - `<<<` and `>>>` are rotations, and `C<<` and `>>C` are rotations that also copy the rotated bit into C.
 
@@ -266,7 +266,7 @@ The loop defines the result for every count, but hardware need not run it n time
 - **Shifts with a fixed fill** (0, 1, or the original C; that is, every shift except the rotations and `C<C`/`C>C`):
   - For n ≥ 32, the result is all fill bits.
   - Where the bit shifted out goes to C, n = 32 leaves C = the last bit of s0 shifted out (bit 0 for a left shift, bit 31 for a right shift), and n > 32 leaves C = the fill bit.
-- **`<<<`, `C<<`, `>>>` and `>>C`** are 32-bit rotations, so only n mod 32 matters for the result. For `C<<` and `>>C` with n > 0, C ends up equal to the bit that was rotated last: bit 0 of r for `C<<`, and bit 31 of r for `>>C`.
+- **`<<<`, `C<<`, `>>>`, and `>>C`** are 32-bit rotations, so only n mod 32 matters for the result. For `C<<` and `>>C` with n > 0, C ends up equal to the bit that was rotated last: bit 0 of r for `C<<`, and bit 31 of r for `>>C`.
 - **`C<C` and `C>C`** are 33-bit rotations of C and s0 together, so only n mod 33 matters.
 
 **The C flag after a shift:**
@@ -291,11 +291,11 @@ Bits 20..8 must be 0, and bits 7..0 must be 0 except in `INT`. An instruction th
 
 The condition field applies, so `?Z HALT` halts only when Z = 1. This includes reserved words: a reserved control word whose condition is false is skipped like any other instruction and does not halt the processor.
 
-Control instructions have no M bit and never update X, C, Z, N or V. `HALT` leaves SR unchanged, `INT` changes only I (§7.2), and `RTI` replaces SR with the saved copy (§7.4).
+Control instructions have no M bit and never update X, C, Z, N, or V. `HALT` leaves SR unchanged, `INT` changes only I (§7.2), and `RTI` replaces SR with the saved copy (§7.4).
 
 ## 6. Flags
 
-If M = 1, and the destination is not R14 in a register-direct mode (000, 001 or 010), then after the destination is written:
+If M = 1, and the destination is not R14 in a register-direct mode (000, 001, or 010), then after the destination is written:
 
 | Flag | New value |
 |---|---|
@@ -328,7 +328,7 @@ When the processor accepts a request, the device supplies an 8-bit vector number
 
 ### 7.2 Interrupt entry
 
-Entry is the same for IRQ, NMI and `INT v`:
+Entry is the same for IRQ, NMI, and `INT v`:
 
 1. saved_pc ← PC, the address of the next instruction. For `INT`, that is the instruction after the `INT`.
 2. saved_sr ← SR.
@@ -360,7 +360,7 @@ To set the table address without touching the flags:
 
 Because SR is restored, an interrupt routine may change any flag freely, E and I included. An interrupt routine must save and restore any other registers it uses.
 
-## 8. Reset, memory and I/O
+## 8. Reset, memory, and I/O
 
 ### 8.1 Reset
 
@@ -380,7 +380,7 @@ Because SR is restored, an interrupt routine may change any flag freely, E and I
 - A read from an address with no memory or device behind it returns 0. A write to such an address is ignored.
 - Every instruction fetch sees all earlier writes. A store may change the next instruction or its constant words, and the change takes effect. An instruction that overwrites its own constant words does not see the change, because they were fetched in step 2.
 
-**Memory accesses are exact and in order.** Each memory access named in this document is performed exactly once, as a separate access, and in program order. No access is merged with another, dropped, repeated, reordered or performed speculatively. I/O devices may rely on this. For one instruction the accesses are:
+**Memory accesses are exact and in order.** Each memory access named in this document is performed exactly once, as a separate access, and in program order. No access is merged with another, dropped, repeated, reordered, or performed speculatively. I/O devices may rely on this. For one instruction the accesses are:
 
 1. Read the instruction word.
 2. Read the constant words, if any, in the order dest, s0, s1.
@@ -400,7 +400,7 @@ The 2004 emulator maps a character screen at `0x400`. That is a property of the 
 
 These are conventions, not hardware rules.
 
-### 9.1 Stack, call and return
+### 9.1 Stack, call, and return
 
 R13 is the stack pointer, SP. The stack grows down, and SP points at the last item pushed.
 
@@ -421,7 +421,7 @@ The call works because PC reads as the address after `ADD`'s constant word, whic
 | Conditional jump | `?Z MOVE PC, label` |
 | Relative jump | `ADD PC, PC, offset`. The offset is relative to the next instruction. |
 | Compare a with b | `SUB[M] R0, a, b`. Then Z = 1 if a = b, and C = 1 if a < b unsigned. |
-| Test a | `MOVE[M] R0, a`. Then Z, N and X describe a. |
+| Test a | `MOVE[M] R0, a`. Then Z, N, and X describe a. |
 
 No single flag gives a signed comparison. A signed a < b is N XOR V after `SUB[M]`, which takes more than one conditional instruction to test.
 
@@ -433,7 +433,7 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
 
     [label]  [?cond]  MNEMONIC[mods]  dest, s0, s1    ; comment
 
-- **Case.** Mnemonics, register names and directives are case-insensitive.
+- **Case.** Mnemonics, register names, and directives are case-insensitive.
 - **Comments.** A comment starts with `;` or `*` and runs to the end of the line.
 - **Separators.** Operands are separated by whitespace or by one comma.
 - **Labels.** A label is the first word on a line that is not a mnemonic or a directive. Its value is the address of what follows on that line; on a `.ORG` line, that is the new address. A label or `.EQU` name cannot be a mnemonic or a register name.
@@ -441,8 +441,8 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
 - **Modifiers.** `[M]` sets the M bit and `[C]` sets the C bit. `[CM]` and `[MC]` set both. `[C]` is accepted only on ALU instructions.
 - **Operand counts.** The assembler expects exactly the operands the instruction uses:
   - `ONE` takes dest only.
-  - `MOVE`, `DBL`, `DEC` and `NOT` take dest and s0.
-  - The other ALU and SHIFT instructions take dest, s0 and s1.
+  - `MOVE`, `DBL`, `DEC`, and `NOT` take dest and s0.
+  - The other ALU and SHIFT instructions take dest, s0, and s1.
   - `HALT` and `RTI` take none, and `INT` takes the vector number.
 - **Unused fields** are encoded as R0 (`000 0000`).
 
@@ -464,7 +464,7 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
 
 | Directive | Effect |
 |---|---|
-| `NAME .EQU value` | Defines NAME. The value is a number, an expression, a register or a complete operand. NAME is replaced by the value where it stands for a whole operand, a register, or a number in an expression. |
+| `NAME .EQU value` | Defines NAME. The value is a number, an expression, a register, or a complete operand. NAME is replaced by the value where it stands for a whole operand, a register, or a number in an expression. |
 | `.ORG addr` | Continue assembling at addr. |
 | `.DAT value` | One word holding value. |
 | `.BLK n` | n words of 0. |
@@ -496,7 +496,7 @@ It executes as follows:
 1. R2 ← R2 − 1, then s0 = R2.
 2. s1 = mem[R1 + 0x12345678].
 3. mem[R3] ← s0 + s1, then R3 ← R3 + 1.
-4. X, C, Z, N and V are updated.
+4. X, C, Z, N, and V are updated.
 5. All of this happens only if Z was 0.
 
 ## Appendix A: Opcode map
@@ -533,7 +533,7 @@ It executes as follows:
 | Interrupt entry details | Entry sets I; NMI is taken before IRQ; NMI does not nest either (§7.1, §7.2) | Not specified anywhere. The articles have NMI and IRQ serviced "the same way". |
 | Pending interrupt requests | Deferred, never lost; same-kind requests may merge (§7.1) | Not specified anywhere |
 | Interrupts right after `RTI` | No IRQ or NMI until the instruction after `RTI` completes (`after_rti`, §7.1) | Not specified anywhere. QNICE guarantees the same progress. |
-| Memory access order | Each access exactly once, unmerged and in program order (§8.2) | Not specified anywhere |
+| Memory access order | Each access exactly once, unmerged, and in program order (§8.2) | Not specified anywhere |
 | Carry input timing | The C flag as step 5 of §5 left it (§5.1, §5.2) | Not specified anywhere. The emulator also reads C after the source operands. |
 | Assembler numbers | `0x`, `0b`, decimal | The emulator reads a leading 0 as octal; the articles use `#` and `$` |
 

@@ -23,7 +23,7 @@
 | 12, 14, 15 | Multiplication example bugs | The counter is initialised (`move r6, #$20`), r5 is cleared, and r3/r4 are stored. | **Fixed** in A2. Item 13 is not fixed (see §2). |
 | 51 | Reset state | "On startup of the machine, this register [PC] is reset to zero." | **Confirmed** PC = 0, which agrees with QNICE. SR and the other registers are still unspecified. |
 | 54 | Call/return | A2 gives a calling idiom (`add @--r12, #2, pc` then `move pc, #sub`, with return `move pc, @r12++`). Its stack grows **downwards**: push with `@--r12`, pop with `@r12++`. | **Partly resolved.** The stack direction now agrees with QNICE. The stack pointer is still R12, where QNICE uses R13. The idiom only works if R15 reads as the next instruction (see item 21). |
-| 60 | Assembler directives | Defines `.org`, `.equ`, `.dat` and `.reserve`, the label/condition/instruction/operand fields, `;` comments, and `?[!]bit` conditions. "When no condition is specified, the 1 bit … is used." | **Partly resolved.** |
+| 60 | Assembler directives | Defines `.org`, `.equ`, `.dat`, and `.reserve`; the label/condition/instruction/operand fields; `;` comments; and `?[!]bit` conditions. "When no condition is specified, the 1 bit … is used." | **Partly resolved.** |
 | 35 | Purpose of X | X is "Set to 1 if the result … was $FFFFFFFF (this bit can be used in comparisons like a ≠ b)". | **The purpose is explained, but update timing is still open.** `xnor` yields all ones exactly when a = b, so X acts as an equality flag after `xnor`. The "≠" in A2 should read "=", or should mean "test !x". |
 
 ### Insight: the 74181 explains the carry rule (item 29)
@@ -83,7 +83,7 @@ These items are the same in both articles, so their status in gap-resolution.md 
 - Shift table.
 - Condition select mapping.
 - Unused operand fields.
-- R0, R14, NMI handshake, I/O and self-modifying code.
-- The open items 24, 25, 26, 34, 38 and 58.
+- R0, R14, NMI handshake, I/O, and self-modifying code.
+- The open items 24, 25, 26, 34, 38, and 58.
 
 `bpl`/`bpr` are still not explained.

@@ -1,10 +1,10 @@
-# NICE web page, nice_can.pdf and the 2004 emulator
+# NICE web page, nice_can.pdf, and the 2004 emulator
 
 These are the four files Michael uploaded on 2026-10-13:
 - `The NICE Processor Pages.html`, dated 13-OCT-2004 on the page itself.
 - `nice_can.pdf`.
 - `nice_source.zip`, containing `NICE.pm` v0.4 and `nice_ide.pl`, written by B. Ulmann and T. Kratz in 2004.
-- `examples.zip`, containing `count`, `replicate` and `print`, each as `.asm` and `.bin`.
+- `examples.zip`, containing `count`, `replicate`, and `print`, each as `.asm` and `.bin`.
 
 **Abbreviations used below:**
 - **A1** is the 1997 article.
@@ -17,7 +17,7 @@ These are the four files Michael uploaded on 2026-10-13:
 
 ## Summary
 
-- **nice_can.pdf** is a clean, typeset copy of A1. The text matches the scan on every page I compared (1, 2, 3 and 5), including the `iand` typo, `$0200`, `0<0` and the multiplication bugs. Use it instead of the scan from now on. It resolves nothing new.
+- **nice_can.pdf** is a clean, typeset copy of A1. The text matches the scan on every page I compared (1, 2, 3, and 5), including the `iand` typo, `$0200`, `0<0`, and the multiplication bugs. Use it instead of the scan from now on. It resolves nothing new.
 - **WEB and EMU are later than both articles and agree with each other.** EMU is the only executable reference, and both are by the author. They settle several open items: what R15 reads as, the `Rx++`/`Rx--` destinations, the duplicate destination mode, R0 behaviour, reset, and number syntax.
 - **They also contradict the articles on the encoding.** The condition field and the SR flag order are laid out differently (§1). This is now the biggest open decision. The WEB/EMU layout happens to be the QNICE layout, so following Michael's QNICE rule picks it.
 - **EMU is buggy.** Several of its operations do not do what its code clearly intends (§4). Treat it as evidence of *intent*, not as a bit-exact golden model.
@@ -59,7 +59,7 @@ Both layouts give the same *flag order* for select values 0–7: `1, X, C, Z, N,
 | 41, 43 | HALT's spare bits; conditional HALT | WEB: the remaining bits "have no meaning and should be zero". A HALT whose condition holds stops the CPU. EMU emits zeros and tests the condition before halting. | **Resolved** for HALT itself. Extension space (item 42) is still open. |
 | 53 | I/O | The IDE maps a character screen into main memory at 0x400 (80×25, character plus colour in one word). | **Memory-mapped I/O confirmed.** The address is an IDE convention, not an ISA rule. |
 | 54 | Call/return | `print.asm` uses **R13 as the stack pointer** (`SP .EQU R13`), growing down. It calls with `ADD @--SP 10 PC` then `MOVE PC PRINT`, and returns with `MOVE PC @SP++`. | **Supports QNICE's convention** of R13 as SP growing down. Note that WEB still calls R13 the interrupt return register. |
-| 58, 57, 60 | Assembler syntax | EMU accepts hex as `0x…`, binary as `0b…`, and plain decimal. A **leading 0 means octal**, via Perl's `oct`. There is **no `#`**: a bare number or label is a constant, and `@const` is an absolute address. Flags are written `[M]`, `[C]` or `[CM]`. Directives are `.ORG .EQU .DAT .BLK .ASCII_B .ASCII_L`. Comments start with `;` or `*`. Operands are separated by commas or whitespace. Missing operands default to `R0`, so unused fields are `000 0000` (item 59). | **Resolved for the toolchain.** This replaces the articles' `#`, `$` and `<m>`. The leading-zero-octal rule is a trap and should be dropped. |
+| 58, 57, 60 | Assembler syntax | EMU accepts hex as `0x…`, binary as `0b…`, and plain decimal. A **leading 0 means octal**, via Perl's `oct`. There is **no `#`**: a bare number or label is a constant, and `@const` is an absolute address. Flags are written `[M]`, `[C]`, or `[CM]`. Directives are `.ORG .EQU .DAT .BLK .ASCII_B .ASCII_L`. Comments start with `;` or `*`. Operands are separated by commas or whitespace. Missing operands default to `R0`, so unused fields are `000 0000` (item 59). | **Resolved for the toolchain.** This replaces the articles' `#`, `$`, and `<m>`. The leading-zero-octal rule is a trap and should be dropped. |
 
 ## 3. Where EMU or WEB contradict decisions already made
 
@@ -67,9 +67,9 @@ Both layouts give the same *flag order* for select values 0–7: `1, X, C, Z, N,
 |---|---|---|---|
 | 7 | Order of constant words | EMU and the `.bin` files store them as **destination, s0, s1** (probe: `MOVE @0x40, 0x41` emits `0x40` then `0x41`). A1 footnote 3 says s1, s2, destination. | **Needs a decision.** Recommended: follow EMU (field order, destination first), because the existing binaries depend on it. |
 | 27 | Writing R14 with M = 1 | EMU applies the flags *after* the write and keeps only bit 24, so the written value and the vector-table address are lost (probe: `MOVE[M] R14, 0x12` gives `0x01000000`). | This is a bug, not a design. Keep QNICE's rule: the explicit write wins. |
-| 28 | Which flags each op writes | With M set, EMU rewrites all five of X, C, Z, N and V, so logic ops **clear** C and V. QNICE leaves C and V unchanged on logic ops. | **Needs a decision.** EMU's behaviour is simpler in hardware. QNICE's is more useful. |
+| 28 | Which flags each op writes | With M set, EMU rewrites all five of X, C, Z, N, and V, so logic ops **clear** C and V. QNICE leaves C and V unchanged on logic ops. | **Needs a decision.** EMU's behaviour is simpler in hardware. QNICE's is more useful. |
 | 31 | `one` | WEB says "d = 1". EMU intends the value 1 (`value = '1'`), but the program crashes when it executes `ONE`. | **Reopened.** The author's tools say 1; the 74181 lineage says all ones. Michael decides. |
-| 33 | `move`/`dec` with C | EMU's `MOVE` and `DEC` ignore the C bit. `MDBL`, `ADD`, `DBL` and `SUB` honour it. | Simplest choice: only `mdbl`, `add`, `dbl` and `sub` use carry-in. |
+| 33 | `move`/`dec` with C | EMU's `MOVE` and `DEC` ignore the C bit. `MDBL`, `ADD`, `DBL`, and `SUB` honour it. | Simplest choice: only `mdbl`, `add`, `dbl`, and `sub` use carry-in. |
 | 36 | Shift count | EMU *intends* count mod 32 (`& 0x1F`), except `0<0` and `0>0`, which use the full count. QNICE uses the full count everywhere. | **Needs a decision.** Mod 32 is cheaper in hardware. QNICE's choice is consistent. |
 | 40 | Shifts that write C when M = 0 | WEB and A1 say C is written regardless of M. EMU only writes C when M is set (probe: `C<0` without M leaves C at 0). | EMU contradicts its own documentation, and A2's multiplication example needs the documented rule. **Keep the documented rule.** |
 | 2 | I/M meanings | WEB swaps them relative to A1 and A2 (§1). | Settle together with the interrupt model (items 45–50). |
@@ -80,7 +80,7 @@ Both layouts give the same *flag order* for select values 0–7: `1, X, C, Z, N,
 
 1. **The carry-in is read from SR bit 29** (`bit_test(29)`), which is V in EMU's own layout. C is bit 26. So `ADD[C]` and `SUB[C]` never use the carry (probe: `0xFFFFFFFF + 1` sets C, then `ADD[C] 10, 4` gives 14 rather than 15).
 2. **Shift counts are masked with the number 0x1F.** Bit::Vector's `in=hex` overload parses the literal as hex `0x31`, so the mask is really `& 0x31` (probe: `1>0 …, 4` does not shift at all). Only shifts by 1 work, and those are the only shifts the examples use.
-3. **Sources are aliased.** Shifts, `IAND` and `IOR` modify the *source register* in place (probe: `0<0 R2, R1, 1` also doubles R1; `IAND` inverts R1).
+3. **Sources are aliased.** Shifts, `IAND`, and `IOR` modify the *source register* in place (probe: `0<0 R2, R1, 1` also doubles R1; `IAND` inverts R1).
 4. **X is never set,** because the comparison with 0xFFFFFFFF suffers the same hex-overload problem (probe: `NOT[M]` of 0 gives N but no X).
 5. **`ONE` crashes** the emulator, because it assigns a plain string where a vector is expected.
 6. **`1>0` and `C>0` fill the wrong end:** they OR the mask into the low bits instead of the high bits.

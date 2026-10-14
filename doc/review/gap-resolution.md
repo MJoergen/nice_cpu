@@ -7,8 +7,8 @@ This file goes through the 60 items in [nice-article-review.md](nice-article-rev
 - `doc/intro/qnice_intro.tex`, the ISA slides.
 - `emulator/qnice.c`, the reference emulator.
 - `vhdl/alu.vhd`, the upstream ALU.
-- The qnice_cpu RTL: `src/cpu_main/sub/alu_data.vhd`, `alu_flags.vhd` and `write.vhd`.
-- The qnice_cpu docs: `doc/README.md`, `doc/interrupts.md` and `test/prog_r15.asm`.
+- The qnice_cpu RTL: `src/cpu_main/sub/alu_data.vhd`, `alu_flags.vhd`, and `write.vhd`.
+- The qnice_cpu docs: `doc/README.md`, `doc/interrupts.md`, and `test/prog_r15.asm`.
 
 ## Summary
 
@@ -19,9 +19,9 @@ This file goes through the 60 items in [nice-article-review.md](nice-article-rev
 | **Partial** | 18 | QNICE sets a precedent, but NICE differs enough that adopting it needs a decision. Most of these are interrupts and calls. |
 | **Open** | 3 | QNICE has nothing equivalent. Michael decides. |
 
-*Updated after the 1999 article* ([second-article-review.md](second-article-review.md)). That article resolves items 1, 31 and 32, which move to Article. It contradicts the 1997 article on item 21, which moves to Partial. It also confirms or refines items 8, 10, 29, 35, 51, 54 and 60.
+*Updated after the 1999 article* ([second-article-review.md](second-article-review.md)). That article resolves items 1, 31, and 32, which move to Article. It contradicts the 1997 article on item 21, which moves to Partial. It also confirms or refines items 8, 10, 29, 35, 51, 54, and 60.
 
-*Updated after the 2004 web page and emulator* ([emulator-and-webpage-review.md](emulator-and-webpage-review.md)). They resolve items 21, 24, 25, 26 and 58, which move to Article. They reopen item 31 (they say `one` = 1). They contradict the articles on the condition-field and SR layout, so item 44 moves to Partial. They also bear on items 2, 4, 7, 22, 27, 28, 29, 30, 33, 36, 40, 41, 51, 53, 54 and 60; see the "2004:" notes in those rows.
+*Updated after the 2004 web page and emulator* ([emulator-and-webpage-review.md](emulator-and-webpage-review.md)). They resolve items 21, 24, 25, 26, and 58, which move to Article. They reopen item 31 (they say `one` = 1). They contradict the articles on the condition-field and SR layout, so item 44 moves to Partial. They also bear on items 2, 4, 7, 22, 27, 28, 29, 30, 33, 36, 40, 41, 51, 53, 54, and 60; see the "2004:" notes in those rows.
 
 ### The decisions that matter most
 
@@ -32,11 +32,11 @@ This file goes through the 60 items in [nice-article-review.md](nice-article-rev
    - A rogue `RTI` or `INT` halts the CPU.
 
    The article's model saves only the return address, in R13, and has no RTI. Adopting QNICE's model fixes four gaps at once: the R13 clobber race, the lost M bit, the unsafe return, and the missing software interrupt. It also frees R13, which could then become the stack pointer as it is in QNICE. The cost is that the article's R13 = IR model changes, and new instructions (`RTI`, `INT`) need room in the HALT space. **Recommended: adopt it.**
-2. **Extension space (items 41, 42, 59).** Do what QNICE does with opcode `E`: turn the HALT encoding into a control group, with HALT as command 0 followed by RTI, INT and so on. Unknown commands halt. **Recommended.**
+2. **Extension space (items 41, 42, 59).** Do what QNICE does with opcode `E`: turn the HALT encoding into a control group, with HALT as command 0 followed by RTI, INT, and so on. Unknown commands halt. **Recommended.**
 3. **Overflow flag on subtract (item 30).** QNICE computes V for SUB with the add formula, which is not textbook signed overflow. The emulator keeps this under `OLD_V_LOGIC` and admits it is "not by the book", and qnice_cpu copies it. **Recommended: do not inherit this; use textbook V.**
 4. **The 3 open items.** They are small: `one` = 1 or all ones (31), the C bit on logic ops (34), and the `bpl`/`bpr` names (38).
-5. **What R15 reads as (item 21).** Settled: the 1999 article, the 2004 emulator and QNICE all say R15 reads as the next instruction.
-6. **Condition-field and SR layout (items 44, 2, 4, 51).** The articles put select in bits 31..29, negate in bit 28 and the always-1 bit at SR bit 31. WEB and EMU put negate in bit 31, select in bits 30..28, and SR bits 31..24 = `I M V N Z C X 1`, so select n tests SR bit 24 + n. That is the QNICE layout. **Recommended: adopt the WEB/EMU layout.**
+5. **What R15 reads as (item 21).** Settled: the 1999 article, the 2004 emulator, and QNICE all say R15 reads as the next instruction.
+6. **Condition-field and SR layout (items 44, 2, 4, 51).** The articles put select in bits 31..29, negate in bit 28, and the always-1 bit at SR bit 31. WEB and EMU put negate in bit 31, select in bits 30..28, and SR bits 31..24 = `I M V N Z C X 1`, so select n tests SR bit 24 + n. That is the QNICE layout. **Recommended: adopt the WEB/EMU layout.**
 7. **Order of constant words (item 7).** The 1997 article says s1, s2, destination. EMU and its binaries use destination, s0, s1. **Recommended: follow EMU.**
 8. **Flag-write policy and shift count (items 28, 36).** EMU rewrites all flags when M is set and masks shift counts to 5 bits. QNICE leaves C and V alone on logic ops and uses the full count. Michael decides.
 
@@ -75,7 +75,7 @@ Item numbers match the review file.
 | 16 | Interrupt example | Article | See items 2–4. |
 | 17 | Self-replicating program | Article | Its behaviour is correct. Use it to state the `Rx++` destination semantics (item 24). |
 
-### 3.1 Fetch, length and PC
+### 3.1 Fetch, length, and PC
 
 | # | Item | Status | Resolution and source |
 |---|---|---|---|
@@ -99,8 +99,8 @@ Item numbers match the review file.
 
 | # | Item | Status | Resolution and source |
 |---|---|---|---|
-| 28 | Flags for each operation | Partial | QNICE's pattern (intro slides "Affected condition bits", `alu_flags.vhd`): add/sub write V, N, Z, C; MOVE, NOT and the logic ops write only N and Z, leaving C and V unchanged; shifts write N, Z and the shifted-out bit, leaving V unchanged. Map NICE's extra ops onto this pattern: `dbl`, `mdbl` and `dec` count as arithmetic; `one`, `nor`, `nand`, `xnor` and `iand` count as logic. 2004: with M set, EMU rewrites all of X, C, Z, N and V, so logic ops clear C and V. Michael decides between that and QNICE's pattern. |
-| 29 | Carry for sub/dec, multi-word subtraction | **QNICE** | `SUBC` computes dst − src − C, and C = 1 means an unsigned borrow (`alu_data.vhd`: addend `not src`, carry-in `not C`; emulator `source_0 - source_1 - C`). NICE: the C bit **adds** C for `move`, `mdbl`, `add` and `dbl`, and **subtracts** C for `sub` and `dec`. This changes the article's "+1 if carry" rule for sub/dec. 2004: EMU computes s0 − s1 − C with C as borrow, confirming this as the author's intent (its carry-in is read from the wrong bit). |
+| 28 | Flags for each operation | Partial | QNICE's pattern (intro slides "Affected condition bits", `alu_flags.vhd`): add/sub write V, N, Z, C; MOVE, NOT, and the logic ops write only N and Z, leaving C and V unchanged; shifts write N, Z, and the shifted-out bit, leaving V unchanged. Map NICE's extra ops onto this pattern: `dbl`, `mdbl`, and `dec` count as arithmetic; `one`, `nor`, `nand`, `xnor`, and `iand` count as logic. 2004: with M set, EMU rewrites all of X, C, Z, N, and V, so logic ops clear C and V. Michael decides between that and QNICE's pattern. |
+| 29 | Carry for sub/dec, multi-word subtraction | **QNICE** | `SUBC` computes dst − src − C, and C = 1 means an unsigned borrow (`alu_data.vhd`: addend `not src`, carry-in `not C`; emulator `source_0 - source_1 - C`). NICE: the C bit **adds** C for `move`, `mdbl`, `add`, and `dbl`, and **subtracts** C for `sub` and `dec`. This changes the article's "+1 if carry" rule for sub/dec. 2004: EMU computes s0 − s1 − C with C as borrow, confirming this as the author's intent (its carry-in is read from the wrong bit). |
 | 30 | Two's complement, definition of V | Partial | QNICE: two's complement, with V meaning signed overflow on add/sub. Its SUB V uses the add formula, which is wrong for subtraction (emulator `OLD_V_LOGIC`; `alu_flags.vhd` copies it). Recommended: textbook V for NICE. 2004: EMU uses textbook signed overflow, confirming the recommendation. |
 | 31 | `one` = 1 or all ones | **Open** | Contested. The 1999 article's 74181 lineage implies all ones (`$FFFFFFFF`). WEB says "d = 1", and EMU intends 1 (but crashes on it). Michael decides. |
 | 32 | `mdbl` formula | Article | Resolved by the 1999 article: it is the 74181's "A plus AB", so s1 + (s1 ∧ s2) is deliberate. (`dbl` = 2·s1. The 1999 article's 2·s2 is a typo.) |
@@ -122,7 +122,7 @@ Item numbers match the review file.
 
 | # | Item | Status | Resolution and source |
 |---|---|---|---|
-| 41 | HALT's spare 26 bits | Partial | QNICE's opcode `E` is a control group: `HALT` is command 0 (`0xE000`), followed by RTI, INT, INCRB and DECRB. Recommended: split the NICE HALT space into command and operand fields the same way. 2004: WEB says the spare bits "have no meaning and should be zero", and a HALT whose condition holds stops the CPU. The control-group idea is still open. |
+| 41 | HALT's spare 26 bits | Partial | QNICE's opcode `E` is a control group: `HALT` is command 0 (`0xE000`), followed by RTI, INT, INCRB, and DECRB. Recommended: split the NICE HALT space into command and operand fields the same way. 2004: WEB says the spare bits "have no meaning and should be zero", and a HALT whose condition holds stops the CPU. The control-group idea is still open. |
 | 42 | No reserved opcodes or illegal-opcode trap | Partial | QNICE precedent: there is a reserved opcode (`D`), and a reserved or unknown command halts the CPU (emulator: "Attempt to execute a reserved instruction", return 1; upstream VHDL: "illegal command: HALT"; qnice_cpu traps it in simulation). Recommended: unknown control commands halt. |
 | 43 | Conditional HALT | Article | Fig. 8 includes the condition field, so HALT is conditional. QNICE control instructions are not conditional, so this is a NICE extra. |
 | 44 | Mapping of the condition select bits | Partial | QNICE: select n tests SR bit n counting from the always-1 bit, so 000 = always, 001 = X, 010 = C, 011 = Z, 100 = N, 101 = V (intro example `ABRA LOOP, !Z` = `0xFF8B`). For NICE that is select n → SR bit 31 − n, so 110 = M and 111 = I, and the first six flags are in exactly QNICE's order. The all-zero word is then an unconditional `move r0,r0`, which matches footnote 4's "zero is a NOP". *This replaces the "24 + n" default in the review.* 2004: WEB and EMU use a different layout from the articles: negate in bit 31, select in bits 30..28, SR bits 31..24 = `I M V N Z C X 1`, and select n tests SR bit 24 + n. That is exactly QNICE's layout. Recommended: adopt it, which turns "SR bit 31 − n" above into "SR bit 24 + n". |
@@ -136,7 +136,7 @@ Item numbers match the review file.
 | 47 | Return address | **QNICE** | The saved address is where execution would have continued: the next instruction, or the target if the instruction was a taken branch. Interrupts are taken only between instructions (`doc/README.md`, "What a program sees"). |
 | 48 | Interrupt vs. HALT | **QNICE** | qnice_cpu: HALT wins, and a halted CPU stays halted. This matches the article's "only reset restarts". (Upstream's FSM does the opposite; qnice_cpu chose this deliberately.) |
 | 49 | Edge/level, priority, acknowledge | Partial | qnice_cpu: a valid/ready handshake with the ISR address on its own port; one device; a request may be withdrawn; the interrupted program is guaranteed progress. NICE differs in two ways: it sends an 8-bit vector number rather than an address, and it has an NMI, which QNICE does not. NMI priority and NMI nesting need a decision. |
-| 50 | Software interrupt | **QNICE** | Add `INT`. A rogue `INT` (inside an ISR) and a rogue `RTI` (outside one) both halt, matching the emulator, upstream and qnice_cpu. For NICE, `INT` takes a vector number. |
+| 50 | Software interrupt | **QNICE** | Add `INT`. A rogue `INT` (inside an ISR) and a rogue `RTI` (outside one) both halt, matching the emulator, upstream, and qnice_cpu. For NICE, `INT` takes a vector number. |
 
 ### 3.7 System level
 

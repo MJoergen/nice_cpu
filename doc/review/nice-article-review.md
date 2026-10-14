@@ -1,4 +1,4 @@
-# NICE article review: inconsistencies, gaps and ambiguities
+# NICE article review: inconsistencies, gaps, and ambiguities
 
 Source: B. Ulmann, *NICE – an elegant and powerful 32-bit architecture*, Sept 8 1997 (journal pages 30–35, uploaded as `Bernds-NICE.pdf`).
 
@@ -61,7 +61,7 @@ These are places where the article disagrees with itself. Each needs a decision.
 
 4. **That same example clobbers all flags, including the "always true" bit.** Any whole-register write to R14 (`0<0 r14,...`, or `0>0` if fixed) overwrites bits 31..24. If bit 31 is an ordinary storage bit, writing 0 there makes every unconditional instruction be skipped, and the machine locks up. The article never says bit 31 is hard-wired. It must be (read-only 1), or the "always" condition must be encoded some other way.
 
-5. **"Fixed format, 32-bit instructions" vs. trailing constant words** (Abstract, §2 p. 31, footnote 3). Modes 011/111 each add a 32-bit constant word after the instruction, so an instruction is 1–4 words long. The format of the first word is fixed; the instruction length is not. The spec should say so explicitly, because fetch, PC update and conditional skip all depend on it.
+5. **"Fixed format, 32-bit instructions" vs. trailing constant words** (Abstract, §2 p. 31, footnote 3). Modes 011/111 each add a 32-bit constant word after the instruction, so an instruction is 1–4 words long. The format of the first word is fixed; the instruction length is not. The spec should say so explicitly, because fetch, PC update, and conditional skip all depend on it.
 
 6. **"PC points to the current instruction during the whole cycle" vs. using R15 with side effects.** The article also says every register can be used in every context without restrictions (p. 30). That collides with `R15++`, `--R15`, `@R15++`, R15 as a post-inc/dec destination, and with the need to read constant words that follow the instruction. Either those combinations get defined semantics or they are declared reserved/undefined.
 
@@ -88,7 +88,7 @@ These don't change the ISA, but they matter because examples are often read as t
 
 ## 3. Gaps: things a complete ISA must define and the article doesn't
 
-### 3.1 Instruction fetch, length and PC update
+### 3.1 Instruction fetch, length, and PC update
 18. **How PC advances.** Not stated. Needed: after an instruction that does not write R15, PC ← PC + 1 + (number of constant words).
 19. **Writes to R15.** Writing R15 is the only jump mechanism (`mov r15,#label`). The spec must say that a write to R15 replaces the normal PC advance, and what happens with R15 in `++`/`--` modes and as an indirect base.
 20. **Skipped instructions still have length.** When the condition is false, the CPU must still decode all three operand modes to skip the right number of constant words. Also: are side effects (`++`/`--`) suppressed on a skipped instruction? (Presumably yes.)
@@ -145,7 +145,7 @@ These don't change the ISA, but they matter because examples are often read as t
 57. `#c` without `[Rx]` (e.g. `mov r15,#skip`) is used everywhere but never defined; presumably `#c[R0]`.
 58. Number syntax: `$` = hex; is a bare number decimal? (see item 7.)
 59. Encoding of unused operand fields and HALT's spare bits (items 23, 41).
-60. `.dat #label` uses `#` inside a data directive, which is not explained; `.org`, `.equ`, `.ivtable`, `.reserve` and macros are mentioned but not specified.
+60. `.dat #label` uses `#` inside a data directive, which is not explained; `.org`, `.equ`, `.ivtable`, `.reserve`, and macros are mentioned but not specified.
 
 ---
 

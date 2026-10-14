@@ -6,7 +6,7 @@ Reviewed on 2026-10-14: `emulator/src/cpu.zig` and `emulator/src/main.zig` at co
 
 ## Summary
 
-**The core is faithful.** I found no divergence from ISA.md in any instruction, addressing mode, flag rule or interrupt rule, including the corners the specification spent the most words on: R0 and R14 bit 24 within an instruction, R15 reading as the next instruction, the carry input taken after the source side effects, unused fields evaluated in full, shifts writing C only with M, `after_rti`, and NMI before IRQ.
+**The core is faithful.** I found no divergence from ISA.md in any instruction, addressing mode, flag rule, or interrupt rule, including the corners the specification spent the most words on: R0 and R14 bit 24 within an instruction, R15 reading as the next instruction, the carry input taken after the source side effects, unused fields evaluated in full, shifts writing C only with M, `after_rti`, and NMI before IRQ.
 
 The problems are around the core:
 
@@ -14,7 +14,7 @@ The problems are around the core:
 - Memory is a dense array, so nothing can ever live at a high address. The assembler's own `wrap.bin` cannot be loaded, the ISA's address wrap and I/O range are unreachable, and a stack placed high silently loses every write (§1.2).
 - An out-of-memory `--mem-size` and an empty program are not reported (§1.3, §1.4).
 - Error messages are decent but a few are vague or go to the wrong stream (§4).
-- The tests pass but have real gaps: eight ALU opcodes, three destination modes, §4.4, the carry timing, twelve conditions, the trace, the loader and the exit codes are never tested (§5).
+- The tests pass but have real gaps: eight ALU opcodes, three destination modes, §4.4, the carry timing, twelve conditions, the trace, the loader, and the exit codes are never tested (§5).
 
 ## 1. Bugs and limitations
 
@@ -75,7 +75,7 @@ Each probe below was assembled with `niceasm` and run. The results match ISA.md.
 
 **Logic opcodes and `SUB[C]`** (§5.1). With R1 = `0xF0F0F0F0`, R2 = `0xFF00FF00`: `NOR` `000f000f`, `IAND` `0f000f00`, `NAND` `0fff0fff`, `XOR` `0ff00ff0`, `IOR` `ff0fff0f`, `XNOR` `f00ff00f`, `AND` `f000f000`, `OR` `fff0fff0`, `NOT R1` `0f0f0f0f`, `ONE` 1, `SUB[C]` with C = 0 `f1eff1f0`.
 
-**Destination modes 001, 110, 011/111 and unused fields** (§4.2, §4.4). The last two words are hand-encoded, because the assembler rightly refuses three operands for `MOVE` and `ONE`:
+**Destination modes 001, 110, and 011/111, and unused fields** (§4.2, §4.4). The last two words are hand-encoded, because the assembler rightly refuses three operands for `MOVE` and `ONE`:
 
             MOVE R1, 0x100
             MOVE R1--, 5          ; R1 = 4
@@ -116,11 +116,11 @@ Result: R1 = 1, R2 = 8, R4 = 9, R3 = 1, halted at PC = `0xc`. This also covers t
 
 **33-bit rotations and a huge shift count** (§5.2). With C = 1 and R1 = `0x80000000`: `C<C[M] R2, R1, 1` gives R2 = 1 and C = 1; `C>C R4, R1, R3` with R3 = `0xFFFFFFFF` (n = 2³²−1 ≡ 3 mod 33) gives `0x30000000` and leaves C alone because M is clear; `0<0[M] R5, R1, R3` gives 0 with Z = 1 and C = 0.
 
-**VBASE ≠ 0, the I flag and a nested `INT`** (§7). With R14 = `0x01000001` (table at `0x100`) and vector 2 pointing at the routine, `INT 2` enters it with R14 = `0x81000001`; an `INT 3` inside it halts with `INT inside an interrupt routine` and exit status 2. `HALT` directly after `RTI` works (4 steps).
+**VBASE ≠ 0, the I flag, and a nested `INT`** (§7). With R14 = `0x01000001` (table at `0x100`) and vector 2 pointing at the routine, `INT 2` enters it with R14 = `0x81000001`; an `INT 3` inside it halts with `INT inside an interrupt routine` and exit status 2. `HALT` directly after `RTI` works (4 steps).
 
 **Self-modifying code** (§8.2). `MOVE @0x4, 0x0C000000` followed by `MOVE R1, 1` (whose constant is word 4) gives R1 = `0x0C000000`.
 
-**Interrupt ordering**, from the ad-hoc Zig tests: with IRQ 5 and NMI 6 both pending and E = 1, the NMI is taken, the IRQ stays pending through the routine, the instruction after `RTI` runs, and then the IRQ is taken with `saved_pc` = 1. The §11 instruction `0xB278C971 0x12345678`, when actually executed (the existing test only checks its encoding), decrements R2, adds mem[R1 + 0x12345678], stores at R3 and increments R3.
+**Interrupt ordering**, from the ad-hoc Zig tests: with IRQ 5 and NMI 6 both pending and E = 1, the NMI is taken, the IRQ stays pending through the routine, the instruction after `RTI` runs, and then the IRQ is taken with `saved_pc` = 1. The §11 instruction `0xB278C971 0x12345678`, when actually executed (the existing test only checks its encoding), decrements R2, adds mem[R1 + 0x12345678], stores at R3, and increments R3.
 
 **Everything else I read.** The constant words are fetched before the condition and dest/s0/s1 order is right. The condition sees SR before the instruction. R14 register-direct destinations skip the flag update and force bit 24; memory-mode destinations on R14 do update the flags. Reserved control words are detected by `bits 20..8 ≠ 0 or (cmd ≠ INT and vector ≠ 0)`. `RTI` outside a routine halts. `after_rti` is cleared by a skipped instruction too. The `shift()` reduction of the count (mod 33, (n−1) mod 32 + 1, min(n, 33)) is correct for every one of the sixteen shifts, and the C result follows the §5.2 table exactly. Zig precedence is right everywhere (`&` binds tighter than `==`), all wrap-around arithmetic uses `+%`/`-%`, and no index or cast can trap on hostile input.
 
@@ -135,7 +135,7 @@ These are not emulator bugs, but the FPGA will have to make the same choices, so
 
 ## 4. Error messages
 
-**Good.** Loader errors carry `file:line:`. No program, a missing value, an unknown option and two programs each get a clear one-line message, and the full usage is shown only when it helps. Exit statuses 0/1/2/3 behave as documented; I checked each.
+**Good.** Loader errors carry `file:line:`. No program, a missing value, an unknown option, and two programs each get a clear one-line message, and the full usage is shown only when it helps. Exit statuses 0/1/2/3 behave as documented; I checked each.
 
 **Nits.**
 
@@ -147,11 +147,11 @@ These are not emulator bugs, but the FPGA will have to make the same choices, so
 | `-d 10` | `--dump wants ADDR:N, not '10'` | Names the long option when `-d` was typed. Trivial. |
 | `-n 5000000000` | `bad number '5000000000'` | `max_steps` is a `u64`, but the parser is `u32`. Parse as `u64`, or say the limit. |
 
-**Lenient loading, undocumented.** The format is "8-digit hex, space, 8-digit hex", but the loader accepts `0000_0000 0C00_0000`, `+1 +5` and fields of any width, and a later line for the same address silently overwrites an earlier one (the assembler calls that an error). A `0x` prefix and a UTF-8 BOM are rejected. None of this matters for `niceasm` output; it only matters if the README is taken as a format definition.
+**Lenient loading, undocumented.** The format is "8-digit hex, space, 8-digit hex", but the loader accepts `0000_0000 0C00_0000`, `+1 +5`, and fields of any width, and a later line for the same address silently overwrites an earlier one (the assembler calls that an error). A `0x` prefix and a UTF-8 BOM are rejected. None of this matters for `niceasm` output; it only matters if the README is taken as a format definition.
 
 ## 5. Tests
 
-**What is good.** The three 2004 programs are compared end to end with exact output; I re-derived `count` (12292 = 3 + 3·4096 + 1 steps, R1 = 4096·4097/2 = `0x800800`, R14 = Z + bit 24) and `replicate` (34 steps, R2 = `0x1a`, the dump equals program words 0–9) by hand and they are right. The `shift()` tests are thorough: every count regime, both directions, n = 0, and the C rule. The R0, R14 bit 24, R15/call-return, skip, reserved-word and missing-memory tests each pin a sentence of ISA.md. The `run()` helper panics after 10 000 steps, so a wrong jump cannot hang the suite.
+**What is good.** The three 2004 programs are compared end to end with exact output; I re-derived `count` (12292 = 3 + 3·4096 + 1 steps, R1 = 4096·4097/2 = `0x800800`, R14 = Z + bit 24) and `replicate` (34 steps, R2 = `0x1a`, the dump equals program words 0–9) by hand and they are right. The `shift()` tests are thorough: every count regime, both directions, n = 0, and the C rule. The R0, R14 bit 24, R15/call-return, skip, reserved-word, and missing-memory tests each pin a sentence of ISA.md. The `run()` helper panics after 10 000 steps, so a wrong jump cannot hang the suite.
 
 **Gaps.** Each of these would let a one-character typo through today.
 
@@ -165,7 +165,7 @@ These are not emulator bugs, but the FPGA will have to make the same choices, so
 | §4.3 R15 | `R15++` as destination, the side-effect exception, last-write-wins. | The R15 probe. |
 | §7 interrupts | NMI before IRQ when both pend; IRQ held through a routine; nested `INT` halts; `HALT` inside a routine; VBASE ≠ 0; `RTI` restoring E. | The two ad-hoc tests in §2 and the VBASE probe. |
 | §8.2 | Self-modifying code. | The `selfmod` probe. |
-| Trace | Nothing, although the README defines the format and it is the FPGA comparison tool. §1.1 is the result. | Trace into a `std.Io.Writer.fixed` buffer and compare lines, for a jump, a skip, a write and an interrupt. |
+| Trace | Nothing, although the README defines the format and it is the FPGA comparison tool. §1.1 is the result. | Trace into a `std.Io.Writer.fixed` buffer and compare lines, for a jump, a skip, a write, and an interrupt. |
 | CLI and loader | Nothing. No exit code, no loader error, no option parser path. The assembler has `test/errors.py`; the emulator has no equivalent. | A shell or Python script that runs the binary on each bad input in §4 and checks message and status. |
 
 **Hygiene.** The IRQ/NMI test pokes `cpu.saved_sr = 0` and `setReg(14, …)` halfway through with the comment "irrelevant from here"; splitting it into two tests would make each self-explanatory. The `.expected` files were produced by the emulator itself; a comment that `count` and `replicate` were checked by hand would record that they are not circular.
@@ -188,7 +188,7 @@ Checked on 2026-10-14 against commit 99feb8d ("niceemu: fix the issues from the 
 - **§1.4** An empty file and a blank-only file give `error: no words to load`.
 - **§1.5** `execute()` returns the instruction word; dumps and the screen use `peek()`, which is documented as not being a §8.2 access.
 - **§3** ISA.md §4.2 and Appendix B now state the `R14--`/`R14++` rule; the README defines a step and the printed PC.
-- **§4** Every message in the table is fixed and has a case in `test/errors.py`; `-h` goes to stdout; the loader is strict (1–8 hex digits, no `0x`, `_` or sign, duplicates rejected) and the README says so.
+- **§4** Every message in the table is fixed and has a case in `test/errors.py`; `-h` goes to stdout; the loader is strict (1–8 hex digits, no `0x`, `_`, or sign, duplicates rejected) and the README says so.
 - **§5** Every gap in the table has a test: `alu()` for the logic ops plus `logic.asm`, the executed §11 instruction, `dest.asm`, `carry.asm`, all sixteen conditions in `cond.asm` and the full `Cond` enum, `r15.asm`, NMI before IRQ, the IRQ waiting through a routine, `RTI` restoring E, `HALT` and `INT` inside a routine, VBASE, `selfmod.asm`, two trace tests, and the exit statuses. The interrupt test is split in three with a shared fixture, and the Makefile records that `count` and `replicate` were checked by hand.
 - **§6** Interrupt trace lines are padded to 17 characters, and the Makefile explains Debug against ReleaseSafe.
 

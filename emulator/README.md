@@ -23,7 +23,7 @@ command line and the loader. The probes are assembled with niceasm, and
     niceemu [options] program.bin
 
 The program is loaded, the processor is reset (PC = 0) and it runs until it
-halts. Then the emulator prints why it stopped, the number of steps and the
+halts. Then the emulator prints why it stopped, the number of steps, and the
 registers. A step is one instruction, or the entry into an interrupt, so an
 NMI followed by `RTI` and `HALT` is 3 steps. The PC printed after a halt is
 the address after the halting instruction.
@@ -43,7 +43,7 @@ the address after the halting instruction.
 
 The exit status is 0 after `HALT`, 2 after any other halt (a reserved control
 word, a nested `INT`, or `RTI` outside an interrupt routine), 3 at the step
-limit, and 1 for a usage, file or memory error. If stdout is a pipe that
+limit, and 1 for a usage, file, or memory error. If stdout is a pipe that
 closes early, as in `niceemu -t x.bin | head`, niceemu stops quietly with
 status 141, as a filter killed by SIGPIPE would.
 
@@ -52,7 +52,7 @@ status 141, as a filter killed by SIGPIPE would.
 A `.bin` file has one line per word, as niceasm writes it (ISA.md §10.4):
 an address and a word, both in hex, separated by blanks. niceasm writes 8
 digits; the loader accepts 1 to 8, in upper or lower case, and nothing else:
-no `0x` prefix, sign or `_`. Blank lines are ignored. Loading the same
+no `0x` prefix, sign, or `_`. Blank lines are ignored. Loading the same
 address twice and a file with no words are errors.
 
 ## Devices
@@ -69,7 +69,7 @@ word is first written to them, so a program only costs the memory it
 touches. Nothing is mapped at the I/O addresses `0xFFFFFF00`–`0xFFFFFFFF`
 yet: they are ordinary memory.
 
-The core (`src/cpu.zig`) implements IRQ, NMI, `INT` and `RTI` (ISA.md §7).
+The core (`src/cpu.zig`) implements IRQ, NMI, `INT`, and `RTI` (ISA.md §7).
 No device raises IRQ or NMI yet; the unit tests call `requestIrq` and
 `requestNmi` directly.
 

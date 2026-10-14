@@ -1,10 +1,10 @@
 # Adversarial review of niceasm
 
-Reviewed on 2026-10-14: `assembler/niceasm.py` at commit 55a6913 ("niceasm: add type hints"), against `doc/ISA.md` §2, §4, §5.3, §10 and §11.
+Reviewed on 2026-10-14: `assembler/niceasm.py` at commit 55a6913 ("niceasm: add type hints"), against `doc/ISA.md` §2, §4, §5.3, §10, and §11.
 
-**Status after commit 0670e53** ("niceasm: fix the issues from the adversarial review"), checked the same day: every item in sections 1, 2 and 4 is fixed, and each has a case in `test/errors.py` or a line in `test/encoding.asm`. Section 5 is the second round against the new code. It found one crash on an unrealistic input and a few message nits, nothing that affects correct programs.
+**Status after commit 0670e53** ("niceasm: fix the issues from the adversarial review"), checked the same day: every item in sections 1, 2, and 4 is fixed, and each has a case in `test/errors.py` or a line in `test/encoding.asm`. Section 5 is the second round against the new code. It found one crash on an unrealistic input and a few message nits, nothing that affects correct programs.
 
-**How it was checked.** I read the code against the specification, confirmed that `make test` passes, checked the shift alias table and the control encodings by hand, and then ran about sixty one- to five-line probe programs through the assembler to see what it accepts, rejects and reports. The probe files were not kept; every input quoted below is complete and reproduces the result.
+**How it was checked.** I read the code against the specification, confirmed that `make test` passes, checked the shift alias table and the control encodings by hand, and then ran about sixty one- to five-line probe programs through the assembler to see what it accepts, rejects, and reports. The probe files were not kept; every input quoted below is complete and reproduces the result.
 
 ## Summary
 
@@ -65,14 +65,14 @@ Line 334 tests `if cond:`, and `?1` encodes as 0. So `?1 .DAT 1` and `?1 .ORG 5`
 
 ### 1.6 Documentation mismatch on `.EQU`
 
-ISA.md §10.3 says `.EQU` "is substituted textually, so it can stand for a number or a register". Only a number, an expression or a register survives substitution:
+ISA.md §10.3 says `.EQU` "is substituted textually, so it can stand for a number or a register". Only a number, an expression, or a register survives substitution:
 
 | Input | Result at the use site |
 |---|---|
 | `X .EQU @R2` then `MOVE R1, X` | `expected a number or a symbol at '@R2'` |
 | `X .EQU R1++` then `MOVE R2, X` | `bad expression 'R1++'` |
 
-Either support full operands or say in ISA.md and the README that an `.EQU` value is a number, an expression or a register name.
+Either support full operands or say in ISA.md and the README that an `.EQU` value is a number, an expression, or a register name.
 
 ### 1.7 Things accepted without complaint
 
@@ -113,10 +113,10 @@ For the record, these were checked and are right:
 
 - The worked example in §11, `0xB278C971 0x12345678`.
 - All sixteen shift opcodes and the six aliases `SHL ROL BPL SHR ROR BPR`.
-- `HALT`, `RTI` and `INT n` encodings, and the range check on n including for a label whose value is 256.
+- `HALT`, `RTI`, and `INT n` encodings, and the range check on n including for a label whose value is 256.
 - Constant words in field order dest, s0, s1, and unused fields encoded as R0.
 - Pass 1 and pass 2 agree on every statement size, because operand modes depend only on `.EQU` definitions, which are fixed before pass 1, and `.ORG` and `.BLK` refuse forward references.
-- Duplicate labels, duplicate `.EQU` names, a label that collides with an `.EQU`, `.EQU` loops including `X .EQU X+1`, duplicate addresses, numbers above 2³², CRLF line endings and address wrap at `0xFFFFFFFF` are all handled.
+- Duplicate labels, duplicate `.EQU` names, a label that collides with an `.EQU`, `.EQU` loops including `X .EQU X+1`, duplicate addresses, numbers above 2³², CRLF line endings, and address wrap at `0xFFFFFFFF` are all handled.
 - `.ASCII_B` byte order and padding, `.ASCII_L` terminator, and both quote styles including a `'` inside `"..."`.
 
 ## 4. Missing tests
@@ -125,8 +125,8 @@ For the record, these were checked and are right:
 
 Positive gaps in `encoding.asm`:
 
-- The aliases `ROL`, `BPL`, `SHR` and `BPR`. Only `SHL` and `ROR` are tested.
-- The conditions `?!X`, `?!C`, `?!N`, `?!V`, `?!E` and `?!I`. Only `?!1` and `?!M` are tested.
+- The aliases `ROL`, `BPL`, `SHR`, and `BPR`. Only `SHL` and `ROR` are tested.
+- The conditions `?!X`, `?!C`, `?!N`, `?!V`, `?!E`, and `?!I`. Only `?!1` and `?!M` are tested.
 - `@c[Rx]` as a destination, `--R0`, the `R00` to `R09` spellings, and the registers R10 to R12.
 - Double-quoted strings, an empty string for both `.ASCII` forms, a string containing `;`, and a `*` comment.
 - `.BLK 0`, an `.EQU` chain such as `A .EQU B` and `B .EQU R1`, an `.EQU` that names a label, and a program with no `.ORG`.
@@ -150,11 +150,11 @@ Negative tests to add, one line each:
 ### 5.1 Confirmed fixed
 
 - A line starting with `,` and an indented unterminated string are both reported.
-- `R1 .EQU 5`, `R16 .DAT 1` and `ADD .EQU 5` are rejected with a message that names the rule.
+- `R1 .EQU 5`, `R16 .DAT 1`, and `ADD .EQU 5` are rejected with a message that names the rule.
 - `.BLK -1` is an error. `.BLK 0x2000000` now runs in 14 MB instead of 4.7 GB.
 - `?1 .DAT 1` is an error.
 - The default output name never overwrites the input, and `-o` pointing at the input is refused.
-- `X .EQU @R2`, `X .EQU R1++` and `X .EQU 5[R4]` work as whole operands, and ISA.md §10.3 and the README now say what an `.EQU` may hold.
+- `X .EQU @R2`, `X .EQU R1++`, and `X .EQU 5[R4]` work as whole operands, and ISA.md §10.3 and the README now say what an `.EQU` may hold.
 - A bad `.EQU` value is reported once, on its own line, even if unused.
 - A label on a `.ORG` line names the new address, and ISA.md §10.1 says so.
 - Every message in the section 2 table is replaced. `LOOP MOV R1, R2` now reports `MOV` and says that `LOOP` is read as a label.
@@ -190,7 +190,7 @@ Two things are wrong with that line: it is not a loop, and the name quoted is th
 
 ### 5.5 Accepted without complaint
 
-- A comma directly after the mnemonic, label or condition: `MOVE , R1, R2`, `L , HALT` and `?Z , HALT`. The README says operands are separated by one comma. This comma separates nothing.
+- A comma directly after the mnemonic, label, or condition: `MOVE , R1, R2`, `L , HALT`, and `?Z , HALT`. The README says operands are separated by one comma. This comma separates nothing.
 - `X: .EQU 5` is still rejected with "bad symbol name 'X:'" while `X: HALT` is accepted. The README says a label may end with `:`, and an `.EQU` name is written in the label position.
 
 ### 5.6 Tests

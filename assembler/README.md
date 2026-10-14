@@ -27,7 +27,7 @@ is 1 if there were any. No output is written if there is an error.
 ## Output format
 
 The output is the `.bin` text format of [ISA.md §10.4](../doc/ISA.md#104-object-format):
-one line per assembled word, an 8-digit hex address, a space and the 8-digit
+one line per assembled word, an 8-digit hex address, a space, and the 8-digit
 hex word, in address order. This is the format the 2004 `NICE.pm` assembler
 writes, so its example binaries can be compared directly. Addresses skipped
 by `.ORG` are not listed.
@@ -42,13 +42,13 @@ by `.ORG` are not listed.
 - A label or `.EQU` name may end with `:`. A label on a `.ORG` line names the
   new address.
 - Labels and `.EQU` names are case-sensitive. Mnemonics, register names,
-  conditions, modifiers and directives are not.
+  conditions, modifiers, and directives are not.
 - A label or `.EQU` name cannot be a mnemonic or look like a register (`R`
   followed by digits, so `R16` is rejected too).
-- An `.EQU` value is a number, an expression, a register or a complete
-  operand such as `@R2`, `R3++` or `5[R4]`. The name is replaced by its value
+- An `.EQU` value is a number, an expression, a register, or a complete
+  operand such as `@R2`, `R3++`, or `5[R4]`. The name is replaced by its value
   when it is a whole operand, the part after `@`, the register in `--Rx`,
-  `Rx++`, `Rx--` or `c[Rx]`, or a term in an expression. In an expression
+  `Rx++`, `Rx--`, or `c[Rx]`, or a term in an expression. In an expression
   the value must be a number or an expression. Each value is checked where it
   is defined.
 - Numbers are digits only: no `_` separators.
@@ -66,7 +66,7 @@ by `.ORG` are not listed.
 | File | What it checks |
 |---|---|
 | `count`, `replicate`, `print` | The 2004 example programs by B. Ulmann ([examples.zip](http://www.vaxman.de/projects/nice/examples.zip)). The `.bin` files are the original `NICE.pm` output and match byte for byte. |
-| `encoding` | Every addressing mode, opcode, alias, condition, control instruction and directive, register spellings, `.EQU` chains and operands. The expected output was checked by hand against ISA.md, including the worked example in §11. |
+| `encoding` | Every addressing mode, opcode, alias, condition, control instruction, and directive; register spellings; and `.EQU` chains and operands. The expected output was checked by hand against ISA.md, including the worked example in §11. |
 | `wrap` | Address wrap from `0xFFFFFFFF` to 0. |
 | `crlf` | CRLF line endings and a program with no `.ORG`. |
 | `errors.py` | One case per error message, including every bug fixed after [the review](../doc/review/assembler-review.md), and generated programs such as `.EQU` chains of 1200 names. |

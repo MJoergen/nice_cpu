@@ -128,13 +128,15 @@ and it traps with `unreachable`, even if its source has no function
 pointers. nicewasm supports all of them. A Rust program uses a table and
 `call_indirect` for `dyn` trait calls.
 
-The next step is smaller code. Two steps are done. Using locals and
-constants directly as operands made `test/safe.zig` 19% smaller (12353
-to 9941 words) and the float library 31% smaller (29569 to 20317). A
-short inline path for memory accesses made them 12% (to 8730) and 2.5%
-(to 19808) smaller again. Helpers for `i64` shifts should save more,
-with no change to ISA.md §9.4. [TODO.md](TODO.md) has the measurements
-and the plan.
+The code is about a third smaller than it was, after three steps with
+no change to ISA.md §9.4. Using locals and constants directly as
+operands made `test/safe.zig` 19% smaller (12353 to 9941 words) and the
+float library 31% smaller (29569 to 20317). A short inline path for
+memory accesses made them 12% (to 8730) and 2.5% (to 19808) smaller
+again. Helpers for `i64` shifts, and short inline code for a shift by a
+constant, took them to 8670 and 18723. In all, `test/safe.zig` is 30%
+smaller and the float library 37%. [TODO.md](TODO.md) has the
+measurements.
 
 ## Supported features
 
@@ -300,11 +302,13 @@ them. A signed comparison is N XOR V (ISA.md §9.2).
 An `i32` shift masks its count to 5 bits first, because NICE uses the
 full count (ISA.md §9.4). `shr_s` copies the sign bit into C and shifts it
 in with `C>0` (§5.2). A rotate needs no mask, since only the count modulo
-32 matters to `ROL` and `ROR`. An `i64` shift combines the two words with
-32-bit shifts. A NICE shift by 32 or more gives 0, and so does a shift by
-a "negative" count such as 32 − n for n > 32. So `shl` and `shr_u` need
-no branch: each part that does not apply comes out as 0. An `i64`
-rotate by 32 or more swaps the words first.
+32 matters to `ROL` and `ROR`. An `i64` shift by a constant combines the
+two words with three or four 32-bit shifts inline. Any other `i64` shift
+or rotate calls a helper, such as `W.shl64`, with the value in R1 and R2
+and the count in R3. A NICE shift by 32 or more gives 0, and so does a
+shift by a "negative" count such as 32 − n for n > 32. So `W.shl64` and
+`W.shr_u64` need no branch: each part that does not apply comes out as
+0. An `i64` rotate by 32 or more swaps the words first.
 
 A load or store first puts the byte address in R1 and checks that all its
 bytes are in the memory. A failed check jumps to a trap stub after the

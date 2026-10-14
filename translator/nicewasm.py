@@ -823,6 +823,73 @@ def store_helper(n: int) -> List[str]:
     return out + [instr("MOVE", "R15", "@R13++")]
 
 
+def rotl64_body() -> List[str]:
+    """Rotates R1 (low) and R2 (high) left by R3. A rotate by n >= 32 is a
+    rotate of the swapped words by n - 32."""
+    return [instr("AND[M]", "R0", "R3", "32"),               # Z = (n mod 64) < 32
+            instr("AND", "R3", "R3", "31"),                  # k
+            instr("MOVE", "R4", "R1"),                       # x
+            instr("MOVE", "R5", "R2"),                       # y
+            instr("?!Z MOVE", "R4", "R2"),
+            instr("?!Z MOVE", "R5", "R1"),
+            instr("SUB", "R6", "32", "R3"),
+            # lo' = x << k | y >> (32 - k), hi' = y << k | x >> (32 - k).
+            instr("SHL", "R1", "R4", "R3"),
+            instr("SHR", "R2", "R5", "R6"),
+            instr("OR", "R1", "R1", "R2"),
+            instr("SHL", "R2", "R5", "R3"),
+            instr("SHR", "R6", "R4", "R6"),
+            instr("OR", "R2", "R2", "R6"),
+            instr("MOVE", "R15", "@R13++")]
+
+
+def shift64_helper(op: str) -> List[str]:
+    """W.shl64, W.shr_u64, W.shr_s64, W.rotl64, or W.rotr64: shifts or
+    rotates the i64 in R1 (low) and R2 (high) by R3 modulo 64, and returns
+    it in R1 and R2. Uses R3-R6. A NICE shift uses its full count, so a
+    count of 32 or more, or a "negative" one like 32 - n for n > 32,
+    shifts out every bit (§5.2). That makes the logical shifts
+    branch-free."""
+    name = f"W.{op}64"
+    out = [f"; {name}: i64.{op} of R1 and R2 by R3.", name]
+    if op in ("shl", "shr_u"):
+        # shl: hi' = hi << n | lo >> (32 - n) | lo << (n - 32), lo' = lo << n.
+        # shr_u is the mirror image, with the words swapped.
+        near, far = ("R1", "R2") if op == "shl" else ("R2", "R1")
+        fwd, back = ("SHL", "SHR") if op == "shl" else ("SHR", "SHL")
+        return out + [
+            instr("AND", "R3", "R3", "63"),                  # n
+            instr("SUB", "R4", "32", "R3"),
+            instr("SUB", "R5", "R3", "32"),
+            instr(back, "R6", near, "R4"),
+            instr(fwd, "R4", near, "R5"),
+            instr("OR", "R6", "R6", "R4"),
+            instr(fwd, "R4", far, "R3"),
+            instr("OR", far, "R6", "R4"),
+            instr(fwd, near, near, "R3"),
+            instr("MOVE", "R15", "@R13++")]
+    if op == "shr_s":
+        # hi' = hi >>s n, which is all sign bits for n >= 32. lo' is
+        # hi >>s (n - 32) for n >= 32, else lo >> n | hi << (32 - n).
+        return out + [
+            instr("AND", "R3", "R3", "63"),                  # n
+            instr("SUB", "R4", "R3", "32"),
+            instr("C<0[M]", "R0", "R2", "1"),                # C = the sign bit
+            instr("C>0", "R5", "R2", "R4"),
+            instr("C>0", "R6", "R2", "R3"),
+            instr("SUB[M]", "R0", "R3", "32"),               # C = n < 32
+            instr("?C SUB", "R4", "32", "R3"),
+            instr("?C SHR", "R5", "R1", "R3"),
+            instr("?C SHL", "R4", "R2", "R4"),
+            instr("?C OR", "R5", "R5", "R4"),
+            instr("MOVE", "R1", "R5"),
+            instr("MOVE", "R2", "R6"),
+            instr("MOVE", "R15", "@R13++")]
+    if op == "rotr":
+        out.append(instr("SUB", "R3", "0", "R3"))            # rotr by n is rotl by -n
+    return out + rotl64_body()
+
+
 # Functions that memory.fill and memory.copy call, emitted once each if a
 # function uses them. They take byte addresses and a byte count, which the
 # caller has checked. Each byte or whole word is a pass of a loop: a word
@@ -950,6 +1017,8 @@ HELPERS: Dict[str, List[str]] = {
 for _n in (1, 2):
     for _signed in (False, True):
         HELPERS[f"W.load{_n}{'s' if _signed else 'u'}"] = load_helper(_n, _signed)
+for _op in ("shl", "shr_u", "shr_s", "rotl", "rotr"):
+    HELPERS[f"W.{_op}64"] = shift64_helper(_op)
 for _n in (1, 2, 4, 8):
     HELPERS[f"W.store{_n}"] = store_helper(_n)
     if _n >= 4:
@@ -1782,63 +1851,48 @@ class FunctionTranslator:
 
     def shift64(self, op: str, at: int, what: str) -> None:
         """An i64 shift or rotate. The count is the low word of the second
-        operand, modulo 64. A NICE shift uses its full count, so a count of
-        32 or more, or a "negative" one like 32 - n for n > 32, shifts out
-        every bit (§5.2). That makes the logical shifts branch-free."""
+        operand, modulo 64. A shift by a constant is a few instructions
+        inline. Any other calls a helper (shift64_helper)."""
+        count = self.deferred[-1] if len(self.stack) > self.ctrl[-1].height else None
         a, b = self.pop([I64, I64], at, what)
         lo, hi = self.push(I64)  # where a is, or would be
         a_lo, a_hi = a           # a itself, which may be deferred
-        if op in ("shl", "shr_u"):
-            # shl: hi' = hi << n | lo >> (32 - n) | lo << (n - 32), lo' = lo << n.
-            # shr_u is the mirror image, with the words swapped.
+        if count is None or count.local is not None or op in ("rotl", "rotr"):
+            self.move(["R1", "R2", "R3"], [a_lo, a_hi, b[0]])
+            self.call_helper(f"W.{op}64")
+            self.move([lo, hi], ["R1", "R2"])
+            return
+        n = int(count.words[0]) & 63
+        if n == 0:
+            self.move([lo, hi], a)
+        elif op in ("shl", "shr_u"):
+            # shl: hi' = hi << n | lo >> (32 - n), lo' = lo << n, or for
+            # n >= 32, hi' = lo << (n - 32) and lo' = 0. shr_u is the
+            # mirror image, with the words swapped.
             near, far = (lo, hi) if op == "shl" else (hi, lo)
             a_near, a_far = (a_lo, a_hi) if op == "shl" else (a_hi, a_lo)
             fwd, back = ("SHL", "SHR") if op == "shl" else ("SHR", "SHL")
-            self.emit("AND", "R1", b[0], "63")                 # n
-            self.emit("SUB", "R2", "32", "R1")
-            self.emit("SUB", "R3", "R1", "32")
-            self.emit(back, "R4", a_near, "R2")
-            self.emit(fwd, "R2", a_near, "R3")
-            self.emit("OR", "R4", "R4", "R2")
-            self.emit(fwd, "R2", a_far, "R1")
-            self.emit("OR", far, "R4", "R2")
-            self.emit(fwd, near, a_near, "R1")
-        elif op == "shr_s":
-            # hi' = hi >>s n, which is all sign bits for n >= 32. lo' is
-            # hi >>s (n - 32) for n >= 32, else lo >> n | hi << (32 - n).
-            self.emit("AND", "R1", b[0], "63")                 # n
-            self.emit("SUB", "R2", "R1", "32")
-            self.emit("C<0[M]", "R0", a_hi, "1")               # C = the sign bit
-            self.emit("C>0", "R3", a_hi, "R2")
-            self.emit("C>0", "R4", a_hi, "R1")
-            self.emit("SUB[M]", "R0", "R1", "32")              # C = n < 32
-            self.emit("?C SUB", "R2", "32", "R1")
-            self.emit("?C SHR", "R3", a_lo, "R1")
-            self.emit("?C SHL", "R2", a_hi, "R2")
-            self.emit("?C OR", "R3", "R3", "R2")
-            self.emit("MOVE", lo, "R3")
-            self.emit("MOVE", hi, "R4")
+            if n < 32:
+                self.emit(back, "R1", a_near, str(32 - n))
+                self.emit(fwd, "R2", a_far, str(n))
+                self.emit("OR", far, "R1", "R2")
+                self.emit(fwd, near, a_near, str(n))
+            else:
+                self.emit(fwd, far, a_near, str(n - 32))
+                self.emit("MOVE", near, "0")
+        elif n < 32:
+            # shr_s: lo' = lo >> n | hi << (32 - n), hi' = hi >>s n. C>0
+            # shifts in C, the sign bit (§5.2).
+            self.emit("SHL", "R1", a_hi, str(32 - n))
+            self.emit("SHR", "R2", a_lo, str(n))
+            self.emit("OR", lo, "R1", "R2")
+            self.emit("C<0[M]", "R0", a_hi, "1")
+            self.emit("C>0", hi, a_hi, str(n))
         else:
-            # A rotate by n >= 32 is a rotate of the swapped words by
-            # n - 32. rotr by n is rotl by -n.
-            count = b[0]
-            if op == "rotr":
-                self.emit("SUB", "R1", "0", b[0])
-                count = "R1"
-            self.emit("AND[M]", "R0", count, "32")             # Z = (n mod 64) < 32
-            self.emit("AND", "R1", count, "31")                # k
-            self.emit("MOVE", "R2", a_lo)                      # x
-            self.emit("MOVE", "R3", a_hi)                      # y
-            self.emit("?!Z MOVE", "R2", a_hi)
-            self.emit("?!Z MOVE", "R3", a_lo)
-            self.emit("SUB", "R4", "32", "R1")
-            # lo' = x << k | y >> (32 - k), hi' = y << k | x >> (32 - k).
-            self.emit("SHL", lo, "R2", "R1")
-            self.emit("SHR", hi, "R3", "R4")
-            self.emit("OR", lo, lo, hi)
-            self.emit("SHL", hi, "R3", "R1")
-            self.emit("SHR", "R4", "R2", "R4")
-            self.emit("OR", hi, hi, "R4")
+            # lo' = hi >>s (n - 32), and hi' is all sign bits.
+            self.emit("C<0[M]", "R0", a_hi, "1")
+            self.emit("C>0", lo, a_hi, str(n - 32))
+            self.emit("C>0", hi, a_hi, "32")
 
     def run(self) -> List[str]:
         r = Reader(self.t.data, self.code.start, self.code.end)

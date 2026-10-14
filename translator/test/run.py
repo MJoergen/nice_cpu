@@ -291,6 +291,61 @@ def memory_checks(dyn: bool) -> List[bytes]:
         ld_(I32_LOAD8_U, 0, 0x82)]
 
 
+# i64 shifts and rotates: (a, operation, count, result). V is
+# 0x80000001_00000003.
+SHIFT64_ROWS: List[Tuple[int, bytes, int, int]] = [
+    # V << 4: hi = 0x80000001 << 4, nothing comes up from lo.
+    (0x80000001_00000003, SHL64, 4, 0x00000010_00000030),
+    # V << 31: bit 1 of lo goes to bit 0 of hi.
+    (0x80000001_00000003, SHL64, 31, 0x80000001_80000000),
+    (0x80000001_00000003, SHL64, 32, 0x00000003_00000000),
+    (0x80000001_00000003, SHL64, 36, 0x00000030_00000000),
+    (0x80000001_00000003, SHL64, 64, 0x80000001_00000003),
+    (0x80000001_00000003, SHL64, 0, 0x80000001_00000003),
+    # Only the low word of the count matters: 4.
+    (0x80000001_00000003, SHL64, 0xFFFFFFFF_00000004, 0x00000010_00000030),
+    # V >> 4: the low 4 bits of hi, 0001, go to the top of lo.
+    (0x80000001_00000003, SHR_U64, 4, 0x08000000_10000000),
+    (0x80000001_00000003, SHR_U64, 32, 0x00000000_80000001),
+    (0x80000001_00000003, SHR_U64, 63, 1),
+    (0x80000001_00000003, SHR_S64, 4, 0xF8000000_10000000),
+    (0x80000001_00000003, SHR_S64, 32, 0xFFFFFFFF_80000001),
+    (0x80000001_00000003, SHR_S64, 36, 0xFFFFFFFF_F8000000),
+    (0x80000001_00000003, SHR_S64, 63, 0xFFFFFFFF_FFFFFFFF),
+    (0x40000000_00000000, SHR_S64, 62, 1),
+    # rotl 4: the top 4 bits of hi, 1000, go to the bottom of lo.
+    (0x80000001_00000003, ROTL64, 4, 0x00000010_00000038),
+    # rotl 36 is rotl 4 of the swapped words, 0x00000003_80000001.
+    (0x80000001_00000003, ROTL64, 36, 0x00000038_00000010),
+    (0x80000001_00000003, ROTL64, 32, 0x00000003_80000001),
+    # rotr 4: the bottom 4 bits of lo, 0011, go to the top of hi.
+    (0x80000001_00000003, ROTR64, 4, 0x38000000_10000000),
+    (0x80000001_00000003, ROTR64, 0, 0x80000001_00000003),
+]
+
+# More counts at the edges: 0, 1, 31, 36, and 63, and rotates by 36 and 64.
+SHIFT64_EDGES: List[Tuple[int, bytes, int, int]] = [
+    (0x80000001_00000003, SHL64, 63, 0x80000000_00000000),
+    (0x80000001_00000003, SHL64, 2**64 - 1, 0x80000000_00000000),          # 63
+    (0x80000001_00000003, SHR_U64, 0, 0x80000001_00000003),
+    (0x80000001_00000003, SHR_U64, 1, 0x40000000_80000001),
+    (0x80000001_00000003, SHR_U64, 36, 0x00000000_08000000),
+    (0x80000001_00000003, SHR_S64, 0, 0x80000001_00000003),
+    (0x80000001_00000003, SHR_S64, 31, 0xFFFFFFFF_00000002),
+    # rotr 36 is rotr 4 of the swapped words, 0x00000003_80000001.
+    (0x80000001_00000003, ROTR64, 36, 0x10000000_38000000),
+    (0x80000001_00000003, ROTL64, 64, 0x80000001_00000003),
+]
+
+
+def op64_dyn(a: int, op: bytes, b: int, want: int) -> bytes:
+    """op64, with the count in the i64 local 1, so that it is not a
+    constant."""
+    def c(x: int) -> bytes:
+        return i64_const(x - 2**64 if x >= 2**63 else x)
+    return c(a) + c(b) + local_tee(1) + op + c(want) + EQ64
+
+
 # (name, module bytes or the name of test/X.wasm, hand-written assembly, R1)
 CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # main returns 6 * 7, folded by zig. Zig's main(argc, argv) wrapper
@@ -887,35 +942,24 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
             op32(0x80000001, ROTL, 1, 3),
             op32(0x80000001, ROTR, 1, 0xC0000000),
             op32(0x12345678, ROTL, 36, 0x23456781),             # by 4
-            # V << 4: hi = 0x80000001 << 4, nothing comes up from lo.
-            op64(0x80000001_00000003, SHL64, 4, 0x00000010_00000030),
-            # V << 31: bit 1 of lo goes to bit 0 of hi.
-            op64(0x80000001_00000003, SHL64, 31, 0x80000001_80000000),
-            op64(0x80000001_00000003, SHL64, 32, 0x00000003_00000000),
-            op64(0x80000001_00000003, SHL64, 36, 0x00000030_00000000),
-            op64(0x80000001_00000003, SHL64, 64, 0x80000001_00000003),
-            op64(0x80000001_00000003, SHL64, 0, 0x80000001_00000003),
-            # Only the low word of the count matters: 4.
-            op64(0x80000001_00000003, SHL64, 0xFFFFFFFF_00000004, 0x00000010_00000030),
-            # V >> 4: the low 4 bits of hi, 0001, go to the top of lo.
-            op64(0x80000001_00000003, SHR_U64, 4, 0x08000000_10000000),
-            op64(0x80000001_00000003, SHR_U64, 32, 0x00000000_80000001),
-            op64(0x80000001_00000003, SHR_U64, 63, 1),
-            op64(0x80000001_00000003, SHR_S64, 4, 0xF8000000_10000000),
-            op64(0x80000001_00000003, SHR_S64, 32, 0xFFFFFFFF_80000001),
-            op64(0x80000001_00000003, SHR_S64, 36, 0xFFFFFFFF_F8000000),
-            op64(0x80000001_00000003, SHR_S64, 63, 0xFFFFFFFF_FFFFFFFF),
-            op64(0x40000000_00000000, SHR_S64, 62, 1),
-            # rotl 4: the top 4 bits of hi, 1000, go to the bottom of lo.
-            op64(0x80000001_00000003, ROTL64, 4, 0x00000010_00000038),
-            # rotl 36 is rotl 4 of the swapped words, 0x00000003_80000001.
-            op64(0x80000001_00000003, ROTL64, 36, 0x00000038_00000010),
-            op64(0x80000001_00000003, ROTL64, 32, 0x00000003_80000001),
-            # rotr 4: the bottom 4 bits of lo, 0011, go to the top of hi.
-            op64(0x80000001_00000003, ROTR64, 4, 0x38000000_10000000),
-            op64(0x80000001_00000003, ROTR64, 0, 0x80000001_00000003),
+            *[op64(*row) for row in SHIFT64_ROWS],
             # A check that fails.
             op32(1, SHL, 1, 1))))), "", 0x7FFFFFFE),
+    # The edge counts, as constants, which nicewasm turns into a few
+    # instructions inline. One bit each, so 9 ones.
+    ("shift64_edges", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((1, bits(0, *[op64(*row) for row in SHIFT64_EDGES])))), "", 0x1FF),
+    # All the i64 shifts and rotates again, with counts that are known only
+    # when the code runs, which call the helpers. 29 ones.
+    ("shift64_dyn", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code(([I32, I64], bits(0, *[op64_dyn(*row) for row in SHIFT64_ROWS + SHIFT64_EDGES])))),
+     "", 0x1FFFFFFF),
     # The other integer operations, one bit each. MIN is the most negative
     # number. The routines are in runtime/lib.asm.
     ("intops", module(

@@ -2,6 +2,8 @@
 
 Reviewed on 2026-10-14: `emulator/test/cputest.asm` at commit 821168a ("niceemu: add cputest, a self-checking test of the instruction set"), against `doc/ISA.md` §1 to §8.
 
+**Status after commit f711ca8** ("niceemu: fix the findings of the cputest review"), checked the same day: every item in sections 1 to 4 is fixed. Section 6 is the second round against the new program.
+
 **How it was checked.** I derived the result and the SR word of each of the 108 checks by hand from ISA.md and compared them with the values the program tests for, decoded the five hand-encoded `.DAT` words and word 0, and confirmed that `make test` passes. Then I ran the program with `--trace` and mapped every executed address back to its source line through the assembler: which lines ran, how often, and which were skipped. Finally I wrote the checks proposed below as a separate program, assembled it with `niceasm`, and ran it, so every expected value quoted here has been run on the emulator.
 
 ## Summary
@@ -220,3 +222,33 @@ For a later round, these were checked and found right:
 - **The interrupt checks.** The saved SR, the I bit, the restored flags, the return address, and the skipped and taken conditional `INT` are all as §7 says.
 - **The trace.** No "never runs" line executes, no body address executes twice, the interrupt routine runs four times, and the step count is 855 + 2 + 4 × 3 = 869.
 - **The documentation.** The header, the emulator README, and the top-level README describe the program accurately.
+
+## 6. Second round, commit f711ca8
+
+The program now has 117 checks. I checked the nine new checks and the five extended ones by hand against ISA.md, confirmed that `make test` passes and that the committed `.bin` is what `niceasm` produces from the source, and mapped the new trace back to the source lines as in the first round.
+
+### 6.1 Confirmed fixed
+
+| Finding | Where it is now | Checked |
+|---|---|---|
+| §1, conditional `HALT` with a true condition | The final halt at `pass` is `?!Z HALT` with Z = 0, followed by two never-run lines | It is the only `HALT` in the trace, and the trace shows it as the `?!Z` encoding `0xBC000000` |
+| §2.1, I, E, and VBASE survive M | Check 39 | `0xC0FFFFFF` becomes `0xC1FFFFFF` after `ADD[M]` |
+| §2.2, carry input timing for shifts | Check 76 | `0<C R1, R14++, 1` gives `0x07FFFFFF` |
+| §2.3, a shift clears V, N, Z, and X | Check 52 starts from `0x3E000000` | SR ends as `0x01000000` |
+| §2.4, R15 in the memory modes | Check 101 | `@R15++` reads and skips the `.DAT`, and `@1[R15]` reads the next instruction's constant |
+| §2.5, `@--R0` and `@R0++` | Check 97 | Both compare with word 0 |
+| §2.6, carry input in the carry and borrow out | Checks 26 and 27 | Z C, and N C X |
+| §2.7, flags with a memory destination | Check 92 | Overwrites `wdata`, which no later check reads; Z C |
+| §2.8, eight-bit `INT` vector | Check 115, with a second vector at `0xFFF` | R4 = `0x8100000F` |
+| §3.1, wrongly run `?!1 INT` | Check 110 clears R4 before and compares it after | Direct now |
+| §3.2, R14 modes 001 and 010 with M | Check 105 | `0x01FFFFFF` and `0x01000001` |
+| §3.3, three constant words | Check 93 | `0x123 − 0x23` lands at `wdata+1`, which no later check reads |
+| §3.4, last write to R15 in both orders | Check 102 adds `ADD PC, PC++, 2` over two never-run `HALT`s | Jumped over |
+| §3.5, a logic operation ignores the C bit | Check 37, `AND[CM]` | `0x000F000F`, SR `0x01000000` |
+| §4, IRQs on hardware | The header and the emulator README say that no IRQ may be raised | |
+
+The `.expected` file is right: 931 body lines, each executed once, plus the two lines of the subroutine and five runs of the three-line interrupt routine give 948 steps, and the PC is the address after the final `?!Z HALT`. The thirteen "never runs" lines never run, and the only skipped instructions are 214 of the 215 `?!Z HALT` lines and the twenty-six intended skips.
+
+### 6.2 Nit
+
+The header still says "Every other line up to the final HALT is one step." The final `HALT` line is now one of the two never-run lines after the `?!Z HALT` at `pass`. The sentence is still true, because the never-run lines are excluded first, but "up to the `?!Z HALT` at `pass`" would name the line that actually halts.

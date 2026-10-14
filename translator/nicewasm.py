@@ -120,6 +120,22 @@ CMP64_OPS = {op + 11: v for op, v in CMP_OPS.items()}
 SHIFT_OPS = {0x74: "shl", 0x75: "shr_s", 0x76: "shr_u", 0x77: "rotl", 0x78: "rotr"}
 SHIFT64_OPS = {op + 18: v for op, v in SHIFT_OPS.items()}
 
+# Divisions and remainders: wasm opcode -> (type, operation).
+DIV_OPS = {0x6D: (I32, "div_s"), 0x6E: (I32, "div_u"), 0x6F: (I32, "rem_s"),
+           0x70: (I32, "rem_u"), 0x7F: (I64, "div_s"), 0x80: (I64, "div_u"),
+           0x81: (I64, "rem_s"), 0x82: (I64, "rem_u")}
+
+# Operations that are a call to the runtime library (§9.3): wasm opcode ->
+# (routine, its type).
+LIB_OPS = {0x67: ("__clz", ([I32], [I32])), 0x68: ("__ctz", ([I32], [I32])),
+           0x69: ("__popcnt", ([I32], [I32])), 0x6C: ("__mul", ([I32, I32], [I32])),
+           0x79: ("__clz64", ([I64], [I64])), 0x7A: ("__ctz64", ([I64], [I64])),
+           0x7B: ("__popcnt64", ([I64], [I64])), 0x7E: ("__mul64", ([I64, I64], [I64]))}
+
+# The sign extensions: wasm opcode -> (type, bits extended from).
+EXTEND_OPS = {0xC0: (I32, 8), 0xC1: (I32, 16), 0xC2: (I64, 8), 0xC3: (I64, 16),
+              0xC4: (I64, 32)}
+
 BLOCK, LOOP, IF = 0x02, 0x03, 0x04
 
 # The loads: wasm opcode -> (type, bytes, signed). And the stores: wasm
@@ -877,9 +893,7 @@ class FunctionTranslator:
             else:
                 self.emit("MOVE", "R1", base)
             return
-        trap = self.new_label()
-        self.stubs += [trap, instr("MOVE", "R1", "2"), instr("MOVE", "R2", start),
-                       instr("MOVE", "R15", "@___wasm_trap_vector")]
+        trap = self.trap_stub(2, start)
         if offset:
             self.emit("ADD[M]", "R1", base, words(offset, I32)[0])
             self.emit("?C MOVE", "R15", trap)  # base + offset passes 2^32
@@ -893,6 +907,60 @@ class FunctionTranslator:
         elif limit < 1 << 32:
             self.emit("SUB[M]", "R0", "R1", words(limit, I32)[0])
             self.emit("?!C MOVE", "R15", trap)
+
+    def trap_stub(self, code: int, start: str) -> str:
+        """A stub after the epilogue that traps with the given code, and
+        with R2 = start, the first instruction of the code for the wasm
+        instruction that traps (§9.4). Returns its label."""
+        label = self.new_label()
+        self.stubs += [label, instr("MOVE", "R1", str(code)), instr("MOVE", "R2", start),
+                       instr("MOVE", "R15", "@___wasm_trap_vector")]
+        return label
+
+    def divide(self, t: int, op: str, at: int, what: str) -> None:
+        """A division or remainder, by a call to the runtime library. First
+        come the cases that wasm defines but C does not (§9.4): division by
+        0 traps with code 3, and div_s of the most negative number by -1
+        traps with code 4. rem_s by -1 is 0, without the call."""
+        a, b = self.pop([t, t], at, what)
+        self.push(t)
+        self.push(t)
+        start = self.new_label()
+        self.body.append(start)
+        if t == I32:
+            self.emit("MOVE[M]", "R0", b[0])
+        else:
+            self.emit("OR[M]", "R0", b[0], b[1])
+        self.emit("?Z MOVE", "R15", self.trap_stub(3, start))
+        if op in ("div_s", "rem_s"):
+            # Z = b is -1, all ones.
+            if t == I32:
+                self.emit("ADD[M]", "R0", b[0], "1")
+            else:
+                self.emit("AND", "R1", b[0], b[1])
+                self.emit("ADD[M]", "R0", "R1", "1")
+        done = ""
+        if op == "div_s":
+            ok = self.new_label()
+            self.emit("?!Z MOVE", "R15", ok)
+            # Z = a is the most negative number.
+            if t == I32:
+                self.emit("SUB[M]", "R0", a[0], "-2147483648")
+            else:
+                self.emit("XOR", "R1", a[1], "-2147483648")
+                self.emit("OR[M]", "R0", "R1", a[0])
+            self.emit("?Z MOVE", "R15", self.trap_stub(4, start))
+            self.body.append(ok)
+        elif op == "rem_s":
+            # The result goes where a is.
+            done = self.new_label()
+            for w in a:
+                self.emit("?Z MOVE", w, "0")
+            self.emit("?Z MOVE", "R15", done)
+        routine = {"div_s": "__div", "div_u": "__udiv", "rem_s": "__mod", "rem_u": "__umod"}[op]
+        self.call(routine + ("64" if t == I64 else ""), FuncType([t, t], [t]), at, what)
+        if done:
+            self.body.append(done)
 
     def memarg(self, n: int, align: int, at: int, what: str) -> None:
         """Checks a load's or store's memory and alignment."""
@@ -1117,8 +1185,9 @@ class FunctionTranslator:
                     raise WasmError(f"function {self.idx}: select must name one type", at)
                 check_types(types, f"function {self.idx}: select", at)
                 sel_type = types[0]
-            elif not (op in (0x00, 0x01, 0x05, 0x0B, 0x0F, 0x1A, 0x1B, 0x45, 0x50, 0x6C, 0xA7,
+            elif not (op in (0x00, 0x01, 0x05, 0x0B, 0x0F, 0x1A, 0x1B, 0x45, 0x50, 0xA7,
                              0xAC, 0xAD)
+                      or op in DIV_OPS or op in LIB_OPS or op in EXTEND_OPS
                       or op in ALU_OPS or op in ALU64_OPS or op in CMP_OPS or op in CMP64_OPS
                       or op in SHIFT_OPS or op in SHIFT64_OPS):
                 raise WasmError(f"function {self.idx}: {name} is not supported yet", at)
@@ -1355,8 +1424,27 @@ class FunctionTranslator:
                 dest = self.push(I64)
                 for k, mnemonic in enumerate(ALU64_OPS[op]):
                     self.emit(mnemonic, dest[k], a[k], b[k])
-            elif op == 0x6C:  # i32.mul
-                self.call("__mul", FuncType([I32, I32], [I32]), at, name)
+            elif op in LIB_OPS:
+                routine, (params, results) = LIB_OPS[op]
+                self.call(routine, FuncType(params, results), at, name)
+            elif op in DIV_OPS:
+                self.divide(*DIV_OPS[op], at, name)
+            elif op in EXTEND_OPS:
+                t, bits = EXTEND_OPS[op]
+                (a,) = self.pop([t], at, name)
+                ext = self.push(t)  # the same words as a
+                if bits == 32:
+                    self.emit("MOVE[M]", ext[0], a[0])
+                else:
+                    # (x XOR sign) - sign extends the sign bit of x. SUB[M]
+                    # sets N for an i64's high word.
+                    sign = str(1 << (bits - 1))
+                    self.emit("AND", "R1", a[0], str((1 << bits) - 1))
+                    self.emit("XOR", "R1", "R1", sign)
+                    self.emit("SUB[M]" if t == I64 else "SUB", ext[0], "R1", sign)
+                if t == I64:
+                    self.emit("MOVE", ext[1], "0")
+                    self.emit("?N MOVE", ext[1], "-1")
             elif op == 0xA7:  # i32.wrap_i64
                 (a,) = self.pop([I64], at, name)
                 self.emit("MOVE", self.push(I32)[0], a[0])

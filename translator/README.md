@@ -67,9 +67,8 @@ global's initial value, not the expressions of `extended-const`.
 Every Zig program built with ReleaseSafe or Debug uses a table,
 `call_indirect`, `br_table`, `select`, `memory.copy`, and `memory.fill`,
 and it traps with `unreachable`, even if its source has no function
-pointers. So the next features are the other integer operations, such
-as division and `i64.mul`, `memory.copy` and `memory.fill`, and then
-`call_indirect`.
+pointers. So the next features are `memory.copy` and `memory.fill`, and
+then `call_indirect`.
 
 ## Supported features
 
@@ -82,11 +81,18 @@ as division and `i64.mul`, `memory.copy` and `memory.fill`, and then
   be a function type, with parameters and several results.
 - **Instructions:** `drop`, `select` (both forms), `local.get`,
   `local.set`, `local.tee`, `global.get`, `global.set`, `i32.const`,
-  `i32.add`, `i32.sub`, `i32.mul`, `i32.and`, `i32.or`, `i32.xor`,
-  `i64.const`, `i64.add`, `i64.sub`, `i64.and`, `i64.or`, `i64.xor`,
-  `i32.wrap_i64`, `i64.extend_i32_s`, and `i64.extend_i32_u`. `i32.mul`
-  calls `__mul` in the runtime library. `unreachable` traps with code 1
-  through `___wasm_trap_vector`, as ISA.md §9.4 says.
+  `i64.const`, `i32.wrap_i64`, `i64.extend_i32_s`, and `i64.extend_i32_u`.
+  `unreachable` traps with code 1 through `___wasm_trap_vector`, as ISA.md
+  §9.4 says.
+- **Integer operations,** for `i32` and `i64`: `add`, `sub`,
+  `mul`, `div_s`, `div_u`, `rem_s`, `rem_u`, `and`, `or`, `xor`, `clz`,
+  `ctz`, `popcnt`, and the `sign-ext` instructions `extend8_s`,
+  `extend16_s`, and `i64.extend32_s`. `mul`, the divisions, and the bit
+  counts call the runtime library, for example `__mul`, `__div64`, and
+  `__popcnt` (see [runtime/README.md](../runtime/README.md)). Division by 0
+  traps with code 3, and `div_s` of the most negative number by −1 with
+  code 4. `rem_s` by −1 is 0 without a call, because C leaves the most
+  negative number % −1 undefined.
 - **Comparisons:** `eqz`, `eq`, `ne`, `lt`, `gt`, `le`, and `ge`, signed
   and unsigned, for `i32` and `i64`.
 - **Shifts:** `shl`, `shr_s`, `shr_u`, `rotl`, and `rotr`, for `i32` and
@@ -116,9 +122,8 @@ as division and `i64.mul`, `memory.copy` and `memory.fill`, and then
   not printable ASCII is left out, and so is any such character in the
   input file's name, so that a comment cannot become code.
 
-Not supported yet: the other `i32` and `i64` operations, the `0xFC`
-instructions, `f32` and `f64` loads and stores, the traps other than
-`unreachable` and memory bounds, `call_indirect`, `nice.peek` and
+Not supported yet: the `0xFC` instructions, `f32` and `f64` loads and
+stores, the conversion trap (code 5) and the `call_indirect` traps, `call_indirect`, `nice.peek` and
 `nice.poke`, passive data segments and `memory.init`, element segments,
 library modules (ISA.md §9.4),
 `f32`, and `f64`.

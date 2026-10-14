@@ -135,6 +135,8 @@ CASES: List[Tuple[bytes, str]] = [
     (one(i32_const(1) + i64_const(2) + ADD), "function 0: i32.add expects i32, found i64"),
     (one(i64_const(1) + i32_const(2) + ADD64), "function 0: i64.add expects i64, found i32"),
     (one(i32_const(1) + i64_const(2) + b"\x74"), "function 0: i32.shl expects i32, found i64"),
+    (one(i32_const(1) + i64_const(2) + b"\x6d"), "function 0: i32.div_s expects i32, found i64"),
+    (one(i32_const(1) + b"\xc4" + b"\xa7"), "function 0: i64.extend32_s expects i64, found i32"),
     (one(i64_const(1) + i32_const(2) + b"\x86" + b"\xa7"),
      "function 0: i64.shl expects i64, found i32"),
     (one(i32_const(1) + i32_const(2)), "function 0: values left on the operand stack at the end"),

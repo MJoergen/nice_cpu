@@ -102,10 +102,34 @@ def op64(a: int, op: bytes, b: int, want: int) -> bytes:
     return c(a) + c(b) + op + c(want) + EQ64
 
 
+def un32(op: int, a: int, want: int) -> bytes:
+    """A check that the i32 operation op on a gives want."""
+    def c(x: int) -> bytes:
+        return i32_const(x - 2**32 if x >= 2**31 else x)
+    return c(a) + bytes([op]) + c(want) + EQ
+
+
+def un64(op: int, a: int, want: int) -> bytes:
+    """The same for i64."""
+    def c(x: int) -> bytes:
+        return i64_const(x - 2**64 if x >= 2**63 else x)
+    return c(a) + bytes([op]) + c(want) + EQ64
+
+
+def i64_un(op: int, a: int, want: int) -> bytes:
+    """A check that op on the i64 a gives the i32 want."""
+    return i64_const(a - 2**64 if a >= 2**63 else a) + bytes([op]) + i32_const(want) + EQ
+
+
 # Cases that must trap rather than return, and the first NICE instruction
 # of the code for the wasm instruction that traps, which R2 points at.
-# In main, an operand on the stack with nothing below it is at FP - 1.
-TRAPS = {"unreachable": "MOVE R1, 1",
+# In main, an operand on the stack with nothing below it is at FP - 1. An
+# i32 above it is at FP - 2, and an i64 above an i64 at FP - 4 and FP - 3.
+TRAPS = {"divzero": "MOVE[M] R0, @-2[R12]",
+         "divzero64": "OR[M] R0, @-4[R12], @-3[R12]",
+         "overflow": "MOVE[M] R0, @-2[R12]",
+         "overflow64": "OR[M] R0, @-4[R12], @-3[R12]",
+         "unreachable": "MOVE R1, 1",
          "oob": "ADD[M] R1, @-1[R12], 1",
          "oobcarry": "ADD[M] R1, @-1[R12], 1",
          "nomemory": "MOVE R1, @-1[R12]"}
@@ -154,6 +178,13 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # gives 0x4BF43926. 1 << 40 >> 37 = 8, and -1 << 40 >> 40 = -1, so the
     # sum is 0x4BF43926 + 8 - 1 = 0x4BF4392D.
     ("shifts_c", "shifts", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 0x4BF4392D),
+    # Division, long long, and bit counts from clang, with get(i) = i + 100.
+    # gcd(2071, 1271) = 1: 2071 - 1271 = 800, then 471, 329, 142, 45, 7, 3,
+    # and 1. (2^64 - 1) / 3 = 6148914691236517205, whose digits sum to 80.
+    # -1000 * 7 / 3 = -2333. clz(1) + ctz(2^40) = 31 + 40 = 71.
+    # popcount(255) = 8. (signed char)128 = -128. 1 + 80 - 2333 + 71 + 8 -
+    # 128 = -2301 = 0xFFFFF703.
+    ("intops_c", "intops", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 0xFFFFF703),
     # Declared locals start at 0. dirty sets its 3 locals to 0x55, and clean
     # gets the same frame words, so without zeroing it returns 0x55 * 3 + 7.
     ("locals", module(
@@ -612,6 +643,73 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
             op64(0x80000001_00000003, ROTR64, 0, 0x80000001_00000003),
             # A check that fails.
             op32(1, SHL, 1, 1))))), "", 0x7FFFFFFE),
+    # The other integer operations, one bit each. MIN is the most negative
+    # number. The routines are in runtime/lib.asm.
+    ("intops", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((1, bits(0,
+            un32(0x67, 0, 32),                                  # clz
+            un32(0x67, 1, 31),
+            un32(0x68, 0x80000000, 31),                         # ctz
+            un32(0x69, 0xF0F0, 8),                              # popcnt
+            un64(0x79, 0x1_00000000, 31),                       # clz
+            un64(0x7A, 0x1_00000000, 32),                       # ctz
+            un64(0x7B, 2**64 - 1, 64),                          # popcnt
+            # mul: (2^32 - 1)^2 = 2^64 - 2^33 + 1, and -3 * 5 = -15.
+            op64(0xFFFFFFFF, b"\x7e", 0xFFFFFFFF, 0xFFFFFFFE_00000001),
+            op64(2**64 - 3, b"\x7e", 5, 2**64 - 15),
+            # -7 / 2 = -3 rem -1, rounding toward 0. Unsigned, -7 is
+            # 4294967289 = 2 * 2147483644 + 1.
+            op32(2**32 - 7, b"\x6d", 2, 2**32 - 3),
+            op32(2**32 - 7, b"\x6f", 2, 2**32 - 1),
+            op32(2**32 - 7, b"\x6e", 2, 0x7FFFFFFC),
+            op32(2**32 - 7, b"\x70", 2, 1),
+            # rem_s by -1 is 0, even for MIN, where C leaves it undefined.
+            op32(0x80000000, b"\x6f", 2**32 - 1, 0),
+            op32(5, b"\x6f", 2**32 - 1, 0),
+            # MIN / 1 does not trap.
+            op32(0x80000000, b"\x6d", 1, 0x80000000),
+            op64(2**64 - 7, b"\x7f", 2, 2**64 - 3),
+            op64(2**64 - 7, b"\x81", 2, 2**64 - 1),
+            # 2^32 / 3 = 0x55555555 rem 1.
+            op64(2**32, b"\x80", 3, 0x55555555),
+            op64(2**32, b"\x82", 3, 1),
+            op64(2**63, b"\x81", 2**64 - 1, 0),
+            # -1 in the low word alone is not -1, so this does not trap.
+            # 2^63 = (2^32 - 1) * 2^31 + 2^31, so MIN / (2^32 - 1) = -2^31.
+            op64(2**63, b"\x7f", 0xFFFFFFFF, 0xFFFFFFFF_80000000),
+            un32(0xC0, 0x80, 2**32 - 128),                      # extend8_s
+            un32(0xC0, 0x17F, 0x7F),
+            un32(0xC1, 0x8000, 2**32 - 32768),                  # extend16_s
+            un64(0xC2, 0xFF, 2**64 - 1),
+            un64(0xC3, 0x7FFF, 0x7FFF),
+            un64(0xC4, 0x80000000, 2**64 - 2**31),              # extend32_s
+            un64(0xC4, 0x1_7FFFFFFF, 0x7FFFFFFF),
+            # A check that fails.
+            op32(7, b"\x6e", 2, 4))))), "", 0x3FFFFFFE),
+    # Division by 0 traps with code 3, and MIN / -1 with code 4.
+    ("divzero", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((0, i32_const(5) + i32_const(0) + b"\x6e"))), "", 3),
+    ("divzero64", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((0, i64_const(5) + i64_const(0) + b"\x81" + WRAP))), "", 3),
+    ("overflow", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((0, i32_const(-2**31) + i32_const(-1) + b"\x6d"))), "", 4),
+    ("overflow64", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((0, i64_const(-2**63) + i64_const(-1) + b"\x7f" + WRAP))), "", 4),
     # The start function sets g = g * 10 + 1, then __wasm_call_ctors sets
     # g = g * 10 + 2. In that order, g = 12.
     ("startup", module(

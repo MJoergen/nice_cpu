@@ -23,7 +23,8 @@ every opcode, shift, addressing mode, and condition, the flags, R0, R14, and
 R15, skipped instructions, `INT`, and `RTI`. It halts at the first check
 that fails, with the check's number in R12 and R11 = 0. If every check
 passes, it halts with R11 = `0x600D`. It needs no emulator options or I/O, so
-the FPGA core can run it too.
+the FPGA core can run it too. No IRQ may be raised while it runs, because
+some checks set E with no vector table in place.
 
 ## Usage
 

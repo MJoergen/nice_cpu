@@ -84,6 +84,12 @@ CASES: List[Tuple[bytes, str]] = [
     (module(section(4, vec([b"\x70\x04" + u(1)]))), "a shared or 64-bit table is not supported"),
     (module(section(6, vec([bytes([I32, 2]) + i32_const(0) + b"\x0b"]))),
      "global 0: the mutability must be 0 or 1, not 2"),
+    (module(MAIN, funcs(0), exports(("memory", 2, 0)), code((0, i32_const(0)))),
+     "export memory: memory 0 does not exist"),
+    (module(MAIN, funcs(0), table(1), exports(("t", 1, 1)), code((0, i32_const(0)))),
+     "export t: table 1 does not exist"),
+    (module(MAIN, funcs(0), exports(("e", 4, 0)), code((0, i32_const(0)))),
+     "export e: only functions, tables, memories, and globals can be exported"),
     # The import is called at _f, so the export would take its label.
     (module(MAIN, imports(("env", "f", 0)), funcs(0), exports(("f", 0, 1)),
             code((0, i32_const(0)))),

@@ -199,7 +199,8 @@ measurements.
   A name that is not a C identifier gets no label, in a library module
   too. Exports of the memory and of the table are ignored: the memory is at
   `___wasm_memory`, and a function pointer is a table index. So the
-  `memory` export that Zig always emits does no harm. Exporting an imported
+  `memory` export that Zig always emits does no harm. An export of a memory
+  or table that the module does not have is an error. Exporting an imported
   function is not supported, and an export may not have the name of an
   `env` import, because the call to the import goes to the same label
   `_name`.

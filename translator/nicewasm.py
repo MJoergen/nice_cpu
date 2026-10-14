@@ -1097,8 +1097,15 @@ class Translator:
                     if library:
                         raise WasmError("a library module may not export __wasm_call_ctors")
                     self.ctors = idx
+            elif kind == 1 and (idx != 0 or m.table_size is None):
+                raise WasmError(f"export {name}: table {idx} does not exist")
+            elif kind == 2 and (idx != 0 or m.memory_pages is None):
+                raise WasmError(f"export {name}: memory {idx} does not exist")
             elif kind == 3 and idx >= len(m.globals):
                 raise WasmError(f"export {name}: global {idx} does not exist")
+            elif kind > 3:
+                raise WasmError(f"export {name}: only functions, tables, memories, and globals"
+                                " can be exported")
             # Names that start with _ are reserved for the runtime library,
             # so only a library module gives them labels (§9.4).
             # Memory and table exports get no label: the memory is at

@@ -59,7 +59,7 @@ These are not visible as registers. They exist for interrupts (§7) and halting:
 | `in_service` | 1 while an interrupt service routine runs, from interrupt entry until `RTI`. |
 | `saved_pc`, `saved_sr` | The PC and SR saved on interrupt entry and restored by `RTI`. |
 | `after_rti` | Set to 1 by `RTI`. Cleared to 0 when the next instruction completes, whether or not its condition is true. While it is 1, no IRQ or NMI is taken (§7.1). |
-| `halted` | 1 after `HALT`. Only reset clears it. |
+| `halted` | 1 after `HALT` or any other halt (§5.3, §7.2, §7.4). Only reset clears it. |
 
 Pending interrupt requests (§7.1) are also state. How they are held is a hardware interface matter.
 
@@ -320,7 +320,7 @@ Before each instruction fetch, the processor checks for pending requests:
 - **IRQ** is taken if `in_service` = 0 and E = 1.
 - If both are pending, NMI goes first.
 - A halted processor takes no interrupts.
-- No IRQ or NMI is taken while `after_rti` = 1, so the instruction directly after an `RTI` always runs first. That instruction may itself be an `INT`, which works normally. This guarantees that the interrupted program makes progress. A deferred NMI waits at most one instruction after `RTI`. A deferred IRQ does the same if E = 1 in the restored SR, and otherwise waits until software sets E.
+- No IRQ or NMI is taken while `after_rti` = 1, so the instruction directly after an `RTI` always runs first. That instruction may itself be an `INT`, which works normally. This guarantees that the interrupted program makes progress. A deferred request is taken before the second instruction after `RTI`, unless the first one is an `INT` (then the request waits for that routine's `RTI` as well), halts the processor, or, for an IRQ, leaves E = 0 (then the IRQ waits until software sets E).
 
 **Pending requests are deferred, never lost.** An NMI or IRQ that cannot be taken when it arrives stays pending until it is taken. That happens when `in_service` = 1, or for an IRQ when E = 0. Requests of the same kind that arrive while one is already pending may merge into one, so software must not rely on counting interrupts. A request still pending when the processor halts is never taken, because only reset restarts the processor.
 

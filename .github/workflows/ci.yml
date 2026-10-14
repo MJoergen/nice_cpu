@@ -54,3 +54,20 @@ jobs:
         with:
           version: 0.15.2
       - run: make test
+
+  translator:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: translator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: pip install mypy
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      - run: make test
+      - run: make typecheck

@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 NICE is a 32-bit CPU by B. Ulmann; this repo will implement it on an FPGA.
-So far: the spec, an assembler, an emulator, and a runtime library. See README.md.
+So far: the spec, an assembler, an emulator, a runtime library, and a wasm translator. See README.md.
 
 ## Layout
 
@@ -10,6 +10,7 @@ So far: the spec, an assembler, an emulator, and a runtime library. See README.m
 - `assembler/niceasm.py`: Python 3, standard library only, `mypy --strict` clean.
 - `emulator/src/cpu.zig` (core, unit tests) and `main.zig` (CLI, loader). Zig 0.15.
 - `runtime/`: start-up code and runtime routines in NICE assembly (ISA.md §9.3).
+- `translator/nicewasm.py`: wasm -> NICE assembly (ISA.md §9.4). Same rules as niceasm.py.
 
 ## Commands
 
@@ -18,6 +19,8 @@ So far: the spec, an assembler, an emulator, and a runtime library. See README.m
     cd emulator  && make test        # zig unit tests, example and probe programs, test/errors.py
     cd emulator  && make bins        # reassemble test/*.bin after editing a probe .asm
     cd runtime   && make test        # join, assemble, and run each test/*.asm
+    cd translator && make test       # test/run.py, then test/errors.py
+    cd translator && make typecheck  # mypy --strict
 
 Run the relevant `make test` after every change.
 
@@ -32,4 +35,4 @@ Run the relevant `make test` after every change.
 - The 2004 example `.bin` files are original `NICE.pm` output; do not change them.
 - Keep the READMEs in sync with the tools' options, formats, and error behaviour.
 - Docs: plain, short sentences. Use the Oxford comma by default ("a, b, and c").
-- Commit subjects: `niceasm: ...`, `niceemu: ...`, `runtime: ...`, `ISA: ...`, `Review: ...`.
+- Commit subjects: `niceasm: ...`, `niceemu: ...`, `runtime: ...`, `nicewasm: ...`, `ISA: ...`, `Review: ...`.

@@ -10,10 +10,14 @@ translated wasm code call. They follow the C ABI of
 |---|---|
 | `start.asm` | Start-up code for a program without a wasm module. |
 | `start_wasm.asm` | Start-up code for a program with a wasm module. It calls `___wasm_start` before `main`. |
-| `lib.asm` | The runtime routines. |
+| `lib.asm` | The runtime routines in assembly. |
+| `float.zig` | The source of the float routines (see below). |
+| `float.wasm` | `float.zig` and parts of Zig's compiler_rt, compiled to wasm. |
+| `float.asm` | `float.wasm` translated as a library module. It is not checked in: `make float.asm` makes it, with Python only. |
 
 There is no linker. A program is one assembly file, joined in this order:
-one of the start-up files, the program's own files, and `lib.asm`. For
+one of the start-up files, the program's own files, `lib.asm`, and
+`float.asm` if the program uses floats. For
 example:
 
     cat runtime/start.asm prog.asm runtime/lib.asm > full.asm
@@ -64,6 +68,40 @@ the counting routines take longer the more bits their operand has.
 |---|---|
 | `___wasm_trap_vector` | The word that wasm traps jump through. It starts as `___wasm_trap`. |
 | `___wasm_trap` | The default handler: the reserved control word `0x0FE00000`. It halts with the trap's code in R1 and address in R2. The emulator exits with status 2, not 0 as after `HALT`. |
+
+## Floating point
+
+NICE has no float instructions, so `float.asm` does float arithmetic in
+software. It is the library module `float` of ISA.md §9.4: wasm code,
+translated by `nicewasm --library float`. Its routines take and return the
+bits of the numbers, an `f32` in one word and an `f64` in two, low word
+first, by the rules of §9.3. Most come unchanged from Zig's compiler_rt.
+`float.zig` adds those whose meaning differs from C's, or that compiler_rt
+has only with float instructions inside.
+
+| Labels | Result |
+|---|---|
+| `___addsf3`, `___subsf3`, `___mulsf3`, `___divsf3` | f32 +, −, ×, and ÷, rounded to nearest. |
+| `___adddf3`, `___subdf3`, `___muldf3`, `___divdf3` | The same for f64. |
+| `___eqsf2`, `___nesf2`, `___ltsf2`, `___lesf2`, `___gtsf2`, `___gesf2` | Compare two f32: below 0, 0, or above 0, as libgcc does. For a NaN, the result makes the test fail, except for `ne`. |
+| `___eqdf2` and the others with `df` | The same for f64. |
+| `___floatsisf`, `___floatunsisf`, `___floatdisf`, `___floatundisf` | f32 from an `int`, `unsigned int`, `long long`, or `unsigned long long`. |
+| `___floatsidf`, `___floatunsidf`, `___floatdidf`, `___floatundidf` | The same to f64. |
+| `___fixsfsi`, `___fixunssfsi`, `___fixsfdi`, `___fixunssfdi` | f32 to those integers, toward 0. Out of range they saturate, and a NaN gives 0, as wasm's `trunc_sat` does. |
+| `___fixdfsi`, `___fixunsdfsi`, `___fixdfdi`, `___fixunsdfdi` | The same from f64. |
+| `___extendsfdf2`, `___truncdfsf2` | f32 to f64, and f64 to f32 rounded to nearest. |
+| `___sqrtsf`, `___ceilsf`, `___floorsf`, `___truncsf`, `___nearestsf` | The square root, rounded to nearest, and rounding to an integral value: up, down, toward 0, and to nearest with ties to even. |
+| `___minsf`, `___maxsf` | As wasm defines them: a NaN gives a NaN, and −0 is less than +0. |
+| The same with `df` | For f64. |
+
+The routines use the words `WL.float.memory` as their own stack, 256
+words that are part of the program image. Assembled, `float.asm` is about
+30800 words.
+
+`make float` rebuilds `float.wasm` from `float.zig`. It needs Zig 0.15,
+whose compiler_rt sources it copies next to `float.zig`. The routines must
+not use the wasm float instructions, as `nicewasm` translates those into
+calls to this library. `nicewasm` rejects a library module that uses them.
 
 ## Test
 

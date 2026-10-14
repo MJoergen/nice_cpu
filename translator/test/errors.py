@@ -11,6 +11,7 @@ import tempfile
 from typing import List, Tuple
 
 from wasm import table
+V128 = 0x7B  # a type nicewasm does not support
 from wasm import (ADD, ADD64, DROP, ELSE, END, F32, I32, I64, SELECT, block, br,
                   br_table, call, code, exports, funcs, global_get, global_set, globals_,
                   i32_const, i64_const, if_, imports, local_get, memory, module, name,
@@ -61,14 +62,16 @@ CASES: List[Tuple[bytes, str]] = [
      "import nice.load: the module 'nice' has only peek and poke"),
     (module(MAIN, imports(("env", "a-b", 0))),
      "import env.a-b: the name is not a C identifier, so it has no label"),
-    (module(types(([F32], [])), imports(("env", "f", 0))),
-     "import env.f has type f32; only i32 and i64 are supported yet"),
+    (module(types(([V128], [])), imports(("env", "f", 0))),
+     "import env.f has type v128; only i32, i64, f32, and f64 are supported"),
     # Module contents
     (module(memory(1), memory(1)), "section 5 is out of order or repeated"),
     (module(section(5, vec([b"\0\1", b"\0\1"]))), "a module may have only one memory"),
     (module(section(5, vec([b"\x03\x01\x01"]))), "a shared or 64-bit memory is not supported"),
-    (module(section(6, vec([bytes([F32, 1, 0x43, 0, 0, 0, 0, 0x0b])]))),
-     "global 0 has type f32; only i32 and i64 are supported yet"),
+    (module(section(6, vec([bytes([V128, 1, 0xfd, 0x0c] + [0] * 16 + [0x0b])]))),
+     "global 0 has type v128; only i32, i64, f32, and f64 are supported"),
+    (module(section(6, vec([bytes([F32, 1, 0x41, 0, 0x0b])]))),
+     "global 0: the initial value must be an f32.const"),
     (module(section(6, vec([bytes([I32, 1, 0x23, 0, 0x0b])]))),
      "global 0: the initial value must be an i32.const"),
     (module(section(6, vec([bytes([I64, 1, 0x41, 0, 0x0b])]))),
@@ -133,13 +136,13 @@ CASES: List[Tuple[bytes, str]] = [
      "the start function must have no parameters and no results"),
     (module(MAIN, start(1)), "start function 1 does not exist"),
     # Functions
-    (module(types(([F32], [])), funcs(0), code((0, b""))),
-     "function 0 has type f32; only i32 and i64 are supported yet"),
-    (module(MAIN, funcs(0), section(10, vec([u(6) + vec([u(1) + bytes([F32])]) + i32_const(0) + b"\x0b"]))),
-     "function 0: a local has type f32; only i32 and i64 are supported yet"),
+    (module(types(([V128], [])), funcs(0), code((0, b""))),
+     "function 0 has type v128; only i32, i64, f32, and f64 are supported"),
+    (module(MAIN, funcs(0), section(10, vec([u(6) + vec([u(1) + bytes([V128])]) + i32_const(0) + b"\x0b"]))),
+     "function 0: a local has type v128; only i32, i64, f32, and f64 are supported"),
     (module(types(([], [I32, I32])), funcs(0), code((0, i32_const(1) + i32_const(2)))),
      "function 0: more than one result is not supported yet"),
-    (one(i32_const(0) + b"\x2a\x02\x00"), "function 0: f32.load is not supported yet"),
+    (one(i32_const(0) + b"\x25\x00"), "function 0: table.get is not supported yet"),
     # Memory
     (one(i32_const(0) + b"\x28\x02\x00"),
      "function 0: i32.load needs a memory, and the module has none"),
@@ -214,8 +217,8 @@ CASES: List[Tuple[bytes, str]] = [
     (one(block(I32) + block() + i32_const(0) + br_table([0], 1) + END + i32_const(0) + END),
      "function 0: the labels of br_table take different values"),
     (one(b"\x02\x05" + END + i32_const(0)), "type index 5 is out of range"),
-    (one(b"\x02\x7d" + END + i32_const(0)),
-     "function 0: a block has type f32; only i32 and i64 are supported yet"),
+    (one(b"\x02\x7b" + END + i32_const(0)),
+     "function 0: a block has type v128; only i32, i64, f32, and f64 are supported"),
     (one(i32_const(1) + i64_const(2) + i32_const(0) + SELECT),
      "function 0: select expects i64, found i32"),
     (one(i32_const(1) + i32_const(2) + i32_const(0) + b"\x1c\x02\x7f\x7f"),
@@ -232,15 +235,49 @@ CASES: List[Tuple[bytes, str]] = [
 ]
 
 
+LIB = ["--library", "lib"]
+
+# Errors with options: (options, module, expected error message).
+OPTION_CASES: List[Tuple[List[str], bytes, str]] = [
+    (LIB, module(MAIN, funcs(0), start(0), code((0, i32_const(0)))),
+     "a library module may not have a start function"),
+    # Float arithmetic calls the float library, which must not call itself.
+    (LIB, module(types(([], [F32])), funcs(0), code((0, b"\x43\0\0\0\0" * 2 + b"\x92"))),
+     "function 0: a library module may not use f32.add"),
+    (LIB, module(MAIN, funcs(0), code((0, b"\x43\0\0\0\0" + b"\xfc\x00"))),
+     "function 0: a library module may not use i32.trunc_sat_f32_s"),
+    (LIB, module(MAIN, funcs(0), memory(1), code((0, b"\x3f\x00"))),
+     "function 0: a library module may not use memory.size"),
+    (LIB, module(MAIN, funcs(0), memory(1), code((0, i32_const(0) + b"\x40\x00"))),
+     "function 0: a library module may not use memory.grow"),
+    (LIB + ["--library-memory", "70000"], module(memory(1)),
+     "the library memory of 70000 bytes is larger than the module's memory of 65536"),
+    (LIB + ["--library-memory", "16"], module(MAIN), "--library-memory: the module has no memory"),
+    # Only the reserved part of the memory is there for data.
+    (LIB + ["--library-memory", "8"],
+     module(memory(1), section(11, vec([b"\0" + i32_const(8) + b"\x0b" + vec([b"x"])]))),
+     "data segment 0 does not fit in the memory"),
+]
+
+# Errors in the command line: (options, expected message). The module is
+# a valid one.
+COMMAND_CASES: List[Tuple[List[str], str]] = [
+    (["--library", "1x"], "--library: '1x' is not a C identifier"),
+    (["--library-memory", "16"], "--library-memory: only a library module (--library) takes it"),
+]
+
+
 def main() -> None:
     failed = 0
     with tempfile.TemporaryDirectory() as tmp:
         src = os.path.join(tmp, "t.wasm")
         out = os.path.join(tmp, "t.asm")
-        for wasm, expected in CASES:
+        cases: List[Tuple[List[str], bytes, str]] = [([], wasm, expected) for wasm, expected in CASES]
+        cases += OPTION_CASES
+        for options, wasm, expected in cases:
             with open(src, "wb") as f:
                 f.write(wasm)
-            p = subprocess.run([sys.executable, NICEWASM, "-o", out, src],
+            p = subprocess.run([sys.executable, NICEWASM, *options, "-o", out, src],
                                capture_output=True, text=True)
             got = p.stderr.strip()
             ok = (p.returncode == 1 and got.startswith(src)
@@ -250,7 +287,19 @@ def main() -> None:
                 print(f"FAIL: expected '{expected}'\n  got (exit {p.returncode}): {got}")
                 if os.path.exists(out):
                     os.remove(out)
-    print(f"{'FAIL' if failed else 'PASS'} errors ({len(CASES)} cases)")
+        with open(src, "wb") as f:
+            f.write(module(MAIN))
+        for options, expected in COMMAND_CASES:
+            p = subprocess.run([sys.executable, NICEWASM, *options, "-o", out, src],
+                               capture_output=True, text=True)
+            got = p.stderr.strip()
+            if p.returncode != 1 or got != expected or os.path.exists(out):
+                failed += 1
+                print(f"FAIL: expected '{expected}'\n  got (exit {p.returncode}): {got}")
+                if os.path.exists(out):
+                    os.remove(out)
+    n = len(CASES) + len(OPTION_CASES) + len(COMMAND_CASES)
+    print(f"{'FAIL' if failed else 'PASS'} errors ({n} cases)")
     if failed:
         sys.exit(1)
 

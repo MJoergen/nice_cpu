@@ -9,12 +9,14 @@ rejects anything else with an error, rather than translating it wrongly.
 
 ## Usage
 
-    ./nicewasm.py [-o output.asm] [--no-bounds-checks] input.wasm
+    ./nicewasm.py [-o output.asm] [--no-bounds-checks]
+                  [--library NAME [--library-memory BYTES]] input.wasm
 
 Without `-o`, the output goes to `input.asm`. `--no-bounds-checks` leaves
 out the bounds checks on memory accesses, as ISA.md §9.4 allows. The code
 is then smaller and faster, but an access out of bounds reads or writes
-whatever NICE memory the address reaches. Errors are printed as
+whatever NICE memory the address reaches. `--library` translates a
+library module instead, as described below. Errors are printed as
 `file:0xOFFSET: error: message`, where OFFSET is the byte offset in the
 module, or as `file: error: message` when there is no offset. The exit
 status is 1 after an error, and no output is written. nicewasm stops at the
@@ -65,24 +67,33 @@ nicewasm aims at the default wasm32 feature set of Zig 0.15:
 `bulk-memory-opt`, `call-indirect-overlong`, `extended-const`,
 `multivalue`, `mutable-globals`, `nontrapping-fptoint`, and `sign-ext`.
 Clang's default set is a subset of it. A module built with
-`-mcpu=mvp` needs none of them. Of `bulk-memory-opt`, nicewasm supports
-`memory.copy` and `memory.fill`. It decodes the other `0xFC`
-instructions, those of `nontrapping-fptoint` and the table instructions,
-only to name them in an error. It accepts only an `i32.const` or `i64.const` as a
-global's initial value, not the expressions of `extended-const`.
+`-mcpu=mvp` needs none of them. Of the `0xFC` instructions, nicewasm
+supports `memory.copy` and `memory.fill` of `bulk-memory-opt`, and the
+`trunc_sat` conversions of `nontrapping-fptoint`. It decodes the others,
+such as the table instructions, only to name them in an error. It accepts
+only a constant instruction as a global's initial value, not the
+expressions of `extended-const`.
 
 Every Zig program built with ReleaseSafe or Debug uses a table,
 `call_indirect`, `br_table`, `select`, `memory.copy`, and `memory.fill`,
 and it traps with `unreachable`, even if its source has no function
-pointers. nicewasm supports all of them. The next features are `f32` and
-`f64`.
+pointers. nicewasm supports all of them. The next feature is an option
+for the size up to which the memory may grow, so that `memory.grow` can
+succeed (ISA.md §9.4).
 
 ## Supported features
 
-- **Types:** `i32` and `i64`, in function types, locals, and globals. A
-  function has at most one result. An `i64` takes two words, low word
-  first, and is passed in registers or on the stack by the rules of ISA.md
-  §9.3.
+- **Types:** `i32`, `i64`, `f32`, and `f64`, in function types, locals,
+  and globals. A function has at most one result. An `i64` or `f64` takes
+  two words, low word first, and is passed in registers or on the stack by
+  the rules of ISA.md §9.3. A float value is its bits, as in memory.
+- **Floats:** every `f32` and `f64` instruction. `const`, `load`, `store`,
+  and `reinterpret` move the bits, and `abs`, `neg`, and `copysign` change
+  the sign bit inline. Everything else calls the float library,
+  `runtime/float.asm`, so a program that uses floats must be joined with
+  it, after `runtime/lib.asm`. `trunc` traps with code 5 for a NaN or a
+  value whose integer part does not fit, and `trunc_sat` saturates
+  instead.
 - **Control:** `block`, `loop`, `if`, `else`, `end`, `br`, `br_if`,
   `br_table`, `return`, `call`, `unreachable`, and `nop`. A block type may
   be a function type, with parameters and several results.
@@ -149,11 +160,10 @@ pointers. nicewasm supports all of them. The next features are `f32` and
   not printable ASCII is left out, and so is any such character in the
   input file's name, so that a comment cannot become code.
 
-Not supported yet: the other `0xFC` instructions, `f32` and `f64` loads
-and stores, the conversion trap (code 5), passive data and element segments, `memory.init`, the table instructions
-such as `table.get`, `ref.func` outside element segments, the tail calls
-`return_call` and `return_call_indirect`, library modules (ISA.md §9.4),
-`f32`, and `f64`.
+Not supported yet: passive data and element segments, `memory.init`,
+`data.drop`, the table instructions such as `table.get` and `table.grow`,
+`ref.func` outside element segments, the tail calls `return_call` and
+`return_call_indirect`, SIMD, and exceptions.
 
 nicewasm checks the types on the operand stack as wasm validation does,
 so an invalid module is an error, not wrong code. Code that cannot be
@@ -161,6 +171,26 @@ reached, such as the code after a `br` up to the end of its block, is
 decoded but not checked, and nicewasm emits nothing for it. Two exports with the
 same name are an error too, and so is a `__wasm_call_ctors` with
 parameters or results.
+
+## Library modules
+
+`--library NAME` translates a library module of the runtime library, as
+ISA.md §9.4 describes. The float library is one: see
+[runtime/README.md](../runtime/README.md). It differs from a program's
+module in these ways:
+
+- The labels nicewasm makes start with `WL.NAME.`, and its memory is at
+  `WL.NAME.memory`. Every exported function gets the label `_name`, also
+  when the name starts with `_`, so `__addsf3` becomes `___addsf3`.
+- There is no `___wasm_start`, and a start function, `memory.size`, and
+  `memory.grow` are errors. So is any float instruction that would call the
+  float library, which a library module could be part of.
+- Only the start of the memory is reserved, and it is part of the program
+  image, with the data segments in it. By default, that is up to the end of
+  the last data segment or the highest initial value of a mutable `i32`
+  global, which for compiler output is the stack pointer. With
+  `--library-memory BYTES`, it is BYTES, rounded up to a word. An access
+  past it traps with code 2.
 
 ## How functions are translated
 

@@ -74,9 +74,18 @@ def globals_(*inits: int) -> bytes:
 
 
 def typed_globals(*gs: Tuple[int, bool, int]) -> bytes:
-    """Globals of any integer type: (type, mutable, initial value)."""
-    return section(6, vec([bytes([t, int(m), 0x41 if t == I32 else 0x42]) + s(i) + b"\x0b"
-                           for t, m, i in gs]))
+    """Globals of any type: (type, mutable, initial value). The value of a
+    float type is its bits."""
+    return section(6, vec([bytes([t, int(m)]) + const(t, i) + b"\x0b" for t, m, i in gs]))
+
+
+def const(t: int, v: int) -> bytes:
+    """The constant instruction of type t. For a float type, v is its bits."""
+    if t == I32:
+        return b"\x41" + s(v)
+    if t == I64:
+        return b"\x42" + s(v)
+    return (b"\x43" if t == F32 else b"\x44") + v.to_bytes(4 if t == F32 else 8, "little")
 
 
 def exports(*exps: Tuple[str, int, int]) -> bytes:
@@ -232,3 +241,9 @@ def elems(*segs: Tuple[int, Sequence[int]], exprs: Sequence[Tuple[int, Sequence[
 
 def call_indirect(type_idx: int) -> bytes:
     return b"\x11" + u(type_idx) + b"\x00"
+
+I32_REINTERPRET_F32, I64_REINTERPRET_F64, F32_REINTERPRET_I32, F64_REINTERPRET_I64 = (
+    bytes([op]) for op in range(0xBC, 0xC0))
+F32_ABS, F32_NEG, F32_COPYSIGN = b"\x8b", b"\x8c", b"\x98"
+F64_ABS, F64_NEG, F64_COPYSIGN = b"\x99", b"\x9a", b"\xa6"
+F32_LOAD, F64_LOAD, F32_STORE, F64_STORE = 0x2A, 0x2B, 0x38, 0x39

@@ -32,7 +32,7 @@ I32, I64, F32, F64 = 0x7F, 0x7E, 0x7D, 0x7C
 TYPE_NAMES = {I32: "i32", I64: "i64", F32: "f32", F64: "f64", 0x7B: "v128",
               0x70: "funcref", 0x6F: "externref"}
 
-SIZES = {I32: 1, I64: 2}  # words per value of each supported type
+SIZES = {I32: 1, I64: 2, F32: 1, F64: 2}  # words per value of each supported type
 
 WORDS_PER_PAGE = 16384  # 65536 bytes, four to a word
 ZERO_UNROLL = 16        # words cleared per pass of ___wasm_start's loops
@@ -138,13 +138,72 @@ EXTEND_OPS = {0xC0: (I32, 8), 0xC1: (I32, 16), 0xC2: (I64, 8), 0xC3: (I64, 16),
 
 BLOCK, LOOP, IF = 0x02, 0x03, 0x04
 
+# The float operations that are a call to the float library (runtime/
+# float.asm): wasm opcode -> (routine, parameter types, result type).
+FLOAT_OPS: Dict[int, Tuple[str, List[int], int]] = {}
+for _t, _first, _suffix in [(F32, 0x8D, "sf"), (F64, 0x9B, "df")]:
+    for _i, _name in enumerate("ceil floor trunc nearest sqrt".split()):
+        FLOAT_OPS[_first + _i] = (f"__{_name}{_suffix}", [_t], _t)
+    for _i, _name in enumerate(f"add{_suffix}3 sub{_suffix}3 mul{_suffix}3 div{_suffix}3 min{_suffix}"
+                               f" max{_suffix}".split()):
+        FLOAT_OPS[_first + 5 + _i] = (f"__{_name}", [_t, _t], _t)
+FLOAT_OPS.update({
+    0xB2: ("__floatsisf", [I32], F32), 0xB3: ("__floatunsisf", [I32], F32),
+    0xB4: ("__floatdisf", [I64], F32), 0xB5: ("__floatundisf", [I64], F32),
+    0xB6: ("__truncdfsf2", [F64], F32),
+    0xB7: ("__floatsidf", [I32], F64), 0xB8: ("__floatunsidf", [I32], F64),
+    0xB9: ("__floatdidf", [I64], F64), 0xBA: ("__floatundidf", [I64], F64),
+    0xBB: ("__extendsfdf2", [F32], F64)})
+
+# The conversions from float to integer. Those of the library saturate and
+# give 0 for a NaN, as trunc_sat does. trunc must trap instead (§9.4), if
+# the value is a NaN or its integer part does not fit. That is the case
+# when its magnitude, its bits without the sign, is not below a limit,
+# one for each sign. wasm opcode -> (routine, from, to, limit for +, for -).
+TRUNC_OPS: Dict[int, Tuple[str, int, int, int, int]] = {
+    0xA8: ("__fixsfsi", F32, I32, 0x4F000000, 0x4F000001),           # 2^31; -2^31 fits
+    0xA9: ("__fixunssfsi", F32, I32, 0x4F800000, 0x3F800000),        # 2^32; above -1
+    0xAA: ("__fixdfsi", F64, I32, 0x41E00000_00000000, 0x41E00000_00200000),  # -(2^31 + 1)
+    0xAB: ("__fixunsdfsi", F64, I32, 0x41F00000_00000000, 0x3FF00000_00000000),
+    0xAE: ("__fixsfdi", F32, I64, 0x5F000000, 0x5F000001),           # 2^63; -2^63 fits
+    0xAF: ("__fixunssfdi", F32, I64, 0x5F800000, 0x3F800000),        # 2^64
+    0xB0: ("__fixdfdi", F64, I64, 0x43E00000_00000000, 0x43E00000_00000001),
+    0xB1: ("__fixunsdfdi", F64, I64, 0x43F00000_00000000, 0x3FF00000_00000000),
+}
+# trunc_sat: the instructions after 0xFC with the second opcodes 0 to 7, in
+# the same order as the trunc opcodes.
+TRUNC_SAT_OPS = {0x100 + _i: _op for _i, _op in enumerate(sorted(TRUNC_OPS))}
+
+# The float comparisons call the libgcc-style routines, whose result is
+# below 0, 0, or above 0, and for a NaN the value that makes the test fail.
+# wasm opcode -> (type, routine, the test of the result).
+FLOAT_CMP_OPS: Dict[int, Tuple[int, str, str]] = {}
+for _t, _first, _suffix in [(F32, 0x5B, "sf"), (F64, 0x61, "df")]:
+    for _i, (_name, _test) in enumerate([("eq", "=="), ("ne", "!="), ("lt", "<"), ("gt", ">"),
+                                         ("le", "<="), ("ge", ">=")]):
+        FLOAT_CMP_OPS[_first + _i] = (_t, f"__{_name}{_suffix}2", _test)
+
+# The constant instruction of each type.
+CONST_OPS = {I32: 0x41, I64: 0x42, F32: 0x43, F64: 0x44}
+
+# The reinterpretations: wasm opcode -> (from, to). The bits stay as they
+# are, so they need no code.
+REINTERPRET_OPS = {0xBC: (F32, I32), 0xBD: (F64, I64), 0xBE: (I32, F32), 0xBF: (I64, F64)}
+
+# abs, neg, and copysign change only the sign bit, the top bit of the
+# value's last word: wasm opcode -> (type, operation).
+SIGN_OPS = {0x8B: (F32, "abs"), 0x8C: (F32, "neg"), 0x98: (F32, "copysign"),
+            0x99: (F64, "abs"), 0x9A: (F64, "neg"), 0xA6: (F64, "copysign")}
+
 # The loads: wasm opcode -> (type, bytes, signed). And the stores: wasm
 # opcode -> (type, bytes).
-LOADS = {0x28: (I32, 4, False), 0x29: (I64, 8, False), 0x2C: (I32, 1, True),
+LOADS = {0x28: (I32, 4, False), 0x29: (I64, 8, False), 0x2A: (F32, 4, False),
+         0x2B: (F64, 8, False), 0x2C: (I32, 1, True),
          0x2D: (I32, 1, False), 0x2E: (I32, 2, True), 0x2F: (I32, 2, False),
          0x30: (I64, 1, True), 0x31: (I64, 1, False), 0x32: (I64, 2, True),
          0x33: (I64, 2, False), 0x34: (I64, 4, True), 0x35: (I64, 4, False)}
-STORES = {0x36: (I32, 4), 0x37: (I64, 8), 0x3A: (I32, 1), 0x3B: (I32, 2),
+STORES = {0x36: (I32, 4), 0x37: (I64, 8), 0x38: (F32, 4), 0x39: (F64, 8), 0x3A: (I32, 1),
+          0x3B: (I32, 2),
           0x3C: (I64, 1), 0x3D: (I64, 2), 0x3E: (I64, 4)}
 
 
@@ -295,11 +354,21 @@ def type_name(t: int) -> str:
     return TYPE_NAMES.get(t, f"0x{t:02x}")
 
 
+def read_const(s: Reader, t: int) -> int:
+    """The immediate of a t.const: a signed LEB128 number for the integer
+    types, and the bits of the number, little-endian, for the float types."""
+    if t == I32:
+        return s.s32()
+    if t == I64:
+        return s.leb(64, True)
+    return int.from_bytes(s.bytes(4 if t == F32 else 8), "little")
+
+
 def check_types(types: List[int], what: str, offset: int) -> None:
     for t in types:
         if t not in SIZES:
-            raise WasmError(f"{what} has type {type_name(t)}; only i32 and i64 are supported yet",
-                            offset)
+            raise WasmError(f"{what} has type {type_name(t)}; only i32, i64, f32, and f64 are"
+                            " supported", offset)
 
 
 def words(value: int, t: int) -> List[str]:
@@ -448,11 +517,10 @@ def parse_section(m: Module, sec_id: int, s: Reader, sec_start: int) -> None:
             at = s.pos
             # The constant instruction of the type, then end. extended-const
             # allows expressions, which are not supported.
-            const, bits = (0x41, 32) if t == I32 else (0x42, 64)
             what = f"global {i}: the initial value must be an {type_name(t)}.const"
-            if s.byte() != const:
+            if s.byte() != CONST_OPS[t]:
                 raise WasmError(what, at)
-            init = s.leb(bits, True)
+            init = read_const(s, t)
             if s.byte() != 0x0B:
                 raise WasmError(what, at)
             m.globals.append(Global(t, mutable, init))
@@ -716,10 +784,34 @@ HELPERS: Dict[str, List[str]] = {
 
 
 class Translator:
-    def __init__(self, m: Module, data: bytes, checks: bool = True) -> None:
+    def __init__(self, m: Module, data: bytes, checks: bool = True,
+                 library: Optional[str] = None, library_memory: Optional[int] = None) -> None:
         self.m = m
         self.data = data
         self.checks = checks  # bounds checks on memory accesses
+        self.library = library  # the name of a library module (§9.4), or None
+        self.prefix = f"WL.{library}." if library else "W."  # of the labels made here
+        self.mem = f"WL.{library}.memory" if library else "___wasm_memory"
+        # The bytes of the memory that are reserved: all of the initial
+        # pages for a program, and only the start for a library (§9.4).
+        self.mem_bytes: Optional[int] = None
+        if m.memory_pages is not None:
+            self.mem_bytes = m.memory_pages * WORDS_PER_PAGE * 4
+            if library:
+                if library_memory is None:
+                    # As much as the data and the stack need. A stack
+                    # pointer is a mutable i32 global whose initial value
+                    # is the top of the stack.
+                    ends = [d.offset + len(d.data) for d in m.data]
+                    ends += [g.init & 0xFFFFFFFF for g in m.globals if g.type == I32 and g.mutable]
+                    library_memory = max(ends, default=0)
+                library_memory = (library_memory + 3) // 4 * 4
+                if library_memory > self.mem_bytes:
+                    raise WasmError(f"the library memory of {library_memory} bytes is larger than"
+                                    f" the module's memory of {self.mem_bytes}")
+                self.mem_bytes = library_memory
+        elif library_memory is not None:
+            raise WasmError("--library-memory: the module has no memory")
         self.helpers: set[str] = set()  # the HELPERS that functions call
         self.labels: Dict[int, List[str]] = {}         # function index -> export labels
         self.global_labels: Dict[int, List[str]] = {}  # global index -> export labels
@@ -735,13 +827,16 @@ class Translator:
                     raise WasmError(f"export {name}: function {idx} does not exist")
                 if idx < n_imports:
                     raise WasmError(f"export {name}: exporting an imported function is not supported")
-                if name == "__wasm_call_ctors":
+                if name == "__wasm_call_ctors" and not library:
                     self.ctors = idx
             elif kind == 3 and idx >= len(m.globals):
                 raise WasmError(f"export {name}: global {idx} does not exist")
-            # Names that start with _ are reserved for the runtime library.
-            if kind in (0, 3) and C_IDENT.match(name) and not name.startswith("_"):
+            # Names that start with _ are reserved for the runtime library,
+            # so only a library module gives them labels (§9.4).
+            if kind in (0, 3) and C_IDENT.match(name) and (library or not name.startswith("_")):
                 (self.labels if kind == 0 else self.global_labels).setdefault(idx, []).append(f"_{name}")
+        if m.start is not None and library:
+            raise WasmError("a library module may not have a start function")
         if m.start is not None:
             if m.start >= n_imports + len(m.funcs):
                 raise WasmError(f"start function {m.start} does not exist")
@@ -760,18 +855,57 @@ class Translator:
     def func_label(self, idx: int) -> str:
         if idx < len(self.m.imports):
             return f"_{self.m.imports[idx].name}"
-        return f"W.f{idx}"
+        return f"{self.prefix}f{idx}"
 
     def run(self, source: str) -> List[str]:
         source = "".join(c if PRINTABLE.match(c) else "?" for c in source)
-        out = [f"; Translated from {source} by nicewasm (doc/ISA.md §9.4).", ""]
-        out.append("; Sets the memory to 0, then calls the start function and")
-        out.append("; __wasm_call_ctors, if the module has them.")
-        out.append("___wasm_start")
+        out = [f"; Translated from {source} by nicewasm (doc/ISA.md §9.4)."]
+        if self.library:
+            out.append(f"; Library module {self.library}.")
+        runs = self.memory_runs()
+        if not self.library:
+            out += self.start(runs)
+        n_imports = len(self.m.imports)
+        for i, code in enumerate(self.m.codes):
+            out.append("")
+            out += FunctionTranslator(self, n_imports + i, code).run()
+        for name in sorted(self.helpers):
+            out += [""] + [line.replace("W.", self.prefix).replace("___wasm_memory", self.mem)
+                           for line in HELPERS[name]]
+        out += self.table()
+        if self.m.globals:
+            out += ["", "; Globals"]
+            for i, g in enumerate(self.m.globals):
+                out += self.global_labels.get(i, [])
+                out.append(f"{self.prefix}g{i}")
+                out += [instr(".DAT", w) for w in words(g.init, g.type)]
+        if self.m.memory_pages is not None:
+            pages = self.m.memory_pages
+            if self.library:
+                out += ["", f"; Linear memory: the first {self.mem_bytes} bytes of"
+                        f" {pages} page{'' if pages == 1 else 's'}"]
+            else:
+                out += ["", f"; Linear memory: {pages} page{'' if pages == 1 else 's'}"]
+            out.append(self.mem)
+            for start, values in runs:
+                if isinstance(values, list):
+                    last = start + len(values) - 1
+                    where = f"word {start}" if last == start else f"words {start} to {last}"
+                    out.append(f"        ; {where}: data segments")
+                    for i in range(0, len(values), 8):
+                        out.append(instr(".DAT", *(f"0x{w:08X}" for w in values[i:i + 8])))
+                else:
+                    # A library's memory is small, so it is in the image.
+                    out.append(instr(".BLK" if self.library else ".RES", str(values)))
+        return out
+
+    def start(self, runs: List[Tuple[int, Union[int, List[int]]]]) -> List[str]:
+        """___wasm_start, which a program's module always has (§9.4)."""
+        out = ["", "; Sets the memory to 0, then calls the start function and",
+               "; __wasm_call_ctors, if the module has them.", "___wasm_start"]
         # The words that data segments set are in the program image. The
         # rest of the memory is reserved with .RES, so it is not, and is
         # set to 0 here. Each pass of a loop clears ZERO_UNROLL words.
-        runs = self.memory_runs()
         gaps = 0
         for start, values in runs:
             if isinstance(values, list):
@@ -790,32 +924,6 @@ class Translator:
                 out.append(instr("ADD", "@--R13", "2", "R15"))
                 out.append(instr("MOVE", "R15", self.func_label(idx)))
         out.append(instr("MOVE", "R15", "@R13++"))
-        n_imports = len(self.m.imports)
-        for i, code in enumerate(self.m.codes):
-            out.append("")
-            out += FunctionTranslator(self, n_imports + i, code).run()
-        for name in sorted(self.helpers):
-            out += [""] + HELPERS[name]
-        out += self.table()
-        if self.m.globals:
-            out += ["", "; Globals"]
-            for i, g in enumerate(self.m.globals):
-                out += self.global_labels.get(i, [])
-                out.append(f"W.g{i}")
-                out += [instr(".DAT", w) for w in words(g.init, g.type)]
-        if self.m.memory_pages is not None:
-            pages = self.m.memory_pages
-            out += ["", f"; Linear memory: {pages} page{'' if pages == 1 else 's'}",
-                    "___wasm_memory"]
-            for start, values in runs:
-                if isinstance(values, list):
-                    last = start + len(values) - 1
-                    where = f"word {start}" if last == start else f"words {start} to {last}"
-                    out.append(f"        ; {where}: data segments")
-                    for i in range(0, len(values), 8):
-                        out.append(instr(".DAT", *(f"0x{w:08X}" for w in values[i:i + 8])))
-                else:
-                    out.append(instr(".RES", str(values)))
         return out
 
     def type_number(self, idx: int) -> int:
@@ -845,7 +953,7 @@ class Translator:
                 entries[seg.offset + k] = f
         size = self.m.table_size
         out = ["", f"; Table 0: {size} entr{'y' if size == 1 else 'ies'}, each a function's"
-               " address and its type number", "W.table"]
+               " address and its type number", f"{self.prefix}table"]
         for f in entries:
             if f is None:
                 out.append(instr(".DAT", "0", "0"))
@@ -866,7 +974,8 @@ class Translator:
             if self.m.data:
                 raise WasmError("data segment 0: the module has no memory", self.m.data[0].at)
             return []
-        size = self.m.memory_pages * WORDS_PER_PAGE * 4
+        assert self.mem_bytes is not None
+        size = self.mem_bytes
         init: Dict[int, int] = {}
         for i, seg in enumerate(self.m.data):
             if seg.offset + len(seg.data) > size:
@@ -926,7 +1035,7 @@ class FunctionTranslator:
         self.n_labels = 0
         self.body: List[str] = []
         self.stubs: List[str] = []  # code after the epilogue, out of the way
-        self.ret_label = f"W.f{idx}.ret"
+        self.ret_label = f"{t.prefix}f{idx}.ret"
         self.ctrl = [Frame(0, self.ftype, 0, 0, self.ret_label)]
 
     def push(self, t: int) -> List[str]:
@@ -1001,12 +1110,12 @@ class FunctionTranslator:
         if i >= len(self.t.m.globals):
             raise WasmError(f"function {self.idx}: global {i} does not exist", at)
         t = self.t.m.globals[i].type
-        return t, [f"@W.g{i}" + (f"+{k}" if k else "") for k in range(SIZES[t])]
+        return t, [f"@{self.t.prefix}g{i}" + (f"+{k}" if k else "") for k in range(SIZES[t])]
 
     def trap(self, code: int) -> None:
         """Jumps through ___wasm_trap_vector with the code in R1 and the
         address of this code in R2 (§9.4)."""
-        label = f"W.f{self.idx}.t{self.n_traps}"
+        label = f"{self.t.prefix}f{self.idx}.t{self.n_traps}"
         self.n_traps += 1
         self.body.append(label)
         self.emit("MOVE", "R1", str(code))
@@ -1014,7 +1123,7 @@ class FunctionTranslator:
         self.emit("MOVE", "R15", "@___wasm_trap_vector")
 
     def new_label(self) -> str:
-        label = f"W.f{self.idx}.L{self.n_labels}"
+        label = f"{self.t.prefix}f{self.idx}.L{self.n_labels}"
         self.n_labels += 1
         return label
 
@@ -1135,13 +1244,41 @@ class FunctionTranslator:
         else:
             self.emit("MOVE", "R1", base)
         # The first address at which n bytes do not fit.
-        assert self.t.m.memory_pages is not None
-        limit = self.t.m.memory_pages * WORDS_PER_PAGE * 4 - n + 1
+        assert self.t.mem_bytes is not None
+        limit = self.t.mem_bytes - n + 1
         if limit <= 0:
             self.emit("MOVE", "R15", trap)
         elif limit < 1 << 32:
             self.emit("SUB[M]", "R0", "R1", words(limit, I32)[0])
             self.emit("?!C MOVE", "R15", trap)
+
+    def trunc_check(self, src_t: int, dst_t: int, pos_limit: int, neg_limit: int, at: int,
+                    what: str) -> None:
+        """Traps with code 5 unless the float on top of the operand stack,
+        which stays there, has a magnitude below the limit for its sign
+        (TRUNC_OPS). A NaN or an infinity is above every limit."""
+        (v,) = self.pop([src_t], at, what)
+        self.push(src_t)
+        start = self.new_label()
+        self.body.append(start)
+        hi = v[-1]  # the word with the sign
+        if src_t == F32:
+            self.emit("MOVE", "R2", words(pos_limit, I32)[0])
+            self.emit("MOVE[M]", "R0", hi)
+            self.emit("?N MOVE", "R2", words(neg_limit, I32)[0])
+            self.emit("AND", "R1", hi, "0x7FFFFFFF")
+            self.emit("SUB[M]", "R0", "R1", "R2")          # C = R1 < R2, unsigned
+        else:
+            pos, neg = words(pos_limit, I64), words(neg_limit, I64)
+            self.emit("MOVE", "R2", pos[1])
+            self.emit("MOVE", "R3", pos[0])
+            self.emit("MOVE[M]", "R0", hi)
+            self.emit("?N MOVE", "R2", neg[1])
+            self.emit("?N MOVE", "R3", neg[0])
+            self.emit("AND", "R1", hi, "0x7FFFFFFF")
+            self.emit("SUB[M]", "R0", v[0], "R3")
+            self.emit("SUB[CM]", "R0", "R1", "R2")         # C = R1:v[0] < R2:R3
+        self.emit("?!C MOVE", "R15", self.trap_stub(5, start))
 
     def call_indirect(self, type_idx: int, at: int, what: str) -> None:
         """Calls the function in the table entry whose index is on top of
@@ -1161,18 +1298,19 @@ class FunctionTranslator:
         self.emit("SUB[M]", "R0", "R5", str(self.t.m.table_size))
         self.emit("?!C MOVE", "R15", self.trap_stub(6, start))    # index >= size
         self.emit("ADD", "R5", "R5", "R5")                         # two words an entry
-        self.emit("MOVE[M]", "R0", "@W.table[R5]")
+        table = f"{self.t.prefix}table"
+        self.emit("MOVE[M]", "R0", f"@{table}[R5]")
         self.emit("?Z MOVE", "R15", self.trap_stub(6, start))     # empty
-        self.emit("SUB[M]", "R0", "@W.table+1[R5]", str(self.t.type_number(type_idx)))
+        self.emit("SUB[M]", "R0", f"@{table}+1[R5]", str(self.t.type_number(type_idx)))
         self.emit("?!Z MOVE", "R15", self.trap_stub(7, start))
-        self.emit("MOVE", "R5", "@W.table[R5]")
+        self.emit("MOVE", "R5", f"@{table}[R5]")
         self.call("R5", ft, at, what)
 
     def range_check(self, addr: str, n: str, trap: str) -> None:
         """Jumps to trap unless the n bytes from byte address addr are all
         in the memory. n may be 0, even at the end of the memory."""
-        assert self.t.m.memory_pages is not None
-        size = self.t.m.memory_pages * WORDS_PER_PAGE * 4
+        assert self.t.mem_bytes is not None
+        size = self.t.mem_bytes
         self.emit("ADD[M]", "R1", addr, n)
         self.emit("?C MOVE", "R15", trap)          # addr + n passes 2^32
         if size < 1 << 32:
@@ -1192,10 +1330,10 @@ class FunctionTranslator:
         if self.t.checks:
             trap = self.trap_stub(2, start)
             self.range_check(d[0], n[0], trap)
-            if helper == "W.copy":
+            if helper == "copy":
                 self.range_check(x[0], n[0], trap)
-        self.t.helpers.add(helper)
-        self.call(helper, FuncType([I32, I32, I32], []), at, what)
+        self.t.helpers.add(f"W.{helper}")
+        self.call(f"{self.t.prefix}{helper}", FuncType([I32, I32, I32], []), at, what)
 
     def trap_stub(self, code: int, start: str) -> str:
         """A stub after the epilogue that traps with the given code, and
@@ -1268,7 +1406,7 @@ class FunctionTranslator:
         (base,) = self.pop([I32], at, what)
         dest = self.push(t)
         self.address(base[0], offset, n)
-        mem = "@___wasm_memory"
+        mem = f"@{self.t.mem}"
         self.emit("SHR", "R2", "R1", "2")                  # word index
         if n == 8:
             lo, hi = dest
@@ -1328,7 +1466,7 @@ class FunctionTranslator:
         base, value = self.pop([I32, t], at, what)
         v = value[0]
         self.address(base[0], offset, n)
-        mem = "@___wasm_memory"
+        mem = f"@{self.t.mem}"
         self.emit("SHR", "R2", "R1", "2")                  # word index
         if n >= 4:
             done = self.new_label()
@@ -1444,9 +1582,9 @@ class FunctionTranslator:
             if op == 0xFC:
                 sub = r.u32()
                 name = FC_OPCODES.get(sub, f"opcode 0xfc {sub}")
-                if sub not in (10, 11):  # memory.copy, memory.fill
+                if sub not in (10, 11) and 0x100 + sub not in TRUNC_SAT_OPS:
                     raise WasmError(f"function {self.idx}: {name} is not supported yet", at)
-                for _ in range(2 if sub == 10 else 1):
+                for _ in range(2 if sub == 10 else 1 if sub == 11 else 0):
                     mem_at = r.pos
                     mem = r.u32()
                     if mem != 0 or self.t.m.memory_pages is None:
@@ -1470,10 +1608,8 @@ class FunctionTranslator:
                 if table_idx != 0 or self.t.m.table_size is None:
                     raise WasmError(f"function {self.idx}: table {table_idx} does not exist",
                                     table_at)
-            elif op == 0x41:
-                imm = r.s32()
-            elif op == 0x42:
-                imm = r.leb(64, True)
+            elif op in (0x41, 0x42, 0x43, 0x44):  # the constants
+                imm = read_const(r, {0x41: I32, 0x42: I64, 0x43: F32, 0x44: F64}[op])
             elif op in (BLOCK, LOOP, IF):
                 ft = self.block_type(r)
             elif op in LOADS or op in STORES:
@@ -1484,6 +1620,9 @@ class FunctionTranslator:
                 mem = r.u32()
                 if mem != 0 or self.t.m.memory_pages is None:
                     raise WasmError(f"function {self.idx}: memory {mem} does not exist", mem_at)
+                if self.t.library:
+                    raise WasmError(f"function {self.idx}: a library module may not use {name}",
+                                    at)
             elif op == 0x0E:
                 targets = [r.u32() for _ in range(r.u32() + 1)]
             elif op == 0x1C:
@@ -1494,10 +1633,16 @@ class FunctionTranslator:
                 sel_type = types[0]
             elif not (op in (0x00, 0x01, 0x05, 0x0B, 0x0F, 0x1A, 0x1B, 0x45, 0x50, 0xA7,
                              0xAC, 0xAD, 0x10A, 0x10B, 0x11)
+                      or op in REINTERPRET_OPS or op in SIGN_OPS or op in FLOAT_OPS
+                      or op in TRUNC_OPS or op in TRUNC_SAT_OPS or op in FLOAT_CMP_OPS
                       or op in DIV_OPS or op in LIB_OPS or op in EXTEND_OPS
                       or op in ALU_OPS or op in ALU64_OPS or op in CMP_OPS or op in CMP64_OPS
                       or op in SHIFT_OPS or op in SHIFT64_OPS):
                 raise WasmError(f"function {self.idx}: {name} is not supported yet", at)
+            if self.t.library and (op in FLOAT_OPS or op in TRUNC_OPS or op in TRUNC_SAT_OPS
+                                   or op in FLOAT_CMP_OPS):
+                # These call the float library, which would then call itself.
+                raise WasmError(f"function {self.idx}: a library module may not use {name}", at)
             if not reachable:
                 # Skip to the else or end that makes the code reachable again.
                 if op in (BLOCK, LOOP, IF):
@@ -1509,7 +1654,9 @@ class FunctionTranslator:
                 if op not in (0x05, 0x0B) or dead_blocks:
                     continue
             comment = f"        ; {name}"
-            if imm is not None:
+            if op in (0x43, 0x44):
+                comment += f" 0x{imm:0{8 if op == 0x43 else 16}X}"  # the bits
+            elif imm is not None:
                 comment += f" {imm}"
             elif targets:
                 comment += " " + " ".join(map(str, targets))
@@ -1681,9 +1828,9 @@ class FunctionTranslator:
                     raise WasmError(f"function {self.idx}: global {imm} is immutable", at)
                 (src,) = self.pop([t], at, name)
                 self.move(dest, src)
-            elif op in (0x41, 0x42):  # i32.const, i64.const
+            elif op in (0x41, 0x42, 0x43, 0x44):  # the constants
                 assert imm is not None
-                t = I32 if op == 0x41 else I64
+                t = {0x41: I32, 0x42: I64, 0x43: F32, 0x44: F64}[op]
                 for d, w in zip(self.push(t), words(imm, t)):
                     self.emit("MOVE", d, w)
             elif op in (0x45, 0x50):  # i32.eqz, i64.eqz
@@ -1746,7 +1893,52 @@ class FunctionTranslator:
                 for k, mnemonic in enumerate(ALU64_OPS[op]):
                     self.emit(mnemonic, dest[k], a[k], b[k])
             elif op in (0x10A, 0x10B):  # memory.copy, memory.fill
-                self.bulk("W.copy" if op == 0x10A else "W.fill", at, name)
+                self.bulk("copy" if op == 0x10A else "fill", at, name)
+            elif op in FLOAT_OPS:
+                routine, params, result = FLOAT_OPS[op]
+                self.call(f"_{routine}", FuncType(params, [result]), at, name)
+            elif op in TRUNC_OPS or op in TRUNC_SAT_OPS:
+                if op in TRUNC_OPS:
+                    self.trunc_check(*TRUNC_OPS[op][1:], at, name)
+                routine, src_t, dst_t, _, _ = TRUNC_OPS[TRUNC_SAT_OPS.get(op, op)]
+                self.call(f"_{routine}", FuncType([src_t], [dst_t]), at, name)
+            elif op in FLOAT_CMP_OPS:
+                t, routine, test = FLOAT_CMP_OPS[op]
+                self.call(f"_{routine}", FuncType([t, t], [I32]), at, name)
+                d = self.top()[0]
+                self.emit("MOVE[M]", "R0", "R1")
+                # The flags of the routine's result in R1 give the answer.
+                if test in ("==", "!="):
+                    self.emit("MOVE", d, "0")
+                    self.emit("?Z MOVE" if test == "==" else "?!Z MOVE", d, "1")
+                elif test in ("<", "<="):
+                    self.emit("MOVE", d, "0")
+                    self.emit("?N MOVE", d, "1")
+                    if test == "<=":
+                        self.emit("?Z MOVE", d, "1")
+                else:
+                    self.emit("MOVE", d, "1")
+                    self.emit("?N MOVE", d, "0")
+                    if test == ">":
+                        self.emit("?Z MOVE", d, "0")
+            elif op in REINTERPRET_OPS:
+                src_t, dst_t = REINTERPRET_OPS[op]
+                self.pop([src_t], at, name)
+                self.push(dst_t)  # the same words, unchanged
+            elif op in SIGN_OPS:
+                t, sign_op = SIGN_OPS[op]
+                values = self.pop([t, t] if sign_op == "copysign" else [t], at, name)
+                dest = self.push(t)  # the same words as the first value
+                a, top = values[0], values[0][-1]  # top: the word with the sign bit
+                if sign_op == "abs":
+                    self.emit("AND", top, top, "0x7FFFFFFF")
+                elif sign_op == "neg":
+                    self.emit("XOR", top, top, "0x80000000")
+                else:
+                    self.emit("AND", "R1", values[1][-1], "0x80000000")
+                    self.emit("AND", top, top, "0x7FFFFFFF")
+                    self.emit("OR", top, top, "R1")
+                assert dest == a
             elif op in LIB_OPS:
                 routine, (params, results) = LIB_OPS[op]
                 self.call(routine, FuncType(params, results), at, name)
@@ -1795,7 +1987,7 @@ class FunctionTranslator:
         name = printable(self.t.m.names.get(self.idx, ""))
         out = [f"; Function {self.idx}" + (f": {name}" if name else "")]
         out += self.t.labels.get(self.idx, [])
-        out.append(f"W.f{self.idx}")
+        out.append(f"{self.t.prefix}f{self.idx}")
         out.append(instr("MOVE", "@--R13", "R12"))
         out.append(instr("MOVE", "R12", "R13"))
         size = self.n_slots + self.max_words
@@ -1817,8 +2009,9 @@ class FunctionTranslator:
         return out
 
 
-def translate(data: bytes, source: str, checks: bool = True) -> List[str]:
-    return Translator(parse(data), data, checks).run(source)
+def translate(data: bytes, source: str, checks: bool = True, library: Optional[str] = None,
+              library_memory: Optional[int] = None) -> List[str]:
+    return Translator(parse(data), data, checks, library, library_memory).run(source)
 
 
 def main() -> None:
@@ -1828,6 +2021,11 @@ def main() -> None:
                     help="output file (default: input with .asm extension)")
     ap.add_argument("--no-bounds-checks", action="store_true",
                     help="do not check that memory accesses are in bounds")
+    ap.add_argument("--library", metavar="NAME",
+                    help="translate a library module (ISA.md §9.4) with this name")
+    ap.add_argument("--library-memory", metavar="BYTES", type=int,
+                    help="bytes of a library module's memory to reserve"
+                         " (default: as much as its data and stack need)")
     args = ap.parse_args()
 
     out = args.output or os.path.splitext(args.input)[0] + ".asm"
@@ -1840,7 +2038,12 @@ def main() -> None:
         sys.exit(f"{e.filename}: {e.strerror}")
 
     try:
-        lines = translate(data, os.path.basename(args.input), not args.no_bounds_checks)
+        if args.library is not None and not C_IDENT.match(args.library):
+            sys.exit(f"--library: {args.library!r} is not a C identifier")
+        if args.library_memory is not None and args.library is None:
+            sys.exit("--library-memory: only a library module (--library) takes it")
+        lines = translate(data, os.path.basename(args.input), not args.no_bounds_checks,
+                          args.library, args.library_memory)
     except WasmError as e:
         where = "" if e.offset is None else f":0x{e.offset:x}"
         print(f"{args.input}{where}: error: {e}", file=sys.stderr)

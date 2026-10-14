@@ -79,7 +79,7 @@ whole program is assembled at once.
         |
         |  cat, in this order: runtime/start_wasm.asm (or start.asm for a
         |  program with no wasm module), hand-written .asm files, prog.asm,
-        |  and runtime/lib.asm
+        |  runtime/lib.asm, and runtime/float.asm if prog uses floats
         v
     full.asm
         |  assembler/niceasm.py
@@ -105,6 +105,10 @@ the join.
   calls `__mul` in `lib.asm` for `i32.mul`, and traps through
   `___wasm_trap_vector`. A C compiler for NICE would call the same
   routines.
+- The float routines are themselves translated by `nicewasm`: `runtime/
+  float.zig` and parts of Zig's compiler_rt are compiled to
+  `runtime/float.wasm`, and `nicewasm --library float` turns that into
+  `runtime/float.asm` (`make -C runtime float.asm`).
 - The tests of the runtime use `niceasm` and `niceemu`. The tests of
   `nicewasm` use all three other tools: they translate each module, join it
   with the runtime, assemble it, and run it.

@@ -4,14 +4,16 @@
 Each case is a module, either built here with wasm.py or compiled from a
 test/X.c or test/X.zig source into test/X.wasm. It is translated and joined
 with runtime/start_wasm.asm, any hand-written assembly the case needs, and
-runtime/lib.asm, as ISA.md §9.3 describes. Then it is assembled and run.
+runtime/lib.asm, as ISA.md §9.3 describes. If it calls the float library,
+runtime/float.wasm translated as the library module float follows. Then it
+is assembled and run.
 
 The program must halt with HALT and main's result in R1, and print what
 CONSOLE gives on the console, or nothing. A case in TRAPS
 must instead trap: halt at ___wasm_trap with the trap code in R1, and R2
 pointing at the first instruction of the code for the wasm instruction
-that trapped, which TRAPS gives. Its .bin file must
-have fewer than 16384 words, so the memory, reserved with .RES, is not in it. R7-R12 must be 0
+that trapped, which TRAPS gives. The first page of its memory, reserved
+with .RES, must not be in the program image. R7-R12 must be 0
 and SP must be 0xFFFFFF00 again, as the start-up code left them, because
 every translated function must preserve them (ISA.md §9.3). The expected
 results were worked out by hand from the sources."""
@@ -22,7 +24,7 @@ import os
 import subprocess
 import sys
 import tempfile
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Set, Tuple, Union
 
 from wasm import (ADD, ADD64, AND, AND64, DROP, ELSE, END, EQ, EQ64, EQZ, EQZ64,
                   EXTEND_S, EXTEND_U, GE_S, GE_S64, GE_U, GE_U64, GT_S, GT_S64, GT_U,
@@ -37,12 +39,17 @@ from wasm import (I32_LOAD, I32_LOAD8_S, I32_LOAD8_U, I32_LOAD16_S, I32_LOAD16_U
                   I64_LOAD32_S, I64_LOAD32_U, I64_STORE, I64_STORE8, I64_STORE16,
                   I64_STORE32, MEMORY_GROW, MEMORY_SIZE, data, mem)
 from wasm import MEMORY_COPY, MEMORY_FILL, call_indirect, elems, table
+from wasm import (F32, F32_ABS, F32_COPYSIGN, F32_LOAD, F32_NEG, F32_REINTERPRET_I32, F32_STORE,
+                  F64, F64_ABS, F64_COPYSIGN, F64_LOAD, F64_NEG, F64_REINTERPRET_I64, F64_STORE,
+                  I32_REINTERPRET_F32, I64_REINTERPRET_F64, const)
 from wasm import ROTL, ROTL64, ROTR, ROTR64, SHL, SHL64, SHR_S, SHR_S64, SHR_U, SHR_U64
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.join(HERE, "..", "..")
 NICEWASM = os.path.join(HERE, "..", "nicewasm.py")
 NICEASM = os.path.join(TOP, "assembler", "niceasm.py")
+sys.path.insert(0, os.path.join(TOP, "assembler"))
+import niceasm  # noqa: E402
 NICEEMU = os.path.join(TOP, "emulator", "zig-out", "bin", "niceemu")
 RUNTIME = os.path.join(TOP, "runtime")
 
@@ -131,11 +138,68 @@ def i64_un(op: int, a: int, want: int) -> bytes:
     return i64_const(a - 2**64 if a >= 2**63 else a) + bytes([op]) + i32_const(want) + EQ
 
 
+def bits32(code: bytes, want: int) -> bytes:
+    """A check that code leaves an f32 whose bits are want."""
+    return code + I32_REINTERPRET_F32 + const(I32, want - 2**32 if want >= 2**31 else want) + EQ
+
+
+def bits64(code: bytes, want: int) -> bytes:
+    """The same for an f64."""
+    return code + I64_REINTERPRET_F64 + const(I64, want - 2**64 if want >= 2**63 else want) + EQ64
+
+
+def f32(x: int) -> bytes:
+    return const(F32, x)
+
+
+def fop(op: int) -> bytes:
+    """A float instruction by its opcode, or by 0x100 + n for 0xFC n."""
+    return bytes([op]) if op < 0x100 else b"\xfc" + bytes([op - 0x100])
+
+
+def is_nan32(code: bytes) -> bytes:
+    """A check that code leaves an f32 NaN: its magnitude is above that of
+    infinity, 0x7F800000."""
+    return code + I32_REINTERPRET_F32 + i32_const(0x7FFFFFFF) + AND + i32_const(0x7F800000) + GT_U
+
+
+def f64(x: int) -> bytes:
+    return const(F64, x)
+
+
+# A library module, lib, for the library cases. Global 0 is its stack
+# pointer, 64, so nicewasm reserves 64 bytes of its memory. __twice(x)
+# stores x on its stack and returns the sum of two loads of it.
+# peek100() loads byte address 100, past the reserved part.
+LIB_MODULE = module(
+    types(([I32], [I32]), ([], [I32])),
+    funcs(0, 1),
+    memory(1),
+    globals_(64),
+    exports(("__twice", 0, 0), ("peek100", 0, 1)),
+    code(([I32, I32], global_get(0) + i32_const(16) + SUB + local_tee(1) + global_set(0)
+          + local_get(1) + local_get(0) + mem(I32_STORE)
+          + local_get(1) + mem(I32_LOAD) + local_get(1) + mem(I32_LOAD) + ADD + local_set(2)
+          + local_get(1) + i32_const(16) + ADD + global_set(0) + local_get(2)),
+         (0, i32_const(100) + mem(I32_LOAD))))
+
+# Hand-written assembly for the library cases: the program's ___wasm_start,
+# which does nothing, and its main, which runs an instruction, calls a
+# routine, and runs another instruction.
+LIB_ASM = "___wasm_start MOVE R15, @R13++\n_main {}\n ADD @--R13, 2, R15\n MOVE R15, {}\n {}\n" \
+          " MOVE R15, @R13++\n"
+
+
 # Cases that must trap rather than return, and the first NICE instruction
 # of the code for the wasm instruction that traps, which R2 points at.
 # In main, an operand on the stack with nothing below it is at FP - 1. An
 # i32 above it is at FP - 2, and an i64 above an i64 at FP - 4 and FP - 3.
-TRAPS = {"safetrap": "MOVE R1, 1",
+TRAPS = {"trunc_big": "MOVE R2, 0x4F000000",
+         "trunc_small": "MOVE R2, 0x41E00000",
+         "trunc_neg": "MOVE R2, 0x41F00000",
+         "trunc_nan": "MOVE R2, 0x5F000000",
+         "libtrap": "MOVE R1, @-1[R12]",
+         "safetrap": "MOVE R1, 1",
          "indirectoob": "MOVE R5, @-2[R12]",
          "indirectnull": "MOVE R5, @-2[R12]",
          "indirecttype": "MOVE R5, @-3[R12]",
@@ -151,7 +215,10 @@ TRAPS = {"safetrap": "MOVE R1, 1",
          "nomemory": "MOVE R1, @-1[R12]"}
 
 # Options for nicewasm.
-OPTIONS = {"unchecked": ["--no-bounds-checks"]}
+OPTIONS = {"unchecked": ["--no-bounds-checks"],
+           "library": ["--library", "lib"],
+           "libtrap": ["--library", "lib"],
+           "libmem": ["--library", "lib", "--library-memory", "128"]}
 
 # What a case must print on the console (ISA.md §8.3). Every other case
 # must print nothing.
@@ -218,6 +285,12 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     ("safetrap", "safetrap", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 1),
     # Hello world from Zig, through nice.poke to the console. 13 bytes.
     ("hello", "hello", "", 13),
+    # float and double from clang, with get(i) = i + 100, through the
+    # float library. (1.5 * 1.5 + 0.5) * 1000 = 2750, sqrt(144) = 12, the
+    # mean of 1.5, 2.5, 4, and 8 is 4, and Newton's method from 25 reaches
+    # 5 exactly, as 0.5 * (5 + 25 / 5) = 5, so 500. -7.9 < -8 is 0.
+    # 2750 + 12 + 4 + 500 = 3266.
+    ("floats_c", "floats", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 3266),
     # Declared locals start at 0. dirty sets its 3 locals to 0x55, and clean
     # gets the same frame words, so without zeroing it returns 0x55 * 3 + 7.
     ("locals", module(
@@ -884,6 +957,165 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
               + local_get(0) + call(0) + DROP
               + local_get(0) + call(0) + i32_const(1) + ADD))),
      "_cell MOVE R1, cell\n MOVE R15, @R13++\ncell .DAT 7\n", 42),
+    # f32 and f64 values as bits, one bit each. 1.5 is 0x3FC00000, 2.0
+    # 0x40000000, 3.0 0x40400000, and 1.0 as an f64 0x3FF0000000000000.
+    # f0 to f3 take (f32 a, f64 b, f32 c, f64 d) = (1.0, 2.0, 3.0, 4.0),
+    # which go in R1, R2:R3, R4, and on the stack, and return b, d, c, and a.
+    ("floatdata", module(
+        types(MAIN_TYPE, ([F32, F64, F32, F64], [F64]), ([F32, F64, F32, F64], [F32])),
+        funcs(1, 1, 2, 2, 0),
+        memory(1),
+        typed_globals((F32, False, 0x40490FDB), (F64, True, 0x4005BF0A8B145769)),
+        exports(("main", 0, 4)),
+        code((0, local_get(1)), (0, local_get(3)), (0, local_get(2)), (0, local_get(0)),
+             (1, bits(0,
+                bits32(f32(0x3FC00000), 0x3FC00000),
+                bits32(f32(0x3FC00000) + F32_NEG, 0xBFC00000),
+                bits32(f32(0xC0000000) + F32_ABS, 0x40000000),
+                bits32(f32(0x40400000) + f32(0x80000000) + F32_COPYSIGN, 0xC0400000),
+                bits32(f32(0xC0400000) + f32(0x3F800000) + F32_COPYSIGN, 0x40400000),
+                bits64(f64(0x3FF0000000000000) + F64_NEG, 0xBFF0000000000000),
+                bits64(f64(0x8000000000000000) + F64_ABS, 0),
+                bits64(f64(0x4000000000000000) + f64(0xBFF0000000000000) + F64_COPYSIGN,
+                       0xC000000000000000),
+                # A NaN keeps its bits.
+                bits32(i32_const(0x7FC00001) + F32_REINTERPRET_I32, 0x7FC00001),
+                # An f64 at byte 3, across three words, and back.
+                i32_const(3) + f64(0x0123456789ABCDEF) + mem(F64_STORE)
+                + i32_const(3) + mem(I64_LOAD) + i64_const(0x0123456789ABCDEF) + EQ64,
+                bits64(i32_const(3) + mem(F64_LOAD), 0x0123456789ABCDEF),
+                bits32(i32_const(0) + f32(0x40490FDB) + mem(F32_STORE) + i32_const(0)
+                       + mem(F32_LOAD), 0x40490FDB),
+                bits32(global_get(0), 0x40490FDB),                   # pi
+                bits64(global_get(1), 0x4005BF0A8B145769),           # e
+                bits64(f32(0x3F800000) + f64(0x4000000000000000) + f32(0x40400000)
+                       + f64(0x4010000000000000) + call(0), 0x4000000000000000),
+                bits64(f32(0x3F800000) + f64(0x4000000000000000) + f32(0x40400000)
+                       + f64(0x4010000000000000) + call(1), 0x4010000000000000),
+                bits32(f32(0x3F800000) + f64(0x4000000000000000) + f32(0x40400000)
+                       + f64(0x4010000000000000) + call(2), 0x40400000),
+                bits32(f32(0x3F800000) + f64(0x4000000000000000) + f32(0x40400000)
+                       + f64(0x4010000000000000) + call(3), 0x3F800000),
+                bits64(f64(1) + f64(2) + i32_const(0) + select_t(F64), 2),
+                # A check that fails.
+                bits32(f32(0x3FC00000), 0x3FC00001))))), "", 0xFFFFE),
+    # f32 arithmetic through the float library, one bit each. Some bits:
+    # 1.0 = 0x3F800000, 1.5 = 0x3FC00000, 2.0 = 0x40000000, 2.5 = 0x40200000,
+    # 3.0 = 0x40400000, 3.5 = 0x40600000, 0.5 = 0x3F000000, 0.75 = 0x3F400000,
+    # 0.1 = 0x3DCCCCCD, 0.2 = 0x3E4CCCCD, NaN = 0x7FC00000, -0.0 = 0x80000000.
+    ("float32", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((1, bits(0,
+            bits32(f32(0x3F800000) + f32(0x40000000) + fop(0x92), 0x40400000),      # 1 + 2 = 3
+            bits32(f32(0x3DCCCCCD) + f32(0x3E4CCCCD) + fop(0x92), 0x3E99999A),      # 0.1 + 0.2 = 0.3
+            bits32(f32(0x3F800000) + f32(0x40400000) + fop(0x93), 0xC0000000),      # 1 - 3 = -2
+            bits32(f32(0x3FC00000) + f32(0x3FC00000) + fop(0x94), 0x40100000),      # 2.25
+            bits32(f32(0x3F800000) + f32(0x40400000) + fop(0x95), 0x3EAAAAAB),      # 1/3
+            bits32(f32(0x40000000) + fop(0x91), 0x3FB504F3),                        # sqrt 2
+            bits32(f32(0x40800000) + fop(0x91), 0x40000000),                        # sqrt 4 = 2
+            is_nan32(f32(0xBF800000) + fop(0x91)),                                  # sqrt -1
+            bits32(f32(0x80000000) + fop(0x91), 0x80000000),                        # sqrt -0 = -0
+            bits32(f32(0x3FC00000) + fop(0x8D), 0x40000000),                        # ceil 1.5 = 2
+            bits32(f32(0xBF000000) + fop(0x8D), 0x80000000),                        # ceil -0.5 = -0
+            bits32(f32(0xBFC00000) + fop(0x8E), 0xC0000000),                        # floor -1.5 = -2
+            bits32(f32(0x3F000000) + fop(0x8E), 0),                                 # floor 0.5 = 0
+            bits32(f32(0xBFD9999A) + fop(0x8F), 0xBF800000),                        # trunc -1.7 = -1
+            bits32(f32(0x40200000) + fop(0x90), 0x40000000),                        # nearest 2.5 = 2
+            bits32(f32(0x40600000) + fop(0x90), 0x40800000),                        # nearest 3.5 = 4
+            bits32(f32(0xBF000000) + fop(0x90), 0x80000000),                        # nearest -0.5 = -0
+            bits32(f32(0x3F400000) + fop(0x90), 0x3F800000),                        # nearest 0.75 = 1
+            bits32(f32(0x80000000) + f32(0) + fop(0x96), 0x80000000),               # min(-0, 0) = -0
+            bits32(f32(0x80000000) + f32(0) + fop(0x97), 0),                        # max(-0, 0) = 0
+            is_nan32(f32(0x3F800000) + f32(0x7FC00000) + fop(0x96)),                # min(1, NaN)
+            f32(0x3F800000) + f32(0x40000000) + fop(0x5D),                          # 1 < 2
+            f32(0x7FC00000) + f32(0x7FC00000) + fop(0x5B) + EQZ,                    # NaN == NaN is 0
+            f32(0x7FC00000) + f32(0x7FC00000) + fop(0x5C),                          # NaN != NaN
+            f32(0x80000000) + f32(0) + fop(0x5B),                                   # -0 == 0
+            f32(0x40000000) + f32(0x40000000) + fop(0x5F),                          # 2 <= 2
+            f32(0x7FC00000) + f32(0x3F800000) + fop(0x60) + EQZ,                    # NaN >= 1 is 0
+            f32(0x40400000) + f32(0x40000000) + fop(0x5E),                          # 3 > 2
+            f32(0x7FC00000) + f32(0x3F800000) + fop(0x5D) + EQZ,                    # NaN < 1 is 0
+            # A check that fails.
+            bits32(f32(0x3F800000) + f32(0x40000000) + fop(0x92), 0x40000000))))), "", 0x3FFFFFFE),
+    # The same for f64. 0.1 = 0x3FB999999999999A, 0.2 = 0x3FC999999999999A,
+    # 1e10 = 0x4202A05F20000000, 1/3 = 0x3FD5555555555555.
+    ("float64", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((1, bits(0,
+            # 0.1 + 0.2 = 0.30000000000000004.
+            bits64(f64(0x3FB999999999999A) + f64(0x3FC999999999999A) + fop(0xA0),
+                   0x3FD3333333333334),
+            bits64(f64(0x3FF0000000000000) + f64(0x4008000000000000) + fop(0xA1),
+                   0xC000000000000000),                                             # 1 - 3 = -2
+            # 1e10 * 1e10 = 1e20 = 2^20 * 5^20 exactly.
+            bits64(f64(0x4202A05F20000000) + f64(0x4202A05F20000000) + fop(0xA2),
+                   0x4415AF1D78B58C40),
+            bits64(f64(0x3FF0000000000000) + f64(0x4008000000000000) + fop(0xA3),
+                   0x3FD5555555555555),                                             # 1/3
+            bits64(f64(0x4000000000000000) + fop(0x9F), 0x3FF6A09E667F3BCD),        # sqrt 2
+            bits64(f64(0x4022000000000000) + fop(0x9F), 0x4008000000000000),        # sqrt 9 = 3
+            bits64(f64(0xC004000000000000) + fop(0x9E), 0xC000000000000000),        # nearest -2.5 = -2
+            bits64(f64(0x8000000000000000) + fop(0x9C), 0x8000000000000000),        # floor -0 = -0
+            bits64(f64(0x3FF8000000000000) + fop(0x9B), 0x4000000000000000),        # ceil 1.5 = 2
+            bits64(f64(0xBFF8000000000000) + fop(0x9D), 0xBFF0000000000000),        # trunc -1.5 = -1
+            bits64(f64(0x4000000000000000) + f64(0x4008000000000000) + fop(0xA5),
+                   0x4008000000000000),                                             # max(2, 3) = 3
+            bits64(f64(0x4000000000000000) + f64(0x4008000000000000) + fop(0xA4),
+                   0x4000000000000000),                                             # min(2, 3) = 2
+            f64(0x3FF0000000000000) + f64(0x4000000000000000) + fop(0x63),          # 1 < 2
+            f64(0x7FF8000000000000) + f64(0x7FF8000000000000) + fop(0x62),          # NaN != NaN
+            f64(0x7FF8000000000000) + f64(0x3FF0000000000000) + fop(0x65) + EQZ,    # NaN <= 1 is 0
+            f64(0x4000000000000000) + f64(0x4000000000000000) + fop(0x66),          # 2 >= 2
+            # A check that fails.
+            bits64(f64(0x4000000000000000) + fop(0x9F), 0x3FF6A09E667F3BCE))))), "", 0x1FFFE),
+    # Conversions, one bit each. MIN is -2^31.
+    ("floatconv", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((1, bits(0,
+            f32(0xC039999A) + fop(0xA8) + i32_const(-2) + EQ,                       # trunc -2.9 = -2
+            f32(0x4F32D05E) + fop(0xA9) + i32_const(3000000000 - 2**32) + EQ,       # 3e9, unsigned
+            f32(0xCF000000) + fop(0xA8) + i32_const(-2**31) + EQ,                   # -2^31 fits
+            f64(0xC1E00000001CCCCD) + fop(0xAA) + i32_const(-2**31) + EQ,           # -2147483648.9
+            f64(0xBFECCCCCCCCCCCCD) + fop(0xAB) + EQZ,                              # -0.9 unsigned = 0
+            f64(0xC3ABC16D674EC800) + fop(0xB0) + i64_const(-10**18) + EQ64,        # -1e18
+            f64(0xC3E0000000000000) + fop(0xB0) + i64_const(-2**63) + EQ64,         # -2^63 fits
+            bits32(i32_const(-5) + fop(0xB2), 0xC0A00000),                          # -5.0
+            bits32(i32_const(-1) + fop(0xB3), 0x4F800000),                          # 2^32 - 1 rounds to 2^32
+            bits64(i64_const(-1) + fop(0xB9), 0xBFF0000000000000),                  # -1.0
+            bits64(i64_const(-1) + fop(0xBA), 0x43F0000000000000),                  # 2^64 - 1 rounds to 2^64
+            bits64(f32(0x3DCCCCCD) + fop(0xBB), 0x3FB99999A0000000),                # promote 0.1f
+            bits32(f64(0x3FB999999999999A) + fop(0xB6), 0x3DCCCCCD),                # demote 0.1
+            # trunc_sat saturates, and gives 0 for a NaN.
+            f32(0x501502F9) + fop(0x100) + i32_const(0x7FFFFFFF) + EQ,              # 1e10
+            f32(0x7FC00000) + fop(0x100) + EQZ,                                     # NaN
+            f32(0xBF800000) + fop(0x101) + EQZ,                                     # -1.0 unsigned
+            f64(0xC3E0000000000001) + fop(0x106) + i64_const(-2**63) + EQ64,        # below -2^63
+            # A check that fails.
+            f32(0xC039999A) + fop(0xA8) + i32_const(-3) + EQ)))), "", 0x3FFFE),
+    # trunc traps with code 5 if the integer part does not fit: 2^31 as an
+    # i32, -2^31 - 1 as an i32, -1 as an unsigned i32, and a NaN.
+    ("trunc_big", module(types(MAIN_TYPE), funcs(0), exports(("main", 0, 0)),
+                         code((0, f32(0x4F000000) + fop(0xA8))), ), "", 5),
+    ("trunc_small", module(types(MAIN_TYPE), funcs(0), exports(("main", 0, 0)),
+                           code((0, f64(0xC1E0000000200000) + fop(0xAA))), ), "", 5),
+    ("trunc_neg", module(types(MAIN_TYPE), funcs(0), exports(("main", 0, 0)),
+                         code((0, f64(0xBFF0000000000000) + fop(0xAB))), ), "", 5),
+    ("trunc_nan", module(types(MAIN_TYPE), funcs(0), exports(("main", 0, 0)),
+                         code((0, f32(0x7FC00000) + fop(0xAE) + WRAP)), ), "", 5),
+    # A library module: main calls its __twice, labelled ___twice, which
+    # uses the module's own stack and memory. 2 * 21 = 42.
+    ("library", LIB_MODULE, LIB_ASM.format("MOVE R1, 21", "___twice", "MOVE R0, R0"), 42),
+    # peek100 reads past the 64 bytes that are reserved, so it traps with
+    # code 2.
+    ("libtrap", LIB_MODULE, LIB_ASM.format("MOVE R0, R0", "_peek100", "MOVE R0, R0"), 2),
+    # With 128 bytes reserved, it reads 0.
+    ("libmem", LIB_MODULE, LIB_ASM.format("MOVE R0, R0", "_peek100", "ADD R1, R1, 5"), 5),
     # The start function sets g = g * 10 + 1, then __wasm_call_ctors sets
     # g = g * 10 + 2. In that order, g = 12.
     ("startup", module(
@@ -915,7 +1147,19 @@ def assemble(line: str, tmp: str) -> List[int]:
         return [int(line.split()[1], 16) for line in f]
 
 
-def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str) -> List[str]:
+def float_library(tmp: str) -> Tuple[str, Set[str]]:
+    """Translates the float library, and returns its file and the labels
+    of its routines."""
+    asm = os.path.join(tmp, "float.asm")
+    run([sys.executable, NICEWASM, "--library", "float", "-o", asm,
+         os.path.join(RUNTIME, "float.wasm")])
+    with open(asm) as f:
+        labels = {line.strip() for line in f if line.startswith("__")}
+    return asm, labels
+
+
+def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
+          floats: Tuple[str, Set[str]]) -> List[str]:
     trap = name in TRAPS
     asm = os.path.join(tmp, name + ".asm")
     run([sys.executable, NICEWASM, *OPTIONS.get(name, []), "-o", asm, wasm_file])
@@ -923,20 +1167,26 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str) -> Lis
     if os.path.exists(hand):
         with open(hand) as f:
             extra += f.read()
-    full = os.path.join(tmp, name + ".full.asm")
-    with open(full, "w") as out:
-        for part in [os.path.join(RUNTIME, "start_wasm.asm"), None, asm,
-                     os.path.join(RUNTIME, "lib.asm")]:
-            if part is None:
-                out.write(extra)
-            else:
-                with open(part) as f:
-                    out.write(f.read())
+    with open(asm) as f:
+        text = f.read()
+    parts = [os.path.join(RUNTIME, "start_wasm.asm"), None, asm, os.path.join(RUNTIME, "lib.asm")]
+    if any(label in text for label in floats[1]):
+        parts.append(floats[0])
+    lines: List[str] = []
+    for part in parts:
+        if part is None:
+            lines += extra.splitlines(keepends=True)
+        else:
+            with open(part) as f:
+                lines += f.readlines()
+    assembler = niceasm.Assembler()
+    errors = assembler.run(lines, name + ".full.asm")
+    if errors:
+        raise RuntimeError("\n".join(errors))
+    image = dict(assembler.output())
     binary = os.path.join(tmp, name + ".bin")
-    run([sys.executable, NICEASM, "-o", binary, full])
-    with open(binary) as f:
-        image = {int(a, 16): int(w, 16) for a, w in (line.split() for line in f)}
-    n_words = len(image)
+    with open(binary, "w") as f:
+        f.writelines(f"{a:08x} {w:08x}\n" for a, w in sorted(image.items()))
     output = run([NICEEMU, binary])
     # The console output comes before the line that says why it halted.
     at = output.find("Halted (")
@@ -955,8 +1205,9 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str) -> Lis
     problems = []
     if console != CONSOLE.get(name, ""):
         problems.append(f"printed {console!r}, expected {CONSOLE.get(name, '')!r}")
-    if n_words >= 16384:
-        problems.append(f"the .bin has {n_words} words, so it holds the memory")
+    mem = assembler.labels.get("___wasm_memory")
+    if mem is not None and all(a in image for a in range(mem, mem + 16384)):
+        problems.append("the memory is in the program image")
     if trap:
         if (not output.startswith("Halted (reserved control instruction)")
                 or not output.endswith("exit 2\n")):
@@ -978,6 +1229,7 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str) -> Lis
 def main() -> None:
     failed = 0
     with tempfile.TemporaryDirectory() as tmp:
+        floats = float_library(tmp)
         for name, wasm, extra, expected in CASES:
             if isinstance(wasm, bytes):
                 wasm_file = os.path.join(tmp, FILE_NAMES.get(name, name + ".wasm"))
@@ -986,7 +1238,7 @@ def main() -> None:
             else:
                 wasm_file = os.path.join(HERE, wasm + ".wasm")
             try:
-                problems = check(name, wasm_file, extra, expected, tmp)
+                problems = check(name, wasm_file, extra, expected, tmp, floats)
             except RuntimeError as e:
                 problems = [str(e)]
             if problems:

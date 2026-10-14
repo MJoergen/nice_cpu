@@ -7,7 +7,7 @@ ZIG ?= zig
 # options keep the linear memory to one page. ZIG_SAFE_TESTS are built with
 # ReleaseSafe and a 16 KB stack, because Zig's panic handler puts a 4 KB
 # buffer on the stack.
-C_TESTS = sum5 control memory data shifts intops
+C_TESTS = sum5 control memory data shifts intops floats
 ZIG_TESTS = answer datazig bulk hello
 ZIG_SAFE_TESTS = safe safetrap
 
@@ -22,7 +22,8 @@ emulator:
 
 # Needs mypy (pip install mypy).
 typecheck:
-	cd test && $(PYTHON) -m mypy --strict ../nicewasm.py run.py errors.py wasm.py
+	cd test && MYPYPATH=../../assembler $(PYTHON) -m mypy --strict ../nicewasm.py run.py errors.py \
+	  wasm.py
 
 wasm:
 	@for t in $(C_TESTS); do \

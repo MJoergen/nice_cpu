@@ -1,4 +1,5 @@
 PYTHON ?= python3
+ZIG ?= zig
 ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
 
@@ -29,10 +30,33 @@ test: emulator
 	$(foreach t,$(TESTS),$(call check,$(t)))
 	@rm -f test/*.out test/*.out.asm test/*.out.bin
 
+# The float library, translated from float.wasm as the library module float
+# (ISA.md §9.4). Only float.wasm is checked in.
+float.asm: float.wasm ../translator/nicewasm.py
+	$(PYTHON) ../translator/nicewasm.py --library float -o float.asm float.wasm
+
+# Rebuilds float.wasm from float.zig and parts of Zig's compiler_rt. This
+# needs Zig 0.15.
+FLOAT_EXPORTS = __addsf3 __subsf3 __mulsf3 __divsf3 __adddf3 __subdf3 __muldf3 __divdf3 \
+  __eqsf2 __nesf2 __ltsf2 __lesf2 __gtsf2 __gesf2 __eqdf2 __nedf2 __ltdf2 __ledf2 __gtdf2 __gedf2 \
+  __floatsisf __floatunsisf __floatdisf __floatundisf __floatsidf __floatunsidf __floatdidf \
+  __floatundidf __extendsfdf2 __truncdfsf2 __fixsfsi __fixunssfsi __fixsfdi __fixunssfdi \
+  __fixdfsi __fixunsdfsi __fixdfdi __fixunsdfdi __ceilsf __floorsf __truncsf __nearestsf \
+  __ceildf __floordf __truncdf __nearestdf __minsf __maxsf __mindf __maxdf __sqrtsf __sqrtdf
+
+float:
+	rm -rf build && mkdir build
+	cp -r "$$($(ZIG) env | sed -n 's/.*\.lib_dir = "\(.*\)".*/\1/p')/compiler_rt" build/
+	cp float.zig build/
+	$(ZIG) build-exe -target wasm32-freestanding -fno-entry -fno-compiler-rt -O ReleaseSmall \
+	  -fstrip --stack 1024 --initial-memory=65536 $(FLOAT_EXPORTS:%=--export=%) \
+	  -femit-bin=float.wasm build/float.zig
+	rm -rf build float.wasm.o
+
 emulator:
 	$(MAKE) -C ../emulator build
 
 clean:
-	rm -f test/*.out test/*.out.asm test/*.out.bin
+	rm -f test/*.out test/*.out.asm test/*.out.bin float.asm
 
-.PHONY: test emulator clean
+.PHONY: test emulator clean float

@@ -57,10 +57,20 @@ pub fn main() !void {
             std.debug.print("niceemu: out of memory\n", .{});
             break :blk 1;
         },
+        error.WriteFailed => outputFailed(&out_w),
         else => return err,
     };
-    try out.flush();
+    out.flush() catch outputFailed(&out_w);
     std.process.exit(status);
+}
+
+/// Exit after stdout failed. A closed pipe, as in `niceemu -t x.bin | head`,
+/// ends the program quietly with the status of a filter killed by SIGPIPE.
+fn outputFailed(out_w: *const std.fs.File.Writer) noreturn {
+    const err = out_w.err orelse error.Unexpected;
+    if (err == error.BrokenPipe) std.process.exit(128 + 13);
+    std.debug.print("niceemu: cannot write the output: {s}\n", .{@errorName(err)});
+    std.process.exit(1);
 }
 
 fn fail(comptime fmt: []const u8, args: anytype) error{Usage} {

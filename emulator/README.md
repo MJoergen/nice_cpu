@@ -4,11 +4,11 @@ An emulator for the NICE processor, written in Zig. It implements
 [doc/ISA.md](../doc/ISA.md) and runs the `.bin` files that
 [niceasm](../assembler/README.md) writes.
 
-It needs Zig 0.15 (tested with 0.15.2).
+It needs Zig 0.15 (tested with 0.15.2), and Python 3 for `make test`.
 
 ## Build and test
 
-    make          # unit tests, then the example programs
+    make          # unit tests, example and probe programs, test/errors.py
     make build    # just build zig-out/bin/niceemu
 
 `make test` runs the unit tests in `src/cpu.zig`, then the 2004 example
@@ -43,7 +43,9 @@ the address after the halting instruction.
 
 The exit status is 0 after `HALT`, 2 after any other halt (a reserved control
 word, a nested `INT`, or `RTI` outside an interrupt routine), 3 at the step
-limit, and 1 for a usage, file or memory error.
+limit, and 1 for a usage, file or memory error. If stdout is a pipe that
+closes early, as in `niceemu -t x.bin | head`, niceemu stops quietly with
+status 141, as a filter killed by SIGPIPE would.
 
 ## Program files
 

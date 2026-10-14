@@ -90,7 +90,19 @@ def main() -> None:
             if p.returncode != status:
                 failed += 1
                 print(f"FAIL {text!r}: exit status {p.returncode}, expected {status}")
-    total = len(CASES) + 4
+
+        # A pipe closed early ends the trace quietly, with status 141.
+        with open(path, "w") as f:
+            f.write("00000000 00000000\n")
+        proc = subprocess.Popen([NICEEMU, "-t", path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        assert proc.stdout is not None and proc.stderr is not None
+        proc.stdout.readline()
+        proc.stdout.close()
+        err = proc.stderr.read()
+        if proc.wait() != 141 or err:
+            failed += 1
+            print(f"FAIL closed pipe: exit status {proc.returncode}, stderr {err!r}")
+    total = len(CASES) + 5
     print(f"PASS errors ({total} cases)" if not failed else f"FAIL errors ({failed} of {total})")
     sys.exit(1 if failed else 0)
 

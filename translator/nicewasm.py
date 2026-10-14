@@ -5,11 +5,12 @@ Implements the WebAssembly mapping of doc/ISA.md section 9.4. The output is
 one assembly file, to be joined with the start-up code, the program's other
 files, and the runtime library as section 9.3 describes.
 
-Usage: nicewasm.py [-o output.asm] input.wasm
+Usage: nicewasm.py [-o output.asm] [--no-bounds-checks] input.wasm
 
-This is a first version: it supports control flow and some integer
-instructions, and only the i32 and i64 types. README.md lists what it supports. Anything else is
-rejected with an error, never translated wrongly.
+This is a first version: it supports control flow, memory accesses, and
+some integer instructions, and only the i32 and i64 types. README.md lists
+what it supports. Anything else is rejected with an error, never
+translated wrongly.
 
 Each function keeps its locals and its wasm operand stack in its frame on
 the NICE stack, addressed from FP (R12). An i32 takes one word and an i64
@@ -115,6 +116,15 @@ CMP_OPS = {0x46: (False, "eq"), 0x47: (False, "ne"), 0x48: (False, "lt_s"),
 CMP64_OPS = {op + 11: v for op, v in CMP_OPS.items()}
 
 BLOCK, LOOP, IF = 0x02, 0x03, 0x04
+
+# The loads: wasm opcode -> (type, bytes, signed). And the stores: wasm
+# opcode -> (type, bytes).
+LOADS = {0x28: (I32, 4, False), 0x29: (I64, 8, False), 0x2C: (I32, 1, True),
+         0x2D: (I32, 1, False), 0x2E: (I32, 2, True), 0x2F: (I32, 2, False),
+         0x30: (I64, 1, True), 0x31: (I64, 1, False), 0x32: (I64, 2, True),
+         0x33: (I64, 2, False), 0x34: (I64, 4, True), 0x35: (I64, 4, False)}
+STORES = {0x36: (I32, 4), 0x37: (I64, 8), 0x3A: (I32, 1), 0x3B: (I32, 2),
+          0x3C: (I64, 1), 0x3D: (I64, 2), 0x3E: (I64, 4)}
 
 
 class WasmError(Exception):
@@ -461,9 +471,10 @@ def instr(mnemonic: str, *operands: str) -> str:
 
 
 class Translator:
-    def __init__(self, m: Module, data: bytes) -> None:
+    def __init__(self, m: Module, data: bytes, checks: bool = True) -> None:
         self.m = m
         self.data = data
+        self.checks = checks  # bounds checks on memory accesses
         self.labels: Dict[int, List[str]] = {}         # function index -> export labels
         self.global_labels: Dict[int, List[str]] = {}  # global index -> export labels
         self.ctors: Optional[int] = None
@@ -576,6 +587,7 @@ class FunctionTranslator:
         self.n_traps = 0
         self.n_labels = 0
         self.body: List[str] = []
+        self.stubs: List[str] = []  # code after the epilogue, out of the way
         self.ret_label = f"W.f{idx}.ret"
         self.ctrl = [Frame(0, self.ftype, 0, 0, self.ret_label)]
 
@@ -760,6 +772,161 @@ class FunctionTranslator:
             self.emit("?N XOR", d, d, "1")
             self.emit("?V XOR", d, d, "1")
 
+    def address(self, base: str, offset: int, n: int) -> None:
+        """Puts the byte address base + offset in R1. With bounds checks,
+        traps with code 2 unless all n bytes there are in the memory. A
+        trap's R2 is the start of this code, the first instruction of the
+        access (§9.4)."""
+        start = self.new_label()
+        self.body.append(start)
+        if not self.t.checks:
+            # The address wraps modulo 2^32 (§9.4).
+            if offset:
+                self.emit("ADD", "R1", base, words(offset, I32)[0])
+            else:
+                self.emit("MOVE", "R1", base)
+            return
+        trap = self.new_label()
+        self.stubs += [trap, instr("MOVE", "R1", "2"), instr("MOVE", "R2", start),
+                       instr("MOVE", "R15", "@___wasm_trap_vector")]
+        if offset:
+            self.emit("ADD[M]", "R1", base, words(offset, I32)[0])
+            self.emit("?C MOVE", "R15", trap)  # base + offset passes 2^32
+        else:
+            self.emit("MOVE", "R1", base)
+        # The first address at which n bytes do not fit.
+        assert self.t.m.memory_pages is not None
+        limit = self.t.m.memory_pages * WORDS_PER_PAGE * 4 - n + 1
+        if limit <= 0:
+            self.emit("MOVE", "R15", trap)
+        elif limit < 1 << 32:
+            self.emit("SUB[M]", "R0", "R1", words(limit, I32)[0])
+            self.emit("?!C MOVE", "R15", trap)
+
+    def memarg(self, n: int, align: int, at: int, what: str) -> None:
+        """Checks a load's or store's memory and alignment."""
+        if self.t.m.memory_pages is None:
+            raise WasmError(f"function {self.idx}: {what} needs a memory, and the module has"
+                            " none", at)
+        if 1 << align > n:
+            raise WasmError(f"function {self.idx}: {what}: the alignment is larger than"
+                            " natural", at)
+
+    def load(self, t: int, n: int, signed: bool, offset: int, at: int, what: str) -> None:
+        """Loads n bytes into a value of type t. A word of the memory holds
+        four bytes, the lowest address in the low byte (§9.4). An access
+        that is not at a multiple of 4 may need bytes from the next word,
+        which is read only then."""
+        (base,) = self.pop([I32], at, what)
+        dest = self.push(t)
+        self.address(base[0], offset, n)
+        mem = "@___wasm_memory"
+        self.emit("SHR", "R2", "R1", "2")                  # word index
+        if n == 8:
+            lo, hi = dest
+            done = self.new_label()
+            self.emit("AND[M]", "R3", "R1", "3")           # byte in the word
+            self.emit("MOVE", lo, f"{mem}[R2]")
+            self.emit("MOVE", hi, f"{mem}+1[R2]")
+            self.emit("?Z MOVE", "R15", done)
+            self.emit("SHL", "R3", "R3", "3")              # s = 8 * byte
+            self.emit("SUB", "R4", "32", "R3")             # 32 - s
+            self.emit("SHR", lo, lo, "R3")
+            self.emit("SHL", "R1", hi, "R4")
+            self.emit("OR", lo, lo, "R1")
+            self.emit("SHR", hi, hi, "R3")
+            self.emit("SHL", "R1", f"{mem}+2[R2]", "R4")
+            self.emit("OR", hi, hi, "R1")
+            self.body.append(done)
+            return
+        # The n bytes go to the low bytes of R4, with other bytes above.
+        if n == 4:
+            self.emit("AND[M]", "R3", "R1", "3")
+            self.emit("MOVE", "R4", f"{mem}[R2]")
+            self.emit("?!Z SHL", "R3", "R3", "3")
+            self.emit("?!Z SHR", "R4", "R4", "R3")
+            self.emit("?!Z SUB", "R3", "32", "R3")
+            self.emit("?!Z SHL", "R1", f"{mem}+1[R2]", "R3")
+            self.emit("?!Z OR", "R4", "R4", "R1")
+        else:
+            self.emit("AND", "R3", "R1", "3")
+            self.emit("SHL", "R3", "R3", "3")
+            self.emit("SHR", "R4", f"{mem}[R2]", "R3")
+            if n == 2:
+                # Byte 3 of a word: the second byte is in the next word.
+                self.emit("SUB[M]", "R0", "R3", "24")
+                self.emit("?Z SHL", "R1", f"{mem}+1[R2]", "8")
+                self.emit("?Z OR", "R4", "R4", "R1")
+        # Extend to 32 bits, setting N for an i64's high word.
+        if n == 4:
+            self.emit("MOVE[M]" if signed else "MOVE", dest[0], "R4")
+        elif signed:
+            # (x XOR sign) - sign extends the sign bit of x.
+            sign = str(1 << (8 * n - 1))
+            self.emit("AND", "R4", "R4", str((1 << (8 * n)) - 1))
+            self.emit("XOR", "R4", "R4", sign)
+            self.emit("SUB[M]", dest[0], "R4", sign)
+        else:
+            self.emit("AND", dest[0], "R4", str((1 << (8 * n)) - 1))
+        if t == I64:
+            self.emit("MOVE", dest[1], "0")
+            if signed:
+                self.emit("?N MOVE", dest[1], "-1")
+
+    def store(self, t: int, n: int, offset: int, at: int, what: str) -> None:
+        """Stores the low n bytes of a value of type t. A store that does
+        not fill whole words reads each partial word, changes its bytes,
+        and writes it back (§9.4)."""
+        base, value = self.pop([I32, t], at, what)
+        v = value[0]
+        self.address(base[0], offset, n)
+        mem = "@___wasm_memory"
+        self.emit("SHR", "R2", "R1", "2")                  # word index
+        if n >= 4:
+            done = self.new_label()
+            self.emit("AND[M]", "R3", "R1", "3")           # byte in the word
+            self.emit("?Z MOVE", f"{mem}[R2]", v)
+            if n == 8:
+                self.emit("?Z MOVE", f"{mem}+1[R2]", value[1])
+            self.emit("?Z MOVE", "R15", done)
+            self.emit("SHL", "R3", "R3", "3")              # s = 8 * byte
+            # The first word keeps its low s bits.
+            self.emit("SHL", "R4", "-1", "R3")
+            self.emit("IAND", "R4", "R4", f"{mem}[R2]")
+            self.emit("SHL", "R1", v, "R3")
+            self.emit("OR", f"{mem}[R2]", "R4", "R1")
+            self.emit("SUB", "R4", "32", "R3")             # 32 - s
+            last = f"{mem}+1[R2]"
+            if n == 8:
+                # The middle word is all new.
+                self.emit("SHR", "R1", v, "R4")
+                self.emit("SHL", "R3", value[1], "R3")
+                self.emit("OR", f"{mem}+1[R2]", "R1", "R3")
+                v = value[1]
+                last = f"{mem}+2[R2]"
+            # The last word keeps all but its low s bits.
+            self.emit("SHR", "R3", "-1", "R4")
+            self.emit("IAND", "R3", "R3", last)
+            self.emit("SHR", "R1", v, "R4")
+            self.emit("OR", last, "R3", "R1")
+            self.body.append(done)
+            return
+        mask = str((1 << (8 * n)) - 1)
+        self.emit("AND", "R3", "R1", "3")
+        self.emit("SHL", "R3", "R3", "3")                  # s = 8 * byte
+        self.emit("SHL", "R4", mask, "R3")
+        self.emit("IAND", "R4", "R4", f"{mem}[R2]")
+        self.emit("AND", "R1", v, mask)
+        self.emit("SHL", "R1", "R1", "R3")
+        self.emit("OR", f"{mem}[R2]", "R4", "R1")
+        if n == 2:
+            # Byte 3 of a word: the second byte goes in the next word.
+            self.emit("SUB[M]", "R0", "R3", "24")
+            self.emit("?Z AND", "R4", f"{mem}+1[R2]", "0xFFFFFF00")
+            self.emit("?Z SHR", "R1", v, "8")
+            self.emit("?Z AND", "R1", "R1", "0xFF")
+            self.emit("?Z OR", f"{mem}+1[R2]", "R4", "R1")
+
     def run(self) -> List[str]:
         r = Reader(self.t.data, self.code.start, self.code.end)
         reachable = True
@@ -776,6 +943,7 @@ class FunctionTranslator:
             ft = FuncType([], [])
             targets: List[int] = []
             sel_type: Optional[int] = None
+            align = 0
             if op in (0x0C, 0x0D, 0x10, 0x20, 0x21, 0x22, 0x23, 0x24):
                 imm = r.u32()
             elif op == 0x41:
@@ -784,6 +952,14 @@ class FunctionTranslator:
                 imm = r.leb(64, True)
             elif op in (BLOCK, LOOP, IF):
                 ft = self.block_type(r)
+            elif op in LOADS or op in STORES:
+                align = r.u32()
+                imm = r.u32()  # the offset
+            elif op in (0x3F, 0x40):  # memory.size, memory.grow
+                mem_at = r.pos
+                mem = r.u32()
+                if mem != 0 or self.t.m.memory_pages is None:
+                    raise WasmError(f"function {self.idx}: memory {mem} does not exist", mem_at)
             elif op == 0x0E:
                 targets = [r.u32() for _ in range(r.u32() + 1)]
             elif op == 0x1C:
@@ -980,6 +1156,28 @@ class FunctionTranslator:
                 d = self.push(I32)[0]
                 self.emit("MOVE", d, "0")
                 self.emit("?Z MOVE", d, "1")
+            elif op in LOADS:
+                assert imm is not None
+                t, n, signed = LOADS[op]
+                self.memarg(n, align, at, name)
+                self.load(t, n, signed, imm, at, name)
+            elif op in STORES:
+                assert imm is not None
+                t, n = STORES[op]
+                self.memarg(n, align, at, name)
+                self.store(t, n, imm, at, name)
+            elif op == 0x3F:  # memory.size
+                assert self.t.m.memory_pages is not None
+                self.emit("MOVE", self.push(I32)[0], str(self.t.m.memory_pages))
+            elif op == 0x40:  # memory.grow
+                # The memory cannot grow yet, so only growing by 0 pages
+                # succeeds. It returns the size, and anything else -1.
+                assert self.t.m.memory_pages is not None
+                (delta,) = self.pop([I32], at, name)
+                d = self.push(I32)[0]
+                self.emit("MOVE[M]", "R0", delta[0])
+                self.emit("MOVE", d, "-1")
+                self.emit("?Z MOVE", d, str(self.t.m.memory_pages))
             elif op in CMP_OPS:
                 self.compare(I32, *CMP_OPS[op], at, name)
             elif op in CMP64_OPS:
@@ -1039,11 +1237,12 @@ class FunctionTranslator:
         out.append(instr("MOVE", "R13", "R12"))
         out.append(instr("MOVE", "R12", "@R13++"))
         out.append(instr("MOVE", "R15", "@R13++"))
+        out += self.stubs
         return out
 
 
-def translate(data: bytes, source: str) -> List[str]:
-    return Translator(parse(data), data).run(source)
+def translate(data: bytes, source: str, checks: bool = True) -> List[str]:
+    return Translator(parse(data), data, checks).run(source)
 
 
 def main() -> None:
@@ -1051,6 +1250,8 @@ def main() -> None:
     ap.add_argument("input", help="wasm module (.wasm)")
     ap.add_argument("-o", dest="output",
                     help="output file (default: input with .asm extension)")
+    ap.add_argument("--no-bounds-checks", action="store_true",
+                    help="do not check that memory accesses are in bounds")
     args = ap.parse_args()
 
     out = args.output or os.path.splitext(args.input)[0] + ".asm"
@@ -1063,7 +1264,7 @@ def main() -> None:
         sys.exit(f"{e.filename}: {e.strerror}")
 
     try:
-        lines = translate(data, os.path.basename(args.input))
+        lines = translate(data, os.path.basename(args.input), not args.no_bounds_checks)
     except WasmError as e:
         where = "" if e.offset is None else f":0x{e.offset:x}"
         print(f"{args.input}{where}: error: {e}", file=sys.stderr)

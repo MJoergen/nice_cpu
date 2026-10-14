@@ -8,7 +8,8 @@ runtime/lib.asm, as ISA.md §9.3 describes. Then it is assembled and run.
 
 The program must halt with HALT and main's result in R1. A case in TRAPS
 must instead trap: halt at ___wasm_trap with the trap code in R1, and R2
-pointing at the trap's MOVE R1 instruction. Its .bin file must
+pointing at the first instruction of the code for the wasm instruction
+that trapped, which TRAPS gives. Its .bin file must
 have fewer than 16384 words, so the memory, reserved with .RES, is not in it. R7-R12 must be 0
 and SP must be 0xFFFFFF00 again, as the start-up code left them, because
 every translated function must preserve them (ISA.md §9.3). The expected
@@ -30,6 +31,10 @@ from wasm import (ADD, ADD64, AND, AND64, DROP, ELSE, END, EQ, EQ64, EQZ, EQZ64,
                   exports, funcs, global_get, global_set, globals_, i32_const, i64_const,
                   if_, imports, local_get, local_set, local_tee, loop, memory, module,
                   names, select_t, start, typed_globals, typeidx, types)
+from wasm import (I32_LOAD, I32_LOAD8_S, I32_LOAD8_U, I32_LOAD16_S, I32_LOAD16_U, I32_STORE,
+                  I32_STORE8, I32_STORE16, I64_LOAD, I64_LOAD8_S, I64_LOAD8_U, I64_LOAD16_S,
+                  I64_LOAD32_S, I64_LOAD32_U, I64_STORE, I64_STORE8, I64_STORE16,
+                  I64_STORE32, MEMORY_GROW, MEMORY_SIZE, mem)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.join(HERE, "..", "..")
@@ -69,8 +74,29 @@ def cmp_all(t: int, pairs: List[Tuple[int, int]]) -> List[bytes]:
     return out + [const(0) + eqz, const(-0x80000000 if t == I32 else 0x1_00000000) + eqz]
 
 
-# Cases that must trap rather than return.
-TRAPS = {"unreachable"}
+def ld(op: int, addr: int, want: int, offset: int = 0) -> bytes:
+    """A check that the load op at addr + offset gives want."""
+    i64 = op in (I64_LOAD, I64_LOAD8_S, I64_LOAD8_U, I64_LOAD16_S, I64_LOAD32_S, I64_LOAD32_U)
+    return (i32_const(addr) + mem(op, offset)
+            + (i64_const(want) + EQ64 if i64 else i32_const(want) + EQ))
+
+
+def st(op: int, addr: int, value: int) -> bytes:
+    """Stores value at addr."""
+    i64 = op in (I64_STORE, I64_STORE8, I64_STORE16, I64_STORE32)
+    return i32_const(addr) + (i64_const(value) if i64 else i32_const(value)) + mem(op)
+
+
+# Cases that must trap rather than return, and the first NICE instruction
+# of the code for the wasm instruction that traps, which R2 points at.
+# In main, an operand on the stack with nothing below it is at FP - 1.
+TRAPS = {"unreachable": "MOVE R1, 1",
+         "oob": "ADD[M] R1, @-1[R12], 1",
+         "oobcarry": "ADD[M] R1, @-1[R12], 1",
+         "nomemory": "MOVE R1, @-1[R12]"}
+
+# Options for nicewasm.
+OPTIONS = {"unchecked": ["--no-bounds-checks"]}
 
 # Cases whose module is written to a file of another name. The newline
 # must not end the comment that names the source.
@@ -92,6 +118,13 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # fib(60) = 1548008755920 = 0x168_6C8312D0 adds 1000. 21 + 138 + 1000
     # = 1159.
     ("control", "control", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 1159),
+    # Byte, 16-bit, and unaligned 32-bit accesses from clang, with get(i) =
+    # i + 100. fill sets buf[i] = 10 + i, so sum is 10 + ... + 49 = 59 * 20
+    # = 1180 = 0x49C. word_at(buf + 5) reads the bytes 15, 16, 17, 18:
+    # 0x1211100F, and XOR 0x49C gives 0x12111493. Each short is -200 - 100
+    # = -300, and 8 of them sum to -2400 = -0x960. 0x12111493 - 0x960 =
+    # 0x12110B33.
+    ("memory_c", "memory", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 0x12110B33),
     # Declared locals start at 0. dirty sets its 3 locals to 0x55, and clean
     # gets the same frame words, so without zeroing it returns 0x55 * 3 + 7.
     ("locals", module(
@@ -378,6 +411,105 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
               + block() + loop(I64) + if_() + ELSE + END + END + END + ADD + END
               + i32_const(0) + if_(I32) + UNREACHABLE + ADD + ELSE + i32_const(9) + END
               + ADD))), "", 17),
+    # Loads, on the bytes 81 82 83 84 | 85 86 87 88 | 09 0A 0B 0C at 0 to
+    # 11, put there by aligned i32 stores. The words are little-endian, so
+    # the word at 0 is 0x84838281. Each line is one bit:
+    ("memory", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, bits(0,
+            st(I32_STORE, 0, 0x84838281 - 2**32) + st(I32_STORE, 4, 0x88878685 - 2**32)
+            + st(I32_STORE, 8, 0x0C0B0A09)
+            + ld(I32_LOAD8_U, 1, 0x82),
+            ld(I32_LOAD8_S, 2, 0x83 - 0x100),                   # -125
+            ld(I32_LOAD16_U, 3, 0x8584),                        # bytes 3 and 4: two words
+            ld(I32_LOAD16_U, 7, 0x0988),
+            ld(I32_LOAD16_S, 1, 0x8382 - 0x10000),
+            ld(I32_LOAD, 2, 0x86858483 - 2**32),
+            ld(I32_LOAD, 4, 0x88878685 - 2**32),
+            ld(I32_LOAD, 1, 0x09888786, offset=4),              # byte 5
+            ld(I64_LOAD, 3, 0x0B0A0988_87868584),              # three words
+            ld(I64_LOAD, 0, 0x88878685_84838281 - 2**64),
+            ld(I64_LOAD32_S, 1, 0x85848382 - 2**32),
+            ld(I64_LOAD32_U, 1, 0x85848382),
+            ld(I64_LOAD8_S, 8, 9),
+            ld(I64_LOAD16_S, 6, 0x8887 - 0x10000),
+            ld(I64_LOAD8_U, 7, 0x88),
+            # Stores, from 16 on, which is 0. Bytes 16 to 23 are 00 11 22 33
+            # 44 55 66 77 after an aligned i64 store.
+            st(I64_STORE, 16, 0x77665544_33221100) + ld(I64_LOAD, 16, 0x77665544_33221100),
+            # Only the low 16 bits are stored, CD AB in bytes 19 and 20.
+            st(I32_STORE16, 19, 0x5ABCD) + ld(I64_LOAD, 16, 0x776655AB_CD221100),
+            # EF BE AD DE in bytes 21 to 24.
+            st(I32_STORE, 21, 0xDEADBEEF - 2**32) + ld(I64_LOAD, 16, 0xADBEEFAB_CD221100 - 2**64),
+            ld(I32_LOAD, 24, 0xDE),
+            # 08 07 06 05 04 03 02 01 in bytes 26 to 33.
+            st(I64_STORE, 26, 0x01020304_05060708) + ld(I32_LOAD, 24, 0x070800DE),
+            ld(I32_LOAD, 28, 0x03040506),
+            ld(I32_LOAD, 32, 0x0102),
+            # AA in byte 25.
+            st(I64_STORE8, 25, 0x1_000000AA) + ld(I32_LOAD, 24, 0x0708AADE),
+            # CC BB in bytes 31 and 32.
+            st(I64_STORE16, 31, 0x12345678_9ABCBBCC) + ld(I32_LOAD, 28, 0xCC040506 - 2**32),
+            ld(I32_LOAD, 32, 0x01BB),
+            # 44 33 22 11 in bytes 29 to 32.
+            st(I64_STORE32, 29, 0x99_11223344) + ld(I32_LOAD, 28, 0x22334406),
+            ld(I32_LOAD, 32, 0x0111),
+            # FF in byte 35, and byte 36 is untouched.
+            st(I32_STORE8, 35, 0x1FF) + ld(I32_LOAD, 32, 0xFF000111 - 2**32),
+            ld(I32_LOAD, 36, 0),
+            # A check that fails: byte 0 is 0x81.
+            ld(I32_LOAD8_U, 0, 0x82))))), "", 0x3FFFFFFE),
+    # Two pages: memory.size is 2, memory.grow 0 returns 2, and the memory
+    # cannot grow, so memory.grow 1 returns -1. The last word and the last
+    # 8 bytes are in bounds. 11111 = 0x1F.
+    ("memsize", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(2),
+        exports(("main", 0, 0)),
+        code((1, bits(0,
+            MEMORY_SIZE + i32_const(2) + EQ,
+            i32_const(0) + MEMORY_GROW + i32_const(2) + EQ,
+            i32_const(1) + MEMORY_GROW + i32_const(-1) + EQ,
+            st(I32_STORE, 131068, 77) + ld(I32_LOAD, 131068, 77),
+            st(I64_STORE, 131064, 0x5_00000006) + ld(I64_LOAD, 131064, 0x5_00000006))))),
+     "", 0x1F),
+    # The last 4 bytes of one page are at 65532, so a load there works, but
+    # one at 65532 + 1 traps with code 2.
+    ("oob", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((0, i32_const(65532) + mem(I32_LOAD) + DROP
+              + i32_const(65532) + mem(I32_LOAD, offset=1)))), "", 2),
+    # -1 + 1 passes 2^32, so the store traps, though the address wraps to
+    # 0, which is in bounds.
+    ("oobcarry", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((0, i32_const(-1) + i32_const(5) + mem(I32_STORE, offset=1) + i32_const(0)))),
+     "", 2),
+    # A memory of 0 pages: every access traps.
+    ("nomemory", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(0),
+        exports(("main", 0, 0)),
+        code((0, i32_const(0) + mem(I32_LOAD8_U)))), "", 2),
+    # Without bounds checks, the address -4 + 8 wraps to 4, so the load
+    # finds the 1234 stored there. With them, it would trap.
+    ("unchecked", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((0, st(I32_STORE, 4, 1234) + i32_const(-4) + mem(I32_LOAD, offset=8)))), "", 1234),
     # The start function sets g = g * 10 + 1, then __wasm_call_ctors sets
     # g = g * 10 + 2. In that order, g = 12.
     ("startup", module(
@@ -399,10 +531,20 @@ def run(cmd: List[str]) -> str:
     return p.stdout + f"exit {p.returncode}\n"
 
 
+def assemble(line: str, tmp: str) -> List[int]:
+    """The words of one instruction."""
+    src = os.path.join(tmp, "line.asm")
+    with open(src, "w") as f:
+        f.write(f" {line}\n")
+    run([sys.executable, NICEASM, "-o", src + ".bin", src])
+    with open(src + ".bin") as f:
+        return [int(line.split()[1], 16) for line in f]
+
+
 def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str) -> List[str]:
     trap = name in TRAPS
     asm = os.path.join(tmp, name + ".asm")
-    run([sys.executable, NICEWASM, "-o", asm, wasm_file])
+    run([sys.executable, NICEWASM, *OPTIONS.get(name, []), "-o", asm, wasm_file])
     hand = os.path.join(HERE, name + ".asm")
     if os.path.exists(hand):
         with open(hand) as f:
@@ -440,9 +582,10 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str) -> Lis
         if (not output.startswith("Halted (reserved control instruction)")
                 or not output.endswith("exit 2\n")):
             problems.append("did not halt at ___wasm_trap")
-        # MOVE R1, code
-        if image.get(regs.get("R2", 0)) != 0x5800 or image.get(regs.get("R2", 0) + 1) != expected:
-            problems.append("R2 does not point at the trap's MOVE R1")
+        first = assemble(TRAPS[name], tmp)
+        r2 = regs.get("R2", 0)
+        if [image.get(r2 + i) for i in range(len(first))] != first:
+            problems.append(f"R2 does not point at {TRAPS[name]}")
     elif not output.startswith("Halted (HALT)") or not output.endswith("exit 0\n"):
         problems.append("did not halt with HALT")
     for reg, value in wanted.items():

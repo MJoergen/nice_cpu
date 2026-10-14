@@ -9,9 +9,12 @@ rejects anything else with an error, rather than translating it wrongly.
 
 ## Usage
 
-    ./nicewasm.py [-o output.asm] input.wasm
+    ./nicewasm.py [-o output.asm] [--no-bounds-checks] input.wasm
 
-Without `-o`, the output goes to `input.asm`. Errors are printed as
+Without `-o`, the output goes to `input.asm`. `--no-bounds-checks` leaves
+out the bounds checks on memory accesses, as ISA.md §9.4 allows. The code
+is then smaller and faster, but an access out of bounds reads or writes
+whatever NICE memory the address reaches. Errors are printed as
 `file:0xOFFSET: error: message`, where OFFSET is the byte offset in the
 module, or as `file: error: message` when there is no offset. The exit
 status is 1 after an error, and no output is written. nicewasm stops at the
@@ -63,7 +66,8 @@ global's initial value, not the expressions of `extended-const`.
 Every Zig program built with ReleaseSafe or Debug uses a table,
 `call_indirect`, `br_table`, `select`, `memory.copy`, and `memory.fill`,
 and it traps with `unreachable`, even if its source has no function
-pointers. So the next features are memory accesses, then `call_indirect`.
+pointers. So the next features are data segments, `memory.copy` and
+`memory.fill`, and then `call_indirect`.
 
 ## Supported features
 
@@ -78,11 +82,15 @@ pointers. So the next features are memory accesses, then `call_indirect`.
   `local.set`, `local.tee`, `global.get`, `global.set`, `i32.const`,
   `i32.add`, `i32.sub`, `i32.mul`, `i32.and`, `i32.or`, `i32.xor`,
   `i64.const`, `i64.add`, `i64.sub`, `i64.and`, `i64.or`, `i64.xor`,
-  `i32.wrap_i64`, `i64.extend_i32_s`, and `i64.extend_i32_u`.
+  `i32.wrap_i64`, `i64.extend_i32_s`, and `i64.extend_i32_u`. `i32.mul`
+  calls `__mul` in the runtime library. `unreachable` traps with code 1
+  through `___wasm_trap_vector`, as ISA.md §9.4 says.
 - **Comparisons:** `eqz`, `eq`, `ne`, `lt`, `gt`, `le`, and `ge`, signed
   and unsigned, for `i32` and `i64`.
-  `i32.mul` calls `__mul` in the runtime library. `unreachable` traps with
-  code 1 through `___wasm_trap_vector`, as ISA.md §9.4 says.
+- **Memory instructions:** every `i32` and `i64` load and store, at any
+  byte address, and `memory.size`. An access out of bounds traps with
+  code 2. The memory cannot grow yet, so `memory.grow` returns the size for
+  0 pages and -1 otherwise.
 - **Imports:** functions from `env`, whose names must be C identifiers. Each
   becomes a call to the label `_name`.
 - **Exports:** functions and globals get the label `_name`, as §9.4 says.
@@ -90,7 +98,7 @@ pointers. So the next features are memory accesses, then `call_indirect`.
 - **Globals:** mutable or not, with an `i32.const` or `i64.const` initial
   value. `global.set` on an immutable global is an error.
 - **Memory:** one memory, reserved at its initial size with `.RES` at
-  `___wasm_memory`. No instruction reads or writes it yet.
+  `___wasm_memory`.
 - **Start-up:** `___wasm_start` sets the memory to 0. Then it calls the
   start function, if there is one, and `__wasm_call_ctors`, if it is
   exported.
@@ -99,8 +107,9 @@ pointers. So the next features are memory accesses, then `call_indirect`.
   not printable ASCII is left out, and so is any such character in the
   input file's name, so that a comment cannot become code.
 
-Not supported yet: the other `i32` and `i64` operations, memory instructions, the `0xFC` instructions, the
-traps other than `unreachable`, `call_indirect`, `nice.peek` and
+Not supported yet: the other `i32` and `i64` operations, the `0xFC`
+instructions, `f32` and `f64` loads and stores, the traps other than
+`unreachable` and memory bounds, `call_indirect`, `nice.peek` and
 `nice.poke`, data and element segments, library modules (ISA.md §9.4),
 `f32`, and `f64`.
 
@@ -131,6 +140,15 @@ to R1 and up, as `return` does. `br_table` checks the index against the
 number of labels, then jumps through a table of `.DAT` addresses.
 A comparison sets the flags, usually with `SUB[M]`, then sets the result from
 them. A signed comparison is N XOR V (ISA.md §9.2).
+
+A load or store first puts the byte address in R1 and checks that all its
+bytes are in the memory. A failed check jumps to a trap stub after the
+function's epilogue, which sets R2 to the start of the access code. Then
+R2 gets the word index and R3 the byte within the word. An access that
+fits in one word reads or writes only that word. Otherwise the value is
+shifted together from, or split across, two words, or three for an
+unaligned `i64`. A store that changes only part of a word reads the word,
+changes its bytes, and writes it back once.
 
 The translated code itself uses only R1–R4, R12, R13, and R15, so R7–R11 keep their
 values across a call, as §9.3 requires.

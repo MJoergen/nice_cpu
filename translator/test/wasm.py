@@ -193,3 +193,16 @@ ELSE, END, SELECT = b"\x05", b"\x0b", b"\x1b"
 EQZ, EQ, NE, LT_S, LT_U, GT_S, GT_U, LE_S, LE_U, GE_S, GE_U = (bytes([op]) for op in range(0x45, 0x50))
 EQZ64, EQ64, NE64, LT_S64, LT_U64, GT_S64, GT_U64, LE_S64, LE_U64, GE_S64, GE_U64 = (
     bytes([op]) for op in range(0x50, 0x5B))
+
+
+def mem(op: int, offset: int = 0, align: int = 0) -> bytes:
+    """A load or a store, by its opcode."""
+    return bytes([op]) + u(align) + u(offset)
+
+
+I32_LOAD, I64_LOAD = 0x28, 0x29
+I32_LOAD8_S, I32_LOAD8_U, I32_LOAD16_S, I32_LOAD16_U = 0x2C, 0x2D, 0x2E, 0x2F
+I64_LOAD8_S, I64_LOAD8_U, I64_LOAD16_S, I64_LOAD16_U, I64_LOAD32_S, I64_LOAD32_U = range(0x30, 0x36)
+I32_STORE, I64_STORE, I32_STORE8, I32_STORE16 = 0x36, 0x37, 0x3A, 0x3B
+I64_STORE8, I64_STORE16, I64_STORE32 = 0x3C, 0x3D, 0x3E
+MEMORY_SIZE, MEMORY_GROW = b"\x3f\x00", b"\x40\x00"

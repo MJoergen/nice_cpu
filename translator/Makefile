@@ -10,7 +10,7 @@ RUSTC ?= rustc
 # nothing defines (see README.md). ZIG_SAFE_TESTS are built with
 # ReleaseSafe and a 16 KB stack, because Zig's panic handler puts a 4 KB
 # buffer on the stack.
-C_TESTS = sum5 control memory data shifts intops floats
+C_TESTS = sum5 control memory data shifts intops floats primes
 ZIG_TESTS = answer datazig bulk hello
 ZIG_SAFE_TESTS = safe safetrap
 RUST_TESTS = rust rusttrap hellors

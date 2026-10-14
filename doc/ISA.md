@@ -321,7 +321,7 @@ NICE has one maskable interrupt request (IRQ), one non-maskable interrupt reques
 
 ### 7.1 When an interrupt is taken
 
-Before each instruction fetch, the processor checks for pending requests:
+Between instructions, the processor checks for pending requests:
 - **NMI** is taken if `in_service` = 0.
 - **IRQ** is taken if `in_service` = 0 and E = 1.
 - If both are pending, NMI goes first.
@@ -384,21 +384,25 @@ Because SR is restored, an interrupt routine may change any flag freely, E and I
 ### 8.2 Memory
 
 - A read from an address with no memory or device behind it returns 0. A write to such an address is ignored.
-- Every instruction fetch sees all earlier writes. A store may change the next instruction or its constant words, and the change takes effect. An instruction that overwrites its own constant words does not see the change, because they were fetched in step 2.
+- Each instruction runs with the words that memory held when the instructions before it had completed. So a store may change the next instruction or its constant words, and the change takes effect. An instruction that overwrites its own constant words does not see the change, because they were fetched in step 2.
 
-**Memory accesses are exact and in order.** Each memory access named in this document is performed exactly once, as a separate access, and in program order. No access is merged with another, dropped, repeated, reordered, or performed speculatively. I/O devices may rely on this. For one instruction the accesses are:
+Memory accesses are of two kinds. **Instruction fetches** read the instruction word and the constant words (steps 1 and 2 of §5). **Data accesses** are the operand reads, the destination writes, and the vector table reads.
 
-1. Read the instruction word.
-2. Read the constant words, if any, in the order dest, s0, s1.
-3. If the condition is false, there are no further accesses.
-4. Read s0 if its mode is 100–111, then s1 if its mode is 100–111. This applies even when the operation ignores the operand (§4.4). So `ADD R1, @R2, @R2` reads mem[R2] twice, and a `MOVE` whose unused s1 field holds `@R3` also reads mem[R3].
-5. Write the destination if its mode is 011–111. The destination is never read.
+**Data accesses are exact and in order.** Each data access named in this document is performed exactly once, as a separate access, and in program order. No data access is merged with another, dropped, repeated, reordered, or performed speculatively. I/O devices may rely on this. For one instruction the data accesses are:
 
-Interrupt entry (§7.2), including `INT`, makes one read: the vector table entry. Control instructions make no accesses other than the instruction word and `INT`'s vector read.
+1. None if the condition is false.
+2. Read s0 if its mode is 100–111, then s1 if its mode is 100–111. This applies even when the operation ignores the operand (§4.4). So `ADD R1, @R2, @R2` reads mem[R2] twice, and a `MOVE` whose unused s1 field holds `@R3` also reads mem[R3].
+3. Write the destination if its mode is 011–111. The destination is never read.
+
+Interrupt entry (§7.2), including `INT`, makes one data access: the read of the vector table entry. Control instructions make no other data accesses.
+
+**Instruction fetches are not ordered.** The processor may fetch instruction words and constant words early, more than once, or for instructions that never run. It may do so in any order relative to data accesses. Only the result is defined: each instruction runs with the words that memory held when the instructions before it had completed. This lets a pipelined processor fetch ahead, and lets instruction fetches and data accesses use separate buses.
 
 ### 8.3 Input and output
 
 I/O is memory-mapped. There are no I/O instructions. Addresses `0xFFFFFF00`–`0xFFFFFFFF` are reserved for I/O devices.
+
+Instruction fetches never reach I/O devices. An instruction fetch from `0xFFFFFF00`–`0xFFFFFFFF` reads 0, whatever a data read of the same address returns. The word 0 is a NOP (§2.1), so a program that runs into the I/O range runs through it and wraps to address 0.
 
 The 2004 emulator maps a character screen at `0x400`. That is a property of the emulator, not of the ISA.
 
@@ -822,7 +826,8 @@ It executes as follows:
 | Interrupt entry details | Entry sets I; NMI is taken before IRQ; NMI does not nest either (§7.1, §7.2) | Not specified anywhere. The articles have NMI and IRQ serviced "the same way". |
 | Pending interrupt requests | Deferred, never lost; same-kind requests may merge (§7.1) | Not specified anywhere |
 | Interrupts right after `RTI` | No IRQ or NMI until the instruction after `RTI` completes (`after_rti`, §7.1) | Not specified anywhere. QNICE guarantees the same progress. |
-| Memory access order | Each access exactly once, unmerged, and in program order (§8.2) | Not specified anywhere |
+| Memory access order | Each data access exactly once, unmerged, and in program order. Instruction fetches may run ahead, repeat, or be wasted (§8.2) | Not specified anywhere |
+| Instruction fetches from the I/O range | Read 0 and never reach a device (§8.3) | Not specified anywhere |
 | Carry input timing | The C flag as step 5 of §5 left it (§5.1, §5.2) | Not specified anywhere. The emulator also reads C after the source operands. |
 | Assembler numbers | `0x`, `0b`, decimal | The emulator reads a leading 0 as octal; the articles use `#` and `$` |
 | Assembler directives and constants | `.DAT` takes several values, a constant may be an expression, and a string may use `"..."` (§10) | `NICE.pm` takes one value per directive, a number or a symbol only, and `'...'` only |

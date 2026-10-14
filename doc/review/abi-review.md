@@ -155,6 +155,8 @@ Reviewed on 2026-10-14: `doc/ISA.md` §9.3 and §9.4 at commit da65885 ("ISA: fi
 
 Three things in the new text need another pass, and there are three nits.
 
+**Resolved**: ISA.md §9.3 and §9.4 now do all of this. The trap jumps through `___wasm_trap_vector`, which a program may overwrite at run time (5.1). The join order lists hand-written files, and only the start-up code may use `.ORG` (5.2). The runtime library has two versions of the start-up code, one that calls `___wasm_start` and one that does not (5.3). The examples say they use `SP` and `PC` for readability, the single-scalar structure rule is stated, and §9.4 says `___wasm_start` calls `__wasm_call_ctors` by its `W.` label (5.4).
+
 ### 5.1 The trap override contradicts the no-linker rule
 
 ISA.md:636 says `___wasm_trap` is in the runtime library with a `HALT` as its default, and that "a program may supply its own". ISA.md:522 says every label must be unique in the whole program, that the assembler rejects a second definition, and that the runtime library is always joined in. So a program that supplies its own `___wasm_trap` never assembles.

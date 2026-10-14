@@ -1,0 +1,9 @@
+examples/*.bin
+examples/*.out
+*.aux
+*.log
+*.nav
+*.out
+*.snm
+*.toc
+*.vrb

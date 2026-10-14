@@ -14,12 +14,12 @@ ASM = ../assembler/test
 EXAMPLES = count replicate print wrap
 OPTS_count     =
 OPTS_replicate = -d 0x10:10
-OPTS_print     = -s
+OPTS_print     = -2004 -s
 OPTS_wrap      = -d 0xffffffff:1
 
 # Probes of single rules of doc/ISA.md, in test/X.asm. The expected values
 # are in the comments of each program. Run make bins after changing one.
-PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest console
+PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest console screen
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
@@ -27,6 +27,7 @@ OPTS_irq     = -t --nmi 2:1 --irq 2:2 --nmi 9:1 --irq 17:2 --nmi 17:1 --irq 100:
 OPTS_merge   = --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
 OPTS_after   = --nmi 3:1 --nmi 10:1 -d 0x200:6
 OPTS_start   = -t --nmi 0:3
+OPTS_screen  = -s
 
 define check
 	@$(EMU) $(OPTS_$(1)) $(2) > test/$(1).out; echo "exit $$?" >> test/$(1).out

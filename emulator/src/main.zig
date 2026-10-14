@@ -11,7 +11,8 @@ const usage =
     \\
     \\Options:
     \\  -t, --trace          Print one line per instruction.
-    \\  -s, --screen         Print the 80x25 character screen at 0x400.
+    \\  -s, --screen         Print the 80x25 character screen at 0xFFFF0000.
+    \\  -2004                Put the screen at 0x400, as the 2004 emulator does.
     \\  -d, --dump ADDR:N    Print N memory words from ADDR. May be repeated.
     \\  -n, --max-steps N    Stop after N steps (default 100000000).
     \\      --irq STEP:VEC   Raise IRQ with vector VEC before step STEP.
@@ -25,9 +26,10 @@ const usage =
     \\
 ;
 
-/// The character screen of the 2004 emulator (doc/ISA.md §8.3). Each word
-/// holds a character in bits 7..0 and its colour above.
-const screen_base = 0x400;
+/// The character screen (doc/ISA.md §8.3). Each word holds a character in
+/// bits 7..0 and its colour above. The 2004 emulator has it at 0x400.
+const screen_base = 0xFFFF0000;
+const screen_base_2004 = 0x400;
 const screen_width = 80;
 const screen_height = 25;
 
@@ -48,6 +50,7 @@ const Options = struct {
     path: []const u8,
     trace: bool = false,
     screen: bool = false,
+    screen_base: u32 = screen_base,
     dumps: []const Dump = &.{},
     /// Sorted by step, in command-line order within a step.
     requests: []const Request = &.{},
@@ -135,6 +138,8 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
             opts.trace = true;
         } else if (std.mem.eql(u8, arg, "-s") or std.mem.eql(u8, arg, "--screen")) {
             opts.screen = true;
+        } else if (std.mem.eql(u8, arg, "-2004")) {
+            opts.screen_base = screen_base_2004;
         } else if (std.mem.eql(u8, arg, "-d") or std.mem.eql(u8, arg, "--dump")) {
             const colon = std.mem.indexOfScalar(u8, value, ':') orelse
                 return fail("{s} wants ADDR:N, not '{s}'", .{ arg, value });
@@ -259,7 +264,7 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
     }
     try printRegisters(out, &cpu);
     for (opts.dumps) |d| try printMemory(out, &cpu, d);
-    if (opts.screen) try printScreen(out, &cpu);
+    if (opts.screen) try printScreen(out, &cpu, opts.screen_base);
 
     return if (!cpu.halted()) 3 else if (cpu.halt_reason == .halt) 0 else 2;
 }
@@ -283,12 +288,12 @@ fn printMemory(out: *std.Io.Writer, cpu: *const Cpu, d: Dump) !void {
 
 /// Print the screen, one row per line, without trailing blanks. Characters
 /// outside printable ASCII show as blanks.
-fn printScreen(out: *std.Io.Writer, cpu: *const Cpu) !void {
+fn printScreen(out: *std.Io.Writer, cpu: *const Cpu, base: u32) !void {
     var rows: [screen_height][screen_width]u8 = undefined;
     var last_row: usize = 0;
     for (&rows, 0..) |*row, y| {
         for (row, 0..) |*ch, x| {
-            const c: u8 = @truncate(cpu.peek(@intCast(screen_base + y * screen_width + x)));
+            const c: u8 = @truncate(cpu.peek(base + @as(u32, @intCast(y * screen_width + x))));
             ch.* = if (c > ' ' and c < 0x7F) c else ' ';
             if (ch.* != ' ') last_row = y + 1;
         }

@@ -1,6 +1,6 @@
 # niceemu
 
-An emulator for the NICE processor, written in Zig. It implements
+An emulator for the NICE processor, written in [Zig](https://ziglang.org). It implements
 [doc/ISA.md](../doc/ISA.md) and runs the `.bin` files that
 [niceasm](../assembler/README.md) writes.
 
@@ -48,7 +48,8 @@ line such as `Pending: IRQ 05` follows the first line.
 | Option | Effect |
 |---|---|
 | `-t`, `--trace` | Print one line per instruction (see below). |
-| `-s`, `--screen` | After halting, print the 80×25 character screen at `0x400`. |
+| `-s`, `--screen` | After halting, print the 80×25 character screen. |
+| `-2004` | Put the screen at `0x400`, as the 2004 emulator does. |
 | `-d`, `--dump ADDR:N` | After halting, print N memory words from ADDR. May be repeated. |
 | `-n`, `--max-steps N` | Stop after N steps. The default is 100000000. |
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
@@ -78,27 +79,33 @@ digits; the loader accepts 1 to 8, in upper or lower case, and nothing else:
 no `0x` prefix, sign, or `_`. Blank lines are ignored. Loading the same
 address twice and a file with no words are errors.
 
-## Devices
+## Memory map
 
-The 2004 emulator has one device, a character screen mapped into memory at
-`0x400`: 80 columns by 25 rows, one word per character, with the character
-in bits 7..0 and its colour above. Here the screen is ordinary memory, and
-`--screen` prints the characters when the program has halted. `print.asm`
-writes to it. The screen is kept for the 2004 programs. It overlaps the code
-of any program longer than 1024 words.
+| Address | Words | Contents |
+|---|---|---|
+| `0x00000000`–`0xFFFEFFFF` | 4294901760 | Ordinary memory. Programs load at 0. |
+| `0xFFFF0000`–`0xFFFF07CF` | 2000 | Character screen, 80×25. Ordinary memory. With `-2004` it is at `0x00000400`–`0x00000BCF` instead. |
+| `0xFFFF07D0`–`0xFFFFFEFF` | 63280 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |
+| `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns 0. |
+| `0xFFFFFF01`–`0xFFFFFFFF` | 255 | Reserved for I/O (ISA.md §8.3). Ordinary memory here. |
 
-niceemu adds a console at `0xFFFFFF00`, the first I/O address. A write
-there prints bits 7..0 of the word on stdout at once, and ignores the rest.
-The console stores nothing, so a read from it returns 0. Its output comes
-before the `Halted` line, and with `--trace` it is mixed in with the trace
-lines. `test/console.asm` writes to it. The FPGA core will have a UART at
-the same address.
+The screen has one word per character, with the character in bits 7..0 and
+its colour above. It is ordinary memory, and `--screen` prints the
+characters when the program has halted. `test/screen.asm` writes to it. The
+2004 emulator has the screen at `0x400`, where it overlaps the code of any
+program longer than 1024 words. `-2004` puts it there for the 2004
+programs, such as `print.asm`.
+
+The console stores nothing. Its output comes before the `Halted` line, and
+with `--trace` it is mixed in with the trace lines. `test/console.asm`
+writes to it. The FPGA core will have a UART at the same address.
 
 All 2³² words of memory exist, and addresses wrap from `0xFFFFFFFF` to 0
 (ISA.md §1.1). Memory is allocated in pages of 4096 words when a nonzero
 word is first written to them, so a program only costs the memory it
-touches. The other I/O addresses, `0xFFFFFF01`–`0xFFFFFFFF`, are ordinary
-memory.
+touches.
+
+## Interrupts
 
 The core (`src/cpu.zig`) implements IRQ, NMI, `INT`, and `RTI` (ISA.md §7).
 No device raises IRQ or NMI yet. Instead, `--irq` and `--nmi` raise a request

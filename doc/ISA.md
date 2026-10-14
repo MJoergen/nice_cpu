@@ -519,13 +519,15 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 - A C function or variable `name` with external linkage gets the label `_name`. So `main` is `_main`, and a C function called `move` does not clash with the mnemonic `MOVE`. Names with internal linkage are covered below.
 - Every other label that the compiler emits contains a `.` (see Programs and units). No C identifier contains a `.`, so these cannot clash with external C names.
 
-**Programs and units.** There is no linker. A program is one assembly file, made by joining these files in this order: the start-up code, the compiled units, the translated wasm module if there is one (§9.4), and the runtime library. Every label and `.EQU` name must therefore be unique in the whole program. The assembler rejects a second definition.
+**Programs and units.** There is no linker. A program is one assembly file, made by joining these files in this order: the start-up code; the compiled units and hand-written assembly files, in any order; the translated wasm module if there is one (§9.4); and the runtime library. Every label and `.EQU` name must therefore be unique in the whole program. The assembler rejects a second definition.
+
+- Only the start-up code may use `.ORG`, because a `.ORG` in one file moves every file after it. Anything that must sit at a fixed address, such as an interrupt vector table (§7.3), therefore belongs in the start-up code.
 
 - Each compiled unit has a unit name, given when it is compiled, for example from the file name. It consists of letters, digits, and `_`, and it differs from the names of the other units in the program.
 - The compiler's own labels are `L.unit.n`, for example `L.main.12`.
 - A `static` function or variable at file scope gets the label `_name.unit`, for example `_count.main` for `static int count` in the unit `main`. A `static` variable inside a function gets one of the compiler's own labels.
 - Two units that define the same external name both define `_name`, and the assembler rejects the program, as a linker would.
-- Compiled and translated code writes R13 and R15 and defines no `.EQU` names. Hand-written files may define names such as `SP` and `PC`, but only one file may define each name.
+- Compiled and translated code writes R13 and R15 and defines no `.EQU` names. Hand-written files may define names such as `SP` and `PC`, but only one file may define each name. The examples in this section and in §9.4 use `SP` and `PC` for readability.
 
 **Runtime routines.** NICE has no multiply or divide instruction, and no floating-point instructions. The compiler calls routines in the runtime library instead. They follow the rules above.
 
@@ -541,7 +543,7 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 
 Division by zero is undefined in C, so these routines may return any value for it.
 
-**Start-up.** The start-up code sits at address 0. It sets SP to one past the highest word the program may use, so that the first push lands on that word. If the program has a wasm module, it then calls `___wasm_start` (§9.4). Then it calls `_main` with no arguments, and then executes `HALT` with `main`'s return value still in R1. Static data gets its initial values when the program image is loaded. Reset does not restore them.
+**Start-up.** The start-up code sits at address 0. It sets SP to one past the highest word the program may use, so that the first push lands on that word. If the program has a wasm module, it then calls `___wasm_start` (§9.4). The runtime library has two versions of the start-up code, one with this call and one without, and a program uses the version that matches it. Then the start-up code calls `_main` with no arguments, and then executes `HALT` with `main`'s return value still in R1. Static data gets its initial values when the program image is loaded. Reset does not restore them.
 
 **Example.** This function and call:
 
@@ -621,7 +623,7 @@ The module's own stack is separate. Compilers for wasm keep the variables whose 
 - `call_indirect` traps if the index is past the end of the table, if the entry is empty, or if its type number differs from the type of the call. Otherwise it calls the address with the "through a register" sequence of §9.3.
 - A wasm function pointer is an index into this table, not a NICE address.
 
-**Traps.** A trap jumps to the label `___wasm_trap`. R1 holds a code, and R2 holds the address of the first NICE instruction of the code for the wasm instruction that trapped:
+**Traps.** A trap jumps through the word `___wasm_trap_vector`, with `MOVE PC, @___wasm_trap_vector`. R1 holds a code, and R2 holds the address of the first NICE instruction of the code for the wasm instruction that trapped:
 
 | R1 | Cause |
 |---|---|
@@ -633,7 +635,13 @@ The module's own stack is separate. Compilers for wasm keep the variables whose 
 | 6 | `call_indirect`: index past the end of the table, or an empty entry |
 | 7 | `call_indirect`: type mismatch |
 
-`___wasm_trap` is part of the runtime library. Its default is a `HALT`. A program may supply its own, in assembly or as the C function `void __wasm_trap(int code, unsigned addr)`. It is entered by a jump, not a call, so mem[SP] is not a return address, and SP is wherever the trapping function left it. It must therefore not return.
+The runtime library defines `___wasm_trap_vector` and starts it with the address of its default handler, `___wasm_trap`, which is a `HALT`. A label may be defined only once (§9.3), so a program cannot replace `___wasm_trap`. Instead, it installs its own handler at run time by storing the handler's address in the vector. From C, that is:
+
+    extern void (*__wasm_trap_vector)(int code, unsigned addr);
+    ...
+    __wasm_trap_vector = my_trap;
+
+A handler is entered by a jump, not a call, so mem[SP] is not a return address, and SP is wherever the trapping function left it. A handler must therefore not return.
 
 Running out of NICE stack is not detected, unlike in wasm. What happens then is undefined.
 
@@ -649,7 +657,7 @@ Running out of NICE stack is not detected, unlike in wasm. What happens then is 
 - The C address of wasm byte address *p* is `__wasm_memory + p / 4`. This works only if *p* is a multiple of 4. C then sees the data packed four bytes to a word.
 - To pass C data to wasm, it must be in linear memory. The byte address of the word at C address *q* is (*q* − `__wasm_memory`) × 4.
 - Wasm code cannot reach C data outside linear memory, except through `nice.peek` and `nice.poke`.
-- Only `i32`, `i64`, `f32`, and `f64` values cross the boundary. Clang and Rust pass a structure in an `extern "C"` signature as a pointer into linear memory, so C receives a byte address there too.
+- Only `i32`, `i64`, `f32`, and `f64` values cross the boundary. Clang and Rust pass a structure with a single scalar member in an `extern "C"` signature as that scalar. They pass any other structure as a pointer into linear memory, so C receives a byte address there too.
 - Function pointers do not cross the boundary. A wasm function pointer is a table index, and a C function pointer is a NICE address.
 
 **Runtime routines.** The translator uses the runtime library of §9.3, which it shares with the C compiler. For `i32` arithmetic it calls `__mul`, `__div`, `__mod`, `__udiv`, and `__umod`. Before it calls them, it checks the cases that wasm defines but C leaves undefined:
@@ -667,7 +675,7 @@ The routines for `i64` and floating point are in the same library and listed in 
 
 **Start-up.** The start-up code is that of §9.3. For a program with a wasm module, it calls `___wasm_start` before `_main`.
 
-- The translator always emits `___wasm_start`, a §9.3 function with no arguments and no result. It calls the module's start function, if there is one. Then it calls `__wasm_call_ctors`, if the module exports a function of that name. Otherwise it just returns.
+- The translator always emits `___wasm_start`, a §9.3 function with no arguments and no result. It calls the module's start function, if there is one. Then it calls `__wasm_call_ctors`, if the module exports a function of that name. Otherwise it just returns. The name starts with `_`, so the export gets no label of its own (see Imports and exports), and the translator calls it by its `W.` label.
 - Clang, Rust, and Zig emit no start function. Clang puts the calls to C++ constructors and `__attribute__((constructor))` functions in `__wasm_call_ctors`, so link with `--export=__wasm_call_ctors` to have them run. Rust and Zig need neither.
 - Rust and Zig code supply `main` as an exported function, for example `#[no_mangle] pub extern "C" fn main() -> i32` in Rust or `export fn main() i32` in Zig.
 

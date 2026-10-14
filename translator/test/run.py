@@ -34,7 +34,7 @@ from wasm import (ADD, ADD64, AND, AND64, DROP, ELSE, END, EQ, EQ64, EQZ, EQZ64,
 from wasm import (I32_LOAD, I32_LOAD8_S, I32_LOAD8_U, I32_LOAD16_S, I32_LOAD16_U, I32_STORE,
                   I32_STORE8, I32_STORE16, I64_LOAD, I64_LOAD8_S, I64_LOAD8_U, I64_LOAD16_S,
                   I64_LOAD32_S, I64_LOAD32_U, I64_STORE, I64_STORE8, I64_STORE16,
-                  I64_STORE32, MEMORY_GROW, MEMORY_SIZE, mem)
+                  I64_STORE32, MEMORY_GROW, MEMORY_SIZE, data, mem)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.join(HERE, "..", "..")
@@ -125,6 +125,15 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # = -300, and 8 of them sum to -2400 = -0x960. 0x12111493 - 0x960 =
     # 0x12110B33.
     ("memory_c", "memory", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 0x12110B33),
+    # Initialized data from clang, with get(i) = i + 100. text is "Hello,
+    # NICE!", so char_at(0) + char_at(7) = 'H' + 'N' = 72 + 78 = 150. table[2]
+    # is 4, and bumping it by get(0) twice gives 104 + 204 = 308. counter is
+    # 0, not in a data segment, and bumps to 100. 150 + 308 + 100 = 558.
+    ("data_c", "data", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 558),
+    # The same from Zig, which puts its stack first and the data after it,
+    # so ___wasm_start clears the words below and above the data. primes[5]
+    # = 13, and state = 0x12345678 + 100 = 0x123456DC. 13 + 0x56DC = 0x56E9.
+    ("data_zig", "datazig", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 0x56E9),
     # Declared locals start at 0. dirty sets its 3 locals to 0x55, and clean
     # gets the same frame words, so without zeroing it returns 0x55 * 3 + 7.
     ("locals", module(
@@ -510,6 +519,33 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         memory(1),
         exports(("main", 0, 0)),
         code((0, st(I32_STORE, 4, 1234) + i32_const(-4) + mem(I32_LOAD, offset=8)))), "", 1234),
+    # Data segments: 11 22 33 at byte 5, "ABCDEFGHI" at 8, EE at 9 over the
+    # B, 77 88 at 65534, the last two bytes, and nothing at 65536. Bytes
+    # that no segment sets are 0, so the words are:
+    #   word 1 (bytes 4-7):  00 11 22 33 = 0x33221100
+    #   word 2 (8-11):       41 EE 43 44 = 0x4443EE41
+    #   word 3 (12-15):      45 46 47 48 = 0x48474645
+    #   word 4 (16-19):      49 00 00 00 = 0x00000049
+    #   word 16383:          00 00 77 88 = 0x88770000
+    # main writes -1 to word 0, word 5, and word 16382, next to the data,
+    # then calls restart, which runs ___wasm_start again. It must set them
+    # to 0 and leave the data alone. The words above are each one bit,
+    # 0 for words 0, 5, and 16382, then a check that fails: 111111110 = 0x1FE.
+    ("data", module(
+        types(MAIN_TYPE, ([], [])),
+        imports(("env", "restart", 1)),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 1)),
+        code((1, st(I32_STORE, 0, -1) + st(I32_STORE, 20, -1) + st(I32_STORE, 65528, -1)
+              + call(0)
+              + bits(0, ld(I32_LOAD, 0, 0), ld(I32_LOAD, 4, 0x33221100),
+                     ld(I32_LOAD, 8, 0x4443EE41), ld(I32_LOAD, 12, 0x48474645),
+                     ld(I32_LOAD, 16, 0x49), ld(I32_LOAD, 20, 0), ld(I32_LOAD, 65528, 0),
+                     ld(I32_LOAD, 65532, 0x88770000 - 2**32), ld(I32_LOAD, 4, 0)))),
+        data((5, b"\x11\x22\x33"), (8, b"ABCDEFGHI"), (9, b"\xEE"), (65534, b"\x77\x88"),
+             (65536, b""))),
+     "_restart ADD @--R13, 2, R15\n MOVE R15, ___wasm_start\n MOVE R15, @R13++\n", 0x1FE),
     # The start function sets g = g * 10 + 1, then __wasm_call_ctors sets
     # g = g * 10 + 2. In that order, g = 12.
     ("startup", module(

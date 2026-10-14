@@ -45,7 +45,8 @@ out of bounds.
 
 The memory options keep the memory small. nicewasm reserves the module's
 initial memory with `.RES`, so the memory is not in the `.bin` file, and
-`___wasm_start` sets it to 0. That takes 18 steps for every 16 words, or
+`___wasm_start` sets it to 0. Only the words that data segments set are in
+the `.bin` file. That takes 18 steps for every 16 words, or
 18434 steps for one page. The emulator runs about 70 million steps per
 second, so even Zig's default of 16 pages, or 17 with data, is cleared
 in a few milliseconds. The real cost is space: each page is 16384 words, which an
@@ -66,8 +67,10 @@ global's initial value, not the expressions of `extended-const`.
 Every Zig program built with ReleaseSafe or Debug uses a table,
 `call_indirect`, `br_table`, `select`, `memory.copy`, and `memory.fill`,
 and it traps with `unreachable`, even if its source has no function
-pointers. So the next features are data segments, `memory.copy` and
-`memory.fill`, and then `call_indirect`.
+pointers. Most compiled code also needs shifts, for example to index an
+array of anything but bytes. So the next features are the shifts and the
+other integer operations, `memory.copy` and `memory.fill`, and then
+`call_indirect`.
 
 ## Supported features
 
@@ -97,11 +100,16 @@ pointers. So the next features are data segments, `memory.copy` and
   Exporting an imported function is not supported.
 - **Globals:** mutable or not, with an `i32.const` or `i64.const` initial
   value. `global.set` on an immutable global is an error.
-- **Memory:** one memory, reserved at its initial size with `.RES` at
-  `___wasm_memory`.
-- **Start-up:** `___wasm_start` sets the memory to 0. Then it calls the
-  start function, if there is one, and `__wasm_call_ctors`, if it is
-  exported.
+- **Memory:** one memory at `___wasm_memory`, at its initial size.
+- **Data segments:** active ones, whose offset is an `i32.const`. The words
+  they set are `.DAT` words in the program image, and a word that a
+  segment sets only part of has its other bytes 0. A later segment
+  overwrites an earlier one, as in wasm. The rest of the memory is
+  reserved with `.RES`. A segment that does not fit in the memory is an
+  error.
+- **Start-up:** `___wasm_start` sets the memory to 0, except the words
+  that data segments set. Then it calls the start function, if there is
+  one, and `__wasm_call_ctors`, if it is exported.
 - **Ignored:** tables (without element segments) and custom sections. The
   name section only supplies function names for comments. A name that is
   not printable ASCII is left out, and so is any such character in the
@@ -110,7 +118,8 @@ pointers. So the next features are data segments, `memory.copy` and
 Not supported yet: the other `i32` and `i64` operations, the `0xFC`
 instructions, `f32` and `f64` loads and stores, the traps other than
 `unreachable` and memory bounds, `call_indirect`, `nice.peek` and
-`nice.poke`, data and element segments, library modules (ISA.md §9.4),
+`nice.poke`, passive data segments and `memory.init`, element segments,
+library modules (ISA.md §9.4),
 `f32`, and `f64`.
 
 nicewasm checks the types on the operand stack as wasm validation does,

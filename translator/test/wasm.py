@@ -206,3 +206,8 @@ I64_LOAD8_S, I64_LOAD8_U, I64_LOAD16_S, I64_LOAD16_U, I64_LOAD32_S, I64_LOAD32_U
 I32_STORE, I64_STORE, I32_STORE8, I32_STORE16 = 0x36, 0x37, 0x3A, 0x3B
 I64_STORE8, I64_STORE16, I64_STORE32 = 0x3C, 0x3D, 0x3E
 MEMORY_SIZE, MEMORY_GROW = b"\x3f\x00", b"\x40\x00"
+
+
+def data(*segs: Tuple[int, bytes]) -> bytes:
+    """Active data segments: (byte offset, bytes)."""
+    return section(11, vec([b"\0" + b"\x41" + s(off) + b"\x0b" + u(len(d)) + d for off, d in segs]))

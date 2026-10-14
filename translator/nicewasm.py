@@ -26,7 +26,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 I32, I64, F32, F64 = 0x7F, 0x7E, 0x7D, 0x7C
 TYPE_NAMES = {I32: "i32", I64: "i64", F32: "f32", F64: "f64", 0x7B: "v128",
@@ -35,7 +35,7 @@ TYPE_NAMES = {I32: "i32", I64: "i64", F32: "f32", F64: "f64", 0x7B: "v128",
 SIZES = {I32: 1, I64: 2}  # words per value of each supported type
 
 WORDS_PER_PAGE = 16384  # 65536 bytes, four to a word
-ZERO_UNROLL = 16        # words cleared per pass of ___wasm_start's loop; divides a page
+ZERO_UNROLL = 16        # words cleared per pass of ___wasm_start's loops
 
 # Section ids in the order a module must give them. Custom sections (0) may
 # come anywhere.
@@ -169,6 +169,14 @@ class Global:
 
 
 @dataclass
+class Data:
+    """An active data segment."""
+    offset: int         # byte address in the memory
+    data: bytes
+    at: int             # offset of the segment in the file
+
+
+@dataclass
 class Code:
     locals: List[int]   # the declared locals, not the parameters
     start: int          # offset of the first instruction in the file
@@ -185,6 +193,8 @@ class Module:
     exports: List[Tuple[str, int, int]] = field(default_factory=list)  # name, kind, index
     start: Optional[int] = None
     codes: List[Code] = field(default_factory=list)
+    data: List[Data] = field(default_factory=list)
+    data_count: Optional[int] = None                   # from the data count section
     names: Dict[int, str] = field(default_factory=dict)  # function names from the name section
 
 
@@ -426,10 +436,35 @@ def parse_section(m: Module, sec_id: int, s: Reader, sec_start: int) -> None:
                 local_types += [body.byte()] * n
             m.codes.append(Code(local_types, body.pos, body.end))
     elif sec_id == 11:
-        if s.u32():
-            raise WasmError("data segments are not supported yet", sec_start)
+        count = s.u32()
+        if m.data_count is not None and count != m.data_count:
+            raise WasmError(f"the data count section says {m.data_count} segments, but there"
+                            f" are {count}", sec_start)
+        for i in range(count):
+            at = s.pos
+            flags = s.u32()
+            if flags == 1:
+                raise WasmError(f"data segment {i} is passive; memory.init is not supported yet",
+                                at)
+            if flags == 2:
+                mem_at = s.pos
+                mem = s.u32()
+                if mem != 0:
+                    raise WasmError(f"data segment {i}: memory {mem} does not exist", mem_at)
+            elif flags != 0:
+                raise WasmError(f"data segment {i} has unknown flags {flags}", at)
+            # The offset is an i32.const, then end. extended-const allows
+            # expressions, which are not supported.
+            off_at = s.pos
+            what = f"data segment {i}: the offset must be an i32.const"
+            if s.byte() != 0x41:
+                raise WasmError(what, off_at)
+            offset = s.s32() & 0xFFFFFFFF
+            if s.byte() != 0x0B:
+                raise WasmError(what, off_at)
+            m.data.append(Data(offset, s.bytes(s.u32()), at))
     elif sec_id == 12:
-        s.u32()
+        m.data_count = s.u32()
     elif sec_id == 13:
         raise WasmError("exception tags are not supported", sec_start)
 
@@ -522,15 +557,23 @@ class Translator:
         out.append("; Sets the memory to 0, then calls the start function and")
         out.append("; __wasm_call_ctors, if the module has them.")
         out.append("___wasm_start")
-        if self.m.memory_pages:
-            # The memory is reserved with .RES, so it is not in the program
-            # image. Each pass of the loop clears ZERO_UNROLL words.
-            out.append(instr("MOVE", "R5", "___wasm_memory"))
-            out.append(instr("MOVE", "R6", str(self.m.memory_pages * WORDS_PER_PAGE // ZERO_UNROLL)))
-            out.append("W.zero")
-            out += [instr("MOVE", "@R5++", "R0")] * ZERO_UNROLL
-            out.append(instr("DEC[M]", "R6", "R6"))
-            out.append("        ?!Z MOVE R15, W.zero")
+        # The words that data segments set are in the program image. The
+        # rest of the memory is reserved with .RES, so it is not, and is
+        # set to 0 here. Each pass of a loop clears ZERO_UNROLL words.
+        runs = self.memory_runs()
+        gaps = 0
+        for start, values in runs:
+            if isinstance(values, list):
+                continue
+            out.append(instr("MOVE", "R5", "___wasm_memory" + (f"+{start}" if start else "")))
+            if values >= ZERO_UNROLL:
+                out.append(instr("MOVE", "R6", str(values // ZERO_UNROLL)))
+                out.append(f"W.zero{gaps}")
+                out += [instr("MOVE", "@R5++", "R0")] * ZERO_UNROLL
+                out.append(instr("DEC[M]", "R6", "R6"))
+                out.append(f"        ?!Z MOVE R15, W.zero{gaps}")
+                gaps += 1
+            out += [instr("MOVE", "@R5++", "R0")] * (values % ZERO_UNROLL)
         for idx in (self.m.start, self.ctors):
             if idx is not None:
                 out.append(instr("ADD", "@--R13", "2", "R15"))
@@ -549,8 +592,51 @@ class Translator:
         if self.m.memory_pages is not None:
             pages = self.m.memory_pages
             out += ["", f"; Linear memory: {pages} page{'' if pages == 1 else 's'}",
-                    "___wasm_memory", instr(".RES", str(pages * WORDS_PER_PAGE))]
+                    "___wasm_memory"]
+            for start, values in runs:
+                if isinstance(values, list):
+                    last = start + len(values) - 1
+                    where = f"word {start}" if last == start else f"words {start} to {last}"
+                    out.append(f"        ; {where}: data segments")
+                    for i in range(0, len(values), 8):
+                        out.append(instr(".DAT", *(f"0x{w:08X}" for w in values[i:i + 8])))
+                else:
+                    out.append(instr(".RES", str(values)))
         return out
+
+    def memory_runs(self) -> List[Tuple[int, Union[int, List[int]]]]:
+        """The memory in runs of words, in address order: (first word, the
+        values of the words that data segments set) or (first word, the
+        number of words that are 0). A word that a segment sets only part
+        of is in the image, its other bytes 0. A later segment overwrites
+        an earlier one, as in wasm."""
+        if self.m.memory_pages is None:
+            if self.m.data:
+                raise WasmError("data segment 0: the module has no memory", self.m.data[0].at)
+            return []
+        size = self.m.memory_pages * WORDS_PER_PAGE * 4
+        init: Dict[int, int] = {}
+        for i, seg in enumerate(self.m.data):
+            if seg.offset + len(seg.data) > size:
+                raise WasmError(f"data segment {i} does not fit in the memory", seg.at)
+            for k, b in enumerate(seg.data):
+                addr = seg.offset + k
+                shift = 8 * (addr % 4)
+                w = init.get(addr // 4, 0)
+                init[addr // 4] = (w & ~(0xFF << shift)) | (b << shift)
+        runs: List[Tuple[int, Union[int, List[int]]]] = []
+        w = 0
+        for i in sorted(init):
+            if i > w:
+                runs.append((w, i - w))
+            if runs and isinstance(runs[-1][1], list) and i == w:
+                runs[-1][1].append(init[i])
+            else:
+                runs.append((i, [init[i]]))
+            w = i + 1
+        if size // 4 > w:
+            runs.append((w, size // 4 - w))
+        return runs
 
 
 class FunctionTranslator:

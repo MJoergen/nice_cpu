@@ -45,12 +45,17 @@ return the result in R1:R2, each pair low word first (§9.3):
 |---|---|---|
 | `__mul64` | R1:R2 × R3:R4, the low 64 bits. Serves signed and unsigned operands. | R3–R6 |
 | `__div64`, `__mod64` | Signed R1:R2 / R3:R4 and R1:R2 % R3:R4, rounding toward zero. | R3–R6 |
-| `__udiv64`, `__umod64` | Unsigned R1:R2 / R3:R4 and R1:R2 % R3:R4. | R3–R6 |
+| `__udiv64`, `__umod64` | Unsigned R1:R2 / R3:R4 and R1:R2 % R3:R4. | R5, R6 |
 | `__clz64`, `__ctz64` | The number of leading or trailing 0 bits in R1:R2, 64 for 0. | none |
 | `__popcnt64` | The number of 1 bits in R1:R2. | R3, R4 |
 
 Every routine changes the flags. A routine may change R1–R6 and the
 flags, as §9.3 allows. The tables list what each one actually changes.
+
+`lib.asm` also has two labels that are not C routines: `__udivmod` and
+`__udivmod64`, the unsigned division that the division routines share.
+Every label is global in the joined program (§9.3), so no other file may
+define these names either.
 
 Division by zero is undefined in C, so the division routines return some
 value for it and do not trap. The wasm translator checks for 0 before it

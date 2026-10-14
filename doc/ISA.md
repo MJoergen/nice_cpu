@@ -515,7 +515,7 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 **Symbol names.** The assembler's labels are case-sensitive, but they may not be mnemonics or register names (§10.1).
 
 - A C identifier `name` becomes the label `_name`. So `main` is `_main`, and a C function called `move` does not clash with the mnemonic `MOVE`.
-- Labels that the compiler makes for itself contain a `.`, for example `L.12`. No C identifier contains a `.`, so these cannot clash with C names.
+- Labels that the compiler makes for itself start with `L.`, for example `L.12`. No C identifier contains a `.`, so these cannot clash with C names.
 
 **Runtime routines.** NICE has no multiply or divide instruction. The compiler calls these routines instead. They follow the rules above.
 
@@ -549,6 +549,116 @@ compile to:
             MOVE PC, _f
             ADD  SP, SP, 1       ; remove e
             MOVE @_x, R1         ; x = f(...)
+
+### 9.4 WebAssembly mapping
+
+Rust and Zig assume 8-bit bytes, so they cannot use the C ABI's one-word `char` (§9.3). Instead, their compilers emit a wasm32 WebAssembly module, and a translator turns the module into NICE assembly. Clang can do the same for C code that needs 8-bit bytes. These rules say how a module maps onto NICE, so that translated code, C code, and assembly code can work together.
+
+The WebAssembly specification defines what each wasm instruction does. A translator must keep those results, except where this section says otherwise. Which wasm features a translator supports is up to the translator, and its README must list them. A program contains at most one wasm module.
+
+**Values.**
+
+| Wasm type | Words | Same as the C type (§9.3) |
+|---|---|---|
+| `i32` | 1 | `int` or `unsigned int` |
+| `i64` | 2 | `long long` or `unsigned long long` |
+| `f32` | 1 | `float` |
+| `f64` | 2 | `double` |
+
+**Linear memory.** Linear memory is byte-addressed. It is stored four bytes to a word, starting at a word address chosen by the translator:
+
+- Byte address *b* is bits 8·(*b* mod 4) + 7 to 8·(*b* mod 4) of the word at `MEMBASE` + ⌊*b* / 4⌋. Byte 0 of a word is its least significant byte, as in `.ASCII_B` (§10.3).
+- Wasm is little-endian, so an `i32` at a byte address that is a multiple of 4 is exactly one NICE word. An `i64` there is two words, low word first, as in §9.3.
+- The translator reserves enough words for the module's maximum memory size, or for a limit it chooses if the module sets none. A page is 65536 bytes, or 16384 words. `memory.grow` returns −1 if the new size would pass the reservation.
+- Active data segments are part of the program image, like C static data (§9.3).
+- The label `___wasm_memory` is `MEMBASE`, so C code can declare the memory as `extern unsigned __wasm_memory[];`.
+
+Memory accesses must give the results wasm defines:
+
+- An access may be at any byte address. The alignment hint in the instruction is not a promise, so an access that crosses a word boundary must still work. A translator may use a faster path when the address turns out to be a multiple of 4.
+- A store of fewer than 32 bits reads the word, changes the bytes, and writes it back.
+- An access that goes past the end of the current memory size traps. A translator may offer an option to leave out these checks. Then such an access uses the word that the formula above gives, wrapping modulo 2³².
+
+**Hardware access.** Linear memory cannot reach I/O devices or the rest of NICE memory. A module reaches them through these imports from the module `nice`. The translator replaces each call with the instruction shown:
+
+| Import | Wasm type | Code |
+|---|---|---|
+| `nice.peek` | `(i32) -> i32` | `MOVE R1, @R1`: read the NICE word at the given word address. |
+| `nice.poke` | `(i32, i32) -> ()` | `MOVE @R1, R2`: write the second argument to the NICE word at the first. |
+
+In Rust, they are declared in an `extern "C"` block with `#[link(wasm_import_module = "nice")]`.
+
+**Functions and calls.** A wasm function is a §9.3 function whose parameter and result types are the C types in the table above:
+
+- Parameters go in R1–R4 and on the stack, by the §9.3 rules for a function that is not variadic.
+- Results go in registers by the same rules that would apply if they were arguments. A function with no result returns nothing. The translator rejects a function type whose results do not all fit in R1–R4.
+- R7–R13 and SR's I, E, and VBASE are preserved, as in §9.3.
+- Wasm locals and the wasm operand stack live in registers and in the function's frame on the NICE stack (R13).
+
+The module's own stack is separate. Compilers for wasm keep the variables whose address is taken in linear memory, below the global `__stack_pointer`. That stack is ordinary module data, and the translator gives it no special treatment.
+
+**Globals.** Each global is one word, or two for `i64` and `f64`, at a fixed address chosen by the translator. It starts with the value the module gives it.
+
+**Tables and indirect calls.**
+
+- Each entry of table 0 is two words: the address of a function, and a number for the function's type. Two types with the same parameters and results get the same number. An empty entry has address 0.
+- `call_indirect` traps if the index is past the end of the table, if the entry is empty, or if its type number differs from the type of the call. Otherwise it calls the address with the "through a register" sequence of §9.3.
+- A wasm function pointer is an index into this table, not a NICE address.
+
+**Traps.** A trap jumps to the label `__wasm_trap`, with a code in R1 and in R2 the address of the instruction that trapped:
+
+| R1 | Cause |
+|---|---|
+| 1 | `unreachable` |
+| 2 | Memory access out of bounds |
+| 3 | Integer division or remainder by zero |
+| 4 | Integer overflow: `div_s` of the most negative value by −1 |
+| 5 | Conversion of a float to an integer that cannot represent it |
+| 6 | `call_indirect`: index past the end of the table, or an empty entry |
+| 7 | `call_indirect`: type mismatch |
+
+`__wasm_trap` is part of the runtime, and the program may supply its own. The default one is a `HALT`. It never returns into the module.
+
+Running out of NICE stack is not detected, unlike in wasm. What happens then is undefined.
+
+**Imports and exports.**
+
+- An exported function or global whose name is a C identifier gets the label `_name`, as in §9.3. So C code calls an exported wasm function `sum` as `sum`. Other export names get no label.
+- A function imported from the module `env` is the §9.3 function `name`, at the label `_name`. Rust, Zig, and clang put their `extern` functions in `env` unless told otherwise.
+- The translator rejects imports from any module other than `env` and `nice`.
+- Labels that the translator makes for itself start with `W.`, for example `W.f12` for function 12. They cannot clash with C names, or with the C compiler's labels, which start with `L.`.
+
+**Pointers at the boundary with C.** A wasm pointer is a byte address in linear memory. A C pointer is a word address.
+
+- To pass a wasm pointer *p* to C, convert it to `__wasm_memory + p / 4`. This works only if *p* is a multiple of 4. C then sees the data packed four bytes to a word.
+- To pass C data to wasm, it must be in linear memory. The byte address of the word at C address *q* is (*q* − `__wasm_memory`) × 4.
+- Wasm code cannot reach C data outside linear memory, except through `nice.peek` and `nice.poke`.
+
+**Runtime routines.** The translator uses the §9.3 routines `__mul`, `__div`, `__mod`, `__udiv`, and `__umod` for `i32` arithmetic. It checks the cases that wasm defines but C leaves undefined before it calls them:
+
+- division or remainder by zero traps (code 3)
+- `div_s` of the most negative value by −1 traps (code 4)
+- `rem_s` of the most negative value by −1 is 0.
+
+Other runtime routines, for example for `i64` and floating point, also have names that start with `__`. The translator's README lists them.
+
+**Other differences from NICE.** Wasm takes shift and rotate counts modulo 32, or 64 for `i64`. NICE uses the full count (§5.2), so the translator must mask it first.
+
+**Start-up.** The start-up code is that of §9.3. If the module has a start function, the start-up code calls it before it calls `_main`. Rust and Zig code supply `main` as an exported function, for example `#[no_mangle] pub extern "C" fn main() -> i32` in Rust or `export fn main() i32` in Zig.
+
+**Example.** With R1 holding a byte address *b*, and no bounds check:
+
+    ; i32.load8_u
+            SHR  R5, R1, 2               ; word index b / 4
+            MOVE R5, @___wasm_memory[R5] ; the word that holds byte b
+            AND  R6, R1, 3               ; b mod 4
+            SHL  R6, R6, 3               ; bit position 8 * (b mod 4)
+            SHR  R5, R5, R6
+            AND  R1, R5, 0xFF
+
+    ; i32.load, when b is a multiple of 4
+            SHR  R5, R1, 2
+            MOVE R1, @___wasm_memory[R5]
 
 ## 10. Assembler syntax
 

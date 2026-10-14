@@ -38,4 +38,4 @@ These record how each ISA decision was reached. [ISA.md](ISA.md) supersedes them
 - [review/emulator-and-webpage-review.md](review/emulator-and-webpage-review.md): what the 2004 web page and emulator resolve and contradict, and the emulator's bugs.
 - [review/abi-review.md](review/abi-review.md): the review of the C ABI and the WebAssembly mapping, ISA.md §9.3 and §9.4.
 
-The tools were reviewed the same way: [review/assembler-review.md](review/assembler-review.md), [review/emulator-review.md](review/emulator-review.md), and [review/cputest-review.md](review/cputest-review.md). Where a tool review led to a new rule in ISA.md, Appendix B lists it.
+The tools were reviewed the same way: [review/assembler-review.md](review/assembler-review.md), [review/emulator-review.md](review/emulator-review.md), [review/cputest-review.md](review/cputest-review.md), and the wasm path twice, [review/wasm-review.md](review/wasm-review.md) and [review/second-wasm-review.md](review/second-wasm-review.md). Where a tool review led to a new rule in ISA.md, Appendix B lists it.

@@ -18,6 +18,13 @@ Finally `test/errors.py` checks the error messages and exit statuses of the
 command line and the loader. The probes are assembled with niceasm, and
 `make bins` reassembles them after a change.
 
+`test/cputest.asm` is a self-checking test of the whole instruction set:
+every opcode, shift, addressing mode, and condition, the flags, R0, R14, and
+R15, skipped instructions, `INT`, and `RTI`. It halts at the first check
+that fails, with the check's number in R12 and R11 = 0. If every check
+passes, it halts with R11 = `0x600D`. It needs no emulator options or I/O, so
+the FPGA core can run it too.
+
 ## Usage
 
     niceemu [options] program.bin

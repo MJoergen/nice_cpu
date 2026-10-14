@@ -70,4 +70,5 @@ The first test vectors are the three example programs from 2004 (`count`,
 `replicate`, and `print`). The assembler reproduces their original `.bin`
 files byte for byte, and the emulator's results for them were checked by
 hand. Both tools also have probe programs for single rules of the ISA and a
-script that checks every error message.
+script that checks every error message. `emulator/test/cputest.asm` checks
+the whole instruction set by itself, and is meant for the FPGA core as well.

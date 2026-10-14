@@ -19,7 +19,7 @@ OPTS_wrap      = -d 0xffffffff:1
 
 # Probes of single rules of doc/ISA.md, in test/X.asm. The expected values
 # are in the comments of each program. Run make bins after changing one.
-PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start
+PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1

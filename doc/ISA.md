@@ -589,7 +589,7 @@ The WebAssembly specification defines what each wasm instruction does. A transla
 
 - The translator is given a name for it, which is a C identifier. The labels the translator makes for itself start with `WL.name.` instead of `W.`, for example `WL.float.f3`, so that the labels of two library modules cannot clash.
 - Each exported function gets the label `_name`, including when the name starts with `_`. So the export `__divdi3` gets the label `___divdi3`.
-- It has no start function, and it uses neither `memory.size` nor `memory.grow`. The translator rejects one that does, and it emits no `___wasm_start`.
+- It has no start function, it does not export `__wasm_call_ctors`, and it uses neither `memory.size` nor `memory.grow`. The translator rejects one that does, and it emits no `___wasm_start`.
 - Its memory and its globals are its own, separate from those of the program's module. Compilers use them for a stack, for example to pass 128-bit values. The memory is at the label `WL.name.memory`. Its words are part of the program image, with the values that its data segments give and 0 elsewhere, like C static data (§9.3).
 - The translator reserves only the start of the memory, as much as the module's stack and data need. It chooses the size, for example from the initial value of the stack pointer. A whole page of 16384 words would cost more RAM than the routines themselves. An access past the reserved part traps as out of bounds (code 2), unless the bounds checks are left out.
 
@@ -672,6 +672,7 @@ Running out of NICE stack is not detected, unlike in wasm. What happens then is 
 
 - An exported function or global whose name is a C identifier gets the label `_name`, as in §9.3. So C code calls an exported wasm function `sum` as `sum`. Names that start with `_` are reserved for the runtime library (§9.3), so they get no label, and neither do names that are not C identifiers.
 - A function imported from the module `env` is the §9.3 function `name`, at the label `_name`. Rust, Zig, and clang put their `extern` functions in `env` unless told otherwise.
+- The translator rejects an import from `env` whose name starts with `_`. Such names are reserved for the runtime library (§9.3), and the translator calls the routines it needs itself. Clang imports them for routines that the runtime library does not have, such as `__multi3` for `__int128` and `__addtf3` for `long double`.
 - The translator accepts only function imports from `env`, and only `peek` and `poke` from `nice`. It rejects every other import. This includes imported globals, memories, and tables, such as those that `--import-memory` or position-independent code produce.
 - Labels that the translator makes for itself start with `W.`, for example `W.f12` for function 12. They cannot clash with C names, or with the C compiler's labels, which start with `L.`.
 
@@ -701,7 +702,7 @@ The routines for `i64` and floating point are in the same library and listed in 
 **Start-up.** The start-up code is that of §9.3. For a program with a wasm module, it calls `___wasm_start` before `_main`.
 
 - The translator always emits `___wasm_start`, a §9.3 function with no arguments and no result. First it sets the memory to 0, as described under Linear memory. Then it calls the module's start function, if there is one. Then it calls `__wasm_call_ctors`, if the module exports a function of that name. Otherwise it just returns. The name starts with `_`, so the export gets no label of its own (see Imports and exports), and the translator calls it by its `W.` label.
-- Clang, Rust, and Zig emit no start function. Clang puts the calls to C++ constructors and `__attribute__((constructor))` functions in `__wasm_call_ctors`, so link with `--export=__wasm_call_ctors` to have them run. Rust and Zig need neither.
+- Clang, Rust, and Zig emit no start function. Clang puts the calls to C++ constructors and `__attribute__((constructor))` functions in `__wasm_call_ctors`. Link with `--export=__wasm_call_ctors`, so that `___wasm_start` calls it once. Without the export, wasm-ld wraps each exported function in one that calls `__wasm_call_ctors` first, so the constructors run again on each call of an exported function. Rust and Zig need neither.
 - Rust and Zig code supply `main` as an exported function, for example `#[no_mangle] pub extern "C" fn main() -> i32` in Rust or `export fn main() i32` in Zig.
 - Clang and Zig both rename a `main` with no parameters to `__original_main`, and export a wrapper `main` of type `(i32, i32) -> i32` that ignores its arguments and calls it. So `_main` is the wrapper, and `__original_main` gets no label.
 

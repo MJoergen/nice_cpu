@@ -36,8 +36,8 @@
      \item In 2006, its 16 bit descendant QNICE (``Quite NICE'') followed
       \cite{qnice}. QNICE runs on FPGAs today.
      \item This project gives NICE a complete specification, an assembler,
-      an emulator, and a runtime library -- and next, an FPGA
-      implementation.
+      an emulator, a runtime library, a WebAssembly translator, and a
+      first FPGA core -- and next, a faster one.
      \item This introduction explains NICE step by step. It assumes you
       know what a register and a memory address are, and nothing more.
     \end{itemize}
@@ -813,8 +813,8 @@ ISR     MOVE    @CONSOLE, 0x2A          ; print '*'
     \item \code{translator/}: \code{nicewasm}, which translates
      WebAssembly into NICE assembly. That way, C, Rust, and Zig programs
      can run on NICE.
-    \item \code{hdl/}: The FPGA implementation in VHDL, which is just
-     starting.
+    \item \code{hdl/}: The FPGA implementation in VHDL. So far a simple
+     multi-cycle core, checked against the emulator.
    \end{itemize}
   \end{frame}
 %
@@ -904,12 +904,14 @@ Stopped at the step limit after 8 steps, PC=00000004
      \begin{itemize}
       \item a complete specification of the instruction set,
       \item an assembler and an emulator,
-      \item a runtime library, and
+      \item a runtime library,
       \item a WebAssembly translator, so that C, Rust, and Zig programs
-       can run on the emulator.
+       can run on the emulator, and
+      \item a simple multi-cycle FPGA core, which writes the same trace
+       as the emulator for every test program.
      \end{itemize}
-    \item Next comes the \textbf{FPGA implementation}. It will run the
-     emulator's test programs and write the same trace.
+    \item Next comes the \textbf{pipelined FPGA core}: faster, and
+     checked against the emulator in the same way.
     \item A C compiler that targets NICE directly would be great, too.
      The calling convention for one is already in \code{doc/ISA.md}.
    \end{itemize}

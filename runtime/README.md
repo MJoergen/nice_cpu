@@ -77,7 +77,8 @@ translated by `nicewasm --library float`. Its routines take and return the
 bits of the numbers, an `f32` in one word and an `f64` in two, low word
 first, by the rules of §9.3. Most come unchanged from Zig's compiler_rt.
 `float.zig` adds those whose meaning differs from C's, or that compiler_rt
-has only with float instructions inside.
+has only with float instructions inside. It also has its own division,
+because compiler_rt's gives 0 when the quotient is subnormal.
 
 | Labels | Result |
 |---|---|
@@ -96,7 +97,7 @@ has only with float instructions inside.
 
 The routines use the words `WL.float.memory` as their own stack, 256
 words that are part of the program image. Assembled, `float.asm` is about
-30800 words.
+29600 words.
 
 `make float` rebuilds `float.wasm` from `float.zig`. It needs Zig 0.15,
 whose compiler_rt sources it copies next to `float.zig`. The routines must

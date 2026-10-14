@@ -1053,8 +1053,12 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
             f32(0x7FC00000) + f32(0x3F800000) + fop(0x60) + EQZ,                    # NaN >= 1 is 0
             f32(0x40400000) + f32(0x40000000) + fop(0x5E),                          # 3 > 2
             f32(0x7FC00000) + f32(0x3F800000) + fop(0x5D) + EQZ,                    # NaN < 1 is 0
+            # Quotients near the subnormals: (2^-126)(2 - 2^-23) / 2 rounds
+            # up to the smallest normal, 2^-126, and 2^-126 / 2 = 2^-127.
+            bits32(f32(0x00FFFFFF) + f32(0x40000000) + fop(0x95), 0x00800000),
+            bits32(f32(0x00800000) + f32(0x40000000) + fop(0x95), 0x00400000),
             # A check that fails.
-            bits32(f32(0x3F800000) + f32(0x40000000) + fop(0x92), 0x40000000))))), "", 0x3FFFFFFE),
+            bits32(f32(0x3F800000) + f32(0x40000000) + fop(0x92), 0x40000000))))), "", 0xFFFFFFFE),
     # The same for f64. 0.1 = 0x3FB999999999999A, 0.2 = 0x3FC999999999999A,
     # 1e10 = 0x4202A05F20000000, 1/3 = 0x3FD5555555555555.
     ("float64", module(
@@ -1086,8 +1090,14 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
             f64(0x7FF8000000000000) + f64(0x7FF8000000000000) + fop(0x62),          # NaN != NaN
             f64(0x7FF8000000000000) + f64(0x3FF0000000000000) + fop(0x65) + EQZ,    # NaN <= 1 is 0
             f64(0x4000000000000000) + f64(0x4000000000000000) + fop(0x66),          # 2 >= 2
+            # Subnormal quotients: 1 / DBL_MAX = 2^-1024 (1 + 2^-53 + ...),
+            # which is 2^-1024 after rounding, and 3 * 2^-1074 / 2 = 1.5 *
+            # 2^-1074, a tie that goes to the even 2 * 2^-1074.
+            bits64(f64(0x3FF0000000000000) + f64(0x7FEFFFFFFFFFFFFF) + fop(0xA3),
+                   0x0004000000000000),
+            bits64(f64(3) + f64(0x4000000000000000) + fop(0xA3), 2),
             # A check that fails.
-            bits64(f64(0x4000000000000000) + fop(0x9F), 0x3FF6A09E667F3BCE))))), "", 0x1FFFE),
+            bits64(f64(0x4000000000000000) + fop(0x9F), 0x3FF6A09E667F3BCE))))), "", 0x7FFFE),
     # Conversions, one bit each. MIN is -2^31.
     ("floatconv", module(
         types(MAIN_TYPE),

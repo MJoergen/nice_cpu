@@ -4,7 +4,8 @@
 //! "float" (§9.4) into float.asm. See README.md for how to rebuild it.
 //!
 //! Most routines come unchanged from Zig's compiler_rt, which the build
-//! copies next to this file: the arithmetic, the comparisons, and the
+//! copies next to this file: addition, subtraction, multiplication, the
+//! comparisons, and the
 //! conversions from integers and between f32 and f64. They keep their
 //! usual names, such as __addsf3. This file adds the routines whose
 //! meaning differs from C's or that compiler_rt does not have, all written
@@ -13,6 +14,8 @@
 //! - __fixsfsi and the other conversions to integers saturate, and give 0
 //!   for a NaN, as wasm's trunc_sat does. C leaves these cases undefined,
 //!   so the same routines serve C.
+//! - __divsf3 and __divdf3, because compiler_rt's give 0 for a result
+//!   that is subnormal. These round it correctly.
 //! - __sqrtsf, __ceilsf, __floorsf, __truncsf, __nearestsf, __minsf, and
 //!   __maxsf, and the same with df for f64, as wasm defines them.
 //!
@@ -27,11 +30,9 @@ comptime {
     _ = @import("compiler_rt/addsf3.zig");
     _ = @import("compiler_rt/subsf3.zig");
     _ = @import("compiler_rt/mulsf3.zig");
-    _ = @import("compiler_rt/divsf3.zig");
     _ = @import("compiler_rt/adddf3.zig");
     _ = @import("compiler_rt/subdf3.zig");
     _ = @import("compiler_rt/muldf3.zig");
-    _ = @import("compiler_rt/divdf3.zig");
     _ = @import("compiler_rt/cmpsf2.zig");
     _ = @import("compiler_rt/gesf2.zig");
     _ = @import("compiler_rt/cmpdf2.zig");
@@ -272,4 +273,86 @@ export fn __sqrtsf(x: u32) u32 {
 }
 export fn __sqrtdf(x: u64) u64 {
     return sqrt(f64, x);
+}
+
+// Division, rounded to nearest, ties to even, also when the result is
+// subnormal.
+
+fn div(comptime T: type, a: Layout(T).Bits, b: Layout(T).Bits) Layout(T).Bits {
+    const L = Layout(T);
+    const nan = L.inf | L.quiet;
+    if (L.isNan(a)) return a | L.quiet;
+    if (L.isNan(b)) return b | L.quiet;
+    const sign = (a ^ b) & L.sign;
+    const ma0 = a & ~L.sign;
+    const mb0 = b & ~L.sign;
+    if (ma0 == L.inf) return if (mb0 == L.inf) nan else sign | L.inf;
+    if (mb0 == L.inf) return sign;
+    if (mb0 == 0) return if (ma0 == 0) nan else sign | L.inf;
+    if (ma0 == 0) return sign;
+    // Each operand is m * 2^(e - mant), with bit mant the top bit of m.
+    var ma = ma0;
+    var mb = mb0;
+    const ea = normalize(T, &ma);
+    const eb = normalize(T, &mb);
+    // The quotient is (ma / mb) * 2^e. Make ma / mb lie in [1, 2).
+    var e = ea - eb;
+    if (ma < mb) {
+        ma <<= 1;
+        e -= 1;
+    }
+    // q = floor(ma / mb * 2^(mant + 2)), bit by bit, so it has mant + 3
+    // bits: the significand and two more. The remainder r is the sticky
+    // part. r < 2 * mb, so it never overflows.
+    var q: L.Bits = 0;
+    var r = ma;
+    var i: u32 = 0;
+    while (i < L.mant + 3) : (i += 1) {
+        q <<= 1;
+        if (r >= mb) {
+            r -= mb;
+            q |= 1;
+        }
+        r <<= 1;
+    }
+    var field = e + L.bias; // the biased exponent of the result
+    if (field >= 2 * L.bias + 1) return sign | L.inf;
+    // Shift q right by 2, or more for a subnormal result, whose field is
+    // 1 with no implicit bit. A shift of mant + 4 or more leaves only the
+    // sticky part.
+    const sh: u32 = @intCast(@min(2 + @max(1 - field, 0), L.mant + 4));
+    if (field < 1) field = 1;
+    var f = q >> @intCast(sh);
+    const guard = (q >> @intCast(sh - 1)) & 1 != 0;
+    const sticky = q & ((@as(L.Bits, 1) << @intCast(sh - 1)) - 1) != 0 or r != 0;
+    if (guard and (sticky or f & 1 != 0)) f += 1;
+    // For a normal result, f has the implicit bit, which adds 1 to the
+    // field. A carry out of the significand, or out of a subnormal into
+    // the smallest normal, then gives the right field too.
+    const mag = (@as(L.Bits, @intCast(field - 1)) << L.mant) + f;
+    return sign | @min(mag, L.inf);
+}
+
+/// Shifts the significand of a finite x other than 0 so that its top bit
+/// is bit mant, and returns its unbiased exponent.
+fn normalize(comptime T: type, m: *Layout(T).Bits) i32 {
+    const L = Layout(T);
+    var field: i32 = @intCast(m.* >> L.mant);
+    if (field == 0) {
+        field = 1;
+        while (m.* & (@as(L.Bits, 1) << L.mant) == 0) {
+            m.* <<= 1;
+            field -= 1;
+        }
+    } else {
+        m.* = (m.* & L.frac) | (@as(L.Bits, 1) << L.mant);
+    }
+    return field - L.bias;
+}
+
+export fn __divsf3(a: u32, b: u32) u32 {
+    return div(f32, a, b);
+}
+export fn __divdf3(a: u64, b: u64) u64 {
+    return div(f64, a, b);
 }

@@ -51,6 +51,87 @@ To assemble and run a program:
 The emulator's `--trace` option prints one line per instruction, in a format
 meant for comparing the FPGA core with the emulator.
 
+## Toolchain
+
+There are four tools. Three run on the host, and one is NICE assembly that
+is joined into every program. Each follows one part of
+[doc/ISA.md](doc/ISA.md).
+
+| Tool | Where | Written in | Reads | Writes | Follows |
+|---|---|---|---|---|---|
+| `niceasm`, the assembler | [assembler/niceasm.py](assembler/niceasm.py) | Python 3, standard library only | `.asm` | `.bin` | ISA.md §10 |
+| `niceemu`, the emulator | [emulator/](emulator/) | Zig 0.15 | `.bin` | Console output, the registers, memory dumps, and a trace | ISA.md §1–8 |
+| The runtime library | [runtime/](runtime/) | NICE assembly | | | ISA.md §9.3 and §9.4 |
+| `nicewasm`, the wasm translator | [translator/nicewasm.py](translator/nicewasm.py) | Python 3, standard library only | `.wasm` | `.asm` | ISA.md §9.4 |
+
+A program is built in these steps. There is no linker. The pieces are
+assembly files, joined with `cat` in the order ISA.md §9.3 gives, and the
+whole program is assembled at once.
+
+    prog.c, prog.zig, or prog.rs
+        |  clang, zig, or rustc, with a wasm32 target
+        v
+    prog.wasm
+        |  translator/nicewasm.py
+        v
+    prog.asm
+        |
+        |  cat, in this order: runtime/start_wasm.asm (or start.asm for a
+        |  program with no wasm module), hand-written .asm files, prog.asm,
+        |  and runtime/lib.asm
+        v
+    full.asm
+        |  assembler/niceasm.py
+        v
+    full.bin
+        |  emulator/zig-out/bin/niceemu, or later the FPGA core
+        v
+    console output, the registers, and an exit status
+
+A hand-written program that does not use the runtime library needs only
+the last two steps, as in the quick start above. The
+[translator README](translator/README.md) gives the exact clang and Zig
+command lines for the first step, and the [runtime README](runtime/README.md)
+the join.
+
+**How the tools use each other.**
+
+- `niceemu` runs the `.bin` files that `niceasm` writes. Its probe programs
+  are assembled with `niceasm` (`make bins`), and its tests also run the
+  assembler's example programs.
+- The runtime library's start-up code calls `_main`, and `start_wasm.asm`
+  first calls the `___wasm_start` that `nicewasm` emits. Translated code
+  calls `__mul` in `lib.asm` for `i32.mul`, and traps through
+  `___wasm_trap_vector`. A C compiler for NICE would call the same
+  routines.
+- The tests of the runtime use `niceasm` and `niceemu`. The tests of
+  `nicewasm` use all three other tools: they translate each module, join it
+  with the runtime, assemble it, and run it.
+- The `.bin` format is the text format of the 2004 `NICE.pm` assembler, so
+  its example binaries can be compared directly.
+- The FPGA core will take the place of `niceemu` at the end of the
+  pipeline. `emulator/test/cputest.asm` and the `--trace` format are there
+  to compare the two.
+
+**Compilers.** No compiler targets NICE directly yet. ISA.md §9.3 defines
+the C ABI for one, with a one-word `char` and `CHAR_BIT` = 32. Until there
+is one, compiled code reaches NICE through WebAssembly: clang (with
+`wasm-ld`), Zig, and Rust all have a wasm32 target, and `nicewasm`
+translates the module. That gives C code the 8-bit bytes of wasm linear
+memory, which Rust and Zig need anyway. GCC has no wasm32 target and no
+NICE target, so it is not used. Clang and Zig are tested; Rust has not been
+tried.
+
+**Host tools.** Python 3 runs `niceasm`, `nicewasm`, and the test scripts.
+Nothing beyond the standard library is needed, and `make typecheck` checks
+the Python with `mypy --strict` if mypy is installed. Zig 0.15 builds
+`niceemu` and compiles the Zig test modules. clang with the wasm32 target
+and `wasm-ld` are needed only for `make wasm` in `translator/`, which
+rebuilds the compiled test modules; their `.wasm` files are checked in, so
+`make test` needs no C compiler. The tests use `make`, `cat`, `cmp`, and
+`diff`. GitHub Actions runs every `make test` and `make typecheck` on each
+push.
+
 ## The specification
 
 [doc/ISA.md](doc/ISA.md) covers the programmer's model, the instruction

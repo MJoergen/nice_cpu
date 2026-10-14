@@ -14,6 +14,9 @@ const usage =
     \\  -s, --screen         Print the 80x25 character screen at 0x400.
     \\  -d, --dump ADDR:N    Print N memory words from ADDR. May be repeated.
     \\  -n, --max-steps N    Stop after N steps (default 100000000).
+    \\      --irq STEP:VEC   Raise IRQ with vector VEC before step STEP.
+    \\      --nmi STEP:VEC   Raise NMI with vector VEC before step STEP.
+    \\                       Both may be repeated. Steps count from 0.
     \\  -h, --help           Print this help.
     \\
     \\Numbers may be decimal or 0x hex. Exit status: 0 after HALT, 1 on a
@@ -30,11 +33,24 @@ const screen_height = 25;
 
 const Dump = struct { addr: u32, len: u32 };
 
+/// An interrupt request raised from the command line, before step `step`.
+const Request = struct {
+    step: u64,
+    kind: enum { irq, nmi },
+    vector: u8,
+
+    fn before(_: void, a: Request, b: Request) bool {
+        return a.step < b.step;
+    }
+};
+
 const Options = struct {
     path: []const u8,
     trace: bool = false,
     screen: bool = false,
     dumps: []const Dump = &.{},
+    /// Sorted by step, in command-line order within a step.
+    requests: []const Request = &.{},
     max_steps: u64 = 100_000_000,
     help: bool = false,
 };
@@ -93,10 +109,11 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
     const args = try std.process.argsAlloc(arena);
     var opts: Options = .{ .path = "" };
     var dumps: std.ArrayList(Dump) = .empty;
+    var requests: std.ArrayList(Request) = .empty;
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps" }) |o| {
+        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "--irq", "--nmi" }) |o| {
             if (std.mem.eql(u8, arg, o)) break true;
         } else false;
         const value = if (takes_value) blk: {
@@ -121,6 +138,14 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
             });
         } else if (std.mem.eql(u8, arg, "-n") or std.mem.eql(u8, arg, "--max-steps")) {
             opts.max_steps = try parseNumber(u64, arg, value);
+        } else if (std.mem.eql(u8, arg, "--irq") or std.mem.eql(u8, arg, "--nmi")) {
+            const colon = std.mem.indexOfScalar(u8, value, ':') orelse
+                return fail("{s} wants STEP:VEC, not '{s}'", .{ arg, value });
+            try requests.append(arena, .{
+                .step = try parseNumber(u64, arg, value[0..colon]),
+                .kind = if (std.mem.eql(u8, arg, "--irq")) .irq else .nmi,
+                .vector = try parseNumber(u8, arg, value[colon + 1 ..]),
+            });
         } else if (arg.len > 1 and arg[0] == '-') {
             return fail("unknown option '{s}'\n\n{s}", .{ arg, usage });
         } else if (opts.path.len != 0) {
@@ -131,6 +156,10 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
     }
     if (opts.path.len == 0) return fail("no program given\n\n{s}", .{usage});
     opts.dumps = dumps.items;
+    // Insertion sort is stable, so of two requests of one kind at one step
+    // the later one wins (they merge, ISA.md §7.1).
+    std.sort.insertion(Request, requests.items, {}, Request.before);
+    opts.requests = requests.items;
     return opts;
 }
 
@@ -196,7 +225,15 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
     if (opts.trace) cpu.trace = out;
     // A step is one instruction, or the entry into an interrupt.
     var steps: u64 = 0;
+    var next: usize = 0;
     while (!cpu.halted() and steps < opts.max_steps) : (steps += 1) {
+        while (next < opts.requests.len and opts.requests[next].step == steps) : (next += 1) {
+            const r = opts.requests[next];
+            switch (r.kind) {
+                .irq => cpu.requestIrq(r.vector),
+                .nmi => cpu.requestNmi(r.vector),
+            }
+        }
         try cpu.step();
     }
 

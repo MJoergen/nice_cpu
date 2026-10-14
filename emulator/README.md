@@ -39,6 +39,8 @@ the address after the halting instruction.
 | `-s`, `--screen` | After halting, print the 80×25 character screen at `0x400`. |
 | `-d`, `--dump ADDR:N` | After halting, print N memory words from ADDR. May be repeated. |
 | `-n`, `--max-steps N` | Stop after N steps. The default is 100000000. |
+| `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
+| `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
 | `-h`, `--help` | Print the usage on stdout. |
 
 The exit status is 0 after `HALT`, 2 after any other halt (a reserved control
@@ -70,8 +72,14 @@ touches. Nothing is mapped at the I/O addresses `0xFFFFFF00`–`0xFFFFFFFF`
 yet: they are ordinary memory.
 
 The core (`src/cpu.zig`) implements IRQ, NMI, `INT`, and `RTI` (ISA.md §7).
-No device raises IRQ or NMI yet; the unit tests call `requestIrq` and
-`requestNmi` directly.
+No device raises IRQ or NMI yet. Instead, `--irq` and `--nmi` raise a request
+at a chosen step, counted from 0 as in the step count that niceemu prints.
+`--nmi 0:5` makes an NMI pending at reset. A request is raised whether or not
+it can be taken. If it cannot, it stays pending, as ISA.md §7.1 says, and a
+request still pending at a halt is never taken. Two requests of one kind
+raised at the same step merge, and the vector given last wins. Requests for
+steps after the processor halts are never raised. The probes `test/irq.asm`
+and `test/merge.asm` show each rule.
 
 ## Trace format
 

@@ -31,6 +31,13 @@ CASES: List[Tuple[List[str], Optional[str], str]] = [
     (["--dump", "10", "BIN"], "00000000 0c000000", "niceemu: --dump wants ADDR:N, not '10'"),
     (["-d", ":5", "BIN"], "00000000 0c000000", "niceemu: -d: bad number ''"),
     (["-d", "0:0x100000000", "BIN"], "00000000 0c000000", "niceemu: -d: '0x100000000' is larger than 4294967295"),
+    (["BIN", "--irq"], "00000000 0c000000", "niceemu: --irq needs a value"),
+    (["--irq", "5", "BIN"], "00000000 0c000000", "niceemu: --irq wants STEP:VEC, not '5'"),
+    (["--nmi", "5", "BIN"], "00000000 0c000000", "niceemu: --nmi wants STEP:VEC, not '5'"),
+    (["--irq", "x:1", "BIN"], "00000000 0c000000", "niceemu: --irq: bad number 'x'"),
+    (["--nmi", "-1:1", "BIN"], "00000000 0c000000", "niceemu: --nmi: bad number '-1'"),
+    (["--irq", "0:256", "BIN"], "00000000 0c000000", "niceemu: --irq: '256' is larger than 255"),
+    (["--nmi", "0:", "BIN"], "00000000 0c000000", "niceemu: --nmi: bad number ''"),
     (["does-not-exist.bin"], None, "niceemu: cannot read does-not-exist.bin: FileNotFound"),
     # Loader
     (["BIN"], "", "BIN: error: no words to load"),

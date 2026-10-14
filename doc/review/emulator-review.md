@@ -198,3 +198,9 @@ The streaming-stdout change also holds: `(niceemu x.bin; echo) > log` keeps all 
 
 - `niceemu -t x.bin | head -2` ends with `error: WriteFailed` on stderr and exit status 1 once `head` closes the pipe. Catch `error.WriteFailed` in `main` and exit quietly, as other filters do.
 - The README's `make` comment still says "unit tests, then the example programs"; the probes and `test/errors.py` run too, and the latter needs Python 3.
+
+## 8. Third round, commit 6199dd8
+
+Checked on 2026-10-14. `make test` passes (28 error cases). Both nits of §7.2 are fixed: `niceemu -t x.bin | head -1` ends with status 141 and nothing on stderr, `niceemu x.bin > /dev/full` prints `niceemu: cannot write the output: NoSpaceLeft` with status 1, and the README names Python 3 and the full `make test` contents.
+
+One nit left: `-h` writes the usage with a plain `try writeAll`, so a closed pipe there would still surface as a raw `error: BrokenPipe` rather than go through `outputFailed`. Harmless in practice, since the usage is 600 bytes.

@@ -32,39 +32,79 @@ order of ISA.md §9.3. For example, for C code compiled with clang:
 And for Zig:
 
     zig build-exe -target wasm32-freestanding -fno-entry -rdynamic -O ReleaseSmall \
-        --stack 4096 --initial-memory=65536 prog.zig
+        -fstrip --stack 4096 --initial-memory=65536 prog.zig
 
-The memory options keep start-up short. nicewasm reserves the module's
-initial memory with `.RES`, so the memory is not in the `.bin` file, but
+`-fstrip` drops the DWARF sections, which make up almost all of a
+ReleaseSafe or Debug module. nicewasm ignores them, but they make the
+file large. Do not use `-fno-llvm`: Zig 0.15's own wasm backend encodes
+the initial value of `__stack_pointer` wrongly, so every stack access is
+out of bounds.
+
+The memory options keep the memory small. nicewasm reserves the module's
+initial memory with `.RES`, so the memory is not in the `.bin` file, and
 `___wasm_start` sets it to 0. That takes 18 steps for every 16 words, or
-18434 steps for one page. Without the options, clang asks for 2 pages and
-Zig for 16, which take 36866 and 294914 steps.
+18434 steps for one page. The emulator runs about 70 million steps per
+second, so even Zig's default of 16 pages, or 17 with data, is cleared
+in a few milliseconds. The real cost is space: each page is 16384 words, which an
+FPGA system with little RAM may not have. Without the options, clang asks
+for 2 pages and Zig for 16 or more.
+
+## Target
+
+nicewasm aims at the default wasm32 feature set of Zig 0.15:
+`bulk-memory-opt`, `call-indirect-overlong`, `extended-const`,
+`multivalue`, `mutable-globals`, `nontrapping-fptoint`, and `sign-ext`.
+Clang's default set is a subset of it. A module built with
+`-mcpu=mvp` needs none of them. So far nicewasm decodes the `0xFC`
+instructions of `bulk-memory-opt` and `nontrapping-fptoint` only to name
+them in an error. It accepts only an `i32.const` or `i64.const` as a
+global's initial value, not the expressions of `extended-const`.
+
+Every Zig program built with ReleaseSafe or Debug uses a table,
+`call_indirect`, `br_table`, `select`, `memory.copy`, and `memory.fill`,
+and it traps with `unreachable`, even if its source has no function
+pointers. So the next features are blocks and branches, memory accesses,
+then `call_indirect`.
 
 ## Supported features
 
-- **Types:** `i32` only, in function types, locals, and globals. A function
-  has at most one result.
-- **Instructions:** `nop`, `drop`, `return`, `call`, `local.get`,
-  `local.set`, `local.tee`, `global.get`, `global.set`, `i32.const`,
-  `i32.add`, `i32.sub`, `i32.mul`, `i32.and`, `i32.or`, and `i32.xor`.
-  `i32.mul` calls `__mul` in the runtime library.
+- **Types:** `i32` and `i64`, in function types, locals, and globals. A
+  function has at most one result. An `i64` takes two words, low word
+  first, and is passed in registers or on the stack by the rules of ISA.md
+  §9.3.
+- **Instructions:** `unreachable`, `nop`, `drop`, `return`, `call`,
+  `local.get`, `local.set`, `local.tee`, `global.get`, `global.set`,
+  `i32.const`, `i32.add`, `i32.sub`, `i32.mul`, `i32.and`, `i32.or`,
+  `i32.xor`, `i64.const`, `i64.add`, `i64.sub`, `i64.and`, `i64.or`,
+  `i64.xor`, `i32.wrap_i64`, `i64.extend_i32_s`, and `i64.extend_i32_u`.
+  `i32.mul` calls `__mul` in the runtime library. `unreachable` traps with
+  code 1 through `___wasm_trap_vector`, as ISA.md §9.4 says.
 - **Imports:** functions from `env`, whose names must be C identifiers. Each
   becomes a call to the label `_name`.
 - **Exports:** functions and globals get the label `_name`, as §9.4 says.
   Exporting an imported function is not supported.
-- **Globals:** mutable or not, with an `i32.const` initial value.
+- **Globals:** mutable or not, with an `i32.const` or `i64.const` initial
+  value. `global.set` on an immutable global is an error.
 - **Memory:** one memory, reserved at its initial size with `.RES` at
   `___wasm_memory`. No instruction reads or writes it yet.
 - **Start-up:** `___wasm_start` sets the memory to 0. Then it calls the
   start function, if there is one, and `__wasm_call_ctors`, if it is
   exported.
 - **Ignored:** tables (without element segments) and custom sections. The
-  name section only supplies function names for comments.
+  name section only supplies function names for comments. A name that is
+  not printable ASCII is left out, and so is any such character in the
+  input file's name, so that a comment cannot become code.
 
 Not supported yet: blocks, loops, branches, comparisons, the other `i32`
-operations, memory instructions, `unreachable` and the other traps,
-`call_indirect`, `nice.peek` and `nice.poke`, data and element segments,
-`i64`, `f32`, and `f64`.
+and `i64` operations, memory instructions, the `0xFC` instructions, the
+traps other than `unreachable`, `call_indirect`, `nice.peek` and
+`nice.poke`, data and element segments, library modules (ISA.md §9.4),
+`f32`, and `f64`.
+
+nicewasm checks the types on the operand stack as wasm validation does,
+so an invalid module is an error, not wrong code. Two exports with the
+same name are an error too, and so is a `__wasm_call_ctors` with
+parameters or results.
 
 ## How functions are translated
 
@@ -72,10 +112,12 @@ Each wasm function becomes a §9.3 function at the label `W.fN`, where N is
 its function index. It builds a §9.3 frame with FP (R12). The parameters
 that arrive in R1–R4 and the declared locals are copied into words below FP.
 The declared locals are set to 0, as wasm requires. Parameters on the stack
-stay where the caller put them. Each depth of the wasm operand stack has its
-own frame word, so every wasm instruction becomes NICE instructions on frame
-words. For example, `i32.add` is one `ADD` with three memory operands. The
-output has a comment for each wasm instruction.
+stay where the caller put them. nicewasm tracks the type of each value on
+the wasm operand stack, so each value has fixed frame words: one for an
+`i32`, two for an `i64`. Every wasm instruction becomes NICE instructions on
+frame words. For example, `i32.add` is one `ADD` with three memory
+operands, and `i64.add` is `ADD[M]` on the low words and `ADD[C]` on the
+high words. The output has a comment for each wasm instruction.
 
 The translated code itself uses only R1–R4, R12, R13, and R15, so R7–R11 keep their
 values across a call, as §9.3 requires.
@@ -88,7 +130,8 @@ values across a call, as §9.3 requires.
 
 `test/run.py` translates each test module and joins it with the runtime. It
 then assembles and runs the program. It checks main's result in R1, that
-R7–R13 are unchanged, and that the memory is not in the `.bin` file. Most modules are built byte by byte with `test/wasm.py`.
+R7–R13 are unchanged, and that the memory is not in the `.bin` file. A case
+that traps must instead halt at `___wasm_trap` with the trap code in R1. Most modules are built byte by byte with `test/wasm.py`.
 The others are compiled from `test/*.c` and `test/*.zig`. Their `.wasm` files
 are checked in, so `make test` needs no compiler. `make wasm` needs clang
 with the wasm32 target, `wasm-ld`, and Zig 0.15. `test/errors.py` checks

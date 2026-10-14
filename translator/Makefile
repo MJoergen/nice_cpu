@@ -28,7 +28,7 @@ wasm:
 	    -o test/$$t.wasm test/$$t.c || exit 1; \
 	done
 	@for t in $(ZIG_TESTS); do \
-	  $(ZIG) build-exe -target wasm32-freestanding -fno-entry -rdynamic -O ReleaseSmall \
+	  $(ZIG) build-exe -target wasm32-freestanding -fno-entry -rdynamic -O ReleaseSmall -fstrip \
 	    --stack 4096 --initial-memory=65536 -femit-bin=test/$$t.wasm test/$$t.zig || exit 1; \
 	done
 	@rm -f test/*.wasm.o

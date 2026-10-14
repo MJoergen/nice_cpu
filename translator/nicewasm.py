@@ -8,13 +8,14 @@ files, and the runtime library as section 9.3 describes.
 Usage: nicewasm.py [-o output.asm] input.wasm
 
 This is a first version: it supports only a few instructions and only the
-i32 type. README.md lists what it supports. Anything else is rejected with an
-error, never translated wrongly.
+i32 and i64 types. README.md lists what it supports. Anything else is
+rejected with an error, never translated wrongly.
 
 Each function keeps its locals and its wasm operand stack in its frame on
-the NICE stack, one word per value, addressed from FP (R12). Operand stack
-depth d is one fixed word, so every instruction is a few NICE instructions
-on frame words.
+the NICE stack, addressed from FP (R12). An i32 takes one word and an i64
+two, low word first. The operand stack holds the type of each value, so
+every value has a fixed place in the frame, and every instruction is a few
+NICE instructions on frame words.
 """
 
 from __future__ import annotations
@@ -30,6 +31,8 @@ I32, I64, F32, F64 = 0x7F, 0x7E, 0x7D, 0x7C
 TYPE_NAMES = {I32: "i32", I64: "i64", F32: "f32", F64: "f64", 0x7B: "v128",
               0x70: "funcref", 0x6F: "externref"}
 
+SIZES = {I32: 1, I64: 2}  # words per value of each supported type
+
 WORDS_PER_PAGE = 16384  # 65536 bytes, four to a word
 ZERO_UNROLL = 16        # words cleared per pass of ___wasm_start's loop; divides a page
 
@@ -38,6 +41,7 @@ ZERO_UNROLL = 16        # words cleared per pass of ___wasm_start's loop; divide
 SECTION_ORDER = [1, 2, 3, 4, 5, 13, 6, 7, 8, 9, 12, 10, 11]
 
 C_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+PRINTABLE = re.compile(r"[ -~]*\Z")  # text that may go in a comment
 
 # Opcode names, for comments in the output and for error messages.
 OPCODES: Dict[int, str] = {
@@ -85,8 +89,21 @@ for _first, _names in [
     for _i, _name in enumerate(_names.split()):
         OPCODES[_first + _i] = _name
 
+# The instructions after the 0xFC prefix, by their second opcode.
+FC_OPCODES = dict(enumerate(
+    "i32.trunc_sat_f32_s i32.trunc_sat_f32_u i32.trunc_sat_f64_s"
+    " i32.trunc_sat_f64_u i64.trunc_sat_f32_s i64.trunc_sat_f32_u"
+    " i64.trunc_sat_f64_s i64.trunc_sat_f64_u memory.init data.drop memory.copy"
+    " memory.fill table.init elem.drop table.copy table.grow table.size"
+    " table.fill".split()))
+
 # The i32 operations that are one NICE instruction: wasm opcode -> mnemonic.
 ALU_OPS = {0x6A: "ADD", 0x6B: "SUB", 0x71: "AND", 0x72: "OR", 0x73: "XOR"}
+
+# The same for i64, with the mnemonics for the low and the high word. The
+# carry or borrow passes from the low word to the high word (§5.1).
+ALU64_OPS = {0x7C: ("ADD[M]", "ADD[C]"), 0x7D: ("SUB[M]", "SUB[C]"),
+             0x83: ("AND", "AND"), 0x84: ("OR", "OR"), 0x85: ("XOR", "XOR")}
 
 
 class WasmError(Exception):
@@ -110,6 +127,7 @@ class Import:
 
 @dataclass
 class Global:
+    type: int
     mutable: bool
     init: int
 
@@ -197,8 +215,43 @@ def type_name(t: int) -> str:
 
 def check_types(types: List[int], what: str, offset: int) -> None:
     for t in types:
-        if t != I32:
-            raise WasmError(f"{what} has type {type_name(t)}; only i32 is supported yet", offset)
+        if t not in SIZES:
+            raise WasmError(f"{what} has type {type_name(t)}; only i32 and i64 are supported yet",
+                            offset)
+
+
+def words(value: int, t: int) -> List[str]:
+    """A constant of type t as its words, low word first, each a signed
+    32-bit number."""
+    out = []
+    for i in range(SIZES[t]):
+        w = (value >> (32 * i)) & 0xFFFFFFFF
+        out.append(str(w - (1 << 32) if w & 0x80000000 else w))
+    return out
+
+
+def assign_args(params: List[int]) -> Tuple[List[Tuple[bool, int]], int]:
+    """Where §9.3 puts each argument of a function that is not variadic:
+    (True, first register) or (False, first stack word). Also returns the
+    number of stack words."""
+    locs: List[Tuple[bool, int]] = []
+    reg = 1
+    stack = 0
+    for t in params:
+        n = SIZES[t]
+        if stack == 0 and reg + n - 1 <= 4:
+            locs.append((True, reg))
+            reg += n
+        else:
+            locs.append((False, stack))
+            stack += n
+    return locs, stack
+
+
+def printable(text: str) -> Optional[str]:
+    """text, if it may go in a comment. A newline in a name from the module
+    would otherwise end the comment and make the rest of the name code."""
+    return text if PRINTABLE.match(text) else None
 
 
 def parse(data: bytes) -> Module:
@@ -301,12 +354,16 @@ def parse_section(m: Module, sec_id: int, s: Reader, sec_start: int) -> None:
             check_types([t], f"global {i}", at)
             mutable = s.byte() == 1
             at = s.pos
-            if s.byte() != 0x41:
-                raise WasmError(f"global {i}: the initial value must be an i32.const", at)
-            init = s.s32()
+            # The constant instruction of the type, then end. extended-const
+            # allows expressions, which are not supported.
+            const, bits = (0x41, 32) if t == I32 else (0x42, 64)
+            what = f"global {i}: the initial value must be an {type_name(t)}.const"
+            if s.byte() != const:
+                raise WasmError(what, at)
+            init = s.leb(bits, True)
             if s.byte() != 0x0B:
-                raise WasmError(f"global {i}: the initial value must be an i32.const", at)
-            m.globals.append(Global(mutable, init))
+                raise WasmError(what, at)
+            m.globals.append(Global(t, mutable, init))
     elif sec_id == 7:
         for _ in range(s.u32()):
             name = s.name()
@@ -385,7 +442,11 @@ class Translator:
         self.global_labels: Dict[int, List[str]] = {}  # global index -> export labels
         self.ctors: Optional[int] = None
         n_imports = len(m.imports)
+        seen = set()
         for name, kind, idx in m.exports:
+            if name in seen:
+                raise WasmError(f"export {name}: the name is exported twice")
+            seen.add(name)
             if kind == 0:
                 if idx >= n_imports + len(m.funcs):
                     raise WasmError(f"export {name}: function {idx} does not exist")
@@ -403,6 +464,9 @@ class Translator:
                 raise WasmError(f"start function {m.start} does not exist")
             if self.func_type(m.start).params or self.func_type(m.start).results:
                 raise WasmError("the start function must have no parameters and no results")
+        if self.ctors is not None:
+            if self.func_type(self.ctors).params or self.func_type(self.ctors).results:
+                raise WasmError("__wasm_call_ctors must have no parameters and no results")
 
     def func_type(self, idx: int) -> FuncType:
         n_imports = len(self.m.imports)
@@ -416,6 +480,7 @@ class Translator:
         return f"W.f{idx}"
 
     def run(self, source: str) -> List[str]:
+        source = "".join(c if PRINTABLE.match(c) else "?" for c in source)
         out = [f"; Translated from {source} by nicewasm (doc/ISA.md §9.4).", ""]
         out.append("; Sets the memory to 0, then calls the start function and")
         out.append("; __wasm_call_ctors, if the module has them.")
@@ -443,7 +508,7 @@ class Translator:
             for i, g in enumerate(self.m.globals):
                 out += self.global_labels.get(i, [])
                 out.append(f"W.g{i}")
-                out.append(instr(".DAT", str(g.init)))
+                out += [instr(".DAT", w) for w in words(g.init, g.type)]
         if self.m.memory_pages is not None:
             pages = self.m.memory_pages
             out += ["", f"; Linear memory: {pages} page{'' if pages == 1 else 's'}",
@@ -452,8 +517,10 @@ class Translator:
 
 
 class FunctionTranslator:
-    """Translates one function. Local i is the frame word at FP + local[i].
-    Operand stack depth d is the frame word at FP - 1 - n_slots - d."""
+    """Translates one function. Local i starts at the frame word FP +
+    local[i]. The operand stack starts at FP - n_slots and grows down: a
+    value whose first word is stack word w, and which takes n words, starts
+    at FP - n_slots - w - n. A value's low word is at the lower address."""
 
     def __init__(self, t: Translator, idx: int, code: Code) -> None:
         self.t = t
@@ -467,68 +534,101 @@ class FunctionTranslator:
             raise WasmError(f"{what}: more than one result is not supported yet", code.start)
         # Parameters in registers and declared locals get frame words below
         # FP. Parameters on the stack stay where the caller put them.
+        self.local_types = self.ftype.params + code.locals
+        self.args, _ = assign_args(self.ftype.params)
         self.local: List[int] = []
         self.n_slots = 0
-        for i in range(len(self.ftype.params)):
-            if i < 4:
-                self.n_slots += 1
-                self.local.append(-self.n_slots)
+        for i, lt in enumerate(self.local_types):
+            if i < len(self.args) and not self.args[i][0]:
+                self.local.append(2 + self.args[i][1])
             else:
-                self.local.append(2 + i - 4)
-        for _ in code.locals:
-            self.n_slots += 1
-            self.local.append(-self.n_slots)
-        self.depth = 0
-        self.max_depth = 0
+                self.n_slots += SIZES[lt]
+                self.local.append(-self.n_slots)
+        self.stack: List[int] = []  # the type of each value on the operand stack
+        self.words = 0              # the words they take
+        self.max_words = 0
+        self.n_traps = 0
         self.body: List[str] = []
         self.ret_label = f"W.f{idx}.ret"
 
-    def slot(self, d: int) -> str:
-        return operand(-1 - self.n_slots - d)
-
-    def top(self, n: int = 1) -> str:
-        """The nth value from the top of the operand stack."""
-        return self.slot(self.depth - n)
-
-    def pop(self, n: int, at: int) -> None:
-        if self.depth < n:
-            raise WasmError(f"function {self.idx}: operand stack underflow", at)
-        self.depth -= n
-
-    def push(self) -> str:
-        self.depth += 1
-        self.max_depth = max(self.max_depth, self.depth)
+    def push(self, t: int) -> List[str]:
+        """Pushes a value of type t and returns its words."""
+        self.stack.append(t)
+        self.words += SIZES[t]
+        self.max_words = max(self.max_words, self.words)
         return self.top()
+
+    def top(self) -> List[str]:
+        """The words of the value on top of the operand stack."""
+        n = SIZES[self.stack[-1]]
+        start = -self.n_slots - self.words
+        return [operand(start + i) for i in range(n)]
+
+    def pop(self, types: List[Optional[int]], at: int, what: str) -> List[List[str]]:
+        """Pops values of the given types, the last one from the top, and
+        returns their words. None accepts any type."""
+        if len(self.stack) < len(types):
+            raise WasmError(f"function {self.idx}: operand stack underflow", at)
+        out: List[List[str]] = []
+        for want in reversed(types):
+            got = self.stack[-1]
+            if want is not None and got != want:
+                raise WasmError(f"function {self.idx}: {what} expects {type_name(want)},"
+                                f" found {type_name(got)}", at)
+            out.append(self.top())
+            self.words -= SIZES[got]
+            self.stack.pop()
+        return out[::-1]
 
     def emit(self, mnemonic: str, *operands: str) -> None:
         self.body.append(instr(mnemonic, *operands))
 
-    def call(self, label: str, ft: FuncType, at: int) -> None:
+    def move(self, dest: List[str], src: List[str]) -> None:
+        for d, s in zip(dest, src):
+            self.emit("MOVE", d, s)
+
+    def call(self, label: str, ft: FuncType, at: int, what: str) -> None:
         """Calls label with the arguments on top of the operand stack, by
-        the rules of §9.3 for i32 arguments, and pushes the result."""
-        n = len(ft.params)
-        self.pop(n, at)
-        args = [self.slot(self.depth + i) for i in range(n)]
-        for i in reversed(range(4, n)):
-            self.emit("MOVE", "@--R13", args[i])
-        for i in range(min(n, 4)):
-            self.emit("MOVE", f"R{i + 1}", args[i])
+        the rules of §9.3, and pushes the result."""
+        args = self.pop(list(ft.params), at, what)
+        locs, stack_words = assign_args(ft.params)
+        # Stack arguments go last to first, each high word first, so that
+        # the first word ends up at the lowest address.
+        for i in reversed(range(len(args))):
+            if not locs[i][0]:
+                for w in reversed(args[i]):
+                    self.emit("MOVE", "@--R13", w)
+        for i, (in_reg, first) in enumerate(locs):
+            if in_reg:
+                self.move([f"R{first + k}" for k in range(len(args[i]))], args[i])
         self.emit("ADD", "@--R13", "2", "R15")
         self.emit("MOVE", "R15", label)
-        if n > 4:
-            self.emit("ADD", "R13", "R13", str(n - 4))
-        if ft.results:
-            self.emit("MOVE", self.push(), "R1")
+        if stack_words:
+            self.emit("ADD", "R13", "R13", str(stack_words))
+        for rt in ft.results:
+            self.move(self.push(rt), [f"R{k + 1}" for k in range(SIZES[rt])])
 
-    def local_operand(self, i: int, at: int) -> str:
+    def local_operand(self, i: int, at: int) -> Tuple[int, List[str]]:
         if i >= len(self.local):
             raise WasmError(f"function {self.idx}: local {i} does not exist", at)
-        return operand(self.local[i])
+        t = self.local_types[i]
+        return t, [operand(self.local[i] + k) for k in range(SIZES[t])]
 
-    def global_operand(self, i: int, at: int) -> str:
+    def global_operand(self, i: int, at: int) -> Tuple[int, List[str]]:
         if i >= len(self.t.m.globals):
             raise WasmError(f"function {self.idx}: global {i} does not exist", at)
-        return f"@W.g{i}"
+        t = self.t.m.globals[i].type
+        return t, [f"@W.g{i}" + (f"+{k}" if k else "") for k in range(SIZES[t])]
+
+    def trap(self, code: int) -> None:
+        """Jumps through ___wasm_trap_vector with the code in R1 and the
+        address of this code in R2 (§9.4)."""
+        label = f"W.f{self.idx}.t{self.n_traps}"
+        self.n_traps += 1
+        self.body.append(label)
+        self.emit("MOVE", "R1", str(code))
+        self.emit("MOVE", "R2", label)
+        self.emit("MOVE", "R15", "@___wasm_trap_vector")
 
     def run(self) -> List[str]:
         r = Reader(self.t.data, self.code.start, self.code.end)
@@ -537,11 +637,18 @@ class FunctionTranslator:
             at = r.pos
             op = r.byte()
             name = OPCODES.get(op, f"opcode 0x{op:02x}")
+            if op == 0xFC:
+                sub = r.u32()
+                name = FC_OPCODES.get(sub, f"opcode 0xfc {sub}")
+                raise WasmError(f"function {self.idx}: {name} is not supported yet", at)
             if op in (0x10, 0x20, 0x21, 0x22, 0x23, 0x24):
                 imm: Optional[int] = r.u32()
             elif op == 0x41:
                 imm = r.s32()
-            elif op in (0x00, 0x01, 0x0B, 0x0F, 0x1A, 0x6C) or op in ALU_OPS:
+            elif op == 0x42:
+                imm = r.leb(64, True)
+            elif (op in (0x00, 0x01, 0x0B, 0x0F, 0x1A, 0x6C, 0xA7, 0xAC, 0xAD)
+                  or op in ALU_OPS or op in ALU64_OPS):
                 imm = None
             else:
                 raise WasmError(f"function {self.idx}: {name} is not supported yet", at)
@@ -551,81 +658,107 @@ class FunctionTranslator:
                     raise WasmError(f"function {self.idx}: code after the function's end", r.pos)
                 if reachable:
                     self.body.append("        ; end")
-                    self.ret(at)
+                    self.ret(at, name)
+                    if self.stack:
+                        raise WasmError(f"function {self.idx}: values left on the operand stack"
+                                        " at the end", at)
                 break
             if not reachable:
                 continue
             self.body.append(f"        ; {name}" + ("" if imm is None else f" {imm}"))
-            if op == 0x01:  # nop
+            if op == 0x00:  # unreachable
+                self.trap(1)
+                reachable = False
+            elif op == 0x01:  # nop
                 pass
             elif op == 0x1A:  # drop
-                self.pop(1, at)
+                self.pop([None], at, name)
             elif op == 0x0F:  # return
-                self.ret(at)
+                self.ret(at, name)
                 self.emit("MOVE", "R15", self.ret_label)
                 reachable = False
             elif op == 0x10:  # call
                 assert imm is not None
                 if imm >= len(self.t.m.imports) + len(self.t.m.funcs):
                     raise WasmError(f"function {self.idx}: function {imm} does not exist", at)
-                self.call(self.t.func_label(imm), self.t.func_type(imm), at)
+                self.call(self.t.func_label(imm), self.t.func_type(imm), at, name)
             elif op == 0x20:  # local.get
                 assert imm is not None
-                src = self.local_operand(imm, at)
-                self.emit("MOVE", self.push(), src)
+                t, src = self.local_operand(imm, at)
+                self.move(self.push(t), src)
             elif op in (0x21, 0x22):  # local.set, local.tee
                 assert imm is not None
-                dest = self.local_operand(imm, at)
-                self.pop(1, at)
-                self.emit("MOVE", dest, self.slot(self.depth))
+                t, dest = self.local_operand(imm, at)
+                (src,) = self.pop([t], at, name)
+                self.move(dest, src)
                 if op == 0x22:
-                    self.depth += 1
+                    self.push(t)
             elif op == 0x23:  # global.get
                 assert imm is not None
-                src = self.global_operand(imm, at)
-                self.emit("MOVE", self.push(), src)
+                t, src = self.global_operand(imm, at)
+                self.move(self.push(t), src)
             elif op == 0x24:  # global.set
                 assert imm is not None
-                dest = self.global_operand(imm, at)
-                self.pop(1, at)
-                self.emit("MOVE", dest, self.slot(self.depth))
-            elif op == 0x41:  # i32.const
+                t, dest = self.global_operand(imm, at)
+                if not self.t.m.globals[imm].mutable:
+                    raise WasmError(f"function {self.idx}: global {imm} is immutable", at)
+                (src,) = self.pop([t], at, name)
+                self.move(dest, src)
+            elif op in (0x41, 0x42):  # i32.const, i64.const
                 assert imm is not None
-                self.emit("MOVE", self.push(), str(imm))
+                t = I32 if op == 0x41 else I64
+                for d, w in zip(self.push(t), words(imm, t)):
+                    self.emit("MOVE", d, w)
             elif op in ALU_OPS:
-                self.pop(2, at)
-                a, b = self.slot(self.depth), self.slot(self.depth + 1)
-                self.emit(ALU_OPS[op], self.push(), a, b)
+                a, b = self.pop([I32, I32], at, name)
+                self.emit(ALU_OPS[op], self.push(I32)[0], a[0], b[0])
+            elif op in ALU64_OPS:
+                a, b = self.pop([I64, I64], at, name)
+                dest = self.push(I64)
+                for k, mnemonic in enumerate(ALU64_OPS[op]):
+                    self.emit(mnemonic, dest[k], a[k], b[k])
             elif op == 0x6C:  # i32.mul
-                self.call("__mul", FuncType([I32, I32], [I32]), at)
-            elif op == 0x00:
-                raise WasmError(f"function {self.idx}: unreachable is not supported yet", at)
+                self.call("__mul", FuncType([I32, I32], [I32]), at, name)
+            elif op == 0xA7:  # i32.wrap_i64
+                (a,) = self.pop([I64], at, name)
+                self.emit("MOVE", self.push(I32)[0], a[0])
+            elif op in (0xAC, 0xAD):  # i64.extend_i32_s, i64.extend_i32_u
+                # The i32 is in the word that becomes the high word, so the
+                # low word is written first.
+                (a,) = self.pop([I32], at, name)
+                lo, hi = self.push(I64)
+                self.emit("MOVE" if op == 0xAD else "MOVE[M]", lo, a[0])
+                self.emit("MOVE", hi, "0")
+                if op == 0xAC:
+                    self.emit("?N MOVE", hi, "-1")
         return self.wrap()
 
-    def ret(self, at: int) -> None:
-        """Moves the result into R1, for return and for the final end."""
-        n = len(self.ftype.results)
-        if self.depth < n:
-            raise WasmError(f"function {self.idx}: operand stack underflow", at)
-        if n:
-            self.emit("MOVE", "R1", self.top())
+    def ret(self, at: int, what: str) -> None:
+        """Moves the result into R1, or R1 and R2, for return and for the
+        final end. The values below it are dropped."""
+        results = self.pop(list(self.ftype.results), at, what)
+        for rt, src in zip(self.ftype.results, results):
+            self.move([f"R{k + 1}" for k in range(SIZES[rt])], src)
 
     def wrap(self) -> List[str]:
         """Adds the prologue and the epilogue, which build and drop the
         §9.3 frame."""
-        name = self.t.m.names.get(self.idx)
+        name = printable(self.t.m.names.get(self.idx, ""))
         out = [f"; Function {self.idx}" + (f": {name}" if name else "")]
         out += self.t.labels.get(self.idx, [])
         out.append(f"W.f{self.idx}")
         out.append(instr("MOVE", "@--R13", "R12"))
         out.append(instr("MOVE", "R12", "R13"))
-        size = self.n_slots + self.max_depth
+        size = self.n_slots + self.max_words
         if size:
             out.append(instr("SUB", "R13", "R13", str(size)))
-        for i in range(min(len(self.ftype.params), 4)):
-            out.append(instr("MOVE", operand(self.local[i]), f"R{i + 1}"))
-        for i in range(len(self.ftype.params), len(self.local)):
-            out.append(instr("MOVE", operand(self.local[i]), "0"))  # wasm zeroes locals
+        for i, (in_reg, first) in enumerate(self.args):
+            if in_reg:
+                for k in range(SIZES[self.local_types[i]]):
+                    out.append(instr("MOVE", operand(self.local[i] + k), f"R{first + k}"))
+        for i in range(len(self.args), len(self.local)):
+            for k in range(SIZES[self.local_types[i]]):
+                out.append(instr("MOVE", operand(self.local[i] + k), "0"))  # wasm zeroes locals
         out += self.body
         out.append(self.ret_label)
         out.append(instr("MOVE", "R13", "R12"))

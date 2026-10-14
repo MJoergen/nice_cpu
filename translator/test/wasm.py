@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence, Tuple
+from typing import Dict, Sequence, Tuple, Union
 
 I32, I64, F32, F64 = 0x7F, 0x7E, 0x7D, 0x7C
 
@@ -71,6 +71,12 @@ def globals_(*inits: int) -> bytes:
     return section(6, vec([bytes([I32, 1, 0x41]) + s(i) + b"\x0b" for i in inits]))
 
 
+def typed_globals(*gs: Tuple[int, bool, int]) -> bytes:
+    """Globals of any integer type: (type, mutable, initial value)."""
+    return section(6, vec([bytes([t, int(m), 0x41 if t == I32 else 0x42]) + s(i) + b"\x0b"
+                           for t, m, i in gs]))
+
+
 def exports(*exps: Tuple[str, int, int]) -> bytes:
     """(name, kind, index), where kind 0 is a function and 3 a global."""
     return section(7, vec([name(n) + bytes([k]) + u(i) for n, k, i in exps]))
@@ -80,13 +86,22 @@ def start(idx: int) -> bytes:
     return section(8, u(idx))
 
 
-def code(*bodies: Tuple[int, bytes]) -> bytes:
-    """(number of i32 locals, instructions without the final end)."""
+def code(*bodies: Tuple[Union[int, Sequence[int]], bytes]) -> bytes:
+    """(number of i32 locals, or the type of each local, instructions
+    without the final end)."""
     out = []
-    for n_locals, body in bodies:
-        b = (vec([u(n_locals) + bytes([I32])]) if n_locals else vec([])) + body + b"\x0b"
+    for local_types, body in bodies:
+        if isinstance(local_types, int):
+            local_types = [I32] * local_types
+        b = vec([u(1) + bytes([t]) for t in local_types]) + body + b"\x0b"
         out.append(u(len(b)) + b)
     return section(10, vec(out))
+
+
+def names(funcs: Dict[int, str]) -> bytes:
+    """A name section with the given function names."""
+    sub = vec([u(i) + name(n) for i, n in sorted(funcs.items())])
+    return section(0, name("name") + b"\x01" + u(len(sub)) + sub)
 
 
 # Instructions
@@ -118,5 +133,12 @@ def call(i: int) -> bytes:
     return b"\x10" + u(i)
 
 
+def i64_const(n: int) -> bytes:
+    return b"\x42" + s(n)
+
+
 NOP, DROP, RETURN = b"\x01", b"\x1a", b"\x0f"
+UNREACHABLE = b"\x00"
 ADD, SUB, MUL, AND, OR, XOR = b"\x6a", b"\x6b", b"\x6c", b"\x71", b"\x72", b"\x73"
+ADD64, SUB64, AND64, OR64, XOR64 = b"\x7c", b"\x7d", b"\x83", b"\x84", b"\x85"
+WRAP, EXTEND_S, EXTEND_U = b"\xa7", b"\xac", b"\xad"

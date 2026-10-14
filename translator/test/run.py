@@ -6,7 +6,9 @@ test/X.c or test/X.zig source into test/X.wasm. It is translated and joined
 with runtime/start_wasm.asm, any hand-written assembly the case needs, and
 runtime/lib.asm, as ISA.md §9.3 describes. Then it is assembled and run.
 
-The program must halt with HALT and main's result in R1. Its .bin file must
+The program must halt with HALT and main's result in R1. A case in TRAPS
+must instead trap: halt at ___wasm_trap with the trap code in R1, and R2
+pointing at the trap's MOVE R1 instruction. Its .bin file must
 have fewer than 16384 words, so the memory, reserved with .RES, is not in it. R7-R12 must be 0
 and SP must be 0xFFFFFF00 again, as the start-up code left them, because
 every translated function must preserve them (ISA.md §9.3). The expected
@@ -20,9 +22,11 @@ import sys
 import tempfile
 from typing import Dict, List, Tuple, Union
 
-from wasm import (ADD, AND, DROP, I32, MUL, NOP, OR, RETURN, SUB, XOR, call, code,
-                  exports, funcs, global_get, global_set, globals_, i32_const,
-                  imports, local_get, local_set, local_tee, memory, module, start, types)
+from wasm import (ADD, ADD64, AND, AND64, DROP, EXTEND_S, EXTEND_U, I32, I64, MUL, NOP,
+                  OR, OR64, RETURN, SUB, SUB64, UNREACHABLE, WRAP, XOR, XOR64, call,
+                  code, exports, funcs, global_get, global_set, globals_, i32_const,
+                  i64_const, imports, local_get, local_set, local_tee, memory, module,
+                  names, start, typed_globals, types)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.join(HERE, "..", "..")
@@ -32,6 +36,19 @@ NICEEMU = os.path.join(TOP, "emulator", "zig-out", "bin", "niceemu")
 RUNTIME = os.path.join(TOP, "runtime")
 
 MAIN_TYPE: Tuple[List[int], List[int]] = ([], [I32])  # () -> i32
+
+# Hand-written env functions for the i64 cases. twice(x) = 2 * x for an i64
+# in R1 and R2. high() reads the high word of the exported i64 global
+# result, so it shows the order of the global's words.
+I64_ASM = ("_twice ADD[M] R1, R1, R1\n ADD[C] R2, R2, R2\n MOVE R15, @R13++\n"
+           "_high MOVE R1, @_result+1\n MOVE R15, @R13++\n")
+
+# Cases that must trap rather than return.
+TRAPS = {"unreachable"}
+
+# Cases whose module is written to a file of another name. The newline
+# must not end the comment that names the source.
+FILE_NAMES = {"names": "names\n_main HALT.wasm"}
 
 # (name, module bytes or the name of test/X.wasm, hand-written assembly, R1)
 CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
@@ -85,6 +102,54 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         exports(("main", 0, 0)),
         code((0, i32_const(0xF0F0) + i32_const(0xFF00) + AND + i32_const(0xF) + OR
               + i32_const(0xF0F) + XOR + i32_const(0x10000) + SUB))), "", 0xFFFFFF00),
+    # main passes f(a, b, c, d) = ((a + c) - b) XOR d, with b and d
+    # extended, unsigned and signed, to i64. a is twice(result) =
+    # twice(0x1_80000001) = 0x3_00000002, with a carry between the words.
+    # a and b fill R1-R3, so c does not fit and goes on the stack, and d
+    # follows it there although R4 is free. a + c = 0x3_00000002 +
+    # 0x4_FFFFFFFF = 0x8_00000001, again with a carry. - 2 borrows:
+    # 0x7_FFFFFFFF. XOR 0xFFFFFFFF_FFFFFFF0 = 0xFFFFFFF8_0000000F, which goes
+    # in result. main returns its low word XOR high() = 0xF XOR 0xFFFFFFF8.
+    ("i64", module(
+        types(MAIN_TYPE, ([I64, I32, I64, I32], [I64]), ([I64], [I64])),
+        imports(("env", "twice", 2), ("env", "high", 0)),
+        funcs(1, 0),
+        typed_globals((I64, True, 0x1_80000001)),
+        exports(("main", 0, 3), ("result", 3, 0)),
+        code(([I64], local_get(0) + local_get(2) + ADD64 + local_get(1) + EXTEND_U + SUB64
+              + local_tee(4) + local_get(3) + EXTEND_S + XOR64),
+             (0, global_get(0) + call(0) + i32_const(2) + i64_const(0x4_FFFFFFFF)
+              + i32_const(-16) + call(2) + global_set(0) + global_get(0) + WRAP
+              + call(1) + XOR))), I64_ASM, 0xFFFFFFF7),
+    # result = NOT ((0x12345678_9ABCDEF0 AND 0x0F0F0F0F_F0F0F0F0) OR
+    # 0x00000001_00000001), with NOT as XOR -1: NOT 0x02040609_90B0D0F1 =
+    # 0xFDFBF9F6_6F4F2F0E. main returns low - high = 0x6F4F2F0E -
+    # 0xFDFBF9F6 = 0x71533518.
+    ("i64logic", module(
+        types(MAIN_TYPE),
+        imports(("env", "high", 0)),
+        funcs(0),
+        typed_globals((I64, True, 0)),
+        exports(("main", 0, 1), ("result", 3, 0)),
+        code((0, i64_const(0x123456789ABCDEF0) + i64_const(0x0F0F0F0FF0F0F0F0) + AND64
+              + i64_const(0x100000001) + OR64 + i64_const(-1) + XOR64 + global_set(0)
+              + global_get(0) + WRAP + call(0) + SUB))),
+     I64_ASM, 0x71533518),
+    # f traps with code 1. The code after unreachable is never translated.
+    ("unreachable", module(
+        types(MAIN_TYPE),
+        funcs(0, 0),
+        exports(("main", 0, 1)),
+        code((0, i32_const(5) + UNREACHABLE + i64_const(1) + DROP),
+             (0, call(0)))), "", 1),
+    # The function's name and the file name contain a newline. If either
+    # ended its comment, the rest would define _main a second time.
+    ("names", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((0, i32_const(3))),
+        names({0: "f\n_main HALT"})), "", 3),
     # -2147483648 is 0x80000000, and XOR -1 inverts it to 0x7FFFFFFF.
     ("consts", module(
         types(MAIN_TYPE),
@@ -138,6 +203,7 @@ def run(cmd: List[str]) -> str:
 
 
 def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str) -> List[str]:
+    trap = name in TRAPS
     asm = os.path.join(tmp, name + ".asm")
     run([sys.executable, NICEWASM, "-o", asm, wasm_file])
     hand = os.path.join(HERE, name + ".asm")
@@ -156,7 +222,8 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str) -> Lis
     binary = os.path.join(tmp, name + ".bin")
     run([sys.executable, NICEASM, "-o", binary, full])
     with open(binary) as f:
-        n_words = len(f.readlines())
+        image = {int(a, 16): int(w, 16) for a, w in (line.split() for line in f)}
+    n_words = len(image)
     output = run([NICEEMU, binary])
 
     regs: Dict[str, int] = {}
@@ -164,12 +231,22 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str) -> Lis
         tok = line.split()
         for i in range(0, len(tok), 2):
             regs[tok[i]] = int(tok[i + 1], 16)
-    wanted = {"R1": expected, "R13": 0xFFFFFF00}
-    wanted.update({f"R{i}": 0 for i in range(7, 13)})
+    wanted = {"R1": expected}
+    wanted.update({f"R{i}": 0 for i in range(7, 12)})
+    if not trap:
+        # A trap leaves the frames as they were.
+        wanted.update({"R12": 0, "R13": 0xFFFFFF00})
     problems = []
     if n_words >= 16384:
         problems.append(f"the .bin has {n_words} words, so it holds the memory")
-    if not output.startswith("Halted (HALT)") or not output.endswith("exit 0\n"):
+    if trap:
+        if (not output.startswith("Halted (reserved control instruction)")
+                or not output.endswith("exit 2\n")):
+            problems.append("did not halt at ___wasm_trap")
+        # MOVE R1, code
+        if image.get(regs.get("R2", 0)) != 0x5800 or image.get(regs.get("R2", 0) + 1) != expected:
+            problems.append("R2 does not point at the trap's MOVE R1")
+    elif not output.startswith("Halted (HALT)") or not output.endswith("exit 0\n"):
         problems.append("did not halt with HALT")
     for reg, value in wanted.items():
         if regs.get(reg) != value:
@@ -184,7 +261,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         for name, wasm, extra, expected in CASES:
             if isinstance(wasm, bytes):
-                wasm_file = os.path.join(tmp, name + ".wasm")
+                wasm_file = os.path.join(tmp, FILE_NAMES.get(name, name + ".wasm"))
                 with open(wasm_file, "wb") as f:
                     f.write(wasm)
             else:

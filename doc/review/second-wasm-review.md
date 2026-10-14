@@ -94,6 +94,8 @@ CLAUDE.md asks for a test for every rule. These messages have no case in `errors
 
 The top-level README says Rust has a wasm32 target and has not been tried. There was no Rust toolchain on the review machine either, so this stays untested.
 
+**Resolved** in 91e9be2: three `no_std` Rust programs, built with rustc 1.99.0 for `wasm32-unknown-unknown`, are now test modules. The translator README gives the Rust build.
+
 ## 5. What is correct
 
 - **Frames and arguments.** Register parameters are copied below FP, stack parameters are read at FP + 2 and up, and an `i64` that would need R4 and R5 goes on the stack with everything after it, in both the caller and the callee. A `local.set` to a stack parameter writes the caller's argument word, which the caller never reads again. Confirmed with a six-parameter function of mixed `i32` and `i64`, and with `call_indirect` of five arguments.

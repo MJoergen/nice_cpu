@@ -4,9 +4,12 @@ ZIG ?= zig
 
 # The modules compiled from test/*.c and test/*.zig. Their .wasm files are
 # checked in, so make test needs no compiler; make wasm rebuilds them. The
-# options keep the linear memory to one page.
+# options keep the linear memory to one page. ZIG_SAFE_TESTS are built with
+# ReleaseSafe and a 16 KB stack, because Zig's panic handler puts a 4 KB
+# buffer on the stack.
 C_TESTS = sum5 control memory data shifts intops
 ZIG_TESTS = answer datazig bulk
+ZIG_SAFE_TESTS = safe safetrap
 
 # Translate, assemble, and run each module in test/run.py, then check the
 # error messages in test/errors.py.
@@ -30,6 +33,10 @@ wasm:
 	@for t in $(ZIG_TESTS); do \
 	  $(ZIG) build-exe -target wasm32-freestanding -fno-entry -rdynamic -O ReleaseSmall -fstrip \
 	    --stack 4096 --initial-memory=65536 -femit-bin=test/$$t.wasm test/$$t.zig || exit 1; \
+	done
+	@for t in $(ZIG_SAFE_TESTS); do \
+	  $(ZIG) build-exe -target wasm32-freestanding -fno-entry -rdynamic -O ReleaseSafe -fstrip \
+	    --stack 16384 --initial-memory=65536 -femit-bin=test/$$t.wasm test/$$t.zig || exit 1; \
 	done
 	@rm -f test/*.wasm.o
 

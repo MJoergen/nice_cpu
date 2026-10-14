@@ -37,6 +37,12 @@ And for Zig:
     zig build-exe -target wasm32-freestanding -fno-entry -rdynamic -O ReleaseSmall \
         -fstrip --stack 4096 --initial-memory=65536 prog.zig
 
+ReleaseSafe and Debug work too. They need `--stack 16384`, or at least
+more than 4096, if the program can panic: Zig's panic handler puts a
+4 KB buffer on the stack, and with too small a stack it traps with code
+2, out of bounds, before it reaches its own trap. A ReleaseSafe program
+is about 12000 words, and a Debug one about 44000.
+
 `-fstrip` drops the DWARF sections, which make up almost all of a
 ReleaseSafe or Debug module. nicewasm ignores them, but they make the
 file large. Do not use `-fno-llvm`: Zig 0.15's own wasm backend encodes
@@ -68,7 +74,9 @@ global's initial value, not the expressions of `extended-const`.
 Every Zig program built with ReleaseSafe or Debug uses a table,
 `call_indirect`, `br_table`, `select`, `memory.copy`, and `memory.fill`,
 and it traps with `unreachable`, even if its source has no function
-pointers. So the next feature is `call_indirect`.
+pointers. nicewasm supports all of them. The next features are
+`nice.peek` and `nice.poke`, which reach the I/O devices, and then `f32`
+and `f64`.
 
 ## Supported features
 
@@ -122,16 +130,25 @@ pointers. So the next feature is `call_indirect`.
 - **Start-up:** `___wasm_start` sets the memory to 0, except the words
   that data segments set. Then it calls the start function, if there is
   one, and `__wasm_call_ctors`, if it is exported.
-- **Ignored:** tables (without element segments) and custom sections. The
+- **Tables:** table 0 of `funcref`, filled by active element segments
+  whose offset is an `i32.const`. Their elements may be function indices
+  or `ref.func` and `ref.null` expressions. nicewasm emits the table at
+  `W.table`, two words to an entry as ISA.md §9.4 says: the function's
+  address and its type number, the index of the first type with the same
+  parameters and results. Declarative segments are ignored.
+- **Indirect calls:** `call_indirect`. An index past the end of the table
+  and an empty entry trap with code 6, and an entry of another type with
+  code 7.
+- **Ignored:** custom sections. The
   name section only supplies function names for comments. A name that is
   not printable ASCII is left out, and so is any such character in the
   input file's name, so that a comment cannot become code.
 
 Not supported yet: the other `0xFC` instructions, `f32` and `f64` loads
-and stores, the conversion trap (code 5) and the `call_indirect` traps,
-`call_indirect`, `nice.peek` and
-`nice.poke`, passive data segments and `memory.init`, element segments,
-library modules (ISA.md §9.4),
+and stores, the conversion trap (code 5), `nice.peek` and `nice.poke`,
+passive data and element segments, `memory.init`, the table instructions
+such as `table.get`, `ref.func` outside element segments, the tail calls
+`return_call` and `return_call_indirect`, library modules (ISA.md §9.4),
 `f32`, and `f64`.
 
 nicewasm checks the types on the operand stack as wasm validation does,
@@ -180,9 +197,15 @@ shifted together from, or split across, two words, or three for an
 unaligned `i64`. A store that changes only part of a word reads the word,
 changes its bytes, and writes it back once.
 
-The translated code itself uses only R1–R4, R12, R13, and R15, so R7–R11
+`call_indirect` puts the table index in R5 and checks it against the
+table's size. It checks the entry's address for 0 and its type number,
+then calls the address in R5 with `ADD @--SP, 1, PC` and `MOVE PC, R5`,
+the "through a register" sequence of ISA.md §9.3. The arguments are in
+R1–R4 and on the stack, as for `call`.
+
+The translated code itself uses only R1–R5, R12, R13, and R15, so R7–R11
 keep their values across a call, as §9.3 requires. `W.fill` and `W.copy`
-also use R5 and R6, which a §9.3 function may change.
+also use R6, which a §9.3 function may change.
 
 ## Test
 

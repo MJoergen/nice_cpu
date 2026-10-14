@@ -198,6 +198,14 @@ class Data:
 
 
 @dataclass
+class Elem:
+    """An active element segment of table 0."""
+    offset: int                     # first entry
+    funcs: List[Optional[int]]      # function index of each entry, or None for ref.null
+    at: int                         # offset of the segment in the file
+
+
+@dataclass
 class Code:
     locals: List[int]   # the declared locals, not the parameters
     start: int          # offset of the first instruction in the file
@@ -215,6 +223,8 @@ class Module:
     start: Optional[int] = None
     codes: List[Code] = field(default_factory=list)
     data: List[Data] = field(default_factory=list)
+    table_size: Optional[int] = None                   # initial size, if there is a table
+    elems: List[Elem] = field(default_factory=list)
     data_count: Optional[int] = None                   # from the data count section
     names: Dict[int, str] = field(default_factory=dict)  # function names from the name section
 
@@ -404,10 +414,15 @@ def parse_section(m: Module, sec_id: int, s: Reader, sec_start: int) -> None:
         for _ in range(s.u32()):
             m.funcs.append(func_type_idx(m, s))
     elif sec_id == 4:
-        # Tables matter only to call_indirect, which is not supported yet.
-        for _ in range(s.u32()):
-            s.byte()
-            parse_limits(s, "table")
+        count = s.u32()
+        if count > 1:
+            raise WasmError("a module may have only one table", sec_start)
+        if count == 1:
+            at = s.pos
+            t = s.byte()
+            if t != 0x70:
+                raise WasmError(f"table 0 holds {type_name(t)}; only funcref is supported", at)
+            m.table_size = parse_limits(s, "table")
     elif sec_id == 5:
         count = s.u32()
         if count > 1:
@@ -439,8 +454,8 @@ def parse_section(m: Module, sec_id: int, s: Reader, sec_start: int) -> None:
     elif sec_id == 8:
         m.start = s.u32()
     elif sec_id == 9:
-        if s.u32():
-            raise WasmError("element segments are not supported yet", sec_start)
+        for i in range(s.u32()):
+            parse_elem(m, s, i)
     elif sec_id == 10:
         for _ in range(s.u32()):
             size = s.u32()
@@ -488,6 +503,59 @@ def parse_section(m: Module, sec_id: int, s: Reader, sec_start: int) -> None:
         m.data_count = s.u32()
     elif sec_id == 13:
         raise WasmError("exception tags are not supported", sec_start)
+
+
+def parse_elem(m: Module, s: Reader, i: int) -> None:
+    """Reads element segment i. Bit 0 of its flags is set for a passive or
+    declarative segment, bit 1 for an explicit table index or element
+    kind, and bit 2 for elements that are expressions, not function
+    indices."""
+    at = s.pos
+    flags = s.u32()
+    if flags > 7:
+        raise WasmError(f"element segment {i} has unknown flags {flags}", at)
+    active = not flags & 1
+    if flags in (1, 5):
+        raise WasmError(f"element segment {i} is passive; table.init is not supported yet", at)
+    offset = 0
+    if active:
+        if flags & 2:
+            t_at = s.pos
+            table = s.u32()
+            if table != 0:
+                raise WasmError(f"element segment {i}: table {table} does not exist", t_at)
+        # The offset is an i32.const, then end.
+        off_at = s.pos
+        what = f"element segment {i}: the offset must be an i32.const"
+        if s.byte() != 0x41:
+            raise WasmError(what, off_at)
+        offset = s.s32() & 0xFFFFFFFF
+        if s.byte() != 0x0B:
+            raise WasmError(what, off_at)
+    if flags & 3:
+        # The element kind: 0 (functions) for indices, funcref for expressions.
+        k_at = s.pos
+        if s.byte() != (0x70 if flags & 4 else 0x00):
+            raise WasmError(f"element segment {i}: only functions are supported", k_at)
+    funcs: List[Optional[int]] = []
+    for _ in range(s.u32()):
+        if not flags & 4:
+            funcs.append(s.u32())
+            continue
+        e_at = s.pos
+        op = s.byte()
+        if op == 0xD2:      # ref.func
+            funcs.append(s.u32())
+        elif op == 0xD0 and s.byte() == 0x70:  # ref.null funcref
+            funcs.append(None)
+        else:
+            raise WasmError(f"element segment {i}: an element must be ref.func or ref.null", e_at)
+        if s.byte() != 0x0B:
+            raise WasmError(f"element segment {i}: an element must be ref.func or ref.null", e_at)
+    # A declarative segment only declares functions for ref.func, which
+    # is not supported, so it has no effect.
+    if active:
+        m.elems.append(Elem(offset, funcs, at))
 
 
 def func_type_idx(m: Module, s: Reader) -> int:
@@ -718,6 +786,7 @@ class Translator:
             out += FunctionTranslator(self, n_imports + i, code).run()
         for name in sorted(self.helpers):
             out += [""] + HELPERS[name]
+        out += self.table()
         if self.m.globals:
             out += ["", "; Globals"]
             for i, g in enumerate(self.m.globals):
@@ -737,6 +806,41 @@ class Translator:
                         out.append(instr(".DAT", *(f"0x{w:08X}" for w in values[i:i + 8])))
                 else:
                     out.append(instr(".RES", str(values)))
+        return out
+
+    def type_number(self, idx: int) -> int:
+        """The number of a function type in the table: the index of the
+        first type with the same parameters and results (§9.4)."""
+        return self.m.types.index(self.m.types[idx])
+
+    def table(self) -> List[str]:
+        """Table 0, two words to an entry: the address of a function and
+        the number of its type, or 0 and 0 for an empty entry (§9.4). A
+        later element segment overwrites an earlier one, as in wasm."""
+        if self.m.table_size is None:
+            if self.m.elems:
+                raise WasmError("element segment 0: the module has no table", self.m.elems[0].at)
+            return []
+        n_funcs = len(self.m.imports) + len(self.m.funcs)
+        entries: List[Optional[int]] = [None] * self.m.table_size
+        for i, seg in enumerate(self.m.elems):
+            if seg.offset + len(seg.funcs) > self.m.table_size:
+                raise WasmError(f"element segment {i} does not fit in the table", seg.at)
+            for k, f in enumerate(seg.funcs):
+                if f is not None and f >= n_funcs:
+                    raise WasmError(f"element segment {i}: function {f} does not exist", seg.at)
+                entries[seg.offset + k] = f
+        size = self.m.table_size
+        out = ["", f"; Table 0: {size} entr{'y' if size == 1 else 'ies'}, each a function's"
+               " address and its type number", "W.table"]
+        for f in entries:
+            if f is None:
+                out.append(instr(".DAT", "0", "0"))
+            else:
+                n_imports = len(self.m.imports)
+                type_idx = (self.m.imports[f].type_idx if f < n_imports
+                            else self.m.funcs[f - n_imports])
+                out.append(instr(".DAT", self.func_label(f), str(self.type_number(type_idx))))
         return out
 
     def memory_runs(self) -> List[Tuple[int, Union[int, List[int]]]]:
@@ -851,7 +955,8 @@ class FunctionTranslator:
 
     def call(self, label: str, ft: FuncType, at: int, what: str) -> None:
         """Calls label with the arguments on top of the operand stack, by
-        the rules of §9.3, and pushes the result."""
+        the rules of §9.3, and pushes the result. A label that is a
+        register is called through it."""
         args = self.pop(list(ft.params), at, what)
         locs, stack_words = assign_args(ft.params)
         # Stack arguments go last to first, each high word first, so that
@@ -863,7 +968,10 @@ class FunctionTranslator:
         for i, (in_reg, first) in enumerate(locs):
             if in_reg:
                 self.move([f"R{first + k}" for k in range(len(args[i]))], args[i])
-        self.emit("ADD", "@--R13", "2", "R15")
+        if label.startswith("R"):
+            self.emit("ADD", "@--R13", "1", "R15")
+        else:
+            self.emit("ADD", "@--R13", "2", "R15")
         self.emit("MOVE", "R15", label)
         if stack_words:
             self.emit("ADD", "R13", "R13", str(stack_words))
@@ -1021,6 +1129,31 @@ class FunctionTranslator:
         elif limit < 1 << 32:
             self.emit("SUB[M]", "R0", "R1", words(limit, I32)[0])
             self.emit("?!C MOVE", "R15", trap)
+
+    def call_indirect(self, type_idx: int, at: int, what: str) -> None:
+        """Calls the function in the table entry whose index is on top of
+        the operand stack (§9.4). An index past the end of the table and an
+        empty entry trap with code 6, and an entry of another type with
+        code 7. R5 holds the address, as R1-R4 hold arguments."""
+        ft = self.t.m.types[type_idx]
+        check_types(ft.params + ft.results, f"function {self.idx}: {what}", at)
+        if len(ft.results) > 1:
+            raise WasmError(f"function {self.idx}: {what}: more than one result is not supported"
+                            " yet", at)
+        (index,) = self.pop([I32], at, what)
+        assert self.t.m.table_size is not None
+        start = self.new_label()
+        self.body.append(start)
+        self.emit("MOVE", "R5", index[0])
+        self.emit("SUB[M]", "R0", "R5", str(self.t.m.table_size))
+        self.emit("?!C MOVE", "R15", self.trap_stub(6, start))    # index >= size
+        self.emit("ADD", "R5", "R5", "R5")                         # two words an entry
+        self.emit("MOVE[M]", "R0", "@W.table[R5]")
+        self.emit("?Z MOVE", "R15", self.trap_stub(6, start))     # empty
+        self.emit("SUB[M]", "R0", "@W.table+1[R5]", str(self.t.type_number(type_idx)))
+        self.emit("?!Z MOVE", "R15", self.trap_stub(7, start))
+        self.emit("MOVE", "R5", "@W.table[R5]")
+        self.call("R5", ft, at, what)
 
     def range_check(self, addr: str, n: str, trap: str) -> None:
         """Jumps to trap unless the n bytes from byte address addr are all
@@ -1314,6 +1447,16 @@ class FunctionTranslator:
             align = 0
             if op in (0x0C, 0x0D, 0x10, 0x20, 0x21, 0x22, 0x23, 0x24):
                 imm = r.u32()
+            elif op == 0x11:  # call_indirect: a type index, then a table index
+                type_at = r.pos
+                imm = r.u32()
+                if imm >= len(self.t.m.types):
+                    raise WasmError(f"type index {imm} is out of range", type_at)
+                table_at = r.pos
+                table_idx = r.u32()
+                if table_idx != 0 or self.t.m.table_size is None:
+                    raise WasmError(f"function {self.idx}: table {table_idx} does not exist",
+                                    table_at)
             elif op == 0x41:
                 imm = r.s32()
             elif op == 0x42:
@@ -1337,7 +1480,7 @@ class FunctionTranslator:
                 check_types(types, f"function {self.idx}: select", at)
                 sel_type = types[0]
             elif not (op in (0x00, 0x01, 0x05, 0x0B, 0x0F, 0x1A, 0x1B, 0x45, 0x50, 0xA7,
-                             0xAC, 0xAD, 0x10A, 0x10B)
+                             0xAC, 0xAD, 0x10A, 0x10B, 0x11)
                       or op in DIV_OPS or op in LIB_OPS or op in EXTEND_OPS
                       or op in ALU_OPS or op in ALU64_OPS or op in CMP_OPS or op in CMP64_OPS
                       or op in SHIFT_OPS or op in SHIFT64_OPS):
@@ -1489,6 +1632,9 @@ class FunctionTranslator:
                 if imm >= len(self.t.m.imports) + len(self.t.m.funcs):
                     raise WasmError(f"function {self.idx}: function {imm} does not exist", at)
                 self.call(self.t.func_label(imm), self.t.func_type(imm), at, name)
+            elif op == 0x11:  # call_indirect
+                assert imm is not None
+                self.call_indirect(imm, at, name)
             elif op == 0x20:  # local.get
                 assert imm is not None
                 t, src = self.local_operand(imm, at)

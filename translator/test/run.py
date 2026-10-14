@@ -35,7 +35,7 @@ from wasm import (I32_LOAD, I32_LOAD8_S, I32_LOAD8_U, I32_LOAD16_S, I32_LOAD16_U
                   I32_STORE8, I32_STORE16, I64_LOAD, I64_LOAD8_S, I64_LOAD8_U, I64_LOAD16_S,
                   I64_LOAD32_S, I64_LOAD32_U, I64_STORE, I64_STORE8, I64_STORE16,
                   I64_STORE32, MEMORY_GROW, MEMORY_SIZE, data, mem)
-from wasm import MEMORY_COPY, MEMORY_FILL
+from wasm import MEMORY_COPY, MEMORY_FILL, call_indirect, elems, table
 from wasm import ROTL, ROTL64, ROTR, ROTR64, SHL, SHL64, SHR_S, SHR_S64, SHR_U, SHR_U64
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -134,7 +134,11 @@ def i64_un(op: int, a: int, want: int) -> bytes:
 # of the code for the wasm instruction that traps, which R2 points at.
 # In main, an operand on the stack with nothing below it is at FP - 1. An
 # i32 above it is at FP - 2, and an i64 above an i64 at FP - 4 and FP - 3.
-TRAPS = {"filloob": "ADD[M] R1, @-1[R12], @-3[R12]",
+TRAPS = {"safetrap": "MOVE R1, 1",
+         "indirectoob": "MOVE R5, @-2[R12]",
+         "indirectnull": "MOVE R5, @-2[R12]",
+         "indirecttype": "MOVE R5, @-3[R12]",
+         "filloob": "ADD[M] R1, @-1[R12], @-3[R12]",
          "copyoob": "ADD[M] R1, @-1[R12], @-3[R12]",
          "divzero": "MOVE[M] R0, @-2[R12]",
          "divzero64": "OR[M] R0, @-4[R12], @-3[R12]",
@@ -201,6 +205,12 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # buf[50..60] ten 7s, 70. Then 0 to 19 move up by one, which overlaps,
     # so buf[20] = 19. 75 + 70 + 1000 * 19 = 19145.
     ("bulk_zig", "bulk", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 19145),
+    # Zig with ReleaseSafe, which uses a table and call_indirect. Even x
+    # from 0 to 9 are squared and odd ones incremented: 0 + 4 + 16 + 36 +
+    # 64 = 120, and 2 + 4 + 6 + 8 + 10 = 30. 120 + 30 = 150.
+    ("safe", "safe", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 150),
+    # buf[4] is past the end of buf, so Zig panics, which traps with code 1.
+    ("safetrap", "safetrap", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 1),
     # Declared locals start at 0. dirty sets its 3 locals to 0x55, and clean
     # gets the same frame words, so without zeroing it returns 0x55 * 3 + 7.
     ("locals", module(
@@ -791,6 +801,64 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         memory(1),
         exports(("main", 0, 0)),
         code((0, copy(0, 65535, 2) + i32_const(0)))), "", 2),
+    # call_indirect. Function 0 is the import ext(x) = x + 1000, and 1-4 are
+    # double(x) = 2x, sub(a, b) = a - b, neg(x) = -x, and dbl64(x) = 2x
+    # for an i64. Types 1 and 3 are both (i32) -> (i32), so they match.
+    # The segments fill table entries 1-5 with functions 1, 2, 3, 0, 4, entry
+    # 6 with 1, and entry 7, with a ref.func, with 2. Entry 0 is empty.
+    # Each line is one bit:
+    ("indirect", module(
+        types(MAIN_TYPE, ([I32], [I32]), ([I32, I32], [I32]), ([I32], [I32]), ([I64], [I64])),
+        imports(("env", "ext", 1)),
+        funcs(1, 2, 3, 4, 0),
+        table(8),
+        exports(("main", 0, 5)),
+        elems((1, [1, 2, 3, 0, 4]), (6, [1]), exprs=[(7, [2])]),
+        code((0, local_get(0) + local_get(0) + ADD),
+             (0, local_get(0) + local_get(1) + SUB),
+             (0, i32_const(0) + local_get(0) + SUB),
+             (0, local_get(0) + local_get(0) + ADD64),
+             (1, bits(0,
+                i32_const(21) + i32_const(1) + call_indirect(1) + i32_const(42) + EQ,
+                # Type 3 matches double's type 1.
+                i32_const(7) + i32_const(1) + call_indirect(3) + i32_const(14) + EQ,
+                i32_const(50) + i32_const(8) + i32_const(2) + call_indirect(2) + i32_const(42) + EQ,
+                i32_const(5) + i32_const(3) + call_indirect(1) + i32_const(-5) + EQ,
+                i32_const(5) + i32_const(4) + call_indirect(1) + i32_const(1005) + EQ,
+                i64_const(0x1_00000001) + i32_const(5) + call_indirect(4)
+                + i64_const(0x2_00000002) + EQ64,
+                i32_const(9) + i32_const(6) + call_indirect(1) + i32_const(18) + EQ,
+                i32_const(9) + i32_const(4) + i32_const(7) + call_indirect(2) + i32_const(5) + EQ,
+                # A check that fails.
+                i32_const(9) + i32_const(6) + call_indirect(1) + i32_const(9) + EQ)))),
+     "_ext ADD R1, R1, 1000\n MOVE R15, @R13++\n", 0x1FE),
+    # Index 4 is past the end of a table of 4, and entry 0 is empty: both
+    # trap with code 6. Entry 1 holds a function of type 1, so a call of
+    # type 2 traps with code 7.
+    ("indirectoob", module(
+        types(MAIN_TYPE, ([I32], [I32]), ([I32, I32], [I32])),
+        funcs(1, 0),
+        table(4),
+        exports(("main", 0, 1)),
+        elems((1, [0])),
+        code((0, local_get(0)),
+             (0, i32_const(1) + i32_const(4) + call_indirect(1)))), "", 6),
+    ("indirectnull", module(
+        types(MAIN_TYPE, ([I32], [I32]), ([I32, I32], [I32])),
+        funcs(1, 0),
+        table(4),
+        exports(("main", 0, 1)),
+        elems((1, [0])),
+        code((0, local_get(0)),
+             (0, i32_const(1) + i32_const(0) + call_indirect(1)))), "", 6),
+    ("indirecttype", module(
+        types(MAIN_TYPE, ([I32], [I32]), ([I32, I32], [I32])),
+        funcs(1, 0),
+        table(4),
+        exports(("main", 0, 1)),
+        elems((1, [0])),
+        code((0, local_get(0)),
+             (0, i32_const(1) + i32_const(2) + i32_const(1) + call_indirect(2)))), "", 7),
     # The start function sets g = g * 10 + 1, then __wasm_call_ctors sets
     # g = g * 10 + 2. In that order, g = 12.
     ("startup", module(

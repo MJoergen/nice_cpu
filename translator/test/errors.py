@@ -10,6 +10,7 @@ import sys
 import tempfile
 from typing import List, Tuple
 
+from wasm import table
 from wasm import (ADD, ADD64, DROP, ELSE, END, F32, I32, I64, SELECT, block, br,
                   br_table, call, code, exports, funcs, global_get, global_set, globals_,
                   i32_const, i64_const, if_, imports, local_get, memory, module, name,
@@ -69,8 +70,28 @@ CASES: List[Tuple[bytes, str]] = [
     # extended-const: an expression is not supported.
     (module(section(6, vec([bytes([I32, 1]) + i32_const(1) + i32_const(2) + ADD + b"\x0b"]))),
      "global 0: the initial value must be an i32.const"),
+    # Tables and element segments
     (module(section(9, vec([b"\0" + i32_const(0) + b"\x0b" + vec([u(0)])]))),
-     "element segments are not supported yet"),
+     "element segment 0: the module has no table"),
+    (module(section(4, vec([b"\x70\x00\x01", b"\x70\x00\x01"]))), "a module may have only one table"),
+    (module(section(4, vec([b"\x6f\x00\x01"]))), "table 0 holds externref; only funcref is supported"),
+    (module(MAIN, funcs(0), table(1), section(9, vec([b"\0" + i32_const(0) + b"\x0b" + vec([u(0), u(0)])])),
+            code((0, i32_const(0)))),
+     "element segment 0 does not fit in the table"),
+    (module(MAIN, funcs(0), table(1), section(9, vec([b"\0" + i32_const(0) + b"\x0b" + vec([u(1)])])),
+            code((0, i32_const(0)))),
+     "element segment 0: function 1 does not exist"),
+    (module(table(1), section(9, vec([b"\x01\x00" + vec([u(0)])]))),
+     "element segment 0 is passive; table.init is not supported yet"),
+    (module(table(1), section(9, vec([b"\x02\x01" + i32_const(0) + b"\x0b\x00" + vec([u(0)])]))),
+     "element segment 0: table 1 does not exist"),
+    (module(table(1), section(9, vec([b"\0" + global_get(0) + b"\x0b" + vec([u(0)])]))),
+     "element segment 0: the offset must be an i32.const"),
+    (module(table(1), section(9, vec([b"\x06\x00" + i32_const(0) + b"\x0b\x6f" + vec([b"\xd0\x6f\x0b"])]))),
+     "element segment 0: only functions are supported"),
+    (module(table(1), section(9, vec([b"\x04" + i32_const(0) + b"\x0b" + vec([i32_const(0) + b"\x0b"])]))),
+     "element segment 0: an element must be ref.func or ref.null"),
+    (module(table(1), section(9, vec([b"\x08"]))), "element segment 0 has unknown flags 8"),
     # Data segments
     (module(section(11, vec([b"\0" + i32_const(0) + b"\x0b" + vec([b"x"])]))),
      "data segment 0: the module has no memory"),
@@ -155,7 +176,18 @@ CASES: List[Tuple[bytes, str]] = [
      "function 0: global.set expects i64, found i32"),
     (module(types(([], [I32]), ([I64], [])), funcs(0, 1), code((0, i32_const(1) + call(1) + i32_const(0)), (0, b""))),
      "function 0: call expects i64, found i32"),
-    (one(i32_const(0) + b"\x11\x00\x00"), "function 0: call_indirect is not supported yet"),
+    (one(i32_const(0) + b"\x12\x00"), "function 0: return_call is not supported yet"),
+    # call_indirect
+    (one(i32_const(0) + b"\x11\x00\x00"), "function 0: table 0 does not exist"),
+    (module(MAIN, funcs(0), table(1), code((0, i32_const(0) + b"\x11\x05\x00"))),
+     "type index 5 is out of range"),
+    (module(MAIN, funcs(0), table(1), code((0, i32_const(0) + b"\x11\x00\x01"))),
+     "function 0: table 1 does not exist"),
+    (module(MAIN, funcs(0), table(1), code((0, i64_const(0) + b"\x11\x00\x00"))),
+     "function 0: call_indirect expects i32, found i64"),
+    (module(types(([], [I32]), ([I32], [])), funcs(0), table(1),
+            code((0, i64_const(0) + i32_const(0) + b"\x11\x01\x00" + i32_const(0)))),
+     "function 0: call_indirect expects i32, found i64"),
     # Blocks and branches
     (one(block() + br(2) + END + i32_const(0)), "function 0: label 2 does not exist"),
     (one(block() + ELSE + END + i32_const(0)), "function 0: else without if"),

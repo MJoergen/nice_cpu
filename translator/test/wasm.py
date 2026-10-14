@@ -214,3 +214,21 @@ def data(*segs: Tuple[int, bytes]) -> bytes:
 SHL, SHR_S, SHR_U, ROTL, ROTR = (bytes([op]) for op in range(0x74, 0x79))
 SHL64, SHR_S64, SHR_U64, ROTL64, ROTR64 = (bytes([op]) for op in range(0x86, 0x8B))
 MEMORY_COPY, MEMORY_FILL = b"\xfc\x0a\x00\x00", b"\xfc\x0b\x00"
+
+
+def table(size: int) -> bytes:
+    """Table 0 of funcref, with the given initial size."""
+    return section(4, vec([b"\x70\x00" + u(size)]))
+
+
+def elems(*segs: Tuple[int, Sequence[int]], exprs: Sequence[Tuple[int, Sequence[int]]] = ()) -> bytes:
+    """Active element segments of table 0: (first entry, function indices).
+    Those in exprs give each element as a ref.func expression instead."""
+    out = [b"\0" + b"\x41" + s(off) + b"\x0b" + vec([u(f) for f in fs]) for off, fs in segs]
+    out += [b"\x04" + b"\x41" + s(off) + b"\x0b" + vec([b"\xd2" + u(f) + b"\x0b" for f in fs])
+            for off, fs in exprs]
+    return section(9, vec(out))
+
+
+def call_indirect(type_idx: int) -> bytes:
+    return b"\x11" + u(type_idx) + b"\x00"

@@ -73,13 +73,19 @@ Every instruction is one **instruction word**, followed by zero to three **const
 |---|---|---|---|---|---|---|---|---|---|
 | ALU | NEG | SEL | 0 | C | M | opcode | dest | s0 | s1 |
 | SHIFT | NEG | SEL | 1 | 0 | M | opcode | dest | s0 | s1 |
-| Control | NEG | SEL | 1 | 1 | command (bits 25..21) | | must be 0 (bits 20..8) | | vector (bits 7..0) |
+
+Control instructions divide the bits below the class differently:
+
+| Bits | 31 | 30..28 | 27 | 26 | 25..21 | 20..8 | 7..0 |
+|---|---|---|---|---|---|---|---|
+| Control | NEG | SEL | 1 | 1 | command | 0 | vector |
 
 - **NEG, SEL**: the condition (§3).
 - **Bits 27..26** select the class: `0x` ALU, `10` SHIFT, `11` control.
 - **C** (ALU only): use the C flag as carry or borrow input (§5.1).
 - **M**: update the flags from the result (§6).
 - **dest, s0, s1**: the three operand fields (§4).
+- **command, vector**: the control instruction and, for `INT`, its vector number (§5.3).
 
 The all-zero word is `MOVE R0, R0` with condition "always", so it does nothing. It is the canonical NOP.
 
@@ -695,16 +701,16 @@ The routines for `i64` and floating point are in the same library and listed in 
 
 ## 10. Assembler syntax
 
-This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appendix B.
+This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appendix B. The assembler's [README](../assembler/README.md) adds the finer points of the syntax and its error checks.
 
 ### 10.1 Statements
 
     [label]  [?cond]  MNEMONIC[mods]  dest, s0, s1    ; comment
 
-- **Case.** Mnemonics, register names, and directives are case-insensitive.
+- **Case.** Labels and `.EQU` names are case-sensitive. Mnemonics, register names, conditions, modifiers, and directives are not.
 - **Comments.** A comment starts with `;` or `*` and runs to the end of the line.
 - **Separators.** Operands are separated by whitespace or by one comma.
-- **Labels.** A label is the first word on a line that is not a mnemonic or a directive. Its value is the address of what follows on that line; on a `.ORG` line, that is the new address. A label or `.EQU` name cannot be a mnemonic or a register name.
+- **Labels.** A label is the first word on a line that is not a mnemonic or a directive. It may end with `:`, and so may an `.EQU` name. Its value is the address of what follows on that line; on a `.ORG` line, that is the new address. A label or `.EQU` name cannot be a mnemonic or a register name.
 - **Conditions.** `?cond` is one of the condition codes in §3, such as `?Z` or `?!C`. Without one, the instruction is unconditional. `?M`/`?!M` are accepted as aliases for `?E`/`?!E`.
 - **Modifiers.** `[M]` sets the M bit and `[C]` sets the C bit. `[CM]` and `[MC]` set both. `[C]` is accepted only on ALU instructions.
 - **Operand counts.** The assembler expects exactly the operands the instruction uses:
@@ -725,7 +731,7 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
 | `c`, `c[Rx]` | A constant, mode 011. As a source its value is Rx + c. As a destination it writes mem[Rx + c]. |
 | `@c`, `@c[Rx]` | Memory at Rx + c, mode 111. |
 
-- **Numbers.** `0x` hex, `0b` binary, and plain decimal. There is no `#` prefix and no `$`. A label or an `.EQU` name may appear wherever a number may.
+- **Numbers and expressions.** `0x` hex, `0b` binary, and plain decimal. The prefix and the digits may be in either case. There is no `#` prefix and no `$`. A label or an `.EQU` name may appear wherever a number may. A constant may also be an expression: numbers and symbols joined with `+` and `-`, with an optional leading sign and no spaces, such as `end-data` or `-1`. The value wraps modulo 2³².
 - **Register aliases.** Programs define them with `.EQU`, for example `SP .EQU R13` and `PC .EQU R15`.
 
 ### 10.3 Directives
@@ -734,10 +740,12 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
 |---|---|
 | `NAME .EQU value` | Defines NAME. The value is a number, an expression, a register, or a complete operand. NAME is replaced by the value where it stands for a whole operand, a register, or a number in an expression. |
 | `.ORG addr` | Continue assembling at addr. |
-| `.DAT value` | One word holding value. |
+| `.DAT value, ...` | One word for each value. |
 | `.BLK n` | n words of 0. |
 | `.ASCII_L 'text'` | One character per word, followed by a 0 word. |
 | `.ASCII_B 'text'` | Four characters per word, with the first character in the least significant byte. The last word is padded with 0 bytes. No terminator is added when the length is a multiple of 4. |
+
+Strings may be quoted with `'` or `"`.
 
 ### 10.4 Object format
 
@@ -804,5 +812,6 @@ It executes as follows:
 | Memory access order | Each access exactly once, unmerged, and in program order (§8.2) | Not specified anywhere |
 | Carry input timing | The C flag as step 5 of §5 left it (§5.1, §5.2) | Not specified anywhere. The emulator also reads C after the source operands. |
 | Assembler numbers | `0x`, `0b`, decimal | The emulator reads a leading 0 as octal; the articles use `#` and `$` |
+| Assembler directives and constants | `.DAT` takes several values, a constant may be an expression, and a string may use `"..."` (§10) | `NICE.pm` takes one value per directive, a number or a symbol only, and `'...'` only |
 
 The emulator also has bugs that this specification does not copy. Its carry input comes from the wrong SR bit, its 5-bit count mask is wrong, it modifies source registers, it never sets X, `ONE` crashes, `1>0` and `C>0` fill the wrong end, and `DEC` reports a borrow in V. See [review/emulator-and-webpage-review.md](review/emulator-and-webpage-review.md) §4.

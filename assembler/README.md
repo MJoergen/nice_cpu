@@ -34,15 +34,8 @@ by `.ORG` are not listed.
 
 ## Details beyond ISA.md
 
-- Expressions are a number or symbol, optionally combined with `+` and `-`
-  (for example `end-data` or `TABLE+1`), with no spaces, because whitespace
-  separates operands. Arithmetic wraps modulo 2³².
 - Operands are separated by whitespace or by one comma. A comma anywhere
   else, such as after the mnemonic or two in a row, is an error.
-- A label or `.EQU` name may end with `:`. A label on a `.ORG` line names the
-  new address.
-- Labels and `.EQU` names are case-sensitive. Mnemonics, register names,
-  conditions, modifiers, and directives are not.
 - A label or `.EQU` name cannot be a mnemonic or look like a register (`R`
   followed by digits, so `R16` is rejected too).
 - An `.EQU` value is a number, an expression, a register, or a complete
@@ -52,9 +45,7 @@ by `.ORG` are not listed.
   the value must be a number or an expression. Each value is checked where it
   is defined.
 - Numbers are digits only: no `_` separators.
-- `.DAT` accepts several values: `.DAT 1, 2, 3`.
-- Strings for `.ASCII_L` and `.ASCII_B` may use `'...'` or `"..."`. There are
-  no escape sequences.
+- Strings have no escape sequences.
 - `.ORG` and `.BLK` arguments must not refer to labels defined later.
 - A `.BLK` count must not be negative, and the block must end at or before
   address `0xFFFFFFFF`. Other statements wrap from `0xFFFFFFFF` to 0.

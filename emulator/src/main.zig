@@ -36,6 +36,7 @@ const Options = struct {
     screen: bool = false,
     dumps: []const Dump = &.{},
     max_steps: u64 = 100_000_000,
+    help: bool = false,
 };
 
 pub fn main() !void {
@@ -105,8 +106,8 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
         } else "";
 
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
-            try std.fs.File.stdout().writeAll(usage);
-            std.process.exit(0);
+            opts.help = true;
+            return opts;
         } else if (std.mem.eql(u8, arg, "-t") or std.mem.eql(u8, arg, "--trace")) {
             opts.trace = true;
         } else if (std.mem.eql(u8, arg, "-s") or std.mem.eql(u8, arg, "--screen")) {
@@ -179,6 +180,11 @@ fn loadError(path: []const u8, line_no: usize, comptime fmt: []const u8, args: a
 
 fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
     const opts = try parseArgs(arena);
+    if (opts.help) {
+        // Through `out`, so that a closed pipe is handled as for any output.
+        try out.writeAll(usage);
+        return 0;
+    }
 
     const text = std.fs.cwd().readFileAlloc(arena, opts.path, 1 << 30) catch |err| {
         std.debug.print("niceemu: cannot read {s}: {s}\n", .{ opts.path, @errorName(err) });

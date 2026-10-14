@@ -1,8 +1,8 @@
 # nicewasm: smaller code
 
 nicewasm supports every wasm feature that clang, Zig, and Rust emit by default.
-The next step is smaller code. This file records the analysis and the
-plan, for later.
+This file records the analysis and the plan for smaller code. All three
+steps of the plan are done.
 
 ## Where the words go
 
@@ -67,13 +67,19 @@ give the word counts before and after.
    Expected: about 12 words for an `i32.load` and 14 for an `i32.store`,
    which saves about 2000 words in `safe.zig`.
 
-3. **`i64` shifts in helpers.** Each `i64` shift calls a helper instead of
-   19 words of inline code. This saves about 2000 words in the float
-   library.
+3. **`i64` shifts in helpers.** Done. `test/safe.zig` went from 8730 to
+   8670 words, and the float library from 19808 to 18723 (5.5% less).
+   Of the float library's `i64` shifts, 84 are by a constant and 54 by
+   a variable. A shift by a constant is now 3 or 4 instructions inline,
+   and the others call a helper. Rotates always call a helper.
+
+   Each `i64` shift calls a helper instead of 19 words of inline code.
+   This saves about 2000 words in the float library.
 
 All three together should make both programs about a third smaller:
 `safe.zig` about 8000 words, and the float library about 20000. These
-are estimates.
+were estimates. The result is 8670 words (30% less than 12353) and
+18723 (37% less than 29569).
 
 ## Left as it is
 

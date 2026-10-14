@@ -160,6 +160,11 @@ class FuncType:
     results: List[int]
 
 
+# The imports from the module nice and their types (§9.4). A call to one
+# is replaced by the access it performs.
+NICE_TYPES = {"peek": FuncType([I32], [I32]), "poke": FuncType([I32, I32], [])}
+
+
 @dataclass
 class Frame:
     """A block, loop, or if, or the function itself, on the control stack."""
@@ -398,9 +403,14 @@ def parse_section(m: Module, sec_id: int, s: Reader, sec_start: int) -> None:
                                 " may be imported", at)
             type_idx = func_type_idx(m, s)
             if module == "nice":
-                if name in ("peek", "poke"):
-                    raise WasmError(f"{what} is not supported yet", at)
-                raise WasmError(f"{what}: the module 'nice' has only peek and poke", at)
+                if name not in NICE_TYPES:
+                    raise WasmError(f"{what}: the module 'nice' has only peek and poke", at)
+                if m.types[type_idx] != NICE_TYPES[name]:
+                    want = NICE_TYPES[name]
+                    raise WasmError(f"{what} must have the type ({', '.join(map(type_name, want.params))})"
+                                    f" -> ({', '.join(map(type_name, want.results))})", at)
+                m.imports.append(Import(module, name, type_idx))
+                continue
             if module != "env":
                 raise WasmError(f"{what}: functions may be imported only from 'env' and 'nice'", at)
             if not C_IDENT.match(name):
@@ -829,6 +839,9 @@ class Translator:
             for k, f in enumerate(seg.funcs):
                 if f is not None and f >= n_funcs:
                     raise WasmError(f"element segment {i}: function {f} does not exist", seg.at)
+                if f is not None and f < len(self.m.imports) and self.m.imports[f].module == "nice":
+                    raise WasmError(f"element segment {i}: nice.{self.m.imports[f].name} has no"
+                                    " address, so it cannot be in a table", seg.at)
                 entries[seg.offset + k] = f
         size = self.m.table_size
         out = ["", f"; Table 0: {size} entr{'y' if size == 1 else 'ies'}, each a function's"
@@ -1631,7 +1644,18 @@ class FunctionTranslator:
                 assert imm is not None
                 if imm >= len(self.t.m.imports) + len(self.t.m.funcs):
                     raise WasmError(f"function {self.idx}: function {imm} does not exist", at)
-                self.call(self.t.func_label(imm), self.t.func_type(imm), at, name)
+                if imm < len(self.t.m.imports) and self.t.m.imports[imm].module == "nice":
+                    # One access, even if a peek's result is not used (§9.4).
+                    if self.t.m.imports[imm].name == "peek":
+                        (addr,) = self.pop([I32], at, "nice.peek")
+                        self.emit("MOVE", "R1", addr[0])
+                        self.emit("MOVE", self.push(I32)[0], "@R1")
+                    else:
+                        addr, value = self.pop([I32, I32], at, "nice.poke")
+                        self.emit("MOVE", "R1", addr[0])
+                        self.emit("MOVE", "@R1", value[0])
+                else:
+                    self.call(self.t.func_label(imm), self.t.func_type(imm), at, name)
             elif op == 0x11:  # call_indirect
                 assert imm is not None
                 self.call_indirect(imm, at, name)

@@ -8,7 +8,7 @@ ZIG ?= zig
 # ReleaseSafe and a 16 KB stack, because Zig's panic handler puts a 4 KB
 # buffer on the stack.
 C_TESTS = sum5 control memory data shifts intops
-ZIG_TESTS = answer datazig bulk
+ZIG_TESTS = answer datazig bulk hello
 ZIG_SAFE_TESTS = safe safetrap
 
 # Translate, assemble, and run each module in test/run.py, then check the

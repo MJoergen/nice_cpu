@@ -6,7 +6,8 @@ test/X.c or test/X.zig source into test/X.wasm. It is translated and joined
 with runtime/start_wasm.asm, any hand-written assembly the case needs, and
 runtime/lib.asm, as ISA.md §9.3 describes. Then it is assembled and run.
 
-The program must halt with HALT and main's result in R1. A case in TRAPS
+The program must halt with HALT and main's result in R1, and print what
+CONSOLE gives on the console, or nothing. A case in TRAPS
 must instead trap: halt at ___wasm_trap with the trap code in R1, and R2
 pointing at the first instruction of the code for the wasm instruction
 that trapped, which TRAPS gives. Its .bin file must
@@ -152,6 +153,10 @@ TRAPS = {"safetrap": "MOVE R1, 1",
 # Options for nicewasm.
 OPTIONS = {"unchecked": ["--no-bounds-checks"]}
 
+# What a case must print on the console (ISA.md §8.3). Every other case
+# must print nothing.
+CONSOLE = {"peekpoke": "Hi\n", "hello": "Hello, NICE!\n"}
+
 # Cases whose module is written to a file of another name. The newline
 # must not end the comment that names the source.
 FILE_NAMES = {"names": "names\n_main HALT.wasm"}
@@ -211,6 +216,8 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     ("safe", "safe", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 150),
     # buf[4] is past the end of buf, so Zig panics, which traps with code 1.
     ("safetrap", "safetrap", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 1),
+    # Hello world from Zig, through nice.poke to the console. 13 bytes.
+    ("hello", "hello", "", 13),
     # Declared locals start at 0. dirty sets its 3 locals to 0x55, and clean
     # gets the same frame words, so without zeroing it returns 0x55 * 3 + 7.
     ("locals", module(
@@ -859,6 +866,24 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         elems((1, [0])),
         code((0, local_get(0)),
              (0, i32_const(1) + i32_const(2) + i32_const(1) + call_indirect(2)))), "", 7),
+    # nice.peek and nice.poke. cell() returns the address of a word that
+    # starts as 7. main pokes 41 into it, then prints H, i, and a newline
+    # on the console at 0xFFFFFF00, which prints bits 7..0 of each word, so
+    # 0x169 prints i. A peek whose result is dropped is still performed.
+    # peek of the word + 1 = 42.
+    ("peekpoke", module(
+        types(MAIN_TYPE, ([I32], [I32]), ([I32, I32], [])),
+        imports(("nice", "peek", 1), ("nice", "poke", 2), ("env", "cell", 0)),
+        funcs(0),
+        exports(("main", 0, 3)),
+        code((1, call(2) + local_set(0)
+              + local_get(0) + i32_const(41) + call(1)
+              + i32_const(-256) + i32_const(ord("H")) + call(1)
+              + i32_const(-256) + i32_const(0x169) + call(1)
+              + i32_const(-256) + i32_const(10) + call(1)
+              + local_get(0) + call(0) + DROP
+              + local_get(0) + call(0) + i32_const(1) + ADD))),
+     "_cell MOVE R1, cell\n MOVE R15, @R13++\ncell .DAT 7\n", 42),
     # The start function sets g = g * 10 + 1, then __wasm_call_ctors sets
     # g = g * 10 + 2. In that order, g = 12.
     ("startup", module(
@@ -913,6 +938,9 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str) -> Lis
         image = {int(a, 16): int(w, 16) for a, w in (line.split() for line in f)}
     n_words = len(image)
     output = run([NICEEMU, binary])
+    # The console output comes before the line that says why it halted.
+    at = output.find("Halted (")
+    console, output = output[:max(at, 0)], output[max(at, 0):]
 
     regs: Dict[str, int] = {}
     for line in output.splitlines()[1:5]:
@@ -925,6 +953,8 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str) -> Lis
         # A trap leaves the frames as they were.
         wanted.update({"R12": 0, "R13": 0xFFFFFF00})
     problems = []
+    if console != CONSOLE.get(name, ""):
+        problems.append(f"printed {console!r}, expected {CONSOLE.get(name, '')!r}")
     if n_words >= 16384:
         problems.append(f"the .bin has {n_words} words, so it holds the memory")
     if trap:

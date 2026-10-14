@@ -74,9 +74,8 @@ global's initial value, not the expressions of `extended-const`.
 Every Zig program built with ReleaseSafe or Debug uses a table,
 `call_indirect`, `br_table`, `select`, `memory.copy`, and `memory.fill`,
 and it traps with `unreachable`, even if its source has no function
-pointers. nicewasm supports all of them. The next features are
-`nice.peek` and `nice.poke`, which reach the I/O devices, and then `f32`
-and `f64`.
+pointers. nicewasm supports all of them. The next features are `f32` and
+`f64`.
 
 ## Supported features
 
@@ -116,6 +115,12 @@ and `f64`.
   time where it can.
 - **Imports:** functions from `env`, whose names must be C identifiers. Each
   becomes a call to the label `_name`.
+- **Hardware access:** `nice.peek`, of type `(i32) -> i32`, and `nice.poke`,
+  of type `(i32, i32) -> ()`, as ISA.md §9.4 says. Each call becomes one
+  `MOVE` that reads or writes the NICE word at the given word address, even
+  if a `peek`'s result is not used. So `poke(0xFFFFFF00, c)` prints `c` on
+  the console (ISA.md §8.3). They have no address, so they cannot be in a
+  table.
 - **Exports:** functions and globals get the label `_name`, as §9.4 says.
   Exporting an imported function is not supported.
 - **Globals:** mutable or not, with an `i32.const` or `i64.const` initial
@@ -145,8 +150,7 @@ and `f64`.
   input file's name, so that a comment cannot become code.
 
 Not supported yet: the other `0xFC` instructions, `f32` and `f64` loads
-and stores, the conversion trap (code 5), `nice.peek` and `nice.poke`,
-passive data and element segments, `memory.init`, the table instructions
+and stores, the conversion trap (code 5), passive data and element segments, `memory.init`, the table instructions
 such as `table.get`, `ref.func` outside element segments, the tail calls
 `return_call` and `return_call_indirect`, library modules (ISA.md §9.4),
 `f32`, and `f64`.
@@ -215,8 +219,10 @@ also use R6, which a §9.3 function may change.
 
 `test/run.py` translates each test module and joins it with the runtime. It
 then assembles and runs the program. It checks main's result in R1, that
-R7–R13 are unchanged, and that the memory is not in the `.bin` file. A case
-that traps must instead halt at `___wasm_trap` with the trap code in R1. Most modules are built byte by byte with `test/wasm.py`.
+R7–R13 are unchanged, what it printed on the console, and that the memory
+is not in the `.bin` file. A case that traps must instead halt at
+`___wasm_trap` with the trap code in R1, and R2 at the start of the code
+that trapped. Most modules are built byte by byte with `test/wasm.py`.
 The others are compiled from `test/*.c` and `test/*.zig`. Their `.wasm` files
 are checked in, so `make test` needs no compiler. `make wasm` needs clang
 with the wasm32 target, `wasm-ld`, and Zig 0.15. `test/errors.py` checks

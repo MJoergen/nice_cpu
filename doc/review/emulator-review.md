@@ -175,3 +175,26 @@ These are not emulator bugs, but the FPGA will have to make the same choices, so
 - Interrupt trace lines start the change list 3 columns left of instruction lines (`NMI 06` plus 8 spaces is 14 characters, `00000000 001c1800` is 17).
 - The Makefile builds `niceemu` as ReleaseSafe but `zig build test` runs the unit tests in Debug. Probably intended; worth a comment.
 - `README.md` says "Nothing is mapped at the I/O addresses … yet", which is true, but with the dense array the addresses themselves cannot exist (§1.2).
+
+## 7. Second round, commit 99feb8d
+
+Checked on 2026-10-14 against commit 99feb8d ("niceemu: fix the issues from the adversarial review"). `make test` passes: 24 unit tests, 13 programs with exit statuses, and 27 command-line and loader cases.
+
+### 7.1 Confirmed fixed
+
+- **§1.1** `last_write` is cleared before the interrupt check, and `trace: an interrupt line shows no write of the instruction before` pins it.
+- **§1.2** Memory is sparse (4096-word pages in a hash map, one-entry cache, allocated on the first nonzero write). `wrap.bin` loads and `test/addr.asm` executes across `0xFFFFFFFF` → 0, reads R15 as 0 there, and keeps a stack at `0x1FFFFF`. `--mem-size` is gone and is rejected as an unknown option. The cache costs about 25 % when code and data alternate between pages (16M-iteration loop: 0.93 s against 0.73 s on one page), and 100M NOPs take 1.2 s against 0.9 s before. Acceptable.
+- **§1.3** With a 300 MB address-space limit, a program that touches a new page per iteration ends with `niceemu: out of memory`, exit status 1, and the trace written so far is flushed (56 002 lines).
+- **§1.4** An empty file and a blank-only file give `error: no words to load`.
+- **§1.5** `execute()` returns the instruction word; dumps and the screen use `peek()`, which is documented as not being a §8.2 access.
+- **§3** ISA.md §4.2 and Appendix B now state the `R14--`/`R14++` rule; the README defines a step and the printed PC.
+- **§4** Every message in the table is fixed and has a case in `test/errors.py`; `-h` goes to stdout; the loader is strict (1–8 hex digits, no `0x`, `_` or sign, duplicates rejected) and the README says so.
+- **§5** Every gap in the table has a test: `alu()` for the logic ops plus `logic.asm`, the executed §11 instruction, `dest.asm`, `carry.asm`, all sixteen conditions in `cond.asm` and the full `Cond` enum, `r15.asm`, NMI before IRQ, the IRQ waiting through a routine, `RTI` restoring E, `HALT` and `INT` inside a routine, VBASE, `selfmod.asm`, two trace tests, and the exit statuses. The interrupt test is split in three with a shared fixture, and the Makefile records that `count` and `replicate` were checked by hand.
+- **§6** Interrupt trace lines are padded to 17 characters, and the Makefile explains Debug against ReleaseSafe.
+
+The streaming-stdout change also holds: `(niceemu x.bin; echo) > log` keeps all six lines in order.
+
+### 7.2 Nits
+
+- `niceemu -t x.bin | head -2` ends with `error: WriteFailed` on stderr and exit status 1 once `head` closes the pipe. Catch `error.WriteFailed` in `main` and exit quietly, as other filters do.
+- The README's `make` comment still says "unit tests, then the example programs"; the probes and `test/errors.py` run too, and the latter needs Python 3.

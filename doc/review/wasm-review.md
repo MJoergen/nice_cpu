@@ -143,3 +143,20 @@ For planning, the shape of real modules from Zig 0.15.2:
 - **Labels.** `W.f12`, `W.f12.ret`, `W.g0`, `W.zero`, and `_name` are valid assembler symbols that cannot clash with each other, with C names, or with a mnemonic. `__original_main` and other `_` exports correctly get no label.
 - **Section order** follows the specification, with the data count section before code.
 - **Scale.** The assembler takes 7.5 s for 196000 lines, the emulator loads a 614000-word `.bin` in 0.1 s and runs 20 million steps in 0.3 s.
+
+## 6. Resolution
+
+Resolved on 2026-10-14:
+
+- §1.1: the operand stack is typed, with one word per `i32` and two per `i64`, low word first. `i64` works in parameters, results, locals, globals, and a few instructions.
+- §1.2: the translator's README states Zig 0.15's default feature set as the target. The `0xFC` instructions are decoded, so far only to name them in an error.
+- §1.3: `unreachable` traps. The README lists the order of the next features.
+- §1.4: the emulator has a console at `0xFFFFFF00` (ISA.md §8.3). The default trap handler is the reserved control word `0x0FE00000`, so the emulator exits with status 2 after a trap.
+- §1.5: ISA.md §9.3 and §9.4 allow library modules, with their own label rules. The translator does not implement them yet.
+- §2.1–§2.4: fixed, each with a test.
+- §2.5: the start-up code passes R1 = 0 and R2 = 0 to `main`.
+- §3.1–§3.3: ISA.md §9.4 updated. §3.4 and §3.5: the translator's README updated.
+
+Left for later:
+
+- §1.6: an option for the memory cap, needed with `memory.grow`, and the zero loop's skipping of data segments. Neither instruction nor data segments are supported yet.

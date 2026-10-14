@@ -5,7 +5,7 @@ ZIG ?= zig
 # The modules compiled from test/*.c and test/*.zig. Their .wasm files are
 # checked in, so make test needs no compiler; make wasm rebuilds them. The
 # options keep the linear memory to one page.
-C_TESTS = sum5
+C_TESTS = sum5 control
 ZIG_TESTS = answer
 
 # Translate, assemble, and run each module in test/run.py, then check the

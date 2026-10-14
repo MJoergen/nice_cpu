@@ -7,8 +7,8 @@ files, and the runtime library as section 9.3 describes.
 
 Usage: nicewasm.py [-o output.asm] input.wasm
 
-This is a first version: it supports only a few instructions and only the
-i32 and i64 types. README.md lists what it supports. Anything else is
+This is a first version: it supports control flow and some integer
+instructions, and only the i32 and i64 types. README.md lists what it supports. Anything else is
 rejected with an error, never translated wrongly.
 
 Each function keeps its locals and its wasm operand stack in its frame on
@@ -105,6 +105,17 @@ ALU_OPS = {0x6A: "ADD", 0x6B: "SUB", 0x71: "AND", 0x72: "OR", 0x73: "XOR"}
 ALU64_OPS = {0x7C: ("ADD[M]", "ADD[C]"), 0x7D: ("SUB[M]", "SUB[C]"),
              0x83: ("AND", "AND"), 0x84: ("OR", "OR"), 0x85: ("XOR", "XOR")}
 
+# The i32 comparisons, from eq to ge_u: wasm opcode -> (swap the operands,
+# test). gt and le are lt and ge with the operands swapped. The i64
+# comparisons are the same, 11 opcodes further on.
+CMP_OPS = {0x46: (False, "eq"), 0x47: (False, "ne"), 0x48: (False, "lt_s"),
+           0x49: (False, "lt_u"), 0x4A: (True, "lt_s"), 0x4B: (True, "lt_u"),
+           0x4C: (True, "ge_s"), 0x4D: (True, "ge_u"), 0x4E: (False, "ge_s"),
+           0x4F: (False, "ge_u")}
+CMP64_OPS = {op + 11: v for op, v in CMP_OPS.items()}
+
+BLOCK, LOOP, IF = 0x02, 0x03, 0x04
+
 
 class WasmError(Exception):
     def __init__(self, msg: str, offset: Optional[int] = None) -> None:
@@ -116,6 +127,21 @@ class WasmError(Exception):
 class FuncType:
     params: List[int]
     results: List[int]
+
+
+@dataclass
+class Frame:
+    """A block, loop, or if, or the function itself, on the control stack."""
+    op: int                           # BLOCK, LOOP, IF, or 0 for the function
+    ft: FuncType                      # its parameters and results
+    height: int                       # values on the operand stack below the parameters
+    words: int                        # the words they take
+    label: str                        # where a branch to it goes
+    else_label: Optional[str] = None  # an if's false branch, until its else
+
+    def label_types(self) -> List[int]:
+        """The values that a branch to it takes."""
+        return self.ft.params if self.op == LOOP else self.ft.results
 
 
 @dataclass
@@ -431,7 +457,7 @@ def operand(offset: int) -> str:
 
 
 def instr(mnemonic: str, *operands: str) -> str:
-    return f"        {mnemonic:<8}{', '.join(operands)}".rstrip()
+    return f"        {mnemonic + ' ':<8}{', '.join(operands)}".rstrip()
 
 
 class Translator:
@@ -548,8 +574,10 @@ class FunctionTranslator:
         self.words = 0              # the words they take
         self.max_words = 0
         self.n_traps = 0
+        self.n_labels = 0
         self.body: List[str] = []
         self.ret_label = f"W.f{idx}.ret"
+        self.ctrl = [Frame(0, self.ftype, 0, 0, self.ret_label)]
 
     def push(self, t: int) -> List[str]:
         """Pushes a value of type t and returns its words."""
@@ -566,8 +594,9 @@ class FunctionTranslator:
 
     def pop(self, types: List[Optional[int]], at: int, what: str) -> List[List[str]]:
         """Pops values of the given types, the last one from the top, and
-        returns their words. None accepts any type."""
-        if len(self.stack) < len(types):
+        returns their words. None accepts any type. Only the values pushed
+        inside the innermost block can be popped."""
+        if len(self.stack) - self.ctrl[-1].height < len(types):
             raise WasmError(f"function {self.idx}: operand stack underflow", at)
         out: List[List[str]] = []
         for want in reversed(types):
@@ -630,9 +659,111 @@ class FunctionTranslator:
         self.emit("MOVE", "R2", label)
         self.emit("MOVE", "R15", "@___wasm_trap_vector")
 
+    def new_label(self) -> str:
+        label = f"W.f{self.idx}.L{self.n_labels}"
+        self.n_labels += 1
+        return label
+
+    def slots(self, types: List[int], words: int) -> List[List[str]]:
+        """The words of values of the given types, placed on the operand
+        stack above the given number of words."""
+        out = []
+        for t in types:
+            n = SIZES[t]
+            out.append([operand(-self.n_slots - words - n + k) for k in range(n)])
+            words += n
+        return out
+
+    def reset(self, f: Frame, types: List[int]) -> None:
+        """Leaves only the values below f and then values of the given
+        types on the operand stack."""
+        del self.stack[f.height:]
+        self.words = f.words
+        for t in types:
+            self.push(t)
+
+    def frame(self, depth: int, at: int) -> Frame:
+        if depth >= len(self.ctrl):
+            raise WasmError(f"function {self.idx}: label {depth} does not exist", at)
+        return self.ctrl[-1 - depth]
+
+    def block_type(self, r: Reader) -> FuncType:
+        at = r.pos
+        b = r.byte()
+        if b == 0x40:
+            return FuncType([], [])
+        if b in TYPE_NAMES:
+            ft = FuncType([], [b])
+        else:
+            r.pos = at
+            idx = r.leb(33, True)
+            if not 0 <= idx < len(self.t.m.types):
+                raise WasmError(f"type index {idx} is out of range", at)
+            ft = self.t.m.types[idx]
+        check_types(ft.params + ft.results, f"function {self.idx}: a block", at)
+        return ft
+
+    def branch_moves(self, f: Frame, at: int, what: str) -> List[Tuple[str, str]]:
+        """Checks the values that a branch to f takes, which are on top of
+        the operand stack, and returns the moves that put them where f
+        expects them: in its slots, or for the function in R1 and up."""
+        types = f.label_types()
+        values = self.pop(list(types), at, what)
+        for t in types:
+            self.push(t)
+        if f.op == 0:
+            regs = [f"R{k + 1}" for k in range(sum(SIZES[t] for t in types))]
+            return list(zip(regs, [w for v in values for w in v]))
+        # The slots are at the same height or below. Moving the deepest
+        # word first never overwrites a word that is still to be read.
+        moves = []
+        for dest, src in zip(self.slots(types, f.words), values):
+            for k in reversed(range(len(dest))):
+                if dest[k] != src[k]:
+                    moves.append((dest[k], src[k]))
+        return moves
+
+    def end_block(self, f: Frame, at: int, what: str) -> None:
+        """Checks that the operand stack holds exactly f's results, at else
+        and at end."""
+        self.pop(list(f.ft.results), at, what)
+        if len(self.stack) != f.height:
+            raise WasmError(f"function {self.idx}: values left on the operand stack at the {what}",
+                            at)
+
+    def compare(self, t: int, swap: bool, test: str, at: int, what: str) -> None:
+        """An i32 or i64 comparison. It sets the flags, then the i32
+        result: 1 if the test holds, else 0."""
+        a, b = self.pop([t, t], at, what)
+        if swap:
+            a, b = b, a
+        d = self.push(I32)[0]
+        if t == I32:
+            self.emit("SUB[M]", "R0", a[0], b[0])
+        elif test in ("eq", "ne"):
+            self.emit("XOR", "R1", a[0], b[0])
+            self.emit("XOR", "R2", a[1], b[1])
+            self.emit("OR[M]", "R0", "R1", "R2")
+        else:
+            self.emit("SUB[M]", "R0", a[0], b[0])
+            self.emit("SUB[CM]", "R0", a[1], b[1])
+        if test in ("eq", "ne"):
+            self.emit("MOVE", d, "0")
+            self.emit("?Z MOVE" if test == "eq" else "?!Z MOVE", d, "1")
+        elif test == "lt_u":
+            self.emit("ADD[C]", d, "R0", "R0")  # C, the borrow
+        elif test == "ge_u":
+            self.emit("SUB[C]", d, "1", "R0")   # 1 - C
+        else:
+            # a < b signed is N XOR V (§9.2).
+            self.emit("MOVE", d, "0" if test == "lt_s" else "1")
+            self.emit("?N XOR", d, d, "1")
+            self.emit("?V XOR", d, d, "1")
+
     def run(self) -> List[str]:
         r = Reader(self.t.data, self.code.start, self.code.end)
         reachable = True
+        dead_blocks = 0  # blocks opened in code that cannot be reached
         while True:
             at = r.pos
             op = r.byte()
@@ -641,38 +772,168 @@ class FunctionTranslator:
                 sub = r.u32()
                 name = FC_OPCODES.get(sub, f"opcode 0xfc {sub}")
                 raise WasmError(f"function {self.idx}: {name} is not supported yet", at)
-            if op in (0x10, 0x20, 0x21, 0x22, 0x23, 0x24):
-                imm: Optional[int] = r.u32()
+            imm: Optional[int] = None
+            ft = FuncType([], [])
+            targets: List[int] = []
+            sel_type: Optional[int] = None
+            if op in (0x0C, 0x0D, 0x10, 0x20, 0x21, 0x22, 0x23, 0x24):
+                imm = r.u32()
             elif op == 0x41:
                 imm = r.s32()
             elif op == 0x42:
                 imm = r.leb(64, True)
-            elif (op in (0x00, 0x01, 0x0B, 0x0F, 0x1A, 0x6C, 0xA7, 0xAC, 0xAD)
-                  or op in ALU_OPS or op in ALU64_OPS):
-                imm = None
-            else:
+            elif op in (BLOCK, LOOP, IF):
+                ft = self.block_type(r)
+            elif op == 0x0E:
+                targets = [r.u32() for _ in range(r.u32() + 1)]
+            elif op == 0x1C:
+                types = [r.byte() for _ in range(r.u32())]
+                if len(types) != 1:
+                    raise WasmError(f"function {self.idx}: select must name one type", at)
+                check_types(types, f"function {self.idx}: select", at)
+                sel_type = types[0]
+            elif not (op in (0x00, 0x01, 0x05, 0x0B, 0x0F, 0x1A, 0x1B, 0x45, 0x50, 0x6C, 0xA7,
+                             0xAC, 0xAD)
+                      or op in ALU_OPS or op in ALU64_OPS or op in CMP_OPS or op in CMP64_OPS):
                 raise WasmError(f"function {self.idx}: {name} is not supported yet", at)
-            if op == 0x0B:
-                # Without blocks, the only end is the function's own.
-                if not r.at_end():
-                    raise WasmError(f"function {self.idx}: code after the function's end", r.pos)
-                if reachable:
-                    self.body.append("        ; end")
-                    self.ret(at, name)
-                    if self.stack:
-                        raise WasmError(f"function {self.idx}: values left on the operand stack"
-                                        " at the end", at)
-                break
             if not reachable:
-                continue
-            self.body.append(f"        ; {name}" + ("" if imm is None else f" {imm}"))
-            if op == 0x00:  # unreachable
+                # Skip to the else or end that makes the code reachable again.
+                if op in (BLOCK, LOOP, IF):
+                    dead_blocks += 1
+                    continue
+                if op == 0x0B and dead_blocks:
+                    dead_blocks -= 1
+                    continue
+                if op not in (0x05, 0x0B) or dead_blocks:
+                    continue
+            comment = f"        ; {name}"
+            if imm is not None:
+                comment += f" {imm}"
+            elif targets:
+                comment += " " + " ".join(map(str, targets))
+            self.body.append(comment)
+            if op == 0x0B:  # end
+                f = self.ctrl[-1]
+                if f.op == 0:
+                    if not r.at_end():
+                        raise WasmError(f"function {self.idx}: code after the function's end", r.pos)
+                    if reachable:
+                        self.ret(at, name)
+                        if self.stack:
+                            raise WasmError(f"function {self.idx}: values left on the operand"
+                                            " stack at the end", at)
+                    break
+                if reachable:
+                    self.end_block(f, at, name)
+                if f.else_label is not None:
+                    # An if without else passes its parameters on as its
+                    # results.
+                    if f.ft.params != f.ft.results:
+                        raise WasmError(f"function {self.idx}: an if without else must have"
+                                        " the same parameters and results", at)
+                    self.body.append(f.else_label)
+                if f.op != LOOP:
+                    self.body.append(f.label)
+                self.ctrl.pop()
+                self.reset(f, f.ft.results)
+                reachable = True
+            elif op == 0x05:  # else
+                f = self.ctrl[-1]
+                if f.else_label is None:
+                    raise WasmError(f"function {self.idx}: else without if", at)
+                if reachable:
+                    self.end_block(f, at, name)
+                    self.emit("MOVE", "R15", f.label)
+                self.body.append(f.else_label)
+                f.else_label = None
+                self.reset(f, f.ft.params)
+                reachable = True
+            elif op == 0x00:  # unreachable
                 self.trap(1)
                 reachable = False
             elif op == 0x01:  # nop
                 pass
+            elif op in (BLOCK, LOOP, IF):
+                cond_word = self.pop([I32], at, name)[0][0] if op == IF else ""
+                self.pop(list(ft.params), at, name)
+                f = Frame(op, ft, len(self.stack), self.words, self.new_label())
+                for t in ft.params:
+                    self.push(t)
+                self.ctrl.append(f)
+                if op == LOOP:
+                    self.body.append(f.label)
+                if op == IF:
+                    f.else_label = self.new_label()
+                    self.emit("MOVE[M]", "R0", cond_word)
+                    self.emit("?Z MOVE", "R15", f.else_label)
+            elif op == 0x0C:  # br
+                assert imm is not None
+                f = self.frame(imm, at)
+                for to, frm in self.branch_moves(f, at, name):
+                    self.emit("MOVE", to, frm)
+                self.emit("MOVE", "R15", f.label)
+                reachable = False
+            elif op == 0x0D:  # br_if
+                assert imm is not None
+                (cond,) = self.pop([I32], at, name)
+                f = self.frame(imm, at)
+                moves = self.branch_moves(f, at, name)
+                self.emit("MOVE[M]", "R0", cond[0])
+                if moves:
+                    skip = self.new_label()
+                    self.emit("?Z MOVE", "R15", skip)
+                    for to, frm in moves:
+                        self.emit("MOVE", to, frm)
+                    self.emit("MOVE", "R15", f.label)
+                    self.body.append(skip)
+                else:
+                    self.emit("?!Z MOVE", "R15", f.label)
+            elif op == 0x0E:  # br_table
+                (index,) = self.pop([I32], at, name)
+                frames = [self.frame(d, at) for d in targets]
+                default = frames[-1]
+                for f in frames:
+                    if f.label_types() != default.label_types():
+                        raise WasmError(f"function {self.idx}: the labels of br_table take"
+                                        " different values", at)
+                # A label whose values must be moved first gets a stub that
+                # moves them and then branches.
+                target: Dict[int, str] = {}  # label depth -> address
+                stubs: List[str] = []
+                for depth, f in zip(targets, frames):
+                    if depth in target:
+                        continue
+                    moves = self.branch_moves(f, at, name)
+                    if not moves:
+                        target[depth] = f.label
+                        continue
+                    target[depth] = self.new_label()
+                    stubs.append(target[depth])
+                    stubs += [instr("MOVE", to, frm) for to, frm in moves]
+                    stubs.append(instr("MOVE", "R15", f.label))
+                table = self.new_label()
+                n = len(targets) - 1
+                self.emit("MOVE", "R1", index[0])
+                self.emit("SUB[M]", "R0", "R1", str(n))
+                self.emit("?!C MOVE", "R15", target[targets[-1]])  # index >= n, unsigned
+                self.emit("MOVE", "R15", f"@{table}[R1]")
+                self.body.append(table)
+                self.body += [instr(".DAT", target[depth]) for depth in targets[:-1]]
+                self.body += stubs
+                reachable = False
             elif op == 0x1A:  # drop
                 self.pop([None], at, name)
+            elif op in (0x1B, 0x1C):  # select
+                (cond,) = self.pop([I32], at, name)
+                if sel_type is None and len(self.stack) > self.ctrl[-1].height:
+                    sel_type = self.stack[-1]
+                a, b = self.pop([sel_type, sel_type], at, name)  # underflow if None
+                assert sel_type is not None
+                # The result goes where the first value already is.
+                self.emit("MOVE[M]", "R0", cond[0])
+                for k in range(len(a)):
+                    self.emit("?Z MOVE", a[k], b[k])
+                self.push(sel_type)
             elif op == 0x0F:  # return
                 self.ret(at, name)
                 self.emit("MOVE", "R15", self.ret_label)
@@ -709,6 +970,20 @@ class FunctionTranslator:
                 t = I32 if op == 0x41 else I64
                 for d, w in zip(self.push(t), words(imm, t)):
                     self.emit("MOVE", d, w)
+            elif op in (0x45, 0x50):  # i32.eqz, i64.eqz
+                t = I32 if op == 0x45 else I64
+                (a,) = self.pop([t], at, name)
+                if t == I32:
+                    self.emit("MOVE[M]", "R0", a[0])
+                else:
+                    self.emit("OR[M]", "R0", a[0], a[1])
+                d = self.push(I32)[0]
+                self.emit("MOVE", d, "0")
+                self.emit("?Z MOVE", d, "1")
+            elif op in CMP_OPS:
+                self.compare(I32, *CMP_OPS[op], at, name)
+            elif op in CMP64_OPS:
+                self.compare(I64, *CMP64_OPS[op], at, name)
             elif op in ALU_OPS:
                 a, b = self.pop([I32, I32], at, name)
                 self.emit(ALU_OPS[op], self.push(I32)[0], a[0], b[0])

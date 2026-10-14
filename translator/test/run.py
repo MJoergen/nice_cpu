@@ -22,11 +22,14 @@ import sys
 import tempfile
 from typing import Dict, List, Tuple, Union
 
-from wasm import (ADD, ADD64, AND, AND64, DROP, EXTEND_S, EXTEND_U, I32, I64, MUL, NOP,
-                  OR, OR64, RETURN, SUB, SUB64, UNREACHABLE, WRAP, XOR, XOR64, call,
-                  code, exports, funcs, global_get, global_set, globals_, i32_const,
-                  i64_const, imports, local_get, local_set, local_tee, memory, module,
-                  names, start, typed_globals, types)
+from wasm import (ADD, ADD64, AND, AND64, DROP, ELSE, END, EQ, EQ64, EQZ, EQZ64,
+                  EXTEND_S, EXTEND_U, GE_S, GE_S64, GE_U, GE_U64, GT_S, GT_S64, GT_U,
+                  GT_U64, I32, I64, LE_S, LE_S64, LE_U, LE_U64, LT_S, LT_S64, LT_U,
+                  LT_U64, MUL, NE, NE64, NOP, OR, OR64, RETURN, SELECT, SUB, SUB64,
+                  UNREACHABLE, WRAP, XOR, XOR64, block, br, br_if, br_table, call, code,
+                  exports, funcs, global_get, global_set, globals_, i32_const, i64_const,
+                  if_, imports, local_get, local_set, local_tee, loop, memory, module,
+                  names, select_t, start, typed_globals, typeidx, types)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.join(HERE, "..", "..")
@@ -43,6 +46,29 @@ MAIN_TYPE: Tuple[List[int], List[int]] = ([], [I32])  # () -> i32
 I64_ASM = ("_twice ADD[M] R1, R1, R1\n ADD[C] R2, R2, R2\n MOVE R15, @R13++\n"
            "_high MOVE R1, @_result+1\n MOVE R15, @R13++\n")
 
+
+
+def bits(r: int, *checks: bytes) -> bytes:
+    """Code that leaves 2 * r + c on the stack for each check c in turn, an
+    i32 that is 0 or 1, starting with r = 0. So the first check gives the
+    highest bit. r is an i32 local that the code uses."""
+    out = i32_const(0)
+    for c in checks:
+        out += local_tee(r) + local_get(r) + ADD + c + ADD
+    return out
+
+
+def cmp_all(t: int, pairs: List[Tuple[int, int]]) -> List[bytes]:
+    """Each comparison from eq to ge_u on each pair, then eqz on 0 and on
+    0x1_00000000 (an i32 sees only the low word of that, 0)."""
+    const = i32_const if t == I32 else i64_const
+    ops = ([EQ, NE, LT_S, LT_U, GT_S, GT_U, LE_S, LE_U, GE_S, GE_U] if t == I32 else
+           [EQ64, NE64, LT_S64, LT_U64, GT_S64, GT_U64, LE_S64, LE_U64, GE_S64, GE_U64])
+    out = [const(a) + const(b) + op for a, b in pairs for op in ops]
+    eqz = EQZ if t == I32 else EQZ64
+    return out + [const(0) + eqz, const(-0x80000000 if t == I32 else 0x1_00000000) + eqz]
+
+
 # Cases that must trap rather than return.
 TRAPS = {"unreachable"}
 
@@ -58,6 +84,14 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # get(i) returns i + 100, so sum5 is 101 + 102 - 103 + 104 * 105 =
     # 11020. The fifth argument goes on the stack, and * calls __mul.
     ("sum5", "sum5", "", 11020),
+    # Loops, ifs, and a switch from clang, with get(i) = i + 100:
+    # gcd(1071, 462) = 21, as 1071 = 2 * 462 + 147, 462 = 3 * 147 + 21, and
+    # 147 = 7 * 21. The switch gives sw(0, 1) = get(1) = 101, sw(1, 20) =
+    # 20 - get(3) = -83, sw(2, 0x0F) = 0x0F XOR 0x55 = 0x5A = 90, sw(4, 9)
+    # = gcd(9, 6) = 3, and by default sw(-3, 30) = 30 - 3 = 27: 138 in all.
+    # fib(60) = 1548008755920 = 0x168_6C8312D0 adds 1000. 21 + 138 + 1000
+    # = 1159.
+    ("control", "control", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 1159),
     # Declared locals start at 0. dirty sets its 3 locals to 0x55, and clean
     # gets the same frame words, so without zeroing it returns 0x55 * 3 + 7.
     ("locals", module(
@@ -198,6 +232,152 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
      " ADD @--R13, 2, R15\n MOVE R15, __mul\n"
      " ADD R1, R1, @___wasm_memory\n ADD R1, R1, @___wasm_memory+16383\n"
      " MOVE R15, @R13++\n", 42),
+    # Each comparison on three pairs, ten bits each, eq first:
+    # MAX, MIN: 0101100110. MAX - MIN overflows to a negative number, so
+    #           lt_s is N XOR V = 1 XOR 1 = 0.
+    # MIN, 1:   0110011001. MIN - 1 overflows the other way: N = 0, V = 1.
+    # 5, 5:     1000001111.
+    # eqz 0 is 1, and eqz 0x80000000 is 0: 10.
+    # 0101 1001 1001 1001 1001 1000 0011 1110 = 0x5999983E.
+    ("cmp", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((1, bits(0, *cmp_all(I32, [(0x7FFFFFFF, -0x80000000), (-0x80000000, 1),
+                                        (5, 5)]))))), "", 0x5999983E),
+    # The same for i64:
+    # MAX, MIN: 0101100110 again.
+    # 0x1_00000000, 0x0_FFFFFFFF: a > b both ways, though the low words
+    # compare the other way, so the borrow must reach the high words:
+    # 0100110011.
+    # 0x5_00000007, 0x5_00000007: 1000001111.
+    # eqz 0 is 1, and eqz 0x1_00000000 is 0, so eqz sees the high word: 10.
+    # 0101 1001 1001 0011 0011 1000 0011 1110 = 0x5993383E.
+    ("cmp64", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((1, bits(0, *cmp_all(I64, [(2**63 - 1, -2**63), (0x1_00000000, 0xFFFFFFFF),
+                                        (0x5_00000007, 0x5_00000007)]))))), "", 0x5993383E),
+    # Sum 1 to 10 = 55: a loop inside a block. br_if 1 leaves the block
+    # when i > 10, and br 0 goes back to the start of the loop.
+    ("loop", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((2, i32_const(1) + local_set(0)
+              + block() + loop()
+              + local_get(0) + i32_const(10) + GT_S + br_if(1)
+              + local_get(1) + local_get(0) + ADD + local_set(1)
+              + local_get(0) + i32_const(1) + ADD + local_set(0)
+              + br(0) + END + END
+              + local_get(1)))), "", 55),
+    # abs(x) is an if with an else and a result: abs(-7) + abs(5) = 12.
+    # Then two ifs without else, of type (i32) -> (i32), on 30: the first
+    # adds 2, the second is not taken. 12 + 32 + 30 = 74.
+    ("if", module(
+        types(MAIN_TYPE, ([I32], [I32])),
+        funcs(1, 0),
+        exports(("main", 0, 1)),
+        code((0, local_get(0) + i32_const(0) + LT_S
+              + if_(I32) + i32_const(0) + local_get(0) + SUB + ELSE + local_get(0) + END),
+             (0, i32_const(-7) + call(0) + i32_const(5) + call(0) + ADD
+              + i32_const(30) + i32_const(1) + if_(typeidx(1)) + i32_const(2) + ADD + END + ADD
+              + i32_const(30) + i32_const(0) + if_(typeidx(1)) + i32_const(2) + ADD + END
+              + ADD))), "", 74),
+    # Branches that carry values, from above the slots that they go to.
+    # Each line of main is one check, in bits():
+    # 1: br 0 carries the 3 of 1, 2, 3 out of the block.
+    # 1: br 0 carries an i64 one word down, over an i32. Moving its low
+    #    word first would overwrite its high word.
+    # 1: a taken br_if carries 60 of 50, 60 out; the code after it is not
+    #    run.
+    # 1: a br_if that is not taken leaves 70, 80; drop leaves 70.
+    # 1: br 1 carries 11 of 4, 11 out of two blocks. The 99 is not run.
+    # 1: br 1 in f is a return from inside a block: f returns 42.
+    # 1: a loop of type (i32) -> (i32) counts from 0 to 10. Each br_if 0
+    #    carries the count from above 99 and a copy of itself back to the
+    #    loop's slot.
+    # 0: the same loop, but from 3 to 10, does not give 11.
+    ("brvalues", module(
+        types(MAIN_TYPE, ([I32], [I32])),
+        funcs(0, 0),
+        exports(("main", 0, 1)),
+        code((0, block() + i32_const(5) + i32_const(42) + br(1) + END + i32_const(0)),
+             ([I32, I32], bits(0,
+                block(I32) + i32_const(1) + i32_const(2) + i32_const(3) + br(0) + END
+                + i32_const(3) + EQ,
+                block(I64) + i32_const(9) + i64_const(0x7_00000005) + br(0) + END
+                + i64_const(0x7_00000005) + EQ64,
+                block(I32) + i32_const(50) + i32_const(60) + i32_const(1) + br_if(0)
+                + DROP + DROP + i32_const(0) + END + i32_const(60) + EQ,
+                block(I32) + i32_const(70) + i32_const(80) + i32_const(0) + br_if(0) + DROP + END
+                + i32_const(70) + EQ,
+                block(I32) + block() + i32_const(4) + i32_const(11) + br(1) + END
+                + i32_const(99) + END + i32_const(11) + EQ,
+                call(0) + i32_const(42) + EQ,
+                i32_const(0) + loop(typeidx(1)) + i32_const(1) + ADD + local_tee(1)
+                + i32_const(99) + local_get(1) + local_get(1) + i32_const(10) + LT_U + br_if(0)
+                + DROP + DROP + END + i32_const(10) + EQ,
+                i32_const(3) + loop(typeidx(1)) + i32_const(1) + ADD + local_tee(1)
+                + i32_const(99) + local_get(1) + local_get(1) + i32_const(10) + LT_U + br_if(0)
+                + DROP + DROP + END + i32_const(11) + EQ)))), "", 0xFE),
+    # f(i) is a switch: br_table 0 1 2 3 on i in four blocks returns 100 +
+    # the depth it leaves by. g(i) is br_table 0 1 1 in two blocks of
+    # result i32, from above a 1, so each target needs a move: g(0) is
+    # 7 + 20 from the inner block, and g(i) for i >= 1 is 7 from the outer
+    # one. h() has a br_table with only a default, and returns 55.
+    # Checks: f(0) to f(3) are 100 to 103, f(-1) is 103, as -1 is unsigned
+    # 0xFFFFFFFF, f(2) is not 101, g(0) = 27, g(1) = 7, g(5) = 7, h() = 55:
+    # 1 1111 0111 1 = 0x3EF.
+    ("brtable", module(
+        types(MAIN_TYPE, ([I32], [I32])),
+        funcs(1, 1, 0, 0),
+        exports(("main", 0, 3)),
+        code((0, block() + block() + block() + block()
+              + local_get(0) + br_table([0, 1, 2], 3)
+              + END + i32_const(100) + RETURN
+              + END + i32_const(101) + RETURN
+              + END + i32_const(102) + RETURN
+              + END + i32_const(103)),
+             (0, block(I32) + block(I32) + i32_const(1) + i32_const(7) + local_get(0)
+              + br_table([0], 1) + END + i32_const(20) + ADD + END),
+             (0, block() + i32_const(3) + br_table([], 0) + END + i32_const(55)),
+             (1, bits(0, *[i32_const(i) + call(0) + i32_const(v) + EQ for i, v in
+                           [(0, 100), (1, 101), (2, 102), (3, 103), (-1, 103), (2, 101)]],
+                      *[i32_const(i) + call(1) + i32_const(v) + EQ for i, v in
+                        [(0, 27), (1, 7), (5, 7)]],
+                      call(2) + i32_const(55) + EQ)))), "", 0x3EF),
+    # select picks the first value if the condition is not 0:
+    # 1: select(10, 20, 1) = 10.
+    # 1: select(10, 20, 0) = 20.
+    # 1: typed select on i64: select(0x1_00000002, 0x3_00000004, 0) is the second.
+    # 1: select(0x1_00000002, 0x3_00000004, 7) is the first.
+    # 0: i64.eq 0x1_00000007, 0x2_00000007 is 0, though the low words are equal.
+    # 11110 = 0x1E.
+    ("select", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((1, bits(0,
+                      i32_const(10) + i32_const(20) + i32_const(1) + SELECT + i32_const(10) + EQ,
+                      i32_const(10) + i32_const(20) + i32_const(0) + SELECT + i32_const(20) + EQ,
+                      i64_const(0x1_00000002) + i64_const(0x3_00000004) + i32_const(0)
+                      + select_t(I64) + i64_const(0x3_00000004) + EQ64,
+                      i64_const(0x1_00000002) + i64_const(0x3_00000004) + i32_const(7)
+                      + select_t(I64) + i64_const(0x1_00000002) + EQ64,
+                      i64_const(0x1_00000007) + i64_const(0x2_00000007) + EQ64)))), "", 0x1E),
+    # Code that cannot be reached is skipped up to its block's end or
+    # else, including nested blocks in it, which are not even valid: the
+    # if has no condition, and the add no operands. 8 + 9 = 17.
+    ("dead", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((0, block(I32) + i32_const(8) + br(0)
+              + block() + loop(I64) + if_() + ELSE + END + END + END + ADD + END
+              + i32_const(0) + if_(I32) + UNREACHABLE + ADD + ELSE + i32_const(9) + END
+              + ADD))), "", 17),
     # The start function sets g = g * 10 + 1, then __wasm_call_ctors sets
     # g = g * 10 + 2. In that order, g = 12.
     ("startup", module(

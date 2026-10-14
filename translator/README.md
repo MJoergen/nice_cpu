@@ -63,8 +63,7 @@ global's initial value, not the expressions of `extended-const`.
 Every Zig program built with ReleaseSafe or Debug uses a table,
 `call_indirect`, `br_table`, `select`, `memory.copy`, and `memory.fill`,
 and it traps with `unreachable`, even if its source has no function
-pointers. So the next features are blocks and branches, memory accesses,
-then `call_indirect`.
+pointers. So the next features are memory accesses, then `call_indirect`.
 
 ## Supported features
 
@@ -72,11 +71,16 @@ then `call_indirect`.
   function has at most one result. An `i64` takes two words, low word
   first, and is passed in registers or on the stack by the rules of ISA.md
   §9.3.
-- **Instructions:** `unreachable`, `nop`, `drop`, `return`, `call`,
-  `local.get`, `local.set`, `local.tee`, `global.get`, `global.set`,
-  `i32.const`, `i32.add`, `i32.sub`, `i32.mul`, `i32.and`, `i32.or`,
-  `i32.xor`, `i64.const`, `i64.add`, `i64.sub`, `i64.and`, `i64.or`,
-  `i64.xor`, `i32.wrap_i64`, `i64.extend_i32_s`, and `i64.extend_i32_u`.
+- **Control:** `block`, `loop`, `if`, `else`, `end`, `br`, `br_if`,
+  `br_table`, `return`, `call`, `unreachable`, and `nop`. A block type may
+  be a function type, with parameters and several results.
+- **Instructions:** `drop`, `select` (both forms), `local.get`,
+  `local.set`, `local.tee`, `global.get`, `global.set`, `i32.const`,
+  `i32.add`, `i32.sub`, `i32.mul`, `i32.and`, `i32.or`, `i32.xor`,
+  `i64.const`, `i64.add`, `i64.sub`, `i64.and`, `i64.or`, `i64.xor`,
+  `i32.wrap_i64`, `i64.extend_i32_s`, and `i64.extend_i32_u`.
+- **Comparisons:** `eqz`, `eq`, `ne`, `lt`, `gt`, `le`, and `ge`, signed
+  and unsigned, for `i32` and `i64`.
   `i32.mul` calls `__mul` in the runtime library. `unreachable` traps with
   code 1 through `___wasm_trap_vector`, as ISA.md §9.4 says.
 - **Imports:** functions from `env`, whose names must be C identifiers. Each
@@ -95,14 +99,15 @@ then `call_indirect`.
   not printable ASCII is left out, and so is any such character in the
   input file's name, so that a comment cannot become code.
 
-Not supported yet: blocks, loops, branches, comparisons, the other `i32`
-and `i64` operations, memory instructions, the `0xFC` instructions, the
+Not supported yet: the other `i32` and `i64` operations, memory instructions, the `0xFC` instructions, the
 traps other than `unreachable`, `call_indirect`, `nice.peek` and
 `nice.poke`, data and element segments, library modules (ISA.md §9.4),
 `f32`, and `f64`.
 
 nicewasm checks the types on the operand stack as wasm validation does,
-so an invalid module is an error, not wrong code. Two exports with the
+so an invalid module is an error, not wrong code. Code that cannot be
+reached, such as the code after a `br` up to the end of its block, is
+decoded but not checked, and nicewasm emits nothing for it. Two exports with the
 same name are an error too, and so is a `__wasm_call_ctors` with
 parameters or results.
 
@@ -118,6 +123,14 @@ the wasm operand stack, so each value has fixed frame words: one for an
 frame words. For example, `i32.add` is one `ADD` with three memory
 operands, and `i64.add` is `ADD[M]` on the low words and `ADD[C]` on the
 high words. The output has a comment for each wasm instruction.
+
+A block's values stay in the frame words where they already are. A
+branch moves the values it carries down to the words that the target
+block expects, and then jumps. A branch out of the function moves them
+to R1 and up, as `return` does. `br_table` checks the index against the
+number of labels, then jumps through a table of `.DAT` addresses.
+A comparison sets the flags, usually with `SUB[M]`, then sets the result from
+them. A signed comparison is N XOR V (ISA.md §9.2).
 
 The translated code itself uses only R1–R4, R12, R13, and R15, so R7–R11 keep their
 values across a call, as §9.3 requires.

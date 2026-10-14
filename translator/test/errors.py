@@ -10,9 +10,10 @@ import sys
 import tempfile
 from typing import List, Tuple
 
-from wasm import (ADD, ADD64, F32, I32, I64, call, code, exports, funcs, global_get,
-                  global_set, globals_, i32_const, i64_const, imports, local_get, memory,
-                  module, name, section, start, types, u, vec)
+from wasm import (ADD, ADD64, DROP, ELSE, END, F32, I32, I64, SELECT, block, br,
+                  br_table, call, code, exports, funcs, global_get, global_set, globals_,
+                  i32_const, i64_const, if_, imports, local_get, memory, module, name,
+                  section, start, types, u, vec)
 
 NICEWASM = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "nicewasm.py")
 
@@ -107,7 +108,33 @@ CASES: List[Tuple[bytes, str]] = [
      "function 0: global.set expects i64, found i32"),
     (module(types(([], [I32]), ([I64], [])), funcs(0, 1), code((0, i32_const(1) + call(1) + i32_const(0)), (0, b""))),
      "function 0: call expects i64, found i32"),
-    (one(b"\x02\x40\x0b" + i32_const(0)), "function 0: block is not supported yet"),
+    (one(i32_const(0) + b"\x11\x00\x00"), "function 0: call_indirect is not supported yet"),
+    # Blocks and branches
+    (one(block() + br(2) + END + i32_const(0)), "function 0: label 2 does not exist"),
+    (one(block() + ELSE + END + i32_const(0)), "function 0: else without if"),
+    (one(i32_const(1) + if_() + ELSE + ELSE + END + i32_const(0)), "function 0: else without if"),
+    (one(i32_const(1) + if_(I32) + i32_const(2) + END),
+     "function 0: an if without else must have the same parameters and results"),
+    (one(i64_const(1) + if_() + END + i32_const(0)), "function 0: if expects i32, found i64"),
+    (one(block(I32) + i64_const(1) + END), "function 0: end expects i32, found i64"),
+    (one(i32_const(1) + if_(I32) + i64_const(1) + ELSE + i32_const(2) + END),
+     "function 0: else expects i32, found i64"),
+    (one(block() + i32_const(1) + END + i32_const(0)),
+     "function 0: values left on the operand stack at the end"),
+    (one(i32_const(1) + if_() + i32_const(1) + ELSE + END + i32_const(0)),
+     "function 0: values left on the operand stack at the else"),
+    # Only the block's own values can be popped inside it.
+    (one(i32_const(1) + block() + DROP + END), "function 0: operand stack underflow"),
+    (one(block(I32) + i64_const(1) + br(0) + END), "function 0: br expects i32, found i64"),
+    (one(block(I32) + block() + i32_const(0) + br_table([0], 1) + END + i32_const(0) + END),
+     "function 0: the labels of br_table take different values"),
+    (one(b"\x02\x05" + END + i32_const(0)), "type index 5 is out of range"),
+    (one(b"\x02\x7d" + END + i32_const(0)),
+     "function 0: a block has type f32; only i32 and i64 are supported yet"),
+    (one(i32_const(1) + i64_const(2) + i32_const(0) + SELECT),
+     "function 0: select expects i64, found i32"),
+    (one(i32_const(1) + i32_const(2) + i32_const(0) + b"\x1c\x02\x7f\x7f"),
+     "function 0: select must name one type"),
     (one(b"\xfe"), "function 0: opcode 0xfe is not supported yet"),
     (one(ADD), "function 0: operand stack underflow"),
     (one(b""), "function 0: operand stack underflow"),

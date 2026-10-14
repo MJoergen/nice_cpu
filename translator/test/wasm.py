@@ -144,3 +144,52 @@ UNREACHABLE = b"\x00"
 ADD, SUB, MUL, AND, OR, XOR = b"\x6a", b"\x6b", b"\x6c", b"\x71", b"\x72", b"\x73"
 ADD64, SUB64, AND64, OR64, XOR64 = b"\x7c", b"\x7d", b"\x83", b"\x84", b"\x85"
 WRAP, EXTEND_S, EXTEND_U = b"\xa7", b"\xac", b"\xad"
+
+
+def block(bt: Union[int, None] = None) -> bytes:
+    """block with a block type: None for no values, a value type for one
+    result, or typeidx(i) for the function type i."""
+    return b"\x02" + blocktype(bt)
+
+
+def loop(bt: Union[int, None] = None) -> bytes:
+    return b"\x03" + blocktype(bt)
+
+
+def if_(bt: Union[int, None] = None) -> bytes:
+    return b"\x04" + blocktype(bt)
+
+
+def blocktype(bt: Union[int, None]) -> bytes:
+    if bt is None:
+        return b"\x40"
+    return s(bt - 0x100) if bt >= 0x100 else bytes([bt])
+
+
+def typeidx(i: int) -> int:
+    """A block type that names the function type i. Pass it to block, loop,
+    or if_."""
+    return 0x100 + i
+
+
+def br(i: int) -> bytes:
+    return b"\x0c" + u(i)
+
+
+def br_if(i: int) -> bytes:
+    return b"\x0d" + u(i)
+
+
+def br_table(labels: Sequence[int], default: int) -> bytes:
+    return b"\x0e" + vec([u(i) for i in labels]) + u(default)
+
+
+def select_t(t: int) -> bytes:
+    """The typed select."""
+    return b"\x1c" + vec([bytes([t])])
+
+
+ELSE, END, SELECT = b"\x05", b"\x0b", b"\x1b"
+EQZ, EQ, NE, LT_S, LT_U, GT_S, GT_U, LE_S, LE_U, GE_S, GE_U = (bytes([op]) for op in range(0x45, 0x50))
+EQZ64, EQ64, NE64, LT_S64, LT_U64, GT_S64, GT_U64, LE_S64, LE_U64, GE_S64, GE_U64 = (
+    bytes([op]) for op in range(0x50, 0x5B))

@@ -12,6 +12,9 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
 - `emulator/src/cpu.zig` (core, unit tests) and `main.zig` (CLI, loader). Zig 0.15.
 - `runtime/`: start-up code and runtime routines in NICE assembly (ISA.md §9.3).
 - `translator/nicewasm.py`: wasm -> NICE assembly (ISA.md §9.4). Same rules as niceasm.py.
+- `hdl/`: VHDL-2008, GHDL. No core yet: `src/trace_pkg.vhd`, and the
+  simulation-only memory model and trace writer in `sim/`. Style follows
+  qnice_cpu's CODING_STYLE.md.
 
 ## Commands
 
@@ -22,6 +25,7 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
     cd runtime   && make test        # join, assemble, and run each test/*.asm
     cd translator && make test       # test/run.py, then test/errors.py
     cd translator && make typecheck  # mypy --strict
+    cd hdl && make test              # tb_mem, then tb_trace diffed against niceemu
 
 Run the relevant `make test` after every change.
 

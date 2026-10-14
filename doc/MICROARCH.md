@@ -308,10 +308,12 @@ qnice_cpu. WRITE reports each retired instruction: its address and word,
 whether it was skipped, any interrupt taken, the halt reason, and the register
 values. The writer prints what changed, in the emulator's format and order:
 R0–R14 in order, R15 only after a jump, the memory write, and the halt reason.
+The report is a `t_retire` record (`hdl/src/trace_pkg.vhd`), and the writer
+is `hdl/sim/trace.vhd`.
 
 **The testbench** has a sparse dual-port memory model that loads `.bin` files,
 a console model that writes each byte into the trace stream when it is
-written, and an interrupt source that raises a request once a given number of
+written (both in `hdl/sim/wb_mem.vhd`), and an interrupt source that raises a request once a given number of
 instructions have retired. Whether the core takes it before the next
 instruction or after one that had already issued a data read depends on the
 pipeline state (§6), so the trace cannot be predicted from the request step
@@ -340,7 +342,8 @@ and the accesses appear in program order.
 ## 10. Repository and boards
 
 - **Directory.** The HDL lives in `hdl/`, with its own `make test`. Its commit
-  subjects start with `nicehdl:`.
+  subjects start with `nicehdl:`. Synthesisable code goes in `hdl/src/`, the
+  simulation models in `hdl/sim/`, and the testbenches in `hdl/test/`.
 - **No board.** This repository targets no particular board. Everything that
   depends on a board, including the memory map, is set by generics (§8).
 - **Example design.** An example design for the MEGA65 is planned, probably in

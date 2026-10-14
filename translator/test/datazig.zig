@@ -2,9 +2,8 @@
 // the calls below at compile time.
 extern fn get(i: i32) i32;
 
-// Initialized data, in a data segment. Bytes, because indexing wider
-// elements needs a shift, which nicewasm does not support yet.
-const primes = [_]u8{ 2, 3, 5, 7, 11, 13, 17, 19 };
+// Initialized data, in a data segment.
+const primes = [_]u16{ 2, 3, 5, 7, 11, 13, 17, 19 };
 var state: u32 = 0x12345678;
 
 export fn main() i32 {

@@ -30,15 +30,14 @@ __attribute__((noinline)) unsigned word_at(const unsigned char *p)
     return w;
 }
 
-// Signed 16-bit loads and stores. It takes an end pointer, because p + n
-// would need a shift, which nicewasm does not support yet.
-__attribute__((noinline)) int shorts_sum(short *p, short *end, int x)
+// Signed 16-bit loads and stores.
+__attribute__((noinline)) int shorts_sum(short *p, int n, int x)
 {
     int s = 0;
-    for (short *q = p; q != end; q++)
-        *q = x - get(0);
-    for (short *q = p; q != end; q++)
-        s += *q;
+    for (int i = 0; i < n; i++)
+        p[i] = x - get(0);
+    for (int i = 0; i < n; i++)
+        s += p[i];
     return s;
 }
 
@@ -47,6 +46,6 @@ int main(void)
     fill(buf, 40, get(-90));
     unsigned r = sum(buf, 40);
     r ^= word_at(buf + get(-95));
-    r += shorts_sum(shorts, shorts + 8, get(-300));
+    r += shorts_sum(shorts, get(-92), get(-300));
     return r;
 }

@@ -67,9 +67,8 @@ global's initial value, not the expressions of `extended-const`.
 Every Zig program built with ReleaseSafe or Debug uses a table,
 `call_indirect`, `br_table`, `select`, `memory.copy`, and `memory.fill`,
 and it traps with `unreachable`, even if its source has no function
-pointers. Most compiled code also needs shifts, for example to index an
-array of anything but bytes. So the next features are the shifts and the
-other integer operations, `memory.copy` and `memory.fill`, and then
+pointers. So the next features are the other integer operations, such
+as division and `i64.mul`, `memory.copy` and `memory.fill`, and then
 `call_indirect`.
 
 ## Supported features
@@ -90,6 +89,8 @@ other integer operations, `memory.copy` and `memory.fill`, and then
   through `___wasm_trap_vector`, as ISA.md §9.4 says.
 - **Comparisons:** `eqz`, `eq`, `ne`, `lt`, `gt`, `le`, and `ge`, signed
   and unsigned, for `i32` and `i64`.
+- **Shifts:** `shl`, `shr_s`, `shr_u`, `rotl`, and `rotr`, for `i32` and
+  `i64`.
 - **Memory instructions:** every `i32` and `i64` load and store, at any
   byte address, and `memory.size`. An access out of bounds traps with
   code 2. The memory cannot grow yet, so `memory.grow` returns the size for
@@ -149,6 +150,15 @@ to R1 and up, as `return` does. `br_table` checks the index against the
 number of labels, then jumps through a table of `.DAT` addresses.
 A comparison sets the flags, usually with `SUB[M]`, then sets the result from
 them. A signed comparison is N XOR V (ISA.md §9.2).
+
+An `i32` shift masks its count to 5 bits first, because NICE uses the
+full count (ISA.md §9.4). `shr_s` copies the sign bit into C and shifts it
+in with `C>0` (§5.2). A rotate needs no mask, since only the count modulo
+32 matters to `ROL` and `ROR`. An `i64` shift combines the two words with
+32-bit shifts. A NICE shift by 32 or more gives 0, and so does a shift by
+a "negative" count such as 32 − n for n > 32. So `shl` and `shr_u` need
+no branch: each part that does not apply comes out as 0. An `i64`
+rotate by 32 or more swaps the words first.
 
 A load or store first puts the byte address in R1 and checks that all its
 bytes are in the memory. A failed check jumps to a trap stub after the

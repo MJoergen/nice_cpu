@@ -115,6 +115,11 @@ CMP_OPS = {0x46: (False, "eq"), 0x47: (False, "ne"), 0x48: (False, "lt_s"),
            0x4F: (False, "ge_u")}
 CMP64_OPS = {op + 11: v for op, v in CMP_OPS.items()}
 
+# The shifts and rotates: wasm opcode -> operation. The i64 ones are 18
+# opcodes further on.
+SHIFT_OPS = {0x74: "shl", 0x75: "shr_s", 0x76: "shr_u", 0x77: "rotl", 0x78: "rotr"}
+SHIFT64_OPS = {op + 18: v for op, v in SHIFT_OPS.items()}
+
 BLOCK, LOOP, IF = 0x02, 0x03, 0x04
 
 # The loads: wasm opcode -> (type, bytes, signed). And the stores: wasm
@@ -1013,6 +1018,64 @@ class FunctionTranslator:
             self.emit("?Z AND", "R1", "R1", "0xFF")
             self.emit("?Z OR", f"{mem}+1[R2]", "R4", "R1")
 
+    def shift64(self, op: str, at: int, what: str) -> None:
+        """An i64 shift or rotate. The count is the low word of the second
+        operand, modulo 64. A NICE shift uses its full count, so a count of
+        32 or more, or a "negative" one like 32 - n for n > 32, shifts out
+        every bit (§5.2). That makes the logical shifts branch-free."""
+        a, b = self.pop([I64, I64], at, what)
+        lo, hi = self.push(I64)  # the same words as a
+        if op in ("shl", "shr_u"):
+            # shl: hi' = hi << n | lo >> (32 - n) | lo << (n - 32), lo' = lo << n.
+            # shr_u is the mirror image, with the words swapped.
+            near, far = (lo, hi) if op == "shl" else (hi, lo)
+            fwd, back = ("SHL", "SHR") if op == "shl" else ("SHR", "SHL")
+            self.emit("AND", "R1", b[0], "63")                 # n
+            self.emit("SUB", "R2", "32", "R1")
+            self.emit("SUB", "R3", "R1", "32")
+            self.emit(back, "R4", near, "R2")
+            self.emit(fwd, "R2", near, "R3")
+            self.emit("OR", "R4", "R4", "R2")
+            self.emit(fwd, "R2", far, "R1")
+            self.emit("OR", far, "R4", "R2")
+            self.emit(fwd, near, near, "R1")
+        elif op == "shr_s":
+            # hi' = hi >>s n, which is all sign bits for n >= 32. lo' is
+            # hi >>s (n - 32) for n >= 32, else lo >> n | hi << (32 - n).
+            self.emit("AND", "R1", b[0], "63")                 # n
+            self.emit("SUB", "R2", "R1", "32")
+            self.emit("C<0[M]", "R0", hi, "1")                 # C = the sign bit
+            self.emit("C>0", "R3", hi, "R2")
+            self.emit("C>0", "R4", hi, "R1")
+            self.emit("SUB[M]", "R0", "R1", "32")              # C = n < 32
+            self.emit("?C SUB", "R2", "32", "R1")
+            self.emit("?C SHR", "R3", lo, "R1")
+            self.emit("?C SHL", "R2", hi, "R2")
+            self.emit("?C OR", "R3", "R3", "R2")
+            self.emit("MOVE", lo, "R3")
+            self.emit("MOVE", hi, "R4")
+        else:
+            # A rotate by n >= 32 is a rotate of the swapped words by
+            # n - 32. rotr by n is rotl by -n.
+            count = b[0]
+            if op == "rotr":
+                self.emit("SUB", "R1", "0", b[0])
+                count = "R1"
+            self.emit("AND[M]", "R0", count, "32")             # Z = (n mod 64) < 32
+            self.emit("AND", "R1", count, "31")                # k
+            self.emit("MOVE", "R2", lo)                        # x
+            self.emit("MOVE", "R3", hi)                        # y
+            self.emit("?!Z MOVE", "R2", hi)
+            self.emit("?!Z MOVE", "R3", lo)
+            self.emit("SUB", "R4", "32", "R1")
+            # lo' = x << k | y >> (32 - k), hi' = y << k | x >> (32 - k).
+            self.emit("SHL", lo, "R2", "R1")
+            self.emit("SHR", hi, "R3", "R4")
+            self.emit("OR", lo, lo, hi)
+            self.emit("SHL", hi, "R3", "R1")
+            self.emit("SHR", "R4", "R2", "R4")
+            self.emit("OR", hi, hi, "R4")
+
     def run(self) -> List[str]:
         r = Reader(self.t.data, self.code.start, self.code.end)
         reachable = True
@@ -1056,7 +1119,8 @@ class FunctionTranslator:
                 sel_type = types[0]
             elif not (op in (0x00, 0x01, 0x05, 0x0B, 0x0F, 0x1A, 0x1B, 0x45, 0x50, 0x6C, 0xA7,
                              0xAC, 0xAD)
-                      or op in ALU_OPS or op in ALU64_OPS or op in CMP_OPS or op in CMP64_OPS):
+                      or op in ALU_OPS or op in ALU64_OPS or op in CMP_OPS or op in CMP64_OPS
+                      or op in SHIFT_OPS or op in SHIFT64_OPS):
                 raise WasmError(f"function {self.idx}: {name} is not supported yet", at)
             if not reachable:
                 # Skip to the else or end that makes the code reachable again.
@@ -1264,6 +1328,21 @@ class FunctionTranslator:
                 self.emit("MOVE[M]", "R0", delta[0])
                 self.emit("MOVE", d, "-1")
                 self.emit("?Z MOVE", d, str(self.t.m.memory_pages))
+            elif op in SHIFT_OPS:
+                a, b = self.pop([I32, I32], at, name)
+                d = self.push(I32)[0]
+                shift = SHIFT_OPS[op]
+                if shift in ("rotl", "rotr"):
+                    # Only the count modulo 32 matters to a rotation (§5.2).
+                    self.emit("ROL" if shift == "rotl" else "ROR", d, a[0], b[0])
+                else:
+                    # Wasm takes the count modulo 32 (§9.4).
+                    self.emit("AND", "R1", b[0], "31")
+                    if shift == "shr_s":
+                        self.emit("C<0[M]", "R0", a[0], "1")   # C = the sign bit (§5.2)
+                    self.emit({"shl": "SHL", "shr_u": "SHR", "shr_s": "C>0"}[shift], d, a[0], "R1")
+            elif op in SHIFT64_OPS:
+                self.shift64(SHIFT64_OPS[op], at, name)
             elif op in CMP_OPS:
                 self.compare(I32, *CMP_OPS[op], at, name)
             elif op in CMP64_OPS:

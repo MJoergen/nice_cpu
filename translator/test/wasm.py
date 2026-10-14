@@ -211,3 +211,5 @@ MEMORY_SIZE, MEMORY_GROW = b"\x3f\x00", b"\x40\x00"
 def data(*segs: Tuple[int, bytes]) -> bytes:
     """Active data segments: (byte offset, bytes)."""
     return section(11, vec([b"\0" + b"\x41" + s(off) + b"\x0b" + u(len(d)) + d for off, d in segs]))
+SHL, SHR_S, SHR_U, ROTL, ROTR = (bytes([op]) for op in range(0x74, 0x79))
+SHL64, SHR_S64, SHR_U64, ROTL64, ROTR64 = (bytes([op]) for op in range(0x86, 0x8B))

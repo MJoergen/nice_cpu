@@ -35,6 +35,7 @@ from wasm import (I32_LOAD, I32_LOAD8_S, I32_LOAD8_U, I32_LOAD16_S, I32_LOAD16_U
                   I32_STORE8, I32_STORE16, I64_LOAD, I64_LOAD8_S, I64_LOAD8_U, I64_LOAD16_S,
                   I64_LOAD32_S, I64_LOAD32_U, I64_STORE, I64_STORE8, I64_STORE16,
                   I64_STORE32, MEMORY_GROW, MEMORY_SIZE, data, mem)
+from wasm import ROTL, ROTL64, ROTR, ROTR64, SHL, SHL64, SHR_S, SHR_S64, SHR_U, SHR_U64
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.join(HERE, "..", "..")
@@ -87,6 +88,20 @@ def st(op: int, addr: int, value: int) -> bytes:
     return i32_const(addr) + (i64_const(value) if i64 else i32_const(value)) + mem(op)
 
 
+def op32(a: int, op: bytes, b: int, want: int) -> bytes:
+    """A check that a op b gives want, all as unsigned i32 numbers."""
+    def c(x: int) -> bytes:
+        return i32_const(x - 2**32 if x >= 2**31 else x)
+    return c(a) + c(b) + op + c(want) + EQ
+
+
+def op64(a: int, op: bytes, b: int, want: int) -> bytes:
+    """The same for i64."""
+    def c(x: int) -> bytes:
+        return i64_const(x - 2**64 if x >= 2**63 else x)
+    return c(a) + c(b) + op + c(want) + EQ64
+
+
 # Cases that must trap rather than return, and the first NICE instruction
 # of the code for the wasm instruction that traps, which R2 points at.
 # In main, an operand on the stack with nothing below it is at FP - 1.
@@ -134,6 +149,11 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # so ___wasm_start clears the words below and above the data. primes[5]
     # = 13, and state = 0x12345678 + 100 = 0x123456DC. 13 + 0x56DC = 0x56E9.
     ("data_zig", "datazig", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 0x56E9),
+    # Shifts from clang, with get(i) = i + 100. The CRC-32 of "123456789" is
+    # the standard check value 0xCBF43926. XOR (1 rotl 31) = 0x80000000
+    # gives 0x4BF43926. 1 << 40 >> 37 = 8, and -1 << 40 >> 40 = -1, so the
+    # sum is 0x4BF43926 + 8 - 1 = 0x4BF4392D.
+    ("shifts_c", "shifts", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 0x4BF4392D),
     # Declared locals start at 0. dirty sets its 3 locals to 0x55, and clean
     # gets the same frame words, so without zeroing it returns 0x55 * 3 + 7.
     ("locals", module(
@@ -546,6 +566,52 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         data((5, b"\x11\x22\x33"), (8, b"ABCDEFGHI"), (9, b"\xEE"), (65534, b"\x77\x88"),
              (65536, b""))),
      "_restart ADD @--R13, 2, R15\n MOVE R15, ___wasm_start\n MOVE R15, @R13++\n", 0x1FE),
+    # Shifts and rotates, one bit each. Wasm takes the count modulo 32 or
+    # 64. V is 0x80000001_00000003.
+    ("shifts", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((1, bits(0,
+            op32(0x80000001, SHL, 1, 2),
+            op32(0x80000001, SHL, 33, 2),                       # 33 mod 32 = 1
+            op32(1, SHL, 0xFFFFFFFF, 0x80000000),               # count 31
+            op32(0x80000001, SHR_U, 31, 1),
+            op32(0x80000001, SHR_S, 4, 0xF8000000),
+            op32(0x40000000, SHR_S, 30, 1),
+            op32(0x80000001, SHR_S, 32, 0x80000001),            # count 0
+            op32(0x80000001, ROTL, 1, 3),
+            op32(0x80000001, ROTR, 1, 0xC0000000),
+            op32(0x12345678, ROTL, 36, 0x23456781),             # by 4
+            # V << 4: hi = 0x80000001 << 4, nothing comes up from lo.
+            op64(0x80000001_00000003, SHL64, 4, 0x00000010_00000030),
+            # V << 31: bit 1 of lo goes to bit 0 of hi.
+            op64(0x80000001_00000003, SHL64, 31, 0x80000001_80000000),
+            op64(0x80000001_00000003, SHL64, 32, 0x00000003_00000000),
+            op64(0x80000001_00000003, SHL64, 36, 0x00000030_00000000),
+            op64(0x80000001_00000003, SHL64, 64, 0x80000001_00000003),
+            op64(0x80000001_00000003, SHL64, 0, 0x80000001_00000003),
+            # Only the low word of the count matters: 4.
+            op64(0x80000001_00000003, SHL64, 0xFFFFFFFF_00000004, 0x00000010_00000030),
+            # V >> 4: the low 4 bits of hi, 0001, go to the top of lo.
+            op64(0x80000001_00000003, SHR_U64, 4, 0x08000000_10000000),
+            op64(0x80000001_00000003, SHR_U64, 32, 0x00000000_80000001),
+            op64(0x80000001_00000003, SHR_U64, 63, 1),
+            op64(0x80000001_00000003, SHR_S64, 4, 0xF8000000_10000000),
+            op64(0x80000001_00000003, SHR_S64, 32, 0xFFFFFFFF_80000001),
+            op64(0x80000001_00000003, SHR_S64, 36, 0xFFFFFFFF_F8000000),
+            op64(0x80000001_00000003, SHR_S64, 63, 0xFFFFFFFF_FFFFFFFF),
+            op64(0x40000000_00000000, SHR_S64, 62, 1),
+            # rotl 4: the top 4 bits of hi, 1000, go to the bottom of lo.
+            op64(0x80000001_00000003, ROTL64, 4, 0x00000010_00000038),
+            # rotl 36 is rotl 4 of the swapped words, 0x00000003_80000001.
+            op64(0x80000001_00000003, ROTL64, 36, 0x00000038_00000010),
+            op64(0x80000001_00000003, ROTL64, 32, 0x00000003_80000001),
+            # rotr 4: the bottom 4 bits of lo, 0011, go to the top of hi.
+            op64(0x80000001_00000003, ROTR64, 4, 0x38000000_10000000),
+            op64(0x80000001_00000003, ROTR64, 0, 0x80000001_00000003),
+            # A check that fails.
+            op32(1, SHL, 1, 1))))), "", 0x7FFFFFFE),
     # The start function sets g = g * 10 + 1, then __wasm_call_ctors sets
     # g = g * 10 + 2. In that order, g = 12.
     ("startup", module(

@@ -85,9 +85,11 @@ pointers. nicewasm supports all of them.
 The next step is smaller code. Every value on the wasm operand stack has
 a frame word, so most wasm instructions become a few NICE instructions
 with memory operands, of about three words each. A ReleaseSafe program
-is about 12000 words, and the float library about 30800. Keeping the top
-of the operand stack in registers would shrink both, with no change to
-ISA.md §9.4.
+is about 12000 words, and the float library about 30800. Using locals
+and constants directly as operands, a shorter inline path for memory
+accesses, and helpers for `i64` shifts should shrink both by about a
+third, with no change to ISA.md §9.4. [TODO.md](TODO.md) has the
+measurements and the plan.
 
 ## Supported features
 

@@ -259,11 +259,22 @@ OPTION_CASES: List[Tuple[List[str], bytes, str]] = [
      "data segment 0 does not fit in the memory"),
 ]
 
+# Errors with options: (options, module, expected error message).
+OPTION_CASES += [
+    (["--memory-pages", "0"], module(memory(1)), "--memory-pages: 0 is below the memory's initial size, 1"),
+    (["--memory-pages", "3"], module(section(5, vec([b"\x01\x01\x02"]))),
+     "--memory-pages: 3 is above the memory's maximum size, 2"),
+    (["--memory-pages", "2"], module(MAIN), "--memory-pages: the module has no memory"),
+    (["--memory-pages", "65536"], module(memory(1)), "--memory-pages: the memory must be below 65536 pages"),
+]
+
 # Errors in the command line: (options, expected message). The module is
 # a valid one.
 COMMAND_CASES: List[Tuple[List[str], str]] = [
     (["--library", "1x"], "--library: '1x' is not a C identifier"),
     (["--library-memory", "16"], "--library-memory: only a library module (--library) takes it"),
+    (["--library", "lib", "--memory-pages", "2"],
+     "--memory-pages: a library module (--library) cannot grow its memory"),
 ]
 
 

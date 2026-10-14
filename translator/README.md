@@ -9,13 +9,16 @@ rejects anything else with an error, rather than translating it wrongly.
 
 ## Usage
 
-    ./nicewasm.py [-o output.asm] [--no-bounds-checks]
+    ./nicewasm.py [-o output.asm] [--no-bounds-checks] [--memory-pages N]
                   [--library NAME [--library-memory BYTES]] input.wasm
 
 Without `-o`, the output goes to `input.asm`. `--no-bounds-checks` leaves
 out the bounds checks on memory accesses, as ISA.md §9.4 allows. The code
 is then smaller and faster, but an access out of bounds reads or writes
-whatever NICE memory the address reaches. `--library` translates a
+whatever NICE memory the address reaches. `--memory-pages N` lets
+`memory.grow` grow the memory up to N pages, the cap of ISA.md §9.4. N
+may not be below the memory's initial size or above its maximum, if it
+declares one. Without the option, the cap is the initial size. `--library` translates a
 library module instead, as described below. Errors are printed as
 `file:0xOFFSET: error: message`, where OFFSET is the byte offset in the
 module, or as `file: error: message` when there is no offset. The exit
@@ -77,9 +80,14 @@ expressions of `extended-const`.
 Every Zig program built with ReleaseSafe or Debug uses a table,
 `call_indirect`, `br_table`, `select`, `memory.copy`, and `memory.fill`,
 and it traps with `unreachable`, even if its source has no function
-pointers. nicewasm supports all of them. The next feature is an option
-for the size up to which the memory may grow, so that `memory.grow` can
-succeed (ISA.md §9.4).
+pointers. nicewasm supports all of them.
+
+The next step is smaller code. Every value on the wasm operand stack has
+a frame word, so most wasm instructions become a few NICE instructions
+with memory operands, of about three words each. A ReleaseSafe program
+is about 12000 words, and the float library about 30800. Keeping the top
+of the operand stack in registers would shrink both, with no change to
+ISA.md §9.4.
 
 ## Supported features
 
@@ -117,8 +125,11 @@ succeed (ISA.md §9.4).
   `i64`.
 - **Memory instructions:** every `i32` and `i64` load and store, at any
   byte address, and `memory.size`. An access out of bounds traps with
-  code 2. The memory cannot grow yet, so `memory.grow` returns the size for
-  0 pages and -1 otherwise.
+  code 2. `memory.grow` returns the old size, or -1 if the memory would
+  pass its cap (`--memory-pages`), and sets the new pages to 0. Below the
+  cap, the size is a word, `W.pages`, and the bounds checks compare with
+  words that `memory.grow` keeps up to date, `W.limit0` to `W.limit8`. At
+  the cap, they are constants, and only growing by 0 pages succeeds.
 - **Bulk memory:** `memory.fill` and `memory.copy`, whose ranges may
   overlap. Both check their ranges before they write a byte, and trap with
   code 2 if a range passes the end of the memory. Each calls a function

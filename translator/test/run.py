@@ -194,7 +194,8 @@ LIB_ASM = "___wasm_start MOVE R15, @R13++\n_main {}\n ADD @--R13, 2, R15\n MOVE 
 # of the code for the wasm instruction that traps, which R2 points at.
 # In main, an operand on the stack with nothing below it is at FP - 1. An
 # i32 above it is at FP - 2, and an i64 above an i64 at FP - 4 and FP - 3.
-TRAPS = {"trunc_big": "MOVE R2, 0x4F000000",
+TRAPS = {"growtrap": "MOVE R1, @-1[R12]",
+         "trunc_big": "MOVE R2, 0x4F000000",
          "trunc_small": "MOVE R2, 0x41E00000",
          "trunc_neg": "MOVE R2, 0x41F00000",
          "trunc_nan": "MOVE R2, 0x5F000000",
@@ -216,6 +217,8 @@ TRAPS = {"trunc_big": "MOVE R2, 0x4F000000",
 
 # Options for nicewasm.
 OPTIONS = {"unchecked": ["--no-bounds-checks"],
+           "grow": ["--memory-pages", "3"],
+           "growtrap": ["--memory-pages", "2"],
            "library": ["--library", "lib"],
            "libtrap": ["--library", "lib"],
            "libmem": ["--library", "lib", "--library-memory", "128"]}
@@ -1116,6 +1119,40 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     ("libtrap", LIB_MODULE, LIB_ASM.format("MOVE R0, R0", "_peek100", "MOVE R0, R0"), 2),
     # With 128 bytes reserved, it reads 0.
     ("libmem", LIB_MODULE, LIB_ASM.format("MOVE R0, R0", "_peek100", "ADD R1, R1, 5"), 5),
+    # memory.grow, with up to 3 pages. dirty() writes 77 in the first word of
+    # page 1 and 99 in the last word of page 2, which are not in the memory
+    # yet. memory.grow must set them to 0. One bit each:
+    ("grow", module(
+        types(MAIN_TYPE, ([], [])),
+        imports(("env", "dirty", 1)),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 1)),
+        code((1, bits(0,
+            MEMORY_SIZE + i32_const(1) + EQ,
+            call(0) + i32_const(1) + MEMORY_GROW + i32_const(1) + EQ,       # returns the old size
+            MEMORY_SIZE + i32_const(2) + EQ,
+            ld(I32_LOAD, 65536, 0),                                          # 77 is gone
+            st(I32_STORE, 131068, 77) + ld(I32_LOAD, 131068, 77),            # page 1 works
+            i32_const(5) + MEMORY_GROW + i32_const(-1) + EQ,                 # only 1 page left
+            i32_const(1) + MEMORY_GROW + i32_const(2) + EQ,
+            i32_const(1) + MEMORY_GROW + i32_const(-1) + EQ,                 # at the cap
+            i32_const(0) + MEMORY_GROW + i32_const(3) + EQ,
+            ld(I32_LOAD, 196604, 0),                                         # 99 is gone
+            ld(I64_LOAD, 196600, 0),                                         # the last 8 bytes
+            fill(196600, 0xAB, 8) + ld(I32_LOAD, 196600, 0xABABABAB - 2**32),
+            # A check that fails.
+            MEMORY_SIZE + i32_const(2) + EQ)))),
+     "_dirty MOVE @___wasm_memory+16384, 77\n MOVE @___wasm_memory+49151, 99\n"
+     " MOVE R15, @R13++\n", 0x1FFE),
+    # Page 1 is reserved, but not part of the memory until it grows, so a
+    # load from it traps.
+    ("growtrap", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((0, i32_const(65536) + mem(I32_LOAD)))), "", 2),
     # The start function sets g = g * 10 + 1, then __wasm_call_ctors sets
     # g = g * 10 + 2. In that order, g = 12.
     ("startup", module(

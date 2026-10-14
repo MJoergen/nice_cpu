@@ -161,6 +161,8 @@ Left for later:
 
 - §1.6: an option for the memory cap, needed with `memory.grow`, and the zero loop's skipping of data segments. Neither instruction nor data segments are supported yet.
 
+**Resolved** later: the zero loop skips the words that data segments set, with one loop for each range of words that it clears (commit "nicewasm: add active data segments"). `--memory-pages` sets the cap, and `memory.grow` grows the memory up to it and sets the new pages to 0.
+
 ## 7. Second round, commit 377a620
 
 Reviewed on 2026-10-14: `translator/nicewasm.py`, its tests and README, `runtime/`, and ISA.md §8.3, §9.3, and §9.4 at commit 377a620 ("Review: record how the wasm review was resolved"), which resolves §1 to §3 above as §6 says. The diff from the first version of the translator was read line by line for regressions, each resolved item was checked against the code and its test, every `make test` and `make typecheck` was run, and the translator was run on about twenty hostile or odd modules: padded and overlong LEB128 numbers, a memory of 0 pages, invalid mutability and export kinds, a start function that is an import, dead code after `unreachable` and `return`, an `i64` argument that would need R4 and R5, `local.set` on a stack parameter, and an import and an export of the same name.

@@ -282,6 +282,7 @@ class Module:
     imports: List[Import] = field(default_factory=list)
     funcs: List[int] = field(default_factory=list)     # type index of each defined function
     memory_pages: Optional[int] = None                 # initial size, if there is a memory
+    memory_max: Optional[int] = None                   # its maximum size, if it has one
     globals: List[Global] = field(default_factory=list)
     exports: List[Tuple[str, int, int]] = field(default_factory=list)  # name, kind, index
     start: Optional[int] = None
@@ -437,16 +438,14 @@ def parse(data: bytes) -> Module:
     return m
 
 
-def parse_limits(s: Reader, what: str) -> int:
-    """Reads limits and returns the minimum. The maximum is not used."""
+def parse_limits(s: Reader, what: str) -> Tuple[int, Optional[int]]:
+    """Reads limits: the minimum, and the maximum if there is one."""
     at = s.pos
     flags = s.byte()
     if flags not in (0, 1):
         raise WasmError(f"a shared or 64-bit {what} is not supported", at)
     minimum = s.u32()
-    if flags == 1:
-        s.u32()
-    return minimum
+    return minimum, (s.u32() if flags == 1 else None)
 
 
 def parse_section(m: Module, sec_id: int, s: Reader, sec_start: int) -> None:
@@ -501,13 +500,13 @@ def parse_section(m: Module, sec_id: int, s: Reader, sec_start: int) -> None:
             t = s.byte()
             if t != 0x70:
                 raise WasmError(f"table 0 holds {type_name(t)}; only funcref is supported", at)
-            m.table_size = parse_limits(s, "table")
+            m.table_size = parse_limits(s, "table")[0]
     elif sec_id == 5:
         count = s.u32()
         if count > 1:
             raise WasmError("a module may have only one memory", sec_start)
         if count == 1:
-            m.memory_pages = parse_limits(s, "memory")
+            m.memory_pages, m.memory_max = parse_limits(s, "memory")
     elif sec_id == 6:
         for i in range(s.u32()):
             at = s.pos
@@ -694,6 +693,38 @@ def byte_copy() -> List[str]:
 # caller has checked. Each byte or whole word is a pass of a loop: a word
 # when the addresses are at a multiple of 4 and 4 or more bytes are left.
 HELPERS: Dict[str, List[str]] = {
+    "W.grow": [
+        "; W.grow: memory.grow. Grows the memory by R1 pages, if that stays within",
+        "; the cap, sets the new pages to 0, and returns the old size in R1. Else",
+        "; it returns -1.",
+        "W.grow",
+        instr("MOVE[M]", "R0", "R1"),
+        instr("?Z MOVE", "R1", "@W.pages"),                # growing by 0
+        instr("?Z MOVE", "R15", "@R13++"),
+        instr("MOVE", "R2", "W.CAP"),
+        instr("SUB", "R2", "R2", "@W.pages"),              # pages left
+        instr("SUB[M]", "R0", "R2", "R1"),                 # C = R2 < R1
+        instr("?C MOVE", "R1", "-1"),
+        instr("?C MOVE", "R15", "@R13++"),
+        instr("MOVE", "R3", "@W.pages"),                   # the old size
+        instr("ADD", "@W.pages", "R3", "R1"),
+        instr("SHL", "R4", "R3", "14"),                    # 16384 words a page
+        instr("ADD", "R4", "R4", "___wasm_memory"),
+        instr("SHL", "R5", "R1", "10"),                    # 1024 passes of 16 words a page
+        "W.grow.zero",
+        *[instr("MOVE", "@R4++", "R0")] * ZERO_UNROLL,
+        instr("DEC[M]", "R5", "R5"),
+        instr("?!Z MOVE", "R15", "W.grow.zero"),
+        instr("MOVE", "R2", "@W.pages"),
+        instr("SHL", "R2", "R2", "16"),                    # the new size in bytes
+        instr("ADD", "@W.limit0", "R2", "1"),
+        instr("MOVE", "@W.limit1", "R2"),
+        instr("SUB", "@W.limit2", "R2", "1"),
+        instr("SUB", "@W.limit4", "R2", "3"),
+        instr("SUB", "@W.limit8", "R2", "7"),
+        instr("MOVE", "R1", "R3"),
+        instr("MOVE", "R15", "@R13++"),
+    ],
     "W.fill": [
         "; W.fill: sets the R3 bytes from byte address R1 to the low byte of R2.",
         "W.fill",
@@ -785,7 +816,8 @@ HELPERS: Dict[str, List[str]] = {
 
 class Translator:
     def __init__(self, m: Module, data: bytes, checks: bool = True,
-                 library: Optional[str] = None, library_memory: Optional[int] = None) -> None:
+                 library: Optional[str] = None, library_memory: Optional[int] = None,
+                 memory_pages: Optional[int] = None) -> None:
         self.m = m
         self.data = data
         self.checks = checks  # bounds checks on memory accesses
@@ -812,6 +844,24 @@ class Translator:
                 self.mem_bytes = library_memory
         elif library_memory is not None:
             raise WasmError("--library-memory: the module has no memory")
+        # The cap: memory.grow may grow the memory up to it (§9.4). Unless
+        # it is above the initial size, the size is a constant.
+        self.cap = m.memory_pages
+        if memory_pages is not None:
+            if library:
+                raise WasmError("--memory-pages: a library module cannot grow its memory")
+            if m.memory_pages is None:
+                raise WasmError("--memory-pages: the module has no memory")
+            if memory_pages < m.memory_pages:
+                raise WasmError(f"--memory-pages: {memory_pages} is below the memory's initial"
+                                f" size, {m.memory_pages}")
+            if m.memory_max is not None and memory_pages > m.memory_max:
+                raise WasmError(f"--memory-pages: {memory_pages} is above the memory's maximum"
+                                f" size, {m.memory_max}")
+            if memory_pages >= 65536:
+                raise WasmError("--memory-pages: the memory must be below 65536 pages")
+            self.cap = memory_pages
+        self.growable = self.cap != m.memory_pages
         self.helpers: set[str] = set()  # the HELPERS that functions call
         self.labels: Dict[int, List[str]] = {}         # function index -> export labels
         self.global_labels: Dict[int, List[str]] = {}  # global index -> export labels
@@ -870,8 +920,8 @@ class Translator:
             out.append("")
             out += FunctionTranslator(self, n_imports + i, code).run()
         for name in sorted(self.helpers):
-            out += [""] + [line.replace("W.", self.prefix).replace("___wasm_memory", self.mem)
-                           for line in HELPERS[name]]
+            out += [""] + [line.replace("W.CAP", str(self.cap)).replace("W.", self.prefix)
+                           .replace("___wasm_memory", self.mem) for line in HELPERS[name]]
         out += self.table()
         if self.m.globals:
             out += ["", "; Globals"]
@@ -879,6 +929,13 @@ class Translator:
                 out += self.global_labels.get(i, [])
                 out.append(f"{self.prefix}g{i}")
                 out += [instr(".DAT", w) for w in words(g.init, g.type)]
+        if self.growable:
+            assert self.m.memory_pages is not None
+            out += ["", "; The memory's size in pages, and for each n the first byte address",
+                    "; at which n bytes do not fit, or 0 if none do. W.grow keeps them",
+                    "; up to date.", "W.pages", instr(".DAT", str(self.m.memory_pages))]
+            for n, v in self.limits(self.m.memory_pages):
+                out += [f"W.limit{n}", instr(".DAT", str(v))]
         if self.m.memory_pages is not None:
             pages = self.m.memory_pages
             if self.library:
@@ -897,7 +954,19 @@ class Translator:
                 else:
                     # A library's memory is small, so it is in the image.
                     out.append(instr(".BLK" if self.library else ".RES", str(values)))
+            if self.growable:
+                assert self.cap is not None
+                out.append(f"        ; pages {pages} to {self.cap - 1}, for memory.grow")
+                out.append(instr(".RES", str((self.cap - pages) * WORDS_PER_PAGE)))
         return out
+
+    @staticmethod
+    def limits(pages: int) -> List[Tuple[int, int]]:
+        """For n = 0 (memory.fill and memory.copy, which check the end of a
+        range), 1, 2, 4, and 8: the first byte address at which n bytes do
+        not fit in a memory of the given pages, or 0 if none do."""
+        size = pages * WORDS_PER_PAGE * 4
+        return [(n, max(size - n + 1, 0)) for n in (0, 1, 2, 4, 8)]
 
     def start(self, runs: List[Tuple[int, Union[int, List[int]]]]) -> List[str]:
         """___wasm_start, which a program's module always has (§9.4)."""
@@ -919,6 +988,12 @@ class Translator:
                 out.append(f"        ?!Z MOVE R15, W.zero{gaps}")
                 gaps += 1
             out += [instr("MOVE", "@R5++", "R0")] * (values % ZERO_UNROLL)
+        if self.growable:
+            # Back to the initial size, in case the program starts again.
+            assert self.m.memory_pages is not None
+            out.append(instr("MOVE", "@W.pages", str(self.m.memory_pages)))
+            out += [instr("MOVE", f"@W.limit{n}", str(v))
+                    for n, v in self.limits(self.m.memory_pages)]
         for idx in (self.m.start, self.ctors):
             if idx is not None:
                 out.append(instr("ADD", "@--R13", "2", "R15"))
@@ -1243,6 +1318,12 @@ class FunctionTranslator:
             self.emit("?C MOVE", "R15", trap)  # base + offset passes 2^32
         else:
             self.emit("MOVE", "R1", base)
+        if self.t.growable:
+            # The first address at which n bytes do not fit, which
+            # memory.grow keeps up to date.
+            self.emit("SUB[M]", "R0", "R1", f"@W.limit{n}")
+            self.emit("?!C MOVE", "R15", trap)
+            return
         # The first address at which n bytes do not fit.
         assert self.t.mem_bytes is not None
         limit = self.t.mem_bytes - n + 1
@@ -1313,7 +1394,10 @@ class FunctionTranslator:
         size = self.t.mem_bytes
         self.emit("ADD[M]", "R1", addr, n)
         self.emit("?C MOVE", "R15", trap)          # addr + n passes 2^32
-        if size < 1 << 32:
+        if self.t.growable:
+            self.emit("SUB[M]", "R0", "R1", "@W.limit0")
+            self.emit("?!C MOVE", "R15", trap)
+        elif size < 1 << 32:
             self.emit("SUB[M]", "R0", "R1", words(size + 1, I32)[0])
             self.emit("?!C MOVE", "R15", trap)
 
@@ -1855,16 +1939,21 @@ class FunctionTranslator:
                 self.store(t, n, imm, at, name)
             elif op == 0x3F:  # memory.size
                 assert self.t.m.memory_pages is not None
-                self.emit("MOVE", self.push(I32)[0], str(self.t.m.memory_pages))
+                size = "@W.pages" if self.t.growable else str(self.t.m.memory_pages)
+                self.emit("MOVE", self.push(I32)[0], size)
             elif op == 0x40:  # memory.grow
-                # The memory cannot grow yet, so only growing by 0 pages
-                # succeeds. It returns the size, and anything else -1.
                 assert self.t.m.memory_pages is not None
-                (delta,) = self.pop([I32], at, name)
-                d = self.push(I32)[0]
-                self.emit("MOVE[M]", "R0", delta[0])
-                self.emit("MOVE", d, "-1")
-                self.emit("?Z MOVE", d, str(self.t.m.memory_pages))
+                if self.t.growable:
+                    self.t.helpers.add("W.grow")
+                    self.call("W.grow", FuncType([I32], [I32]), at, name)
+                else:
+                    # The memory is at its cap, so only growing by 0 pages
+                    # succeeds. It returns the size, and anything else -1.
+                    (delta,) = self.pop([I32], at, name)
+                    d = self.push(I32)[0]
+                    self.emit("MOVE[M]", "R0", delta[0])
+                    self.emit("MOVE", d, "-1")
+                    self.emit("?Z MOVE", d, str(self.t.m.memory_pages))
             elif op in SHIFT_OPS:
                 a, b = self.pop([I32, I32], at, name)
                 d = self.push(I32)[0]
@@ -2010,8 +2099,10 @@ class FunctionTranslator:
 
 
 def translate(data: bytes, source: str, checks: bool = True, library: Optional[str] = None,
-              library_memory: Optional[int] = None) -> List[str]:
-    return Translator(parse(data), data, checks, library, library_memory).run(source)
+              library_memory: Optional[int] = None,
+              memory_pages: Optional[int] = None) -> List[str]:
+    return Translator(parse(data), data, checks, library, library_memory,
+                      memory_pages).run(source)
 
 
 def main() -> None:
@@ -2021,6 +2112,9 @@ def main() -> None:
                     help="output file (default: input with .asm extension)")
     ap.add_argument("--no-bounds-checks", action="store_true",
                     help="do not check that memory accesses are in bounds")
+    ap.add_argument("--memory-pages", metavar="N", type=int,
+                    help="pages up to which memory.grow may grow the memory"
+                         " (default: its initial size)")
     ap.add_argument("--library", metavar="NAME",
                     help="translate a library module (ISA.md §9.4) with this name")
     ap.add_argument("--library-memory", metavar="BYTES", type=int,
@@ -2042,8 +2136,10 @@ def main() -> None:
             sys.exit(f"--library: {args.library!r} is not a C identifier")
         if args.library_memory is not None and args.library is None:
             sys.exit("--library-memory: only a library module (--library) takes it")
+        if args.memory_pages is not None and args.library is not None:
+            sys.exit("--memory-pages: a library module (--library) cannot grow its memory")
         lines = translate(data, os.path.basename(args.input), not args.no_bounds_checks,
-                          args.library, args.library_memory)
+                          args.library, args.library_memory, args.memory_pages)
     except WasmError as e:
         where = "" if e.offset is None else f":0x{e.offset:x}"
         print(f"{args.input}{where}: error: {e}", file=sys.stderr)

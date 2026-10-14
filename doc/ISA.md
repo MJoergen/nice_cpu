@@ -433,8 +433,8 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
 
 - **Case.** Mnemonics, register names and directives are case-insensitive.
 - **Comments.** A comment starts with `;` or `*` and runs to the end of the line.
-- **Separators.** Operands are separated by commas or whitespace.
-- **Labels.** A label is the first word on a line that is not a mnemonic or a directive. Its value is the address of what follows on that line.
+- **Separators.** Operands are separated by whitespace or by one comma.
+- **Labels.** A label is the first word on a line that is not a mnemonic or a directive. Its value is the address of what follows on that line; on a `.ORG` line, that is the new address. A label or `.EQU` name cannot be a mnemonic or a register name.
 - **Conditions.** `?cond` is one of the condition codes in §3, such as `?Z` or `?!C`. Without one, the instruction is unconditional. `?M`/`?!M` are accepted as aliases for `?E`/`?!E`.
 - **Modifiers.** `[M]` sets the M bit and `[C]` sets the C bit. `[CM]` and `[MC]` set both. `[C]` is accepted only on ALU instructions.
 - **Operand counts.** The assembler expects exactly the operands the instruction uses:
@@ -462,7 +462,7 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
 
 | Directive | Effect |
 |---|---|
-| `NAME .EQU value` | Defines NAME. It is substituted textually, so it can stand for a number or a register. |
+| `NAME .EQU value` | Defines NAME. The value is a number, an expression, a register or a complete operand. NAME is replaced by the value where it stands for a whole operand, a register, or a number in an expression. |
 | `.ORG addr` | Continue assembling at addr. |
 | `.DAT value` | One word holding value. |
 | `.BLK n` | n words of 0. |

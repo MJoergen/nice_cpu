@@ -1,8 +1,9 @@
 PYTHON ?= python3
 
-TESTS = count replicate print encoding
+TESTS = count replicate print encoding wrap crlf
 
-# Assemble each test/X.asm and compare with the expected test/X.bin.
+# Assemble each test/X.asm and compare with the expected test/X.bin, then run
+# the error tests in test/errors.py.
 test:
 	@for t in $(TESTS); do \
 	  $(PYTHON) niceasm.py -o test/$$t.out test/$$t.asm || exit 1; \
@@ -10,10 +11,11 @@ test:
 	  else echo "FAIL $$t"; diff test/$$t.bin test/$$t.out; exit 1; fi; \
 	done
 	@rm -f test/*.out
+	@$(PYTHON) test/errors.py
 
 # Needs mypy (pip install mypy).
 typecheck:
-	$(PYTHON) -m mypy --strict niceasm.py
+	$(PYTHON) -m mypy --strict niceasm.py test/errors.py
 
 clean:
 	rm -f test/*.out

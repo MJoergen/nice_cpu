@@ -86,3 +86,37 @@ data:   .DAT    0b101, 0x10+TEN-1, -1, data
         .BLK    2
         MOVE    R1, end-data
 end
+; aliases, conditions, modes and spellings not covered above
+        .ORG    0x200
+        ROL     R1, R2, R3
+        BPL     R1, R2, R3
+        SHR     R1, R2, R3
+        BPR     R1, R2, R3
+        ?!X MOVE R1, R2
+        ?!C MOVE R1, R2
+        ?!N MOVE R1, R2
+        ?!V MOVE R1, R2
+        ?!E MOVE R1, R2
+        ?!I MOVE R1, R2
+        MOVE    @3[R2], R1
+        MOVE    R1, --R0
+        MOVE    R00, R09
+        AND     R10, R11, R12
+        .ASCII_L ""
+        .ASCII_B ''
+        .ASCII_L "a;b"                  ; a string containing ';'
+* a comment starting with '*'
+        .BLK    0
+; .EQU chains, .EQU naming a label, .EQU standing for a whole operand
+CHAIN_A .EQU    CHAIN_B
+CHAIN_B .EQU    R1
+LBL_EQU .EQU    here
+IND     .EQU    @R2
+PINC    .EQU    R3++
+IDX     .EQU    5[R4]
+        MOVE    CHAIN_A, R2
+here    MOVE    R1, LBL_EQU
+        MOVE    IND, PINC
+        MOVE    @IDX, R1
+lbl     .ORG    0x300                   ; the label names the new address
+        .DAT    lbl

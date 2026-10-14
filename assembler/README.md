@@ -9,7 +9,9 @@ dependencies beyond the standard library. It implements the assembler syntax in
     make test
 
 This assembles every program in `test/` and compares the result with
-the expected `.bin` file.
+the expected `.bin` file. It then runs `test/errors.py`, which assembles a
+list of one-line faulty programs and checks the error message, the exit
+status, and that no output file is written.
 
 The script is fully type-annotated. `make typecheck` checks it with
 `mypy --strict` (install mypy first).
@@ -18,8 +20,9 @@ The script is fully type-annotated. `make typecheck` checks it with
 
     ./niceasm.py [-o output.bin] input.asm
 
-Without `-o`, the output goes to `input.bin`. Errors are printed as
-`file:line: error: message`, and the exit status is 1 if there were any.
+Without `-o`, the output goes to `input.bin`, unless that is the input file
+itself. Errors are printed as `file:line: error: message`, and the exit status
+is 1 if there were any. No output is written if there is an error.
 
 ## Output format
 
@@ -34,18 +37,35 @@ by `.ORG` are not listed.
 - Expressions are a number or symbol, optionally combined with `+` and `-`
   (for example `end-data` or `TABLE+1`), with no spaces, because whitespace
   separates operands. Arithmetic wraps modulo 2³².
-- A label may end with `:`.
+- Operands are separated by whitespace or by one comma. Two commas in a row,
+  or a comma at the start or end of a line, are errors.
+- A label may end with `:`. A label on a `.ORG` line names the new address.
 - Labels and `.EQU` names are case-sensitive. Mnemonics, register names,
   conditions, modifiers and directives are not.
+- A label or `.EQU` name cannot be a mnemonic or look like a register (`R`
+  followed by digits, so `R16` is rejected too).
+- An `.EQU` value is a number, an expression, a register or a complete
+  operand such as `@R2`, `R3++` or `5[R4]`. The name is replaced by its value
+  when it is a whole operand, the part after `@`, the register in `--Rx`,
+  `Rx++`, `Rx--` or `c[Rx]`, or a term in an expression. In an expression
+  the value must be a number or an expression. Each value is checked where it
+  is defined.
+- Numbers are digits only: no `_` separators.
 - `.DAT` accepts several values: `.DAT 1, 2, 3`.
 - Strings for `.ASCII_L` and `.ASCII_B` may use `'...'` or `"..."`. There are
   no escape sequences.
 - `.ORG` and `.BLK` arguments must not refer to labels defined later.
+- A `.BLK` count must not be negative, and the block must end at or before
+  address `0xFFFFFFFF`. Other statements wrap from `0xFFFFFFFF` to 0.
 - Writing two words to the same address is an error.
+- A UTF-8 byte order mark at the start of the file is ignored.
 
 ## Tests
 
 | File | What it checks |
 |---|---|
 | `count`, `replicate`, `print` | The 2004 example programs by B. Ulmann ([examples.zip](http://www.vaxman.de/projects/nice/examples.zip)). The `.bin` files are the original `NICE.pm` output and match byte for byte. |
-| `encoding` | Every addressing mode, opcode, condition, control instruction and directive. The expected output was checked by hand against ISA.md, including the worked example in §11. |
+| `encoding` | Every addressing mode, opcode, alias, condition, control instruction and directive, register spellings, `.EQU` chains and operands. The expected output was checked by hand against ISA.md, including the worked example in §11. |
+| `wrap` | Address wrap from `0xFFFFFFFF` to 0. |
+| `crlf` | CRLF line endings and a program with no `.ORG`. |
+| `errors.py` | One case per error message, including every bug fixed after [the review](../doc/review/assembler-review.md). |

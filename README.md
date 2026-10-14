@@ -91,7 +91,7 @@ whole program is assembled at once.
 
 A hand-written program that does not use the runtime library needs only
 the last two steps, as in the quick start above. The
-[translator README](translator/README.md) gives the exact clang and Zig
+[translator README](translator/README.md) gives the exact clang, Zig, and Rust
 command lines for the first step, and the [runtime README](runtime/README.md)
 the join.
 
@@ -124,16 +124,16 @@ is one, compiled code reaches NICE through WebAssembly: clang (with
 `wasm-ld`), Zig, and Rust all have a wasm32 target, and `nicewasm`
 translates the module. That gives C code the 8-bit bytes of wasm linear
 memory, which Rust and Zig need anyway. GCC has no wasm32 target and no
-NICE target, so it is not used. Clang and Zig are tested; Rust has not been
-tried.
+NICE target, so it is not used. All three are tested.
 
 **Host tools.** Python 3 runs `niceasm`, `nicewasm`, and the test scripts.
 Nothing beyond the standard library is needed, and `make typecheck` checks
 the Python with `mypy --strict` if mypy is installed. Zig 0.15 builds
 `niceemu` and compiles the Zig test modules. clang with the wasm32 target
-and `wasm-ld` are needed only for `make wasm` in `translator/`, which
-rebuilds the compiled test modules; their `.wasm` files are checked in, so
-`make test` needs no C compiler. The tests use `make`, `cat`, `cmp`, and
+and `wasm-ld`, and rustc with the `wasm32-unknown-unknown` target, are
+needed only for `make wasm` in `translator/`, which rebuilds the compiled
+test modules. Their `.wasm` files are checked in, so `make test` needs no
+C or Rust compiler. The tests use `make`, `cat`, `cmp`, and
 `diff`. GitHub Actions runs every `make test` and `make typecheck` on each
 push.
 

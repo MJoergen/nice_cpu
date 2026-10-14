@@ -2,7 +2,7 @@
 """Runs translated wasm modules in the emulator.
 
 Each case is a module, either built here with wasm.py or compiled from a
-test/X.c or test/X.zig source into test/X.wasm. It is translated and joined
+test/X.c, test/X.zig, or test/X.rs source into test/X.wasm. It is translated and joined
 with runtime/start_wasm.asm, any hand-written assembly the case needs, and
 runtime/lib.asm, as ISA.md §9.3 describes. If it calls the float library,
 runtime/float.wasm translated as the library module float follows. Then it
@@ -201,6 +201,7 @@ TRAPS = {"growtrap": "MOVE R1, @-1[R12]",
          "trunc_nan": "MOVE R2, 0x5F000000",
          "libtrap": "MOVE R1, @-1[R12]",
          "safetrap": "MOVE R1, 1",
+         "rusttrap": "MOVE R1, 1",
          "indirectoob": "MOVE R5, @-2[R12]",
          "indirectnull": "MOVE R5, @-2[R12]",
          "indirecttype": "MOVE R5, @-3[R12]",
@@ -225,7 +226,7 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
 
 # What a case must print on the console (ISA.md §8.3). Every other case
 # must print nothing.
-CONSOLE = {"peekpoke": "Hi\n", "hello": "Hello, NICE!\n"}
+CONSOLE = {"peekpoke": "Hi\n", "hello": "Hello, NICE!\n", "hello_rs": "Hello, Rust!\n"}
 
 # Cases whose module is written to a file of another name. The newline
 # must not end the comment that names the source.
@@ -288,6 +289,18 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     ("safetrap", "safetrap", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 1),
     # Hello world from Zig, through nice.poke to the console. 13 bytes.
     ("hello", "hello", "", 13),
+    # Rust, with get(i) = i + 100. The calls through &dyn Shape use a
+    # table and call_indirect. shapes[1..] is a 3 x 5 rectangle and a 3 x
+    # 3 square: 15 + 9 = 24. The primes p with p % 4 == 1 are 5, 13, and
+    # 17: 35. buf[j] = 7 * j, so after reverse buf[0] = 7 * 31 = 217.
+    # 99 * 2^40 = 108851651149824, and / 1000000007 gives 108851, which %
+    # 1000 is 851. 24 + 35 + 217 + 851 = 1127.
+    ("rust", "rust", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 1127),
+    # BUF[4] is past the end of BUF, so Rust panics, and the panic handler
+    # traps with code 1.
+    ("rusttrap", "rusttrap", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 1),
+    # Hello world from Rust, through nice.poke. 13 bytes.
+    ("hello_rs", "hellors", "", 13),
     # float and double from clang, with get(i) = i + 100, through the
     # float library. (1.5 * 1.5 + 0.5) * 1000 = 2750, sqrt(144) = 12, the
     # mean of 1.5, 2.5, 4, and 8 is 4, and Newton's method from 25 reaches

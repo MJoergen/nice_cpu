@@ -64,12 +64,34 @@ in a few milliseconds. The real cost is space: each page is 16384 words, which a
 FPGA system with little RAM may not have. Without the options, clang asks
 for 2 pages and Zig for 16 or more.
 
+And for Rust, with the wasm32 target installed (`rustup target add
+wasm32-unknown-unknown`):
+
+    rustc --target wasm32-unknown-unknown --crate-type cdylib -C opt-level=s \
+        -C panic=abort -C strip=debuginfo -C link-arg=-zstack-size=4096 \
+        -C link-arg=--initial-memory=65536 prog.rs
+
+Use `#![no_std]`, which keeps the module small. It needs a panic
+handler, such as one that calls `core::arch::wasm32::unreachable()`.
+That traps with code 1. `main` is `#[no_mangle] pub extern "C" fn main()
+-> i32`. rustc does not wrap it, so `_main` is that function. An `extern
+"C"` block needs `#[link(wasm_import_module = "env")]`, or rustc fails
+to link its functions; with the attribute, they are imports from `env`.
+With Cargo, the crate type is `cdylib`, the profile sets `panic =
+"abort"`, and the `-C link-arg` options go in `rustflags` in
+`.cargo/config.toml`. Other opt-levels work too, and so do `-C
+overflow-checks` and `-C debug-assertions`.
+
 ## Target
 
 nicewasm aims at the default wasm32 feature set of Zig 0.15:
 `bulk-memory-opt`, `call-indirect-overlong`, `extended-const`,
 `multivalue`, `mutable-globals`, `nontrapping-fptoint`, and `sign-ext`.
-Clang's default set is a subset of it. A module built with
+Clang's default set is a subset of it. Rust's default set adds all of
+`bulk-memory` and `reference-types`. Of those, rustc emits only
+`memory.copy`, `memory.fill`, and the `call_indirect` encoding, unless
+the program uses threads or `externref`. nicewasm rejects the rest, such
+as `memory.init` and `table.get`, with an error. A module built with
 `-mcpu=mvp` needs none of them. Of the `0xFC` instructions, nicewasm
 supports `memory.copy` and `memory.fill` of `bulk-memory-opt`, and the
 `trunc_sat` conversions of `nontrapping-fptoint`. It decodes the others,
@@ -80,7 +102,8 @@ expressions of `extended-const`.
 Every Zig program built with ReleaseSafe or Debug uses a table,
 `call_indirect`, `br_table`, `select`, `memory.copy`, and `memory.fill`,
 and it traps with `unreachable`, even if its source has no function
-pointers. nicewasm supports all of them.
+pointers. nicewasm supports all of them. A Rust program uses a table and
+`call_indirect` for `dyn` trait calls.
 
 The next step is smaller code. Every value on the wasm operand stack has
 a frame word, so most wasm instructions become a few NICE instructions
@@ -258,15 +281,16 @@ also use R6, which a §9.3 function may change.
 
     make test        # translate, assemble, and run the test modules, then test/errors.py
     make typecheck   # mypy --strict
-    make wasm        # rebuild test/*.wasm from test/*.c and test/*.zig
+    make wasm        # rebuild test/*.wasm from test/*.c, test/*.zig, and test/*.rs
 
-`test/run.py` translates each test module and joins it with the runtime. It
-then assembles and runs the program. It checks main's result in R1, that
-R7–R13 are unchanged, what it printed on the console, and that the memory
-is not in the `.bin` file. A case that traps must instead halt at
+`test/run.py` translates each test module and joins it with the runtime.
+It then assembles and runs the program. It checks main's result in R1,
+that R7–R13 are unchanged, what it printed on the console, and that the
+memory is not in the `.bin` file. A case that traps must instead halt at
 `___wasm_trap` with the trap code in R1, and R2 at the start of the code
 that trapped. Most modules are built byte by byte with `test/wasm.py`.
-The others are compiled from `test/*.c` and `test/*.zig`. Their `.wasm` files
-are checked in, so `make test` needs no compiler. `make wasm` needs clang
-with the wasm32 target, `wasm-ld`, and Zig 0.15. `test/errors.py` checks
-every error message.
+The others are compiled from `test/*.c`, `test/*.zig`, and `test/*.rs`.
+Their `.wasm` files are checked in, so `make test` needs no compiler.
+`make wasm` needs clang with the wasm32 target, `wasm-ld`, Zig 0.15, and
+rustc with the `wasm32-unknown-unknown` target. The Rust modules were
+built with rustc 1.99.0. `test/errors.py` checks every error message.

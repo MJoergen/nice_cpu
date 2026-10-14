@@ -1,6 +1,6 @@
 # nicewasm: smaller code
 
-nicewasm supports every wasm feature that clang and Zig emit by default.
+nicewasm supports every wasm feature that clang, Zig, and Rust emit by default.
 The next step is smaller code. This file records the analysis and the
 plan, for later.
 
@@ -70,7 +70,7 @@ shared stub cannot easily know that address.
 ## Tests
 
 The tests check results, not the code, so every `make test` case must
-still pass after each step. That includes the C and Zig programs and the
+still pass after each step. That includes the C, Zig, and Rust programs and the
 float library. Step 1 needs new cases for the ways it can go wrong:
 
 - a `local.set` or `local.tee` to a local whose old value is still on the

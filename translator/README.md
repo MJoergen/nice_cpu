@@ -68,7 +68,7 @@ ReleaseSafe and Debug work too. They need `--stack 16384`, or at least
 more than 4096, if the program can panic: Zig's panic handler puts a
 4 KB buffer on the stack, and with too small a stack it traps with code
 2, out of bounds, before it reaches its own trap. `test/safe.zig` is
-about 8700 words built with ReleaseSafe, and about 239000 built with
+about 7100 words built with ReleaseSafe, and about 239000 built with
 Debug.
 
 `-fstrip` drops the DWARF sections, which make up almost all of a
@@ -135,8 +135,10 @@ operands made `test/safe.zig` 19% smaller (12353 to 9941 words) and the
 float library 31% smaller (29569 to 20317). A short inline path for
 memory accesses made them 12% (to 8730) and 2.5% (to 19808) smaller
 again. Helpers for `i64` shifts, and short inline code for a shift by a
-constant, took them to 8670 and 18723. In all, `test/safe.zig` is 30%
-smaller and the float library 37%.
+constant, took them to 8670 and 18723. Locals in registers, jumps on the
+flags after a comparison, and results written straight to a local took
+them to 7139 (18% less) and 14565 (22% less). In all, `test/safe.zig` is
+42% smaller and the float library 51%.
 [doc/review/code-size-plan.md](../doc/review/code-size-plan.md) has the
 measurements.
 
@@ -269,22 +271,38 @@ module in these ways:
 ## How functions are translated
 
 Each wasm function becomes a §9.3 function at the label `W.fN`, where N is
-its function index. It builds a §9.3 frame with FP (R12). The parameters
-that arrive in R1–R4 and the declared locals are copied into words below FP.
-The declared locals are set to 0, as wasm requires. Parameters on the stack
-stay where the caller put them. nicewasm tracks the type of each value on
-the wasm operand stack, so each value has fixed frame words: one for an
-`i32`, two for an `i64`. Every wasm instruction becomes NICE instructions on
-frame words. For example, `i32.add` is one `ADD` with three memory
-operands, and `i64.add` is `ADD[M]` on the low words and `ADD[C]` on the
-high words. The output has a comment for each wasm instruction.
+its function index. It builds a §9.3 frame with FP (R12).
+
+The most used locals live in R7–R11. nicewasm translates each function
+twice. The first pass counts the uses of each local, and a use inside a
+loop counts 8 times, or 64 or 512 inside two or three loops. The second
+pass gives the registers to the locals with the highest counts, as long
+as they fit: an `i32` takes one register, and an `i64` two. A local whose
+count is below 3 stays in the frame. The function pushes the registers it
+uses just below the saved FP, and pops them before it returns. So R7–R11
+keep their values across a call, as §9.3 requires.
+
+The parameters that arrive in R1–R4 and the declared locals are copied into
+their registers, or into words below the saved registers. The declared
+locals are set to 0, as wasm requires. A parameter on the stack is copied
+into its registers, or stays where the caller put it. nicewasm tracks the
+type of each value on the wasm operand stack, so each value has fixed frame
+words: one for an `i32`, two for an `i64`. Every wasm instruction becomes
+NICE instructions on registers and frame words. For example, `i32.add` is
+one `ADD` with three operands, and `i64.add` is `ADD[M]` on the low words
+and `ADD[C]` on the high words. The output has a comment for each wasm
+instruction.
 
 A constant, and a `local.get`, emit no code. nicewasm records the value
 on the operand stack as deferred, and the instruction that uses it takes
-the constant or the local's frame word as its operand. So `local.get a;
-local.get b; i32.add; local.set c` is `ADD @x, @a, @b` and `MOVE @c, @x`,
-where x is the sum's frame word. A deferred value is written to its frame
-words only when it must be:
+the constant or the local's register or frame word as its operand. A
+result that the next instruction stores with `local.set` or `local.tee`
+goes straight to the local, for an `i32` operation of two values, an
+`i32` shift, a call, and the operations that call the runtime library,
+such as `i32.mul`. So `local.get a; local.get b; i32.add; local.set c` is
+one `ADD c, a, b`. Before such an operation, the copies of the local's old
+value below its operands are written to their frame words. A deferred
+value is written to its frame words only when it must be:
 
 - before a `local.set` or `local.tee` changes the local it is the value of;
 - at the start of a block, for the values the block takes and for every
@@ -308,7 +326,12 @@ block expects, and then jumps. A branch out of the function moves them
 to R1 and up, as `return` does. `br_table` checks the index against the
 number of labels, then jumps through a table of `.DAT` addresses.
 A comparison sets the flags, usually with `SUB[M]`, then sets the result from
-them. A signed comparison is N XOR V (ISA.md §9.2).
+them. A signed comparison is N XOR V (ISA.md §9.2). When the next
+instruction is `br_if` or `if`, or `i32.eqz` and then one of them, the
+comparison sets only the flags, and the branch jumps on them. For a
+signed comparison, `?V XOR R14, R14, 0x10000000` first flips N when V is
+set, so N alone holds the answer, as ISA.md §9.2 describes. `i32.eqz` and `i64.eqz` before `br_if` or
+`if` do the same with Z.
 
 An `i32` shift masks its count to 5 bits first, because NICE uses the
 full count (ISA.md §9.4). `shr_s` copies the sign bit into C and shifts it
@@ -348,8 +371,8 @@ then calls the address in R5 with `ADD @--SP, 1, PC` and `MOVE PC, R5`,
 the "through a register" sequence of ISA.md §9.3. The arguments are in
 R1–R4 and on the stack, as for `call`.
 
-The translated functions use only R1–R5, R12, R13, and R15, so R7–R11
-keep their values across a call, as §9.3 requires. The helpers and
+Apart from the locals in R7–R11, the translated functions use only R1–R5,
+R12, R13, R14 for the trick above, and R15. The helpers and
 `___wasm_start` also use R6, which a §9.3 function may change.
 
 ## Test
@@ -360,7 +383,7 @@ keep their values across a call, as §9.3 requires. The helpers and
 
 `test/run.py` translates each test module and joins it with the runtime.
 It then assembles and runs the program. It checks main's result in R1,
-that R7–R13 are unchanged, what it printed on the console, and that the
+that R7–R13 are unchanged unless it trapped, what it printed on the console, and that the
 memory is not in the `.bin` file. A case that traps must instead halt at
 `___wasm_trap` with the trap code in R1, and R2 at the start of the code
 that trapped. Most modules are built byte by byte with `test/wasm.py`.

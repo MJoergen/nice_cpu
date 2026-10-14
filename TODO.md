@@ -60,6 +60,8 @@ below. No code has TODO or FIXME comments.
 - **Signed comparison.** No condition tests a signed a < b. It is N XOR V
   after `SUB[M]`, which takes more than one conditional instruction
   (ISA.md §9.2). Michael decided on 2026-10-13 to leave it out "for now".
+  nicewasm now does it in two: `?V XOR R14, R14, 0x10000000` flips N,
+  then `?N` jumps.
   Open: add a condition or an instruction for it, or keep it out.
 
 ## Toolchain
@@ -85,8 +87,9 @@ below. No code has TODO or FIXME comments.
 - **Smaller translated code.** An idea from
   [doc/review/wasm-review.md](doc/review/wasm-review.md): keep the top of
   the wasm operand stack in registers. The deferred operands of
-  [doc/review/code-size-plan.md](doc/review/code-size-plan.md) already
-  took part of that saving.
+  [doc/review/code-size-plan.md](doc/review/code-size-plan.md), and the
+  locals in R7–R11 ([translator/README.md](translator/README.md)), already
+  took part of that saving. Byte loads and stores still call a helper.
 
 ## Claims not checked
 

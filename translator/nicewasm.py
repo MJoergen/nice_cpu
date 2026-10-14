@@ -11,13 +11,14 @@ Usage: nicewasm.py [-o output.asm] [--no-bounds-checks] [--memory-pages N]
 README.md lists the wasm features it supports. Anything else is rejected
 with an error, never translated wrongly.
 
-Each function keeps its locals and its wasm operand stack in its frame on
-the NICE stack, addressed from FP (R12). An i32 or f32 takes one word,
-and an i64 or f64 two, low word first. The operand stack holds the type of each value, so
+Each function keeps its most used locals in R7-R11, and the other locals
+and its wasm operand stack in its frame on the NICE stack, addressed from
+FP (R12). An i32 or f32 takes one word or register, and an i64 or f64
+two, low word first. The operand stack holds the type of each value, so
 every value has a fixed place in the frame, and every instruction is a few
-NICE instructions on frame words. A constant or the value of a local is
-written to its place only when it must be; until then, the instructions
-that use it take the constant or the local as their operand.
+NICE instructions on frame words and registers. A constant or the value of
+a local is written to its place only when it must be; until then, the
+instructions that use it take the constant or the local as their operand.
 """
 
 from __future__ import annotations
@@ -34,6 +35,12 @@ TYPE_NAMES = {I32: "i32", I64: "i64", F32: "f32", F64: "f64", 0x7B: "v128",
               0x70: "funcref", 0x6F: "externref"}
 
 SIZES = {I32: 1, I64: 2, F32: 1, F64: 2}  # words per value of each supported type
+
+# The registers that hold locals. §9.3 preserves them across calls, so a
+# function saves the ones it uses. A local gets one only if its uses weigh
+# at least MIN_WEIGHT, where a use weighs 8 for each loop around it, up to 3.
+LOCAL_REGS = ["R7", "R8", "R9", "R10", "R11"]
+MIN_WEIGHT = 3
 
 WORDS_PER_PAGE = 16384  # 65536 bytes, four to a word
 ZERO_UNROLL = 16        # words cleared per pass of ___wasm_start's loops
@@ -681,6 +688,11 @@ def parse_custom(m: Module, s: Reader) -> None:
         pass
 
 
+def negate(cond: str) -> str:
+    """The opposite of a condition such as Z or !Z (§3)."""
+    return cond[1:] if cond.startswith("!") else "!" + cond
+
+
 def operand(offset: int) -> str:
     """The frame word at FP + offset."""
     return f"@{offset}[R12]"
@@ -1148,7 +1160,11 @@ class Translator:
         n_imports = len(self.m.imports)
         for i, code in enumerate(self.m.codes):
             out.append("")
-            out += FunctionTranslator(self, n_imports + i, code).run()
+            # The first pass weighs the uses of each local, so that the
+            # second can keep the most used ones in registers.
+            first = FunctionTranslator(self, n_imports + i, code)
+            first.run()
+            out += FunctionTranslator(self, n_imports + i, code, first.uses).run()
         for name in sorted(self.helpers):
             out += [""] + [line.replace("W.CAP", str(self.cap)).replace("W.", self.prefix)
                            .replace("___wasm_memory", self.mem) for line in HELPERS[name]]
@@ -1306,8 +1322,10 @@ class Translator:
 
 
 class FunctionTranslator:
-    """Translates one function. Local i starts at the frame word FP +
-    local[i]. The operand stack starts at FP - n_slots and grows down: a
+    """Translates one function. Local i is in the registers regs[i], or
+    starts at the frame word FP + local[i]. The registers are given by
+    weights, the uses of each local that a first translation counted
+    (uses). The operand stack starts at FP - n_slots and grows down: a
     value whose first word is stack word w, and which takes n words, starts
     at FP - n_slots - w - n. A value's low word is at the lower address.
 
@@ -1323,7 +1341,8 @@ class FunctionTranslator:
     the value. So the values below a block are the same on every path
     through it."""
 
-    def __init__(self, t: Translator, idx: int, code: Code) -> None:
+    def __init__(self, t: Translator, idx: int, code: Code,
+                 weights: Optional[Dict[int, int]] = None) -> None:
         self.t = t
         self.idx = idx
         self.code = code
@@ -1333,15 +1352,27 @@ class FunctionTranslator:
         check_types(code.locals, f"{what}: a local", code.start)
         if len(self.ftype.results) > 1:
             raise WasmError(f"{what}: more than one result is not supported yet", code.start)
-        # Parameters in registers and declared locals get frame words below
-        # FP. Parameters on the stack stay where the caller put them.
         self.local_types = self.ftype.params + code.locals
         self.args, _ = assign_args(self.ftype.params)
+        self.uses: Dict[int, int] = {}  # local -> its uses, weighted by loop depth
+        # The locals with the most weight get the registers of LOCAL_REGS.
+        # The function pushes the ones it uses just below the saved FP.
+        self.regs: Dict[int, List[str]] = {}
+        free = list(LOCAL_REGS)
+        for i, w in sorted((weights or {}).items(), key=lambda iw: (-iw[1], iw[0])):
+            n = SIZES[self.local_types[i]]
+            if w >= MIN_WEIGHT and n <= len(free):
+                self.regs[i], free = free[:n], free[n:]
+        self.saved = [r for r in LOCAL_REGS if r not in free]
+        # Parameters in registers and the other locals get frame words below
+        # FP. Parameters on the stack stay where the caller put them.
         self.local: List[int] = []
-        self.n_slots = 0
+        self.n_slots = len(self.saved)
         for i, lt in enumerate(self.local_types):
             if i < len(self.args) and not self.args[i][0]:
                 self.local.append(2 + self.args[i][1])
+            elif i in self.regs:
+                self.local.append(0)  # not used
             else:
                 self.n_slots += SIZES[lt]
                 self.local.append(-self.n_slots)
@@ -1429,10 +1460,12 @@ class FunctionTranslator:
             if d != s:
                 self.emit("MOVE", d, s)
 
-    def call(self, label: str, ft: FuncType, at: int, what: str) -> None:
+    def call(self, label: str, ft: FuncType, at: int, what: str,
+             fwd: Optional[Tuple[List[str], Optional[Deferred]]] = None) -> None:
         """Calls label with the arguments on top of the operand stack, by
         the rules of §9.3, and pushes the result. A label that is a
-        register is called through it."""
+        register is called through it. With fwd, from forward(), the
+        result goes to a local instead."""
         args = self.pop(list(ft.params), at, what)
         locs, stack_words = assign_args(ft.params)
         # Stack arguments go last to first, each high word first, so that
@@ -1451,6 +1484,11 @@ class FunctionTranslator:
         self.emit("MOVE", "R15", label)
         if stack_words:
             self.emit("ADD", "R13", "R13", str(stack_words))
+        if fwd is not None:
+            self.move(fwd[0], [f"R{k + 1}" for k in range(len(fwd[0]))])
+            if fwd[1] is not None:
+                self.push(ft.results[0], fwd[1])
+            return
         for rt in ft.results:
             self.move(self.push(rt), [f"R{k + 1}" for k in range(SIZES[rt])])
 
@@ -1458,7 +1496,15 @@ class FunctionTranslator:
         if i >= len(self.local):
             raise WasmError(f"function {self.idx}: local {i} does not exist", at)
         t = self.local_types[i]
-        return t, [operand(self.local[i] + k) for k in range(SIZES[t])]
+        weight = 8 ** min(sum(1 for f in self.ctrl if f.op == LOOP), 3)
+        self.uses[i] = self.uses.get(i, 0) + weight
+        return t, self.local_words(i)
+
+    def local_words(self, i: int) -> List[str]:
+        """The words of local i: registers or frame words."""
+        if i in self.regs:
+            return list(self.regs[i])
+        return [operand(self.local[i] + k) for k in range(SIZES[self.local_types[i]])]
 
     def global_operand(self, i: int, at: int) -> Tuple[int, List[str]]:
         if i >= len(self.t.m.globals):
@@ -1548,9 +1594,21 @@ class FunctionTranslator:
             raise WasmError(f"function {self.idx}: values left on the operand stack at the {what}",
                             at)
 
-    def compare(self, t: int, swap: bool, test: str, at: int, what: str) -> None:
+    def fuses(self, r: Reader) -> bool:
+        """Whether the i32 that the current instruction pushes is only a
+        condition for the next ones: they are br_if or if, maybe after
+        i32.eqz."""
+        pos = r.pos
+        if pos < r.end and self.t.data[pos] == 0x45:
+            pos += 1
+        return pos < r.end and self.t.data[pos] in (0x0D, IF)
+
+    def compare(self, t: int, swap: bool, test: str, at: int, what: str,
+                fuse: bool) -> Optional[str]:
         """An i32 or i64 comparison. It sets the flags, then the i32
-        result: 1 if the test holds, else 0."""
+        result: 1 if the test holds, else 0. With fuse, it only sets the
+        flags, and returns the condition under which the test holds. The
+        result's frame word is then not written."""
         a, b = self.pop([t, t], at, what)
         if swap:
             a, b = b, a
@@ -1564,6 +1622,13 @@ class FunctionTranslator:
         else:
             self.emit("SUB[M]", "R0", a[0], b[0])
             self.emit("SUB[CM]", "R0", a[1], b[1])
+        if fuse:
+            if test in ("lt_s", "ge_s"):
+                # a < b signed is N XOR V. Flipping N when V is set leaves
+                # it in N (§9.2).
+                self.emit("?V XOR", "R14", "R14", "0x10000000")
+            return {"eq": "Z", "ne": "!Z", "lt_u": "C", "ge_u": "!C",
+                    "lt_s": "N", "ge_s": "!N"}[test]
         if test in ("eq", "ne"):
             self.emit("MOVE", d, "0")
             self.emit("?Z MOVE" if test == "eq" else "?!Z MOVE", d, "1")
@@ -1576,6 +1641,33 @@ class FunctionTranslator:
             self.emit("MOVE", d, "0" if test == "lt_s" else "1")
             self.emit("?N XOR", d, d, "1")
             self.emit("?V XOR", d, d, "1")
+        return None
+
+    def forward(self, r: Reader, at: int, t: int,
+                n: int) -> Optional[Tuple[List[str], Optional[Deferred]]]:
+        """For an operation that takes n values and gives one of type t,
+        and whose next instruction is a local.set or local.tee of a local
+        of type t: skips that instruction and returns the local's words,
+        where the operation writes its result, and for local.tee, the value
+        it leaves on the operand stack. Every other copy of the local's old
+        value is written to its frame words first. The operation reads its
+        operands before it writes, so they may be the local itself."""
+        if (r.pos >= r.end or self.t.data[r.pos] not in (0x21, 0x22)
+                or len(self.stack) - self.ctrl[-1].height < n):
+            return None
+        nxt = Reader(self.t.data, r.pos + 1, r.end)
+        i = nxt.u32()
+        if i >= len(self.local) or self.local_types[i] != t:
+            return None
+        tee = self.t.data[r.pos] == 0x22
+        _, dest = self.local_operand(i, at)
+        for k in range(len(self.stack) - n):
+            d = self.deferred[k]
+            if d is not None and d.local == i:
+                self.settle(k)
+        self.body.append(f"        ; {'local.tee' if tee else 'local.set'} {i}")
+        r.pos = nxt.pos
+        return dest, Deferred(dest, i) if tee else None
 
     def const_value(self, i: int) -> Optional[int]:
         """The value of the i32 on the operand stack i values from the top,
@@ -1917,9 +2009,13 @@ class FunctionTranslator:
         r = Reader(self.t.data, self.code.start, self.code.end)
         reachable = True
         dead_blocks = 0  # blocks opened in code that cannot be reached
+        # The condition under which the i32 on top of the operand stack is
+        # not 0, when the flags hold it and its frame word does not.
+        pending: Optional[str] = None
         while True:
             at = r.pos
             op = r.byte()
+            flags, pending = pending, None
             name = OPCODES.get(op, f"opcode 0x{op:02x}")
             if op == 0xFC:
                 sub = r.u32()
@@ -2059,8 +2155,9 @@ class FunctionTranslator:
                     self.body.append(f.label)
                 if op == IF:
                     f.else_label = self.new_label()
-                    self.emit("MOVE[M]", "R0", cond_word)
-                    self.emit("?Z MOVE", "R15", f.else_label)
+                    if flags is None:
+                        self.emit("MOVE[M]", "R0", cond_word)
+                    self.emit(f"?{negate(flags or '!Z')} MOVE", "R15", f.else_label)
             elif op == 0x0C:  # br
                 assert imm is not None
                 f = self.frame(imm, at)
@@ -2073,16 +2170,18 @@ class FunctionTranslator:
                 (cond,) = self.pop([I32], at, name)
                 f = self.frame(imm, at)
                 moves = self.branch_moves(f, at, name)
-                self.emit("MOVE[M]", "R0", cond[0])
+                if flags is None:
+                    self.emit("MOVE[M]", "R0", cond[0])
+                    flags = "!Z"
                 if moves:
                     skip = self.new_label()
-                    self.emit("?Z MOVE", "R15", skip)
+                    self.emit(f"?{negate(flags)} MOVE", "R15", skip)
                     for to, frm in moves:
                         self.emit("MOVE", to, frm)
                     self.emit("MOVE", "R15", f.label)
                     self.body.append(skip)
                 else:
-                    self.emit("?!Z MOVE", "R15", f.label)
+                    self.emit(f"?{flags} MOVE", "R15", f.label)
             elif op == 0x0E:  # br_table
                 (index,) = self.pop([I32], at, name)
                 frames = [self.frame(d, at) for d in targets]
@@ -2149,7 +2248,10 @@ class FunctionTranslator:
                         self.emit("MOVE", "R1", addr[0])
                         self.emit("MOVE", "@R1", value[0])
                 else:
-                    self.call(self.t.func_label(imm), self.t.func_type(imm), at, name)
+                    ft = self.t.func_type(imm)
+                    fwd = (self.forward(r, at, ft.results[0], len(ft.params))
+                           if len(ft.results) == 1 else None)
+                    self.call(self.t.func_label(imm), ft, at, name, fwd)
             elif op == 0x11:  # call_indirect
                 assert imm is not None
                 self.call_indirect(imm, at, name)
@@ -2184,13 +2286,18 @@ class FunctionTranslator:
             elif op in (0x45, 0x50):  # i32.eqz, i64.eqz
                 t = I32 if op == 0x45 else I64
                 (a,) = self.pop([t], at, name)
-                if t == I32:
+                if flags is not None:
+                    pending = negate(flags)
+                elif t == I32:
                     self.emit("MOVE[M]", "R0", a[0])
                 else:
                     self.emit("OR[M]", "R0", a[0], a[1])
                 d = self.push(I32)[0]
-                self.emit("MOVE", d, "0")
-                self.emit("?Z MOVE", d, "1")
+                if flags is None and self.fuses(r):
+                    pending = "Z"
+                elif flags is None:
+                    self.emit("MOVE", d, "0")
+                    self.emit("?Z MOVE", d, "1")
             elif op in LOADS:
                 assert imm is not None
                 t, n, signed = LOADS[op]
@@ -2219,8 +2326,9 @@ class FunctionTranslator:
                     self.emit("MOVE", d, "-1")
                     self.emit("?Z MOVE", d, str(self.t.m.memory_pages))
             elif op in SHIFT_OPS:
+                fwd = self.forward(r, at, I32, 2)
                 a, b = self.pop([I32, I32], at, name)
-                d = self.push(I32)[0]
+                d = self.push(I32)[0] if fwd is None else fwd[0][0]
                 shift = SHIFT_OPS[op]
                 if shift in ("rotl", "rotr"):
                     # Only the count modulo 32 matters to a rotation (§5.2).
@@ -2231,15 +2339,23 @@ class FunctionTranslator:
                     if shift == "shr_s":
                         self.emit("C<0[M]", "R0", a[0], "1")   # C = the sign bit (§5.2)
                     self.emit({"shl": "SHL", "shr_u": "SHR", "shr_s": "C>0"}[shift], d, a[0], "R1")
+                if fwd is not None and fwd[1] is not None:
+                    self.push(I32, fwd[1])
             elif op in SHIFT64_OPS:
                 self.shift64(SHIFT64_OPS[op], at, name)
             elif op in CMP_OPS:
-                self.compare(I32, *CMP_OPS[op], at, name)
+                pending = self.compare(I32, *CMP_OPS[op], at, name, self.fuses(r))
             elif op in CMP64_OPS:
-                self.compare(I64, *CMP64_OPS[op], at, name)
+                pending = self.compare(I64, *CMP64_OPS[op], at, name, self.fuses(r))
             elif op in ALU_OPS:
+                fwd = self.forward(r, at, I32, 2)
                 a, b = self.pop([I32, I32], at, name)
-                self.emit(ALU_OPS[op], self.push(I32)[0], a[0], b[0])
+                if fwd is None:
+                    self.emit(ALU_OPS[op], self.push(I32)[0], a[0], b[0])
+                else:
+                    self.emit(ALU_OPS[op], fwd[0][0], a[0], b[0])
+                    if fwd[1] is not None:
+                        self.push(I32, fwd[1])
             elif op in ALU64_OPS:
                 a, b = self.pop([I64, I64], at, name)
                 dest = self.push(I64)
@@ -2296,7 +2412,8 @@ class FunctionTranslator:
                     self.emit("OR", top, top, "R1")
             elif op in LIB_OPS:
                 routine, (params, results) = LIB_OPS[op]
-                self.call(routine, FuncType(params, results), at, name)
+                fwd = self.forward(r, at, results[0], len(params))
+                self.call(routine, FuncType(params, results), at, name, fwd)
             elif op in DIV_OPS:
                 self.divide(*DIV_OPS[op], at, name)
             elif op in EXTEND_OPS:
@@ -2350,19 +2467,30 @@ class FunctionTranslator:
         out.append(f"{self.t.prefix}f{self.idx}")
         out.append(instr("MOVE", "@--R13", "R12"))
         out.append(instr("MOVE", "R12", "R13"))
-        size = self.n_slots + self.max_words
+        for r in self.saved:
+            out.append(instr("MOVE", "@--R13", r))
+        size = self.n_slots - len(self.saved) + self.max_words
         if size:
             out.append(instr("SUB", "R13", "R13", str(size)))
         for i, (in_reg, first) in enumerate(self.args):
             if in_reg:
-                for k in range(SIZES[self.local_types[i]]):
-                    out.append(instr("MOVE", operand(self.local[i] + k), f"R{first + k}"))
+                for k, w in enumerate(self.local_words(i)):
+                    out.append(instr("MOVE", w, f"R{first + k}"))
+            elif i in self.regs:
+                for k, w in enumerate(self.local_words(i)):
+                    out.append(instr("MOVE", w, operand(self.local[i] + k)))
         for i in range(len(self.args), len(self.local)):
-            for k in range(SIZES[self.local_types[i]]):
-                out.append(instr("MOVE", operand(self.local[i] + k), "0"))  # wasm zeroes locals
+            for w in self.local_words(i):
+                out.append(instr("MOVE", w, "0"))  # wasm zeroes locals
         out += self.body
         out.append(self.ret_label)
-        out.append(instr("MOVE", "R13", "R12"))
+        if self.saved:
+            # Pop the saved registers, last saved first.
+            out.append(instr("SUB", "R13", "R12", str(len(self.saved))))
+            for r in reversed(self.saved):
+                out.append(instr("MOVE", r, "@R13++"))
+        else:
+            out.append(instr("MOVE", "R13", "R12"))
         out.append(instr("MOVE", "R12", "@R13++"))
         out.append(instr("MOVE", "R15", "@R13++"))
         out += self.stubs

@@ -13,9 +13,9 @@ CONSOLE gives on the console, or nothing. A case in TRAPS
 must instead trap: halt at ___wasm_trap with the trap code in R1, and R2
 pointing at the first instruction of the code for the wasm instruction
 that trapped, which TRAPS gives. The first page of its memory, reserved
-with .RES, must not be in the program image. R7-R12 must be 0
-and SP must be 0xFFFFFF00 again, as the start-up code left them, because
-every translated function must preserve them (ISA.md §9.3). The expected
+with .RES, must not be in the program image. Unless it trapped, R7-R12
+must be 0 and SP must be 0xFFFFFF00 again, as the start-up code left them,
+because every translated function must preserve them (ISA.md §9.3). The expected
 results were worked out by hand from the sources."""
 
 from __future__ import annotations
@@ -82,6 +82,23 @@ def cmp_all(t: int, pairs: List[Tuple[int, int]]) -> List[bytes]:
     out = [const(a) + const(b) + op for a, b in pairs for op in ops]
     eqz = EQZ if t == I32 else EQZ64
     return out + [const(0) + eqz, const(-0x80000000 if t == I32 else 0x1_00000000) + eqz]
+
+
+def as_if(check: bytes) -> bytes:
+    """The i32 that check leaves, 0 or 1, taken by an if."""
+    return check + if_(I32) + i32_const(1) + ELSE + i32_const(0) + END
+
+
+def as_br_if(check: bytes) -> bytes:
+    """The same, taken by a br_if that carries a value out of a block."""
+    return block(I32) + i32_const(1) + check + br_if(0) + DROP + i32_const(0) + END
+
+
+def as_eqz_br_if(check: bytes) -> bytes:
+    """The same, taken by eqz and a br_if that carries no value. Local 1
+    holds the result."""
+    return (i32_const(0) + local_set(1) + block() + check + EQZ + br_if(0)
+            + i32_const(1) + local_set(1) + END + local_get(1))
 
 
 def ld(op: int, addr: int, want: int, offset: int = 0) -> bytes:
@@ -715,6 +732,60 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         exports(("main", 0, 0)),
         code((1, bits(0, *cmp_all(I64, [(2**63 - 1, -2**63), (0x1_00000000, 0xFFFFFFFF),
                                         (0x5_00000007, 0x5_00000007)]))))), "", 0x5993383E),
+    # The same comparisons, each taken by if, by br_if, and by eqz and
+    # br_if. nicewasm then jumps on the flags, and writes no 0 or 1.
+    *[(f"cmp{bits_}_{how.__name__}", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((2, bits(0, *[how(c) for c in cmp_all(t, pairs)])))), "", want)
+      for bits_, t, pairs, want in
+      [("", I32, [(0x7FFFFFFF, -0x80000000), (-0x80000000, 1), (5, 5)], 0x5999983E),
+       ("64", I64, [(2**63 - 1, -2**63), (0x1_00000000, 0xFFFFFFFF),
+                    (0x5_00000007, 0x5_00000007)], 0x5993383E)]
+      for how in (as_if, as_br_if, as_eqz_br_if)],
+    # An operation whose result goes straight to a local, with the local's
+    # old value still on the operand stack below it:
+    # x = 5; x - (x = x + 1) = -1.
+    # y = 60 by i32.mul, and local.tee y, then + y = 120.
+    # z = 7; z - (z = f(z)) = -1, where f(z) = z + 1.
+    # w = 3 << 2 by local.tee, then + w = 24.
+    # -1 + 120 - 1 + 24 = 142.
+    ("forward", module(
+        types(MAIN_TYPE, ([I32], [I32])),
+        funcs(0, 1),
+        exports(("main", 0, 0)),
+        code((4, i32_const(5) + local_set(0)
+              + local_get(0) + local_get(0) + i32_const(1) + ADD + local_set(0)
+              + local_get(0) + SUB
+              + local_get(0) + i32_const(10) + MUL + local_tee(1) + local_get(1) + ADD + ADD
+              + i32_const(7) + local_set(2)
+              + local_get(2) + local_get(2) + call(1) + local_set(2) + local_get(2) + SUB + ADD
+              + i32_const(3) + local_set(3)
+              + local_get(3) + i32_const(2) + SHL + local_tee(3) + local_get(3) + ADD + ADD),
+             (0, local_get(0) + i32_const(1) + ADD))), "", 142),
+    # More locals than registers, one an i64, in a loop that runs 3 times.
+    # Local k of 1-6 grows by k each time, to 3k, and local 6 also by g(3)
+    # = 1. g uses 6 locals of its own, which must not change main's. The
+    # i64 grows by 0x1_00000001 to 0x3_00000003. 3 * 21 + 3 + 3 + 3 = 72.
+    ("manylocals", module(
+        types(MAIN_TYPE, ([I32], [I32])),
+        funcs(0, 1),
+        exports(("main", 0, 0)),
+        code(([I32] * 7 + [I64],
+              loop()
+              + b"".join(local_get(k) + i32_const(k) + ADD + local_set(k) for k in range(1, 7))
+              + local_get(7) + i64_const(0x1_00000001) + ADD64 + local_set(7)
+              + local_get(6) + i32_const(3) + call(1) + ADD + local_set(6)
+              + local_get(0) + i32_const(1) + ADD + local_tee(0) + i32_const(3) + LT_S + br_if(0)
+              + END
+              + local_get(1) + b"".join(local_get(k) + ADD for k in range(2, 7))
+              + local_get(7) + WRAP + ADD
+              + local_get(7) + i64_const(32) + SHR_U64 + WRAP + ADD),
+             (5, loop()
+              + b"".join(local_get(0) + local_set(k) for k in range(1, 6))
+              + local_get(0) + i32_const(1) + SUB + local_tee(0) + br_if(0)
+              + END + local_get(1)))), "", 72),
     # Sum 1 to 10 = 55: a loop inside a block. br_if 1 leaves the block
     # when i > 10, and br 0 goes back to the start of the loop.
     ("loop", module(
@@ -1460,9 +1531,9 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
         for i in range(0, len(tok), 2):
             regs[tok[i]] = int(tok[i + 1], 16)
     wanted = {"R1": expected}
-    wanted.update({f"R{i}": 0 for i in range(7, 12)})
     if not trap:
-        # A trap leaves the frames as they were.
+        # A trap leaves the frames, and the locals in R7-R11, as they were.
+        wanted.update({f"R{i}": 0 for i in range(7, 12)})
         wanted.update({"R12": 0, "R13": 0xFFFFFF00})
     problems = []
     if console != CONSOLE.get(name, ""):

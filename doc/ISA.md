@@ -435,7 +435,7 @@ The call works because PC reads as the address after `ADD`'s constant word, whic
 | Compare a with b | `SUB[M] R0, a, b`. Then Z = 1 if a = b, and C = 1 if a < b unsigned. |
 | Test a | `MOVE[M] R0, a`. Then Z, N, and X describe a. |
 
-No single flag gives a signed comparison. A signed a < b is N XOR V after `SUB[M]`, which takes more than one conditional instruction to test.
+No single flag gives a signed comparison. A signed a < b is N XOR V after `SUB[M]`, which takes more than one conditional instruction to test. One way is to flip N when V is set, with `?V XOR R14, R14, 0x10000000`. N is then a < b, and `?N` or `?!N` tests it. The write to R14 takes the written value, and leaves the other flags as they were (§4.3).
 
 ### 9.3 C ABI
 

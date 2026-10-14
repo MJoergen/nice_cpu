@@ -20,13 +20,15 @@ def u(n: int) -> bytes:
             return bytes(out)
 
 
-def s(n: int) -> bytes:
-    """Signed LEB128."""
+def s(n: int, length: int = 0) -> bytes:
+    """Signed LEB128, padded to length bytes if that is more than it needs.
+    LLVM pads some numbers, and a padded encoding is valid."""
     out = bytearray()
     while True:
         b = n & 0x7F
         n >>= 7
-        if (n == 0 and not b & 0x40) or (n == -1 and b & 0x40):
+        done = (n == 0 and not b & 0x40) or (n == -1 and b & 0x40)
+        if done and len(out) + 1 >= length:
             out.append(b)
             return bytes(out)
         out.append(b | 0x80)
@@ -133,8 +135,8 @@ def call(i: int) -> bytes:
     return b"\x10" + u(i)
 
 
-def i64_const(n: int) -> bytes:
-    return b"\x42" + s(n)
+def i64_const(n: int, length: int = 0) -> bytes:
+    return b"\x42" + s(n, length)
 
 
 NOP, DROP, RETURN = b"\x01", b"\x1a", b"\x0f"

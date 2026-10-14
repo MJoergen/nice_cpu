@@ -188,7 +188,7 @@ class Reader:
                 break
             if shift >= bits:
                 raise WasmError("integer too long", start)
-        if signed and b & 0x40 and shift < 64:
+        if signed and b & 0x40:
             result -= 1 << shift
         lo, hi = (-(1 << (bits - 1)), 1 << (bits - 1)) if signed else (0, 1 << bits)
         if not lo <= result < hi:

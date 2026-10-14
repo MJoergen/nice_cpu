@@ -36,6 +36,11 @@ CASES: List[Tuple[bytes, str]] = [
     (module(section(1, b"\x01\x60\x00\x00\x00")), "section 1 has 1 bytes left over"),
     (module(MAIN, funcs(0)), "the function and code sections differ in length (1 and 0)"),
     (module(MAIN, funcs(3)), "type index 3 is out of range"),
+    # LEB128: the unused bits of the last byte must repeat the sign, and an
+    # i64 takes at most 10 bytes.
+    (one(b"\x41\x80\x80\x80\x80\x70"), "integer too large"),
+    (one(b"\x42" + b"\x80" * 9 + b"\x01"), "integer too large"),
+    (one(b"\x42" + b"\x80" * 10), "integer too long"),
     # Imports
     (module(section(2, vec([name("env") + name("mem") + b"\x02\x00\x01"]))),
      "import env.mem is a memory; only functions may be imported"),

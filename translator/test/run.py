@@ -135,6 +135,23 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
               + i64_const(0x100000001) + OR64 + i64_const(-1) + XOR64 + global_set(0)
               + global_get(0) + WRAP + call(0) + SUB))),
      I64_ASM, 0x71533518),
+    # The most negative i64, MIN = 0x80000000_00000000, has only a 10-byte
+    # encoding. It is the first constant and the global's initial value.
+    # The other constants are padded to 10 bytes, which is valid too, as
+    # LLVM's 5-byte i32 constants are. MIN + 3 = 0x80000000_00000003, XOR
+    # -1 = 0x7FFFFFFF_FFFFFFFC, XOR MIN = 0xFFFFFFFF_FFFFFFFC, which goes in
+    # result. main returns its low word - high() = 0xFFFFFFFC - 0xFFFFFFFF
+    # = -3 = 0xFFFFFFFD.
+    ("i64min", module(
+        types(MAIN_TYPE),
+        imports(("env", "high", 0)),
+        funcs(0),
+        typed_globals((I64, True, -2**63)),
+        exports(("main", 0, 1), ("result", 3, 0)),
+        code((0, i64_const(-2**63) + i64_const(3, 10) + ADD64 + i64_const(-1, 10) + XOR64
+              + global_get(0) + XOR64 + global_set(0) + global_get(0) + WRAP + call(0)
+              + SUB))),
+     I64_ASM, 0xFFFFFFFD),
     # f traps with code 1. The code after unreachable is never translated.
     ("unreachable", module(
         types(MAIN_TYPE),

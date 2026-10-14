@@ -33,7 +33,7 @@ The output is the `.bin` text format of [ISA.md §10.4](../doc/ISA.md#104-object
 one line per assembled word, an 8-digit hex address, a space, and the 8-digit
 hex word, in address order. This is the format the 2004 `NICE.pm` assembler
 writes, so its example binaries can be compared directly. Addresses skipped
-by `.ORG` are not listed.
+by `.ORG` and words reserved by `.RES` are not listed.
 
 ## Details beyond ISA.md
 
@@ -49,9 +49,9 @@ by `.ORG` are not listed.
   is defined.
 - Numbers are digits only: no `_` separators.
 - Strings have no escape sequences.
-- `.ORG` and `.BLK` arguments must not refer to labels defined later.
-- A `.BLK` count must not be negative, and the block must end at or before
-  address `0xFFFFFFFF`. Other statements wrap from `0xFFFFFFFF` to 0.
+- `.ORG`, `.BLK`, and `.RES` arguments must not refer to labels defined later.
+- A `.BLK` or `.RES` count must not be negative, and the block must end at or
+  before address `0xFFFFFFFF`. Other statements wrap from `0xFFFFFFFF` to 0.
 - Writing two words to the same address is an error.
 - A UTF-8 byte order mark at the start of the file is ignored.
 

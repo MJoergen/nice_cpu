@@ -120,3 +120,7 @@ here    MOVE    R1, LBL_EQU
         MOVE    @IDX, R1
 lbl     .ORG    0x300                   ; the label names the new address
         .DAT    lbl
+; .RES reserves words that are not in the .bin
+        .RES    3                       ; 0x301-0x303
+res_end .DAT    res_end                 ; 0x304
+        .RES    0

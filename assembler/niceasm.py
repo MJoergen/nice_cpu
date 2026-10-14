@@ -46,7 +46,7 @@ MNEMONICS: Dict[str, Tuple[int, int, int]] = {
     "HALT": (CTRL, 0x00, 0), "RTI": (CTRL, 0x01, 0), "INT": (CTRL, 0x02, 1),
 }
 
-DIRECTIVES = {".EQU", ".ORG", ".DAT", ".BLK", ".ASCII_L", ".ASCII_B"}
+DIRECTIVES = {".EQU", ".ORG", ".DAT", ".BLK", ".RES", ".ASCII_L", ".ASCII_B"}
 
 CONDITION_FLAGS = "1XCZNVEI"  # SEL 0..7; ?M is the 2004 name of ?E
 
@@ -70,13 +70,14 @@ class Assembler:
         self.labels: Dict[str, int] = {}               # name -> address
         self.defined_on: Dict[str, int] = {}           # label or .EQU name -> line number
         self.words: Dict[int, Tuple[int, int]] = {}    # address -> (word, line number)
-        self.blocks: List[Tuple[int, int, int]] = []   # .BLK: (address, count, line number)
+        # .BLK and .RES: (address, count, line number, True for .BLK)
+        self.blocks: List[Tuple[int, int, int, bool]] = []
         self.pc = 0
         self.pass_no = 0
         self.line_no = 0
         self.equ_cache: Dict[str, int] = {}            # .EQU values in pass 0
         self.early_labels: Dict[str, int] = {}         # label name -> first line, from pass 0
-        self.must_know: Optional[str] = None  # set while evaluating a .ORG or .BLK argument
+        self.must_know: Optional[str] = None  # set while evaluating a .ORG, .BLK, or .RES argument
 
     # -- Symbols and expressions -------------------------------------------
 
@@ -318,13 +319,13 @@ class Assembler:
         self.pc = (self.pc + 1) & MASK
 
     def check_blocks(self) -> List[Tuple[int, str]]:
-        """Finds .BLK ranges that overlap each other or another word. Returns
+        """Finds .BLK and .RES ranges that overlap each other or another word. Returns
         (line number, message) for each, reported on the later line."""
         errors: List[Tuple[int, str]] = []
         addrs = sorted(self.words)
         end = 0
         prev_line = 0
-        for start, count, line_no in sorted(self.blocks):
+        for start, count, line_no, _ in sorted(self.blocks):
             if start < end:
                 errors.append((max(line_no, prev_line),
                                f"address 0x{start:08x} is already used by line "
@@ -340,9 +341,10 @@ class Assembler:
         return errors
 
     def output(self) -> Iterator[Tuple[int, int]]:
-        """Yields (address, word) in address order, with .BLK ranges expanded."""
+        """Yields (address, word) in address order, with .BLK ranges expanded.
+        .RES ranges are not in the output."""
         runs = [(a, 1, w) for a, (w, _) in self.words.items()]
-        runs += [(a, n, 0) for a, n, _ in self.blocks]
+        runs += [(a, n, 0) for a, n, _, zeros in self.blocks if zeros]
         for start, count, word in sorted(runs):
             for addr in range(start, start + count):
                 yield addr, word
@@ -359,17 +361,17 @@ class Assembler:
                 raise AsmError(".DAT takes at least one value")
             for a in args:
                 self.emit(self.expr(a), line_no)
-        elif d == ".BLK":
+        elif d in (".BLK", ".RES"):
             if len(args) != 1:
-                raise AsmError(".BLK takes one count")
-            n = self.known(args[0], ".BLK")
+                raise AsmError(f"{d} takes one count")
+            n = self.known(args[0], d)
             if n < 0:
-                raise AsmError(f".BLK count {n} is negative")
+                raise AsmError(f"{d} count {n} is negative")
             if self.pc + n > MASK + 1:
-                raise AsmError(f".BLK of {n} words at 0x{self.pc:08x} runs past "
+                raise AsmError(f"{d} of {n} words at 0x{self.pc:08x} runs past "
                                f"address 0xffffffff")
             if self.pass_no == 2 and n:
-                self.blocks.append((self.pc, n, line_no))
+                self.blocks.append((self.pc, n, line_no, d == ".BLK"))
             self.pc = (self.pc + n) & MASK
         elif d in (".ASCII_L", ".ASCII_B"):
             if len(args) > 1 and args[0][:1] in QUOTES and args[1][:1] in QUOTES:

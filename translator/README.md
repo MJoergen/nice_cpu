@@ -34,10 +34,11 @@ And for Zig:
     zig build-exe -target wasm32-freestanding -fno-entry -rdynamic -O ReleaseSmall \
         --stack 4096 --initial-memory=65536 prog.zig
 
-The memory options matter. nicewasm reserves the module's initial memory as
-`.BLK` words, and the assembler writes every one of them to the `.bin` file.
-Without the options, clang asks for 2 pages and Zig for 16, which is 32768
-or 262144 words.
+The memory options keep start-up short. nicewasm reserves the module's
+initial memory with `.RES`, so the memory is not in the `.bin` file, but
+`___wasm_start` sets it to 0. That takes 18 steps for every 16 words, or
+18434 steps for one page. Without the options, clang asks for 2 pages and
+Zig for 16, which take 36866 and 294914 steps.
 
 ## Supported features
 
@@ -52,10 +53,11 @@ or 262144 words.
 - **Exports:** functions and globals get the label `_name`, as §9.4 says.
   Exporting an imported function is not supported.
 - **Globals:** mutable or not, with an `i32.const` initial value.
-- **Memory:** one memory, reserved at its initial size at `___wasm_memory`.
-  No instruction reads or writes it yet.
-- **Start-up:** `___wasm_start` calls the start function, if there is one,
-  and then `__wasm_call_ctors`, if it is exported.
+- **Memory:** one memory, reserved at its initial size with `.RES` at
+  `___wasm_memory`. No instruction reads or writes it yet.
+- **Start-up:** `___wasm_start` sets the memory to 0. Then it calls the
+  start function, if there is one, and `__wasm_call_ctors`, if it is
+  exported.
 - **Ignored:** tables (without element segments) and custom sections. The
   name section only supplies function names for comments.
 
@@ -85,8 +87,8 @@ values across a call, as §9.3 requires.
     make wasm        # rebuild test/*.wasm from test/*.c and test/*.zig
 
 `test/run.py` translates each test module and joins it with the runtime. It
-then assembles and runs the program. It checks main's result in R1, and that
-R7–R13 are unchanged. Most modules are built byte by byte with `test/wasm.py`.
+then assembles and runs the program. It checks main's result in R1, that
+R7–R13 are unchanged, and that the memory is not in the `.bin` file. Most modules are built byte by byte with `test/wasm.py`.
 The others are compiled from `test/*.c` and `test/*.zig`. Their `.wasm` files
 are checked in, so `make test` needs no compiler. `make wasm` needs clang
 with the wasm32 target, `wasm-ld`, and Zig 0.15. `test/errors.py` checks

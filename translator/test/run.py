@@ -6,7 +6,8 @@ test/X.c or test/X.zig source into test/X.wasm. It is translated and joined
 with runtime/start_wasm.asm, any hand-written assembly the case needs, and
 runtime/lib.asm, as ISA.md §9.3 describes. Then it is assembled and run.
 
-The program must halt with HALT and main's result in R1. R7-R12 must be 0
+The program must halt with HALT and main's result in R1. Its .bin file must
+have fewer than 16384 words, so the memory, reserved with .RES, is not in it. R7-R12 must be 0
 and SP must be 0xFFFFFF00 again, as the start-up code left them, because
 every translated function must preserve them (ISA.md §9.3). The expected
 results were worked out by hand from the sources."""
@@ -21,7 +22,7 @@ from typing import Dict, List, Tuple, Union
 
 from wasm import (ADD, AND, DROP, I32, MUL, NOP, OR, RETURN, SUB, XOR, call, code,
                   exports, funcs, global_get, global_set, globals_, i32_const,
-                  imports, local_get, local_set, local_tee, module, start, types)
+                  imports, local_get, local_set, local_tee, memory, module, start, types)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.join(HERE, "..", "..")
@@ -102,6 +103,19 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         exports(("main", 0, 1), ("_skip", 0, 1), ("a-b", 0, 1), ("counter", 3, 1)),
         code((0, global_get(0) + i32_const(3) + SUB + global_set(1) + call(0)))),
      "_read_counter MOVE R1, @_counter\n MOVE R15, @R13++\n__skip HALT\n", 4),
+    # ___wasm_start sets the 16384 words of the memory to 0, and no other
+    # word. main is hand-written: it sets the first and last words, calls
+    # ___wasm_start again, and returns their sum + 6 * 7 = 42. __mul follows
+    # the memory, so if the loop cleared one word too many, its first
+    # instruction would be gone and 6 * 7 would not be 42.
+    ("zero", module(types(MAIN_TYPE), memory(1)),
+     "_main MOVE @___wasm_memory, 5\n"
+     " MOVE @___wasm_memory+16383, 7\n"
+     " ADD @--R13, 2, R15\n MOVE R15, ___wasm_start\n"
+     " MOVE R1, 6\n MOVE R2, 7\n"
+     " ADD @--R13, 2, R15\n MOVE R15, __mul\n"
+     " ADD R1, R1, @___wasm_memory\n ADD R1, R1, @___wasm_memory+16383\n"
+     " MOVE R15, @R13++\n", 42),
     # The start function sets g = g * 10 + 1, then __wasm_call_ctors sets
     # g = g * 10 + 2. In that order, g = 12.
     ("startup", module(
@@ -141,6 +155,8 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str) -> Lis
                     out.write(f.read())
     binary = os.path.join(tmp, name + ".bin")
     run([sys.executable, NICEASM, "-o", binary, full])
+    with open(binary) as f:
+        n_words = len(f.readlines())
     output = run([NICEEMU, binary])
 
     regs: Dict[str, int] = {}
@@ -151,6 +167,8 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str) -> Lis
     wanted = {"R1": expected, "R13": 0xFFFFFF00}
     wanted.update({f"R{i}": 0 for i in range(7, 13)})
     problems = []
+    if n_words >= 16384:
+        problems.append(f"the .bin has {n_words} words, so it holds the memory")
     if not output.startswith("Halted (HALT)") or not output.endswith("exit 0\n"):
         problems.append("did not halt with HALT")
     for reg, value in wanted.items():

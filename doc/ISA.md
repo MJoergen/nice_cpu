@@ -592,7 +592,7 @@ The WebAssembly specification defines what each wasm instruction does. A transla
 - Byte address *b* is bits 8·(*b* mod 4) + 7 to 8·(*b* mod 4) of the word at `MEMBASE` + ⌊*b* / 4⌋. Byte 0 of a word is its least significant byte, as in `.ASCII_B` (§10.3).
 - Wasm is little-endian, so an `i32` at a byte address that is a multiple of 4 is exactly one NICE word. An `i64` there is two words, low word first, as in §9.3.
 - A page is 65536 bytes, or 16384 words. The translator reserves words for the memory up to a cap. The cap is at least the module's initial size and at most its maximum size, if it declares one. The translator chooses it, for example by an option, because a module may declare a maximum that no NICE system has room for. `memory.grow` returns −1 if the new size would pass the cap.
-- Active data segments are part of the program image, like C static data (§9.3).
+- The words that active data segments set are part of the program image, like C static data (§9.3). The translator reserves the rest of the memory with `.RES` (§10.3), so it is not in the image. Wasm requires new memory to be 0, so `___wasm_start` sets the initial pages to 0, except the words that data segments set, and `memory.grow` sets each new page to 0.
 - The label `___wasm_memory` is `MEMBASE`, so C code can declare the memory as `extern unsigned __wasm_memory[];`.
 
 Memory accesses must give the results wasm defines:
@@ -681,7 +681,7 @@ The routines for `i64` and floating point are in the same library and listed in 
 
 **Start-up.** The start-up code is that of §9.3. For a program with a wasm module, it calls `___wasm_start` before `_main`.
 
-- The translator always emits `___wasm_start`, a §9.3 function with no arguments and no result. It calls the module's start function, if there is one. Then it calls `__wasm_call_ctors`, if the module exports a function of that name. Otherwise it just returns. The name starts with `_`, so the export gets no label of its own (see Imports and exports), and the translator calls it by its `W.` label.
+- The translator always emits `___wasm_start`, a §9.3 function with no arguments and no result. First it sets the memory to 0, as described under Linear memory. Then it calls the module's start function, if there is one. Then it calls `__wasm_call_ctors`, if the module exports a function of that name. Otherwise it just returns. The name starts with `_`, so the export gets no label of its own (see Imports and exports), and the translator calls it by its `W.` label.
 - Clang, Rust, and Zig emit no start function. Clang puts the calls to C++ constructors and `__attribute__((constructor))` functions in `__wasm_call_ctors`, so link with `--export=__wasm_call_ctors` to have them run. Rust and Zig need neither.
 - Rust and Zig code supply `main` as an exported function, for example `#[no_mangle] pub extern "C" fn main() -> i32` in Rust or `export fn main() i32` in Zig.
 
@@ -742,6 +742,7 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
 | `.ORG addr` | Continue assembling at addr. |
 | `.DAT value, ...` | One word for each value. |
 | `.BLK n` | n words of 0. |
+| `.RES n` | Reserves n words. They are not part of the program image (§10.4), so their contents are undefined when the program starts. |
 | `.ASCII_L 'text'` | One character per word, followed by a 0 word. |
 | `.ASCII_B 'text'` | Four characters per word, with the first character in the least significant byte. The last word is padded with 0 bytes. No terminator is added when the length is a multiple of 4. |
 
@@ -749,7 +750,7 @@ Strings may be quoted with `'` or `"`.
 
 ### 10.4 Object format
 
-The `.bin` format is plain text with one line per assembled word: an 8-digit hex address, a space, and the 8-digit hex word. Lines are in address order, for example `00000002 0077580f`.
+The `.bin` format is plain text with one line per assembled word: an 8-digit hex address, a space, and the 8-digit hex word. Lines are in address order, for example `00000002 0077580f`. Addresses skipped by `.ORG` and words reserved by `.RES` are not listed.
 
 ## 11. Worked example
 
@@ -813,5 +814,6 @@ It executes as follows:
 | Carry input timing | The C flag as step 5 of §5 left it (§5.1, §5.2) | Not specified anywhere. The emulator also reads C after the source operands. |
 | Assembler numbers | `0x`, `0b`, decimal | The emulator reads a leading 0 as octal; the articles use `#` and `$` |
 | Assembler directives and constants | `.DAT` takes several values, a constant may be an expression, and a string may use `"..."` (§10) | `NICE.pm` takes one value per directive, a number or a symbol only, and `'...'` only |
+| `.RES` directive | Reserves words that are not in the program image (§10.3) | The 2004 assembler has no such directive. Every word it reserves, with `.BLK`, is in the image. |
 
 The emulator also has bugs that this specification does not copy. Its carry input comes from the wrong SR bit, its 5-bit count mask is wrong, it modifies source registers, it never sets X, `ONE` crashes, `1>0` and `C>0` fill the wrong end, and `DEC` reports a borrow in V. See [review/emulator-and-webpage-review.md](review/emulator-and-webpage-review.md) §4.

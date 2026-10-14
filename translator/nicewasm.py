@@ -31,6 +31,7 @@ TYPE_NAMES = {I32: "i32", I64: "i64", F32: "f32", F64: "f64", 0x7B: "v128",
               0x70: "funcref", 0x6F: "externref"}
 
 WORDS_PER_PAGE = 16384  # 65536 bytes, four to a word
+ZERO_UNROLL = 16        # words cleared per pass of ___wasm_start's loop; divides a page
 
 # Section ids in the order a module must give them. Custom sections (0) may
 # come anywhere.
@@ -416,8 +417,18 @@ class Translator:
 
     def run(self, source: str) -> List[str]:
         out = [f"; Translated from {source} by nicewasm (doc/ISA.md §9.4).", ""]
-        out.append("; Calls the start function and __wasm_call_ctors, if the module has them.")
+        out.append("; Sets the memory to 0, then calls the start function and")
+        out.append("; __wasm_call_ctors, if the module has them.")
         out.append("___wasm_start")
+        if self.m.memory_pages:
+            # The memory is reserved with .RES, so it is not in the program
+            # image. Each pass of the loop clears ZERO_UNROLL words.
+            out.append(instr("MOVE", "R5", "___wasm_memory"))
+            out.append(instr("MOVE", "R6", str(self.m.memory_pages * WORDS_PER_PAGE // ZERO_UNROLL)))
+            out.append("W.zero")
+            out += [instr("MOVE", "@R5++", "R0")] * ZERO_UNROLL
+            out.append(instr("DEC[M]", "R6", "R6"))
+            out.append("        ?!Z MOVE R15, W.zero")
         for idx in (self.m.start, self.ctors):
             if idx is not None:
                 out.append(instr("ADD", "@--R13", "2", "R15"))
@@ -436,7 +447,7 @@ class Translator:
         if self.m.memory_pages is not None:
             pages = self.m.memory_pages
             out += ["", f"; Linear memory: {pages} page{'' if pages == 1 else 's'}",
-                    "___wasm_memory", instr(".BLK", str(pages * WORDS_PER_PAGE))]
+                    "___wasm_memory", instr(".RES", str(pages * WORDS_PER_PAGE))]
         return out
 
 

@@ -545,7 +545,7 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 
 - There is one runtime library, shared by the C compiler and the wasm translator (§9.4).
 - A routine may be written in assembly, or translated from a library module (§9.4).
-- All its labels start with `__`. Their C names start with `_`, which C reserves for the implementation at file scope.
+- The labels of its routines start with `__`. Their C names start with `_`, which C reserves for the implementation at file scope. The labels inside a translated library module start with `WL.` (§9.4), which no C name can produce.
 - The table lists the routines for one-word integers. The runtime library's README lists all routines, including those for `long long`, floating point, and conversions between them.
 
 | Label | Result in R1 |
@@ -587,11 +587,13 @@ The WebAssembly specification defines what each wasm instruction does. A transla
 
 **Library modules.** Runtime routines (§9.3) may be compiled to wasm, for example from compiler-rt, and translated as a library module. A library module differs from a program's module in these ways:
 
-- It has no start function, no data segments, and no globals, and it does not access linear memory. The translator rejects one that does. It reserves no memory, and it emits no `___wasm_start`.
+- The translator is given a name for it, which is a C identifier. The labels the translator makes for itself start with `WL.name.` instead of `W.`, for example `WL.float.f3`, so that the labels of two library modules cannot clash.
 - Each exported function gets the label `_name`, including when the name starts with `_`. So the export `__divdi3` gets the label `___divdi3`.
-- The labels the translator makes for itself start with `WL.` instead of `W.`.
+- It has no start function, and it uses neither `memory.size` nor `memory.grow`. The translator rejects one that does, and it emits no `___wasm_start`.
+- Its memory and its globals are its own, separate from those of the program's module. Compilers use them for a stack, for example to pass 128-bit values. The memory is at the label `WL.name.memory`. Its words are part of the program image, with the values that its data segments give and 0 elsewhere, like C static data (§9.3).
+- The translator reserves only the start of the memory, as much as the module's stack and data need. It chooses the size, for example from the initial value of the stack pointer. A whole page of 16384 words would cost more RAM than the routines themselves. An access past the reserved part traps as out of bounds (code 2), unless the bounds checks are left out.
 
-A program may contain any number of library modules, as long as their labels are unique (§9.3). They go with the runtime library, after the program's module.
+A program may contain any number of library modules. They go with the runtime library, after the program's module.
 
 **Values.**
 
@@ -686,6 +688,8 @@ Running out of NICE stack is not detected, unlike in wasm. What happens then is 
 - division or remainder by zero traps (code 3)
 - `div_s` of the most negative value by −1 traps (code 4)
 - `rem_s` of the most negative value by −1 is 0.
+
+Before it converts a float to an integer with `trunc`, it checks that the result fits. A NaN, or a value whose integer part does not fit, traps (code 5).
 
 The routines for `i64` and floating point are in the same library and listed in its README.
 

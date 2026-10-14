@@ -182,6 +182,8 @@ Every item in §6 is done as described. The typed operand stack puts an `i64` in
 
 Both are left for when library modules are implemented.
 
+**Resolved** when they were implemented, for the float library: ISA.md §9.4 now gives each library module a name, and its labels start with `WL.name.`. A library module may have its own memory and globals, because compiler-rt's f64 routines pass 128-bit values on a stack in linear memory. The translator reserves only the part of that memory the module needs. §9.3 now says that only the labels of the routines start with `__`.
+
 ### 7.4 Nits
 
 - An import and an export of the same name both become `_name`. Calls to the import then reach the module's own function, and a hand-written `_name` is a duplicate that the assembler reports with line numbers in the joined file, as duplicate exports were before §2.4. No toolchain produces this, and a check would cost one line.

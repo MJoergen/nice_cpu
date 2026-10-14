@@ -292,3 +292,17 @@ Suggested wording: "A deferred request is taken before the second instruction af
 - `std.fmt.parseInt` accepts `+5` and `1_0`, so `--irq 0:+5` and `--irq 0:1_0` are taken. The same holds for `-d` and `-n` since the first round; the README says only "decimal or 0x hex".
 - The numbers in the line comments of `irq.asm` and `merge.asm` (`; 0,1: VBASE = 1`) are word addresses, while the header comment of each file numbers steps. Both are bare numbers. "Words 0,1" would separate them.
 - Nothing shows a request that is still pending when the program stops. One line after the halt line, such as `Pending: IRQ 02`, would make the "never taken" rule visible instead of inferred from an absence.
+
+## 10. Fifth round, commits 0883db0 and c7012b2
+
+Checked on 2026-10-14. `make test` passes (24 unit tests, 4 examples, 13 probes, 40 error cases), and `make bins` leaves `test/` unchanged. Every item of §9 is fixed, and each fix was run, not just read.
+
+**ISA.md.** §1.4 now defines `halted` by any halt, with the three section references. §7.1 states the deferred-request rule with the `INT`, halt, and E = 0 exceptions, in the wording §9.3 proposed. Appendix B's row on `after_rti` is still accurate.
+
+**Probes.** I traced the three `.expected` files by hand. `after` logs `B3 B4 A1 B1 B1 A3` in 18 steps with R13 = `0x206`: the `INT 4` runs before the pending NMI, the NMI waits through its routine, and the skipped `MOVE` at word 8 counts as the instruction after `RTI`. `merge` takes `NMI 02` and then `IRQ 04`, which replaced `IRQ 03` across steps, and ends after 10 steps with `Pending: IRQ 05`, R1 = 2, R2 = 4, R3 = 3. `start` begins its trace with `NMI 03            R14=81000000 R15=00000004` and returns to word 0. All three step lists in the header comments are right, and the line comments now say "words".
+
+**The pending line.** `Pending: NMI 01 IRQ 02` appears with both kinds pending, `Pending: IRQ 05` after `Stopped at the step limit`, and `Pending: IRQ 07` after a halt inside a routine, each on the line after the first one, as the README says.
+
+**Numbers in options.** `+5`, `1_0`, `0b11`, `0x`, `0xg`, and `1e3` are all rejected with `bad number`, naming the option; `007` is decimal 7, and `0x10` still works. The `InvalidCharacter => unreachable` in `parseNumber` is sound: every character has passed `charToDigit` for the base before `parseInt` sees it, and the sign and `_` cases that `parseInt` would accept fail that check first.
+
+One trivial thing left: `0X3` is accepted as hex while the README and the usage say `0x`.

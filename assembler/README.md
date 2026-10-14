@@ -37,9 +37,10 @@ by `.ORG` are not listed.
 - Expressions are a number or symbol, optionally combined with `+` and `-`
   (for example `end-data` or `TABLE+1`), with no spaces, because whitespace
   separates operands. Arithmetic wraps modulo 2³².
-- Operands are separated by whitespace or by one comma. Two commas in a row,
-  or a comma at the start or end of a line, are errors.
-- A label may end with `:`. A label on a `.ORG` line names the new address.
+- Operands are separated by whitespace or by one comma. A comma anywhere
+  else, such as after the mnemonic or two in a row, is an error.
+- A label or `.EQU` name may end with `:`. A label on a `.ORG` line names the
+  new address.
 - Labels and `.EQU` names are case-sensitive. Mnemonics, register names,
   conditions, modifiers and directives are not.
 - A label or `.EQU` name cannot be a mnemonic or look like a register (`R`
@@ -68,4 +69,4 @@ by `.ORG` are not listed.
 | `encoding` | Every addressing mode, opcode, alias, condition, control instruction and directive, register spellings, `.EQU` chains and operands. The expected output was checked by hand against ISA.md, including the worked example in §11. |
 | `wrap` | Address wrap from `0xFFFFFFFF` to 0. |
 | `crlf` | CRLF line endings and a program with no `.ORG`. |
-| `errors.py` | One case per error message, including every bug fixed after [the review](../doc/review/assembler-review.md). |
+| `errors.py` | One case per error message, including every bug fixed after [the review](../doc/review/assembler-review.md), and generated programs such as `.EQU` chains of 1200 names. |

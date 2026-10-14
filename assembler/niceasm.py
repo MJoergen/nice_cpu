@@ -74,17 +74,23 @@ class Assembler:
         self.pc = 0
         self.pass_no = 0
         self.line_no = 0
+        self.equ_cache: Dict[str, int] = {}            # .EQU values in pass 0
+        self.early_labels: Dict[str, int] = {}         # label name -> first line, from pass 0
         self.must_know: Optional[str] = None  # set while evaluating a .ORG or .BLK argument
 
     # -- Symbols and expressions -------------------------------------------
 
     def resolve(self, text: str) -> str:
-        """Follows .EQU names until reaching text that is not one."""
-        for _ in range(100):
-            if text not in self.equs or text in self.bad_equs:
-                return text
+        """Follows .EQU names until reaching text that is not one. Loops
+        cannot occur: check_equs() marks a name in every loop as bad."""
+        while text in self.equs and text not in self.bad_equs:
             text = self.equs[text]
-        raise AsmError(f"'{text}': .EQU definitions form a loop")
+        return text
+
+    def deps(self, name: str) -> List[str]:
+        """The good .EQU names that the value of .EQU name mentions."""
+        return [d for d in IDENT_IN_TEXT.findall(self.equs[name])
+                if d in self.equs and d not in self.bad_equs]
 
     def register(self, text: str) -> Optional[int]:
         """Register number 0..15 if text (after .EQU) names one, else None."""
@@ -107,7 +113,7 @@ class Assembler:
         if name.upper() in MNEMONICS:
             raise AsmError(f"'{name}' is a mnemonic and cannot be a symbol")
 
-    def term(self, t: str, depth: int) -> int:
+    def term(self, t: str, done: Dict[str, int]) -> int:
         if t[:1] in QUOTES:
             raise AsmError(f"a string ({t}) is only allowed after .ASCII_L and .ASCII_B")
         if t[:1].isdigit():
@@ -131,14 +137,7 @@ class Assembler:
         if t in self.bad_equs:
             return 0  # its definition has already been reported
         if t in self.equs:
-            if depth > 100:
-                raise AsmError(f"'{t}': .EQU definitions form a loop")
-            if self.register(t) is not None:
-                raise AsmError(f"'{t}' is a register where a number is expected")
-            s = self.resolve(t)
-            if (s.startswith(("@", "--")) or s.endswith(("++", "--")) or "[" in s):
-                raise AsmError(f"'{t}' stands for the operand '{s}', not a number")
-            return self.value(self.equs[t], depth + 1)
+            return done[t] if t in done else self.equ_value(t)
         if t in self.labels:
             return self.labels[t]
         if self.must_know:
@@ -147,8 +146,35 @@ class Assembler:
             raise AsmError(f"undefined symbol '{t}'")
         return 0  # pass 0 or 1: value not needed yet
 
-    def value(self, text: str, depth: int = 0) -> int:
-        """expr := ['-'|'+'] term {('+'|'-') term}, not yet wrapped modulo 2^32."""
+    def check_number(self, name: str) -> None:
+        """Checks that .EQU name stands for a number, not a register or operand."""
+        if self.register(name) is not None:
+            raise AsmError(f"'{name}' is a register where a number is expected")
+        s = self.resolve(name)
+        if s.startswith(("@", "--")) or s.endswith(("++", "--")) or "[" in s:
+            raise AsmError(f"'{name}' stands for the operand '{s}', not a number")
+
+    def equ_value(self, name: str) -> int:
+        """The value of .EQU name. Evaluates the names it depends on first,
+        with an explicit stack, so a long chain cannot exhaust Python's. In
+        pass 0 no label is known yet, so values are kept for check_equs()."""
+        done: Dict[str, int] = self.equ_cache if self.pass_no == 0 else {}
+        stack = [name]
+        while stack:
+            n = stack[-1]
+            todo = [d for d in self.deps(n) if d not in done]
+            if todo:
+                stack += todo
+                continue
+            stack.pop()
+            if n not in done:
+                self.check_number(n)
+                done[n] = self.value(self.equs[n], done)
+        return done[name]
+
+    def value(self, text: str, done: Optional[Dict[str, int]] = None) -> int:
+        """expr := ['-'|'+'] term {('+'|'-') term}, not yet wrapped modulo 2^32.
+        done holds .EQU values that are already known."""
         parts = re.split(r"([+-])", text)
         if parts[0] == "":       # leading sign
             parts = parts[1:]
@@ -158,7 +184,7 @@ class Assembler:
             raise AsmError(f"bad expression '{text}'")
         acc = 0
         for op, t in zip(parts[0::2], parts[1::2]):
-            v = self.term(t, depth)
+            v = self.term(t, done or {})
             acc = acc + v if op == "+" else acc - v
         return acc
 
@@ -178,35 +204,53 @@ class Assembler:
     def check_equs(self) -> List[Tuple[int, str]]:
         """Checks every .EQU value, each after the .EQU names it uses. Returns
         (line number, message) for each bad one and marks it as bad, so that
-        its uses do not report it again."""
+        its uses do not report it again. A depth-first search with an explicit
+        stack, so a long chain cannot exhaust Python's."""
         errors: List[Tuple[int, str]] = []
         state: Dict[str, bool] = {}  # name -> True once checked, False while checking
 
-        def check(name: str) -> None:
-            state[name] = False
-            try:
-                for dep in IDENT_IN_TEXT.findall(self.equs[name]):
-                    if dep in self.equs and dep not in self.bad_equs:
-                        if state.get(dep) is False:
-                            raise AsmError(f"'{name}': .EQU definitions form a loop")
-                        if dep not in state:
-                            check(dep)
-                value = self.equs[name]
-                try:  # any operand will do, as a destination or a source
-                    self.operand(value, True)
-                except AsmError:
-                    self.operand(value, False)
-            except AsmError as e:
-                self.bad_equs.add(name)
-                errors.append((self.defined_on[name], str(e)))
-            state[name] = True
+        def fail(name: str, msg: str) -> None:
+            self.bad_equs.add(name)
+            errors.append((self.defined_on[name], msg))
 
-        for name in self.equs:
-            if name not in state:
-                check(name)
+        for root in self.equs:
+            if root in state:
+                continue
+            state[root] = False
+            stack = [root]
+            while stack:
+                name = stack[-1]
+                if name not in self.bad_equs:
+                    deps = self.deps(name)
+                    if any(state.get(d) is False for d in deps):
+                        fail(name, f"'{name}': .EQU definitions form a loop")
+                    else:
+                        todo = [d for d in deps if d not in state]
+                        if todo:
+                            state[todo[0]] = False
+                            stack.append(todo[0])
+                            continue
+                        value = self.equs[name]
+                        try:  # any operand will do, as a destination or a source
+                            try:
+                                self.operand(value, True)
+                            except AsmError:
+                                self.operand(value, False)
+                        except AsmError as e:
+                            fail(name, str(e))
+                state[name] = True
+                stack.pop()
         return errors
 
     # -- Operands ----------------------------------------------------------
+
+    def base_register(self, name: str) -> Optional[int]:
+        """Like register(), for the name in --Rx, Rx++ and Rx--. An .EQU name
+        there must stand for a register."""
+        reg = self.register(name)
+        if reg is None and name in self.equs and name not in self.bad_equs:
+            raise AsmError(f"'{name}' stands for '{self.resolve(name)}', not a register")
+        return reg
 
     def operand(self, tok: str, is_dest: bool) -> Tuple[int, Optional[int]]:
         """Returns (7-bit field, constant or None). See ISA.md section 4.
@@ -221,14 +265,14 @@ class Assembler:
             raise AsmError(f"{shown}: there is only one level of '@'")
 
         if p.startswith("--"):                          # --Rx
-            reg = self.register(p[2:])
+            reg = self.base_register(p[2:])
             if reg is not None:
                 if is_dest and not indirect:
                     raise AsmError(f"{shown}: pre-decrement is not a destination mode, use Rx--")
                 return hi | 0x10 | reg, None
 
         if len(p) > 2 and p[-2:] in ("++", "--"):       # Rx++ and Rx--
-            reg = self.register(p[:-2])
+            reg = self.base_register(p[:-2])
             if reg is not None:
                 if p[-1] == "+":
                     return hi | 0x20 | reg, None
@@ -325,6 +369,8 @@ class Assembler:
                 self.blocks.append((self.pc, n, line_no))
             self.pc = (self.pc + n) & MASK
         elif d in (".ASCII_L", ".ASCII_B"):
+            if len(args) > 1 and args[0][:1] in QUOTES and args[1][:1] in QUOTES:
+                raise AsmError(f"{d} takes one string, got {len(args)}")
             if len(args) > 1 and args[0][:1] in QUOTES:
                 q = args[0][0]
                 other = "'" if q == '"' else '"'
@@ -351,9 +397,12 @@ class Assembler:
         name = m.group(1).upper()
         cls, opcode, nops = MNEMONICS[name]
 
-        if m.group(2) is None and args and args[0].startswith("["):
-            raise AsmError(f"'{mtok} {args[0]}': write the modifier without a space, "
-                           f"as {mtok}{args[0]}")
+        if args and args[0].startswith("["):
+            if m.group(2) is None:
+                raise AsmError(f"'{mtok} {args[0]}': write the modifier without a space, "
+                               f"as {mtok}{args[0]}")
+            raise AsmError(f"'{mtok} {args[0]}': write all modifiers in one bracket, "
+                           f"as {m.group(1)}[{m.group(2)}{args[0].strip('[]')}]")
         mods = (m.group(2) or "").upper()
         if m.group(2) is not None and (not mods or len(set(mods)) != len(mods)
                                        or set(mods) - set("MC")):
@@ -389,10 +438,12 @@ class Assembler:
                 self.emit(c, line_no)
 
     @staticmethod
-    def tokenize(text: str) -> List[str]:
+    def tokenize(text: str) -> Tuple[List[str], List[bool]]:
         """Splits at whitespace and single commas. A comment starts with ';'
-        or '*'. A quoted string is one token, quotes kept."""
+        or '*'. A quoted string is one token, quotes kept. Returns the tokens
+        and, for each, whether a comma comes before it."""
         tokens: List[str] = []
+        commas: List[bool] = []
         text = text.rstrip("\r\n")
         pos = 0
         comma = False  # a comma since the last token
@@ -415,11 +466,23 @@ class Assembler:
                     raise AsmError(f"unterminated string {text[pos:]}")
                 raise AsmError(f"unexpected character '{text[pos]}'")
             tokens.append(m.group())
+            commas.append(comma)
             pos = m.end()
             comma = False
         if comma:
             raise AsmError("',' at the end of the line has no operand after it")
-        return tokens
+        return tokens, commas
+
+    @staticmethod
+    def check_commas(tokens: List[str], commas: List[bool], first_arg: int) -> None:
+        """A comma may only come between two operands, which start at first_arg."""
+        for i in range(1, min(first_arg + 1, len(tokens))):
+            if commas[i]:
+                raise AsmError(f"',' after '{tokens[i - 1]}': a comma only separates operands")
+
+    @staticmethod
+    def strip_colon(name: str) -> str:
+        return name[:-1] if len(name) > 1 and name.endswith(":") else name
 
     @staticmethod
     def is_keyword(tok: str) -> bool:
@@ -435,7 +498,7 @@ class Assembler:
     def line(self, text: str, line_no: int) -> None:
         self.line_no = line_no
         try:
-            tok = self.tokenize(text)
+            tok, commas = self.tokenize(text)
         except AsmError:
             if self.pass_no == 0:
                 return  # reported in pass 1
@@ -445,14 +508,25 @@ class Assembler:
 
         if len(tok) >= 2 and tok[1].upper() == ".EQU":  # handled before pass 1
             if self.pass_no == 0:
+                self.check_commas(tok, commas, 2)
                 if len(tok) != 3:
                     raise AsmError(".EQU takes one value")
-                self.check_name(tok[0])
-                self.equs[tok[0]] = tok[2]
-                self.defined_on[tok[0]] = line_no
+                name = self.strip_colon(tok[0])
+                if name in self.early_labels:
+                    raise AsmError(f"symbol '{name}' is already defined on line "
+                                   f"{self.early_labels[name]}")
+                self.check_name(name)
+                self.equs[name] = tok[2]
+                self.defined_on[name] = line_no
             return
         if self.pass_no == 0:
+            # Note labels, so that an .EQU of the same name further down is
+            # reported on the .EQU line. Pass 1 checks and defines them.
+            if (not self.is_keyword(tok[0]) and not tok[0].startswith(".")
+                    and (len(tok) == 1 or self.is_keyword(tok[1]))):
+                self.early_labels.setdefault(self.strip_colon(tok[0]), line_no)
             return
+        all_tok = list(tok)
 
         # A label is a first word that is not a condition, mnemonic or directive.
         label = None
@@ -466,9 +540,7 @@ class Assembler:
                     raise AsmError(f"unknown mnemonic '{tok[0]}'")
                 raise AsmError(f"unknown mnemonic '{tok[1]}' "
                                f"('{tok[0]}' is read as a label)")
-            label = tok.pop(0)
-            if len(label) > 1 and label.endswith(":"):
-                label = label[:-1]
+            label = self.strip_colon(tok.pop(0))
         if not tok:
             if label is not None:
                 self.define_label(label)
@@ -485,6 +557,7 @@ class Assembler:
             cond = (m.group(1) == "!") << 3 | CONDITION_FLAGS.index(flag)
             if not tok:
                 raise AsmError("condition without an instruction")
+        self.check_commas(all_tok, commas, len(all_tok) - len(tok) + 1)
 
         if tok[0].startswith("."):
             d = tok[0].upper()

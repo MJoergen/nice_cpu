@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""Negative tests for niceasm: each case is a short program that must fail
-with exit status 1, print the expected error, and write no output file."""
+"""Tests for niceasm that need no file of their own.
+
+CASES are short programs that must fail with exit status 1, print the
+expected error, and write no output file. GOOD are programs, some of them
+generated, that must assemble to the expected output."""
 
 from __future__ import annotations
 
@@ -91,6 +94,41 @@ CASES: List[Tuple[str, str]] = [
     (" .DAT 0x100000000", "1: error: number too large: '0x100000000'"),
     (" .DAT 1+", "1: error: bad expression '1+'"),
     ("\xef\xbb\xbf MOVE R1, X", "1: error: undefined symbol 'X'"),
+    # Second round of the review
+    (" HALT\n .ORG 0\n .BLK 1", "3: error: address 0x00000000 is already used by line 1"),
+    (" .BLK 3\n .ORG 1\n .BLK 1", "3: error: address 0x00000001 is already used by line 1"),
+    ("X .EQU R1++\n MOVE R2, --X", "2: error: 'X' stands for 'R1++', not a register"),
+    ("X .EQU 5\n MOVE R2, X++", "2: error: 'X' stands for '5', not a register"),
+    (" MOVE[M] [C] R1, R2", "1: error: 'MOVE[M] [C]': write all modifiers in one bracket, as MOVE[MC]"),
+    (" .ASCII_L 'abc' 'def'", "1: error: .ASCII_L takes one string, got 2"),
+    ("A HALT\nA .EQU 1", "2: error: symbol 'A' is already defined on line 1"),
+    ("A: HALT\nA: .EQU 1", "2: error: symbol 'A' is already defined on line 1"),
+    (" MOVE , R1, R2", "1: error: ',' after 'MOVE': a comma only separates operands"),
+    ("L , HALT", "1: error: ',' after 'L': a comma only separates operands"),
+    ("?Z , HALT", "1: error: ',' after '?Z': a comma only separates operands"),
+    ("X .EQU, 5", "1: error: ',' after '.EQU': a comma only separates operands"),
+]
+
+
+def chain(n: int, reverse: bool, step: str = "") -> str:
+    """n .EQU names, A1 to An, each defined as the one before plus step,
+    with A0 = 7, followed by .DAT An."""
+    lines = [f"A{i} .EQU A{i - 1}{step}" for i in range(1, n + 1)]
+    if reverse:
+        lines.reverse()
+    return "\n".join(["A0 .EQU 7"] + lines + [f" .DAT A{n}"])
+
+
+# (source, expected output)
+GOOD: List[Tuple[str, str]] = [
+    ("X: .EQU 5\n .DAT X", "00000000 00000005\n"),
+    (" ADD R1 R2, R3", "00000000 00604103\n"),
+    (" .ORG 0xFFFFFFFE\n .BLK 2\n HALT",
+     "00000000 0c000000\nfffffffe 00000000\nffffffff 00000000\n"),
+    (chain(1200, False), "00000000 00000007\n"),
+    (chain(1200, True), "00000000 00000007\n"),
+    (chain(1200, False, "+1"), "00000000 000004b7\n"),
+    (chain(1200, True, "+1"), "00000000 000004b7\n"),
 ]
 
 
@@ -113,14 +151,29 @@ def run_case(tmp: str, source: str, expected: str) -> List[str]:
     return problems
 
 
+def run_good(tmp: str, source: str, expected: str) -> List[str]:
+    """Returns a list of failure descriptions, empty if the case passed."""
+    src = os.path.join(tmp, "t.asm")
+    out = os.path.join(tmp, "t.bin")
+    with open(src, "w", encoding="latin-1") as f:
+        f.write(source + "\n")
+    p = subprocess.run([sys.executable, NICEASM, src], capture_output=True, text=True)
+    if p.returncode != 0:
+        return [f"exit status {p.returncode}, expected 0:\n{p.stderr}"]
+    with open(out) as f:
+        got = f.read()
+    return [] if got == expected else [f"expected:\n{expected}got:\n{got}"]
+
+
 def main() -> None:
     failed = 0
     with tempfile.TemporaryDirectory() as tmp:
-        for source, expected in CASES:
-            problems = run_case(tmp, source, expected)
+        cases = [(run_case, s, e) for s, e in CASES] + [(run_good, s, e) for s, e in GOOD]
+        for run, source, expected in cases:
+            problems = run(tmp, source, expected)
             if problems:
                 failed += 1
-                print(f"FAIL {source!r}")
+                print(f"FAIL {source[:60]!r}")
                 for msg in problems:
                     print("    " + msg.replace("\n", "\n    "))
         # The default output name must not overwrite the input.
@@ -133,7 +186,7 @@ def main() -> None:
         if p.returncode == 0 or not kept:
             failed += 1
             print("FAIL output overwrites the input")
-    total = len(CASES) + 1
+    total = len(CASES) + len(GOOD) + 1
     print(f"PASS errors ({total} cases)" if not failed else f"FAIL errors ({failed} of {total})")
     sys.exit(1 if failed else 0)
 

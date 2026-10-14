@@ -19,7 +19,7 @@ where NICE allows it. This note concentrates on where NICE differs.
 | Registers | R1–R13 in a register file with three read ports and one write port. R0 is a constant 0. SR (R14) and PC (R15) are separate registers. |
 | Data accesses | Exact, in order, and never speculative, as ISA §8.2 requires. |
 | Instruction fetches | Free to run ahead, as ISA §8.2 allows (§2). |
-| Interrupts | Taken in WRITE, between instructions. Valid/ready request ports for NMI and IRQ. |
+| Interrupts | Taken in WRITE, before an instruction, as soon as ISA §7.1 allows (§6). Valid/ready request ports for NMI and IRQ. |
 | Language | VHDL-2008, GHDL for simulation, SymbiYosys for formal verification, and Vivado for synthesis. |
 | Verification | A trace writer diffed against `niceemu --trace`, then formal checks with SymbiYosys. |
 | Location | The `hdl/` directory, with commit prefix `nicehdl:` (§10). |
@@ -42,8 +42,10 @@ So ISA.md was changed for this core:
   from `0xFFFFFF00`–`0xFFFFFFFF` reads 0. Without this, a fetch running ahead
   could start a device access. The emulator follows it, and
   `emulator/test/iofetch.asm` tests it.
-- **ISA §7.1** checks for interrupts "between instructions", not "before each
-  instruction fetch".
+- **ISA §7.1** checks for interrupts "before each instruction", not "before
+  each instruction fetch".
+- **ISA §5** and **§9.4** name the two kinds of access where they referred to
+  the old rule.
 - **Appendix B** records both rules.
 
 Nothing else in the ISA had to change. Conditional execution, the side
@@ -64,8 +66,10 @@ The stages do what they do in qnice_cpu, with these differences:
   to three constant words. DECODE takes the instruction only when all its
   words are present. The length follows from the instruction word (ISA §2.3).
 - **DECODE** reads up to three registers: the bases of s0, s1, and dest. It
-  knows PC, which is the instruction's address plus its length, so it never
-  reads R15 from the register file. It emits the micro-operations of §4.
+  knows PC, which is the instruction's address plus its length, so it does
+  not read R15 from the register file. The one exception is an R15 operand
+  after a side effect on R15 in the same instruction (ISA §4.3), which takes
+  the slow path of §5.4. It emits the micro-operations of §4.
 - **PREPARE** forms operand values and addresses, and issues data reads.
 - **WRITE** holds the ALU and the shifter, writes registers and memory,
   updates SR, checks the condition, and starts flushes and interrupts.
@@ -119,9 +123,10 @@ hazard.
   is current. It needs no stall. If the condition is false, WRITE discards
   it. This covers the common pair `SUB[M] R0, a, b` followed by
   `?Z MOVE PC, label`.
-- **A micro-op with a data access** must know its condition before PREPARE
-  issues the access (§5.3). It waits in PREPARE while any older micro-op in
-  flight can still change SR.
+- **A micro-op with a data read** must know its condition before PREPARE
+  issues the read (§5.3). It waits in PREPARE while any older micro-op in
+  flight can still change SR. A store is issued in WRITE, where the condition
+  is known, so it needs no wait.
 - **An instruction with condition "always"** never waits for SR.
 
 The condition is decided once per instruction. A skipped instruction's
@@ -137,8 +142,15 @@ issues a data read only when the instruction is certain to run:
 2. No older micro-op in flight can still redirect: a write to R15, `RTI`,
    `INT`, a halt, or a store that may hit fetched code (§5.5).
 3. Every older store has been issued, so the read cannot overtake it.
+4. No interrupt request is pending that could be taken before it (§6): an
+   NMI that is valid while `in_service` = 0, or an IRQ that is valid while
+   `in_service` = 0 and either E = 1 or an older micro-op in flight may
+   still set E. An IRQ with E = 0 does not count, or a program that never
+   sets E could never read memory. The instruction directly after an `RTI`
+   is exempt, because ISA §7.1 holds every request off until it has retired.
+   The instruction after that is not.
 
-When PREPARE issues an instruction's first data access, the core commits to
+When PREPARE issues an instruction's first data read, the core commits to
 that instruction. No interrupt is taken before it (§6).
 
 Stores are issued in WRITE, which is in order, so they need no extra rule.
@@ -162,8 +174,10 @@ destination R15 in mode 000, and a source with no memory access, such as
 
 A side effect on R15 in `S0` or `S1`, such as `MOVE R1, @R15++`, must not
 flush the instruction's own later micro-ops. As in qnice_cpu, the flush waits
-for the instruction's last micro-op. R15 as a pointer is rare, so a slow path
-is fine.
+for the instruction's last micro-op. A later operand of the same instruction
+that reads R15 sees the side effect (ISA §4.3), so it takes R15 from the PC
+register after that micro-op has retired, not from DECODE. R15 as a pointer
+is rare, so a slow path is fine.
 
 R14 used as an operand or base register is also rare. DECODE can stall such
 an instruction until everything older has retired.
@@ -171,11 +185,16 @@ an instruction until everything older has retired.
 ### 5.5 Self-modifying code
 
 A store can change a word that FETCH has already read. WRITE compares each
-store address with the range of fetched words, from the storing instruction's
-next PC to FETCH's current address. On a hit, it flushes and refetches from
-the next instruction. Over-approximating is safe, because a needless flush
-costs only cycles. qnice_cpu uses a fixed window of 32 words for the same
-purpose.
+store address with the words that are fetched but not yet retired. While
+FETCH runs straight on, they are one range, from the storing instruction's
+next PC to FETCH's current address. After an early redirect by DECODE (§5.4)
+they are two: the words from the storing instruction up to the jump, and the
+words from the jump's target to FETCH's current address. So WRITE checks the
+range held in FETCH and ICACHE, from the oldest word ICACHE still holds to
+FETCH's current address, and the one to four words of each instruction in
+DECODE, SEQUENCER, and PREPARE. On a hit, it flushes and refetches from the
+next instruction. Over-approximating is safe, because a needless flush costs
+only cycles. qnice_cpu uses a fixed window of 32 words for the same purpose.
 
 A store into the storing instruction's own constant words must not change
 it, and refetching from the next instruction gives that.
@@ -186,18 +205,25 @@ Requests use valid/ready ports, as in qnice_cpu. The device holds `valid` and
 the vector until the core raises `ready`. So the device holds the pending
 state of ISA §7.1, and requests are never lost.
 
-WRITE takes a request between two instructions, when ISA §7.1 allows it: not
-halted, `in_service` = 0, `after_rti` = 0, and E = 1 for IRQ. NMI goes first.
-Entry (ISA §7.2) flushes the pipeline, saves PC and SR, reads the vector through
-the data port, and redirects FETCH.
+WRITE takes a request before an instruction, the first one after reset
+included, when ISA §7.1 allows it: not halted, `in_service` = 0,
+`after_rti` = 0, and E = 1 for IRQ. NMI goes first. Entry (ISA §7.2) flushes
+the pipeline, saves PC and SR, reads the vector through the data port, and
+redirects FETCH.
 
-The core may delay a request, because ISA §7.1 only says it is deferred, never
-lost. It does so in two cases:
+A request is taken at the first instruction boundary where ISA §7.1 allows
+it, as in the emulator. ISA §7.1 says a request "is taken" when the
+conditions hold, and promises that a request deferred during an interrupt
+routine is taken before the second instruction after `RTI`. Rule 4 of §5.3
+makes this possible: no younger instruction issues a data read while a
+request is pending that could be taken before it, so the core never has to
+choose between a wasted access and a late interrupt. The one delay is the
+instruction after `RTI`, which `after_rti` protects until it has retired.
 
-- **A younger instruction has issued a data access** (§5.3). The request
-  waits until that instruction has retired, so the access is not wasted.
-- **The instruction after `RTI`.** `after_rti` holds the request until that
-  instruction has retired.
+A request that arrives after a younger instruction has issued its first data
+read is taken after that instruction. Software cannot tell this from a
+request that arrived one instruction later, and ISA §7.1 leaves the timing of
+the request signals to the hardware interface.
 
 `INT` and `RTI` run in WRITE as `CTRL` micro-ops, and flush.
 
@@ -285,8 +311,13 @@ R0–R14 in order, R15 only after a jump, the memory write, and the halt reason.
 
 **The testbench** has a sparse dual-port memory model that loads `.bin` files,
 a console model that writes each byte into the trace stream when it is
-written, and an interrupt source with the meaning of the emulator's
-`--irq STEP:VEC` and `--nmi STEP:VEC`.
+written, and an interrupt source that raises a request once a given number of
+instructions have retired. Whether the core takes it before the next
+instruction or after one that had already issued a data read depends on the
+pipeline state (§6), so the trace cannot be predicted from the request step
+alone. Instead, the comparison script reads from the core's trace where each
+interrupt was taken, and runs the emulator with the matching `--irq STEP:VEC`
+or `--nmi STEP:VEC` options. The diff is then exact.
 
 **Test order:**
 

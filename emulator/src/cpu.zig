@@ -229,7 +229,7 @@ pub const Cpu = struct {
         const before = self.regs;
         self.last_write = null;
 
-        // §7.1: interrupts are checked between instructions.
+        // §7.1: interrupts are checked before each instruction.
         if (!self.after_rti and !self.in_service) {
             if (self.nmi_pending) |v| {
                 self.nmi_pending = null;

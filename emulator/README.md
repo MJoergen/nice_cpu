@@ -87,7 +87,7 @@ address twice and a file with no words are errors.
 | `0xFFFF0000`–`0xFFFF07CF` | 2000 | Character screen, 80×25. Ordinary memory. With `-2004` it is at `0x00000400`–`0x00000BCF` instead. |
 | `0xFFFF07D0`–`0xFFFFFEFF` | 63280 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |
 | `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns 0. |
-| `0xFFFFFF01`–`0xFFFFFFFF` | 255 | Reserved for I/O (ISA.md §8.3). Ordinary memory here. |
+| `0xFFFFFF01`–`0xFFFFFFFF` | 255 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
 
 The screen has one word per character, with the character in bits 7..0 and
 its colour above. It is ordinary memory, and `--screen` prints the

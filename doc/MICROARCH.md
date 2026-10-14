@@ -1,0 +1,318 @@
+# NICE core microarchitecture
+
+This is a design note for the FPGA implementation of NICE. It is a draft.
+[ISA.md](ISA.md) is the specification, and it wins wherever this note
+disagrees with it. "ISA §8.2" refers to a section of ISA.md, and a plain
+"§5.3" to a section of this note.
+
+The core is pipelined and has separate instruction and data buses, like
+[qnice_cpu](https://github.com/MJoergen/qnice_cpu). It reuses that design
+where NICE allows it. This note concentrates on where NICE differs.
+
+## 1. Decisions at a glance
+
+| Topic | Decision |
+|---|---|
+| Structure | A pipeline: FETCH, ICACHE, DECODE, SEQUENCER, PREPARE, and WRITE, as in qnice_cpu. |
+| Buses | Harvard: a read-only Wishbone instruction port and a Wishbone data port. Both see the same memory, through dual-port RAM. |
+| Instructions | DECODE splits each instruction into one to three micro-operations. |
+| Registers | R1–R13 in a register file with three read ports and one write port. R0 is a constant 0. SR (R14) and PC (R15) are separate registers. |
+| Data accesses | Exact, in order, and never speculative, as ISA §8.2 requires. |
+| Instruction fetches | Free to run ahead, as ISA §8.2 allows (§2). |
+| Interrupts | Taken in WRITE, between instructions. Valid/ready request ports for NMI and IRQ. |
+| Language | VHDL-2008, GHDL for simulation, SymbiYosys for formal verification, and Vivado for synthesis. |
+| Verification | A trace writer diffed against `niceemu --trace`, then formal checks with SymbiYosys. |
+| Location | The `hdl/` directory, with commit prefix `nicehdl:` (§10). |
+| Boards | None in this repository. The design is board-agnostic, and generics set the memory map (§10). |
+
+## 2. Changes to the ISA
+
+The ISA used to say that every memory access, instruction fetches included,
+happens exactly once, in program order, and never speculatively. A pipeline
+must fetch ahead, and a Harvard core cannot keep its two buses in one order.
+So ISA.md was changed for this core:
+
+- **ISA §8.2** splits accesses into instruction fetches and data accesses. Only
+  data accesses (operand reads, destination writes, and vector reads) must be
+  exact and in order. Instruction fetches may run early, repeat, or be wasted.
+  Each instruction still runs with the words memory held once the
+  instructions before it had completed, so self-modifying code works as
+  before (§5.5).
+- **ISA §8.3** says that instruction fetches never reach I/O devices. A fetch
+  from `0xFFFFFF00`–`0xFFFFFFFF` reads 0. Without this, a fetch running ahead
+  could start a device access. The emulator follows it, and
+  `emulator/test/iofetch.asm` tests it.
+- **ISA §7.1** checks for interrupts "between instructions", not "before each
+  instruction fetch".
+- **Appendix B** records both rules.
+
+Nothing else in the ISA had to change. Conditional execution, the side
+effects, R15 as an operand, and interrupts are all handled in the pipeline.
+
+## 3. Pipeline
+
+    FETCH --> ICACHE --> DECODE --> SEQUENCER --> PREPARE --> WRITE
+      |                    |                         |          |
+    instruction       REGISTERS                   MEMORY -------+
+      bus              (3 reads)                (data bus)
+      ^                                                         |
+      +----------------- redirect and flush --------------------+
+
+The stages do what they do in qnice_cpu, with these differences:
+
+- **ICACHE** presents up to four words to DECODE: the instruction word and up
+  to three constant words. DECODE takes the instruction only when all its
+  words are present. The length follows from the instruction word (ISA §2.3).
+- **DECODE** reads up to three registers: the bases of s0, s1, and dest. It
+  knows PC, which is the instruction's address plus its length, so it never
+  reads R15 from the register file. It emits the micro-operations of §4.
+- **PREPARE** forms operand values and addresses, and issues data reads.
+- **WRITE** holds the ALU and the shifter, writes registers and memory,
+  updates SR, checks the condition, and starts flushes and interrupts.
+
+All of this uses the valid/ready primitives of qnice_cpu's `src/sub/`.
+
+## 4. Micro-operations
+
+A micro-operation makes at most one register write, so the register file needs
+one write port. DECODE emits:
+
+| Micro-op | When | What it does |
+|---|---|---|
+| `S0` | s0 has a side effect on a register other than R0 (modes 001, 010, 101, and 110) | Reads s0 if it is in memory. Writes Rx ± 1. |
+| `S1` | the same for s1 | Reads s0 first, if it is a memory operand not yet read. Then reads s1 if it is in memory, and writes Ry ± 1. |
+| `OP` | always, for ALU and SHIFT instructions | Reads the memory sources not yet read. Computes r. Writes the destination and applies its side effect. Updates the flags. |
+| `CTRL` | control instructions | `HALT`, `RTI`, `INT`, or a reserved word. |
+
+Reads happen in field order, s0 then s1, as ISA §8.2 requires. That is why `S1`
+also reads an s0 that has no micro-op of its own.
+
+The common instructions need one micro-op: `ADD R1, R2, R3`, `MOVE R1, 5`,
+the push `MOVE @--SP, x`, and the call `ADD @--SP, 2, PC`. A pop
+`MOVE x, @SP++` and a return `MOVE PC, @SP++` need two. The most any
+instruction needs is three.
+
+**One write per micro-op is enough** because the two writes of a register
+destination in mode 001 or 010 merge into one: Rx ← regval(x, regval(x, r) ∓ 1)
+(§7.1). In a memory destination mode, the side effect is the only register
+write.
+
+**s1 can depend on s0's side effect**, as in `ADD R1, R2++, @R2`. `S0` writes
+R2 in WRITE, before s1's address is formed. A bypass from WRITE to PREPARE, or
+a stall, gives `S1` the new value.
+
+## 5. Hazards
+
+### 5.1 Registers
+
+The register file writes before it reads, as in qnice_cpu. DECODE stalls an
+instruction that reads a register an older micro-op in flight will write.
+Bypasses can come later, once the stall counts are measured.
+
+### 5.2 The condition
+
+Every instruction is conditional, and the condition reads SR as it was before
+the instruction started (ISA §3). Many instructions write SR, so this is the main
+hazard.
+
+- **A micro-op with no data access** checks the condition in WRITE, where SR
+  is current. It needs no stall. If the condition is false, WRITE discards
+  it. This covers the common pair `SUB[M] R0, a, b` followed by
+  `?Z MOVE PC, label`.
+- **A micro-op with a data access** must know its condition before PREPARE
+  issues the access (§5.3). It waits in PREPARE while any older micro-op in
+  flight can still change SR.
+- **An instruction with condition "always"** never waits for SR.
+
+The condition is decided once per instruction. A skipped instruction's
+remaining micro-ops go through as bubbles, so none of its side effects
+happen (ISA §3).
+
+### 5.3 Data accesses
+
+ISA §8.2 keeps data accesses exact, in order, and never speculative. So PREPARE
+issues a data read only when the instruction is certain to run:
+
+1. Its condition is known (§5.2).
+2. No older micro-op in flight can still redirect: a write to R15, `RTI`,
+   `INT`, a halt, or a store that may hit fetched code (§5.5).
+3. Every older store has been issued, so the read cannot overtake it.
+
+When PREPARE issues an instruction's first data access, the core commits to
+that instruction. No interrupt is taken before it (§6).
+
+Stores are issued in WRITE, which is in order, so they need no extra rule.
+
+This costs a cycle or two after conditional jumps and stores. If that turns
+out to matter, the ISA could later let reads of RAM (not of the I/O range) be
+speculative. That needs a check of each read against older stores, so it is
+not part of the first version.
+
+### 5.4 Control flow
+
+WRITE flushes the stages above it and redirects FETCH when:
+
+- A micro-op writes R15. This is every jump that DECODE did not resolve.
+- An `INT`, an `RTI`, or an interrupt (§6) is taken.
+- A store may hit a word already fetched (§5.5).
+
+DECODE redirects early for jumps it can resolve itself: condition "always",
+destination R15 in mode 000, and a source with no memory access, such as
+`MOVE PC, label` and `ADD PC, PC, offset`. qnice_cpu does the same.
+
+A side effect on R15 in `S0` or `S1`, such as `MOVE R1, @R15++`, must not
+flush the instruction's own later micro-ops. As in qnice_cpu, the flush waits
+for the instruction's last micro-op. R15 as a pointer is rare, so a slow path
+is fine.
+
+R14 used as an operand or base register is also rare. DECODE can stall such
+an instruction until everything older has retired.
+
+### 5.5 Self-modifying code
+
+A store can change a word that FETCH has already read. WRITE compares each
+store address with the range of fetched words, from the storing instruction's
+next PC to FETCH's current address. On a hit, it flushes and refetches from
+the next instruction. Over-approximating is safe, because a needless flush
+costs only cycles. qnice_cpu uses a fixed window of 32 words for the same
+purpose.
+
+A store into the storing instruction's own constant words must not change
+it, and refetching from the next instruction gives that.
+
+## 6. Interrupts
+
+Requests use valid/ready ports, as in qnice_cpu. The device holds `valid` and
+the vector until the core raises `ready`. So the device holds the pending
+state of ISA §7.1, and requests are never lost.
+
+WRITE takes a request between two instructions, when ISA §7.1 allows it: not
+halted, `in_service` = 0, `after_rti` = 0, and E = 1 for IRQ. NMI goes first.
+Entry (ISA §7.2) flushes the pipeline, saves PC and SR, reads the vector through
+the data port, and redirects FETCH.
+
+The core may delay a request, because ISA §7.1 only says it is deferred, never
+lost. It does so in two cases:
+
+- **A younger instruction has issued a data access** (§5.3). The request
+  waits until that instruction has retired, so the access is not wasted.
+- **The instruction after `RTI`.** `after_rti` holds the request until that
+  instruction has retired.
+
+`INT` and `RTI` run in WRITE as `CTRL` micro-ops, and flush.
+
+## 7. Datapath details
+
+### 7.1 Register values
+
+R0 is not stored. SR's bit 24 is a constant 1. Every value read from register
+*x*, or produced by a side effect on *x*, goes through
+
+    regval(x, v) = 0            if x = 0
+                   v OR 2^24    if x = 14
+                   v            otherwise
+
+This covers several rules of ISA §4.3 that are easy to miss. `@--R0` addresses
+word 0, not `0xFFFFFFFF`. `@--R14` after reset addresses `0x01FFFFFF`. `--R0`
+reads 0. Every write to R14 sets bit 24. `MOVE R14--, 0` leaves `0x01FFFFFF`
+(ISA §4.2).
+
+### 7.2 ALU
+
+The arithmetic operations share one 32-bit adder `A + B + k`, with A = s0:
+
+| Operation | B | k | C flag |
+|---|---|---|---|
+| `ADD` | s1 | cin | carry out |
+| `DBL` | s0 | cin | carry out |
+| `MDBL` | s0 AND s1 | cin | carry out |
+| `SUB` | NOT s1 | NOT cin | NOT carry out (the borrow) |
+| `DEC` | `0xFFFFFFFF` | 0 | NOT carry out |
+
+`cin` is SR's C bit if the instruction's C bit is set, and 0 otherwise. The
+ALU is in WRITE, so `cin` is read after the side effects of `S0` and `S1`, as
+ISA §5.1 requires. V is the usual adder rule for all five operations: A and B have
+the same sign, and r has the other sign. This matches ISA §5.1 for subtraction,
+because B is the inverted subtrahend.
+
+The logic operations, `MOVE`, and `ONE` are a 16-way mux. X, Z, and N come
+from r.
+
+### 7.3 Shifter
+
+The count is all 32 bits of s1, with no modulo (ISA §5.2). So the shifter uses the
+closed forms of ISA §5.2. It needs three reduced counts:
+
+- **Fixed-fill shifts:** n saturated to 33.
+- **32-bit rotations:** n mod 32, which is bits 4..0.
+- **33-bit rotations through carry** (`C<C`, `C>C`): n mod 33. Because
+  32 ≡ −1 (mod 33), split n into 5-bit digits d0 (bits 4..0) to d6
+  (bits 31..30). Then n ≡ d0 − d1 + d2 − d3 + d4 − d5 + d6 (mod 33). The sum
+  lies between −93 and 96, so a few compare-and-subtract steps finish it.
+
+The reduction does not depend on s0, so PREPARE can compute it and keep it
+out of WRITE's critical path.
+
+## 8. Memory system
+
+The repository provides a system around the core: the core, dual-port RAM, the
+bus decoders, a default slave, and the console UART. It is not tied to a
+board. Generics set the memory map, for example the size and base address of
+each RAM and the address of the UART. These rules hold for every setting:
+
+- **Dual-port RAM.** The instruction port and the data port reach the same
+  RAM. Any memory that the data port sees must be visible to the instruction
+  port too, except the I/O range.
+- **Unmapped addresses.** Both buses need a default slave that acknowledges a
+  read with 0 and drops a write (ISA §8.2). Without one, the core would wait
+  forever.
+- **I/O.** Only the data bus reaches I/O. The instruction bus returns 0 for
+  the I/O range (ISA §8.3).
+- **Console.** A UART transmitter at `0xFFFFFF00` by default, as in the
+  emulator (ISA §8.3).
+- **Stack.** The runtime puts the stack just below `0xFFFFFF00`. A memory map
+  that runs the runtime's programs needs RAM there as well as at address 0.
+
+## 9. Verification
+
+The main check is a line-by-line diff against the emulator's trace.
+
+**The trace writer** is a simulation-only module, like `debug.vhd` in
+qnice_cpu. WRITE reports each retired instruction: its address and word,
+whether it was skipped, any interrupt taken, the halt reason, and the register
+values. The writer prints what changed, in the emulator's format and order:
+R0–R14 in order, R15 only after a jump, the memory write, and the halt reason.
+
+**The testbench** has a sparse dual-port memory model that loads `.bin` files,
+a console model that writes each byte into the trace stream when it is
+written, and an interrupt source with the meaning of the emulator's
+`--irq STEP:VEC` and `--nmi STEP:VEC`.
+
+**Test order:**
+
+1. The 2004 examples: `count`, `replicate`, and `print`.
+2. The emulator probes in `emulator/test/`.
+3. `emulator/test/cputest.asm`.
+4. New hazard programs: back-to-back flag use, every pair of side effects on
+   the same register, R14 and R15 as pointers, stores into the next few
+   instructions, and jumps over `HALT`. qnice_cpu's `prog_hazard.asm` and
+   `prog_pipeline.asm` are the model.
+5. The interrupt probes, and requests at every point in a hazard program.
+6. The runtime and translator test programs.
+7. Random instruction streams, run on both and diffed.
+
+**Formal checks**, as in qnice_cpu: each primitive and stage on its own, and
+properties of the whole core. The most important new property is the data
+access rule of §5.3: every data access belongs to an instruction that retires,
+and the accesses appear in program order.
+
+## 10. Repository and boards
+
+- **Directory.** The HDL lives in `hdl/`, with its own `make test`. Its commit
+  subjects start with `nicehdl:`.
+- **No board.** This repository targets no particular board. Everything that
+  depends on a board, including the memory map, is set by generics (§8).
+- **Example design.** An example design for the MEGA65 is planned, probably in
+  a separate repository. It would set the generics, map the screen at
+  `0xFFFF0000` to video RAM if it wants one, and add the board's clocks and
+  pins.

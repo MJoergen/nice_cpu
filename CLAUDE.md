@@ -7,6 +7,7 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
 
 - `doc/ISA.md`: the specification. It is authoritative for all code here.
   `doc/review/` records how decisions were reached; ISA.md supersedes it.
+- `doc/MICROARCH.md`: draft design note for the FPGA core. ISA.md wins over it.
 - `assembler/niceasm.py`: Python 3, standard library only, `mypy --strict` clean.
 - `emulator/src/cpu.zig` (core, unit tests) and `main.zig` (CLI, loader). Zig 0.15.
 - `runtime/`: start-up code and runtime routines in NICE assembly (ISA.md §9.3).
@@ -35,4 +36,4 @@ Run the relevant `make test` after every change.
 - The 2004 example `.bin` files are original `NICE.pm` output; do not change them.
 - Keep the READMEs in sync with the tools' options, formats, and error behaviour.
 - Docs: plain, short sentences. Use the Oxford comma by default ("a, b, and c").
-- Commit subjects: `niceasm: ...`, `niceemu: ...`, `runtime: ...`, `nicewasm: ...`, `ISA: ...`, `Review: ...`.
+- Commit subjects: `niceasm: ...`, `niceemu: ...`, `runtime: ...`, `nicewasm: ...`, `nicehdl: ...`, `ISA: ...`, `Review: ...`.

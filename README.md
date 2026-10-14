@@ -21,6 +21,7 @@ start of a runtime library and of a WebAssembly translator.
 | Path | What it is |
 |---|---|
 | [doc/ISA.md](doc/ISA.md) | The instruction set: the specification for everything else here. |
+| [doc/MICROARCH.md](doc/MICROARCH.md) | A draft design note for the FPGA core. |
 | [doc/REFERENCES.md](doc/REFERENCES.md) | The NICE and QNICE sources the specification is based on. |
 | [doc/review/](doc/review/) | Notes on how each ISA decision was reached, and the reviews of the tools. ISA.md supersedes them. |
 | [assembler/](assembler/README.md) | `niceasm`, the assembler: one Python 3 script with no dependencies. |

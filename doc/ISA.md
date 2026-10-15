@@ -451,6 +451,27 @@ These are RISC-V's results for the two special cases. Software never needs to wa
 
 A use of the MPU takes several instructions, and an interrupt may come between them. An interrupt service routine that uses the MPU must therefore read the operands it changes first, and write them back before `RTI`. The results depend only on the operands, so that restores the whole state.
 
+### 8.5 Performance counters
+
+The emulator and the FPGA implementation map two 64-bit performance counters at `0xFFFFFF10`–`0xFFFFFF1F`. Like the console, they are a property of those systems, not of the ISA.
+
+| Address | Name | A data read returns | A write |
+|---|---|---|---|
+| `0xFFFFFF10` | `CYCLE_LO` | bits 31..0 of the cycle counter, and takes a snapshot of it | is ignored |
+| `0xFFFFFF11` | `CYCLE_HI` | bits 63..32 of the cycle counter's snapshot | is ignored |
+| `0xFFFFFF12` | `INSTR_LO` | bits 31..0 of the instruction counter, and takes a snapshot of it | is ignored |
+| `0xFFFFFF13` | `INSTR_HI` | bits 63..32 of the instruction counter's snapshot | is ignored |
+| `0xFFFFFF14`–`0xFFFFFF1F` | | 0 | is ignored |
+
+- The **instruction counter** counts the instructions that have completed since reset. Every instruction counts, including one whose condition is false, a control instruction, and `INT`. An interrupt entry for IRQ or NMI does not count, because it is not an instruction. An instruction that reads `INSTR_LO` reads the number of instructions that completed before it.
+- The **cycle counter** counts the clock cycles since reset. The emulator has no clock, so it counts one cycle for each instruction and each interrupt entry, that is, for each step. Its cycle counter is an approximation and differs from the FPGA implementation's.
+- Reset sets both counters and both snapshots to 0. Neither counter can be written. A program measures an interval as the difference of two readings.
+- A counter wraps from `0xFFFFFFFF_FFFFFFFF` to 0. At one count per cycle at 100 MHz that takes over 5000 years.
+
+**Reading a counter.** Read the low word first, then the high word: `MOVE R1, @CYCLE_LO` then `MOVE R2, @CYCLE_HI`. The read of the low word copies the whole 64-bit counter into the snapshot, and the read of the high word returns the high half of the snapshot. So R2:R1 is the value at the time of the first read, even when the low word wraps from `0xFFFFFFFF` to 0 between the two reads. Each counter has its own snapshot.
+
+An interrupt service routine that reads a counter's low word overwrites its snapshot. If the routine interrupted code between the two reads, that code then reads a high word that may not belong to its low word. So either interrupt service routines do not read the counters, or the code that reads them clears E around its two reads and NMI service routines do not read them.
+
 ## 9. Software conventions
 
 These are conventions, not hardware rules.

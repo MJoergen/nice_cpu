@@ -4,9 +4,12 @@ This is the single list of open items for the repository: work not done
 yet, questions not decided, claims not checked, and ideas for later. Each
 item names where it comes from. Add new items here, not in other files.
 
-Every finding of the reviews in [doc/review/](doc/review/) and of the
-repository review of 2026-10-14 is closed, except the unchecked claims
-below. No code has TODO or FIXME comments.
+Every finding of the reviews in [doc/review/](doc/review/) is closed,
+except the items marked 2026-10-15, which come from
+[doc/review/repository-review.md](doc/review/repository-review.md). The
+claims that the repository review of 2026-10-14 left unchecked were checked
+on 2026-10-15 (repository-review.md §6.1). No code has TODO or FIXME
+comments.
 
 ## FPGA core
 
@@ -35,6 +38,15 @@ below. No code has TODO or FIXME comments.
 - **An interrupt comparison script for the pipelined core** (MICROARCH.md
   §9). It reads from the core's trace where each interrupt was taken, and
   runs the emulator with the matching `--irq` or `--nmi` options.
+- **`random_prog.py` can read the cycle counter** (repository-review.md
+  §1.2, 2026-10-15). A register loaded with the read counter's address
+  `0xFFFFFF01` and advanced by `@Rx++` reaches `CYCLE_LO` at `0xFFFFFF10`,
+  where the emulator counts steps and the core counts cycles, so the
+  traces differ although the core is right. The seeds and step count in
+  `hdl/Makefile` avoid it by chance; with seeds 31 to 90 and 5000 steps,
+  5 of 60 programs read it. Keep the counters out of the random programs,
+  for example by using the `COUNTER` constant only as a mode 111 address
+  with R0 as the base.
 
 ## Example design
 
@@ -98,27 +110,31 @@ below. No code has TODO or FIXME comments.
 - **Stack overflow** is not detected in translated code, unlike in wasm.
   What happens then is undefined (ISA.md §9.4). An idea: a check against a
   stack limit in each function's prologue, at a cost in code size.
+- **Shadow stack overflow is silent** (repository-review.md §5.2,
+  2026-10-15). With the clang command lines of the READMEs, wasm-ld puts
+  the stack after the data, so a function whose frame does not fit in
+  `-z stack-size` overwrites the data and the program misbehaves later.
+  With `-Wl,--stack-first` the overflow wraps below address 0 and traps
+  with code 2 at once. Add the option to the command lines in
+  `translator/README.md`, `translator/Makefile`, `runtime/README.md`, and
+  `runtime/libc/Makefile`, and say what it buys.
+- **`printf` nits** (repository-review.md §5.3, 2026-10-15). `%+u` and
+  `% x` print a sign, which C defines only for signed conversions and
+  glibc ignores. `%p` of a null pointer prints `0`, not `0x0` or `(nil)`;
+  the README says `%p` prints `0x` and the address.
+- **Stale sentences** (repository-review.md §6.2, 2026-10-15).
+  `translator/README.md`, `doc/REFERENCES.md`, and
+  `doc/review/code-size-plan.md` still say the code became "a third"
+  smaller and that the plan had three steps; the fourth step took it to
+  42% and 51%. `README.md` says translated code uses the math unit for
+  `i32.mul` only; it also uses it for `div` and `rem`. `hdl/README.md`
+  could say that CI's `ubuntu-latest` installs GHDL 4.1.0.
 - **Smaller translated code.** An idea from
   [doc/review/wasm-review.md](doc/review/wasm-review.md): keep the top of
   the wasm operand stack in registers. The deferred operands of
   [doc/review/code-size-plan.md](doc/review/code-size-plan.md), and the
   locals in R7–R11 ([translator/README.md](translator/README.md)), already
   took part of that saving. Byte loads and stores still call a helper.
-
-## Claims not checked
-
-From the repository review of 2026-10-14:
-
-- **GHDL in CI.** [hdl/README.md](hdl/README.md) says GHDL 6.0.0-dev and
-  4.1.0 were tested. Which version `ubuntu-latest` installs in CI is not
-  recorded.
-- **nvc.** [hdl/README.md](hdl/README.md) says the memory model and the
-  trace writer also run under nvc. No test runs them there.
-- **rustc 1.99.0.** [translator/README.md](translator/README.md) says the
-  Rust test modules were built with it.
-- **"2006" for QNICE.** Slide `doc/intro/nice_intro.tex:36` says QNICE
-  followed in 2006. [doc/REFERENCES.md](doc/REFERENCES.md) gives no source
-  for the date.
 
 ## Decided against
 

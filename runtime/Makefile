@@ -9,7 +9,7 @@ EMU = ../emulator/zig-out/bin/niceemu
 # test/X.expected. The tests in SOFT_TESTS run a second time as X_soft,
 # with muldiv_soft.asm instead, and are compared with test/X_soft.expected.
 TESTS = start start_wasm mul trap div div64 mul64 bits
-SOFT_TESTS = mul div mul64
+SOFT_TESTS = mul div mul64 div64
 START_start_wasm = start_wasm.asm
 START_trap       = start_wasm.asm
 OPTS_start      = -d 0xfffffeff:1

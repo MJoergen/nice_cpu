@@ -1,5 +1,5 @@
-; The one-word multiply and divide routines and __mul64 of the NICE runtime
-; library (doc/ISA.md §9.3), in software, for a system without the math
+; The multiply and divide routines of the NICE runtime library
+; (doc/ISA.md §9.3), for one word and for long long, in software, for a system without the math
 ; unit of §8.4. It goes after lib.asm, instead of muldiv_mpu.asm.
 
 ; __mul: R1 = R1 * R2, the low 32 bits. The same result serves signed and
@@ -96,4 +96,91 @@ __mul64.next
         ?!Z MOVE R15, __mul64.loop
         MOVE    R1, R5
         MOVE    R2, R6
+        MOVE    R15, @R13++
+
+; __udivmod64: R1:R2 = R1:R2 / R3:R4 and R5:R6 = R1:R2 % R3:R4, unsigned.
+; Not a C routine: __udiv64, __umod64, __div64, and __mod64 share it. The
+; same restoring division as __udivmod, with 64 passes. All six registers
+; hold operands, so four words on the stack hold the passes to go, the
+; remainder's bit 64, and the remainder minus the divisor. Every pass
+; takes 13 steps, so __udivmod64 takes 4 + 64 * 13 + 2 = 838.
+__udivmod64
+        MOVE    R5, 0                   ; remainder
+        MOVE    R6, 0
+        SUB     R13, R13, 3             ; @1[R13]: bit 64, @2 and @3: the difference
+        MOVE    @--R13, 64              ; @R13: passes to go
+__udivmod64.loop
+        C<0[M]  R1, R1, 1               ; C = next dividend bit
+        C<C[M]  R2, R2, 1
+        C<C[M]  R5, R5, 1               ; into the remainder
+        C<C[M]  R6, R6, 1               ; C = its bit 64
+        ADD[C]  @1[R13], R0, R0
+        SUB[M]  @2[R13], R5, R3
+        SUB[CM] @3[R13], R6, R4
+        SUB[CM] R0, @1[R13], 0          ; C = the remainder < R3:R4
+        ?!C MOVE R5, @2[R13]
+        ?!C MOVE R6, @3[R13]
+        ?!C OR  R1, R1, 1
+        DEC[M]  @R13, @R13
+        ?!Z MOVE R15, __udivmod64.loop
+        ADD     R13, R13, 4
+        MOVE    R15, @R13++
+
+; __udiv64: R1:R2 = R1:R2 / R3:R4, unsigned. 1 + 838 = 839 steps.
+__udiv64
+        MOVE    R15, __udivmod64        ; which returns to our caller
+
+; __umod64: R1:R2 = R1:R2 % R3:R4, unsigned. 5 + 838 = 843 steps.
+__umod64
+        ADD     @--R13, 2, R15
+        MOVE    R15, __udivmod64
+        MOVE    R1, R5
+        MOVE    R2, R6
+        MOVE    R15, @R13++
+
+; __div64: R1:R2 = R1:R2 / R3:R4, signed, rounding toward zero. Like __div.
+; Negating a pair takes two instructions, so the signs are tested with
+; jumps. Steps: 1 + a + b + 2 + 838 + q, where a and b are 2 for an
+; operand that is not negative and 4 for one that is, and q is 2 for a
+; quotient that is not negated and 5 for one that is.
+__div64 XOR     @--R13, R2, R4          ; bit 31: the signs differ
+        MOVE[M] R2, R2
+        ?!N MOVE R15, __div64.a
+        SUB[M]  R1, 0, R1
+        SUB[C]  R2, 0, R2
+__div64.a
+        MOVE[M] R4, R4
+        ?!N MOVE R15, __div64.b
+        SUB[M]  R3, 0, R3
+        SUB[C]  R4, 0, R4
+__div64.b
+        ADD     @--R13, 2, R15
+        MOVE    R15, __udivmod64
+        MOVE[M] R0, @R13++
+        ?!N MOVE R15, @R13++
+        SUB[M]  R1, 0, R1
+        SUB[C]  R2, 0, R2
+        MOVE    R15, @R13++
+
+; __mod64: R1:R2 = R1:R2 % R3:R4, signed, with the dividend's sign. Steps:
+; 1 + a + b + 2 + 838 + 2 + q, with a, b, and q as for __div64.
+__mod64 MOVE    @--R13, R2              ; bit 31: the dividend's sign
+        MOVE[M] R2, R2
+        ?!N MOVE R15, __mod64.a
+        SUB[M]  R1, 0, R1
+        SUB[C]  R2, 0, R2
+__mod64.a
+        MOVE[M] R4, R4
+        ?!N MOVE R15, __mod64.b
+        SUB[M]  R3, 0, R3
+        SUB[C]  R4, 0, R4
+__mod64.b
+        ADD     @--R13, 2, R15
+        MOVE    R15, __udivmod64
+        MOVE    R1, R5
+        MOVE    R2, R6
+        MOVE[M] R0, @R13++
+        ?!N MOVE R15, @R13++
+        SUB[M]  R1, 0, R1
+        SUB[C]  R2, 0, R2
         MOVE    R15, @R13++

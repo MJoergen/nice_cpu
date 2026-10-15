@@ -1,7 +1,7 @@
-; The one-word multiply and divide routines and __mul64 of the NICE runtime
-; library (doc/ISA.md §9.3), with the math unit of §8.4. It goes after
-; lib.asm, instead of muldiv_soft.asm. Each routine writes its operands to
-; A and B and reads the results.
+; The multiply and divide routines of the NICE runtime library
+; (doc/ISA.md §9.3), for one word and for long long, with the math unit of
+; §8.4. It goes after lib.asm, instead of muldiv_soft.asm. Each routine
+; writes its operands to A and B, or C and D, and reads the results.
 
 __mpu.a         .EQU    0xFFFFFF10
 __mpu.b         .EQU    0xFFFFFF11
@@ -12,6 +12,14 @@ __mpu.sdiv_q    .EQU    0xFFFFFF16
 __mpu.sdiv_r    .EQU    0xFFFFFF17
 __mpu.udiv_q    .EQU    0xFFFFFF18
 __mpu.udiv_r    .EQU    0xFFFFFF19
+__mpu.c_lo      .EQU    0xFFFFFF20
+__mpu.c_hi      .EQU    0xFFFFFF21
+__mpu.d_lo      .EQU    0xFFFFFF22
+__mpu.d_hi      .EQU    0xFFFFFF23
+__mpu.sdiv64_q  .EQU    0xFFFFFF24              ; and +1 for the high word
+__mpu.sdiv64_r  .EQU    0xFFFFFF26
+__mpu.udiv64_q  .EQU    0xFFFFFF28
+__mpu.udiv64_r  .EQU    0xFFFFFF2A
 
 ; __mul: R1 = R1 * R2, the low 32 bits, for signed and unsigned operands.
 ; 4 steps.
@@ -58,4 +66,43 @@ __mul64 MOVE    @__mpu.a, R1
         MOVE    @__mpu.a, R2
         MOVE    @__mpu.b, R3
         ADD     R2, R5, @__mpu.umul_lo
+        MOVE    R15, @R13++
+
+; __udiv64: R1:R2 = R1:R2 / R3:R4, unsigned. 7 steps.
+__udiv64
+        MOVE    @__mpu.c_lo, R1
+        MOVE    @__mpu.c_hi, R2
+        MOVE    @__mpu.d_lo, R3
+        MOVE    @__mpu.d_hi, R4
+        MOVE    R1, @__mpu.udiv64_q
+        MOVE    R2, @__mpu.udiv64_q+1
+        MOVE    R15, @R13++
+
+; __umod64: R1:R2 = R1:R2 % R3:R4, unsigned. 7 steps.
+__umod64
+        MOVE    @__mpu.c_lo, R1
+        MOVE    @__mpu.c_hi, R2
+        MOVE    @__mpu.d_lo, R3
+        MOVE    @__mpu.d_hi, R4
+        MOVE    R1, @__mpu.udiv64_r
+        MOVE    R2, @__mpu.udiv64_r+1
+        MOVE    R15, @R13++
+
+; __div64: R1:R2 = R1:R2 / R3:R4, signed, rounding toward zero. 7 steps.
+; The most negative number divided by -1 gives the most negative number.
+__div64 MOVE    @__mpu.c_lo, R1
+        MOVE    @__mpu.c_hi, R2
+        MOVE    @__mpu.d_lo, R3
+        MOVE    @__mpu.d_hi, R4
+        MOVE    R1, @__mpu.sdiv64_q
+        MOVE    R2, @__mpu.sdiv64_q+1
+        MOVE    R15, @R13++
+
+; __mod64: R1:R2 = R1:R2 % R3:R4, signed, with the dividend's sign. 7 steps.
+__mod64 MOVE    @__mpu.c_lo, R1
+        MOVE    @__mpu.c_hi, R2
+        MOVE    @__mpu.d_lo, R3
+        MOVE    @__mpu.d_hi, R4
+        MOVE    R1, @__mpu.sdiv64_r
+        MOVE    R2, @__mpu.sdiv64_r+1
         MOVE    R15, @R13++

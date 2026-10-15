@@ -11,7 +11,7 @@ translated wasm code call. They follow the C ABI of
 | `start.asm` | Start-up code for a program without a wasm module. |
 | `start_wasm.asm` | Start-up code for a program with a wasm module. It calls `___wasm_start` before `main`. |
 | `lib.asm` | The runtime routines in assembly, except those below. |
-| `muldiv_mpu.asm` | `__mul`, `__div`, `__mod`, `__udiv`, `__umod`, and `__mul64`, with the math unit of ISA.md §8.4. |
+| `muldiv_mpu.asm` | The multiply and divide routines: `__mul`, `__div`, `__mod`, `__udiv`, `__umod`, and their `64` versions, with the math unit of ISA.md §8.4. |
 | `muldiv_soft.asm` | The same routines in software, for a system without the math unit. |
 | `float.zig` | The source of the float routines (see below). |
 | `float.wasm` | `float.zig` and parts of Zig's compiler_rt, compiled to wasm. |
@@ -52,8 +52,9 @@ return the result in R1:R2, each pair low word first (§9.3):
 
 A routine may change R1–R6 and the flags, as §9.3 allows. The tables list
 what each one actually changes in `lib.asm` and `muldiv_soft.asm`. The
-versions in `muldiv_mpu.asm` change less: R5 for `__mul64`, nothing else
-for the others, and not the flags. They change A and B of the math unit.
+versions in `muldiv_mpu.asm` change less: R5 for `__mul64`, nothing
+besides the result for the others, and not the flags. They change the
+operands of the math unit.
 
 A program contains exactly one of the muldiv files. `muldiv_mpu.asm` needs
 the math unit, which the emulator and the FPGA core have. It also defines
@@ -62,10 +63,10 @@ unit, and translated code that uses the math unit needs them (see
 [translator/README.md](../translator/README.md), `--no-mpu`). A program
 translated with `--no-mpu` must use `muldiv_soft.asm`.
 
-Some labels are not C routines: the `__mpu.` names above, and the
-unsigned divisions that the division routines share, `__udivmod` in
-`muldiv_soft.asm` and `__udivmod64` in `lib.asm`. Every label is global in
-the joined program (§9.3), so no other file may define these names either.
+Some labels are not C routines: the `__mpu.` names above, and
+`__udivmod` and `__udivmod64` in `muldiv_soft.asm`, the unsigned divisions
+that the division routines share. Every label is global in the joined
+program (§9.3), so no other file may define these names either.
 
 Division by zero is undefined in C, so the division routines return some
 value for it and do not trap. The wasm translator checks for 0 before it
@@ -76,8 +77,8 @@ The comments in the files give the number of steps each routine takes.
 The division routines take the same number for all operands of one sign,
 for example 292 steps for `__udiv` in `muldiv_soft.asm` and 839 for
 `__udiv64`. `__mul64` in `muldiv_soft.asm` and the counting routines take
-longer the more bits their operand has. In `muldiv_mpu.asm`, each routine
-takes 4 steps, and `__mul64` 10.
+longer the more bits their operand has. In `muldiv_mpu.asm`, the one-word
+routines take 4 steps each, `__mul64` 10, and the other `long long` ones 7.
 
 `lib.asm` also holds the wasm trap vector of ISA.md §9.4:
 

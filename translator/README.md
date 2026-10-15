@@ -418,6 +418,9 @@ Their `.wasm` files are checked in, so `make test` needs no compiler.
 `make wasm` needs clang with the wasm32 target, `wasm-ld`, Zig 0.15, and
 rustc with the `wasm32-unknown-unknown` target. The Rust modules were
 built with rustc 1.99.0. `test/errors.py` checks every error message.
+`test/run.py --keep DIR` also leaves each program in `DIR/X.bin`, or
+`DIR/X_soft.bin` for the run with `--no-mpu`, for `make programs` in
+`hdl/`, which runs them on the FPGA core.
 
 `test/fuzz.py FIRST COUNT` builds random modules from a syntax tree whose
 nodes also evaluate themselves in Python, so each module comes with the

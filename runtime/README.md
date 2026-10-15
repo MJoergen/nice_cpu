@@ -292,6 +292,11 @@ with `test/X_soft.expected`. `test/device.nasm` reads `test/device.input`
 as its console input. The expected values were checked by
 hand. The comments in each test show how.
 
+With `make test KEEP=DIR`, where DIR is an absolute path, each test also
+leaves its program in `DIR/X.bin`, and its console input, if any, in
+`DIR/X.input`. The C library's tests leave `DIR/libc_X.bin`. `make
+programs` in `hdl/` uses them to run the same programs on the FPGA core.
+
 Then it runs the C library's tests, `libc/test/X.c`, with
 `libc/test/X.input` as the console input if there is one. Their `.wasm` files
 are checked in, so no C compiler is needed; `make -C libc wasm` rebuilds

@@ -20,14 +20,24 @@ OPTS_div        = -d 0x4b:32
 OPTS_div64      = -d 0x6f:64
 OPTS_mul64      = -d 0x48:16
 OPTS_bits       = -d 0x54:54
-OPTS_device     = -s --input test/device.input -d 0x7f:8 -d 0xffff0000:3 -d 0xffff0052:1 \
-  -d 0xffff07ce:2
+OPTS_device     = -s -d 0x7f:8 -d 0xffff0000:3 -d 0xffff0052:1 -d 0xffff07ce:2
+INPUT_device    = test/device.input
+
+# With KEEP=DIR, an absolute path, each test also leaves its program in
+# DIR/X.bin, and its console input, if any, in DIR/X.input, for the tests
+# of the FPGA core in hdl/. libc/Makefile does the same.
+define keep
+	$(if $(KEEP),@mkdir -p $(KEEP) && cp $(1) $(KEEP)/$(3).bin)
+	$(if $(KEEP),$(if $(2),@cp $(2) $(KEEP)/$(3).input))
+endef
 
 # $(1) is the name of the run, $(2) the test, and $(3) the muldiv file.
 define check
 	@cat $(or $(START_$(2)),start.nasm) test/$(2).nasm lib.nasm $(3) > test/$(1).out.nasm
 	@$(ASM) -o test/$(1).out.bin test/$(1).out.nasm
-	@$(EMU) $(OPTS_$(2)) test/$(1).out.bin > test/$(1).out; echo "exit $$?" >> test/$(1).out
+	@$(EMU) $(OPTS_$(2)) $(if $(INPUT_$(2)),--input $(INPUT_$(2))) test/$(1).out.bin > test/$(1).out; \
+	  echo "exit $$?" >> test/$(1).out
+	$(call keep,test/$(1).out.bin,$(INPUT_$(2)),$(1))
 	@if cmp -s test/$(1).out test/$(1).expected; then echo "PASS $(1)"; \
 	else echo "FAIL $(1)"; diff test/$(1).expected test/$(1).out; exit 1; fi
 
@@ -47,6 +57,7 @@ define check_wasm
 	@cat start_wasm.nasm test/$(1).out.nasm lib.nasm muldiv_mpu.nasm > test/$(1).full.nasm
 	@$(ASM) -o test/$(1).out.bin test/$(1).full.nasm
 	@$(EMU) --input test/$(1).input test/$(1).out.bin < /dev/null > test/$(1).raw; echo "exit $$?" > test/$(1).status
+	$(call keep,test/$(1).out.bin,test/$(1).input,$(1))
 	@sed '/^\(Halted\|Stopped\)/,$$d' test/$(1).raw > test/$(1).out
 	@grep -o ' R1  [0-9a-f]*' test/$(1).raw | cut -c2- >> test/$(1).out; cat test/$(1).status >> test/$(1).out
 	@if cmp -s test/$(1).out test/$(1).expected; then echo "PASS $(1)"; \

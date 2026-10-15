@@ -46,6 +46,7 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
     cd hdl && make test              # synth check, tb_mem, then tb_trace and the core diffed against niceemu
     cd hdl && make lint              # vsg style check (pip install vsg)
     cd hdl && make formal            # SymbiYosys: the core's Wishbone and interrupt ports
+    cd hdl && make programs          # the runtime and translator test programs on the core (minutes)
     cd doc/intro && make test        # run the slides' example programs
     cd doc/intro && make pdf         # rebuild the slides (pdflatex, beamer)
     cd doc/intro && make pdfcheck    # check that nice_intro.pdf matches the .tex

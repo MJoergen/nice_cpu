@@ -14,7 +14,8 @@ library ieee;
 
 entity tb_mem is
    generic (
-      G_BIN_FILE : string
+      G_BIN_FILE   : string;
+      G_INPUT_FILE : string
    );
 end entity tb_mem;
 
@@ -55,7 +56,8 @@ begin
 
    i_wb_mem : entity work.wb_mem
       generic map (
-         G_INIT_FILE => G_BIN_FILE
+         G_INIT_FILE  => G_BIN_FILE,
+         G_INPUT_FILE => G_INPUT_FILE
       )
       port map (
          clk_i           => clk,
@@ -182,7 +184,9 @@ begin
       check_ibus(X"FFFFFF80", X"00000000");
 
       -- The console takes bits 7..0, in the cycle the write is accepted,
-      -- stores nothing, and reads 0x200, as with no input (ISA.md §8.3).
+      -- and stores nothing. A read returns 0x100 plus the next byte of
+      -- G_INPUT_FILE, test/mem.input, which holds "A", the byte 0xC3, and
+      -- a newline. After those, it returns 0x200 (ISA.md §8.3).
       dbus_cyc      <= '1';
       dbus_stb      <= '1';
       dbus_we       <= '1';
@@ -196,6 +200,10 @@ begin
       dbus_cyc <= '0';
       check_true("console bytes", console_count = 1);
       check("console byte", console_last, X"48");
+      check_dbus(X"FFFFFF00", X"00000141");
+      check_dbus(X"FFFFFF00", X"000001C3");
+      check_dbus(X"FFFFFF00", X"0000010A");
+      check_dbus(X"FFFFFF00", X"00000200");
       check_dbus(X"FFFFFF00", X"00000200");
       check_true("console bytes after a read", console_count = 1);
 

@@ -34,13 +34,17 @@ wasm: libc.a
 # Each test/X.wasm is translated and joined with the start-up code,
 # lib.nasm, and muldiv_mpu.nasm. It is assembled and run, and the console
 # output, main's result in R1, and the exit status are compared with
-# test/X.expected. The step count and the other registers are left out, so
+# test/X.expected. With KEEP=DIR, an absolute path, each test also leaves
+# its program in DIR/libc_X.bin, and its console input in DIR/libc_X.input,
+# for the tests of the FPGA core in hdl/. The step count and the other registers are left out, so
 # that the expected files do not change with the compiler.
 define check
 	@$(NICEWASM) -o test/$(1).out.nasm test/$(1).wasm
 	@cat ../start_wasm.nasm test/$(1).out.nasm ../lib.nasm ../muldiv_mpu.nasm > test/$(1).full.nasm
 	@$(ASM) -o test/$(1).out.bin test/$(1).full.nasm
 	@$(EMU) $(if $(wildcard test/$(1).input),--input test/$(1).input) test/$(1).out.bin < /dev/null > test/$(1).raw; echo "exit $$?" > test/$(1).status
+	$(if $(KEEP),@mkdir -p $(KEEP) && cp test/$(1).out.bin $(KEEP)/libc_$(1).bin)
+	$(if $(KEEP),$(if $(wildcard test/$(1).input),@cp test/$(1).input $(KEEP)/libc_$(1).input))
 	@sed '/^\(Halted\|Stopped\)/,$$d' test/$(1).raw > test/$(1).out
 	@grep -o ' R1  [0-9a-f]*' test/$(1).raw | cut -c2- >> test/$(1).out; cat test/$(1).status >> test/$(1).out
 	@if cmp -s test/$(1).out test/$(1).expected; then echo "PASS libc/$(1)"; \

@@ -13,9 +13,8 @@ emulator must also take the request, so the trace has no "Pending:" line,
 and with --self-check, end as test/hazard.nasm does when it passes: with
 R12 = 0 and exit status 0.
 
-The runs are independent, so they go in parallel, each worker in its own
-directory under BUILD/sweep, because GHDL's LLVM and GCC backends write an
-executable where they run. The VHDL must be analysed in BUILD already.
+The runs are independent, so they go in parallel, as test/core_runs.py
+describes. The VHDL must be analysed in BUILD already.
 
 For the multi-cycle core the request step decides where the request is
 taken. For the pipelined core it does not (MICROARCH.md §9), and this
@@ -26,63 +25,12 @@ import argparse
 import concurrent.futures
 import os
 import re
-import shutil
-import subprocess
 import sys
-import threading
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_BUILD = os.path.join(HERE, "..", "build")
-DEFAULT_EMU = os.path.join(HERE, "..", "..", "emulator", "zig-out", "bin", "niceemu")
+from core_runs import DEFAULT_BUILD, DEFAULT_EMU, Core, difference, run_emulator
 
 
-def run_emulator(emu: str, binfile: str, opts: list[str]) -> str:
-    r = subprocess.run(
-        [emu, "-t", *opts, binfile], stdin=subprocess.DEVNULL, capture_output=True, text=True
-    )
-    return r.stdout + f"exit {r.returncode}\n"
-
-
-class Workers:
-    """One directory for each worker thread."""
-
-    def __init__(self, build: str) -> None:
-        self.root = os.path.join(os.path.abspath(build), "sweep")
-        self.local = threading.local()
-        self.count = 0
-        self.lock = threading.Lock()
-
-    def directory(self) -> str:
-        d: str | None = getattr(self.local, "dir", None)
-        if d is None:
-            with self.lock:
-                self.count += 1
-                d = os.path.join(self.root, str(self.count))
-            os.makedirs(d, exist_ok=True)
-            self.local.dir = d
-        return d
-
-
-def run_core(args: argparse.Namespace, workers: Workers, opts: list[str], seed: int) -> str:
-    d = workers.directory()
-    trace = os.path.join(d, "core.out")
-    cmd = [
-        args.ghdl, "--elab-run", "--std=08", "--workdir=" + os.path.abspath(args.build),
-        "tb_multicycle", "-gG_BIN_FILE=" + os.path.abspath(args.program),
-        "-gG_TRACE_FILE=" + trace, "-gG_INTERRUPTS=" + " ".join(opts),
-        f"-gG_STALL={args.stall}", f"-gG_SEED={seed}",
-    ]
-    if os.path.exists(trace):
-        os.remove(trace)
-    r = subprocess.run(cmd, cwd=d, stdin=subprocess.DEVNULL, capture_output=True, text=True)
-    if not os.path.exists(trace):
-        return f"no trace from GHDL, exit {r.returncode}\n" + r.stdout + r.stderr
-    with open(trace) as f:
-        out = f.read()
-    return out + f"exit {r.returncode}\n" + ("" if r.returncode in (0, 2, 3) else r.stdout + r.stderr)
-
-
-def check(args: argparse.Namespace, workers: Workers, kind: str, vec: int, step: int) -> str | None:
+def check(args: argparse.Namespace, core: Core, kind: str, vec: int, step: int) -> str | None:
     """Returns None if the run passes, or what went wrong."""
     opts = [f"--{kind}", f"{step}:{vec}"]
     name = f"--{kind} {step}:{vec}"
@@ -93,14 +41,12 @@ def check(args: argparse.Namespace, workers: Workers, kind: str, vec: int, step:
         re.search(r"^R12 00000000", expected, re.M) and expected.endswith("exit 0\n")
     ):
         return f"{name}: the program's own checks failed on the emulator\n" + expected[-400:]
-    got = run_core(args, workers, opts, step + 1)
-    if got != expected:
-        e, g = expected.splitlines(), got.splitlines()
-        i = next((i for i, (a, b) in enumerate(zip(e, g)) if a != b), min(len(e), len(g)))
-        return f"{name}: the traces differ at line {i + 1}\n" + "\n".join(
-            [f"  emulator: {line}" for line in e[i : i + 3]] + [f"  core:     {line}" for line in g[i : i + 3]]
-        )
-    return None
+    got = core.run(
+        args.program,
+        ["-gG_INTERRUPTS=" + " ".join(opts), f"-gG_STALL={args.stall}", f"-gG_SEED={step + 1}"],
+    )
+    diff = difference(expected, got)
+    return None if diff is None else f"{name}: {diff}"
 
 
 def main() -> None:
@@ -122,11 +68,11 @@ def main() -> None:
         sys.exit(f"irq_sweep: the program does not halt on the emulator:\n{plain[-400:]}")
     steps = int(m.group(1))
 
-    workers = Workers(args.build)
+    core = Core(args.ghdl, args.build, "sweep")
     jobs = [(kind, vec, s) for kind, vec in (("nmi", args.nmi), ("irq", args.irq)) for s in range(steps)]
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
-        results = list(pool.map(lambda j: check(args, workers, *j), jobs))
-    shutil.rmtree(workers.root, ignore_errors=True)
+        results = list(pool.map(lambda j: check(args, core, *j), jobs))
+    core.clean()
 
     failures = [r for r in results if r is not None]
     for r in failures[:10]:

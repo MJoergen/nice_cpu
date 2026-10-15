@@ -3,6 +3,8 @@
 --
 -- THEORY OF OPERATION
 -- The core runs on the memory model, sim/wb_mem.vhd, which loads G_BIN_FILE.
+-- Its console reads the bytes of G_INPUT_FILE, as the emulator's --input
+-- does, or none if it is "".
 -- A decoder on the data bus sends 0xFFFFFF10-0xFFFFFF1F to the performance
 -- counters, src/perf.vhd (ISA.md §8.5), 0xFFFFFF20-0xFFFFFF3F to the math
 -- unit, src/mpu.vhd (ISA.md §8.4), and 0xFFFFFF40-0xFFFFFF4F to the timer,
@@ -44,6 +46,7 @@ entity tb_multicycle is
    generic (
       G_BIN_FILE      : string;
       G_TRACE_FILE    : string;
+      G_INPUT_FILE    : string   := "";
       G_TRACE         : boolean  := true;
       G_MAX_STEPS     : positive := 100_000_000;
       G_INTERRUPTS    : string   := "";
@@ -274,9 +277,10 @@ begin
 
    i_wb_mem : entity work.wb_mem
       generic map (
-         G_INIT_FILE => G_BIN_FILE,
-         G_STALL     => G_STALL,
-         G_SEED      => G_SEED
+         G_INIT_FILE  => G_BIN_FILE,
+         G_INPUT_FILE => G_INPUT_FILE,
+         G_STALL      => G_STALL,
+         G_SEED       => G_SEED
       )
       port map (
          clk_i           => clk,

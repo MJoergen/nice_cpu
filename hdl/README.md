@@ -23,7 +23,7 @@ working reference for it.
 | [src/trace_pkg.vhd](src/trace_pkg.vhd) | `t_retire`, the record in which the core reports each step to the trace writer. |
 | [sim/trace.vhd](sim/trace.vhd) | The trace writer. Simulation only. |
 | [sim/wb_mem.vhd](sim/wb_mem.vhd) | The memory model, with the console and the read counter. Simulation only. |
-| [test/tb_mem.vhd](test/tb_mem.vhd) | A self-checking test of the memory model, which loads [test/mem.bin](test/mem.bin). |
+| [test/tb_mem.vhd](test/tb_mem.vhd) | A self-checking test of the memory model, which loads [test/mem.bin](test/mem.bin) and reads [test/mem.input](test/mem.input) as its console input. |
 | [test/tb_mpu.vhd](test/tb_mpu.vhd) | A self-checking test of the math unit. |
 | [test/tb_perf.vhd](test/tb_perf.vhd) | A self-checking test of the performance counters. |
 | [test/tb_timer.vhd](test/tb_timer.vhd) | A self-checking test of the timer. |
@@ -31,6 +31,8 @@ working reference for it.
 | [test/tb_multicycle.vhd](test/tb_multicycle.vhd) | Runs a program on the multi-cycle core, with an interrupt source, and writes its trace. |
 | [test/shift.nasm](test/shift.nasm) | Every shift, with the counts that are hard to get right. |
 | [test/hazard.nasm](test/hazard.nasm) | The hazards of MICROARCH.md §5, each with no padding. It checks itself. |
+| [test/programs.py](test/programs.py) | Runs the programs in some directories on the core and on the emulator, for `make programs`. |
+| [test/core_runs.py](test/core_runs.py) | Runs a program on the core, or on the emulator, for `irq_sweep.py` and `programs.py`. |
 | [test/irq_sweep.py](test/irq_sweep.py) | Runs a program with an NMI before each of its steps, and with an IRQ before each. |
 | [test/sidefx_prog.py](test/sidefx_prog.py) | Writes a program with every pair of side effects on one register. |
 | [test/random_prog.py](test/random_prog.py) | Writes random programs, and random interrupt requests for them. |
@@ -142,6 +144,17 @@ with the same interrupt requests:
   sides, with the generic `G_CYCLE_COUNTER` and the emulator's
   `--no-cycle-counter`. The instruction counter and the math unit stay,
   because both sides agree on them.
+
+`make programs` runs the test programs of the runtime and of the
+translator on the core (MICROARCH.md §9, step 6). It is not part of
+`make test`, because it takes minutes: about 2 million steps in 196
+programs, at GHDL's 3300 steps a second, on all cores. `make test KEEP=DIR`
+in `runtime/` and `test/run.py --keep DIR` in `translator/` run their
+tests and leave the programs in `build/programs`, with the console input
+of those that read one. Then `test/programs.py` runs each on the core and
+on the emulator and compares them, as `make test` does, with the console
+input on both sides. The runtime's clock reads the cycle counter, so these
+runs make its two words memory, as the random programs do.
 
 `make random` runs more random programs, with the seeds, step count, and
 stall rate given as variables:
@@ -259,8 +272,13 @@ one cycle, the instruction port reads the old value.
 
 The I/O range follows ISA.md §8.3. The instruction port reads 0 there. The
 console is at `0xFFFFFF00`. A write sends bits 7..0 to the trace writer in
-the cycle the write is accepted, and stores nothing. A read returns `0x200`:
-there is no input, as for the emulator with stdin from `/dev/null`.
+the cycle the write is accepted, and stores nothing. A read returns `0x100`
+plus the next byte of the file that the generic `G_INPUT_FILE` names, and
+`0x200` after its end, as the emulator's `--input` does. Without the
+generic there is no input, and every read returns `0x200`, as for the
+emulator with stdin from `/dev/null`. `tb_multicycle` passes its own
+`G_INPUT_FILE` on, and `make test` runs the emulator's `input` probe
+with `emulator/test/input.txt`.
 The read counter is at `0xFFFFFF01`, as in the emulator. A data read returns
 the number of data reads of it since the last write, and a write sets that
 number. The rest of the I/O range is plain memory, as in the emulator.

@@ -40,10 +40,11 @@ has TODO or FIXME comments.
     with any value, so E and VBASE too. For the pipelined core, the sweep
     must vary the cycle at which the request arrives, not the step, and
     needs the comparison script below.
-  - Step 6, the runtime and translator test programs on the core. The hdl
-    tests do not run them yet, not even on the multi-cycle core. GHDL runs
-    the multi-cycle core at about 3300 instructions a second, from the
-    times in [bench/README.md](bench/README.md).
+  - Step 6: `make programs` in `hdl/` runs the runtime's and the
+    translator's test programs on the core, and the multi-cycle core
+    passes. Left out: the random modules of `translator/test/fuzz.py`,
+    `runtime/libc/test/fuzz_printf.py`, which needs clang, and the
+    benchmark, which `make core` in `bench/` runs already.
 - **An interrupt comparison script for the pipelined core** (MICROARCH.md
   §9). It reads from the core's trace where each interrupt was taken, and
   runs the emulator with the matching `--irq` or `--nmi` options. On the
@@ -55,8 +56,8 @@ has TODO or FIXME comments.
   decoder must keep the ACKs in order when requests to different slaves
   are in flight (MICROARCH.md §8); the pipelined core needs it before the
   rest. The UART must receive too: a read returns the next byte with bit 8
-  set, or 0 (ISA.md §8.3). `wb_mem.vhd` always reads `0x200`, as with no
-  input. Today
+  set, or 0 (ISA.md §8.3). `wb_mem.vhd` reads a file, as the emulator's
+  `--input` does. Today
   `hdl/sim/wb_mem.vhd` stands in for all of it, in simulation only, and
   `hdl/test/tb_multicycle.vhd` decodes the math unit and the performance
   counters with an address compare.

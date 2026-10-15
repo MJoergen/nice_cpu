@@ -53,20 +53,23 @@ endef
 # stalls in 30% of the cycles.
 EXAMPLES = count replicate print wrap
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest \
-  console screen iofetch reads reserved mpu mpu64 perf timer
+  console screen iofetch reads reserved mpu mpu64 perf timer input
 INTR_irq   = --nmi 2:1 --irq 2:2 --nmi 9:1 --irq 17:2 --nmi 17:1 --irq 100:2
 INTR_merge = --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
 INTR_after = --nmi 3:1 --nmi 10:1
 INTR_start = --nmi 0:3
 INTR_perf  = --nmi 3:0x41
 INTR_perf_stall = $(INTR_perf)
+# The console input of a run, a file, as the emulator's --input takes it.
+INPUT_input = ../emulator/test/input.txt
 
 # $(1) is the name of the run, $(2) the program, and $(3) any more generics.
 define check_core
 	@($(GHDLRUN) tb_multicycle -gG_BIN_FILE=../$(2) -gG_TRACE_FILE=core_$(1).out \
-	  $(if $(INTR_$(1)),"-gG_INTERRUPTS=$(INTR_$(1))") $(3) > core_$(1).log 2>&1); \
-	  echo "exit $$?" >> $(BUILD)/core_$(1).out
-	@$(EMU) -t $(INTR_$(1)) $(2) < /dev/null > $(BUILD)/core_$(1).expected; \
+	  $(if $(INTR_$(1)),"-gG_INTERRUPTS=$(INTR_$(1))") $(if $(INPUT_$(1)),-gG_INPUT_FILE=../$(INPUT_$(1))) \
+	  $(3) > core_$(1).log 2>&1); echo "exit $$?" >> $(BUILD)/core_$(1).out
+	@$(EMU) -t $(INTR_$(1)) $(if $(INPUT_$(1)),--input $(INPUT_$(1))) $(2) < /dev/null \
+	  > $(BUILD)/core_$(1).expected; \
 	  echo "exit $$?" >> $(BUILD)/core_$(1).expected
 	@if cmp -s $(BUILD)/core_$(1).expected $(BUILD)/core_$(1).out; then echo "PASS multicycle $(1)"; \
 	else echo "FAIL multicycle $(1)"; cat $(BUILD)/core_$(1).log; \
@@ -117,7 +120,7 @@ endef
 # tb_mem checks the memory model itself, tb_mpu the math unit, tb_perf the
 # performance counters, and tb_timer the timer.
 test: emulator analyse synth
-	@($(GHDLRUN) tb_mem -gG_BIN_FILE=../test/mem.bin > tb_mem.log 2>&1); \
+	@($(GHDLRUN) tb_mem -gG_BIN_FILE=../test/mem.bin -gG_INPUT_FILE=../test/mem.input > tb_mem.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS tb_mem"; else echo "FAIL tb_mem"; cat $(BUILD)/tb_mem.log; exit 1; fi
 	@($(GHDLRUN) tb_mpu > tb_mpu.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS tb_mpu"; else echo "FAIL tb_mpu"; cat $(BUILD)/tb_mpu.log; exit 1; fi
@@ -154,6 +157,21 @@ test: emulator analyse synth
 # the emulator's trace and the core's differ.
 random: emulator analyse
 	$(foreach t,$(RANDOM_SEEDS),$(call check_random,$(t)))
+
+# The runtime's and the translator's test programs on the core (MICROARCH.md
+# §9, step 6). runtime/Makefile with KEEP and translator/test/run.py with
+# --keep run their tests and leave the programs in $(PROGRAMS), and
+# test/programs.py runs each on the core and on the emulator, in parallel,
+# and compares them. It takes minutes, so make test leaves it out.
+PROGRAMS = $(BUILD)/programs
+
+programs: emulator analyse
+	@rm -rf $(PROGRAMS)
+	@$(MAKE) --no-print-directory -C ../runtime test KEEP=$(abspath $(PROGRAMS)/runtime) \
+	  > $(BUILD)/programs_runtime.log 2>&1 || { cat $(BUILD)/programs_runtime.log; exit 1; }
+	@$(PYTHON) ../translator/test/run.py --keep $(PROGRAMS)/translator \
+	  > $(BUILD)/programs_translator.log 2>&1 || { cat $(BUILD)/programs_translator.log; exit 1; }
+	@$(PYTHON) test/programs.py --build $(BUILD) --emu $(EMU) $(PROGRAMS)/runtime $(PROGRAMS)/translator
 
 analyse:
 	@mkdir -p $(BUILD)
@@ -203,4 +221,4 @@ lint:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: test random analyse synth formal emulator lint clean
+.PHONY: test programs random analyse synth formal emulator lint clean

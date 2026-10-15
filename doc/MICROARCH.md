@@ -424,7 +424,8 @@ exact.
    and the program that `hdl/test/sidefx_prog.py` writes.
 5. The interrupt probes, and requests at every point in a hazard program,
    which `hdl/test/irq_sweep.py` makes.
-6. The runtime and translator test programs.
+6. The runtime and translator test programs, which `make programs` in
+   `hdl/` runs.
 7. Random instruction streams, run on both and diffed.
 
 **Formal checks**, as in qnice_cpu: each primitive and stage on its own, and

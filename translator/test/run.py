@@ -23,10 +23,11 @@ results were worked out by hand from the sources."""
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
-from typing import Dict, List, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from wasm import (ADD, ADD64, AND, AND64, DROP, ELSE, END, EQ, EQ64, EQZ, EQZ64,
                   EXTEND_S, EXTEND_U, GE_S, GE_S64, GE_U, GE_U64, GT_S, GT_S64, GT_U,
@@ -1494,7 +1495,7 @@ def float_library(tmp: str, mpu: bool) -> Tuple[str, Set[str]]:
 
 
 def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
-          floats: Tuple[str, Set[str]], mpu: bool) -> List[str]:
+          floats: Tuple[str, Set[str]], mpu: bool, keep: Optional[str]) -> List[str]:
     trap = name in TRAPS
     asm = os.path.join(tmp, name + ".nasm")
     run([sys.executable, NICEWASM, *OPTIONS.get(name, []), *([] if mpu else ["--no-mpu"]),
@@ -1524,6 +1525,8 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
     binary = os.path.join(tmp, name + ".bin")
     with open(binary, "w") as f:
         f.writelines(f"{a:08x} {w:08x}\n" for a, w in sorted(image.items()))
+    if keep is not None:
+        shutil.copy(binary, os.path.join(keep, name + ("" if mpu else "_soft") + ".bin"))
     output = run([NICEEMU, binary])
     # The console output comes before the line that says why it halted.
     at = output.find("Halted (")
@@ -1564,6 +1567,14 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
 
 
 def main() -> None:
+    # --keep DIR copies each program to DIR/X.bin, or DIR/X_soft.bin with
+    # --no-mpu, for the tests of the FPGA core in hdl/.
+    keep = None
+    if sys.argv[1:2] == ["--keep"] and len(sys.argv) == 3:
+        keep = sys.argv[2]
+        os.makedirs(keep, exist_ok=True)
+    elif len(sys.argv) != 1:
+        sys.exit("usage: run.py [--keep DIR]")
     failed = 0
     with tempfile.TemporaryDirectory() as tmp:
         for mpu in (True, False):
@@ -1577,7 +1588,7 @@ def main() -> None:
                 else:
                     wasm_file = os.path.join(HERE, wasm + ".wasm")
                 try:
-                    problems = check(name, wasm_file, extra, expected, tmp, floats, mpu)
+                    problems = check(name, wasm_file, extra, expected, tmp, floats, mpu, keep)
                 except RuntimeError as e:
                     problems = [str(e)]
                 if problems:

@@ -19,8 +19,10 @@
 -- * The instruction port reads 0 there.
 -- * The console is at 0xFFFFFF00. A write puts bits 7..0 on console_data_o,
 --   with console_valid_o high, in the cycle the write is accepted, and stores
---   nothing. A read returns 0x200: there is no input, as for the emulator
---   with stdin from /dev/null (ISA.md §8.3).
+--   nothing. A data read returns 0x100 plus the next byte of the file
+--   G_INPUT_FILE, and 0x200 after its end, as the emulator's --input does
+--   (ISA.md §8.3). With G_INPUT_FILE = "", there is no input, and every
+--   read returns 0x200, as for the emulator with stdin from /dev/null.
 -- * The read counter is at 0xFFFFFF01, as in the emulator (ISA.md §8.3).
 --   A data read returns the number of data reads of it since the last write,
 --   and then counts itself. A write sets the count and stores nothing. It
@@ -43,9 +45,10 @@ library ieee;
 
 entity wb_mem is
    generic (
-      G_INIT_FILE : string;
-      G_STALL     : natural range 0 to 100 := 0;
-      G_SEED      : positive               := 1
+      G_INIT_FILE  : string;
+      G_INPUT_FILE : string                 := "";
+      G_STALL      : natural range 0 to 100 := 0;
+      G_SEED       : positive               := 1
    );
    port (
       clk_i           : in  std_logic;
@@ -103,7 +106,12 @@ begin
       type t_page     is array (0 to 4095) of std_logic_vector(31 downto 0);
       type t_page_ptr is access t_page;
       type t_pages    is array (0 to 2 ** 20 - 1) of t_page_ptr;
+      type t_bytes    is file of character;
 -- vsg_on type_006
+      file     input_f    : t_bytes;
+      variable input_v    : boolean := false;
+      variable in_stat_v  : file_open_status;
+      variable in_char_v  : character;
       variable pages_v    : t_pages;
       variable count_v    : std_logic_vector(31 downto 0) := (others => '0');
       variable seed1_v    : positive                      := G_SEED;
@@ -223,6 +231,15 @@ begin
    begin
       load(G_INIT_FILE);
 
+      -- A file of character reads one byte per element.
+      if G_INPUT_FILE /= "" then
+         file_open(in_stat_v, input_f, G_INPUT_FILE, read_mode);
+         assert in_stat_v = OPEN_OK
+            report "wb_mem: cannot open " & G_INPUT_FILE
+            severity failure;
+         input_v := true;
+      end if;
+
       main_loop : loop
          wait until rising_edge(clk_i);
 
@@ -248,7 +265,12 @@ begin
                   mem_write(dbus_addr_i, dbus_data_i);
                end if;
             elsif dbus_addr_i = C_CONSOLE then
-               dbus_data_o <= X"00000200";
+               if input_v and not endfile(input_f) then
+                  read(input_f, in_char_v);
+                  dbus_data_o <= X"00000100" or to_slv(character'pos(in_char_v), 32);
+               else
+                  dbus_data_o <= X"00000200";
+               end if;
             elsif dbus_addr_i = C_COUNTER then
                dbus_data_o <= count_v;
                count_v     := count_v + 1;

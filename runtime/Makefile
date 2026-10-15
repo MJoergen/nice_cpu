@@ -1,5 +1,6 @@
 PYTHON ?= python3
 ZIG ?= zig
+RUSTC ?= rustc
 ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
 
@@ -32,10 +33,32 @@ define check
 
 endef
 
+# The tests of nice.zig and nice.rs, test/X.zig and test/X.rs, as in
+# libc/Makefile: each test/X.wasm is translated, joined with
+# start_wasm.nasm, lib.nasm, and muldiv_mpu.nasm, and run with test/X.input
+# as the console input. The console output, main's result in R1, and the
+# exit status are compared with test/X.expected. The .wasm files are
+# checked in, so make test needs no Zig or Rust; make wasm rebuilds them.
+ZIG_TESTS = nicezig
+RUST_TESTS = nicers
+
+define check_wasm
+	@$(PYTHON) ../translator/nicewasm.py -o test/$(1).out.nasm test/$(1).wasm
+	@cat start_wasm.nasm test/$(1).out.nasm lib.nasm muldiv_mpu.nasm > test/$(1).full.nasm
+	@$(ASM) -o test/$(1).out.bin test/$(1).full.nasm
+	@$(EMU) --input test/$(1).input test/$(1).out.bin < /dev/null > test/$(1).raw; echo "exit $$?" > test/$(1).status
+	@sed '/^\(Halted\|Stopped\)/,$$d' test/$(1).raw > test/$(1).out
+	@grep -o ' R1  [0-9a-f]*' test/$(1).raw | cut -c2- >> test/$(1).out; cat test/$(1).status >> test/$(1).out
+	@if cmp -s test/$(1).out test/$(1).expected; then echo "PASS $(1)"; \
+	else echo "FAIL $(1)"; diff test/$(1).expected test/$(1).out; exit 1; fi
+
+endef
+
 test: emulator
 	$(foreach t,$(TESTS),$(call check,$(t),$(t),muldiv_mpu.nasm))
 	$(foreach t,$(SOFT_TESTS),$(call check,$(t)_soft,$(t),muldiv_soft.nasm))
-	@rm -f test/*.out test/*.out.nasm test/*.out.bin
+	$(foreach t,$(ZIG_TESTS) $(RUST_TESTS),$(call check_wasm,$(t)))
+	@rm -f test/*.out test/*.out.nasm test/*.out.bin test/*.full.nasm test/*.raw test/*.status
 	@$(MAKE) --no-print-directory -C libc test
 
 # The float library, translated from float.wasm as the library module float
@@ -61,11 +84,26 @@ float:
 	  -femit-bin=float.wasm build/float.zig
 	rm -rf build float.wasm.o
 
+# Rebuilds the .wasm files of the Zig and Rust tests. This needs Zig 0.15
+# and rustc with the wasm32-unknown-unknown target.
+wasm:
+	@for t in $(ZIG_TESTS); do \
+	  $(ZIG) build-exe -target wasm32-freestanding -fno-entry -rdynamic -O ReleaseSmall -fstrip \
+	    --stack 4096 --initial-memory=65536 --dep nice -Mroot=test/$$t.zig -Mnice=nice.zig \
+	    -femit-bin=test/$$t.wasm || exit 1; \
+	done
+	@for t in $(RUST_TESTS); do \
+	  $(RUSTC) --target wasm32-unknown-unknown --crate-type cdylib -C opt-level=s -C panic=abort \
+	    -C strip=debuginfo -C link-arg=-zstack-size=4096 -C link-arg=--initial-memory=65536 \
+	    -o test/$$t.wasm test/$$t.rs || exit 1; \
+	done
+	@rm -f test/*.wasm.o
+
 emulator:
 	$(MAKE) -C ../emulator build
 
 clean:
-	rm -f test/*.out test/*.out.nasm test/*.out.bin float.nasm
+	rm -f test/*.out test/*.out.nasm test/*.out.bin test/*.full.nasm test/*.raw test/*.status float.nasm
 	$(MAKE) -C libc clean
 
-.PHONY: test emulator clean float
+.PHONY: test emulator clean float wasm

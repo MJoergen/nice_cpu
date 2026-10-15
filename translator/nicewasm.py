@@ -1048,7 +1048,7 @@ class Translator:
         self.m = m
         self.data = data
         self.checks = checks  # bounds checks on memory accesses
-        self.mpu = mpu  # use the math unit of §8.4 for i32 mul, div, and rem
+        self.mpu = mpu  # use the math unit of §8.4 for i32 mul, and div and rem
         self.library = library  # the name of a library module (§9.4), or None
         self.prefix = f"WL.{library}." if library else "W."  # of the labels made here
         self.mem = f"WL.{library}.memory" if library else "___wasm_memory"
@@ -1842,14 +1842,22 @@ class FunctionTranslator:
         return label
 
     def mpu_op(self, word: str, t: int, at: int, what: str) -> None:
-        """Pops a and b, writes them to the math unit (§8.4), and pushes
-        the given result word. The labels __mpu.* are in
-        runtime/muldiv_mpu.asm."""
+        """Pops a and b, writes them to the math unit (§8.4), A and B for
+        an i32 and C and D for an i64, and pushes the given result. The
+        labels __mpu.* are in runtime/muldiv_mpu.asm."""
         a, b = self.pop([t, t], at, what)
         dest = self.push(t)
-        self.emit("MOVE", "@__mpu.a", a[0])
-        self.emit("MOVE", "@__mpu.b", b[0])
-        self.emit("MOVE", dest[0], f"@__mpu.{word}")
+        if t == I32:
+            self.emit("MOVE", "@__mpu.a", a[0])
+            self.emit("MOVE", "@__mpu.b", b[0])
+            self.emit("MOVE", dest[0], f"@__mpu.{word}")
+        else:
+            self.emit("MOVE", "@__mpu.c_lo", a[0])
+            self.emit("MOVE", "@__mpu.c_hi", a[1])
+            self.emit("MOVE", "@__mpu.d_lo", b[0])
+            self.emit("MOVE", "@__mpu.d_hi", b[1])
+            self.emit("MOVE", dest[0], f"@__mpu.{word}")
+            self.emit("MOVE", dest[1], f"@__mpu.{word}+1")
 
     def divide(self, t: int, op: str, at: int, what: str) -> None:
         """A division or remainder, by the math unit for i32 unless it is
@@ -1891,8 +1899,10 @@ class FunctionTranslator:
             for w in result:
                 self.emit("?Z MOVE", w, "0")
             self.emit("?Z MOVE", "R15", done)
-        if t == I32 and self.t.mpu:
+        if self.t.mpu:
             word = {"div_s": "sdiv_q", "div_u": "udiv_q", "rem_s": "sdiv_r", "rem_u": "udiv_r"}[op]
+            if t == I64:
+                word = word.replace("_", "64_")
             self.mpu_op(word, t, at, what)
         else:
             routine = {"div_s": "__div", "div_u": "__udiv", "rem_s": "__mod",
@@ -2539,7 +2549,7 @@ def main() -> None:
                     help="bytes of a library module's memory to reserve"
                          " (default: as much as its data and stack need)")
     ap.add_argument("--no-mpu", action="store_true",
-                    help="call the runtime library for i32 mul, div, and rem, instead of"
+                    help="call the runtime library for i32 mul, and for div and rem, instead of"
                          " using the math unit")
     args = ap.parse_args()
 

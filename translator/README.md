@@ -24,8 +24,8 @@ may not be below the memory's initial size or above its maximum, if it
 declares one, and it must be below 65536. Without the option, the cap is
 the initial size. `--library` translates a library module instead, as
 described below. `--no-mpu` is for a system without the math unit of
-ISA.md §8.4: `i32.mul`, `div`, and `rem` then call the runtime library
-instead of using the math unit, and the program must be joined with
+ISA.md §8.4: `i32.mul`, and `div` and `rem` of both widths, then call
+the runtime library instead of using the math unit, and the program must be joined with
 `runtime/muldiv_soft.asm`, not `muldiv_mpu.asm`. Errors are printed as
 `file:0xOFFSET: error: message`, where OFFSET is the byte offset in the
 module, or as `file: error: message` when there is no offset. The exit
@@ -169,13 +169,14 @@ measurements.
 - **Integer operations,** for `i32` and `i64`: `add`, `sub`,
   `mul`, `div_s`, `div_u`, `rem_s`, `rem_u`, `and`, `or`, `xor`, `clz`,
   `ctz`, `popcnt`, and the `sign-ext` instructions `extend8_s`,
-  `extend16_s`, and `i64.extend32_s`. `i32.mul`, `div`, and `rem` write
-  their operands to the math unit of ISA.md §8.4 and read the result, in
-  three instructions, through the labels `__mpu.a` and the like that
-  `runtime/muldiv_mpu.asm` defines. With `--no-mpu` they call `__mul`,
-  `__div`, and the like instead. The `i64` ones and the bit counts always
-  call the runtime library, for example `__mul64`, `__div64`, and
-  `__popcnt` (see [runtime/README.md](../runtime/README.md)). Division by 0
+  `extend16_s`, and `i64.extend32_s`. `i32.mul`, and `div` and `rem` of
+  both widths, write their operands to the math unit of ISA.md §8.4 and
+  read the result, in three instructions for `i32` and six for `i64`,
+  through the labels `__mpu.a` and the like that `runtime/muldiv_mpu.asm`
+  defines. With `--no-mpu` they call `__mul`, `__div64`, and the like
+  instead. `i64.mul` and the bit counts always call the runtime library,
+  for example `__mul64` and `__popcnt` (see
+  [runtime/README.md](../runtime/README.md)). Division by 0
   traps with code 3, and `div_s` of the most negative number by −1 with
   code 4. `rem_s` by −1 is 0 without a division, because C leaves the most
   negative number % −1 undefined.

@@ -3,10 +3,13 @@ ZIG ?= zig
 ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
 
-# Each test/X.asm is joined with a start-up file and lib.asm into one
-# program, as ISA.md §9.3 describes. The program is assembled and run, and
-# the output and exit status are compared with test/X.expected.
+# Each test/X.asm is joined with a start-up file, lib.asm, and
+# muldiv_mpu.asm into one program, as ISA.md §9.3 describes. The program is
+# assembled and run, and the output and exit status are compared with
+# test/X.expected. The tests in SOFT_TESTS run a second time as X_soft,
+# with muldiv_soft.asm instead, and are compared with test/X_soft.expected.
 TESTS = start start_wasm mul trap div div64 mul64 bits
+SOFT_TESTS = mul div mul64
 START_start_wasm = start_wasm.asm
 START_trap       = start_wasm.asm
 OPTS_start      = -d 0xfffffeff:1
@@ -17,17 +20,19 @@ OPTS_div64      = -d 0x6f:64
 OPTS_mul64      = -d 0x48:16
 OPTS_bits       = -d 0x54:54
 
+# $(1) is the name of the run, $(2) the test, and $(3) the muldiv file.
 define check
-	@cat $(or $(START_$(1)),start.asm) test/$(1).asm lib.asm > test/$(1).out.asm
+	@cat $(or $(START_$(2)),start.asm) test/$(2).asm lib.asm $(3) > test/$(1).out.asm
 	@$(ASM) -o test/$(1).out.bin test/$(1).out.asm
-	@$(EMU) $(OPTS_$(1)) test/$(1).out.bin > test/$(1).out; echo "exit $$?" >> test/$(1).out
+	@$(EMU) $(OPTS_$(2)) test/$(1).out.bin > test/$(1).out; echo "exit $$?" >> test/$(1).out
 	@if cmp -s test/$(1).out test/$(1).expected; then echo "PASS $(1)"; \
 	else echo "FAIL $(1)"; diff test/$(1).expected test/$(1).out; exit 1; fi
 
 endef
 
 test: emulator
-	$(foreach t,$(TESTS),$(call check,$(t)))
+	$(foreach t,$(TESTS),$(call check,$(t),$(t),muldiv_mpu.asm))
+	$(foreach t,$(SOFT_TESTS),$(call check,$(t)_soft,$(t),muldiv_soft.asm))
 	@rm -f test/*.out test/*.out.asm test/*.out.bin
 
 # The float library, translated from float.wasm as the library module float

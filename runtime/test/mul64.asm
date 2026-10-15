@@ -21,6 +21,12 @@
 ;
 ; At the end R1:R2 and R5:R6 hold the last product, and R3:R4 = 0, shifted
 ; out. R10-R12 survive the calls. R14 = 0x09000000: Z from the last DEC[M].
+;
+; That is mul64_soft.expected, with muldiv_soft.asm. With muldiv_mpu.asm,
+; __mul64 takes 10 steps, so the total is 5 + 6 + 8 * (11 + 10) + 1 + 1
+; = 181 (mul64.expected). R3:R4 keep the last operand, 0x0FEDCBA9_87654321,
+; R6 = 0, and R5 = the high word of 0x9ABCDEF0 * 0x87654321 plus the low
+; word of 0x9ABCDEF0 * 0x0FEDCBA9, mod 2^32: 0xB17E4B17.
 
 _main   MOVE    R7, pairs
         MOVE    R8, results

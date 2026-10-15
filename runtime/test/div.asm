@@ -28,6 +28,10 @@
 ; At the end R1 = R3 = 6, the last remainder, and R2 = 13. R4 = 0 after 32
 ; passes. The last quotient bit is 1, so the last pass subtracted: R5 = 6,
 ; and R6 = 0, as no remainder needed bit 32. R10-R12 survive the calls.
+;
+; That is div_soft.expected, with muldiv_soft.asm. With muldiv_mpu.asm,
+; each routine takes 4 steps, so a pass takes 20 + 16 + 3 = 39, and the
+; total is 5 + 6 + 8 * 39 + 1 + 1 = 325. R3-R6 stay 0 (div.expected).
 ; R14 = 0x09000000: Z from the last DEC[M].
 
 _main   MOVE    R7, pairs

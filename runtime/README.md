@@ -10,17 +10,18 @@ translated wasm code call. They follow the C ABI of
 |---|---|
 | `start.asm` | Start-up code for a program without a wasm module. |
 | `start_wasm.asm` | Start-up code for a program with a wasm module. It calls `___wasm_start` before `main`. |
-| `lib.asm` | The runtime routines in assembly. |
+| `lib.asm` | The runtime routines in assembly, except those below. |
+| `muldiv_mpu.asm` | `__mul`, `__div`, `__mod`, `__udiv`, `__umod`, and `__mul64`, with the math unit of ISA.md §8.4. |
+| `muldiv_soft.asm` | The same routines in software, for a system without the math unit. |
 | `float.zig` | The source of the float routines (see below). |
 | `float.wasm` | `float.zig` and parts of Zig's compiler_rt, compiled to wasm. |
 | `float.asm` | `float.wasm` translated as a library module. It is not checked in: `make float.asm` makes it, with Python only. |
 
 There is no linker. A program is one assembly file, joined in this order:
-one of the start-up files, the program's own files, `lib.asm`, and
-`float.asm` if the program uses floats. For
-example:
+one of the start-up files, the program's own files, `lib.asm`, one of the
+two muldiv files, and `float.asm` if the program uses floats. For example:
 
-    cat runtime/start.asm prog.asm runtime/lib.asm > full.asm
+    cat runtime/start.asm prog.asm runtime/lib.asm runtime/muldiv_mpu.asm > full.asm
     assembler/niceasm.py full.asm
     emulator/zig-out/bin/niceemu full.bin
 
@@ -49,23 +50,34 @@ return the result in R1:R2, each pair low word first (§9.3):
 | `__clz64`, `__ctz64` | The number of leading or trailing 0 bits in R1:R2, 64 for 0. | none |
 | `__popcnt64` | The number of 1 bits in R1:R2. | R3, R4 |
 
-Every routine changes the flags. A routine may change R1–R6 and the
-flags, as §9.3 allows. The tables list what each one actually changes.
+A routine may change R1–R6 and the flags, as §9.3 allows. The tables list
+what each one actually changes in `lib.asm` and `muldiv_soft.asm`. The
+versions in `muldiv_mpu.asm` change less: R5 for `__mul64`, nothing else
+for the others, and not the flags. They change A and B of the math unit.
 
-`lib.asm` also has two labels that are not C routines: `__udivmod` and
-`__udivmod64`, the unsigned division that the division routines share.
-Every label is global in the joined program (§9.3), so no other file may
-define these names either.
+A program contains exactly one of the muldiv files. `muldiv_mpu.asm` needs
+the math unit, which the emulator and the FPGA core have. It also defines
+the labels `__mpu.a`, `__mpu.b`, and so on, for the words of the math
+unit, and translated code that uses the math unit needs them (see
+[translator/README.md](../translator/README.md), `--no-mpu`). A program
+translated with `--no-mpu` must use `muldiv_soft.asm`.
+
+Some labels are not C routines: the `__mpu.` names above, and the
+unsigned divisions that the division routines share, `__udivmod` in
+`muldiv_soft.asm` and `__udivmod64` in `lib.asm`. Every label is global in
+the joined program (§9.3), so no other file may define these names either.
 
 Division by zero is undefined in C, so the division routines return some
 value for it and do not trap. The wasm translator checks for 0 before it
 calls them. The most negative number divided by −1 gives the most
 negative number.
 
-The comments in `lib.asm` give the number of steps each routine takes.
+The comments in the files give the number of steps each routine takes.
 The division routines take the same number for all operands of one sign,
-for example 292 steps for `__udiv` and 839 for `__udiv64`. `__mul64` and
-the counting routines take longer the more bits their operand has.
+for example 292 steps for `__udiv` in `muldiv_soft.asm` and 839 for
+`__udiv64`. `__mul64` in `muldiv_soft.asm` and the counting routines take
+longer the more bits their operand has. In `muldiv_mpu.asm`, each routine
+takes 4 steps, and `__mul64` 10.
 
 `lib.asm` also holds the wasm trap vector of ISA.md §9.4:
 
@@ -113,7 +125,9 @@ calls to this library. `nicewasm` rejects a library module that uses them.
 
     make test
 
-This builds the emulator, then joins each `test/X.asm` with a start-up file
-and `lib.asm`. It assembles and runs the result and compares the output and
-exit status with `test/X.expected`. The expected values were checked by
+This builds the emulator, then joins each `test/X.asm` with a start-up file,
+`lib.asm`, and `muldiv_mpu.asm`. It assembles and runs the result and
+compares the output and exit status with `test/X.expected`. The tests of
+the muldiv routines run a second time with `muldiv_soft.asm`, and compare
+with `test/X_soft.expected`. The expected values were checked by
 hand. The comments in each test show how.

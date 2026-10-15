@@ -16,6 +16,8 @@ translated wasm code call. They follow the C ABI of
 | `float.zig` | The source of the float routines (see below). |
 | `float.wasm` | `float.zig` and parts of Zig's compiler_rt, compiled to wasm. |
 | `float.nasm` | `float.wasm` translated as a library module. It is not checked in: `make float.nasm` makes it, with Python only. |
+| `libc/` | A small C library (see below). |
+| `nice.zig`, `nice.rs` | Console and performance counter support for Zig and Rust (see below). |
 
 There is no linker. A program is one assembly file, joined in this order:
 one of the start-up files, the program's own files, `lib.nasm`, one of the
@@ -203,13 +205,41 @@ the functions and link `libc.a`:
     extern "C" { fn printf(fmt: *const u8, ...) -> i32; }
     rustc ... -C link-arg=runtime/libc/libc.a prog.rs
 
-The preferred way is a small support module in each language, written in
-that language, with the same split as the C library. Only its console
-code calls `nice.poke`. For Zig, that is a writer for the console, so
-that `std.fmt` can print through it. For Rust, it is a type that
-implements `core::fmt::Write`, `print!` and `println!` macros on top of
-it, and a `#[global_allocator]` for `alloc`. Neither exists yet
-([TODO.md](../TODO.md)).
+The preferred way is `nice.zig` or `nice.rs`, below.
+
+## Zig and Rust
+
+`nice.zig` and `nice.rs` give Zig and Rust code what `nice.h` and the
+console code of the C library give C code, written in each language:
+
+| | Zig, `nice.zig` | Rust, `nice.rs` |
+|---|---|---|
+| The `nice` imports | `peek`, `poke` | `peek`, `poke`, safe wrappers |
+| Addresses | `console`, `console_byte`, `console_end`, `cycle_lo`, `instr_lo` | `CONSOLE`, `CONSOLE_BYTE`, `CONSOLE_END`, `CYCLE_LO`, `INSTR_LO` |
+| Output | `write(bytes)`, `print(fmt, args)` with `std.fmt`, and `writer`, a `std.Io.Writer` | `write(bytes)`, `print!` and `println!` with `core::fmt`, and `Console`, a `core::fmt::Write` |
+| Input | `getchar()`, a `?u8` | `getchar()`, an `Option<u8>` |
+| Counters | `counter64(lo)` | `counter64(lo)` |
+
+`getchar` waits until a byte is there, and returns null or `None` once
+the emulator's input has ended, as C's `getchar` returns `EOF`.
+`counter64` reads the low word first, as `nice_counter64` does. There is
+no formatted input, as `scanf` gives C.
+
+For Zig, add the file as the module `nice`, and import it with
+`const nice = @import("nice");`:
+
+    zig build-exe -target wasm32-freestanding -fno-entry -rdynamic -O ReleaseSmall \
+        -fstrip --stack 4096 --initial-memory=65536 \
+        --dep nice -Mroot=prog.zig -Mnice=runtime/nice.zig
+
+For Rust, mount the file at the crate root as the module `nice`, so that
+`print!` and `println!` find it, in a `#![no_std]` program:
+
+    #[path = "runtime/nice.rs"]
+    mod nice;
+
+and compile as the [translator README](../translator/README.md) shows.
+`test/nicezig.zig` and `test/nicers.rs` are examples.
 
 ## Test
 
@@ -229,6 +259,12 @@ them and `libc.a`. Each is translated, joined with `start_wasm.nasm`,
 `lib.nasm`, and `muldiv_mpu.nasm`, and run. Its console output, `main`'s result in R1, and the
 exit status are compared with `libc/test/X.expected`, which was written
 by hand from the source.
+
+Then it runs the tests of `nice.zig` and `nice.rs`, `test/nicezig.zig` and
+`test/nicers.rs`, the same way, with `test/X.input` as the console input
+and `test/X.expected`, written by hand from the source. Their `.wasm`
+files are checked in; `make wasm` rebuilds them, with Zig 0.15 and rustc
+with the `wasm32-unknown-unknown` target.
 
 `make -C libc fuzz` needs clang. It runs `libc/test/fuzz_printf.py`,
 which writes a C program with 300 random `printf` and `snprintf` calls,

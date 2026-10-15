@@ -71,6 +71,9 @@ runtime library does not have, and nicewasm rejects the imports. Zig's
 For `printf`, `strlen`, `malloc`, and the like, compile and link with the
 small C library in `runtime/libc/`. Its section in the
 [runtime README](../runtime/README.md#c-library) gives the command line.
+Zig and Rust code prints, reads the console, and reads the performance
+counters with `runtime/nice.zig` and `runtime/nice.rs`
+([runtime README](../runtime/README.md#zig-and-rust)).
 
 If the program has constructors, also link with
 `-Wl,--export=__wasm_call_ctors`, so that `___wasm_start` runs them once

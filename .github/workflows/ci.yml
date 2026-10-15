@@ -89,6 +89,9 @@ jobs:
           version: 0.15.2
       - run: sudo apt-get update && sudo apt-get install -y ghdl
       - run: make test
+      # The style of CODING_STYLE.md, as far as vsg can check it.
+      - run: pip install vsg==3.35.0
+      - run: make lint
 
   intro:
     runs-on: ubuntu-latest

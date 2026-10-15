@@ -78,7 +78,8 @@ begin
 
       procedure fail(msg : string) is
       begin
-         report "tb_perf: " & msg severity error;
+         report "tb_perf: " & msg
+            severity error;
          stop(1);
       end procedure fail;
 

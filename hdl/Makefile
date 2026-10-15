@@ -147,7 +147,14 @@ synth: analyse
 emulator:
 	$(MAKE) -C ../emulator build
 
+# Checks the style of every VHDL file against CODING_STYLE.md. Long lines are
+# only warnings.
+VSG ?= vsg
+
+lint:
+	$(VSG) -c vsg.yml -of syntastic -f $(SOURCES) $(SIM_SOURCES) $(TEST_SOURCES)
+
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: test random analyse synth emulator clean
+.PHONY: test random analyse synth emulator lint clean

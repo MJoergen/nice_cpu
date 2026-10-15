@@ -98,9 +98,12 @@ begin
 
 
    p_mem : process
-      type     t_page     is array (0 to 4095) of std_logic_vector(31 downto 0);
-      type     t_page_ptr is access t_page;
-      type     t_pages    is array (0 to 2 ** 20 - 1) of t_page_ptr;
+      -- The type declarations are aligned as a table.
+-- vsg_off type_006
+      type t_page     is array (0 to 4095) of std_logic_vector(31 downto 0);
+      type t_page_ptr is access t_page;
+      type t_pages    is array (0 to 2 ** 20 - 1) of t_page_ptr;
+-- vsg_on type_006
       variable pages_v    : t_pages;
       variable count_v    : std_logic_vector(31 downto 0) := (others => '0');
       variable seed1_v    : positive                      := G_SEED;

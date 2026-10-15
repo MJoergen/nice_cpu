@@ -14,6 +14,8 @@ working reference for it.
 
 | Path | What it is |
 |---|---|
+| [CODING_STYLE.md](CODING_STYLE.md) | The style of the VHDL. |
+| [vsg.yml](vsg.yml) | The rules of CODING_STYLE.md for vsg, which `make lint` runs. |
 | [src/multicycle.vhd](src/multicycle.vhd) | The multi-cycle core. |
 | [src/mpu.vhd](src/mpu.vhd) | The math unit of ISA.md §8.4, a Wishbone slave. |
 | [src/perf.vhd](src/perf.vhd) | The performance counters of ISA.md §8.5, a Wishbone slave. |
@@ -42,6 +44,12 @@ run under nvc.
 synthesise the core, the math unit, and the performance counters
 (`ghdl --synth`), and runs the tests. Everything it makes goes in `build/`.
 `make clean` removes it.
+
+`make lint` checks the style of every VHDL file against
+[CODING_STYLE.md](CODING_STYLE.md), as far as
+[vsg](https://vhdl-style-guide.readthedocs.io/) can, with the rules in
+[vsg.yml](vsg.yml). It needs `pip install vsg`. It fails on errors and only
+warns about lines over 100 columns.
 
 `tb_mpu` checks every word of the math unit against `numeric_std`: for 20
 corner cases and 2000 random pairs of A and B, and for 16 corner cases and

@@ -233,7 +233,7 @@ begin
 
 
    p_compute : process (clk_i)
-      variable sum_v : std_logic_vector(32 downto 0);
+      variable sum_v   : std_logic_vector(32 downto 0);
       variable div_v   : std_logic_vector(63 downto 0);
       variable div64_v : std_logic_vector(127 downto 0);
    begin
@@ -284,6 +284,8 @@ begin
          end if;
 
          if accept = '1' and wb_we_i = '1' then
+            -- A table of the writable words, one line each.
+-- vsg_off sequential_007
             case to_integer(wb_addr_i) is
                when 0      => a_r <= wb_data_i; start_r <= '1';
                when 1      => b_r <= wb_data_i; start_r <= '1';
@@ -293,6 +295,7 @@ begin
                when 19     => d_r(63 downto 32) <= wb_data_i; start64_r <= '1';
                when others => null;
             end case;
+-- vsg_on sequential_007
          end if;
 
          if rst_i = '1' then

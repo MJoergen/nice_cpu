@@ -1,0 +1,241 @@
+# Configuration for vsg, the VHDL Style Guide
+# (https://vhdl-style-guide.readthedocs.io/). It maps the rules of
+# CODING_STYLE.md onto vsg's rules. Each entry changes one of vsg's defaults,
+# and its comment names the rule in CODING_STYLE.md. vsg's other defaults
+# apply as they are.
+#
+# Run it with "make lint". A single construct that breaks a rule on purpose
+# is wrapped in "-- vsg_off <rule>" and "-- vsg_on <rule>" markers in its
+# file, as the write table in src/mpu.vhd is.
+
+rule:
+
+  global:
+    indent_size: 3
+
+  # --- Layout ----------------------------------------------------------------
+
+  # A blank line between the use clauses of two libraries, and none within.
+  library_007:
+    style: no_blank_line_unless_different_library
+
+  # Lines under 100 columns is a target, so this only warns.
+  length_001:
+    length: 100
+    severity: Warning
+
+  # Two blank lines separate the top-level items of an architecture body.
+  whitespace_200:
+    blank_lines_allowed: 2
+
+  # Blank lines are placed by the author. vsg can only require or forbid them
+  # at each of these boundaries.
+  case_007:
+    disable: true
+  case_009:
+    disable: true
+  case_010:
+    disable: true
+  case_200:
+    disable: true
+  case_201:
+    disable: true
+  function_006:
+    disable: true
+  if_030:
+    disable: true
+  if_031:
+    disable: true
+  loop_statement_200:
+    disable: true
+  loop_statement_201:
+    disable: true
+  loop_statement_202:
+    disable: true
+  loop_statement_203:
+    disable: true
+  procedure_200:
+    disable: true
+  process_026:
+    disable: true
+  process_027:
+    disable: true
+  subprogram_body_201:
+    disable: true
+  subprogram_body_202:
+    disable: true
+  subprogram_body_203:
+    disable: true
+  subprogram_body_204:
+    disable: true
+  type_010:
+    disable: true
+  type_011:
+    disable: true
+
+  # No blank line after a process's "begin" or before its "end process".
+  process_022:
+    style: no_blank_line
+  process_023:
+    style: no_blank_line
+
+  # --- Naming ----------------------------------------------------------------
+
+  # Generics are G_UPPER_SNAKE.
+  generic_020:
+    disable: false
+    prefixes: ['G_']
+  generic_007:
+    case: upper
+  generic_map_002:
+    case: upper
+
+  # Constants are C_UPPER_SNAKE.
+  constant_015:
+    disable: false
+    prefixes: ['C_']
+  constant_004:
+    case: upper
+
+  # Enumeration literals are upper case, as in S_FETCH.
+  type_500:
+    case: upper
+
+  # Types start with t_.
+  type_015:
+    disable: false
+
+  # Ports end in _i or _o.
+  port_605:
+    disable: false
+  port_606:
+    disable: false
+
+  # Process labels start with p_, instance labels with i_, and generate
+  # labels with gen_.
+  process_036:
+    disable: false
+    prefixes: ['p_']
+  instantiation_601:
+    disable: false
+    prefixes: ['i_']
+  generate_017:
+    disable: false
+
+  # --- Formatting ------------------------------------------------------------
+
+  # Port modes are "in " and "out", as only those two are used.
+  port_007:
+    spaces_after: 2
+  port_008:
+    spaces_after: 1
+
+  # Bit-string literals are upper case: X"1FFF".
+  bit_string_literal_500:
+    case: upper
+
+  # A when-else with one condition may stay on one line.
+  conditional_waveforms_001:
+    allow_single_line: 'yes'
+
+  # Port clauses and port maps are aligned as a whole, across blank lines and
+  # comments.
+  entity_017:
+    blank_line_ends_group: 'no'
+    comment_line_ends_group: 'no'
+  instantiation_010:
+    blank_line_ends_group: 'no'
+    comment_line_ends_group: 'no'
+
+  # Trailing comments on a run of lines are aligned into a column.
+  entity_020:
+    compact_alignment: 'no'
+  architecture_027:
+    compact_alignment: 'no'
+  package_401:
+    compact_alignment: 'no'
+  concurrent_008:
+    compact_alignment: 'no'
+  process_034:
+    compact_alignment: 'no'
+  process_035:
+    blank_line_ends_group: 'yes'
+    comment_line_ends_group: 'yes'
+
+  # The "<=" and ":=" of a run of assignments are aligned by the author. vsg's
+  # runs go on across waits and procedure calls.
+  process_400:
+    disable: true
+
+  # Only the colon of a declaration is aligned. The ":=" may be aligned
+  # within a group, or not.
+  declarative_part_400:
+    disable: true
+  entity_018:
+    disable: true
+  subprogram_body_400:
+    disable: true
+
+  # A continuation line is indented to the column that reads best, usually
+  # under the expression it continues.
+  concurrent_009:
+    disable: true
+  function_008:
+    disable: true
+  procedure_004:
+    disable: true
+  procedure_410:
+    disable: true
+  procedure_call_400:
+    disable: true
+
+  # The lines of a multi-line constant are indented one level.
+  constant_012:
+    align_left: 'yes'
+    align_paren: 'no'
+
+  # A case alternative with one short statement may stay on its line, so
+  # that the alternatives read as a table.
+  case_005:
+    disable: true
+  case_012:
+    disable: true
+
+  # --- Idioms ----------------------------------------------------------------
+
+  # Direct entity instantiation, without an architecture name.
+  instantiation_034:
+    method: entity
+  instantiation_036:
+    action: remove
+
+  # "process (clk_i)" without "is", and "if" conditions without parentheses.
+  process_012:
+    action: remove
+  if_002:
+    parenthesis: remove
+
+  # Compact subprogram headers: "function f(a : t;" with the parameters
+  # aligned under the first one.
+  function_019:
+    disable: true
+  procedure_013:
+    disable: true
+  constant_016:
+    disable: true
+  function_100:
+    disable: true
+  procedure_100:
+    disable: true
+
+  # Initial values on signals, ports, and variables are allowed.
+  signal_007:
+    disable: true
+  port_012:
+    disable: true
+  variable_007:
+    disable: true
+
+  # vsg_off and vsg_on markers sit at column 0.
+  comment_010:
+    disable: true

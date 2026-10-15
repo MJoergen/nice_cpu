@@ -20,8 +20,8 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
   `src/trace_pkg.vhd`, the math unit in `src/mpu.vhd`, the performance
   counters in `src/perf.vhd`, the simulation-only memory model and trace
   writer in `sim/`, and the testbenches, test programs, and random program
-  generator in `test/`. No pipelined core yet. Style follows qnice_cpu's
-  CODING_STYLE.md.
+  generator in `test/`. No pipelined core yet. Style follows
+  `hdl/CODING_STYLE.md`, checked by vsg with `hdl/vsg.yml`.
 
 ## Commands
 
@@ -33,6 +33,7 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
     cd translator && make test       # test/run.py, then test/errors.py
     cd translator && make typecheck  # mypy --strict
     cd hdl && make test              # synth check, tb_mem, then tb_trace and the core diffed against niceemu
+    cd hdl && make lint              # vsg style check (pip install vsg)
     cd doc/intro && make test        # run the slides' example programs
     cd doc/intro && make pdf         # rebuild the slides (pdflatex, beamer)
     cd doc/intro && make pdfcheck    # check that nice_intro.pdf matches the .tex

@@ -63,9 +63,9 @@ architecture simulation of tb_multicycle is
    -- Parses the emulator's options "--irq STEP:VEC" and "--nmi STEP:VEC".
    -- Numbers are decimal, or hex after 0x.
    function parse(s : string) return t_requests is
-      variable res_v   : t_requests(0 to 63);
-      variable count_v : natural  := 0;
-      variable pos_v   : positive := s'low;
+      variable res_v    : t_requests(0 to 63);
+      variable count_v  : natural  := 0;
+      variable pos_v    : positive := s'low;
       variable number_v : natural;
 
       procedure skip_blanks is
@@ -159,6 +159,7 @@ architecture simulation of tb_multicycle is
    signal mpu_stall   : std_logic;
    signal mpu_ack     : std_logic;
    signal mpu_data_in : std_logic_vector(31 downto 0);
+
    signal perf_sel     : std_logic;
    signal perf_stb     : std_logic;
    signal perf_stall   : std_logic;

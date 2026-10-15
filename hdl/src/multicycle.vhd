@@ -267,13 +267,13 @@ architecture synthesis of multicycle is
                   s0 : std_logic_vector(31 downto 0);
                   n  : std_logic_vector(31 downto 0);
                   c  : std_logic) return t_result is
-      variable d_v    : std_logic_vector(31 downto 0);
-      variable fill_v : std_logic;
+      variable d_v     : std_logic_vector(31 downto 0);
+      variable fill_v  : std_logic;
       variable fills_v : std_logic_vector(32 downto 0);
-      variable wide_v : std_logic_vector(65 downto 0);   -- c, d, 33 fill bits
-      variable rot_v  : std_logic_vector(32 downto 0);   -- c, d
-      variable m_v    : natural range 0 to 33;      -- The reduced count
-      variable res_v  : t_result := (r => (others => '0'), c => c, v => '0');
+      variable wide_v  : std_logic_vector(65 downto 0);   -- c, d, 33 fill bits
+      variable rot_v   : std_logic_vector(32 downto 0);   -- c, d
+      variable m_v     : natural range 0 to 33;           -- The reduced count
+      variable res_v   : t_result := (r => (others => '0'), c => c, v => '0');
    begin
       d_v := reverse(s0) when op(3) = '1' else s0;
 
@@ -320,24 +320,24 @@ architecture synthesis of multicycle is
       return res_v;
    end function shift;
 
-   signal state       : t_state;
-   signal regs        : t_regs;
+   signal state : t_state;
+   signal regs  : t_regs;
 
    -- Hidden state (ISA.md §1.4)
-   signal in_service  : std_logic;
-   signal after_rti   : std_logic;
-   signal saved_pc    : std_logic_vector(31 downto 0);
-   signal saved_sr    : std_logic_vector(31 downto 0);
-   signal halt        : t_halt;
+   signal in_service : std_logic;
+   signal after_rti  : std_logic;
+   signal saved_pc   : std_logic_vector(31 downto 0);
+   signal saved_sr   : std_logic_vector(31 downto 0);
+   signal halt       : t_halt;
 
    -- The current instruction
-   signal iw          : std_logic_vector(31 downto 0);
-   signal consts      : t_consts;
-   signal fetch_iw    : std_logic;                       -- FETCH reads the instruction word
-   signal fetch_need  : std_logic_vector(0 to 2);        -- Constant words still to read
-   signal src_idx     : natural range 1 to 2;            -- The source field in SRC
-   signal srcs        : t_consts;                        -- The source values, at 1 and 2
-   signal int_vector  : std_logic_vector(7 downto 0);
+   signal iw         : std_logic_vector(31 downto 0);
+   signal consts     : t_consts;
+   signal fetch_iw   : std_logic;                       -- FETCH reads the instruction word
+   signal fetch_need : std_logic_vector(0 to 2);        -- Constant words still to read
+   signal src_idx    : natural range 1 to 2;            -- The source field in SRC
+   signal srcs       : t_consts;                        -- The source values, at 1 and 2
+   signal int_vector : std_logic_vector(7 downto 0);
 
    -- The step being reported
    signal rep_intr    : std_logic;
@@ -346,8 +346,8 @@ architecture synthesis of multicycle is
    signal rep_skipped : std_logic;
    signal rep_mem_we  : std_logic;
 
-   signal take_nmi    : boolean;
-   signal take_irq    : boolean;
+   signal take_nmi : boolean;
+   signal take_irq : boolean;
 
 begin
 
@@ -360,18 +360,18 @@ begin
    nmi_ready_o <= '1' when take_nmi else '0';
    irq_ready_o <= '1' when take_irq else '0';
 
-   halted_o    <= '1' when state = S_HALTED else '0';
-   instret_o   <= '1' when state = S_RETIRE and rep_intr = '0' else '0';
+   halted_o  <= '1' when state = S_HALTED else '0';
+   instret_o <= '1' when state = S_RETIRE and rep_intr = '0' else '0';
 
 
    p_fsm : process (clk_i)
-      variable regs_v  : t_regs;
-      variable sr_v    : std_logic_vector(31 downto 0);
-      variable f_v     : std_logic_vector(6 downto 0);
-      variable x_v     : natural range 0 to 15;
-      variable addr_v  : std_logic_vector(31 downto 0);
-      variable need_v  : std_logic_vector(0 to 2);
-      variable res_v   : t_result;
+      variable regs_v : t_regs;
+      variable sr_v   : std_logic_vector(31 downto 0);
+      variable f_v    : std_logic_vector(6 downto 0);
+      variable x_v    : natural range 0 to 15;
+      variable addr_v : std_logic_vector(31 downto 0);
+      variable need_v : std_logic_vector(0 to 2);
+      variable res_v  : t_result;
 
       -- Start a data bus access.
       procedure dbus_start(we   : std_logic;

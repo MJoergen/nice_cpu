@@ -197,16 +197,17 @@ begin
       variable seed1_v : positive := G_SEED;
       variable seed2_v : positive := 1;
       -- The operands as the MPU holds them.
-      variable a_v     : std_logic_vector(31 downto 0) := (others => '0');
-      variable b_v     : std_logic_vector(31 downto 0) := (others => '0');
-      variable c_v     : std_logic_vector(63 downto 0) := (others => '0');
-      variable d_v     : std_logic_vector(63 downto 0) := (others => '0');
-      variable data_v  : std_logic_vector(31 downto 0);
+      variable a_v      : std_logic_vector(31 downto 0) := (others => '0');
+      variable b_v      : std_logic_vector(31 downto 0) := (others => '0');
+      variable c_v      : std_logic_vector(63 downto 0) := (others => '0');
+      variable d_v      : std_logic_vector(63 downto 0) := (others => '0');
+      variable data_v   : std_logic_vector(31 downto 0);
       variable cycles_v : natural;
 
       procedure fail(msg : string) is
       begin
-         report "tb_mpu: " & msg severity error;
+         report "tb_mpu: " & msg
+            severity error;
          stop(1);
       end procedure fail;
 

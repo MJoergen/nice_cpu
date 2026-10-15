@@ -435,6 +435,8 @@ The emulator and the FPGA implementation map a math unit, the MPU, at `0xFFFFFF1
 
 These are RISC-V's results for the two special cases. Software never needs to wait for a result. The FPGA implementation starts a new computation at each write to A or B, which may take many cycles, and holds off the acknowledge of a read of a result until the result is ready.
 
+A use of the MPU takes several instructions, and an interrupt may come between them. An interrupt service routine that uses the MPU must therefore read A and B first and write them back before `RTI`. The results depend only on A and B, so that restores the whole state.
+
 ## 9. Software conventions
 
 These are conventions, not hardware rules.
@@ -573,6 +575,7 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 - There is one runtime library, shared by the C compiler and the wasm translator (§9.4).
 - A routine may be written in assembly, or translated from a library module (§9.4).
 - The labels of its routines start with `__`. Their C names start with `_`, which C reserves for the implementation at file scope. The labels inside a translated library module start with `WL.` (§9.4), which no C name can produce.
+- The one-word multiply and divide routines, and `__mul64`, come in two versions: one that uses the math unit of §8.4, and one in software for systems without it. A program contains exactly one of the two.
 - The table lists the routines for one-word integers. The runtime library's README lists all routines, including those for `long long`, floating point, and conversions between them.
 
 | Label | Result in R1 |
@@ -711,7 +714,7 @@ Running out of NICE stack is not detected, unlike in wasm. What happens then is 
 - Only `i32`, `i64`, `f32`, and `f64` values cross the boundary. Clang and Rust pass a structure with a single scalar member in an `extern "C"` signature as that scalar. They pass any other structure as a pointer into linear memory, so C receives a byte address there too.
 - Function pointers do not cross the boundary. A wasm function pointer is a table index, and a C function pointer is a NICE address.
 
-**Runtime routines.** The translator uses the runtime library of §9.3, which it shares with the C compiler. For `i32` arithmetic it calls `__mul`, `__div`, `__mod`, `__udiv`, and `__umod`. Before it calls them, it checks the cases that wasm defines but C leaves undefined:
+**Runtime routines.** The translator uses the runtime library of §9.3, which it shares with the C compiler. For `i32.mul`, `div`, and `rem` it uses the math unit of §8.4 directly: it writes the operands to A and B and reads the result. With an option, for systems without the math unit, it calls `__mul`, `__div`, `__mod`, `__udiv`, and `__umod` instead. Before a division or remainder, it checks the cases that wasm defines but C leaves undefined:
 
 - division or remainder by zero traps (code 3)
 - `div_s` of the most negative value by −1 traps (code 4)

@@ -21,7 +21,7 @@ and the test setup for it. The pipelined core is not written yet.
 
 The core is FPGA-agnostic. This repository has no board top level and no
 synthesis for a particular board. The example design for the MEGA65 lives in
-the separate NicemonMEGA65 repository.
+the separate [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) repository.
 
 ## Contents
 

@@ -108,5 +108,6 @@ Kept here so that they are not proposed again.
   to keep it that way.
 - **Board synthesis and an example design in this repository.** This
   repository stays FPGA-agnostic. The MEGA65 example design, with its
-  synthesis, size, and clock speed, lives in the NicemonMEGA65 repository
-  (MICROARCH.md §10).
+  synthesis, size, and clock speed, lives in the
+  [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65)
+  repository (MICROARCH.md §10).

@@ -374,6 +374,6 @@ and the accesses appear in program order.
 - **No board.** This repository targets no particular board. Everything that
   depends on a board, including the memory map, is set by generics (§8).
 - **Example design.** The example design for the MEGA65 lives in the separate
-  NicemonMEGA65 repository, not here. It sets the generics, maps the screen at
-  `0xFFFF0000` to video RAM if it wants one, adds the board's clocks and pins,
-  and does the synthesis.
+  [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) repository, not here.
+  It sets the generics, maps the screen at `0xFFFF0000` to video RAM if it
+  wants one, adds the board's clocks and pins, and does the synthesis.

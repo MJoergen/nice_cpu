@@ -77,6 +77,8 @@ This is not a bug in the toolchain: wasm-ld places the stack after the data unle
 
 **Suggestion.** Add `-Wl,--stack-first` to the clang command lines in `translator/README.md`, `translator/Makefile`, `runtime/README.md`, and `runtime/libc/Makefile`, and say in the translator README that an overflow of the wasm stack then traps instead of corrupting the data. Zig's default layout already puts its stack first, as the `datazig` case notes.
 
+**Resolved**: the four command lines have `-Wl,--stack-first`, and the translator README explains what it buys and that Zig and rustc do it by default. The C test modules and the C library's test modules were rebuilt with it; every case still passes, since the tests check results, not addresses.
+
 ### 5.3 Two small deviations in `printf`
 
 - `%+u`, `% u`, `%+x`, and the like print a sign. The C standard defines the `+` and space flags for signed conversions only, and glibc ignores them for unsigned ones. Clang warns about the combination, so no correct program uses it. Harmless, but a one-line check in `number()` would make it match.

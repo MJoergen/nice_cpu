@@ -164,7 +164,7 @@ Compile with the library's headers and link with `libc.a`, for example:
     make -C runtime/libc
     clang --target=wasm32 -mbulk-memory -O2 -ffreestanding -nostdlibinc \
         -isystem runtime/libc/include -nostdlib -Wl,--no-entry -Wl,--export=main \
-        -Wl,-z,stack-size=4096 -Wl,--initial-memory=65536 \
+        -Wl,--stack-first -Wl,-z,stack-size=4096 -Wl,--initial-memory=65536 \
         -o prog.wasm prog.c runtime/libc/libc.a
 
 Then translate, join, and assemble as for any wasm module
@@ -172,7 +172,10 @@ Then translate, join, and assemble as for any wasm module
 clang from treating the library's functions as built-ins, for example from
 turning `printf("x\n")` into `puts("x")`. `-mbulk-memory` matters
 here too: the library's `memcpy`, `memmove`, and `memset` are
-`memory.copy` and `memory.fill`.
+`memory.copy` and `memory.fill`. `--stack-first` makes an overflow of the
+program's stack in linear memory trap instead of overwriting the data
+(translator README); each `printf` call takes some of that stack for its
+arguments.
 
 **From Zig and Rust.** The library is plain wasm code with C names, so
 Zig and Rust code can call it too, but this is not the preferred way. It

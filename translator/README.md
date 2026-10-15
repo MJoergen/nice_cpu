@@ -37,8 +37,8 @@ start-up code, the program's other files, and the runtime library, in the
 order of ISA.md §9.3. For example, for C code compiled with clang:
 
     clang --target=wasm32 -mbulk-memory -O2 -nostdlib -Wl,--no-entry -Wl,--export=main \
-        -Wl,--allow-undefined -Wl,-z,stack-size=4096 -Wl,--initial-memory=65536 \
-        -o prog.wasm prog.c
+        -Wl,--allow-undefined -Wl,--stack-first -Wl,-z,stack-size=4096 \
+        -Wl,--initial-memory=65536 -o prog.wasm prog.c
     translator/nicewasm.py prog.wasm
     cat runtime/start_wasm.nasm prog.nasm runtime/lib.nasm runtime/muldiv_mpu.nasm > full.nasm
     assembler/niceasm.py full.nasm
@@ -51,6 +51,17 @@ imports from `env`, and the assembler stops with `undefined symbol
 '_memcpy'`. A C routine could not serve them anyway, since they take byte
 addresses in linear memory. With `-mbulk-memory`, clang emits
 `memory.copy` and `memory.fill` instead.
+
+`-Wl,--stack-first` matters too. The program's own stack, which clang
+keeps in linear memory for the variables whose address is taken and for
+the arguments of variadic calls, is not checked for overflow, as ISA.md
+§9.4 says. By default wasm-ld puts it above the data, so a function whose
+frame does not fit in `-z stack-size` overwrites the data, and the
+program misbehaves somewhere else later. With `--stack-first`, the stack
+is at the bottom of the memory, so an overflow wraps the address below 0
+and the bounds check traps with code 2 at once. Zig and rustc put the
+stack first by default. A `main` with hundreds of `printf` calls needs
+more than 4 KB, since clang gives each call its own argument area.
 
 C's `long double` and `__int128` are not supported. Clang implements them
 with calls to routines such as `__addtf3` and `__multi3`, which the

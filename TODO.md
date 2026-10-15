@@ -101,14 +101,6 @@ comments.
 - **Stack overflow** is not detected in translated code, unlike in wasm.
   What happens then is undefined (ISA.md §9.4). An idea: a check against a
   stack limit in each function's prologue, at a cost in code size.
-- **Shadow stack overflow is silent** (repository-review.md §5.2,
-  2026-10-15). With the clang command lines of the READMEs, wasm-ld puts
-  the stack after the data, so a function whose frame does not fit in
-  `-z stack-size` overwrites the data and the program misbehaves later.
-  With `-Wl,--stack-first` the overflow wraps below address 0 and traps
-  with code 2 at once. Add the option to the command lines in
-  `translator/README.md`, `translator/Makefile`, `runtime/README.md`, and
-  `runtime/libc/Makefile`, and say what it buys.
 - **`printf` nits** (repository-review.md §5.3, 2026-10-15). `%+u` and
   `% x` print a sign, which C defines only for signed conversions and
   glibc ignores. `%p` of a null pointer prints `0`, not `0x0` or `(nil)`;

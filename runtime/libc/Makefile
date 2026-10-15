@@ -7,7 +7,7 @@ EMU = ../../emulator/zig-out/bin/niceemu
 
 CFLAGS = --target=wasm32 -mbulk-memory -O2 -ffreestanding -nostdlibinc -isystem include \
   -Wall -Wextra
-LDFLAGS = -nostdlib -Wl,--no-entry -Wl,--export=main -Wl,-z,stack-size=4096 \
+LDFLAGS = -nostdlib -Wl,--no-entry -Wl,--export=main -Wl,--stack-first -Wl,-z,stack-size=4096 \
   -Wl,--initial-memory=65536
 
 SRCS = $(wildcard src/*.c)

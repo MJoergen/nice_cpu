@@ -4,7 +4,8 @@ EMU = zig-out/bin/niceemu
 ASM = ../assembler/test
 
 # Each program is run with its options, and its output and exit status are
-# compared with test/X.expected.
+# compared with test/X.expected. Stdin is /dev/null, so a program that reads
+# the console finds the input ended.
 #
 # The 2004 example programs, from the assembler's tests. Their .expected
 # files were checked by hand, not just copied from the emulator: count
@@ -37,7 +38,7 @@ OPTS_perf    = --nmi 3:0x41 -d 0xffffff10:5
 OPTS_input   = --input test/input.txt
 
 define check
-	@$(EMU) $(OPTS_$(1)) $(2) > test/$(1).out; echo "exit $$?" >> test/$(1).out
+	@$(EMU) $(OPTS_$(1)) $(2) < /dev/null > test/$(1).out; echo "exit $$?" >> test/$(1).out
 	@if cmp -s test/$(1).out test/$(1).expected; then echo "PASS $(1)"; \
 	else echo "FAIL $(1)"; diff test/$(1).expected test/$(1).out; exit 1; fi
 

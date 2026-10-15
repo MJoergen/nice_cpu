@@ -7,9 +7,9 @@ const usage =
     \\Usage: niceemu [options] program.bin
     \\
     \\Runs the program from address 0 until it halts, then prints the
-    \\registers. A write to 0xFFFFFF00 prints its low byte on stdout. With
-    \\--input, a read of 0xFFFFFF00 returns the next input byte plus 0x100,
-    \\or 0x200 after the end of the input; without it, it returns 0.
+    \\registers. A write to 0xFFFFFF00 prints its low byte on stdout. A read
+    \\of 0xFFFFFF00 returns the next byte of stdin plus 0x100, or 0x200 after
+    \\the end of the input.
     \\The performance counters are at 0xFFFFFF10-0xFFFFFF13, and the math
     \\unit is at 0xFFFFFF20-0xFFFFFF3F.
     \\
@@ -19,7 +19,7 @@ const usage =
     \\  -2004                Put the screen at 0x400, as the 2004 emulator does.
     \\  -d, --dump ADDR:N    Print N memory words from ADDR. May be repeated.
     \\  -n, --max-steps N    Stop after N steps (default 100000000).
-    \\  -i, --input FILE     Console input from FILE, or from stdin if FILE is -.
+    \\  -i, --input FILE     Read the console input from FILE instead of stdin.
     \\      --irq STEP:VEC   Raise IRQ with vector VEC before step STEP.
     \\      --nmi STEP:VEC   Raise NMI with vector VEC before step STEP.
     \\                       Both may be repeated. Steps count from 0.
@@ -63,8 +63,8 @@ const Options = struct {
     requests: []const Request = &.{},
     max_steps: u64 = 100_000_000,
     cycle_counter: bool = true,
-    /// The console input file, "-" for stdin, or null for none.
-    input: ?[]const u8 = null,
+    /// The console input file, or "-" for stdin.
+    input: []const u8 = "-",
     help: bool = false,
 };
 
@@ -252,15 +252,14 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
     cpu.cycle_counter = opts.cycle_counter;
     var in_buf: [4096]u8 = undefined;
     var in_r: std.fs.File.Reader = undefined;
-    if (opts.input) |path| {
-        const file = if (std.mem.eql(u8, path, "-")) std.fs.File.stdin() else std.fs.cwd().openFile(path, .{}) catch |err| {
-            std.debug.print("niceemu: cannot read {s}: {s}\n", .{ path, @errorName(err) });
-            return error.Load;
-        };
-        // Streaming, so that stdin may be a terminal or a pipe.
-        in_r = file.readerStreaming(&in_buf);
-        cpu.input = &in_r.interface;
-    }
+    const in_file = if (std.mem.eql(u8, opts.input, "-")) std.fs.File.stdin() else std.fs.cwd().openFile(opts.input, .{}) catch |err| {
+        std.debug.print("niceemu: cannot read {s}: {s}\n", .{ opts.input, @errorName(err) });
+        return error.Load;
+    };
+    // Streaming, so that stdin may be a terminal or a pipe. Nothing is read
+    // until the program reads the console.
+    in_r = in_file.readerStreaming(&in_buf);
+    cpu.input = &in_r.interface;
     // A step is one instruction, or the entry into an interrupt.
     var steps: u64 = 0;
     var next: usize = 0;

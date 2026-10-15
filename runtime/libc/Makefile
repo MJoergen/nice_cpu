@@ -40,7 +40,7 @@ define check
 	@$(NICEWASM) -o test/$(1).out.nasm test/$(1).wasm
 	@cat ../start_wasm.nasm test/$(1).out.nasm ../lib.nasm ../muldiv_mpu.nasm > test/$(1).full.nasm
 	@$(ASM) -o test/$(1).out.bin test/$(1).full.nasm
-	@$(EMU) $(if $(wildcard test/$(1).input),--input test/$(1).input) test/$(1).out.bin > test/$(1).raw; echo "exit $$?" > test/$(1).status
+	@$(EMU) $(if $(wildcard test/$(1).input),--input test/$(1).input) test/$(1).out.bin < /dev/null > test/$(1).raw; echo "exit $$?" > test/$(1).status
 	@sed '/^\(Halted\|Stopped\)/,$$d' test/$(1).raw > test/$(1).out
 	@grep -o ' R1  [0-9a-f]*' test/$(1).raw | cut -c2- >> test/$(1).out; cat test/$(1).status >> test/$(1).out
 	@if cmp -s test/$(1).out test/$(1).expected; then echo "PASS libc/$(1)"; \

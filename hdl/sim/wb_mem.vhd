@@ -19,7 +19,8 @@
 -- * The instruction port reads 0 there.
 -- * The console is at 0xFFFFFF00. A write puts bits 7..0 on console_data_o,
 --   with console_valid_o high, in the cycle the write is accepted, and stores
---   nothing. A read returns 0: no input byte (ISA.md §8.3).
+--   nothing. A read returns 0x200: there is no input, as for the emulator
+--   with stdin from /dev/null (ISA.md §8.3).
 -- * The read counter is at 0xFFFFFF01, as in the emulator (ISA.md §8.3).
 --   A data read returns the number of data reads of it since the last write,
 --   and then counts itself. A write sets the count and stores nothing. It
@@ -244,7 +245,7 @@ begin
                   mem_write(dbus_addr_i, dbus_data_i);
                end if;
             elsif dbus_addr_i = C_CONSOLE then
-               dbus_data_o <= X"00000000";
+               dbus_data_o <= X"00000200";
             elsif dbus_addr_i = C_COUNTER then
                dbus_data_o <= count_v;
                count_v     := count_v + 1;

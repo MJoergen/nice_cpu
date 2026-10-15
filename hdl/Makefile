@@ -27,7 +27,7 @@ OPTS_full      = -t --nmi 5:0x20
 define check_trace
 	@($(GHDLRUN) tb_trace -gG_BIN_FILE=trace.bin -gG_TRACE_FILE=trace_$(1).out \
 	  $(GENERICS_$(1)) > trace_$(1).log 2>&1); echo "exit $$?" >> $(BUILD)/trace_$(1).out
-	@$(EMU) $(OPTS_$(1)) $(BUILD)/trace.bin > $(BUILD)/trace_$(1).expected; \
+	@$(EMU) $(OPTS_$(1)) $(BUILD)/trace.bin < /dev/null > $(BUILD)/trace_$(1).expected; \
 	  echo "exit $$?" >> $(BUILD)/trace_$(1).expected
 	@if cmp -s $(BUILD)/trace_$(1).expected $(BUILD)/trace_$(1).out; then echo "PASS tb_trace $(1)"; \
 	else echo "FAIL tb_trace $(1)"; cat $(BUILD)/trace_$(1).log; \
@@ -65,7 +65,7 @@ define check_core
 	@($(GHDLRUN) tb_multicycle -gG_BIN_FILE=../$(2) -gG_TRACE_FILE=core_$(1).out \
 	  $(if $(INTR_$(1)),"-gG_INTERRUPTS=$(INTR_$(1))") $(3) > core_$(1).log 2>&1); \
 	  echo "exit $$?" >> $(BUILD)/core_$(1).out
-	@$(EMU) -t $(INTR_$(1)) $(2) > $(BUILD)/core_$(1).expected; \
+	@$(EMU) -t $(INTR_$(1)) $(2) < /dev/null > $(BUILD)/core_$(1).expected; \
 	  echo "exit $$?" >> $(BUILD)/core_$(1).expected
 	@if cmp -s $(BUILD)/core_$(1).expected $(BUILD)/core_$(1).out; then echo "PASS multicycle $(1)"; \
 	else echo "FAIL multicycle $(1)"; cat $(BUILD)/core_$(1).log; \
@@ -91,7 +91,7 @@ define check_random
 	  $${o:+"-gG_INTERRUPTS=$$o"} > random_$(1).log 2>&1); \
 	  echo "exit $$?" >> $(BUILD)/random_$(1).out
 	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter $$(cat $(BUILD)/random_$(1).opts) $(BUILD)/random_$(1).bin \
-	  > $(BUILD)/random_$(1).expected; echo "exit $$?" >> $(BUILD)/random_$(1).expected
+	  < /dev/null > $(BUILD)/random_$(1).expected; echo "exit $$?" >> $(BUILD)/random_$(1).expected
 	@if cmp -s $(BUILD)/random_$(1).expected $(BUILD)/random_$(1).out; then echo "PASS multicycle random $(1)"; \
 	else echo "FAIL multicycle random $(1)"; cat $(BUILD)/random_$(1).log; \
 	  diff $(BUILD)/random_$(1).expected $(BUILD)/random_$(1).out | head -20; exit 1; fi

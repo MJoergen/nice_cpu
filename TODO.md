@@ -19,7 +19,7 @@ has TODO or FIXME comments.
   decoders, a default slave that reads 0 and drops writes, and the console
   UART at `0xFFFFFF00`, with generics for the memory map. The UART must
   receive too: a read returns the next byte with bit 8 set, or 0
-  (ISA.md §8.3). `wb_mem.vhd` always reads 0, as with no input yet. Today
+  (ISA.md §8.3). `wb_mem.vhd` always reads `0x200`, as with no input. Today
   `hdl/sim/wb_mem.vhd` stands in for all of it, in simulation only, and
   `hdl/test/tb_multicycle.vhd` decodes the math unit and the performance
   counters with an address compare.

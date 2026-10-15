@@ -142,9 +142,8 @@ program uses. So it adds nothing to the joined assembly files.
 `getchar` reads from it with `nice_peek` (ISA.md §8.3). They are the only
 functions that touch hardware. `getchar` waits until a byte is there. It
 returns `EOF` once the emulator's input has ended, which a UART's input
-never does. In the emulator, give the input with `--input FILE`, or
-`--input -` for the terminal; without it, `getchar` waits until the step
-limit. Clang's own `stddef.h`,
+never does. The emulator reads the input from stdin, or from the file
+that `--input` names. Clang's own `stddef.h`,
 `stdint.h`, `stdarg.h`, `stdbool.h`, and `limits.h` complete the headers.
 
 The library is small on purpose:

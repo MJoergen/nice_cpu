@@ -35,6 +35,7 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
     cd hdl && make test              # synth check, tb_mem, then tb_trace and the core diffed against niceemu
     cd doc/intro && make test        # run the slides' example programs
     cd doc/intro && make pdf         # rebuild the slides (pdflatex, beamer)
+    cd doc/intro && make pdfcheck    # check that nice_intro.pdf matches the .tex
 
 Run the relevant `make test` after every change.
 

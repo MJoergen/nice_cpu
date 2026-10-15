@@ -89,3 +89,19 @@ jobs:
           version: 0.15.2
       - run: sudo apt-get update && sudo apt-get install -y ghdl
       - run: make test
+
+  intro:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: doc/intro
+    steps:
+      - uses: actions/checkout@v4
+      # pdflatex with beamer, and pdftotext.
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends texlive-latex-base \
+            texlive-latex-recommended texlive-fonts-recommended texlive-pictures \
+            texlive-latex-extra lmodern poppler-utils
+      # The checked-in nice_intro.pdf must match nice_intro.tex.
+      - run: make pdfcheck

@@ -7,3 +7,4 @@ examples/*.out
 *.snm
 *.toc
 *.vrb
+build/

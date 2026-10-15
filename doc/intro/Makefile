@@ -9,6 +9,18 @@ nice_intro.pdf: nice_intro.tex
 	pdflatex -interaction=nonstopmode -halt-on-error nice_intro.tex
 	pdflatex -interaction=nonstopmode -halt-on-error nice_intro.tex
 
+# Checks that the checked-in PDF is up to date. The slides are rebuilt in
+# build/ and the text of each page is compared with pdftotext, because the
+# PDF bytes hold the build date.
+pdfcheck:
+	mkdir -p build
+	pdflatex -interaction=nonstopmode -halt-on-error -output-directory build nice_intro.tex > /dev/null
+	pdflatex -interaction=nonstopmode -halt-on-error -output-directory build nice_intro.tex > /dev/null
+	pdftotext -layout nice_intro.pdf build/old.txt
+	pdftotext -layout build/nice_intro.pdf build/new.txt
+	@if cmp -s build/old.txt build/new.txt; then echo "PASS nice_intro.pdf"; \
+	else echo "FAIL nice_intro.pdf is out of date; run make pdf"; diff build/old.txt build/new.txt; exit 1; fi
+
 # The example programs on the slides. Each is assembled and run with its
 # options, and the output and exit status are compared with
 # examples/X.expected. The expected values are checked by hand in the
@@ -40,6 +52,7 @@ emulator:
 	$(MAKE) -C ../../emulator build
 
 clean:
+	rm -rf build
 	rm -f examples/*.out examples/*.bin *.aux *.log *.nav *.out *.snm *.toc *.vrb
 
-.PHONY: pdf test emulator clean
+.PHONY: pdf pdfcheck test emulator clean

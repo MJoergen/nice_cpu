@@ -91,9 +91,10 @@ address twice and a file with no words are errors.
 | `0xFFFF07D0`–`0xFFFFFEFF` | 63280 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |
 | `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns 0. |
 | `0xFFFFFF01` | 1 | Read counter. A data read returns the number of data reads of it since the last write, and a write sets that number. |
-| `0xFFFFFF02`–`0xFFFFFF1F` | 30 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
+| `0xFFFFFF02`–`0xFFFFFF0F` | 14 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
+| `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Performance counters (ISA.md §8.5). Cycles and instructions, 64 bits each. |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (ISA.md §8.4). Multiplies and divides A and B, and divides C and D. |
-| `0xFFFFFF40`–`0xFFFFFFFF` | 192 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF1F`. |
+| `0xFFFFFF40`–`0xFFFFFFFF` | 192 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. |
 
 The screen has one word per character, with the character in bits 7..0 and
 its colour above. It is ordinary memory, and `--screen` prints the
@@ -115,6 +116,14 @@ result when it is read, so a read never waits, and `--dump` shows the
 results for the current operands. Its words store nothing else.
 `test/mpu.asm` and `test/mpu64.asm` check every result, with division by
 zero and the signed overflow.
+
+The performance counters count the instructions and the steps since reset.
+The emulator has no clock, so its cycle counter counts one cycle per step,
+that is, per instruction and per interrupt entry. It differs from the FPGA
+core's, which counts clock cycles. A read of a low word takes a snapshot of
+its counter, and a read of the high word returns the snapshot's high word.
+`--dump` shows the low words and the snapshots without taking a snapshot.
+Writes are ignored. `test/perf.asm` checks the instruction counter.
 
 Instruction fetches from `0xFFFFFF00`–`0xFFFFFFFF` read 0, as ISA.md §8.3
 requires, whatever the memory there holds. So a program that runs into the

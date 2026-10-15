@@ -194,6 +194,46 @@ fn mpuWord(addr: u32) ?u5 {
     return if (addr -% mpu_base < 32) @truncate(addr -% mpu_base) else null;
 }
 
+/// The first of the 16 words of the performance counters (§8.5).
+pub const perf_base: u32 = io_base + 0x10;
+
+/// The performance counters (§8.5). Each 64-bit counter has a snapshot,
+/// which a read of its low word fills and a read of its high word returns.
+pub const Perf = struct {
+    /// One per step: per instruction and per interrupt entry. The emulator
+    /// has no clock, so this stands in for the clock cycles.
+    cycles: u64 = 0,
+    cycles_snap: u64 = 0,
+    instrs: u64 = 0,
+    instrs_snap: u64 = 0,
+
+    /// The value a data read of word `i` returns, with its side effect.
+    pub fn read(self: *Perf, i: u4) u32 {
+        switch (i) {
+            0 => self.cycles_snap = self.cycles,
+            2 => self.instrs_snap = self.instrs,
+            else => {},
+        }
+        return self.peek(i);
+    }
+
+    /// The value of word `i`, without the side effect of a read.
+    pub fn peek(self: Perf, i: u4) u32 {
+        return switch (i) {
+            0 => @truncate(self.cycles),
+            1 => @truncate(self.cycles_snap >> 32),
+            2 => @truncate(self.instrs),
+            3 => @truncate(self.instrs_snap >> 32),
+            else => 0,
+        };
+    }
+};
+
+/// The word of the performance counters that `addr` names, if it names one.
+fn perfWord(addr: u32) ?u4 {
+    return if (addr -% perf_base < 16) @truncate(addr -% perf_base) else null;
+}
+
 pub const Cpu = struct {
     /// R0..R15. Read and write them through `getReg` and `setReg`, which
     /// apply the rules for R0 and R14 (§4.3).
@@ -223,6 +263,8 @@ pub const Cpu = struct {
     console: ?*std.Io.Writer,
     /// The math unit at `mpu_base`.
     mpu: Mpu,
+    /// The performance counters at `perf_base`.
+    perf: Perf,
 
     /// A processor after reset (§8.1), with empty memory allocated from `gpa`.
     pub fn init(gpa: std.mem.Allocator) Cpu {
@@ -241,6 +283,7 @@ pub const Cpu = struct {
             .read_count = 0,
             .console = null,
             .mpu = .{},
+            .perf = .{},
         };
         cpu.reset();
         return cpu;
@@ -259,6 +302,7 @@ pub const Cpu = struct {
         self.nmi_pending = null;
         self.irq_pending = null;
         self.mpu = .{};
+        self.perf = .{};
     }
 
     pub fn halted(self: *const Cpu) bool {
@@ -301,6 +345,7 @@ pub const Cpu = struct {
             return n;
         }
         if (mpuWord(addr)) |i| return self.mpu.read(i);
+        if (perfWord(addr)) |i| return self.perf.read(i);
         return self.mem.read(addr);
     }
 
@@ -310,6 +355,7 @@ pub const Cpu = struct {
     pub fn peek(self: *const Cpu, addr: u32) u32 {
         if (addr == counter_addr) return self.read_count;
         if (mpuWord(addr)) |i| return self.mpu.read(i);
+        if (perfWord(addr)) |i| return self.perf.peek(i);
         return self.mem.peek(addr);
     }
 
@@ -322,6 +368,8 @@ pub const Cpu = struct {
             self.read_count = value;
         } else if (mpuWord(addr)) |i| {
             self.mpu.write(i, value);
+        } else if (perfWord(addr) != null) {
+            // The counters cannot be written (§8.5).
         } else if (addr != console_addr or self.console == null) {
             try self.mem.write(addr, value);
         }
@@ -333,9 +381,11 @@ pub const Cpu = struct {
     }
 
     /// Take a pending interrupt if one may be taken, or else run one
-    /// instruction. Does nothing once the processor has halted.
+    /// instruction. Does nothing once the processor has halted. Each step
+    /// counts as one cycle (§8.5).
     pub fn step(self: *Cpu) Error!void {
         if (self.halted()) return;
+        defer self.perf.cycles +%= 1;
         const before = self.regs;
         self.last_write = null;
 
@@ -360,6 +410,7 @@ pub const Cpu = struct {
         self.after_rti = false;
         const pc = self.regs[15];
         const ex = try self.execute();
+        self.perf.instrs +%= 1;
         if (self.trace) |w| try self.traceInstruction(w, pc, ex.iw, ex.executed, before);
     }
 
@@ -1205,6 +1256,60 @@ test "the math unit takes writes to A and B only, and memory keeps nothing" {
     try testing.expectEqual(1, cpu.mem.pages.count()); // only the program's page
     cpu.reset();
     try testing.expectEqual(0, cpu.peek(mpu_base));
+}
+
+test "a read of a counter's low word keeps its high word for the next read (§8.5)" {
+    var perf: Perf = .{ .instrs = 0xFFFF_FFFF, .cycles = 0x1_2345_6789 };
+    try testing.expectEqual(0xFFFF_FFFF, perf.read(2));
+    perf.instrs += 1; // the low word wraps between the two reads
+    try testing.expectEqual(0, perf.read(3)); // the snapshot, not the counter
+    try testing.expectEqual(0, perf.read(2));
+    try testing.expectEqual(1, perf.read(3));
+    // The cycle counter has a snapshot of its own, still 0.
+    try testing.expectEqual(0, perf.read(1));
+    try testing.expectEqual(0x2345_6789, perf.read(0));
+    try testing.expectEqual(1, perf.read(1));
+    try testing.expectEqual(0, perf.read(4));
+    try testing.expectEqual(0, perf.read(15));
+    // peek leaves the snapshots alone.
+    perf.cycles = 0x5_0000_0000;
+    try testing.expectEqual(0, perf.peek(0));
+    try testing.expectEqual(1, perf.peek(1));
+}
+
+test "the counters count instructions and steps, and ignore writes (§8.5)" {
+    // 0:  MOVE R1, @INSTR_LO    0 instructions before it
+    // 2:  ?Z MOVE R2, 7         skipped, but counts
+    // 4:  MOVE R2, @INSTR_LO    2
+    // 6:  MOVE R3, @CYCLE_LO    3 steps before it
+    //     NMI with vector 13, which holds 8: a step, not an instruction
+    // 8:  MOVE R4, @INSTR_LO    4
+    // 10: MOVE R5, @CYCLE_LO    6 steps: 5 instructions and the NMI
+    // 12: HALT                  the 7th instruction and the 8th step
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{
+        alu_iw(.always, MOVE, .none, reg(1), ind_imm(0), reg(0)), perf_base + 2,
+        alu_iw(.z, MOVE, .none, reg(2), imm(0), reg(0)), 7,
+        alu_iw(.always, MOVE, .none, reg(2), ind_imm(0), reg(0)), perf_base + 2,
+        alu_iw(.always, MOVE, .none, reg(3), ind_imm(0), reg(0)), perf_base,
+        alu_iw(.always, MOVE, .none, reg(4), ind_imm(0), reg(0)), perf_base + 2,
+        alu_iw(.always, MOVE, .none, reg(5), ind_imm(0), reg(0)), perf_base,
+        HALT,
+        8, // the NMI's vector table entry, at 13
+    });
+    for (0..4) |_| try cpu.step();
+    cpu.requestNmi(13);
+    try runToHalt(&cpu);
+    try testing.expectEqual([5]u32{ 0, 2, 3, 4, 6 }, cpu.regs[1..6].*);
+    try testing.expectEqual(7, cpu.perf.instrs);
+    try testing.expectEqual(8, cpu.perf.cycles);
+    try cpu.write(perf_base + 2, 99);
+    try cpu.write(perf_base + 3, 99);
+    try testing.expectEqual(7, cpu.peek(perf_base + 2));
+    try testing.expectEqual(0, cpu.peek(perf_base + 3));
+    cpu.reset();
+    try testing.expectEqual(Perf{}, cpu.perf);
 }
 
 test "instruction fetches from the I/O range read 0 (§8.3)" {

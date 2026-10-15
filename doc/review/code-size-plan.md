@@ -1,8 +1,8 @@
 # nicewasm: smaller code
 
 nicewasm supports every wasm feature that clang, Zig, and Rust emit by default.
-This file records the analysis and the plan for smaller code. All three
-steps of the plan are done.
+This file records the analysis and the plan for smaller code. The three
+steps of the plan are done, and a fourth step followed them.
 
 ## Where the words go
 
@@ -80,6 +80,16 @@ All three together should make both programs about a third smaller:
 `safe.zig` about 8000 words, and the float library about 20000. These
 were estimates. The result is 8670 words (30% less than 12353) and
 18723 (37% less than 29569).
+
+4. **Locals in registers, jumps on the flags, and forwarded results.**
+   Done, after the plan. The most used locals of a function live in
+   R7–R11, a comparison before `br_if` or `if` sets only the flags and the
+   branch jumps on them, and an operation whose result the next
+   instruction stores in a local writes the local directly. `safe.zig`
+   went from 8670 to 7139 words (18% less) and the float library from
+   18723 to 14565 (22% less). In all, `safe.zig` is 42% smaller than at
+   the start and the float library 51%. The translator README describes
+   the rules.
 
 ## Left as it is
 

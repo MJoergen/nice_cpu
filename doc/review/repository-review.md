@@ -101,6 +101,8 @@ This is not a bug in the toolchain: wasm-ld places the stack after the data unle
 - `README.md` says translated code uses the math unit "for `i32.mul`, or calls `__mul` with `--no-mpu`". It also uses it for `div` and `rem` of `i32` and `i64`.
 - `TODO.md` said that every finding of the reviews is closed except the unchecked claims. It now lists the items of §1.2, §5.2, §5.3, and this section, dated 2026-10-15, and no longer lists the claims.
 
+**Resolved**: the translator README says "about half the size it was, after four steps", `code-size-plan.md` has the fourth step with its numbers, the top-level README names the divisions, and `hdl/README.md` says which GHDL CI installs. Every item of this review is closed, and `TODO.md` says so.
+
 ## 7. What is correct
 
 - **The core against the emulator**, on the 2004 examples, every probe, `cputest`, `shift.nasm`, five programs with a stalling memory, and 210 random programs with interrupts at random steps. The only differences are reads of the cycle counter, where the two must differ.

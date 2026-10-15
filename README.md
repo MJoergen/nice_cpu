@@ -111,10 +111,10 @@ the join.
   assembler's example programs.
 - The runtime library's start-up code calls `_main`, and `start_wasm.nasm`
   first calls the `___wasm_start` that `nicewasm` emits. Translated code
-  uses the math unit through the labels in `muldiv_mpu.nasm` for `i32.mul`,
-  or calls `__mul` with `--no-mpu`, and traps through
-  `___wasm_trap_vector`. A C compiler for NICE would call the same
-  routines.
+  uses the math unit through the labels in `muldiv_mpu.nasm` for `i32.mul`
+  and the divisions, or calls `__mul`, `__div`, and the like with
+  `--no-mpu`, and traps through `___wasm_trap_vector`. A C compiler for
+  NICE would call the same routines.
 - The float routines are themselves translated by `nicewasm`: `runtime/
   float.zig` and parts of Zig's compiler_rt are compiled to
   `runtime/float.wasm`, and `nicewasm --library float` turns that into

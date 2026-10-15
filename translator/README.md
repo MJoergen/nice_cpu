@@ -147,8 +147,8 @@ and it traps with `unreachable`, even if its source has no function
 pointers. nicewasm supports all of them. A Rust program uses a table and
 `call_indirect` for `dyn` trait calls.
 
-The code is about a third smaller than it was, after three steps with
-no change to ISA.md §9.4. Using locals and constants directly as
+The code is about half the size it was, after four steps with no change
+to ISA.md §9.4. Using locals and constants directly as
 operands made `test/safe.zig` 19% smaller (12353 to 9941 words) and the
 float library 31% smaller (29569 to 20317). A short inline path for
 memory accesses made them 12% (to 8730) and 2.5% (to 19808) smaller

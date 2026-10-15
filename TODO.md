@@ -5,11 +5,10 @@ yet, questions not decided, claims not checked, and ideas for later. Each
 item names where it comes from. Add new items here, not in other files.
 
 Every finding of the reviews in [doc/review/](doc/review/) is closed,
-except the items marked 2026-10-15, which come from
-[doc/review/repository-review.md](doc/review/repository-review.md). The
-claims that the repository review of 2026-10-14 left unchecked were checked
-on 2026-10-15 (repository-review.md §6.1). No code has TODO or FIXME
-comments.
+those of [doc/review/repository-review.md](doc/review/repository-review.md)
+included. The claims that the repository review of 2026-10-14 left
+unchecked were checked on 2026-10-15 (repository-review.md §6.1). No code
+has TODO or FIXME comments.
 
 ## FPGA core
 
@@ -101,13 +100,6 @@ comments.
 - **Stack overflow** is not detected in translated code, unlike in wasm.
   What happens then is undefined (ISA.md §9.4). An idea: a check against a
   stack limit in each function's prologue, at a cost in code size.
-- **Stale sentences** (repository-review.md §6.2, 2026-10-15).
-  `translator/README.md`, `doc/REFERENCES.md`, and
-  `doc/review/code-size-plan.md` still say the code became "a third"
-  smaller and that the plan had three steps; the fourth step took it to
-  42% and 51%. `README.md` says translated code uses the math unit for
-  `i32.mul` only; it also uses it for `div` and `rem`. `hdl/README.md`
-  could say that CI's `ubuntu-latest` installs GHDL 4.1.0.
 - **Smaller translated code.** An idea from
   [doc/review/wasm-review.md](doc/review/wasm-review.md): keep the top of
   the wasm operand stack in registers. The deferred operands of

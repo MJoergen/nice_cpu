@@ -86,12 +86,57 @@ has TODO or FIXME comments.
 - **Stack overflow** is not detected in translated code, unlike in wasm.
   What happens then is undefined (ISA.md §9.4). An idea: a check against a
   stack limit in each function's prologue, at a cost in code size.
-- **Smaller translated code.** An idea from
-  [doc/review/wasm-review.md](doc/review/wasm-review.md): keep the top of
-  the wasm operand stack in registers. The deferred operands of
-  [doc/review/code-size-plan.md](doc/review/code-size-plan.md), and the
-  locals in R7–R11 ([translator/README.md](translator/README.md)), already
-  took part of that saving. Byte loads and stores still call a helper.
+- **Faster and smaller translated code.** From a look at the translated
+  test programs on 2026-10-15. The inner loop of
+  `translator/test/primes.c`, `composite[j] = 1; j += i`, takes 20
+  instructions per iteration: 9 in the byte store helper, 2 to put the
+  address in a frame word and reload it, 2 for the bounds check, 3 to pass
+  the value and call, and 4 for the increment, compare, and branch. Six of
+  the twenty are avoidable, in these ways. The options start in ISA.md
+  §9.4, as `--no-bounds-checks` did.
+  - *Trust the alignment hint, as an option.* An aligned word access
+    costs 9 instructions, 3 of them the test of the address and the
+    conditional call of the helper, whose skipped instructions still
+    fetch their constant words (ISA.md §3). Clang, Zig, and Rust emit the
+    natural alignment unless the source is packed or reads unaligned on
+    purpose. With the hint trusted and the base in a register, an aligned
+    `i32.load` is 4 instructions and 7 words. The hint is not a promise
+    (ISA.md §9.4), so a misaligned access then gives a wrong value, as an
+    access out of bounds does without the checks.
+  - *The top of the operand stack in R1–R6.* An idea from
+    [doc/review/wasm-review.md](doc/review/wasm-review.md). The deferred
+    operands of [doc/review/code-size-plan.md](doc/review/code-size-plan.md)
+    and the locals in R7–R11 ([translator/README.md](translator/README.md))
+    already took part of the saving. In `test/safe.zig`, spills to frame
+    words, reloads, and frame-to-frame moves are still 332 of 3596
+    instructions, and they are in the hot paths. A value in a register
+    would be a further kind of deferred value, written to its frame word
+    before a call and at a block boundary.
+  - *Flags from the operation before a branch.* `ADD R9, R9, -1`, then
+    `MOVE[M] R0, R9` and a conditional jump, is in every counted loop.
+    With `ADD[M]` the test goes, as in the `DEC[M]` loop of the intro
+    slides. `fuses` in `nicewasm.py` already finds the pattern for
+    comparisons.
+  - *A constant offset folded into the operand.* `i32.load offset=12`
+    costs an `ADD[M]` and a wrap check before the bounds check. With a
+    fixed memory cap, one compare of the base against the limit minus the
+    offset covers both, and the access is `@___wasm_memory+3[R2]`. Saves 2
+    instructions for each field access.
+  - *One bounds check for several accesses to the same base in a basic
+    block.* Rust code stores to offsets 12, 16, and 20 of one pointer in a
+    row, each with its own check of 4 instructions. One check up front,
+    with the present sequence kept as the slow path, so that a trap still
+    comes in order and with the right R2 (ISA.md §9.4).
+  - *Conditional execution instead of a jump* for an `if` without `else`
+    whose body is a few instructions with no call, no memory access, and
+    no flag update. Worth more on the pipelined core than on the
+    multi-cycle one.
+
+  Out of reach without loop analysis on an intermediate form: `@Rx++` for
+  a pointer walk, which needs a word pointer kept in step with the byte
+  address, and bounds checks hoisted out of loops. A byte access stays at
+  about 9 instructions whatever the translator does, because linear
+  memory is byte-addressed (ISA.md §9.4).
 
 ## Decided against
 

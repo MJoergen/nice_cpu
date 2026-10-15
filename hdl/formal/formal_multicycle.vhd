@@ -18,7 +18,7 @@ entity formal_multicycle is
       rst_i        : in  std_logic;
       ibus_stall_i : in  std_logic;
       ibus_ack_i   : in  std_logic;
-      ibus_data_i  : in  std_logic_vector(31 downto 0);
+      ibus_data_i  : in  std_logic_vector(63 downto 0);
       dbus_stall_i : in  std_logic;
       dbus_ack_i   : in  std_logic;
       dbus_data_i  : in  std_logic_vector(31 downto 0);
@@ -33,7 +33,7 @@ architecture synthesis of formal_multicycle is
 
    signal ibus_cyc  : std_logic;
    signal ibus_stb  : std_logic;
-   signal ibus_addr : std_logic_vector(31 downto 0);
+   signal ibus_addr : std_logic_vector(30 downto 0);
    signal dbus_cyc  : std_logic;
    signal dbus_stb  : std_logic;
    signal dbus_we   : std_logic;
@@ -95,6 +95,8 @@ begin
 
    i_ibus_check : entity work.wb_master_check
       generic map (
+         G_ADDR_SIZE => 31,
+         G_DATA_SIZE => 64,
          G_READ_ONLY => true
       )
       port map (
@@ -106,7 +108,7 @@ begin
          ack_i     => ibus_ack_i,
          we_i      => '0',
          addr_i    => ibus_addr,
-         data_i    => X"00000000",
+         data_i    => (others => '0'),
          pending_o => ibus_wait
       ); -- i_ibus_check
 

@@ -70,7 +70,10 @@ effects, R15 as an operand, and interrupts are all handled in the pipeline.
 The stages do what they do in qnice_cpu, with these differences:
 
 - **FETCH** reads two words per cycle: the instruction port is 64 bits wide
-  and reads an aligned pair of words. An instruction is 2.1 words on average
+  and reads an aligned pair of words. Its address a names words 2a and
+  2a + 1, and it returns word 2a in bits 31..0 and word 2a + 1 in bits
+  63..32, low word first as in ISA §9.3. The multi-cycle core has the same
+  port. An instruction is 2.1 words on average
   in translated code and 1.6 in hand-written code (§5.6), so a port that
   delivers one word per cycle would hold the core to about one instruction
   per two cycles, whatever the rest of the pipeline did.
@@ -353,7 +356,7 @@ board. Generics set the memory map, for example the size and base address of
 each RAM and the address of the UART. These rules hold for every setting:
 
 - **Dual-port RAM.** The instruction port and the data port reach the same
-  RAM. Any memory that the data port sees must be visible to the instruction
+  RAM, through a 64-bit port and a 32-bit port. Any memory that the data port sees must be visible to the instruction
   port too, except the I/O range.
 - **Unmapped addresses.** Both buses need a default slave that acknowledges a
   read with 0 and drops a write (ISA §8.2). Without one, the core would wait

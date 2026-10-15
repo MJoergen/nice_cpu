@@ -145,8 +145,8 @@ architecture simulation of tb_multicycle is
    signal ibus_stb   : std_logic;
    signal ibus_stall : std_logic;
    signal ibus_ack   : std_logic;
-   signal ibus_addr  : std_logic_vector(31 downto 0);
-   signal ibus_data  : std_logic_vector(31 downto 0);
+   signal ibus_addr  : std_logic_vector(30 downto 0);
+   signal ibus_data  : std_logic_vector(63 downto 0);
 
    signal dbus_cyc      : std_logic;
    signal dbus_stb      : std_logic;

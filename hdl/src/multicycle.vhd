@@ -19,6 +19,11 @@
 --   RETIRE    Report the step on retire_o, and an instruction on
 --             instret_o.
 --
+-- The instruction bus is 64 bits wide, as MICROARCH.md §1 requires of both
+-- cores. A read returns the aligned pair of words 2a and 2a + 1 for the pair
+-- address a, the lower word in bits 31..0. The core reads one pair per word
+-- it needs, at bits 31..1 of R15, and keeps the half that bit 0 selects.
+--
 -- Each bus access is one pipelined Wishbone transaction, and the core waits
 -- for its ACK before it moves on. So the data accesses happen exactly once
 -- and in program order, as ISA.md §8.2 requires, and a store always takes
@@ -64,8 +69,8 @@ entity multicycle is
       ibus_stb_o   : out std_logic                     := '0';
       ibus_stall_i : in  std_logic;
       ibus_ack_i   : in  std_logic;
-      ibus_addr_o  : out std_logic_vector(31 downto 0) := (others => '0');
-      ibus_data_i  : in  std_logic_vector(31 downto 0);
+      ibus_addr_o  : out std_logic_vector(30 downto 0) := (others => '0');
+      ibus_data_i  : in  std_logic_vector(63 downto 0);
 
       -- Data bus: read and write
       dbus_cyc_o   : out std_logic                     := '0';
@@ -375,6 +380,7 @@ begin
       variable x_v    : natural range 0 to 15;
       variable addr_v : std_logic_vector(31 downto 0);
       variable need_v : std_logic_vector(0 to 2);
+      variable word_v : std_logic_vector(31 downto 0);
       variable res_v  : t_result;
 
       -- Start a data bus access.
@@ -447,22 +453,27 @@ begin
             when FETCH_ST =>
                ibus_cyc_o  <= '1';
                ibus_stb_o  <= '1';
-               ibus_addr_o <= regs(15);
+               ibus_addr_o <= regs(15)(31 downto 1);
                state       <= FETCH_WAIT_ST;
 
             when FETCH_WAIT_ST =>
                if ibus_ack_i = '1' then
                   ibus_cyc_o <= '0';
+                  if regs(15)(0) = '1' then
+                     word_v := ibus_data_i(63 downto 32);
+                  else
+                     word_v := ibus_data_i(31 downto 0);
+                  end if;
                   set_reg(regs_v, 15, regs(15) + 1);
                   if fetch_iw = '1' then
                      fetch_iw <= '0';
-                     iw       <= ibus_data_i;
-                     need_v   := const_fields(ibus_data_i);
+                     iw       <= word_v;
+                     need_v   := const_fields(word_v);
                   else
                      need_v := fetch_need;
                      for i in 0 to 2 loop
                         if need_v(i) = '1' then
-                           consts(i) <= ibus_data_i;
+                           consts(i) <= word_v;
                            need_v(i) := '0';
                            exit;
                         end if;

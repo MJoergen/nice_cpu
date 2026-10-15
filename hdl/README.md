@@ -159,7 +159,8 @@ every slave, every interrupt source, and every program. Each checker
 assumes the rules of the other side of its port and asserts the core's:
 
 - The instruction bus and the data bus (`wb_master_check`), as pipelined
-  Wishbone B4 masters. The checker assumes that a slave sends ACK only
+  Wishbone B4 masters. Generics set the widths of the address and the data,
+  so one checker serves both buses. The checker assumes that a slave sends ACK only
   while CYC is high and only for an accepted request. It asserts that STB
   is high only with CYC, that a stalled request is held with WE, ADDR, and
   DATA unchanged, that CYC stays high while a request waits for its ACK,
@@ -207,7 +208,10 @@ right, not fast: an instruction takes about ten cycles.
 | `RETIRE` | Reports the step on `retire_o`. |
 
 It has the two Wishbone ports of the memory model: a read-only instruction
-bus and a data bus. Each access waits for its ACK before the core moves on.
+bus and a data bus. The instruction bus is 64 bits wide, as MICROARCH.md §1
+requires of both cores. The core still reads one word at a time: it reads
+the pair that holds the word at R15, and keeps the half that bit 0 of R15
+selects. Each access waits for its ACK before the core moves on.
 So data accesses are exact and in program order (ISA.md §8.2), and a store
 takes effect before the next instruction is fetched, which makes
 self-modifying code work.
@@ -239,9 +243,11 @@ merges them.
 `.bin` file (ISA.md §10.4) at time 0. A word never written reads 0.
 
 It has a read-only Wishbone port for the instruction bus and a read-write
-port for the data bus. Both are pipelined Wishbone slaves that acknowledge
-each request in the cycle after they accept it. By default they never
-stall. The generic `G_STALL` makes each port stall in that percentage of the
+port for the data bus. The instruction port is 64 bits wide. Its address a
+names the aligned pair of words 2a and 2a + 1, and it returns word 2a in
+bits 31..0 and word 2a + 1 in bits 63..32. The data port is 32 bits wide.
+Both are pipelined Wishbone slaves that acknowledge each request in the
+cycle after they accept it. By default they never stall. The generic `G_STALL` makes each port stall in that percentage of the
 cycles, at random, from the seed `G_SEED`, so that the tests check that the
 core waits for a request to be accepted. When both ports reach one word in
 one cycle, the instruction port reads the old value.

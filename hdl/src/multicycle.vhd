@@ -109,18 +109,18 @@ architecture synthesis of multicycle is
    constant C_FLAG_MASK : std_logic_vector(31 downto 0) := X"3E000000";
 
    type t_state is (
-      S_BOUNDARY,
-      S_FETCH,
-      S_FETCH_WAIT,
-      S_COND,
-      S_SRC,
-      S_SRC_WAIT,
-      S_EXEC,
-      S_DEST_WAIT,
-      S_VEC,
-      S_VEC_WAIT,
-      S_RETIRE,
-      S_HALTED
+      BOUNDARY_ST,
+      FETCH_ST,
+      FETCH_WAIT_ST,
+      COND_ST,
+      SRC_ST,
+      SRC_WAIT_ST,
+      EXEC_ST,
+      DEST_WAIT_ST,
+      VEC_ST,
+      VEC_WAIT_ST,
+      RETIRE_ST,
+      HALTED_ST
    );
 
    type t_consts is array (0 to 2) of std_logic_vector(31 downto 0);
@@ -352,16 +352,16 @@ architecture synthesis of multicycle is
 begin
 
    -- ISA.md §7.1. NMI goes first.
-   take_nmi <= state = S_BOUNDARY and rst_i = '0' and nmi_valid_i = '1' and
+   take_nmi <= state = BOUNDARY_ST and rst_i = '0' and nmi_valid_i = '1' and
                in_service = '0' and after_rti = '0';
-   take_irq <= state = S_BOUNDARY and rst_i = '0' and irq_valid_i = '1' and
+   take_irq <= state = BOUNDARY_ST and rst_i = '0' and irq_valid_i = '1' and
                in_service = '0' and after_rti = '0' and regs(14)(C_SR_E) = '1' and not take_nmi;
 
    nmi_ready_o <= '1' when take_nmi else '0';
    irq_ready_o <= '1' when take_irq else '0';
 
-   halted_o  <= '1' when state = S_HALTED else '0';
-   instret_o <= '1' when state = S_RETIRE and rep_intr = '0' else '0';
+   halted_o  <= '1' when state = HALTED_ST else '0';
+   instret_o <= '1' when state = RETIRE_ST and rep_intr = '0' else '0';
 
 
    p_fsm : process (clk_i)
@@ -390,7 +390,7 @@ begin
       procedure fetch_next(need : std_logic_vector(0 to 2)) is
       begin
          fetch_need <= need;
-         state      <= S_FETCH when need /= "000" else S_COND;
+         state      <= FETCH_ST when need /= "000" else COND_ST;
       end procedure fetch_next;
 
       -- The value of source i is known.
@@ -400,9 +400,9 @@ begin
          srcs(i) <= v;
          if i = 1 then
             src_idx <= 2;
-            state   <= S_SRC;
+            state   <= SRC_ST;
          else
-            state <= S_EXEC;
+            state <= EXEC_ST;
          end if;
       end procedure src_done;
 
@@ -419,7 +419,7 @@ begin
          end if;
 
          case state is
-            when S_BOUNDARY =>
+            when BOUNDARY_ST =>
                rep_intr    <= '0';
                rep_skipped <= '0';
                rep_mem_we  <= '0';
@@ -428,25 +428,25 @@ begin
                   rep_intr   <= '1';
                   rep_nmi    <= '1';
                   int_vector <= nmi_vector_i;
-                  state      <= S_VEC;
+                  state      <= VEC_ST;
                elsif take_irq then
                   rep_intr   <= '1';
                   rep_nmi    <= '0';
                   int_vector <= irq_vector_i;
-                  state      <= S_VEC;
+                  state      <= VEC_ST;
                else
                   fetch_iw <= '1';
-                  state    <= S_FETCH;
+                  state    <= FETCH_ST;
                end if;
 
             -- ISA.md §5 steps 1 and 2
-            when S_FETCH =>
+            when FETCH_ST =>
                ibus_cyc_o  <= '1';
                ibus_stb_o  <= '1';
                ibus_addr_o <= regs(15);
-               state       <= S_FETCH_WAIT;
+               state       <= FETCH_WAIT_ST;
 
-            when S_FETCH_WAIT =>
+            when FETCH_WAIT_ST =>
                if ibus_ack_i = '1' then
                   ibus_cyc_o <= '0';
                   set_reg(regs_v, 15, regs(15) + 1);
@@ -468,18 +468,18 @@ begin
                end if;
 
             -- ISA.md §5 steps 3 and 4
-            when S_COND =>
+            when COND_ST =>
                -- The instruction about to run clears after_rti when it
                -- completes, unless it is an RTI, which sets it again.
                after_rti <= '0';
                src_idx   <= 1;
-               state     <= S_SRC;
+               state     <= SRC_ST;
 
                if (regs(14)(C_SR_ONE + to_integer(iw(30 downto 28))) xor iw(31)) = '0' then
                   rep_skipped <= '1';
-                  state       <= S_RETIRE;
+                  state       <= RETIRE_ST;
                elsif iw(27 downto 26) = "11" then
-                  state <= S_RETIRE;
+                  state <= RETIRE_ST;
                   if iw(20 downto 8) /= 0 or (iw(25 downto 21) /= "00010" and iw(7 downto 0) /= 0) then
                      halt <= HALT_RESERVED;
                   else
@@ -502,7 +502,7 @@ begin
                               halt <= HALT_NESTED_INT;
                            else
                               int_vector <= iw(7 downto 0);
-                              state      <= S_VEC;
+                              state      <= VEC_ST;
                            end if;
 
                         when others =>
@@ -512,7 +512,7 @@ begin
                end if;
 
             -- ISA.md §4.1 and §5 step 5
-            when S_SRC =>
+            when SRC_ST =>
                f_v := field(iw, src_idx);
                x_v := to_integer(f_v(3 downto 0));
                case f_v(6 downto 4) is
@@ -528,28 +528,28 @@ begin
                      src_done(src_idx, regs(x_v) + consts(src_idx));
                   when "100" =>
                      dbus_start('0', regs(x_v), X"00000000");
-                     state <= S_SRC_WAIT;
+                     state <= SRC_WAIT_ST;
                   when "101" =>
                      set_reg(regs_v, x_v, regs(x_v) - 1);
                      dbus_start('0', regs_v(x_v), X"00000000");
-                     state <= S_SRC_WAIT;
+                     state <= SRC_WAIT_ST;
                   when "110" =>
                      set_reg(regs_v, x_v, regs(x_v) + 1);
                      dbus_start('0', regs(x_v), X"00000000");
-                     state <= S_SRC_WAIT;
+                     state <= SRC_WAIT_ST;
                   when others =>
                      dbus_start('0', regs(x_v) + consts(src_idx), X"00000000");
-                     state <= S_SRC_WAIT;
+                     state <= SRC_WAIT_ST;
                end case;
 
-            when S_SRC_WAIT =>
+            when SRC_WAIT_ST =>
                if dbus_ack_i = '1' then
                   dbus_cyc_o <= '0';
                   src_done(src_idx, dbus_data_i);
                end if;
 
             -- ISA.md §5 steps 6 to 8
-            when S_EXEC =>
+            when EXEC_ST =>
                if iw(27) = '1' then
                   res_v := shift(iw(24 downto 21), srcs(1), srcs(2), regs(14)(C_SR_C));
                else
@@ -559,7 +559,7 @@ begin
                -- The destination (ISA.md §4.2)
                f_v   := field(iw, 0);
                x_v   := to_integer(f_v(3 downto 0));
-               state <= S_RETIRE;
+               state <= RETIRE_ST;
                case f_v(6 downto 4) is
                   when "000" =>
                      set_reg(regs_v, x_v, res_v.r);
@@ -585,7 +585,7 @@ begin
                if f_v(6) = '1' or f_v(5 downto 4) = "11" then
                   dbus_start('1', addr_v, res_v.r);
                   rep_mem_we <= '1';
-                  state      <= S_DEST_WAIT;
+                  state      <= DEST_WAIT_ST;
                end if;
 
                -- The flags (ISA.md §6)
@@ -599,18 +599,18 @@ begin
                   set_reg(regs_v, 14, sr_v);
                end if;
 
-            when S_DEST_WAIT =>
+            when DEST_WAIT_ST =>
                if dbus_ack_i = '1' then
                   dbus_cyc_o <= '0';
-                  state      <= S_RETIRE;
+                  state      <= RETIRE_ST;
                end if;
 
             -- ISA.md §7.2. The vector table entry is at VBASE * 256 + v.
-            when S_VEC =>
+            when VEC_ST =>
                dbus_start('0', regs(14)(23 downto 0) & int_vector, X"00000000");
-               state <= S_VEC_WAIT;
+               state <= VEC_WAIT_ST;
 
-            when S_VEC_WAIT =>
+            when VEC_WAIT_ST =>
                if dbus_ack_i = '1' then
                   dbus_cyc_o <= '0';
                   saved_pc   <= regs(15);
@@ -620,20 +620,20 @@ begin
                   sr_v(C_SR_I)  := '1';
                   set_reg(regs_v, 14, sr_v);
                   set_reg(regs_v, 15, dbus_data_i);
-                  state      <= S_RETIRE;
+                  state      <= RETIRE_ST;
                end if;
 
-            when S_RETIRE =>
-               state <= S_HALTED when halt /= HALT_NONE else S_BOUNDARY;
+            when RETIRE_ST =>
+               state <= HALTED_ST when halt /= HALT_NONE else BOUNDARY_ST;
 
-            when S_HALTED =>
+            when HALTED_ST =>
                null;
          end case;
 
          regs <= regs_v;
 
          if rst_i = '1' then
-            state      <= S_BOUNDARY;
+            state      <= BOUNDARY_ST;
             regs       <= C_REGS_RESET;
             in_service <= '0';
             after_rti  <= '0';
@@ -653,7 +653,7 @@ begin
    p_retire : process (all)
    begin
       retire_o          <= C_RETIRE_NONE;
-      retire_o.valid    <= '1' when state = S_RETIRE else '0';
+      retire_o.valid    <= '1' when state = RETIRE_ST else '0';
       retire_o.intr     <= rep_intr;
       retire_o.nmi      <= rep_nmi;
       retire_o.vector   <= int_vector;

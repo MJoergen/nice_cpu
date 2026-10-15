@@ -28,7 +28,8 @@ All code is VHDL-2008, analysed with plain `ghdl --std=08` (no `-frelaxed`).
 | Port | ends in `_i` or `_o` | `wb_stall_o` |
 | Generic | `G_UPPER_SNAKE` | `G_STALL` |
 | Constant | `C_UPPER_SNAKE` | `C_REGS_RESET` |
-| Enumeration literal | `UPPER_SNAKE` | `S_FETCH`, `HALT_NONE` |
+| Enumeration literal | `UPPER_SNAKE` | `HALT_NONE` |
+| State of a state machine | `UPPER_SNAKE` + `_ST` | `FETCH_ST` |
 | Type | `t_` prefix | `t_retire` |
 | Process, instance, generate | `p_`, `i_`, `gen_` prefix | `p_fsm`, `i_mpu` |
 

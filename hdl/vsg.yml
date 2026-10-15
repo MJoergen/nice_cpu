@@ -97,7 +97,7 @@ rule:
   constant_004:
     case: upper
 
-  # Enumeration literals are upper case, as in S_FETCH.
+  # Enumeration literals are upper case, as in FETCH_ST.
   type_500:
     case: upper
 

@@ -627,6 +627,23 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 
 Division by zero is undefined in C, so these routines may return any value for it.
 
+**Device routines.** The runtime library also has routines for the devices of the emulator and the FPGA implementation, so that programs need not use their addresses. They are the console (§8.3), the performance counters (§8.5), and the emulator's character screen at `0xFFFF0000` (§8.3). Unlike the routines above, a program calls them by name, so they are ordinary C functions: `nice_putc` has the label `_nice_putc`. External C names that start with `nice_` are reserved for them.
+
+| C declaration | What it does |
+|---|---|
+| `void nice_putc(int c)` | Writes bits 7..0 of `c` to the console. |
+| `int nice_getc(void)` | Waits for the next input byte from the console and returns it, 0 to 255. Returns −1 once the input has ended. |
+| `int nice_pollc(void)` | Like `nice_getc`, but returns −2 at once if no byte is waiting. |
+| `void nice_print(const char *s)` | Writes the characters of `s` up to its first 0 to the console, with no newline. |
+| `unsigned long long nice_cycles(void)` | The cycle counter. |
+| `unsigned long long nice_instructions(void)` | The instruction counter. |
+| `void nice_screen_put(int col, int row, int c)` | Writes `c`, the character in bits 7..0 and its colour above, to column `col`, 0 to 79, of row `row`, 0 to 24. |
+| `void nice_screen_clear(void)` | Writes a blank, `0x20`, to each of the screen's 2000 words. |
+
+- Each routine makes the data accesses that its device needs, and no others. `nice_getc` reads the console until a byte is there or the input has ended; `nice_pollc` reads it once.
+- `nice_cycles` and `nice_instructions` read the low word and then the high word, as §8.5 describes. The rule there for interrupt service routines applies to them.
+- The screen routines write ordinary memory on the emulator. On a system without a screen, the writes are ignored or land in RAM. With the emulator's option `-2004`, the screen is at `0x400`, and these routines do not reach it.
+
 **Start-up.** The start-up code sits at address 0. It sets SP to one past the highest word the program may use, so that the first push lands on that word. If the program has a wasm module, it then calls `___wasm_start` (§9.4). The runtime library has two versions of the start-up code, one with this call and one without, and a program uses the version that matches it. Then the start-up code calls `_main` with R1 = 0 and R2 = 0, so a `main(int argc, char **argv)` sees no arguments and a null `argv`. After `main` returns, the start-up code executes `HALT` with `main`'s return value still in R1. Static data gets its initial values when the program image is loaded. Reset does not restore them.
 
 **Example.** This function and call:

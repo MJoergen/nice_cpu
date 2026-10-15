@@ -28,8 +28,8 @@ architecture simulation of tb_mem is
    signal ibus_stb   : std_logic                     := '0';
    signal ibus_stall : std_logic;
    signal ibus_ack   : std_logic;
-   signal ibus_addr  : std_logic_vector(31 downto 0) := (others => '0');
-   signal ibus_data  : std_logic_vector(31 downto 0);
+   signal ibus_addr  : std_logic_vector(30 downto 0) := (others => '0');
+   signal ibus_data  : std_logic_vector(63 downto 0);
 
    signal dbus_cyc      : std_logic                     := '0';
    signal dbus_stb      : std_logic                     := '0';
@@ -116,12 +116,14 @@ begin
          end if;
       end procedure check_true;
 
+      -- Reads the pair of words at addr and addr + 1. addr is even.
       procedure check_ibus(addr     : std_logic_vector(31 downto 0);
-                           expected : std_logic_vector(31 downto 0)) is
+                           expected : std_logic_vector(63 downto 0)) is
       begin
+         assert addr(0) = '0';
          ibus_cyc  <= '1';
          ibus_stb  <= '1';
-         ibus_addr <= addr;
+         ibus_addr <= addr(31 downto 1);
          wait until rising_edge(clk);
          ibus_stb  <= '0';
          wait until rising_edge(clk) and ibus_ack = '1';
@@ -164,24 +166,26 @@ begin
       check_true("dbus stall", dbus_stall = '0');
       rst <= '0';
 
-      -- The loaded words, through both ports.
-      check_ibus(X"00000000", X"001C1800");
+      -- The loaded words, through both ports. The instruction port returns
+      -- the word at the lower address in bits 31..0.
+      check_ibus(X"00000000", X"00000050" & X"001C1800");
       check_dbus(X"00000000", X"001C1800");
-      check_ibus(X"00000001", X"00000050");
       check_dbus(X"00000001", X"00000050");
 
       -- A word never written reads 0.
-      check_ibus(X"12345678", X"00000000");
+      check_ibus(X"12345678", X"00000000" & X"00000000");
       check_dbus(X"12345678", X"00000000");
 
       -- The I/O range: the loaded word at 0xFFFFFFFF and a written word at
       -- 0xFFFFFF80 are memory to the data port, and read 0 on the
-      -- instruction port.
+      -- instruction port. The pair just below the range is memory to both.
       check_dbus(X"FFFFFFFF", X"00000007");
-      check_ibus(X"FFFFFFFF", X"00000000");
+      check_ibus(X"FFFFFFFE", X"00000000" & X"00000000");
       write_dbus(X"FFFFFF80", X"00000005");
       check_dbus(X"FFFFFF80", X"00000005");
-      check_ibus(X"FFFFFF80", X"00000000");
+      check_ibus(X"FFFFFF80", X"00000000" & X"00000000");
+      write_dbus(X"FFFFFEFF", X"00000003");
+      check_ibus(X"FFFFFEFE", X"00000003" & X"00000000");
 
       -- The console takes bits 7..0, in the cycle the write is accepted,
       -- and stores nothing. A read returns 0x100 plus the next byte of
@@ -212,14 +216,14 @@ begin
       write_dbus(X"FFFFFF01", X"00000005");
       check_dbus(X"FFFFFF01", X"00000005");
       check_dbus(X"FFFFFF01", X"00000006");
-      check_ibus(X"FFFFFF01", X"00000000");
+      check_ibus(X"FFFFFF00", X"00000000" & X"00000000");
       check_dbus(X"FFFFFF01", X"00000007");
 
       -- Both ports at one word in one cycle: the instruction port reads the
       -- value from before the write.
       ibus_cyc      <= '1';
       ibus_stb      <= '1';
-      ibus_addr     <= X"00000100";
+      ibus_addr     <= "000" & X"0000080";
       dbus_cyc      <= '1';
       dbus_stb      <= '1';
       dbus_we       <= '1';
@@ -231,25 +235,27 @@ begin
       wait until rising_edge(clk);
       check_true("ibus ack", ibus_ack = '1');
       check_true("dbus ack", dbus_ack = '1');
-      check("ibus read during a write", ibus_data, X"00000000");
+      check("ibus read during a write", ibus_data, X"00000000" & X"00000000");
       ibus_cyc <= '0';
       dbus_cyc <= '0';
-      check_ibus(X"00000100", X"00000009");
+      check_ibus(X"00000100", X"00000000" & X"00000009");
+      write_dbus(X"00000101", X"0000000A");
+      check_ibus(X"00000100", X"0000000A" & X"00000009");
 
       -- Pipelined reads: a request in each of two cycles, then an ACK in
       -- each of the next two, in order.
       ibus_cyc  <= '1';
       ibus_stb  <= '1';
-      ibus_addr <= X"00000000";
+      ibus_addr <= "000" & X"0000000";
       wait until rising_edge(clk);
-      ibus_addr <= X"00000001";
+      ibus_addr <= "000" & X"0000080";
       wait until rising_edge(clk);
       ibus_stb  <= '0';
       check_true("first pipelined ack", ibus_ack = '1');
-      check("first pipelined read", ibus_data, X"001C1800");
+      check("first pipelined read", ibus_data, X"00000050" & X"001C1800");
       wait until rising_edge(clk);
       check_true("second pipelined ack", ibus_ack = '1');
-      check("second pipelined read", ibus_data, X"00000050");
+      check("second pipelined read", ibus_data, X"0000000A" & X"00000009");
       ibus_cyc  <= '0';
       wait until rising_edge(clk);
       check_true("no third ack", ibus_ack = '0');

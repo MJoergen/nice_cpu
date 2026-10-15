@@ -39,8 +39,8 @@ architecture simulation of tb_trace is
    signal ibus_stb   : std_logic := '0';
    signal ibus_stall : std_logic;
    signal ibus_ack   : std_logic;
-   signal ibus_addr  : std_logic_vector(31 downto 0) := (others => '0');
-   signal ibus_data  : std_logic_vector(31 downto 0);
+   signal ibus_addr  : std_logic_vector(30 downto 0) := (others => '0');
+   signal ibus_data  : std_logic_vector(63 downto 0);
 
    signal dbus_cyc      : std_logic := '0';
    signal dbus_stb      : std_logic := '0';
@@ -126,17 +126,22 @@ begin
       variable data_v : std_logic_vector(31 downto 0);
       variable step_v : t_retire;
 
-      -- One Wishbone read on the instruction bus.
+      -- One Wishbone read on the instruction bus, of the pair that holds the
+      -- word at addr. It keeps that word.
       procedure fetch(addr : std_logic_vector(31 downto 0)) is
       begin
          ibus_cyc  <= '1';
          ibus_stb  <= '1';
-         ibus_addr <= addr;
+         ibus_addr <= addr(31 downto 1);
          wait until rising_edge(clk) and ibus_stall = '0';
          ibus_stb  <= '0';
          wait until rising_edge(clk) and ibus_ack = '1';
          ibus_cyc  <= '0';
-         iw_v      := ibus_data;
+         if addr(0) = '1' then
+            iw_v := ibus_data(63 downto 32);
+         else
+            iw_v := ibus_data(31 downto 0);
+         end if;
       end procedure fetch;
 
       -- One Wishbone access on the data bus. A read leaves its data in data_v.

@@ -25,6 +25,9 @@ library ieee;
 entity wb_master_check is
    generic (
       G_MAX_PENDING : positive := 1;
+      -- The widths of ADDR and DATA
+      G_ADDR_SIZE   : positive := 32;
+      G_DATA_SIZE   : positive := 32;
       -- A read-only port has no write to cover
       G_READ_ONLY   : boolean  := false
    );
@@ -36,8 +39,8 @@ entity wb_master_check is
       stall_i   : in  std_logic;
       ack_i     : in  std_logic;
       we_i      : in  std_logic;
-      addr_i    : in  std_logic_vector(31 downto 0);
-      data_i    : in  std_logic_vector(31 downto 0);
+      addr_i    : in  std_logic_vector(G_ADDR_SIZE - 1 downto 0);
+      data_i    : in  std_logic_vector(G_DATA_SIZE - 1 downto 0);
 
       -- The requests that wait for their ACK, for the invariants of a
       -- particular master

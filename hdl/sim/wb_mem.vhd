@@ -3,6 +3,10 @@
 -- read-write Wishbone port for the data bus, as MICROARCH.md §8 describes. It
 -- loads a .bin file (ISA.md §10.4) at time 0. A word never written reads 0.
 --
+-- The instruction port is 64 bits wide (MICROARCH.md §1). Its address a names
+-- the aligned pair of words 2a and 2a + 1, and it returns word 2a in bits
+-- 31..0 and word 2a + 1 in bits 63..32. The data port is 32 bits wide.
+--
 -- THEORY OF OPERATION
 -- The memory is held sparsely, like the emulator's: 2^20 pages of 4096 words,
 -- each allocated on its first write. One process owns it, so the two ports
@@ -16,7 +20,7 @@
 -- that the core waits for a request to be accepted.
 --
 -- The I/O range, 0xFFFFFF00-0xFFFFFFFF, follows ISA.md §8.3:
--- * The instruction port reads 0 there.
+-- * The instruction port reads 0 there. The range is a whole number of pairs.
 -- * The console is at 0xFFFFFF00. A write puts bits 7..0 on console_data_o,
 --   with console_valid_o high, in the cycle the write is accepted, and stores
 --   nothing. A data read returns 0x100 plus the next byte of the file
@@ -59,8 +63,8 @@ entity wb_mem is
       ibus_stb_i      : in  std_logic;
       ibus_stall_o    : out std_logic := '0';
       ibus_ack_o      : out std_logic := '0';
-      ibus_addr_i     : in  std_logic_vector(31 downto 0);
-      ibus_data_o     : out std_logic_vector(31 downto 0);
+      ibus_addr_i     : in  std_logic_vector(30 downto 0);
+      ibus_data_o     : out std_logic_vector(63 downto 0);
 
       -- Data bus: read and write
       dbus_cyc_i      : in  std_logic;
@@ -249,10 +253,10 @@ begin
 
          ibus_ack_o <= ibus_acc_v;
          if ibus_acc_v = '1' then
-            if ibus_addr_i >= C_IO_BASE then
-               ibus_data_o <= X"00000000";
+            if ibus_addr_i & '0' >= C_IO_BASE then
+               ibus_data_o <= (others => '0');
             else
-               ibus_data_o <= mem_read(ibus_addr_i);
+               ibus_data_o <= mem_read(ibus_addr_i & '1') & mem_read(ibus_addr_i & '0');
             end if;
          end if;
 

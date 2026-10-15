@@ -17,10 +17,7 @@ has TODO or FIXME comments.
   describes. Only the multi-cycle core exists ([hdl/README.md](hdl/README.md)).
   First come the next three items, which give it tests that the
   multi-cycle core passes today, so that a failure blames the core and not
-  the test, and the bus decoder of the system item. Its instruction port
-  is 64 bits wide (MICROARCH.md §3), so `hdl/sim/wb_mem.vhd` needs a
-  generic for the width of its instruction port, and `wb_master_check` one
-  for the width of the data.
+  the test, and the bus decoder of the system item.
 - **A testbench for any core.** `hdl/test/tb_multicycle.vhd` holds the bus
   decoder, the interrupt source, the timer, the trace writer, and the
   watchdog, and names the core. Factor them into one testbench that takes

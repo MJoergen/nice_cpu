@@ -234,6 +234,9 @@ fn perfWord(addr: u32) ?u4 {
     return if (addr -% perf_base < 16) @truncate(addr -% perf_base) else null;
 }
 
+/// The words of the cycle counter, `CYCLE_LO` and `CYCLE_HI`.
+const cycle_words = 2;
+
 pub const Cpu = struct {
     /// R0..R15. Read and write them through `getReg` and `setReg`, which
     /// apply the rules for R0 and R14 (§4.3).
@@ -265,6 +268,11 @@ pub const Cpu = struct {
     mpu: Mpu,
     /// The performance counters at `perf_base`.
     perf: Perf,
+    /// When false, `CYCLE_LO` and `CYCLE_HI` are ordinary memory
+    /// (`--no-cycle-counter`). The emulator counts steps where an FPGA core
+    /// counts clock cycles, so a comparison of their traces must leave the
+    /// cycle counter out. The instruction counter stays.
+    cycle_counter: bool,
 
     /// A processor after reset (§8.1), with empty memory allocated from `gpa`.
     pub fn init(gpa: std.mem.Allocator) Cpu {
@@ -284,6 +292,7 @@ pub const Cpu = struct {
             .console = null,
             .mpu = .{},
             .perf = .{},
+            .cycle_counter = true,
         };
         cpu.reset();
         return cpu;
@@ -345,8 +354,16 @@ pub const Cpu = struct {
             return n;
         }
         if (mpuWord(addr)) |i| return self.mpu.read(i);
-        if (perfWord(addr)) |i| return self.perf.read(i);
+        if (self.perfDevice(addr)) |i| return self.perf.read(i);
         return self.mem.read(addr);
+    }
+
+    /// The word of the performance counters that `addr` names, if it names
+    /// one that is a device: not a word of the cycle counter when that is
+    /// switched off.
+    fn perfDevice(self: *const Cpu, addr: u32) ?u4 {
+        const i = perfWord(addr) orelse return null;
+        return if (self.cycle_counter or i >= cycle_words) i else null;
     }
 
     /// A look at memory from outside the processor, for dumps and tests.
@@ -355,7 +372,7 @@ pub const Cpu = struct {
     pub fn peek(self: *const Cpu, addr: u32) u32 {
         if (addr == counter_addr) return self.read_count;
         if (mpuWord(addr)) |i| return self.mpu.read(i);
-        if (perfWord(addr)) |i| return self.perf.peek(i);
+        if (self.perfDevice(addr)) |i| return self.perf.peek(i);
         return self.mem.peek(addr);
     }
 
@@ -368,7 +385,7 @@ pub const Cpu = struct {
             self.read_count = value;
         } else if (mpuWord(addr)) |i| {
             self.mpu.write(i, value);
-        } else if (perfWord(addr) != null) {
+        } else if (self.perfDevice(addr) != null) {
             // The counters cannot be written (§8.5).
         } else if (addr != console_addr or self.console == null) {
             try self.mem.write(addr, value);
@@ -1310,6 +1327,21 @@ test "the counters count instructions and steps, and ignore writes (§8.5)" {
     try testing.expectEqual(0, cpu.peek(perf_base + 3));
     cpu.reset();
     try testing.expectEqual(Perf{}, cpu.perf);
+}
+
+test "without the cycle counter, its two words are memory (--no-cycle-counter)" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    cpu.cycle_counter = false;
+    try cpu.write(perf_base, 5);
+    try cpu.write(perf_base + 1, 6);
+    try cpu.write(perf_base + 2, 7); // still the instruction counter: ignored
+    try testing.expectEqual(5, cpu.read(perf_base));
+    try testing.expectEqual(6, cpu.peek(perf_base + 1));
+    try testing.expectEqual(0, cpu.read(perf_base + 2));
+    try testing.expectEqual(0, cpu.perf.cycles_snap); // no snapshot was taken
+    cpu.cycle_counter = true;
+    try testing.expectEqual(0, cpu.read(perf_base)); // the counter again, not the memory
 }
 
 test "instruction fetches from the I/O range read 0 (§8.3)" {

@@ -20,6 +20,8 @@ const usage =
     \\      --irq STEP:VEC   Raise IRQ with vector VEC before step STEP.
     \\      --nmi STEP:VEC   Raise NMI with vector VEC before step STEP.
     \\                       Both may be repeated. Steps count from 0.
+    \\      --no-cycle-counter  Make 0xFFFFFF10 and 0xFFFFFF11 ordinary memory,
+    \\                       for comparing traces with an FPGA core.
     \\  -h, --help           Print this help.
     \\
     \\Numbers may be decimal or 0x hex. Exit status: 0 after HALT, 1 on a
@@ -57,6 +59,7 @@ const Options = struct {
     /// Sorted by step, in command-line order within a step.
     requests: []const Request = &.{},
     max_steps: u64 = 100_000_000,
+    cycle_counter: bool = true,
     help: bool = false,
 };
 
@@ -159,6 +162,8 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
                 .kind = if (std.mem.eql(u8, arg, "--irq")) .irq else .nmi,
                 .vector = try parseNumber(u8, arg, value[colon + 1 ..]),
             });
+        } else if (std.mem.eql(u8, arg, "--no-cycle-counter")) {
+            opts.cycle_counter = false;
         } else if (arg.len > 1 and arg[0] == '-') {
             return fail("unknown option '{s}'\n\n{s}", .{ arg, usage });
         } else if (opts.path.len != 0) {
@@ -237,6 +242,7 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
 
     if (opts.trace) cpu.trace = out;
     cpu.console = out;
+    cpu.cycle_counter = opts.cycle_counter;
     // A step is one instruction, or the entry into an interrupt.
     var steps: u64 = 0;
     var next: usize = 0;

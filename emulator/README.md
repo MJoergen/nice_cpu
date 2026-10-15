@@ -57,6 +57,7 @@ line such as `Pending: IRQ 05` follows the first line.
 | `-n`, `--max-steps N` | Stop after N steps. The default is 100000000. |
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
+| `--no-cycle-counter` | Make `0xFFFFFF10` and `0xFFFFFF11`, the cycle counter, ordinary memory (see Memory map). |
 | `-h`, `--help` | Print the usage on stdout. |
 
 Numbers in options are decimal, or hex after `0x` or `0X`, with no sign or
@@ -124,6 +125,13 @@ core's, which counts clock cycles. A read of a low word takes a snapshot of
 its counter, and a read of the high word returns the snapshot's high word.
 `--dump` shows the low words and the snapshots without taking a snapshot.
 Writes are ignored. `test/perf.nasm` checks the instruction counter.
+
+`--no-cycle-counter` makes the two words of the cycle counter ordinary
+memory, like the rest of the I/O range. A program that reads them then
+runs the same on the emulator and on an FPGA core whose cycle count
+cannot be predicted, so their traces can be compared. The random programs
+of the HDL tests run this way ([hdl/README.md](../hdl/README.md)). The
+instruction counter stays.
 
 Instruction fetches from `0xFFFFFF00`–`0xFFFFFFFF` read 0, as ISA.md §8.3
 requires, whatever the memory there holds. So a program that runs into the

@@ -97,7 +97,7 @@ def main() -> None:
         # The exit status of each way to stop: HALT, any other halt, the step
         # limit. 0c200000 is RTI outside an interrupt routine.
         for text, args, status in [("00000000 0c000000", [], 0), ("00000000 0c200000", [], 2),
-                                   ("00000000 00000000", ["-n", "5"], 3)]:
+                                   ("00000000 00000000", ["-n", "5", "--no-cycle-counter"], 3)]:
             p = run(tmp, args + ["BIN"], text)
             if p.returncode != status:
                 failed += 1

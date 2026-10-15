@@ -110,7 +110,7 @@ pub const console_addr: u32 = io_base;
 /// sets the count. It lets tests see the data reads of §8.2.
 pub const counter_addr: u32 = io_base + 1;
 
-/// The first of the 16 words of the math unit (§8.4).
+/// The first of the 32 words of the math unit (§8.4).
 pub const mpu_base: u32 = io_base + 0x10;
 
 /// The math unit (§8.4). It computes each result when it is read, so a
@@ -118,9 +118,15 @@ pub const mpu_base: u32 = io_base + 0x10;
 pub const Mpu = struct {
     a: u32 = 0,
     b: u32 = 0,
+    c: u64 = 0,
+    d: u64 = 0,
 
     /// The value a data read of word `i` returns.
-    pub fn read(self: Mpu, i: u4) u32 {
+    pub fn read(self: Mpu, i: u5) u32 {
+        if (i >= 16) {
+            const w = self.read64(@truncate(i / 2 - 8));
+            return @truncate(if (i % 2 == 0) w else w >> 32);
+        }
         const sa: i64 = @as(i32, @bitCast(self.a));
         const sb: i64 = @as(i32, @bitCast(self.b));
         const sp: u64 = @bitCast(sa * sb);
@@ -146,19 +152,46 @@ pub const Mpu = struct {
         };
     }
 
-    /// A write of `value` to word `i`. Only A and B can be written.
-    pub fn write(self: *Mpu, i: u4, value: u32) void {
+    /// The 64-bit value of the word pair 16 + 2k, 17 + 2k: C, D, the
+    /// signed quotient and remainder, the unsigned ones, and 0 for the
+    /// spare pairs.
+    fn read64(self: Mpu, k: u3) u64 {
+        return switch (k) {
+            0 => self.c,
+            1 => self.d,
+            2, 3 => {
+                // Division by zero, and -2^63 / -1, which overflows.
+                if (self.d == 0) return if (k == 2) ~@as(u64, 0) else self.c;
+                if (self.c == 1 << 63 and self.d == ~@as(u64, 0)) return if (k == 2) 1 << 63 else 0;
+                const c: i64 = @bitCast(self.c);
+                const d: i64 = @bitCast(self.d);
+                return @bitCast(if (k == 2) @divTrunc(c, d) else @rem(c, d));
+            },
+            4 => if (self.d == 0) ~@as(u64, 0) else self.c / self.d,
+            5 => if (self.d == 0) self.c else self.c % self.d,
+            else => 0,
+        };
+    }
+
+    /// A write of `value` to word `i`. Only the operands can be written.
+    pub fn write(self: *Mpu, i: u5, value: u32) void {
+        const lo: u64 = value;
+        const hi: u64 = lo << 32;
         switch (i) {
             0 => self.a = value,
             1 => self.b = value,
+            16 => self.c = (self.c & 0xFFFF_FFFF_0000_0000) | lo,
+            17 => self.c = (self.c & 0xFFFF_FFFF) | hi,
+            18 => self.d = (self.d & 0xFFFF_FFFF_0000_0000) | lo,
+            19 => self.d = (self.d & 0xFFFF_FFFF) | hi,
             else => {},
         }
     }
 };
 
 /// The word of the math unit that `addr` names, if it names one.
-fn mpuWord(addr: u32) ?u4 {
-    return if (addr -% mpu_base < 16) @truncate(addr -% mpu_base) else null;
+fn mpuWord(addr: u32) ?u5 {
+    return if (addr -% mpu_base < 32) @truncate(addr -% mpu_base) else null;
 }
 
 pub const Cpu = struct {
@@ -1125,6 +1158,33 @@ test "the math unit's results, with division by zero and overflow (§8.4)" {
         const mpu: Mpu = .{ .a = c[0], .b = c[1] };
         for (0..10) |i| try testing.expectEqual(c[i], mpu.read(@intCast(i)));
         for (10..16) |i| try testing.expectEqual(0, mpu.read(@intCast(i)));
+    }
+}
+
+test "the math unit's 64-bit division, with division by zero and overflow (§8.4)" {
+    // C, D, then the signed quotient and remainder, and the unsigned ones.
+    const cases = [_][6]u64{
+        .{ 100, 7, 14, 2, 14, 2 },
+        // -7 / 2 = -3 rem -1; 2^64 - 7 = 2 * 0x7FFFFFFF_FFFFFFFC + 1.
+        .{ 0xFFFF_FFFF_FFFF_FFF9, 2, 0xFFFF_FFFF_FFFF_FFFD, 0xFFFF_FFFF_FFFF_FFFF, 0x7FFF_FFFF_FFFF_FFFC, 1 },
+        // -2^63 / -1 overflows; unsigned, 2^63 / (2^64 - 1) = 0 rem 2^63.
+        .{ 1 << 63, 0xFFFF_FFFF_FFFF_FFFF, 1 << 63, 0, 0, 1 << 63 },
+        // -5 / 0.
+        .{ 0xFFFF_FFFF_FFFF_FFFB, 0, 0xFFFF_FFFF_FFFF_FFFF, 0xFFFF_FFFF_FFFF_FFFB, 0xFFFF_FFFF_FFFF_FFFF, 0xFFFF_FFFF_FFFF_FFFB },
+        // 2^40 + 3 = 2^20 * 2^20 + 3.
+        .{ (1 << 40) + 3, 1 << 20, 1 << 20, 3, 1 << 20, 3 },
+    };
+    for (cases) |c| {
+        var mpu: Mpu = .{};
+        mpu.write(16, @truncate(c[0]));
+        mpu.write(17, @truncate(c[0] >> 32));
+        mpu.write(18, @truncate(c[1]));
+        mpu.write(19, @truncate(c[1] >> 32));
+        for (0..6) |k| {
+            try testing.expectEqual(@as(u32, @truncate(c[k])), mpu.read(@intCast(16 + 2 * k)));
+            try testing.expectEqual(@as(u32, @truncate(c[k] >> 32)), mpu.read(@intCast(17 + 2 * k)));
+        }
+        for (28..32) |i| try testing.expectEqual(0, mpu.read(@intCast(i)));
     }
 }
 

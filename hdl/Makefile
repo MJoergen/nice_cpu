@@ -7,9 +7,9 @@ BUILD = build
 # executables, so paths given to it start with ../.
 GHDLRUN = cd $(BUILD) && $(GHDL) --elab-run --std=08
 
-SOURCES = src/trace_pkg.vhd src/multicycle.vhd
+SOURCES = src/trace_pkg.vhd src/multicycle.vhd src/mpu.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd
-TEST_SOURCES = test/tb_mem.vhd test/tb_trace.vhd test/tb_multicycle.vhd
+TEST_SOURCES = test/tb_mem.vhd test/tb_mpu.vhd test/tb_trace.vhd test/tb_multicycle.vhd
 
 # tb_trace stands in for the core and runs test/trace.asm. Each run's output
 # and exit status must equal those of the emulator on the same program, with
@@ -43,11 +43,13 @@ endef
 # with the counts that are hard to get right. The memory dumps of the probes
 # are left out, because the trace lists every memory write. The data reads
 # are not in the trace, but the probe reads.asm counts them with the read
-# counter, and its registers show the counts. cputest and reads run a second
-# time with a memory that stalls in 30% of the cycles.
+# counter, and its registers show the counts. mpu reads every word of the
+# math unit, src/mpu.vhd, and its registers and the trace's memory writes
+# show the results. cputest, reads, and mpu run a second time with a memory
+# that stalls in 30% of the cycles.
 EXAMPLES = count replicate print wrap
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest \
-  console screen iofetch reads reserved
+  console screen iofetch reads reserved mpu
 INTR_irq   = --nmi 2:1 --irq 2:2 --nmi 9:1 --irq 17:2 --nmi 17:1 --irq 100:2
 INTR_merge = --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
 INTR_after = --nmi 3:1 --nmi 10:1
@@ -88,10 +90,12 @@ define check_random
 
 endef
 
-# tb_mem checks the memory model itself.
+# tb_mem checks the memory model itself, and tb_mpu the math unit.
 test: emulator analyse synth
 	@($(GHDLRUN) tb_mem -gG_BIN_FILE=../test/mem.bin > tb_mem.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS tb_mem"; else echo "FAIL tb_mem"; cat $(BUILD)/tb_mem.log; exit 1; fi
+	@($(GHDLRUN) tb_mpu > tb_mpu.log 2>&1); \
+	if [ $$? -eq 0 ]; then echo "PASS tb_mpu"; else echo "FAIL tb_mpu"; cat $(BUILD)/tb_mpu.log; exit 1; fi
 	@$(ASM) -o $(BUILD)/trace.bin test/trace.asm
 	$(foreach r,$(TRACE_RUNS),$(call check_trace,$(r)))
 	$(foreach t,$(EXAMPLES),$(call check_core,$(t),../assembler/test/$(t).bin))
@@ -100,16 +104,24 @@ test: emulator analyse synth
 	$(call check_core,shift,$(BUILD)/shift.bin)
 	$(call check_core,cputest_stall,../emulator/test/cputest.bin,-gG_STALL=30)
 	$(call check_core,reads_stall,../emulator/test/reads.bin,-gG_STALL=30 -gG_SEED=7)
+	$(call check_core,mpu_stall,../emulator/test/mpu.bin,-gG_STALL=30 -gG_SEED=3)
 	$(foreach t,$(RANDOM_SEEDS),$(call check_random,$(t)))
 
 analyse:
 	@mkdir -p $(BUILD)
 	cd $(BUILD) && $(GHDL) -a --std=08 $(addprefix ../,$(SOURCES) $(SIM_SOURCES) $(TEST_SOURCES))
 
-# Checks that GHDL can synthesise the core.
+# Checks that GHDL can synthesise the core and the math unit.
+SYNTH = multicycle mpu
+
+define check_synth
+	@cd $(BUILD) && $(GHDL) --synth --std=08 $(1) > $(1)_synth.vhd 2> synth_$(1).log; \
+	if [ $$? -eq 0 ]; then echo "PASS synth $(1)"; else echo "FAIL synth $(1)"; cat synth_$(1).log; exit 1; fi
+
+endef
+
 synth: analyse
-	@cd $(BUILD) && $(GHDL) --synth --std=08 multicycle > multicycle_synth.vhd 2> synth.log; \
-	if [ $$? -eq 0 ]; then echo "PASS synth multicycle"; else echo "FAIL synth multicycle"; cat synth.log; exit 1; fi
+	$(foreach u,$(SYNTH),$(call check_synth,$(u)))
 
 emulator:
 	$(MAKE) -C ../emulator build

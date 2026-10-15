@@ -3,6 +3,9 @@
 --
 -- THEORY OF OPERATION
 -- The core runs on the memory model, sim/wb_mem.vhd, which loads G_BIN_FILE.
+-- A decoder on the data bus sends 0xFFFFFF10-0xFFFFFF1F to the math unit,
+-- src/mpu.vhd, instead (ISA.md §8.4). It needs no more than an address
+-- compare, because the core waits for each ACK before its next request.
 -- The trace writer, sim/trace.vhd, prints each step the core reports.
 --
 -- G_INTERRUPTS takes the emulator's interrupt options, for example
@@ -140,6 +143,16 @@ architecture simulation of tb_multicycle is
    signal dbus_data_out : std_logic_vector(31 downto 0);
    signal dbus_data_in  : std_logic_vector(31 downto 0);
 
+   signal mpu_sel     : std_logic;
+   signal mem_stb     : std_logic;
+   signal mem_stall   : std_logic;
+   signal mem_ack     : std_logic;
+   signal mem_data_in : std_logic_vector(31 downto 0);
+   signal mpu_stb     : std_logic;
+   signal mpu_stall   : std_logic;
+   signal mpu_ack     : std_logic;
+   signal mpu_data_in : std_logic_vector(31 downto 0);
+
    signal nmi_valid  : std_logic                    := '0';
    signal nmi_ready  : std_logic;
    signal nmi_vector : std_logic_vector(7 downto 0) := X"00";
@@ -202,6 +215,14 @@ begin
       ); -- i_multicycle
 
 
+   mpu_sel      <= '1' when dbus_addr(31 downto 4) = X"FFFFFF1" else '0';
+   mem_stb      <= dbus_stb and not mpu_sel;
+   mpu_stb      <= dbus_stb and mpu_sel;
+   dbus_stall   <= mpu_stall when mpu_sel = '1' else mem_stall;
+   dbus_ack     <= mem_ack or mpu_ack;
+   dbus_data_in <= mpu_data_in when mpu_ack = '1' else mem_data_in;
+
+
    i_wb_mem : entity work.wb_mem
       generic map (
          G_INIT_FILE => G_BIN_FILE,
@@ -218,16 +239,31 @@ begin
          ibus_addr_i     => ibus_addr,
          ibus_data_o     => ibus_data,
          dbus_cyc_i      => dbus_cyc,
-         dbus_stb_i      => dbus_stb,
-         dbus_stall_o    => dbus_stall,
-         dbus_ack_o      => dbus_ack,
+         dbus_stb_i      => mem_stb,
+         dbus_stall_o    => mem_stall,
+         dbus_ack_o      => mem_ack,
          dbus_we_i       => dbus_we,
          dbus_addr_i     => dbus_addr,
          dbus_data_i     => dbus_data_out,
-         dbus_data_o     => dbus_data_in,
+         dbus_data_o     => mem_data_in,
          console_valid_o => console_valid,
          console_data_o  => console_data
       ); -- i_wb_mem
+
+
+   i_mpu : entity work.mpu
+      port map (
+         clk_i      => clk,
+         rst_i      => rst,
+         wb_cyc_i   => dbus_cyc,
+         wb_stb_i   => mpu_stb,
+         wb_stall_o => mpu_stall,
+         wb_ack_o   => mpu_ack,
+         wb_we_i    => dbus_we,
+         wb_addr_i  => dbus_addr(3 downto 0),
+         wb_data_i  => dbus_data_out,
+         wb_data_o  => mpu_data_in
+      ); -- i_mpu
 
 
    i_trace : entity work.trace

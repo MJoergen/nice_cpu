@@ -15,10 +15,12 @@ working reference for it.
 | Path | What it is |
 |---|---|
 | [src/multicycle.vhd](src/multicycle.vhd) | The multi-cycle core. |
+| [src/mpu.vhd](src/mpu.vhd) | The math unit of ISA.md §8.4, a Wishbone slave. |
 | [src/trace_pkg.vhd](src/trace_pkg.vhd) | `t_retire`, the record in which the core reports each step to the trace writer. |
 | [sim/trace.vhd](sim/trace.vhd) | The trace writer. Simulation only. |
 | [sim/wb_mem.vhd](sim/wb_mem.vhd) | The memory model, with the console and the read counter. Simulation only. |
 | [test/tb_mem.vhd](test/tb_mem.vhd) | A self-checking test of the memory model, which loads [test/mem.bin](test/mem.bin). |
+| [test/tb_mpu.vhd](test/tb_mpu.vhd) | A self-checking test of the math unit. |
 | [test/tb_trace.vhd](test/tb_trace.vhd) | A test of the trace writer, which stands in for the core and runs [test/trace.asm](test/trace.asm). |
 | [test/tb_multicycle.vhd](test/tb_multicycle.vhd) | Runs a program on the multi-cycle core, with an interrupt source, and writes its trace. |
 | [test/shift.asm](test/shift.asm) | Every shift, with the counts that are hard to get right. |
@@ -33,8 +35,14 @@ writer also run under nvc.
     cd hdl && make test
 
 `make test` builds the emulator, analyses the VHDL, checks that GHDL can
-synthesise the core (`ghdl --synth`), and runs the tests. Everything it makes
+synthesise the core and the math unit (`ghdl --synth`), and runs the tests. Everything it makes
 goes in `build/`. `make clean` removes it.
+
+`tb_mpu` checks every word of the math unit for 20 corner cases and 2000
+random pairs of operands, against `numeric_std`. It also checks that a read
+of a result waits for the computation, that a write restarts it, that a
+write and a read in back-to-back cycles see each other in order, and that
+reset clears A and B.
 
 `tb_trace` runs four times, each against the emulator on the same program
 with the same NMI: with the full trace, without the trace, and stopped at two
@@ -52,9 +60,10 @@ with the same interrupt requests:
   are left out, because the trace lists every memory write. The trace does
   not list data reads, but `reads` counts them with the read counter, so
   its registers show whether the core made each read exactly once and in
-  order (ISA.md §8.2).
+  order (ISA.md §8.2). `mpu` reads every word of the math unit.
 - `test/shift.asm`.
-- `cputest` and `reads` again, on a memory that stalls in 30% of the cycles.
+- `cputest`, `reads`, and `mpu` again, on a memory that stalls in 30% of
+  the cycles.
 - 30 random programs from `test/random_prog.py`, each stopped at 3000 steps,
   on a memory that stalls in 30% of the cycles. Besides random ALU and
   shift instructions, they use R15 with every side effect, `HALT`, `RTI`,
@@ -120,6 +129,24 @@ the cycle the write is accepted, and stores nothing, and a read returns 0.
 The read counter is at `0xFFFFFF01`, as in the emulator. A data read returns
 the number of data reads of it since the last write, and a write sets that
 number. The rest of the I/O range is plain memory, as in the emulator.
+
+## The math unit
+
+`mpu` is the math unit of ISA.md §8.4: A at offset 0, B at 1, and the
+signed and unsigned products, quotients, and remainders at 2 to 9. It is a
+pipelined Wishbone slave with a 4-bit address. The bus decoder selects it
+for `0xFFFFFF10`–`0xFFFFFF1F`. In `tb_multicycle`, that decoder is an
+address compare on the data bus.
+
+A write to A or B starts a computation that takes 33 cycles. A
+shift-and-add multiplier and two restoring dividers run side by side, one
+bit per cycle: one divider for A / B, and one for |A| / |B|. The signed
+results are formed from those, as the header of `src/mpu.vhd` explains.
+
+A read of a result while the computation runs is accepted, then STALL stays
+high and ACK waits until the result is ready. Reads of A, B, and the spare
+words, and all writes, are acknowledged in the next cycle. Writes to the
+result words and the spare words are ignored.
 
 ## The trace writer
 

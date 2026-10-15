@@ -306,6 +306,9 @@ each RAM and the address of the UART. These rules hold for every setting:
   the I/O range (ISA §8.3).
 - **Console.** A UART transmitter at `0xFFFFFF00` by default, as in the
   emulator (ISA §8.3).
+- **Math unit.** `hdl/src/mpu.vhd` at `0xFFFFFF10`–`0xFFFFFF1F` (ISA §8.4).
+  A read of a result holds off its ACK until the result is ready, so the
+  data bus must allow a slave to take many cycles.
 - **Stack.** The runtime puts the stack just below `0xFFFFFF00`. A memory map
   that runs the runtime's programs needs RAM there as well as at address 0.
 

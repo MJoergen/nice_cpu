@@ -242,6 +242,58 @@ fn perfWord(addr: u32) ?u4 {
 /// The words of the cycle counter, `CYCLE_LO` and `CYCLE_HI`.
 const cycle_words = 2;
 
+/// The first of the 16 words of the timer (§8.6).
+pub const timer_base: u32 = io_base + 0x40;
+
+/// The timer (§8.6). It counts steps, as the cycle counter does.
+pub const Timer = struct {
+    period: u32 = 0,
+    count: u32 = 0,
+    vector: u8 = 0,
+    /// The request raised at the end of the last step, with its vector. The
+    /// next step passes it to the processor before it checks for
+    /// interrupts. So, as on the FPGA core, a request raised by the last
+    /// step of a run is not pending at the end of the run.
+    raised: ?u8 = null,
+
+    /// The value a data read of word `i` returns. Reads have no side effect.
+    pub fn read(self: Timer, i: u4) u32 {
+        return switch (i) {
+            0 => self.period,
+            1 => self.count,
+            2 => self.vector,
+            else => 0,
+        };
+    }
+
+    /// A write of `value` to word `i`.
+    pub fn write(self: *Timer, i: u4, value: u32) void {
+        switch (i) {
+            0 => {
+                self.period = value;
+                self.count = value;
+            },
+            2 => self.vector = @truncate(value),
+            else => {},
+        }
+    }
+
+    /// The end of a cycle: count down, and raise a request at 0.
+    pub fn tick(self: *Timer) void {
+        if (self.period == 0) return;
+        self.count -= 1;
+        if (self.count == 0) {
+            self.raised = self.vector;
+            self.count = self.period;
+        }
+    }
+};
+
+/// The word of the timer that `addr` names, if it names one.
+fn timerWord(addr: u32) ?u4 {
+    return if (addr -% timer_base < 16) @truncate(addr -% timer_base) else null;
+}
+
 pub const Cpu = struct {
     /// R0..R15. Read and write them through `getReg` and `setReg`, which
     /// apply the rules for R0 and R14 (§4.3).
@@ -278,6 +330,8 @@ pub const Cpu = struct {
     mpu: Mpu,
     /// The performance counters at `perf_base`.
     perf: Perf,
+    /// The timer at `timer_base`.
+    timer: Timer,
     /// When false, `CYCLE_LO` and `CYCLE_HI` are ordinary memory
     /// (`--no-cycle-counter`). The emulator counts steps where an FPGA core
     /// counts clock cycles, so a comparison of their traces must leave the
@@ -303,6 +357,7 @@ pub const Cpu = struct {
             .input = null,
             .mpu = .{},
             .perf = .{},
+            .timer = .{},
             .cycle_counter = true,
         };
         cpu.reset();
@@ -323,6 +378,7 @@ pub const Cpu = struct {
         self.irq_pending = null;
         self.mpu = .{};
         self.perf = .{};
+        self.timer = .{};
     }
 
     pub fn halted(self: *const Cpu) bool {
@@ -374,6 +430,7 @@ pub const Cpu = struct {
         }
         if (mpuWord(addr)) |i| return self.mpu.read(i);
         if (self.perfDevice(addr)) |i| return self.perf.read(i);
+        if (timerWord(addr)) |i| return self.timer.read(i);
         return self.mem.read(addr);
     }
 
@@ -392,6 +449,7 @@ pub const Cpu = struct {
         if (addr == counter_addr) return self.read_count;
         if (mpuWord(addr)) |i| return self.mpu.read(i);
         if (self.perfDevice(addr)) |i| return self.perf.peek(i);
+        if (timerWord(addr)) |i| return self.timer.read(i);
         return self.mem.peek(addr);
     }
 
@@ -406,6 +464,8 @@ pub const Cpu = struct {
             self.mpu.write(i, value);
         } else if (self.perfDevice(addr) != null) {
             // The counters cannot be written (§8.5).
+        } else if (timerWord(addr)) |i| {
+            self.timer.write(i, value);
         } else if (addr != console_addr or self.console == null) {
             try self.mem.write(addr, value);
         }
@@ -418,12 +478,22 @@ pub const Cpu = struct {
 
     /// Take a pending interrupt if one may be taken, or else run one
     /// instruction. Does nothing once the processor has halted. Each step
-    /// counts as one cycle (§8.5).
+    /// counts as one cycle (§8.5, §8.6).
     pub fn step(self: *Cpu) Error!void {
         if (self.halted()) return;
-        defer self.perf.cycles +%= 1;
+        defer {
+            self.perf.cycles +%= 1;
+            self.timer.tick();
+        }
         const before = self.regs;
         self.last_write = null;
+
+        // The timer's request merges with one that is pending, and keeps
+        // the vector of that one (§8.6).
+        if (self.timer.raised) |v| {
+            if (self.irq_pending == null) self.requestIrq(v);
+            self.timer.raised = null;
+        }
 
         // §7.1: interrupts are checked before each instruction.
         if (!self.after_rti and !self.in_service) {
@@ -1381,6 +1451,65 @@ test "without the cycle counter, its two words are memory (--no-cycle-counter)" 
     try testing.expectEqual(0, cpu.perf.cycles_snap); // no snapshot was taken
     cpu.cycle_counter = true;
     try testing.expectEqual(0, cpu.read(perf_base)); // the counter again, not the memory
+}
+
+test "the timer counts down from the write and raises a request every P steps (§8.6)" {
+    var timer: Timer = .{};
+    timer.tick(); // stopped: nothing changes
+    try testing.expectEqual(Timer{}, timer);
+    timer.write(2, 0x1234); // the vector keeps bits 7..0
+    timer.write(0, 3);
+    try testing.expectEqual(3, timer.read(0));
+    try testing.expectEqual(3, timer.read(1));
+    try testing.expectEqual(0x34, timer.read(2));
+    timer.tick(); // the cycle of the write counts
+    try testing.expectEqual(2, timer.read(1));
+    timer.tick();
+    try testing.expectEqual(null, timer.raised);
+    timer.tick(); // the third cycle: a request, and COUNT is reloaded
+    try testing.expectEqual(0x34, timer.raised);
+    try testing.expectEqual(3, timer.read(1));
+    timer.write(1, 9); // COUNT cannot be written
+    timer.write(15, 9);
+    try testing.expectEqual(3, timer.read(1));
+    try testing.expectEqual(0, timer.read(15));
+    timer.write(0, 0); // stops the timer
+    try testing.expectEqual(0, timer.read(1));
+    timer.tick();
+    try testing.expectEqual(0, timer.read(1));
+}
+
+test "the timer's request is an IRQ, and merges with a pending one (§8.6)" {
+    // 0: MOVE @TIMER_PERIOD, 2, then NOPs. The vector table entries 0x10
+    // and 0x11 hold 0x40 and 0x50, each an RTI.
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{ alu_iw(.always, MOVE, .none, ind_imm(0), imm(0), reg(0)), timer_base, 2 });
+    try load(&cpu, 0x10, &.{ 0x40, 0x50 });
+    try load(&cpu, 0x40, &.{RTI});
+    try load(&cpu, 0x50, &.{RTI});
+    try cpu.write(timer_base + 2, 0x10);
+    try cpu.step(); // the write, and the first of the two steps
+    try testing.expectEqual(1, cpu.peek(timer_base + 1));
+    try cpu.step(); // a NOP; the request is raised at its end
+    try testing.expectEqual(null, cpu.irq_pending);
+    try cpu.step(); // E = 0: the request is pending, and a NOP runs
+    try testing.expectEqual(0x10, cpu.irq_pending);
+    try testing.expectEqual(5, cpu.regs[15]);
+    cpu.requestIrq(7); // a request from elsewhere replaces it
+    try cpu.write(timer_base + 2, 0x11);
+    try cpu.step(); // a NOP; the timer's second request is raised at its end
+    try cpu.step(); // it merges with the pending one, which keeps vector 7
+    try testing.expectEqual(7, cpu.irq_pending);
+    cpu.setReg(14, 1 << sr_e);
+    cpu.irq_pending = null;
+    try cpu.step(); // a NOP; the timer's third request, with vector 0x11
+    try testing.expectEqual(null, cpu.irq_pending);
+    try cpu.step(); // its entry
+    try testing.expectEqual(0x50, cpu.regs[15]);
+    try testing.expectEqual(null, cpu.irq_pending);
+    cpu.reset();
+    try testing.expectEqual(Timer{}, cpu.timer);
 }
 
 test "instruction fetches from the I/O range read 0 (§8.3)" {

@@ -10,8 +10,8 @@ const usage =
     \\registers. A write to 0xFFFFFF00 prints its low byte on stdout. A read
     \\of 0xFFFFFF00 returns the next byte of stdin plus 0x100, or 0x200 after
     \\the end of the input.
-    \\The performance counters are at 0xFFFFFF10-0xFFFFFF13, and the math
-    \\unit is at 0xFFFFFF20-0xFFFFFF3F.
+    \\The performance counters are at 0xFFFFFF10-0xFFFFFF13, the math unit
+    \\is at 0xFFFFFF20-0xFFFFFF3F, and the timer at 0xFFFFFF40-0xFFFFFF42.
     \\
     \\Options:
     \\  -t, --trace          Print one line per instruction.

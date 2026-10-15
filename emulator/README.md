@@ -96,7 +96,8 @@ address twice and a file with no words are errors.
 | `0xFFFFFF02`–`0xFFFFFF0F` | 14 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Performance counters (ISA.md §8.5). Cycles and instructions, 64 bits each. |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (ISA.md §8.4). Multiplies and divides A and B, and divides C and D. |
-| `0xFFFFFF40`–`0xFFFFFFFF` | 192 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. |
+| `0xFFFFFF40`–`0xFFFFFF4F` | 16 | Timer (ISA.md §8.6). Raises IRQ once every P steps. |
+| `0xFFFFFF50`–`0xFFFFFFFF` | 176 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. |
 
 The screen has one word per character, with the character in bits 7..0 and
 its colour above. It is ordinary memory, and `--screen` prints the
@@ -143,6 +144,14 @@ runs the same on the emulator and on an FPGA core whose cycle count
 cannot be predicted, so their traces can be compared. The random programs
 of the HDL tests run this way ([hdl/README.md](../hdl/README.md)). The
 instruction counter stays.
+
+The timer counts steps as well, so its requests come every P steps. A
+request raised by the last step of a run is not listed as pending at the
+end, as on the FPGA core, where it only reaches the core after that step.
+The timer's requests are IRQs, like those of `--irq`. A request merges
+with one that is pending, and an `--irq` request replaces the vector of a
+pending one. `test/timer.nasm` checks the counting, the stop, and the
+merging.
 
 Instruction fetches from `0xFFFFFF00`–`0xFFFFFFFF` read 0, as ISA.md §8.3
 requires, whatever the memory there holds. So a program that runs into the

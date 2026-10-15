@@ -73,6 +73,12 @@ below. No code has TODO or FIXME comments.
   ([README.md](README.md), Compilers).
 - **A linker.** There is none. Programs are joined with `cat` and
   assembled at once, so every label is global (ISA.md §9.3).
+- **The C library is output only** ([runtime/README.md](runtime/README.md#c-library)).
+  Missing: `getchar` and input, which need a console input register with
+  a "byte ready" bit, in ISA.md §8.3, the emulator, and the FPGA UART;
+  float conversions in `printf`, which would pull in the float library;
+  `FILE` and `stdout`; `errno`; and `exit`, which needs a way for wasm
+  code to halt.
 - **C's `long double` and `__int128`.** Not supported, because the runtime
   library has no `__addtf3`, `__multi3`, and the like
   ([translator/README.md](translator/README.md)).

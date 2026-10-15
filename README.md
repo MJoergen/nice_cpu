@@ -30,7 +30,7 @@ and the test setup for it. The pipelined core is not written yet.
 | [doc/review/](doc/review/) | Notes on how each ISA decision was reached, and the reviews of the tools. ISA.md supersedes them. |
 | [assembler/](assembler/README.md) | `niceasm`, the assembler: one Python 3 script with no dependencies. |
 | [emulator/](emulator/README.md) | `niceemu`, the emulator, written in Zig. |
-| [runtime/](runtime/README.md) | The start-up code and runtime library for C and wasm programs. |
+| [runtime/](runtime/README.md) | The start-up code and runtime library for C and wasm programs, and a small C library. |
 | [translator/](translator/README.md) | `nicewasm`, which translates WebAssembly into NICE assembly. |
 | [hdl/](hdl/README.md) | The FPGA implementation in VHDL. So far a simple multi-cycle core, and the memory model and trace writer it is tested with. |
 | [TODO.md](TODO.md) | The single list of open items, undecided questions, and ideas for later. |
@@ -134,7 +134,10 @@ is one, compiled code reaches NICE through WebAssembly: clang (with
 `wasm-ld`), Zig, and Rust all have a wasm32 target, and `nicewasm`
 translates the module. That gives C code the 8-bit bytes of wasm linear
 memory, which Rust and Zig need anyway. GCC has no wasm32 target and no
-NICE target, so it is not used. All three are tested.
+NICE target, so it is not used. All three are tested. C programs can use
+the small C library in [runtime/libc/](runtime/README.md#c-library):
+`printf`, the `string.h` functions, `malloc`, and a few more. It is
+compiled to wasm with the program, so it is not one of the joined files.
 
 **Host tools.** Python 3 runs `niceasm`, `nicewasm`, and the test scripts.
 Nothing beyond the standard library is needed, and `make typecheck` checks
@@ -143,8 +146,9 @@ the Python with `mypy --strict` if mypy is installed. Zig 0.15 builds
 and `wasm-ld`, and rustc with the `wasm32-unknown-unknown` target, are
 needed only for `make wasm` in `translator/`, which rebuilds the compiled
 test modules. Their `.wasm` files are checked in, so `make test` needs no
-C or Rust compiler. The tests use `make`, `cat`, `cmp`, and
-`diff`. GitHub Actions runs every `make test` and `make typecheck` on each
+C or Rust compiler. The same holds for the C library's tests in
+`runtime/libc/`, which `make -C runtime/libc wasm` rebuilds. The tests use
+`make`, `cat`, `cmp`, `diff`, `sed`, `grep`, and `cut`. GitHub Actions runs every `make test` and `make typecheck` on each
 push.
 
 ## The specification

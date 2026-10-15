@@ -1,2 +1,4 @@
 hdl/build/
 *.swp
+runtime/libc/build/
+runtime/libc/libc.a

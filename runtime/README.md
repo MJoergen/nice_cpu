@@ -122,6 +122,58 @@ whose compiler_rt sources it copies next to `float.zig`. The routines must
 not use the wasm float instructions, as `nicewasm` translates those into
 calls to this library. `nicewasm` rejects a library module that uses them.
 
+## C library
+
+`libc/` is a small C standard library for C code that reaches NICE
+through wasm. It is written in C and compiled to wasm, to the archive
+`libc/libc.a`, which `make -C runtime/libc` builds with clang. wasm-ld
+links it into the program's module and keeps only the functions the
+program uses. So it adds nothing to the joined assembly files.
+
+| Header | Functions |
+|---|---|
+| `stdio.h` | `putchar`, `puts`, `printf`, `sprintf`, `snprintf`, `vprintf`, `vsprintf`, `vsnprintf` |
+| `string.h` | `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`, `strnlen`, `strcmp`, `strncmp`, `strcpy`, `strncpy`, `strcat`, `strncat`, `strchr`, `strrchr`, `strstr` |
+| `stdlib.h` | `malloc`, `calloc`, `realloc`, `free`, `abs`, `labs`, `llabs`, `atoi`, `atol`, `strtol`, `strtoul`, `abort` |
+| `ctype.h` | `isalnum`, `isalpha`, `iscntrl`, `isdigit`, `isgraph`, `islower`, `isprint`, `ispunct`, `isspace`, `isupper`, `isxdigit`, `tolower`, `toupper` |
+| `nice.h` | `nice_peek` and `nice_poke`, the `nice` imports of ISA.md §9.4, and `NICE_CONSOLE` |
+
+`putchar` writes to the console at `0xFFFFFF00` with `nice_poke`. It is
+the only function that touches hardware. Clang's own `stddef.h`,
+`stdint.h`, `stdarg.h`, `stdbool.h`, and `limits.h` complete the headers.
+
+The library is small on purpose:
+
+- Output only. There is no `getchar`, because the console has no input
+  yet.
+- No `FILE`, `stdout`, or `fprintf`.
+- `printf` supports the flags `- + space # 0`, a width and a precision
+  (either may be `*`), the length modifiers `hh h l ll z t j`, and the
+  conversions `d i u o x X c s p %`. The float conversions, such as `%f`,
+  take their argument and are printed as they stand, as is any other
+  unknown conversion. `%p` prints `0x` and the address in hex.
+- No `errno`. `strtol` and `strtoul` saturate on overflow.
+- No `exit`. `abort` traps (ISA.md §9.4).
+- `malloc` is first fit, with an 8-byte header on each block, and merges
+  neighbouring free blocks. The heap starts at wasm-ld's `__heap_base`
+  and grows with `memory.grow`, so only up to nicewasm's
+  `--memory-pages`.
+
+Compile with the library's headers and link with `libc.a`, for example:
+
+    make -C runtime/libc
+    clang --target=wasm32 -mbulk-memory -O2 -ffreestanding -nostdlibinc \
+        -isystem runtime/libc/include -nostdlib -Wl,--no-entry -Wl,--export=main \
+        -Wl,-z,stack-size=4096 -Wl,--initial-memory=65536 \
+        -o prog.wasm prog.c runtime/libc/libc.a
+
+Then translate, join, and assemble as for any wasm module
+([translator README](../translator/README.md)). `-ffreestanding` keeps
+clang from treating the library's functions as built-ins, for example from
+turning `printf("x\n")` into `puts("x")`. `-mbulk-memory` matters
+here too: the library's `memcpy`, `memmove`, and `memset` are
+`memory.copy` and `memory.fill`.
+
 ## Test
 
     make test
@@ -132,3 +184,10 @@ compares the output and exit status with `test/X.expected`. The tests of
 the muldiv routines run a second time with `muldiv_soft.asm`, and compare
 with `test/X_soft.expected`. The expected values were checked by
 hand. The comments in each test show how.
+
+Then it runs the C library's tests, `libc/test/X.c`. Their `.wasm` files
+are checked in, so no C compiler is needed; `make -C libc wasm` rebuilds
+them and `libc.a`. Each is translated, joined with `start_wasm.asm` and
+`lib.asm`, and run. Its console output, `main`'s result in R1, and the
+exit status are compared with `libc/test/X.expected`, which was written
+by hand from the source.

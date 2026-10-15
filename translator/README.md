@@ -57,6 +57,10 @@ with calls to routines such as `__addtf3` and `__multi3`, which the
 runtime library does not have, and nicewasm rejects the imports. Zig's
 `f128` and `u128` work, because Zig puts its compiler_rt in the module.
 
+For `printf`, `strlen`, `malloc`, and the like, compile and link with the
+small C library in `runtime/libc/`. Its section in the
+[runtime README](../runtime/README.md#c-library) gives the command line.
+
 If the program has constructors, also link with
 `-Wl,--export=__wasm_call_ctors`, so that `___wasm_start` runs them once
 (ISA.md §9.4). Without it, wasm-ld runs them again before each call of an

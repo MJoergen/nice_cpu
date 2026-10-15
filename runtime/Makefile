@@ -34,6 +34,7 @@ test: emulator
 	$(foreach t,$(TESTS),$(call check,$(t),$(t),muldiv_mpu.asm))
 	$(foreach t,$(SOFT_TESTS),$(call check,$(t)_soft,$(t),muldiv_soft.asm))
 	@rm -f test/*.out test/*.out.asm test/*.out.bin
+	@$(MAKE) --no-print-directory -C libc test
 
 # The float library, translated from float.wasm as the library module float
 # (ISA.md §9.4). Only float.wasm is checked in.
@@ -63,5 +64,6 @@ emulator:
 
 clean:
 	rm -f test/*.out test/*.out.asm test/*.out.bin float.asm
+	$(MAKE) -C libc clean
 
 .PHONY: test emulator clean float

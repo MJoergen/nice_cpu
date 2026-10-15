@@ -410,7 +410,9 @@ The emulator in this repository maps the screen at `0xFFFF0000` instead, so that
 
 ### 8.4 Math unit
 
-The emulator and the FPGA implementation map a math unit, the MPU, at `0xFFFFFF10`–`0xFFFFFF1F`. It multiplies and divides 32-bit integers. Like the console, it is a property of those systems, not of the ISA.
+The emulator and the FPGA implementation map a math unit, the MPU, at `0xFFFFFF10`–`0xFFFFFF2F`. It multiplies and divides 32-bit integers, and divides 64-bit integers. Like the console, it is a property of those systems, not of the ISA.
+
+The first 16 words work on the 32-bit operands A and B:
 
 | Address | Name | A data read returns | A write |
 |---|---|---|---|
@@ -426,16 +428,28 @@ The emulator and the FPGA implementation map a math unit, the MPU, at `0xFFFFFF1
 | `0xFFFFFF19` | `UDIV_R` | the remainder of A / B, unsigned | is ignored |
 | `0xFFFFFF1A`–`0xFFFFFF1F` | | 0 | is ignored |
 
-- Each result depends only on A and B as they are when it is read. A read has no side effect, so the results can be read in any order and any number of times.
-- Signed operations treat A and B as two's complement. A signed product is exact in 64 bits.
-- A signed quotient is rounded toward zero, and a signed remainder has the sign of A, so A = Q · B + R. This is C's `/` and `%`, and wasm's `div_s` and `rem_s`.
-- Division by zero gives Q = `0xFFFFFFFF` and R = A, signed and unsigned.
-- The signed `0x80000000 / 0xFFFFFFFF` (−2³¹ / −1) gives Q = `0x80000000` and R = 0.
-- Reset sets A and B to 0.
+The next 16 words work on the 64-bit operands C and D. Each 64-bit value takes two words, low word first, as in §9.3:
 
-These are RISC-V's results for the two special cases. Software never needs to wait for a result. The FPGA implementation starts a new computation at each write to A or B, which may take many cycles, and holds off the acknowledge of a read of a result until the result is ready.
+| Address | Name | A data read returns | A write |
+|---|---|---|---|
+| `0xFFFFFF20`, `0xFFFFFF21` | `C_LO`, `C_HI` | the left operand C | sets that half of C |
+| `0xFFFFFF22`, `0xFFFFFF23` | `D_LO`, `D_HI` | the right operand D | sets that half of D |
+| `0xFFFFFF24`, `0xFFFFFF25` | `SDIV64_Q_LO`, `SDIV64_Q_HI` | the quotient of C / D, signed | is ignored |
+| `0xFFFFFF26`, `0xFFFFFF27` | `SDIV64_R_LO`, `SDIV64_R_HI` | the remainder of C / D, signed | is ignored |
+| `0xFFFFFF28`, `0xFFFFFF29` | `UDIV64_Q_LO`, `UDIV64_Q_HI` | the quotient of C / D, unsigned | is ignored |
+| `0xFFFFFF2A`, `0xFFFFFF2B` | `UDIV64_R_LO`, `UDIV64_R_HI` | the remainder of C / D, unsigned | is ignored |
+| `0xFFFFFF2C`–`0xFFFFFF2F` | | 0 | is ignored |
 
-A use of the MPU takes several instructions, and an interrupt may come between them. An interrupt service routine that uses the MPU must therefore read A and B first and write them back before `RTI`. The results depend only on A and B, so that restores the whole state.
+- Each result depends only on the operands of its half, A and B or C and D, as they are when it is read. A read has no side effect, so the results can be read in any order and any number of times.
+- Signed operations treat the operands as two's complement. A signed product is exact in 64 bits.
+- A signed quotient is rounded toward zero, and a signed remainder has the sign of the dividend, so A = Q · B + R and C = Q · D + R. This is C's `/` and `%`, and wasm's `div_s` and `rem_s`.
+- Division by zero gives a quotient of all ones and a remainder equal to the dividend, signed and unsigned: Q = `0xFFFFFFFF` and R = A, or Q = `0xFFFFFFFF_FFFFFFFF` and R = C.
+- The signed division of the most negative number by −1 gives Q = the most negative number and R = 0. That is `0x80000000 / 0xFFFFFFFF` = `0x80000000` for A and B, and −2⁶³ / −1 = −2⁶³ for C and D.
+- Reset sets A, B, C, and D to 0.
+
+These are RISC-V's results for the two special cases. Software never needs to wait for a result. The FPGA implementation starts a new computation at each write to an operand, which may take many cycles, and holds off the acknowledge of a read of a result until the result is ready.
+
+A use of the MPU takes several instructions, and an interrupt may come between them. An interrupt service routine that uses the MPU must therefore read the operands it changes first, and write them back before `RTI`. The results depend only on the operands, so that restores the whole state.
 
 ## 9. Software conventions
 
@@ -575,7 +589,7 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 - There is one runtime library, shared by the C compiler and the wasm translator (§9.4).
 - A routine may be written in assembly, or translated from a library module (§9.4).
 - The labels of its routines start with `__`. Their C names start with `_`, which C reserves for the implementation at file scope. The labels inside a translated library module start with `WL.` (§9.4), which no C name can produce.
-- The one-word multiply and divide routines, and `__mul64`, come in two versions: one that uses the math unit of §8.4, and one in software for systems without it. A program contains exactly one of the two.
+- The multiply and divide routines, for one-word integers and for `long long`, come in two versions: one that uses the math unit of §8.4, and one in software for systems without it. A program contains exactly one of the two.
 - The table lists the routines for one-word integers. The runtime library's README lists all routines, including those for `long long`, floating point, and conversions between them.
 
 | Label | Result in R1 |
@@ -714,7 +728,7 @@ Running out of NICE stack is not detected, unlike in wasm. What happens then is 
 - Only `i32`, `i64`, `f32`, and `f64` values cross the boundary. Clang and Rust pass a structure with a single scalar member in an `extern "C"` signature as that scalar. They pass any other structure as a pointer into linear memory, so C receives a byte address there too.
 - Function pointers do not cross the boundary. A wasm function pointer is a table index, and a C function pointer is a NICE address.
 
-**Runtime routines.** The translator uses the runtime library of §9.3, which it shares with the C compiler. For `i32.mul`, `div`, and `rem` it uses the math unit of §8.4 directly: it writes the operands to A and B and reads the result. With an option, for systems without the math unit, it calls `__mul`, `__div`, `__mod`, `__udiv`, and `__umod` instead. Before a division or remainder, it checks the cases that wasm defines but C leaves undefined:
+**Runtime routines.** The translator uses the runtime library of §9.3, which it shares with the C compiler. For `i32.mul`, and the `div` and `rem` of `i32` and `i64`, it uses the math unit of §8.4 directly: it writes the operands to A and B, or C and D, and reads the result. With an option, for systems without the math unit, it calls `__mul`, `__div`, `__mod`, `__udiv`, `__umod`, and the `64` versions of the last four instead. Before a division or remainder, it checks the cases that wasm defines but C leaves undefined:
 
 - division or remainder by zero traps (code 3)
 - `div_s` of the most negative value by −1 traps (code 4)

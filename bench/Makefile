@@ -36,6 +36,7 @@ endef
 
 test: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 	@$(PYTHON) expected.py --check bench.c hand.nasm
+	@$(PYTHON) hazards.py --test
 	$(foreach p,$(PROGRAMS),$(call check,$(p)))
 
 # Runs both on the multi-cycle core in GHDL, so that the cycles are the
@@ -69,6 +70,15 @@ $(BUILD)/hand.full.nasm: ../runtime/start.nasm hand.nasm
 $(BUILD)/%.bin: $(BUILD)/%.full.nasm ../assembler/niceasm.py
 	$(ASM) -o $@ $<
 
+# Counts the pipeline hazards of doc/MICROARCH.md §5 in both programs, from
+# the emulator's traces (README.md, The hazard profile).
+hazards: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
+	@NICEEMU=$(EMU) $(PYTHON) hazards.py $(BUILD)/bench.bin $(BUILD)/hand.bin
+
+# Needs mypy (pip install mypy).
+typecheck:
+	$(PYTHON) -m mypy --strict expected.py hazards.py
+
 # Rebuilds bench.wasm from bench.c. Needs clang with the wasm32 target and
 # wasm-ld, and builds the C library first.
 wasm:
@@ -88,4 +98,4 @@ emulator:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: run test core wasm native emulator clean
+.PHONY: run test core hazards typecheck wasm native emulator clean

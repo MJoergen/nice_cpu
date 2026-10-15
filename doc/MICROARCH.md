@@ -21,9 +21,9 @@ It is the working reference for the pipelined core
 | Topic | Decision |
 |---|---|
 | Structure | A pipeline: FETCH, ICACHE, DECODE, SEQUENCER, PREPARE, and WRITE, as in qnice_cpu. |
-| Buses | Harvard: a read-only Wishbone instruction port and a Wishbone data port. Both see the same memory, through dual-port RAM. |
+| Buses | Harvard: a read-only Wishbone instruction port, 64 bits wide so that it delivers two words per cycle (§3), and a 32-bit Wishbone data port. Both see the same memory, through dual-port RAM. |
 | Instructions | DECODE splits each instruction into one to three micro-operations. |
-| Registers | R1–R13 in a register file with three read ports and one write port. R0 is a constant 0. SR (R14) and PC (R15) are separate registers. |
+| Registers | R1–R13 in a register file with three read ports and one write port, with bypasses from WRITE (§5.1). R0 is a constant 0. SR (R14) and PC (R15) are separate registers. |
 | Data accesses | Exact, in order, and never speculative, as ISA §8.2 requires. |
 | Instruction fetches | Free to run ahead, as ISA §8.2 allows (§2). |
 | Interrupts | Taken in WRITE, before an instruction, as soon as ISA §7.1 allows (§6). Valid/ready request ports for NMI and IRQ. |
@@ -69,6 +69,11 @@ effects, R15 as an operand, and interrupts are all handled in the pipeline.
 
 The stages do what they do in qnice_cpu, with these differences:
 
+- **FETCH** reads two words per cycle: the instruction port is 64 bits wide
+  and reads an aligned pair of words. An instruction is 2.1 words on average
+  in translated code and 1.6 in hand-written code (§5.6), so a port that
+  delivers one word per cycle would hold the core to about one instruction
+  per two cycles, whatever the rest of the pipeline did.
 - **ICACHE** presents up to four words to DECODE: the instruction word and up
   to three constant words. DECODE takes the instruction only when all its
   words are present. The length follows from the instruction word (ISA §2.3).
@@ -101,7 +106,9 @@ also reads an s0 that has no micro-op of its own.
 The common instructions need one micro-op: `ADD R1, R2, R3`, `MOVE R1, 5`,
 the push `MOVE @--SP, x`, and the call `ADD @--SP, 2, PC`. A pop
 `MOVE x, @SP++` and a return `MOVE PC, @SP++` need two. The most any
-instruction needs is three.
+instruction needs is three. In the benchmark programs an instruction has
+1.02 micro-ops on average when translated and 1.18 when written by hand
+(§5.6), so the SEQUENCER seldom adds a cycle.
 
 **One write per micro-op is enough** because the two writes of a register
 destination in mode 001 or 010 merge into one: Rx ← regval(x, regval(x, r) ∓ 1)
@@ -116,9 +123,14 @@ a stall, gives `S1` the new value.
 
 ### 5.1 Registers
 
-The register file writes before it reads, as in qnice_cpu. DECODE stalls an
-instruction that reads a register an older micro-op in flight will write.
-Bypasses can come later, once the stall counts are measured.
+The register file writes before it reads, as in qnice_cpu. A micro-op that
+reads a register an older micro-op in flight will write gets the value
+through a bypass from WRITE, where the value is produced, rather than by a
+stall. DECODE stalls only when the value does not exist yet when the
+micro-op needs it. The bypasses are in the first version because about
+three in ten instructions read a register the previous instruction writes
+(§5.6). With stalls alone, every third instruction would wait for the
+writer to retire.
 
 ### 5.2 The condition
 
@@ -162,10 +174,17 @@ that instruction. No interrupt is taken before it (§6).
 
 Stores are issued in WRITE, which is in order, so they need no extra rule.
 
-This costs a cycle or two after conditional jumps and stores. If that turns
-out to matter, the ISA could later let reads of RAM (not of the I/O range) be
-speculative. That needs a check of each read against older stores, so it is
-not part of the first version.
+A data read directly after a store is 15% of the translated benchmark's
+instructions and 8% of the hand-written one's (§5.6). So rule 3 matters:
+the read must be allowed in the cycle after the bus accepts the store, not
+after the store's instruction retires.
+
+Rules 1 and 2 cost a cycle or two for a conditional read after a write of
+SR, and for a read after a conditional jump. These are 1 to 4% and 1 to 8%
+of the instructions (§5.6), so data reads stay exact for now. If the cost
+turns out to matter, the ISA could later let reads of RAM (not of the I/O
+range) be speculative. That needs a check of each read against older
+stores, so it is not part of the first version.
 
 ### 5.4 Control flow
 
@@ -186,8 +205,11 @@ that reads R15 sees the side effect (ISA §4.3), so it takes R15 from the PC
 register after that micro-op has retired, not from DECODE. R15 as a pointer
 is rare, so a slow path is fine.
 
-R14 used as an operand or base register is also rare. DECODE can stall such
-an instruction until everything older has retired.
+R14 as an operand is not rare. The signed comparison of ISA §9.2,
+`?V XOR R14, R14, 0x10000000`, reads and writes it directly, and it is 7%
+of the hand-written benchmark's instructions (§5.6). So R14 is bypassed like
+any other register, from the SR that WRITE keeps. R15 as a pointer or with
+a side effect occurs in neither benchmark, so its slow path stays slow.
 
 ### 5.5 Self-modifying code
 
@@ -205,6 +227,40 @@ only cycles. qnice_cpu uses a fixed window of 32 words for the same purpose.
 
 A store into the storing instruction's own constant words must not change
 it, and refetching from the next instruction gives that.
+
+### 5.6 How often the hazards occur
+
+`bench/hazards.py` counts the hazards above in a program, from the
+emulator's trace, and `make hazards` in `bench/` runs it on the two
+benchmark programs ([bench/README.md](../bench/README.md)). A skipped
+instruction counts as if it ran, because DECODE sees its operands before
+the condition is known. These are the shares of all instructions on
+2026-10-15:
+
+| | `bench.c` through nicewasm | `hand.nasm` |
+|---|---|---|
+| Instructions | 3425036 | 494070 |
+| Skipped | 20.3% | 18.4% |
+| Words per instruction, mean | 2.09 | 1.62 |
+| Micro-ops per instruction, mean | 1.02 | 1.18 |
+| Conditional | 22.5% | 27.7% |
+| Data read | 25.9% | 41.7% |
+| Store | 27.4% | 15.4% |
+| Jump: writes R15, or a control instruction | 19.3% | 21.1% |
+| Reads a register the previous instruction writes | 26.9% | 30.0% |
+| Reads a register written two back, not one | 4.3% | 14.0% |
+| Conditional, SR written by the previous instruction | 15.3% | 20.3% |
+| Conditional with a data read, SR written by the previous | 1.1% | 3.8% |
+| Data read after a store | 15.3% | 8.1% |
+| Data read after a conditional jump | 0.9% | 7.6% |
+| R14 read as an operand | 0.8% | 6.6% |
+| R15 as a pointer, or with a side effect | 0% | 0% |
+
+The numbers decided three things: FETCH reads two words per cycle (§3),
+the bypasses are in the first version (§5.1), and R14 is a bypassed
+register (§5.4). They left speculative reads out of the first version
+(§5.3). The reads from the previous instruction are value chains in R1 to
+R4, not stack operations: R13 alone is under 1% in both programs.
 
 ## 6. Interrupts
 
@@ -302,6 +358,11 @@ each RAM and the address of the UART. These rules hold for every setting:
 - **Unmapped addresses.** Both buses need a default slave that acknowledges a
   read with 0 and drops a write (ISA §8.2). Without one, the core would wait
   forever.
+- **Bus decoder.** The data bus decoder keeps the ACKs in order when
+  requests to different slaves are in flight, since the math unit holds an
+  ACK for up to 65 cycles: a request to one slave waits while a request to
+  another is still owed its ACK. The address compare of `tb_multicycle`
+  does without this only because the multi-cycle core waits for each ACK.
 - **I/O.** Only the data bus reaches I/O. The instruction bus returns 0 for
   the I/O range (ISA §8.3).
 - **Console.** A UART at `0xFFFFFF00` by default, as in the emulator
@@ -332,7 +393,9 @@ whether it was skipped, any interrupt taken, the halt reason, and the register
 values. The writer prints what changed, in the emulator's format and order:
 R0–R14 in order, R15 only after a jump, the memory write, and the halt reason.
 The report is a `t_retire` record (`hdl/src/trace_pkg.vhd`), and the writer
-is `hdl/sim/trace.vhd`.
+is `hdl/sim/trace.vhd`. The record's contract wants a store to the console
+accepted on the bus no later than the cycle its instruction is reported, so
+WRITE holds the report of an instruction while the bus stalls its store.
 
 **The testbench** has a sparse dual-port memory model that loads `.bin` files,
 a console model that writes each byte into the trace stream when it is

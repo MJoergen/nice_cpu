@@ -1,0 +1,329 @@
+#!/usr/bin/env python3
+"""How often the pipeline hazards of doc/MICROARCH.md §5 occur in a program.
+
+    ./hazards.py FILE...      profile each program
+    ./hazards.py --test       check the counts on a small program
+
+A FILE that ends in .bin is run on the emulator with --trace. The emulator
+is ../emulator/zig-out/bin/niceemu next to this script, or $NICEEMU. Any
+other FILE is a trace that "niceemu --trace" wrote.
+
+Each instruction in the trace is decoded (ISA.md §2 and §4) into the
+registers it reads and writes, its data accesses, its constant words, and
+its micro-operations (MICROARCH.md §4). Each count compares an instruction
+with the one, two, or three before it. A skipped instruction counts as if
+it ran, because DECODE sees its operands before the condition is known, so
+a register it would write counts as written. An interrupt entry starts the
+sequence afresh, as it flushes the pipeline. The console output in the
+trace and the lines after the halt are skipped.
+"""
+
+import os
+import subprocess
+import sys
+from dataclasses import dataclass
+from typing import Dict, FrozenSet, Iterable, Iterator, List
+
+# The modes of ISA.md §4: those with a side effect on the register, those
+# that read memory as a source, and those that take a constant word.
+SIDE_EFFECT = {1, 2, 5, 6}
+MEMORY = {4, 5, 6, 7}
+CONSTANT = {3, 7}
+
+
+@dataclass
+class Instr:
+    """What DECODE learns from one instruction word."""
+
+    conditional: bool          # The condition is not "always"
+    control: bool              # HALT, RTI, INT, or a reserved word
+    reads: FrozenSet[int]      # Registers read as operands or bases, R0 left out
+    writes: FrozenSet[int]     # Registers written by the result or a side effect
+    mem_reads: int             # Data reads
+    store: bool                # Writes memory
+    words: int                 # The instruction word and its constant words
+    uops: int                  # Micro-operations of MICROARCH.md §4
+    sr_write: bool             # Writes SR: M = 1, R14 written, or control
+    redirect: bool             # Writes R15, or control
+    early_jump: bool           # A jump that DECODE resolves (MICROARCH.md §5.4)
+    r15_known: bool            # Reads R15 in mode 000 or 011, where DECODE knows PC
+    r15_pointer: bool          # R15 as a pointer or base, or with a side effect
+    skipped: bool = False
+
+
+def decode(iw: int) -> Instr:
+    conditional = ((iw >> 31) & 1, (iw >> 28) & 7) != (0, 0)
+    if (iw >> 26) & 3 == 3:
+        return Instr(conditional, True, frozenset(), frozenset(), 0, False, 1, 1,
+                     True, True, False, False, False)
+    m = (iw >> 25) & 1
+    dm, dr = (iw >> 18) & 7, (iw >> 14) & 15
+    sources = (((iw >> 11) & 7, (iw >> 7) & 15), ((iw >> 4) & 7, iw & 15))
+    reads = set()
+    writes = set()
+    mem_reads = constants = 0
+    uops = 1
+    r15_known = r15_pointer = False
+    for mode, reg in sources:
+        if reg == 15:
+            if mode in (0, 3):
+                r15_known = True
+            else:
+                r15_pointer = True
+        if reg != 0:
+            reads.add(reg)
+            if mode in SIDE_EFFECT:
+                writes.add(reg)
+                uops += 1
+        if mode in MEMORY:
+            mem_reads += 1
+        if mode in CONSTANT:
+            constants += 1
+    if dm in CONSTANT:
+        constants += 1
+    store = dm >= 3  # Mode 011 is an alias of 111 (ISA.md §4.2)
+    if store:
+        if dr != 0:
+            reads.add(dr)
+            if dm in SIDE_EFFECT:
+                writes.add(dr)
+        if dr == 15:
+            r15_pointer = True
+    elif dr != 0:
+        writes.add(dr)
+    early_jump = not conditional and dm == 0 and dr == 15 and mem_reads == 0
+    return Instr(conditional, False, frozenset(reads), frozenset(writes), mem_reads, store,
+                 constants + 1, uops, bool(m) or 14 in writes, 15 in writes, early_jump,
+                 r15_known, r15_pointer)
+
+
+LABELS = [
+    "conditional",
+    "conditional with a data read",
+    "data read",
+    "two data reads",
+    "store",
+    "jump: writes R15, or control",
+    "conditional jump",
+    "jump that DECODE resolves",
+    "writes SR",
+    "conditional, SR written by the previous instruction",
+    "conditional, SR written two back, not one",
+    "conditional with a data read, SR written by the previous",
+    "data read after a store",
+    "data read after a conditional jump",
+    "reads a register the previous instruction writes",
+    "the same, R13 only",
+    "reads a register written two back, not one",
+    "reads a register written three back, not one or two",
+    "R14 read as an operand or base",
+    "R14 written as a register",
+    "R15 read where DECODE knows PC",
+    "R15 as a pointer, or with a side effect",
+]
+
+
+class Profile:
+    """The counts for one program."""
+
+    def __init__(self) -> None:
+        self.instructions = 0
+        self.skipped = 0
+        self.words: Dict[int, int] = {}
+        self.uops: Dict[int, int] = {}
+        self.counts: Dict[str, int] = {label: 0 for label in LABELS}
+        self.raw_regs: Dict[int, int] = {}
+        self.history: List[Instr] = []
+
+    def interrupt(self) -> None:
+        self.history.clear()
+
+    def add(self, d: Instr) -> None:
+        c = self.counts
+        self.instructions += 1
+        self.skipped += d.skipped
+        self.words[d.words] = self.words.get(d.words, 0) + 1
+        self.uops[d.uops] = self.uops.get(d.uops, 0) + 1
+        reading = d.mem_reads > 0
+        c["conditional"] += d.conditional
+        c["conditional with a data read"] += d.conditional and reading
+        c["data read"] += reading
+        c["two data reads"] += d.mem_reads > 1
+        c["store"] += d.store
+        c["jump: writes R15, or control"] += d.redirect
+        c["conditional jump"] += d.redirect and d.conditional
+        c["jump that DECODE resolves"] += d.early_jump
+        c["writes SR"] += d.sr_write
+        c["R14 read as an operand or base"] += 14 in d.reads
+        c["R14 written as a register"] += 14 in d.writes
+        c["R15 read where DECODE knows PC"] += d.r15_known
+        c["R15 as a pointer, or with a side effect"] += d.r15_pointer
+        h = self.history
+        if h:
+            p1 = h[-1]
+            c["conditional, SR written by the previous instruction"] += d.conditional and p1.sr_write
+            c["conditional with a data read, SR written by the previous"] += (
+                d.conditional and reading and p1.sr_write)
+            c["data read after a store"] += reading and p1.store
+            c["data read after a conditional jump"] += reading and p1.redirect and p1.conditional
+            raw1 = (d.reads & p1.writes) - {15}
+            c["reads a register the previous instruction writes"] += bool(raw1)
+            c["the same, R13 only"] += raw1 == {13}
+            for reg in raw1:
+                self.raw_regs[reg] = self.raw_regs.get(reg, 0) + 1
+            if len(h) > 1:
+                p2 = h[-2]
+                c["conditional, SR written two back, not one"] += (
+                    d.conditional and p2.sr_write and not p1.sr_write)
+                raw2 = (d.reads & p2.writes) - {15} - raw1
+                c["reads a register written two back, not one"] += bool(raw2)
+                if len(h) > 2:
+                    raw3 = (d.reads & h[-3].writes) - {15} - raw1 - raw2
+                    c["reads a register written three back, not one or two"] += bool(raw3)
+        h.append(d)
+        if len(h) > 3:
+            h.pop(0)
+
+    def report(self, name: str) -> str:
+        n = self.instructions
+        if n == 0:
+            return f"{name}: no instructions"
+
+        def distribution(what: str, d: Dict[int, int]) -> str:
+            shares = "  ".join(f"{k}: {100 * v / n:.1f}%" for k, v in sorted(d.items()))
+            return f"  {what:12s} {shares}   mean {sum(k * v for k, v in d.items()) / n:.2f}"
+
+        lines = [f"{name}: {n} instructions, {self.skipped} skipped ({100 * self.skipped / n:.1f}%)",
+                 distribution("words", self.words), distribution("micro-ops", self.uops)]
+        for label in LABELS:
+            lines.append(f"  {label:58s} {self.counts[label]:9d} {100 * self.counts[label] / n:5.1f}%")
+        top = sorted(self.raw_regs.items(), key=lambda kv: -kv[1])[:6]
+        lines.append("  registers read from the previous instruction: "
+                     + ", ".join(f"R{reg} {100 * v / n:.1f}%" for reg, v in top))
+        return "\n".join(lines)
+
+
+def profile(lines: Iterable[str]) -> Profile:
+    p = Profile()
+    for line in lines:
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] in ("NMI", "IRQ"):
+            p.interrupt()
+            continue
+        if len(parts) < 2 or len(parts[0]) != 8 or len(parts[1]) != 8:
+            continue
+        try:
+            int(parts[0], 16)
+            iw = int(parts[1], 16)
+        except ValueError:
+            continue
+        d = decode(iw)
+        d.skipped = "skipped" in parts[2:]
+        p.add(d)
+    return p
+
+
+def trace_lines(path: str) -> Iterator[str]:
+    """The lines of a trace file, or of the emulator's trace of a .bin file."""
+    if not path.endswith(".bin"):
+        with open(path) as f:
+            yield from f
+        return
+    emulator = os.environ.get("NICEEMU") or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "emulator", "zig-out", "bin", "niceemu")
+    try:
+        proc = subprocess.Popen([emulator, "--trace", path], stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, text=True)
+    except OSError as e:
+        sys.exit(f"hazards.py: cannot run {emulator}: {e.strerror}")
+    assert proc.stdout is not None
+    yield from proc.stdout
+    proc.wait()
+
+
+# The trace of this program, from niceemu --trace, with the counts below
+# worked out by hand:
+#        MOVE R1, 5                    writes R1
+#        ADD[M] R2, R1, 1              reads R1 from the previous instruction; writes SR
+#        ?Z MOVE R3, R2                conditional after SR; reads R2 from the previous; skipped
+#        MOVE @--R13, R1               a store; reads R1 from three back
+#        MOVE R4, @R13++               a data read after the store; reads R13 from the
+#                                      previous; two micro-ops
+#        ?V XOR R14, R14, 0x10000000   conditional; reads and writes R14; writes SR; skipped
+#        ?N MOVE R5, 1                 conditional after SR; skipped
+#        MOVE R15, done                a jump that DECODE resolves
+#        .DAT 0
+# done:  HALT                          control: a jump, and SR counts as written
+TEST_TRACE = """\
+00000000 00005800 R1=00000005
+00000002 026080b0 R2=00000006
+00000004 3000c100 skipped
+00000005 00174080 R13=ffffffff [ffffffff]=00000005
+00000006 00013680 R4=00000005 R13=00000000
+00000007 51438730 skipped
+00000009 40015800 skipped
+0000000b 0003d800 R15=0000000e
+0000000e 0c000000 HALT
+Halted (HALT) after 9 steps, PC=0000000f
+R0  00000000 R1  00000005 R2  00000006 R3  00000000
+"""
+TEST_WORDS = {1: 4, 2: 5}
+TEST_UOPS = {1: 8, 2: 1}
+TEST_RAW_REGS = {1: 1, 2: 1, 13: 1}
+TEST_COUNTS = {
+    "conditional": 3,
+    "conditional with a data read": 0,
+    "data read": 1,
+    "two data reads": 0,
+    "store": 1,
+    "jump: writes R15, or control": 2,
+    "conditional jump": 0,
+    "jump that DECODE resolves": 1,
+    "writes SR": 3,
+    "conditional, SR written by the previous instruction": 2,
+    "conditional, SR written two back, not one": 0,
+    "conditional with a data read, SR written by the previous": 0,
+    "data read after a store": 1,
+    "data read after a conditional jump": 0,
+    "reads a register the previous instruction writes": 3,
+    "the same, R13 only": 1,
+    "reads a register written two back, not one": 0,
+    "reads a register written three back, not one or two": 1,
+    "R14 read as an operand or base": 1,
+    "R14 written as a register": 1,
+    "R15 read where DECODE knows PC": 0,
+    "R15 as a pointer, or with a side effect": 0,
+}
+
+
+def test() -> None:
+    p = profile(TEST_TRACE.splitlines())
+    bad = []
+    if (p.instructions, p.skipped) != (9, 3):
+        bad.append(f"{p.instructions} instructions, {p.skipped} skipped, expected 9 and 3")
+    for what, have, want in (("words", p.words, TEST_WORDS), ("micro-ops", p.uops, TEST_UOPS),
+                             ("registers", p.raw_regs, TEST_RAW_REGS)):
+        if have != want:
+            bad.append(f"{what}: {have}, expected {want}")
+    for label in LABELS:
+        if p.counts[label] != TEST_COUNTS[label]:
+            bad.append(f"{label}: {p.counts[label]}, expected {TEST_COUNTS[label]}")
+    if bad:
+        sys.exit("FAIL hazards.py --test\n  " + "\n  ".join(bad))
+    print("PASS hazards.py: the counts of the test program are the ones worked out by hand")
+
+
+def main() -> None:
+    args = sys.argv[1:]
+    if args == ["--test"]:
+        test()
+        return
+    if not args or args[0].startswith("-"):
+        sys.exit(__doc__.split("\n\n")[1])
+    for path in args:
+        name = os.path.splitext(os.path.basename(path))[0] if path.endswith(".bin") else path
+        print(profile(trace_lines(path)).report(name))
+
+
+if __name__ == "__main__":
+    main()

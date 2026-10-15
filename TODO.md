@@ -15,18 +15,17 @@ has TODO or FIXME comments.
 - **The pipelined core.** FETCH, ICACHE, DECODE, SEQUENCER, PREPARE, and
   WRITE, with micro-operations, as [doc/MICROARCH.md](doc/MICROARCH.md)
   describes. Only the multi-cycle core exists ([hdl/README.md](hdl/README.md)).
-- **The system around the core** (MICROARCH.md §8): dual-port RAM, the bus
-  decoders, a default slave that reads 0 and drops writes, and the console
-  UART at `0xFFFFFF00`, with generics for the memory map. The UART must
-  receive too: a read returns the next byte with bit 8 set, or 0
-  (ISA.md §8.3). `wb_mem.vhd` always reads `0x200`, as with no input. Today
-  `hdl/sim/wb_mem.vhd` stands in for all of it, in simulation only, and
-  `hdl/test/tb_multicycle.vhd` decodes the math unit and the performance
-  counters with an address compare.
-- **Formal checks with SymbiYosys** (MICROARCH.md §9): each stage, and the
-  data access rule of MICROARCH.md §5.3. So far `make formal` checks only
-  the bus and interrupt ports of the multi-cycle core
-  ([hdl/README.md](hdl/README.md)).
+  First come the next three items, which give it tests that the
+  multi-cycle core passes today, so that a failure blames the core and not
+  the test, and the bus decoder of the system item. Its instruction port
+  is 64 bits wide (MICROARCH.md §3), so `hdl/sim/wb_mem.vhd` needs a
+  generic for the width of its instruction port, and `wb_master_check` one
+  for the width of the data.
+- **A testbench for any core.** `hdl/test/tb_multicycle.vhd` holds the bus
+  decoder, the interrupt source, the timer, the trace writer, and the
+  watchdog, and names the core. Factor them into one testbench that takes
+  the core as a generic, so that the pipelined core runs the same tests
+  with one line changed in `hdl/Makefile`.
 - **Test order steps not done** (MICROARCH.md §9):
   - Step 4, hazard programs: back-to-back flag use, every pair of side
     effects on one register, R14 and R15 as pointers, stores into the next
@@ -35,10 +34,29 @@ has TODO or FIXME comments.
     multi-cycle core passes the interrupt probes with requests at fixed
     steps.
   - Step 6, the runtime and translator test programs on the core. The hdl
-    tests do not run them yet, not even on the multi-cycle core.
+    tests do not run them yet, not even on the multi-cycle core. GHDL runs
+    the multi-cycle core at about 3300 instructions a second, from the
+    times in [bench/README.md](bench/README.md).
 - **An interrupt comparison script for the pipelined core** (MICROARCH.md
   §9). It reads from the core's trace where each interrupt was taken, and
-  runs the emulator with the matching `--irq` or `--nmi` options.
+  runs the emulator with the matching `--irq` or `--nmi` options. On the
+  multi-cycle core it must give the same result as the fixed steps do,
+  which checks the script before the pipelined core needs it.
+- **The system around the core** (MICROARCH.md §8): dual-port RAM, the bus
+  decoders, a default slave that reads 0 and drops writes, and the console
+  UART at `0xFFFFFF00`, with generics for the memory map. The data bus
+  decoder must keep the ACKs in order when requests to different slaves
+  are in flight (MICROARCH.md §8); the pipelined core needs it before the
+  rest. The UART must receive too: a read returns the next byte with bit 8
+  set, or 0 (ISA.md §8.3). `wb_mem.vhd` always reads `0x200`, as with no
+  input. Today
+  `hdl/sim/wb_mem.vhd` stands in for all of it, in simulation only, and
+  `hdl/test/tb_multicycle.vhd` decodes the math unit and the performance
+  counters with an address compare.
+- **Formal checks with SymbiYosys** (MICROARCH.md §9): each stage, and the
+  data access rule of MICROARCH.md §5.3. So far `make formal` checks only
+  the bus and interrupt ports of the multi-cycle core
+  ([hdl/README.md](hdl/README.md)).
 
 ## Devices
 
@@ -47,16 +65,17 @@ has TODO or FIXME comments.
   device needs a controller that merges the requests and says which vector
   goes first. No device raises NMI.
 
-## Pipelined core: decide after measuring
+## Pipelined core: after the first version
 
-- **Register bypasses** instead of stalls (MICROARCH.md §5.1).
 - **Speculative reads of RAM** (MICROARCH.md §5.3). Data reads wait until
-  the instruction is certain to run, which costs a cycle or two after
-  conditional jumps and stores. Allowing speculative reads of RAM, but not
-  of the I/O range, needs a change to ISA.md §8.2 and a check of each read
-  against older stores.
-- **R14 and R15 as operands** take a slow path (MICROARCH.md §5.4). Keep
-  it slow unless programs turn out to use them.
+  the instruction is certain to run. The waits are a conditional read
+  after a write of SR, 1.1% of the translated benchmark's instructions and
+  3.8% of the hand-written one's, and a read after a conditional jump,
+  0.9% and 7.6% (MICROARCH.md §5.6). Allowing speculative reads of RAM, but
+  not of the I/O range, needs a change to ISA.md §8.2 and a check of each
+  read against older stores. Decide once the pipelined core shows what the
+  waits cost. The bypasses and the slow path for R14 were decided from the
+  same measurements (MICROARCH.md §5.6).
 
 ## Toolchain
 

@@ -11,6 +11,7 @@ NICE with other processors.
     make            # run both on the emulator and print their tables
     make test       # the same, and check every result
     make core       # run both on the multi-cycle core in GHDL (about 20 minutes)
+    make hazards    # count the pipeline hazards of MICROARCH.md §5 in both
     make native     # build and run bench.c on the host, as a check
     make wasm       # rebuild bench.wasm from bench.c (needs clang)
 
@@ -129,6 +130,38 @@ instruction because more of its instructions have constant words and
 memory operands. In both programs `rng64` has the most cycles per
 instruction, 14.9 and 14.0, because its reads of the math unit wait for
 the multiplier.
+
+## The hazard profile
+
+`hazards.py` counts how often the pipeline hazards of
+[MICROARCH.md §5](../doc/MICROARCH.md) occur in a program, from the
+emulator's trace, and `make hazards` runs it on both programs. It takes
+`.bin` files, which it runs on the emulator with `--trace`, or traces that
+`niceemu --trace` wrote. The emulator is the one in `emulator/zig-out/bin`,
+or `$NICEEMU`.
+
+Each instruction is decoded into the registers it reads and writes, its
+data accesses, its constant words, and its micro-operations, and compared
+with the one, two, and three instructions before it. A skipped instruction
+counts as if it ran, because DECODE sees its operands before the condition
+is known. For each program the output gives the number of instructions,
+the distributions of the instruction length in words and of the
+micro-operations, and then one line per hazard with its count and its
+share of all instructions:
+
+    hand: 494070 instructions, 91075 skipped (18.4%)
+      words        1: 39.0%  2: 59.7%  3: 1.3%  4: 0.0%   mean 1.62
+      micro-ops    1: 82.3%  2: 17.5%  3: 0.2%   mean 1.18
+      conditional                                                  137036  27.7%
+      ...
+      reads a register the previous instruction writes             148135  30.0%
+      ...
+      registers read from the previous instruction: R2 8.7%, R1 7.0%, ...
+
+MICROARCH.md §5.6 has the table from 2026-10-15 and the decisions it led
+to. `hazards.py --test` checks the counts on a small program whose hazards
+are counted by hand in the script, and `make test` runs it. `make
+typecheck` runs mypy on `expected.py` and `hazards.py`.
 
 ## Checking the results
 

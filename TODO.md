@@ -17,7 +17,8 @@ below. No code has TODO or FIXME comments.
   decoders, a default slave that reads 0 and drops writes, and the console
   UART at `0xFFFFFF00`, with generics for the memory map. Today
   `hdl/sim/wb_mem.vhd` stands in for all of it, in simulation only, and
-  `hdl/test/tb_multicycle.vhd` decodes the math unit with an address compare.
+  `hdl/test/tb_multicycle.vhd` decodes the math unit and the performance
+  counters with an address compare.
 - **Synthesis for an FPGA.** Only `ghdl --synth` is run. Vivado has not
   been tried, so size and clock speed are unknown.
 - **Formal checks with SymbiYosys** (MICROARCH.md §9): each stage, and the

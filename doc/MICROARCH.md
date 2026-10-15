@@ -310,6 +310,11 @@ each RAM and the address of the UART. These rules hold for every setting:
   aligned words, so the decoder compares address bits 31..5.
   A read of a result holds off its ACK until the result is ready, so the
   data bus must allow a slave to take many cycles.
+- **Performance counters.** `hdl/src/perf.vhd` at `0xFFFFFF10`–`0xFFFFFF1F`
+  (ISA §8.5). The core raises `instret_o` for one cycle per completed
+  instruction. A read of `INSTR_LO` must count every older instruction, so
+  the pipelined core raises it at the latest when the data read of a younger
+  instruction is made, or holds that read off until it has.
 - **Stack.** The runtime puts the stack just below `0xFFFFFF00`. A memory map
   that runs the runtime's programs needs RAM there as well as at address 0.
 

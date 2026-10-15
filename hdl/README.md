@@ -16,11 +16,13 @@ working reference for it.
 |---|---|
 | [src/multicycle.vhd](src/multicycle.vhd) | The multi-cycle core. |
 | [src/mpu.vhd](src/mpu.vhd) | The math unit of ISA.md §8.4, a Wishbone slave. |
+| [src/perf.vhd](src/perf.vhd) | The performance counters of ISA.md §8.5, a Wishbone slave. |
 | [src/trace_pkg.vhd](src/trace_pkg.vhd) | `t_retire`, the record in which the core reports each step to the trace writer. |
 | [sim/trace.vhd](sim/trace.vhd) | The trace writer. Simulation only. |
 | [sim/wb_mem.vhd](sim/wb_mem.vhd) | The memory model, with the console and the read counter. Simulation only. |
 | [test/tb_mem.vhd](test/tb_mem.vhd) | A self-checking test of the memory model, which loads [test/mem.bin](test/mem.bin). |
 | [test/tb_mpu.vhd](test/tb_mpu.vhd) | A self-checking test of the math unit. |
+| [test/tb_perf.vhd](test/tb_perf.vhd) | A self-checking test of the performance counters. |
 | [test/tb_trace.vhd](test/tb_trace.vhd) | A test of the trace writer, which stands in for the core and runs [test/trace.asm](test/trace.asm). |
 | [test/tb_multicycle.vhd](test/tb_multicycle.vhd) | Runs a program on the multi-cycle core, with an interrupt source, and writes its trace. |
 | [test/shift.asm](test/shift.asm) | Every shift, with the counts that are hard to get right. |
@@ -35,8 +37,9 @@ writer also run under nvc.
     cd hdl && make test
 
 `make test` builds the emulator, analyses the VHDL, checks that GHDL can
-synthesise the core and the math unit (`ghdl --synth`), and runs the tests. Everything it makes
-goes in `build/`. `make clean` removes it.
+synthesise the core, the math unit, and the performance counters
+(`ghdl --synth`), and runs the tests. Everything it makes goes in `build/`.
+`make clean` removes it.
 
 `tb_mpu` checks every word of the math unit against `numeric_std`: for 20
 corner cases and 2000 random pairs of A and B, and for 16 corner cases and
@@ -44,6 +47,12 @@ corner cases and 2000 random pairs of A and B, and for 16 corner cases and
 for the computation, that a write restarts it, that the two halves do not
 wait for each other, that a write and a read in back-to-back cycles see
 each other in order, and that reset clears the operands.
+
+`tb_perf` starts the counters just below a wrap of their low words. It
+checks that the cycle counter counts every cycle, that the instruction
+counter counts the cycles with `instret_i` high, and that a read of a high
+word returns the snapshot of the last read of the low word, across the
+wrap. It also checks the spare words, that writes change nothing, and reset.
 
 `tb_trace` runs four times, each against the emulator on the same program
 with the same NMI: with the full trace, without the trace, and stopped at two
@@ -62,9 +71,12 @@ with the same interrupt requests:
   not list data reads, but `reads` counts them with the read counter, so
   its registers show whether the core made each read exactly once and in
   order (ISA.md §8.2). `mpu` and `mpu64` read every word of the math unit.
+  `perf` reads the instruction counter, with an NMI and an `INT`, and
+  checks the cycle counter only through flags, because the emulator counts
+  steps, not cycles.
 - `test/shift.asm`.
-- `cputest`, `reads`, `mpu`, and `mpu64` again, on a memory that stalls in
-  30% of the cycles.
+- `cputest`, `reads`, `mpu`, `mpu64`, and `perf` again, on a memory that
+  stalls in 30% of the cycles.
 - 30 random programs from `test/random_prog.py`, each stopped at 3000 steps,
   on a memory that stalls in 30% of the cycles. Besides random ALU and
   shift instructions, they use R15 with every side effect, `HALT`, `RTI`,
@@ -152,6 +164,26 @@ A read of a result while the computation runs is accepted, then STALL stays
 high and ACK waits until the result is ready. Reads of A, B, and the spare
 words, and all writes, are acknowledged in the next cycle. Writes to the
 result words and the spare words are ignored.
+
+## The performance counters
+
+`perf` holds the performance counters of ISA.md §8.5: `CYCLE_LO` and
+`CYCLE_HI` at offsets 0 and 1, and `INSTR_LO` and `INSTR_HI` at 2 and 3. It
+is a pipelined Wishbone slave with a 4-bit address. It never stalls, and it
+acknowledges each request in the next cycle. The bus decoder selects it for
+`0xFFFFFF10`–`0xFFFFFF1F`, and in `tb_multicycle` that is an address compare,
+as for the math unit.
+
+The cycle counter counts every clock cycle after reset. The instruction
+counter counts the core's `instret_o`, which the multi-cycle core raises for
+one cycle in `RETIRE` after each instruction, but not after an interrupt
+entry. An instruction makes its data reads before its own `RETIRE`, so a
+read of `INSTR_LO` returns the number of instructions before it, as ISA.md
+§8.5 requires. A read of a low word copies its 64-bit counter into a
+snapshot, and a read of the high word returns the snapshot's high word.
+
+The generic `G_RESET` sets the counters' value after reset. It is 0, as
+ISA.md §8.5 requires, except in `tb_perf`, which starts near a wrap.
 
 ## The trace writer
 

@@ -16,7 +16,8 @@
 --             effect, and update the flags. A memory destination is written
 --             through the data bus.
 --   VEC       Read the vector table entry, for IRQ, NMI, and INT.
---   RETIRE    Report the step on retire_o.
+--   RETIRE    Report the step on retire_o, and an instruction on
+--             instret_o.
 --
 -- Each bus access is one pipelined Wishbone transaction, and the core waits
 -- for its ACK before it moves on. So the data accesses happen exactly once
@@ -82,6 +83,10 @@ entity multicycle is
 
       -- '1' once the core has halted (ISA.md §1.4)
       halted_o     : out std_logic;
+
+      -- '1' for one cycle when an instruction completes, but not an
+      -- interrupt entry, for the instruction counter (ISA.md §8.5)
+      instret_o    : out std_logic;
 
       -- One report per step, for sim/trace.vhd
       retire_o     : out t_retire
@@ -356,6 +361,7 @@ begin
    irq_ready_o <= '1' when take_irq else '0';
 
    halted_o    <= '1' when state = S_HALTED else '0';
+   instret_o   <= '1' when state = S_RETIRE and rep_intr = '0' else '0';
 
 
    p_fsm : process (clk_i)

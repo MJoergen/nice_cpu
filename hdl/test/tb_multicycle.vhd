@@ -3,8 +3,9 @@
 --
 -- THEORY OF OPERATION
 -- The core runs on the memory model, sim/wb_mem.vhd, which loads G_BIN_FILE.
--- A decoder on the data bus sends 0xFFFFFF20-0xFFFFFF3F to the math unit,
--- src/mpu.vhd, instead (ISA.md §8.4). It needs no more than an address
+-- A decoder on the data bus sends 0xFFFFFF10-0xFFFFFF1F to the performance
+-- counters, src/perf.vhd (ISA.md §8.5), and 0xFFFFFF20-0xFFFFFF3F to the
+-- math unit, src/mpu.vhd (ISA.md §8.4). It needs no more than an address
 -- compare, because the core waits for each ACK before its next request.
 -- The trace writer, sim/trace.vhd, prints each step the core reports.
 --
@@ -152,6 +153,12 @@ architecture simulation of tb_multicycle is
    signal mpu_stall   : std_logic;
    signal mpu_ack     : std_logic;
    signal mpu_data_in : std_logic_vector(31 downto 0);
+   signal perf_sel     : std_logic;
+   signal perf_stb     : std_logic;
+   signal perf_stall   : std_logic;
+   signal perf_ack     : std_logic;
+   signal perf_data_in : std_logic_vector(31 downto 0);
+   signal instret      : std_logic;
 
    signal nmi_valid  : std_logic                    := '0';
    signal nmi_ready  : std_logic;
@@ -211,16 +218,23 @@ begin
          irq_ready_o  => irq_ready,
          irq_vector_i => irq_vector,
          halted_o     => open,
+         instret_o    => instret,
          retire_o     => retire
       ); -- i_multicycle
 
 
    mpu_sel      <= '1' when dbus_addr(31 downto 5) = X"FFFFFF" & "001" else '0';
-   mem_stb      <= dbus_stb and not mpu_sel;
+   perf_sel     <= '1' when dbus_addr(31 downto 4) = X"FFFFFF1" else '0';
+   mem_stb      <= dbus_stb and not mpu_sel and not perf_sel;
    mpu_stb      <= dbus_stb and mpu_sel;
-   dbus_stall   <= mpu_stall when mpu_sel = '1' else mem_stall;
-   dbus_ack     <= mem_ack or mpu_ack;
-   dbus_data_in <= mpu_data_in when mpu_ack = '1' else mem_data_in;
+   perf_stb     <= dbus_stb and perf_sel;
+   dbus_stall   <= mpu_stall when mpu_sel = '1' else
+                   perf_stall when perf_sel = '1' else
+                   mem_stall;
+   dbus_ack     <= mem_ack or mpu_ack or perf_ack;
+   dbus_data_in <= mpu_data_in when mpu_ack = '1' else
+                   perf_data_in when perf_ack = '1' else
+                   mem_data_in;
 
 
    i_wb_mem : entity work.wb_mem
@@ -264,6 +278,22 @@ begin
          wb_data_i  => dbus_data_out,
          wb_data_o  => mpu_data_in
       ); -- i_mpu
+
+
+   i_perf : entity work.perf
+      port map (
+         clk_i      => clk,
+         rst_i      => rst,
+         instret_i  => instret,
+         wb_cyc_i   => dbus_cyc,
+         wb_stb_i   => perf_stb,
+         wb_stall_o => perf_stall,
+         wb_ack_o   => perf_ack,
+         wb_we_i    => dbus_we,
+         wb_addr_i  => dbus_addr(3 downto 0),
+         wb_data_i  => dbus_data_out,
+         wb_data_o  => perf_data_in
+      ); -- i_perf
 
 
    i_trace : entity work.trace

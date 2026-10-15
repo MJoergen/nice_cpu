@@ -93,3 +93,86 @@ __popcnt64
         ADD     R1, R1, R3
         MOVE    R2, 0
         MOVE    R15, @R13++
+
+; The device routines of §9.3: the console (§8.3), the performance counters
+; (§8.5), and the emulator's character screen. Unlike the routines above,
+; programs call them by their C names.
+__nice.console  .EQU    0xFFFFFF00
+__nice.cycle_lo .EQU    0xFFFFFF10
+__nice.cycle_hi .EQU    0xFFFFFF11
+__nice.instr_lo .EQU    0xFFFFFF12
+__nice.instr_hi .EQU    0xFFFFFF13
+__nice.screen   .EQU    0xFFFF0000              ; 80 columns, 25 rows
+
+; nice_putc: writes bits 7..0 of R1 to the console. 2 steps.
+_nice_putc
+        MOVE    @__nice.console, R1
+        MOVE    R15, @R13++
+
+; nice_getc: R1 = the next input byte, waiting until there is one, or -1
+; once the input has ended. A console read returns the byte with bit 8 set,
+; 0 if none is waiting, or 0x200 at the end. Steps: 4 for a byte, 8 at the
+; end, and 6 more for each read that finds no byte. Skipped instructions
+; count as steps.
+_nice_getc
+        MOVE    R1, @__nice.console
+        AND[M]  R0, R1, 0x100
+        ?!Z AND R1, R1, 0xFF
+        ?!Z MOVE R15, @R13++
+        AND[M]  R0, R1, 0x200
+        ?Z MOVE R15, _nice_getc
+        MOVE    R1, -1
+        MOVE    R15, @R13++
+
+; nice_pollc: as nice_getc, but with one read: R1 = -2 if no byte is
+; waiting. Steps: 4 for a byte, 8 otherwise.
+_nice_pollc
+        MOVE    R1, @__nice.console
+        AND[M]  R0, R1, 0x100
+        ?!Z AND R1, R1, 0xFF
+        ?!Z MOVE R15, @R13++
+        AND[M]  R0, R1, 0x200
+        MOVE    R1, -2
+        ?!Z MOVE R1, -1
+        MOVE    R15, @R13++
+
+; nice_print: writes the string at R1, one character per word, up to its
+; first 0 word, to the console. Steps: 2 + 4n for n characters. Uses R2.
+_nice_print
+        MOVE[M] R2, @R1++
+        ?Z MOVE R15, @R13++
+        MOVE    @__nice.console, R2
+        MOVE    R15, _nice_print
+
+; nice_cycles, nice_instructions: R1:R2 = the counter, low word first.
+; The read of the low word takes the snapshot that the read of the high
+; word returns (§8.5). 3 steps.
+_nice_cycles
+        MOVE    R1, @__nice.cycle_lo
+        MOVE    R2, @__nice.cycle_hi
+        MOVE    R15, @R13++
+
+_nice_instructions
+        MOVE    R1, @__nice.instr_lo
+        MOVE    R2, @__nice.instr_hi
+        MOVE    R15, @R13++
+
+; nice_screen_put: writes R3 to the screen at column R1 and row R2, the
+; word 80 * R2 + R1. 80 * R2 = 64 * R2 + 16 * R2. 6 steps. Uses R2 and R4.
+_nice_screen_put
+        SHL     R4, R2, 6
+        SHL     R2, R2, 4
+        ADD     R2, R2, R4
+        ADD     R2, R2, R1
+        MOVE    @__nice.screen[R2], R3
+        MOVE    R15, @R13++
+
+; nice_screen_clear: writes 0x20 to the 2000 words of the screen, from the
+; last down to the first. 6002 steps. Uses R1.
+_nice_screen_clear
+        MOVE    R1, 2000
+_nice_screen_clear.loop
+        DEC[M]  R1, R1
+        MOVE    @__nice.screen[R1], 0x20
+        ?!Z MOVE R15, _nice_screen_clear.loop
+        MOVE    R15, @R13++

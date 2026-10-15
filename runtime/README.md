@@ -87,6 +87,40 @@ routines take 4 steps each, `__mul64` 10, and the other `long long` ones 7.
 | `___wasm_trap_vector` | The word that wasm traps jump through. It starts as `___wasm_trap`. |
 | `___wasm_trap` | The default handler: the reserved control word `0x0FE00000`. It halts with the trap's code in R1 and address in R2. The emulator exits with status 2, not 0 as after `HALT`. |
 
+## Device routines
+
+`lib.nasm` also has the device routines of ISA.md §9.3, for the console,
+the performance counters, and the emulator's character screen. Programs
+call them instead of using the devices' addresses. They are C functions,
+so their labels are their C names with `_` in front.
+
+| Label | C declaration | What it does | Changes |
+|---|---|---|---|
+| `_nice_putc` | `void nice_putc(int c)` | Writes bits 7..0 of R1 to the console. | none |
+| `_nice_getc` | `int nice_getc(void)` | Waits for the next input byte and returns it, 0 to 255, or −1 once the input has ended. | flags |
+| `_nice_pollc` | `int nice_pollc(void)` | Like `nice_getc`, but returns −2 at once if no byte is waiting. | flags |
+| `_nice_print` | `void nice_print(const char *s)` | Writes the string at R1, one character per word, up to its first 0 word, with no newline. | R1, R2, flags |
+| `_nice_cycles` | `unsigned long long nice_cycles(void)` | R1:R2 = the cycle counter. | none |
+| `_nice_instructions` | `unsigned long long nice_instructions(void)` | R1:R2 = the instruction counter. | none |
+| `_nice_screen_put` | `void nice_screen_put(int col, int row, int c)` | Writes R3 to column R1, 0 to 79, of row R2, 0 to 24. | R2, R4 |
+| `_nice_screen_clear` | `void nice_screen_clear(void)` | Writes `0x20` to each of the screen's 2000 words. | R1, flags |
+
+From assembly, for example:
+
+        MOVE    R1, text
+        ADD     @--R13, 2, R15
+        MOVE    R15, _nice_print
+        ...
+text    .ASCII_L 'Hello'
+
+The counter routines read the low word first, as ISA.md §8.5 describes.
+So an interrupt service routine that reads a counter can spoil the reading
+of the code it interrupted. The screen routines write `0xFFFF0000` to
+`0xFFFF07CF`, so with the emulator's `-2004` they miss the screen. On a
+system without a screen, those words are RAM or nothing.
+
+The C library below has the same routines, in `nice.h`.
+
 ## Floating point
 
 NICE has no float instructions, so `float.nasm` does float arithmetic in
@@ -136,11 +170,14 @@ program uses. So it adds nothing to the joined assembly files.
 | `string.h` | `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`, `strnlen`, `strcmp`, `strncmp`, `strcpy`, `strncpy`, `strcat`, `strncat`, `strchr`, `strrchr`, `strstr` |
 | `stdlib.h` | `malloc`, `calloc`, `realloc`, `free`, `abs`, `labs`, `llabs`, `atoi`, `atol`, `strtol`, `strtoul`, `abort` |
 | `ctype.h` | `isalnum`, `isalpha`, `iscntrl`, `isdigit`, `isgraph`, `islower`, `isprint`, `ispunct`, `isspace`, `isupper`, `isxdigit`, `tolower`, `toupper` |
-| `nice.h` | `nice_peek` and `nice_poke`, the `nice` imports of ISA.md §9.4, and `NICE_CONSOLE` with the bits of a console read |
+| `nice.h` | The device routines (see above): `nice_putc`, `nice_getc`, `nice_pollc`, `nice_print`, `nice_cycles`, `nice_instructions`, `nice_screen_put`, and `nice_screen_clear`. Also `nice_peek` and `nice_poke`, the `nice` imports of ISA.md §9.4, and the devices' addresses, for devices that have no routine. |
 
-`putchar` writes to the console at `0xFFFFFF00` with `nice_poke`, and
-`getchar` reads from it with `nice_peek` (ISA.md §8.3). They are the only
-functions that touch hardware. `getchar` waits until a byte is there. It
+The device routines, in `src/nice.c`, are the only functions that touch
+hardware. They use `nice_peek` and `nice_poke`. `nice_print` writes the
+bytes of a C string in linear memory, where `_nice_print` in `lib.nasm`
+writes one character per word. `putchar` and `puts` write with `nice_putc` and
+`nice_print`, and `getchar` reads with `nice_getc` (ISA.md §8.3).
+`getchar` waits until a byte is there. It
 returns `EOF` once the emulator's input has ended, which a UART's input
 never does. The emulator reads the input from stdin, or from the file
 that `--input` names. Clang's own `stddef.h`,
@@ -217,7 +254,8 @@ This builds the emulator, then joins each `test/X.nasm` with a start-up file,
 `lib.nasm`, and `muldiv_mpu.nasm`. It assembles and runs the result and
 compares the output and exit status with `test/X.expected`. The tests of
 the muldiv routines run a second time with `muldiv_soft.nasm`, and compare
-with `test/X_soft.expected`. The expected values were checked by
+with `test/X_soft.expected`. `test/device.nasm` reads `test/device.input`
+as its console input. The expected values were checked by
 hand. The comments in each test show how.
 
 Then it runs the C library's tests, `libc/test/X.c`, with

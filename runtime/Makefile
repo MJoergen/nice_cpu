@@ -8,7 +8,7 @@ EMU = ../emulator/zig-out/bin/niceemu
 # assembled and run, and the output and exit status are compared with
 # test/X.expected. The tests in SOFT_TESTS run a second time as X_soft,
 # with muldiv_soft.nasm instead, and are compared with test/X_soft.expected.
-TESTS = start start_wasm mul trap div div64 mul64 bits
+TESTS = start start_wasm mul trap div div64 mul64 bits device
 SOFT_TESTS = mul div mul64 div64
 START_start_wasm = start_wasm.nasm
 START_trap       = start_wasm.nasm
@@ -19,6 +19,8 @@ OPTS_div        = -d 0x4b:32
 OPTS_div64      = -d 0x6f:64
 OPTS_mul64      = -d 0x48:16
 OPTS_bits       = -d 0x54:54
+OPTS_device     = -s --input test/device.input -d 0x7f:8 -d 0xffff0000:3 -d 0xffff0052:1 \
+  -d 0xffff07ce:2
 
 # $(1) is the name of the run, $(2) the test, and $(3) the muldiv file.
 define check

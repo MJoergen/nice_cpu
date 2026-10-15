@@ -74,7 +74,11 @@ has TODO or FIXME comments.
   ([runtime/README.md](runtime/README.md#c-library)). Wanted: a Zig module
   with a console writer for `std.fmt`, and a Rust crate with a
   `core::fmt::Write` console, `print!` and `println!`, and a global
-  allocator. Both print through `nice.poke`.
+  allocator. Both print through `nice.poke`. Each should also offer the
+  device routines of ISA.md §9.3 (`nice_getc`, `nice_cycles`, the screen,
+  and so on), which C code has in `runtime/libc/include/nice.h`. Until
+  then, Zig and Rust code reaches the devices by their addresses, as
+  `translator/test/hello.zig` and `hellors.rs` do.
 - **C's `long double` and `__int128`.** Not supported, because the runtime
   library has no `__addtf3`, `__multi3`, and the like
   ([translator/README.md](translator/README.md)).

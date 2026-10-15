@@ -2,12 +2,46 @@
 #ifndef _NICE_H
 #define _NICE_H
 
-// The console (ISA.md §8.3). Each write prints bits 7..0 of the word. A
-// read returns the next input byte with NICE_CONSOLE_BYTE set, 0 if no
-// byte is there yet, or NICE_CONSOLE_END once the emulator's input ended.
+// The device routines of ISA.md §9.3, with the same names and meanings as
+// in the runtime library. Programs use these, not the addresses below.
+
+// Writes bits 7..0 of c to the console.
+void nice_putc(int c);
+
+// Waits for the next input byte from the console and returns it, 0 to
+// 255, or -1 once the input has ended.
+int nice_getc(void);
+
+// Like nice_getc, but returns -2 at once if no byte is waiting.
+int nice_pollc(void);
+
+// Writes the bytes of s up to its first 0 to the console, with no newline.
+void nice_print(const char *s);
+
+// The performance counters (ISA.md §8.5): the clock cycles and the
+// instructions since reset. An interrupt routine must not read them
+// while the code it interrupted is reading one.
+unsigned long long nice_cycles(void);
+unsigned long long nice_instructions(void);
+
+// The emulator's 80x25 character screen. nice_screen_put writes c, the
+// character in bits 7..0 and its colour above, to a column, 0 to 79, of a
+// row, 0 to 24. nice_screen_clear writes a blank, 0x20, to every word.
+void nice_screen_put(int col, int row, int c);
+void nice_screen_clear(void);
+
+#define NICE_SCREEN_COLS 80
+#define NICE_SCREEN_ROWS 25
+
+// The devices' addresses and bits (ISA.md §8.3, §8.5), for nice.c.
 #define NICE_CONSOLE 0xFFFFFF00u
 #define NICE_CONSOLE_BYTE 0x100u
 #define NICE_CONSOLE_END 0x200u
+#define NICE_CYCLE_LO 0xFFFFFF10u
+#define NICE_CYCLE_HI 0xFFFFFF11u
+#define NICE_INSTR_LO 0xFFFFFF12u
+#define NICE_INSTR_HI 0xFFFFFF13u
+#define NICE_SCREEN 0xFFFF0000u
 
 // Reads the NICE word at a word address.
 __attribute__((import_module("nice"), import_name("peek")))

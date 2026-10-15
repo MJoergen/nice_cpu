@@ -59,15 +59,6 @@ has TODO or FIXME comments.
 - **R14 and R15 as operands** take a slow path (MICROARCH.md §5.4). Keep
   it slow unless programs turn out to use them.
 
-## ISA
-
-- **Signed comparison.** No condition tests a signed a < b. It is N XOR V
-  after `SUB[M]`, which takes more than one conditional instruction
-  (ISA.md §9.2). Michael decided on 2026-10-13 to leave it out "for now".
-  nicewasm now does it in two: `?V XOR R14, R14, 0x10000000` flips N,
-  then `?N` jumps.
-  Open: add a condition or an instruction for it, or keep it out.
-
 ## Toolchain
 
 - **A C compiler for NICE.** None targets NICE directly. ISA.md §9.3
@@ -116,3 +107,7 @@ Kept here so that they are not proposed again.
   first NICE instruction of the code that trapped, and a shared stub cannot
   easily know it ([doc/review/code-size-plan.md](doc/review/code-size-plan.md),
   Left as it is).
+- **A condition or instruction for signed comparison.** A signed a < b
+  takes two instructions, `?V XOR R14, R14, 0x10000000` and then `?N`,
+  as ISA.md §9.2 shows and nicewasm does. Michael decided on 2026-10-15
+  to keep it that way.

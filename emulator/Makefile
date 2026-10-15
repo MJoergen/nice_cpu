@@ -20,7 +20,7 @@ OPTS_wrap      = -d 0xffffffff:1
 # Probes of single rules of doc/ISA.md, in test/X.asm. The expected values
 # are in the comments of each program. Run make bins after changing one.
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest console screen iofetch \
-  reads reserved
+  reads reserved mpu
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
@@ -31,6 +31,7 @@ OPTS_start   = -t --nmi 0:3
 OPTS_screen  = -s
 OPTS_iofetch = -d 0xffffff80:1 -d 0xffffffff:1
 OPTS_reads   = -d 0xffffff01:1
+OPTS_mpu     = -d 0x200:72 -d 0xffffff10:16
 
 define check
 	@$(EMU) $(OPTS_$(1)) $(2) > test/$(1).out; echo "exit $$?" >> test/$(1).out

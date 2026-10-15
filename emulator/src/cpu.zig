@@ -110,6 +110,57 @@ pub const console_addr: u32 = io_base;
 /// sets the count. It lets tests see the data reads of §8.2.
 pub const counter_addr: u32 = io_base + 1;
 
+/// The first of the 16 words of the math unit (§8.4).
+pub const mpu_base: u32 = io_base + 0x10;
+
+/// The math unit (§8.4). It computes each result when it is read, so a
+/// read never waits.
+pub const Mpu = struct {
+    a: u32 = 0,
+    b: u32 = 0,
+
+    /// The value a data read of word `i` returns.
+    pub fn read(self: Mpu, i: u4) u32 {
+        const sa: i64 = @as(i32, @bitCast(self.a));
+        const sb: i64 = @as(i32, @bitCast(self.b));
+        const sp: u64 = @bitCast(sa * sb);
+        const up: u64 = @as(u64, self.a) * self.b;
+        return switch (i) {
+            0 => self.a,
+            1 => self.b,
+            2 => @truncate(sp),
+            3 => @truncate(sp >> 32),
+            4 => @truncate(up),
+            5 => @truncate(up >> 32),
+            6, 7 => {
+                // Division by zero, and -2^31 / -1, which overflows.
+                if (self.b == 0) return if (i == 6) 0xFFFF_FFFF else self.a;
+                if (self.a == 0x8000_0000 and self.b == 0xFFFF_FFFF) return if (i == 6) 0x8000_0000 else 0;
+                const a: i32 = @bitCast(self.a);
+                const b: i32 = @bitCast(self.b);
+                return @bitCast(if (i == 6) @divTrunc(a, b) else @rem(a, b));
+            },
+            8 => if (self.b == 0) 0xFFFF_FFFF else self.a / self.b,
+            9 => if (self.b == 0) self.a else self.a % self.b,
+            else => 0,
+        };
+    }
+
+    /// A write of `value` to word `i`. Only A and B can be written.
+    pub fn write(self: *Mpu, i: u4, value: u32) void {
+        switch (i) {
+            0 => self.a = value,
+            1 => self.b = value,
+            else => {},
+        }
+    }
+};
+
+/// The word of the math unit that `addr` names, if it names one.
+fn mpuWord(addr: u32) ?u4 {
+    return if (addr -% mpu_base < 16) @truncate(addr -% mpu_base) else null;
+}
+
 pub const Cpu = struct {
     /// R0..R15. Read and write them through `getReg` and `setReg`, which
     /// apply the rules for R0 and R14 (§4.3).
@@ -137,6 +188,8 @@ pub const Cpu = struct {
     /// instead of to memory. This device belongs to the emulator, not to
     /// the ISA (§8.3).
     console: ?*std.Io.Writer,
+    /// The math unit at `mpu_base`.
+    mpu: Mpu,
 
     /// A processor after reset (§8.1), with empty memory allocated from `gpa`.
     pub fn init(gpa: std.mem.Allocator) Cpu {
@@ -154,6 +207,7 @@ pub const Cpu = struct {
             .last_write = null,
             .read_count = 0,
             .console = null,
+            .mpu = .{},
         };
         cpu.reset();
         return cpu;
@@ -171,6 +225,7 @@ pub const Cpu = struct {
         self.halt_reason = .none;
         self.nmi_pending = null;
         self.irq_pending = null;
+        self.mpu = .{};
     }
 
     pub fn halted(self: *const Cpu) bool {
@@ -212,6 +267,7 @@ pub const Cpu = struct {
             self.read_count +%= 1;
             return n;
         }
+        if (mpuWord(addr)) |i| return self.mpu.read(i);
         return self.mem.read(addr);
     }
 
@@ -220,6 +276,7 @@ pub const Cpu = struct {
     /// devices are mapped it must not trigger their side effects.
     pub fn peek(self: *const Cpu, addr: u32) u32 {
         if (addr == counter_addr) return self.read_count;
+        if (mpuWord(addr)) |i| return self.mpu.read(i);
         return self.mem.peek(addr);
     }
 
@@ -230,6 +287,8 @@ pub const Cpu = struct {
         }
         if (addr == counter_addr) {
             self.read_count = value;
+        } else if (mpuWord(addr)) |i| {
+            self.mpu.write(i, value);
         } else if (addr != console_addr or self.console == null) {
             try self.mem.write(addr, value);
         }
@@ -1047,6 +1106,45 @@ test "the read counter counts data reads, and a write sets it" {
     try testing.expectEqual(5 + 6, cpu.regs[1]);
     try testing.expectEqual(7, cpu.peek(counter_addr));
     try testing.expectEqual(7, cpu.read_count);
+}
+
+test "the math unit's results, with division by zero and overflow (§8.4)" {
+    // A, B, then SMUL_LO, SMUL_HI, UMUL_LO, UMUL_HI, SDIV_Q, SDIV_R, UDIV_Q, UDIV_R.
+    const cases = [_][10]u32{
+        .{ 7, 3, 21, 0, 21, 0, 2, 1, 2, 1 },
+        // -7 * 2 = -14; 0xFFFFFFF9 * 2 = 0x1_FFFFFFF2; -7 / 2 = -3 rem -1.
+        .{ 0xFFFF_FFF9, 2, 0xFFFF_FFF2, 0xFFFF_FFFF, 0xFFFF_FFF2, 1, 0xFFFF_FFFD, 0xFFFF_FFFF, 0x7FFF_FFFC, 1 },
+        // -1 * -1 = 1; 0xFFFFFFFF^2 = 0xFFFFFFFE_00000001.
+        .{ 0xFFFF_FFFF, 0xFFFF_FFFF, 1, 0, 1, 0xFFFF_FFFE, 1, 0, 1, 0 },
+        // -2^31 * -1 = 2^31; 2^31 * (2^32 - 1) = 0x7FFFFFFF_80000000; -2^31 / -1 overflows.
+        .{ 0x8000_0000, 0xFFFF_FFFF, 0x8000_0000, 0, 0x8000_0000, 0x7FFF_FFFF, 0x8000_0000, 0, 0, 0x8000_0000 },
+        // -5 / 0 and 0xFFFFFFFB / 0.
+        .{ 0xFFFF_FFFB, 0, 0, 0, 0, 0, 0xFFFF_FFFF, 0xFFFF_FFFB, 0xFFFF_FFFF, 0xFFFF_FFFB },
+    };
+    for (cases) |c| {
+        const mpu: Mpu = .{ .a = c[0], .b = c[1] };
+        for (0..10) |i| try testing.expectEqual(c[i], mpu.read(@intCast(i)));
+        for (10..16) |i| try testing.expectEqual(0, mpu.read(@intCast(i)));
+    }
+}
+
+test "the math unit takes writes to A and B only, and memory keeps nothing" {
+    // MOVE @A, 6;  MOVE @B, 7;  MOVE @UMUL_LO, 5;  MOVE R1, @UMUL_LO;  HALT
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), mpu_base, 6,
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), mpu_base + 1, 7,
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), mpu_base + 4, 5,
+        alu_iw(.always, MOVE, .none, reg(1), ind_imm(0), reg(0)), mpu_base + 4,
+        HALT,
+    });
+    try runToHalt(&cpu);
+    try testing.expectEqual(42, cpu.regs[1]);
+    try testing.expectEqual(42, cpu.peek(mpu_base + 4));
+    try testing.expectEqual(1, cpu.mem.pages.count()); // only the program's page
+    cpu.reset();
+    try testing.expectEqual(0, cpu.peek(mpu_base));
 }
 
 test "instruction fetches from the I/O range read 0 (§8.3)" {

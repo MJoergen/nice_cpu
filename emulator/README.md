@@ -91,7 +91,9 @@ address twice and a file with no words are errors.
 | `0xFFFF07D0`–`0xFFFFFEFF` | 63280 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |
 | `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns 0. |
 | `0xFFFFFF01` | 1 | Read counter. A data read returns the number of data reads of it since the last write, and a write sets that number. |
-| `0xFFFFFF02`–`0xFFFFFFFF` | 254 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
+| `0xFFFFFF02`–`0xFFFFFF0F` | 14 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
+| `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Math unit (ISA.md §8.4). Multiplies and divides A and B. |
+| `0xFFFFFF20`–`0xFFFFFFFF` | 224 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. |
 
 The screen has one word per character, with the character in bits 7..0 and
 its colour above. It is ordinary memory, and `--screen` prints the
@@ -107,6 +109,11 @@ writes to it. The FPGA core will have a UART at the same address.
 The read counter makes the data reads of ISA.md §8.2 visible: how many
 there are, and in which order. It stores nothing else, and `--dump` shows
 its count without counting. `test/reads.asm` uses it.
+
+The math unit holds only A and B. It computes each result when it is read,
+so a read never waits, and `--dump` shows the results for the current A and
+B. Its words store nothing else. `test/mpu.asm` checks every result, with
+division by zero and the signed overflow.
 
 Instruction fetches from `0xFFFFFF00`–`0xFFFFFFFF` read 0, as ISA.md §8.3
 requires, whatever the memory there holds. So a program that runs into the

@@ -8,6 +8,7 @@ const usage =
     \\
     \\Runs the program from address 0 until it halts, then prints the
     \\registers. A write to 0xFFFFFF00 prints its low byte on stdout.
+    \\The math unit is at 0xFFFFFF10-0xFFFFFF1F.
     \\
     \\Options:
     \\  -t, --trace          Print one line per instruction.

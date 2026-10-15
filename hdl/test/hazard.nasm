@@ -15,16 +15,32 @@
 ; checks that the emulator's run exits with 0, and then compares the core's
 ; trace with the emulator's. Every pair of side effects on one register is
 ; in sidefx_prog.py.
+;
+; The program runs with an NMI or an IRQ before any one of its steps, for
+; step 5 of the test order (test/irq_sweep.py), and still passes its checks.
+; So E = 1 almost everywhere, and VBASE is 0, 1, or 2 at every instruction
+; boundary, each with a vector table entry for NMI (vector 8) and IRQ
+; (vector 9). The routines change the flags, which RTI restores.
 COUNT   .EQU    0xFFFFFF01      ; the read counter (ISA.md §8.3)
 SP      .EQU    R13
 PC      .EQU    R15
 
+NMI     .EQU    8               ; the vectors of test/irq_sweep.py
+IRQ     .EQU    9
+
         MOVE    PC, start       ; words 0,1
         .ORG    4
         .DAT    isr             ; vector 4, for INT 4 (VBASE = 0)
+        .ORG    NMI
+        .DAT    nmi, irq
+        .ORG    0x100+NMI
+        .DAT    nmi, irq
+        .ORG    0x200+NMI
+        .DAT    nmi, irq
 
-        .ORG    0x10
+        .ORG    0x300
 start   MOVE    SP, stack
+        MOVE    R14, 0x40000000 ; E = 1
 
 ; 1. Each flag is set by a direct write of R14 and cleared by an instruction
 ; with M set, which the next instruction tests. Then it is set by an
@@ -35,52 +51,56 @@ start   MOVE    SP, stack
         MOVE    R12, 1
         MOVE    R1, 0
         MOVE    R2, 0x7FFFFFFF
-        MOVE    R14, 0x09000000 ; Z = 1
+        MOVE    R14, 0x49000000 ; Z = 1
         ADD[M]  R0, R0, 1       ; Z = 0
         ?Z ADD  R1, R1, 0x100
         SUB[M]  R0, R2, R2      ; Z = 1
         ?Z ADD  R1, R1, 1       ; 1
-        MOVE    R14, 0x05000000 ; C = 1
+        MOVE    R14, 0x45000000 ; C = 1
         ADD[M]  R0, R0, R0      ; C = 0
         ?C ADD  R1, R1, 0x100
         SUB[M]  R0, R0, 1       ; C = 1
         ?C ADD  R1, R1, 1       ; 2
-        MOVE    R14, 0x03000000 ; X = 1
+        MOVE    R14, 0x43000000 ; X = 1
         MOVE[M] R0, R2          ; X = 0
         ?X ADD  R1, R1, 0x100
         NOT[M]  R0, R0          ; X = 1
         ?X ADD  R1, R1, 1       ; 3
-        MOVE    R14, 0x11000000 ; N = 1
+        MOVE    R14, 0x51000000 ; N = 1
         MOVE[M] R0, R2          ; N = 0
         ?N ADD  R1, R1, 0x100
         ADD[M]  R0, R2, 1       ; N = 1, V = 1
         ?N ADD  R1, R1, 1       ; 4
-        MOVE    R14, 0x21000000 ; V = 1
+        MOVE    R14, 0x61000000 ; V = 1
         ADD[M]  R0, R2, 0       ; V = 0
         ?V ADD  R1, R1, 0x100
         ADD[M]  R0, R2, 1       ; V = 1
         ?V ADD  R1, R1, 1       ; 5
-        MOVE    R14, 0x09000000 ; Z = 1
+        MOVE    R14, 0x49000000 ; Z = 1
         ADD[M]  R0, R0, 1       ; Z = 0
         ?!Z ADD R1, R1, 1       ; 6
 ; I is changed only by writes of R14, here direct ones.
-        MOVE    R14, 0x81000000 ; I = 1
+        MOVE    R14, 0xC1000000 ; I = 1
         ?I ADD  R1, R1, 1       ; 7
         AND     R14, R14, 0x7FFFFFFF ; I = 0
         ?I ADD  R1, R1, 0x100
-; R14 changed by a side effect, then tested. Bit 24 is set by each write.
-        MOVE    R14, 0x01FFFFFF ; no flags
-        MOVE    R3, R14++       ; R14 = 0x02000000 + bit 24: X = 1
+; R14 changed by the side effect of its destination, then tested. Bit 24
+; is set by each of the two writes. A side effect can carry into the flags
+; only from VBASE = 0xFFFFFF, so the values pass through it within the
+; instruction. Between instructions, the vector table would be in the I/O
+; range.
+        MOVE    R14++, 0x40FFFFFF ; 0x41FFFFFF, then 0x42000000 + bit 24
         ?X ADD  R1, R1, 1       ; 8
-        MOVE    R14--, 0x09000000 ; 0x08FFFFFF + bit 24: Z = 1
-        ?Z ADD  R1, R1, 1       ; 9
-        MOVE    R14++, 0x0AFFFFFF ; 0x0BFFFFFF, then 0x0C000000 + bit 24
-        ?C ADD  R1, R1, 1       ; 10
+        MOVE    R14++, 0x4AFFFFFF ; 0x4BFFFFFF, then 0x4C000000 + bit 24
+        ?C ADD  R1, R1, 1       ; 9
+        ?Z ADD  R1, R1, 1       ; 10
         ?X ADD  R1, R1, 0x100
 ; An instruction with M set and R14 as a register destination computes no
-; flags, though its result is 0.
+; flags, though its result is 0. It clears E too, and an IRQ waits until
+; the OR sets it again.
         MOVE[M] R14, 0          ; R14 = 0x01000000: Z = 0
         ?Z ADD  R1, R1, 0x100
+        OR      R14, R14, 0x40000000
 ; An instruction without M keeps the flags.
         SUB[M]  R0, R0, R0      ; Z = 1
         ADD     R3, R0, 1
@@ -215,18 +235,18 @@ start   MOVE    SP, stack
         SUB[M]  R0, R2, data+4
         ?!Z MOVE PC, fail
 
-; 4. R14 and R15 as pointers. R14 = 0x01000400 points to the words at
+; 4. R14 and R15 as pointers. R14 = 0x41000000 points to the words at
 ; r14data. When an instruction with M set changes the flags, R14 points
 ; elsewhere.
         MOVE    R12, 4
-        MOVE    R14, 0x01000400
+        MOVE    R14, 0x41000000
         MOVE    R1, @R14        ; R1 = 0x14
-        MOVE    R2, @R14++      ; R2 = 0x14, R14 = 0x01000401
+        MOVE    R2, @R14++      ; R2 = 0x14, R14 = 0x41000001
         MOVE    R3, @R14        ; R3 = 0x15
-        MOVE    @R14++, 0x16    ; R14 = 0x01000402
-        MOVE    R4, @--R14      ; R4 = 0x16, R14 = 0x01000401
-        MOVE    R14, 0x01000400
-        SUB[M]  R0, R0, R0      ; Z = 1: R14 = 0x09000400
+        MOVE    @R14++, 0x16    ; R14 = 0x41000002
+        MOVE    R4, @--R14      ; R4 = 0x16, R14 = 0x41000001
+        MOVE    R14, 0x41000000
+        SUB[M]  R0, R0, R0      ; Z = 1: R14 = 0x49000000
         MOVE    R5, @R14        ; R5 = 0x94
         ADD     R6, R1, R2
         ADD     R6, R6, R3
@@ -262,7 +282,7 @@ x4      ADD     R1, @--R15, 0[R15]
 x5      HALT
         MOVE    R15--, x6+1     ; R15 = x6
         HALT
-x6      MOVE    R14, 0x01000000 ; VBASE = 0 again, for INT 4 in section 6
+x6      MOVE    R14, 0x41000000 ; VBASE = 0 again, for INT 4 in section 6
 
 ; 5. Stores into the words just fetched (MICROARCH.md §5.5): a NOP over a
 ; HALT in the next word and up to six words further, through a constant
@@ -394,6 +414,12 @@ j9      MOVE    R1, 0x01C1C000
 isr     ADD[M]  R7, R7, 1       ; Z = 0
         RTI
 
+; The routines of NMI and IRQ. Each counts itself and changes the flags.
+nmi     ADD[M]  @nmis, @nmis, 1
+        RTI
+irq     ADD[M]  @irqs, @irqs, 1
+        RTI
+
 ; A subroutine that returns at once: the jump reads its target from memory.
 subr    MOVE    PC, @SP++
 
@@ -402,14 +428,16 @@ fail    .DAT    0x0FE00000      ; a reserved word: halts with status 2
 jt3     .DAT    j4
 jt4     .DAT    j5
 jtf     .DAT    fail
+nmis    .DAT    0
+irqs    .DAT    0
 
-        .ORG    0x400
+        .ORG    0x800
 data    .BLK    16
-        .ORG    0x4F0
+        .ORG    0x8F0
         .BLK    16
 stack
 
-        .ORG    0x01000400
+        .ORG    0x41000000
 r14data .DAT    0x14, 0x15
-        .ORG    0x09000400
+        .ORG    0x49000000
         .DAT    0x94

@@ -31,6 +31,7 @@ working reference for it.
 | [test/tb_multicycle.vhd](test/tb_multicycle.vhd) | Runs a program on the multi-cycle core, with an interrupt source, and writes its trace. |
 | [test/shift.nasm](test/shift.nasm) | Every shift, with the counts that are hard to get right. |
 | [test/hazard.nasm](test/hazard.nasm) | The hazards of MICROARCH.md §5, each with no padding. It checks itself. |
+| [test/irq_sweep.py](test/irq_sweep.py) | Runs a program with an NMI before each of its steps, and with an IRQ before each. |
 | [test/sidefx_prog.py](test/sidefx_prog.py) | Writes a program with every pair of side effects on one register. |
 | [test/random_prog.py](test/random_prog.py) | Writes random programs, and random interrupt requests for them. |
 | [test/trace_reads.py](test/trace_reads.py) | Finds the first line where two traces differ, and shows the data reads of that instruction. |
@@ -119,6 +120,16 @@ with the same interrupt requests:
   or R14, which holds every pair of side effects on one register, and
   every pair of a `SUB` that writes the register and a `SUB` that uses it
   next, or one instruction later. It does not check itself.
+- `test/hazard.nasm` with an interrupt request at every point (MICROARCH.md
+  §9, step 5). `test/irq_sweep.py` runs it once for each step S, with
+  `--nmi S:8`, and once more with `--irq S:9`, on a memory that stalls in
+  30% of the cycles. Each run on the core must match the emulator's, and
+  the emulator must take the request and still pass the program's checks.
+  So `hazard.nasm` keeps E = 1 at all but one step, and has a vector
+  table entry for each VBASE it uses. The runs go in parallel, on all
+  cores; set the number with `-j`. Each worker runs GHDL in its own
+  directory under `build/sweep`, because the LLVM and GCC backends of GHDL
+  write an executable where they run.
 - `cputest`, `reads`, `mpu`, `mpu64`, `perf`, and `timer` again, on a memory that
   stalls in 30% of the cycles.
 - 30 random programs from `test/random_prog.py`, each stopped at 3000 steps,

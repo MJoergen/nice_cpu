@@ -78,6 +78,9 @@ endef
 # program that test/sidefx_prog.py writes, each also on a memory that stalls.
 # hazard.nasm checks itself, so the emulator's run must end at its last HALT,
 # with R12 = 0 and exit status 0, before the core's trace means anything.
+# test/irq_sweep.py then runs hazard.nasm with an NMI before each of its
+# steps, and with an IRQ before each, on the stalling memory (MICROARCH.md
+# §9, step 5). It runs them in parallel, on all cores.
 define check_selfcheck
 	@if grep -q '^R12 00000000' $(BUILD)/core_$(1).expected && \
 	  tail -n 1 $(BUILD)/core_$(1).expected | grep -qx 'exit 0'; then echo "PASS emulator $(1)"; \
@@ -138,6 +141,7 @@ test: emulator analyse synth
 	$(call check_core,hazard,$(BUILD)/hazard.bin)
 	$(call check_selfcheck,hazard)
 	$(call check_core,hazard_stall,$(BUILD)/hazard.bin,-gG_STALL=30 -gG_SEED=13)
+	@$(PYTHON) test/irq_sweep.py --self-check --stall 30 --build $(BUILD) --emu $(EMU) $(BUILD)/hazard.bin
 	@$(PYTHON) test/sidefx_prog.py $(BUILD)/sidefx.nasm
 	@$(ASM) -o $(BUILD)/sidefx.bin $(BUILD)/sidefx.nasm
 	$(call check_core,sidefx,$(BUILD)/sidefx.bin)

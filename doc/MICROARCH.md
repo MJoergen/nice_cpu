@@ -422,7 +422,8 @@ exact.
    instructions, and jumps over `HALT`. qnice_cpu's `prog_hazard.asm` and
    `prog_pipeline.asm` are the model. They are `hdl/test/hazard.nasm`
    and the program that `hdl/test/sidefx_prog.py` writes.
-5. The interrupt probes, and requests at every point in a hazard program.
+5. The interrupt probes, and requests at every point in a hazard program,
+   which `hdl/test/irq_sweep.py` makes.
 6. The runtime and translator test programs.
 7. Random instruction streams, run on both and diffed.
 

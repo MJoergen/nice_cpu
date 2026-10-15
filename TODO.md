@@ -30,14 +30,16 @@ has TODO or FIXME comments.
   - Step 4, hazard programs: `hdl/test/hazard.nasm` and
     `hdl/test/sidefx_prog.py`, which the multi-cycle core passes. Left
     out so far: pairs of side effects on R15, which only some cases of
-    `hazard.nasm` and the random programs have, and hazards across an
-    interrupt entry, which step 5 brings.
-  - Step 5 with requests at every point of a hazard program. The
-    multi-cycle core passes the interrupt probes with requests at fixed
-    steps. `hazard.nasm` has a routine only for its `INT 4`, so it needs
-    routines for the NMI and IRQ vectors first, and it must keep E = 0
-    where an IRQ would break a check. `sidefx_prog.py` writes R14 with
-    any value, E included.
+    `hazard.nasm` and the random programs have. `hazard.nasm` tests a
+    flag set by a side effect on R14 only for a destination, because a
+    source side effect needs VBASE = 0xFFFFFF before the instruction,
+    and its vector table would then be in the I/O range.
+  - Step 5: `hdl/test/irq_sweep.py` runs `hazard.nasm` with an NMI before
+    each step, and with an IRQ before each, and the multi-cycle core
+    passes. Not swept: the program of `sidefx_prog.py`, which writes R14
+    with any value, so E and VBASE too. For the pipelined core, the sweep
+    must vary the cycle at which the request arrives, not the step, and
+    needs the comparison script below.
   - Step 6, the runtime and translator test programs on the core. The hdl
     tests do not run them yet, not even on the multi-cycle core. GHDL runs
     the multi-cycle core at about 3300 instructions a second, from the

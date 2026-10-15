@@ -182,7 +182,7 @@ begin
       check_ibus(X"FFFFFF80", X"00000000");
 
       -- The console takes bits 7..0, in the cycle the write is accepted,
-      -- stores nothing, and reads 0.
+      -- stores nothing, and reads 0x200, as with no input (ISA.md §8.3).
       dbus_cyc      <= '1';
       dbus_stb      <= '1';
       dbus_we       <= '1';
@@ -196,7 +196,7 @@ begin
       dbus_cyc <= '0';
       check_true("console bytes", console_count = 1);
       check("console byte", console_last, X"48");
-      check_dbus(X"FFFFFF00", X"00000000");
+      check_dbus(X"FFFFFF00", X"00000200");
       check_true("console bytes after a read", console_count = 1);
 
       -- The read counter: a data read returns the count and then counts

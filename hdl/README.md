@@ -160,7 +160,8 @@ one cycle, the instruction port reads the old value.
 
 The I/O range follows ISA.md §8.3. The instruction port reads 0 there. The
 console is at `0xFFFFFF00`. A write sends bits 7..0 to the trace writer in
-the cycle the write is accepted, and stores nothing, and a read returns 0.
+the cycle the write is accepted, and stores nothing. A read returns `0x200`:
+there is no input, as for the emulator with stdin from `/dev/null`.
 The read counter is at `0xFFFFFF01`, as in the emulator. A data read returns
 the number of data reads of it since the last write, and a write sets that
 number. The rest of the I/O range is plain memory, as in the emulator.

@@ -51,6 +51,10 @@ library ieee;
    use work.trace_pkg.all;
 
 entity multicycle is
+   generic (
+      -- Adds the invariants that formal/multicycle.sby needs.
+      G_FORMAL : boolean := false
+   );
    port (
       clk_i        : in  std_logic;
       rst_i        : in  std_logic;
@@ -666,5 +670,24 @@ begin
       retire_o.mem_data <= dbus_data_o;
       retire_o.halt     <= halt;
    end process p_retire;
+
+
+   gen_formal : if G_FORMAL generate
+      signal dbus_wait : boolean;
+   begin
+      -- The state has one of its 12 values, and each bus is busy in its
+      -- wait states and only there. Without this the k-induction of
+      -- formal/multicycle.sby starts from states that reset never leads
+      -- to, such as a pending fetch in HALTED_ST.
+      dbus_wait <= state = SRC_WAIT_ST or state = DEST_WAIT_ST or state = VEC_WAIT_ST;
+
+      -- psl default clock is rising_edge(clk_i);
+
+      -- psl f_state      : assert always rst_i = '0' -> state <= HALTED_ST;
+      -- psl f_ibus_state : assert always
+      --    rst_i = '0' -> (ibus_cyc_o = '1') = (state = FETCH_WAIT_ST);
+      -- psl f_dbus_state : assert always
+      --    rst_i = '0' -> (dbus_cyc_o = '1') = dbus_wait;
+   end generate gen_formal;
 
 end architecture synthesis;

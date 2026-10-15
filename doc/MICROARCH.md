@@ -360,7 +360,9 @@ exact.
 7. Random instruction streams, run on both and diffed.
 
 **Formal checks**, as in qnice_cpu: each primitive and stage on its own, and
-properties of the whole core. The most important new property is the data
+properties of the whole core. The checkers of the Wishbone and interrupt
+ports in `hdl/formal/`, written for the multi-cycle core, apply to the
+pipelined core too. The most important new property is the data
 access rule of §5.3: every data access belongs to an instruction that retires,
 and the accesses appear in program order.
 

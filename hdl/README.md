@@ -30,6 +30,10 @@ working reference for it.
 | [test/shift.nasm](test/shift.nasm) | Every shift, with the counts that are hard to get right. |
 | [test/random_prog.py](test/random_prog.py) | Writes random programs, and random interrupt requests for them. |
 | [test/trace_reads.py](test/trace_reads.py) | Finds the first line where two traces differ, and shows the data reads of that instruction. |
+| [formal/wb_master_check.vhd](formal/wb_master_check.vhd) | Formal properties of a Wishbone master port. |
+| [formal/handshake_check.vhd](formal/handshake_check.vhd) | Formal properties of a valid/ready port that takes requests. |
+| [formal/formal_multicycle.vhd](formal/formal_multicycle.vhd) | The multi-cycle core with a checker on each of its four ports. |
+| [formal/multicycle.sby](formal/multicycle.sby) | The SymbiYosys job for it. |
 
 ## Running the tests
 
@@ -109,6 +113,44 @@ line that differs, and prints the data reads of that instruction, with
 the names of the I/O words it knows:
 
     test/trace_reads.py build/random_65.bin build/random_65.expected build/random_65.out
+
+## The formal checks
+
+`make formal` runs the SymbiYosys jobs in `formal/`. It is not part of
+`make test`, because it needs more tools: Yosys with the GHDL plugin,
+SymbiYosys, and the Yices 2 solver. Tested with Yosys 0.33, the plugin
+and GHDL 4.1.0 of Ubuntu 24.04 (packages `yosys`, `yosys-plugin-ghdl`, and
+`ghdl-gcc`, whose libraries the plugin loads), SymbiYosys at its tag
+`yosys-0.33`, and Yices 2.6.4. CI installs the same.
+
+`formal_multicycle` connects the multi-cycle core to four checkers. Every
+input is free, apart from a reset in the first cycle, so the solver plays
+every slave, every interrupt source, and every program. Each checker
+assumes the rules of the other side of its port and asserts the core's:
+
+- The instruction bus and the data bus (`wb_master_check`), as pipelined
+  Wishbone B4 masters. The checker assumes that a slave sends ACK only
+  while CYC is high and only for an accepted request. It asserts that STB
+  is high only with CYC, that a stalled request is held with WE, ADDR, and
+  DATA unchanged, that CYC stays high while a request waits for its ACK,
+  that at most one request waits at a time, and that reset drops CYC and
+  STB.
+- The NMI and IRQ ports (`handshake_check`), with the AXI handshake. The
+  checker assumes that a device holds `valid` and the vector until `ready`.
+  It asserts that the core raises `ready` only for a request, and never in
+  reset.
+
+The `prove` task proves the assertions for every cycle by k-induction. The
+induction needs invariants that tie the ports to the core's state: the state
+is one of its 12 values, and each bus has CYC high exactly in its wait
+states. The core asserts them itself when its generic `G_FORMAL` is true;
+`formal_multicycle` sets it, and the other users leave it false. The
+`cover` task shows that each port can do what the properties talk about: a
+read, a write, a stalled request, and each kind of interrupt taken.
+
+The checkers do not depend on the multi-cycle core, so the pipelined core
+can reuse them, with `G_MAX_PENDING` raised if it keeps more than one
+request waiting.
 
 ## The multi-cycle core
 

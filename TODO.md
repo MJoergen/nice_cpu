@@ -24,7 +24,9 @@ has TODO or FIXME comments.
   `hdl/test/tb_multicycle.vhd` decodes the math unit and the performance
   counters with an address compare.
 - **Formal checks with SymbiYosys** (MICROARCH.md §9): each stage, and the
-  data access rule of MICROARCH.md §5.3. None are written.
+  data access rule of MICROARCH.md §5.3. So far `make formal` checks only
+  the bus and interrupt ports of the multi-cycle core
+  ([hdl/README.md](hdl/README.md)).
 - **Test order steps not done** (MICROARCH.md §9):
   - Step 4, hazard programs: back-to-back flag use, every pair of side
     effects on one register, R14 and R15 as pointers, stores into the next

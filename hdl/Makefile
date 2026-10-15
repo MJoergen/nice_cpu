@@ -144,6 +144,24 @@ endef
 synth: analyse
 	$(foreach u,$(SYNTH),$(call check_synth,$(u)))
 
+# The formal checks of formal/: each task of each .sby file must pass. The
+# work directories go in $(BUILD).
+SBY ?= sby
+FORMAL = multicycle
+FORMAL_TASKS = prove cover
+
+define check_formal
+	@mkdir -p $(BUILD)
+	@cd formal && $(SBY) -f --prefix ../$(BUILD)/$(1) $(1).sby $(2) > ../$(BUILD)/formal_$(1)_$(2).log 2>&1; \
+	if [ $$? -eq 0 ]; then echo "PASS formal $(1) $(2)"; else echo "FAIL formal $(1) $(2)"; \
+	  grep -E "Assert failed|Unreached|ERROR|summary: +(failed|counterexample|unreached)" \
+	    ../$(BUILD)/formal_$(1)_$(2).log; exit 1; fi
+
+endef
+
+formal:
+	$(foreach f,$(FORMAL),$(foreach t,$(FORMAL_TASKS),$(call check_formal,$(f),$(t))))
+
 emulator:
 	$(MAKE) -C ../emulator build
 
@@ -157,4 +175,4 @@ lint:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: test random analyse synth emulator lint clean
+.PHONY: test random analyse synth formal emulator lint clean

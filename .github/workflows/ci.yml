@@ -93,6 +93,26 @@ jobs:
       - run: pip install vsg==3.35.0
       - run: make lint
 
+  formal:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: hdl
+    steps:
+      - uses: actions/checkout@v4
+      # The versions of hdl/README.md, The formal checks. The GHDL plugin
+      # loads the libraries of ghdl-gcc.
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y yosys yosys-plugin-ghdl ghdl-gcc
+      - run: |
+          git clone --depth 1 --branch yosys-0.33 https://github.com/YosysHQ/sby.git /tmp/sby
+          sudo make -C /tmp/sby install PREFIX=/usr/local
+      - run: |
+          curl -sSL https://github.com/SRI-CSL/yices2/releases/download/Yices-2.6.4/yices-2.6.4-x86_64-pc-linux-gnu.tar.gz | tar xz -C /tmp
+          sudo cp /tmp/yices-2.6.4/bin/* /usr/local/bin/
+      - run: make formal
+
   intro:
     runs-on: ubuntu-latest
     defaults:

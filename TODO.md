@@ -21,8 +21,6 @@ has TODO or FIXME comments.
   `hdl/sim/wb_mem.vhd` stands in for all of it, in simulation only, and
   `hdl/test/tb_multicycle.vhd` decodes the math unit and the performance
   counters with an address compare.
-- **Synthesis for an FPGA.** Only `ghdl --synth` is run. Vivado has not
-  been tried, so size and clock speed are unknown.
 - **Formal checks with SymbiYosys** (MICROARCH.md §9): each stage, and the
   data access rule of MICROARCH.md §5.3. None are written.
 - **Test order steps not done** (MICROARCH.md §9):
@@ -38,11 +36,8 @@ has TODO or FIXME comments.
   §9). It reads from the core's trace where each interrupt was taken, and
   runs the emulator with the matching `--irq` or `--nmi` options.
 
-## Example design
+## Devices
 
-- **A MEGA65 example design**, probably in a separate repository
-  (MICROARCH.md §10). It sets the generics, adds the board's clocks and
-  pins, and may map the screen at `0xFFFF0000` to video RAM.
 - **Devices that raise interrupts.** No device raises IRQ or NMI yet, in
   the emulator or in hardware. Only the emulator's `--irq` and `--nmi`
   options and the testbench do ([emulator/README.md](emulator/README.md)).
@@ -111,3 +106,7 @@ Kept here so that they are not proposed again.
   takes two instructions, `?V XOR R14, R14, 0x10000000` and then `?N`,
   as ISA.md §9.2 shows and nicewasm does. Michael decided on 2026-10-15
   to keep it that way.
+- **Board synthesis and an example design in this repository.** This
+  repository stays FPGA-agnostic. The MEGA65 example design, with its
+  synthesis, size, and clock speed, lives in the NicemonMEGA65 repository
+  (MICROARCH.md §10).

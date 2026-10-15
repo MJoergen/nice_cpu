@@ -27,7 +27,7 @@ It is the working reference for the pipelined core
 | Data accesses | Exact, in order, and never speculative, as ISA §8.2 requires. |
 | Instruction fetches | Free to run ahead, as ISA §8.2 allows (§2). |
 | Interrupts | Taken in WRITE, before an instruction, as soon as ISA §7.1 allows (§6). Valid/ready request ports for NMI and IRQ. |
-| Language | VHDL-2008, GHDL for simulation, SymbiYosys for formal verification, and Vivado for synthesis. |
+| Language | VHDL-2008, GHDL for simulation, and SymbiYosys for formal verification. Synthesis for a board is done in the example design (§10). |
 | Verification | A trace writer diffed against `niceemu --trace`, then formal checks with SymbiYosys. |
 | Location | The `hdl/` directory, with commit prefix `nicehdl:` (§10). |
 | Boards | None in this repository. The design is board-agnostic, and generics set the memory map (§10). |
@@ -370,7 +370,7 @@ and the accesses appear in program order.
   simulation models in `hdl/sim/`, and the testbenches in `hdl/test/`.
 - **No board.** This repository targets no particular board. Everything that
   depends on a board, including the memory map, is set by generics (§8).
-- **Example design.** An example design for the MEGA65 is planned, probably in
-  a separate repository. It would set the generics, map the screen at
-  `0xFFFF0000` to video RAM if it wants one, and add the board's clocks and
-  pins.
+- **Example design.** The example design for the MEGA65 lives in the separate
+  NicemonMEGA65 repository, not here. It sets the generics, maps the screen at
+  `0xFFFF0000` to video RAM if it wants one, adds the board's clocks and pins,
+  and does the synthesis.

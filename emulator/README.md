@@ -55,6 +55,7 @@ line such as `Pending: IRQ 05` follows the first line.
 | `-2004` | Put the screen at `0x400`, as the 2004 emulator does. |
 | `-d`, `--dump ADDR:N` | After halting, print N memory words from ADDR. May be repeated. |
 | `-n`, `--max-steps N` | Stop after N steps. The default is 100000000. |
+| `-i`, `--input FILE` | Take the console's input from FILE, or from stdin if FILE is `-`. |
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
 | `--no-cycle-counter` | Make `0xFFFFFF10` and `0xFFFFFF11`, the cycle counter, ordinary memory (see Memory map). |
@@ -90,7 +91,7 @@ address twice and a file with no words are errors.
 | `0x00000000`–`0xFFFEFFFF` | 4294901760 | Ordinary memory. Programs load at 0. |
 | `0xFFFF0000`–`0xFFFF07CF` | 2000 | Character screen, 80×25. Ordinary memory. With `-2004` it is at `0x00000400`–`0x00000BCF` instead. |
 | `0xFFFF07D0`–`0xFFFFFEFF` | 63280 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |
-| `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns 0. |
+| `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns the next input byte plus `0x100`, `0x200` after the end of the input, or 0 without `--input`. |
 | `0xFFFFFF01` | 1 | Read counter. A data read returns the number of data reads of it since the last write, and a write sets that number. |
 | `0xFFFFFF02`–`0xFFFFFF0F` | 14 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Performance counters (ISA.md §8.5). Cycles and instructions, 64 bits each. |
@@ -107,6 +108,15 @@ programs, such as `print.nasm`.
 The console stores nothing. Its output comes before the `Halted` line, and
 with `--trace` it is mixed in with the trace lines. `test/console.nasm`
 writes to it. The FPGA core will have a UART at the same address.
+
+With `--input`, each data read of the console takes the next byte of the
+input. It returns the byte in bits 7..0 with bit 8 set, so a 0 byte reads
+as `0x100`. Once the input has ended, every read returns `0x200`. Without
+`--input` a read returns 0, which means that no byte is there yet, so a
+program that waits for input waits until the step limit. Before it reads,
+the emulator flushes its output, so that a prompt shows before the
+program waits for the answer. `test/input.nasm` reads `test/input.txt`.
+Reads by `--dump` take no input.
 
 The read counter makes the data reads of ISA.md §8.2 visible: how many
 there are, and in which order. It stores nothing else, and `--dump` shows

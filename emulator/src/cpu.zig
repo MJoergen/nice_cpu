@@ -102,8 +102,13 @@ pub const Error = std.Io.Writer.Error || error{OutOfMemory};
 /// The first address of the I/O range (§8.3).
 pub const io_base: u32 = 0xFFFF_FF00;
 
-/// The emulator's console output: the first I/O address (§8.3).
+/// The emulator's console: the first I/O address (§8.3).
 pub const console_addr: u32 = io_base;
+
+/// Bits of a console read when there is input (§8.3): bit 8 says that bits
+/// 7..0 hold the next input byte, and bit 9 that the input has ended.
+pub const console_byte: u32 = 0x100;
+pub const console_end: u32 = 0x200;
 
 /// The emulator's read counter (§8.3): a data read returns the number of
 /// data reads of it since the last write, and then counts itself. A write
@@ -264,6 +269,10 @@ pub const Cpu = struct {
     /// instead of to memory. This device belongs to the emulator, not to
     /// the ISA (§8.3).
     console: ?*std.Io.Writer,
+    /// When set, a data read of `console_addr` takes the next byte from
+    /// here and returns it with `console_byte`, or returns `console_end`
+    /// once it is empty. Unset, the read returns 0 as with no input yet.
+    input: ?*std.Io.Reader,
     /// The math unit at `mpu_base`.
     mpu: Mpu,
     /// The performance counters at `perf_base`.
@@ -290,6 +299,7 @@ pub const Cpu = struct {
             .last_write = null,
             .read_count = 0,
             .console = null,
+            .input = null,
             .mpu = .{},
             .perf = .{},
             .cycle_counter = true,
@@ -348,6 +358,14 @@ pub const Cpu = struct {
 
     /// A data read by the processor (§8.2).
     pub fn read(self: *Cpu, addr: u32) u32 {
+        if (addr == console_addr) {
+            if (self.input) |r| {
+                // Show a prompt before waiting for the input that answers it.
+                if (self.console) |w| w.flush() catch {};
+                const b = r.takeByte() catch return console_end;
+                return console_byte | b;
+            }
+        }
         if (addr == counter_addr) {
             const n = self.read_count;
             self.read_count +%= 1;
@@ -1192,6 +1210,26 @@ test "the console takes the low byte of a write, and memory keeps nothing" {
     try testing.expectEqualStrings("Hi", w.buffered());
     try testing.expectEqual(0, cpu.regs[1]);
     try testing.expectEqual(1, cpu.mem.pages.count()); // only the program's page
+}
+
+test "with input, a console read returns the next byte, then the end" {
+    // MOVE R1, @0xFFFFFF00 three times, into R1, R2, and R3, then HALT.
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{
+        alu_iw(.always, MOVE, .none, reg(1), ind_imm(0), reg(0)), console_addr,
+        alu_iw(.always, MOVE, .none, reg(2), ind_imm(0), reg(0)), console_addr,
+        alu_iw(.always, MOVE, .none, reg(3), ind_imm(0), reg(0)), console_addr,
+        HALT,
+    });
+    var r: std.Io.Reader = .fixed("A\xff");
+    cpu.input = &r;
+    try runToHalt(&cpu);
+    try testing.expectEqual(0x141, cpu.regs[1]);
+    try testing.expectEqual(0x1ff, cpu.regs[2]);
+    try testing.expectEqual(0x200, cpu.regs[3]);
+    // A look from outside takes no byte.
+    try testing.expectEqual(0, cpu.peek(console_addr));
 }
 
 test "the read counter counts data reads, and a write sets it" {

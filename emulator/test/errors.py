@@ -44,6 +44,9 @@ CASES: List[Tuple[List[str], Optional[str], str]] = [
     (["-d", "0x:1", "BIN"], "00000000 0c000000", "niceemu: -d: bad number '0x'"),
     (["-d", "0xg:1", "BIN"], "00000000 0c000000", "niceemu: -d: bad number '0xg'"),
     (["does-not-exist.bin"], None, "niceemu: cannot read does-not-exist.bin: FileNotFound"),
+    (["BIN", "--input"], "00000000 0c000000", "niceemu: --input needs a value"),
+    (["-i", "does-not-exist.txt", "BIN"], "00000000 0c000000",
+     "niceemu: cannot read does-not-exist.txt: FileNotFound"),
     # Loader
     (["BIN"], "", "BIN: error: no words to load"),
     (["BIN"], "\n  \n", "BIN: error: no words to load"),

@@ -17,7 +17,9 @@ has TODO or FIXME comments.
   describes. Only the multi-cycle core exists ([hdl/README.md](hdl/README.md)).
 - **The system around the core** (MICROARCH.md §8): dual-port RAM, the bus
   decoders, a default slave that reads 0 and drops writes, and the console
-  UART at `0xFFFFFF00`, with generics for the memory map. Today
+  UART at `0xFFFFFF00`, with generics for the memory map. The UART must
+  receive too: a read returns the next byte with bit 8 set, or 0
+  (ISA.md §8.3). `wb_mem.vhd` always reads 0, as with no input yet. Today
   `hdl/sim/wb_mem.vhd` stands in for all of it, in simulation only, and
   `hdl/test/tb_multicycle.vhd` decodes the math unit and the performance
   counters with an address compare.
@@ -61,12 +63,10 @@ has TODO or FIXME comments.
   ([README.md](README.md), Compilers).
 - **A linker.** There is none. Programs are joined with `cat` and
   assembled at once, so every label is global (ISA.md §9.3).
-- **The C library is output only** ([runtime/README.md](runtime/README.md#c-library)).
-  Missing: `getchar` and input, which need a console input register with
-  a "byte ready" bit, in ISA.md §8.3, the emulator, and the FPGA UART;
-  float conversions in `printf`, which would pull in the float library;
-  `FILE` and `stdout`; `errno`; and `exit`, which needs a way for wasm
-  code to halt.
+- **The C library is small** ([runtime/README.md](runtime/README.md#c-library)).
+  Missing: float conversions in `printf` and `scanf`, which would pull in
+  the float library; `FILE`, `stdin`, and `stdout`; `errno`; and `exit`,
+  which needs a way for wasm code to halt.
 - **Console and heap support for Zig and Rust.** They can call the C
   library, but that is not the preferred way
   ([runtime/README.md](runtime/README.md#c-library)). Wanted: a Zig module

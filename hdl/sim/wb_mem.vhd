@@ -19,7 +19,7 @@
 -- * The instruction port reads 0 there.
 -- * The console is at 0xFFFFFF00. A write puts bits 7..0 on console_data_o,
 --   with console_valid_o high, in the cycle the write is accepted, and stores
---   nothing. A read returns 0.
+--   nothing. A read returns 0: no input byte (ISA.md §8.3).
 -- * The read counter is at 0xFFFFFF01, as in the emulator (ISA.md §8.3).
 --   A data read returns the number of data reads of it since the last write,
 --   and then counts itself. A write sets the count and stores nothing. It

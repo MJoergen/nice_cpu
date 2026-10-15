@@ -132,21 +132,30 @@ program uses. So it adds nothing to the joined assembly files.
 
 | Header | Functions |
 |---|---|
-| `stdio.h` | `putchar`, `puts`, `printf`, `sprintf`, `snprintf`, `vprintf`, `vsprintf`, `vsnprintf` |
+| `stdio.h` | `putchar`, `puts`, `getchar`, `printf`, `sprintf`, `snprintf`, `vprintf`, `vsprintf`, `vsnprintf`, `scanf`, `sscanf`, `vscanf`, `vsscanf` |
 | `string.h` | `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`, `strnlen`, `strcmp`, `strncmp`, `strcpy`, `strncpy`, `strcat`, `strncat`, `strchr`, `strrchr`, `strstr` |
 | `stdlib.h` | `malloc`, `calloc`, `realloc`, `free`, `abs`, `labs`, `llabs`, `atoi`, `atol`, `strtol`, `strtoul`, `abort` |
 | `ctype.h` | `isalnum`, `isalpha`, `iscntrl`, `isdigit`, `isgraph`, `islower`, `isprint`, `ispunct`, `isspace`, `isupper`, `isxdigit`, `tolower`, `toupper` |
-| `nice.h` | `nice_peek` and `nice_poke`, the `nice` imports of ISA.md §9.4, and `NICE_CONSOLE` |
+| `nice.h` | `nice_peek` and `nice_poke`, the `nice` imports of ISA.md §9.4, and `NICE_CONSOLE` with the bits of a console read |
 
-`putchar` writes to the console at `0xFFFFFF00` with `nice_poke`. It is
-the only function that touches hardware. Clang's own `stddef.h`,
+`putchar` writes to the console at `0xFFFFFF00` with `nice_poke`, and
+`getchar` reads from it with `nice_peek` (ISA.md §8.3). They are the only
+functions that touch hardware. `getchar` waits until a byte is there. It
+returns `EOF` once the emulator's input has ended, which a UART's input
+never does. In the emulator, give the input with `--input FILE`, or
+`--input -` for the terminal; without it, `getchar` waits until the step
+limit. Clang's own `stddef.h`,
 `stdint.h`, `stdarg.h`, `stdbool.h`, and `limits.h` complete the headers.
 
 The library is small on purpose:
 
-- Output only. There is no `getchar`, because the console has no input
-  yet.
-- No `FILE`, `stdout`, or `fprintf`.
+- No `FILE`, `stdin`, `stdout`, `fprintf`, `ungetc`, or `fgets`.
+- `scanf` and `sscanf` support white space and ordinary characters in the
+  format, `*` to read without storing, a width, the length modifiers
+  `hh h l ll z t j`, and the conversions `d i u o x X p c s [ n %`. A set
+  in `[` may hold ranges such as `a-z`, and `^` first negates it. There
+  are no float conversions. `scanf` gives back the one byte it read too
+  far, for the next `getchar` or `scanf`.
 - `printf` supports the flags `- + space # 0`, with `+` and space for the
   signed conversions only, as C defines them, a width and a precision
   (either may be `*`), the length modifiers `hh h l ll z t j`, and the
@@ -212,7 +221,8 @@ the muldiv routines run a second time with `muldiv_soft.nasm`, and compare
 with `test/X_soft.expected`. The expected values were checked by
 hand. The comments in each test show how.
 
-Then it runs the C library's tests, `libc/test/X.c`. Their `.wasm` files
+Then it runs the C library's tests, `libc/test/X.c`, with
+`libc/test/X.input` as the console input if there is one. Their `.wasm` files
 are checked in, so no C compiler is needed; `make -C libc wasm` rebuilds
 them and `libc.a`. Each is translated, joined with `start_wasm.nasm`,
 `lib.nasm`, and `muldiv_mpu.nasm`, and run. Its console output, `main`'s result in R1, and the

@@ -7,7 +7,9 @@ const usage =
     \\Usage: niceemu [options] program.bin
     \\
     \\Runs the program from address 0 until it halts, then prints the
-    \\registers. A write to 0xFFFFFF00 prints its low byte on stdout.
+    \\registers. A write to 0xFFFFFF00 prints its low byte on stdout. With
+    \\--input, a read of 0xFFFFFF00 returns the next input byte plus 0x100,
+    \\or 0x200 after the end of the input; without it, it returns 0.
     \\The performance counters are at 0xFFFFFF10-0xFFFFFF13, and the math
     \\unit is at 0xFFFFFF20-0xFFFFFF3F.
     \\
@@ -17,6 +19,7 @@ const usage =
     \\  -2004                Put the screen at 0x400, as the 2004 emulator does.
     \\  -d, --dump ADDR:N    Print N memory words from ADDR. May be repeated.
     \\  -n, --max-steps N    Stop after N steps (default 100000000).
+    \\  -i, --input FILE     Console input from FILE, or from stdin if FILE is -.
     \\      --irq STEP:VEC   Raise IRQ with vector VEC before step STEP.
     \\      --nmi STEP:VEC   Raise NMI with vector VEC before step STEP.
     \\                       Both may be repeated. Steps count from 0.
@@ -60,6 +63,8 @@ const Options = struct {
     requests: []const Request = &.{},
     max_steps: u64 = 100_000_000,
     cycle_counter: bool = true,
+    /// The console input file, "-" for stdin, or null for none.
+    input: ?[]const u8 = null,
     help: bool = false,
 };
 
@@ -127,7 +132,7 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "--irq", "--nmi" }) |o| {
+        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "-i", "--input", "--irq", "--nmi" }) |o| {
             if (std.mem.eql(u8, arg, o)) break true;
         } else false;
         const value = if (takes_value) blk: {
@@ -154,6 +159,8 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
             });
         } else if (std.mem.eql(u8, arg, "-n") or std.mem.eql(u8, arg, "--max-steps")) {
             opts.max_steps = try parseNumber(u64, arg, value);
+        } else if (std.mem.eql(u8, arg, "-i") or std.mem.eql(u8, arg, "--input")) {
+            opts.input = value;
         } else if (std.mem.eql(u8, arg, "--irq") or std.mem.eql(u8, arg, "--nmi")) {
             const colon = std.mem.indexOfScalar(u8, value, ':') orelse
                 return fail("{s} wants STEP:VEC, not '{s}'", .{ arg, value });
@@ -243,6 +250,17 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
     if (opts.trace) cpu.trace = out;
     cpu.console = out;
     cpu.cycle_counter = opts.cycle_counter;
+    var in_buf: [4096]u8 = undefined;
+    var in_r: std.fs.File.Reader = undefined;
+    if (opts.input) |path| {
+        const file = if (std.mem.eql(u8, path, "-")) std.fs.File.stdin() else std.fs.cwd().openFile(path, .{}) catch |err| {
+            std.debug.print("niceemu: cannot read {s}: {s}\n", .{ path, @errorName(err) });
+            return error.Load;
+        };
+        // Streaming, so that stdin may be a terminal or a pipe.
+        in_r = file.readerStreaming(&in_buf);
+        cpu.input = &in_r.interface;
+    }
     // A step is one instruction, or the entry into an interrupt.
     var steps: u64 = 0;
     var next: usize = 0;

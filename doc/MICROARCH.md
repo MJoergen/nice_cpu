@@ -304,8 +304,9 @@ each RAM and the address of the UART. These rules hold for every setting:
   forever.
 - **I/O.** Only the data bus reaches I/O. The instruction bus returns 0 for
   the I/O range (ISA §8.3).
-- **Console.** A UART transmitter at `0xFFFFFF00` by default, as in the
-  emulator (ISA §8.3).
+- **Console.** A UART at `0xFFFFFF00` by default, as in the emulator
+  (ISA §8.3). A write sends bits 7..0. A read returns the next received
+  byte with bit 8 set, or 0 if none has arrived.
 - **Math unit.** `hdl/src/mpu.vhd` at `0xFFFFFF20`–`0xFFFFFF3F` (ISA §8.4), 32
   aligned words, so the decoder compares address bits 31..5.
   A read of a result holds off its ACK until the result is ready, so the

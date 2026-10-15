@@ -27,12 +27,17 @@ has TODO or FIXME comments.
   the core as a generic, so that the pipelined core runs the same tests
   with one line changed in `hdl/Makefile`.
 - **Test order steps not done** (MICROARCH.md §9):
-  - Step 4, hazard programs: back-to-back flag use, every pair of side
-    effects on one register, R14 and R15 as pointers, stores into the next
-    few instructions, and jumps over `HALT`.
+  - Step 4, hazard programs: `hdl/test/hazard.nasm` and
+    `hdl/test/sidefx_prog.py`, which the multi-cycle core passes. Left
+    out so far: pairs of side effects on R15, which only some cases of
+    `hazard.nasm` and the random programs have, and hazards across an
+    interrupt entry, which step 5 brings.
   - Step 5 with requests at every point of a hazard program. The
     multi-cycle core passes the interrupt probes with requests at fixed
-    steps.
+    steps. `hazard.nasm` has a routine only for its `INT 4`, so it needs
+    routines for the NMI and IRQ vectors first, and it must keep E = 0
+    where an IRQ would break a check. `sidefx_prog.py` writes R14 with
+    any value, E included.
   - Step 6, the runtime and translator test programs on the core. The hdl
     tests do not run them yet, not even on the multi-cycle core. GHDL runs
     the multi-cycle core at about 3300 instructions a second, from the

@@ -420,7 +420,8 @@ exact.
 4. New hazard programs: back-to-back flag use, every pair of side effects on
    the same register, R14 and R15 as pointers, stores into the next few
    instructions, and jumps over `HALT`. qnice_cpu's `prog_hazard.asm` and
-   `prog_pipeline.asm` are the model.
+   `prog_pipeline.asm` are the model. They are `hdl/test/hazard.nasm`
+   and the program that `hdl/test/sidefx_prog.py` writes.
 5. The interrupt probes, and requests at every point in a hazard program.
 6. The runtime and translator test programs.
 7. Random instruction streams, run on both and diffed.

@@ -30,6 +30,8 @@ working reference for it.
 | [test/tb_trace.vhd](test/tb_trace.vhd) | A test of the trace writer, which stands in for the core and runs [test/trace.nasm](test/trace.nasm). |
 | [test/tb_multicycle.vhd](test/tb_multicycle.vhd) | Runs a program on the multi-cycle core, with an interrupt source, and writes its trace. |
 | [test/shift.nasm](test/shift.nasm) | Every shift, with the counts that are hard to get right. |
+| [test/hazard.nasm](test/hazard.nasm) | The hazards of MICROARCH.md §5, each with no padding. It checks itself. |
+| [test/sidefx_prog.py](test/sidefx_prog.py) | Writes a program with every pair of side effects on one register. |
 | [test/random_prog.py](test/random_prog.py) | Writes random programs, and random interrupt requests for them. |
 | [test/trace_reads.py](test/trace_reads.py) | Finds the first line where two traces differ, and shows the data reads of that instruction. |
 | [formal/wb_master_check.vhd](formal/wb_master_check.vhd) | Formal properties of a Wishbone master port. |
@@ -104,6 +106,19 @@ with the same interrupt requests:
   interrupt source share the core's IRQ port, with the interrupt source's
   vector when both are raised, as the emulator merges them.
 - `test/shift.nasm`.
+- The hazard programs of MICROARCH.md §9, step 4, each also on a memory
+  that stalls in 30% of the cycles. `test/hazard.nasm` makes each hazard
+  of MICROARCH.md §5 with no padding: flags tested by the next
+  instruction, conditional reads and stores right after the write of SR,
+  registers read by the next instruction, R14 and R15 as pointers, stores
+  into the next few words, and jumps over `HALT`. It checks its own
+  results, and a failed check ends at a reserved word, with R12 naming the
+  section. So the emulator's run must end with R12 = 0 and exit status 0,
+  which also shows that no jump fell into a `HALT`. `test/sidefx_prog.py`
+  writes a program with every mode in every field of one `SUB`, all on R2
+  or R14, which holds every pair of side effects on one register, and
+  every pair of a `SUB` that writes the register and a `SUB` that uses it
+  next, or one instruction later. It does not check itself.
 - `cputest`, `reads`, `mpu`, `mpu64`, `perf`, and `timer` again, on a memory that
   stalls in 30% of the cycles.
 - 30 random programs from `test/random_prog.py`, each stopped at 3000 steps,

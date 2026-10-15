@@ -74,6 +74,18 @@ define check_core
 
 endef
 
+# The hazard programs of MICROARCH.md §9, step 4: test/hazard.nasm, and the
+# program that test/sidefx_prog.py writes, each also on a memory that stalls.
+# hazard.nasm checks itself, so the emulator's run must end at its last HALT,
+# with R12 = 0 and exit status 0, before the core's trace means anything.
+define check_selfcheck
+	@if grep -q '^R12 00000000' $(BUILD)/core_$(1).expected && \
+	  tail -n 1 $(BUILD)/core_$(1).expected | grep -qx 'exit 0'; then echo "PASS emulator $(1)"; \
+	else echo "FAIL emulator $(1): the program's own checks failed"; \
+	  tail -n 6 $(BUILD)/core_$(1).expected; exit 1; fi
+
+endef
+
 # Random programs from test/random_prog.py, each run for RANDOM_STEPS steps
 # with random interrupt requests, on a memory that stalls in RANDOM_STALL
 # percent of the cycles, and compared in the same way. A random program
@@ -122,6 +134,14 @@ test: emulator analyse synth
 	$(call check_core,mpu64_stall,../emulator/test/mpu64.bin,-gG_STALL=30 -gG_SEED=5)
 	$(call check_core,perf_stall,../emulator/test/perf.bin,-gG_STALL=30 -gG_SEED=9)
 	$(call check_core,timer_stall,../emulator/test/timer.bin,-gG_STALL=30 -gG_SEED=11)
+	@$(ASM) -o $(BUILD)/hazard.bin test/hazard.nasm
+	$(call check_core,hazard,$(BUILD)/hazard.bin)
+	$(call check_selfcheck,hazard)
+	$(call check_core,hazard_stall,$(BUILD)/hazard.bin,-gG_STALL=30 -gG_SEED=13)
+	@$(PYTHON) test/sidefx_prog.py $(BUILD)/sidefx.nasm
+	@$(ASM) -o $(BUILD)/sidefx.bin $(BUILD)/sidefx.nasm
+	$(call check_core,sidefx,$(BUILD)/sidefx.bin)
+	$(call check_core,sidefx_stall,$(BUILD)/sidefx.bin,-gG_STALL=30 -gG_SEED=15)
 	$(foreach t,$(RANDOM_SEEDS),$(call check_random,$(t)))
 
 # More random programs than make test runs, for example

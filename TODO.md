@@ -16,7 +16,8 @@ below. No code has TODO or FIXME comments.
 - **The system around the core** (MICROARCH.md §8): dual-port RAM, the bus
   decoders, a default slave that reads 0 and drops writes, and the console
   UART at `0xFFFFFF00`, with generics for the memory map. Today
-  `hdl/sim/wb_mem.vhd` stands in for all of it, in simulation only.
+  `hdl/sim/wb_mem.vhd` stands in for all of it, in simulation only, and
+  `hdl/test/tb_multicycle.vhd` decodes the math unit with an address compare.
 - **Synthesis for an FPGA.** Only `ghdl --synth` is run. Vivado has not
   been tried, so size and clock speed are unknown.
 - **Formal checks with SymbiYosys** (MICROARCH.md §9): each stage, and the
@@ -90,6 +91,10 @@ below. No code has TODO or FIXME comments.
   [doc/review/code-size-plan.md](doc/review/code-size-plan.md), and the
   locals in R7–R11 ([translator/README.md](translator/README.md)), already
   took part of that saving. Byte loads and stores still call a helper.
+- **Use the math unit** (ISA.md §8.4) in the runtime's `__mul`,
+  `__div`, `__udiv`, and the like, and in nicewasm's `i32.mul`, `div`, and `rem`.
+  Today they all run in software. Programs for a system without the math
+  unit would then need the software versions as an option.
 
 ## Claims not checked
 

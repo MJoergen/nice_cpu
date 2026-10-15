@@ -408,6 +408,33 @@ The 2004 emulator maps a character screen at `0x400`. That is a property of the 
 
 The emulator in this repository maps the screen at `0xFFFF0000` instead, so that it does not overlap the code of programs longer than 1024 words. Its option `-2004` puts the screen back at `0x400` for the 2004 programs. It also maps a console at `0xFFFFFF00`. Each write prints bits 7..0 of the word, and a read returns 0. The FPGA implementation will have a UART at the same address. At `0xFFFFFF01` the emulator and the simulation memory of the FPGA core map a read counter for tests. A data read of it returns the number of data reads of it since the last write to it, and a write sets that number. Tests use it to count the data accesses of §8.2. These are properties of those systems too, not of the ISA. Programs use the console for output.
 
+### 8.4 Math unit
+
+The emulator and the FPGA implementation map a math unit, the MPU, at `0xFFFFFF10`–`0xFFFFFF1F`. It multiplies and divides 32-bit integers. Like the console, it is a property of those systems, not of the ISA.
+
+| Address | Name | A data read returns | A write |
+|---|---|---|---|
+| `0xFFFFFF10` | `A` | the left operand A | sets A |
+| `0xFFFFFF11` | `B` | the right operand B | sets B |
+| `0xFFFFFF12` | `SMUL_LO` | bits 31..0 of A · B, signed | is ignored |
+| `0xFFFFFF13` | `SMUL_HI` | bits 63..32 of A · B, signed | is ignored |
+| `0xFFFFFF14` | `UMUL_LO` | bits 31..0 of A · B, unsigned | is ignored |
+| `0xFFFFFF15` | `UMUL_HI` | bits 63..32 of A · B, unsigned | is ignored |
+| `0xFFFFFF16` | `SDIV_Q` | the quotient of A / B, signed | is ignored |
+| `0xFFFFFF17` | `SDIV_R` | the remainder of A / B, signed | is ignored |
+| `0xFFFFFF18` | `UDIV_Q` | the quotient of A / B, unsigned | is ignored |
+| `0xFFFFFF19` | `UDIV_R` | the remainder of A / B, unsigned | is ignored |
+| `0xFFFFFF1A`–`0xFFFFFF1F` | | 0 | is ignored |
+
+- Each result depends only on A and B as they are when it is read. A read has no side effect, so the results can be read in any order and any number of times.
+- Signed operations treat A and B as two's complement. A signed product is exact in 64 bits.
+- A signed quotient is rounded toward zero, and a signed remainder has the sign of A, so A = Q · B + R. This is C's `/` and `%`, and wasm's `div_s` and `rem_s`.
+- Division by zero gives Q = `0xFFFFFFFF` and R = A, signed and unsigned.
+- The signed `0x80000000 / 0xFFFFFFFF` (−2³¹ / −1) gives Q = `0x80000000` and R = 0.
+- Reset sets A and B to 0.
+
+These are RISC-V's results for the two special cases. Software never needs to wait for a result. The FPGA implementation starts a new computation at each write to A or B, which may take many cycles, and holds off the acknowledge of a read of a result until the result is ready.
+
 ## 9. Software conventions
 
 These are conventions, not hardware rules.

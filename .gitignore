@@ -1,5 +1,5 @@
 hdl/build/
-hdl/test/__pycache__/
+__pycache__/
 *.swp
 runtime/libc/build/
 runtime/libc/libc.a

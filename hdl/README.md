@@ -36,6 +36,7 @@ working reference for it.
 | [test/irq_sweep.py](test/irq_sweep.py) | Runs a program with an NMI before each of its steps, and with an IRQ before each. |
 | [test/sidefx_prog.py](test/sidefx_prog.py) | Writes a program with every pair of side effects on one register. |
 | [test/random_prog.py](test/random_prog.py) | Writes random programs, and random interrupt requests for them. |
+| [test/random_stats.py](test/random_stats.py) | Shows how the random programs spend their steps, and how often they make each hazard. |
 | [test/trace_reads.py](test/trace_reads.py) | Finds the first line where two traces differ, and shows the data reads of that instruction. |
 | [formal/wb_master_check.vhd](formal/wb_master_check.vhd) | Formal properties of a Wishbone master port. |
 | [formal/handshake_check.vhd](formal/handshake_check.vhd) | Formal properties of a valid/ready port that takes requests. |
@@ -137,13 +138,35 @@ with the same interrupt requests:
 - 30 random programs from `test/random_prog.py`, each stopped at 3000 steps,
   on a memory that stalls in 30% of the cycles. Besides random ALU and
   shift instructions, they use R15 with every side effect, `HALT`, `RTI`,
-  `INT`, reserved control words, and the read counter. A random program
-  may read any address, and now and then one reaches the cycle counter at
+  `INT`, reserved control words, and the read counter. Most jumps skip
+  only a few instructions, sources often read a register that one of the
+  last three instructions wrote, and each interrupt vector leads to a
+  short routine that ends with `RTI`. A random program may read any address, and now and then one reaches the cycle counter at
   `0xFFFFFF10`, where the core counts cycles and the emulator counts steps
   (ISA.md §8.5). So these runs make its two words ordinary memory on both
   sides, with the generic `G_CYCLE_COUNTER` and the emulator's
   `--no-cycle-counter`. The instruction counter and the math unit stay,
   because both sides agree on them.
+
+`test/random_stats.py` shows how well the random programs test the core
+(MICROARCH.md §9, step 7). It runs a range of seeds on the emulator, as
+`make test` does, and reports where the steps run, how much of each
+program runs, how many interrupt requests are taken, how the runs end, and
+how often they make the hazards of MICROARCH.md §5, beside the benchmark's
+shares. With `--generator`, it measures another version of
+`random_prog.py`. These are the numbers for seeds 31 to 90 before and
+after the changes of 2026-10-15, which made jumps shorter, registers more
+local, and interrupt routines return:
+
+| | before | after |
+|---|---|---|
+| Steps in the program, not in the low words or empty memory | 72% | 88% |
+| Program instructions that run at least once | 24% | 56% |
+| Interrupt requests taken, of those raised before the run ended | 19 of 115 | 90 of 195 |
+| Runs that reach the step limit | 25 of 60 | 26 of 60 |
+
+On seeds 1 to 30, a register read right after its write went from 16% to
+33% of the instructions, and jumps from 16% to 24%.
 
 `make programs` runs the test programs of the runtime and of the
 translator on the core (MICROARCH.md §9, step 6). It is not part of

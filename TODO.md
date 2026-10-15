@@ -45,6 +45,14 @@ has TODO or FIXME comments.
     passes. Left out: the random modules of `translator/test/fuzz.py`,
     `runtime/libc/test/fuzz_printf.py`, which needs clang, and the
     benchmark, which `make core` in `bench/` runs already.
+  - Step 7: `hdl/test/random_prog.py` was tuned with
+    `hdl/test/random_stats.py`, and the multi-cycle core passes seeds 1
+    to 90. Still weak: a conditional instruction right after a write of
+    SR is 10% of the instructions, against 15 to 20% in the benchmark,
+    and about half of the runs halt before the step limit, mostly at a
+    word that a store changed, or after an interrupt that a write of VBASE
+    sent astray. `make random` runs one seed at a time; `programs.py`
+    could run them in parallel.
 - **An interrupt comparison script for the pipelined core** (MICROARCH.md
   §9). It reads from the core's trace where each interrupt was taken, and
   runs the emulator with the matching `--irq` or `--nmi` options. On the

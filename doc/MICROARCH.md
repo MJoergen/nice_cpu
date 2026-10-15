@@ -426,7 +426,8 @@ exact.
    which `hdl/test/irq_sweep.py` makes.
 6. The runtime and translator test programs, which `make programs` in
    `hdl/` runs.
-7. Random instruction streams, run on both and diffed.
+7. Random instruction streams, run on both and diffed:
+   `hdl/test/random_prog.py`, measured with `hdl/test/random_stats.py`.
 
 **Formal checks**, as in qnice_cpu: each primitive and stage on its own, and
 properties of the whole core. The checkers of the Wishbone and interrupt

@@ -136,10 +136,12 @@ program uses. So it adds nothing to the joined assembly files.
 | `string.h` | `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`, `strnlen`, `strcmp`, `strncmp`, `strcpy`, `strncpy`, `strcat`, `strncat`, `strchr`, `strrchr`, `strstr` |
 | `stdlib.h` | `malloc`, `calloc`, `realloc`, `free`, `abs`, `labs`, `llabs`, `atoi`, `atol`, `strtol`, `strtoul`, `abort` |
 | `ctype.h` | `isalnum`, `isalpha`, `iscntrl`, `isdigit`, `isgraph`, `islower`, `isprint`, `ispunct`, `isspace`, `isupper`, `isxdigit`, `tolower`, `toupper` |
-| `nice.h` | `nice_peek` and `nice_poke`, the `nice` imports of ISA.md §9.4, and `NICE_CONSOLE` with the bits of a console read |
+| `nice.h` | `nice_peek` and `nice_poke`, the `nice` imports of ISA.md §9.4, `NICE_CONSOLE` with the bits of a console read, and `nice_counter64` with `NICE_CYCLE_LO` and `NICE_INSTR_LO` for the performance counters |
 
 `putchar` writes to the console at `0xFFFFFF00` with `nice_poke`, and
-`getchar` reads from it with `nice_peek` (ISA.md §8.3). They are the only
+`getchar` reads from it with `nice_peek` (ISA.md §8.3). `nice_counter64`
+reads a performance counter (ISA.md §8.5), the low word first and then the
+high word, so that the two halves belong together. These are the only
 functions that touch hardware. `getchar` waits until a byte is there. It
 returns `EOF` once the emulator's input has ended, which a UART's input
 never does. The emulator reads the input from stdin, or from the file

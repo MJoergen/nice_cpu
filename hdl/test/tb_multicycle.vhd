@@ -25,6 +25,17 @@
 -- merges them (ISA.md §7.1). The core takes requests only between steps, so
 -- the trace matches the emulator's exactly.
 --
+-- With G_INTR_LOG, p_intr writes a line to that file for each request it
+-- raises, "raised S nmi V" or "raised S irq V", where S is the number of
+-- steps reported before, and V the vector in hex. When the core takes its
+-- request, with ready, it writes "accepted nmi" or "accepted irq". That
+-- takes every request of the kind raised before, as they merge. When the
+-- core then reports the interrupt entry, it writes "taken S nmi V" or
+-- "taken S irq V", where S is the number of that step, counting from 0, as
+-- the trace does. An IRQ that only the timer raised is not in the log.
+-- test/irq_compare.py reads the log, for cores that take a request later
+-- than the step it was raised for (MICROARCH.md §9).
+--
 -- The timer counts the steps, as the emulator's does: its tick is the
 -- core's report of a step. Its request and the IRQ of p_intr reach the core
 -- as one request, with the vector of p_intr's when both are raised, and the
@@ -39,6 +50,7 @@ library ieee;
    use ieee.numeric_std_unsigned.all;
 
    use std.env.all;
+   use std.textio.all;
 
    use work.trace_pkg.all;
 
@@ -50,6 +62,7 @@ entity tb_multicycle is
       G_TRACE         : boolean  := true;
       G_MAX_STEPS     : positive := 100_000_000;
       G_INTERRUPTS    : string   := "";
+      G_INTR_LOG      : string   := "";
       G_CYCLE_COUNTER : boolean  := true;
       -- The memory's stall rate in percent, and its seed (sim/wb_mem.vhd).
       G_STALL         : natural  := 0;
@@ -378,22 +391,71 @@ begin
    -- The requests for step 0 are raised during reset, so that the core sees
    -- them before its first step.
    p_intr : process (clk)
-      variable steps_v : natural := 0;
+      file     log_f      : text;
+      variable log_open_v : boolean := false;
+      variable steps_v    : natural := 0;
+      -- One of p_intr's requests was taken, and its entry is not reported yet.
+      variable nmi_taken_v : boolean := false;
+      variable irq_taken_v : boolean := false;
+
+      procedure log(text : string) is
+         variable l : line;
+      begin
+         if G_INTR_LOG = "" then
+            return;
+         end if;
+         if not log_open_v then
+            file_open(log_f, G_INTR_LOG, write_mode);
+            log_open_v := true;
+         end if;
+         write(l, text);
+         writeline(log_f, l);
+         flush(log_f);
+      end procedure log;
+
+      procedure log(what   : string;
+                    step   : natural;
+                    nmi    : boolean;
+                    vector : std_logic_vector(7 downto 0)) is
+      begin
+         if nmi then
+            log(what & " " & integer'image(step) & " nmi " & to_hstring(vector));
+         else
+            log(what & " " & integer'image(step) & " irq " & to_hstring(vector));
+         end if;
+      end procedure log;
+
    begin
       if rising_edge(clk) then
          if nmi_ready = '1' then
+            if nmi_valid = '1' then
+               log("accepted nmi");
+               nmi_taken_v := true;
+            end if;
             nmi_valid <= '0';
          end if;
          if irq_ready = '1' then
+            if irq_valid = '1' then
+               log("accepted irq");
+               irq_taken_v := true;
+            end if;
             irq_valid <= '0';
          end if;
 
          if rst = '0' and retire.valid = '1' then
+            if retire.intr = '1' and retire.nmi = '1' and nmi_taken_v then
+               log("taken", steps_v, true, retire.vector);
+               nmi_taken_v := false;
+            elsif retire.intr = '1' and retire.nmi = '0' and irq_taken_v then
+               log("taken", steps_v, false, retire.vector);
+               irq_taken_v := false;
+            end if;
             steps_v := steps_v + 1;
          end if;
 
          for i in C_REQUESTS'range loop
             if C_REQUESTS(i).step = steps_v and (rst = '1' or retire.valid = '1') then
+               log("raised", steps_v, C_REQUESTS(i).nmi, C_REQUESTS(i).vector);
                if C_REQUESTS(i).nmi then
                   nmi_valid  <= '1';
                   nmi_vector <= C_REQUESTS(i).vector;

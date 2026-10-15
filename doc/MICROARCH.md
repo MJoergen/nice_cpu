@@ -406,11 +406,14 @@ retired. The multi-cycle core takes a request only between steps, so its
 test gives the emulator the same options and the diff is exact. For the
 pipelined core, whether it takes a request before the next instruction or
 after one that had already issued a data read depends on the pipeline state
-(§6), so the trace cannot be predicted from the request step alone. Its
-test will need a comparison script, not written yet, that reads from the
-core's trace where each interrupt was taken, and runs the emulator with the
-matching `--irq STEP:VEC` or `--nmi STEP:VEC` options. The diff is then
-exact.
+(§6), so the trace cannot be predicted from the request step alone. So
+the testbench also writes an interrupt log: when each request was raised,
+and at which step the core took it. `hdl/test/irq_compare.py` runs the
+emulator with the matching `--irq STEP:VEC` or `--nmi STEP:VEC` options,
+and the diff is then exact. It also checks that no request was taken
+later than the emulator would take it, beyond a number of steps it is
+given: 0 for the multi-cycle core, which runs it on every run with
+requests.
 
 **Test order:**
 

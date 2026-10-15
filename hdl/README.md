@@ -33,6 +33,7 @@ working reference for it.
 | [test/hazard.nasm](test/hazard.nasm) | The hazards of MICROARCH.md §5, each with no padding. It checks itself. |
 | [test/programs.py](test/programs.py) | Runs the programs in some directories on the core and on the emulator, for `make programs`. |
 | [test/core_runs.py](test/core_runs.py) | Runs a program on the core, or on the emulator, for `irq_sweep.py` and `programs.py`. |
+| [test/irq_compare.py](test/irq_compare.py) | Compares a run with interrupt requests against the emulator, from the steps where the core took them. |
 | [test/irq_sweep.py](test/irq_sweep.py) | Runs a program with an NMI before each of its steps, and with an IRQ before each. |
 | [test/sidefx_prog.py](test/sidefx_prog.py) | Writes a program with every pair of side effects on one register. |
 | [test/random_prog.py](test/random_prog.py) | Writes random programs, and random interrupt requests for them. |
@@ -279,6 +280,27 @@ for example `--nmi 2:1 --irq 2:2`. A request for step S is raised once S
 steps have retired, as the emulator raises it before step S. A second request
 of the same kind replaces the vector of one still pending, as the emulator
 merges them.
+
+With the generic `G_INTR_LOG`, `tb_multicycle` writes an interrupt log:
+`raised S nmi V` when it raises a request after S steps, `accepted nmi`
+when the core takes it with `ready`, which takes every request of the kind
+raised before, and `taken S nmi V` when the core reports the interrupt
+entry as step S, counting from 0. The same goes for `irq`, except that an
+IRQ that only the timer raised is not logged, as the emulator raises the
+timer's requests itself.
+
+`test/irq_compare.py` reads the log, for a core that may take a request
+later than the step it was raised for, as the pipelined core may
+(MICROARCH.md §6 and §9). It runs the emulator with each request that the
+core took raised for the step where the core took it, and with each
+request it never took raised as before, and compares the two runs. Then,
+for each request taken, it runs the emulator with the request raised as
+it was, stopped `--max-delay` steps (default 0) before the step where the
+core took it, and the request must still be pending there. `make test`
+runs it after each run with requests, the random programs included, and
+`test/irq_sweep.py` after each of its runs. On the multi-cycle core it
+agrees with the comparison that uses the steps the requests were raised
+for.
 
 ## The memory model
 

@@ -39,7 +39,7 @@ has TODO or FIXME comments.
     passes. Not swept: the program of `sidefx_prog.py`, which writes R14
     with any value, so E and VBASE too. For the pipelined core, the sweep
     must vary the cycle at which the request arrives, not the step, and
-    needs the comparison script below.
+    compare with `irq_compare.py`, as the item below says.
   - Step 6: `make programs` in `hdl/` runs the runtime's and the
     translator's test programs on the core, and the multi-cycle core
     passes. Left out: the random modules of `translator/test/fuzz.py`,
@@ -53,11 +53,15 @@ has TODO or FIXME comments.
     word that a store changed, or after an interrupt that a write of VBASE
     sent astray. `make random` runs one seed at a time; `programs.py`
     could run them in parallel.
-- **An interrupt comparison script for the pipelined core** (MICROARCH.md
-  §9). It reads from the core's trace where each interrupt was taken, and
-  runs the emulator with the matching `--irq` or `--nmi` options. On the
-  multi-cycle core it must give the same result as the fixed steps do,
-  which checks the script before the pipelined core needs it.
+- **The interrupt comparison for the pipelined core** (MICROARCH.md §9).
+  `hdl/test/irq_compare.py` reads the testbench's interrupt log, and the
+  multi-cycle core passes it on every run with requests, with no delay
+  allowed. For the pipelined core it needs: a check that a request taken
+  one step late passed an instruction that had issued a data read
+  (MICROARCH.md §6), not just `--max-delay 1`; requests timed in cycles,
+  not steps, in the testbench, so that a sweep can vary the arrival
+  within an instruction; and the testbench for any core, which must keep
+  the log.
 - **The system around the core** (MICROARCH.md §8): dual-port RAM, the bus
   decoders, a default slave that reads 0 and drops writes, and the console
   UART at `0xFFFFFF00`, with generics for the memory map. The data bus

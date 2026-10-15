@@ -65,8 +65,10 @@ INPUT_input = ../emulator/test/input.txt
 
 # $(1) is the name of the run, $(2) the program, and $(3) any more generics.
 define check_core
+	@rm -f $(BUILD)/core_$(1).intr
 	@($(GHDLRUN) tb_multicycle -gG_BIN_FILE=../$(2) -gG_TRACE_FILE=core_$(1).out \
-	  $(if $(INTR_$(1)),"-gG_INTERRUPTS=$(INTR_$(1))") $(if $(INPUT_$(1)),-gG_INPUT_FILE=../$(INPUT_$(1))) \
+	  $(if $(INTR_$(1)),"-gG_INTERRUPTS=$(INTR_$(1))" -gG_INTR_LOG=core_$(1).intr) \
+	  $(if $(INPUT_$(1)),-gG_INPUT_FILE=../$(INPUT_$(1))) \
 	  $(3) > core_$(1).log 2>&1); echo "exit $$?" >> $(BUILD)/core_$(1).out
 	@$(EMU) -t $(INTR_$(1)) $(if $(INPUT_$(1)),--input $(INPUT_$(1))) $(2) < /dev/null \
 	  > $(BUILD)/core_$(1).expected; \
@@ -74,8 +76,16 @@ define check_core
 	@if cmp -s $(BUILD)/core_$(1).expected $(BUILD)/core_$(1).out; then echo "PASS multicycle $(1)"; \
 	else echo "FAIL multicycle $(1)"; cat $(BUILD)/core_$(1).log; \
 	  diff $(BUILD)/core_$(1).expected $(BUILD)/core_$(1).out | head -20; exit 1; fi
+	$(if $(INTR_$(1)),@$(IRQ_COMPARE) --name $(1) $(2) $(BUILD)/core_$(1).out $(BUILD)/core_$(1).intr)
 
 endef
+
+# A run with interrupt requests is also compared with test/irq_compare.py,
+# which runs the emulator with the steps where the core took each request,
+# from the core's interrupt log, and checks that none was taken late. On
+# the multi-cycle core it must agree with the comparison above, which uses
+# the steps the requests were raised for (MICROARCH.md §9).
+IRQ_COMPARE = $(PYTHON) test/irq_compare.py --emu $(EMU)
 
 # The hazard programs of MICROARCH.md §9, step 4: test/hazard.nasm, and the
 # program that test/sidefx_prog.py writes, each also on a memory that stalls.
@@ -104,16 +114,19 @@ RANDOM_STALL = 30
 
 define check_random
 	@$(PYTHON) test/random_prog.py $(1) $(BUILD)/random_$(1).bin > $(BUILD)/random_$(1).opts
+	@rm -f $(BUILD)/random_$(1).intr
 	@o=$$(cat $(BUILD)/random_$(1).opts); \
 	  ($(GHDLRUN) tb_multicycle -gG_BIN_FILE=random_$(1).bin -gG_TRACE_FILE=random_$(1).out \
 	  -gG_MAX_STEPS=$(RANDOM_STEPS) -gG_STALL=$(RANDOM_STALL) -gG_SEED=$(1) -gG_CYCLE_COUNTER=false \
-	  $${o:+"-gG_INTERRUPTS=$$o"} > random_$(1).log 2>&1); \
+	  $${o:+"-gG_INTERRUPTS=$$o"} -gG_INTR_LOG=random_$(1).intr > random_$(1).log 2>&1); \
 	  echo "exit $$?" >> $(BUILD)/random_$(1).out
 	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter $$(cat $(BUILD)/random_$(1).opts) $(BUILD)/random_$(1).bin \
 	  < /dev/null > $(BUILD)/random_$(1).expected; echo "exit $$?" >> $(BUILD)/random_$(1).expected
 	@if cmp -s $(BUILD)/random_$(1).expected $(BUILD)/random_$(1).out; then echo "PASS multicycle random $(1)"; \
 	else echo "FAIL multicycle random $(1)"; cat $(BUILD)/random_$(1).log; \
 	  diff $(BUILD)/random_$(1).expected $(BUILD)/random_$(1).out | head -20; exit 1; fi
+	@$(IRQ_COMPARE) --name random_$(1) $(BUILD)/random_$(1).bin $(BUILD)/random_$(1).out \
+	  $(BUILD)/random_$(1).intr -- -n $(RANDOM_STEPS) --no-cycle-counter
 
 endef
 

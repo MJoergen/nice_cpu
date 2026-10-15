@@ -8,7 +8,8 @@ emulator, which gives its number of steps N. Then, for each kind of request
 (NMI and IRQ) and each step S from 0 to N - 1, it runs once on the core in
 tb_multicycle and once on the emulator, with the one request "--nmi S:VEC"
 or "--irq S:VEC". The trace, the output, and the exit status of the two
-must be the same, as in the makefile's other runs. Each run on the
+must be the same, as in the makefile's other runs. test/irq_compare.py
+must also pass, with the steps where the core took the request. Each run on the
 emulator must also take the request, so the trace has no "Pending:" line,
 and with --self-check, end as test/hazard.nasm does when it passes: with
 R12 = 0 and exit status 0.
@@ -28,6 +29,7 @@ import re
 import sys
 
 from core_runs import DEFAULT_BUILD, DEFAULT_EMU, Core, difference, run_emulator
+from irq_compare import check as irq_compare
 
 
 def check(args: argparse.Namespace, core: Core, kind: str, vec: int, step: int) -> str | None:
@@ -41,12 +43,15 @@ def check(args: argparse.Namespace, core: Core, kind: str, vec: int, step: int) 
         re.search(r"^R12 00000000", expected, re.M) and expected.endswith("exit 0\n")
     ):
         return f"{name}: the program's own checks failed on the emulator\n" + expected[-400:]
-    got = core.run(
+    got, log = core.run_logged(
         args.program,
         ["-gG_INTERRUPTS=" + " ".join(opts), f"-gG_STALL={args.stall}", f"-gG_SEED={step + 1}"],
     )
     diff = difference(expected, got)
-    return None if diff is None else f"{name}: {diff}"
+    if diff is not None:
+        return f"{name}: {diff}"
+    problems = irq_compare(args.emu, args.program, got, log, [])
+    return None if not problems else f"{name}: irq_compare: " + "\n".join(problems)
 
 
 def main() -> None:

@@ -42,10 +42,10 @@ has TODO or FIXME comments.
 
 ## Devices
 
-- **Devices that raise interrupts.** No device raises IRQ or NMI yet, in
-  the emulator or in hardware. Only the emulator's `--irq` and `--nmi`
-  options and the testbench do ([emulator/README.md](emulator/README.md)).
-  A timer would be a natural first one.
+- **An interrupt controller.** The timer (ISA.md §8.6) is the only device
+  that raises IRQ, so it drives the core's IRQ port directly. A second
+  device needs a controller that merges the requests and says which vector
+  goes first. No device raises NMI.
 
 ## Pipelined core: decide after measuring
 

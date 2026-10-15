@@ -472,6 +472,30 @@ The emulator and the FPGA implementation map two 64-bit performance counters at 
 
 An interrupt service routine that reads a counter's low word overwrites its snapshot. If the routine interrupted code between the two reads, that code then reads a high word that may not belong to its low word. So either interrupt service routines do not read the counters, or the code that reads them clears E around its two reads and NMI service routines do not read them.
 
+### 8.6 Timer
+
+The emulator and the FPGA implementation map a timer at `0xFFFFFF40`–`0xFFFFFF4F`. It raises IRQ once every P cycles. Like the console, it is a property of those systems, not of the ISA.
+
+| Address | Name | A data read returns | A write |
+|---|---|---|---|
+| `0xFFFFFF40` | `TIMER_PERIOD` | the period P | sets P, and COUNT, to the value written |
+| `0xFFFFFF41` | `TIMER_COUNT` | COUNT, the cycles left until the next request | is ignored |
+| `0xFFFFFF42` | `TIMER_VECTOR` | the vector v in bits 7..0, and 0 in bits 31..8 | sets v to bits 7..0 of the value written |
+| `0xFFFFFF43`–`0xFFFFFF4F` | | 0 | is ignored |
+
+- While P ≠ 0, COUNT decreases by one at the end of each cycle, the cycle of the write to `TIMER_PERIOD` included. When COUNT reaches 0, the timer raises IRQ with vector v, and COUNT is set to P again. So the first request comes at the end of the P-th cycle, counting from the write, and then one comes every P cycles.
+- P = 0 stops the timer, and COUNT stays 0. A request that is already pending stays pending.
+- The emulator counts one cycle for each step, as its cycle counter does (§8.5). The FPGA implementation counts clock cycles.
+- A request keeps the vector it was raised with. If the timer's last request is still pending when it raises the next one, the two merge (§7.1). So a timer whose period is shorter than its interrupt routine, or than a stretch of code with E = 0, loses requests. To keep time, read the cycle counter rather than count interrupts.
+- The interrupt routine need not acknowledge the request. Taking it is enough.
+- Reset sets P, COUNT, and v to 0, with no request pending.
+
+To get an IRQ through vector table entry `0x41` every 100000 cycles, that is, every millisecond at 100 MHz:
+
+    MOVE @TIMER_VECTOR, 0x41
+    MOVE @TIMER_PERIOD, 100000
+    OR   R14, R14, 0x40000000     ; E = 1
+
 ## 9. Software conventions
 
 These are conventions, not hardware rules.

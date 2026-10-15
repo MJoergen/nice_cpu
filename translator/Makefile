@@ -15,10 +15,13 @@ ZIG_TESTS = answer datazig bulk hello
 ZIG_SAFE_TESTS = safe safetrap
 RUST_TESTS = rust rusttrap hellors
 
-# Translate, assemble, and run each module in test/run.py, then check the
-# error messages in test/errors.py.
+# Translate, assemble, and run each module in test/run.py, then 40 random
+# modules in each mode with test/fuzz.py, then check the error messages in
+# test/errors.py.
 test: emulator
 	@$(PYTHON) test/run.py
+	@$(PYTHON) test/fuzz.py 1 40
+	@$(PYTHON) test/fuzz.py --no-mpu 1 40
 	@$(PYTHON) test/errors.py
 
 emulator:
@@ -27,7 +30,7 @@ emulator:
 # Needs mypy (pip install mypy).
 typecheck:
 	cd test && MYPYPATH=../../assembler $(PYTHON) -m mypy --strict ../nicewasm.py run.py errors.py \
-	  wasm.py
+	  wasm.py fuzz.py
 
 wasm:
 	@for t in $(C_TESTS); do \

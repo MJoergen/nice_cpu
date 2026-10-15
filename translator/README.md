@@ -389,7 +389,7 @@ R12, R13, R14 for the trick above, and R15. The helpers and
 
 ## Test
 
-    make test        # translate, assemble, and run the test modules, then test/errors.py
+    make test        # run the test modules, then test/fuzz.py and test/errors.py
     make typecheck   # mypy --strict
     make wasm        # rebuild test/*.wasm from test/*.c, test/*.zig, and test/*.rs
 
@@ -404,3 +404,16 @@ Their `.wasm` files are checked in, so `make test` needs no compiler.
 `make wasm` needs clang with the wasm32 target, `wasm-ld`, Zig 0.15, and
 rustc with the `wasm32-unknown-unknown` target. The Rust modules were
 built with rustc 1.99.0. `test/errors.py` checks every error message.
+
+`test/fuzz.py FIRST COUNT` builds random modules from a syntax tree whose
+nodes also evaluate themselves in Python, so each module comes with the
+result that wasm defines for it, and `main`'s result in R1 must match.
+The modules have four functions with `i32` and `i64` parameters, more
+locals than fit in R7–R11, loops, blocks, branches with values, `select`,
+calls through the table, every integer operation and comparison, and
+loads and stores of every width at constant and dynamic addresses. That
+covers the rules for deferred values, fused comparisons, forwarded
+results, and register locals above. `make test` runs 40 seeds with the
+math unit and 40 with `--no-mpu`; `test/fuzz.py 1 1000` runs more, and
+`test/fuzz.py --reduce SEED` shrinks a failing module and writes it with
+its translation.

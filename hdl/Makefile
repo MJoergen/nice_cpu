@@ -43,13 +43,13 @@ endef
 # with the counts that are hard to get right. The memory dumps of the probes
 # are left out, because the trace lists every memory write. The data reads
 # are not in the trace, but the probe reads.asm counts them with the read
-# counter, and its registers show the counts. mpu reads every word of the
-# math unit, src/mpu.vhd, and its registers and the trace's memory writes
-# show the results. cputest, reads, and mpu run a second time with a memory
-# that stalls in 30% of the cycles.
+# counter, and its registers show the counts. mpu and mpu64 read every word
+# of the math unit, src/mpu.vhd, and their registers and the trace's memory
+# writes show the results. cputest, reads, mpu, and mpu64 run a second time
+# with a memory that stalls in 30% of the cycles.
 EXAMPLES = count replicate print wrap
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest \
-  console screen iofetch reads reserved mpu
+  console screen iofetch reads reserved mpu mpu64
 INTR_irq   = --nmi 2:1 --irq 2:2 --nmi 9:1 --irq 17:2 --nmi 17:1 --irq 100:2
 INTR_merge = --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
 INTR_after = --nmi 3:1 --nmi 10:1
@@ -105,6 +105,7 @@ test: emulator analyse synth
 	$(call check_core,cputest_stall,../emulator/test/cputest.bin,-gG_STALL=30)
 	$(call check_core,reads_stall,../emulator/test/reads.bin,-gG_STALL=30 -gG_SEED=7)
 	$(call check_core,mpu_stall,../emulator/test/mpu.bin,-gG_STALL=30 -gG_SEED=3)
+	$(call check_core,mpu64_stall,../emulator/test/mpu64.bin,-gG_STALL=30 -gG_SEED=5)
 	$(foreach t,$(RANDOM_SEEDS),$(call check_random,$(t)))
 
 analyse:

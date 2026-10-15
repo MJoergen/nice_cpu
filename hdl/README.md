@@ -38,11 +38,12 @@ writer also run under nvc.
 synthesise the core and the math unit (`ghdl --synth`), and runs the tests. Everything it makes
 goes in `build/`. `make clean` removes it.
 
-`tb_mpu` checks every word of the math unit for 20 corner cases and 2000
-random pairs of operands, against `numeric_std`. It also checks that a read
-of a result waits for the computation, that a write restarts it, that a
-write and a read in back-to-back cycles see each other in order, and that
-reset clears A and B.
+`tb_mpu` checks every word of the math unit against `numeric_std`: for 20
+corner cases and 2000 random pairs of A and B, and for 16 corner cases and
+4000 random pairs of C and D. It also checks that a read of a result waits
+for the computation, that a write restarts it, that the two halves do not
+wait for each other, that a write and a read in back-to-back cycles see
+each other in order, and that reset clears the operands.
 
 `tb_trace` runs four times, each against the emulator on the same program
 with the same NMI: with the full trace, without the trace, and stopped at two
@@ -60,10 +61,10 @@ with the same interrupt requests:
   are left out, because the trace lists every memory write. The trace does
   not list data reads, but `reads` counts them with the read counter, so
   its registers show whether the core made each read exactly once and in
-  order (ISA.md §8.2). `mpu` reads every word of the math unit.
+  order (ISA.md §8.2). `mpu` and `mpu64` read every word of the math unit.
 - `test/shift.asm`.
-- `cputest`, `reads`, and `mpu` again, on a memory that stalls in 30% of
-  the cycles.
+- `cputest`, `reads`, `mpu`, and `mpu64` again, on a memory that stalls in
+  30% of the cycles.
 - 30 random programs from `test/random_prog.py`, each stopped at 3000 steps,
   on a memory that stalls in 30% of the cycles. Besides random ALU and
   shift instructions, they use R15 with every side effect, `HALT`, `RTI`,
@@ -132,16 +133,20 @@ number. The rest of the I/O range is plain memory, as in the emulator.
 
 ## The math unit
 
-`mpu` is the math unit of ISA.md §8.4: A at offset 0, B at 1, and the
-signed and unsigned products, quotients, and remainders at 2 to 9. It is a
-pipelined Wishbone slave with a 4-bit address. The bus decoder selects it
-for `0xFFFFFF10`–`0xFFFFFF1F`. In `tb_multicycle`, that decoder is an
-address compare on the data bus.
+`mpu` is the math unit of ISA.md §8.4. Offsets 0 to 15 hold A, B, and the
+signed and unsigned products, quotients, and remainders of A and B.
+Offsets 16 to 31 hold the 64-bit C and D, and the signed and unsigned
+quotients and remainders of C and D. It is a pipelined Wishbone slave with
+a 5-bit address. The bus decoder selects it for `0xFFFFFF10`–`0xFFFFFF2F`
+and passes address bit 5 and bits 3..0 as the offset. In `tb_multicycle`,
+that decoder is an address compare on the data bus.
 
 A write to A or B starts a computation that takes 33 cycles. A
 shift-and-add multiplier and two restoring dividers run side by side, one
 bit per cycle: one divider for A / B, and one for |A| / |B|. The signed
-results are formed from those, as the header of `src/mpu.vhd` explains.
+results are formed from those, as the header of `src/mpu.vhd` explains. A
+write to C or D starts the same computation with two 64-bit dividers,
+which takes 65 cycles. The two halves run independently.
 
 A read of a result while the computation runs is accepted, then STALL stays
 high and ACK waits until the result is ready. Reads of A, B, and the spare

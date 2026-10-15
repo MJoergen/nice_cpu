@@ -3,7 +3,7 @@
 --
 -- THEORY OF OPERATION
 -- The core runs on the memory model, sim/wb_mem.vhd, which loads G_BIN_FILE.
--- A decoder on the data bus sends 0xFFFFFF10-0xFFFFFF1F to the math unit,
+-- A decoder on the data bus sends 0xFFFFFF10-0xFFFFFF2F to the math unit,
 -- src/mpu.vhd, instead (ISA.md §8.4). It needs no more than an address
 -- compare, because the core waits for each ACK before its next request.
 -- The trace writer, sim/trace.vhd, prints each step the core reports.
@@ -215,7 +215,9 @@ begin
       ); -- i_multicycle
 
 
-   mpu_sel      <= '1' when dbus_addr(31 downto 4) = X"FFFFFF1" else '0';
+   mpu_sel      <= '1' when dbus_addr(31 downto 4) = X"FFFFFF1" or
+                            dbus_addr(31 downto 4) = X"FFFFFF2" else
+                   '0';
    mem_stb      <= dbus_stb and not mpu_sel;
    mpu_stb      <= dbus_stb and mpu_sel;
    dbus_stall   <= mpu_stall when mpu_sel = '1' else mem_stall;
@@ -260,7 +262,7 @@ begin
          wb_stall_o => mpu_stall,
          wb_ack_o   => mpu_ack,
          wb_we_i    => dbus_we,
-         wb_addr_i  => dbus_addr(3 downto 0),
+         wb_addr_i  => dbus_addr(5) & dbus_addr(3 downto 0),
          wb_data_i  => dbus_data_out,
          wb_data_o  => mpu_data_in
       ); -- i_mpu

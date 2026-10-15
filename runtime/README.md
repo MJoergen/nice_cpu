@@ -174,6 +174,28 @@ turning `printf("x\n")` into `puts("x")`. `-mbulk-memory` matters
 here too: the library's `memcpy`, `memmove`, and `memset` are
 `memory.copy` and `memory.fill`.
 
+**From Zig and Rust.** The library is plain wasm code with C names, so
+Zig and Rust code can call it too, but this is not the preferred way. It
+ties a Zig or Rust program to a C library and to clang, and `printf`
+loses the type checks of the languages' own formatting. To try it, declare
+the functions and link `libc.a`:
+
+    // Zig
+    extern fn printf(fmt: [*:0]const u8, ...) c_int;
+    zig build-exe ... prog.zig runtime/libc/libc.a
+
+    // Rust
+    extern "C" { fn printf(fmt: *const u8, ...) -> i32; }
+    rustc ... -C link-arg=runtime/libc/libc.a prog.rs
+
+The preferred way is a small support module in each language, written in
+that language, with the same split as the C library. Only its console
+code calls `nice.poke`. For Zig, that is a writer for the console, so
+that `std.fmt` can print through it. For Rust, it is a type that
+implements `core::fmt::Write`, `print!` and `println!` macros on top of
+it, and a `#[global_allocator]` for `alloc`. Neither exists yet
+([TODO.md](../TODO.md)).
+
 ## Test
 
     make test

@@ -79,6 +79,12 @@ below. No code has TODO or FIXME comments.
   float conversions in `printf`, which would pull in the float library;
   `FILE` and `stdout`; `errno`; and `exit`, which needs a way for wasm
   code to halt.
+- **Console and heap support for Zig and Rust.** They can call the C
+  library, but that is not the preferred way
+  ([runtime/README.md](runtime/README.md#c-library)). Wanted: a Zig module
+  with a console writer for `std.fmt`, and a Rust crate with a
+  `core::fmt::Write` console, `print!` and `println!`, and a global
+  allocator. Both print through `nice.poke`.
 - **C's `long double` and `__int128`.** Not supported, because the runtime
   library has no `__addtf3`, `__multi3`, and the like
   ([translator/README.md](translator/README.md)).

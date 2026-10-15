@@ -51,10 +51,16 @@ test: emulator
 	$(foreach t,$(TESTS),$(call check,$(t)))
 	@rm -f test/*.out test/*.raw test/*.status test/*.out.nasm test/*.full.nasm test/*.out.bin
 
+# A random test of the printf family against a model of C's printf,
+# test/fuzz_printf.py. It compiles a program with clang, so make test
+# does not run it.
+fuzz: libc.a emulator
+	@$(PYTHON) test/fuzz_printf.py 1 300
+
 emulator:
 	$(MAKE) -C ../../emulator build
 
 clean:
 	rm -rf build libc.a test/*.out test/*.raw test/*.status test/*.out.nasm test/*.full.nasm test/*.out.bin
 
-.PHONY: wasm test emulator clean
+.PHONY: wasm test fuzz emulator clean

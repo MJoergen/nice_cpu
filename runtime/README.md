@@ -147,11 +147,13 @@ The library is small on purpose:
 - Output only. There is no `getchar`, because the console has no input
   yet.
 - No `FILE`, `stdout`, or `fprintf`.
-- `printf` supports the flags `- + space # 0`, a width and a precision
+- `printf` supports the flags `- + space # 0`, with `+` and space for the
+  signed conversions only, as C defines them, a width and a precision
   (either may be `*`), the length modifiers `hh h l ll z t j`, and the
   conversions `d i u o x X c s p %`. The float conversions, such as `%f`,
   take their argument and are printed as they stand, as is any other
-  unknown conversion. `%p` prints `0x` and the address in hex.
+  unknown conversion. `%p` prints `0x` and the address in hex, `0x0` for a
+  null pointer.
 - No `errno`. `strtol` and `strtoul` saturate on overflow.
 - No `exit`. `abort` traps (ISA.md §9.4).
 - `malloc` is first fit, with an 8-byte header on each block, and merges
@@ -216,3 +218,9 @@ them and `libc.a`. Each is translated, joined with `start_wasm.nasm`,
 `lib.nasm`, and `muldiv_mpu.nasm`, and run. Its console output, `main`'s result in R1, and the
 exit status are compared with `libc/test/X.expected`, which was written
 by hand from the source.
+
+`make -C libc fuzz` needs clang. It runs `libc/test/fuzz_printf.py`,
+which writes a C program with 300 random `printf` and `snprintf` calls,
+with every flag, width, precision, length modifier, and integer
+conversion, and compares the output with a model of C's `printf` in
+Python. `fuzz_printf.py SEED COUNT` runs other seeds and sizes.

@@ -84,6 +84,8 @@ This is not a bug in the toolchain: wasm-ld places the stack after the data unle
 - `%+u`, `% u`, `%+x`, and the like print a sign. The C standard defines the `+` and space flags for signed conversions only, and glibc ignores them for unsigned ones. Clang warns about the combination, so no correct program uses it. Harmless, but a one-line check in `number()` would make it match.
 - `%p` of a null pointer prints `0`, where glibc prints `(nil)`. The README says `%p` prints `0x` and the address; for 0 it prints neither. Either is acceptable; the README could say so.
 
+**Resolved**: `printf` ignores `+` and space for the unsigned conversions, and `%p` always starts with `0x`, so a null pointer is `0x0`. `stdio.c` tests both, the README says so, and `runtime/libc/test/fuzz_printf.py`, the model-based test of this review, is in the repository as `make -C runtime/libc fuzz`.
+
 ## 6. Documentation
 
 ### 6.1 The unchecked claims of TODO.md

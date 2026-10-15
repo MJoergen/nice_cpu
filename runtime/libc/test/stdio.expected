@@ -11,6 +11,7 @@ ff FF 10 0xff 010 0
 100% %f 9
 22 [overflowing tex]
 5 [0beef]
+5 ff 0x0
 0x1234
 R1  00000007
 exit 0

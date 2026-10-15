@@ -1,8 +1,9 @@
-// printf and its relatives. They support the flags - + space # 0, a width
-// and a precision (either may be *), the length modifiers hh h l ll z t j,
-// and the conversions d i u o x X c s p %. The float conversions, such as
-// %f, take their argument but are copied to the output as they stand, and
-// so is any other conversion.
+// printf and its relatives. They support the flags - + space # 0 (+ and
+// space for the signed conversions, as C defines them), a width and a
+// precision (either may be *), the length modifiers hh h l ll z t j, and
+// the conversions d i u o x X c s p %. The float conversions, such as %f,
+// take their argument but are copied to the output as they stand, and so
+// is any other conversion.
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -30,7 +31,8 @@ static void emit_n(struct out *o, char c, int n)
         emit(o, c);
 }
 
-enum { LEFT = 1, PLUS = 2, SPACE = 4, ALT = 8, ZERO = 16 };
+// PTR is %p: 0x comes before the digits, also for a null pointer.
+enum { LEFT = 1, PLUS = 2, SPACE = 4, ALT = 8, ZERO = 16, PTR = 32 };
 
 // Writes the digits of v in base 2..16, last digit first, and returns
 // their number. Values that fit in 32 bits use the 32-bit division, which
@@ -67,7 +69,7 @@ static void number(struct out *o, unsigned long long v, int neg, unsigned base, 
         prefix[np++] = '+';
     else if (flags & SPACE)
         prefix[np++] = ' ';
-    if ((flags & ALT) && base == 16 && v) {
+    if (base == 16 && ((flags & PTR) || ((flags & ALT) && v))) {
         prefix[np++] = '0';
         prefix[np++] = upper ? 'X' : 'x';
     }
@@ -191,11 +193,13 @@ static void format(struct out *o, const char *fmt, va_list ap)
             else if (size == -2)
                 v = (unsigned char)v;
             unsigned base = c == 'u' ? 10 : c == 'o' ? 8 : 16;
-            number(o, v, 0, base, c == 'X', flags, width, prec);
+            // + and space are for the signed conversions only.
+            number(o, v, 0, base, c == 'X', flags & ~(PLUS | SPACE), width, prec);
             break;
         }
         case 'p':
-            number(o, (uintptr_t)va_arg(ap, void *), 0, 16, 0, flags | ALT, width, prec);
+            number(o, (uintptr_t)va_arg(ap, void *), 0, 16, 0, (flags & ~(PLUS | SPACE)) | PTR,
+                   width, prec);
             break;
         case 'c':
             if (!(flags & LEFT))

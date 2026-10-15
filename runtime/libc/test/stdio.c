@@ -24,5 +24,12 @@ int main(void)
     printf("%d [%s]\n", n, buf);
     n = sprintf(buf, "%05x", 0xbeef);
     printf("%d [%s]\n", n, buf);
+    // + and space are for signed conversions, so they are ignored here, as
+    // glibc ignores them; C leaves the combination undefined, hence the
+    // pragma. %p of a null pointer is 0x0.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat"
+    printf("%+u % x %p\n", 5u, 255u, (void *)0);
+#pragma clang diagnostic pop
     return printf("%p\n", (void *)0x1234);
 }

@@ -3,23 +3,23 @@
 ; §8.4. It goes after lib.asm, instead of muldiv_soft.asm. Each routine
 ; writes its operands to A and B, or C and D, and reads the results.
 
-__mpu.a         .EQU    0xFFFFFF10
-__mpu.b         .EQU    0xFFFFFF11
-__mpu.smul_lo   .EQU    0xFFFFFF12
-__mpu.umul_lo   .EQU    0xFFFFFF14
-__mpu.umul_hi   .EQU    0xFFFFFF15
-__mpu.sdiv_q    .EQU    0xFFFFFF16
-__mpu.sdiv_r    .EQU    0xFFFFFF17
-__mpu.udiv_q    .EQU    0xFFFFFF18
-__mpu.udiv_r    .EQU    0xFFFFFF19
-__mpu.c_lo      .EQU    0xFFFFFF20
-__mpu.c_hi      .EQU    0xFFFFFF21
-__mpu.d_lo      .EQU    0xFFFFFF22
-__mpu.d_hi      .EQU    0xFFFFFF23
-__mpu.sdiv64_q  .EQU    0xFFFFFF24              ; and +1 for the high word
-__mpu.sdiv64_r  .EQU    0xFFFFFF26
-__mpu.udiv64_q  .EQU    0xFFFFFF28
-__mpu.udiv64_r  .EQU    0xFFFFFF2A
+__mpu.a         .EQU    0xFFFFFF20
+__mpu.b         .EQU    0xFFFFFF21
+__mpu.smul_lo   .EQU    0xFFFFFF22
+__mpu.umul_lo   .EQU    0xFFFFFF24
+__mpu.umul_hi   .EQU    0xFFFFFF25
+__mpu.sdiv_q    .EQU    0xFFFFFF26
+__mpu.sdiv_r    .EQU    0xFFFFFF27
+__mpu.udiv_q    .EQU    0xFFFFFF28
+__mpu.udiv_r    .EQU    0xFFFFFF29
+__mpu.c_lo      .EQU    0xFFFFFF30
+__mpu.c_hi      .EQU    0xFFFFFF31
+__mpu.d_lo      .EQU    0xFFFFFF32
+__mpu.d_hi      .EQU    0xFFFFFF33
+__mpu.sdiv64_q  .EQU    0xFFFFFF34              ; and +1 for the high word
+__mpu.sdiv64_r  .EQU    0xFFFFFF36
+__mpu.udiv64_q  .EQU    0xFFFFFF38
+__mpu.udiv64_r  .EQU    0xFFFFFF3A
 
 ; __mul: R1 = R1 * R2, the low 32 bits, for signed and unsigned operands.
 ; 4 steps.

@@ -6,7 +6,7 @@ one assembly file, to be joined with the start-up code, the program's other
 files, and the runtime library as section 9.3 describes.
 
 Usage: nicewasm.py [-o output.asm] [--no-bounds-checks] [--memory-pages N]
-                   [--library NAME [--library-memory BYTES]] input.wasm
+                   [--library NAME [--library-memory BYTES]] [--no-mpu] input.wasm
 
 README.md lists the wasm features it supports. Anything else is rejected
 with an error, never translated wrongly.
@@ -1044,10 +1044,11 @@ for _n in (1, 2, 4, 8):
 class Translator:
     def __init__(self, m: Module, data: bytes, checks: bool = True,
                  library: Optional[str] = None, library_memory: Optional[int] = None,
-                 memory_pages: Optional[int] = None) -> None:
+                 memory_pages: Optional[int] = None, mpu: bool = True) -> None:
         self.m = m
         self.data = data
         self.checks = checks  # bounds checks on memory accesses
+        self.mpu = mpu  # use the math unit of §8.4 for i32 mul, div, and rem
         self.library = library  # the name of a library module (§9.4), or None
         self.prefix = f"WL.{library}." if library else "W."  # of the labels made here
         self.mem = f"WL.{library}.memory" if library else "___wasm_memory"
@@ -1840,8 +1841,19 @@ class FunctionTranslator:
                        instr("MOVE", "R15", "@___wasm_trap_vector")]
         return label
 
+    def mpu_op(self, word: str, t: int, at: int, what: str) -> None:
+        """Pops a and b, writes them to the math unit (§8.4), and pushes
+        the given result word. The labels __mpu.* are in
+        runtime/muldiv_mpu.asm."""
+        a, b = self.pop([t, t], at, what)
+        dest = self.push(t)
+        self.emit("MOVE", "@__mpu.a", a[0])
+        self.emit("MOVE", "@__mpu.b", b[0])
+        self.emit("MOVE", dest[0], f"@__mpu.{word}")
+
     def divide(self, t: int, op: str, at: int, what: str) -> None:
-        """A division or remainder, by a call to the runtime library. First
+        """A division or remainder, by the math unit for i32 unless it is
+        turned off, else by a call to the runtime library. First
         come the cases that wasm defines but C does not (§9.4): division by
         0 traps with code 3, and div_s of the most negative number by -1
         traps with code 4. rem_s by -1 is 0, without the call."""
@@ -1879,8 +1891,13 @@ class FunctionTranslator:
             for w in result:
                 self.emit("?Z MOVE", w, "0")
             self.emit("?Z MOVE", "R15", done)
-        routine = {"div_s": "__div", "div_u": "__udiv", "rem_s": "__mod", "rem_u": "__umod"}[op]
-        self.call(routine + ("64" if t == I64 else ""), FuncType([t, t], [t]), at, what)
+        if t == I32 and self.t.mpu:
+            word = {"div_s": "sdiv_q", "div_u": "udiv_q", "rem_s": "sdiv_r", "rem_u": "udiv_r"}[op]
+            self.mpu_op(word, t, at, what)
+        else:
+            routine = {"div_s": "__div", "div_u": "__udiv", "rem_s": "__mod",
+                       "rem_u": "__umod"}[op]
+            self.call(routine + ("64" if t == I64 else ""), FuncType([t, t], [t]), at, what)
         if done:
             self.body.append(done)
 
@@ -2410,6 +2427,8 @@ class FunctionTranslator:
                     self.emit("AND", "R1", values[1][-1], "0x80000000")
                     self.emit("AND", top, a_top, "0x7FFFFFFF")
                     self.emit("OR", top, top, "R1")
+            elif op == 0x6C and self.t.mpu:
+                self.mpu_op("umul_lo", I32, at, name)
             elif op in LIB_OPS:
                 routine, (params, results) = LIB_OPS[op]
                 fwd = self.forward(r, at, results[0], len(params))
@@ -2499,9 +2518,9 @@ class FunctionTranslator:
 
 def translate(data: bytes, source: str, checks: bool = True, library: Optional[str] = None,
               library_memory: Optional[int] = None,
-              memory_pages: Optional[int] = None) -> List[str]:
+              memory_pages: Optional[int] = None, mpu: bool = True) -> List[str]:
     return Translator(parse(data), data, checks, library, library_memory,
-                      memory_pages).run(source)
+                      memory_pages, mpu).run(source)
 
 
 def main() -> None:
@@ -2519,6 +2538,9 @@ def main() -> None:
     ap.add_argument("--library-memory", metavar="BYTES", type=int,
                     help="bytes of a library module's memory to reserve"
                          " (default: as much as its data and stack need)")
+    ap.add_argument("--no-mpu", action="store_true",
+                    help="call the runtime library for i32 mul, div, and rem, instead of"
+                         " using the math unit")
     args = ap.parse_args()
 
     out = args.output or os.path.splitext(args.input)[0] + ".asm"
@@ -2538,7 +2560,8 @@ def main() -> None:
         if args.memory_pages is not None and args.library is not None:
             sys.exit("--memory-pages: a library module (--library) cannot grow its memory")
         lines = translate(data, os.path.basename(args.input), not args.no_bounds_checks,
-                          args.library, args.library_memory, args.memory_pages)
+                          args.library, args.library_memory, args.memory_pages,
+                          not args.no_mpu)
     except WasmError as e:
         where = "" if e.offset is None else f":0x{e.offset:x}"
         print(f"{args.input}{where}: error: {e}", file=sys.stderr)

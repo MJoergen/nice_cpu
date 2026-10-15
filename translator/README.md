@@ -13,7 +13,7 @@ anything else with an error, rather than translating it wrongly.
 ## Usage
 
     ./nicewasm.py [-o output.asm] [--no-bounds-checks] [--memory-pages N]
-                  [--library NAME [--library-memory BYTES]] input.wasm
+                  [--library NAME [--library-memory BYTES]] [--no-mpu] input.wasm
 
 Without `-o`, the output goes to `input.asm`. `--no-bounds-checks` leaves
 out the bounds checks on memory accesses, as ISA.md §9.4 allows. The code
@@ -23,7 +23,10 @@ whatever NICE memory the address reaches. `--memory-pages N` lets
 may not be below the memory's initial size or above its maximum, if it
 declares one, and it must be below 65536. Without the option, the cap is
 the initial size. `--library` translates a library module instead, as
-described below. Errors are printed as
+described below. `--no-mpu` is for a system without the math unit of
+ISA.md §8.4: `i32.mul`, `div`, and `rem` then call the runtime library
+instead of using the math unit, and the program must be joined with
+`runtime/muldiv_soft.asm`, not `muldiv_mpu.asm`. Errors are printed as
 `file:0xOFFSET: error: message`, where OFFSET is the byte offset in the
 module, or as `file: error: message` when there is no offset. The exit
 status is 1 after an error, and no output is written. nicewasm stops at the
@@ -37,7 +40,7 @@ order of ISA.md §9.3. For example, for C code compiled with clang:
         -Wl,--allow-undefined -Wl,-z,stack-size=4096 -Wl,--initial-memory=65536 \
         -o prog.wasm prog.c
     translator/nicewasm.py prog.wasm
-    cat runtime/start_wasm.asm prog.asm runtime/lib.asm > full.asm
+    cat runtime/start_wasm.asm prog.asm runtime/lib.asm runtime/muldiv_mpu.asm > full.asm
     assembler/niceasm.py full.asm
     emulator/zig-out/bin/niceemu full.bin
 
@@ -152,7 +155,7 @@ measurements.
   and `reinterpret` move the bits, and `abs`, `neg`, and `copysign` change
   the sign bit inline. Everything else calls the float library,
   `runtime/float.asm`, so a program that uses floats must be joined with
-  it, after `runtime/lib.asm`. `trunc` traps with code 5 for a NaN or a
+  it, after `runtime/lib.asm` and the muldiv file. `trunc` traps with code 5 for a NaN or a
   value whose integer part does not fit, and `trunc_sat` saturates
   instead.
 - **Control:** `block`, `loop`, `if`, `else`, `end`, `br`, `br_if`,
@@ -166,11 +169,15 @@ measurements.
 - **Integer operations,** for `i32` and `i64`: `add`, `sub`,
   `mul`, `div_s`, `div_u`, `rem_s`, `rem_u`, `and`, `or`, `xor`, `clz`,
   `ctz`, `popcnt`, and the `sign-ext` instructions `extend8_s`,
-  `extend16_s`, and `i64.extend32_s`. `mul`, the divisions, and the bit
-  counts call the runtime library, for example `__mul`, `__div64`, and
+  `extend16_s`, and `i64.extend32_s`. `i32.mul`, `div`, and `rem` write
+  their operands to the math unit of ISA.md §8.4 and read the result, in
+  three instructions, through the labels `__mpu.a` and the like that
+  `runtime/muldiv_mpu.asm` defines. With `--no-mpu` they call `__mul`,
+  `__div`, and the like instead. The `i64` ones and the bit counts always
+  call the runtime library, for example `__mul64`, `__div64`, and
   `__popcnt` (see [runtime/README.md](../runtime/README.md)). Division by 0
   traps with code 3, and `div_s` of the most negative number by −1 with
-  code 4. `rem_s` by −1 is 0 without a call, because C leaves the most
+  code 4. `rem_s` by −1 is 0 without a division, because C leaves the most
   negative number % −1 undefined.
 - **Comparisons:** `eqz`, `eq`, `ne`, `lt`, `gt`, `le`, and `ge`, signed
   and unsigned, for `i32` and `i64`.

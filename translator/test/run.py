@@ -3,10 +3,12 @@
 
 Each case is a module, either built here with wasm.py or compiled from a
 test/X.c, test/X.zig, or test/X.rs source into test/X.wasm. It is translated and joined
-with runtime/start_wasm.asm, any hand-written assembly the case needs, and
-runtime/lib.asm, as ISA.md §9.3 describes. If it calls the float library,
-runtime/float.wasm translated as the library module float follows. Then it
-is assembled and run.
+with runtime/start_wasm.asm, any hand-written assembly the case needs,
+runtime/lib.asm, and runtime/muldiv_mpu.asm, as ISA.md §9.3 describes. If
+it calls the float library, runtime/float.wasm translated as the library
+module float follows. Then it is assembled and run. Each case runs twice:
+as translated by default, with the math unit (ISA.md §8.4), and with
+--no-mpu and runtime/muldiv_soft.asm.
 
 The program must halt with HALT and main's result in R1, and print what
 CONSOLE gives on the console, or nothing. A case in TRAPS
@@ -1480,29 +1482,31 @@ def assemble(line: str, tmp: str) -> List[int]:
         return [int(line.split()[1], 16) for line in f]
 
 
-def float_library(tmp: str) -> Tuple[str, Set[str]]:
+def float_library(tmp: str, mpu: bool) -> Tuple[str, Set[str]]:
     """Translates the float library, and returns its file and the labels
     of its routines."""
-    asm = os.path.join(tmp, "float.asm")
-    run([sys.executable, NICEWASM, "--library", "float", "-o", asm,
-         os.path.join(RUNTIME, "float.wasm")])
+    asm = os.path.join(tmp, "float.asm" if mpu else "float_soft.asm")
+    run([sys.executable, NICEWASM, "--library", "float", *([] if mpu else ["--no-mpu"]),
+         "-o", asm, os.path.join(RUNTIME, "float.wasm")])
     with open(asm) as f:
         labels = {line.strip() for line in f if line.startswith("__")}
     return asm, labels
 
 
 def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
-          floats: Tuple[str, Set[str]]) -> List[str]:
+          floats: Tuple[str, Set[str]], mpu: bool) -> List[str]:
     trap = name in TRAPS
     asm = os.path.join(tmp, name + ".asm")
-    run([sys.executable, NICEWASM, *OPTIONS.get(name, []), "-o", asm, wasm_file])
+    run([sys.executable, NICEWASM, *OPTIONS.get(name, []), *([] if mpu else ["--no-mpu"]),
+         "-o", asm, wasm_file])
     hand = os.path.join(HERE, name + ".asm")
     if os.path.exists(hand):
         with open(hand) as f:
             extra += f.read()
     with open(asm) as f:
         text = f.read()
-    parts = [os.path.join(RUNTIME, "start_wasm.asm"), None, asm, os.path.join(RUNTIME, "lib.asm")]
+    parts = [os.path.join(RUNTIME, "start_wasm.asm"), None, asm, os.path.join(RUNTIME, "lib.asm"),
+             os.path.join(RUNTIME, "muldiv_mpu.asm" if mpu else "muldiv_soft.asm")]
     if any(label in text for label in floats[1]):
         parts.append(floats[0])
     lines: List[str] = []
@@ -1562,25 +1566,27 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
 def main() -> None:
     failed = 0
     with tempfile.TemporaryDirectory() as tmp:
-        floats = float_library(tmp)
-        for name, wasm, extra, expected in CASES:
-            if isinstance(wasm, bytes):
-                wasm_file = os.path.join(tmp, FILE_NAMES.get(name, name + ".wasm"))
-                with open(wasm_file, "wb") as f:
-                    f.write(wasm)
-            else:
-                wasm_file = os.path.join(HERE, wasm + ".wasm")
-            try:
-                problems = check(name, wasm_file, extra, expected, tmp, floats)
-            except RuntimeError as e:
-                problems = [str(e)]
-            if problems:
-                failed += 1
-                print(f"FAIL {name}")
-                for p in problems:
-                    print("  " + p.rstrip().replace("\n", "\n  "))
-            else:
-                print(f"PASS {name}")
+        for mpu in (True, False):
+            floats = float_library(tmp, mpu)
+            suffix = "" if mpu else " (--no-mpu)"
+            for name, wasm, extra, expected in CASES:
+                if isinstance(wasm, bytes):
+                    wasm_file = os.path.join(tmp, FILE_NAMES.get(name, name + ".wasm"))
+                    with open(wasm_file, "wb") as f:
+                        f.write(wasm)
+                else:
+                    wasm_file = os.path.join(HERE, wasm + ".wasm")
+                try:
+                    problems = check(name, wasm_file, extra, expected, tmp, floats, mpu)
+                except RuntimeError as e:
+                    problems = [str(e)]
+                if problems:
+                    failed += 1
+                    print(f"FAIL {name}{suffix}")
+                    for p in problems:
+                        print("  " + p.rstrip().replace("\n", "\n  "))
+                else:
+                    print(f"PASS {name}{suffix}")
     if failed:
         sys.exit(1)
 

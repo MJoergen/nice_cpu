@@ -87,7 +87,8 @@ whole program is assembled at once.
         |
         |  cat, in this order: runtime/start_wasm.asm (or start.asm for a
         |  program with no wasm module), hand-written .asm files, prog.asm,
-        |  runtime/lib.asm, and runtime/float.asm if prog uses floats
+        |  runtime/lib.asm, runtime/muldiv_mpu.asm (or muldiv_soft.asm
+        |  without the math unit), and runtime/float.asm if prog uses floats
         v
     full.asm
         |  assembler/niceasm.py
@@ -110,7 +111,8 @@ the join.
   assembler's example programs.
 - The runtime library's start-up code calls `_main`, and `start_wasm.asm`
   first calls the `___wasm_start` that `nicewasm` emits. Translated code
-  calls `__mul` in `lib.asm` for `i32.mul`, and traps through
+  uses the math unit through the labels in `muldiv_mpu.asm` for `i32.mul`,
+  or calls `__mul` with `--no-mpu`, and traps through
   `___wasm_trap_vector`. A C compiler for NICE would call the same
   routines.
 - The float routines are themselves translated by `nicewasm`: `runtime/

@@ -91,10 +91,6 @@ below. No code has TODO or FIXME comments.
   [doc/review/code-size-plan.md](doc/review/code-size-plan.md), and the
   locals in R7–R11 ([translator/README.md](translator/README.md)), already
   took part of that saving. Byte loads and stores still call a helper.
-- **Use the math unit** (ISA.md §8.4) in the runtime's `__mul`,
-  `__div`, `__udiv`, and the like, and in nicewasm's `i32.mul`, `div`, and `rem`.
-  Today they all run in software. Programs for a system without the math
-  unit would then need the software versions as an option.
 
 ## Claims not checked
 

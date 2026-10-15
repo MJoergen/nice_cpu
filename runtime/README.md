@@ -209,7 +209,7 @@ hand. The comments in each test show how.
 
 Then it runs the C library's tests, `libc/test/X.c`. Their `.wasm` files
 are checked in, so no C compiler is needed; `make -C libc wasm` rebuilds
-them and `libc.a`. Each is translated, joined with `start_wasm.asm` and
-`lib.asm`, and run. Its console output, `main`'s result in R1, and the
+them and `libc.a`. Each is translated, joined with `start_wasm.asm`,
+`lib.asm`, and `muldiv_mpu.asm`, and run. Its console output, `main`'s result in R1, and the
 exit status are compared with `libc/test/X.expected`, which was written
 by hand from the source.

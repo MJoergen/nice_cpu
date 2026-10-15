@@ -30,14 +30,14 @@ wasm: libc.a
 	  $(CLANG) $(CFLAGS) $(LDFLAGS) -o test/$$t.wasm test/$$t.c libc.a || exit 1; \
 	done
 
-# Each test/X.wasm is translated and joined with the start-up code and
-# lib.asm. It is assembled and run, and the console output, main's result
-# in R1, and the exit status are compared with test/X.expected. The step
-# count and the other registers are left out, so that the expected files
-# do not change with the compiler.
+# Each test/X.wasm is translated and joined with the start-up code,
+# lib.asm, and muldiv_mpu.asm. It is assembled and run, and the console
+# output, main's result in R1, and the exit status are compared with
+# test/X.expected. The step count and the other registers are left out, so
+# that the expected files do not change with the compiler.
 define check
 	@$(NICEWASM) -o test/$(1).out.asm test/$(1).wasm
-	@cat ../start_wasm.asm test/$(1).out.asm ../lib.asm > test/$(1).full.asm
+	@cat ../start_wasm.asm test/$(1).out.asm ../lib.asm ../muldiv_mpu.asm > test/$(1).full.asm
 	@$(ASM) -o test/$(1).out.bin test/$(1).full.asm
 	@$(EMU) test/$(1).out.bin > test/$(1).raw; echo "exit $$?" > test/$(1).status
 	@sed '/^\(Halted\|Stopped\)/,$$d' test/$(1).raw > test/$(1).out

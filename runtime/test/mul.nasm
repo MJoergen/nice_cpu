@@ -1,4 +1,4 @@
-; Run after start.asm. Calls __mul on each pair in the table and stores the
+; Run after start.nasm. Calls __mul on each pair in the table and stores the
 ; products in results (0x34-0x3D):
 ;
 ;   6 * 7                   = 0x0000002A
@@ -21,7 +21,7 @@
 ; At the end R2 = 0 and R3 = 0, because the last R2 has 32 bits, so both
 ; were shifted 32 times. R14 = 0x09000000: Z from the last DEC[M].
 ;
-; That is mul_soft.expected, with muldiv_soft.asm. With muldiv_mpu.asm,
+; That is mul_soft.expected, with muldiv_soft.nasm. With muldiv_mpu.nasm,
 ; each __mul takes 4 steps, so the total is 5 + 6 + 10 * (7 + 4) + 1 + 1
 ; = 123, and R2 keeps the last operand, 0x9ABCDEF0 (mul.expected).
 

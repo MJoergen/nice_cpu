@@ -1,1 +1,1 @@
-assembler/test/crlf.asm -text
+assembler/test/crlf.nasm -text

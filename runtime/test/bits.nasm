@@ -1,4 +1,4 @@
-; Run after start.asm. For each 64-bit number v in the table, calls
+; Run after start.nasm. For each 64-bit number v in the table, calls
 ; __clz, __ctz, and __popcnt on its low word, then __clz64, __ctz64, and
 ; __popcnt64 on v, and stores the 9 result words in results (0x54-0x89):
 ;
@@ -12,8 +12,8 @@
 ;
 ; The 64-bit results are pairs, so R2 = 0 follows each.
 ;
-; Code: start.asm is words 0-8, main 9-71, values 0x48-0x53, results 0x54.
-; Steps, from the comments in lib.asm, for the six routines on each value.
+; Code: start.nasm is words 0-8, main 9-71, values 0x48-0x53, results 0x54.
+; Steps, from the comments in lib.nasm, for the six routines on each value.
 ; __popcnt64 includes __popcnt on both words, for example 10 + 6 + 6 = 22
 ; for 0.
 ;   0:          3 + 3 + 6 + 10 + 11 + 22                  = 55

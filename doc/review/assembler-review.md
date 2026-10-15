@@ -2,7 +2,7 @@
 
 Reviewed on 2026-10-14: `assembler/niceasm.py` at commit 55a6913 ("niceasm: add type hints"), against `doc/ISA.md` §2, §4, §5.3, §10, and §11.
 
-**Status after commit 0670e53** ("niceasm: fix the issues from the adversarial review"), checked the same day: every item in sections 1, 2, and 4 is fixed, and each has a case in `test/errors.py` or a line in `test/encoding.asm`. Section 5 is the second round against the new code. It found one crash on an unrealistic input and a few message nits, nothing that affects correct programs.
+**Status after commit 0670e53** ("niceasm: fix the issues from the adversarial review"), checked the same day: every item in sections 1, 2, and 4 is fixed, and each has a case in `test/errors.py` or a line in `test/encoding.nasm`. Section 5 is the second round against the new code. It found one crash on an unrealistic input and a few message nits, nothing that affects correct programs.
 
 **How it was checked.** I read the code against the specification, confirmed that `make test` passes, checked the shift alias table and the control encodings by hand, and then ran about sixty one- to five-line probe programs through the assembler to see what it accepts, rejects, and reports. The probe files were not kept; every input quoted below is complete and reproduces the result.
 
@@ -123,7 +123,7 @@ For the record, these were checked and are right:
 
 `make test` has no negative test. None of the error paths, the exit status, or the rule that no output is written on error is covered. A table of one-line inputs with the expected message, run by a small Python test or a shell loop, would cover most of sections 1 and 2.
 
-Positive gaps in `encoding.asm`:
+Positive gaps in `encoding.nasm`:
 
 - The aliases `ROL`, `BPL`, `SHR`, and `BPR`. Only `SHL` and `ROR` are tested.
 - The conditions `?!X`, `?!C`, `?!N`, `?!V`, `?!E`, and `?!I`. Only `?!1` and `?!M` are tested.
@@ -175,7 +175,7 @@ Fifty names in reverse order work. The forward order never recurses deeply, beca
 
 `resolve()` (line 83) gives up after 100 steps and reports a loop. A forward chain of 101 names is therefore rejected:
 
-    chain.asm:101: error: '7': .EQU definitions form a loop
+    chain.nasm:101: error: '7': .EQU definitions form a loop
 
 Two things are wrong with that line: it is not a loop, and the name quoted is the final value `7`, not an `.EQU` name. Real loops are now found by `check_equs()` before anything else runs, and bad names stop `resolve()` early, so the 100-step limit no longer catches anything that the loop check misses. It could be raised to the number of `.EQU` definitions, or dropped.
 

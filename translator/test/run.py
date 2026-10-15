@@ -3,12 +3,12 @@
 
 Each case is a module, either built here with wasm.py or compiled from a
 test/X.c, test/X.zig, or test/X.rs source into test/X.wasm. It is translated and joined
-with runtime/start_wasm.asm, any hand-written assembly the case needs,
-runtime/lib.asm, and runtime/muldiv_mpu.asm, as ISA.md §9.3 describes. If
+with runtime/start_wasm.nasm, any hand-written assembly the case needs,
+runtime/lib.nasm, and runtime/muldiv_mpu.nasm, as ISA.md §9.3 describes. If
 it calls the float library, runtime/float.wasm translated as the library
 module float follows. Then it is assembled and run. Each case runs twice:
 as translated by default, with the math unit (ISA.md §8.4), and with
---no-mpu and runtime/muldiv_soft.asm.
+--no-mpu and runtime/muldiv_soft.nasm.
 
 The program must halt with HALT and main's result in R1, and print what
 CONSOLE gives on the console, or nothing. A case in TRAPS
@@ -1037,7 +1037,7 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         code(([I32, I64], bits(0, *[op64_dyn(*row) for row in SHIFT64_ROWS + SHIFT64_EDGES])))),
      "", 0x1FFFFFFF),
     # The other integer operations, one bit each. MIN is the most negative
-    # number. The routines are in runtime/lib.asm.
+    # number. The routines are in runtime/lib.nasm.
     ("intops", module(
         types(MAIN_TYPE),
         funcs(0),
@@ -1474,7 +1474,7 @@ def run(cmd: List[str]) -> str:
 
 def assemble(line: str, tmp: str) -> List[int]:
     """The words of one instruction."""
-    src = os.path.join(tmp, "line.asm")
+    src = os.path.join(tmp, "line.nasm")
     with open(src, "w") as f:
         f.write(f" {line}\n")
     run([sys.executable, NICEASM, "-o", src + ".bin", src])
@@ -1485,7 +1485,7 @@ def assemble(line: str, tmp: str) -> List[int]:
 def float_library(tmp: str, mpu: bool) -> Tuple[str, Set[str]]:
     """Translates the float library, and returns its file and the labels
     of its routines."""
-    asm = os.path.join(tmp, "float.asm" if mpu else "float_soft.asm")
+    asm = os.path.join(tmp, "float.nasm" if mpu else "float_soft.nasm")
     run([sys.executable, NICEWASM, "--library", "float", *([] if mpu else ["--no-mpu"]),
          "-o", asm, os.path.join(RUNTIME, "float.wasm")])
     with open(asm) as f:
@@ -1496,17 +1496,17 @@ def float_library(tmp: str, mpu: bool) -> Tuple[str, Set[str]]:
 def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
           floats: Tuple[str, Set[str]], mpu: bool) -> List[str]:
     trap = name in TRAPS
-    asm = os.path.join(tmp, name + ".asm")
+    asm = os.path.join(tmp, name + ".nasm")
     run([sys.executable, NICEWASM, *OPTIONS.get(name, []), *([] if mpu else ["--no-mpu"]),
          "-o", asm, wasm_file])
-    hand = os.path.join(HERE, name + ".asm")
+    hand = os.path.join(HERE, name + ".nasm")
     if os.path.exists(hand):
         with open(hand) as f:
             extra += f.read()
     with open(asm) as f:
         text = f.read()
-    parts = [os.path.join(RUNTIME, "start_wasm.asm"), None, asm, os.path.join(RUNTIME, "lib.asm"),
-             os.path.join(RUNTIME, "muldiv_mpu.asm" if mpu else "muldiv_soft.asm")]
+    parts = [os.path.join(RUNTIME, "start_wasm.nasm"), None, asm, os.path.join(RUNTIME, "lib.nasm"),
+             os.path.join(RUNTIME, "muldiv_mpu.nasm" if mpu else "muldiv_soft.nasm")]
     if any(label in text for label in floats[1]):
         parts.append(floats[0])
     lines: List[str] = []
@@ -1517,7 +1517,7 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
             with open(part) as f:
                 lines += f.readlines()
     assembler = niceasm.Assembler()
-    errors = assembler.run(lines, name + ".full.asm")
+    errors = assembler.run(lines, name + ".full.nasm")
     if errors:
         raise RuntimeError("\n".join(errors))
     image = dict(assembler.output())

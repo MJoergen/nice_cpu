@@ -1,12 +1,12 @@
 -- A test of the trace writer and the memory model, before there is a core.
 --
 -- THEORY OF OPERATION
--- The process p_core stands in for the core and runs test/trace.asm, with
+-- The process p_core stands in for the core and runs test/trace.nasm, with
 -- an NMI at step 5. For each step it fetches the instruction word through
 -- the instruction bus, makes the step's data accesses on the data bus, and
 -- reports the step to sim/trace.vhd. The register values and memory writes
 -- of each step are written out by hand below, from the comments in
--- trace.asm. The Makefile compares the output with that of
+-- trace.nasm. The Makefile compares the output with that of
 -- "niceemu --nmi 5:0x20" on the same program, with and without -t, and
 -- with the step limits that G_MAX_STEPS sets.
 --

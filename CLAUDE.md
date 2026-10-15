@@ -25,11 +25,11 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
 
 ## Commands
 
-    cd assembler && make test        # .asm -> .bin comparisons, then test/errors.py
+    cd assembler && make test        # .nasm -> .bin comparisons, then test/errors.py
     cd assembler && make typecheck   # mypy --strict
     cd emulator  && make test        # zig unit tests, example and probe programs, test/errors.py
-    cd emulator  && make bins        # reassemble test/*.bin after editing a probe .asm
-    cd runtime   && make test        # join, assemble, and run each test/*.asm
+    cd emulator  && make bins        # reassemble test/*.bin after editing a probe .nasm
+    cd runtime   && make test        # join, assemble, and run each test/*.nasm
     cd translator && make test       # test/run.py, then test/errors.py
     cd translator && make typecheck  # mypy --strict
     cd hdl && make test              # synth check, tb_mem, then tb_trace and the core diffed against niceemu
@@ -43,7 +43,7 @@ Run the relevant `make test` after every change.
 - Behaviour changes start in ISA.md; code follows the spec, never the reverse.
   Departures from the sources go in ISA.md Appendix B.
 - Every bug fix or new rule gets a test: an `errors.py` case, a line in
-  `assembler/test/encoding.asm`, or an emulator probe with a hand-checked
+  `assembler/test/encoding.nasm`, or an emulator probe with a hand-checked
   `.expected` file. Never generate `.expected` or `.bin` files by copying tool
   output without checking it.
 - The 2004 example `.bin` files are original `NICE.pm` output; do not change them.

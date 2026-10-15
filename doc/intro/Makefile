@@ -25,7 +25,7 @@ OPTS_copy = -d 0x10:5
 OPTS_irq  = --irq 5:5 --irq 12:5
 
 define check
-	@$(ASM) -o examples/$(1).bin examples/$(1).asm
+	@$(ASM) -o examples/$(1).bin examples/$(1).nasm
 	@$(EMU) $(OPTS_$(1)) examples/$(1).bin > examples/$(1).out; echo "exit $$?" >> examples/$(1).out
 	@if cmp -s examples/$(1).out examples/$(1).expected; then echo "PASS $(1)"; \
 	else echo "FAIL $(1)"; diff examples/$(1).expected examples/$(1).out; exit 1; fi

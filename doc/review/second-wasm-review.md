@@ -35,13 +35,13 @@ The WebAssembly specification requires IEEE 754 results with subnormals, and §9
 
 **Fix.** Either add a correctly rounded subnormal path to the two routines in `float.zig`, as `float.zig` already does for `sqrt` and the roundings, or record the departure in ISA.md Appendix B and the runtime README. In both cases add the first two lines of the table to the `float32` and `float64` cases in `run.py`, which have no division with a subnormal result today.
 
-**Resolved**: `float.zig` now has its own `__divsf3` and `__divdf3`, which divide the significands bit by bit and round once, also into the subnormals. They replace compiler_rt's and make `float.asm` about 1200 words smaller. They agreed with the host's division on 20 million random operands of each type, many of them subnormal, and with numpy on 797 random divisions through the translator, assembler, and emulator. `run.py` has the first two lines of the table for `f32`, and the last two for `f64`.
+**Resolved**: `float.zig` now has its own `__divsf3` and `__divdf3`, which divide the significands bit by bit and round once, also into the subnormals. They replace compiler_rt's and make `float.nasm` about 1200 words smaller. They agreed with the host's division on 20 million random operands of each type, many of them subnormal, and with numpy on 797 random divisions through the translator, assembler, and emulator. `run.py` has the first two lines of the table for `f32`, and the last two for `f64`.
 
 ## 2. Gaps in the C toolchain
 
 ### 2.1 Struct copies import `memcpy`
 
-Clang 18's default wasm32 features are `mutable-globals` and `sign-ext`, without bulk memory, as the translator's README says. The consequence is not said: every copy that LLVM does not inline becomes a call to `memcpy`, which `-nostdlib` and `--allow-undefined` turn into the import `env.memcpy`. A 400-byte structure assignment at -O2 did this, with and without `-mcpu=mvp`. The translator accepts the import, because `memcpy` is a C identifier, and the assembler then stops with `undefined symbol '_memcpy'`. The same happens with `memset` and `memmove`. A routine in `lib.asm` could not serve these imports anyway, because they take byte addresses in linear memory and a C-ABI routine would take word addresses.
+Clang 18's default wasm32 features are `mutable-globals` and `sign-ext`, without bulk memory, as the translator's README says. The consequence is not said: every copy that LLVM does not inline becomes a call to `memcpy`, which `-nostdlib` and `--allow-undefined` turn into the import `env.memcpy`. A 400-byte structure assignment at -O2 did this, with and without `-mcpu=mvp`. The translator accepts the import, because `memcpy` is a C identifier, and the assembler then stops with `undefined symbol '_memcpy'`. The same happens with `memset` and `memmove`. A routine in `lib.nasm` could not serve these imports anyway, because they take byte addresses in linear memory and a C-ABI routine would take word addresses.
 
 With `-mbulk-memory`, LLVM emits `memory.copy` and `memory.fill` instead, and the same program translates and runs correctly. Zig is not affected, because its compiler_rt is inside the module.
 

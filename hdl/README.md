@@ -23,9 +23,9 @@ working reference for it.
 | [test/tb_mem.vhd](test/tb_mem.vhd) | A self-checking test of the memory model, which loads [test/mem.bin](test/mem.bin). |
 | [test/tb_mpu.vhd](test/tb_mpu.vhd) | A self-checking test of the math unit. |
 | [test/tb_perf.vhd](test/tb_perf.vhd) | A self-checking test of the performance counters. |
-| [test/tb_trace.vhd](test/tb_trace.vhd) | A test of the trace writer, which stands in for the core and runs [test/trace.asm](test/trace.asm). |
+| [test/tb_trace.vhd](test/tb_trace.vhd) | A test of the trace writer, which stands in for the core and runs [test/trace.nasm](test/trace.nasm). |
 | [test/tb_multicycle.vhd](test/tb_multicycle.vhd) | Runs a program on the multi-cycle core, with an interrupt source, and writes its trace. |
-| [test/shift.asm](test/shift.asm) | Every shift, with the counts that are hard to get right. |
+| [test/shift.nasm](test/shift.nasm) | Every shift, with the counts that are hard to get right. |
 | [test/random_prog.py](test/random_prog.py) | Writes random programs, and random interrupt requests for them. |
 
 ## Running the tests
@@ -74,7 +74,7 @@ with the same interrupt requests:
   `perf` reads the instruction counter, with an NMI and an `INT`, and
   checks the cycle counter only through flags, because the emulator counts
   steps, not cycles.
-- `test/shift.asm`.
+- `test/shift.nasm`.
 - `cputest`, `reads`, `mpu`, `mpu64`, and `perf` again, on a memory that
   stalls in 30% of the cycles.
 - 30 random programs from `test/random_prog.py`, each stopped at 3000 steps,

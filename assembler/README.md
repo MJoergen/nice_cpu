@@ -18,7 +18,7 @@ The script is fully type-annotated. `make typecheck` checks it with
 
 ## Usage
 
-    ./niceasm.py [-o output.bin] input.asm
+    ./niceasm.py [-o output.bin] input.nasm
 
 Without `-o`, the output goes to `input.bin`. If that is the input file
 itself, the assembler refuses with a message. Errors in the program are

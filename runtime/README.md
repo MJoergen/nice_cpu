@@ -8,21 +8,21 @@ translated wasm code call. They follow the C ABI of
 
 | File | What it is |
 |---|---|
-| `start.asm` | Start-up code for a program without a wasm module. |
-| `start_wasm.asm` | Start-up code for a program with a wasm module. It calls `___wasm_start` before `main`. |
-| `lib.asm` | The runtime routines in assembly, except those below. |
-| `muldiv_mpu.asm` | The multiply and divide routines: `__mul`, `__div`, `__mod`, `__udiv`, `__umod`, and their `64` versions, with the math unit of ISA.md §8.4. |
-| `muldiv_soft.asm` | The same routines in software, for a system without the math unit. |
+| `start.nasm` | Start-up code for a program without a wasm module. |
+| `start_wasm.nasm` | Start-up code for a program with a wasm module. It calls `___wasm_start` before `main`. |
+| `lib.nasm` | The runtime routines in assembly, except those below. |
+| `muldiv_mpu.nasm` | The multiply and divide routines: `__mul`, `__div`, `__mod`, `__udiv`, `__umod`, and their `64` versions, with the math unit of ISA.md §8.4. |
+| `muldiv_soft.nasm` | The same routines in software, for a system without the math unit. |
 | `float.zig` | The source of the float routines (see below). |
 | `float.wasm` | `float.zig` and parts of Zig's compiler_rt, compiled to wasm. |
-| `float.asm` | `float.wasm` translated as a library module. It is not checked in: `make float.asm` makes it, with Python only. |
+| `float.nasm` | `float.wasm` translated as a library module. It is not checked in: `make float.nasm` makes it, with Python only. |
 
 There is no linker. A program is one assembly file, joined in this order:
-one of the start-up files, the program's own files, `lib.asm`, one of the
-two muldiv files, and `float.asm` if the program uses floats. For example:
+one of the start-up files, the program's own files, `lib.nasm`, one of the
+two muldiv files, and `float.nasm` if the program uses floats. For example:
 
-    cat runtime/start.asm prog.asm runtime/lib.asm runtime/muldiv_mpu.asm > full.asm
-    assembler/niceasm.py full.asm
+    cat runtime/start.nasm prog.nasm runtime/lib.nasm runtime/muldiv_mpu.nasm > full.nasm
+    assembler/niceasm.py full.nasm
     emulator/zig-out/bin/niceemu full.bin
 
 The start-up code sets SP to `0xFFFFFF00`, calls `_main` with R1 = 0 and
@@ -51,20 +51,20 @@ return the result in R1:R2, each pair low word first (§9.3):
 | `__popcnt64` | The number of 1 bits in R1:R2. | R3, R4 |
 
 A routine may change R1–R6 and the flags, as §9.3 allows. The tables list
-what each one actually changes in `lib.asm` and `muldiv_soft.asm`. The
-versions in `muldiv_mpu.asm` change less: R5 for `__mul64`, nothing
+what each one actually changes in `lib.nasm` and `muldiv_soft.nasm`. The
+versions in `muldiv_mpu.nasm` change less: R5 for `__mul64`, nothing
 besides the result for the others, and not the flags. They change the
 operands of the math unit.
 
-A program contains exactly one of the muldiv files. `muldiv_mpu.asm` needs
+A program contains exactly one of the muldiv files. `muldiv_mpu.nasm` needs
 the math unit, which the emulator and the FPGA core have. It also defines
 the labels `__mpu.a`, `__mpu.b`, and so on, for the words of the math
 unit, and translated code that uses the math unit needs them (see
 [translator/README.md](../translator/README.md), `--no-mpu`). A program
-translated with `--no-mpu` must use `muldiv_soft.asm`.
+translated with `--no-mpu` must use `muldiv_soft.nasm`.
 
 Some labels are not C routines: the `__mpu.` names above, and
-`__udivmod` and `__udivmod64` in `muldiv_soft.asm`, the unsigned divisions
+`__udivmod` and `__udivmod64` in `muldiv_soft.nasm`, the unsigned divisions
 that the division routines share. Every label is global in the joined
 program (§9.3), so no other file may define these names either.
 
@@ -75,12 +75,12 @@ negative number.
 
 The comments in the files give the number of steps each routine takes.
 The division routines take the same number for all operands of one sign,
-for example 292 steps for `__udiv` in `muldiv_soft.asm` and 839 for
-`__udiv64`. `__mul64` in `muldiv_soft.asm` and the counting routines take
-longer the more bits their operand has. In `muldiv_mpu.asm`, the one-word
+for example 292 steps for `__udiv` in `muldiv_soft.nasm` and 839 for
+`__udiv64`. `__mul64` in `muldiv_soft.nasm` and the counting routines take
+longer the more bits their operand has. In `muldiv_mpu.nasm`, the one-word
 routines take 4 steps each, `__mul64` 10, and the other `long long` ones 7.
 
-`lib.asm` also holds the wasm trap vector of ISA.md §9.4:
+`lib.nasm` also holds the wasm trap vector of ISA.md §9.4:
 
 | Label | What it is |
 |---|---|
@@ -89,7 +89,7 @@ routines take 4 steps each, `__mul64` 10, and the other `long long` ones 7.
 
 ## Floating point
 
-NICE has no float instructions, so `float.asm` does float arithmetic in
+NICE has no float instructions, so `float.nasm` does float arithmetic in
 software. It is the library module `float` of ISA.md §9.4: wasm code,
 translated by `nicewasm --library float`. Its routines take and return the
 bits of the numbers, an `f32` in one word and an `f64` in two, low word
@@ -114,7 +114,7 @@ because compiler_rt's gives 0 when the quotient is subnormal.
 | The same with `df` | For f64. |
 
 The routines use the words `WL.float.memory` as their own stack, 256
-words that are part of the program image. Assembled, `float.asm` is about
+words that are part of the program image. Assembled, `float.nasm` is about
 14600 words.
 
 `make float` rebuilds `float.wasm` from `float.zig`. It needs Zig 0.15,
@@ -200,16 +200,16 @@ it, and a `#[global_allocator]` for `alloc`. Neither exists yet
 
     make test
 
-This builds the emulator, then joins each `test/X.asm` with a start-up file,
-`lib.asm`, and `muldiv_mpu.asm`. It assembles and runs the result and
+This builds the emulator, then joins each `test/X.nasm` with a start-up file,
+`lib.nasm`, and `muldiv_mpu.nasm`. It assembles and runs the result and
 compares the output and exit status with `test/X.expected`. The tests of
-the muldiv routines run a second time with `muldiv_soft.asm`, and compare
+the muldiv routines run a second time with `muldiv_soft.nasm`, and compare
 with `test/X_soft.expected`. The expected values were checked by
 hand. The comments in each test show how.
 
 Then it runs the C library's tests, `libc/test/X.c`. Their `.wasm` files
 are checked in, so no C compiler is needed; `make -C libc wasm` rebuilds
-them and `libc.a`. Each is translated, joined with `start_wasm.asm`,
-`lib.asm`, and `muldiv_mpu.asm`, and run. Its console output, `main`'s result in R1, and the
+them and `libc.a`. Each is translated, joined with `start_wasm.nasm`,
+`lib.nasm`, and `muldiv_mpu.nasm`, and run. Its console output, `main`'s result in R1, and the
 exit status are compared with `libc/test/X.expected`, which was written
 by hand from the source.

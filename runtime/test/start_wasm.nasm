@@ -1,4 +1,4 @@
-; Run after start_wasm.asm. ___wasm_start stores 41 in flag and leaves R1 = 5
+; Run after start_wasm.nasm. ___wasm_start stores 41 in flag and leaves R1 = 5
 ; and R2 = 7. main returns R1 + R2 + flag + 1. So R1 = 42 shows that
 ; ___wasm_start ran first, and that the start-up code then set R1 and R2 to
 ; 0 for main.

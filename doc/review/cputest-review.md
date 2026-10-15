@@ -1,6 +1,6 @@
 # Review of cputest, the self-checking instruction set test
 
-Reviewed on 2026-10-14: `emulator/test/cputest.asm` at commit 821168a ("niceemu: add cputest, a self-checking test of the instruction set"), against `doc/ISA.md` §1 to §8.
+Reviewed on 2026-10-14: `emulator/test/cputest.nasm` at commit 821168a ("niceemu: add cputest, a self-checking test of the instruction set"), against `doc/ISA.md` §1 to §8.
 
 **Status after commit f711ca8** ("niceemu: fix the findings of the cputest review"), checked the same day: every item in sections 1 to 4 is fixed. Section 6 is the second round against the new program.
 

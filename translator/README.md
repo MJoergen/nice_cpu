@@ -12,10 +12,10 @@ anything else with an error, rather than translating it wrongly.
 
 ## Usage
 
-    ./nicewasm.py [-o output.asm] [--no-bounds-checks] [--memory-pages N]
+    ./nicewasm.py [-o output.nasm] [--no-bounds-checks] [--memory-pages N]
                   [--library NAME [--library-memory BYTES]] [--no-mpu] input.wasm
 
-Without `-o`, the output goes to `input.asm`. `--no-bounds-checks` leaves
+Without `-o`, the output goes to `input.nasm`. `--no-bounds-checks` leaves
 out the bounds checks on memory accesses, as ISA.md §9.4 allows. The code
 is then smaller and faster, but an access out of bounds reads or writes
 whatever NICE memory the address reaches. `--memory-pages N` lets
@@ -26,7 +26,7 @@ the initial size. `--library` translates a library module instead, as
 described below. `--no-mpu` is for a system without the math unit of
 ISA.md §8.4: `i32.mul`, and `div` and `rem` of both widths, then call
 the runtime library instead of using the math unit, and the program must be joined with
-`runtime/muldiv_soft.asm`, not `muldiv_mpu.asm`. Errors are printed as
+`runtime/muldiv_soft.nasm`, not `muldiv_mpu.nasm`. Errors are printed as
 `file:0xOFFSET: error: message`, where OFFSET is the byte offset in the
 module, or as `file: error: message` when there is no offset. The exit
 status is 1 after an error, and no output is written. nicewasm stops at the
@@ -40,8 +40,8 @@ order of ISA.md §9.3. For example, for C code compiled with clang:
         -Wl,--allow-undefined -Wl,-z,stack-size=4096 -Wl,--initial-memory=65536 \
         -o prog.wasm prog.c
     translator/nicewasm.py prog.wasm
-    cat runtime/start_wasm.asm prog.asm runtime/lib.asm runtime/muldiv_mpu.asm > full.asm
-    assembler/niceasm.py full.asm
+    cat runtime/start_wasm.nasm prog.nasm runtime/lib.nasm runtime/muldiv_mpu.nasm > full.nasm
+    assembler/niceasm.py full.nasm
     emulator/zig-out/bin/niceemu full.bin
 
 `-mbulk-memory` matters. Without it, clang turns every copy or fill that
@@ -158,8 +158,8 @@ measurements.
 - **Floats:** every `f32` and `f64` instruction. `const`, `load`, `store`,
   and `reinterpret` move the bits, and `abs`, `neg`, and `copysign` change
   the sign bit inline. Everything else calls the float library,
-  `runtime/float.asm`, so a program that uses floats must be joined with
-  it, after `runtime/lib.asm` and the muldiv file. `trunc` traps with code 5 for a NaN or a
+  `runtime/float.nasm`, so a program that uses floats must be joined with
+  it, after `runtime/lib.nasm` and the muldiv file. `trunc` traps with code 5 for a NaN or a
   value whose integer part does not fit, and `trunc_sat` saturates
   instead.
 - **Control:** `block`, `loop`, `if`, `else`, `end`, `br`, `br_if`,
@@ -176,7 +176,7 @@ measurements.
   `extend16_s`, and `i64.extend32_s`. `i32.mul`, and `div` and `rem` of
   both widths, write their operands to the math unit of ISA.md §8.4 and
   read the result, in three instructions for `i32` and six for `i64`,
-  through the labels `__mpu.a` and the like that `runtime/muldiv_mpu.asm`
+  through the labels `__mpu.a` and the like that `runtime/muldiv_mpu.nasm`
   defines. With `--no-mpu` they call `__mul`, `__div64`, and the like
   instead. `i64.mul` and the bit counts always call the runtime library,
   for example `__mul64` and `__popcnt` (see

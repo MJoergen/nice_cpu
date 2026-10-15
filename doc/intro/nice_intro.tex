@@ -648,7 +648,7 @@
 %
   \begin{frame}[fragile]
    \frametitle{Code example: {\scriptsize$\sum_{i=1}^{\mathtt{0x1000}}i$}}
-   The file \code{doc/intro/examples/sum.asm}, with the address and words
+   The file \code{doc/intro/examples/sum.nasm}, with the address and words
    of each instruction:
    {\scriptsize
    \begin{verbatim}
@@ -823,7 +823,7 @@ ISR     MOVE    @CONSOLE, 0x2A          ; print '*'
    Assemble the summation program and look at the result:
    {\footnotesize
    \begin{verbatim}
-$ assembler/niceasm.py -o sum.bin doc/intro/examples/sum.asm
+$ assembler/niceasm.py -o sum.bin doc/intro/examples/sum.nasm
 $ cat sum.bin
 00000000 00005800
 00000001 00000000

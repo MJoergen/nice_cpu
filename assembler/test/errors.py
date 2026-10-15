@@ -148,7 +148,7 @@ GOOD: List[Tuple[str, str]] = [
 
 def run_case(tmp: str, source: str, expected: str) -> List[str]:
     """Returns a list of failure descriptions, empty if the case passed."""
-    src = os.path.join(tmp, "t.asm")
+    src = os.path.join(tmp, "t.nasm")
     out = os.path.join(tmp, "t.bin")
     with open(src, "w", encoding="latin-1") as f:
         f.write(source + "\n")
@@ -167,7 +167,7 @@ def run_case(tmp: str, source: str, expected: str) -> List[str]:
 
 def run_good(tmp: str, source: str, expected: str) -> List[str]:
     """Returns a list of failure descriptions, empty if the case passed."""
-    src = os.path.join(tmp, "t.asm")
+    src = os.path.join(tmp, "t.nasm")
     out = os.path.join(tmp, "t.bin")
     with open(src, "w", encoding="latin-1") as f:
         f.write(source + "\n")

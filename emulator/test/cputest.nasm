@@ -10,7 +10,7 @@
 ;
 ; The program uses no I/O and no memory above 0x1000, so it can run on the
 ; FPGA core as well as on the emulator. External interrupts are tested by
-; irq.asm and merge.asm instead, because they need the emulator's options.
+; irq.nasm and merge.nasm instead, because they need the emulator's options.
 ; No IRQ may be raised while the test runs: some checks set E with the
 ; vector table not in place.
 ;
@@ -957,7 +957,7 @@ pcA     HALT                    ; never runs: jumped over
 ?!Z     HALT
 
 ; ---- 5. Conditions (§3) -------------------------------------------------
-; As in cond.asm: each condition sets its own bit of R1 to R4.
+; As in cond.nasm: each condition sets its own bit of R1 to R4.
         MOVE    R12, 106
         MOVE    R1, 0
         MOVE    R2, 0

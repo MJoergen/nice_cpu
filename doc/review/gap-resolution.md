@@ -82,7 +82,7 @@ Item numbers match the review file.
 | 18 | How PC advances | **QNICE** | PC advances past every word the instruction consumes. NICE: PC ← PC + 1 + (number of constant words). |
 | 19 | Writes to R15 | **QNICE** | Any write to R15 is a jump and replaces the normal advance (`prog_r15.asm` T3; `write.vhd` redirects on any R15 write). |
 | 20 | Skipped instructions | **QNICE** | When a QNICE branch is not taken, its immediate word is still consumed but the other register side effects are suppressed (emulator, branch arm: "We must always increment when it is the PC register"). NICE: a skipped instruction skips its constant words and has no other effect. |
-| 21 | Value of R15 when read | Article | Resolved by the 2004 emulator: R15 reads as the address after the current instruction and all its constant words, as in the 1999 article and QNICE. `print.asm` relies on it (`ADD @--SP 10 PC`). This overrides the 1997 article. |
+| 21 | Value of R15 when read | Article | Resolved by the 2004 emulator: R15 reads as the address after the current instruction and all its constant words, as in the 1999 article and QNICE. `print.nasm` relies on it (`ADD @--SP 10 PC`). This overrides the 1997 article. |
 
 ### 3.2 Operand evaluation
 
@@ -145,7 +145,7 @@ Item numbers match the review file.
 | 51 | Reset state | **QNICE** | PC = 0, all registers 0, SR = only the always-1 bit (so interrupts are disabled). Sources: emulator `reset_machine`, qnice_cpu `f_sr_reset_priority`. NICE: SR = `$80000000`. 2004: EMU resets all registers to 0 and SR to `0x01000000`, the same state in the WEB/EMU layout (item 44). |
 | 52 | Address space; accesses to non-existent memory | Partial | The article settles the 32-bit word addressing. QNICE leaves non-existent memory undefined too. Recommended: undefined, or reads return 0. |
 | 53 | I/O | **QNICE** | Memory-mapped I/O, with the top 256 words reserved for I/O. NICE: `$FFFFFF00`–`$FFFFFFFF`. 2004: the IDE maps an 80×25 screen into memory at 0x400, confirming memory-mapped I/O. The address is an IDE convention. |
-| 54 | No call/return | Partial | QNICE: `ASUB`/`RSUB` push PC onto `@--R13` (the stack grows down) and `MOVE @R13++, R15` returns. NICE has no opcode space for a call. If item 45 frees R13, adopt QNICE's convention (R13 = SP, growing down) and define `call`/`ret` macros. The article's examples use R12 growing up. 2004: `print.asm` uses R13 as SP growing down, calls with `ADD @--SP 10 PC` + `MOVE PC target`, and returns with `MOVE PC @SP++`. This supports QNICE's convention. |
+| 54 | No call/return | Partial | QNICE: `ASUB`/`RSUB` push PC onto `@--R13` (the stack grows down) and `MOVE @R13++, R15` returns. NICE has no opcode space for a call. If item 45 frees R13, adopt QNICE's convention (R13 = SP, growing down) and define `call`/`ret` macros. The article's examples use R12 growing up. 2004: `print.nasm` uses R13 as SP growing down, calls with `ADD @--SP 10 PC` + `MOVE PC target`, and returns with `MOVE PC @SP++`. This supports QNICE's convention. |
 | 55 | No signed compare conditions | Partial | QNICE's `CMP` sets N to unsigned greater-than and V to signed greater-than, so a single flag test can express a signed compare. NICE could add a `cmp` in the control group, or live with `sub<m>` plus multi-instruction tests. |
 | 56 | Self-modifying code | **QNICE** | Fully supported, with no latency requirement. A store may rewrite the instruction immediately after it (qnice_cpu, "Self-modifying code"). |
 

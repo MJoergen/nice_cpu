@@ -47,7 +47,7 @@ Both layouts give the same *flag order* for select values 0–7: `1, X, C, Z, N,
 
 | # | Item | Evidence | Resolution |
 |---|---|---|---|
-| 21 | Value of R15 when read | EMU `step()` increments PC past the instruction word *and all of its constant words* before reading any operand. Probe: `ADD R2, R15, 0x100` at address 1 gives 0x103. `print.asm` builds a return address with `ADD @--SP 10 PC`, which is only right under this rule. | **Resolved:** R15 reads as the address of the next instruction. This agrees with A2 and QNICE and overrides A1. |
+| 21 | Value of R15 when read | EMU `step()` increments PC past the instruction word *and all of its constant words* before reading any operand. Probe: `ADD R2, R15, 0x100` at address 1 gives 0x103. `print.nasm` builds a return address with `ADD @--SP 10 PC`, which is only right under this rule. | **Resolved:** R15 reads as the address of the next instruction. This agrees with A2 and QNICE and overrides A1. |
 | 24 | `Rx++`/`Rx--` as a destination | WEB: "Rxx++ as a destination operand will write the result … into Rxx and increment Rxx afterwards". EMU `_write_op` does exactly that. Probe: `MOVE R1++, 7` gives R1 = 8. | **Resolved:** Rx = result ± 1. |
 | 25 | Destination mode 011 = 111 | EMU `_write_op` handles both modes in one branch (`/3|7/`). | **Resolved: alias.** It stays available as extension space only if Michael wants it. |
 | 26 | R0 with side effects | EMU zeroes R0 before and after every step. | **Resolved:** R0 reads 0, writes are discarded, and so are increments. |
@@ -58,7 +58,7 @@ Both layouts give the same *flag order* for select values 0–7: `1, X, C, Z, N,
 | 29 | Carry for subtraction | EMU `SUB` calls `subtract(s0, s1, carry)`, which computes s0 − s1 − C, and C after a SUB is a borrow (probe: 3 − 5 sets C). | **QNICE semantics confirmed as the author's intent.** (The carry-in itself is read from the wrong bit; see 4.1.) |
 | 41, 43 | HALT's spare bits; conditional HALT | WEB: the remaining bits "have no meaning and should be zero". A HALT whose condition holds stops the CPU. EMU emits zeros and tests the condition before halting. | **Resolved** for HALT itself. Extension space (item 42) was resolved later: ISA.md §5.3 makes the HALT encoding a control group with `HALT`, `RTI`, and `INT`, and every other command halts. |
 | 53 | I/O | The IDE maps a character screen into main memory at 0x400 (80×25, character plus colour in one word). | **Memory-mapped I/O confirmed.** The address is an IDE convention, not an ISA rule. |
-| 54 | Call/return | `print.asm` uses **R13 as the stack pointer** (`SP .EQU R13`), growing down. It calls with `ADD @--SP 10 PC` then `MOVE PC PRINT`, and returns with `MOVE PC @SP++`. | **Supports QNICE's convention** of R13 as SP growing down. Note that WEB still calls R13 the interrupt return register. |
+| 54 | Call/return | `print.nasm` uses **R13 as the stack pointer** (`SP .EQU R13`), growing down. It calls with `ADD @--SP 10 PC` then `MOVE PC PRINT`, and returns with `MOVE PC @SP++`. | **Supports QNICE's convention** of R13 as SP growing down. Note that WEB still calls R13 the interrupt return register. |
 | 58, 57, 60 | Assembler syntax | EMU accepts hex as `0x…`, binary as `0b…`, and plain decimal. A **leading 0 means octal**, via Perl's `oct`. There is **no `#`**: a bare number or label is a constant, and `@const` is an absolute address. Flags are written `[M]`, `[C]`, or `[CM]`. Directives are `.ORG .EQU .DAT .BLK .ASCII_B .ASCII_L`. Comments start with `;` or `*`. Operands are separated by commas or whitespace. Missing operands default to `R0`, so unused fields are `000 0000` (item 59). | **Resolved for the toolchain.** This replaces the articles' `#`, `$`, and `<m>`. The leading-zero-octal rule is a trap and should be dropped. |
 
 ## 3. Where EMU or WEB contradict decisions already made
@@ -97,7 +97,7 @@ Both layouts give the same *flag order* for select values 0–7: `1, X, C, Z, N,
 
 ## 6. The example programs
 
-- **`count.asm`** sums 1..0x1000. It starts with `MOVE R14, R0` to clear SR, which relies on the always-1 bit surviving a write.
-- **`replicate.asm`** is A2's self-copy program in 2004 syntax.
-- **`print.asm`** writes a string to the memory-mapped screen, with R13 as the stack pointer and the PC-relative call idiom described above. It is the best existing evidence for the calling convention.
+- **`count.nasm`** sums 1..0x1000. It starts with `MOVE R14, R0` to clear SR, which relies on the always-1 bit surviving a write.
+- **`replicate.nasm`** is A2's self-copy program in 2004 syntax.
+- **`print.nasm`** writes a string to the memory-mapped screen, with R13 as the stack pointer and the PC-relative call idiom described above. It is the best existing evidence for the calling convention.
 - **Use as tests:** the `.bin` files are real assembler output, and they decode consistently with the WEB/EMU layout. They make good first test vectors for the FPGA core, once the encoding decision is made.

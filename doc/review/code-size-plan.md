@@ -10,7 +10,7 @@ Words of NICE code for each kind of wasm instruction, measured on commit
 2b96d36. The words for an instruction include its bounds check and its
 trap stub, but not the epilogue.
 
-| Instructions | `test/safe.zig` (ReleaseSafe): 12353 words | `runtime/float.asm`: 30587 words |
+| Instructions | `test/safe.zig` (ReleaseSafe): 12353 words | `runtime/float.nasm`: 30587 words |
 |---|---|---|
 | `local.get`, `local.set`, `local.tee` | 2298 (19%) | 7734 (25%) |
 | `i32.const`, `i64.const` | 594 (5%) | 4539 (15%) |

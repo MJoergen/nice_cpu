@@ -321,7 +321,7 @@ def main() -> None:
     failed = 0
     with tempfile.TemporaryDirectory() as tmp:
         src = os.path.join(tmp, "t.wasm")
-        out = os.path.join(tmp, "t.asm")
+        out = os.path.join(tmp, "t.nasm")
         cases: List[Tuple[List[str], bytes, str]] = [([], wasm, expected) for wasm, expected in CASES]
         cases += OPTION_CASES
         for options, wasm, expected in cases:
@@ -348,7 +348,7 @@ def main() -> None:
                 print(f"FAIL: expected '{expected}'\n  got (exit {p.returncode}): {got}")
                 if os.path.exists(out):
                     os.remove(out)
-        # Without -o, the output of t.asm would be t.asm itself.
+        # Without -o, the output of t.nasm would be t.nasm itself.
         with open(out, "wb") as f:
             f.write(module(MAIN))
         p =subprocess.run([sys.executable, NICEWASM, out], capture_output=True, text=True)

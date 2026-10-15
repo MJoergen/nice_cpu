@@ -1,5 +1,5 @@
 ; The NICE runtime library (doc/ISA.md §9.3). It goes after the program's
-; own files, followed by muldiv_mpu.asm or muldiv_soft.asm, which hold the
+; own files, followed by muldiv_mpu.nasm or muldiv_soft.nasm, which hold the
 ; multiply and divide routines. Every routine follows the C ABI of §9.3.
 
 ; ___wasm_trap_vector: wasm traps jump through this word (§9.4). It holds

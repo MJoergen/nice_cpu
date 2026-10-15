@@ -1,4 +1,4 @@
-// get is imported from env and defined in sum5.asm: get(i) = i + 100. So
+// get is imported from env and defined in sum5.nasm: get(i) = i + 100. So
 // main returns 101 + 102 - 103 + 104 * 105 = 11020. sum5 takes its fifth
 // argument on the stack, and the * calls __mul.
 int get(int);

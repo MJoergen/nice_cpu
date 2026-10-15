@@ -17,7 +17,7 @@ OPTS_replicate = -d 0x10:10
 OPTS_print     = -2004 -s
 OPTS_wrap      = -d 0xffffffff:1
 
-# Probes of single rules of doc/ISA.md, in test/X.asm. The expected values
+# Probes of single rules of doc/ISA.md, in test/X.nasm. The expected values
 # are in the comments of each program. Run make bins after changing one.
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest console screen iofetch \
   reads reserved mpu mpu64 perf
@@ -56,7 +56,7 @@ build:
 
 # Reassemble the probes with niceasm.
 bins:
-	@for t in $(PROBES); do $(PYTHON) ../assembler/niceasm.py test/$$t.asm || exit 1; done
+	@for t in $(PROBES); do $(PYTHON) ../assembler/niceasm.py test/$$t.nasm || exit 1; done
 
 clean:
 	rm -rf zig-out .zig-cache test/*.out

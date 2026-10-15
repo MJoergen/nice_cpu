@@ -1,5 +1,5 @@
 ; Start-up code for a program with a wasm module (doc/ISA.md §9.3, §9.4).
-; It is start.asm with a call to ___wasm_start before main.
+; It is start.nasm with a call to ___wasm_start before main.
 
         .ORG    0
         MOVE    R13, 0xFFFFFF00         ; SP

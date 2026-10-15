@@ -5,7 +5,7 @@ Implements the WebAssembly mapping of doc/ISA.md section 9.4. The output is
 one assembly file, to be joined with the start-up code, the program's other
 files, and the runtime library as section 9.3 describes.
 
-Usage: nicewasm.py [-o output.asm] [--no-bounds-checks] [--memory-pages N]
+Usage: nicewasm.py [-o output.nasm] [--no-bounds-checks] [--memory-pages N]
                    [--library NAME [--library-memory BYTES]] [--no-mpu] input.wasm
 
 README.md lists the wasm features it supports. Anything else is rejected
@@ -147,7 +147,7 @@ EXTEND_OPS = {0xC0: (I32, 8), 0xC1: (I32, 16), 0xC2: (I64, 8), 0xC3: (I64, 16),
 BLOCK, LOOP, IF = 0x02, 0x03, 0x04
 
 # The float operations that are a call to the float library (runtime/
-# float.asm): wasm opcode -> (routine, parameter types, result type).
+# float.nasm): wasm opcode -> (routine, parameter types, result type).
 FLOAT_OPS: Dict[int, Tuple[str, List[int], int]] = {}
 for _t, _first, _suffix in [(F32, 0x8D, "sf"), (F64, 0x9B, "df")]:
     for _i, _name in enumerate("ceil floor trunc nearest sqrt".split()):
@@ -1844,7 +1844,7 @@ class FunctionTranslator:
     def mpu_op(self, word: str, t: int, at: int, what: str) -> None:
         """Pops a and b, writes them to the math unit (§8.4), A and B for
         an i32 and C and D for an i64, and pushes the given result. The
-        labels __mpu.* are in runtime/muldiv_mpu.asm."""
+        labels __mpu.* are in runtime/muldiv_mpu.nasm."""
         a, b = self.pop([t, t], at, what)
         dest = self.push(t)
         if t == I32:
@@ -2537,7 +2537,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Translates a WebAssembly module into NICE assembly.")
     ap.add_argument("input", help="wasm module (.wasm)")
     ap.add_argument("-o", dest="output",
-                    help="output file (default: input with .asm extension)")
+                    help="output file (default: input with .nasm extension)")
     ap.add_argument("--no-bounds-checks", action="store_true",
                     help="do not check that memory accesses are in bounds")
     ap.add_argument("--memory-pages", metavar="N", type=int,
@@ -2553,7 +2553,7 @@ def main() -> None:
                          " using the math unit")
     args = ap.parse_args()
 
-    out = args.output or os.path.splitext(args.input)[0] + ".asm"
+    out = args.output or os.path.splitext(args.input)[0] + ".nasm"
     try:
         with open(args.input, "rb") as f:
             data = f.read()

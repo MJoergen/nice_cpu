@@ -183,13 +183,13 @@ Checked on 2026-10-14 against commit 99feb8d ("niceemu: fix the issues from the 
 ### 7.1 Confirmed fixed
 
 - **§1.1** `last_write` is cleared before the interrupt check, and `trace: an interrupt line shows no write of the instruction before` pins it.
-- **§1.2** Memory is sparse (4096-word pages in a hash map, one-entry cache, allocated on the first nonzero write). `wrap.bin` loads and `test/addr.asm` executes across `0xFFFFFFFF` → 0, reads R15 as 0 there, and keeps a stack at `0x1FFFFF`. `--mem-size` is gone and is rejected as an unknown option. The cache costs about 25 % when code and data alternate between pages (16M-iteration loop: 0.93 s against 0.73 s on one page), and 100M NOPs take 1.2 s against 0.9 s before. Acceptable.
+- **§1.2** Memory is sparse (4096-word pages in a hash map, one-entry cache, allocated on the first nonzero write). `wrap.bin` loads and `test/addr.nasm` executes across `0xFFFFFFFF` → 0, reads R15 as 0 there, and keeps a stack at `0x1FFFFF`. `--mem-size` is gone and is rejected as an unknown option. The cache costs about 25 % when code and data alternate between pages (16M-iteration loop: 0.93 s against 0.73 s on one page), and 100M NOPs take 1.2 s against 0.9 s before. Acceptable.
 - **§1.3** With a 300 MB address-space limit, a program that touches a new page per iteration ends with `niceemu: out of memory`, exit status 1, and the trace written so far is flushed (56 002 lines).
 - **§1.4** An empty file and a blank-only file give `error: no words to load`.
 - **§1.5** `execute()` returns the instruction word; dumps and the screen use `peek()`, which is documented as not being a §8.2 access.
 - **§3** ISA.md §4.2 and Appendix B now state the `R14--`/`R14++` rule; the README defines a step and the printed PC.
 - **§4** Every message in the table is fixed and has a case in `test/errors.py`; `-h` goes to stdout; the loader is strict (1–8 hex digits, no `0x`, `_`, or sign, duplicates rejected) and the README says so.
-- **§5** Every gap in the table has a test: `alu()` for the logic ops plus `logic.asm`, the executed §11 instruction, `dest.asm`, `carry.asm`, all sixteen conditions in `cond.asm` and the full `Cond` enum, `r15.asm`, NMI before IRQ, the IRQ waiting through a routine, `RTI` restoring E, `HALT` and `INT` inside a routine, VBASE, `selfmod.asm`, two trace tests, and the exit statuses. The interrupt test is split in three with a shared fixture, and the Makefile records that `count` and `replicate` were checked by hand.
+- **§5** Every gap in the table has a test: `alu()` for the logic ops plus `logic.nasm`, the executed §11 instruction, `dest.nasm`, `carry.nasm`, all sixteen conditions in `cond.nasm` and the full `Cond` enum, `r15.nasm`, NMI before IRQ, the IRQ waiting through a routine, `RTI` restoring E, `HALT` and `INT` inside a routine, VBASE, `selfmod.nasm`, two trace tests, and the exit statuses. The interrupt test is split in three with a shared fixture, and the Makefile records that `count` and `replicate` were checked by hand.
 - **§6** Interrupt trace lines are padded to 17 characters, and the Makefile explains Debug against ReleaseSafe.
 
 The streaming-stdout change also holds: `(niceemu x.bin; echo) > log` keeps all six lines in order.
@@ -209,7 +209,7 @@ One nit left: `-h` writes the usage with a plain `try writeAll`, so a closed pip
 
 Checked on 2026-10-14. The commit adds `--irq STEP:VEC` and `--nmi STEP:VEC` to `main.zig`, the probes `irq` and `merge`, seven `errors.py` cases, and a README section. `make test` passes (24 unit tests, 4 examples, 11 probes, 35 error cases).
 
-**How it was checked.** I read the diff against ISA.md §7 and §8.1, traced `irq.asm` and `merge.asm` by hand and compared every line with the `.expected` files, and then assembled eight more probes for the corners the two probes leave out: merging across steps, `INT`, `HALT`, a skipped instruction, and a second `RTI` as the instruction after `RTI`, an NMI before the first instruction, E cleared by the instruction after `RTI`, and E set inside a routine. Then I tried about ten odd command lines. Every input quoted below is complete and reproduces the result.
+**How it was checked.** I read the diff against ISA.md §7 and §8.1, traced `irq.nasm` and `merge.nasm` by hand and compared every line with the `.expected` files, and then assembled eight more probes for the corners the two probes leave out: merging across steps, `INT`, `HALT`, a skipped instruction, and a second `RTI` as the instruction after `RTI`, an NMI before the first instruction, E cleared by the instruction after `RTI`, and E set inside a routine. Then I tried about ten odd command lines. Every input quoted below is complete and reproduces the result.
 
 ### 9.1 Summary
 
@@ -257,7 +257,7 @@ What is left is in the words, not the code:
 
 ### 9.3 Documentation
 
-**README, merging.** "Two requests of one kind raised at the same step merge, and the vector given last wins" is the special case. The rule the code implements, and the one a user of `--irq` needs, is: a request of a kind that is already pending replaces it, so the vector given last wins, whether the two were given for the same step or for different steps. The probe in §9.2 shows the difference. Say so, and make `merge.asm` show it (§9.4).
+**README, merging.** "Two requests of one kind raised at the same step merge, and the vector given last wins" is the special case. The rule the code implements, and the one a user of `--irq` needs, is: a request of a kind that is already pending replaces it, so the vector given last wins, whether the two were given for the same step or for different steps. The probe in §9.2 shows the difference. Say so, and make `merge.nasm` show it (§9.4).
 
 **ISA.md §7.1, "waits at most one instruction".** The paragraph says: "A deferred NMI waits at most one instruction after `RTI`. A deferred IRQ does the same if E = 1 in the restored SR, and otherwise waits until software sets E." Three cases break it, all run in §9.2:
 
@@ -273,7 +273,7 @@ Suggested wording: "A deferred request is taken before the second instruction af
 
 **README, what a step number is.** "Counted from 0 as in the step count that niceemu prints" is hard to use, because the printed number is a total. What a user needs: a request before step N is raised after N steps have run, so with `--trace` it comes before line N + 1, and `--nmi 0:v` comes before the first line.
 
-**README, "show each rule".** The `--nmi 0:5` rule is in neither probe, and `merge.asm` merges NMIs only. Either drop "each" or add the cases (§9.4).
+**README, "show each rule".** The `--nmi 0:5` rule is in neither probe, and `merge.nasm` merges NMIs only. Either drop "each" or add the cases (§9.4).
 
 **README, "after the processor halts".** A request for step N is also never raised with `-n N`, when the processor does not halt. Trivial.
 
@@ -281,16 +281,16 @@ Suggested wording: "A deferred request is taken before the second instruction af
 
 | Rule | Not tested | Suggested test |
 |---|---|---|
-| §1.4: a skipped instruction after `RTI` clears `after_rti` | Nothing. §2 above says it is so from reading the code, and only this round ran it. | A `?!1 MOVE` as the first instruction after a return point in `irq.asm`, or a unit test next to "no interrupt right after RTI". |
+| §1.4: a skipped instruction after `RTI` clears `after_rti` | Nothing. §2 above says it is so from reading the code, and only this round ran it. | A `?!1 MOVE` as the first instruction after a return point in `irq.nasm`, or a unit test next to "no interrupt right after RTI". |
 | §7.1: `INT` as the instruction after `RTI` works normally, and a pending request waits through it | Nothing. | The `B3 B4 A1 BB` probe of §9.2. |
-| README: merging across steps | Nothing. `merge.asm` raises both NMIs at step 1. | `--irq 1:5 --irq 3:6` with E set after step 3, as in §9.2. |
+| README: merging across steps | Nothing. `merge.nasm` raises both NMIs at step 1. | `--irq 1:5 --irq 3:6` with E set after step 3, as in §9.2. |
 | README: `--nmi 0:v` | Nothing. Both probes start at step 1 or 2. | `-t --nmi 0:3` on the word-3 probe of §9.2; the first trace line is the check. |
 
 ### 9.5 Nits
 
 - `requestNmi`'s doc comment lacks the sentence on merging that `requestIrq`'s has.
 - `std.fmt.parseInt` accepts `+5` and `1_0`, so `--irq 0:+5` and `--irq 0:1_0` are taken. The same holds for `-d` and `-n` since the first round; the README says only "decimal or 0x hex".
-- The numbers in the line comments of `irq.asm` and `merge.asm` (`; 0,1: VBASE = 1`) are word addresses, while the header comment of each file numbers steps. Both are bare numbers. "Words 0,1" would separate them.
+- The numbers in the line comments of `irq.nasm` and `merge.nasm` (`; 0,1: VBASE = 1`) are word addresses, while the header comment of each file numbers steps. Both are bare numbers. "Words 0,1" would separate them.
 - Nothing shows a request that is still pending when the program stops. One line after the halt line, such as `Pending: IRQ 02`, would make the "never taken" rule visible instead of inferred from an absence.
 
 ## 10. Fifth round, commits 0883db0 and c7012b2

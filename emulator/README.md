@@ -13,16 +13,16 @@ It needs Zig 0.15 (tested with 0.15.2), and Python 3 for `make test`.
 
 `make test` runs the unit tests in `src/cpu.zig`, then the example programs
 in `../assembler/test/` (the three 2004 programs and `wrap`) and the probe
-programs `test/*.asm`, comparing the output and exit status of each with
+programs `test/*.nasm`, comparing the output and exit status of each with
 `test/X.expected`.
 Finally `test/errors.py` checks the error messages and exit statuses of the
 command line and the loader. The probes are assembled with niceasm, and
 `make bins` reassembles them after a change.
 
-`test/reserved.asm` runs a reserved control word, which halts the
+`test/reserved.nasm` runs a reserved control word, which halts the
 processor with exit status 2.
 
-`test/cputest.asm` is a self-checking test of the whole instruction set:
+`test/cputest.nasm` is a self-checking test of the whole instruction set:
 every opcode, shift, addressing mode, and condition, the flags, R0, R14, and
 R15, skipped instructions, `INT`, and `RTI`. It halts at the first check
 that fails, with the check's number in R12 and R11 = 0. If every check
@@ -98,23 +98,23 @@ address twice and a file with no words are errors.
 
 The screen has one word per character, with the character in bits 7..0 and
 its colour above. It is ordinary memory, and `--screen` prints the
-characters when the program has halted. `test/screen.asm` writes to it. The
+characters when the program has halted. `test/screen.nasm` writes to it. The
 2004 emulator has the screen at `0x400`, where it overlaps the code of any
 program longer than 1024 words. `-2004` puts it there for the 2004
-programs, such as `print.asm`.
+programs, such as `print.nasm`.
 
 The console stores nothing. Its output comes before the `Halted` line, and
-with `--trace` it is mixed in with the trace lines. `test/console.asm`
+with `--trace` it is mixed in with the trace lines. `test/console.nasm`
 writes to it. The FPGA core will have a UART at the same address.
 
 The read counter makes the data reads of ISA.md §8.2 visible: how many
 there are, and in which order. It stores nothing else, and `--dump` shows
-its count without counting. `test/reads.asm` uses it.
+its count without counting. `test/reads.nasm` uses it.
 
 The math unit holds only its operands, A, B, C, and D. It computes each
 result when it is read, so a read never waits, and `--dump` shows the
 results for the current operands. Its words store nothing else.
-`test/mpu.asm` and `test/mpu64.asm` check every result, with division by
+`test/mpu.nasm` and `test/mpu64.nasm` check every result, with division by
 zero and the signed overflow.
 
 The performance counters count the instructions and the steps since reset.
@@ -123,11 +123,11 @@ that is, per instruction and per interrupt entry. It differs from the FPGA
 core's, which counts clock cycles. A read of a low word takes a snapshot of
 its counter, and a read of the high word returns the snapshot's high word.
 `--dump` shows the low words and the snapshots without taking a snapshot.
-Writes are ignored. `test/perf.asm` checks the instruction counter.
+Writes are ignored. `test/perf.nasm` checks the instruction counter.
 
 Instruction fetches from `0xFFFFFF00`–`0xFFFFFFFF` read 0, as ISA.md §8.3
 requires, whatever the memory there holds. So a program that runs into the
-I/O range runs through it as NOPs. `test/iofetch.asm` shows this.
+I/O range runs through it as NOPs. `test/iofetch.nasm` shows this.
 
 All 2³² words of memory exist, and addresses wrap from `0xFFFFFFFF` to 0
 (ISA.md §1.1). Memory is allocated in pages of 4096 words when a nonzero
@@ -146,8 +146,8 @@ still pending at a halt is never taken. A request of a kind that is already
 pending replaces it, so the vector given last wins, whether the two were
 given for the same step or for different steps. Requests for steps that are
 never reached, because the processor halts or `-n` stops it, are never
-raised. The probes `test/irq.asm`, `test/merge.asm`, `test/after.asm`, and
-`test/start.asm` show these rules.
+raised. The probes `test/irq.nasm`, `test/merge.nasm`, `test/after.nasm`, and
+`test/start.nasm` show these rules.
 
 ## Trace format
 

@@ -54,7 +54,7 @@ download page, pick 0.15.2 rather than the latest release or master.
 
 To assemble and run a program:
 
-    assembler/niceasm.py -o count.bin assembler/test/count.asm
+    assembler/niceasm.py -o count.bin assembler/test/count.nasm
     emulator/zig-out/bin/niceemu count.bin
 
 The emulator's `--trace` option prints one line per instruction, in a format
@@ -68,10 +68,10 @@ is joined into every program. Each follows one part of
 
 | Tool | Where | Written in | Reads | Writes | Follows |
 |---|---|---|---|---|---|
-| `niceasm`, the assembler | [assembler/niceasm.py](assembler/niceasm.py) | Python 3, standard library only | `.asm` | `.bin` | ISA.md §10 |
+| `niceasm`, the assembler | [assembler/niceasm.py](assembler/niceasm.py) | Python 3, standard library only | `.nasm` | `.bin` | ISA.md §10 |
 | `niceemu`, the emulator | [emulator/](emulator/) | Zig 0.15 | `.bin` | Console output, the registers, memory dumps, and a trace | ISA.md §1–8 |
 | The runtime library | [runtime/](runtime/) | NICE assembly | | | ISA.md §9.3 and §9.4 |
-| `nicewasm`, the wasm translator | [translator/nicewasm.py](translator/nicewasm.py) | Python 3, standard library only | `.wasm` | `.asm` | ISA.md §9.4 |
+| `nicewasm`, the wasm translator | [translator/nicewasm.py](translator/nicewasm.py) | Python 3, standard library only | `.wasm` | `.nasm` | ISA.md §9.4 |
 
 A program is built in these steps. There is no linker. The pieces are
 assembly files, joined with `cat` in the order ISA.md §9.3 gives, and the
@@ -83,14 +83,14 @@ whole program is assembled at once.
     prog.wasm
         |  translator/nicewasm.py
         v
-    prog.asm
+    prog.nasm
         |
-        |  cat, in this order: runtime/start_wasm.asm (or start.asm for a
-        |  program with no wasm module), hand-written .asm files, prog.asm,
-        |  runtime/lib.asm, runtime/muldiv_mpu.asm (or muldiv_soft.asm
-        |  without the math unit), and runtime/float.asm if prog uses floats
+        |  cat, in this order: runtime/start_wasm.nasm (or start.nasm for a
+        |  program with no wasm module), hand-written .nasm files, prog.nasm,
+        |  runtime/lib.nasm, runtime/muldiv_mpu.nasm (or muldiv_soft.nasm
+        |  without the math unit), and runtime/float.nasm if prog uses floats
         v
-    full.asm
+    full.nasm
         |  assembler/niceasm.py
         v
     full.bin
@@ -109,23 +109,23 @@ the join.
 - `niceemu` runs the `.bin` files that `niceasm` writes. Its probe programs
   are assembled with `niceasm` (`make bins`), and its tests also run the
   assembler's example programs.
-- The runtime library's start-up code calls `_main`, and `start_wasm.asm`
+- The runtime library's start-up code calls `_main`, and `start_wasm.nasm`
   first calls the `___wasm_start` that `nicewasm` emits. Translated code
-  uses the math unit through the labels in `muldiv_mpu.asm` for `i32.mul`,
+  uses the math unit through the labels in `muldiv_mpu.nasm` for `i32.mul`,
   or calls `__mul` with `--no-mpu`, and traps through
   `___wasm_trap_vector`. A C compiler for NICE would call the same
   routines.
 - The float routines are themselves translated by `nicewasm`: `runtime/
   float.zig` and parts of Zig's compiler_rt are compiled to
   `runtime/float.wasm`, and `nicewasm --library float` turns that into
-  `runtime/float.asm` (`make -C runtime float.asm`).
+  `runtime/float.nasm` (`make -C runtime float.nasm`).
 - The tests of the runtime use `niceasm` and `niceemu`. The tests of
   `nicewasm` use all three other tools: they translate each module, join it
   with the runtime, assemble it, and run it.
 - The `.bin` format is the text format of the 2004 `NICE.pm` assembler, so
   its example binaries can be compared directly.
 - The FPGA core will take the place of `niceemu` at the end of the
-  pipeline. `emulator/test/cputest.asm` and the `--trace` format are there
+  pipeline. `emulator/test/cputest.nasm` and the `--trace` format are there
   to compare the two.
 
 **Compilers.** No compiler targets NICE directly yet. ISA.md §9.3 defines
@@ -175,5 +175,5 @@ The first test vectors are the three example programs from 2004 (`count`,
 `replicate`, and `print`). The assembler reproduces their original `.bin`
 files byte for byte, and the emulator's results for them were checked by
 hand. Both tools also have probe programs for single rules of the ISA and a
-script that checks every error message. `emulator/test/cputest.asm` checks
+script that checks every error message. `emulator/test/cputest.nasm` checks
 the whole instruction set by itself, and is meant for the FPGA core as well.

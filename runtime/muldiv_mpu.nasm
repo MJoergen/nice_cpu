@@ -1,6 +1,6 @@
 ; The multiply and divide routines of the NICE runtime library
 ; (doc/ISA.md §9.3), for one word and for long long, with the math unit of
-; §8.4. It goes after lib.asm, instead of muldiv_soft.asm. Each routine
+; §8.4. It goes after lib.nasm, instead of muldiv_soft.nasm. Each routine
 ; writes its operands to A and B, or C and D, and reads the results.
 
 __mpu.a         .EQU    0xFFFFFF20

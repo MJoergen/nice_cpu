@@ -11,7 +11,7 @@ SOURCES = src/trace_pkg.vhd src/multicycle.vhd src/mpu.vhd src/perf.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd
 TEST_SOURCES = test/tb_mem.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_trace.vhd test/tb_multicycle.vhd
 
-# tb_trace stands in for the core and runs test/trace.asm. Each run's output
+# tb_trace stands in for the core and runs test/trace.nasm. Each run's output
 # and exit status must equal those of the emulator on the same program, with
 # the same NMI. The runs are: the full trace; no trace; a step limit right
 # after the skipped instruction; and a step limit at the NMI.
@@ -39,10 +39,10 @@ endef
 # exit status must equal those of "niceemu -t" on the same program, with the
 # same interrupt requests. The programs are the 2004 examples and wrap from
 # the assembler's tests, the emulator's probes, with the probes' interrupt
-# options from emulator/Makefile, and test/shift.asm, which runs every shift
+# options from emulator/Makefile, and test/shift.nasm, which runs every shift
 # with the counts that are hard to get right. The memory dumps of the probes
 # are left out, because the trace lists every memory write. The data reads
-# are not in the trace, but the probe reads.asm counts them with the read
+# are not in the trace, but the probe reads.nasm counts them with the read
 # counter, and its registers show the counts. mpu and mpu64 read every word
 # of the math unit, src/mpu.vhd, and their registers and the trace's memory
 # writes show the results. perf reads the performance counters,
@@ -104,11 +104,11 @@ test: emulator analyse synth
 	if [ $$? -eq 0 ]; then echo "PASS tb_mpu"; else echo "FAIL tb_mpu"; cat $(BUILD)/tb_mpu.log; exit 1; fi
 	@($(GHDLRUN) tb_perf > tb_perf.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS tb_perf"; else echo "FAIL tb_perf"; cat $(BUILD)/tb_perf.log; exit 1; fi
-	@$(ASM) -o $(BUILD)/trace.bin test/trace.asm
+	@$(ASM) -o $(BUILD)/trace.bin test/trace.nasm
 	$(foreach r,$(TRACE_RUNS),$(call check_trace,$(r)))
 	$(foreach t,$(EXAMPLES),$(call check_core,$(t),../assembler/test/$(t).bin))
 	$(foreach t,$(PROBES),$(call check_core,$(t),../emulator/test/$(t).bin))
-	@$(ASM) -o $(BUILD)/shift.bin test/shift.asm
+	@$(ASM) -o $(BUILD)/shift.bin test/shift.nasm
 	$(call check_core,shift,$(BUILD)/shift.bin)
 	$(call check_core,cputest_stall,../emulator/test/cputest.bin,-gG_STALL=30)
 	$(call check_core,reads_stall,../emulator/test/reads.bin,-gG_STALL=30 -gG_SEED=7)

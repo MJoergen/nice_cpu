@@ -4,7 +4,7 @@
 Implements the assembler syntax in doc/ISA.md section 10 and writes the .bin
 object format of section 10.4: one line per word, "AAAAAAAA WWWWWWWW".
 
-Usage: niceasm.py [-o output.bin] input.asm
+Usage: niceasm.py [-o output.bin] input.nasm
 
 Pass 0 collects and checks the .EQU definitions, pass 1 assigns addresses to
 labels, pass 2 emits the words. The size of every statement depends only on
@@ -609,7 +609,7 @@ class Assembler:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Assembler for the NICE processor.")
-    ap.add_argument("input", help="assembly source (.asm)")
+    ap.add_argument("input", help="assembly source (.nasm)")
     ap.add_argument("-o", dest="output",
                     help="output file (default: input with .bin extension)")
     args = ap.parse_args()

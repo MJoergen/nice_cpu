@@ -48,7 +48,7 @@ So ISA.md was changed for this core:
 - **ISA §8.3** says that instruction fetches never reach I/O devices. A fetch
   from `0xFFFFFF00`–`0xFFFFFFFF` reads 0. Without this, a fetch running ahead
   could start a device access. The emulator follows it, and
-  `emulator/test/iofetch.asm` tests it.
+  `emulator/test/iofetch.nasm` tests it.
 - **ISA §7.1** checks for interrupts "before each instruction", not "before
   each instruction fetch".
 - **ISA §5** and **§9.4** name the two kinds of access where they referred to
@@ -349,7 +349,7 @@ exact.
 
 1. The 2004 examples: `count`, `replicate`, and `print`, and `wrap`.
 2. The emulator probes in `emulator/test/`.
-3. `emulator/test/cputest.asm`.
+3. `emulator/test/cputest.nasm`.
 4. New hazard programs: back-to-back flag use, every pair of side effects on
    the same register, R14 and R15 as pointers, stores into the next few
    instructions, and jumps over `HALT`. qnice_cpu's `prog_hazard.asm` and

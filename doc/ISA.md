@@ -410,35 +410,35 @@ The emulator in this repository maps the screen at `0xFFFF0000` instead, so that
 
 ### 8.4 Math unit
 
-The emulator and the FPGA implementation map a math unit, the MPU, at `0xFFFFFF10`–`0xFFFFFF2F`. It multiplies and divides 32-bit integers, and divides 64-bit integers. Like the console, it is a property of those systems, not of the ISA.
+The emulator and the FPGA implementation map a math unit, the MPU, at `0xFFFFFF20`–`0xFFFFFF3F`. It multiplies and divides 32-bit integers, and divides 64-bit integers. Like the console, it is a property of those systems, not of the ISA.
 
 The first 16 words work on the 32-bit operands A and B:
 
 | Address | Name | A data read returns | A write |
 |---|---|---|---|
-| `0xFFFFFF10` | `A` | the left operand A | sets A |
-| `0xFFFFFF11` | `B` | the right operand B | sets B |
-| `0xFFFFFF12` | `SMUL_LO` | bits 31..0 of A · B, signed | is ignored |
-| `0xFFFFFF13` | `SMUL_HI` | bits 63..32 of A · B, signed | is ignored |
-| `0xFFFFFF14` | `UMUL_LO` | bits 31..0 of A · B, unsigned | is ignored |
-| `0xFFFFFF15` | `UMUL_HI` | bits 63..32 of A · B, unsigned | is ignored |
-| `0xFFFFFF16` | `SDIV_Q` | the quotient of A / B, signed | is ignored |
-| `0xFFFFFF17` | `SDIV_R` | the remainder of A / B, signed | is ignored |
-| `0xFFFFFF18` | `UDIV_Q` | the quotient of A / B, unsigned | is ignored |
-| `0xFFFFFF19` | `UDIV_R` | the remainder of A / B, unsigned | is ignored |
-| `0xFFFFFF1A`–`0xFFFFFF1F` | | 0 | is ignored |
+| `0xFFFFFF20` | `A` | the left operand A | sets A |
+| `0xFFFFFF21` | `B` | the right operand B | sets B |
+| `0xFFFFFF22` | `SMUL_LO` | bits 31..0 of A · B, signed | is ignored |
+| `0xFFFFFF23` | `SMUL_HI` | bits 63..32 of A · B, signed | is ignored |
+| `0xFFFFFF24` | `UMUL_LO` | bits 31..0 of A · B, unsigned | is ignored |
+| `0xFFFFFF25` | `UMUL_HI` | bits 63..32 of A · B, unsigned | is ignored |
+| `0xFFFFFF26` | `SDIV_Q` | the quotient of A / B, signed | is ignored |
+| `0xFFFFFF27` | `SDIV_R` | the remainder of A / B, signed | is ignored |
+| `0xFFFFFF28` | `UDIV_Q` | the quotient of A / B, unsigned | is ignored |
+| `0xFFFFFF29` | `UDIV_R` | the remainder of A / B, unsigned | is ignored |
+| `0xFFFFFF2A`–`0xFFFFFF2F` | | 0 | is ignored |
 
 The next 16 words work on the 64-bit operands C and D. Each 64-bit value takes two words, low word first, as in §9.3:
 
 | Address | Name | A data read returns | A write |
 |---|---|---|---|
-| `0xFFFFFF20`, `0xFFFFFF21` | `C_LO`, `C_HI` | the left operand C | sets that half of C |
-| `0xFFFFFF22`, `0xFFFFFF23` | `D_LO`, `D_HI` | the right operand D | sets that half of D |
-| `0xFFFFFF24`, `0xFFFFFF25` | `SDIV64_Q_LO`, `SDIV64_Q_HI` | the quotient of C / D, signed | is ignored |
-| `0xFFFFFF26`, `0xFFFFFF27` | `SDIV64_R_LO`, `SDIV64_R_HI` | the remainder of C / D, signed | is ignored |
-| `0xFFFFFF28`, `0xFFFFFF29` | `UDIV64_Q_LO`, `UDIV64_Q_HI` | the quotient of C / D, unsigned | is ignored |
-| `0xFFFFFF2A`, `0xFFFFFF2B` | `UDIV64_R_LO`, `UDIV64_R_HI` | the remainder of C / D, unsigned | is ignored |
-| `0xFFFFFF2C`–`0xFFFFFF2F` | | 0 | is ignored |
+| `0xFFFFFF30`, `0xFFFFFF31` | `C_LO`, `C_HI` | the left operand C | sets that half of C |
+| `0xFFFFFF32`, `0xFFFFFF33` | `D_LO`, `D_HI` | the right operand D | sets that half of D |
+| `0xFFFFFF34`, `0xFFFFFF35` | `SDIV64_Q_LO`, `SDIV64_Q_HI` | the quotient of C / D, signed | is ignored |
+| `0xFFFFFF36`, `0xFFFFFF37` | `SDIV64_R_LO`, `SDIV64_R_HI` | the remainder of C / D, signed | is ignored |
+| `0xFFFFFF38`, `0xFFFFFF39` | `UDIV64_Q_LO`, `UDIV64_Q_HI` | the quotient of C / D, unsigned | is ignored |
+| `0xFFFFFF3A`, `0xFFFFFF3B` | `UDIV64_R_LO`, `UDIV64_R_HI` | the remainder of C / D, unsigned | is ignored |
+| `0xFFFFFF3C`–`0xFFFFFF3F` | | 0 | is ignored |
 
 - Each result depends only on the operands of its half, A and B or C and D, as they are when it is read. A read has no side effect, so the results can be read in any order and any number of times.
 - Signed operations treat the operands as two's complement. A signed product is exact in 64 bits.

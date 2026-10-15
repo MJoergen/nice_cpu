@@ -36,8 +36,8 @@
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) The master holds STB and the request while STALL is high.
 -- b) STB is high only for requests to the MPU: the bus decoder decodes the
---    address. Offsets 0-15 are at 0xFFFFFF10-0xFFFFFF1F, and 16-31 at
---    0xFFFFFF20-0xFFFFFF2F, so the offset is address bit 5 & bits 3..0.
+--    address. The MPU is at 0xFFFFFF20-0xFFFFFF3F, so the offset is
+--    address bits 4..0.
 --
 -- RESET
 -- Synchronous. It sets A, B, C, and D to 0, as ISA.md §8.4 requires, and drops

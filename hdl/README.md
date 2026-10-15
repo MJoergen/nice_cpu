@@ -137,8 +137,8 @@ number. The rest of the I/O range is plain memory, as in the emulator.
 signed and unsigned products, quotients, and remainders of A and B.
 Offsets 16 to 31 hold the 64-bit C and D, and the signed and unsigned
 quotients and remainders of C and D. It is a pipelined Wishbone slave with
-a 5-bit address. The bus decoder selects it for `0xFFFFFF10`–`0xFFFFFF2F`
-and passes address bit 5 and bits 3..0 as the offset. In `tb_multicycle`,
+a 5-bit address. The bus decoder selects it for `0xFFFFFF20`–`0xFFFFFF3F`
+and passes address bits 4..0 as the offset. In `tb_multicycle`,
 that decoder is an address compare on the data bus.
 
 A write to A or B starts a computation that takes 33 cycles. A

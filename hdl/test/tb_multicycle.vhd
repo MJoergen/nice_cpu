@@ -35,15 +35,15 @@ library ieee;
 
 entity tb_multicycle is
    generic (
-      G_BIN_FILE   : string;
-      G_TRACE_FILE : string;
-      G_TRACE      : boolean  := true;
-      G_MAX_STEPS  : positive := 100_000_000;
-      G_INTERRUPTS : string   := "";
-      G_CYCLE_COUNTER : boolean := true;
+      G_BIN_FILE      : string;
+      G_TRACE_FILE    : string;
+      G_TRACE         : boolean  := true;
+      G_MAX_STEPS     : positive := 100_000_000;
+      G_INTERRUPTS    : string   := "";
+      G_CYCLE_COUNTER : boolean  := true;
       -- The memory's stall rate in percent, and its seed (sim/wb_mem.vhd).
-      G_STALL      : natural  := 0;
-      G_SEED       : positive := 1
+      G_STALL         : natural  := 0;
+      G_SEED          : positive := 1
    );
 end entity tb_multicycle;
 
@@ -232,7 +232,8 @@ begin
 
    mpu_sel      <= '1' when dbus_addr(31 downto 5) = X"FFFFFF" & "001" else '0';
    perf_sel     <= '1' when dbus_addr(31 downto 4) = X"FFFFFF1" and
-                            (G_CYCLE_COUNTER or dbus_addr(3 downto 1) /= "000") else '0';
+                            (G_CYCLE_COUNTER or dbus_addr(3 downto 1) /= "000") else
+                   '0';
    mem_stb      <= dbus_stb and not mpu_sel and not perf_sel;
    mpu_stb      <= dbus_stb and mpu_sel;
    perf_stb     <= dbus_stb and perf_sel;

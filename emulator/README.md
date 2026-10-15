@@ -91,9 +91,9 @@ address twice and a file with no words are errors.
 | `0xFFFF07D0`–`0xFFFFFEFF` | 63280 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |
 | `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns 0. |
 | `0xFFFFFF01` | 1 | Read counter. A data read returns the number of data reads of it since the last write, and a write sets that number. |
-| `0xFFFFFF02`–`0xFFFFFF0F` | 14 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
-| `0xFFFFFF10`–`0xFFFFFF2F` | 32 | Math unit (ISA.md §8.4). Multiplies and divides A and B, and divides C and D. |
-| `0xFFFFFF30`–`0xFFFFFFFF` | 208 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. |
+| `0xFFFFFF02`–`0xFFFFFF1F` | 30 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
+| `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (ISA.md §8.4). Multiplies and divides A and B, and divides C and D. |
+| `0xFFFFFF40`–`0xFFFFFFFF` | 192 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF1F`. |
 
 The screen has one word per character, with the character in bits 7..0 and
 its colour above. It is ordinary memory, and `--screen` prints the

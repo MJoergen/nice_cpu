@@ -31,8 +31,8 @@ OPTS_start   = -t --nmi 0:3
 OPTS_screen  = -s
 OPTS_iofetch = -d 0xffffff80:1 -d 0xffffffff:1
 OPTS_reads   = -d 0xffffff01:1
-OPTS_mpu     = -d 0x200:72 -d 0xffffff10:16
-OPTS_mpu64   = -d 0x200:72 -d 0xffffff10:32
+OPTS_mpu     = -d 0x200:72 -d 0xffffff20:16
+OPTS_mpu64   = -d 0x200:72 -d 0xffffff20:32
 
 define check
 	@$(EMU) $(OPTS_$(1)) $(2) > test/$(1).out; echo "exit $$?" >> test/$(1).out

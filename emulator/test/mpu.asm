@@ -1,4 +1,4 @@
-; The math unit at 0xFFFFFF10 (ISA.md §8.4). For each pair A, B in the
+; The math unit at 0xFFFFFF20 (ISA.md §8.4). For each pair A, B in the
 ; table, the loop writes A and B and copies the eight results, SMUL_LO to
 ; UDIV_R, to one dump line at 0x200 + 8k. In hex:
 ;
@@ -25,7 +25,7 @@
 ; Division by zero gives Q = 0xFFFFFFFF and R = A.
 ;
 ; After the loop: a write to UMUL_LO is ignored, so it still reads
-; -5 * 0 = 0 (R1 = 0). The spare word 0xFFFFFF1A reads 0 (R2 = 0). Then
+; -5 * 0 = 0 (R1 = 0). The spare word 0xFFFFFF2A reads 0 (R2 = 0). Then
 ; A = 6 and B = 7 give UMUL_LO = 42 = 0x2a (R3), and A and B read back
 ; (R4 = 6, R5 = 7). The MPU stores nothing in memory. The dump of its
 ; words shows A, B, and the results for 6 and 7: 0x2a, 0, 0x2a, 0, 0, 6,
@@ -33,7 +33,7 @@
 ;
 ; Steps: 3 + 9 * 13 + 9 = 129. R6 = 0x200 + 72 = 0x248, R7 = 0 with Z set
 ; (R14 = 0x09000000), R8 = CASES + 18 = 0x3d, and R9 = MPU + 10.
-MPU     .EQU    0xFFFFFF10
+MPU     .EQU    0xFFFFFF20
         MOVE    R8, CASES
         MOVE    R6, 0x200
         MOVE    R7, 9

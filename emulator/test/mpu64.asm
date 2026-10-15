@@ -1,4 +1,4 @@
-; The 64-bit division of the math unit at 0xFFFFFF20 (ISA.md §8.4). For
+; The 64-bit division of the math unit at 0xFFFFFF30 (ISA.md §8.4). For
 ; each pair C, D in the table, the loop writes C and D, low word first, and
 ; copies the eight result words, SDIV64_Q_LO to UDIV64_R_HI, to one dump
 ; line at 0x200 + 8k. In hex, each 64-bit result low word first:
@@ -29,7 +29,7 @@
 ;
 ; Steps: 3 + 9 * 15 + 1 = 139. R6 = 0x200 + 72 = 0x248, R7 = 0 with Z set
 ; (R14 = 0x09000000), R8 = CASES + 36, and R9 = MPU + 0x1C.
-MPU     .EQU    0xFFFFFF10
+MPU     .EQU    0xFFFFFF20
         MOVE    R8, CASES
         MOVE    R6, 0x200
         MOVE    R7, 9

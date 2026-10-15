@@ -111,7 +111,7 @@ pub const console_addr: u32 = io_base;
 pub const counter_addr: u32 = io_base + 1;
 
 /// The first of the 32 words of the math unit (§8.4).
-pub const mpu_base: u32 = io_base + 0x10;
+pub const mpu_base: u32 = io_base + 0x20;
 
 /// The math unit (§8.4). It computes each result when it is read, so a
 /// read never waits.

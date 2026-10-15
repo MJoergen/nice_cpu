@@ -18,10 +18,11 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
 - `translator/nicewasm.py`: wasm -> NICE assembly (ISA.md §9.4). Same rules as niceasm.py.
 - `hdl/`: VHDL-2008, GHDL. A simple multi-cycle core in `src/multicycle.vhd`,
   `src/trace_pkg.vhd`, the math unit in `src/mpu.vhd`, the performance
-  counters in `src/perf.vhd`, the simulation-only memory model and trace
+  counters in `src/perf.vhd`, the timer in `src/timer.vhd`, the
+  simulation-only memory model and trace
   writer in `sim/`, and the testbenches, test programs, and random program
-  generator in `test/`, and the formal checks of the core's ports in
-  `formal/`. No pipelined core yet. Style follows `hdl/CODING_STYLE.md`,
+  generator in `test/`, and the formal checks of the ports of the core and
+  the timer in `formal/`. No pipelined core yet. Style follows `hdl/CODING_STYLE.md`,
   checked by vsg with `hdl/vsg.yml`.
 
 ## Commands

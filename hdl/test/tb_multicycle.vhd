@@ -4,9 +4,10 @@
 -- THEORY OF OPERATION
 -- The core runs on the memory model, sim/wb_mem.vhd, which loads G_BIN_FILE.
 -- A decoder on the data bus sends 0xFFFFFF10-0xFFFFFF1F to the performance
--- counters, src/perf.vhd (ISA.md §8.5), and 0xFFFFFF20-0xFFFFFF3F to the
--- math unit, src/mpu.vhd (ISA.md §8.4). It needs no more than an address
--- compare, because the core waits for each ACK before its next request.
+-- counters, src/perf.vhd (ISA.md §8.5), 0xFFFFFF20-0xFFFFFF3F to the math
+-- unit, src/mpu.vhd (ISA.md §8.4), and 0xFFFFFF40-0xFFFFFF4F to the timer,
+-- src/timer.vhd (ISA.md §8.6). It needs no more than an address compare,
+-- because the core waits for each ACK before its next request.
 -- The trace writer, sim/trace.vhd, prints each step the core reports.
 --
 -- With G_CYCLE_COUNTER false, CYCLE_LO and CYCLE_HI at 0xFFFFFF10 and
@@ -21,6 +22,12 @@
 -- that is raised while one is pending replaces its vector, as the emulator
 -- merges them (ISA.md §7.1). The core takes requests only between steps, so
 -- the trace matches the emulator's exactly.
+--
+-- The timer counts the steps, as the emulator's does: its tick is the
+-- core's report of a step. Its request and the IRQ of p_intr reach the core
+-- as one request, with the vector of p_intr's when both are raised, and the
+-- core's ready takes both. That is how the emulator merges a request of the
+-- timer with one from --irq.
 --
 -- The run ends when the trace writer has printed the end of the run. The
 -- simulation then stops with the emulator's exit status.
@@ -160,6 +167,14 @@ architecture simulation of tb_multicycle is
    signal mpu_ack     : std_logic;
    signal mpu_data_in : std_logic_vector(31 downto 0);
 
+   signal timer_sel     : std_logic;
+   signal timer_stb     : std_logic;
+   signal timer_stall   : std_logic;
+   signal timer_ack     : std_logic;
+   signal timer_data_in : std_logic_vector(31 downto 0);
+   signal timer_valid   : std_logic;
+   signal timer_vector  : std_logic_vector(7 downto 0);
+
    signal perf_sel     : std_logic;
    signal perf_stb     : std_logic;
    signal perf_stall   : std_logic;
@@ -173,6 +188,9 @@ architecture simulation of tb_multicycle is
    signal irq_valid  : std_logic                    := '0';
    signal irq_ready  : std_logic;
    signal irq_vector : std_logic_vector(7 downto 0) := X"00";
+
+   signal core_irq_valid  : std_logic;
+   signal core_irq_vector : std_logic_vector(7 downto 0);
 
    signal console_valid : std_logic;
    signal console_data  : std_logic_vector(7 downto 0);
@@ -221,9 +239,9 @@ begin
          nmi_valid_i  => nmi_valid,
          nmi_ready_o  => nmi_ready,
          nmi_vector_i => nmi_vector,
-         irq_valid_i  => irq_valid,
+         irq_valid_i  => core_irq_valid,
          irq_ready_o  => irq_ready,
-         irq_vector_i => irq_vector,
+         irq_vector_i => core_irq_vector,
          halted_o     => open,
          instret_o    => instret,
          retire_o     => retire
@@ -234,16 +252,24 @@ begin
    perf_sel     <= '1' when dbus_addr(31 downto 4) = X"FFFFFF1" and
                             (G_CYCLE_COUNTER or dbus_addr(3 downto 1) /= "000") else
                    '0';
-   mem_stb      <= dbus_stb and not mpu_sel and not perf_sel;
+   timer_sel    <= '1' when dbus_addr(31 downto 4) = X"FFFFFF4" else '0';
+   mem_stb      <= dbus_stb and not mpu_sel and not perf_sel and not timer_sel;
    mpu_stb      <= dbus_stb and mpu_sel;
    perf_stb     <= dbus_stb and perf_sel;
+   timer_stb    <= dbus_stb and timer_sel;
    dbus_stall   <= mpu_stall when mpu_sel = '1' else
                    perf_stall when perf_sel = '1' else
+                   timer_stall when timer_sel = '1' else
                    mem_stall;
-   dbus_ack     <= mem_ack or mpu_ack or perf_ack;
+   dbus_ack     <= mem_ack or mpu_ack or perf_ack or timer_ack;
    dbus_data_in <= mpu_data_in when mpu_ack = '1' else
                    perf_data_in when perf_ack = '1' else
+                   timer_data_in when timer_ack = '1' else
                    mem_data_in;
+
+   core_irq_valid  <= irq_valid or timer_valid;
+   core_irq_vector <= irq_vector when irq_valid = '1' else
+                      timer_vector;
 
 
    i_wb_mem : entity work.wb_mem
@@ -305,6 +331,25 @@ begin
       ); -- i_perf
 
 
+   i_timer : entity work.timer
+      port map (
+         clk_i        => clk,
+         rst_i        => rst,
+         tick_i       => retire.valid,
+         wb_cyc_i     => dbus_cyc,
+         wb_stb_i     => timer_stb,
+         wb_stall_o   => timer_stall,
+         wb_ack_o     => timer_ack,
+         wb_we_i      => dbus_we,
+         wb_addr_i    => dbus_addr(3 downto 0),
+         wb_data_i    => dbus_data_out,
+         wb_data_o    => timer_data_in,
+         irq_valid_o  => timer_valid,
+         irq_ready_i  => irq_ready,
+         irq_vector_o => timer_vector
+      ); -- i_timer
+
+
    i_trace : entity work.trace
       generic map (
          G_FILE_NAME => G_TRACE_FILE,
@@ -319,8 +364,8 @@ begin
          console_data_i  => console_data,
          nmi_pending_i   => nmi_valid,
          nmi_vector_i    => nmi_vector,
-         irq_pending_i   => irq_valid,
-         irq_vector_i    => irq_vector,
+         irq_pending_i   => core_irq_valid,
+         irq_vector_i    => core_irq_vector,
          done_o          => done,
          status_o        => status
       ); -- i_trace

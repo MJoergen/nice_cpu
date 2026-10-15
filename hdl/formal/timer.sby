@@ -1,0 +1,25 @@
+# The bus and interrupt ports of the timer (formal_timer.vhd). "prove"
+# proves the assertions for every cycle by k-induction, and "cover" reaches
+# each cover statement.
+
+[tasks]
+prove
+cover
+
+[options]
+prove: mode prove
+prove: depth 10
+cover: mode cover
+cover: depth 20
+
+[engines]
+smtbmc yices
+
+[script]
+plugin -i ghdl
+ghdl --std=08 -fpsl timer.vhd formal_timer.vhd -e formal_timer
+prep -top formal_timer
+
+[files]
+../src/timer.vhd
+formal_timer.vhd

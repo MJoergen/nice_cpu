@@ -19,12 +19,14 @@ working reference for it.
 | [src/multicycle.vhd](src/multicycle.vhd) | The multi-cycle core. |
 | [src/mpu.vhd](src/mpu.vhd) | The math unit of ISA.md §8.4, a Wishbone slave. |
 | [src/perf.vhd](src/perf.vhd) | The performance counters of ISA.md §8.5, a Wishbone slave. |
+| [src/timer.vhd](src/timer.vhd) | The timer of ISA.md §8.6, a Wishbone slave with an interrupt request port. |
 | [src/trace_pkg.vhd](src/trace_pkg.vhd) | `t_retire`, the record in which the core reports each step to the trace writer. |
 | [sim/trace.vhd](sim/trace.vhd) | The trace writer. Simulation only. |
 | [sim/wb_mem.vhd](sim/wb_mem.vhd) | The memory model, with the console and the read counter. Simulation only. |
 | [test/tb_mem.vhd](test/tb_mem.vhd) | A self-checking test of the memory model, which loads [test/mem.bin](test/mem.bin). |
 | [test/tb_mpu.vhd](test/tb_mpu.vhd) | A self-checking test of the math unit. |
 | [test/tb_perf.vhd](test/tb_perf.vhd) | A self-checking test of the performance counters. |
+| [test/tb_timer.vhd](test/tb_timer.vhd) | A self-checking test of the timer. |
 | [test/tb_trace.vhd](test/tb_trace.vhd) | A test of the trace writer, which stands in for the core and runs [test/trace.nasm](test/trace.nasm). |
 | [test/tb_multicycle.vhd](test/tb_multicycle.vhd) | Runs a program on the multi-cycle core, with an interrupt source, and writes its trace. |
 | [test/shift.nasm](test/shift.nasm) | Every shift, with the counts that are hard to get right. |
@@ -34,6 +36,8 @@ working reference for it.
 | [formal/handshake_check.vhd](formal/handshake_check.vhd) | Formal properties of a valid/ready port that takes requests. |
 | [formal/formal_multicycle.vhd](formal/formal_multicycle.vhd) | The multi-cycle core with a checker on each of its four ports. |
 | [formal/multicycle.sby](formal/multicycle.sby) | The SymbiYosys job for it. |
+| [formal/formal_timer.vhd](formal/formal_timer.vhd) | The timer with checks of its bus and interrupt ports. |
+| [formal/timer.sby](formal/timer.sby) | The SymbiYosys job for it. |
 
 ## Running the tests
 
@@ -45,8 +49,8 @@ run under nvc.
     cd hdl && make test
 
 `make test` builds the emulator, analyses the VHDL, checks that GHDL can
-synthesise the core, the math unit, and the performance counters
-(`ghdl --synth`), and runs the tests. Everything it makes goes in `build/`.
+synthesise the core, the math unit, the performance counters, and the
+timer (`ghdl --synth`), and runs the tests. Everything it makes goes in `build/`.
 `make clean` removes it.
 
 `make lint` checks the style of every VHDL file against
@@ -68,6 +72,14 @@ counter counts the cycles with `instret_i` high, and that a read of a high
 word returns the snapshot of the last read of the low word, across the
 wrap. It also checks the spare words, that writes change nothing, and reset.
 
+`tb_timer` runs the timer on the clock, as a system does. It checks that a
+write of P sets the period and the count, that the request comes at the end
+of the P-th cycle counting the write's, and that the count stops while
+`tick_i` is low. A raised request must keep its vector until `ready`, also
+when the vector is written and more requests merge with it, and a check
+in every cycle makes sure of that. It also checks a stop with a request
+pending, P = 1 with `ready` high in every cycle, the spare words, and reset.
+
 `tb_trace` runs four times, each against the emulator on the same program
 with the same NMI: with the full trace, without the trace, and stopped at two
 step limits. The output and exit status of each run must match the
@@ -87,9 +99,12 @@ with the same interrupt requests:
   order (ISA.md §8.2). `mpu` and `mpu64` read every word of the math unit.
   `perf` reads the instruction counter, with an NMI and an `INT`, and
   checks the cycle counter only through flags, because the emulator counts
-  steps, not cycles.
+  steps, not cycles. `timer` runs the timer, which counts steps here: its
+  `tick_i` is the core's report of each step. Its request and those of the
+  interrupt source share the core's IRQ port, with the interrupt source's
+  vector when both are raised, as the emulator merges them.
 - `test/shift.nasm`.
-- `cputest`, `reads`, `mpu`, `mpu64`, and `perf` again, on a memory that
+- `cputest`, `reads`, `mpu`, `mpu64`, `perf`, and `timer` again, on a memory that
   stalls in 30% of the cycles.
 - 30 random programs from `test/random_prog.py`, each stopped at 3000 steps,
   on a memory that stalls in 30% of the cycles. Besides random ALU and
@@ -140,13 +155,21 @@ assumes the rules of the other side of its port and asserts the core's:
   It asserts that the core raises `ready` only for a request, and never in
   reset.
 
+`formal_timer` checks the timer's ports from the other side. Every input
+is free. It asserts that a raised request stays raised, with its vector,
+until `ready` takes it, which is what `handshake_check` assumes of a
+device, and that the bus port acknowledges each request in the next cycle
+and never stalls.
+
 The `prove` task proves the assertions for every cycle by k-induction. The
 induction needs invariants that tie the ports to the core's state: the state
 is one of its 12 values, and each bus has CYC high exactly in its wait
 states. The core asserts them itself when its generic `G_FORMAL` is true;
 `formal_multicycle` sets it, and the other users leave it false. The
 `cover` task shows that each port can do what the properties talk about: a
-read, a write, a stalled request, and each kind of interrupt taken.
+read, a write, a stalled request, and each kind of interrupt taken. For
+the timer, it shows a request taken, and one that waits while the timer
+counts on.
 
 The checkers do not depend on the multi-cycle core, so the pipelined core
 can reuse them, with `G_MAX_PENDING` raised if it keeps more than one
@@ -258,7 +281,21 @@ snapshot, and a read of the high word returns the snapshot's high word.
 The generic `G_RESET` sets the counters' value after reset. It is 0, as
 ISA.md §8.5 requires, except in `tb_perf`, which starts near a wrap.
 
-## The trace writer
+## The timer
+
+`timer` holds the timer of ISA.md §8.6: `TIMER_PERIOD`, `TIMER_COUNT`, and
+`TIMER_VECTOR` at offsets 0, 1, and 2. Its bus port is a pipelined Wishbone
+slave with a 4-bit address, like that of the performance counters. The bus
+decoder selects it for `0xFFFFFF40`–`0xFFFFFF4F`.
+
+It counts down in each cycle with `tick_i` high. A system ties `tick_i` to
+`'1'`, so that the timer counts clock cycles. `tb_multicycle` connects it to
+the core's report of each step, so that it counts as the emulator does.
+Its request goes to the core's IRQ port, with the valid/ready handshake of
+`src/multicycle.vhd`. It holds `valid` and the vector until `ready`, and a
+request raised while one waits merges with it. While no request is raised,
+`ready` has no effect, so `ready` may go to more than one device.
+
 
 The core reports each step in a `t_retire`: one instruction, skipped or not,
 or one interrupt entry. A report carries the address, the instruction word,

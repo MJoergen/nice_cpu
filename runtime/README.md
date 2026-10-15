@@ -10,6 +10,7 @@ translated wasm code call. They follow the C ABI of
 |---|---|
 | `start.nasm` | Start-up code for a program without a wasm module. |
 | `start_wasm.nasm` | Start-up code for a program with a wasm module. It calls `___wasm_start` before `main`. |
+| `start_mon.nasm`, `start_wasm_mon.nasm` | The same two for a program that a monitor runs (ISA.md §9.3, "Programs under a monitor"): at `0x8000`, above the monitor's ROM, on the monitor's stack, and returning to the monitor instead of halting. |
 | `lib.nasm` | The runtime routines in assembly, except those below. |
 | `muldiv_mpu.nasm` | The multiply and divide routines: `__mul`, `__div`, `__mod`, `__udiv`, `__umod`, and their `64` versions, with the math unit of ISA.md §8.4. |
 | `muldiv_soft.nasm` | The same routines in software, for a system without the math unit. |
@@ -28,8 +29,12 @@ two muldiv files, and `float.nasm` if the program uses floats. For example:
     emulator/zig-out/bin/niceemu full.bin
 
 The start-up code sets SP to `0xFFFFFF00`, calls `_main` with R1 = 0 and
-R2 = 0 (no `argc` or `argv`), and halts with `main`'s result in R1. It is
-the only file that uses `.ORG`.
+R2 = 0 (no `argc` or `argv`), and halts with `main`'s result in R1. The
+`_mon` versions are for a program that a monitor in ROM, such as the one
+planned for [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65),
+loads at `0x8000` and calls as a subroutine: they leave SP as the monitor
+set it, and return to the monitor with `main`'s result in R1 instead of
+halting. The start-up files are the only ones that use `.ORG`.
 
 ## Routines
 
@@ -289,8 +294,10 @@ This builds the emulator, then joins each `test/X.nasm` with a start-up file,
 compares the output and exit status with `test/X.expected`. The tests of
 the muldiv routines run a second time with `muldiv_soft.nasm`, and compare
 with `test/X_soft.expected`. `test/device.nasm` reads `test/device.input`
-as its console input. The expected values were checked by
-hand. The comments in each test show how.
+as its console input. The tests of the `_mon` start-up files are joined
+after `test/monitor.nasm`, a stand-in for a monitor at address 0, which
+calls the program at `0x8000` and halts when it returns. The expected
+values were checked by hand. The comments in each test show how.
 
 With `make test KEEP=DIR`, where DIR is an absolute path, each test also
 leaves its program in `DIR/X.bin`, and its console input, if any, in

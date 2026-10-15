@@ -9,12 +9,20 @@ EMU = ../emulator/zig-out/bin/niceemu
 # assembled and run, and the output and exit status are compared with
 # test/X.expected. The tests in SOFT_TESTS run a second time as X_soft,
 # with muldiv_soft.nasm instead, and are compared with test/X_soft.expected.
-TESTS = start start_wasm mul trap div div64 mul64 bits device
+# A test of a start-up file for a monitor is joined after PRE_X, the
+# stand-in for the monitor, which sits at 0 and calls the program.
+TESTS = start start_wasm start_mon start_wasm_mon mul trap div div64 mul64 bits device
 SOFT_TESTS = mul div mul64 div64
-START_start_wasm = start_wasm.nasm
-START_trap       = start_wasm.nasm
-OPTS_start      = -d 0xfffffeff:1
-OPTS_start_wasm = -d 0x1b:1 -d 0xfffffeff:1
+START_start_wasm     = start_wasm.nasm
+START_start_mon      = start_mon.nasm
+START_start_wasm_mon = start_wasm_mon.nasm
+START_trap           = start_wasm.nasm
+PRE_start_mon        = test/monitor.nasm
+PRE_start_wasm_mon   = test/monitor.nasm
+OPTS_start          = -d 0xfffffeff:1
+OPTS_start_wasm     = -d 0x1b:1 -d 0xfffffeff:1
+OPTS_start_mon      = -d 0xfffffefe:2
+OPTS_start_wasm_mon = -d 0x8019:1 -d 0xfffffefe:2
 OPTS_mul        = -d 0x34:10
 OPTS_div        = -d 0x4b:32
 OPTS_div64      = -d 0x6f:64
@@ -33,7 +41,7 @@ endef
 
 # $(1) is the name of the run, $(2) the test, and $(3) the muldiv file.
 define check
-	@cat $(or $(START_$(2)),start.nasm) test/$(2).nasm lib.nasm $(3) > test/$(1).out.nasm
+	@cat $(PRE_$(2)) $(or $(START_$(2)),start.nasm) test/$(2).nasm lib.nasm $(3) > test/$(1).out.nasm
 	@$(ASM) -o test/$(1).out.bin test/$(1).out.nasm
 	@$(EMU) $(OPTS_$(2)) $(if $(INPUT_$(2)),--input $(INPUT_$(2))) test/$(1).out.bin > test/$(1).out; \
 	  echo "exit $$?" >> test/$(1).out

@@ -9,6 +9,11 @@
 -- compare, because the core waits for each ACK before its next request.
 -- The trace writer, sim/trace.vhd, prints each step the core reports.
 --
+-- With G_CYCLE_COUNTER false, CYCLE_LO and CYCLE_HI at 0xFFFFFF10 and
+-- 0xFFFFFF11 are memory, as with the emulator's --no-cycle-counter. The
+-- core's cycle count depends on the memory's stalls, so a program that
+-- reads it could not be compared with the emulator otherwise.
+--
 -- G_INTERRUPTS takes the emulator's interrupt options, for example
 -- "--nmi 2:1 --irq 2:2", and the interrupt source p_intr raises the same
 -- requests. A request for step S is raised once S steps have been reported,
@@ -35,6 +40,7 @@ entity tb_multicycle is
       G_TRACE      : boolean  := true;
       G_MAX_STEPS  : positive := 100_000_000;
       G_INTERRUPTS : string   := "";
+      G_CYCLE_COUNTER : boolean := true;
       -- The memory's stall rate in percent, and its seed (sim/wb_mem.vhd).
       G_STALL      : natural  := 0;
       G_SEED       : positive := 1
@@ -224,7 +230,8 @@ begin
 
 
    mpu_sel      <= '1' when dbus_addr(31 downto 5) = X"FFFFFF" & "001" else '0';
-   perf_sel     <= '1' when dbus_addr(31 downto 4) = X"FFFFFF1" else '0';
+   perf_sel     <= '1' when dbus_addr(31 downto 4) = X"FFFFFF1" and
+                            (G_CYCLE_COUNTER or dbus_addr(3 downto 1) /= "000") else '0';
    mem_stb      <= dbus_stb and not mpu_sel and not perf_sel;
    mpu_stb      <= dbus_stb and mpu_sel;
    perf_stb     <= dbus_stb and perf_sel;

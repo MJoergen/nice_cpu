@@ -75,7 +75,10 @@ endef
 
 # Random programs from test/random_prog.py, each run for RANDOM_STEPS steps
 # with random interrupt requests, on a memory that stalls in RANDOM_STALL
-# percent of the cycles, and compared in the same way.
+# percent of the cycles, and compared in the same way. A random program
+# may read any address, so the cycle counter, which the core and the
+# emulator count differently, is memory in both: G_CYCLE_COUNTER=false and
+# --no-cycle-counter.
 RANDOM_SEEDS = $(shell seq 1 30)
 RANDOM_STEPS = 3000
 RANDOM_STALL = 30
@@ -84,10 +87,10 @@ define check_random
 	@$(PYTHON) test/random_prog.py $(1) $(BUILD)/random_$(1).bin > $(BUILD)/random_$(1).opts
 	@o=$$(cat $(BUILD)/random_$(1).opts); \
 	  ($(GHDLRUN) tb_multicycle -gG_BIN_FILE=random_$(1).bin -gG_TRACE_FILE=random_$(1).out \
-	  -gG_MAX_STEPS=$(RANDOM_STEPS) -gG_STALL=$(RANDOM_STALL) -gG_SEED=$(1) \
+	  -gG_MAX_STEPS=$(RANDOM_STEPS) -gG_STALL=$(RANDOM_STALL) -gG_SEED=$(1) -gG_CYCLE_COUNTER=false \
 	  $${o:+"-gG_INTERRUPTS=$$o"} > random_$(1).log 2>&1); \
 	  echo "exit $$?" >> $(BUILD)/random_$(1).out
-	@$(EMU) -t -n $(RANDOM_STEPS) $$(cat $(BUILD)/random_$(1).opts) $(BUILD)/random_$(1).bin \
+	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter $$(cat $(BUILD)/random_$(1).opts) $(BUILD)/random_$(1).bin \
 	  > $(BUILD)/random_$(1).expected; echo "exit $$?" >> $(BUILD)/random_$(1).expected
 	@if cmp -s $(BUILD)/random_$(1).expected $(BUILD)/random_$(1).out; then echo "PASS multicycle random $(1)"; \
 	else echo "FAIL multicycle random $(1)"; cat $(BUILD)/random_$(1).log; \
@@ -117,6 +120,13 @@ test: emulator analyse synth
 	$(call check_core,perf_stall,../emulator/test/perf.bin,-gG_STALL=30 -gG_SEED=9)
 	$(foreach t,$(RANDOM_SEEDS),$(call check_random,$(t)))
 
+# More random programs than make test runs, for example
+#     make random RANDOM_SEEDS="$$(seq 31 90)" RANDOM_STALL=60 RANDOM_STEPS=5000
+# test/trace_reads.py shows the data reads of the first instruction where
+# the emulator's trace and the core's differ.
+random: emulator analyse
+	$(foreach t,$(RANDOM_SEEDS),$(call check_random,$(t)))
+
 analyse:
 	@mkdir -p $(BUILD)
 	cd $(BUILD) && $(GHDL) -a --std=08 $(addprefix ../,$(SOURCES) $(SIM_SOURCES) $(TEST_SOURCES))
@@ -140,4 +150,4 @@ emulator:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: test analyse synth emulator clean
+.PHONY: test random analyse synth emulator clean

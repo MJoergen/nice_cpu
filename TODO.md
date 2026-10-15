@@ -38,15 +38,6 @@ comments.
 - **An interrupt comparison script for the pipelined core** (MICROARCH.md
   §9). It reads from the core's trace where each interrupt was taken, and
   runs the emulator with the matching `--irq` or `--nmi` options.
-- **`random_prog.py` can read the cycle counter** (repository-review.md
-  §1.2, 2026-10-15). A register loaded with the read counter's address
-  `0xFFFFFF01` and advanced by `@Rx++` reaches `CYCLE_LO` at `0xFFFFFF10`,
-  where the emulator counts steps and the core counts cycles, so the
-  traces differ although the core is right. The seeds and step count in
-  `hdl/Makefile` avoid it by chance; with seeds 31 to 90 and 5000 steps,
-  5 of 60 programs read it. Keep the counters out of the random programs,
-  for example by using the `COUNTER` constant only as a mode 111 address
-  with R0 as the base.
 
 ## Example design
 

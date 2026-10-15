@@ -27,12 +27,14 @@ working reference for it.
 | [test/tb_multicycle.vhd](test/tb_multicycle.vhd) | Runs a program on the multi-cycle core, with an interrupt source, and writes its trace. |
 | [test/shift.nasm](test/shift.nasm) | Every shift, with the counts that are hard to get right. |
 | [test/random_prog.py](test/random_prog.py) | Writes random programs, and random interrupt requests for them. |
+| [test/trace_reads.py](test/trace_reads.py) | Finds the first line where two traces differ, and shows the data reads of that instruction. |
 
 ## Running the tests
 
 You need GHDL, Python 3, and Zig 0.15 for the emulator. Tested with
-GHDL 6.0.0-dev and GHDL 4.1.0 (mcode backend). The memory model and the trace
-writer also run under nvc.
+GHDL 6.0.0-dev and GHDL 4.1.0 (mcode backend). CI installs 4.1.0, the
+`ghdl` package of Ubuntu 24.04. The memory model and the trace writer also
+run under nvc.
 
     cd hdl && make test
 
@@ -80,7 +82,25 @@ with the same interrupt requests:
 - 30 random programs from `test/random_prog.py`, each stopped at 3000 steps,
   on a memory that stalls in 30% of the cycles. Besides random ALU and
   shift instructions, they use R15 with every side effect, `HALT`, `RTI`,
-  `INT`, reserved control words, and the read counter.
+  `INT`, reserved control words, and the read counter. A random program
+  may read any address, and now and then one reaches the cycle counter at
+  `0xFFFFFF10`, where the core counts cycles and the emulator counts steps
+  (ISA.md §8.5). So these runs make its two words ordinary memory on both
+  sides, with the generic `G_CYCLE_COUNTER` and the emulator's
+  `--no-cycle-counter`. The instruction counter and the math unit stay,
+  because both sides agree on them.
+
+`make random` runs more random programs, with the seeds, step count, and
+stall rate given as variables:
+
+    make random RANDOM_SEEDS="$(seq 31 90)" RANDOM_STALL=60 RANDOM_STEPS=5000
+
+When a run fails, `test/trace_reads.py` helps to see why. It takes the
+program and the two traces, replays the emulator's trace to the first
+line that differs, and prints the data reads of that instruction, with
+the names of the I/O words it knows:
+
+    test/trace_reads.py build/random_65.bin build/random_65.expected build/random_65.out
 
 ## The multi-cycle core
 
@@ -117,7 +137,9 @@ combinationally on `ready`.
 
 `halted_o` is 1 once the core has halted. Only reset restarts it.
 
-In `tb_multicycle`, the generic `G_INTERRUPTS` takes the emulator's options,
+In `tb_multicycle`, the generic `G_CYCLE_COUNTER` set to false sends the
+two words of the cycle counter to the memory model instead of `perf`, as
+`--no-cycle-counter` does in the emulator. The generic `G_INTERRUPTS` takes the emulator's options,
 for example `--nmi 2:1 --irq 2:2`. A request for step S is raised once S
 steps have retired, as the emulator raises it before step S. A second request
 of the same kind replaces the vector of one still pending, as the emulator

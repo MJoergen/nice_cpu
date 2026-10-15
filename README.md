@@ -36,6 +36,7 @@ the separate [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) reposito
 | [emulator/](emulator/README.md) | `niceemu`, the emulator, written in Zig. |
 | [runtime/](runtime/README.md) | The start-up code and runtime library for C and wasm programs, and a small C library. |
 | [translator/](translator/README.md) | `nicewasm`, which translates WebAssembly into NICE assembly. |
+| [bench/](bench/README.md) | A benchmark of translated code: six kernels with known results, timed with the performance counters, and the same benchmark written by hand. |
 | [hdl/](hdl/README.md) | The FPGA implementation in VHDL. So far a simple multi-cycle core, and the memory model and trace writer it is tested with. |
 | [TODO.md](TODO.md) | The single list of open items, undecided questions, and ideas for later. |
 
@@ -53,6 +54,7 @@ download page, pick 0.15.2 rather than the latest release or master.
     cd emulator && make test          # build and test the emulator
     cd runtime && make test           # test the start-up code and runtime library
     cd translator && make test        # test the wasm translator
+    cd bench && make test             # run the benchmark on the emulator and check its results
     cd hdl && make test               # test the multi-cycle core (needs GHDL)
     cd doc/intro && make test         # run the example programs of the introduction
 

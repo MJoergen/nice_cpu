@@ -127,6 +127,11 @@ has TODO or FIXME comments.
     row, each with its own check of 4 instructions. One check up front,
     with the present sequence kept as the slow path, so that a trap still
     comes in order and with the right R2 (ISA.md §9.4).
+  - *No mask for a constant shift count.* `i32.shl` by a constant emits
+    `AND R1, 2, 31` and then the shift by R1, where `SHL d, a, 2` would do.
+    Every array index computed as `i << 2` pays it. Seen in `bench/`, in
+    the translated heapsort. `const_value` in `nicewasm.py` already tells
+    whether the count is a constant.
   - *Conditional execution instead of a jump* for an `if` without `else`
     whose body is a few instructions with no call, no memory access, and
     no flag update. Worth more on the pipelined core than on the
@@ -137,6 +142,15 @@ has TODO or FIXME comments.
   address, and bounds checks hoisted out of loops. A byte access stays at
   about 9 instructions whatever the translator does, because linear
   memory is byte-addressed (ISA.md §9.4).
+- **Benchmarks beyond [bench/](bench/README.md).** Dhrystone 2.1 would
+  give a number to compare the core with other small processors, once it
+  runs on a board. It needs `malloc`, `strcpy`, `strcmp`, and `printf`
+  from the small C library, and `nice_cycles` in place of its clock. A
+  subset of Embench-IoT, such as `crc32`, `matmult-int`, `huffbench`, and
+  `nettle-sha256`, has published results for small RISC-V and Arm cores,
+  but its harness is GPL-3, so it would live outside this repository.
+  `bench/` has no float phase, because one would measure the float library
+  more than the translator.
 
 ## Decided against
 

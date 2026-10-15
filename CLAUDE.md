@@ -16,6 +16,10 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
 - `emulator/src/cpu.zig` (core, unit tests) and `main.zig` (CLI, loader). Zig 0.15.
 - `runtime/`: start-up code and runtime routines in NICE assembly (ISA.md §9.3).
 - `translator/nicewasm.py`: wasm -> NICE assembly (ISA.md §9.4). Same rules as niceasm.py.
+- `bench/bench.c`: a benchmark of translated code, six kernels with known
+  results, timed with the performance counters. `hand.nasm` is the same
+  benchmark written by hand, the ceiling to compare with. `expected.py`
+  computes the results in Python, and `make test` checks both against them.
 - `hdl/`: VHDL-2008, GHDL. A simple multi-cycle core in `src/multicycle.vhd`,
   `src/trace_pkg.vhd`, the math unit in `src/mpu.vhd`, the performance
   counters in `src/perf.vhd`, the timer in `src/timer.vhd`, the
@@ -34,6 +38,8 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
     cd runtime   && make test        # join, assemble, and run each test/*.nasm
     cd translator && make test       # test/run.py, then test/errors.py
     cd translator && make typecheck  # mypy --strict
+    cd bench     && make test        # the benchmark on the emulator, with its results checked
+    cd bench     && make core        # the benchmark on the multi-cycle core in GHDL (minutes)
     cd hdl && make test              # synth check, tb_mem, then tb_trace and the core diffed against niceemu
     cd hdl && make lint              # vsg style check (pip install vsg)
     cd hdl && make formal            # SymbiYosys: the core's Wishbone and interrupt ports
@@ -54,4 +60,4 @@ Run the relevant `make test` after every change.
 - The 2004 example `.bin` files are original `NICE.pm` output; do not change them.
 - Keep the READMEs in sync with the tools' options, formats, and error behaviour.
 - Docs: plain, short sentences. Use the Oxford comma by default ("a, b, and c").
-- Commit subjects: `niceasm: ...`, `niceemu: ...`, `runtime: ...`, `nicewasm: ...`, `nicehdl: ...`, `intro: ...`, `ISA: ...`, `Review: ...`.
+- Commit subjects: `niceasm: ...`, `niceemu: ...`, `runtime: ...`, `nicewasm: ...`, `nicehdl: ...`, `bench: ...`, `intro: ...`, `ISA: ...`, `Review: ...`.

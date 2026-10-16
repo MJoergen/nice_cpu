@@ -169,6 +169,13 @@ without a frame pointer, took `test/safe.zig` from 7131 to 6338 words
 took the benchmark in [bench/](../bench/) from 3359061 to 2539669
 instructions (24% fewer).
 
+Later on 2026-10-16, cheaper memory accesses took the benchmark from
+2539669 to 1875636 instructions (26% fewer): one compare for the bounds
+and the alignment of a word access, word indices computed from array
+indices, and inline accesses of 1 and 2 bytes. Their stubs after the
+epilogue made `test/safe.zig` larger, from 6338 to 6691 words (6% more),
+and left the float library the same size.
+
 ## Supported features
 
 - **Types:** `i32`, `i64`, `f32`, and `f64`, in function types, locals,

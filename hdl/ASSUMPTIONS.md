@@ -56,10 +56,14 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
 8. **The read of a performance counter.** ISA.md §8.5 wants a read of
    `INSTR_LO` to count every older instruction, and MICROARCH.md §8 lets
    the core raise `instret_o` early for that. The core raises it in the
-   cycle after PREPARE loads an instruction's last data read, or, for an
+   cycle the bus accepts an instruction's last data read, or, for an
    instruction without a read, in the cycle its last micro-operation
-   retires. PREPARE loads a younger read only after that. The two ways
-   never fall in one cycle, which `p_check` asserts.
+   retires. The counters return a count from before that cycle's, so the
+   instruction's own reads leave it out, and PREPARE loads a younger read
+   only then. The two ways never fall in one cycle, which `p_check`
+   asserts. A read may wait on the bus, for example while `wb_dmux` waits
+   for another slave's ACK, so the count cannot be tied to the cycle
+   PREPARE loads the read; `test/instret.nasm` checks this.
 
 ## Interrupts
 

@@ -38,6 +38,7 @@ departs from it.
 | [test/tb_trace.vhd](test/tb_trace.vhd) | A test of the trace writer, which stands in for the core and runs [test/trace.nasm](test/trace.nasm). |
 | [test/tb_core.vhd](test/tb_core.vhd) | Runs a program on a core, which its generic `G_CORE` names, with an interrupt source, and writes its trace. |
 | [test/shift.nasm](test/shift.nasm) | Every shift, with the counts that are hard to get right. |
+| [test/instret.nasm](test/instret.nasm) | Reads of the instruction counter right after a store, after a read, and twice in one instruction. |
 | [test/hazard.nasm](test/hazard.nasm) | The hazards of MICROARCH.md §5, each with no padding. It checks itself. |
 | [test/programs.py](test/programs.py) | Runs the programs in some directories on the core and on the emulator, for `make programs`. |
 | [test/core_runs.py](test/core_runs.py) | Runs a program on the core, or on the emulator, for `irq_sweep.py` and `programs.py`. |
@@ -144,6 +145,10 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   interrupt source share the core's IRQ port, with the interrupt source's
   vector when both are raised, as the emulator merges them.
 - `test/shift.nasm`.
+- `test/instret.nasm`, also on a memory that stalls in 30% of the cycles.
+  It reads the instruction counter right after a store to RAM, which the
+  data bus decoder makes the read wait for, after a read of RAM, as the
+  source of a store, and twice in one instruction.
 - The hazard programs of MICROARCH.md §9, step 4, each also on a memory
   that stalls in 30% of the cycles. `test/hazard.nasm` makes each hazard
   of MICROARCH.md §5 with no padding: flags tested by the next
@@ -441,7 +446,7 @@ will receive, and the instructions in DECODE's and PREPARE's registers
 
 An interrupt is taken in WRITE before an instruction, unless the
 instruction has issued a data read. Then it is taken after it. `instret_o`
-counts an instruction in the cycle after its last data read is issued, or
+counts an instruction in the cycle the bus accepts its last data read, or
 when it retires if it reads nothing. So a read of `INSTR_LO` counts every
 older instruction and not its own (ISA.md §8.5).
 

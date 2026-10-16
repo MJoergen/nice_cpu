@@ -182,6 +182,9 @@ cores:
 	$(call check_core,mpu64_stall,../emulator/test/mpu64.bin,-gG_STALL=30 -gG_SEED=5)
 	$(call check_core,perf_stall,../emulator/test/perf.bin,-gG_STALL=30 -gG_SEED=9)
 	$(call check_core,timer_stall,../emulator/test/timer.bin,-gG_STALL=30 -gG_SEED=11)
+	@$(ASM) -o $(BUILD)/instret.bin test/instret.nasm
+	$(call check_core,instret,$(BUILD)/instret.bin)
+	$(call check_core,instret_stall,$(BUILD)/instret.bin,-gG_STALL=30 -gG_SEED=17)
 	@$(ASM) -o $(BUILD)/hazard.bin test/hazard.nasm
 	$(call check_core,hazard,$(BUILD)/hazard.bin)
 	$(call check_selfcheck,hazard)

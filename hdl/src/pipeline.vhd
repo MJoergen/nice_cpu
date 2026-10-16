@@ -64,10 +64,12 @@
 -- issues no read while a request is pending that could be taken first.
 --
 -- INSTRET. An instruction is counted on instret_o when its last
--- micro-operation retires, or, if it reads memory, in the cycle after
--- PREPARE loads its last data read. So a read of INSTR_LO (ISA.md §8.5)
--- counts every older instruction, and not its own. The two never fall in
--- one cycle.
+-- micro-operation retires, or, if it reads memory, in the cycle the bus
+-- accepts its last data read, which may wait on the bus. The performance
+-- counters return a count from before that cycle's, and PREPARE loads a
+-- younger read only then. So a read of INSTR_LO (ISA.md §8.5) counts every
+-- older instruction, and not its own. The two ways never fall in one
+-- cycle.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) The bus slaves acknowledge every request, in order. On the data bus, a
@@ -256,7 +258,8 @@ architecture synthesis of pipeline is
    signal p_last_read   : std_logic;
    signal p_addr        : std_logic_vector(31 downto 0);
    signal p_move        : std_logic;
-   signal count_r       : std_logic;              -- Counts an instruction on instret_o
+   signal rd_last_r     : std_logic;              -- rd_stb_r is its instruction's last read
+   signal rd_count      : std_logic;              -- Counts that instruction on instret_o
 
    -- The data bus
    signal rd_stb_r  : std_logic;
@@ -558,8 +561,6 @@ begin
    p_prepare_reg : process (clk_i)
    begin
       if rising_edge(clk_i) then
-         count_r <= p_last_read;
-
          if dbus_stall_i = '0' then
             rd_stb_r <= '0';
          end if;
@@ -567,6 +568,7 @@ begin
          if p_load = '1' then
             rd_stb_r      <= '1';
             rd_addr_r     <= p_addr;
+            rd_last_r     <= p_last_read;
             p_loaded_r    <= p_loaded_r + 1;
             p_committed_r <= '1';
             if p_last_read = '1' then
@@ -608,7 +610,7 @@ begin
             p_committed_r <= '0';
             p_counted_r   <= '0';
             rd_stb_r      <= '0';
-            count_r       <= '0';
+            rd_last_r     <= '0';
          end if;
       end if;
    end process p_prepare_reg;
@@ -1118,7 +1120,11 @@ begin
    nmi_ready_o <= take_nmi;
    irq_ready_o <= take_irq;
    halted_o    <= '1' when w_r.mode = HALTED_ST else '0';
-   instret_o   <= count_r or w_instret;
+   -- An instruction with a data read is counted in the cycle the bus
+   -- accepts its last read. The counter returns its value from before the
+   -- count for that read, and every younger read is accepted later.
+   rd_count  <= rd_stb_r and not dbus_stall_i and rd_last_r;
+   instret_o <= rd_count or w_instret;
 
 
    -- The report of the step, in the cycle it retires, with the registers it
@@ -1136,7 +1142,7 @@ begin
    begin
       if rising_edge(clk_i) then
          if rst_i = '0' then
-            assert not (count_r = '1' and w_instret = '1')
+            assert not (rd_count = '1' and w_instret = '1')
                report "pipeline: two instructions counted in one cycle"
                severity failure;
             assert not (rd_stb_r = '1' and w_req = '1')

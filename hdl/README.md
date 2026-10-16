@@ -125,7 +125,9 @@ on the same program, with the same interrupt requests:
   `perf` reads the instruction counter, with an NMI and an `INT`, and
   checks the cycle counter only through flags, because the emulator counts
   steps, not cycles. `timer` runs the timer, which counts steps here: its
-  `tick_i` is the core's report of each step. Its request and those of the
+  `tick_i` is the core's `instret_o` and its report of each interrupt
+  entry, so that a read of `TIMER_COUNT` sees the ticks of every older
+  instruction on any core. Its request and those of the
   interrupt source share the core's IRQ port, with the interrupt source's
   vector when both are raised, as the emulator merges them.
 - `test/shift.nasm`.

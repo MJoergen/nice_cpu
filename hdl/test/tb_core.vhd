@@ -41,7 +41,10 @@
 -- than the step it was raised for (MICROARCH.md §9).
 --
 -- The timer counts the steps, as the emulator's does: its tick is the
--- core's report of a step. Its request and the IRQ of p_intr reach the core
+-- core's instret_o, and the report of each interrupt entry. A data read of
+-- TIMER_COUNT must see the ticks of every older instruction, and the
+-- pipelined core raises instret_o in time for that, but may report a step
+-- later (src/pipeline.vhd). Its request and the IRQ of p_intr reach the core
 -- as one request, with the vector of p_intr's when both are raised, and the
 -- core's ready takes both. That is how the emulator merges a request of the
 -- timer with one from --irq.
@@ -209,6 +212,7 @@ architecture simulation of tb_core is
    signal console_data  : std_logic_vector(7 downto 0);
 
    signal retire : t_retire;
+   signal tick   : std_logic;
    signal done   : std_logic;
    signal status : natural;
 
@@ -299,6 +303,8 @@ begin
       ); -- i_wb_dmux
 
 
+   tick <= instret or (retire.valid and retire.intr);
+
    core_irq_valid  <= irq_valid or timer_valid;
    core_irq_vector <= irq_vector when irq_valid = '1' else
                       timer_vector;
@@ -368,7 +374,7 @@ begin
       port map (
          clk_i        => clk,
          rst_i        => rst,
-         tick_i       => retire.valid,
+         tick_i       => tick,
          wb_cyc_i     => dbus_cyc,
          wb_stb_i     => slave_stb(C_TIMER),
          wb_stall_o   => slave_stall(C_TIMER),

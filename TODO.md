@@ -68,8 +68,8 @@ has TODO or FIXME comments.
   the data access rule among them, only for the first 8 cycles after
   reset ([hdl/README.md](hdl/README.md)). Open: a proof for every cycle,
   which needs invariants that tie the stages together, as `pipe_fetch`
-  has; or proofs of DECODE to WRITE in parts, which would need them in
-  entities of their own; and the order of the data accesses checked
+  has; or proofs of DECODE, PREPARE, and WRITE in parts, now that each
+  is an entity of its own; and the order of the data accesses checked
   against a model of the program, not only through the tests.
 
 ## Devices

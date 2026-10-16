@@ -19,9 +19,13 @@ departs from it.
 | [CODING_STYLE.md](CODING_STYLE.md) | The style of the VHDL. |
 | [vsg.yml](vsg.yml) | The rules of CODING_STYLE.md for vsg, which `make lint` runs. |
 | [src/multicycle.vhd](src/multicycle.vhd) | The multi-cycle core. |
-| [src/pipeline.vhd](src/pipeline.vhd) | The pipelined core: DECODE, SEQUENCER, PREPARE, and WRITE, and its data bus port. |
+| [src/pipeline.vhd](src/pipeline.vhd) | The pipelined core: its stages connected, and the invariants they keep. |
 | [src/pipe_fetch.vhd](src/pipe_fetch.vhd) | FETCH and ICACHE of the pipelined core. |
-| [src/pipe_pkg.vhd](src/pipe_pkg.vhd) | The micro-operations of the pipelined core, and what each reads and writes. |
+| [src/pipe_decode.vhd](src/pipe_decode.vhd) | DECODE and the SEQUENCER of the pipelined core. |
+| [src/pipe_prepare.vhd](src/pipe_prepare.vhd) | PREPARE of the pipelined core, with its data read request. |
+| [src/pipe_dbus.vhd](src/pipe_dbus.vhd) | The data bus port of the pipelined core, with the tags and the read data of the requests in flight. |
+| [src/pipe_write.vhd](src/pipe_write.vhd) | WRITE of the pipelined core, with the architectural state. |
+| [src/pipe_pkg.vhd](src/pipe_pkg.vhd) | The micro-operations of the pipelined core, what each reads and writes, and WRITE's state record. |
 | [src/nice_pkg.vhd](src/nice_pkg.vhd) | The parts of the ISA that the cores share: the operand fields, the register value rule, the condition, the ALU, the shifter, and the flags. |
 | [src/mpu.vhd](src/mpu.vhd) | The math unit of ISA.md §8.4, a Wishbone slave. |
 | [src/perf.vhd](src/perf.vhd) | The performance counters of ISA.md §8.5, a Wishbone slave. |
@@ -415,13 +419,17 @@ core's runs only through `irq_compare.py`, and checks the self-check of
 |---|---|---|
 | FETCH | `pipe_fetch` | Reads pairs of words ahead on the instruction bus, several requests in flight. |
 | ICACHE | `pipe_fetch` | A ring of 16 words, of which it presents the next four to DECODE. |
-| DECODE | `pipeline` | Takes one whole instruction. Redirects FETCH at once for `MOVE R15, c` and `ADD R15, R15, c` with condition "always". |
-| SEQUENCER | `pipeline` | Splits the instruction into micro-operations, one per cycle (MICROARCH.md §4). |
-| PREPARE | `pipeline` | Tests the condition when it can, and issues the data reads. |
-| WRITE | `pipeline` | Computes, writes the registers and SR, issues the store, takes interrupts, and runs the control instructions. |
+| DECODE | `pipe_decode` | Takes one whole instruction. Redirects FETCH at once for `MOVE R15, c` and `ADD R15, R15, c` with condition "always". |
+| SEQUENCER | `pipe_decode` | Splits the instruction into micro-operations, one per cycle (MICROARCH.md §4). |
+| PREPARE | `pipe_prepare` | Tests the condition when it can, and issues the data reads. |
+| WRITE | `pipe_write` | Computes, writes the registers and SR, issues the store, takes interrupts, and runs the control instructions. |
 
+`pipe_dbus` is the data bus port, and `pipeline` connects the parts.
 Each stage holds one item and passes it on when the next stage frees
-itself. In the best case one micro-operation retires each cycle.
+itself. Each part keeps its state in registers, but some of the signals
+between them are combinational, as each part's header lists: PREPARE
+decides on a data read with WRITE's decisions of the same cycle, a flush
+reaches every stage at once, and WRITE drives its stores onto the bus. In the best case one micro-operation retires each cycle.
 `cputest` takes about 1.2 cycles per instruction on memory that never
 stalls, and `hazard.nasm`, which is all hazards, 1.9. The benchmark of
 [bench/](../bench/README.md) ran like this on 2026-10-16, against the

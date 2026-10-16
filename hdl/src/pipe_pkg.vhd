@@ -21,6 +21,7 @@ library ieee;
    use ieee.numeric_std_unsigned.all;
 
    use work.nice_pkg.all;
+   use work.trace_pkg.all;
 
 package pipe_pkg is
 
@@ -132,6 +133,57 @@ package pipe_pkg is
    -- may jump or halt.
    function uop_may_jump(iw : std_logic_vector(31 downto 0);
                          k  : t_kind) return boolean;
+
+   -- Data bus requests in flight, the ACKs owed
+   constant C_MAX_OUT : natural := 4;
+
+   type t_words is array (natural range <>) of std_logic_vector(31 downto 0);
+
+   type t_wmode is (RUN_ST, VEC_ST, HALTED_ST);
+
+   -- The state of WRITE
+   type t_write is record
+      uop        : t_uop;
+      mode       : t_wmode;
+      regs       : t_regs;
+      in_service : std_logic;
+      after_rti  : std_logic;
+      saved_pc   : std_logic_vector(31 downto 0);
+      saved_sr   : std_logic_vector(31 downto 0);
+      halt       : t_halt;
+      cond       : std_logic;                       -- The condition of the instruction
+      mid        : std_logic;                       -- Part of an instruction has retired
+      jump       : std_logic;                       -- The instruction has written R15
+      s0val      : std_logic_vector(31 downto 0);   -- s0, from S0 or S1
+      s1val      : std_logic_vector(31 downto 0);   -- s1, from S1
+      busy       : std_logic;                       -- An access waits on the bus
+      vec        : std_logic_vector(7 downto 0);    -- In VEC_ST: the vector
+      vec_intr   : std_logic;                       -- An interrupt, not INT
+      vec_nmi    : std_logic;
+      vec_issued : std_logic;                       -- The vector read is on its way
+      commits    : natural range 0 to 3;            -- Committed instructions in flight
+      rep        : t_retire;                        -- The report, but its registers
+   end record t_write;
+
+   -- The value of a source field that is not in memory (ISA.md §4.1).
+   function src_value(m : std_logic_vector(2 downto 0);
+                      x : natural range 0 to 15;
+                      b : std_logic_vector(31 downto 0);
+                      c : std_logic_vector(31 downto 0)) return std_logic_vector;
+
+   -- The address of a memory operand, source or destination, before any
+   -- side effect of its own (ISA.md §4.1 and §4.2).
+   function mem_addr(m : std_logic_vector(2 downto 0);
+                     x : natural range 0 to 15;
+                     b : std_logic_vector(31 downto 0);
+                     c : std_logic_vector(31 downto 0)) return std_logic_vector;
+
+   -- a lies in the range lo to hi - 1, modulo 2^32.
+   function in_range(a  : std_logic_vector(31 downto 0);
+                     lo : std_logic_vector(31 downto 0);
+                     hi : std_logic_vector(31 downto 0)) return boolean;
+
+   function popcount(v : std_logic_vector) return natural;
 
 end package pipe_pkg;
 
@@ -323,5 +375,47 @@ package body pipe_pkg is
    begin
       return k = UOP_CTRL or uop_wreg(iw, k) = 15;
    end function uop_may_jump;
+
+   function src_value(m : std_logic_vector(2 downto 0);
+                      x : natural range 0 to 15;
+                      b : std_logic_vector(31 downto 0);
+                      c : std_logic_vector(31 downto 0)) return std_logic_vector is
+   begin
+      case m is
+         when "001"  => return regval(x, b - 1);
+         when "011"  => return b + c;
+         when others => return b;
+      end case;
+   end function src_value;
+
+   function mem_addr(m : std_logic_vector(2 downto 0);
+                     x : natural range 0 to 15;
+                     b : std_logic_vector(31 downto 0);
+                     c : std_logic_vector(31 downto 0)) return std_logic_vector is
+   begin
+      case m is
+         when "101"         => return regval(x, b - 1);
+         when "011" | "111" => return b + c;
+         when others        => return b;
+      end case;
+   end function mem_addr;
+
+   function in_range(a  : std_logic_vector(31 downto 0);
+                     lo : std_logic_vector(31 downto 0);
+                     hi : std_logic_vector(31 downto 0)) return boolean is
+   begin
+      return a - lo < hi - lo;
+   end function in_range;
+
+   function popcount(v : std_logic_vector) return natural is
+      variable res_v : natural := 0;
+   begin
+      for i in v'range loop
+         if v(i) = '1' then
+            res_v := res_v + 1;
+         end if;
+      end loop;
+      return res_v;
+   end function popcount;
 
 end package body pipe_pkg;

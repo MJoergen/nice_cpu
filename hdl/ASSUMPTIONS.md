@@ -23,11 +23,17 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
    wait, because WRITE reads them. R14 is SR in WRITE, as §5.4 wants. R15
    is the instruction's next address, carried with it, unless an earlier
    micro-operation of the same instruction wrote R15.
-2. **DECODE, SEQUENCER, PREPARE, and WRITE share one entity**, as
-   cpu_main does in qnice_cpu. FETCH and ICACHE are one entity,
-   `src/pipe_fetch.vhd`, with a formal proof of their own. The
-   micro-operations and the decode functions are in `src/pipe_pkg.vhd`, and
-   the parts both cores share (the ALU, the shifter, the fields) in
+2. **One entity for each part**: FETCH and ICACHE in `src/pipe_fetch.vhd`,
+   with a formal proof of their own; DECODE and the SEQUENCER in
+   `src/pipe_decode.vhd`; PREPARE in `src/pipe_prepare.vhd`; the data bus
+   port in `src/pipe_dbus.vhd`; and WRITE in `src/pipe_write.vhd`.
+   `src/pipeline.vhd` connects them. Each part keeps its state in
+   registers, but not every output is registered: PREPARE decides on a
+   read with WRITE's decisions of the same cycle, a flush reaches every
+   stage at once, and WRITE drives its stores onto the bus. Registering
+   those would cost cycles (item 6). The micro-operations, the decode
+   functions, and WRITE's state record are in `src/pipe_pkg.vhd`, and the
+   parts both cores share (the ALU, the shifter, the fields) in
    `src/nice_pkg.vhd`.
 3. **ICACHE is a ring of 16 words.** FETCH issues a request only when every
    word that may still arrive has room, so at most 8 requests are in

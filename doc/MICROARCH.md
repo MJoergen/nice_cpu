@@ -9,8 +9,10 @@ The core is pipelined and has separate instruction and data buses, like
 [qnice_cpu](https://github.com/MJoergen/qnice_cpu). It reuses that design
 where NICE allows it. This note concentrates on where NICE differs.
 
-The pipelined core is `hdl/src/pipeline.vhd`, with FETCH and ICACHE in
-`hdl/src/pipe_fetch.vhd`. A simple multi-cycle core,
+The pipelined core is `hdl/src/pipeline.vhd`, which connects one entity
+for each part: `pipe_fetch` (FETCH and ICACHE), `pipe_decode` (DECODE and
+the SEQUENCER), `pipe_prepare`, `pipe_dbus` (the data bus port), and
+`pipe_write`. A simple multi-cycle core,
 `hdl/src/multicycle.vhd`, came first. It runs one instruction at a time,
 with the same buses, interrupt ports, and trace report, and is the working
 reference. Both pass every step of the test order in §9

@@ -19,11 +19,12 @@ cover: smtbmc yices
 
 [script]
 plugin -i ghdl
-ghdl --std=08 -fpsl nice_pkg.vhd pipe_pkg.vhd pipe_fetch.vhd formal_pipe_fetch.vhd -e formal_pipe_fetch
+ghdl --std=08 -fpsl nice_pkg.vhd trace_pkg.vhd pipe_pkg.vhd pipe_fetch.vhd formal_pipe_fetch.vhd -e formal_pipe_fetch
 prep -top formal_pipe_fetch
 
 [files]
 ../src/nice_pkg.vhd
+../src/trace_pkg.vhd
 ../src/pipe_pkg.vhd
 ../src/pipe_fetch.vhd
 formal_pipe_fetch.vhd

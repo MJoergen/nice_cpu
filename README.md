@@ -50,6 +50,9 @@ version. Zig changes its language and standard library between releases, so
 the emulator is unlikely to build with a newer or older version. On the
 download page, pick 0.15.2 rather than the latest release or master.
 
+    make                              # list the top-level targets
+    make test                         # all of the tests below, in order
+
     cd assembler && make test         # test the assembler
     cd emulator && make test          # build and test the emulator
     cd runtime && make test           # test the start-up code and runtime library

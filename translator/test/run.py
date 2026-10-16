@@ -245,13 +245,20 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "oob": "ADD[M] R1, 65532, 1",
          "oobcarry": "ADD[M] R1, -1, 1",
          "oobdyn": "SUB[M] R0, R1, 65532",
-         "oobend": "SUB[M] R0, R1, 65529",
+         "oobend": "ROR R1, R1, 2",
+         "oobword": "ROR R1, R1, 2",
+         "oobword8": "ROR R2, R1, 2",
+         "growdyntrap": "ROR R2, R1, 2",
          "nomemory": "MOVE R1, 2"}
 
 # Options for nicewasm.
 OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "grow": ["--memory-pages", "3"],
            "growtrap": ["--memory-pages", "2"],
+           "growdyn": ["--memory-pages", "2"],
+           "growdyntrap": ["--memory-pages", "2"],
+           "memend_unchecked": ["--no-bounds-checks"],
+           "memend_grow": ["--memory-pages", "2"],
            "library": ["--library", "lib"],
            "libtrap": ["--library", "lib"],
            "libmem": ["--library", "lib", "--library-memory", "128"]}
@@ -311,6 +318,26 @@ def memory_checks(dyn: bool) -> List[bytes]:
         ld_(I32_LOAD, 36, 0),
         # A check that fails: byte 0 is 0x81.
         ld_(I32_LOAD8_U, 0, 0x82)]
+
+
+def memend_checks() -> List[bytes]:
+    """Accesses of 4 and 8 bytes at the end of a memory of one page, at
+    addresses in local 1. Words 16382 and 16383, the last two, get the
+    bytes 55 66 77 88 | 11 22 33 44 at 65528 to 65535. Each check is one
+    bit, and the last one fails."""
+    return [
+        st_dyn(I32_STORE, 65532, 0x44332211) + ld_dyn(I32_LOAD, 65532, 0x44332211),
+        st_dyn(I32_STORE, 65528, 0x88776655 - 2**32) + ld_dyn(I64_LOAD, 65528, 0x44332211_88776655),
+        ld_dyn(I32_LOAD, 65531, 0x33221188),                 # bytes 3 of 4 and 0 to 2
+        ld_dyn(I32_LOAD, 65530, 0x22118877),
+        ld_dyn(I32_LOAD, 65529, 0x11887766),
+        ld_dyn(I32_LOAD, 65528, 0x44332211, offset=4),       # the last word
+        ld_dyn(I32_LOAD, 65527, 0x33221188, offset=4),       # byte 65531
+        # AA BB CC DD in bytes 65531 to 65534. Byte 65535 keeps its 44.
+        st_dyn(I32_STORE, 65531, 0xDDCCBBAA - 2**32) + ld_dyn(I32_LOAD, 65532, 0x44DDCCBB),
+        # Byte 65527 is 0.
+        ld_dyn(I64_LOAD, 65527, 0xDDCCBBAA_77665500 - 2**64),
+        ld_dyn(I32_LOAD, 65532, 0)]
 
 
 # i64 shifts and rotates: (a, operation, count, result). V is
@@ -1002,6 +1029,45 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         exports(("main", 0, 0)),
         code((1, i32_const(65532) + local_set(0) + local_get(0) + mem(I32_LOAD, offset=4)))),
      "", 2),
+    # Loads and stores of 4 and 8 bytes at the end of the memory, at
+    # addresses that are not constants (memend_checks). With bounds checks,
+    # without them, and with a memory that may grow to 2 pages but has not.
+    ("memend", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((2, bits(0, *memend_checks())))), "", 0x3FE),
+    ("memend_unchecked", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((2, bits(0, *memend_checks())))), "", 0x3FE),
+    ("memend_grow", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((2, bits(0, *memend_checks())))), "", 0x3FE),
+    # An i32 at 65533 passes the end of the memory by a byte. The base is
+    # not a multiple of 4, so the compare of base ROR 2 fails, and the stub
+    # finds that the load is out of bounds.
+    ("oobword", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, i32_const(65533) + local_set(0) + local_get(0) + mem(I32_LOAD)))),
+     "", 2),
+    # An i64 at 65532, a multiple of 4, passes the end by 4 bytes.
+    ("oobword8", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, i32_const(65532) + local_set(0) + local_get(0) + mem(I64_LOAD) + WRAP))),
+     "", 2),
     # A memory of 0 pages: every access traps.
     ("nomemory", module(
         types(MAIN_TYPE),
@@ -1486,6 +1552,30 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
             MEMORY_SIZE + i32_const(2) + EQ)))),
      "_dirty MOVE @___wasm_memory+16384, 77\n MOVE @___wasm_memory+49151, 99\n"
      " MOVE R15, @R13++\n", 0x1FFE),
+    # The same with addresses in local 1, after memory.grow 1. The word at
+    # 131068 is the last one of page 1. 77 is 0x4D.
+    ("growdyn", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((2, bits(0,
+            i32_const(1) + MEMORY_GROW + i32_const(1) + EQ,
+            st_dyn(I32_STORE, 131068, 77) + ld_dyn(I32_LOAD, 131068, 77),
+            ld_dyn(I64_LOAD, 131064, 77 << 32),
+            ld_dyn(I32_LOAD, 131064, 77, offset=4),
+            ld_dyn(I32_LOAD, 131067, 77 << 8),
+            ld_dyn(I32_LOAD, 131068, 0))))),
+     "", 0x3E),
+    # Before memory.grow, the load at 65532 + 4, in page 1, traps. The base
+    # is in a local, so the check compares base ROR 2 + 1 with W.wlimit4.
+    ("growdyntrap", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, i32_const(65532) + local_set(0) + local_get(0) + mem(I32_LOAD, offset=4)))),
+     "", 2),
     # Page 1 is reserved, but not part of the memory until it grows, so a
     # load from it traps.
     ("growtrap", module(

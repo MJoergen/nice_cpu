@@ -213,7 +213,8 @@ instructions (24% fewer).
   code 2. `memory.grow` returns the old size, or -1 if the memory would
   pass its cap (`--memory-pages`), and sets the new pages to 0. Below the
   cap, the size is a word, `W.pages`, and the bounds checks compare with
-  words that `memory.grow` keeps up to date, `W.limit0` to `W.limit8`. At
+  words that `memory.grow` keeps up to date, `W.limit0` to `W.limit8`,
+  `W.wlimit4`, and `W.wlimit8`. At
   the cap, they are constants, and only growing by 0 pages succeeds.
 - **Bulk memory:** `memory.fill` and `memory.copy`, whose ranges may
   overlap. Both check their ranges before they write a byte, and trap with
@@ -389,6 +390,25 @@ such as `W.load1u` or `W.store2`. A helper takes the byte address in R1.
 It returns a loaded value in R1, or R1 and R2, and takes a value to
 store in R2, or R2 and R3. nicewasm emits each helper once, if a
 function uses it.
+
+With bounds checks, an access of 4 or 8 bytes whose offset is a
+multiple of 4 takes a shorter path. `ROR t, base, 2` gives base / 4 if
+base is a multiple of 4, and 2^30 or more if it is not, which is past
+the last word of any memory. So one unsigned compare of t checks the
+bounds and the alignment at once, and the offset goes into the word
+operand. An `i32.load` at offset 4 in a memory of one page is:
+
+    ROR     R2, R1, 2
+    SUB[M]  R0, R2, 16383
+    ?!C MOVE R15, W.f0.L1
+    MOVE    R1, @___wasm_memory+1[R2]
+
+If the compare fails, a stub after the epilogue gets the base back with
+`ROL`, traps if the access is out of bounds, and else calls the helper
+and jumps back. If the memory can grow, t is compared with a word that
+`memory.grow` keeps up to date, `W.wlimit4` or `W.wlimit8`. An offset
+is then added to t first, and the code jumps to the stub if the sum
+passes 2^32.
 
 In a helper, the value is shifted together from, or split across, two
 words, or three for an unaligned `i64`. A store that changes only part

@@ -31,7 +31,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Dict, FrozenSet, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Tuple, Union
 
 I32, I64, F32, F64 = 0x7F, 0x7E, 0x7D, 0x7C
 TYPE_NAMES = {I32: "i32", I64: "i64", F32: "f32", F64: "f64", 0x7B: "v128",
@@ -994,6 +994,9 @@ HELPERS: Dict[str, List[str]] = {
         instr("SUB", "@W.limit2", "R2", "1"),
         instr("SUB", "@W.limit4", "R2", "3"),
         instr("SUB", "@W.limit8", "R2", "7"),
+        instr("SHR", "R4", "R2", "2"),                     # the new size in words
+        instr("MOVE", "@W.wlimit4", "R4"),
+        instr("SUB", "@W.wlimit8", "R4", "1"),
         instr("MOVE", "R1", "R3"),
         instr("MOVE", "R15", "@R13++"),
     ],
@@ -1961,11 +1964,12 @@ class Translator:
                 out += [instr(".DAT", w) for w in words(g.init, g.type)]
         if self.growable:
             assert self.m.memory_pages is not None
-            out += ["", "; The memory's size in pages, and for each n the first byte address",
-                    "; at which n bytes do not fit, or 0 if none do. W.grow keeps them",
-                    "; up to date.", "W.pages", instr(".DAT", str(self.m.memory_pages))]
-            for n, v in self.limits(self.m.memory_pages):
-                out += [f"W.limit{n}", instr(".DAT", str(v))]
+            out += ["", "; The memory's size in pages, for each n the first byte address at",
+                    "; which n bytes do not fit, or 0 if none do, and for 4 and 8 the same",
+                    "; as a word index. W.grow keeps them up to date.",
+                    "W.pages", instr(".DAT", str(self.m.memory_pages))]
+            for name, v in self.limits(self.m.memory_pages):
+                out += [f"W.{name}", instr(".DAT", str(v))]
         if self.m.memory_pages is not None:
             pages = self.m.memory_pages
             if self.library:
@@ -1991,12 +1995,16 @@ class Translator:
         return out
 
     @staticmethod
-    def limits(pages: int) -> List[Tuple[int, int]]:
-        """For n = 0 (memory.fill and memory.copy, which check the end of a
-        range), 1, 2, 4, and 8: the first byte address at which n bytes do
-        not fit in a memory of the given pages, or 0 if none do."""
+    def limits(pages: int) -> List[Tuple[str, int]]:
+        """The words that the bounds checks compare with when the memory
+        can grow, and their values for a memory of the given pages. For n
+        = 0 (memory.fill and memory.copy, which check the end of a range),
+        1, 2, 4, and 8, limitN is the first byte address at which n bytes
+        do not fit, or 0 if none do. For n = 4 and 8, wlimitN is the same
+        as a word index: the first word at which n bytes do not fit."""
         size = pages * WORDS_PER_PAGE * 4
-        return [(n, max(size - n + 1, 0)) for n in (0, 1, 2, 4, 8)]
+        return ([(f"limit{n}", max(size - n + 1, 0)) for n in (0, 1, 2, 4, 8)]
+                + [(f"wlimit{n}", max((size - n) // 4 + 1, 0)) for n in (4, 8)])
 
     def start(self, runs: List[Tuple[int, Union[int, List[int]]]]) -> List[str]:
         """___wasm_start, which a program's module always has (§9.4)."""
@@ -2022,8 +2030,8 @@ class Translator:
             # Back to the initial size, in case the program starts again.
             assert self.m.memory_pages is not None
             out.append(instr("MOVE", "@W.pages", str(self.m.memory_pages)))
-            out += [instr("MOVE", f"@W.limit{n}", str(v))
-                    for n, v in self.limits(self.m.memory_pages)]
+            out += [instr("MOVE", f"@W.{name}", str(v))
+                    for name, v in self.limits(self.m.memory_pages)]
         for idx in (self.m.start, self.ctors):
             if idx is not None:
                 out.append(instr("ADD", "@--R13", "2", "R15"))
@@ -2533,11 +2541,23 @@ class FunctionTranslator:
             self.emit("ADD", a, base, words(offset, I32)[0])
         return None, a
 
+    def mem_word(self, k: int, index: Optional[str] = None) -> str:
+        """The operand for word k of the memory, plus the word index in the
+        register index, if given."""
+        return f"@{self.t.mem}" + (f"+{k}" if k else "") + (f"[{index}]" if index else "")
+
+    @staticmethod
+    def expand(aligned: List[Tuple[str, ...]], word: Callable[[int], str]) -> List[Tuple[str, ...]]:
+        """The aligned instructions of an access, with %0 and %1 in their
+        operands replaced by the operands of its first and second word."""
+        return [tuple(o.replace("%0", word(0)).replace("%1", word(1)) for o in ins)
+                for ins in aligned]
+
     def fast_path(self, helper: str, a: str, args: List[str], results: List[str],
                   aligned: List[Tuple[str, ...]]) -> None:
         """The access of 4 or 8 bytes at the byte address a. If a is at a
-        multiple of 4, the aligned instructions do it, with %w in their
-        operands for the word index. Else a stub after the epilogue calls
+        multiple of 4, the aligned instructions do it, with %0 and %1 in
+        their operands for its words. Else a stub after the epilogue calls
         the helper with a in R1 and args from R2 up, moves its results from
         R1 up, and jumps back."""
         stub, back = self.new_label(), self.new_label()
@@ -2545,12 +2565,69 @@ class FunctionTranslator:
         self.emit("?!Z MOVE", "R15", stub)
         w = self.new_vreg()
         self.emit("SHR", w, a, "2")                       # word index
-        for mnemonic, *ops in aligned:
-            self.emit(mnemonic, *(o.replace("%w", w) for o in ops))
+        for mnemonic, *ops in self.expand(aligned, lambda k: self.mem_word(k, w)):
+            self.emit(mnemonic, *ops)
         self.label(back)
         self.label(stub, stub=True)
         self.call_helper(helper, [a] + args, len(results), stub=True)
-        self.move(results, [f"R{k + 1}" for k in range(len(results))], stub=True)
+        self.move(results, [f"R{j + 1}" for j in range(len(results))], stub=True)
+        self.emit("MOVE", "R15", back, stub=True)
+
+    def word_access(self, base: str, offset: int, n: int, helper: str, args: List[str],
+                    results: List[str], aligned: List[Tuple[str, ...]]) -> None:
+        """With bounds checks, the access of 4 or 8 bytes at base + offset,
+        where base is not a constant and offset is a multiple of 4. The
+        word index t = base ROR 2 is base / 4 if base is a multiple of 4,
+        and 2^30 or more if it is not, which is past every word of the
+        memory. So one unsigned compare of t checks both the bounds and
+        the alignment, and the aligned instructions (fast_path) do the
+        access with the word index in t. If the compare fails, a stub
+        after the epilogue gets base back from t, traps with code 2 if the
+        access is out of bounds, and else calls the helper, as fast_path
+        does."""
+        assert self.t.mem_bytes is not None
+        start, slow, back = self.new_label(), self.new_label(), self.new_label()
+        self.label(start)
+        limit = (self.t.mem_bytes - offset - n) // 4 + 1  # the first t at which n bytes do not fit
+        if limit <= 0 and not self.t.growable:
+            # No n bytes fit there.
+            self.emit("MOVE", "R1", "2")
+            self.emit("MOVE", "R2", start)
+            self.emit("MOVE", "R15", "@___wasm_trap_vector")
+            return
+        t = self.new_vreg()
+        self.emit("ROR", t, base, "2")
+        k = offset // 4
+        u = t
+        if self.t.growable:
+            # Words that memory.grow keeps up to date. With k, t + k
+            # passes 2^32 only if base is not a multiple of 4.
+            if k:
+                u = self.new_vreg()
+                self.emit("ADD[M]", u, t, str(k))
+                self.emit("?C MOVE", "R15", slow)
+                k = 0
+            self.emit("SUB[M]", "R0", u, f"@W.wlimit{n}")
+        else:
+            self.emit("SUB[M]", "R0", u, str(limit))
+        self.emit("?!C MOVE", "R15", slow)
+        for mnemonic, *ops in self.expand(aligned, lambda j: self.mem_word(k + j, u)):
+            self.emit(mnemonic, *ops)
+        self.label(back)
+        trap = self.trap_stub(2, start)
+        self.label(slow, stub=True)
+        a = self.new_vreg()
+        self.emit("ROL", a, t, "2", stub=True)            # base
+        if offset:
+            a2 = self.new_vreg()
+            self.emit("ADD[M]", a2, a, words(offset, I32)[0], stub=True)
+            self.emit("?C MOVE", "R15", trap, stub=True)  # base + offset passes 2^32
+            a = a2
+        size_limit = f"@W.limit{n}" if self.t.growable else str(self.t.mem_bytes - n + 1)
+        self.emit("SUB[M]", "R0", a, size_limit, stub=True)
+        self.emit("?!C MOVE", "R15", trap, stub=True)
+        self.call_helper(helper, [a] + args, len(results), stub=True)
+        self.move(results, [f"R{j + 1}" for j in range(len(results))], stub=True)
         self.emit("MOVE", "R15", back, stub=True)
 
     def trunc_check(self, src_t: int, dst_t: int, pos_limit: int, neg_limit: int, at: int,
@@ -2739,9 +2816,16 @@ class FunctionTranslator:
         const = self.const_value(1)
         (base,) = self.pop([I32], at, what)
         dest = self.push(t)
+        helper = f"W.load{n}" + ("" if n >= 4 else "s" if signed else "u")
+        res = dest if n == 8 else [dest[0] if len(dest) == 1 else self.new_vreg()]
+        aligned: List[Tuple[str, ...]] = [("MOVE", w, f"%{k}") for k, w in enumerate(res)]
+        if n >= 4 and const is None and self.t.checks and offset % 4 == 0:
+            self.word_access(base[0], offset, n, helper, [], res, aligned)
+            if len(dest) == 2 and n == 4:
+                self.extend(dest, res[0], signed)
+            return
         addr, a = self.address(base[0], offset, n, const)
         mem = f"@{self.t.mem}"
-        helper = f"W.load{n}" + ("" if n >= 4 else "s" if signed else "u")
         if addr is not None and n >= 4 and addr % 4 == 0:
             # A known address in the memory, at a multiple of 4.
             word = f"{mem}+{addr // 4}"
@@ -2753,15 +2837,8 @@ class FunctionTranslator:
         else:
             if addr is not None:
                 a = str(addr)
-            if n == 8:
-                res = dest
-            else:
-                res = [dest[0] if len(dest) == 1 else self.new_vreg()]
-            if addr is None and n == 8:
-                self.fast_path(helper, a, [], res, [("MOVE", res[0], f"{mem}[%w]"),
-                                                    ("MOVE", res[1], f"{mem}+1[%w]")])
-            elif addr is None and n == 4:
-                self.fast_path(helper, a, [], res, [("MOVE", res[0], f"{mem}[%w]")])
+            if addr is None and n >= 4:
+                self.fast_path(helper, a, [], res, aligned)
             else:
                 self.call_helper(helper, [a], len(res))
                 self.move(res, [f"R{k + 1}" for k in range(len(res))])
@@ -2771,7 +2848,11 @@ class FunctionTranslator:
         if len(dest) == 1:
             self.emit("MOVE", dest[0], src)
             return
-        # Extend to 64 bits. A helper extends a value of 1 or 2 bytes to 32.
+        self.extend(dest, src, signed)
+
+    def extend(self, dest: List[str], src: str, signed: bool) -> None:
+        """Extends the 32-bit value src to the i64 in dest. A helper extends
+        a value of 1 or 2 bytes to 32."""
         self.emit("MOVE[M]" if signed else "MOVE", dest[0], src)
         self.emit("MOVE", dest[1], "0")
         if signed:
@@ -2783,17 +2864,19 @@ class FunctionTranslator:
         helper (store_helper) with the value in R2, and R3 for n = 8."""
         const = self.const_value(2)
         base, value = self.pop([I32, t], at, what)
+        words_n = 2 if n == 8 else 1
+        aligned: List[Tuple[str, ...]] = [("MOVE", f"%{k}", value[k]) for k in range(words_n)]
+        if n >= 4 and const is None and self.t.checks and offset % 4 == 0:
+            self.word_access(base[0], offset, n, f"W.store{n}", value[:words_n], [], aligned)
+            return
         addr, a = self.address(base[0], offset, n, const)
         mem = f"@{self.t.mem}"
-        words_n = 2 if n == 8 else 1
         if addr is not None and n >= 4 and addr % 4 == 0:
             for k in range(words_n):
                 self.emit("MOVE", f"{mem}+{addr // 4 + k}", value[k])
             return
         if addr is None and n >= 4:
-            self.fast_path(f"W.store{n}", a, value[:words_n], [],
-                           [("MOVE", f"{mem}" + (f"+{k}" if k else "") + "[%w]", value[k])
-                            for k in range(words_n)])
+            self.fast_path(f"W.store{n}", a, value[:words_n], [], aligned)
             return
         if addr is not None:
             a = str(addr)

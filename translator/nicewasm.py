@@ -2794,6 +2794,8 @@ class FunctionTranslator:
         self.emit("ADD", "@--R13", "2", "R15", stub=stub)
         j = self.emit("MOVE", "R15", target, stub=stub)
         j.kind, j.targets, j.uses, j.defs = "call", [], frozenset(uses), defs
+        if not stub:
+            self.flag_val = None  # the call changes the flags (§9.3)
 
     def call(self, label: str, ft: FuncType, at: int, what: str,
              fwd: Optional[Tuple[List[str], Optional[Deferred]]] = None,

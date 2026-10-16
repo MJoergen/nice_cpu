@@ -13,8 +13,9 @@ same seed always gives the same module.
 
 A module has four functions: main, f(i32, i64, i32, i32) -> i32, whose
 last argument goes on the stack, g(i64, i32) -> i64, and h(i32, i32) ->
-i32. Each has more locals than nicewasm has registers for them, i32 and
-i64, so some live in R7-R11 and some in the frame. The bodies use blocks,
+i32. Each has 8 to 13 locals, i32 and i64, so that with the values on
+the operand stack some live in registers and some are spilled to the
+frame. The bodies use blocks,
 loops, if and else, br, br_if, and br_table with and without values,
 select, calls and call_indirect, every integer operation and comparison,
 eqz before if and br_if, i64 shifts by constants and by variables,
@@ -22,7 +23,7 @@ divisions with nonzero divisors, loads and stores of every width at
 constant and at dynamic addresses, and local.set and local.tee of locals
 whose old value is still on the operand stack. That covers the rules for
 deferred values, fused comparisons, forwarded results, and register
-locals in README.md. main returns a fold of every local and of 18 memory
+allocation in README.md. main returns a fold of every local and of 18 memory
 words, so a wrong value anywhere shows. Two locals of each function are
 loop counters that nothing else touches, so every loop ends.
 

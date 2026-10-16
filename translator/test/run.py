@@ -446,8 +446,9 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # 5 exactly, as 0.5 * (5 + 25 / 5) = 5, so 500. -7.9 < -8 is 0.
     # 2750 + 12 + 4 + 500 = 3266.
     ("floats_c", "floats", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 3266),
-    # Declared locals start at 0. dirty sets its 3 locals to 0x55, and clean
-    # gets the same frame words, so without zeroing it returns 0x55 * 3 + 7.
+    # Declared locals start at 0. dirty sets its 3 locals to 0x55, which
+    # may leave it in the registers that clean gets, so without zeroing it
+    # could return 0x55 * 3 + 7.
     ("locals", module(
         types(MAIN_TYPE),
         funcs(0, 0, 0),
@@ -467,6 +468,26 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
               + local_get(4) + ADD + local_get(5) + SUB),
              (0, i32_const(1000) + i32_const(200) + i32_const(30) + i32_const(4)
               + i32_const(50000) + i32_const(600000) + call(0)))), "", 0xFFF79ECA),
+    # More values live across calls than there are registers that calls
+    # preserve, so some are spilled to frame words. Local k is 1 << k.
+    # inc(5) = 6, inc(7) through the table = 8, and g(locals 14 to 19) =
+    # 2^14 - 2^15 + 2^16 - 2^17 + 2^18 - 2^19 = -344064, with the last two
+    # arguments on the stack. Then each of the 20 locals that still has its
+    # value adds 1: 6 + 8 - 344064 + 20 = -344030 = 0xFFFAC022.
+    ("spills", module(
+        types(MAIN_TYPE, ([I32], [I32]), ([I32] * 6, [I32])),
+        funcs(1, 2, 0),
+        table(1),
+        exports(("main", 0, 2)),
+        elems((0, [0])),
+        code((0, local_get(0) + i32_const(1) + ADD),
+             (0, local_get(0) + local_get(1) + SUB + local_get(2) + ADD + local_get(3) + SUB
+              + local_get(4) + ADD + local_get(5) + SUB),
+             (20, b"".join(i32_const(1 << k) + local_set(k) for k in range(20))
+              + i32_const(5) + call(0) + i32_const(7) + i32_const(0) + call_indirect(1) + ADD
+              + b"".join(local_get(k) for k in range(14, 20)) + call(1) + ADD
+              + b"".join(local_get(k) + i32_const(1 << k) + EQ + ADD for k in range(20))))),
+     "", 0xFFFAC022),
     # 5, tee keeps it on the stack: 5 + 5 = 10. set 3: 10 + 3 = 13. The
     # 99 is dropped, and nop does nothing.
     ("tee", module(

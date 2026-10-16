@@ -37,12 +37,12 @@ TYPE_NAMES = {I32: "i32", I64: "i64", F32: "f32", F64: "f64", 0x7B: "v128",
 
 SIZES = {I32: 1, I64: 2, F32: 1, F64: 2}  # words per value of each supported type
 
-# The registers that the allocator gives to values, in order of preference.
-# A call may change CALLER_SAVED, and a function saves the CALLEE_SAVED
-# ones that it uses (§9.3). R12 is the frame pointer.
-ALLOC_REGS = [f"R{k}" for k in range(1, 12)]
+# The registers that the allocator gives to values. A call may change
+# CALLER_SAVED, and a function saves the CALLEE_SAVED ones that it uses
+# (§9.3). There is no frame pointer, so R12 is one of them.
+ALLOC_REGS = [f"R{k}" for k in range(1, 13)]
 CALLER_SAVED = frozenset(f"R{k}" for k in range(1, 7))
-CALLEE_SAVED = [f"R{k}" for k in range(7, 12)]
+CALLEE_SAVED = [f"R{k}" for k in range(7, 13)]
 
 WORDS_PER_PAGE = 16384  # 65536 bytes, four to a word
 ZERO_UNROLL = 16        # words cleared per pass of ___wasm_start's loops
@@ -1661,6 +1661,46 @@ def tidy(items: List[Item]) -> List[Item]:
                     and falls_to(i + 1, it.targets[0]))]
 
 
+def frame_words(items: List[Item], n_slots: int, n_saved: int) -> None:
+    """Replaces the frame words %sN of spilled registers and %aN of stack
+    arguments by operands relative to SP. The frame has no frame pointer.
+    From SP up, after the prologue, it holds the n_slots frame words, the
+    n_saved callee-saved registers, the return address, and the stack
+    arguments (§9.3). SP moves only in a call sequence: a push of a stack
+    argument or of the return address takes it down a word, and the
+    return and the ADD R13, R13, n after the call take it back up. depth
+    counts the words pushed so far. All sources of an instruction see SP
+    as it was before the instruction (§5), so MOVE @--R13, @%s0 reads the
+    frame word at the old SP."""
+    depth = 0
+
+    def word(mo: re.Match[str]) -> str:
+        k = int(mo.group(2))
+        if mo.group(1) == "a":
+            k += n_slots + n_saved + 1
+        return f"@{k + depth}[R13]"
+
+    for it in items:
+        if isinstance(it, Label):
+            assert depth == 0, it.name
+        if not isinstance(it, Ins):
+            continue
+        it.ops = [FRAME_WORD.sub(word, o) for o in it.ops]
+        if it.op == "ADD" and it.ops[:2] == ["R13", "R13"]:
+            depth -= int(it.ops[2])
+            continue
+        for o in it.ops:
+            if o == "@--R13":
+                depth += 1
+            elif "R13" in o:
+                assert operand_reg(o)[0] in ("mem", ""), it.text()
+        if it.kind == "call":
+            depth -= 1  # the return pops the return address
+        elif it.op == "RET":
+            assert depth == 0
+        assert depth >= 0, it.text()
+
+
 def fix_calls(items: List[Item]) -> None:
     """Sets what each call's ADD @--R13, n, R15 adds to the address after
     it: the size in words of the jump that follows (§9.3), which depends
@@ -3182,41 +3222,25 @@ class FunctionTranslator:
                           ALLOC_REGS, CALLEE_SAVED)
         items = tidy(alloc.run())
         saved = [r for r in CALLEE_SAVED if r in alloc.used]
-        # The frame, from FP down: the saved registers, then the frame
-        # words of spilled registers. The stack arguments are above the
-        # return address.
-        n_saved, n_slots = len(saved), alloc.n_slots
-
-        def frame_word(mo: re.Match[str]) -> str:
-            k = int(mo.group(2))
-            return f"@{-(n_saved + 1 + k) if mo.group(1) == 's' else 2 + k}[R12]"
-
+        n_slots = alloc.n_slots
         name = printable(self.t.m.names.get(self.idx, ""))
         out = [f"; Function {self.idx}" + (f": {name}" if name else "")]
         out += self.t.labels.get(self.idx, [])
         out.append(f"{self.t.prefix}f{self.idx}")
-        out.append(instr("MOVE", "@--R13", "R12"))
-        out.append(instr("MOVE", "R12", "R13"))
         for r in saved:
             out.append(instr("MOVE", "@--R13", r))
         if n_slots:
             out.append(instr("SUB", "R13", "R13", str(n_slots)))
-        for it in items:
-            if isinstance(it, Ins):
-                it.ops = [FRAME_WORD.sub(frame_word, o) for o in it.ops]
+        frame_words(items, n_slots, len(saved))
         fix_calls(items)
         for it in items:
             if not (isinstance(it, Ins) and it.op == "RET"):
                 out += render([it])
                 continue
-            if saved:
-                # Pop the saved registers, last saved first.
-                out.append(instr("SUB", "R13", "R12", str(n_saved)))
-                for r in reversed(saved):
-                    out.append(instr("MOVE", r, "@R13++"))
-            else:
-                out.append(instr("MOVE", "R13", "R12"))
-            out.append(instr("MOVE", "R12", "@R13++"))
+            if n_slots:
+                out.append(instr("ADD", "R13", "R13", str(n_slots)))
+            for r in reversed(saved):
+                out.append(instr("MOVE", r, "@R13++"))  # last saved first
             out.append(instr("MOVE", "R15", "@R13++"))
         return out
 

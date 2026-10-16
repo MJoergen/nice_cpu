@@ -91,10 +91,10 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
     `TIMER_COUNT` then sees the ticks of every older instruction, as in
     the emulator, whose timer counts steps.
 13. **A timer request may be taken late too**, like any other. `tb_core`
-    does not log the timer's requests, so `irq_compare.py` cannot allow
-    for it. It would show as a difference from the emulator. Only the
-    timer probes start the timer, and they show none. The runtime's and
-    the translator's programs of `make programs` do not use it either.
+    logs the timer's requests as IRQs, and `irq_compare.py` runs the
+    emulator with its option `--no-timer-irq`, which keeps the timer
+    counting but drops its requests, so that the log's requests stand in
+    for them (**Outside hdl/:** the option is new in the emulator).
 
 ## Formal checks
 

@@ -43,7 +43,11 @@
 -- takes every request of the kind raised before, as they merge. When the
 -- core then reports the interrupt entry, it writes "taken S nmi V" or
 -- "taken S irq V", where S is the number of that step, counting from 0, as
--- the trace does. An IRQ that only the timer raised is not in the log.
+-- the trace does. The timer's requests are in the log too, as IRQs: each
+-- one that it raises while none of its own waits, with S the number of
+-- ticks before, which is the step the emulator's timer raises it for, and
+-- V the vector the core will take with it. test/irq_compare.py then runs
+-- the emulator with --no-timer-irq, so that its timer raises none itself.
 -- test/irq_compare.py reads the log, for cores that take a request later
 -- than the step it was raised for (MICROARCH.md §9).
 --
@@ -462,6 +466,9 @@ begin
       -- The cycles until each request is raised, or -1
       type     t_waits is array (C_REQUESTS'range) of integer;
       variable wait_v : t_waits := (others => -1);
+      -- The timer's ticks, and whether its last request still waits
+      variable ticks_v       : natural := 0;
+      variable timer_waits_v : boolean := false;
 
       procedure log(text : string) is
          variable l : line;
@@ -499,8 +506,22 @@ begin
             end if;
             nmi_valid <= '0';
          end if;
-         if irq_ready = '1' then
+         -- A new request of the timer. It merges with one of p_intr that
+         -- waits, and the core then takes that one's vector.
+         if timer_valid = '1' and not timer_waits_v then
             if irq_valid = '1' then
+               log("raised", ticks_v, false, irq_vector);
+            else
+               log("raised", ticks_v, false, timer_vector);
+            end if;
+         end if;
+         timer_waits_v := timer_valid = '1' and irq_ready = '0';
+         if tick = '1' then
+            ticks_v := ticks_v + 1;
+         end if;
+
+         if irq_ready = '1' then
+            if irq_valid = '1' or timer_valid = '1' then
                log("accepted irq");
                irq_taken_v := true;
             end if;

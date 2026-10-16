@@ -68,6 +68,11 @@ INTR_after = --nmi 3:1 --nmi 10:1
 INTR_start = --nmi 0:3
 INTR_perf  = --nmi 3:0x41
 INTR_perf_stall = $(INTR_perf)
+# The runs whose program starts the timer, which raises requests too.
+TIMER_timer       = yes
+TIMER_timer_stall = yes
+# A run has interrupt requests from the options or from the timer.
+requests = $(INTR_$(1))$(TIMER_$(1))
 # The console input of a run, a file, as the emulator's --input takes it.
 INPUT_input = ../emulator/test/input.txt
 
@@ -75,17 +80,18 @@ INPUT_input = ../emulator/test/input.txt
 define check_core
 	@rm -f $(BUILD)/core_$(1).intr
 	@($(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=../$(2) -gG_TRACE_FILE=core_$(1).out \
-	  $(if $(INTR_$(1)),"-gG_INTERRUPTS=$(INTR_$(1))" -gG_INTR_LOG=core_$(1).intr) \
+	  $(if $(INTR_$(1)),"-gG_INTERRUPTS=$(INTR_$(1))") \
+	  $(if $(call requests,$(1)),-gG_INTR_LOG=core_$(1).intr) \
 	  $(if $(INPUT_$(1)),-gG_INPUT_FILE=../$(INPUT_$(1))) \
 	  $(3) > core_$(1).log 2>&1); echo "exit $$?" >> $(BUILD)/core_$(1).out
 	@$(EMU) -t $(INTR_$(1)) $(if $(INPUT_$(1)),--input $(INPUT_$(1))) $(2) < /dev/null \
 	  > $(BUILD)/core_$(1).expected; \
 	  echo "exit $$?" >> $(BUILD)/core_$(1).expected
-	$(if $(and $(INTR_$(1)),$(IRQ_LATE)),,@if cmp -s $(BUILD)/core_$(1).expected $(BUILD)/core_$(1).out; \
+	$(if $(and $(call requests,$(1)),$(IRQ_LATE)),,@if cmp -s $(BUILD)/core_$(1).expected $(BUILD)/core_$(1).out; \
 	then echo "PASS $(CORE) $(1)"; \
 	else echo "FAIL $(CORE) $(1)"; cat $(BUILD)/core_$(1).log; \
 	  diff $(BUILD)/core_$(1).expected $(BUILD)/core_$(1).out | head -20; exit 1; fi)
-	$(if $(INTR_$(1)),@$(IRQ_COMPARE) --name $(1) $(2) $(BUILD)/core_$(1).out $(BUILD)/core_$(1).intr)
+	$(if $(call requests,$(1)),@$(IRQ_COMPARE) --name $(1) $(2) $(BUILD)/core_$(1).out $(BUILD)/core_$(1).intr)
 
 endef
 

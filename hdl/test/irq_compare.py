@@ -9,7 +9,9 @@ G_INTR_LOG. EMULATOR_OPTIONS go to the emulator as they are, for example
 --no-cycle-counter or --input FILE.
 
 The emulator raises a request before a given step and takes it at the
-first step that ISA.md §7.1 allows. The pipelined core may take it later,
+first step that ISA.md §7.1 allows. The log holds the requests of the
+timer too, so the emulator runs with --no-timer-irq, and its timer raises
+none itself. The pipelined core may take it later,
 after an instruction that had already issued a data read (MICROARCH.md §6),
 so the steps of the requests alone do not predict its trace (MICROARCH.md
 §9). This script reads from the log where the core took each request
@@ -126,7 +128,7 @@ def check(emu: str, binfile: str, core_output: str, log: str, emu_options: list[
           max_delay: int = 0, read_delay: bool = False) -> list[str]:
     """The problems with a core's run, or none."""
     options, takes, problems = infer(log)
-    expected = run_emulator(emu, binfile, [*emu_options, *options])
+    expected = run_emulator(emu, binfile, [*emu_options, "--no-timer-irq", *options])
     diff = difference(expected, core_output)
     if diff is not None:
         problems.append(f"with {' '.join(options)}: {diff}")
@@ -145,7 +147,7 @@ def check(emu: str, binfile: str, core_output: str, log: str, emu_options: list[
         # raised.
         others = [o for j, u in enumerate(takes) if j != i
                   for o in (f"--{u.kind}", f"{u.step}:{u.vector}")]
-        early = [*emu_options, *others, f"--{t.kind}", f"{t.raised}:{t.vector_raised}",
+        early = [*emu_options, "--no-timer-irq", *others, f"--{t.kind}", f"{t.raised}:{t.vector_raised}",
                  "-n", str(limit)]
         out = run_emulator(emu, binfile, early)
         pend = re.search(r"^Pending:(.*)$", out, re.M)

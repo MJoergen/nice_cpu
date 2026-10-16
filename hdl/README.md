@@ -377,9 +377,13 @@ With the generic `G_INTR_LOG`, `tb_core` writes an interrupt log:
 `raised S nmi V` when it raises a request after S steps, `accepted nmi`
 when the core takes it with `ready`, which takes every request of the kind
 raised before, and `taken S nmi V` when the core reports the interrupt
-entry as step S, counting from 0. The same goes for `irq`, except that an
-IRQ that only the timer raised is not logged, as the emulator raises the
-timer's requests itself.
+entry as step S, counting from 0. The same goes for `irq`. The timer's
+requests are IRQs in the log too: `raised S irq V` when the timer raises
+one while none of its own waits, with S its ticks so far, which is the
+step the emulator's timer raises it for. `irq_compare.py` runs the
+emulator with `--no-timer-irq`, so that the log's requests stand in for
+those of its timer, and a core may take a timer request late like any
+other. `make test` writes the log for the runs of `timer.nasm` too.
 
 `test/irq_compare.py` reads the log, for a core that may take a request
 later than the step it was raised for, as the pipelined core may

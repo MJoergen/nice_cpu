@@ -55,12 +55,6 @@ has TODO or FIXME comments.
     word that a store changed, or after an interrupt that a write of VBASE
     sent astray. `make random` runs one seed at a time; `programs.py`
     could run them in parallel.
-- **The timer's requests in the interrupt log.** `hdl/test/tb_core.vhd`
-  does not log the requests that the timer raises, so
-  `hdl/test/irq_compare.py` cannot allow for one that the pipelined core
-  takes late, after an instruction with a data read (MICROARCH.md §6). It
-  would show as a difference from the emulator
-  ([hdl/ASSUMPTIONS.md](hdl/ASSUMPTIONS.md), item 13).
 - **The system around the core** (MICROARCH.md §8): dual-port RAM, the bus
   decoders, a default slave that reads 0 and drops writes, and the console
   UART at `0xFFFFFF00`, with generics for the memory map. The data bus

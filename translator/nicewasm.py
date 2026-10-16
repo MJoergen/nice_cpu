@@ -1060,6 +1060,22 @@ for _op in ("shl", "shr_u", "shr_s", "rotl", "rotr"):
 for _n in (4, 8):
     HELPERS[f"W.store{_n}"] = store_helper(_n)
     HELPERS[f"W.load{_n}"] = load_helper(_n)
+for _n in (4, 8):
+    for _op in ("load", "store"):
+        HELPERS[f"W.c{_op}{_n}"] = [
+            f"; W.c{_op}{_n}: W.{_op}{_n} at byte address R1 plus the offset in the second",
+            f"; word after the call, if all {_n} bytes are in the memory. Else traps",
+            "; with code 2 and R2 = the first word after the call. Returns after them.",
+            f"W.c{_op}{_n}",
+            instr("MOVE", "R4", "@R13"),                 # the words after the call
+            instr("ADD[M]", "R1", "R1", "@1[R4]"),
+            instr("?C MOVE", "R15", "W.ctrap"),          # passes 2^32
+            instr("SUB[M]", "R0", "R1", f"W.LIMIT{_n}"),
+            instr("?!C MOVE", "R15", "W.ctrap"),
+            instr("ADD", "@R13", "R4", "2"),
+            instr("MOVE", "R15", f"W.{_op}{_n}")]
+HELPERS["W.ctrap"] = ["; W.ctrap: traps with code 2 and R2 = the word at R4.", "W.ctrap",
+                      instr("MOVE", "R2", "@R4"), instr("MOVE", "R15", "W.trap2")]
 for _code in range(1, 8):
     HELPERS[f"W.trap{_code}"] = [f"; W.trap{_code}: traps with code {_code}, and R2 as it is.",
                                  f"W.trap{_code}", instr("MOVE", "R1", str(_code)),
@@ -1069,6 +1085,13 @@ for _code in range(1, 8):
 # up. None uses R7 or above, so values in those survive a call of it.
 HELPER_REGS = {name: frozenset(re.findall(r"\bR(?:1[0-2]|[1-9])\b", "\n".join(lines)))
                for name, lines in HELPERS.items()}
+
+# The helpers that a helper jumps to, which must be emitted with it.
+HELPER_DEPS = {"W.ctrap": ["W.trap2"]}
+for _n in (4, 8):
+    for _op in ("load", "store"):
+        HELPER_DEPS[f"W.c{_op}{_n}"] = [f"W.{_op}{_n}", "W.ctrap", "W.trap2"]
+        HELPER_REGS[f"W.c{_op}{_n}"] |= HELPER_REGS[f"W.{_op}{_n}"]
 assert all(r in CALLER_SAVED for regs in HELPER_REGS.values() for r in regs)
 
 # Tables that the inline code of the loads and stores of 1 and 2 bytes
@@ -2401,8 +2424,13 @@ class Translator:
         for i, code in enumerate(self.m.codes):
             out.append("")
             out += FunctionTranslator(self, n_imports + i, code).run()
+        for name in list(self.helpers):
+            self.helpers.update(HELPER_DEPS.get(name, []))
+        limit = {f"W.LIMIT{n}": f"@W.limit{n}" if self.growable or self.mem_bytes is None
+                 else words(self.mem_bytes - n + 1, I32)[0] for n in (4, 8)}
         for name in sorted(self.helpers):
-            out += [""] + [line.replace("W.CAP", str(self.cap)).replace("W.", self.prefix)
+            out += [""] + [re.sub(r"W\.LIMIT\d", lambda mo: limit[mo.group()], line)
+                           .replace("W.CAP", str(self.cap)).replace("W.", self.prefix)
                            .replace("___wasm_memory", self.mem) for line in HELPERS[name]]
         for name, (what, entries) in TABLES.items():
             if name in self.tables:
@@ -3142,8 +3170,9 @@ class FunctionTranslator:
         compare of t checks both the bounds and the alignment, and the
         aligned instructions (fast_path) do the access with the word index
         in t. If the compare fails, a stub after the epilogue gets base
-        back from t, traps with code 2 if the access is out of bounds, and
-        else calls the helper, as fast_path does. The t of a base that
+        back from t and calls the checked helper, W.cload4 or the like,
+        which traps with code 2 if the access is out of bounds, and else
+        does the access as the helper does. The t of a base that
         word_index knows serves too: a t that may have bits above the word
         index fails the compare. Without bounds checks, an aligned base
         needs no check, but its t must be taken modulo 2^30, since the
@@ -3191,19 +3220,12 @@ class FunctionTranslator:
         last = [self.emit(mnemonic, *ops)
                 for mnemonic, *ops in self.expand(aligned, lambda j: self.mem_word(k + j, u))][-1:]
         self.label(back, keep=True)
-        trap = self.trap_stub(2, start)
         self.label(slow, stub=True)
         a = self.new_vreg()
         self.emit("SHL" if aligned_t else "ROL", a, t, "2", stub=True)  # base
-        if offset:
-            a2 = self.new_vreg()
-            self.emit("ADD[M]", a2, a, words(offset, I32)[0], stub=True)
-            self.emit("?C MOVE", "R15", trap, stub=True)  # base + offset passes 2^32
-            a = a2
-        size_limit = f"@W.limit{n}" if self.t.growable else str(self.t.mem_bytes - n + 1)
-        self.emit("SUB[M]", "R0", a, size_limit, stub=True)
-        self.emit("?!C MOVE", "R15", trap, stub=True)
-        self.call_helper(helper, [a] + args, len(results), stub=True)
+        # The helper checks base + offset, and traps with R2 = start.
+        self.call_helper("W.c" + helper[2:], [a] + args, len(results), stub=True)
+        self.stubs += [instr(".DAT", start), instr(".DAT", words(offset, I32)[0])]
         moves = [self.emit("MOVE", w, f"R{j + 1}", stub=True) for j, w in enumerate(results)]
         self.emit("MOVE", "R15", back, stub=True)
         return last + moves[-1:] if results else []

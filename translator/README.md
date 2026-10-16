@@ -460,8 +460,12 @@ operand. An `i32.load` at offset 4 in a memory of one page is:
     MOVE    R1, @___wasm_memory+1[R2]
 
 If the compare fails, a stub after the epilogue gets the base back with
-`ROL`, traps if the access is out of bounds, and else calls the helper
-and jumps back. If the memory can grow, t is compared with a word that
+`ROL` and calls a helper such as `W.cload4`, which is followed by two
+words: the start of the access code and the offset. The helper adds the
+offset, traps if the access is out of bounds, with R2 the first word,
+else does the access as `W.load4` does, and returns past the two words.
+Then the stub jumps back. Such a stub takes some 10 words, and with the
+check in each stub it took some 20. If the memory can grow, t is compared with a word that
 `memory.grow` keeps up to date, `W.wlimit4` or `W.wlimit8`. An offset
 is then added to t first, and the code jumps to the stub if the sum
 passes 2^32.

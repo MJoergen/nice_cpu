@@ -254,6 +254,7 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "oobdyn": "SUB[M] R0, R1, 65532",
          "oobend": "ROR R1, R1, 2",
          "oobword": "ROR R1, R1, 2",
+         "oobwordwrap": "ROR R1, R1, 2",
          "addrformtrap": "SUB[M] R0, R1, 16384",
          "oobbyte": "SUB[M] R0, R1, 65536",
          "oobhalf": "SUB[M] R0, R1, 65535",
@@ -1398,6 +1399,16 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         memory(1),
         exports(("main", 0, 0)),
         code((1, i32_const(65533) + local_set(0) + local_get(0) + mem(I32_LOAD)))),
+     "", 2),
+    # 0xFFFFFFFC is a multiple of 4, but past the memory, so the compare of
+    # base ROR 2 fails. In the stub, W.cload4 finds that base + 8 passes
+    # 2^32, and traps with R2 at the start of the load.
+    ("oobwordwrap", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, i32_const(-4) + local_set(0) + local_get(0) + mem(I32_LOAD, offset=8)))),
      "", 2),
     # An i64 at 65532, a multiple of 4, passes the end by 4 bytes.
     ("oobword8", module(

@@ -210,7 +210,17 @@ and left the float library the same size.
   [runtime/README.md](../runtime/README.md)). Division by 0
   traps with code 3, and `div_s` of the most negative number by −1 with
   code 4. `rem_s` by −1 is 0 without a division, because C leaves the most
-  negative number % −1 undefined.
+  negative number % −1 undefined. A divisor that is a constant other
+  than 0 and −1 needs none of these checks, and an unsigned `i32`
+  division or remainder by a power of 2 is a `SHR` or an `AND`.
+- **Multiplication by a constant:** an `i32.mul` by a constant is at
+  most eight shifts, additions, and subtractions, if that many will do.
+  So x × 31 is `SHL t, x, 5` and `SUB d, t, x`, and x × 16777619, the
+  FNV prime 2^24 + 13 × 31, takes eight. The math unit takes three
+  instructions, but on the FPGA core its product comes some 35 cycles
+  after the operands, and each of these instructions takes one. Eight
+  cover every constant with up to four bits set. A multiplication by any
+  other constant uses the math unit, or with `--no-mpu` calls `__mul`.
 - **Comparisons:** `eqz`, `eq`, `ne`, `lt`, `gt`, `le`, and `ge`, signed
   and unsigned, for `i32` and `i64`.
 - **Shifts:** `shl`, `shr_s`, `shr_u`, `rotl`, and `rotr`, for `i32` and

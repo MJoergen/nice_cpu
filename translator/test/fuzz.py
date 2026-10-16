@@ -20,7 +20,8 @@ loops, if and else, br, br_if, and br_table with and without values,
 select, calls and call_indirect, every integer operation and comparison,
 comparisons kept in a local by local.tee for later conditions, eqz
 before if and br_if, i64 shifts by constants and by variables,
-divisions with nonzero divisors, loads and stores of every width at
+multiplications by constants, divisions with nonzero divisors, some of
+them constants, loads and stores of every width at
 constant and at dynamic addresses, and local.set and local.tee of locals
 whose old value is still on the operand stack. That covers the rules for
 deferred values, fused comparisons, forwarded results, and register
@@ -298,12 +299,27 @@ def gen_tee(ctx: Ctx, t: int, depth: int) -> Expr:
 def gen_binop(ctx: Ctx, t: int, depth: int) -> Expr:
     name = ctx.rng.choice(list(BIN))
     a = gen_expr(ctx, t, depth)
-    if name in DIVISIONS:
+    if name in DIVISIONS and ctx.rng.random() < 0.3:
+        # A constant divisor, which needs no checks, or for an unsigned i32
+        # one that is a power of 2, none of the math unit.
+        divisors = [1, 2, 3, 7, 16, 26, 1000, 0x7FFF, 1 << 20]
+        if name != "div_s":
+            divisors += [mask(t), 1 << (bits(t) - 1), 0xFFFFFFF0]
+        b = konst(t, ctx.rng.choice(divisors))
+    elif name in DIVISIONS:
         # A nonzero divisor, and for div_s one that is not -1, so that the
         # most negative number never overflows.
         b = binop("or", t, gen_expr(ctx, t, depth), konst(t, 1))
         if name == "div_s":
             b = binop("or", t, binop("and", t, gen_expr(ctx, t, depth), konst(t, 0x7FFF)), konst(t, 1))
+    elif name == "mul" and ctx.rng.random() < 0.4:
+        # A constant, which nicewasm multiplies by with shifts, additions,
+        # and subtractions if few will do.
+        b = konst(t, ctx.rng.choice([0, 1, 2, 3, 5, 12, 31, 100, 1000, 65599, 16777619, mask(t),
+                                     mask(t) - 2, mask(t) - 7, 1 << (bits(t) - 1),
+                                     ctx.rng.getrandbits(bits(t))]))
+        if ctx.rng.random() < 0.3:
+            a, b = b, a
     elif name in SHIFTS and ctx.rng.random() < 0.5:
         b = gen_const(ctx, t, depth)  # a constant count takes the inline path
     else:

@@ -1099,6 +1099,52 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
                         + as_br_if(local_get(2) + mem(I32_LOAD))
                         for a, v in [(5, 0x100), (9, 0), (12, -1), (16, 0)]])))),
      "", 0xAA),
+    # Multiplications by constants, which become shifts, additions, and
+    # subtractions, and divisions by constants, which need no checks. x =
+    # 0x12345679 is in local 1, and z = 0x12345678_9ABCDEF0 in local 3,
+    # so that they are not constants. One bit each:
+    # x * 0 = 0, x * 1 = x, x * 2 = 0x2468ACF2, 3 * x = 0x369D036B,
+    # x * 31 = x * 32 - x = 0x468ACF20 - 0x12345679 = 0x345678A7,
+    # x * 16777619 = 0x2164207B, x * -1 = 0xEDCBA987,
+    # x * -3 = -0x369D036B = 0xC962FC95, x * 0x80000000 = 0x80000000 (x is odd),
+    # x * 1000 = 0x1C71C8A8, x * 0x12345678 = 0x30292EB8, by the math unit,
+    # x * -8 = -0x91A2B3C8 = 0x6E5D4C38,
+    # x * 24 = 0xB4E81B58, by local.set to local 2,
+    # x / 16 = 0x01234567 and x % 16 = 9, unsigned,
+    # -x / 7 = -43631413 = 0xFD663CCB and -x % -7 = -6, signed,
+    # z / 3 = 0x06117228_33944A50, unsigned,
+    # and a check that fails, x * 3 = x * 2.
+    # 111 1111 1111 1111 1110 = 0x7FFFE.
+    ("constops", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code(([I32, I32, I32, I64],
+              i32_const(0x12345679) + local_set(1) + i64_const(0x12345678_9ABCDEF0) + local_set(3)
+              + bits(0,
+                     *[local_get(1) + i32_const(c - 2**32 if c >= 2**31 else c) + MUL
+                       + i32_const(want - 2**32 if want >= 2**31 else want) + EQ
+                       for c, want in [(0, 0), (1, 0x12345679), (2, 0x2468ACF2)]],
+                     i32_const(3) + local_get(1) + MUL + i32_const(0x369D036B) + EQ,
+                     *[local_get(1) + i32_const(c - 2**32 if c >= 2**31 else c) + MUL
+                       + i32_const(want - 2**32 if want >= 2**31 else want) + EQ
+                       for c, want in [(31, 0x345678A7), (16777619, 0x2164207B),
+                                       (2**32 - 1, 0xEDCBA987), (2**32 - 3, 0xC962FC95),
+                                       (0x80000000, 0x80000000), (1000, 0x1C71C8A8),
+                                       (0x12345678, 0x30292EB8), (2**32 - 8, 0x6E5D4C38)]],
+                     local_get(1) + i32_const(24) + MUL + local_set(2) + local_get(2)
+                     + i32_const(0xB4E81B58 - 2**32) + EQ,
+                     local_get(1) + i32_const(16) + b"\x6e" + i32_const(0x01234567) + EQ,
+                     local_get(1) + i32_const(16) + b"\x70" + i32_const(9) + EQ,
+                     i32_const(0) + local_get(1) + SUB + i32_const(7) + b"\x6d"
+                     + i32_const(0xFD663CCB - 2**32) + EQ,
+                     i32_const(0) + local_get(1) + SUB + i32_const(-7) + b"\x6f"
+                     + i32_const(-6) + EQ,
+                     local_get(3) + i64_const(3) + b"\x80" + i64_const(0x06117228_33944A50)
+                     + EQ64,
+                     local_get(1) + i32_const(3) + MUL + local_get(1) + i32_const(2) + MUL
+                     + EQ)))),
+     "", 0x7FFFE),
     # Code that cannot be reached is skipped up to its block's end or
     # else, including nested blocks in it, which are not even valid: the
     # if has no condition, and the add no operands. 8 + 9 = 17.

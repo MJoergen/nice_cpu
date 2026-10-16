@@ -26,6 +26,7 @@ words, addressed from SP. There is no frame pointer.
 from __future__ import annotations
 
 import argparse
+import functools
 import heapq
 import os
 import re
@@ -1164,6 +1165,71 @@ def flag_use_def(ins: Ins) -> Tuple[FrozenSet[str], FrozenSet[str]]:
     if dest in ("R14", "R14++", "R14--") or sets_flags(ins):
         return frozenset(uses), FLAGS
     return frozenset(uses), frozenset()
+
+
+# The most instructions that a multiplication by a constant may take as
+# shifts, additions, and subtractions (mul_plan). The math unit takes
+# three instructions, but its product comes some 35 cycles after the
+# operands on the FPGA core (ISA.md §8.4, doc/MICROARCH.md), while each of
+# these takes one. Eight cover the FNV prime 16777619 = 2^24 + 13 * 31,
+# and any constant with up to four bits set.
+MUL_STEPS = 8
+
+# A step of a multiplication by a constant: ("shl", a, k) is value a
+# shifted left by k, ("add", a, b) and ("sub", a, b) are a + b and a - b.
+# Value 0 is the number multiplied, value -1 is 0, and value i + 1 is the
+# result of step i.
+Step = Tuple[str, int, int]
+
+
+@functools.lru_cache(maxsize=None)
+def mul_plan(c: int, budget: int) -> Optional[Tuple[Step, ...]]:
+    """The fewest steps, at most budget, that multiply a number x by c,
+    modulo 2^32, or None if there are none. A search over the ways to make
+    c from a smaller m: c = m * 2^k, m + 1, m - 1, 1 - m, -m, m * (2^k +
+    1), m * (2^k - 1), 2^k + m, and 2^k - m, each of which takes one or
+    two steps after those that make m. c = 1 takes none."""
+    c &= 0xFFFFFFFF
+    if c == 1:
+        return ()
+    if budget <= 0 or c == 0:
+        return None
+    # (m, how c comes from m * x, a shift count).
+    ways: List[Tuple[int, str, int]] = []
+    if c >> 31:
+        ways.append((-c, "neg", 0))
+    if c % 2 == 0:
+        tz = (c & -c).bit_length() - 1
+        ways.append((c >> tz, "shl", tz))
+    elif c >> 31:
+        ways.append((1 - c, "x-y", 0))
+    else:
+        ways.append((c - 1, "y+x", 0))
+        ways.append((c + 1, "y-x", 0))
+        for k in range(1, 31):
+            for f, how in (((1 << k) + 1, "y*(2^k+1)"), ((1 << k) - 1, "y*(2^k-1)")):
+                if 1 < f < c and c % f == 0:
+                    ways.append((c // f, how, k))
+        k = c.bit_length() - 1
+        ways.append((c - (1 << k), "2^k+y", k))
+        ways.append(((2 << k) - c, "2^k-y", k + 1))
+    best: Optional[Tuple[Step, ...]] = None
+    for m, how, k in ways:
+        n = 2 if "^" in how else 1
+        limit = budget - n if best is None else min(budget, len(best) - 1) - n
+        sub = mul_plan(m & 0xFFFFFFFF, limit) if limit >= 0 else None
+        if sub is None:
+            continue
+        y = len(sub)  # the index of m * x
+        after: List[Step] = {
+            "neg": [("sub", -1, y)], "shl": [("shl", y, k)], "x-y": [("sub", 0, y)],
+            "y+x": [("add", y, 0)], "y-x": [("sub", y, 0)],
+            "y*(2^k+1)": [("shl", y, k), ("add", y + 1, y)],
+            "y*(2^k-1)": [("shl", y, k), ("sub", y + 1, y)],
+            "2^k+y": [("shl", 0, k), ("add", y + 1, y)],
+            "2^k-y": [("shl", 0, k), ("sub", y + 1, y)]}[how]
+        best = sub + tuple(after)
+    return best
 
 
 class Allocator:
@@ -3076,14 +3142,61 @@ class FunctionTranslator:
             self.emit("MOVE", dest[0], f"@__mpu.{word}")
             self.emit("MOVE", dest[1], f"@__mpu.{word}+1")
 
+    def mul_const(self, r: Reader, at: int, what: str) -> bool:
+        """An i32.mul by a constant as at most MUL_STEPS shifts, additions,
+        and subtractions (mul_plan), if it can be. Its result may go
+        straight to a local. Returns whether it was."""
+        consts = self.const_value(2), self.const_value(1)
+        c = consts[1] if consts[1] is not None else consts[0]
+        if c is None:
+            return False
+        plan = mul_plan(c, MUL_STEPS) if c else ()
+        if plan is None:
+            return False
+        fwd = self.forward(r, at, I32, 2)
+        a, b = self.pop([I32, I32], at, what)
+        vals = [a[0] if consts[1] is not None else b[0]]
+        d = self.push(I32)[0] if fwd is None else fwd[0][0]
+        if not c:
+            self.emit("MOVE", d, "0")
+        elif not plan:
+            self.move([d], vals)
+        for k, (step, i, j) in enumerate(plan):
+            dest = d if k == len(plan) - 1 else self.new_vreg()
+            if step == "shl":
+                self.emit("SHL", dest, vals[i], str(j))
+            else:
+                self.emit(step.upper(), dest, "R0" if i < 0 else vals[i], vals[j])
+            vals.append(dest)
+        if fwd is not None and fwd[1] is not None:
+            self.push(I32, fwd[1])
+        return True
+
     def divide(self, t: int, op: str, at: int, what: str) -> None:
         """A division or remainder, by the math unit for i32 unless it is
         turned off, else by a call to the runtime library. First
         come the cases that wasm defines but C does not (§9.4): division by
         0 traps with code 3, and div_s of the most negative number by -1
-        traps with code 4. rem_s by -1 is 0, without the call."""
+        traps with code 4. rem_s by -1 is 0, without the call. A constant
+        divisor other than 0 and -1 needs none of these checks, and an
+        unsigned i32 division or remainder by a power of 2 is a shift or
+        an AND."""
+        d = self.deferred[-1] if len(self.stack) > self.ctrl[-1].height else None
         a, b = self.pop([t, t], at, what, keep=True)
         result = self.new_vregs(t)
+        if d is not None and d.local is None:
+            c = sum((int(w) & 0xFFFFFFFF) << (32 * k) for k, w in enumerate(d.words))
+            if t == I32 and c & (c - 1) == 0 and c and op in ("div_u", "rem_u"):
+                self.pop([t, t], at, what)
+                dest = self.push(t, words=result)[0]
+                if op == "div_u":
+                    self.emit("SHR", dest, a[0], str(c.bit_length() - 1))
+                else:
+                    self.emit("AND", dest, a[0], str(c - 1))
+                return
+            if c not in (0, (1 << (32 * len(b))) - 1):
+                self.divide_op(t, op, at, what, result)
+                return
         start = self.new_label()
         self.label(start, keep=True)
         if t == I32:
@@ -3118,6 +3231,13 @@ class FunctionTranslator:
             for w in result:
                 self.emit("MOVE", w, "0")
             self.emit("?Z MOVE", "R15", done)
+        self.divide_op(t, op, at, what, result)
+        if done:
+            self.label(done)
+
+    def divide_op(self, t: int, op: str, at: int, what: str, result: List[str]) -> None:
+        """The division or remainder itself, by the math unit or by a call,
+        with the result in the registers result."""
         if self.t.mpu:
             word = {"div_s": "sdiv_q", "div_u": "udiv_q", "rem_s": "sdiv_r", "rem_u": "udiv_r"}[op]
             if t == I64:
@@ -3128,8 +3248,6 @@ class FunctionTranslator:
                        "rem_u": "__umod"}[op]
             self.call(routine + ("64" if t == I64 else ""), FuncType([t, t], [t]), at, what,
                       dest=result)
-        if done:
-            self.label(done)
 
     def memarg(self, n: int, align: int, at: int, what: str) -> None:
         """Checks a load's or store's memory and alignment."""
@@ -3728,6 +3846,8 @@ class FunctionTranslator:
                     self.emit("AND", x, values[1][-1], "0x80000000")
                     self.emit("AND", top, a_top, "0x7FFFFFFF")
                     self.emit("OR", top, top, x)
+            elif op == 0x6C and self.mul_const(r, at, name):
+                pass
             elif op == 0x6C and self.t.mpu:
                 self.mpu_op("umul_lo", I32, at, name)
             elif op in LIB_OPS:

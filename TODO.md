@@ -63,7 +63,7 @@ has TODO or FIXME comments.
   address compare.
 - **Formal checks with SymbiYosys** (MICROARCH.md §9). `make formal` proves
   the ports of the multi-cycle core, the timer, and the data bus decoder,
-  and FETCH and ICACHE of the pipelined core, for every cycle. For the
+  and FETCH of the pipelined core, for every cycle. For the
   whole pipelined core it checks the ports and the core's own assertions,
   the data access rule among them, only for the first 8 cycles after
   reset ([hdl/README.md](hdl/README.md)). Open: a proof for every cycle,

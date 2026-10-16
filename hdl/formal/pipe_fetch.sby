@@ -1,4 +1,4 @@
-# FETCH and ICACHE of the pipelined core (formal_pipe_fetch.vhd, and the
+# FETCH of the pipelined core (formal_pipe_fetch.vhd, and the
 # properties under G_FORMAL in pipe_fetch.vhd). "prove" proves the
 # assertions for every cycle by k-induction, and "cover" reaches each
 # cover statement.

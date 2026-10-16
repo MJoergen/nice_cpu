@@ -1,15 +1,15 @@
--- DECODE and the SEQUENCER of the pipelined core (MICROARCH.md §3, §4).
+-- DECODE of the pipelined core (MICROARCH.md §3, §4).
 --
 -- THEORY OF OPERATION
--- DECODE takes one whole instruction from ICACHE into dec_r, when all its
--- words are present and the SEQUENCER is free. For "MOVE R15, c" and
+-- DECODE takes one whole instruction from FETCH into dec_r, when all its
+-- words are present and dec_r is free. For "MOVE R15, c" and
 -- "ADD R15, R15, c" with condition "always" it redirects FETCH at once
--- (MICROARCH.md §5.4). The SEQUENCER splits the instruction in dec_r into
+-- (MICROARCH.md §5.4). Then it splits the instruction in dec_r into
 -- micro-operations (src/pipe_pkg.vhd), one per cycle, for PREPARE.
 --
 -- The registers are dec_r, the micro-operation to emit, and the id of the
 -- next instruction. consume_o, redirect_o, target_o, and emit_o depend
--- combinationally on the words from ICACHE and on ready_i and flush_i, so
+-- combinationally on the words from FETCH and on ready_i and flush_i, so
 -- that an instruction moves on in the cycle the next stage frees itself.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
@@ -32,7 +32,7 @@ entity pipe_decode is
       clk_i      : in  std_logic;
       rst_i      : in  std_logic;
 
-      -- From ICACHE (src/pipe_fetch.vhd)
+      -- From FETCH (src/pipe_fetch.vhd)
       f_addr_i   : in  std_logic_vector(31 downto 0);
       f_words_i  : in  t_words4;
       f_count_i  : in  natural range 0 to 4;
@@ -49,7 +49,7 @@ entity pipe_decode is
       ready_i    : in  std_logic;
       emit_o     : out std_logic;
       uop_o      : out t_uop;
-      -- The instruction in the SEQUENCER, for the check of stores into
+      -- The instruction in dec_r, for the check of stores into
       -- fetched code
       inst_o     : out t_inst
    );
@@ -64,7 +64,7 @@ architecture synthesis of pipe_decode is
    signal w_flush   : std_logic;
    signal p_ready   : std_logic;
 
-   -- DECODE
+   -- Taking an instruction into dec_r
    signal d_inst  : t_inst;
    signal d_ok    : std_logic;
    signal d_load  : std_logic;
@@ -72,7 +72,7 @@ architecture synthesis of pipe_decode is
    signal d_dest  : std_logic_vector(31 downto 0);
    signal id_r    : std_logic_vector(2 downto 0);
 
-   -- SEQUENCER
+   -- Splitting it into micro-operations
    signal dec_r       : t_inst;
    signal seq_kind_r  : t_kind;
    signal seq_first_r : std_logic;

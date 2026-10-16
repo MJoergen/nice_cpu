@@ -1,4 +1,4 @@
--- The data bus port of the pipelined core (MICROARCH.md §5.3).
+-- DBUS, the data bus port of the pipelined core (MICROARCH.md §5.3).
 --
 -- THEORY OF OPERATION
 -- Two stages make data accesses: PREPARE its reads, from a request

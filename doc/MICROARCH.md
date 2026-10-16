@@ -10,9 +10,9 @@ The core is pipelined and has separate instruction and data buses, like
 where NICE allows it. This note concentrates on where NICE differs.
 
 The pipelined core is `hdl/src/pipeline.vhd`, which connects one entity
-for each part: `pipe_fetch` (FETCH and ICACHE), `pipe_decode` (DECODE and
-the SEQUENCER), `pipe_prepare`, `pipe_dbus` (the data bus port), and
-`pipe_write`. A simple multi-cycle core,
+for each part: `pipe_fetch` (FETCH), `pipe_decode` (DECODE),
+`pipe_prepare` (PREPARE), `pipe_write` (WRITE), and `pipe_dbus` (DBUS,
+the data bus port). A simple multi-cycle core,
 `hdl/src/multicycle.vhd`, came first. It runs one instruction at a time,
 with the same buses, interrupt ports, and trace report, and is the working
 reference. Both pass every step of the test order in §9
@@ -23,7 +23,7 @@ question that this note left open, `hdl/ASSUMPTIONS.md` says how.
 
 | Topic | Decision |
 |---|---|
-| Structure | A pipeline: FETCH, ICACHE, DECODE, SEQUENCER, PREPARE, and WRITE, as in qnice_cpu. |
+| Structure | A pipeline: FETCH, DECODE, PREPARE, and WRITE, with the data bus port DBUS beside it. As in qnice_cpu, but with its ICACHE in FETCH and its SEQUENCER in DECODE. |
 | Buses | Harvard: a read-only Wishbone instruction port, 64 bits wide so that it delivers two words per cycle (§3), and a 32-bit Wishbone data port. Both see the same memory, through dual-port RAM. |
 | Instructions | DECODE splits each instruction into one to three micro-operations. |
 | Registers | R1–R13 in a register file that only WRITE writes, in order. WRITE reads it, and PREPARE for the address of a data read, so no value needs a bypass (§5.1). R0 is a constant 0. SR (R14) and PC (R15) are separate registers in WRITE. |
@@ -70,32 +70,27 @@ effects, R15 as an operand, and interrupts are all handled in the pipeline.
 PNG. The same in text:
 
     pipeline
-    +------------------------------------------------------------+
-    |               pipe_fetch                                   |
-    |  +---------->   FETCH   <------------------------------------> instruction bus
-    |  |  +------->     |                                        |   (64 bits)
-    |  |  |           ICACHE                                     |
-    |  |  |             |                                        |
-    |  |  |          pipe_decode                                 |
-    |  |  +- jump --  DECODE                                     |
-    |  |                |                                        |
-    |  |            SEQUENCER                                    |
-    |  |                |                                        |
-    |  |            pipe_prepare               pipe_dbus         |
-    |  |  +------->   PREPARE   -- read -->   +-----------+      |
-    |  |  |             |                     | tags and  |<-------> data bus
-    |  |  | registers  pipe_write             | read data |      |   (32 bits)
-    |  |  +---------   WRITE   -- store --->  |           |      |
-    |  |                |      <--- data ---  +-----------+      |
-    |  +- flush and ----+                                        |
-    |     redirect                                               |
-    +------------------------------------------------------------+
+    +-----------------------------------------------------------+
+    |  +---------->   FETCH   <-----------------------------------> instruction bus
+    |  |  +------->     |                                       |   (64 bits)
+    |  |  |             |                                       |
+    |  |  +- jump --  DECODE                                    |
+    |  |                |                                       |
+    |  |  +------->   PREPARE   -- read -->  +-----------+     |
+    |  |  |             |                    |   DBUS    |<-------> data bus
+    |  |  | registers   |                    | tags and  |     |   (32 bits)
+    |  |  +---------   WRITE   -- store -->  | read data |     |
+    |  |                |      <-- data ---  +-----------+     |
+    |  +- flush and ----+                                       |
+    |     redirect                                              |
+    +-----------------------------------------------------------+
 
-Each stage sits in the VHDL entity named above it, in `hdl/src/`.
-`pipeline` connects them. The black bars of the PNG mark the registers on
-the main path, which the header of `pipeline.tex` names.
+Each part is the VHDL entity of its name in `hdl/src/`: FETCH is
+`pipe_fetch`, DECODE is `pipe_decode`, and so on. `pipeline` connects
+them. The black bars of the PNG mark the registers on the main path,
+which the header of `pipeline.tex` names.
 
-The stages do what they do in qnice_cpu, with these differences:
+The parts do what they do in qnice_cpu, with these differences:
 
 - **FETCH** reads two words per cycle: the instruction port is 64 bits wide
   and reads an aligned pair of words. Its address a names words 2a and
@@ -104,16 +99,18 @@ The stages do what they do in qnice_cpu, with these differences:
   port. An instruction is 2.1 words on average
   in translated code and 1.6 in hand-written code (§5.6), so a port that
   delivers one word per cycle would hold the core to about one instruction
-  per two cycles, whatever the rest of the pipeline did.
-- **ICACHE** presents up to four words to DECODE: the instruction word and up
-  to three constant words. DECODE takes the instruction only when all its
-  words are present. The length follows from the instruction word (ISA §2.3).
-- **DECODE** takes the whole instruction, and knows PC, which is the
-  instruction's address plus its length. It reads no register (§5.1).
-  The SEQUENCER emits the micro-operations of §4, one per cycle.
+  per two cycles, whatever the rest of the pipeline did. FETCH keeps the
+  words in a buffer, and presents up to four of them to DECODE: the
+  instruction word and up to three constant words.
+- **DECODE** takes the instruction only when all its words are present.
+  The length follows from the instruction word (ISA §2.3). It knows PC,
+  which is the instruction's address plus its length, and it reads no
+  register (§5.1). It emits the micro-operations of §4, one per cycle.
 - **PREPARE** forms operand values and addresses, and issues data reads.
 - **WRITE** holds the ALU and the shifter, writes registers and memory,
   updates SR, checks the condition, and starts flushes and interrupts.
+- **DBUS** is the data bus port. It keeps a tag for each request in
+  flight, and the read data that WRITE has not used yet.
 
 Each stage holds one item and passes it on when the next stage is free,
 or frees itself in the same cycle. qnice_cpu builds its stages from the
@@ -141,7 +138,7 @@ the push `MOVE @--SP, x`, and the call `ADD @--SP, 2, PC`. A pop
 `MOVE x, @SP++` and a return `MOVE PC, @SP++` need two. The most any
 instruction needs is three. In the benchmark programs an instruction has
 1.02 micro-ops on average when translated and 1.18 when written by hand
-(§5.6), so the SEQUENCER seldom adds a cycle.
+(§5.6), so splitting them seldom adds a cycle.
 
 **One write per micro-op is enough** because the two writes of a register
 destination in mode 001 or 010 merge into one: Rx ← regval(x, regval(x, r) ∓ 1)
@@ -266,9 +263,9 @@ FETCH runs straight on, they are one range, from the storing instruction's
 next PC to FETCH's current address. After an early redirect by DECODE (§5.4)
 they are two: the words from the storing instruction up to the jump, and the
 words from the jump's target to FETCH's current address. So WRITE checks the
-range held in FETCH and ICACHE, from the oldest word ICACHE still holds to
-FETCH's current address, and the one to four words of each instruction in
-DECODE, SEQUENCER, and PREPARE. On a hit, it flushes and refetches from the
+range held in FETCH, from the oldest word in its buffer to its current
+address, and the one to four words of each instruction in DECODE and
+PREPARE. On a hit, it flushes and refetches from the
 next instruction. Over-approximating is safe, because a needless flush costs
 only cycles. qnice_cpu uses a fixed window of 32 words for the same purpose.
 
@@ -502,7 +499,7 @@ data read right before the entry.
 
 **Formal checks**, as in qnice_cpu: each stage on its own where it can
 be, and properties of the whole core. The checkers of the Wishbone and
-interrupt ports in `hdl/formal/` serve both cores. FETCH and ICACHE are
+interrupt ports in `hdl/formal/` serve both cores. FETCH is
 proven for every cycle: DECODE sees each word that memory holds at the
 address it names. For the whole pipelined core, the port checks and the
 core's own assertions hold for the first 8 cycles after reset, and the

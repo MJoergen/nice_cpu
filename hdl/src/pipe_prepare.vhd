@@ -44,7 +44,7 @@ entity pipe_prepare is
       clk_i        : in  std_logic;
       rst_i        : in  std_logic;
 
-      -- From the SEQUENCER
+      -- From DECODE
       emit_i       : in  std_logic;
       uop_i        : in  t_uop;
       ready_o      : out std_logic;

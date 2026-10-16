@@ -2,10 +2,10 @@
 % "make diagrams" in the top-level Makefile. MICROARCH.md §3 shows it.
 % Edit this file, not the PNG, and render again when the entities change.
 %
-% What it shows: the six stages in pipeline order, each inside the dashed
-% box of the VHDL entity that holds it (hdl/src/pipe_*.vhd), the data bus
-% port pipe_dbus beside PREPARE and WRITE, the two Wishbone buses leaving
-% on the right, and the dotted boundary of the top level, pipeline. The
+% What it shows: the four stages in pipeline order, the data bus port DBUS
+% beside PREPARE and WRITE, the two Wishbone buses leaving on the right,
+% and the dotted boundary of the top level, pipeline. Each block is the
+% VHDL entity of its name, hdl/src/pipe_fetch.vhd for FETCH and so on. The
 % thin arrows on the left are the paths that are not the main flow: the
 % flush and redirect from WRITE, the early redirect from DECODE, and
 % PREPARE's reads of the registers that WRITE holds. It does not show the
@@ -15,17 +15,18 @@
 % signal it holds leaves:
 %
 %   FETCH, on the instruction address          req_r and stb_r (pipe_fetch)
-%   ICACHE, at its output                      ring_r (pipe_fetch)
-%   DECODE, at its output                      dec_r (pipe_decode)
-%   SEQUENCER, at its output                   prep_r (pipe_prepare)
+%   FETCH, at its output                       ring_r (pipe_fetch)
+%   DECODE, inside, between taking an          dec_r (pipe_decode)
+%     instruction and splitting it
+%   DECODE, at its output                      prep_r (pipe_prepare)
 %   PREPARE, at its output to WRITE            w_r.uop (pipe_write)
 %   PREPARE, on its read request               rd_stb_r, rd_addr_r (pipe_prepare)
 %
 % A register belongs to the entity that names it, which is not always the
-% stage it follows: SEQUENCER's output is PREPARE's prep_r, and PREPARE's
-% is WRITE's w_r.uop. WRITE's store and pipe_dbus have none: WRITE drives
-% its store onto the bus in the cycle it runs, and the read data reaches
-% WRITE in the cycle its ACK comes, past pipe_dbus's FIFO.
+% stage it follows: DECODE's output is PREPARE's prep_r, and PREPARE's is
+% WRITE's w_r.uop. WRITE's store and DBUS have none: WRITE drives its
+% store onto the bus in the cycle it runs, and the read data reaches WRITE
+% in the cycle its ACK comes, past DBUS's FIFO.
 
 \documentclass[border=8pt]{standalone}
 
@@ -40,7 +41,7 @@
 
 \begin{tikzpicture}[
       font = \sffamily\footnotesize,
-      % A pipeline stage
+      % A part of the pipeline, one VHDL entity
       block/.style = {
          draw,
          rounded corners = 4pt,
@@ -48,15 +49,6 @@
          minimum height  = 10mm,
          align           = center
       },
-      % The VHDL entity that holds one or two stages
-      entity/.style = {
-         draw,
-         dashed,
-         rounded corners = 4pt,
-         inner sep       = 2.5mm
-      },
-      entitylabel/.style = {font = \ttfamily\scriptsize, anchor = north east,
-                            inner sep = 1mm},
       % The main flow: one instruction or micro-operation per beat. The line
       % width stays at 0.5pt or more, so that both slivers of the doubled
       % line survive the 150 dpi rendering.
@@ -84,18 +76,18 @@
    %% The stages, top to bottom
    %% ---------------------------------------------------------------
 
-   \node[block]                           (fetch)   {FETCH};
-   \node[block, below = 10mm of fetch]    (icache)  {ICACHE};
-   \node[block, below = 16mm of icache]   (decode)  {DECODE};
-   \node[block, below = 10mm of decode]   (seq)     {SEQUENCER};
-   \node[block, below = 16mm of seq]      (prepare) {PREPARE};
+   \node[block, minimum height = 14mm]    (fetch)   {FETCH\\[-0.5mm]
+                                                     {\scriptsize a buffer of 16 words}};
+   \node[block, below = 14mm of fetch,
+         minimum height = 16mm]           (decode)  {DECODE\\[-0.5mm]
+                                                     {\scriptsize instruction}\\[4.5mm]
+                                                     {\scriptsize micro-operations}};
+   \node[block, below = 16mm of decode]   (prepare) {PREPARE};
    \node[block, below = 16mm of prepare]  (write)   {WRITE\\[-0.5mm]
                                                      {\scriptsize ALU, shifter, registers}};
 
-   \draw[flow] (fetch)   -- (icache);
-   \draw[flow] (icache)  -- (decode);
-   \draw[flow] (decode)  -- (seq);
-   \draw[flow] (seq)     -- (prepare);
+   \draw[flow] (fetch)   -- (decode);
+   \draw[flow] (decode)  -- (prepare);
    \draw[flow] (prepare) -- (write);
 
    %% ---------------------------------------------------------------
@@ -105,7 +97,7 @@
    \coordinate (dbusx) at ([xshift = 60mm] prepare.center);
    \node[block, inner sep = 0pt,
          fit = {([xshift = -14mm] dbusx |- prepare.north)
-                ([xshift =  14mm] dbusx |- write.south)}] (dbus) {DATA BUS\\[-0.5mm]
+                ([xshift =  14mm] dbusx |- write.south)}] (dbus) {DBUS\\[-0.5mm]
                 {\scriptsize tags and read data}};
 
    % PREPARE's read requests and WRITE's stores go out through it; the read
@@ -116,24 +108,6 @@
       node[buslabel, above, pos = 0.55, align = center] {store,\\ vector read};
    \draw[wire] ([yshift = -2.5mm] dbus.west |- write.east) -- ([yshift = -2.5mm] write.east)
       node[buslabel, below] {read data};
-
-   %% ---------------------------------------------------------------
-   %% The entities
-   %% ---------------------------------------------------------------
-
-   % Each box reaches 4mm above its first block, so that its name fits
-   % inside, to the right of the arrow that comes in.
-   \node[entity, fit = {([yshift = 4mm] fetch.north) (fetch) (icache)}]  (efetch)   {};
-   \node[entity, fit = {([yshift = 4mm] decode.north) (decode) (seq)}]   (edecode)  {};
-   \node[entity, fit = {([yshift = 4mm] prepare.north) (prepare)}]       (eprepare) {};
-   \node[entity, fit = {([yshift = 4mm] write.north) (write)}]           (ewrite)   {};
-   \node[entity, fit = {([yshift = 4mm] dbus.north) (dbus)}]             (edbus)    {};
-
-   \node[entitylabel] at (efetch.north east)   {pipe\_fetch};
-   \node[entitylabel] at (edecode.north east)  {pipe\_decode};
-   \node[entitylabel] at (eprepare.north east) {pipe\_prepare};
-   \node[entitylabel] at (ewrite.north east)   {pipe\_write};
-   \node[entitylabel] at (edbus.north east)    {pipe\_dbus};
 
    %% ---------------------------------------------------------------
    %% The paths on the left
@@ -152,7 +126,7 @@
    % redirect from DECODE, to FETCH.
    \draw[wire] ([yshift = -2mm] write.west) -| (regsx) |- (fetch.west);
    \node[wirelabel, anchor = south, rotate = 90]
-      at ($ (regsx |- icache.west)!0.5!(regsx |- decode.west) $) {flush and redirect};
+      at ($ (regsx |- fetch.west)!0.5!(regsx |- prepare.west) $) {flush and redirect};
    \draw[wire] (decode.west) -- ([xshift = -8mm] decode.west) |- ([yshift = -2.5mm] fetch.west);
    \node[wirelabel, anchor = south west] at ([xshift = -8mm, yshift = 1mm] decode.west)
       {jump};
@@ -162,7 +136,7 @@
    %% ---------------------------------------------------------------
 
    \node[draw, dotted, thick, rounded corners = 4pt, inner sep = 3mm,
-         fit = (efetch) (edecode) (eprepare) (ewrite) (edbus) (regsx)] (top) {};
+         fit = (fetch) (decode) (prepare) (write) (dbus) (regsx)] (top) {};
    \node[anchor = south west, font = \ttfamily\scriptsize\itshape]
       at ([xshift = 1mm, yshift = 0.5mm] top.north west) {pipeline};
 
@@ -203,11 +177,12 @@
    % FETCH's request, at the base of the instruction address arrow
    \node[ffv, minimum height = 4.5mm] at ([xshift = -4mm, yshift = 2.5mm] fetch.east) {};
 
-   % ICACHE's ring and DECODE's dec_r, at the bottom of their stages, and
-   % PREPARE's prep_r and WRITE's w_r.uop, on the arrows into theirs
-   \node[ffh] at ([yshift = 2.2mm] icache.south) {};
-   \node[ffh] at ([yshift = 2.2mm] decode.south) {};
-   \node[ffh] at ($ (seq.south)!0.4!(prepare.north) $) {};
+   % FETCH's ring, at the bottom of its block, DECODE's dec_r, between the
+   % instruction it takes and the micro-operations it emits, and PREPARE's
+   % prep_r and WRITE's w_r.uop, on the arrows into theirs
+   \node[ffh] at ([yshift = 2.2mm] fetch.south) {};
+   \node[ffh] at ([yshift = -1.5mm] decode.center) {};
+   \node[ffh] at ($ (decode.south)!0.4!(prepare.north) $) {};
    \node[ffh] at ($ (prepare.south)!0.4!(write.north) $) {};
 
    % PREPARE's read request
@@ -222,11 +197,6 @@
       at ([xshift = 2.5mm] legendff.east)
       {a register on the main path. WRITE drives its stores onto the data bus in the cycle it\\
        runs them, and takes read data in the cycle its ACK comes, so neither path has one.};
-   \node[draw, dashed, rounded corners = 2pt, minimum width = 6mm, minimum height = 3mm,
-         anchor = west] (legendent) at ([yshift = -6mm] legendff.west) {};
-   \node[anchor = west, font = \sffamily\scriptsize]
-      at ([xshift = 2.5mm] legendent.east)
-      {a VHDL entity in hdl/src, named at its top right};
 
 \end{tikzpicture}
 

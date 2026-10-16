@@ -20,10 +20,10 @@ departs from it.
 | [vsg.yml](vsg.yml) | The rules of CODING_STYLE.md for vsg, which `make lint` runs. |
 | [src/multicycle.vhd](src/multicycle.vhd) | The multi-cycle core. |
 | [src/pipeline.vhd](src/pipeline.vhd) | The pipelined core: its stages connected, and the invariants they keep. |
-| [src/pipe_fetch.vhd](src/pipe_fetch.vhd) | FETCH and ICACHE of the pipelined core. |
-| [src/pipe_decode.vhd](src/pipe_decode.vhd) | DECODE and the SEQUENCER of the pipelined core. |
+| [src/pipe_fetch.vhd](src/pipe_fetch.vhd) | FETCH of the pipelined core. |
+| [src/pipe_decode.vhd](src/pipe_decode.vhd) | DECODE of the pipelined core. |
 | [src/pipe_prepare.vhd](src/pipe_prepare.vhd) | PREPARE of the pipelined core, with its data read request. |
-| [src/pipe_dbus.vhd](src/pipe_dbus.vhd) | The data bus port of the pipelined core, with the tags and the read data of the requests in flight. |
+| [src/pipe_dbus.vhd](src/pipe_dbus.vhd) | DBUS, the data bus port of the pipelined core, with the tags and the read data of the requests in flight. |
 | [src/pipe_write.vhd](src/pipe_write.vhd) | WRITE of the pipelined core, with the architectural state. |
 | [src/pipe_pkg.vhd](src/pipe_pkg.vhd) | The micro-operations of the pipelined core, what each reads and writes, and WRITE's state record. |
 | [src/nice_pkg.vhd](src/nice_pkg.vhd) | The parts of the ISA that the cores share: the operand fields, the register value rule, the condition, the ALU, the shifter, and the flags. |
@@ -61,7 +61,7 @@ departs from it.
 | [formal/timer.sby](formal/timer.sby) | The SymbiYosys job for it. |
 | [formal/formal_wb_dmux.vhd](formal/formal_wb_dmux.vhd) | The data bus decoder with checks of its master and slave ports. |
 | [formal/wb_dmux.sby](formal/wb_dmux.sby) | The SymbiYosys job for it. |
-| [formal/formal_pipe_fetch.vhd](formal/formal_pipe_fetch.vhd) | FETCH and ICACHE of the pipelined core, whose properties are in `src/pipe_fetch.vhd`. |
+| [formal/formal_pipe_fetch.vhd](formal/formal_pipe_fetch.vhd) | FETCH of the pipelined core, whose properties are in `src/pipe_fetch.vhd`. |
 | [formal/pipe_fetch.sby](formal/pipe_fetch.sby) | The SymbiYosys job for it. |
 | [formal/formal_pipeline.vhd](formal/formal_pipeline.vhd) | The pipelined core with a checker on each of its four ports. |
 | [formal/pipeline.sby](formal/pipeline.sby) | The SymbiYosys job for it. |
@@ -303,7 +303,7 @@ read, a write, a stalled request, and each kind of interrupt taken. For
 the timer, it shows a request taken, and one that waits while the timer
 counts on.
 
-`formal_pipe_fetch` proves FETCH and ICACHE of the pipelined core for
+`formal_pipe_fetch` proves FETCH of the pipelined core for
 every cycle. Every input is free: every slave, every redirect, and every
 DECODE that takes no more words than it is offered. The properties are in
 `src/pipe_fetch.vhd` under `G_FORMAL`, because their invariants name its
@@ -419,18 +419,18 @@ core's runs only through `irq_compare.py`, and checks the self-check of
 
 ## The pipelined core
 
-`pipeline` is the core of MICROARCH.md, a pipeline of six stages:
+`pipeline` is the core of MICROARCH.md, a pipeline of four stages and a
+data bus port, each an entity of its own:
 
 | Stage | Where | What it does |
 |---|---|---|
-| FETCH | `pipe_fetch` | Reads pairs of words ahead on the instruction bus, several requests in flight. |
-| ICACHE | `pipe_fetch` | A ring of 16 words, of which it presents the next four to DECODE. |
-| DECODE | `pipe_decode` | Takes one whole instruction. Redirects FETCH at once for `MOVE R15, c` and `ADD R15, R15, c` with condition "always". |
-| SEQUENCER | `pipe_decode` | Splits the instruction into micro-operations, one per cycle (MICROARCH.md §4). |
+| FETCH | `pipe_fetch` | Reads pairs of words ahead on the instruction bus, several requests in flight, into a ring of 16 words. Presents the next four to DECODE. |
+| DECODE | `pipe_decode` | Takes one whole instruction, and splits it into micro-operations, one per cycle (MICROARCH.md §4). Redirects FETCH at once for `MOVE R15, c` and `ADD R15, R15, c` with condition "always". |
 | PREPARE | `pipe_prepare` | Tests the condition when it can, and issues the data reads. |
 | WRITE | `pipe_write` | Computes, writes the registers and SR, issues the store, takes interrupts, and runs the control instructions. |
+| DBUS | `pipe_dbus` | The data bus port, with the tags and the read data of the requests in flight. |
 
-`pipe_dbus` is the data bus port, and `pipeline` connects the parts.
+`pipeline` connects the parts.
 Each stage holds one item and passes it on when the next stage frees
 itself. Each part keeps its state in registers, but some of the signals
 between them are combinational, as each part's header lists: PREPARE

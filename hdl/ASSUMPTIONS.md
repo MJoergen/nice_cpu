@@ -23,10 +23,10 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
    wait, because WRITE reads them. R14 is SR in WRITE, as §5.4 wants. R15
    is the instruction's next address, carried with it, unless an earlier
    micro-operation of the same instruction wrote R15.
-2. **One entity for each part**: FETCH and ICACHE in `src/pipe_fetch.vhd`,
-   with a formal proof of their own; DECODE and the SEQUENCER in
-   `src/pipe_decode.vhd`; PREPARE in `src/pipe_prepare.vhd`; the data bus
-   port in `src/pipe_dbus.vhd`; and WRITE in `src/pipe_write.vhd`.
+2. **One entity for each part**: FETCH in `src/pipe_fetch.vhd`, with a
+   formal proof of its own; DECODE in `src/pipe_decode.vhd`; PREPARE in
+   `src/pipe_prepare.vhd`; WRITE in `src/pipe_write.vhd`; and DBUS, the
+   data bus port, in `src/pipe_dbus.vhd`.
    `src/pipeline.vhd` connects them. Each part keeps its state in
    registers, but not every output is registered: PREPARE decides on a
    read with WRITE's decisions of the same cycle, a flush reaches every
@@ -35,7 +35,7 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
    functions, and WRITE's state record are in `src/pipe_pkg.vhd`, and the
    parts both cores share (the ALU, the shifter, the fields) in
    `src/nice_pkg.vhd`.
-3. **ICACHE is a ring of 16 words.** FETCH issues a request only when every
+3. **FETCH's buffer is a ring of 16 words.** FETCH issues a request only when every
    word that may still arrive has room, so at most 8 requests are in
    flight on the instruction bus.
 4. **At most 4 data bus requests are in flight**, `C_MAX_OUT`.
@@ -104,7 +104,7 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
 
 ## Formal checks
 
-14. **FETCH and ICACHE are proven, the rest of the core is checked for 8
+14. **FETCH is proven, the rest of the core is checked for 8
     cycles.** `formal/pipe_fetch.sby` proves `pipe_fetch` for every cycle,
     with invariants under its `G_FORMAL`. It needs Boolector, which CI now
     installs (**Outside hdl/:** one package name in

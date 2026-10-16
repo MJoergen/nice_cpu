@@ -4,24 +4,21 @@
 -- THEORY OF OPERATION
 -- The pipeline (MICROARCH.md §3), one entity for each part:
 --
---   FETCH, ICACHE  src/pipe_fetch.vhd. Reads pairs of words ahead, and
---                  presents up to four of them.
---   DECODE         src/pipe_decode.vhd. Takes one whole instruction from
---                  ICACHE into dec_r. Redirects FETCH at once for a jump
---                  it can resolve.
---   SEQUENCER      src/pipe_decode.vhd. Splits the instruction in dec_r
---                  into micro-operations (src/pipe_pkg.vhd), one per
---                  cycle, into prep_r.
---   PREPARE        src/pipe_prepare.vhd. Tests the condition, and issues
---                  the data reads of the micro-operation in prep_r. Then
---                  passes it to w_r.uop.
---   WRITE          src/pipe_write.vhd. Runs the micro-operation in
---                  w_r.uop: computes the result, writes the registers,
---                  issues the store, and updates the flags. Takes
---                  interrupts, runs the control instructions, and flushes
---                  the pipeline.
---   The data bus   src/pipe_dbus.vhd. The bus port, with the tags and the
---                  read data of the requests in flight.
+--   FETCH     src/pipe_fetch.vhd. Reads pairs of words ahead into a
+--             buffer, and presents up to four of them.
+--   DECODE    src/pipe_decode.vhd. Takes one whole instruction into
+--             dec_r. Redirects FETCH at once for a jump it can resolve.
+--             Splits the instruction in dec_r into micro-operations
+--             (src/pipe_pkg.vhd), one per cycle, into prep_r.
+--   PREPARE   src/pipe_prepare.vhd. Tests the condition, and issues the
+--             data reads of the micro-operation in prep_r. Then passes it
+--             to w_r.uop.
+--   WRITE     src/pipe_write.vhd. Runs the micro-operation in w_r.uop:
+--             computes the result, writes the registers, issues the
+--             store, and updates the flags. Takes interrupts, runs the
+--             control instructions, and flushes the pipeline.
+--   DBUS      src/pipe_dbus.vhd. The data bus port, with the tags and the
+--             read data of the requests in flight.
 --
 -- This entity connects them, and checks the invariants below in
 -- simulation. Some of the signals between the parts are combinational,
@@ -153,7 +150,7 @@ end entity pipeline;
 
 architecture synthesis of pipeline is
 
-   -- FETCH and ICACHE
+   -- FETCH
    signal f_addr     : std_logic_vector(31 downto 0);
    signal f_end      : std_logic_vector(31 downto 0);
    signal f_words    : t_words4;
@@ -163,7 +160,7 @@ architecture synthesis of pipeline is
    signal f_target   : std_logic_vector(31 downto 0);
    signal f_stop     : std_logic;
 
-   -- DECODE and the SEQUENCER
+   -- DECODE
    signal d_redirect : std_logic;
    signal d_dest     : std_logic_vector(31 downto 0);
    signal dec_r      : t_inst;
@@ -181,7 +178,7 @@ architecture synthesis of pipeline is
    signal rd_addr_r    : std_logic_vector(31 downto 0);
    signal rd_count     : std_logic;   -- Counts an instruction on instret_o
 
-   -- The data bus
+   -- DBUS
    signal rq_r       : t_words(0 to C_MAX_OUT - 1);
    signal rq_cnt_r   : natural range 0 to C_MAX_OUT;
    signal ack_read   : std_logic;
@@ -206,7 +203,7 @@ architecture synthesis of pipeline is
 begin
 
    ---------------------------------------------------------------------------
-   -- FETCH and ICACHE
+   -- FETCH
    ---------------------------------------------------------------------------
 
    f_redirect <= w_flush or d_redirect;

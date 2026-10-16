@@ -1,7 +1,7 @@
 -- Types and decode functions of the pipelined core (MICROARCH.md §3, §4).
 --
 -- THEORY OF OPERATION
--- DECODE turns an instruction into a t_inst. The SEQUENCER splits it into
+-- DECODE turns an instruction into a t_inst, and splits it into
 -- one to three micro-operations, each a t_uop (MICROARCH.md §4):
 --
 --   UOP_S0    s0 has a side effect on a register other than R0. Reads s0

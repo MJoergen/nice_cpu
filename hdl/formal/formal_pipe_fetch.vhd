@@ -1,4 +1,4 @@
--- FETCH and ICACHE of the pipelined core, for SymbiYosys. Every input is
+-- FETCH of the pipelined core, for SymbiYosys. Every input is
 -- free, so the solver plays every slave on the instruction bus, every
 -- redirect, and every DECODE that takes no more words than it is offered.
 --

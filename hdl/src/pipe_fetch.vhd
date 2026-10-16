@@ -1,4 +1,4 @@
--- FETCH and ICACHE of the pipelined core (MICROARCH.md §3): a Wishbone
+-- FETCH of the pipelined core (MICROARCH.md §3): a Wishbone
 -- master on the 64-bit instruction bus, and a buffer of the words it has
 -- read, which presents up to four of them to DECODE.
 --

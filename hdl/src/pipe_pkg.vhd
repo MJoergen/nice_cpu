@@ -77,6 +77,12 @@ package pipe_pkg is
       counted    => '0'
    );
 
+   function to_sl(b : boolean) return std_logic;
+
+   function to_nat(b : std_logic) return natural;
+
+   function to_nat(b : boolean) return natural;
+
    function mode(iw : std_logic_vector(31 downto 0);
                  i  : natural range 0 to 2) return std_logic_vector;
 
@@ -130,6 +136,33 @@ package pipe_pkg is
 end package pipe_pkg;
 
 package body pipe_pkg is
+
+   function to_sl(b : boolean) return std_logic is
+   begin
+      if b then
+         return '1';
+      else
+         return '0';
+      end if;
+   end function to_sl;
+
+   function to_nat(b : std_logic) return natural is
+   begin
+      if b = '1' then
+         return 1;
+      else
+         return 0;
+      end if;
+   end function to_nat;
+
+   function to_nat(b : boolean) return natural is
+   begin
+      if b then
+         return 1;
+      else
+         return 0;
+      end if;
+   end function to_nat;
 
    function mode(iw : std_logic_vector(31 downto 0);
                  i  : natural range 0 to 2) return std_logic_vector is

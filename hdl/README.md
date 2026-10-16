@@ -55,6 +55,10 @@ departs from it.
 | [formal/timer.sby](formal/timer.sby) | The SymbiYosys job for it. |
 | [formal/formal_wb_dmux.vhd](formal/formal_wb_dmux.vhd) | The data bus decoder with checks of its master and slave ports. |
 | [formal/wb_dmux.sby](formal/wb_dmux.sby) | The SymbiYosys job for it. |
+| [formal/formal_pipe_fetch.vhd](formal/formal_pipe_fetch.vhd) | FETCH and ICACHE of the pipelined core, whose properties are in `src/pipe_fetch.vhd`. |
+| [formal/pipe_fetch.sby](formal/pipe_fetch.sby) | The SymbiYosys job for it. |
+| [formal/formal_pipeline.vhd](formal/formal_pipeline.vhd) | The pipelined core with a checker on each of its four ports. |
+| [formal/pipeline.sby](formal/pipeline.sby) | The SymbiYosys job for it. |
 
 ## Running the tests
 
@@ -230,10 +234,11 @@ the names of the I/O words it knows:
 
 `make formal` runs the SymbiYosys jobs in `formal/`. It is not part of
 `make test`, because it needs more tools: Yosys with the GHDL plugin,
-SymbiYosys, and the Yices 2 solver. Tested with Yosys 0.33, the plugin
-and GHDL 4.1.0 of Ubuntu 24.04 (packages `yosys`, `yosys-plugin-ghdl`, and
-`ghdl-gcc`, whose libraries the plugin loads), SymbiYosys at its tag
-`yosys-0.33`, and Yices 2.6.4. CI installs the same.
+SymbiYosys, and the solvers Yices 2 and Boolector. Tested with Yosys 0.33,
+the plugin and GHDL 4.1.0 of Ubuntu 24.04 (packages `yosys`,
+`yosys-plugin-ghdl`, and `ghdl-gcc`, whose libraries the plugin loads),
+SymbiYosys at its tag `yosys-0.33`, Yices 2.6.4, and Boolector 3.2 (package
+`boolector`). CI installs the same.
 
 `formal_multicycle` connects the multi-cycle core to four checkers. Every
 input is free, apart from a reset in the first cycle, so the solver plays
@@ -283,9 +288,33 @@ read, a write, a stalled request, and each kind of interrupt taken. For
 the timer, it shows a request taken, and one that waits while the timer
 counts on.
 
-The checkers do not depend on the multi-cycle core, so the pipelined core
-can reuse them, with `G_MAX_PENDING` raised if it keeps more than one
-request waiting.
+`formal_pipe_fetch` proves FETCH and ICACHE of the pipelined core for
+every cycle. Every input is free: every slave, every redirect, and every
+DECODE that takes no more words than it is offered. The properties are in
+`src/pipe_fetch.vhd` under `G_FORMAL`, because their invariants name its
+registers. Memory holds a free but constant value at a free but constant
+address (`anyconst`), and any value elsewhere, in every ACK. The
+assertions say that whenever DECODE sees that address, it sees that value:
+the words come from the addresses that `addr_o` names, also after a
+redirect, a redirect to an odd address, and a redirect with requests in
+flight, whose words must be dropped. They also say that the words lie in
+the range that `end_o` closes, which the core compares with each store,
+and they check the bus port as `wb_master_check` does, but on the
+counter of requests in flight. The invariants tie that counter, the
+requests to drop, the next pair to request, the buffer, and `end_o` to
+each other, which makes the assertions inductive in one step. Boolector
+proves them in about a minute; Yices does not finish. Breaking the drop
+of stale words, or of an odd address's low word, fails the proof.
+
+`formal_pipeline` puts the four checkers on the pipelined core, with
+`G_MAX_PENDING` 8 on the instruction bus and 4 on the data bus. The core's
+own assertions hold there too: those of `pipe_fetch`, and those of its
+process `p_check`, among them the data access rule of MICROARCH.md §9,
+that no flush leaves read data owed. The pipeline is too deep for
+k-induction without many more invariants, so its `bmc` task checks only
+the first 8 cycles after reset, which hold an interrupt entry and a first
+store, as its covers show. A 9th cycle did not finish in 20 minutes. The
+simulation tests check the same assertions on every run.
 
 ## The multi-cycle core
 

@@ -1,0 +1,36 @@
+# The bus and interrupt ports of the pipelined core, and its own
+# invariants (formal_pipeline.vhd). "bmc" checks the assertions for the
+# first 8 cycles after reset, for every program and every bus, and
+# "cover" reaches each cover statement. 8 cycles hold an interrupt entry
+# and a first store, which the covers c_retire and c_store show. Each
+# further cycle costs many times more: the 9th did not finish in 20
+# minutes.
+
+[tasks]
+bmc
+cover
+
+[options]
+bmc: mode bmc
+bmc: depth 8
+cover: mode cover
+cover: depth 12
+
+[engines]
+bmc: abc bmc3
+cover: smtbmc yices
+
+[script]
+plugin -i ghdl
+ghdl --std=08 -fpsl nice_pkg.vhd trace_pkg.vhd pipe_pkg.vhd pipe_fetch.vhd pipeline.vhd wb_master_check.vhd handshake_check.vhd formal_pipeline.vhd -e formal_pipeline
+prep -top formal_pipeline
+
+[files]
+../src/nice_pkg.vhd
+../src/trace_pkg.vhd
+../src/pipe_pkg.vhd
+../src/pipe_fetch.vhd
+../src/pipeline.vhd
+wb_master_check.vhd
+handshake_check.vhd
+formal_pipeline.vhd

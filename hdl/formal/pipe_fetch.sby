@@ -1,0 +1,29 @@
+# FETCH and ICACHE of the pipelined core (formal_pipe_fetch.vhd, and the
+# properties under G_FORMAL in pipe_fetch.vhd). "prove" proves the
+# assertions for every cycle by k-induction, and "cover" reaches each
+# cover statement.
+
+[tasks]
+prove
+cover
+
+[options]
+prove: mode prove
+prove: depth 2
+cover: mode cover
+cover: depth 20
+
+[engines]
+prove: smtbmc boolector
+cover: smtbmc yices
+
+[script]
+plugin -i ghdl
+ghdl --std=08 -fpsl nice_pkg.vhd pipe_pkg.vhd pipe_fetch.vhd formal_pipe_fetch.vhd -e formal_pipe_fetch
+prep -top formal_pipe_fetch
+
+[files]
+../src/nice_pkg.vhd
+../src/pipe_pkg.vhd
+../src/pipe_fetch.vhd
+formal_pipe_fetch.vhd

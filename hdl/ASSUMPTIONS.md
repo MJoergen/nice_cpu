@@ -91,3 +91,15 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
     for it. It would show as a difference from the emulator. Only the
     timer probes start the timer, and they show none. The runtime's and
     the translator's programs of `make programs` do not use it either.
+
+## Formal checks
+
+14. **FETCH and ICACHE are proven, the rest of the core is checked for 8
+    cycles.** `formal/pipe_fetch.sby` proves `pipe_fetch` for every cycle,
+    with invariants under its `G_FORMAL`. It needs Boolector, which CI now
+    installs (**Outside hdl/:** one package name in
+    `.github/workflows/ci.yml`); Yices does not finish the induction. The
+    whole core is too deep for that without many more invariants, so
+    `formal/pipeline.sby` checks its ports and its own assertions for the
+    first 8 cycles after reset. The simulation tests check the same
+    assertions on every run.

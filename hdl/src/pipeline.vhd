@@ -217,24 +217,6 @@ architecture synthesis of pipeline is
       return res_v;
    end function popcount;
 
-   function to_nat(b : std_logic) return natural is
-   begin
-      if b = '1' then
-         return 1;
-      else
-         return 0;
-      end if;
-   end function to_nat;
-
-   function to_sl(b : boolean) return std_logic is
-   begin
-      if b then
-         return '1';
-      else
-         return '0';
-      end if;
-   end function to_sl;
-
    -- FETCH and ICACHE
    signal f_addr     : std_logic_vector(31 downto 0);
    signal f_end      : std_logic_vector(31 downto 0);

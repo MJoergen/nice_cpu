@@ -89,11 +89,11 @@ architecture synthesis of pipe_fetch is
    signal end_r   : std_logic_vector(31 downto 0);
 
    signal stb_r     : std_logic                     := '0';
-   signal req_r     : std_logic_vector(30 downto 0);         -- The pair on the bus
-   signal pair_r    : std_logic_vector(30 downto 0);         -- The next pair to request
+   signal req_r     : std_logic_vector(30 downto 0);            -- The pair on the bus
+   signal pair_r    : std_logic_vector(30 downto 0);            -- The next pair to request
    signal pending_r : natural range 0 to C_DEPTH / 2 := 0;      -- Requests without their ACK
-   signal drop_r    : natural range 0 to C_DEPTH / 2;        -- Of those, to drop
-   signal odd_r     : std_logic;                             -- Drop the next low word
+   signal drop_r    : natural range 0 to C_DEPTH / 2;           -- Of those, to drop
+   signal odd_r     : std_logic;                                -- Drop the next low word
 
    signal load : std_logic;
 
@@ -188,5 +188,96 @@ begin
          end if;
       end if;
    end process p_fetch;
+
+
+   -- The proof of formal/pipe_fetch.sby. The memory holds the value f_v at
+   -- the address f_a, both free but constant, and any value elsewhere. The
+   -- assertions say that DECODE only ever sees f_v at f_a, and that the
+   -- bus port keeps to pipelined Wishbone. The invariants tie the buffer
+   -- and the requests in flight to the addresses, so that k-induction can
+   -- prove it all for every cycle.
+
+   gen_formal : if G_FORMAL generate
+      type t_hits is array (natural range <>) of std_logic;
+
+      signal f_a : std_logic_vector(31 downto 0);
+      signal f_v : std_logic_vector(31 downto 0);
+      -- For each request in flight, oldest first: it reads the pair of f_a.
+      signal f_hits : t_hits(0 to C_DEPTH / 2);
+      signal f_live : natural range 0 to C_DEPTH / 2;   -- Requests not dropped
+      signal f_good : std_logic;                         -- An ACK holds f_v
+
+      attribute anyconst : boolean;
+      attribute anyconst of f_a : signal is true;
+      attribute anyconst of f_v : signal is true;
+   begin
+      f_live <= pending_r - drop_r when drop_r <= pending_r else 0;
+      f_good <= '1' when (f_a(0) = '0' and ibus_data_i(31 downto 0) = f_v) or
+                         (f_a(0) = '1' and ibus_data_i(63 downto 32) = f_v) else
+                '0';
+
+
+      p_hits : process (clk_i)
+         variable hits_v : t_hits(0 to C_DEPTH / 2 + 1);
+         variable n_v    : natural range 0 to C_DEPTH / 2 + 1;
+      begin
+         if rising_edge(clk_i) then
+            hits_v := f_hits & '0';
+            n_v    := pending_r;
+            if ibus_ack_i = '1' and n_v > 0 then
+               hits_v := hits_v(1 to C_DEPTH / 2 + 1) & '0';
+               n_v    := n_v - 1;
+            end if;
+            if load = '1' and n_v <= C_DEPTH / 2 then
+               hits_v(n_v) := '1' when pair_r = f_a(31 downto 1) else '0';
+            end if;
+            f_hits <= hits_v(0 to C_DEPTH / 2);
+         end if;
+      end process p_hits;
+
+      -- psl default clock is rising_edge(clk_i);
+
+      -- The slave: an ACK only for a request accepted, and the memory
+      -- psl f_ack : assume always ibus_ack_i -> pending_r > to_nat(stb_r);
+      -- psl f_memory : assume always (ibus_ack_i and f_hits(0)) -> f_good;
+
+      -- The port, as formal/wb_master_check.vhd checks it from outside
+      -- psl f_stb : assert always rst_i = '0' -> (stb_r = '1' -> pending_r >= 1);
+      -- psl f_stall_hold : assert always
+      --    {stb_r and ibus_stall_i and not rst_i} |=> {rst_i = '1' or (stb_r = '1' and stable(req_r))};
+      -- psl f_cyc_hold : assert always
+      --    {pending_r > to_nat(stb_r) and ibus_ack_i = '0' and rst_i = '0'} |=> {pending_r > 0};
+      -- psl f_reset : assert always {rst_i} |=> {pending_r = 0 and stb_r = '0'};
+
+      -- The invariants
+      -- psl f_drop : assert always rst_i = '0' -> drop_r <= pending_r;
+      -- psl f_room : assert always rst_i = '0' -> count_r + 2 * pending_r <= C_DEPTH;
+      -- psl f_next : assert always rst_i = '0' ->
+      --    ((pair_r - f_live) & odd_r) = head_r + count_r;
+      -- psl f_odd : assert always rst_i = '0' -> (odd_r = '1' -> count_r = 0);
+      -- psl f_end : assert always rst_i = '0' ->
+      --    end_r = (pair_r & '0') + to_nat(odd_r = '1' and f_live = 0);
+      -- psl f_req : assert always rst_i = '0' ->
+      --    ((stb_r = '1' and f_live > 0) -> req_r = pair_r - 1);
+
+      gen_hits : for i in 0 to C_DEPTH / 2 - 1 generate
+         -- psl f_hit : assert always (rst_i = '0' and i < f_live) ->
+         --    f_hits(minimum(drop_r + i, C_DEPTH / 2)) = to_sl(pair_r - f_live + i = f_a(31 downto 1));
+      end generate gen_hits;
+
+      gen_ring : for j in 0 to C_DEPTH - 1 generate
+         -- psl f_ring : assert always (rst_i = '0' and j < count_r and head_r + j = f_a) ->
+         --    ring_r((rd_r + j) mod C_DEPTH) = f_v;
+      end generate gen_ring;
+
+      -- What DECODE sees, and the range of fetched words
+
+      gen_f_words : for i in 0 to 3 generate
+         -- psl f_word : assert always (rst_i = '0' and i < count_o and head_r + i = f_a) ->
+         --    words_o(i) = f_v;
+      end generate gen_f_words;
+
+      -- psl f_range : assert always rst_i = '0' -> end_r - head_r >= count_r;
+   end generate gen_formal;
 
 end architecture synthesis;

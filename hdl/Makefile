@@ -237,8 +237,10 @@ synth: analyse
 # The formal checks of formal/: each task of each .sby file must pass. The
 # work directories go in $(BUILD).
 SBY ?= sby
-FORMAL = multicycle timer wb_dmux
+FORMAL = multicycle timer wb_dmux pipe_fetch pipeline
 FORMAL_TASKS = prove cover
+# The pipelined core is checked for a bounded number of cycles only.
+FORMAL_TASKS_pipeline = bmc cover
 
 define check_formal
 	@mkdir -p $(BUILD)
@@ -250,7 +252,7 @@ define check_formal
 endef
 
 formal:
-	$(foreach f,$(FORMAL),$(foreach t,$(FORMAL_TASKS),$(call check_formal,$(f),$(t))))
+	$(foreach f,$(FORMAL),$(foreach t,$(or $(FORMAL_TASKS_$(f)),$(FORMAL_TASKS)),$(call check_formal,$(f),$(t))))
 
 emulator:
 	$(MAKE) -C ../emulator build

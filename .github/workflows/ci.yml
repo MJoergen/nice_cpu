@@ -122,7 +122,7 @@ jobs:
       # loads the libraries of ghdl-gcc.
       - run: |
           sudo apt-get update
-          sudo apt-get install -y yosys yosys-plugin-ghdl ghdl-gcc
+          sudo apt-get install -y yosys yosys-plugin-ghdl ghdl-gcc boolector
       - run: |
           git clone --depth 1 --branch yosys-0.33 https://github.com/YosysHQ/sby.git /tmp/sby
           sudo make -C /tmp/sby install PREFIX=/usr/local

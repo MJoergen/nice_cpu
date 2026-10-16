@@ -11,14 +11,16 @@ Usage: nicewasm.py [-o output.nasm] [--no-bounds-checks] [--memory-pages N]
 README.md lists the wasm features it supports. Anything else is rejected
 with an error, never translated wrongly.
 
-Each function keeps its most used locals in R7-R11, and the other locals
-and its wasm operand stack in its frame on the NICE stack, addressed from
-FP (R12). An i32 or f32 takes one word or register, and an i64 or f64
-two, low word first. The operand stack holds the type of each value, so
-every value has a fixed place in the frame, and every instruction is a few
-NICE instructions on frame words and registers. A constant or the value of
-a local is written to its place only when it must be; until then, the
+Each function is translated in two steps. The front end
+(FunctionTranslator) turns each wasm instruction into a few NICE
+instructions on virtual registers, one for each word of each local and of
+each value on the wasm operand stack. An i32 or f32 takes one word, and an
+i64 or f64 two, low word first. A constant or the value of a local is
+copied to registers of its own only when it must be; until then, the
 instructions that use it take the constant or the local as their operand.
+The back end (Allocator) colours the virtual registers with R1-R12 by
+iterated register coalescing, and puts the values that do not fit in frame
+words, addressed from SP. There is no frame pointer.
 """
 
 from __future__ import annotations
@@ -1145,7 +1147,7 @@ class Allocator:
     from the registers it names. A conditional instruction may leave its
     destination as it was, so it also uses it. A virtual register that
     gets no colour is spilled to a frame word, %sN, which becomes
-    @k[SP] or the like when the frame is laid out. NICE takes a memory
+    @k[R13] when the frame is laid out (frame_words). NICE takes a memory
     operand almost anywhere, so a spilled register is usually used in
     place. Only where it is an address, or changed by a side effect, does
     a short-lived temporary take its place, and the colouring runs again.
@@ -2840,7 +2842,7 @@ class FunctionTranslator:
         reachable = True
         dead_blocks = 0  # blocks opened in code that cannot be reached
         # The condition under which the i32 on top of the operand stack is
-        # not 0, when the flags hold it and its frame word does not.
+        # not 0, when the flags hold it and its register does not.
         pending: Optional[str] = None
         while True:
             at = r.pos

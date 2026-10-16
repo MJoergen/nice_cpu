@@ -163,6 +163,12 @@ them to 7139 (18% less) and 14565 (22% less). In all, `test/safe.zig` is
 [doc/review/code-size-plan.md](../doc/review/code-size-plan.md) has the
 measurements.
 
+On 2026-10-16, virtual registers with a register allocator, and frames
+without a frame pointer, took `test/safe.zig` from 7131 to 6339 words
+(11% less) and the float library from 14308 to 8058 (44% less). They
+took the benchmark in [bench/](../bench/) from 3359061 to 2540693
+instructions (24% fewer).
+
 ## Supported features
 
 - **Types:** `i32`, `i64`, `f32`, and `f64`, in function types, locals,
@@ -297,38 +303,33 @@ module in these ways:
 ## How functions are translated
 
 Each wasm function becomes a §9.3 function at the label `W.fN`, where N is
-its function index. It builds a §9.3 frame with FP (R12).
+its function index. nicewasm translates it in two steps. The front end
+turns each wasm instruction into NICE instructions on virtual registers.
+The back end gives the virtual registers physical registers, or frame
+words if there are too few, and adds the prologue and the epilogue.
 
-The most used locals live in R7–R11. nicewasm translates each function
-twice. The first pass counts the uses of each local, and a use inside a
-loop counts 8 times, or 64 or 512 inside two or three loops. The second
-pass gives the registers to the locals with the highest counts, as long
-as they fit: an `i32` takes one register, and an `i64` two. A local whose
-count is below 3 stays in the frame. The function pushes the registers it
-uses just below the saved FP, and pops them before it returns. So R7–R11
-keep their values across a call, as §9.3 requires.
-
-The parameters that arrive in R1–R4 and the declared locals are copied into
-their registers, or into words below the saved registers. The declared
-locals are set to 0, as wasm requires. A parameter on the stack is copied
-into its registers, or stays where the caller put it. nicewasm tracks the
-type of each value on the wasm operand stack, so each value has fixed frame
-words: one for an `i32`, two for an `i64`. Every wasm instruction becomes
-NICE instructions on registers and frame words. For example, `i32.add` is
-one `ADD` with three operands, and `i64.add` is `ADD[M]` on the low words
-and `ADD[C]` on the high words. The output has a comment for each wasm
-instruction.
+Each local has a virtual register, or two for an `i64` or `f64`, low word
+first. So does each value that an instruction pushes on the wasm operand
+stack, whose type nicewasm tracks. The values that a block, loop, or `if`
+takes and gives have fixed registers, which every branch to it writes.
+Every wasm instruction becomes NICE instructions on these registers. For
+example, `i32.add` is one `ADD` with three operands, and `i64.add` is
+`ADD[M]` on the low words and `ADD[C]` on the high words. The output has
+a comment for each wasm instruction. Physical registers appear only
+where ISA.md §9.3 or a helper demands them: the arguments and results of
+calls, the function's parameters and result, and the code and address
+of a trap.
 
 A constant, and a `local.get`, emit no code. nicewasm records the value
 on the operand stack as deferred, and the instruction that uses it takes
-the constant or the local's register or frame word as its operand. A
+the constant or the local's register as its operand. A
 result that the next instruction stores with `local.set` or `local.tee`
 goes straight to the local, for an `i32` operation of two values, an
 `i32` shift, a call, and the operations that call the runtime library,
 such as `i32.mul`. So `local.get a; local.get b; i32.add; local.set c` is
 one `ADD c, a, b`. Before such an operation, the copies of the local's old
-value below its operands are written to their frame words. A deferred
-value is written to its frame words only when it must be:
+value below its operands are copied to registers of their own. A
+deferred value is copied to registers of its own only when it must be:
 
 - before a `local.set` or `local.tee` changes the local it is the value of;
 - at the start of a block, for the values the block takes and for every
@@ -338,16 +339,15 @@ value is written to its frame words only when it must be:
 - at an `else` or `end`, for the block's results.
 
 `select`, `abs`, `neg`, and `copysign` change only a part of their first
-operand, so they copy a deferred one to the result's frame words first.
+operand, so they copy a deferred one to the result's registers first.
 
-A branch moves deferred values to the frame words of its target, as it
+A branch moves deferred values to the registers of its target, as it
 does any other value. A call takes deferred arguments directly, and
 deferred values below the arguments stay deferred, since a call cannot
 change this function's locals. `local.tee` leaves the local itself on
 the stack, and `i32.wrap_i64` of a deferred value is the low word of it.
 
-A block's values stay in the frame words where they already are. A
-branch moves the values it carries down to the words that the target
+A branch moves the values it carries to the registers that the target
 block expects, and then jumps. A branch out of the function moves them
 to R1 and up, as `return` does. `br_table` checks the index against the
 number of labels, then jumps through a table of `.DAT` addresses.
@@ -370,17 +370,19 @@ shift by a "negative" count such as 32 − n for n > 32. So `W.shl64` and
 `W.shr_u64` need no branch: each part that does not apply comes out as
 0. An `i64` rotate by 32 or more swaps the words first.
 
-A load or store first puts the byte address in R1 and checks that all its
+A load or store first computes the byte address and checks that all its
 bytes are in the memory. A failed check jumps to a trap stub after the
 function's epilogue, which sets R2 to the start of the access code. An
-access of 4 or 8 bytes then tests whether R1 is at a multiple of 4. If
-it is, R2 gets the word index, and one `MOVE` for each word does the
-access. If it is not, the code calls a helper, `W.load4`, `W.load8`,
-`W.store4`, or `W.store8`, which returns past the aligned `MOVE`s. An
-access of 1 or 2 bytes always calls a helper, such as `W.load1u` or
-`W.store2`. A helper returns a loaded value in R1, or R1 and R2, and
-takes a value to store in R2, or R2 and R3. nicewasm emits each helper
-once, if a function uses it.
+access of 4 or 8 bytes then tests whether the address is at a multiple
+of 4. If it is, one `MOVE` for each word does the access, with the word
+index in a register. If it is not, the code jumps to a stub after the
+epilogue, which calls a helper, `W.load4`, `W.load8`, `W.store4`, or
+`W.store8`, and jumps back. So the common, aligned path changes no
+registers but its own. An access of 1 or 2 bytes always calls a helper,
+such as `W.load1u` or `W.store2`. A helper takes the byte address in R1.
+It returns a loaded value in R1, or R1 and R2, and takes a value to
+store in R2, or R2 and R3. nicewasm emits each helper once, if a
+function uses it.
 
 In a helper, the value is shifted together from, or split across, two
 words, or three for an unaligned `i64`. A store that changes only part
@@ -389,17 +391,70 @@ of a word reads the word, changes its bytes, and writes it back once.
 If the address is a constant, nicewasm adds the offset itself. If all
 the bytes are in the initial memory, or there are no bounds checks,
 there is no check, and an aligned access of 4 or 8 bytes is a `MOVE`
-for each word, such as `MOVE @x, @___wasm_memory+256`.
+for each word, such as `MOVE R3, @___wasm_memory+256`. If no access of
+its size fits in the memory at all, the access traps at once.
 
-`call_indirect` puts the table index in R5 and checks it against the
-table's size. It checks the entry's address for 0 and its type number,
-then calls the address in R5 with `ADD @--SP, 1, PC` and `MOVE PC, R5`,
-the "through a register" sequence of ISA.md §9.3. The arguments are in
-R1–R4 and on the stack, as for `call`.
+`call_indirect` checks the table index against the table's size. It
+checks the entry's address for 0 and its type number, then calls the
+address with `ADD @--SP, 1, PC` and `MOVE PC, Rn`, the "through a
+register" sequence of ISA.md §9.3. The arguments are in R1–R4 and on the
+stack, as for `call`. If the address is in a frame word, the jump takes
+a constant word, and the `ADD` adds 2.
 
-Apart from the locals in R7–R11, the translated functions use only R1–R5,
-R12, R13, R14 for the trick above, and R15. The helpers and
-`___wasm_start` also use R6, which a §9.3 function may change.
+### Register allocation
+
+The back end works on a list of instructions and labels. It finds the
+jumps between them, and which registers are live at each instruction. It
+removes the instructions whose only effect is to write a register that
+is not read afterwards. So of the declared locals, which wasm sets to 0,
+only those that may be read before they are set get a `MOVE x, 0`. Then
+it splits each virtual register into webs: each web is the definitions
+that reach a common use, with those uses. A local that the wasm code
+reuses for unrelated values thus gets a register for each of them.
+
+The registers are coloured by iterated register coalescing (George and
+Appel, 1996), with R1–R12. A move between two registers that do not
+interfere is removed if, by the tests of Briggs and George, that cannot
+make the colouring fail. This includes moves to and from the physical
+registers of calls, so an argument is often computed straight into R1.
+A call may change R1–R6 and the flags, as §9.3 allows, so a value that
+is live across a call gets one of R7–R12, which §9.3 preserves. A call
+of a helper changes only the registers that the helper uses, all among
+R1–R6. A value that is not live across a call gets one of R1–R6 if it
+can, since the function must save each of R7–R12 that it uses.
+
+If there are too few registers, the values with the lowest cost for
+their number of neighbours go to frame words. The cost of a value counts
+its uses and definitions, each weighted by 10 for each loop around it,
+so values in inner loops keep their registers. NICE takes a memory
+operand almost anywhere, so a value in a frame word is used in place, as
+in `ADD R1, @2[R13], R3`. Only where it is an address, as in `@x[Rn]`,
+or is changed by a side effect, does it go to a temporary register for
+that one instruction, and the colouring runs again. Values in frame
+words that are never live at the same time share a word.
+
+Last, nicewasm removes each `MOVE` of a register to itself and each jump
+to the label that follows it.
+
+### The frame
+
+There is no frame pointer. The prologue pushes the registers of R7–R12
+that the function uses, then reserves its frame words with `SUB R13,
+R13, n`. The epilogue drops them with `ADD R13, R13, n`, pops the
+registers, and returns with `MOVE R15, @R13++`. A function that needs
+neither has no prologue. Frame words are addressed from SP, as `@k[R13]`.
+SP moves only in a call sequence: each stack argument and the return
+address are pushed, the return pops the return address, and `ADD R13,
+R13, n` drops the stack arguments. nicewasm counts the words pushed at
+each instruction, so that it can address the same frame word from
+anywhere. All sources of an instruction are read before its destination
+is written (ISA.md §5), so `MOVE @--R13, @3[R13]` pushes the frame word at
+3 above the old SP. A parameter that arrives on the stack is read at
+entry from above the return address.
+
+The translated functions may use every register. The helpers and
+`___wasm_start` use only R1–R6, R13, R14, and R15, so a value in R7–R12
+survives a call of a helper, as it does any §9.3 call.
 
 ## Test
 
@@ -425,12 +480,12 @@ built with rustc 1.99.0. `test/errors.py` checks every error message.
 `test/fuzz.py FIRST COUNT` builds random modules from a syntax tree whose
 nodes also evaluate themselves in Python, so each module comes with the
 result that wasm defines for it, and `main`'s result in R1 must match.
-The modules have four functions with `i32` and `i64` parameters, more
-locals than fit in R7–R11, loops, blocks, branches with values, `select`,
+The modules have four functions with `i32` and `i64` parameters, 8 to 13
+locals, loops, blocks, branches with values, `select`,
 calls through the table, every integer operation and comparison, and
 loads and stores of every width at constant and dynamic addresses. That
 covers the rules for deferred values, fused comparisons, forwarded
-results, and register locals above. `make test` runs 40 seeds with the
+results, and register allocation above. `make test` runs 40 seeds with the
 math unit and 40 with `--no-mpu`; `test/fuzz.py 1 1000` runs more, and
 `test/fuzz.py --reduce SEED` shrinks a failing module and writes it with
 its translation.

@@ -1956,6 +1956,64 @@ def tidy(items: List[Item]) -> List[Item]:
                     and falls_to(i + 1, it.targets[0]))]
 
 
+# The most instructions that a conditional jump may skip and still become
+# conditional instructions (if_convert), and the most that may come
+# before a jump to the end of an if.
+IF_CONVERT = 4
+IF_CONVERT_ELSE = 2
+
+
+def if_convert(items: List[Item]) -> List[Item]:
+    """Turns a conditional jump over a few instructions into those
+    instructions with the opposite condition: ?Z MOVE R15, L, then x and y,
+    then L, becomes ?!Z x and ?!Z y. On the FPGA core a taken conditional
+    jump costs some five cycles, and a skipped instruction one (doc/
+    MICROARCH.md). A skipped instruction makes no access (§3), so the
+    instructions may access memory. None of them may write the flags or
+    be conditional already, and no label may come between the jump and L,
+    which the jump must reach first. A jump that ends the skipped code,
+    to the end of an if with an else, becomes conditional too, if the
+    skipped code is shorter."""
+    def ins_at(k: int) -> Optional[int]:
+        """The next instruction or label from item k on, past comments."""
+        while k < len(items):
+            it = items[k]
+            if not isinstance(it, str):
+                return k
+            if not it.lstrip().startswith(";"):
+                return None
+            k += 1
+        return None
+
+    out = list(items)
+    for i, it in enumerate(items):
+        if not (isinstance(it, Ins) and it.kind == "jump" and it.cond and len(it.targets) == 1
+                and it.ops[1:] == it.targets):
+            continue
+        body: List[Ins] = []
+        k = ins_at(i + 1)
+        while k is not None and isinstance(items[k], Ins) and len(body) <= IF_CONVERT:
+            body.append(items[k])  # type: ignore[arg-type]
+            k = ins_at(k + 1)
+        if k is None or items[k] != Label(it.targets[0]):
+            continue
+        end = body[-1] if body else None
+        if (end is not None and end.kind == "jump" and not end.cond
+                and len(body) - 1 <= IF_CONVERT_ELSE):
+            body = body[:-1]
+        elif len(body) > IF_CONVERT:
+            continue
+        else:
+            end = None
+        if not all(b.kind == "" and not b.cond and not flag_use_def(b)[1]
+                   and "R14" not in (operand_reg(o)[1] for o in b.ops) for b in body):
+            continue
+        for b in body + ([end] if end is not None else []):
+            b.cond = negate(it.cond)
+        out[i] = ""
+    return [x for x in out if x != ""]
+
+
 def frame_words(items: List[Item], n_slots: int, n_saved: int) -> None:
     """Replaces the frame words %sN of spilled registers and %aN of stack
     arguments by operands relative to SP. The frame has no frame pointer.
@@ -3915,7 +3973,7 @@ class FunctionTranslator:
                        uses=frozenset(f"R{k + 1}" for k in range(n_results)))
         alloc = Allocator(entry + self.body + [Label(self.ret_label), exit_ins] + self.stubs,
                           ALLOC_REGS, CALLEE_SAVED, self.n_vregs)
-        items = tidy(alloc.run())
+        items = if_convert(tidy(alloc.run()))
         saved = [r for r in CALLEE_SAVED if r in alloc.used]
         n_slots = alloc.n_slots
         name = printable(self.t.m.names.get(self.idx, ""))

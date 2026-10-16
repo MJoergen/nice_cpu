@@ -1145,6 +1145,32 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
                      local_get(1) + i32_const(3) + MUL + local_get(1) + i32_const(2) + MUL
                      + EQ)))),
      "", 0x7FFFE),
+    # An if whose code is short becomes conditional instructions, with no
+    # jump over it (README.md). Local 1 is 0 and local 2 is 7, so that the
+    # conditions are not constants. One bit each:
+    # 1: y = 3, then y = 9 if local 1, leaves y = 3.
+    # 1: the same if local 2 sets y = 9.
+    # 1: if local 1 then 10 else local 2 + 1 gives 8.
+    # 1: if local 2 then 10 else local 2 + 1 gives 10.
+    # 1: if local 2, store 77 at byte 64. The word there is then 77.
+    # 1: if local 1, store 55 at byte 68. The word there stays 0.
+    # 0: a check that fails, 8 = 10.
+    # 1111110 = 0x7E.
+    ("ifconvert", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((4, i32_const(0) + local_set(1) + i32_const(7) + local_set(2) + bits(0,
+            *[i32_const(3) + local_set(3) + local_get(c) + if_() + i32_const(9) + local_set(3)
+              + END + local_get(3) + i32_const(want) + EQ for c, want in [(1, 3), (2, 9)]],
+            *[local_get(c) + if_(I32) + i32_const(10) + ELSE + local_get(2) + i32_const(1) + ADD
+              + END + i32_const(want) + EQ for c, want in [(1, 8), (2, 10)]],
+            *[local_get(c) + if_() + i32_const(addr) + i32_const(v) + mem(I32_STORE) + END
+              + i32_const(addr) + mem(I32_LOAD) + i32_const(want) + EQ
+              for c, addr, v, want in [(2, 64, 77, 77), (1, 68, 55, 0)]],
+            local_get(1) + if_(I32) + i32_const(10) + ELSE + local_get(2) + i32_const(1) + ADD
+            + END + i32_const(10) + EQ)))), "", 0x7E),
     # Code that cannot be reached is skipped up to its block's end or
     # else, including nested blocks in it, which are not even valid: the
     # if has no condition, and the add no operands. 8 + 9 = 17.

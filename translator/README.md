@@ -533,8 +533,18 @@ or is changed by a side effect, does it go to a temporary register for
 that one instruction, and the colouring runs again. Values in frame
 words that are never live at the same time share a word.
 
-Last, nicewasm removes each `MOVE` of a register to itself and each jump
+Then nicewasm removes each `MOVE` of a register to itself and each jump
 to the label that follows it.
+
+Last, a conditional jump over up to four instructions goes away, and
+they get the opposite condition instead. On the FPGA core, a taken
+conditional jump costs some five cycles more than a skipped instruction
+(doc/MICROARCH.md). The instructions must not write the flags or be
+conditional already, and no label may come between them. A skipped
+instruction makes no memory access (ISA.md §3), so they may access
+memory. So `if (x) y = 9;` is `MOVE[M] R0, x` and `?!Z MOVE y, 9`. The
+code of an if before its else, up to two instructions and the jump to
+the end, becomes conditional the same way, jump and all.
 
 ### The frame
 

@@ -59,6 +59,7 @@ line such as `Pending: IRQ 05` follows the first line.
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
 | `--no-cycle-counter` | Make `0xFFFFFF10` and `0xFFFFFF11`, the cycle counter, ordinary memory (see Memory map). |
+| `--no-timer-irq` | The timer counts, but raises no requests, so that `--irq` can raise them instead (see Memory map). |
 | `-h`, `--help` | Print the usage on stdout. |
 
 Numbers in options are decimal, or hex after `0x` or `0X`, with no sign or
@@ -152,6 +153,14 @@ The timer's requests are IRQs, like those of `--irq`. A request merges
 with one that is pending, and an `--irq` request replaces the vector of a
 pending one. `test/timer.nasm` checks the counting, the stop, and the
 merging.
+
+With `--no-timer-irq`, the timer counts, reloads, and answers reads as
+before, but raises no requests. A test of an FPGA core that may take a
+timer request later than the emulator does (doc/MICROARCH.md §6) then
+raises each one with `--irq` at the step where the core took it, as it
+does for its own requests ([hdl/README.md](../hdl/README.md)). `make test`
+runs `timer.nasm` so, with its eight requests given by `--irq`, and the
+output must equal that of the plain run.
 
 Instruction fetches from `0xFFFFFF00`–`0xFFFFFFFF` read 0, as ISA.md §8.3
 requires, whatever the memory there holds. So a program that runs into the

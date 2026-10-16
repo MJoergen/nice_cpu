@@ -4,7 +4,8 @@ EMU = zig-out/bin/niceemu
 ASM = ../assembler/test
 
 # Each program is run with its options, and its output and exit status are
-# compared with test/X.expected. Stdin is /dev/null, so a program that reads
+# compared with test/X.expected, or with the file a third argument of check
+# names. Stdin is /dev/null, so a program that reads
 # the console finds the input ended.
 #
 # The 2004 example programs, from the assembler's tests. Their .expected
@@ -36,12 +37,17 @@ OPTS_mpu     = -d 0x200:72 -d 0xffffff20:16
 OPTS_mpu64   = -d 0x200:72 -d 0xffffff20:32
 OPTS_perf    = --nmi 3:0x41 -d 0xffffff10:5
 OPTS_timer   = -d 0xffffff40:4
+# timer again, with the timer's requests raised by --irq instead, before
+# the steps after those that raise them in timer.nasm's table: 6, 16, 19,
+# 22, 25, 28, 31, and 34. The output must equal timer.expected.
+OPTS_timer_noirq = --no-timer-irq --irq 7:0x41 --irq 17:0x41 --irq 20:0x41 --irq 23:0x41 \
+  --irq 26:0x41 --irq 29:0x41 --irq 32:0x41 --irq 35:0x41 -d 0xffffff40:4
 OPTS_input   = --input test/input.txt
 
 define check
 	@$(EMU) $(OPTS_$(1)) $(2) < /dev/null > test/$(1).out; echo "exit $$?" >> test/$(1).out
-	@if cmp -s test/$(1).out test/$(1).expected; then echo "PASS $(1)"; \
-	else echo "FAIL $(1)"; diff test/$(1).expected test/$(1).out; exit 1; fi
+	@if cmp -s test/$(1).out test/$(or $(3),$(1)).expected; then echo "PASS $(1)"; \
+	else echo "FAIL $(1)"; diff test/$(or $(3),$(1)).expected test/$(1).out; exit 1; fi
 
 endef
 
@@ -51,6 +57,7 @@ test: build
 	$(ZIG) build test --summary all
 	$(foreach t,$(EXAMPLES),$(call check,$(t),$(ASM)/$(t).bin))
 	$(foreach t,$(PROBES),$(call check,$(t),test/$(t).bin))
+	$(call check,timer_noirq,test/timer.bin,timer)
 	@rm -f test/*.out
 	@$(PYTHON) test/errors.py
 

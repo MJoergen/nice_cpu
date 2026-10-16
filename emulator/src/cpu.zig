@@ -337,6 +337,10 @@ pub const Cpu = struct {
     /// counts clock cycles, so a comparison of their traces must leave the
     /// cycle counter out. The instruction counter stays.
     cycle_counter: bool,
+    /// When false, the timer counts but raises no requests (`--no-timer-irq`).
+    /// A test then raises them with `--irq` at the steps where an FPGA core
+    /// took them, as it does for the requests it raises itself.
+    timer_irq: bool,
 
     /// A processor after reset (§8.1), with empty memory allocated from `gpa`.
     pub fn init(gpa: std.mem.Allocator) Cpu {
@@ -359,6 +363,7 @@ pub const Cpu = struct {
             .perf = .{},
             .timer = .{},
             .cycle_counter = true,
+            .timer_irq = true,
         };
         cpu.reset();
         return cpu;
@@ -491,7 +496,7 @@ pub const Cpu = struct {
         // The timer's request merges with one that is pending, and keeps
         // the vector of that one (§8.6).
         if (self.timer.raised) |v| {
-            if (self.irq_pending == null) self.requestIrq(v);
+            if (self.timer_irq and self.irq_pending == null) self.requestIrq(v);
             self.timer.raised = null;
         }
 
@@ -1510,6 +1515,21 @@ test "the timer's request is an IRQ, and merges with a pending one (§8.6)" {
     try testing.expectEqual(null, cpu.irq_pending);
     cpu.reset();
     try testing.expectEqual(Timer{}, cpu.timer);
+}
+
+test "without timer requests, the timer counts and reloads, and raises none (--no-timer-irq)" {
+    // 0: MOVE @TIMER_PERIOD, 2, then NOPs, with E = 1.
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    cpu.timer_irq = false;
+    try load(&cpu, 0, &.{ alu_iw(.always, MOVE, .none, ind_imm(0), imm(0), reg(0)), timer_base, 2 });
+    cpu.setReg(14, 1 << sr_e);
+    try cpu.step(); // the write, and the first of the two steps
+    try cpu.step(); // a NOP; the request would be raised at its end
+    try testing.expectEqual(2, cpu.peek(timer_base + 1)); // COUNT is P again
+    try cpu.step(); // a NOP, not an entry
+    try testing.expectEqual(null, cpu.irq_pending);
+    try testing.expectEqual(5, cpu.regs[15]);
 }
 
 test "instruction fetches from the I/O range read 0 (§8.3)" {

@@ -25,6 +25,8 @@ const usage =
     \\                       Both may be repeated. Steps count from 0.
     \\      --no-cycle-counter  Make 0xFFFFFF10 and 0xFFFFFF11 ordinary memory,
     \\                       for comparing traces with an FPGA core.
+    \\      --no-timer-irq   The timer counts, but raises no requests, so that
+    \\                       --irq can raise them where an FPGA core took them.
     \\  -h, --help           Print this help.
     \\
     \\Numbers may be decimal or 0x hex. Exit status: 0 after HALT, 1 on a
@@ -63,6 +65,7 @@ const Options = struct {
     requests: []const Request = &.{},
     max_steps: u64 = 100_000_000,
     cycle_counter: bool = true,
+    timer_irq: bool = true,
     /// The console input file, or "-" for stdin.
     input: []const u8 = "-",
     help: bool = false,
@@ -171,6 +174,8 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
             });
         } else if (std.mem.eql(u8, arg, "--no-cycle-counter")) {
             opts.cycle_counter = false;
+        } else if (std.mem.eql(u8, arg, "--no-timer-irq")) {
+            opts.timer_irq = false;
         } else if (arg.len > 1 and arg[0] == '-') {
             return fail("unknown option '{s}'\n\n{s}", .{ arg, usage });
         } else if (opts.path.len != 0) {
@@ -250,6 +255,7 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
     if (opts.trace) cpu.trace = out;
     cpu.console = out;
     cpu.cycle_counter = opts.cycle_counter;
+    cpu.timer_irq = opts.timer_irq;
     var in_buf: [4096]u8 = undefined;
     var in_r: std.fs.File.Reader = undefined;
     const in_file = if (std.mem.eql(u8, opts.input, "-")) std.fs.File.stdin() else std.fs.cwd().openFile(opts.input, .{}) catch |err| {

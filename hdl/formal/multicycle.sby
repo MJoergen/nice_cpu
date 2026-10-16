@@ -17,10 +17,11 @@ smtbmc yices
 
 [script]
 plugin -i ghdl
-ghdl --std=08 -fpsl trace_pkg.vhd multicycle.vhd wb_master_check.vhd handshake_check.vhd formal_multicycle.vhd -e formal_multicycle
+ghdl --std=08 -fpsl nice_pkg.vhd trace_pkg.vhd multicycle.vhd wb_master_check.vhd handshake_check.vhd formal_multicycle.vhd -e formal_multicycle
 prep -top formal_multicycle
 
 [files]
+../src/nice_pkg.vhd
 ../src/trace_pkg.vhd
 ../src/multicycle.vhd
 wb_master_check.vhd

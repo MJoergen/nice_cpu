@@ -17,6 +17,7 @@ working reference for it.
 | [CODING_STYLE.md](CODING_STYLE.md) | The style of the VHDL. |
 | [vsg.yml](vsg.yml) | The rules of CODING_STYLE.md for vsg, which `make lint` runs. |
 | [src/multicycle.vhd](src/multicycle.vhd) | The multi-cycle core. |
+| [src/nice_pkg.vhd](src/nice_pkg.vhd) | The parts of the ISA that the cores share: the operand fields, the register value rule, the condition, the ALU, the shifter, and the flags. |
 | [src/mpu.vhd](src/mpu.vhd) | The math unit of ISA.md §8.4, a Wishbone slave. |
 | [src/perf.vhd](src/perf.vhd) | The performance counters of ISA.md §8.5, a Wishbone slave. |
 | [src/timer.vhd](src/timer.vhd) | The timer of ISA.md §8.6, a Wishbone slave with an interrupt request port. |
@@ -265,7 +266,8 @@ takes effect before the next instruction is fetched, which makes
 self-modifying code work.
 
 The registers are flip-flops. Every register write goes through one function
-that keeps R0 at 0 and bit 24 of R14 at 1 (ISA.md §4.3). The shifter uses the
+that keeps R0 at 0 and bit 24 of R14 at 1 (ISA.md §4.3). The ALU and the
+shifter are in `src/nice_pkg.vhd`. The shifter uses the
 closed forms of ISA.md §5.2, and reduces the count mod 33 as MICROARCH.md
 §7.3 describes.
 

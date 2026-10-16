@@ -7,7 +7,7 @@ BUILD = build
 # executables, so paths given to it start with ../.
 GHDLRUN = cd $(BUILD) && $(GHDL) --elab-run --std=08
 
-SOURCES = src/trace_pkg.vhd src/multicycle.vhd src/mpu.vhd src/perf.vhd src/timer.vhd
+SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/multicycle.vhd src/mpu.vhd src/perf.vhd src/timer.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd
 TEST_SOURCES = test/tb_mem.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_timer.vhd test/tb_trace.vhd test/tb_multicycle.vhd
 

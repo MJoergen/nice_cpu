@@ -4,11 +4,13 @@ The FPGA implementation of NICE, in VHDL-2008. The design follows
 [doc/MICROARCH.md](../doc/MICROARCH.md), and [doc/ISA.md](../doc/ISA.md) is
 the specification.
 
-So far this directory holds a simple multi-cycle core, and the test setup
-that checks it (MICROARCH.md §9): a memory model, a console, and a trace
-writer whose output can be compared with `niceemu --trace`. The pipelined core
-of MICROARCH.md is not written yet. The multi-cycle core comes first, as a
-working reference for it.
+This directory holds two cores, and the test setup that checks them
+(MICROARCH.md §9): a memory model, a console, and a trace writer whose
+output can be compared with `niceemu --trace`. The pipelined core is the
+one of MICROARCH.md. The simple multi-cycle core came first, and is the
+working reference for it. [ASSUMPTIONS.md](ASSUMPTIONS.md) lists where the
+pipelined core settles a question that MICROARCH.md leaves open, or
+departs from it.
 
 ## Contents
 
@@ -17,6 +19,9 @@ working reference for it.
 | [CODING_STYLE.md](CODING_STYLE.md) | The style of the VHDL. |
 | [vsg.yml](vsg.yml) | The rules of CODING_STYLE.md for vsg, which `make lint` runs. |
 | [src/multicycle.vhd](src/multicycle.vhd) | The multi-cycle core. |
+| [src/pipeline.vhd](src/pipeline.vhd) | The pipelined core: DECODE, SEQUENCER, PREPARE, and WRITE, and its data bus port. |
+| [src/pipe_fetch.vhd](src/pipe_fetch.vhd) | FETCH and ICACHE of the pipelined core. |
+| [src/pipe_pkg.vhd](src/pipe_pkg.vhd) | The micro-operations of the pipelined core, and what each reads and writes. |
 | [src/nice_pkg.vhd](src/nice_pkg.vhd) | The parts of the ISA that the cores share: the operand fields, the register value rule, the condition, the ALU, the shifter, and the flags. |
 | [src/mpu.vhd](src/mpu.vhd) | The math unit of ISA.md §8.4, a Wishbone slave. |
 | [src/perf.vhd](src/perf.vhd) | The performance counters of ISA.md §8.5, a Wishbone slave. |
@@ -61,8 +66,9 @@ run under nvc.
     cd hdl && make test
 
 `make test` builds the emulator, analyses the VHDL, checks that GHDL can
-synthesise the core, the math unit, the performance counters, the timer,
-and the data bus decoder (`ghdl --synth`), and runs the tests. Everything it makes goes in `build/`.
+synthesise both cores, the math unit, the performance counters, the timer,
+and the data bus decoder (`ghdl --synth`), and runs the tests, those of
+the cores once for each core. Everything it makes goes in `build/`.
 `make clean` removes it.
 
 `make lint` checks the style of every VHDL file against
@@ -105,14 +111,17 @@ with the same NMI: with the full trace, without the trace, and stopped at two
 step limits. The output and exit status of each run must match the
 emulator's exactly.
 
-`tb_core` runs these programs on the core that its generic `G_CORE` names.
-It is `multicycle` by default, and the only core so far. Each core has the
-ports of `src/multicycle.vhd`, and the rest of the testbench serves them
-all. `make test CORE=name` passes the name on to every run of the core,
-those of `test/irq_sweep.py` and `test/programs.py` too, with their
-option `--core`, and the PASS and FAIL lines name the core. The trace,
-the output, and the exit status of each must match those of `niceemu -t`
-on the same program, with the same interrupt requests:
+`tb_core` runs these programs on the core that its generic `G_CORE` names:
+`multicycle` by default, or `pipeline`. Both cores have the same ports,
+and the rest of the testbench serves them both. `make test` runs them on
+each core in `CORES`, both by default, and `make test CORES=pipeline` on
+one. `make random` and `make programs` run the core in `CORE`, and pass it
+on to `test/irq_sweep.py` and `test/programs.py` with their option
+`--core`. The PASS and FAIL lines name the core. The trace, the output,
+and the exit status of each must match those of `niceemu -t` on the same
+program, with the same interrupt requests. The pipelined core may take a
+request later than the emulator (MICROARCH.md §6), so its runs with
+requests are compared only by `test/irq_compare.py --read-delay`, below.
 
 - The three 2004 examples `count`, `replicate`, and `print`, and `wrap`, from
   `assembler/test/`.
@@ -349,6 +358,56 @@ next instruction has already issued a data read (MICROARCH.md §6), passes
 this. `test/irq_sweep.py` takes the same option, and then compares the
 core's runs only through `irq_compare.py`, and checks the self-check of
 `hazard.nasm` on the core's run.
+
+## The pipelined core
+
+`pipeline` is the core of MICROARCH.md, a pipeline of six stages:
+
+| Stage | Where | What it does |
+|---|---|---|
+| FETCH | `pipe_fetch` | Reads pairs of words ahead on the instruction bus, several requests in flight. |
+| ICACHE | `pipe_fetch` | A ring of 16 words, of which it presents the next four to DECODE. |
+| DECODE | `pipeline` | Takes one whole instruction. Redirects FETCH at once for `MOVE R15, c` and `ADD R15, R15, c` with condition "always". |
+| SEQUENCER | `pipeline` | Splits the instruction into micro-operations, one per cycle (MICROARCH.md §4). |
+| PREPARE | `pipeline` | Tests the condition when it can, and issues the data reads. |
+| WRITE | `pipeline` | Computes, writes the registers and SR, issues the store, takes interrupts, and runs the control instructions. |
+
+Each stage holds one item and passes it on when the next stage frees
+itself. In the best case one micro-operation retires each cycle.
+`cputest` takes about 1.2 cycles per instruction on memory that never
+stalls, and `hazard.nasm`, which is all hazards, 1.9. The multi-cycle core
+takes about 10.
+
+WRITE is the only stage that writes registers, and in order. So it reads
+them directly, and PREPARE reads them for the address of a data read,
+waiting while the micro-operation in WRITE will still write the register.
+No value needs a bypass (ASSUMPTIONS.md, item 1).
+
+The condition is tested once per instruction, in PREPARE if no older
+micro-operation may still change SR, otherwise in WRITE. A data read waits
+in PREPARE until the core is certain to run its instruction, as
+MICROARCH.md §5.3 asks: the condition is true, the older micro-operation
+in WRITE cannot jump, halt, or store into fetched code and has issued its
+store, no interrupt can be taken first, and every older instruction is
+counted on `instret_o`. Stores and vector reads leave from WRITE. The ACKs
+come back in order, and at most 4 data requests are in flight, so the
+core needs the data bus decoder of `src/wb_dmux.vhd`, which `tb_core`
+has.
+
+WRITE flushes the pipeline after a jump that DECODE did not resolve, after
+`RTI`, `INT`, an interrupt entry, and a halt, and after a store into a word
+fetched but not retired: the range of words that `pipe_fetch` holds or
+will receive, and the instructions in DECODE's and PREPARE's registers
+(MICROARCH.md §5.5).
+
+An interrupt is taken in WRITE before an instruction, unless the
+instruction has issued a data read. Then it is taken after it. `instret_o`
+counts an instruction in the cycle after its last data read is issued, or
+when it retires if it reads nothing. So a read of `INSTR_LO` counts every
+older instruction and not its own (ISA.md §8.5).
+
+The core reports each step in the cycle it retires. Its process `p_check`
+asserts, in simulation, the invariants that its design relies on.
 
 ## The data bus decoder
 

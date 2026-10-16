@@ -266,6 +266,37 @@ begin
             retire_o     => retire
          ); -- i_multicycle
 
+   elsif G_CORE = "pipeline" generate
+
+      i_pipeline : entity work.pipeline
+         port map (
+            clk_i        => clk,
+            rst_i        => rst,
+            ibus_cyc_o   => ibus_cyc,
+            ibus_stb_o   => ibus_stb,
+            ibus_stall_i => ibus_stall,
+            ibus_ack_i   => ibus_ack,
+            ibus_addr_o  => ibus_addr,
+            ibus_data_i  => ibus_data,
+            dbus_cyc_o   => dbus_cyc,
+            dbus_stb_o   => dbus_stb,
+            dbus_stall_i => dbus_stall,
+            dbus_ack_i   => dbus_ack,
+            dbus_we_o    => dbus_we,
+            dbus_addr_o  => dbus_addr,
+            dbus_data_o  => dbus_data_out,
+            dbus_data_i  => dbus_data_in,
+            nmi_valid_i  => nmi_valid,
+            nmi_ready_o  => nmi_ready,
+            nmi_vector_i => nmi_vector,
+            irq_valid_i  => core_irq_valid,
+            irq_ready_o  => irq_ready,
+            irq_vector_i => core_irq_vector,
+            halted_o     => open,
+            instret_o    => instret,
+            retire_o     => retire
+         ); -- i_pipeline
+
    else generate
 
       -- A core without a branch above

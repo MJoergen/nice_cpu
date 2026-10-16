@@ -7,7 +7,7 @@ BUILD = build
 # executables, so paths given to it start with ../.
 GHDLRUN = cd $(BUILD) && $(GHDL) --elab-run --std=08
 
-SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/mpu.vhd src/perf.vhd src/timer.vhd src/wb_dmux.vhd
+SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipeline.vhd src/mpu.vhd src/perf.vhd src/timer.vhd src/wb_dmux.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd
 TEST_SOURCES = test/tb_mem.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_timer.vhd test/tb_wb_dmux.vhd \
   test/tb_trace.vhd test/tb_core.vhd
@@ -37,8 +37,11 @@ define check_trace
 endef
 
 # The core that tb_core runs, its generic G_CORE: multicycle for
-# src/multicycle.vhd. The PASS and FAIL lines name it.
+# src/multicycle.vhd, or pipeline for src/pipeline.vhd. The PASS and FAIL
+# lines name it. make test runs the cores of CORES in turn; make random and
+# make programs run CORE.
 CORE ?= multicycle
+CORES ?= multicycle pipeline
 
 # tb_core runs a program on the core. Its trace, output, and
 # exit status must equal those of "niceemu -t" on the same program, with the
@@ -78,9 +81,10 @@ define check_core
 	@$(EMU) -t $(INTR_$(1)) $(if $(INPUT_$(1)),--input $(INPUT_$(1))) $(2) < /dev/null \
 	  > $(BUILD)/core_$(1).expected; \
 	  echo "exit $$?" >> $(BUILD)/core_$(1).expected
-	@if cmp -s $(BUILD)/core_$(1).expected $(BUILD)/core_$(1).out; then echo "PASS $(CORE) $(1)"; \
+	$(if $(and $(INTR_$(1)),$(IRQ_LATE)),,@if cmp -s $(BUILD)/core_$(1).expected $(BUILD)/core_$(1).out; \
+	then echo "PASS $(CORE) $(1)"; \
 	else echo "FAIL $(CORE) $(1)"; cat $(BUILD)/core_$(1).log; \
-	  diff $(BUILD)/core_$(1).expected $(BUILD)/core_$(1).out | head -20; exit 1; fi
+	  diff $(BUILD)/core_$(1).expected $(BUILD)/core_$(1).out | head -20; exit 1; fi)
 	$(if $(INTR_$(1)),@$(IRQ_COMPARE) --name $(1) $(2) $(BUILD)/core_$(1).out $(BUILD)/core_$(1).intr)
 
 endef
@@ -90,7 +94,11 @@ endef
 # from the core's interrupt log, and checks that none was taken late. On
 # the multi-cycle core it must agree with the comparison above, which uses
 # the steps the requests were raised for (MICROARCH.md §9).
-IRQ_COMPARE = $(PYTHON) test/irq_compare.py --emu $(EMU)
+# The pipelined core may take a request after instructions that had issued
+# a data read when it came (MICROARCH.md §6), so for it the comparison above
+# cannot be exact, and irq_compare.py alone judges the runs with requests.
+IRQ_LATE = $(if $(filter pipeline,$(CORE)),--read-delay)
+IRQ_COMPARE = $(PYTHON) test/irq_compare.py --emu $(EMU) $(IRQ_LATE)
 
 # The hazard programs of MICROARCH.md §9, step 4: test/hazard.nasm, and the
 # program that test/sidefx_prog.py writes, each also on a memory that stalls.
@@ -127,11 +135,16 @@ define check_random
 	  echo "exit $$?" >> $(BUILD)/random_$(1).out
 	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter $$(cat $(BUILD)/random_$(1).opts) $(BUILD)/random_$(1).bin \
 	  < /dev/null > $(BUILD)/random_$(1).expected; echo "exit $$?" >> $(BUILD)/random_$(1).expected
-	@if cmp -s $(BUILD)/random_$(1).expected $(BUILD)/random_$(1).out; then echo "PASS $(CORE) random $(1)"; \
+	$(if $(IRQ_LATE),,@if cmp -s $(BUILD)/random_$(1).expected $(BUILD)/random_$(1).out; then echo "PASS $(CORE) random $(1)"; \
 	else echo "FAIL $(CORE) random $(1)"; cat $(BUILD)/random_$(1).log; \
-	  diff $(BUILD)/random_$(1).expected $(BUILD)/random_$(1).out | head -20; exit 1; fi
+	  diff $(BUILD)/random_$(1).expected $(BUILD)/random_$(1).out | head -20; exit 1; fi)
 	@$(IRQ_COMPARE) --name random_$(1) $(BUILD)/random_$(1).bin $(BUILD)/random_$(1).out \
 	  $(BUILD)/random_$(1).intr -- -n $(RANDOM_STEPS) --no-cycle-counter
+
+endef
+
+define run_cores
+	@$(MAKE) --no-print-directory cores CORE=$(1)
 
 endef
 
@@ -151,6 +164,10 @@ test: emulator analyse synth
 	if [ $$? -eq 0 ]; then echo "PASS tb_wb_dmux"; else echo "FAIL tb_wb_dmux"; cat $(BUILD)/tb_wb_dmux.log; exit 1; fi
 	@$(ASM) -o $(BUILD)/trace.bin test/trace.nasm
 	$(foreach r,$(TRACE_RUNS),$(call check_trace,$(r)))
+	$(foreach c,$(CORES),$(call run_cores,$(c)))
+
+# The runs of one core, CORE, which make test runs for each of CORES.
+cores:
 	$(foreach t,$(EXAMPLES),$(call check_core,$(t),../assembler/test/$(t).bin))
 	$(foreach t,$(PROBES),$(call check_core,$(t),../emulator/test/$(t).bin))
 	@$(ASM) -o $(BUILD)/shift.bin test/shift.nasm
@@ -165,7 +182,7 @@ test: emulator analyse synth
 	$(call check_core,hazard,$(BUILD)/hazard.bin)
 	$(call check_selfcheck,hazard)
 	$(call check_core,hazard_stall,$(BUILD)/hazard.bin,-gG_STALL=30 -gG_SEED=13)
-	@$(PYTHON) test/irq_sweep.py --core $(CORE) --self-check --stall 30 --build $(BUILD) --emu $(EMU) $(BUILD)/hazard.bin
+	@$(PYTHON) test/irq_sweep.py --core $(CORE) $(IRQ_LATE) --self-check --stall 30 --build $(BUILD) --emu $(EMU) $(BUILD)/hazard.bin
 	@$(PYTHON) test/sidefx_prog.py $(BUILD)/sidefx.nasm
 	@$(ASM) -o $(BUILD)/sidefx.bin $(BUILD)/sidefx.nasm
 	$(call check_core,sidefx,$(BUILD)/sidefx.bin)
@@ -201,7 +218,7 @@ analyse:
 # Checks that GHDL can synthesise the core, the math unit, the performance
 # counters, the timer, and the data bus decoder, with the generics in
 # SYNTH_GENERICS_unit.
-SYNTH = multicycle mpu perf timer wb_dmux
+SYNTH = multicycle pipeline mpu perf timer wb_dmux
 SYNTH_GENERICS_wb_dmux = -gG_SLAVES=4
 
 define check_synth
@@ -244,4 +261,4 @@ lint:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: test programs random analyse synth formal emulator lint clean
+.PHONY: test cores programs random analyse synth formal emulator lint clean

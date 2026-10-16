@@ -12,12 +12,22 @@ has TODO or FIXME comments.
 
 ## FPGA core
 
-- **The pipelined core.** FETCH, ICACHE, DECODE, SEQUENCER, PREPARE, and
-  WRITE, with micro-operations, as [doc/MICROARCH.md](doc/MICROARCH.md)
-  describes. Only the multi-cycle core exists ([hdl/README.md](hdl/README.md)).
-  First come the next two items, which give it tests that the
-  multi-cycle core passes today, so that a failure blames the core and not
-  the test.
+- **The pipelined core: what is left.** `hdl/src/pipeline.vhd` passes
+  every test that the multi-cycle core passes ([hdl/README.md](hdl/README.md)).
+  [hdl/ASSUMPTIONS.md](hdl/ASSUMPTIONS.md) lists where it settles or
+  departs from [doc/MICROARCH.md](doc/MICROARCH.md). Open:
+  - MICROARCH.md still describes the register reads in DECODE with
+    bypasses (§3, §5.1), which the core does without, and rule 4 of §5.3
+    lacks the exemption of an instruction that has made a data read
+    (ASSUMPTIONS.md, items 1 and 9). The note should follow the core.
+  - `bench/Makefile`'s `make core` runs only the multi-cycle core. A
+    `CORE` variable would give the pipelined core's cycle counts for the
+    benchmark, and with them the cost of the waits that MICROARCH.md
+    §5.3 and §5.6 discuss.
+  - Speed: the store path runs from the ALU to the data bus in one cycle,
+    and PREPARE and WRITE depend on each other combinationally
+    (ASSUMPTIONS.md, item 6). No synthesis for a board has measured the
+    clock yet, which belongs to the example design (MICROARCH.md §10).
 - **Test order steps not done** (MICROARCH.md §9):
   - Step 4, hazard programs: `hdl/test/hazard.nasm` and
     `hdl/test/sidefx_prog.py`, which the multi-cycle core passes. Left
@@ -30,8 +40,8 @@ has TODO or FIXME comments.
     each step, and with an IRQ before each, and the multi-cycle core
     passes. Not swept: the program of `sidefx_prog.py`, which writes R14
     with any value, so E and VBASE too. For the pipelined core, the sweep
-    must vary the cycle at which the request arrives, not the step, and
-    compare with `irq_compare.py`, as the item below says.
+    compares with `irq_compare.py --read-delay`, and should also vary the
+    cycle at which the request arrives, as the item below says.
   - Step 6: `make programs` in `hdl/` runs the runtime's and the
     translator's test programs on the core, and the multi-cycle core
     passes. Left out: the random modules of `translator/test/fuzz.py`,
@@ -48,11 +58,13 @@ has TODO or FIXME comments.
 - **The interrupt comparison for the pipelined core** (MICROARCH.md §9).
   `hdl/test/irq_compare.py` reads the testbench's interrupt log, and the
   multi-cycle core passes it on every run with requests, with no delay
-  allowed. For the pipelined core it needs: a check that a request taken
-  one step late passed an instruction that had issued a data read
-  (MICROARCH.md §6), not just `--max-delay 1`; and requests timed in cycles,
-  not steps, in `hdl/test/tb_core.vhd`, so that a sweep can vary the
-  arrival within an instruction.
+  allowed. The pipelined core passes it with `--read-delay`, which allows
+  a request to be late only by instructions that had issued a data read
+  (MICROARCH.md §6). Still missing: requests timed in cycles, not steps,
+  in `hdl/test/tb_core.vhd`, so that a sweep can vary the arrival within
+  an instruction. And the timer's requests are not in the log, so a late
+  one would show as a difference from the emulator
+  ([hdl/ASSUMPTIONS.md](hdl/ASSUMPTIONS.md), item 13).
 - **The system around the core** (MICROARCH.md §8): dual-port RAM, the bus
   decoders, a default slave that reads 0 and drops writes, and the console
   UART at `0xFFFFFF00`, with generics for the memory map. The data bus

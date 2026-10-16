@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import os
 import random
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -835,7 +836,7 @@ def reduce(seed: int, tmp: str, nompu: bool) -> None:
     r1, ok, _ = pipeline(mod, tmp, nompu, "reduce")
     with open(f"fuzz_{seed}.wasm", "wb") as f:
         f.write(mod)
-    os.replace(os.path.join(tmp, "reduce.nasm"), f"fuzz_{seed}.nasm")
+    shutil.move(os.path.join(tmp, "reduce.nasm"), f"fuzz_{seed}.nasm")
     got = "none" if r1 is None else f"{r1:#010x}"
     print(f"reduced to {[len(fn.stmts) for fn in fns]} statements: expected {expected:#010x}, "
           f"got {got}, halted {'normally' if ok else 'abnormally'}; see fuzz_{seed}.wasm and fuzz_{seed}.nasm")

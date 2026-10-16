@@ -427,6 +427,9 @@ def addrform_checks() -> List[bytes]:
         # at 12 is 0x777 now, so the sum is 0x102 + 0x777.
         i32_const(8) + local_set(1) + local_get(1) + mem(I32_LOAD) + i32_const(12)
         + local_set(1) + local_get(1) + mem(I32_LOAD) + ADD + i32_const(0x879) + EQ,
+        # ((1 << 3) + 8) + 4 = 20.
+        i32_const(1) + local_set(1) + local_get(1) + i32_const(3) + SHL + i32_const(8) + ADD
+        + i32_const(4) + ADD + mem(I32_LOAD) + i32_const(0x105) + EQ,
         idx(0, 2, None, 1)]
 
 
@@ -1209,19 +1212,19 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         funcs(0),
         memory(1),
         exports(("main", 0, 0)),
-        code((3, bits(0, *addrform_checks())))), "", 0x1FFE),
+        code((3, bits(0, *addrform_checks())))), "", 0x3FFE),
     ("addrform_unchecked", module(
         types(MAIN_TYPE),
         funcs(0),
         memory(1),
         exports(("main", 0, 0)),
-        code((3, bits(0, *addrform_checks())))), "", 0x1FFE),
+        code((3, bits(0, *addrform_checks())))), "", 0x3FFE),
     ("addrform_grow", module(
         types(MAIN_TYPE),
         funcs(0),
         memory(1),
         exports(("main", 0, 0)),
-        code((3, bits(0, *addrform_checks())))), "", 0x1FFE),
+        code((3, bits(0, *addrform_checks())))), "", 0x3FFE),
     # -1 << 2 is 0xFFFFFFFC, past the memory.
     ("addrformtrap", module(
         types(MAIN_TYPE),

@@ -415,7 +415,7 @@ since the address wraps modulo 2^32. So the `i32.add` also computes t,
 and an access at the address uses it in place of `ROR`. A t of 2^30 or
 more fails the compare, and the stub gets the address back with `SHL`.
 The same holds for `i << s` with s above 2, with t = (i << (s - 2)) +
-c / 4. If no other code uses the address itself, the allocator removes
+c / 4, and for a constant added to such a sum. If no other code uses the address itself, the allocator removes
 the shift and the add, and the access is three instructions after the
 `ADD` that computes t. Without bounds checks, t is taken modulo 2^30
 with an `AND`, and there is no compare. A later access at the same base

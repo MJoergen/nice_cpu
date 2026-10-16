@@ -2144,13 +2144,11 @@ class FunctionTranslator:
         self.ctrl = [Frame(0, self.ftype, 0, self.ret_label, [], [])]
         # What the straight-line code so far knows of some virtual
         # registers, until one of the registers involved is written or a
-        # label that a jump may reach comes. word_index: a byte address ->
-        # (t, aligned), where t is a word index, the address ROR 2 if not
+        # label that a jump may reach comes: a byte address -> (t,
+        # aligned), where t is a word index, the address ROR 2 if not
         # aligned. If aligned, the address is 4 * t modulo 2^32, so it is
-        # a multiple of 4 and its word is t modulo 2^30. shifted: x -> (i,
-        # s) where x = i << s.
+        # a multiple of 4 and its word is t modulo 2^30.
         self.word_index: Dict[str, Tuple[str, bool]] = {}
-        self.shifted: Dict[str, Tuple[str, int]] = {}
 
     def new_vreg(self) -> str:
         self.n_vregs += 1
@@ -2229,13 +2227,13 @@ class FunctionTranslator:
         else:
             ins.depth = self.loops
             self.body.append(ins)
-            if self.word_index or self.shifted:
+            if self.word_index:
                 self.forget(ins)
         return ins
 
     def forget(self, ins: Ins) -> None:
-        """Drops what word_index and shifted know of the virtual registers
-        that an instruction writes."""
+        """Drops what word_index knows of the virtual registers that an
+        instruction writes."""
         defs = set()
         for k, o in enumerate(ins.ops):
             kind, r = operand_reg(o)
@@ -2244,18 +2242,13 @@ class FunctionTranslator:
         for x, (t, _) in list(self.word_index.items()):
             if x in defs or t in defs:
                 del self.word_index[x]
-        for x, (v, _) in list(self.shifted.items()):
-            if x in defs or v in defs:
-                del self.shifted[x]
 
     def label(self, name: str, stub: bool = False, keep: bool = False) -> None:
         """Adds a label. One that a jump may reach, unless keep says that
-        none does, ends the straight-line code that word_index and
-        shifted are about."""
+        none does, ends the straight-line code that word_index is about."""
         (self.stubs if stub else self.body).append(Label(name))
         if not stub and not keep:
             self.word_index.clear()
-            self.shifted.clear()
 
     def move(self, dest: List[str], src: List[str], stub: bool = False) -> None:
         for d, s in zip(dest, src):
@@ -2556,25 +2549,18 @@ class FunctionTranslator:
 
     def index_of_sum(self, a: str, b: str, ca: Optional[int], cb: Optional[int]) -> str:
         """For an i32.add of a and b, the constants ca and cb if they are
-        ones: if one is x = i << s with s >= 2, and the other a constant c
-        that is a multiple of 4, the sum is an address at a multiple of 4.
-        Emits t = (i << (s - 2)) + c / 4, which is the sum / 4 modulo 2^30
-        since the sum wraps modulo 2^32, and returns it, or else "". If no
-        access uses t, the allocator removes it."""
-        if cb is not None and a in self.shifted:
-            (i, s), c = self.shifted[a], cb
-        elif ca is not None and b in self.shifted:
-            (i, s), c = self.shifted[b], ca
-        else:
-            return ""
-        if c % 4:
+        ones: if one is an address x at a multiple of 4 whose word index
+        t_x word_index knows, and the other a constant c that is a multiple
+        of 4, the sum is an address at a multiple of 4 too. Emits t = t_x
+        + c / 4, which is the sum / 4 modulo 2^30 since the sum wraps
+        modulo 2^32, and returns it, or else "". If no access uses t, the
+        allocator removes it."""
+        x, c = (a, cb) if cb is not None else (b, ca)
+        t_x, aligned = self.word_index.get(x, ("", False))
+        if c is None or not aligned or c % 4:
             return ""
         t = self.new_vreg()
-        if s == 2:
-            self.emit("ADD", t, i, words(c // 4, I32)[0])
-        else:
-            self.emit("SHL", t, i, str(s - 2))
-            self.emit("ADD", t, t, words(c // 4, I32)[0])
+        self.emit("ADD", t, t_x, words(c // 4, I32)[0])
         return t
 
     def mem_word(self, k: int, index: Optional[str] = None) -> str:
@@ -3456,9 +3442,8 @@ class FunctionTranslator:
                         widx = self.new_vreg()
                         self.emit("SHL", widx, a[0], str((count & 31) - 2))
                     self.emit({"shl": "SHL", "shr_u": "SHR", "shr_s": "C>0"}[shift], d, a[0], c)
-                    if shift == "shl" and count is not None and count & 31 >= 2 \
-                            and VREG_RE.fullmatch(a[0]) and a[0] != d:
-                        self.shifted[d] = (a[0], count & 31)
+                    if widx or (shift == "shl" and count is not None and count & 31 == 2
+                                and VREG_RE.fullmatch(a[0]) and a[0] != d):
                         self.word_index[d] = (widx or a[0], True)
                 if fwd is not None and fwd[1] is not None:
                     self.push(I32, fwd[1])

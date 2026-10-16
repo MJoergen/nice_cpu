@@ -253,6 +253,7 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "oobdyn": "SUB[M] R0, R1, 65532",
          "oobend": "ROR R1, R1, 2",
          "oobword": "ROR R1, R1, 2",
+         "addrformtrap": "SUB[M] R0, R1, 16384",
          "oobbyte": "SUB[M] R0, R1, 65536",
          "oobhalf": "SUB[M] R0, R1, 65535",
          "oobbytecarry": "SUB[M] R0, R1, 65535",
@@ -268,6 +269,8 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "growdyntrap": ["--memory-pages", "2"],
            "memend_unchecked": ["--no-bounds-checks"],
            "narrow_unchecked": ["--no-bounds-checks"],
+           "addrform_unchecked": ["--no-bounds-checks"],
+           "addrform_grow": ["--memory-pages", "2"],
            "narrow_grow": ["--memory-pages", "2"],
            "memend_grow": ["--memory-pages", "2"],
            "library": ["--library", "lib"],
@@ -383,6 +386,48 @@ def narrow_checks() -> List[bytes]:
         st_self(I32_STORE8, 18, 0x300) + ld_dyn(I32_LOAD, 16, 0x120022),
         st_self(I32_STORE16, 21, 0x7700) + ld_dyn(I32_LOAD, 20, 0x771500),
         ld_dyn(I32_LOAD8_U, 0, 0)]
+
+
+def idx(i: int, sh: int, c: Optional[int], want: int, op: int = I32_LOAD,
+        offset: int = 0) -> bytes:
+    """A check that the load op at (i << sh) + c, plus offset, gives want,
+    with i in local 1. Without c, the address is i << sh."""
+    i64 = op == I64_LOAD
+    return (i32_const(i) + local_set(1) + local_get(1) + i32_const(sh) + SHL
+            + (b"" if c is None else i32_const(c) + ADD) + mem(op, offset)
+            + (i64_const(want) + EQ64 if i64 else i32_const(want) + EQ))
+
+
+def addrform_checks() -> List[bytes]:
+    """Loads and stores at addresses computed as i << 2 or i << 3, plus a
+    constant, as clang computes those of array elements. The word at byte
+    4k is 0x100 + k for k = 0 to 8. Each check is one bit, and the last
+    one fails."""
+    return [
+        b"".join(st(I32_STORE, 4 * k, 0x100 + k) for k in range(9)) + idx(2, 2, 8, 0x104),
+        idx(0x40000005, 2, 8, 0x107),                  # 0x1_00000014 + 8 wraps to 28
+        idx(-1, 2, 4, 0x100),                          # -4 + 4 wraps to 0
+        idx(3, 2, None, 0x103),
+        idx(1, 3, 8, 0x105_00000104, I64_LOAD),
+        idx(0x20000001, 3, None, 0x103_00000102, I64_LOAD),   # wraps to 8
+        idx(1, 2, 4, 0x104, offset=8),
+        idx(1, 2, 2, 0x01020000),                      # bytes 6 to 9: 00 00 02 01
+        # A store at (2 << 2) + 4 = 12.
+        i32_const(2) + local_set(1) + local_get(1) + i32_const(2) + SHL + i32_const(4) + ADD
+        + i32_const(0x777) + mem(I32_STORE) + ld(I32_LOAD, 12, 0x777),
+        # The address (5 << 2) + 8 = 28 is also a value, in local 2.
+        i32_const(5) + local_set(1) + local_get(1) + i32_const(2) + SHL + i32_const(8) + ADD
+        + local_tee(2) + mem(I32_LOAD) + i32_const(0x107) + EQ
+        + local_get(2) + i32_const(28) + EQ + AND,
+        # Local 1 changes from 2 to 3 between the shift and the add, so the
+        # address is (2 << 2) + 8 = 16, not (3 << 2) + 8.
+        i32_const(2) + local_set(1) + local_get(1) + i32_const(2) + SHL + i32_const(3)
+        + local_set(1) + i32_const(8) + ADD + mem(I32_LOAD) + i32_const(0x104) + EQ,
+        # Local 1 changes from 8 to 12 between two loads from it. The word
+        # at 12 is 0x777 now, so the sum is 0x102 + 0x777.
+        i32_const(8) + local_set(1) + local_get(1) + mem(I32_LOAD) + i32_const(12)
+        + local_set(1) + local_get(1) + mem(I32_LOAD) + ADD + i32_const(0x879) + EQ,
+        idx(0, 2, None, 1)]
 
 
 # i64 shifts and rotates: (a, operation, count, result). V is
@@ -1156,6 +1201,35 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         exports(("main", 0, 0)),
         code((1, i32_const(-1) + local_set(0) + local_get(0) + i32_const(7)
               + mem(I32_STORE8, offset=1) + i32_const(0)))),
+     "", 2),
+    # Addresses computed from an index (addrform_checks), the same three
+    # ways.
+    ("addrform", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((3, bits(0, *addrform_checks())))), "", 0x1FFE),
+    ("addrform_unchecked", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((3, bits(0, *addrform_checks())))), "", 0x1FFE),
+    ("addrform_grow", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((3, bits(0, *addrform_checks())))), "", 0x1FFE),
+    # -1 << 2 is 0xFFFFFFFC, past the memory.
+    ("addrformtrap", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, i32_const(-1) + local_set(0) + local_get(0) + i32_const(2) + SHL
+              + mem(I32_LOAD)))),
      "", 2),
     # A memory of 0 pages: every access traps.
     ("nomemory", module(

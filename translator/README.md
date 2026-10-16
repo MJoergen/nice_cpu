@@ -408,6 +408,21 @@ and jumps back. If the memory can grow, t is compared with a word that
 is then added to t first, and the code jumps to the stub if the sum
 passes 2^32.
 
+Clang computes the address of an array element as `(i << 2) + c`, with
+`i32.shl` and `i32.add`. When c is a multiple of 4, that address is a
+multiple of 4 too, and t = i + c / 4 is its word index, modulo 2^30,
+since the address wraps modulo 2^32. So the `i32.add` also computes t,
+and an access at the address uses it in place of `ROR`. A t of 2^30 or
+more fails the compare, and the stub gets the address back with `SHL`.
+The same holds for `i << s` with s above 2, with t = (i << (s - 2)) +
+c / 4. If no other code uses the address itself, the allocator removes
+the shift and the add, and the access is three instructions after the
+`ADD` that computes t. Without bounds checks, t is taken modulo 2^30
+with an `AND`, and there is no compare. A later access at the same base
+in the same straight-line code uses the same t, with its own compare.
+What nicewasm knows of t is dropped when a register it involves is
+written, and at a label that a jump may reach.
+
 In a helper, the value is shifted together from, or split across, two
 words, or three for an unaligned `i64`. A store that changes only part
 of a word reads the word, changes its bytes, and writes it back once.

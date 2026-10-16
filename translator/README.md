@@ -375,7 +375,11 @@ them. A signed comparison is N XOR V (ISA.md §9.2), so `?V XOR R14, R14,
 as ISA.md §9.2 describes. When the next instruction is `br_if` or `if`,
 or `i32.eqz` and then one of them, the comparison sets only the flags,
 and the branch jumps on them. `i32.eqz` and `i64.eqz` before `br_if` or
-`if` do the same with Z.
+`if` do the same with Z. A comparison of an `i32` with the constant 0 is
+`MOVE[M] R0, x`, whose flags are those of `SUB[M] R0, x, 0`, so that the
+back end may give the M bit to the instruction that computed x (see
+Register allocation). An `i64` `eq` or `ne` takes the words of x as they
+are when the other operand's word is 0.
 
 The front end also keeps track of what the flags say, until an
 instruction changes them or a label comes. After a comparison or an
@@ -390,10 +394,12 @@ d, b`. If the comparison's result is not used otherwise, no code sets
 it.
 
 An `i32` shift masks its count to 5 bits first, because NICE uses the
-full count (ISA.md §9.4). `shr_s` copies the sign bit into C and shifts it
-in with `C>0` (§5.2). A rotate needs no mask, since only the count modulo
-32 matters to `ROL` and `ROR`. An `i64` shift by a constant combines the
-two words with three or four 32-bit shifts inline. Any other `i64` shift
+full count (ISA.md §9.4). A constant count is masked by nicewasm, so a
+shift by a constant is one instruction, such as `SHL d, x, 3`. `shr_s`
+copies the sign bit into C and shifts it in with `C>0` (§5.2). A rotate
+needs no mask, since only the count modulo 32 matters to `ROL` and
+`ROR`. An `i64` shift by a constant combines the two words with three or
+four 32-bit shifts inline, or with moves for a count of 32. Any other `i64` shift
 or rotate calls a helper, such as `W.shl64`, with the value in R1 and R2
 and the count in R3. A NICE shift by 32 or more gives 0, and so does a
 shift by a "negative" count such as 32 − n for n > 32. So `W.shl64` and

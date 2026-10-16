@@ -879,6 +879,33 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         exports(("main", 0, 0)),
         code((1, bits(0, *cmp_all(I64, [(2**63 - 1, -2**63), (0x1_00000000, 0xFFFFFFFF),
                                         (0x5_00000007, 0x5_00000007)]))))), "", 0x5993383E),
+    # Each comparison with 0 of x in local 1, which tests x with MOVE[M]
+    # for eq to ge_u, but not for gt and le, whose operands are swapped:
+    # -5: 0110011001.
+    # 0:  1000001111.
+    # 7:  0100110011.
+    # 01 1001 1001 1000 0011 1101 0011 0011 = 0x19983D33.
+    ("cmpzero", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((2, bits(0, *[(i32_const(x) + local_set(1) if op == EQ else b"")
+                           + local_get(1) + i32_const(0) + op
+                           for x in (-5, 0, 7)
+                           for op in [EQ, NE, LT_S, LT_U, GT_S, GT_U, LE_S, LE_U, GE_S,
+                                      GE_U]])))), "", 0x19983D33),
+    # The same for i64 eq and ne, with 0 on either side, which take the
+    # other words as they are: x == 0, x != 0, 0 == x, and 0 != x, for x =
+    # 0, 0x1_00000000, and 5: 1010 0101 0101 = 0xA55.
+    ("cmpzero64", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code(([I32, I64], bits(0, *[
+            (i64_const(x) + local_set(1) if k == 0 else b"")
+            + (local_get(1) + i64_const(0) if k < 2 else i64_const(0) + local_get(1))
+            + (EQ64 if k % 2 == 0 else NE64)
+            for x in (0, 0x1_00000000, 5) for k in range(4)])))), "", 0xA55),
     # The same comparisons, each taken by if, by br_if, and by eqz and
     # br_if. nicewasm then jumps on the flags, and writes no 0 or 1.
     *[(f"cmp{bits_}_{how.__name__}", module(

@@ -2807,17 +2807,25 @@ class FunctionTranslator:
         if swap:
             a, b = b, a
         d = self.push(I32)[0]
-        if t == I32:
+        if t == I32 and b[0] == "0":
+            # The same flags as SUB[M] R0, a, 0, with C and V 0.
+            self.emit("MOVE[M]", "R0", a[0])
+        elif t == I32:
             self.emit("SUB[M]", "R0", a[0], b[0])
         elif test in ("eq", "ne"):
-            x, y = self.new_vreg(), self.new_vreg()
-            self.emit("XOR", x, a[0], b[0])
-            self.emit("XOR", y, a[1], b[1])
-            self.emit("OR[M]", "R0", x, y)
+            # a XOR b is 0 in both words. A word XOR 0 is the word itself.
+            parts = []
+            for x, y in zip(a, b):
+                if y == "0" or x == "0":
+                    parts.append(x if y == "0" else y)
+                else:
+                    parts.append(self.new_vreg())
+                    self.emit("XOR", parts[-1], x, y)
+            self.emit("OR[M]", "R0", *parts)
         else:
             self.emit("SUB[M]", "R0", a[0], b[0])
             self.emit("SUB[CM]", "R0", a[1], b[1])
-        if test in ("lt_s", "ge_s"):
+        if test in ("lt_s", "ge_s") and not (t == I32 and b[0] == "0"):
             # a < b signed is N XOR V. Flipping N when V is set leaves it
             # in N (§9.2).
             self.emit("?V XOR", "R14", "R14", "0x10000000")
@@ -3513,7 +3521,10 @@ class FunctionTranslator:
                 self.emit("OR", far, x, y)
                 self.emit(fwd, near, a_near, str(n))
             else:
-                self.emit(fwd, far, a_near, str(n - 32))
+                if n == 32:
+                    self.emit("MOVE", far, a_near)
+                else:
+                    self.emit(fwd, far, a_near, str(n - 32))
                 self.emit("MOVE", near, "0")
         elif n < 32:
             # shr_s: lo' = lo >> n | hi << (32 - n), hi' = hi >>s n. C>0
@@ -3526,7 +3537,10 @@ class FunctionTranslator:
         else:
             # lo' = hi >>s (n - 32), and hi' is all sign bits.
             self.emit("C<0[M]", "R0", a_hi, "1")
-            self.emit("C>0", lo, a_hi, str(n - 32))
+            if n == 32:
+                self.emit("MOVE", lo, a_hi)
+            else:
+                self.emit("C>0", lo, a_hi, str(n - 32))
             self.emit("C>0", hi, a_hi, "32")
 
     def run(self) -> List[str]:

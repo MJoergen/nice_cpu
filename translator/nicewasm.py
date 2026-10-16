@@ -1153,7 +1153,8 @@ class Allocator:
     Spill costs weight each use and def by 10 for each loop around it, so
     the registers go to the values used in the inner loops."""
 
-    def __init__(self, items: List[Item], regs: List[str], callee_saved: List[str]) -> None:
+    def __init__(self, items: List[Item], regs: List[str], callee_saved: List[str],
+                 n_vregs: int) -> None:
         self.items = items
         self.regs = regs                   # the allocatable registers, in order of preference
         self.callee_saved = callee_saved   # those that the function must save if it uses them
@@ -1161,7 +1162,7 @@ class Allocator:
         self.precolored = set(regs)
         self.n_slots = 0                   # frame words for spilled registers, %s0 up
         self.temps: set[str] = set()       # temporaries of spill code, which must not spill
-        self.n_temps = 0
+        self.n_vregs = n_vregs             # the virtual registers so far, %v0 up
 
     def tracked(self, r: str) -> bool:
         return r.startswith("%") or r in self.precolored
@@ -1282,6 +1283,109 @@ class Allocator:
         if kind != "reg" or r is None or not self.tracked(r):
             return False
         return all(operand_reg(o)[0] in ("reg", "") and not o.startswith("@") for o in ins.ops[1:])
+
+    def webs(self) -> None:
+        """Splits each virtual register into webs: the sets of its defs
+        that reach a common use, with those uses. A local that the wasm
+        code uses for unrelated values thus becomes several registers, each
+        of which may get its own colour. A def that may leave the old
+        value, by its condition or a side effect, joins the webs of the
+        defs that reach it."""
+        sites: List[Tuple[int, str]] = []    # each def of a virtual register: (instruction, register)
+        site_at: Dict[Tuple[int, str], int] = {}
+        by_reg: Dict[str, List[int]] = {}
+        for i, (_, defs) in enumerate(self.ud):
+            for r in sorted(defs):
+                if r.startswith("%"):
+                    site_at[(i, r)] = len(sites)
+                    by_reg.setdefault(r, []).append(len(sites))
+                    sites.append((i, r))
+        if not any(len(v) > 1 for v in by_reg.values()):
+            return
+        # Reaching definitions, as sets of sites, by iterating to a fixed point.
+        gen: List[set[int]] = []
+        kill: List[set[int]] = []
+        for a, b in self.blocks:
+            g: Dict[str, int] = {}
+            for i in range(a, b):
+                for r in self.ud[i][1]:
+                    if r.startswith("%"):
+                        g[r] = site_at[(i, r)]
+            gen.append(set(g.values()))
+            kill.append({x for r in g for x in by_reg[r]})
+        n = len(self.blocks)
+        preds: List[List[int]] = [[] for _ in range(n)]
+        for k in range(n):
+            for s in self.bsucc[k]:
+                preds[s].append(k)
+        r_in: List[set[int]] = [set() for _ in range(n)]
+        r_out: List[set[int]] = [set(g) for g in gen]
+        changed = True
+        while changed:
+            changed = False
+            for k in range(n):
+                inn: set[int] = set()
+                for p in preds[k]:
+                    inn |= r_out[p]
+                if len(inn) != len(r_in[k]):
+                    r_in[k] = inn
+                    out = gen[k] | (inn - kill[k])
+                    if len(out) != len(r_out[k]):
+                        r_out[k] = out
+                        changed = True
+        # Join the sites that reach a common use.
+        parent = list(range(len(sites)))
+
+        def find(x: int) -> int:
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        use_web: Dict[Tuple[int, str], int] = {}  # (instruction, register) -> a site
+        for k, (a, b) in enumerate(self.blocks):
+            cur: Dict[str, List[int]] = {}
+            for x in sorted(r_in[k]):
+                cur.setdefault(sites[x][1], []).append(x)
+            for i in range(a, b):
+                uses, defs = self.ud[i]
+                ins = self.code[i]
+                for r in uses:
+                    if r.startswith("%") and cur.get(r):
+                        first = cur[r][0]
+                        for x in cur[r][1:]:
+                            parent[find(x)] = find(first)
+                        use_web[(i, r)] = first
+                        if r in defs and (ins.cond or any(
+                                kind == "side" and reg == r
+                                for kind, reg in map(operand_reg, ins.ops))):
+                            parent[find(site_at[(i, r)])] = find(first)
+                for r in defs:
+                    if r.startswith("%"):
+                        cur[r] = [site_at[(i, r)]]
+        # Rename every web but the first of each register.
+        name: Dict[int, str] = {}
+        for r, xs in by_reg.items():
+            roots = sorted({find(x) for x in xs})
+            for j, root in enumerate(roots):
+                name[root] = r if j == 0 else self.new_vreg()
+        for i, ins in enumerate(self.code):
+            ops = []
+            for pos, o in enumerate(ins.ops):
+                kind, reg = operand_reg(o)
+                if reg is not None and reg.startswith("%"):
+                    r = reg
+                    if pos == 0 and kind == "reg" and (i, r) in site_at:
+                        new = name[find(site_at[(i, r)])]
+                    elif (i, r) in use_web:
+                        new = name[find(use_web[(i, r)])]
+                    elif (i, r) in site_at:
+                        new = name[find(site_at[(i, r)])]
+                    else:
+                        new = r  # read before any def, as by MOVE[M] R0 of a dead value
+                    o = VREG_RE.sub(new, o)
+                ops.append(o)
+            ins.ops = ops
 
     # The colouring (George and Appel's names).
 
@@ -1550,9 +1654,12 @@ class Allocator:
 
     # Spilling.
 
+    def new_vreg(self) -> str:
+        self.n_vregs += 1
+        return f"%v{self.n_vregs - 1}"
+
     def new_temp(self) -> str:
-        self.n_temps += 1
-        t = f"%v{1000000 + self.n_temps}"
+        t = self.new_vreg()
         self.temps.add(t)
         return t
 
@@ -1614,6 +1721,8 @@ class Allocator:
     def run(self) -> List[Item]:
         """Allocates the registers, and returns the code with physical
         registers and frame words %sN in place of the virtual registers."""
+        self.flow()
+        self.webs()
         while True:
             self.flow()
             self.liveness()
@@ -3219,7 +3328,7 @@ class FunctionTranslator:
         exit_ins = Ins("RET", [], kind="exit",
                        uses=frozenset(f"R{k + 1}" for k in range(n_results)))
         alloc = Allocator(entry + self.body + [Label(self.ret_label), exit_ins] + self.stubs,
-                          ALLOC_REGS, CALLEE_SAVED)
+                          ALLOC_REGS, CALLEE_SAVED, self.n_vregs)
         items = tidy(alloc.run())
         saved = [r for r in CALLEE_SAVED if r in alloc.used]
         n_slots = alloc.n_slots

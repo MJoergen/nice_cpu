@@ -116,9 +116,9 @@ def ld_dyn(op: int, addr: int, want: int, offset: int = 0) -> bytes:
     return i32_const(addr) + local_tee(1) + ld(op, addr, want, offset)[len(i32_const(addr)):]
 
 
-def st_dyn(op: int, addr: int, value: int) -> bytes:
+def st_dyn(op: int, addr: int, value: int, offset: int = 0) -> bytes:
     """st, with the address in local 1."""
-    return i32_const(addr) + local_tee(1) + st(op, addr, value)[len(i32_const(addr)):]
+    return i32_const(addr) + local_tee(1) + st(op, addr, value, offset)[len(i32_const(addr)):]
 
 
 def fill(addr: int, value: int, n: int) -> bytes:
@@ -129,10 +129,16 @@ def copy(dest: int, src: int, n: int) -> bytes:
     return i32_const(dest) + i32_const(src) + i32_const(n) + MEMORY_COPY
 
 
-def st(op: int, addr: int, value: int) -> bytes:
-    """Stores value at addr."""
+def st(op: int, addr: int, value: int, offset: int = 0) -> bytes:
+    """Stores value at addr + offset."""
     i64 = op in (I64_STORE, I64_STORE8, I64_STORE16, I64_STORE32)
-    return i32_const(addr) + (i64_const(value) if i64 else i32_const(value)) + mem(op)
+    return i32_const(addr) + (i64_const(value) if i64 else i32_const(value)) + mem(op, offset)
+
+
+def st_self(op: int, addr: int, k: int) -> bytes:
+    """Stores addr + k at addr, with addr in local 1, so that neither the
+    address nor the value is a constant."""
+    return i32_const(addr) + local_tee(1) + local_get(1) + i32_const(k) + ADD + mem(op)
 
 
 def op32(a: int, op: bytes, b: int, want: int) -> bytes:
@@ -247,6 +253,9 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "oobdyn": "SUB[M] R0, R1, 65532",
          "oobend": "ROR R1, R1, 2",
          "oobword": "ROR R1, R1, 2",
+         "oobbyte": "SUB[M] R0, R1, 65536",
+         "oobhalf": "SUB[M] R0, R1, 65535",
+         "oobbytecarry": "SUB[M] R0, R1, 65535",
          "oobword8": "ROR R2, R1, 2",
          "growdyntrap": "ROR R2, R1, 2",
          "nomemory": "MOVE R1, 2"}
@@ -258,6 +267,8 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "growdyn": ["--memory-pages", "2"],
            "growdyntrap": ["--memory-pages", "2"],
            "memend_unchecked": ["--no-bounds-checks"],
+           "narrow_unchecked": ["--no-bounds-checks"],
+           "narrow_grow": ["--memory-pages", "2"],
            "memend_grow": ["--memory-pages", "2"],
            "library": ["--library", "lib"],
            "libtrap": ["--library", "lib"],
@@ -338,6 +349,40 @@ def memend_checks() -> List[bytes]:
         # Byte 65527 is 0.
         ld_dyn(I64_LOAD, 65527, 0xDDCCBBAA_77665500 - 2**64),
         ld_dyn(I32_LOAD, 65532, 0)]
+
+
+def narrow_checks() -> List[bytes]:
+    """Accesses of 1 and 2 bytes at addresses in local 1, at the ends of a
+    memory of one page and with offsets. The last word gets the bytes 81
+    F2 83 84 at 65532 to 65535. Each check is one bit, and the last one
+    fails."""
+    return [
+        st_dyn(I32_STORE, 65532, 0x8483F281 - 2**32) + ld_dyn(I32_LOAD8_U, 65535, 0x84),
+        ld_dyn(I32_LOAD8_S, 65535, 0x84 - 0x100),
+        ld_dyn(I32_LOAD16_U, 65534, 0x8483),                 # the last 2 bytes
+        ld_dyn(I32_LOAD16_S, 65533, 0x83F2 - 0x10000),
+        ld_dyn(I32_LOAD8_U, 65531, 0x84, offset=4),
+        ld_dyn(I32_LOAD8_U, 65532, 0xF2, offset=1),
+        ld_dyn(I32_LOAD16_U, 65531, 0xF281, offset=1),
+        ld_dyn(I32_LOAD8_S, 65528, 0x81 - 0x100, offset=4),
+        # Byte 0, then FF in the last byte.
+        st_dyn(I32_STORE8, 0, 0x1FE) + ld_dyn(I32_LOAD, 0, 0xFE),
+        ld_dyn(I32_LOAD8_S, 0, -2),
+        st_dyn(I32_STORE8, 65535, 0x7F) + ld_dyn(I32_LOAD, 65532, 0x7F83F281),
+        # AA BB in bytes 7 and 8, which straddle two words.
+        st_dyn(I32_STORE16, 3, 0xBBAA, offset=4) + ld_dyn(I32_LOAD, 4, 0xAA000000 - 2**32),
+        ld_dyn(I32_LOAD, 8, 0xBB),
+        ld_dyn(I32_LOAD16_S, 3, 0xBBAA - 0x10000, offset=4),
+        ld_dyn(I32_LOAD16_U, 7, 0xBBAA),
+        ld_dyn(I64_LOAD16_S, 7, 0xBBAA - 0x10000),
+        ld_dyn(I64_LOAD8_U, 7, 0xAA),
+        # Values that are not constants: 15 + 0x2200 = 0x220F at 15, 0F
+        # 22 across two words, and the low byte of 18 + 0x300 at 18.
+        st_self(I32_STORE16, 15, 0x2200) + ld_dyn(I32_LOAD, 12, 0x0F000000),
+        ld_dyn(I32_LOAD, 16, 0x22),
+        st_self(I32_STORE8, 18, 0x300) + ld_dyn(I32_LOAD, 16, 0x120022),
+        st_self(I32_STORE16, 21, 0x7700) + ld_dyn(I32_LOAD, 20, 0x771500),
+        ld_dyn(I32_LOAD8_U, 0, 0)]
 
 
 # i64 shifts and rotates: (a, operation, count, result). V is
@@ -1067,6 +1112,50 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         memory(1),
         exports(("main", 0, 0)),
         code((1, i32_const(65532) + local_set(0) + local_get(0) + mem(I64_LOAD) + WRAP))),
+     "", 2),
+    # Loads and stores of 1 and 2 bytes (narrow_checks), the same three
+    # ways.
+    ("narrow", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((2, bits(0, *narrow_checks())))), "", 0x3FFFFE),
+    ("narrow_unchecked", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((2, bits(0, *narrow_checks())))), "", 0x3FFFFE),
+    ("narrow_grow", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((2, bits(0, *narrow_checks())))), "", 0x3FFFFE),
+    # A byte at 65536, just past the memory, a halfword at 65535, of which
+    # one byte is past it, and a byte at -1 + 1, which passes 2^32.
+    ("oobbyte", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, i32_const(65536) + local_set(0) + local_get(0) + mem(I32_LOAD8_U)))),
+     "", 2),
+    ("oobhalf", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, i32_const(65535) + local_set(0) + local_get(0) + mem(I32_LOAD16_S)))),
+     "", 2),
+    ("oobbytecarry", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, i32_const(-1) + local_set(0) + local_get(0) + i32_const(7)
+              + mem(I32_STORE8, offset=1) + i32_const(0)))),
      "", 2),
     # A memory of 0 pages: every access traps.
     ("nomemory", module(

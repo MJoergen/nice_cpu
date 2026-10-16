@@ -385,11 +385,9 @@ of 4. If it is, one `MOVE` for each word does the access, with the word
 index in a register. If it is not, the code jumps to a stub after the
 epilogue, which calls a helper, `W.load4`, `W.load8`, `W.store4`, or
 `W.store8`, and jumps back. So the common, aligned path changes no
-registers but its own. An access of 1 or 2 bytes always calls a helper,
-such as `W.load1u` or `W.store2`. A helper takes the byte address in R1.
-It returns a loaded value in R1, or R1 and R2, and takes a value to
-store in R2, or R2 and R3. nicewasm emits each helper once, if a
-function uses it.
+registers but its own. A helper takes the byte address in R1. It returns
+a loaded value in R1, or R1 and R2, and takes a value to store in R2, or
+R2 and R3. nicewasm emits each helper once, if a function uses it.
 
 With bounds checks, an access of 4 or 8 bytes whose offset is a
 multiple of 4 takes a shorter path. `ROR t, base, 2` gives base / 4 if
@@ -413,6 +411,26 @@ passes 2^32.
 In a helper, the value is shifted together from, or split across, two
 words, or three for an unaligned `i64`. A store that changes only part
 of a word reads the word, changes its bytes, and writes it back once.
+
+An access of 1 or 2 bytes is inline. After the bounds check, a shift
+gives the word index w and an `AND` the byte p of the address in its
+word. A table that nicewasm emits once, if a function uses it, gives
+the shift for byte p, so an `i32.load8_u` is:
+
+    SHR     R2, R1, 2
+    AND     R1, R1, 3
+    SHR     R1, @___wasm_memory[R2], @W.bshift[R1]
+    AND     R1, R1, 0xFF
+
+A signed load shifts the bytes up to bit 31 instead, by `W.bshl`, and
+then down with the sign, by `C<0[M]` and `C>0` (ISA.md §5.2). A store
+clears the bytes in the word with `IAND` and a mask from `W.bmask` or
+`W.hmask`, shifts the new bytes into place, and writes the word back
+with `OR`. With bounds checks and a memory that cannot grow, an offset
+that is a multiple of 4 goes into the word operand, as for the words
+above. Two bytes at p = 3 straddle two words. The code checks for that
+and jumps to a stub after the epilogue, which does the access with the
+two words and jumps back.
 
 If the address is a constant, nicewasm adds the offset itself. If all
 the bytes are in the initial memory, or there are no bounds checks,

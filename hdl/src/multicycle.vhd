@@ -12,9 +12,13 @@
 --   COND      Test the condition. Run a control instruction.
 --   SRC       Evaluate s0, then s1, with their side effects. A memory
 --             operand is read through the data bus.
+--   MOD33     For C<C and C>C only, reduce the count mod 33.
 --   EXEC      Compute the result, write the destination, apply its side
 --             effect, and update the flags. A memory destination is written
 --             through the data bus.
+--   DEST_ADJ  For a register destination with modes 001 and 010 only, step
+--             the register after the result, so that the step is not in
+--             series with the ALU.
 --   VEC       Read the vector table entry, for IRQ, NMI, and INT.
 --   RETIRE    Report the step on retire_o, and an instruction on
 --             instret_o.
@@ -124,7 +128,9 @@ architecture synthesis of multicycle is
       COND_ST,
       SRC_ST,
       SRC_WAIT_ST,
+      MOD33_ST,
       EXEC_ST,
+      DEST_ADJ_ST,
       DEST_WAIT_ST,
       VEC_ST,
       VEC_WAIT_ST,
@@ -249,6 +255,21 @@ architecture synthesis of multicycle is
       return res_v;
    end function reverse;
 
+   -- A table of i mod 33, so that the final reduction in mod33 is a lookup
+   -- rather than a chain of compares and subtractions.
+   type t_mod33 is array (0 to 255) of natural range 0 to 32;
+
+   function mod33_table return t_mod33 is
+      variable res_v : t_mod33;
+   begin
+      for i in res_v'range loop
+         res_v(i) := i mod 33;
+      end loop;
+      return res_v;
+   end function mod33_table;
+
+   constant C_MOD33 : t_mod33 := mod33_table;
+
    -- n mod 33, as in doc/MICROARCH.md §7.3: 32 = -1 (mod 33), so the 5-bit
    -- digits of n count with alternating signs. 99 keeps the sum positive.
    function mod33(n : std_logic_vector(31 downto 0)) return natural is
@@ -259,28 +280,27 @@ architecture synthesis of multicycle is
                to_integer(n(24 downto 20)) - to_integer(n(29 downto 25)) +
                to_integer(n(31 downto 30));
 
-      for i in 1 to 5 loop
-         if sum_v >= 33 then
-            sum_v := sum_v - 33;
-         end if;
-      end loop;
-
-      return sum_v;
+      return C_MOD33(sum_v);
    end function mod33;
 
    -- ISA.md §5.2, in the closed forms given there. A right shift is the
    -- mirror image of the left shift of the same kind, so s0 is reversed
    -- before and the result after. The carry is the C flag after the shift,
-   -- before M is applied.
-   function shift(op : std_logic_vector(3 downto 0);
-                  s0 : std_logic_vector(31 downto 0);
-                  n  : std_logic_vector(31 downto 0);
-                  c  : std_logic) return t_result is
+   -- before M is applied. The reduced counts of n (MICROARCH.md §7.3) come
+   -- from registers, not from n, to keep them out of EXEC's critical path:
+   -- m33 is n mod 33, sat is n saturated to 33, and nz is 1 if n /= 0.
+   function shift(op  : std_logic_vector(3 downto 0);
+                  s0  : std_logic_vector(31 downto 0);
+                  n   : std_logic_vector(31 downto 0);
+                  c   : std_logic;
+                  m33 : natural;
+                  sat : natural;
+                  nz  : std_logic) return t_result is
       variable d_v     : std_logic_vector(31 downto 0);
       variable fill_v  : std_logic;
       variable fills_v : std_logic_vector(32 downto 0);
       variable wide_v  : std_logic_vector(65 downto 0);   -- c, d, 33 fill bits
-      variable rot_v   : std_logic_vector(32 downto 0);   -- c, d
+      variable rot2_v  : std_logic_vector(65 downto 0);   -- c, d, c, d: one shifter
       variable m_v     : natural range 0 to 33;           -- The reduced count
       variable res_v   : t_result := (r => (others => '0'), c => c, v => '0');
    begin
@@ -289,16 +309,16 @@ architecture synthesis of multicycle is
       case op(2 downto 0) is
          when "101" =>
             -- C<C, C>C: a 33-bit rotation of C and d
-            m_v     := mod33(n);
-            rot_v   := ((c & d_v) sll m_v) or ((c & d_v) srl (33 - m_v));
-            res_v.r := rot_v(31 downto 0);
-            res_v.c := rot_v(32);
+            m_v     := m33;
+            rot2_v  := (c & d_v & c & d_v) sll m_v;
+            res_v.r := rot2_v(64 downto 33);
+            res_v.c := rot2_v(65);
 
          when "110" | "111" =>
             -- <<<, C<<, >>>, >>C: a 32-bit rotation. C gets the bit rotated
             -- last.
             res_v.r := d_v rol to_integer(n(4 downto 0));
-            if n /= 0 then
+            if nz = '1' then
                res_v.c := res_v.r(0);
             end if;
 
@@ -309,7 +329,7 @@ architecture synthesis of multicycle is
                when "010"         => fill_v := c;     -- 0<C
                when others        => fill_v := '0';   -- 0<0, C<0
             end case;
-            m_v     := 33 when n > 33 else to_integer(n(5 downto 0));
+            m_v     := sat;
             fills_v := (others => fill_v);
             wide_v  := (c & d_v & fills_v) sll m_v;
             res_v.r := wide_v(64 downto 33);
@@ -346,6 +366,9 @@ architecture synthesis of multicycle is
    signal fetch_need : std_logic_vector(0 to 2);        -- Constant words still to read
    signal src_idx    : natural range 1 to 2;            -- The source field in SRC
    signal srcs       : t_consts;                        -- The source values, at 1 and 2
+   signal src2_m33   : natural range 0 to 32;           -- srcs(2) mod 33
+   signal src2_sat   : natural range 0 to 33;           -- srcs(2) saturated to 33
+   signal src2_nz    : std_logic;                       -- srcs(2) /= 0
    signal int_vector : std_logic_vector(7 downto 0);
 
    -- The step being reported
@@ -408,9 +431,15 @@ begin
                          v : std_logic_vector(31 downto 0)) is
       begin
          srcs(i) <= v;
+         if i = 2 then
+            src2_sat <= 33 when v > 33 else to_integer(v(5 downto 0));
+            src2_nz  <= '1' when v /= 0 else '0';
+         end if;
          if i = 1 then
             src_idx <= 2;
             state   <= SRC_ST;
+         elsif iw(27) = '1' and iw(23 downto 21) = "101" then
+            state <= MOD33_ST;
          else
             state <= EXEC_ST;
          end if;
@@ -563,10 +592,17 @@ begin
                   src_done(src_idx, dbus_data_i);
                end if;
 
+            -- The count of C<C and C>C, n mod 33, in a cycle of its own, as
+            -- it is slow
+            when MOD33_ST =>
+               src2_m33 <= mod33(srcs(2));
+               state    <= EXEC_ST;
+
             -- ISA.md §5 steps 6 to 8
             when EXEC_ST =>
                if iw(27) = '1' then
-                  res_v := shift(iw(24 downto 21), srcs(1), srcs(2), regs(14)(C_SR_C));
+                  res_v := shift(iw(24 downto 21), srcs(1), srcs(2), regs(14)(C_SR_C),
+                                 src2_m33, src2_sat, src2_nz);
                else
                   res_v := alu(iw(24 downto 21), srcs(1), srcs(2), iw(26) and regs(14)(C_SR_C));
                end if;
@@ -578,12 +614,10 @@ begin
                case f_v(6 downto 4) is
                   when "000" =>
                      set_reg(regs_v, x_v, res_v.r);
-                  when "001" =>
+                  when "001" | "010" =>
+                     -- The step of the register follows in DEST_ADJ_ST.
                      set_reg(regs_v, x_v, res_v.r);
-                     set_reg(regs_v, x_v, regs_v(x_v) - 1);
-                  when "010" =>
-                     set_reg(regs_v, x_v, res_v.r);
-                     set_reg(regs_v, x_v, regs_v(x_v) + 1);
+                     state <= DEST_ADJ_ST;
                   when "100" =>
                      addr_v := regs_v(x_v);
                   when "101" =>
@@ -613,6 +647,18 @@ begin
                   sr_v(C_SR_V)   := res_v.v;
                   set_reg(regs_v, 14, sr_v);
                end if;
+
+            -- The step after the result of modes 001 and 010, a cycle of its
+            -- own, so that it is not in series with the ALU
+            when DEST_ADJ_ST =>
+               f_v := field(iw, 0);
+               x_v := to_integer(f_v(3 downto 0));
+               if f_v(4) = '1' then
+                  set_reg(regs_v, x_v, regs(x_v) - 1);
+               else
+                  set_reg(regs_v, x_v, regs(x_v) + 1);
+               end if;
+               state <= RETIRE_ST;
 
             when DEST_WAIT_ST =>
                if dbus_ack_i = '1' then

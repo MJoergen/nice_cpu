@@ -345,9 +345,10 @@ a 5-bit address. The bus decoder selects it for `0xFFFFFF20`–`0xFFFFFF3F`
 and passes address bits 4..0 as the offset. In `tb_multicycle`,
 that decoder is an address compare on the data bus.
 
-A write to A or B starts a computation that takes 33 cycles. A
-shift-and-add multiplier and two restoring dividers run side by side, one
-bit per cycle: one divider for A / B, and one for |A| / |B|. The signed
+A write to A or B starts a computation. A multiplier, which takes two
+cycles, and two restoring dividers, which take 33 cycles, one bit per
+cycle, run side by side: one divider for A / B, and one for |A| / |B|.
+Synthesis can map the multiplier to DSP blocks. The signed
 results are formed from those, as the header of `src/mpu.vhd` explains. A
 write to C or D starts the same computation with two 64-bit dividers,
 which takes 65 cycles. The two halves run independently.

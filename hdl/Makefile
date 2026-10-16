@@ -68,6 +68,9 @@ INTR_after = --nmi 3:1 --nmi 10:1
 INTR_start = --nmi 0:3
 INTR_perf  = --nmi 3:0x41
 INTR_perf_stall = $(INTR_perf)
+# The program of the interrupt timing diagram, doc/interrupt.tex: a request
+# taken at once, and one that comes just after a data read was issued.
+INTR_irqwave = --irq 2:9 --irq 10:9
 # The runs whose program starts the timer, which raises requests too.
 TIMER_timer       = yes
 TIMER_timer_stall = yes
@@ -191,6 +194,8 @@ cores:
 	@$(ASM) -o $(BUILD)/instret.bin test/instret.nasm
 	$(call check_core,instret,$(BUILD)/instret.bin)
 	$(call check_core,instret_stall,$(BUILD)/instret.bin,-gG_STALL=30 -gG_SEED=17)
+	@$(ASM) -o $(BUILD)/irqwave.bin test/irqwave.nasm
+	$(call check_core,irqwave,$(BUILD)/irqwave.bin)
 	@$(ASM) -o $(BUILD)/hazard.bin test/hazard.nasm
 	$(call check_core,hazard,$(BUILD)/hazard.bin)
 	$(call check_selfcheck,hazard)

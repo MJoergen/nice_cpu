@@ -1,0 +1,96 @@
+% Timing diagram of the interrupt request port of the pipelined core
+% (MICROARCH.md §6), rendered to interrupt.png by "make diagrams" in the
+% top-level Makefile. Two IRQs through vector 9:
+%
+% (a) A request that comes while the next instruction has not begun. It is
+%     taken at once, before that instruction, which goes with the flush.
+% (b) A request that comes just after the next instruction has issued its
+%     data read. That instruction is committed, so the request waits until
+%     it has retired, and is taken before the one after.
+%
+% The port is valid/ready with a vector, as in qnice_cpu: the device holds
+% irq_valid_i and irq_vector_i until irq_ready_o, and irq_ready_o is
+% combinational in irq_valid_i and WRITE's registers. Taking the request
+% flushes the pipeline (flush_o), and WRITE reads the vector table entry
+% at VBASE * 256 + 9 = 0x0009 on the data bus (VEC). The entry is reported
+% (retire_o, "IRQ") in the cycle its data comes, and FETCH is redirected
+% there (target_o). FETCH is redirected in the cycle of the take too, and
+% then stops until the entry is done.
+%
+% All values below are read off a GHDL simulation of hdl/test/irqwave.nasm
+% on the pipelined core, with "--irq 2:9 --irq 10:9" (make test,
+% INTR_irqwave) and a memory that never stalls. Cycle 0 is the first cycle
+% after reset. Panel (a) starts at cycle 9 and panel (b) at cycle 32.
+% Changing the program or the core invalidates them. The addresses:
+%
+%   0010-0024  the main program: 0010 sets E, 0012-001A and 001E-0022 are
+%              ADD R1, R1, 1, 001C is MOVE R2, @data, and 0024 is HALT
+%   0025, 0027 the routine: ADD R3, R3, 1, then RTI
+%   0028       data, which PREPARE briefly holds as an instruction after RTI
+%
+% A bus is drawn grey (x) in every cycle in which it carries nothing:
+% irq_vector_i while irq_valid_i is low, prep_r and w_r.uop while they hold
+% no micro-operation, dbus_addr_o while dbus_stb_o is low, target_o
+% while flush_o is low, and retire_o while it reports no step. prep_r and
+% w_r.uop show the address of their micro-operation's instruction.
+%
+% (a) t=2   The request comes. WRITE holds the first micro-operation of
+%           0012, which has not begun, so it takes the request at once.
+%     t=3   The vector read is on the bus; t=4 its data, and the entry.
+%     t=13  The routine's RTI retires and flushes back to 0012.
+% (b) t=1   PREPARE loads the read of 001C, while WRITE retires 001A.
+%     t=2   The request comes. 001C has issued its read (commits = 1), so
+%           no request may be taken before it.
+%     t=3   001C retires with its data; t=4 the request is taken before
+%           001E.
+
+\documentclass[varwidth = 40cm, border = 8pt]{standalone}
+\usepackage{timing}
+
+% Four-digit addresses fit a one-cycle box at this scale.
+\renewcommand{\wavescale}{1.2}
+
+\begin{document}
+
+{\sffamily (a) A request taken at once}\par\medskip
+
+\begin{wave}{15}{15}
+ \nextwave{irq\_valid\_i}            \bit{0}{2} \bit{1}{1} \bit{0}{12}
+ \nextwave{irq\_vector\_i}           \unknown[x]{2} \known{09}{1} \unknown[x]{12}
+ \nextwave{irq\_ready\_o}            \bit{0}{2} \bit{1}{1} \bit{0}{12}
+ \nextwave{PREPARE: prep\_r}         \known{0010}{1} \known{0012}{1} \known{0014}{1} \unknown[x]{8} \known{0025}{1} \known{0027}{1} \known{0028}{1} \unknown[x]{1}
+ \nextwave{PREPARE: load\_o}         \bit{0}{15}
+ \nextwave{WRITE: w\_r.uop}          \unknown[x]{1} \known{0010}{1} \known{0012}{1} \unknown[x]{9} \known{0025}{1} \known{0027}{1} \unknown[x]{1}
+ \nextwave{WRITE: w\_r.mode}         \known{RUN}{3} \known{VEC}{2} \known{RUN}{10}
+ \nextwave{WRITE: w\_r.commits}      \known{0}{15}
+ \nextwave{WRITE: w\_r.in\_service}  \bit{0}{5} \bit{1}{9} \bit{0}{1}
+ \nextwave{dbus\_stb\_o}             \bit{0}{3} \bit{1}{1} \bit{0}{11}
+ \nextwave{dbus\_addr\_o}            \unknown[x]{3} \known{0009}{1} \unknown[x]{11}
+ \nextwave{dbus\_ack\_i}             \bit{0}{4} \bit{1}{1} \bit{0}{10}
+ \nextwave{WRITE: flush\_o}          \bit{0}{2} \bit{1}{1} \bit{0}{1} \bit{1}{1} \bit{0}{8} \bit{1}{1} \bit{0}{1}
+ \nextwave{WRITE: target\_o}         \unknown[x]{2} \known{0012}{1} \unknown[x]{1} \known{0025}{1} \unknown[x]{8} \known{0012}{1} \unknown[x]{1}
+ \nextwave{retire\_o}                \unknown[x]{1} \known{0010}{1} \unknown[x]{2} \known{IRQ}{1} \unknown[x]{7} \known{0025}{1} \known{0027}{1} \unknown[x]{1}
+\end{wave}
+
+\bigskip
+{\sffamily (b) A request that waits for an instruction that has issued its data read}\par\medskip
+
+\begin{wave}{15}{8}
+ \nextwave{irq\_valid\_i}            \bit{0}{2} \bit{1}{3} \bit{0}{3}
+ \nextwave{irq\_vector\_i}           \unknown[x]{2} \known{09}{3} \unknown[x]{3}
+ \nextwave{irq\_ready\_o}            \bit{0}{4} \bit{1}{1} \bit{0}{3}
+ \nextwave{PREPARE: prep\_r}         \known{001A}{1} \known{001C}{1} \known{001E}{2} \known{0020}{1} \unknown[x]{3}
+ \nextwave{PREPARE: load\_o}         \bit{0}{1} \bit{1}{1} \bit{0}{6}
+ \nextwave{WRITE: w\_r.uop}          \known{0018}{1} \known{001A}{1} \known{001C}{2} \known{001E}{1} \unknown[x]{3}
+ \nextwave{WRITE: w\_r.mode}         \known{RUN}{5} \known{VEC}{2} \known{RUN}{1}
+ \nextwave{WRITE: w\_r.commits}      \known{0}{2} \known{1}{2} \known{0}{4}
+ \nextwave{WRITE: w\_r.in\_service}  \bit{0}{7} \bit{1}{1}
+ \nextwave{dbus\_stb\_o}             \bit{0}{2} \bit{1}{1} \bit{0}{2} \bit{1}{1} \bit{0}{2}
+ \nextwave{dbus\_addr\_o}            \unknown[x]{2} \known{0028}{1} \unknown[x]{2} \known{0009}{1} \unknown[x]{2}
+ \nextwave{dbus\_ack\_i}             \bit{0}{3} \bit{1}{1} \bit{0}{2} \bit{1}{1} \bit{0}{1}
+ \nextwave{WRITE: flush\_o}          \bit{0}{4} \bit{1}{1} \bit{0}{1} \bit{1}{1} \bit{0}{1}
+ \nextwave{WRITE: target\_o}         \unknown[x]{4} \known{001E}{1} \unknown[x]{1} \known{0025}{1} \unknown[x]{1}
+ \nextwave{retire\_o}                \known{0018}{1} \known{001A}{1} \unknown[x]{1} \known{001C}{1} \unknown[x]{2} \known{IRQ}{1} \unknown[x]{1}
+\end{wave}
+
+\end{document}

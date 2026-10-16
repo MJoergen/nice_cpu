@@ -337,6 +337,19 @@ the request signals to the hardware interface.
 
 `INT` and `RTI` run in WRITE as `CTRL` micro-ops, and flush.
 
+![Interrupt timing](interrupt.png)
+
+[interrupt.png](interrupt.png), drawn by [interrupt.tex](interrupt.tex),
+shows both cases on the core, with values read off a simulation of
+`hdl/test/irqwave.nasm`. In (a) the request comes while WRITE holds an
+instruction that has not begun. `irq_ready_o` rises at once, the flush
+drops that instruction, WRITE reads the vector table entry on the data
+bus, and the entry retires and redirects FETCH in the cycle the data
+comes. In (b) the request comes in the cycle after PREPARE issued the
+data read of `MOVE R2, @data`. That instruction is committed
+(`w_r.commits` = 1), so `irq_ready_o` waits until it has retired, and the
+request is taken before the next one.
+
 ## 7. Datapath details
 
 ### 7.1 Register values

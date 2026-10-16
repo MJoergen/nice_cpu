@@ -20,7 +20,7 @@ help:
 	@echo "  make hazards     count the pipeline hazards in the benchmark"
 	@echo "  make pdf         rebuild the introduction slides"
 	@echo "  make pdfcheck    check that nice_intro.pdf matches the .tex"
-	@echo "  make diagrams    render the block diagrams in doc/ (pdflatex, pdftoppm)"
+	@echo "  make diagrams    render the diagrams in doc/ (pdflatex, pdftoppm)"
 	@echo "  make all         test, typecheck, lint, and pdfcheck"
 	@echo "  make clean       remove build output"
 	@echo ""
@@ -52,14 +52,19 @@ pdf:
 pdfcheck:
 	$(MAKE) -C doc/intro pdfcheck
 
-# The block diagrams: standalone TikZ, rendered at 150 dpi. Both the .tex
-# and the .png are committed, as in qnice_cpu.
-DIAGRAMS = doc/pipeline
+# The diagrams: standalone TikZ, rendered at 150 dpi. Both the .tex and
+# the .png are committed, as in qnice_cpu. The timing diagrams use the
+# macros of doc/timing.sty, and their values are read off a simulation by
+# hand, as each header says: render them again only after reading them
+# again.
+DIAGRAMS = doc/pipeline doc/interrupt
 
 diagrams: $(addsuffix .png,$(DIAGRAMS))
 
+doc/interrupt.png: doc/timing.sty
+
 %.png: %.tex
-	pdflatex -interaction=nonstopmode -halt-on-error -output-directory=$(dir $@) $<
+	TEXINPUTS=doc: pdflatex -interaction=nonstopmode -halt-on-error -output-directory=$(dir $@) $<
 	pdftoppm -r 150 -png -singlefile $*.pdf $*
 	rm -f $*.pdf $*.aux $*.log
 

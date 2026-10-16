@@ -12,8 +12,9 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
 - `doc/intro/`: beginner's slides (`nice_intro.tex`, built `nice_intro.pdf`)
   and their example programs. ISA.md wins over them.
 - `doc/MICROARCH.md`: design note for the FPGA core. ISA.md wins over it.
-  Its block diagram is `doc/pipeline.tex`, rendered to `doc/pipeline.png` by
-  `make diagrams`; edit the `.tex` and commit both.
+  Its block diagram is `doc/pipeline.tex`, and its interrupt timing diagram
+  `doc/interrupt.tex`, rendered to PNGs by `make diagrams`; edit the `.tex`
+  and commit both. The timing values are read off a simulation by hand.
 - `assembler/niceasm.py`: Python 3, standard library only, `mypy --strict` clean.
 - `emulator/src/cpu.zig` (core, unit tests) and `main.zig` (CLI, loader). Zig 0.15.
 - `runtime/`: start-up code and runtime routines in NICE assembly (ISA.md §9.3).
@@ -59,7 +60,7 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
     cd doc/intro && make test        # run the slides' example programs
     cd doc/intro && make pdf         # rebuild the slides (pdflatex, beamer)
     cd doc/intro && make pdfcheck    # check that nice_intro.pdf matches the .tex
-    make diagrams                    # render doc/pipeline.tex to doc/pipeline.png (pdflatex, pdftoppm)
+    make diagrams                    # render the diagrams in doc/ to PNG (pdflatex, pdftoppm)
 
 Run the relevant `make test` after every change.
 

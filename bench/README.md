@@ -11,6 +11,7 @@ NICE with other processors.
     make            # run both on the emulator and print their tables
     make test       # the same, and check every result
     make core       # run both on the multi-cycle core in GHDL (about 20 minutes)
+    make core CORE=pipeline  # the same on the pipelined core (about 20 minutes)
     make hazards    # count the pipeline hazards of MICROARCH.md §5 in both
     make native     # build and run bench.c on the host, as a check
     make wasm       # rebuild bench.wasm from bench.c (needs clang)
@@ -130,6 +131,18 @@ instruction because more of its instructions have constant words and
 memory operands. In both programs `rng64` has the most cycles per
 instruction, 14.9 and 14.0, because its reads of the math unit wait for
 the multiplier.
+
+`make core CORE=pipeline` runs them on the pipelined core. On 2026-10-16:
+
+| Program | Instructions | Cycles | Cycles per instruction | Faster than the multi-cycle core |
+|---|---|---|---|---|
+| `bench.c` through nicewasm | 3359061 | 6003616 | 1.79 | 7.1 times |
+| `hand.nasm` | 491617 | 1541542 | 3.14 | 3.8 times |
+
+The hand-written program gains less, because more of its time goes to
+what a pipeline cannot hide: `rng64` waits for the multiplier, and `vm`
+jumps through a table every three or four instructions, which flushes
+the pipeline ([hdl/README.md](../hdl/README.md), The pipelined core).
 
 ## The hazard profile
 

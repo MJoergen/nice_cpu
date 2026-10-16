@@ -45,7 +45,7 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
     cd translator && make test       # test/run.py, then test/errors.py
     cd translator && make typecheck  # mypy --strict
     cd bench     && make test        # the benchmark on the emulator, with its results checked
-    cd bench     && make core        # the benchmark on the multi-cycle core in GHDL (minutes)
+    cd bench     && make core        # the benchmark on a core in GHDL, CORE=multicycle or pipeline (minutes)
     cd bench     && make hazards     # how often the pipeline hazards of MICROARCH.md §5 occur
     cd bench     && make typecheck   # mypy --strict
     cd hdl && make test              # synth check, unit tests, tb_trace, then both cores diffed against niceemu

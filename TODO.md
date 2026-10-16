@@ -16,14 +16,9 @@ has TODO or FIXME comments.
   every test that the multi-cycle core passes ([hdl/README.md](hdl/README.md)).
   [hdl/ASSUMPTIONS.md](hdl/ASSUMPTIONS.md) lists where it settles or
   departs from [doc/MICROARCH.md](doc/MICROARCH.md). Open:
-  - MICROARCH.md still describes the register reads in DECODE with
-    bypasses (§3, §5.1), which the core does without, and rule 4 of §5.3
-    lacks the exemption of an instruction that has made a data read
-    (ASSUMPTIONS.md, items 1 and 9). The note should follow the core.
-  - `bench/Makefile`'s `make core` runs only the multi-cycle core. A
-    `CORE` variable would give the pipelined core's cycle counts for the
-    benchmark, and with them the cost of the waits that MICROARCH.md
-    §5.3 and §5.6 discuss.
+  - The cost of the waits that MICROARCH.md §5.3 and §5.6 discuss, from
+    the pipelined core's cycles for the benchmark (`make core
+    CORE=pipeline` in `bench/`), to decide on speculative reads (below).
   - Speed: the store path runs from the ALU to the data bus in one cycle,
     and PREPARE and WRITE depend on each other combinationally
     (ASSUMPTIONS.md, item 6). No synthesis for a board has measured the

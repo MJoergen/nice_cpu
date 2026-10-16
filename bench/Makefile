@@ -39,15 +39,19 @@ test: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 	@$(PYTHON) hazards.py --test
 	$(foreach p,$(PROGRAMS),$(call check,$(p)))
 
-# Runs both on the multi-cycle core in GHDL, so that the cycles are the
-# core's. This takes about 20 minutes. The program is given relative to
+# Runs both on a core in GHDL, so that the cycles are the core's: CORE,
+# the generic G_CORE of hdl/test/tb_core.vhd, is multicycle for the
+# multi-cycle core or pipeline for the pipelined one. Each takes about 20
+# minutes: the pipelined core runs fewer cycles, but more logic in each. The program is given relative to
 # hdl/build, where GHDL runs, and the output is written there too.
+CORE ?= multicycle
+
 define core_run
-	@echo "$(1) on the multi-cycle core:"
-	@cd ../hdl/build && $(GHDL) --elab-run --std=08 tb_core \
-	  -gG_BIN_FILE=../../bench/$(BUILD)/$(1).bin -gG_TRACE_FILE=$(1)_core.out -gG_TRACE=false \
-	  > $(1)_core.log 2>&1; status=$$?; sed '/^Halted/,$$d' $(1)_core.out; \
-	  if [ $$status -ne 0 ]; then cat $(1)_core.log; exit 1; fi
+	@echo "$(1) on the $(CORE) core:"
+	@cd ../hdl/build && $(GHDL) --elab-run --std=08 tb_core -gG_CORE=$(CORE) \
+	  -gG_BIN_FILE=../../bench/$(BUILD)/$(1).bin -gG_TRACE_FILE=$(1)_$(CORE).out -gG_TRACE=false \
+	  > $(1)_$(CORE).log 2>&1; status=$$?; sed '/^Halted/,$$d' $(1)_$(CORE).out; \
+	  if [ $$status -ne 0 ]; then cat $(1)_$(CORE).log; exit 1; fi
 
 endef
 

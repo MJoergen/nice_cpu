@@ -470,11 +470,23 @@ a constant word, and the `ADD` adds 2.
 ### Register allocation
 
 The back end works on a list of instructions and labels. It finds the
-jumps between them, and which registers are live at each instruction. It
+jumps between them, and which flags (ISA.md §6) each instruction may
+leave for a later one to read. A test `MOVE[M] R0, x` of a value that
+the same straight-line code computed, with no instruction between that
+reads or writes the flags, goes away: the instruction that computed x
+gets the M bit instead, as in `ADD[M] x, a, b`. A logic operation or a
+shift whose bit shifted out is discarded sets the flags just as the
+`MOVE[M]` would. An arithmetic operation also sets C and V from the
+operation, so it takes the test's place only if neither is read before
+the flags are written again. For a copy `MOVE x, y`, the instruction
+that computed y gets the M bit, if it can.
+
+Then the back end finds which registers are live at each instruction. It
 removes the instructions whose only effect is to write a register that
 is not read afterwards. So of the declared locals, which wasm sets to 0,
-only those that may be read before they are set get a `MOVE x, 0`. Then
-it splits each virtual register into webs: each web is the definitions
+only those that may be read before they are set get a `MOVE x, 0`. An
+instruction with the M bit stays for its flags, but if its result is not
+read, it writes R0 instead, as in `AND[M] R0, x, 1`. Then it splits each virtual register into webs: each web is the definitions
 that reach a common use, with those uses. A local that the wasm code
 reuses for unrelated values thus gets a register for each of them.
 

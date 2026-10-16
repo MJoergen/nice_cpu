@@ -1040,6 +1040,34 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
                       i64_const(0x1_00000002) + i64_const(0x3_00000004) + i32_const(7)
                       + select_t(I64) + i64_const(0x1_00000002) + EQ64,
                       i64_const(0x1_00000007) + i64_const(0x2_00000007) + EQ64)))), "", 0x1E),
+    # A select, br_if, if, or eqz on the result of an operation, whose
+    # MOVE[M] R0, x the back end removes by giving the operation the M bit
+    # (README.md), so that its flags must say whether x is 0. One bit each:
+    # 0: -1 + 1 = 0, though the ADD[M] also sets C.
+    # 1: 0x7FFFFFFF + 1 = 0x80000000, though it sets N and V.
+    # 0: 5 - 5 = 0, by br_if.
+    # 0: 0x80000000 << 1 = 0, by if.
+    # 1: eqz (6 AND 9) = eqz 0 = 1. The AND's result is not used
+    #    otherwise, so it goes to R0.
+    # 1: 3 XOR 4 = 7, through local.tee: the XOR sets the flags, not the
+    #    copy to the local. Adding the local, 7, and -7 keeps the bit.
+    # 1: 1 - 2 = -1, though it borrows.
+    # 0100111 = 0x27.
+    ("flagops", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((2, bits(0,
+                      i32_const(1) + i32_const(0) + i32_const(-1) + i32_const(1) + ADD + SELECT,
+                      i32_const(1) + i32_const(0) + i32_const(0x7FFFFFFF) + i32_const(1) + ADD
+                      + SELECT,
+                      as_br_if(i32_const(5) + i32_const(5) + SUB),
+                      as_if(i32_const(-0x80000000) + i32_const(1) + SHL),
+                      i32_const(6) + i32_const(9) + AND + EQZ,
+                      as_if(i32_const(3) + i32_const(4) + XOR + local_tee(1)) + local_get(1) + ADD
+                      + i32_const(-7) + ADD,
+                      i32_const(1) + i32_const(0) + i32_const(1) + i32_const(2) + SUB + SELECT)))),
+     "", 0x27),
     # Code that cannot be reached is skipped up to its block's end or
     # else, including nested blocks in it, which are not even valid: the
     # if has no condition, and the add no operands. 8 + 9 = 17.

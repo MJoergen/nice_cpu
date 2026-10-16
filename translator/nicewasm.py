@@ -1110,6 +1110,62 @@ def sets_flags(ins: Ins) -> bool:
     return "[" in ins.op and "M" in ins.op.split("[", 1)[1]
 
 
+def with_m(op: str) -> str:
+    """The mnemonic op with the M bit added: ADD gives ADD[M], ADD[C] gives
+    ADD[CM]."""
+    return op[:-1] + "M]" if op.endswith("]") else op + "[M]"
+
+
+# The flags of §6 that instructions set and test.
+FLAGS = frozenset("XCZNV")
+
+# The shifts whose fill bit is C, which they read (§5.2). A shift whose
+# bit shifted out goes to C reads it too when the count is 0, so every
+# shift with C in its name counts as a reader.
+SHIFT_NAMES = frozenset(["0<0", "0<1", "0<C", "C<0", "C<1", "C<C", "<<<", "C<<", "0>0", "1>0",
+                         "C>0", "0>C", "1>C", "C>C", ">>>", ">>C", "SHL", "ROL", "BPL", "SHR",
+                         "ROR", "BPR"])
+
+# The operations whose M bit sets C and V to 0, as MOVE[M] does: the
+# logic operations (§5.1), and the shifts whose bit shifted out is
+# discarded (§5.2). With M, any of them sets the flags from its result
+# exactly as a MOVE[M] of the result would.
+LIKE_MOVE = frozenset(["MOVE", "NOT", "NOR", "IAND", "NAND", "XOR", "IOR", "XNOR", "AND", "ONE",
+                       "OR", "0<0", "0<1", "0<C", "<<<", "0>0", "1>0", "C>0", ">>>", "SHL", "ROL",
+                       "SHR", "ROR"])
+
+# The operations that may get the M bit: those of LIKE_MOVE, and the
+# arithmetic ones, which set C and V from the operation.
+ALU_NAMES = frozenset(["MOVE", "SUB", "MDBL", "ADD", "DBL", "DEC", "NOT", "NOR", "IAND", "NAND",
+                       "XOR", "IOR", "XNOR", "AND", "ONE", "OR"])
+
+
+def flag_use_def(ins: Ins) -> Tuple[FrozenSet[str], FrozenSet[str]]:
+    """The flags (§6) that an instruction reads, and those that it surely
+    writes. A conditional instruction may not write them, so its writes do
+    not count. A call changes them all (§9.3). An operand that reads R14
+    reads them all."""
+    uses: set[str] = set()
+    cond = ins.cond.lstrip("!")
+    if cond in FLAGS:
+        uses.add(cond)
+    base, _, mods = ins.op.partition("[")
+    if "C" in mods or (base in SHIFT_NAMES and "C" in base):
+        uses.add("C")
+    for k, o in enumerate(ins.ops):
+        kind, r = operand_reg(o)
+        if r == "R14" and (k > 0 or kind != "reg"):
+            uses |= FLAGS
+    if ins.kind == "call":
+        return frozenset(uses), FLAGS
+    if ins.cond or ins.kind:
+        return frozenset(uses), frozenset()
+    dest = ins.ops[0] if ins.ops else ""
+    if dest in ("R14", "R14++", "R14--") or sets_flags(ins):
+        return frozenset(uses), FLAGS
+    return frozenset(uses), frozenset()
+
+
 class Allocator:
     """Gives the virtual registers of a function's code physical registers
     or frame words, by iterated register coalescing (George and Appel,
@@ -1233,27 +1289,111 @@ class Allocator:
                     self.live_out[k], self.live_in[k] = out, inn
                     changed = True
 
+    def flag_liveness(self) -> None:
+        """The flags that may be read after each instruction before they
+        are written again (flag_use_def), in flags_after."""
+        fud = [flag_use_def(ins) for ins in self.code]
+        n = len(self.blocks)
+        live_in: List[FrozenSet[str]] = [frozenset()] * n
+        changed = True
+        while changed:
+            changed = False
+            for k in reversed(range(n)):
+                a, b = self.blocks[k]
+                live: FrozenSet[str] = frozenset().union(*(live_in[s] for s in self.bsucc[k]))
+                for i in reversed(range(a, b)):
+                    uses, defs = fud[i]
+                    live = (live - defs) | uses
+                if live != live_in[k]:
+                    live_in[k] = live
+                    changed = True
+        self.flags_after: List[FrozenSet[str]] = [frozenset()] * len(self.code)
+        for k, (a, b) in enumerate(self.blocks):
+            live = frozenset().union(*(live_in[s] for s in self.bsucc[k]))
+            for i in reversed(range(a, b)):
+                self.flags_after[i] = live
+                uses, defs = fud[i]
+                live = (live - defs) | uses
+        self.flag_ud = fud
+
+    def flags_from_results(self) -> bool:
+        """Removes a MOVE[M] R0, x that only tests x, by giving the M bit to
+        the instruction that computed x instead: x = a + b, MOVE[M] R0, x
+        becomes ADD[M] x, a, b. That instruction must be the last to write x
+        before the test, in the same basic block, with x as its register
+        destination, and no instruction between them may read or write the
+        flags. An operation of LIKE_MOVE then sets the flags exactly as the
+        MOVE[M] did. An arithmetic one sets C and V from the operation, so
+        it qualifies only if neither is read before the next write.
+        Returns whether it changed any."""
+        self.flag_liveness()
+        gone: set[int] = set()
+        for a, b in self.blocks:
+            for j in range(a, b):
+                test = self.code[j]
+                if test.op != "MOVE[M]" or test.cond or test.ops[0] != "R0":
+                    continue
+                kind, x = operand_reg(test.ops[1])
+                if kind != "reg" or x is None or not self.tracked(x):
+                    continue
+                found: Optional[Ins] = None
+                i = j - 1
+                while True:
+                    while i >= a and x not in self.ud[i][1] and not any(self.flag_ud[i]):
+                        i -= 1
+                    if i < a or x not in self.ud[i][1]:
+                        break
+                    ins = self.code[i]
+                    base, _, mods = ins.op.partition("[")
+                    if (ins.cond or ins.kind or "M" in mods or ins.ops[0] != x
+                            or any(operand_reg(o)[0] == "side" for o in ins.ops)
+                            or not (base in ALU_NAMES or base in SHIFT_NAMES)
+                            or (base not in LIKE_MOVE and self.flags_after[j] & {"C", "V"})):
+                        break
+                    found = ins
+                    # For a copy x = y, the instruction that computed y
+                    # may set the flags instead, so that the copy can go.
+                    kind, y = operand_reg(ins.ops[1]) if ins.op == "MOVE" else ("", None)
+                    if kind != "reg" or y is None or not self.tracked(y):
+                        break
+                    x = y
+                    i -= 1
+                if found is not None:
+                    found.op = with_m(found.op)
+                    gone.add(j)
+        if gone:
+            drop = {id(self.code[j]) for j in gone}
+            self.items = [it for it in self.items if id(it) not in drop]
+        return bool(gone)
+
     def dead_code(self) -> bool:
         """Removes instructions whose only effect is to write a register
         that is not read afterwards, such as the zeroing of a local that
         is always set before it is used. An instruction that reads memory
         stays, since the read may be a device's (§8.3), and so does one
-        that sets the flags. Returns whether it removed any."""
+        that sets the flags, but the latter then writes R0 instead.
+        Returns whether it changed any."""
         dead: set[int] = set()
+        to_r0 = False
         for k, (a, b) in enumerate(self.blocks):
             live = set(self.live_out[k])
             for i in reversed(range(a, b)):
                 ins = self.code[i]
                 uses, defs = self.ud[i]
-                if (ins.kind == "" and not sets_flags(ins) and len(defs) == 1
-                        and not (defs & live) and self.removable(ins)):
-                    dead.add(i)
-                    continue
+                if ins.kind == "" and len(defs) == 1 and not (defs & live):
+                    if not sets_flags(ins) and self.removable(ins):
+                        dead.add(i)
+                        continue
+                    if (sets_flags(ins) and not ins.cond
+                            and operand_reg(ins.ops[0]) == ("reg", next(iter(defs)))):
+                        ins.ops[0] = "R0"
+                        to_r0 = True
+                        defs = set()
                 live = (live - defs) | uses
         if dead:
             gone = {id(self.code[i]) for i in dead}
             self.items = [it for it in self.items if id(it) not in gone]
-        return bool(dead)
+        return bool(dead) or to_r0
 
     def removable(self, ins: Ins) -> bool:
         kind, r = operand_reg(ins.ops[0]) if ins.ops else ("", None)
@@ -1700,6 +1840,8 @@ class Allocator:
         """Allocates the registers, and returns the code with physical
         registers and frame words %sN in place of the virtual registers."""
         self.flow()
+        if self.flags_from_results():
+            self.flow()
         self.webs()
         while True:
             self.flow()

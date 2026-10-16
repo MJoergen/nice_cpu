@@ -2511,20 +2511,26 @@ class FunctionTranslator:
             self.emit("MOVE", "R15", "@___wasm_trap_vector")
             return None, a
         trap = self.trap_stub(2, start)
-        if offset:
-            a = self.new_vreg()
-            self.emit("ADD[M]", a, base, words(offset, I32)[0])
-            self.emit("?C MOVE", "R15", trap)  # base + offset passes 2^32
-        if self.t.growable:
+        if self.t.growable or const is not None:
+            if offset:
+                a = self.new_vreg()
+                self.emit("ADD[M]", a, base, words(offset, I32)[0])
+                self.emit("?C MOVE", "R15", trap)  # base + offset passes 2^32
             # The first address at which n bytes do not fit, which
-            # memory.grow keeps up to date.
-            self.emit("SUB[M]", "R0", a, f"@W.limit{n}")
+            # memory.grow keeps up to date if the memory can grow.
+            self.emit("SUB[M]", "R0", a, f"@W.limit{n}" if self.t.growable else words(limit, I32)[0])
             self.emit("?!C MOVE", "R15", trap)
             return None, a
-        # The first address at which n bytes do not fit.
-        if limit < 1 << 32:
-            self.emit("SUB[M]", "R0", a, words(limit, I32)[0])
-            self.emit("?!C MOVE", "R15", trap)
+        # The first base at which n bytes from base + offset do not fit.
+        # Below it, base + offset does not pass 2^32 either.
+        if limit <= offset:
+            self.emit("MOVE", "R15", trap)
+            return None, a
+        self.emit("SUB[M]", "R0", base, words(limit - offset, I32)[0])
+        self.emit("?!C MOVE", "R15", trap)
+        if offset:
+            a = self.new_vreg()
+            self.emit("ADD", a, base, words(offset, I32)[0])
         return None, a
 
     def fast_path(self, helper: str, a: str, args: List[str], results: List[str],

@@ -244,6 +244,8 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "unreachable": "MOVE R1, 1",
          "oob": "ADD[M] R1, 65532, 1",
          "oobcarry": "ADD[M] R1, -1, 1",
+         "oobdyn": "SUB[M] R0, R1, 65532",
+         "oobend": "SUB[M] R0, R1, 65529",
          "nomemory": "MOVE R1, 2"}
 
 # Options for nicewasm.
@@ -980,6 +982,25 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         memory(1),
         exports(("main", 0, 0)),
         code((0, i32_const(-1) + i32_const(5) + mem(I32_STORE, offset=1) + i32_const(0)))),
+     "", 2),
+    # The same with the address in a local, so that it is not a constant.
+    # The check compares the base -1 with 65536 - 4 + 1 - 1, the first
+    # base at which 4 bytes from base + 1 do not fit.
+    ("oobdyn", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, i32_const(-1) + local_set(0) + local_get(0) + i32_const(5)
+              + mem(I32_STORE, offset=1) + i32_const(0)))),
+     "", 2),
+    # 65532 + 4 is the first byte past the memory, so the load traps.
+    ("oobend", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, i32_const(65532) + local_set(0) + local_get(0) + mem(I32_LOAD, offset=4)))),
      "", 2),
     # A memory of 0 pages: every access traps.
     ("nomemory", module(

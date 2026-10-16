@@ -370,9 +370,15 @@ shift by a "negative" count such as 32 − n for n > 32. So `W.shl64` and
 `W.shr_u64` need no branch: each part that does not apply comes out as
 0. An `i64` rotate by 32 or more swaps the words first.
 
-A load or store first computes the byte address and checks that all its
-bytes are in the memory. A failed check jumps to a trap stub after the
-function's epilogue, which sets R2 to the start of the access code. An
+A load or store first checks that all its bytes are in the memory. One
+compare of the base with the first base at which the access does not
+fit does it, as in `SUB[M] R0, R1, 65532`, since below that base the
+base plus the offset cannot pass 2^32 either. A failed check jumps to a
+trap stub after the function's epilogue, which sets R2 to the start of
+the access code. Then the code adds the offset to the base. If the
+memory can grow, the code adds the offset first, traps if the sum passes
+2^32, and compares the sum with a word that `memory.grow` keeps up to
+date. An
 access of 4 or 8 bytes then tests whether the address is at a multiple
 of 4. If it is, one `MOVE` for each word does the access, with the word
 index in a register. If it is not, the code jumps to a stub after the

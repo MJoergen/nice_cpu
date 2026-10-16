@@ -63,12 +63,37 @@ effects, R15 as an operand, and interrupts are all handled in the pipeline.
 
 ## 3. Pipeline
 
-    FETCH --> ICACHE --> DECODE --> SEQUENCER --> PREPARE --> WRITE
-      |                    |                         |          |
-    instruction       REGISTERS                   MEMORY -------+
-      bus              (3 reads)                (data bus)
-      ^                                                         |
-      +----------------- redirect and flush --------------------+
+![The pipelined core](pipeline.png)
+
+[pipeline.png](pipeline.png) is drawn by [pipeline.tex](pipeline.tex), and
+`make diagrams` in the top directory renders it. Edit the LaTeX, not the
+PNG. The same in text:
+
+    pipeline
+    +------------------------------------------------------------+
+    |               pipe_fetch                                   |
+    |  +---------->   FETCH   <------------------------------------> instruction bus
+    |  |  +------->     |                                        |   (64 bits)
+    |  |  |           ICACHE                                     |
+    |  |  |             |                                        |
+    |  |  |          pipe_decode                                 |
+    |  |  +- jump --  DECODE                                     |
+    |  |                |                                        |
+    |  |            SEQUENCER                                    |
+    |  |                |                                        |
+    |  |            pipe_prepare               pipe_dbus         |
+    |  |  +------->   PREPARE   -- read -->   +-----------+      |
+    |  |  |             |                     | tags and  |<-------> data bus
+    |  |  | registers  pipe_write             | read data |      |   (32 bits)
+    |  |  +---------   WRITE   -- store --->  |           |      |
+    |  |                |      <--- data ---  +-----------+      |
+    |  +- flush and ----+                                        |
+    |     redirect                                               |
+    +------------------------------------------------------------+
+
+Each stage sits in the VHDL entity named above it, in `hdl/src/`.
+`pipeline` connects them. The black bars of the PNG mark the registers on
+the main path, which the header of `pipeline.tex` names.
 
 The stages do what they do in qnice_cpu, with these differences:
 

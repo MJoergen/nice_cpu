@@ -14,12 +14,13 @@ help:
 	@echo "                     $(TEST_DIRS)"
 	@echo "  make typecheck   mypy --strict on the Python tools"
 	@echo "  make lint        vsg style check of the VHDL (pip install vsg)"
-	@echo "  make formal      SymbiYosys checks of the core and the timer"
+	@echo "  make formal      SymbiYosys checks of the cores, the timer, and wb_dmux"
 	@echo "  make slow        the runtime and translator programs, and the"
 	@echo "                   benchmark, on the multi-cycle core (minutes)"
 	@echo "  make hazards     count the pipeline hazards in the benchmark"
 	@echo "  make pdf         rebuild the introduction slides"
 	@echo "  make pdfcheck    check that nice_intro.pdf matches the .tex"
+	@echo "  make diagrams    render the block diagrams in doc/ (pdflatex, pdftoppm)"
 	@echo "  make all         test, typecheck, lint, and pdfcheck"
 	@echo "  make clean       remove build output"
 	@echo ""
@@ -51,9 +52,20 @@ pdf:
 pdfcheck:
 	$(MAKE) -C doc/intro pdfcheck
 
+# The block diagrams: standalone TikZ, rendered at 150 dpi. Both the .tex
+# and the .png are committed, as in qnice_cpu.
+DIAGRAMS = doc/pipeline
+
+diagrams: $(addsuffix .png,$(DIAGRAMS))
+
+%.png: %.tex
+	pdflatex -interaction=nonstopmode -halt-on-error -output-directory=$(dir $@) $<
+	pdftoppm -r 150 -png -singlefile $*.pdf $*
+	rm -f $*.pdf $*.aux $*.log
+
 all: test typecheck lint pdfcheck
 
 clean:
 	@for d in $(CLEAN_DIRS); do $(MAKE) -C $$d clean || exit 1; done
 
-.PHONY: help test typecheck lint formal slow hazards pdf pdfcheck all clean
+.PHONY: help test typecheck lint formal slow hazards pdf pdfcheck diagrams all clean

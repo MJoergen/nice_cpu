@@ -33,8 +33,7 @@ end entity tb_mpu;
 
 architecture simulation of tb_mpu is
 
-   -- The computations take 33 and 65 cycles (src/mpu.vhd).
-   constant C_MIN_WAIT   : natural := 30;
+   -- The divisions take 33 and 65 cycles (src/mpu.vhd).
    constant C_MIN_WAIT64 : natural := 62;
 
    signal clk : std_logic;
@@ -381,7 +380,9 @@ begin
       end if;
       write_word(1, X"00000007");
       read_word(4, data_v, cycles_v);
-      if cycles_v < C_MIN_WAIT or data_v /= X"0000002A" then
+      -- The read of B took 1 cycle, and this one also waits for the
+      -- second cycle of the multiplier.
+      if cycles_v /= 2 or data_v /= X"0000002A" then
          fail("UMUL_LO = " & to_hstring(data_v) & " after " & integer'image(cycles_v) & " cycles");
       end if;
 

@@ -10,12 +10,15 @@
 --   20, 21  SDIV64_Q     26, 27  UDIV64_R
 --
 -- THEORY OF OPERATION
--- A write to A or B starts a new computation, which takes 33 cycles. Three
--- units run side by side, one bit per cycle:
--- * A shift-and-add multiplier forms the unsigned product of A and B. The
---   signed product has the same low word. Its high word is the unsigned
---   one, minus B if A is negative, and minus A if B is negative.
--- * A restoring divider divides A by B, unsigned.
+-- A write to A or B starts a new computation. Three units run side by side:
+-- * A multiplier forms the unsigned product of A and B in two cycles. It is
+--   the * operator, followed by two registers, so that synthesis can map it
+--   to DSP blocks and move the registers into them. The signed product has
+--   the same low word. Its high word is the unsigned one, minus B if A is
+--   negative, and minus A if B is negative, and the second register holds
+--   it too.
+-- * A restoring divider divides A by B, unsigned, one bit per cycle, which
+--   takes 33 cycles.
 -- * A second one divides |A| by |B|. The signed quotient is negated when
 --   A and B differ in sign, and the signed remainder when A is negative.
 -- A restoring divider with B = 0 gives Q = 0xFFFFFFFF and R = A, which is
@@ -76,9 +79,13 @@ architecture synthesis of mpu is
    -- The steps still to run.
    signal count_r : natural range 0 to C_STEPS := 0;
 
-   -- The multiplier. The high word holds the partial sum. The low word
-   -- starts as B, which shifts out to the right as the product shifts in.
-   signal prod_r : std_logic_vector(63 downto 0) := (others => '0');
+   -- The multiplier: the product of A and B, the same delayed by a cycle,
+   -- and the high word of the signed product. A write to A or B sets
+   -- mul_count_r to the cycles until they hold its product.
+   signal mul_count_r : natural range 0 to 2         := 2;
+   signal mul_r       : std_logic_vector(63 downto 0) := (others => '0');
+   signal prod_r      : std_logic_vector(63 downto 0) := (others => '0');
+   signal smul_hi_r   : std_logic_vector(31 downto 0) := (others => '0');
 
    -- The two dividers. The quotient register starts as the dividend, which
    -- shifts out to the left as the quotient shifts in.
@@ -101,9 +108,10 @@ architecture synthesis of mpu is
    signal wait_r      : std_logic                    := '0';
    signal wait_addr_r : std_logic_vector(4 downto 0) := (others => '0');
 
-   signal busy   : std_logic;
-   signal busy64 : std_logic;
-   signal accept : std_logic;
+   signal mul_busy : std_logic;
+   signal busy     : std_logic;
+   signal busy64   : std_logic;
+   signal accept   : std_logic;
 
    -- The functions below take vectors of any width N, indexed N-1 downto 0.
 
@@ -167,14 +175,14 @@ architecture synthesis of mpu is
    -- Whether a read of word addr must wait for a computation.
    impure function must_wait(addr : std_logic_vector(4 downto 0)) return boolean is
    begin
-      return (busy = '1' and addr >= 2 and addr <= 9) or
+      return (mul_busy = '1' and addr >= 2 and addr <= 5) or
+             (busy = '1' and addr >= 6 and addr <= 9) or
              (busy64 = '1' and addr >= 20 and addr <= 27);
    end function must_wait;
 
    -- The value of word addr, once the computation has ended.
    impure function result(addr : std_logic_vector(4 downto 0)) return std_logic_vector is
-      variable hi_v : std_logic_vector(31 downto 0);
-      variable w_v  : std_logic_vector(63 downto 0);
+      variable w_v : std_logic_vector(63 downto 0);
    begin
       if addr(4) = '1' then
          w_v := result64(addr(3 downto 1));
@@ -195,14 +203,7 @@ architecture synthesis of mpu is
             return prod_r(31 downto 0);
 
          when X"3" =>
-            hi_v := prod_r(63 downto 32);
-            if a_r(31) = '1' then
-               hi_v := hi_v - b_r;
-            end if;
-            if b_r(31) = '1' then
-               hi_v := hi_v - a_r;
-            end if;
-            return hi_v;
+            return smul_hi_r;
 
          when X"5" =>
             return prod_r(63 downto 32);
@@ -226,20 +227,51 @@ architecture synthesis of mpu is
 
 begin
 
+   mul_busy   <= '1' when mul_count_r /= 0 else '0';
    busy       <= '1' when start_r = '1' or count_r /= 0 else '0';
    busy64     <= '1' when start64_r = '1' or count64_r /= 0 else '0';
    accept     <= wb_cyc_i and wb_stb_i and not wait_r;
    wb_stall_o <= wait_r;
 
 
+   p_multiply : process (clk_i)
+      variable hi_v : std_logic_vector(31 downto 0);
+   begin
+      if rising_edge(clk_i) then
+         mul_r  <= a_r * b_r;
+         prod_r <= mul_r;
+
+         hi_v := mul_r(63 downto 32);
+         if a_r(31) = '1' then
+            hi_v := hi_v - b_r;
+         end if;
+         if b_r(31) = '1' then
+            hi_v := hi_v - a_r;
+         end if;
+         smul_hi_r <= hi_v;
+
+         if mul_count_r /= 0 then
+            mul_count_r <= mul_count_r - 1;
+         end if;
+
+         -- p_compute keeps the rest of the bus decoding.
+         if accept = '1' and wb_we_i = '1' and wb_addr_i(4 downto 1) = "0000" then
+            mul_count_r <= 2;
+         end if;
+
+         if rst_i = '1' then
+            mul_count_r <= 2;
+         end if;
+      end if;
+   end process p_multiply;
+
+
    p_compute : process (clk_i)
-      variable sum_v   : std_logic_vector(32 downto 0);
       variable div_v   : std_logic_vector(63 downto 0);
       variable div64_v : std_logic_vector(127 downto 0);
    begin
       if rising_edge(clk_i) then
          if start_r = '1' then
-            prod_r  <= X"00000000" & b_r;
             uquo_r  <= a_r;
             urem_r  <= (others => '0');
             squo_r  <= absolute(a_r);
@@ -247,12 +279,6 @@ begin
             count_r <= C_STEPS;
             start_r <= '0';
          elsif count_r /= 0 then
-            sum_v := '0' & prod_r(63 downto 32);
-            if prod_r(0) = '1' then
-               sum_v := sum_v + a_r;
-            end if;
-            prod_r <= sum_v & prod_r(31 downto 1);
-
             div_v  := divide_step(urem_r, uquo_r, b_r);
             urem_r <= div_v(63 downto 32);
             uquo_r <= div_v(31 downto 0);

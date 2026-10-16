@@ -28,7 +28,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, FrozenSet, List, Optional, Tuple, Union
 
 I32, I64, F32, F64 = 0x7F, 0x7E, 0x7D, 0x7C
 TYPE_NAMES = {I32: "i32", I64: "i64", F32: "f32", F64: "f64", 0x7B: "v128",
@@ -253,6 +253,59 @@ class Deferred:
     constant, or the value that a local holds."""
     words: List[str]       # its words as source operands
     local: Optional[int]   # the local whose value it is, or None for a constant
+
+
+@dataclass
+class Label:
+    """A label in a function's code."""
+    name: str
+
+
+@dataclass(eq=False)
+class Ins:
+    """One NICE instruction in a function's code. Its operands are text, as
+    in the output, dest first. A jump (MOVE R15, x) also says where it may
+    go, so that later passes can follow the control flow: a jump to a label
+    names it in targets, a call goes on to the next instruction, and an
+    exit leaves the function. A call or an exit also names the registers
+    that the code it reaches reads (uses) and, for a call, changes (defs)."""
+    op: str                    # the mnemonic with its flags, such as ADD[M]
+    ops: List[str]             # the operands, dest first
+    cond: str = ""             # the condition, such as Z or !Z, or "" for always
+    kind: str = ""             # "jump", "call", "exit", or "" for an instruction that goes on
+    targets: List[str] = field(default_factory=list)
+    uses: FrozenSet[str] = frozenset()
+    defs: FrozenSet[str] = frozenset()
+
+    def text(self) -> str:
+        return instr((f"?{self.cond} " if self.cond else "") + self.op, *self.ops)
+
+
+# The code of a function: instructions, labels, and other lines, such as
+# comments and .DAT directives, as text.
+Item = Union[Ins, Label, str]
+
+
+def make_ins(mnemonic: str, *operands: str) -> Ins:
+    """An instruction from its mnemonic, which may start with a condition
+    such as ?Z, and its operands. A jump to a label or through the trap
+    vector says so."""
+    cond = ""
+    if mnemonic.startswith("?"):
+        cond, mnemonic = mnemonic[1:].split(" ", 1)
+    ins = Ins(mnemonic, list(operands), cond)
+    if mnemonic == "MOVE" and operands[0] == "R15":
+        if operands[1] == "@___wasm_trap_vector":
+            ins.kind, ins.uses = "exit", frozenset({"R1", "R2"})
+        elif re.match(r"[A-Za-z_.][\w.]*\Z", operands[1]):
+            ins.kind, ins.targets = "jump", [operands[1]]
+    return ins
+
+
+def render(items: List[Item]) -> List[str]:
+    """The lines of the output for a function's code."""
+    return [it.text() if isinstance(it, Ins) else it.name if isinstance(it, Label) else it
+            for it in items]
 
 
 @dataclass
@@ -1383,8 +1436,8 @@ class FunctionTranslator:
         self.max_words = 0
         self.n_traps = 0
         self.n_labels = 0
-        self.body: List[str] = []
-        self.stubs: List[str] = []  # code after the epilogue, out of the way
+        self.body: List[Item] = []
+        self.stubs: List[Item] = []  # code after the epilogue, out of the way
         self.ret_label = f"{t.prefix}f{idx}.ret"
         self.ctrl = [Frame(0, self.ftype, 0, 0, self.ret_label)]
 
@@ -1453,8 +1506,10 @@ class FunctionTranslator:
             if d is not None and d.local is not None and local in (None, d.local):
                 self.settle(i)
 
-    def emit(self, mnemonic: str, *operands: str) -> None:
-        self.body.append(instr(mnemonic, *operands))
+    def emit(self, mnemonic: str, *operands: str) -> Ins:
+        ins = make_ins(mnemonic, *operands)
+        self.body.append(ins)
+        return ins
 
     def move(self, dest: List[str], src: List[str]) -> None:
         for d, s in zip(dest, src):
@@ -1482,7 +1537,7 @@ class FunctionTranslator:
             self.emit("ADD", "@--R13", "1", "R15")
         else:
             self.emit("ADD", "@--R13", "2", "R15")
-        self.emit("MOVE", "R15", label)
+        self.emit("MOVE", "R15", label).kind = "call"
         if stack_words:
             self.emit("ADD", "R13", "R13", str(stack_words))
         if fwd is not None:
@@ -1518,7 +1573,7 @@ class FunctionTranslator:
         address of this code in R2 (§9.4)."""
         label = f"{self.t.prefix}f{self.idx}.t{self.n_traps}"
         self.n_traps += 1
-        self.body.append(label)
+        self.body.append(Label(label))
         self.emit("MOVE", "R1", str(code))
         self.emit("MOVE", "R2", label)
         self.emit("MOVE", "R15", "@___wasm_trap_vector")
@@ -1695,7 +1750,7 @@ class FunctionTranslator:
             if addr + n <= self.t.mem_bytes:
                 return addr
         start = self.new_label()
-        self.body.append(start)
+        self.body.append(Label(start))
         if not self.t.checks:
             # The address wraps modulo 2^32 (§9.4).
             if offset:
@@ -1729,7 +1784,7 @@ class FunctionTranslator:
         """Calls one of the HELPERS, which is then emitted once."""
         self.t.helpers.add(name)
         self.emit(cond + "ADD", "@--R13", "2", "R15")
-        self.emit(cond + "MOVE", "R15", self.t.prefix + name[2:])
+        self.emit(cond + "MOVE", "R15", self.t.prefix + name[2:]).kind = "call"
 
     def fast_path(self, helper: str, setup: List[Tuple[str, str]], aligned: List[Tuple[str, ...]]) -> None:
         """The access of 4 or 8 bytes at the byte address in R1. If R1 is
@@ -1741,13 +1796,13 @@ class FunctionTranslator:
         for dest, src in setup:
             self.emit("?!Z MOVE", dest, src)
         self.emit("?!Z ADD", "@--R13", f"{back}-{call}", "R15")
-        self.body.append(call)
+        self.body.append(Label(call))
         self.t.helpers.add(helper)
-        self.emit("?!Z MOVE", "R15", self.t.prefix + helper[2:])
+        self.emit("?!Z MOVE", "R15", self.t.prefix + helper[2:]).kind = "call"
         self.emit("SHR", "R2", "R1", "2")                  # word index
         for mnemonic, *ops in aligned:
             self.emit(mnemonic, *ops)
-        self.body.append(back)
+        self.body.append(Label(back))
 
     def trunc_check(self, src_t: int, dst_t: int, pos_limit: int, neg_limit: int, at: int,
                     what: str) -> None:
@@ -1756,7 +1811,7 @@ class FunctionTranslator:
         (TRUNC_OPS). A NaN or an infinity is above every limit."""
         (v,) = self.pop([src_t], at, what, keep=True)
         start = self.new_label()
-        self.body.append(start)
+        self.body.append(Label(start))
         hi = v[-1]  # the word with the sign
         if src_t == F32:
             self.emit("MOVE", "R2", words(pos_limit, I32)[0])
@@ -1789,7 +1844,7 @@ class FunctionTranslator:
         (index,) = self.pop([I32], at, what)
         assert self.t.m.table_size is not None
         start = self.new_label()
-        self.body.append(start)
+        self.body.append(Label(start))
         self.emit("MOVE", "R5", index[0])
         self.emit("SUB[M]", "R0", "R5", str(self.t.m.table_size))
         self.emit("?!C MOVE", "R15", self.trap_stub(6, start))    # index >= size
@@ -1823,7 +1878,7 @@ class FunctionTranslator:
         the helper does the work."""
         d, x, n = self.pop([I32, I32, I32], at, what, keep=True)
         start = self.new_label()
-        self.body.append(start)
+        self.body.append(Label(start))
         if self.t.checks:
             trap = self.trap_stub(2, start)
             self.range_check(d[0], n[0], trap)
@@ -1837,8 +1892,8 @@ class FunctionTranslator:
         with R2 = start, the first instruction of the code for the wasm
         instruction that traps (§9.4). Returns its label."""
         label = self.new_label()
-        self.stubs += [label, instr("MOVE", "R1", str(code)), instr("MOVE", "R2", start),
-                       instr("MOVE", "R15", "@___wasm_trap_vector")]
+        self.stubs += [Label(label), make_ins("MOVE", "R1", str(code)),
+                       make_ins("MOVE", "R2", start), make_ins("MOVE", "R15", "@___wasm_trap_vector")]
         return label
 
     def mpu_op(self, word: str, t: int, at: int, what: str) -> None:
@@ -1868,7 +1923,7 @@ class FunctionTranslator:
         a, b = self.pop([t, t], at, what, keep=True)
         result = self.slot(len(self.stack) - 2)  # where a is, or would be
         start = self.new_label()
-        self.body.append(start)
+        self.body.append(Label(start))
         if t == I32:
             self.emit("MOVE[M]", "R0", b[0])
         else:
@@ -1892,7 +1947,7 @@ class FunctionTranslator:
                 self.emit("XOR", "R1", a[1], "-2147483648")
                 self.emit("OR[M]", "R0", "R1", a[0])
             self.emit("?Z MOVE", "R15", self.trap_stub(4, start))
-            self.body.append(ok)
+            self.body.append(Label(ok))
         elif op == "rem_s":
             # The result goes where the call puts it.
             done = self.new_label()
@@ -1909,7 +1964,7 @@ class FunctionTranslator:
                        "rem_u": "__umod"}[op]
             self.call(routine + ("64" if t == I64 else ""), FuncType([t, t], [t]), at, what)
         if done:
-            self.body.append(done)
+            self.body.append(Label(done))
 
     def memarg(self, n: int, align: int, at: int, what: str) -> None:
         """Checks a load's or store's memory and alignment."""
@@ -2145,9 +2200,9 @@ class FunctionTranslator:
                     if f.ft.params != f.ft.results:
                         raise WasmError(f"function {self.idx}: an if without else must have"
                                         " the same parameters and results", at)
-                    self.body.append(f.else_label)
+                    self.body.append(Label(f.else_label))
                 if f.op != LOOP:
-                    self.body.append(f.label)
+                    self.body.append(Label(f.label))
                 self.ctrl.pop()
                 self.reset(f, f.ft.results)
                 reachable = True
@@ -2158,7 +2213,7 @@ class FunctionTranslator:
                 if reachable:
                     self.end_block(f, at, name)
                     self.emit("MOVE", "R15", f.label)
-                self.body.append(f.else_label)
+                self.body.append(Label(f.else_label))
                 f.else_label = None
                 self.reset(f, f.ft.params)
                 reachable = True
@@ -2179,7 +2234,7 @@ class FunctionTranslator:
                     self.push(t)
                 self.ctrl.append(f)
                 if op == LOOP:
-                    self.body.append(f.label)
+                    self.body.append(Label(f.label))
                 if op == IF:
                     f.else_label = self.new_label()
                     if flags is None:
@@ -2206,7 +2261,7 @@ class FunctionTranslator:
                     for to, frm in moves:
                         self.emit("MOVE", to, frm)
                     self.emit("MOVE", "R15", f.label)
-                    self.body.append(skip)
+                    self.body.append(Label(skip))
                 else:
                     self.emit(f"?{flags} MOVE", "R15", f.label)
             elif op == 0x0E:  # br_table
@@ -2220,7 +2275,7 @@ class FunctionTranslator:
                 # A label whose values must be moved first gets a stub that
                 # moves them and then branches.
                 target: Dict[int, str] = {}  # label depth -> address
-                stubs: List[str] = []
+                stubs: List[Item] = []
                 for depth, f in zip(targets, frames):
                     if depth in target:
                         continue
@@ -2229,16 +2284,17 @@ class FunctionTranslator:
                         target[depth] = f.label
                         continue
                     target[depth] = self.new_label()
-                    stubs.append(target[depth])
-                    stubs += [instr("MOVE", to, frm) for to, frm in moves]
-                    stubs.append(instr("MOVE", "R15", f.label))
+                    stubs.append(Label(target[depth]))
+                    stubs += [make_ins("MOVE", to, frm) for to, frm in moves]
+                    stubs.append(make_ins("MOVE", "R15", f.label))
                 table = self.new_label()
                 n = len(targets) - 1
                 self.emit("MOVE", "R1", index[0])
                 self.emit("SUB[M]", "R0", "R1", str(n))
                 self.emit("?!C MOVE", "R15", target[targets[-1]])  # index >= n, unsigned
-                self.emit("MOVE", "R15", f"@{table}[R1]")
-                self.body.append(table)
+                jump = self.emit("MOVE", "R15", f"@{table}[R1]")
+                jump.kind, jump.targets = "jump", [target[depth] for depth in targets]
+                self.body.append(Label(table))
                 self.body += [instr(".DAT", target[depth]) for depth in targets[:-1]]
                 self.body += stubs
                 reachable = False
@@ -2511,7 +2567,7 @@ class FunctionTranslator:
         for i in range(len(self.args), len(self.local)):
             for w in self.local_words(i):
                 out.append(instr("MOVE", w, "0"))  # wasm zeroes locals
-        out += self.body
+        out += render(self.body)
         out.append(self.ret_label)
         if self.saved:
             # Pop the saved registers, last saved first.
@@ -2522,7 +2578,7 @@ class FunctionTranslator:
             out.append(instr("MOVE", "R13", "R12"))
         out.append(instr("MOVE", "R12", "@R13++"))
         out.append(instr("MOVE", "R15", "@R13++"))
-        out += self.stubs
+        out += render(self.stubs)
         return out
 
 

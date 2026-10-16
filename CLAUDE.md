@@ -21,13 +21,16 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
   benchmark written by hand, the ceiling to compare with. `expected.py`
   computes the results in Python, and `make test` checks both against them.
   `hazards.py` counts the pipeline hazards of MICROARCH.md §5 in a program.
-- `hdl/`: VHDL-2008, GHDL. A simple multi-cycle core in `src/multicycle.vhd`,
-  `src/trace_pkg.vhd`, the math unit in `src/mpu.vhd`, the performance
-  counters in `src/perf.vhd`, the timer in `src/timer.vhd`, the
-  simulation-only memory model and trace
-  writer in `sim/`, and the testbenches, test programs, and random program
-  generator in `test/`, and the formal checks of the ports of the core and
-  the timer in `formal/`. No pipelined core yet. Style follows `hdl/CODING_STYLE.md`,
+- `hdl/`: VHDL-2008, GHDL. Two cores with the same ports: a simple
+  multi-cycle one in `src/multicycle.vhd`, the reference, and the pipelined
+  one of MICROARCH.md in `src/pipeline.vhd`, `src/pipe_fetch.vhd`, and
+  `src/pipe_pkg.vhd`, whose choices are in `hdl/ASSUMPTIONS.md`. Both use
+  `src/nice_pkg.vhd` and `src/trace_pkg.vhd`. Also the math unit in
+  `src/mpu.vhd`, the performance counters in `src/perf.vhd`, the timer in
+  `src/timer.vhd`, the data bus decoder in `src/wb_dmux.vhd`, the
+  simulation-only memory model and trace writer in `sim/`, the
+  testbenches, test programs, and random program generator in `test/`,
+  and the formal checks in `formal/`. Style follows `hdl/CODING_STYLE.md`,
   checked by vsg with `hdl/vsg.yml`.
 
 ## Commands
@@ -45,10 +48,10 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
     cd bench     && make core        # the benchmark on the multi-cycle core in GHDL (minutes)
     cd bench     && make hazards     # how often the pipeline hazards of MICROARCH.md §5 occur
     cd bench     && make typecheck   # mypy --strict
-    cd hdl && make test              # synth check, tb_mem, then tb_trace and the core diffed against niceemu
+    cd hdl && make test              # synth check, unit tests, tb_trace, then both cores diffed against niceemu
     cd hdl && make lint              # vsg style check (pip install vsg)
-    cd hdl && make formal            # SymbiYosys: the core's Wishbone and interrupt ports
-    cd hdl && make programs          # the runtime and translator test programs on the core (minutes)
+    cd hdl && make formal            # SymbiYosys: ports of both cores, a proof of FETCH and ICACHE
+    cd hdl && make programs          # the runtime and translator programs on CORE (minutes)
     cd doc/intro && make test        # run the slides' example programs
     cd doc/intro && make pdf         # rebuild the slides (pdflatex, beamer)
     cd doc/intro && make pdfcheck    # check that nice_intro.pdf matches the .tex

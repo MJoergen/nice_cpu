@@ -419,8 +419,20 @@ core's runs only through `irq_compare.py`, and checks the self-check of
 Each stage holds one item and passes it on when the next stage frees
 itself. In the best case one micro-operation retires each cycle.
 `cputest` takes about 1.2 cycles per instruction on memory that never
-stalls, and `hazard.nasm`, which is all hazards, 1.9. The multi-cycle core
-takes about 10.
+stalls, and `hazard.nasm`, which is all hazards, 1.9. The benchmark of
+[bench/](../bench/README.md) ran like this on 2026-10-16, against the
+multi-cycle core's numbers there:
+
+| Program | Instructions | Cycles | Cycles per instruction | Multi-cycle core |
+|---|---|---|---|---|
+| `bench.c` through nicewasm | 3359061 | 6003616 | 1.79 | 12.6, 7.1 times slower |
+| `hand.nasm` | 491617 | 1541542 | 3.14 | 11.9, 3.8 times slower |
+
+The instruction counts equal the emulator's. In `hand.nasm`, `rng64`
+waits for the multiplier (5.1 cycles per instruction), and `vm` (5.0)
+ends each handler of three or four instructions with a jump through a
+table, whose address PREPARE must wait for, since the instruction before
+loads its index, and which flushes the pipeline.
 
 WRITE is the only stage that writes registers, and in order. So it reads
 them directly, and PREPARE reads them for the address of a data read,

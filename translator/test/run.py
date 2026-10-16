@@ -989,6 +989,35 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
               + local_get(0) + i32_const(1) + ADD + local_set(0)
               + br(0) + END + END
               + local_get(1)))), "", 55),
+    # Loops that end in a br_if back to their start, which nicewasm turns
+    # into a jump out on the opposite condition and a jump back. The first
+    # sums 1 to 10, 55, and leaves local 0 at 10. The second ends in a
+    # br_if 1 out of a block, and adds 100 five times. The third is
+    # followed by a br 1, so the two jumps swap targets, and the + 1000
+    # after it never runs: the br_if 0 before the loop, which could reach
+    # it, sees x = 0. x ends at 20, so main returns (555 + 20 + 5) XOR 7,
+    # 0x244 XOR 7 = 0x243 = 579. That code is long enough that the br 1
+    # stays a jump.
+    ("backedge", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((3, loop()
+              + local_get(0) + i32_const(1) + ADD + local_tee(0)
+              + local_get(1) + ADD + local_set(1)
+              + local_get(0) + i32_const(10) + LT_S + br_if(0) + END
+              + i32_const(0) + local_set(0)
+              + loop() + block()
+              + local_get(0) + i32_const(1) + ADD + local_tee(0)
+              + local_get(1) + i32_const(100) + ADD + local_set(1)
+              + i32_const(5) + LT_S + br_if(1) + END + END
+              + block() + block() + local_get(2) + br_if(0) + loop()
+              + local_get(2) + i32_const(2) + ADD + local_tee(2)
+              + i32_const(20) + LT_S + br_if(0) + END
+              + br(1) + END
+              + local_get(1) + i32_const(1000) + ADD + local_set(1) + END
+              + local_get(1) + local_get(2) + ADD + local_get(0) + ADD
+              + i32_const(7) + XOR))), "", 579),
     # abs(x) is an if with an else and a result: abs(-7) + abs(5) = 12.
     # Then two ifs without else, of type (i32) -> (i32), on 30: the first
     # adds 2, the second is not taken. 12 + 32 + 30 = 74.

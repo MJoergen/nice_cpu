@@ -283,6 +283,7 @@ class Ins:
     uses: FrozenSet[str] = frozenset()
     defs: FrozenSet[str] = frozenset()
     depth: int = 0             # the loops around it, which weigh its registers' spill costs
+    back: bool = False         # a conditional jump back to the start of a loop, at its end
 
     def text(self) -> str:
         return instr((f"?{self.cond} " if self.cond else "") + self.op, *self.ops)
@@ -2100,6 +2101,40 @@ def duplicate_tails(items: List[Item], ret_size: int) -> List[Item]:
     return out
 
 
+def invert_back_edges(items: List[Item], prefix: str) -> List[Item]:
+    """Turns the conditional jump back to the start of a loop at its end
+    into a conditional jump on the opposite condition to the code after
+    it, and an unconditional jump back. On the FPGA core a taken
+    conditional jump costs some five cycles more than a skipped one, and
+    an unconditional jump to a label two (doc/MICROARCH.md). So each
+    round of a loop saves two cycles, and leaving it costs five more.
+    If an unconditional jump follows, the two jumps swap their targets
+    instead. The new labels are prefix and a number."""
+    out: List[Item] = []
+    n = 0
+    for i, it in enumerate(items):
+        if not (isinstance(it, Ins) and it.back and it.kind == "jump" and it.cond
+                and len(it.targets) == 1 and it.ops[1:] == it.targets):
+            out.append(it)
+            continue
+        k = i + 1
+        while k < len(items) and isinstance(items[k], str) and str(items[k]).lstrip().startswith(";"):
+            k += 1
+        nxt = items[k] if k < len(items) else None
+        back = Ins("MOVE", ["R15", it.targets[0]], "", "jump", [it.targets[0]], depth=it.depth)
+        if (isinstance(nxt, Ins) and nxt.kind == "jump" and not nxt.cond and len(nxt.targets) == 1
+                and nxt.ops[1:] == nxt.targets):
+            out.append(Ins(it.op, ["R15", nxt.targets[0]], negate(it.cond), "jump",
+                           [nxt.targets[0]], depth=it.depth))
+            items[k] = back
+            continue
+        name = f"{prefix}{n}"
+        n += 1
+        out += [Ins(it.op, ["R15", name], negate(it.cond), "jump", [name], depth=it.depth),
+                back, Label(name)]
+    return out
+
+
 def reads_memory(ins: Ins) -> bool:
     """Whether an instruction reads memory: a source operand in memory (§4.1)."""
     return any(o.startswith("@") for o in ins.ops[1:])
@@ -3902,7 +3937,11 @@ class FunctionTranslator:
                     self.emit("MOVE", "R15", f.label)
                     self.label(skip)
                 else:
-                    self.emit(f"?{flags} MOVE", "R15", f.label)
+                    j = self.emit(f"?{flags} MOVE", "R15", f.label)
+                    # The jump back at the end of a loop, which is usually
+                    # taken: the next instructions end the blocks up to it.
+                    j.back = (f.op == LOOP and r.pos + imm < r.end
+                              and self.t.data[r.pos:r.pos + imm + 1] == b"\x0b" * (imm + 1))
             elif op == 0x0E:  # br_table
                 (index,) = self.pop([I32], at, name)
                 frames = [self.frame(d, at) for d in targets]
@@ -4239,7 +4278,8 @@ class FunctionTranslator:
         items = if_convert(tidy(alloc.run()))
         saved = [r for r in CALLEE_SAVED if r in alloc.used]
         n_slots = alloc.n_slots
-        items = fill_jump_slots(tidy(duplicate_tails(items, len(saved) + 1 + (n_slots > 0))))
+        items = tidy(duplicate_tails(items, len(saved) + 1 + (n_slots > 0)))
+        items = fill_jump_slots(invert_back_edges(items, f"{self.t.prefix}f{self.idx}.B"))
         name = printable(self.t.m.names.get(self.idx, ""))
         out = [f"; Function {self.idx}" + (f": {name}" if name else "")]
         out += self.t.labels.get(self.idx, [])

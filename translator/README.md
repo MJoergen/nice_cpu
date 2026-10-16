@@ -585,6 +585,13 @@ of the original's labels, such as from a stub back to the code, goes on
 in the original, which does the same, and so a trap's R2 points at the
 original. Code that no jump reaches any more goes.
 
+A `br_if` back to the start of a loop, at the end of the loop, is
+usually taken. A taken conditional jump costs some five cycles more than
+a skipped one on the FPGA core, and an unconditional jump to a label
+two. So the `br_if` becomes a conditional jump out of the loop, on the
+opposite condition, and an unconditional jump back. Each round of the
+loop then saves two cycles, and leaving it costs five more.
+
 Last, on the FPGA core, a data read waits a cycle for a conditional
 jump just before it that is not taken (doc/MICROARCH.md §5.3). So an
 earlier instruction of the same straight-line code moves to between the

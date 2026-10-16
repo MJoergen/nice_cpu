@@ -1,9 +1,9 @@
 # Assumptions of the pipelined core
 
 The pipelined core, `src/pipeline.vhd`, follows
-[doc/MICROARCH.md](../doc/MICROARCH.md), which is a draft. Where the note
-left a question open, or where the core does something else, this file
-says what the core does and why. ISA.md is not changed. Items that need a
+[doc/MICROARCH.md](../doc/MICROARCH.md). Where the note left a question
+open, or where the core first did something else, this file says what the
+core does and why. MICROARCH.md has since taken up items 1, 8, and 9. ISA.md is not changed. Items that need a
 change outside `hdl/` are marked **Outside hdl/**, and are also in
 [TODO.md](../TODO.md).
 
@@ -74,7 +74,7 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
    the request cannot be taken before it, and the core would wait for
    ever. An instruction that has made a read, or whose first
    micro-operation has retired, is exempt, as the instruction after `RTI`
-   is. **Outside hdl/:** MICROARCH.md §5.3 should say so.
+   is. MICROARCH.md §5.3 now says so.
 10. **The report of a step is combinational**, in the cycle the step
     retires, with the registers it leaves. `tb_core` raises a request for
     step S when it sees step S - 1 reported, so the request reaches the

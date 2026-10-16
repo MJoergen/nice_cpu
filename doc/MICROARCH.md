@@ -1,6 +1,6 @@
 # NICE core microarchitecture
 
-This is a design note for the FPGA implementation of NICE. It is a draft.
+This is the design note for the FPGA implementation of NICE.
 [ISA.md](ISA.md) is the specification, and it wins wherever this note
 disagrees with it. "ISA §8.2" refers to a section of ISA.md, and a plain
 "§5.3" to a section of this note.
@@ -9,12 +9,13 @@ The core is pipelined and has separate instruction and data buses, like
 [qnice_cpu](https://github.com/MJoergen/qnice_cpu). It reuses that design
 where NICE allows it. This note concentrates on where NICE differs.
 
-A simple multi-cycle core, `hdl/src/multicycle.vhd`, comes first. It runs one
-instruction at a time, with the same buses, interrupt ports, and trace
-report as planned here. It passes steps 1 to 3 and 7 of the test order in
-§9, and the interrupt probes of step 5 with the requests at fixed steps.
-It is the working reference for the pipelined core
-([hdl/README.md](../hdl/README.md)).
+The pipelined core is `hdl/src/pipeline.vhd`, with FETCH and ICACHE in
+`hdl/src/pipe_fetch.vhd`. A simple multi-cycle core,
+`hdl/src/multicycle.vhd`, came first. It runs one instruction at a time,
+with the same buses, interrupt ports, and trace report, and is the working
+reference. Both pass every step of the test order in §9
+([hdl/README.md](../hdl/README.md)). Where the pipelined core settled a
+question that this note left open, `hdl/ASSUMPTIONS.md` says how.
 
 ## 1. Decisions at a glance
 
@@ -23,7 +24,7 @@ It is the working reference for the pipelined core
 | Structure | A pipeline: FETCH, ICACHE, DECODE, SEQUENCER, PREPARE, and WRITE, as in qnice_cpu. |
 | Buses | Harvard: a read-only Wishbone instruction port, 64 bits wide so that it delivers two words per cycle (§3), and a 32-bit Wishbone data port. Both see the same memory, through dual-port RAM. |
 | Instructions | DECODE splits each instruction into one to three micro-operations. |
-| Registers | R1–R13 in a register file with three read ports and one write port, with bypasses from WRITE (§5.1). R0 is a constant 0. SR (R14) and PC (R15) are separate registers. |
+| Registers | R1–R13 in a register file that only WRITE writes, in order. WRITE reads it, and PREPARE for the address of a data read, so no value needs a bypass (§5.1). R0 is a constant 0. SR (R14) and PC (R15) are separate registers in WRITE. |
 | Data accesses | Exact, in order, and never speculative, as ISA §8.2 requires. |
 | Instruction fetches | Free to run ahead, as ISA §8.2 allows (§2). |
 | Interrupts | Taken in WRITE, before an instruction, as soon as ISA §7.1 allows (§6). Valid/ready request ports for NMI and IRQ. |
@@ -80,16 +81,18 @@ The stages do what they do in qnice_cpu, with these differences:
 - **ICACHE** presents up to four words to DECODE: the instruction word and up
   to three constant words. DECODE takes the instruction only when all its
   words are present. The length follows from the instruction word (ISA §2.3).
-- **DECODE** reads up to three registers: the bases of s0, s1, and dest. It
-  knows PC, which is the instruction's address plus its length, so it does
-  not read R15 from the register file. The one exception is an R15 operand
-  after a side effect on R15 in the same instruction (ISA §4.3), which takes
-  the slow path of §5.4. It emits the micro-operations of §4.
+- **DECODE** takes the whole instruction, and knows PC, which is the
+  instruction's address plus its length. It reads no register (§5.1).
+  The SEQUENCER emits the micro-operations of §4, one per cycle.
 - **PREPARE** forms operand values and addresses, and issues data reads.
 - **WRITE** holds the ALU and the shifter, writes registers and memory,
   updates SR, checks the condition, and starts flushes and interrupts.
 
-All of this uses the valid/ready primitives of qnice_cpu's `src/sub/`.
+Each stage holds one item and passes it on when the next stage is free,
+or frees itself in the same cycle. qnice_cpu builds its stages from the
+valid/ready primitives of its `src/sub/`. The NICE core writes the
+handshake of each stage by hand, because PREPARE's decisions depend on
+the state of WRITE in the same cycle (§5.3).
 
 ## 4. Micro-operations
 
@@ -119,21 +122,31 @@ destination in mode 001 or 010 merge into one: Rx ← regval(x, regval(x, r) ∓
 write.
 
 **s1 can depend on s0's side effect**, as in `ADD R1, R2++, @R2`. `S0` writes
-R2 in WRITE, before s1's address is formed. A bypass from WRITE to PREPARE, or
-a stall, gives `S1` the new value.
+R2 in WRITE, before s1's address is formed. PREPARE waits for that write
+(§5.1).
 
 ## 5. Hazards
 
 ### 5.1 Registers
 
-The register file writes before it reads, as in qnice_cpu. A micro-op that
-reads a register an older micro-op in flight will write gets the value
-through a bypass from WRITE, where the value is produced, rather than by a
-stall. DECODE stalls only when the value does not exist yet when the
-micro-op needs it. The bypasses are in the first version because about
-three in ten instructions read a register the previous instruction writes
-(§5.6). With stalls alone, every third instruction would wait for the
-writer to retire.
+Only WRITE writes registers, and it runs the micro-ops in program order.
+So when a micro-op reaches WRITE, every older one has retired, and the
+register file holds the values it needs. WRITE reads them there, and
+needs no bypass. That matters, because about three in ten instructions
+read a register the previous instruction writes (§5.6): they run back to
+back.
+
+PREPARE reads a register only for the address of a data read. It waits
+while the micro-op in WRITE will still write that register, and reads
+it in the cycle after. That costs a cycle for a pointer that the
+previous micro-op writes, as in `ADD R1, R2++, @R2` or a load through a
+register just loaded, which a bypass from WRITE's result would save. It
+saves the bypass network, and the three read ports in DECODE that would
+feed it.
+
+R14 is SR, which WRITE keeps. R15 is the instruction's next address,
+carried with it, unless an earlier micro-op of the same instruction wrote
+R15 (§5.4).
 
 ### 5.2 The condition
 
@@ -170,7 +183,11 @@ issues a data read only when the instruction is certain to run:
    still set E. An IRQ with E = 0 does not count, or a program that never
    sets E could never read memory. The instruction directly after an `RTI`
    is exempt, because ISA §7.1 holds every request off until it has retired.
-   The instruction after that is not.
+   The instruction after that is not. An instruction that has issued a
+   data read already, or whose first micro-op has retired, is exempt too,
+   because no request can be taken before it any more. Without that, a
+   request that came between the two reads of `ADD R1, @R2, @R3` would
+   hold the second read off for ever.
 
 When PREPARE issues an instruction's first data read, the core commits to
 that instruction. No interrupt is taken before it (§6).
@@ -210,8 +227,8 @@ is rare, so a slow path is fine.
 
 R14 as an operand is not rare. The signed comparison of ISA §9.2,
 `?V XOR R14, R14, 0x10000000`, reads and writes it directly, and it is 7%
-of the hand-written benchmark's instructions (§5.6). So R14 is bypassed like
-any other register, from the SR that WRITE keeps. R15 as a pointer or with
+of the hand-written benchmark's instructions (§5.6). So WRITE reads R14 from
+the SR it keeps, like any other register, with no wait. R15 as a pointer or with
 a side effect occurs in neither benchmark, so its slow path stays slow.
 
 ### 5.5 Self-modifying code
@@ -260,8 +277,8 @@ the condition is known. These are the shares of all instructions on
 | R15 as a pointer, or with a side effect | 0% | 0% |
 
 The numbers decided three things: FETCH reads two words per cycle (§3),
-the bypasses are in the first version (§5.1), and R14 is a bypassed
-register (§5.4). They left speculative reads out of the first version
+a register written by the previous instruction is read without a wait
+(§5.1), and so is R14 (§5.4). They left speculative reads out of the first version
 (§5.3). The reads from the previous instruction are value chains in R1 to
 R4, not stack operations: R13 alone is under 1% in both programs.
 
@@ -365,8 +382,8 @@ each RAM and the address of the UART. These rules hold for every setting:
 - **Bus decoder.** The data bus decoder keeps the ACKs in order when
   requests to different slaves are in flight, since the math unit holds an
   ACK for up to 65 cycles: a request to one slave waits while a request to
-  another is still owed its ACK. The address compare of `tb_multicycle`
-  does without this only because the multi-cycle core waits for each ACK.
+  another is still owed its ACK. `hdl/src/wb_dmux.vhd` does this, and the
+  testbench `tb_core` uses it. So a data read may wait on the bus.
 - **I/O.** Only the data bus reaches I/O. The instruction bus returns 0 for
   the I/O range (ISA §8.3).
 - **Console.** A UART at `0xFFFFFF00` by default, as in the emulator
@@ -378,9 +395,12 @@ each RAM and the address of the UART. These rules hold for every setting:
   data bus must allow a slave to take many cycles.
 - **Performance counters.** `hdl/src/perf.vhd` at `0xFFFFFF10`–`0xFFFFFF1F`
   (ISA §8.5). The core raises `instret_o` for one cycle per completed
-  instruction. A read of `INSTR_LO` must count every older instruction, so
-  the pipelined core raises it at the latest when the data read of a younger
-  instruction is made, or holds that read off until it has.
+  instruction. A read of `INSTR_LO` must count every older instruction,
+  and not its own. So the pipelined core counts an instruction with a data
+  read in the cycle the bus accepts its last read, and one without in the
+  cycle it retires. The counters return a count from before that cycle's,
+  and PREPARE issues a younger read only then. `hdl/test/instret.nasm`
+  checks this, also behind a read that waits on the bus.
 - **Timer.** `hdl/src/timer.vhd` at `0xFFFFFF40`–`0xFFFFFF4F` (ISA §8.6),
   with its request on the core's IRQ port. It is the only device that
   raises IRQ so far, so it needs no interrupt controller.
@@ -398,26 +418,30 @@ values. The writer prints what changed, in the emulator's format and order:
 R0–R14 in order, R15 only after a jump, the memory write, and the halt reason.
 The report is a `t_retire` record (`hdl/src/trace_pkg.vhd`), and the writer
 is `hdl/sim/trace.vhd`. The record's contract wants a store to the console
-accepted on the bus no later than the cycle its instruction is reported, so
-WRITE holds the report of an instruction while the bus stalls its store.
+accepted on the bus no later than the cycle its instruction is reported. So
+WRITE puts its store on the bus combinationally, holds it there while the
+bus stalls it, and retires and reports the instruction in the cycle the
+bus accepts it.
 
 **The testbench** has a sparse dual-port memory model that loads `.bin` files,
 a console model that writes each byte into the trace stream when it is
 written, a read counter that makes the number and order of data reads
 visible, and random stalls (all in `hdl/sim/wb_mem.vhd`), and an interrupt
 source that raises a request once a given number of instructions have
-retired. The multi-cycle core takes a request only between steps, so its
-test gives the emulator the same options and the diff is exact. For the
-pipelined core, whether it takes a request before the next instruction or
-after one that had already issued a data read depends on the pipeline state
-(§6), so the trace cannot be predicted from the request step alone. So
-the testbench also writes an interrupt log: when each request was raised,
-and at which step the core took it. `hdl/test/irq_compare.py` runs the
-emulator with the matching `--irq STEP:VEC` or `--nmi STEP:VEC` options,
+retired, or a few cycles after that. The multi-cycle core takes a request
+only between steps, so its test gives the emulator the same options and
+the diff is exact. For the pipelined core, whether it takes a request
+before the next instruction or after one that had already issued a data
+read depends on the pipeline state (§6), so the trace cannot be predicted
+from the request step alone. So the testbench also writes an interrupt
+log: when each request was raised, the timer's included, and at which
+step the core took it. `hdl/test/irq_compare.py` runs the emulator with
+the matching `--irq STEP:VEC` or `--nmi STEP:VEC` options, and with
+`--no-timer-irq`, so that the log's requests stand in for the timer's,
 and the diff is then exact. It also checks that no request was taken
-later than the emulator would take it, beyond a number of steps it is
-given: 0 for the multi-cycle core, which runs it on every run with
-requests.
+later than the emulator would take it: not at all on the multi-cycle
+core, and on the pipelined core by no more than the instructions with a
+data read right before the entry.
 
 **Test order:**
 
@@ -436,12 +460,18 @@ requests.
 7. Random instruction streams, run on both and diffed:
    `hdl/test/random_prog.py`, measured with `hdl/test/random_stats.py`.
 
-**Formal checks**, as in qnice_cpu: each primitive and stage on its own, and
-properties of the whole core. The checkers of the Wishbone and interrupt
-ports in `hdl/formal/`, written for the multi-cycle core, apply to the
-pipelined core too. The most important new property is the data
-access rule of §5.3: every data access belongs to an instruction that retires,
-and the accesses appear in program order.
+**Formal checks**, as in qnice_cpu: each stage on its own where it can
+be, and properties of the whole core. The checkers of the Wishbone and
+interrupt ports in `hdl/formal/` serve both cores. FETCH and ICACHE are
+proven for every cycle: DECODE sees each word that memory holds at the
+address it names. For the whole pipelined core, the port checks and the
+core's own assertions hold for the first 8 cycles after reset, and the
+simulation tests check the same assertions on every run. The most
+important of them is the data access rule of §5.3: every data access
+belongs to an instruction that retires, which the core asserts as no
+flush leaving read data owed. The accesses issue in program order by
+construction. A proof of the whole core for every cycle is still open
+(TODO.md).
 
 ## 10. Repository and boards
 

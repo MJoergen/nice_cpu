@@ -563,6 +563,15 @@ of the original's labels, such as from a stub back to the code, goes on
 in the original, which does the same, and so a trap's R2 points at the
 original. Code that no jump reaches any more goes.
 
+On the FPGA core, a data read waits a cycle for a conditional jump just
+before it that is not taken (doc/MICROARCH.md §5.3). So an earlier
+instruction of the same straight-line code moves to between the two, if
+one can: it must compute a register from registers only, with no flags,
+the code it passes must not use the register or change its sources, and
+the register must not be live where the jumps it passes go. In a copy
+of an interpreter's dispatch, for example, the `ADD` that computes the
+next pc moves to just before the jump through the table.
+
 ### The frame
 
 There is no frame pointer. The prologue pushes the registers of R7–R12

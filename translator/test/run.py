@@ -260,7 +260,7 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "oobword8": "ROR R2, R1, 2",
          "growdyntrap": "ROR R2, R1, 2",
          "nomemory": "MOVE R1, 2",
-         "dispatchtrap": "SUB[M] R0, R4, 65520"}
+         "dispatchtrap": "SUB[M] R0, R4, 65536"}
 
 # Options for nicewasm.
 OPTIONS = {"unchecked": ["--no-bounds-checks"],
@@ -1049,25 +1049,29 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
                       *[i32_const(i) + call(1) + i32_const(v) + EQ for i, v in
                         [(0, 27), (1, 7), (5, 7)]],
                       call(2) + i32_const(55) + EQ)))), "", 0x3EF),
-    # An interpreter's loop: a br_table on the byte at 16 + pc. Byte 0
-    # adds 1 to acc, byte 1 multiplies it by 3, byte 2 adds 0x10000 to pc,
-    # and any other returns acc. Each case ends with a br to the loop,
-    # which becomes a copy of the code from the loop to the br_table
-    # (README.md). The program 0 0 1 0 1 3 gives ((1 + 1) * 3 + 1) * 3 =
-    # 21. In dispatchtrap, the program 0 2 takes pc past the memory, so the
-    # load of the next byte, in the copy at the end of case 2, traps. Its
-    # R2 points at the load's code in the loop itself, which is the same.
+    # An interpreter's loop: next = pc + 1, then a br_table on the byte at
+    # 16 + pc. Byte 0 adds 1 to acc and byte 1 multiplies it by 3, and
+    # both set pc = next. Byte 2 adds 0x10000 to pc. Any other byte
+    # returns acc. Each case ends with a br to the loop, which becomes a
+    # copy of the code from the loop to the br_table (README.md). In the
+    # copies, the ADD of next moves to just before the jump through the
+    # table, since neither the trap nor the return uses next. The program
+    # 0 0 1 0 1 3 gives ((1 + 1) * 3 + 1) * 3 = 21. In dispatchtrap, the
+    # program 0 2 takes pc past the memory, so the load of the next byte,
+    # in the copy at the end of case 2, traps. Its R2 points at the load's
+    # code in the loop itself, which is the same.
     *[(name, module(
         types(MAIN_TYPE),
         funcs(0),
         memory(1),
         exports(("main", 0, 0)),
-        code((2, loop() + block() + block() + block() + block()
-              + local_get(0) + mem(I32_LOAD8_U, 16) + br_table([0, 1, 2], 3) + END
-              + local_get(1) + i32_const(1) + ADD + local_set(1)
-              + local_get(0) + i32_const(1) + ADD + local_set(0) + br(3) + END
+        code((3, loop() + local_get(0) + i32_const(1) + ADD + local_set(2)
+              + block() + block() + block() + block()
+              + local_get(0) + i32_const(16) + ADD + mem(I32_LOAD8_U) + br_table([0, 1, 2], 3)
+              + END + local_get(1) + i32_const(1) + ADD + local_set(1)
+              + local_get(2) + local_set(0) + br(3) + END
               + local_get(1) + i32_const(3) + MUL + local_set(1)
-              + local_get(0) + i32_const(1) + ADD + local_set(0) + br(2) + END
+              + local_get(2) + local_set(0) + br(2) + END
               + local_get(0) + i32_const(0x10000) + ADD + local_set(0) + br(1) + END
               + local_get(1) + RETURN + END + i32_const(0))),
         data((16, program))), "", want)

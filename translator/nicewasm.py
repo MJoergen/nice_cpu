@@ -2093,6 +2093,91 @@ def duplicate_tails(items: List[Item], ret_size: int) -> List[Item]:
     return out
 
 
+def reads_memory(ins: Ins) -> bool:
+    """Whether an instruction reads memory: a source operand in memory (§4.1)."""
+    return any(o.startswith("@") for o in ins.ops[1:])
+
+
+def fill_jump_slots(items: List[Item]) -> List[Item]:
+    """On the FPGA core, a data read waits for a conditional jump just
+    before it that is not taken (doc/MICROARCH.md §5.3). If an earlier
+    instruction in the same straight-line code can wait instead, it moves
+    to between them. It must compute a register from registers only, with
+    no flags, and be unconditional. The code it passes must neither read
+    nor write that register, nor write its sources, and the register must
+    not be live where any jump it passes goes, since it no longer runs
+    before those jumps. Nor may the read use the register as its address,
+    which would wait for it instead."""
+    alloc = Allocator(items, ALLOC_REGS, CALLEE_SAVED, 0)
+    alloc.flow()
+    alloc.liveness()
+    index = {id(ins): i for i, ins in enumerate(alloc.code)}
+    block_of = {a: k for k, (a, _) in enumerate(alloc.blocks)}
+    live_at: Dict[str, set[str]] = {}
+    n = 0
+    for it in items:
+        if isinstance(it, Label):
+            live_at[it.name] = alloc.live_in[block_of[n]] if n in block_of else set()
+        elif isinstance(it, Ins):
+            n += 1
+
+    def next_item(k: int, step: int) -> int:
+        k += step
+        while 0 <= k < len(items) and isinstance(items[k], str) and str(items[k]).lstrip().startswith(";"):
+            k += step
+        return k
+
+    def pure(ins: Ins) -> bool:
+        kind, d = operand_reg(ins.ops[0]) if ins.ops else ("", None)
+        return (ins.kind == "" and not ins.cond and kind == "reg" and d in alloc.precolored
+                and not any(o.startswith("@") for o in ins.ops) and not any(flag_use_def(ins))
+                and all(operand_reg(o)[0] in ("reg", "") for o in ins.ops[1:]))
+
+    def fills(k: int) -> bool:
+        """Whether items[k] already sits between a jump and a read."""
+        a, b = next_item(k, -1), next_item(k, 1)
+        return (0 <= a and b < len(items) and isinstance(items[a], Ins) and isinstance(items[b], Ins)
+                and items[a].kind == "jump" and bool(items[a].cond)  # type: ignore[union-attr]
+                and reads_memory(items[b]))  # type: ignore[arg-type]
+
+    p = 0
+    while p < len(items):
+        jump, q = items[p], next_item(p, 1)
+        p += 1
+        if not (isinstance(jump, Ins) and jump.kind == "jump" and jump.cond and q < len(items)):
+            continue
+        read = items[q]
+        if not (isinstance(read, Ins) and reads_memory(read)):
+            continue
+        bases = {r for kind, r in map(operand_reg, read.ops) if kind in ("mem", "side")}
+        used: set[str] = set()     # by the code between the candidate and the read
+        written: set[str] = set()
+        exits: set[str] = set()    # live where the jumps passed go
+        k = p - 1
+        while k >= 0:
+            it = items[k]
+            if isinstance(it, Label) or (isinstance(it, str) and not it.lstrip().startswith(";")):
+                break
+            if isinstance(it, Ins):
+                if it.kind in ("call", "exit"):
+                    break
+                if it.kind == "jump":
+                    for t in it.targets:
+                        exits |= live_at.get(t, set(ALLOC_REGS))
+                elif pure(it) and not fills(k):
+                    d = it.ops[0]
+                    srcs = {r for _, r in map(operand_reg, it.ops[1:]) if r is not None}
+                    if not ({d} & (exits | bases | used | written)) and not (srcs & written):
+                        del items[k]
+                        items.insert(q - 1, it)
+                        break
+                uses, defs = alloc.ud[index[id(it)]]
+                used |= uses
+                written |= defs
+            k -= 1
+    return items
+
+
 def frame_words(items: List[Item], n_slots: int, n_saved: int) -> None:
     """Replaces the frame words %sN of spilled registers and %aN of stack
     arguments by operands relative to SP. The frame has no frame pointer.
@@ -4069,7 +4154,7 @@ class FunctionTranslator:
         items = if_convert(tidy(alloc.run()))
         saved = [r for r in CALLEE_SAVED if r in alloc.used]
         n_slots = alloc.n_slots
-        items = tidy(duplicate_tails(items, len(saved) + 1 + (n_slots > 0)))
+        items = fill_jump_slots(tidy(duplicate_tails(items, len(saved) + 1 + (n_slots > 0))))
         name = printable(self.t.m.names.get(self.idx, ""))
         out = [f"; Function {self.idx}" + (f": {name}" if name else "")]
         out += self.t.labels.get(self.idx, [])

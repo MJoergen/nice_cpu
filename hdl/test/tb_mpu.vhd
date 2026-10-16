@@ -6,7 +6,9 @@
 -- of ISA.md §8.4. The pairs are the corner cases first, then G_RANDOM
 -- random ones. Then the same for pairs C, D. Further checks:
 -- * A read of a result right after a write waits for the computation, and
---   a read of an operand or a spare word does not.
+--   a read of an operand or a spare word does not. A division takes as many
+--   cycles as src/mpu.vhd says, which the cases below count by hand, and
+--   each unit ends on its own.
 -- * A write to A, or to half of C, while a computation runs restarts it.
 -- * The two halves are independent: a write to A does not delay a read of
 --   a 64-bit result.
@@ -32,10 +34,6 @@ entity tb_mpu is
 end entity tb_mpu;
 
 architecture simulation of tb_mpu is
-
-   -- The computations take 33 and 65 cycles (src/mpu.vhd).
-   constant C_MIN_WAIT   : natural := 30;
-   constant C_MIN_WAIT64 : natural := 62;
 
    signal clk : std_logic;
    signal rst : std_logic := '1';
@@ -343,12 +341,21 @@ begin
          check_all;
       end loop;
 
+      -- The cycles a read waits for a division, below, count from the last
+      -- write of an operand, which is accepted in cycle t. A division
+      -- starts in cycle t + 1 and ends after n more cycles, one for each
+      -- step, or run of 8 steps that it skips. The read's ACK is then high
+      -- in cycle t + n + 3. A read presented in cycle t + k waits n + 3 - k
+      -- cycles. k is 2, or 4 when another write comes between.
+
       -- A read of a 64-bit result waits, and a write to A does not delay it.
+      -- 100 / 7 has 57 leading zeros in its quotient, so 7 cycles skip 56
+      -- steps, and 8 cycles run the rest: n = 15, k = 4.
       set_cd(X"0000000000000064", X"0000000000000007");
       write_word(0, X"00000001");
       a_v := X"00000001";
       read_word(24, data_v, cycles_v);
-      if cycles_v < C_MIN_WAIT64 - 8 or data_v /= X"0000000E" then
+      if cycles_v /= 14 or data_v /= X"0000000E" then
          fail("UDIV64_Q_LO = " & to_hstring(data_v) & " after " & integer'image(cycles_v) & " cycles");
       end if;
       write_word(0, X"00000002");
@@ -365,8 +372,17 @@ begin
       end loop;
       write_word(17, X"00000000");
       read_word(24, data_v, cycles_v);
-      if cycles_v < C_MIN_WAIT64 - 4 or data_v /= X"0000000E" then
-         fail("UDIV64_Q_LO after a restart = " & to_hstring(data_v));
+      if cycles_v /= 16 or data_v /= X"0000000E" then
+         fail("UDIV64_Q_LO after a restart = " & to_hstring(data_v) & " after " &
+              integer'image(cycles_v) & " cycles");
+      end if;
+
+      -- A quotient with no 0 bits skips nothing: n = 64.
+      set_cd(X"FFFFFFFFFFFFFFFF", X"0000000000000001");
+      read_word(24, data_v, cycles_v);
+      if cycles_v /= 65 or data_v /= X"FFFFFFFF" then
+         fail("UDIV64_Q_LO = " & to_hstring(data_v) & " after " &
+              integer'image(cycles_v) & " cycles");
       end if;
 
       -- A read of a result waits; a read of A, B, or a spare word does not.
@@ -381,7 +397,9 @@ begin
       end if;
       write_word(1, X"00000007");
       read_word(4, data_v, cycles_v);
-      if cycles_v < C_MIN_WAIT or data_v /= X"0000002A" then
+      -- The read of B took 1 cycle, and this one also waits for the
+      -- second cycle of the multiplier.
+      if cycles_v /= 2 or data_v /= X"0000002A" then
          fail("UMUL_LO = " & to_hstring(data_v) & " after " & integer'image(cycles_v) & " cycles");
       end if;
 
@@ -390,15 +408,29 @@ begin
       for i in 1 to 10 loop
          wait until rising_edge(clk);
       end loop;
+      -- 9 / 7 skips 24 steps in 3 cycles, then runs 8: n = 11.
       write_word(0, X"00000009");
       read_word(8, data_v, cycles_v);
-      if data_v /= X"00000001" then
-         fail("UDIV_Q after a restart = " & to_hstring(data_v));
+      if cycles_v /= 12 or data_v /= X"00000001" then
+         fail("UDIV_Q after a restart = " & to_hstring(data_v) & " after " &
+              integer'image(cycles_v) & " cycles");
+      end if;
+
+      -- The two 32-bit dividers end on their own. -7 / 2 divides 7 by 2
+      -- with n = 11, and 0xFFFFFFF9 / 2 skips nothing: n = 32.
+      set_ab(X"FFFFFFF9", X"00000002");
+      read_word(6, data_v, cycles_v);
+      if cycles_v /= 12 or data_v /= X"FFFFFFFD" then
+         fail("SDIV_Q = " & to_hstring(data_v) & " after " & integer'image(cycles_v) & " cycles");
+      end if;
+      set_ab(X"FFFFFFF9", X"00000002");
+      read_word(8, data_v, cycles_v);
+      if cycles_v /= 33 or data_v /= X"7FFFFFFC" then
+         fail("UDIV_Q = " & to_hstring(data_v) & " after " & integer'image(cycles_v) & " cycles");
       end if;
 
       -- Writes to results and spare words are ignored.
-      a_v := X"00000009";
-      b_v := X"00000007";
+      set_ab(X"00000009", X"00000007");
       for i in 2 to 15 loop
          write_word(i, X"DEADBEEF");
       end loop;

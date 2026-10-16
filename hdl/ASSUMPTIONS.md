@@ -13,7 +13,7 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
    §3 and §5.1 have DECODE read three registers, with bypasses from WRITE.
    The core does without both. WRITE is the only stage that writes the
    registers, in program order, so when a micro-operation reaches WRITE,
-   every older one has retired and the register file is current. PREPARE
+   every older one has retired and the registers are current. PREPARE
    reads a register only for the address of a data read, and waits while
    the micro-operation in WRITE will still write it. That wait costs a
    cycle where a bypass from WRITE's result would not, but only for a
@@ -23,6 +23,16 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
    wait, because WRITE reads them. R14 is SR in WRITE, as §5.4 wants. R15
    is the instruction's next address, carried with it, unless an earlier
    micro-operation of the same instruction wrote R15.
+
+   The registers are in WRITE, not in a module of their own as in
+   qnice_cpu's `registers.vhd`. They are `w_r.regs`, R0 to R15 in
+   WRITE's state record (`src/pipe_pkg.vhd`), so they are flip-flops,
+   not block RAM. There is one write port. WRITE reads three registers
+   at once, for the destination, s0, and s1, and PREPARE one, for the
+   address of a data read. Each read is a 16-way mux. R14 and R15 are
+   also read directly. R0 is only ever written with 0, so synthesis can
+   reduce it to a constant. PREPARE gets all of `w_r` through a port,
+   which is part of why it depends combinationally on WRITE (item 6).
 2. **One entity for each part**: FETCH in `src/pipe_fetch.vhd`, with a
    formal proof of its own; DECODE in `src/pipe_decode.vhd`; PREPARE in
    `src/pipe_prepare.vhd`; WRITE in `src/pipe_write.vhd`; and DBUS, the

@@ -26,7 +26,7 @@ question that this note left open, `hdl/ASSUMPTIONS.md` says how.
 | Structure | A pipeline: FETCH, DECODE, PREPARE, and WRITE, with the data bus port DBUS beside it. As in qnice_cpu, but with its ICACHE in FETCH and its SEQUENCER in DECODE. |
 | Buses | Harvard: a read-only Wishbone instruction port, 64 bits wide so that it delivers two words per cycle (§3), and a 32-bit Wishbone data port. Both see the same memory, through dual-port RAM. |
 | Instructions | DECODE splits each instruction into one to three micro-operations. |
-| Registers | R1–R13 in a register file that only WRITE writes, in order. WRITE reads it, and PREPARE for the address of a data read, so no value needs a bypass (§5.1). R0 is a constant 0. SR (R14) and PC (R15) are separate registers in WRITE. |
+| Registers | R0–R15 in flip-flops in WRITE, not in a module of their own as in qnice_cpu. Only WRITE writes them, in order. WRITE reads them, and PREPARE for the address of a data read, so no value needs a bypass (§5.1). R0 is always 0. R14 is SR and R15 is PC. |
 | Data accesses | Exact, in order, and never speculative, as ISA §8.2 requires. |
 | Instruction fetches | Free to run ahead, as ISA §8.2 allows (§2). |
 | Interrupts | Taken in WRITE, before an instruction, as soon as ISA §7.1 allows (§6). Valid/ready request ports for NMI and IRQ. |
@@ -120,7 +120,7 @@ the state of WRITE in the same cycle (§5.3).
 
 ## 4. Micro-operations
 
-A micro-operation makes at most one register write, so the register file needs
+A micro-operation makes at most one register write, so the registers need
 one write port. DECODE emits:
 
 | Micro-op | When | What it does |
@@ -155,7 +155,7 @@ R2 in WRITE, before s1's address is formed. PREPARE waits for that write
 
 Only WRITE writes registers, and it runs the micro-ops in program order.
 So when a micro-op reaches WRITE, every older one has retired, and the
-register file holds the values it needs. WRITE reads them there, and
+registers hold the values it needs. WRITE reads them there, and
 needs no bypass. That matters, because about three in ten instructions
 read a register the previous instruction writes (§5.6): they run back to
 back.

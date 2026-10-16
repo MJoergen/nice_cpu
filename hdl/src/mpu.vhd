@@ -17,23 +17,29 @@
 --   the same low word. Its high word is the unsigned one, minus B if A is
 --   negative, and minus A if B is negative, and the second register holds
 --   it too.
--- * A restoring divider divides A by B, unsigned, one bit per cycle, which
---   takes 33 cycles.
+-- * A restoring divider divides A by B, unsigned, one bit per cycle.
 -- * A second one divides |A| by |B|. The signed quotient is negated when
 --   A and B differ in sign, and the signed remainder when A is negative.
+-- A divider takes 8 steps in one cycle when it can tell that they all
+-- give quotient bits of 0: when the remainder, shifted left by 8 bits, with
+-- the next 8 bits of the dividend shifted in, is still less than the
+-- divisor. That skips the leading zeros of the quotient, of which there are
+-- many when the dividend is small or the divisor large, and any run of 8
+-- zeros after them. A division takes 1 cycle to start, then 32 cycles at
+-- most, and 4 at least.
 -- A restoring divider with B = 0 gives Q = 0xFFFFFFFF and R = A, which is
 -- what ISA.md §8.4 asks for, except for the signed quotient with A < 0,
 -- which is set to 0xFFFFFFFF on its own. -2^31 / -1 needs no special case:
 -- |A| / |B| = 0x80000000, and negating it gives 0x80000000 again.
 --
 -- A write to C or D starts a computation of C / D in the same way, with two
--- 64-bit dividers, which takes 65 cycles. The two halves of the MPU are
+-- 64-bit dividers, which takes 65 cycles at most. The two halves of the MPU are
 -- independent: a write to one half does not restart the other.
 --
 -- The port is a pipelined Wishbone slave. It acknowledges each request in
--- the cycle after it accepts it, except a read of a result while a
--- computation runs. That read is acknowledged in the cycle after the
--- computation ends, and STALL is high until then, so that no other request
+-- the cycle after it accepts it, except a read of a result while the unit
+-- that computes it runs. That read is acknowledged in the cycle after the
+-- unit ends, and STALL is high until then, so that no other request
 -- is accepted in between. A read of an operand or a spare word never waits.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
@@ -71,13 +77,16 @@ architecture synthesis of mpu is
    constant C_STEPS   : natural := 32;
    constant C_STEPS64 : natural := 64;
 
+   -- The steps a divider skips at once.
+   constant C_SKIP : natural := 8;
+
+   subtype t_count is natural range 0 to C_STEPS64;
+
    signal a_r : std_logic_vector(31 downto 0) := (others => '0');
    signal b_r : std_logic_vector(31 downto 0) := (others => '0');
 
-   -- A write to A or B was accepted, and the computation starts next cycle.
-   signal start_r : std_logic                  := '1';
-   -- The steps still to run.
-   signal count_r : natural range 0 to C_STEPS := 0;
+   -- A write to A or B was accepted, and the divisions start next cycle.
+   signal start_r : std_logic := '1';
 
    -- The multiplier: the product of A and B, the same delayed by a cycle,
    -- and the high word of the signed product. A write to A or B sets
@@ -88,30 +97,38 @@ architecture synthesis of mpu is
    signal smul_hi_r   : std_logic_vector(31 downto 0) := (others => '0');
 
    -- The two dividers. The quotient register starts as the dividend, which
-   -- shifts out to the left as the quotient shifts in.
-   signal uquo_r : std_logic_vector(31 downto 0) := (others => '0');
-   signal urem_r : std_logic_vector(31 downto 0) := (others => '0');
-   signal squo_r : std_logic_vector(31 downto 0) := (others => '0');
-   signal srem_r : std_logic_vector(31 downto 0) := (others => '0');
+   -- shifts out to the left as the quotient shifts in. The count is the
+   -- steps still to run, and sdiv_r holds |B|.
+   signal uquo_r   : std_logic_vector(31 downto 0) := (others => '0');
+   signal urem_r   : std_logic_vector(31 downto 0) := (others => '0');
+   signal ucount_r : t_count                       := 0;
+   signal squo_r   : std_logic_vector(31 downto 0) := (others => '0');
+   signal srem_r   : std_logic_vector(31 downto 0) := (others => '0');
+   signal scount_r : t_count                       := 0;
+   signal sdiv_r   : std_logic_vector(31 downto 0) := (others => '0');
 
    -- The 64-bit half: the operands, and the same two dividers, 64 bits wide.
-   signal c_r       : std_logic_vector(63 downto 0) := (others => '0');
-   signal d_r       : std_logic_vector(63 downto 0) := (others => '0');
-   signal start64_r : std_logic                    := '1';
-   signal count64_r : natural range 0 to C_STEPS64 := 0;
-   signal uquo64_r  : std_logic_vector(63 downto 0) := (others => '0');
-   signal urem64_r  : std_logic_vector(63 downto 0) := (others => '0');
-   signal squo64_r  : std_logic_vector(63 downto 0) := (others => '0');
-   signal srem64_r  : std_logic_vector(63 downto 0) := (others => '0');
+   signal c_r        : std_logic_vector(63 downto 0) := (others => '0');
+   signal d_r        : std_logic_vector(63 downto 0) := (others => '0');
+   signal start64_r  : std_logic                     := '1';
+   signal uquo64_r   : std_logic_vector(63 downto 0) := (others => '0');
+   signal urem64_r   : std_logic_vector(63 downto 0) := (others => '0');
+   signal ucount64_r : t_count                       := 0;
+   signal squo64_r   : std_logic_vector(63 downto 0) := (others => '0');
+   signal srem64_r   : std_logic_vector(63 downto 0) := (others => '0');
+   signal scount64_r : t_count                       := 0;
+   signal sdiv64_r   : std_logic_vector(63 downto 0) := (others => '0');
 
    -- A read of a result waits for the computation.
    signal wait_r      : std_logic                    := '0';
    signal wait_addr_r : std_logic_vector(4 downto 0) := (others => '0');
 
-   signal mul_busy : std_logic;
-   signal busy     : std_logic;
-   signal busy64   : std_logic;
-   signal accept   : std_logic;
+   signal mul_busy    : std_logic;
+   signal udiv_busy   : std_logic;
+   signal sdiv_busy   : std_logic;
+   signal udiv64_busy : std_logic;
+   signal sdiv64_busy : std_logic;
+   signal accept      : std_logic;
 
    -- The functions below take vectors of any width N, indexed N-1 downto 0.
 
@@ -137,6 +154,18 @@ architecture synthesis of mpu is
       end if;
       return shifted_v(C_N - 1 downto 0) & quo_in(C_N - 2 downto 0) & '0';
    end function divide_step;
+
+   -- Whether the next C_SKIP steps of a divider all give quotient bits of 0.
+   -- The remainder only grows while they do, so it is enough that it is
+   -- still less than d after the last of them.
+   pure function can_skip(rem_in : std_logic_vector;
+                          quo_in : std_logic_vector;
+                          d      : std_logic_vector) return boolean is
+      constant C_N : natural := rem_in'length;
+   begin
+      return rem_in(C_N - 1 downto C_N - C_SKIP) = 0 and
+             rem_in(C_N - C_SKIP - 1 downto 0) & quo_in(C_N - 1 downto C_N - C_SKIP) < d;
+   end function can_skip;
 
    -- The signed quotient and remainder, from the quotient and remainder of
    -- |n| / |d|.
@@ -175,9 +204,14 @@ architecture synthesis of mpu is
    -- Whether a read of word addr must wait for a computation.
    impure function must_wait(addr : std_logic_vector(4 downto 0)) return boolean is
    begin
-      return (mul_busy = '1' and addr >= 2 and addr <= 5) or
-             (busy = '1' and addr >= 6 and addr <= 9) or
-             (busy64 = '1' and addr >= 20 and addr <= 27);
+      case to_integer(addr) is
+         when 2 to 5   => return mul_busy = '1';
+         when 6 | 7    => return sdiv_busy = '1';
+         when 8 | 9    => return udiv_busy = '1';
+         when 20 to 23 => return sdiv64_busy = '1';
+         when 24 to 27 => return udiv64_busy = '1';
+         when others   => return false;
+      end case;
    end function must_wait;
 
    -- The value of word addr, once the computation has ended.
@@ -227,11 +261,13 @@ architecture synthesis of mpu is
 
 begin
 
-   mul_busy   <= '1' when mul_count_r /= 0 else '0';
-   busy       <= '1' when start_r = '1' or count_r /= 0 else '0';
-   busy64     <= '1' when start64_r = '1' or count64_r /= 0 else '0';
-   accept     <= wb_cyc_i and wb_stb_i and not wait_r;
-   wb_stall_o <= wait_r;
+   mul_busy    <= '1' when mul_count_r /= 0 else '0';
+   udiv_busy   <= '1' when start_r = '1' or ucount_r /= 0 else '0';
+   sdiv_busy   <= '1' when start_r = '1' or scount_r /= 0 else '0';
+   udiv64_busy <= '1' when start64_r = '1' or ucount64_r /= 0 else '0';
+   sdiv64_busy <= '1' when start64_r = '1' or scount64_r /= 0 else '0';
+   accept      <= wb_cyc_i and wb_stb_i and not wait_r;
+   wb_stall_o  <= wait_r;
 
 
    p_multiply : process (clk_i)
@@ -267,46 +303,56 @@ begin
 
 
    p_compute : process (clk_i)
-      variable div_v   : std_logic_vector(63 downto 0);
-      variable div64_v : std_logic_vector(127 downto 0);
+
+      -- One cycle of a divider: C_SKIP steps, one step, or none.
+      procedure divide(signal rem_s   : inout std_logic_vector;
+                       signal quo_s   : inout std_logic_vector;
+                       signal count_s : inout t_count;
+                       d              : std_logic_vector) is
+         constant C_N    : natural := rem_s'length;
+         constant C_ZERO : std_logic_vector(C_SKIP - 1 downto 0) := (others => '0');
+         variable step_v : std_logic_vector(2 * C_N - 1 downto 0);
+      begin
+         if count_s >= C_SKIP and can_skip(rem_s, quo_s, d) then
+            rem_s   <= rem_s(C_N - C_SKIP - 1 downto 0) & quo_s(C_N - 1 downto C_N - C_SKIP);
+            quo_s   <= quo_s(C_N - C_SKIP - 1 downto 0) & C_ZERO;
+            count_s <= count_s - C_SKIP;
+         elsif count_s /= 0 then
+            step_v  := divide_step(rem_s, quo_s, d);
+            rem_s   <= step_v(2 * C_N - 1 downto C_N);
+            quo_s   <= step_v(C_N - 1 downto 0);
+            count_s <= count_s - 1;
+         end if;
+      end procedure divide;
+
    begin
       if rising_edge(clk_i) then
          if start_r = '1' then
-            uquo_r  <= a_r;
-            urem_r  <= (others => '0');
-            squo_r  <= absolute(a_r);
-            srem_r  <= (others => '0');
-            count_r <= C_STEPS;
-            start_r <= '0';
-         elsif count_r /= 0 then
-            div_v  := divide_step(urem_r, uquo_r, b_r);
-            urem_r <= div_v(63 downto 32);
-            uquo_r <= div_v(31 downto 0);
-
-            div_v  := divide_step(srem_r, squo_r, absolute(b_r));
-            srem_r <= div_v(63 downto 32);
-            squo_r <= div_v(31 downto 0);
-
-            count_r <= count_r - 1;
+            uquo_r   <= a_r;
+            urem_r   <= (others => '0');
+            ucount_r <= C_STEPS;
+            squo_r   <= absolute(a_r);
+            srem_r   <= (others => '0');
+            scount_r <= C_STEPS;
+            sdiv_r   <= absolute(b_r);
+            start_r  <= '0';
+         else
+            divide(urem_r, uquo_r, ucount_r, b_r);
+            divide(srem_r, squo_r, scount_r, sdiv_r);
          end if;
 
          if start64_r = '1' then
-            uquo64_r  <= c_r;
-            urem64_r  <= (others => '0');
-            squo64_r  <= absolute(c_r);
-            srem64_r  <= (others => '0');
-            count64_r <= C_STEPS64;
-            start64_r <= '0';
-         elsif count64_r /= 0 then
-            div64_v  := divide_step(urem64_r, uquo64_r, d_r);
-            urem64_r <= div64_v(127 downto 64);
-            uquo64_r <= div64_v(63 downto 0);
-
-            div64_v  := divide_step(srem64_r, squo64_r, absolute(d_r));
-            srem64_r <= div64_v(127 downto 64);
-            squo64_r <= div64_v(63 downto 0);
-
-            count64_r <= count64_r - 1;
+            uquo64_r   <= c_r;
+            urem64_r   <= (others => '0');
+            ucount64_r <= C_STEPS64;
+            squo64_r   <= absolute(c_r);
+            srem64_r   <= (others => '0');
+            scount64_r <= C_STEPS64;
+            sdiv64_r   <= absolute(d_r);
+            start64_r  <= '0';
+         else
+            divide(urem64_r, uquo64_r, ucount64_r, d_r);
+            divide(srem64_r, squo64_r, scount64_r, sdiv64_r);
          end if;
 
          if accept = '1' and wb_we_i = '1' then
@@ -325,14 +371,16 @@ begin
          end if;
 
          if rst_i = '1' then
-            a_r       <= (others => '0');
-            b_r       <= (others => '0');
-            c_r       <= (others => '0');
-            d_r       <= (others => '0');
-            start_r   <= '1';
-            count_r   <= 0;
-            start64_r <= '1';
-            count64_r <= 0;
+            a_r        <= (others => '0');
+            b_r        <= (others => '0');
+            c_r        <= (others => '0');
+            d_r        <= (others => '0');
+            start_r    <= '1';
+            ucount_r   <= 0;
+            scount_r   <= 0;
+            start64_r  <= '1';
+            ucount64_r <= 0;
+            scount64_r <= 0;
          end if;
       end if;
    end process p_compute;

@@ -176,6 +176,17 @@ indices, and inline accesses of 1 and 2 bytes. Their stubs after the
 epilogue made `test/safe.zig` larger, from 6338 to 6691 words (6% more),
 and left the float library the same size.
 
+After that, the work on the flags, on constants, and on jumps of the
+README sections above took the benchmark from 1875636 to 1778350
+instructions (5% fewer), and from about 2994000 to about 2634000 cycles
+(12% fewer) on the pipelined core of doc/MICROARCH.md, by an estimate
+from its trace. The flags of a comparison or a load used directly, and
+multiplications by constants as shifts, saved the most, and copies of
+an interpreter's dispatch and conditional instructions in place of
+short jumps the next most. `test/safe.zig` became smaller, from 6691 to
+6577 words (2% less), and so did the float library, from 8028 to 7454
+(7% less).
+
 ## Supported features
 
 - **Types:** `i32`, `i64`, `f32`, and `f64`, in function types, locals,
@@ -514,8 +525,9 @@ removes the instructions whose only effect is to write a register that
 is not read afterwards. So of the declared locals, which wasm sets to 0,
 only those that may be read before they are set get a `MOVE x, 0`. An
 instruction with the M bit stays for its flags, but if its result is not
-read, it writes R0 instead, as in `AND[M] R0, x, 1`. Then it splits each virtual register into webs: each web is the definitions
-that reach a common use, with those uses. A local that the wasm code
+read, it writes R0 instead, as in `AND[M] R0, x, 1`. Then it splits
+each virtual register into webs: each web is the definitions that reach
+a common use, with those uses. A local that the wasm code
 reuses for unrelated values thus gets a register for each of them.
 
 The registers are coloured by iterated register coalescing (George and
@@ -542,7 +554,7 @@ words that are never live at the same time share a word.
 Then nicewasm removes each `MOVE` of a register to itself and each jump
 to the label that follows it.
 
-Last, a conditional jump over up to four instructions goes away, and
+Next, a conditional jump over up to four instructions goes away, and
 they get the opposite condition instead. On the FPGA core, a taken
 conditional jump costs some five cycles more than a skipped instruction
 (doc/MICROARCH.md). The instructions must not write the flags or be
@@ -555,22 +567,22 @@ the end, becomes conditional the same way, jump and all.
 An unconditional jump to code of up to three instructions that ends in
 a jump or a return gives way to a copy of that code. That saves the
 jump, which costs at least two cycles on the FPGA core. So a `return`
-in a function that saves at most one register becomes the epilogue
-itself. Code that ends in the jump of a `br_table` may have up to twelve
+in a function that saves at most two registers and has no frame words
+becomes the epilogue itself. Code that ends in the jump of a `br_table` may have up to twelve
 instructions, so that each case of an interpreter's loop ends with its
 own copy of the dispatch. The copy has no labels. A jump in it to one
 of the original's labels, such as from a stub back to the code, goes on
 in the original, which does the same, and so a trap's R2 points at the
 original. Code that no jump reaches any more goes.
 
-On the FPGA core, a data read waits a cycle for a conditional jump just
-before it that is not taken (doc/MICROARCH.md §5.3). So an earlier
-instruction of the same straight-line code moves to between the two, if
-one can: it must compute a register from registers only, with no flags,
-the code it passes must not use the register or change its sources, and
-the register must not be live where the jumps it passes go. In a copy
-of an interpreter's dispatch, for example, the `ADD` that computes the
-next pc moves to just before the jump through the table.
+Last, on the FPGA core, a data read waits a cycle for a conditional
+jump just before it that is not taken (doc/MICROARCH.md §5.3). So an
+earlier instruction of the same straight-line code moves to between the
+two, if one can: it must compute a register from registers only, with
+no flags, the code it passes must not use the register or change its
+sources, and the register must not be live where the jumps it passes
+go. In a copy of an interpreter's dispatch, for example, the `ADD` that
+computes the next pc moves to just before the jump through the table.
 
 ### The frame
 

@@ -1571,9 +1571,10 @@ class Allocator:
             self.constrained_moves.add(m)
             self.add_worklist(u)
             self.add_worklist(v)
-        elif ((u in self.precolored and all(self.ok(t, u) for t in self.adjacent(v)))
+        elif (all(self.ok(t, u) for t in self.adjacent(v))
               or (u not in self.precolored
-                  and self.conservative(self.adjacent(u) | self.adjacent(v)))):
+                  and (self.conservative(self.adjacent(u) | self.adjacent(v))
+                       or all(self.ok(t, v) for t in self.adjacent(u))))):
             self.coalesced_moves.add(m)
             self.combine(u, v)
             self.add_worklist(u)

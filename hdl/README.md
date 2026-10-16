@@ -94,8 +94,8 @@ warns about lines over 100 columns.
 `tb_mpu` checks every word of the math unit against `numeric_std`: for 20
 corner cases and 2000 random pairs of A and B, and for 16 corner cases and
 4000 random pairs of C and D. It also checks that a read of a result waits
-for the computation, that a write restarts it, that the two halves do not
-wait for each other, that a write and a read in back-to-back cycles see
+for the computation, exactly as long as it should, that a write restarts
+it, that the two halves and the units in each do not wait for each other, that a write and a read in back-to-back cycles see
 each other in order, and that reset clears the operands.
 
 `tb_perf` starts the counters just below a wrap of their low words. It
@@ -580,15 +580,17 @@ a 5-bit address. The bus decoder selects it for `0xFFFFFF20`–`0xFFFFFF3F`
 and passes address bits 4..0 as the offset.
 
 A write to A or B starts a computation. A multiplier, which takes two
-cycles, and two restoring dividers, which take 33 cycles, one bit per
-cycle, run side by side: one divider for A / B, and one for |A| / |B|.
-Synthesis can map the multiplier to DSP blocks. The signed
+cycles, and two restoring dividers run side by side: one divider for
+A / B, and one for |A| / |B|. Synthesis can map the multiplier to DSP
+blocks. A divider computes one quotient bit per cycle, but skips 8 at once
+when it can tell that they are all 0, so it takes 33 cycles at most, and
+fewer for a small dividend or a large divisor. The signed
 results are formed from those, as the header of `src/mpu.vhd` explains. A
 write to C or D starts the same computation with two 64-bit dividers,
-which takes 65 cycles. The two halves run independently.
+which takes 65 cycles at most. The two halves run independently.
 
-A read of a result while the computation runs is accepted, then STALL stays
-high and ACK waits until the result is ready. Reads of A, B, and the spare
+A read of a result while the unit that computes it runs is accepted, then
+STALL stays high and ACK waits until the result is ready. Reads of A, B, and the spare
 words, and all writes, are acknowledged in the next cycle. Writes to the
 result words and the spare words are ignored.
 

@@ -11,22 +11,24 @@
 % PREPARE's reads of the registers that WRITE holds. It does not show the
 % handshakes, the interrupt ports, or the trace report.
 %
-% The short black bars are the registers on the main path, each where the
-% signal it holds leaves:
+% The short black bars are the registers on the main path. Each is drawn
+% inside the block of the entity that holds it, at the edge where its
+% value comes in or leaves:
 %
 %   FETCH, on the instruction address          req_r and stb_r (pipe_fetch)
 %   FETCH, at its output                       ring_r (pipe_fetch)
-%   DECODE, inside, between taking an          dec_r (pipe_decode)
-%     instruction and splitting it
-%   DECODE, at its output                      prep_r (pipe_prepare)
-%   PREPARE, at its output to WRITE            w_r.uop (pipe_write)
+%   DECODE, between taking an instruction      dec_r (pipe_decode)
+%     and splitting it
+%   PREPARE, at its input                      prep_r (pipe_prepare)
 %   PREPARE, on its read request               rd_stb_r, rd_addr_r (pipe_prepare)
+%   WRITE, at its input                        w_r.uop (pipe_write)
 %
-% A register belongs to the entity that names it, which is not always the
-% stage it follows: DECODE's output is PREPARE's prep_r, and PREPARE's is
-% WRITE's w_r.uop. WRITE's store and DBUS have none: WRITE drives its
-% store onto the bus in the cycle it runs, and the read data reaches WRITE
-% in the cycle its ACK comes, past DBUS's FIFO.
+% So no register sits between two blocks: the words from ring_r reach
+% dec_r, the micro-operation from dec_r reaches prep_r, and the one from
+% prep_r reaches w_r.uop, each through logic only. WRITE's store and DBUS
+% have no register: WRITE drives its store onto the bus in the cycle it
+% runs, and the read data reaches WRITE in the cycle its ACK comes, past
+% DBUS's FIFO.
 
 \documentclass[border=8pt]{standalone}
 
@@ -82,8 +84,10 @@
          minimum height = 16mm]           (decode)  {DECODE\\[-0.5mm]
                                                      {\scriptsize instruction}\\[4.5mm]
                                                      {\scriptsize micro-operations}};
-   \node[block, below = 16mm of decode]   (prepare) {PREPARE};
-   \node[block, below = 16mm of prepare]  (write)   {WRITE\\[-0.5mm]
+   \node[block, below = 14mm of decode,
+         minimum height = 12mm]           (prepare) {PREPARE};
+   \node[block, below = 14mm of prepare,
+         minimum height = 14mm]           (write)   {WRITE\\[-0.5mm]
                                                      {\scriptsize ALU, shifter, registers}};
 
    \draw[flow] (fetch)   -- (decode);
@@ -179,14 +183,14 @@
 
    % FETCH's ring, at the bottom of its block, DECODE's dec_r, between the
    % instruction it takes and the micro-operations it emits, and PREPARE's
-   % prep_r and WRITE's w_r.uop, on the arrows into theirs
+   % prep_r and WRITE's w_r.uop, at the top of theirs
    \node[ffh] at ([yshift = 2.2mm] fetch.south) {};
    \node[ffh] at ([yshift = -1.5mm] decode.center) {};
-   \node[ffh] at ($ (decode.south)!0.4!(prepare.north) $) {};
-   \node[ffh] at ($ (prepare.south)!0.4!(write.north) $) {};
+   \node[ffh] at ([yshift = -2.2mm] prepare.north) {};
+   \node[ffh] at ([yshift = -2.2mm] write.north) {};
 
-   % PREPARE's read request
-   \node[ffv] at ([xshift = 4mm] prepare.east) {};
+   % PREPARE's read request, at the right of its block
+   \node[ffv] at ([xshift = -2.2mm] prepare.east) {};
 
    %% ---------------------------------------------------------------
    %% Legend

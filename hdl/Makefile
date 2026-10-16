@@ -98,6 +98,10 @@ endef
 # a data read when it came (MICROARCH.md §6), so for it the comparison above
 # cannot be exact, and irq_compare.py alone judges the runs with requests.
 IRQ_LATE = $(if $(filter pipeline,$(CORE)),--read-delay)
+# The delays in cycles with which irq_sweep.py raises each request, so that
+# it arrives at different points within an instruction.
+SWEEP_DELAYS_multicycle = 0,3,7
+SWEEP_DELAYS_pipeline = 0,1,2,3
 IRQ_COMPARE = $(PYTHON) test/irq_compare.py --emu $(EMU) $(IRQ_LATE)
 
 # The hazard programs of MICROARCH.md §9, step 4: test/hazard.nasm, and the
@@ -182,7 +186,7 @@ cores:
 	$(call check_core,hazard,$(BUILD)/hazard.bin)
 	$(call check_selfcheck,hazard)
 	$(call check_core,hazard_stall,$(BUILD)/hazard.bin,-gG_STALL=30 -gG_SEED=13)
-	@$(PYTHON) test/irq_sweep.py --core $(CORE) $(IRQ_LATE) --self-check --stall 30 --build $(BUILD) --emu $(EMU) $(BUILD)/hazard.bin
+	@$(PYTHON) test/irq_sweep.py --core $(CORE) $(IRQ_LATE) --delays $(SWEEP_DELAYS_$(CORE)) --self-check --stall 30 --build $(BUILD) --emu $(EMU) $(BUILD)/hazard.bin
 	@$(PYTHON) test/sidefx_prog.py $(BUILD)/sidefx.nasm
 	@$(ASM) -o $(BUILD)/sidefx.bin $(BUILD)/sidefx.nasm
 	$(call check_core,sidefx,$(BUILD)/sidefx.bin)

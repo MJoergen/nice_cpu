@@ -159,7 +159,12 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   30% of the cycles. Each run on the core must match the emulator's, and
   the emulator must take the request and still pass the program's checks.
   So `hazard.nasm` keeps E = 1 at all but one step, and has a vector
-  table entry for each VBASE it uses. The runs go in parallel, on all
+  table entry for each VBASE it uses. Each run is repeated with the
+  request raised a few cycles late, with `--delays` and `tb_core`'s
+  `G_INTR_DELAY`, so that it arrives at different points within an
+  instruction: 3 and 7 cycles on the multi-cycle core, and 1, 2, and 3
+  on the pipelined one. A delayed run is compared only through
+  `test/irq_compare.py`. The runs go in parallel, on all
   cores; set the number with `-j`. Each worker runs GHDL in its own
   directory under `build/sweep`, because the LLVM and GCC backends of GHDL
   write an executable where they run.
@@ -328,6 +333,11 @@ for example `--nmi 2:1 --irq 2:2`. A request for step S is raised once S
 steps have retired, as the emulator raises it before step S. A second request
 of the same kind replaces the vector of one still pending, as the emulator
 merges them.
+
+With the generic `G_INTR_DELAY` = N, each request is raised N cycles
+after its step would raise it, and none after the end of the run. The
+core may have begun the step already, so the log gives such a request the
+step after.
 
 With the generic `G_INTR_LOG`, `tb_core` writes an interrupt log:
 `raised S nmi V` when it raises a request after S steps, `accepted nmi`

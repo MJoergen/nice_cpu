@@ -40,8 +40,8 @@ has TODO or FIXME comments.
     each step, and with an IRQ before each, and the multi-cycle core
     passes. Not swept: the program of `sidefx_prog.py`, which writes R14
     with any value, so E and VBASE too. For the pipelined core, the sweep
-    compares with `irq_compare.py --read-delay`, and should also vary the
-    cycle at which the request arrives, as the item below says.
+    compares with `irq_compare.py --read-delay`, and both cores are swept
+    with the request raised up to a few cycles late as well.
   - Step 6: `make programs` in `hdl/` runs the runtime's and the
     translator's test programs on the core, and the multi-cycle core
     passes. Left out: the random modules of `translator/test/fuzz.py`,
@@ -55,15 +55,11 @@ has TODO or FIXME comments.
     word that a store changed, or after an interrupt that a write of VBASE
     sent astray. `make random` runs one seed at a time; `programs.py`
     could run them in parallel.
-- **The interrupt comparison for the pipelined core** (MICROARCH.md §9).
-  `hdl/test/irq_compare.py` reads the testbench's interrupt log, and the
-  multi-cycle core passes it on every run with requests, with no delay
-  allowed. The pipelined core passes it with `--read-delay`, which allows
-  a request to be late only by instructions that had issued a data read
-  (MICROARCH.md §6). Still missing: requests timed in cycles, not steps,
-  in `hdl/test/tb_core.vhd`, so that a sweep can vary the arrival within
-  an instruction. And the timer's requests are not in the log, so a late
-  one would show as a difference from the emulator
+- **The timer's requests in the interrupt log.** `hdl/test/tb_core.vhd`
+  does not log the requests that the timer raises, so
+  `hdl/test/irq_compare.py` cannot allow for one that the pipelined core
+  takes late, after an instruction with a data read (MICROARCH.md §6). It
+  would show as a difference from the emulator
   ([hdl/ASSUMPTIONS.md](hdl/ASSUMPTIONS.md), item 13).
 - **The system around the core** (MICROARCH.md §8): dual-port RAM, the bus
   decoders, a default slave that reads 0 and drops writes, and the console

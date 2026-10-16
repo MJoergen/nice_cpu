@@ -26,8 +26,15 @@
 -- requests. A request for step S is raised once S steps have been reported,
 -- that is, before step S, as in the emulator. A request of the same kind
 -- that is raised while one is pending replaces its vector, as the emulator
--- merges them (ISA.md §7.1). The core takes requests only between steps, so
--- the trace matches the emulator's exactly.
+-- merges them (ISA.md §7.1). The multi-cycle core takes requests only
+-- between steps, so its trace matches the emulator's exactly.
+--
+-- With G_INTR_DELAY = N, each request is raised N cycles later instead, so
+-- that a sweep can make it arrive anywhere within an instruction. The core
+-- may then take it a step later than the emulator, and only
+-- test/irq_compare.py, which reads the log below, can judge the run. The
+-- step it is logged for is then the one after the last reported, since
+-- the core may have begun that one.
 --
 -- With G_INTR_LOG, p_intr writes a line to that file for each request it
 -- raises, "raised S nmi V" or "raised S irq V", where S is the number of
@@ -71,6 +78,8 @@ entity tb_core is
       G_MAX_STEPS     : positive := 100_000_000;
       G_INTERRUPTS    : string   := "";
       G_INTR_LOG      : string   := "";
+      -- Each request is raised this many cycles after its step allows.
+      G_INTR_DELAY    : natural  := 0;
       G_CYCLE_COUNTER : boolean  := true;
       -- The memory's stall rate in percent, and its seed (sim/wb_mem.vhd).
       G_STALL         : natural  := 0;
@@ -450,6 +459,9 @@ begin
       -- One of p_intr's requests was taken, and its entry is not reported yet.
       variable nmi_taken_v : boolean := false;
       variable irq_taken_v : boolean := false;
+      -- The cycles until each request is raised, or -1
+      type     t_waits is array (C_REQUESTS'range) of integer;
+      variable wait_v : t_waits := (others => -1);
 
       procedure log(text : string) is
          variable l : line;
@@ -507,8 +519,23 @@ begin
          end if;
 
          for i in C_REQUESTS'range loop
+            if wait_v(i) > 0 then
+               wait_v(i) := wait_v(i) - 1;
+            end if;
             if C_REQUESTS(i).step = steps_v and (rst = '1' or retire.valid = '1') then
-               log("raised", steps_v, C_REQUESTS(i).nmi, C_REQUESTS(i).vector);
+               wait_v(i) := G_INTR_DELAY;
+            end if;
+            -- No request after the end of the run, which the trace has
+            -- printed already.
+            if wait_v(i) = 0 and done = '0' then
+               wait_v(i) := -1;
+               -- A request that comes late may find step steps_v begun, so
+               -- it is raised for the step after.
+               if G_INTR_DELAY = 0 then
+                  log("raised", steps_v, C_REQUESTS(i).nmi, C_REQUESTS(i).vector);
+               else
+                  log("raised", steps_v + 1, C_REQUESTS(i).nmi, C_REQUESTS(i).vector);
+               end if;
                if C_REQUESTS(i).nmi then
                   nmi_valid  <= '1';
                   nmi_vector <= C_REQUESTS(i).vector;

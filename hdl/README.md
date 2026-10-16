@@ -29,7 +29,7 @@ working reference for it.
 | [test/tb_perf.vhd](test/tb_perf.vhd) | A self-checking test of the performance counters. |
 | [test/tb_timer.vhd](test/tb_timer.vhd) | A self-checking test of the timer. |
 | [test/tb_trace.vhd](test/tb_trace.vhd) | A test of the trace writer, which stands in for the core and runs [test/trace.nasm](test/trace.nasm). |
-| [test/tb_multicycle.vhd](test/tb_multicycle.vhd) | Runs a program on the multi-cycle core, with an interrupt source, and writes its trace. |
+| [test/tb_core.vhd](test/tb_core.vhd) | Runs a program on a core, which its generic `G_CORE` names, with an interrupt source, and writes its trace. |
 | [test/shift.nasm](test/shift.nasm) | Every shift, with the counts that are hard to get right. |
 | [test/hazard.nasm](test/hazard.nasm) | The hazards of MICROARCH.md §5, each with no padding. It checks itself. |
 | [test/programs.py](test/programs.py) | Runs the programs in some directories on the core and on the emulator, for `make programs`. |
@@ -93,9 +93,14 @@ with the same NMI: with the full trace, without the trace, and stopped at two
 step limits. The output and exit status of each run must match the
 emulator's exactly.
 
-`tb_multicycle` runs these programs on the core. The trace, the output, and
-the exit status of each must match those of `niceemu -t` on the same program,
-with the same interrupt requests:
+`tb_core` runs these programs on the core that its generic `G_CORE` names.
+It is `multicycle` by default, and the only core so far. Each core has the
+ports of `src/multicycle.vhd`, and the rest of the testbench serves them
+all. `make test CORE=name` passes the name on to every run of the core,
+those of `test/irq_sweep.py` and `test/programs.py` too, with their
+option `--core`, and the PASS and FAIL lines name the core. The trace,
+the output, and the exit status of each must match those of `niceemu -t`
+on the same program, with the same interrupt requests:
 
 - The three 2004 examples `count`, `replicate`, and `print`, and `wrap`, from
   `assembler/test/`.
@@ -279,7 +284,7 @@ combinationally on `ready`.
 
 `halted_o` is 1 once the core has halted. Only reset restarts it.
 
-In `tb_multicycle`, the generic `G_CYCLE_COUNTER` set to false sends the
+In `tb_core`, the generic `G_CYCLE_COUNTER` set to false sends the
 two words of the cycle counter to the memory model instead of `perf`, as
 `--no-cycle-counter` does in the emulator. The generic `G_INTERRUPTS` takes the emulator's options,
 for example `--nmi 2:1 --irq 2:2`. A request for step S is raised once S
@@ -287,7 +292,7 @@ steps have retired, as the emulator raises it before step S. A second request
 of the same kind replaces the vector of one still pending, as the emulator
 merges them.
 
-With the generic `G_INTR_LOG`, `tb_multicycle` writes an interrupt log:
+With the generic `G_INTR_LOG`, `tb_core` writes an interrupt log:
 `raised S nmi V` when it raises a request after S steps, `accepted nmi`
 when the core takes it with `ready`, which takes every request of the kind
 raised before, and `taken S nmi V` when the core reports the interrupt
@@ -330,7 +335,7 @@ the cycle the write is accepted, and stores nothing. A read returns `0x100`
 plus the next byte of the file that the generic `G_INPUT_FILE` names, and
 `0x200` after its end, as the emulator's `--input` does. Without the
 generic there is no input, and every read returns `0x200`, as for the
-emulator with stdin from `/dev/null`. `tb_multicycle` passes its own
+emulator with stdin from `/dev/null`. `tb_core` passes its own
 `G_INPUT_FILE` on, and `make test` runs the emulator's `input` probe
 with `emulator/test/input.txt`.
 The read counter is at `0xFFFFFF01`, as in the emulator. A data read returns
@@ -344,7 +349,7 @@ signed and unsigned products, quotients, and remainders of A and B.
 Offsets 16 to 31 hold the 64-bit C and D, and the signed and unsigned
 quotients and remainders of C and D. It is a pipelined Wishbone slave with
 a 5-bit address. The bus decoder selects it for `0xFFFFFF20`–`0xFFFFFF3F`
-and passes address bits 4..0 as the offset. In `tb_multicycle`,
+and passes address bits 4..0 as the offset. In `tb_core`,
 that decoder is an address compare on the data bus.
 
 A write to A or B starts a computation that takes 33 cycles. A
@@ -365,7 +370,7 @@ result words and the spare words are ignored.
 `CYCLE_HI` at offsets 0 and 1, and `INSTR_LO` and `INSTR_HI` at 2 and 3. It
 is a pipelined Wishbone slave with a 4-bit address. It never stalls, and it
 acknowledges each request in the next cycle. The bus decoder selects it for
-`0xFFFFFF10`–`0xFFFFFF1F`, and in `tb_multicycle` that is an address compare,
+`0xFFFFFF10`–`0xFFFFFF1F`, and in `tb_core` that is an address compare,
 as for the math unit.
 
 The cycle counter counts every clock cycle after reset. The instruction
@@ -387,7 +392,7 @@ slave with a 4-bit address, like that of the performance counters. The bus
 decoder selects it for `0xFFFFFF40`–`0xFFFFFF4F`.
 
 It counts down in each cycle with `tick_i` high. A system ties `tick_i` to
-`'1'`, so that the timer counts clock cycles. `tb_multicycle` connects it to
+`'1'`, so that the timer counts clock cycles. `tb_core` connects it to
 the core's report of each step, so that it counts as the emulator does.
 Its request goes to the core's IRQ port, with the valid/ready handshake of
 `src/multicycle.vhd`. It holds `valid` and the vector until `ready`, and a

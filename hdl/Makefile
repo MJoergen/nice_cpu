@@ -9,7 +9,7 @@ GHDLRUN = cd $(BUILD) && $(GHDL) --elab-run --std=08
 
 SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/multicycle.vhd src/mpu.vhd src/perf.vhd src/timer.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd
-TEST_SOURCES = test/tb_mem.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_timer.vhd test/tb_trace.vhd test/tb_multicycle.vhd
+TEST_SOURCES = test/tb_mem.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_timer.vhd test/tb_trace.vhd test/tb_core.vhd
 
 # tb_trace stands in for the core and runs test/trace.nasm. Each run's output
 # and exit status must equal those of the emulator on the same program, with
@@ -35,7 +35,11 @@ define check_trace
 
 endef
 
-# tb_multicycle runs a program on the multicycle core. Its trace, output, and
+# The core that tb_core runs, its generic G_CORE: multicycle for
+# src/multicycle.vhd. The PASS and FAIL lines name it.
+CORE ?= multicycle
+
+# tb_core runs a program on the core. Its trace, output, and
 # exit status must equal those of "niceemu -t" on the same program, with the
 # same interrupt requests. The programs are the 2004 examples and wrap from
 # the assembler's tests, the emulator's probes, with the probes' interrupt
@@ -66,15 +70,15 @@ INPUT_input = ../emulator/test/input.txt
 # $(1) is the name of the run, $(2) the program, and $(3) any more generics.
 define check_core
 	@rm -f $(BUILD)/core_$(1).intr
-	@($(GHDLRUN) tb_multicycle -gG_BIN_FILE=../$(2) -gG_TRACE_FILE=core_$(1).out \
+	@($(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=../$(2) -gG_TRACE_FILE=core_$(1).out \
 	  $(if $(INTR_$(1)),"-gG_INTERRUPTS=$(INTR_$(1))" -gG_INTR_LOG=core_$(1).intr) \
 	  $(if $(INPUT_$(1)),-gG_INPUT_FILE=../$(INPUT_$(1))) \
 	  $(3) > core_$(1).log 2>&1); echo "exit $$?" >> $(BUILD)/core_$(1).out
 	@$(EMU) -t $(INTR_$(1)) $(if $(INPUT_$(1)),--input $(INPUT_$(1))) $(2) < /dev/null \
 	  > $(BUILD)/core_$(1).expected; \
 	  echo "exit $$?" >> $(BUILD)/core_$(1).expected
-	@if cmp -s $(BUILD)/core_$(1).expected $(BUILD)/core_$(1).out; then echo "PASS multicycle $(1)"; \
-	else echo "FAIL multicycle $(1)"; cat $(BUILD)/core_$(1).log; \
+	@if cmp -s $(BUILD)/core_$(1).expected $(BUILD)/core_$(1).out; then echo "PASS $(CORE) $(1)"; \
+	else echo "FAIL $(CORE) $(1)"; cat $(BUILD)/core_$(1).log; \
 	  diff $(BUILD)/core_$(1).expected $(BUILD)/core_$(1).out | head -20; exit 1; fi
 	$(if $(INTR_$(1)),@$(IRQ_COMPARE) --name $(1) $(2) $(BUILD)/core_$(1).out $(BUILD)/core_$(1).intr)
 
@@ -116,14 +120,14 @@ define check_random
 	@$(PYTHON) test/random_prog.py $(1) $(BUILD)/random_$(1).bin > $(BUILD)/random_$(1).opts
 	@rm -f $(BUILD)/random_$(1).intr
 	@o=$$(cat $(BUILD)/random_$(1).opts); \
-	  ($(GHDLRUN) tb_multicycle -gG_BIN_FILE=random_$(1).bin -gG_TRACE_FILE=random_$(1).out \
+	  ($(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=random_$(1).bin -gG_TRACE_FILE=random_$(1).out \
 	  -gG_MAX_STEPS=$(RANDOM_STEPS) -gG_STALL=$(RANDOM_STALL) -gG_SEED=$(1) -gG_CYCLE_COUNTER=false \
 	  $${o:+"-gG_INTERRUPTS=$$o"} -gG_INTR_LOG=random_$(1).intr > random_$(1).log 2>&1); \
 	  echo "exit $$?" >> $(BUILD)/random_$(1).out
 	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter $$(cat $(BUILD)/random_$(1).opts) $(BUILD)/random_$(1).bin \
 	  < /dev/null > $(BUILD)/random_$(1).expected; echo "exit $$?" >> $(BUILD)/random_$(1).expected
-	@if cmp -s $(BUILD)/random_$(1).expected $(BUILD)/random_$(1).out; then echo "PASS multicycle random $(1)"; \
-	else echo "FAIL multicycle random $(1)"; cat $(BUILD)/random_$(1).log; \
+	@if cmp -s $(BUILD)/random_$(1).expected $(BUILD)/random_$(1).out; then echo "PASS $(CORE) random $(1)"; \
+	else echo "FAIL $(CORE) random $(1)"; cat $(BUILD)/random_$(1).log; \
 	  diff $(BUILD)/random_$(1).expected $(BUILD)/random_$(1).out | head -20; exit 1; fi
 	@$(IRQ_COMPARE) --name random_$(1) $(BUILD)/random_$(1).bin $(BUILD)/random_$(1).out \
 	  $(BUILD)/random_$(1).intr -- -n $(RANDOM_STEPS) --no-cycle-counter
@@ -157,7 +161,7 @@ test: emulator analyse synth
 	$(call check_core,hazard,$(BUILD)/hazard.bin)
 	$(call check_selfcheck,hazard)
 	$(call check_core,hazard_stall,$(BUILD)/hazard.bin,-gG_STALL=30 -gG_SEED=13)
-	@$(PYTHON) test/irq_sweep.py --self-check --stall 30 --build $(BUILD) --emu $(EMU) $(BUILD)/hazard.bin
+	@$(PYTHON) test/irq_sweep.py --core $(CORE) --self-check --stall 30 --build $(BUILD) --emu $(EMU) $(BUILD)/hazard.bin
 	@$(PYTHON) test/sidefx_prog.py $(BUILD)/sidefx.nasm
 	@$(ASM) -o $(BUILD)/sidefx.bin $(BUILD)/sidefx.nasm
 	$(call check_core,sidefx,$(BUILD)/sidefx.bin)
@@ -184,7 +188,7 @@ programs: emulator analyse
 	  > $(BUILD)/programs_runtime.log 2>&1 || { cat $(BUILD)/programs_runtime.log; exit 1; }
 	@$(PYTHON) ../translator/test/run.py --keep $(PROGRAMS)/translator \
 	  > $(BUILD)/programs_translator.log 2>&1 || { cat $(BUILD)/programs_translator.log; exit 1; }
-	@$(PYTHON) test/programs.py --build $(BUILD) --emu $(EMU) $(PROGRAMS)/runtime $(PROGRAMS)/translator
+	@$(PYTHON) test/programs.py --core $(CORE) --build $(BUILD) --emu $(EMU) $(PROGRAMS)/runtime $(PROGRAMS)/translator
 
 analyse:
 	@mkdir -p $(BUILD)

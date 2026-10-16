@@ -1,7 +1,9 @@
--- Runs a program on the multicycle core, and writes its trace in the format
--- of "niceemu --trace", so that the two can be compared with diff.
+-- Runs a program on a core, and writes its trace in the format of
+-- "niceemu --trace", so that the two can be compared with diff.
 --
 -- THEORY OF OPERATION
+-- G_CORE names the core: "multicycle" for src/multicycle.vhd. Every core
+-- has the same ports, so the rest of the testbench serves them all.
 -- The core runs on the memory model, sim/wb_mem.vhd, which loads G_BIN_FILE.
 -- Its console reads the bytes of G_INPUT_FILE, as the emulator's --input
 -- does, or none if it is "".
@@ -54,8 +56,9 @@ library ieee;
 
    use work.trace_pkg.all;
 
-entity tb_multicycle is
+entity tb_core is
    generic (
+      G_CORE          : string   := "multicycle";
       G_BIN_FILE      : string;
       G_TRACE_FILE    : string;
       G_INPUT_FILE    : string   := "";
@@ -68,9 +71,9 @@ entity tb_multicycle is
       G_STALL         : natural  := 0;
       G_SEED          : positive := 1
    );
-end entity tb_multicycle;
+end entity tb_core;
 
-architecture simulation of tb_multicycle is
+architecture simulation of tb_core is
 
    -- A step takes far fewer cycles than this.
    constant C_STEP_TIMEOUT : natural := 1000;
@@ -117,13 +120,13 @@ architecture simulation of tb_multicycle is
                when others     => exit;
             end case;
             assert digit_v < base_v
-               report "tb_multicycle: bad number in G_INTERRUPTS"
+               report "tb_core: bad number in G_INTERRUPTS"
                severity failure;
             value_v := value_v * base_v + digit_v;
             pos_v   := pos_v + 1;
          end loop;
          assert pos_v > start_v
-            report "tb_multicycle: missing number in G_INTERRUPTS"
+            report "tb_core: missing number in G_INTERRUPTS"
             severity failure;
          value := value_v;
       end procedure read_number;
@@ -133,7 +136,7 @@ architecture simulation of tb_multicycle is
       while pos_v <= s'high loop
          assert pos_v + 5 <= s'high and
                 (s(pos_v to pos_v + 5) = "--nmi " or s(pos_v to pos_v + 5) = "--irq ")
-            report "tb_multicycle: G_INTERRUPTS wants --nmi STEP:VEC or --irq STEP:VEC"
+            report "tb_core: G_INTERRUPTS wants --nmi STEP:VEC or --irq STEP:VEC"
             severity failure;
          res_v(count_v).nmi := s(pos_v to pos_v + 5) = "--nmi ";
          pos_v := pos_v + 6;
@@ -141,7 +144,7 @@ architecture simulation of tb_multicycle is
          read_number(number_v);
          res_v(count_v).step := number_v;
          assert pos_v <= s'high and s(pos_v) = ':'
-            report "tb_multicycle: G_INTERRUPTS wants STEP:VEC"
+            report "tb_core: G_INTERRUPTS wants STEP:VEC"
             severity failure;
          pos_v := pos_v + 1;
          read_number(number_v);
@@ -234,34 +237,45 @@ begin
    end process p_rst;
 
 
-   i_multicycle : entity work.multicycle
-      port map (
-         clk_i        => clk,
-         rst_i        => rst,
-         ibus_cyc_o   => ibus_cyc,
-         ibus_stb_o   => ibus_stb,
-         ibus_stall_i => ibus_stall,
-         ibus_ack_i   => ibus_ack,
-         ibus_addr_o  => ibus_addr,
-         ibus_data_i  => ibus_data,
-         dbus_cyc_o   => dbus_cyc,
-         dbus_stb_o   => dbus_stb,
-         dbus_stall_i => dbus_stall,
-         dbus_ack_i   => dbus_ack,
-         dbus_we_o    => dbus_we,
-         dbus_addr_o  => dbus_addr,
-         dbus_data_o  => dbus_data_out,
-         dbus_data_i  => dbus_data_in,
-         nmi_valid_i  => nmi_valid,
-         nmi_ready_o  => nmi_ready,
-         nmi_vector_i => nmi_vector,
-         irq_valid_i  => core_irq_valid,
-         irq_ready_o  => irq_ready,
-         irq_vector_i => core_irq_vector,
-         halted_o     => open,
-         instret_o    => instret,
-         retire_o     => retire
-      ); -- i_multicycle
+   gen_core : if G_CORE = "multicycle" generate
+
+      i_multicycle : entity work.multicycle
+         port map (
+            clk_i        => clk,
+            rst_i        => rst,
+            ibus_cyc_o   => ibus_cyc,
+            ibus_stb_o   => ibus_stb,
+            ibus_stall_i => ibus_stall,
+            ibus_ack_i   => ibus_ack,
+            ibus_addr_o  => ibus_addr,
+            ibus_data_i  => ibus_data,
+            dbus_cyc_o   => dbus_cyc,
+            dbus_stb_o   => dbus_stb,
+            dbus_stall_i => dbus_stall,
+            dbus_ack_i   => dbus_ack,
+            dbus_we_o    => dbus_we,
+            dbus_addr_o  => dbus_addr,
+            dbus_data_o  => dbus_data_out,
+            dbus_data_i  => dbus_data_in,
+            nmi_valid_i  => nmi_valid,
+            nmi_ready_o  => nmi_ready,
+            nmi_vector_i => nmi_vector,
+            irq_valid_i  => core_irq_valid,
+            irq_ready_o  => irq_ready,
+            irq_vector_i => core_irq_vector,
+            halted_o     => open,
+            instret_o    => instret,
+            retire_o     => retire
+         ); -- i_multicycle
+
+   else generate
+
+      -- A core without a branch above
+      assert false
+         report "tb_core: unknown core " & G_CORE
+         severity failure;
+
+   end generate gen_core;
 
 
    mpu_sel      <= '1' when dbus_addr(31 downto 5) = X"FFFFFF" & "001" else '0';
@@ -485,7 +499,7 @@ begin
       else
          idle_v := idle_v + 1;
          assert idle_v < C_STEP_TIMEOUT
-            report "tb_multicycle: no step for " & integer'image(C_STEP_TIMEOUT) & " cycles"
+            report "tb_core: no step for " & integer'image(C_STEP_TIMEOUT) & " cycles"
             severity failure;
       end if;
    end process p_watchdog;

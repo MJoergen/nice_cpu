@@ -6,7 +6,7 @@ Usage: irq_sweep.py [options] PROGRAM.bin
 Step 5 of the test order in MICROARCH.md §9. The program runs once on the
 emulator, which gives its number of steps N. Then, for each kind of request
 (NMI and IRQ) and each step S from 0 to N - 1, it runs once on the core in
-tb_multicycle and once on the emulator, with the one request "--nmi S:VEC"
+tb_core and once on the emulator, with the one request "--nmi S:VEC"
 or "--irq S:VEC". The trace, the output, and the exit status of the two
 must be the same, as in the makefile's other runs. test/irq_compare.py
 must also pass, with the steps where the core took the request. Each run on the
@@ -28,7 +28,7 @@ import os
 import re
 import sys
 
-from core_runs import DEFAULT_BUILD, DEFAULT_EMU, Core, difference, run_emulator
+from core_runs import DEFAULT_BUILD, DEFAULT_CORE, DEFAULT_EMU, Core, difference, run_emulator
 from irq_compare import check as irq_compare
 
 
@@ -62,6 +62,7 @@ def main() -> None:
     p.add_argument("--stall", type=int, default=0, help="G_STALL of the memory, in percent")
     p.add_argument("--self-check", action="store_true", help="every run must pass as hazard.nasm does")
     p.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1)
+    p.add_argument("--core", default=DEFAULT_CORE, help="G_CORE of tb_core (default multicycle)")
     p.add_argument("--build", default=DEFAULT_BUILD)
     p.add_argument("--emu", default=DEFAULT_EMU)
     p.add_argument("--ghdl", default=os.environ.get("GHDL", "ghdl"))
@@ -73,7 +74,7 @@ def main() -> None:
         sys.exit(f"irq_sweep: the program does not halt on the emulator:\n{plain[-400:]}")
     steps = int(m.group(1))
 
-    core = Core(args.ghdl, args.build, "sweep")
+    core = Core(args.ghdl, args.build, "sweep", args.core)
     jobs = [(kind, vec, s) for kind, vec in (("nmi", args.nmi), ("irq", args.irq)) for s in range(steps)]
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
         results = list(pool.map(lambda j: check(args, core, *j), jobs))
@@ -84,9 +85,9 @@ def main() -> None:
         print(r)
     name = os.path.basename(args.program)
     if failures:
-        print(f"FAIL irq_sweep {name}: {len(failures)} of {len(jobs)} runs")
+        print(f"FAIL irq_sweep {args.core} {name}: {len(failures)} of {len(jobs)} runs")
         sys.exit(1)
-    print(f"PASS irq_sweep {name}: {len(jobs)} runs")
+    print(f"PASS irq_sweep {args.core} {name}: {len(jobs)} runs")
 
 
 if __name__ == "__main__":

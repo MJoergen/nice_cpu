@@ -4,7 +4,7 @@
 Usage: irq_compare.py [options] PROGRAM.bin CORE.out INTR.log [-- EMULATOR_OPTIONS...]
 
 CORE.out is the core's trace and output, with "exit N" appended, as the
-makefile writes it. INTR.log is the interrupt log of tb_multicycle's
+makefile writes it. INTR.log is the interrupt log of tb_core's
 G_INTR_LOG. EMULATOR_OPTIONS go to the emulator as they are, for example
 --no-cycle-counter or --input FILE.
 

@@ -15,14 +15,9 @@ has TODO or FIXME comments.
 - **The pipelined core.** FETCH, ICACHE, DECODE, SEQUENCER, PREPARE, and
   WRITE, with micro-operations, as [doc/MICROARCH.md](doc/MICROARCH.md)
   describes. Only the multi-cycle core exists ([hdl/README.md](hdl/README.md)).
-  First come the next three items, which give it tests that the
+  First come the next two items, which give it tests that the
   multi-cycle core passes today, so that a failure blames the core and not
   the test, and the bus decoder of the system item.
-- **A testbench for any core.** `hdl/test/tb_multicycle.vhd` holds the bus
-  decoder, the interrupt source, the timer, the trace writer, and the
-  watchdog, and names the core. Factor them into one testbench that takes
-  the core as a generic, so that the pipelined core runs the same tests
-  with one line changed in `hdl/Makefile`.
 - **Test order steps not done** (MICROARCH.md §9):
   - Step 4, hazard programs: `hdl/test/hazard.nasm` and
     `hdl/test/sidefx_prog.py`, which the multi-cycle core passes. Left
@@ -55,10 +50,9 @@ has TODO or FIXME comments.
   multi-cycle core passes it on every run with requests, with no delay
   allowed. For the pipelined core it needs: a check that a request taken
   one step late passed an instruction that had issued a data read
-  (MICROARCH.md §6), not just `--max-delay 1`; requests timed in cycles,
-  not steps, in the testbench, so that a sweep can vary the arrival
-  within an instruction; and the testbench for any core, which must keep
-  the log.
+  (MICROARCH.md §6), not just `--max-delay 1`; and requests timed in cycles,
+  not steps, in `hdl/test/tb_core.vhd`, so that a sweep can vary the
+  arrival within an instruction.
 - **The system around the core** (MICROARCH.md §8): dual-port RAM, the bus
   decoders, a default slave that reads 0 and drops writes, and the console
   UART at `0xFFFFFF00`, with generics for the memory map. The data bus
@@ -68,7 +62,7 @@ has TODO or FIXME comments.
   set, or 0 (ISA.md §8.3). `wb_mem.vhd` reads a file, as the emulator's
   `--input` does. Today
   `hdl/sim/wb_mem.vhd` stands in for all of it, in simulation only, and
-  `hdl/test/tb_multicycle.vhd` decodes the math unit and the performance
+  `hdl/test/tb_core.vhd` decodes the math unit and the performance
   counters with an address compare.
 - **Formal checks with SymbiYosys** (MICROARCH.md §9): each stage, and the
   data access rule of MICROARCH.md §5.3. So far `make formal` checks only

@@ -44,7 +44,7 @@ test: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 # hdl/build, where GHDL runs, and the output is written there too.
 define core_run
 	@echo "$(1) on the multi-cycle core:"
-	@cd ../hdl/build && $(GHDL) --elab-run --std=08 tb_multicycle \
+	@cd ../hdl/build && $(GHDL) --elab-run --std=08 tb_core \
 	  -gG_BIN_FILE=../../bench/$(BUILD)/$(1).bin -gG_TRACE_FILE=$(1)_core.out -gG_TRACE=false \
 	  > $(1)_core.log 2>&1; status=$$?; sed '/^Halted/,$$d' $(1)_core.out; \
 	  if [ $$status -ne 0 ]; then cat $(1)_core.log; exit 1; fi

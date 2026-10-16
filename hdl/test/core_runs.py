@@ -1,10 +1,11 @@
 """Runs programs on the core and on the emulator, for irq_sweep.py and
 programs.py.
 
-A run on the core is GHDL's --elab-run of tb_multicycle, with the VHDL
-analysed in BUILD already. Runs may go in parallel, from threads: each
-thread runs GHDL in its own directory under BUILD/WORK, because GHDL's
-LLVM and GCC backends write an executable where they run.
+A run on the core is GHDL's --elab-run of tb_core, with the VHDL analysed
+in BUILD already, and the core that its generic G_CORE names. Runs may go
+in parallel, from threads: each thread runs GHDL in its own directory
+under BUILD/WORK, because GHDL's LLVM and GCC backends write an executable
+where they run.
 """
 
 import os
@@ -15,6 +16,7 @@ import threading
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_BUILD = os.path.join(HERE, "..", "build")
 DEFAULT_EMU = os.path.join(HERE, "..", "..", "emulator", "zig-out", "bin", "niceemu")
+DEFAULT_CORE = "multicycle"
 
 
 def run_emulator(emu: str, binfile: str, opts: list[str]) -> str:
@@ -26,10 +28,11 @@ def run_emulator(emu: str, binfile: str, opts: list[str]) -> str:
 
 
 class Core:
-    """Runs tb_multicycle, each thread in its own directory."""
+    """Runs a core in tb_core, each thread in its own directory."""
 
-    def __init__(self, ghdl: str, build: str, work: str) -> None:
+    def __init__(self, ghdl: str, build: str, work: str, core: str = DEFAULT_CORE) -> None:
         self.ghdl = ghdl
+        self.core = core
         self.build = os.path.abspath(build)
         self.root = os.path.join(self.build, work)
         self.local = threading.local()
@@ -52,15 +55,15 @@ class Core:
         return self.run_logged(binfile, generics)[0]
 
     def run_logged(self, binfile: str, generics: list[str]) -> tuple[str, str]:
-        """The same, and the interrupt log of tb_multicycle's G_INTR_LOG,
+        """The same, and the interrupt log of tb_core's G_INTR_LOG,
         which is empty when no request was raised."""
         d = self.directory()
         trace = os.path.join(d, "core.out")
         log = os.path.join(d, "intr.log")
         cmd = [
-            self.ghdl, "--elab-run", "--std=08", "--workdir=" + self.build, "tb_multicycle",
-            "-gG_BIN_FILE=" + os.path.abspath(binfile), "-gG_TRACE_FILE=" + trace,
-            "-gG_INTR_LOG=" + log, *generics,
+            self.ghdl, "--elab-run", "--std=08", "--workdir=" + self.build, "tb_core",
+            "-gG_CORE=" + self.core, "-gG_BIN_FILE=" + os.path.abspath(binfile),
+            "-gG_TRACE_FILE=" + trace, "-gG_INTR_LOG=" + log, *generics,
         ]
         for path in (trace, log):
             if os.path.exists(path):

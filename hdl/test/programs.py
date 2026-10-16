@@ -6,7 +6,7 @@ Usage: programs.py [options] DIR...
 Step 6 of the test order in MICROARCH.md §9: the runtime's and the
 translator's test programs, which "make test KEEP=DIR" in runtime/ and
 "test/run.py --keep DIR" in translator/ leave in DIR. Each DIR/X.bin runs
-on the core in tb_multicycle and on the emulator, with DIR/X.input as the
+on the core in tb_core and on the emulator, with DIR/X.input as the
 console input if it exists, and with no input otherwise. The trace, the
 output, and the exit status of the two must be the same, as in the
 makefile's other runs.
@@ -24,7 +24,7 @@ import concurrent.futures
 import os
 import sys
 
-from core_runs import DEFAULT_BUILD, DEFAULT_EMU, Core, difference, run_emulator
+from core_runs import DEFAULT_BUILD, DEFAULT_CORE, DEFAULT_EMU, Core, difference, run_emulator
 
 
 def check(args: argparse.Namespace, core: Core, binfile: str, seed: int) -> str | None:
@@ -47,6 +47,7 @@ def main() -> None:
     p.add_argument("dirs", nargs="+", metavar="DIR")
     p.add_argument("--stall", type=int, default=0, help="G_STALL of the memory, in percent")
     p.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1)
+    p.add_argument("--core", default=DEFAULT_CORE, help="G_CORE of tb_core (default multicycle)")
     p.add_argument("--build", default=DEFAULT_BUILD)
     p.add_argument("--emu", default=DEFAULT_EMU)
     p.add_argument("--ghdl", default=os.environ.get("GHDL", "ghdl"))
@@ -59,7 +60,7 @@ def main() -> None:
     # first, so that no long run starts last.
     programs.sort(key=lambda f: (-os.path.getsize(f), f))
 
-    core = Core(args.ghdl, args.build, "programs")
+    core = Core(args.ghdl, args.build, "programs", args.core)
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
         results = list(pool.map(lambda j: check(args, core, j[1], j[0] + 1), enumerate(programs)))
     core.clean()
@@ -67,7 +68,7 @@ def main() -> None:
     failures = [r for r in results if r is not None]
     for r in failures:
         print("FAIL " + r)
-    print(f"{'FAIL' if failures else 'PASS'} programs: {len(programs) - len(failures)} of "
+    print(f"{'FAIL' if failures else 'PASS'} programs {args.core}: {len(programs) - len(failures)} of "
           f"{len(programs)} in {', '.join(args.dirs)}")
     if failures:
         sys.exit(1)

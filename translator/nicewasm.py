@@ -1060,6 +1060,10 @@ for _op in ("shl", "shr_u", "shr_s", "rotl", "rotr"):
 for _n in (4, 8):
     HELPERS[f"W.store{_n}"] = store_helper(_n)
     HELPERS[f"W.load{_n}"] = load_helper(_n)
+for _code in range(1, 8):
+    HELPERS[f"W.trap{_code}"] = [f"; W.trap{_code}: traps with code {_code}, and R2 as it is.",
+                                 f"W.trap{_code}", instr("MOVE", "R1", str(_code)),
+                                 instr("MOVE", "R15", "@___wasm_trap_vector")]
 
 # The registers that each helper may change. It reads its arguments from R1
 # up. None uses R7 or above, so values in those survive a call of it.
@@ -2856,9 +2860,17 @@ class FunctionTranslator:
         label = f"{self.t.prefix}f{self.idx}.t{self.n_traps}"
         self.n_traps += 1
         self.label(label)
-        self.emit("MOVE", "R1", str(code))
-        self.emit("MOVE", "R2", label)
-        self.emit("MOVE", "R15", "@___wasm_trap_vector")
+        self.trap_jump(code, label)
+
+    def trap_jump(self, code: int, start: str, stub: bool = False) -> None:
+        """Traps with the given code and R2 = start (§9.4): sets R2 and
+        jumps to W.trapN, a helper for code N that sets R1 and jumps
+        through ___wasm_trap_vector."""
+        self.emit("MOVE", "R2", start, stub=stub)
+        name = f"W.trap{code}"
+        self.t.helpers.add(name)
+        j = self.emit("MOVE", "R15", self.t.prefix + name[2:], stub=stub)
+        j.kind, j.targets, j.uses = "exit", [], frozenset({"R2"})
 
     def new_label(self) -> str:
         label = f"{self.t.prefix}f{self.idx}.L{self.n_labels}"
@@ -3045,9 +3057,7 @@ class FunctionTranslator:
         limit = self.t.mem_bytes - n + 1
         if limit <= 0 and not self.t.growable:
             # No n bytes fit in the memory.
-            self.emit("MOVE", "R1", "2")
-            self.emit("MOVE", "R2", start)
-            self.emit("MOVE", "R15", "@___wasm_trap_vector")
+            self.trap_jump(2, start)
             return None, a, 0
         trap = self.trap_stub(2, start)
         if self.t.growable or const is not None:
@@ -3156,9 +3166,7 @@ class FunctionTranslator:
         limit = (self.t.mem_bytes - offset - n) // 4 + 1  # the first t at which n bytes do not fit
         if limit <= 0 and not self.t.growable:
             # No n bytes fit there.
-            self.emit("MOVE", "R1", "2")
-            self.emit("MOVE", "R2", start)
-            self.emit("MOVE", "R15", "@___wasm_trap_vector")
+            self.trap_jump(2, start)
             return []
         t, aligned_t = self.word_index.get(base, ("", False))
         if not t:
@@ -3393,9 +3401,7 @@ class FunctionTranslator:
         instruction that traps (§9.4). Returns its label."""
         label = self.new_label()
         self.label(label, stub=True)
-        self.emit("MOVE", "R1", str(code), stub=True)
-        self.emit("MOVE", "R2", start, stub=True)
-        self.emit("MOVE", "R15", "@___wasm_trap_vector", stub=True)
+        self.trap_jump(code, start, stub=True)
         return label
 
     def mpu_op(self, word: str, t: int, at: int, what: str,

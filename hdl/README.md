@@ -339,6 +339,15 @@ runs it after each run with requests, the random programs included, and
 agrees with the comparison that uses the steps the requests were raised
 for.
 
+With `--read-delay`, the number of steps a request may be late is worked
+out for each request taken: the steps right before its interrupt entry
+that are instructions with a data read, not skipped. A core that takes a
+request at the first instruction boundary after it arrives, unless the
+next instruction has already issued a data read (MICROARCH.md §6), passes
+this. `test/irq_sweep.py` takes the same option, and then compares the
+core's runs only through `irq_compare.py`, and checks the self-check of
+`hazard.nasm` on the core's run.
+
 ## The data bus decoder
 
 `wb_dmux` connects the core's data bus, a pipelined Wishbone master, to

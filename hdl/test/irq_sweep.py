@@ -18,8 +18,11 @@ The runs are independent, so they go in parallel, as test/core_runs.py
 describes. The VHDL must be analysed in BUILD already.
 
 For the multi-cycle core the request step decides where the request is
-taken. For the pipelined core it does not (MICROARCH.md §9), and this
-script will need the comparison that reads where it was taken.
+taken. For the pipelined core it does not (MICROARCH.md §9). With
+--read-delay, the core's run is not compared with the emulator's run with
+the request as raised, but only by test/irq_compare.py with --read-delay,
+which reads where the core took it. With --self-check, the core's run must
+then end as hazard.nasm does when it passes, too.
 """
 
 import argparse
@@ -47,10 +50,14 @@ def check(args: argparse.Namespace, core: Core, kind: str, vec: int, step: int) 
         args.program,
         ["-gG_INTERRUPTS=" + " ".join(opts), f"-gG_STALL={args.stall}", f"-gG_SEED={step + 1}"],
     )
-    diff = difference(expected, got)
-    if diff is not None:
-        return f"{name}: {diff}"
-    problems = irq_compare(args.emu, args.program, got, log, [])
+    if args.read_delay:
+        if args.self_check and not (re.search(r"^R12 00000000", got, re.M) and got.endswith("exit 0\n")):
+            return f"{name}: the program's own checks failed on the core\n" + got[-400:]
+    else:
+        diff = difference(expected, got)
+        if diff is not None:
+            return f"{name}: {diff}"
+    problems = irq_compare(args.emu, args.program, got, log, [], read_delay=args.read_delay)
     return None if not problems else f"{name}: irq_compare: " + "\n".join(problems)
 
 
@@ -61,6 +68,8 @@ def main() -> None:
     p.add_argument("--irq", type=lambda s: int(s, 0), default=9, help="the IRQ vector (default 9)")
     p.add_argument("--stall", type=int, default=0, help="G_STALL of the memory, in percent")
     p.add_argument("--self-check", action="store_true", help="every run must pass as hazard.nasm does")
+    p.add_argument("--read-delay", action="store_true",
+                   help="the core may take a request late, after instructions with a data read")
     p.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1)
     p.add_argument("--core", default=DEFAULT_CORE, help="G_CORE of tb_core (default multicycle)")
     p.add_argument("--build", default=DEFAULT_BUILD)

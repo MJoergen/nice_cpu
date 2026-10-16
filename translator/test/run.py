@@ -1068,6 +1068,37 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
                       + i32_const(-7) + ADD,
                       i32_const(1) + i32_const(0) + i32_const(1) + i32_const(2) + SUB + SELECT)))),
      "", 0x27),
+    # The flags still say whether a comparison's result is 0 after the
+    # code that writes it, and whether a loaded i32 is 0 after the load,
+    # so a select, br_if, or eqz on it uses them (README.md). One bit each:
+    # 1: select(1, 0, c), with c = MIN < 1 signed, set by local.tee: MIN -
+    #    1 overflows, N = 0 and V = 1, so c = 1.
+    # 0: select(0, 1, c), c by local.get, with the flags left as they were.
+    # 1: MAX > MIN signed, by select: MIN - MAX = 1 overflows too.
+    # 0: select(1, 0, eqz (5 < 7 unsigned)) = select(1, 0, 0).
+    # Loads at addresses in local 2, which br_if takes, after a store there:
+    # 1: 0x100 at 5, which is not a multiple of 4, so the helpers do both.
+    # 0: 0 at 9, the same way.
+    # 1: -1 at 12, by the inline path.
+    # 0: 0 at 16.
+    # 10101010 = 0xAA.
+    ("flagvals", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((3, bits(0,
+                      i32_const(1) + i32_const(0) + i32_const(-0x80000000) + i32_const(1) + LT_S
+                      + local_tee(1) + SELECT,
+                      i32_const(0) + i32_const(1) + local_get(1) + SELECT,
+                      i32_const(1) + i32_const(0) + i32_const(0x7FFFFFFF) + i32_const(-0x80000000)
+                      + GT_S + SELECT,
+                      i32_const(1) + i32_const(0) + i32_const(5) + i32_const(7) + LT_U + EQZ
+                      + SELECT,
+                      *[i32_const(a) + local_tee(2) + i32_const(v) + mem(I32_STORE)
+                        + as_br_if(local_get(2) + mem(I32_LOAD))
+                        for a, v in [(5, 0x100), (9, 0), (12, -1), (16, 0)]])))),
+     "", 0xAA),
     # Code that cannot be reached is skipped up to its block's end or
     # else, including nested blocks in it, which are not even valid: the
     # if has no condition, and the add no operands. 8 + 9 = 17.

@@ -360,12 +360,24 @@ block expects, and then jumps. A branch out of the function moves them
 to R1 and up, as `return` does. `br_table` checks the index against the
 number of labels, then jumps through a table of `.DAT` addresses.
 A comparison sets the flags, usually with `SUB[M]`, then sets the result from
-them. A signed comparison is N XOR V (ISA.md §9.2). When the next
-instruction is `br_if` or `if`, or `i32.eqz` and then one of them, the
-comparison sets only the flags, and the branch jumps on them. For a
-signed comparison, `?V XOR R14, R14, 0x10000000` first flips N when V is
-set, so N alone holds the answer, as ISA.md §9.2 describes. `i32.eqz` and `i64.eqz` before `br_if` or
+them. A signed comparison is N XOR V (ISA.md §9.2), so `?V XOR R14, R14,
+0x10000000` first flips N when V is set, and N alone holds the answer,
+as ISA.md §9.2 describes. When the next instruction is `br_if` or `if`,
+or `i32.eqz` and then one of them, the comparison sets only the flags,
+and the branch jumps on them. `i32.eqz` and `i64.eqz` before `br_if` or
 `if` do the same with Z.
+
+The front end also keeps track of what the flags say, until an
+instruction changes them or a label comes. After a comparison or an
+`eqz` sets its result, they say whether the result is 0. After an
+`i32.load` whose offset is a multiple of 4, they can say whether the
+value is 0: its `MOVE` gets the M bit, and so does the `MOVE` of the
+helper's result in the stub, if a branch uses the flags. A `select`,
+`br_if`, `if`, or `eqz` on such a value, or on a copy of it in a local,
+then uses the flags, with no test of its own. So `select(a, b, x < y)`,
+signed, is `SUB[M] R0, x, y`, the `?V XOR`, `MOVE d, a`, and `?!N MOVE
+d, b`. If the comparison's result is not used otherwise, no code sets
+it.
 
 An `i32` shift masks its count to 5 bits first, because NICE uses the
 full count (ISA.md §9.4). `shr_s` copies the sign bit into C and shifts it
@@ -560,10 +572,11 @@ nodes also evaluate themselves in Python, so each module comes with the
 result that wasm defines for it, and `main`'s result in R1 must match.
 The modules have four functions with `i32` and `i64` parameters, 8 to 13
 locals, loops, blocks, branches with values, `select`,
-calls through the table, every integer operation and comparison, and
-loads and stores of every width at constant and dynamic addresses. That
-covers the rules for deferred values, fused comparisons, forwarded
-results, and register allocation above. `make test` runs 40 seeds with the
+calls through the table, every integer operation and comparison, the
+results of comparisons kept in locals for later conditions, and loads
+and stores of every width at constant and dynamic addresses. That
+covers the rules for deferred values, fused comparisons, the flags,
+forwarded results, and register allocation above. `make test` runs 40 seeds with the
 math unit and 40 with `--no-mpu`; `test/fuzz.py 1 1000` runs more, and
 `test/fuzz.py --reduce SEED` shrinks a failing module and writes it with
 its translation.

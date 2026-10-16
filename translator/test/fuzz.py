@@ -18,7 +18,8 @@ the operand stack some live in registers and some are spilled to the
 frame. The bodies use blocks,
 loops, if and else, br, br_if, and br_table with and without values,
 select, calls and call_indirect, every integer operation and comparison,
-eqz before if and br_if, i64 shifts by constants and by variables,
+comparisons kept in a local by local.tee for later conditions, eqz
+before if and br_if, i64 shifts by constants and by variables,
 divisions with nonzero divisors, loads and stores of every width at
 constant and at dynamic addresses, and local.set and local.tee of locals
 whose old value is still on the operand stack. That covers the rules for
@@ -368,9 +369,19 @@ def gen_select(ctx: Ctx, t: int, depth: int) -> Expr:
 
 def gen_condition(ctx: Ctx, depth: int) -> Expr:
     """An i32 for if, br_if, or select: mostly a comparison, so that the
-    flags are used directly, else any i32."""
-    if ctx.rng.random() < 0.7:
+    flags are used directly, sometimes kept in a local by local.tee, so
+    that a later condition may be the local, else any i32."""
+    r = ctx.rng.random()
+    if r < 0.5:
         return gen_cmp(ctx, ctx.rng.choice([I32, I64]), depth)
+    if r < 0.7:
+        c = gen_cmp(ctx, ctx.rng.choice([I32, I64]), depth)
+        i = ctx.rng.choice(ctx.locals_of(I32))
+
+        def ev(st: State) -> int:
+            st.locals[i] = c.ev(st)
+            return st.locals[i]
+        return Expr(I32, c.code + local_tee(i), ev)
     return gen_expr(ctx, I32, depth)
 
 

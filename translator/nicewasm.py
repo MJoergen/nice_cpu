@@ -2291,6 +2291,13 @@ class FunctionTranslator:
         # aligned. If aligned, the address is 4 * t modulo 2^32, so it is
         # a multiple of 4 and its word is t modulo 2^30.
         self.word_index: Dict[str, Tuple[str, bool]] = {}
+        # What the flags say about an i32 value, until an instruction
+        # changes the flags or a label comes: the virtual registers that
+        # hold the value, the condition under which it is not 0, and the
+        # instructions that must get the M bit first for the flags to say
+        # so. While that list is not empty, an instruction that reads the
+        # flags ends it too.
+        self.flag_val: Optional[Tuple[set[str], str, List[Ins]]] = None
 
     def new_vreg(self) -> str:
         self.n_vregs += 1
@@ -2371,26 +2378,66 @@ class FunctionTranslator:
             self.body.append(ins)
             if self.word_index:
                 self.forget(ins)
+            if self.flag_val is not None:
+                self.track_flags(ins)
         return ins
 
-    def forget(self, ins: Ins) -> None:
-        """Drops what word_index knows of the virtual registers that an
-        instruction writes."""
+    @staticmethod
+    def written(ins: Ins) -> set[str]:
+        """The registers that an instruction writes."""
         defs = set()
         for k, o in enumerate(ins.ops):
             kind, r = operand_reg(o)
             if r is not None and (kind == "side" or (k == 0 and kind == "reg")):
                 defs.add(r)
+        return defs
+
+    def forget(self, ins: Ins) -> None:
+        """Drops what word_index knows of the virtual registers that an
+        instruction writes."""
+        defs = self.written(ins)
         for x, (t, _) in list(self.word_index.items()):
             if x in defs or t in defs:
                 del self.word_index[x]
+
+    def track_flags(self, ins: Ins) -> None:
+        """Keeps flag_val up to date after an instruction: it ends if the
+        instruction writes the flags, and the instruction's destination is
+        dropped from its registers, or added if it is a copy of one."""
+        assert self.flag_val is not None
+        regs, cond, todo = self.flag_val
+        uses, defs = flag_use_def(ins)
+        written = self.written(ins)
+        if defs or "R14" in written or (todo and uses):
+            self.flag_val = None
+            return
+        regs -= written
+        kind, src = operand_reg(ins.ops[1]) if ins.op == "MOVE" and len(ins.ops) == 2 else ("", None)
+        if not ins.cond and kind == "reg" and src in regs and operand_reg(ins.ops[0])[0] == "reg":
+            regs.add(ins.ops[0])
+        if not regs:
+            self.flag_val = None
+
+    def flags_of(self, v: str) -> Optional[str]:
+        """The condition under which the i32 in the register or operand v
+        is not 0, if the flags say it, or else None. The instructions that
+        must set the flags for that get the M bit now."""
+        if self.flag_val is None or v not in self.flag_val[0]:
+            return None
+        regs, cond, todo = self.flag_val
+        for ins in todo:
+            ins.op = with_m(ins.op)
+        self.flag_val = (regs, cond, [])
+        return cond
 
     def label(self, name: str, stub: bool = False, keep: bool = False) -> None:
         """Adds a label. One that a jump may reach, unless keep says that
         none does, ends the straight-line code that word_index is about."""
         (self.stubs if stub else self.body).append(Label(name))
-        if not stub and not keep:
-            self.word_index.clear()
+        if not stub:
+            self.flag_val = None
+            if not keep:
+                self.word_index.clear()
 
     def move(self, dest: List[str], src: List[str], stub: bool = False) -> None:
         for d, s in zip(dest, src):
@@ -2567,25 +2614,22 @@ class FunctionTranslator:
         else:
             self.emit("SUB[M]", "R0", a[0], b[0])
             self.emit("SUB[CM]", "R0", a[1], b[1])
+        if test in ("lt_s", "ge_s"):
+            # a < b signed is N XOR V. Flipping N when V is set leaves it
+            # in N (§9.2).
+            self.emit("?V XOR", "R14", "R14", "0x10000000")
+        cond = {"eq": "Z", "ne": "!Z", "lt_u": "C", "ge_u": "!C", "lt_s": "N", "ge_s": "!N"}[test]
         if fuse:
-            if test in ("lt_s", "ge_s"):
-                # a < b signed is N XOR V. Flipping N when V is set leaves
-                # it in N (§9.2).
-                self.emit("?V XOR", "R14", "R14", "0x10000000")
-            return {"eq": "Z", "ne": "!Z", "lt_u": "C", "ge_u": "!C",
-                    "lt_s": "N", "ge_s": "!N"}[test]
-        if test in ("eq", "ne"):
-            self.emit("MOVE", d, "0")
-            self.emit("?Z MOVE" if test == "eq" else "?!Z MOVE", d, "1")
-        elif test == "lt_u":
+            return cond
+        if test == "lt_u":
             self.emit("ADD[C]", d, "R0", "R0")  # C, the borrow
         elif test == "ge_u":
             self.emit("SUB[C]", d, "1", "R0")   # 1 - C
         else:
-            # a < b signed is N XOR V (§9.2).
-            self.emit("MOVE", d, "0" if test == "lt_s" else "1")
-            self.emit("?N XOR", d, d, "1")
-            self.emit("?V XOR", d, d, "1")
+            self.emit("MOVE", d, "0")
+            self.emit(f"?{cond} MOVE", d, "1")
+        # The flags still say whether d is 1, for a select or a branch on it.
+        self.flag_val = ({d}, cond, [])
         return None
 
     def forward(self, r: Reader, at: int, t: int,
@@ -2738,7 +2782,7 @@ class FunctionTranslator:
         self.emit("MOVE", "R15", back, stub=True)
 
     def word_access(self, base: str, offset: int, n: int, helper: str, args: List[str],
-                    results: List[str], aligned: List[Tuple[str, ...]]) -> None:
+                    results: List[str], aligned: List[Tuple[str, ...]]) -> List[Ins]:
         """The access of 4 or 8 bytes at base + offset, where base is not a
         constant and offset is a multiple of 4, with bounds checks or with
         base known to be at a multiple of 4. The word index t = base ROR 2
@@ -2752,7 +2796,8 @@ class FunctionTranslator:
         word_index knows serves too: a t that may have bits above the word
         index fails the compare. Without bounds checks, an aligned base
         needs no check, but its t must be taken modulo 2^30, since the
-        address wraps modulo 2^32 (§9.4)."""
+        address wraps modulo 2^32 (§9.4). Returns the instructions that
+        write the last result on each path, if there are results."""
         assert self.t.mem_bytes is not None
         start, slow, back = self.new_label(), self.new_label(), self.new_label()
         self.label(start, keep=True)
@@ -2764,16 +2809,16 @@ class FunctionTranslator:
                 t = u
             u = self.new_vreg()
             self.emit("AND", u, t, "0x3FFFFFFF")
-            for mnemonic, *ops in self.expand(aligned, lambda j: self.mem_word(j, u)):
-                self.emit(mnemonic, *ops)
-            return
+            last = [self.emit(mnemonic, *ops)
+                    for mnemonic, *ops in self.expand(aligned, lambda j: self.mem_word(j, u))][-1:]
+            return last if results else []
         limit = (self.t.mem_bytes - offset - n) // 4 + 1  # the first t at which n bytes do not fit
         if limit <= 0 and not self.t.growable:
             # No n bytes fit there.
             self.emit("MOVE", "R1", "2")
             self.emit("MOVE", "R2", start)
             self.emit("MOVE", "R15", "@___wasm_trap_vector")
-            return
+            return []
         t, aligned_t = self.word_index.get(base, ("", False))
         if not t:
             t = self.new_vreg()
@@ -2794,8 +2839,8 @@ class FunctionTranslator:
         else:
             self.emit("SUB[M]", "R0", u, str(limit))
         self.emit("?!C MOVE", "R15", slow)
-        for mnemonic, *ops in self.expand(aligned, lambda j: self.mem_word(k + j, u)):
-            self.emit(mnemonic, *ops)
+        last = [self.emit(mnemonic, *ops)
+                for mnemonic, *ops in self.expand(aligned, lambda j: self.mem_word(k + j, u))][-1:]
         self.label(back, keep=True)
         trap = self.trap_stub(2, start)
         self.label(slow, stub=True)
@@ -2810,8 +2855,9 @@ class FunctionTranslator:
         self.emit("SUB[M]", "R0", a, size_limit, stub=True)
         self.emit("?!C MOVE", "R15", trap, stub=True)
         self.call_helper(helper, [a] + args, len(results), stub=True)
-        self.move(results, [f"R{j + 1}" for j in range(len(results))], stub=True)
+        moves = [self.emit("MOVE", w, f"R{j + 1}", stub=True) for j, w in enumerate(results)]
         self.emit("MOVE", "R15", back, stub=True)
+        return last + moves[-1:] if results else []
 
     def table(self, name: str, p: str, k: int = 0) -> str:
         """The operand for entry p + k of one of the TABLES."""
@@ -3106,9 +3152,13 @@ class FunctionTranslator:
         aligned: List[Tuple[str, ...]] = [("MOVE", w, f"%{k}") for k, w in enumerate(res)]
         if n >= 4 and const is None and offset % 4 == 0 and (
                 self.t.checks or self.word_index.get(base[0], ("", False))[1]):
-            self.word_access(base[0], offset, n, helper, [], res, aligned)
+            last = self.word_access(base[0], offset, n, helper, [], res, aligned)
             if len(dest) == 2 and n == 4:
                 self.extend(dest, res[0], signed)
+            elif n == 4 and last:
+                # The flags can say whether the i32 is 0, for a branch on
+                # it, if each path sets them as it loads it.
+                self.flag_val = ({res[0]}, "!Z", last)
             return
         if n < 4:
             self.narrow(base[0], offset, n, const,
@@ -3367,6 +3417,8 @@ class FunctionTranslator:
                 pass
             elif op in (BLOCK, LOOP, IF):
                 cond_word = self.pop([I32], at, name)[0][0] if op == IF else ""
+                if op == IF and flags is None:
+                    flags = self.flags_of(cond_word)
                 # The values below the block are the same on every path
                 # through it, and its parameters are in registers of their
                 # own. A loop's are new ones, which a branch to it writes.
@@ -3401,6 +3453,8 @@ class FunctionTranslator:
                 (cond,) = self.pop([I32], at, name)
                 f = self.frame(imm, at)
                 moves = [(d, s) for d, s in self.branch_moves(f, at, name) if d != s]
+                if flags is None:
+                    flags = self.flags_of(cond[0])
                 if flags is None:
                     self.emit("MOVE[M]", "R0", cond[0])
                     flags = "!Z"
@@ -3458,10 +3512,13 @@ class FunctionTranslator:
                 assert sel_type is not None
                 # The result goes where the first value is, or would be.
                 dest = self.push(sel_type)
+                flags = self.flags_of(cond[0])
                 self.move(dest, a)
-                self.emit("MOVE[M]", "R0", cond[0])
+                if flags is None:
+                    self.emit("MOVE[M]", "R0", cond[0])
+                    flags = "!Z"
                 for k in range(len(a)):
-                    self.emit("?Z MOVE", dest[k], b[k])
+                    self.emit(f"?{negate(flags)} MOVE", dest[k], b[k])
             elif op == 0x0F:  # return
                 self.ret(at, name)
                 self.emit("MOVE", "R15", self.ret_label)
@@ -3520,18 +3577,23 @@ class FunctionTranslator:
             elif op in (0x45, 0x50):  # i32.eqz, i64.eqz
                 t = I32 if op == 0x45 else I64
                 (a,) = self.pop([t], at, name)
-                if flags is not None:
-                    pending = negate(flags)
-                elif t == I32:
-                    self.emit("MOVE[M]", "R0", a[0])
-                else:
-                    self.emit("OR[M]", "R0", a[0], a[1])
+                fused = flags is not None  # by a comparison, for a br_if or if after this
+                if flags is None:
+                    flags = self.flags_of(a[0]) if t == I32 else None
+                if flags is None:
+                    if t == I32:
+                        self.emit("MOVE[M]", "R0", a[0])
+                    else:
+                        self.emit("OR[M]", "R0", a[0], a[1])
+                    flags = "!Z"
+                zero = negate(flags)  # the condition that a is 0
                 d = self.push(I32)[0]
-                if flags is None and self.fuses(r):
-                    pending = "Z"
-                elif flags is None:
+                if fused or self.fuses(r):
+                    pending = zero
+                else:
                     self.emit("MOVE", d, "0")
-                    self.emit("?Z MOVE", d, "1")
+                    self.emit(f"?{zero} MOVE", d, "1")
+                    self.flag_val = ({d}, zero, [])
             elif op in LOADS:
                 assert imm is not None
                 t, n, signed = LOADS[op]

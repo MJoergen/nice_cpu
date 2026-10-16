@@ -546,6 +546,17 @@ memory. So `if (x) y = 9;` is `MOVE[M] R0, x` and `?!Z MOVE y, 9`. The
 code of an if before its else, up to two instructions and the jump to
 the end, becomes conditional the same way, jump and all.
 
+An unconditional jump to code of up to three instructions that ends in
+a jump or a return gives way to a copy of that code. That saves the
+jump, which costs at least two cycles on the FPGA core. So a `return`
+in a function that saves at most one register becomes the epilogue
+itself. Code that ends in the jump of a `br_table` may have up to twelve
+instructions, so that each case of an interpreter's loop ends with its
+own copy of the dispatch. The copy has no labels. A jump in it to one
+of the original's labels, such as from a stub back to the code, goes on
+in the original, which does the same, and so a trap's R2 points at the
+original. Code that no jump reaches any more goes.
+
 ### The frame
 
 There is no frame pointer. The prologue pushes the registers of R7–R12

@@ -2014,6 +2014,85 @@ def if_convert(items: List[Item]) -> List[Item]:
     return [x for x in out if x != ""]
 
 
+# The most instructions of the code that a jump goes to, which then takes
+# the jump's place (duplicate_tails), and the most if that code ends in
+# the jump of a br_table.
+TAIL_COPY = 3
+TAIL_COPY_TABLE = 12
+
+
+def label_refs(items: List[Item]) -> Dict[str, int]:
+    """How often each label is named: as a jump's target, in an operand,
+    or in a line of text such as .DAT."""
+    refs: Dict[str, int] = {}
+    for it in items:
+        text = ""
+        if isinstance(it, Ins):
+            text = " ".join(it.ops)
+        elif isinstance(it, str) and not it.lstrip().startswith(";"):
+            text = it
+        for name in re.findall(r"[A-Za-z_][\w.]*", text):
+            refs[name] = refs.get(name, 0) + 1
+    return refs
+
+
+def duplicate_tails(items: List[Item], ret_size: int) -> List[Item]:
+    """Replaces an unconditional jump to short code that ends in a jump or
+    a return by a copy of that code. The copy saves the jump, which costs
+    two cycles or more on the FPGA core (doc/MICROARCH.md), and an
+    interpreter's dispatch by br_table thus gets a copy at the end of each
+    case. The code may have labels in it, which a jump in it, or a trap's
+    R2, may name: the copy then goes on in the original, which does the
+    same. It may not call. The epilogue, RET, counts as ret_size
+    instructions. Two rounds, so that a copy that ends in a jump may get
+    a copy too. Then the code that no jump reaches any more goes."""
+    for _ in range(2):
+        at = {it.name: k for k, it in enumerate(items) if isinstance(it, Label)}
+        out: List[Item] = []
+        for it in items:
+            if not (isinstance(it, Ins) and it.kind == "jump" and not it.cond
+                    and len(it.targets) == 1 and it.ops[1:] == it.targets):
+                out.append(it)
+                continue
+            code: List[Ins] = []
+            k = at[it.targets[0]] + 1
+            while k < len(items):
+                x = items[k]
+                k += 1
+                if isinstance(x, Label) or (isinstance(x, str) and x.lstrip().startswith(";")):
+                    continue
+                if isinstance(x, str) or x.kind == "call" or x is it:
+                    code = []
+                    break
+                code.append(x)
+                if x.kind in ("jump", "exit") and not x.cond:
+                    break
+            else:
+                code = []
+            size = sum(ret_size if x.op == "RET" else 1 for x in code)
+            table = bool(code) and len(code[-1].targets) > 1
+            if not code or size > (TAIL_COPY_TABLE if table else TAIL_COPY):
+                out.append(it)
+                continue
+            out += [Ins(x.op, list(x.ops), x.cond, x.kind, list(x.targets), x.uses, x.defs, x.depth)
+                    for x in code]
+        items = out
+    # Remove the code that no jump reaches: after an unconditional jump or
+    # exit, up to the next label that something names.
+    refs = label_refs(items)
+    out = []
+    dead = False
+    for it in items:
+        if isinstance(it, Label) and refs.get(it.name):
+            dead = False
+        if dead and not isinstance(it, str):
+            continue
+        out.append(it)
+        if isinstance(it, Ins) and it.kind in ("jump", "exit") and not it.cond:
+            dead = True
+    return out
+
+
 def frame_words(items: List[Item], n_slots: int, n_saved: int) -> None:
     """Replaces the frame words %sN of spilled registers and %aN of stack
     arguments by operands relative to SP. The frame has no frame pointer.
@@ -3976,6 +4055,7 @@ class FunctionTranslator:
         items = if_convert(tidy(alloc.run()))
         saved = [r for r in CALLEE_SAVED if r in alloc.used]
         n_slots = alloc.n_slots
+        items = tidy(duplicate_tails(items, len(saved) + 1 + (n_slots > 0)))
         name = printable(self.t.m.names.get(self.idx, ""))
         out = [f"; Function {self.idx}" + (f": {name}" if name else "")]
         out += self.t.labels.get(self.idx, [])

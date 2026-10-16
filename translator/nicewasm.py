@@ -1175,6 +1175,11 @@ def flag_use_def(ins: Ins) -> Tuple[FrozenSet[str], FrozenSet[str]]:
 # and any constant with up to four bits set.
 MUL_STEPS = 8
 
+# The most steps for the product of a word with a word of an i64 constant
+# (mul64_const). These run while the math unit computes another product,
+# which takes some 35 cycles, so they cost little up to about that many.
+MUL64_STEPS = 16
+
 # A step of a multiplication by a constant: ("shl", a, k) is value a
 # shifted left by k, ("add", a, b) and ("sub", a, b) are a + b and a - b.
 # Value 0 is the number multiplied, value -1 is 0, and value i + 1 is the
@@ -1465,7 +1470,9 @@ class Allocator:
         kind, r = operand_reg(ins.ops[0]) if ins.ops else ("", None)
         if kind != "reg" or r is None or not self.tracked(r):
             return False
-        return all(operand_reg(o)[0] in ("reg", "") and not o.startswith("@") for o in ins.ops[1:])
+        # A read of the math unit has no side effect (§8.4).
+        return all(operand_reg(o)[0] in ("reg", "") and not o.startswith("@")
+                   or o.startswith("@__mpu.") for o in ins.ops[1:])
 
     def webs(self) -> None:
         """Splits each virtual register into webs: the sets of its defs
@@ -2955,15 +2962,16 @@ class FunctionTranslator:
         r.pos = nxt.pos
         return dest, Deferred(dest, i) if tee else None
 
-    def const_value(self, i: int) -> Optional[int]:
-        """The value of the i32 on the operand stack i values from the top,
-        if it is a deferred constant, as an unsigned number."""
+    def const_value(self, i: int, t: int = I32) -> Optional[int]:
+        """The value of the i32, or with t the value of type t, on the
+        operand stack i values from the top, if it is a deferred constant,
+        as an unsigned number."""
         if len(self.stack) - self.ctrl[-1].height < i:
             return None
         d = self.deferred[-i]
-        if d is None or d.local is not None or self.stack[-i] != I32:
+        if d is None or d.local is not None or self.stack[-i] != t:
             return None
-        return int(d.words[0]) & 0xFFFFFFFF
+        return sum((int(w) & 0xFFFFFFFF) << (32 * k) for k, w in enumerate(d.words))
 
     def address(self, base: str, offset: int, n: int, const: Optional[int],
                 fold: bool = False) -> Tuple[Optional[int], str, int]:
@@ -3400,6 +3408,81 @@ class FunctionTranslator:
             vals.append(dest)
         if fwd is not None and fwd[1] is not None:
             self.push(I32, fwd[1])
+        return True
+
+    def mul64_const(self, r: Reader, at: int, what: str) -> bool:
+        """An i64.mul by a constant c = 2^32 * ch + cl, inline with the math
+        unit, if it is used and if a product of a word with ch or cl can be
+        made of at most MUL64_STEPS shifts, additions, and subtractions
+        (mul_plan). Returns whether it was. With x = 2^32 * xh + xl, the
+        product modulo 2^64 is xl * cl + 2^32 * (xl * ch + xh * cl), and
+        only the low words of the last two products count. The math unit
+        computes xl * cl, all 64 bits, while the shifts and additions
+        compute the others, so the wait for the math unit overlaps them.
+        A product that has no such plan uses the math unit after the first.
+        Its result may go straight to a local."""
+        if not self.t.mpu:
+            return False
+        consts = self.const_value(2, I64), self.const_value(1, I64)
+        c = consts[1] if consts[1] is not None else consts[0]
+        if c is None:
+            return False
+        cl, ch = c & 0xFFFFFFFF, c >> 32
+        # The products of the high word: (operand word, constant word, plan).
+        cross = [(0, ch, mul_plan(ch, MUL64_STEPS) if ch else ()),
+                 (1, cl, mul_plan(cl, MUL64_STEPS) if cl else ())]
+        if all(plan is None for _, _, plan in cross):
+            return False
+        fwd = self.forward(r, at, I64, 2)
+        a, b = self.pop([I64, I64], at, what)
+        x = a if consts[1] is not None else b
+        d = self.push(I64)[:] if fwd is None else fwd[0]
+        if cl > 1:
+            self.emit("MOVE", "@__mpu.a", x[0])
+            self.emit("MOVE", "@__mpu.b", str(cl))
+        terms = []
+        for k, cw, plan in cross:
+            if cw == 0 or plan is None:
+                continue
+            vals = [x[k]]
+            for step, i, j in plan:
+                v = self.new_vreg()
+                if step == "shl":
+                    self.emit("SHL", v, vals[i], str(j))
+                else:
+                    self.emit(step.upper(), v, "R0" if i < 0 else vals[i], vals[j])
+                vals.append(v)
+            terms.append(vals[-1])
+        # The high word sums the terms, and reads each result of the math
+        # unit as late as it can, but before the next operand is written.
+        reads: List[Tuple[str, str]] = []  # (the word for A, the constant for B)
+        for k, cw, plan in cross:
+            if cw and plan is None:
+                reads.append((x[k], str(cw)))
+        hi = terms.pop(0) if terms else "0"
+        n = len(terms) + (cl > 1) + len(reads)
+        lo = x[0] if cl == 1 else "0"
+        for v in terms + (["@__mpu.umul_hi"] if cl > 1 else []):
+            if v.startswith("@"):
+                lo = self.new_vreg()
+                self.emit("MOVE", lo, "@__mpu.umul_lo")
+            n -= 1
+            dest = d[1] if n == 0 else self.new_vreg()
+            self.emit("ADD", dest, hi, v)
+            hi = dest
+        mpu_a = x[0] if cl > 1 else None  # what A holds
+        for word, factor in reads:
+            if mpu_a != word:
+                self.emit("MOVE", "@__mpu.a", word)
+                mpu_a = word
+            self.emit("MOVE", "@__mpu.b", factor)
+            n -= 1
+            dest = d[1] if n == 0 else self.new_vreg()
+            self.emit("ADD", dest, hi, "@__mpu.umul_lo")
+            hi = dest
+        self.moves([(d[0], lo), (d[1], hi)])  # lo or hi may be a word of x, and x d
+        if fwd is not None and fwd[1] is not None:
+            self.push(I64, fwd[1])
         return True
 
     def divide(self, t: int, op: str, at: int, what: str) -> None:
@@ -4083,6 +4166,8 @@ class FunctionTranslator:
                     self.emit("AND", top, a_top, "0x7FFFFFFF")
                     self.emit("OR", top, top, x)
             elif op == 0x6C and self.mul_const(r, at, name):
+                pass
+            elif op == 0x7E and self.mul64_const(r, at, name):
                 pass
             elif op == 0x6C and self.t.mpu:
                 self.mpu_op("umul_lo", I32, at, name)

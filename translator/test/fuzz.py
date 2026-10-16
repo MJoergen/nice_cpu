@@ -315,9 +315,15 @@ def gen_binop(ctx: Ctx, t: int, depth: int) -> Expr:
     elif name == "mul" and ctx.rng.random() < 0.4:
         # A constant, which nicewasm multiplies by with shifts, additions,
         # and subtractions if few will do.
-        b = konst(t, ctx.rng.choice([0, 1, 2, 3, 5, 12, 31, 100, 1000, 65599, 16777619, mask(t),
-                                     mask(t) - 2, mask(t) - 7, 1 << (bits(t) - 1),
-                                     ctx.rng.getrandbits(bits(t))]))
+        # An i64 constant is made inline of the math unit and such steps
+        # for each word, if a word has few enough, so the words vary.
+        consts = [0, 1, 2, 3, 5, 12, 31, 100, 1000, 65599, 16777619, mask(t),
+                  mask(t) - 2, mask(t) - 7, 1 << (bits(t) - 1), ctx.rng.getrandbits(bits(t))]
+        if t == I64:
+            consts += [1 << 32, (1 << 32) + 1, 0x2545F4914F6CDD1D, 0xA6CECC1B_00000001,
+                       0x3_A6CECC1B, (ctx.rng.getrandbits(32) << 32) + ctx.rng.randrange(64),
+                       (ctx.rng.randrange(64) << 32) + ctx.rng.getrandbits(32)]
+        b = konst(t, ctx.rng.choice(consts))
         if ctx.rng.random() < 0.3:
             a, b = b, a
     elif name in SHIFTS and ctx.rng.random() < 0.5:

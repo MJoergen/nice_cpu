@@ -216,8 +216,8 @@ short jumps the next most. `test/safe.zig` became smaller, from 6691 to
   read the result, in three instructions for `i32` and six for `i64`,
   through the labels `__mpu.a` and the like that `runtime/muldiv_mpu.nasm`
   defines. With `--no-mpu` they call `__mul`, `__div64`, and the like
-  instead. `i64.mul` and the bit counts always call the runtime library,
-  for example `__mul64` and `__popcnt` (see
+  instead. `i64.mul`, except by a constant (below), and the bit counts
+  always call the runtime library, for example `__mul64` and `__popcnt` (see
   [runtime/README.md](../runtime/README.md)). Division by 0
   traps with code 3, and `div_s` of the most negative number by −1 with
   code 4. `rem_s` by −1 is 0 without a division, because C leaves the most
@@ -232,6 +232,16 @@ short jumps the next most. `test/safe.zig` became smaller, from 6691 to
   after the operands, and each of these instructions takes one. Eight
   cover every constant with up to four bits set. A multiplication by any
   other constant uses the math unit, or with `--no-mpu` calls `__mul`.
+- **i64 multiplication by a constant:** with x = 2^32 · xh + xl and the
+  constant c = 2^32 · ch + cl, the product is xl · cl + 2^32 · (xl · ch +
+  xh · cl), modulo 2^64. Of the last two products only the low words
+  count, so each can be shifts, additions, and subtractions, up to 16 for
+  each. They run while the math unit computes xl · cl, so they cost
+  little: the math unit needs some 35 cycles anyway. xorshift64*'s
+  constant 0x2545F4914F6CDD1D takes 12 and 16, and the multiplication
+  some 40 cycles on the FPGA core instead of some 130 with `__mul64`. A
+  product that needs more steps uses the math unit after the first one.
+  If both would, or with `--no-mpu`, the multiplication calls `__mul64`.
 - **Comparisons:** `eqz`, `eq`, `ne`, `lt`, `gt`, `le`, and `ge`, signed
   and unsigned, for `i32` and `i64`.
 - **Shifts:** `shl`, `shr_s`, `shr_u`, `rotl`, and `rotr`, for `i32` and

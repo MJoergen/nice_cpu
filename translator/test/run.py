@@ -489,6 +489,22 @@ def op64_dyn(a: int, op: bytes, b: int, want: int) -> bytes:
     return c(a) + c(b) + local_tee(1) + op + c(want) + EQ64
 
 
+def mul64_by(x: int, c: int, want: int, how: int) -> bytes:
+    """A check that the i64 x, in local 1, times the constant c gives want.
+    how 0 multiplies x by c, how 1 c by x, and how 2 writes x * c back to
+    local 1, so the result goes to the registers of x."""
+    def k(v: int) -> bytes:
+        return i64_const(v - 2**64 if v >= 2**63 else v)
+    out = k(x) + local_set(1)
+    if how == 1:
+        out += k(c) + local_get(1) + b"\x7e"
+    else:
+        out += local_get(1) + k(c) + b"\x7e"
+    if how == 2:
+        out += local_set(1) + local_get(1)
+    return out + k(want) + EQ64
+
+
 # (name, module bytes or the name of test/X.wasm, hand-written assembly, R1)
 CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # main returns 6 * 7, folded by zig. Zig's main(argc, argv) wrapper
@@ -1544,6 +1560,32 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
             un64(0xC4, 0x1_7FFFFFFF, 0x7FFFFFFF),
             # A check that fails.
             op32(7, b"\x6e", 2, 4))))), "", 0x3FFFFFFE),
+    # i64.mul by constants, which nicewasm makes inline with the math unit
+    # and shifts and additions, unless it finds no plan for either word of
+    # the constant. c = 0x2545F4914F6CDD1D, xorshift64*'s, has a plan for
+    # both words: 12 steps for the high word and 16 for the low. -1 * c is
+    # ~c + 1. 0xA6CECC1B has no plan in 16 steps, so with x = 2^32 + 1,
+    # x * c is c + (c << 32): the low word of c, and below it the sum of
+    # its words. Each of the 8 rows is checked three ways, so 24 ones,
+    # then a check that fails.
+    ("mul64", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code(([I32, I64], bits(0, *[mul64_by(*row, how) for how in range(3) for row in [
+            # 3 * 0x80000001_80000001 = 0x1_80000004_80000003.
+            (0x80000001_80000001, 3, 0x80000004_80000003),
+            # Times 2^32, and times 2^32 + 1: the low word of c is 0 or 1.
+            (0x12345678_9ABCDEF0, 0x1_00000000, 0x9ABCDEF0_00000000),
+            (0x12345678_9ABCDEF0, 0x1_00000001, 0xACF13568_9ABCDEF0),
+            (2**64 - 1, 0x2545F491_4F6CDD1D, 0xDABA0B6E_B09322E3),
+            (0x1_00000001, 0x2545F491_4F6CDD1D, 0x74B2D1AE_4F6CDD1D),
+            # The low word has no plan, the high word does (3), and the
+            # other way round with a low word of 1, and neither.
+            (0x1_00000001, 0x3_A6CECC1B, 0xA6CECC1E_A6CECC1B),
+            (0x1_00000001, 0xA6CECC1B_00000001, 0xA6CECC1C_00000001),
+            (0x1_00000001, 0xA6CECC1B_A6CECC1B, 0x4D9D9836_A6CECC1B)]]
+            + [mul64_by(3, 5, 16, 0)])))), "", 0x1FFFFFE),
     # Division by 0 traps with code 3, and MIN / -1 with code 4.
     ("divzero", module(
         types(MAIN_TYPE),

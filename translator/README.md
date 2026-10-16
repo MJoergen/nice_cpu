@@ -164,9 +164,9 @@ them to 7139 (18% less) and 14565 (22% less). In all, `test/safe.zig` is
 measurements.
 
 On 2026-10-16, virtual registers with a register allocator, and frames
-without a frame pointer, took `test/safe.zig` from 7131 to 6339 words
-(11% less) and the float library from 14308 to 8058 (44% less). They
-took the benchmark in [bench/](../bench/) from 3359061 to 2540693
+without a frame pointer, took `test/safe.zig` from 7131 to 6338 words
+(11% less) and the float library from 14308 to 8022 (44% less). They
+took the benchmark in [bench/](../bench/) from 3359061 to 2539669
 instructions (24% fewer).
 
 ## Supported features

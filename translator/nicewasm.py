@@ -24,11 +24,12 @@ instructions that use it take the constant or the local as their operand.
 from __future__ import annotations
 
 import argparse
+import heapq
 import os
 import re
 import sys
 from dataclasses import dataclass, field
-from typing import Dict, FrozenSet, List, Optional, Tuple, Union
+from typing import Any, Dict, FrozenSet, List, Optional, Tuple, Union
 
 I32, I64, F32, F64 = 0x7F, 0x7E, 0x7D, 0x7C
 TYPE_NAMES = {I32: "i32", I64: "i64", F32: "f32", F64: "f64", 0x7B: "v128",
@@ -36,11 +37,12 @@ TYPE_NAMES = {I32: "i32", I64: "i64", F32: "f32", F64: "f64", 0x7B: "v128",
 
 SIZES = {I32: 1, I64: 2, F32: 1, F64: 2}  # words per value of each supported type
 
-# The registers that hold locals. §9.3 preserves them across calls, so a
-# function saves the ones it uses. A local gets one only if its uses weigh
-# at least MIN_WEIGHT, where a use weighs 8 for each loop around it, up to 3.
-LOCAL_REGS = ["R7", "R8", "R9", "R10", "R11"]
-MIN_WEIGHT = 3
+# The registers that the allocator gives to values, in order of preference.
+# A call may change CALLER_SAVED, and a function saves the CALLEE_SAVED
+# ones that it uses (§9.3). R12 is the frame pointer.
+ALLOC_REGS = [f"R{k}" for k in range(1, 12)]
+CALLER_SAVED = frozenset(f"R{k}" for k in range(1, 7))
+CALLEE_SAVED = [f"R{k}" for k in range(7, 12)]
 
 WORDS_PER_PAGE = 16384  # 65536 bytes, four to a word
 ZERO_UNROLL = 16        # words cleared per pass of ___wasm_start's loops
@@ -238,8 +240,9 @@ class Frame:
     op: int                           # BLOCK, LOOP, IF, or 0 for the function
     ft: FuncType                      # its parameters and results
     height: int                       # values on the operand stack below the parameters
-    words: int                        # the words they take
     label: str                        # where a branch to it goes
+    params_v: List[List[str]]         # the registers of its parameters
+    results_v: List[List[str]]        # and of its results, which every path to its end writes
     else_label: Optional[str] = None  # an if's false branch, until its else
 
     def label_types(self) -> List[int]:
@@ -249,7 +252,7 @@ class Frame:
 
 @dataclass
 class Deferred:
-    """A value on the operand stack that is not in its frame words yet: a
+    """A value on the operand stack that is not in registers of its own: a
     constant, or the value that a local holds."""
     words: List[str]       # its words as source operands
     local: Optional[int]   # the local whose value it is, or None for a constant
@@ -276,6 +279,7 @@ class Ins:
     targets: List[str] = field(default_factory=list)
     uses: FrozenSet[str] = frozenset()
     defs: FrozenSet[str] = frozenset()
+    depth: int = 0             # the loops around it, which weigh its registers' spill costs
 
     def text(self) -> str:
         return instr((f"?{self.cond} " if self.cond else "") + self.op, *self.ops)
@@ -746,11 +750,6 @@ def negate(cond: str) -> str:
     return cond[1:] if cond.startswith("!") else "!" + cond
 
 
-def operand(offset: int) -> str:
-    """The frame word at FP + offset."""
-    return f"@{offset}[R12]"
-
-
 def instr(mnemonic: str, *operands: str) -> str:
     return f"        {mnemonic + ' ':<8}{', '.join(operands)}".rstrip()
 
@@ -1093,6 +1092,589 @@ for _n in (1, 2, 4, 8):
     if _n >= 4:
         HELPERS[f"W.load{_n}"] = load_helper(_n, False)
 
+# The registers that each helper may change. It reads its arguments from R1
+# up. None uses R7 or above, so values in those survive a call of it.
+HELPER_REGS = {name: frozenset(re.findall(r"\bR(?:1[0-2]|[1-9])\b", "\n".join(lines)))
+               for name, lines in HELPERS.items()}
+assert all(r in CALLER_SAVED for regs in HELPER_REGS.values() for r in regs)
+
+
+# A register name in an operand: R0 to R15, or a virtual register %vN.
+REG_NAME = r"(?:R1[0-5]|R[0-9]|%v\d+)"
+OPERAND_RE = re.compile(rf"@?(?:--({REG_NAME})|({REG_NAME})(?:\+\+|--)|({REG_NAME})|.*\[({REG_NAME})\])\Z")
+VREG_RE = re.compile(r"%v\d+")
+
+
+def operand_reg(op: str) -> Tuple[str, Optional[str]]:
+    """The register in an operand, and how the operand uses it (§4): "reg"
+    for the register itself, "mem" when it only gives an address, or
+    "side" when the operand also increments or decrements it. An operand
+    without a register, a constant or @constant, gives ("", None)."""
+    m = OPERAND_RE.match(op)
+    if not m:
+        return "", None
+    pre, post, plain, base = m.groups()
+    if pre or post:
+        return "side", pre or post
+    if plain:
+        return ("mem" if op.startswith("@") else "reg"), plain
+    return "mem", base
+
+
+def has_word(op: str) -> bool:
+    """Whether an operand takes a constant word (§2.3): c, @c, c[Rx], and
+    @c[Rx] do."""
+    kind, _ = operand_reg(op)
+    return kind == "" or "[" in op
+
+
+def sets_flags(ins: Ins) -> bool:
+    """Whether an instruction has the M bit, as in ADD[M] or SUB[CM]."""
+    return "[" in ins.op and "M" in ins.op.split("[", 1)[1]
+
+
+class Allocator:
+    """Gives the virtual registers of a function's code physical registers
+    or frame words, by iterated register coalescing (George and Appel,
+    "Iterated register coalescing", 1996): Chaitin-Briggs graph colouring,
+    with conservative coalescing of moves by the Briggs and George tests,
+    also with the physical registers that calls and the ABI demand.
+
+    The code is a list of items. An instruction's register uses and defs
+    come from its operands (operand_reg), and for a call or an exit also
+    from the registers it names. A conditional instruction may leave its
+    destination as it was, so it also uses it. A virtual register that
+    gets no colour is spilled to a frame word, %sN, which becomes
+    @k[SP] or the like when the frame is laid out. NICE takes a memory
+    operand almost anywhere, so a spilled register is usually used in
+    place. Only where it is an address, or changed by a side effect, does
+    a short-lived temporary take its place, and the colouring runs again.
+
+    Spill costs weight each use and def by 10 for each loop around it, so
+    the registers go to the values used in the inner loops."""
+
+    def __init__(self, items: List[Item], regs: List[str], callee_saved: List[str]) -> None:
+        self.items = items
+        self.regs = regs                   # the allocatable registers, in order of preference
+        self.callee_saved = callee_saved   # those that the function must save if it uses them
+        self.k = len(regs)
+        self.precolored = set(regs)
+        self.n_slots = 0                   # frame words for spilled registers, %s0 up
+        self.temps: set[str] = set()       # temporaries of spill code, which must not spill
+        self.n_temps = 0
+
+    def tracked(self, r: str) -> bool:
+        return r.startswith("%") or r in self.precolored
+
+    def use_def(self, ins: Ins) -> Tuple[set[str], set[str]]:
+        """The registers that an instruction reads and writes."""
+        uses = set(ins.uses)
+        defs = set(ins.defs)
+        for i, o in enumerate(ins.ops):
+            kind, r = operand_reg(o)
+            if r is None or not self.tracked(r):
+                continue
+            if kind == "side":
+                uses.add(r)
+                defs.add(r)
+            elif kind == "mem" or i > 0:
+                uses.add(r)
+            else:
+                defs.add(r)
+        if ins.cond:
+            uses |= defs  # a def that may not happen keeps the old value
+        return uses, defs
+
+    def is_move(self, ins: Ins) -> bool:
+        """Whether an instruction is a copy of one register to another,
+        which coalescing may remove."""
+        if ins.op != "MOVE" or ins.cond or len(ins.ops) != 2:
+            return False
+        a, b = (operand_reg(o) for o in ins.ops)
+        return (a[0] == "reg" and b[0] == "reg" and a[1] is not None and b[1] is not None
+                and self.tracked(a[1]) and self.tracked(b[1]))
+
+    # Control flow and liveness.
+
+    def flow(self) -> None:
+        """Finds the instructions, their successors, and the basic blocks."""
+        self.code = [it for it in self.items if isinstance(it, Ins)]
+        label_at: Dict[str, int] = {}
+        n = 0
+        for it in self.items:
+            if isinstance(it, Label):
+                label_at[it.name] = n
+            elif isinstance(it, Ins):
+                n += 1
+        self.ud = [self.use_def(ins) for ins in self.code]
+        leaders = {0} | set(label_at.values())
+        self.succ: List[List[int]] = []
+        for i, ins in enumerate(self.code):
+            s: List[int] = []
+            if ins.kind == "jump":
+                s = [label_at[t] for t in ins.targets]
+            elif ins.ops and ins.ops[0] == "R15" and ins.kind == "":
+                raise AssertionError(f"a jump that goes nowhere known: {ins.text()}")
+            if ins.kind in ("jump", "exit"):
+                leaders.add(i + 1)
+                if ins.cond:
+                    s.append(i + 1)
+            else:
+                s.append(i + 1)
+            self.succ.append([j for j in s if j < len(self.code)])
+        starts = sorted(x for x in leaders if x < len(self.code))
+        self.blocks = [(a, b) for a, b in zip(starts, starts[1:] + [len(self.code)])]
+        block_of = {a: k for k, (a, _) in enumerate(self.blocks)}
+        self.bsucc = [sorted({block_of[j] for j in self.succ[b - 1]}) for _, b in self.blocks]
+
+    def liveness(self) -> None:
+        """live_out of each block, by iterating to a fixed point."""
+        gen: List[set[str]] = []
+        kill: List[set[str]] = []
+        for a, b in self.blocks:
+            g: set[str] = set()
+            killed: set[str] = set()
+            for i in reversed(range(a, b)):
+                uses, defs = self.ud[i]
+                g = (g - defs) | uses
+                killed |= defs
+            gen.append(g)
+            kill.append(killed)
+        n = len(self.blocks)
+        self.live_in: List[set[str]] = [set() for _ in range(n)]
+        self.live_out: List[set[str]] = [set() for _ in range(n)]
+        changed = True
+        while changed:
+            changed = False
+            for k in reversed(range(n)):
+                out: set[str] = set()
+                for s in self.bsucc[k]:
+                    out |= self.live_in[s]
+                inn = gen[k] | (out - kill[k])
+                if len(out) != len(self.live_out[k]) or len(inn) != len(self.live_in[k]):
+                    self.live_out[k], self.live_in[k] = out, inn
+                    changed = True
+
+    def dead_code(self) -> bool:
+        """Removes instructions whose only effect is to write a register
+        that is not read afterwards, such as the zeroing of a local that
+        is always set before it is used. An instruction that reads memory
+        stays, since the read may be a device's (§8.3), and so does one
+        that sets the flags. Returns whether it removed any."""
+        dead: set[int] = set()
+        for k, (a, b) in enumerate(self.blocks):
+            live = set(self.live_out[k])
+            for i in reversed(range(a, b)):
+                ins = self.code[i]
+                uses, defs = self.ud[i]
+                if (ins.kind == "" and not sets_flags(ins) and len(defs) == 1
+                        and not (defs & live) and self.removable(ins)):
+                    dead.add(i)
+                    continue
+                live = (live - defs) | uses
+        if dead:
+            gone = {id(self.code[i]) for i in dead}
+            self.items = [it for it in self.items if id(it) not in gone]
+        return bool(dead)
+
+    def removable(self, ins: Ins) -> bool:
+        kind, r = operand_reg(ins.ops[0]) if ins.ops else ("", None)
+        if kind != "reg" or r is None or not self.tracked(r):
+            return False
+        return all(operand_reg(o)[0] in ("reg", "") and not o.startswith("@") for o in ins.ops[1:])
+
+    # The colouring (George and Appel's names).
+
+    def build(self) -> None:
+        self.adj_set: set[Tuple[str, str]] = set()
+        self.adj_list: Dict[str, set[str]] = {}
+        self.degree: Dict[str, int] = {}
+        self.move_list: Dict[str, set[int]] = {}
+        self.moves: List[Tuple[str, str]] = []    # move i: (dest, src)
+        self.worklist_moves: set[int] = set()
+        self.cost: Dict[str, float] = {}
+        for r in self.precolored:
+            self.degree[r] = 1 << 30
+        for i, ins in enumerate(self.code):
+            uses, defs = self.ud[i]
+            w = 10.0 ** min(ins.depth, 8)
+            for r in uses | defs:
+                if r.startswith("%"):
+                    if r not in self.adj_list:
+                        self.adj_list[r] = set()
+                        self.degree[r] = 0
+                        self.move_list[r] = set()
+                    self.cost[r] = self.cost.get(r, 0.0) + (float("inf") if r in self.temps else w)
+        for k, (a, b) in enumerate(self.blocks):
+            live = set(self.live_out[k])
+            for i in reversed(range(a, b)):
+                ins = self.code[i]
+                uses, defs = self.ud[i]
+                if self.is_move(ins):
+                    live -= uses
+                    m = len(self.moves)
+                    self.moves.append((ins.ops[0], ins.ops[1]))
+                    for r in (ins.ops[0], ins.ops[1]):
+                        self.move_list.setdefault(r, set()).add(m)
+                    self.worklist_moves.add(m)
+                live |= defs
+                for d in defs:
+                    for v in live:
+                        self.add_edge(v, d)
+                live = uses | (live - defs)
+        self.adj0 = {n: set(s) for n, s in self.adj_list.items()}
+
+    def add_edge(self, u: str, v: str) -> None:
+        if u != v and (u, v) not in self.adj_set:
+            self.adj_set.add((u, v))
+            self.adj_set.add((v, u))
+            if u not in self.precolored:
+                self.adj_list[u].add(v)
+                self.degree[u] += 1
+            if v not in self.precolored:
+                self.adj_list[v].add(u)
+                self.degree[v] += 1
+
+    def color_graph(self) -> None:
+        self.simplify_wl: set[str] = set()
+        self.freeze_wl: set[str] = set()
+        self.simplify_heap: List[int] = []
+        self.freeze_heap: List[int] = []
+        self.moves_heap = sorted(self.worklist_moves)
+        self.spill_wl: set[str] = set()
+        self.spilled: set[str] = set()
+        self.coalesced: set[str] = set()
+        self.colored: set[str] = set()
+        self.select: List[str] = []
+        self.on_stack: set[str] = set()
+        self.alias: Dict[str, str] = {}
+        self.color: Dict[str, str] = {r: r for r in self.precolored}
+        self.coalesced_moves: set[int] = set()
+        self.constrained_moves: set[int] = set()
+        self.frozen_moves: set[int] = set()
+        self.active_moves: set[int] = set()
+        for n in sorted(self.adj_list, key=lambda v: int(v[2:])):
+            if self.degree[n] >= self.k:
+                self.spill_wl.add(n)
+            elif self.move_related(n):
+                self.to_freeze(n)
+            else:
+                self.to_simplify(n)
+        while True:
+            if self.simplify_wl:
+                self.simplify()
+            elif self.worklist_moves:
+                self.coalesce()
+            elif self.freeze_wl:
+                self.freeze()
+            elif self.spill_wl:
+                self.select_spill()
+            else:
+                break
+        self.assign_colors()
+
+    def adjacent(self, n: str) -> set[str]:
+        return {m for m in self.adj_list[n] if m not in self.on_stack and m not in self.coalesced}
+
+    def node_moves(self, n: str) -> set[int]:
+        return {m for m in self.move_list.get(n, set())
+                if m in self.active_moves or m in self.worklist_moves}
+
+    def move_related(self, n: str) -> bool:
+        return bool(self.node_moves(n))
+
+    def to_simplify(self, n: str) -> None:
+        if n not in self.simplify_wl:
+            self.simplify_wl.add(n)
+            heapq.heappush(self.simplify_heap, int(n[2:]))
+
+    def to_freeze(self, n: str) -> None:
+        if n not in self.freeze_wl:
+            self.freeze_wl.add(n)
+            heapq.heappush(self.freeze_heap, int(n[2:]))
+
+    def to_coalesce(self, m: int) -> None:
+        if m not in self.worklist_moves:
+            self.worklist_moves.add(m)
+            heapq.heappush(self.moves_heap, m)
+
+    @staticmethod
+    def first(heap: List[int], members: Union[set[str], set[int]], prefix: str) -> Any:
+        """The lowest-numbered member of a worklist. The heap holds every
+        number added to it, also those that have left the worklist since,
+        so that the choice does not depend on the order of a set."""
+        while True:
+            x = heap[0] if not prefix else f"{prefix}{heap[0]}"
+            if x in members:
+                return x
+            heapq.heappop(heap)
+
+    def simplify(self) -> None:
+        n = self.first(self.simplify_heap, self.simplify_wl, "%v")
+        self.simplify_wl.remove(n)
+        self.select.append(n)
+        self.on_stack.add(n)
+        for m in self.adjacent(n):
+            self.decrement_degree(m)
+
+    def decrement_degree(self, m: str) -> None:
+        if m in self.precolored:
+            return
+        d = self.degree[m]
+        self.degree[m] = d - 1
+        if d == self.k:
+            self.enable_moves({m} | self.adjacent(m))
+            self.spill_wl.discard(m)
+            if self.move_related(m):
+                self.to_freeze(m)
+            else:
+                self.to_simplify(m)
+
+    def enable_moves(self, nodes: set[str]) -> None:
+        for n in nodes:
+            for m in self.node_moves(n):
+                if m in self.active_moves:
+                    self.active_moves.remove(m)
+                    self.to_coalesce(m)
+
+    def get_alias(self, n: str) -> str:
+        while n in self.coalesced:
+            n = self.alias[n]
+        return n
+
+    def add_worklist(self, u: str) -> None:
+        if u not in self.precolored and not self.move_related(u) and self.degree[u] < self.k:
+            self.freeze_wl.discard(u)
+            self.to_simplify(u)
+
+    def ok(self, t: str, r: str) -> bool:
+        return self.degree[t] < self.k or t in self.precolored or (t, r) in self.adj_set
+
+    def conservative(self, nodes: set[str]) -> bool:
+        return sum(1 for n in nodes if self.degree[n] >= self.k) < self.k
+
+    def coalesce(self) -> None:
+        m = self.first(self.moves_heap, self.worklist_moves, "")
+        self.worklist_moves.remove(m)
+        x, y = (self.get_alias(r) for r in self.moves[m])
+        u, v = (y, x) if y in self.precolored else (x, y)
+        if u == v:
+            self.coalesced_moves.add(m)
+            self.add_worklist(u)
+        elif v in self.precolored or (u, v) in self.adj_set:
+            self.constrained_moves.add(m)
+            self.add_worklist(u)
+            self.add_worklist(v)
+        elif ((u in self.precolored and all(self.ok(t, u) for t in self.adjacent(v)))
+              or (u not in self.precolored
+                  and self.conservative(self.adjacent(u) | self.adjacent(v)))):
+            self.coalesced_moves.add(m)
+            self.combine(u, v)
+            self.add_worklist(u)
+        else:
+            self.active_moves.add(m)
+
+    def combine(self, u: str, v: str) -> None:
+        if v in self.freeze_wl:
+            self.freeze_wl.remove(v)
+        else:
+            self.spill_wl.discard(v)
+        self.coalesced.add(v)
+        self.alias[v] = u
+        self.move_list.setdefault(u, set()).update(self.move_list[v])
+        if u not in self.precolored:
+            self.cost[u] += self.cost[v]
+        self.enable_moves({v})
+        for t in self.adjacent(v):
+            self.add_edge(t, u)
+            self.decrement_degree(t)
+        if u not in self.precolored and self.degree[u] >= self.k and u in self.freeze_wl:
+            self.freeze_wl.remove(u)
+            self.spill_wl.add(u)
+
+    def freeze(self) -> None:
+        u = self.first(self.freeze_heap, self.freeze_wl, "%v")
+        self.freeze_wl.remove(u)
+        self.to_simplify(u)
+        self.freeze_moves(u)
+
+    def freeze_moves(self, u: str) -> None:
+        for m in self.node_moves(u):
+            x, y = self.moves[m]
+            v = self.get_alias(x) if self.get_alias(y) == self.get_alias(u) else self.get_alias(y)
+            self.active_moves.discard(m)
+            self.frozen_moves.add(m)
+            if v in self.freeze_wl and not self.node_moves(v) and self.degree[v] < self.k:
+                self.freeze_wl.remove(v)
+                self.to_simplify(v)
+
+    def select_spill(self) -> None:
+        m = min(self.spill_wl, key=lambda v: (self.cost[v] / max(self.degree[v], 1), int(v[2:])))
+        self.spill_wl.remove(m)
+        self.to_simplify(m)
+        self.freeze_moves(m)
+
+    def assign_colors(self) -> None:
+        used: set[str] = set()  # the colours given so far
+        while self.select:
+            n = self.select.pop()
+            self.on_stack.discard(n)
+            ok = set(self.regs)
+            for w in self.adj_list[n]:
+                a = self.get_alias(w)
+                if a in self.colored or a in self.precolored:
+                    ok.discard(self.color[a])
+            if not ok:
+                self.spilled.add(n)
+                continue
+            # A colour that a move partner has makes the move go away.
+            partners = []
+            for m in sorted(self.move_list.get(n, set())):
+                for r in self.moves[m]:
+                    a = self.get_alias(r)
+                    if a != n and (a in self.colored or a in self.precolored):
+                        partners.append(self.color[a])
+            choice = next((c for c in partners if c in ok), None)
+            if choice is None:
+                order = ([r for r in self.regs if r not in self.callee_saved]
+                         + [r for r in self.callee_saved if r in used]
+                         + self.callee_saved)
+                choice = next(r for r in order if r in ok)
+            self.colored.add(n)
+            self.color[n] = choice
+            used.add(choice)
+        for n in self.coalesced:
+            a = self.get_alias(n)
+            if a in self.color and a not in self.spilled:
+                self.color[n] = self.color[a]
+
+    # Spilling.
+
+    def new_temp(self) -> str:
+        self.n_temps += 1
+        t = f"%v{1000000 + self.n_temps}"
+        self.temps.add(t)
+        return t
+
+    def spill(self) -> None:
+        """Gives each spilled register, with the registers coalesced into
+        it, a frame word. Groups that do not interfere share one. Then
+        rewrites the code to use the frame words."""
+        groups: Dict[str, List[str]] = {n: [n] for n in sorted(self.spilled)}
+        for n in self.coalesced:
+            a = self.get_alias(n)
+            if a in groups:
+                groups[a].append(n)
+        slot_of: Dict[str, int] = {}
+        slot_members: List[set[str]] = []
+        first = self.n_slots
+        for rep, members in groups.items():
+            near: set[str] = set()
+            for n in members:
+                near |= self.adj0.get(n, set())
+            for k, ms in enumerate(slot_members):
+                if not (ms & near):
+                    break
+            else:
+                k = len(slot_members)
+                slot_members.append(set())
+            slot_members[k].update(members)
+            for n in members:
+                slot_of[n] = first + k
+        self.n_slots += len(slot_members)
+        out: List[Item] = []
+        for it in self.items:
+            if not isinstance(it, Ins):
+                out.append(it)
+                continue
+            regs = [operand_reg(o) for o in it.ops]
+            need = {r for kind, r in regs if r in slot_of and kind in ("mem", "side")}
+            temps = {r: self.new_temp() for r in sorted(need)}
+            uses, defs = self.use_def(it)
+            before = [Ins("MOVE", [t, f"@%s{slot_of[r]}"], depth=it.depth)
+                      for r, t in temps.items() if r in uses]
+            after = [Ins("MOVE", [f"@%s{slot_of[r]}", t], depth=it.depth)
+                     for r, t in temps.items() if r in defs]
+            assert not (before and it.kind == "call"), it.text()
+            assert not (after and it.kind), it.text()
+            ops = []
+            for o, (kind, r) in zip(it.ops, regs):
+                if r in temps:
+                    o = VREG_RE.sub(lambda mo: temps.get(mo.group(), mo.group()), o)
+                elif r in slot_of:
+                    assert kind == "reg"
+                    o = f"@%s{slot_of[r]}"
+                ops.append(o)
+            it.ops = ops
+            out += before
+            out.append(it)
+            out += after
+        self.items = out
+
+    def run(self) -> List[Item]:
+        """Allocates the registers, and returns the code with physical
+        registers and frame words %sN in place of the virtual registers."""
+        while True:
+            self.flow()
+            self.liveness()
+            if self.dead_code():
+                continue
+            self.build()
+            self.color_graph()
+            if not self.spilled:
+                break
+            self.spill()
+        self.used: set[str] = set()  # the physical registers that the code uses
+        for it in self.items:
+            if isinstance(it, Ins):
+                it.ops = [VREG_RE.sub(lambda mo: self.color[mo.group()], o) for o in it.ops]
+                for o in it.ops:
+                    self.used.update(re.findall(r"\bR1[0-2]\b|\bR[1-9]\b", o))
+        return self.items
+
+
+FRAME_WORD = re.compile(r"@%([sa])(\d+)")  # a spill slot or a stack argument, before the frame
+
+
+def tidy(items: List[Item]) -> List[Item]:
+    """Removes what the allocation leaves useless: a MOVE of a register or
+    frame word to itself, and a jump to the label that follows it."""
+    def self_move(it: Item) -> bool:
+        return (isinstance(it, Ins) and it.op == "MOVE" and len(it.ops) == 2
+                and it.ops[0] == it.ops[1] and re.match(r"(R\d+|@%s\d+)\Z", it.ops[0]) is not None)
+
+    def falls_to(k: int, label: str) -> bool:
+        """Whether the code from item k on reaches label before any
+        instruction or data."""
+        while k < len(items) and not isinstance(items[k], Ins):
+            nxt = items[k]
+            if isinstance(nxt, Label) and nxt.name == label:
+                return True
+            if isinstance(nxt, str) and not nxt.lstrip().startswith(";"):
+                return False
+            k += 1
+        return False
+
+    items = [it for it in items if not self_move(it)]
+    return [it for i, it in enumerate(items)
+            if not (isinstance(it, Ins) and it.kind == "jump" and it.ops[1:] == it.targets
+                    and falls_to(i + 1, it.targets[0]))]
+
+
+def fix_calls(items: List[Item]) -> None:
+    """Sets what each call's ADD @--R13, n, R15 adds to the address after
+    it: the size in words of the jump that follows (§9.3), which depends
+    on the jump's operand."""
+    prev: Optional[Ins] = None
+    for it in items:
+        if isinstance(it, Ins):
+            if it.kind == "call":
+                assert prev is not None and prev.op == "ADD" and prev.ops[0] == "@--R13", it.text()
+                prev.ops[1] = str(1 + sum(has_word(o) for o in it.ops))
+            prev = it
+        elif isinstance(it, Label):
+            prev = None
+
 
 class Translator:
     def __init__(self, m: Module, data: bytes, checks: bool = True,
@@ -1214,11 +1796,7 @@ class Translator:
         n_imports = len(self.m.imports)
         for i, code in enumerate(self.m.codes):
             out.append("")
-            # The first pass weighs the uses of each local, so that the
-            # second can keep the most used ones in registers.
-            first = FunctionTranslator(self, n_imports + i, code)
-            first.run()
-            out += FunctionTranslator(self, n_imports + i, code, first.uses).run()
+            out += FunctionTranslator(self, n_imports + i, code).run()
         for name in sorted(self.helpers):
             out += [""] + [line.replace("W.CAP", str(self.cap)).replace("W.", self.prefix)
                            .replace("___wasm_memory", self.mem) for line in HELPERS[name]]
@@ -1376,27 +1954,34 @@ class Translator:
 
 
 class FunctionTranslator:
-    """Translates one function. Local i is in the registers regs[i], or
-    starts at the frame word FP + local[i]. The registers are given by
-    weights, the uses of each local that a first translation counted
-    (uses). The operand stack starts at FP - n_slots and grows down: a
-    value whose first word is stack word w, and which takes n words, starts
-    at FP - n_slots - w - n. A value's low word is at the lower address.
+    """Translates one function, in two steps.
+
+    The front end, run(), turns each wasm instruction into NICE
+    instructions on virtual registers, %v0 and up. Each local has one
+    virtual register, or two for an i64 or f64, low word first. So does
+    each value on the operand stack, a new one for each value pushed,
+    except that the values that a block, loop, or if takes and gives have
+    fixed registers in its Frame, which every path to them writes.
+    Physical registers appear only where §9.3 or a helper demands them:
+    the arguments and results of calls, the results of the function, and
+    the code and address of a trap.
 
     A value on the operand stack may be deferred: a constant, or the value
-    of a local, that is not in its frame words yet. pop() gives such a
-    value's words as the constant or the local, so the instruction that
-    uses it takes it directly. A deferred value is written to its frame
-    words when it must be (settle()): before a local.set or local.tee
-    changes its local, at the start of a block for the values that the
-    block takes and for every value of a local, and at an else or end for
-    the results. A deferred constant below a block stays deferred through
-    the block, because nothing inside it can change the constant or reach
-    the value. So the values below a block are the same on every path
-    through it."""
+    of a local, that is not in its own registers yet. pop() gives such a
+    value's words as the constant or the local's registers, so the
+    instruction that uses it takes it directly. A deferred value is copied
+    to its own registers when it must be (settle()): before a local.set or
+    local.tee changes its local, at the start of a block for the values
+    that the block takes and for every value of a local, and at an else or
+    end for the results. A deferred constant below a block stays deferred
+    through the block, because nothing inside it can change the constant
+    or reach the value. So the values below a block are the same on every
+    path through it.
 
-    def __init__(self, t: Translator, idx: int, code: Code,
-                 weights: Optional[Dict[int, int]] = None) -> None:
+    The back end, finish(), gives the virtual registers physical registers
+    or frame words (Allocator), and adds the prologue and the epilogue."""
+
+    def __init__(self, t: Translator, idx: int, code: Code) -> None:
         self.t = t
         self.idx = idx
         self.code = code
@@ -1408,57 +1993,39 @@ class FunctionTranslator:
             raise WasmError(f"{what}: more than one result is not supported yet", code.start)
         self.local_types = self.ftype.params + code.locals
         self.args, _ = assign_args(self.ftype.params)
-        self.uses: Dict[int, int] = {}  # local -> its uses, weighted by loop depth
-        # The locals with the most weight get the registers of LOCAL_REGS.
-        # The function pushes the ones it uses just below the saved FP.
-        self.regs: Dict[int, List[str]] = {}
-        free = list(LOCAL_REGS)
-        for i, w in sorted((weights or {}).items(), key=lambda iw: (-iw[1], iw[0])):
-            n = SIZES[self.local_types[i]]
-            if w >= MIN_WEIGHT and n <= len(free):
-                self.regs[i], free = free[:n], free[n:]
-        self.saved = [r for r in LOCAL_REGS if r not in free]
-        # Parameters in registers and the other locals get frame words below
-        # FP. Parameters on the stack stay where the caller put them.
-        self.local: List[int] = []
-        self.n_slots = len(self.saved)
-        for i, lt in enumerate(self.local_types):
-            if i < len(self.args) and not self.args[i][0]:
-                self.local.append(2 + self.args[i][1])
-            elif i in self.regs:
-                self.local.append(0)  # not used
-            else:
-                self.n_slots += SIZES[lt]
-                self.local.append(-self.n_slots)
-        self.stack: List[int] = []  # the type of each value on the operand stack
-        self.deferred: List[Optional[Deferred]] = []  # and what it is, if it is deferred
-        self.words = 0              # the words they take
-        self.max_words = 0
+        self.n_vregs = 0
+        self.locals = [self.new_vregs(lt) for lt in self.local_types]
+        self.stack: List[int] = []                      # the type of each value on the operand stack
+        self.vals: List[List[str]] = []                 # its words as source operands
+        self.deferred: List[Optional[Deferred]] = []    # and what it is, if it is deferred
+        self.loops = 0                                  # the loops around the current instruction
         self.n_traps = 0
         self.n_labels = 0
         self.body: List[Item] = []
         self.stubs: List[Item] = []  # code after the epilogue, out of the way
         self.ret_label = f"{t.prefix}f{idx}.ret"
-        self.ctrl = [Frame(0, self.ftype, 0, 0, self.ret_label)]
+        self.ctrl = [Frame(0, self.ftype, 0, self.ret_label, [], [])]
 
-    def push(self, t: int, deferred: Optional[Deferred] = None) -> List[str]:
-        """Pushes a value of type t and returns its frame words. A deferred
-        value is not in them yet."""
+    def new_vreg(self) -> str:
+        self.n_vregs += 1
+        return f"%v{self.n_vregs - 1}"
+
+    def new_vregs(self, t: int) -> List[str]:
+        return [self.new_vreg() for _ in range(SIZES[t])]
+
+    def push(self, t: int, deferred: Optional[Deferred] = None,
+             words: Optional[List[str]] = None) -> List[str]:
+        """Pushes a value of type t and returns its words: those of a
+        deferred value, the given registers, or new ones."""
+        v = deferred.words if deferred is not None else words or self.new_vregs(t)
         self.stack.append(t)
+        self.vals.append(v)
         self.deferred.append(deferred)
-        self.words += SIZES[t]
-        self.max_words = max(self.max_words, self.words)
-        return self.top()
+        return v
 
     def top(self) -> List[str]:
-        """The frame words of the value on top of the operand stack."""
-        return self.slot(len(self.stack) - 1)
-
-    def slot(self, i: int) -> List[str]:
-        """The frame words of value i on the operand stack, counted from
-        the bottom."""
-        below = self.words - sum(SIZES[t] for t in self.stack[i:])
-        return self.slots([self.stack[i]], below)[0]
+        """The words of the value on top of the operand stack."""
+        return self.vals[-1]
 
     def pop(self, types: List[Optional[int]], at: int, what: str,
             keep: bool = False) -> List[List[str]]:
@@ -1476,52 +2043,84 @@ class FunctionTranslator:
             if want is not None and got != want:
                 raise WasmError(f"function {self.idx}: {what} expects {type_name(want)},"
                                 f" found {type_name(got)}", at)
-            d = self.deferred[i]
-            out.append(self.slot(i) if d is None else d.words)
-        if not keep:
-            for _ in range(n):
-                self.words -= SIZES[self.stack.pop()]
-                self.deferred.pop()
+            out.append(self.vals[i])
+        if not keep and n:
+            del self.stack[-n:]
+            del self.vals[-n:]
+            del self.deferred[-n:]
         return out
 
     def settle(self, i: int) -> None:
-        """Writes value i on the operand stack to its frame words, if it is
-        deferred."""
+        """Copies value i on the operand stack to registers of its own, if
+        it is deferred."""
         d = self.deferred[i]
         if d is not None:
-            self.move(self.slot(i), d.words)
+            v = self.new_vregs(self.stack[i])
+            self.move(v, d.words)
+            self.vals[i] = v
             self.deferred[i] = None
 
     def settle_top(self, types: List[int], at: int, what: str) -> None:
         """Checks that the values on top of the operand stack have the
-        given types, and writes them to their frame words."""
+        given types, and copies the deferred ones to their own registers."""
         self.pop(list(types), at, what, keep=True)
         for i in range(len(self.stack) - len(types), len(self.stack)):
             self.settle(i)
 
     def settle_locals(self, local: Optional[int] = None) -> None:
-        """Writes the values of the given local, or of every local, to
-        their frame words."""
+        """Copies the values of the given local, or of every local, to
+        their own registers."""
         for i, d in enumerate(self.deferred):
             if d is not None and d.local is not None and local in (None, d.local):
                 self.settle(i)
 
-    def emit(self, mnemonic: str, *operands: str) -> Ins:
+    def emit(self, mnemonic: str, *operands: str, stub: bool = False) -> Ins:
+        """Adds an instruction to the body, or with stub to the code after
+        the epilogue, which runs rarely."""
         ins = make_ins(mnemonic, *operands)
-        self.body.append(ins)
+        if stub:
+            self.stubs.append(ins)
+        else:
+            ins.depth = self.loops
+            self.body.append(ins)
         return ins
 
-    def move(self, dest: List[str], src: List[str]) -> None:
+    def label(self, name: str, stub: bool = False) -> None:
+        (self.stubs if stub else self.body).append(Label(name))
+
+    def move(self, dest: List[str], src: List[str], stub: bool = False) -> None:
         for d, s in zip(dest, src):
             if d != s:
-                self.emit("MOVE", d, s)
+                self.emit("MOVE", d, s, stub=stub)
+
+    def moves(self, pairs: List[Tuple[str, str]]) -> None:
+        """Moves that happen at once: if a destination is also a source,
+        the sources go through new registers first."""
+        pairs = [(d, s) for d, s in pairs if d != s]
+        if {d for d, _ in pairs} & {s for _, s in pairs}:
+            temps = [self.new_vreg() for _ in pairs]
+            for tmp, (_, s) in zip(temps, pairs):
+                self.emit("MOVE", tmp, s)
+            pairs = [(d, tmp) for tmp, (d, _) in zip(temps, pairs)]
+        for d, s in pairs:
+            self.emit("MOVE", d, s)
+
+    def call_jump(self, target: str, uses: List[str], defs: FrozenSet[str],
+                  stub: bool = False) -> None:
+        """The call sequence of §9.3, to a label or through a register. The
+        call reads the registers uses, and changes defs. The back end
+        sets the 2 that the return address adds to the jump's size."""
+        self.emit("ADD", "@--R13", "2", "R15", stub=stub)
+        j = self.emit("MOVE", "R15", target, stub=stub)
+        j.kind, j.targets, j.uses, j.defs = "call", [], frozenset(uses), defs
 
     def call(self, label: str, ft: FuncType, at: int, what: str,
-             fwd: Optional[Tuple[List[str], Optional[Deferred]]] = None) -> None:
+             fwd: Optional[Tuple[List[str], Optional[Deferred]]] = None,
+             dest: Optional[List[str]] = None) -> None:
         """Calls label with the arguments on top of the operand stack, by
-        the rules of §9.3, and pushes the result. A label that is a
-        register is called through it. With fwd, from forward(), the
-        result goes to a local instead."""
+        the rules of §9.3, and pushes the result, in dest if given. A label
+        that is a register is called through it. With fwd, from forward(),
+        the result goes to a local instead."""
         args = self.pop(list(ft.params), at, what)
         locs, stack_words = assign_args(ft.params)
         # Stack arguments go last to first, each high word first, so that
@@ -1530,14 +2129,13 @@ class FunctionTranslator:
             if not locs[i][0]:
                 for w in reversed(args[i]):
                     self.emit("MOVE", "@--R13", w)
+        regs = []
         for i, (in_reg, first) in enumerate(locs):
             if in_reg:
-                self.move([f"R{first + k}" for k in range(len(args[i]))], args[i])
-        if label.startswith("R"):
-            self.emit("ADD", "@--R13", "1", "R15")
-        else:
-            self.emit("ADD", "@--R13", "2", "R15")
-        self.emit("MOVE", "R15", label).kind = "call"
+                for k, w in enumerate(args[i]):
+                    regs.append(f"R{first + k}")
+                    self.emit("MOVE", regs[-1], w)
+        self.call_jump(label, regs, CALLER_SAVED)
         if stack_words:
             self.emit("ADD", "R13", "R13", str(stack_words))
         if fwd is not None:
@@ -1546,21 +2144,22 @@ class FunctionTranslator:
                 self.push(ft.results[0], fwd[1])
             return
         for rt in ft.results:
-            self.move(self.push(rt), [f"R{k + 1}" for k in range(SIZES[rt])])
+            v = dest or self.new_vregs(rt)
+            self.move(v, [f"R{k + 1}" for k in range(SIZES[rt])])
+            self.push(rt, words=v)
+
+    def call_helper(self, name: str, args: List[str], results: int, stub: bool = False) -> None:
+        """Calls one of the HELPERS, which is then emitted once, with
+        the given arguments in R1 and up. Its results are in R1 and up."""
+        self.t.helpers.add(name)
+        regs = [f"R{k + 1}" for k in range(len(args))]
+        self.move(regs, args, stub=stub)
+        self.call_jump(self.t.prefix + name[2:], regs, HELPER_REGS[name], stub=stub)
 
     def local_operand(self, i: int, at: int) -> Tuple[int, List[str]]:
-        if i >= len(self.local):
+        if i >= len(self.locals):
             raise WasmError(f"function {self.idx}: local {i} does not exist", at)
-        t = self.local_types[i]
-        weight = 8 ** min(sum(1 for f in self.ctrl if f.op == LOOP), 3)
-        self.uses[i] = self.uses.get(i, 0) + weight
-        return t, self.local_words(i)
-
-    def local_words(self, i: int) -> List[str]:
-        """The words of local i: registers or frame words."""
-        if i in self.regs:
-            return list(self.regs[i])
-        return [operand(self.local[i] + k) for k in range(SIZES[self.local_types[i]])]
+        return self.local_types[i], list(self.locals[i])
 
     def global_operand(self, i: int, at: int) -> Tuple[int, List[str]]:
         if i >= len(self.t.m.globals):
@@ -1573,7 +2172,7 @@ class FunctionTranslator:
         address of this code in R2 (§9.4)."""
         label = f"{self.t.prefix}f{self.idx}.t{self.n_traps}"
         self.n_traps += 1
-        self.body.append(Label(label))
+        self.label(label)
         self.emit("MOVE", "R1", str(code))
         self.emit("MOVE", "R2", label)
         self.emit("MOVE", "R15", "@___wasm_trap_vector")
@@ -1583,24 +2182,14 @@ class FunctionTranslator:
         self.n_labels += 1
         return label
 
-    def slots(self, types: List[int], words: int) -> List[List[str]]:
-        """The words of values of the given types, placed on the operand
-        stack above the given number of words."""
-        out = []
-        for t in types:
-            n = SIZES[t]
-            out.append([operand(-self.n_slots - words - n + k) for k in range(n)])
-            words += n
-        return out
-
-    def reset(self, f: Frame, types: List[int]) -> None:
+    def reset(self, f: Frame, words: List[List[str]], types: List[int]) -> None:
         """Leaves only the values below f and then values of the given
-        types, in their frame words, on the operand stack."""
+        types, in the given registers, on the operand stack."""
         del self.stack[f.height:]
+        del self.vals[f.height:]
         del self.deferred[f.height:]
-        self.words = f.words
-        for t in types:
-            self.push(t)
+        for t, w in zip(types, words):
+            self.push(t, words=w)
 
     def frame(self, depth: int, at: int) -> Frame:
         if depth >= len(self.ctrl):
@@ -1626,29 +2215,24 @@ class FunctionTranslator:
     def branch_moves(self, f: Frame, at: int, what: str) -> List[Tuple[str, str]]:
         """Checks the values that a branch to f takes, which are on top of
         the operand stack, and returns the moves that put them where f
-        expects them: in its slots, or for the function in R1 and up."""
+        expects them: in its registers, or for the function in R1 and up."""
         types = f.label_types()
         values = self.pop(list(types), at, what, keep=True)
         if f.op == 0:
-            regs = [f"R{k + 1}" for k in range(sum(SIZES[t] for t in types))]
-            return list(zip(regs, [w for v in values for w in v]))
-        # The slots are at the same height or below. Moving the deepest
-        # word first never overwrites a word that is still to be read.
-        moves = []
-        for dest, src in zip(self.slots(types, f.words), values):
-            for k in reversed(range(len(dest))):
-                if dest[k] != src[k]:
-                    moves.append((dest[k], src[k]))
-        return moves
+            dest = [f"R{k + 1}" for k in range(sum(SIZES[t] for t in types))]
+        else:
+            dest = [w for v in (f.params_v if f.op == LOOP else f.results_v) for w in v]
+        return list(zip(dest, [w for v in values for w in v]))
 
     def end_block(self, f: Frame, at: int, what: str) -> None:
         """Checks that the operand stack holds exactly f's results, at else
-        and at end, and writes them to their frame words."""
-        self.settle_top(f.ft.results, at, what)
-        self.pop(list(f.ft.results), at, what)
-        if len(self.stack) != f.height:
+        and at end, and moves them to f's registers."""
+        values = self.pop(list(f.ft.results), at, what, keep=True)
+        if len(self.stack) - len(values) != f.height:
             raise WasmError(f"function {self.idx}: values left on the operand stack at the {what}",
                             at)
+        self.moves(list(zip([w for v in f.results_v for w in v], [w for v in values for w in v])))
+        self.pop(list(f.ft.results), at, what)
 
     def fuses(self, r: Reader) -> bool:
         """Whether the i32 that the current instruction pushes is only a
@@ -1664,7 +2248,7 @@ class FunctionTranslator:
         """An i32 or i64 comparison. It sets the flags, then the i32
         result: 1 if the test holds, else 0. With fuse, it only sets the
         flags, and returns the condition under which the test holds. The
-        result's frame word is then not written."""
+        result is then not written."""
         a, b = self.pop([t, t], at, what)
         if swap:
             a, b = b, a
@@ -1672,9 +2256,10 @@ class FunctionTranslator:
         if t == I32:
             self.emit("SUB[M]", "R0", a[0], b[0])
         elif test in ("eq", "ne"):
-            self.emit("XOR", "R1", a[0], b[0])
-            self.emit("XOR", "R2", a[1], b[1])
-            self.emit("OR[M]", "R0", "R1", "R2")
+            x, y = self.new_vreg(), self.new_vreg()
+            self.emit("XOR", x, a[0], b[0])
+            self.emit("XOR", y, a[1], b[1])
+            self.emit("OR[M]", "R0", x, y)
         else:
             self.emit("SUB[M]", "R0", a[0], b[0])
             self.emit("SUB[CM]", "R0", a[1], b[1])
@@ -1703,17 +2288,18 @@ class FunctionTranslator:
                 n: int) -> Optional[Tuple[List[str], Optional[Deferred]]]:
         """For an operation that takes n values and gives one of type t,
         and whose next instruction is a local.set or local.tee of a local
-        of type t: skips that instruction and returns the local's words,
-        where the operation writes its result, and for local.tee, the value
-        it leaves on the operand stack. Every other copy of the local's old
-        value is written to its frame words first. The operation reads its
-        operands before it writes, so they may be the local itself."""
+        of type t: skips that instruction and returns the local's
+        registers, where the operation writes its result, and for
+        local.tee, the value it leaves on the operand stack. Every other
+        copy of the local's old value is settled first. The operation
+        reads its operands before it writes, so they may be the local
+        itself."""
         if (r.pos >= r.end or self.t.data[r.pos] not in (0x21, 0x22)
                 or len(self.stack) - self.ctrl[-1].height < n):
             return None
         nxt = Reader(self.t.data, r.pos + 1, r.end)
         i = nxt.u32()
-        if i >= len(self.local) or self.local_types[i] != t:
+        if i >= len(self.locals) or self.local_types[i] != t:
             return None
         tee = self.t.data[r.pos] == 0x22
         _, dest = self.local_operand(i, at)
@@ -1735,74 +2321,79 @@ class FunctionTranslator:
             return None
         return int(d.words[0]) & 0xFFFFFFFF
 
-    def address(self, base: str, offset: int, n: int, const: Optional[int]) -> Optional[int]:
-        """Puts the byte address base + offset in R1. With bounds checks,
-        traps with code 2 unless all n bytes there are in the memory. A
-        trap's R2 is the start of this code, the first instruction of the
-        access (§9.4). If base is the constant const, and the n bytes are
-        in the initial memory or there are no bounds checks, returns the
-        address and emits no code."""
+    def address(self, base: str, offset: int, n: int,
+                const: Optional[int]) -> Tuple[Optional[int], str]:
+        """The byte address base + offset, as an operand. With bounds
+        checks, traps with code 2 unless all n bytes there are in the
+        memory. A trap's R2 is the start of this code, the first
+        instruction of the access (§9.4). If base is the constant const,
+        and the n bytes are in the initial memory or there are no bounds
+        checks, returns the address and emits no code."""
         if const is not None:
             addr = const + offset
             if not self.t.checks:
-                return addr & 0xFFFFFFFF  # the address wraps modulo 2^32 (§9.4)
+                return addr & 0xFFFFFFFF, ""  # the address wraps modulo 2^32 (§9.4)
             assert self.t.mem_bytes is not None
             if addr + n <= self.t.mem_bytes:
-                return addr
+                return addr, ""
         start = self.new_label()
-        self.body.append(Label(start))
+        self.label(start)
+        a = base
+        if const is not None and not offset:
+            # A constant address that may be out of bounds, which is rare.
+            # The trap's R2 points at the MOVE that puts it in a register.
+            a = self.new_vreg()
+            self.emit("MOVE", a, base)
         if not self.t.checks:
             # The address wraps modulo 2^32 (§9.4).
             if offset:
-                self.emit("ADD", "R1", base, words(offset, I32)[0])
-            else:
-                self.emit("MOVE", "R1", base)
-            return None
+                a = self.new_vreg()
+                self.emit("ADD", a, base, words(offset, I32)[0])
+            return None, a
+        assert self.t.mem_bytes is not None
+        limit = self.t.mem_bytes - n + 1
+        if limit <= 0 and not self.t.growable:
+            # No n bytes fit in the memory.
+            self.emit("MOVE", "R1", "2")
+            self.emit("MOVE", "R2", start)
+            self.emit("MOVE", "R15", "@___wasm_trap_vector")
+            return None, a
         trap = self.trap_stub(2, start)
         if offset:
-            self.emit("ADD[M]", "R1", base, words(offset, I32)[0])
+            a = self.new_vreg()
+            self.emit("ADD[M]", a, base, words(offset, I32)[0])
             self.emit("?C MOVE", "R15", trap)  # base + offset passes 2^32
-        else:
-            self.emit("MOVE", "R1", base)
         if self.t.growable:
             # The first address at which n bytes do not fit, which
             # memory.grow keeps up to date.
-            self.emit("SUB[M]", "R0", "R1", f"@W.limit{n}")
+            self.emit("SUB[M]", "R0", a, f"@W.limit{n}")
             self.emit("?!C MOVE", "R15", trap)
-            return None
+            return None, a
         # The first address at which n bytes do not fit.
-        assert self.t.mem_bytes is not None
-        limit = self.t.mem_bytes - n + 1
-        if limit <= 0:
-            self.emit("MOVE", "R15", trap)
-        elif limit < 1 << 32:
-            self.emit("SUB[M]", "R0", "R1", words(limit, I32)[0])
+        if limit < 1 << 32:
+            self.emit("SUB[M]", "R0", a, words(limit, I32)[0])
             self.emit("?!C MOVE", "R15", trap)
-        return None
+        return None, a
 
-    def call_helper(self, name: str, cond: str = "") -> None:
-        """Calls one of the HELPERS, which is then emitted once."""
-        self.t.helpers.add(name)
-        self.emit(cond + "ADD", "@--R13", "2", "R15")
-        self.emit(cond + "MOVE", "R15", self.t.prefix + name[2:]).kind = "call"
-
-    def fast_path(self, helper: str, setup: List[Tuple[str, str]], aligned: List[Tuple[str, ...]]) -> None:
-        """The access of 4 or 8 bytes at the byte address in R1. If R1 is
-        at a multiple of 4, the aligned instructions do it with the word
-        index in R2. Else the moves in setup prepare the helper's
-        arguments, and it is called and returns past them."""
-        call, back = self.new_label(), self.new_label()
-        self.emit("AND[M]", "R0", "R1", "3")
-        for dest, src in setup:
-            self.emit("?!Z MOVE", dest, src)
-        self.emit("?!Z ADD", "@--R13", f"{back}-{call}", "R15")
-        self.body.append(Label(call))
-        self.t.helpers.add(helper)
-        self.emit("?!Z MOVE", "R15", self.t.prefix + helper[2:]).kind = "call"
-        self.emit("SHR", "R2", "R1", "2")                  # word index
+    def fast_path(self, helper: str, a: str, args: List[str], results: List[str],
+                  aligned: List[Tuple[str, ...]]) -> None:
+        """The access of 4 or 8 bytes at the byte address a. If a is at a
+        multiple of 4, the aligned instructions do it, with %w in their
+        operands for the word index. Else a stub after the epilogue calls
+        the helper with a in R1 and args from R2 up, moves its results from
+        R1 up, and jumps back."""
+        stub, back = self.new_label(), self.new_label()
+        self.emit("AND[M]", "R0", a, "3")
+        self.emit("?!Z MOVE", "R15", stub)
+        w = self.new_vreg()
+        self.emit("SHR", w, a, "2")                       # word index
         for mnemonic, *ops in aligned:
-            self.emit(mnemonic, *ops)
-        self.body.append(Label(back))
+            self.emit(mnemonic, *(o.replace("%w", w) for o in ops))
+        self.label(back)
+        self.label(stub, stub=True)
+        self.call_helper(helper, [a] + args, len(results), stub=True)
+        self.move(results, [f"R{k + 1}" for k in range(len(results))], stub=True)
+        self.emit("MOVE", "R15", back, stub=True)
 
     def trunc_check(self, src_t: int, dst_t: int, pos_limit: int, neg_limit: int, at: int,
                     what: str) -> None:
@@ -1811,31 +2402,33 @@ class FunctionTranslator:
         (TRUNC_OPS). A NaN or an infinity is above every limit."""
         (v,) = self.pop([src_t], at, what, keep=True)
         start = self.new_label()
-        self.body.append(Label(start))
+        self.label(start)
         hi = v[-1]  # the word with the sign
+        mag, lim = self.new_vreg(), self.new_vreg()
         if src_t == F32:
-            self.emit("MOVE", "R2", words(pos_limit, I32)[0])
+            self.emit("MOVE", lim, words(pos_limit, I32)[0])
             self.emit("MOVE[M]", "R0", hi)
-            self.emit("?N MOVE", "R2", words(neg_limit, I32)[0])
-            self.emit("AND", "R1", hi, "0x7FFFFFFF")
-            self.emit("SUB[M]", "R0", "R1", "R2")          # C = R1 < R2, unsigned
+            self.emit("?N MOVE", lim, words(neg_limit, I32)[0])
+            self.emit("AND", mag, hi, "0x7FFFFFFF")
+            self.emit("SUB[M]", "R0", mag, lim)            # C = mag < lim, unsigned
         else:
             pos, neg = words(pos_limit, I64), words(neg_limit, I64)
-            self.emit("MOVE", "R2", pos[1])
-            self.emit("MOVE", "R3", pos[0])
+            lim_lo = self.new_vreg()
+            self.emit("MOVE", lim, pos[1])
+            self.emit("MOVE", lim_lo, pos[0])
             self.emit("MOVE[M]", "R0", hi)
-            self.emit("?N MOVE", "R2", neg[1])
-            self.emit("?N MOVE", "R3", neg[0])
-            self.emit("AND", "R1", hi, "0x7FFFFFFF")
-            self.emit("SUB[M]", "R0", v[0], "R3")
-            self.emit("SUB[CM]", "R0", "R1", "R2")         # C = R1:v[0] < R2:R3
+            self.emit("?N MOVE", lim, neg[1])
+            self.emit("?N MOVE", lim_lo, neg[0])
+            self.emit("AND", mag, hi, "0x7FFFFFFF")
+            self.emit("SUB[M]", "R0", v[0], lim_lo)
+            self.emit("SUB[CM]", "R0", mag, lim)           # C = mag:v[0] < lim:lim_lo
         self.emit("?!C MOVE", "R15", self.trap_stub(5, start))
 
     def call_indirect(self, type_idx: int, at: int, what: str) -> None:
         """Calls the function in the table entry whose index is on top of
         the operand stack (§9.4). An index past the end of the table and an
         empty entry trap with code 6, and an entry of another type with
-        code 7. R5 holds the address, as R1-R4 hold arguments."""
+        code 7."""
         ft = self.t.m.types[type_idx]
         check_types(ft.params + ft.results, f"function {self.idx}: {what}", at)
         if len(ft.results) > 1:
@@ -1844,31 +2437,31 @@ class FunctionTranslator:
         (index,) = self.pop([I32], at, what)
         assert self.t.m.table_size is not None
         start = self.new_label()
-        self.body.append(Label(start))
-        self.emit("MOVE", "R5", index[0])
-        self.emit("SUB[M]", "R0", "R5", str(self.t.m.table_size))
+        self.label(start)
+        entry, func = self.new_vreg(), self.new_vreg()
+        self.emit("SUB[M]", "R0", index[0], str(self.t.m.table_size))
         self.emit("?!C MOVE", "R15", self.trap_stub(6, start))    # index >= size
-        self.emit("ADD", "R5", "R5", "R5")                         # two words an entry
+        self.emit("ADD", entry, index[0], index[0])               # two words an entry
         table = f"{self.t.prefix}table"
-        self.emit("MOVE[M]", "R0", f"@{table}[R5]")
+        self.emit("MOVE[M]", func, f"@{table}[{entry}]")
         self.emit("?Z MOVE", "R15", self.trap_stub(6, start))     # empty
-        self.emit("SUB[M]", "R0", f"@{table}+1[R5]", str(self.t.type_number(type_idx)))
+        self.emit("SUB[M]", "R0", f"@{table}+1[{entry}]", str(self.t.type_number(type_idx)))
         self.emit("?!Z MOVE", "R15", self.trap_stub(7, start))
-        self.emit("MOVE", "R5", f"@{table}[R5]")
-        self.call("R5", ft, at, what)
+        self.call(func, ft, at, what)
 
     def range_check(self, addr: str, n: str, trap: str) -> None:
         """Jumps to trap unless the n bytes from byte address addr are all
         in the memory. n may be 0, even at the end of the memory."""
         assert self.t.mem_bytes is not None
         size = self.t.mem_bytes
-        self.emit("ADD[M]", "R1", addr, n)
+        end = self.new_vreg()
+        self.emit("ADD[M]", end, addr, n)
         self.emit("?C MOVE", "R15", trap)          # addr + n passes 2^32
         if self.t.growable:
-            self.emit("SUB[M]", "R0", "R1", "@W.limit0")
+            self.emit("SUB[M]", "R0", end, "@W.limit0")
             self.emit("?!C MOVE", "R15", trap)
         elif size < 1 << 32:
-            self.emit("SUB[M]", "R0", "R1", words(size + 1, I32)[0])
+            self.emit("SUB[M]", "R0", end, words(size + 1, I32)[0])
             self.emit("?!C MOVE", "R15", trap)
 
     def bulk(self, helper: str, at: int, what: str) -> None:
@@ -1878,7 +2471,7 @@ class FunctionTranslator:
         the helper does the work."""
         d, x, n = self.pop([I32, I32, I32], at, what, keep=True)
         start = self.new_label()
-        self.body.append(Label(start))
+        self.label(start)
         if self.t.checks:
             trap = self.trap_stub(2, start)
             self.range_check(d[0], n[0], trap)
@@ -1892,16 +2485,19 @@ class FunctionTranslator:
         with R2 = start, the first instruction of the code for the wasm
         instruction that traps (§9.4). Returns its label."""
         label = self.new_label()
-        self.stubs += [Label(label), make_ins("MOVE", "R1", str(code)),
-                       make_ins("MOVE", "R2", start), make_ins("MOVE", "R15", "@___wasm_trap_vector")]
+        self.label(label, stub=True)
+        self.emit("MOVE", "R1", str(code), stub=True)
+        self.emit("MOVE", "R2", start, stub=True)
+        self.emit("MOVE", "R15", "@___wasm_trap_vector", stub=True)
         return label
 
-    def mpu_op(self, word: str, t: int, at: int, what: str) -> None:
+    def mpu_op(self, word: str, t: int, at: int, what: str,
+               dest: Optional[List[str]] = None) -> None:
         """Pops a and b, writes them to the math unit (§8.4), A and B for
-        an i32 and C and D for an i64, and pushes the given result. The
-        labels __mpu.* are in runtime/muldiv_mpu.nasm."""
+        an i32 and C and D for an i64, and pushes the given result, in
+        dest if given. The labels __mpu.* are in runtime/muldiv_mpu.nasm."""
         a, b = self.pop([t, t], at, what)
-        dest = self.push(t)
+        dest = self.push(t, words=dest)
         if t == I32:
             self.emit("MOVE", "@__mpu.a", a[0])
             self.emit("MOVE", "@__mpu.b", b[0])
@@ -1921,9 +2517,9 @@ class FunctionTranslator:
         0 traps with code 3, and div_s of the most negative number by -1
         traps with code 4. rem_s by -1 is 0, without the call."""
         a, b = self.pop([t, t], at, what, keep=True)
-        result = self.slot(len(self.stack) - 2)  # where a is, or would be
+        result = self.new_vregs(t)
         start = self.new_label()
-        self.body.append(Label(start))
+        self.label(start)
         if t == I32:
             self.emit("MOVE[M]", "R0", b[0])
         else:
@@ -1934,8 +2530,9 @@ class FunctionTranslator:
             if t == I32:
                 self.emit("ADD[M]", "R0", b[0], "1")
             else:
-                self.emit("AND", "R1", b[0], b[1])
-                self.emit("ADD[M]", "R0", "R1", "1")
+                x = self.new_vreg()
+                self.emit("AND", x, b[0], b[1])
+                self.emit("ADD[M]", "R0", x, "1")
         done = ""
         if op == "div_s":
             ok = self.new_label()
@@ -1944,27 +2541,29 @@ class FunctionTranslator:
             if t == I32:
                 self.emit("SUB[M]", "R0", a[0], "-2147483648")
             else:
-                self.emit("XOR", "R1", a[1], "-2147483648")
-                self.emit("OR[M]", "R0", "R1", a[0])
+                x = self.new_vreg()
+                self.emit("XOR", x, a[1], "-2147483648")
+                self.emit("OR[M]", "R0", x, a[0])
             self.emit("?Z MOVE", "R15", self.trap_stub(4, start))
-            self.body.append(Label(ok))
+            self.label(ok)
         elif op == "rem_s":
-            # The result goes where the call puts it.
+            # The result is 0 by -1. A MOVE leaves the flags as they are.
             done = self.new_label()
             for w in result:
-                self.emit("?Z MOVE", w, "0")
+                self.emit("MOVE", w, "0")
             self.emit("?Z MOVE", "R15", done)
         if self.t.mpu:
             word = {"div_s": "sdiv_q", "div_u": "udiv_q", "rem_s": "sdiv_r", "rem_u": "udiv_r"}[op]
             if t == I64:
                 word = word.replace("_", "64_")
-            self.mpu_op(word, t, at, what)
+            self.mpu_op(word, t, at, what, result)
         else:
             routine = {"div_s": "__div", "div_u": "__udiv", "rem_s": "__mod",
                        "rem_u": "__umod"}[op]
-            self.call(routine + ("64" if t == I64 else ""), FuncType([t, t], [t]), at, what)
+            self.call(routine + ("64" if t == I64 else ""), FuncType([t, t], [t]), at, what,
+                      dest=result)
         if done:
-            self.body.append(Label(done))
+            self.label(done)
 
     def memarg(self, n: int, align: int, at: int, what: str) -> None:
         """Checks a load's or store's memory and alignment."""
@@ -1982,7 +2581,7 @@ class FunctionTranslator:
         const = self.const_value(1)
         (base,) = self.pop([I32], at, what)
         dest = self.push(t)
-        addr = self.address(base[0], offset, n, const)
+        addr, a = self.address(base[0], offset, n, const)
         mem = f"@{self.t.mem}"
         helper = f"W.load{n}" + ("" if n >= 4 else "s" if signed else "u")
         if addr is not None and n >= 4 and addr % 4 == 0:
@@ -1995,19 +2594,22 @@ class FunctionTranslator:
             src = word
         else:
             if addr is not None:
-                self.emit("MOVE", "R1", str(addr))
-                self.call_helper(helper)
-            elif n == 8:
-                self.fast_path(helper, [], [("MOVE", "R1", f"{mem}[R2]"),
-                                            ("MOVE", "R2", f"{mem}+1[R2]")])
-            elif n == 4:
-                self.fast_path(helper, [], [("MOVE", "R1", f"{mem}[R2]")])
-            else:
-                self.call_helper(helper)
+                a = str(addr)
             if n == 8:
-                self.move(dest, ["R1", "R2"])
+                res = dest
+            else:
+                res = [dest[0] if len(dest) == 1 else self.new_vreg()]
+            if addr is None and n == 8:
+                self.fast_path(helper, a, [], res, [("MOVE", res[0], f"{mem}[%w]"),
+                                                    ("MOVE", res[1], f"{mem}+1[%w]")])
+            elif addr is None and n == 4:
+                self.fast_path(helper, a, [], res, [("MOVE", res[0], f"{mem}[%w]")])
+            else:
+                self.call_helper(helper, [a], len(res))
+                self.move(res, [f"R{k + 1}" for k in range(len(res))])
+            if n == 8 or len(dest) == 1:
                 return
-            src = "R1"
+            src = res[0]
         if len(dest) == 1:
             self.emit("MOVE", dest[0], src)
             return
@@ -2023,24 +2625,21 @@ class FunctionTranslator:
         helper (store_helper) with the value in R2, and R3 for n = 8."""
         const = self.const_value(2)
         base, value = self.pop([I32, t], at, what)
-        addr = self.address(base[0], offset, n, const)
+        addr, a = self.address(base[0], offset, n, const)
         mem = f"@{self.t.mem}"
         words_n = 2 if n == 8 else 1
         if addr is not None and n >= 4 and addr % 4 == 0:
             for k in range(words_n):
                 self.emit("MOVE", f"{mem}+{addr // 4 + k}", value[k])
             return
-        args = [(f"R{k + 2}", value[k]) for k in range(words_n)]
         if addr is None and n >= 4:
-            self.fast_path(f"W.store{n}", args,
-                           [("MOVE", f"{mem}" + (f"+{k}" if k else "") + "[R2]", value[k])
+            self.fast_path(f"W.store{n}", a, value[:words_n], [],
+                           [("MOVE", f"{mem}" + (f"+{k}" if k else "") + "[%w]", value[k])
                             for k in range(words_n)])
             return
         if addr is not None:
-            self.emit("MOVE", "R1", str(addr))
-        for dest, src in args:
-            self.emit("MOVE", dest, src)
-        self.call_helper(f"W.store{n}")
+            a = str(addr)
+        self.call_helper(f"W.store{n}", [a] + value[:words_n], 0)
 
     def shift64(self, op: str, at: int, what: str) -> None:
         """An i64 shift or rotate. The count is the low word of the second
@@ -2048,14 +2647,14 @@ class FunctionTranslator:
         inline. Any other calls a helper (shift64_helper)."""
         count = self.deferred[-1] if len(self.stack) > self.ctrl[-1].height else None
         a, b = self.pop([I64, I64], at, what)
-        lo, hi = self.push(I64)  # where a is, or would be
+        lo, hi = self.push(I64)
         a_lo, a_hi = a           # a itself, which may be deferred
         if count is None or count.local is not None or op in ("rotl", "rotr"):
-            self.move(["R1", "R2", "R3"], [a_lo, a_hi, b[0]])
-            self.call_helper(f"W.{op}64")
+            self.call_helper(f"W.{op}64", [a_lo, a_hi, b[0]], 2)
             self.move([lo, hi], ["R1", "R2"])
             return
         n = int(count.words[0]) & 63
+        x, y = self.new_vreg(), self.new_vreg()
         if n == 0:
             self.move([lo, hi], a)
         elif op in ("shl", "shr_u"):
@@ -2066,9 +2665,9 @@ class FunctionTranslator:
             a_near, a_far = (a_lo, a_hi) if op == "shl" else (a_hi, a_lo)
             fwd, back = ("SHL", "SHR") if op == "shl" else ("SHR", "SHL")
             if n < 32:
-                self.emit(back, "R1", a_near, str(32 - n))
-                self.emit(fwd, "R2", a_far, str(n))
-                self.emit("OR", far, "R1", "R2")
+                self.emit(back, x, a_near, str(32 - n))
+                self.emit(fwd, y, a_far, str(n))
+                self.emit("OR", far, x, y)
                 self.emit(fwd, near, a_near, str(n))
             else:
                 self.emit(fwd, far, a_near, str(n - 32))
@@ -2076,9 +2675,9 @@ class FunctionTranslator:
         elif n < 32:
             # shr_s: lo' = lo >> n | hi << (32 - n), hi' = hi >>s n. C>0
             # shifts in C, the sign bit (§5.2).
-            self.emit("SHL", "R1", a_hi, str(32 - n))
-            self.emit("SHR", "R2", a_lo, str(n))
-            self.emit("OR", lo, "R1", "R2")
+            self.emit("SHL", x, a_hi, str(32 - n))
+            self.emit("SHR", y, a_lo, str(n))
+            self.emit("OR", lo, x, y)
             self.emit("C<0[M]", "R0", a_hi, "1")
             self.emit("C>0", hi, a_hi, str(n))
         else:
@@ -2200,11 +2799,17 @@ class FunctionTranslator:
                     if f.ft.params != f.ft.results:
                         raise WasmError(f"function {self.idx}: an if without else must have"
                                         " the same parameters and results", at)
-                    self.body.append(Label(f.else_label))
+                    if f.ft.params and reachable:
+                        self.emit("MOVE", "R15", f.label)
+                    self.label(f.else_label)
+                    self.moves(list(zip([w for v in f.results_v for w in v],
+                                        [w for v in f.params_v for w in v])))
                 if f.op != LOOP:
-                    self.body.append(Label(f.label))
+                    self.label(f.label)
+                else:
+                    self.loops -= 1
                 self.ctrl.pop()
-                self.reset(f, f.ft.results)
+                self.reset(f, f.results_v, f.ft.results)
                 reachable = True
             elif op == 0x05:  # else
                 f = self.ctrl[-1]
@@ -2213,9 +2818,9 @@ class FunctionTranslator:
                 if reachable:
                     self.end_block(f, at, name)
                     self.emit("MOVE", "R15", f.label)
-                self.body.append(Label(f.else_label))
+                self.label(f.else_label)
                 f.else_label = None
-                self.reset(f, f.ft.params)
+                self.reset(f, f.params_v, f.ft.params)
                 reachable = True
             elif op == 0x00:  # unreachable
                 self.trap(1)
@@ -2225,16 +2830,23 @@ class FunctionTranslator:
             elif op in (BLOCK, LOOP, IF):
                 cond_word = self.pop([I32], at, name)[0][0] if op == IF else ""
                 # The values below the block are the same on every path
-                # through it, and its parameters are in their frame words.
+                # through it, and its parameters are in registers of their
+                # own. A loop's are new ones, which a branch to it writes.
                 self.settle_locals()
                 self.settle_top(ft.params, at, name)
-                self.pop(list(ft.params), at, name)
-                f = Frame(op, ft, len(self.stack), self.words, self.new_label())
-                for t in ft.params:
-                    self.push(t)
+                params_v = self.pop(list(ft.params), at, name)
+                if op == LOOP:
+                    entry, params_v = params_v, [self.new_vregs(t) for t in ft.params]
+                    for dest, src in zip(params_v, entry):
+                        self.move(dest, src)
+                f = Frame(op, ft, len(self.stack), self.new_label(), params_v,
+                          [self.new_vregs(t) for t in ft.results])
+                for t, w in zip(ft.params, params_v):
+                    self.push(t, words=w)
                 self.ctrl.append(f)
                 if op == LOOP:
-                    self.body.append(Label(f.label))
+                    self.loops += 1
+                    self.label(f.label)
                 if op == IF:
                     f.else_label = self.new_label()
                     if flags is None:
@@ -2243,25 +2855,23 @@ class FunctionTranslator:
             elif op == 0x0C:  # br
                 assert imm is not None
                 f = self.frame(imm, at)
-                for to, frm in self.branch_moves(f, at, name):
-                    self.emit("MOVE", to, frm)
+                self.moves(self.branch_moves(f, at, name))
                 self.emit("MOVE", "R15", f.label)
                 reachable = False
             elif op == 0x0D:  # br_if
                 assert imm is not None
                 (cond,) = self.pop([I32], at, name)
                 f = self.frame(imm, at)
-                moves = self.branch_moves(f, at, name)
+                moves = [(d, s) for d, s in self.branch_moves(f, at, name) if d != s]
                 if flags is None:
                     self.emit("MOVE[M]", "R0", cond[0])
                     flags = "!Z"
                 if moves:
                     skip = self.new_label()
                     self.emit(f"?{negate(flags)} MOVE", "R15", skip)
-                    for to, frm in moves:
-                        self.emit("MOVE", to, frm)
+                    self.moves(moves)
                     self.emit("MOVE", "R15", f.label)
-                    self.body.append(Label(skip))
+                    self.label(skip)
                 else:
                     self.emit(f"?{flags} MOVE", "R15", f.label)
             elif op == 0x0E:  # br_table
@@ -2275,28 +2885,30 @@ class FunctionTranslator:
                 # A label whose values must be moved first gets a stub that
                 # moves them and then branches.
                 target: Dict[int, str] = {}  # label depth -> address
-                stubs: List[Item] = []
+                stubs: List[Tuple[str, List[Tuple[str, str]], str]] = []
                 for depth, f in zip(targets, frames):
                     if depth in target:
                         continue
-                    moves = self.branch_moves(f, at, name)
+                    moves = [(d, s) for d, s in self.branch_moves(f, at, name) if d != s]
                     if not moves:
                         target[depth] = f.label
                         continue
                     target[depth] = self.new_label()
-                    stubs.append(Label(target[depth]))
-                    stubs += [make_ins("MOVE", to, frm) for to, frm in moves]
-                    stubs.append(make_ins("MOVE", "R15", f.label))
+                    stubs.append((target[depth], moves, f.label))
                 table = self.new_label()
                 n = len(targets) - 1
-                self.emit("MOVE", "R1", index[0])
-                self.emit("SUB[M]", "R0", "R1", str(n))
+                x = self.new_vreg()
+                self.emit("MOVE", x, index[0])
+                self.emit("SUB[M]", "R0", x, str(n))
                 self.emit("?!C MOVE", "R15", target[targets[-1]])  # index >= n, unsigned
-                jump = self.emit("MOVE", "R15", f"@{table}[R1]")
-                jump.kind, jump.targets = "jump", [target[depth] for depth in targets]
-                self.body.append(Label(table))
+                jump = self.emit("MOVE", "R15", f"@{table}[{x}]")
+                jump.kind, jump.targets = "jump", sorted(set(target.values()))
+                self.label(table)
                 self.body += [instr(".DAT", target[depth]) for depth in targets[:-1]]
-                self.body += stubs
+                for label, moves, to in stubs:
+                    self.label(label)
+                    self.moves(moves)
+                    self.emit("MOVE", "R15", to)
                 reachable = False
             elif op == 0x1A:  # drop
                 self.pop([None], at, name)
@@ -2322,14 +2934,15 @@ class FunctionTranslator:
                     raise WasmError(f"function {self.idx}: function {imm} does not exist", at)
                 if imm < len(self.t.m.imports) and self.t.m.imports[imm].module == "nice":
                     # One access, even if a peek's result is not used (§9.4).
+                    p = self.new_vreg()
                     if self.t.m.imports[imm].name == "peek":
                         (addr,) = self.pop([I32], at, "nice.peek")
-                        self.emit("MOVE", "R1", addr[0])
-                        self.emit("MOVE", self.push(I32)[0], "@R1")
+                        self.emit("MOVE", p, addr[0])
+                        self.emit("MOVE", self.push(I32)[0], f"@{p}")
                     else:
                         addr, value = self.pop([I32, I32], at, "nice.poke")
-                        self.emit("MOVE", "R1", addr[0])
-                        self.emit("MOVE", "@R1", value[0])
+                        self.emit("MOVE", p, addr[0])
+                        self.emit("MOVE", f"@{p}", value[0])
                 else:
                     ft = self.t.func_type(imm)
                     fwd = (self.forward(r, at, ft.results[0], len(ft.params))
@@ -2409,6 +3022,7 @@ class FunctionTranslator:
                     self.emit("MOVE", d, "-1")
                     self.emit("?Z MOVE", d, str(self.t.m.memory_pages))
             elif op in SHIFT_OPS:
+                count = self.const_value(1)
                 fwd = self.forward(r, at, I32, 2)
                 a, b = self.pop([I32, I32], at, name)
                 d = self.push(I32)[0] if fwd is None else fwd[0][0]
@@ -2418,10 +3032,14 @@ class FunctionTranslator:
                     self.emit("ROL" if shift == "rotl" else "ROR", d, a[0], b[0])
                 else:
                     # Wasm takes the count modulo 32 (§9.4).
-                    self.emit("AND", "R1", b[0], "31")
+                    if count is not None:
+                        c = str(count & 31)
+                    else:
+                        c = self.new_vreg()
+                        self.emit("AND", c, b[0], "31")
                     if shift == "shr_s":
                         self.emit("C<0[M]", "R0", a[0], "1")   # C = the sign bit (§5.2)
-                    self.emit({"shl": "SHL", "shr_u": "SHR", "shr_s": "C>0"}[shift], d, a[0], "R1")
+                    self.emit({"shl": "SHL", "shr_u": "SHR", "shr_s": "C>0"}[shift], d, a[0], c)
                 if fwd is not None and fwd[1] is not None:
                     self.push(I32, fwd[1])
             elif op in SHIFT64_OPS:
@@ -2457,8 +3075,9 @@ class FunctionTranslator:
             elif op in FLOAT_CMP_OPS:
                 t, routine, test = FLOAT_CMP_OPS[op]
                 self.call(f"_{routine}", FuncType([t, t], [I32]), at, name)
-                d = self.top()[0]
-                self.emit("MOVE[M]", "R0", "R1")
+                (res,) = self.pop([I32], at, name)
+                d = self.push(I32)[0]
+                self.emit("MOVE[M]", "R0", res[0])
                 # The flags of the routine's result in R1 give the answer.
                 if test in ("==", "!="):
                     self.emit("MOVE", d, "0")
@@ -2476,8 +3095,8 @@ class FunctionTranslator:
             elif op in REINTERPRET_OPS:
                 src_t, dst_t = REINTERPRET_OPS[op]
                 deferred = self.deferred[-1] if len(self.stack) > self.ctrl[-1].height else None
-                self.pop([src_t], at, name)
-                self.push(dst_t, deferred)  # the same words, unchanged
+                (a,) = self.pop([src_t], at, name)
+                self.push(dst_t, deferred, a)  # the same words, unchanged
             elif op in SIGN_OPS:
                 t, sign_op = SIGN_OPS[op]
                 values = self.pop([t, t] if sign_op == "copysign" else [t], at, name)
@@ -2490,9 +3109,10 @@ class FunctionTranslator:
                 elif sign_op == "neg":
                     self.emit("XOR", top, a_top, "0x80000000")
                 else:
-                    self.emit("AND", "R1", values[1][-1], "0x80000000")
+                    x = self.new_vreg()
+                    self.emit("AND", x, values[1][-1], "0x80000000")
                     self.emit("AND", top, a_top, "0x7FFFFFFF")
-                    self.emit("OR", top, top, "R1")
+                    self.emit("OR", top, top, x)
             elif op == 0x6C and self.t.mpu:
                 self.mpu_op("umul_lo", I32, at, name)
             elif op in LIB_OPS:
@@ -2511,9 +3131,10 @@ class FunctionTranslator:
                     # (x XOR sign) - sign extends the sign bit of x. SUB[M]
                     # sets N for an i64's high word.
                     sign = str(1 << (bits - 1))
-                    self.emit("AND", "R1", a[0], str((1 << bits) - 1))
-                    self.emit("XOR", "R1", "R1", sign)
-                    self.emit("SUB[M]" if t == I64 else "SUB", ext[0], "R1", sign)
+                    x = self.new_vreg()
+                    self.emit("AND", x, a[0], str((1 << bits) - 1))
+                    self.emit("XOR", x, x, sign)
+                    self.emit("SUB[M]" if t == I64 else "SUB", ext[0], x, sign)
                 if t == I64:
                     self.emit("MOVE", ext[1], "0")
                     self.emit("?N MOVE", ext[1], "-1")
@@ -2534,7 +3155,7 @@ class FunctionTranslator:
                 self.emit("MOVE", hi, "0")
                 if op == 0xAC:
                     self.emit("?N MOVE", hi, "-1")
-        return self.wrap()
+        return self.finish()
 
     def ret(self, at: int, what: str) -> None:
         """Moves the result into R1, or R1 and R2, for return and for the
@@ -2543,42 +3164,60 @@ class FunctionTranslator:
         for rt, src in zip(self.ftype.results, results):
             self.move([f"R{k + 1}" for k in range(SIZES[rt])], src)
 
-    def wrap(self) -> List[str]:
-        """Adds the prologue and the epilogue, which build and drop the
-        §9.3 frame."""
+    def finish(self) -> List[str]:
+        """The back end: copies the parameters to their registers and sets
+        the other locals to 0, allocates the registers, and adds the
+        prologue and the epilogue, which build and drop the §9.3 frame."""
+        entry: List[Item] = []
+        for i, (in_reg, first) in enumerate(self.args):
+            for k, v in enumerate(self.locals[i]):
+                entry.append(Ins("MOVE", [v, f"R{first + k}" if in_reg else f"@%a{first + k}"]))
+        for i in range(len(self.args), len(self.locals)):
+            for v in self.locals[i]:
+                entry.append(Ins("MOVE", [v, "0"]))  # wasm zeroes locals
+        n_results = sum(SIZES[t] for t in self.ftype.results)
+        exit_ins = Ins("RET", [], kind="exit",
+                       uses=frozenset(f"R{k + 1}" for k in range(n_results)))
+        alloc = Allocator(entry + self.body + [Label(self.ret_label), exit_ins] + self.stubs,
+                          ALLOC_REGS, CALLEE_SAVED)
+        items = tidy(alloc.run())
+        saved = [r for r in CALLEE_SAVED if r in alloc.used]
+        # The frame, from FP down: the saved registers, then the frame
+        # words of spilled registers. The stack arguments are above the
+        # return address.
+        n_saved, n_slots = len(saved), alloc.n_slots
+
+        def frame_word(mo: re.Match[str]) -> str:
+            k = int(mo.group(2))
+            return f"@{-(n_saved + 1 + k) if mo.group(1) == 's' else 2 + k}[R12]"
+
         name = printable(self.t.m.names.get(self.idx, ""))
         out = [f"; Function {self.idx}" + (f": {name}" if name else "")]
         out += self.t.labels.get(self.idx, [])
         out.append(f"{self.t.prefix}f{self.idx}")
         out.append(instr("MOVE", "@--R13", "R12"))
         out.append(instr("MOVE", "R12", "R13"))
-        for r in self.saved:
+        for r in saved:
             out.append(instr("MOVE", "@--R13", r))
-        size = self.n_slots - len(self.saved) + self.max_words
-        if size:
-            out.append(instr("SUB", "R13", "R13", str(size)))
-        for i, (in_reg, first) in enumerate(self.args):
-            if in_reg:
-                for k, w in enumerate(self.local_words(i)):
-                    out.append(instr("MOVE", w, f"R{first + k}"))
-            elif i in self.regs:
-                for k, w in enumerate(self.local_words(i)):
-                    out.append(instr("MOVE", w, operand(self.local[i] + k)))
-        for i in range(len(self.args), len(self.local)):
-            for w in self.local_words(i):
-                out.append(instr("MOVE", w, "0"))  # wasm zeroes locals
-        out += render(self.body)
-        out.append(self.ret_label)
-        if self.saved:
-            # Pop the saved registers, last saved first.
-            out.append(instr("SUB", "R13", "R12", str(len(self.saved))))
-            for r in reversed(self.saved):
-                out.append(instr("MOVE", r, "@R13++"))
-        else:
-            out.append(instr("MOVE", "R13", "R12"))
-        out.append(instr("MOVE", "R12", "@R13++"))
-        out.append(instr("MOVE", "R15", "@R13++"))
-        out += render(self.stubs)
+        if n_slots:
+            out.append(instr("SUB", "R13", "R13", str(n_slots)))
+        for it in items:
+            if isinstance(it, Ins):
+                it.ops = [FRAME_WORD.sub(frame_word, o) for o in it.ops]
+        fix_calls(items)
+        for it in items:
+            if not (isinstance(it, Ins) and it.op == "RET"):
+                out += render([it])
+                continue
+            if saved:
+                # Pop the saved registers, last saved first.
+                out.append(instr("SUB", "R13", "R12", str(n_saved)))
+                for r in reversed(saved):
+                    out.append(instr("MOVE", r, "@R13++"))
+            else:
+                out.append(instr("MOVE", "R13", "R12"))
+            out.append(instr("MOVE", "R12", "@R13++"))
+            out.append(instr("MOVE", "R15", "@R13++"))
         return out
 
 

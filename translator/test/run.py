@@ -222,19 +222,19 @@ LIB_ASM = "___wasm_start MOVE R15, @R13++\n_main {}\n ADD @--R13, 2, R15\n MOVE 
 
 # Cases that must trap rather than return, and the first NICE instruction
 # of the code for the wasm instruction that traps, which R2 points at.
-# The operands of these instructions are constants, which take no frame
-# words until they must (README.md).
+# The operands of these instructions are constants, which take no
+# registers until they must (README.md).
 TRAPS = {"growtrap": "MOVE R1, 65536",
-         "trunc_big": "MOVE R2, 0x4F000000",
+         "trunc_big": "MOVE R1, 0x4F000000",
          "trunc_small": "MOVE R2, 0x41E00000",
          "trunc_neg": "MOVE R2, 0x41F00000",
-         "trunc_nan": "MOVE R2, 0x5F000000",
+         "trunc_nan": "MOVE R1, 0x5F000000",
          "libtrap": "MOVE R1, 100",
          "safetrap": "MOVE R1, 1",
          "rusttrap": "MOVE R1, 1",
-         "indirectoob": "MOVE R5, 4",
-         "indirectnull": "MOVE R5, 0",
-         "indirecttype": "MOVE R5, 1",
+         "indirectoob": "SUB[M] R0, 4, 4",
+         "indirectnull": "SUB[M] R0, 0, 4",
+         "indirecttype": "SUB[M] R0, 1, 4",
          "filloob": "ADD[M] R1, 65533, 4",
          "copyoob": "ADD[M] R1, 0, 2",
          "divzero": "MOVE[M] R0, 0",
@@ -244,7 +244,7 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "unreachable": "MOVE R1, 1",
          "oob": "ADD[M] R1, 65532, 1",
          "oobcarry": "ADD[M] R1, -1, 1",
-         "nomemory": "MOVE R1, 0"}
+         "nomemory": "MOVE R1, 2"}
 
 # Options for nicewasm.
 OPTIONS = {"unchecked": ["--no-bounds-checks"],

@@ -17,7 +17,7 @@ has TODO or FIXME comments.
   describes. Only the multi-cycle core exists ([hdl/README.md](hdl/README.md)).
   First come the next two items, which give it tests that the
   multi-cycle core passes today, so that a failure blames the core and not
-  the test, and the bus decoder of the system item.
+  the test.
 - **Test order steps not done** (MICROARCH.md §9):
   - Step 4, hazard programs: `hdl/test/hazard.nasm` and
     `hdl/test/sidefx_prog.py`, which the multi-cycle core passes. Left
@@ -56,17 +56,17 @@ has TODO or FIXME comments.
 - **The system around the core** (MICROARCH.md §8): dual-port RAM, the bus
   decoders, a default slave that reads 0 and drops writes, and the console
   UART at `0xFFFFFF00`, with generics for the memory map. The data bus
-  decoder must keep the ACKs in order when requests to different slaves
-  are in flight (MICROARCH.md §8); the pipelined core needs it before the
-  rest. The UART must receive too: a read returns the next byte with bit 8
+  decoder, which keeps the ACKs in order when requests to different slaves
+  are in flight (MICROARCH.md §8), exists: `hdl/src/wb_dmux.vhd`. The
+  instruction bus decoder does not. The UART must receive too: a read returns the next byte with bit 8
   set, or 0 (ISA.md §8.3). `wb_mem.vhd` reads a file, as the emulator's
   `--input` does. Today
-  `hdl/sim/wb_mem.vhd` stands in for all of it, in simulation only, and
-  `hdl/test/tb_core.vhd` decodes the math unit and the performance
-  counters with an address compare.
+  `hdl/sim/wb_mem.vhd` stands in for the rest, in simulation only, and
+  `hdl/test/tb_core.vhd` computes the data bus decoder's select with an
+  address compare.
 - **Formal checks with SymbiYosys** (MICROARCH.md §9): each stage, and the
   data access rule of MICROARCH.md §5.3. So far `make formal` checks only
-  the bus and interrupt ports of the multi-cycle core
+  the ports of the multi-cycle core, the timer, and the data bus decoder
   ([hdl/README.md](hdl/README.md)).
 
 ## Devices

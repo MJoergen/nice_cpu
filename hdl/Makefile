@@ -7,9 +7,10 @@ BUILD = build
 # executables, so paths given to it start with ../.
 GHDLRUN = cd $(BUILD) && $(GHDL) --elab-run --std=08
 
-SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/multicycle.vhd src/mpu.vhd src/perf.vhd src/timer.vhd
+SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/multicycle.vhd src/mpu.vhd src/perf.vhd src/timer.vhd src/wb_dmux.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd
-TEST_SOURCES = test/tb_mem.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_timer.vhd test/tb_trace.vhd test/tb_core.vhd
+TEST_SOURCES = test/tb_mem.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_timer.vhd test/tb_wb_dmux.vhd \
+  test/tb_trace.vhd test/tb_core.vhd
 
 # tb_trace stands in for the core and runs test/trace.nasm. Each run's output
 # and exit status must equal those of the emulator on the same program, with
@@ -135,7 +136,8 @@ define check_random
 endef
 
 # tb_mem checks the memory model itself, tb_mpu the math unit, tb_perf the
-# performance counters, and tb_timer the timer.
+# performance counters, tb_timer the timer, and tb_wb_dmux the data bus
+# decoder.
 test: emulator analyse synth
 	@($(GHDLRUN) tb_mem -gG_BIN_FILE=../test/mem.bin -gG_INPUT_FILE=../test/mem.input > tb_mem.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS tb_mem"; else echo "FAIL tb_mem"; cat $(BUILD)/tb_mem.log; exit 1; fi
@@ -145,6 +147,8 @@ test: emulator analyse synth
 	if [ $$? -eq 0 ]; then echo "PASS tb_perf"; else echo "FAIL tb_perf"; cat $(BUILD)/tb_perf.log; exit 1; fi
 	@($(GHDLRUN) tb_timer > tb_timer.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS tb_timer"; else echo "FAIL tb_timer"; cat $(BUILD)/tb_timer.log; exit 1; fi
+	@($(GHDLRUN) tb_wb_dmux > tb_wb_dmux.log 2>&1); \
+	if [ $$? -eq 0 ]; then echo "PASS tb_wb_dmux"; else echo "FAIL tb_wb_dmux"; cat $(BUILD)/tb_wb_dmux.log; exit 1; fi
 	@$(ASM) -o $(BUILD)/trace.bin test/trace.nasm
 	$(foreach r,$(TRACE_RUNS),$(call check_trace,$(r)))
 	$(foreach t,$(EXAMPLES),$(call check_core,$(t),../assembler/test/$(t).bin))
@@ -195,11 +199,13 @@ analyse:
 	cd $(BUILD) && $(GHDL) -a --std=08 $(addprefix ../,$(SOURCES) $(SIM_SOURCES) $(TEST_SOURCES))
 
 # Checks that GHDL can synthesise the core, the math unit, the performance
-# counters, and the timer.
-SYNTH = multicycle mpu perf timer
+# counters, the timer, and the data bus decoder, with the generics in
+# SYNTH_GENERICS_unit.
+SYNTH = multicycle mpu perf timer wb_dmux
+SYNTH_GENERICS_wb_dmux = -gG_SLAVES=4
 
 define check_synth
-	@cd $(BUILD) && $(GHDL) --synth --std=08 $(1) > $(1)_synth.vhd 2> synth_$(1).log; \
+	@cd $(BUILD) && $(GHDL) --synth --std=08 $(SYNTH_GENERICS_$(1)) $(1) > $(1)_synth.vhd 2> synth_$(1).log; \
 	if [ $$? -eq 0 ]; then echo "PASS synth $(1)"; else echo "FAIL synth $(1)"; cat synth_$(1).log; exit 1; fi
 
 endef
@@ -210,7 +216,7 @@ synth: analyse
 # The formal checks of formal/: each task of each .sby file must pass. The
 # work directories go in $(BUILD).
 SBY ?= sby
-FORMAL = multicycle timer
+FORMAL = multicycle timer wb_dmux
 FORMAL_TASKS = prove cover
 
 define check_formal

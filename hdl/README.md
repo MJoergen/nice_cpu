@@ -21,6 +21,7 @@ working reference for it.
 | [src/mpu.vhd](src/mpu.vhd) | The math unit of ISA.md §8.4, a Wishbone slave. |
 | [src/perf.vhd](src/perf.vhd) | The performance counters of ISA.md §8.5, a Wishbone slave. |
 | [src/timer.vhd](src/timer.vhd) | The timer of ISA.md §8.6, a Wishbone slave with an interrupt request port. |
+| [src/wb_dmux.vhd](src/wb_dmux.vhd) | The data bus decoder, which keeps the ACKs of several slaves in order. |
 | [src/trace_pkg.vhd](src/trace_pkg.vhd) | `t_retire`, the record in which the core reports each step to the trace writer. |
 | [sim/trace.vhd](sim/trace.vhd) | The trace writer. Simulation only. |
 | [sim/wb_mem.vhd](sim/wb_mem.vhd) | The memory model, with the console and the read counter. Simulation only. |
@@ -28,6 +29,7 @@ working reference for it.
 | [test/tb_mpu.vhd](test/tb_mpu.vhd) | A self-checking test of the math unit. |
 | [test/tb_perf.vhd](test/tb_perf.vhd) | A self-checking test of the performance counters. |
 | [test/tb_timer.vhd](test/tb_timer.vhd) | A self-checking test of the timer. |
+| [test/tb_wb_dmux.vhd](test/tb_wb_dmux.vhd) | A self-checking test of the data bus decoder. |
 | [test/tb_trace.vhd](test/tb_trace.vhd) | A test of the trace writer, which stands in for the core and runs [test/trace.nasm](test/trace.nasm). |
 | [test/tb_core.vhd](test/tb_core.vhd) | Runs a program on a core, which its generic `G_CORE` names, with an interrupt source, and writes its trace. |
 | [test/shift.nasm](test/shift.nasm) | Every shift, with the counts that are hard to get right. |
@@ -46,6 +48,8 @@ working reference for it.
 | [formal/multicycle.sby](formal/multicycle.sby) | The SymbiYosys job for it. |
 | [formal/formal_timer.vhd](formal/formal_timer.vhd) | The timer with checks of its bus and interrupt ports. |
 | [formal/timer.sby](formal/timer.sby) | The SymbiYosys job for it. |
+| [formal/formal_wb_dmux.vhd](formal/formal_wb_dmux.vhd) | The data bus decoder with checks of its master and slave ports. |
+| [formal/wb_dmux.sby](formal/wb_dmux.sby) | The SymbiYosys job for it. |
 
 ## Running the tests
 
@@ -57,8 +61,8 @@ run under nvc.
     cd hdl && make test
 
 `make test` builds the emulator, analyses the VHDL, checks that GHDL can
-synthesise the core, the math unit, the performance counters, and the
-timer (`ghdl --synth`), and runs the tests. Everything it makes goes in `build/`.
+synthesise the core, the math unit, the performance counters, the timer,
+and the data bus decoder (`ghdl --synth`), and runs the tests. Everything it makes goes in `build/`.
 `make clean` removes it.
 
 `make lint` checks the style of every VHDL file against
@@ -87,6 +91,14 @@ of the P-th cycle counting the write's, and that the count stops while
 when the vector is written and more requests merge with it, and a check
 in every cycle makes sure of that. It also checks a stop with a request
 pending, P = 1 with `ready` high in every cycle, the spare words, and reset.
+
+`tb_wb_dmux` sends 5000 random requests through the data bus decoder to
+three slaves that stall at random and answer in order at their own pace:
+one in the next cycle, one slowly, and one that stalls while it owes an
+ACK, as the math unit does. It checks that each ACK reaches the master in
+the order of the requests, with the data of the slave and the request it
+answers, that a slave gets STB only for a request to it and only while no
+other slave owes an ACK, and that a request that may pass is not stalled.
 
 `tb_trace` runs four times, each against the emulator on the same program
 with the same NMI: with the full trace, without the trace, and stopped at two
@@ -225,6 +237,20 @@ assumes the rules of the other side of its port and asserts the core's:
   It asserts that the core raises `ready` only for a request, and never in
   reset.
 
+`formal_wb_dmux` checks the data bus decoder with three slaves and up to
+three ACKs owed. Every input is free. It assumes that the master raises
+STB only with CYC, and that a slave sends ACK only while CYC is high and
+it owes one. It asserts that a slave gets STB only with the master's STB
+and only when the select names it, that no slave gets STB while another
+owes an ACK, that the master's request is accepted exactly when a slave
+accepts it, and that the master's ACK and data are those of the slave
+that owes ACKs, only while the master is owed one. So all the requests in
+flight are at one slave, and the ACKs come back in order. Its `prove`
+task uses PDR (`abc pdr`), which finds the invariants that tie the
+decoder's count to the checker's, so the decoder needs no `G_FORMAL`.
+The `cover` task shows a request that waits for another slave's ACKs,
+the most ACKs owed, and a switch from one slave to another.
+
 `formal_timer` checks the timer's ports from the other side. Every input
 is free. It asserts that a raised request stays raised, with its vector,
 until `ready` takes it, which is what `handshake_check` assumes of a
@@ -313,6 +339,29 @@ runs it after each run with requests, the random programs included, and
 agrees with the comparison that uses the steps the requests were raised
 for.
 
+## The data bus decoder
+
+`wb_dmux` connects the core's data bus, a pipelined Wishbone master, to
+`G_SLAVES` slaves. The instantiator decodes the address into `sel_i`, the
+index of the slave, so the decoder holds no address map. In `tb_core`,
+slave 0 is the memory model, the default slave, then come the math unit,
+the performance counters, and the timer. CYC, WE, ADDR, and the write
+data go to every slave directly.
+
+The slaves answer at their own pace: the math unit holds the ACK of a read
+for up to 65 cycles. So a request to one slave passes only while no other
+slave owes an ACK, and otherwise the master sees STALL. All the requests
+in flight then go to one slave, which answers them in order, and the ACK
+and the read data come back from that slave. The decoder counts the ACKs
+owed, up to `G_MAX_PENDING` (default 4), beyond which the master sees
+STALL too. A request to another slave waits one cycle after the last ACK
+it waits for, because the choice depends only on registers and the select,
+not on that cycle's ACK.
+
+STB and STALL pass combinationally, so the decoder adds no cycle of
+latency: a store accepted in cycle c reaches the memory in cycle c,
+before an instruction fetch accepted in cycle c + 1.
+
 ## The memory model
 
 `wb_mem` holds all 2³² words sparsely, as the emulator does, and loads a
@@ -349,8 +398,7 @@ signed and unsigned products, quotients, and remainders of A and B.
 Offsets 16 to 31 hold the 64-bit C and D, and the signed and unsigned
 quotients and remainders of C and D. It is a pipelined Wishbone slave with
 a 5-bit address. The bus decoder selects it for `0xFFFFFF20`–`0xFFFFFF3F`
-and passes address bits 4..0 as the offset. In `tb_core`,
-that decoder is an address compare on the data bus.
+and passes address bits 4..0 as the offset.
 
 A write to A or B starts a computation that takes 33 cycles. A
 shift-and-add multiplier and two restoring dividers run side by side, one
@@ -370,8 +418,7 @@ result words and the spare words are ignored.
 `CYCLE_HI` at offsets 0 and 1, and `INSTR_LO` and `INSTR_HI` at 2 and 3. It
 is a pipelined Wishbone slave with a 4-bit address. It never stalls, and it
 acknowledges each request in the next cycle. The bus decoder selects it for
-`0xFFFFFF10`–`0xFFFFFF1F`, and in `tb_core` that is an address compare,
-as for the math unit.
+`0xFFFFFF10`–`0xFFFFFF1F`.
 
 The cycle counter counts every clock cycle after reset. The instruction
 counter counts the core's `instret_o`, which the multi-cycle core raises for

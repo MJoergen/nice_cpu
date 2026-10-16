@@ -7,11 +7,13 @@
 -- The core runs on the memory model, sim/wb_mem.vhd, which loads G_BIN_FILE.
 -- Its console reads the bytes of G_INPUT_FILE, as the emulator's --input
 -- does, or none if it is "".
--- A decoder on the data bus sends 0xFFFFFF10-0xFFFFFF1F to the performance
--- counters, src/perf.vhd (ISA.md §8.5), 0xFFFFFF20-0xFFFFFF3F to the math
--- unit, src/mpu.vhd (ISA.md §8.4), and 0xFFFFFF40-0xFFFFFF4F to the timer,
--- src/timer.vhd (ISA.md §8.6). It needs no more than an address compare,
--- because the core waits for each ACK before its next request.
+-- The data bus decoder, src/wb_dmux.vhd, sends 0xFFFFFF10-0xFFFFFF1F to
+-- the performance counters, src/perf.vhd (ISA.md §8.5), 0xFFFFFF20-
+-- 0xFFFFFF3F to the math unit, src/mpu.vhd (ISA.md §8.4), 0xFFFFFF40-
+-- 0xFFFFFF4F to the timer, src/timer.vhd (ISA.md §8.6), and the rest to the
+-- memory model. It keeps the ACKs in order for a core with several
+-- requests in flight (MICROARCH.md §8). It holds no address map: the
+-- address compare that names the slave, dbus_sel, is here.
 -- The trace writer, sim/trace.vhd, prints each step the core reports.
 --
 -- With G_CYCLE_COUNTER false, CYCLE_LO and CYCLE_HI at 0xFFFFFF10 and
@@ -176,29 +178,21 @@ architecture simulation of tb_core is
    signal dbus_data_out : std_logic_vector(31 downto 0);
    signal dbus_data_in  : std_logic_vector(31 downto 0);
 
-   signal mpu_sel     : std_logic;
-   signal mem_stb     : std_logic;
-   signal mem_stall   : std_logic;
-   signal mem_ack     : std_logic;
-   signal mem_data_in : std_logic_vector(31 downto 0);
-   signal mpu_stb     : std_logic;
-   signal mpu_stall   : std_logic;
-   signal mpu_ack     : std_logic;
-   signal mpu_data_in : std_logic_vector(31 downto 0);
+   -- The slaves of the data bus decoder, in the order of these indices
+   constant C_MEM    : natural := 0;
+   constant C_MPU    : natural := 1;
+   constant C_PERF   : natural := 2;
+   constant C_TIMER  : natural := 3;
+   constant C_SLAVES : natural := 4;
 
-   signal timer_sel     : std_logic;
-   signal timer_stb     : std_logic;
-   signal timer_stall   : std_logic;
-   signal timer_ack     : std_logic;
-   signal timer_data_in : std_logic_vector(31 downto 0);
-   signal timer_valid   : std_logic;
-   signal timer_vector  : std_logic_vector(7 downto 0);
+   signal dbus_sel    : natural range 0 to C_SLAVES - 1;
+   signal slave_stb   : std_logic_vector(C_SLAVES - 1 downto 0);
+   signal slave_stall : std_logic_vector(C_SLAVES - 1 downto 0);
+   signal slave_ack   : std_logic_vector(C_SLAVES - 1 downto 0);
+   signal slave_data  : std_logic_vector(32 * C_SLAVES - 1 downto 0);
 
-   signal perf_sel     : std_logic;
-   signal perf_stb     : std_logic;
-   signal perf_stall   : std_logic;
-   signal perf_ack     : std_logic;
-   signal perf_data_in : std_logic_vector(31 downto 0);
+   signal timer_valid  : std_logic;
+   signal timer_vector : std_logic_vector(7 downto 0);
    signal instret      : std_logic;
 
    signal nmi_valid  : std_logic                    := '0';
@@ -278,24 +272,32 @@ begin
    end generate gen_core;
 
 
-   mpu_sel      <= '1' when dbus_addr(31 downto 5) = X"FFFFFF" & "001" else '0';
-   perf_sel     <= '1' when dbus_addr(31 downto 4) = X"FFFFFF1" and
-                            (G_CYCLE_COUNTER or dbus_addr(3 downto 1) /= "000") else
-                   '0';
-   timer_sel    <= '1' when dbus_addr(31 downto 4) = X"FFFFFF4" else '0';
-   mem_stb      <= dbus_stb and not mpu_sel and not perf_sel and not timer_sel;
-   mpu_stb      <= dbus_stb and mpu_sel;
-   perf_stb     <= dbus_stb and perf_sel;
-   timer_stb    <= dbus_stb and timer_sel;
-   dbus_stall   <= mpu_stall when mpu_sel = '1' else
-                   perf_stall when perf_sel = '1' else
-                   timer_stall when timer_sel = '1' else
-                   mem_stall;
-   dbus_ack     <= mem_ack or mpu_ack or perf_ack or timer_ack;
-   dbus_data_in <= mpu_data_in when mpu_ack = '1' else
-                   perf_data_in when perf_ack = '1' else
-                   timer_data_in when timer_ack = '1' else
-                   mem_data_in;
+   dbus_sel <= C_MPU when dbus_addr(31 downto 5) = X"FFFFFF" & "001" else
+               C_PERF when dbus_addr(31 downto 4) = X"FFFFFF1" and
+                           (G_CYCLE_COUNTER or dbus_addr(3 downto 1) /= "000") else
+               C_TIMER when dbus_addr(31 downto 4) = X"FFFFFF4" else
+               C_MEM;
+
+
+   i_wb_dmux : entity work.wb_dmux
+      generic map (
+         G_SLAVES => C_SLAVES
+      )
+      port map (
+         clk_i     => clk,
+         rst_i     => rst,
+         sel_i     => dbus_sel,
+         m_cyc_i   => dbus_cyc,
+         m_stb_i   => dbus_stb,
+         m_stall_o => dbus_stall,
+         m_ack_o   => dbus_ack,
+         m_data_o  => dbus_data_in,
+         s_stb_o   => slave_stb,
+         s_stall_i => slave_stall,
+         s_ack_i   => slave_ack,
+         s_data_i  => slave_data
+      ); -- i_wb_dmux
+
 
    core_irq_valid  <= irq_valid or timer_valid;
    core_irq_vector <= irq_vector when irq_valid = '1' else
@@ -319,13 +321,13 @@ begin
          ibus_addr_i     => ibus_addr,
          ibus_data_o     => ibus_data,
          dbus_cyc_i      => dbus_cyc,
-         dbus_stb_i      => mem_stb,
-         dbus_stall_o    => mem_stall,
-         dbus_ack_o      => mem_ack,
+         dbus_stb_i      => slave_stb(C_MEM),
+         dbus_stall_o    => slave_stall(C_MEM),
+         dbus_ack_o      => slave_ack(C_MEM),
          dbus_we_i       => dbus_we,
          dbus_addr_i     => dbus_addr,
          dbus_data_i     => dbus_data_out,
-         dbus_data_o     => mem_data_in,
+         dbus_data_o     => slave_data(32 * C_MEM + 31 downto 32 * C_MEM),
          console_valid_o => console_valid,
          console_data_o  => console_data
       ); -- i_wb_mem
@@ -336,13 +338,13 @@ begin
          clk_i      => clk,
          rst_i      => rst,
          wb_cyc_i   => dbus_cyc,
-         wb_stb_i   => mpu_stb,
-         wb_stall_o => mpu_stall,
-         wb_ack_o   => mpu_ack,
+         wb_stb_i   => slave_stb(C_MPU),
+         wb_stall_o => slave_stall(C_MPU),
+         wb_ack_o   => slave_ack(C_MPU),
          wb_we_i    => dbus_we,
          wb_addr_i  => dbus_addr(4 downto 0),
          wb_data_i  => dbus_data_out,
-         wb_data_o  => mpu_data_in
+         wb_data_o  => slave_data(32 * C_MPU + 31 downto 32 * C_MPU)
       ); -- i_mpu
 
 
@@ -352,13 +354,13 @@ begin
          rst_i      => rst,
          instret_i  => instret,
          wb_cyc_i   => dbus_cyc,
-         wb_stb_i   => perf_stb,
-         wb_stall_o => perf_stall,
-         wb_ack_o   => perf_ack,
+         wb_stb_i   => slave_stb(C_PERF),
+         wb_stall_o => slave_stall(C_PERF),
+         wb_ack_o   => slave_ack(C_PERF),
          wb_we_i    => dbus_we,
          wb_addr_i  => dbus_addr(3 downto 0),
          wb_data_i  => dbus_data_out,
-         wb_data_o  => perf_data_in
+         wb_data_o  => slave_data(32 * C_PERF + 31 downto 32 * C_PERF)
       ); -- i_perf
 
 
@@ -368,13 +370,13 @@ begin
          rst_i        => rst,
          tick_i       => retire.valid,
          wb_cyc_i     => dbus_cyc,
-         wb_stb_i     => timer_stb,
-         wb_stall_o   => timer_stall,
-         wb_ack_o     => timer_ack,
+         wb_stb_i     => slave_stb(C_TIMER),
+         wb_stall_o   => slave_stall(C_TIMER),
+         wb_ack_o     => slave_ack(C_TIMER),
          wb_we_i      => dbus_we,
          wb_addr_i    => dbus_addr(3 downto 0),
          wb_data_i    => dbus_data_out,
-         wb_data_o    => timer_data_in,
+         wb_data_o    => slave_data(32 * C_TIMER + 31 downto 32 * C_TIMER),
          irq_valid_o  => timer_valid,
          irq_ready_i  => irq_ready,
          irq_vector_o => timer_vector

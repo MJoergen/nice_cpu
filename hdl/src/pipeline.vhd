@@ -364,6 +364,17 @@ begin
             assert not (rd_stb_r = '1' and w_req = '1')
                report "pipeline: a read of PREPARE and an access of WRITE on the bus at once"
                severity failure;
+            -- No flush or interrupt drops an instruction in PREPARE that has
+            -- made a data read (src/pipe_prepare.vhd, c).
+            assert not ((w_flush = '1' or take_nmi = '1' or take_irq = '1') and
+                        prep_r.valid = '1' and p_out.committed = '1')
+               report "pipeline: a flush or interrupt drops an instruction with a data read"
+               severity failure;
+            -- The data of a read finds room in DBUS (src/pipe_dbus.vhd, c).
+            assert not ((rd_stb_r = '1' or (w_req = '1' and w_we = '0')) and dbus_stall_i = '0' and
+                        rq_cnt_r + reads_owed >= C_MAX_OUT + w_pop)
+               report "pipeline: a read accepted without room for its data"
+               severity failure;
             assert not (w_flush = '1' and (rd_stb_r = '1' or p_load = '1'))
                report "pipeline: a flush while a data read is waiting to be issued"
                severity failure;

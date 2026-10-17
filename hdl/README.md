@@ -143,7 +143,7 @@ with the same interrupt requests:
   only a few instructions, sources often read a register that one of the
   last three instructions wrote, and each interrupt vector leads to a
   short routine that ends with `RTI`. A random program may read any address, and now and then one reaches the cycle counter at
-  `0xFFFFFF10`, where the core counts cycles and the emulator counts steps
+  `0xFFFFFF40`, where the core counts cycles and the emulator counts steps
   (ISA.md §8.5). So these runs make its two words ordinary memory on both
   sides, with the generic `G_CYCLE_COUNTER` and the emulator's
   `--no-cycle-counter`. The instruction counter and the math unit stay,
@@ -363,7 +363,7 @@ result words and the spare words are ignored.
 `CYCLE_HI` at offsets 0 and 1, and `INSTR_LO` and `INSTR_HI` at 2 and 3. It
 is a pipelined Wishbone slave with a 4-bit address. It never stalls, and it
 acknowledges each request in the next cycle. The bus decoder selects it for
-`0xFFFFFF10`–`0xFFFFFF1F`, and in `tb_multicycle` that is an address compare,
+`0xFFFFFF40`–`0xFFFFFF4F`, and in `tb_multicycle` that is an address compare,
 as for the math unit.
 
 The cycle counter counts every clock cycle after reset. The instruction
@@ -382,7 +382,7 @@ ISA.md §8.5 requires, except in `tb_perf`, which starts near a wrap.
 `timer` holds the timer of ISA.md §8.6: `TIMER_PERIOD`, `TIMER_COUNT`, and
 `TIMER_VECTOR` at offsets 0, 1, and 2. Its bus port is a pipelined Wishbone
 slave with a 4-bit address, like that of the performance counters. The bus
-decoder selects it for `0xFFFFFF40`–`0xFFFFFF4F`.
+decoder selects it for `0xFFFFFF10`–`0xFFFFFF1F`.
 
 It counts down in each cycle with `tick_i` high. A system ties `tick_i` to
 `'1'`, so that the timer counts clock cycles. `tb_multicycle` connects it to

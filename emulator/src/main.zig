@@ -10,8 +10,8 @@ const usage =
     \\registers. A write to 0xFFFFFF00 prints its low byte on stdout. A read
     \\of 0xFFFFFF00 returns the next byte of stdin plus 0x100, or 0x200 after
     \\the end of the input.
-    \\The performance counters are at 0xFFFFFF10-0xFFFFFF13, the math unit
-    \\is at 0xFFFFFF20-0xFFFFFF3F, and the timer at 0xFFFFFF40-0xFFFFFF42.
+    \\The timer is at 0xFFFFFF10-0xFFFFFF12, the math unit at 0xFFFFFF20-
+    \\0xFFFFFF3F, and the performance counters at 0xFFFFFF40-0xFFFFFF43.
     \\
     \\Options:
     \\  -t, --trace          Print one line per instruction.
@@ -23,7 +23,7 @@ const usage =
     \\      --irq STEP:VEC   Raise IRQ with vector VEC before step STEP.
     \\      --nmi STEP:VEC   Raise NMI with vector VEC before step STEP.
     \\                       Both may be repeated. Steps count from 0.
-    \\      --no-cycle-counter  Make 0xFFFFFF10 and 0xFFFFFF11 ordinary memory,
+    \\      --no-cycle-counter  Make 0xFFFFFF40 and 0xFFFFFF41 ordinary memory,
     \\                       for comparing traces with an FPGA core.
     \\  -h, --help           Print this help.
     \\

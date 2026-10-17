@@ -453,15 +453,15 @@ A use of the MPU takes several instructions, and an interrupt may come between t
 
 ### 8.5 Performance counters
 
-The emulator and the FPGA implementation map two 64-bit performance counters at `0xFFFFFF10`–`0xFFFFFF1F`. Like the console, they are a property of those systems, not of the ISA.
+The emulator and the FPGA implementation map two 64-bit performance counters at `0xFFFFFF40`–`0xFFFFFF4F`. Like the console, they are a property of those systems, not of the ISA.
 
 | Address | Name | A data read returns | A write |
 |---|---|---|---|
-| `0xFFFFFF10` | `CYCLE_LO` | bits 31..0 of the cycle counter, and takes a snapshot of it | is ignored |
-| `0xFFFFFF11` | `CYCLE_HI` | bits 63..32 of the cycle counter's snapshot | is ignored |
-| `0xFFFFFF12` | `INSTR_LO` | bits 31..0 of the instruction counter, and takes a snapshot of it | is ignored |
-| `0xFFFFFF13` | `INSTR_HI` | bits 63..32 of the instruction counter's snapshot | is ignored |
-| `0xFFFFFF14`–`0xFFFFFF1F` | | 0 | is ignored |
+| `0xFFFFFF40` | `CYCLE_LO` | bits 31..0 of the cycle counter, and takes a snapshot of it | is ignored |
+| `0xFFFFFF41` | `CYCLE_HI` | bits 63..32 of the cycle counter's snapshot | is ignored |
+| `0xFFFFFF42` | `INSTR_LO` | bits 31..0 of the instruction counter, and takes a snapshot of it | is ignored |
+| `0xFFFFFF43` | `INSTR_HI` | bits 63..32 of the instruction counter's snapshot | is ignored |
+| `0xFFFFFF44`–`0xFFFFFF4F` | | 0 | is ignored |
 
 - The **instruction counter** counts the instructions that have completed since reset. Every instruction counts, including one whose condition is false, a control instruction, and `INT`. An interrupt entry for IRQ or NMI does not count, because it is not an instruction. An instruction that reads `INSTR_LO` reads the number of instructions that completed before it.
 - The **cycle counter** counts the clock cycles since reset. The emulator has no clock, so it counts one cycle for each instruction and each interrupt entry, that is, for each step. Its cycle counter is an approximation and differs from the FPGA implementation's.
@@ -474,14 +474,14 @@ An interrupt service routine that reads a counter's low word overwrites its snap
 
 ### 8.6 Timer
 
-The emulator and the FPGA implementation map a timer at `0xFFFFFF40`–`0xFFFFFF4F`. It raises IRQ once every P cycles. Like the console, it is a property of those systems, not of the ISA.
+The emulator and the FPGA implementation map a timer at `0xFFFFFF10`–`0xFFFFFF1F`. It raises IRQ once every P cycles. Like the console, it is a property of those systems, not of the ISA.
 
 | Address | Name | A data read returns | A write |
 |---|---|---|---|
-| `0xFFFFFF40` | `TIMER_PERIOD` | the period P | sets P, and COUNT, to the value written |
-| `0xFFFFFF41` | `TIMER_COUNT` | COUNT, the cycles left until the next request | is ignored |
-| `0xFFFFFF42` | `TIMER_VECTOR` | the vector v in bits 7..0, and 0 in bits 31..8 | sets v to bits 7..0 of the value written |
-| `0xFFFFFF43`–`0xFFFFFF4F` | | 0 | is ignored |
+| `0xFFFFFF10` | `TIMER_PERIOD` | the period P | sets P, and COUNT, to the value written |
+| `0xFFFFFF11` | `TIMER_COUNT` | COUNT, the cycles left until the next request | is ignored |
+| `0xFFFFFF12` | `TIMER_VECTOR` | the vector v in bits 7..0, and 0 in bits 31..8 | sets v to bits 7..0 of the value written |
+| `0xFFFFFF13`–`0xFFFFFF1F` | | 0 | is ignored |
 
 - While P ≠ 0, COUNT decreases by one at the end of each cycle, the cycle of the write to `TIMER_PERIOD` included. When COUNT reaches 0, the timer raises IRQ with vector v, and COUNT is set to P again. So the first request comes at the end of the P-th cycle, counting from the write, and then one comes every P cycles.
 - P = 0 stops the timer, and COUNT stays 0. A request that is already pending stays pending.

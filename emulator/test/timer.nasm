@@ -50,9 +50,9 @@
 ; E and Z from the flags of step 28 that the routines restored, and the
 ; HALT is the 41st step. The dump of the timer shows P = 0, COUNT = 0,
 ; v = 0x41, and a spare word, 0.
-TIMER_PERIOD .EQU 0xFFFFFF40
-TIMER_COUNT  .EQU 0xFFFFFF41
-TIMER_VECTOR .EQU 0xFFFFFF42
+TIMER_PERIOD .EQU 0xFFFFFF10
+TIMER_COUNT  .EQU 0xFFFFFF11
+TIMER_VECTOR .EQU 0xFFFFFF12
         MOVE    R1, @TIMER_COUNT
         MOVE    @TIMER_VECTOR, 0x141
         MOVE    R2, @TIMER_VECTOR

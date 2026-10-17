@@ -30,10 +30,10 @@
 ; cycle snapshot's high word 0, the instructions, 17 = 0x11, the
 ; instruction snapshot's high word 0, and a spare word, 0. The writes left
 ; no trace in memory.
-CYCLE_LO .EQU   0xFFFFFF10
-CYCLE_HI .EQU   0xFFFFFF11
-INSTR_LO .EQU   0xFFFFFF12
-INSTR_HI .EQU   0xFFFFFF13
+CYCLE_LO .EQU   0xFFFFFF40
+CYCLE_HI .EQU   0xFFFFFF41
+INSTR_LO .EQU   0xFFFFFF42
+INSTR_HI .EQU   0xFFFFFF43
         MOVE    R1, @INSTR_HI   ; words 0,1
         MOVE    R2, @INSTR_LO   ; words 2,3
         MOVE    R3, @INSTR_HI   ; words 4,5

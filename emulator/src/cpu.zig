@@ -200,7 +200,7 @@ fn mpuWord(addr: u32) ?u5 {
 }
 
 /// The first of the 16 words of the performance counters (§8.5).
-pub const perf_base: u32 = io_base + 0x10;
+pub const perf_base: u32 = io_base + 0x40;
 
 /// The performance counters (§8.5). Each 64-bit counter has a snapshot,
 /// which a read of its low word fills and a read of its high word returns.
@@ -243,7 +243,7 @@ fn perfWord(addr: u32) ?u4 {
 const cycle_words = 2;
 
 /// The first of the 16 words of the timer (§8.6).
-pub const timer_base: u32 = io_base + 0x40;
+pub const timer_base: u32 = io_base + 0x10;
 
 /// The timer (§8.6). It counts steps, as the cycle counter does.
 pub const Timer = struct {

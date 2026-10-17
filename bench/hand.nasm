@@ -23,10 +23,10 @@ PC              .EQU    R15
 SP              .EQU    R13
 
 CONSOLE         .EQU    0xFFFFFF00
-CYC_LO          .EQU    0xFFFFFF10
-CYC_HI          .EQU    0xFFFFFF11
-INS_LO          .EQU    0xFFFFFF12
-INS_HI          .EQU    0xFFFFFF13
+CYC_LO          .EQU    0xFFFFFF40
+CYC_HI          .EQU    0xFFFFFF41
+INS_LO          .EQU    0xFFFFFF42
+INS_HI          .EQU    0xFFFFFF43
 MPU_A           .EQU    0xFFFFFF20
 MPU_B           .EQU    0xFFFFFF21
 UMUL_LO         .EQU    0xFFFFFF24

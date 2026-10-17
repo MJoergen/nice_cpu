@@ -8,16 +8,16 @@
 -- Its console reads the bytes of G_INPUT_FILE, as the emulator's --input
 -- does, or none if it is "".
 -- The data bus decoder, src/wb_dmux.vhd, sends 0xFFFFFF10-0xFFFFFF1F to
--- the performance counters, src/perf.vhd (ISA.md §8.5), 0xFFFFFF20-
--- 0xFFFFFF3F to the math unit, src/mpu.vhd (ISA.md §8.4), 0xFFFFFF40-
--- 0xFFFFFF4F to the timer, src/timer.vhd (ISA.md §8.6), and the rest to the
+-- the timer, src/timer.vhd (ISA.md §8.6), 0xFFFFFF20-0xFFFFFF3F to the
+-- math unit, src/mpu.vhd (ISA.md §8.4), 0xFFFFFF40-0xFFFFFF4F to the
+-- performance counters, src/perf.vhd (ISA.md §8.5), and the rest to the
 -- memory model. It keeps the ACKs in order for a core with several
 -- requests in flight (MICROARCH.md §8). It holds no address map: the
 -- address compare that names the slave, dbus_sel, is here.
 -- The trace writer, sim/trace.vhd, prints each step the core reports.
 --
--- With G_CYCLE_COUNTER false, CYCLE_LO and CYCLE_HI at 0xFFFFFF10 and
--- 0xFFFFFF11 are memory, as with the emulator's --no-cycle-counter. The
+-- With G_CYCLE_COUNTER false, CYCLE_LO and CYCLE_HI at 0xFFFFFF40 and
+-- 0xFFFFFF41 are memory, as with the emulator's --no-cycle-counter. The
 -- core's cycle count depends on the memory's stalls, so a program that
 -- reads it could not be compared with the emulator otherwise.
 --
@@ -321,9 +321,9 @@ begin
 
 
    dbus_sel <= C_MPU when dbus_addr(31 downto 5) = X"FFFFFF" & "001" else
-               C_PERF when dbus_addr(31 downto 4) = X"FFFFFF1" and
+               C_PERF when dbus_addr(31 downto 4) = X"FFFFFF4" and
                            (G_CYCLE_COUNTER or dbus_addr(3 downto 1) /= "000") else
-               C_TIMER when dbus_addr(31 downto 4) = X"FFFFFF4" else
+               C_TIMER when dbus_addr(31 downto 4) = X"FFFFFF1" else
                C_MEM;
 
 

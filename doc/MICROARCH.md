@@ -430,7 +430,7 @@ each RAM and the address of the UART. These rules hold for every setting:
   aligned words, so the decoder compares address bits 31..5.
   A read of a result holds off its ACK until the result is ready, so the
   data bus must allow a slave to take many cycles.
-- **Performance counters.** `hdl/src/perf.vhd` at `0xFFFFFF10`–`0xFFFFFF1F`
+- **Performance counters.** `hdl/src/perf.vhd` at `0xFFFFFF40`–`0xFFFFFF4F`
   (ISA §8.5). The core raises `instret_o` for one cycle per completed
   instruction. A read of `INSTR_LO` must count every older instruction,
   and not its own. So the pipelined core counts an instruction with a data
@@ -438,7 +438,7 @@ each RAM and the address of the UART. These rules hold for every setting:
   cycle it retires. The counters return a count from before that cycle's,
   and PREPARE issues a younger read only then. `hdl/test/instret.nasm`
   checks this, also behind a read that waits on the bus.
-- **Timer.** `hdl/src/timer.vhd` at `0xFFFFFF40`–`0xFFFFFF4F` (ISA §8.6),
+- **Timer.** `hdl/src/timer.vhd` at `0xFFFFFF10`–`0xFFFFFF1F` (ISA §8.6),
   with its request on the core's IRQ port. It is the only device that
   raises IRQ so far, so it needs no interrupt controller.
 - **Stack.** The runtime puts the stack just below `0xFFFFFF00`. A memory map

@@ -22,7 +22,7 @@
 ;   12   HALT
 ;
 ; The trace shows every value, and must equal the emulator's.
-INSTR_LO .EQU   0xFFFFFF12
+INSTR_LO .EQU   0xFFFFFF42
 MEM      .EQU   0x100
 MEM2     .EQU   0x101
         MOVE    @MEM, 1

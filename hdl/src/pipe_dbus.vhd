@@ -12,11 +12,16 @@
 --
 -- The registers are the two FIFOs. The bus outputs and ack_read_o depend
 -- combinationally on the requests of PREPARE and WRITE and on the bus.
+-- DAT_O is 0 for a read, so that it stays unchanged while the bus stalls
+-- a read, as wb_master_check asks, whatever WRITE does meanwhile.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) rd_stb_i and w_req_i are never '1' together.
 -- b) WRITE pops no more data than has come, and makes no request when
 --    C_MAX_OUT are in flight; PREPARE neither.
+-- c) A read is accepted only when the read data not used yet and the reads
+--    owed, less what WRITE pops in that cycle, are fewer than C_MAX_OUT.
+--    Else its data would find no room.
 --
 -- RESET
 -- Synchronous. It empties the FIFOs.
@@ -30,6 +35,10 @@ library ieee;
    use work.trace_pkg.all;
 
 entity pipe_dbus is
+   generic (
+      -- Adds the invariants that a formal proof needs.
+      G_FORMAL : boolean := false
+   );
    port (
       clk_i        : in  std_logic;
       rst_i        : in  std_logic;
@@ -105,7 +114,7 @@ begin
    dbus_cyc_o  <= '1' when dbus_stb = '1' or tag_cnt_r > 0 else '0';
    dbus_we_o   <= w_we when w_req = '1' else '0';
    dbus_addr_o <= w_addr when w_req = '1' else rd_addr_r;
-   dbus_data_o <= w_data;
+   dbus_data_o <= w_data when w_req = '1' else (others => '0');
    accept      <= dbus_stb and not dbus_stall_i;
    ack_read    <= dbus_ack_i and not tags_r(0);
 
@@ -170,5 +179,122 @@ begin
       end loop;
       reads_owed <= owed_v;
    end process p_owed;
+
+
+   -- The formal properties (formal/formal_pipe_dbus.vhd). Requests and read
+   -- data are numbered modulo 8, in the order the bus accepts them and the
+   -- ACKs bring them. One request, of free but constant number f_r, is
+   -- followed: the assertions say that its ACK is taken for a read exactly
+   -- when it was one. One read datum, of free but constant number f_n,
+   -- holds a free but constant value f_v: the assertions say that WRITE
+   -- finds f_v wherever rq_o holds read number f_n. The invariants tie the
+   -- counts and the FIFOs to the numbers, so that k-induction can prove it
+   -- all for every cycle.
+
+   gen_formal : if G_FORMAL generate
+      signal f_acc  : std_logic_vector(2 downto 0) := "000";   -- Requests accepted
+      signal f_ack  : std_logic_vector(2 downto 0) := "000";   -- ACKs
+      signal f_racc : std_logic_vector(2 downto 0) := "000";   -- Reads accepted
+      signal f_rack : std_logic_vector(2 downto 0) := "000";   -- ACKs of reads
+      signal f_pop  : std_logic_vector(2 downto 0) := "000";   -- Read data popped
+      signal f_we   : std_logic;                                -- Request f_r is a write
+      signal f_read : std_logic;                                -- A read is accepted now
+      -- The cycle before: a reset, and a stalled request with its fields
+      signal f_rst_d    : std_logic := '1';
+      signal f_rd_stall : std_logic := '0';
+      signal f_w_stall  : std_logic := '0';
+      signal f_rd_addr  : std_logic_vector(31 downto 0);
+      signal f_w_we     : std_logic;
+      signal f_w_addr   : std_logic_vector(31 downto 0);
+      signal f_w_data   : std_logic_vector(31 downto 0);
+
+      signal f_r : std_logic_vector(2 downto 0);
+      signal f_n : std_logic_vector(2 downto 0);
+      signal f_v : std_logic_vector(31 downto 0);
+
+      attribute anyconst : boolean;
+      attribute anyconst of f_r : signal is true;
+      attribute anyconst of f_n : signal is true;
+      attribute anyconst of f_v : signal is true;
+   begin
+      f_read <= accept and not (w_req and w_we);
+
+
+      p_count : process (clk_i)
+      begin
+         if rising_edge(clk_i) then
+            if accept = '1' then
+               f_acc <= f_acc + 1;
+               if f_acc = f_r then
+                  f_we <= w_req and w_we;
+               end if;
+            end if;
+            if f_read = '1' then
+               f_racc <= f_racc + 1;
+            end if;
+            if dbus_ack_i = '1' then
+               f_ack <= f_ack + 1;
+            end if;
+            if ack_read = '1' then
+               f_rack <= f_rack + 1;
+            end if;
+            f_pop <= f_pop + w_pop;
+
+            f_rst_d    <= rst_i;
+            f_rd_stall <= rd_stb_r and dbus_stall_i and not rst_i;
+            f_w_stall  <= w_req and dbus_stall_i and not rst_i;
+            f_rd_addr  <= rd_addr_r;
+            f_w_we     <= w_we;
+            f_w_addr   <= w_addr;
+            f_w_data   <= w_data;
+
+            if rst_i = '1' then
+               f_acc  <= "000";
+               f_ack  <= "000";
+               f_racc <= "000";
+               f_rack <= "000";
+               f_pop  <= "000";
+            end if;
+         end if;
+      end process p_count;
+
+      -- psl default clock is rising_edge(clk_i);
+
+      -- The slave: an ACK only for a request accepted before, and the memory
+      -- psl f_slave : assume always dbus_ack_i -> tag_cnt_r > 0;
+      -- psl f_memory : assume always (ack_read and f_rack = f_n) -> dbus_data_i = f_v;
+
+      -- PREPARE and WRITE: the contracts, a stalled request held, and no
+      -- request in the cycle after a reset
+      -- psl f_one : assume always not (rd_stb_r and w_req);
+      -- psl f_out : assume always (rd_stb_r or w_req) -> tag_cnt_r < C_MAX_OUT;
+      -- psl f_pops : assume always w_pop <= rq_cnt_r + to_nat(ack_read);
+      -- psl f_rq_room : assume always f_read -> rq_cnt_r + reads_owed < C_MAX_OUT + w_pop;
+      -- psl f_rd_hold : assume always (f_rd_stall and not rst_i) ->
+      --    (rd_stb_r = '1' and rd_addr_r = f_rd_addr);
+      -- psl f_w_hold : assume always (f_w_stall and not rst_i) ->
+      --    (w_req = '1' and w_we = f_w_we and w_addr = f_w_addr and w_data = f_w_data);
+      -- psl f_quiet : assume always f_rst_d -> not (rd_stb_r or w_req);
+
+      -- The invariants
+      -- psl f_tags : assert always rst_i = '0' -> tag_cnt_r = to_integer(f_acc - f_ack);
+      -- psl f_owed : assert always rst_i = '0' -> reads_owed = to_integer(f_racc - f_rack);
+      -- psl f_rq_cnt : assert always rst_i = '0' -> rq_cnt_r = to_integer(f_rack - f_pop);
+      -- psl f_room : assert always rst_i = '0' -> rq_cnt_r + reads_owed <= C_MAX_OUT;
+
+      gen_fifos : for i in 0 to C_MAX_OUT - 1 generate
+         -- psl f_tag : assert always (rst_i = '0' and i < tag_cnt_r and f_ack + i = f_r) ->
+         --    tags_r(i) = f_we;
+         -- psl f_rq : assert always (rst_i = '0' and i < rq_cnt_r and f_pop + i = f_n) ->
+         --    rq_r(i) = f_v;
+      end generate gen_fifos;
+
+      -- What WRITE sees: the ACK of request f_r taken for a read exactly when
+      -- it is one. rq_o is rq_r, so f_rq says that WRITE finds read f_n in
+      -- its place.
+      -- psl f_ack_read : assert always (rst_i = '0' and dbus_ack_i = '1' and f_ack = f_r) ->
+      --    ack_read = not f_we;
+
+   end generate gen_formal;
 
 end architecture synthesis;

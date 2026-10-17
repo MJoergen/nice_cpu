@@ -129,7 +129,7 @@ begin
       -- and nothing changes R15 before them in the instruction.
       early_v := '0';
       dest_v  := inst_v.consts(1);
-      if iw_v(31 downto 27) = "00000" and field(iw_v, 0) = "0001111" then
+      if iw_v(27) = '0' and field(iw_v, 0) = "0001111" then
          if iw_v(26 downto 21) = "000000" and field(iw_v, 1) = "0110000" and
             field(iw_v, 2) = "0000000" then
             early_v := '1';
@@ -142,6 +142,11 @@ begin
                dest_v  := inst_v.next_pc + inst_v.consts(1);
             end if;
          end if;
+      end if;
+      -- Backward taken: a conditional one is redirected only when its
+      -- target is at or before the instruction.
+      if iw_v(31 downto 28) /= "0000" and dest_v > inst_v.addr then
+         early_v := '0';
       end if;
       inst_v.early := early_v;
       d_early      <= early_v;

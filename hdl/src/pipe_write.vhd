@@ -492,7 +492,7 @@ begin
                if not rti_v and n_v.jump = '0' then
                   n_v.regs(15) := u_v.inst.next_pc;
                end if;
-               if rti_v or (n_v.jump = '1' and u_v.inst.early = '0') then
+               if rti_v or n_v.jump /= u_v.inst.early then
                   flush_v := true;
                end if;
                if halt_v /= HALT_NONE then

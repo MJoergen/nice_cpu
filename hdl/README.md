@@ -30,6 +30,7 @@ departs from it.
 | [src/mpu.vhd](src/mpu.vhd) | The math unit of ISA.md §8.4, a Wishbone slave. |
 | [src/perf.vhd](src/perf.vhd) | The performance counters of ISA.md §8.5, a Wishbone slave. |
 | [src/timer.vhd](src/timer.vhd) | The timer of ISA.md §8.6, a Wishbone slave with an interrupt request port. |
+| [src/fetch_stats.vhd](src/fetch_stats.vhd) | The fetch statistics of MICROARCH.md §8.1, counters of FETCH and DECODE of the pipelined core, a Wishbone slave. |
 | [src/wb_dmux.vhd](src/wb_dmux.vhd) | The data bus decoder, which keeps the ACKs of several slaves in order. |
 | [src/trace_pkg.vhd](src/trace_pkg.vhd) | `t_retire`, the record in which the core reports each step to the trace writer. |
 | [sim/trace.vhd](sim/trace.vhd) | The trace writer. Simulation only. |
@@ -38,6 +39,8 @@ departs from it.
 | [test/tb_mpu.vhd](test/tb_mpu.vhd) | A self-checking test of the math unit. |
 | [test/tb_perf.vhd](test/tb_perf.vhd) | A self-checking test of the performance counters. |
 | [test/tb_timer.vhd](test/tb_timer.vhd) | A self-checking test of the timer. |
+| [test/tb_fetch_stats.vhd](test/tb_fetch_stats.vhd) | A self-checking test of the fetch statistics. |
+| [test/fstats.nasm](test/fstats.nasm) | A program that reads the fetch statistics on the pipelined core, and checks itself. |
 | [test/tb_wb_dmux.vhd](test/tb_wb_dmux.vhd) | A self-checking test of the data bus decoder. |
 | [test/tb_trace.vhd](test/tb_trace.vhd) | A test of the trace writer, which stands in for the core and runs [test/trace.nasm](test/trace.nasm). |
 | [test/tb_core.vhd](test/tb_core.vhd) | Runs a program on a core, which its generic `G_CORE` names, with an interrupt source, and writes its trace. |
@@ -81,7 +84,7 @@ run under nvc.
 
 `make test` builds the emulator, analyses the VHDL, checks that GHDL can
 synthesise both cores, the math unit, the performance counters, the timer,
-and the data bus decoder (`ghdl --synth`), and runs the tests, those of
+the fetch statistics, and the data bus decoder (`ghdl --synth`), and runs the tests, those of
 the cores once for each core. Everything it makes goes in `build/`.
 `make clean` removes it.
 
@@ -112,6 +115,14 @@ when the vector is written and more requests merge with it, and a check
 in every cycle makes sure of that. It also checks a stop with a request
 pending, P = 1 with `ready` high in every cycle, the spare words, and reset.
 
+`tb_fetch_stats` drives the events of a few cycles by hand. It checks
+that each counter counts its events from the cycle after a write that
+clears and starts the counters, up to the write that stops them, that
+`FS_MIN`, `FS_MAX`, and `FS_HELD_MAX` follow the words in the buffer,
+that stopped counters keep their values, that a write of 1 starts them
+again without a clear, the spare words, writes to other words, and reset.
+A second instance, with `G_ENABLE` false, must read 0.
+
 `tb_wb_dmux` sends 5000 random requests through the data bus decoder to
 three slaves that stall at random and answer in order at their own pace:
 one in the next cycle, one slowly, and one that stalls while it owes an
@@ -127,7 +138,8 @@ emulator's exactly.
 
 `tb_core` runs these programs on the core that its generic `G_CORE` names:
 `multicycle` by default, or `pipeline`. Both cores have the same ports,
-and the rest of the testbench serves them both. `make test` runs them on
+but for the pipelined core's `stats_o`, and the rest of the testbench
+serves them both. `make test` runs them on
 each core in `CORES`, both by default, and `make test CORES=pipeline` on
 one. `make random` and `make programs` run the core in `CORE`, and pass it
 on to `test/irq_sweep.py` and `test/programs.py` with their option
@@ -193,6 +205,13 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   write an executable where they run.
 - `cputest`, `reads`, `mpu`, `mpu64`, `perf`, and `timer` again, on a memory that
   stalls in 30% of the cycles.
+- On the pipelined core only, `test/fstats.nasm`, also on a memory that
+  stalls in 30% of the cycles. It reads the fetch statistics around a
+  loop of jumps, and checks what any run must give: the histogram adds up
+  to the cycles, `FS_MIN` ≤ `FS_MAX` ≤ `FS_HELD_MAX` ≤ 16, at least one
+  jump and flush per round, and cycles in which DECODE waited. The
+  emulator has no fetch statistics, so the run is not compared with it:
+  it must end with R12 = 0 and exit status 0.
 - 30 random programs from `test/random_prog.py`, each stopped at 3000 steps,
   on a memory that stalls in 30% of the cycles. Besides random ALU and
   shift instructions, they use R15 with every side effect, `HALT`, `RTI`,
@@ -627,6 +646,25 @@ Its request goes to the core's IRQ port, with the valid/ready handshake of
 `src/multicycle.vhd`. It holds `valid` and the vector until `ready`, and a
 request raised while one waits merges with it. While no request is raised,
 `ready` has no effect, so `ready` may go to more than one device.
+
+## The fetch statistics
+
+`fetch_stats` holds the fetch statistics of MICROARCH.md §8.1. Its bus
+port is a pipelined Wishbone slave with a 6-bit address, bits 5..0 of the
+address, so `FS_CTRL` is at offset `0x10` and `FS_HIST` at `0x20`. The bus decoder
+selects it for `0xFFFFFF50`–`0xFFFFFF7F`.
+
+It counts the events of a `t_fetch_events` (`src/pipe_pkg.vhd`), which the
+pipelined core reports for each cycle on its port `stats_o`. FETCH fills in
+the words in its buffer, the room held for the requests in flight, a
+request held back for lack of room, a stalled request, and an arriving
+pair. DECODE fills in the cycles it waits for words or holds them back,
+and the words it takes. `pipeline` adds the jumps that DECODE resolves and
+the flushes of WRITE. The multi-cycle core has no such port, and `tb_core`
+gives the device `C_FETCH_EVENTS_NONE` with it.
+
+With the generic `G_ENABLE` false there are no counters, and every word
+reads 0. `tb_core` passes its generic `G_FETCH_STATS` on to it.
 
 
 The core reports each step in a `t_retire`: one instruction, skipped or not,

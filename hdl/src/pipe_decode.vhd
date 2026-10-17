@@ -51,7 +51,12 @@ entity pipe_decode is
       uop_o      : out t_uop;
       -- The instruction in dec_r, for the check of stores into
       -- fetched code
-      inst_o     : out t_inst
+      inst_o     : out t_inst;
+
+      -- For the fetch statistics: DECODE is free, but the words of the
+      -- next instruction are not all there; or they are, but DECODE is busy
+      starve_o   : out std_logic;
+      blocked_o  : out std_logic
    );
 end entity pipe_decode;
 
@@ -152,6 +157,8 @@ begin
    end process p_decode;
 
    d_load    <= d_ok and dec_free and not w_flush;
+   starve_o  <= not d_ok and dec_free and not w_flush and not rst_i;
+   blocked_o <= d_ok and not dec_free and not w_flush and not rst_i;
    f_consume <= inst_len(f_words(0)) when d_load = '1' else 0;
 
 

@@ -441,8 +441,61 @@ each RAM and the address of the UART. These rules hold for every setting:
 - **Timer.** `hdl/src/timer.vhd` at `0xFFFFFF10`–`0xFFFFFF1F` (ISA §8.6),
   with its request on the core's IRQ port. It is the only device that
   raises IRQ so far, so it needs no interrupt controller.
+- **Fetch statistics.** `hdl/src/fetch_stats.vhd` at
+  `0xFFFFFF50`–`0xFFFFFF7F` (§8.1), 48 words, so the decoder compares
+  address bits 31..6 and leaves out `0xFFFFFF40`–`0xFFFFFF4F`. The
+  pipelined core reports what FETCH and DECODE do in each cycle on its
+  port `stats_o`, and the device counts it: the words in FETCH's buffer,
+  the cycles DECODE waits for words, the cycles FETCH has no room for a
+  request, and more. They show how much of the buffer is used, and so
+  whether its 16 words are too many or too few.
 - **Stack.** The runtime puts the stack just below `0xFFFFFF00`. A memory map
   that runs the runtime's programs needs RAM there as well as at address 0.
+
+### 8.1 Fetch statistics
+
+`hdl/src/fetch_stats.vhd` counts what FETCH and DECODE of the pipelined
+core (§3) do, in 48 words of I/O at `0xFFFFFF50`–`0xFFFFFF7F`. They help to
+judge the size of FETCH's buffer. They are a property of this core, not of
+the ISA, so ISA.md does not describe them. The emulator has none, and the
+range is ordinary memory there. The generic `G_ENABLE` leaves them out of
+the core; every word then reads 0.
+
+| Address | Name | A data read returns | A write |
+|---|---|---|---|
+| `0xFFFFFF50` | `FS_CTRL` | the run bit R in bit 0, and 0 in bits 31..1 | sets R to bit 0; if bit 1 is set, also clears the counters |
+| `0xFFFFFF51` | `FS_CYCLES` | the cycles counted | is ignored |
+| `0xFFFFFF52` | `FS_STARVE` | the cycles in which DECODE could take an instruction, but FETCH did not have all its words | is ignored |
+| `0xFFFFFF53` | `FS_BLOCKED` | the cycles in which FETCH had all the words of the next instruction, but DECODE was busy | is ignored |
+| `0xFFFFFF54` | `FS_FULL` | the cycles in which FETCH could have sent a request, but its buffer had no room | is ignored |
+| `0xFFFFFF55` | `FS_STALL` | the cycles in which the instruction bus stalled a request | is ignored |
+| `0xFFFFFF56` | `FS_PAIRS` | the pairs of words that arrived on the instruction bus, wasted ones included | is ignored |
+| `0xFFFFFF57` | `FS_WORDS` | the words that DECODE took | is ignored |
+| `0xFFFFFF58` | `FS_JUMPS` | the jumps that DECODE resolved | is ignored |
+| `0xFFFFFF59` | `FS_FLUSHES` | the flushes of the pipeline by WRITE | is ignored |
+| `0xFFFFFF5A` | `FS_MIN` | the fewest words in the buffer in a cycle counted, or 31 if none was | is ignored |
+| `0xFFFFFF5B` | `FS_MAX` | the most words in the buffer in a cycle counted | is ignored |
+| `0xFFFFFF5C` | `FS_HELD_MAX` | the most words in the buffer and in the requests in flight, in a cycle counted | is ignored |
+| `0xFFFFFF5D`–`0xFFFFFF5F` | | 0 | is ignored |
+| `0xFFFFFF60` + n | `FS_HIST` + n | the cycles counted with n words in the buffer, for n = 0 to 31 | is ignored |
+
+- While R = 1, each clock cycle counts. Reset sets R to 1 and clears the
+  counters, so they count from reset.
+- A clear sets `FS_MIN` to 31 and every other counter to 0. A write to
+  `FS_CTRL` takes effect from the next cycle, and the cycle of a write of 0
+  still counts.
+- The counters are 32 bits wide and wrap, after about 43 seconds at 100 MHz.
+- A read returns the counter as it is in the cycle the read is accepted. To
+  read a consistent set, stop the counters first.
+- The multi-cycle core has no FETCH or DECODE stages. With it, only
+  `FS_CYCLES` and `FS_HIST` count, and every cycle has 0 words in the
+  buffer.
+
+To measure a piece of code, and then read the counters at leisure:
+
+    MOVE @FS_CTRL, 3        ; clear, and run
+    ...                     ; the code
+    MOVE @FS_CTRL, 0        ; stop
 
 ## 9. Verification
 

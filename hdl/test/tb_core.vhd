@@ -3,18 +3,24 @@
 --
 -- THEORY OF OPERATION
 -- G_CORE names the core: "multicycle" for src/multicycle.vhd. Every core
--- has the same ports, so the rest of the testbench serves them all.
+-- has the same ports, so the rest of the testbench serves them all. Only
+-- the pipelined core has stats_o, for the fetch statistics.
 -- The core runs on the memory model, sim/wb_mem.vhd, which loads G_BIN_FILE.
 -- Its console reads the bytes of G_INPUT_FILE, as the emulator's --input
 -- does, or none if it is "".
 -- The data bus decoder, src/wb_dmux.vhd, sends 0xFFFFFF10-0xFFFFFF1F to
 -- the timer, src/timer.vhd (ISA.md §8.6), 0xFFFFFF20-0xFFFFFF3F to the
 -- math unit, src/mpu.vhd (ISA.md §8.4), 0xFFFFFF40-0xFFFFFF4F to the
--- performance counters, src/perf.vhd (ISA.md §8.5), and the rest to the
--- memory model. It keeps the ACKs in order for a core with several
+-- performance counters, src/perf.vhd (ISA.md §8.5), 0xFFFFFF50-0xFFFFFF7F
+-- to the fetch statistics, src/fetch_stats.vhd (MICROARCH.md §8.1), and
+-- the rest to the memory model. It keeps the ACKs in order for a core with several
 -- requests in flight (MICROARCH.md §8). It holds no address map: the
 -- address compare that names the slave, dbus_sel, is here.
 -- The trace writer, sim/trace.vhd, prints each step the core reports.
+--
+-- G_FETCH_STATS is the generic G_ENABLE of the fetch statistics. Only the
+-- pipelined core reports the events they count; with the multi-cycle core
+-- they count only cycles.
 --
 -- With G_CYCLE_COUNTER false, CYCLE_LO and CYCLE_HI at 0xFFFFFF40 and
 -- 0xFFFFFF41 are memory, as with the emulator's --no-cycle-counter. The
@@ -70,6 +76,7 @@ library ieee;
    use std.env.all;
    use std.textio.all;
 
+   use work.pipe_pkg.all;
    use work.trace_pkg.all;
 
 entity tb_core is
@@ -85,6 +92,7 @@ entity tb_core is
       -- Each request is raised this many cycles after its step allows.
       G_INTR_DELAY    : natural  := 0;
       G_CYCLE_COUNTER : boolean  := true;
+      G_FETCH_STATS   : boolean  := true;
       -- The memory's stall rate in percent, and its seed (sim/wb_mem.vhd).
       G_STALL         : natural  := 0;
       G_SEED          : positive := 1
@@ -199,7 +207,8 @@ architecture simulation of tb_core is
    constant C_MPU    : natural := 1;
    constant C_PERF   : natural := 2;
    constant C_TIMER  : natural := 3;
-   constant C_SLAVES : natural := 4;
+   constant C_STATS  : natural := 4;
+   constant C_SLAVES : natural := 5;
 
    signal dbus_sel    : natural range 0 to C_SLAVES - 1;
    signal slave_stb   : std_logic_vector(C_SLAVES - 1 downto 0);
@@ -210,6 +219,7 @@ architecture simulation of tb_core is
    signal timer_valid  : std_logic;
    signal timer_vector : std_logic_vector(7 downto 0);
    signal instret      : std_logic;
+   signal fetch_events : t_fetch_events := C_FETCH_EVENTS_NONE;
 
    signal nmi_valid  : std_logic                    := '0';
    signal nmi_ready  : std_logic;
@@ -307,7 +317,8 @@ begin
             irq_vector_i => core_irq_vector,
             halted_o     => open,
             instret_o    => instret,
-            retire_o     => retire
+            retire_o     => retire,
+            stats_o      => fetch_events
          ); -- i_pipeline
 
    else generate
@@ -324,6 +335,8 @@ begin
                C_PERF when dbus_addr(31 downto 4) = X"FFFFFF4" and
                            (G_CYCLE_COUNTER or dbus_addr(3 downto 1) /= "000") else
                C_TIMER when dbus_addr(31 downto 4) = X"FFFFFF1" else
+               C_STATS when dbus_addr(31 downto 6) = X"FFFFFF" & "01" and
+                            dbus_addr(5 downto 4) /= "00" else
                C_MEM;
 
 
@@ -431,6 +444,25 @@ begin
          irq_ready_i  => irq_ready,
          irq_vector_o => timer_vector
       ); -- i_timer
+
+
+   i_fetch_stats : entity work.fetch_stats
+      generic map (
+         G_ENABLE => G_FETCH_STATS
+      )
+      port map (
+         clk_i      => clk,
+         rst_i      => rst,
+         events_i   => fetch_events,
+         wb_cyc_i   => dbus_cyc,
+         wb_stb_i   => slave_stb(C_STATS),
+         wb_stall_o => slave_stall(C_STATS),
+         wb_ack_o   => slave_ack(C_STATS),
+         wb_we_i    => dbus_we,
+         wb_addr_i  => dbus_addr(5 downto 0),
+         wb_data_i  => dbus_data_out,
+         wb_data_o  => slave_data(32 * C_STATS + 31 downto 32 * C_STATS)
+      ); -- i_fetch_stats
 
 
    i_trace : entity work.trace

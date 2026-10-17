@@ -63,6 +63,10 @@ departs from it.
 | [formal/wb_dmux.sby](formal/wb_dmux.sby) | The SymbiYosys job for it. |
 | [formal/formal_pipe_fetch.vhd](formal/formal_pipe_fetch.vhd) | FETCH of the pipelined core, whose properties are in `src/pipe_fetch.vhd`. |
 | [formal/pipe_fetch.sby](formal/pipe_fetch.sby) | The SymbiYosys job for it. |
+| [formal/formal_pipe_prepare.vhd](formal/formal_pipe_prepare.vhd) | PREPARE of the pipelined core, whose properties are in `src/pipe_prepare.vhd`. |
+| [formal/pipe_prepare.sby](formal/pipe_prepare.sby) | The SymbiYosys job for it. |
+| [formal/formal_pipe_dbus.vhd](formal/formal_pipe_dbus.vhd) | DBUS of the pipelined core, whose properties are in `src/pipe_dbus.vhd`. |
+| [formal/pipe_dbus.sby](formal/pipe_dbus.sby) | The SymbiYosys job for it. |
 | [formal/formal_pipeline.vhd](formal/formal_pipeline.vhd) | The pipelined core with a checker on each of its four ports. |
 | [formal/pipeline.sby](formal/pipeline.sby) | The SymbiYosys job for it. |
 
@@ -252,8 +256,10 @@ the names of the I/O words it knows:
 SymbiYosys, and the solvers Yices 2 and Boolector. Tested with Yosys 0.33,
 the plugin and GHDL 4.1.0 of Ubuntu 24.04 (packages `yosys`,
 `yosys-plugin-ghdl`, and `ghdl-gcc`, whose libraries the plugin loads),
-SymbiYosys at its tag `yosys-0.33`, Yices 2.6.4, and Boolector 3.2 (package
-`boolector`). CI installs the same.
+SymbiYosys at its tag `yosys-0.33`, Yices 2.6.4, and Boolector 3.2.3. CI
+installs the same. Boolector is built from source, with the scripts in its
+`contrib/` for CaDiCaL and btor2tools: the `boolector` package of Ubuntu
+24.04 is version 1.5, which SymbiYosys cannot drive.
 
 `formal_multicycle` connects the multi-cycle core to four checkers. Every
 input is free, apart from a reset in the first cycle, so the solver plays
@@ -320,6 +326,35 @@ requests to drop, the next pair to request, the buffer, and `end_o` to
 each other, which makes the assertions inductive in one step. Boolector
 proves them in about a minute; Yices does not finish. Breaking the drop
 of stale words, or of an odd address's low word, fails the proof.
+
+`formal_pipe_prepare` proves PREPARE for every cycle. Its inputs are
+free, within assumptions that model DECODE and WRITE as far as PREPARE
+relies on them: DECODE emits the micro-operations of each instruction in
+order, WRITE takes what PREPARE moves on, SR and WRITE's condition of the
+instruction change only when WRITE retires a micro-operation that may
+change them, and WRITE neither flushes nor takes an interrupt while
+PREPARE holds an instruction that has made a data read. The assertions
+say that the read request is held while the bus stalls it, that it never
+goes out with `C_MAX_OUT` requests in flight, that a micro-operation makes
+all its reads and no more before it moves on unless its condition is
+false, and that PREPARE never finds the condition false of an instruction
+that has made a data read (MICROARCH.md §5.3). The proof found that a read
+could go out in the cycle WRITE puts a store on the bus with three
+requests in flight, which made five; PREPARE now counts that store.
+
+`formal_pipe_dbus` proves DBUS for every cycle, with a `wb_master_check`
+on its bus port. Requests and read data are numbered in the order the bus
+takes them. The solver picks one request and one read datum, of free but
+constant numbers, and the datum has a free but constant value. The
+assertions say that the request's ACK is taken for a read exactly when it
+was one, and that WRITE finds the datum's value wherever DBUS shows that
+datum, so the read data come in the order of their ACKs, none lost. The
+proof found that the write data changed on the bus while a read was
+stalled; DBUS now drives 0 there for a read.
+
+The assumptions of each proof that name another stage are checked in the
+whole core by `p_check` in `src/pipeline.vhd`, on every simulation and in
+`formal_pipeline`.
 
 `formal_pipeline` puts the four checkers on the pipelined core, with
 `G_MAX_PENDING` 8 on the instruction bus and 4 on the data bus. The core's

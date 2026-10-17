@@ -34,8 +34,8 @@ OPTS_iofetch = -d 0xffffff80:1 -d 0xffffffff:1
 OPTS_reads   = -d 0xffffff01:1
 OPTS_mpu     = -d 0x200:72 -d 0xffffff20:16
 OPTS_mpu64   = -d 0x200:72 -d 0xffffff20:32
-OPTS_perf    = --nmi 3:0x41 -d 0xffffff10:5
-OPTS_timer   = -d 0xffffff40:4
+OPTS_perf    = --nmi 3:0x41 -d 0xffffff40:5
+OPTS_timer   = -d 0xffffff10:4
 OPTS_input   = --input test/input.txt
 
 define check

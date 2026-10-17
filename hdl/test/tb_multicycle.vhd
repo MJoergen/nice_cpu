@@ -5,15 +5,15 @@
 -- The core runs on the memory model, sim/wb_mem.vhd, which loads G_BIN_FILE.
 -- Its console reads the bytes of G_INPUT_FILE, as the emulator's --input
 -- does, or none if it is "".
--- A decoder on the data bus sends 0xFFFFFF10-0xFFFFFF1F to the performance
--- counters, src/perf.vhd (ISA.md §8.5), 0xFFFFFF20-0xFFFFFF3F to the math
--- unit, src/mpu.vhd (ISA.md §8.4), and 0xFFFFFF40-0xFFFFFF4F to the timer,
--- src/timer.vhd (ISA.md §8.6). It needs no more than an address compare,
--- because the core waits for each ACK before its next request.
+-- A decoder on the data bus sends 0xFFFFFF10-0xFFFFFF1F to the timer,
+-- src/timer.vhd (ISA.md §8.6), 0xFFFFFF20-0xFFFFFF3F to the math unit,
+-- src/mpu.vhd (ISA.md §8.4), and 0xFFFFFF40-0xFFFFFF4F to the performance
+-- counters, src/perf.vhd (ISA.md §8.5). It needs no more than an address
+-- compare, because the core waits for each ACK before its next request.
 -- The trace writer, sim/trace.vhd, prints each step the core reports.
 --
--- With G_CYCLE_COUNTER false, CYCLE_LO and CYCLE_HI at 0xFFFFFF10 and
--- 0xFFFFFF11 are memory, as with the emulator's --no-cycle-counter. The
+-- With G_CYCLE_COUNTER false, CYCLE_LO and CYCLE_HI at 0xFFFFFF40 and
+-- 0xFFFFFF41 are memory, as with the emulator's --no-cycle-counter. The
 -- core's cycle count depends on the memory's stalls, so a program that
 -- reads it could not be compared with the emulator otherwise.
 --
@@ -265,10 +265,10 @@ begin
 
 
    mpu_sel      <= '1' when dbus_addr(31 downto 5) = X"FFFFFF" & "001" else '0';
-   perf_sel     <= '1' when dbus_addr(31 downto 4) = X"FFFFFF1" and
+   perf_sel     <= '1' when dbus_addr(31 downto 4) = X"FFFFFF4" and
                             (G_CYCLE_COUNTER or dbus_addr(3 downto 1) /= "000") else
                    '0';
-   timer_sel    <= '1' when dbus_addr(31 downto 4) = X"FFFFFF4" else '0';
+   timer_sel    <= '1' when dbus_addr(31 downto 4) = X"FFFFFF1" else '0';
    mem_stb      <= dbus_stb and not mpu_sel and not perf_sel and not timer_sel;
    mpu_stb      <= dbus_stb and mpu_sel;
    perf_stb     <= dbus_stb and perf_sel;

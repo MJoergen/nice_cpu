@@ -37,10 +37,10 @@ void nice_screen_clear(void);
 #define NICE_CONSOLE 0xFFFFFF00u
 #define NICE_CONSOLE_BYTE 0x100u
 #define NICE_CONSOLE_END 0x200u
-#define NICE_CYCLE_LO 0xFFFFFF10u
-#define NICE_CYCLE_HI 0xFFFFFF11u
-#define NICE_INSTR_LO 0xFFFFFF12u
-#define NICE_INSTR_HI 0xFFFFFF13u
+#define NICE_CYCLE_LO 0xFFFFFF40u
+#define NICE_CYCLE_HI 0xFFFFFF41u
+#define NICE_INSTR_LO 0xFFFFFF42u
+#define NICE_INSTR_HI 0xFFFFFF43u
 #define NICE_SCREEN 0xFFFF0000u
 
 // Reads the NICE word at a word address.

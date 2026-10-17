@@ -98,10 +98,10 @@ __popcnt64
 ; (§8.5), and the emulator's character screen. Unlike the routines above,
 ; programs call them by their C names.
 __nice.console  .EQU    0xFFFFFF00
-__nice.cycle_lo .EQU    0xFFFFFF10
-__nice.cycle_hi .EQU    0xFFFFFF11
-__nice.instr_lo .EQU    0xFFFFFF12
-__nice.instr_hi .EQU    0xFFFFFF13
+__nice.cycle_lo .EQU    0xFFFFFF40
+__nice.cycle_hi .EQU    0xFFFFFF41
+__nice.instr_lo .EQU    0xFFFFFF42
+__nice.instr_hi .EQU    0xFFFFFF43
 __nice.screen   .EQU    0xFFFF0000              ; 80 columns, 25 rows
 
 ; nice_putc: writes bits 7..0 of R1 to the console. 2 steps.

@@ -58,7 +58,7 @@ line such as `Pending: IRQ 05` follows the first line.
 | `-i`, `--input FILE` | Read the console's input from FILE instead of stdin. |
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
-| `--no-cycle-counter` | Make `0xFFFFFF10` and `0xFFFFFF11`, the cycle counter, ordinary memory (see Memory map). |
+| `--no-cycle-counter` | Make `0xFFFFFF40` and `0xFFFFFF41`, the cycle counter, ordinary memory (see Memory map). |
 | `-h`, `--help` | Print the usage on stdout. |
 
 Numbers in options are decimal, or hex after `0x` or `0X`, with no sign or
@@ -94,9 +94,9 @@ address twice and a file with no words are errors.
 | `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns the next input byte plus `0x100`, or `0x200` after the end of the input. |
 | `0xFFFFFF01` | 1 | Read counter. A data read returns the number of data reads of it since the last write, and a write sets that number. |
 | `0xFFFFFF02`–`0xFFFFFF0F` | 14 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
-| `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Performance counters (ISA.md §8.5). Cycles and instructions, 64 bits each. |
+| `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (ISA.md §8.6). Raises IRQ once every P steps. |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (ISA.md §8.4). Multiplies and divides A and B, and divides C and D. |
-| `0xFFFFFF40`–`0xFFFFFF4F` | 16 | Timer (ISA.md §8.6). Raises IRQ once every P steps. |
+| `0xFFFFFF40`–`0xFFFFFF4F` | 16 | Performance counters (ISA.md §8.5). Cycles and instructions, 64 bits each. |
 | `0xFFFFFF50`–`0xFFFFFFFF` | 176 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. |
 
 The screen has one word per character, with the character in bits 7..0 and

@@ -21,12 +21,15 @@
 -- first_read_o, and count_o depend combinationally on the state of WRITE
 -- and on the bus in the same cycle: a read may go out in the cycle WRITE
 -- retires an older store, and a micro-operation moves on in the cycle
--- WRITE frees itself.
+-- WRITE frees itself. Such a store counts among the requests in flight,
+-- of which there may be no more than C_MAX_OUT (src/pipe_dbus.vhd, b).
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) w_i is WRITE's state, and done_i, flush_i, accept_i, take_nmi_i, and
 --    take_irq_i are WRITE's decisions in the same cycle.
 -- b) tag_cnt_i counts the data bus requests accepted and not acknowledged.
+-- c) WRITE neither flushes nor takes an interrupt while the instruction in
+--    PREPARE has made a data read.
 --
 -- RESET
 -- Synchronous. It empties the stage and drops the request.
@@ -40,6 +43,10 @@ library ieee;
    use work.trace_pkg.all;
 
 entity pipe_prepare is
+   generic (
+      -- Adds the properties of a formal proof.
+      G_FORMAL : boolean := false
+   );
    port (
       clk_i        : in  std_logic;
       rst_i        : in  std_logic;
@@ -149,6 +156,7 @@ begin
       variable older_ok  : boolean;
       variable intr_ok   : boolean;
       variable bus_ok    : boolean;
+      variable store_v   : boolean;   -- WRITE puts a store on the bus now
       variable started_v : boolean;
       variable load_v    : std_logic;
       variable irq_v     : boolean;
@@ -213,8 +221,11 @@ begin
       intr_ok   := started_v or p_committed_r = '1' or (not older_v and w_r.after_rti = '1') or
                    not ((nmi_valid_i = '1' and w_r.in_service = '0') or irq_v);
 
-      bus_ok := (rd_stb_r = '0' or dbus_stall_i = '0') and
-                tag_cnt_r + to_nat(rd_stb_r) < C_MAX_OUT;
+      -- The bus takes the read when C_MAX_OUT will not be in flight, counting
+      -- the store of an older micro-operation that retires now.
+      store_v := older_v and w_done = '1' and uop_store(wu_v.inst.iw, wu_v.kind);
+      bus_ok  := (rd_stb_r = '0' or dbus_stall_i = '0') and
+                 tag_cnt_r + to_nat(rd_stb_r) + to_nat(store_v) < C_MAX_OUT;
 
       load_v := '0';
       if u_v.valid = '1' and ck_v = '1' and cv_v = '1' and p_loaded_r < nr_v and
@@ -305,5 +316,183 @@ begin
          end if;
       end if;
    end process p_prepare_reg;
+
+
+   -- The formal properties (formal/formal_pipe_prepare.vhd). The
+   -- assumptions model DECODE and WRITE as far as PREPARE relies on them:
+   -- - DECODE emits only when PREPARE is ready, and the micro-operations
+   --   of each instruction in order, with a new id for each instruction.
+   -- - WRITE takes what PREPARE moves on. SR changes only when WRITE
+   --   retires a micro-operation that may change it, and WRITE's condition
+   --   of the instruction only when it retires an instruction's first.
+   --   WRITE leaves RUN_ST only with a flush or an interrupt.
+   -- - WRITE neither flushes nor takes an interrupt while PREPARE holds an
+   --   instruction that has made a data read (contract c).
+   -- - The data bus requests in flight grow only by PREPARE's read, or
+   --   WRITE's store or vector read when there is room.
+   -- The assertions say that the read request keeps to the bus (held
+   -- while stalled, and never with C_MAX_OUT requests in flight), that a
+   -- micro-operation makes no more reads than it has, and all of them
+   -- before it moves on unless its condition is false, and that PREPARE
+   -- never finds the condition false of an instruction that has made a
+   -- data read (the data access rule of MICROARCH.md §5.3). The invariants
+   -- after them make it all inductive.
+
+   gen_formal : if G_FORMAL generate
+      signal f_first     : std_logic := '1';   -- The first cycle
+      signal f_uop       : t_uop     := C_UOP_NONE;   -- WRITE's next micro-operation
+      signal f_sr        : std_logic_vector(31 downto 0);
+      signal f_sr_free   : std_logic;          -- SR may change now
+      signal f_cond      : std_logic;
+      signal f_cond_free : std_logic;          -- WRITE's condition may change now
+      signal f_mode      : t_wmode;
+      signal f_mode_free : std_logic;          -- The mode may change now
+      signal f_tag       : natural range 0 to C_MAX_OUT + 1;
+      signal f_rd_stall  : std_logic;          -- and was stalled
+      signal f_rd_addr   : std_logic_vector(31 downto 0);
+      signal f_open      : std_logic := '0';   -- DECODE is in an instruction
+      signal f_inst      : t_inst;             -- and this one
+      signal f_kind      : t_kind;             -- The kind of its last micro-operation
+      signal f_nr        : natural range 0 to 2;
+   begin
+      f_nr <= popcount(uop_reads(prep_r.inst.iw, prep_r.kind));
+
+
+      p_model : process (clk_i)
+      begin
+         if rising_edge(clk_i) then
+            f_first <= '0';
+
+            if w_flush = '1' then
+               f_uop <= C_UOP_NONE;
+            elsif p_move = '1' then
+               f_uop <= p_out;
+            elsif w_done = '1' then
+               f_uop <= C_UOP_NONE;
+            else
+               f_uop <= w_r.uop;
+            end if;
+
+            f_sr        <= w_r.regs(14);
+            f_sr_free   <= rst_i or w_flush or take_nmi or take_irq or
+                           (w_done and w_r.uop.valid and
+                            to_sl(uop_may_sr(w_r.uop.inst.iw, w_r.uop.kind)));
+            f_cond      <= w_r.cond;
+            f_cond_free <= rst_i or w_flush or take_nmi or take_irq or
+                           (w_done and w_r.uop.valid and w_r.uop.first);
+            f_mode      <= w_r.mode;
+            f_mode_free <= rst_i or w_flush or take_nmi or take_irq;
+
+            f_rd_stall <= rd_stb_r and dbus_stall_i and not rst_i;
+            f_rd_addr  <= rd_addr_r;
+            -- PREPARE's read, or else, when there is room, a vector read of
+            -- WRITE, or a store, which retires when the bus accepts it
+            f_tag      <= tag_cnt_r + to_nat((rd_stb_r = '1' and dbus_stall_i = '0') or
+                                             (rd_stb_r = '0' and tag_cnt_r < C_MAX_OUT and
+                                              (w_r.mode = VEC_ST or
+                                               (w_done = '1' and w_r.uop.valid = '1' and
+                                                uop_store(w_r.uop.inst.iw, w_r.uop.kind)))));
+
+            if seq_emit = '1' then
+               f_open <= not seq_uop.last;
+               f_inst <= seq_uop.inst;
+               f_kind <= seq_uop.kind;
+            end if;
+
+            if rst_i = '1' or w_flush = '1' then
+               f_uop  <= C_UOP_NONE;
+               f_open <= '0';
+            end if;
+         end if;
+      end process p_model;
+
+      -- psl default clock is rising_edge(clk_i);
+
+      -- DECODE
+      -- psl f_emit : assume always seq_emit ->
+      --    (seq_uop.valid = '1' and (prep_r.valid = '0' or p_move = '1'));
+      -- psl f_last : assume always seq_emit -> seq_uop.last = is_last(seq_uop.kind);
+      -- psl f_next_uop : assume always (seq_emit and f_open) ->
+      --    (seq_uop.first = '0' and seq_uop.inst = f_inst and
+      --     seq_uop.kind = next_kind(f_inst.iw, f_kind));
+      -- psl f_new_inst : assume always (seq_emit and not f_open) ->
+      --    (seq_uop.first = '1' and seq_uop.inst.id /= f_inst.id and
+      --     seq_uop.kind = first_kind(seq_uop.inst.iw));
+
+      -- WRITE
+      -- psl f_takes : assume always f_first = '0' -> w_r.uop = f_uop;
+      -- psl f_sr_stable : assume always (f_first = '0' and f_sr_free = '0') -> w_r.regs(14) = f_sr;
+      -- psl f_cond_stable : assume always (f_first = '0' and f_cond_free = '0') ->
+      --    w_r.cond = f_cond;
+      -- psl f_run : assume always (f_first = '0' and f_mode_free = '0' and f_mode = RUN_ST) ->
+      --    w_r.mode = RUN_ST;
+      -- psl f_keep : assume always (w_flush or take_nmi or take_irq) -> not p_committed_r;
+      -- psl f_accept : assume always w_accept -> not w_flush;
+
+      -- DBUS: requests in flight, PREPARE's read among them
+      -- psl f_tags : assume always tag_cnt_r <= C_MAX_OUT;
+      -- psl f_tag_grow : assume always f_first = '0' -> tag_cnt_r <= f_tag;
+
+      -- The read request
+      -- psl f_rd_hold : assert always (f_rd_stall and not rst_i) ->
+      --    (rd_stb_r = '1' and rd_addr_r = f_rd_addr);
+      -- psl f_rd_room : assert always (rst_i = '0' and rd_stb_r = '1') -> tag_cnt_r < C_MAX_OUT;
+
+      -- The reads of a micro-operation
+      -- psl f_none_loaded : assert always (rst_i = '0' and prep_r.valid = '0') -> p_loaded_r = 0;
+      -- psl f_loaded : assert always (rst_i = '0' and prep_r.valid = '1') -> p_loaded_r <= f_nr;
+      -- psl f_all_read : assert always (rst_i = '0' and p_move = '1' and p_out.cond_val = '1') ->
+      --    p_loaded_r + to_nat(p_load) = f_nr;
+
+      -- The data access rule
+      -- psl f_committed : assert always
+      --    (rst_i = '0' and prep_r.valid = '1' and p_committed_r = '1' and
+      --     p_out.cond_known = '1') ->
+      --    p_out.cond_val = '1';
+
+      -- The invariants that make it inductive. An instruction that has made
+      -- a data read runs in RUN_ST. PREPARE knows its condition as true,
+      -- or it is the first micro-operation, still here, whose condition
+      -- holds on SR, which no micro-operation in WRITE may change, or its
+      -- first micro-operation has retired with the condition true.
+      -- psl f_inv_prep : assert always (rst_i = '0' and prep_r.valid = '1') ->
+      --    (prep_r.inst = f_inst and prep_r.kind = f_kind and
+      --     prep_r.last = is_last(prep_r.kind) and
+      --     f_open = not prep_r.last and
+      --     (prep_r.first = '0' or prep_r.kind = first_kind(prep_r.inst.iw)));
+      -- WRITE holds an earlier micro-operation of the instruction in
+      -- prep_r, or the last of the instruction before it.
+      -- psl f_inv_same : assert always
+      --    (rst_i = '0' and prep_r.valid = '1' and w_r.uop.valid = '1' and
+      --     w_r.uop.inst.id = prep_r.inst.id) -> (w_r.uop.last = '0' and prep_r.first = '0');
+      -- psl f_inv_older : assert always
+      --    (rst_i = '0' and prep_r.valid = '1' and w_r.uop.valid = '1' and
+      --     w_r.uop.inst.id /= prep_r.inst.id) -> (w_r.uop.last = '1' and prep_r.first = '1');
+      -- psl f_inv_write : assert always
+      --    (rst_i = '0' and prep_r.valid = '0' and w_r.uop.valid = '1') ->
+      --    (w_r.uop.inst.id = f_inst.id and w_r.uop.last = not f_open);
+      -- psl f_inv_wkind : assert always (rst_i = '0' and w_r.uop.valid = '1') ->
+      --    w_r.uop.last = is_last(w_r.uop.kind);
+      -- psl f_inv_ck_inst : assert always (rst_i = '0' and p_ck_r = '1') ->
+      --    ((prep_r.valid = '1' and prep_r.first = '0') or (prep_r.valid = '0' and f_open = '1'));
+      -- psl f_inv_open : assert always (rst_i = '0' and p_committed_r = '1') ->
+      --    (f_open = '1' or prep_r.valid = '1');
+      -- psl f_inv_run : assert always (rst_i = '0' and p_committed_r = '1') -> w_r.mode = RUN_ST;
+      -- psl f_inv_ck : assert always (rst_i = '0' and p_committed_r = '1' and p_ck_r = '1') ->
+      --    p_cv_r = '1';
+      -- psl f_inv_first : assert always
+      --    (rst_i = '0' and p_committed_r = '1' and prep_r.valid = '1' and prep_r.first = '1') ->
+      --    (condition(prep_r.inst.iw, w_r.regs(14)) = '1' and
+      --     not (w_r.uop.valid = '1' and uop_may_sr(w_r.uop.inst.iw, w_r.uop.kind)));
+      -- psl f_inv_retired : assert always
+      --    (rst_i = '0' and p_committed_r = '1' and p_ck_r = '0' and
+      --     not (prep_r.valid = '1' and prep_r.first = '1')) ->
+      --    (w_r.cond = '1' and not (w_r.uop.valid = '1' and w_r.uop.first = '1'));
+
+      -- psl c_two : cover {rst_i = '0' and p_load = '1' and p_loaded_r = 1};
+      -- psl c_stall : cover {f_rd_stall = '1' and rst_i = '0'};
+      -- psl c_move : cover {rst_i = '0' and p_move = '1' and p_out.committed = '1' and
+      --    p_out.last = '1'};
+   end generate gen_formal;
 
 end architecture synthesis;

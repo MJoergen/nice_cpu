@@ -64,11 +64,13 @@ has TODO or FIXME comments.
   and FETCH of the pipelined core, for every cycle. For the
   whole pipelined core it checks the ports and the core's own assertions,
   the data access rule among them, only for the first 8 cycles after
-  reset ([hdl/README.md](hdl/README.md)). Open: a proof for every cycle,
-  which needs invariants that tie the stages together, as `pipe_fetch`
-  has; or proofs of DECODE, PREPARE, and WRITE in parts, now that each
-  is an entity of its own; and the order of the data accesses checked
-  against a model of the program, not only through the tests.
+  reset ([hdl/README.md](hdl/README.md)). FETCH, PREPARE,
+  and DBUS are also proved alone, for every cycle. Open: a proof of
+  DECODE alone (its handshake with FETCH and PREPARE); WRITE is mostly ISA
+  semantics, which the trace diff checks better. A proof of the whole core
+  for every cycle, which needs invariants that tie the stages together;
+  and the order of the data accesses checked against a model of the
+  program, not only through the tests.
 
 ## Devices
 

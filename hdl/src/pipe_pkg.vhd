@@ -78,6 +78,34 @@ package pipe_pkg is
       counted    => '0'
    );
 
+   -- What FETCH and DECODE did in one cycle, for the fetch statistics,
+   -- src/fetch_stats.vhd (ISA.md §8.7)
+   type t_fetch_events is record
+      count   : natural range 0 to 31;           -- Words in FETCH's buffer
+      held    : natural range 0 to 31;           -- Those, and room held for the requests in flight
+      starve  : std_logic;                       -- DECODE is free, and waits for words
+      blocked : std_logic;                       -- An instruction is ready, and DECODE is busy
+      full    : std_logic;                       -- FETCH could request, but lacks room
+      stall   : std_logic;                       -- The instruction bus stalls a request
+      pair    : std_logic;                       -- A pair of words arrives
+      words   : natural range 0 to 4;            -- Words that DECODE takes
+      jump    : std_logic;                       -- DECODE redirects FETCH
+      flush   : std_logic;                       -- WRITE flushes and redirects FETCH
+   end record t_fetch_events;
+
+   constant C_FETCH_EVENTS_NONE : t_fetch_events := (
+      count   => 0,
+      held    => 0,
+      starve  => '0',
+      blocked => '0',
+      full    => '0',
+      stall   => '0',
+      pair    => '0',
+      words   => 0,
+      jump    => '0',
+      flush   => '0'
+   );
+
    function to_sl(b : boolean) return std_logic;
 
    function to_nat(b : std_logic) return natural;

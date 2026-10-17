@@ -496,6 +496,40 @@ To get an IRQ through vector table entry `0x41` every 100000 cycles, that is, ev
     MOVE @TIMER_PERIOD, 100000
     OR   R14, R14, 0x40000000     ; E = 1
 
+### 8.7 Fetch statistics
+
+The pipelined FPGA core can map counters of what its FETCH and DECODE stages do at `0xFFFFFF50`–`0xFFFFFF7F` ([MICROARCH.md](MICROARCH.md) §3). They help to judge the size of FETCH's buffer. They are a property of that core, not of the ISA. The emulator has none, and the range is ordinary memory there. A generic leaves them out of the FPGA core; every word then reads 0.
+
+| Address | Name | A data read returns | A write |
+|---|---|---|---|
+| `0xFFFFFF50` | `FS_CTRL` | the run bit R in bit 0, and 0 in bits 31..1 | sets R to bit 0; if bit 1 is set, also clears the counters |
+| `0xFFFFFF51` | `FS_CYCLES` | the cycles counted | is ignored |
+| `0xFFFFFF52` | `FS_STARVE` | the cycles in which DECODE could take an instruction, but FETCH did not have all its words | is ignored |
+| `0xFFFFFF53` | `FS_BLOCKED` | the cycles in which FETCH had all the words of the next instruction, but DECODE was busy | is ignored |
+| `0xFFFFFF54` | `FS_FULL` | the cycles in which FETCH could have sent a request, but its buffer had no room | is ignored |
+| `0xFFFFFF55` | `FS_STALL` | the cycles in which the instruction bus stalled a request | is ignored |
+| `0xFFFFFF56` | `FS_PAIRS` | the pairs of words that arrived on the instruction bus, wasted ones included | is ignored |
+| `0xFFFFFF57` | `FS_WORDS` | the words that DECODE took | is ignored |
+| `0xFFFFFF58` | `FS_JUMPS` | the jumps that DECODE resolved | is ignored |
+| `0xFFFFFF59` | `FS_FLUSHES` | the flushes of the pipeline by WRITE | is ignored |
+| `0xFFFFFF5A` | `FS_MIN` | the fewest words in the buffer in a cycle counted, or 31 if none was | is ignored |
+| `0xFFFFFF5B` | `FS_MAX` | the most words in the buffer in a cycle counted | is ignored |
+| `0xFFFFFF5C` | `FS_HELD_MAX` | the most words in the buffer and in the requests in flight, in a cycle counted | is ignored |
+| `0xFFFFFF5D`–`0xFFFFFF5F` | | 0 | is ignored |
+| `0xFFFFFF60` + n | `FS_HIST` + n | the cycles counted with n words in the buffer, for n = 0 to 31 | is ignored |
+
+- While R = 1, each clock cycle counts. Reset sets R to 1 and clears the counters, so they count from reset.
+- A clear sets `FS_MIN` to 31 and every other counter to 0. A write to `FS_CTRL` takes effect from the next cycle, and the cycle of a write of 0 still counts.
+- The counters are 32 bits wide and wrap, after about 43 seconds at 100 MHz.
+- A read returns the counter as it is in the cycle the read is accepted. To read a consistent set, stop the counters first.
+- The multi-cycle core has no FETCH or DECODE stages. With it, only `FS_CYCLES` and `FS_HIST` count, and every cycle has 0 words in the buffer.
+
+To measure a piece of code, and then read the counters at leisure:
+
+    MOVE @FS_CTRL, 3        ; clear, and run
+    ...                     ; the code
+    MOVE @FS_CTRL, 0        ; stop
+
 ## 9. Software conventions
 
 These are conventions, not hardware rules.

@@ -441,6 +441,15 @@ each RAM and the address of the UART. These rules hold for every setting:
 - **Timer.** `hdl/src/timer.vhd` at `0xFFFFFF40`–`0xFFFFFF4F` (ISA §8.6),
   with its request on the core's IRQ port. It is the only device that
   raises IRQ so far, so it needs no interrupt controller.
+- **Fetch statistics.** `hdl/src/fetch_stats.vhd` at
+  `0xFFFFFF50`–`0xFFFFFF7F` (ISA §8.7), 48 words, so the decoder compares
+  address bits 31..6 and leaves out `0xFFFFFF40`–`0xFFFFFF4F`. The
+  pipelined core reports what FETCH and DECODE do in each cycle on its
+  port `stats_o`, and the device counts it: the words in FETCH's buffer,
+  the cycles DECODE waits for words, the cycles FETCH has no room for a
+  request, and more. They show how much of the buffer is used, and so
+  whether its 16 words are too many or too few. The generic `G_ENABLE`
+  leaves the counters out, and the words then read 0.
 - **Stack.** The runtime puts the stack just below `0xFFFFFF00`. A memory map
   that runs the runtime's programs needs RAM there as well as at address 0.
 

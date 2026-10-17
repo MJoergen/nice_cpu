@@ -97,7 +97,8 @@ begin
          irq_vector_i => irq_vector_i,
          halted_o     => halted,
          instret_o    => instret,
-         retire_o     => retire
+         retire_o     => retire,
+         stats_o      => open
       ); -- i_pipeline
 
 

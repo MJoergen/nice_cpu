@@ -98,7 +98,8 @@ address twice and a file with no words are errors.
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Performance counters (ISA.md §8.5). Cycles and instructions, 64 bits each. |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (ISA.md §8.4). Multiplies and divides A and B, and divides C and D. |
 | `0xFFFFFF40`–`0xFFFFFF4F` | 16 | Timer (ISA.md §8.6). Raises IRQ once every P steps. |
-| `0xFFFFFF50`–`0xFFFFFFFF` | 176 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. |
+| `0xFFFFFF50`–`0xFFFFFF7F` | 48 | Ordinary memory. The pipelined FPGA core maps its fetch statistics here (ISA.md §8.7). |
+| `0xFFFFFF80`–`0xFFFFFFFF` | 128 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. |
 
 The screen has one word per character, with the character in bits 7..0 and
 its colour above. It is ordinary memory, and `--screen` prints the

@@ -24,15 +24,17 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
   benchmark written by hand, the ceiling to compare with. `expected.py`
   computes the results in Python, and `make test` checks both against them.
   `hazards.py` counts the pipeline hazards of MICROARCH.md §5 in a program.
-- `hdl/`: VHDL-2008, GHDL. Two cores with the same ports: a simple
-  multi-cycle one in `src/multicycle.vhd`, the reference, and the pipelined
-  one of MICROARCH.md in `src/pipeline.vhd`, which connects
+- `hdl/`: VHDL-2008, GHDL. Two cores with the same ports, but for the
+  pipelined one's `stats_o`: a simple multi-cycle one in
+  `src/multicycle.vhd`, the reference, and the pipelined one of
+  MICROARCH.md in `src/pipeline.vhd`, which connects
   `src/pipe_fetch.vhd`, `pipe_decode.vhd`, `pipe_prepare.vhd`,
   `pipe_dbus.vhd`, and `pipe_write.vhd`, with `pipe_pkg.vhd`; its choices
   are in `hdl/ASSUMPTIONS.md`. Both use
   `src/nice_pkg.vhd` and `src/trace_pkg.vhd`. Also the math unit in
   `src/mpu.vhd`, the performance counters in `src/perf.vhd`, the timer in
-  `src/timer.vhd`, the data bus decoder in `src/wb_dmux.vhd`, the
+  `src/timer.vhd`, the fetch statistics of the pipelined core in
+  `src/fetch_stats.vhd`, the data bus decoder in `src/wb_dmux.vhd`, the
   simulation-only memory model and trace writer in `sim/`, the
   testbenches, test programs, and random program generator in `test/`,
   and the formal checks in `formal/`. Style follows `hdl/CODING_STYLE.md`,

@@ -1,5 +1,7 @@
 -- The pipelined NICE core of doc/MICROARCH.md. It has the ports of the
--- multi-cycle core, src/multicycle.vhd, and reports the same steps.
+-- multi-cycle core, src/multicycle.vhd, and reports the same steps. Its
+-- one more port, stats_o, reports what FETCH and DECODE do in each cycle,
+-- for the fetch statistics, src/fetch_stats.vhd.
 --
 -- THEORY OF OPERATION
 -- The pipeline (MICROARCH.md §3), one entity for each part:
@@ -144,7 +146,12 @@ entity pipeline is
       instret_o    : out std_logic;
 
       -- One report per step, for sim/trace.vhd
-      retire_o     : out t_retire
+      retire_o     : out t_retire;
+
+      -- What FETCH and DECODE did in each cycle, for the fetch statistics,
+      -- src/fetch_stats.vhd (ISA.md §8.7). The multi-cycle core has no
+      -- such port.
+      stats_o      : out t_fetch_events
    );
 end entity pipeline;
 
@@ -159,6 +166,7 @@ architecture synthesis of pipeline is
    signal f_redirect : std_logic;
    signal f_target   : std_logic_vector(31 downto 0);
    signal f_stop     : std_logic;
+   signal f_stats    : t_fetch_events;
 
    -- DECODE
    signal d_redirect : std_logic;
@@ -166,6 +174,8 @@ architecture synthesis of pipeline is
    signal dec_r      : t_inst;
    signal seq_uop    : t_uop;
    signal seq_emit   : std_logic;
+   signal d_starve   : std_logic;
+   signal d_blocked  : std_logic;
 
    -- PREPARE
    signal p_ready      : std_logic;
@@ -231,7 +241,8 @@ begin
          words_o         => f_words,
          count_o         => f_count,
          consume_i       => f_consume,
-         end_o           => f_end
+         end_o           => f_end,
+         stats_o         => f_stats
       ); -- i_pipe_fetch
 
 
@@ -249,7 +260,9 @@ begin
          ready_i    => p_ready,
          emit_o     => seq_emit,
          uop_o      => seq_uop,
-         inst_o     => dec_r
+         inst_o     => dec_r,
+         starve_o   => d_starve,
+         blocked_o  => d_blocked
       ); -- i_pipe_decode
 
 
@@ -351,6 +364,19 @@ begin
    irq_ready_o <= take_irq;
    halted_o    <= '1' when w_r.mode = HALTED_ST else '0';
    instret_o   <= rd_count or w_instret;
+
+
+   p_stats : process (all)
+      variable stats_v : t_fetch_events;
+   begin
+      stats_v         := f_stats;
+      stats_v.starve  := d_starve;
+      stats_v.blocked := d_blocked;
+      stats_v.words   := f_consume;
+      stats_v.jump    := d_redirect;
+      stats_v.flush   := w_flush;
+      stats_o         <= stats_v;
+   end process p_stats;
 
 
    -- The invariants that the theory of operation above relies on.

@@ -29,6 +29,9 @@
 -- to find stores into fetched code (MICROARCH.md §5.5). The range may hold
 -- words not in the buffer yet, which is safe.
 --
+-- stats_o reports the buffer's words, and the room held for the requests
+-- in flight, in each cycle, for the fetch statistics (ISA.md §8.7).
+--
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) The bus slave acknowledges every request, in order.
 -- b) consume_i is at most count_o.
@@ -72,7 +75,10 @@ entity pipe_fetch is
       count_o         : out natural range 0 to 4;
       consume_i       : in  natural range 0 to 4;
       -- One past the last word fetched or being fetched
-      end_o           : out std_logic_vector(31 downto 0)
+      end_o           : out std_logic_vector(31 downto 0);
+
+      -- For the fetch statistics: the fields of FETCH, the rest 0
+      stats_o         : out t_fetch_events
    );
 end entity pipe_fetch;
 
@@ -96,6 +102,7 @@ architecture synthesis of pipe_fetch is
    signal odd_r     : std_logic;                                -- Drop the next low word
 
    signal load : std_logic;
+   signal room : std_logic;
 
 begin
 
@@ -113,10 +120,26 @@ begin
 
    -- A new request, when the bus can take it and every word that may still
    -- arrive has room.
-   load <= '1' when rst_i = '0' and redirect_i = '0' and stop_i = '0' and
-                    (stb_r = '0' or ibus_stall_i = '0') and
-                    count_r + 2 * pending_r + 2 <= C_DEPTH else
+   room <= '1' when count_r + 2 * pending_r + 2 <= C_DEPTH else
            '0';
+   load <= '1' when rst_i = '0' and redirect_i = '0' and stop_i = '0' and
+                    (stb_r = '0' or ibus_stall_i = '0') and room = '1' else
+           '0';
+
+
+   p_stats : process (all)
+      variable stats_v : t_fetch_events;
+   begin
+      stats_v       := C_FETCH_EVENTS_NONE;
+      stats_v.count := count_r;
+      stats_v.held  := count_r + 2 * pending_r;
+      stats_v.full  := '1' when rst_i = '0' and redirect_i = '0' and stop_i = '0' and
+                                (stb_r = '0' or ibus_stall_i = '0') and room = '0' else
+                       '0';
+      stats_v.stall := stb_r and ibus_stall_i;
+      stats_v.pair  := ibus_ack_i;
+      stats_o       <= stats_v;
+   end process p_stats;
 
 
    p_fetch : process (clk_i)

@@ -7,9 +7,9 @@ BUILD = build
 # executables, so paths given to it start with ../.
 GHDLRUN = cd $(BUILD) && $(GHDL) --elab-run --std=08
 
-SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/perf.vhd src/timer.vhd src/wb_dmux.vhd
+SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/perf.vhd src/timer.vhd src/fetch_stats.vhd src/wb_dmux.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd
-TEST_SOURCES = test/tb_mem.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_timer.vhd test/tb_wb_dmux.vhd \
+TEST_SOURCES = test/tb_mem.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_timer.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd \
   test/tb_trace.vhd test/tb_core.vhd
 
 # tb_trace stands in for the core and runs test/trace.nasm. Each run's output
@@ -128,6 +128,19 @@ define check_selfcheck
 
 endef
 
+# test/fstats.nasm reads the fetch statistics (ISA.md §8.7), which only the
+# pipelined core has, and checks itself. The emulator has none, so the run
+# is not compared with it: it must end at the last HALT, with R12 = 0 and
+# exit status 0. $(1) is the name of the run, $(2) any more generics.
+define check_fstats
+	@($(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=fstats.bin -gG_TRACE_FILE=core_$(1).out \
+	  -gG_TRACE=false $(2) > core_$(1).log 2>&1); echo "exit $$?" >> $(BUILD)/core_$(1).out
+	@if grep -q '^R12 00000000' $(BUILD)/core_$(1).out && \
+	  tail -n 1 $(BUILD)/core_$(1).out | grep -qx 'exit 0'; then echo "PASS $(CORE) $(1)"; \
+	else echo "FAIL $(CORE) $(1)"; cat $(BUILD)/core_$(1).log; tail -n 6 $(BUILD)/core_$(1).out; exit 1; fi
+
+endef
+
 # Random programs from test/random_prog.py, each run for RANDOM_STEPS steps
 # with random interrupt requests, on a memory that stalls in RANDOM_STALL
 # percent of the cycles, and compared in the same way. A random program
@@ -162,8 +175,8 @@ define run_cores
 endef
 
 # tb_mem checks the memory model itself, tb_mpu the math unit, tb_perf the
-# performance counters, tb_timer the timer, and tb_wb_dmux the data bus
-# decoder.
+# performance counters, tb_timer the timer, tb_fetch_stats the fetch
+# statistics, and tb_wb_dmux the data bus decoder.
 test: emulator analyse synth
 	@($(GHDLRUN) tb_mem -gG_BIN_FILE=../test/mem.bin -gG_INPUT_FILE=../test/mem.input > tb_mem.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS tb_mem"; else echo "FAIL tb_mem"; cat $(BUILD)/tb_mem.log; exit 1; fi
@@ -173,6 +186,8 @@ test: emulator analyse synth
 	if [ $$? -eq 0 ]; then echo "PASS tb_perf"; else echo "FAIL tb_perf"; cat $(BUILD)/tb_perf.log; exit 1; fi
 	@($(GHDLRUN) tb_timer > tb_timer.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS tb_timer"; else echo "FAIL tb_timer"; cat $(BUILD)/tb_timer.log; exit 1; fi
+	@($(GHDLRUN) tb_fetch_stats > tb_fetch_stats.log 2>&1); \
+	if [ $$? -eq 0 ]; then echo "PASS tb_fetch_stats"; else echo "FAIL tb_fetch_stats"; cat $(BUILD)/tb_fetch_stats.log; exit 1; fi
 	@($(GHDLRUN) tb_wb_dmux > tb_wb_dmux.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS tb_wb_dmux"; else echo "FAIL tb_wb_dmux"; cat $(BUILD)/tb_wb_dmux.log; exit 1; fi
 	@$(ASM) -o $(BUILD)/trace.bin test/trace.nasm
@@ -205,6 +220,9 @@ cores:
 	@$(ASM) -o $(BUILD)/sidefx.bin $(BUILD)/sidefx.nasm
 	$(call check_core,sidefx,$(BUILD)/sidefx.bin)
 	$(call check_core,sidefx_stall,$(BUILD)/sidefx.bin,-gG_STALL=30 -gG_SEED=15)
+	@$(ASM) -o $(BUILD)/fstats.bin test/fstats.nasm
+	$(if $(filter pipeline,$(CORE)),$(call check_fstats,fstats))
+	$(if $(filter pipeline,$(CORE)),$(call check_fstats,fstats_stall,-gG_STALL=30 -gG_SEED=19))
 	$(foreach t,$(RANDOM_SEEDS),$(call check_random,$(t)))
 
 # More random programs than make test runs, for example
@@ -236,7 +254,7 @@ analyse:
 # Checks that GHDL can synthesise the core, the math unit, the performance
 # counters, the timer, and the data bus decoder, with the generics in
 # SYNTH_GENERICS_unit.
-SYNTH = multicycle pipeline mpu perf timer wb_dmux
+SYNTH = multicycle pipeline mpu perf timer fetch_stats wb_dmux
 SYNTH_GENERICS_wb_dmux = -gG_SLAVES=4
 
 define check_synth

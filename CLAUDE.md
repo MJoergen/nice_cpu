@@ -64,6 +64,9 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
     cd doc/intro && make pdfcheck    # check that nice_intro.pdf matches the .tex
     make diagrams                    # render the diagrams in doc/ to PNG (pdflatex, pdftoppm)
 
+Vivado 2025.1 is installed but not on PATH: `/opt/Xilinx/2025.1/Vivado/bin/vivado`.
+The out-of-context timing script is in `doc/review/pipeline-timing.md` (Method).
+
 Run the relevant `make test` after every change.
 
 ## Conventions

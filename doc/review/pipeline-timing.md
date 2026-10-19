@@ -1,10 +1,12 @@
 # The clock of the pipelined core
 
 NiceMonMEGA65 ran the multi-cycle core at 100 MHz. With the pipelined
-core it meets timing only at 33.3 MHz: its worst path is 29.1 ns over 43
+core it met timing only at 33.3 MHz: its worst path was 29.1 ns over 43
 logic levels, from WRITE to a register in nicemon. This file records why,
-what each fix is worth in time and in cycles, and the plan. It was
-measured on 2026-10-19, at commit 0009a54. The open items are in
+what each fix is worth in time and in cycles, the plan, and, in the
+second measurement at the end, what the re-timing of the same day did:
+the core alone now meets 10 ns. The first measurement was on
+2026-10-19, at commit 0009a54. The open items are in
 [TODO.md](../../TODO.md).
 
 ## Method
@@ -192,3 +194,48 @@ Beyond about 88 MHz, the store into fetched code needs a new design:
 its flush would come a cycle later, or its compares be made before
 WRITE. Today WRITE takes the next micro-operation in the cycle of the
 store.
+
+## The second measurement
+
+The core was re-timed on 2026-10-19, after the measurements above,
+with the method above, in Vivado 2025.1, and the script is now
+`hdl/timing.tcl` (`make timing` in `hdl/`). The plan was not followed
+step by step. Instead of moving only the sums to PREPARE, every operand
+goes there, and WRITE keeps one bypass, the value it wrote last
+(MICROARCH.md §7.4); and instead of registering the redirect, WRITE
+finds a `MOVE`'s target in its source and takes a second cycle for any
+other (§5.4). Each row is one run, and runs differ by a few tenths of a
+nanosecond from placement alone:
+
+| Step | Worst path | About | LUTs | Ends in |
+|---|---|---|---|---|
+| As it was, after the faster mod 33 | 20.4 ns | 49 MHz | 6154 | FETCH, through all of WRITE |
+| 1. Operands, addresses, and shift counts from PREPARE; the value written last as the one bypass; the shifter from a prepared count, with no reverse; one adder in the ALU; the ± 1 of a destination, a computed jump target, and a shift count from memory in a second cycle; the store compare as a distance | 10.6 ns | 94 MHz | 5763 | FETCH, from the store address through the compare and the flush |
+| 2. The compare on aligned blocks, with no subtraction; a second instruction slot in DECODE, so that FETCH's consume does not wait on WRITE; FETCH's next head from candidates; no count mod 33 in PREPARE | 9.7 ns | 103 MHz | 5491 | DECODE, from the flush through PREPARE's handshake |
+| 3. The store address and compare off the kind decode; the count mod 33 of a late count in a cycle of its own | 9.6 ns | 104 MHz | 5485 | the same |
+| 4. The jump flag from the decoded register, not the write mux | 9.7 ns | 103 MHz | 5470 | the same, and FETCH's head into DECODE |
+| 5. The block after each fetched range computed ahead, in registers, so that the compare has no adder | 10.1 ns | 99 MHz | 5880 | FETCH's block register, from the redirect target through an adder |
+| 6. FETCH's next block from candidates, like its next head | 10.2 ns | 98 MHz | 6018 | the same, from the flush |
+| 7. FETCH's block a cycle late, from its head register alone, and WRITE comparing with the block after it too | 9.6 ns | 104 MHz | 6256 | DECODE, from the flush through PREPARE's handshake |
+
+The first step took the clock from 49 to 94 MHz, and the rest is the
+control path: the flush, which the store compare and WRITE's retire
+decide, must reach PREPARE's read decision and DECODE's registers in
+the same cycle. Steps 2 to 4 shortened it until several paths differ
+only by placement, all within a few tenths of a nanosecond of 10 ns.
+Step 5 took the adder out of the compare, which gave the handshake
+paths a few tenths more, but put it on the redirect target instead;
+step 7 took it off every path. `make timing` on the final code, a
+second run of step 7, gave 9.7 ns with 6230 LUTs. What is left is in
+TODO.md.
+
+What it costs in cycles, by the model of `bench/pipecycles.py` with the
+rules of the new core against those of the old (`--shift-mem 0
+--shift-reg 0 --sum-wait 0 --dest-adjust 0`), on the benchmark as
+translated the same day, whose byte accesses no longer shift by a
+count from memory: 2199014 against 2197301 cycles for the translated
+program, and 1122937 against 1121913 for `hand.nasm`, both under 0.1%.
+Every case that takes a cycle more is rare in both programs
+(`make hazards` in `bench/`): a sum on a register the previous
+instruction writes, a shift by such a register or by a word in memory,
+a destination adjusted by one, and a jump to a computed target.

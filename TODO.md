@@ -20,10 +20,12 @@ has TODO or FIXME comments.
   - The cost of the waits that MICROARCH.md §5.3 and §5.6 discuss, from
     the pipelined core's cycles for the benchmark (`make core
     CORE=pipeline` in `bench/`), to decide on speculative reads (below).
-  - Speed: the core alone reaches about 49 MHz out of context (Vivado
-    2025.1, 2026-10-19), up from about 39 MHz before the faster mod 33 and
-    rotation in `nice_pkg`. NiceMonMEGA65 runs it at 33.3 MHz. See the
-    clock items below.
+  - Speed: the core alone meets a 10 ns clock out of context (Vivado
+    2025.1, `make timing` in `hdl/`), with a margin of a few tenths of a
+    nanosecond, since the re-timing of 2026-10-19
+    ([doc/review/pipeline-timing.md](doc/review/pipeline-timing.md)).
+    Before it, it reached about 49 MHz. NiceMonMEGA65 still runs it at
+    33.3 MHz, and must be tried at 100 MHz. See the clock items below.
 - **Test order steps not done** (MICROARCH.md §9):
   - Step 4, hazard programs: `hdl/test/hazard.nasm`,
     `hdl/test/sidefx_prog.py`, and `hdl/test/smc_prog.py`, which both
@@ -83,52 +85,28 @@ has TODO or FIXME comments.
 
 ## Pipelined core: after the first version
 
-- **A faster clock: the lean plan**
-  ([doc/review/pipeline-timing.md](doc/review/pipeline-timing.md)). WRITE
-  runs four carry chains in series in one cycle: the operand sum, the
-  shift count mod 33, the ALU or shifter, and the ± 1 of the
-  destination. Stand-ins of the fixes reach about 82 MHz out of context,
-  for about 6% more cycles in the translated benchmark and 4% in
-  `hand.nasm`. Each step starts in MICROARCH.md:
-  1. Register the redirect to FETCH, share one adder in the ALU
-     (MICROARCH.md §7.2), and give the ± 1 of a destination a cycle or a
-     micro-operation of its own.
-  2. Compute `R + c`, `R - 1`, and the store addresses of modes 011, 101,
-     and 111 in PREPARE, which waits when WRITE writes the register.
-  3. Reduce the shift counts before WRITE (MICROARCH.md §7.3), with one
-     more cycle for a count from a register.
-- **The store into fetched code limits the clock beyond about 88 MHz**
-  (pipeline-timing.md). Its three `in_range` compares feed `flush`, which
-  feeds the handshake of PREPARE and FETCH in the same cycle. Open: a
-  flush a cycle later, or compares made before WRITE, and what either
-  costs in cycles.
-- **The clock of the fast-clock plan** (pipeline-timing.md): a shift over
-  three cycles and every operand value from PREPARE reach about 99 MHz,
-  for 30% more cycles in the translated benchmark. Not planned, since the
-  lean plan runs it about as fast. Decide again if the lean plan falls
-  short.
+- **The margin at 100 MHz is thin** (pipeline-timing.md, the second
+  measurement). The worst paths out of context are within a few tenths
+  of a nanosecond of 10 ns, and several differ only by placement: the
+  flush, through PREPARE's handshake, into DECODE's registers; the store
+  address through the block compare into the flush; and the next
+  address of an instruction from FETCH's head into DECODE. The full
+  design places worse than the core alone. Ideas, each worth a few
+  tenths: a second slot in PREPARE, so that DECODE's emit does not wait
+  on WRITE's decision; the condition and the data count of WRITE's
+  micro-operation tested a cycle ahead; DECODE's next address from
+  FETCH's precomputed heads. Decide after NiceMonMEGA65 has been tried
+  at 100 MHz.
+- **What the system adds to the core's paths.** Out of context, the
+  inputs arrive at time 0. In the system, the data bus's read data goes
+  straight into WRITE's operands in the cycle of the ACK, and
+  `dbus_stall_i` into WRITE's retire and so into the flush; the memory
+  and the decoder must register what they drive. `retire_o` and the bus
+  outputs are combinational and were never counted.
 - **NiceMonMEGA65 reads the registers from `retire_o.regs`**, which is
   `w_n.regs` of WRITE, before the register. Its worst path ends there. A
   registered copy is enough for nicemon. Fix in NiceMonMEGA65, and say in
   `hdl/src/trace_pkg.vhd` that `retire_o` is for simulation and is slow.
-- **An out-of-context timing check in the repository.** The measurements
-  of pipeline-timing.md used a Vivado script outside it. Board synthesis
-  stays in the example design (below, Decided against), but a script that
-  reports the core's worst path would catch regressions. Decide whether
-  it belongs in `hdl/`.
-- **Count the cycles of the timing fixes in `bench/hazards.py`.** The
-  counts of pipeline-timing.md (shifts by a register, operands that the
-  previous instruction writes, by mode, and jumps that WRITE takes) came
-  from a script outside the repository.
-
-- **The cycle model's bubble after a jump.** With its defaults, the
-  model of `bench/pipecycles.py` is 2 to 22% below the pipelined core in
-  each phase of the benchmark (`make compare`, 2026-10-19), least where
-  the time goes to the math unit or straight code and most where it goes
-  to jumps: `vm`, `crc32`, and `bst`. `--flush 7` instead of 5 halves
-  the error, so the core's bubble after a jump taken in WRITE is longer
-  than MICROARCH.md §3 assumes. Find out why, and set the model's
-  defaults from the core.
 
 - **Speculative reads of RAM** (MICROARCH.md §5.3). Data reads wait until
   the instruction is certain to run. The waits are a conditional read
@@ -177,15 +155,17 @@ has TODO or FIXME comments.
   accesses, no compare for an index with a known bound, flags from the
   operation before a branch, no mask for a constant shift count,
   conditional instructions in place of short jumps, and multiplications
-  and divisions by constants. `bench/` went from 3359061 to 1729523
+  and divisions by constants, and shift counts of the byte accesses in
+  registers. `bench/` went from 3359061 to 1730635
   instructions, against 491617 for `hand.nasm`, and from about 5.55 to
   about 2.27 million cycles by `bench/pipecycles.py`, an estimate for
   the pipelined core of MICROARCH.md with the math unit as it was before
-  2026-10-16. With the math unit as it is, the estimate is 2.15 million
-  cycles, and the pipelined core takes 2.33 million (`make compare`). Trusting the alignment hint would
+  2026-10-16. With the math unit as it is, the estimate is 2.20 million
+  cycles, with the rules of the re-timed core or without them, and the
+  re-timed core takes 2.28 million (`make compare`). Trusting the alignment hint would
   save nothing now, as one compare covers the bounds and the alignment.
   What is left, by the estimate:
-  - *Taken jumps resolved in WRITE*, about two fifths of the cycles
+  - *Taken jumps resolved in WRITE*, about half of the cycles
     above one per instruction: the interpreter's table jumps, which no layout
     avoids, and `br_if`s whose common path is the taken one. nicewasm
     guesses that the shorter arm of a diamond is the rarer one; branch
@@ -197,14 +177,14 @@ has TODO or FIXME comments.
     independent work in between, which the translator rarely has without
     moving stores past loads. `__mul64` could overlap its partial
     products.
-  - *A read right after a skipped bounds-check jump*, about a seventh, in
-    chains of dependent loads, where no instruction can fill the slot.
-    Speculative reads (above) would remove it.
-  - *The address register written by the instruction before*, about an
-    eighth, in the inline byte loads, whose two address registers are both
-    computed just before the read. A different byte-load sequence would
-    be needed. MICROARCH.md §5 could state this stall in so many words;
-    §3 implies it.
+  - *A read right after a skipped bounds-check jump*, about a fifth, in
+    chains of dependent loads, where no instruction can fill the slot,
+    and in the byte accesses, whose word index and shift count now come
+    before the compare. Speculative reads (above) would remove it.
+  - *The address register written by the instruction before*, about 3%
+    now that the byte accesses compute theirs before the compare.
+    MICROARCH.md §5 could state this stall in so many words; §3 implies
+    it.
   - *Loop back edges* cost the two cycles of an early redirect each round.
   - *`@Rx++` for a pointer walk*, as `hand.nasm` does, needs a word
     pointer kept in step with the byte address, which is out of reach

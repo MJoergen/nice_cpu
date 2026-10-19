@@ -4569,11 +4569,17 @@ class FunctionTranslator:
                     d = self.push(I32)[0]
                 else:
                     d = fwd[0][0]
+                if sw is not None and sw.i == d:
+                    # The add writes i, as a local.tee of the index does.
+                    # A copy of i keeps it for the access. If no access
+                    # uses the copy, the allocator removes it.
+                    i2 = self.new_vreg()
+                    self.emit("MOVE", i2, sw.i)
+                    sw = WordIndex(sw.t, True, i2, sw.c)
                 ins = self.emit(ALU_OPS[op], d, a[0], b[0])
                 if fwd is not None and fwd[1] is not None:
                     self.push(I32, fwd[1])
                 if sw is not None:
-                    # The add may write i itself, as a local.tee does.
                     self.word_index[d] = (sw if sw.i not in self.written(ins)
                                           else WordIndex(sw.t, True))
             elif op in ALU64_OPS:

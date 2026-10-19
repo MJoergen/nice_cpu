@@ -527,7 +527,10 @@ one in the memory still works, through the checked helper. A d at or
 past L keeps the `ADD`, and so does a negative c, since d is taken
 modulo 2^32. So does every access if the memory can grow. Without
 bounds checks, d and the access's offset go into one `ADD` before the
-`AND`. For a library module, L comes from the library's memory.
+`AND`. For a library module, L comes from the library's memory. If
+the `i32.add` writes the local that holds i, as a `local.tee` of the
+index does, a copy of i comes first, for the accesses. The allocator
+gives the copy the register of i if it can, and then removes it.
 
 Such a group of word accesses with the same t, or the same i, shares
 one compare: that of the first access, with the least limit of the

@@ -285,7 +285,8 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "foldtrap": "SUB[M] R0, R1, 1",
          "foldtrap8": "SUB[M] R0, R2, 16383",
          "foldsharetrap": "MOVE @___wasm_memory+2121[R8], R1",
-         "libfoldtrap": "SUB[M] R0, R1, 8"}
+         "libfoldtrap": "SUB[M] R0, R1, 8",
+         "foldteetrap": "MOVE @___wasm_memory+2121[R8], R1"}
 
 # Options for nicewasm.
 OPTIONS = {"unchecked": ["--no-bounds-checks"],
@@ -509,6 +510,25 @@ def fold_loop(i0: int, end: int) -> bytes:
               + local_get(2) + i32_const(end << 2) + mem(I32_LOAD, 8480) + i32_const(8) + SHL
               + XOR)),
         data((8468, bytes([0x10, 0, 0, 0]))))
+
+
+def fold_tee(i: int) -> bytes:
+    """The module of the foldtee cases: main sets local 0 to i, then to a
+    = (i << 2) + 8480 with local.tee, loads x from a, stores x + 1 at a +
+    4, and returns the word at a + 4 plus a. The add writes the local
+    that holds i, so a copy of i keeps it for the accesses (README.md).
+    The word at 8492 is 0x20."""
+    return module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((2, i32_const(i) + local_set(0)
+              + local_get(0) + i32_const(2) + SHL + i32_const(8480) + ADD + local_tee(0)
+              + mem(I32_LOAD) + local_set(1)
+              + local_get(0) + local_get(1) + i32_const(1) + ADD + mem(I32_STORE, 4)
+              + local_get(0) + mem(I32_LOAD, 4) + local_get(0) + ADD)),
+        data((8492, bytes([0x20, 0, 0, 0]))))
 
 
 # i64 shifts and rotates: (a, operation, count, result). V is
@@ -1861,6 +1881,12 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # the store, which traps. The trap handler gives 2 + 6 = 8. R2 points
     # at the store in the code, which has no compare of its own.
     ("foldsharetrap", fold_loop(14260, 14300), SHARE_ASM.format(0), 8),
+    # a = (3 << 2) + 8480 = 8492, x = 0x20, and main returns 0x21 + 8492
+    # = 0x214D.
+    ("foldtee", fold_tee(3), "", 0x214D),
+    # a = (14263 << 2) + 8480 = 65532: the load is in bounds, and the store
+    # at 65536 traps, in the copy. R2 points at the store in the code.
+    ("foldteetrap", fold_tee(14263), "", 2),
     # A memory of 0 pages: every access traps.
     ("nomemory", module(
         types(MAIN_TYPE),

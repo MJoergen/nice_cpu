@@ -15,6 +15,7 @@ NICE with other processors.
     make hazards    # count the pipeline hazards of MICROARCH.md §5 in both
     make cycles     # estimate the cycles of both on the pipelined core of MICROARCH.md
     make profile    # the same, charged to the source lines, in build/*.cyc.txt
+    make compare    # the estimate beside the pipelined core's cycles, after make core CORE=pipeline
     make words      # the size in words of the benchmark, safe.zig, and float modules
     make native     # build and run bench.c on the host, as a check
     make wasm       # rebuild bench.wasm from bench.c (needs clang)
@@ -194,31 +195,58 @@ PREPARE, and WRITE under the rules of §3 to §5: two words fetched per
 cycle, a bubble of 2 cycles for a jump that DECODE resolves and of 5 for
 one resolved in WRITE, a data read that waits for an older write of SR
 or an older skipped jump, an address register written by the previous
-micro-operation, one data access per cycle on the bus, and 35 cycles for
-a result of the math unit. Every cycle above one per instruction is
+micro-operation, one data access per cycle on the bus, and the math unit
+of `hdl/src/mpu.vhd`: a product two cycles after the write of an operand,
+and a quotient after one cycle per bit, less the runs of eight zero bits
+that the divider skips, which the model works out from the operands in
+the trace. Every cycle above one per instruction is
 charged to the rule that caused it, so the output says where the time
 goes, and a program that reads the instruction counter around each phase,
 as both programs do, gets a row per phase:
 
-    bench.bin: 1774408 instructions, 2366863 cycles (estimate), CPI 1.334
-      cycles above 1/instruction: 592455
-      taken jumps resolved in WRITE (flush)                        191000  0.108/instr  32.2%
-      math unit result not ready                                   143406  0.081/instr  24.2%
+    bench.bin: 1774408 instructions, 2241842 cycles (estimate), CPI 1.263
+      cycles above 1/instruction: 467434
+      taken jumps resolved in WRITE (flush)                        191000  0.108/instr  40.9%
+      jumps DECODE resolves (early-redirect bubble)                 66391  0.037/instr  14.2%
       ...
 
       phase         instr    cycles    CPI   main extra cycles per instruction
-      rng64         89632    101952  1.137   mpu 0.10, early 0.02, fetch 0.01, flush 0.00
+      rng64         89632     92736  1.035   early 0.02, fetch 0.01, flush 0.00, multi 0.00
       ...
-      total       1729523   2273490  1.315
+      total       1729523   2154905  1.246
 
 On 2026-10-19 the phases of the translated program take an estimated
-2273490 cycles, 1.3 per instruction, and those of `hand.nasm` 1361674,
-2.8 per instruction: the hand-written code has more instructions with
+2154905 cycles, 1.25 per instruction, and those of `hand.nasm` 1023601,
+2.1 per instruction: the hand-written code has more instructions with
 side effects, memory operands, and reads of the math unit, and fewer
-instructions in all. Options such as `--flush`, `--early`, `--agen`, and
-`--mpu32` set the model's parameters, to try a design change before it
-is built. `pipecycles.py --test` checks the model on small programs whose
-cycles are worked out by hand in the script, and `make test` runs it.
+instructions in all. Options such as `--flush`, `--early`, `--agen`,
+`--mul`, and `--div-skip` set the model's parameters, to try a design
+change before it is built. `pipecycles.py --test` checks the model on
+small programs whose cycles are worked out by hand in the script, and
+`make test` runs it, and then the model on both programs with `--phases
+6`, which fails unless each reads the instruction counter around its six
+phases.
+
+`make compare` puts the estimate beside the cycles the pipelined core
+took, phase by phase, from the output of `make core CORE=pipeline`,
+which must have run first. On 2026-10-19:
+
+| Phase | `bench.c`, model | Core | Model against the core | `hand.nasm`, model | Core | Model against the core |
+|---|---|---|---|---|---|---|
+| `rng64` | 92736 | 95358 | −2.7% | 58380 | 59679 | −2.2% |
+| `crc32` | 76595 | 87154 | −12.1% | 35337 | 41756 | −15.4% |
+| `bst` | 402110 | 409866 | −1.9% | 215743 | 260388 | −17.1% |
+| `heapsort` | 375132 | 386801 | −3.0% | 271723 | 290524 | −6.5% |
+| `vm` | 1058089 | 1184155 | −10.6% | 388032 | 500056 | −22.4% |
+| `strings` | 150243 | 167285 | −10.2% | 54386 | 61791 | −12.0% |
+| total | 2154905 | 2330619 | −7.5% | 1023601 | 1214194 | −15.7% |
+
+The model is below the core in every phase: by 2 or 3% where the time
+goes to the math unit or to straight code, and by 10 to 22% where it
+goes to jumps, in `vm`, `crc32`, and `bst`. With `--flush 7` instead of
+5, the totals come within 4.5% and 7.3%, so the core's bubble after a
+jump taken in WRITE is longer than the five cycles of MICROARCH.md §3
+that the model assumes (TODO.md).
 
 `cycprof.py` charges the model's cycles to the source lines of a program,
 and `make profile` writes `build/bench.cyc.txt` and `build/hand.cyc.txt`.

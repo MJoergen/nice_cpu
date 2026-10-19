@@ -99,9 +99,13 @@ Under "Test order steps not done", steps 4, 5, 6, and 7 each say "which the mult
 
 **Fix.** `INSTR_LO = 0xFFFFFF42`, and a test that runs the model on `build/bench.bin` and expects six phase rows, or a check of the constant against `runtime/lib.nasm`.
 
+**Resolved**: `INSTR_LO` is `0xFFFFFF42`, and `make test` runs the model on both programs with `--phases 6`, which fails unless each reads the counter around six phases. The fixes of 3.1 to 3.3 are one commit, since the comparison needs the phases and the phases need the address.
+
 ### 3.2 It models the math unit of 2026-10-15
 
 The model holds a read of a result for `--mpu32` = 35 cycles after the write of an operand, "as in hdl/src/mpu.vhd: 33 (65) steps, plus a cycle to start and one to acknowledge". Since commits b018cbd and dd81315 of 2026-10-16, the multiplier takes two cycles, and the dividers skip runs of eight zero quotient bits, so a small dividend or a large divisor takes a few cycles. `bench/README.md` repeats the 35. The model therefore overcharges every multiplication by about 30 cycles.
+
+**Resolved**: the model has the multiplier's two cycles and the dividers' skips, worked out from the operands in the trace as `mpu.vhd` does them, with `--mul` and `--div-skip` as its knobs in place of `--mpu32` and `--mpu64`. `--test` has four math unit cases, a product, two divisions that skip, and one that does not, with the cycles counted by hand from the rules of `tb_mpu`.
 
 ### 3.3 The model against the core
 
@@ -135,6 +139,8 @@ TODO.md, under "Faster and smaller translated code", says that "waits on the mat
 
 **Fix.** Give the model the multiplier's 2 cycles and the dividers' variable time (a divider that skips zero runs is simple to copy from `mpu.vhd`), and then compare it with the core again. The comparison is worth keeping: `make core CORE=pipeline` already prints the phase rows, and a target that diffs them against the model's would show when the model drifts next.
 
+**Resolved**: `make compare` prints the model's phases beside the core's, from the output of `make core CORE=pipeline`. With the math unit of 3.2, the model is below the core in every phase, by 2% to 22%, least on `rng64` and most on the jump-heavy `vm`, `crc32`, and `bst`; `bench/README.md` has the table. `--flush 7` halves the error, so the core's bubble after a jump taken in WRITE is longer than the five cycles the model assumes, which is a new item in TODO.md.
+
 ### 3.4 The tables of 2026-10-16
 
 `bench/README.md` ("On 2026-10-16") and `hdl/README.md` ("The pipelined core") give the pipelined core 6003616 cycles for 3359061 instructions on the translated benchmark, from before the translator's optimizations, next to the multi-cycle core's numbers of 2026-10-19 for 1729523 instructions. The two columns are not of the same program. Today's numbers from this review:
@@ -157,6 +163,8 @@ The `hdl` job runs `make test`, which covers both cores, and `make programs`, wh
 ### 4.2 Nothing checks the model's phase rows
 
 See 3.1. The bench `make test` runs `pipecycles.py --test` on snippets. A run of the model on `bench.bin` that asserts six phase rows, with the sum of the rows no more than the total, would have caught the stale address.
+
+**Resolved**: with 3.1.
 
 ### 4.3 The hazard program and the fetch range
 

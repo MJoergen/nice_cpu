@@ -18,17 +18,6 @@ The open items of
 [doc/review/second-repository-review.md](doc/review/second-repository-review.md),
 added 2026-10-19. The section numbers are its.
 
-- **The cycle model's counter address and math unit** (§3.1, §3.2).
-  `bench/pipecycles.py` looks for `INSTR_LO` at `0xFFFFFF12`, which has
-  been `TIMER_VECTOR` since the swap of 2026-10-17, so `make cycles` and
-  `make profile` print no phase rows. It also holds every result of the
-  math unit for 35 cycles, where the multiplier has taken 2 since
-  2026-10-16 and the dividers skip runs of zero quotient bits. Fix the
-  address, add a test that expects the phase rows of `bench.bin`, give
-  the model the new math unit, and compare it with `make core
-  CORE=pipeline` again (§3.3): today it is within 12% of the core on each
-  phase of the translated benchmark, but 3.4 times too high on `rng64`
-  of `hand.nasm`.
 - **The tables of 2026-10-16** in `bench/README.md` and `hdl/README.md`
   pair the pipelined core's run of the old translator output with the
   multi-cycle core's run of the new. §3.4 has the numbers of 2026-10-19.
@@ -161,6 +150,15 @@ added 2026-10-19. The section numbers are its.
   previous instruction writes, by mode, and jumps that WRITE takes) came
   from a script outside the repository.
 
+- **The cycle model's bubble after a jump.** With its defaults, the
+  model of `bench/pipecycles.py` is 2 to 22% below the pipelined core in
+  each phase of the benchmark (`make compare`, 2026-10-19), least where
+  the time goes to the math unit or straight code and most where it goes
+  to jumps: `vm`, `crc32`, and `bst`. `--flush 7` instead of 5 halves
+  the error, so the core's bubble after a jump taken in WRITE is longer
+  than MICROARCH.md §3 assumes. Find out why, and set the model's
+  defaults from the core.
+
 - **Speculative reads of RAM** (MICROARCH.md §5.3). Data reads wait until
   the instruction is certain to run. The waits are a conditional read
   after a write of SR, 1.1% of the translated benchmark's instructions and
@@ -211,26 +209,28 @@ added 2026-10-19. The section numbers are its.
   and divisions by constants. `bench/` went from 3359061 to 1729523
   instructions, against 491617 for `hand.nasm`, and from about 5.55 to
   about 2.27 million cycles by `bench/pipecycles.py`, an estimate for
-  the pipelined core of MICROARCH.md. Trusting the alignment hint would
+  the pipelined core of MICROARCH.md with the math unit as it was before
+  2026-10-16. With the math unit as it is, the estimate is 2.15 million
+  cycles, and the pipelined core takes 2.33 million (`make compare`). Trusting the alignment hint would
   save nothing now, as one compare covers the bounds and the alignment.
   What is left, by the estimate:
-  - *Taken jumps resolved in WRITE*, about a third of the cycles above
-    one per instruction: the interpreter's table jumps, which no layout
+  - *Taken jumps resolved in WRITE*, about two fifths of the cycles
+    above one per instruction: the interpreter's table jumps, which no layout
     avoids, and `br_if`s whose common path is the taken one. nicewasm
     guesses that the shorter arm of a diamond is the rarer one; branch
     probabilities from a profile would do better.
-  - *Waits on the math unit*, about a quarter: the interpreter's `MUL`,
-    `__mul64` in `runtime/`, and `% 26` in strings read the result right
-    after writing the operands. Hiding the 35 cycles needs independent
-    work in between, which the translator rarely has without moving
-    stores past loads. `__mul64` could overlap its partial products. The quarter is the model's figure with a
-    35-cycle multiplier, which the math unit no longer has
-    (second-repository-review.md §3.2).
-  - *A read right after a skipped bounds-check jump*, about a tenth, in
+  - *Waits on the math unit*, about 4% now that the multiplier takes
+    two cycles: the interpreter's `MUL`, `__mul64` in `runtime/`, and
+    `% 26` in strings read the result right after writing the operands,
+    and a division still takes up to 34 cycles. Hiding a wait needs
+    independent work in between, which the translator rarely has without
+    moving stores past loads. `__mul64` could overlap its partial
+    products.
+  - *A read right after a skipped bounds-check jump*, about a seventh, in
     chains of dependent loads, where no instruction can fill the slot.
     Speculative reads (above) would remove it.
-  - *The address register written by the instruction before*, about a
-    tenth, in the inline byte loads, whose two address registers are both
+  - *The address register written by the instruction before*, about an
+    eighth, in the inline byte loads, whose two address registers are both
     computed just before the read. A different byte-load sequence would
     be needed. MICROARCH.md §5 could state this stall in so many words;
     §3 implies it.

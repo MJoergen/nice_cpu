@@ -41,6 +41,8 @@ test: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 	@NICEEMU=$(EMU) $(PYTHON) cycprof.py --test
 	@$(PYTHON) words.py --test
 	$(foreach p,$(PROGRAMS),$(call check,$(p)))
+	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --phases 6 $(BUILD)/bench.bin $(BUILD)/hand.bin > /dev/null \
+	  && echo "PASS pipecycles.py --phases 6"
 
 # Runs both on a core in GHDL, so that the cycles are the core's: CORE,
 # the generic G_CORE of hdl/test/tb_core.vhd, is multicycle for the
@@ -88,6 +90,13 @@ hazards: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 cycles: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py $(BUILD)/bench.bin $(BUILD)/hand.bin
 
+# The estimate beside the cycles the pipelined core took, phase by phase,
+# from the output of make core CORE=pipeline, which must have run first
+# (README.md, The cycle estimate).
+compare: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
+	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --against ../hdl/build/bench_pipeline.out $(BUILD)/bench.bin
+	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --against ../hdl/build/hand_pipeline.out $(BUILD)/hand.bin
+
 # The same, charged to the source lines of each program: the listings
 # build/bench.cyc.txt and build/hand.cyc.txt.
 profile: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/bench.full.nasm $(BUILD)/hand.full.nasm emulator
@@ -123,4 +132,4 @@ emulator:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: run test core hazards cycles profile words typecheck wasm native emulator clean
+.PHONY: run test core hazards cycles compare profile words typecheck wasm native emulator clean

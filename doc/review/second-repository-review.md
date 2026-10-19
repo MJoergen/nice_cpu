@@ -22,6 +22,8 @@ The question asked was not whether each part works, but whether the parts still 
 - CI never runs `make programs` on the pipelined core, and nothing in `make test` would notice the missing phase rows of §3.1 (§4).
 - Small emulator items: `--input` with a directory runs as an ended input, one README sentence predates the timer, and the timer's "keeps its vector" rule has no test of its own (§6).
 
+Every finding was fixed on 2026-10-19, in the commits after the review's own, one for each, with a **Resolved** paragraph under it. The two scripts of the review are in the repository as `hdl/test/smc_prog.py` and `translator/test/diff_fuzz.py`, and TODO.md has the one new item the fixes turned up, the cycle model's bubble after a jump.
+
 ## 1. The pipelined core
 
 ### 1.1 What was checked

@@ -204,6 +204,14 @@ from 5242 to 5215 words, and so did the float library, from 7149 to
 in the benchmark came from no longer copying short tails into the
 stubs.
 
+Later on 2026-10-19, instructions moved from after a data read to the
+slot between it and the jump to its stub took the benchmark from about
+2344000 to about 2306000 cycles (1.6% fewer), with the same 1785571
+instructions. The reads that wait for a skipped jump went from some
+94500 to some 56800 cycles. The vm saved the most, then heapsort and
+crc32. `test/safe.zig` became 5224 words, not 5215, the float library
+7083, not 7089, and the benchmark's module 8658, not 8632.
+
 ## Supported features
 
 - **Types:** `i32`, `i64`, `f32`, and `f64`, in function types, locals,

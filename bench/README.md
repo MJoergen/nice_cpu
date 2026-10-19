@@ -51,17 +51,17 @@ of the phase, from the performance counters of ISA.md §8.5, then the
 phase's result and whether it is the expected one. `main` returns the
 number of phases with a wrong result, so R1 is 0 after a good run.
 
-These are the tables from the emulator on 2026-10-15. First `bench.c`
+These are the tables from the emulator on 2026-10-19. First `bench.c`
 through nicewasm:
 
     phase      instructions       cycles  result
-    rng64            88642        88700  0e18cd0a  ok
-    crc32           146487       146545  2df3b109  ok
-    bst             574615       574673  55a72225  ok
-    heapsort        802646       802704  bdb22882  ok
-    vm             1554096      1554154  04156880  ok
-    strings         192575       192633  d9867cf6  ok
-    total          3359061      3359409
+    rng64            89632        89660  0e18cd0a  ok
+    crc32            65816        65844  2df3b109  ok
+    bst             315589       315617  55a72225  ok
+    heapsort        312536       312564  bdb22882  ok
+    vm              840049       840077  04156880  ok
+    strings         105901       105929  d9867cf6  ok
+    total          1729523      1729691
 
 Then `hand.nasm`:
 
@@ -106,31 +106,33 @@ The ratio of the instruction counts, translated to hand-written:
 | Phase | Ratio | Where the translated code loses |
 |---|---|---|
 | `rng64` | 2.2 | `i64` shifts and the 64-bit product take the same two-word steps either way. |
-| `crc32` | 5.3 | A byte load is a helper call, and the operand stack lives in frame words. |
-| `bst` | 5.0 | Each field access computes a byte address, checks it, and tests its alignment. |
-| `heapsort` | 4.6 | The same for each array element, and the `?:` becomes a comparison materialized as 0 or 1 and then a `select`. |
-| `vm` | 13.9 | The `br_table` checks and loads its table, each stack operation is several accesses, and the bytecode fetch is a helper call. |
-| `strings` | 9.1 | Every character goes through a byte helper and a library call. |
-| total | 6.8 | |
+| `crc32` | 2.4 | A byte load is seven instructions with its own bounds check, against a word read with a side effect on the pointer and shifts by hand. The table lookups need no check. |
+| `bst` | 2.7 | Each node's fields take a compare and a skipped jump before their reads, which the hand-written code does without. |
+| `heapsort` | 1.8 | The array elements take a compare and a skipped jump before their reads and writes, and the signed comparisons take two instructions either way. |
+| `vm` | 7.5 | The `br_table` checks its index, each stack cell is a checked word access, and the bytecode fetch is a byte load of seven instructions, where the hand-written interpreter has one word per opcode and the operands in registers. |
+| `strings` | 5.0 | Every character is a byte load of seven instructions, where the hand-written strings have one character per word. |
+| total | 3.5 | |
 
-The first column of TODO.md's list of translator optimizations, trusting
-the alignment hint, and the second, the operand stack in registers, aim
-at exactly the costs in the middle rows.
+What remains is in TODO.md, under "Faster and smaller translated code".
+A byte load of linear memory stays several instructions, since the
+memory is byte-addressed and packed four to a word (ISA.md §9.4).
 
 On the multi-cycle core, which takes about ten cycles for a plain
-instruction, the two programs ran like this on 2026-10-15:
+instruction, the two programs ran like this on 2026-10-19:
 
 | Program | Instructions | Cycles | Cycles per instruction | GHDL time |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 3359061 | 42487187 | 12.6 | 17.5 minutes |
-| `hand.nasm` | 491617 | 5829021 | 11.9 | 2.3 minutes |
+| `bench.c` through nicewasm | 1729523 | 19834290 | 11.5 | 10 minutes |
+| `hand.nasm` | 491617 | 5829021 | 11.9 | 3 minutes |
 
-So the hand-written program is 6.8 times shorter in instructions and 7.3
-times faster in cycles. The translated code takes more cycles per
-instruction because more of its instructions have constant words and
-memory operands. In both programs `rng64` has the most cycles per
-instruction, 14.9 and 14.0, because its reads of the math unit wait for
-the multiplier.
+So the hand-written program is 3.5 times shorter in instructions and 3.4
+times faster in cycles. On 2026-10-15, before the translator's register
+allocator and inline memory accesses, the ratios were 6.8 and 7.3, and
+the translated code took 12.6 cycles per instruction, because more of
+its instructions had constant words and memory operands. Now `vm` and
+`strings` have the most cycles per instruction in the translated
+program, 12.0 and 11.9, and `rng64` in the hand-written one, 14.0,
+because its reads of the math unit wait for the multiplier.
 
 `make core CORE=pipeline` runs them on the pipelined core. On 2026-10-16:
 

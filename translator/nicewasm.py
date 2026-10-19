@@ -294,11 +294,26 @@ class Ins:
 Item = Union[Ins, Label, str]
 
 
+@dataclass(frozen=True)
+class WordIndex:
+    """What word_index knows of a byte address x: a word index t, the
+    address ROR 2 if not aligned. If aligned, x is 4 * t modulo 2^32, so it
+    is a multiple of 4 and its word is t modulo 2^30. If i is not "", t is
+    i + c modulo 2^32, with c in [0, 2^32), and i still holds the value it
+    had then, so an access may use i and c in place of t (word_access)."""
+    t: str
+    aligned: bool
+    i: str = ""
+    c: int = 0
+
+
 @dataclass(eq=False)
 class Access:
     """A word access whose bounds and alignment one compare checks
     (word_access): SUB[M] R0, t, limit, then ?!C MOVE R15, slow, then the
-    access, then the label back, where the stub at slow comes back to."""
+    access, then the label back, where the stub at slow comes back to. If
+    the access is at word d of the memory plus i, t is i, and the limit
+    is less d."""
     t: str
     limit: int
     check: Ins
@@ -3006,11 +3021,8 @@ class FunctionTranslator:
         self.ctrl = [Frame(0, self.ftype, 0, self.ret_label, [], [])]
         # What the straight-line code so far knows of some virtual
         # registers, until one of the registers involved is written or a
-        # label that a jump may reach comes: a byte address -> (t,
-        # aligned), where t is a word index, the address ROR 2 if not
-        # aligned. If aligned, the address is 4 * t modulo 2^32, so it is
-        # a multiple of 4 and its word is t modulo 2^30.
-        self.word_index: Dict[str, Tuple[str, bool]] = {}
+        # label that a jump may reach comes: a byte address -> WordIndex.
+        self.word_index: Dict[str, WordIndex] = {}
         self.accesses: List[Access] = []  # for share_checks
         # What the flags say about an i32 value, until an instruction
         # changes the flags or a label comes: the virtual registers that
@@ -3115,11 +3127,13 @@ class FunctionTranslator:
 
     def forget(self, ins: Ins) -> None:
         """Drops what word_index knows of the virtual registers that an
-        instruction writes."""
+        instruction writes. If only its i is written, t still holds."""
         defs = self.written(ins)
-        for x, (t, _) in list(self.word_index.items()):
-            if x in defs or t in defs:
+        for x, w in list(self.word_index.items()):
+            if x in defs or w.t in defs:
                 del self.word_index[x]
+            elif w.i in defs:
+                self.word_index[x] = WordIndex(w.t, w.aligned)
 
     def track_flags(self, ins: Ins) -> None:
         """Keeps flag_val up to date after an instruction: it ends if the
@@ -3471,21 +3485,29 @@ class FunctionTranslator:
             self.emit("ADD", a, base, words(offset, I32)[0])
         return None, a, 0
 
-    def index_of_sum(self, a: str, b: str, ca: Optional[int], cb: Optional[int]) -> str:
+    def index_of_sum(self, a: str, b: str, ca: Optional[int], cb: Optional[int]
+                     ) -> Optional[WordIndex]:
         """For an i32.add of a and b, the constants ca and cb if they are
         ones: if one is an address x at a multiple of 4 whose word index
         t_x word_index knows, and the other a constant c that is a multiple
         of 4, the sum is an address at a multiple of 4 too. Emits t = t_x
         + c / 4, which is the sum / 4 modulo 2^30 since the sum wraps
-        modulo 2^32, and returns it, or else "". If no access uses t, the
-        allocator removes it."""
+        modulo 2^32, and returns what word_index is to know of the sum, or
+        else None. If t_x is i + c_x, t is i + c_x + c / 4, so an access
+        may use i in place of t. If no access uses t, the allocator
+        removes it."""
         x, c = (a, cb) if cb is not None else (b, ca)
-        t_x, aligned = self.word_index.get(x, ("", False))
-        if c is None or not aligned or c % 4:
-            return ""
+        w = self.word_index.get(x)
+        if c is None or w is None or not w.aligned or c % 4:
+            return None
         t = self.new_vreg()
-        self.emit("ADD", t, t_x, words(c // 4, I32)[0])
-        return t
+        self.emit("ADD", t, w.t, words(c // 4, I32)[0])
+        return WordIndex(t, True, w.i, (w.c + c // 4) & 0xFFFFFFFF if w.i else 0)
+
+    def aligned(self, x: str) -> bool:
+        """Whether word_index knows the address x to be at a multiple of 4."""
+        w = self.word_index.get(x)
+        return w is not None and w.aligned
 
     def mem_word(self, k: int, index: Optional[str] = None) -> str:
         """The operand for word k of the memory, plus the word index in the
@@ -3533,18 +3555,26 @@ class FunctionTranslator:
         which traps with code 2 if the access is out of bounds, and else
         does the access as the helper does. The t of a base that
         word_index knows serves too: a t that may have bits above the word
-        index fails the compare. Without bounds checks, an aligned base
-        needs no check, but its t must be taken modulo 2^30, since the
-        address wraps modulo 2^32 (§9.4). Returns the instructions that
-        write the last result on each path, if there are results."""
+        index fails the compare. If t is i + c, with c below the limit of
+        t, the compare is of i with the limit - c, and the access is at
+        word c of the memory plus i, so the add that computes t goes. If i
+        passes that compare, i + c passes the limit and does not wrap. If
+        not, the stub computes base from i and c, and the checked helper
+        does the rest. Without bounds checks, an aligned base needs no
+        check, but its t must be taken modulo 2^30, since the address wraps
+        modulo 2^32 (§9.4). Returns the instructions that write the last
+        result on each path, if there are results."""
         assert self.t.mem_bytes is not None
         start, slow, back = self.new_label(), self.new_label(), self.new_label()
         self.label(start, keep=True)
+        w = self.word_index.get(base)
         if not self.t.checks:
-            t = self.word_index[base][0]
-            if offset:
+            assert w is not None
+            t, k = (w.i, w.c + offset // 4) if w.i else (w.t, offset // 4)
+            k &= 0xFFFFFFFF
+            if k:
                 u = self.new_vreg()
-                self.emit("ADD", u, t, words(offset // 4, I32)[0])
+                self.emit("ADD", u, t, words(k, I32)[0])
                 t = u
             u = self.new_vreg()
             self.emit("AND", u, t, "0x3FFFFFFF")
@@ -3556,13 +3586,15 @@ class FunctionTranslator:
             # No n bytes fit there.
             self.trap_jump(2, start)
             return []
-        t, aligned_t = self.word_index.get(base, ("", False))
-        if not t:
-            t = self.new_vreg()
-            self.emit("ROR", t, base, "2")
+        if w is None:
+            w = WordIndex(self.new_vreg(), False)
+            self.emit("ROR", w.t, base, "2")
             if VREG_RE.fullmatch(base):
-                self.word_index[base] = (t, False)
-        k = offset // 4
+                self.word_index[base] = w
+        t, c = w.t, 0
+        if w.i and w.c < limit and not self.t.growable:
+            t, c = w.i, w.c
+        k = offset // 4 + c
         u = t
         if self.t.growable:
             # Words that memory.grow keeps up to date. With k, t + k
@@ -3575,19 +3607,23 @@ class FunctionTranslator:
             self.emit("SUB[M]", "R0", u, f"@W.wlimit{n}")
             self.emit("?!C MOVE", "R15", slow)
         else:
-            check = self.emit("SUB[M]", "R0", u, str(limit))
+            check = self.emit("SUB[M]", "R0", u, str(limit - c))
             jump = self.emit("?!C MOVE", "R15", slow)
-            self.accesses.append(Access(t, limit, check, jump, back))
+            self.accesses.append(Access(t, limit - c, check, jump, back))
         last = [self.emit(mnemonic, *ops)
                 for mnemonic, *ops in self.expand(aligned, lambda j: self.mem_word(k + j, u))][-1:]
         self.label(back, keep=True)
         self.label(slow, stub=True)
+        if c:
+            u = self.new_vreg()
+            self.emit("ADD", u, t, str(c), stub=True)  # w.t
+            t = u
         a = self.new_vreg()
-        self.emit("SHL" if aligned_t else "ROL", a, t, "2", stub=True)  # base
+        self.emit("SHL" if w.aligned else "ROL", a, t, "2", stub=True)  # base
         # The helper checks base + offset, and traps with R2 = start.
         self.call_helper("W.c" + helper[2:], [a] + args, len(results), stub=True)
         self.stubs += [instr(".DAT", start), instr(".DAT", words(offset, I32)[0])]
-        moves = [self.emit("MOVE", w, f"R{j + 1}", stub=True) for j, w in enumerate(results)]
+        moves = [self.emit("MOVE", r, f"R{j + 1}", stub=True) for j, r in enumerate(results)]
         self.emit("MOVE", "R15", back, stub=True)
         return last + moves[-1:] if results else []
 
@@ -4008,7 +4044,7 @@ class FunctionTranslator:
         res = dest if n == 8 else [dest[0] if len(dest) == 1 else self.new_vreg()]
         aligned: List[Tuple[str, ...]] = [("MOVE", w, f"%{k}") for k, w in enumerate(res)]
         if n >= 4 and const is None and offset % 4 == 0 and (
-                self.t.checks or self.word_index.get(base[0], ("", False))[1]):
+                self.t.checks or self.aligned(base[0])):
             last = self.word_access(base[0], offset, n, helper, [], res, aligned)
             if len(dest) == 2 and n == 4:
                 self.extend(dest, res[0], signed)
@@ -4066,7 +4102,7 @@ class FunctionTranslator:
         words_n = 2 if n == 8 else 1
         aligned: List[Tuple[str, ...]] = [("MOVE", f"%{k}", value[k]) for k in range(words_n)]
         if n >= 4 and const is None and offset % 4 == 0 and (
-                self.t.checks or self.word_index.get(base[0], ("", False))[1]):
+                self.t.checks or self.aligned(base[0])):
             self.word_access(base[0], offset, n, f"W.store{n}", value[:words_n], [], aligned)
             return
         if n < 4:
@@ -4515,7 +4551,7 @@ class FunctionTranslator:
                     self.emit({"shl": "SHL", "shr_u": "SHR", "shr_s": "C>0"}[shift], d, a[0], c)
                     if widx or (shift == "shl" and count is not None and count & 31 == 2
                                 and VREG_RE.fullmatch(a[0]) and a[0] != d):
-                        self.word_index[d] = (widx or a[0], True)
+                        self.word_index[d] = WordIndex(widx or a[0], True, widx or a[0])
                 if fwd is not None and fwd[1] is not None:
                     self.push(I32, fwd[1])
             elif op in SHIFT64_OPS:
@@ -4528,17 +4564,18 @@ class FunctionTranslator:
                 consts = self.const_value(2), self.const_value(1)
                 fwd = self.forward(r, at, I32, 2)
                 a, b = self.pop([I32, I32], at, name)
-                widx = self.index_of_sum(a[0], b[0], *consts) if op == 0x6A else ""
+                sw = self.index_of_sum(a[0], b[0], *consts) if op == 0x6A else None
                 if fwd is None:
                     d = self.push(I32)[0]
-                    self.emit(ALU_OPS[op], d, a[0], b[0])
                 else:
                     d = fwd[0][0]
-                    self.emit(ALU_OPS[op], d, a[0], b[0])
-                    if fwd[1] is not None:
-                        self.push(I32, fwd[1])
-                if widx:
-                    self.word_index[d] = (widx, True)
+                ins = self.emit(ALU_OPS[op], d, a[0], b[0])
+                if fwd is not None and fwd[1] is not None:
+                    self.push(I32, fwd[1])
+                if sw is not None:
+                    # The add may write i itself, as a local.tee does.
+                    self.word_index[d] = (sw if sw.i not in self.written(ins)
+                                          else WordIndex(sw.t, True))
             elif op in ALU64_OPS:
                 a, b = self.pop([I64, I64], at, name)
                 dest = self.push(I64)
@@ -4651,8 +4688,8 @@ class FunctionTranslator:
             self.move([f"R{k + 1}" for k in range(SIZES[rt])], src)
 
     def share_checks(self) -> None:
-        """Gives a group of word accesses with the same word index t, in
-        the same straight-line code, one compare: that of the first, with
+        """Gives a group of word accesses with the same word index t, or
+        the same i (Access), in the same straight-line code, one compare: that of the first, with
         the least of their limits. If it passes, every access of the
         group is in bounds and at a multiple of 4, and the code goes on
         without the other compares, whose stubs go. If it fails,

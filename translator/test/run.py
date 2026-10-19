@@ -220,6 +220,15 @@ LIB_MODULE = module(
           + local_get(1) + i32_const(16) + ADD + global_set(0) + local_get(2)),
          (0, i32_const(100) + mem(I32_LOAD))))
 
+# A library module whose elem(i) loads the word at (i << 2) + 32, which
+# nicewasm folds into the word operand (README.md).
+LIB_FOLD = module(
+    types(([I32], [I32])),
+    funcs(0),
+    memory(1),
+    exports(("elem", 0, 0)),
+    code((0, local_get(0) + i32_const(2) + SHL + i32_const(32) + ADD + mem(I32_LOAD))))
+
 # Hand-written assembly for the library cases: the program's ___wasm_start,
 # which does nothing, and its main, which runs an instruction, calls a
 # routine, and runs another instruction.
@@ -272,7 +281,11 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "dispatchtrap": "SUB[M] R0, R4, 65536",
          "hoisttrap": "ROR R1, R5, 2",
          "hoistgrouptrap": "MOVE R1, @___wasm_memory+1[R9]",
-         "hoiststoretrap": "ROR R1, R8, 2"}
+         "hoiststoretrap": "ROR R1, R8, 2",
+         "foldtrap": "SUB[M] R0, R1, 1",
+         "foldtrap8": "SUB[M] R0, R2, 16383",
+         "foldsharetrap": "MOVE @___wasm_memory+2121[R8], R1",
+         "libfoldtrap": "SUB[M] R0, R1, 8"}
 
 # Options for nicewasm.
 OPTIONS = {"unchecked": ["--no-bounds-checks"],
@@ -287,6 +300,10 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "narrow_unchecked": ["--no-bounds-checks"],
            "addrform_unchecked": ["--no-bounds-checks"],
            "addrform_grow": ["--memory-pages", "2"],
+           "foldform_unchecked": ["--no-bounds-checks"],
+           "foldform_grow": ["--memory-pages", "2"],
+           "libfold": ["--library", "lib", "--library-memory", "64"],
+           "libfoldtrap": ["--library", "lib", "--library-memory", "64"],
            "narrow_grow": ["--memory-pages", "2"],
            "memend_grow": ["--memory-pages", "2"],
            "library": ["--library", "lib"],
@@ -447,6 +464,51 @@ def addrform_checks() -> List[bytes]:
         i32_const(1) + local_set(1) + local_get(1) + i32_const(3) + SHL + i32_const(8) + ADD
         + i32_const(4) + ADD + mem(I32_LOAD) + i32_const(0x105) + EQ,
         idx(0, 2, None, 1)]
+
+
+def fold_checks() -> List[bytes]:
+    """Word accesses at (i << s) + c with a constant c of up to 65536,
+    which nicewasm folds into the word operand (README.md), unless c / 4
+    is at or past the limit of the compare. Each check is one bit, and the
+    last one fails."""
+    return [
+        st(I32_STORE, 8516, 0x1234) + st(I64_STORE, 65528, 0x01020304_05060708)
+        + st(I32_STORE, 20, 0x105)
+        + idx(5, 2, 8476, 0x1234, offset=20),          # 20 + 8476 + 20 = 8516
+        idx(-1, 2, 8520, 0x1234),                      # -4 + 8520 = 8516, in the stub
+        idx(0x40000001, 2, 8508, 0x1234, offset=4),    # 4 + 8508 + 4, in the stub
+        idx(-16379, 2, 65536, 0x105),                  # -65516 + 65536 = 20, c / 4 = 16384
+        idx(0, 2, 65532, 0x01020304),                  # the last word: c / 4 = 16383
+        idx(8190, 3, 8, 0x01020304_05060708, I64_LOAD),   # 65520 + 8, the last two words
+        idx(0, 2, 65528, 0x01020304_05060708, I64_LOAD),  # c / 4 = 16382, the limit - 1
+        idx(-2, 2, 65536, 0x01020304_05060708, I64_LOAD),  # c / 4 = 16384: not folded
+        idx(5, 2, 8476, 0x1235, offset=20)]
+
+
+def fold_loop(i0: int, end: int) -> bytes:
+    """The module of the fold cases. main calls setup, then, for i from i0
+    up to end - 1, signed, loads x from a = (i << 2) + 8480, adds x to s,
+    stores s at 0, and stores x + 1 at a + 4. The two accesses share one
+    compare of i, with 8480 / 4 = 2120 in their word operands (README.md).
+    main returns s XOR the word at (end << 2) + 8480, shifted left by 8.
+    The word at 8468 is 0x10."""
+    a = local_get(0) + i32_const(2) + SHL + i32_const(8480) + ADD
+    return module(
+        types(MAIN_TYPE, ([], [])),
+        imports(("env", "setup", 1)),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 1)),
+        code((3, call(0) + i32_const(i0) + local_set(0) + loop()
+              + a + mem(I32_LOAD) + local_tee(1)
+              + local_get(2) + ADD + local_set(2)
+              + i32_const(0) + local_get(2) + mem(I32_STORE)
+              + a + local_get(1) + i32_const(1) + ADD + mem(I32_STORE, 4)
+              + local_get(0) + i32_const(1) + ADD + local_tee(0) + i32_const(end) + LT_S
+              + br_if(0) + END
+              + local_get(2) + i32_const(end << 2) + mem(I32_LOAD, 8480) + i32_const(8) + SHL
+              + XOR)),
+        data((8468, bytes([0x10, 0, 0, 0]))))
 
 
 # i64 shifts and rotates: (a, operation, count, result). V is
@@ -1740,6 +1802,65 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         code((1, i32_const(-1) + local_set(0) + local_get(0) + i32_const(2) + SHL
               + mem(I32_LOAD)))),
      "", 2),
+    # Constant offsets folded into the word operand (fold_checks), the
+    # same three ways.
+    ("foldform", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((3, bits(0, *fold_checks())))), "", 0x1FE),
+    ("foldform_unchecked", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((3, bits(0, *fold_checks())))), "", 0x1FE),
+    ("foldform_grow", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((3, bits(0, *fold_checks())))), "", 0x1FE),
+    # (1 << 2) + 65532 = 65536: c / 4 = 16383 is below the limit of 16384,
+    # so the compare is of i = 1 with 1, which fails, and the stub calls
+    # the checked helper, which traps. R2 is at the compare.
+    ("foldtrap", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, i32_const(1) + local_set(0) + local_get(0) + i32_const(2) + SHL
+              + i32_const(65532) + ADD + mem(I32_LOAD)))),
+     "", 2),
+    # (0 << 2) + 65532 + 4: the 8 bytes from 65532 pass the memory. The
+    # limit of an i64 access is 16383, so c / 4 = 16383 is not below it,
+    # and the access is not folded: its compare is of t = 0 + 16383.
+    ("foldtrap8", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, i32_const(0) + local_set(0) + local_get(0) + i32_const(2) + SHL
+              + i32_const(65532) + ADD + mem(I64_LOAD) + WRAP))),
+     "", 2),
+    # From i = 0 to 4, the loads give 0, 1, 2, 3, and 4, each the value
+    # that the round before stored, and s is 10. The word at (5 << 2) +
+    # 8480 is 5. So main returns 10 XOR 0x500 = 0x50A.
+    ("fold", fold_loop(0, 5), SHARE_ASM.format(0), 0x50A),
+    # From i = -3 to 1. For i = -3 to -1, a = 8468, 8472, and 8476: the
+    # address wraps modulo 2^32, i fails the compare, and the stub and the
+    # copy do the accesses through the checked helpers. The loads give
+    # 0x10 to 0x14, so s is 0x5A, and the word at (2 << 2) + 8480 = 8488
+    # is 0x15. 0x5A XOR 0x1500 is 0x155A.
+    ("foldwrap", fold_loop(-3, 2), SHARE_ASM.format(0), 0x155A),
+    # From i = 14260, a = 57040 + 8480 = 65520. The loads give 0, 1, 2,
+    # and 3, so s is 6 when the store at 65532 + 4 = 65536 traps, for i =
+    # 14263. That i fails the shared compare, with the limit 16383 - 2120
+    # = 14263 of the store, so the load's stub does the load, and the copy
+    # the store, which traps. The trap handler gives 2 + 6 = 8. R2 points
+    # at the store in the code, which has no compare of its own.
+    ("foldsharetrap", fold_loop(14260, 14300), SHARE_ASM.format(0), 8),
     # A memory of 0 pages: every access traps.
     ("nomemory", module(
         types(MAIN_TYPE),
@@ -2224,6 +2345,11 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     ("libtrap", LIB_MODULE, LIB_ASM.format("MOVE R0, R0", "_peek100", "MOVE R0, R0"), 2),
     # With 128 bytes reserved, it reads 0.
     ("libmem", LIB_MODULE, LIB_ASM.format("MOVE R0, R0", "_peek100", "ADD R1, R1, 5"), 5),
+    # With 64 bytes reserved, elem(7) reads the last word, at 60, which is
+    # 0, and elem(8) traps. The compare is of i with 16 - 8 = 8: the limit
+    # of the library's memory, less 32 / 4.
+    ("libfold", LIB_FOLD, LIB_ASM.format("MOVE R1, 7", "_elem", "ADD R1, R1, 5"), 5),
+    ("libfoldtrap", LIB_FOLD, LIB_ASM.format("MOVE R1, 8", "_elem", "MOVE R0, R0"), 2),
     # memory.grow, with up to 3 pages. dirty() writes 77 in the first word of
     # page 1 and 99 in the last word of page 2, which are not in the memory
     # yet. memory.grow must set them to 0. One bit each:

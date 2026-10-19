@@ -510,11 +510,31 @@ in the same straight-line code uses the same t. What nicewasm knows of t
 is dropped when a register it involves is written, and at a label that
 a jump may reach.
 
-Such a group of word accesses with the same t shares one compare: that
-of the first access, with the least limit of the group. If t passes it,
+Often the `ADD` that computes t can go too. Then t is i + d, with i
+the index, or the index shifted by s - 2, and the constant d = c / 4.
+If d is below the limit L of the compare, the compare is of i with L -
+d, and d goes into the word operand. So for `(i << 2) + 8480`, an
+`i32.load` is:
+
+    SUB[M]  R0, R7, 14264
+    ?!C MOVE R15, W.f6.L8
+    MOVE    R5, @___wasm_memory+2120[R7]
+
+If i passes the compare, i + d is below L, so the access is in bounds,
+and its word index does not wrap. If not, the stub computes t with an
+`ADD` and goes on as before. So an address that wraps modulo 2^32 to
+one in the memory still works, through the checked helper. A d at or
+past L keeps the `ADD`, and so does a negative c, since d is taken
+modulo 2^32. So does every access if the memory can grow. Without
+bounds checks, d and the access's offset go into one `ADD` before the
+`AND`. For a library module, L comes from the library's memory.
+
+Such a group of word accesses with the same t, or the same i, shares
+one compare: that of the first access, with the least limit of the
+group, L - d for i. If the compare passes,
 every access of the group is in bounds and at a multiple of 4, so the
 others need no compare. A struct's fields, or a load and a store of the
-same array element, are such groups. If t fails the compare, the first
+same array element, are such groups. If the compare fails, the first
 access's stub does that access, as before, and then goes on in a copy
 of the code up to the end of the last access, after the epilogue. In
 the copy, each word access calls its checked helper, such as

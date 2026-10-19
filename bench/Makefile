@@ -39,6 +39,7 @@ test: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 	@$(PYTHON) hazards.py --test
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --test
 	@NICEEMU=$(EMU) $(PYTHON) cycprof.py --test
+	@$(PYTHON) words.py --test
 	$(foreach p,$(PROGRAMS),$(call check,$(p)))
 
 # Runs both on a core in GHDL, so that the cycles are the core's: CORE,
@@ -93,9 +94,15 @@ profile: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/bench.full.nasm $(BUILD)/
 	@NICEEMU=$(EMU) $(PYTHON) cycprof.py $(BUILD)/bench.full.nasm $(BUILD)/bench.bin
 	@NICEEMU=$(EMU) $(PYTHON) cycprof.py $(BUILD)/hand.full.nasm $(BUILD)/hand.bin
 
+# The size in words of the translated modules the READMEs quote: the
+# benchmark's, translator/test/safe.zig's, and the float library's.
+words:
+	@$(PYTHON) words.py bench.wasm ../translator/test/safe.wasm
+	@$(PYTHON) words.py --library float ../runtime/float.wasm
+
 # Needs mypy (pip install mypy).
 typecheck:
-	MYPYPATH=../assembler $(PYTHON) -m mypy --strict expected.py hazards.py pipecycles.py cycprof.py
+	MYPYPATH=../assembler $(PYTHON) -m mypy --strict expected.py hazards.py pipecycles.py cycprof.py words.py
 
 # Rebuilds bench.wasm from bench.c. Needs clang with the wasm32 target and
 # wasm-ld, and builds the C library first.
@@ -116,4 +123,4 @@ emulator:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: run test core hazards cycles profile typecheck wasm native emulator clean
+.PHONY: run test core hazards cycles profile words typecheck wasm native emulator clean

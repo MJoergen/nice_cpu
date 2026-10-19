@@ -15,6 +15,7 @@ NICE with other processors.
     make hazards    # count the pipeline hazards of MICROARCH.md §5 in both
     make cycles     # estimate the cycles of both on the pipelined core of MICROARCH.md
     make profile    # the same, charged to the source lines, in build/*.cyc.txt
+    make words      # the size in words of the benchmark, safe.zig, and float modules
     make native     # build and run bench.c on the host, as a check
     make wasm       # rebuild bench.wasm from bench.c (needs clang)
 
@@ -235,6 +236,21 @@ the read of the result. In heapsort's inner loop, for example:
 
 `cycprof.py --test` checks the charging on a counted loop whose cycles
 are worked out by hand in the script, and `make test` runs it.
+
+## The size of a module
+
+`words.py` gives the size in words of a wasm module translated by
+nicewasm, the measure that [translator/README.md](../translator/README.md)
+quotes for `test/safe.zig` and the float library. `make words` prints it
+for `bench.wasm`, `translator/test/safe.wasm`, and `runtime/float.wasm`:
+on 2026-10-19, 8623, 5182, and 7083 words. Each module is translated and
+assembled on its own, with the labels it uses but does not define, such
+as the runtime's routines, defined as 0 first; a constant takes a whole
+word whatever its value (ISA.md §3), so that changes no size. The count
+is the words the assembler emits, instructions and data, and not the
+words that `.RES` reserves for the linear memory. `words.py --test`
+checks the count on a snippet whose words are counted by hand in the
+script, and `make test` runs it.
 
 ## Checking the results
 

@@ -3,7 +3,7 @@
 The pipelined core, `src/pipeline.vhd`, follows
 [doc/MICROARCH.md](../doc/MICROARCH.md). Where the note left a question
 open, or where the core first did something else, this file says what the
-core does and why. MICROARCH.md has since taken up items 1, 8, and 9. ISA.md is not changed. Items that need a
+core does and why. MICROARCH.md has since taken up items 1, 8, 9, and 14. ISA.md is not changed. Items that need a
 change outside `hdl/` are marked **Outside hdl/**, and are also in
 [TODO.md](../TODO.md).
 
@@ -114,12 +114,14 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
 
 ## Formal checks
 
-14. **FETCH is proven, the rest of the core is checked for 8
-    cycles.** `formal/pipe_fetch.sby` proves `pipe_fetch` for every cycle,
-    with invariants under its `G_FORMAL`. It needs Boolector, which CI now
-    installs (**Outside hdl/:** one package name in
-    `.github/workflows/ci.yml`); Yices does not finish the induction. The
-    whole core is too deep for that without many more invariants, so
+14. **FETCH, PREPARE, and DBUS are proven, the rest of the core is
+    checked for 8 cycles.** `formal/pipe_fetch.sby`, `pipe_prepare.sby`,
+    and `pipe_dbus.sby` prove the three for every cycle, with invariants
+    under their `G_FORMAL`, and with assumptions that model the stages
+    beside them, which `p_check` in `src/pipeline.vhd` checks in the
+    whole core. FETCH needs Boolector, which CI installs; Yices does not
+    finish its induction, but proves the other two. The whole core is too
+    deep for that without many more invariants, so
     `formal/pipeline.sby` checks its ports and its own assertions for the
     first 8 cycles after reset. The simulation tests check the same
     assertions on every run.

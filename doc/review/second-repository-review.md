@@ -63,6 +63,8 @@ WRITE flushes when a store lands in FETCH's range, `addr_o` to `end_o`, or in th
 
 Item 14, "FETCH is proven, the rest of the core is checked for 8 cycles", predates the proofs of PREPARE and DBUS. The header says MICROARCH.md "has since taken up items 1, 8, and 9"; after 2.2 it should also take up 14. **Fix:** update the item, or drop it in favour of hdl/README.md, The formal checks.
 
+**Resolved**: item 14 names the three proofs and what checks their assumptions, and the header says MICROARCH.md has taken it up.
+
 ### 2.4 hdl/README.md lost a heading
 
 Commit ef385fa ("nicehdl: the timer of ISA.md §8.6") replaced the heading `## The trace writer` with `## The timer` instead of inserting one. The paragraphs that begin "The core reports each step in a `t_retire`" now sit under "The fetch statistics", after two blank lines (line 676). **Fix:** put `## The trace writer` back before them.

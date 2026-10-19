@@ -175,8 +175,8 @@ touches.
 ## Interrupts
 
 The core (`src/cpu.zig`) implements IRQ, NMI, `INT`, and `RTI` (ISA.md §7).
-No device raises IRQ or NMI yet. Instead, `--irq` and `--nmi` raise a request
-at a chosen step. A request for step N is raised after N steps have run, so
+The timer (Memory map) is the only device that raises IRQ, and no device
+raises NMI. `--irq` and `--nmi` raise a request at a chosen step. A request for step N is raised after N steps have run, so
 with `--trace` it comes before line N + 1, and `--nmi 0:5` raises an NMI
 before the first instruction. A request is raised whether or not it can be
 taken. If it cannot, it stays pending, as ISA.md §7.1 says, and a request

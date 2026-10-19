@@ -215,6 +215,8 @@ CLAUDE.md asks for a test with every new rule. Commits fa3a8a7 (the instruction 
 
 `emulator/README.md` line 178: "No device raises IRQ or NMI yet." The timer has raised IRQ since commit 3125ba1, and the same README's memory map says so. **Fix:** "The timer (Memory map) is the only device that raises IRQ, and no device raises NMI."
 
+**Resolved**: the sentence names the timer.
+
 ### 6.3 The timer's "keeps its vector" rule has no test of its own
 
 ISA.md §8.6: "A request keeps the vector it was raised with." The unit test at `cpu.zig` line 1487 rewrites `TIMER_VECTOR` only after an `--irq` request has replaced the timer's, so it checks the merge, and `test/timer.nasm` never changes the vector after setting it. A scratch probe that raises the timer's request with E = 0, rewrites the vector, stops the timer, and sets E showed the right vector taken, so the emulator is correct. **Fix:** add those steps to `timer.nasm`, with the expected file checked by hand.

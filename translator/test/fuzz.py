@@ -24,7 +24,9 @@ before if and br_if, i64 shifts by constants and by variables, groups
 of word loads and stores at offsets from one address in a local,
 multiplications by constants, divisions with nonzero divisors, some of
 them constants, loads and stores of every width at
-constant and at dynamic addresses, and local.set and local.tee of locals
+constant and at dynamic addresses, among them the addresses of array
+elements, (i << s) + c, with an index i whose high bits the shift drops
+and constants that may be negative, and local.set and local.tee of locals
 whose old value is still on the operand stack. That covers the rules for
 deferred values, fused comparisons, forwarded results, and register
 allocation in README.md. main returns a fold of every local and of 18 memory
@@ -416,9 +418,36 @@ def gen_address(ctx: Ctx, depth: int) -> Expr:
     if ctx.rng.random() < 0.4:
         a = ctx.rng.randrange(0x400) if ctx.rng.random() < 0.7 else ctx.rng.randrange(ADDR_MASK)
         return konst(I32, a)
+    if ctx.rng.random() < 0.3:
+        return gen_element(ctx, depth)
     k = ctx.rng.randrange(8) if ctx.rng.random() < 0.6 else 0
     e = binop("and", I32, gen_expr(ctx, I32, depth), konst(I32, ADDR_MASK))
     return binop("or", I32, e, konst(I32, k)) if k else e
+
+
+def gen_element(ctx: Ctx, depth: int) -> Expr:
+    """The address of an array element, (i << s) + c, as clang computes
+    it, sometimes with a second constant added. The index i is in 0x400
+    to 0x7FF, and often has high bits set that the shift drops, so that
+    the address wraps modulo 2^32 to one in bounds. The constants are
+    mostly multiples of 4, and may be negative."""
+    s = ctx.rng.choice([2, 2, 3])
+    e = binop("and", I32, gen_expr(ctx, I32, depth), konst(I32, 0x3FF))
+    e = binop("or", I32, e, konst(I32, 0x400))
+    if ctx.rng.random() < 0.5:
+        hi = ctx.rng.choice([0x40000000, 0x80000000, 0xC0000000]) >> (s - 2)
+        e = binop("or", I32, e, konst(I32, hi))
+    a = binop("shl", I32, e, konst(I32, s))
+    # (i << s) is in 0x1000 to 0x1FFC, or 0x2000 to 0x3FF8 for s = 3, so the
+    # address is in 0 to 0x6400.
+    cs = [ctx.rng.randrange(-0xC00, 0x2000) // 4 * 4]
+    if ctx.rng.random() < 0.3:
+        cs.append(ctx.rng.randrange(-0x400, 0x400) // 4 * 4)
+    if ctx.rng.random() < 0.1:
+        cs[-1] += ctx.rng.randrange(1, 4)
+    for c in cs:
+        a = binop("add", I32, a, konst(I32, c))
+    return a
 
 
 def gen_load(ctx: Ctx, t: int, depth: int) -> Expr:

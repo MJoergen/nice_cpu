@@ -759,7 +759,8 @@ The modules have four functions with `i32` and `i64` parameters, 8 to 13
 locals, loops, blocks, branches with values, `select`,
 calls through the table, every integer operation and comparison, the
 results of comparisons kept in locals for later conditions, loads
-and stores of every width at constant and dynamic addresses, and groups
+and stores of every width at constant and dynamic addresses, the
+addresses of array elements as `(i << s) + c`, and groups
 of word accesses at offsets from one address. That
 covers the rules for deferred values, fused comparisons, the flags,
 forwarded results, and register allocation above. `make test` runs 40 seeds with the

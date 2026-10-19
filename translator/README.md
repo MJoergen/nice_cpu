@@ -187,6 +187,23 @@ short jumps the next most. `test/safe.zig` became smaller, from 6691 to
 6577 words (2% less), and so did the float library, from 8028 to 7454
 (7% less).
 
+Then `i64.mul` by a constant inline, loop exits in place of a `br_if`
+back, and helpers for traps and for the stubs of word accesses took the
+benchmark to 1830683 instructions and about 2448000 cycles, and
+`test/safe.zig` to 5242 words and the float library to 7149, counted as
+the words of the translated module in a program.
+
+On 2026-10-19, one compare for a group of word accesses, an early
+return before the prologue, tail calls, and the longer arm of a diamond
+as the one that falls through took the benchmark from 1830683 to
+1785571 instructions (2.5% fewer), and from about 2448000 to about
+2344000 cycles (4.3% fewer). The diamonds saved the most, in heapsort,
+and the shared compares the next most. `test/safe.zig` became smaller,
+from 5242 to 5215 words, and so did the float library, from 7149 to
+7089, and the benchmark's module, from 8853 to 8632. Of that, 191 words
+in the benchmark came from no longer copying short tails into the
+stubs.
+
 ## Supported features
 
 - **Types:** `i32`, `i64`, `f32`, and `f64`, in function types, locals,

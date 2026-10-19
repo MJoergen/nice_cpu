@@ -32,17 +32,6 @@ added 2026-10-19. The section numbers are its.
 - **The tables of 2026-10-16** in `bench/README.md` and `hdl/README.md`
   pair the pipelined core's run of the old translator output with the
   multi-cycle core's run of the new. §3.4 has the numbers of 2026-10-19.
-- **Documents that fell behind the pipelined core** (§2): README.md, the
-  slides and `nice_intro.pdf`, `bench/README.md`, and the docstring of
-  `pipecycles.py` say it is not written (§2.1); MICROARCH.md §8 describes
-  the memory system as if it existed, §9 and ASSUMPTIONS.md item 14 do
-  not know of the PREPARE and DBUS proofs, and §7.3 says PREPARE can
-  reduce the shift count (§2.2, §2.3); hdl/README.md lost its `## The
-  trace writer` heading (§2.4); the test order steps below say the
-  multi-cycle core passes where both do (§2.5); ISA.md §8.3 says the
-  simulation memory has no input (§2.6); CLAUDE.md's `make formal` line,
-  REFERENCES.md without pipeline-timing.md, and the timer's range in the
-  usage text of `main.zig` (§2.7).
 - **CI runs `make programs` on the multi-cycle core only** (§4.1). The
   pipelined core passed all 350 programs on 2026-10-19, by hand.
 - **The translator** (§5): the rules of commits fa3a8a7, 2e77769, and

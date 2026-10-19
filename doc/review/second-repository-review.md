@@ -89,6 +89,8 @@ Under "Test order steps not done", steps 4, 5, 6, and 7 each say "which the mult
 - `doc/REFERENCES.md` lists the review notes, but not [pipeline-timing.md](pipeline-timing.md), which is one.
 - `emulator/src/main.zig` usage says the timer is at `0xFFFFFF10`–`0xFFFFFF12`; the README's memory map and ISA.md give `0xFFFFFF10`–`0xFFFFFF1F`, and words 13 to 1F are device words that read 0 and drop writes, not memory.
 
+**Resolved**: CLAUDE.md names every proof, REFERENCES.md has listed pipeline-timing.md since the review's own commit, and the usage text gives the timer's and the counters' ranges in full.
+
 ## 3. The cycle model, bench/pipecycles.py
 
 ### 3.1 It looks for INSTR_LO at the old address

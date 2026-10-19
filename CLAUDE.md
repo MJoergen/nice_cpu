@@ -63,7 +63,7 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
     cd bench     && make typecheck   # mypy --strict
     cd hdl && make test              # synth check, unit tests, tb_trace, then both cores diffed against niceemu
     cd hdl && make lint              # vsg style check (pip install vsg)
-    cd hdl && make formal            # SymbiYosys: ports of both cores, a proof of FETCH
+    cd hdl && make formal            # SymbiYosys: the ports of both cores, the timer, and wb_dmux; proofs of FETCH, PREPARE, and DBUS
     cd hdl && make programs          # the runtime and translator programs on CORE (minutes)
     cd doc/intro && make test        # run the slides' example programs
     cd doc/intro && make pdf         # rebuild the slides (pdflatex, beamer)

@@ -657,6 +657,23 @@ sources, and the register must not be live where the jumps it passes
 go. In a copy of an interpreter's dispatch, for example, the `ADD` that
 computes the next pc moves to just before the jump through the table.
 
+Often no earlier instruction can, as when the read is the first
+instruction after the label of a word access. Then a later one may,
+from just after the label where the stub of the access comes back, if
+only unconditional jumps go to that label. The instruction moves to
+between the jump and the read, and a copy of it goes just before each
+jump to the label. So every path past the label runs it once, as
+before, and an access that traps in its stub has not run it. This is
+done on the virtual registers, before the allocation, so that the
+moved instruction gets a register of its own. It must compute a
+virtual register from virtual registers and constants, with no flags,
+be unconditional, and not be a copy, which the allocator may remove. It
+may be one of the first four instructions after the label, if neither
+it nor those it passes, or the read, write a register that the other
+reads or writes. It may not be the value that a later `MOVE[M] R0`
+tests, since it then could no longer take the M bit. The copies cost
+words, so this is done in loops only.
+
 ### The frame
 
 There is no frame pointer. The prologue pushes the registers of R7–R12

@@ -1949,12 +1949,24 @@ class Allocator:
             out += after
         self.items = out
 
-    def run(self) -> List[Item]:
-        """Allocates the registers, and returns the code with physical
-        registers and frame words %sN in place of the virtual registers."""
+    def prepare(self) -> None:
+        """Gives the M bit of tests to the instructions that compute their
+        values (flags_from_results), and removes dead code, before the
+        allocation proper or a pass that wants the code as the
+        allocation will see it."""
         self.flow()
         if self.flags_from_results():
             self.flow()
+        while True:
+            self.liveness()
+            if not self.dead_code():
+                break
+            self.flow()
+
+    def run(self) -> List[Item]:
+        """Allocates the registers, and returns the code with physical
+        registers and frame words %sN in place of the virtual registers."""
+        self.prepare()
         self.webs()
         while True:
             self.flow()
@@ -2343,6 +2355,113 @@ def fill_jump_slots(items: List[Item]) -> List[Item]:
                 written |= defs
             k -= 1
     return items
+
+
+# The most instructions after the label where a stub comes back that
+# hoist_into_slots looks at for one to move.
+HOIST_LOOK = 4
+
+
+def hoist_into_slots(items: List[Item]) -> List[Item]:
+    """On the FPGA core, a data read waits for a conditional jump just
+    before it that is not taken (doc/MICROARCH.md §5.3), as the jump to
+    the stub of a word access is. Where fill_jump_slots finds no earlier
+    instruction to wait instead, a later one may: if the read and the
+    code up to a label B follow the jump, B is reached otherwise only by
+    unconditional jumps, and one of the first instructions after B can
+    move to the slot between the jump and the read, a copy of it goes
+    just before each jump to B. So every path to the code after B runs it
+    once, as before. Runs on the virtual registers, before the
+    allocation, so that the allocator gives the moved instruction a
+    register that the read does not use. It must compute a virtual
+    register from virtual registers and constants only, with no flags,
+    be unconditional, and not be a copy, which coalescing may remove. In
+    a loop only, since the copies cost words. It must commute with each
+    instruction that it passes: neither may write a register that the
+    other reads or writes. It may not compute a value that a later
+    MOVE[M] R0 tests, whose M bit it could no longer take."""
+    alloc = Allocator([], ALLOC_REGS, CALLEE_SAVED, 0)
+
+    def skip(k: int) -> int:
+        while k < len(items) and isinstance(items[k], str) and str(items[k]).lstrip().startswith(";"):
+            k += 1
+        return k
+
+    def plain(it: Item) -> bool:
+        return isinstance(it, Ins) and it.kind == "" and not (it.ops and it.ops[0] == "R15")
+
+    def movable(ins: Ins) -> bool:
+        kind, d = operand_reg(ins.ops[0]) if ins.ops else ("", None)
+        return (ins.depth > 0 and not ins.cond and kind == "reg" and d is not None
+                and VREG_RE.fullmatch(d) is not None and not alloc.is_move(ins)
+                and not any(o.startswith("@") for o in ins.ops) and not any(flag_use_def(ins))
+                and all(operand_reg(o)[0] == "" or VREG_RE.fullmatch(o) for o in ins.ops[1:]))
+
+    def commute(a: Ins, b: Ins) -> bool:
+        ua, da = alloc.use_def(a)
+        ub, db = alloc.use_def(b)
+        return not (da & (ub | db) or db & ua)
+
+    p = 0
+    while p < len(items):
+        jump = items[p]
+        p += 1
+        q = skip(p)
+        if not (isinstance(jump, Ins) and jump.kind == "jump" and jump.cond and q < len(items)
+                and plain(items[q]) and reads_memory(items[q])):  # type: ignore[arg-type]
+            continue
+        passed: List[Ins] = []
+        k = q
+        while k < len(items) and (plain(items[k]) or (isinstance(items[k], str)
+                                                       and str(items[k]).lstrip().startswith(";"))):
+            if isinstance(items[k], Ins):
+                passed.append(items[k])  # type: ignore[arg-type]
+            k += 1
+        b = items[k] if k < len(items) else None
+        if not isinstance(b, Label):
+            continue
+        jumps = [j for j, it in enumerate(items) if isinstance(it, Ins) and b.name in it.targets]
+        if (label_refs(items).get(b.name, 0) != len(jumps)
+                or not all(items[j].kind == "jump" and not items[j].cond  # type: ignore[union-attr]
+                           and items[j].targets == [b.name] for j in jumps)):  # type: ignore[union-attr]
+            continue
+        after: List[Ins] = []
+        k += 1
+        found = -1
+        while len(after) < HOIST_LOOK:
+            k = skip(k)
+            it = items[k] if k < len(items) else None
+            if not (isinstance(it, Ins) and plain(it)):
+                break
+            if (movable(it) and all(commute(it, x) for x in passed + after)
+                    and not any(x.op == "MOVE[M]" and x.ops[0] == "R0" and x.ops[1] == it.ops[0]
+                                for x in after_of(items, k))):
+                found = k
+                break
+            after.append(it)
+            k += 1
+        if found < 0:
+            continue
+        x = items.pop(found)
+        assert isinstance(x, Ins)
+        for j in [it for it in items if isinstance(it, Ins) and b.name in it.targets]:
+            items.insert(items.index(j), Ins(x.op, list(x.ops), depth=j.depth))
+        items.insert(items.index(jump) + 1, x)
+    return items
+
+
+def after_of(items: List[Item], k: int) -> List[Ins]:
+    """The instructions after items[k] up to the next label, jump, call,
+    or line of text other than a comment."""
+    out: List[Ins] = []
+    for it in items[k + 1:]:
+        if isinstance(it, Label) or (isinstance(it, str) and not it.lstrip().startswith(";")):
+            break
+        if isinstance(it, Ins):
+            if it.kind:
+                break
+            out.append(it)
+    return out
 
 
 def frame_words(items: List[Item], n_slots: int, n_saved: int) -> None:
@@ -4724,8 +4843,10 @@ class FunctionTranslator:
         exit_ins = Ins("RET", [], kind="exit",
                        uses=frozenset(f"R{k + 1}" for k in range(n_results)))
         self.share_checks()
-        alloc = Allocator(entry + self.body + [Label(self.ret_label), exit_ins] + self.stubs,
-                          ALLOC_REGS, CALLEE_SAVED, self.n_vregs)
+        pre = Allocator(entry + self.body + [Label(self.ret_label), exit_ins] + self.stubs,
+                        ALLOC_REGS, CALLEE_SAVED, self.n_vregs)
+        pre.prepare()
+        alloc = Allocator(hoist_into_slots(pre.items), ALLOC_REGS, CALLEE_SAVED, self.n_vregs)
         items = if_convert(tidy(alloc.run()))
         saved = [r for r in CALLEE_SAVED if r in alloc.used]
         n_slots = alloc.n_slots

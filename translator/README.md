@@ -500,9 +500,11 @@ access in the original code, which has no compare of its own, as for
 the copies of duplicate tails below. The stubs of the other accesses
 go, and that pays for most of the copy. The code from the first compare
 to the end of the last access may hold up to 16 other instructions. It
-may not change t, and no jump may come into it. Only code in a loop
-does this. With a memory that can grow, each access keeps its own
-compare.
+may not change t, and no jump may come into it. In a loop, the group
+may make the code larger by up to 20 words for each compare that it
+saves, twice that in two loops, and so on. Outside loops, it may not
+make the code larger. With a memory that can grow, each access keeps
+its own compare.
 
 In a helper, the value is shifted together from, or split across, two
 words, or three for an unaligned `i64`. A store that changes only part

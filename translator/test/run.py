@@ -261,6 +261,7 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "sharetrap3_grow": "ADD[M] R1, R8, 3",
          "sharetrap2": "MOVE R1, @___wasm_memory+2[R8]",
          "sharetrap2_grow": "ADD[M] R1, R8, 2",
+         "sharetrap": "MOVE @___wasm_memory+3[R7], R1",
          "addrformtrap": "SUB[M] R0, R1, 16384",
          "oobbyte": "SUB[M] R0, R1, 65536",
          "oobhalf": "SUB[M] R0, R1, 65535",
@@ -527,19 +528,20 @@ def share_trap(p: int, step: int) -> bytes:
     """The module of the sharetrap cases. main calls setup, then, from p
     on in steps, stores 7 at p, loads x from p + 8, and stores x + 1 at
     p + 12, until an access traps. The three accesses share one compare
-    (README.md)."""
+    (README.md). With step 0, there is no loop, and they run once."""
+    accesses = (local_get(0) + i32_const(7) + mem(I32_STORE)
+                + local_get(0) + mem(I32_LOAD, 8) + local_set(1)
+                + local_get(0) + local_get(1) + i32_const(1) + ADD + mem(I32_STORE, 12))
+    if step:
+        accesses = (loop() + accesses + local_get(0) + i32_const(step) + ADD + local_set(0)
+                    + br(0) + END)
     return module(
         types(MAIN_TYPE, ([], [])),
         imports(("env", "setup", 1)),
         funcs(0),
         memory(1),
         exports(("main", 0, 1)),
-        code((2, call(0) + i32_const(p) + local_set(0) + loop()
-              + local_get(0) + i32_const(7) + mem(I32_STORE)
-              + local_get(0) + mem(I32_LOAD, 8) + local_set(1)
-              + local_get(0) + local_get(1) + i32_const(1) + ADD + mem(I32_STORE, 12)
-              + local_get(0) + i32_const(step) + ADD + local_set(0)
-              + br(0) + END + i32_const(0))))
+        code((2, call(0) + i32_const(p) + local_set(0) + accesses + i32_const(0))))
 
 
 # The module of the share cases. In a loop that runs once, it stores at
@@ -1477,6 +1479,9 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # at 65536 traps. 2 + 7 = 9.
     ("sharetrap2", share_trap(65520, 8), SHARE_ASM.format(16382), 9),
     ("sharetrap2_grow", share_trap(65520, 8), SHARE_ASM.format(16382), 9),
+    # The accesses of sharetrap3 at 65524, once. Outside a loop, they
+    # share a compare too, since that makes the code smaller.
+    ("sharetrap", share_trap(65524, 0), SHARE_ASM.format(16381), 9),
     # Before the loop, bytes 5 to 8 are 0A 0B 0C 0D. Then bytes 1 to 4
     # become 11 22 33 44, x is 0x0D0C0B0A, and bytes 9 to 12 become 55 66
     # 77 88. So the words at 0, 4, 8, and 12 are 0x33221100, 0x0C0B0A44,

@@ -2062,9 +2062,29 @@ def if_convert(items: List[Item]) -> List[Item]:
 
 
 # The most other instructions among a group of word accesses with the
-# same word index that share a compare (share_checks). Larger groups
-# save few cycles more and cost more words.
+# same word index that share a compare (share_checks), and the most
+# words that the copy of their code may add for each compare that the
+# group saves, in code in one loop. Twice that in two loops, and so on.
+# Larger groups save few cycles more and cost more words.
 SHARE_CHECKS = 16
+SHARE_COST = 20
+
+
+def item_words(it: Item) -> int:
+    """The words of an instruction or a line of .DAT, for estimates of the
+    code size."""
+    if isinstance(it, Ins):
+        return 1 + sum(has_word(o) for o in it.ops)
+    if isinstance(it, str) and it.split()[:1] == [".DAT"]:
+        return it.count(",") + 1
+    return 0
+
+
+def share_cost(words: int, saved: int, depth: int) -> bool:
+    """Whether a group of word accesses that saves the compares of saved
+    accesses, in code in depth loops, may share a compare (share_checks)
+    if that makes the code larger by words. Outside loops, it may not."""
+    return words <= ((SHARE_COST * saved) << (depth - 1) if depth else 0)
 
 
 # The most instructions of the code that a jump goes to, which then takes
@@ -4315,10 +4335,10 @@ class FunctionTranslator:
 
     def share_checks(self) -> None:
         """Gives a group of word accesses with the same word index t, in
-        the same straight-line code in a loop, one compare: that of the
-        first, with the least of their limits. If it passes, every access
-        of the group is in bounds and at a multiple of 4, and the code
-        goes on without the other compares, whose stubs go. If it fails,
+        the same straight-line code, one compare: that of the first, with
+        the least of their limits. If it passes, every access of the
+        group is in bounds and at a multiple of 4, and the code goes on
+        without the other compares, whose stubs go. If it fails,
         the first access's stub does that access, and then goes on in a
         copy of the code after it, up to the end of the last access. In
         the copy, each word access is the code of its stub, which calls
@@ -4328,7 +4348,9 @@ class FunctionTranslator:
         for duplicate_tails. The code may not write t, and no jump from
         the code may reach into it. Another stub that the copy jumps to and
         that comes back into the code, such as that of a byte access, gets
-        a copy that comes back into the copy."""
+        a copy that comes back into the copy. The copy costs words, and
+        the stubs that go save some, so a group shares its compare only
+        if share_cost allows it."""
         body = self.body
         at = {id(it): k for k, it in enumerate(body)}
         labels = {it.name: k for k, it in enumerate(body) if isinstance(it, Label)}
@@ -4359,7 +4381,7 @@ class FunctionTranslator:
         gone: set[str] = set()  # the labels of the stubs that go
         for a1 in sorted(self.accesses, key=lambda a: at[id(a.check)]):
             k = at[id(a1.check)]
-            if k < done or body[k + 1] is not a1.jump or not a1.check.depth:
+            if k < done or body[k + 1] is not a1.jump:
                 continue
             group = self.share_group(a1, k, by_check, from_body)
             while len(group) > 1:
@@ -4437,7 +4459,8 @@ class FunctionTranslator:
                    ) -> Optional[List[Item]]:
         """The copy for a group of share_checks, with its own labels. Its
         first item is the label at which the first access's stub goes on.
-        None if it cannot be made."""
+        None if the copy costs too many words for what the group saves
+        (share_cost), or if it cannot be made."""
 
         def stub_of(a: Access) -> Optional[List[Item]]:
             """The code of an access's stub, with its jump back."""
@@ -4494,6 +4517,11 @@ class FunctionTranslator:
                 copy += [copied(x) for x in stub if not isinstance(x, Label)]
                 copy[-1].targets = [rename[to]]  # type: ignore[union-attr]
                 copy[-1].ops[1] = rename[to]  # type: ignore[union-attr]
+        saved = sum(item_words(x) for a in group[1:]
+                    for x in [a.check, a.jump] + (stub_of(a) or []))
+        if not share_cost(sum(item_words(x) for x in copy) - saved, len(group) - 1,
+                          group[0].check.depth):
+            return None
         return copy
 
     def finish(self) -> List[str]:

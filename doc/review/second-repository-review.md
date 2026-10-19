@@ -81,6 +81,8 @@ Under "Test order steps not done", steps 4, 5, 6, and 7 each say "which the mult
 
 "The simulation memory of the FPGA core has no input either: a read returns `0x200`." Since commit 7f445c5, `hdl/sim/wb_mem.vhd` reads the file of its generic `G_INPUT_FILE` and returns `0x100` plus each byte, and `0x200` only after the end or without a file, as hdl/README.md says and the emulator's `input` probe checks on the core. **Fix:** "The simulation memory of the FPGA core reads a file too, as the emulator's `--input` does, and returns `0x200` without one."
 
+**Resolved**: the sentence says so.
+
 ### 2.7 Smaller ones
 
 - `CLAUDE.md`: `make -C hdl formal` is "ports of both cores, a proof of FETCH". It also proves PREPARE, DBUS, the timer, and the data bus decoder.

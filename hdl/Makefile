@@ -9,7 +9,7 @@ GHDLRUN = cd $(BUILD) && $(GHDL) --elab-run --std=08
 
 SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/perf.vhd src/timer.vhd src/fetch_stats.vhd src/wb_dmux.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd
-TEST_SOURCES = test/tb_mem.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_timer.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd \
+TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_timer.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd \
   test/tb_trace.vhd test/tb_core.vhd
 
 # tb_trace stands in for the core and runs test/trace.nasm. Each run's output
@@ -176,12 +176,15 @@ define run_cores
 
 endef
 
-# tb_mem checks the memory model itself, tb_mpu the math unit, tb_perf the
-# performance counters, tb_timer the timer, tb_fetch_stats the fetch
-# statistics, and tb_wb_dmux the data bus decoder.
+# tb_mem checks the memory model itself, tb_shift the ALU and the shifter of
+# src/nice_pkg.vhd, tb_mpu the math unit, tb_perf the performance counters,
+# tb_timer the timer, tb_fetch_stats the fetch statistics, and tb_wb_dmux
+# the data bus decoder.
 test: emulator analyse synth
 	@($(GHDLRUN) tb_mem -gG_BIN_FILE=../test/mem.bin -gG_INPUT_FILE=../test/mem.input > tb_mem.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS tb_mem"; else echo "FAIL tb_mem"; cat $(BUILD)/tb_mem.log; exit 1; fi
+	@($(GHDLRUN) tb_shift > tb_shift.log 2>&1); \
+	if [ $$? -eq 0 ]; then echo "PASS tb_shift"; else echo "FAIL tb_shift"; cat $(BUILD)/tb_shift.log; exit 1; fi
 	@($(GHDLRUN) tb_mpu > tb_mpu.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS tb_mpu"; else echo "FAIL tb_mpu"; cat $(BUILD)/tb_mpu.log; exit 1; fi
 	@($(GHDLRUN) tb_perf > tb_perf.log 2>&1); \

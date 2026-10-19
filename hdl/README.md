@@ -679,6 +679,7 @@ gives the device `C_FETCH_EVENTS_NONE` with it.
 With the generic `G_ENABLE` false there are no counters, and every word
 reads 0. `tb_core` passes its generic `G_FETCH_STATS` on to it.
 
+## The trace writer
 
 The core reports each step in a `t_retire`: one instruction, skipped or not,
 or one interrupt entry. A report carries the address, the instruction word,

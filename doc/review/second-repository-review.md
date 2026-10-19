@@ -69,6 +69,8 @@ Item 14, "FETCH is proven, the rest of the core is checked for 8 cycles", predat
 
 Commit ef385fa ("nicehdl: the timer of ISA.md §8.6") replaced the heading `## The trace writer` with `## The timer` instead of inserting one. The paragraphs that begin "The core reports each step in a `t_retire`" now sit under "The fetch statistics", after two blank lines (line 676). **Fix:** put `## The trace writer` back before them.
 
+**Resolved**: the heading is back.
+
 ### 2.5 TODO.md names the multi-cycle core where both pass
 
 Under "Test order steps not done", steps 4, 5, 6, and 7 each say "which the multi-cycle core passes". `make test` runs steps 4, 5, and 7 on both cores, and the pipelined core passes them; step 6 passes on it too, as this review ran it (How it was checked). **Fix:** say "both cores", and add `make programs CORE=pipeline` to what step 6 has run.

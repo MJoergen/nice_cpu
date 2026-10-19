@@ -59,6 +59,10 @@ begin
    -- psl f_dbus_wait : assert always rst_i = '0' ->
    --    (dbus_wait = 1) = (dbus_cyc = '1' and dbus_stb = '0');
 
+   -- A halted core makes no request
+   -- psl f_halt_idle : assert always
+   --    (rst_i = '0' and halted = '1') -> (ibus_stb = '0' and dbus_stb = '0');
+
 
    i_multicycle : entity work.multicycle
       generic map (

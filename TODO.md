@@ -68,7 +68,10 @@ has TODO or FIXME comments.
   semantics, which the trace diff checks better. A proof of the whole core
   for every cycle, which needs invariants that tie the stages together;
   and the order of the data accesses checked against a model of the
-  program, not only through the tests.
+  program, not only through the tests. That a halted core makes no data
+  bus request is proved for the multi-cycle core only. In the pipelined
+  core, PREPARE and WRITE start a data access only in `RUN_ST`, but no
+  proof says so.
 
 ## Devices
 

@@ -293,7 +293,14 @@ begin
       --    {stb_r and ibus_stall_i and not rst_i} |=> {rst_i = '1' or (stb_r = '1' and stable(req_r))};
       -- psl f_cyc_hold : assert always
       --    {pending_r > to_nat(stb_r) and ibus_ack_i = '0' and rst_i = '0'} |=> {pending_r > 0};
+      -- psl f_cyc_accept : assert always
+      --    {stb_r and not ibus_stall_i and not rst_i} |=> {rst_i = '1' or pending_r > 0};
       -- psl f_reset : assert always {rst_i} |=> {pending_r = 0 and stb_r = '0'};
+
+      -- A stop, the halt of pipeline.vhd, makes no new request: one on the
+      -- bus stays only while it is stalled
+      -- psl f_stop : assert always
+      --    {stop_i and not (stb_r and ibus_stall_i) and not rst_i} |=> {rst_i = '1' or stb_r = '0'};
 
       -- The invariants
       -- psl f_drop : assert always rst_i = '0' -> drop_r <= pending_r;

@@ -295,12 +295,17 @@ assumes the rules of the other side of its port and asserts the core's:
   ACK only while CYC is high and only for an accepted request. It asserts
   that STB is high only with CYC, that a stalled request is held with WE,
   ADDR, and DATA unchanged, that CYC stays high while a request waits for
-  its ACK, that at most one request waits at a time, and that reset drops
-  CYC and STB.
+  its ACK, from the cycle after it is accepted on, that at most one
+  request waits at a time, and that reset drops CYC and STB. A slave with
+  a registered ACK relies on CYC in that first cycle, so dropping CYC then
+  would be no clean way to abandon a request.
 - The NMI and IRQ ports (`handshake_check`), with the AXI handshake. The
   checker assumes that a device holds `valid` and the vector until `ready`.
   It asserts that the core raises `ready` only for a request, and never in
   reset.
+
+`formal_multicycle` also asserts that a halted core makes no request, so
+that the system around the core may take the buses over after a halt.
 
 `formal_wb_dmux` checks the data bus decoder with three slaves and up to
 three ACKs owed. Every input is free. It assumes that the master raises
@@ -344,7 +349,10 @@ redirect, a redirect to an odd address, and a redirect with requests in
 flight, whose words must be dropped. They also say that the words lie in
 the range that `end_o` closes, which the core compares with each store,
 and they check the bus port as `wb_master_check` does, but on the
-counter of requests in flight. The invariants tie that counter, the
+counter of requests in flight. `stop_i` is the halt of `pipeline.vhd`,
+and after a cycle of it FETCH makes no new request: a request stays on
+the bus only while it is stalled. So a halted pipelined core fetches
+nothing from its second cycle on, if the bus does not stall. The invariants tie that counter, the
 requests to drop, the next pair to request, the buffer, and `end_o` to
 each other, which makes the assertions inductive in one step. Boolector
 proves them in about a minute; Yices does not finish. Breaking the drop

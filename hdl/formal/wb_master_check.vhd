@@ -10,7 +10,9 @@
 -- and only for an accepted request. It asserts the master side:
 -- - STB is high only while CYC is high.
 -- - A stalled request is held, with WE, ADDR, and DATA unchanged.
--- - CYC stays high while a request waits for its ACK.
+-- - CYC stays high while a request waits for its ACK, from the cycle after
+--   the request is accepted. The count includes the request only from the
+--   cycle after that, so f_cyc_accept covers the first.
 -- - No more than G_MAX_PENDING requests wait at a time.
 -- - Reset drops CYC and STB.
 -- The covers show that a read, a write, and a stalled request can happen.
@@ -95,6 +97,7 @@ begin
    --    {rst_i = '1' or (stb_i = '1' and stable(we_i) and stable(addr_i) and stable(data_i))};
    -- psl f_cyc_hold : assert always
    --    {waiting and not ack_i and not rst_i} |=> {cyc_i};
+   -- psl f_cyc_accept : assert always {accept and not rst_i} |=> {rst_i = '1' or cyc_i = '1'};
    -- psl f_max_pending : assert always pending <= G_MAX_PENDING;
    -- psl f_reset : assert always {rst_i} |=> {not cyc_i and not stb_i};
 

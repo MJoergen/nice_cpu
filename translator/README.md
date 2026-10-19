@@ -89,8 +89,8 @@ ReleaseSafe and Debug work too. They need `--stack 16384`, or at least
 more than 4096, if the program can panic: Zig's panic handler puts a
 4 KB buffer on the stack, and with too small a stack it traps with code
 2, out of bounds, before it reaches its own trap. `test/safe.zig` is
-about 7100 words built with ReleaseSafe, and about 239000 built with
-Debug.
+about 5200 words built with ReleaseSafe, and about 16000 built with
+Debug (2026-10-19).
 
 `-fstrip` drops the DWARF sections, which make up almost all of a
 ReleaseSafe or Debug module. nicewasm ignores them, but they make the
@@ -412,9 +412,11 @@ on the operand stack as deferred, and the instruction that uses it takes
 the constant or the local's register as its operand. A
 result that the next instruction stores with `local.set` or `local.tee`
 goes straight to the local, for an `i32` operation of two values, an
-`i32` shift, a call, and the operations that call the runtime library,
-such as `i32.mul`. So `local.get a; local.get b; i32.add; local.set c` is
-one `ADD c, a, b`. Before such an operation, the copies of the local's old
+`i32` shift, a call, a multiplication by a constant, and the operations
+that call the runtime library, such as `i32.mul` with `--no-mpu`. An
+`i32.mul` through the math unit reads the product into a register of its
+own, and the coalescing below folds that into the local. So `local.get
+a; local.get b; i32.add; local.set c` is one `ADD c, a, b`. Before such an operation, the copies of the local's old
 value below its operands are copied to registers of their own. A
 deferred value is copied to registers of its own only when it must be:
 
@@ -477,8 +479,9 @@ shift by a "negative" count such as 32 − n for n > 32. So `W.shl64` and
 
 A load or store first checks that all its bytes are in the memory. One
 compare of the base with the first base at which the access does not
-fit does it, as in `SUB[M] R0, R1, 65532`, since below that base the
-base plus the offset cannot pass 2^32 either. A failed check jumps to a
+fit does it, as in `SUB[M] R0, R1, 65532` for a word access at offset 1, whose last
+byte is at base + 4, since below that base the base plus the offset
+cannot pass 2^32 either. A failed check jumps to a
 trap stub after the function's epilogue, which sets R2 to the start of
 the access code. Then the code adds the offset to the base. If the
 memory can grow, the code adds the offset first, traps if the sum passes
@@ -717,7 +720,11 @@ usually taken. A taken conditional jump costs some five cycles more than
 a skipped one on the FPGA core, and an unconditional jump to a label
 two. So the `br_if` becomes a conditional jump out of the loop, on the
 opposite condition, and an unconditional jump back. Each round of the
-loop then saves two cycles, and leaving it costs five more.
+loop then saves two cycles, and leaving it costs five more. If an
+unconditional jump follows the `br_if`, the two swap their targets
+instead: the conditional jump goes where the unconditional one went, on
+the opposite condition, and the unconditional one goes back, with no new
+label.
 
 A `br_if` out of a block whose other arm ends in a `br` forward, as in
 `block; block; c; br_if 0; A; br 1; end; B; end`, jumps over arm A to

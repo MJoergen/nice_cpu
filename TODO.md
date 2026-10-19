@@ -18,10 +18,6 @@ The open items of
 [doc/review/second-repository-review.md](doc/review/second-repository-review.md),
 added 2026-10-19. The section numbers are its.
 
-- **The translator** (§5): the README says `test/safe.zig` is
-  about 7100 words, where it is 5182, lists `i32.mul` among the results
-  that go straight to a local, which the math unit path does not forward,
-  and omits the second form of `invert_back_edges` (§5.4).
 - **The emulator** (§6): `--input` with a directory runs as an ended
   input and exits 0, with no `errors.py` case; the README still says "No
   device raises IRQ or NMI yet"; the timer's "keeps its vector" rule has

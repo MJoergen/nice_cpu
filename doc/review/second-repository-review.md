@@ -201,6 +201,8 @@ CLAUDE.md asks for a test with every new rule. Commits fa3a8a7 (the instruction 
 - Lines 715 to 720 describe `invert_back_edges` without its second form, where an unconditional jump after the `br_if` swaps targets with it instead of getting a label.
 - The example at lines 479 to 481, `SUB[M] R0, R1, 65532`, is for an access at offset 1, which the text does not say.
 
+**Resolved**: the README has the sizes of 2026-10-19, built as `make wasm` builds `safe.wasm` but with `-O Debug`; says that an `i32.mul` through the math unit reads the product into a register that the coalescing folds into the local; describes the second form of `invert_back_edges`; and says the example is for offset 1.
+
 ## 6. The emulator and the runtime
 
 ### 6.1 `--input` with a directory runs as an ended input

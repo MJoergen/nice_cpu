@@ -122,14 +122,17 @@ A byte load of linear memory stays several instructions, since the
 memory is byte-addressed and packed four to a word (ISA.md §9.4).
 
 On the multi-cycle core, which takes about ten cycles for a plain
-instruction, the two programs ran like this on 2026-10-19:
+instruction, the two programs ran like this on 2026-10-19, after the
+byte accesses of the translated program took their shift counts from
+registers (translator/README.md), which made it run 1730635
+instructions:
 
 | Program | Instructions | Cycles | Cycles per instruction | GHDL time |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 1729523 | 19834290 | 11.5 | 10 minutes |
-| `hand.nasm` | 491617 | 5829021 | 11.9 | 3 minutes |
+| `bench.c` through nicewasm | 1730635 | 19486758 | 11.3 | 38 minutes on a busy machine |
+| `hand.nasm` | 491617 | 5598318 | 11.4 | 8 minutes on a busy machine |
 
-So the hand-written program is 3.5 times shorter in instructions and 3.4
+So the hand-written program is 3.5 times shorter in instructions and 3.5
 times faster in cycles. On 2026-10-15, before the translator's register
 allocator and inline memory accesses, the ratios were 6.8 and 7.3, and
 the translated code took 12.6 cycles per instruction, because more of
@@ -139,12 +142,19 @@ program, 12.0 and 11.9, and `rng64` in the hand-written one, 14.0,
 because its reads of the math unit wait for the multiplier.
 
 `make core CORE=pipeline` runs them on the pipelined core. On 2026-10-19,
-on the same programs as the multi-cycle core above:
+on the same programs as the multi-cycle core above, and after the core
+was re-timed for 100 MHz
+([doc/review/pipeline-timing.md](../doc/review/pipeline-timing.md)):
 
 | Program | Instructions | Cycles | Cycles per instruction | Faster than the multi-cycle core |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 1729523 | 2330619 | 1.35 | 8.5 times |
-| `hand.nasm` | 491617 | 1214194 | 2.47 | 4.8 times |
+| `bench.c` through nicewasm | 1730635 | 2275410 | 1.31 | 8.6 times |
+| `hand.nasm` | 491617 | 1216653 | 2.47 | 4.6 times |
+
+Before the re-timing, on the older translation of 1729523 instructions,
+the core took 2330619 and 1214194 cycles: the new byte accesses saved
+cycles in `crc32`, `vm`, and `strings`, and the re-timing's new waits
+cost `hand.nasm` 0.2%.
 
 The hand-written program gains less, because more of its time goes to
 what a pipeline cannot hide: `vm` jumps through a table every three or
@@ -272,20 +282,17 @@ re-timed core and the translation above:
 
 | Phase | `bench.c`, model | Core | Model against the core | `hand.nasm`, model | Core | Model against the core |
 |---|---|---|---|---|---|---|
-| `rng64` | 92736 | 95358 | −2.7% | 58380 | 59679 | −2.2% |
-| `crc32` | 76595 | 87154 | −12.1% | 35337 | 41756 | −15.4% |
-| `bst` | 402110 | 409866 | −1.9% | 215743 | 260388 | −17.1% |
-| `heapsort` | 375132 | 386801 | −3.0% | 271723 | 290524 | −6.5% |
-| `vm` | 1058089 | 1184155 | −10.6% | 388032 | 500056 | −22.4% |
-| `strings` | 150243 | 167285 | −10.2% | 54386 | 61791 | −12.0% |
-| total | 2154905 | 2330619 | −7.5% | 1023601 | 1214194 | −15.7% |
+| `rng64` | 92743 | 95360 | −2.7% | 59402 | 60191 | −1.3% |
+| `crc32` | 72506 | 81009 | −10.5% | 37895 | 41756 | −9.2% |
+| `bst` | 407758 | 409898 | −0.5% | 241063 | 262436 | −8.1% |
+| `heapsort` | 378235 | 386801 | −2.2% | 279933 | 290524 | −3.6% |
+| `vm` | 1096097 | 1146157 | −4.4% | 444036 | 500056 | −11.2% |
+| `strings` | 151675 | 156185 | −2.9% | 60608 | 61690 | −1.8% |
+| total | 2199014 | 2275410 | −3.4% | 1122937 | 1216653 | −7.7% |
 
-The model is below the core in every phase: by 2 or 3% where the time
-goes to the math unit or to straight code, and by 10 to 22% where it
-goes to jumps, in `vm`, `crc32`, and `bst`. With `--flush 7` instead of
-5, the totals come within 4.5% and 7.3%, so the core's bubble after a
-jump taken in WRITE is longer than the five cycles of MICROARCH.md §3
-that the model assumes (TODO.md).
+The model is below the core in every phase, by up to 11%, most in
+`crc32` and `vm`. With a bubble of 5 after a jump taken in WRITE, as
+the model had before, the totals were 7.5% and 15.7% below the core's.
 
 `cycprof.py` charges the model's cycles to the source lines of a program,
 and `make profile` writes `build/bench.cyc.txt` and `build/hand.cyc.txt`.

@@ -521,8 +521,8 @@ multi-cycle core's numbers there:
 
 | Program | Instructions | Cycles | Cycles per instruction | Multi-cycle core |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 1729523 | 2330619 | 1.35 | 11.5, 8.5 times slower |
-| `hand.nasm` | 491617 | 1214194 | 2.47 | 11.9, 4.8 times slower |
+| `bench.c` through nicewasm | 1730635 | 2275410 | 1.31 | 11.3, 8.6 times slower |
+| `hand.nasm` | 491617 | 1216653 | 2.47 | 11.4, 4.6 times slower |
 
 The instruction counts equal the emulator's. In `hand.nasm`, `vm` (4.5
 cycles per instruction) ends each handler of three or four instructions

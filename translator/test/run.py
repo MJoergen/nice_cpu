@@ -272,13 +272,13 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "sharetrap2_grow": "ADD[M] R1, R8, 2",
          "sharetrap": "MOVE @___wasm_memory+3[R7], R1",
          "addrformtrap": "SUB[M] R0, R1, 16384",
-         "oobbyte": "SUB[M] R0, R1, 65536",
-         "oobhalf": "SUB[M] R0, R1, 65535",
-         "oobbytecarry": "SUB[M] R0, R1, 65535",
+         "oobbyte": "SHR R2, R3, 2",
+         "oobhalf": "SHR R3, R2, 2",
+         "oobbytecarry": "ADD R1, R2, 1",
          "oobword8": "ROR R2, R1, 2",
          "growdyntrap": "ROR R2, R1, 2",
          "nomemory": "MOVE R2, {R2}",
-         "dispatchtrap": "SUB[M] R0, R4, 65536",
+         "dispatchtrap": "SHR R5, R6, 2",
          "hoisttrap": "ROR R1, R5, 2",
          "hoistgrouptrap": "MOVE R1, @___wasm_memory+1[R9]",
          "hoiststoretrap": "ROR R1, R8, 2",
@@ -306,7 +306,14 @@ SHAPES = {"bound": (r"SUB\[M\]", False),
           "byte_bound": (r"SUB\[M\]", False),
           "byte_bound_over": (r"SUB\[M\] +R0, R\d+, 65536$", True),
           "half_bound": (r"SUB\[M\] +R0, R\d+, 65535$", False),
-          "half_bound_over": (r"SUB\[M\] +R0, R\d+, 65535$", True)}
+          "half_bound_over": (r"SUB\[M\] +R0, R\d+, 65535$", True),
+          # A byte load: the word index and the rotation count come before
+          # the compare, and fill_jump_slots moves neither to after the jump.
+          "oobbyte": (r"^ +SHR +(R\d+), (R\d+), 2\n +SHL +(R\d+), \2, 3\n"
+                      r" +SUB\[M\] +R0, \2, 65536\n +\?!C MOVE +R15, \S+\n"
+                      r" +ROR +R\d+, @___wasm_memory\[\1\], \3$", True),
+          # A byte store: the mask comes from a rotation, not a table.
+          "oobbytecarry": (r"^ +ROL +(R\d+), -256, R\d+\n +AND +R\d+, \1, @___wasm_memory", True)}
 
 # Options for nicewasm.
 OPTIONS = {"unchecked": ["--no-bounds-checks"],
@@ -441,6 +448,9 @@ def narrow_checks() -> List[bytes]:
         ld_dyn(I32_LOAD, 16, 0x22),
         st_self(I32_STORE8, 18, 0x300) + ld_dyn(I32_LOAD, 16, 0x120022),
         st_self(I32_STORE16, 21, 0x7700) + ld_dyn(I32_LOAD, 20, 0x771500),
+        # A byte 0, the low byte of 0x100, at 22, then at the constant 21.
+        st_dyn(I32_STORE8, 22, 0x100) + ld_dyn(I32_LOAD, 20, 0x1500),
+        st(I32_STORE8, 21, 0) + ld_dyn(I32_LOAD, 20, 0),
         ld_dyn(I32_LOAD8_U, 0, 0)]
 
 
@@ -1845,19 +1855,19 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         funcs(0),
         memory(1),
         exports(("main", 0, 0)),
-        code((2, bits(0, *narrow_checks())))), "", 0x3FFFFE),
+        code((2, bits(0, *narrow_checks())))), "", 0xFFFFFE),
     ("narrow_unchecked", module(
         types(MAIN_TYPE),
         funcs(0),
         memory(1),
         exports(("main", 0, 0)),
-        code((2, bits(0, *narrow_checks())))), "", 0x3FFFFE),
+        code((2, bits(0, *narrow_checks())))), "", 0xFFFFFE),
     ("narrow_grow", module(
         types(MAIN_TYPE),
         funcs(0),
         memory(1),
         exports(("main", 0, 0)),
-        code((2, bits(0, *narrow_checks())))), "", 0x3FFFFE),
+        code((2, bits(0, *narrow_checks())))), "", 0xFFFFFE),
     # A byte at 65536, just past the memory, a halfword at 65535, of which
     # one byte is past it, and a byte at -1 + 1, which passes 2^32.
     ("oobbyte", module(

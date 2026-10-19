@@ -233,6 +233,23 @@ most of the cycles, are crc32's: its table lookup, `table[(crc ^ b) &
 the float library stayed 7083 words, and the benchmark's module became
 8623, not 8657.
 
+Then, still on 2026-10-19, the accesses of 1 and 2 bytes took their
+shift count from a register, computed with the word index before the
+bounds check, in place of a table in memory, and rotations in place of
+shifts (below). That is for the core as it is since it was re-timed
+for 100 MHz the same day, which forms every shift count in PREPARE: a
+count read from memory costs a cycle more in WRITE. A store of 1 or 2 bytes is an
+instruction longer, but one of a constant 0 is one shorter, and the
+loads are as long as before. The benchmark ran 1730635
+instructions in its phases, not 1729523. By `bench/pipecycles.py`, the
+phases took 2128130 cycles, not 2154905 (1.2% fewer), with the model as
+it was, `--flush 5`, and 2199014, not 2282080 (3.6% fewer), with the
+rules of the re-timed core, `--shift-mem 1 --shift-reg 1 --sum-wait 1
+--dest-adjust 1`. The byte loads no longer wait for their address
+register or for a second read on the bus. `test/safe.zig` became 5171
+words, not 5182, the float library stayed 7083 words, and the
+benchmark's module became 8560, not 8623.
+
 ## Supported features
 
 - **Types:** `i32`, `i64`, `f32`, and `f64`, in function types, locals,
@@ -609,27 +626,39 @@ In a helper, the value is shifted together from, or split across, two
 words, or three for an unaligned `i64`. A store that changes only part
 of a word reads the word, changes its bytes, and writes it back once.
 
-An access of 1 or 2 bytes is inline. After the bounds check, a shift
-gives the word index w and an `AND` the byte p of the address in its
-word. A table that nicewasm emits once, if a function uses it, gives
-the shift for byte p, so an `i32.load8_u` is:
+An access of 1 or 2 bytes is inline. A shift gives the word index w of
+the address a, and `SHL c, a, 3` gives c, which is 8p modulo 32 for the
+byte p of a in its word. Neither instruction can trap, and each writes
+only its own register, so both come before the bounds check, after the
+start of the code, where a trap's R2 points (ISA.md §9.4). So the read
+waits for neither register, only for the skipped jump just before it,
+unless an instruction moves to between them (below). Only a rotation
+takes its count modulo 32 (ISA.md §5.2), so the code rotates by c. The
+vm's fetch of an opcode, an `i32.load8_u`, is:
 
-    SHR     R2, R1, 2
-    AND     R1, R1, 3
-    SHR     R1, @___wasm_memory[R2], @W.bshift[R1]
+    SHR     R2, R3, 2
+    SHL     R1, R3, 3
+    SUB[M]  R0, R3, 65536
+    ?!C MOVE R15, W.f7.L20
+    ROR     R1, @___wasm_memory[R2], R1
     AND     R1, R1, 0xFF
 
-A signed load shifts the bytes up to bit 31 instead, by `W.bshl`, and
-then down with the sign, by `C<0[M]` and `C>0` (ISA.md §5.2). A store
-clears the bytes in the word with `IAND` and a mask from `W.bmask` or
-`W.hmask`, shifts the new bytes into place, and writes the word back
-with `OR`. With bounds checks and a memory that cannot grow, an offset
-that is a multiple of 4 goes into the word operand, as for the words
-above. If the bound of the base, as for the words above, shows that
-all the bytes are in the memory, there is no bounds check. Two bytes at
-p = 3 straddle two words. The code checks for that and jumps to a stub
-after the epilogue, which does the access with the two words and jumps
-back.
+A signed load rotates the bytes up to bit 31 instead, by `8[c]` or
+`16[c]`, which is c + 8 or c + 16, and then shifts them down with the
+sign, by `C<0[M]` and `C>0`. A store rotates the mask of the bits to
+keep, such as `ROL R4, -256, R3`, ANDs the word with it, rotates the new
+bytes into place, and writes the word back with `OR`. A store of a
+constant 0 needs no `OR`: `AND @___wasm_memory[R3], R2,
+@___wasm_memory[R3]` writes the word back. With bounds checks and a
+memory that cannot grow, an offset that is a multiple of 4 goes into
+the word operand, as for the words above, and any other offset is added
+before the check too. If the memory can grow, w and c come after the
+add of the offset, which can trap, and before the compare. If the
+bound of the base, as for the words above, shows that all the bytes
+are in the memory, there is no bounds check. Two bytes at p = 3
+straddle two words. The code checks for that, with `AND[M] R0, 1[a],
+3`, which is 0 for p = 3, and jumps to a stub after the epilogue, which
+does the access with the two words and jumps back.
 
 If the address is a constant, nicewasm adds the offset itself. If all
 the bytes are in the initial memory, or there are no bounds checks,
@@ -742,7 +771,10 @@ earlier instruction of the same straight-line code moves to between the
 two, if one can: it must compute a register from registers only, with
 no flags, the code it passes must not use the register or change its
 sources, and the register must not be live where the jumps it passes
-go. In a copy of an interpreter's dispatch, for example, the `ADD` that
+go. Nor may it be the read's address register, or its count if the
+read is a shift, as the `SHL` of a byte access is, since the read would
+wait for it instead on a core that forms the count in PREPARE. In a
+copy of an interpreter's dispatch, for example, the `ADD` that
 computes the next pc moves to just before the jump through the table.
 
 Often no earlier instruction can, as when the read is the first

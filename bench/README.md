@@ -64,8 +64,8 @@ through nicewasm:
     bst             315589       315617  55a72225  ok
     heapsort        312536       312564  bdb22882  ok
     vm              840049       840077  04156880  ok
-    strings         105901       105929  d9867cf6  ok
-    total          1729523      1729691
+    strings         107013       107041  d9867cf6  ok
+    total          1730635      1730803
 
 Then `hand.nasm`:
 
@@ -114,7 +114,7 @@ The ratio of the instruction counts, translated to hand-written:
 | `bst` | 2.7 | Each node's fields take a compare and a skipped jump before their reads, which the hand-written code does without. |
 | `heapsort` | 1.8 | The array elements take a compare and a skipped jump before their reads and writes, and the signed comparisons take two instructions either way. |
 | `vm` | 7.5 | The `br_table` checks its index, each stack cell is a checked word access, and the bytecode fetch is a byte load of seven instructions, where the hand-written interpreter has one word per opcode and the operands in registers. |
-| `strings` | 5.0 | Every character is a byte load of seven instructions, where the hand-written strings have one character per word. |
+| `strings` | 5.1 | Every character is a byte load of seven instructions, where the hand-written strings have one character per word. |
 | total | 3.5 | |
 
 What remains is in TODO.md, under "Faster and smaller translated code".
@@ -273,7 +273,7 @@ are worked out by hand in the script, and `make test` runs it.
 nicewasm, the measure that [translator/README.md](../translator/README.md)
 quotes for `test/safe.zig` and the float library. `make words` prints it
 for `bench.wasm`, `translator/test/safe.wasm`, and `runtime/float.wasm`:
-on 2026-10-19, 8623, 5182, and 7083 words. Each module is translated and
+on 2026-10-19, 8560, 5171, and 7083 words. Each module is translated and
 assembled on its own, with the labels it uses but does not define, such
 as the runtime's routines, defined as 0 first; a constant takes a whole
 word whatever its value (ISA.md §3), so that changes no size. The count

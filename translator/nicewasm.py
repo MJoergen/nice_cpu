@@ -1121,17 +1121,6 @@ for _n in (4, 8):
         HELPER_REGS[f"W.c{_op}{_n}"] |= HELPER_REGS[f"W.{_op}{_n}"]
 assert all(r in CALLER_SAVED for regs in HELPER_REGS.values() for r in regs)
 
-# Tables that the inline code of the loads and stores of 1 and 2 bytes
-# index by the byte p of the address in its word, emitted once each if a
-# function uses them: name -> (what entry p is, the entries).
-TABLES: Dict[str, Tuple[str, List[int]]] = {
-    "bshift": ("the shift that brings byte p of a word down to bit 0", [0, 8, 16, 24]),
-    "bshl": ("the shift that brings byte p of a word up to bit 24", [24, 16, 8, 0]),
-    "bmask": ("the bits of byte p", [0xFF, 0xFF00, 0xFF0000, 0xFF000000]),
-    "hmask": ("the bits of bytes p and p + 1", [0xFFFF, 0xFFFF00, 0xFFFF0000]),
-}
-
-
 # A register name in an operand: R0 to R15, or a virtual register %vN.
 REG_NAME = r"(?:R1[0-5]|R[0-9]|%v\d+)"
 OPERAND_RE = re.compile(rf"@?(?:--({REG_NAME})|({REG_NAME})(?:\+\+|--)|({REG_NAME})|.*\[({REG_NAME})\])\Z")
@@ -2293,6 +2282,12 @@ def reads_memory(ins: Ins) -> bool:
     return any(o.startswith("@") for o in ins.ops[1:])
 
 
+def is_shift(ins: Ins) -> bool:
+    """Whether an instruction is a shift or a rotation (§5.2)."""
+    m = ins.op.split()[-1].split("[")[0]
+    return m in ("SHL", "SHR", "ROL", "ROR", "BPL", "BPR") or "<" in m or ">" in m
+
+
 def fill_jump_slots(items: List[Item]) -> List[Item]:
     """On the FPGA core, a data read waits for a conditional jump just
     before it that is not taken (doc/MICROARCH.md §5.3). If an earlier
@@ -2302,7 +2297,8 @@ def fill_jump_slots(items: List[Item]) -> List[Item]:
     nor write that register, nor write its sources, and the register must
     not be live where any jump it passes goes, since it no longer runs
     before those jumps. Nor may the read use the register as its address,
-    which would wait for it instead."""
+    or as its count if it is a shift, which would wait for it instead on a
+    core that forms the count in PREPARE."""
     alloc = Allocator(items, ALLOC_REGS, CALLEE_SAVED, 0)
     alloc.flow()
     alloc.liveness()
@@ -2345,6 +2341,9 @@ def fill_jump_slots(items: List[Item]) -> List[Item]:
         if not (isinstance(read, Ins) and reads_memory(read)):
             continue
         bases = {r for kind, r in map(operand_reg, read.ops) if kind in ("mem", "side")}
+        if is_shift(read):
+            # A shift's count register, which the core also wants early.
+            bases |= {r for _, r in [operand_reg(read.ops[-1])] if r is not None}
         used: set[str] = set()     # by the code between the candidate and the read
         written: set[str] = set()
         exits: set[str] = set()    # live where the jumps passed go
@@ -2748,7 +2747,6 @@ class Translator:
             self.cap = memory_pages
         self.growable = self.cap != m.memory_pages
         self.helpers: set[str] = set()  # the HELPERS that functions call
-        self.tables: set[str] = set()   # the TABLES that functions use
         self.labels: Dict[int, List[str]] = {}         # function index -> export labels
         self.global_labels: Dict[int, List[str]] = {}  # global index -> export labels
         self.ctors: Optional[int] = None
@@ -2830,10 +2828,6 @@ class Translator:
             out += [""] + [re.sub(r"W\.LIMIT\d", lambda mo: limit[mo.group()], line)
                            .replace("W.CAP", str(self.cap)).replace("W.", self.prefix)
                            .replace("___wasm_memory", self.mem) for line in HELPERS[name]]
-        for name, (what, entries) in TABLES.items():
-            if name in self.tables:
-                out += ["", f"; {self.prefix}{name}: for p = 0 to {len(entries) - 1}, {what}.",
-                        f"{self.prefix}{name}", instr(".DAT", *(f"0x{v:X}" for v in entries))]
         out += self.table()
         if self.m.globals:
             out += ["", "; Globals"]
@@ -3478,7 +3472,8 @@ class FunctionTranslator:
         return sum((int(w) & 0xFFFFFFFF) << (32 * k) for k, w in enumerate(d.words))
 
     def address(self, base: str, offset: int, n: int, const: Optional[int],
-                fold: bool = False) -> Tuple[Optional[int], str, int]:
+                fold: bool = False, prep: Optional[Callable[[str], None]] = None
+                ) -> Tuple[Optional[int], str, int]:
         """The byte address base + offset, as an operand a and a number of
         words k: the address is a + 4 * k. With bounds checks, traps with
         code 2 unless all n bytes there are in the memory. A trap's R2 is
@@ -3487,7 +3482,10 @@ class FunctionTranslator:
         compare, there is none. If base is the constant const, and the n bytes are in the
         initial memory or there are no bounds checks, returns the address
         and emits no code. With fold, an offset that is a multiple of 4 may
-        come back in k, which is otherwise 0."""
+        come back in k, which is otherwise 0. If the address is not
+        returned, prep(a) emits code that needs only a, after the start and
+        before the compare if a is known by then, so that its registers are
+        not written just before the access."""
         if const is not None:
             addr = const + offset
             if not self.t.checks:
@@ -3503,50 +3501,62 @@ class FunctionTranslator:
             # The trap's R2 points at the MOVE that puts it in a register.
             a = self.new_vreg()
             self.emit("MOVE", a, base)
+        def done(a: str, k: int = 0) -> Tuple[Optional[int], str, int]:
+            if prep:
+                prep(a)
+            return None, a, k
+
         if not self.t.checks:
             # The address wraps modulo 2^32 (§9.4).
             if offset:
                 a = self.new_vreg()
                 self.emit("ADD", a, base, words(offset, I32)[0])
-            return None, a, 0
+            return done(a)
         assert self.t.mem_bytes is not None
         limit = self.t.mem_bytes - n + 1
         if limit <= 0 and not self.t.growable:
             # No n bytes fit in the memory.
             self.trap_jump(2, start)
-            return None, a, 0
+            return done(a)
         if not self.t.growable and const is None and self.bound_of(base) < limit - offset:
             # Every value of base passes the compare below, so there is none.
             if fold and offset % 4 == 0:
-                return None, base, offset // 4
+                return done(base, offset // 4)
             if offset:
                 a = self.new_vreg()
                 self.emit("ADD", a, base, words(offset, I32)[0])
-            return None, a, 0
+            return done(a)
         trap = self.trap_stub(2, start)
         if self.t.growable or const is not None:
             if offset:
                 a = self.new_vreg()
                 self.emit("ADD[M]", a, base, words(offset, I32)[0])
                 self.emit("?C MOVE", "R15", trap)  # base + offset passes 2^32
+            if prep:
+                prep(a)
             # The first address at which n bytes do not fit, which
             # memory.grow keeps up to date if the memory can grow.
             self.emit("SUB[M]", "R0", a, f"@W.limit{n}" if self.t.growable else words(limit, I32)[0])
             self.emit("?!C MOVE", "R15", trap)
             return None, a, 0
         # The first base at which n bytes from base + offset do not fit.
-        # Below it, base + offset does not pass 2^32 either.
+        # Below it, base + offset does not pass 2^32 either. With prep,
+        # the add of the offset, which cannot trap, comes first.
         if limit <= offset:
             self.emit("MOVE", "R15", trap)
-            return None, a, 0
+            return done(a)
+        k = offset // 4 if fold and offset % 4 == 0 else 0
+        if prep:
+            if offset and not k:
+                a = self.new_vreg()
+                self.emit("ADD", a, base, words(offset, I32)[0])
+            prep(a)
         self.emit("SUB[M]", "R0", base, words(limit - offset, I32)[0])
         self.emit("?!C MOVE", "R15", trap)
-        if fold and offset % 4 == 0:
-            return None, base, offset // 4
-        if offset:
+        if not prep and offset and not k:
             a = self.new_vreg()
             self.emit("ADD", a, base, words(offset, I32)[0])
-        return None, a, 0
+        return None, a, k
 
     def index_of_sum(self, a: str, b: str, ca: Optional[int], cb: Optional[int]
                      ) -> Optional[WordIndex]:
@@ -3706,36 +3716,37 @@ class FunctionTranslator:
         self.emit("MOVE", "R15", back, stub=True)
         return last + moves[-1:] if results else []
 
-    def table(self, name: str, p: str, k: int = 0) -> str:
-        """The operand for entry p + k of one of the TABLES."""
-        self.t.tables.add(name)
-        return f"@{self.t.prefix}{name}" + (f"+{k}" if k else "") + f"[{p}]"
-
     def narrow(self, base: str, offset: int, n: int, const: Optional[int],
                access: Callable[[Callable[[int], str], Union[int, str], bool], None]) -> None:
-        """An access of 1 or 2 bytes at base + offset, after the bounds
-        check (address). The word index w and the byte p of the address in
-        its word come from a shift and an AND, unless the address is a
-        constant. access(word, p, stub) emits the code, with word(j) the
-        operand of word j from w and p a number or a register. Bytes p and
-        p + 1 of a word hold 2 bytes unless p = 3, when they straddle two
-        words. A register p is then checked, and access runs again in a
-        stub after the epilogue for p = 3."""
+        """An access of 1 or 2 bytes at base + offset, with the bounds
+        check (address). Unless the address is a constant, two shifts give
+        the word index w and the count c = 8p modulo 32 of the byte p of
+        the address in its word, before the compare, so that the access
+        waits for neither. access(word, p, stub) emits the code, with
+        word(j) the operand of word j from w, and p a number or the
+        register c, a count that only rotations may use, since only they
+        take it modulo 32 (ISA.md §5.2). Bytes p and p + 1 of a word hold 2
+        bytes unless p = 3, when they straddle two words. The code checks
+        that from the address, and access runs again in a stub after the
+        epilogue for p = 3."""
         fold = const is None and self.t.checks and not self.t.growable
-        addr, a, k = self.address(base, offset, n, const, fold)
+        w, c = self.new_vreg(), self.new_vreg()
+
+        def prep(a: str) -> None:
+            self.emit("SHR", w, a, "2")     # the word index
+            self.emit("SHL", c, a, "3")     # 8p, modulo 32
+
+        addr, a, k = self.address(base, offset, n, const, fold, prep)
         if addr is not None:
             access(lambda j: self.mem_word(addr // 4 + j), addr % 4, False)
             return
-        w, p = self.new_vreg(), self.new_vreg()
-        self.emit("SHR", w, a, "2")
-        self.emit("AND", p, a, "3")
         if n == 1:
-            access(lambda j: self.mem_word(k + j, w), p, False)
+            access(lambda j: self.mem_word(k + j, w), c, False)
             return
         slow, back = self.new_label(), self.new_label()
-        self.emit("SUB[M]", "R0", p, "3")
+        self.emit("AND[M]", "R0", f"1[{a}]", "3")      # Z: p = 3
         self.emit("?Z MOVE", "R15", slow)
-        access(lambda j: self.mem_word(k + j, w), p, False)
+        access(lambda j: self.mem_word(k + j, w), c, False)
         self.label(back, keep=True)
         self.label(slow, stub=True)
         access(lambda j: self.mem_word(k + j, w), 3, True)
@@ -3744,9 +3755,10 @@ class FunctionTranslator:
     def load_narrow(self, n: int, signed: bool, word: Callable[[int], str], p: Union[int, str],
                     d: str, stub: bool) -> None:
         """Loads the n = 1 or 2 bytes from byte p of word(0) into d, with
-        the sign for signed. For n = 2 and p = 3, the second byte is the
-        low byte of word(1). A sign comes down from bit 31 with C<0 and C>0
-        (§5.2)."""
+        the sign for signed. p is a number, or a register with 8p modulo
+        32, by which a rotation brings byte p down to bit 0. For n = 2 and
+        p = 3, the second byte is the low byte of word(1). A sign comes
+        down from bit 31 with C<0 and C>0 (§5.2)."""
         if n == 2 and p == 3:
             x = self.new_vreg()
             self.emit("SHR", d, word(0), "24", stub=stub)
@@ -3759,22 +3771,27 @@ class FunctionTranslator:
                 self.emit("AND", d, d, "0xFFFF", stub=stub)
             return
         if signed:
-            # The bytes up to bit 31, then down with the sign.
-            up = str(32 - 8 * n - 8 * p) if isinstance(p, int) else self.table("bshl", p, n - 1)
-            self.emit("SHL", d, word(0), up, stub=stub)
+            # The bytes up to bit 31, then down with the sign. A rotation
+            # right by 8p + 8n is one left by 32 - 8n - 8p.
+            if isinstance(p, int):
+                self.emit("SHL", d, word(0), str(32 - 8 * n - 8 * p), stub=stub)
+            else:
+                self.emit("ROR", d, word(0), f"{8 * n}[{p}]", stub=stub)
             self.emit("C<0[M]", "R0", d, "1", stub=stub)
             self.emit("C>0", d, d, str(32 - 8 * n), stub=stub)
         else:
-            down = str(8 * p) if isinstance(p, int) else self.table("bshift", p)
-            self.emit("SHR", d, word(0), down, stub=stub)
+            self.emit("SHR" if isinstance(p, int) else "ROR", d, word(0),
+                      str(8 * p) if isinstance(p, int) else p, stub=stub)
             self.emit("AND", d, d, "0xFF" if n == 1 else "0xFFFF", stub=stub)
 
     def store_narrow(self, n: int, v: str, word: Callable[[int], str], p: Union[int, str],
                      stub: bool) -> None:
         """Stores the low n = 1 or 2 bytes of v at byte p of word(0): reads
         the word, clears the bytes, ORs in the new ones, and writes it back.
-        For n = 2 and p = 3, the second byte goes to the low byte of
-        word(1)."""
+        p is a number, or a register with 8p modulo 32, by which rotations
+        move the mask and the bytes up to byte p. For n = 2 and p = 3, the
+        second byte goes to the low byte of word(1). A constant 0 needs no
+        OR."""
         mask = (1 << (8 * n)) - 1
         const = int(v) & mask if re.match(r"-?\d+\Z", v) else None
         m, x = self.new_vreg(), self.new_vreg()
@@ -3792,7 +3809,11 @@ class FunctionTranslator:
             self.emit("OR", word(1), m, x if const is None else str(const >> 8), stub=stub)
             return
         if isinstance(p, int):
-            self.emit("AND", m, word(0), words(~(mask << (8 * p)), I32)[0], stub=stub)
+            keep = words(~(mask << (8 * p)), I32)[0]
+            if const == 0:
+                self.emit("AND", word(0), word(0), keep, stub=stub)
+                return
+            self.emit("AND", m, word(0), keep, stub=stub)
             if const is not None:
                 self.emit("OR", word(0), m, words(const << (8 * p), I32)[0], stub=stub)
                 return
@@ -3800,12 +3821,15 @@ class FunctionTranslator:
             if p:
                 self.emit("SHL", x, x, str(8 * p), stub=stub)
         else:
-            self.emit("IAND", m, self.table("bmask" if n == 1 else "hmask", p), word(0),
-                      stub=stub)
+            k = self.new_vreg()
+            self.emit("ROL", k, words(~mask, I32)[0], p, stub=stub)  # the bits to keep
+            if const == 0:
+                self.emit("AND", word(0), k, word(0), stub=stub)
+                return
+            self.emit("AND", m, k, word(0), stub=stub)
             if const is None:
                 self.emit("AND", x, v, str(mask), stub=stub)
-            self.emit("SHL", x, x if const is None else str(const), self.table("bshift", p),
-                      stub=stub)
+            self.emit("ROL", x, x if const is None else str(const), p, stub=stub)
         self.emit("OR", word(0), m, x, stub=stub)
 
     def trunc_check(self, src_t: int, dst_t: int, pos_limit: int, neg_limit: int, at: int,

@@ -23,6 +23,7 @@ results were worked out by hand from the sources."""
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -230,7 +231,8 @@ LIB_ASM = "___wasm_start MOVE R15, @R13++\n_main {}\n ADD @--R13, 2, R15\n MOVE 
 # of the code for the wasm instruction that traps, which R2 points at.
 # The operands of these instructions are constants, which take no
 # registers until they must (README.md). {R2} stands for R2's value: code
-# that only traps starts with MOVE R2 of its own address.
+# that only traps starts with MOVE R2 of its own address. A label of the
+# program, such as ___wasm_memory, has its value in the program.
 TRAPS = {"growtrap": "MOVE R1, 65536",
          "trunc_big": "MOVE R1, 0x4F000000",
          "trunc_small": "MOVE R2, 0x41E00000",
@@ -2054,10 +2056,13 @@ def run(cmd: List[str]) -> str:
     return p.stdout + f"exit {p.returncode}\n"
 
 
-def assemble(line: str, tmp: str) -> List[int]:
-    """The words of one instruction."""
+def assemble(line: str, tmp: str, labels: Dict[str, int]) -> List[int]:
+    """The words of one instruction. A label of the program that it names
+    has its value in the program, from labels."""
     src = os.path.join(tmp, "line.nasm")
     with open(src, "w") as f:
+        for name in sorted(set(re.findall(r"[A-Za-z_][\w.]*", line)) & labels.keys()):
+            f.write(f"{name} .EQU {labels[name]}\n")
         f.write(f" {line}\n")
     run([sys.executable, NICEASM, "-o", src + ".bin", src])
     with open(src + ".bin") as f:
@@ -2134,7 +2139,7 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
                 or not output.endswith("exit 2\n")):
             problems.append("did not halt at ___wasm_trap")
         r2 = regs.get("R2", 0)
-        first = assemble(TRAPS[name].format(R2=r2), tmp)
+        first = assemble(TRAPS[name].format(R2=r2), tmp, assembler.labels)
         if [image.get(r2 + i) for i in range(len(first))] != first:
             problems.append(f"R2 does not point at {TRAPS[name].format(R2=hex(r2))}")
     elif not output.startswith("Halted (HALT)") or not output.endswith("exit 0\n"):

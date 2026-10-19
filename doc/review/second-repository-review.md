@@ -57,6 +57,8 @@ WRITE flushes when a store lands in FETCH's range, `addr_o` to `end_o`, or in th
 - **§7.3** says the mod 33 reduction "does not depend on s0, so PREPARE can compute it". The core computes it in WRITE, which is the second carry chain of pipeline-timing.md. **Fix:** say where it is now, and that moving it is step 3 of the lean plan.
 - **§5.6** is the table of 2026-10-15, which TODO.md already notes as stale. `make -C bench hazards` gives the new shares.
 
+**Resolved**: §8 says what exists and what the memory model stands in for, §9 names the three proofs and what `p_check` checks of their assumptions, and §7.3 says where the reduction is and that moving it is step 3 of the plan. §5.6 stays as TODO.md has it.
+
 ### 2.3 ASSUMPTIONS.md
 
 Item 14, "FETCH is proven, the rest of the core is checked for 8 cycles", predates the proofs of PREPARE and DBUS. The header says MICROARCH.md "has since taken up items 1, 8, and 9"; after 2.2 it should also take up 14. **Fix:** update the item, or drop it in favour of hdl/README.md, The formal checks.

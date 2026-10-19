@@ -400,14 +400,18 @@ closed forms of ISA §5.2. It needs three reduced counts:
   lies between −93 and 96. Plus 99, it is between 6 and 195, and a table
   of 256 entries finishes it.
 
-The reduction does not depend on s0, so PREPARE can compute it and keep it
-out of WRITE's critical path.
+The reduction does not depend on s0, so PREPARE could compute it and keep
+it out of WRITE's critical path. The core computes it in WRITE so far,
+which is one of the four carry chains of
+[review/pipeline-timing.md](review/pipeline-timing.md); moving it is step
+3 of the plan there (TODO.md).
 
 ## 8. Memory system
 
-The repository provides a system around the core: the core, dual-port RAM, the
-bus decoders, a default slave, and the console UART. It is not tied to a
-board. Generics set the memory map, for example the size and base address of
+The repository will provide a system around the core: dual-port RAM, the
+bus decoders, a default slave, and the console UART. So far only the data
+bus decoder exists, and `hdl/sim/wb_mem.vhd` stands in for the rest in
+simulation (TODO.md). The system is not tied to a board. Generics set the memory map, for example the size and base address of
 each RAM and the address of the UART. These rules hold for every setting:
 
 - **Dual-port RAM.** The instruction port and the data port reach the same
@@ -426,7 +430,9 @@ each RAM and the address of the UART. These rules hold for every setting:
   the I/O range (ISA §8.3).
 - **Console.** A UART at `0xFFFFFF00` by default, as in the emulator
   (ISA §8.3). A write sends bits 7..0. A read returns the next received
-  byte with bit 8 set, or 0 if none has arrived.
+  byte with bit 8 set, or 0 if none has arrived. Not written yet; the
+  memory model's console reads a file instead
+  ([hdl/README.md](../hdl/README.md), The memory model).
 - **Math unit.** `hdl/src/mpu.vhd` at `0xFFFFFF20`–`0xFFFFFF3F` (ISA §8.4), 32
   aligned words, so the decoder compares address bits 31..5.
   A read of a result holds off its ACK until the result is ready, so the
@@ -555,16 +561,23 @@ data read right before the entry.
 
 **Formal checks**, as in qnice_cpu: each stage on its own where it can
 be, and properties of the whole core. The checkers of the Wishbone and
-interrupt ports in `hdl/formal/` serve both cores. FETCH is
-proven for every cycle: DECODE sees each word that memory holds at the
-address it names. For the whole pipelined core, the port checks and the
+interrupt ports in `hdl/formal/` serve both cores. Three stages are
+proven for every cycle, each with assumptions that model the stages
+beside it: FETCH, so that DECODE sees each word that memory holds at the
+address it names; PREPARE, so that it holds a read while the bus stalls
+it, makes all of a micro-operation's reads before it moves on, and never
+finds the condition false of an instruction that has made a read; and
+DBUS, so that WRITE gets the read data in the order of the ACKs. The
+assumptions that name another stage are checked in the whole core by
+`p_check` in `hdl/src/pipeline.vhd`, on every simulation run and in the
+bounded check. For the whole pipelined core, the port checks and the
 core's own assertions hold for the first 8 cycles after reset, and the
 simulation tests check the same assertions on every run. The most
 important of them is the data access rule of §5.3: every data access
 belongs to an instruction that retires, which the core asserts as no
 flush leaving read data owed. The accesses issue in program order by
-construction. A proof of the whole core for every cycle is still open
-(TODO.md).
+construction. A proof of DECODE alone, and of the whole core for every
+cycle, is still open (TODO.md).
 
 ## 10. Repository and boards
 

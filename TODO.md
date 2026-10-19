@@ -18,8 +18,6 @@ The open items of
 [doc/review/second-repository-review.md](doc/review/second-repository-review.md),
 added 2026-10-19. The section numbers are its.
 
-- **CI runs `make programs` on the multi-cycle core only** (§4.1). The
-  pipelined core passed all 350 programs on 2026-10-19, by hand.
 - **The translator** (§5): the rules of commits fa3a8a7, 2e77769, and
   3e0a2c1 have no test, since no module reaches their shape; a test of
   the passes on hand-built instruction lists would (§5.2). `fuzz.py`

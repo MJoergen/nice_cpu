@@ -255,7 +255,8 @@ On seeds 1 to 30, a register read right after its write went from 16% to
 `make programs` runs the test programs of the runtime and of the
 translator on the core (MICROARCH.md §9, step 6). It is not part of
 `make test`, because it takes minutes: about 2 million steps in 196
-programs, at GHDL's 3300 steps a second, on all cores. `make test KEEP=DIR`
+programs, at GHDL's 3300 steps a second, on all cores. CI runs it on
+both. `make test KEEP=DIR`
 in `runtime/` and `test/run.py --keep DIR` in `translator/` run their
 tests and leave the programs in `build/programs`, with the console input
 of those that read one. Then `test/programs.py` runs each on the core and

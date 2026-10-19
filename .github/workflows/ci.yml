@@ -106,7 +106,9 @@ jobs:
           version: 0.15.2
       - run: sudo apt-get update && sudo apt-get install -y ghdl
       - run: make test
+      # The runtime's and the translator's programs, on both cores.
       - run: make programs
+      - run: make programs CORE=pipeline
       # The style of CODING_STYLE.md, as far as vsg can check it.
       - run: pip install vsg==3.35.0
       - run: make lint

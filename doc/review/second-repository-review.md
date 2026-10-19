@@ -162,6 +162,8 @@ The pipelined core also ran `hand.nasm` 21% faster than on 2026-10-16, which is 
 
 The `hdl` job runs `make test`, which covers both cores, and `make programs`, which runs `CORE`'s default, the multi-cycle core. So the pipelined core's run of the 350 programs happens only when someone runs it by hand, as this review did. **Fix:** `make programs CORE=pipeline` in the job too, about as long again, or `programs` over `CORES` as `test` is.
 
+**Resolved**: the job runs `make programs CORE=pipeline` after `make programs`.
+
 ### 4.2 Nothing checks the model's phase rows
 
 See 3.1. The bench `make test` runs `pipecycles.py --test` on snippets. A run of the model on `bench.bin` that asserts six phase rows, with the sum of the rows no more than the total, would have caught the stale address.

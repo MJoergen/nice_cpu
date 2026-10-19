@@ -154,6 +154,8 @@ The pipelined core also ran `hand.nasm` 21% faster than on 2026-10-16, which is 
 
 **Fix.** Replace both tables with these, with the date, and keep the two READMEs' tables the same.
 
+**Resolved**: both READMEs have the tables of 2026-10-19, and hdl/README.md's reading of `hand.nasm`'s phases follows the new cycles.
+
 ## 4. The tests and CI
 
 ### 4.1 CI runs `make programs` on the multi-cycle core only

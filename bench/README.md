@@ -138,17 +138,19 @@ its instructions had constant words and memory operands. Now `vm` and
 program, 12.0 and 11.9, and `rng64` in the hand-written one, 14.0,
 because its reads of the math unit wait for the multiplier.
 
-`make core CORE=pipeline` runs them on the pipelined core. On 2026-10-16:
+`make core CORE=pipeline` runs them on the pipelined core. On 2026-10-19,
+on the same programs as the multi-cycle core above:
 
 | Program | Instructions | Cycles | Cycles per instruction | Faster than the multi-cycle core |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 3359061 | 6003616 | 1.79 | 7.1 times |
-| `hand.nasm` | 491617 | 1541542 | 3.14 | 3.8 times |
+| `bench.c` through nicewasm | 1729523 | 2330619 | 1.35 | 8.5 times |
+| `hand.nasm` | 491617 | 1214194 | 2.47 | 4.8 times |
 
 The hand-written program gains less, because more of its time goes to
-what a pipeline cannot hide: `rng64` waits for the multiplier, and `vm`
-jumps through a table every three or four instructions, which flushes
-the pipeline ([hdl/README.md](../hdl/README.md), The pipelined core).
+what a pipeline cannot hide: `vm` jumps through a table every three or
+four instructions, which flushes the pipeline, and `strings` and `bst`
+read the math unit right after writing its operands
+([hdl/README.md](../hdl/README.md), The pipelined core).
 
 ## The hazard profile
 

@@ -505,19 +505,22 @@ decides on a data read with WRITE's decisions of the same cycle, a flush
 reaches every stage at once, and WRITE drives its stores onto the bus. In the best case one micro-operation retires each cycle.
 `cputest` takes about 1.2 cycles per instruction on memory that never
 stalls, and `hazard.nasm`, which is all hazards, 1.9. The benchmark of
-[bench/](../bench/README.md) ran like this on 2026-10-16, against the
+[bench/](../bench/README.md) ran like this on 2026-10-19, against the
 multi-cycle core's numbers there:
 
 | Program | Instructions | Cycles | Cycles per instruction | Multi-cycle core |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 3359061 | 6003616 | 1.79 | 12.6, 7.1 times slower |
-| `hand.nasm` | 491617 | 1541542 | 3.14 | 11.9, 3.8 times slower |
+| `bench.c` through nicewasm | 1729523 | 2330619 | 1.35 | 11.5, 8.5 times slower |
+| `hand.nasm` | 491617 | 1214194 | 2.47 | 11.9, 4.8 times slower |
 
-The instruction counts equal the emulator's. In `hand.nasm`, `rng64`
-waits for the multiplier (5.1 cycles per instruction), and `vm` (5.0)
-ends each handler of three or four instructions with a jump through a
-table, whose address PREPARE must wait for, since the instruction before
-loads its index, and which flushes the pipeline.
+The instruction counts equal the emulator's. In `hand.nasm`, `vm` (4.5
+cycles per instruction) ends each handler of three or four instructions
+with a jump through a table, whose address PREPARE must wait for, since
+the instruction before loads its index, and which flushes the pipeline;
+`strings` (2.9) and `bst` (2.3) read the math unit right after writing
+its operands. `rng64` (1.5) waited for the multiplier before it took two
+cycles. `make -C bench compare` puts the estimate of
+`bench/pipecycles.py` beside these cycles, phase by phase.
 
 WRITE is the only stage that writes registers, and in order. So it reads
 them directly, and PREPARE reads them for the address of a data read,

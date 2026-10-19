@@ -18,9 +18,6 @@ The open items of
 [doc/review/second-repository-review.md](doc/review/second-repository-review.md),
 added 2026-10-19. The section numbers are its.
 
-- **The tables of 2026-10-16** in `bench/README.md` and `hdl/README.md`
-  pair the pipelined core's run of the old translator output with the
-  multi-cycle core's run of the new. §3.4 has the numbers of 2026-10-19.
 - **CI runs `make programs` on the multi-cycle core only** (§4.1). The
   pipelined core passed all 350 programs on 2026-10-19, by hand.
 - **The translator** (§5): the rules of commits fa3a8a7, 2e77769, and

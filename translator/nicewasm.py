@@ -2471,6 +2471,10 @@ def hoist_into_slots(items: List[Item]) -> List[Item]:
         if not ok:
             continue
         passed: List[Ins] = [items[q]]  # type: ignore[list-item]
+        # After the write of an address register, the moved instruction
+        # may not use what that write writes: a copy of it before a jump
+        # back to B may run on a path that left before the write.
+        written = set() if jump.cond else alloc.use_def(jump)[1]
         b: Optional[Label] = None
         start: Optional[Label] = None
         k = q + 1
@@ -2489,7 +2493,8 @@ def hoist_into_slots(items: List[Item]) -> List[Item]:
             if not (isinstance(it, Ins) and plain(it)):
                 break
             if (movable(it) and (b is None or it.depth > 0)
-                    and all(commute(it, x) for x in passed) and not tested(k, it.ops[0])):
+                    and all(commute(it, x) for x in passed) and not tested(k, it.ops[0])
+                    and not written & (alloc.use_def(it)[0] | alloc.use_def(it)[1])):
                 found = k
                 break
             if start is not None:

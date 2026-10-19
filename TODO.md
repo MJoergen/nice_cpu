@@ -159,62 +159,53 @@ has TODO or FIXME comments.
 - **Stack overflow** is not detected in translated code, unlike in wasm.
   What happens then is undefined (ISA.md §9.4). An idea: a check against a
   stack limit in each function's prologue, at a cost in code size.
-- **Faster and smaller translated code.** From a look at the translated
-  test programs on 2026-10-15. The inner loop of
-  `translator/test/primes.c`, `composite[j] = 1; j += i`, takes 20
-  instructions per iteration: 9 in the byte store helper, 2 to put the
-  address in a frame word and reload it, 2 for the bounds check, 3 to pass
-  the value and call, and 4 for the increment, compare, and branch. Six of
-  the twenty are avoidable, in these ways. The options start in ISA.md
-  §9.4, as `--no-bounds-checks` did.
-  - *Trust the alignment hint, as an option.* An aligned word access
-    costs 9 instructions, 3 of them the test of the address and the
-    conditional call of the helper, whose skipped instructions still
-    fetch their constant words (ISA.md §3). Clang, Zig, and Rust emit the
-    natural alignment unless the source is packed or reads unaligned on
-    purpose. With the hint trusted and the base in a register, an aligned
-    `i32.load` is 4 instructions and 7 words. The hint is not a promise
-    (ISA.md §9.4), so a misaligned access then gives a wrong value, as an
-    access out of bounds does without the checks.
-  - *The top of the operand stack in R1–R6.* An idea from
-    [doc/review/wasm-review.md](doc/review/wasm-review.md). The deferred
-    operands of [doc/review/code-size-plan.md](doc/review/code-size-plan.md)
-    and the locals in R7–R11 ([translator/README.md](translator/README.md))
-    already took part of the saving. In `test/safe.zig`, spills to frame
-    words, reloads, and frame-to-frame moves are still 332 of 3596
-    instructions, and they are in the hot paths. A value in a register
-    would be a further kind of deferred value, written to its frame word
-    before a call and at a block boundary.
-  - *Flags from the operation before a branch.* `ADD R9, R9, -1`, then
-    `MOVE[M] R0, R9` and a conditional jump, is in every counted loop.
-    With `ADD[M]` the test goes, as in the `DEC[M]` loop of the intro
-    slides. `fuses` in `nicewasm.py` already finds the pattern for
-    comparisons.
-  - *A constant offset folded into the operand.* `i32.load offset=12`
-    costs an `ADD[M]` and a wrap check before the bounds check. With a
-    fixed memory cap, one compare of the base against the limit minus the
-    offset covers both, and the access is `@___wasm_memory+3[R2]`. Saves 2
-    instructions for each field access.
-  - *One bounds check for several accesses to the same base in a basic
-    block.* Rust code stores to offsets 12, 16, and 20 of one pointer in a
-    row, each with its own check of 4 instructions. One check up front,
-    with the present sequence kept as the slow path, so that a trap still
-    comes in order and with the right R2 (ISA.md §9.4).
-  - *No mask for a constant shift count.* `i32.shl` by a constant emits
-    `AND R1, 2, 31` and then the shift by R1, where `SHL d, a, 2` would do.
-    Every array index computed as `i << 2` pays it. Seen in `bench/`, in
-    the translated heapsort. `const_value` in `nicewasm.py` already tells
-    whether the count is a constant.
-  - *Conditional execution instead of a jump* for an `if` without `else`
-    whose body is a few instructions with no call, no memory access, and
-    no flag update. Worth more on the pipelined core than on the
-    multi-cycle one.
-
-  Out of reach without loop analysis on an intermediate form: `@Rx++` for
-  a pointer walk, which needs a word pointer kept in step with the byte
-  address, and bounds checks hoisted out of loops. A byte access stays at
-  about 9 instructions whatever the translator does, because linear
-  memory is byte-addressed (ISA.md §9.4).
+- **Faster and smaller translated code.** The list from a look at the
+  translated test programs on 2026-10-15 was done from 2026-10-16 to
+  2026-10-19 ([translator/README.md](translator/README.md), How functions
+  are translated): a register allocator in place of frame words, inline
+  memory accesses with one compare for the bounds and the alignment, a
+  constant offset in the word operand, one compare for a group of
+  accesses, no compare for an index with a known bound, flags from the
+  operation before a branch, no mask for a constant shift count,
+  conditional instructions in place of short jumps, and multiplications
+  and divisions by constants. `bench/` went from 3359061 to 1729523
+  instructions, against 491617 for `hand.nasm`, and from about 5.55 to
+  about 2.27 million cycles by an estimate for the pipelined core of
+  MICROARCH.md. Trusting the alignment hint would save nothing now, as
+  one compare covers the bounds and the alignment. What is left, by the
+  estimate:
+  - *Taken jumps resolved in WRITE*, about a third of the cycles above
+    one per instruction: the interpreter's table jumps, which no layout
+    avoids, and `br_if`s whose common path is the taken one. nicewasm
+    guesses that the shorter arm of a diamond is the rarer one; branch
+    probabilities from a profile would do better.
+  - *Waits on the math unit*, about a quarter: the interpreter's `MUL`,
+    `__mul64` in `runtime/`, and `% 26` in strings read the result right
+    after writing the operands. Hiding the 35 cycles needs independent
+    work in between, which the translator rarely has without moving
+    stores past loads. `__mul64` could overlap its partial products.
+  - *A read right after a skipped bounds-check jump*, about a tenth, in
+    chains of dependent loads, where no instruction can fill the slot.
+    Speculative reads (above) would remove it.
+  - *The address register written by the instruction before*, about a
+    tenth, in the inline byte loads, whose two address registers are both
+    computed just before the read. A different byte-load sequence would
+    be needed. MICROARCH.md §5 could state this stall in so many words;
+    §3 implies it.
+  - *Loop back edges* cost the two cycles of an early redirect each round.
+  - *`@Rx++` for a pointer walk*, as `hand.nasm` does, needs a word
+    pointer kept in step with the byte address, which is out of reach
+    without loop analysis on an intermediate form.
+  - *Range analysis* beyond the bounds nicewasm keeps (masks, byte loads,
+    shifts, and remainders), to drop the bounds checks of counted loops.
+  - ISA.md §9.4 could say where a trap's R2 points when nicewasm copies
+    or moves code: at the first instruction of the original copy, and
+    the code of a neighbouring access may lie between that instruction
+    and the rest of the trapping instruction's code.
+  - MICROARCH.md §5.6's table of 2026-10-15 predates these changes. A read
+    after a conditional jump is now in most inline memory accesses, so
+    speculative reads (above) matter more; `make -C bench hazards` gives
+    the new shares.
 - **Benchmarks beyond [bench/](bench/README.md).** Dhrystone 2.1 would
   give a number to compare the core with other small processors, once it
   runs on a board. It needs `malloc`, `strcpy`, `strcmp`, and `printf`
@@ -229,11 +220,6 @@ has TODO or FIXME comments.
 
 Kept here so that they are not proposed again.
 
-- **Shared trap stubs in nicewasm.** Sharing them would save about 4 words
-  for each memory access. But ISA.md §9.4 says R2 holds the address of the
-  first NICE instruction of the code that trapped, and a shared stub cannot
-  easily know it ([doc/review/code-size-plan.md](doc/review/code-size-plan.md),
-  Left as it is).
 - **A condition or instruction for signed comparison.** A signed a < b
   takes two instructions, `?V XOR R14, R14, 0x10000000` and then `?N`,
   as ISA.md §9.2 shows and nicewasm does. Michael decided on 2026-10-15

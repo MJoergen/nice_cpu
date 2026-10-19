@@ -14,6 +14,7 @@ NICE with other processors.
     make core CORE=pipeline  # the same on the pipelined core (about 20 minutes)
     make hazards    # count the pipeline hazards of MICROARCH.md §5 in both
     make cycles     # estimate the cycles of both on the pipelined core of MICROARCH.md
+    make profile    # the same, charged to the source lines, in build/*.cyc.txt
     make native     # build and run bench.c on the host, as a check
     make wasm       # rebuild bench.wasm from bench.c (needs clang)
 
@@ -217,6 +218,23 @@ instructions in all. Options such as `--flush`, `--early`, `--agen`, and
 `--mpu32` set the model's parameters, to try a design change before it
 is built. `pipecycles.py --test` checks the model on small programs whose
 cycles are worked out by hand in the script, and `make test` runs it.
+
+`cycprof.py` charges the model's cycles to the source lines of a program,
+and `make profile` writes `build/bench.cyc.txt` and `build/hand.cyc.txt`.
+It takes the assembly of the whole program and the `.bin` assembled from
+it, runs the model as `pipecycles.py` does, and writes the source with
+two columns in front of each line, how often its instruction ran and the
+cycles it cost above one per run, and the causes after the line. The
+cycles land on the instruction in whose WRITE the model saw them wait: a
+taken jump's on the instruction at its target, and a math unit wait's on
+the read of the result. In heapsort's inner loop, for example:
+
+        7722   13400         ADD     R7, R1, 2                  early13400
+        7722                 SUB[M]  R0, R7, R8
+        7722                 ?V XOR  R14, R14, 0x10000000
+
+`cycprof.py --test` checks the charging on a counted loop whose cycles
+are worked out by hand in the script, and `make test` runs it.
 
 ## Checking the results
 

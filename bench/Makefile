@@ -38,6 +38,7 @@ test: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 	@$(PYTHON) expected.py --check bench.c hand.nasm
 	@$(PYTHON) hazards.py --test
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --test
+	@NICEEMU=$(EMU) $(PYTHON) cycprof.py --test
 	$(foreach p,$(PROGRAMS),$(call check,$(p)))
 
 # Runs both on a core in GHDL, so that the cycles are the core's: CORE,
@@ -86,9 +87,15 @@ hazards: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 cycles: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py $(BUILD)/bench.bin $(BUILD)/hand.bin
 
+# The same, charged to the source lines of each program: the listings
+# build/bench.cyc.txt and build/hand.cyc.txt.
+profile: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/bench.full.nasm $(BUILD)/hand.full.nasm emulator
+	@NICEEMU=$(EMU) $(PYTHON) cycprof.py $(BUILD)/bench.full.nasm $(BUILD)/bench.bin
+	@NICEEMU=$(EMU) $(PYTHON) cycprof.py $(BUILD)/hand.full.nasm $(BUILD)/hand.bin
+
 # Needs mypy (pip install mypy).
 typecheck:
-	$(PYTHON) -m mypy --strict expected.py hazards.py pipecycles.py
+	MYPYPATH=../assembler $(PYTHON) -m mypy --strict expected.py hazards.py pipecycles.py cycprof.py
 
 # Rebuilds bench.wasm from bench.c. Needs clang with the wasm32 target and
 # wasm-ld, and builds the C library first.
@@ -109,4 +116,4 @@ emulator:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: run test core hazards cycles typecheck wasm native emulator clean
+.PHONY: run test core hazards cycles profile typecheck wasm native emulator clean

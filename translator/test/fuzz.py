@@ -27,7 +27,7 @@ them constants, loads and stores of every width at
 constant and at dynamic addresses, among them the addresses of array
 elements, (i << s) + c, with an index i whose high bits the shift drops
 and constants that may be negative, or with a masked index i = x & m,
-and local.set and local.tee of locals
+some near the end of the memory, and local.set and local.tee of locals
 whose old value is still on the operand stack. That covers the rules for
 deferred values, fused comparisons, forwarded results, and register
 allocation in README.md. main returns a fold of every local and of 18 memory
@@ -413,28 +413,32 @@ def gen_condition(ctx: Ctx, depth: int) -> Expr:
     return gen_expr(ctx, I32, depth)
 
 
-def gen_address(ctx: Ctx, depth: int) -> Expr:
-    """A byte address, constant or dynamic, with 8 bytes and an offset of
-    up to 13 in bounds. Dynamic addresses are often unaligned."""
+def gen_address(ctx: Ctx, depth: int, room: int = 21) -> Expr:
+    """A byte address, constant or dynamic, with room bytes from it in
+    bounds: by default 8 bytes at an offset of up to 13. Dynamic addresses
+    are often unaligned."""
     if ctx.rng.random() < 0.4:
         a = ctx.rng.randrange(0x400) if ctx.rng.random() < 0.7 else ctx.rng.randrange(ADDR_MASK)
         return konst(I32, a)
     if ctx.rng.random() < 0.3:
-        return gen_element(ctx, depth)
+        return gen_element(ctx, depth, room)
     if ctx.rng.random() < 0.2:
-        return gen_masked(ctx, depth)
+        return gen_masked(ctx, depth, room)
     k = ctx.rng.randrange(8) if ctx.rng.random() < 0.6 else 0
     e = binop("and", I32, gen_expr(ctx, I32, depth), konst(I32, ADDR_MASK))
     return binop("or", I32, e, konst(I32, k)) if k else e
 
 
-def gen_element(ctx: Ctx, depth: int) -> Expr:
+def gen_element(ctx: Ctx, depth: int, room: int) -> Expr:
     """The address of an array element, (i << s) + c, as clang computes
     it, sometimes with a second constant added. The index i is in 0x400
     to 0x7FF, and often has high bits set that the shift drops, so that
     the address wraps modulo 2^32 to one in bounds. The constants are
-    mostly multiples of 4, and may be negative."""
+    mostly multiples of 4, and may be negative. Sometimes c / 4 is near
+    the end of the memory instead (gen_end)."""
     s = ctx.rng.choice([2, 2, 3])
+    if ctx.rng.random() < 0.3:
+        return gen_end(ctx, depth, room, s)
     e = binop("and", I32, gen_expr(ctx, I32, depth), konst(I32, 0x3FF))
     e = binop("or", I32, e, konst(I32, 0x400))
     if ctx.rng.random() < 0.5:
@@ -453,7 +457,33 @@ def gen_element(ctx: Ctx, depth: int) -> Expr:
     return a
 
 
-def gen_masked(ctx: Ctx, depth: int) -> Expr:
+def gen_end(ctx: Ctx, depth: int, room: int, s: int) -> Expr:
+    """The address (i << s) + c of an array element near the end of the
+    memory, with room bytes from it in bounds. Either i is at most 3, and
+    c is a multiple of 4 that puts the last address that i allows at the
+    last place that leaves room bytes, or up to 8 bytes before it, so that
+    with room = 8 an i64 is at the last two words. Half the time i goes
+    through a subtraction of 0, so that nicewasm knows no bound on it and
+    keeps the compare. Or i is -16 to -9, so that i << s is -64 to -36,
+    or -128 to -72 for s = 3, and c / 4 is one word below the end,
+    the end, or one word past it. Then a folded access fails its compare,
+    and its stub does the access, and an access with the ADD of its word
+    index passes its compare."""
+    top = 0x10000 - room  # the last address with room bytes in bounds
+    x = gen_expr(ctx, I32, depth)
+    if ctx.rng.random() < 0.6:
+        m = ctx.rng.choice([0, 1, 3])
+        i = binop("and", I32, x, konst(I32, m))
+        if ctx.rng.random() < 0.5:
+            i = binop("sub", I32, i, konst(I32, 0))
+        c = (top - (m << s)) // 4 * 4 - 4 * ctx.rng.randrange(3)
+    else:
+        i = binop("or", I32, binop("and", I32, x, konst(I32, 7)), konst(I32, 0xFFFFFFF0))
+        c = 0x10000 + 4 * ctx.rng.randrange(-1, 2)
+    return binop("add", I32, binop("shl", I32, i, konst(I32, s)), konst(I32, c))
+
+
+def gen_masked(ctx: Ctx, depth: int, room: int) -> Expr:
     """The address of an array element, (i << s) + c, with a masked index
     i = x & m, whose bound m may let a word access go without its compare
     (README.md). Often c puts the bound's last element just at the end of
@@ -467,8 +497,8 @@ def gen_masked(ctx: Ctx, depth: int) -> Expr:
         c = (0x10000 - (m << s) - ctx.rng.randrange(-8, 64)) // 4 * 4
     else:
         c = ctx.rng.randrange(0, 0x2000) // 4 * 4
-    c = min(max(c, 0), 0x10000 - 24)
-    fits = (0x10000 - 21 - c) >> s  # the largest index whose 8 bytes and offset fit
+    c = min(max(c, 0), 0x10000 - room) // 4 * 4
+    fits = (0x10000 - room - c) >> s  # the largest index that leaves room bytes in bounds
     x = binop("and", I32, gen_expr(ctx, I32, depth), konst(I32, fits))
     if ctx.rng.random() < 0.5:
         x = binop("sub", I32, x, konst(I32, 0))
@@ -481,7 +511,7 @@ def gen_load(ctx: Ctx, t: int, depth: int) -> Expr:
     op = ctx.rng.choice([o for o, (rt, n, s) in LOADS.items() if rt == t])
     _, n, signed = LOADS[op]
     offset = ctx.rng.choice([0, 0, 1, 4, 8, 13])
-    a = gen_address(ctx, depth)
+    a = gen_address(ctx, depth, offset + n)
 
     def ev(st: State) -> int:
         addr = a.ev(st) + offset
@@ -496,7 +526,7 @@ def gen_store(ctx: Ctx, depth: int) -> Stmt:
     op = ctx.rng.choice(list(STORES))
     t, n = STORES[op]
     offset = ctx.rng.choice([0, 0, 2, 4, 9])
-    a, v = gen_address(ctx, depth), gen_expr(ctx, t, depth)
+    a, v = gen_address(ctx, depth, offset + n), gen_expr(ctx, t, depth)
 
     def run(st: State) -> None:
         addr = a.ev(st) + offset

@@ -19,7 +19,7 @@ const usage =
     \\  -2004                Put the screen at 0x400, as the 2004 emulator does.
     \\  -d, --dump ADDR:N    Print N memory words from ADDR. May be repeated.
     \\  -n, --max-steps N    Stop after N steps (default 100000000).
-    \\  -i, --input FILE     Read the console input from FILE instead of stdin.
+    \\  -i, --input FILE     Read the console input from FILE, or stdin for -.
     \\      --irq STEP:VEC   Raise IRQ with vector VEC before step STEP.
     \\      --nmi STEP:VEC   Raise NMI with vector VEC before step STEP.
     \\                       Both may be repeated. Steps count from 0.

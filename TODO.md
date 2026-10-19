@@ -18,12 +18,6 @@ The open items of
 [doc/review/second-repository-review.md](doc/review/second-repository-review.md),
 added 2026-10-19. The section numbers are its.
 
-- **The emulator** (§6): `--input` with a directory runs as an ended
-  input and exits 0, with no `errors.py` case; the README still says "No
-  device raises IRQ or NMI yet"; the timer's "keeps its vector" rule has
-  no test of its own; `--input -` is undocumented; and a comment in
-  `cpu.zig` says a console read without input returns 0, where the code
-  reads memory.
 
 ## FPGA core
 

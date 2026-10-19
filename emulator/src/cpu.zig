@@ -323,8 +323,8 @@ pub const Cpu = struct {
     console: ?*std.Io.Writer,
     /// When set, a data read of `console_addr` takes the next byte from
     /// here and returns it with `console_byte`, or returns `console_end`
-    /// once it is empty. Unset, as in most unit tests, the read returns 0,
-    /// as when no byte is there yet.
+    /// once it is empty. Unset, as in most unit tests, the read falls
+    /// through to memory, like any other word.
     input: ?*std.Io.Reader,
     /// The math unit at `mpu_base`.
     mpu: Mpu,

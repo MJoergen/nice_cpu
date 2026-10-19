@@ -229,6 +229,8 @@ ISA.md §8.6: "A request keeps the vector it was raised with." The unit test at 
 - `cpu.zig` line 326's comment says a console read returns 0 when the input is unset; the code falls through to memory.
 - The emulator's console read blocks, so it never returns 0 for "no byte waiting". `nice_getc`'s retry loop and `nice_pollc`'s −2 can be exercised only on hardware; `device.nasm` and `libc/test/nice.c` test the byte and end paths.
 
+**Resolved**: the README and the usage text say that `-` is stdin, and the comment says the read falls through to memory. The blocking read stays as it is.
+
 ## 7. What is correct
 
 - **The pipelined core** against the emulator on everything `make test` runs, on the 350 programs of `make programs` (first run on it here), on the benchmark with the translator's output of 2026-10-19, and on 360 runs of stores at every distance up to 40 words. Its code keeps the rules of ISA.md and MICROARCH.md as §1.1 lists them.

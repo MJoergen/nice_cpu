@@ -608,9 +608,11 @@ clears the bytes in the word with `IAND` and a mask from `W.bmask` or
 `W.hmask`, shifts the new bytes into place, and writes the word back
 with `OR`. With bounds checks and a memory that cannot grow, an offset
 that is a multiple of 4 goes into the word operand, as for the words
-above. Two bytes at p = 3 straddle two words. The code checks for that
-and jumps to a stub after the epilogue, which does the access with the
-two words and jumps back.
+above. If the bound of the base, as for the words above, shows that
+all the bytes are in the memory, there is no bounds check. Two bytes at
+p = 3 straddle two words. The code checks for that and jumps to a stub
+after the epilogue, which does the access with the two words and jumps
+back.
 
 If the address is a constant, nicewasm adds the offset itself. If all
 the bytes are in the initial memory, or there are no bounds checks,

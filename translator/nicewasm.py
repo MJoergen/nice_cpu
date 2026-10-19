@@ -3459,7 +3459,8 @@ class FunctionTranslator:
         words k: the address is a + 4 * k. With bounds checks, traps with
         code 2 unless all n bytes there are in the memory. A trap's R2 is
         the start of this code, the first instruction of the access
-        (§9.4). If base is the constant const, and the n bytes are in the
+        (§9.4). If bound knows that every value of base passes the
+        compare, there is none. If base is the constant const, and the n bytes are in the
         initial memory or there are no bounds checks, returns the address
         and emits no code. With fold, an offset that is a multiple of 4 may
         come back in k, which is otherwise 0."""
@@ -3489,6 +3490,14 @@ class FunctionTranslator:
         if limit <= 0 and not self.t.growable:
             # No n bytes fit in the memory.
             self.trap_jump(2, start)
+            return None, a, 0
+        if not self.t.growable and const is None and self.bound_of(base) < limit - offset:
+            # Every value of base passes the compare below, so there is none.
+            if fold and offset % 4 == 0:
+                return None, base, offset // 4
+            if offset:
+                a = self.new_vreg()
+                self.emit("ADD", a, base, words(offset, I32)[0])
             return None, a, 0
         trap = self.trap_stub(2, start)
         if self.t.growable or const is not None:

@@ -300,7 +300,11 @@ SHAPES = {"bound": (r"SUB\[M\]", False),
           "bound64": (r"SUB\[M\]", False),
           "bound64_over": (r"SUB\[M\] +R0, R\d+, 510$", True),
           "bound_grow": (r"SUB\[M\] +R0, R\d+, @W.wlimit4$", True),
-          "bound_unchecked": (r"0x3FFFFFFF|^ +ADD", False)}
+          "bound_unchecked": (r"0x3FFFFFFF|^ +ADD", False),
+          "byte_bound": (r"SUB\[M\]", False),
+          "byte_bound_over": (r"SUB\[M\] +R0, R\d+, 65536$", True),
+          "half_bound": (r"SUB\[M\] +R0, R\d+, 65535$", False),
+          "half_bound_over": (r"SUB\[M\] +R0, R\d+, 65535$", True)}
 
 # Options for nicewasm.
 OPTIONS = {"unchecked": ["--no-bounds-checks"],
@@ -570,6 +574,21 @@ def bound_case(index: bytes, c: int, at: int, value: int, i64: bool = False) -> 
         memory(1),
         exports(("main", 0, 0)),
         code(([I32, I32, I64], st(I64_STORE if i64 else I32_STORE, at, value) + load)))
+
+
+def byte_bound(op: int, c: int, value: int) -> bytes:
+    """The module of the byte bound cases: main stores value at x + c with
+    the store of op's size, x = 0x1234 & 0xFFF = 0x234, and loads it back
+    with op from (0x1234 & 0xFFF) + c. All that nicewasm knows of the load's
+    address is that it is at most 0xFFF + c."""
+    store = I32_STORE8 if op == I32_LOAD8_U else I32_STORE16
+    return module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, st(store, 0x234 + c, value) + i32_const(0x1234) + local_set(0)
+              + local_get(0) + i32_const(0xFFF) + AND + i32_const(c) + ADD + mem(op))))
 
 
 # x & 255 with x = 0x1234 in local 0: i = 0x34 = 52, but all nicewasm
@@ -1984,6 +2003,20 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # bound without bounds checks: i + 16128 is the word index, below
     # 2^30, so it needs no AND with 0x3FFFFFFF.
     ("bound_unchecked", bound_case(AND255, 64512, 64720, 0x11223344), "", 0x11223344),
+    # Byte loads at a bounded address (byte_bound). 0xFFF + 0xF000 =
+    # 65535 is the last byte, so the load has no compare. It is at
+    # 0x234 + 0xF000 = 62004.
+    ("byte_bound", byte_bound(I32_LOAD8_U, 0xF000, 0xAB), "", 0xAB),
+    # 0xFFF + 0xF001 = 65536 is past the memory, so the compare of the
+    # address with 65536 stays. The load is at 62005.
+    ("byte_bound_over", byte_bound(I32_LOAD8_U, 0xF001, 0xCD), "", 0xCD),
+    # Two bytes: 0xFFF + 0xEFFF = 65534, and 65534 + 1 is the last byte,
+    # so there is no compare with 65535. The load is at 62003, and its
+    # two bytes straddle two words.
+    ("half_bound", byte_bound(I32_LOAD16_U, 0xEFFF, 0xBEEF), "", 0xBEEF),
+    # 0xFFF + 0xF000 = 65535, and its second byte is past the memory, so
+    # the compare with 65535 stays. The load is at 62004.
+    ("half_bound_over", byte_bound(I32_LOAD16_U, 0xF000, 0xBEEF), "", 0xBEEF),
     # A memory of 0 pages: every access traps.
     ("nomemory", module(
         types(MAIN_TYPE),

@@ -96,6 +96,13 @@ the cores once for each core. Everything it makes goes in `build/`.
 [vsg.yml](vsg.yml). It needs `pip install vsg`. It fails on errors and only
 warns about lines over 100 columns.
 
+`make timing` runs Vivado on the pipelined core alone, out of context, as
+[doc/review/pipeline-timing.md](../doc/review/pipeline-timing.md)
+measures it ([timing.tcl](timing.tcl)): synthesis, placement, and routing
+for the part of the MEGA65 with a 10 ns clock. It prints the worst
+register-to-register path and leaves the 50 worst in `build/timing.rpt`.
+It takes about 10 minutes, and `VIVADO` names the executable.
+
 `tb_mpu` checks every word of the math unit against `numeric_std`: for 20
 corner cases and 2000 random pairs of A and B, and for 16 corner cases and
 4000 random pairs of C and D. It also checks that a read of a result waits

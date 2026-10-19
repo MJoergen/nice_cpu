@@ -65,6 +65,7 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
     cd hdl && make test              # synth check, unit tests, tb_trace, then both cores diffed against niceemu
     cd hdl && make lint              # vsg style check (pip install vsg)
     cd hdl && make formal            # SymbiYosys: the ports of both cores, the timer, and wb_dmux; proofs of FETCH, PREPARE, and DBUS
+    cd hdl && make timing            # the pipelined core's worst paths out of context in Vivado (10 minutes)
     cd hdl && make programs          # the runtime and translator programs on CORE (minutes)
     cd doc/intro && make test        # run the slides' example programs
     cd doc/intro && make pdf         # rebuild the slides (pdflatex, beamer)
@@ -72,7 +73,8 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
     make diagrams                    # render the diagrams in doc/ to PNG (pdflatex, pdftoppm)
 
 Vivado 2025.1 is installed but not on PATH: `/opt/Xilinx/2025.1/Vivado/bin/vivado`.
-The out-of-context timing script is in `doc/review/pipeline-timing.md` (Method).
+`make timing` in `hdl/` runs the out-of-context timing script `hdl/timing.tcl`
+of `doc/review/pipeline-timing.md` (Method).
 
 Run the relevant `make test` after every change.
 

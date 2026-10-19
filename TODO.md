@@ -4,11 +4,66 @@ This is the single list of open items for the repository: work not done
 yet, questions not decided, claims not checked, and ideas for later. Each
 item names where it comes from. Add new items here, not in other files.
 
-Every finding of the reviews in [doc/review/](doc/review/) is closed,
-those of [doc/review/repository-review.md](doc/review/repository-review.md)
-included. The claims that the repository review of 2026-10-14 left
+Every finding of the reviews in [doc/review/](doc/review/) before
+2026-10-19 is closed, those of
+[doc/review/repository-review.md](doc/review/repository-review.md)
+included. The open findings of the review of 2026-10-19 are the first
+section below. The claims that the repository review of 2026-10-14 left
 unchecked were checked on 2026-10-15 (repository-review.md §6.1). No code
 has TODO or FIXME comments.
+
+## Findings of the review of 2026-10-19
+
+The open items of
+[doc/review/second-repository-review.md](doc/review/second-repository-review.md),
+added 2026-10-19. The section numbers are its.
+
+- **The cycle model's counter address and math unit** (§3.1, §3.2).
+  `bench/pipecycles.py` looks for `INSTR_LO` at `0xFFFFFF12`, which has
+  been `TIMER_VECTOR` since the swap of 2026-10-17, so `make cycles` and
+  `make profile` print no phase rows. It also holds every result of the
+  math unit for 35 cycles, where the multiplier has taken 2 since
+  2026-10-16 and the dividers skip runs of zero quotient bits. Fix the
+  address, add a test that expects the phase rows of `bench.bin`, give
+  the model the new math unit, and compare it with `make core
+  CORE=pipeline` again (§3.3): today it is within 12% of the core on each
+  phase of the translated benchmark, but 3.4 times too high on `rng64`
+  of `hand.nasm`.
+- **The tables of 2026-10-16** in `bench/README.md` and `hdl/README.md`
+  pair the pipelined core's run of the old translator output with the
+  multi-cycle core's run of the new. §3.4 has the numbers of 2026-10-19.
+- **Documents that fell behind the pipelined core** (§2): README.md, the
+  slides and `nice_intro.pdf`, `bench/README.md`, and the docstring of
+  `pipecycles.py` say it is not written (§2.1); MICROARCH.md §8 describes
+  the memory system as if it existed, §9 and ASSUMPTIONS.md item 14 do
+  not know of the PREPARE and DBUS proofs, and §7.3 says PREPARE can
+  reduce the shift count (§2.2, §2.3); hdl/README.md lost its `## The
+  trace writer` heading (§2.4); the test order steps below say the
+  multi-cycle core passes where both do (§2.5); ISA.md §8.3 says the
+  simulation memory has no input (§2.6); CLAUDE.md's `make formal` line,
+  REFERENCES.md without pipeline-timing.md, and the timer's range in the
+  usage text of `main.zig` (§2.7).
+- **CI runs `make programs` on the multi-cycle core only** (§4.1). The
+  pipelined core passed all 350 programs on 2026-10-19, by hand.
+- **Stores at every distance up to 40 words**, for `hazard.nasm` (§1.2):
+  the boundary of FETCH's range, which the sweep of the review covered
+  and `make test` does not.
+- **The translator** (§5): the rules of commits fa3a8a7, 2e77769, and
+  3e0a2c1 have no test, since no module reaches their shape; a test of
+  the passes on hand-built instruction lists would (§5.2). `fuzz.py`
+  checks neither traps, nor R7 to R13, nor the console, nor more than 18
+  memory words, and runs the default options only; the review's
+  differential check against the translator of 88276db did, on 1300
+  modules, and found nothing (§5.3). The README says `test/safe.zig` is
+  about 7100 words, where it is 5182, lists `i32.mul` among the results
+  that go straight to a local, which the math unit path does not forward,
+  and omits the second form of `invert_back_edges` (§5.4).
+- **The emulator** (§6): `--input` with a directory runs as an ended
+  input and exits 0, with no `errors.py` case; the README still says "No
+  device raises IRQ or NMI yet"; the timer's "keeps its vector" rule has
+  no test of its own; `--input -` is undocumented; and a comment in
+  `cpu.zig` says a console read without input returns 0, where the code
+  reads memory.
 
 ## FPGA core
 
@@ -183,7 +238,9 @@ has TODO or FIXME comments.
     `__mul64` in `runtime/`, and `% 26` in strings read the result right
     after writing the operands. Hiding the 35 cycles needs independent
     work in between, which the translator rarely has without moving
-    stores past loads. `__mul64` could overlap its partial products.
+    stores past loads. `__mul64` could overlap its partial products. The quarter is the model's figure with a
+    35-cycle multiplier, which the math unit no longer has
+    (second-repository-review.md §3.2).
   - *A read right after a skipped bounds-check jump*, about a tenth, in
     chains of dependent loads, where no instruction can fill the slot.
     Speculative reads (above) would remove it.

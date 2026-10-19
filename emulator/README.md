@@ -152,15 +152,16 @@ request raised by the last step of a run is not listed as pending at the
 end, as on the FPGA core, where it only reaches the core after that step.
 The timer's requests are IRQs, like those of `--irq`. A request merges
 with one that is pending, and an `--irq` request replaces the vector of a
-pending one. `test/timer.nasm` checks the counting, the stop, and the
-merging.
+pending one. `test/timer.nasm` checks the counting, the stop, the
+merging, and that a request keeps the vector it was raised with when
+the vector is written while it is pending.
 
 With `--no-timer-irq`, the timer counts, reloads, and answers reads as
 before, but raises no requests. A test of an FPGA core that may take a
 timer request later than the emulator does (doc/MICROARCH.md §6) then
 raises each one with `--irq` at the step where the core took it, as it
 does for its own requests ([hdl/README.md](../hdl/README.md)). `make test`
-runs `timer.nasm` so, with its eight requests given by `--irq`, and the
+runs `timer.nasm` so, with its ten requests given by `--irq`, and the
 output must equal that of the plain run.
 
 Instruction fetches from `0xFFFFFF00`–`0xFFFFFFFF` read 0, as ISA.md §8.3

@@ -39,9 +39,11 @@ OPTS_perf    = --nmi 3:0x41 -d 0xffffff40:5
 OPTS_timer   = -d 0xffffff10:4
 # timer again, with the timer's requests raised by --irq instead, before
 # the steps after those that raise them in timer.nasm's table: 6, 16, 19,
-# 22, 25, 28, 31, and 34. The output must equal timer.expected.
+# 22, 25, 28, 31, 34, 41, and 49, the last with vector 0x42. The output
+# must equal timer.expected.
 OPTS_timer_noirq = --no-timer-irq --irq 7:0x41 --irq 17:0x41 --irq 20:0x41 --irq 23:0x41 \
-  --irq 26:0x41 --irq 29:0x41 --irq 32:0x41 --irq 35:0x41 -d 0xffffff10:4
+  --irq 26:0x41 --irq 29:0x41 --irq 32:0x41 --irq 35:0x41 --irq 42:0x41 --irq 50:0x42 \
+  -d 0xffffff10:4
 OPTS_input   = --input test/input.txt
 
 define check

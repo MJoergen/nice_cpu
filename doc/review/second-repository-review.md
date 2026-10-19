@@ -221,6 +221,8 @@ CLAUDE.md asks for a test with every new rule. Commits fa3a8a7 (the instruction 
 
 ISA.md §8.6: "A request keeps the vector it was raised with." The unit test at `cpu.zig` line 1487 rewrites `TIMER_VECTOR` only after an `--irq` request has replaced the timer's, so it checks the merge, and `test/timer.nasm` never changes the vector after setting it. A scratch probe that raises the timer's request with E = 0, rewrites the vector, stops the timer, and sets E showed the right vector taken, so the emulator is correct. **Fix:** add those steps to `timer.nasm`, with the expected file checked by hand.
 
+**Resolved**: `timer.nasm` has sixteen more steps: a request raised with E = 0, the vector rewritten, the timer stopped, and E set, so that the entry must come through the old vector, and then one through the new vector. The expected file is checked by hand, `timer_noirq` raises the two requests with `--irq`, and both cores run the program in `make -C hdl test`.
+
 ### 6.4 Nits
 
 - `main.zig` line 261 accepts `--input -` for stdin, which neither the usage text nor the README says.

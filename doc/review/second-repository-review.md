@@ -192,6 +192,8 @@ CLAUDE.md asks for a test with every new rule. Commits fa3a8a7 (the instruction 
 
 `fuzz.py` runs the default options only, and its model checks R1 and a normal halt: not the trap codes and R2, which TODO.md records, and also not R7 to R13 across the call, not the console, and only 18 words of the memory. The differential check above covered those, and found nothing; a version of it in the repository would keep it so. The script is `diff_fuzz.py` in the scratch directory of this review, with the old translator beside it, and TODO.md already asks for such a mode.
 
+**Resolved**: `test/diff_fuzz.py` is the differential check, with `--old REV` for the version to compare with, and `make diff` runs a few hundred modules in every mode against `OLD`, `main` by default. It is not in `make test`, since it takes minutes and needs git.
+
 ### 5.4 README nits
 
 - Line 92: "`test/safe.zig` is about 7100 words built with ReleaseSafe". It is 5182, as the README's own measurements of 2026-10-19 and `make -C bench words` say. The Debug figure on the same line was not checked.

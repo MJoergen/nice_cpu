@@ -821,6 +821,7 @@ survives a call of a helper, as it does any §9.3 call.
     make test        # run the test modules, then test/fuzz.py, test/passes.py, and test/errors.py
     make typecheck   # mypy --strict
     make wasm        # rebuild test/*.wasm from test/*.c, test/*.zig, and test/*.rs
+    make diff        # compare with an older translator, OLD=main, on random modules (minutes)
 
 `test/run.py` translates each test module and joins it with the runtime.
 It then assembles and runs the program. It checks main's result in R1,
@@ -857,3 +858,15 @@ built by hand: `hoist_into_slots` after the write of an address
 register, `tail_calls` with data between the call and the return, and
 `duplicate_tails` in the stubs. These are rules that no module reaches
 today, so `run.py` and `fuzz.py` cannot test them.
+
+`make diff` compares the translator with an older version of itself,
+`OLD`, a git revision, `main` by default: `test/diff_fuzz.py` translates
+random modules with both, runs both programs, and compares the console
+output, the halt reason, the exit status, R1, R7 to R13, and every word
+of the linear memory. The modules are `fuzz.py`'s, and, with `--trap`,
+the same with statements that may trap: accesses out of bounds,
+divisions by zero and of the most negative value by −1, bad
+`call_indirect`s, `memory.fill` and `memory.copy` past the end,
+`unreachable`, and `memory.grow`. So it checks the trap paths, which
+`fuzz.py`'s model does not know, and each mode of the translator. It is
+not part of `make test`, since it takes minutes and needs git.

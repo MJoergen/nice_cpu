@@ -29,10 +29,23 @@ test: emulator
 emulator:
 	$(MAKE) -C ../emulator build
 
+# Compares the translator with an older version of itself, OLD, a git
+# revision, on random modules: fuzz.py's, and modules with accesses,
+# divisions, and indirect calls that may trap, in each mode (README.md,
+# Test). Not part of make test: it takes minutes and needs git.
+OLD ?= main
+diff: emulator
+	@$(PYTHON) test/diff_fuzz.py --old $(OLD) 1 60
+	@$(PYTHON) test/diff_fuzz.py --old $(OLD) --trap 1 150
+	@$(PYTHON) test/diff_fuzz.py --old $(OLD) --trap --grow 1 40
+	@$(PYTHON) test/diff_fuzz.py --old $(OLD) --trap --no-mpu 1 40
+	@$(PYTHON) test/diff_fuzz.py --old $(OLD) --trap --library 1 40
+	@$(PYTHON) test/diff_fuzz.py --old $(OLD) --unchecked 1 30
+
 # Needs mypy (pip install mypy).
 typecheck:
 	cd test && MYPYPATH=../../assembler:.. $(PYTHON) -m mypy --strict ../nicewasm.py run.py errors.py \
-	  wasm.py fuzz.py passes.py
+	  wasm.py fuzz.py passes.py diff_fuzz.py
 
 wasm:
 	@for t in $(C_TESTS); do \
@@ -55,4 +68,4 @@ wasm:
 	done
 	@rm -f test/*.wasm.o
 
-.PHONY: test emulator typecheck wasm
+.PHONY: test emulator typecheck wasm diff

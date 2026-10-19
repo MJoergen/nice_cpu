@@ -18,11 +18,7 @@ The open items of
 [doc/review/second-repository-review.md](doc/review/second-repository-review.md),
 added 2026-10-19. The section numbers are its.
 
-- **The translator** (§5): `fuzz.py`
-  checks neither traps, nor R7 to R13, nor the console, nor more than 18
-  memory words, and runs the default options only; the review's
-  differential check against the translator of 88276db did, on 1300
-  modules, and found nothing (§5.3). The README says `test/safe.zig` is
+- **The translator** (§5): the README says `test/safe.zig` is
   about 7100 words, where it is 5182, lists `i32.mul` among the results
   that go straight to a local, which the math unit path does not forward,
   and omits the second form of `invert_back_edges` (§5.4).
@@ -253,13 +249,13 @@ added 2026-10-19. The section numbers are its.
     constant.
   - *What `fuzz.py` cannot check.* Its model does not know a trap's code
     or R2, so every access it generates is in bounds, and the trap paths
-    are tested by `run.py` only. The reviews of the 2026-10-19 work used
-    a differential fuzzer instead, which runs two versions of nicewasm on
-    the same random programs and compares R1, the memory, and the trap's
-    R2 by wasm instruction; it found two bugs in the early return that
-    the model-based fuzzer and `run.py` had missed. A mode like it in
-    `fuzz.py`, with traps in the model, would catch such bugs before a
-    review does.
+    are tested by `run.py`, and by `make diff` (`test/diff_fuzz.py`),
+    which runs two versions of nicewasm on the same random modules, with
+    statements that may trap, and compares the console output, the halt,
+    the registers, and the memory. The differential fuzzer of the reviews
+    of 2026-10-19, which also compared a trap's R2 by wasm instruction,
+    found two bugs in the early return that `fuzz.py` and `run.py` had
+    missed. A model with traps in `fuzz.py` is still an idea.
 - **Benchmarks beyond [bench/](bench/README.md).** Dhrystone 2.1 would
   give a number to compare the core with other small processors, once it
   runs on a board. It needs `malloc`, `strcpy`, `strcmp`, and `printf`

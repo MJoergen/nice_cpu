@@ -2140,7 +2140,7 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
             problems.append("did not halt at ___wasm_trap")
         r2 = regs.get("R2", 0)
         first = assemble(TRAPS[name].format(R2=r2), tmp, assembler.labels)
-        if [image.get(r2 + i) for i in range(len(first))] != first:
+        if not first or [image.get(r2 + i) for i in range(len(first))] != first:
             problems.append(f"R2 does not point at {TRAPS[name].format(R2=hex(r2))}")
     elif not output.startswith("Halted (HALT)") or not output.endswith("exit 0\n"):
         problems.append("did not halt with HALT")

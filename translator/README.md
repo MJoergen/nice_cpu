@@ -659,6 +659,14 @@ parameter. These come after the prologue instead. If one of them sets
 the flags for the jump, a copy of it that writes R0 sets them before
 the prologue.
 
+A call of a function or a helper by its label, just before the return,
+is a tail call: the epilogue drops the frame and restores the saved
+registers, and then jumps to the label with `MOVE R15, label`, without
+pushing a return address. The callee then returns to this function's
+caller, with its results in R1 and up, which are this function's. A
+call with stack arguments drops them after it, so it is never a tail
+call.
+
 The translated functions may use every register. The helpers and
 `___wasm_start` use only R1–R6, R13, R14, and R15, so a value in R7–R12
 survives a call of a helper, as it does any §9.3 call.

@@ -1503,6 +1503,18 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
               + local_get(0) + i32_const(1) + SUB + local_get(1) + local_get(0) + ADD + call(1)
               + local_get(0) + ADD + END))),
      "", 30),
+    # g(x) = h(x + h(x)), with h(v) = 2v + 1, so g(5) = h(5 + 11) = 33. x
+    # lives across the first call in a saved register, which g restores
+    # before it jumps to h for the second call, a tail call (README.md).
+    # h then returns to main.
+    ("tailcall", module(
+        types(MAIN_TYPE, ([I32], [I32])),
+        funcs(0, 1, 1),
+        exports(("main", 0, 0)),
+        code((0, i32_const(5) + call(1)),
+             (0, local_get(0) + local_get(0) + call(2) + ADD + call(2)),
+             (0, local_get(0) + i32_const(2) + MUL + i32_const(1) + ADD))),
+     "", 33),
     # An i64 at 65532, a multiple of 4, passes the end by 4 bytes.
     ("oobword8", module(
         types(MAIN_TYPE),

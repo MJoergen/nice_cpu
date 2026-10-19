@@ -2421,6 +2421,36 @@ def early_exit(items: List[Item], saved: List[str], name: str
     before.append(Ins(j.op, ["R15", name], j.cond, "jump", [name], depth=j.depth))
     return before, later + items[jump + 1:], exit_code
 
+def tail_calls(items: List[Item]) -> List[Item]:
+    """Turns a call of a label just before the return into a TAIL, which
+    drops the frame, restores the saved registers, and jumps to the label
+    (finish). The callee then returns to this function's caller. The
+    call's push of the return address goes, and so does the return,
+    unless a jump goes to a label between them. A call with stack
+    arguments drops them after it, so it is not just before the return."""
+    refs = label_refs(items)
+    out: List[Item] = []
+    drop = -1  # the index of a return that goes
+    for k, it in enumerate(items):
+        if k == drop:
+            continue
+        if isinstance(it, Ins) and it.kind == "call" and operand_reg(it.ops[1]) == ("", None) \
+                and not it.ops[1].startswith("@"):
+            j = k + 1
+            while j < len(items) and (isinstance(items[j], str) or isinstance(items[j], Label)):
+                j += 1
+            ret = items[j] if j < len(items) else None
+            if isinstance(ret, Ins) and ret.op == "RET":
+                push = next(x for x in reversed(out) if not isinstance(x, str))
+                assert isinstance(push, Ins) and push.ops[0] == "@--R13"
+                out.remove(push)
+                out.append(Ins("TAIL", [it.ops[1]], kind="exit"))
+                if not any(isinstance(x, Label) and refs.get(x.name) for x in items[k + 1:j]):
+                    drop = j
+                continue
+        out.append(it)
+    return out
+
 class Translator:
     def __init__(self, m: Module, data: bytes, checks: bool = True,
                  library: Optional[str] = None, library_memory: Optional[int] = None,
@@ -4639,15 +4669,15 @@ class FunctionTranslator:
             out.append(instr("MOVE", "@--R13", r))
         if n_slots:
             out.append(instr("SUB", "R13", "R13", str(n_slots)))
-        for it in items:
-            if not (isinstance(it, Ins) and it.op == "RET"):
+        for it in tail_calls(items):
+            if not (isinstance(it, Ins) and it.op in ("RET", "TAIL")):
                 out += render([it])
                 continue
             if n_slots:
                 out.append(instr("ADD", "R13", "R13", str(n_slots)))
             for r in reversed(saved):
                 out.append(instr("MOVE", r, "@R13++"))  # last saved first
-            out.append(instr("MOVE", "R15", "@R13++"))
+            out.append(instr("MOVE", "R15", it.ops[0] if it.op == "TAIL" else "@R13++"))
         if exit_code:
             out += render(exit_code)
             out.append(instr("MOVE", "R15", "@R13++"))  # nothing to restore

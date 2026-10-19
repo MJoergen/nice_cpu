@@ -170,10 +170,10 @@ has TODO or FIXME comments.
   conditional instructions in place of short jumps, and multiplications
   and divisions by constants. `bench/` went from 3359061 to 1729523
   instructions, against 491617 for `hand.nasm`, and from about 5.55 to
-  about 2.27 million cycles by an estimate for the pipelined core of
-  MICROARCH.md. Trusting the alignment hint would save nothing now, as
-  one compare covers the bounds and the alignment. What is left, by the
-  estimate:
+  about 2.27 million cycles by `bench/pipecycles.py`, an estimate for
+  the pipelined core of MICROARCH.md. Trusting the alignment hint would
+  save nothing now, as one compare covers the bounds and the alignment.
+  What is left, by the estimate:
   - *Taken jumps resolved in WRITE*, about a third of the cycles above
     one per instruction: the interpreter's table jumps, which no layout
     avoids, and `br_if`s whose common path is the taken one. nicewasm

@@ -13,6 +13,7 @@ NICE with other processors.
     make core       # run both on the multi-cycle core in GHDL (about 20 minutes)
     make core CORE=pipeline  # the same on the pipelined core (about 20 minutes)
     make hazards    # count the pipeline hazards of MICROARCH.md §5 in both
+    make cycles     # estimate the cycles of both on the pipelined core of MICROARCH.md
     make native     # build and run bench.c on the host, as a check
     make wasm       # rebuild bench.wasm from bench.c (needs clang)
 
@@ -176,7 +177,46 @@ share of all instructions:
 MICROARCH.md §5.6 has the table from 2026-10-15 and the decisions it led
 to. `hazards.py --test` checks the counts on a small program whose hazards
 are counted by hand in the script, and `make test` runs it. `make
-typecheck` runs mypy on `expected.py` and `hazards.py`.
+typecheck` runs mypy on `expected.py`, `hazards.py`, and the tools below.
+
+## The cycle estimate
+
+`pipecycles.py` estimates the clock cycles a program takes on the
+pipelined core of [MICROARCH.md](../doc/MICROARCH.md), which is not built
+yet, and `make cycles` runs it on both programs. Like `hazards.py`, it
+takes `.bin` files, which it runs on the emulator with `--trace`, or
+traces. It is a model built from MICROARCH.md, not the core. Each
+instruction of the trace is decoded as `hazards.py` decodes it, split
+into its micro-operations, and sent through FETCH, DECODE, SEQUENCER,
+PREPARE, and WRITE under the rules of §3 to §5: two words fetched per
+cycle, a bubble of 2 cycles for a jump that DECODE resolves and of 5 for
+one resolved in WRITE, a data read that waits for an older write of SR
+or an older skipped jump, an address register written by the previous
+micro-operation, one data access per cycle on the bus, and 35 cycles for
+a result of the math unit. Every cycle above one per instruction is
+charged to the rule that caused it, so the output says where the time
+goes, and a program that reads the instruction counter around each phase,
+as both programs do, gets a row per phase:
+
+    bench.bin: 1774408 instructions, 2366863 cycles (estimate), CPI 1.334
+      cycles above 1/instruction: 592455
+      taken jumps resolved in WRITE (flush)                        191000  0.108/instr  32.2%
+      math unit result not ready                                   143406  0.081/instr  24.2%
+      ...
+
+      phase         instr    cycles    CPI   main extra cycles per instruction
+      rng64         89632    101952  1.137   mpu 0.10, early 0.02, fetch 0.01, flush 0.00
+      ...
+      total       1729523   2273490  1.315
+
+On 2026-10-19 the phases of the translated program take an estimated
+2273490 cycles, 1.3 per instruction, and those of `hand.nasm` 1361674,
+2.8 per instruction: the hand-written code has more instructions with
+side effects, memory operands, and reads of the math unit, and fewer
+instructions in all. Options such as `--flush`, `--early`, `--agen`, and
+`--mpu32` set the model's parameters, to try a design change before it
+is built. `pipecycles.py --test` checks the model on small programs whose
+cycles are worked out by hand in the script, and `make test` runs it.
 
 ## Checking the results
 

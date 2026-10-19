@@ -23,7 +23,8 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
   results, timed with the performance counters. `hand.nasm` is the same
   benchmark written by hand, the ceiling to compare with. `expected.py`
   computes the results in Python, and `make test` checks both against them.
-  `hazards.py` counts the pipeline hazards of MICROARCH.md §5 in a program.
+  `hazards.py` counts the pipeline hazards of MICROARCH.md §5 in a program,
+  and `pipecycles.py` estimates a program's cycles on the pipelined core.
 - `hdl/`: VHDL-2008, GHDL. Two cores with the same ports, but for the
   pipelined one's `stats_o`: a simple multi-cycle one in
   `src/multicycle.vhd`, the reference, and the pipelined one of
@@ -54,6 +55,7 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
     cd bench     && make test        # the benchmark on the emulator, with its results checked
     cd bench     && make core        # the benchmark on a core in GHDL, CORE=multicycle or pipeline (minutes)
     cd bench     && make hazards     # how often the pipeline hazards of MICROARCH.md §5 occur
+    cd bench     && make cycles      # the estimated cycles on the pipelined core, per phase
     cd bench     && make typecheck   # mypy --strict
     cd hdl && make test              # synth check, unit tests, tb_trace, then both cores diffed against niceemu
     cd hdl && make lint              # vsg style check (pip install vsg)

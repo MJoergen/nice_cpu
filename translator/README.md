@@ -179,8 +179,8 @@ and left the float library the same size.
 After that, the work on the flags, on constants, and on jumps of the
 README sections above took the benchmark from 1875636 to 1778350
 instructions (5% fewer), and from about 2994000 to about 2634000 cycles
-(12% fewer) on the pipelined core of doc/MICROARCH.md, by an estimate
-from its trace. The flags of a comparison or a load used directly, and
+(12% fewer) on the pipelined core of doc/MICROARCH.md, by the estimate
+of bench/pipecycles.py. The flags of a comparison or a load used directly, and
 multiplications by constants as shifts, saved the most, and copies of
 an interpreter's dispatch and conditional instructions in place of
 short jumps the next most. `test/safe.zig` became smaller, from 6691 to

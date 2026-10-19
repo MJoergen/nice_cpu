@@ -37,6 +37,7 @@ endef
 test: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 	@$(PYTHON) expected.py --check bench.c hand.nasm
 	@$(PYTHON) hazards.py --test
+	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --test
 	$(foreach p,$(PROGRAMS),$(call check,$(p)))
 
 # Runs both on a core in GHDL, so that the cycles are the core's: CORE,
@@ -79,9 +80,15 @@ $(BUILD)/%.bin: $(BUILD)/%.full.nasm ../assembler/niceasm.py
 hazards: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 	@NICEEMU=$(EMU) $(PYTHON) hazards.py $(BUILD)/bench.bin $(BUILD)/hand.bin
 
+# Estimates the cycles of both programs on the pipelined core of
+# doc/MICROARCH.md, from the emulator's traces (README.md, The cycle
+# estimate).
+cycles: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
+	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py $(BUILD)/bench.bin $(BUILD)/hand.bin
+
 # Needs mypy (pip install mypy).
 typecheck:
-	$(PYTHON) -m mypy --strict expected.py hazards.py
+	$(PYTHON) -m mypy --strict expected.py hazards.py pipecycles.py
 
 # Rebuilds bench.wasm from bench.c. Needs clang with the wasm32 target and
 # wasm-ld, and builds the C library first.
@@ -102,4 +109,4 @@ emulator:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: run test core hazards typecheck wasm native emulator clean
+.PHONY: run test core hazards cycles typecheck wasm native emulator clean

@@ -206,6 +206,25 @@ has TODO or FIXME comments.
     after a conditional jump is now in most inline memory accesses, so
     speculative reads (above) matter more; `make -C bench hazards` gives
     the new shares.
+  - *Two guesses that could become options.* The shorter arm of a diamond
+    is taken for the rarer one, which cost 2500 cycles in `strstr`, where
+    the short arm is the inner loop, and saved 51000 in heapsort. A group
+    of accesses may share a compare if the copy of the slow path costs at
+    most 20 words for each compare saved in a loop, twice that in two
+    loops, and nothing outside loops (`SHARE_COST`, `SHARE_CHECKS` in
+    `nicewasm.py`); 16 words loses the vm's groups, and 32 instructions
+    between the accesses saves 2000 cycles for 3% more code in
+    `test/safe.zig`. A profile, or a flag, would decide better than a
+    constant.
+  - *What `fuzz.py` cannot check.* Its model does not know a trap's code
+    or R2, so every access it generates is in bounds, and the trap paths
+    are tested by `run.py` only. The reviews of the 2026-10-19 work used
+    a differential fuzzer instead, which runs two versions of nicewasm on
+    the same random programs and compares R1, the memory, and the trap's
+    R2 by wasm instruction; it found two bugs in the early return that
+    the model-based fuzzer and `run.py` had missed. A mode like it in
+    `fuzz.py`, with traps in the model, would catch such bugs before a
+    review does.
 - **Benchmarks beyond [bench/](bench/README.md).** Dhrystone 2.1 would
   give a number to compare the core with other small processors, once it
   runs on a board. It needs `malloc`, `strcpy`, `strcmp`, and `printf`
@@ -220,6 +239,27 @@ has TODO or FIXME comments.
 
 Kept here so that they are not proposed again.
 
+- **Four ways to fewer pipeline stalls in translated code**, tried in the
+  translator work of 2026-10-19 and dropped, measured with
+  `bench/pipecycles.py`:
+  - Moving an instruction up past a conditional jump, into the slot
+    before a read, when its register is dead where the jump goes. It
+    saved 3000 cycles, but the instruction then also runs on the taken
+    path: bst ran 11116 more instructions, and strings took 1100 more
+    cycles.
+  - Sharing a compare by carrying the C flag to the next access, with no
+    copy of the slow path. Other compares between the accesses mostly
+    prevent it, and it saved 3000 cycles where the copy saves far more.
+  - Hiding the math unit's wait on the interpreter's `MUL` by moving
+    instructions between the operand writes and the result read. Only
+    two or three register-only instructions can move, about 4000 of the
+    70000 cycles, and they would cross a store and a trap's start label.
+  - A pass that moves an earlier instruction down to break the address
+    register and data bus stalls. It saved 721 cycles: the stalls that
+    the model counts are the second table read of a byte load, which the
+    bus delays anyway, and the pushes and pops of the hand-written
+    runtime. Interleaving crc32's two byte loads gained nothing for the
+    same reason.
 - **A condition or instruction for signed comparison.** A signed a < b
   takes two instructions, `?V XOR R14, R14, 0x10000000` and then `?N`,
   as ISA.md §9.2 shows and nicewasm does. Michael decided on 2026-10-15

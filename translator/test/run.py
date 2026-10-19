@@ -257,6 +257,10 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "oobend": "ROR R1, R1, 2",
          "oobword": "ROR R1, R1, 2",
          "oobwordwrap": "ROR R1, R1, 2",
+         "sharetrap3": "MOVE @___wasm_memory+3[R8], R1",
+         "sharetrap3_grow": "ADD[M] R1, R8, 3",
+         "sharetrap2": "MOVE R1, @___wasm_memory+2[R8]",
+         "sharetrap2_grow": "ADD[M] R1, R8, 2",
          "addrformtrap": "SUB[M] R0, R1, 16384",
          "oobbyte": "SUB[M] R0, R1, 65536",
          "oobhalf": "SUB[M] R0, R1, 65535",
@@ -272,6 +276,9 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "growtrap": ["--memory-pages", "2"],
            "growdyn": ["--memory-pages", "2"],
            "growdyntrap": ["--memory-pages", "2"],
+           "sharetrap2_grow": ["--memory-pages", "2"],
+           "sharetrap3_grow": ["--memory-pages", "2"],
+           "share_unchecked": ["--no-bounds-checks"],
            "memend_unchecked": ["--no-bounds-checks"],
            "narrow_unchecked": ["--no-bounds-checks"],
            "addrform_unchecked": ["--no-bounds-checks"],
@@ -507,6 +514,51 @@ def mul64_by(x: int, c: int, want: int, how: int) -> bytes:
     if how == 2:
         out += local_set(1) + local_get(1)
     return out + k(want) + EQ64
+
+
+# setup() installs a trap handler that adds word {0} of the memory to
+# the trap code in R1, and then traps as before, so that a case shows
+# that a store before the trap was done.
+SHARE_ASM = ("_setup MOVE @___wasm_trap_vector, _handler\n MOVE R15, @R13++\n"
+             "_handler ADD R1, R1, @___wasm_memory+{0}\n MOVE R15, ___wasm_trap\n")
+
+
+def share_trap(p: int, step: int) -> bytes:
+    """The module of the sharetrap cases. main calls setup, then, from p
+    on in steps, stores 7 at p, loads x from p + 8, and stores x + 1 at
+    p + 12, until an access traps. The three accesses share one compare
+    (README.md)."""
+    return module(
+        types(MAIN_TYPE, ([], [])),
+        imports(("env", "setup", 1)),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 1)),
+        code((2, call(0) + i32_const(p) + local_set(0) + loop()
+              + local_get(0) + i32_const(7) + mem(I32_STORE)
+              + local_get(0) + mem(I32_LOAD, 8) + local_set(1)
+              + local_get(0) + local_get(1) + i32_const(1) + ADD + mem(I32_STORE, 12)
+              + local_get(0) + i32_const(step) + ADD + local_set(0)
+              + br(0) + END + i32_const(0))))
+
+
+# The module of the share cases. In a loop that runs once, it stores at
+# base 1, loads from base 1 + 4, and stores at base 1 + 8. These share one
+# compare (README.md), which fails, since 1 is not a multiple of 4. Then
+# main returns the loaded value XOR the words at 0, 4, 8, and 12.
+SHARE_UNALIGNED = module(
+    types(MAIN_TYPE),
+    funcs(0),
+    memory(1),
+    exports(("main", 0, 0)),
+    code((2, i32_const(5) + i32_const(0x0D0C0B0A) + mem(I32_STORE)
+          + i32_const(1) + local_set(0) + loop()
+          + local_get(0) + i32_const(0x44332211) + mem(I32_STORE)
+          + local_get(0) + mem(I32_LOAD, 4) + local_set(1)
+          + local_get(0) + i32_const(-0x778899AB) + mem(I32_STORE, 8) + END
+          + local_get(1)
+          + i32_const(0) + mem(I32_LOAD) + XOR + i32_const(4) + mem(I32_LOAD) + XOR
+          + i32_const(8) + mem(I32_LOAD) + XOR + i32_const(12) + mem(I32_LOAD) + XOR)))
 
 
 # (name, module bytes or the name of test/X.wasm, hand-written assembly, R1)
@@ -1412,6 +1464,27 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         exports(("main", 0, 0)),
         code((1, i32_const(-4) + local_set(0) + local_get(0) + mem(I32_LOAD, offset=8)))),
      "", 2),
+    # From 65516 in steps of 4, the third round stores 7 at 65524, word
+    # 16381, which fails the shared compare. The first access's stub
+    # stores it, then the copy loads 2 from 65532, and the store at 65536
+    # traps. The handler adds the word at 65524, 7, to the code: 2 + 7 =
+    # 9. R2 points at the store in the code, which has no compare of its
+    # own. With a memory that can grow, each access has its own compare.
+    ("sharetrap3", share_trap(65516, 4), SHARE_ASM.format(16381), 9),
+    ("sharetrap3_grow", share_trap(65516, 4), SHARE_ASM.format(16381), 9),
+    # The same from 65520 in steps of 8: the second round stores 7 at
+    # 65528, word 16382, which fails the shared compare too, and the load
+    # at 65536 traps. 2 + 7 = 9.
+    ("sharetrap2", share_trap(65520, 8), SHARE_ASM.format(16382), 9),
+    ("sharetrap2_grow", share_trap(65520, 8), SHARE_ASM.format(16382), 9),
+    # Before the loop, bytes 5 to 8 are 0A 0B 0C 0D. Then bytes 1 to 4
+    # become 11 22 33 44, x is 0x0D0C0B0A, and bytes 9 to 12 become 55 66
+    # 77 88. So the words at 0, 4, 8, and 12 are 0x33221100, 0x0C0B0A44,
+    # 0x7766550D, and 0x88. Their XOR with x is 0x454345CB. The first
+    # access's stub stores at 1, and the copy does the others through the
+    # helpers. Without bounds checks, there is no compare to share.
+    ("share", SHARE_UNALIGNED, "", 0x454345CB),
+    ("share_unchecked", SHARE_UNALIGNED, "", 0x454345CB),
     # An i64 at 65532, a multiple of 4, passes the end by 4 bytes.
     ("oobword8", module(
         types(MAIN_TYPE),

@@ -481,9 +481,28 @@ c / 4, and for a constant added to such a sum. If no other code uses the address
 the shift and the add, and the access is three instructions after the
 `ADD` that computes t. Without bounds checks, t is taken modulo 2^30
 with an `AND`, and there is no compare. A later access at the same base
-in the same straight-line code uses the same t, with its own compare.
-What nicewasm knows of t is dropped when a register it involves is
-written, and at a label that a jump may reach.
+in the same straight-line code uses the same t. What nicewasm knows of t
+is dropped when a register it involves is written, and at a label that
+a jump may reach.
+
+Such a group of word accesses with the same t shares one compare: that
+of the first access, with the least limit of the group. If t passes it,
+every access of the group is in bounds and at a multiple of 4, so the
+others need no compare. A struct's fields, or a load and a store of the
+same array element, are such groups. If t fails the compare, the first
+access's stub does that access, as before, and then goes on in a copy
+of the code up to the end of the last access, after the epilogue. In
+the copy, each word access calls its checked helper, such as
+`W.cload4`, and the copy then jumps back to the code after the last
+access. So an access out of bounds still traps where it would have:
+the code before it has run, and its stores are done. R2 points at the
+access in the original code, which has no compare of its own, as for
+the copies of duplicate tails below. The stubs of the other accesses
+go, and that pays for most of the copy. The code from the first compare
+to the end of the last access may hold up to 16 other instructions. It
+may not change t, and no jump may come into it. Only code in a loop
+does this. With a memory that can grow, each access keeps its own
+compare.
 
 In a helper, the value is shifted together from, or split across, two
 words, or three for an unaligned `i64`. A store that changes only part
@@ -656,8 +675,9 @@ result that wasm defines for it, and `main`'s result in R1 must match.
 The modules have four functions with `i32` and `i64` parameters, 8 to 13
 locals, loops, blocks, branches with values, `select`,
 calls through the table, every integer operation and comparison, the
-results of comparisons kept in locals for later conditions, and loads
-and stores of every width at constant and dynamic addresses. That
+results of comparisons kept in locals for later conditions, loads
+and stores of every width at constant and dynamic addresses, and groups
+of word accesses at offsets from one address. That
 covers the rules for deferred values, fused comparisons, the flags,
 forwarded results, and register allocation above. `make test` runs 40 seeds with the
 math unit and 40 with `--no-mpu`; `test/fuzz.py 1 1000` runs more, and

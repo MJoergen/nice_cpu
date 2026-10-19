@@ -19,7 +19,8 @@ frame. The bodies use blocks,
 loops, if and else, br, br_if, and br_table with and without values,
 select, calls and call_indirect, every integer operation and comparison,
 comparisons kept in a local by local.tee for later conditions, eqz
-before if and br_if, i64 shifts by constants and by variables,
+before if and br_if, i64 shifts by constants and by variables, groups
+of word loads and stores at offsets from one address in a local,
 multiplications by constants, divisions with nonzero divisors, some of
 them constants, loads and stores of every width at
 constant and at dynamic addresses, and local.set and local.tee of locals
@@ -447,6 +448,54 @@ def gen_store(ctx: Ctx, depth: int) -> Stmt:
     return Stmt(a.code + v.code + mem(op, offset), run)
 
 
+def gen_group(ctx: Ctx, depth: int) -> Stmt:
+    """An address in an i32 local, often not a multiple of 4, then two to
+    four loads and stores of 4 or 8 bytes at offsets 0, 4, and 8 from the
+    local, with other statements between. In a loop, nicewasm checks them
+    with one compare (share_checks)."""
+    base = ctx.rng.choice(ctx.locals_of(I32))
+    a = gen_address(ctx, depth)
+
+    def set_base(st: State) -> None:
+        st.locals[base] = a.ev(st)
+    steps = [Stmt(a.code + local_set(base), set_base)]
+    k = ctx.usable.index(base)
+    del ctx.usable[k]  # nothing between changes the address
+    for _ in range(ctx.rng.randrange(2, 5)):
+        if ctx.rng.random() < 0.3:
+            steps.append(gen_set(ctx, 0))
+        offset = ctx.rng.choice([0, 4, 8])
+        if ctx.rng.random() < 0.5:
+            op = ctx.rng.choice([0x28, 0x29, 0x34, 0x35])
+            t, n, signed = LOADS[op]
+            j = ctx.rng.choice(ctx.locals_of(t))
+
+            def load(st: State, t: int = t, n: int = n, signed: bool = signed, j: int = j,
+                     offset: int = offset) -> None:
+                addr = st.locals[base] + offset
+                v = int.from_bytes(st.mem[addr:addr + n], "little")
+                if signed and v >> (8 * n - 1):
+                    v -= 1 << (8 * n)
+                st.locals[j] = v & mask(t)
+            steps.append(Stmt(local_get(base) + mem(op, offset) + local_set(j), load))
+        else:
+            op = ctx.rng.choice([0x36, 0x37, 0x3E])
+            t, n = STORES[op]
+            v = gen_expr(ctx, t, 0)
+
+            def store(st: State, n: int = n, v: Expr = v, offset: int = offset) -> None:
+                addr = st.locals[base] + offset
+                x = v.ev(st)
+                st.mem[addr:addr + n] = (x & ((1 << (8 * n)) - 1)).to_bytes(n, "little")
+            steps.append(Stmt(local_get(base) + v.code + mem(op, offset), store))
+    ctx.usable.insert(k, base)
+
+    def run(st: State) -> None:
+        for step in steps:
+            step.run(st)
+    return Stmt(b"".join(step.code for step in steps), run)
+
+
 def gen_call(ctx: Ctx, t: int, depth: int) -> Expr:
     """A call of a later function, so that there is no recursion; a quarter
     of them through the table."""
@@ -688,8 +737,10 @@ def gen_stmt(ctx: Ctx, depth: int) -> Stmt:
         if r < 0.9:
             return gen_br(ctx, 1)
         return gen_drop(ctx, 1)
-    if r < 0.40:
+    if r < 0.34:
         return gen_set(ctx, depth)
+    if r < 0.40:
+        return gen_group(ctx, depth)
     if r < 0.55:
         return gen_store(ctx, depth)
     if r < 0.65:

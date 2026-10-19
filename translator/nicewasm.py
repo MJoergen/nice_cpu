@@ -294,6 +294,18 @@ class Ins:
 Item = Union[Ins, Label, str]
 
 
+@dataclass(eq=False)
+class Access:
+    """A word access whose bounds and alignment one compare checks
+    (word_access): SUB[M] R0, t, limit, then ?!C MOVE R15, slow, then the
+    access, then the label back, where the stub at slow comes back to."""
+    t: str
+    limit: int
+    check: Ins
+    jump: Ins
+    back: str
+
+
 def make_ins(mnemonic: str, *operands: str) -> Ins:
     """An instruction from its mnemonic, which may start with a condition
     such as ?Z, and its operands. A jump to a label or through the trap
@@ -2049,6 +2061,12 @@ def if_convert(items: List[Item]) -> List[Item]:
     return [x for x in out if x != ""]
 
 
+# The most other instructions among a group of word accesses with the
+# same word index that share a compare (share_checks). Larger groups
+# save few cycles more and cost more words.
+SHARE_CHECKS = 16
+
+
 # The most instructions of the code that a jump goes to, which then takes
 # the jump's place (duplicate_tails), and the most if that code ends in
 # the jump of a br_table.
@@ -2656,6 +2674,7 @@ class FunctionTranslator:
         # aligned. If aligned, the address is 4 * t modulo 2^32, so it is
         # a multiple of 4 and its word is t modulo 2^30.
         self.word_index: Dict[str, Tuple[str, bool]] = {}
+        self.accesses: List[Access] = []  # for share_checks
         # What the flags say about an i32 value, until an instruction
         # changes the flags or a label comes: the virtual registers that
         # hold the value, the condition under which it is not 0, and the
@@ -3217,9 +3236,11 @@ class FunctionTranslator:
                 self.emit("?C MOVE", "R15", slow)
                 k = 0
             self.emit("SUB[M]", "R0", u, f"@W.wlimit{n}")
+            self.emit("?!C MOVE", "R15", slow)
         else:
-            self.emit("SUB[M]", "R0", u, str(limit))
-        self.emit("?!C MOVE", "R15", slow)
+            check = self.emit("SUB[M]", "R0", u, str(limit))
+            jump = self.emit("?!C MOVE", "R15", slow)
+            self.accesses.append(Access(t, limit, check, jump, back))
         last = [self.emit(mnemonic, *ops)
                 for mnemonic, *ops in self.expand(aligned, lambda j: self.mem_word(k + j, u))][-1:]
         self.label(back, keep=True)
@@ -4292,6 +4313,189 @@ class FunctionTranslator:
         for rt, src in zip(self.ftype.results, results):
             self.move([f"R{k + 1}" for k in range(SIZES[rt])], src)
 
+    def share_checks(self) -> None:
+        """Gives a group of word accesses with the same word index t, in
+        the same straight-line code in a loop, one compare: that of the
+        first, with the least of their limits. If it passes, every access
+        of the group is in bounds and at a multiple of 4, and the code
+        goes on without the other compares, whose stubs go. If it fails,
+        the first access's stub does that access, and then goes on in a
+        copy of the code after it, up to the end of the last access. In
+        the copy, each word access is the code of its stub, which calls
+        the checked helper, and the copy then jumps back to the code. So
+        an access out of bounds traps where it would have, after the code
+        before it has run, and a trap's R2 points at the original code, as
+        for duplicate_tails. The code may not write t, and no jump from
+        the code may reach into it. Another stub that the copy jumps to and
+        that comes back into the code, such as that of a byte access, gets
+        a copy that comes back into the copy."""
+        body = self.body
+        at = {id(it): k for k, it in enumerate(body)}
+        labels = {it.name: k for k, it in enumerate(body) if isinstance(it, Label)}
+        by_check = {id(a.check): a for a in self.accesses}
+        from_body: set[str] = set()  # the labels that a jump in the body names
+        # The code of each stub that jumps back into the body: from its
+        # labels to that jump, or None if it has a conditional jump.
+        comes_back: Dict[str, Optional[List[Item]]] = {}
+        names: List[str] = []  # the labels at the start of the code in stub_code
+        stub_code: List[Item] = []
+        for it in body + self.stubs:
+            if isinstance(it, Label):
+                if any(isinstance(x, Ins) for x in stub_code):
+                    names, stub_code = [], []
+                names.append(it.name)
+            stub_code.append(it)
+            if not (isinstance(it, Ins) and it.kind == "jump"):
+                continue
+            if id(it) in at:
+                from_body.update(it.targets)
+            elif not it.cond and it.targets[0] in labels:
+                simple = not any(isinstance(x, Ins) and x.cond for x in stub_code)
+                comes_back.update((name, stub_code if simple else None) for name in names)
+            if not it.cond:
+                names, stub_code = [], []
+        out: List[Item] = []
+        done = 0  # body[:done] is in out
+        gone: set[str] = set()  # the labels of the stubs that go
+        for a1 in sorted(self.accesses, key=lambda a: at[id(a.check)]):
+            k = at[id(a1.check)]
+            if k < done or body[k + 1] is not a1.jump or not a1.check.depth:
+                continue
+            group = self.share_group(a1, k, by_check, from_body)
+            while len(group) > 1:
+                copy = self.share_copy(group, labels, by_check, comes_back)
+                if copy is not None:
+                    break
+                group.pop()
+            else:
+                continue
+            # The first access's stub goes on in the copy.
+            for it in comes_back[a1.jump.targets[0]] or []:
+                if isinstance(it, Ins) and it.kind == "jump" and it.targets == [a1.back]:
+                    it.targets = [copy[0].name]  # type: ignore[union-attr]
+                    it.ops[1] = it.targets[0]
+            self.stubs += copy
+            gone.update(a.jump.targets[0] for a in group[1:])
+            a1.check.ops[2] = str(min(a.limit for a in group))
+            end = labels[group[-1].back]
+            skip = {id(x) for a in group[1:] for x in (a.check, a.jump)}
+            backs = {a.back for a in group}
+            out += [it for it in body[done:end] if id(it) not in skip
+                    and not (isinstance(it, Label) and it.name in backs)]
+            done = end
+        self.body = out + body[done:]
+        stubs, self.stubs = self.stubs, []
+        going = False  # in a stub that goes, up to its jump back
+        for it in stubs:
+            going = going or (isinstance(it, Label) and it.name in gone)
+            if not going:
+                self.stubs.append(it)
+            elif isinstance(it, Ins) and it.kind == "jump" and not it.cond:
+                going = False
+
+    def share_group(self, a1: Access, k: int, by_check: Dict[int, Access],
+                    from_body: set[str]) -> List[Access]:
+        """The accesses with the same t as a1, whose compare is body[k],
+        that can share its compare (share_checks): those up to the first
+        label that a jump in the body names, other text than a comment, an
+        unconditional jump, a br_table, or a write of t, within
+        SHARE_CHECKS other instructions, and whose code ends before it."""
+        body = self.body
+        group = [a1]
+        n = 0
+        ended = 1  # the accesses group[:ended] end before the place reached
+        j = k + 2
+        while j < len(body):
+            it = body[j]
+            if isinstance(it, Label):
+                if it.name == group[-1].back:
+                    ended = len(group)
+                elif it.name in from_body:
+                    break
+            elif isinstance(it, str):
+                if not it.lstrip().startswith(";"):
+                    break
+            elif id(it) in by_check and by_check[id(it)].t == a1.t:
+                a = by_check[id(it)]
+                if body[j + 1] is not a.jump:
+                    break
+                group.append(a)
+                j += 1
+            elif it.kind == "exit" or (it.kind == "jump" and (not it.cond or len(it.targets) != 1)):
+                break
+            elif a1.t in self.written(it):
+                break
+            else:
+                n += 1
+                if n > SHARE_CHECKS:
+                    break
+            j += 1
+        return group[:ended]
+
+    def share_copy(self, group: List[Access], labels: Dict[str, int],
+                   by_check: Dict[int, Access], comes_back: Dict[str, Optional[List[Item]]]
+                   ) -> Optional[List[Item]]:
+        """The copy for a group of share_checks, with its own labels. Its
+        first item is the label at which the first access's stub goes on.
+        None if it cannot be made."""
+
+        def stub_of(a: Access) -> Optional[List[Item]]:
+            """The code of an access's stub, with its jump back."""
+            stub = comes_back.get(a.jump.targets[0])
+            if stub is None or stub[-1].targets != [a.back]:  # type: ignore[union-attr]
+                return None
+            return stub
+        if stub_of(group[0]) is None:
+            return None
+        first, end = labels[group[0].back], labels[group[-1].back]
+        rename: Dict[str, str] = {}  # the labels of the code in the copy
+
+        def copied(x: Item) -> Item:
+            if isinstance(x, Label):
+                rename[x.name] = self.new_label()
+                return Label(rename[x.name])
+            if not isinstance(x, Ins):
+                return x
+            return Ins(x.op, list(x.ops), x.cond, x.kind, list(x.targets), x.uses, x.defs)
+        code = self.body[first + 1:end]
+        where = {x.name: k for k, x in enumerate(code) if isinstance(x, Label)}
+        copy: List[Item] = [Label(self.new_label())]
+        k = 0
+        while k < len(code):
+            it = code[k]
+            a = by_check.get(id(it))
+            if a is None or code[k + 1:k + 2] != [a.jump]:
+                copy.append(copied(it))
+                k += 1
+                continue
+            # A word access: the code of its stub, then what follows its
+            # label back.
+            stub = stub_of(a)
+            if stub is None:
+                return None
+            copy += [copied(x) for x in stub[:-1] if not isinstance(x, Label)]
+            k = where.get(a.back, len(code)) + 1
+        copy.append(make_ins("MOVE", "R15", group[-1].back))
+        # Another stub that the copy jumps to and that comes back into the
+        # code gets a copy that comes back into the copy.
+        for c in copy:
+            if not (isinstance(c, Ins) and c.kind == "jump" and c.targets[0] in comes_back):
+                continue
+            stub = comes_back[c.targets[0]]
+            if stub is None:
+                return None  # it cannot tell where the stub goes
+            to = stub[-1].targets[0]  # type: ignore[union-attr]
+            if first < labels[to] <= end:
+                if to not in rename:
+                    return None  # back to code that the copy left out
+                c.targets = [self.new_label()]
+                c.ops[1] = c.targets[0]
+                copy.append(Label(c.targets[0]))
+                copy += [copied(x) for x in stub if not isinstance(x, Label)]
+                copy[-1].targets = [rename[to]]  # type: ignore[union-attr]
+                copy[-1].ops[1] = rename[to]  # type: ignore[union-attr]
+        return copy
+
     def finish(self) -> List[str]:
         """The back end: copies the parameters to their registers and sets
         the other locals to 0, allocates the registers, and adds the
@@ -4306,6 +4510,7 @@ class FunctionTranslator:
         n_results = sum(SIZES[t] for t in self.ftype.results)
         exit_ins = Ins("RET", [], kind="exit",
                        uses=frozenset(f"R{k + 1}" for k in range(n_results)))
+        self.share_checks()
         alloc = Allocator(entry + self.body + [Label(self.ret_label), exit_ins] + self.stubs,
                           ALLOC_REGS, CALLEE_SAVED, self.n_vregs)
         items = if_convert(tidy(alloc.run()))

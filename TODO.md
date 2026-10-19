@@ -19,10 +19,8 @@ has TODO or FIXME comments.
   - The cost of the waits that MICROARCH.md §5.3 and §5.6 discuss, from
     the pipelined core's cycles for the benchmark (`make core
     CORE=pipeline` in `bench/`), to decide on speculative reads (below).
-  - Speed: the store path runs from the ALU to the data bus in one cycle,
-    and PREPARE and WRITE depend on each other combinationally
-    (ASSUMPTIONS.md, item 6). No synthesis for a board has measured the
-    clock yet, which belongs to the example design (MICROARCH.md §10).
+  - Speed: the core alone reaches about 41 MHz, and NiceMonMEGA65 runs
+    it at 33.3 MHz. See the clock items below.
 - **Test order steps not done** (MICROARCH.md §9):
   - Step 4, hazard programs: `hdl/test/hazard.nasm` and
     `hdl/test/sidefx_prog.py`, which the multi-cycle core passes. Left
@@ -80,6 +78,44 @@ has TODO or FIXME comments.
   goes first. No device raises NMI.
 
 ## Pipelined core: after the first version
+
+- **A faster clock: the lean plan**
+  ([doc/review/pipeline-timing.md](doc/review/pipeline-timing.md)). WRITE
+  runs four carry chains in series in one cycle: the operand sum, the
+  shift count mod 33, the ALU or shifter, and the ± 1 of the
+  destination. Stand-ins of the fixes reach about 82 MHz out of context,
+  for about 6% more cycles in the translated benchmark and 4% in
+  `hand.nasm`. Each step starts in MICROARCH.md:
+  1. Register the redirect to FETCH, share one adder in the ALU
+     (MICROARCH.md §7.2), and give the ± 1 of a destination a cycle or a
+     micro-operation of its own.
+  2. Compute `R + c`, `R - 1`, and the store addresses of modes 011, 101,
+     and 111 in PREPARE, which waits when WRITE writes the register.
+  3. Reduce the shift counts before WRITE (MICROARCH.md §7.3), with one
+     more cycle for a count from a register.
+- **The store into fetched code limits the clock beyond about 88 MHz**
+  (pipeline-timing.md). Its three `in_range` compares feed `flush`, which
+  feeds the handshake of PREPARE and FETCH in the same cycle. Open: a
+  flush a cycle later, or compares made before WRITE, and what either
+  costs in cycles.
+- **The clock of the fast-clock plan** (pipeline-timing.md): a shift over
+  three cycles and every operand value from PREPARE reach about 99 MHz,
+  for 30% more cycles in the translated benchmark. Not planned, since the
+  lean plan runs it about as fast. Decide again if the lean plan falls
+  short.
+- **NiceMonMEGA65 reads the registers from `retire_o.regs`**, which is
+  `w_n.regs` of WRITE, before the register. Its worst path ends there. A
+  registered copy is enough for nicemon. Fix in NiceMonMEGA65, and say in
+  `hdl/src/trace_pkg.vhd` that `retire_o` is for simulation and is slow.
+- **An out-of-context timing check in the repository.** The measurements
+  of pipeline-timing.md used a Vivado script outside it. Board synthesis
+  stays in the example design (below, Decided against), but a script that
+  reports the core's worst path would catch regressions. Decide whether
+  it belongs in `hdl/`.
+- **Count the cycles of the timing fixes in `bench/hazards.py`.** The
+  counts of pipeline-timing.md (shifts by a register, operands that the
+  previous instruction writes, by mode, and jumps that WRITE takes) came
+  from a script outside the repository.
 
 - **Speculative reads of RAM** (MICROARCH.md §5.3). Data reads wait until
   the instruction is certain to run. The waits are a conditional read

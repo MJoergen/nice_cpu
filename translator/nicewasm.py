@@ -2469,6 +2469,7 @@ def early_exit(items: List[Item], saved: List[str], name: str
     at = {it.name: k for k, it in enumerate(items) if isinstance(it, Label)}
     k = at[items[jump].targets[0]]  # type: ignore[union-attr]
     exit_code: List[Item] = [Label(name)]
+    followed: set[str] = set()  # the labels of the jumps followed, which may loop
     while len(exit_code) < 12 and k < len(items):
         it = items[k]
         k += 1
@@ -2479,6 +2480,9 @@ def early_exit(items: List[Item], saved: List[str], name: str
         if it.op == "RET":
             break
         if it.kind == "jump" and not it.cond and len(it.targets) == 1 and it.ops[1:] == it.targets:
+            if it.targets[0] in followed:
+                return None
+            followed.add(it.targets[0])
             k = at[it.targets[0]]
             continue
         if it.kind:

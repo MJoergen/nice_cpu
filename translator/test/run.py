@@ -1518,6 +1518,18 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
              (1, i32_const(42) + local_get(1) + i32_const(1) + ADD + local_tee(2) + EQZ
               + br_if(0) + DROP + call(0) + local_get(2) + local_get(1) + ADD))),
      "_g MOVE R15, @R13++\n", 4209),
+    # f(p) loops for ever if p = 0, as C's if (!p) for (;;); does, and
+    # else calls g and returns p. The search for an early return
+    # (README.md) follows the jump of the loop only once. f(5) = 5.
+    ("earlyexitloop", module(
+        types(MAIN_TYPE, ([I32], [I32]), ([], [])),
+        imports(("env", "g", 2)),
+        funcs(0, 1),
+        exports(("main", 0, 1)),
+        code((0, i32_const(5) + call(2)),
+             (0, block() + local_get(0) + EQZ + br_if(0) + call(0) + local_get(0) + RETURN + END
+              + loop() + br(0) + END + i32_const(0)))),
+     "_g MOVE R15, @R13++\n", 5),
     # g(x) = h(x + h(x)), with h(v) = 2v + 1, so g(5) = h(5 + 11) = 33. x
     # lives across the first call in a saved register, which g restores
     # before it jumps to h for the second call, a tail call (README.md).

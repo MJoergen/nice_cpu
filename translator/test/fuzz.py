@@ -18,7 +18,8 @@ the operand stack some live in registers and some are spilled to the
 frame. The bodies use blocks,
 loops, if and else, br, br_if, and br_table with and without values,
 select, calls and call_indirect, every integer operation and comparison,
-comparisons kept in a local by local.tee for later conditions, eqz
+comparisons kept in a local by local.tee for later conditions, a
+br_if out of the function at its start, eqz
 before if and br_if, i64 shifts by constants and by variables, groups
 of word loads and stores at offsets from one address in a local,
 multiplications by constants, divisions with nonzero divisors, some of
@@ -615,11 +616,12 @@ def gen_body(ctx: Ctx, t: Optional[int], depth: int) -> Expr:
     return Expr(t if t is not None else I32, code, ev)
 
 
-def gen_br(ctx: Ctx, depth: int, unconditional: bool = False) -> Stmt:
+def gen_br(ctx: Ctx, depth: int, unconditional: bool = False, out: bool = False) -> Stmt:
     """br_if n, or br n, to a block, an if, or the function, with the value
-    the label takes. Never to a loop, so that every loop ends."""
+    the label takes. Never to a loop, so that every loop ends. With out,
+    to the function."""
     cands = [n for n, (kind, lt) in enumerate(reversed(ctx.labels)) if kind != "loop"]
-    n = ctx.rng.choice(cands)
+    n = cands[-1] if out else ctx.rng.choice(cands)
     _, lt = ctx.labels[len(ctx.labels) - 1 - n]
     v = gen_expr(ctx, lt, depth) if lt is not None else None
     if unconditional:
@@ -791,7 +793,10 @@ def build(seed: int) -> Tuple[List[Func], bytes]:
     for idx, fn in enumerate(fns):
         ctx = Ctx(rng, fn, idx, fns)
         count = rng.randrange(8, 20) if idx == 0 else rng.randrange(3, 10)
-        fn.stmts = [gen_stmt(ctx, 3) for _ in range(count)]
+        # Half of the other functions start with a br_if out of the
+        # function, an early exit before the prologue (README.md).
+        fn.stmts = [gen_br(ctx, 0, out=True)] if idx and rng.random() < 0.5 else []
+        fn.stmts += [gen_stmt(ctx, 3) for _ in range(count)]
         fn.value = checksum(fn) if idx == 0 else gen_expr(ctx, fn.result, 3)
     return fns, bytes(rng.getrandbits(8) for _ in range(DATA_SIZE))
 

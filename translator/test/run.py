@@ -1490,6 +1490,19 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # helpers. Without bounds checks, there is no compare to share.
     ("share", SHARE_UNALIGNED, "", 0x454345CB),
     ("share_unchecked", SHARE_UNALIGNED, "", 0x454345CB),
+    # f(n, a) = a if n = 0, else f(n - 1, a + n) + n, so f(4, 10) = 20 +
+    # 1 + 2 + 3 + 4 = 30. n lives across the call in a saved register, but
+    # the test of n and the return of a come before the prologue
+    # (README.md), so f(0, 20) saves nothing.
+    ("earlyexit", module(
+        types(MAIN_TYPE, ([I32, I32], [I32])),
+        funcs(0, 1),
+        exports(("main", 0, 0)),
+        code((0, i32_const(4) + i32_const(10) + call(1)),
+             (0, local_get(0) + EQZ + if_(I32) + local_get(1) + ELSE
+              + local_get(0) + i32_const(1) + SUB + local_get(1) + local_get(0) + ADD + call(1)
+              + local_get(0) + ADD + END))),
+     "", 30),
     # An i64 at 65532, a multiple of 4, passes the end by 4 bytes.
     ("oobword8", module(
         types(MAIN_TYPE),

@@ -646,6 +646,19 @@ is written (ISA.md §5), so `MOVE @--R13, @3[R13]` pushes the frame word at
 3 above the old SP. A parameter that arrives on the stack is read at
 entry from above the return address.
 
+A function that starts with a test and an early return often needs no
+saved register on that path, as in a recursive walk of a tree that
+returns at once for a null node. If the first jump of the function is a
+conditional one, and the code it goes to returns without a saved
+register, SP, or a call, the test and the jump come before the
+prologue. The jump then goes to a copy of that code, which returns with
+`MOVE R15, @R13++` alone. The instructions before the jump may not need
+a saved register or SP either, except those that only write a saved
+register from other registers and constants, such as the copy of a
+parameter. These come after the prologue instead. If one of them sets
+the flags for the jump, a copy of it that writes R0 sets them before
+the prologue.
+
 The translated functions may use every register. The helpers and
 `___wasm_start` use only R1–R6, R13, R14, and R15, so a value in R7–R12
 survives a call of a helper, as it does any §9.3 call.

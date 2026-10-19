@@ -2343,6 +2343,84 @@ def fix_calls(items: List[Item]) -> None:
             prev = None
 
 
+def early_exit(items: List[Item], saved: List[str], name: str
+               ) -> Optional[Tuple[List[Item], List[Item], List[Item]]]:
+    """Shrink-wrapping: if the code starts with a conditional jump to code
+    that returns, and neither the jump nor that code needs a saved
+    register or SP, the jump can come before the prologue, and go to a
+    copy of that code that returns without the epilogue. The
+    instructions before the jump may not need them either, except
+    instructions that only write a saved register from other registers
+    and constants, which then come after the prologue. If one of them sets
+    the flags, a copy that writes R0 sets them before the prologue. Returns the
+    code before the prologue, with the jump to the label name, the code
+    after it, and the copy, or None."""
+    avoid = set(saved) | {"R13"}
+
+    def free(ins: Ins) -> bool:
+        """Whether an instruction needs no saved register and no SP."""
+        return not any(operand_reg(o)[1] in avoid for o in ins.ops) and not (ins.uses | ins.defs) & avoid
+    before: List[Item] = []
+    later: List[Item] = []  # copies to saved registers, for after the prologue
+    reads: set[str] = set()  # the registers that they read
+    for k, it in enumerate(items):
+        if isinstance(it, Label) or (isinstance(it, str) and not it.lstrip().startswith(";")):
+            return None
+        if isinstance(it, str):
+            before.append(it)
+            continue
+        if it.kind == "jump" and it.cond and len(it.targets) == 1 and it.ops[1:] == it.targets:
+            jump = k
+            break
+        if it.kind:
+            return None
+        kind, r = operand_reg(it.ops[0]) if it.ops else ("", None)
+        if free(it):
+            if FunctionTranslator.written(it) & reads:
+                return None
+            before.append(it)
+        elif (r in saved and kind == "reg" and not it.cond and not flag_use_def(it)[0]
+              and all(operand_reg(o) == ("reg", operand_reg(o)[1]) and operand_reg(o)[1] != "R13"
+                      or operand_reg(o) == ("", None) and not o.startswith("@")
+                      for o in it.ops[1:])):
+            if sets_flags(it):
+                # The flags before the prologue, the register after it.
+                before.append(Ins(it.op, ["R0"] + it.ops[1:], depth=it.depth))
+                base, _, mods = it.op.partition("[")
+                mods = mods.rstrip("]").replace("M", "")
+                it = Ins(base + (f"[{mods}]" if mods else ""), list(it.ops), depth=it.depth)
+            later.append(it)
+            reads.update(r for o in it.ops[1:] for r in [operand_reg(o)[1]] if r)
+        else:
+            return None
+    else:
+        return None
+    # The code that the jump goes to, up to the return.
+    at = {it.name: k for k, it in enumerate(items) if isinstance(it, Label)}
+    k = at[items[jump].targets[0]]  # type: ignore[union-attr]
+    exit_code: List[Item] = [Label(name)]
+    while len(exit_code) < 12 and k < len(items):
+        it = items[k]
+        k += 1
+        if isinstance(it, Label) or isinstance(it, str) and it.lstrip().startswith(";"):
+            continue
+        if isinstance(it, str) or not free(it):
+            return None
+        if it.op == "RET":
+            break
+        if it.kind == "jump" and not it.cond and len(it.targets) == 1 and it.ops[1:] == it.targets:
+            k = at[it.targets[0]]
+            continue
+        if it.kind:
+            return None
+        exit_code.append(it)
+    else:
+        return None
+    j = items[jump]
+    assert isinstance(j, Ins)
+    before.append(Ins(j.op, ["R15", name], j.cond, "jump", [name], depth=j.depth))
+    return before, later + items[jump + 1:], exit_code
+
 class Translator:
     def __init__(self, m: Module, data: bytes, checks: bool = True,
                  library: Optional[str] = None, library_memory: Optional[int] = None,
@@ -4550,12 +4628,17 @@ class FunctionTranslator:
         out = [f"; Function {self.idx}" + (f": {name}" if name else "")]
         out += self.t.labels.get(self.idx, [])
         out.append(f"{self.t.prefix}f{self.idx}")
+        frame_words(items, n_slots, len(saved))
+        fix_calls(items)
+        early = early_exit(items, saved, f"{self.t.prefix}f{self.idx}.E") if saved or n_slots else None
+        exit_code: List[Item] = []
+        if early is not None:
+            before, items, exit_code = early
+            out += render(before)
         for r in saved:
             out.append(instr("MOVE", "@--R13", r))
         if n_slots:
             out.append(instr("SUB", "R13", "R13", str(n_slots)))
-        frame_words(items, n_slots, len(saved))
-        fix_calls(items)
         for it in items:
             if not (isinstance(it, Ins) and it.op == "RET"):
                 out += render([it])
@@ -4565,6 +4648,9 @@ class FunctionTranslator:
             for r in reversed(saved):
                 out.append(instr("MOVE", r, "@R13++"))  # last saved first
             out.append(instr("MOVE", "R15", "@R13++"))
+        if exit_code:
+            out += render(exit_code)
+            out.append(instr("MOVE", "R15", "@R13++"))  # nothing to restore
         return out
 
 

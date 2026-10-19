@@ -2080,13 +2080,16 @@ def duplicate_tails(items: List[Item], ret_size: int) -> List[Item]:
     R2, may name: the copy then goes on in the original, which does the
     same. It may not call. The epilogue, RET, counts as ret_size
     instructions. Two rounds, so that a copy that ends in a jump may get
-    a copy too. Then the code that no jump reaches any more goes."""
+    a copy too. The code after the epilogue, the stubs, runs rarely, so
+    its jumps stay. Then the code that no jump reaches any more goes."""
     for _ in range(2):
         at = {it.name: k for k, it in enumerate(items) if isinstance(it, Label)}
+        stubs = max((k for k, it in enumerate(items) if isinstance(it, Ins) and it.op == "RET"),
+                    default=len(items))
         out: List[Item] = []
-        for it in items:
-            if not (isinstance(it, Ins) and it.kind == "jump" and not it.cond
-                    and len(it.targets) == 1 and it.ops[1:] == it.targets):
+        for i, it in enumerate(items):
+            if i > stubs or not (isinstance(it, Ins) and it.kind == "jump" and not it.cond
+                                 and len(it.targets) == 1 and it.ops[1:] == it.targets):
                 out.append(it)
                 continue
             code: List[Ins] = []

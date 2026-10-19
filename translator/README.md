@@ -589,7 +589,9 @@ instructions, so that each case of an interpreter's loop ends with its
 own copy of the dispatch. The copy has no labels. A jump in it to one
 of the original's labels, such as from a stub back to the code, goes on
 in the original, which does the same, and so a trap's R2 points at the
-original. Code that no jump reaches any more goes.
+original. The jumps of the stubs after the epilogue stay, since the
+stubs run rarely: copies there cost words and save little. Code that no
+jump reaches any more goes.
 
 A `br_if` back to the start of a loop, at the end of the loop, is
 usually taken. A taken conditional jump costs some five cycles more than

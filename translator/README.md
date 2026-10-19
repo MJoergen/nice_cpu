@@ -213,7 +213,7 @@ instructions. The reads that wait for a skipped jump went from some
 crc32. `test/safe.zig` became 5224 words, not 5215, the float library
 7083, not 7089, and the benchmark's module 8658, not 8632.
 
-Last on 2026-10-19, a constant word offset in the word operand of a
+After that on 2026-10-19, a constant word offset in the word operand of a
 word access, in place of the `ADD` that computed its word index, took
 the benchmark from 1785571 to 1737715 instructions (2.7% fewer), and
 from about 2306000 to about 2283000 cycles (1.0% fewer). Heapsort saved
@@ -222,6 +222,16 @@ more with the same instructions, since their code and data moved,
 which changed the timing of fetches and reads. `test/safe.zig` and the
 float library stayed 5224 and 7083 words, and the benchmark's module
 became 8657, not 8658.
+
+Last on 2026-10-19, no bounds check for an access whose index or base
+has a known bound, and instructions moved to between the write of an
+address register and the access that uses it, took the benchmark from
+1737715 to 1729523 instructions (0.5% fewer), and from about 2283000
+to about 2273000 cycles (0.4% fewer). All of the instructions, and
+most of the cycles, are crc32's: its table lookup, `table[(crc ^ b) &
+255]`, has no compare. `test/safe.zig` became 5182 words, not 5224,
+the float library stayed 7083 words, and the benchmark's module became
+8623, not 8657.
 
 ## Supported features
 

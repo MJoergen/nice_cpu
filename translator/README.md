@@ -511,10 +511,10 @@ words: the start of the access code and the offset. The helper adds the
 offset, traps if the access is out of bounds, with R2 the first word,
 else does the access as `W.load4` does, and returns past the two words.
 Then the stub jumps back. Such a stub takes some 10 words, and with the
-check in each stub it took some 20. If the memory can grow, t is compared with a word that
-`memory.grow` keeps up to date, `W.wlimit4` or `W.wlimit8`. An offset
-is then added to t first, and the code jumps to the stub if the sum
-passes 2^32.
+check in each stub it took some 20. If the memory can grow, t is
+compared with a word that `memory.grow` keeps up to date, `W.wlimit4` or
+`W.wlimit8`. An offset is then added to t first, and the code jumps to
+the stub if the sum passes 2^32.
 
 Clang computes the address of an array element as `(i << 2) + c`, with
 `i32.shl` and `i32.add`. When c is a multiple of 4, that address is a
@@ -523,13 +523,13 @@ since the address wraps modulo 2^32. So the `i32.add` also computes t,
 and an access at the address uses it in place of `ROR`. A t of 2^30 or
 more fails the compare, and the stub gets the address back with `SHL`.
 The same holds for `i << s` with s above 2, with t = (i << (s - 2)) +
-c / 4, and for a constant added to such a sum. If no other code uses the address itself, the allocator removes
-the shift and the add, and the access is three instructions after the
-`ADD` that computes t. Without bounds checks, t is taken modulo 2^30
-with an `AND`, and there is no compare. A later access at the same base
-in the same straight-line code uses the same t. What nicewasm knows of t
-is dropped when a register it involves is written, and at a label that
-a jump may reach.
+c / 4, and for a constant added to such a sum. If no other code uses the
+address itself, the allocator removes the shift and the add, and the
+access is three instructions after the `ADD` that computes t. Without
+bounds checks, t is taken modulo 2^30 with an `AND`, and there is no
+compare. A later access at the same base in the same straight-line code
+uses the same t. What nicewasm knows of t is dropped when a register it
+involves is written, and at a label that a jump may reach.
 
 Often the `ADD` that computes t can go too. Then t is i + d, with i
 the index, or the index shifted by s - 2, and the constant d = c / 4.
@@ -562,16 +562,16 @@ bound of the value shifted right by k, so 2^(32 - k) - 1 at most.
 `i32.rem_u` by a constant c gives c - 1, or the bound of the value if c
 is a power of two and that is smaller. A copy keeps the bound of what it
 copies, and `i32.add`, `i32.or`, `i32.xor`, and `i32.shl` by a constant
-combine the bounds of their operands. Signed operations give no bound. A bound is dropped, as
-what nicewasm knows of t is, when its register is written, and at a
-label that a jump may reach. A call changes no virtual register, so a
-bound lasts across it. If the bound of the register that a word access
-compares is below the limit of the compare, every value passes it, so
-there is no compare and no stub. For an access at word d of the
-memory plus i, that is B + d + w ≤ L, with B the bound of i, w the words
-of the access, 1 or 2, and d including a quarter of the access's offset.
-So in crc32,
-`table[(crc ^ b) & 255]` with the table at word 3144 is:
+combine the bounds of their operands. Signed operations give no bound. A
+bound is dropped, as what nicewasm knows of t is, when its register is
+written, and at a label that a jump may reach. A call changes no virtual
+register, so a bound lasts across it. If the bound of the register that
+a word access compares is below the limit of the compare, every value
+passes it, so there is no compare and no stub. For an access at word d
+of the memory plus i, that is B + d + w ≤ L, with B the bound of i, w
+the words of the access, 1 or 2, and d including a quarter of the
+access's offset. So in crc32, `table[(crc ^ b) & 255]` with the table at
+word 3144 is:
 
     AND     R1, R1, 255
     MOVE    R5, @___wasm_memory+3144[R1]
@@ -699,18 +699,18 @@ memory. So `if (x) y = 9;` is `MOVE[M] R0, x` and `?!Z MOVE y, 9`. The
 code of an if before its else, up to two instructions and the jump to
 the end, becomes conditional the same way, jump and all.
 
-An unconditional jump to code of up to three instructions that ends in
-a jump or a return gives way to a copy of that code. That saves the
-jump, which costs at least two cycles on the FPGA core. So a `return`
-in a function that saves at most two registers and has no frame words
-becomes the epilogue itself. Code that ends in the jump of a `br_table` may have up to twelve
-instructions, so that each case of an interpreter's loop ends with its
-own copy of the dispatch. The copy has no labels. A jump in it to one
-of the original's labels, such as from a stub back to the code, goes on
-in the original, which does the same, and so a trap's R2 points at the
-original. The jumps of the stubs after the epilogue stay, since the
-stubs run rarely: copies there cost words and save little. Code that no
-jump reaches any more goes.
+An unconditional jump to code of up to three instructions that ends in a
+jump or a return gives way to a copy of that code. That saves the jump,
+which costs at least two cycles on the FPGA core. So a `return` in a
+function that saves at most two registers and has no frame words becomes
+the epilogue itself. Code that ends in the jump of a `br_table` may have
+up to twelve instructions, so that each case of an interpreter's loop
+ends with its own copy of the dispatch. The copy has no labels. A jump
+in it to one of the original's labels, such as from a stub back to the
+code, goes on in the original, which does the same, and so a trap's R2
+points at the original. The jumps of the stubs after the epilogue stay,
+since the stubs run rarely: copies there cost words and save little.
+Code that no jump reaches any more goes.
 
 A `br_if` back to the start of a loop, at the end of the loop, is
 usually taken. A taken conditional jump costs some five cycles more than
@@ -824,31 +824,30 @@ survives a call of a helper, as it does any §9.3 call.
 
 `test/run.py` translates each test module and joins it with the runtime.
 It then assembles and runs the program. It checks main's result in R1,
-that R7–R13 are unchanged unless it trapped, what it printed on the console, and that the
-memory is not in the `.bin` file. A case that traps must instead halt at
-`___wasm_trap` with the trap code in R1, and R2 at the start of the code
-that trapped. Most modules are built byte by byte with `test/wasm.py`.
-The others are compiled from `test/*.c`, `test/*.zig`, and `test/*.rs`.
-Their `.wasm` files are checked in, so `make test` needs no compiler.
-`make wasm` needs clang with the wasm32 target, `wasm-ld`, Zig 0.15, and
-rustc with the `wasm32-unknown-unknown` target. The Rust modules were
-built with rustc 1.99.0. `test/errors.py` checks every error message.
-`test/run.py --keep DIR` also leaves each program in `DIR/X.bin`, or
-`DIR/X_soft.bin` for the run with `--no-mpu`, for `make programs` in
-`hdl/`, which runs them on the FPGA core.
+that R7–R13 are unchanged unless it trapped, what it printed on the
+console, and that the memory is not in the `.bin` file. A case that
+traps must instead halt at `___wasm_trap` with the trap code in R1, and
+R2 at the start of the code that trapped. Most modules are built byte by
+byte with `test/wasm.py`. The others are compiled from `test/*.c`,
+`test/*.zig`, and `test/*.rs`. Their `.wasm` files are checked in, so
+`make test` needs no compiler. `make wasm` needs clang with the wasm32
+target, `wasm-ld`, Zig 0.15, and rustc with the `wasm32-unknown-unknown`
+target. The Rust modules were built with rustc 1.99.0. `test/errors.py`
+checks every error message. `test/run.py --keep DIR` also leaves each
+program in `DIR/X.bin`, or `DIR/X_soft.bin` for the run with `--no-mpu`,
+for `make programs` in `hdl/`, which runs them on the FPGA core.
 
-`test/fuzz.py FIRST COUNT` builds random modules from a syntax tree whose
-nodes also evaluate themselves in Python, so each module comes with the
-result that wasm defines for it, and `main`'s result in R1 must match.
-The modules have four functions with `i32` and `i64` parameters, 8 to 13
-locals, loops, blocks, branches with values, `select`,
-calls through the table, every integer operation and comparison, the
-results of comparisons kept in locals for later conditions, loads
-and stores of every width at constant and dynamic addresses, the
-addresses of array elements as `(i << s) + c`, and groups
-of word accesses at offsets from one address. That
-covers the rules for deferred values, fused comparisons, the flags,
-forwarded results, and register allocation above. `make test` runs 40 seeds with the
-math unit and 40 with `--no-mpu`; `test/fuzz.py 1 1000` runs more, and
-`test/fuzz.py --reduce SEED` shrinks a failing module and writes it with
-its translation.
+`test/fuzz.py FIRST COUNT` builds random modules from a syntax tree
+whose nodes also evaluate themselves in Python, so each module comes
+with the result that wasm defines for it, and `main`'s result in R1 must
+match. The modules have four functions with `i32` and `i64` parameters,
+8 to 13 locals, loops, blocks, branches with values, `select`, calls
+through the table, every integer operation and comparison, the results
+of comparisons kept in locals for later conditions, loads and stores of
+every width at constant and dynamic addresses, the addresses of array
+elements as `(i << s) + c`, and groups of word accesses at offsets from
+one address. That covers the rules for deferred values, fused
+comparisons, the flags, forwarded results, and register allocation
+above. `make test` runs 40 seeds with the math unit and 40 with
+`--no-mpu`; `test/fuzz.py 1 1000` runs more, and `test/fuzz.py --reduce
+SEED` shrinks a failing module and writes it with its translation.

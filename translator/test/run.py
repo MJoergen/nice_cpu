@@ -1515,6 +1515,23 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
              (0, local_get(0) + local_get(0) + call(2) + ADD + call(2)),
              (0, local_get(0) + i32_const(2) + MUL + i32_const(1) + ADD))),
      "", 33),
+    # f(x) is ((x + 7) XOR 9) - 2 if x != 0, the short arm, which moves to
+    # the end of f (README.md), and (x + 3) * 5 + (x XOR 6) + 1 if x = 0,
+    # the long one. f(0) = 15 + 6 + 1 = 22 and f(4) = (11 XOR 9) - 2 = 0.
+    # main returns 100 f(0) + f(4) + 1 = 2201.
+    ("swaparms", module(
+        types(MAIN_TYPE, ([I32], [I32])),
+        funcs(0, 1),
+        exports(("main", 0, 0)),
+        code((0, i32_const(0) + call(1) + i32_const(100) + MUL + i32_const(4) + call(1) + ADD
+              + i32_const(1) + ADD),
+             (1, block() + block() + local_get(0) + EQZ + br_if(0)
+              + local_get(0) + i32_const(7) + ADD + i32_const(9) + XOR + i32_const(2) + SUB
+              + local_set(1) + br(1) + END
+              + local_get(0) + i32_const(3) + ADD + i32_const(5) + MUL
+              + local_get(0) + i32_const(6) + XOR + ADD + i32_const(1) + ADD + local_set(1) + END
+              + local_get(1)))),
+     "", 2201),
     # An i64 at 65532, a multiple of 4, passes the end by 4 bytes.
     ("oobword8", module(
         types(MAIN_TYPE),

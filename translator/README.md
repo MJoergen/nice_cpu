@@ -621,6 +621,16 @@ two. So the `br_if` becomes a conditional jump out of the loop, on the
 opposite condition, and an unconditional jump back. Each round of the
 loop then saves two cycles, and leaving it costs five more.
 
+A `br_if` out of a block whose other arm ends in a `br` forward, as in
+`block; block; c; br_if 0; A; br 1; end; B; end`, jumps over arm A to
+arm B. Without a profile, nicewasm guesses that the shorter arm is the
+rarer one, as an edge case tends to be. So if A has fewer instructions
+than B, the jump goes to A on the opposite condition instead, and A
+moves to the end of the function, after the return, so that B falls
+through. A may have no other unconditional jump, and no jump back,
+which would be the next round of a loop. In the benchmark, this made
+heapsort's sift take some 51000 cycles fewer.
+
 Last, on the FPGA core, a data read waits a cycle for a conditional
 jump just before it that is not taken (doc/MICROARCH.md §5.3). So an
 earlier instruction of the same straight-line code moves to between the

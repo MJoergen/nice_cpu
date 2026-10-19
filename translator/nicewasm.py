@@ -2169,6 +2169,63 @@ def duplicate_tails(items: List[Item], ret_size: int) -> List[Item]:
     return out
 
 
+def swap_arms(items: List[Item], prefix: str) -> List[Item]:
+    """Where a conditional jump skips code that ends in an unconditional
+    jump forward, as the br_if of a block whose other arm ends in a br,
+    the arm with more instructions becomes the one that falls through,
+    since short arms tend to be the rare cases. The short arm may have no
+    other unconditional jump, and no jump back, which would be the next
+    round of a loop, not a rare case. The jump then goes on the
+    opposite condition to the short arm, which moves to the end, after
+    the return. The new labels are prefix and a number."""
+    at = {it.name: k for k, it in enumerate(items) if isinstance(it, Label)}
+    moved: List[Item] = []
+    out: List[Item] = []
+    n = 0
+    k = 0
+    while k < len(items):
+        it = items[k]
+        k += 1
+        if not (isinstance(it, Ins) and it.kind == "jump" and it.cond and not it.back
+                and len(it.targets) == 1 and it.ops[1:] == it.targets):
+            out.append(it)
+            continue
+        a = at[it.targets[0]]
+        end = next((j for j in range(a - 1, k - 1, -1) if isinstance(items[j], Ins)), k - 1)
+        arm = items[k:end + 1]  # up to its last instruction
+        last = items[end] if arm else None
+        assert last is None or isinstance(last, Ins)
+        if (a < k or last is None or not (last.kind == "jump" and not last.cond
+                                           and len(last.targets) == 1 and last.ops[1:] == last.targets)
+                or any(isinstance(x, Ins) and x.kind == "jump"
+                       and (x is not last and not x.cond or any(at.get(t, k) < k for t in x.targets))
+                       for x in arm)
+                or any(isinstance(x, str) and not x.lstrip().startswith(";") for x in items[k:a])
+                or any(isinstance(x, Ins) and x.op == "RET" for x in arm)):
+            out.append(it)
+            continue
+        # The instructions of the other arm: up to the label that the
+        # short arm jumps to, or to the next unconditional jump.
+        other = 0
+        for x in items[a + 1:]:
+            if isinstance(x, Label) and x.name in last.targets:
+                break
+            if isinstance(x, Ins):
+                other += 1
+                if x.kind in ("jump", "exit") and not x.cond:
+                    break
+        if sum(isinstance(x, Ins) for x in arm) - 1 >= other:
+            out.append(it)
+            continue
+        name = f"{prefix}{n}"
+        n += 1
+        out.append(Ins(it.op, ["R15", name], negate(it.cond), "jump", [name], depth=it.depth))
+        moved += [Label(name)] + arm
+        k += len(arm)
+    stubs = max((k for k, it in enumerate(out) if isinstance(it, Ins) and it.op == "RET"),
+                default=len(out) - 1)
+    return out[:stubs + 1] + moved + out[stubs + 1:]
+
 def invert_back_edges(items: List[Item], prefix: str) -> List[Item]:
     """Turns the conditional jump back to the start of a loop at its end
     into a conditional jump on the opposite condition to the code after
@@ -4652,6 +4709,7 @@ class FunctionTranslator:
         items = if_convert(tidy(alloc.run()))
         saved = [r for r in CALLEE_SAVED if r in alloc.used]
         n_slots = alloc.n_slots
+        items = swap_arms(items, f"{self.t.prefix}f{self.idx}.A")
         items = tidy(duplicate_tails(items, len(saved) + 1 + (n_slots > 0)))
         items = fill_jump_slots(invert_back_edges(items, f"{self.t.prefix}f{self.idx}.B"))
         name = printable(self.t.m.names.get(self.idx, ""))

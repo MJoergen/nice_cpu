@@ -542,6 +542,30 @@ the `i32.add` writes the local that holds i, as a `local.tee` of the
 index does, a copy of i comes first, for the accesses. The allocator
 gives the copy the register of i if it can, and then removes it.
 
+nicewasm also keeps an upper bound on the unsigned value of some
+registers. `i32.and` with a constant m gives m, `i32.load8_u` and
+`i32.load16_u` give 255 and 65535, `i32.shr_u` by a constant k gives
+2^(32 - k) - 1, `i32.rem_u` by a constant c gives c - 1, and a constant
+gives itself. A copy keeps the bound of what it copies, and `i32.add`,
+`i32.or`, `i32.xor`, and `i32.shl` by a constant combine the bounds of
+their operands. Signed operations give no bound. A bound is dropped, as
+what nicewasm knows of t is, when its register is written, and at a
+label that a jump may reach. A call changes no virtual register, so a
+bound lasts across it. If the bound of the register that a word access
+compares is below the limit of the compare, every value passes it, so
+there is no compare and no stub. For an access at word d of the
+memory plus i, that is B + d + w ≤ L, with B the bound of i, w the words
+of the access, 1 or 2, and d including a quarter of the access's offset.
+So in crc32,
+`table[(crc ^ b) & 255]` with the table at word 3144 is:
+
+    AND     R1, R1, 255
+    MOVE    R5, @___wasm_memory+3144[R1]
+
+With a memory that can grow, the access keeps its compare. Without
+bounds checks, if B + d is below 2^30, i + d is the word index, so d
+goes into the word operand, and there is no `ADD` and no `AND`.
+
 Such a group of word accesses with the same t, or the same i, shares
 one compare: that of the first access, with the least limit of the
 group, L - d for i. If the compare passes,

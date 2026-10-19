@@ -26,7 +26,8 @@ multiplications by constants, divisions with nonzero divisors, some of
 them constants, loads and stores of every width at
 constant and at dynamic addresses, among them the addresses of array
 elements, (i << s) + c, with an index i whose high bits the shift drops
-and constants that may be negative, and local.set and local.tee of locals
+and constants that may be negative, or with a masked index i = x & m,
+and local.set and local.tee of locals
 whose old value is still on the operand stack. That covers the rules for
 deferred values, fused comparisons, forwarded results, and register
 allocation in README.md. main returns a fold of every local and of 18 memory
@@ -420,6 +421,8 @@ def gen_address(ctx: Ctx, depth: int) -> Expr:
         return konst(I32, a)
     if ctx.rng.random() < 0.3:
         return gen_element(ctx, depth)
+    if ctx.rng.random() < 0.2:
+        return gen_masked(ctx, depth)
     k = ctx.rng.randrange(8) if ctx.rng.random() < 0.6 else 0
     e = binop("and", I32, gen_expr(ctx, I32, depth), konst(I32, ADDR_MASK))
     return binop("or", I32, e, konst(I32, k)) if k else e
@@ -448,6 +451,30 @@ def gen_element(ctx: Ctx, depth: int) -> Expr:
     for c in cs:
         a = binop("add", I32, a, konst(I32, c))
     return a
+
+
+def gen_masked(ctx: Ctx, depth: int) -> Expr:
+    """The address of an array element, (i << s) + c, with a masked index
+    i = x & m, whose bound m may let a word access go without its compare
+    (README.md). Often c puts the bound's last element just at the end of
+    the memory, or a little before or past it. The value of i keeps the
+    access in bounds: x is first ANDed with the largest index that fits.
+    Half the time that value then goes through a subtraction of 0, so that
+    nicewasm knows only the bound m, which may not fit."""
+    s = ctx.rng.choice([2, 2, 3])
+    m = ctx.rng.choice([0x7, 0xFF, 0x3FF, 0xFFF, 0x3FFF, 0xFFFF, 0x7FFFFFFF, M32])
+    if m << s < 0x10000 and ctx.rng.random() < 0.7:
+        c = (0x10000 - (m << s) - ctx.rng.randrange(-8, 64)) // 4 * 4
+    else:
+        c = ctx.rng.randrange(0, 0x2000) // 4 * 4
+    c = min(max(c, 0), 0x10000 - 24)
+    fits = (0x10000 - 21 - c) >> s  # the largest index whose 8 bytes and offset fit
+    x = binop("and", I32, gen_expr(ctx, I32, depth), konst(I32, fits))
+    if ctx.rng.random() < 0.5:
+        x = binop("sub", I32, x, konst(I32, 0))
+    i = (binop("and", I32, x, konst(I32, m)) if ctx.rng.random() < 0.7
+         else binop("and", I32, konst(I32, m), x))
+    return binop("add", I32, binop("shl", I32, i, konst(I32, s)), konst(I32, c))
 
 
 def gen_load(ctx: Ctx, t: int, depth: int) -> Expr:

@@ -286,7 +286,21 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "foldtrap8": "SUB[M] R0, R2, 16383",
          "foldsharetrap": "MOVE @___wasm_memory+2121[R8], R1",
          "libfoldtrap": "SUB[M] R0, R1, 8",
-         "foldteetrap": "MOVE @___wasm_memory+2121[R8], R1"}
+         "foldteetrap": "MOVE @___wasm_memory+2121[R8], R1",
+         "boundtrap": "SUB[M] R0, R1, 256"}
+
+# Cases whose translation must match a pattern, or must not: name ->
+# (pattern, whether it must match). A word access that needs no compare
+# has no SUB[M] (bound_case).
+SHAPES = {"bound": (r"SUB\[M\]", False),
+          "bound_over": (r"SUB\[M\] +R0, R\d+, 255$", True),
+          "bound_load8": (r"SUB\[M\]", False),
+          "bound_remu": (r"SUB\[M\]", False),
+          "boundtrap": (r"SUB\[M\] +R0, R\d+, 256$", True),
+          "bound64": (r"SUB\[M\]", False),
+          "bound64_over": (r"SUB\[M\] +R0, R\d+, 510$", True),
+          "bound_grow": (r"SUB\[M\] +R0, R\d+, @W.wlimit4$", True),
+          "bound_unchecked": (r"0x3FFFFFFF|^ +ADD", False)}
 
 # Options for nicewasm.
 OPTIONS = {"unchecked": ["--no-bounds-checks"],
@@ -303,6 +317,8 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "addrform_grow": ["--memory-pages", "2"],
            "foldform_unchecked": ["--no-bounds-checks"],
            "foldform_grow": ["--memory-pages", "2"],
+           "bound_grow": ["--memory-pages", "2"],
+           "bound_unchecked": ["--no-bounds-checks"],
            "libfold": ["--library", "lib", "--library-memory", "64"],
            "libfoldtrap": ["--library", "lib", "--library-memory", "64"],
            "narrow_grow": ["--memory-pages", "2"],
@@ -425,9 +441,11 @@ def narrow_checks() -> List[bytes]:
 def idx(i: int, sh: int, c: Optional[int], want: int, op: int = I32_LOAD,
         offset: int = 0) -> bytes:
     """A check that the load op at (i << sh) + c, plus offset, gives want,
-    with i in local 1. Without c, the address is i << sh."""
+    with i in local 1. Without c, the address is i << sh. Local 1 is i - 0,
+    so that nicewasm does not know a bound on it, and the access keeps its
+    compare."""
     i64 = op == I64_LOAD
-    return (i32_const(i) + local_set(1) + local_get(1) + i32_const(sh) + SHL
+    return (i32_const(i) + i32_const(0) + SUB + local_set(1) + local_get(1) + i32_const(sh) + SHL
             + (b"" if c is None else i32_const(c) + ADD) + mem(op, offset)
             + (i64_const(want) + EQ64 if i64 else i32_const(want) + EQ))
 
@@ -513,7 +531,8 @@ def fold_loop(i0: int, end: int) -> bytes:
 
 
 def fold_tee(i: int) -> bytes:
-    """The module of the foldtee cases: main sets local 0 to i, then to a
+    """The module of the foldtee cases: main sets local 0 to i, from a
+    global, so that nicewasm does not know a bound on it, then to a
     = (i << 2) + 8480 with local.tee, loads x from a, stores x + 1 at a +
     4, and returns the word at a + 4 plus a. The add writes the local
     that holds i, so a copy of i keeps it for the accesses (README.md).
@@ -522,13 +541,40 @@ def fold_tee(i: int) -> bytes:
         types(MAIN_TYPE),
         funcs(0),
         memory(1),
+        globals_(i),
         exports(("main", 0, 0)),
-        code((2, i32_const(i) + local_set(0)
+        code((2, global_get(0) + local_set(0)
               + local_get(0) + i32_const(2) + SHL + i32_const(8480) + ADD + local_tee(0)
               + mem(I32_LOAD) + local_set(1)
               + local_get(0) + local_get(1) + i32_const(1) + ADD + mem(I32_STORE, 4)
               + local_get(0) + mem(I32_LOAD, 4) + local_get(0) + ADD)),
         data((8492, bytes([0x20, 0, 0, 0]))))
+
+
+def bound_case(index: bytes, c: int, at: int, value: int, i64: bool = False) -> bytes:
+    """The module of the bound cases: main stores value at the constant
+    address at, then loads from (i << s) + c, with s = 3 for an i64 and 2
+    else, and i what the code index leaves, and returns the loaded i32, or
+    the low word XOR the high word of the i64. The code may use the i32
+    locals 0 and 1. nicewasm knows a bound on i from the code, and if
+    every address it allows is in the memory, the load has no compare
+    (README.md)."""
+    if i64:
+        load = (index + i32_const(3) + SHL + i32_const(c) + ADD + mem(I64_LOAD) + local_tee(2)
+                + WRAP + local_get(2) + i64_const(32) + SHR_U64 + WRAP + XOR)
+    else:
+        load = index + i32_const(2) + SHL + i32_const(c) + ADD + mem(I32_LOAD)
+    return module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code(([I32, I32, I64], st(I64_STORE if i64 else I32_STORE, at, value) + load)))
+
+
+# x & 255 with x = 0x1234 in local 0: i = 0x34 = 52, but all nicewasm
+# knows is i <= 255.
+AND255 = i32_const(0x1234) + local_set(0) + local_get(0) + i32_const(255) + AND
 
 
 # i64 shifts and rotates: (a, operation, count, result). V is
@@ -1887,6 +1933,57 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # a = (14263 << 2) + 8480 = 65532: the load is in bounds, and the store
     # at 65536 traps, in the copy. R2 points at the store in the code.
     ("foldteetrap", fold_tee(14263), "", 2),
+    # Loads at (i << 2) + c with a bound on i (bound_case). The memory is
+    # 16384 words. With c = 64512, d = c / 4 = 16128, and i <= 255, the
+    # last word that i allows is 255 + 16128 = 16383, the last word of the
+    # memory, so the load has no compare. i = 52 gives 64512 + 208 =
+    # 64720.
+    ("bound", bound_case(AND255, 64512, 64720, 0x11223344), "", 0x11223344),
+    # The same, but c = 64516 and d = 16129: i = 255 would be past the
+    # memory, so the compare of i with 16384 - 16129 = 255 stays. i = 52
+    # gives 64516 + 208 = 64724.
+    ("bound_over", bound_case(AND255, 64516, 64724, 0x55667788), "", 0x55667788),
+    # i is the byte at 100, 200 = 0xC8, so i <= 255, and c = 64512 as for
+    # bound: 64512 + 800 = 65312.
+    ("bound_load8", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((2, st(I32_STORE, 65312, 0x0BADF00D) + i32_const(100) + mem(I32_LOAD8_U)
+              + i32_const(2) + SHL + i32_const(64512) + ADD + mem(I32_LOAD))),
+        data((100, bytes([0xC8])))), "", 0x0BADF00D),
+    # i = 0x1234 rem_u 100 = 4660 % 100 = 60, so i <= 99. With c = 65136,
+    # d = 16284, and 99 + 16284 = 16383 is the last word. 65136 + 240 =
+    # 65376.
+    ("bound_remu", bound_case(i32_const(0x1234) + local_set(0) + local_get(0)
+                              + i32_const(100) + b"\x70", 65136, 65376, 0x600D),
+     "", 0x600D),
+    # i = x & 255 in local 1, and then local 1 is set to local 0 - 0 =
+    # 0x4034, whose bound nicewasm does not know, before the shift. So the
+    # compare stays, and the address 0x4034 * 4 + 64512 = 130256 traps.
+    ("boundtrap", bound_case(AND255 + local_set(1) + i32_const(0x4034) + i32_const(0) + SUB
+                             + local_set(0) + local_get(0) + local_set(1) + local_get(1),
+                             64512, 64720, 0x77), "", 2),
+    # An i64 at (i << 3) + 63488, with i = -1 & 255 = 255: the word index
+    # is 2i + 15872 <= 16382, so both words, 16382 and 16383, are in the
+    # memory, and there is no compare. 63488 + 2040 = 65528, the last 8
+    # bytes, and the result is 0x01020304 XOR 0x50607080.
+    ("bound64", bound_case(i32_const(-1) + local_set(0) + local_get(0) + i32_const(255) + AND,
+                           63488, 65528, 0x50607080_01020304, True), "", 0x51627384),
+    # The same with c = 63492: 2 * 255 + 15873 = 16383 is the last word,
+    # but the second word would be past it, so the compare of 2i with
+    # 16383 - 15873 = 510 stays. i = (254 - 0) & 255 = 254, of which
+    # nicewasm knows only i <= 255, gives 63492 + 2032 = 65524.
+    ("bound64_over", bound_case(i32_const(254) + i32_const(0) + SUB + local_set(0)
+                                + local_get(0) + i32_const(255) + AND, 63492, 65524,
+                                0x50607080_01020304, True), "", 0x51627384),
+    # bound with a memory that can grow: the compare with the limit that
+    # memory.grow keeps stays.
+    ("bound_grow", bound_case(AND255, 64512, 64720, 0x11223344), "", 0x11223344),
+    # bound without bounds checks: i + 16128 is the word index, below
+    # 2^30, so it needs no AND with 0x3FFFFFFF.
+    ("bound_unchecked", bound_case(AND255, 64512, 64720, 0x11223344), "", 0x11223344),
     # A memory of 0 pages: every access traps.
     ("nomemory", module(
         types(MAIN_TYPE),
@@ -2528,6 +2625,10 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
         wanted.update({f"R{i}": 0 for i in range(7, 12)})
         wanted.update({"R12": 0, "R13": 0xFFFFFF00})
     problems = []
+    if name in SHAPES:
+        pattern, must = SHAPES[name]
+        if bool(re.search(pattern, text, re.M)) != must:
+            problems.append(f"the code {'does not match' if must else 'matches'} {pattern}")
     if console != CONSOLE.get(name, ""):
         problems.append(f"printed {console!r}, expected {CONSOLE.get(name, '')!r}")
     mem = assembler.labels.get("___wasm_memory")

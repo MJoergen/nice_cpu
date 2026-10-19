@@ -1136,6 +1136,7 @@ TABLES: Dict[str, Tuple[str, List[int]]] = {
 REG_NAME = r"(?:R1[0-5]|R[0-9]|%v\d+)"
 OPERAND_RE = re.compile(rf"@?(?:--({REG_NAME})|({REG_NAME})(?:\+\+|--)|({REG_NAME})|.*\[({REG_NAME})\])\Z")
 VREG_RE = re.compile(r"%v\d+")
+MASK32 = 0xFFFFFFFF
 
 
 def operand_reg(op: str) -> Tuple[str, Optional[str]]:
@@ -3023,6 +3024,9 @@ class FunctionTranslator:
         # registers, until one of the registers involved is written or a
         # label that a jump may reach comes: a byte address -> WordIndex.
         self.word_index: Dict[str, WordIndex] = {}
+        # And an upper bound on the unsigned i32 that some virtual
+        # registers hold, below 2^32 - 1, for the same straight-line code.
+        self.bound: Dict[str, int] = {}
         self.accesses: List[Access] = []  # for share_checks
         # What the flags say about an i32 value, until an instruction
         # changes the flags or a label comes: the virtual registers that
@@ -3109,8 +3113,12 @@ class FunctionTranslator:
         else:
             ins.depth = self.loops
             self.body.append(ins)
-            if self.word_index:
+            copy = ins.op == "MOVE" and not ins.cond and len(ins.ops) == 2
+            b = self.bound_of(ins.ops[1]) if copy else MASK32
+            if self.word_index or self.bound:
                 self.forget(ins)
+            if copy:
+                self.set_bound(ins.ops[0], b)  # a copy keeps the bound
             if self.flag_val is not None:
                 self.track_flags(ins)
         return ins
@@ -3126,14 +3134,35 @@ class FunctionTranslator:
         return defs
 
     def forget(self, ins: Ins) -> None:
-        """Drops what word_index knows of the virtual registers that an
-        instruction writes. If only its i is written, t still holds."""
+        """Drops what word_index and bound know of the virtual registers
+        that an instruction writes. If only its i is written, t still
+        holds."""
         defs = self.written(ins)
+        for d in defs:
+            self.bound.pop(d, None)
         for x, w in list(self.word_index.items()):
             if x in defs or w.t in defs:
                 del self.word_index[x]
             elif w.i in defs:
                 self.word_index[x] = WordIndex(w.t, w.aligned)
+
+    def bound_of(self, v: str) -> int:
+        """An upper bound on the unsigned i32 in the register or operand v:
+        what bound knows of a virtual register, the value of a constant, or
+        else 2^32 - 1."""
+        if VREG_RE.fullmatch(v):
+            return self.bound.get(v, MASK32)
+        try:
+            return int(v, 0) & MASK32
+        except ValueError:
+            return MASK32
+
+    def set_bound(self, d: str, b: int) -> None:
+        """Records b as an upper bound on the unsigned i32 in the virtual
+        register d, which an instruction has just written, if b says more
+        than that it is an i32: b may be 2^32 or more."""
+        if VREG_RE.fullmatch(d) and b < MASK32:
+            self.bound[d] = b
 
     def track_flags(self, ins: Ins) -> None:
         """Keeps flag_val up to date after an instruction: it ends if the
@@ -3173,6 +3202,7 @@ class FunctionTranslator:
             self.flag_val = None
             if not keep:
                 self.word_index.clear()
+                self.bound.clear()
 
     def move(self, dest: List[str], src: List[str], stub: bool = False) -> None:
         for d, s in zip(dest, src):
@@ -3501,7 +3531,9 @@ class FunctionTranslator:
         if c is None or w is None or not w.aligned or c % 4:
             return None
         t = self.new_vreg()
+        bt = self.bound_of(w.t) + c // 4
         self.emit("ADD", t, w.t, words(c // 4, I32)[0])
+        self.set_bound(t, bt)
         return WordIndex(t, True, w.i, (w.c + c // 4) & 0xFFFFFFFF if w.i else 0)
 
     def aligned(self, x: str) -> bool:
@@ -3560,10 +3592,13 @@ class FunctionTranslator:
         word c of the memory plus i, so the add that computes t goes. If i
         passes that compare, i + c passes the limit and does not wrap. If
         not, the stub computes base from i and c, and the checked helper
-        does the rest. Without bounds checks, an aligned base needs no
-        check, but its t must be taken modulo 2^30, since the address wraps
-        modulo 2^32 (§9.4). Returns the instructions that write the last
-        result on each path, if there are results."""
+        does the rest. If bound knows that every value of the compared
+        register passes the compare, there is no compare and no stub.
+        Without bounds checks, an aligned base needs no check, but its t
+        must be taken modulo 2^30, since the address wraps modulo 2^32
+        (§9.4), unless bound knows that t plus the offset is below 2^30.
+        Returns the instructions that write the last result on each path,
+        if there are results."""
         assert self.t.mem_bytes is not None
         start, slow, back = self.new_label(), self.new_label(), self.new_label()
         self.label(start, keep=True)
@@ -3572,6 +3607,12 @@ class FunctionTranslator:
             assert w is not None
             t, k = (w.i, w.c + offset // 4) if w.i else (w.t, offset // 4)
             k &= 0xFFFFFFFF
+            if self.bound_of(t) + k < 1 << 30:
+                # t + k is the word index, below 2^30, so it needs no AND,
+                # and k goes into the word operand.
+                last = [self.emit(mnemonic, *ops) for mnemonic, *ops
+                        in self.expand(aligned, lambda j: self.mem_word(k + j, t))][-1:]
+                return last if results else []
             if k:
                 u = self.new_vreg()
                 self.emit("ADD", u, t, words(k, I32)[0])
@@ -3596,6 +3637,11 @@ class FunctionTranslator:
             t, c = w.i, w.c
         k = offset // 4 + c
         u = t
+        if not self.t.growable and self.bound_of(t) < limit - c:
+            # Every value of t passes the compare, so the access needs none.
+            last = [self.emit(mnemonic, *ops) for mnemonic, *ops
+                    in self.expand(aligned, lambda j: self.mem_word(k + j, t))][-1:]
+            return last if results else []
         if self.t.growable:
             # Words that memory.grow keeps up to date. With k, t + k
             # passes 2^32 only if base is not a multiple of 4.
@@ -3964,13 +4010,18 @@ class FunctionTranslator:
             if t == I32 and c & (c - 1) == 0 and c and op in ("div_u", "rem_u"):
                 self.pop([t, t], at, what)
                 dest = self.push(t, words=result)[0]
+                ba = self.bound_of(a[0])
                 if op == "div_u":
                     self.emit("SHR", dest, a[0], str(c.bit_length() - 1))
+                    self.set_bound(dest, ba >> (c.bit_length() - 1))
                 else:
                     self.emit("AND", dest, a[0], str(c - 1))
+                    self.set_bound(dest, min(ba, c - 1))
                 return
             if c not in (0, (1 << (32 * len(b))) - 1):
                 self.divide_op(t, op, at, what, result)
+                if t == I32 and op == "rem_u":
+                    self.set_bound(result[0], c - 1)
                 return
         start = self.new_label()
         self.label(start, keep=True)
@@ -4056,6 +4107,8 @@ class FunctionTranslator:
         if n < 4:
             self.narrow(base[0], offset, n, const,
                         lambda word, p, stub: self.load_narrow(n, signed, word, p, res[0], stub))
+            if not signed:
+                self.set_bound(res[0], (1 << (8 * n)) - 1)
             if len(dest) == 2:
                 self.extend(dest, res[0], signed)
             return
@@ -4542,13 +4595,19 @@ class FunctionTranslator:
                         self.emit("AND", c, b[0], "31")
                     if shift == "shr_s":
                         self.emit("C<0[M]", "R0", a[0], "1")   # C = the sign bit (§5.2)
+                    ba = self.bound_of(a[0])
                     widx = ""
                     if shift == "shl" and count is not None and count & 31 > 2:
                         # A word index for an address d, in case one is
                         # needed. If none is, the allocator removes it.
                         widx = self.new_vreg()
                         self.emit("SHL", widx, a[0], str((count & 31) - 2))
+                        self.set_bound(widx, ba << ((count & 31) - 2))
                     self.emit({"shl": "SHL", "shr_u": "SHR", "shr_s": "C>0"}[shift], d, a[0], c)
+                    if count is not None and shift == "shr_u":
+                        self.set_bound(d, ba >> (count & 31))
+                    elif count is not None and shift == "shl":
+                        self.set_bound(d, ba << (count & 31))
                     if widx or (shift == "shl" and count is not None and count & 31 == 2
                                 and VREG_RE.fullmatch(a[0]) and a[0] != d):
                         self.word_index[d] = WordIndex(widx or a[0], True, widx or a[0])
@@ -4576,7 +4635,14 @@ class FunctionTranslator:
                     i2 = self.new_vreg()
                     self.emit("MOVE", i2, sw.i)
                     sw = WordIndex(sw.t, True, i2, sw.c)
+                ba, bb = self.bound_of(a[0]), self.bound_of(b[0])
                 ins = self.emit(ALU_OPS[op], d, a[0], b[0])
+                if op == 0x71:    # and
+                    self.set_bound(d, min(ba, bb))
+                elif op == 0x6A:  # add
+                    self.set_bound(d, ba + bb)
+                elif op != 0x6B:  # or, xor
+                    self.set_bound(d, (1 << max(ba, bb).bit_length()) - 1)
                 if fwd is not None and fwd[1] is not None:
                     self.push(I32, fwd[1])
                 if sw is not None:

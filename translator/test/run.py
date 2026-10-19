@@ -1503,6 +1503,21 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
               + local_get(0) + i32_const(1) + SUB + local_get(1) + local_get(0) + ADD + call(1)
               + local_get(0) + ADD + END))),
      "", 30),
+    # f(a, p) = 42 if x = p + 1 is 0, else g(); x + p. x and p live
+    # across the call in saved registers. The test of x comes before the
+    # prologue, with ADD[M] R0, but the copy of p to its saved register
+    # comes after it, so the test must add 1 to p where it came. So
+    # f(0, -1) = 42 and f(0, 4) = 9, and main returns 100 * 42 + 9 = 4209.
+    ("earlyexitcopy", module(
+        types(MAIN_TYPE, ([I32, I32], [I32]), ([], [])),
+        imports(("env", "g", 2)),
+        funcs(0, 1),
+        exports(("main", 0, 1)),
+        code((0, i32_const(0) + i32_const(-1) + call(2) + i32_const(100) + MUL
+              + i32_const(0) + i32_const(4) + call(2) + ADD),
+             (1, i32_const(42) + local_get(1) + i32_const(1) + ADD + local_tee(2) + EQZ
+              + br_if(0) + DROP + call(0) + local_get(2) + local_get(1) + ADD))),
+     "_g MOVE R15, @R13++\n", 4209),
     # g(x) = h(x + h(x)), with h(v) = 2v + 1, so g(5) = h(5 + 11) = 33. x
     # lives across the first call in a saved register, which g restores
     # before it jumps to h for the second call, a tail call (README.md).

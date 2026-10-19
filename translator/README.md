@@ -684,7 +684,9 @@ a saved register or SP either, except those that only write a saved
 register from other registers and constants, such as the copy of a
 parameter. These come after the prologue instead. If one of them sets
 the flags for the jump, a copy of it that writes R0 sets them before
-the prologue.
+the prologue. Where it reads a saved register that an earlier one
+of them copied from another register or a constant, the copy reads
+that instead, and if it cannot, the jump stays after the prologue.
 
 A call of a function or a helper by its label, just before the return,
 is a tail call: the epilogue drops the frame and restores the saved

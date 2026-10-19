@@ -2420,6 +2420,10 @@ def early_exit(items: List[Item], saved: List[str], name: str
     before: List[Item] = []
     later: List[Item] = []  # copies to saved registers, for after the prologue
     reads: set[str] = set()  # the registers that they read
+    # What each saved register that they write holds after them, if it is
+    # a copy of a register or constant that the code before the prologue
+    # can read instead, or None.
+    copies: Dict[str, Optional[str]] = {}
     for k, it in enumerate(items):
         if isinstance(it, Label) or (isinstance(it, str) and not it.lstrip().startswith(";")):
             return None
@@ -2440,12 +2444,21 @@ def early_exit(items: List[Item], saved: List[str], name: str
               and all(operand_reg(o) == ("reg", operand_reg(o)[1]) and operand_reg(o)[1] != "R13"
                       or operand_reg(o) == ("", None) and not o.startswith("@")
                       for o in it.ops[1:])):
+            srcs = [o if operand_reg(o)[1] not in avoid else copies.get(o) for o in it.ops[1:]]
             if sets_flags(it):
-                # The flags before the prologue, the register after it.
-                before.append(Ins(it.op, ["R0"] + it.ops[1:], depth=it.depth))
+                # The flags before the prologue, the register after it. A
+                # saved register that an instruction moved after the
+                # prologue has written is not yet written there, so the
+                # copy reads what that instruction copied, if it can.
+                if None in srcs:
+                    return None
+                before.append(Ins(it.op, ["R0"] + [o for o in srcs if o is not None],
+                                  depth=it.depth))
                 base, _, mods = it.op.partition("[")
                 mods = mods.rstrip("]").replace("M", "")
                 it = Ins(base + (f"[{mods}]" if mods else ""), list(it.ops), depth=it.depth)
+            assert r is not None
+            copies[r] = srcs[0] if it.op == "MOVE" and len(srcs) == 1 else None
             later.append(it)
             reads.update(r for o in it.ops[1:] for r in [operand_reg(o)[1]] if r)
         else:

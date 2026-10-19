@@ -77,27 +77,25 @@ added 2026-10-19. The section numbers are its.
     clock items below.
 - **Test order steps not done** (MICROARCH.md §9):
   - Step 4, hazard programs: `hdl/test/hazard.nasm`,
-    `hdl/test/sidefx_prog.py`, and `hdl/test/smc_prog.py`, which the
-    multi-cycle core passes. Left
+    `hdl/test/sidefx_prog.py`, and `hdl/test/smc_prog.py`, which both
+    cores pass. Left
     out so far: pairs of side effects on R15, which only some cases of
     `hazard.nasm` and the random programs have. `hazard.nasm` tests a
     flag set by a side effect on R14 only for a destination, because a
     source side effect needs VBASE = 0xFFFFFF before the instruction,
     and its vector table would then be in the I/O range.
   - Step 5: `hdl/test/irq_sweep.py` runs `hazard.nasm` with an NMI before
-    each step, and with an IRQ before each, and the multi-cycle core
-    passes. Not swept: the program of `sidefx_prog.py`, which writes R14
+    each step, and with an IRQ before each, and both cores pass. Not swept: the program of `sidefx_prog.py`, which writes R14
     with any value, so E and VBASE too. For the pipelined core, the sweep
     compares with `irq_compare.py --read-delay`, and both cores are swept
     with the request raised up to a few cycles late as well.
   - Step 6: `make programs` in `hdl/` runs the runtime's and the
-    translator's test programs on the core, and the multi-cycle core
-    passes. Left out: the random modules of `translator/test/fuzz.py`,
+    translator's test programs on the core, and both cores pass, the
+    pipelined one with `make programs CORE=pipeline` on 2026-10-19. Left out: the random modules of `translator/test/fuzz.py`,
     `runtime/libc/test/fuzz_printf.py`, which needs clang, and the
     benchmark, which `make core` in `bench/` runs already.
   - Step 7: `hdl/test/random_prog.py` was tuned with
-    `hdl/test/random_stats.py`, and the multi-cycle core passes seeds 1
-    to 90. Still weak: a conditional instruction right after a write of
+    `hdl/test/random_stats.py`, and both cores pass seeds 1 to 90. Still weak: a conditional instruction right after a write of
     SR is 10% of the instructions, against 15 to 20% in the benchmark,
     and about half of the runs halt before the step limit, mostly at a
     word that a store changed, or after an interrupt that a write of VBASE

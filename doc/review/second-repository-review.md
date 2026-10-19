@@ -75,6 +75,8 @@ Commit ef385fa ("nicehdl: the timer of ISA.md §8.6") replaced the heading `## T
 
 Under "Test order steps not done", steps 4, 5, 6, and 7 each say "which the multi-cycle core passes". `make test` runs steps 4, 5, and 7 on both cores, and the pipelined core passes them; step 6 passes on it too, as this review ran it (How it was checked). **Fix:** say "both cores", and add `make programs CORE=pipeline` to what step 6 has run.
 
+**Resolved**: the four steps say both cores pass, and step 6 names the run of 2026-10-19. Seeds 31 to 90 pass on the pipelined core too, checked with `make random` for this fix.
+
 ### 2.6 ISA.md §8.3 on the simulation memory's input
 
 "The simulation memory of the FPGA core has no input either: a read returns `0x200`." Since commit 7f445c5, `hdl/sim/wb_mem.vhd` reads the file of its generic `G_INPUT_FILE` and returns `0x100` plus each byte, and `0x200` only after the end or without a file, as hdl/README.md says and the emulator's `input` probe checks on the core. **Fix:** "The simulation memory of the FPGA core reads a file too, as the emulator's `--input` does, and returns `0x200` without one."

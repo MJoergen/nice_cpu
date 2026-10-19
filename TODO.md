@@ -103,9 +103,9 @@ has TODO or FIXME comments.
 
 - **Speculative reads of RAM** (MICROARCH.md §5.3). Data reads wait until
   the instruction is certain to run. The waits are a conditional read
-  after a write of SR, 1.1% of the translated benchmark's instructions and
+  after a write of SR, 0.0% of the translated benchmark's instructions and
   3.8% of the hand-written one's, and a read after a conditional jump,
-  0.9% and 7.6% (MICROARCH.md §5.6). Allowing speculative reads of RAM, but
+  5.5% and 7.6% (MICROARCH.md §5.6). Allowing speculative reads of RAM, but
   not of the I/O range, needs a change to ISA.md §8.2 and a check of each
   read against older stores. Decide once the pipelined core shows what the
   waits cost. The bypasses and the slow path for R14 were decided from the
@@ -177,10 +177,6 @@ has TODO or FIXME comments.
     or moves code: at the first instruction of the original copy, and
     the code of a neighbouring access may lie between that instruction
     and the rest of the trapping instruction's code.
-    - MICROARCH.md §5.6's table is from an older translation. A read
-    after a conditional jump is now in most inline memory accesses, so
-    speculative reads (above) matter more; `make -C bench hazards` gives
-    the current shares.
   - *Two guesses that could become options.* The shorter arm of a diamond
     is taken for the rarer one, which cost 2500 cycles in `strstr`, where
     the short arm is the inner loop, and saved 51000 in heapsort. A group

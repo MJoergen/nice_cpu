@@ -227,13 +227,13 @@ that instruction. No interrupt is taken before it (§6).
 
 Stores are issued in WRITE, which is in order, so they need no extra rule.
 
-A data read directly after a store is 15% of the translated benchmark's
+A data read directly after a store is 0.3% of the translated benchmark's
 instructions and 8% of the hand-written one's (§5.6). So rule 3 matters:
 the read must be allowed in the cycle after the bus accepts the store, not
 after the store's instruction retires.
 
 Rules 1 and 2 cost a cycle or two for a conditional read after a write of
-SR, and for a read after a conditional jump. These are 1 to 4% and 1 to 8%
+SR, and for a read after a conditional jump. These are 0 to 4% and 5 to 8%
 of the instructions (§5.6), so data reads stay exact for now. If the cost
 turns out to matter, the ISA could later let reads of RAM (not of the I/O
 range) be speculative. That needs a check of each read against older
@@ -307,33 +307,32 @@ it, and refetching from the next instruction gives that.
 emulator's trace, and `make hazards` in `bench/` runs it on the two
 benchmark programs ([bench/README.md](../bench/README.md)). A skipped
 instruction counts as if it ran, because DECODE sees its operands before
-the condition is known. These are the shares of all instructions, measured on the translation before
-its optimizations (`make hazards` gives the current ones, and a read after a
-conditional jump is now more common):
+the condition is known. These are the shares of all instructions:
 
 | | `bench.c` through nicewasm | `hand.nasm` |
 |---|---|---|
-| Instructions | 3425036 | 494070 |
-| Skipped | 20.3% | 18.4% |
-| Words per instruction, mean | 2.09 | 1.62 |
-| Micro-ops per instruction, mean | 1.02 | 1.18 |
-| Conditional | 22.5% | 27.7% |
-| Data read | 25.9% | 41.7% |
-| Store | 27.4% | 15.4% |
-| Jump: writes R15, or a control instruction | 19.3% | 21.1% |
-| Reads a register the previous instruction writes | 26.9% | 30.0% |
-| Reads a register written two back, not one | 4.3% | 14.0% |
-| Conditional, SR written by the previous instruction | 15.3% | 20.3% |
-| Conditional with a data read, SR written by the previous | 1.1% | 3.8% |
-| Data read after a store | 15.3% | 8.1% |
-| Data read after a conditional jump | 0.9% | 7.6% |
-| R14 read as an operand | 0.8% | 6.6% |
+| Instructions | 1775455 | 494070 |
+| Skipped | 19.7% | 18.4% |
+| Words per instruction, mean | 1.84 | 1.62 |
+| Micro-ops per instruction, mean | 1.00 | 1.18 |
+| Conditional | 21.7% | 27.7% |
+| Data read | 11.3% | 41.7% |
+| Store | 5.1% | 15.4% |
+| Jump: writes R15, or a control instruction | 19.5% | 21.1% |
+| Reads a register the previous instruction writes | 32.2% | 30.0% |
+| Reads a register written two back, not one | 8.0% | 14.0% |
+| Conditional, SR written by the previous instruction | 19.5% | 20.3% |
+| Conditional with a data read, SR written by the previous | 0.0% | 3.8% |
+| Data read after a store | 0.3% | 8.1% |
+| Data read after a conditional jump | 5.5% | 7.6% |
+| R14 read as an operand | 2.9% | 6.6% |
 | R15 as a pointer, or with a side effect | 0% | 0% |
 
-The numbers decided three things: FETCH reads two words per cycle (§3),
+The numbers support three decisions: FETCH reads two words per cycle (§3),
 a register written by the previous instruction is read without a wait
-(§5.1), and so is R14 (§5.4). They left speculative reads out (§5.3). The reads from the previous instruction are value chains in R1 to
-R4, not stack operations: R13 alone is under 1% in both programs.
+(§5.1), and so is R14 (§5.4). They left speculative reads out (§5.3). The reads from the previous
+instruction are value chains, mostly in R1 to R4, not stack operations: R13
+alone is under 1% in both programs.
 
 ## 6. Interrupts
 

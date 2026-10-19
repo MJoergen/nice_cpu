@@ -31,7 +31,11 @@ two kinds of access. Appendix B records the two rules.
 - The first version had no speculative reads, and still has none. The
   numbers of MICROARCH.md §5.6, measured on 2026-10-15, decided that FETCH
   reads two words a cycle, that a register written by the previous
-  instruction is read without a wait, and that R14 is too.
+  instruction is read without a wait, and that R14 is too. The table was
+  measured again on 2026-10-19, on the optimized translation: data reads
+  went from 25.9% to 11.3% of the instructions, and a data read after a
+  store from 15.3% to 0.3%, but a read after a conditional jump from 0.9% to
+  5.5%. The decisions stand.
 - The proof of the data bus port found that a read could go out in the
   cycle WRITE puts a store on the bus with three requests in flight, which
   made five. It also found that the write data changed on the bus while a

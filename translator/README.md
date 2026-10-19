@@ -666,8 +666,11 @@ register of its own. It must compute a virtual register from virtual
 registers and constants, with no flags, be unconditional, and not be a
 copy, which the allocator may remove. Neither it nor an instruction
 that it passes, the read included, may write a register that the other
-reads or writes. It may not pass a label that no jump goes to, such as
-the start of the code of a wasm instruction, where a trap's R2 points.
+reads or writes. It may pass a label that no jump goes to, such as the
+start of the code of a wasm instruction, where a trap's R2 points, only
+if it is the first instruction after it. The label then moves with it,
+so R2 still points at the first instruction of that code, as in the
+vm's `ROR` of the address of a store just after a load.
 It may pass the label where the stub of a word access comes back, or
 another label that only unconditional jumps go to, if it is in a loop:
 then a copy of it goes just before each of those jumps. So every path

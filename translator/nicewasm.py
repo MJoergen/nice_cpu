@@ -2372,9 +2372,10 @@ def hoist_into_slots(items: List[Item]) -> List[Item]:
     register from virtual registers and constants, with no flags, be
     unconditional, and not be a copy, which coalescing may remove. It
     must commute with each instruction that it passes: neither may write
-    a register that the other reads or writes. It may not pass a label
-    that no jump goes to, such as the start of the code of a wasm
-    instruction, where a trap's R2 points (§9.4). It may pass one label
+    a register that the other reads or writes. It may pass a label that
+    no jump goes to, such as the start of the code of a wasm instruction,
+    where a trap's R2 points (§9.4), only if it is the first instruction
+    after it, and the label then moves with it. It may pass one label
     B that only unconditional jumps go to, such as the one where the stub
     of a word access comes back: then a copy of it goes just before each
     of those jumps, so every path past B runs it once, as before, and an
@@ -2384,6 +2385,7 @@ def hoist_into_slots(items: List[Item]) -> List[Item]:
     virtual registers, before the allocation, so that the allocator gives
     the moved instruction a register that the read does not use."""
     alloc = Allocator([], ALLOC_REGS, CALLEE_SAVED, 0)
+    targets = {t for it in items if isinstance(it, Ins) for t in it.targets}
 
     def skip(k: int) -> int:
         while k < len(items) and isinstance(items[k], str) and str(items[k]).lstrip().startswith(";"):
@@ -2435,13 +2437,18 @@ def hoist_into_slots(items: List[Item]) -> List[Item]:
             continue
         passed: List[Ins] = [items[q]]  # type: ignore[list-item]
         b: Optional[Label] = None
+        start: Optional[Label] = None
         k = q + 1
         found = -1
         while len(passed) <= HOIST_LOOK:
             k = skip(k)
             it = items[k] if k < len(items) else None
-            if isinstance(it, Label) and b is None and comes_back(it.name):
+            if isinstance(it, Label) and b is None and start is None and comes_back(it.name):
                 b = it
+                k += 1
+                continue
+            if isinstance(it, Label) and start is None and it.name not in targets:
+                start = it
                 k += 1
                 continue
             if not (isinstance(it, Ins) and plain(it)):
@@ -2449,6 +2456,8 @@ def hoist_into_slots(items: List[Item]) -> List[Item]:
             if (movable(it) and (b is None or it.depth > 0)
                     and all(commute(it, x) for x in passed) and not tested(k, it.ops[0])):
                 found = k
+                break
+            if start is not None:
                 break
             passed.append(it)
             k += 1
@@ -2461,6 +2470,10 @@ def hoist_into_slots(items: List[Item]) -> List[Item]:
                 items.insert(items.index(j), Ins(x.op, list(x.ops), depth=j.depth))
         p = items.index(jump) + 1
         items.insert(p, x)
+        if start is not None:
+            items.remove(start)
+            items.insert(p, start)
+            p += 1
     return items
 
 

@@ -271,7 +271,8 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "nomemory": "MOVE R2, {R2}",
          "dispatchtrap": "SUB[M] R0, R4, 65536",
          "hoisttrap": "ROR R1, R5, 2",
-         "hoistgrouptrap": "MOVE R1, @___wasm_memory+1[R9]"}
+         "hoistgrouptrap": "MOVE R1, @___wasm_memory+1[R9]",
+         "hoiststoretrap": "ROR R1, R8, 2"}
 
 # Options for nicewasm.
 OPTIONS = {"unchecked": ["--no-bounds-checks"],
@@ -591,6 +592,30 @@ def hoist_group(p: int, end: int) -> bytes:
               + br_if(0) + END
               + local_get(2) + local_get(1) + XOR)),
         data((p, bytes(range(1, 13)))))
+
+
+def hoist_store(q: int) -> bytes:
+    """The module of the hoiststore cases. main calls setup, then copies
+    three words, from 17, 21, and 25 to q, q + 4, and q + 8, and returns
+    the sum of the words at 32, 36, and 40. The data at 16 are the bytes
+    1 to 16. The ROR that starts each store moves, with the store's
+    start, to between the compare of the load and the load (README.md),
+    and the load's stub gets a copy of it."""
+    return module(
+        types(MAIN_TYPE, ([], [])),
+        imports(("env", "setup", 1)),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 1)),
+        code((3, call(0) + i32_const(17) + local_set(0) + i32_const(q) + local_set(1) + loop()
+              + local_get(1) + local_get(0) + mem(I32_LOAD) + mem(I32_STORE)
+              + local_get(0) + i32_const(4) + ADD + local_set(0)
+              + local_get(1) + i32_const(4) + ADD + local_set(1)
+              + local_get(2) + i32_const(1) + ADD + local_tee(2) + i32_const(3) + LT_U
+              + br_if(0) + END
+              + i32_const(32) + mem(I32_LOAD) + i32_const(36) + mem(I32_LOAD) + ADD
+              + i32_const(40) + mem(I32_LOAD) + ADD)),
+        data((16, bytes(range(1, 17)))))
 
 
 # The module of the share cases. In a loop that runs once, it stores at
@@ -1571,6 +1596,13 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # makes 0x50463C32. At 65529, the load of y from 65533 traps, in the
     # copy, so the trap handler gives 2 + 0x50463C32 = 0x50463C34.
     ("hoistgrouptrap", hoist_group(65524, 65540), SHARE_ASM.format(0), 0x50463C34),
+    # The loads from 17, 21, and 25, all through the stub, give
+    # 0x05040302, 0x09080706, and 0x0D0C0B0A, whose sum is 0x1B181512.
+    ("hoiststore", hoist_store(32), SHARE_ASM.format(0), 0x1B181512),
+    # The stores at 65528 and 65532 are done, and that at 65536 traps,
+    # with R2 at its ROR, which is in the code of the load. The trap
+    # handler gives 2 + the word at 65532, 0x09080706, so 0x09080708.
+    ("hoiststoretrap", hoist_store(65528), SHARE_ASM.format(16383), 0x09080708),
     # f(a, p) = 42 if x = p + 1 is 0, else g(); x + p. x and p live
     # across the call in saved registers. The test of x comes before the
     # prologue, with ADD[M] R0, but the copy of p to its saved register

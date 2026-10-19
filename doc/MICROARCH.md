@@ -26,7 +26,7 @@ question that this note left open, `hdl/ASSUMPTIONS.md` says how.
 | Structure | A pipeline: FETCH, DECODE, PREPARE, and WRITE, with the data bus port DBUS beside it. As in qnice_cpu, but with its ICACHE in FETCH and its SEQUENCER in DECODE. |
 | Buses | Harvard: a read-only Wishbone instruction port, 64 bits wide so that it delivers two words per cycle (§3), and a 32-bit Wishbone data port. Both see the same memory, through dual-port RAM. |
 | Instructions | DECODE splits each instruction into one to three micro-operations. |
-| Registers | R0–R15 in flip-flops in WRITE, not in a module of their own as in qnice_cpu. Only WRITE writes them, in order. WRITE reads them, and PREPARE for the address of a data read, so no value needs a bypass (§5.1). R0 is always 0. R14 is SR and R15 is PC. |
+| Registers | R0–R15 in flip-flops in WRITE, not in a module of their own as in qnice_cpu. Only WRITE writes them, in order. PREPARE reads them and forms every operand value and address; WRITE has one bypass, the value it wrote last (§5.1, §7.4). R0 is always 0. R14 is SR and R15 is PC. |
 | Data accesses | Exact, in order, and never speculative, as ISA §8.2 requires. |
 | Instruction fetches | Free to run ahead, as ISA §8.2 allows (§2). |
 | Interrupts | Taken in WRITE, before an instruction, as soon as ISA §7.1 allows (§6). Valid/ready request ports for NMI and IRQ. |
@@ -105,8 +105,14 @@ The parts do what they do in qnice_cpu, with these differences:
 - **DECODE** takes the instruction only when all its words are present.
   The length follows from the instruction word (ISA §2.3). It knows PC,
   which is the instruction's address plus its length, and it reads no
-  register (§5.1). It emits the micro-operations of §4, one per cycle.
-- **PREPARE** forms operand values and addresses, and issues data reads.
+  register (§5.1). It decodes the fields that the later stages need once,
+  so that their logic starts from registers (§7.4). It emits the
+  micro-operations of §4, one per cycle. It holds a second instruction
+  behind the one it splits, so that it takes instructions from FETCH
+  without waiting on the stages below it, which keeps WRITE's decisions
+  off the path into FETCH.
+- **PREPARE** reads the registers, forms operand values and addresses
+  (§7.4), reduces the shift count (§7.3), and issues data reads.
 - **WRITE** holds the ALU and the shifter, writes registers and memory,
   updates SR, checks the condition, and starts flushes and interrupts.
 - **DBUS** is the data bus port. It keeps a tag for each request in
@@ -141,9 +147,10 @@ instruction needs is three. In the benchmark programs an instruction has
 (§5.6), so splitting them seldom adds a cycle.
 
 **One write per micro-op is enough** because the two writes of a register
-destination in mode 001 or 010 merge into one: Rx ← regval(x, regval(x, r) ∓ 1)
-(§7.1). In a memory destination mode, the side effect is the only register
-write.
+destination in mode 001 or 010 are one value, Rx ← regval(x, regval(x, r) ∓ 1)
+(§7.1), which WRITE writes in two cycles: r, then the adjusted value
+(§7.4). Neither benchmark has such a destination (§5.6). In a memory
+destination mode, the side effect is the only register write.
 
 **s1 can depend on s0's side effect**, as in `ADD R1, R2++, @R2`. `S0` writes
 R2 in WRITE, before s1's address is formed. PREPARE waits for that write
@@ -155,18 +162,24 @@ R2 in WRITE, before s1's address is formed. PREPARE waits for that write
 
 Only WRITE writes registers, and it runs the micro-ops in program order.
 So when a micro-op reaches WRITE, every older one has retired, and the
-registers hold the values it needs. WRITE reads them there, and
-needs no bypass. That matters, because about three in ten instructions
-read a register the previous instruction writes (§5.6): they run back to
-back.
+registers hold the values it needs. PREPARE reads them one cycle
+earlier, for every operand, and forms the values and addresses (§7.4).
+Then only the micro-op in WRITE at that moment can still change a
+register PREPARE read, and it writes one register at most. WRITE keeps
+a copy of the value it wrote last, and a field whose value is that
+register takes the copy instead. That one bypass matters, because about
+three in ten instructions read a register the previous instruction
+writes (§5.6): they run back to back.
 
-PREPARE reads a register only for the address of a data read. It waits
-while the micro-op in WRITE will still write that register, and reads
-it in the cycle after. That costs a cycle for a pointer that the
-previous micro-op writes, as in `ADD R1, R2++, @R2` or a load through a
-register just loaded, which a bypass from WRITE's result would save. It
-saves the bypass network, and the three read ports in DECODE that would
-feed it.
+A field whose value needs an adder on the register, `R + c` or `R − 1`,
+and a register that a data read's address needs, cannot take the copy,
+because the adder would then follow the ALU of the micro-op before. So
+PREPARE waits while the micro-op in WRITE will still write that
+register, and reads it in the cycle after. That costs a cycle for a
+pointer that the previous micro-op writes, as in `ADD R1, R2++, @R2` or
+a load through a register just loaded, and for a sum on a register just
+written, which is rare (§5.6). It saves the bypass network, and the
+three read ports in DECODE that would feed it.
 
 R14 is SR, which WRITE keeps. R15 is the instruction's next address,
 carried with it, unless an earlier micro-op of the same instruction wrote
@@ -235,6 +248,11 @@ stores, so it is not part of the first version.
 WRITE flushes the stages above it and redirects FETCH when:
 
 - A micro-op writes R15. This is every jump that DECODE did not resolve.
+  The target of `MOVE R15, x` is the source itself, a constant, a
+  register, or a word read from memory, which WRITE has at the start of
+  its cycle, so the redirect does not wait for the ALU. Any other
+  operation on R15, such as `ADD R15, R15, R1`, writes R15 in one cycle
+  and redirects in the next (§7.4). Neither benchmark has one (§5.6).
 - An `INT`, an `RTI`, or an interrupt (§6) is taken.
 - A store may hit a word already fetched (§5.5).
 
@@ -268,6 +286,21 @@ address, and the one to four words of each instruction in DECODE and
 PREPARE. On a hit, it flushes and refetches from the
 next instruction. Over-approximating is safe, because a needless flush costs
 only cycles. qnice_cpu uses a fixed window of 32 words for the same purpose.
+
+The compares are cheap on purpose, because the flush they raise must
+reach PREPARE and FETCH in the same cycle. FETCH's range is at most 16
+words, and an instruction at most 4. So WRITE tests whether the store
+lies in the aligned block of 32 words that holds FETCH's oldest word, or
+in the block after it, and in the aligned block of 4 words that holds
+each instruction, or the block after it: equality compares on the high
+address bits, with no subtraction. The numbers of the blocks after are
+computed ahead, in registers: an instruction's when DECODE takes it,
+and FETCH's from its oldest word's address a cycle late, so that the
+redirect target needs no adder. FETCH's oldest word moves by at most
+four words a cycle, so WRITE also tests the block after that one, and
+in the cycle after a redirect, when the number is stale, no store can
+retire. The store address itself comes from PREPARE (§7.4), or is the
+value WRITE wrote last.
 
 A store into the storing instruction's own constant words must not change
 it, and refetching from the next instruction gives that.
@@ -400,11 +433,78 @@ closed forms of ISA §5.2. It needs three reduced counts:
   lies between −93 and 96. Plus 99, it is between 6 and 195, and a table
   of 256 entries finishes it.
 
-The reduction does not depend on s0, so PREPARE could compute it and keep
-it out of WRITE's critical path. The core computes it in WRITE so far,
-which is one of the four carry chains of
-[review/pipeline-timing.md](review/pipeline-timing.md); moving it is step
-3 of the plan there (TODO.md).
+The reduction does not depend on s0, so it is done before WRITE, and
+the shifter itself is one structure for all sixteen operations: a
+vector of 66 bits, built from s0, C, and the fill bit, shifted right by
+a count k, of which the low 32 bits are the result and bit 32 is the bit
+for C. The multi-cycle core reduces the count in the shift itself; the
+pipelined core prepares k, the kind of vector, the fill, and the rule
+for C ahead (`shift_prep` and `shift_fast` in `hdl/src/nice_pkg.vhd`,
+checked against each other by `hdl/test/tb_shift.vhd`):
+
+| Shift | Vector, bit 65 first | k |
+|---|---|---|
+| Fixed fill to the left | C, s0, 33 fill bits | 33 − sat |
+| Fixed fill to the right | 34 fill bits, s0 | sat; C gets s0(sat − 1) |
+| `C<C` | C, s0, C, s0 | 33 − (n mod 33) |
+| `C>C` | the same | n mod 33, or 33 for 0 |
+| Rotation to the left | 0, 0, s0, s0 | 32 − (n mod 32) |
+| Rotation to the right | the same | n mod 32 |
+
+So a right shift is a left shift with another count, and no reverse is
+in the shifter's path. Where the count is reduced:
+
+- **In DECODE**, for a constant count, which is most shifts (§5.6).
+- **In PREPARE**, for a count in a register, but for `C<C` and `C>C`,
+  whose n mod 33 PREPARE cannot afford after the register read.
+- **In WRITE, in a cycle of its own**, for a count read from memory, a
+  count through an adder (`R − 1` or `c[R]`), a count in a register that
+  the micro-op before writes or in R14, a count with a side effect, and
+  a rotation through C by a register. The shift then takes two cycles,
+  or three for a rotation through C, whose count mod 33 takes a cycle of
+  its own. Neither benchmark has one: the translated byte accesses once
+  read their shift count from a table in memory, 3% of the instructions,
+  and now compute it in a register ahead of the bounds check
+  ([translator/README.md](../translator/README.md)).
+
+### 7.4 Operands, and the value written last
+
+Every value that WRITE computes with starts in a register: the ALU and
+the shifter are the only logic in its cycle, besides the one adder that
+a side effect `R++` needs. PREPARE reads the registers for the three
+fields of the micro-op, and forms for each the value, in a source
+field, or the address, in a destination field, with an adder for the
+modes that need one: `R + c` for `c[R]` and `@c[R]`, and `R − 1` for
+`--R` and `@--R`. The read addresses are the same values. It also
+decides where WRITE takes each field from:
+
+- **The value PREPARE formed**, as a rule.
+- **The value WRITE wrote last**, if the field is a plain register, in
+  mode 000, 010, 100, or 110, that the micro-op in WRITE writes now. WRITE
+  keeps that value in a register of its own, so that the field needs no
+  mux over the sixteen registers in WRITE's cycle (§5.1). For a read
+  address in mode 100 or 110 PREPARE waits instead, since it needs the
+  address itself.
+- **SR**, if the field is R14 in one of those modes, because the micro-op
+  in WRITE may change the flags, which are not a value it wrote.
+
+R15 takes the value WRITE wrote last only from an earlier micro-op of
+the same instruction, as in `ADD R4, R15++, R15`. An older instruction
+that writes R15 either flushes this one or, if its jump was skipped or
+DECODE had resolved it, leaves R15 as this instruction's next address,
+which PREPARE knows (§5.4).
+
+A field that needs the adder on a register the micro-op in WRITE writes
+waits a cycle, as §5.1 says.
+
+Three rare cases take WRITE two cycles, so that none of them is on the
+paths of the common ones: a register destination in mode 001 or 010,
+whose adjusted value follows the result (§4); a jump whose target is not
+a `MOVE`'s source (§5.4); and a shift whose count PREPARE could not
+reduce (§7.3). The first cycle computes and writes the result, and in
+the third case reduces the count; the second cycle writes the adjusted
+value, redirects FETCH, or shifts. An interrupt is not taken between the
+two (§6).
 
 ## 8. Memory system
 

@@ -69,8 +69,10 @@ entity pipe_fetch is
       -- No new requests, for example after a halt
       stop_i          : in  std_logic;
 
-      -- The words for DECODE
+      -- The words for DECODE, and the 32-word block after the one that
+      -- held addr_o a cycle ago, for the check of stores into fetched code
       addr_o          : out std_logic_vector(31 downto 0);
+      blk_o           : out std_logic_vector(31 downto 5);
       words_o         : out t_words4;
       count_o         : out natural range 0 to 4;
       consume_i       : in  natural range 0 to 4;
@@ -92,6 +94,7 @@ architecture synthesis of pipe_fetch is
    signal rd_r    : natural range 0 to C_DEPTH - 1;        -- Oldest word
    signal count_r : natural range 0 to C_DEPTH;
    signal head_r  : std_logic_vector(31 downto 0);         -- Its address
+   signal blk_r   : std_logic_vector(31 downto 5);         -- The block after its block, a cycle late
    signal end_r   : std_logic_vector(31 downto 0);
 
    signal stb_r     : std_logic                     := '0';
@@ -104,6 +107,12 @@ architecture synthesis of pipe_fetch is
    signal load : std_logic;
    signal room : std_logic;
 
+   -- head_r after DECODE takes 1 to 4 words, computed ahead so that
+   -- consume_i only picks one
+   type t_heads is array (1 to 4) of std_logic_vector(31 downto 0);
+
+   signal head_next : t_heads;
+
 begin
 
    ibus_cyc_o  <= '1' when pending_r > 0 else '0';
@@ -111,12 +120,17 @@ begin
    ibus_addr_o <= req_r;
 
    addr_o  <= head_r;
+   blk_o   <= blk_r;
    end_o   <= end_r;
    count_o <= minimum(count_r, 4);
 
    gen_words : for i in 0 to 3 generate
       words_o(i) <= ring_r((rd_r + i) mod C_DEPTH);
    end generate gen_words;
+
+   gen_heads : for i in 1 to 4 generate
+      head_next(i) <= head_r + i;
+   end generate gen_heads;
 
    -- A new request, when the bus can take it and every word that may still
    -- arrive has room.
@@ -183,7 +197,15 @@ begin
          end if;
 
          rd_r      <= (rd_r + consume_i) mod C_DEPTH;
-         head_r    <= head_r + consume_i;
+         if consume_i /= 0 then
+            head_r <= head_next(consume_i);
+         end if;
+         -- The block after head_r's, a cycle late, from the register
+         -- alone: head_r moves by at most four words a cycle, so the
+         -- block after the current one is this or the one after it, and
+         -- WRITE compares with both. In the cycle after a redirect it is
+         -- stale, but no store retires then.
+         blk_r <= next_block(head_r, 5);
          count_r   <= count_v;
          pending_r <= pending_v;
 
@@ -204,6 +226,7 @@ begin
             count_r   <= 0;
             rd_r      <= 0;
             head_r    <= (others => '0');
+            blk_r     <= (others => '0');
             end_r     <= (others => '0');
             req_r     <= (others => '0');
             pair_r    <= (others => '0');

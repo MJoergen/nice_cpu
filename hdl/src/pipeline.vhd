@@ -159,6 +159,7 @@ architecture synthesis of pipeline is
 
    -- FETCH
    signal f_addr     : std_logic_vector(31 downto 0);
+   signal f_blk      : std_logic_vector(31 downto 5);
    signal f_end      : std_logic_vector(31 downto 0);
    signal f_words    : t_words4;
    signal f_count    : natural range 0 to 4;
@@ -172,6 +173,7 @@ architecture synthesis of pipeline is
    signal d_redirect : std_logic;
    signal d_dest     : std_logic_vector(31 downto 0);
    signal dec_r      : t_inst;
+   signal dec_q      : t_inst;
    signal seq_uop    : t_uop;
    signal seq_emit   : std_logic;
    signal d_starve   : std_logic;
@@ -238,6 +240,7 @@ begin
          redirect_addr_i => f_target,
          stop_i          => f_stop,
          addr_o          => f_addr,
+         blk_o           => f_blk,
          words_o         => f_words,
          count_o         => f_count,
          consume_i       => f_consume,
@@ -261,6 +264,7 @@ begin
          emit_o     => seq_emit,
          uop_o      => seq_uop,
          inst_o     => dec_r,
+         inst2_o    => dec_q,
          starve_o   => d_starve,
          blocked_o  => d_blocked
       ); -- i_pipe_decode
@@ -331,8 +335,9 @@ begin
          rd_stb_i     => rd_stb_r,
          accept_o     => w_accept,
          f_addr_i     => f_addr,
-         f_end_i      => f_end,
+         f_blk_i      => f_blk,
          dec_i        => dec_r,
+         dec2_i       => dec_q,
          prep_i       => prep_r,
          rq_i         => rq_r,
          rq_cnt_i     => rq_cnt_r,
@@ -386,6 +391,9 @@ begin
          if rst_i = '0' then
             assert not (rd_count = '1' and w_instret = '1')
                report "pipeline: two instructions counted in one cycle"
+               severity failure;
+            assert not (seq_emit = '1' and not decoded_ok(seq_uop))
+               report "pipeline: DECODE's fields disagree with the instruction word"
                severity failure;
             assert not (rd_stb_r = '1' and w_req = '1')
                report "pipeline: a read of PREPARE and an access of WRITE on the bus at once"

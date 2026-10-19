@@ -358,7 +358,9 @@ of stale words, or of an odd address's low word, fails the proof.
 `formal_pipe_prepare` proves PREPARE for every cycle. Its inputs are
 free, within assumptions that model DECODE and WRITE as far as PREPARE
 relies on them: DECODE emits the micro-operations of each instruction in
-order, WRITE takes what PREPARE moves on, SR and WRITE's condition of the
+order, with the fields it decodes agreeing with the instruction word
+(`decoded_ok` in `src/pipe_pkg.vhd`, which `pipeline` also asserts in
+simulation), WRITE takes what PREPARE moves on, SR and WRITE's condition of the
 instruction change only when WRITE retires a micro-operation that may
 change them, and WRITE neither flushes nor takes an interrupt while
 PREPARE holds an instruction that has made a data read. The assertions
@@ -494,9 +496,9 @@ data bus port, each an entity of its own:
 | Stage | Where | What it does |
 |---|---|---|
 | FETCH | `pipe_fetch` | Reads pairs of words ahead on the instruction bus, several requests in flight, into a ring of 16 words. Presents the next four to DECODE. |
-| DECODE | `pipe_decode` | Takes one whole instruction, and splits it into micro-operations, one per cycle (MICROARCH.md §4). Redirects FETCH at once for `MOVE R15, c` and `ADD R15, R15, c` with condition "always". |
-| PREPARE | `pipe_prepare` | Tests the condition when it can, and issues the data reads. |
-| WRITE | `pipe_write` | Computes, writes the registers and SR, issues the store, takes interrupts, and runs the control instructions. |
+| DECODE | `pipe_decode` | Takes one whole instruction, with one more behind it, decodes its fields, and splits it into micro-operations, one per cycle (MICROARCH.md §4). Redirects FETCH at once for `MOVE R15, c` and `ADD R15, R15, c` with condition "always". |
+| PREPARE | `pipe_prepare` | Reads the registers and forms every operand value and address, reduces the shift count, tests the condition when it can, and issues the data reads. |
+| WRITE | `pipe_write` | Computes, writes the registers and SR, issues the store, takes interrupts, and runs the control instructions. Its one bypass is the value it wrote last. |
 | DBUS | `pipe_dbus` | The data bus port, with the tags and the read data of the requests in flight. |
 
 `pipeline` connects the parts.
@@ -524,10 +526,14 @@ its operands. `rng64` (1.5) waited for the multiplier before it took two
 cycles. `make -C bench compare` puts the estimate of
 `bench/pipecycles.py` beside these cycles, phase by phase.
 
-WRITE is the only stage that writes registers, and in order. So it reads
-them directly, and PREPARE reads them for the address of a data read,
-waiting while the micro-operation in WRITE will still write the register.
-No value needs a bypass (ASSUMPTIONS.md, item 1).
+WRITE is the only stage that writes registers, and in order. PREPARE
+reads them, one stage earlier, and forms the operand values and
+addresses. A field that is the register the micro-operation in WRITE
+writes takes the value WRITE wrote last, WRITE's one bypass; a field
+that needs an adder on it, or a read address, waits a cycle
+(ASSUMPTIONS.md, item 1; MICROARCH.md §7.4). Three rare cases take WRITE
+two cycles: a destination adjusted by one, a jump to a computed target,
+and a shift by a count from memory (MICROARCH.md §7.4).
 
 The condition is tested once per instruction, in PREPARE if no older
 micro-operation may still change SR, otherwise in WRITE. A data read waits

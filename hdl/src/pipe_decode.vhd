@@ -1,16 +1,19 @@
 -- DECODE of the pipelined core (MICROARCH.md §3, §4).
 --
 -- THEORY OF OPERATION
--- DECODE takes one whole instruction from FETCH into dec_r, when all its
--- words are present and dec_r is free. For "MOVE R15, c" and
--- "ADD R15, R15, c" with condition "always" it redirects FETCH at once
--- (MICROARCH.md §5.4). Then it splits the instruction in dec_r into
--- micro-operations (src/pipe_pkg.vhd), one per cycle, for PREPARE.
+-- DECODE takes one whole instruction from FETCH, when all its words are
+-- present and it has room: into dec_r, the instruction it splits into
+-- micro-operations (src/pipe_pkg.vhd), one per cycle, for PREPARE, or
+-- into dec_q, the one after it, which moves up when dec_r frees. For
+-- "MOVE R15, c" and "ADD R15, R15, c" with condition "always" it
+-- redirects FETCH at once (MICROARCH.md §5.4), as it takes them.
 --
--- The registers are dec_r, the micro-operation to emit, and the id of the
--- next instruction. consume_o, redirect_o, target_o, and emit_o depend
--- combinationally on the words from FETCH and on ready_i and flush_i, so
--- that an instruction moves on in the cycle the next stage frees itself.
+-- The registers are dec_r, dec_q, the micro-operation to emit, and the
+-- id of the next instruction. consume_o, redirect_o, and target_o depend
+-- combinationally on the words from FETCH and on dec_q alone, so that
+-- the path from WRITE's decisions ends here and not in FETCH. emit_o
+-- depends on ready_i and flush_i, so that an instruction moves on in the
+-- cycle the next stage frees itself.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) ready_i is '1' when PREPARE takes uop_o at the end of the cycle.
@@ -49,9 +52,10 @@ entity pipe_decode is
       ready_i    : in  std_logic;
       emit_o     : out std_logic;
       uop_o      : out t_uop;
-      -- The instruction in dec_r, for the check of stores into
-      -- fetched code
+      -- The instructions in dec_r and dec_q, for the check of stores
+      -- into fetched code
       inst_o     : out t_inst;
+      inst2_o    : out t_inst;
 
       -- For the fetch statistics: DECODE is free, but the words of the
       -- next instruction are not all there; or they are, but DECODE is busy
@@ -78,7 +82,8 @@ architecture synthesis of pipe_decode is
    signal id_r    : std_logic_vector(2 downto 0);
 
    -- Splitting it into micro-operations
-   signal dec_r       : t_inst;
+   signal dec_r       : t_inst;   -- The instruction being split
+   signal dec_q       : t_inst;   -- The one after it, waiting
    signal seq_kind_r  : t_kind;
    signal seq_first_r : std_logic;
    signal seq_uop     : t_uop;
@@ -99,6 +104,7 @@ begin
    emit_o     <= seq_emit;
    uop_o      <= seq_uop;
    inst_o     <= dec_r;
+   inst2_o    <= dec_q;
 
 
    p_decode : process (all)
@@ -117,6 +123,7 @@ begin
       inst_v.valid   := '1';
       inst_v.id      := id_r;
       inst_v.addr    := f_addr;
+      inst_v.blk     := next_block(f_addr, 2);
       inst_v.next_pc := f_addr + len_v;
       inst_v.iw      := iw_v;
       k_v            := 1;
@@ -125,7 +132,15 @@ begin
             inst_v.consts(i) := f_words(k_v);
             k_v              := minimum(k_v + 1, 3);
          end if;
+         inst_v.m(i) := mode(iw_v, i);
+         inst_v.x(i) := reg(iw_v, i);
       end loop;
+      inst_v.side  := to_sl(side(iw_v, 1)) & to_sl(side(iw_v, 2));
+      inst_v.ctrl  := to_sl(is_ctrl(iw_v));
+      inst_v.shift := iw_v(27) and not inst_v.ctrl;
+      inst_v.op    := iw_v(24 downto 21);
+      inst_v.mbit  := iw_v(25);
+      inst_v.cbit  := iw_v(26);
 
       -- The jumps that DECODE resolves (MICROARCH.md §5.4): condition
       -- "always", an ALU instruction, and the destination R15 in mode 000.
@@ -156,22 +171,35 @@ begin
       d_ok   <= '1' when f_count >= len_v else '0';
    end process p_decode;
 
-   d_load    <= d_ok and dec_free and not w_flush;
-   starve_o  <= not d_ok and dec_free and not w_flush and not rst_i;
-   blocked_o <= d_ok and not dec_free and not w_flush and not rst_i;
+   -- An instruction is taken when the second slot is free, so that
+   -- consume_o depends on nothing downstream of DECODE. A flush drops it
+   -- again, below.
+   d_load    <= d_ok and not dec_q.valid;
+   starve_o  <= not d_ok and not dec_q.valid and not w_flush and not rst_i;
+   blocked_o <= d_ok and dec_q.valid and not w_flush and not rst_i;
    f_consume <= inst_len(f_words(0)) when d_load = '1' else 0;
 
 
+   -- The micro-operation to emit, with what each stage after DECODE needs
+   -- to know of it decoded here, from registers, so that the stages'
+   -- paths start from registers (MICROARCH.md §7.4). The shift count of a
+   -- constant is prepared here too.
    p_seq_uop : process (all)
       variable uop_v : t_uop;
    begin
-      uop_v       := C_UOP_NONE;
-      uop_v.valid := dec_r.valid;
-      uop_v.inst  := dec_r;
-      uop_v.kind  := seq_kind_r;
-      uop_v.first := seq_first_r;
-      uop_v.last  := is_last(seq_kind_r);
-      seq_uop     <= uop_v;
+      uop_v          := C_UOP_NONE;
+      uop_v.valid    := dec_r.valid;
+      uop_v.inst     := dec_r;
+      uop_v.kind     := seq_kind_r;
+      uop_v.first    := seq_first_r;
+      uop_v.last     := is_last(seq_kind_r);
+      uop_v.wreg     := uop_wreg(dec_r.iw, seq_kind_r);
+      uop_v.reads    := uop_reads(dec_r.iw, seq_kind_r);
+      uop_v.store    := to_sl(uop_store(dec_r.iw, seq_kind_r));
+      uop_v.may_sr   := to_sl(uop_may_sr(dec_r.iw, seq_kind_r));
+      uop_v.may_jump := to_sl(uop_may_jump(dec_r.iw, seq_kind_r));
+      uop_v.cnt      := shift_prep(dec_r.op, dec_r.consts(2));
+      seq_uop        <= uop_v;
    end process p_seq_uop;
 
    seq_emit <= dec_r.valid and p_ready and not w_flush;
@@ -189,19 +217,34 @@ begin
             end if;
          end if;
 
+         -- The next instruction moves up when dec_r frees: from dec_q, or
+         -- straight from FETCH. Else a new one waits in dec_q.
+         if dec_free = '1' then
+            if dec_q.valid = '1' then
+               dec_r       <= dec_q;
+               seq_kind_r  <= first_kind(dec_q.iw);
+               seq_first_r <= '1';
+               dec_q.valid <= '0';
+            elsif d_load = '1' then
+               dec_r       <= d_inst;
+               seq_kind_r  <= first_kind(d_inst.iw);
+               seq_first_r <= '1';
+            end if;
+         elsif d_load = '1' then
+            dec_q <= d_inst;
+         end if;
          if d_load = '1' then
-            dec_r       <= d_inst;
-            seq_kind_r  <= first_kind(d_inst.iw);
-            seq_first_r <= '1';
-            id_r        <= id_r + 1;
+            id_r <= id_r + 1;
          end if;
 
          if w_flush = '1' then
             dec_r.valid <= '0';
+            dec_q.valid <= '0';
          end if;
 
          if rst_i = '1' then
             dec_r       <= C_INST_NONE;
+            dec_q       <= C_INST_NONE;
             seq_kind_r  <= UOP_OP;
             seq_first_r <= '0';
             id_r        <= (others => '0');

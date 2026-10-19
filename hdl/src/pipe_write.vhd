@@ -50,8 +50,9 @@ entity pipe_write is
 
       -- The words fetched but not retired (MICROARCH.md §5.5)
       f_addr_i     : in  std_logic_vector(31 downto 0);
-      f_end_i      : in  std_logic_vector(31 downto 0);
+      f_blk_i      : in  std_logic_vector(31 downto 5);   -- Lags f_addr_i by a cycle
       dec_i        : in  t_inst;
+      dec2_i       : in  t_inst;
       prep_i       : in  t_uop;
 
       -- The data bus (src/pipe_dbus.vhd)
@@ -92,8 +93,9 @@ architecture synthesis of pipe_write is
    signal p_first_read : std_logic;
    signal rd_stb_r     : std_logic;
    signal f_addr       : std_logic_vector(31 downto 0);
-   signal f_end        : std_logic_vector(31 downto 0);
+   signal f_blk        : std_logic_vector(31 downto 5);
    signal dec_r        : t_inst;
+   signal dec2_r       : t_inst;
    signal prep_r       : t_uop;
    signal rq_r         : t_words(0 to C_MAX_OUT - 1);
    signal rq_cnt_r     : natural range 0 to C_MAX_OUT;
@@ -122,8 +124,9 @@ begin
    p_first_read <= first_read_i;
    rd_stb_r     <= rd_stb_i;
    f_addr       <= f_addr_i;
-   f_end        <= f_end_i;
+   f_blk        <= f_blk_i;
    dec_r        <= dec_i;
+   dec2_r       <= dec2_i;
    prep_r       <= prep_i;
    rq_r         <= rq_i;
    rq_cnt_r     <= rq_cnt_i;
@@ -146,31 +149,36 @@ begin
 
 
    p_write : process (all)
-      variable n_v     : t_write;
-      variable u_v     : t_uop;
-      variable iw_v    : std_logic_vector(31 downto 0);
-      variable cond_v  : std_logic;
-      variable data_v  : t_words(0 to 1);
-      variable avail_v : natural range 0 to C_MAX_OUT + 1;
-      variable rd_v    : std_logic_vector(1 to 2);
-      variable nr_v    : natural range 0 to 2;
-      variable k_v     : natural range 0 to 2;
-      variable base_v  : t_fields;
-      variable x_v     : natural range 0 to 15;
-      variable m_v     : std_logic_vector(2 downto 0);
-      variable v0_v    : std_logic_vector(31 downto 0);
-      variable v1_v    : std_logic_vector(31 downto 0);
-      variable res_v   : t_result;
-      variable a_v     : std_logic_vector(31 downto 0);
-      variable wreg_v  : natural range 0 to 15;
-      variable wval_v  : std_logic_vector(31 downto 0);
-      variable store_v : boolean;
-      variable done_v  : boolean;
-      variable flush_v : boolean;
-      variable halt_v  : t_halt;
-      variable rti_v   : boolean;
-      variable bound_v : boolean;
-      variable room_v  : boolean;
+      variable n_v      : t_write;
+      variable u_v      : t_uop;
+      variable iw_v     : std_logic_vector(31 downto 0);
+      variable cond_v   : std_logic;
+      variable data_v   : t_words(0 to 1);
+      variable avail_v  : natural range 0 to C_MAX_OUT + 1;
+      variable rd_v     : std_logic_vector(1 to 2);
+      variable nr_v     : natural range 0 to 2;
+      variable k_v      : natural range 0 to 2;
+      variable base_v   : t_fields;
+      variable x_v      : natural range 0 to 15;
+      variable m_v      : std_logic_vector(2 downto 0);
+      variable v0_v     : std_logic_vector(31 downto 0);
+      variable v1_v     : std_logic_vector(31 downto 0);
+      variable cnt_v    : t_shift_prep;
+      variable res_v    : t_result;
+      variable a_v      : std_logic_vector(31 downto 0);
+      variable wreg_v   : natural range 0 to 15;
+      variable wval_v   : std_logic_vector(31 downto 0);
+      variable target_v : std_logic_vector(31 downto 0);
+      variable store_v  : boolean;
+      variable adjust_v : boolean;   -- The destination is adjusted by one after the result
+      variable hit_v    : boolean;   -- The store lies in fetched code
+      variable two_v    : boolean;   -- The micro-operation needs a second cycle after this
+      variable done_v   : boolean;
+      variable flush_v  : boolean;
+      variable halt_v   : t_halt;
+      variable rti_v    : boolean;
+      variable bound_v  : boolean;
+      variable room_v   : boolean;
    begin
       n_v         := w_r;
       n_v.rep     := C_RETIRE_NONE;
@@ -183,7 +191,6 @@ begin
       w_pop       <= 0;
       w_instret   <= '0';
       w_flush     <= '0';
-      w_target    <= w_r.regs(15);
       take_nmi    <= '0';
       take_irq    <= '0';
       done_v      := false;
@@ -191,11 +198,12 @@ begin
       halt_v      := HALT_NONE;
       rti_v       := false;
       store_v     := false;
+      adjust_v    := false;
+      two_v       := false;
       res_v       := (r => (others => '0'), c => '0', v => '0');
       a_v         := (others => '0');
       v0_v        := (others => '0');
       v1_v        := (others => '0');
-      base_v      := (others => (others => '0'));
       x_v         := 0;
       m_v         := "000";
       k_v         := 0;
@@ -203,6 +211,11 @@ begin
       nr_v        := 0;
       wreg_v      := 0;
       wval_v      := (others => '0');
+      -- The redirect target: R15 if an earlier micro-operation of the
+      -- instruction wrote it, else the next instruction, for the refetch
+      -- after a store into fetched code. A jump by this micro-operation
+      -- sets it below.
+      target_v    := w_r.regs(15) when w_r.jump = '1' else u_v.inst.next_pc;
 
       -- The read data, from the FIFO or straight from the bus
       avail_v   := rq_cnt_r + to_nat(ack_read);
@@ -212,19 +225,47 @@ begin
       -- Room on the data bus for an access of WRITE's own
       room_v := rd_stb_r = '0' and tag_cnt_r < C_MAX_OUT;
 
-      -- The condition (ISA.md §3)
+      -- The condition (ISA.md §3). A micro-operation in a later cycle of
+      -- its own keeps the condition of its first, since it may have
+      -- changed the flags itself.
       if u_v.cond_known = '1' then
          cond_v := u_v.cond_val;
-      elsif u_v.first = '1' then
+      elsif u_v.first = '1' and w_r.exec_done = '0' and w_r.cnt_step = 0 then
          cond_v := condition(iw_v, w_r.regs(14));
       else
          cond_v := w_r.cond;
       end if;
 
+      -- The value or address of each field, as PREPARE formed it, or the
+      -- value written last, or SR (MICROARCH.md §7.4)
+      for i in 0 to 2 loop
+         case u_v.src(i) is
+            when SRC_LAST => base_v(i) := w_r.last;
+            when SRC_SR   => base_v(i) := w_r.regs(14);
+            when others   => base_v(i) := u_v.val(i);
+         end case;
+      end loop;
+
+      -- The value written last, for the next micro-operation: the register
+      -- this one writes, as it is, unless this one writes it below.
+      n_v.last := w_r.regs(u_v.wreg);
+
+      -- The destination address of a store, and whether it lies in a word
+      -- fetched but not retired (MICROARCH.md §5.5): FETCH holds at most
+      -- 16 words from f_addr on, and an instruction at most 4. Decided
+      -- here, from the operand alone, so that the flush depends on as
+      -- little as possible.
+      a_v   := base_v(0);
+      hit_v := near(a_v, f_addr, f_blk, 5) or a_v(31 downto 5) = f_blk + 1 or
+               (dec_r.valid = '1' and near(a_v, dec_r.addr, dec_r.blk, 2)) or
+               (dec2_r.valid = '1' and near(a_v, dec2_r.addr, dec2_r.blk, 2)) or
+               (prep_r.valid = '1' and near(a_v, prep_r.inst.addr, prep_r.inst.blk, 2));
+
       -- An instruction boundary where ISA.md §7.1 allows an interrupt, and
       -- no data access of the next instruction has begun.
       bound_v := w_r.mode = RUN_ST and rst_i = '0' and w_r.commits = 0 and w_r.mid = '0' and
-                 w_r.busy = '0' and (u_v.valid = '0' or u_v.first = '1') and
+                 w_r.busy = '0' and w_r.cnt_step = 0 and w_r.exec_done = '0' and
+                 (u_v.valid = '0' or u_v.first = '1') and
                  w_r.in_service = '0' and w_r.after_rti = '0';
 
       if bound_v and nmi_valid_i = '1' then
@@ -261,6 +302,7 @@ begin
             n_v.in_service    := '1';
             n_v.regs(14)(C_SR_I) := '1';
             n_v.regs(15) := data_v(0);
+            target_v     := data_v(0);
             n_v.mode     := RUN_ST;
             n_v.uop.valid := '0';
             flush_v      := true;
@@ -281,17 +323,6 @@ begin
          wreg_v := 0;
          wval_v := (others => '0');
 
-         -- The base register of each field (ISA.md §4.3)
-         for i in 0 to 2 loop
-            x_v := reg(iw_v, i);
-            if x_v = 15 then
-               base_v(i) := w_r.regs(15) when u_v.first = '0' and w_r.jump = '1' else
-                            u_v.inst.next_pc;
-            else
-               base_v(i) := w_r.regs(x_v);
-            end if;
-         end loop;
-
          if cond_v = '0' then
             done_v := true;
          elsif u_v.kind = UOP_CTRL then
@@ -311,6 +342,7 @@ begin
                         -- ISA.md §7.4
                         n_v.regs(14)   := regval(14, w_r.saved_sr);
                         n_v.regs(15)   := w_r.saved_pc;
+                        target_v       := w_r.saved_pc;
                         n_v.in_service := '0';
                         rti_v          := true;
                      end if;
@@ -333,138 +365,178 @@ begin
                end case;
             end if;
          else
-            rd_v := uop_reads(iw_v, u_v.kind);
+            rd_v := u_v.reads;
             nr_v := popcount(rd_v);
-            if avail_v >= nr_v then
+            if w_r.exec_done = '1' then
+               -- The second cycle of a register destination adjusted by
+               -- one, or of a jump to a computed target: the result is
+               -- in the register and in w_r.last.
                done_v := true;
-               w_pop  <= nr_v;
-               k_v    := 0;
-
-               case u_v.kind is
-                  when UOP_S0 =>
-                     -- ISA.md §4.1, s0 with its side effect
-                     x_v := reg(iw_v, 1);
-                     m_v := mode(iw_v, 1);
-                     if m_v(2) = '1' then
-                        v0_v := data_v(0);
-                     else
-                        v0_v := src_value(m_v, x_v, base_v(1), u_v.inst.consts(1));
-                     end if;
-                     n_v.s0val := v0_v;
-                     wreg_v    := x_v;
-                     wval_v    := base_v(1) - 1 when m_v(0) = '1' else base_v(1) + 1;
-
-                  when UOP_S1 =>
-                     -- s0, unless S0 had it, then s1 with its side effect
-                     if not side(iw_v, 1) then
-                        m_v := mode(iw_v, 1);
-                        if m_v(2) = '1' then
-                           n_v.s0val := data_v(0);
-                           k_v       := 1;
-                        else
-                           n_v.s0val := src_value(m_v, reg(iw_v, 1), base_v(1), u_v.inst.consts(1));
-                        end if;
-                     end if;
-                     x_v := reg(iw_v, 2);
-                     m_v := mode(iw_v, 2);
-                     if m_v(2) = '1' then
-                        n_v.s1val := data_v(k_v);
-                     else
-                        n_v.s1val := src_value(m_v, x_v, base_v(2), u_v.inst.consts(2));
-                     end if;
-                     wreg_v := x_v;
-                     wval_v := base_v(2) - 1 when m_v(0) = '1' else base_v(2) + 1;
-
-                  when others =>
-                     -- ISA.md §5, steps 5 to 8
-                     if side(iw_v, 1) or side(iw_v, 2) then
-                        v0_v := w_r.s0val;
-                     elsif mode(iw_v, 1)(2) = '1' then
-                        v0_v := data_v(0);
-                        k_v  := 1;
-                     else
-                        v0_v := src_value(mode(iw_v, 1), reg(iw_v, 1), base_v(1), u_v.inst.consts(1));
-                     end if;
-                     if side(iw_v, 2) then
-                        v1_v := w_r.s1val;
-                     elsif mode(iw_v, 2)(2) = '1' then
-                        v1_v := data_v(k_v);
-                     else
-                        v1_v := src_value(mode(iw_v, 2), reg(iw_v, 2), base_v(2), u_v.inst.consts(2));
-                     end if;
-
-                     if iw_v(27) = '1' then
-                        res_v := shift(iw_v(24 downto 21), v0_v, v1_v, w_r.regs(14)(C_SR_C));
-                     else
-                        res_v := alu(iw_v(24 downto 21), v0_v, v1_v, iw_v(26) and w_r.regs(14)(C_SR_C));
-                     end if;
-
-                     -- The destination (ISA.md §4.2)
-                     x_v := reg(iw_v, 0);
-                     m_v := mode(iw_v, 0);
-                     a_v := mem_addr(m_v, x_v, base_v(0), u_v.inst.consts(0));
-                     case m_v is
-                        when "000" =>
-                           wreg_v := x_v;
-                           wval_v := res_v.r;
-                        when "001" =>
-                           wreg_v := x_v;
-                           wval_v := regval(x_v, res_v.r) - 1;
-                        when "010" =>
-                           wreg_v := x_v;
-                           wval_v := regval(x_v, res_v.r) + 1;
-                        when "101" =>
-                           wreg_v := x_v;
-                           wval_v := a_v;
-                        when "110" =>
-                           wreg_v := x_v;
-                           wval_v := base_v(0) + 1;
-                        when others =>
-                           null;
-                     end case;
-                     store_v := m_v(2) = '1' or m_v = "011";
-               end case;
-
-               -- The register write
+               x_v    := u_v.inst.x(0);
+               m_v    := u_v.inst.m(0);
+               if m_v = "001" then
+                  wreg_v := x_v;
+                  wval_v := w_r.last - 1;
+               elsif m_v = "010" then
+                  wreg_v := x_v;
+                  wval_v := w_r.last + 1;
+               end if;
+               target_v := regval(15, wval_v) when wreg_v = 15 else w_r.regs(15);
                if wreg_v /= 0 then
                   n_v.regs(wreg_v) := regval(wreg_v, wval_v);
-                  if wreg_v = 15 then
+                  n_v.last         := regval(wreg_v, wval_v);
+               end if;
+            elsif avail_v >= nr_v then
+               -- The sources (ISA.md §4.1): from memory, from S0 and S1 for
+               -- the operation, or as PREPARE formed them
+               if rd_v(1) = '1' then
+                  v0_v := data_v(0);
+                  k_v  := 1;
+               elsif u_v.kind = UOP_OP and (u_v.inst.side(1) = '1' or u_v.inst.side(2) = '1') then
+                  v0_v := w_r.s0val;
+               else
+                  v0_v := base_v(1);
+               end if;
+               if rd_v(2) = '1' then
+                  v1_v := data_v(k_v);
+               elsif u_v.kind = UOP_OP and u_v.inst.side(2) = '1' then
+                  v1_v := w_r.s1val;
+               else
+                  v1_v := base_v(2);
+               end if;
+
+               if u_v.cnt_late = '1' and w_r.cnt_step /= 2 then
+                  -- The first cycle of a shift whose count PREPARE could not
+                  -- reduce: reduce it from the count as it is now, and
+                  -- leave the read data for the next cycle. A rotation
+                  -- through C takes a second cycle for the count mod 33.
+                  if w_r.cnt_step = 0 then
+                     n_v.cnt      := shift_prep(u_v.inst.op, v1_v, false);
+                     n_v.m33sum   := mod33_sum(v1_v);
+                     n_v.cnt_step := 1 when u_v.inst.op(2 downto 0) = "101" else 2;
+                     n_v.cond     := cond_v;
+                  else
+                     n_v.cnt.k    := rot33_k(u_v.inst.op, mod33_of_sum(w_r.m33sum));
+                     n_v.cnt_step := 2;
+                  end if;
+               else
+                  done_v := true;
+                  w_pop  <= nr_v;
+                  cnt_v  := w_r.cnt when u_v.cnt_late = '1' else u_v.cnt;
+
+                  case u_v.kind is
+                     when UOP_S0 =>
+                        -- s0 with its side effect
+                        x_v       := u_v.inst.x(1);
+                        m_v       := u_v.inst.m(1);
+                        n_v.s0val := v0_v;
+                        wreg_v    := x_v;
+                        wval_v    := base_v(1) when m_v(0) = '1' else base_v(1) + 1;
+
+                     when UOP_S1 =>
+                        -- s0, unless S0 had it, then s1 with its side effect
+                        if u_v.inst.side(1) = '0' then
+                           n_v.s0val := v0_v;
+                        end if;
+                        x_v       := u_v.inst.x(2);
+                        m_v       := u_v.inst.m(2);
+                        n_v.s1val := v1_v;
+                        wreg_v    := x_v;
+                        wval_v    := base_v(2) when m_v(0) = '1' else base_v(2) + 1;
+
+                     when others =>
+                        -- ISA.md §5, steps 5 to 8
+                        if u_v.inst.shift = '1' then
+                           res_v := shift_fast(v0_v, w_r.regs(14)(C_SR_C), cnt_v);
+                        else
+                           res_v := alu(u_v.inst.op, v0_v, v1_v, u_v.inst.cbit and w_r.regs(14)(C_SR_C));
+                        end if;
+
+                        -- The destination (ISA.md §4.2)
+                        x_v := u_v.inst.x(0);
+                        m_v := u_v.inst.m(0);
+                        case m_v is
+                           when "000" =>
+                              wreg_v := x_v;
+                              wval_v := res_v.r;
+                              -- A jump: a MOVE's target is its source, ready
+                              -- now; any other is ready a cycle later.
+                              if x_v = 15 then
+                                 target_v := v0_v;
+                                 two_v    := u_v.inst.op /= "0000";
+                              end if;
+                           when "001" | "010" =>
+                              wreg_v   := x_v;
+                              wval_v   := res_v.r;
+                              adjust_v := x_v /= 0;
+                              two_v    := adjust_v;
+                           when "101" =>
+                              wreg_v := x_v;
+                              wval_v := a_v;
+                           when "110" =>
+                              wreg_v := x_v;
+                              wval_v := a_v + 1;
+                           when others =>
+                              null;
+                        end case;
+                        -- A side effect on R15 is the jump's target; else a
+                        -- flush after this store refetches the next instruction.
+                        if (m_v = "101" or m_v = "110") and x_v = 15 then
+                           target_v := regval(15, wval_v);
+                        end if;
+                        store_v := u_v.store = '1';
+                  end case;
+
+                  -- The register write. Whether it is R15, which starts a
+                  -- flush, comes from the decoded field, so that the flush
+                  -- does not wait for the write mux.
+                  if wreg_v /= 0 then
+                     n_v.regs(wreg_v) := regval(wreg_v, wval_v);
+                     n_v.last         := regval(wreg_v, wval_v);
+                  end if;
+                  if u_v.wreg = 15 then
                      n_v.jump := '1';
                   end if;
-               end if;
 
-               -- The flags (ISA.md §6), after the destination
-               if u_v.kind = UOP_OP and iw_v(25) = '1' and
-                  not (reg(iw_v, 0) = 14 and mode(iw_v, 0)(2) = '0' and mode(iw_v, 0) /= "011") then
-                  n_v.regs(14) := flags(n_v.regs(14), res_v);
-               end if;
+                  -- The flags (ISA.md §6), after the destination
+                  if u_v.kind = UOP_OP and u_v.inst.mbit = '1' and
+                     not (u_v.inst.x(0) = 14 and u_v.inst.m(0)(2) = '0' and u_v.inst.m(0) /= "011") then
+                     n_v.regs(14) := flags(n_v.regs(14), res_v);
+                  end if;
 
-               -- The store, held on the bus until it is accepted
-               if store_v then
-                  done_v := false;
-                  if room_v then
-                     w_req  <= '1';
-                     w_we   <= '1';
-                     w_addr <= a_v;
-                     w_data <= res_v.r;
-                     if dbus_stall_i = '0' then
-                        done_v := true;
+                  -- The store, held on the bus until it is accepted
+                  if store_v then
+                     done_v := false;
+                     if room_v then
+                        w_req  <= '1';
+                        w_we   <= '1';
+                        w_addr <= a_v;
+                        w_data <= res_v.r;
+                        if dbus_stall_i = '0' then
+                           done_v := true;
+                        end if;
                      end if;
-                  end if;
-                  if not done_v then
-                     w_pop <= 0;
-                  end if;
-                  n_v.busy := to_sl(room_v and dbus_stall_i = '1');
+                     if not done_v then
+                        w_pop <= 0;
+                     end if;
+                     n_v.busy := to_sl(room_v and dbus_stall_i = '1');
 
-                  -- A store into a word fetched but not retired
-                  if done_v and (in_range(a_v, f_addr, f_end) or
-                     (dec_r.valid = '1' and in_range(a_v, dec_r.addr, dec_r.next_pc)) or
-                     (prep_r.valid = '1' and in_range(a_v, prep_r.inst.addr, prep_r.inst.next_pc))) then
-                     flush_v := true;
+                     -- A store into a word fetched but not retired
+                     if done_v and hit_v then
+                        flush_v := true;
+                     end if;
+                     n_v.rep.mem_we   := '1';
+                     n_v.rep.mem_addr := a_v;
+                     n_v.rep.mem_data := res_v.r;
                   end if;
-                  n_v.rep.mem_we   := '1';
-                  n_v.rep.mem_addr := a_v;
-                  n_v.rep.mem_data := res_v.r;
+
+                  if two_v then
+                     -- The result is written now; the micro-operation
+                     -- retires in the next cycle.
+                     done_v         := false;
+                     n_v.exec_done  := '1';
+                     n_v.cond       := cond_v;
+                  end if;
                end if;
             end if;
          end if;
@@ -472,6 +544,8 @@ begin
          if done_v then
             n_v.uop.valid := '0';
             n_v.busy      := '0';
+            n_v.cnt_step  := 0;
+            n_v.exec_done := '0';
             if u_v.first = '1' then
                n_v.cond := cond_v;
             end if;
@@ -509,11 +583,15 @@ begin
             end if;
          else
             -- Nothing changes until the micro-operation retires, but a
-            -- move to VEC_ST and the bus state.
-            n_v.regs  := w_r.regs;
+            -- move to VEC_ST, the bus state, and the result of a first
+            -- cycle.
+            if w_r.exec_done = '0' and not two_v then
+               n_v.regs  := w_r.regs;
+               n_v.last  := w_r.last;
+               n_v.jump  := w_r.jump;
+            end if;
             n_v.s0val := w_r.s0val;
             n_v.s1val := w_r.s1val;
-            n_v.jump  := w_r.jump;
             n_v.in_service := w_r.in_service;
             n_v.rep        := C_RETIRE_NONE;
          end if;
@@ -537,7 +615,7 @@ begin
 
       w_done   <= to_sl(done_v);
       w_flush  <= to_sl(flush_v);
-      w_target <= n_v.regs(15);
+      w_target <= target_v;
       w_n      <= n_v;
    end process p_write;
 
@@ -558,6 +636,8 @@ begin
             w_r.mid        <= '0';
             w_r.jump       <= '0';
             w_r.busy       <= '0';
+            w_r.cnt_step   <= 0;
+            w_r.exec_done  <= '0';
             w_r.vec_issued <= '0';
             w_r.commits    <= 0;
             w_r.rep        <= C_RETIRE_NONE;

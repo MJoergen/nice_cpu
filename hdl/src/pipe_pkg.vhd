@@ -30,40 +30,82 @@ package pipe_pkg is
    -- One word per operand field: 0 = dest, 1 = s0, 2 = s1.
    type t_fields is array (0 to 2) of std_logic_vector(31 downto 0);
 
+   type t_modes is array (0 to 2) of std_logic_vector(2 downto 0);
+
+   type t_regnums is array (0 to 2) of natural range 0 to 15;
+
    type t_kind is (UOP_S0, UOP_S1, UOP_OP, UOP_CTRL);
 
-   -- A decoded instruction
+   -- A decoded instruction. DECODE fills in what follows from the
+   -- instruction word alone, once, so that the later stages start from
+   -- registers (MICROARCH.md §7.4).
    type t_inst is record
       valid   : std_logic;
       id      : std_logic_vector(2 downto 0);    -- Tells instructions in flight apart
       addr    : std_logic_vector(31 downto 0);   -- Of the instruction word
+      blk     : std_logic_vector(31 downto 2);   -- The 4-word block after addr's
       next_pc : std_logic_vector(31 downto 0);   -- After the constant words
       iw      : std_logic_vector(31 downto 0);
       consts  : t_fields;                        -- The constant word of each field
       early   : std_logic;                       -- DECODE has redirected FETCH to it
+      m       : t_modes;                         -- The mode of each field
+      x       : t_regnums;                       -- The register of each field
+      side    : std_logic_vector(1 to 2);        -- The source has a side effect
+      ctrl    : std_logic;                       -- A control instruction
+      shift   : std_logic;                       -- A shift, else an ALU operation
+      op      : std_logic_vector(3 downto 0);    -- The operation
+      mbit    : std_logic;                       -- Writes the flags
+      cbit    : std_logic;                       -- Takes the carry in
    end record t_inst;
 
    constant C_INST_NONE : t_inst := (
       valid   => '0',
       id      => (others => '0'),
       addr    => (others => '0'),
+      blk     => (others => '0'),
       next_pc => (others => '0'),
       iw      => (others => '0'),
       consts  => (others => (others => '0')),
-      early   => '0'
+      early   => '0',
+      m       => (others => (others => '0')),
+      x       => (others => 0),
+      side    => "00",
+      ctrl    => '0',
+      shift   => '0',
+      op      => (others => '0'),
+      mbit    => '0',
+      cbit    => '0'
    );
 
-   -- A micro-operation
+   -- Where WRITE takes a field's value or address from (MICROARCH.md
+   -- §7.4): the value PREPARE formed, the value WRITE wrote last, which
+   -- the micro-operation before this one writes to the field's register,
+   -- or SR, which WRITE keeps.
+   type t_src is (SRC_VAL, SRC_LAST, SRC_SR);
+
+   type t_srcs is array (0 to 2) of t_src;
+
+   -- A micro-operation. DECODE fills in the fields down to cnt, for the
+   -- kind of micro-operation, and PREPARE the rest.
    type t_uop is record
       valid      : std_logic;
       inst       : t_inst;
       kind       : t_kind;
       first      : std_logic;                    -- The instruction's first
       last       : std_logic;                    -- The instruction's last
+      wreg       : natural range 0 to 15;        -- The register it writes, or 0
+      reads      : std_logic_vector(1 to 2);     -- The sources it reads from memory
+      store      : std_logic;                    -- It writes memory
+      may_sr     : std_logic;                    -- It may change SR
+      may_jump   : std_logic;                    -- It may write R15, or is a control instruction
+      cnt        : t_shift_prep;                 -- The shift count, from the constant
       cond_known : std_logic;                    -- PREPARE has tested the condition
       cond_val   : std_logic;                    -- Its result
       committed  : std_logic;                    -- The instruction has made a data read
       counted    : std_logic;                    -- The instruction is in instret
+      val        : t_fields;                     -- The value or address of each field
+      src        : t_srcs;                       -- Where WRITE takes it from
+      cnt_late   : std_logic;                    -- WRITE must prepare the shift count itself
    end record t_uop;
 
    constant C_UOP_NONE : t_uop := (
@@ -72,10 +114,19 @@ package pipe_pkg is
       kind       => UOP_OP,
       first      => '0',
       last       => '0',
+      wreg       => 0,
+      reads      => "00",
+      store      => '0',
+      may_sr     => '0',
+      may_jump   => '0',
+      cnt        => C_SHIFT_PREP_NONE,
       cond_known => '0',
       cond_val   => '0',
       committed  => '0',
-      counted    => '0'
+      counted    => '0',
+      val        => (others => (others => '0')),
+      src        => (others => SRC_VAL),
+      cnt_late   => '0'
    );
 
    -- What FETCH and DECODE did in one cycle, for the fetch statistics,
@@ -185,6 +236,11 @@ package pipe_pkg is
       s0val      : std_logic_vector(31 downto 0);   -- s0, from S0 or S1
       s1val      : std_logic_vector(31 downto 0);   -- s1, from S1
       busy       : std_logic;                       -- An access waits on the bus
+      last       : std_logic_vector(31 downto 0);   -- The value written last (MICROARCH.md §7.4)
+      cnt_step   : natural range 0 to 2;            -- How far the shift count is prepared
+      m33sum     : natural range 0 to 255;          -- Its digit sum, for the count mod 33
+      exec_done  : std_logic;                       -- The result is written; the retire is next
+      cnt        : t_shift_prep;                    -- The shift count WRITE prepared itself
       vec        : std_logic_vector(7 downto 0);    -- In VEC_ST: the vector
       vec_intr   : std_logic;                       -- An interrupt, not INT
       vec_nmi    : std_logic;
@@ -206,12 +262,25 @@ package pipe_pkg is
                      b : std_logic_vector(31 downto 0);
                      c : std_logic_vector(31 downto 0)) return std_logic_vector;
 
-   -- a lies in the range lo to hi - 1, modulo 2^32.
-   function in_range(a  : std_logic_vector(31 downto 0);
-                     lo : std_logic_vector(31 downto 0);
-                     hi : std_logic_vector(31 downto 0)) return boolean;
+   -- a lies in the aligned block of 2^bits words that holds lo, or in the
+   -- block after it, whose number the caller computed ahead. That covers
+   -- the 2^bits words from lo on, with no subtraction: two equality
+   -- compares, and safe where the range is known to be no longer
+   -- (MICROARCH.md §5.5).
+   function near(a       : std_logic_vector(31 downto 0);
+                 lo      : std_logic_vector(31 downto 0);
+                 lo_next : std_logic_vector;
+                 bits    : natural) return boolean;
+
+   -- The number of the block after the one that holds lo.
+   function next_block(lo   : std_logic_vector(31 downto 0);
+                       bits : natural) return std_logic_vector;
 
    function popcount(v : std_logic_vector) return natural;
+
+   -- The fields that DECODE fills in agree with the instruction word and
+   -- the kind, for the checks in simulation and the formal proofs.
+   function decoded_ok(u : t_uop) return boolean;
 
 end package pipe_pkg;
 
@@ -428,12 +497,45 @@ package body pipe_pkg is
       end case;
    end function mem_addr;
 
-   function in_range(a  : std_logic_vector(31 downto 0);
-                     lo : std_logic_vector(31 downto 0);
-                     hi : std_logic_vector(31 downto 0)) return boolean is
+   function near(a       : std_logic_vector(31 downto 0);
+                 lo      : std_logic_vector(31 downto 0);
+                 lo_next : std_logic_vector;
+                 bits    : natural) return boolean is
    begin
-      return a - lo < hi - lo;
-   end function in_range;
+      return a(31 downto bits) = lo(31 downto bits) or a(31 downto bits) = lo_next;
+   end function near;
+
+   function next_block(lo   : std_logic_vector(31 downto 0);
+                       bits : natural) return std_logic_vector is
+      variable res_v : std_logic_vector(31 downto bits);
+   begin
+      res_v := lo(31 downto bits) + 1;
+      return res_v;
+   end function next_block;
+
+   function decoded_ok(u : t_uop) return boolean is
+      variable iw_v : std_logic_vector(31 downto 0);
+      variable ok_v : boolean;
+   begin
+      iw_v := u.inst.iw;
+      ok_v := u.wreg = uop_wreg(iw_v, u.kind) and
+              u.reads = uop_reads(iw_v, u.kind) and
+              u.store = to_sl(uop_store(iw_v, u.kind)) and
+              u.may_sr = to_sl(uop_may_sr(iw_v, u.kind)) and
+              u.may_jump = to_sl(uop_may_jump(iw_v, u.kind)) and
+              u.inst.side = to_sl(side(iw_v, 1)) & to_sl(side(iw_v, 2)) and
+              u.inst.ctrl = to_sl(is_ctrl(iw_v)) and
+              u.inst.shift = (iw_v(27) and not to_sl(is_ctrl(iw_v))) and
+              u.inst.op = iw_v(24 downto 21) and
+              u.inst.mbit = iw_v(25) and
+              u.inst.cbit = iw_v(26);
+      for i in 0 to 2 loop
+         if u.inst.m(i) /= mode(iw_v, i) or u.inst.x(i) /= reg(iw_v, i) then
+            ok_v := false;
+         end if;
+      end loop;
+      return ok_v;
+   end function decoded_ok;
 
    function popcount(v : std_logic_vector) return natural is
       variable res_v : natural := 0;

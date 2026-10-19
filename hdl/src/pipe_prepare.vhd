@@ -3,15 +3,20 @@
 -- THEORY OF OPERATION
 -- PREPARE holds one micro-operation in prep_r. It tests the condition of
 -- the instruction when no older micro-operation in WRITE may still change
--- SR, and must before it issues a data read. It loads each data read of
--- the micro-operation into the request register, rd_stb_r and rd_addr_r,
--- which holds it on the data bus until the bus accepts it, but only when
--- the instruction is certain to run (MICROARCH.md §5.3). It reads the
--- registers in WRITE's state for the address, and waits while the
--- micro-operation in WRITE will still write the register it needs. Then it
--- passes the micro-operation to WRITE, with what it found out: the
--- condition, and whether the instruction has made a data read (committed)
--- and been counted on instret_o (counted).
+-- SR, and must before it issues a data read. It forms the value or the
+-- address of each operand field from the registers in WRITE's state
+-- (MICROARCH.md §7.4): the sums R + c and R - 1 of the modes that need
+-- them, and the shift count reduced for the shifter. A field whose value
+-- is a plain register that the micro-operation in WRITE writes now gets
+-- WRITE's last value instead, in WRITE; a field that needs an adder on
+-- such a register, or whose address a read needs, waits a cycle. It loads
+-- each data read of the micro-operation into the request register,
+-- rd_stb_r and rd_addr_r, which holds it on the data bus until the bus
+-- accepts it, but only when the instruction is certain to run
+-- (MICROARCH.md §5.3). Then it passes the micro-operation to WRITE, with
+-- what it found out: the condition, the values, and whether the
+-- instruction has made a data read (committed) and been counted on
+-- instret_o (counted).
 --
 -- An instruction with a data read is counted in the cycle the bus accepts
 -- its last read, count_o.
@@ -151,8 +156,18 @@ begin
       variable nr_v      : natural range 0 to 2;
       variable f_v       : natural range 1 to 2;
       variable x_v       : natural range 0 to 15;
-      variable b_v       : std_logic_vector(31 downto 0);
-      variable busy_v    : boolean;   -- WRITE will still write the base
+      variable m_v       : std_logic_vector(2 downto 0);
+      variable base_v    : t_fields;  -- The base register of each field
+      variable val_v     : t_fields;  -- Its value or address
+      variable src_v     : t_srcs;
+      variable plain_v   : boolean;   -- The field's value is its base
+      variable rdaddr_v  : boolean;   -- The field is the address of a read
+      variable wr_v      : boolean;   -- WRITE will still write the base
+      variable used_v    : boolean;   -- The micro-operation needs the field
+      variable busy_v    : boolean;   -- A field it needs is not ready
+      variable late_v    : std_logic;
+      variable cnt_v     : t_shift_prep;
+      variable quiet_v   : boolean;   -- and will not jump, store, or be counted late
       variable older_ok  : boolean;
       variable intr_ok   : boolean;
       variable bus_ok    : boolean;
@@ -169,8 +184,7 @@ begin
       ck_v := '0';
       cv_v := condition(u_v.inst.iw, w_r.regs(14));
       if u_v.first = '1' then
-         if w_r.mode = RUN_ST and
-            not (wu_v.valid = '1' and uop_may_sr(wu_v.inst.iw, wu_v.kind)) then
+         if w_r.mode = RUN_ST and not (wu_v.valid = '1' and wu_v.may_sr = '1') then
             ck_v := '1';
          end if;
       elsif p_ck_r = '1' then
@@ -182,33 +196,89 @@ begin
          cv_v := w_r.cond;
       end if;
 
+      -- The value or address of each field (ISA.md §4.1 and §4.2), from
+      -- the registers as WRITE holds them. A field whose value is its base
+      -- register, and whose register the micro-operation in WRITE writes
+      -- now, takes WRITE's last value instead (MICROARCH.md §7.4). A field
+      -- that needs an adder on such a register, or whose address a read
+      -- needs, waits until WRITE has written it.
+      rd_v   := u_v.reads;
+      nr_v   := popcount(rd_v);
+      busy_v := false;
+      for i in 0 to 2 loop
+         x_v := u_v.inst.x(i);
+         m_v := u_v.inst.m(i);
+         if x_v = 15 then
+            base_v(i) := w_r.regs(15) when not older_v and w_r.jump = '1' else u_v.inst.next_pc;
+         else
+            base_v(i) := w_r.regs(x_v);
+         end if;
+         case m_v is
+            when "001" | "101"  => val_v(i) := regval(x_v, base_v(i) - 1);
+            when "011" | "111"  => val_v(i) := base_v(i) + u_v.inst.consts(i);
+            when others         => val_v(i) := base_v(i);
+         end case;
+         plain_v := m_v(1 downto 0) = "00" or m_v(1 downto 0) = "10";
+         -- R15 is this instruction's next address whatever an older
+         -- instruction wrote to it: a jump flushes this one, and a
+         -- skipped or early jump leaves it. Only an earlier
+         -- micro-operation of the same instruction can change it.
+         wr_v    := wu_v.valid = '1' and x_v /= 0 and (x_v /= 15 or not older_v) and
+                    ((x_v = 14 and wu_v.may_sr = '1') or (x_v /= 14 and wu_v.wreg = x_v));
+         -- A read address is needed here, so it never comes from WRITE.
+         rdaddr_v := m_v(2) = '1' and i /= 0;
+         if plain_v and not rdaddr_v and x_v = 14 then
+            src_v(i) := SRC_SR;
+         elsif plain_v and not rdaddr_v and wr_v then
+            src_v(i) := SRC_LAST;
+         else
+            src_v(i) := SRC_VAL;
+         end if;
+         case u_v.kind is
+            when UOP_S0   => used_v := i = 1;
+            when UOP_S1   => used_v := i = 2 or (i = 1 and u_v.inst.side(1) = '0');
+            when UOP_OP   => used_v := (i = 0 and m_v /= "000" and m_v /= "001" and m_v /= "010") or
+                                       (i = 1 and u_v.inst.side(1) = '0') or
+                                       (i = 2 and u_v.inst.side(2) = '0');
+            when UOP_CTRL => used_v := false;
+         end case;
+         if used_v and wr_v and src_v(i) = SRC_VAL then
+            busy_v := true;
+         end if;
+      end loop;
+
+      -- The shift count, reduced here from a constant (by DECODE) or a
+      -- register, or by WRITE in a cycle of its own when it comes from
+      -- memory, through an adder, or from WRITE's last value or SR, or
+      -- is a rotation through C by a register, whose count mod 33 this
+      -- stage cannot afford (MICROARCH.md §7.3).
+      m_v   := u_v.inst.m(2);
+      x_v   := u_v.inst.x(2);
+      cnt_v := shift_prep(u_v.inst.op, base_v(2), false);
+      if m_v = "011" and x_v = 0 then
+         cnt_v := u_v.cnt;
+      end if;
+      late_v := '0';
+      if m_v(2) = '1' or u_v.inst.side(2) = '1' or src_v(2) /= SRC_VAL or
+         (x_v /= 0 and (m_v = "001" or m_v = "011")) or
+         (u_v.inst.op(2 downto 0) = "101" and not (m_v = "011" and x_v = 0)) then
+         late_v := u_v.inst.shift;
+      end if;
+
       -- The next read to load: s0, then s1
-      rd_v := uop_reads(u_v.inst.iw, u_v.kind);
-      nr_v := popcount(rd_v);
       if p_loaded_r = 0 and rd_v(1) = '1' then
          f_v := 1;
       else
          f_v := 2;
       end if;
-      x_v := reg(u_v.inst.iw, f_v);
-      if x_v = 15 then
-         b_v := w_r.regs(15) when not older_v and w_r.jump = '1' else u_v.inst.next_pc;
-      else
-         b_v := w_r.regs(x_v);
-      end if;
-      p_addr <= mem_addr(mode(u_v.inst.iw, f_v), x_v, b_v, u_v.inst.consts(f_v));
-
-      busy_v := wu_v.valid = '1' and x_v /= 0 and
-                ((x_v = 14 and uop_may_sr(wu_v.inst.iw, wu_v.kind)) or
-                 (x_v /= 14 and uop_wreg(wu_v.inst.iw, wu_v.kind) = x_v));
+      p_addr <= val_v(f_v);
 
       -- The older micro-operation in WRITE will not jump, halt, or store
       -- into fetched code, and is counted on instret_o. Either it retires
       -- now, or it has made its reads and makes no store.
-      older_ok := not older_v or (w_done = '1' and w_flush = '0') or
-                  (not uop_store(wu_v.inst.iw, wu_v.kind) and
-                   not uop_may_jump(wu_v.inst.iw, wu_v.kind) and
-                   w_r.jump = '0' and wu_v.counted = '1');
+      quiet_v  := wu_v.store = '0' and wu_v.may_jump = '0' and w_r.jump = '0' and
+                  wu_v.counted = '1';
+      older_ok := not older_v or (w_done = '1' and w_flush = '0') or quiet_v;
 
       -- No interrupt may be taken before this instruction (MICROARCH.md
       -- §5.3, rule 4). None can be if the instruction has made a data read
@@ -216,14 +286,13 @@ begin
       started_v := not older_v and
                    ((wu_v.valid = '1' and wu_v.first = '0') or (wu_v.valid = '0' and w_r.mid = '1'));
       irq_v     := irq_valid_i = '1' and w_r.in_service = '0' and
-                   (w_r.regs(14)(C_SR_E) = '1' or
-                    (wu_v.valid = '1' and uop_may_sr(wu_v.inst.iw, wu_v.kind)));
+                   (w_r.regs(14)(C_SR_E) = '1' or (wu_v.valid = '1' and wu_v.may_sr = '1'));
       intr_ok   := started_v or p_committed_r = '1' or (not older_v and w_r.after_rti = '1') or
                    not ((nmi_valid_i = '1' and w_r.in_service = '0') or irq_v);
 
       -- The bus takes the read when C_MAX_OUT will not be in flight, counting
       -- the store of an older micro-operation that retires now.
-      store_v := older_v and w_done = '1' and uop_store(wu_v.inst.iw, wu_v.kind);
+      store_v := older_v and w_done = '1' and wu_v.store = '1';
       bus_ok  := (rd_stb_r = '0' or dbus_stall_i = '0') and
                  tag_cnt_r + to_nat(rd_stb_r) + to_nat(store_v) < C_MAX_OUT;
 
@@ -240,11 +309,12 @@ begin
          p_last_read <= '1';
       end if;
 
-      -- The micro-operation may go on when its reads are loaded, or it has
-      -- none, or its condition is false.
+      -- The micro-operation may go on when its values are ready and its
+      -- reads are loaded, or it has none, or its condition is false.
       p_move <= '0';
       if u_v.valid = '1' and w_accept = '1' then
-         if nr_v = 0 or (ck_v = '1' and (cv_v = '0' or p_loaded_r + to_nat(load_v) = nr_v)) then
+         if (ck_v = '1' and cv_v = '0') or
+            (not busy_v and (nr_v = 0 or (ck_v = '1' and p_loaded_r + to_nat(load_v) = nr_v))) then
             p_move <= '1';
          end if;
       end if;
@@ -256,6 +326,10 @@ begin
       if load_v = '1' and p_loaded_r + 1 = nr_v and not later_reads(u_v.inst.iw, u_v.kind) then
          u_v.counted := '1';
       end if;
+      u_v.val      := val_v;
+      u_v.src      := src_v;
+      u_v.cnt      := cnt_v;
+      u_v.cnt_late := late_v;
       p_out <= u_v;
    end process p_prepare;
 
@@ -321,7 +395,8 @@ begin
    -- The formal properties (formal/formal_pipe_prepare.vhd). The
    -- assumptions model DECODE and WRITE as far as PREPARE relies on them:
    -- - DECODE emits only when PREPARE is ready, and the micro-operations
-   --   of each instruction in order, with a new id for each instruction.
+   --   of each instruction in order, with a new id for each instruction,
+   --   and the fields it decodes agree with the instruction word.
    -- - WRITE takes what PREPARE moves on. SR changes only when WRITE
    --   retires a micro-operation that may change it, and WRITE's condition
    --   of the instruction only when it retires an instruction's first.
@@ -359,6 +434,7 @@ begin
 
 
       p_model : process (clk_i)
+         variable wstore_v : boolean;   -- WRITE's store retires now
       begin
          if rising_edge(clk_i) then
             f_first <= '0';
@@ -375,8 +451,7 @@ begin
 
             f_sr        <= w_r.regs(14);
             f_sr_free   <= rst_i or w_flush or take_nmi or take_irq or
-                           (w_done and w_r.uop.valid and
-                            to_sl(uop_may_sr(w_r.uop.inst.iw, w_r.uop.kind)));
+                           (w_done and w_r.uop.valid and w_r.uop.may_sr);
             f_cond      <= w_r.cond;
             f_cond_free <= rst_i or w_flush or take_nmi or take_irq or
                            (w_done and w_r.uop.valid and w_r.uop.first);
@@ -387,11 +462,10 @@ begin
             f_rd_addr  <= rd_addr_r;
             -- PREPARE's read, or else, when there is room, a vector read of
             -- WRITE, or a store, which retires when the bus accepts it
+            wstore_v   := w_done = '1' and w_r.uop.valid = '1' and w_r.uop.store = '1';
             f_tag      <= tag_cnt_r + to_nat((rd_stb_r = '1' and dbus_stall_i = '0') or
                                              (rd_stb_r = '0' and tag_cnt_r < C_MAX_OUT and
-                                              (w_r.mode = VEC_ST or
-                                               (w_done = '1' and w_r.uop.valid = '1' and
-                                                uop_store(w_r.uop.inst.iw, w_r.uop.kind)))));
+                                                (w_r.mode = VEC_ST or wstore_v)));
 
             if seq_emit = '1' then
                f_open <= not seq_uop.last;
@@ -418,6 +492,7 @@ begin
       -- psl f_new_inst : assume always (seq_emit and not f_open) ->
       --    (seq_uop.first = '1' and seq_uop.inst.id /= f_inst.id and
       --     seq_uop.kind = first_kind(seq_uop.inst.iw));
+      -- psl f_decoded : assume always seq_emit -> decoded_ok(seq_uop);
 
       -- WRITE
       -- psl f_takes : assume always f_first = '0' -> w_r.uop = f_uop;
@@ -460,6 +535,10 @@ begin
       --     prep_r.last = is_last(prep_r.kind) and
       --     f_open = not prep_r.last and
       --     (prep_r.first = '0' or prep_r.kind = first_kind(prep_r.inst.iw)));
+      -- psl f_inv_decoded : assert always (rst_i = '0' and prep_r.valid = '1') ->
+      --    decoded_ok(prep_r);
+      -- psl f_inv_wdecoded : assert always (rst_i = '0' and f_uop.valid = '1') ->
+      --    decoded_ok(f_uop);
       -- WRITE holds an earlier micro-operation of the instruction in
       -- prep_r, or the last of the instruction before it.
       -- psl f_inv_same : assert always
@@ -483,7 +562,7 @@ begin
       -- psl f_inv_first : assert always
       --    (rst_i = '0' and p_committed_r = '1' and prep_r.valid = '1' and prep_r.first = '1') ->
       --    (condition(prep_r.inst.iw, w_r.regs(14)) = '1' and
-      --     not (w_r.uop.valid = '1' and uop_may_sr(w_r.uop.inst.iw, w_r.uop.kind)));
+      --     not (w_r.uop.valid = '1' and w_r.uop.may_sr = '1'));
       -- psl f_inv_retired : assert always
       --    (rst_i = '0' and p_committed_r = '1' and p_ck_r = '0' and
       --     not (prep_r.valid = '1' and prep_r.first = '1')) ->

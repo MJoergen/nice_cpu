@@ -2401,7 +2401,11 @@ def hoist_into_slots(items: List[Item]) -> List[Item]:
     the copies cost words. It may not compute a value that a later
     MOVE[M] R0 tests, whose M bit it could no longer take. Runs on the
     virtual registers, before the allocation, so that the allocator gives
-    the moved instruction a register that the read does not use."""
+    the moved instruction a register that the read does not use. A data
+    access also waits for the instruction just before it if that writes
+    the access's address register, so the same is done for such a pair,
+    with the labels that no jump goes to between them left after the
+    moved instruction."""
     alloc = Allocator([], ALLOC_REGS, CALLEE_SAVED, 0)
     targets = {t for it in items if isinstance(it, Ins) for t in it.targets}
 
@@ -2450,8 +2454,21 @@ def hoist_into_slots(items: List[Item]) -> List[Item]:
         jump = items[p]
         p += 1
         q = skip(p)
-        if not (isinstance(jump, Ins) and jump.kind == "jump" and jump.cond and q < len(items)
-                and plain(items[q]) and reads_memory(items[q])):  # type: ignore[arg-type]
+        if not isinstance(jump, Ins):
+            continue
+        if jump.kind == "jump" and jump.cond:
+            ok = q < len(items) and plain(items[q]) and reads_memory(items[q])  # type: ignore[arg-type]
+        else:
+            # An access whose address register jump writes, maybe after
+            # labels that no jump goes to.
+            while (q < len(items) and isinstance(items[q], Label)
+                   and items[q].name not in targets):  # type: ignore[union-attr]
+                q = skip(q + 1)
+            kind, d = operand_reg(jump.ops[0]) if jump.ops else ("", None)
+            ok = (plain(jump) and not jump.cond and kind == "reg" and q < len(items)
+                  and plain(items[q]) and any(operand_reg(o) == ("mem", d)
+                                              for o in items[q].ops))  # type: ignore[union-attr]
+        if not ok:
             continue
         passed: List[Ins] = [items[q]]  # type: ignore[list-item]
         b: Optional[Label] = None

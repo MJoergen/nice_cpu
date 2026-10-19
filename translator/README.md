@@ -751,6 +751,15 @@ a group of accesses that share a compare, the copy runs its own. It may
 not be the value that a later `MOVE[M] R0`
 tests, since it then could no longer take the M bit.
 
+A data access also waits a cycle when the instruction just before it
+writes its address register, since the core forms the address in
+PREPARE, before that instruction's WRITE (doc/MICROARCH.md §3). So one
+of the next four instructions may move to between them in the same
+way. Labels that no jump goes to, such as the start of the access's
+code, may be between them, and the moved instruction goes before those.
+In crc32, the `SHR` of the CRC moves to between the `AND` of the table
+index and the load from the table.
+
 ### The frame
 
 There is no frame pointer. The prologue pushes the registers of R7–R12

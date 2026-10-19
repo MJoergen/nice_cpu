@@ -289,8 +289,8 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "foldteetrap": "MOVE @___wasm_memory+2121[R8], R1",
          "boundtrap": "SUB[M] R0, R1, 256"}
 
-# Cases whose translation must match a pattern, or must not: name ->
-# (pattern, whether it must match). A word access that needs no compare
+# Cases whose translation, without its comment lines, must match a
+# pattern, or must not: name -> (pattern, whether it must match). A word access that needs no compare
 # has no SUB[M] (bound_case).
 SHAPES = {"bound": (r"SUB\[M\]", False),
           "bound_over": (r"SUB\[M\] +R0, R\d+, 255$", True),
@@ -301,6 +301,8 @@ SHAPES = {"bound": (r"SUB\[M\]", False),
           "bound64_over": (r"SUB\[M\] +R0, R\d+, 510$", True),
           "bound_grow": (r"SUB\[M\] +R0, R\d+, @W.wlimit4$", True),
           "bound_unchecked": (r"0x3FFFFFFF|^ +ADD", False),
+          "hoistagen": (r"^ +AND +(R\d+), R\d+, 255\n +ADD +R\d+, R\d+, 7\n"
+                        r"(W\.f0\.L\d+\n)? +MOVE +R\d+, @___wasm_memory\+64\[\1\]$", True),
           "byte_bound": (r"SUB\[M\]", False),
           "byte_bound_over": (r"SUB\[M\] +R0, R\d+, 65536$", True),
           "half_bound": (r"SUB\[M\] +R0, R\d+, 65535$", False),
@@ -763,6 +765,27 @@ def hoist_store(q: int) -> bytes:
               + i32_const(32) + mem(I32_LOAD) + i32_const(36) + mem(I32_LOAD) + ADD
               + i32_const(40) + mem(I32_LOAD) + ADD)),
         data((16, bytes(range(1, 17)))))
+
+
+# The module of the hoistagen case. For i from 0 to 3, main loads x from
+# word 64 + (i & 255) of the memory, which needs no compare, adds 7 to k,
+# and adds x to s. It returns s XOR k = (1 + 2 + 3 + 4) XOR 28 = 0x16.
+# The ADD of k moves to between the AND that computes the load's word
+# index and the load (README.md).
+HOIST_AGEN = module(
+    types(MAIN_TYPE),
+    funcs(0),
+    memory(1),
+    exports(("main", 0, 0)),
+    code((3, loop()
+          + local_get(0) + i32_const(255) + AND + i32_const(2) + SHL + i32_const(256) + ADD
+          + mem(I32_LOAD)
+          + local_get(1) + i32_const(7) + ADD + local_set(1)
+          + local_get(2) + ADD + local_set(2)
+          + local_get(0) + i32_const(1) + ADD + local_tee(0) + i32_const(4) + LT_U
+          + br_if(0) + END
+          + local_get(2) + local_get(1) + XOR)),
+    data((256, bytes([1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0]))))
 
 
 # The module of the share cases. In a loop that runs once, it stores at
@@ -1745,6 +1768,7 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     ("hoistgrouptrap", hoist_group(65524, 65540), SHARE_ASM.format(0), 0x50463C34),
     # The loads from 17, 21, and 25, all through the stub, give
     # 0x05040302, 0x09080706, and 0x0D0C0B0A, whose sum is 0x1B181512.
+    ("hoistagen", HOIST_AGEN, "", 0x16),
     ("hoiststore", hoist_store(32), SHARE_ASM.format(0), 0x1B181512),
     # The stores at 65528 and 65532 are done, and that at 65536 traps,
     # with R2 at its ROR, which is in the code of the load. The trap
@@ -2660,7 +2684,8 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
     problems = []
     if name in SHAPES:
         pattern, must = SHAPES[name]
-        if bool(re.search(pattern, text, re.M)) != must:
+        bare = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith(";"))
+        if bool(re.search(pattern, bare, re.M)) != must:
             problems.append(f"the code {'does not match' if must else 'matches'} {pattern}")
     if console != CONSOLE.get(name, ""):
         problems.append(f"printed {console!r}, expected {CONSOLE.get(name, '')!r}")

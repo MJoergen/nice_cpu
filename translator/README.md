@@ -658,21 +658,24 @@ go. In a copy of an interpreter's dispatch, for example, the `ADD` that
 computes the next pc moves to just before the jump through the table.
 
 Often no earlier instruction can, as when the read is the first
-instruction after the label of a word access. Then a later one may,
-from just after the label where the stub of the access comes back, if
-only unconditional jumps go to that label. The instruction moves to
-between the jump and the read, and a copy of it goes just before each
-jump to the label. So every path past the label runs it once, as
-before, and an access that traps in its stub has not run it. This is
-done on the virtual registers, before the allocation, so that the
-moved instruction gets a register of its own. It must compute a
-virtual register from virtual registers and constants, with no flags,
-be unconditional, and not be a copy, which the allocator may remove. It
-may be one of the first four instructions after the label, if neither
-it nor those it passes, or the read, write a register that the other
-reads or writes. It may not be the value that a later `MOVE[M] R0`
-tests, since it then could no longer take the M bit. The copies cost
-words, so this is done in loops only.
+instruction after the label of a word access. Then one of the next four
+instructions after the read, in the same straight-line code, may move
+to between the jump and the read instead. This is done on the virtual
+registers, before the allocation, so that the moved instruction gets a
+register of its own. It must compute a virtual register from virtual
+registers and constants, with no flags, be unconditional, and not be a
+copy, which the allocator may remove. Neither it nor an instruction
+that it passes, the read included, may write a register that the other
+reads or writes. It may not pass a label that no jump goes to, such as
+the start of the code of a wasm instruction, where a trap's R2 points.
+It may pass the label where the stub of a word access comes back, or
+another label that only unconditional jumps go to, if it is in a loop:
+then a copy of it goes just before each of those jumps. So every path
+past the label runs it once, as before, and an access that traps in its
+stub has not run it. If the stub goes on in a copy of the code, as for
+a group of accesses that share a compare, the copy runs its own. It may
+not be the value that a later `MOVE[M] R0`
+tests, since it then could no longer take the M bit.
 
 ### The frame
 

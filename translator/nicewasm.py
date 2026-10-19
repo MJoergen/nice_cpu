@@ -2357,8 +2357,8 @@ def fill_jump_slots(items: List[Item]) -> List[Item]:
     return items
 
 
-# The most instructions after the label where a stub comes back that
-# hoist_into_slots looks at for one to move.
+# The most instructions after a read that hoist_into_slots looks at for
+# one to move to before it.
 HOIST_LOOK = 4
 
 
@@ -2366,20 +2366,23 @@ def hoist_into_slots(items: List[Item]) -> List[Item]:
     """On the FPGA core, a data read waits for a conditional jump just
     before it that is not taken (doc/MICROARCH.md §5.3), as the jump to
     the stub of a word access is. Where fill_jump_slots finds no earlier
-    instruction to wait instead, a later one may: if the read and the
-    code up to a label B follow the jump, B is reached otherwise only by
-    unconditional jumps, and one of the first instructions after B can
-    move to the slot between the jump and the read, a copy of it goes
-    just before each jump to B. So every path to the code after B runs it
-    once, as before. Runs on the virtual registers, before the
-    allocation, so that the allocator gives the moved instruction a
-    register that the read does not use. It must compute a virtual
-    register from virtual registers and constants only, with no flags,
-    be unconditional, and not be a copy, which coalescing may remove. In
-    a loop only, since the copies cost words. It must commute with each
-    instruction that it passes: neither may write a register that the
-    other reads or writes. It may not compute a value that a later
-    MOVE[M] R0 tests, whose M bit it could no longer take."""
+    instruction to wait instead, a later one may move to between the jump
+    and the read: one of the first HOIST_LOOK instructions after the
+    read, in the same straight-line code. It must compute a virtual
+    register from virtual registers and constants, with no flags, be
+    unconditional, and not be a copy, which coalescing may remove. It
+    must commute with each instruction that it passes: neither may write
+    a register that the other reads or writes. It may not pass a label
+    that no jump goes to, such as the start of the code of a wasm
+    instruction, where a trap's R2 points (§9.4). It may pass one label
+    B that only unconditional jumps go to, such as the one where the stub
+    of a word access comes back: then a copy of it goes just before each
+    of those jumps, so every path past B runs it once, as before, and an
+    access that traps in its stub has not run it. Only in a loop, since
+    the copies cost words. It may not compute a value that a later
+    MOVE[M] R0 tests, whose M bit it could no longer take. Runs on the
+    virtual registers, before the allocation, so that the allocator gives
+    the moved instruction a register that the read does not use."""
     alloc = Allocator([], ALLOC_REGS, CALLEE_SAVED, 0)
 
     def skip(k: int) -> int:
@@ -2388,11 +2391,11 @@ def hoist_into_slots(items: List[Item]) -> List[Item]:
         return k
 
     def plain(it: Item) -> bool:
-        return isinstance(it, Ins) and it.kind == "" and not (it.ops and it.ops[0] == "R15")
+        return isinstance(it, Ins) and it.kind == "" and not any("R15" in o for o in it.ops)
 
     def movable(ins: Ins) -> bool:
         kind, d = operand_reg(ins.ops[0]) if ins.ops else ("", None)
-        return (ins.depth > 0 and not ins.cond and kind == "reg" and d is not None
+        return (not ins.cond and kind == "reg" and d is not None
                 and VREG_RE.fullmatch(d) is not None and not alloc.is_move(ins)
                 and not any(o.startswith("@") for o in ins.ops) and not any(flag_use_def(ins))
                 and all(operand_reg(o)[0] == "" or VREG_RE.fullmatch(o) for o in ins.ops[1:]))
@@ -2402,6 +2405,26 @@ def hoist_into_slots(items: List[Item]) -> List[Item]:
         ub, db = alloc.use_def(b)
         return not (da & (ub | db) or db & ua)
 
+    def tested(k: int, d: str) -> bool:
+        """Whether a MOVE[M] R0, d tests d after items[k], before a label,
+        a jump, or a call."""
+        for it in items[k + 1:]:
+            if isinstance(it, Label) or (isinstance(it, str) and not it.lstrip().startswith(";")):
+                return False
+            if isinstance(it, Ins):
+                if it.kind:
+                    return False
+                if it.op == "MOVE[M]" and it.ops[0] == "R0" and it.ops[1] == d:
+                    return True
+        return False
+
+    def comes_back(name: str) -> bool:
+        """Whether only unconditional jumps go to the label name, and
+        nothing else names it."""
+        jumps = [j for j in items if isinstance(j, Ins) and name in j.targets]
+        return (bool(jumps) and label_refs(items).get(name, 0) == len(jumps)
+                and all(j.kind == "jump" and not j.cond and j.targets == [name] for j in jumps))
+
     p = 0
     while p < len(items):
         jump = items[p]
@@ -2410,58 +2433,35 @@ def hoist_into_slots(items: List[Item]) -> List[Item]:
         if not (isinstance(jump, Ins) and jump.kind == "jump" and jump.cond and q < len(items)
                 and plain(items[q]) and reads_memory(items[q])):  # type: ignore[arg-type]
             continue
-        passed: List[Ins] = []
-        k = q
-        while k < len(items) and (plain(items[k]) or (isinstance(items[k], str)
-                                                       and str(items[k]).lstrip().startswith(";"))):
-            if isinstance(items[k], Ins):
-                passed.append(items[k])  # type: ignore[arg-type]
-            k += 1
-        b = items[k] if k < len(items) else None
-        if not isinstance(b, Label):
-            continue
-        jumps = [j for j, it in enumerate(items) if isinstance(it, Ins) and b.name in it.targets]
-        if (label_refs(items).get(b.name, 0) != len(jumps)
-                or not all(items[j].kind == "jump" and not items[j].cond  # type: ignore[union-attr]
-                           and items[j].targets == [b.name] for j in jumps)):  # type: ignore[union-attr]
-            continue
-        after: List[Ins] = []
-        k += 1
+        passed: List[Ins] = [items[q]]  # type: ignore[list-item]
+        b: Optional[Label] = None
+        k = q + 1
         found = -1
-        while len(after) < HOIST_LOOK:
+        while len(passed) <= HOIST_LOOK:
             k = skip(k)
             it = items[k] if k < len(items) else None
+            if isinstance(it, Label) and b is None and comes_back(it.name):
+                b = it
+                k += 1
+                continue
             if not (isinstance(it, Ins) and plain(it)):
                 break
-            if (movable(it) and all(commute(it, x) for x in passed + after)
-                    and not any(x.op == "MOVE[M]" and x.ops[0] == "R0" and x.ops[1] == it.ops[0]
-                                for x in after_of(items, k))):
+            if (movable(it) and (b is None or it.depth > 0)
+                    and all(commute(it, x) for x in passed) and not tested(k, it.ops[0])):
                 found = k
                 break
-            after.append(it)
+            passed.append(it)
             k += 1
         if found < 0:
             continue
         x = items.pop(found)
         assert isinstance(x, Ins)
-        for j in [it for it in items if isinstance(it, Ins) and b.name in it.targets]:
-            items.insert(items.index(j), Ins(x.op, list(x.ops), depth=j.depth))
-        items.insert(items.index(jump) + 1, x)
+        if b is not None:
+            for j in [it for it in items if isinstance(it, Ins) and b.name in it.targets]:
+                items.insert(items.index(j), Ins(x.op, list(x.ops), depth=j.depth))
+        p = items.index(jump) + 1
+        items.insert(p, x)
     return items
-
-
-def after_of(items: List[Item], k: int) -> List[Ins]:
-    """The instructions after items[k] up to the next label, jump, call,
-    or line of text other than a comment."""
-    out: List[Ins] = []
-    for it in items[k + 1:]:
-        if isinstance(it, Label) or (isinstance(it, str) and not it.lstrip().startswith(";")):
-            break
-        if isinstance(it, Ins):
-            if it.kind:
-                break
-            out.append(it)
-    return out
 
 
 def frame_words(items: List[Item], n_slots: int, n_saved: int) -> None:

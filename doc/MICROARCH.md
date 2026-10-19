@@ -19,6 +19,30 @@ reference. Both pass every step of the test order in §9
 ([hdl/README.md](../hdl/README.md)). Where the pipelined core settled a
 question that this note left open, `hdl/ASSUMPTIONS.md` says how.
 
+## Contents
+
+- [1. Decisions at a glance](#1-decisions-at-a-glance)
+- [2. What the ISA allows](#2-what-the-isa-allows)
+- [3. Pipeline](#3-pipeline)
+- [4. Micro-operations](#4-micro-operations)
+- [5. Hazards](#5-hazards)
+  - [5.1 Registers](#51-registers)
+  - [5.2 The condition](#52-the-condition)
+  - [5.3 Data accesses](#53-data-accesses)
+  - [5.4 Control flow](#54-control-flow)
+  - [5.5 Self-modifying code](#55-self-modifying-code)
+  - [5.6 How often the hazards occur](#56-how-often-the-hazards-occur)
+- [6. Interrupts](#6-interrupts)
+- [7. Datapath details](#7-datapath-details)
+  - [7.1 Register values](#71-register-values)
+  - [7.2 ALU](#72-alu)
+  - [7.3 Shifter](#73-shifter)
+  - [7.4 Operands, and the value written last](#74-operands-and-the-value-written-last)
+- [8. Memory system](#8-memory-system)
+  - [8.1 Fetch statistics](#81-fetch-statistics)
+- [9. Verification](#9-verification)
+- [10. Repository and boards](#10-repository-and-boards)
+
 ## 1. Decisions at a glance
 
 | Topic | Decision |

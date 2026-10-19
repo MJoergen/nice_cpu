@@ -212,6 +212,16 @@ instructions. The reads that wait for a skipped jump went from some
 crc32. `test/safe.zig` became 5224 words, not 5215, the float library
 7083, not 7089, and the benchmark's module 8658, not 8632.
 
+Last on 2026-10-19, a constant word offset in the word operand of a
+word access, in place of the `ADD` that computed its word index, took
+the benchmark from 1785571 to 1737715 instructions (2.7% fewer), and
+from about 2306000 to about 2283000 cycles (1.0% fewer). Heapsort saved
+the most, then bst and crc32. The vm and strings took some 5000 cycles
+more with the same instructions, since their code and data moved,
+which changed the timing of fetches and reads. `test/safe.zig` and the
+float library stayed 5224 and 7083 words, and the benchmark's module
+became 8657, not 8658.
+
 ## Supported features
 
 - **Types:** `i32`, `i64`, `f32`, and `f64`, in function types, locals,

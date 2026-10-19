@@ -2380,13 +2380,15 @@ HOIST_LOOK = 4
 
 def hoist_into_slots(items: List[Item]) -> List[Item]:
     """On the FPGA core, a data read waits for a conditional jump just
-    before it that is not taken (doc/MICROARCH.md §5.3), as the jump to
-    the stub of a word access is. Where fill_jump_slots finds no earlier
-    instruction to wait instead, a later one may move to between the jump
-    and the read: one of the first HOIST_LOOK instructions after the
-    read, in the same straight-line code. It must compute a virtual
-    register from virtual registers and constants, with no flags, be
-    unconditional, and not be a copy, which coalescing may remove. It
+    before it that is not taken (doc/MICROARCH.md §5.3): the jump to the
+    stub of a word access, the check of a 2-byte access for a straddle,
+    a br_if before a load from a constant address, or any other. Where
+    fill_jump_slots finds no earlier instruction to wait instead, a later
+    one may move to between the jump and the read: one of the first
+    HOIST_LOOK instructions after the read, in the same straight-line
+    code. It must compute a virtual register from virtual registers and
+    constants, with no flags, be unconditional, and not be a copy, which
+    coalescing may remove. It
     must commute with each instruction that it passes: neither may write
     a register that the other reads or writes. It may pass a label that
     no jump goes to, such as the start of the code of a wasm instruction,

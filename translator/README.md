@@ -205,7 +205,8 @@ in the benchmark came from no longer copying short tails into the
 stubs.
 
 Later on 2026-10-19, instructions moved from after a data read to the
-slot between it and the jump to its stub took the benchmark from about
+slot between it and a conditional jump just before it, mostly the jump
+to the stub of a word access, took the benchmark from about
 2344000 to about 2306000 cycles (1.6% fewer), with the same 1785571
 instructions. The reads that wait for a skipped jump went from some
 94500 to some 56800 cycles. The vm saved the most, then heapsort and
@@ -727,7 +728,10 @@ computes the next pc moves to just before the jump through the table.
 Often no earlier instruction can, as when the read is the first
 instruction after the label of a word access. Then one of the next four
 instructions after the read, in the same straight-line code, may move
-to between the jump and the read instead. This is done on the virtual
+to between the jump and the read instead. This holds for any
+conditional jump just before a read: the jump to the stub of a word
+access, the check of a 2-byte access for p = 3, or a `br_if` just
+before a load from a constant address. This is done on the virtual
 registers, before the allocation, so that the moved instruction gets a
 register of its own. It must compute a virtual register from virtual
 registers and constants, with no flags, be unconditional, and not be a

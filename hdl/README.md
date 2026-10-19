@@ -246,19 +246,7 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
 program runs, how many interrupt requests are taken, how the runs end, and
 how often they make the hazards of MICROARCH.md §5, beside the benchmark's
 shares. With `--generator`, it measures another version of
-`random_prog.py`. These are the numbers for seeds 31 to 90 before and
-after the changes of 2026-10-15, which made jumps shorter, registers more
-local, and interrupt routines return:
-
-| | before | after |
-|---|---|---|
-| Steps in the program, not in the low words or empty memory | 72% | 88% |
-| Program instructions that run at least once | 24% | 56% |
-| Interrupt requests taken, of those raised before the run ended | 19 of 115 | 90 of 195 |
-| Runs that reach the step limit | 25 of 60 | 26 of 60 |
-
-On seeds 1 to 30, a register read right after its write went from 16% to
-33% of the instructions, and jumps from 16% to 24%.
+`random_prog.py`.
 
 `make programs` runs the test programs of the runtime and of the
 translator on the core (MICROARCH.md §9, step 6). It is not part of
@@ -375,9 +363,9 @@ say that the read request is held while the bus stalls it, that it never
 goes out with `C_MAX_OUT` requests in flight, that a micro-operation makes
 all its reads and no more before it moves on unless its condition is
 false, and that PREPARE never finds the condition false of an instruction
-that has made a data read (MICROARCH.md §5.3). The proof found that a read
-could go out in the cycle WRITE puts a store on the bus with three
-requests in flight, which made five; PREPARE now counts that store.
+that has made a data read (MICROARCH.md §5.3).  PREPARE counts a store that
+WRITE puts on the bus in the cycle of a read, so that no more than
+`C_MAX_OUT` requests are in flight.
 
 `formal_pipe_dbus` proves DBUS for every cycle, with a `wb_master_check`
 on its bus port. Requests and read data are numbered in the order the bus
@@ -385,9 +373,9 @@ takes them. The solver picks one request and one read datum, of free but
 constant numbers, and the datum has a free but constant value. The
 assertions say that the request's ACK is taken for a read exactly when it
 was one, and that WRITE finds the datum's value wherever DBUS shows that
-datum, so the read data come in the order of their ACKs, none lost. The
-proof found that the write data changed on the bus while a read was
-stalled; DBUS now drives 0 there for a read.
+datum, so the read data come in the order of their ACKs, none lost.  DBUS
+drives 0 as the write data of a read, so that it does not change on the
+bus while the read is stalled.
 
 The assumptions of each proof that name another stage are checked in the
 whole core by `p_check` in `src/pipeline.vhd`, on every simulation and in
@@ -516,7 +504,7 @@ decides on a data read with WRITE's decisions of the same cycle, a flush
 reaches every stage at once, and WRITE drives its stores onto the bus. In the best case one micro-operation retires each cycle.
 `cputest` takes about 1.2 cycles per instruction on memory that never
 stalls, and `hazard.nasm`, which is all hazards, 1.9. The benchmark of
-[bench/](../bench/README.md) ran like this on 2026-10-19, against the
+[bench/](../bench/README.md) runs like this, against the
 multi-cycle core's numbers there:
 
 | Program | Instructions | Cycles | Cycles per instruction | Multi-cycle core |
@@ -529,8 +517,7 @@ cycles per instruction) ends each handler of three or four instructions
 with a jump through a table, whose address PREPARE must wait for, since
 the instruction before loads its index, and which flushes the pipeline;
 `strings` (2.9) and `bst` (2.3) read the math unit right after writing
-its operands. `rng64` (1.5) waited for the multiplier before it took two
-cycles. `make -C bench compare` puts the estimate of
+its operands.  `make -C bench compare` puts the estimate of
 `bench/pipecycles.py` beside these cycles, phase by phase.
 
 WRITE is the only stage that writes registers, and in order. PREPARE

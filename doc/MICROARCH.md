@@ -35,12 +35,10 @@ question that this note left open, `hdl/ASSUMPTIONS.md` says how.
 | Location | The `hdl/` directory, with commit prefix `nicehdl:` (§10). |
 | Boards | None in this repository. The design is board-agnostic, and generics set the memory map (§10). |
 
-## 2. Changes to the ISA
+## 2. What the ISA allows
 
-The ISA used to say that every memory access, instruction fetches included,
-happens exactly once, in program order, and never speculatively. A pipeline
-must fetch ahead, and a Harvard core cannot keep its two buses in one order.
-So ISA.md was changed for this core:
+A pipeline must fetch ahead, and a Harvard core cannot keep its two buses in
+one order. So ISA.md distinguishes instruction fetches from data accesses:
 
 - **ISA §8.2** splits accesses into instruction fetches and data accesses. Only
   data accesses (operand reads, destination writes, and vector reads) must be
@@ -54,11 +52,9 @@ So ISA.md was changed for this core:
   `emulator/test/iofetch.nasm` tests it.
 - **ISA §7.1** checks for interrupts "before each instruction", not "before
   each instruction fetch".
-- **ISA §5** and **§9.4** name the two kinds of access where they referred to
-  the old rule.
 - **Appendix B** records both rules.
 
-Nothing else in the ISA had to change. Conditional execution, the side
+Nothing else in the ISA constrains the pipeline. Conditional execution, the side
 effects, R15 as an operand, and interrupts are all handled in the pipeline.
 
 ## 3. Pipeline
@@ -241,7 +237,7 @@ SR, and for a read after a conditional jump. These are 1 to 4% and 1 to 8%
 of the instructions (§5.6), so data reads stay exact for now. If the cost
 turns out to matter, the ISA could later let reads of RAM (not of the I/O
 range) be speculative. That needs a check of each read against older
-stores, so it is not part of the first version.
+stores, so the core does not do it.
 
 ### 5.4 Control flow
 
@@ -311,8 +307,9 @@ it, and refetching from the next instruction gives that.
 emulator's trace, and `make hazards` in `bench/` runs it on the two
 benchmark programs ([bench/README.md](../bench/README.md)). A skipped
 instruction counts as if it ran, because DECODE sees its operands before
-the condition is known. These are the shares of all instructions on
-2026-10-15:
+the condition is known. These are the shares of all instructions, measured on the translation before
+its optimizations (`make hazards` gives the current ones, and a read after a
+conditional jump is now more common):
 
 | | `bench.c` through nicewasm | `hand.nasm` |
 |---|---|---|
@@ -335,8 +332,7 @@ the condition is known. These are the shares of all instructions on
 
 The numbers decided three things: FETCH reads two words per cycle (§3),
 a register written by the previous instruction is read without a wait
-(§5.1), and so is R14 (§5.4). They left speculative reads out of the first version
-(§5.3). The reads from the previous instruction are value chains in R1 to
+(§5.1), and so is R14 (§5.4). They left speculative reads out (§5.3). The reads from the previous instruction are value chains in R1 to
 R4, not stack operations: R13 alone is under 1% in both programs.
 
 ## 6. Interrupts
@@ -462,9 +458,8 @@ in the shifter's path. Where the count is reduced:
   the micro-op before writes or in R14, a count with a side effect, and
   a rotation through C by a register. The shift then takes two cycles,
   or three for a rotation through C, whose count mod 33 takes a cycle of
-  its own. Neither benchmark has one: the translated byte accesses once
-  read their shift count from a table in memory, 3% of the instructions,
-  and now compute it in a register ahead of the bounds check
+  its own. Neither benchmark has one: the translated byte accesses compute
+  their shift count in a register ahead of the bounds check
   ([translator/README.md](../translator/README.md)).
 
 ### 7.4 Operands, and the value written last

@@ -28,11 +28,11 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
    instruction's next address, carried with it, unless an earlier
    micro-operation of the same instruction wrote R15.
 
-   The first version of the core read the registers in WRITE, with no
-   bypass at all, and formed the sums there too. That put a register
-   mux, an adder, the shifter or the ALU, and the register write in one
-   cycle, and held the clock to about 49 MHz
-   ([doc/review/pipeline-timing.md](../doc/review/pipeline-timing.md)).
+      Reading the registers and forming the sums in PREPARE keeps a register
+   mux, an adder, the shifter or the ALU, and the register write out of one
+   cycle ([doc/review/pipeline-timing.md](../doc/review/pipeline-timing.md)).
+
+
 
    The registers are in WRITE, not in a module of their own as in
    qnice_cpu's `registers.vhd`. They are `w_r.regs`, R0 to R15 in
@@ -68,9 +68,7 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
    a register destination in mode 001 or 010, a jump to a target that is
    not a `MOVE`'s source, and a shift whose count PREPARE could not
    reduce. `w_r.exec_done` and `w_r.cnt_done` mark the second cycle, and
-   no interrupt is taken between the two. The first version merged the
-   adjusted destination into one write and found every target through
-   the ALU.
+   no interrupt is taken between the two. 
 
 ## The data bus
 
@@ -108,7 +106,7 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
    the request cannot be taken before it, and the core would wait for
    ever. An instruction that has made a read, or whose first
    micro-operation has retired, is exempt, as the instruction after `RTI`
-   is. MICROARCH.md §5.3 now says so.
+   is. MICROARCH.md §5.3 says so.
 11. **The report of a step is combinational**, in the cycle the step
     retires, with the registers it leaves. `tb_core` raises a request for
     step S when it sees step S - 1 reported, so the request reaches the

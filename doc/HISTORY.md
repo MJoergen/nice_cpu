@@ -1,0 +1,193 @@
+# History
+
+How the repository got to its present state, moved out of the other
+documents so that they describe only what is true now. The specification
+is [ISA.md](ISA.md). The reasoning behind each ISA decision and the reviews
+of the tools are in [review/](review/). The open items are in
+[../TODO.md](../TODO.md).
+
+## The ISA for the pipelined core
+
+ISA.md used to say that every memory access, instruction fetches included,
+happened exactly once, in program order, and never speculatively. A pipeline
+must fetch ahead, and a Harvard core cannot keep its two buses in one
+order, so ISA §8.2 was split into instruction fetches and data accesses,
+§8.3 was made to say that instruction fetches never reach I/O devices,
+§7.1 was changed to check for interrupts "before each instruction" instead
+of "before each instruction fetch", and §5 and §9.4 were made to name the
+two kinds of access. Appendix B records the two rules.
+
+## The pipelined core
+
+- The first version of the core read the registers in WRITE, with no bypass
+  at all, and formed the sums there too. That put a register mux, an adder,
+  the shifter or the ALU, and the register write in one cycle, and held the
+  clock to about 49 MHz. It was re-timed for 100 MHz on 2026-10-19, so that
+  PREPARE reads the registers and forms the operand values, addresses, and
+  shift counts ([review/pipeline-timing.md](review/pipeline-timing.md)).
+- The same first version merged the adjusted destination of a register in
+  mode 001 or 010 into one write, and found every jump target through the
+  ALU. Now three rare cases take WRITE two cycles (MICROARCH.md §7.4).
+- The first version had no speculative reads, and still has none. The
+  numbers of MICROARCH.md §5.6, measured on 2026-10-15, decided that FETCH
+  reads two words a cycle, that a register written by the previous
+  instruction is read without a wait, and that R14 is too.
+- The proof of the data bus port found that a read could go out in the
+  cycle WRITE puts a store on the bus with three requests in flight, which
+  made five. It also found that the write data changed on the bus while a
+  read was stalled. PREPARE now counts that store, and DBUS drives 0 for a
+  read.
+- Before the re-timing, the translated byte accesses read their shift count
+  from a table in memory, which was 3% of the benchmark's instructions.
+  They now compute it in a register ahead of the bounds check.
+
+## The random test programs
+
+`hdl/test/random_prog.py` was changed on 2026-10-15 to make jumps shorter,
+registers more local, and interrupt routines return. These are the numbers
+of `random_stats.py` for seeds 31 to 90 before and after:
+
+| | before | after |
+|---|---|---|
+| Steps in the program, not in the low words or empty memory | 72% | 88% |
+| Program instructions that run at least once | 24% | 56% |
+| Interrupt requests taken, of those raised before the run ended | 19 of 115 | 90 of 195 |
+| Runs that reach the step limit | 25 of 60 | 26 of 60 |
+
+On seeds 1 to 30, a register read right after its write went from 16% to
+33% of the instructions, and jumps from 16% to 24%.
+
+## The size and speed of translated code
+
+The code of the translator is about half the size it was, after four steps with no change
+to ISA.md §9.4. Using locals and constants directly as
+operands made `test/safe.zig` 19% smaller (12353 to 9941 words) and the
+float library 31% smaller (29569 to 20317). A short inline path for
+memory accesses made them 12% (to 8730) and 2.5% (to 19808) smaller
+again. Helpers for `i64` shifts, and short inline code for a shift by a
+constant, took them to 8670 and 18723. Locals in registers, jumps on the
+flags after a comparison, and results written straight to a local took
+them to 7139 (18% less) and 14565 (22% less). In all, `test/safe.zig` is
+42% smaller and the float library 51%.
+[doc/review/code-size-plan.md](../doc/review/code-size-plan.md) has the
+measurements.
+
+On 2026-10-16, virtual registers with a register allocator, and frames
+without a frame pointer, took `test/safe.zig` from 7131 to 6338 words
+(11% less) and the float library from 14308 to 8022 (44% less). They
+took the benchmark in [bench/](../bench/) from 3359061 to 2539669
+instructions (24% fewer).
+
+Later on 2026-10-16, cheaper memory accesses took the benchmark from
+2539669 to 1875636 instructions (26% fewer): one compare for the bounds
+and the alignment of a word access, word indices computed from array
+indices, and inline accesses of 1 and 2 bytes. Their stubs after the
+epilogue made `test/safe.zig` larger, from 6338 to 6691 words (6% more),
+and left the float library the same size.
+
+After that, the work on the flags, on constants, and on jumps of the
+README sections above took the benchmark from 1875636 to 1778350
+instructions (5% fewer), and from about 2994000 to about 2634000 cycles
+(12% fewer) on the pipelined core of doc/MICROARCH.md, by the estimate
+of bench/pipecycles.py. The flags of a comparison or a load used directly, and
+multiplications by constants as shifts, saved the most, and copies of
+an interpreter's dispatch and conditional instructions in place of
+short jumps the next most. `test/safe.zig` became smaller, from 6691 to
+6577 words (2% less), and so did the float library, from 8028 to 7454
+(7% less).
+
+Then `i64.mul` by a constant inline, loop exits in place of a `br_if`
+back, and helpers for traps and for the stubs of word accesses took the
+benchmark to 1830683 instructions and about 2448000 cycles, and
+`test/safe.zig` to 5242 words and the float library to 7149, counted as
+the words of the translated module in a program.
+
+On 2026-10-19, one compare for a group of word accesses, an early
+return before the prologue, tail calls, and the longer arm of a diamond
+as the one that falls through took the benchmark from 1830683 to
+1785571 instructions (2.5% fewer), and from about 2448000 to about
+2344000 cycles (4.3% fewer). The diamonds saved the most, in heapsort,
+and the shared compares the next most. `test/safe.zig` became smaller,
+from 5242 to 5215 words, and so did the float library, from 7149 to
+7089, and the benchmark's module, from 8853 to 8632. Of that, 191 words
+in the benchmark came from no longer copying short tails into the
+stubs.
+
+Later on 2026-10-19, instructions moved from after a data read to the
+slot between it and a conditional jump just before it, mostly the jump
+to the stub of a word access, took the benchmark from about
+2344000 to about 2306000 cycles (1.6% fewer), with the same 1785571
+instructions. The reads that wait for a skipped jump went from some
+94500 to some 56800 cycles. The vm saved the most, then heapsort and
+crc32. `test/safe.zig` became 5224 words, not 5215, the float library
+7083, not 7089, and the benchmark's module 8658, not 8632.
+
+After that on 2026-10-19, a constant word offset in the word operand of a
+word access, in place of the `ADD` that computed its word index, took
+the benchmark from 1785571 to 1737715 instructions (2.7% fewer), and
+from about 2306000 to about 2283000 cycles (1.0% fewer). Heapsort saved
+the most, then bst and crc32. The vm and strings took some 5000 cycles
+more with the same instructions, since their code and data moved,
+which changed the timing of fetches and reads. `test/safe.zig` and the
+float library stayed 5224 and 7083 words, and the benchmark's module
+became 8657, not 8658.
+
+Last on 2026-10-19, no bounds check for an access whose index or base
+has a known bound, and instructions moved to between the write of an
+address register and the access that uses it, took the benchmark from
+1737715 to 1729523 instructions (0.5% fewer), and from about 2283000
+to about 2273000 cycles (0.4% fewer). All of the instructions, and
+most of the cycles, are crc32's: its table lookup, `table[(crc ^ b) &
+255]`, has no compare. `test/safe.zig` became 5182 words, not 5224,
+the float library stayed 7083 words, and the benchmark's module became
+8623, not 8657.
+
+Then, still on 2026-10-19, the accesses of 1 and 2 bytes took their
+shift count from a register, computed with the word index before the
+bounds check, in place of a table in memory, and rotations in place of
+shifts (below). That is for the core as it is since it was re-timed
+for 100 MHz the same day, which forms every shift count in PREPARE: a
+count read from memory costs a cycle more in WRITE. A store of 1 or 2 bytes is an
+instruction longer, but one of a constant 0 is one shorter, and the
+loads are as long as before. The benchmark ran 1730635
+instructions in its phases, not 1729523. By `bench/pipecycles.py`, the
+phases took 2128130 cycles, not 2154905 (1.2% fewer), with the model as
+it was, `--flush 5`, and 2199014, not 2282080 (3.6% fewer), with the
+rules of the re-timed core, `--shift-mem 1 --shift-reg 1 --sum-wait 1
+--dest-adjust 1`. The byte loads no longer wait for their address
+register or for a second read on the bus. `test/safe.zig` became 5171
+words, not 5182, the float library stayed 7083 words, and the
+benchmark's module became 8560, not 8623.
+
+## The benchmark
+
+- The list of improvements from a look at the translated test programs on
+  2026-10-15 was done from 2026-10-16 to 2026-10-19: a register allocator
+  in place of frame words, inline memory accesses with one compare for the
+  bounds and the alignment, a constant offset in the word operand, one
+  compare for a group of accesses, no compare for an index with a known
+  bound, flags from the operation before a branch, no mask for a constant
+  shift count, conditional instructions in place of short jumps,
+  multiplications and divisions by constants, and shift counts of the byte
+  accesses in registers. `bench/` went from 3359061 to 1730635
+  instructions, and from about 5.55 to about 2.27 million cycles by
+  `bench/pipecycles.py`.
+- A differential fuzzer (`translator/test/diff_fuzz.py`) built in the
+  reviews of 2026-10-19 also compared a trap's R2 by wasm instruction. It
+  found two bugs in the early return that `fuzz.py` and `run.py` had
+  missed.
+
+- On 2026-10-15, before the translator's register allocator and inline
+  memory accesses, the hand-written program was 6.8 times shorter in
+  instructions and 7.3 times faster in cycles on the multi-cycle core, and
+  the translated code took 12.6 cycles per instruction, because more of its
+  instructions had constant words and memory operands.
+- Before the re-timing of the core, on the older translation of 1729523
+  instructions, the pipelined core took 2330619 cycles for `bench.c` and
+  1214194 for `hand.nasm`. The new byte accesses saved cycles in `crc32`,
+  `vm`, and `strings`, and the re-timing's new waits cost `hand.nasm` 0.2%.
+- `rng64` in `hand.nasm` ran at 1.5 cycles per instruction on the pipelined
+  core when the multiplier still took longer than two cycles.
+- With a bubble of 5 after a jump taken in WRITE, as the model of
+  `bench/pipecycles.py` had before, its totals were 7.5% and 15.7% below
+  the pipelined core's.

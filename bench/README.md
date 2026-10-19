@@ -55,7 +55,7 @@ of the phase, from the performance counters of ISA.md §8.5, then the
 phase's result and whether it is the expected one. `main` returns the
 number of phases with a wrong result, so R1 is 0 after a good run.
 
-These are the tables from the emulator on 2026-10-19. First `bench.c`
+These are the tables from the emulator. First `bench.c`
 through nicewasm:
 
     phase      instructions       cycles  result
@@ -122,10 +122,7 @@ A byte load of linear memory stays several instructions, since the
 memory is byte-addressed and packed four to a word (ISA.md §9.4).
 
 On the multi-cycle core, which takes about ten cycles for a plain
-instruction, the two programs ran like this on 2026-10-19, after the
-byte accesses of the translated program took their shift counts from
-registers (translator/README.md), which made it run 1730635
-instructions:
+instruction, the two programs run like this:
 
 | Program | Instructions | Cycles | Cycles per instruction | GHDL time |
 |---|---|---|---|---|
@@ -133,28 +130,17 @@ instructions:
 | `hand.nasm` | 491617 | 5598318 | 11.4 | 8 minutes on a busy machine |
 
 So the hand-written program is 3.5 times shorter in instructions and 3.5
-times faster in cycles. On 2026-10-15, before the translator's register
-allocator and inline memory accesses, the ratios were 6.8 and 7.3, and
-the translated code took 12.6 cycles per instruction, because more of
-its instructions had constant words and memory operands. Now `vm` and
-`strings` have the most cycles per instruction in the translated
-program, 12.0 and 11.9, and `rng64` in the hand-written one, 14.0,
+times faster in cycles. In the translated program, `vm` and `strings` have the most cycles per instruction, 12.0 and 11.9, and `rng64` in the hand-written one, 14.0,
 because its reads of the math unit wait for the multiplier.
 
-`make core CORE=pipeline` runs them on the pipelined core. On 2026-10-19,
-on the same programs as the multi-cycle core above, and after the core
-was re-timed for 100 MHz
-([doc/review/pipeline-timing.md](../doc/review/pipeline-timing.md)):
+`make core CORE=pipeline` runs them on the pipelined core, on the same programs as the multi-cycle core above:
 
 | Program | Instructions | Cycles | Cycles per instruction | Faster than the multi-cycle core |
 |---|---|---|---|---|
 | `bench.c` through nicewasm | 1730635 | 2275410 | 1.31 | 8.6 times |
 | `hand.nasm` | 491617 | 1216653 | 2.47 | 4.6 times |
 
-Before the re-timing, on the older translation of 1729523 instructions,
-the core took 2330619 and 1214194 cycles: the new byte accesses saved
-cycles in `crc32`, `vm`, and `strings`, and the re-timing's new waits
-cost `hand.nasm` 0.2%.
+
 
 The hand-written program gains less, because more of its time goes to
 what a pipeline cannot hide: `vm` jumps through a table every three or
@@ -189,22 +175,19 @@ share of all instructions:
       ...
       registers read from the previous instruction: R2 8.7%, R1 7.0%, ...
 
-The last lines count what costs a cycle on the core since it was
-re-timed for 100 MHz on 2026-10-19, which forms every operand value,
-address, and shift count in PREPARE: the shifts by the kind of their count (a
+The last lines count what costs a cycle on the core which forms every operand value, address, and shift count in PREPARE: the shifts by the kind of their count (a
 constant, R0 and R15 included, a register, or memory), the shifts whose
 count register the previous instruction writes, the sources in mode 001
 or 011 and the store addresses in mode 011, 101, or 111 whose register
 the previous instruction writes, the same for stores through `@R` or
 `@R++`, the taken jumps that WRITE resolves, by their target (a
 constant, a word in memory, or computed), and the register destinations
-in mode 001 or 010. In both programs on 2026-10-19, no shift's count
+in mode 001 or 010. In both programs, no shift's count
 register and no source in mode 001 or 011 came from the previous
 instruction, and there were no computed jumps that WRITE resolved and
 no destinations in mode 001 or 010.
 
-MICROARCH.md §5.6 has the table from 2026-10-15 and the decisions it led
-to. `hazards.py --test` checks the counts on a small program whose hazards
+MICROARCH.md §5.6 has a table of these shares and the decisions it led to. `hazards.py --test` checks the counts on a small program whose hazards
 are counted by hand in the script, and `make test` runs it. `make
 typecheck` runs mypy on `expected.py`, `hazards.py`, and the tools below.
 
@@ -248,16 +231,13 @@ acknowledges in c + 3. DECODE takes the instruction in c + 4 and emits
 its micro-op in c + 5, PREPARE passes it on in c + 6, and WRITE runs it
 in c + 7, 7 cycles after a fall-through would have run.
 
-On 2026-10-19 the phases of the translated program take an estimated
+The phases of the translated program take an estimated
 2199014 cycles, 1.27 per instruction, and those of `hand.nasm` 1125497,
 2.3 per instruction: the hand-written code has more instructions with
 side effects, memory operands, and reads of the math unit, and fewer
 instructions in all. Options such as `--flush`, `--early`, `--agen`,
 `--mul`, and `--div-skip` set the model's parameters, to try a design
-change before it is built. Four options, each 1 by default, are the
-rules of the core since it was re-timed for 100 MHz on 2026-10-19,
-which forms every operand value, address, and shift count in PREPARE
-(MICROARCH.md §7.3 and §7.4); 0 gives the core before: `--shift-mem N`
+change before it is built. Four options, each 1 by default, are the rules of the core, which forms every operand value, address, and shift count in PREPARE (MICROARCH.md §7.3 and §7.4); 0 turns a rule off: `--shift-mem N`
 gives a shift by a count in memory N cycles more in WRITE;
 `--shift-reg N` makes a shift wait N cycles in PREPARE for a count
 register that the previous micro-op writes, as `--agen` does for an
@@ -277,8 +257,7 @@ phases.
 
 `make compare` puts the estimate beside the cycles the pipelined core
 took, phase by phase, from the output of `make core CORE=pipeline`,
-which must have run first, on the same `.bin`. On 2026-10-19, with the
-re-timed core and the translation above:
+which must have run first, on the same `.bin`. For example:
 
 | Phase | `bench.c`, model | Core | Model against the core | `hand.nasm`, model | Core | Model against the core |
 |---|---|---|---|---|---|---|
@@ -291,8 +270,7 @@ re-timed core and the translation above:
 | total | 2199014 | 2275410 | −3.4% | 1122937 | 1216653 | −7.7% |
 
 The model is below the core in every phase, by up to 11%, most in
-`crc32` and `vm`. With a bubble of 5 after a jump taken in WRITE, as
-the model had before, the totals were 7.5% and 15.7% below the core's.
+`crc32` and `vm`. 
 
 `cycprof.py` charges the model's cycles to the source lines of a program,
 and `make profile` writes `build/bench.cyc.txt` and `build/hand.cyc.txt`.
@@ -317,7 +295,7 @@ are worked out by hand in the script, and `make test` runs it.
 nicewasm, the measure that [translator/README.md](../translator/README.md)
 quotes for `test/safe.zig` and the float library. `make words` prints it
 for `bench.wasm`, `translator/test/safe.wasm`, and `runtime/float.wasm`:
-on 2026-10-19, 8560, 5171, and 7083 words. Each module is translated and
+8560, 5171, and 7083 words. Each module is translated and
 assembled on its own, with the labels it uses but does not define, such
 as the runtime's routines, defined as 0 first; a constant takes a whole
 word whatever its value (ISA.md §3), so that changes no size. The count

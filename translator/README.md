@@ -90,7 +90,7 @@ more than 4096, if the program can panic: Zig's panic handler puts a
 4 KB buffer on the stack, and with too small a stack it traps with code
 2, out of bounds, before it reaches its own trap. `test/safe.zig` is
 about 5200 words built with ReleaseSafe, and about 16000 built with
-Debug (2026-10-19).
+Debug.
 
 `-fstrip` drops the DWARF sections, which make up almost all of a
 ReleaseSafe or Debug module. nicewasm ignores them, but they make the
@@ -150,105 +150,13 @@ and it traps with `unreachable`, even if its source has no function
 pointers. nicewasm supports all of them. A Rust program uses a table and
 `call_indirect` for `dyn` trait calls.
 
-The code is about half the size it was, after four steps with no change
-to ISA.md §9.4. Using locals and constants directly as
-operands made `test/safe.zig` 19% smaller (12353 to 9941 words) and the
-float library 31% smaller (29569 to 20317). A short inline path for
-memory accesses made them 12% (to 8730) and 2.5% (to 19808) smaller
-again. Helpers for `i64` shifts, and short inline code for a shift by a
-constant, took them to 8670 and 18723. Locals in registers, jumps on the
-flags after a comparison, and results written straight to a local took
-them to 7139 (18% less) and 14565 (22% less). In all, `test/safe.zig` is
-42% smaller and the float library 51%.
+The optimizations change nothing in ISA.md §9.4. The size of translated code
+is measured in words (`make words` in `bench/`): `test/safe.zig` is 5171
+words and the float library 7083. The benchmark of [bench/](../bench/)
+runs 1730635 instructions in its phases, from a module of 8560 words.
 [doc/review/code-size-plan.md](../doc/review/code-size-plan.md) has the
-measurements.
-
-On 2026-10-16, virtual registers with a register allocator, and frames
-without a frame pointer, took `test/safe.zig` from 7131 to 6338 words
-(11% less) and the float library from 14308 to 8022 (44% less). They
-took the benchmark in [bench/](../bench/) from 3359061 to 2539669
-instructions (24% fewer).
-
-Later on 2026-10-16, cheaper memory accesses took the benchmark from
-2539669 to 1875636 instructions (26% fewer): one compare for the bounds
-and the alignment of a word access, word indices computed from array
-indices, and inline accesses of 1 and 2 bytes. Their stubs after the
-epilogue made `test/safe.zig` larger, from 6338 to 6691 words (6% more),
-and left the float library the same size.
-
-After that, the work on the flags, on constants, and on jumps of the
-README sections above took the benchmark from 1875636 to 1778350
-instructions (5% fewer), and from about 2994000 to about 2634000 cycles
-(12% fewer) on the pipelined core of doc/MICROARCH.md, by the estimate
-of bench/pipecycles.py. The flags of a comparison or a load used directly, and
-multiplications by constants as shifts, saved the most, and copies of
-an interpreter's dispatch and conditional instructions in place of
-short jumps the next most. `test/safe.zig` became smaller, from 6691 to
-6577 words (2% less), and so did the float library, from 8028 to 7454
-(7% less).
-
-Then `i64.mul` by a constant inline, loop exits in place of a `br_if`
-back, and helpers for traps and for the stubs of word accesses took the
-benchmark to 1830683 instructions and about 2448000 cycles, and
-`test/safe.zig` to 5242 words and the float library to 7149, counted as
-the words of the translated module in a program.
-
-On 2026-10-19, one compare for a group of word accesses, an early
-return before the prologue, tail calls, and the longer arm of a diamond
-as the one that falls through took the benchmark from 1830683 to
-1785571 instructions (2.5% fewer), and from about 2448000 to about
-2344000 cycles (4.3% fewer). The diamonds saved the most, in heapsort,
-and the shared compares the next most. `test/safe.zig` became smaller,
-from 5242 to 5215 words, and so did the float library, from 7149 to
-7089, and the benchmark's module, from 8853 to 8632. Of that, 191 words
-in the benchmark came from no longer copying short tails into the
-stubs.
-
-Later on 2026-10-19, instructions moved from after a data read to the
-slot between it and a conditional jump just before it, mostly the jump
-to the stub of a word access, took the benchmark from about
-2344000 to about 2306000 cycles (1.6% fewer), with the same 1785571
-instructions. The reads that wait for a skipped jump went from some
-94500 to some 56800 cycles. The vm saved the most, then heapsort and
-crc32. `test/safe.zig` became 5224 words, not 5215, the float library
-7083, not 7089, and the benchmark's module 8658, not 8632.
-
-After that on 2026-10-19, a constant word offset in the word operand of a
-word access, in place of the `ADD` that computed its word index, took
-the benchmark from 1785571 to 1737715 instructions (2.7% fewer), and
-from about 2306000 to about 2283000 cycles (1.0% fewer). Heapsort saved
-the most, then bst and crc32. The vm and strings took some 5000 cycles
-more with the same instructions, since their code and data moved,
-which changed the timing of fetches and reads. `test/safe.zig` and the
-float library stayed 5224 and 7083 words, and the benchmark's module
-became 8657, not 8658.
-
-Last on 2026-10-19, no bounds check for an access whose index or base
-has a known bound, and instructions moved to between the write of an
-address register and the access that uses it, took the benchmark from
-1737715 to 1729523 instructions (0.5% fewer), and from about 2283000
-to about 2273000 cycles (0.4% fewer). All of the instructions, and
-most of the cycles, are crc32's: its table lookup, `table[(crc ^ b) &
-255]`, has no compare. `test/safe.zig` became 5182 words, not 5224,
-the float library stayed 7083 words, and the benchmark's module became
-8623, not 8657.
-
-Then, still on 2026-10-19, the accesses of 1 and 2 bytes took their
-shift count from a register, computed with the word index before the
-bounds check, in place of a table in memory, and rotations in place of
-shifts (below). That is for the core as it is since it was re-timed
-for 100 MHz the same day, which forms every shift count in PREPARE: a
-count read from memory costs a cycle more in WRITE. A store of 1 or 2 bytes is an
-instruction longer, but one of a constant 0 is one shorter, and the
-loads are as long as before. The benchmark ran 1730635
-instructions in its phases, not 1729523. By `bench/pipecycles.py`, the
-phases took 2128130 cycles, not 2154905 (1.2% fewer), with the model as
-it was, `--flush 5`, and 2199014, not 2282080 (3.6% fewer), with the
-rules of the re-timed core, `--shift-mem 1 --shift-reg 1 --sum-wait 1
---dest-adjust 1`. The byte loads no longer wait for their address
-register or for a second read on the bus. `test/safe.zig` became 5171
-words, not 5182, the float library stayed 7083 words, and the
-benchmark's module became 8560, not 8623.
+measurements of the plan, and [doc/HISTORY.md](../doc/HISTORY.md) lists
+the steps that got the code here.
 
 ## Supported features
 

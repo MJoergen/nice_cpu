@@ -4,11 +4,7 @@ This is the single list of open items for the repository: work not done
 yet, questions not decided, claims not checked, and ideas for later. Each
 item names where it comes from. Add new items here, not in other files.
 
-Every finding of the reviews in [doc/review/](doc/review/) is closed,
-those of
-[doc/review/second-repository-review.md](doc/review/second-repository-review.md)
-included. The claims that the repository review of 2026-10-14 left
-unchecked were checked on 2026-10-15 (repository-review.md §6.1). No code
+Every finding of the reviews in [doc/review/](doc/review/) is closed. No code
 has TODO or FIXME comments.
 
 ## FPGA core
@@ -22,9 +18,8 @@ has TODO or FIXME comments.
     CORE=pipeline` in `bench/`), to decide on speculative reads (below).
   - Speed: the core alone meets a 10 ns clock out of context (Vivado
     2025.1, `make timing` in `hdl/`), with a margin of a few tenths of a
-    nanosecond, since the re-timing of 2026-10-19
-    ([doc/review/pipeline-timing.md](doc/review/pipeline-timing.md)).
-    Before it, it reached about 49 MHz. NiceMonMEGA65 still runs it at
+    nanosecond ([doc/review/pipeline-timing.md](doc/review/pipeline-timing.md)).
+    NiceMonMEGA65 still runs it at
     33.3 MHz, and must be tried at 100 MHz. See the clock items below.
 - **Test order steps not done** (MICROARCH.md §9):
   - Step 4, hazard programs: `hdl/test/hazard.nasm`,
@@ -41,8 +36,7 @@ has TODO or FIXME comments.
     compares with `irq_compare.py --read-delay`, and both cores are swept
     with the request raised up to a few cycles late as well.
   - Step 6: `make programs` in `hdl/` runs the runtime's and the
-    translator's test programs on the core, and both cores pass, the
-    pipelined one with `make programs CORE=pipeline` on 2026-10-19. Left out: the random modules of `translator/test/fuzz.py`,
+    translator's test programs on the core, and both cores pass. Left out: the random modules of `translator/test/fuzz.py`,
     `runtime/libc/test/fuzz_printf.py`, which needs clang, and the
     benchmark, which `make core` in `bench/` runs already.
   - Step 7: `hdl/test/random_prog.py` was tuned with
@@ -83,10 +77,9 @@ has TODO or FIXME comments.
   device needs a controller that merges the requests and says which vector
   goes first. No device raises NMI.
 
-## Pipelined core: after the first version
+## Pipelined core
 
-- **The margin at 100 MHz is thin** (pipeline-timing.md, the second
-  measurement). The worst paths out of context are within a few tenths
+- **The margin at 100 MHz is thin** (pipeline-timing.md). The worst paths out of context are within a few tenths
   of a nanosecond of 10 ns, and several differ only by placement: the
   flush, through PREPARE's handshake, into DECODE's registers; the store
   address through the block compare into the flush; and the next
@@ -146,25 +139,14 @@ has TODO or FIXME comments.
 - **Stack overflow** is not detected in translated code, unlike in wasm.
   What happens then is undefined (ISA.md §9.4). An idea: a check against a
   stack limit in each function's prologue, at a cost in code size.
-- **Faster and smaller translated code.** The list from a look at the
-  translated test programs on 2026-10-15 was done from 2026-10-16 to
-  2026-10-19 ([translator/README.md](translator/README.md), How functions
-  are translated): a register allocator in place of frame words, inline
-  memory accesses with one compare for the bounds and the alignment, a
-  constant offset in the word operand, one compare for a group of
-  accesses, no compare for an index with a known bound, flags from the
-  operation before a branch, no mask for a constant shift count,
-  conditional instructions in place of short jumps, and multiplications
-  and divisions by constants, and shift counts of the byte accesses in
-  registers. `bench/` went from 3359061 to 1730635
-  instructions, against 491617 for `hand.nasm`, and from about 5.55 to
-  about 2.27 million cycles by `bench/pipecycles.py`, an estimate for
-  the pipelined core of MICROARCH.md with the math unit as it was before
-  2026-10-16. With the math unit as it is, the estimate is 2.20 million
-  cycles, with the rules of the re-timed core or without them, and the
-  re-timed core takes 2.28 million (`make compare`). Trusting the alignment hint would
-  save nothing now, as one compare covers the bounds and the alignment.
-  What is left, by the estimate:
+- **Faster and smaller translated code.** `bench/` runs 1730635
+  instructions, against 491617 for `hand.nasm`, and takes about 2.28
+  million cycles on the pipelined core (`make compare`), 2.20 million by
+  the estimate of `bench/pipecycles.py`
+  ([translator/README.md](translator/README.md), How functions are
+  translated). Trusting the alignment hint would save nothing, as one
+  compare covers the bounds and the alignment. What is left, by the
+  estimate:
   - *Taken jumps resolved in WRITE*, about half of the cycles
     above one per instruction: the interpreter's table jumps, which no layout
     avoids, and `br_if`s whose common path is the taken one. nicewasm
@@ -195,10 +177,10 @@ has TODO or FIXME comments.
     or moves code: at the first instruction of the original copy, and
     the code of a neighbouring access may lie between that instruction
     and the rest of the trapping instruction's code.
-  - MICROARCH.md §5.6's table of 2026-10-15 predates these changes. A read
+    - MICROARCH.md §5.6's table is from an older translation. A read
     after a conditional jump is now in most inline memory accesses, so
     speculative reads (above) matter more; `make -C bench hazards` gives
-    the new shares.
+    the current shares.
   - *Two guesses that could become options.* The shorter arm of a diamond
     is taken for the rarer one, which cost 2500 cycles in `strstr`, where
     the short arm is the inner loop, and saved 51000 in heapsort. A group
@@ -214,10 +196,7 @@ has TODO or FIXME comments.
     are tested by `run.py`, and by `make diff` (`test/diff_fuzz.py`),
     which runs two versions of nicewasm on the same random modules, with
     statements that may trap, and compares the console output, the halt,
-    the registers, and the memory. The differential fuzzer of the reviews
-    of 2026-10-19, which also compared a trap's R2 by wasm instruction,
-    found two bugs in the early return that `fuzz.py` and `run.py` had
-    missed. A model with traps in `fuzz.py` is still an idea.
+    the registers, and the memory. A model with traps in `fuzz.py` is still an idea.
 - **Benchmarks beyond [bench/](bench/README.md).** Dhrystone 2.1 would
   give a number to compare the core with other small processors, once it
   runs on a board. It needs `malloc`, `strcpy`, `strcmp`, and `printf`
@@ -233,7 +212,7 @@ has TODO or FIXME comments.
 Kept here so that they are not proposed again.
 
 - **Four ways to fewer pipeline stalls in translated code**, tried in the
-  translator work of 2026-10-19 and dropped, measured with
+  translator and dropped, measured with
   `bench/pipecycles.py`:
   - Moving an instruction up past a conditional jump, into the slot
     before a read, when its register is dead where the jump goes. It
@@ -255,8 +234,7 @@ Kept here so that they are not proposed again.
     same reason.
 - **A condition or instruction for signed comparison.** A signed a < b
   takes two instructions, `?V XOR R14, R14, 0x10000000` and then `?N`,
-  as ISA.md §9.2 shows and nicewasm does. Michael decided on 2026-10-15
-  to keep it that way.
+  as ISA.md §9.2 shows and nicewasm does. It stays that way.
 - **Board synthesis and an example design in this repository.** This
   repository stays FPGA-agnostic. The MEGA65 example design, with its
   synthesis, size, and clock speed, lives in the

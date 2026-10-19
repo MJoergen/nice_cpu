@@ -25,9 +25,9 @@
 --   with console_valid_o high, in the cycle the write is accepted, and stores
 --   nothing. A data read returns 0x100 plus the next byte of the file
 --   G_INPUT_FILE, and 0x200 after its end, as the emulator's --input does
---   (ISA.md §8.3). With G_INPUT_FILE = "", there is no input, and every
+--   (SYSTEM.md §1). With G_INPUT_FILE = "", there is no input, and every
 --   read returns 0x200, as for the emulator with stdin from /dev/null.
--- * The read counter is at 0xFFFFFF01, as in the emulator (ISA.md §8.3).
+-- * The read counter is at 0xFFFFFF01, as in the emulator (SYSTEM.md §1).
 --   A data read returns the number of data reads of it since the last write,
 --   and then counts itself. A write sets the count and stores nothing. It
 --   lets tests see the number and order of data reads (ISA.md §8.2).

@@ -1,7 +1,7 @@
 # niceemu
 
 An emulator for the NICE processor, written in [Zig](https://ziglang.org). It implements
-[doc/ISA.md](../doc/ISA.md) and runs the `.bin` files that
+[doc/ISA.md](../doc/ISA.md) and the devices of [doc/SYSTEM.md](../doc/SYSTEM.md), and runs the `.bin` files that
 [niceasm](../assembler/README.md) writes.
 
 It needs Zig 0.15 (tested with 0.15.2), and Python 3 for `make test`.
@@ -95,9 +95,9 @@ address twice and a file with no words are errors.
 | `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns the next input byte plus `0x100`, or `0x200` after the end of the input. |
 | `0xFFFFFF01` | 1 | Read counter. A data read returns the number of data reads of it since the last write, and a write sets that number. |
 | `0xFFFFFF02`–`0xFFFFFF0F` | 14 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
-| `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (ISA.md §8.6). Raises IRQ once every P steps. |
-| `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (ISA.md §8.4). Multiplies and divides A and B, and divides C and D. |
-| `0xFFFFFF40`–`0xFFFFFF4F` | 16 | Performance counters (ISA.md §8.5). Cycles and instructions, 64 bits each. |
+| `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (SYSTEM.md §4). Raises IRQ once every P steps. |
+| `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (SYSTEM.md §2). Multiplies and divides A and B, and divides C and D. |
+| `0xFFFFFF40`–`0xFFFFFF4F` | 16 | Performance counters (SYSTEM.md §3). Cycles and instructions, 64 bits each. |
 | `0xFFFFFF50`–`0xFFFFFF7F` | 48 | Ordinary memory. The pipelined FPGA core maps its fetch statistics here (MICROARCH.md §8.1). |
 | `0xFFFFFF80`–`0xFFFFFFFF` | 128 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. |
 

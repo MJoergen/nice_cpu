@@ -9,6 +9,9 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
   Add new ones there, not in other files or code comments.
 - `doc/ISA.md`: the specification. It is authoritative for all code here.
   `doc/review/` records how decisions were reached; ISA.md supersedes it.
+- `doc/SYSTEM.md`: the devices in the I/O range that the emulator and the FPGA
+  core share (console, math unit, counters, timer). ISA.md reserves the range
+  and defines no device. ISA.md wins over it.
 - `doc/HISTORY.md`: what used to be true, and how the code got here. Keep it
   out of the other docs, which say only what is true now.
 - `doc/intro/`: beginner's slides (`nice_intro.tex`, built `nice_intro.pdf`)

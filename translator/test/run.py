@@ -7,7 +7,7 @@ with runtime/start_wasm.nasm, any hand-written assembly the case needs,
 runtime/lib.nasm, and runtime/muldiv_mpu.nasm, as ISA.md §9.3 describes. If
 it calls the float library, runtime/float.wasm translated as the library
 module float follows. Then it is assembled and run. Each case runs twice:
-as translated by default, with the math unit (ISA.md §8.4), and with
+as translated by default, with the math unit (SYSTEM.md §2), and with
 --no-mpu and runtime/muldiv_soft.nasm.
 
 The program must halt with HALT and main's result in R1, and print what
@@ -340,7 +340,7 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "libtrap": ["--library", "lib"],
            "libmem": ["--library", "lib", "--library-memory", "128"]}
 
-# What a case must print on the console (ISA.md §8.3). Every other case
+# What a case must print on the console (SYSTEM.md §1). Every other case
 # must print nothing.
 CONSOLE = {"peekpoke": "Hi\n", "hello": "Hello, NICE!\n", "hello_rs": "Hello, Rust!\n"}
 

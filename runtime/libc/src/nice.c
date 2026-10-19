@@ -35,7 +35,7 @@ void nice_print(const char *s)
 }
 
 // The read of the low word takes the snapshot that the read of the high
-// word returns (ISA.md §8.5). nice_peek is never reordered.
+// word returns (SYSTEM.md §3). nice_peek is never reordered.
 unsigned long long nice_cycles(void)
 {
     unsigned lo = nice_peek(NICE_CYCLE_LO);

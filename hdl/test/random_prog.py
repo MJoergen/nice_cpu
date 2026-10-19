@@ -60,7 +60,7 @@ VECTORS = range(0x80, 0x84)  # Vector table entries, at VBASE = 0, above most sm
 LOCAL = 0.4  # The chance that a register field takes a register written just before
 NEAR = 0.9  # The chance that a forward jump skips at most JUMP_SPAN - 1 instructions
 JUMP_SPAN = 5
-COUNTER = 0xFFFFFF01  # The read counter (ISA.md §8.3)
+COUNTER = 0xFFFFFF01  # The read counter (SYSTEM.md §1)
 
 # MOVE R15, c: a jump to the constant word that follows.
 JUMP = 0x0003D800

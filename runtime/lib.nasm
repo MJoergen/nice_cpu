@@ -94,8 +94,8 @@ __popcnt64
         MOVE    R2, 0
         MOVE    R15, @R13++
 
-; The device routines of §9.3: the console (§8.3), the performance counters
-; (§8.5), and the emulator's character screen. Unlike the routines above,
+; The device routines of §9.3: the console (SYSTEM §1), the performance counters
+; (SYSTEM §3), and the emulator's character screen. Unlike the routines above,
 ; programs call them by their C names.
 __nice.console  .EQU    0xFFFFFF00
 __nice.cycle_lo .EQU    0xFFFFFF40
@@ -146,7 +146,7 @@ _nice_print
 
 ; nice_cycles, nice_instructions: R1:R2 = the counter, low word first.
 ; The read of the low word takes the snapshot that the read of the high
-; word returns (§8.5). 3 steps.
+; word returns (SYSTEM §3). 3 steps.
 _nice_cycles
         MOVE    R1, @__nice.cycle_lo
         MOVE    R2, @__nice.cycle_hi

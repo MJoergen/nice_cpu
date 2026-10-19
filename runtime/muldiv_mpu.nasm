@@ -1,6 +1,6 @@
 ; The multiply and divide routines of the NICE runtime library
 ; (doc/ISA.md §9.3), for one word and for long long, with the math unit of
-; §8.4. It goes after lib.nasm, instead of muldiv_soft.nasm. Each routine
+; SYSTEM §2. It goes after lib.nasm, instead of muldiv_soft.nasm. Each routine
 ; writes its operands to A and B, or C and D, and reads the results.
 
 __mpu.a         .EQU    0xFFFFFF20
@@ -41,7 +41,7 @@ __umod  MOVE    @__mpu.a, R1
         MOVE    R15, @R13++
 
 ; __div: R1 = R1 / R2, signed, rounding toward zero. 4 steps. The most
-; negative number divided by -1 gives the most negative number (§8.4).
+; negative number divided by -1 gives the most negative number (SYSTEM §2).
 __div   MOVE    @__mpu.a, R1
         MOVE    @__mpu.b, R2
         MOVE    R1, @__mpu.sdiv_q

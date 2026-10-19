@@ -1,4 +1,4 @@
-; The math unit at 0xFFFFFF20 (ISA.md §8.4). For each pair A, B in the
+; The math unit at 0xFFFFFF20 (SYSTEM.md §2). For each pair A, B in the
 ; table, the loop writes A and B and copies the eight results, SMUL_LO to
 ; UDIV_R, to one dump line at 0x200 + 8k. In hex:
 ;

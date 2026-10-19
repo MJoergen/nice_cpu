@@ -35,7 +35,7 @@ const usage =
     \\
 ;
 
-/// The character screen (doc/ISA.md §8.3). Each word holds a character in
+/// The character screen (doc/SYSTEM.md §1). Each word holds a character in
 /// bits 7..0 and its colour above. The 2004 emulator has it at 0x400.
 const screen_base = 0xFFFF0000;
 const screen_base_2004 = 0x400;

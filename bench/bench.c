@@ -1,7 +1,7 @@
 // A benchmark for code that reaches NICE through wasm (ISA.md §9.4).
 //
 // Six phases, each a well-known kernel with a known result. Each phase is
-// timed with the performance counters of ISA.md §8.5, and main prints one
+// timed with the performance counters of SYSTEM.md §3, and main prints one
 // line per phase: the instructions, the cycles, the result, and whether it
 // is the expected one. The expected values come from expected.py, which
 // computes each phase in Python from the same sizes. The native build,

@@ -1,4 +1,4 @@
-; Reads of the instruction counter (ISA.md §8.5) in the places where a
+; Reads of the instruction counter (SYSTEM.md §3) in the places where a
 ; pipelined core may count an instruction too early or too late: right
 ; after a store to RAM, which tb_core's data bus decoder (src/wb_dmux.vhd)
 ; makes the read wait for, right after a read of RAM, as the source of a

@@ -99,7 +99,7 @@ entity multicycle is
       halted_o     : out std_logic;
 
       -- '1' for one cycle when an instruction completes, but not an
-      -- interrupt entry, for the instruction counter (ISA.md §8.5)
+      -- interrupt entry, for the instruction counter (SYSTEM.md §3)
       instret_o    : out std_logic;
 
       -- One report per step, for sim/trace.vhd

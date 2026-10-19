@@ -51,7 +51,7 @@ left them, and `heapsort` sorts them afterwards.
 ## The output
 
 Each program prints one line per phase: the instructions and the cycles
-of the phase, from the performance counters of ISA.md §8.5, then the
+of the phase, from the performance counters of SYSTEM.md §3, then the
 phase's result and whether it is the expected one. `main` returns the
 number of phases with a wrong result, so R1 is 0 after a good run.
 

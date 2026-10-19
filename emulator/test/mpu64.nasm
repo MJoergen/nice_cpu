@@ -1,4 +1,4 @@
-; The 64-bit division of the math unit at 0xFFFFFF30 (ISA.md §8.4). For
+; The 64-bit division of the math unit at 0xFFFFFF30 (SYSTEM.md §2). For
 ; each pair C, D in the table, the loop writes C and D, low word first, and
 ; copies the eight result words, SDIV64_Q_LO to UDIV64_R_HI, to one dump
 ; line at 0x200 + 8k. In hex, each 64-bit result low word first:

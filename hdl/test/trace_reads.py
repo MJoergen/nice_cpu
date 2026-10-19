@@ -13,7 +13,7 @@ words from the program and the trace's memory writes, and lists the
 addresses of its source reads (ISA.md §4.1, §8.2), with the names of the
 I/O words it knows. A read of CYCLE_LO or CYCLE_HI explains a difference
 between the core and the emulator: one counts cycles, the other steps
-(ISA.md §8.5).
+(SYSTEM.md §3).
 """
 
 import re

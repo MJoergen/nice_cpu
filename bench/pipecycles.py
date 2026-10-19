@@ -130,7 +130,7 @@ INSTR_LO = 0xFFFFFF42
 MEMORY = (4, 5, 6, 7)
 SIDE = (1, 2, 5, 6)
 
-# The units of the math unit (ISA.md §8.4), and the result words that wait
+# The units of the math unit (SYSTEM.md §2), and the result words that wait
 # for each: the products, the signed and the unsigned quotient and
 # remainder, and the 64-bit ones.
 MPU_UNITS = ["mul", "sdiv", "udiv", "sdiv64", "udiv64"]

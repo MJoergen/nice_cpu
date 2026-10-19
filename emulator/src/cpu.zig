@@ -102,23 +102,23 @@ pub const Error = std.Io.Writer.Error || error{OutOfMemory};
 /// The first address of the I/O range (§8.3).
 pub const io_base: u32 = 0xFFFF_FF00;
 
-/// The emulator's console: the first I/O address (§8.3).
+/// The emulator's console: the first I/O address (SYSTEM §1).
 pub const console_addr: u32 = io_base;
 
-/// Bits of a console read when there is input (§8.3): bit 8 says that bits
+/// Bits of a console read when there is input (SYSTEM §1): bit 8 says that bits
 /// 7..0 hold the next input byte, and bit 9 that the input has ended.
 pub const console_byte: u32 = 0x100;
 pub const console_end: u32 = 0x200;
 
-/// The emulator's read counter (§8.3): a data read returns the number of
+/// The emulator's read counter (SYSTEM §1): a data read returns the number of
 /// data reads of it since the last write, and then counts itself. A write
 /// sets the count. It lets tests see the data reads of §8.2.
 pub const counter_addr: u32 = io_base + 1;
 
-/// The first of the 32 words of the math unit (§8.4).
+/// The first of the 32 words of the math unit (SYSTEM §2).
 pub const mpu_base: u32 = io_base + 0x20;
 
-/// The math unit (§8.4). It computes each result when it is read, so a
+/// The math unit (SYSTEM §2). It computes each result when it is read, so a
 /// read never waits.
 pub const Mpu = struct {
     a: u32 = 0,
@@ -199,10 +199,10 @@ fn mpuWord(addr: u32) ?u5 {
     return if (addr -% mpu_base < 32) @truncate(addr -% mpu_base) else null;
 }
 
-/// The first of the 16 words of the performance counters (§8.5).
+/// The first of the 16 words of the performance counters (SYSTEM §3).
 pub const perf_base: u32 = io_base + 0x40;
 
-/// The performance counters (§8.5). Each 64-bit counter has a snapshot,
+/// The performance counters (SYSTEM §3). Each 64-bit counter has a snapshot,
 /// which a read of its low word fills and a read of its high word returns.
 pub const Perf = struct {
     /// One per step: per instruction and per interrupt entry. The emulator
@@ -242,10 +242,10 @@ fn perfWord(addr: u32) ?u4 {
 /// The words of the cycle counter, `CYCLE_LO` and `CYCLE_HI`.
 const cycle_words = 2;
 
-/// The first of the 16 words of the timer (§8.6).
+/// The first of the 16 words of the timer (SYSTEM §4).
 pub const timer_base: u32 = io_base + 0x10;
 
-/// The timer (§8.6). It counts steps, as the cycle counter does.
+/// The timer (SYSTEM §4). It counts steps, as the cycle counter does.
 pub const Timer = struct {
     period: u32 = 0,
     count: u32 = 0,
@@ -468,7 +468,7 @@ pub const Cpu = struct {
         } else if (mpuWord(addr)) |i| {
             self.mpu.write(i, value);
         } else if (self.perfDevice(addr) != null) {
-            // The counters cannot be written (§8.5).
+            // The counters cannot be written (SYSTEM §3).
         } else if (timerWord(addr)) |i| {
             self.timer.write(i, value);
         } else if (addr != console_addr or self.console == null) {
@@ -483,7 +483,7 @@ pub const Cpu = struct {
 
     /// Take a pending interrupt if one may be taken, or else run one
     /// instruction. Does nothing once the processor has halted. Each step
-    /// counts as one cycle (§8.5, §8.6).
+    /// counts as one cycle (SYSTEM §3, §4).
     pub fn step(self: *Cpu) Error!void {
         if (self.halted()) return;
         defer {
@@ -494,7 +494,7 @@ pub const Cpu = struct {
         self.last_write = null;
 
         // The timer's request merges with one that is pending, and keeps
-        // the vector of that one (§8.6).
+        // the vector of that one (SYSTEM §4).
         if (self.timer.raised) |v| {
             if (self.timer_irq and self.irq_pending == null) self.requestIrq(v);
             self.timer.raised = null;
@@ -1323,7 +1323,7 @@ test "the read counter counts data reads, and a write sets it" {
     try testing.expectEqual(7, cpu.read_count);
 }
 
-test "the math unit's results, with division by zero and overflow (§8.4)" {
+test "the math unit's results, with division by zero and overflow (SYSTEM §2)" {
     // A, B, then SMUL_LO, SMUL_HI, UMUL_LO, UMUL_HI, SDIV_Q, SDIV_R, UDIV_Q, UDIV_R.
     const cases = [_][10]u32{
         .{ 7, 3, 21, 0, 21, 0, 2, 1, 2, 1 },
@@ -1343,7 +1343,7 @@ test "the math unit's results, with division by zero and overflow (§8.4)" {
     }
 }
 
-test "the math unit's 64-bit division, with division by zero and overflow (§8.4)" {
+test "the math unit's 64-bit division, with division by zero and overflow (SYSTEM §2)" {
     // C, D, then the signed quotient and remainder, and the unsigned ones.
     const cases = [_][6]u64{
         .{ 100, 7, 14, 2, 14, 2 },
@@ -1389,7 +1389,7 @@ test "the math unit takes writes to A and B only, and memory keeps nothing" {
     try testing.expectEqual(0, cpu.peek(mpu_base));
 }
 
-test "a read of a counter's low word keeps its high word for the next read (§8.5)" {
+test "a read of a counter's low word keeps its high word for the next read (SYSTEM §3)" {
     var perf: Perf = .{ .instrs = 0xFFFF_FFFF, .cycles = 0x1_2345_6789 };
     try testing.expectEqual(0xFFFF_FFFF, perf.read(2));
     perf.instrs += 1; // the low word wraps between the two reads
@@ -1408,7 +1408,7 @@ test "a read of a counter's low word keeps its high word for the next read (§8.
     try testing.expectEqual(1, perf.peek(1));
 }
 
-test "the counters count instructions and steps, and ignore writes (§8.5)" {
+test "the counters count instructions and steps, and ignore writes (SYSTEM §3)" {
     // 0:  MOVE R1, @INSTR_LO    0 instructions before it
     // 2:  ?Z MOVE R2, 7         skipped, but counts
     // 4:  MOVE R2, @INSTR_LO    2
@@ -1458,7 +1458,7 @@ test "without the cycle counter, its two words are memory (--no-cycle-counter)" 
     try testing.expectEqual(0, cpu.read(perf_base)); // the counter again, not the memory
 }
 
-test "the timer counts down from the write and raises a request every P steps (§8.6)" {
+test "the timer counts down from the write and raises a request every P steps (SYSTEM §4)" {
     var timer: Timer = .{};
     timer.tick(); // stopped: nothing changes
     try testing.expectEqual(Timer{}, timer);
@@ -1484,7 +1484,7 @@ test "the timer counts down from the write and raises a request every P steps (�
     try testing.expectEqual(0, timer.read(1));
 }
 
-test "the timer's request is an IRQ, and merges with a pending one (§8.6)" {
+test "the timer's request is an IRQ, and merges with a pending one (SYSTEM §4)" {
     // 0: MOVE @TIMER_PERIOD, 2, then NOPs. The vector table entries 0x10
     // and 0x11 hold 0x40 and 0x50, each an RTI.
     var cpu = Cpu.init(testing.allocator);

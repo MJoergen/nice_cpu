@@ -190,7 +190,7 @@ begin
       -- The console takes bits 7..0, in the cycle the write is accepted,
       -- and stores nothing. A read returns 0x100 plus the next byte of
       -- G_INPUT_FILE, test/mem.input, which holds "A", the byte 0xC3, and
-      -- a newline. After those, it returns 0x200 (ISA.md §8.3).
+      -- a newline. After those, it returns 0x200 (SYSTEM.md §1).
       dbus_cyc      <= '1';
       dbus_stb      <= '1';
       dbus_we       <= '1';

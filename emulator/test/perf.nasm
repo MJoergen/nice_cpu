@@ -1,4 +1,4 @@
-; The performance counters (ISA.md §8.5), run with --nmi 3:0x41. The
+; The performance counters (SYSTEM.md §3), run with --nmi 3:0x41. The
 ; instruction counter counts every instruction, a skipped one and INT
 ; included, but not the NMI entry. A read of it returns the number of
 ; instructions before the reading one. The cycle counter counts the steps in

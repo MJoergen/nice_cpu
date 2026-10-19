@@ -21,7 +21,7 @@
 ; So E = 1 almost everywhere, and VBASE is 0, 1, or 2 at every instruction
 ; boundary, each with a vector table entry for NMI (vector 8) and IRQ
 ; (vector 9). The routines change the flags, which RTI restores.
-COUNT   .EQU    0xFFFFFF01      ; the read counter (ISA.md §8.3)
+COUNT   .EQU    0xFFFFFF01      ; the read counter (SYSTEM.md §1)
 SP      .EQU    R13
 PC      .EQU    R15
 

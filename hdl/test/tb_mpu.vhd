@@ -3,7 +3,7 @@
 -- THEORY OF OPERATION
 -- For each pair A, B it writes A and B, then reads all 32 words and checks
 -- them against results that numeric_std computes, with the special cases
--- of ISA.md §8.4. The pairs are the corner cases first, then G_RANDOM
+-- of SYSTEM.md §2. The pairs are the corner cases first, then G_RANDOM
 -- random ones. Then the same for pairs C, D. Further checks:
 -- * A read of a result right after a write waits for the computation, and
 --   a read of an operand or a spare word does not. A division takes as many
@@ -49,7 +49,7 @@ architecture simulation of tb_mpu is
 
    type t_words is array (0 to 31) of std_logic_vector(31 downto 0);
 
-   -- The 32 words of ISA.md §8.4 for A, B, C, and D.
+   -- The 32 words of SYSTEM.md §2 for A, B, C, and D.
    function expected(a : std_logic_vector(31 downto 0);
                      b : std_logic_vector(31 downto 0);
                      c : std_logic_vector(63 downto 0);

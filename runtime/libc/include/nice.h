@@ -18,7 +18,7 @@ int nice_pollc(void);
 // Writes the bytes of s up to its first 0 to the console, with no newline.
 void nice_print(const char *s);
 
-// The performance counters (ISA.md §8.5): the clock cycles and the
+// The performance counters (SYSTEM.md §3): the clock cycles and the
 // instructions since reset. An interrupt routine must not read them
 // while the code it interrupted is reading one.
 unsigned long long nice_cycles(void);
@@ -33,7 +33,7 @@ void nice_screen_clear(void);
 #define NICE_SCREEN_COLS 80
 #define NICE_SCREEN_ROWS 25
 
-// The devices' addresses and bits (ISA.md §8.3, §8.5), for nice.c.
+// The devices' addresses and bits (SYSTEM.md §1, §3), for nice.c.
 #define NICE_CONSOLE 0xFFFFFF00u
 #define NICE_CONSOLE_BYTE 0x100u
 #define NICE_CONSOLE_END 0x200u

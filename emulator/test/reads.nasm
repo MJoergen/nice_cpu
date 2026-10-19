@@ -1,5 +1,5 @@
 ; Data reads happen exactly once each, and in program order (ISA.md §8.2).
-; The emulator's read counter at 0xFFFFFF01 (§8.3) shows them: a data read
+; The emulator's read counter at 0xFFFFFF01 (SYSTEM §1) shows them: a data read
 ; returns the number of data reads of it since the last write, and a write
 ; sets that number.
 ;

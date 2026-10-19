@@ -52,7 +52,7 @@ has TODO or FIXME comments.
   decoder, which keeps the ACKs in order when requests to different slaves
   are in flight (MICROARCH.md §8), exists: `hdl/src/wb_dmux.vhd`. The
   instruction bus decoder does not. The UART must receive too: a read returns the next byte with bit 8
-  set, or 0 (ISA.md §8.3). `wb_mem.vhd` reads a file, as the emulator's
+  set, or 0 (SYSTEM.md §1). `wb_mem.vhd` reads a file, as the emulator's
   `--input` does. Today
   `hdl/sim/wb_mem.vhd` stands in for the rest, in simulation only, and
   `hdl/test/tb_core.vhd` computes the data bus decoder's select with an
@@ -72,7 +72,7 @@ has TODO or FIXME comments.
 
 ## Devices
 
-- **An interrupt controller.** The timer (ISA.md §8.6) is the only device
+- **An interrupt controller.** The timer (SYSTEM.md §4) is the only device
   that raises IRQ, so it drives the core's IRQ port directly. A second
   device needs a controller that merges the requests and says which vector
   goes first. No device raises NMI.

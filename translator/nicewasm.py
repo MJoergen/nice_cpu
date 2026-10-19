@@ -1215,7 +1215,7 @@ def flag_use_def(ins: Ins) -> Tuple[FrozenSet[str], FrozenSet[str]]:
 # The most instructions that a multiplication by a constant may take as
 # shifts, additions, and subtractions (mul_plan). The math unit takes
 # three instructions, but its product comes some 35 cycles after the
-# operands on the FPGA core (ISA.md §8.4, doc/MICROARCH.md), while each of
+# operands on the FPGA core (SYSTEM.md §2, doc/MICROARCH.md), while each of
 # these takes one. Eight cover the FNV prime 16777619 = 2^24 + 13 * 31,
 # and any constant with up to four bits set.
 MUL_STEPS = 8
@@ -1515,7 +1515,7 @@ class Allocator:
         kind, r = operand_reg(ins.ops[0]) if ins.ops else ("", None)
         if kind != "reg" or r is None or not self.tracked(r):
             return False
-        # A read of the math unit has no side effect (§8.4).
+        # A read of the math unit has no side effect (SYSTEM §2).
         return all(operand_reg(o)[0] in ("reg", "") and not o.startswith("@")
                    or o.startswith("@__mpu.") for o in ins.ops[1:])
 
@@ -2706,7 +2706,7 @@ class Translator:
         self.m = m
         self.data = data
         self.checks = checks  # bounds checks on memory accesses
-        self.mpu = mpu  # use the math unit of §8.4 for i32 mul, and div and rem
+        self.mpu = mpu  # use the math unit of SYSTEM §2 for i32 mul, and div and rem
         self.library = library  # the name of a library module (§9.4), or None
         self.prefix = f"WL.{library}." if library else "W."  # of the labels made here
         self.mem = f"WL.{library}.memory" if library else "___wasm_memory"
@@ -3928,7 +3928,7 @@ class FunctionTranslator:
 
     def mpu_op(self, word: str, t: int, at: int, what: str,
                dest: Optional[List[str]] = None) -> None:
-        """Pops a and b, writes them to the math unit (§8.4), A and B for
+        """Pops a and b, writes them to the math unit (SYSTEM §2), A and B for
         an i32 and C and D for an i64, and pushes the given result, in
         dest if given. The labels __mpu.* are in runtime/muldiv_mpu.nasm."""
         a, b = self.pop([t, t], at, what)

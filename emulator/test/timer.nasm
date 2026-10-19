@@ -1,4 +1,4 @@
-; The timer (ISA.md §8.6). The emulator counts one cycle per step, so the
+; The timer (SYSTEM.md §4). The emulator counts one cycle per step, so the
 ; timer counts steps here. COUNT is shown after the step's read, then at the
 ; end of the step. "raise" is a request raised at the end of the step, which
 ; is pending before the next one.

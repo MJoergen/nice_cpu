@@ -12,7 +12,7 @@ output, and the exit status of the two must be the same, as in the
 makefile's other runs.
 
 The runtime's clock reads the cycle counter, where the core counts cycles
-and the emulator steps (ISA.md §8.5), so its two words are memory on both
+and the emulator steps (SYSTEM.md §3), so its two words are memory on both
 sides: G_CYCLE_COUNTER=false and --no-cycle-counter.
 
 The runs go in parallel, the longest first, as test/core_runs.py

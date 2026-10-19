@@ -31,6 +31,7 @@ the separate [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) reposito
 |---|---|
 | [doc/ISA.md](doc/ISA.md) | The instruction set: the specification for everything else here. |
 | [doc/intro/](doc/intro/nice_intro.pdf) | A beginner's introduction to NICE: slides, with example programs that assemble and run. |
+| [doc/SYSTEM.md](doc/SYSTEM.md) | The devices that the emulator and the FPGA core map into the I/O range: console, math unit, performance counters, and timer. |
 | [doc/MICROARCH.md](doc/MICROARCH.md) | The design note for the pipelined FPGA core. |
 | [doc/REFERENCES.md](doc/REFERENCES.md) | The NICE and QNICE sources the specification is based on. |
 | [doc/HISTORY.md](doc/HISTORY.md) | How the design and the tools got here: what the documents used to say, and the steps of the optimizations. |
@@ -81,7 +82,7 @@ is joined into every program. Each follows one part of
 | Tool | Where | Written in | Reads | Writes | Follows |
 |---|---|---|---|---|---|
 | `niceasm`, the assembler | [assembler/niceasm.py](assembler/niceasm.py) | Python 3, standard library only | `.nasm` | `.bin` | ISA.md §10 |
-| `niceemu`, the emulator | [emulator/](emulator/) | Zig 0.15 | `.bin` | Console output, the registers, memory dumps, and a trace | ISA.md §1–8 |
+| `niceemu`, the emulator | [emulator/](emulator/) | Zig 0.15 | `.bin` | Console output, the registers, memory dumps, and a trace | ISA.md §1–8, SYSTEM.md |
 | The runtime library | [runtime/](runtime/) | NICE assembly | | | ISA.md §9.3 and §9.4 |
 | `nicewasm`, the wasm translator | [translator/nicewasm.py](translator/nicewasm.py) | Python 3, standard library only | `.wasm` | `.nasm` | ISA.md §9.4 |
 
@@ -170,7 +171,7 @@ push.
 
 [doc/ISA.md](doc/ISA.md) covers the programmer's model, the instruction
 format, conditional execution, addressing modes, execution, flags,
-interrupts, reset, memory, I/O, software conventions, the C ABI, the
+interrupts, reset, memory, the I/O range, software conventions, the C ABI, the
 WebAssembly mapping, the assembler syntax, and the `.bin` object format. Where the sources disagree, it follows this
 order:
 

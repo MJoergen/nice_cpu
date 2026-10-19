@@ -1,4 +1,4 @@
-// Prints on the console at 0xFFFFFF00 (ISA.md §8.3) through nice.poke,
+// Prints on the console at 0xFFFFFF00 (SYSTEM.md §1) through nice.poke,
 // and returns the number of bytes it printed, 13.
 #![no_std]
 

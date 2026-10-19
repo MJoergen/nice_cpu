@@ -1,6 +1,6 @@
 ; The multiply and divide routines of the NICE runtime library
 ; (doc/ISA.md §9.3), for one word and for long long, in software, for a system without the math
-; unit of §8.4. It goes after lib.nasm, instead of muldiv_mpu.nasm.
+; unit of SYSTEM §2. It goes after lib.nasm, instead of muldiv_mpu.nasm.
 
 ; __mul: R1 = R1 * R2, the low 32 bits. The same result serves signed and
 ; unsigned operands. Shift and add: each 1 bit of R2, from bit 0 up, adds

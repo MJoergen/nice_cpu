@@ -24,7 +24,7 @@ may not be below the memory's initial size or above its maximum, if it
 declares one, and it must be below 65536. Without the option, the cap is
 the initial size. `--library` translates a library module instead, as
 described below. `--no-mpu` is for a system without the math unit of
-ISA.md §8.4: `i32.mul`, and `div` and `rem` of both widths, then call
+SYSTEM.md §2: `i32.mul`, and `div` and `rem` of both widths, then call
 the runtime library instead of using the math unit, and the program must be joined with
 `runtime/muldiv_soft.nasm`, not `muldiv_mpu.nasm`. Errors are printed as
 `file:0xOFFSET: error: message`, where OFFSET is the byte offset in the
@@ -185,7 +185,7 @@ the steps that got the code here.
   `mul`, `div_s`, `div_u`, `rem_s`, `rem_u`, `and`, `or`, `xor`, `clz`,
   `ctz`, `popcnt`, and the `sign-ext` instructions `extend8_s`,
   `extend16_s`, and `i64.extend32_s`. `i32.mul`, and `div` and `rem` of
-  both widths, write their operands to the math unit of ISA.md §8.4 and
+  both widths, write their operands to the math unit of SYSTEM.md §2 and
   read the result, in three instructions for `i32` and six for `i64`,
   through the labels `__mpu.a` and the like that `runtime/muldiv_mpu.nasm`
   defines. With `--no-mpu` they call `__mul`, `__div64`, and the like
@@ -240,7 +240,7 @@ the steps that got the code here.
   one data access, a `MOVE` that reads or writes the NICE word at the given
   word address, after the code that puts the address in a register. A
   `peek` whose result is not used still makes its access. So `poke(0xFFFFFF00, c)` prints `c` on
-  the console (ISA.md §8.3). They have no address, so they cannot be in a
+  the console (SYSTEM.md §1). They have no address, so they cannot be in a
   table.
 - **Exports:** functions and globals get the label `_name`, as §9.4 says.
   A name that is not a C identifier gets no label, in a library module

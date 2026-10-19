@@ -78,7 +78,7 @@ pub fn pollc() -> Poll {
     }
 }
 
-/// The performance counters of ISA.md §8.5: the clock cycles and the
+/// The performance counters of SYSTEM.md §3: the clock cycles and the
 /// instructions since reset. An interrupt routine must not read them while
 /// the code it interrupted is reading one.
 pub fn cycles() -> u64 {

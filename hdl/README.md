@@ -27,9 +27,9 @@ departs from it.
 | [src/pipe_write.vhd](src/pipe_write.vhd) | WRITE of the pipelined core, with the architectural state. |
 | [src/pipe_pkg.vhd](src/pipe_pkg.vhd) | The micro-operations of the pipelined core, what each reads and writes, and WRITE's state record. |
 | [src/nice_pkg.vhd](src/nice_pkg.vhd) | The parts of the ISA that the cores share: the operand fields, the register value rule, the condition, the ALU, the shifter, and the flags. |
-| [src/mpu.vhd](src/mpu.vhd) | The math unit of ISA.md §8.4, a Wishbone slave. |
-| [src/perf.vhd](src/perf.vhd) | The performance counters of ISA.md §8.5, a Wishbone slave. |
-| [src/timer.vhd](src/timer.vhd) | The timer of ISA.md §8.6, a Wishbone slave with an interrupt request port. |
+| [src/mpu.vhd](src/mpu.vhd) | The math unit of SYSTEM.md §2, a Wishbone slave. |
+| [src/perf.vhd](src/perf.vhd) | The performance counters of SYSTEM.md §3, a Wishbone slave. |
+| [src/timer.vhd](src/timer.vhd) | The timer of SYSTEM.md §4, a Wishbone slave with an interrupt request port. |
 | [src/fetch_stats.vhd](src/fetch_stats.vhd) | The fetch statistics of MICROARCH.md §8.1, counters of FETCH and DECODE of the pipelined core, a Wishbone slave. |
 | [src/wb_dmux.vhd](src/wb_dmux.vhd) | The data bus decoder, which keeps the ACKs of several slaves in order. |
 | [src/trace_pkg.vhd](src/trace_pkg.vhd) | `t_retire`, the record in which the core reports each step to the trace writer. |
@@ -235,7 +235,7 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   last three instructions wrote, and each interrupt vector leads to a
   short routine that ends with `RTI`. A random program may read any address, and now and then one reaches the cycle counter at
   `0xFFFFFF40`, where the core counts cycles and the emulator counts steps
-  (ISA.md §8.5). So these runs make its two words ordinary memory on both
+  (SYSTEM.md §3). So these runs make its two words ordinary memory on both
   sides, with the generic `G_CYCLE_COUNTER` and the emulator's
   `--no-cycle-counter`. The instruction counter and the math unit stay,
   because both sides agree on them.
@@ -550,7 +550,7 @@ An interrupt is taken in WRITE before an instruction, unless the
 instruction has issued a data read. Then it is taken after it. `instret_o`
 counts an instruction in the cycle the bus accepts its last data read, or
 when it retires if it reads nothing. So a read of `INSTR_LO` counts every
-older instruction and not its own (ISA.md §8.5).
+older instruction and not its own (SYSTEM.md §3).
 
 The core reports each step in the cycle it retires. Its process `p_check`
 asserts, in simulation, the invariants that its design relies on.
@@ -609,7 +609,7 @@ number. The rest of the I/O range is plain memory, as in the emulator.
 
 ## The math unit
 
-`mpu` is the math unit of ISA.md §8.4. Offsets 0 to 15 hold A, B, and the
+`mpu` is the math unit of SYSTEM.md §2. Offsets 0 to 15 hold A, B, and the
 signed and unsigned products, quotients, and remainders of A and B.
 Offsets 16 to 31 hold the 64-bit C and D, and the signed and unsigned
 quotients and remainders of C and D. It is a pipelined Wishbone slave with
@@ -633,7 +633,7 @@ result words and the spare words are ignored.
 
 ## The performance counters
 
-`perf` holds the performance counters of ISA.md §8.5: `CYCLE_LO` and
+`perf` holds the performance counters of SYSTEM.md §3: `CYCLE_LO` and
 `CYCLE_HI` at offsets 0 and 1, and `INSTR_LO` and `INSTR_HI` at 2 and 3. It
 is a pipelined Wishbone slave with a 4-bit address. It never stalls, and it
 acknowledges each request in the next cycle. The bus decoder selects it for
@@ -643,16 +643,16 @@ The cycle counter counts every clock cycle after reset. The instruction
 counter counts the core's `instret_o`, which the multi-cycle core raises for
 one cycle in `RETIRE` after each instruction, but not after an interrupt
 entry. An instruction makes its data reads before its own `RETIRE`, so a
-read of `INSTR_LO` returns the number of instructions before it, as ISA.md
-§8.5 requires. A read of a low word copies its 64-bit counter into a
+read of `INSTR_LO` returns the number of instructions before it, as SYSTEM.md
+§3 requires. A read of a low word copies its 64-bit counter into a
 snapshot, and a read of the high word returns the snapshot's high word.
 
 The generic `G_RESET` sets the counters' value after reset. It is 0, as
-ISA.md §8.5 requires, except in `tb_perf`, which starts near a wrap.
+SYSTEM.md §3 requires, except in `tb_perf`, which starts near a wrap.
 
 ## The timer
 
-`timer` holds the timer of ISA.md §8.6: `TIMER_PERIOD`, `TIMER_COUNT`, and
+`timer` holds the timer of SYSTEM.md §4: `TIMER_PERIOD`, `TIMER_COUNT`, and
 `TIMER_VECTOR` at offsets 0, 1, and 2. Its bus port is a pipelined Wishbone
 slave with a 4-bit address, like that of the performance counters. The bus
 decoder selects it for `0xFFFFFF10`–`0xFFFFFF1F`.

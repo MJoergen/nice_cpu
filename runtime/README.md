@@ -12,7 +12,7 @@ translated wasm code call. They follow the C ABI of
 | `start_wasm.nasm` | Start-up code for a program with a wasm module. It calls `___wasm_start` before `main`. |
 | `start_mon.nasm`, `start_wasm_mon.nasm` | The same two for a program that a monitor runs (ISA.md §9.3, "Programs under a monitor"): at `0x8000`, above the monitor's ROM, on the monitor's stack, and returning to the monitor instead of halting. |
 | `lib.nasm` | The runtime routines in assembly, except those below. |
-| `muldiv_mpu.nasm` | The multiply and divide routines: `__mul`, `__div`, `__mod`, `__udiv`, `__umod`, and their `64` versions, with the math unit of ISA.md §8.4. |
+| `muldiv_mpu.nasm` | The multiply and divide routines: `__mul`, `__div`, `__mod`, `__udiv`, `__umod`, and their `64` versions, with the math unit of SYSTEM.md §2. |
 | `muldiv_soft.nasm` | The same routines in software, for a system without the math unit. |
 | `float.zig` | The source of the float routines (see below). |
 | `float.wasm` | `float.zig` and parts of Zig's compiler_rt, compiled to wasm. |
@@ -120,7 +120,7 @@ From assembly, for example:
         ...
 text    .ASCII_L 'Hello'
 
-The counter routines read the low word first, as ISA.md §8.5 describes.
+The counter routines read the low word first, as SYSTEM.md §3 describes.
 So an interrupt service routine that reads a counter can spoil the reading
 of the code it interrupted. The screen routines write `0xFFFF0000` to
 `0xFFFF07CF`, so with the emulator's `-2004` they miss the screen. On a
@@ -183,7 +183,7 @@ The device routines, in `src/nice.c`, are the only functions that touch
 hardware. They use `nice_peek` and `nice_poke`. `nice_print` writes the
 bytes of a C string in linear memory, where `_nice_print` in `lib.nasm`
 writes one character per word. `putchar` and `puts` write with `nice_putc` and
-`nice_print`, and `getchar` reads with `nice_getc` (ISA.md §8.3).
+`nice_print`, and `getchar` reads with `nice_getc` (SYSTEM.md §1).
 `getchar` waits until a byte is there. It
 returns `EOF` once the emulator's input has ended, which a UART's input
 never does. The emulator reads the input from stdin, or from the file

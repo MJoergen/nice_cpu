@@ -1,4 +1,4 @@
--- The timer of ISA.md §8.6: 16 words of I/O that raise an interrupt request
+-- The timer of SYSTEM.md §4: 16 words of I/O that raise an interrupt request
 -- once every P cycles.
 --
 --   0  TIMER_PERIOD   1  TIMER_COUNT   2  TIMER_VECTOR   3-15  read 0

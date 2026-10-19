@@ -1,4 +1,4 @@
--- The math unit, MPU, of ISA.md §8.4: 32 words of I/O that multiply and
+-- The math unit, MPU, of SYSTEM.md §2: 32 words of I/O that multiply and
 -- divide 32-bit integers, and divide 64-bit integers, signed and unsigned.
 --
 --   0  A        3  SMUL_HI  6  SDIV_Q   9  UDIV_R
@@ -28,7 +28,7 @@
 -- zeros after them. A division takes 1 cycle to start, then 32 cycles at
 -- most, and 4 at least.
 -- A restoring divider with B = 0 gives Q = 0xFFFFFFFF and R = A, which is
--- what ISA.md §8.4 asks for, except for the signed quotient with A < 0,
+-- what SYSTEM.md §2 asks for, except for the signed quotient with A < 0,
 -- which is set to 0xFFFFFFFF on its own. -2^31 / -1 needs no special case:
 -- |A| / |B| = 0x80000000, and negating it gives 0x80000000 again.
 --
@@ -49,7 +49,7 @@
 --    address bits 4..0.
 --
 -- RESET
--- Synchronous. It sets A, B, C, and D to 0, as ISA.md §8.4 requires, and drops
+-- Synchronous. It sets A, B, C, and D to 0, as SYSTEM.md §2 requires, and drops
 -- any ACK owed.
 
 library ieee;

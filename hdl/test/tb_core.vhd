@@ -9,9 +9,9 @@
 -- Its console reads the bytes of G_INPUT_FILE, as the emulator's --input
 -- does, or none if it is "".
 -- The data bus decoder, src/wb_dmux.vhd, sends 0xFFFFFF10-0xFFFFFF1F to
--- the timer, src/timer.vhd (ISA.md §8.6), 0xFFFFFF20-0xFFFFFF3F to the
--- math unit, src/mpu.vhd (ISA.md §8.4), 0xFFFFFF40-0xFFFFFF4F to the
--- performance counters, src/perf.vhd (ISA.md §8.5), 0xFFFFFF50-0xFFFFFF7F
+-- the timer, src/timer.vhd (SYSTEM.md §4), 0xFFFFFF20-0xFFFFFF3F to the
+-- math unit, src/mpu.vhd (SYSTEM.md §2), 0xFFFFFF40-0xFFFFFF4F to the
+-- performance counters, src/perf.vhd (SYSTEM.md §3), 0xFFFFFF50-0xFFFFFF7F
 -- to the fetch statistics, src/fetch_stats.vhd (MICROARCH.md §8.1), and
 -- the rest to the memory model. It keeps the ACKs in order for a core with several
 -- requests in flight (MICROARCH.md §8). It holds no address map: the

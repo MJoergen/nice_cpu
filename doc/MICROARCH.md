@@ -2,8 +2,8 @@
 
 This is the design note for the FPGA implementation of NICE.
 [ISA.md](ISA.md) is the specification, and it wins wherever this note
-disagrees with it. "ISA §8.2" refers to a section of ISA.md, and a plain
-"§5.3" to a section of this note.
+disagrees with it. "ISA §8.2" refers to a section of ISA.md, "SYSTEM §2" to a section of
+[SYSTEM.md](SYSTEM.md), and a plain "§5.3" to a section of this note.
 
 The core is pipelined and has separate instruction and data buses, like
 [qnice_cpu](https://github.com/MJoergen/qnice_cpu). It reuses that design
@@ -547,23 +547,23 @@ each RAM and the address of the UART. These rules hold for every setting:
 - **I/O.** Only the data bus reaches I/O. The instruction bus returns 0 for
   the I/O range (ISA §8.3).
 - **Console.** A UART at `0xFFFFFF00` by default, as in the emulator
-  (ISA §8.3). A write sends bits 7..0. A read returns the next received
+  (SYSTEM §1). A write sends bits 7..0. A read returns the next received
   byte with bit 8 set, or 0 if none has arrived. Not written yet; the
   memory model's console reads a file instead
   ([hdl/README.md](../hdl/README.md), The memory model).
-- **Math unit.** `hdl/src/mpu.vhd` at `0xFFFFFF20`–`0xFFFFFF3F` (ISA §8.4), 32
+- **Math unit.** `hdl/src/mpu.vhd` at `0xFFFFFF20`–`0xFFFFFF3F` (SYSTEM §2), 32
   aligned words, so the decoder compares address bits 31..5.
   A read of a result holds off its ACK until the result is ready, so the
   data bus must allow a slave to take many cycles.
 - **Performance counters.** `hdl/src/perf.vhd` at `0xFFFFFF40`–`0xFFFFFF4F`
-  (ISA §8.5). The core raises `instret_o` for one cycle per completed
+  (SYSTEM §3). The core raises `instret_o` for one cycle per completed
   instruction. A read of `INSTR_LO` must count every older instruction,
   and not its own. So the pipelined core counts an instruction with a data
   read in the cycle the bus accepts its last read, and one without in the
   cycle it retires. The counters return a count from before that cycle's,
   and PREPARE issues a younger read only then. `hdl/test/instret.nasm`
   checks this, also behind a read that waits on the bus.
-- **Timer.** `hdl/src/timer.vhd` at `0xFFFFFF10`–`0xFFFFFF1F` (ISA §8.6),
+- **Timer.** `hdl/src/timer.vhd` at `0xFFFFFF10`–`0xFFFFFF1F` (SYSTEM §4),
   with its request on the core's IRQ port. It is the only device that
   raises IRQ so far, so it needs no interrupt controller.
 - **Fetch statistics.** `hdl/src/fetch_stats.vhd` at

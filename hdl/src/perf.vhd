@@ -1,4 +1,4 @@
--- The performance counters of ISA.md §8.5: 16 words of I/O with a 64-bit
+-- The performance counters of SYSTEM.md §3: 16 words of I/O with a 64-bit
 -- cycle counter and a 64-bit instruction counter.
 --
 --   0  CYCLE_LO   2  INSTR_LO   4-15  read 0
@@ -26,7 +26,7 @@
 --
 -- RESET
 -- Synchronous. It sets both counters and both snapshots to G_RESET, which
--- is 0 except in tests, as ISA.md §8.5 requires, and drops any ACK owed.
+-- is 0 except in tests, as SYSTEM.md §3 requires, and drops any ACK owed.
 
 library ieee;
    use ieee.std_logic_1164.all;
@@ -34,7 +34,7 @@ library ieee;
 
 entity perf is
    generic (
-      -- The counters' value after reset. ISA.md §8.5 wants 0. A test sets
+      -- The counters' value after reset. SYSTEM.md §3 wants 0. A test sets
       -- it near a wrap of the low word.
       G_RESET : std_logic_vector(63 downto 0) := (others => '0')
    );

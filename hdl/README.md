@@ -53,6 +53,7 @@ departs from it.
 | [test/irq_compare.py](test/irq_compare.py) | Compares a run with interrupt requests against the emulator, from the steps where the core took them. |
 | [test/irq_sweep.py](test/irq_sweep.py) | Runs a program with an NMI before each of its steps, and with an IRQ before each. |
 | [test/sidefx_prog.py](test/sidefx_prog.py) | Writes a program with every pair of side effects on one register. |
+| [test/smc_prog.py](test/smc_prog.py) | Writes a program that stores into its own code 1 to 40 words ahead. |
 | [test/random_prog.py](test/random_prog.py) | Writes random programs, and random interrupt requests for them. |
 | [test/random_stats.py](test/random_stats.py) | Shows how the random programs spend their steps, and how often they make each hazard. |
 | [test/trace_reads.py](test/trace_reads.py) | Finds the first line where two traces differ, and shows the data reads of that instruction. |
@@ -188,6 +189,12 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   or R14, which holds every pair of side effects on one register, and
   every pair of a `SUB` that writes the register and a `SUB` that uses it
   next, or one instruction later. It does not check itself.
+  `test/smc_prog.py` writes a program that stores a NOP over a `HALT` 1
+  to 40 words ahead, from the next word to beyond FETCH's buffer and its
+  requests in flight, so that some store lands in the pair whose fetch
+  the bus accepts in the same cycle (MICROARCH.md §5.5): three of its
+  forty stores do with no stalls, and two with 30%. It checks itself:
+  R12 is 0 at the end only if every `HALT` was passed.
 - `test/hazard.nasm` with an interrupt request at every point (MICROARCH.md
   §9, step 5). `test/irq_sweep.py` runs it once for each step S, with
   `--nmi S:8`, and once more with `--irq S:9`, on a memory that stalls in

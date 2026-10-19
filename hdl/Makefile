@@ -114,7 +114,9 @@ SWEEP_DELAYS_pipeline = 0,1,2,3
 IRQ_COMPARE = $(PYTHON) test/irq_compare.py --emu $(EMU) $(IRQ_LATE)
 
 # The hazard programs of MICROARCH.md §9, step 4: test/hazard.nasm, and the
-# program that test/sidefx_prog.py writes, each also on a memory that stalls.
+# programs that test/sidefx_prog.py and test/smc_prog.py write, each also on
+# a memory that stalls. smc_prog.py's program stores into its own code 1 to
+# 40 words ahead, and checks itself like hazard.nasm.
 # hazard.nasm checks itself, so the emulator's run must end at its last HALT,
 # with R12 = 0 and exit status 0, before the core's trace means anything.
 # test/irq_sweep.py then runs hazard.nasm with an NMI before each of its
@@ -220,6 +222,11 @@ cores:
 	@$(ASM) -o $(BUILD)/sidefx.bin $(BUILD)/sidefx.nasm
 	$(call check_core,sidefx,$(BUILD)/sidefx.bin)
 	$(call check_core,sidefx_stall,$(BUILD)/sidefx.bin,-gG_STALL=30 -gG_SEED=15)
+	@$(PYTHON) test/smc_prog.py $(BUILD)/smc.nasm
+	@$(ASM) -o $(BUILD)/smc.bin $(BUILD)/smc.nasm
+	$(call check_core,smc,$(BUILD)/smc.bin)
+	$(call check_selfcheck,smc)
+	$(call check_core,smc_stall,$(BUILD)/smc.bin,-gG_STALL=30 -gG_SEED=21)
 	@$(ASM) -o $(BUILD)/fstats.bin test/fstats.nasm
 	$(if $(filter pipeline,$(CORE)),$(call check_fstats,fstats))
 	$(if $(filter pipeline,$(CORE)),$(call check_fstats,fstats_stall,-gG_STALL=30 -gG_SEED=19))

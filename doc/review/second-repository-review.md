@@ -36,6 +36,8 @@ WRITE flushes when a store lands in FETCH's range, `addr_o` to `end_o`, or in th
 
 **Suggestion.** `hazard.nasm` stores up to six words ahead, all inside FETCH's buffer. A section that stores 1 to 40 words ahead would cover the boundary of the range, on every stall seed `make test` uses. It is a short loop of `MOVE @n, 0` over a `HALT`, as section 5 does now.
 
+**Resolved**: `hdl/test/smc_prog.py` writes that program, 40 stores of a NOP over a `HALT` 1 to 40 words ahead, which checks itself, and `make test` runs it on every core with and without stalls. A waveform of the pipelined core shows three of its stores landing in the pair whose fetch the bus accepts in the same cycle with no stalls, and two with 30%, so the test reaches the far end of FETCH's range. The sweep's 360 runs from reset are not kept; the program covers the same distances in the pipeline's steady state.
+
 ## 2. The documents that fell behind
 
 ### 2.1 The pipelined core "is not written yet"

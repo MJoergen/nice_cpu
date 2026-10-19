@@ -543,7 +543,9 @@ data read right before the entry.
    the same register, R14 and R15 as pointers, stores into the next few
    instructions, and jumps over `HALT`. qnice_cpu's `prog_hazard.asm` and
    `prog_pipeline.asm` are the model. They are `hdl/test/hazard.nasm`
-   and the program that `hdl/test/sidefx_prog.py` writes.
+   and the programs that `hdl/test/sidefx_prog.py` and
+   `hdl/test/smc_prog.py` write, the last with stores 1 to 40 words ahead,
+   past the end of FETCH's range (§5.5).
 5. The interrupt probes, and requests at every point in a hazard program,
    which `hdl/test/irq_sweep.py` makes.
 6. The runtime and translator test programs, which `make programs` in

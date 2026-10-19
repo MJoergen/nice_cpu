@@ -45,9 +45,6 @@ added 2026-10-19. The section numbers are its.
   usage text of `main.zig` (§2.7).
 - **CI runs `make programs` on the multi-cycle core only** (§4.1). The
   pipelined core passed all 350 programs on 2026-10-19, by hand.
-- **Stores at every distance up to 40 words**, for `hazard.nasm` (§1.2):
-  the boundary of FETCH's range, which the sweep of the review covered
-  and `make test` does not.
 - **The translator** (§5): the rules of commits fa3a8a7, 2e77769, and
   3e0a2c1 have no test, since no module reaches their shape; a test of
   the passes on hand-built instruction lists would (§5.2). `fuzz.py`
@@ -79,8 +76,9 @@ added 2026-10-19. The section numbers are its.
     rotation in `nice_pkg`. NiceMonMEGA65 runs it at 33.3 MHz. See the
     clock items below.
 - **Test order steps not done** (MICROARCH.md §9):
-  - Step 4, hazard programs: `hdl/test/hazard.nasm` and
-    `hdl/test/sidefx_prog.py`, which the multi-cycle core passes. Left
+  - Step 4, hazard programs: `hdl/test/hazard.nasm`,
+    `hdl/test/sidefx_prog.py`, and `hdl/test/smc_prog.py`, which the
+    multi-cycle core passes. Left
     out so far: pairs of side effects on R15, which only some cases of
     `hazard.nasm` and the random programs have. `hazard.nasm` tests a
     flag set by a side effect on R14 only for a destination, because a

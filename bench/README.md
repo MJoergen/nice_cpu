@@ -179,6 +179,20 @@ share of all instructions:
       ...
       registers read from the previous instruction: R2 8.7%, R1 7.0%, ...
 
+The last lines count what costs a cycle on the core since it was
+re-timed for 100 MHz on 2026-10-19, which forms every operand value,
+address, and shift count in PREPARE: the shifts by the kind of their count (a
+constant, R0 and R15 included, a register, or memory), the shifts whose
+count register the previous instruction writes, the sources in mode 001
+or 011 and the store addresses in mode 011, 101, or 111 whose register
+the previous instruction writes, the same for stores through `@R` or
+`@R++`, the taken jumps that WRITE resolves, by their target (a
+constant, a word in memory, or computed), and the register destinations
+in mode 001 or 010. In both programs on 2026-10-19, no shift's count
+register and no source in mode 001 or 011 came from the previous
+instruction, and there were no computed jumps that WRITE resolved and
+no destinations in mode 001 or 010.
+
 MICROARCH.md §5.6 has the table from 2026-10-15 and the decisions it led
 to. `hazards.py --test` checks the counts on a small program whose hazards
 are counted by hand in the script, and `make test` runs it. `make
@@ -194,7 +208,7 @@ traces. It is a model built from MICROARCH.md, not the core. Each
 instruction of the trace is decoded as `hazards.py` decodes it, split
 into its micro-operations, and sent through FETCH, DECODE, SEQUENCER,
 PREPARE, and WRITE under the rules of §3 to §5: two words fetched per
-cycle, a bubble of 2 cycles for a jump that DECODE resolves and of 5 for
+cycle, a bubble of 2 cycles for a jump that DECODE resolves and of 7 for
 one resolved in WRITE, a data read that waits for an older write of SR
 or an older skipped jump, an address register written by the previous
 micro-operation, one data access per cycle on the bus, and the math unit
@@ -206,24 +220,46 @@ charged to the rule that caused it, so the output says where the time
 goes, and a program that reads the instruction counter around each phase,
 as both programs do, gets a row per phase:
 
-    bench.bin: 1774408 instructions, 2241842 cycles (estimate), CPI 1.263
-      cycles above 1/instruction: 467434
-      taken jumps resolved in WRITE (flush)                        191000  0.108/instr  40.9%
-      jumps DECODE resolves (early-redirect bubble)                 66391  0.037/instr  14.2%
+    bench.bin: 1775661 instructions, 2290661 cycles (estimate), CPI 1.290
+      cycles above 1/instruction: 515000
+      taken jumps resolved in WRITE (flush)                        267400  0.151/instr  51.9%
+      jumps DECODE resolves (early-redirect bubble)                 66391  0.037/instr  12.9%
       ...
 
       phase         instr    cycles    CPI   main extra cycles per instruction
-      rng64         89632     92736  1.035   early 0.02, fetch 0.01, flush 0.00, multi 0.00
+      rng64         89632     92743  1.035   early 0.02, fetch 0.01, flush 0.00, multi 0.00
       ...
-      total       1729523   2154905  1.246
+      total       1730635   2199014  1.271
+
+The bubble of 7 is the core's. A jump leaves WRITE in cycle c − 1, and
+WRITE's registered flush redirects FETCH in cycle c. FETCH issues the
+request in c + 1, so it is on the bus in c + 2, and the memory
+acknowledges in c + 3. DECODE takes the instruction in c + 4 and emits
+its micro-op in c + 5, PREPARE passes it on in c + 6, and WRITE runs it
+in c + 7, 7 cycles after a fall-through would have run.
 
 On 2026-10-19 the phases of the translated program take an estimated
-2154905 cycles, 1.25 per instruction, and those of `hand.nasm` 1023601,
-2.1 per instruction: the hand-written code has more instructions with
+2199014 cycles, 1.27 per instruction, and those of `hand.nasm` 1125497,
+2.3 per instruction: the hand-written code has more instructions with
 side effects, memory operands, and reads of the math unit, and fewer
 instructions in all. Options such as `--flush`, `--early`, `--agen`,
 `--mul`, and `--div-skip` set the model's parameters, to try a design
-change before it is built. `pipecycles.py --test` checks the model on
+change before it is built. Four options, each 1 by default, are the
+rules of the core since it was re-timed for 100 MHz on 2026-10-19,
+which forms every operand value, address, and shift count in PREPARE
+(MICROARCH.md §7.3 and §7.4); 0 gives the core before: `--shift-mem N`
+gives a shift by a count in memory N cycles more in WRITE;
+`--shift-reg N` makes a shift wait N cycles in PREPARE for a count
+register that the previous micro-op writes, as `--agen` does for an
+address register; `--sum-wait N` does the same for a source in mode 001
+or 011, and a store address in mode 011, 101, or 111, the sums that
+PREPARE forms; and `--dest-adjust N` gives a register destination in
+mode 001 or 010, and a jump to a computed target, N cycles more in
+WRITE. A store through `@R` or `@R++` never waits, since WRITE takes
+the value it wrote last. With the four rules, the translated program's
+phases take the same 2199014 cycles as without, since its byte accesses
+rotate by a register written well before, against 2197301 without,
+and those of `hand.nasm` 1122937 against 1121913. `pipecycles.py --test` checks the model on
 small programs whose cycles are worked out by hand in the script, and
 `make test` runs it, and then the model on both programs with `--phases
 6`, which fails unless each reads the instruction counter around its six
@@ -231,7 +267,8 @@ phases.
 
 `make compare` puts the estimate beside the cycles the pipelined core
 took, phase by phase, from the output of `make core CORE=pipeline`,
-which must have run first. On 2026-10-19:
+which must have run first, on the same `.bin`. On 2026-10-19, with the
+re-timed core and the translation above:
 
 | Phase | `bench.c`, model | Core | Model against the core | `hand.nasm`, model | Core | Model against the core |
 |---|---|---|---|---|---|---|

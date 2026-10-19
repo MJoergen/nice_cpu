@@ -34,16 +34,22 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   DECODE: the target is in DECODE 3 cycles after the jump, a bubble of
   --early (2) cycles. Every other taken jump (conditional jumps, returns
   MOVE R15, @SP++, table jumps, control instructions) is resolved in WRITE
-  by its last micro-op and refetches: the target reaches WRITE --flush (5)
-  cycles later than a fall-through would (FETCH, ICACHE, DECODE, SEQUENCER,
-  PREPARE). A skipped jump costs nothing itself.
+  by its last micro-op and refetches: the target reaches WRITE --flush (7)
+  cycles later than a fall-through would. That is the core's bubble: the
+  jump leaves WRITE in cycle c - 1, WRITE's registered flush redirects
+  FETCH in c, FETCH issues the request in c + 1 (on the bus in c + 2),
+  the memory acknowledges in c + 3, DECODE takes the instruction in c + 4
+  and emits its micro-op in c + 5, PREPARE passes it on in c + 6, and
+  WRITE runs it in c + 7. A skipped jump costs nothing itself.
 - Registers: bypasses from WRITE make ALU operand dependences free. A
-  register used as the base of a data access (read or store; the address is
-  formed in PREPARE) is ready only the cycle after the micro-op that writes
-  it leaves WRITE: an --agen (1) cycle stall when it is the previous
-  micro-op. This includes the side effects of a push or pop and s0's side
-  effect read by s1; --sidefx-fast makes side-effect writes (Rx +/- 1) free.
-  A skipped writer counts as writing, as DECODE cannot tell.
+  register used as the base of a data read (the address is formed in
+  PREPARE) is ready only the cycle after the micro-op that writes it leaves
+  WRITE: an --agen (1) cycle stall when it is the previous micro-op. This
+  includes the side effects of a push or pop and s0's side effect read by
+  s1; --sidefx-fast makes side-effect writes (Rx +/- 1) free. A store
+  through @R or @R++ does not wait: WRITE takes the value it wrote last
+  (MICROARCH.md §7.4). A skipped writer counts as writing, as DECODE
+  cannot tell.
 - Data reads are issued in PREPARE (MICROARCH.md §5.3): a conditional
   instruction's read waits until the cycle after the last older SR writer
   (M = 1, R14 written, control) has left WRITE ("SR stall"), and a read waits
@@ -63,6 +69,22 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   quotient or remainder is accepted in cycle t + 2 + n at the earliest,
   with n the divider's cycles. The signed dividers divide the absolute
   values. The bus is held until then ("MPU wait").
+- A core that forms every operand value, address, and shift count in
+  PREPARE, one stage before WRITE, has four more rules, each off (0) by
+  default. --shift-mem N: a shift (bit 27 set, not a control
+  instruction) whose count s1 is in memory takes N cycles more in WRITE,
+  where the count is reduced ("shiftmem"). --shift-reg N: a shift whose
+  count is a register (s1 in mode 000 to 011, not R0 or R15) waits in
+  PREPARE until N cycles after the micro-op that writes it left WRITE,
+  as for --agen ("shiftreg"). --sum-wait N: the same for a source in
+  mode 001 or 011 and a store address in mode 011, 101, or 111, the sums
+  ("sumwait"). The waits are not added: a micro-op waits for the latest
+  of them, charged to the first that binds.
+  --dest-adjust N: a register destination in mode 001 or 010, and a jump
+  to a computed target (dest R15 in mode 000, but for a MOVE of a
+  constant or of a memory operand), take N cycles more in WRITE
+  ("adjust"). The waits in PREPARE hold for a skipped instruction too,
+  as DECODE cannot tell; the cycles in WRITE only for one that runs.
 - Not modelled: interrupts (an entry is treated as a flush), self-modifying
   code checks, the INSTR_LO retire rule, wrong-path fetch traffic, and bus
   stalls other than the math unit.
@@ -85,7 +107,8 @@ import hazards
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 PHASES = ["rng64", "crc32", "bst", "heapsort", "vm", "strings"]
-CAUSES = ["startup", "fetch", "flush", "early", "sr", "jumpwait", "agen", "bus", "mpu", "interrupt"]
+CAUSES = ["startup", "fetch", "flush", "early", "sr", "jumpwait", "agen", "shiftreg", "sumwait",
+          "bus", "mpu", "shiftmem", "adjust", "interrupt"]
 CAUSE_TEXT = {
     "multi": "multi-micro-op instructions",
     "startup": "pipeline start",
@@ -95,8 +118,12 @@ CAUSE_TEXT = {
     "sr": "conditional data read waits for SR",
     "jumpwait": "data read waits for an older skipped jump",
     "agen": "address register written by the previous micro-op",
+    "shiftreg": "shift count register written by the previous micro-op",
+    "sumwait": "sum operand or store address register just written",
     "bus": "data bus: read after store, two reads in a micro-op",
     "mpu": "math unit result not ready",
+    "shiftmem": "shift count from memory, reduced in WRITE",
+    "adjust": "destination adjusted by 1, or a computed jump",
     "interrupt": "interrupt entries",
 }
 INSTR_LO = 0xFFFFFF42
@@ -161,7 +188,7 @@ class Uop:
 class Info:
     """What the model needs of one instruction word."""
     __slots__ = ("cond", "control", "words", "uops", "redirect", "early", "dm", "dr",
-                 "src", "nreads")
+                 "src", "nreads", "shift_mem", "shift_regs", "sum_regs", "adjust")
     cond: bool
     control: bool
     words: int
@@ -172,6 +199,10 @@ class Info:
     dr: int
     src: Tuple[Tuple[int, int], Tuple[int, int]]
     nreads: int
+    shift_mem: bool         # a shift whose count s1 is in memory
+    shift_regs: List[int]   # the register of a shift's count, if one
+    sum_regs: List[int]     # registers of sum operands and store addresses
+    adjust: bool            # a destination in mode 001 or 010, or a computed jump
 
 
 def base_of(mode: int, reg: int) -> Optional[int]:
@@ -191,6 +222,7 @@ def decode(iw: int) -> Info:
     info.dr = (iw >> 14) & 15
     info.src = (((iw >> 11) & 7, (iw >> 7) & 15), ((iw >> 4) & 7, iw & 15))
     info.nreads = h.mem_reads
+    info.shift_mem, info.shift_regs, info.sum_regs, info.adjust = False, [], [], False
     if h.control:
         u = Uop()
         u.sr_write = True
@@ -223,6 +255,22 @@ def decode(iw: int) -> Info:
         op.writes.append(dr)
         op.sidefx.append(False)
     op.sr_write = bool((iw >> 25) & 1) or 14 in op.writes
+    # The rules of a core that forms every operand value, address, and
+    # shift count in PREPARE (--shift-mem, --shift-reg, --sum-wait, and
+    # --dest-adjust). R0 is a constant, and DECODE knows R15.
+    (m0, r0), (m1, r1) = info.src
+    if (iw >> 27) & 1:
+        info.shift_mem = m1 in MEMORY
+        if m1 < 4 and base_of(m1, r1) is not None:
+            info.shift_regs = [r1]
+    for m, r in info.src:
+        if m in (1, 3) and base_of(m, r) is not None:
+            info.sum_regs.append(r)
+    if dm in (3, 5, 7) and base_of(dm, dr) is not None:
+        info.sum_regs.append(dr)
+    move = not (iw >> 27) & 1 and (iw >> 21) & 15 == 0
+    computed = dm == 0 and dr == 15 and not (move and (m0 >= 4 or (m0, r0) == (3, 0)))
+    info.adjust = (dm in (1, 2) and dr != 0) or computed
     uops.append(op)
     info.uops = uops
     assert len(uops) == h.uops, hex(iw)
@@ -265,14 +313,17 @@ TRACE_RE = re.compile(r"([0-9a-f]{8}) ([0-9a-f]{8})(?= |$)")
 
 
 class Model:
-    def __init__(self, mem: Dict[int, int], ibuf: int = 8, flush: int = 5, early: int = 2,
+    def __init__(self, mem: Dict[int, int], ibuf: int = 8, flush: int = 7, early: int = 2,
                  agen: int = 1, sidefx_fast: bool = False, mul: int = 3,
-                 div_skip: int = 8) -> None:
+                 div_skip: int = 8, shift_mem: int = 1, shift_reg: int = 1,
+                 sum_wait: int = 1, dest_adjust: int = 1) -> None:
         self.mem = mem
         self.bp = max(2, ibuf // 2)
         self.flush, self.early, self.agen = flush, early, agen
         self.sidefx_fast = sidefx_fast
         self.mul, self.div_skip = mul, div_skip
+        self.shift_mem, self.shift_reg = shift_mem, shift_reg
+        self.sum_wait, self.dest_adjust = sum_wait, dest_adjust
         self.bubble = {"flush": flush, "early": early, "interrupt": flush + 1}
         self.cache: Dict[int, Info] = {}
         self.regs = [0] * 16
@@ -297,6 +348,7 @@ class Model:
         self.first = True
         self.last_bus = -10
         self.reg_ready = [-10] * 16
+        self.reg_done = [-10] * 16  # cycle the last write of each register left WRITE
         self.sr_ready = -10
         self.jump_ready = -10
         # The math unit: its operands, and the cycle in which a read of each
@@ -397,8 +449,16 @@ class Model:
                     if a == INSTR_LO:
                         counter_read_time = acc
                 p, ptag = t, tag
-            if u.store and u.store_base is not None and self.reg_ready[u.store_base] > p:
-                p, ptag = self.reg_ready[u.store_base], "agen"
+            # A store's address is formed in PREPARE too, but a plain @R or
+            # @R++ takes the value WRITE wrote last (MICROARCH.md §7.4): no
+            # wait. A sum, @c[R] or @--R, waits under --sum-wait below.
+            last = j == len(info.uops) - 1
+            if last:
+                for regs, n, tag in ((info.shift_regs, self.shift_reg, "shiftreg"),
+                                     (info.sum_regs, self.sum_wait, "sumwait")):
+                    for r in regs if n > 0 else []:
+                        if self.reg_done[r] + n > p:
+                            p, ptag = self.reg_done[r] + n, tag
             # WRITE
             w, wtag = self.done_prev + 1, "flow"
             if p + 1 > w:
@@ -426,14 +486,25 @@ class Model:
                     gap -= b
                 if gap:
                     self.gaps[tag] += gap
+            # Extra cycles in WRITE, for an instruction that runs.
+            if last and not skipped:
+                for extra, tag in ((self.shift_mem if info.shift_mem else 0, "shiftmem"),
+                                   (self.dest_adjust if info.adjust else 0, "adjust")):
+                    if extra > 0:
+                        done += extra
+                        self.gaps[tag] += extra
+                if u.store:
+                    self.last_bus = done
             self.s_prev, self.p_prev, self.w_prev, self.done_prev = s, p, w, done
             for r, fx in zip(u.writes, u.sidefx):
                 if fx and self.sidefx_fast:
                     continue
                 self.reg_ready[r] = done + self.agen
+                self.reg_done[r] = done
             if u.sr_write:
                 self.sr_ready = done + 1
                 self.reg_ready[14] = done + self.agen
+                self.reg_done[14] = done
         # Leaving DECODE frees the fetch buffer.
         lv = self.leave
         while len(lv) <= k1:
@@ -617,12 +688,12 @@ loop    SUB[M] R1, R1, 1
         HALT
 """,
      # MOVE (2 words) done 5. Each iteration SUB (2 words) + jump (2 words).
-     # Taken jump done at t: target SUB fetched at t+1, DECODE t+3, WRITE t+6:
-     # a gap of 5 for each of the 9 taken jumps. The first SUB and the jump
-     # come straight from the stream: SUB at 6, jump at 7. Then 9 x (1 + 5)
+     # Taken jump done at t: target SUB fetched at t+3, DECODE t+5, WRITE t+8:
+     # a gap of 7 for each of the 9 taken jumps. The first SUB and the jump
+     # come straight from the stream: SUB at 6, jump at 7. Then 9 x (1 + 7)
      # ... the HALT after the untaken jump needs pair 3 (words 6), fine.
-     # Instructions: 1 + 10 * 2 + 1 = 22; cycles 22 + 5 (start) + 45 = 72.
-     22, 72, {"startup": 5, "flush": 45}),
+     # Instructions: 1 + 10 * 2 + 1 = 22; cycles 22 + 5 (start) + 63 = 90.
+     22, 90, {"startup": 5, "flush": 63}),
     ("unconditional MOVE R15, label: DECODE redirect, 2-cycle bubble",
      """        MOVE R15, a
         HALT
@@ -656,11 +727,11 @@ c       HALT
         MOVE R1, @R13++
         HALT
 """,
-     # Push 1 needs R13 from MOVE R13: agen 1. Push 2 needs R13 from push 1:
-     # agen 1. The pop's S0 needs R13 from push 2: agen 1, and its read
-     # follows the store of push 2 on the bus, which the agen wait covers.
-     # Instructions 5, micro-ops 6.
-     5, 5 + 1 + 5 + 3, {"startup": 5, "multi": 1, "agen": 3}),
+     # Push 1 needs R13 - 1 from MOVE R13: sumwait 1. Push 2 needs R13 - 1
+     # from push 1: sumwait 1. The pop's S0 needs R13 from push 2 for its
+     # read: agen 1, and the read follows the store of push 2 on the bus,
+     # which the agen wait covers. Instructions 5, micro-ops 6.
+     5, 5 + 1 + 5 + 3, {"startup": 5, "multi": 1, "sumwait": 2, "agen": 1}),
     ("math unit: write A and B, read the product",
      """        MOVE @0xFFFFFF20, 7
         MOVE @0xFFFFFF21, 6
@@ -720,29 +791,87 @@ f       MOVE R15, @R13++
      # DECODE 7, done 10, and early: f (word 10, pair 5) fetched at 8,
      # DECODE 10, S0 done 13: early 2. The S0 needs R13 from the call, two
      # micro-ops back: free. Its OP is done 14 and flushes: HALT (word 9)
-     # fetched 15, DECODE 17, done 20: flush 5. So 21 cycles:
-     # 7 instructions, 1 multi, 5 start, 1 + 2 + 5.
-     7, 21, {"startup": 5, "multi": 1, "jumpwait": 1, "early": 2, "flush": 5}),
+     # fetched 17, DECODE 19, done 22: flush 7. So 23 cycles:
+     # 7 instructions, 1 multi, 5 start, 1 + 2 + 7.
+     7, 23, {"startup": 5, "multi": 1, "jumpwait": 1, "early": 2, "flush": 7}),
+]
+
+# The same, with options of the model set.
+OPTION_TESTS = [
+    ("--shift-mem 1: a shift by a memory operand takes a cycle more in WRITE",
+     """        MOVE R2, 0x100
+        MOVE R3, 1
+        SHL R1, R3, @R2
+        HALT
+""",
+     # MOVE R2 done 5, MOVE R3 done 6. The SHL reads through R2, written
+     # two micro-ops back: free, so it would be done at 7, and is done at
+     # 8. HALT done 9, so 10 cycles.
+     {"shift_mem": 1}, 4, 10, {"startup": 5, "shiftmem": 1}),
+    ("--shift-reg 1: a count register from the previous micro-op; a constant count",
+     """        MOVE R3, 3
+        SHL R1, R1, R3
+        SHL R1, R1, 2
+        HALT
+""",
+     # MOVE R3 done 5. The first SHL needs R3 in PREPARE in cycle 6, not 5:
+     # done 7. The second SHL shifts by a constant: done 8, though R1 is
+     # written by the previous micro-op. HALT done 9, so 10 cycles.
+     {"shift_reg": 1}, 4, 10, {"startup": 5, "shiftreg": 1}),
+    ("--sum-wait 1: c[R] as a value, @R and c[R] as a store's address",
+     """        MOVE R2, 0x100
+        ADD R1, 4[R2], R3
+        MOVE @R2, R1
+        MOVE R2, 0x200
+        MOVE @R2, R1
+        MOVE R2, 0x300
+        MOVE 1[R2], R1
+        HALT
+""",
+     # MOVE R2 done 5. The ADD's 4[R2] needs R2 from the previous micro-op:
+     # done 7. MOVE @R2 stores through R2, written two back: done 8. MOVE
+     # R2 done 9. MOVE @R2 stores through the R2 WRITE just wrote, which it
+     # takes from its last value: done 10. MOVE R2 done 11. MOVE 1[R2]
+     # needs the sum in PREPARE: done 13. HALT done 14, so 15 cycles.
+     {"sum_wait": 1}, 8, 15, {"startup": 5, "sumwait": 2}),
+    ("--dest-adjust 1: R1++ as a destination; a computed jump, a jump to a constant",
+     """        MOVE R1++, 5
+        MOVE R3, a
+        ?!Z MOVE R15, R3
+        HALT
+a       ?!Z MOVE R15, b
+b       HALT
+""",
+     # MOVE R1++ done 6, a cycle late. MOVE R3 done 7. The jump to R3 (Z is
+     # clear) would be done 8, is done 9, and flushes: a (word 6, pair 3)
+     # fetched 12, DECODE 14, done 17: flush 7. The jump to b takes no
+     # cycle more, and flushes: HALT done 25. So 26 cycles.
+     {"dest_adjust": 1}, 5, 26, {"startup": 5, "adjust": 2, "flush": 14}),
 ]
 
 
 def test() -> None:
     bad = 0
     with tempfile.TemporaryDirectory() as tmp:
-        for i, (what, src, n, cycles, gaps) in enumerate(TESTS):
+        none: Dict[str, int] = {}
+        tests = [(what, src, none, n, cycles, gaps) for what, src, n, cycles, gaps in TESTS]
+        for i, (what, src, opts, n, cycles, gaps) in enumerate(tests + OPTION_TESTS):
             nasm, binp = os.path.join(tmp, f"t{i}.nasm"), os.path.join(tmp, f"t{i}.bin")
             with open(nasm, "w") as f:
                 f.write(src)
             subprocess.run([sys.executable, os.path.join(HERE, "..", "assembler", "niceasm.py"),
                             "-o", binp, nasm], check=True, stdout=subprocess.DEVNULL)
-            m = run_model(Model(load_bin(binp)), hazards.trace_lines(binp))
+            m = Model(load_bin(binp))
+            for option, value in opts.items():
+                setattr(m, option, value)
+            run_model(m, hazards.trace_lines(binp))
             have = {k: v for k, v in dict(m.gaps, multi=m.multi).items() if v}
             ok = (m.instructions, m.total(), have) == (n, cycles, gaps)
             bad += not ok
             print(f"{'PASS' if ok else 'FAIL'} {what}: {m.instructions} instructions, "
                   f"{m.total()} cycles" + ("" if ok else f" {have}, expected {n}, {cycles}, {gaps}"))
     if bad:
-        sys.exit(f"FAIL pipecycles.py --test: {bad} of {len(TESTS)}")
+        sys.exit(f"FAIL pipecycles.py --test: {bad} of {len(tests + OPTION_TESTS)}")
     print("PASS pipecycles.py --test")
 
 
@@ -752,7 +881,7 @@ def main() -> None:
     ap.add_argument("--test", action="store_true")
     ap.add_argument("--bin", help="the .bin of a trace FILE")
     ap.add_argument("--ibuf", type=int, default=8, help="words FETCH may run ahead (8)")
-    ap.add_argument("--flush", type=int, default=5, help="bubble of a jump taken in WRITE (5)")
+    ap.add_argument("--flush", type=int, default=7, help="bubble of a jump taken in WRITE (7)")
     ap.add_argument("--early", type=int, default=2, help="bubble of a jump DECODE resolves (2)")
     ap.add_argument("--agen", type=int, default=1, help="address-register stall (1, 0 = none)")
     ap.add_argument("--sidefx-fast", action="store_true", help="side-effect writes need no agen stall")
@@ -760,6 +889,16 @@ def main() -> None:
                     help="cycles from the write of an operand to the read of a product (3)")
     ap.add_argument("--div-skip", type=int, default=8,
                     help="quotient bits a divider skips in one cycle (8, 0 = none)")
+    ap.add_argument("--shift-mem", type=int, default=1, metavar="N",
+                    help="extra WRITE cycles of a shift by a memory operand (0)")
+    ap.add_argument("--shift-reg", type=int, default=1, metavar="N",
+                    help="stall of a shift count register written by the previous micro-op (0)")
+    ap.add_argument("--sum-wait", type=int, default=1, metavar="N",
+                    help="stall of a sum operand or store address register written by the "
+                         "previous micro-op (0)")
+    ap.add_argument("--dest-adjust", type=int, default=1, metavar="N",
+                    help="extra WRITE cycles of a destination in mode 001 or 010, or of a "
+                         "computed jump (0)")
     ap.add_argument("--phases", type=int, metavar="N",
                     help="fail unless each program reads INSTR_LO around N phases")
     ap.add_argument("--against", metavar="FILE",
@@ -776,7 +915,7 @@ def main() -> None:
         if not binp:
             sys.exit("pipecycles.py: a trace needs --bin")
         m = Model(load_bin(binp), a.ibuf, a.flush, a.early, a.agen, a.sidefx_fast, a.mul,
-                  a.div_skip)
+                  a.div_skip, a.shift_mem, a.shift_reg, a.sum_wait, a.dest_adjust)
         run_model(m, hazards.trace_lines(path))
         print(report(os.path.basename(path), m))
         if a.phases is not None and len(m.counter_reads) != 2 * a.phases:

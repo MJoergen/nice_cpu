@@ -186,6 +186,8 @@ By reading, each rule of the README's "How functions are translated" holds in th
 
 CLAUDE.md asks for a test with every new rule. Commits fa3a8a7 (the instruction moved after the write of an address register may not use what it writes), 2e77769 (a tail call has only labels and comments before the return), and 3e0a2c1 (no tail copies in the stubs after the epilogue) change `nicewasm.py` and the README only. The first two commit messages say that no module reaches the shape today, which is why no `run.py` case could be written; the third could be pinned by a `SHAPES` entry. **Fix.** A test of the passes on hand-built instruction lists, which `test/` has no form for yet: `hoist_into_slots` and the tail-call pass take a function's items, so a few lists with the shapes in question, and the expected output, would do.
 
+**Resolved**: `test/passes.py` runs `hoist_into_slots`, `tail_calls`, and `duplicate_tails` on code built by hand, five cases with the three rules among them, and `make test` runs it.
+
 ### 5.3 What `fuzz.py` does not check
 
 `fuzz.py` runs the default options only, and its model checks R1 and a normal halt: not the trap codes and R2, which TODO.md records, and also not R7 to R13 across the call, not the console, and only 18 words of the memory. The differential check above covered those, and found nothing; a version of it in the repository would keep it so. The script is `diff_fuzz.py` in the scratch directory of this review, with the old translator beside it, and TODO.md already asks for such a mode.

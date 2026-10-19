@@ -18,9 +18,7 @@ The open items of
 [doc/review/second-repository-review.md](doc/review/second-repository-review.md),
 added 2026-10-19. The section numbers are its.
 
-- **The translator** (§5): the rules of commits fa3a8a7, 2e77769, and
-  3e0a2c1 have no test, since no module reaches their shape; a test of
-  the passes on hand-built instruction lists would (§5.2). `fuzz.py`
+- **The translator** (§5): `fuzz.py`
   checks neither traps, nor R7 to R13, nor the console, nor more than 18
   memory words, and runs the default options only; the review's
   differential check against the translator of 88276db did, on 1300

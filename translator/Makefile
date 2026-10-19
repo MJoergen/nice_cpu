@@ -17,12 +17,13 @@ ZIG_SAFE_TESTS = safe safetrap
 RUST_TESTS = rust rusttrap hellors
 
 # Translate, assemble, and run each module in test/run.py, then 40 random
-# modules in each mode with test/fuzz.py, then check the error messages in
-# test/errors.py.
+# modules in each mode with test/fuzz.py, then the passes on code built by
+# hand in test/passes.py, then check the error messages in test/errors.py.
 test: emulator
 	@$(PYTHON) test/run.py
 	@$(PYTHON) test/fuzz.py 1 40
 	@$(PYTHON) test/fuzz.py --no-mpu 1 40
+	@$(PYTHON) test/passes.py
 	@$(PYTHON) test/errors.py
 
 emulator:
@@ -30,8 +31,8 @@ emulator:
 
 # Needs mypy (pip install mypy).
 typecheck:
-	cd test && MYPYPATH=../../assembler $(PYTHON) -m mypy --strict ../nicewasm.py run.py errors.py \
-	  wasm.py fuzz.py
+	cd test && MYPYPATH=../../assembler:.. $(PYTHON) -m mypy --strict ../nicewasm.py run.py errors.py \
+	  wasm.py fuzz.py passes.py
 
 wasm:
 	@for t in $(C_TESTS); do \

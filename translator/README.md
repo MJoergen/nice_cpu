@@ -818,7 +818,7 @@ survives a call of a helper, as it does any §9.3 call.
 
 ## Test
 
-    make test        # run the test modules, then test/fuzz.py and test/errors.py
+    make test        # run the test modules, then test/fuzz.py, test/passes.py, and test/errors.py
     make typecheck   # mypy --strict
     make wasm        # rebuild test/*.wasm from test/*.c, test/*.zig, and test/*.rs
 
@@ -851,3 +851,9 @@ comparisons, the flags, forwarded results, and register allocation
 above. `make test` runs 40 seeds with the math unit and 40 with
 `--no-mpu`; `test/fuzz.py 1 1000` runs more, and `test/fuzz.py --reduce
 SEED` shrinks a failing module and writes it with its translation.
+
+`test/passes.py` runs some of the passes over a function's code on code
+built by hand: `hoist_into_slots` after the write of an address
+register, `tail_calls` with data between the call and the return, and
+`duplicate_tails` in the stubs. These are rules that no module reaches
+today, so `run.py` and `fuzz.py` cannot test them.

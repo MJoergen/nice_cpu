@@ -397,7 +397,8 @@ closed forms of ISA §5.2. It needs three reduced counts:
 - **33-bit rotations through carry** (`C<C`, `C>C`): n mod 33. Because
   32 ≡ −1 (mod 33), split n into 5-bit digits d0 (bits 4..0) to d6
   (bits 31..30). Then n ≡ d0 − d1 + d2 − d3 + d4 − d5 + d6 (mod 33). The sum
-  lies between −93 and 96, so a few compare-and-subtract steps finish it.
+  lies between −93 and 96. Plus 99, it is between 6 and 195, and a table
+  of 256 entries finishes it.
 
 The reduction does not depend on s0, so PREPARE can compute it and keep it
 out of WRITE's critical path.

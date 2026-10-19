@@ -12,9 +12,13 @@
 --   COND      Test the condition. Run a control instruction.
 --   SRC       Evaluate s0, then s1, with their side effects. A memory
 --             operand is read through the data bus.
+--   MOD33     For C<C and C>C only, reduce the count mod 33.
 --   EXEC      Compute the result, write the destination, apply its side
 --             effect, and update the flags. A memory destination is written
 --             through the data bus.
+--   DEST_ADJ  For a register destination with mode 001 or 010 only, step
+--             the register after the result, so that the step is not in
+--             series with the ALU.
 --   VEC       Read the vector table entry, for IRQ, NMI, and INT.
 --   RETIRE    Report the step on retire_o, and an instruction on
 --             instret_o.
@@ -112,7 +116,9 @@ architecture synthesis of multicycle is
       COND_ST,
       SRC_ST,
       SRC_WAIT_ST,
+      MOD33_ST,
       EXEC_ST,
+      DEST_ADJ_ST,
       DEST_WAIT_ST,
       VEC_ST,
       VEC_WAIT_ST,
@@ -146,6 +152,7 @@ architecture synthesis of multicycle is
    signal fetch_need : std_logic_vector(0 to 2);        -- Constant words still to read
    signal src_idx    : natural range 1 to 2;            -- The source field in SRC
    signal srcs       : t_consts;                        -- The source values, at 1 and 2
+   signal src2_count : t_shift_count;                   -- shift_count(srcs(2))
    signal int_vector : std_logic_vector(7 downto 0);
 
    -- The step being reported
@@ -208,9 +215,17 @@ begin
                          v : std_logic_vector(31 downto 0)) is
       begin
          srcs(i) <= v;
+         if i = 2 then
+            -- The reduced counts of a shift. mod 33 is slow, and gets
+            -- MOD33_ST of its own.
+            src2_count.sat <= 33 when v > 33 else to_integer(v(5 downto 0));
+            src2_count.nz  <= '1' when v /= 0 else '0';
+         end if;
          if i = 1 then
             src_idx <= 2;
             state   <= SRC_ST;
+         elsif iw(27) = '1' and iw(23 downto 21) = "101" then
+            state <= MOD33_ST;
          else
             state <= EXEC_ST;
          end if;
@@ -363,10 +378,16 @@ begin
                   src_done(src_idx, dbus_data_i);
                end if;
 
+            -- The count of C<C and C>C, n mod 33
+            when MOD33_ST =>
+               src2_count.m33 <= mod33(srcs(2));
+               state          <= EXEC_ST;
+
             -- ISA.md §5 steps 6 to 8
             when EXEC_ST =>
                if iw(27) = '1' then
-                  res_v := shift(iw(24 downto 21), srcs(1), srcs(2), regs(14)(C_SR_C));
+                  res_v := shift(iw(24 downto 21), srcs(1), srcs(2), regs(14)(C_SR_C),
+                                 src2_count);
                else
                   res_v := alu(iw(24 downto 21), srcs(1), srcs(2), iw(26) and regs(14)(C_SR_C));
                end if;
@@ -378,12 +399,10 @@ begin
                case f_v(6 downto 4) is
                   when "000" =>
                      set_reg(regs_v, x_v, res_v.r);
-                  when "001" =>
+                  when "001" | "010" =>
+                     -- The step of the register follows in DEST_ADJ_ST.
                      set_reg(regs_v, x_v, res_v.r);
-                     set_reg(regs_v, x_v, regs_v(x_v) - 1);
-                  when "010" =>
-                     set_reg(regs_v, x_v, res_v.r);
-                     set_reg(regs_v, x_v, regs_v(x_v) + 1);
+                     state <= DEST_ADJ_ST;
                   when "100" =>
                      addr_v := regs_v(x_v);
                   when "101" =>
@@ -407,6 +426,17 @@ begin
                if iw(25) = '1' and not (x_v = 14 and f_v(6 downto 4) <= "010") then
                   set_reg(regs_v, 14, flags(regs_v(14), res_v));
                end if;
+
+            -- The step after the result, of modes 001 and 010
+            when DEST_ADJ_ST =>
+               f_v := field(iw, 0);
+               x_v := to_integer(f_v(3 downto 0));
+               if f_v(4) = '1' then
+                  set_reg(regs_v, x_v, regs(x_v) - 1);
+               else
+                  set_reg(regs_v, x_v, regs(x_v) + 1);
+               end if;
+               state <= RETIRE_ST;
 
             when DEST_WAIT_ST =>
                if dbus_ack_i = '1' then

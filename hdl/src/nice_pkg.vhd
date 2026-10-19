@@ -10,7 +10,9 @@
 --   alu           §5.1, with carry and overflow
 --   shift         §5.2, in the closed forms given there
 --
--- The shifter reduces its count as MICROARCH.md §7.3 describes.
+-- The shifter reduces its count as MICROARCH.md §7.3 describes. A core can
+-- reduce it ahead of the shift, with shift_count, and keep the reduction
+-- out of the shift's path.
 
 library ieee;
    use ieee.std_logic_1164.all;
@@ -60,8 +62,28 @@ package nice_pkg is
                 s1  : std_logic_vector(31 downto 0);
                 cin : std_logic) return t_result;
 
+   -- The reduced counts of a shift count n (MICROARCH.md §7.3). The 32-bit
+   -- rotations take bits 4..0 of n directly.
+   type t_shift_count is record
+      m33 : natural range 0 to 32;   -- n mod 33
+      sat : natural range 0 to 33;   -- n saturated to 33
+      nz  : std_logic;               -- '1' if n /= 0
+   end record t_shift_count;
+
+   -- n mod 33, for the rotations through C.
+   function mod33(n : std_logic_vector(31 downto 0)) return natural;
+
+   function shift_count(n : std_logic_vector(31 downto 0)) return t_shift_count;
+
    -- ISA.md §5.2. c is the C flag. The carry of the result is the C flag
-   -- after the shift, before M is applied.
+   -- after the shift, before M is applied. cnt is shift_count(n).
+   function shift(op  : std_logic_vector(3 downto 0);
+                  s0  : std_logic_vector(31 downto 0);
+                  n   : std_logic_vector(31 downto 0);
+                  c   : std_logic;
+                  cnt : t_shift_count) return t_result;
+
+   -- The same, with the counts reduced in the shift.
    function shift(op : std_logic_vector(3 downto 0);
                   s0 : std_logic_vector(31 downto 0);
                   n  : std_logic_vector(31 downto 0);
@@ -177,8 +199,24 @@ package body nice_pkg is
       return res_v;
    end function reverse;
 
+   -- A table of i mod 33, for the last step of mod33.
+   type t_mod33 is array (0 to 255) of natural range 0 to 32;
+
+   function mod33_table return t_mod33 is
+      variable res_v : t_mod33;
+   begin
+      for i in res_v'range loop
+         res_v(i) := i mod 33;
+      end loop;
+      return res_v;
+   end function mod33_table;
+
+   constant C_MOD33 : t_mod33 := mod33_table;
+
    -- n mod 33, as in doc/MICROARCH.md §7.3: 32 = -1 (mod 33), so the 5-bit
-   -- digits of n count with alternating signs. 99 keeps the sum positive.
+   -- digits of n count with alternating signs. 99 keeps the sum positive,
+   -- and a table reduces it, instead of a chain of compares and
+   -- subtractions.
    function mod33(n : std_logic_vector(31 downto 0)) return natural is
       variable sum_v : integer range 0 to 255;
    begin
@@ -186,45 +224,47 @@ package body nice_pkg is
                to_integer(n(14 downto 10)) - to_integer(n(19 downto 15)) +
                to_integer(n(24 downto 20)) - to_integer(n(29 downto 25)) +
                to_integer(n(31 downto 30));
-
-      for i in 1 to 5 loop
-         if sum_v >= 33 then
-            sum_v := sum_v - 33;
-         end if;
-      end loop;
-
-      return sum_v;
+      return C_MOD33(sum_v);
    end function mod33;
+
+   function shift_count(n : std_logic_vector(31 downto 0)) return t_shift_count is
+      variable res_v : t_shift_count;
+   begin
+      res_v.m33 := mod33(n);
+      res_v.sat := 33 when n > 33 else to_integer(n(5 downto 0));
+      res_v.nz  := '1' when n /= 0 else '0';
+      return res_v;
+   end function shift_count;
 
    -- A right shift is the mirror image of the left shift of the same kind,
    -- so s0 is reversed before and the result after.
-   function shift(op : std_logic_vector(3 downto 0);
-                  s0 : std_logic_vector(31 downto 0);
-                  n  : std_logic_vector(31 downto 0);
-                  c  : std_logic) return t_result is
+   function shift(op  : std_logic_vector(3 downto 0);
+                  s0  : std_logic_vector(31 downto 0);
+                  n   : std_logic_vector(31 downto 0);
+                  c   : std_logic;
+                  cnt : t_shift_count) return t_result is
       variable d_v     : std_logic_vector(31 downto 0);
       variable fill_v  : std_logic;
       variable fills_v : std_logic_vector(32 downto 0);
       variable wide_v  : std_logic_vector(65 downto 0);   -- c, d, 33 fill bits
-      variable rot_v   : std_logic_vector(32 downto 0);   -- c, d
-      variable m_v     : natural range 0 to 33;           -- The reduced count
+      variable rot_v   : std_logic_vector(65 downto 0);   -- c, d, c, d
       variable res_v   : t_result := (r => (others => '0'), c => c, v => '0');
    begin
       d_v := reverse(s0) when op(3) = '1' else s0;
 
       case op(2 downto 0) is
          when "101" =>
-            -- C<C, C>C: a 33-bit rotation of C and d
-            m_v     := mod33(n);
-            rot_v   := ((c & d_v) sll m_v) or ((c & d_v) srl (33 - m_v));
-            res_v.r := rot_v(31 downto 0);
-            res_v.c := rot_v(32);
+            -- C<C, C>C: a 33-bit rotation of C and d, as one shift of
+            -- two copies
+            rot_v   := (c & d_v & c & d_v) sll cnt.m33;
+            res_v.r := rot_v(64 downto 33);
+            res_v.c := rot_v(65);
 
          when "110" | "111" =>
             -- <<<, C<<, >>>, >>C: a 32-bit rotation. C gets the bit rotated
             -- last.
             res_v.r := d_v rol to_integer(n(4 downto 0));
-            if n /= 0 then
+            if cnt.nz = '1' then
                res_v.c := res_v.r(0);
             end if;
 
@@ -235,9 +275,8 @@ package body nice_pkg is
                when "010"         => fill_v := c;     -- 0<C
                when others        => fill_v := '0';   -- 0<0, C<0
             end case;
-            m_v     := 33 when n > 33 else to_integer(n(5 downto 0));
             fills_v := (others => fill_v);
-            wide_v  := (c & d_v & fills_v) sll m_v;
+            wide_v  := (c & d_v & fills_v) sll cnt.sat;
             res_v.r := wide_v(64 downto 33);
             res_v.c := wide_v(65);
       end case;
@@ -253,6 +292,14 @@ package body nice_pkg is
       end case;
 
       return res_v;
+   end function shift;
+
+   function shift(op : std_logic_vector(3 downto 0);
+                  s0 : std_logic_vector(31 downto 0);
+                  n  : std_logic_vector(31 downto 0);
+                  c  : std_logic) return t_result is
+   begin
+      return shift(op, s0, n, c, shift_count(n));
    end function shift;
 
    function flags(sr  : std_logic_vector(31 downto 0);

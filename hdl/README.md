@@ -397,7 +397,9 @@ right, not fast: an instruction takes about ten cycles.
 | `FETCH` | Reads the instruction word, then each constant word, and increments R15 after each. |
 | `COND` | Tests the condition, and runs a control instruction. |
 | `SRC` | Evaluates s0, then s1, with their side effects. |
+| `MOD33` | For `C<C` and `C>C` only, reduces the count mod 33. |
 | `EXEC` | Computes the result, writes the destination, and updates the flags. |
+| `DEST_ADJ` | For a register destination with mode 001 or 010 only, steps the register after the result. |
 | `VEC` | Reads the vector table entry for IRQ, NMI, and `INT`. |
 | `RETIRE` | Reports the step on `retire_o`. |
 
@@ -414,7 +416,11 @@ The registers are flip-flops. Every register write goes through one function
 that keeps R0 at 0 and bit 24 of R14 at 1 (ISA.md §4.3). The ALU and the
 shifter are in `src/nice_pkg.vhd`. The shifter uses the
 closed forms of ISA.md §5.2, and reduces the count mod 33 as MICROARCH.md
-§7.3 describes.
+§7.3 describes, with a table for the last step. The reduced counts are
+registers, set when s1 is known, and the mod 33 one in a state of its own.
+That state and `DEST_ADJ` keep slow logic out of `EXEC`, so that the core
+reaches 100 MHz on an Artix-7 (xc7a200t-2), at the cost of one more cycle
+in a few instructions.
 
 Interrupt requests use valid/ready ports, with an 8-bit vector each. A device
 holds `valid` and the vector until the core raises `ready`. The core raises it

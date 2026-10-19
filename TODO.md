@@ -19,8 +19,10 @@ has TODO or FIXME comments.
   - The cost of the waits that MICROARCH.md §5.3 and §5.6 discuss, from
     the pipelined core's cycles for the benchmark (`make core
     CORE=pipeline` in `bench/`), to decide on speculative reads (below).
-  - Speed: the core alone reaches about 41 MHz, and NiceMonMEGA65 runs
-    it at 33.3 MHz. See the clock items below.
+  - Speed: the core alone reaches about 49 MHz out of context (Vivado
+    2025.1, 2026-10-19), up from about 39 MHz before the faster mod 33 and
+    rotation in `nice_pkg`. NiceMonMEGA65 runs it at 33.3 MHz. See the
+    clock items below.
 - **Test order steps not done** (MICROARCH.md §9):
   - Step 4, hazard programs: `hdl/test/hazard.nasm` and
     `hdl/test/sidefx_prog.py`, which the multi-cycle core passes. Left

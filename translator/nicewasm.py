@@ -2500,8 +2500,10 @@ def tail_calls(items: List[Item]) -> List[Item]:
     drops the frame, restores the saved registers, and jumps to the label
     (finish). The callee then returns to this function's caller. The
     call's push of the return address goes, and so does the return,
-    unless a jump goes to a label between them. A call with stack
-    arguments drops them after it, so it is not just before the return."""
+    unless a jump goes to a label between them. Only labels and
+    comments may come between them, not data such as the words after a
+    call of a checked helper. A call with stack arguments drops them
+    after it, so it is not just before the return."""
     refs = label_refs(items)
     out: List[Item] = []
     drop = -1  # the index of a return that goes
@@ -2511,7 +2513,8 @@ def tail_calls(items: List[Item]) -> List[Item]:
         if isinstance(it, Ins) and it.kind == "call" and operand_reg(it.ops[1]) == ("", None) \
                 and not it.ops[1].startswith("@"):
             j = k + 1
-            while j < len(items) and (isinstance(items[j], str) or isinstance(items[j], Label)):
+            while j < len(items) and (isinstance(items[j], str) and str(items[j]).lstrip().startswith(";")
+                                      or isinstance(items[j], Label)):
                 j += 1
             ret = items[j] if j < len(items) else None
             if isinstance(ret, Ins) and ret.op == "RET":

@@ -48,6 +48,8 @@ WRITE flushes when a store lands in FETCH's range, `addr_o` to `end_o`, or in th
 
 **Fix.** Say that `hdl/` holds both cores, that the pipelined one is the core of MICROARCH.md, and that `make -C hdl test` runs both against the emulator. In the slides, move the pipelined core from "next" to "exists", with a sentence on the proofs.
 
+**Resolved**: README.md, the slides, with `nice_intro.pdf` rebuilt, `bench/README.md`, and the docstring of `pipecycles.py` say that both cores exist, and what comes next.
+
 ### 2.2 MICROARCH.md
 
 - **§8** opens with "The repository provides a system around the core: the core, dual-port RAM, the bus decoders, a default slave, and the console UART", and the Console bullet describes a UART at `0xFFFFFF00`. Only the data bus decoder exists, as TODO.md says. **Fix:** "will provide", and mark the UART, the RAM, the default slave, and the instruction bus decoder as open, with a pointer to TODO.md.

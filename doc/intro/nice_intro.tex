@@ -813,8 +813,8 @@ ISR     MOVE    @CONSOLE, 0x2A          ; print '*'
     \item \code{translator/}: \code{nicewasm}, which translates
      WebAssembly into NICE assembly. That way, C, Rust, and Zig programs
      can run on NICE.
-    \item \code{hdl/}: The FPGA implementation in VHDL. So far a simple
-     multi-cycle core, checked against the emulator.
+    \item \code{hdl/}: The FPGA implementation in VHDL: a multi-cycle
+     core and a pipelined core, both checked against the emulator.
    \end{itemize}
   \end{frame}
 %
@@ -907,11 +907,12 @@ Stopped at the step limit after 8 steps, PC=00000004
       \item a runtime library,
       \item a WebAssembly translator, so that C, Rust, and Zig programs
        can run on the emulator, and
-      \item a simple multi-cycle FPGA core, which writes the same trace
-       as the emulator for every test program.
+      \item two FPGA cores, a simple multi-cycle one and a pipelined
+       one, which write the same trace as the emulator for every test
+       program.
      \end{itemize}
-    \item Next comes the \textbf{pipelined FPGA core}: faster, and
-     checked against the emulator in the same way.
+    \item Next comes a faster clock for the \textbf{pipelined core}, and
+     the system around it: RAM, a UART, and an interrupt controller.
     \item A C compiler that targets NICE directly would be great, too.
      The calling convention for one is already in \code{doc/ISA.md}.
    \end{itemize}

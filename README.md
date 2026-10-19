@@ -16,8 +16,10 @@ a complete specification. The FPGA implementation follows it. So far the
 repository holds the specification, an assembler, an emulator, a runtime
 library with integer and floating-point routines, and a WebAssembly
 translator that runs C, Zig, and Rust programs. The `hdl/` directory holds
-a simple multi-cycle core, which passes every comparison with the emulator,
-and the test setup for it. The pipelined core is not written yet.
+two cores, a simple multi-cycle one and the pipelined one of MICROARCH.md,
+which both pass every comparison with the emulator, the test setup for
+them, and formal checks of their ports and of three stages of the
+pipeline.
 
 The core is FPGA-agnostic. This repository has no board top level and no
 synthesis for a particular board. The example design for the MEGA65 lives in
@@ -29,7 +31,7 @@ the separate [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) reposito
 |---|---|
 | [doc/ISA.md](doc/ISA.md) | The instruction set: the specification for everything else here. |
 | [doc/intro/](doc/intro/nice_intro.pdf) | A beginner's introduction to NICE: slides, with example programs that assemble and run. |
-| [doc/MICROARCH.md](doc/MICROARCH.md) | A draft design note for the FPGA core. |
+| [doc/MICROARCH.md](doc/MICROARCH.md) | The design note for the pipelined FPGA core. |
 | [doc/REFERENCES.md](doc/REFERENCES.md) | The NICE and QNICE sources the specification is based on. |
 | [doc/review/](doc/review/) | Notes on how each ISA decision was reached, and the reviews of the tools. ISA.md supersedes them. |
 | [assembler/](assembler/README.md) | `niceasm`, the assembler: one Python 3 script with no dependencies. |
@@ -37,7 +39,7 @@ the separate [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) reposito
 | [runtime/](runtime/README.md) | The start-up code and runtime library for C and wasm programs, and a small C library. |
 | [translator/](translator/README.md) | `nicewasm`, which translates WebAssembly into NICE assembly. |
 | [bench/](bench/README.md) | A benchmark of translated code: six kernels with known results, timed with the performance counters, and the same benchmark written by hand. |
-| [hdl/](hdl/README.md) | The FPGA implementation in VHDL. So far a simple multi-cycle core, and the memory model and trace writer it is tested with. |
+| [hdl/](hdl/README.md) | The FPGA implementation in VHDL: a multi-cycle core and a pipelined core, the memory model and trace writer they are tested with, and the formal checks. |
 | [TODO.md](TODO.md) | The single list of open items, undecided questions, and ideas for later. |
 
 ## Quick start
@@ -58,7 +60,7 @@ download page, pick 0.15.2 rather than the latest release or master.
     cd runtime && make test           # test the start-up code and runtime library
     cd translator && make test        # test the wasm translator
     cd bench && make test             # run the benchmark on the emulator and check its results
-    cd hdl && make test               # test the multi-cycle core (needs GHDL)
+    cd hdl && make test               # test both cores (needs GHDL)
     cd doc/intro && make test         # run the example programs of the introduction
 
 To assemble and run a program:
@@ -134,9 +136,11 @@ the join.
   with the runtime, assemble it, and run it.
 - The `.bin` format is the text format of the 2004 `NICE.pm` assembler, so
   its example binaries can be compared directly.
-- The FPGA core will take the place of `niceemu` at the end of the
-  pipeline. `emulator/test/cputest.nasm` and the `--trace` format are there
-  to compare the two.
+- The FPGA cores take the place of `niceemu` at the end of the pipeline.
+  `hdl/` runs the same programs on them and compares their traces with
+  the emulator's: `emulator/test/cputest.nasm` and the `--trace` format
+  are there for that, and `make -C hdl programs` runs the runtime's and
+  the translator's test programs on a core.
 
 **Compilers.** No compiler targets NICE directly yet. ISA.md §9.3 defines
 the C ABI for one, with a one-word `char` and `CHAR_BIT` = 32. Until there

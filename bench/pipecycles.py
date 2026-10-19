@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Estimate the clock cycles of a NICE program on the pipelined core of
-doc/MICROARCH.md, which is not built yet.
+doc/MICROARCH.md, from the emulator's trace.
 
     ./pipecycles.py [options] FILE.bin...         run the emulator with --trace
     ./pipecycles.py [options] --bin FILE.bin TRACE  use a trace written before

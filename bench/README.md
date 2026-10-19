@@ -184,8 +184,8 @@ typecheck` runs mypy on `expected.py`, `hazards.py`, and the tools below.
 ## The cycle estimate
 
 `pipecycles.py` estimates the clock cycles a program takes on the
-pipelined core of [MICROARCH.md](../doc/MICROARCH.md), which is not built
-yet, and `make cycles` runs it on both programs. Like `hazards.py`, it
+pipelined core of [MICROARCH.md](../doc/MICROARCH.md), and `make cycles`
+runs it on both programs. Like `hazards.py`, it
 takes `.bin` files, which it runs on the emulator with `--trace`, or
 traces. It is a model built from MICROARCH.md, not the core. Each
 instruction of the trace is decoded as `hazards.py` decodes it, split

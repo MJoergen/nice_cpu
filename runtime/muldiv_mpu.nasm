@@ -1,5 +1,5 @@
 ; The multiply and divide routines of the NICE runtime library
-; (doc/ISA.md §9.3), for one word and for long long, with the math unit of
+; (ABI.md), for one word and for long long, with the math unit of
 ; SYSTEM §2. It goes after lib.nasm, instead of muldiv_soft.nasm. Each routine
 ; writes its operands to A and B, or C and D, and reads the results.
 
@@ -54,7 +54,7 @@ __mod   MOVE    @__mpu.a, R1
         MOVE    R15, @R13++
 
 ; __mul64: R1:R2 = R1:R2 * R3:R4, the low 64 bits, for signed and unsigned
-; operands. Each pair is low word first (§9.3). With a = R2:R1 and
+; operands. Each pair is low word first (ABI.md). With a = R2:R1 and
 ; b = R4:R3, the product mod 2^64 is R1 * R3 + 2^32 * (R1 * R4 + R2 * R3).
 ; Only the low words of the last two products count. 10 steps. Uses R5.
 __mul64 MOVE    @__mpu.a, R1

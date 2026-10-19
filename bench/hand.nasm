@@ -11,12 +11,12 @@
 ; - The data layout is the natural one for a word-addressed machine. The
 ;   byte buffer stays packed, four bytes to a word, as in linear memory.
 ;   The strings have one character per word, as a C char does in ISA.md
-;   §9.3, the interpreter's program has one word per opcode or operand, and
+;   ABI.md, the interpreter's program has one word per opcode or operand, and
 ;   pointers are word addresses. The tree's nodes are four words, as in
 ;   the wasm version.
 ; - The C library routines of the strings phase are written inline.
 ;
-; Joined with runtime/start.nasm, which calls _main (ISA.md §9.3). The
+; Joined with runtime/start.nasm, which calls _main (ABI.md). The
 ; phases may use R1-R12; main keeps nothing in registers across them.
 
 PC              .EQU    R15

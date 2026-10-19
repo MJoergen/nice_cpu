@@ -1,7 +1,7 @@
 # nicewasm
 
 Translates a WebAssembly module into NICE assembly, following the
-WebAssembly mapping in [doc/ISA.md §9.4](../doc/ISA.md#94-webassembly-mapping).
+WebAssembly mapping in [WASM.md](WASM.md).
 It is one Python 3 script with no dependencies beyond the standard library.
 The [WebAssembly specification](https://webassembly.github.io/spec/core/)
 defines the module format and what each instruction does.
@@ -16,10 +16,10 @@ anything else with an error, rather than translating it wrongly.
                   [--library NAME [--library-memory BYTES]] [--no-mpu] input.wasm
 
 Without `-o`, the output goes to `input.nasm`. `--no-bounds-checks` leaves
-out the bounds checks on memory accesses, as ISA.md §9.4 allows. The code
+out the bounds checks on memory accesses, as WASM.md allows. The code
 is then smaller and faster, but an access out of bounds reads or writes
 whatever NICE memory the address reaches. `--memory-pages N` lets
-`memory.grow` grow the memory up to N pages, the cap of ISA.md §9.4. N
+`memory.grow` grow the memory up to N pages, the cap of WASM.md. N
 may not be below the memory's initial size or above its maximum, if it
 declares one, and it must be below 65536. Without the option, the cap is
 the initial size. `--library` translates a library module instead, as
@@ -34,7 +34,7 @@ first error.
 
 The output is one assembly file. A program is made by joining it with the
 start-up code, the program's other files, and the runtime library, in the
-order of ISA.md §9.3. For example, for C code compiled with clang:
+order of ABI.md. For example, for C code compiled with clang:
 
     clang --target=wasm32 -mbulk-memory -O2 -nostdlib -Wl,--no-entry -Wl,--export=main \
         -Wl,--allow-undefined -Wl,--stack-first -Wl,-z,stack-size=4096 \
@@ -54,8 +54,7 @@ addresses in linear memory. With `-mbulk-memory`, clang emits
 
 `-Wl,--stack-first` matters too. The program's own stack, which clang
 keeps in linear memory for the variables whose address is taken and for
-the arguments of variadic calls, is not checked for overflow, as ISA.md
-§9.4 says. By default wasm-ld puts it above the data, so a function whose
+the arguments of variadic calls, is not checked for overflow, as WASM.md says. By default wasm-ld puts it above the data, so a function whose
 frame does not fit in `-z stack-size` overwrites the data, and the
 program misbehaves somewhere else later. With `--stack-first`, the stack
 is at the bottom of the memory, so an overflow wraps the address below 0
@@ -77,7 +76,7 @@ routines with `runtime/nice.zig` and `runtime/nice.rs`
 
 If the program has constructors, also link with
 `-Wl,--export=__wasm_call_ctors`, so that `___wasm_start` runs them once
-(ISA.md §9.4). Without it, wasm-ld runs them again before each call of an
+(WASM.md). Without it, wasm-ld runs them again before each call of an
 exported function.
 
 And for Zig:
@@ -150,7 +149,7 @@ and it traps with `unreachable`, even if its source has no function
 pointers. nicewasm supports all of them. A Rust program uses a table and
 `call_indirect` for `dyn` trait calls.
 
-The optimizations change nothing in ISA.md §9.4. The size of translated code
+The optimizations change nothing in WASM.md. The size of translated code
 is measured in words (`make words` in `bench/`): `test/safe.zig` is 5171
 words and the float library 7083. The benchmark of [bench/](../bench/)
 runs 1730635 instructions in its phases, from a module of 8560 words.
@@ -163,7 +162,7 @@ the steps that got the code here.
 - **Types:** `i32`, `i64`, `f32`, and `f64`, in function types, locals,
   and globals. An `i64` or `f64` takes
   two words, low word first, and is passed in registers or on the stack by
-  the rules of ISA.md §9.3. A float value is its bits, as in memory.
+  the rules of ABI.md. A float value is its bits, as in memory.
 - **Floats:** every `f32` and `f64` instruction. `const`, `load`, `store`,
   and `reinterpret` move the bits, and `abs`, `neg`, and `copysign` change
   the sign bit inline. Everything else calls the float library,
@@ -177,8 +176,7 @@ the steps that got the code here.
 - **Instructions:** `drop`, `select` (both forms), `local.get`,
   `local.set`, `local.tee`, `global.get`, `global.set`, `i32.const`,
   `i64.const`, `i32.wrap_i64`, `i64.extend_i32_s`, and `i64.extend_i32_u`.
-  `unreachable` traps with code 1 through `___wasm_trap_vector`, as ISA.md
-  §9.4 says. Each trap sets R2 and jumps to a helper for its code,
+  `unreachable` traps with code 1 through `___wasm_trap_vector`, as WASM.md says. Each trap sets R2 and jumps to a helper for its code,
   such as `W.trap1`, which sets R1 and jumps through the vector. So a
   trap takes four words, not six.
 - **Integer operations,** for `i32` and `i64`: `add`, `sub`,
@@ -233,16 +231,16 @@ the steps that got the code here.
   that nicewasm emits once, `W.fill` or `W.copy`, which works a word at a
   time where it can.
 - **Imports:** functions from `env`, whose names must be C identifiers
-  that do not start with `_` (ISA.md §9.4). Each becomes a call to the
+  that do not start with `_` (WASM.md). Each becomes a call to the
   label `_name`.
 - **Hardware access:** `nice.peek`, of type `(i32) -> i32`, and `nice.poke`,
-  of type `(i32, i32) -> ()`, as ISA.md §9.4 says. Each call makes exactly
+  of type `(i32, i32) -> ()`, as WASM.md says. Each call makes exactly
   one data access, a `MOVE` that reads or writes the NICE word at the given
   word address, after the code that puts the address in a register. A
   `peek` whose result is not used still makes its access. So `poke(0xFFFFFF00, c)` prints `c` on
   the console (SYSTEM.md §1). They have no address, so they cannot be in a
   table.
-- **Exports:** functions and globals get the label `_name`, as §9.4 says.
+- **Exports:** functions and globals get the label `_name`, as WASM.md says.
   A name that is not a C identifier gets no label, in a library module
   too. Exports of the memory and of the table are ignored: the memory is at
   `___wasm_memory`, and a function pointer is a table index. So the
@@ -268,7 +266,7 @@ the steps that got the code here.
 - **Tables:** table 0 of `funcref`, filled by active element segments
   whose offset is an `i32.const`. Their elements may be function indices
   or `ref.func` and `ref.null` expressions. nicewasm emits the table at
-  `W.table`, two words to an entry as ISA.md §9.4 says: the function's
+  `W.table`, two words to an entry as WASM.md says: the function's
   address and its type number, the index of the first type with the same
   parameters and results. Declarative segments are ignored.
 - **Indirect calls:** `call_indirect`. An index past the end of the table
@@ -295,7 +293,7 @@ parameters or results.
 ## Library modules
 
 `--library NAME` translates a library module of the runtime library, as
-ISA.md §9.4 describes. The float library is one: see
+WASM.md describes. The float library is one: see
 [runtime/README.md](../runtime/README.md). It differs from a program's
 module in these ways:
 
@@ -314,7 +312,7 @@ module in these ways:
 
 ## How functions are translated
 
-Each wasm function becomes a §9.3 function at the label `W.fN`, where N is
+Each wasm function becomes a function of the ABI (ABI.md) at the label `W.fN`, where N is
 its function index. nicewasm translates it in two steps. The front end
 turns each wasm instruction into NICE instructions on virtual registers.
 The back end gives the virtual registers physical registers, or frame
@@ -328,7 +326,7 @@ Every wasm instruction becomes NICE instructions on these registers. For
 example, `i32.add` is one `ADD` with three operands, and `i64.add` is
 `ADD[M]` on the low words and `ADD[C]` on the high words. The output has
 a comment for each wasm instruction. Physical registers appear only
-where ISA.md §9.3 or a helper demands them: the arguments and results of
+where ABI.md or a helper demands them: the arguments and results of
 calls, the function's parameters and result, and the code and address
 of a trap.
 
@@ -390,7 +388,7 @@ d, b`. If the comparison's result is not used otherwise, no code sets
 it.
 
 An `i32` shift masks its count to 5 bits first, because NICE uses the
-full count (ISA.md §9.4). A constant count is masked by nicewasm, so a
+full count (WASM.md). A constant count is masked by nicewasm, so a
 shift by a constant is one instruction, such as `SHL d, x, 3`. `shr_s`
 copies the sign bit into C and shifts it in with `C>0` (§5.2). A rotate
 needs no mask, since only the count modulo 32 matters to `ROL` and
@@ -538,7 +536,7 @@ An access of 1 or 2 bytes is inline. A shift gives the word index w of
 the address a, and `SHL c, a, 3` gives c, which is 8p modulo 32 for the
 byte p of a in its word. Neither instruction can trap, and each writes
 only its own register, so both come before the bounds check, after the
-start of the code, where a trap's R2 points (ISA.md §9.4). So the read
+start of the code, where a trap's R2 points (WASM.md). So the read
 waits for neither register, only for the skipped jump just before it,
 unless an instruction moves to between them (below). Only a rotation
 takes its count modulo 32 (ISA.md §5.2), so the code rotates by c. The
@@ -577,7 +575,7 @@ its size fits in the memory at all, the access traps at once.
 `call_indirect` checks the table index against the table's size. It
 checks the entry's address for 0 and its type number, then calls the
 address with `ADD @--SP, 1, PC` and `MOVE PC, Rn`, the "through a
-register" sequence of ISA.md §9.3. The arguments are in R1–R4 and on the
+register" sequence of ABI.md. The arguments are in R1–R4 and on the
 stack, as for `call`. If the address is in a frame word, the jump takes
 a constant word, and the `ADD` adds 2.
 
@@ -610,8 +608,8 @@ Appel, 1996), with R1–R12. A move between two registers that do not
 interfere is removed if, by the tests of Briggs and George, that cannot
 make the colouring fail. This includes moves to and from the physical
 registers of calls, so an argument is often computed straight into R1.
-A call may change R1–R6 and the flags, as §9.3 allows, so a value that
-is live across a call gets one of R7–R12, which §9.3 preserves. A call
+A call may change R1–R6 and the flags, as ABI.md allows, so a value that
+is live across a call gets one of R7–R12, which ABI.md preserves. A call
 of a helper changes only the registers that the helper uses, all among
 R1–R6. A value that is not live across a call gets one of R1–R6 if it
 can, since the function must save each of R7–R12 that it uses.
@@ -761,7 +759,7 @@ call.
 
 The translated functions may use every register. The helpers and
 `___wasm_start` use only R1–R6, R13, R14, and R15, so a value in R7–R12
-survives a call of a helper, as it does any §9.3 call.
+survives a call of a helper, as it does any ABI.md call.
 
 ## Test
 

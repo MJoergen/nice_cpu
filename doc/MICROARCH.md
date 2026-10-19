@@ -115,7 +115,7 @@ The parts do what they do in qnice_cpu, with these differences:
 - **FETCH** reads two words per cycle: the instruction port is 64 bits wide
   and reads an aligned pair of words. Its address a names words 2a and
   2a + 1, and it returns word 2a in bits 31..0 and word 2a + 1 in bits
-  63..32, low word first as in ISA §9.3. The multi-cycle core has the same
+  63..32, low word first as in ABI.md. The multi-cycle core has the same
   port. An instruction is 2.1 words on average
   in translated code and 1.6 in hand-written code (§5.6), so a port that
   delivers one word per cycle would hold the core to about one instruction

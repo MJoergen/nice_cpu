@@ -1,8 +1,8 @@
-; The NICE runtime library (doc/ISA.md §9.3). It goes after the program's
+; The NICE runtime library (ABI.md). It goes after the program's
 ; own files, followed by muldiv_mpu.nasm or muldiv_soft.nasm, which hold the
-; multiply and divide routines. Every routine follows the C ABI of §9.3.
+; multiply and divide routines. Every routine follows the C ABI of ABI.md.
 
-; ___wasm_trap_vector: wasm traps jump through this word (§9.4). It holds
+; ___wasm_trap_vector: wasm traps jump through this word (WASM.md). It holds
 ; the default handler until a program stores its own.
 ___wasm_trap_vector
         .DAT    ___wasm_trap
@@ -94,7 +94,7 @@ __popcnt64
         MOVE    R2, 0
         MOVE    R15, @R13++
 
-; The device routines of §9.3: the console (SYSTEM §1), the performance counters
+; The device routines of ABI.md: the console (SYSTEM §1), the performance counters
 ; (SYSTEM §3), and the emulator's character screen. Unlike the routines above,
 ; programs call them by their C names.
 __nice.console  .EQU    0xFFFFFF00

@@ -1,8 +1,8 @@
-// Access to NICE memory and I/O devices from wasm code (ISA.md §9.4).
+// Access to NICE memory and I/O devices from wasm code (WASM.md).
 #ifndef _NICE_H
 #define _NICE_H
 
-// The device routines of ISA.md §9.3, with the same names and meanings as
+// The device routines of ABI.md, with the same names and meanings as
 // in the runtime library. Programs use these, not the addresses below.
 
 // Writes bits 7..0 of c to the console.

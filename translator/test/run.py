@@ -4,7 +4,7 @@
 Each case is a module, either built here with wasm.py or compiled from a
 test/X.c, test/X.zig, or test/X.rs source into test/X.wasm. It is translated and joined
 with runtime/start_wasm.nasm, any hand-written assembly the case needs,
-runtime/lib.nasm, and runtime/muldiv_mpu.nasm, as ISA.md §9.3 describes. If
+runtime/lib.nasm, and runtime/muldiv_mpu.nasm, as ABI.md describes. If
 it calls the float library, runtime/float.wasm translated as the library
 module float follows. Then it is assembled and run. Each case runs twice:
 as translated by default, with the math unit (SYSTEM.md §2), and with
@@ -17,7 +17,7 @@ pointing at the first instruction of the code for the wasm instruction
 that trapped, which TRAPS gives. The first page of its memory, reserved
 with .RES, must not be in the program image. Unless it trapped, R7-R12
 must be 0 and SP must be 0xFFFFFF00 again, as the start-up code left them,
-because every translated function must preserve them (ISA.md §9.3). The expected
+because every translated function must preserve them (ABI.md). The expected
 results were worked out by hand from the sources."""
 
 from __future__ import annotations

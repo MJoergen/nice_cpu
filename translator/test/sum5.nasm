@@ -1,5 +1,5 @@
 ; get(i) = i + 100, imported by sum5.c from env. It also scrambles R2-R6,
-; which a callee may change (ISA.md §9.3).
+; which a callee may change (ABI.md).
 _get    ADD     R1, R1, 100
         MOVE    R2, 0xDEAD0002
         MOVE    R3, 0xDEAD0003

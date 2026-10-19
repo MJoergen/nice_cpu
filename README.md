@@ -31,6 +31,8 @@ the separate [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) reposito
 |---|---|
 | [doc/ISA.md](doc/ISA.md) | The instruction set: the specification for everything else here. |
 | [doc/intro/](doc/intro/nice_intro.pdf) | A beginner's introduction to NICE: slides, with example programs that assemble and run. |
+| [runtime/ABI.md](runtime/ABI.md) | The C ABI: registers, calls, the stack, and the runtime library's conventions. |
+| [translator/WASM.md](translator/WASM.md) | How WebAssembly maps to NICE. |
 | [doc/SYSTEM.md](doc/SYSTEM.md) | The devices that the emulator and the FPGA core map into the I/O range: console, math unit, performance counters, and timer. |
 | [doc/MICROARCH.md](doc/MICROARCH.md) | The design note for the pipelined FPGA core. |
 | [doc/REFERENCES.md](doc/REFERENCES.md) | The NICE and QNICE sources the specification is based on. |
@@ -83,11 +85,11 @@ is joined into every program. Each follows one part of
 |---|---|---|---|---|---|
 | `niceasm`, the assembler | [assembler/niceasm.py](assembler/niceasm.py) | Python 3, standard library only | `.nasm` | `.bin` | ISA.md §10 |
 | `niceemu`, the emulator | [emulator/](emulator/) | Zig 0.15 | `.bin` | Console output, the registers, memory dumps, and a trace | ISA.md §1–8, SYSTEM.md |
-| The runtime library | [runtime/](runtime/) | NICE assembly | | | ISA.md §9.3 and §9.4 |
-| `nicewasm`, the wasm translator | [translator/nicewasm.py](translator/nicewasm.py) | Python 3, standard library only | `.wasm` | `.nasm` | ISA.md §9.4 |
+| The runtime library | [runtime/](runtime/) | NICE assembly | | | ABI.md and WASM.md |
+| `nicewasm`, the wasm translator | [translator/nicewasm.py](translator/nicewasm.py) | Python 3, standard library only | `.wasm` | `.nasm` | WASM.md |
 
 A program is built in these steps. There is no linker. The pieces are
-assembly files, joined with `cat` in the order ISA.md §9.3 gives, and the
+assembly files, joined with `cat` in the order ABI.md gives, and the
 whole program is assembled at once.
 
     prog.c, prog.zig, or prog.rs
@@ -144,7 +146,7 @@ the join.
   are there for that, and `make -C hdl programs` runs the runtime's and
   the translator's test programs on a core.
 
-**Compilers.** No compiler targets NICE directly yet. ISA.md §9.3 defines
+**Compilers.** No compiler targets NICE directly yet. ABI.md defines
 the C ABI for one, with a one-word `char` and `CHAR_BIT` = 32. Until there
 is one, compiled code reaches NICE through WebAssembly: clang (with
 `wasm-ld`), Zig, and Rust all have a wasm32 target, and `nicewasm`
@@ -171,8 +173,7 @@ push.
 
 [doc/ISA.md](doc/ISA.md) covers the programmer's model, the instruction
 format, conditional execution, addressing modes, execution, flags,
-interrupts, reset, memory, the I/O range, software conventions, the C ABI, the
-WebAssembly mapping, the assembler syntax, and the `.bin` object format. Where the sources disagree, it follows this
+interrupts, reset, memory, the I/O range, software conventions, the assembler syntax, and the `.bin` object format. Where the sources disagree, it follows this
 order:
 
 1. The intended behaviour of the 2004 emulator `NICE.pm` and web page (not

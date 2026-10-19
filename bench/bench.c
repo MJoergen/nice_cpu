@@ -1,4 +1,4 @@
-// A benchmark for code that reaches NICE through wasm (ISA.md §9.4).
+// A benchmark for code that reaches NICE through wasm (WASM.md).
 //
 // Six phases, each a well-known kernel with a known result. Each phase is
 // timed with the performance counters of SYSTEM.md §3, and main prints one

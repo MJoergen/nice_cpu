@@ -1,5 +1,5 @@
 ; Start-up code for a program without a wasm module that a monitor runs
-; (doc/ISA.md §9.3, "Programs under a monitor"). The monitor's ROM takes
+; (ABI.md, "Programs under a monitor"). The monitor's ROM takes
 ; 0x0000-0x7FFF, so the program is assembled at 0x8000. The monitor calls
 ; the program with SP set to its own stack, so this does not set SP, and
 ; it returns to the monitor instead of halting.

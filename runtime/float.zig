@@ -1,7 +1,7 @@
-//! The floating-point routines of the runtime library (doc/ISA.md §9.3).
+//! The floating-point routines of the runtime library (ABI.md).
 //!
 //! This file is compiled to wasm and translated as the library module
-//! "float" (§9.4) into float.nasm. See README.md for how to rebuild it.
+//! "float" (WASM.md) into float.nasm. See README.md for how to rebuild it.
 //!
 //! Most routines come unchanged from Zig's compiler_rt, which the build
 //! copies next to this file: addition, subtraction, multiplication, the

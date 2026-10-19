@@ -1,5 +1,5 @@
 ; Run after start.nasm with test/device.input, "ab", as the console input,
-; and with -s. Calls each device routine of lib.nasm (ISA.md §9.3).
+; and with -s. Calls each device routine of lib.nasm (ABI.md).
 ;
 ; The counters. The start-up code runs 5 instructions, 0-4, and main
 ; starts with a call, 5 and 6. The read of INSTR_LO in nice_instructions

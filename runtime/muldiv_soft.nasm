@@ -1,5 +1,5 @@
 ; The multiply and divide routines of the NICE runtime library
-; (doc/ISA.md §9.3), for one word and for long long, in software, for a system without the math
+; (ABI.md), for one word and for long long, in software, for a system without the math
 ; unit of SYSTEM §2. It goes after lib.nasm, instead of muldiv_mpu.nasm.
 
 ; __mul: R1 = R1 * R2, the low 32 bits. The same result serves signed and
@@ -76,7 +76,7 @@ __mod   MOVE    @--R13, R1              ; bit 31: the dividend's sign
         MOVE    R15, @R13++
 
 ; __mul64: R1:R2 = R1:R2 * R3:R4, the low 64 bits, for signed and unsigned
-; operands. Each pair is low word first (§9.3). Shift and add, as __mul:
+; operands. Each pair is low word first (ABI.md). Shift and add, as __mul:
 ; each 1 bit of R3:R4, from bit 0 up, adds R1:R2 shifted left by that
 ; bit's position into R5:R6. A pass takes 7 steps, or 9 for a 1 bit. So
 ; __mul64 takes 2 + 7k + 2j + 3 steps, where k is the number of bits in

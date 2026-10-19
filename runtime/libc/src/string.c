@@ -1,7 +1,7 @@
 #include <string.h>
 
 // With -mbulk-memory, clang turns these three into memory.copy and
-// memory.fill, which nicewasm translates (ISA.md §9.4).
+// memory.fill, which nicewasm translates (WASM.md).
 void *memcpy(void *dst, const void *src, size_t n)
 {
     return __builtin_memcpy(dst, src, n);

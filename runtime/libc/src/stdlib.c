@@ -8,7 +8,7 @@ long long llabs(long long x) { return x < 0 ? -x : x; }
 
 _Noreturn void abort(void)
 {
-    __builtin_trap();           // wasm unreachable: a trap (ISA.md §9.4)
+    __builtin_trap();           // wasm unreachable: a trap (WASM.md)
 }
 
 // The value of a digit or letter in bases up to 36, or 36 if it is neither.

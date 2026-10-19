@@ -1,6 +1,6 @@
 //! Support for Zig code that reaches NICE through wasm: the device routines
-//! of ISA.md §9.3, which are imports from env and so the routines of
-//! lib.nasm, and the `nice` imports of ISA.md §9.4. It is the Zig
+//! of ABI.md, which are imports from env and so the routines of
+//! lib.nasm, and the `nice` imports of WASM.md. It is the Zig
 //! counterpart of the C library's nice.h, with a console writer for
 //! std.fmt. Build with `--dep nice -Mroot=prog.zig -Mnice=nice.zig` and
 //! `const nice = @import("nice");`.
@@ -11,7 +11,7 @@ pub extern "nice" fn peek(addr: u32) u32;
 /// Writes val to the NICE word at a word address.
 pub extern "nice" fn poke(addr: u32, val: u32) void;
 
-// The device routines of ISA.md §9.3. nice_print is left out: it takes a
+// The device routines of ABI.md. nice_print is left out: it takes a
 // string of one character per word, and wasm strings are bytes.
 extern "env" fn nice_putc(c: i32) void;
 extern "env" fn nice_getc() i32;

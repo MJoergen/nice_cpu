@@ -1,4 +1,4 @@
-; Run after start_wasm.nasm. A trap as the translator emits it (ISA.md §9.4):
+; Run after start_wasm.nasm. A trap as the translator emits it (WASM.md):
 ; R1 = 3, R2 = the trapping code's address, then a jump through
 ; ___wasm_trap_vector. The default handler is a reserved control word, so
 ; the processor halts with "reserved control instruction" and exit status 2.

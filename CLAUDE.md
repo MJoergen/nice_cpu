@@ -22,8 +22,8 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
   and commit both. The timing values are read off a simulation by hand.
 - `assembler/niceasm.py`: Python 3, standard library only, `mypy --strict` clean.
 - `emulator/src/cpu.zig` (core, unit tests) and `main.zig` (CLI, loader). Zig 0.15.
-- `runtime/`: start-up code and runtime routines in NICE assembly (ISA.md §9.3).
-- `translator/nicewasm.py`: wasm -> NICE assembly (ISA.md §9.4). Same rules as niceasm.py.
+- `runtime/`: start-up code and runtime routines in NICE assembly (`runtime/ABI.md`).
+- `translator/nicewasm.py`: wasm -> NICE assembly (`translator/WASM.md`). Same rules as niceasm.py.
 - `bench/bench.c`: a benchmark of translated code, six kernels with known
   results, timed with the performance counters. `hand.nasm` is the same
   benchmark written by hand, the ceiling to compare with. `expected.py`

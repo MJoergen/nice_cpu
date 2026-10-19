@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """nicewasm - translates a WebAssembly module into NICE assembly.
 
-Implements the WebAssembly mapping of doc/ISA.md section 9.4. The output is
+Implements the WebAssembly mapping of translator/WASM.md. The output is
 one assembly file, to be joined with the start-up code, the program's other
-files, and the runtime library as section 9.3 describes.
+files, and the runtime library as runtime/ABI.md describes.
 
 Usage: nicewasm.py [-o output.nasm] [--no-bounds-checks] [--memory-pages N]
                    [--library NAME [--library-memory BYTES]] [--no-mpu] input.wasm
@@ -42,7 +42,7 @@ SIZES = {I32: 1, I64: 2, F32: 1, F64: 2}  # words per value of each supported ty
 
 # The registers that the allocator gives to values. A call may change
 # CALLER_SAVED, and a function saves the CALLEE_SAVED ones that it uses
-# (§9.3). There is no frame pointer, so R12 is one of them.
+# (ABI.md). There is no frame pointer, so R12 is one of them.
 ALLOC_REGS = [f"R{k}" for k in range(1, 13)]
 CALLER_SAVED = frozenset(f"R{k}" for k in range(1, 7))
 CALLEE_SAVED = [f"R{k}" for k in range(7, 13)]
@@ -138,7 +138,7 @@ DIV_OPS = {0x6D: (I32, "div_s"), 0x6E: (I32, "div_u"), 0x6F: (I32, "rem_s"),
            0x70: (I32, "rem_u"), 0x7F: (I64, "div_s"), 0x80: (I64, "div_u"),
            0x81: (I64, "rem_s"), 0x82: (I64, "rem_u")}
 
-# Operations that are a call to the runtime library (§9.3): wasm opcode ->
+# Operations that are a call to the runtime library (ABI.md): wasm opcode ->
 # (routine, its type).
 LIB_OPS = {0x67: ("__clz", ([I32], [I32])), 0x68: ("__ctz", ([I32], [I32])),
            0x69: ("__popcnt", ([I32], [I32])), 0x6C: ("__mul", ([I32, I32], [I32])),
@@ -169,7 +169,7 @@ FLOAT_OPS.update({
     0xBB: ("__extendsfdf2", [F32], F64)})
 
 # The conversions from float to integer. Those of the library saturate and
-# give 0 for a NaN, as trunc_sat does. trunc must trap instead (§9.4), if
+# give 0 for a NaN, as trunc_sat does. trunc must trap instead (WASM.md), if
 # the value is a NaN or its integer part does not fit. That is the case
 # when its magnitude, its bits without the sign, is not below a limit,
 # one for each sign. wasm opcode -> (routine, from, to, limit for +, for -).
@@ -232,7 +232,7 @@ class FuncType:
     results: List[int]
 
 
-# The imports from the module nice and their types (§9.4). A call to one
+# The imports from the module nice and their types (WASM.md). A call to one
 # is replaced by the access it performs.
 NICE_TYPES = {"peek": FuncType([I32], [I32]), "poke": FuncType([I32, I32], [])}
 
@@ -487,7 +487,7 @@ def words(value: int, t: int) -> List[str]:
 
 
 def assign_args(params: List[int]) -> Tuple[List[Tuple[bool, int]], int]:
-    """Where §9.3 puts each argument of a function that is not variadic:
+    """Where ABI.md puts each argument of a function that is not variadic:
     (True, first register) or (False, first stack word). Also returns the
     number of stack words."""
     locs: List[Tuple[bool, int]] = []
@@ -589,7 +589,7 @@ def parse_section(m: Module, sec_id: int, s: Reader, sec_start: int) -> None:
                 raise WasmError(f"{what}: the name is not a C identifier, so it has no label", at)
             if name.startswith("_"):
                 # Clang imports such names for routines that the runtime
-                # library does not have (§9.4), for example __multi3 for
+                # library does not have (WASM.md), for example __multi3 for
                 # __int128 and __addtf3 for long double.
                 raise WasmError(f"{what}: names that start with _ are reserved for the runtime"
                                 " library, which has no routines for C's long double and __int128", at)
@@ -806,7 +806,7 @@ def load_helper(n: int) -> List[str]:
     """W.load4 or W.load8: loads the n bytes at byte address R1, which is
     in the memory, into R1, or for n = 8 into R1 and R2, low word first.
     Uses R2-R6. A word of the memory holds four bytes, the lowest address
-    in the low byte (§9.4). The inline code takes the accesses at a
+    in the low byte (WASM.md). The inline code takes the accesses at a
     multiple of 4, and these the others."""
     mem = "@___wasm_memory"
     name = f"W.load{n}"
@@ -1189,7 +1189,7 @@ ALU_NAMES = frozenset(["MOVE", "SUB", "MDBL", "ADD", "DBL", "DEC", "NOT", "NOR",
 def flag_use_def(ins: Ins) -> Tuple[FrozenSet[str], FrozenSet[str]]:
     """The flags (§6) that an instruction reads, and those that it surely
     writes. A conditional instruction may not write them, so its writes do
-    not count. A call changes them all (§9.3). An operand that reads R14
+    not count. A call changes them all (ABI.md). An operand that reads R14
     reads them all."""
     uses: set[str] = set()
     cond = ins.cond.lstrip("!")
@@ -2391,7 +2391,7 @@ def hoist_into_slots(items: List[Item]) -> List[Item]:
     must commute with each instruction that it passes: neither may write
     a register that the other reads or writes. It may pass a label that
     no jump goes to, such as the start of the code of a wasm instruction,
-    where a trap's R2 points (§9.4), only if it is the first instruction
+    where a trap's R2 points (WASM.md), only if it is the first instruction
     after it, and the label then moves with it. It may pass one label
     B that only unconditional jumps go to, such as the one where the stub
     of a word access comes back: then a copy of it goes just before each
@@ -2521,7 +2521,7 @@ def frame_words(items: List[Item], n_slots: int, n_saved: int) -> None:
     arguments by operands relative to SP. The frame has no frame pointer.
     From SP up, after the prologue, it holds the n_slots frame words, the
     n_saved callee-saved registers, the return address, and the stack
-    arguments (§9.3). SP moves only in a call sequence: a push of a stack
+    arguments (ABI.md). SP moves only in a call sequence: a push of a stack
     argument or of the return address takes it down a word, and the
     return and the ADD R13, R13, n after the call take it back up. depth
     counts the words pushed so far. All sources of an instruction see SP
@@ -2558,7 +2558,7 @@ def frame_words(items: List[Item], n_slots: int, n_saved: int) -> None:
 
 def fix_calls(items: List[Item]) -> None:
     """Sets what each call's ADD @--R13, n, R15 adds to the address after
-    it: the size in words of the jump that follows (§9.3), which depends
+    it: the size in words of the jump that follows (ABI.md), which depends
     on the jump's operand."""
     prev: Optional[Ins] = None
     for it in items:
@@ -2707,11 +2707,11 @@ class Translator:
         self.data = data
         self.checks = checks  # bounds checks on memory accesses
         self.mpu = mpu  # use the math unit of SYSTEM §2 for i32 mul, and div and rem
-        self.library = library  # the name of a library module (§9.4), or None
+        self.library = library  # the name of a library module (WASM.md), or None
         self.prefix = f"WL.{library}." if library else "W."  # of the labels made here
         self.mem = f"WL.{library}.memory" if library else "___wasm_memory"
         # The bytes of the memory that are reserved: all of the initial
-        # pages for a program, and only the start for a library (§9.4).
+        # pages for a program, and only the start for a library (WASM.md).
         self.mem_bytes: Optional[int] = None
         if m.memory_pages is not None:
             self.mem_bytes = m.memory_pages * WORDS_PER_PAGE * 4
@@ -2730,7 +2730,7 @@ class Translator:
                 self.mem_bytes = library_memory
         elif library_memory is not None:
             raise WasmError("--library-memory: the module has no memory")
-        # The cap: memory.grow may grow the memory up to it (§9.4). Unless
+        # The cap: memory.grow may grow the memory up to it (WASM.md). Unless
         # it is above the initial size, the size is a constant.
         self.cap = m.memory_pages
         if memory_pages is not None:
@@ -2752,7 +2752,7 @@ class Translator:
         self.ctors: Optional[int] = None
         n_imports = len(m.imports)
         seen = set()
-        # An import from env is called at its label _name (§9.4), so an
+        # An import from env is called at its label _name (WASM.md), so an
         # export may not take the same label.
         imported = {imp.name for imp in m.imports if imp.module == "env"}
         for name, kind, idx in m.exports:
@@ -2778,7 +2778,7 @@ class Translator:
                 raise WasmError(f"export {name}: only functions, tables, memories, and globals"
                                 " can be exported")
             # Names that start with _ are reserved for the runtime library,
-            # so only a library module gives them labels (§9.4).
+            # so only a library module gives them labels (WASM.md).
             # Memory and table exports get no label: the memory is at
             # ___wasm_memory, and a function pointer is a table index.
             if kind in (0, 3) and C_IDENT.match(name) and (library or not name.startswith("_")):
@@ -2810,7 +2810,7 @@ class Translator:
 
     def run(self, source: str) -> List[str]:
         source = "".join(c if PRINTABLE.match(c) else "?" for c in source)
-        out = [f"; Translated from {source} by nicewasm (doc/ISA.md §9.4)."]
+        out = [f"; Translated from {source} by nicewasm (WASM.md)."]
         if self.library:
             out.append(f"; Library module {self.library}.")
         runs = self.memory_runs()
@@ -2880,7 +2880,7 @@ class Translator:
                 + [(f"wlimit{n}", max((size - n) // 4 + 1, 0)) for n in (4, 8)])
 
     def start(self, runs: List[Tuple[int, Union[int, List[int]]]]) -> List[str]:
-        """___wasm_start, which a program's module always has (§9.4)."""
+        """___wasm_start, which a program's module always has (WASM.md)."""
         out = ["", "; Sets the memory to 0, then calls the start function and",
                "; __wasm_call_ctors, if the module has them.", "___wasm_start"]
         # The words that data segments set are in the program image. The
@@ -2914,12 +2914,12 @@ class Translator:
 
     def type_number(self, idx: int) -> int:
         """The number of a function type in the table: the index of the
-        first type with the same parameters and results (§9.4)."""
+        first type with the same parameters and results (WASM.md)."""
         return self.m.types.index(self.m.types[idx])
 
     def table(self) -> List[str]:
         """Table 0, two words to an entry: the address of a function and
-        the number of its type, or 0 and 0 for an empty entry (§9.4). A
+        the number of its type, or 0 and 0 for an empty entry (WASM.md). A
         later element segment overwrites an earlier one, as in wasm."""
         if self.m.table_size is None:
             if self.m.elems:
@@ -2995,7 +2995,7 @@ class FunctionTranslator:
     each value on the operand stack, a new one for each value pushed,
     except that the values that a block, loop, or if takes and gives have
     fixed registers in its Frame, which every path to them writes.
-    Physical registers appear only where §9.3 or a helper demands them:
+    Physical registers appear only where ABI.md or a helper demands them:
     the arguments and results of calls, the results of the function, and
     the code and address of a trap.
 
@@ -3241,20 +3241,20 @@ class FunctionTranslator:
 
     def call_jump(self, target: str, uses: List[str], defs: FrozenSet[str],
                   stub: bool = False) -> None:
-        """The call sequence of §9.3, to a label or through a register. The
+        """The call sequence of ABI.md, to a label or through a register. The
         call reads the registers uses, and changes defs. The back end
         sets the 2 that the return address adds to the jump's size."""
         self.emit("ADD", "@--R13", "2", "R15", stub=stub)
         j = self.emit("MOVE", "R15", target, stub=stub)
         j.kind, j.targets, j.uses, j.defs = "call", [], frozenset(uses), defs
         if not stub:
-            self.flag_val = None  # the call changes the flags (§9.3)
+            self.flag_val = None  # the call changes the flags (ABI.md)
 
     def call(self, label: str, ft: FuncType, at: int, what: str,
              fwd: Optional[Tuple[List[str], Optional[Deferred]]] = None,
              dest: Optional[List[str]] = None) -> None:
         """Calls label with the arguments on top of the operand stack, by
-        the rules of §9.3, and pushes the result, in dest if given. A label
+        the rules of ABI.md, and pushes the result, in dest if given. A label
         that is a register is called through it. With fwd, from forward(),
         the result goes to a local instead."""
         args = self.pop(list(ft.params), at, what)
@@ -3305,14 +3305,14 @@ class FunctionTranslator:
 
     def trap(self, code: int) -> None:
         """Jumps through ___wasm_trap_vector with the code in R1 and the
-        address of this code in R2 (§9.4)."""
+        address of this code in R2 (WASM.md)."""
         label = f"{self.t.prefix}f{self.idx}.t{self.n_traps}"
         self.n_traps += 1
         self.label(label)
         self.trap_jump(code, label)
 
     def trap_jump(self, code: int, start: str, stub: bool = False) -> None:
-        """Traps with the given code and R2 = start (§9.4): sets R2 and
+        """Traps with the given code and R2 = start (WASM.md): sets R2 and
         jumps to W.trapN, a helper for code N that sets R1 and jumps
         through ___wasm_trap_vector."""
         self.emit("MOVE", "R2", start, stub=stub)
@@ -3478,7 +3478,7 @@ class FunctionTranslator:
         words k: the address is a + 4 * k. With bounds checks, traps with
         code 2 unless all n bytes there are in the memory. A trap's R2 is
         the start of this code, the first instruction of the access
-        (§9.4). If bound knows that every value of base passes the
+        (WASM.md). If bound knows that every value of base passes the
         compare, there is none. If base is the constant const, and the n bytes are in the
         initial memory or there are no bounds checks, returns the address
         and emits no code. With fold, an offset that is a multiple of 4 may
@@ -3489,7 +3489,7 @@ class FunctionTranslator:
         if const is not None:
             addr = const + offset
             if not self.t.checks:
-                return addr & 0xFFFFFFFF, "", 0  # the address wraps modulo 2^32 (§9.4)
+                return addr & 0xFFFFFFFF, "", 0  # the address wraps modulo 2^32 (WASM.md)
             assert self.t.mem_bytes is not None
             if addr + n <= self.t.mem_bytes:
                 return addr, "", 0
@@ -3507,7 +3507,7 @@ class FunctionTranslator:
             return None, a, k
 
         if not self.t.checks:
-            # The address wraps modulo 2^32 (§9.4).
+            # The address wraps modulo 2^32 (WASM.md).
             if offset:
                 a = self.new_vreg()
                 self.emit("ADD", a, base, words(offset, I32)[0])
@@ -3639,7 +3639,7 @@ class FunctionTranslator:
         register passes the compare, there is no compare and no stub.
         Without bounds checks, an aligned base needs no check, but its t
         must be taken modulo 2^30, since the address wraps modulo 2^32
-        (§9.4), unless bound knows that t plus the offset is below 2^30.
+        (WASM.md), unless bound knows that t plus the offset is below 2^30.
         Returns the instructions that write the last result on each path,
         if there are results."""
         assert self.t.mem_bytes is not None
@@ -3863,7 +3863,7 @@ class FunctionTranslator:
 
     def call_indirect(self, type_idx: int, at: int, what: str) -> None:
         """Calls the function in the table entry whose index is on top of
-        the operand stack (§9.4). An index past the end of the table and an
+        the operand stack (WASM.md). An index past the end of the table and an
         empty entry trap with code 6, and an entry of another type with
         code 7."""
         ft = self.t.m.types[type_idx]
@@ -3920,7 +3920,7 @@ class FunctionTranslator:
     def trap_stub(self, code: int, start: str) -> str:
         """A stub after the epilogue that traps with the given code, and
         with R2 = start, the first instruction of the code for the wasm
-        instruction that traps (§9.4). Returns its label."""
+        instruction that traps (WASM.md). Returns its label."""
         label = self.new_label()
         self.label(label, stub=True)
         self.trap_jump(code, start, stub=True)
@@ -4053,7 +4053,7 @@ class FunctionTranslator:
     def divide(self, t: int, op: str, at: int, what: str) -> None:
         """A division or remainder, by the math unit for i32 unless it is
         turned off, else by a call to the runtime library. First
-        come the cases that wasm defines but C does not (§9.4): division by
+        come the cases that wasm defines but C does not (WASM.md): division by
         0 traps with code 3, and div_s of the most negative number by -1
         traps with code 4. rem_s by -1 is 0, without the call. A constant
         divisor other than 0 and -1 needs none of these checks, and an
@@ -4541,7 +4541,7 @@ class FunctionTranslator:
                 if imm >= len(self.t.m.imports) + len(self.t.m.funcs):
                     raise WasmError(f"function {self.idx}: function {imm} does not exist", at)
                 if imm < len(self.t.m.imports) and self.t.m.imports[imm].module == "nice":
-                    # One access, even if a peek's result is not used (§9.4).
+                    # One access, even if a peek's result is not used (WASM.md).
                     p = self.new_vreg()
                     if self.t.m.imports[imm].name == "peek":
                         (addr,) = self.pop([I32], at, "nice.peek")
@@ -4644,7 +4644,7 @@ class FunctionTranslator:
                     # Only the count modulo 32 matters to a rotation (§5.2).
                     self.emit("ROL" if shift == "rotl" else "ROR", d, a[0], b[0])
                 else:
-                    # Wasm takes the count modulo 32 (§9.4).
+                    # Wasm takes the count modulo 32 (WASM.md).
                     if count is not None:
                         c = str(count & 31)
                     else:
@@ -5010,7 +5010,7 @@ class FunctionTranslator:
     def finish(self) -> List[str]:
         """The back end: copies the parameters to their registers and sets
         the other locals to 0, allocates the registers, and adds the
-        prologue and the epilogue, which build and drop the §9.3 frame."""
+        prologue and the epilogue, which build and drop the ABI.md frame."""
         entry: List[Item] = []
         for i, (in_reg, first) in enumerate(self.args):
             for k, v in enumerate(self.locals[i]):
@@ -5080,7 +5080,7 @@ def main() -> None:
                     help="pages up to which memory.grow may grow the memory"
                          " (default: its initial size)")
     ap.add_argument("--library", metavar="NAME",
-                    help="translate a library module (ISA.md §9.4) with this name")
+                    help="translate a library module (WASM.md) with this name")
     ap.add_argument("--library-memory", metavar="BYTES", type=int,
                     help="bytes of a library module's memory to reserve"
                          " (default: as much as its data and stack need)")

@@ -5,7 +5,7 @@ ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
 
 # Each test/X.nasm is joined with a start-up file, lib.nasm, and
-# muldiv_mpu.nasm into one program, as ISA.md §9.3 describes. The program is
+# muldiv_mpu.nasm into one program, as ABI.md describes. The program is
 # assembled and run, and the output and exit status are compared with
 # test/X.expected. The tests in SOFT_TESTS run a second time as X_soft,
 # with muldiv_soft.nasm instead, and are compared with test/X_soft.expected.
@@ -81,7 +81,7 @@ test: emulator
 	@$(MAKE) --no-print-directory -C libc test
 
 # The float library, translated from float.wasm as the library module float
-# (ISA.md §9.4). Only float.wasm is checked in.
+# (WASM.md). Only float.wasm is checked in.
 float.nasm: float.wasm ../translator/nicewasm.py
 	$(PYTHON) ../translator/nicewasm.py --library float -o float.nasm float.wasm
 

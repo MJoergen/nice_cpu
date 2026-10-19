@@ -113,11 +113,11 @@ has TODO or FIXME comments.
 
 ## Toolchain
 
-- **A C compiler for NICE.** None targets NICE directly. ISA.md §9.3
+- **A C compiler for NICE.** None targets NICE directly. ABI.md
   defines the C ABI for one. Until then, C reaches NICE through wasm
   ([README.md](README.md), Compilers).
 - **A linker.** There is none. Programs are joined with `cat` and
-  assembled at once, so every label is global (ISA.md §9.3).
+  assembled at once, so every label is global (ABI.md).
 - **The C library is small** ([runtime/README.md](runtime/README.md#c-library)).
   Missing: float conversions in `printf` and `scanf`, which would pull in
   the float library; `FILE`, `stdin`, and `stdout`; `errno`; and `exit`,
@@ -137,7 +137,7 @@ has TODO or FIXME comments.
   tail calls `return_call` and `return_call_indirect`, SIMD, and
   exceptions.
 - **Stack overflow** is not detected in translated code, unlike in wasm.
-  What happens then is undefined (ISA.md §9.4). An idea: a check against a
+  What happens then is undefined (WASM.md). An idea: a check against a
   stack limit in each function's prologue, at a cost in code size.
 - **Faster and smaller translated code.** `bench/` runs 1730635
   instructions, against 491617 for `hand.nasm`, and takes about 2.28
@@ -173,7 +173,7 @@ has TODO or FIXME comments.
     without loop analysis on an intermediate form.
   - *Range analysis* beyond the bounds nicewasm keeps (masks, byte loads,
     shifts, and remainders), to drop the bounds checks of counted loops.
-  - ISA.md §9.4 could say where a trap's R2 points when nicewasm copies
+  - WASM.md could say where a trap's R2 points when nicewasm copies
     or moves code: at the first instruction of the original copy, and
     the code of a neighbouring access may lie between that instruction
     and the rest of the trapping instruction's code.

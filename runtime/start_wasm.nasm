@@ -1,4 +1,4 @@
-; Start-up code for a program with a wasm module (doc/ISA.md §9.3, §9.4).
+; Start-up code for a program with a wasm module (ABI.md, WASM.md).
 ; It is start.nasm with a call to ___wasm_start before main.
 
         .ORG    0

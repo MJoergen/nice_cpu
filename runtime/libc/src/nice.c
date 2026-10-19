@@ -1,4 +1,4 @@
-// The device routines of ISA.md §9.3, the only part of the library that
+// The device routines of ABI.md, the only part of the library that
 // touches hardware.
 #include <nice.h>
 

@@ -1,6 +1,6 @@
 //! Support for Rust code that reaches NICE through wasm: the device routines
-//! of ISA.md §9.3, which are imports from env and so the routines of
-//! lib.nasm, and the `nice` imports of ISA.md §9.4. It is the Rust
+//! of ABI.md, which are imports from env and so the routines of
+//! lib.nasm, and the `nice` imports of WASM.md. It is the Rust
 //! counterpart of the C library's nice.h, with a `core::fmt::Write`
 //! console and `print!` and `println!`, for `#![no_std]` programs. Mount it
 //! at the crate root as `nice`, so that `print!` and `println!` find it:
@@ -19,7 +19,7 @@ extern "C" {
     fn nice_poke(addr: u32, val: u32);
 }
 
-// The device routines of ISA.md §9.3. nice_print is left out: it takes a
+// The device routines of ABI.md. nice_print is left out: it takes a
 // string of one character per word, and Rust strings are bytes.
 #[link(wasm_import_module = "env")]
 extern "C" {

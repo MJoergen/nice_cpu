@@ -99,8 +99,7 @@ same work:
   translated `switch` does, not through addresses in the program.
 - The data layout is the natural one for a word-addressed machine. The
   byte buffer stays packed, four bytes to a word, as in linear memory.
-  The strings have one character per word, as a C `char` does in ISA.md
-  §9.3, the interpreter's program has one word per opcode or operand, and
+  The strings have one character per word, as a C `char` does in ABI.md, the interpreter's program has one word per opcode or operand, and
   pointers are word addresses. The tree's nodes are four words, as in the
   wasm version.
 - The C library routines of the strings phase are written inline.
@@ -119,7 +118,7 @@ The ratio of the instruction counts, translated to hand-written:
 
 What remains is in TODO.md, under "Faster and smaller translated code".
 A byte load of linear memory stays several instructions, since the
-memory is byte-addressed and packed four to a word (ISA.md §9.4).
+memory is byte-addressed and packed four to a word (WASM.md).
 
 On the multi-cycle core, which takes about ten cycles for a plain
 instruction, the two programs run like this:

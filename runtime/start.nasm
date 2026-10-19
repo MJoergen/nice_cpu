@@ -1,4 +1,4 @@
-; Start-up code for a program without a wasm module (doc/ISA.md §9.3).
+; Start-up code for a program without a wasm module (ABI.md).
 ; It sits at address 0, so it comes first in the program.
 ;
 ; SP starts at 0xFFFFFF00, one past the highest word below the I/O

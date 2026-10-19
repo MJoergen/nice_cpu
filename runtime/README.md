@@ -2,7 +2,7 @@
 
 The start-up code and the runtime routines that compiled C code and
 translated wasm code call. They follow the C ABI of
-[doc/ISA.md §9.3](../doc/ISA.md#93-c-abi).
+[ABI.md](ABI.md).
 
 ## Files
 
@@ -10,7 +10,7 @@ translated wasm code call. They follow the C ABI of
 |---|---|
 | `start.nasm` | Start-up code for a program without a wasm module. |
 | `start_wasm.nasm` | Start-up code for a program with a wasm module. It calls `___wasm_start` before `main`. |
-| `start_mon.nasm`, `start_wasm_mon.nasm` | The same two for a program that a monitor runs (ISA.md §9.3, "Programs under a monitor"): at `0x8000`, above the monitor's ROM, on the monitor's stack, and returning to the monitor instead of halting. |
+| `start_mon.nasm`, `start_wasm_mon.nasm` | The same two for a program that a monitor runs (ABI.md, "Programs under a monitor"): at `0x8000`, above the monitor's ROM, on the monitor's stack, and returning to the monitor instead of halting. |
 | `lib.nasm` | The runtime routines in assembly, except those below. |
 | `muldiv_mpu.nasm` | The multiply and divide routines: `__mul`, `__div`, `__mod`, `__udiv`, `__umod`, and their `64` versions, with the math unit of SYSTEM.md §2. |
 | `muldiv_soft.nasm` | The same routines in software, for a system without the math unit. |
@@ -47,7 +47,7 @@ halting. The start-up files are the only ones that use `.ORG`.
 | `__popcnt` | The number of 1 bits in R1. | R2 |
 
 The `long long` routines take their operands in R1:R2 and R3:R4, and
-return the result in R1:R2, each pair low word first (§9.3):
+return the result in R1:R2, each pair low word first (ABI.md):
 
 | Label | Result in R1:R2 | Changes |
 |---|---|---|
@@ -57,7 +57,7 @@ return the result in R1:R2, each pair low word first (§9.3):
 | `__clz64`, `__ctz64` | The number of leading or trailing 0 bits in R1:R2, 64 for 0. | none |
 | `__popcnt64` | The number of 1 bits in R1:R2. | R3, R4 |
 
-A routine may change R1–R6 and the flags, as §9.3 allows. The tables list
+A routine may change R1–R6 and the flags, as ABI.md allows. The tables list
 what each one actually changes in `lib.nasm` and `muldiv_soft.nasm`. The
 versions in `muldiv_mpu.nasm` change less: R5 for `__mul64`, nothing
 besides the result for the others, and not the flags. They change the
@@ -73,7 +73,7 @@ translated with `--no-mpu` must use `muldiv_soft.nasm`.
 Some labels are not C routines: the `__mpu.` names above, and
 `__udivmod` and `__udivmod64` in `muldiv_soft.nasm`, the unsigned divisions
 that the division routines share. Every label is global in the joined
-program (§9.3), so no other file may define these names either.
+program (ABI.md), so no other file may define these names either.
 
 Division by zero is undefined in C, so the division routines return some
 value for it and do not trap. The wasm translator checks for 0 before it
@@ -87,7 +87,7 @@ for example 292 steps for `__udiv` in `muldiv_soft.nasm` and 839 for
 longer the more bits their operand has. In `muldiv_mpu.nasm`, the one-word
 routines take 4 steps each, `__mul64` 10, and the other `long long` ones 7.
 
-`lib.nasm` also holds the wasm trap vector of ISA.md §9.4:
+`lib.nasm` also holds the wasm trap vector of WASM.md:
 
 | Label | What it is |
 |---|---|
@@ -96,7 +96,7 @@ routines take 4 steps each, `__mul64` 10, and the other `long long` ones 7.
 
 ## Device routines
 
-`lib.nasm` also has the device routines of ISA.md §9.3, for the console,
+`lib.nasm` also has the device routines of ABI.md, for the console,
 the performance counters, and the emulator's character screen. Programs
 call them instead of using the devices' addresses. They are C functions,
 so their labels are their C names with `_` in front.
@@ -131,10 +131,10 @@ The C library below has the same routines, in `nice.h`.
 ## Floating point
 
 NICE has no float instructions, so `float.nasm` does float arithmetic in
-software. It is the library module `float` of ISA.md §9.4: wasm code,
+software. It is the library module `float` of WASM.md: wasm code,
 translated by `nicewasm --library float`. Its routines take and return the
 bits of the numbers, an `f32` in one word and an `f64` in two, low word
-first, by the rules of §9.3. Most come unchanged from Zig's compiler_rt.
+first, by the rules of ABI.md. Most come unchanged from Zig's compiler_rt.
 `float.zig` adds those whose meaning differs from C's, or that compiler_rt
 has only with float instructions inside. It also has its own division,
 because compiler_rt's gives 0 when the quotient is subnormal.
@@ -177,7 +177,7 @@ program uses. So it adds nothing to the joined assembly files.
 | `string.h` | `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`, `strnlen`, `strcmp`, `strncmp`, `strcpy`, `strncpy`, `strcat`, `strncat`, `strchr`, `strrchr`, `strstr` |
 | `stdlib.h` | `malloc`, `calloc`, `realloc`, `free`, `abs`, `labs`, `llabs`, `atoi`, `atol`, `strtol`, `strtoul`, `abort` |
 | `ctype.h` | `isalnum`, `isalpha`, `iscntrl`, `isdigit`, `isgraph`, `islower`, `isprint`, `ispunct`, `isspace`, `isupper`, `isxdigit`, `tolower`, `toupper` |
-| `nice.h` | The device routines (see above): `nice_putc`, `nice_getc`, `nice_pollc`, `nice_print`, `nice_cycles`, `nice_instructions`, `nice_screen_put`, and `nice_screen_clear`. Also `nice_peek` and `nice_poke`, the `nice` imports of ISA.md §9.4, and the devices' addresses, for devices that have no routine. |
+| `nice.h` | The device routines (see above): `nice_putc`, `nice_getc`, `nice_pollc`, `nice_print`, `nice_cycles`, `nice_instructions`, `nice_screen_put`, and `nice_screen_clear`. Also `nice_peek` and `nice_poke`, the `nice` imports of WASM.md, and the devices' addresses, for devices that have no routine. |
 
 The device routines, in `src/nice.c`, are the only functions that touch
 hardware. They use `nice_peek` and `nice_poke`. `nice_print` writes the
@@ -207,7 +207,7 @@ The library is small on purpose:
   unknown conversion. `%p` prints `0x` and the address in hex, `0x0` for a
   null pointer.
 - No `errno`. `strtol` and `strtoul` saturate on overflow.
-- No `exit`. `abort` traps (ISA.md §9.4).
+- No `exit`. `abort` traps (WASM.md).
 - `malloc` is first fit, with an 8-byte header on each block, and merges
   neighbouring free blocks. The heap starts at wasm-ld's `__heap_base`
   and grows with `memory.grow`, so only up to nicewasm's
@@ -253,7 +253,7 @@ The preferred way is `nice.zig` or `nice.rs`, below.
 `nice.h` gives C code, with names and types that suit each language, and
 console output through the language's own formatting. They declare the
 routines as imports from `env`, which the translator calls at their labels
-(ISA.md §9.4), so the calls go to the assembly routines in `lib.nasm`.
+(WASM.md), so the calls go to the assembly routines in `lib.nasm`.
 `nice_print` is left out, since it takes one character per word; `write`
 prints a byte slice instead.
 

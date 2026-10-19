@@ -64,7 +64,7 @@ On seeds 1 to 30, a register read right after its write went from 16% to
 ## The size and speed of translated code
 
 The code of the translator is about half the size it was, after four steps with no change
-to ISA.md §9.4. Using locals and constants directly as
+to WASM.md. Using locals and constants directly as
 operands made `test/safe.zig` 19% smaller (12353 to 9941 words) and the
 float library 31% smaller (29569 to 20317). A short inline path for
 memory accesses made them 12% (to 8730) and 2.5% (to 19808) smaller

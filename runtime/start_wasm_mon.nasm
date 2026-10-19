@@ -1,5 +1,5 @@
 ; Start-up code for a program with a wasm module that a monitor runs
-; (doc/ISA.md §9.3, "Programs under a monitor", and §9.4). It is
+; (ABI.md, "Programs under a monitor", and WASM.md). It is
 ; start_mon.nasm with a call to ___wasm_start before main.
 
         .ORG    0x8000

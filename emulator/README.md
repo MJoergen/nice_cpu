@@ -55,7 +55,7 @@ line such as `Pending: IRQ 05` follows the first line.
 | `-2004` | Put the screen at `0x400`, as the 2004 emulator does. |
 | `-d`, `--dump ADDR:N` | After halting, print N memory words from ADDR. May be repeated. |
 | `-n`, `--max-steps N` | Stop after N steps. The default is 100000000. |
-| `-i`, `--input FILE` | Read the console's input from FILE instead of stdin. |
+| `-i`, `--input FILE` | Read the console's input from FILE instead of stdin. A directory is an error. |
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
 | `--no-cycle-counter` | Make `0xFFFFFF40` and `0xFFFFFF41`, the cycle counter, ordinary memory (see Memory map). |

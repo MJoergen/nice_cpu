@@ -209,6 +209,8 @@ CLAUDE.md asks for a test with every new rule. Commits fa3a8a7 (the instruction 
 
 `niceemu --input /tmp prog.bin` opens the directory (main.zig line 261), and every console read then returns `0x200`, because `cpu.zig` line 427 turns every read error into the end marker. The run exits 0 with no message. `test/errors.py` has cases for a missing value and a missing file, not for this. **Fix:** reject anything but a regular file or `-` after opening, with exit 1, or let `cpu.zig` fail on any error but end of stream; and add an `errors.py` case.
 
+**Resolved**: `niceemu` rejects a directory after opening it, with `cannot read DIR: IsDir` and exit status 1, and `errors.py` has the case. A read error on a pipe still reads as the end of the input.
+
 ### 6.2 The README's Interrupts section predates the timer
 
 `emulator/README.md` line 178: "No device raises IRQ or NMI yet." The timer has raised IRQ since commit 3125ba1, and the same README's memory map says so. **Fix:** "The timer (Memory map) is the only device that raises IRQ, and no device raises NMI."

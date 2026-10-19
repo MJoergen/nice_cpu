@@ -262,6 +262,18 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
         std.debug.print("niceemu: cannot read {s}: {s}\n", .{ opts.input, @errorName(err) });
         return error.Load;
     };
+    // A directory opens, but every read of it fails, which would pass for
+    // the end of the input.
+    if (!std.mem.eql(u8, opts.input, "-")) {
+        const stat = in_file.stat() catch |err| {
+            std.debug.print("niceemu: cannot read {s}: {s}\n", .{ opts.input, @errorName(err) });
+            return error.Load;
+        };
+        if (stat.kind == .directory) {
+            std.debug.print("niceemu: cannot read {s}: IsDir\n", .{opts.input});
+            return error.Load;
+        }
+    }
     // Streaming, so that stdin may be a terminal or a pipe. Nothing is read
     // until the program reads the console.
     in_r = in_file.readerStreaming(&in_buf);

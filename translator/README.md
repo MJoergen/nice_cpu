@@ -554,12 +554,15 @@ index does, a copy of i comes first, for the accesses. The allocator
 gives the copy the register of i if it can, and then removes it.
 
 nicewasm also keeps an upper bound on the unsigned value of some
-registers. `i32.and` with a constant m gives m, `i32.load8_u` and
-`i32.load16_u` give 255 and 65535, `i32.shr_u` by a constant k gives
-2^(32 - k) - 1, `i32.rem_u` by a constant c gives c - 1, and a constant
-gives itself. A copy keeps the bound of what it copies, and `i32.add`,
-`i32.or`, `i32.xor`, and `i32.shl` by a constant combine the bounds of
-their operands. Signed operations give no bound. A bound is dropped, as
+registers. A constant gives itself, and a value without a bound counts
+as 2^32 - 1. `i32.and` gives the smaller bound of its operands, so a
+constant mask m gives m. `i32.load8_u` and `i32.load16_u` give 255 and
+65535. `i32.shr_u` by a constant k, and `i32.div_u` by 2^k, give the
+bound of the value shifted right by k, so 2^(32 - k) - 1 at most.
+`i32.rem_u` by a constant c gives c - 1, or the bound of the value if c
+is a power of two and that is smaller. A copy keeps the bound of what it
+copies, and `i32.add`, `i32.or`, `i32.xor`, and `i32.shl` by a constant
+combine the bounds of their operands. Signed operations give no bound. A bound is dropped, as
 what nicewasm knows of t is, when its register is written, and at a
 label that a jump may reach. A call changes no virtual register, so a
 bound lasts across it. If the bound of the register that a word access

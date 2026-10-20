@@ -9,21 +9,26 @@ the translator's output and the core, phase by phase, not for comparing
 NICE with other processors.
 
     make            # run both on the emulator and print their tables
+    make dhry       # run Dhrystone 2.1 on the emulator
     make test       # the same, and check every result
     make core       # run both on the pipelined core in GHDL (about 40 minutes)
     make core CORE=multicycle  # the same on the multi-cycle core (about 40 minutes)
+    make core-dhry  # run Dhrystone on a core in GHDL, CORE as above, and check it (4 minutes)
     make hazards    # count the pipeline hazards of MICROARCH.md §5 in both
     make cycles     # estimate the cycles of both on the pipelined core of MICROARCH.md
     make profile    # the same, charged to the source lines, in build/*.cyc.txt
     make compare    # the estimate beside the pipelined core's cycles, after make core
     make words      # the size in words of the benchmark, safe.zig, and float modules
     make native     # build and run bench.c on the host, as a check
-    make wasm       # rebuild bench.wasm from bench.c (needs clang)
+    make wasm       # rebuild bench.wasm and dhrystone/dhry.wasm (needs clang)
 
-`bench.wasm` is checked in, so `make` and `make test` need only Python 3
-and the emulator, as the translator's tests do. `make wasm` needs clang
-with the wasm32 target and wasm-ld, and it builds `runtime/libc/libc.a`
-first.
+`dhrystone/` is Dhrystone 2.1, the classic benchmark for comparing
+small processors, ported to the C library (see Dhrystone below).
+
+`bench.wasm` and `dhrystone/dhry.wasm` are checked in, so `make` and
+`make test` need only Python 3 and the emulator, as the translator's
+tests do. `make wasm` needs clang with the wasm32 target and wasm-ld, and
+it builds `runtime/libc/libc.a` first.
 
 ## The phases
 
@@ -366,3 +371,46 @@ To change a size, edit its define in `bench.c` and its equate in
 `hand.nasm`, run `python3 expected.py` and put its values in both files,
 then `make wasm`. A smaller `VM_LOOPS` or `ARR_WORDS` is the quickest way
 to a shorter run on the core.
+
+## Dhrystone
+
+`dhrystone/` holds Dhrystone 2.1 by Reinhold P. Weicker: `dhry.h`,
+`dhry_1.c`, and `dhry_2.c`, from his 1990 posting to alt.sources, as
+extracted in [Keith-S-Thompson/dhrystone](https://github.com/Keith-S-Thompson/dhrystone)
+(`v2.1`). It is the benchmark that small processors publish numbers
+for. It needs `malloc`, `strcpy`, `strcmp`, `printf`, and `scanf` from
+the C library, and reads the number of runs from the console,
+`dhrystone/dhry.input`.
+
+The port is a system of its own, `NICE`, beside the original's `TIMES`,
+`TIME`, and `MSC_CLOCK`, and changes only lines under `#ifdef NICE`, and
+one `#ifndef` in `dhry.h` that would otherwise choose `TIMES`. The timer
+is `nice_cycles`. The original prints its results with `%f`, which the C
+library cannot print, and needs a run of two seconds. The port prints
+the cycles of all the runs and of one run, and the Dhrystone MIPS per
+MHz, 10⁶ / (1757 × cycles per run), with three decimals in integer
+arithmetic, for any number of runs.
+
+The sources are K&R C, so `make wasm` compiles them as C89. It follows
+the ground rules in `dhry.h`: `dhry_1.c` and `dhry_2.c` are compiled
+separately, and `-fno-inline` keeps the procedures apart. Inlining them
+would take about 7% off the instructions. `main` returns no value, so R1 means
+nothing at the end.
+
+`dhrycheck.py` checks the output: each of the 22 final values against
+the "should be" line under it, with `Number_Of_Runs + 10` for
+`Arr_2_Glob[8][7]`, and the three result lines. `make test` runs it on
+the emulator's output and `make core-dhry` on the core's.
+
+100 runs, measured at commit 06cfabb:
+
+| Where | Cycles per run | DMIPS/MHz |
+|---|---|---|
+| emulator (one cycle per instruction) | 1559 | 0.365 |
+| multi-cycle core | 17948 | 0.031 |
+| pipelined core | 2348 | 0.242 |
+
+The emulator's row counts instructions. For comparison, Arm gives 0.87
+DMIPS/MHz for the Cortex-M0 under the ground rules. The translation
+through wasm accounts for much of the gap, judging by the ratios of
+`hand.nasm` above.

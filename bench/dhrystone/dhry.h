@@ -346,7 +346,7 @@
 
 /* Compiler and system dependent definitions: */
 
-#ifndef TIME
+#if !defined(TIME) && !defined(NICE)
 #undef TIMES
 #define TIMES
 #endif

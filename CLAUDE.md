@@ -29,6 +29,7 @@ translator, and two FPGA cores. See README.md.
   results, timed with the performance counters. `hand.nasm` is the same
   benchmark written by hand, the ceiling to compare with. `expected.py`
   computes the results in Python, and `make test` checks both against them.
+  `dhrystone/` is Dhrystone 2.1 on the C library, checked by `dhrycheck.py`.
 - `hdl/`: VHDL-2008, GHDL. Two cores with the same ports, but for the
   pipelined one's `stats_o`: the pipelined one of
   MICROARCH.md in `src/pipeline.vhd`, the default, which connects

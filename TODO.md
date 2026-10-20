@@ -139,10 +139,7 @@ TODO or FIXME comments.
     may trap, and compares the console output, the halt, the registers,
     and the memory. The model has no `memory.grow`, no floats, and no
     functions with several results; `make diff` covers the first.
-- **Benchmarks beyond [bench/](bench/README.md).** Dhrystone 2.1 would
-  give a number to compare the core with other small processors, once it
-  runs on a board. It needs `malloc`, `strcpy`, `strcmp`, and `printf`
-  from the small C library, and `nice_cycles` in place of its clock. A
+- **Benchmarks beyond [bench/](bench/README.md)** and its Dhrystone. A
   subset of Embench-IoT, such as `crc32`, `matmult-int`, `huffbench`, and
   `nettle-sha256`, has published results for small RISC-V and Arm cores,
   but its harness is GPL-3, so it would live outside this repository.

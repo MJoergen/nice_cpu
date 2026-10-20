@@ -60,6 +60,12 @@ extern long     time();
 extern clock_t	clock();
 #define Too_Small_Time (2*HZ)
 #endif
+#ifdef NICE
+#include <nice.h>
+                /* for nice_cycles, the cycle counter */
+unsigned long long Begin_Cycles,
+                   End_Cycles;
+#endif
 
 long            Begin_Time,
                 End_Time,
@@ -142,6 +148,9 @@ main ()
 #ifdef MSC_CLOCK
   Begin_Time = clock();
 #endif
+#ifdef NICE
+  Begin_Cycles = nice_cycles ();
+#endif
 
   for (Run_Index = 1; Run_Index <= Number_Of_Runs; ++Run_Index)
   {
@@ -203,6 +212,9 @@ main ()
 #ifdef MSC_CLOCK
   End_Time = clock();
 #endif
+#ifdef NICE
+  End_Cycles = nice_cycles ();
+#endif
 
   printf ("Execution ends\n");
   printf ("\n");
@@ -257,6 +269,26 @@ main ()
   printf ("        should be:   DHRYSTONE PROGRAM, 2'ND STRING\n");
   printf ("\n");
 
+#ifdef NICE
+  /* The cycle counter has no granularity to speak of, so any number   */
+  /* of runs gives a result. No floats, which printf cannot print:     */
+  /* the Dhrystone MIPS per MHz, 10^6 / (1757 * cycles per run), has   */
+  /* three decimals in integer arithmetic. 1757 is the Dhrystones per  */
+  /* second of the VAX 11/780, the 1 MIPS machine.                     */
+  {
+    unsigned long long Cycles = End_Cycles - Begin_Cycles;
+    unsigned long long Milli =
+        1000000000ull * Number_Of_Runs / (1757ull * Cycles);
+
+    printf ("Cycles for %d runs through Dhrystone: %llu\n",
+            Number_Of_Runs, Cycles);
+    printf ("Cycles for one run through Dhrystone:      %llu\n",
+            Cycles / Number_Of_Runs);
+    printf ("Dhrystone MIPS per MHz:                    %llu.%03llu\n",
+            Milli / 1000, Milli % 1000);
+    printf ("\n");
+  }
+#else
   User_Time = End_Time - Begin_Time;
 
   if (User_Time < Too_Small_Time)
@@ -283,6 +315,7 @@ main ()
     printf ("%6.1f \n", Dhrystones_Per_Second);
     printf ("\n");
   }
+#endif
   
 }
 

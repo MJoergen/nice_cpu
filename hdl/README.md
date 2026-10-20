@@ -203,7 +203,8 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
 - The three 2004 examples `count`, `replicate`, and `print`, and `wrap`, from
   `assembler/test/`.
 - The emulator's probes in `emulator/test/`, `cputest` among them, with the
-  interrupt options that `emulator/Makefile` gives them. Their memory dumps
+  interrupt options that `emulator/Makefile` gives them, but `scrbound`,
+  which checks the emulator's screen. Their memory dumps
   are left out, because the trace lists every memory write. The trace does
   not list data reads, but `reads` counts them with the read counter, so
   its registers show whether the core made each read exactly once and in
@@ -310,7 +311,7 @@ shares. With `--generator`, it measures another version of
 
 `make programs` runs the test programs of the runtime and of the
 translator on the core (MICROARCH.md §9, step 6). It is not part of
-`make test`, because it takes minutes: about 2 million steps in 196
+`make test`, because it takes minutes: some 2 million steps in 448
 programs, at GHDL's 3300 steps a second, on all cores. CI runs it on
 both. `make test KEEP=DIR`
 in `runtime/` and `test/run.py --keep DIR` in `translator/` run their

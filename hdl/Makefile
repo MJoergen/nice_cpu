@@ -101,7 +101,8 @@ CORES ?= multicycle pipeline
 # stalls in 30% of the cycles.
 EXAMPLES = count replicate print wrap
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest \
-  console screen iofetch reads reserved mpu mpu64 perf timer input
+  console screen iofetch reads reserved mpu mpu64 perf timer input \
+  r15modes r0dest r14mem skipconst carryin shiftc wrapmem smcown
 INTR_irq   = --nmi 2:1 --irq 2:2 --nmi 9:1 --irq 17:2 --nmi 17:1 --irq 100:2
 INTR_merge = --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
 INTR_after = --nmi 3:1 --nmi 10:1

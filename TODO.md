@@ -4,8 +4,45 @@ This is the single list of open items for the repository: work not done
 yet, questions not decided, claims not checked, and ideas for later. Each
 item names where it comes from. Add new items here, not in other files.
 
-Every finding of the reviews in [doc/review/](doc/review/) is closed.
 No code has TODO or FIXME comments.
+
+## From the fourth repository review (2026-10-20)
+
+The findings of [doc/review/fourth-repository-review.md](doc/review/fourth-repository-review.md)
+that are not closed yet. Every finding of the earlier reviews is closed.
+
+- **Four bugs, each with a test that fails until it is fixed** (§1.2,
+  §3.2 to §3.4): `niceasm.py` opens its output file outside the `try`
+  that turns an `OSError` into a one-line message; `snprintf(NULL, 0,
+  ...)` of the C library prints to the console; `malloc` of a size near
+  2³² returns a pointer into the heap; and `strtoul` does not negate a
+  value that is exactly `ULONG_MAX`.
+- **Documents** (§1.3, §2, §4.4): ISA.md §10 could say that `INT`,
+  `.BLK`, and `.RES` take a value before it wraps; SYSTEM.md §1 that the
+  emulator and the simulation memory never return 0 for a console read
+  with no byte waiting; and the translator's README that an unreadable
+  input and the overwrite check print without `error:`, and that
+  `early_exit` has a length limit.
+- **The assembler** could warn about a lone unknown word that it reads
+  as a label, and report an undefined symbol in an `.EQU` that nothing
+  uses (§1.3).
+- **A failing C library test** stops `make -C runtime/libc test` before
+  the line that removes the tests' build files, which git does not
+  ignore (§3.6).
+- **`nice.rs`** has no test of `poke` and of `pollc` returning a byte,
+  until a rustc is at hand to rebuild `runtime/test/nicers.wasm` (§3.5).
+- **The fuzzer of the translator** still has no blocks with several
+  values and no traps in its model (§4.3).
+- **The math unit's products** (§6.5): `hdl/formal/mpu.sby` proves that a
+  product read is never stale, not that `*` and the signed correction
+  compute the product, and the dividers up to the lemma that shift and
+  add multiplies, because neither Yices nor Boolector can compare two
+  32-bit multipliers. A solver with a multiplier theory, or the lemma
+  proven by hand beside the job, would close it.
+- **CI's formal tools** (§6.5): the jobs of the shared functions, DECODE,
+  the performance counters, the fetch statistics, and the math unit ran
+  with Yosys 0.56 and GHDL 6.0 only. CI's Yosys 0.33 and GHDL 4.1 have
+  not run them.
 
 ## FPGA core
 
@@ -52,20 +89,23 @@ No code has TODO or FIXME comments.
     sent astray. `make random` runs one seed at a time; `programs.py`
     could run them in parallel.
 - **Formal checks with SymbiYosys** (MICROARCH.md §9). `make formal` proves
-  the ports of the multi-cycle core, the timer, and the data bus decoder,
-  and FETCH of the pipelined core, for every cycle. For the
-  whole pipelined core it checks the ports and the core's own assertions,
-  the data access rule among them, only for the first 8 cycles after
-  reset ([hdl/README.md](hdl/README.md)). FETCH, PREPARE,
-  and DBUS are also proved alone, for every cycle. Open: a proof of
-  DECODE alone (its handshake with FETCH and PREPARE); WRITE is mostly ISA
-  semantics, which the trace diff checks better. A proof of the whole core
-  for every cycle, which needs invariants that tie the stages together;
-  and the order of the data accesses checked against a model of the
-  program, not only through the tests. That a halted core makes no data
-  bus request is proved for the multi-cycle core only. In the pipelined
-  core, PREPARE and WRITE start a data access only in `RUN_ST`, but no
-  proof says so.
+  the ports of the multi-cycle core and the data bus decoder, the timer,
+  the math unit, the performance counters, the fetch statistics, and
+  FETCH, DECODE, PREPARE, and DBUS of the pipelined core, for every
+  cycle, and the shifter, the ALU, and the block compares of the store
+  check for every input. For the whole pipelined core it checks the ports
+  and the core's own assertions, the data access rule among them, only
+  for the first 8 cycles after reset ([hdl/README.md](hdl/README.md)).
+  Open: WRITE is mostly ISA semantics, which the trace diff checks
+  better, and only the bounded check covers it, so that a halted core
+  makes no store or vector read is proved for 8 cycles only, where
+  PREPARE's reads and FETCH's requests are proved for every cycle. A
+  proof of the whole core for every cycle, which needs invariants that
+  tie the stages together; and the order of the data accesses checked
+  against a model of the program, not only through the tests. With Yosys
+  0.56 the bounded check reaches 12 cycles in 13 minutes, where CI's
+  Yosys 0.33 did not finish 9 in 20; the depth can grow when CI's tools
+  do.
 
 ## Devices
 

@@ -48,6 +48,7 @@ from wasm import (F32, F32_ABS, F32_COPYSIGN, F32_LOAD, F32_NEG, F32_REINTERPRET
                   F64, F64_ABS, F64_COPYSIGN, F64_LOAD, F64_NEG, F64_REINTERPRET_I64, F64_STORE,
                   I32_REINTERPRET_F32, I64_REINTERPRET_F64, const)
 from wasm import ROTL, ROTL64, ROTR, ROTR64, SHL, SHL64, SHR_S, SHR_S64, SHR_U, SHR_U64
+from wasm import name as wname, section, u, vec
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.join(HERE, "..", "..")
@@ -288,7 +289,25 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "foldsharetrap": "MOVE @___wasm_memory+2121[R8], R1",
          "libfoldtrap": "SUB[M] R0, R1, 8",
          "foldteetrap": "MOVE @___wasm_memory+2121[R8], R1",
-         "boundtrap": "SUB[M] R0, R1, 256"}
+         "boundtrap": "SUB[M] R0, R1, 256",
+         "divzero_dyn": "MOVE[M] R0, R2",
+         "divzero64_dyn": "OR[M] R0, R3, R4",
+         "overflow_dyn": "MOVE[M] R0, R2",
+         "overflow64_dyn": "OR[M] R0, R3, R4",
+         "trunc_u64_big": "MOVE R1, 0x5F800000",
+         "trunc_u64_neg": "MOVE R2, 0x43F00000",
+         "trunc_u32_neg": "MOVE R1, 0x4F800000",
+         "trunc_s64_big": "MOVE R2, 0x43E00000",
+         "fillzerooob": "ADD[M] R1, 65537, 0",
+         "copyzerooob": "ADD[M] R1, 0, 0",
+         "copydestzerooob": "ADD[M] R1, 65537, 0",
+         "fillwrap": "ADD[M] R1, 16, -16",
+         "bigoffbyte": "MOVE R2, {R2}",
+         "bigoffword": "MOVE R2, {R2}",
+         "elemnull": "SUB[M] R0, 2, 6",
+         "elemneg": "SUB[M] R0, -1, 6",
+         "growzerotrap": "SHR R2, R3, 2",
+         "growzerotrap8": "ROR R2, R1, 2"}
 
 # Cases whose translation, without its comment lines, must match a
 # pattern, or must not: name -> (pattern, whether it must match). A word access that needs no compare
@@ -339,7 +358,15 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "memend_grow": ["--memory-pages", "2"],
            "library": ["--library", "lib"],
            "libtrap": ["--library", "lib"],
-           "libmem": ["--library", "lib", "--library-memory", "128"]}
+           "libmem": ["--library", "lib", "--library-memory", "128"],
+           "bigoff_unchecked": ["--no-bounds-checks"],
+           "growneg": ["--memory-pages", "2"],
+           "bulk_unchecked": ["--no-bounds-checks"],
+           "grow_unchecked": ["--no-bounds-checks", "--memory-pages", "3"],
+           "library_unchecked": ["--library", "lib", "--no-bounds-checks"],
+           "growzero": ["--memory-pages", "1"],
+           "growzerotrap": ["--memory-pages", "1"],
+           "growzerotrap8": ["--memory-pages", "1"]}
 
 # What a case must print on the console (SYSTEM.md §1). Every other case
 # must print nothing.
@@ -654,6 +681,99 @@ SHIFT64_EDGES: List[Tuple[int, bytes, int, int]] = [
     (0x80000001_00000003, ROTR64, 36, 0x10000000_38000000),
     (0x80000001_00000003, ROTL64, 64, 0x80000001_00000003),
 ]
+
+
+def c32(x: int) -> bytes:
+    """i32.const of x, taken modulo 2^32."""
+    x &= 0xFFFFFFFF
+    return i32_const(x - 2**32 if x >= 2**31 else x)
+
+
+def c64(x: int) -> bytes:
+    """i64.const of x, taken modulo 2^64."""
+    x &= 2**64 - 1
+    return i64_const(x - 2**64 if x >= 2**63 else x)
+
+
+def dyn32(a: int, op: bytes, b: int, want: int) -> bytes:
+    """op32, with a and b in the i32 locals 1 and 2, so that neither is a
+    constant (DYN_LOCALS)."""
+    return (c32(a) + local_set(1) + c32(b) + local_set(2) + local_get(1) + local_get(2) + op
+            + c32(want) + EQ)
+
+
+def dyn64(a: int, op: bytes, b: int, want: int) -> bytes:
+    """op64, with a and b in the i64 locals 3 and 4."""
+    return (c64(a) + local_set(3) + c64(b) + local_set(4) + local_get(3) + local_get(4) + op
+            + c64(want) + EQ64)
+
+
+# The locals of the cases that use dyn32 and dyn64: local 0 for bits().
+DYN_LOCALS = [I32, I32, I32, I64, I64]
+
+
+def main_of(body: bytes, mem: bool = False) -> bytes:
+    """A module whose main has the locals DYN_LOCALS and the given body,
+    with a memory of one page if mem."""
+    return module(types(MAIN_TYPE), funcs(0), *([memory(1)] if mem else []),
+                  exports(("main", 0, 0)), code((DYN_LOCALS, body)))
+
+
+def div_trap(t: int, a: int, op: bytes, b: int) -> bytes:
+    """A module whose main calls f(a, b) = a op b, so that the operands are
+    f's parameters, in R1 and R2, or R1-R2 and R3-R4 for an i64."""
+    k = c32 if t == I32 else c64
+    return module(types(MAIN_TYPE, ([t, t], [t])), funcs(1, 0), exports(("main", 0, 1)),
+                  code((0, local_get(0) + local_get(1) + op),
+                       (0, k(a) + k(b) + call(0) + (WRAP if t == I64 else b""))))
+
+
+def trunc_trap(code_: bytes) -> bytes:
+    """A module whose main is code_, a conversion that traps."""
+    return module(types(MAIN_TYPE), funcs(0), exports(("main", 0, 0)), code((0, code_)))
+
+
+DIV_S, DIV_U, REM_S, REM_U = b"\x6d", b"\x6e", b"\x6f", b"\x70"
+DIV_S64, DIV_U64, REM_S64, REM_U64 = b"\x7f", b"\x80", b"\x81", b"\x82"
+
+
+# Element segments of every active and declarative form, for elem_case.
+# Functions 1 and 2 are inc(x) = x + 1 and dbl(x) = 2x. Flags 2 names
+# table 0 and puts inc at entry 0. Flags 6 names the table too, and its
+# elements are expressions: dbl at 1, and a ref.null at 2. Flags 3 and 7
+# are declarative, and change nothing. Flags 4 puts a ref.null at 3.
+# Flags 0 puts dbl at 4, and the next segment inc over it. Entry 5 is
+# not set. So the table is inc, dbl, null, null, inc, null.
+ELEM_FORMS = [
+    b"\x02" + u(0) + i32_const(0) + END + b"\x00" + vec([u(1)]),
+    b"\x06" + u(0) + i32_const(1) + END + b"\x70" + vec([b"\xd2" + u(2) + END, b"\xd0\x70" + END]),
+    b"\x03" + b"\x00" + vec([u(2)]),
+    b"\x07" + b"\x70" + vec([b"\xd2" + u(2) + END]),
+    b"\x04" + i32_const(3) + END + vec([b"\xd0\x70" + END]),
+    b"\x00" + i32_const(4) + END + vec([u(2)]),
+    b"\x00" + i32_const(4) + END + vec([u(1)]),
+]
+
+
+def elem_case(body: bytes) -> bytes:
+    """A module with the table of ELEM_FORMS, whose main is body with one
+    i32 local, and a data segment with the flags 2 and memory 0, which
+    puts 42 at byte 0."""
+    return module(
+        types(MAIN_TYPE, ([I32], [I32])),
+        funcs(0, 1, 1),
+        table(6),
+        memory(1),
+        exports(("main", 0, 0)),
+        section(9, vec(ELEM_FORMS)),
+        code((1, body), (0, local_get(0) + i32_const(1) + ADD),
+             (0, local_get(0) + local_get(0) + ADD)),
+        section(11, vec([b"\x02" + u(0) + i32_const(0) + END + vec([b"\x2a"])])))
+
+
+# f(a, b, c, d, e, g, h, i, j, k) of manyparams: a, c, g, i, and k are
+# i32, b, d, and h i64, e f64, and j f32.
+MANY_TYPE: Tuple[List[int], List[int]] = ([I32, I64, I32, I64, F64, I32, I64, I32, F32, I32], [I64])
 
 
 def op64_dyn(a: int, op: bytes, b: int, want: int) -> bytes:
@@ -2610,7 +2730,521 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         code((0, global_get(0) + i32_const(10) + MUL + i32_const(1) + ADD + global_set(0)),
              (0, global_get(0) + i32_const(10) + MUL + i32_const(2) + ADD + global_set(0)),
              (0, global_get(0)))), "", 12),
+    # Division and remainder with both operands in locals, so that
+    # nicewasm checks the divisor when the code runs (README.md), one bit
+    # each. MIN is the most negative number. Rounding is toward 0, and a
+    # remainder has the sign of the dividend:
+    ("divdyn", main_of(bits(0,
+        dyn32(-7, DIV_S, -1, 7),                            # by -1, not MIN: no trap
+        dyn32(-7, REM_S, -1, 0),
+        dyn32(0x80000000, REM_S, -1, 0),                    # MIN % -1 = 0
+        dyn32(-7, DIV_U, -1, 0),                            # 0xFFFFFFF9 / 0xFFFFFFFF
+        dyn32(-7, REM_U, -1, -7),
+        dyn32(7, DIV_S, -2, -3),
+        dyn32(7, REM_S, -2, 1),
+        dyn32(-7, REM_S, -2, -1),
+        dyn32(-7, DIV_S, -2, 3),
+        dyn32(0x80000000, DIV_S, 1, 0x80000000),
+        dyn32(0x80000000, DIV_S, 2, 0xC0000000),            # -2^30
+        dyn32(0xFFFFFFFF, DIV_U, 0x80000000, 1),
+        dyn32(0xFFFFFFFF, REM_U, 0x80000000, 0x7FFFFFFF),
+        # x = 0x12345678_9ABCDEF0: x / -1 = -x.
+        dyn64(0x12345678_9ABCDEF0, DIV_S64, -1, 0xEDCBA987_65432110),
+        dyn64(0x12345678_9ABCDEF0, REM_S64, -1, 0),
+        dyn64(2**63, REM_S64, -1, 0),                       # MIN % -1 = 0
+        # -1 in the low word alone: MIN / (2^32 - 1) = -2^31 rem -2^31,
+        # as (2^32 - 1) * 2^31 = 2^63 - 2^31.
+        dyn64(2**63, DIV_S64, 0xFFFFFFFF, 0xFFFFFFFF_80000000),
+        dyn64(2**63, REM_S64, 0xFFFFFFFF, 0xFFFFFFFF_80000000),
+        # -1 in the high word alone: MIN / -2^32 = 2^31.
+        dyn64(2**63, DIV_S64, 0xFFFFFFFF_00000000, 0x80000000),
+        # A divisor whose low word is 0 is not 0.
+        dyn64(0x5_00000007, DIV_U64, 0x1_00000000, 5),
+        dyn64(0x5_00000007, REM_U64, 0x1_00000000, 7),
+        dyn64(-7, REM_S64, 2, -1),
+        dyn64(7, REM_S64, -2, 1),
+        dyn64(0x12345678_9ABCDEF0, DIV_U64, -1, 0),
+        dyn64(0x12345678_9ABCDEF0, REM_U64, -1, 0x12345678_9ABCDEF0),
+        dyn64(-1, DIV_U64, -1, 1),
+        dyn64(-1, DIV_S64, 0x1_00000000, 0),                # -1 / 2^32 rounds to 0
+        dyn64(-1, REM_S64, 0x1_00000000, -1),
+        # A check that fails. 28 ones, then 0.
+        dyn32(7, DIV_U, 2, 4))), "", 0x1FFFFFFE),
+    # The traps of divdyn's checks, with the operands in f's parameters:
+    # 5 % 0, 5 / 0 for an i64, and MIN / -1 for both. R2 points at the
+    # first check, of the divisor in R2, or R3 and R4.
+    ("divzero_dyn", div_trap(I32, 5, REM_S, 0), "", 3),
+    ("divzero64_dyn", div_trap(I64, 5, DIV_U64, 0), "", 3),
+    ("overflow_dyn", div_trap(I32, 0x80000000, DIV_S, -1), "", 4),
+    ("overflow64_dyn", div_trap(I64, 2**63, DIV_S64, -1), "", 4),
+    # The conversions that floatconv does not reach, one bit each. Some
+    # bits: 1e10 as an f64 is 0x4202A05F20000000, 1e20 as an f32
+    # 0x60AD78EC, 4.5e9 as an f32 0x4F861C46, 3.9 as an f64
+    # 0x400F333333333333, -3.7 as an f32 0xC06CCCCD.
+    ("floatconv2", main_of(bits(0,
+        bits32(c64(-1) + fop(0xB4), 0xBF800000),                       # f32.convert_i64_s -1
+        bits32(c64(2**63 - 1) + fop(0xB4), 0x5F000000),                # rounds to 2^63
+        bits32(c64(2**63) + fop(0xB4), 0xDF000000),                    # -2^63
+        bits32(c64(-1) + fop(0xB5), 0x5F800000),                       # f32.convert_i64_u: 2^64
+        # 2^63 + 2^39 + 1 is more than half an f32 step, 2^40, above 2^63,
+        # so it rounds up. Rounded to an f64 first, it would lose the 1,
+        # become a tie, and round to the even 2^63.
+        bits32(c64(0x80000080_00000001) + fop(0xB5), 0x5F000001),
+        bits32(c64(2**24 + 1) + fop(0xB5), 0x4B800000),                # a tie, to the even 2^24
+        bits64(c32(0xFFFFFFFF) + fop(0xB8), 0x41EFFFFFFFE00000),       # f64.convert_i32_u
+        bits64(c32(0x80000000) + fop(0xB8), 0x41E0000000000000),       # 2^31
+        f64(0x3FF0000000000000) + f64(0x3FF0000000000000) + fop(0x61),  # f64.eq: 1 == 1
+        f64(0x7FF8000000000000) + f64(0x7FF8000000000000) + fop(0x61) + EQZ,  # NaN == NaN is 0
+        f64(0x8000000000000000) + f64(0) + fop(0x61),                   # -0 == 0
+        f64(0x4008000000000000) + f64(0x4000000000000000) + fop(0x64),  # f64.gt: 3 > 2
+        f64(0x7FF8000000000000) + f64(0x3FF0000000000000) + fop(0x64) + EQZ,  # NaN > 1 is 0
+        bits64(c64(0x7FF8000000000001) + fop(0xBF), 0x7FF8000000000001),  # f64.reinterpret_i64
+        f64(0xC202A05F20000000) + fop(0x102) + c32(0x80000000) + EQ,   # i32.trunc_sat_f64_s -1e10
+        f64(0x4202A05F20000000) + fop(0x102) + c32(0x7FFFFFFF) + EQ,   # 1e10
+        f64(0x7FF8000000000000) + fop(0x102) + EQZ,                    # NaN
+        f64(0xC004000000000000) + fop(0x102) + c32(-2) + EQ,           # -2.5
+        f64(0xBFF0000000000000) + fop(0x103) + EQZ,                    # i32.trunc_sat_f64_u -1
+        f64(0x4202A05F20000000) + fop(0x103) + c32(0xFFFFFFFF) + EQ,   # 1e10
+        f64(0x41EFFFFFFFE00000) + fop(0x103) + c32(0xFFFFFFFF) + EQ,   # 2^32 - 1 fits
+        f64(0x400F333333333333) + fop(0x103) + c32(3) + EQ,            # 3.9
+        f32(0x4F861C46) + fop(0x101) + c32(0xFFFFFFFF) + EQ,           # i32.trunc_sat_f32_u 4.5e9
+        f32(0x5F000000) + fop(0xAF) + c64(2**63) + EQ64,               # i64.trunc_f32_u 2^63
+        # A check that fails. 24 ones, then 0.
+        bits32(c64(-1) + fop(0xB4), 0x3F800000))), "", 0x1FFFFFE),
+    ("floatconv3", main_of(bits(0,
+        f32(0xBF000000) + fop(0xAF) + EQZ64,                           # -0.5 fits, as 0
+        f32(0x3FC00000) + fop(0xAF) + c64(1) + EQ64,                   # 1.5
+        # 2^64 - 2^11, the largest f64 below 2^64.
+        f64(0x43EFFFFFFFFFFFFF) + fop(0xB1) + c64(0xFFFFFFFF_FFFFF800) + EQ64,  # i64.trunc_f64_u
+        f64(0xBFECCCCCCCCCCCCD) + fop(0xB1) + EQZ64,                   # -0.9 fits, as 0
+        f32(0xDF000000) + fop(0xAE) + c64(2**63) + EQ64,               # i64.trunc_f32_s: -2^63 fits
+        f32(0x60AD78EC) + fop(0x104) + c64(2**63 - 1) + EQ64,          # i64.trunc_sat_f32_s 1e20
+        f32(0xFF800000) + fop(0x104) + c64(2**63) + EQ64,              # -inf
+        f32(0x7FC00000) + fop(0x104) + EQZ64,                          # NaN
+        f32(0xC06CCCCD) + fop(0x104) + c64(-3) + EQ64,                 # -3.7
+        f32(0xC0A00000) + fop(0x105) + EQZ64,                          # i64.trunc_sat_f32_u -5
+        f32(0x7F800000) + fop(0x105) + c64(-1) + EQ64,                 # +inf
+        f64(0x43F0000000000000) + fop(0x107) + c64(-1) + EQ64,         # i64.trunc_sat_f64_u 2^64
+        f64(0x3FF8000000000000) + fop(0x107) + c64(1) + EQ64,          # 1.5
+        f64(0x7FF8000000000000) + fop(0x107) + EQZ64,                  # NaN
+        f64(0x43E0000000000000) + fop(0x106) + c64(2**63 - 1) + EQ64,  # i64.trunc_sat_f64_s 2^63
+        # select without a type, on an f32 and on an f64.
+        bits32(f32(0x3F800000) + f32(0x40000000) + i32_const(0) + SELECT, 0x40000000),
+        bits64(f64(0x3FF0000000000000) + f64(0x4000000000000000) + i32_const(1) + SELECT,
+               0x3FF0000000000000),
+        # A check that fails. 17 ones, then 0.
+        f32(0x3FC00000) + fop(0xAF) + c64(2) + EQ64)), "", 0x3FFFE),
+    # trunc traps with code 5 for 2^64 as an unsigned i64, -1 as an
+    # unsigned i64 and i32, and 2^63 as a signed i64. Each trunc's code
+    # starts with the move of its limit for a positive value (TRUNC_OPS),
+    # 0x5F800000, 0x43F00000_00000000, 0x4F800000, and 0x43E00000_00000000.
+    ("trunc_u64_big", trunc_trap(f32(0x5F800000) + fop(0xAF) + WRAP), "", 5),
+    ("trunc_u64_neg", trunc_trap(f64(0xBFF0000000000000) + fop(0xB1) + WRAP), "", 5),
+    ("trunc_u32_neg", trunc_trap(f32(0xBF800000) + fop(0xA9)), "", 5),
+    ("trunc_s64_big", trunc_trap(f64(0x43E0000000000000) + fop(0xB0) + WRAP), "", 5),
+    # Blocks with several results and with parameters, one bit each. Type
+    # 1 is () -> (i32, i64), 2 (i32, i64) -> (i64, i32), 3 (i32, i32) ->
+    # (i32, i32), and 4 () -> (f64, i32). L is 0x5_00000007.
+    ("multivalue", module(
+        types(MAIN_TYPE, ([], [I32, I64]), ([I32, I64], [I64, I32]), ([I32, I32], [I32, I32]),
+              ([], [F64, I32])),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((DYN_LOCALS, bits(0,
+            # 3 and L at the end of the block, then through a br from above 99.
+            block(typeidx(1)) + i32_const(3) + c64(0x5_00000007) + END
+            + c64(0x5_00000007) + EQ64 + local_set(2) + i32_const(3) + EQ + local_get(2) + AND,
+            block(typeidx(1)) + i32_const(99) + i32_const(3) + c64(0x5_00000007) + br(0) + END
+            + c64(0x5_00000007) + EQ64 + local_set(2) + i32_const(3) + EQ + local_get(2) + AND,
+            # A br_if that is taken carries 4 and 0x6_00000008, one that
+            # is not leaves them, and the block ends with 6 and
+            # 0x9_0000000A instead.
+            block(typeidx(1)) + i32_const(4) + c64(0x6_00000008) + i32_const(1) + br_if(0)
+            + DROP + DROP + i32_const(0) + c64(0) + END
+            + c64(0x6_00000008) + EQ64 + local_set(2) + i32_const(4) + EQ + local_get(2) + AND,
+            block(typeidx(1)) + i32_const(4) + c64(0x6_00000008) + i32_const(0) + br_if(0)
+            + DROP + DROP + i32_const(6) + c64(0x9_0000000A) + END
+            + c64(0x9_0000000A) + EQ64 + local_set(2) + i32_const(6) + EQ + local_get(2) + AND,
+            # An if of type 2 on 10 and 20: taken, it gives 21 and 12,
+            # else 7 and 8.
+            *[i32_const(10) + c64(20) + i32_const(cond) + if_(typeidx(2))
+              + local_set(3) + local_set(1) + local_get(3) + c64(1) + ADD64
+              + local_get(1) + i32_const(2) + ADD
+              + ELSE + DROP + DROP + c64(7) + i32_const(8) + END
+              + i32_const(w32) + EQ + local_set(2) + c64(w64) + EQ64 + local_get(2) + AND
+              for cond, w64, w32 in [(1, 21, 12), (0, 7, 8)]],
+            # A loop of type 3 takes the count and the sum, and its br_if
+            # carries both back: 5 rounds give 5 and 1 + ... + 5 = 15.
+            i32_const(0) + i32_const(0) + loop(typeidx(3))
+            + local_set(2) + local_set(1) + local_get(1) + i32_const(1) + ADD + local_tee(1)
+            + local_get(2) + local_get(1) + ADD + local_get(1) + i32_const(5) + LT_U + br_if(0)
+            + END + i32_const(15) + EQ + local_set(2) + i32_const(5) + EQ + local_get(2) + AND,
+            # br_table carries 5 and 0x1_00000002 to the inner block,
+            # which adds 100, for index 0, else to the outer one.
+            *[block(typeidx(1)) + block(typeidx(1)) + i32_const(5) + c64(0x1_00000002)
+              + i32_const(index) + br_table([0], 1) + END
+              + local_set(3) + i32_const(100) + ADD + local_get(3) + END
+              + c64(0x1_00000002) + EQ64 + local_set(2) + i32_const(want) + EQ + local_get(2) + AND
+              for index, want in [(0, 105), (1, 5), (7, 5)]],
+            # A block of type 2 swaps its parameters, 1 and 2, by a br.
+            i32_const(1) + c64(2) + block(typeidx(2)) + local_set(3) + local_set(1)
+            + local_get(3) + local_get(1) + br(0) + END
+            + i32_const(1) + EQ + local_set(2) + c64(2) + EQ64 + local_get(2) + AND,
+            # An f64 below an i32.
+            block(typeidx(4)) + f64(0x4000000000000000) + i32_const(9) + END
+            + i32_const(9) + EQ + local_set(2)
+            + I64_REINTERPRET_F64 + c64(0x4000000000000000) + EQ64 + local_get(2) + AND,
+            # A check that fails. 12 ones, then 0.
+            i32_const(0))))), "", 0x1FFE),
+    # Blocks whose parameter is a local's value, which the block then
+    # changes: the parameter keeps the old value, 3, so each gives 3 +
+    # 100 = 103. An if without else of type (i32, i32) -> (i32, i32)
+    # passes 3 and 4 on, 3 + 10 * 4 = 43, or swaps them, 4 + 10 * 3 =
+    # 34. 5 ones, then a check that fails.
+    ("blockparams", module(
+        types(MAIN_TYPE, ([I32], [I32]), ([I32, I32], [I32, I32])),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((DYN_LOCALS, bits(0,
+            *[i32_const(3) + local_set(1) + local_get(1) + kind(typeidx(1))
+              + i32_const(100) + local_set(1) + local_get(1) + ADD + END + i32_const(103) + EQ
+              for kind in (block, loop)],
+            i32_const(3) + local_set(1) + local_get(1) + i32_const(1) + if_(typeidx(1))
+            + i32_const(100) + local_set(1) + local_get(1) + ADD + ELSE + i32_const(1) + ADD
+            + END + i32_const(103) + EQ,
+            *[i32_const(3) + local_set(1) + i32_const(4) + local_set(2) + local_get(1)
+              + local_get(2) + i32_const(cond) + if_(typeidx(2)) + local_set(1) + local_set(2)
+              + local_get(1) + local_get(2) + END + i32_const(10) + MUL + ADD + i32_const(want) + EQ
+              for cond, want in [(0, 43), (1, 34)]],
+            i32_const(0))))), "", 0x3E),
+    # A range of 0 bytes past the end of the memory traps too: wasm traps
+    # if d + n is past the end, for d, and for s of memory.copy. So do 16
+    # + 0xFFFFFFF0 bytes, whose end passes 2^32. R2 points at the ADD of
+    # the first check.
+    ("fillzerooob", main_of(fill(65537, 0, 0) + i32_const(0), True), "", 2),
+    ("copyzerooob", main_of(copy(0, 65537, 0) + i32_const(0), True), "", 2),
+    ("copydestzerooob", main_of(copy(65537, 0, 0) + i32_const(0), True), "", 2),
+    ("fillwrap", main_of(fill(16, 0, -16) + i32_const(0), True), "", 2),
+    # An offset of 65536 puts every access past the end of one page, so
+    # the code of a byte load and of a word load at a base in a local only
+    # traps.
+    ("bigoffbyte", main_of(i32_const(0) + local_set(1) + local_get(1) + mem(I32_LOAD8_U, 65536),
+                           True), "", 2),
+    ("bigoffword", main_of(i32_const(0) + local_set(1) + local_get(1) + mem(I32_LOAD, 65536),
+                           True), "", 2),
+    # Without bounds checks, base + offset wraps modulo 2^32 (WASM.md).
+    # Bytes 4 to 15 are 11 22 ... CC, from three stores. The bases are in
+    # local 1, so they are not constants. One bit each:
+    ("bigoff_unchecked", main_of(
+        st(I32_STORE, 4, 0x44332211) + st(I32_STORE, 8, 0x88776655 - 2**32)
+        + st(I32_STORE, 12, 0xCCBBAA99 - 2**32) + bits(0,
+            i32_const(8) + local_tee(1) + mem(I32_LOAD, 0xFFFFFFFC) + c32(0x44332211) + EQ,  # 4
+            local_get(1) + mem(I32_LOAD8_U, 0xFFFFFFFD) + i32_const(0x22) + EQ,              # 5
+            local_get(1) + mem(I32_LOAD16_U, 0xFFFFFFFE) + i32_const(0x4433) + EQ,           # 6
+            local_get(1) + mem(I32_LOAD, 0xFFFFFFFD) + c32(0x55443322) + EQ,                 # 5
+            i32_const(16) + local_tee(1) + mem(I64_LOAD, 0xFFFFFFF8)
+            + c64(0xCCBBAA99_88776655) + EQ64,                                               # 8
+            i32_const(20) + local_tee(1) + c32(0x12345678) + mem(I32_STORE, 0xFFFFFFFC)      # 16
+            + ld(I32_LOAD, 16, 0x12345678),
+            i32_const(30) + local_tee(1) + i32_const(0xAB) + mem(I32_STORE8, 0xFFFFFFFF)     # 29
+            + ld(I32_LOAD8_U, 29, 0xAB),
+            # A check that fails. 7 ones, then 0.
+            i32_const(0)), True), "", 0xFE),
+    # i32 shifts and rotates by counts in a local, which nicewasm masks
+    # with an AND, one bit each. The count is taken modulo 32. 11 ones,
+    # then a check that fails.
+    ("dynshift", main_of(bits(0, *[dyn32(*row) for row in [
+        (0x80000001, SHL, 32, 0x80000001),
+        (1, SHL, 33, 2),
+        (0x80000000, SHR_U, 63, 1),
+        (0x80000000, SHR_S, 63, 0xFFFFFFFF),
+        (0x80000000, SHR_S, 0xFFFFFFFF, 0xFFFFFFFF),
+        (0x40000000, SHR_S, 32, 0x40000000),
+        (0x80000001, ROTL, 33, 3),
+        (0x80000001, ROTR, 0xFFFFFFFF, 3),                  # rotr 31 = rotl 1
+        (0x12345678, ROTL, 0, 0x12345678),
+        (0x12345678, ROTR, 32, 0x12345678),
+        (0x12345678, ROTR, 4, 0x81234567),
+        (1, SHL, 1, 1)]])), "", 0xFFE),
+    # The bit counts at their edges, and the extensions and wrap of a
+    # local, one bit each. 22 ones, then a check that fails.
+    ("bitcounts", main_of(bits(0,
+        un32(0x68, 0, 32),                                  # ctz
+        un32(0x69, 0, 0),                                   # popcnt
+        un32(0x69, 0xFFFFFFFF, 32),
+        un32(0x67, 0xFFFFFFFF, 0),                          # clz
+        un32(0x67, 0x00008000, 16),
+        un64(0x79, 0, 64),                                  # clz
+        un64(0x79, 1, 63),
+        un64(0x79, 0x10000, 47),
+        un64(0x79, 2**64 - 1, 0),
+        un64(0x7A, 0, 64),                                  # ctz
+        un64(0x7A, 2**63, 63),
+        un64(0x7A, 0x10, 4),
+        un64(0x7B, 0, 0),                                   # popcnt
+        un64(0x7B, 0x80000001_00000001, 3),
+        c32(0x00F00000) + local_tee(1) + b"\x67" + i32_const(8) + EQ,
+        c64(0x00000100_00000000) + local_tee(3) + b"\x7a" + c64(40) + EQ64,
+        local_get(3) + b"\x79" + c64(23) + EQ64,
+        c32(-1) + local_set(1) + local_get(1) + EXTEND_U + c64(0xFFFFFFFF) + EQ64,
+        local_get(1) + EXTEND_S + c64(-1) + EQ64,
+        c32(0x7FFFFFFF) + local_set(1) + local_get(1) + EXTEND_S + c64(0x7FFFFFFF) + EQ64,
+        c64(0xFFFFFFFF_00000001) + local_set(3) + local_get(3) + WRAP + i32_const(1) + EQ,
+        c64(0x12345678_87654321) + local_set(3) + local_get(3) + b"\xc4"
+        + c64(0xFFFFFFFF_87654321) + EQ64,
+        un32(0x69, 1, 0))), "", 0x7FFFFE),
+    # 40 i32 values, each local 0 + k, and 10 i64 values, each local 1 + k,
+    # on the operand stack across a call of f, which returns 1000, so that
+    # most are spilled to frame words. Then all are added: 40 * 3 + (0 +
+    # ... + 39) = 900, and 1000. The i64s sum to 10 * 0x1_00000001 + 45 =
+    # 0xA_00000037, whose words add 0x37 + 0xA = 65. 900 + 1000 + 65 =
+    # 1965.
+    ("deepstack", module(
+        types(MAIN_TYPE),
+        funcs(0, 0),
+        exports(("main", 0, 1)),
+        code((0, i32_const(1000)),
+             ([I32, I64], i32_const(3) + local_set(0) + c64(0x1_00000001) + local_set(1)
+              + b"".join(local_get(0) + i32_const(k) + ADD for k in range(40))
+              + b"".join(local_get(1) + c64(k) + ADD64 for k in range(10))
+              + call(0) + local_set(0)
+              + ADD64 * 9 + local_tee(1) + WRAP + local_get(1) + c64(32) + SHR_U64 + WRAP + ADD
+              + local_get(0) + ADD + ADD * 40))), "", 1965),
+    # f(a, b, c, d, e, g, h, i, j, k) of MANY_TYPE: a, b, and c fill
+    # R1-R4, d would need R4 and R5, so it and all after it go on the
+    # stack (ABI.md). f first sets k = k + 1, a stack parameter, then
+    # returns b + 2d + 4h + (a + 8c + 16g + 32i + 64k) + 128 bits(e) +
+    # 256 bits(j). wrap passes its parameters on to f through the table,
+    # and adds 1. main calls wrap with 1, 2^40, 2, 2^41, 1.0, 3, 3 * 2^40,
+    # 4, 2.0, and 5: 17 * 2^40 + (1 + 16 + 48 + 128 + 384) + 128 *
+    # 0x3FF00000_00000000 + 256 * 0x40000000 + 1. 128 * 0x3FF << 52 is
+    # 31 << 59 modulo 2^64, so that is 0xF8000000_00000000 +
+    # 0x1100_00000000 + 0x40_00000000 + 578 = 0xF8001140_00000242. main
+    # returns whether it got that.
+    ("manyparams", module(
+        types(MAIN_TYPE, MANY_TYPE),
+        funcs(1, 1, 0),
+        table(1),
+        exports(("main", 0, 2)),
+        elems((0, [0])),
+        code((0, local_get(9) + i32_const(1) + ADD + local_set(9)
+              + local_get(1) + local_get(3) + c64(2) + b"\x7e" + ADD64
+              + local_get(6) + c64(4) + b"\x7e" + ADD64
+              + local_get(0) + local_get(2) + i32_const(8) + MUL + ADD
+              + local_get(5) + i32_const(16) + MUL + ADD + local_get(7) + i32_const(32) + MUL + ADD
+              + local_get(9) + i32_const(64) + MUL + ADD + EXTEND_U + ADD64
+              + local_get(4) + I64_REINTERPRET_F64 + c64(128) + b"\x7e" + ADD64
+              + local_get(8) + I32_REINTERPRET_F32 + EXTEND_U + c64(256) + b"\x7e" + ADD64),
+             (0, b"".join(local_get(n) for n in range(10)) + i32_const(0) + call_indirect(1)
+              + c64(1) + ADD64),
+             (0, i32_const(1) + c64(2**40) + i32_const(2) + c64(2**41) + f64(0x3FF0000000000000)
+              + i32_const(3) + c64(3 * 2**40) + i32_const(4) + f32(0x40000000) + i32_const(5)
+              + call(1) + c64(0xF8001140_00000242) + EQ64))), "", 1),
+    # rsum(n, a, b, c, d, e) = a + b + c + d + e if n = 0, else rsum(n - 1,
+    # b, c, d, e, a + n), with d and e on the stack. Each call adds n to
+    # the sum, so rsum(10, 1, 2, 3, 4, 5) = 15 + 55 = 70. fib(n) = n if n
+    # < 2, else fib(n - 1) + fib(n - 2), so fib(20) = 6765. 70 + 6765 =
+    # 6835.
+    ("recursion", module(
+        types(MAIN_TYPE, ([I32] * 6, [I32]), ([I32], [I32])),
+        funcs(1, 2, 0),
+        exports(("main", 0, 2)),
+        code((0, local_get(0) + EQZ + if_(I32)
+              + local_get(1) + local_get(2) + ADD + local_get(3) + ADD + local_get(4) + ADD
+              + local_get(5) + ADD
+              + ELSE + local_get(0) + i32_const(1) + SUB + local_get(2) + local_get(3)
+              + local_get(4) + local_get(5) + local_get(1) + local_get(0) + ADD + call(0) + END),
+             (0, local_get(0) + i32_const(2) + LT_U + if_(I32) + local_get(0)
+              + ELSE + local_get(0) + i32_const(1) + SUB + call(1)
+              + local_get(0) + i32_const(2) + SUB + call(1) + ADD + END),
+             (0, i32_const(10) + i32_const(1) + i32_const(2) + i32_const(3) + i32_const(4)
+              + i32_const(5) + call(0) + i32_const(20) + call(1) + ADD))), "", 6835),
+    # find(x) returns the first i with i * i >= x, by a return from inside
+    # a loop, a block, and an if, with 77 below on the operand stack and i
+    # live across a call of id(x) = x. find(50) = 8, find(1) = 1, and
+    # find(0) = 0. g(x) returns 0x7_00000000 + x from two loops deep, with
+    # an i64 and an i32 below. 8 * 100 + 1 * 10 + 0 + the low word of g(5),
+    # 5, is 815.
+    ("retloop", module(
+        types(MAIN_TYPE, ([I32], [I32]), ([I32], [I64])),
+        funcs(1, 1, 2, 0),
+        exports(("main", 0, 3)),
+        code((0, local_get(0)),
+             ([I32], i32_const(77) + loop() + block() + local_get(1) + call(0) + local_tee(1)
+              + local_get(1) + MUL + local_get(0) + GE_U + if_() + local_get(1) + RETURN + END
+              + END + local_get(1) + i32_const(1) + ADD + local_set(1) + br(0) + END),
+             (0, c64(1) + i32_const(2) + loop() + loop(I64) + local_get(0) + EXTEND_U
+              + c64(0x7_00000000) + ADD64 + RETURN + END + DROP + END + DROP + DROP + c64(0)),
+             (0, i32_const(50) + call(1) + i32_const(100) + MUL + i32_const(1) + call(1)
+              + i32_const(10) + MUL + ADD + i32_const(0) + call(1) + ADD + i32_const(5) + call(2)
+              + WRAP + ADD))), "", 815),
+    # The table of ELEM_FORMS, one bit each: entry 0 is inc, inc(5) = 6,
+    # entry 1 dbl, 10, entry 4 inc, which overwrote dbl, 6, and the data
+    # segment put 42 at byte 0. 1111, then a check that fails. Entry 2
+    # holds a ref.null, and -1 is past the end of the table, so both
+    # trap with code 6.
+    ("elemforms", elem_case(bits(0,
+        i32_const(5) + i32_const(0) + call_indirect(1) + i32_const(6) + EQ,
+        i32_const(5) + i32_const(1) + call_indirect(1) + i32_const(10) + EQ,
+        i32_const(5) + i32_const(4) + call_indirect(1) + i32_const(6) + EQ,
+        i32_const(0) + mem(I32_LOAD8_U) + i32_const(42) + EQ,
+        i32_const(0))), "", 0x1E),
+    ("elemnull", elem_case(i32_const(5) + i32_const(2) + call_indirect(1)), "", 6),
+    ("elemneg", elem_case(i32_const(5) + i32_const(-1) + call_indirect(1)), "", 6),
+    # memory.grow with up to 2 pages, one bit each: growing by -1 or by
+    # 2^31 pages fails, and must not wrap the size, which stays 1. Growing
+    # by 2 fails, as only 1 page is left. Growing by 1 returns the old
+    # size, 1, and the size is then 2. 111111, then a check that fails.
+    ("growneg", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, bits(0,
+            i32_const(-1) + MEMORY_GROW + i32_const(-1) + EQ,
+            MEMORY_SIZE + i32_const(1) + EQ,
+            c32(0x80000000) + MEMORY_GROW + i32_const(-1) + EQ,
+            i32_const(2) + MEMORY_GROW + i32_const(-1) + EQ,
+            i32_const(1) + MEMORY_GROW + i32_const(1) + EQ,
+            MEMORY_SIZE + i32_const(2) + EQ,
+            i32_const(0))))), "", 0x7E),
+    # Imports with stack arguments: sum6(a, b, c, d, e, f) = a + b + c +
+    # d + e - f, with e and f on the stack, and mix(x, y, z) = x + y - z
+    # of three i64s, with y in R3 and R4 and z on the stack (ABI.md).
+    # sum6(1, 2, 3, 4, 50, 600) = -540, and mix(0x1_00000001,
+    # 0x2_00000002, 4) = 0x2_FFFFFFFF. 11, then a check that fails.
+    ("importargs", module(
+        types(MAIN_TYPE, ([I32] * 6, [I32]), ([I64] * 3, [I64])),
+        imports(("env", "sum6", 1), ("env", "mix", 2)),
+        funcs(0),
+        exports(("main", 0, 2)),
+        code((1, bits(0,
+            b"".join(i32_const(v) for v in (1, 2, 3, 4, 50, 600)) + call(0) + c32(-540) + EQ,
+            c64(0x1_00000001) + c64(0x2_00000002) + c64(4) + call(1) + c64(0x2_FFFFFFFF) + EQ64,
+            i32_const(0))))),
+     "_sum6 ADD R1, R1, R2\n ADD R1, R1, R3\n ADD R1, R1, R4\n ADD R1, R1, @1[R13]\n"
+     " SUB R1, R1, @2[R13]\n MOVE R15, @R13++\n"
+     "_mix ADD[M] R1, R1, R3\n ADD[C] R2, R2, R4\n SUB[M] R1, R1, @1[R13]\n"
+     " SUB[C] R2, R2, @2[R13]\n MOVE R15, @R13++\n", 6),
+    # main is hand-written and calls the exported f(a, b, c, d) = b + d - a
+    # - c, of the types i32, i64, i32, and i64, with a in R1, b in R2-R3, c
+    # in R4, and d on the stack, low word first (ABI.md). f(3,
+    # 0x2_00000050, 5, 0x7_00000100) = 0x9_00000148, and main returns its
+    # low word less its high one: 0x148 - 9 = 319.
+    ("exportabi", module(
+        types(([I32, I64, I32, I64], [I64])),
+        funcs(0),
+        exports(("f", 0, 0)),
+        code((0, local_get(1) + local_get(3) + ADD64 + local_get(0) + EXTEND_U + SUB64
+              + local_get(2) + EXTEND_U + SUB64))),
+     "_main MOVE @--R13, 7\n MOVE @--R13, 0x100\n MOVE R1, 3\n MOVE R2, 0x50\n MOVE R3, 2\n"
+     " MOVE R4, 5\n ADD @--R13, 2, R15\n MOVE R15, _f\n ADD R13, R13, 2\n SUB R1, R1, R2\n"
+     " MOVE R15, @R13++\n", 319),
+    # An immutable i32 global, 41, and mutable i64 and f32 globals, set to
+    # 0x1_00000002 + 0x2_00000003 = 0x3_00000005 and to 2.0. 111, then a
+    # check that fails.
+    ("globals2", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        typed_globals((I32, False, 41), (I64, True, 0x1_00000002), (F32, True, 0x3F800000)),
+        exports(("main", 0, 0), ("ro", 3, 0)),
+        code((1, global_get(1) + c64(0x2_00000003) + ADD64 + global_set(1)
+              + i32_const(0x40000000) + F32_REINTERPRET_I32 + global_set(2)
+              + bits(0,
+                     global_get(0) + i32_const(41) + EQ,
+                     global_get(1) + c64(0x3_00000005) + EQ64,
+                     global_get(2) + I32_REINTERPRET_F32 + i32_const(0x40000000) + EQ,
+                     i32_const(0))))), "", 0xE),
+    # The start function reads a byte that a data segment sets, after
+    # ___wasm_start has set the memory to 0, so g = 1 + 42 = 43.
+    ("startdata", module(
+        types(MAIN_TYPE, ([], [])),
+        funcs(1, 0),
+        memory(1),
+        globals_(1),
+        exports(("main", 0, 1)),
+        start(0),
+        code((0, global_get(0) + i32_const(100) + mem(I32_LOAD8_U) + ADD + global_set(0)),
+             (0, global_get(0))),
+        data((100, b"\x2a"))), "", 43),
+    # The start function is an import, init, which sets the exported
+    # global flag to 5.
+    ("startimport", module(
+        types(MAIN_TYPE, ([], [])),
+        imports(("env", "init", 1)),
+        funcs(0),
+        globals_(0),
+        exports(("main", 0, 1), ("flag", 3, 0)),
+        start(0),
+        code((0, global_get(0)))), "_init MOVE @_flag, 5\n MOVE R15, @R13++\n", 5),
+    # A name section that ends in the middle of a name is ignored, since a
+    # custom section must not make a module invalid.
+    ("badnames", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((0, i32_const(3))),
+        section(0, wname("name") + b"\x01\x05\x01\x00\x09ab")), "", 3),
+    # An i64.mul by a constant whose result goes to a local by local.tee
+    # and stays on the stack: x = 5, x * 3 = 15, plus the local: 30.
+    ("multee", main_of(c64(5) + local_set(3) + local_get(3) + c64(3) + b"\x7e" + local_tee(4)
+                       + local_get(4) + ADD64 + WRAP), "", 30),
+    # bulk, memsize's grow, and the library without bounds checks, which
+    # give the same results.
+    ("library_unchecked", LIB_MODULE, LIB_ASM.format("MOVE R1, 21", "___twice", "MOVE R0, R0"), 42),
+    # The flags say what a comparison's result in a local is, until the
+    # local is written (README.md). x = 5, and local 1 = x < 7 = 1, one
+    # bit each, by an if:
+    # 0: local 1 is then set to 0.
+    # 1: local 3 is a copy of local 1, which is then set to 0.
+    # 0: the same, and local 3 is then set to 0 too.
+    # 1: local 1 = x < 7 by local.tee, then local 1 = x, 5.
+    # 01010 = 0xA, the last a check that fails.
+    ("flagstale", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((4, bits(0,
+            as_if(i32_const(5) + local_set(2) + local_get(2) + i32_const(7) + LT_U + local_set(1)
+                  + i32_const(0) + local_set(1) + local_get(1)),
+            as_if(local_get(2) + i32_const(7) + LT_U + local_set(1) + local_get(1) + local_set(3)
+                  + i32_const(0) + local_set(1) + local_get(3)),
+            as_if(local_get(2) + i32_const(7) + LT_U + local_set(1) + local_get(1) + local_set(3)
+                  + i32_const(0) + local_set(1) + i32_const(0) + local_set(3) + local_get(3)),
+            as_if(local_get(2) + i32_const(7) + LT_U + local_tee(1) + DROP + local_get(2)
+                  + local_set(1) + local_get(1)),
+            i32_const(0))))), "", 0xA),
+    # A memory of 0 pages that may grow to 1, one bit each: its size is 0,
+    # memory.grow 1 returns 0, and the size is then 1. An i64 at the last 8
+    # bytes, and the byte at 65535, the high byte of the i64's high word,
+    # 0x01234567, work, with the bases in local 1. 11111, then a check
+    # that fails. Before memory.grow, every limit of the checks is 0, so
+    # a byte load and an i64 load at 0 trap with code 2.
+    ("growzero", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(0),
+        exports(("main", 0, 0)),
+        code((DYN_LOCALS, bits(0,
+            MEMORY_SIZE + EQZ,
+            i32_const(1) + MEMORY_GROW + EQZ,
+            MEMORY_SIZE + i32_const(1) + EQ,
+            i32_const(65528) + local_tee(1) + c64(0x01234567_89ABCDEF) + mem(I64_STORE)
+            + local_get(1) + mem(I64_LOAD) + c64(0x01234567_89ABCDEF) + EQ64,
+            i32_const(65535) + local_tee(1) + mem(I32_LOAD8_U) + i32_const(0x01) + EQ,
+            i32_const(0))))), "", 0x3E),
+    *[(name, module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(0),
+        exports(("main", 0, 0)),
+        code((DYN_LOCALS, i32_const(0) + local_set(1) + local_get(1) + load))), "", 2)
+      for name, load in [("growzerotrap", mem(I32_LOAD8_U)),
+                         ("growzerotrap8", mem(I64_LOAD) + WRAP)]],
 ]
+# bulk and grow again without bounds checks, which give the same results.
+CASES += [(name + "_unchecked", wasm, extra, expected) for name, wasm, extra, expected in CASES
+          if name in ("bulk", "grow")]
 
 
 def run(cmd: List[str]) -> str:

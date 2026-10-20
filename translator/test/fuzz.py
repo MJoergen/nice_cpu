@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A random test of nicewasm against a model of wasm written in Python.
 
-Usage: fuzz.py [--no-mpu] [--reduce] FIRST COUNT
+Usage: fuzz.py [--no-mpu] [--unchecked] [--grow] [--reduce] FIRST COUNT
 
 Each case is a module built from a random syntax tree. Every node of the
 tree emits its wasm bytes and evaluates itself in Python with the
@@ -17,7 +17,10 @@ i32. Each has 8 to 13 locals, i32 and i64, so that with the values on
 the operand stack some live in registers and some are spilled to the
 frame. The bodies use blocks,
 loops, if and else, br, br_if, and br_table with and without values,
-select, calls and call_indirect, every integer operation and comparison,
+return, nop, both forms of select, calls and call_indirect, every
+integer operation and comparison, global.get and global.set of mutable
+i32 and i64 globals and global.get of an immutable one,
+memory.fill and memory.copy, whose ranges may overlap,
 comparisons kept in a local by local.tee for later conditions, a
 br_if out of the function at its start, eqz
 before if and br_if, i64 shifts by constants and by variables, groups
@@ -30,19 +33,24 @@ and constants that may be negative, or with a masked index i = x & m,
 some near the end of the memory, and local.set and local.tee of locals
 whose old value is still on the operand stack. That covers the rules for
 deferred values, fused comparisons, forwarded results, and register
-allocation in README.md. main returns a fold of every local and of 18 memory
-words, so a wrong value anywhere shows. Two locals of each function are
+allocation in README.md. main returns a fold of every local, of 18 memory
+words, and of the globals, so a wrong value anywhere shows. Two locals of each function are
 loop counters that nothing else touches, so every loop ends.
 
 With --no-mpu, nicewasm is run with that option and the program is joined
-with muldiv_soft.nasm instead of muldiv_mpu.nasm. With --reduce, FIRST is
+with muldiv_soft.nasm instead of muldiv_mpu.nasm. With --unchecked,
+nicewasm is run with --no-bounds-checks, and with --grow with
+--memory-pages 2, so that the bounds checks compare with the words that
+memory.grow keeps. No access is out of bounds, so the result is the same
+in every mode. With --reduce, FIRST is
 a failing seed: statements are removed from the functions while the
 mismatch persists, and the reduced module and its translation are written
 to fuzz_FIRST.wasm and fuzz_FIRST.nasm in the current directory.
 
 This test does not replace run.py, whose cases are checked by hand. It
 is cheap to run on many seeds, and it found three bugs while it was
-written, all three in the model. make test runs 40 seeds in each mode."""
+written, all three in the model. make test runs 40 seeds with the math
+unit and 40 with --no-mpu, and 20 with --unchecked and 20 with --grow."""
 
 from __future__ import annotations
 
@@ -55,10 +63,11 @@ import sys
 import tempfile
 from typing import Callable, Dict, List, Optional, Tuple
 
-from wasm import (ADD, AND, DROP, ELSE, END, EXTEND_S, EXTEND_U, I32, I64, LT_U, OR, SELECT,
-                  SHR_U64, WRAP, block, br, br_if, br_table, call, call_indirect, code, data,
-                  elems, exports, funcs, i32_const, i64_const, if_, local_get, local_set,
-                  local_tee, loop, mem, memory, module, table, types)
+from wasm import (ADD, AND, DROP, ELSE, END, EXTEND_S, EXTEND_U, I32, I64, LT_U, MEMORY_COPY,
+                  MEMORY_FILL, NOP, OR, RETURN, SELECT, SHR_U64, WRAP, block, br, br_if, br_table,
+                  call, call_indirect, code, data, elems, exports, funcs, global_get, global_set,
+                  i32_const, i64_const, if_, local_get, local_set, local_tee, loop, mem, memory,
+                  module, select_t, table, typed_globals, types)
 
 sys.setrecursionlimit(5000)
 
@@ -172,6 +181,10 @@ STORES: Dict[int, Tuple[int, int]] = {
 # Addresses: the memory is one page, and the data segment is at DATA.
 ADDR_MASK, DATA, DATA_SIZE = 0x7FF8, 0x100, 256
 
+# The globals: (type, mutable, initial value). The last one is immutable.
+GLOBALS: List[Tuple[int, bool, int]] = [(I32, True, 0x12345678), (I32, True, 0xFFFFFFFB),
+                                        (I64, True, 0x1_00000002), (I32, False, 0x7FFF0001)]
+
 
 class Branch(Exception):
     """A br, br_if, or br_table taken in the model: the label's depth from
@@ -190,6 +203,7 @@ class State:
         self.fns = fns
         self.mem = memory
         self.locals: List[int] = []
+        self.globals = [v for _, _, v in GLOBALS]
 
     def call(self, idx: int, args: List[int]) -> int:
         fn = self.fns[idx]
@@ -393,7 +407,8 @@ def gen_select(ctx: Ctx, t: int, depth: int) -> Expr:
         x = a.ev(st)
         y = b.ev(st)
         return x if c.ev(st) else y
-    return Expr(t, a.code + b.code + c.code + SELECT, ev)
+    sel = SELECT if ctx.rng.random() < 0.5 else select_t(t)
+    return Expr(t, a.code + b.code + c.code + sel, ev)
 
 
 def gen_condition(ctx: Ctx, depth: int) -> Expr:
@@ -664,8 +679,51 @@ def gen_br_table_expr(ctx: Ctx, t: int, depth: int) -> Expr:
                 + i32_const(c) + ADD + END, ev)
 
 
+def gen_global_get(ctx: Ctx, t: int, depth: int) -> Expr:
+    """global.get of a global of type t, mutable or not."""
+    k = ctx.rng.choice([k for k, (gt, _, _) in enumerate(GLOBALS) if gt == t])
+    return Expr(t, global_get(k), lambda st: st.globals[k])
+
+
+def gen_global_set(ctx: Ctx, depth: int) -> Stmt:
+    k = ctx.rng.choice([k for k, (_, m, _) in enumerate(GLOBALS) if m])
+    v = gen_expr(ctx, GLOBALS[k][0], depth)
+
+    def run(st: State) -> None:
+        st.globals[k] = v.ev(st)
+    return Stmt(v.code + global_set(k), run)
+
+
+def gen_bulk(ctx: Ctx, depth: int) -> Stmt:
+    """memory.fill or memory.copy of up to 63 bytes, each address and the
+    count a constant or masked, so that the ranges stay in the memory.
+    Mostly in the first 1 KB, which main's result folds, and the ranges of
+    a copy may overlap."""
+    def operand(m: int) -> Expr:
+        if ctx.rng.random() < 0.4:
+            return konst(I32, ctx.rng.randrange(m + 1))
+        return binop("and", I32, gen_expr(ctx, I32, depth), konst(I32, m))
+    m = 0x3FF if ctx.rng.random() < 0.7 else ADDR_MASK
+    d = operand(m)
+    fill = ctx.rng.random() < 0.5
+    x = gen_expr(ctx, I32, depth) if fill else operand(m)
+    n = operand(63)
+
+    def run(st: State) -> None:
+        a, v, k = d.ev(st), x.ev(st), n.ev(st)
+        if fill:
+            st.mem[a:a + k] = bytes([v & 0xFF]) * k
+        else:
+            st.mem[a:a + k] = st.mem[v:v + k]
+    return Stmt(d.code + x.code + n.code + (MEMORY_FILL if fill else MEMORY_COPY), run)
+
+
+def gen_nop(ctx: Ctx, depth: int) -> Stmt:
+    return Stmt(NOP, lambda st: None)
+
+
 EXPRS: List[Tuple[Callable[[Ctx, int, int], Expr], float]] = [
-    (gen_local_get, 0.18), (gen_const, 0.10), (gen_binop, 0.25), (gen_cmp_value, 0.05),
+    (gen_local_get, 0.15), (gen_global_get, 0.03), (gen_const, 0.10), (gen_binop, 0.25), (gen_cmp_value, 0.05),
     (gen_unop, 0.04), (gen_convert, 0.06), (gen_select, 0.05), (gen_load, 0.08),
     (gen_tee, 0.06), (gen_call, 0.05), (gen_if_expr, 0.04), (gen_block_expr, 0.02),
     (gen_br_table_expr, 0.02)]
@@ -714,7 +772,9 @@ def gen_br(ctx: Ctx, depth: int, unconditional: bool = False, out: bool = False)
     if unconditional:
         def run(st: State) -> None:
             raise Branch(n, v.ev(st) if v is not None else None)
-        return Stmt((v.code if v is not None else b"") + br(n), run)
+        # A br to the function's label is a return, which may say so.
+        jump = RETURN if n == len(ctx.labels) - 1 and ctx.rng.random() < 0.5 else br(n)
+        return Stmt((v.code if v is not None else b"") + jump, run)
     c = gen_condition(ctx, depth)
 
     def run_if(st: State) -> None:
@@ -819,19 +879,27 @@ def gen_stmt(ctx: Ctx, depth: int) -> Stmt:
     r = ctx.rng.random()
     if depth <= 0:
         # Only statements that nest nothing.
-        if r < 0.5:
+        if r < 0.45:
             return gen_set(ctx, 1)
+        if r < 0.5:
+            return gen_global_set(ctx, 1)
         if r < 0.75:
             return gen_store(ctx, 1)
         if r < 0.9:
             return gen_br(ctx, 1)
+        if r < 0.92:
+            return gen_nop(ctx, 1)
         return gen_drop(ctx, 1)
-    if r < 0.34:
+    if r < 0.30:
         return gen_set(ctx, depth)
+    if r < 0.34:
+        return gen_global_set(ctx, depth)
     if r < 0.40:
         return gen_group(ctx, depth)
-    if r < 0.55:
+    if r < 0.51:
         return gen_store(ctx, depth)
+    if r < 0.55:
+        return gen_bulk(ctx, depth)
     if r < 0.65:
         return gen_loop(ctx, depth)
     if r < 0.75:
@@ -844,12 +912,20 @@ def gen_stmt(ctx: Ctx, depth: int) -> Stmt:
 
 
 def checksum(fn: Func) -> Expr:
-    """main's result: a fold of every local and of 18 memory words."""
+    """main's result: a fold of every local, of 18 memory words, and of
+    the globals."""
     def low(i: int) -> Expr:
         return Expr(I32, local_get(i) + WRAP, lambda st: st.locals[i] & M32)
 
     def high(i: int) -> Expr:
         return Expr(I32, local_get(i) + i64_const(32) + SHR_U64 + WRAP, lambda st: st.locals[i] >> 32)
+
+    def glow(k: int) -> Expr:
+        return Expr(I32, global_get(k) + (WRAP if GLOBALS[k][0] == I64 else b""),
+                    lambda st: st.globals[k] & M32)
+
+    def ghigh(k: int) -> Expr:
+        return Expr(I32, global_get(k) + i64_const(32) + SHR_U64 + WRAP, lambda st: st.globals[k] >> 32)
 
     def word(a: int) -> Expr:
         return Expr(I32, i32_const(a) + mem(I32_LOAD), lambda st: int.from_bytes(st.mem[a:a + 4], "little"))
@@ -858,6 +934,8 @@ def checksum(fn: Func) -> Expr:
     for i, t in enumerate(fn.local_types):
         parts += [get(I32, i)] if t == I32 else [low(i), high(i)]
     parts += [word(a) for a in range(0, 0x400, 0x3C)]
+    for k, (t, _, _) in enumerate(GLOBALS):
+        parts += [glow(k)] if t == I32 else [glow(k), ghigh(k)]
     code = i32_const(0)
     for p in parts:
         code += i32_const(31) + b"\x6c" + p.code + ADD
@@ -895,6 +973,7 @@ def finish(fns: List[Func], segment: bytes) -> Tuple[bytes, int]:
         funcs(*[fn.type_idx for fn in fns]),
         table(3),
         memory(1),
+        typed_globals(*[(t, m, s32(v) if t == I32 else s64(v)) for t, m, v in GLOBALS]),
         exports(("main", 0, 0)),
         elems((0, [1, 2, 3])),
         code(*[(fn.local_types[len(fn.params):], fn.body().code) for fn in fns]),
@@ -910,14 +989,16 @@ def run(cmd: List[str]) -> None:
         raise RuntimeError(" ".join(cmd) + "\n" + p.stdout + p.stderr)
 
 
-def pipeline(mod: bytes, tmp: str, nompu: bool, name: str) -> Tuple[Optional[int], bool, str]:
-    """Translates, joins, assembles, and runs the module. Returns R1, whether
-    the program halted with HALT, and the emulator's output."""
+def pipeline(mod: bytes, tmp: str, opts: List[str], name: str) -> Tuple[Optional[int], bool, str]:
+    """Translates the module with the options opts of nicewasm, joins,
+    assembles, and runs it. Returns R1, whether the program halted with
+    HALT, and the emulator's output."""
     wasm_file = os.path.join(tmp, name + ".wasm")
     with open(wasm_file, "wb") as f:
         f.write(mod)
     asm = os.path.join(tmp, name + ".nasm")
-    run([sys.executable, NICEWASM, *(["--no-mpu"] if nompu else []), "-o", asm, wasm_file])
+    nompu = "--no-mpu" in opts
+    run([sys.executable, NICEWASM, *opts, "-o", asm, wasm_file])
     parts = [os.path.join(RUNTIME, "start_wasm.nasm"), asm, os.path.join(RUNTIME, "lib.nasm"),
              os.path.join(RUNTIME, "muldiv_soft.nasm" if nompu else "muldiv_mpu.nasm")]
     full = os.path.join(tmp, name + ".full.nasm")
@@ -936,12 +1017,12 @@ def pipeline(mod: bytes, tmp: str, nompu: bool, name: str) -> Tuple[Optional[int
     return r1, p.returncode == 0 and "Halted (HALT)" in p.stdout, p.stdout
 
 
-def check(seed: int, tmp: str, nompu: bool) -> Optional[str]:
+def check(seed: int, tmp: str, opts: List[str]) -> Optional[str]:
     """Runs one seed. Returns a description of the failure, or None."""
     fns, segment = build(seed)
     mod, expected = finish(fns, segment)
     try:
-        r1, ok, output = pipeline(mod, tmp, nompu, f"fuzz{seed}")
+        r1, ok, output = pipeline(mod, tmp, opts, f"fuzz{seed}")
     except RuntimeError as e:
         return f"seed {seed}: " + str(e).replace("\n", "\n  ")
     if ok and r1 == expected:
@@ -951,7 +1032,7 @@ def check(seed: int, tmp: str, nompu: bool) -> Optional[str]:
     return f"seed {seed}: expected {expected:#010x}, got {got}\n  {first}"
 
 
-def reduce(seed: int, tmp: str, nompu: bool) -> None:
+def reduce(seed: int, tmp: str, opts: List[str]) -> None:
     """Removes statements while the mismatch persists, and writes the
     reduced module and its translation to the current directory."""
     fns, segment = build(seed)
@@ -959,7 +1040,7 @@ def reduce(seed: int, tmp: str, nompu: bool) -> None:
     def mismatch() -> bool:
         mod, expected = finish(fns, segment)
         try:
-            r1, ok, _ = pipeline(mod, tmp, nompu, "reduce")
+            r1, ok, _ = pipeline(mod, tmp, opts, "reduce")
         except RuntimeError:
             return True
         return not ok or r1 != expected
@@ -976,7 +1057,7 @@ def reduce(seed: int, tmp: str, nompu: bool) -> None:
                 else:
                     fn.stmts.insert(i, saved)
     mod, expected = finish(fns, segment)
-    r1, ok, _ = pipeline(mod, tmp, nompu, "reduce")
+    r1, ok, _ = pipeline(mod, tmp, opts, "reduce")
     with open(f"fuzz_{seed}.wasm", "wb") as f:
         f.write(mod)
     shutil.move(os.path.join(tmp, "reduce.nasm"), f"fuzz_{seed}.nasm")
@@ -985,26 +1066,31 @@ def reduce(seed: int, tmp: str, nompu: bool) -> None:
           f"got {got}, halted {'normally' if ok else 'abnormally'}; see fuzz_{seed}.wasm and fuzz_{seed}.nasm")
 
 
+# The modes: fuzz.py's option -> nicewasm's options.
+MODES = {"--no-mpu": ["--no-mpu"], "--unchecked": ["--no-bounds-checks"],
+         "--grow": ["--memory-pages", "2"]}
+
+
 def main() -> None:
     args = sys.argv[1:]
-    nompu = "--no-mpu" in args
+    opts = [o for a in args for o in MODES.get(a, [])]
     do_reduce = "--reduce" in args
     numbers = [a for a in args if not a.startswith("--")]
-    if len(numbers) != 2 or any(a not in ("--no-mpu", "--reduce") for a in args if a.startswith("--")):
+    if len(numbers) != 2 or any(a not in (*MODES, "--reduce") for a in args if a.startswith("--")):
         sys.exit(__doc__.split("\n\n")[1])
     first, count = int(numbers[0]), int(numbers[1])
     with tempfile.TemporaryDirectory() as tmp:
         if do_reduce:
-            reduce(first, tmp, nompu)
+            reduce(first, tmp, opts)
             return
         # The seeds run in parallel, each with files of its own name.
         failures = []
         with concurrent.futures.ThreadPoolExecutor(os.cpu_count()) as pool:
-            for problem in pool.map(lambda seed: check(seed, tmp, nompu), range(first, first + count)):
+            for problem in pool.map(lambda seed: check(seed, tmp, opts), range(first, first + count)):
                 if problem is not None:
                     failures.append(problem)
                     print("FAIL " + problem)
-    suffix = ", --no-mpu" if nompu else ""
+    suffix = "".join(", " + a for a in args if a in MODES)
     print(f"{'FAIL' if failures else 'PASS'} fuzz ({count} cases{suffix})")
     if failures:
         sys.exit(1)

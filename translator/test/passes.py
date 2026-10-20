@@ -18,7 +18,8 @@ from typing import Callable, List
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
-from nicewasm import Ins, Item, Label, duplicate_tails, hoist_into_slots, tail_calls  # noqa: E402
+from nicewasm import (Ins, Item, Label, duplicate_tails, early_exit, hoist_into_slots,  # noqa: E402
+                      tail_calls)
 
 
 def text(items: List[Item]) -> List[str]:
@@ -110,8 +111,45 @@ def no_tail_copies_in_stubs() -> None:
     assert got == want, got
 
 
+def early_function(first: List[Item], exit_code: List[Item]) -> List[Item]:
+    """A function that saves R7 and R8: first, then a jump on Z to
+    W.f0.L1, a return of R7 + R8, and at W.f0.L1 exit_code."""
+    return first + [Ins("MOVE", ["R15", "W.f0.L1"], "Z", "jump", ["W.f0.L1"]),
+                    Ins("ADD", ["R1", "R7", "R8"]), ret(), Label("W.f0.L1")] + exit_code
+
+
+def early_exit_flags() -> None:
+    """early_exit moves the test and the jump before the prologue. The
+    test SUB[M] R8, R7, 5 writes a saved register, so it stays after the
+    prologue, without the M bit, and a copy that writes R0 sets the flags
+    before it. R7 is not written yet there, so the copy reads R1, which
+    MOVE R7, R1 copied (README.md, The frame). If R7 is not a copy, as
+    after ADD R7, R1, 1, the copy cannot read it, and the jump stays."""
+    test = Ins("SUB[M]", ["R8", "R7", "5"])
+    got = early_exit(early_function([Ins("MOVE", ["R7", "R1"]), test],
+                                    [Ins("MOVE", ["R1", "0"]), ret()]), ["R7", "R8"], "W.f0.E")
+    assert got is not None
+    want = [["SUB[M]  R0, R1, 5", "?Z MOVE R15, W.f0.E"],
+            ["MOVE    R7, R1", "SUB     R8, R7, 5", "ADD     R1, R7, R8", "RET", "W.f0.L1:",
+             "MOVE    R1, 0", "RET"],
+            ["W.f0.E:", "MOVE    R1, 0"]]
+    assert [text(part) for part in got] == want, [text(part) for part in got]
+    got = early_exit(early_function([Ins("ADD", ["R7", "R1", "1"]), test],
+                                    [Ins("MOVE", ["R1", "0"]), ret()]), ["R7", "R8"], "W.f0.E")
+    assert got is None, got
+
+
+def early_exit_call() -> None:
+    """The code that the jump goes to must return without a call, which
+    may change R1-R6 and needs the return address on the stack."""
+    got = early_exit(early_function([Ins("MOVE[M]", ["R0", "R1"])], call("_f") + [ret()]),
+                     ["R7", "R8"], "W.f0.E")
+    assert got is None, got
+
+
 CASES: List[Callable[[], None]] = [hoist_after_write, hoist_after_jump, tail_call_plain,
-                                   tail_call_data, no_tail_copies_in_stubs]
+                                   tail_call_data, no_tail_copies_in_stubs, early_exit_flags,
+                                   early_exit_call]
 
 
 def main() -> None:

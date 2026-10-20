@@ -16,13 +16,17 @@ ZIG_TESTS = answer datazig bulk hello
 ZIG_SAFE_TESTS = safe safetrap
 RUST_TESTS = rust rusttrap hellors
 
-# Translate, assemble, and run each module in test/run.py, then 40 random
-# modules in each mode with test/fuzz.py, then the passes on code built by
-# hand in test/passes.py, then check the error messages in test/errors.py.
+# Translate, assemble, and run each module in test/run.py, then random
+# modules with test/fuzz.py: 40 with the math unit, 40 without, and 20 each
+# without bounds checks and with a memory that can grow. Then the passes on
+# code built by hand in test/passes.py, then check the error messages in
+# test/errors.py.
 test: emulator
 	@$(PYTHON) test/run.py
 	@$(PYTHON) test/fuzz.py 1 40
 	@$(PYTHON) test/fuzz.py --no-mpu 1 40
+	@$(PYTHON) test/fuzz.py --unchecked 1 20
+	@$(PYTHON) test/fuzz.py --grow 1 20
 	@$(PYTHON) test/passes.py
 	@$(PYTHON) test/errors.py
 

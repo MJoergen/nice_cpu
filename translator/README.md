@@ -790,22 +790,29 @@ in order.
 whose nodes also evaluate themselves in Python, so each module comes
 with the result that wasm defines for it, and `main`'s result in R1 must
 match. The modules have four functions with `i32` and `i64` parameters,
-8 to 13 locals, loops, blocks, branches with values, `select`, calls
-through the table, every integer operation and comparison, the results
-of comparisons kept in locals for later conditions, loads and stores of
+8 to 13 locals, loops, blocks, branches with values, `return`, `nop`,
+both forms of `select`, calls through the table, every integer
+operation and comparison, the results of comparisons kept in locals for
+later conditions, mutable and immutable globals, loads and stores of
 every width at constant and dynamic addresses, the addresses of array
-elements as `(i << s) + c`, and groups of word accesses at offsets from
-one address. That covers the rules for deferred values, fused
-comparisons, the flags, forwarded results, and register allocation
-above. `make test` runs 40 seeds with the math unit and 40 with
-`--no-mpu`; `test/fuzz.py 1 1000` runs more, and `test/fuzz.py --reduce
-SEED` shrinks a failing module and writes it with its translation.
+elements as `(i << s) + c`, groups of word accesses at offsets from one
+address, and `memory.fill` and `memory.copy`. That covers the rules for
+deferred values, fused comparisons, the flags, forwarded results, and
+register allocation above. No access is out of bounds, so the result is
+the same in each mode of nicewasm: `--no-mpu`, `--unchecked` for
+`--no-bounds-checks`, and `--grow` for `--memory-pages 2`. `make test`
+runs 40 seeds with the math unit, 40 with `--no-mpu`, and 20 each with
+`--unchecked` and `--grow`; `test/fuzz.py 1 1000` runs more, and
+`test/fuzz.py --reduce SEED` shrinks a failing module and writes it with
+its translation.
 
 `test/passes.py` runs some of the passes over a function's code on code
 built by hand: `hoist_into_slots` after the write of an address
-register, `tail_calls` with data between the call and the return, and
-`duplicate_tails` in the stubs. These are rules that no module reaches
-today, so `run.py` and `fuzz.py` cannot test them.
+register, `tail_calls` with data between the call and the return,
+`duplicate_tails` in the stubs, and `early_exit` with a test that writes
+a saved register and with a call in the code that the jump goes to.
+These are rules that no module reaches today, so `run.py` and `fuzz.py`
+cannot test them.
 
 `make diff` compares the translator with an older version of itself,
 `OLD`, a git revision, `main` by default: `test/diff_fuzz.py` translates

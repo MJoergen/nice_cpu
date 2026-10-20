@@ -15,8 +15,8 @@ from wasm import call_indirect, table
 V128 = 0x7B  # a type nicewasm does not support
 from wasm import (ADD, ADD64, DROP, ELSE, END, F32, I32, I64, SELECT, block, br,
                   br_table, call, code, exports, funcs, global_get, global_set, globals_,
-                  i32_const, i64_const, if_, imports, local_get, memory, module, name,
-                  section, start, types, u, vec)
+                  i32_const, i64_const, if_, imports, local_get, local_set, local_tee, memory, module,
+                  name, section, start, types, u, vec)
 
 NICEWASM = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "nicewasm.py")
 
@@ -129,9 +129,15 @@ CASES: List[Tuple[bytes, str]] = [
      "element segment 0: table 1 does not exist"),
     (module(table(1), section(9, vec([b"\0" + global_get(0) + b"\x0b" + vec([u(0)])]))),
      "element segment 0: the offset must be an i32.const"),
+    # The offset's constant must be followed by end.
+    (module(table(1), section(9, vec([b"\0" + i32_const(0) + b"\x01" + vec([u(0)])]))),
+     "element segment 0: the offset must be an i32.const"),
     (module(table(1), section(9, vec([b"\x06\x00" + i32_const(0) + b"\x0b\x6f" + vec([b"\xd0\x6f\x0b"])]))),
      "element segment 0: only functions are supported"),
     (module(table(1), section(9, vec([b"\x04" + i32_const(0) + b"\x0b" + vec([i32_const(0) + b"\x0b"])]))),
+     "element segment 0: an element must be ref.func or ref.null"),
+    # A ref.func must be followed by end.
+    (module(table(1), section(9, vec([b"\x04" + i32_const(0) + b"\x0b" + vec([b"\xd2\x00\x01"])]))),
      "element segment 0: an element must be ref.func or ref.null"),
     (module(table(1), section(9, vec([b"\x08"]))), "element segment 0 has unknown flags 8"),
     # Data segments
@@ -216,6 +222,14 @@ CASES: List[Tuple[bytes, str]] = [
     (module(MAIN, funcs(0), section(6, vec([bytes([I64, 1]) + i64_const(0) + b"\x0b"])),
             code((0, i32_const(1) + global_set(0) + i32_const(0)))),
      "function 0: global.set expects i64, found i32"),
+    # An i32.add whose result would go straight to the local (README.md,
+    # How functions are translated), when the local has another type or
+    # does not exist.
+    (module(MAIN, funcs(0), code(([I64], i32_const(1) + i32_const(2) + ADD + local_set(0)
+                                  + i32_const(0)))),
+     "function 0: local.set expects i64, found i32"),
+    (module(MAIN, funcs(0), code(([I64], i32_const(1) + i32_const(2) + ADD + local_tee(5)))),
+     "function 0: local 5 does not exist"),
     (module(types(([], [I32]), ([I64], [])), funcs(0, 1), code((0, i32_const(1) + call(1) + i32_const(0)), (0, b""))),
      "function 0: call expects i64, found i32"),
     (one(i32_const(0) + b"\x12\x00"), "function 0: return_call is not supported yet"),
@@ -369,7 +383,15 @@ def main() -> None:
         if p.returncode != 1 or p.stderr.strip() != expected or not unchanged:
             failed += 1
             print(f"FAIL: expected '{expected}'\n  got (exit {p.returncode}): {p.stderr.strip()}")
-    n = len(CASES) + len(OPTION_CASES) + len(COMMAND_CASES) + 1
+        # An input file that cannot be read.
+        missing = os.path.join(tmp, "missing.wasm")
+        p = subprocess.run([sys.executable, NICEWASM, "-o", out + "2", missing],
+                           capture_output=True, text=True)
+        expected = f"{missing}: No such file or directory"
+        if p.returncode != 1 or p.stderr.strip() != expected or os.path.exists(out + "2"):
+            failed += 1
+            print(f"FAIL: expected '{expected}'\n  got (exit {p.returncode}): {p.stderr.strip()}")
+    n = len(CASES) + len(OPTION_CASES) + len(COMMAND_CASES) + 2
     print(f"{'FAIL' if failed else 'PASS'} errors ({n} cases)")
     if failed:
         sys.exit(1)

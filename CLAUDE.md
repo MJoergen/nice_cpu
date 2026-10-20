@@ -21,8 +21,8 @@ translator, and two FPGA cores. See README.md.
   against the headings of the documents, and every link of every Markdown
   file. `make -C doc test` runs it.
 - `doc/MICROARCH.md`: design note for the FPGA core. ISA.md wins over it.
-  Its block diagram is `doc/pipeline.tex`, and its interrupt timing diagram
-  `doc/interrupt.tex`, rendered to PNGs by `make diagrams`; edit the `.tex`
+  Its block diagram is `doc/pipeline.tex`, and its timing diagrams
+  `doc/flow.tex` and `doc/interrupt.tex`, rendered to PNGs by `make diagrams`; edit the `.tex`
   and commit both. The timing values are read off a simulation by hand.
 - `assembler/niceasm.py`: Python 3, standard library only, `mypy --strict` clean.
 - `emulator/src/cpu.zig` (core, unit tests) and `main.zig` (CLI, loader). Zig 0.15.

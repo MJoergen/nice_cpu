@@ -61,6 +61,7 @@ departs from it.
 | [test/tb_core.vhd](test/tb_core.vhd) | Runs a program on a core, which its generic `G_CORE` names, with an interrupt source, and writes its trace. |
 | [test/shift.nasm](test/shift.nasm) | Every shift, with the counts that are hard to get right. |
 | [test/irqwave.nasm](test/irqwave.nasm) | The program of the interrupt timing diagram, doc/interrupt.tex. |
+| [test/addwave.nasm](test/addwave.nasm) | The program of the timing diagram of one instruction, doc/flow.tex. |
 | [test/instret.nasm](test/instret.nasm) | Reads of the instruction counter right after a store, after a read, and twice in one instruction. |
 | [test/hazard.nasm](test/hazard.nasm) | The hazards of MICROARCH.md §5, each with no padding. It checks itself. |
 | [test/programs.py](test/programs.py) | Runs the programs in some directories on the core and on the emulator, for `make programs`. |
@@ -216,6 +217,9 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   has issued its data read, which the pipelined core takes after that
   instruction. Its values are those of the timing diagram
   [doc/interrupt.png](../doc/interrupt.png).
+- `test/addwave.nasm`, the worked example of ISA.md §11 between plain
+  instructions. Its values are those of the timing diagram
+  [doc/flow.png](../doc/flow.png).
 - `test/instret.nasm`, also on a memory that stalls in 30% of the cycles.
   It reads the instruction counter right after a store to RAM, which the
   data bus decoder makes the read wait for, after a read of RAM, as the

@@ -114,6 +114,8 @@ So the multi-cycle core stands where the pipelined core does, and has no finding
 
 The move of the devices out of ISA.md turned each "ISA §8.4" into a link to SYSTEM.md whose text is "SYSTEM.md ISA §2", with "ISA" left in: ABI.md lines 115, 126 (three times), and 140, and WASM.md line 110. **Fix:** "SYSTEM.md §2", and so on.
 
+**Resolved**: "SYSTEM.md §2", "§1", and "§3" in both files.
+
 ### 2.2 SYSTEM.md: the memory map is two tables
 
 In SYSTEM.md, Memory map, a blank line follows the row of the character screen, so the table ends there. The rows from `0xFFFFFF00` on have no header row, and a Markdown renderer shows them as a paragraph of text with bars. Three blank lines also precede the table. **Fix:** one table, or two with a header each, if the screen is to stand apart.

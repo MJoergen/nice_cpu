@@ -792,22 +792,29 @@ in order.
 `test/fuzz.py FIRST COUNT` builds random modules from a syntax tree
 whose nodes also evaluate themselves in Python, so each module comes
 with the result that wasm defines for it, and `main`'s result in R1 must
-match. The modules have four functions with `i32` and `i64` parameters,
-8 to 13 locals, loops, blocks, branches with values, `return`, `nop`,
-both forms of `select`, calls through the table, every integer
+match, or if the module traps, the program must halt at `___wasm_trap`
+with the trap code in R1. The modules have four functions with `i32` and
+`i64` parameters, 8 to 13 locals, loops, blocks, and ifs whose block
+types may have parameters and several results, branches that carry no
+value, one, or several, `br_table` among them, `return`, `nop`, both
+forms of `select`, calls through the table, every integer
 operation and comparison, the results of comparisons kept in locals for
 later conditions, mutable and immutable globals, loads and stores of
 every width at constant and dynamic addresses, the addresses of array
 elements as `(i << s) + c`, groups of word accesses at offsets from one
 address, and `memory.fill` and `memory.copy`. That covers the rules for
 deferred values, fused comparisons, the flags, forwarded results, and
-register allocation above. No access is out of bounds, so the result is
-the same in each mode of nicewasm: `--no-mpu`, `--unchecked` for
-`--no-bounds-checks`, and `--grow` for `--memory-pages 2`. `make test`
-runs 40 seeds with the math unit, 40 with `--no-mpu`, and 20 each with
-`--unchecked` and `--grow`; `test/fuzz.py 1 1000` runs more, and
-`test/fuzz.py --reduce SEED` shrinks a failing module and writes it with
-its translation.
+register allocation above. In 40% of the modules, statements may trap:
+`unreachable`, divisions by 0 and of the most negative value by −1,
+`call_indirect` past the table or of the wrong type, and accesses,
+`memory.fill`, and `memory.copy` past the end of the memory. About a
+fifth of the modules trap. The modes of nicewasm are `--no-mpu`,
+`--unchecked` for `--no-bounds-checks`, whose modules make no access out
+of bounds, and `--grow` for `--memory-pages 2`. `make test` runs 40
+seeds with the math unit, 40 with `--no-mpu`, and 20 each with
+`--unchecked` and `--grow`, and says how many of them trap;
+`test/fuzz.py 1 1000` runs more, and `test/fuzz.py --reduce SEED 1`
+shrinks a failing module and writes it with its translation.
 
 `test/passes.py` runs some of the passes over a function's code on code
 built by hand: `hoist_into_slots` after the write of an address
@@ -825,6 +832,6 @@ of the linear memory. The modules are `fuzz.py`'s, and, with `--trap`,
 the same with statements that may trap: accesses out of bounds,
 divisions by zero and of the most negative value by −1, bad
 `call_indirect`s, `memory.fill` and `memory.copy` past the end,
-`unreachable`, and `memory.grow`. So it checks the trap paths, which
-`fuzz.py`'s model does not know, and each mode of the translator. It is
-not part of `make test`, since it takes minutes and needs git.
+`unreachable`, and `memory.grow`. So it checks a trap's R2, and
+`memory.grow`, which `fuzz.py`'s model does not know, and each mode of
+the translator. It is not part of `make test`, since it takes minutes and needs git.

@@ -11,8 +11,6 @@ No code has TODO or FIXME comments.
 The findings of [doc/review/fourth-repository-review.md](doc/review/fourth-repository-review.md)
 that are not closed yet. Every finding of the earlier reviews is closed.
 
-- **The fuzzer of the translator** still has no blocks with several
-  values and no traps in its model (§4.3).
 - **CI's formal tools** (§6.5): the jobs of the shared functions, DECODE,
   the performance counters, the fetch statistics, and the math unit ran
   with Yosys 0.56 and GHDL 6.0 only. CI's Yosys 0.33 and GHDL 4.1 have
@@ -210,12 +208,13 @@ that are not closed yet. Every finding of the earlier reviews is closed.
     between the accesses saves 2000 cycles for 3% more code in
     `test/safe.zig`. A profile, or a flag, would decide better than a
     constant.
-  - *What `fuzz.py` cannot check.* Its model does not know a trap's code
-    or R2, so every access it generates is in bounds, and the trap paths
-    are tested by `run.py`, and by `make diff` (`test/diff_fuzz.py`),
-    which runs two versions of nicewasm on the same random modules, with
-    statements that may trap, and compares the console output, the halt,
-    the registers, and the memory. A model with traps in `fuzz.py` is still an idea.
+  - *What `fuzz.py` cannot check.* Its model knows a trap's code but not
+    R2, the address of the code that trapped, so R2 is tested only by
+    `run.py`, and by `make diff` (`test/diff_fuzz.py`), which runs two
+    versions of nicewasm on the same random modules, with statements that
+    may trap, and compares the console output, the halt, the registers,
+    and the memory. The model has no `memory.grow`, no floats, and no
+    functions with several results; `make diff` covers the first.
 - **Benchmarks beyond [bench/](bench/README.md).** Dhrystone 2.1 would
   give a number to compare the core with other small processors, once it
   runs on a board. It needs `malloc`, `strcpy`, `strcmp`, and `printf`

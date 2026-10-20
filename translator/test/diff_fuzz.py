@@ -12,10 +12,10 @@ between versions, so it is not compared. REV is a git revision whose
 nicewasm.py is the older version, main by default, or the path of a
 nicewasm.py. Seeds FIRST to FIRST + COUNT - 1 are tried.
 
-Without --trap, the modules are those of fuzz.py, which never trap, and
-the new translation's R1 is also checked against fuzz.py's model. With
---trap, each module gets a few statements that may trap, which the model
-does not know: loads and stores out of bounds, at constant addresses,
+Without --trap, the modules are those of fuzz.py, and the new
+translation's R1, or its trap code, is also checked against fuzz.py's
+model. With --trap, each module gets a few more statements that may trap,
+which the model does not know: loads and stores out of bounds, at constant addresses,
 through locals, and as (i << s) + c with masked and with huge indices;
 groups of word accesses from one local near the end of the memory;
 divisions and remainders by zero and by masked divisors, and of the most
@@ -214,10 +214,16 @@ def trap_module(seed: int, grow: bool) -> bytes:
     for idx, fn in enumerate(fns):
         ctx = fuzz.Ctx(rng, fn, idx, fns)
         for _ in range(rng.randrange(1, 4) if idx == 0 else rng.randrange(0, 3)):
+            # Sometimes under a condition, so that some paths do not trap.
+            # Its label is in scope while the statement is made, so that a
+            # branch in the statement counts it.
+            cond = fuzz.gen_condition(ctx, 2) if rng.random() < 0.4 else None
+            if cond is not None:
+                ctx.labels.append(("if", []))
             st = trap_stmt(ctx, rng, grow)
-            if rng.random() < 0.4:
-                # Under a condition, so that some paths do not trap.
-                st = fuzz.Stmt(fuzz.gen_condition(ctx, 2).code + if_() + st.code + END, st.run)
+            if cond is not None:
+                ctx.labels.pop()
+                st = fuzz.Stmt(cond.code + if_() + st.code + END, st.run)
             fn.stmts.insert(rng.randrange(0, len(fn.stmts) + 1), st)
     mod, _ = fuzz.finish(fns, segment)
     return mod
@@ -278,7 +284,7 @@ def build_and_run(asm: str, name: str, tmp: str, nompu: bool, pages: int, librar
 
 
 def compare(seed: int, mod: bytes, old: str, tmp: str, nompu: bool, opts: List[str], pages: int,
-            expected: Optional[int]) -> Tuple[Optional[str], Optional[Run]]:
+            expected: Optional[fuzz.Outcome]) -> Tuple[Optional[str], Optional[Run]]:
     """Translates the module with both versions and compares the runs.
     Returns what differs, or None, and the new translation's run."""
     wasm_file = os.path.join(tmp, f"m{seed}.wasm")
@@ -308,9 +314,15 @@ def compare(seed: int, mod: bytes, old: str, tmp: str, nompu: bool, opts: List[s
         for r in ["R7", "R8", "R9", "R10", "R11", "R12", "R13"]:
             if o.regs.get(r) != n.regs.get(r):
                 problems.append(f"{r} old {o.regs.get(r, -1):#x} new {n.regs.get(r, -1):#x}")
-        if expected is not None and n.regs.get("R1") != expected:
-            problems.append(f"the model expected {expected:#x}, the new translation gave "
-                            f"{n.regs.get('R1', -1):#x}")
+    if expected is not None:
+        got: Optional[fuzz.Outcome] = None
+        if "R1" in n.regs and n.halt.startswith("Halted (HALT)"):
+            got = ("value", n.regs["R1"])
+        elif "R1" in n.regs and n.halt.startswith("Halted (reserved control instruction)"):
+            got = ("trap", n.regs["R1"])
+        if got != expected:
+            problems.append(f"the model expected {fuzz.show(expected)}, the new translation gave "
+                            f"{fuzz.show(got)}")
     if len(o.words) != len(n.words):
         problems.append(f"memory words old {len(o.words)} new {len(n.words)}")
     else:
@@ -373,7 +385,7 @@ def main() -> None:
             if trap:
                 mod, expected = trap_module(seed, grow), None
             else:
-                fns, segment = fuzz.build(seed)
+                fns, segment = fuzz.build(seed, "--unchecked" not in args)
                 mod, expected = fuzz.finish(fns, segment)
             problem, run = compare(seed, mod, tool, tmp, nompu, opts, pages, expected)
             if problem is not None:

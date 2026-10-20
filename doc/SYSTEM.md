@@ -12,6 +12,7 @@ this file.
 
 ## Contents
 
+- [Memory map](#memory-map)
 - [1. Console, screen, and read counter](#1-console-screen-and-read-counter)
 - [2. Math unit](#2-math-unit)
 - [3. Performance counters](#3-performance-counters)
@@ -35,9 +36,11 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 
 ## 1. Console, screen, and read counter
 
-The 2004 emulator maps a character screen at `0x400`.
+**Screen.** The original emulator of 2004, `NICE.pm` ([REFERENCES.md](REFERENCES.md)), maps a character screen at `0x400`. The emulator in this repository maps the screen at `0xFFFF0000` instead, so that it does not overlap the code of programs longer than 1024 words. Its option `-2004` puts the screen back at `0x400` for the 2004 example programs.
 
-The emulator in this repository maps the screen at `0xFFFF0000` instead, so that it does not overlap the code of programs longer than 1024 words. Its option `-2004` puts the screen back at `0x400` for the 2004 programs. It also maps a console at `0xFFFFFF00`. Each write prints bits 7..0 of the word. Each data read takes the next input byte, if there is one, and returns it in bits 7..0 with bit 8 set. With no byte waiting, a read returns 0. When the emulator's input has ended, a read returns `0x200` (bit 9) instead; a UART's input never ends. The emulator reads its input from stdin, so stdin from `/dev/null` gives a console with no input. The simulation memory of the FPGA core reads a file too, as the emulator's `--input` does, and returns `0x200` without one. This repository has no UART. A system built on the FPGA core, such as the example design in NiceMonMEGA65, maps one at the same address, with the same bits (MICROARCH.md §8). At `0xFFFFFF01` the emulator and the simulation memory of the FPGA core map a read counter for tests. A data read of it returns the number of data reads of it since the last write to it, and a write sets that number. Tests use it to count the data accesses of ISA §8.2. Programs use the console for input and output.
+**Console.** The emulator maps a console at `0xFFFFFF00`. Each write prints bits 7..0 of the word. Each data read takes the next input byte, if there is one, and returns it in bits 7..0 with bit 8 set. With no byte waiting, a read returns 0. When the emulator's input has ended, a read returns `0x200` (bit 9) instead; a UART's input never ends. The emulator reads its input from stdin, so stdin from `/dev/null` gives a console with no input. The simulation memory of the FPGA core reads a file too, as the emulator's `--input` does, and returns `0x200` without one. This repository has no UART. A system built on the FPGA core, such as the example design in [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), maps one at the same address, with the same bits (MICROARCH.md §8). Programs use the console for input and output.
+
+**Read counter.** At `0xFFFFFF01` the emulator and the simulation memory of the FPGA core map a read counter for tests. A data read of it returns the number of data reads of it since the last write to it, and a write sets that number. Tests use it to count the data accesses of ISA §8.2.
 
 ## 2. Math unit
 
@@ -103,7 +106,7 @@ The emulator and the FPGA implementation map performance counters at `0xFFFFFF40
 
 **Reading a counter.** Read the low word first, then the high word: `MOVE R1, @CYCLE_LO` then `MOVE R2, @CYCLE_HI`. The read of the low word copies the whole 64-bit counter into the snapshot, and the read of the high word returns the high half of the snapshot. So R2:R1 is the value at the time of the first read, even when the low word wraps from `0xFFFFFFFF` to 0 between the two reads. Each counter has its own snapshot.
 
-An interrupt service routine that reads a counter's low word overwrites its snapshot. If the routine interrupted code between the two reads, that code then reads a high word that may not belong to its low word. So either interrupt service routines do not read the counters, or the code that reads them clears E around its two reads and NMI service routines do not read them.
+An interrupt service routine that reads a counter's low word overwrites its snapshot. If the routine interrupted code between the two reads, that code then reads a high word that may not belong to its low word. So either interrupt service routines do not read the counters, or the code that reads them clears E, the interrupt enable flag (ISA §1.3), around its two reads and NMI service routines do not read them.
 
 ## 4. Timer
 

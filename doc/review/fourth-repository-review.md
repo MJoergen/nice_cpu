@@ -196,6 +196,8 @@ The math unit, the performance counters, and the fetch statistics had testbenche
 
 **What is not proven, and why.** That the multiplier computes the product. Neither Yices nor Boolector can compare two 32-bit multipliers: the induction step of `mul_r = a_r * b_r` did not finish in ten minutes, and the combinational identity between the signed high word and the unsigned one, with no registers at all, did not finish in five. So the value of a product read stays with `tb_mpu`, and only its freshness is proven. The same limit leaves the textbook lemma that shift and add multiplies, M = Q × B, unproven: on its own, the 64-bit lemma did not finish in five minutes, and with M written as a product every divider invariant timed out at ten. A bounded check from a free operand pair was not tried, because its last step needs the same multiplication. **Fix:** none with these solvers. A solver with a multiplier theory, or the lemma proven by hand beside the job, would close it (TODO.md).
 
+**Resolved** by hand, in `hdl/README.md` (The formal checks): m = q·d holds after every step and every skip, by induction from a start, which clears both ghosts and is the only way the divisor changes, and q < 2ᴺ keeps q·d inside the ghosts' 2N bits, so M = Q × B exactly. The signed high word is the unsigned one minus B if A is negative and minus A if B is negative, modulo 2³², from expanding (A − 2³²a)(B − 2³²b) modulo 2⁶⁴. That `*` gives A·B is the definition of the operator in `numeric_std_unsigned`, and `tb_mpu` checks both on samples.
+
 The three jobs ran with Yosys 0.56 and GHDL 6.0.0-dev here, as did those of §6.1 and §6.2. CI's Yosys 0.33 and GHDL 4.1 have not run them yet (TODO.md).
 
 ### 6.6 A ROM is state in an induction step

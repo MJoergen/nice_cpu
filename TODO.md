@@ -13,12 +13,6 @@ that are not closed yet. Every finding of the earlier reviews is closed.
 
 - **The fuzzer of the translator** still has no blocks with several
   values and no traps in its model (§4.3).
-- **The math unit's products** (§6.5): `hdl/formal/mpu.sby` proves that a
-  product read is never stale, not that `*` and the signed correction
-  compute the product, and the dividers up to the lemma that shift and
-  add multiplies, because neither Yices nor Boolector can compare two
-  32-bit multipliers. A solver with a multiplier theory, or the lemma
-  proven by hand beside the job, would close it.
 - **CI's formal tools** (§6.5): the jobs of the shared functions, DECODE,
   the performance counters, the fetch statistics, and the math unit ran
   with Yosys 0.56 and GHDL 6.0 only. CI's Yosys 0.33 and GHDL 4.1 have

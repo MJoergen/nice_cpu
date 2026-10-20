@@ -572,9 +572,9 @@ at most 34 cycles after it is accepted for the 32-bit half and 66 for the
 When a read of a result gets its data, the unit has computed it from the
 operands as they are then, which a write cannot change while the read
 waits. For the products, ghost copies of the operands follow them through
-the multiplier's two registers. That `*` and the signed correction
-compute the product is left to `tb_mpu`: neither Yices nor Boolector can
-compare two 32-bit multipliers, not even without registers. For the
+the multiplier's two registers. Neither Yices nor Boolector can compare
+two 32-bit multipliers, not even without registers, so the two lemmas
+below are proven by hand, and `tb_mpu` checks them on samples. For the
 quotients and remainders, each of the four dividers has the loop
 invariant of a restoring divider, with ghosts of the quotient bits found,
 the dividend bits shifted out, and their product, which the ghosts form
@@ -583,10 +583,30 @@ for every pair of operands that A = M + R with R < B, where M is Q times
 B by shift and add, and Q and R of SYSTEM.md §2 for B = 0; for the
 signed results, the same on the magnitudes, the signs of SYSTEM.md §2,
 and the special case of the most negative number divided by −1; and the
-same for C and D. That shift and add multiplies is not proven here.
-Boolector proves it all by k-induction in about 2 minutes; Yices takes
-minutes for one divider alone. The covers show a read that waits for
-each kind of unit, and reads that wait the longest a division takes.
+same for C and D. Boolector proves it all by k-induction in about 2
+minutes; Yices takes minutes for one divider alone. The covers show a
+read that waits for each kind of unit, and reads that wait the longest a
+division takes.
+
+The two lemmas, proven by hand:
+
+- **Shift and add multiplies: M = Q × B.** A start clears the ghosts q
+  and m of a divider, and a write to the divisor also starts it, so the
+  divisor d is the same in every step between two starts. A step that
+  finds the quotient bit t sets q to 2q + t and m to 2m + t·d; a skip of
+  8 steps sets q to 2⁸q and m to 2⁸m. If m = q·d before a step, then
+  after it m = 2q·d + t·d = (2q + t)·d, and after a skip
+  m = 2⁸q·d. So m = q·d modulo 2²ᴺ, the width of the ghosts, from the
+  start on. After k steps q has k bits, so q < 2ᴺ and q·d < 2²ᴺ, and m
+  = q·d exactly. At the end, A = M + R is A = Q·B + R.
+- **The signed correction.** For 32-bit words A and B with sign bits a
+  and b, the signed values are A − 2³²a and B − 2³²b, and their product
+  is A·B − 2³²(a·B + b·A) + 2⁶⁴a·b. Modulo 2⁶⁴ the last term goes, and
+  subtracting a multiple of 2³² leaves the low word as it is, so the low
+  word of the signed product is that of the unsigned one, and the high
+  word is the unsigned high word minus B if a = 1 and minus A if b = 1,
+  modulo 2³². That is what `p_multiply` computes from `mul_r`, which is
+  A·B by the definition of `*` in `numeric_std_unsigned`.
 
 ## The multi-cycle core
 
@@ -854,8 +874,9 @@ STALL stays high and ACK waits until the result is ready. Reads of A, B, and the
 words, and all writes, are acknowledged in the next cycle. Writes to the
 result words and the spare words are ignored. `formal/mpu.sby` proves
 the port, the waits, and the quotients and remainders for every pair of
-operands, and that a product is never stale; the products' values are
-left to `tb_mpu` (The formal checks above).
+operands, and that a product is never stale; the signed product's
+correction is proven by hand, and `tb_mpu` checks the products' values
+(The formal checks above).
 
 ## The performance counters
 

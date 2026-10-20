@@ -429,9 +429,9 @@ begin
    -- The multiplier: f_ma and f_mb are the operands that mul_r is the
    -- product of, and f_pa and f_pb those of prod_r and smul_hi_r. So a read
    -- of a product gets the product of A and B as they were when the read
-   -- was accepted. That the * operator and the signed correction compute
-   -- the product is left to tb_mpu: Yices and Boolector cannot compare two
-   -- 32-bit multipliers.
+   -- was accepted. That the signed correction computes the signed product
+   -- is proven by hand in hdl/README.md: Yices and Boolector cannot compare
+   -- two 32-bit multipliers.
    --
    -- The dividers: each has the loop invariant of a restoring divider of n
    -- by d, N bits wide. After k of its N steps, the quotient register holds
@@ -441,9 +441,9 @@ begin
    -- 2N bits wide. m is q times d, which the ghost forms as the divider
    -- finds the bits of q, by shift and add: twice m, plus d if the new bit
    -- is 1. So the solver needs no multiplier, which it could not handle;
-   -- that shift and add multiplies is left unproven. A skip of 8 steps
-   -- keeps the invariant, as 8 steps that each give a quotient bit of 0
-   -- would. When the divider ends, k = N, so A = Q * B + R with R < B, and
+   -- that shift and add multiplies is proven by hand in hdl/README.md. A
+   -- skip of 8 steps keeps the invariant, as 8 steps that each give a
+   -- quotient bit of 0 would. When the divider ends, k = N, so A = Q * B + R with R < B, and
    -- the signed results follow from those of |A| / |B|.
    --
    -- A read waits until its unit ends, and f_age_r counts the cycles it

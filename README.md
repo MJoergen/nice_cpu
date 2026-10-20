@@ -40,8 +40,12 @@ the separate [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) reposito
 
 ## Quick start
 
-You need Python 3 and Zig 0.15 ([download](https://ziglang.org/download/),
-or see [installing Zig](https://ziglang.org/learn/getting-started/)).
+You need Python 3. Zig 0.15 is needed only to build the emulator
+([download](https://ziglang.org/download/), or see
+[installing Zig](https://ziglang.org/learn/getting-started/)). All the tests
+but those of the assembler and the documents run programs on the emulator,
+so they build it first. The `.wasm` files the tests translate are checked
+in, so the tests need no C, Zig, or Rust compiler for wasm.
 
 **Use Zig 0.15 exactly (tested with 0.15.2).** It is the only supported
 version. Zig changes its language and standard library between releases, so

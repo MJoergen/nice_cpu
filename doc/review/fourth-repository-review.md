@@ -41,6 +41,8 @@ The gaps that the lines did not show: s1 was tested in three of its eight modes;
 
 The same for `-o` naming a directory. The exit status is 1, as the README says, but the message is a traceback. **Fix:** open the output in the same `try`, or in one of its own with the same `except OSError`. Two cases of `errors.py` fail until then, and `make -C assembler test` ends in `FAIL errors (2 of 181)`.
 
+**Resolved**: `main()` writes the output inside a `try` of its own, with the same `except OSError`, so both cases print `file: message` and exit with status 1. `errors.py` passes all 181 cases.
+
 ### 1.3 Behaviour that no document stated
 
 The tests pinned down four things that the README now says: `*` starts a comment only at the start of a word, so `R2 *note` is `R2` and a comment while `R2*note` is an error; a line with one word that is not a mnemonic or a directive is a label even when indented, so a misspelt `HALT` alone on a line is silently a label, which follows ISA.md §10.1 to the letter; an undefined symbol in an `.EQU` value is reported only where the name is used; and the source is read as Latin-1, so a UTF-8 `é` in a string gives two words. Two of them are worth an item in TODO.md: a warning for a lone unknown word read as a label, and reporting an undefined symbol in an `.EQU` that nothing uses. One more: ISA.md §10.2 says a constant's value wraps modulo 2³², but `INT`, `.BLK`, and `.RES` use the unwrapped value, so `INT 0xFFFFFFFF+1` is "out of range" rather than vector 0, which the README states for `.BLK` and `.RES` and `errors.py` pins for `INT -1`. That looks intended. **Fix:** a sentence in ISA.md §10.2 or §10.3 that these three take the value before it wraps.

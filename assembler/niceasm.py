@@ -633,9 +633,12 @@ def main() -> None:
         print(f"{len(errors)} error{'' if len(errors) == 1 else 's'}", file=sys.stderr)
         sys.exit(1)
 
-    with open(out, "w") as f:
-        for addr, word in asm.output():
-            f.write(f"{addr:08x} {word:08x}\n")
+    try:
+        with open(out, "w") as f:
+            for addr, word in asm.output():
+                f.write(f"{addr:08x} {word:08x}\n")
+    except OSError as e:
+        sys.exit(f"{e.filename}: {e.strerror}")
 
 
 if __name__ == "__main__":

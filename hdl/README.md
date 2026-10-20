@@ -237,8 +237,9 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   `0xFFFFFF40`, where the core counts cycles and the emulator counts steps
   (SYSTEM.md §3). So these runs make its two words ordinary memory on both
   sides, with the generic `G_CYCLE_COUNTER` and the emulator's
-  `--no-cycle-counter`. The instruction counter and the math unit stay,
-  because both sides agree on them.
+  `--no-cycle-counter`, and the fetch statistics too, which the emulator
+  has as memory, with `G_FETCH_STATS` false. The instruction counter and
+  the math unit stay, because both sides agree on them.
 
 `test/random_stats.py` shows how well the random programs test the core
 (MICROARCH.md §9, step 7). It runs a range of seeds on the emulator, as
@@ -446,7 +447,9 @@ combinationally on `ready`.
 
 In `tb_core`, the generic `G_CYCLE_COUNTER` set to false sends the
 two words of the cycle counter to the memory model instead of `perf`, as
-`--no-cycle-counter` does in the emulator. The generic `G_INTERRUPTS` takes the emulator's options,
+`--no-cycle-counter` does in the emulator, and `G_FETCH_STATS` set to
+false sends the 48 words of the fetch statistics there, as the emulator
+has them. The generic `G_INTERRUPTS` takes the emulator's options,
 for example `--nmi 2:1 --irq 2:2`. A request for step S is raised once S
 steps have retired, as the emulator raises it before step S. A second request
 of the same kind replaces the vector of one still pending, as the emulator

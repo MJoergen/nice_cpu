@@ -20,7 +20,9 @@
 --
 -- G_FETCH_STATS is the generic G_ENABLE of the fetch statistics. Only the
 -- pipelined core reports the events they count; with the multi-cycle core
--- they count only cycles.
+-- they count only cycles. With G_FETCH_STATS false, their 48 words at
+-- 0xFFFFFF50 are memory, as the emulator has them, for a program that may
+-- store there and read it back.
 --
 -- With G_CYCLE_COUNTER false, CYCLE_LO and CYCLE_HI at 0xFFFFFF40 and
 -- 0xFFFFFF41 are memory, as with the emulator's --no-cycle-counter. The
@@ -336,7 +338,7 @@ begin
                            (G_CYCLE_COUNTER or dbus_addr(3 downto 1) /= "000") else
                C_TIMER when dbus_addr(31 downto 4) = X"FFFFFF1" else
                C_STATS when dbus_addr(31 downto 6) = X"FFFFFF" & "01" and
-                            dbus_addr(5 downto 4) /= "00" else
+                            dbus_addr(5 downto 4) /= "00" and G_FETCH_STATS else
                C_MEM;
 
 

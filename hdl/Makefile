@@ -148,7 +148,8 @@ endef
 # percent of the cycles, and compared in the same way. A random program
 # may read any address, so the cycle counter, which the core and the
 # emulator count differently, is memory in both: G_CYCLE_COUNTER=false and
-# --no-cycle-counter.
+# --no-cycle-counter. So are the fetch statistics, which the emulator has
+# as memory: G_FETCH_STATS=false.
 RANDOM_SEEDS = $(shell seq 1 30)
 RANDOM_STEPS = 3000
 RANDOM_STALL = 30
@@ -159,6 +160,7 @@ define check_random
 	@o=$$(cat $(BUILD)/random_$(1).opts); \
 	  ($(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=random_$(1).bin -gG_TRACE_FILE=random_$(1).out \
 	  -gG_MAX_STEPS=$(RANDOM_STEPS) -gG_STALL=$(RANDOM_STALL) -gG_SEED=$(1) -gG_CYCLE_COUNTER=false \
+	  -gG_FETCH_STATS=false \
 	  $${o:+"-gG_INTERRUPTS=$$o"} -gG_INTR_LOG=random_$(1).intr > random_$(1).log 2>&1); \
 	  echo "exit $$?" >> $(BUILD)/random_$(1).out
 	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter $$(cat $(BUILD)/random_$(1).opts) $(BUILD)/random_$(1).bin \

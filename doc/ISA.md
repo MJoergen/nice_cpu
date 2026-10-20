@@ -6,7 +6,7 @@ The sources are listed in [REFERENCES.md](REFERENCES.md). Where they disagree, t
 
 1. The intended behaviour of the 2004 emulator `NICE.pm` and the 2004 web page. The emulator's bugs are not part of the ISA.
 2. The 1999 and 1997 articles.
-3. QNICE (as in [MJoergen/qnice_cpu](https://github.com/MJoergen/qnice_cpu)), for anything the NICE sources leave open, such as interrupts.
+3. QNICE, the 16-bit descendant of NICE, as implemented in [MJoergen/qnice_cpu](https://github.com/MJoergen/qnice_cpu), for anything the NICE sources leave open, such as interrupts.
 
 [Appendix B](#appendix-b-departures-from-the-sources) lists every place where this specification departs from a source.
 
@@ -269,11 +269,11 @@ The next instruction is the one at PC as it stands after step 8. Interrupts are 
 - Addition: V = 1 when both addends have the same sign and r has the other sign. For `MDBL` the addends are s0 and (s0 AND s1). For `DBL` both addends are s0.
 - Subtraction a − b: V = 1 when a and b have different signs and r's sign differs from a's. For `DEC`, b = 1, so V = 1 only when s0 = `0x80000000`.
 
-`MDBL` doubles s0 where s1 has ones: s1 = `0xFFFFFFFF` gives 2·s0 and s1 = 0 gives s0. It comes from the 74181 ALU chip, as do `IAND`, `IOR`, and the other unusual operations.
+`MDBL` doubles s0 where s1 has ones: s1 = `0xFFFFFFFF` gives 2·s0 and s1 = 0 gives s0. It comes from the 74181, a 4-bit ALU chip of the 1970s, as do `IAND`, `IOR`, and the other unusual operations.
 
 ### 5.2 SHIFT instructions (bits 27..26 = 10)
 
-s0 is the value to shift. s1 is the count: the shift runs **n = s1** steps, using all 32 bits of s1 as an unsigned number (as in QNICE). There is no modulo.
+s0 is the value to shift. s1 is the count: the shift runs **n = s1** steps, using all 32 bits of s1 as an unsigned number. There is no modulo.
 
 The mnemonic shows the direction and where bits come from and go to:
 - **Left shifts `A<B`**: B is the fill bit shifted into bit 0 (0, 1, or C), and A is where bit 31 goes (0 = discarded, C = the carry flag).
@@ -361,7 +361,7 @@ If M = 0, the flags do not change. This holds for every instruction, shifts incl
 
 ## 7. Interrupts
 
-NICE has one maskable interrupt request (IRQ), one non-maskable interrupt request (NMI) and a software interrupt (`INT`). The model follows QNICE: the hardware saves PC and SR in hidden registers, `RTI` restores them, and interrupts do not nest.
+NICE has one maskable interrupt request (IRQ), one non-maskable interrupt request (NMI) and a software interrupt (`INT`). The hardware saves PC and SR in hidden registers, `RTI` restores them, and interrupts do not nest.
 
 ### 7.1 When an interrupt is taken
 

@@ -143,6 +143,8 @@ In SYSTEM.md, Memory map, a blank line follows the row of the character screen, 
 
 **Fix:** the three sentences.
 
+**Resolved**: "the code that the translator writes", a sentence that §9.4 is WASM.md now, and 2.20 million cycles by the model, with the core's 2.28 beside it.
+
 ### 2.6 The slides
 
 `doc/intro/nice_intro.tex` line 917: "A C compiler that targets NICE directly would be great, too. The calling convention for one is already in `doc/ISA.md`." It is in `runtime/ABI.md` since commit d07a0a0. **Fix:** the file name, and `make pdf`, since `make pdfcheck` compares the PDF with the text.

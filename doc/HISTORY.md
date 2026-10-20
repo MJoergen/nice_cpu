@@ -15,7 +15,8 @@ order, so ISA §8.2 was split into instruction fetches and data accesses,
 §8.3 was made to say that instruction fetches never reach I/O devices,
 §7.1 was changed to check for interrupts "before each instruction" instead
 of "before each instruction fetch", and §5 and §9.4 were made to name the
-two kinds of access. Appendix B records the two rules.
+two kinds of access. §9.4, the mapping of WebAssembly, is
+[translator/WASM.md](../translator/WASM.md) now. Appendix B records the two rules.
 
 ## The pipelined core
 
@@ -63,7 +64,7 @@ On seeds 1 to 30, a register read right after its write went from 16% to
 
 ## The size and speed of translated code
 
-The code of the translator is about half the size it was, after four steps with no change
+The code that the translator writes is about half the size it was, after four steps with no change
 to WASM.md. Using locals and constants directly as
 operands made `test/safe.zig` 19% smaller (12353 to 9941 words) and the
 float library 31% smaller (29569 to 20317). A short inline path for
@@ -174,8 +175,8 @@ benchmark's module became 8560, not 8623.
   shift count, conditional instructions in place of short jumps,
   multiplications and divisions by constants, and shift counts of the byte
   accesses in registers. `bench/` went from 3359061 to 1730635
-  instructions, and from about 5.55 to about 2.27 million cycles by
-  `bench/pipecycles.py`.
+  instructions, and from about 5.55 to about 2.20 million cycles by
+  `bench/pipecycles.py`, 2.28 million on the pipelined core.
 - A differential fuzzer (`translator/test/diff_fuzz.py`) built in the
   reviews of 2026-10-19 also compared a trap's R2 by wasm instruction. It
   found two bugs in the early return that `fuzz.py` and `run.py` had

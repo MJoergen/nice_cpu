@@ -41,9 +41,7 @@ added 2026-10-20. The section numbers are its.
   1775661 instructions, since one skips a trace line that the program's
   console output precedes (§3.5).
 - **The moves left text behind** (§2): the slides send a C compiler to ISA.md for its calling
-  convention, which is in ABI.md (§2.6); HISTORY.md calls the translated
-  code "the code of the translator", cites a section of ISA.md that is
-  now WASM.md, and gives the core's cycles as the model's (§2.5); the review notes cite ISA.md
+  convention, which is in ABI.md (§2.6); the review notes cite ISA.md
   §8.4, §8.6, and §9.4 by their old numbers (§2.7, §5.1).
 - **MICROARCH.md and ASSUMPTIONS.md lag the re-timing** (§2.3, §2.4):
   §3 and §4 give the words and micro-operations per instruction of the

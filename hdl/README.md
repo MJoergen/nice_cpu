@@ -55,6 +55,20 @@ departs from it.
 | [test/irq_sweep.py](test/irq_sweep.py) | Runs a program with an NMI before each of its steps, and with an IRQ before each. |
 | [test/sidefx_prog.py](test/sidefx_prog.py) | Writes a program with every pair of side effects on one register. |
 | [test/smc_prog.py](test/smc_prog.py) | Writes a program that stores into its own code 1 to 40 words ahead. |
+| [test/samereg_prog.py](test/samereg_prog.py) | Writes a program with one register in all three fields of a shift, for every pair of source modes. |
+| [test/latecount.nasm](test/latecount.nasm) | Every shift count that WRITE reduces in a cycle of its own, and every reader of such a shift's result. |
+| [test/twocycle.nasm](test/twocycle.nasm) | Register destinations adjusted by one, their readers, and two-cycle jumps. |
+| [test/r15mix.nasm](test/r15mix.nasm) | R15 in several fields of one instruction, as a shift count, and as a store's base. |
+| [test/r14cond.nasm](test/r14cond.nasm) | SR written by side effects and adjusted destinations, then conditional instructions and reads; `INT` and `RTI` with conditions. |
+| [test/r0odd.nasm](test/r0odd.nasm) | R0 in every mode as count, source, and destination. |
+| [test/smclate.nasm](test/smclate.nasm) | Stores into fetched code from late shifts and two-cycle instructions, and into the constants of early jumps. |
+| [test/readorder.nasm](test/readorder.nasm) | The number and order of the data reads of late shifts, adjusted destinations, and skipped instructions, through the read counter. |
+| [test/instret_late.nasm](test/instret_late.nasm) | The instruction counter read right after late shifts, adjusted destinations, stores, skipped instructions, and `INT`. |
+| [test/jumpwords.nasm](test/jumpwords.nasm) | Jumps into constant words and to the instruction itself, with conditions on I. It ends at a reserved word. |
+| [test/condlate.nasm](test/condlate.nasm) | Conditional late shifts, adjusted destinations in R14, `HALT` and `INT` right after two-cycle flag writes, and more forms of R15. |
+| [test/irqhazard.nasm](test/irqhazard.nasm) | Late shifts, adjusted destinations, and side effects on R14 and R15, for a request before each step. |
+| [test/shiftjump.nasm](test/shiftjump.nasm) | Every shift with R15 as its destination, `0<0` among them, whose opcode is `MOVE`'s. |
+| [test/bubble.nasm](test/bubble.nasm) | Measures the bubbles of the pipelined core with the cycle counter, and checks itself. |
 | [test/random_prog.py](test/random_prog.py) | Writes random programs, and random interrupt requests for them. |
 | [test/random_stats.py](test/random_stats.py) | Shows how the random programs spend their steps, and how often they make each hazard. |
 | [test/trace_reads.py](test/trace_reads.py) | Finds the first line where two traces differ, and shows the data reads of that instruction. |
@@ -202,7 +216,18 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   requests in flight, so that some store lands in the pair whose fetch
   the bus accepts in the same cycle (MICROARCH.md §5.5): three of its
   forty stores do with no stalls, and two with 30%. It checks itself:
-  R12 is 0 at the end only if every `HALT` was passed.
+  R12 is 0 at the end only if every `HALT` was passed. The programs of
+  the third repository review, `test/latecount.nasm` to
+  `test/shiftjump.nasm` in the table above, were written against the
+  operand rules of the re-timed core: the shift counts WRITE reduces in
+  a cycle of its own, the destinations adjusted by one, R14 and R15 in
+  every field, R0, stores into fetched code from late instructions, the
+  read counter and the instruction counter around them, jumps into
+  constant words, and every shift into R15, which found a `0<0` that
+  jumped to its source. `test/samereg_prog.py` writes one more, with one
+  register in all three fields of a shift, for every pair of source
+  modes and six destination modes. None of them checks itself; the
+  core's trace is compared with the emulator's.
 - `test/hazard.nasm` with an interrupt request at every point (MICROARCH.md
   §9, step 5). `test/irq_sweep.py` runs it once for each step S, with
   `--nmi S:8`, and once more with `--irq S:9`, on a memory that stalls in
@@ -217,7 +242,8 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   `test/irq_compare.py`. The runs go in parallel, on all
   cores; set the number with `-j`. Each worker runs GHDL in its own
   directory under `build/sweep`, because the LLVM and GCC backends of GHDL
-  write an executable where they run.
+  write an executable where they run. `test/irqhazard.nasm` is swept the
+  same way, without the delays.
 - `cputest`, `reads`, `mpu`, `mpu64`, `perf`, and `timer` again, on a memory that
   stalls in 30% of the cycles.
 - On the pipelined core only, `test/fstats.nasm`, also on a memory that
@@ -226,7 +252,9 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   to the cycles, `FS_MIN` ≤ `FS_MAX` ≤ `FS_HELD_MAX` ≤ 16, at least one
   jump and flush per round, and cycles in which DECODE waited. The
   emulator has no fetch statistics, so the run is not compared with it:
-  it must end with R12 = 0 and exit status 0.
+  it must end with R12 = 0 and exit status 0. `test/bubble.nasm` runs
+  the same way: it reads the cycle counter before and after each kind of
+  jump, and checks the bubbles below.
 - 30 random programs from `test/random_prog.py`, each stopped at 3000 steps,
   on a memory that stalls in 30% of the cycles. Besides random ALU and
   shift instructions, they use R15 with every side effect, `HALT`, `RTI`,
@@ -538,7 +566,11 @@ writes takes the value WRITE wrote last, WRITE's one bypass; a field
 that needs an adder on it, or a read address, waits a cycle
 (ASSUMPTIONS.md, item 1; MICROARCH.md §7.4). Three rare cases take WRITE
 two cycles: a destination adjusted by one, a jump to a computed target,
-and a shift by a count from memory (MICROARCH.md §7.4).
+and a shift by a count from memory (MICROARCH.md §7.4). `test/bubble.nasm`
+measures what a jump costs, with the cycle counter on a memory that never
+stalls: 6 cycles over a fall-through for a jump that WRITE resolves,
+aligned or not, 2 for one that DECODE resolves, and one more for an
+operation other than `MOVE` into R15.
 
 The condition is tested once per instruction, in PREPARE if no older
 micro-operation may still change SR, otherwise in WRITE. A data read waits

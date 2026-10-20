@@ -48,7 +48,7 @@ Nine programs read `CYCLE_LO` into R1, run one instruction, and read it into R2.
 | `MOVE R3, L` first, then `MOVE R15, R3` | 9 | 6 |
 | `MOVE R3, L` first, then `ADD R15, R3, 0` | 10 | 7 |
 
-So a jump that WRITE resolves costs 6 cycles over a fall-through, whatever the target's alignment, a `MOVE` through a register the same, and an `ADD` to R15 one more, as MICROARCH.md §5.4 and §7.4 say. The chain is: the jump retires in cycle c − 1 and flushes in the same cycle, since `flush_o` is combinational; FETCH issues the request in c, it is on the bus in c + 1, the memory acknowledges in c + 2, DECODE takes the instruction in c + 3 and emits its micro-operation in c + 4, PREPARE passes it on in c + 5, and WRITE runs it in c + 6, where the fall-through would have run in c. §3.1 is about the model's account of this.
+So a jump that WRITE resolves costs 6 cycles over a fall-through, whatever the target's alignment, a `MOVE` through a register the same, and an `ADD` to R15 one more, as MICROARCH.md §5.4 and §7.4 say. `hdl/test/bubble.nasm` measures the seven cases and checks these values; `make test` runs it on the pipelined core. The chain is: the jump retires in cycle c − 1 and flushes in the same cycle, since `flush_o` is combinational; FETCH issues the request in c, it is on the bus in c + 1, the memory acknowledges in c + 2, DECODE takes the instruction in c + 3 and emits its micro-operation in c + 4, PREPARE passes it on in c + 5, and WRITE runs it in c + 6, where the fall-through would have run in c. §3.1 is about the model's account of this.
 
 ### 1.3 The benchmark on the core
 
@@ -92,6 +92,8 @@ The ISA says any write to R15 is a jump (§4.3), and the shift's result is the v
 ### 1.5 The programs written against the operand rules
 
 The bug came from a second reader's programs, in the scratchpad of the review, run on both cores, with a stalling memory, and against the emulator, in the way `check_core` of `hdl/Makefile` runs them: every late shift count of MICROARCH.md §7.3 and every reader of a late shift's result; every reader of an adjusted destination, and chains of them; R14 and R15 in every mode as count, source, and destination, after flag writes and after jumps; one register in all three fields with every pair of source modes; stores into fetched code from late and two-cycle instructions; the read counter and `INSTR_LO` around them; and two programs swept with an NMI or an IRQ before each step, 356 runs, judged by `irq_compare.py --read-delay`. All but the `0<0` cases agree. The programs are worth keeping as a hazard program, next to `hazard.nasm`, once the fix is in.
+
+**Resolved**: the programs are in `hdl/test/`, `latecount.nasm` to `shiftjump.nasm`, with `samereg_prog.py` writing the generated one, and `make test` runs each on both cores, plain and on a stalling memory, and `irqhazard.nasm` with a request before each step.
 
 ## 2. The documents
 

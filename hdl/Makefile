@@ -113,10 +113,11 @@ SWEEP_DELAYS_multicycle = 0,3,7
 SWEEP_DELAYS_pipeline = 0,1,2,3
 IRQ_COMPARE = $(PYTHON) test/irq_compare.py --emu $(EMU) $(IRQ_LATE)
 
-# The hazard programs of MICROARCH.md §9, step 4: test/hazard.nasm, and the
-# programs that test/sidefx_prog.py and test/smc_prog.py write, each also on
-# a memory that stalls. smc_prog.py's program stores into its own code 1 to
-# 40 words ahead, and checks itself like hazard.nasm.
+# The hazard programs of MICROARCH.md §9, step 4: test/hazard.nasm, the
+# programs that test/sidefx_prog.py and test/smc_prog.py write, and the
+# HAZARD_PROGS below, each also on a memory that stalls. smc_prog.py's
+# program stores into its own code 1 to 40 words ahead, and checks itself
+# like hazard.nasm.
 # hazard.nasm checks itself, so the emulator's run must end at its last HALT,
 # with R12 = 0 and exit status 0, before the core's trace means anything.
 # test/irq_sweep.py then runs hazard.nasm with an NMI before each of its
@@ -130,13 +131,36 @@ define check_selfcheck
 
 endef
 
+# The programs of the third repository review against the operand rules of
+# the re-timed core (doc/review/third-repository-review.md §1.5): the shift
+# counts WRITE reduces in a cycle of its own, the destinations adjusted by
+# one, R14 and R15 in every field, R0, stores into fetched code from late
+# instructions, the read counter and the instruction counter around them,
+# jumps into constant words, and every shift into R15. Each runs on both
+# cores, plain and on a stalling memory, compared with the emulator, and
+# irqhazard also with a request before each step, through
+# test/irq_sweep.py, without delays. test/samereg_prog.py writes one more,
+# with one register in all three fields of a shift.
+HAZARD_PROGS = latecount twocycle r15mix r14cond r0odd smclate readorder instret_late \
+  jumpwords condlate irqhazard shiftjump
+
+define check_hazard
+	@$(ASM) -o $(BUILD)/$(1).bin test/$(1).nasm
+	$(call check_core,$(1),$(BUILD)/$(1).bin)
+	$(call check_core,$(1)_stall,$(BUILD)/$(1).bin,-gG_STALL=30 -gG_SEED=25)
+
+endef
+
 # test/fstats.nasm reads the fetch statistics (MICROARCH.md §8.1), which
 # only the pipelined core has, and checks itself. The emulator has none, so the run
 # is not compared with it: it must end at the last HALT, with R12 = 0 and
-# exit status 0. $(1) is the name of the run, $(2) any more generics.
-define check_fstats
-	@($(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=fstats.bin -gG_TRACE_FILE=core_$(1).out \
-	  -gG_TRACE=false $(2) > core_$(1).log 2>&1); echo "exit $$?" >> $(BUILD)/core_$(1).out
+# exit status 0. test/bubble.nasm measures the bubbles of the pipelined
+# core with the cycle counter, which the emulator counts in steps, and
+# checks itself the same way. $(1) is the name of the run, $(2) the
+# program, and $(3) any more generics.
+define check_selfonly
+	@($(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=../$(2) -gG_TRACE_FILE=core_$(1).out \
+	  -gG_TRACE=false $(3) > core_$(1).log 2>&1); echo "exit $$?" >> $(BUILD)/core_$(1).out
 	@if grep -q '^R12 00000000' $(BUILD)/core_$(1).out && \
 	  tail -n 1 $(BUILD)/core_$(1).out | grep -qx 'exit 0'; then echo "PASS $(CORE) $(1)"; \
 	else echo "FAIL $(CORE) $(1)"; cat $(BUILD)/core_$(1).log; tail -n 6 $(BUILD)/core_$(1).out; exit 1; fi
@@ -232,9 +256,17 @@ cores:
 	$(call check_core,smc,$(BUILD)/smc.bin)
 	$(call check_selfcheck,smc)
 	$(call check_core,smc_stall,$(BUILD)/smc.bin,-gG_STALL=30 -gG_SEED=21)
+	$(foreach t,$(HAZARD_PROGS),$(call check_hazard,$(t)))
+	@$(PYTHON) test/samereg_prog.py $(BUILD)/samereg.nasm
+	@$(ASM) -o $(BUILD)/samereg.bin $(BUILD)/samereg.nasm
+	$(call check_core,samereg,$(BUILD)/samereg.bin)
+	$(call check_core,samereg_stall,$(BUILD)/samereg.bin,-gG_STALL=30 -gG_SEED=27)
+	@$(PYTHON) test/irq_sweep.py --core $(CORE) $(IRQ_LATE) --stall 30 --build $(BUILD) --emu $(EMU) $(BUILD)/irqhazard.bin
 	@$(ASM) -o $(BUILD)/fstats.bin test/fstats.nasm
-	$(if $(filter pipeline,$(CORE)),$(call check_fstats,fstats))
-	$(if $(filter pipeline,$(CORE)),$(call check_fstats,fstats_stall,-gG_STALL=30 -gG_SEED=19))
+	$(if $(filter pipeline,$(CORE)),$(call check_selfonly,fstats,$(BUILD)/fstats.bin))
+	$(if $(filter pipeline,$(CORE)),$(call check_selfonly,fstats_stall,$(BUILD)/fstats.bin,-gG_STALL=30 -gG_SEED=19))
+	@$(ASM) -o $(BUILD)/bubble.bin test/bubble.nasm
+	$(if $(filter pipeline,$(CORE)),$(call check_selfonly,bubble,$(BUILD)/bubble.bin))
 	$(foreach t,$(RANDOM_SEEDS),$(call check_random,$(t)))
 
 # More random programs than make test runs, for example

@@ -149,6 +149,8 @@ In SYSTEM.md, Memory map, a blank line follows the row of the character screen, 
 
 `doc/intro/nice_intro.tex` line 917: "A C compiler that targets NICE directly would be great, too. The calling convention for one is already in `doc/ISA.md`." It is in `runtime/ABI.md` since commit d07a0a0. **Fix:** the file name, and `make pdf`, since `make pdfcheck` compares the PDF with the text.
 
+**Resolved**: `runtime/ABI.md`, and the PDF rebuilt.
+
 ### 2.7 Smaller ones
 
 - `translator/README.md` lines 632, 654, and 658 say a taken conditional jump "costs some five cycles more" than a skipped one on the FPGA core. It costs six (§1.2), and the model charges seven.

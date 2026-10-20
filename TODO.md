@@ -17,9 +17,6 @@ that are not closed yet. Every finding of the earlier reviews is closed.
   with no byte waiting; and the translator's README that an unreadable
   input and the overwrite check print without `error:`, and that
   `early_exit` has a length limit.
-- **The assembler** could warn about a lone unknown word that it reads
-  as a label, and report an undefined symbol in an `.EQU` that nothing
-  uses (§1.3).
 - **A failing C library test** stops `make -C runtime/libc test` before
   the line that removes the tests' build files, which git does not
   ignore (§3.6).

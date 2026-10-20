@@ -519,14 +519,14 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
 | `c`, `c[Rx]` | A constant, mode 011. As a source its value is Rx + c. As a destination it writes mem[Rx + c]. |
 | `@c`, `@c[Rx]` | Memory at Rx + c, mode 111. |
 
-- **Numbers and expressions.** `0x` hex, `0b` binary, and plain decimal. The prefix and the digits may be in either case. There is no `#` prefix and no `$`. A label or an `.EQU` name may appear wherever a number may. A constant may also be an expression: numbers and symbols joined with `+` and `-`, with an optional leading sign and no spaces, such as `end-data` or `-1`. The value wraps modulo 2³².
+- **Numbers and expressions.** `0x` hex, `0b` binary, and plain decimal. The prefix and the digits may be in either case. There is no `#` prefix and no `$`. A label or an `.EQU` name may appear wherever a number may. A constant may also be an expression: numbers and symbols joined with `+` and `-`, with an optional leading sign and no spaces, such as `end-data` or `-1`. The value wraps modulo 2³², except for `INT`, `.BLK`, and `.RES`, which take it before it wraps and reject it out of range, so `INT 0xFFFFFFFF+1` is an error, not vector 0.
 - **Register aliases.** Programs define them with `.EQU`, for example `SP .EQU R13` and `PC .EQU R15`.
 
 ### 10.3 Directives
 
 | Directive | Effect |
 |---|---|
-| `NAME .EQU value` | Defines NAME. The value is a number, an expression, a register, or a complete operand. NAME is replaced by the value where it stands for a whole operand, a register, or a number in an expression. |
+| `NAME .EQU value` | Defines NAME. The value is a number, an expression, a register, or a complete operand. NAME is replaced by the value where it stands for a whole operand, a register, or a number in an expression. Every symbol in the value must be defined, also when NAME is never used. |
 | `.ORG addr` | Continue assembling at addr. |
 | `.DAT value, ...` | One word for each value. |
 | `.BLK n` | n words of 0. |

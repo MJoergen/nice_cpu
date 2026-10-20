@@ -23,8 +23,9 @@ The script is fully type-annotated. `make typecheck` checks it with
 
 Without `-o`, the output goes to `input.bin`. If that is the input file
 itself, the assembler refuses with a message. Errors in the program are
-printed as `file:line: error: message`, followed by a count of them. No
-output is written if there is an error. The exit status is 0 on success, 1
+printed as `file:line: error: message`, followed by a count of them, and
+warnings as `file:line: warning: message`. No output is written if there
+is an error; a warning does not stop the output. The exit status is 0 on success, 1
 after any error, and 2 for a bad command line, which also prints the usage.
 `-h` prints the usage.
 
@@ -44,8 +45,9 @@ by `.ORG` and words reserved by `.RES` are not listed.
   the start of a word, so `R2 *note` is `R2` and a comment, but `R2*note`
   is an error.
 - A line with one word that is not a mnemonic or a directive is a label,
-  even when it is indented. So a misspelt `HALT` or `RTI` alone on a line
-  is not reported: it is read as a label.
+  even when it is indented. When it is indented and has no `:`, as a
+  misspelt `HALT` or `RTI` alone on a line would be, the assembler prints
+  `file:line: warning: message` and assembles the program.
 - A label or `.EQU` name cannot be a mnemonic or look like a register (`R`
   followed by digits, so `R16` is rejected too).
 - An `.EQU` value is a number, an expression, a register, or a complete
@@ -53,8 +55,8 @@ by `.ORG` and words reserved by `.RES` are not listed.
   when it is a whole operand, the part after `@`, the register in `--Rx`,
   `Rx++`, `Rx--`, or `c[Rx]`, or a term in an expression. In an expression
   the value must be a number or an expression. Each value is checked where it
-  is defined, except that an undefined symbol in it is reported only where
-  the name is used.
+  is defined, also when the name is never used, and an error in it is
+  reported there and not where the name is used.
 - Numbers are digits only: no `_` separators.
 - Strings have no escape sequences. The source is read byte by byte, as
   Latin-1, so each byte of a string is one character: a UTF-8 `é` gives two.
@@ -72,4 +74,4 @@ by `.ORG` and words reserved by `.RES` are not listed.
 | `encoding` | Every addressing mode in every field, opcode, alias, condition, control instruction, and directive; three constant words; number spellings and expressions; register spellings; and `.EQU` chains and operands. The expected output was checked by hand against ISA.md, including the worked example in §11. The comments of the later lines give the derivation. |
 | `wrap` | Address wrap from `0xFFFFFFFF` to 0. |
 | `crlf` | CRLF line endings and a program with no `.ORG`. |
-| `errors.py` | One case per error message, including every bug fixed after [the review](../doc/review/assembler-review.md); generated programs such as `.EQU` chains of 1200 names; an empty file and one with no final newline; the exact output for two errors; and the command line: `-o`, a missing file, a directory in place of a file, and bad arguments. |
+| `errors.py` | One case per error message, including every bug fixed after [the review](../doc/review/assembler-review.md); generated programs such as `.EQU` chains of 1200 names; an empty file and one with no final newline; the exact output for two errors, and for warnings; and the command line: `-o`, a missing file, a directory in place of a file, and bad arguments. |

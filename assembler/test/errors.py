@@ -3,7 +3,8 @@
 
 CASES are short programs that must fail with exit status 1, print the
 expected error, and write no output file. GOOD are programs, some of them
-generated, that must assemble to the expected output."""
+generated, that must assemble to the expected output. WARN are programs
+that assemble and print a warning."""
 
 from __future__ import annotations
 
@@ -19,6 +20,10 @@ NICEASM = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "niceas
 CASES: List[Tuple[str, str]] = [
     # Symbols
     (" MOVE R1, X", "1: error: undefined symbol 'X'"),
+    # An undefined symbol in an .EQU value, also one that nothing uses
+    ("X .EQU nowhere\n HALT", "1: error: undefined symbol 'nowhere'"),
+    ("X .EQU 5\nY .EQU nowhere+X\n HALT", "2: error: undefined symbol 'nowhere'"),
+    ("X .EQU @foo[R1]\n HALT", "1: error: undefined symbol 'foo'"),
     ("A HALT\nA HALT", "2: error: symbol 'A' is already defined on line 1"),
     ("A .EQU 1\nA .EQU 2", "2: error: symbol 'A' is already defined on line 1"),
     ("A .EQU 1\nA HALT", "2: error: symbol 'A' is already defined on line 1"),
@@ -64,6 +69,8 @@ CASES: List[Tuple[str, str]] = [
     (" INT", "1: error: INT takes 1 operand, got 0"),
     (" INT 256", "1: error: interrupt vector 256 is out of range 0..255"),
     (" INT -1", "1: error: interrupt vector -1 is out of range 0..255"),
+    # INT takes the value before it wraps (ISA.md section 10.2).
+    (" INT 0xFFFFFFFF+1", "1: error: interrupt vector 4294967296 is out of range 0..255"),
     (" INT v\n .ORG 256\nv HALT", "1: error: interrupt vector 256 is out of range 0..255"),
     # Conditions and modifiers
     ("?Q MOVE R1, R2", "1: error: bad condition '?Q'"),
@@ -214,9 +221,8 @@ GOOD: List[Tuple[str, str]] = [
     (" .DAT 1 2,3", "00000000 00000001\n00000001 00000002\n00000002 00000003\n"),
     # Symbols are case-sensitive.
     ("x .EQU 1\nX .EQU 2\n .DAT x, X", "00000000 00000001\n00000001 00000002\n"),
-    # An undefined symbol in an .EQU value is only reported where it is used.
-    ("X .EQU nowhere\n HALT", "00000000 0c000000\n"),
-    # One word that is not a mnemonic is a label, even when indented.
+    # One word that is not a mnemonic is a label, even when indented (with
+    # a warning, see WARN).
     (" HLT\n .DAT HLT", "00000000 00000000\n"),
     # The source is read byte by byte: UTF-8 'e acute' is two characters.
     (' .ASCII_L "\xc3\xa9"', "00000000 000000c3\n00000001 000000a9\n00000002 00000000\n"),
@@ -237,6 +243,31 @@ STDERR: List[Tuple[str, str]] = [
      "{src}:1: error: unknown mnemonic 'MOV'\n"
      "{src}:2: error: '@@R1': there is only one level of '@'\n"
      "2 errors\n"),
+    # An undefined symbol in a used .EQU is reported once, where it is defined.
+    ("X .EQU nowhere\n MOVE R1, X\n .DAT X+1\n HALT",
+     "{src}:1: error: undefined symbol 'nowhere'\n"
+     "1 error\n"),
+    # A warning is printed with the errors.
+    (" HLT\n MOV R1, R2",
+     "{src}:1: warning: 'HLT' alone on an indented line is read as a label; "
+     "write 'HLT:' if one is meant\n"
+     "{src}:2: error: unknown mnemonic 'MOV'\n"
+     "1 error\n"),
+]
+
+# (source, expected output, expected stderr, exactly): programs that
+# assemble with exit status 0 and print warnings, or none.
+WARN: List[Tuple[str, str, str]] = [
+    (" HLT\n .DAT HLT",
+     "00000000 00000000\n",
+     "{src}:1: warning: 'HLT' alone on an indented line is read as a label; "
+     "write 'HLT:' if one is meant\n"),
+    ("\tRIT\n HALT",
+     "00000000 0c000000\n",
+     "{src}:1: warning: 'RIT' alone on an indented line is read as a label; "
+     "write 'RIT:' if one is meant\n"),
+    # No warning for a label at the start of a line, or with ':'
+    ("loop\n  done:\n HALT", "00000000 0c000000\n", ""),
 ]
 
 
@@ -289,6 +320,21 @@ def run_stderr(tmp: str, source: str, expected: str) -> List[str]:
     return []
 
 
+def run_warn(tmp: str, source: str, expected: str, stderr: str) -> List[str]:
+    """Returns a list of failure descriptions, empty if the case passed."""
+    src = os.path.join(tmp, "t.nasm")
+    out = os.path.join(tmp, "t.bin")
+    with open(src, "w", encoding="latin-1") as f:
+        f.write(source + "\n")
+    p = subprocess.run([sys.executable, NICEASM, src], capture_output=True, text=True)
+    want = stderr.format(src=src)
+    if p.returncode != 0 or p.stderr != want:
+        return [f"exit status {p.returncode}, expected 0; expected:\n{want}got:\n{p.stderr}"]
+    with open(out) as f:
+        got = f.read()
+    return [] if got == expected else [f"expected:\n{expected}got:\n{got}"]
+
+
 def run_cli(tmp: str, args: List[str], status: int, message: str) -> List[str]:
     """Runs niceasm with args, in tmp, and checks the exit status and that
     the last line of stderr is message. Returns failure descriptions."""
@@ -328,6 +374,13 @@ def main() -> None:
                 print(f"FAIL {source[:60]!r}")
                 for msg in problems:
                     print("    " + msg.replace("\n", "\n    "))
+        for source, expected, stderr in WARN:
+            problems = run_warn(tmp, source, expected, stderr)
+            if problems:
+                failed += 1
+                print(f"FAIL {source[:60]!r}")
+                for msg in problems:
+                    print("    " + msg.replace("\n", "\n    "))
         # The default output name must not overwrite the input.
         src = os.path.join(tmp, "prog.bin")
         with open(src, "w") as f:
@@ -359,7 +412,7 @@ def main() -> None:
                 or os.path.exists(os.path.join(cli, "ok.bin"))):
             failed += 1
             print("FAIL -o out.txt")
-    total = len(CASES) + len(GOOD) + len(RAW) + len(STDERR) + len(CLI) + 2
+    total = len(CASES) + len(GOOD) + len(RAW) + len(STDERR) + len(WARN) + len(CLI) + 2
     print(f"PASS errors ({total} cases)" if not failed else f"FAIL errors ({failed} of {total})")
     sys.exit(1 if failed else 0)
 

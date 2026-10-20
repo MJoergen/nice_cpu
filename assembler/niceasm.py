@@ -78,6 +78,7 @@ class Assembler:
         self.equ_cache: Dict[str, int] = {}            # .EQU values in pass 0
         self.early_labels: Dict[str, int] = {}         # label name -> first line, from pass 0
         self.must_know: Optional[str] = None  # set while evaluating a .ORG, .BLK, or .RES argument
+        self.warnings: List[Tuple[int, str]] = []      # (line number, message), from pass 1
 
     # -- Symbols and expressions -------------------------------------------
 
@@ -244,6 +245,26 @@ class Assembler:
                             fail(name, str(e))
                 state[name] = True
                 stack.pop()
+        return errors
+
+    def check_equ_symbols(self) -> List[Tuple[int, str]]:
+        """Checks, once every label is known, that each good .EQU value names
+        only defined symbols, whether the name is used or not (ISA.md
+        section 10.3). Marks a bad one, so that its uses do not report it
+        again."""
+        errors: List[Tuple[int, str]] = []
+        for name, value in self.equs.items():
+            if name in self.bad_equs:
+                continue
+            try:
+                try:
+                    self.operand(value, True)
+                except AsmError:
+                    self.operand(value, False)
+            except AsmError as e:
+                errors.append((self.defined_on[name], str(e)))
+        for line_no, _ in errors:
+            self.bad_equs.update(n for n in self.equs if self.defined_on[n] == line_no)
         return errors
 
     # -- Operands ----------------------------------------------------------
@@ -549,6 +570,10 @@ class Assembler:
                     raise AsmError(f"unknown mnemonic '{tok[0]}'")
                 raise AsmError(f"unknown mnemonic '{tok[1]}' "
                                f"('{tok[0]}' is read as a label)")
+            if (self.pass_no == 1 and len(tok) == 1 and text[:1] in (" ", "\t")
+                    and not tok[0].endswith(":")):
+                self.warnings.append((line_no, f"'{tok[0]}' alone on an indented line is read "
+                                               f"as a label; write '{tok[0]}:' if one is meant"))
             label = self.strip_colon(tok.pop(0))
         if not tok:
             if label is not None:
@@ -591,8 +616,10 @@ class Assembler:
         """Assembles lines. Returns a list of error messages."""
         errors: List[Tuple[int, str]] = []
         for self.pass_no in (0, 1, 2):
-            if self.pass_no == 2 and errors:
-                break  # pass 2 would only repeat pass 1's errors
+            if self.pass_no == 2:
+                if errors:
+                    break  # pass 2 would only repeat pass 1's errors
+                errors += self.check_equ_symbols()
             self.pc = 0
             for n, text in enumerate(lines, 1):
                 try:
@@ -627,6 +654,8 @@ def main() -> None:
 
     asm = Assembler()
     errors = asm.run(lines, args.input)
+    for n, msg in asm.warnings:
+        print(f"{args.input}:{n}: warning: {msg}", file=sys.stderr)
     if errors:
         for msg in errors:
             print(msg, file=sys.stderr)

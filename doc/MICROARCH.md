@@ -726,13 +726,19 @@ data read right before the entry.
 
 **Formal checks**: each stage on its own where it can
 be, and properties of the whole core. The checkers of the Wishbone and
-interrupt ports in `hdl/formal/` serve both cores. Three stages are
+interrupt ports in `hdl/formal/` serve both cores. Four stages are
 proven for every cycle, each with assumptions that model the stages
 beside it: FETCH, so that DECODE sees each word that memory holds at the
-address it names; PREPARE, so that it holds a read while the bus stalls
-it, makes all of a micro-operation's reads before it moves on, and never
+address it names; DECODE, so that the micro-operations of each
+instruction come in order, with the fields of its word and its constant
+words, which is what the proof of PREPARE assumes of it; PREPARE, so
+that it holds a read while the bus stalls it, makes all of a
+micro-operation's reads before it moves on, and never
 finds the condition false of an instruction that has made a read; and
 DBUS, so that WRITE gets the read data in the order of the ACKs. The
+functions both cores share, the shifter and the ALU, are proven against
+ISA.md §5 for every input, and the block compares of §5.5 against the
+ranges they stand for (`hdl/formal/formal_nice_pkg.vhd`). The
 assumptions that name another stage are checked in the whole core by
 `p_check` in `hdl/src/pipeline.vhd`, on every simulation run and in the
 bounded check. For the whole pipelined core, the port checks and the
@@ -741,7 +747,7 @@ simulation tests check the same assertions on every run. The most
 important of them is the data access rule of §5.3: every data access
 belongs to an instruction that retires, which the core asserts as no
 flush leaving read data owed. The accesses issue in program order by
-construction. A proof of DECODE alone, and of the whole core for every
+construction. A proof of WRITE alone, and of the whole core for every
 cycle, is still open (TODO.md).
 
 ## 10. Repository and boards

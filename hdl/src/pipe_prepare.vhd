@@ -402,7 +402,8 @@ begin
    --   of the instruction only when it retires an instruction's first.
    --   WRITE leaves RUN_ST only with a flush or an interrupt.
    -- - WRITE neither flushes nor takes an interrupt while PREPARE holds an
-   --   instruction that has made a data read (contract c).
+   --   instruction that has made a data read (contract c), or has a read
+   --   on the bus or about to be loaded.
    -- - The data bus requests in flight grow only by PREPARE's read, or
    --   WRITE's store or vector read when there is room.
    -- The assertions say that the read request keeps to the bus (held
@@ -502,6 +503,7 @@ begin
       -- psl f_run : assume always (f_first = '0' and f_mode_free = '0' and f_mode = RUN_ST) ->
       --    w_r.mode = RUN_ST;
       -- psl f_keep : assume always (w_flush or take_nmi or take_irq) -> not p_committed_r;
+      -- psl f_keep_read : assume always (w_flush or take_nmi or take_irq) -> not (rd_stb_r or p_load);
       -- psl f_accept : assume always w_accept -> not w_flush;
 
       -- DBUS: requests in flight, PREPARE's read among them
@@ -512,6 +514,9 @@ begin
       -- psl f_rd_hold : assert always (f_rd_stall and not rst_i) ->
       --    (rd_stb_r = '1' and rd_addr_r = f_rd_addr);
       -- psl f_rd_room : assert always (rst_i = '0' and rd_stb_r = '1') -> tag_cnt_r < C_MAX_OUT;
+      -- A read is on the bus only while the core runs: a halted core
+      -- makes no data read
+      -- psl f_rd_run : assert always (rst_i = '0' and rd_stb_r = '1') -> w_r.mode = RUN_ST;
 
       -- The reads of a micro-operation
       -- psl f_none_loaded : assert always (rst_i = '0' and prep_r.valid = '0') -> p_loaded_r = 0;

@@ -9,9 +9,11 @@
 -- cycle, no read of PREPARE on the bus together with an access of WRITE,
 -- and no flush while a data read waits to be issued or its data is owed.
 -- The last is the data access rule of MICROARCH.md §9: every data read
--- belongs to an instruction that retires. The pipeline is too deep for
--- k-induction without many invariants, so pipeline.sby checks a bounded
--- number of cycles from reset.
+-- belongs to an instruction that retires. So do the properties of FETCH
+-- under G_FORMAL, and a halted core makes no request, as
+-- formal_multicycle asserts of the multi-cycle core. The pipeline is too
+-- deep for k-induction without many invariants, so pipeline.sby checks a
+-- bounded number of cycles from reset.
 --
 -- RESET
 -- The first cycle is a reset, so the core starts from the state of
@@ -62,10 +64,18 @@ begin
    -- psl default clock is rising_edge(clk_i);
    -- psl f_initial_reset : assume rst_i;
 
-   -- How deep the bounded check must go to see an instruction retire, and a
-   -- store.
+   -- A halted core makes no data access, and no new instruction fetch: a
+   -- request still on the instruction bus is one the bus stalled before
+   -- the halt (src/pipe_fetch.vhd, f_stop).
+   -- psl f_halt_dbus : assert always (rst_i = '0' and halted = '1') -> dbus_stb = '0';
+   -- psl f_halt_ibus : assert always (rst_i = '0' and halted = '1' and ibus_stb = '1') ->
+   --    (prev(ibus_stb) = '1' and prev(ibus_stall_i) = '1');
+
+   -- How deep the bounded check must go to see an instruction retire, a
+   -- store, and a halt.
    -- psl c_retire : cover {retire.valid = '1' and rst_i = '0'};
    -- psl c_store : cover {dbus_stb = '1' and dbus_we = '1' and rst_i = '0'};
+   -- psl c_halt : cover {halted = '1' and rst_i = '0'};
 
 
    i_pipeline : entity work.pipeline

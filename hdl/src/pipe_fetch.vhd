@@ -311,6 +311,15 @@ begin
       -- psl f_stop : assert always
       --    {stop_i and not (stb_r and ibus_stall_i) and not rst_i} |=> {rst_i = '1' or stb_r = '0'};
 
+      -- The oldest word moves by at most four words a cycle, so its block
+      -- is the one before blk_r or blk_r itself, and WRITE's compare with
+      -- those and the next covers the range (MICROARCH.md §5.5,
+      -- formal/formal_nice_pkg.vhd); and the range is at most C_DEPTH
+      -- words
+      -- psl f_blk : assert always {not redirect_i and not rst_i} |=>
+      --    {rst_i = '1' or head_r(31 downto 5) = blk_r - 1 or head_r(31 downto 5) = blk_r};
+      -- psl f_span : assert always rst_i = '0' -> end_r - head_r <= C_DEPTH;
+
       -- The invariants
       -- psl f_drop : assert always rst_i = '0' -> drop_r <= pending_r;
       -- psl f_room : assert always rst_i = '0' -> count_r + 2 * pending_r <= C_DEPTH;

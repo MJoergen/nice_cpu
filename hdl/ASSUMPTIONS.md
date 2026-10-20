@@ -135,13 +135,16 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
 
 ## Formal checks
 
-15. **FETCH, PREPARE, and DBUS are proven, the rest of the core is
-    checked for 8 cycles.** `formal/pipe_fetch.sby`, `pipe_prepare.sby`,
-    and `pipe_dbus.sby` prove the three for every cycle, with invariants
-    under their `G_FORMAL`, and with assumptions that model the stages
-    beside them, which `p_check` in `src/pipeline.vhd` checks in the
-    whole core. FETCH needs Boolector, which CI installs; Yices does not
-    finish its induction, but proves the other two. The whole core is too
+15. **FETCH, DECODE, PREPARE, and DBUS are proven, the rest of the core
+    is checked for 8 cycles.** `formal/pipe_fetch.sby`, `pipe_decode.sby`,
+    `pipe_prepare.sby`, and `pipe_dbus.sby` prove the four for every
+    cycle, with invariants under their `G_FORMAL`, and with assumptions
+    that model the stages beside them, which `p_check` in
+    `src/pipeline.vhd` checks in the whole core, and which DECODE's proof
+    discharges for PREPARE's. `formal/nice_pkg.sby` proves the shifter,
+    the ALU, and the block compares for every input. FETCH and the
+    functions need Boolector, which CI installs; Yices does not finish
+    their induction, but proves the other three. The whole core is too
     deep for that without many more invariants, so
     `formal/pipeline.sby` checks its ports and its own assertions for the
     first 8 cycles after reset. The simulation tests check the same

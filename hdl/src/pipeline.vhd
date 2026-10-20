@@ -409,8 +409,16 @@ begin
                         rq_cnt_r + reads_owed >= C_MAX_OUT + w_pop)
                report "pipeline: a read accepted without room for its data"
                severity failure;
-            assert not (w_flush = '1' and (rd_stb_r = '1' or p_load = '1'))
-               report "pipeline: a flush while a data read is waiting to be issued"
+            assert not ((w_flush = '1' or take_nmi = '1' or take_irq = '1') and
+                        (rd_stb_r = '1' or p_load = '1'))
+               report "pipeline: a flush or interrupt while a data read is waiting to be issued"
+               severity failure;
+            -- The ids tell an older instruction in WRITE from an earlier
+            -- micro-operation of the one in PREPARE (src/pipe_prepare.vhd):
+            -- a new instruction never has the id of the one in WRITE.
+            assert not (prep_r.valid = '1' and prep_r.first = '1' and w_r.uop.valid = '1' and
+                        prep_r.inst.id = w_r.uop.inst.id)
+               report "pipeline: a new instruction in PREPARE has the id of the one in WRITE"
                severity failure;
             -- Every data read belongs to an instruction that retires
             -- (MICROARCH.md §9): no flush leaves read data behind, counting

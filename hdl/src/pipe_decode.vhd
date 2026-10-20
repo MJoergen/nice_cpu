@@ -31,6 +31,10 @@ library ieee;
    use work.trace_pkg.all;
 
 entity pipe_decode is
+   generic (
+      -- Adds the properties of a formal proof.
+      G_FORMAL : boolean := false
+   );
    port (
       clk_i      : in  std_logic;
       rst_i      : in  std_logic;
@@ -142,25 +146,17 @@ begin
       inst_v.mbit  := iw_v(25);
       inst_v.cbit  := iw_v(26);
 
-      -- The jumps that DECODE resolves (MICROARCH.md §5.4): condition
-      -- "always", an ALU instruction, and the destination R15 in mode 000.
-      -- "MOVE R15, c" with s1 unused, and "ADD R15, R15, c" or
-      -- "ADD R15, c, R15" without the C bit. They read no register but R15,
-      -- and nothing changes R15 before them in the instruction.
-      early_v := '0';
+      -- The jumps that DECODE resolves (MICROARCH.md §5.4), early_form of
+      -- src/pipe_pkg.vhd: "MOVE R15, c" and "ADD R15, R15, c". They read
+      -- no register but R15, and nothing changes R15 before them in the
+      -- instruction.
+      early_v := to_sl(early_form(iw_v));
       dest_v  := inst_v.consts(1);
-      if iw_v(31 downto 27) = "00000" and field(iw_v, 0) = "0001111" then
-         if iw_v(26 downto 21) = "000000" and field(iw_v, 1) = "0110000" and
-            field(iw_v, 2) = "0000000" then
-            early_v := '1';
-         elsif iw_v(26) = '0' and iw_v(24 downto 21) = "0011" then
-            if field(iw_v, 1) = "0001111" and field(iw_v, 2) = "0110000" then
-               early_v := '1';
-               dest_v  := inst_v.next_pc + inst_v.consts(2);
-            elsif field(iw_v, 1) = "0110000" and field(iw_v, 2) = "0001111" then
-               early_v := '1';
-               dest_v  := inst_v.next_pc + inst_v.consts(1);
-            end if;
+      if early_v = '1' and iw_v(24 downto 21) = "0011" then
+         if field(iw_v, 1) = "0001111" then
+            dest_v := inst_v.next_pc + inst_v.consts(2);
+         else
+            dest_v := inst_v.next_pc + inst_v.consts(1);
          end if;
       end if;
       inst_v.early := early_v;
@@ -251,5 +247,163 @@ begin
          end if;
       end if;
    end process p_seq;
+
+
+   -- The formal properties (formal/formal_pipe_decode.vhd). Every input is
+   -- free: the words and their count from FETCH, with the count at most
+   -- four, PREPARE's ready, and WRITE's flush. The assertions are what
+   -- the proof of PREPARE assumes of DECODE (src/pipe_prepare.vhd, f_emit
+   -- to f_decoded): a micro-operation is emitted only when PREPARE takes
+   -- it and no flush comes; the micro-operations of an instruction come
+   -- in order, the first marked first and the last marked last, each
+   -- with the same instruction, and the instructions emitted since the
+   -- last flush have consecutive ids; and the fields of each agree with
+   -- its instruction word, next_pc and the block among them. They also
+   -- say what DECODE takes from FETCH: no more words than are there, and
+   -- a whole instruction or nothing, with its constant words in the order
+   -- dest, s0, s1 (ISA.md §2.3); and what it redirects FETCH to: the
+   -- target of MOVE R15, c or ADD R15, R15, c (MICROARCH.md §5.4), and
+   -- only as it takes such an instruction. The invariants after them tie
+   -- dec_r, dec_q, and the id counter to the last micro-operation
+   -- emitted, so that k-induction proves it all for every cycle.
+
+   gen_formal : if G_FORMAL generate
+      signal f_open  : std_logic := '0';   -- The last emitted micro-operation was not its instruction's last
+      signal f_since : std_logic := '0';   -- An instruction was emitted since the last flush
+      signal f_inst  : t_inst;             -- The instruction of the last emitted micro-operation
+      signal f_kind  : t_kind;             -- Its kind
+
+      -- The fields of an instruction that DECODE fills in agree with its
+      -- word: those that decoded_ok checks, and next_pc, the block, and
+      -- whether DECODE resolves it.
+      function inst_ok(inst : t_inst) return boolean is
+         variable iw_v : std_logic_vector(31 downto 0);
+         variable ok_v : boolean;
+      begin
+         iw_v := inst.iw;
+         ok_v := inst.next_pc = inst.addr + inst_len(iw_v) and
+                 inst.blk = next_block(inst.addr, 2) and
+                 inst.side = to_sl(side(iw_v, 1)) & to_sl(side(iw_v, 2)) and
+                 inst.ctrl = to_sl(is_ctrl(iw_v)) and
+                 inst.shift = (iw_v(27) and not to_sl(is_ctrl(iw_v))) and
+                 inst.op = iw_v(24 downto 21) and
+                 inst.mbit = iw_v(25) and
+                 inst.cbit = iw_v(26) and
+                 inst.early = to_sl(early_form(iw_v));
+         for i in 0 to 2 loop
+            if inst.m(i) /= mode(iw_v, i) or inst.x(i) /= reg(iw_v, i) then
+               ok_v := false;
+            end if;
+         end loop;
+         return ok_v;
+      end function inst_ok;
+
+      -- The constant word of field i of the instruction in f_words(0),
+      -- counted in the order dest, s0, s1 (ISA.md §2.3).
+      function const_word(words : t_words4;
+                          i     : natural range 0 to 2) return std_logic_vector is
+         variable cf_v : std_logic_vector(0 to 2);
+         variable k_v  : natural range 1 to 3 := 1;
+      begin
+         cf_v := const_fields(words(0));
+         for j in 0 to 2 loop
+            if j < i and cf_v(j) = '1' then
+               k_v := k_v + 1;
+            end if;
+         end loop;
+         return words(k_v);
+      end function const_word;
+
+      -- The target of an early jump, from ISA.md §4.1 and §4.3: c for MOVE
+      -- R15, c, and R15 + c for ADD R15, R15, c, where R15 reads as the
+      -- next instruction's address.
+      function early_target(addr  : std_logic_vector(31 downto 0);
+                            words : t_words4) return std_logic_vector is
+      begin
+         if words(0)(24 downto 21) = "0000" then
+            return words(1);
+         end if;
+         return addr + 2 + words(1);
+      end function early_target;
+
+   begin
+
+      p_model : process (clk_i)
+      begin
+         if rising_edge(clk_i) then
+            if seq_emit = '1' then
+               f_open  <= not seq_uop.last;
+               f_since <= '1';
+               f_inst  <= dec_r;
+               f_kind  <= seq_kind_r;
+            end if;
+            if rst_i = '1' or w_flush = '1' then
+               f_open  <= '0';
+               f_since <= '0';
+            end if;
+         end if;
+      end process p_model;
+
+      -- psl default clock is rising_edge(clk_i);
+
+      -- FETCH
+      -- psl f_count_range : assume always f_count <= 4;
+
+      -- What PREPARE assumes of DECODE
+      -- psl f_emit : assert always (rst_i = '0' and seq_emit = '1') ->
+      --    (seq_uop.valid = '1' and p_ready = '1' and w_flush = '0');
+      -- psl f_last : assert always (rst_i = '0' and seq_emit = '1') ->
+      --    seq_uop.last = is_last(seq_uop.kind);
+      -- psl f_next_uop : assert always (rst_i = '0' and seq_emit = '1' and f_open = '1') ->
+      --    (seq_uop.first = '0' and seq_uop.inst = f_inst and
+      --     seq_uop.kind = next_kind(f_inst.iw, f_kind));
+      -- psl f_new_inst : assert always (rst_i = '0' and seq_emit = '1' and f_open = '0') ->
+      --    (seq_uop.first = '1' and seq_uop.kind = first_kind(seq_uop.inst.iw) and
+      --     (f_since = '0' or seq_uop.inst.id = f_inst.id + 1));
+      -- psl f_decoded : assert always (rst_i = '0' and seq_emit = '1') ->
+      --    (decoded_ok(seq_uop) and inst_ok(seq_uop.inst));
+
+      -- What DECODE takes from FETCH, and the constant words it keeps
+      -- psl f_take : assert always rst_i = '0' ->
+      --    (f_consume <= f_count and (f_consume = 0 or f_consume = inst_len(f_words(0))));
+      -- psl f_load : assert always (rst_i = '0' and d_load = '1') ->
+      --    (d_inst.addr = f_addr and d_inst.iw = f_words(0) and inst_ok(d_inst));
+
+      gen_consts : for i in 0 to 2 generate
+         -- psl f_const : assert always (rst_i = '0' and d_load = '1' and const_fields(f_words(0))(i) = '1') ->
+         --    d_inst.consts(i) = const_word(f_words, i);
+      end generate gen_consts;
+
+      -- The jumps DECODE resolves
+      -- psl f_redirect : assert always (rst_i = '0' and d_load = '1') ->
+      --    (d_early = to_sl(early_form(f_words(0))));
+      -- psl f_target : assert always (rst_i = '0' and redirect_o = '1') ->
+      --    (f_consume = 2 and d_dest = early_target(f_addr, f_words));
+
+      -- A flush empties the stage
+      -- psl f_flushed : assert always {w_flush and not rst_i} |=>
+      --    {rst_i = '1' or (dec_r.valid = '0' and dec_q.valid = '0')};
+
+      -- The invariants
+      -- psl f_inv_mid : assert always (rst_i = '0' and dec_r.valid = '1' and seq_first_r = '0') ->
+      --    (f_open = '1' and dec_r = f_inst and seq_kind_r = next_kind(f_inst.iw, f_kind));
+      -- psl f_inv_open : assert always (rst_i = '0' and f_open = '1') ->
+      --    (dec_r.valid = '1' and seq_first_r = '0' and f_since = '1' and is_last(f_kind) = '0');
+      -- psl f_inv_first : assert always (rst_i = '0' and dec_r.valid = '1' and seq_first_r = '1') ->
+      --    (seq_kind_r = first_kind(dec_r.iw) and (f_since = '0' or dec_r.id = f_inst.id + 1));
+      -- psl f_inv_queue : assert always (rst_i = '0' and dec_q.valid = '1') ->
+      --    (dec_r.valid = '1' and dec_q.id = dec_r.id + 1);
+      -- psl f_inv_id : assert always rst_i = '0' ->
+      --    ((dec_r.valid = '1' and id_r = dec_r.id + 1 + to_nat(dec_q.valid)) or
+      --     (dec_r.valid = '0' and (f_since = '0' or id_r = f_inst.id + 1)));
+      -- psl f_inv_insts : assert always rst_i = '0' ->
+      --    ((dec_r.valid = '0' or inst_ok(dec_r)) and (dec_q.valid = '0' or inst_ok(dec_q)) and
+      --     (f_since = '0' or inst_ok(f_inst)));
+
+      -- psl c_three : cover {seq_emit = '1' and inst_len(seq_uop.inst.iw) = 4};
+      -- psl c_queue : cover {dec_q.valid = '1' and seq_emit = '1' and seq_uop.first = '0'};
+      -- psl c_redirect : cover {redirect_o = '1' and dec_r.valid = '1'};
+      -- psl c_flush : cover {w_flush = '1' and dec_q.valid = '1' and rst_i = '0'};
+   end generate gen_formal;
 
 end architecture synthesis;

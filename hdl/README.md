@@ -95,8 +95,12 @@ departs from it.
 | [formal/timer.sby](formal/timer.sby) | The SymbiYosys job for it. |
 | [formal/formal_wb_dmux.vhd](formal/formal_wb_dmux.vhd) | The data bus decoder with checks of its master and slave ports. |
 | [formal/wb_dmux.sby](formal/wb_dmux.sby) | The SymbiYosys job for it. |
+| [formal/formal_nice_pkg.vhd](formal/formal_nice_pkg.vhd) | The functions of `src/nice_pkg.vhd` and the block compares of `src/pipe_pkg.vhd`, against ISA.md and MICROARCH.md for every input. |
+| [formal/nice_pkg.sby](formal/nice_pkg.sby) | The SymbiYosys job for it. |
 | [formal/formal_pipe_fetch.vhd](formal/formal_pipe_fetch.vhd) | FETCH of the pipelined core, whose properties are in `src/pipe_fetch.vhd`. |
 | [formal/pipe_fetch.sby](formal/pipe_fetch.sby) | The SymbiYosys job for it. |
+| [formal/formal_pipe_decode.vhd](formal/formal_pipe_decode.vhd) | DECODE of the pipelined core, whose properties are in `src/pipe_decode.vhd`. |
+| [formal/pipe_decode.sby](formal/pipe_decode.sby) | The SymbiYosys job for it. |
 | [formal/formal_pipe_prepare.vhd](formal/formal_pipe_prepare.vhd) | PREPARE of the pipelined core, whose properties are in `src/pipe_prepare.vhd`. |
 | [formal/pipe_prepare.sby](formal/pipe_prepare.sby) | The SymbiYosys job for it. |
 | [formal/formal_pipe_dbus.vhd](formal/formal_pipe_dbus.vhd) | DBUS of the pipelined core, whose properties are in `src/pipe_dbus.vhd`. |
@@ -341,8 +345,10 @@ the names of the I/O words it knows:
 SymbiYosys, and the solvers Yices 2 and Boolector. Tested with Yosys 0.33,
 the plugin and GHDL 4.1.0 of Ubuntu 24.04 (packages `yosys`,
 `yosys-plugin-ghdl`, and `ghdl-gcc`, whose libraries the plugin loads),
-SymbiYosys at its tag `yosys-0.33`, Yices 2.6.4, and Boolector 3.2.3. CI
-installs the same. Boolector is built from source, with the scripts in its
+SymbiYosys at its tag `yosys-0.33`, Yices 2.6.4, and Boolector 3.2.3,
+which CI installs, and with Yosys 0.56 and GHDL 6.0; the jobs of the
+shared functions and of DECODE have run with the latter only so far
+(TODO.md). Boolector is built from source, with the scripts in its
 `contrib/` for CaDiCaL and btor2tools: the `boolector` package of Ubuntu
 24.04 is version 1.5, which SymbiYosys cannot drive.
 
@@ -399,6 +405,28 @@ read, a write, a stalled request, and each kind of interrupt taken. For
 the timer, it shows a request taken, and one that waits while the timer
 counts on.
 
+`formal_nice_pkg` proves the functions that both cores share, for every
+input. They are combinational, so a proof of depth 1 covers every value.
+The shift of ISA.md §5.2, written as the loop that repeats n times and run
+for counts up to 66, gives what `shift` gives. Beyond that, `shift` gives
+for n what it gives for a smaller count that the loop would give the same
+for: 33 for a fixed fill, n − 32 for a 32-bit rotation, and n − 33 for a
+rotation through C, which checks the digit sum of `mod33`. So the shifter
+follows §5.2 for every count. `shift_fast` of `shift_prep`, the pipelined
+core's shifter, gives what `shift` gives, also when WRITE prepares the
+count in two steps, as it does for a count it must reduce itself. The ALU
+with its one adder gives what the operations of ISA.md §5.1 give, written
+out one by one with the carry and overflow rules of that section, and
+`flags` sets the five flags of §6 and nothing else. The block compares of
+MICROARCH.md §5.5 cover their ranges: a word within 16 of FETCH's oldest
+word lies in one of the three blocks that WRITE tests, given that the
+oldest word moves by at most four words a cycle, which `formal_pipe_fetch`
+proves, and a word within 4 of an instruction's address lies in its block
+or the next. `tb_shift` checks a sample of the same by simulation. The
+table of `mod33` is mapped to logic in the job, because Yosys models a
+ROM as state, whose contents are free in an induction step. Boolector
+proves it in under a minute; Yices does not finish.
+
 `formal_pipe_fetch` proves FETCH of the pipelined core for
 every cycle. Every input is free: every slave, every redirect, and every
 DECODE that takes no more words than it is offered. The properties are in
@@ -414,11 +442,36 @@ and they check the bus port as `wb_master_check` does, but on the
 counter of requests in flight. `stop_i` is the halt of `pipeline.vhd`,
 and after a cycle of it FETCH makes no new request: a request stays on
 the bus only while it is stalled. So a halted pipelined core fetches
-nothing from its second cycle on, if the bus does not stall. The invariants tie that counter, the
+nothing from its second cycle on, if the bus does not stall. The range
+is at most 16 words, and the oldest word moves by at most four words a
+cycle, so its block is the one before `blk_o` or `blk_o` itself, which is
+what WRITE's compare with the fetched words relies on (MICROARCH.md
+§5.5). The invariants tie that counter, the
 requests to drop, the next pair to request, the buffer, and `end_o` to
 each other, which makes the assertions inductive in one step. Boolector
 proves them in about a minute; Yices does not finish. Breaking the drop
 of stale words, or of an odd address's low word, fails the proof.
+
+`formal_pipe_decode` proves DECODE for every cycle. Every input is free:
+the words from FETCH and their count, at most four, PREPARE's ready, and
+WRITE's flush. The properties are in `src/pipe_decode.vhd` under
+`G_FORMAL`. The assertions are what the proof of PREPARE assumes of
+DECODE: a micro-operation is emitted only when PREPARE takes it and no
+flush comes; the micro-operations of an instruction come in order, the
+first marked first and the last marked last, each with the same
+instruction; the instructions emitted since the last flush have
+consecutive ids; and the fields of each micro-operation agree with its
+instruction word, `next_pc` and the block among them. They also say that
+DECODE takes no more words than FETCH offers, and a whole instruction or
+nothing, with its constant words in the order dest, s0, s1 (ISA.md
+§2.3), and that it redirects FETCH only as it takes `MOVE R15, c` or
+`ADD R15, R15, c`, to the target that ISA.md §4.3 gives. The invariants
+tie `dec_r`, `dec_q`, and the id counter to the last micro-operation
+emitted. PREPARE's proof assumes that a new instruction's id differs
+from the last one emitted, also across a flush, where DECODE proves
+consecutive ids only since the flush; `p_check` in the whole core asserts
+what PREPARE relies on, that a new instruction in PREPARE never has the
+id of the one in WRITE, which holds because a flush empties WRITE.
 
 `formal_pipe_prepare` proves PREPARE for every cycle. Its inputs are
 free, within assumptions that model DECODE and WRITE as far as PREPARE
@@ -432,8 +485,10 @@ PREPARE holds an instruction that has made a data read. The assertions
 say that the read request is held while the bus stalls it, that it never
 goes out with `C_MAX_OUT` requests in flight, that a micro-operation makes
 all its reads and no more before it moves on unless its condition is
-false, and that PREPARE never finds the condition false of an instruction
-that has made a data read (MICROARCH.md §5.3).  PREPARE counts a store that
+false, that PREPARE never finds the condition false of an instruction
+that has made a data read (MICROARCH.md §5.3), and that a read is on the
+bus only while the core runs, so that a halted core makes no data read.
+PREPARE counts a store that
 WRITE puts on the bus in the cycle of a read, so that no more than
 `C_MAX_OUT` requests are in flight.
 
@@ -455,11 +510,19 @@ whole core by `p_check` in `src/pipeline.vhd`, on every simulation and in
 `G_MAX_PENDING` 8 on the instruction bus and 4 on the data bus. The core's
 own assertions hold there too: those of `pipe_fetch`, and those of its
 process `p_check`, among them the data access rule of MICROARCH.md §9,
-that no flush leaves read data owed. The pipeline is too deep for
-k-induction without many more invariants, so its `bmc` task checks only
-the first 8 cycles after reset, which hold an interrupt entry and a first
-store, as its covers show. A 9th cycle did not finish in 20 minutes. The
-simulation tests check the same assertions on every run.
+that no flush leaves read data owed. The properties of DECODE and PREPARE
+stay out of it: each is proven for every cycle with free inputs, which
+covers everything the whole core can do, so their shadow registers would
+add only time to the bounded check, a sixth with DECODE's in a trial. It
+also asserts
+what `formal_multicycle` asserts of the multi-cycle core: a halted core
+makes no data access, and no new instruction fetch. The pipeline is too
+deep for k-induction without many more invariants, so its `bmc` task
+checks only the first 8 cycles after reset, which hold an interrupt
+entry, a first store, and a halt, as its covers show. With Yosys 0.33 a
+9th cycle did not finish in 20 minutes; with Yosys 0.56 and its ABC, 10
+cycles take 5 minutes and 12 take 13. The simulation tests check the same
+assertions on every run.
 
 ## The multi-cycle core
 

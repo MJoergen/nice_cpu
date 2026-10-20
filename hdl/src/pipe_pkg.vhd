@@ -213,6 +213,12 @@ package pipe_pkg is
    function uop_may_jump(iw : std_logic_vector(31 downto 0);
                          k  : t_kind) return boolean;
 
+   -- The instruction is a jump that DECODE resolves (MICROARCH.md §5.4):
+   -- condition "always", an ALU instruction, and the destination R15 in
+   -- mode 000, either "MOVE R15, c" with s1 unused, or "ADD R15, R15, c"
+   -- or "ADD R15, c, R15" without the C bit.
+   function early_form(iw : std_logic_vector(31 downto 0)) return boolean;
+
    -- Data bus requests in flight, the ACKs owed
    constant C_MAX_OUT : natural := 4;
 
@@ -472,6 +478,19 @@ package body pipe_pkg is
    begin
       return k = UOP_CTRL or uop_wreg(iw, k) = 15;
    end function uop_may_jump;
+
+   function early_form(iw : std_logic_vector(31 downto 0)) return boolean is
+   begin
+      if iw(31 downto 27) /= "00000" or field(iw, 0) /= "0001111" then
+         return false;
+      end if;
+      if iw(26 downto 21) = "000000" then
+         return field(iw, 1) = "0110000" and field(iw, 2) = "0000000";
+      end if;
+      return iw(26) = '0' and iw(24 downto 21) = "0011" and
+             ((field(iw, 1) = "0001111" and field(iw, 2) = "0110000") or
+              (field(iw, 1) = "0110000" and field(iw, 2) = "0001111"));
+   end function early_form;
 
    function src_value(m : std_logic_vector(2 downto 0);
                       x : natural range 0 to 15;

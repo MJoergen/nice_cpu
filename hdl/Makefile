@@ -3,14 +3,51 @@ PYTHON ?= python3
 ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
 BUILD = build
-# GHDL runs in $(BUILD), where the LLVM and GCC backends leave their
-# executables, so paths given to it start with ../.
-GHDLRUN = cd $(BUILD) && $(GHDL) --elab-run --std=08
 
 SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/perf.vhd src/timer.vhd src/fetch_stats.vhd src/wb_dmux.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd
 TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_timer.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd \
   test/tb_trace.vhd test/tb_core.vhd
+
+# The runs of make test and make random go in parallel: each
+# is a target run/GROUP/NAME, where GROUP is unit, trace, or a core. A run
+# leaves its files in its own directory, RUNDIR, $(BUILD)/run/GROUP/NAME,
+# and GHDL runs there, because its LLVM and GCC backends write an
+# executable where they run. Paths given to GHDL are absolute. The runs
+# take JOBS jobs, one per CPU, unless make was given -j; their PASS and FAIL
+# lines come in the order they finish.
+JOBS ?= $(shell nproc)
+PARALLEL = $(if $(filter -j%,$(MAKEFLAGS)),,-j$(JOBS)) -O
+RUNDIR = $(BUILD)/$@
+GHDLRUN = $(GHDL) --elab-run --std=08 --workdir=$(abspath $(BUILD))
+# Empties RUNDIR and changes to it, in the shell of one recipe line.
+in_rundir = rm -rf $(RUNDIR) && mkdir -p $(RUNDIR) && cd $(RUNDIR)
+
+# The programs that the runs assemble, from test/ or written by a script.
+$(BUILD)/%.bin: test/%.nasm ../assembler/niceasm.py
+	@mkdir -p $(BUILD)
+	@$(ASM) -o $@ $<
+
+$(BUILD)/%.bin: $(BUILD)/%.nasm ../assembler/niceasm.py
+	@$(ASM) -o $@ $<
+
+# The scripts write their programs as .nasm files, which are kept.
+.PRECIOUS: $(BUILD)/%.nasm
+
+$(BUILD)/%.nasm: test/%_prog.py
+	@mkdir -p $(BUILD)
+	@$(PYTHON) $< $@
+
+# tb_mem checks the memory model itself, tb_shift the ALU and the shifter of
+# src/nice_pkg.vhd, tb_mpu the math unit, tb_perf the performance counters,
+# tb_timer the timer, tb_fetch_stats the fetch statistics, and tb_wb_dmux
+# the data bus decoder.
+UNITS = tb_mem tb_shift tb_mpu tb_perf tb_timer tb_fetch_stats tb_wb_dmux
+GENERICS_tb_mem = -gG_BIN_FILE=$(abspath test/mem.bin) -gG_INPUT_FILE=$(abspath test/mem.input)
+
+$(UNITS:%=run/unit/%): run/unit/%:
+	@($(in_rundir) && $(GHDLRUN) $* $(GENERICS_$*) > $*.log 2>&1); \
+	if [ $$? -eq 0 ]; then echo "PASS $*"; else echo "FAIL $*"; cat $(RUNDIR)/$*.log; exit 1; fi
 
 # tb_trace stands in for the core and runs test/trace.nasm. Each run's output
 # and exit status must equal those of the emulator on the same program, with
@@ -26,20 +63,23 @@ OPTS_nmi       = -t -n 6 --nmi 5:0x20
 OPTS_full      = -t --nmi 5:0x20
 
 define check_trace
-	@($(GHDLRUN) tb_trace -gG_BIN_FILE=trace.bin -gG_TRACE_FILE=trace_$(1).out \
-	  $(GENERICS_$(1)) > trace_$(1).log 2>&1); echo "exit $$?" >> $(BUILD)/trace_$(1).out
-	@$(EMU) $(OPTS_$(1)) $(BUILD)/trace.bin < /dev/null > $(BUILD)/trace_$(1).expected; \
-	  echo "exit $$?" >> $(BUILD)/trace_$(1).expected
-	@if cmp -s $(BUILD)/trace_$(1).expected $(BUILD)/trace_$(1).out; then echo "PASS tb_trace $(1)"; \
-	else echo "FAIL tb_trace $(1)"; cat $(BUILD)/trace_$(1).log; \
-	  diff $(BUILD)/trace_$(1).expected $(BUILD)/trace_$(1).out; exit 1; fi
+	@($(in_rundir) && $(GHDLRUN) tb_trace -gG_BIN_FILE=$(abspath $(BUILD)/trace.bin) -gG_TRACE_FILE=trace.out \
+	  $(GENERICS_$(1)) > trace.log 2>&1); echo "exit $$?" >> $(RUNDIR)/trace.out
+	@$(EMU) $(OPTS_$(1)) $(BUILD)/trace.bin < /dev/null > $(RUNDIR)/trace.expected; \
+	  echo "exit $$?" >> $(RUNDIR)/trace.expected
+	@if cmp -s $(RUNDIR)/trace.expected $(RUNDIR)/trace.out; then echo "PASS tb_trace $(1)"; \
+	else echo "FAIL tb_trace $(1)"; cat $(RUNDIR)/trace.log; \
+	  diff $(RUNDIR)/trace.expected $(RUNDIR)/trace.out; exit 1; fi
 
 endef
 
+$(TRACE_RUNS:%=run/trace/%): run/trace/%: $(BUILD)/trace.bin
+	$(call check_trace,$*)
+
 # The core that tb_core runs, its generic G_CORE: multicycle for
 # src/multicycle.vhd, or pipeline for src/pipeline.vhd. The PASS and FAIL
-# lines name it. make test runs the cores of CORES in turn; make random and
-# make programs run CORE.
+# lines name it. make test runs the cores of CORES; make random and make
+# programs run CORE.
 CORE ?= multicycle
 CORES ?= multicycle pipeline
 
@@ -85,20 +125,19 @@ INPUT_input = ../emulator/test/input.txt
 
 # $(1) is the name of the run, $(2) the program, and $(3) any more generics.
 define check_core
-	@rm -f $(BUILD)/core_$(1).intr
-	@($(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=../$(2) -gG_TRACE_FILE=core_$(1).out \
+	@($(in_rundir) && $(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(2)) -gG_TRACE_FILE=core.out \
 	  $(if $(INTR_$(1)),"-gG_INTERRUPTS=$(INTR_$(1))") \
-	  $(if $(call requests,$(1)),-gG_INTR_LOG=core_$(1).intr) \
-	  $(if $(INPUT_$(1)),-gG_INPUT_FILE=../$(INPUT_$(1))) \
-	  $(3) > core_$(1).log 2>&1); echo "exit $$?" >> $(BUILD)/core_$(1).out
+	  $(if $(call requests,$(1)),-gG_INTR_LOG=core.intr) \
+	  $(if $(INPUT_$(1)),-gG_INPUT_FILE=$(abspath $(INPUT_$(1)))) \
+	  $(3) > core.log 2>&1); echo "exit $$?" >> $(RUNDIR)/core.out
 	@$(EMU) -t $(INTR_$(1)) $(if $(INPUT_$(1)),--input $(INPUT_$(1))) $(2) < /dev/null \
-	  > $(BUILD)/core_$(1).expected; \
-	  echo "exit $$?" >> $(BUILD)/core_$(1).expected
-	$(if $(and $(call requests,$(1)),$(IRQ_LATE)),,@if cmp -s $(BUILD)/core_$(1).expected $(BUILD)/core_$(1).out; \
+	  > $(RUNDIR)/core.expected; \
+	  echo "exit $$?" >> $(RUNDIR)/core.expected
+	$(if $(and $(call requests,$(1)),$(IRQ_LATE)),,@if cmp -s $(RUNDIR)/core.expected $(RUNDIR)/core.out; \
 	then echo "PASS $(CORE) $(1)"; \
-	else echo "FAIL $(CORE) $(1)"; cat $(BUILD)/core_$(1).log; \
-	  diff $(BUILD)/core_$(1).expected $(BUILD)/core_$(1).out | head -20; exit 1; fi)
-	$(if $(call requests,$(1)),@$(IRQ_COMPARE) --name $(1) $(2) $(BUILD)/core_$(1).out $(BUILD)/core_$(1).intr)
+	else echo "FAIL $(CORE) $(1)"; cat $(RUNDIR)/core.log; \
+	  diff $(RUNDIR)/core.expected $(RUNDIR)/core.out | head -20; exit 1; fi)
+	$(if $(call requests,$(1)),@$(IRQ_COMPARE) --name $(1) $(2) $(RUNDIR)/core.out $(RUNDIR)/core.intr)
 
 endef
 
@@ -117,33 +156,57 @@ SWEEP_DELAYS_multicycle = 0,3,7
 SWEEP_DELAYS_pipeline = 0,1,2,3
 IRQ_COMPARE = $(PYTHON) test/irq_compare.py --emu $(EMU) $(IRQ_LATE)
 
-# The hazard programs of MICROARCH.md §9, step 4: test/hazard.nasm, and the
-# programs that test/sidefx_prog.py and test/smc_prog.py write, each also on
-# a memory that stalls. smc_prog.py's program stores into its own code 1 to
-# 40 words ahead, and checks itself like hazard.nasm.
+# The hazard programs of MICROARCH.md §9, step 4: test/hazard.nasm, the
+# programs that test/sidefx_prog.py and test/smc_prog.py write, and the
+# HAZARD_PROGS below, each also on a memory that stalls. smc_prog.py's
+# program stores into its own code 1 to 40 words ahead, and checks itself
+# like hazard.nasm.
 # hazard.nasm checks itself, so the emulator's run must end at its last HALT,
 # with R12 = 0 and exit status 0, before the core's trace means anything.
 # test/irq_sweep.py then runs hazard.nasm with an NMI before each of its
 # steps, and with an IRQ before each, on the stalling memory (MICROARCH.md
 # §9, step 5). It runs them in parallel, on all cores.
 define check_selfcheck
-	@if grep -q '^R12 00000000' $(BUILD)/core_$(1).expected && \
-	  tail -n 1 $(BUILD)/core_$(1).expected | grep -qx 'exit 0'; then echo "PASS emulator $(1)"; \
+	@if grep -q '^R12 00000000' $(RUNDIR)/core.expected && \
+	  tail -n 1 $(RUNDIR)/core.expected | grep -qx 'exit 0'; then echo "PASS emulator $(1)"; \
 	else echo "FAIL emulator $(1): the program's own checks failed"; \
-	  tail -n 6 $(BUILD)/core_$(1).expected; exit 1; fi
+	  tail -n 6 $(RUNDIR)/core.expected; exit 1; fi
 
 endef
+
+# $(1) is the program, in $(BUILD), and $(2) any more options.
+define check_sweep
+	@$(PYTHON) test/irq_sweep.py --core $(CORE) $(IRQ_LATE) $(2) --stall 30 --build $(BUILD) --emu $(EMU) \
+	  $(BUILD)/$(1).bin
+
+endef
+
+# The programs of the third repository review against the operand rules of
+# the re-timed core (doc/review/third-repository-review.md §1.5): the shift
+# counts WRITE reduces in a cycle of its own, the destinations adjusted by
+# one, R14 and R15 in every field, R0, stores into fetched code from late
+# instructions, the read counter and the instruction counter around them,
+# jumps into constant words, and every shift into R15. Each runs on both
+# cores, plain and on a stalling memory, compared with the emulator, and
+# irqhazard also with a request before each step, through
+# test/irq_sweep.py, without delays. test/samereg_prog.py writes one more,
+# with one register in all three fields of a shift.
+HAZARD_PROGS = latecount twocycle r15mix r14cond r0odd smclate readorder instret_late \
+  jumpwords condlate irqhazard shiftjump
 
 # test/fstats.nasm reads the fetch statistics (MICROARCH.md §8.1), which
 # only the pipelined core has, and checks itself. The emulator has none, so the run
 # is not compared with it: it must end at the last HALT, with R12 = 0 and
-# exit status 0. $(1) is the name of the run, $(2) any more generics.
-define check_fstats
-	@($(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=fstats.bin -gG_TRACE_FILE=core_$(1).out \
-	  -gG_TRACE=false $(2) > core_$(1).log 2>&1); echo "exit $$?" >> $(BUILD)/core_$(1).out
-	@if grep -q '^R12 00000000' $(BUILD)/core_$(1).out && \
-	  tail -n 1 $(BUILD)/core_$(1).out | grep -qx 'exit 0'; then echo "PASS $(CORE) $(1)"; \
-	else echo "FAIL $(CORE) $(1)"; cat $(BUILD)/core_$(1).log; tail -n 6 $(BUILD)/core_$(1).out; exit 1; fi
+# exit status 0. test/bubble.nasm measures the bubbles of the pipelined
+# core with the cycle counter, which the emulator counts in steps, and
+# checks itself the same way. $(1) is the name of the run, $(2) the
+# program, and $(3) any more generics.
+define check_selfonly
+	@($(in_rundir) && $(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(2)) -gG_TRACE_FILE=core.out \
+	  -gG_TRACE=false $(3) > core.log 2>&1); echo "exit $$?" >> $(RUNDIR)/core.out
+	@if grep -q '^R12 00000000' $(RUNDIR)/core.out && \
+	  tail -n 1 $(RUNDIR)/core.out | grep -qx 'exit 0'; then echo "PASS $(CORE) $(1)"; \
+	else echo "FAIL $(CORE) $(1)"; cat $(RUNDIR)/core.log; tail -n 6 $(RUNDIR)/core.out; exit 1; fi
 
 endef
 
@@ -152,108 +215,131 @@ endef
 # percent of the cycles, and compared in the same way. A random program
 # may read any address, so the cycle counter, which the core and the
 # emulator count differently, is memory in both: G_CYCLE_COUNTER=false and
-# --no-cycle-counter. The seeds of PAUSE_SEEDS run again with random pauses
-# (G_PAUSE of test/tb_core.vhd), as random_pause, which must not change
-# the trace. $(2) is any more generics, and $(3) the suffix of the name.
+# --no-cycle-counter. The fetch statistics read 0 and ignore writes in
+# both: G_FETCH_STATS=false. random_prog.py writes the program, and
+# prints the requests, which go in random_N.opts. The seeds of PAUSE_SEEDS
+# run again with random pauses (G_PAUSE of test/tb_core.vhd), as
+# random_pause_N, which must not change the trace. In check_random, $(2) is
+# any more generics, and $(3) the suffix of the name.
 RANDOM_SEEDS = $(shell seq 1 30)
 PAUSE_SEEDS = $(shell seq 1 8)
 RANDOM_STEPS = 3000
 RANDOM_STALL = 30
 
+$(BUILD)/random_%.bin $(BUILD)/random_%.opts: test/random_prog.py
+	@mkdir -p $(BUILD)
+	@$(PYTHON) test/random_prog.py $* $(BUILD)/random_$*.bin > $(BUILD)/random_$*.opts
+
 define check_random
-	@$(PYTHON) test/random_prog.py $(1) $(BUILD)/random$(3)_$(1).bin > $(BUILD)/random$(3)_$(1).opts
-	@rm -f $(BUILD)/random$(3)_$(1).intr
-	@o=$$(cat $(BUILD)/random$(3)_$(1).opts); \
-	  ($(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=random$(3)_$(1).bin -gG_TRACE_FILE=random$(3)_$(1).out \
-	  -gG_MAX_STEPS=$(RANDOM_STEPS) -gG_STALL=$(RANDOM_STALL) -gG_SEED=$(1) -gG_CYCLE_COUNTER=false $(2) \
-	  $${o:+"-gG_INTERRUPTS=$$o"} -gG_INTR_LOG=random$(3)_$(1).intr > random$(3)_$(1).log 2>&1); \
-	  echo "exit $$?" >> $(BUILD)/random$(3)_$(1).out
-	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter $$(cat $(BUILD)/random$(3)_$(1).opts) $(BUILD)/random$(3)_$(1).bin \
-	  < /dev/null > $(BUILD)/random$(3)_$(1).expected; echo "exit $$?" >> $(BUILD)/random$(3)_$(1).expected
-	$(if $(IRQ_LATE),,@if cmp -s $(BUILD)/random$(3)_$(1).expected $(BUILD)/random$(3)_$(1).out; then echo "PASS $(CORE) random$(3) $(1)"; \
-	else echo "FAIL $(CORE) random$(3) $(1)"; cat $(BUILD)/random$(3)_$(1).log; \
-	  diff $(BUILD)/random$(3)_$(1).expected $(BUILD)/random$(3)_$(1).out | head -20; exit 1; fi)
-	@$(IRQ_COMPARE) --name random$(3)_$(1) $(BUILD)/random$(3)_$(1).bin $(BUILD)/random$(3)_$(1).out \
-	  $(BUILD)/random$(3)_$(1).intr -- -n $(RANDOM_STEPS) --no-cycle-counter
+	@o=$$(cat $(BUILD)/random_$(1).opts); \
+	  ($(in_rundir) && $(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(BUILD)/random_$(1).bin) \
+	  -gG_TRACE_FILE=core.out -gG_MAX_STEPS=$(RANDOM_STEPS) -gG_STALL=$(RANDOM_STALL) -gG_SEED=$(1) \
+	  -gG_CYCLE_COUNTER=false -gG_FETCH_STATS=false $(2) \
+	  $${o:+"-gG_INTERRUPTS=$$o"} -gG_INTR_LOG=core.intr > core.log 2>&1); \
+	  echo "exit $$?" >> $(RUNDIR)/core.out
+	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter $$(cat $(BUILD)/random_$(1).opts) $(BUILD)/random_$(1).bin \
+	  < /dev/null > $(RUNDIR)/core.expected; echo "exit $$?" >> $(RUNDIR)/core.expected
+	$(if $(IRQ_LATE),,@if cmp -s $(RUNDIR)/core.expected $(RUNDIR)/core.out; then echo "PASS $(CORE) random$(3) $(1)"; \
+	else echo "FAIL $(CORE) random$(3) $(1)"; cat $(RUNDIR)/core.log; \
+	  diff $(RUNDIR)/core.expected $(RUNDIR)/core.out | head -20; exit 1; fi)
+	@$(IRQ_COMPARE) --name random$(3)_$(1) $(BUILD)/random_$(1).bin $(RUNDIR)/core.out \
+	  $(RUNDIR)/core.intr -- -n $(RANDOM_STEPS) --no-cycle-counter
 
 endef
 
-define run_cores
-	@$(MAKE) --no-print-directory cores CORE=$(1)
+# The target of one run on a core, run/CORE/NAME, which RUNS_CORE lists:
+# $(1) is the core, $(2) the name of the run, $(3) the program, $(4) any
+# more generics, and $(5) the defines that make the run, called with the
+# name, the program, and the generics; check_core if empty. The program
+# is a prerequisite if it is made in $(BUILD).
+define core_run
+RUNS_$(1) += run/$(1)/$(2)
+.PHONY: run/$(1)/$(2)
+run/$(1)/$(2): override CORE = $(1)
+run/$(1)/$(2): $(filter $(BUILD)/%,$(3))
+	$(foreach d,$(or $(5),check_core),$$(call $(d),$(2),$(3),$(4)))
 
 endef
 
-# tb_mem checks the memory model itself, tb_shift the ALU and the shifter of
-# src/nice_pkg.vhd, tb_mpu the math unit, tb_perf the performance counters,
-# tb_timer the timer, tb_fetch_stats the fetch statistics, and tb_wb_dmux
-# the data bus decoder.
+# The same for a sweep of test/irq_sweep.py, run/CORE/sweep_PROGRAM: $(1)
+# is the core, $(2) the program, in $(BUILD), and $(3) any more options.
+define sweep_run
+RUNS_$(1) += run/$(1)/sweep_$(2)
+.PHONY: run/$(1)/sweep_$(2)
+run/$(1)/sweep_$(2): override CORE = $(1)
+run/$(1)/sweep_$(2): $(BUILD)/$(2).bin
+	$$(call check_sweep,$(2),$(3))
+
+endef
+
+# The same for a random program, run/CORE/randomSUFFIX_SEED, which
+# RANDOM_CORE lists too: $(1) is the core, $(2) the seed, $(3) any more
+# generics, and $(4) the suffix.
+define random_run
+RUNS_$(1) += run/$(1)/random$(4)_$(2)
+RANDOM_$(1) += run/$(1)/random$(4)_$(2)
+.PHONY: run/$(1)/random$(4)_$(2)
+run/$(1)/random$(4)_$(2): override CORE = $(1)
+run/$(1)/random$(4)_$(2): $(BUILD)/random_$(2).bin $(BUILD)/random_$(2).opts
+	$$(call check_random,$(2),$(3),$(4))
+
+endef
+
+# The runs of the core $(1). The sweeps take longest, so they come first,
+# and make starts them first.
+define core_runs
+$(eval $(call sweep_run,$(1),hazard,--delays $$(SWEEP_DELAYS_$(1)) --self-check))
+$(eval $(call sweep_run,$(1),irqhazard))
+$(foreach t,$(EXAMPLES),$(eval $(call core_run,$(1),$(t),../assembler/test/$(t).bin)))
+$(foreach t,$(PROBES),$(eval $(call core_run,$(1),$(t),../emulator/test/$(t).bin)))
+$(eval $(call core_run,$(1),shift,$(BUILD)/shift.bin))
+$(eval $(call core_run,$(1),cputest_stall,../emulator/test/cputest.bin,-gG_STALL=30))
+$(eval $(call core_run,$(1),reads_stall,../emulator/test/reads.bin,-gG_STALL=30 -gG_SEED=7))
+$(eval $(call core_run,$(1),mpu_stall,../emulator/test/mpu.bin,-gG_STALL=30 -gG_SEED=3))
+$(eval $(call core_run,$(1),mpu64_stall,../emulator/test/mpu64.bin,-gG_STALL=30 -gG_SEED=5))
+$(eval $(call core_run,$(1),perf_stall,../emulator/test/perf.bin,-gG_STALL=30 -gG_SEED=9))
+$(eval $(call core_run,$(1),timer_stall,../emulator/test/timer.bin,-gG_STALL=30 -gG_SEED=11))
+$(eval $(call core_run,$(1),cputest_pause,../emulator/test/cputest.bin,-gG_PAUSE=60 -gG_STALL=30 -gG_SEED=23))
+$(eval $(call core_run,$(1),cputest_step,../emulator/test/cputest.bin,-gG_SINGLE_STEP=true))
+$(eval $(call core_run,$(1),reads_step,../emulator/test/reads.bin,-gG_SINGLE_STEP=true -gG_STALL=30 -gG_SEED=25))
+$(eval $(call core_run,$(1),irq_step,../emulator/test/irq.bin,-gG_SINGLE_STEP=true))
+$(eval $(call core_run,$(1),after_pause,../emulator/test/after.bin,-gG_PAUSE=50 -gG_SEED=27))
+$(eval $(call core_run,$(1),instret,$(BUILD)/instret.bin))
+$(eval $(call core_run,$(1),instret_stall,$(BUILD)/instret.bin,-gG_STALL=30 -gG_SEED=17))
+$(eval $(call core_run,$(1),irqwave,$(BUILD)/irqwave.bin))
+$(eval $(call core_run,$(1),addwave,$(BUILD)/addwave.bin))
+$(eval $(call core_run,$(1),hazard,$(BUILD)/hazard.bin,,check_core check_selfcheck))
+$(eval $(call core_run,$(1),hazard_stall,$(BUILD)/hazard.bin,-gG_STALL=30 -gG_SEED=13))
+$(eval $(call core_run,$(1),sidefx,$(BUILD)/sidefx.bin))
+$(eval $(call core_run,$(1),sidefx_stall,$(BUILD)/sidefx.bin,-gG_STALL=30 -gG_SEED=15))
+$(eval $(call core_run,$(1),smc,$(BUILD)/smc.bin,,check_core check_selfcheck))
+$(eval $(call core_run,$(1),smc_stall,$(BUILD)/smc.bin,-gG_STALL=30 -gG_SEED=21))
+$(foreach t,$(HAZARD_PROGS),$(eval $(call core_run,$(1),$(t),$(BUILD)/$(t).bin)))
+$(foreach t,$(HAZARD_PROGS),$(eval $(call core_run,$(1),$(t)_stall,$(BUILD)/$(t).bin,-gG_STALL=30 -gG_SEED=25)))
+$(eval $(call core_run,$(1),samereg,$(BUILD)/samereg.bin))
+$(eval $(call core_run,$(1),samereg_stall,$(BUILD)/samereg.bin,-gG_STALL=30 -gG_SEED=27))
+$(if $(filter pipeline,$(1)),$(eval $(call core_run,$(1),fstats,$(BUILD)/fstats.bin,,check_selfonly)))
+$(if $(filter pipeline,$(1)),$(eval $(call core_run,$(1),fstats_stall,$(BUILD)/fstats.bin,-gG_STALL=30 -gG_SEED=19,check_selfonly)))
+$(if $(filter pipeline,$(1)),$(eval $(call core_run,$(1),bubble,$(BUILD)/bubble.bin,,check_selfonly)))
+$(foreach t,$(RANDOM_SEEDS),$(eval $(call random_run,$(1),$(t))))
+$(foreach t,$(PAUSE_SEEDS),$(eval $(call random_run,$(1),$(t),-gG_PAUSE=50,_pause)))
+endef
+
+$(foreach c,$(sort $(CORES) $(CORE)),$(eval $(call core_runs,$(c))))
+
 test: emulator analyse synth
-	@($(GHDLRUN) tb_mem -gG_BIN_FILE=../test/mem.bin -gG_INPUT_FILE=../test/mem.input > tb_mem.log 2>&1); \
-	if [ $$? -eq 0 ]; then echo "PASS tb_mem"; else echo "FAIL tb_mem"; cat $(BUILD)/tb_mem.log; exit 1; fi
-	@($(GHDLRUN) tb_shift > tb_shift.log 2>&1); \
-	if [ $$? -eq 0 ]; then echo "PASS tb_shift"; else echo "FAIL tb_shift"; cat $(BUILD)/tb_shift.log; exit 1; fi
-	@($(GHDLRUN) tb_mpu > tb_mpu.log 2>&1); \
-	if [ $$? -eq 0 ]; then echo "PASS tb_mpu"; else echo "FAIL tb_mpu"; cat $(BUILD)/tb_mpu.log; exit 1; fi
-	@($(GHDLRUN) tb_perf > tb_perf.log 2>&1); \
-	if [ $$? -eq 0 ]; then echo "PASS tb_perf"; else echo "FAIL tb_perf"; cat $(BUILD)/tb_perf.log; exit 1; fi
-	@($(GHDLRUN) tb_timer > tb_timer.log 2>&1); \
-	if [ $$? -eq 0 ]; then echo "PASS tb_timer"; else echo "FAIL tb_timer"; cat $(BUILD)/tb_timer.log; exit 1; fi
-	@($(GHDLRUN) tb_fetch_stats > tb_fetch_stats.log 2>&1); \
-	if [ $$? -eq 0 ]; then echo "PASS tb_fetch_stats"; else echo "FAIL tb_fetch_stats"; cat $(BUILD)/tb_fetch_stats.log; exit 1; fi
-	@($(GHDLRUN) tb_wb_dmux > tb_wb_dmux.log 2>&1); \
-	if [ $$? -eq 0 ]; then echo "PASS tb_wb_dmux"; else echo "FAIL tb_wb_dmux"; cat $(BUILD)/tb_wb_dmux.log; exit 1; fi
-	@$(ASM) -o $(BUILD)/trace.bin test/trace.nasm
-	$(foreach r,$(TRACE_RUNS),$(call check_trace,$(r)))
-	$(foreach c,$(CORES),$(call run_cores,$(c)))
+	@$(MAKE) --no-print-directory $(PARALLEL) runs
 
-# The runs of one core, CORE, which make test runs for each of CORES.
-cores:
-	$(foreach t,$(EXAMPLES),$(call check_core,$(t),../assembler/test/$(t).bin))
-	$(foreach t,$(PROBES),$(call check_core,$(t),../emulator/test/$(t).bin))
-	@$(ASM) -o $(BUILD)/shift.bin test/shift.nasm
-	$(call check_core,shift,$(BUILD)/shift.bin)
-	$(call check_core,cputest_stall,../emulator/test/cputest.bin,-gG_STALL=30)
-	$(call check_core,reads_stall,../emulator/test/reads.bin,-gG_STALL=30 -gG_SEED=7)
-	$(call check_core,mpu_stall,../emulator/test/mpu.bin,-gG_STALL=30 -gG_SEED=3)
-	$(call check_core,mpu64_stall,../emulator/test/mpu64.bin,-gG_STALL=30 -gG_SEED=5)
-	$(call check_core,perf_stall,../emulator/test/perf.bin,-gG_STALL=30 -gG_SEED=9)
-	$(call check_core,timer_stall,../emulator/test/timer.bin,-gG_STALL=30 -gG_SEED=11)
-	$(call check_core,cputest_pause,../emulator/test/cputest.bin,-gG_PAUSE=60 -gG_STALL=30 -gG_SEED=23)
-	$(call check_core,cputest_step,../emulator/test/cputest.bin,-gG_SINGLE_STEP=true)
-	$(call check_core,reads_step,../emulator/test/reads.bin,-gG_SINGLE_STEP=true -gG_STALL=30 -gG_SEED=25)
-	$(call check_core,irq_step,../emulator/test/irq.bin,-gG_SINGLE_STEP=true)
-	$(call check_core,after_pause,../emulator/test/after.bin,-gG_PAUSE=50 -gG_SEED=27)
-	@$(ASM) -o $(BUILD)/instret.bin test/instret.nasm
-	$(call check_core,instret,$(BUILD)/instret.bin)
-	$(call check_core,instret_stall,$(BUILD)/instret.bin,-gG_STALL=30 -gG_SEED=17)
-	@$(ASM) -o $(BUILD)/irqwave.bin test/irqwave.nasm
-	$(call check_core,irqwave,$(BUILD)/irqwave.bin)
-	@$(ASM) -o $(BUILD)/hazard.bin test/hazard.nasm
-	$(call check_core,hazard,$(BUILD)/hazard.bin)
-	$(call check_selfcheck,hazard)
-	$(call check_core,hazard_stall,$(BUILD)/hazard.bin,-gG_STALL=30 -gG_SEED=13)
-	@$(PYTHON) test/irq_sweep.py --core $(CORE) $(IRQ_LATE) --delays $(SWEEP_DELAYS_$(CORE)) --self-check --stall 30 --build $(BUILD) --emu $(EMU) $(BUILD)/hazard.bin
-	@$(PYTHON) test/sidefx_prog.py $(BUILD)/sidefx.nasm
-	@$(ASM) -o $(BUILD)/sidefx.bin $(BUILD)/sidefx.nasm
-	$(call check_core,sidefx,$(BUILD)/sidefx.bin)
-	$(call check_core,sidefx_stall,$(BUILD)/sidefx.bin,-gG_STALL=30 -gG_SEED=15)
-	@$(PYTHON) test/smc_prog.py $(BUILD)/smc.nasm
-	@$(ASM) -o $(BUILD)/smc.bin $(BUILD)/smc.nasm
-	$(call check_core,smc,$(BUILD)/smc.bin)
-	$(call check_selfcheck,smc)
-	$(call check_core,smc_stall,$(BUILD)/smc.bin,-gG_STALL=30 -gG_SEED=21)
-	@$(ASM) -o $(BUILD)/fstats.bin test/fstats.nasm
-	$(if $(filter pipeline,$(CORE)),$(call check_fstats,fstats))
-	$(if $(filter pipeline,$(CORE)),$(call check_fstats,fstats_stall,-gG_STALL=30 -gG_SEED=19))
-	$(foreach t,$(RANDOM_SEEDS),$(call check_random,$(t)))
-	$(foreach t,$(PAUSE_SEEDS),$(call check_random,$(t),-gG_PAUSE=50,_pause))
+# The runs of make test: the unit tests, tb_trace, and those of each core in
+# CORES.
+runs: $(UNITS:%=run/unit/%) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
 
 # More random programs than make test runs, for example
 #     make random RANDOM_SEEDS="$$(seq 31 90)" RANDOM_STALL=60 RANDOM_STEPS=5000
 # test/trace_reads.py shows the data reads of the first instruction where
 # the emulator's trace and the core's differ.
 random: emulator analyse
-	$(foreach t,$(RANDOM_SEEDS),$(call check_random,$(t)))
+	@$(MAKE) --no-print-directory $(PARALLEL) $(RANDOM_$(CORE))
 
 # The runtime's and the translator's test programs on the core (MICROARCH.md
 # §9, step 6). runtime/Makefile with KEEP and translator/test/run.py with
@@ -313,15 +399,18 @@ emulator:
 	$(MAKE) -C ../emulator build
 
 # The out-of-context timing of the pipelined core in Vivado, which timing.tcl
-# describes: the worst register-to-register paths go to build/timing.rpt, and
-# the worst one is printed. About 10 minutes.
+# describes: the worst register-to-register paths go to build/timing.rpt, the
+# worst from an input to build/timing_in.rpt, and the worst to an output to
+# build/timing_out.rpt. The worst of each is printed. About 10 minutes.
 VIVADO ?= /opt/Xilinx/2025.1/Vivado/bin/vivado
 
 timing:
 	@mkdir -p $(BUILD)
 	@cd $(BUILD) && $(VIVADO) -mode batch -nolog -nojournal -source ../timing.tcl > timing.log 2>&1 || \
 	  { tail -20 timing.log; exit 1; }
-	@grep -m1 -E "^Slack" $(BUILD)/timing.rpt; grep -m2 -E "^  (Source|Destination):" $(BUILD)/timing.rpt
+	@for r in timing timing_in timing_out; do \
+	  echo "$$r.rpt:"; grep -m1 -E "^Slack" $(BUILD)/$$r.rpt; \
+	  grep -m2 -E "^  (Source|Destination):" $(BUILD)/$$r.rpt; done
 
 # Checks the style of every VHDL file against CODING_STYLE.md. Long lines are
 # only warnings.
@@ -333,4 +422,4 @@ lint:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: test cores programs random analyse synth formal emulator timing lint clean
+.PHONY: test runs programs random analyse synth formal emulator timing lint clean

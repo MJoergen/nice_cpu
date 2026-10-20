@@ -199,11 +199,13 @@ fn mpuWord(addr: u32) ?u5 {
     return if (addr -% mpu_base < 32) @truncate(addr -% mpu_base) else null;
 }
 
-/// The first of the 16 words of the performance counters (SYSTEM §3).
+/// The first of the 64 words of the performance counters (SYSTEM §3).
 pub const perf_base: u32 = io_base + 0x40;
 
 /// The performance counters (SYSTEM §3). Each 64-bit counter has a snapshot,
 /// which a read of its low word fills and a read of its high word returns.
+/// The fetch statistics of the pipelined FPGA core, at words 0x10-0x3F, read
+/// 0 here.
 pub const Perf = struct {
     /// One per step: per instruction and per interrupt entry. The emulator
     /// has no clock, so this stands in for the clock cycles.
@@ -213,7 +215,7 @@ pub const Perf = struct {
     instrs_snap: u64 = 0,
 
     /// The value a data read of word `i` returns, with its side effect.
-    pub fn read(self: *Perf, i: u4) u32 {
+    pub fn read(self: *Perf, i: u6) u32 {
         switch (i) {
             0 => self.cycles_snap = self.cycles,
             2 => self.instrs_snap = self.instrs,
@@ -223,7 +225,7 @@ pub const Perf = struct {
     }
 
     /// The value of word `i`, without the side effect of a read.
-    pub fn peek(self: Perf, i: u4) u32 {
+    pub fn peek(self: Perf, i: u6) u32 {
         return switch (i) {
             0 => @truncate(self.cycles),
             1 => @truncate(self.cycles_snap >> 32),
@@ -235,8 +237,8 @@ pub const Perf = struct {
 };
 
 /// The word of the performance counters that `addr` names, if it names one.
-fn perfWord(addr: u32) ?u4 {
-    return if (addr -% perf_base < 16) @truncate(addr -% perf_base) else null;
+fn perfWord(addr: u32) ?u6 {
+    return if (addr -% perf_base < 64) @truncate(addr -% perf_base) else null;
 }
 
 /// The words of the cycle counter, `CYCLE_LO` and `CYCLE_HI`.
@@ -442,7 +444,7 @@ pub const Cpu = struct {
     /// The word of the performance counters that `addr` names, if it names
     /// one that is a device: not a word of the cycle counter when that is
     /// switched off.
-    fn perfDevice(self: *const Cpu, addr: u32) ?u4 {
+    fn perfDevice(self: *const Cpu, addr: u32) ?u6 {
         const i = perfWord(addr) orelse return null;
         return if (self.cycle_counter or i >= cycle_words) i else null;
     }
@@ -1402,6 +1404,9 @@ test "a read of a counter's low word keeps its high word for the next read (SYST
     try testing.expectEqual(1, perf.read(1));
     try testing.expectEqual(0, perf.read(4));
     try testing.expectEqual(0, perf.read(15));
+    // The fetch statistics read 0.
+    try testing.expectEqual(0, perf.read(16));
+    try testing.expectEqual(0, perf.read(63));
     // peek leaves the snapshots alone.
     perf.cycles = 0x5_0000_0000;
     try testing.expectEqual(0, perf.peek(0));
@@ -1439,6 +1444,13 @@ test "the counters count instructions and steps, and ignore writes (SYSTEM §3)"
     try cpu.write(perf_base + 3, 99);
     try testing.expectEqual(7, cpu.peek(perf_base + 2));
     try testing.expectEqual(0, cpu.peek(perf_base + 3));
+    // The fetch statistics are not memory: they ignore writes and read 0.
+    try cpu.write(perf_base + 0x10, 3);
+    try cpu.write(perf_base + 0x3F, 99);
+    try testing.expectEqual(0, cpu.read(perf_base + 0x10));
+    try testing.expectEqual(0, cpu.peek(perf_base + 0x3F));
+    try cpu.write(perf_base + 0x40, 5); // past them, memory
+    try testing.expectEqual(5, cpu.read(perf_base + 0x40));
     cpu.reset();
     try testing.expectEqual(Perf{}, cpu.perf);
 }

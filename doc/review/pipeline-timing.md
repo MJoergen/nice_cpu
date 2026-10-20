@@ -239,3 +239,41 @@ Every case that takes a cycle more is rare in both programs
 (`make hazards` in `bench/`): a sum on a register the previous
 instruction writes, a shift by such a register or by a word in memory,
 a destination adjusted by one, and a jump to a computed target.
+
+## Read data
+
+On 2026-10-20 NiceMonMEGA65 reached about 78 MHz with the core of the
+second measurement (issue 34 on GitHub). The worst paths ran from the
+block RAM's output into `dbus_data_i`, past DBUS's FIFO into WRITE's
+operands, through the ALU, and into FETCH's redirect and WRITE's
+registers. Out of context they were not seen, because the script
+reported only the paths between registers. `hdl/timing.tcl` now also
+reports the paths from the inputs and to the outputs. Their delays
+outside the core are 0, so their slack is the time left to the system
+around the core. At commit b7b46f4, the paths between registers had
+0.20 ns of slack, `dbus_data_i` left 1.59 ns, and the store's
+`dbus_addr_o` and `dbus_data_o` left 1.56 ns and 0.93 ns. A block RAM
+without an output register takes 2.1 ns from its clock alone.
+
+Two ways to take read data from the FIFO were tried. The cycles are the
+core's, from `make core CORE=pipeline` in `bench/`, and the slack is from
+one run of `make timing` each:
+
+| WRITE takes read data from the bus | Translated | `hand.nasm` | Left to `dbus_data_i` |
+|---|---|---|---|
+| Always, as at b7b46f4 | 2241652 | 1215117 | 1.59 ns |
+| Never | 2423723, +8.1% | 1392855, +14.6% | more than 3.75 ns, into the FIFO only |
+| Only into a register | 2331640, +4.0% | 1288181, +6.0% | 6.50 ns, into WRITE's registers |
+
+In each, the paths between registers had about 0.2 ns of slack. PREPARE
+issues a read one stage before WRITE, so a read is rarely early enough to
+hide the extra cycle. Most reads in `hand.nasm` are pops and loads into
+a register, which the third way leaves as they were. The core takes the
+third (MICROARCH.md §5.3). Against 78 MHz it pays off from about 81 MHz
+for the translated program and 83 MHz for `hand.nasm`.
+
+It adds a path from `dbus_ack_i` through WRITE's retire into FETCH,
+with 2.80 ns left, enough for an ACK from a register. The store still
+goes onto the bus from WRITE in the cycle it runs (hdl/ASSUMPTIONS.md,
+item 7), with 1.15 ns left for the address and 1.43 ns for the data,
+and is what TODO.md takes up next.

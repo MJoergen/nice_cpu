@@ -93,7 +93,10 @@ def main() -> None:
         sys.exit(f"irq_sweep: the program does not halt on the emulator:\n{plain[-400:]}")
     steps = int(m.group(1))
 
-    core = Core(args.ghdl, args.build, "sweep", args.core)
+    # Each sweep has its own directory, so that sweeps can go in parallel.
+    name = os.path.basename(args.program)
+    work = os.path.join("sweep", f"{args.core}_{os.path.splitext(name)[0]}")
+    core = Core(args.ghdl, args.build, work, args.core)
     # A request delayed into the last step, the halt, would be pending at
     # the end, which the emulator cannot be told: it raises a request only
     # before a step.
@@ -106,7 +109,6 @@ def main() -> None:
     failures = [r for r in results if r is not None]
     for r in failures[:10]:
         print(r)
-    name = os.path.basename(args.program)
     if failures:
         print(f"FAIL irq_sweep {args.core} {name}: {len(failures)} of {len(jobs)} runs")
         sys.exit(1)

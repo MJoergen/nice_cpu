@@ -204,7 +204,10 @@ begin
          -- alone: head_r moves by at most four words a cycle, so the
          -- block after the current one is this or the one after it, and
          -- WRITE compares with both. In the cycle after a redirect it is
-         -- stale, but no store retires then.
+         -- stale, and a store may retire then, but this buffer is empty
+         -- and every request in flight is dropped (f_redirect), so the
+         -- first pair of the new stream is accepted after the store and
+         -- sees it, and its block is head_r's (MICROARCH.md §5.5).
          blk_r <= next_block(head_r, 5);
          count_r   <= count_v;
          pending_r <= pending_v;
@@ -296,6 +299,12 @@ begin
       -- psl f_cyc_accept : assert always
       --    {stb_r and not ibus_stall_i and not rst_i} |=> {rst_i = '1' or pending_r > 0};
       -- psl f_reset : assert always {rst_i} |=> {pending_r = 0 and stb_r = '0'};
+
+      -- After a redirect, no word is held and no request is of the new
+      -- stream, so a store in that cycle is seen (MICROARCH.md §5.5)
+      -- psl f_redirect : assert always
+      --    {redirect_i and not rst_i} |=>
+      --    {rst_i = '1' or (count_r = 0 and drop_r = pending_r)};
 
       -- A stop, the halt of pipeline.vhd, makes no new request: one on the
       -- bus stays only while it is stalled

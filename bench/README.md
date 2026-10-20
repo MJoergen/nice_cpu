@@ -59,13 +59,13 @@ These are the tables from the emulator. First `bench.c`
 through nicewasm:
 
     phase      instructions       cycles  result
-    rng64            89632        89660  0e18cd0a  ok
+    rng64            52768        52796  0e18cd0a  ok
     crc32            65816        65844  2df3b109  ok
-    bst             315589       315617  55a72225  ok
-    heapsort        312536       312564  bdb22882  ok
+    bst             310469       310497  55a72225  ok
+    heapsort        307416       307444  bdb22882  ok
     vm              840049       840077  04156880  ok
-    strings         107013       107041  d9867cf6  ok
-    total          1730635      1730803
+    strings         104562       104590  d9867cf6  ok
+    total          1681080      1681248
 
 Then `hand.nasm`:
 
@@ -108,36 +108,39 @@ The ratio of the instruction counts, translated to hand-written:
 
 | Phase | Ratio | Where the translated code loses |
 |---|---|---|
-| `rng64` | 2.2 | `i64` shifts and the 64-bit product take the same two-word steps either way. |
+| `rng64` | 1.3 | `i64` shifts take the same two-word steps either way, and the 64-bit product three products of the math unit. |
 | `crc32` | 2.4 | A byte load is seven instructions with its own bounds check, against a word read with a side effect on the pointer and shifts by hand. The table lookups need no check. |
 | `bst` | 2.7 | Each node's fields take a compare and a skipped jump before their reads, which the hand-written code does without. |
 | `heapsort` | 1.8 | The array elements take a compare and a skipped jump before their reads and writes, and the signed comparisons take two instructions either way. |
 | `vm` | 7.5 | The `br_table` checks its index, each stack cell is a checked word access, and the bytecode fetch is a byte load of seven instructions, where the hand-written interpreter has one word per opcode and the operands in registers. |
-| `strings` | 5.1 | Every character is a byte load of seven instructions, where the hand-written strings have one character per word. |
-| total | 3.5 | |
+| `strings` | 4.9 | Every character is a byte load of seven instructions, where the hand-written strings have one character per word. |
+| total | 3.4 | |
 
 What remains is in TODO.md, under "Faster and smaller translated code".
 A byte load of linear memory stays several instructions, since the
 memory is byte-addressed and packed four to a word (WASM.md).
 
 On the multi-cycle core, which takes about ten cycles for a plain
-instruction, the two programs run like this:
+instruction, the two programs run like this, measured at commit 8f899fe:
 
 | Program | Instructions | Cycles | Cycles per instruction | GHDL time |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 1730635 | 19486758 | 11.3 | 38 minutes on a busy machine |
+| `bench.c` through nicewasm | 1681080 | 19043715 | 11.3 | 38 minutes on a busy machine |
 | `hand.nasm` | 491617 | 5598318 | 11.4 | 8 minutes on a busy machine |
 
-So the hand-written program is 3.5 times shorter in instructions and 3.5
-times faster in cycles. In the translated program, `vm` and `strings` have the most cycles per instruction, 12.0 and 11.9, and `rng64` in the hand-written one, 14.0,
-because its reads of the math unit wait for the multiplier.
+So the hand-written program is 3.4 times shorter in instructions and 3.4
+times faster in cycles. In the translated program, `rng64` and `vm` have
+the most cycles per instruction, 12.0 and 11.7, and `vm` in the
+hand-written one, 12.8.
 
-`make core CORE=pipeline` runs them on the pipelined core, on the same programs as the multi-cycle core above:
+`make core CORE=pipeline` runs them on the pipelined core, on the same
+programs as the multi-cycle core above, at commit 1b18fd6, which leaves
+the multi-cycle core as it was:
 
 | Program | Instructions | Cycles | Cycles per instruction | Faster than the multi-cycle core |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 1730635 | 2275410 | 1.31 | 8.6 times |
-| `hand.nasm` | 491617 | 1216653 | 2.47 | 4.6 times |
+| `bench.c` through nicewasm | 1681080 | 2331640 | 1.39 | 8.2 times |
+| `hand.nasm` | 491617 | 1288181 | 2.62 | 4.3 times |
 
 
 
@@ -165,7 +168,7 @@ the distributions of the instruction length in words and of the
 micro-operations, and then one line per hazard with its count and its
 share of all instructions:
 
-    hand: 494070 instructions, 91075 skipped (18.4%)
+    hand: 494272 instructions, 91075 skipped (18.4%)
       words        1: 39.0%  2: 59.7%  3: 1.3%  4: 0.0%   mean 1.62
       micro-ops    1: 82.3%  2: 17.5%  3: 0.2%   mean 1.18
       conditional                                                  137036  27.7%
@@ -175,16 +178,21 @@ share of all instructions:
       registers read from the previous instruction: R2 8.7%, R1 7.0%, ...
 
 The last lines count what costs a cycle on the core which forms every operand value, address, and shift count in PREPARE: the shifts by the kind of their count (a
-constant, R0 and R15 included, a register, or memory), the shifts whose
+constant, R0 and R15 included, a register, memory, or an adder, `c[R]`
+or `--R`, which WRITE reduces in a cycle of its own whoever wrote R), the shifts whose
 count register the previous instruction writes, the sources in mode 001
 or 011 and the store addresses in mode 011, 101, or 111 whose register
 the previous instruction writes, the same for stores through `@R` or
 `@R++`, the taken jumps that WRITE resolves, by their target (a
 constant, a word in memory, or computed), and the register destinations
-in mode 001 or 010. In both programs, no shift's count
-register and no source in mode 001 or 011 came from the previous
-instruction, and there were no computed jumps that WRITE resolved and
-no destinations in mode 001 or 010.
+in mode 001 or 010. A jump that DECODE resolves is `MOVE R15, c` or
+`ADD R15, R15, c` with the condition "always", as in the core; a `MOVE`
+to R15 of a register or a sum is resolved in WRITE, in one cycle, and
+any other operation on R15 computes its target. In both programs, no
+shift's count register and no source in mode 001 or 011 came from the
+previous instruction, and there were no computed jumps and no
+destinations in mode 001 or 010, and no shift whose count WRITE
+reduces. `hand.nasm` has six jumps to a register.
 
 MICROARCH.md §5.6 has a table of these shares and the decisions it led to. `hazards.py --test` checks the counts on a small program whose hazards
 are counted by hand in the script, and `make test` runs it. `make
@@ -203,8 +211,9 @@ PREPARE, and WRITE under the rules of §3 to §5: two words fetched per
 cycle, a bubble of 2 cycles for a jump that DECODE resolves and of 7 for
 one resolved in WRITE, a data read that waits for an older write of SR
 or an older skipped jump, an address register written by the previous
-micro-operation, one data access per cycle on the bus, and the math unit
-of `hdl/src/mpu.vhd`: a product two cycles after the write of an operand,
+micro-operation, one data access per cycle on the bus, read data that
+reaches WRITE a cycle after its ACK unless it only goes into a register,
+and the math unit of `hdl/src/mpu.vhd`: a product two cycles after the write of an operand,
 and a quotient after one cycle per bit, less the runs of eight zero bits
 that the divider skips, which the model works out from the operands in
 the trace. Every cycle above one per instruction is
@@ -212,43 +221,53 @@ charged to the rule that caused it, so the output says where the time
 goes, and a program that reads the instruction counter around each phase,
 as both programs do, gets a row per phase:
 
-    bench.bin: 1775661 instructions, 2290661 cycles (estimate), CPI 1.290
-      cycles above 1/instruction: 515000
-      taken jumps resolved in WRITE (flush)                        267400  0.151/instr  51.9%
-      jumps DECODE resolves (early-redirect bubble)                 66391  0.037/instr  12.9%
+    bench.bin: 1726106 instructions, 2338396 cycles (estimate), CPI 1.355
+      cycles above 1/instruction: 612290
+      taken jumps resolved in WRITE (flush)                        266700  0.155/instr  43.6%
+      jumps DECODE resolves (early-redirect bubble)                 63898  0.037/instr  10.4%
       ...
 
       phase         instr    cycles    CPI   main extra cycles per instruction
-      rng64         89632     92743  1.035   early 0.02, fetch 0.01, flush 0.00, multi 0.00
+      rng64         52768     74312  1.408   mpu 0.34, early 0.04, fetch 0.02, readlate 0.01
       ...
-      total       1730635   2199014  1.271
+      total       1681080   2260097  1.344
 
-The bubble of 7 is the core's. A jump leaves WRITE in cycle c − 1, and
-WRITE's registered flush redirects FETCH in cycle c. FETCH issues the
-request in c + 1, so it is on the bus in c + 2, and the memory
-acknowledges in c + 3. DECODE takes the instruction in c + 4 and emits
-its micro-op in c + 5, PREPARE passes it on in c + 6, and WRITE runs it
-in c + 7, 7 cycles after a fall-through would have run.
+The core's bubble is 6 cycles, as `hdl/test/bubble.nasm` measures. A
+jump leaves WRITE in cycle c − 1 and flushes in the same cycle, since
+the flush is combinational. FETCH issues the request in c, so it is on
+the bus in c + 1, and the memory acknowledges in c + 2. DECODE takes the
+instruction in c + 3 and emits its micro-op in c + 4, PREPARE passes it
+on in c + 5, and WRITE runs it in c + 6. The model's 7 is a fit: with
+`--flush 6` it is 4.6% below the core's cycles for the translated
+program and 10.5% below for `hand.nasm`, with 7 3.1% and 6.6%, so the
+extra cycle stands in for something the model lacks. The hand-counted
+cases of `pipecycles.py --test` and `cycprof.py --test` use the 7.
 
 The phases of the translated program take an estimated
-2199014 cycles, 1.27 per instruction, and those of `hand.nasm` 1125497,
-2.3 per instruction: the hand-written code has more instructions with
+2260097 cycles, 1.34 per instruction, and those of `hand.nasm` 1203605,
+2.4 per instruction: the hand-written code has more instructions with
 side effects, memory operands, and reads of the math unit, and fewer
 instructions in all. Options such as `--flush`, `--early`, `--agen`,
 `--mul`, and `--div-skip` set the model's parameters, to try a design
-change before it is built. Four options, each 1 by default, are the rules of the core, which forms every operand value, address, and shift count in PREPARE (MICROARCH.md §7.3 and §7.4); 0 turns a rule off: `--shift-mem N`
-gives a shift by a count in memory N cycles more in WRITE;
-`--shift-reg N` makes a shift wait N cycles in PREPARE for a count
-register that the previous micro-op writes, as `--agen` does for an
-address register; `--sum-wait N` does the same for a source in mode 001
+change before it is built. Four options, each 1 by default, are the rules of the core, which forms every operand value, address, and shift count in PREPARE (MICROARCH.md §7.3 and §7.4); 0 turns a rule off: `--shift-late N`
+gives a shift whose count WRITE reduces N cycles more in WRITE, and a
+rotation through C 2N: a count from memory, through an adder (`c[R]` or
+`--R`), with a side effect, in R14, or of `C<C` or `C>C`, but for a
+constant word (MICROARCH.md §7.3);
+`--shift-reg N` makes a shift wait N cycles in PREPARE for any other
+count register that the previous micro-op writes, as `--agen` does for
+an address register; `--sum-wait N` does the same for a source in mode 001
 or 011, and a store address in mode 011, 101, or 111, the sums that
 PREPARE forms; and `--dest-adjust N` gives a register destination in
 mode 001 or 010, and a jump to a computed target, N cycles more in
 WRITE. A store through `@R` or `@R++` never waits, since WRITE takes
 the value it wrote last. With the four rules, the translated program's
-phases take the same 2199014 cycles as without, since its byte accesses
-rotate by a register written well before, against 2197301 without,
-and those of `hand.nasm` 1122937 against 1121913. `pipecycles.py --test` checks the model on
+phases take 2260097 cycles, against 2258384 without, and those of
+`hand.nasm` 1203605 against 1202581. A fifth, `--read-late N`, also 1 by
+default, has WRITE take read data N cycles after its ACK, but for a
+micro-op whose data only goes into a register: s0 or s1 with a side
+effect, and a `MOVE` into a register other than R15 (MICROARCH.md §5.3).
+Without it, the phases take 2171133 cycles and 1122967. `pipecycles.py --test` checks the model on
 small programs whose cycles are worked out by hand in the script, and
 `make test` runs it, and then the model on both programs with `--phases
 6`, which fails unless each reads the instruction counter around its six
@@ -256,20 +275,20 @@ phases.
 
 `make compare` puts the estimate beside the cycles the pipelined core
 took, phase by phase, from the output of `make core CORE=pipeline`,
-which must have run first, on the same `.bin`. For example:
+which must have run first, on the same `.bin`. At commit 1b18fd6:
 
 | Phase | `bench.c`, model | Core | Model against the core | `hand.nasm`, model | Core | Model against the core |
 |---|---|---|---|---|---|---|
-| `rng64` | 92743 | 95360 | −2.7% | 59402 | 60191 | −1.3% |
-| `crc32` | 72506 | 81009 | −10.5% | 37895 | 41756 | −9.2% |
-| `bst` | 407758 | 409898 | −0.5% | 241063 | 262436 | −8.1% |
-| `heapsort` | 378235 | 386801 | −2.2% | 279933 | 290524 | −3.6% |
-| `vm` | 1096097 | 1146157 | −4.4% | 444036 | 500056 | −11.2% |
-| `strings` | 151675 | 156185 | −2.9% | 60608 | 61690 | −1.8% |
-| total | 2199014 | 2275410 | −3.4% | 1122937 | 1216653 | −7.7% |
+| `rng64` | 74312 | 75393 | −1.4% | 62481 | 61727 | +1.2% |
+| `crc32` | 76603 | 85106 | −10.0% | 41998 | 45852 | −8.4% |
+| `bst` | 405711 | 408875 | −0.8% | 256281 | 274575 | −6.7% |
+| `heapsort` | 375849 | 384074 | −2.1% | 289631 | 300215 | −3.5% |
+| `vm` | 1170099 | 1216159 | −3.8% | 492044 | 544057 | −9.6% |
+| `strings` | 157523 | 162033 | −2.8% | 61170 | 61755 | −0.9% |
+| total | 2260097 | 2331640 | −3.1% | 1203605 | 1288181 | −6.6% |
 
-The model is below the core in every phase, by up to 11%, most in
-`crc32` and `vm`. 
+The model is below the core in every phase but one, by up to 10%, most
+in `crc32` and `vm`.
 
 `cycprof.py` charges the model's cycles to the source lines of a program,
 and `make profile` writes `build/bench.cyc.txt` and `build/hand.cyc.txt`.
@@ -294,7 +313,7 @@ are worked out by hand in the script, and `make test` runs it.
 nicewasm, the measure that [translator/README.md](../translator/README.md)
 quotes for `test/safe.zig` and the float library. `make words` prints it
 for `bench.wasm`, `translator/test/safe.wasm`, and `runtime/float.wasm`:
-8560, 5171, and 7083 words. Each module is translated and
+8447, 5170, and 7083 words. Each module is translated and
 assembled on its own, with the labels it uses but does not define, such
 as the runtime's routines, defined as 0 first; a constant takes a whole
 word whatever its value (ISA.md §3), so that changes no size. The count

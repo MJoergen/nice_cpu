@@ -12,7 +12,21 @@ working reference for it. [ASSUMPTIONS.md](ASSUMPTIONS.md) lists where the
 pipelined core settles a question that MICROARCH.md leaves open, or
 departs from it.
 
-## Contents
+- [Folder contents](#folder-contents)
+- [Running the tests](#running-the-tests)
+- [The formal checks](#the-formal-checks)
+- [The multi-cycle core](#the-multi-cycle-core)
+- [The pipelined core](#the-pipelined-core)
+- [The data bus decoder](#the-data-bus-decoder)
+- [The memory model](#the-memory-model)
+- [The console](#the-console)
+- [The timer](#the-timer)
+- [The math unit](#the-math-unit)
+- [The performance counters](#the-performance-counters)
+- [The fetch statistics](#the-fetch-statistics)
+- [The trace writer](#the-trace-writer)
+
+## Folder contents
 
 | Path | What it is |
 |---|---|
@@ -47,6 +61,7 @@ departs from it.
 | [test/tb_core.vhd](test/tb_core.vhd) | Runs a program on a core, which its generic `G_CORE` names, with an interrupt source, and writes its trace. |
 | [test/shift.nasm](test/shift.nasm) | Every shift, with the counts that are hard to get right. |
 | [test/irqwave.nasm](test/irqwave.nasm) | The program of the interrupt timing diagram, doc/interrupt.tex. |
+| [test/addwave.nasm](test/addwave.nasm) | The program of the timing diagram of one instruction, doc/flow.tex. |
 | [test/instret.nasm](test/instret.nasm) | Reads of the instruction counter right after a store, after a read, and twice in one instruction. |
 | [test/hazard.nasm](test/hazard.nasm) | The hazards of MICROARCH.md §5, each with no padding. It checks itself. |
 | [test/programs.py](test/programs.py) | Runs the programs in some directories on the core and on the emulator, for `make programs`. |
@@ -55,6 +70,20 @@ departs from it.
 | [test/irq_sweep.py](test/irq_sweep.py) | Runs a program with an NMI before each of its steps, and with an IRQ before each. |
 | [test/sidefx_prog.py](test/sidefx_prog.py) | Writes a program with every pair of side effects on one register. |
 | [test/smc_prog.py](test/smc_prog.py) | Writes a program that stores into its own code 1 to 40 words ahead. |
+| [test/samereg_prog.py](test/samereg_prog.py) | Writes a program with one register in all three fields of a shift, for every pair of source modes. |
+| [test/latecount.nasm](test/latecount.nasm) | Every shift count that WRITE reduces in a cycle of its own, and every reader of such a shift's result. |
+| [test/twocycle.nasm](test/twocycle.nasm) | Register destinations adjusted by one, their readers, and two-cycle jumps. |
+| [test/r15mix.nasm](test/r15mix.nasm) | R15 in several fields of one instruction, as a shift count, and as a store's base. |
+| [test/r14cond.nasm](test/r14cond.nasm) | SR written by side effects and adjusted destinations, then conditional instructions and reads; `INT` and `RTI` with conditions. |
+| [test/r0odd.nasm](test/r0odd.nasm) | R0 in every mode as count, source, and destination. |
+| [test/smclate.nasm](test/smclate.nasm) | Stores into fetched code from late shifts and two-cycle instructions, and into the constants of early jumps. |
+| [test/readorder.nasm](test/readorder.nasm) | The number and order of the data reads of late shifts, adjusted destinations, and skipped instructions, through the read counter. |
+| [test/instret_late.nasm](test/instret_late.nasm) | The instruction counter read right after late shifts, adjusted destinations, stores, skipped instructions, and `INT`. |
+| [test/jumpwords.nasm](test/jumpwords.nasm) | Jumps into constant words and to the instruction itself, with conditions on I. It ends at a reserved word. |
+| [test/condlate.nasm](test/condlate.nasm) | Conditional late shifts, adjusted destinations in R14, `HALT` and `INT` right after two-cycle flag writes, and more forms of R15. |
+| [test/irqhazard.nasm](test/irqhazard.nasm) | Late shifts, adjusted destinations, and side effects on R14 and R15, for a request before each step. |
+| [test/shiftjump.nasm](test/shiftjump.nasm) | Every shift with R15 as its destination, `0<0` among them, whose opcode is `MOVE`'s. |
+| [test/bubble.nasm](test/bubble.nasm) | Measures the bubbles of the pipelined core with the cycle counter, and checks itself. |
 | [test/random_prog.py](test/random_prog.py) | Writes random programs, and random interrupt requests for them. |
 | [test/random_stats.py](test/random_stats.py) | Shows how the random programs spend their steps, and how often they make each hazard. |
 | [test/trace_reads.py](test/trace_reads.py) | Finds the first line where two traces differ, and shows the data reads of that instruction. |
@@ -90,6 +119,14 @@ the fetch statistics, and the data bus decoder (`ghdl --synth`), and runs the te
 the cores once for each core. Everything it makes goes in `build/`.
 `make clean` removes it.
 
+The runs go in parallel, one per CPU, or as many as `-j` gives, and
+their PASS and FAIL lines come in the order they finish. Each run leaves
+its files in a directory of its own, `build/run/GROUP/NAME`, where GROUP
+is `unit`, `trace`, or the core: for a run on a core, the core's trace
+and output in `core.out`, the emulator's in `core.expected`, and GHDL's
+messages in `core.log`. `make run/pipeline/NAME` repeats one run, for
+example `make run/pipeline/hazard_stall`.
+
 `make lint` checks the style of every VHDL file against
 [CODING_STYLE.md](CODING_STYLE.md), as far as
 [vsg](https://vhdl-style-guide.readthedocs.io/) can, with the rules in
@@ -101,6 +138,11 @@ warns about lines over 100 columns.
 measures it ([timing.tcl](timing.tcl)): synthesis, placement, and routing
 for the part of the MEGA65 with a 10 ns clock. It prints the worst
 register-to-register path and leaves the 50 worst in `build/timing.rpt`.
+It does the same for the paths from an input, in `build/timing_in.rpt`,
+and to an output, in `build/timing_out.rpt`, but for `retire_o` and
+`stats_o`. Their delays outside the core are 0, so their slack is the
+time left to the system around the core: for the data bus, its address
+decode, its block RAMs, and its read mux.
 It takes about 10 minutes, and `VIVADO` names the executable.
 
 `tb_mpu` checks every word of the math unit against `numeric_std`: for 20
@@ -180,6 +222,9 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   has issued its data read, which the pipelined core takes after that
   instruction. Its values are those of the timing diagram
   [doc/interrupt.png](../doc/interrupt.png).
+- `test/addwave.nasm`, the worked example of ISA.md §11 between plain
+  instructions. Its values are those of the timing diagram
+  [doc/flow.png](../doc/flow.png).
 - `test/instret.nasm`, also on a memory that stalls in 30% of the cycles.
   It reads the instruction counter right after a store to RAM, which the
   data bus decoder makes the read wait for, after a read of RAM, as the
@@ -202,7 +247,17 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   requests in flight, so that some store lands in the pair whose fetch
   the bus accepts in the same cycle (MICROARCH.md §5.5): three of its
   forty stores do with no stalls, and two with 30%. It checks itself:
-  R12 is 0 at the end only if every `HALT` was passed.
+  R12 is 0 at the end only if every `HALT` was passed. The programs
+  `test/latecount.nasm` to `test/shiftjump.nasm` in the table above test
+  the operand rules of MICROARCH.md §7.4: the shift counts WRITE reduces
+  in a cycle of its own, the destinations adjusted by one, R14 and R15 in
+  every field, R0, stores into fetched code from late instructions, the
+  read counter and the instruction counter around them, jumps into
+  constant words, and every shift into R15, `0<0` among them, whose
+  opcode is `MOVE`'s. `test/samereg_prog.py` writes one more, with one
+  register in all three fields of a shift, for every pair of source
+  modes and six destination modes. None of them checks itself; the
+  core's trace is compared with the emulator's.
 - `test/hazard.nasm` with an interrupt request at every point (MICROARCH.md
   §9, step 5). `test/irq_sweep.py` runs it once for each step S, with
   `--nmi S:8`, and once more with `--irq S:9`, on a memory that stalls in
@@ -217,7 +272,8 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   `test/irq_compare.py`. The runs go in parallel, on all
   cores; set the number with `-j`. Each worker runs GHDL in its own
   directory under `build/sweep`, because the LLVM and GCC backends of GHDL
-  write an executable where they run.
+  write an executable where they run. `test/irqhazard.nasm` is swept the
+  same way, without the delays.
 - `cputest`, `reads`, `mpu`, `mpu64`, `perf`, and `timer` again, on a memory that
   stalls in 30% of the cycles.
 - On the pipelined core only, `test/fstats.nasm`, also on a memory that
@@ -226,7 +282,9 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   to the cycles, `FS_MIN` ≤ `FS_MAX` ≤ `FS_HELD_MAX` ≤ 16, at least one
   jump and flush per round, and cycles in which DECODE waited. The
   emulator has no fetch statistics, so the run is not compared with it:
-  it must end with R12 = 0 and exit status 0.
+  it must end with R12 = 0 and exit status 0. `test/bubble.nasm` runs
+  the same way: it reads the cycle counter before and after each kind of
+  jump, and checks the bubbles below.
 - 30 random programs from `test/random_prog.py`, each stopped at 3000 steps,
   on a memory that stalls in 30% of the cycles. Besides random ALU and
   shift instructions, they use R15 with every side effect, `HALT`, `RTI`,
@@ -237,8 +295,10 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   `0xFFFFFF40`, where the core counts cycles and the emulator counts steps
   (SYSTEM.md §3). So these runs make its two words ordinary memory on both
   sides, with the generic `G_CYCLE_COUNTER` and the emulator's
-  `--no-cycle-counter`. The instruction counter and the math unit stay,
-  because both sides agree on them.
+  `--no-cycle-counter`. The generic `G_FETCH_STATS` false makes the
+  fetch statistics read 0 and ignore writes, as in the emulator. The
+  instruction counter and the math unit stay, because both sides agree
+  on them.
 
 `test/random_stats.py` shows how well the random programs test the core
 (MICROARCH.md §9, step 7). It runs a range of seeds on the emulator, as
@@ -270,7 +330,8 @@ program and the two traces, replays the emulator's trace to the first
 line that differs, and prints the data reads of that instruction, with
 the names of the I/O words it knows:
 
-    test/trace_reads.py build/random_65.bin build/random_65.expected build/random_65.out
+    test/trace_reads.py build/random_65.bin build/run/multicycle/random_65/core.expected \
+      build/run/multicycle/random_65/core.out
 
 ## The formal checks
 
@@ -524,19 +585,19 @@ decides on a data read with WRITE's decisions of the same cycle, a flush
 reaches every stage at once, and WRITE drives its stores onto the bus. In the best case one micro-operation retires each cycle.
 `cputest` takes about 1.2 cycles per instruction on memory that never
 stalls, and `hazard.nasm`, which is all hazards, 1.9. The benchmark of
-[bench/](../bench/README.md) runs like this, against the
-multi-cycle core's numbers there:
+[bench/](../bench/README.md) runs like this at commit 1b18fd6, against
+the multi-cycle core's numbers there:
 
 | Program | Instructions | Cycles | Cycles per instruction | Multi-cycle core |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 1730635 | 2275410 | 1.31 | 11.3, 8.6 times slower |
-| `hand.nasm` | 491617 | 1216653 | 2.47 | 11.4, 4.6 times slower |
+| `bench.c` through nicewasm | 1681080 | 2331640 | 1.39 | 11.3, 8.2 times slower |
+| `hand.nasm` | 491617 | 1288181 | 2.62 | 11.4, 4.3 times slower |
 
-The instruction counts equal the emulator's. In `hand.nasm`, `vm` (4.5
+The instruction counts equal the emulator's. In `hand.nasm`, `vm` (4.9
 cycles per instruction) ends each handler of three or four instructions
 with a jump through a table, whose address PREPARE must wait for, since
 the instruction before loads its index, and which flushes the pipeline;
-`strings` (2.9) and `bst` (2.3) read the math unit right after writing
+`strings` (2.9) and `bst` (2.4) read the math unit right after writing
 its operands.  `make -C bench compare` puts the estimate of
 `bench/pipecycles.py` beside these cycles, phase by phase.
 
@@ -547,7 +608,16 @@ writes takes the value WRITE wrote last, WRITE's one bypass; a field
 that needs an adder on it, or a read address, waits a cycle
 (ASSUMPTIONS.md, item 1; MICROARCH.md §7.4). Three rare cases take WRITE
 two cycles: a destination adjusted by one, a jump to a computed target,
-and a shift by a count from memory (MICROARCH.md §7.4).
+and a shift by a count that PREPARE cannot reduce, such as one from
+memory or through an adder, which takes three for a rotation through C
+(MICROARCH.md §7.3 and §7.4). `test/bubble.nasm`
+measures what a jump costs, with the cycle counter on a memory that never
+stalls: 6 cycles over a fall-through for a jump that WRITE resolves,
+aligned or not, 2 for one that DECODE resolves, and one more for an
+operation other than `MOVE` into R15. It also measures four reads in a
+row: WRITE takes read data from DBUS's FIFO, a cycle after its ACK,
+unless it only goes into a register (MICROARCH.md §5.3), so four `ADD`s
+from memory take 2 cycles more than four `MOVE`s.
 
 The condition is tested once per instruction, in PREPARE if no older
 micro-operation may still change SR, otherwise in WRITE. A data read waits
@@ -617,6 +687,8 @@ random, from the seed `G_SEED`, so that the tests check that the core
 waits for a request to be accepted. When both ports reach one word in one
 cycle, the instruction port reads the old value.
 
+## The console
+
 The I/O range follows ISA.md §8.3. The instruction port reads 0 there. The
 console is at `0xFFFFFF00`. A write sends bits 7..0 to the trace writer in
 the cycle the write is accepted, and stores nothing. A read returns `0x100`
@@ -629,6 +701,21 @@ with `emulator/test/input.txt`.
 The read counter is at `0xFFFFFF01`, as in the emulator. A data read returns
 the number of data reads of it since the last write, and a write sets that
 number. The rest of the I/O range is plain memory, as in the emulator.
+
+## The timer
+
+`timer` holds the timer of SYSTEM.md §4: `TIMER_PERIOD`, `TIMER_COUNT`, and
+`TIMER_VECTOR` at offsets 0, 1, and 2. Its bus port is a pipelined Wishbone
+slave with a 4-bit address, like that of the performance counters. The bus
+decoder selects it for `0xFFFFFF10`–`0xFFFFFF1F`.
+
+It counts down in each cycle with `tick_i` high. A system ties `tick_i` to
+`'1'`, so that the timer counts clock cycles. `tb_core` connects it to
+the core's report of each step, so that it counts as the emulator does.
+Its request goes to the core's IRQ port, with the valid/ready handshake of
+`src/multicycle.vhd`. It holds `valid` and the vector until `ready`, and a
+request raised while one waits merges with it. While no request is raised,
+`ready` has no effect, so `ready` may go to more than one device.
 
 ## The math unit
 
@@ -672,21 +759,6 @@ snapshot, and a read of the high word returns the snapshot's high word.
 
 The generic `G_RESET` sets the counters' value after reset. It is 0, as
 SYSTEM.md §3 requires, except in `tb_perf`, which starts near a wrap.
-
-## The timer
-
-`timer` holds the timer of SYSTEM.md §4: `TIMER_PERIOD`, `TIMER_COUNT`, and
-`TIMER_VECTOR` at offsets 0, 1, and 2. Its bus port is a pipelined Wishbone
-slave with a 4-bit address, like that of the performance counters. The bus
-decoder selects it for `0xFFFFFF10`–`0xFFFFFF1F`.
-
-It counts down in each cycle with `tick_i` high. A system ties `tick_i` to
-`'1'`, so that the timer counts clock cycles. `tb_core` connects it to
-the core's report of each step, so that it counts as the emulator does.
-Its request goes to the core's IRQ port, with the valid/ready handshake of
-`src/multicycle.vhd`. It holds `valid` and the vector until `ready`, and a
-request raised while one waits merges with it. While no request is raised,
-`ready` has no effect, so `ready` may go to more than one device.
 
 ## The fetch statistics
 

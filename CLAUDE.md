@@ -1,7 +1,8 @@
 # CLAUDE.md
 
-NICE is a 32-bit CPU by B. Ulmann; this repo will implement it on an FPGA.
-So far: the spec, an assembler, an emulator, a runtime library, and a wasm translator. See README.md.
+NICE is a 32-bit CPU by B. Ulmann; this repo implements it on an FPGA.
+The repo holds the spec, an assembler, an emulator, a runtime library, a wasm
+translator, and two FPGA cores. See README.md.
 
 ## Layout
 
@@ -9,16 +10,19 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
   Add new ones there, not in other files or code comments.
 - `doc/ISA.md`: the specification. It is authoritative for all code here.
   `doc/review/` records how decisions were reached; ISA.md supersedes it.
-- `doc/SYSTEM.md`: the devices in the I/O range that the emulator and the FPGA
-  core share (console, math unit, counters, timer). ISA.md reserves the range
-  and defines no device. ISA.md wins over it.
+- `doc/SYSTEM.md`: the devices that the emulator maps into the I/O range
+  (console, math unit, counters, timer). ISA.md reserves the range and
+  defines no device. ISA.md wins over it.
 - `doc/HISTORY.md`: what used to be true, and how the code got here. Keep it
   out of the other docs, which say only what is true now.
 - `doc/intro/`: beginner's slides (`nice_intro.tex`, built `nice_intro.pdf`)
   and their example programs. ISA.md wins over them.
+- `doc/check_refs.py`: checks every `FILE.md §n.m` reference in the repository
+  against the headings of the documents, and every link of every Markdown
+  file. `make -C doc test` runs it.
 - `doc/MICROARCH.md`: design note for the FPGA core. ISA.md wins over it.
-  Its block diagram is `doc/pipeline.tex`, and its interrupt timing diagram
-  `doc/interrupt.tex`, rendered to PNGs by `make diagrams`; edit the `.tex`
+  Its block diagram is `doc/pipeline.tex`, and its timing diagrams
+  `doc/flow.tex` and `doc/interrupt.tex`, rendered to PNGs by `make diagrams`; edit the `.tex`
   and commit both. The timing values are read off a simulation by hand.
 - `assembler/niceasm.py`: Python 3, standard library only, `mypy --strict` clean.
 - `emulator/src/cpu.zig` (core, unit tests) and `main.zig` (CLI, loader). Zig 0.15.
@@ -51,7 +55,7 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
 ## Commands
 
     make                             # help: the top-level targets, which run the ones below
-    make test                        # every quick make test below, in order
+    make test                        # every quick make test below, in parallel
     cd assembler && make test        # .nasm -> .bin comparisons, then test/errors.py
     cd assembler && make typecheck   # mypy --strict
     cd emulator  && make test        # zig unit tests, example and probe programs, test/errors.py
@@ -75,6 +79,8 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
     cd doc/intro && make test        # run the slides' example programs
     cd doc/intro && make pdf         # rebuild the slides (pdflatex, beamer)
     cd doc/intro && make pdfcheck    # check that nice_intro.pdf matches the .tex
+    cd doc && make test              # the section references and links of every Markdown file
+    cd doc && make typecheck         # mypy --strict
     make diagrams                    # render the diagrams in doc/ to PNG (pdflatex, pdftoppm)
 
 Vivado 2025.1 is installed but not on PATH: `/opt/Xilinx/2025.1/Vivado/bin/vivado`.

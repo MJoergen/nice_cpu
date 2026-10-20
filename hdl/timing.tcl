@@ -3,7 +3,13 @@
 # routing of pipeline alone, for the part of the MEGA65, with a 10 ns
 # clock, and the worst register-to-register paths. Run it with
 # "make timing" in hdl/, which leaves build/timing.rpt and prints the
-# worst path. A run takes about 10 minutes, and runs differ by a few
+# worst path.
+#
+# The input and output delays are 0, so the slack of a path from an input
+# or to an output is the time left to the system around the core: for the
+# data bus, its address decode, its block RAMs, and its read mux. Those
+# paths go to build/timing_in.rpt and build/timing_out.rpt. They leave out
+# retire_o and stats_o, which only the trace and the statistics read. A run takes about 10 minutes, and runs differ by a few
 # tenths of a nanosecond from placement alone.
 set src [file normalize [file join [file dirname [info script]] src]]
 set out [file normalize [file join [file dirname [info script]] build]]
@@ -21,5 +27,8 @@ route_design
 report_utilization -file $out/timing_util.rpt
 report_timing -from [all_registers] -to [all_registers] -max_paths 50 -nworst 1 \
   -file $out/timing.rpt
-report_timing -from [all_registers] -to [all_registers] -max_paths 1 -nworst 1 \
-  -path_type summary
+report_timing -from [all_inputs] -to [all_registers] -max_paths 50 -nworst 1 \
+  -file $out/timing_in.rpt
+report_timing -from [all_registers] \
+  -to [get_ports -filter {DIRECTION == OUT && NAME !~ retire_o* && NAME !~ stats_o*}] \
+  -max_paths 50 -nworst 1 -file $out/timing_out.rpt

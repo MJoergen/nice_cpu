@@ -15,7 +15,8 @@ with the one, two, or three before it. A skipped instruction counts as if
 it ran, because DECODE sees its operands before the condition is known, so
 a register it would write counts as written. An interrupt entry starts the
 sequence afresh, as it flushes the pipeline. The console output in the
-trace and the lines after the halt are skipped.
+trace and the lines after the halt are skipped (steps(), which
+pipecycles.py reads a trace with too).
 
 The last counts are for a core that forms every operand value, address,
 and shift count in PREPARE, the rules of pipecycles.py's --shift-mem,
@@ -26,10 +27,11 @@ target, and register destinations with a side effect.
 """
 
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
-from typing import Dict, FrozenSet, Iterable, Iterator, List
+from typing import Dict, FrozenSet, Iterable, Iterator, List, Optional, Tuple
 
 # The modes of ISA.md §4: those with a side effect on the register, those
 # that read memory as a source, and those that take a constant word.
@@ -59,12 +61,13 @@ class Instr:
     # For the rules of a core that forms every operand value, address, and
     # shift count in PREPARE (pipecycles.py's --shift-mem and the like).
     # R0 and R15, which DECODE knows, count as constants.
-    shift_count: str = ""      # A shift's count: "constant", "register", or "memory"
+    shift_count: str = ""      # A shift's count: "constant", "register", "adder", or "memory"
     count_reg: int = 0         # The register of a shift's count, if one
+    count_late: int = 0        # Cycles more that WRITE takes to reduce a shift's count
     sum_regs: FrozenSet[int] = frozenset()  # Registers of sources in modes 001 and 011
     store_sum_reg: int = 0     # The register of a store's address in mode 011, 101, or 111
     store_ptr_reg: int = 0     # The register of a store through @R or @R++
-    jump_kind: str = ""        # A jump WRITE resolves: "constant", "memory", or "computed"
+    jump_kind: str = ""        # A jump WRITE resolves: "constant", "memory", "register", or "computed"
     dest_adjust: bool = False  # A register destination in mode 001 or 010
 
 
@@ -108,7 +111,13 @@ def decode(iw: int) -> Instr:
             r15_pointer = True
     elif dr != 0:
         writes.add(dr)
-    early_jump = not conditional and dm == 0 and dr == 15 and mem_reads == 0
+    # DECODE resolves only MOVE R15, c and ADD R15, R15, c, with the
+    # condition "always" and the C bit clear, and the MOVE with M clear
+    # too (MICROARCH.md §5.4, src/pipe_decode.vhd).
+    f0, f1, f2 = (iw >> 14) & 0x7F, (iw >> 7) & 0x7F, iw & 0x7F
+    early_jump = (iw >> 27) == 0 and f0 == 0x0F and (
+        ((iw >> 21) & 0x3F == 0 and (f1, f2) == (0x30, 0)) or
+        ((iw >> 26) & 1 == 0 and (iw >> 21) & 15 == 3 and {f1, f2} == {0x0F, 0x30}))
     d = Instr(conditional, False, frozenset(reads), frozenset(writes), mem_reads, store,
               constants + 1, uops, bool(m) or 14 in writes, 15 in writes, early_jump,
               r15_known, r15_pointer)
@@ -120,7 +129,21 @@ def decode(iw: int) -> Instr:
         elif r1 in known:
             d.shift_count = "constant"
         else:
-            d.shift_count, d.count_reg = "register", r1
+            # Through an adder, c[R] or --R, WRITE reduces the count in a
+            # cycle of its own (MICROARCH.md §7.3), whoever wrote R.
+            d.shift_count = "adder" if m1 in (1, 3) else "register"
+            d.count_reg = r1
+        # WRITE reduces the count in a cycle of its own when it is read
+        # from memory, comes through an adder or with a side effect, is R14,
+        # or is the count of a rotation through C, and not a constant word,
+        # whose count mod 33 takes another cycle (src/pipe_prepare.vhd,
+        # late_v). A count in a register that the micro-op before writes
+        # is late too; that is "shift count register written by the
+        # previous instruction".
+        rotc = (iw >> 21) & 7 == 5
+        if (m1 in MEMORY or (r1 != 0 and m1 in (1, 2, 3)) or (r1 == 14 and m1 == 0) or
+                (rotc and (m1, r1) != (3, 0))):
+            d.count_late = 2 if rotc else 1
     d.sum_regs = frozenset(r for mode, r in sources if mode in (1, 3) and r not in known)
     if dr not in known:
         if dm in (3, 5, 7):
@@ -128,12 +151,17 @@ def decode(iw: int) -> Instr:
         elif dm in (4, 6):
             d.store_ptr_reg = dr
     d.dest_adjust = dm in (1, 2) and dr != 0
+    # The target of MOVE R15, x is the source, which WRITE has at the start
+    # of its cycle (MICROARCH.md §5.4). Any other write of R15, by an
+    # operation or a side effect, has a computed target.
     if 15 in writes and not early_jump:
         move = not (iw >> 27) & 1 and (iw >> 21) & 15 == 0
         if move and dm == 0 and dr == 15 and (m0, r0) == (3, 0):
             d.jump_kind = "constant"
         elif move and dm == 0 and dr == 15 and m0 in MEMORY:
             d.jump_kind = "memory"
+        elif move and dm == 0 and dr == 15:
+            d.jump_kind = "register"
         else:
             d.jump_kind = "computed"
     return d
@@ -165,12 +193,15 @@ LABELS = [
     "shift, count a constant",
     "shift, count a register",
     "shift, count in memory",
+    "shift, count through an adder (c[R] or --R)",
+    "shift whose count WRITE reduces in a cycle of its own",
     "shift count register written by the previous instruction",
     "source in mode 001 or 011, register from the previous",
     "store in mode 011, 101, or 111, register from the previous",
     "store through @R or @R++, R from the previous",
     "taken jump resolved in WRITE, to a constant",
     "taken jump resolved in WRITE, to a word in memory",
+    "taken jump resolved in WRITE, to a register or a sum",
     "taken jump resolved in WRITE, to a computed target",
     "register destination in mode 001 or 010",
 ]
@@ -212,12 +243,13 @@ class Profile:
         c["R15 read where DECODE knows PC"] += d.r15_known
         c["R15 as a pointer, or with a side effect"] += d.r15_pointer
         if d.shift_count:
-            c["shift, count " + ("in memory" if d.shift_count == "memory" else
-                                 "a " + d.shift_count)] += 1
+            c["shift, count " + {"memory": "in memory", "adder": "through an adder (c[R] or --R)",
+                                 "constant": "a constant", "register": "a register"}[d.shift_count]] += 1
         if d.jump_kind and not d.skipped:
             c["taken jump resolved in WRITE, to " + {
                 "constant": "a constant", "memory": "a word in memory",
-                "computed": "a computed target"}[d.jump_kind]] += 1
+                "register": "a register or a sum", "computed": "a computed target"}[d.jump_kind]] += 1
+        c["shift whose count WRITE reduces in a cycle of its own"] += bool(d.count_late)
         c["register destination in mode 001 or 010"] += d.dest_adjust
         h = self.history
         if h:
@@ -272,22 +304,35 @@ class Profile:
         return "\n".join(lines)
 
 
+STEP_RE = re.compile(r"([0-9a-f]{8}) ([0-9a-f]{8})(?= |$)")
+ENTRY_RE = re.compile(r"(?:NMI|IRQ) [0-9a-f]{2}(?= |$)")
+
+
+def steps(lines: Iterable[str]) -> Iterator[Optional[Tuple[int, int, List[str]]]]:
+    """The steps of a trace: the address, the instruction word, and the
+    rest of the line for an instruction, and None for an interrupt entry.
+    The emulator writes the program's console output to stdout too, so a
+    step may follow output that did not end in a newline, on the same
+    line. The lines after the halt are not steps."""
+    for line in lines:
+        if line.startswith(("Halted", "Stopped")):
+            return
+        m = STEP_RE.match(line) or STEP_RE.search(line)
+        e = ENTRY_RE.search(line)
+        if e and (m is None or e.start() < m.start()):
+            yield None
+        elif m:
+            yield int(m.group(1), 16), int(m.group(2), 16), line[m.end():].split()
+
+
 def profile(lines: Iterable[str]) -> Profile:
     p = Profile()
-    for line in lines:
-        parts = line.split()
-        if len(parts) >= 2 and parts[0] in ("NMI", "IRQ"):
+    for step in steps(lines):
+        if step is None:
             p.interrupt()
             continue
-        if len(parts) < 2 or len(parts[0]) != 8 or len(parts[1]) != 8:
-            continue
-        try:
-            int(parts[0], 16)
-            iw = int(parts[1], 16)
-        except ValueError:
-            continue
-        d = decode(iw)
-        d.skipped = "skipped" in parts[2:]
+        d = decode(step[1])
+        d.skipped = "skipped" in step[2]
         p.add(d)
     return p
 
@@ -325,7 +370,8 @@ def trace_lines(path: str) -> Iterator[str]:
 # done:  MOVE R6, 3                    writes R6
 #        SHL R1, R1, R6                count a register, R6 from the previous
 #        SHL R1, R1, 2                 count a constant; reads R1 from the previous
-#        SHR R1, R1, @R13              count in memory, a data read; reads R1 from the previous
+#        SHR R1, R1, @R13              count in memory, which WRITE reduces, a data read;
+#                                      reads R1 from the previous
 #        ADD R2, 0x100[R1], R0         a source in mode 011, R1 from the previous
 #        MOVE @R2, R1                  a store through @R2, R2 from the previous; reads R1
 #                                      from two back
@@ -337,10 +383,15 @@ def trace_lines(path: str) -> Iterator[str]:
 #                                      data read; reads R8 from the previous
 # tab:   .DAT j1
 # j1:    MOVE R7, j2                   writes R7
-#        ?!Z MOVE R15, R7              conditional; a computed jump, taken (to the next
-#                                      instruction); reads R7 from the previous
+#        ?!Z MOVE R15, R7              conditional; a jump to a register, taken (to the
+#                                      next instruction); reads R7 from the previous
 # j2:    ?!Z MOVE R15, j3              conditional; a jump to a constant, taken
-# j3:    HALT                          control: a jump, and SR counts as written
+# j3:    MOVE R9, j4                   writes R9
+#        MOVE R15, R9                  a jump to a register, which WRITE resolves, though
+#                                      it is unconditional; reads R9 from the previous
+# j4:    0<0 R2, R6, 2[R6]             count through an adder, which WRITE reduces
+#        ADD R15, R15, R0              a jump to a computed target (the next instruction)
+#        HALT                          control: a jump, and SR counts as written
 TEST_TRACE = """\
 00000000 00005800 R1=00000005
 00000002 026080b0 R2=00000006
@@ -364,20 +415,24 @@ TEST_TRACE = """\
 00000021 0001d800 R7=00000024
 00000023 b003c380
 00000024 b003d800
-00000026 0c000000 HALT
-Halted (HALT) after 23 steps, PC=00000027
-R0  00000000 R1  00000000 R2  00000101 R3  00000000
+00000026 00025800 R9=00000029
+00000028 0003c480
+00000029 08008336 R2=00000060
+0000002b 0063c780
+0000002c 0c000000 HALT
+Halted (HALT) after 27 steps, PC=0000002d
+R0  00000000 R1  00000000 R2  00000060 R3  00000000
 """
-TEST_WORDS = {1: 9, 2: 14}
-TEST_UOPS = {1: 22, 2: 1}
-TEST_RAW_REGS = {1: 4, 2: 3, 6: 1, 7: 1, 8: 1, 13: 1}
+TEST_WORDS = {1: 11, 2: 16}
+TEST_UOPS = {1: 26, 2: 1}
+TEST_RAW_REGS = {1: 4, 2: 3, 6: 1, 7: 1, 8: 1, 9: 1, 13: 1}
 TEST_COUNTS = {
     "conditional": 5,
     "conditional with a data read": 0,
     "data read": 3,
     "two data reads": 0,
     "store": 3,
-    "jump: writes R15, or control": 5,
+    "jump: writes R15, or control": 7,
     "conditional jump": 2,
     "jump that DECODE resolves": 1,
     "writes SR": 3,
@@ -386,23 +441,26 @@ TEST_COUNTS = {
     "conditional with a data read, SR written by the previous": 0,
     "data read after a store": 1,
     "data read after a conditional jump": 0,
-    "reads a register the previous instruction writes": 11,
+    "reads a register the previous instruction writes": 12,
     "the same, R13 only": 1,
     "reads a register written two back, not one": 2,
     "reads a register written three back, not one or two": 1,
     "R14 read as an operand or base": 1,
     "R14 written as a register": 1,
-    "R15 read where DECODE knows PC": 0,
+    "R15 read where DECODE knows PC": 1,
     "R15 as a pointer, or with a side effect": 0,
     "shift, count a constant": 1,
     "shift, count a register": 1,
     "shift, count in memory": 1,
+    "shift, count through an adder (c[R] or --R)": 1,
+    "shift whose count WRITE reduces in a cycle of its own": 2,
     "shift count register written by the previous instruction": 1,
     "source in mode 001 or 011, register from the previous": 1,
     "store in mode 011, 101, or 111, register from the previous": 1,
     "store through @R or @R++, R from the previous": 1,
     "taken jump resolved in WRITE, to a constant": 1,
     "taken jump resolved in WRITE, to a word in memory": 1,
+    "taken jump resolved in WRITE, to a register or a sum": 2,
     "taken jump resolved in WRITE, to a computed target": 1,
     "register destination in mode 001 or 010": 1,
 }
@@ -411,8 +469,8 @@ TEST_COUNTS = {
 def test() -> None:
     p = profile(TEST_TRACE.splitlines())
     bad = []
-    if (p.instructions, p.skipped) != (23, 3):
-        bad.append(f"{p.instructions} instructions, {p.skipped} skipped, expected 23 and 3")
+    if (p.instructions, p.skipped) != (27, 3):
+        bad.append(f"{p.instructions} instructions, {p.skipped} skipped, expected 27 and 3")
     for what, have, want in (("words", p.words, TEST_WORDS), ("micro-ops", p.uops, TEST_UOPS),
                              ("registers", p.raw_regs, TEST_RAW_REGS)):
         if have != want:

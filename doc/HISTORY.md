@@ -15,7 +15,8 @@ order, so ISA §8.2 was split into instruction fetches and data accesses,
 §8.3 was made to say that instruction fetches never reach I/O devices,
 §7.1 was changed to check for interrupts "before each instruction" instead
 of "before each instruction fetch", and §5 and §9.4 were made to name the
-two kinds of access. Appendix B records the two rules.
+two kinds of access. §9.4, the mapping of WebAssembly, is
+[translator/WASM.md](../translator/WASM.md) now. Appendix B records the two rules.
 
 ## The pipelined core
 
@@ -25,6 +26,12 @@ two kinds of access. Appendix B records the two rules.
   clock to about 49 MHz. It was re-timed for 100 MHz on 2026-10-19, so that
   PREPARE reads the registers and forms the operand values, addresses, and
   shift counts ([review/pipeline-timing.md](review/pipeline-timing.md)).
+- Until 2026-10-20, WRITE took all read data in the cycle of its ACK,
+  straight from the bus. In NiceMonMEGA65 the path from the block RAM
+  through the ALU into FETCH held the clock to about 78 MHz. Now only data
+  that goes into a register takes that way, and the rest comes from DBUS's
+  FIFO a cycle later ([review/pipeline-timing.md](review/pipeline-timing.md),
+  Read data).
 - The same first version merged the adjusted destination of a register in
   mode 001 or 010 into one write, and found every jump target through the
   ALU. Now three rare cases take WRITE two cycles (MICROARCH.md §7.4).
@@ -44,6 +51,10 @@ two kinds of access. Appendix B records the two rules.
 - Before the re-timing, the translated byte accesses read their shift count
   from a table in memory, which was 3% of the benchmark's instructions.
   They now compute it in a register ahead of the bounds check.
+- The fetch statistics (MICROARCH.md §8.1) were a device of their own at
+  `0xFFFFFF50`–`0xFFFFFF7F`, and ordinary memory in the emulator. On
+  2026-10-20 they became part of the performance counters of SYSTEM.md §3,
+  at the same addresses, and the emulator reads them as 0.
 
 ## The random test programs
 
@@ -63,7 +74,7 @@ On seeds 1 to 30, a register read right after its write went from 16% to
 
 ## The size and speed of translated code
 
-The code of the translator is about half the size it was, after four steps with no change
+The code that the translator writes is about half the size it was, after four steps with no change
 to WASM.md. Using locals and constants directly as
 operands made `test/safe.zig` 19% smaller (12353 to 9941 words) and the
 float library 31% smaller (29569 to 20317). A short inline path for
@@ -174,8 +185,8 @@ benchmark's module became 8560, not 8623.
   shift count, conditional instructions in place of short jumps,
   multiplications and divisions by constants, and shift counts of the byte
   accesses in registers. `bench/` went from 3359061 to 1730635
-  instructions, and from about 5.55 to about 2.27 million cycles by
-  `bench/pipecycles.py`.
+  instructions, and from about 5.55 to about 2.20 million cycles by
+  `bench/pipecycles.py`, 2.28 million on the pipelined core.
 - A differential fuzzer (`translator/test/diff_fuzz.py`) built in the
   reviews of 2026-10-19 also compared a trap's R2 by wasm instruction. It
   found two bugs in the early return that `fuzz.py` and `run.py` had
@@ -195,3 +206,11 @@ benchmark's module became 8560, not 8623.
 - With a bubble of 5 after a jump taken in WRITE, as the model of
   `bench/pipecycles.py` had before, its totals were 7.5% and 15.7% below
   the pipelined core's.
+
+## The start-up code for a monitor
+
+The runtime library once had `start_mon.nasm` and `start_wasm_mon.nasm`,
+start-up code for a program that a monitor in ROM loads at `0x8000` and
+calls as a subroutine. ABI.md described them under "Programs under a
+monitor". They were removed, because the monitor and the system around
+the core belong in [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65).

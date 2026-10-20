@@ -150,9 +150,9 @@ pointers. nicewasm supports all of them. A Rust program uses a table and
 `call_indirect` for `dyn` trait calls.
 
 The optimizations change nothing in WASM.md. The size of translated code
-is measured in words (`make words` in `bench/`): `test/safe.zig` is 5171
+is measured in words (`make words` in `bench/`): `test/safe.zig` is 5170
 words and the float library 7083. The benchmark of [bench/](../bench/)
-runs 1730635 instructions in its phases, from a module of 8560 words.
+runs 1681080 instructions in its phases, from a module of 8447 words.
 [doc/review/code-size-plan.md](../doc/review/code-size-plan.md) has the
 measurements of the plan, and [doc/HISTORY.md](../doc/HISTORY.md) lists
 the steps that got the code here.
@@ -196,23 +196,22 @@ the steps that got the code here.
   than 0 and −1 needs none of these checks, and an unsigned `i32`
   division or remainder by a power of 2 is a `SHR` or an `AND`.
 - **Multiplication by a constant:** an `i32.mul` by a constant is at
-  most eight shifts, additions, and subtractions, if that many will do.
-  So x × 31 is `SHL t, x, 5` and `SUB d, t, x`, and x × 16777619, the
-  FNV prime 2^24 + 13 × 31, takes eight. The math unit takes three
-  instructions, but on the FPGA core its product comes some 35 cycles
-  after the operands, and each of these instructions takes one. Eight
-  cover every constant with up to four bits set. A multiplication by any
+  most three shifts, additions, and subtractions, if that many will do.
+  So x × 31 is `SHL t, x, 5` and `SUB d, t, x`. The math unit takes
+  three instructions, and on the FPGA core its product can be read three
+  cycles after the operand is written, so a read right after the write
+  waits about two; each of these instructions takes one. By the cycle
+  estimate of `bench/`, more steps gain nothing. A multiplication by any
   other constant uses the math unit, or with `--no-mpu` calls `__mul`.
 - **i64 multiplication by a constant:** with x = 2^32 · xh + xl and the
   constant c = 2^32 · ch + cl, the product is xl · cl + 2^32 · (xl · ch +
   xh · cl), modulo 2^64. Of the last two products only the low words
-  count, so each can be shifts, additions, and subtractions, up to 16 for
-  each. They run while the math unit computes xl · cl, so they cost
-  little: the math unit needs some 35 cycles anyway. xorshift64*'s
-  constant 0x2545F4914F6CDD1D takes 12 and 16, and the multiplication
-  some 40 cycles on the FPGA core instead of some 130 with `__mul64`. A
-  product that needs more steps uses the math unit after the first one.
-  If both would, or with `--no-mpu`, the multiplication calls `__mul64`.
+  count. The math unit computes xl · cl, and then each of the two others
+  in turn, but one that takes at most four shifts, additions, and
+  subtractions is computed so, while the math unit computes xl · cl.
+  xorshift64*'s constant 0x2545F4914F6CDD1D takes three products of the
+  math unit, nine instructions. With `--no-mpu` the multiplication calls
+  `__mul64`.
 - **Comparisons:** `eqz`, `eq`, `ne`, `lt`, `gt`, `le`, and `ge`, signed
   and unsigned, for `i32` and `i64`.
 - **Shifts:** `shl`, `shr_s`, `shr_u`, `rotl`, and `rotr`, for `i32` and
@@ -549,8 +548,9 @@ vm's fetch of an opcode, an `i32.load8_u`, is:
     ROR     R1, @___wasm_memory[R2], R1
     AND     R1, R1, 0xFF
 
-A signed load rotates the bytes up to bit 31 instead, by `8[c]` or
-`16[c]`, which is c + 8 or c + 16, and then shifts them down with the
+A signed load gets c from `SHL c, 1[a], 3` or `SHL c, 2[a], 3`
+instead, which is 8p + 8 or 8p + 16 modulo 32, rotates the bytes up to
+bit 31 by it, and then shifts them down with the
 sign, by `C<0[M]` and `C>0`. A store rotates the mask of the bits to
 keep, such as `ROL R4, -256, R3`, ANDs the word with it, rotates the new
 bytes into place, and writes the word back with `OR`. A store of a
@@ -629,8 +629,8 @@ to the label that follows it.
 
 Next, a conditional jump over up to four instructions goes away, and
 they get the opposite condition instead. On the FPGA core, a taken
-conditional jump costs some five cycles more than a skipped instruction
-(doc/MICROARCH.md). The instructions must not write the flags or be
+conditional jump costs six cycles more than a skipped instruction
+(doc/MICROARCH.md §5.4). The instructions must not write the flags or be
 conditional already, and no label may come between them. A skipped
 instruction makes no memory access (ISA.md §3), so they may access
 memory. So `if (x) y = 9;` is `MOVE[M] R0, x` and `?!Z MOVE y, 9`. The
@@ -651,11 +651,11 @@ since the stubs run rarely: copies there cost words and save little.
 Code that no jump reaches any more goes.
 
 A `br_if` back to the start of a loop, at the end of the loop, is
-usually taken. A taken conditional jump costs some five cycles more than
-a skipped one on the FPGA core, and an unconditional jump to a label
+usually taken. A taken conditional jump costs six cycles more than a
+skipped one on the FPGA core, and an unconditional jump to a label
 two. So the `br_if` becomes a conditional jump out of the loop, on the
 opposite condition, and an unconditional jump back. Each round of the
-loop then saves two cycles, and leaving it costs five more. If an
+loop then saves three cycles, and leaving it costs six more. If an
 unconditional jump follows the `br_if`, the two swap their targets
 instead: the conditional jump goes where the unconditional one went, on
 the opposite condition, and the unconditional one goes back, with no new
@@ -782,6 +782,9 @@ target. The Rust modules were built with rustc 1.99.0. `test/errors.py`
 checks every error message. `test/run.py --keep DIR` also leaves each
 program in `DIR/X.bin`, or `DIR/X_soft.bin` for the run with `--no-mpu`,
 for `make programs` in `hdl/`, which runs them on the FPGA core.
+`test/run.py`, `test/fuzz.py`, and `test/errors.py` run their cases in
+parallel, one per CPU, each with files of its own, and report them
+in order.
 
 `test/fuzz.py FIRST COUNT` builds random modules from a syntax tree
 whose nodes also evaluate themselves in Python, so each module comes

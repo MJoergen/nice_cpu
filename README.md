@@ -11,15 +11,15 @@ single instruction word format with conditional execution on every
 instruction, and memory-to-memory operands with pre-decrement, post-increment,
 and indexed addressing.
 
-The sources disagree in places and leave gaps, so the first step was to write
-a complete specification. The FPGA implementation follows it. So far the
-repository holds the specification, an assembler, an emulator, a runtime
-library with integer and floating-point routines, and a WebAssembly
-translator that runs C, Zig, and Rust programs. The `hdl/` directory holds
-two cores, a simple multi-cycle one and the pipelined one of MICROARCH.md,
-which both pass every comparison with the emulator, the test setup for
-them, and formal checks of their ports and of three stages of the
-pipeline.
+The [sources](doc/REFERENCES.md) disagree in places and leave gaps, so
+the first step was to write a complete specification. The repository
+holds the specification, an assembler, an emulator, a runtime library
+with integer and floating-point routines, and a WebAssembly translator
+that runs C, Zig, and Rust programs. The `hdl/` directory holds two
+different FPGA implementations, a simple multi-cycle one and the
+pipelined one of MICROARCH.md, which both pass every comparison with the
+emulator, the test setup for them, and formal checks of their ports and
+of three stages of the pipeline.
 
 The core is FPGA-agnostic. This repository has no board top level and no
 synthesis for a particular board. The example design for the MEGA65 lives in
@@ -29,27 +29,23 @@ the separate [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) reposito
 
 | Path | What it is |
 |---|---|
-| [doc/ISA.md](doc/ISA.md) | The instruction set: the specification for everything else here. |
-| [doc/intro/](doc/intro/nice_intro.pdf) | A beginner's introduction to NICE: slides, with example programs that assemble and run. |
-| [runtime/ABI.md](runtime/ABI.md) | The C ABI: registers, calls, the stack, and the runtime library's conventions. |
-| [translator/WASM.md](translator/WASM.md) | How WebAssembly maps to NICE. |
-| [doc/SYSTEM.md](doc/SYSTEM.md) | The devices that the emulator and the FPGA core map into the I/O range: console, math unit, performance counters, and timer. |
-| [doc/MICROARCH.md](doc/MICROARCH.md) | The design note for the pipelined FPGA core. |
-| [doc/REFERENCES.md](doc/REFERENCES.md) | The NICE and QNICE sources the specification is based on. |
-| [doc/HISTORY.md](doc/HISTORY.md) | How the design and the tools got here: what the documents used to say, and the steps of the optimizations. |
-| [doc/review/](doc/review/) | Notes on how each ISA decision was reached, and the reviews of the tools. ISA.md supersedes them. |
+| [doc/](doc/README.md) | The specification, [ISA.md](doc/ISA.md), and the other documents: the I/O devices, the design note for the pipelined core, the sources, the history, the reviews, and a beginner's introduction in slides. |
 | [assembler/](assembler/README.md) | `niceasm`, the assembler: one Python 3 script with no dependencies. |
 | [emulator/](emulator/README.md) | `niceemu`, the emulator, written in Zig. |
-| [runtime/](runtime/README.md) | The start-up code and runtime library for C and wasm programs, and a small C library. |
-| [translator/](translator/README.md) | `nicewasm`, which translates WebAssembly into NICE assembly. |
+| [runtime/](runtime/README.md) | The start-up code and runtime library for C and wasm programs, and a small C library. [ABI.md](runtime/ABI.md) gives the C ABI: registers, calls, the stack, and the runtime library's conventions. |
+| [translator/](translator/README.md) | `nicewasm`, which translates WebAssembly into NICE assembly. [WASM.md](translator/WASM.md) says how WebAssembly maps to NICE. |
 | [bench/](bench/README.md) | A benchmark of translated code: six kernels with known results, timed with the performance counters, and the same benchmark written by hand. |
 | [hdl/](hdl/README.md) | The FPGA implementation in VHDL: a multi-cycle core and a pipelined core, the memory model and trace writer they are tested with, and the formal checks. |
 | [TODO.md](TODO.md) | The single list of open items, undecided questions, and ideas for later. |
 
 ## Quick start
 
-You need Python 3 and Zig 0.15 ([download](https://ziglang.org/download/),
-or see [installing Zig](https://ziglang.org/learn/getting-started/)).
+You need Python 3. Zig 0.15 is needed only to build the emulator
+([download](https://ziglang.org/download/), or see
+[installing Zig](https://ziglang.org/learn/getting-started/)). All the tests
+but those of the assembler and the documents run programs on the emulator,
+so they build it first. The `.wasm` files the tests translate are checked
+in, so the tests need no C, Zig, or Rust compiler for wasm.
 
 **Use Zig 0.15 exactly (tested with 0.15.2).** It is the only supported
 version. Zig changes its language and standard library between releases, so
@@ -57,7 +53,7 @@ the emulator is unlikely to build with a newer or older version. On the
 download page, pick 0.15.2 rather than the latest release or master.
 
     make                              # list the top-level targets
-    make test                         # all of the tests below, in order
+    make test                         # all of the tests below, in parallel
 
     cd assembler && make test         # test the assembler
     cd emulator && make test          # build and test the emulator
@@ -66,6 +62,7 @@ download page, pick 0.15.2 rather than the latest release or master.
     cd bench && make test             # run the benchmark on the emulator and check its results
     cd hdl && make test               # test both cores (needs GHDL)
     cd doc/intro && make test         # run the example programs of the introduction
+    cd doc && make test               # check the section references and links of the documents
 
 To assemble and run a program:
 
@@ -101,8 +98,7 @@ whole program is assembled at once.
     prog.nasm
         |
         |  cat, in this order: runtime/start_wasm.nasm (or start.nasm for a
-        |  program with no wasm module, or their _mon versions for a program
-        |  that a monitor runs), hand-written .nasm files, prog.nasm,
+        |  program with no wasm module), hand-written .nasm files, prog.nasm,
         |  runtime/lib.nasm, runtime/muldiv_mpu.nasm (or muldiv_soft.nasm
         |  without the math unit), and runtime/float.nasm if prog uses floats
         v
@@ -110,7 +106,7 @@ whole program is assembled at once.
         |  assembler/niceasm.py
         v
     full.bin
-        |  emulator/zig-out/bin/niceemu, or later the FPGA core
+        |  emulator/zig-out/bin/niceemu, or the FPGA core
         v
     console output, the registers, and an exit status
 
@@ -141,21 +137,24 @@ the join.
 - The `.bin` format is the text format of the 2004 `NICE.pm` assembler, so
   its example binaries can be compared directly.
 - The FPGA cores take the place of `niceemu` at the end of the pipeline.
-  `hdl/` runs the same programs on them and compares their traces with
-  the emulator's: `emulator/test/cputest.nasm` and the `--trace` format
-  are there for that, and `make -C hdl programs` runs the runtime's and
-  the translator's test programs on a core.
+  `hdl/` runs the same programs on them in simulation, in GHDL, and
+  compares their traces with the emulator's: `emulator/test/cputest.nasm`
+  and the `--trace` format are there for that, and `make -C hdl programs`
+  simulates a core running the runtime's and the translator's test
+  programs. No test runs on an FPGA board.
 
-**Compilers.** No compiler targets NICE directly yet. ABI.md defines
-the C ABI for one, with a one-word `char` and `CHAR_BIT` = 32. Until there
-is one, compiled code reaches NICE through WebAssembly: clang (with
-`wasm-ld`), Zig, and Rust all have a wasm32 target, and `nicewasm`
-translates the module. That gives C code the 8-bit bytes of wasm linear
-memory, which Rust and Zig need anyway. GCC has no wasm32 target and no
-NICE target, so it is not used. All three are tested. C programs can use
-the small C library in [runtime/libc/](runtime/README.md#c-library):
-`printf`, the `string.h` functions, `malloc`, and a few more. It is
-compiled to wasm with the program, so it is not one of the joined files.
+**Compilers.** No compiler targets NICE directly
+[yet](TODO.md#toolchain). ABI.md defines the C ABI for one, with a
+one-word `char` and `CHAR_BIT` = 32. Until there is one, compiled code
+reaches NICE through WebAssembly: clang (with `wasm-ld`), Zig, and Rust
+all have a wasm32 target, and `nicewasm` translates the compiler's
+`.wasm` output into NICE assembly. That gives C code the 8-bit bytes of
+wasm linear memory, which Rust and Zig need anyway. GCC has no wasm32
+target and no NICE target, so it is not used. All three are tested. C
+programs can use the small C library in
+[runtime/libc/](runtime/README.md#c-library): `printf`, the `string.h`
+functions, `malloc`, and a few more. It is compiled to wasm with the
+program, so it is not one of the joined files.
 
 **Host tools.** Python 3 runs `niceasm`, `nicewasm`, and the test scripts.
 Nothing beyond the standard library is needed, and `make typecheck` checks

@@ -112,7 +112,7 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 - There is one runtime library, shared by the C compiler and the wasm translator ([WASM.md](../translator/WASM.md)).
 - A routine may be written in assembly, or translated from a library module ([WASM.md](../translator/WASM.md)).
 - The labels of its routines start with `__`. Their C names start with `_`, which C reserves for the implementation at file scope. The labels inside a translated library module start with `WL.` ([WASM.md](../translator/WASM.md)), which no C name can produce.
-- The multiply and divide routines, for one-word integers and for `long long`, come in two versions: one that uses the math unit of [SYSTEM.md ISA §2](../doc/SYSTEM.md#2-math-unit), and one in software for systems without it. A program contains exactly one of the two.
+- The multiply and divide routines, for one-word integers and for `long long`, come in two versions: one that uses the math unit of [SYSTEM.md §2](../doc/SYSTEM.md#2-math-unit), and one in software for systems without it. A program contains exactly one of the two.
 - The table lists the routines for one-word integers. The runtime library's README lists all routines, including those for `long long`, floating point, and conversions between them.
 
 | Label | Result in R1 |
@@ -123,7 +123,7 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 
 Division by zero is undefined in C, so these routines may return any value for it.
 
-**Device routines.** The runtime library also has routines for the devices of the emulator and the FPGA implementation, so that programs need not use their addresses. They are the console ([SYSTEM.md ISA §1](../doc/SYSTEM.md#1-console-screen-and-read-counter)), the performance counters ([SYSTEM.md ISA §3](../doc/SYSTEM.md#3-performance-counters)), and the emulator's character screen at `0xFFFF0000` ([SYSTEM.md ISA §1](../doc/SYSTEM.md#1-console-screen-and-read-counter)). Unlike the routines above, a program calls them by name, so they are ordinary C functions: `nice_putc` has the label `_nice_putc`. External C names that start with `nice_` are reserved for them.
+**Device routines.** The runtime library also has routines for the devices of the emulator and the FPGA implementation, so that programs need not use their addresses. They are the console ([SYSTEM.md §1](../doc/SYSTEM.md#1-console-screen-and-read-counter)), the performance counters ([SYSTEM.md §3](../doc/SYSTEM.md#3-performance-counters)), and the emulator's character screen at `0xFFFF0000` ([SYSTEM.md §1](../doc/SYSTEM.md#1-console-screen-and-read-counter)). Unlike the routines above, a program calls them by name, so they are ordinary C functions: `nice_putc` has the label `_nice_putc`. External C names that start with `nice_` are reserved for them.
 
 | C declaration | What it does |
 |---|---|
@@ -137,12 +137,10 @@ Division by zero is undefined in C, so these routines may return any value for i
 | `void nice_screen_clear(void)` | Writes a blank, `0x20`, to each of the screen's 2000 words. |
 
 - Each routine makes the data accesses that its device needs, and no others. `nice_getc` reads the console until a byte is there or the input has ended; `nice_pollc` reads it once.
-- `nice_cycles` and `nice_instructions` read the low word and then the high word, as [SYSTEM.md ISA §3](../doc/SYSTEM.md#3-performance-counters) describes. The rule there for interrupt service routines applies to them.
+- `nice_cycles` and `nice_instructions` read the low word and then the high word, as [SYSTEM.md §3](../doc/SYSTEM.md#3-performance-counters) describes. The rule there for interrupt service routines applies to them.
 - The screen routines write ordinary memory on the emulator. On a system without a screen, the writes are ignored or land in RAM. With the emulator's option `-2004`, the screen is at `0x400`, and these routines do not reach it.
 
 **Start-up.** The start-up code sits at address 0. It sets SP to one past the highest word the program may use, so that the first push lands on that word. If the program has a wasm module, it then calls `___wasm_start` ([WASM.md](../translator/WASM.md)). The runtime library has two versions of the start-up code, one with this call and one without, and a program uses the version that matches it. Then the start-up code calls `_main` with R1 = 0 and R2 = 0, so a `main(int argc, char **argv)` sees no arguments and a null `argv`. After `main` returns, the start-up code executes `HALT` with `main`'s return value still in R1. Static data gets its initial values when the program image is loaded. Reset does not restore them.
-
-**Programs under a monitor.** A system may boot from a monitor in a ROM at the bottom of memory and load programs into the RAM above it, as QNICE-FPGA does. The ROM takes `0x0000`–`0x7FFF`, and a program for the monitor is assembled at `0x8000`. The monitor runs the program as a subroutine (ISA §9.1): it sets SP to its own stack, pushes a return address, and jumps to `0x8000`. So the program's start-up code does not set SP, and after `main` returns it returns to the monitor with `MOVE PC, @SP++`, with `main`'s return value in R1 and SP as it was on entry, instead of executing `HALT`, which would stop the processor until reset. The runtime library has the two versions of this start-up code too, for programs with and without a wasm module. The program may use the memory from its end up to the monitor's stack, and nothing below `0x8000`: a write to the ROM is dropped, so a stack or data there is lost. What else the monitor offers, such as its routines, is documented with the monitor.
 
 **Example.** This function and call:
 

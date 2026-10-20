@@ -20,9 +20,12 @@ DEFAULT_CORE = "multicycle"
 
 
 def run_emulator(emu: str, binfile: str, opts: list[str]) -> str:
-    """The trace and the output of "niceemu -t", and its exit status."""
+    """The trace and the output of "niceemu -t", and its exit status. A
+    program may write any byte to the console, so the output is not
+    always UTF-8."""
     r = subprocess.run(
-        [emu, "-t", *opts, binfile], stdin=subprocess.DEVNULL, capture_output=True, text=True
+        [emu, "-t", *opts, binfile], stdin=subprocess.DEVNULL, capture_output=True, text=True,
+        errors="replace"
     )
     return r.stdout + f"exit {r.returncode}\n"
 

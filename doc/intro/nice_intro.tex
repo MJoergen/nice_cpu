@@ -911,10 +911,11 @@ Stopped at the step limit after 8 steps, PC=00000004
        one, which write the same trace as the emulator for every test
        program.
      \end{itemize}
-    \item Next comes a faster clock for the \textbf{pipelined core}, and
-     the system around it: RAM, a UART, and an interrupt controller.
+    \item Next comes a faster clock for the \textbf{pipelined core}.
+     The system around it, with RAM and a UART, is built in the separate
+     NiceMonMEGA65 repository.
     \item A C compiler that targets NICE directly would be great, too.
-     The calling convention for one is already in \code{doc/ISA.md}.
+     The calling convention for one is already in \code{runtime/ABI.md}.
    \end{itemize}
   \end{frame}
 %

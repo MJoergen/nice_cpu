@@ -4,11 +4,12 @@ status 1, print the expected error, and write no output file."""
 
 from __future__ import annotations
 
+import concurrent.futures
 import os
 import subprocess
 import sys
 import tempfile
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from wasm import call_indirect, table
 V128 = 0x7B  # a type nicewasm does not support
@@ -317,6 +318,24 @@ COMMAND_CASES: List[Tuple[List[str], str]] = [
 ]
 
 
+def check(tmp: str, index: int, options: List[str], wasm: bytes, expected: str) -> Optional[str]:
+    """Translates one module that has an error, in a directory of its own
+    under tmp, so that the cases can go in parallel. Returns the failure,
+    or None."""
+    work = os.path.join(tmp, str(index))
+    os.mkdir(work)
+    src = os.path.join(work, "t.wasm")
+    out = os.path.join(work, "t.nasm")
+    with open(src, "wb") as f:
+        f.write(wasm)
+    p = subprocess.run([sys.executable, NICEWASM, *options, "-o", out, src],
+                       capture_output=True, text=True)
+    got = p.stderr.strip()
+    ok = (p.returncode == 1 and got.startswith(src)
+          and got.endswith(f": error: {expected}") and not os.path.exists(out))
+    return None if ok else f"FAIL: expected '{expected}'\n  got (exit {p.returncode}): {got}"
+
+
 def main() -> None:
     failed = 0
     with tempfile.TemporaryDirectory() as tmp:
@@ -324,19 +343,11 @@ def main() -> None:
         out = os.path.join(tmp, "t.nasm")
         cases: List[Tuple[List[str], bytes, str]] = [([], wasm, expected) for wasm, expected in CASES]
         cases += OPTION_CASES
-        for options, wasm, expected in cases:
-            with open(src, "wb") as f:
-                f.write(wasm)
-            p = subprocess.run([sys.executable, NICEWASM, *options, "-o", out, src],
-                               capture_output=True, text=True)
-            got = p.stderr.strip()
-            ok = (p.returncode == 1 and got.startswith(src)
-                  and got.endswith(f": error: {expected}") and not os.path.exists(out))
-            if not ok:
-                failed += 1
-                print(f"FAIL: expected '{expected}'\n  got (exit {p.returncode}): {got}")
-                if os.path.exists(out):
-                    os.remove(out)
+        with concurrent.futures.ThreadPoolExecutor(os.cpu_count()) as pool:
+            for problem in pool.map(lambda c: check(tmp, c[0], *c[1]), enumerate(cases)):
+                if problem is not None:
+                    failed += 1
+                    print(problem)
         with open(src, "wb") as f:
             f.write(module(MAIN))
         for options, expected in COMMAND_CASES:

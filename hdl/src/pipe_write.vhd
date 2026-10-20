@@ -158,6 +158,12 @@ begin
       variable cond_v   : std_logic;
       variable data_v   : t_words(0 to 1);
       variable avail_v  : natural range 0 to C_MAX_OUT + 1;
+      variable byp_v    : boolean;   -- The micro-operation may take its read data from the bus
+      variable bdata_v  : t_words(0 to 1);
+      variable bavail_v : natural range 0 to C_MAX_OUT + 1;
+      variable b0_v     : std_logic_vector(31 downto 0);
+      variable b1_v     : std_logic_vector(31 downto 0);
+      variable fres_v   : t_result;  -- The result for the flags
       variable rd_v     : std_logic_vector(1 to 2);
       variable nr_v     : natural range 0 to 2;
       variable k_v      : natural range 0 to 2;
@@ -206,6 +212,7 @@ begin
       adjust_v    := false;
       two_v       := false;
       res_v       := (r => (others => '0'), c => '0', v => '0');
+      fres_v      := res_v;
       a_v         := (others => '0');
       v0_v        := (others => '0');
       v1_v        := (others => '0');
@@ -222,10 +229,22 @@ begin
       -- sets it below.
       target_v    := w_r.regs(15) when w_r.jump = '1' else u_v.inst.next_pc;
 
-      -- The read data, from the FIFO or straight from the bus
-      avail_v   := rq_cnt_r + to_nat(ack_read);
-      data_v(0) := rq_r(0) when rq_cnt_r >= 1 else dbus_data_i;
-      data_v(1) := rq_r(1) when rq_cnt_r >= 2 else dbus_data_i;
+      -- The read data, from DBUS's FIFO, so that no path runs from the bus
+      -- through the ALU, the shifter, the store, or a jump.
+      avail_v   := rq_cnt_r;
+      data_v(0) := rq_r(0);
+      data_v(1) := rq_r(1);
+
+      -- A micro-operation whose read data only goes into a register may take
+      -- it straight from the bus, in the cycle its ACK comes: s0 and s1 with
+      -- a side effect, and a MOVE into a register other than R15
+      -- (MICROARCH.md §5.3).
+      byp_v      := u_v.kind = UOP_S0 or u_v.kind = UOP_S1 or
+                    (u_v.kind = UOP_OP and u_v.inst.op = "0000" and u_v.inst.shift = '0' and
+                      u_v.inst.m(0) = "000" and u_v.inst.x(0) /= 15);
+      bavail_v   := rq_cnt_r + to_nat(ack_read) when byp_v else rq_cnt_r;
+      bdata_v(0) := rq_r(0) when rq_cnt_r >= 1 else dbus_data_i;
+      bdata_v(1) := rq_r(1) when rq_cnt_r >= 2 else dbus_data_i;
 
       -- Room on the data bus for an access of WRITE's own
       room_v := rd_stb_r = '0' and tag_cnt_r < C_MAX_OUT;
@@ -411,7 +430,7 @@ begin
                   n_v.regs(wreg_v) := regval(wreg_v, wval_v);
                   n_v.last         := regval(wreg_v, wval_v);
                end if;
-            elsif avail_v >= nr_v then
+            elsif bavail_v >= nr_v then
                -- The sources (ISA.md §4.1): from memory, from S0 and S1 for
                -- the operation, or as PREPARE formed them
                if rd_v(1) = '1' then
@@ -429,6 +448,9 @@ begin
                else
                   v1_v := base_v(2);
                end if;
+               -- The same, for a micro-operation that may take them from the bus
+               b0_v := bdata_v(0) when rd_v(1) = '1' else v0_v;
+               b1_v := bdata_v(k_v) when rd_v(2) = '1' else v1_v;
 
                if u_v.cnt_late = '1' and w_r.cnt_step /= 2 then
                   -- The first cycle of a shift whose count PREPARE could not
@@ -454,18 +476,18 @@ begin
                         -- s0 with its side effect
                         x_v       := u_v.inst.x(1);
                         m_v       := u_v.inst.m(1);
-                        n_v.s0val := v0_v;
+                        n_v.s0val := b0_v;
                         wreg_v    := x_v;
                         wval_v    := base_v(1) when m_v(0) = '1' else base_v(1) + 1;
 
                      when UOP_S1 =>
                         -- s0, unless S0 had it, then s1 with its side effect
                         if u_v.inst.side(1) = '0' then
-                           n_v.s0val := v0_v;
+                           n_v.s0val := b0_v;
                         end if;
                         x_v       := u_v.inst.x(2);
                         m_v       := u_v.inst.m(2);
-                        n_v.s1val := v1_v;
+                        n_v.s1val := b1_v;
                         wreg_v    := x_v;
                         wval_v    := base_v(2) when m_v(0) = '1' else base_v(2) + 1;
 
@@ -485,10 +507,12 @@ begin
                               wreg_v := x_v;
                               wval_v := res_v.r;
                               -- A jump: a MOVE's target is its source, ready
-                              -- now; any other is ready a cycle later.
+                              -- now; any other is ready a cycle later. MOVE
+                              -- is opcode 0000 of the ALU class only: the
+                              -- shift 0<0 has the same opcode.
                               if x_v = 15 then
                                  target_v := v0_v;
-                                 two_v    := u_v.inst.op /= "0000";
+                                 two_v    := u_v.inst.op /= "0000" or u_v.inst.shift = '1';
                               end if;
                            when "001" | "010" =>
                               wreg_v   := x_v;
@@ -510,6 +534,15 @@ begin
                            target_v := regval(15, wval_v);
                         end if;
                         store_v := u_v.store = '1';
+
+                        -- A MOVE into a register writes its source as it
+                        -- comes from the bus; the store and the jump above
+                        -- never take it.
+                        fres_v := res_v;
+                        if byp_v then
+                           fres_v := (r => b0_v, c => '0', v => '0');
+                           wval_v := b0_v;
+                        end if;
                   end case;
 
                   -- The register write. Whether it is R15, which starts a
@@ -526,7 +559,7 @@ begin
                   -- The flags (ISA.md §6), after the destination
                   if u_v.kind = UOP_OP and u_v.inst.mbit = '1' and
                      not (u_v.inst.x(0) = 14 and u_v.inst.m(0)(2) = '0' and u_v.inst.m(0) /= "011") then
-                     n_v.regs(14) := flags(n_v.regs(14), res_v);
+                     n_v.regs(14) := flags(n_v.regs(14), fres_v);
                   end if;
 
                   -- The store, held on the bus until it is accepted

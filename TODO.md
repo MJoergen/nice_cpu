@@ -4,8 +4,8 @@ This is the single list of open items for the repository: work not done
 yet, questions not decided, claims not checked, and ideas for later. Each
 item names where it comes from. Add new items here, not in other files.
 
-Every finding of the reviews in [doc/review/](doc/review/) is closed. No code
-has TODO or FIXME comments.
+Every finding of the reviews in [doc/review/](doc/review/) is closed.
+No code has TODO or FIXME comments.
 
 ## FPGA core
 
@@ -19,8 +19,10 @@ has TODO or FIXME comments.
   - Speed: the core alone meets a 10 ns clock out of context (Vivado
     2025.1, `make timing` in `hdl/`), with a margin of a few tenths of a
     nanosecond ([doc/review/pipeline-timing.md](doc/review/pipeline-timing.md)).
-    NiceMonMEGA65 still runs it at
-    33.3 MHz, and must be tried at 100 MHz. See the clock items below.
+    In NiceMonMEGA65 it reached about 78 MHz before WRITE stopped taking
+    read data from the bus into the ALU
+    ([doc/review/pipeline-timing.md](doc/review/pipeline-timing.md), Read
+    data). See the items under "Pipelined core" below.
 - **Test order steps not done** (MICROARCH.md §9):
   - Step 4, hazard programs: `hdl/test/hazard.nasm`,
     `hdl/test/sidefx_prog.py`, and `hdl/test/smc_prog.py`, which both
@@ -31,7 +33,9 @@ has TODO or FIXME comments.
     source side effect needs VBASE = 0xFFFFFF before the instruction,
     and its vector table would then be in the I/O range.
   - Step 5: `hdl/test/irq_sweep.py` runs `hazard.nasm` with an NMI before
-    each step, and with an IRQ before each, and both cores pass. Not swept: the program of `sidefx_prog.py`, which writes R14
+    each step, and with an IRQ before each, and both cores pass, and
+    `irqhazard.nasm` too. `latecount.nasm` was swept the same way by hand
+    on 2026-10-20, and both cores pass. Not swept: the program of `sidefx_prog.py`, which writes R14
     with any value, so E and VBASE too. For the pipelined core, the sweep
     compares with `irq_compare.py --read-delay`, and both cores are swept
     with the request raised up to a few cycles late as well.
@@ -40,23 +44,13 @@ has TODO or FIXME comments.
     `runtime/libc/test/fuzz_printf.py`, which needs clang, and the
     benchmark, which `make core` in `bench/` runs already.
   - Step 7: `hdl/test/random_prog.py` was tuned with
-    `hdl/test/random_stats.py`, and both cores pass seeds 1 to 90. Still weak: a conditional instruction right after a write of
+    `hdl/test/random_stats.py`, and both cores pass seeds 1 to 90, with
+    the shift jumps it makes since 2026-10-20. Still weak: a conditional instruction right after a write of
     SR is 10% of the instructions, against 15 to 20% in the benchmark,
     and about half of the runs halt before the step limit, mostly at a
     word that a store changed, or after an interrupt that a write of VBASE
     sent astray. `make random` runs one seed at a time; `programs.py`
     could run them in parallel.
-- **The system around the core** (MICROARCH.md §8): dual-port RAM, the bus
-  decoders, a default slave that reads 0 and drops writes, and the console
-  UART at `0xFFFFFF00`, with generics for the memory map. The data bus
-  decoder, which keeps the ACKs in order when requests to different slaves
-  are in flight (MICROARCH.md §8), exists: `hdl/src/wb_dmux.vhd`. The
-  instruction bus decoder does not. The UART must receive too: a read returns the next byte with bit 8
-  set, or 0 (SYSTEM.md §1). `wb_mem.vhd` reads a file, as the emulator's
-  `--input` does. Today
-  `hdl/sim/wb_mem.vhd` stands in for the rest, in simulation only, and
-  `hdl/test/tb_core.vhd` computes the data bus decoder's select with an
-  address compare.
 - **Formal checks with SymbiYosys** (MICROARCH.md §9). `make formal` proves
   the ports of the multi-cycle core, the timer, and the data bus decoder,
   and FETCH of the pipelined core, for every cycle. For the
@@ -94,21 +88,34 @@ has TODO or FIXME comments.
   FETCH's precomputed heads. Decide after NiceMonMEGA65 has been tried
   at 100 MHz.
 - **What the system adds to the core's paths.** Out of context, the
-  inputs arrive at time 0. In the system, the data bus's read data goes
-  straight into WRITE's operands in the cycle of the ACK, and
-  `dbus_stall_i` into WRITE's retire and so into the flush; the memory
-  and the decoder must register what they drive. `retire_o` and the bus
-  outputs are combinational and were never counted.
+  inputs arrive at time 0 and the outputs are due at time 10 ns, so
+  `make timing` in `hdl/` reports their slack as the time left to the
+  system. Read data goes into WRITE only for a register write (6.5 ns
+  left), but `dbus_ack_i` goes into WRITE's retire and so into FETCH
+  (2.8 ns left), and the store goes onto the bus from WRITE in the cycle
+  it runs (1.2 ns left for the address, 1.4 ns for the data). Next: the
+  store from a register in DBUS, which costs a cycle for a read right
+  after a store (MICROARCH.md §5.3, rule 3), and a skid buffer between
+  DECODE and PREPARE for the handshake. Measure each in NiceMonMEGA65.
+  `retire_o` is combinational and is not counted.
 - **NiceMonMEGA65 reads the registers from `retire_o.regs`**, which is
   `w_n.regs` of WRITE, before the register. Its worst path ends there. A
   registered copy is enough for nicemon. Fix in NiceMonMEGA65, and say in
   `hdl/src/trace_pkg.vhd` that `retire_o` is for simulation and is slow.
 
+- **The cycle the model lacks.** `bench/pipecycles.py` charges a jump
+  taken in WRITE 7 cycles, where the core's bubble is 6
+  (`hdl/test/bubble.nasm`), because 7 brings the model closer to the
+  core on the benchmark, which it still underestimates by 3% and 7%
+  (`make compare` in `bench/`). Find what the extra cycle stands for,
+  for example by printing each retire's cycle from a scratch copy of the
+  core and comparing it with the model's, instruction by instruction
+  (doc/review/third-repository-review.md §3.1).
 - **Speculative reads of RAM** (MICROARCH.md §5.3). Data reads wait until
   the instruction is certain to run. The waits are a conditional read
   after a write of SR, 0.0% of the translated benchmark's instructions and
   3.8% of the hand-written one's, and a read after a conditional jump,
-  5.5% and 7.6% (MICROARCH.md §5.6). Allowing speculative reads of RAM, but
+  5.6% and 7.6% (MICROARCH.md §5.6). Allowing speculative reads of RAM, but
   not of the I/O range, needs a change to ISA.md §8.2 and a check of each
   read against older stores. Decide once the pipelined core shows what the
   waits cost. The bypasses and the slow path for R14 were decided from the
@@ -167,9 +174,8 @@ has TODO or FIXME comments.
     and in the byte accesses, whose word index and shift count now come
     before the compare. Speculative reads (above) would remove it.
   - *The address register written by the instruction before*, about 3%
-    now that the byte accesses compute theirs before the compare.
-    MICROARCH.md §5 could state this stall in so many words; §3 implies
-    it.
+    now that the byte accesses compute theirs before the compare
+    (MICROARCH.md §5.1).
   - *Loop back edges* cost the two cycles of an early redirect each round.
   - *`@Rx++` for a pointer walk*, as `hand.nasm` does, needs a word
     pointer kept in step with the byte address, which is out of reach

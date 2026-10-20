@@ -73,6 +73,15 @@
 -- micro-operation runs, if no data read of it is issued yet. PREPARE
 -- issues no read while a request is pending that could be taken first.
 --
+-- PAUSE (MICROARCH.md §6.1). While pause_i is '1', WRITE stops before the
+-- next instruction, at the first boundary where it could take an interrupt,
+-- but whatever in_service and after_rti are. It flushes the pipeline, so
+-- that FETCH waits at R15 with no request, and paused_o is '1'. PREPARE
+-- issues no read while pause_i is '1', as for an interrupt request. When
+-- pause_i is '0' again, the core goes on, and the first instruction, or
+-- interrupt entry, runs whatever pause_i is then. So a pulse of pause_i
+-- low for one cycle while the core is paused runs exactly one step.
+--
 -- INSTRET. An instruction is counted on instret_o when its last
 -- micro-operation retires, or, if it reads memory, in the cycle the bus
 -- accepts its last data read, which may wait on the bus. The performance
@@ -89,7 +98,8 @@
 --    the core raises the matching ready.
 -- c) nmi_ready_o and irq_ready_o depend combinationally on nmi_valid_i and
 --    irq_valid_i, so a device must not make valid depend combinationally on
---    ready.
+--    ready. The core's requests depend combinationally on pause_i, so
+--    pause_i must not depend combinationally on them.
 --
 -- RESET
 -- Synchronous. It sets the state of ISA.md §8.1, empties the pipeline, and
@@ -137,6 +147,10 @@ entity pipeline is
       irq_valid_i  : in  std_logic;
       irq_ready_o  : out std_logic;
       irq_vector_i : in  std_logic_vector(7 downto 0);
+
+      -- Pause before the next instruction, and '1' while paused (PAUSE above)
+      pause_i      : in  std_logic;
+      paused_o     : out std_logic;
 
       -- '1' once the core has halted (ISA.md §1.4)
       halted_o     : out std_logic;
@@ -285,6 +299,7 @@ begin
          take_irq_i   => take_irq,
          nmi_valid_i  => nmi_valid_i,
          irq_valid_i  => irq_valid_i,
+         pause_i      => pause_i,
          move_o       => p_move,
          uop_o        => p_out,
          first_read_o => p_first_read,
@@ -356,6 +371,7 @@ begin
          irq_vector_i => irq_vector_i,
          take_nmi_o   => take_nmi,
          take_irq_o   => take_irq,
+         pause_i      => pause_i,
          state_o      => w_r,
          done_o       => w_done,
          flush_o      => w_flush,
@@ -368,6 +384,7 @@ begin
    nmi_ready_o <= take_nmi;
    irq_ready_o <= take_irq;
    halted_o    <= '1' when w_r.mode = HALTED_ST else '0';
+   paused_o    <= '1' when w_r.mode = PAUSED_ST else '0';
    instret_o   <= rd_count or w_instret;
 
 

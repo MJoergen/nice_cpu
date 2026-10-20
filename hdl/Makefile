@@ -58,7 +58,9 @@ CORES ?= multicycle pipeline
 # do not depend on the cycles an instruction takes. timer runs the timer,
 # src/timer.vhd, which counts steps here, as the emulator's does. cputest,
 # reads, mpu, mpu64, perf, and timer run a second time with a memory that
-# stalls in 30% of the cycles.
+# stalls in 30% of the cycles. cputest and after run again with random
+# pauses, and cputest, reads, and irq one step at a time (G_PAUSE and
+# G_SINGLE_STEP of test/tb_core.vhd), which must not change the trace.
 EXAMPLES = count replicate print wrap
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest \
   console screen iofetch reads reserved mpu mpu64 perf timer input
@@ -68,6 +70,8 @@ INTR_after = --nmi 3:1 --nmi 10:1
 INTR_start = --nmi 0:3
 INTR_perf  = --nmi 3:0x41
 INTR_perf_stall = $(INTR_perf)
+INTR_irq_step   = $(INTR_irq)
+INTR_after_pause = $(INTR_after)
 # The program of the interrupt timing diagram, doc/interrupt.tex: a request
 # taken at once, and one that comes just after a data read was issued.
 INTR_irqwave = --irq 2:9 --irq 10:9
@@ -148,26 +152,29 @@ endef
 # percent of the cycles, and compared in the same way. A random program
 # may read any address, so the cycle counter, which the core and the
 # emulator count differently, is memory in both: G_CYCLE_COUNTER=false and
-# --no-cycle-counter.
+# --no-cycle-counter. The seeds of PAUSE_SEEDS run again with random pauses
+# (G_PAUSE of test/tb_core.vhd), as random_pause, which must not change
+# the trace. $(2) is any more generics, and $(3) the suffix of the name.
 RANDOM_SEEDS = $(shell seq 1 30)
+PAUSE_SEEDS = $(shell seq 1 8)
 RANDOM_STEPS = 3000
 RANDOM_STALL = 30
 
 define check_random
-	@$(PYTHON) test/random_prog.py $(1) $(BUILD)/random_$(1).bin > $(BUILD)/random_$(1).opts
-	@rm -f $(BUILD)/random_$(1).intr
-	@o=$$(cat $(BUILD)/random_$(1).opts); \
-	  ($(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=random_$(1).bin -gG_TRACE_FILE=random_$(1).out \
-	  -gG_MAX_STEPS=$(RANDOM_STEPS) -gG_STALL=$(RANDOM_STALL) -gG_SEED=$(1) -gG_CYCLE_COUNTER=false \
-	  $${o:+"-gG_INTERRUPTS=$$o"} -gG_INTR_LOG=random_$(1).intr > random_$(1).log 2>&1); \
-	  echo "exit $$?" >> $(BUILD)/random_$(1).out
-	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter $$(cat $(BUILD)/random_$(1).opts) $(BUILD)/random_$(1).bin \
-	  < /dev/null > $(BUILD)/random_$(1).expected; echo "exit $$?" >> $(BUILD)/random_$(1).expected
-	$(if $(IRQ_LATE),,@if cmp -s $(BUILD)/random_$(1).expected $(BUILD)/random_$(1).out; then echo "PASS $(CORE) random $(1)"; \
-	else echo "FAIL $(CORE) random $(1)"; cat $(BUILD)/random_$(1).log; \
-	  diff $(BUILD)/random_$(1).expected $(BUILD)/random_$(1).out | head -20; exit 1; fi)
-	@$(IRQ_COMPARE) --name random_$(1) $(BUILD)/random_$(1).bin $(BUILD)/random_$(1).out \
-	  $(BUILD)/random_$(1).intr -- -n $(RANDOM_STEPS) --no-cycle-counter
+	@$(PYTHON) test/random_prog.py $(1) $(BUILD)/random$(3)_$(1).bin > $(BUILD)/random$(3)_$(1).opts
+	@rm -f $(BUILD)/random$(3)_$(1).intr
+	@o=$$(cat $(BUILD)/random$(3)_$(1).opts); \
+	  ($(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=random$(3)_$(1).bin -gG_TRACE_FILE=random$(3)_$(1).out \
+	  -gG_MAX_STEPS=$(RANDOM_STEPS) -gG_STALL=$(RANDOM_STALL) -gG_SEED=$(1) -gG_CYCLE_COUNTER=false $(2) \
+	  $${o:+"-gG_INTERRUPTS=$$o"} -gG_INTR_LOG=random$(3)_$(1).intr > random$(3)_$(1).log 2>&1); \
+	  echo "exit $$?" >> $(BUILD)/random$(3)_$(1).out
+	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter $$(cat $(BUILD)/random$(3)_$(1).opts) $(BUILD)/random$(3)_$(1).bin \
+	  < /dev/null > $(BUILD)/random$(3)_$(1).expected; echo "exit $$?" >> $(BUILD)/random$(3)_$(1).expected
+	$(if $(IRQ_LATE),,@if cmp -s $(BUILD)/random$(3)_$(1).expected $(BUILD)/random$(3)_$(1).out; then echo "PASS $(CORE) random$(3) $(1)"; \
+	else echo "FAIL $(CORE) random$(3) $(1)"; cat $(BUILD)/random$(3)_$(1).log; \
+	  diff $(BUILD)/random$(3)_$(1).expected $(BUILD)/random$(3)_$(1).out | head -20; exit 1; fi)
+	@$(IRQ_COMPARE) --name random$(3)_$(1) $(BUILD)/random$(3)_$(1).bin $(BUILD)/random$(3)_$(1).out \
+	  $(BUILD)/random$(3)_$(1).intr -- -n $(RANDOM_STEPS) --no-cycle-counter
 
 endef
 
@@ -211,6 +218,11 @@ cores:
 	$(call check_core,mpu64_stall,../emulator/test/mpu64.bin,-gG_STALL=30 -gG_SEED=5)
 	$(call check_core,perf_stall,../emulator/test/perf.bin,-gG_STALL=30 -gG_SEED=9)
 	$(call check_core,timer_stall,../emulator/test/timer.bin,-gG_STALL=30 -gG_SEED=11)
+	$(call check_core,cputest_pause,../emulator/test/cputest.bin,-gG_PAUSE=60 -gG_STALL=30 -gG_SEED=23)
+	$(call check_core,cputest_step,../emulator/test/cputest.bin,-gG_SINGLE_STEP=true)
+	$(call check_core,reads_step,../emulator/test/reads.bin,-gG_SINGLE_STEP=true -gG_STALL=30 -gG_SEED=25)
+	$(call check_core,irq_step,../emulator/test/irq.bin,-gG_SINGLE_STEP=true)
+	$(call check_core,after_pause,../emulator/test/after.bin,-gG_PAUSE=50 -gG_SEED=27)
 	@$(ASM) -o $(BUILD)/instret.bin test/instret.nasm
 	$(call check_core,instret,$(BUILD)/instret.bin)
 	$(call check_core,instret_stall,$(BUILD)/instret.bin,-gG_STALL=30 -gG_SEED=17)
@@ -234,6 +246,7 @@ cores:
 	$(if $(filter pipeline,$(CORE)),$(call check_fstats,fstats))
 	$(if $(filter pipeline,$(CORE)),$(call check_fstats,fstats_stall,-gG_STALL=30 -gG_SEED=19))
 	$(foreach t,$(RANDOM_SEEDS),$(call check_random,$(t)))
+	$(foreach t,$(PAUSE_SEEDS),$(call check_random,$(t),-gG_PAUSE=50,_pause))
 
 # More random programs than make test runs, for example
 #     make random RANDOM_SEEDS="$$(seq 31 90)" RANDOM_STALL=60 RANDOM_STEPS=5000

@@ -148,10 +148,11 @@ the join.
 [yet](TODO.md#toolchain). ABI.md defines the C ABI for one, with a
 one-word `char` and `CHAR_BIT` = 32. Until there is one, compiled code
 reaches NICE through WebAssembly: clang (with `wasm-ld`), Zig, and Rust
-all have a wasm32 target, and `nicewasm` translates the module. That
-gives C code the 8-bit bytes of wasm linear memory, which Rust and Zig
-need anyway. GCC has no wasm32 target and no NICE target, so it is not
-used. All three are tested. C programs can use the small C library in
+all have a wasm32 target, and `nicewasm` translates the compiler's
+`.wasm` output into NICE assembly. That gives C code the 8-bit bytes of
+wasm linear memory, which Rust and Zig need anyway. GCC has no wasm32
+target and no NICE target, so it is not used. All three are tested. C
+programs can use the small C library in
 [runtime/libc/](runtime/README.md#c-library): `printf`, the `string.h`
 functions, `malloc`, and a few more. It is compiled to wasm with the
 program, so it is not one of the joined files.

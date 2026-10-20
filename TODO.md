@@ -40,8 +40,7 @@ added 2026-10-20. The section numbers are its.
   `pipecycles.py` count the same trace differently, 1775455 against
   1775661 instructions, since one skips a trace line that the program's
   console output precedes (§3.5).
-- **The moves left text behind** (§2): the memory map of SYSTEM.md is two tables
-  (§2.2); the slides send a C compiler to ISA.md for its calling
+- **The moves left text behind** (§2): the slides send a C compiler to ISA.md for its calling
   convention, which is in ABI.md (§2.6); HISTORY.md calls the translated
   code "the code of the translator", cites a section of ISA.md that is
   now WASM.md, and gives the core's cycles as the model's (§2.5); the review notes cite ISA.md

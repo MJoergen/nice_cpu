@@ -120,6 +120,8 @@ The move of the devices out of ISA.md turned each "ISA §8.4" into a link to SYS
 
 In SYSTEM.md, Memory map, a blank line follows the row of the character screen, so the table ends there. The rows from `0xFFFFFF00` on have no header row, and a Markdown renderer shows them as a paragraph of text with bars. Three blank lines also precede the table. **Fix:** one table, or two with a header each, if the screen is to stand apart.
 
+**Resolved**: one table, with one blank line before it.
+
 ### 2.3 MICROARCH.md
 
 - **§3** says an instruction is "2.1 words on average in translated code and 1.6 in hand-written code (§5.6)", and **§4** "1.02 micro-ops". The table of §5.6, regenerated on 2026-10-19 by commit 6bab46b, says 1.84, 1.62, and 1.00. **Fix:** the table's figures, or "about two words".

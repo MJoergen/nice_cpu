@@ -242,15 +242,14 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   requests in flight, so that some store lands in the pair whose fetch
   the bus accepts in the same cycle (MICROARCH.md §5.5): three of its
   forty stores do with no stalls, and two with 30%. It checks itself:
-  R12 is 0 at the end only if every `HALT` was passed. The programs of
-  the third repository review, `test/latecount.nasm` to
-  `test/shiftjump.nasm` in the table above, were written against the
-  operand rules of the re-timed core: the shift counts WRITE reduces in
-  a cycle of its own, the destinations adjusted by one, R14 and R15 in
+  R12 is 0 at the end only if every `HALT` was passed. The programs
+  `test/latecount.nasm` to `test/shiftjump.nasm` in the table above test
+  the operand rules of MICROARCH.md §7.4: the shift counts WRITE reduces
+  in a cycle of its own, the destinations adjusted by one, R14 and R15 in
   every field, R0, stores into fetched code from late instructions, the
   read counter and the instruction counter around them, jumps into
-  constant words, and every shift into R15, which found a `0<0` that
-  jumped to its source. `test/samereg_prog.py` writes one more, with one
+  constant words, and every shift into R15, `0<0` among them, whose
+  opcode is `MOVE`'s. `test/samereg_prog.py` writes one more, with one
   register in all three fields of a shift, for every pair of source
   modes and six destination modes. None of them checks itself; the
   core's trace is compared with the emulator's.

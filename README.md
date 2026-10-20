@@ -144,16 +144,17 @@ the join.
   simulates a core running the runtime's and the translator's test
   programs. No test runs on an FPGA board.
 
-**Compilers.** No compiler targets NICE directly yet. ABI.md defines
-the C ABI for one, with a one-word `char` and `CHAR_BIT` = 32. Until there
-is one, compiled code reaches NICE through WebAssembly: clang (with
-`wasm-ld`), Zig, and Rust all have a wasm32 target, and `nicewasm`
-translates the module. That gives C code the 8-bit bytes of wasm linear
-memory, which Rust and Zig need anyway. GCC has no wasm32 target and no
-NICE target, so it is not used. All three are tested. C programs can use
-the small C library in [runtime/libc/](runtime/README.md#c-library):
-`printf`, the `string.h` functions, `malloc`, and a few more. It is
-compiled to wasm with the program, so it is not one of the joined files.
+**Compilers.** No compiler targets NICE directly
+[yet](TODO.md#toolchain). ABI.md defines the C ABI for one, with a
+one-word `char` and `CHAR_BIT` = 32. Until there is one, compiled code
+reaches NICE through WebAssembly: clang (with `wasm-ld`), Zig, and Rust
+all have a wasm32 target, and `nicewasm` translates the module. That
+gives C code the 8-bit bytes of wasm linear memory, which Rust and Zig
+need anyway. GCC has no wasm32 target and no NICE target, so it is not
+used. All three are tested. C programs can use the small C library in
+[runtime/libc/](runtime/README.md#c-library): `printf`, the `string.h`
+functions, `malloc`, and a few more. It is compiled to wasm with the
+program, so it is not one of the joined files.
 
 **Host tools.** Python 3 runs `niceasm`, `nicewasm`, and the test scripts.
 Nothing beyond the standard library is needed, and `make typecheck` checks

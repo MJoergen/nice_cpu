@@ -104,6 +104,14 @@ the fetch statistics, and the data bus decoder (`ghdl --synth`), and runs the te
 the cores once for each core. Everything it makes goes in `build/`.
 `make clean` removes it.
 
+The runs go in parallel, one per CPU, or as many as `-j` gives, and
+their PASS and FAIL lines come in the order they finish. Each run leaves
+its files in a directory of its own, `build/run/GROUP/NAME`, where GROUP
+is `unit`, `trace`, or the core: for a run on a core, the core's trace
+and output in `core.out`, the emulator's in `core.expected`, and GHDL's
+messages in `core.log`. `make run/pipeline/NAME` repeats one run, for
+example `make run/pipeline/hazard_stall`.
+
 `make lint` checks the style of every VHDL file against
 [CODING_STYLE.md](CODING_STYLE.md), as far as
 [vsg](https://vhdl-style-guide.readthedocs.io/) can, with the rules in
@@ -299,7 +307,8 @@ program and the two traces, replays the emulator's trace to the first
 line that differs, and prints the data reads of that instruction, with
 the names of the I/O words it knows:
 
-    test/trace_reads.py build/random_65.bin build/random_65.expected build/random_65.out
+    test/trace_reads.py build/random_65.bin build/run/multicycle/random_65/core.expected \
+      build/run/multicycle/random_65/core.out
 
 ## The formal checks
 

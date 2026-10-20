@@ -28,11 +28,9 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
    instruction's next address, carried with it, unless an earlier
    micro-operation of the same instruction wrote R15.
 
-      Reading the registers and forming the sums in PREPARE keeps a register
+   Reading the registers and forming the sums in PREPARE keeps a register
    mux, an adder, the shifter or the ALU, and the register write out of one
    cycle ([doc/review/pipeline-timing.md](../doc/review/pipeline-timing.md)).
-
-
 
    The registers are in WRITE, not in a module of their own as in
    qnice_cpu's `registers.vhd`. They are `w_r.regs`, R0 to R15 in
@@ -67,8 +65,10 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
 6. **WRITE takes two cycles for three rare cases** (MICROARCH.md §7.4):
    a register destination in mode 001 or 010, a jump to a target that is
    not a `MOVE`'s source, and a shift whose count PREPARE could not
-   reduce. `w_r.exec_done` and `w_r.cnt_done` mark the second cycle, and
-   no interrupt is taken between the two. 
+   reduce, which takes three for a rotation through C. `w_r.exec_done`
+   marks the second cycle of the first two, and `w_r.cnt_step`, 0 to 2,
+   the progress of the count. No interrupt is taken between the cycles:
+   `bound_v` in `src/pipe_write.vhd` waits for both to be clear.
 
 ## The data bus
 

@@ -42,14 +42,12 @@ added 2026-10-20. The section numbers are its.
   console output precedes (§3.5).
 - **The moves left text behind** (§2): the review notes cite ISA.md
   §8.4, §8.6, and §9.4 by their old numbers (§2.7, §5.1).
-- **MICROARCH.md and ASSUMPTIONS.md lag the re-timing** (§2.3, §2.4):
+- **MICROARCH.md lags the re-timing** (§2.3):
   §3 and §4 give the words and micro-operations per instruction of the
   old table; §7.4 says two cycles where a rotation through C takes
   three; §5.5 and `pipe_fetch.vhd` say no store retires in the cycle
   after a redirect, which DECODE's redirect does not guarantee, and the
-  compare is safe for another reason; ASSUMPTIONS.md item 6 names
-  `w_r.cnt_done`, which does not exist, and item 1 has a paragraph
-  Markdown renders as code. Smaller ones in §2.7: "some five cycles" in
+  compare is safe for another reason. Smaller ones in §2.7: "some five cycles" in
   `translator/README.md`, the third two-cycle case in `hdl/README.md`,
   a done sub-item below, and the header of `tb_shift.vhd`.
 - **The diagrams of MICROARCH.md** (§2.8): `interrupt.tex` shows the

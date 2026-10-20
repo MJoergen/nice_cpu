@@ -135,6 +135,8 @@ In SYSTEM.md, Memory map, a blank line follows the row of the character screen, 
 
 **Fix:** `cnt_step`, "two cycles, or three", and the indentation.
 
+**Resolved**: item 6 names `exec_done` for the first two cases, `cnt_step` for the count, the third cycle of a rotation through C, and `bound_v`, which keeps an interrupt out; item 1's paragraph is indented as the others.
+
 ### 2.5 HISTORY.md
 
 - "The code of the translator is about half the size it was" means the translated code; the translator did not shrink.

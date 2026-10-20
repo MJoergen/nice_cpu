@@ -211,8 +211,8 @@ endef
 # percent of the cycles, and compared in the same way. A random program
 # may read any address, so the cycle counter, which the core and the
 # emulator count differently, is memory in both: G_CYCLE_COUNTER=false and
-# --no-cycle-counter. So are the fetch statistics, which the emulator has
-# as memory: G_FETCH_STATS=false. random_prog.py writes the program, and
+# --no-cycle-counter. The fetch statistics read 0 and ignore writes in
+# both: G_FETCH_STATS=false. random_prog.py writes the program, and
 # prints the requests, which go in random_N.opts.
 RANDOM_SEEDS = $(shell seq 1 30)
 RANDOM_STEPS = 3000

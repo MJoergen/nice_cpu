@@ -34,6 +34,7 @@ question that this note left open, `hdl/ASSUMPTIONS.md` says how.
   - [5.5 Self-modifying code](#55-self-modifying-code)
   - [5.6 How often the hazards occur](#56-how-often-the-hazards-occur)
 - [6. Interrupts](#6-interrupts)
+  - [6.1 Pause](#61-pause)
 - [7. Datapath details](#7-datapath-details)
   - [7.1 Register values](#71-register-values)
   - [7.2 ALU](#72-alu)
@@ -262,7 +263,8 @@ issues a data read only when the instruction is certain to run:
    data read already, or whose first micro-op has retired, is exempt too,
    because no request can be taken before it any more. Without that, a
    request that came between the two reads of `ADD R1, @R2, @R3` would
-   hold the second read off for ever.
+   hold the second read off for ever. A pause (§6.1) counts as such a
+   request, and the first instruction after a pause is exempt from it.
 
 When PREPARE issues an instruction's first data read, the core commits to
 that instruction. No interrupt is taken before it (§6).
@@ -436,6 +438,31 @@ data comes, since WRITE takes the vector from DBUS's FIFO (§5.3). In (b) the re
 data read of `MOVE R2, @data`. That instruction is committed
 (`w_r.commits` = 1), so `irq_ready_o` waits until it has retired, and the
 request is taken before the next one.
+
+### 6.1 Pause
+
+Both cores have a port for a debugger, `pause_i` and `paused_o`. The ISA
+has no such state, and a program cannot tell that the core paused, but by
+its cycle counts.
+
+While `pause_i` is 1, the core stops before the next step, at the first
+boundary where it could take an interrupt, whatever `in_service` and
+`after_rti` are, and before it takes one. The pipelined core flushes there,
+so that FETCH waits at R15 with no request, and `paused_o` is 1. PREPARE
+treats the pause as a pending request under rule 4 of §5.3, so the core
+reaches such a boundary. When `pause_i` is 0 again, the core goes on, and
+runs the first step whatever `pause_i` is then. So a pulse of 0 for one
+cycle runs exactly one step, which may be an interrupt entry, and the
+core always makes progress. The multi-cycle core waits in a state of its
+own, `PAUSED`, between `BOUNDARY` and the step.
+
+The pause input of a system can thus pause, step, and stop the core at a
+breakpoint. The pipelined core fetches ahead, and a data read may commit
+an instruction (§5.3) before the one ahead of it has retired, so a
+breakpoint has to raise `pause_i` before that, for example when the pair
+of words that holds it is fetched. The trace of a run must not change
+with the pauses, and `tb_core` checks that with random pauses and with
+single steps (hdl/README.md).
 
 ## 7. Datapath details
 

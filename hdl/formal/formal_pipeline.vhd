@@ -1,6 +1,6 @@
 -- The pipelined core with the checkers of its bus and interrupt ports, for
 -- SymbiYosys. Every input is free, so the solver tries every slave, every
--- interrupt source, and every instruction stream that keeps to the
+-- interrupt source, every pause, and every instruction stream that keeps to the
 -- checkers' assumptions.
 --
 -- THEORY OF OPERATION
@@ -35,7 +35,8 @@ entity formal_pipeline is
       nmi_valid_i  : in  std_logic;
       nmi_vector_i : in  std_logic_vector(7 downto 0);
       irq_valid_i  : in  std_logic;
-      irq_vector_i : in  std_logic_vector(7 downto 0)
+      irq_vector_i : in  std_logic_vector(7 downto 0);
+      pause_i      : in  std_logic
    );
 end entity formal_pipeline;
 
@@ -95,6 +96,8 @@ begin
          irq_valid_i  => irq_valid_i,
          irq_ready_o  => irq_ready,
          irq_vector_i => irq_vector_i,
+         pause_i      => pause_i,
+         paused_o     => open,
          halted_o     => halted,
          instret_o    => instret,
          retire_o     => retire,

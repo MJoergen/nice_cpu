@@ -22,6 +22,7 @@
 --   VEC       Read the vector table entry, for IRQ, NMI, and INT.
 --   RETIRE    Report the step on retire_o, and an instruction on
 --             instret_o.
+--   PAUSED    Wait, while pause_i is '1', before the next step.
 --
 -- The instruction bus is 64 bits wide, as MICROARCH.md §1 requires of both
 -- cores. A read returns the aligned pair of words 2a and 2a + 1 for the pair
@@ -40,6 +41,12 @@
 -- Interrupt requests use valid/ready ports. A device holds valid and the
 -- vector until the core raises ready, which it does for one cycle in the
 -- BOUNDARY state when it takes the request.
+--
+-- While pause_i is '1', the core goes from BOUNDARY to PAUSED instead of
+-- starting a step, and paused_o is '1' there. When pause_i is '0', it goes
+-- back to BOUNDARY and runs one step, whatever pause_i is then: after_go
+-- marks that step. So a pulse of pause_i low for one cycle while the core
+-- is paused runs exactly one step, as in src/pipeline.vhd.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) The bus slaves acknowledge every request.
@@ -95,6 +102,10 @@ entity multicycle is
       irq_ready_o  : out std_logic;
       irq_vector_i : in  std_logic_vector(7 downto 0);
 
+      -- Pause before the next step, and '1' while paused
+      pause_i      : in  std_logic;
+      paused_o     : out std_logic;
+
       -- '1' once the core has halted (ISA.md §1.4)
       halted_o     : out std_logic;
 
@@ -123,6 +134,7 @@ architecture synthesis of multicycle is
       VEC_ST,
       VEC_WAIT_ST,
       RETIRE_ST,
+      PAUSED_ST,
       HALTED_ST
    );
 
@@ -141,6 +153,7 @@ architecture synthesis of multicycle is
    -- Hidden state (ISA.md §1.4)
    signal in_service : std_logic;
    signal after_rti  : std_logic;
+   signal after_go   : std_logic;                       -- The first step after a pause
    signal saved_pc   : std_logic_vector(31 downto 0);
    signal saved_sr   : std_logic_vector(31 downto 0);
    signal halt       : t_halt;
@@ -162,21 +175,25 @@ architecture synthesis of multicycle is
    signal rep_skipped : std_logic;
    signal rep_mem_we  : std_logic;
 
+   signal pause    : boolean;
    signal take_nmi : boolean;
    signal take_irq : boolean;
 
 begin
 
-   -- ISA.md §7.1. NMI goes first.
+   -- A pause goes first, then ISA.md §7.1, where NMI goes first.
+   pause    <= state = BOUNDARY_ST and rst_i = '0' and pause_i = '1' and after_go = '0';
    take_nmi <= state = BOUNDARY_ST and rst_i = '0' and nmi_valid_i = '1' and
-               in_service = '0' and after_rti = '0';
+               in_service = '0' and after_rti = '0' and not pause;
    take_irq <= state = BOUNDARY_ST and rst_i = '0' and irq_valid_i = '1' and
-               in_service = '0' and after_rti = '0' and regs(14)(C_SR_E) = '1' and not take_nmi;
+               in_service = '0' and after_rti = '0' and regs(14)(C_SR_E) = '1' and not take_nmi and
+               not pause;
 
    nmi_ready_o <= '1' when take_nmi else '0';
    irq_ready_o <= '1' when take_irq else '0';
 
    halted_o  <= '1' when state = HALTED_ST else '0';
+   paused_o  <= '1' when state = PAUSED_ST else '0';
    instret_o <= '1' when state = RETIRE_ST and rep_intr = '0' else '0';
 
 
@@ -249,7 +266,10 @@ begin
                rep_skipped <= '0';
                rep_mem_we  <= '0';
                rep_addr    <= regs(15);
-               if take_nmi then
+               after_go    <= '0';
+               if pause then
+                  state <= PAUSED_ST;
+               elsif take_nmi then
                   rep_intr   <= '1';
                   rep_nmi    <= '1';
                   int_vector <= nmi_vector_i;
@@ -465,6 +485,12 @@ begin
             when RETIRE_ST =>
                state <= HALTED_ST when halt /= HALT_NONE else BOUNDARY_ST;
 
+            when PAUSED_ST =>
+               if pause_i = '0' then
+                  after_go <= '1';
+                  state    <= BOUNDARY_ST;
+               end if;
+
             when HALTED_ST =>
                null;
          end case;
@@ -476,6 +502,7 @@ begin
             regs       <= C_REGS_RESET;
             in_service <= '0';
             after_rti  <= '0';
+            after_go   <= '0';
             halt       <= HALT_NONE;
             fetch_iw   <= '0';
             ibus_cyc_o <= '0';

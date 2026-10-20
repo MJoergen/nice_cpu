@@ -505,6 +505,13 @@ combinationally on `ready`.
 
 `halted_o` is 1 once the core has halted. Only reset restarts it.
 
+`pause_i` and `paused_o` are for a debugger. While `pause_i` is 1, the
+core goes from `BOUNDARY` to `PAUSED` instead of starting a step, before
+it would take an interrupt, and `paused_o` is 1 there. When `pause_i` is 0
+again, the core runs one step whatever `pause_i` is then, so a pulse of 0
+for one cycle runs exactly one step. Both cores have the port, with the same
+behaviour (MICROARCH.md §6.1).
+
 In `tb_core`, the generic `G_CYCLE_COUNTER` set to false sends the
 two words of the cycle counter to the memory model instead of `perf`, as
 `--no-cycle-counter` does in the emulator. The generic `G_INTERRUPTS` takes the emulator's options,
@@ -512,6 +519,11 @@ for example `--nmi 2:1 --irq 2:2`. A request for step S is raised once S
 steps have retired, as the emulator raises it before step S. A second request
 of the same kind replaces the vector of one still pending, as the emulator
 merges them.
+
+With the generic `G_PAUSE` = P, `tb_core` raises `pause_i` in a random P
+percent of the cycles, and with `G_SINGLE_STEP` it holds `pause_i` at 1
+and lowers it for one cycle each time the core has paused, and checks that
+each such pulse runs exactly one step. Neither may change the trace.
 
 With the generic `G_INTR_DELAY` = N, each request is raised N cycles
 after its step would raise it, and none after the end of the run. The
@@ -625,7 +637,10 @@ will receive, and the instructions in DECODE's and PREPARE's registers
 (MICROARCH.md §5.5).
 
 An interrupt is taken in WRITE before an instruction, unless the
-instruction has issued a data read. Then it is taken after it. `instret_o`
+instruction has issued a data read. Then it is taken after it. A pause
+(MICROARCH.md §6.1) is taken at the same boundaries, first, and flushes
+the pipeline, so that FETCH waits at R15. PREPARE issues no read while
+`pause_i` is 1, but for the first instruction after a pause. `instret_o`
 counts an instruction in the cycle the bus accepts its last data read, or
 when it retires if it reads nothing. So a read of `INSTR_LO` counts every
 older instruction and not its own (SYSTEM.md §3).

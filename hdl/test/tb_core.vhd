@@ -67,12 +67,25 @@
 -- core's ready takes both. That is how the emulator merges a request of the
 -- timer with one from --irq.
 --
+-- With G_PAUSE = P, p_pause raises pause_i in a random P percent of the
+-- cycles, from G_SEED, so that the core pauses and goes on at random
+-- boundaries, and often runs a single step. A pause must not change what
+-- the core does, so the trace stays that of the emulator. The core's cycle
+-- count does change, so such a run needs G_CYCLE_COUNTER false or a
+-- program that does not read it.
+--
+-- With G_SINGLE_STEP, p_pause holds pause_i at '1' and, each time the
+-- core has paused, lowers it for one cycle, so the core runs one step at a
+-- time. Each such pulse must give exactly one step, and the trace must
+-- still be the emulator's.
+--
 -- The run ends when the trace writer has printed the end of the run. The
 -- simulation then stops with the emulator's exit status.
 
 library ieee;
    use ieee.std_logic_1164.all;
    use ieee.numeric_std_unsigned.all;
+   use ieee.math_real.uniform;
 
    use std.env.all;
    use std.textio.all;
@@ -96,6 +109,8 @@ entity tb_core is
       G_FETCH_STATS   : boolean  := true;
       -- The memory's stall rate in percent, and its seed (sim/wb_mem.vhd).
       G_STALL         : natural  := 0;
+      G_PAUSE         : natural  := 0;
+      G_SINGLE_STEP   : boolean  := false;
       G_SEED          : positive := 1
    );
 end entity tb_core;
@@ -235,6 +250,8 @@ architecture simulation of tb_core is
    signal console_valid : std_logic;
    signal console_data  : std_logic_vector(7 downto 0);
 
+   signal pause  : std_logic := '0';
+   signal paused : std_logic;
    signal retire : t_retire;
    signal tick   : std_logic;
    signal done   : std_logic;
@@ -257,6 +274,35 @@ begin
       rst <= '0';
       wait;
    end process p_rst;
+
+
+   p_pause : process (clk)
+      variable seed1_v : positive := G_SEED;
+      variable seed2_v : positive := 7;
+      variable r_v     : real;
+      variable steps_v : natural  := 0;   -- The steps since the last pulse
+      variable pulse_v : boolean  := false;
+   begin
+      if rising_edge(clk) then
+         if G_SINGLE_STEP then
+            pause <= '1';
+            if retire.valid = '1' then
+               steps_v := steps_v + 1;
+            end if;
+            if paused = '1' and pause = '1' then
+               assert not pulse_v or steps_v = 1
+                  report "tb_core: a pulse of pause_i ran " & integer'image(steps_v) & " steps"
+                  severity failure;
+               pause   <= '0';
+               pulse_v := true;
+               steps_v := 0;
+            end if;
+         elsif G_PAUSE > 0 then
+            uniform(seed1_v, seed2_v, r_v);
+            pause <= '1' when r_v * 100.0 < real(G_PAUSE) else '0';
+         end if;
+      end if;
+   end process p_pause;
 
 
    gen_core : if G_CORE = "multicycle" generate
@@ -285,6 +331,8 @@ begin
             irq_valid_i  => core_irq_valid,
             irq_ready_o  => irq_ready,
             irq_vector_i => core_irq_vector,
+            pause_i      => pause,
+            paused_o     => paused,
             halted_o     => open,
             instret_o    => instret,
             retire_o     => retire
@@ -316,6 +364,8 @@ begin
             irq_valid_i  => core_irq_valid,
             irq_ready_o  => irq_ready,
             irq_vector_i => core_irq_vector,
+            pause_i      => pause,
+            paused_o     => paused,
             halted_o     => open,
             instret_o    => instret,
             retire_o     => retire,

@@ -107,6 +107,12 @@ departs from it.
 | [formal/pipe_dbus.sby](formal/pipe_dbus.sby) | The SymbiYosys job for it. |
 | [formal/formal_pipeline.vhd](formal/formal_pipeline.vhd) | The pipelined core with a checker on each of its four ports. |
 | [formal/pipeline.sby](formal/pipeline.sby) | The SymbiYosys job for it. |
+| [formal/formal_perf.vhd](formal/formal_perf.vhd) | The performance counters with checks of their bus port against a model of the counters. |
+| [formal/perf.sby](formal/perf.sby) | The SymbiYosys job for it. |
+| [formal/formal_fetch_stats.vhd](formal/formal_fetch_stats.vhd) | The fetch statistics, with and without counters, whose properties are in `src/fetch_stats.vhd`. |
+| [formal/fetch_stats.sby](formal/fetch_stats.sby) | The SymbiYosys job for it. |
+| [formal/formal_mpu.vhd](formal/formal_mpu.vhd) | The math unit with checks of its bus port, whose other properties are in `src/mpu.vhd`. |
+| [formal/mpu.sby](formal/mpu.sby) | The SymbiYosys job for it. |
 
 ## Running the tests
 
@@ -347,8 +353,8 @@ the plugin and GHDL 4.1.0 of Ubuntu 24.04 (packages `yosys`,
 `yosys-plugin-ghdl`, and `ghdl-gcc`, whose libraries the plugin loads),
 SymbiYosys at its tag `yosys-0.33`, Yices 2.6.4, and Boolector 3.2.3,
 which CI installs, and with Yosys 0.56 and GHDL 6.0; the jobs of the
-shared functions and of DECODE have run with the latter only so far
-(TODO.md). Boolector is built from source, with the scripts in its
+shared functions, of DECODE, and of the devices have run with the latter
+only so far (TODO.md). Boolector is built from source, with the scripts in its
 `contrib/` for CaDiCaL and btor2tools: the `boolector` package of Ubuntu
 24.04 is version 1.5, which SymbiYosys cannot drive.
 
@@ -523,6 +529,64 @@ entry, a first store, and a halt, as its covers show. With Yosys 0.33 a
 9th cycle did not finish in 20 minutes; with Yosys 0.56 and its ABC, 10
 cycles take 5 minutes and 12 take 13. The simulation tests check the same
 assertions on every run.
+
+`formal_perf` checks the performance counters against a model in the
+wrapper: two 64-bit counters, one of every cycle and one of the cycles
+with `instret_i` high, and a snapshot of each, which a read of its low
+word takes. It asserts that the port never stalls, that it acknowledges
+each request in the next cycle, and that a read returns the low word of
+its counter, the high word of its snapshot, or 0 for a spare word. So a
+read of `CYCLE_HI` returns the high word of the counter as it was at the
+last read of `CYCLE_LO`, also when the low word wrapped in between, and
+writes change nothing. Its `prove` task uses PDR, which finds the
+invariant that the counters equal the model, so `perf` needs no
+`G_FORMAL`. It takes a few seconds. The `cover` task starts the counters
+near a wrap, with `G_RESET`, and shows a read of `CYCLE_HI` after one.
+
+`formal_fetch_stats` connects two fetch statistics to the same inputs,
+one with `G_ENABLE` true and one with it false. Both ports never stall
+and acknowledge each request in the next cycle, and every read of the
+one without counters returns 0. The other properties are in
+`src/fetch_stats.vhd` under `G_FORMAL`, because they name its counters. A
+read returns the word as it is in the cycle the read is accepted. A cycle
+counted adds one to `FS_CYCLES` and to the bin of its count. Stopped
+counters keep their values, a write of 1 to `FS_CTRL` starts them without
+a clear, and a clear or a reset clears them. The invariants are that the
+bins of `FS_HIST` sum to `FS_CYCLES`, that `FS_MIN` is at most `FS_MAX`
+once a cycle has counted, and that `FS_MAX` is at most `FS_HELD_MAX`.
+The last needs the one assumption, that the buffer holds no more words
+than are held. The sum of 32 counters is too much for the solver in one
+step, so ghost counters in a binary tree over the bins count the cycles
+of each subtree, and each node is asserted to be the sum of its two
+children. Boolector proves it all by k-induction in about 3 minutes;
+Yices does not finish in 15.
+
+`formal_mpu` checks the bus port of the math unit with a count of the
+ACKs owed: at most one, an ACK only when one is owed, STALL high exactly
+while a read waits for its ACK, and an ACK in the next cycle for a write
+and for a read of an operand or a spare word. The other properties are in
+`src/mpu.vhd` under `G_FORMAL`. Shadow operands follow the writes. A
+read waits no longer than its unit takes, so every request gets its ACK,
+at most 34 cycles after it is accepted for the 32-bit half and 66 for the
+64-bit half.
+When a read of a result gets its data, the unit has computed it from the
+operands as they are then, which a write cannot change while the read
+waits. For the products, ghost copies of the operands follow them through
+the multiplier's two registers. That `*` and the signed correction
+compute the product is left to `tb_mpu`: neither Yices nor Boolector can
+compare two 32-bit multipliers, not even without registers. For the
+quotients and remainders, each of the four dividers has the loop
+invariant of a restoring divider, with ghosts of the quotient bits found,
+the dividend bits shifted out, and their product, which the ghosts form
+by shift and add. So the solver needs no multiplier, and the proof shows
+for every pair of operands that A = M + R with R < B, where M is Q times
+B by shift and add, and Q and R of SYSTEM.md §2 for B = 0; for the
+signed results, the same on the magnitudes, the signs of SYSTEM.md §2,
+and the special case of the most negative number divided by −1; and the
+same for C and D. That shift and add multiplies is not proven here.
+Boolector proves it all by k-induction in about 2 minutes; Yices takes
+minutes for one divider alone. The covers show a read that waits for
+each kind of unit, and reads that wait the longest a division takes.
 
 ## The multi-cycle core
 
@@ -788,7 +852,10 @@ which takes 65 cycles at most. The two halves run independently.
 A read of a result while the unit that computes it runs is accepted, then
 STALL stays high and ACK waits until the result is ready. Reads of A, B, and the spare
 words, and all writes, are acknowledged in the next cycle. Writes to the
-result words and the spare words are ignored.
+result words and the spare words are ignored. `formal/mpu.sby` proves
+the port, the waits, and the quotients and remainders for every pair of
+operands, and that a product is never stale; the products' values are
+left to `tb_mpu` (The formal checks above).
 
 ## The performance counters
 
@@ -808,6 +875,8 @@ snapshot, and a read of the high word returns the snapshot's high word.
 
 The generic `G_RESET` sets the counters' value after reset. It is 0, as
 SYSTEM.md §3 requires, except in `tb_perf`, which starts near a wrap.
+`formal/perf.sby` proves the port and the reads against a model of the
+counters for every cycle, and its cover task starts near a wrap too.
 
 ## The fetch statistics
 
@@ -827,6 +896,8 @@ gives the device `C_FETCH_EVENTS_NONE` with it.
 
 With the generic `G_ENABLE` false there are no counters, and every word
 reads 0. `tb_core` passes its generic `G_FETCH_STATS` on to it.
+`formal/fetch_stats.sby` proves the port, what each cycle does to the
+counters, and the invariants that tie them, with and without `G_ENABLE`.
 
 ## The trace writer
 

@@ -73,7 +73,7 @@ translator, and two FPGA cores. See README.md.
     cd bench     && make typecheck   # mypy --strict
     cd hdl && make test              # synth check, unit tests, tb_trace, then both cores diffed against niceemu
     cd hdl && make lint              # vsg style check (pip install vsg)
-    cd hdl && make formal            # SymbiYosys: the ports of both cores, the timer, and wb_dmux; proofs of FETCH, PREPARE, and DBUS
+    cd hdl && make formal            # SymbiYosys: the ports of both cores and wb_dmux; proofs of FETCH, DECODE, PREPARE, DBUS, the shared functions, and the devices
     cd hdl && make timing            # the pipelined core's worst paths out of context in Vivado (10 minutes)
     cd hdl && make programs          # the runtime and translator programs on CORE (minutes)
     cd doc/intro && make test        # run the slides' example programs

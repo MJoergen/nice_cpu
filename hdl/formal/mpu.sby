@@ -1,0 +1,26 @@
+# The math unit (formal_mpu.vhd, and the properties under G_FORMAL in
+# mpu.vhd). "prove" proves the assertions for every cycle by k-induction,
+# and "cover" reaches each cover statement.
+
+[tasks]
+prove
+cover
+
+[options]
+prove: mode prove
+prove: depth 1
+cover: mode cover
+cover: depth 70
+
+[engines]
+prove: smtbmc boolector
+cover: smtbmc yices
+
+[script]
+plugin -i ghdl
+ghdl --std=08 -fpsl mpu.vhd formal_mpu.vhd -e formal_mpu
+prep -top formal_mpu
+
+[files]
+../src/mpu.vhd
+formal_mpu.vhd

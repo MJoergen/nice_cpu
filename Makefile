@@ -14,7 +14,7 @@ help:
 	@echo "                     $(TEST_DIRS)"
 	@echo "  make typecheck   mypy --strict on the Python tools"
 	@echo "  make lint        vsg style check of the VHDL (pip install vsg)"
-	@echo "  make formal      SymbiYosys checks of the cores, the timer, and wb_dmux"
+	@echo "  make formal      SymbiYosys checks of the cores, their stages, the devices, and the shared functions"
 	@echo "  make slow        the runtime and translator programs, and the"
 	@echo "                   benchmark, on the multi-cycle core (minutes)"
 	@echo "  make hazards     count the pipeline hazards in the benchmark"

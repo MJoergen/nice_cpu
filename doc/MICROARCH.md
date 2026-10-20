@@ -738,7 +738,10 @@ finds the condition false of an instruction that has made a read; and
 DBUS, so that WRITE gets the read data in the order of the ACKs. The
 functions both cores share, the shifter and the ALU, are proven against
 ISA.md §5 for every input, and the block compares of §5.5 against the
-ranges they stand for (`hdl/formal/formal_nice_pkg.vhd`). The
+ranges they stand for (`hdl/formal/formal_nice_pkg.vhd`). The math
+unit, the performance counters, the timer, and the fetch statistics of
+§8.1 are proven for every cycle too, each in a job of its own
+(hdl/README.md). The
 assumptions that name another stage are checked in the whole core by
 `p_check` in `hdl/src/pipeline.vhd`, on every simulation run and in the
 bounded check. For the whole pipelined core, the port checks and the

@@ -57,6 +57,10 @@ library ieee;
    use ieee.numeric_std_unsigned.all;
 
 entity mpu is
+   generic (
+      -- Adds the properties and invariants of formal/mpu.sby.
+      G_FORMAL : boolean := false
+   );
    port (
       clk_i      : in  std_logic;
       rst_i      : in  std_logic;
@@ -415,5 +419,364 @@ begin
          end if;
       end if;
    end process p_bus;
+
+
+   -- The proof of formal/mpu.sby. f_a to f_d are the operands as the bus
+   -- wrote them. When the data of a read is set, for its ACK in the next
+   -- cycle, it must be the operand or 0, or the result of a unit, and that
+   -- unit must have computed it from the operands as they are now.
+   --
+   -- The multiplier: f_ma and f_mb are the operands that mul_r is the
+   -- product of, and f_pa and f_pb those of prod_r and smul_hi_r. So a read
+   -- of a product gets the product of A and B as they were when the read
+   -- was accepted. That the * operator and the signed correction compute
+   -- the product is left to tb_mpu: Yices and Boolector cannot compare two
+   -- 32-bit multipliers.
+   --
+   -- The dividers: each has the loop invariant of a restoring divider of n
+   -- by d, N bits wide. After k of its N steps, the quotient register holds
+   -- the N - k dividend bits still to come above the k quotient bits found
+   -- so far, and the k dividend bits shifted out, p, equal m + rem, with
+   -- rem < d. The ghosts f_*q, f_*p, and f_*m hold q, p, and m as numbers,
+   -- 2N bits wide. m is q times d, which the ghost forms as the divider
+   -- finds the bits of q, by shift and add: twice m, plus d if the new bit
+   -- is 1. So the solver needs no multiplier, which it could not handle;
+   -- that shift and add multiplies is left unproven. A skip of 8 steps
+   -- keeps the invariant, as 8 steps that each give a quotient bit of 0
+   -- would. When the divider ends, k = N, so A = Q * B + R with R < B, and
+   -- the signed results follow from those of |A| / |B|.
+   --
+   -- A read waits until its unit ends, and f_age_r counts the cycles it
+   -- has waited.
+
+   gen_formal : if G_FORMAL generate
+      signal f_a : std_logic_vector(31 downto 0) := (others => '0');
+      signal f_b : std_logic_vector(31 downto 0) := (others => '0');
+      signal f_c : std_logic_vector(63 downto 0) := (others => '0');
+      signal f_d : std_logic_vector(63 downto 0) := (others => '0');
+
+      signal f_ma : std_logic_vector(31 downto 0) := (others => '0');
+      signal f_mb : std_logic_vector(31 downto 0) := (others => '0');
+      signal f_pa : std_logic_vector(31 downto 0) := (others => '0');
+      signal f_pb : std_logic_vector(31 downto 0) := (others => '0');
+
+      signal f_uq   : std_logic_vector(63 downto 0)  := (others => '0');
+      signal f_up   : std_logic_vector(63 downto 0)  := (others => '0');
+      signal f_um   : std_logic_vector(63 downto 0)  := (others => '0');
+      signal f_sq   : std_logic_vector(63 downto 0)  := (others => '0');
+      signal f_sp   : std_logic_vector(63 downto 0)  := (others => '0');
+      signal f_sm   : std_logic_vector(63 downto 0)  := (others => '0');
+      signal f_uq64 : std_logic_vector(127 downto 0) := (others => '0');
+      signal f_up64 : std_logic_vector(127 downto 0) := (others => '0');
+      signal f_um64 : std_logic_vector(127 downto 0) := (others => '0');
+      signal f_sq64 : std_logic_vector(127 downto 0) := (others => '0');
+      signal f_sp64 : std_logic_vector(127 downto 0) := (others => '0');
+      signal f_sm64 : std_logic_vector(127 downto 0) := (others => '0');
+
+      signal f_latch  : std_logic;                       -- The data of a read is set
+      signal f_word   : std_logic_vector(4 downto 0);    -- The word it reads
+      signal f_expect : std_logic_vector(31 downto 0);   -- What it must be
+      signal f_last_r : std_logic_vector(31 downto 0) := (others => '0');
+      signal f_left   : natural range 0 to C_STEPS64 + 1;
+      signal f_bound  : natural range 0 to C_STEPS64;
+      signal f_age_r  : natural range 0 to C_STEPS64 + 1 := 0;
+
+      signal f_mul_ok    : boolean;
+      signal f_udiv_ok   : boolean;
+      signal f_sdiv_ok   : boolean;
+      signal f_udiv64_ok : boolean;
+      signal f_sdiv64_ok : boolean;
+      signal f_uinv      : boolean;
+      signal f_sinv      : boolean;
+      signal f_uinv64    : boolean;
+      signal f_sinv64    : boolean;
+
+      pure function zext(x : std_logic_vector;
+                         n : natural) return std_logic_vector is
+         variable r_v : std_logic_vector(n - 1 downto 0) := (others => '0');
+      begin
+         r_v(x'length - 1 downto 0) := x;
+         return r_v;
+      end function zext;
+
+      -- The loop invariant of a divider of n by d, N bits wide, with count
+      -- steps to go, and its ghosts gq, gp, and gm.
+      pure function div_inv(n      : std_logic_vector;
+                            d      : std_logic_vector;
+                            quo    : std_logic_vector;
+                            rem_in : std_logic_vector;
+                            gq     : std_logic_vector;
+                            gp     : std_logic_vector;
+                            gm     : std_logic_vector;
+                            count  : t_count) return boolean is
+         constant C_N    : natural := n'length;
+         constant C_ONES : std_logic_vector(C_N - 1 downto 0) := (others => '1');
+         variable k_v    : natural range 0 to C_STEPS64;
+         variable mask_v : std_logic_vector(C_N - 1 downto 0);
+         variable rem_v  : std_logic_vector(2 * C_N - 1 downto 0);
+      begin
+         if count > C_N then
+            return false;
+         end if;
+         k_v    := C_N - count;
+         mask_v := shift_right(C_ONES, count);
+         rem_v  := zext(rem_in, 2 * C_N);
+         -- The registers hold what the ghosts say.
+         if gq /= zext(quo and mask_v, 2 * C_N) or gp /= zext(shift_right(n, count), 2 * C_N) or
+            shift_right(quo, k_v) /= shift_right(shift_left(n, k_v), k_v) then
+            return false;
+         end if;
+         -- p = m + rem, without a wrap
+         if gp /= gm + rem_v or gm > gp then
+            return false;
+         end if;
+         -- With d = 0, each quotient bit is 1 and m = 0. Otherwise rem < d,
+         -- and bounds on q that the signed results need.
+         if d = 0 then
+            return (quo and mask_v) = mask_v and gm = 0;
+         elsif d = 1 then
+            return rem_in < d and gm = gq;
+         end if;
+         return rem_in < d and gq + gq <= gm;
+      end function div_inv;
+
+      -- SYSTEM.md §2 on the unsigned quotient q and remainder r of a / b,
+      -- given m, q times b.
+      pure function udiv_ok(a : std_logic_vector;
+                            b : std_logic_vector;
+                            q : std_logic_vector;
+                            r : std_logic_vector;
+                            m : std_logic_vector) return boolean is
+         constant C_N : natural := a'length;
+      begin
+         if b = 0 then
+            return q = (q'range => '1') and r = a;
+         end if;
+         return zext(a, 2 * C_N) = m + zext(r, 2 * C_N) and r < b;
+      end function udiv_ok;
+
+      -- The same on a signed quotient and remainder, given m, |q| times
+      -- |b|: rounded toward zero, the remainder with the sign of the
+      -- dividend, so that the magnitudes divide as unsigned numbers, and
+      -- the special cases.
+      pure function sdiv_ok(a : std_logic_vector;
+                            b : std_logic_vector;
+                            q : std_logic_vector;
+                            r : std_logic_vector;
+                            m : std_logic_vector) return boolean is
+         constant C_N   : natural := a'length;
+         constant C_MIN : std_logic_vector(C_N - 1 downto 0) := '1' & (C_N - 2 downto 0 => '0');
+      begin
+         if b = 0 then
+            return q = (q'range => '1') and r = a;
+         elsif a = C_MIN and b = (b'range => '1') then
+            return q = C_MIN and r = 0;
+         end if;
+         return zext(absolute(a), 2 * C_N) = m + zext(absolute(r), 2 * C_N) and
+                absolute(r) < absolute(b) and
+                (r = 0 or r(C_N - 1) = a(C_N - 1)) and
+                (q = 0 or q(C_N - 1) = (a(C_N - 1) xor b(C_N - 1)));
+      end function sdiv_ok;
+
+   begin
+
+      p_shadow : process (clk_i)
+
+         -- The ghosts of one cycle of a divider, as divide does it.
+         procedure ghost(signal gq_s : inout std_logic_vector;
+                         signal gp_s : inout std_logic_vector;
+                         signal gm_s : inout std_logic_vector;
+                         rem_in      : std_logic_vector;
+                         quo         : std_logic_vector;
+                         count       : t_count;
+                         d           : std_logic_vector) is
+            constant C_N    : natural := rem_in'length;
+            constant C_ZERO : std_logic_vector(C_SKIP - 1 downto 0) := (others => '0');
+            variable step_v : std_logic_vector(2 * C_N - 1 downto 0);
+            variable q_v    : std_logic_vector(0 downto 0);
+            variable p_v    : std_logic_vector(0 downto 0);
+         begin
+            if count >= C_SKIP and can_skip(rem_in, quo, d) then
+               gq_s <= gq_s(2 * C_N - C_SKIP - 1 downto 0) & C_ZERO;
+               gp_s <= gp_s(2 * C_N - C_SKIP - 1 downto 0) & quo(C_N - 1 downto C_N - C_SKIP);
+               gm_s <= gm_s(2 * C_N - C_SKIP - 1 downto 0) & C_ZERO;
+            elsif count /= 0 then
+               step_v := divide_step(rem_in, quo, d);
+               q_v(0) := step_v(0);
+               p_v(0) := quo(C_N - 1);
+               gq_s   <= gq_s + gq_s + q_v;
+               gp_s   <= gp_s + gp_s + p_v;
+               if step_v(0) = '1' then
+                  gm_s <= gm_s + gm_s + zext(d, 2 * C_N);
+               else
+                  gm_s <= gm_s + gm_s;
+               end if;
+            end if;
+         end procedure ghost;
+
+      begin
+         if rising_edge(clk_i) then
+            f_ma <= a_r;
+            f_mb <= b_r;
+            f_pa <= f_ma;
+            f_pb <= f_mb;
+
+            if start_r = '1' then
+               f_uq <= (others => '0');
+               f_up <= (others => '0');
+               f_um <= (others => '0');
+               f_sq <= (others => '0');
+               f_sp <= (others => '0');
+               f_sm <= (others => '0');
+            else
+               ghost(f_uq, f_up, f_um, urem_r, uquo_r, ucount_r, b_r);
+               ghost(f_sq, f_sp, f_sm, srem_r, squo_r, scount_r, sdiv_r);
+            end if;
+
+            if start64_r = '1' then
+               f_uq64 <= (others => '0');
+               f_up64 <= (others => '0');
+               f_um64 <= (others => '0');
+               f_sq64 <= (others => '0');
+               f_sp64 <= (others => '0');
+               f_sm64 <= (others => '0');
+            else
+               ghost(f_uq64, f_up64, f_um64, urem64_r, uquo64_r, ucount64_r, d_r);
+               ghost(f_sq64, f_sp64, f_sm64, srem64_r, squo64_r, scount64_r, sdiv64_r);
+            end if;
+
+            if accept = '1' and wb_we_i = '1' then
+               -- A table of the writable words, one line each.
+-- vsg_off sequential_007
+               case to_integer(wb_addr_i) is
+                  when 0      => f_a <= wb_data_i;
+                  when 1      => f_b <= wb_data_i;
+                  when 16     => f_c(31 downto 0)  <= wb_data_i;
+                  when 17     => f_c(63 downto 32) <= wb_data_i;
+                  when 18     => f_d(31 downto 0)  <= wb_data_i;
+                  when 19     => f_d(63 downto 32) <= wb_data_i;
+                  when others => null;
+               end case;
+-- vsg_on sequential_007
+            end if;
+
+            f_last_r <= f_expect;
+            if wait_r = '1' then
+               f_age_r <= f_age_r + 1;
+            else
+               f_age_r <= 0;
+            end if;
+
+            if rst_i = '1' then
+               f_a <= (others => '0');
+               f_b <= (others => '0');
+               f_c <= (others => '0');
+               f_d <= (others => '0');
+            end if;
+         end if;
+      end process p_shadow;
+
+
+      p_expect : process (all)
+      begin
+         if wait_r = '1' then
+            f_word  <= wait_addr_r;
+            f_latch <= '0' when must_wait(wait_addr_r) else '1';
+         else
+            f_word  <= wb_addr_i;
+            f_latch <= '0' when must_wait(wb_addr_i) else accept and not wb_we_i;
+         end if;
+
+         case to_integer(f_word) is
+            when 0        => f_expect <= f_a;
+            when 1        => f_expect <= f_b;
+            when 2 to 9   => f_expect <= result(f_word);
+            when 16       => f_expect <= f_c(31 downto 0);
+            when 17       => f_expect <= f_c(63 downto 32);
+            when 18       => f_expect <= f_d(31 downto 0);
+            when 19       => f_expect <= f_d(63 downto 32);
+            when 20 to 27 => f_expect <= result(f_word);
+            when others   => f_expect <= (others => '0');
+         end case;
+
+         -- The cycles until the unit of a waiting read ends, at most
+         case to_integer(wait_addr_r) is
+            when 2 to 5 =>
+               f_left  <= mul_count_r;
+               f_bound <= 2;
+
+            when 6 | 7 =>
+               f_left  <= scount_r + C_STEPS + 1 when start_r = '1' else scount_r;
+               f_bound <= C_STEPS;
+
+            when 8 | 9 =>
+               f_left  <= ucount_r + C_STEPS + 1 when start_r = '1' else ucount_r;
+               f_bound <= C_STEPS;
+
+            when 20 to 23 =>
+               f_left  <= scount64_r + C_STEPS64 + 1 when start64_r = '1' else scount64_r;
+               f_bound <= C_STEPS64;
+
+            when others =>
+               f_left  <= ucount64_r + C_STEPS64 + 1 when start64_r = '1' else ucount64_r;
+               f_bound <= C_STEPS64;
+         end case;
+      end process p_expect;
+
+      f_mul_ok    <= (mul_count_r = 2 or (f_ma = a_r and f_mb = b_r)) and
+                     (mul_count_r /= 0 or (f_pa = a_r and f_pb = b_r));
+      f_udiv_ok   <= udiv_ok(f_a, f_b, result("01000"), result("01001"), f_um);
+      f_sdiv_ok   <= sdiv_ok(f_a, f_b, result("00110"), result("00111"), f_sm) and
+                     (f_b = 0 or zext(absolute(result("00110")), 64) = f_sq);
+      f_udiv64_ok <= udiv_ok(f_c, f_d, uquo64_r, urem64_r, f_um64);
+      f_sdiv64_ok <= sdiv_ok(f_c, f_d, result64("010"), result64("011"), f_sm64) and
+                     (f_d = 0 or zext(absolute(result64("010")), 128) = f_sq64);
+      f_uinv      <= start_r = '1' or div_inv(a_r, b_r, uquo_r, urem_r, f_uq, f_up, f_um, ucount_r);
+      f_sinv      <= start_r = '1' or
+                     (sdiv_r = absolute(b_r) and
+                      div_inv(absolute(a_r), sdiv_r, squo_r, srem_r, f_sq, f_sp, f_sm, scount_r));
+      f_uinv64    <= start64_r = '1' or
+                     div_inv(c_r, d_r, uquo64_r, urem64_r, f_uq64, f_up64, f_um64, ucount64_r);
+      f_sinv64    <= start64_r = '1' or
+                     (sdiv64_r = absolute(d_r) and
+                      div_inv(absolute(c_r), sdiv64_r, squo64_r, srem64_r, f_sq64, f_sp64, f_sm64,
+                              scount64_r));
+
+      -- psl default clock is rising_edge(clk_i);
+
+      -- The data of each read, and the unit's operands
+      -- psl f_data : assert always
+      --    {f_latch and not rst_i} |=> {wb_ack_o = '1' and wb_data_o = f_last_r};
+      -- psl f_mul : assert always
+      --    (f_latch = '1' and f_word >= 2 and f_word <= 5) -> (f_pa = f_a and f_pb = f_b);
+      -- psl f_udiv : assert always
+      --    (f_latch = '1' and (f_word = 8 or f_word = 9)) ->
+      --    (f_udiv_ok and zext(uquo_r, 64) = f_uq);
+      -- psl f_sdiv : assert always
+      --    (f_latch = '1' and (f_word = 6 or f_word = 7)) -> f_sdiv_ok;
+      -- psl f_udiv64 : assert always
+      --    (f_latch = '1' and f_word >= 24 and f_word <= 27) ->
+      --    (f_udiv64_ok and zext(uquo64_r, 128) = f_uq64);
+      -- psl f_sdiv64 : assert always
+      --    (f_latch = '1' and f_word >= 20 and f_word <= 23) -> f_sdiv64_ok;
+
+      -- A read waits no longer than its unit takes
+      -- psl f_age : assert always wait_r = '1' -> f_age_r + f_left <= f_bound;
+      -- psl c_long : cover {wait_r = '1' and wait_addr_r = 9 and f_age_r = C_STEPS - 1};
+      -- psl c_long64 : cover {wait_r = '1' and wait_addr_r = 20 and f_age_r = C_STEPS64 - 1};
+
+      -- The invariants
+      -- psl f_operands : assert always
+      --    rst_i = '0' -> (a_r = f_a and b_r = f_b and c_r = f_c and d_r = f_d);
+      -- psl f_mul_inv : assert always rst_i = '0' -> f_mul_ok;
+      -- psl f_udiv_inv : assert always rst_i = '0' -> f_uinv;
+      -- psl f_sdiv_inv : assert always rst_i = '0' -> f_sinv;
+      -- psl f_udiv64_inv : assert always rst_i = '0' -> f_uinv64;
+      -- psl f_sdiv64_inv : assert always rst_i = '0' -> f_sinv64;
+      -- psl f_wait : assert always
+      --    wait_r = '1' -> (start_r = '0' and start64_r = '0' and
+      --                     ((wait_addr_r >= 2 and wait_addr_r <= 9) or
+      --                      (wait_addr_r >= 20 and wait_addr_r <= 27)));
+   end generate gen_formal;
 
 end architecture synthesis;

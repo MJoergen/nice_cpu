@@ -18,8 +18,9 @@ with integer and floating-point routines, and a WebAssembly translator
 that runs C, Zig, and Rust programs. The `hdl/` directory holds two
 different FPGA implementations, a simple multi-cycle one and the
 pipelined one of MICROARCH.md, which both pass every comparison with the
-emulator, the test setup for them, and formal checks of their ports and
-of three stages of the pipeline.
+emulator, the test setup for them, and formal checks of their ports, of
+four stages of the pipeline, of the devices, and of the shifter and the
+ALU for every input.
 
 The core is FPGA-agnostic. This repository has no board top level and no
 synthesis for a particular board. The example design for the MEGA65 lives in

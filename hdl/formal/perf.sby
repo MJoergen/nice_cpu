@@ -1,0 +1,27 @@
+# The bus port of the performance counters (formal_perf.vhd). "prove"
+# proves the assertions for every cycle with PDR, which finds the
+# invariants that tie the counters to the wrapper's model, and "cover"
+# reaches each cover statement, from counters near a wrap of the low word.
+
+[tasks]
+prove
+cover
+
+[options]
+prove: mode prove
+cover: mode cover
+cover: depth 20
+
+[engines]
+prove: abc pdr
+cover: smtbmc yices
+
+[script]
+plugin -i ghdl
+prove: ghdl --std=08 -fpsl perf.vhd formal_perf.vhd -e formal_perf
+cover: ghdl --std=08 -fpsl -gG_RESET=0000000000000000000000000000000011111111111111111111111111110000 perf.vhd formal_perf.vhd -e formal_perf
+prep -top formal_perf
+
+[files]
+../src/perf.vhd
+formal_perf.vhd

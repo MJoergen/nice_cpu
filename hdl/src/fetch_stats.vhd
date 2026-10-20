@@ -49,7 +49,9 @@ library ieee;
 entity fetch_stats is
    generic (
       -- False leaves out the counters.
-      G_ENABLE : boolean := true
+      G_ENABLE : boolean := true;
+      -- Adds the properties and invariants of formal/fetch_stats.sby.
+      G_FORMAL : boolean := false
    );
    port (
       clk_i      : in  std_logic;
@@ -188,6 +190,145 @@ begin
             end if;
          end if;
       end process p_bus;
+
+
+      -- The proof of formal/fetch_stats.sby. The invariants tie the
+      -- counters to each other: the histogram sums to FS_CYCLES, FS_MIN is
+      -- at most FS_MAX once a cycle has counted, and FS_MAX is at most
+      -- FS_HELD_MAX, given that no more words are in the buffer than are
+      -- held. Each holds after reset and a clear, and each cycle counted
+      -- keeps it, so k-induction proves them in one step. The other
+      -- assertions say what each cycle does to the counters, and that a
+      -- read returns the word as it is in the cycle the read is accepted.
+
+      gen_formal : if G_FORMAL generate
+         signal f_sum     : std_logic_vector(31 downto 0);
+         signal f_ctrl    : std_logic;                       -- A write to FS_CTRL
+         signal f_expect  : std_logic_vector(31 downto 0);   -- What a read returns
+         signal f_same    : std_logic;                       -- The counters did not change
+         signal f_zero    : std_logic;                       -- The counters are clear
+         signal f_last_r  : std_logic_vector(31 downto 0);
+         signal f_count_r : t_counts(0 to C_COUNTS - 1);
+         signal f_hist_r  : t_counts(0 to 31);
+         signal f_min_r   : natural range 0 to 31;
+         signal f_max_r   : natural range 0 to 31;
+         signal f_held_r  : natural range 0 to 31;
+         signal f_bin_r   : natural range 0 to 31;
+         -- A binary tree over the histogram: node n has the children 2n
+         -- and 2n + 1, and nodes 16 to 31 have the bins as children. Each
+         -- node counts the cycles counted with the count in its subtree.
+         signal f_tree_r : t_counts(1 to 31);
+      begin
+
+         -- The sum of the bins, added in the order of the tree below
+         p_sum : process (all)
+            variable sum_v : t_counts(1 to 63);
+         begin
+            sum_v(32 to 63) := hist_r;
+            for n in 31 downto 1 loop
+               sum_v(n) := sum_v(2 * n) + sum_v(2 * n + 1);
+            end loop;
+            f_sum <= sum_v(1);
+         end process p_sum;
+
+         f_ctrl <= '1' when accept = '1' and wb_we_i = '1' and wb_addr_i = "010000" else
+                   '0';
+         f_same <= '1' when count_r = f_count_r and hist_r = f_hist_r and min_r = f_min_r and
+                            max_r = f_max_r and held_r = f_held_r else
+                   '0';
+         f_zero <= '1' when count_r = (count_r'range => X"00000000") and
+                             hist_r = (hist_r'range => X"00000000") and
+                             min_r = 31 and max_r = 0 and held_r = 0 else
+                    '0';
+
+
+         p_expect : process (all)
+            variable n_v : natural range 0 to 63;
+         begin
+            n_v := to_integer(wb_addr_i);
+            case n_v is
+               when 16#10#           => f_expect <= (0 => run_r, others => '0');
+               when 16#11# to 16#19# => f_expect <= count_r(n_v - 16#11#);
+               when 16#1A#           => f_expect <= std_logic_vector(to_unsigned(min_r, 32));
+               when 16#1B#           => f_expect <= std_logic_vector(to_unsigned(max_r, 32));
+               when 16#1C#           => f_expect <= std_logic_vector(to_unsigned(held_r, 32));
+               when 16#20# to 16#3F# => f_expect <= hist_r(n_v - 16#20#);
+               when others           => f_expect <= (others => '0');
+            end case;
+         end process p_expect;
+
+
+         p_prev : process (clk_i)
+         begin
+            if rising_edge(clk_i) then
+               f_last_r  <= f_expect;
+               f_count_r <= count_r;
+               f_hist_r  <= hist_r;
+               f_min_r   <= min_r;
+               f_max_r   <= max_r;
+               f_held_r  <= held_r;
+               f_bin_r   <= events_i.count;
+
+               if run_r = '1' then
+                  for n in 1 to 31 loop
+                     for d in 1 to 5 loop
+                        if (32 + events_i.count) / 2 ** d = n then
+                           f_tree_r(n) <= f_tree_r(n) + 1;
+                        end if;
+                     end loop;
+                  end loop;
+               end if;
+               if rst_i = '1' or (f_ctrl = '1' and wb_data_i(1) = '1') then
+                  f_tree_r <= (others => (others => '0'));
+               end if;
+            end if;
+         end process p_prev;
+
+         -- psl default clock is rising_edge(clk_i);
+
+         -- The invariants
+         -- psl f_hist_sum : assert always rst_i = '0' -> f_sum = count_r(C_CYCLES);
+         -- psl f_root : assert always rst_i = '0' -> f_tree_r(1) = count_r(C_CYCLES);
+
+         gen_tree : for n in 1 to 15 generate
+            -- psl f_node : assert always rst_i = '0' ->
+            --    f_tree_r(n) = f_tree_r(2 * n) + f_tree_r(2 * n + 1);
+         end generate gen_tree;
+
+         gen_leaves : for n in 16 to 31 generate
+            -- psl f_leaf : assert always rst_i = '0' ->
+            --    f_tree_r(n) = hist_r(2 * n - 32) + hist_r(2 * n - 31);
+         end generate gen_leaves;
+
+         -- psl f_min_max : assert always
+         --    rst_i = '0' -> (count_r(C_CYCLES) /= 0 -> min_r <= max_r);
+         -- psl f_max_held : assert always rst_i = '0' -> max_r <= held_r;
+
+         -- A cycle counted adds one to FS_CYCLES and to the histogram's
+         -- bin of its count. Stopped counters keep their values, and a
+         -- write of 1 to FS_CTRL starts them without a clear.
+         -- psl f_cycle : assert always
+         --    {run_r and not (f_ctrl and wb_data_i(1)) and not rst_i} |=>
+         --    {count_r(C_CYCLES) = f_count_r(C_CYCLES) + 1 and
+         --     hist_r(f_bin_r) = f_hist_r(f_bin_r) + 1};
+         -- psl f_stopped : assert always
+         --    {not run_r and not f_ctrl and not rst_i} |=> {f_same and not run_r};
+         -- psl f_start : assert always
+         --    {run_r = '0' and f_ctrl = '1' and wb_data_i(1 downto 0) = "01" and rst_i = '0'} |=>
+         --    {f_same and run_r};
+         -- psl f_stop : assert always
+         --    {f_ctrl and not wb_data_i(0) and not rst_i} |=> {run_r = '0'};
+
+         -- A clear and a reset
+         -- psl f_clear : assert always
+         --    {(f_ctrl and wb_data_i(1)) or rst_i} |=>
+         --    {f_zero};
+         -- psl f_reset : assert always {rst_i} |=> {run_r};
+
+         -- A read
+         -- psl f_read : assert always
+         --    {accept and not wb_we_i and not rst_i} |=> {wb_data_o = f_last_r};
+      end generate gen_formal;
 
    else generate
 

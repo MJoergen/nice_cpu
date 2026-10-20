@@ -5,9 +5,10 @@ This is the design note for the FPGA implementation of NICE.
 disagrees with it. "ISA §8.2" refers to a section of ISA.md, "SYSTEM §2" to a section of
 [SYSTEM.md](SYSTEM.md), and a plain "§5.3" to a section of this note.
 
-The core is pipelined and has separate instruction and data buses, like
-[qnice_cpu](https://github.com/MJoergen/qnice_cpu). It reuses that design
-where NICE allows it. This note concentrates on where NICE differs.
+The core is pipelined and has separate instruction and data buses. Its
+design borrows from [qnice_cpu](https://github.com/MJoergen/qnice_cpu), a
+pipelined core for QNICE, the 16-bit descendant of NICE, but this note
+describes it in full and needs no knowledge of that design.
 
 The pipelined core is `hdl/src/pipeline.vhd`, which connects one entity
 for each part: `pipe_fetch` (FETCH), `pipe_decode` (DECODE),
@@ -47,10 +48,10 @@ question that this note left open, `hdl/ASSUMPTIONS.md` says how.
 
 | Topic | Decision |
 |---|---|
-| Structure | A pipeline: FETCH, DECODE, PREPARE, and WRITE, with the data bus port DBUS beside it. As in qnice_cpu, but with its ICACHE in FETCH and its SEQUENCER in DECODE. |
+| Structure | A pipeline: FETCH, DECODE, PREPARE, and WRITE, with the data bus port DBUS beside it (§3). |
 | Buses | Harvard: a read-only Wishbone instruction port, 64 bits wide so that it delivers two words per cycle (§3), and a 32-bit Wishbone data port. Both see the same memory, through dual-port RAM. |
 | Instructions | DECODE splits each instruction into one to three micro-operations. |
-| Registers | R0–R15 in flip-flops in WRITE, not in a module of their own as in qnice_cpu. Only WRITE writes them, in order. PREPARE reads them and forms every operand value and address; WRITE has one bypass, the value it wrote last (§5.1, §7.4). R0 is always 0. R14 is SR and R15 is PC. |
+| Registers | R0–R15 in flip-flops in WRITE. Only WRITE writes them, in order. PREPARE reads them and forms every operand value and address; WRITE has one bypass, the value it wrote last (§5.1, §7.4). R0 is always 0. R14 is SR and R15 is PC. |
 | Data accesses | Exact, in order, and never speculative, as ISA §8.2 requires. |
 | Instruction fetches | Free to run ahead, as ISA §8.2 allows (§2). |
 | Interrupts | Taken in WRITE, before an instruction, as soon as ISA §7.1 allows (§6). Valid/ready request ports for NMI and IRQ. |
@@ -110,10 +111,12 @@ Each part is the VHDL entity of its name in `hdl/src/`: FETCH is
 them. The black bars of the PNG mark the registers on the main path,
 which the header of `pipeline.tex` names.
 
-The parts do what they do in qnice_cpu, with these differences:
+The parts do this:
 
-- **FETCH** reads two words per cycle: the instruction port is 64 bits wide
-  and reads an aligned pair of words. Its address a names words 2a and
+- **FETCH** requests words on the instruction bus, running ahead of the
+  program, and starts again from a new address when DECODE or WRITE
+  redirects it (§5.4). It reads two words per cycle: the instruction
+  port is 64 bits wide and reads an aligned pair of words. Its address a names words 2a and
   2a + 1, and it returns word 2a in bits 31..0 and word 2a + 1 in bits
   63..32, low word first as in ABI.md. The multi-cycle core has the same
   port. An instruction is about 1.8 words on average
@@ -139,10 +142,10 @@ The parts do what they do in qnice_cpu, with these differences:
   flight, and the read data that WRITE has not used yet.
 
 Each stage holds one item and passes it on when the next stage is free,
-or frees itself in the same cycle. qnice_cpu builds its stages from the
-valid/ready primitives of its `src/sub/`. The NICE core writes the
-handshake of each stage by hand, because PREPARE's decisions depend on
-the state of WRITE in the same cycle (§5.3).
+or frees itself in the same cycle. The handshake of each stage is
+written by hand, not built from generic valid/ready pipeline stages,
+because PREPARE's decisions depend on the state of WRITE in the same
+cycle (§5.3).
 
 ## 4. Micro-operations
 
@@ -294,10 +297,10 @@ DECODE redirects early for the jumps it can resolve itself, with the
 condition "always" and the C bit clear: `MOVE PC, label`, with M clear
 too, and `ADD PC, PC, offset`, in either order of the sources. Their
 target is a constant, or the next instruction's address plus a
-constant. Every other jump, `MOVE PC, R3` included, is resolved in WRITE. qnice_cpu does the same.
+constant. Every other jump, `MOVE PC, R3` included, is resolved in WRITE.
 
 A side effect on R15 in `S0` or `S1`, such as `MOVE R1, @R15++`, must not
-flush the instruction's own later micro-ops. As in qnice_cpu, the flush waits
+flush the instruction's own later micro-ops. So the flush waits
 for the instruction's last micro-op. A later operand of the same instruction
 that reads R15 sees the side effect (ISA §4.3), so it takes R15 from the PC
 register after that micro-op has retired, not from DECODE. R15 as a pointer
@@ -321,7 +324,7 @@ range held in FETCH, from the oldest word in its buffer to its current
 address, and the one to four words of each instruction in DECODE and
 PREPARE. On a hit, it flushes and refetches from the
 next instruction. Over-approximating is safe, because a needless flush costs
-only cycles. qnice_cpu uses a fixed window of 32 words for the same purpose.
+only cycles.
 
 The compares are cheap on purpose, because the flush they raise must
 reach PREPARE and FETCH in the same cycle. FETCH's range is at most 16
@@ -383,7 +386,7 @@ alone is under 1% in both programs.
 
 ## 6. Interrupts
 
-Requests use valid/ready ports, as in qnice_cpu. The device holds `valid` and
+Interrupt requests use valid/ready ports. The device holds `valid` and
 the vector until the core raises `ready`. So the device holds the pending
 state of ISA §7.1, and requests are never lost.
 
@@ -658,9 +661,8 @@ To measure a piece of code, and then read the counters at leisure:
 
 The main check is a line-by-line diff against the emulator's trace.
 
-**The trace writer** is a simulation-only module, like `debug.vhd` in
-qnice_cpu. WRITE reports each retired instruction: its address and word,
-whether it was skipped, any interrupt taken, the halt reason, and the register
+**The trace writer** is a simulation-only module. WRITE reports each
+retired instruction: its address and word, whether it was skipped, any interrupt taken, the halt reason, and the register
 values. The writer prints what changed, in the emulator's format and order:
 R0–R14 in order, R15 only after a jump, the memory write, and the halt reason.
 The report is a `t_retire` record (`hdl/src/trace_pkg.vhd`), and the writer
@@ -695,10 +697,9 @@ data read right before the entry.
 1. The 2004 examples: `count`, `replicate`, and `print`, and `wrap`.
 2. The emulator probes in `emulator/test/`.
 3. `emulator/test/cputest.nasm`.
-4. New hazard programs: back-to-back flag use, every pair of side effects on
+4. Hazard programs: back-to-back flag use, every pair of side effects on
    the same register, R14 and R15 as pointers, stores into the next few
-   instructions, and jumps over `HALT`. qnice_cpu's `prog_hazard.asm` and
-   `prog_pipeline.asm` are the model. They are `hdl/test/hazard.nasm`
+   instructions, and jumps over `HALT`. They are `hdl/test/hazard.nasm`
    and the programs that `hdl/test/sidefx_prog.py` and
    `hdl/test/smc_prog.py` write, the last with stores 1 to 40 words ahead,
    past the end of FETCH's range (§5.5), and the programs against the
@@ -711,7 +712,7 @@ data read right before the entry.
 7. Random instruction streams, run on both and diffed:
    `hdl/test/random_prog.py`, measured with `hdl/test/random_stats.py`.
 
-**Formal checks**, as in qnice_cpu: each stage on its own where it can
+**Formal checks**: each stage on its own where it can
 be, and properties of the whole core. The checkers of the Wishbone and
 interrupt ports in `hdl/formal/` serve both cores. Three stages are
 proven for every cycle, each with assumptions that model the stages

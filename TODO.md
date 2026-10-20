@@ -94,7 +94,9 @@ added 2026-10-20. The section numbers are its.
     source side effect needs VBASE = 0xFFFFFF before the instruction,
     and its vector table would then be in the I/O range.
   - Step 5: `hdl/test/irq_sweep.py` runs `hazard.nasm` with an NMI before
-    each step, and with an IRQ before each, and both cores pass. Not swept: the program of `sidefx_prog.py`, which writes R14
+    each step, and with an IRQ before each, and both cores pass, and
+    `irqhazard.nasm` too. `latecount.nasm` was swept the same way by hand
+    on 2026-10-20, and both cores pass. Not swept: the program of `sidefx_prog.py`, which writes R14
     with any value, so E and VBASE too. For the pipelined core, the sweep
     compares with `irq_compare.py --read-delay`, and both cores are swept
     with the request raised up to a few cycles late as well.
@@ -103,7 +105,8 @@ added 2026-10-20. The section numbers are its.
     `runtime/libc/test/fuzz_printf.py`, which needs clang, and the
     benchmark, which `make core` in `bench/` runs already.
   - Step 7: `hdl/test/random_prog.py` was tuned with
-    `hdl/test/random_stats.py`, and both cores pass seeds 1 to 90. Still weak: a conditional instruction right after a write of
+    `hdl/test/random_stats.py`, and both cores pass seeds 1 to 90, with
+    the shift jumps it makes since 2026-10-20. Still weak: a conditional instruction right after a write of
     SR is 10% of the instructions, against 15 to 20% in the benchmark,
     and about half of the runs halt before the step limit, mostly at a
     word that a store changed, or after an interrupt that a write of VBASE

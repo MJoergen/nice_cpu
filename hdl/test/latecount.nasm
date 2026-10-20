@@ -1,5 +1,7 @@
-; shiftcnt.nasm with vector tables for every VBASE it uses, for runs with
-; an NMI (vector 8) or an IRQ (vector 9) before each step. E = 1 at first.
+; With vector tables for every VBASE it uses, for runs with an NMI (vector
+; 8) or an IRQ (vector 9) before each step, which test/irq_sweep.py makes;
+; E = 1 at every step but those of the R14 section, so every request is
+; taken.
         MOVE    R15, start
         .ORG    8
         .DAT    nmi, irq
@@ -128,7 +130,7 @@ start   MOVE    R14, 0x40000000
         C<C[M]  R14, R0, 1      ; dest R14 register-direct: no flags; VBASE = 0 or 1
         ?C MOVE R4, 0xC1
         ?!C MOVE R4, 0xC0
-        MOVE    R14, 0x01000000
+        MOVE    R14, 0x41000000 ; E = 1 again, so that a request before any step is taken
 ; the C of one late shift feeds the next
         SUB[M]  R0, R0, 1       ; C = 1
         MOVE    R2, 1

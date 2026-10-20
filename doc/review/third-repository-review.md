@@ -12,6 +12,7 @@ The question asked was the same as last time: not whether each part works, but w
 - **Every `FILE.md §n.m` reference in the repository** against the headings of ISA.md, SYSTEM.md, MICROARCH.md, and the others, with a script (§5.1), since two sections of ISA.md moved out and its numbering changed.
 - **The bubble after a jump** on the pipelined core, measured with the cycle counter on nine four-instruction programs, for a fall-through, a skipped jump, a jump taken in WRITE, a target that spans two pairs, an early redirect, `MOVE R15, R3`, and `ADD R15, R3, 0` (§1.2), beside the cycle model's figures for the same programs (§3.1).
 - **Programs written to break the operand rules of the re-timed core**, run on both cores and the emulator (§1.5), which found the bug of §1.4. The counts of §3.2 and §3.3 are rows of `hazards.py` now.
+- **The multi-cycle core**, run to the same depth: the 350 programs, random seeds 31 to 90, the sweep of `latecount.nasm`, and the benchmark (§1.6).
 - **The benchmark with smaller budgets for a multiplication by a constant**, by the cycle model (§4.1).
 - **The three diagrams of MICROARCH.md §3 and §6**: the block diagram and its text twin against the entities and their registers, and the interrupt timing diagram against a scratch copy of the re-timed core instrumented to print its sixteen signals once per cycle for `irqwave.nasm` (§2.8).
 
@@ -95,6 +96,17 @@ The ISA says any write to R15 is a jump (§4.3), and the shift's result is the v
 The bug came from a second reader's programs, in the scratchpad of the review, run on both cores, with a stalling memory, and against the emulator, in the way `check_core` of `hdl/Makefile` runs them: every late shift count of MICROARCH.md §7.3 and every reader of a late shift's result; every reader of an adjusted destination, and chains of them; R14 and R15 in every mode as count, source, and destination, after flag writes and after jumps; one register in all three fields with every pair of source modes; stores into fetched code from late and two-cycle instructions; the read counter and `INSTR_LO` around them; and two programs swept with an NMI or an IRQ before each step, 356 runs, judged by `irq_compare.py --read-delay`. All but the `0<0` cases agree. The programs are worth keeping as a hazard program, next to `hazard.nasm`, once the fix is in.
 
 **Resolved**: the programs are in `hdl/test/`, `latecount.nasm` to `shiftjump.nasm`, with `samereg_prog.py` writing the generated one, and `make test` runs each on both cores, plain and on a stalling memory, and `irqhazard.nasm` with a request before each step.
+
+### 1.6 The multi-cycle core, to the same depth
+
+The multi-cycle core is the reference, and `make test` runs everything on both cores, so it had the probes, the hazard programs, the random seeds 1 to 30, the sweeps, and, once they were in, the review's programs. The checks that the pipelined core got beyond that were run on it as well, after the commits of the tests:
+
+- `make -C hdl programs CORE=multicycle`: all 350 programs pass.
+- The random seeds 31 to 90, with the generator that now makes shift jumps: all 60 pass on the multi-cycle core, and all 60 on the pipelined core. Seed 89 writes a byte above 0x7F to the console, which crashed `core_runs.py`, since it read the emulator's output as strict UTF-8; it reads with replacement now, and the seed passes on both cores.
+- `latecount.nasm` with a request before each of its 155 steps, through `irq_sweep.py` on a stalling memory: 932 runs on the multi-cycle core, with the requests 0, 3, and 7 cycles late, and 1242 on the pipelined core, with 0 to 3 cycles and `--read-delay`, all pass. The program had to keep E = 1 past its R14 section first, since a sweep demands that every request is taken; the review's own sweep had not noticed, as it checked the taken requests only.
+- `make -C bench core CORE=multicycle` gives the figures of `bench/README.md` exactly, 19486758 and 5598318 cycles, so the multi-cycle core's rows are current, as the translated program's rows of the pipelined core are (§1.3).
+
+So the multi-cycle core stands where the pipelined core does, and has no finding.
 
 ## 2. The documents
 

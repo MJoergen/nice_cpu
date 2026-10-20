@@ -57,7 +57,7 @@ question that this note left open, `hdl/ASSUMPTIONS.md` says how.
 | Language | VHDL-2008, GHDL for simulation, and SymbiYosys for formal verification. Synthesis for a board is done in the example design (§10). |
 | Verification | A trace writer diffed against `niceemu --trace`, then formal checks with SymbiYosys. |
 | Location | The `hdl/` directory, with commit prefix `nicehdl:` (§10). |
-| Boards | None in this repository. The design is board-agnostic, and generics set the memory map (§10). |
+| Boards | None in this repository. The design is board-agnostic, and the example design sets the memory map (§10). |
 
 ## 2. What the ISA allows
 
@@ -538,11 +538,15 @@ waits for the last ([hdl/ASSUMPTIONS.md](../hdl/ASSUMPTIONS.md), item 6).
 
 ## 8. Memory system
 
-The repository will provide a system around the core: dual-port RAM, the
-bus decoders, a default slave, and the console UART. So far only the data
-bus decoder exists, and `hdl/sim/wb_mem.vhd` stands in for the rest in
-simulation (TODO.md). The system is not tied to a board. Generics set the memory map, for example the size and base address of
-each RAM and the address of the UART. These rules hold for every setting:
+This repository has no system and no FPGA design. Those belong in the
+example design, in the separate NiceMonMEGA65 repository (§10). The system
+that this repository defines is the emulator, with the memory map of
+SYSTEM.md. The RTL modules in `hdl/` implement the same devices as the
+emulator, as a convenience for building a system. Here they are tested in
+simulation only, where `hdl/sim/wb_mem.vhd` stands in for the memory and
+the console, and each core runs beside the emulator, with their traces
+compared (§9). NiceMonMEGA65 uses them and tests them on hardware. A
+system built from them must follow these rules:
 
 - **Dual-port RAM.** The instruction port and the data port reach the same
   RAM, through a 64-bit port and a 32-bit port. Any memory that the data
@@ -558,10 +562,10 @@ each RAM and the address of the UART. These rules hold for every setting:
   testbench `tb_core` uses it. So a data read may wait on the bus.
 - **I/O.** Only the data bus reaches I/O. The instruction bus returns 0 for
   the I/O range (ISA §8.3).
-- **Console.** A UART at `0xFFFFFF00` by default, as in the emulator
+- **Console.** A UART at `0xFFFFFF00`, as in the emulator
   (SYSTEM §1). A write sends bits 7..0. A read returns the next received
-  byte with bit 8 set, or 0 if none has arrived. Not written yet; the
-  memory model's console reads a file instead
+  byte with bit 8 set, or 0 if none has arrived. This repository has no
+  UART; the memory model's console reads a file instead
   ([hdl/README.md](../hdl/README.md), The memory model).
 - **Math unit.** `hdl/src/mpu.vhd` at `0xFFFFFF20`–`0xFFFFFF3F` (SYSTEM §2), 32
   aligned words, so the decoder compares address bits 31..5.
@@ -719,7 +723,8 @@ cycle, is still open (TODO.md).
   subjects start with `nicehdl:`. Synthesisable code goes in `hdl/src/`, the
   simulation models in `hdl/sim/`, and the testbenches in `hdl/test/`.
 - **No board.** This repository targets no particular board. Everything that
-  depends on a board, including the memory map, is set by generics (§8).
+  depends on a board, including the RAM and the UART, is in the example
+  design (§8).
 - **Example design.** The example design for the MEGA65 lives in the separate
   [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) repository, not here.
   It sets the generics, maps the screen at `0xFFFF0000` to video RAM if it

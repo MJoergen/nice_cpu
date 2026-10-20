@@ -293,6 +293,7 @@ $(eval $(call core_run,$(1),timer_stall,../emulator/test/timer.bin,-gG_STALL=30 
 $(eval $(call core_run,$(1),instret,$(BUILD)/instret.bin))
 $(eval $(call core_run,$(1),instret_stall,$(BUILD)/instret.bin,-gG_STALL=30 -gG_SEED=17))
 $(eval $(call core_run,$(1),irqwave,$(BUILD)/irqwave.bin))
+$(eval $(call core_run,$(1),addwave,$(BUILD)/addwave.bin))
 $(eval $(call core_run,$(1),hazard,$(BUILD)/hazard.bin,,check_core check_selfcheck))
 $(eval $(call core_run,$(1),hazard_stall,$(BUILD)/hazard.bin,-gG_STALL=30 -gG_SEED=13))
 $(eval $(call core_run,$(1),sidefx,$(BUILD)/sidefx.bin))

@@ -1,0 +1,76 @@
+% Timing diagram of one instruction through the pipelined core (MICROARCH.md
+% §3 and §4), rendered to flow.png by "make diagrams" in the top-level
+% Makefile. The instruction is the worked example of ISA.md §11:
+%
+%   0008  ?!Z ADD[M] @R3++, --R2, @0x12345678[R1]
+%
+% It has two micro-operations: S0, which writes R2 - 1 to R2, and OP,
+% which reads s1, stores the sum at R3, and writes R3 + 1 to R3. Before it
+% R1 = 0xEDCBA9A8, so s1 is at 0x20, which holds 0x100. R2 = 0x31, so s0 =
+% 0x30. R3 = 0x100, so 0x130 is stored at 0x100. Z = 0, so it runs.
+%
+% All values below are read off a GHDL simulation of hdl/test/addwave.nasm
+% on the pipelined core (make test) and a memory that never stalls. Cycle
+% 0 is the first cycle after reset, and the diagram starts at cycle 4.
+% Changing the program or the core invalidates them. The addresses:
+%
+%   0000-0006  MOVE R1, MOVE R2, MOVE R3, and ADD R4, R4, 1, two words each
+%   0008       the instruction, and its constant word 0x12345678 at 0009
+%   000A-000E  ADD R4, R4, 1
+%   0010       HALT
+%
+% A bus is drawn grey (x) in every cycle in which it carries nothing:
+% FETCH's addr_o while DECODE takes no word (consume_i = 0), DECODE's
+% uop_o while it emits none, prep_r and w_r.uop while they hold no
+% micro-operation, dbus_addr_o while dbus_stb_o is low, dbus_data_o while
+% dbus_we_o is low, dbus_data_i but for a read's ACK, and retire_o while
+% it reports no step. ibus_addr_o is shown as the address of the first
+% word of the pair. A micro-operation is shown as its kind and the
+% address of its instruction. R2 and R3 are WRITE's registers, w_r.regs.
+%
+%   t=1   FETCH requests the pair 0008-0009; t=2 it comes.
+%   t=3   DECODE takes both words into dec_r.
+%   t=4   DECODE emits S0. It needs no data read.
+%   t=5   DECODE emits OP. PREPARE holds S0.
+%   t=6   WRITE runs S0, which writes R2 but retires no instruction.
+%         PREPARE holds OP, forms the address 0x20 of s1, and loads the
+%         read (load_o).
+%   t=7   The read is on the bus, and the instruction is committed
+%         (w_r.commits = 1). instret_o counts it, as the bus accepts its
+%         last read. WRITE holds OP and waits for the data, so ADD 000A
+%         waits in PREPARE, and DECODE emits nothing.
+%   t=8   The data comes. WRITE adds, puts the store on the bus, writes
+%         R3 + 1, and retires the instruction.
+%   t=9   The store's ACK. ADD 000A retires.
+
+\documentclass[varwidth = 40cm, border = 8pt]{standalone}
+\usepackage{timing}
+
+% A micro-operation's kind and address fit a one-cycle box at this scale.
+\renewcommand{\wavescale}{1.9}
+
+\begin{document}
+
+\begin{wave}{19}{10}
+ \nextwave{ibus\_addr\_o}            \known{0006}{1} \known{0008}{1} \known{000A}{1} \known{000C}{1} \known{000E}{1} \known{0010}{1} \known{0012}{1} \known{0014}{1} \known{0016}{1} \known{0018}{1}
+ \nextwave{ibus\_ack\_i}             \bit{1}{10}
+ \nextwave{FETCH: addr\_o}           \known{0002}{1} \known{0004}{1} \known{0006}{1} \known{0008}{1} \known{000A}{1} \unknown[x]{1} \known{000C}{1} \known{000E}{1} \unknown[x]{1} \known{0010}{1}
+ \nextwave{DECODE: dec\_r}           \known{0000}{1} \known{0002}{1} \known{0004}{1} \known{0006}{1} \known{0008}{2} \known{000A}{1} \known{000C}{2} \known{000E}{1}
+ \nextwave{DECODE: uop\_o}           \known{OP 0000}{1} \known{OP 0002}{1} \known{OP 0004}{1} \known{OP 0006}{1} \known{S0 0008}{1} \known{OP 0008}{1} \known{OP 000A}{1} \unknown[x]{1} \known{OP 000C}{1} \known{OP 000E}{1}
+ \nextwave{PREPARE: prep\_r}         \unknown[x]{1} \known{OP 0000}{1} \known{OP 0002}{1} \known{OP 0004}{1} \known{OP 0006}{1} \known{S0 0008}{1} \known{OP 0008}{1} \known{OP 000A}{2} \known{OP 000C}{1}
+ \nextwave{PREPARE: load\_o}         \bit{0}{6} \bit{1}{1} \bit{0}{3}
+ \nextwave{WRITE: w\_r.uop}          \unknown[x]{2} \known{OP 0000}{1} \known{OP 0002}{1} \known{OP 0004}{1} \known{OP 0006}{1} \known{S0 0008}{1} \known{OP 0008}{2} \known{OP 000A}{1}
+ \nextwave{WRITE: w\_r.commits}      \known{0}{7} \known{1}{2} \known{0}{1}
+ \nextwave{dbus\_stb\_o}             \bit{0}{7} \bit{1}{2} \bit{0}{1}
+ \nextwave{dbus\_we\_o}              \bit{0}{8} \bit{1}{1} \bit{0}{1}
+ \nextwave{dbus\_addr\_o}            \unknown[x]{7} \known{0020}{1} \known{0100}{1} \unknown[x]{1}
+ \nextwave{dbus\_data\_o}            \unknown[x]{8} \known{0130}{1} \unknown[x]{1}
+ \nextwave{dbus\_ack\_i}             \bit{0}{8} \bit{1}{2}
+ \nextwave{dbus\_data\_i}            \unknown[x]{8} \known{0100}{1} \unknown[x]{1}
+ \nextwave{retire\_o}                \unknown[x]{2} \known{0000}{1} \known{0002}{1} \known{0004}{1} \known{0006}{1} \unknown[x]{2} \known{0008}{1} \known{000A}{1}
+ \nextwave{instret\_o}               \bit{0}{2} \bit{1}{4} \bit{0}{1} \bit{1}{1} \bit{0}{1} \bit{1}{1}
+ \nextwave{WRITE: R2}                \known{0000}{4} \known{0031}{3} \known{0030}{3}
+ \nextwave{WRITE: R3}                \known{0000}{5} \known{0100}{4} \known{0101}{1}
+\end{wave}
+
+\end{document}

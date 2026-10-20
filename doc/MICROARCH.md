@@ -176,6 +176,20 @@ destination mode, the side effect is the only register write.
 R2 in WRITE, before s1's address is formed. PREPARE waits for that write
 (§5.1).
 
+![One instruction through the pipeline](flow.png)
+
+[flow.png](flow.png), drawn by [flow.tex](flow.tex), shows the worked
+example of ISA §11, `?!Z ADD[M] @R3++, --R2, @0x12345678[R1]` at
+address 0008, on the core, with values read off a simulation of
+`hdl/test/addwave.nasm`. Its s0 has a side effect, so DECODE splits it
+into `S0` and `OP`, one per cycle (t = 4 and 5). WRITE runs `S0` at
+t = 6, which writes R2. In the same cycle PREPARE forms the address of
+s1 and loads the read. The read is on the bus at t = 7, while WRITE
+waits in `OP` for its data. The data comes at t = 8. WRITE adds, puts
+the store on the bus, writes R3, and retires the instruction. The wait
+for the data costs one cycle: the instruction after it waits in PREPARE
+at t = 7.
+
 ## 5. Hazards
 
 ### 5.1 Registers

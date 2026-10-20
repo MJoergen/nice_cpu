@@ -28,9 +28,12 @@ SYSTEM.md §2: `i32.mul`, and `div` and `rem` of both widths, then call
 the runtime library instead of using the math unit, and the program must be joined with
 `runtime/muldiv_soft.nasm`, not `muldiv_mpu.nasm`. Errors are printed as
 `file:0xOFFSET: error: message`, where OFFSET is the byte offset in the
-module, or as `file: error: message` when there is no offset. The exit
-status is 1 after an error, and no output is written. nicewasm stops at the
-first error.
+module, or as `file: error: message` when there is no offset. An input
+that cannot be read prints `file: message`, such as `file: No such file
+or directory`, and an output that would overwrite the input prints
+`file: the output file would overwrite the input; use -o`, both without
+`error:`. The exit status is 1 after an error, and no output is written.
+nicewasm stops at the first error.
 
 The output is one assembly file. A program is made by joining it with the
 start-up code, the program's other files, and the runtime library, in the
@@ -738,8 +741,8 @@ A function that starts with a test and an early return often needs no
 saved register on that path, as in a recursive walk of a tree that
 returns at once for a null node. If the first jump of the function is a
 conditional one, and the code it goes to returns without a saved
-register, SP, or a call, the test and the jump come before the
-prologue. The jump then goes to a copy of that code, which returns with
+register, SP, or a call, within ten instructions before the return,
+the test and the jump come before the prologue. The jump then goes to a copy of that code, which returns with
 `MOVE R15, @R13++` alone. The instructions before the jump may not need
 a saved register or SP either, except those that only write a saved
 register from other registers and constants, such as the copy of a

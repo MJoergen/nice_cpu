@@ -139,6 +139,8 @@ No bug. The gaps were in what the instructions were given, since the C modules u
 
 It says errors print as `file: error: message`; an unreadable input prints `file: No such file or directory`, and the overwrite check omits `error:` too, both with exit status 1 as the README says. And `early_exit` has a length limit of about 11 instructions that the README does not state. **Fix:** the two sentences.
 
+**Resolved**: the README gives the two messages without `error:`, and says that the early return goes before the prologue only when the code it jumps to has at most ten instructions before the return, the limit of `early_exit`.
+
 `make -C hdl programs` runs `run.py --keep`, so it now runs 88 more programs on each core.
 
 ## 5. The cores: simulation tests

@@ -116,7 +116,7 @@ The parts do what they do in qnice_cpu, with these differences:
   and reads an aligned pair of words. Its address a names words 2a and
   2a + 1, and it returns word 2a in bits 31..0 and word 2a + 1 in bits
   63..32, low word first as in ABI.md. The multi-cycle core has the same
-  port. An instruction is 2.1 words on average
+  port. An instruction is about 1.8 words on average
   in translated code and 1.6 in hand-written code (§5.6), so a port that
   delivers one word per cycle would hold the core to about one instruction
   per two cycles, whatever the rest of the pipeline did. FETCH keeps the
@@ -163,7 +163,7 @@ The common instructions need one micro-op: `ADD R1, R2, R3`, `MOVE R1, 5`,
 the push `MOVE @--SP, x`, and the call `ADD @--SP, 2, PC`. A pop
 `MOVE x, @SP++` and a return `MOVE PC, @SP++` need two. The most any
 instruction needs is three. In the benchmark programs an instruction has
-1.02 micro-ops on average when translated and 1.18 when written by hand
+1.00 micro-ops on average when translated and 1.18 when written by hand
 (§5.6), so splitting them seldom adds a cycle.
 
 **One write per micro-op is enough** because the two writes of a register
@@ -317,9 +317,16 @@ address bits, with no subtraction. The numbers of the blocks after are
 computed ahead, in registers: an instruction's when DECODE takes it,
 and FETCH's from its oldest word's address a cycle late, so that the
 redirect target needs no adder. FETCH's oldest word moves by at most
-four words a cycle, so WRITE also tests the block after that one, and
-in the cycle after a redirect, when the number is stale, no store can
-retire. The store address itself comes from PREPARE (§7.4), or is the
+four words a cycle, so WRITE also tests the block after that one. In
+the cycle after a redirect the number is stale, and a store may retire
+then: after a redirect by DECODE, WRITE may hold an older store that the
+bus accepts in that cycle. But FETCH then holds no word and has no
+request of its own on the bus, since it makes none in the cycle of the
+redirect. The first pair it requests is accepted a cycle after the store
+at the earliest, so it sees the store
+([hdl/ASSUMPTIONS.md](../hdl/ASSUMPTIONS.md), item 8), and that pair
+lies in the block of FETCH's oldest word, which WRITE tests directly.
+The store address itself comes from PREPARE (§7.4), or is the
 value WRITE wrote last.
 
 A store into the storing instruction's own constant words must not change
@@ -519,10 +526,12 @@ Three rare cases take WRITE two cycles, so that none of them is on the
 paths of the common ones: a register destination in mode 001 or 010,
 whose adjusted value follows the result (§4); a jump whose target is not
 a `MOVE`'s source (§5.4); and a shift whose count PREPARE could not
-reduce (§7.3). The first cycle computes and writes the result, and in
-the third case reduces the count; the second cycle writes the adjusted
-value, redirects FETCH, or shifts. An interrupt is not taken between the
-two (§6).
+reduce (§7.3), which takes three for a rotation through C. The first
+cycle computes and writes the result, and in the third case reduces the
+count, or for a rotation through C takes the count mod 33 in the next
+cycle; the last cycle writes the adjusted value, redirects FETCH, or
+shifts. WRITE takes no interrupt between the cycles of one micro-op: it
+waits for the last ([hdl/ASSUMPTIONS.md](../hdl/ASSUMPTIONS.md), item 6).
 
 ## 8. Memory system
 

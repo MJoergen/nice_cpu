@@ -228,12 +228,16 @@ as both programs do, gets a row per phase:
       ...
       total       1681080   2171133  1.292
 
-The bubble of 7 is the core's. A jump leaves WRITE in cycle c − 1, and
-WRITE's registered flush redirects FETCH in cycle c. FETCH issues the
-request in c + 1, so it is on the bus in c + 2, and the memory
-acknowledges in c + 3. DECODE takes the instruction in c + 4 and emits
-its micro-op in c + 5, PREPARE passes it on in c + 6, and WRITE runs it
-in c + 7, 7 cycles after a fall-through would have run.
+The core's bubble is 6 cycles, as `hdl/test/bubble.nasm` measures. A
+jump leaves WRITE in cycle c − 1 and flushes in the same cycle, since
+the flush is combinational. FETCH issues the request in c, so it is on
+the bus in c + 1, and the memory acknowledges in c + 2. DECODE takes the
+instruction in c + 3 and emits its micro-op in c + 4, PREPARE passes it
+on in c + 5, and WRITE runs it in c + 6. The model's 7 is a fit: with
+`--flush 6` it is 4.7% below the core's cycles for the translated
+program and 11.8% below for `hand.nasm`, with 7 3.1% and 7.6%, so the
+extra cycle stands in for something the model lacks. The hand-counted
+cases of `pipecycles.py --test` and `cycprof.py --test` use the 7.
 
 The phases of the translated program take an estimated
 2171133 cycles, 1.29 per instruction, and those of `hand.nasm` 1122967,

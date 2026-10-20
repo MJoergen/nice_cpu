@@ -14,14 +14,6 @@ The open items of
 [doc/review/third-repository-review.md](doc/review/third-repository-review.md),
 added 2026-10-20. The section numbers are its.
 
-- **The cycle model's bubble after a jump taken in WRITE** (§3.1).
-  `bench/README.md` and the docstring of `bench/pipecycles.py` explain
-  `--flush 7` with a registered flush that the core does not have: the
-  flush is combinational, and the measured bubble is 6 cycles, for an
-  aligned target and for one that spans two pairs alike (§1.2). Say that
-  7 is the value that fits the benchmark, or find the cycle the model
-  lacks; the hand-counted cases of `pipecycles.py --test` and
-  `cycprof.py --test` encode the 7.
 - **The `hand.nasm` rows of the benchmark tables** (§1.3) in
   `bench/README.md` and `hdl/README.md` give 1216653 cycles on the
   pipelined core, with 60191 for `rng64` and 262436 for `bst`; the core
@@ -129,6 +121,14 @@ added 2026-10-20. The section numbers are its.
   registered copy is enough for nicemon. Fix in NiceMonMEGA65, and say in
   `hdl/src/trace_pkg.vhd` that `retire_o` is for simulation and is slow.
 
+- **The cycle the model lacks.** `bench/pipecycles.py` charges a jump
+  taken in WRITE 7 cycles, where the core's bubble is 6
+  (`hdl/test/bubble.nasm`), because 7 brings the model closer to the
+  core on the benchmark, which it still underestimates by 3% and 8%
+  (`make compare` in `bench/`). Find what the extra cycle stands for,
+  for example by printing each retire's cycle from a scratch copy of the
+  core and comparing it with the model's, instruction by instruction
+  (doc/review/third-repository-review.md §3.1).
 - **Speculative reads of RAM** (MICROARCH.md §5.3). Data reads wait until
   the instruction is certain to run. The waits are a conditional read
   after a write of SR, 0.0% of the translated benchmark's instructions and

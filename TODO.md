@@ -46,17 +46,6 @@ has TODO or FIXME comments.
     word that a store changed, or after an interrupt that a write of VBASE
     sent astray. `make random` runs one seed at a time; `programs.py`
     could run them in parallel.
-- **The system around the core** (MICROARCH.md §8): dual-port RAM, the bus
-  decoders, a default slave that reads 0 and drops writes, and the console
-  UART at `0xFFFFFF00`, with generics for the memory map. The data bus
-  decoder, which keeps the ACKs in order when requests to different slaves
-  are in flight (MICROARCH.md §8), exists: `hdl/src/wb_dmux.vhd`. The
-  instruction bus decoder does not. The UART must receive too: a read returns the next byte with bit 8
-  set, or 0 (SYSTEM.md §1). `wb_mem.vhd` reads a file, as the emulator's
-  `--input` does. Today
-  `hdl/sim/wb_mem.vhd` stands in for the rest, in simulation only, and
-  `hdl/test/tb_core.vhd` computes the data bus decoder's select with an
-  address compare.
 - **Formal checks with SymbiYosys** (MICROARCH.md §9). `make formal` proves
   the ports of the multi-cycle core, the timer, and the data bus decoder,
   and FETCH of the pipelined core, for every cycle. For the

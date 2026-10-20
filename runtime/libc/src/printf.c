@@ -8,17 +8,19 @@
 #include <stdio.h>
 #include <string.h>
 
-// Where the output goes: the console if buf is NULL, else buf, which has
-// room for cap bytes. len counts every byte, also those that did not fit.
+// Where the output goes: the console if console is set, else buf, which
+// has room for cap bytes and may be NULL if cap is 0. len counts every
+// byte, also those that did not fit.
 struct out {
     char *buf;
     size_t cap;
     size_t len;
+    int console;
 };
 
 static void emit(struct out *o, char c)
 {
-    if (!o->buf)
+    if (o->console)
         putchar(c);
     else if (o->len + 1 < o->cap)
         o->buf[o->len] = c;
@@ -237,14 +239,14 @@ static void format(struct out *o, const char *fmt, va_list ap)
 
 static int finish(struct out *o)
 {
-    if (o->buf && o->cap)
+    if (o->cap)
         o->buf[o->len < o->cap ? o->len : o->cap - 1] = '\0';
     return (int)o->len;
 }
 
 int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap)
 {
-    struct out o = {buf, size, 0};
+    struct out o = {buf, size, 0, 0};
     format(&o, fmt, ap);
     return finish(&o);
 }
@@ -256,7 +258,7 @@ int vsprintf(char *buf, const char *fmt, va_list ap)
 
 int vprintf(const char *fmt, va_list ap)
 {
-    struct out o = {NULL, 0, 0};
+    struct out o = {NULL, 0, 0, 1};
     format(&o, fmt, ap);
     return (int)o.len;
 }

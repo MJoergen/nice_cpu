@@ -11,12 +11,6 @@ No code has TODO or FIXME comments.
 The findings of [doc/review/fourth-repository-review.md](doc/review/fourth-repository-review.md)
 that are not closed yet. Every finding of the earlier reviews is closed.
 
-- **Four bugs, each with a test that fails until it is fixed** (§1.2,
-  §3.2 to §3.4): `niceasm.py` opens its output file outside the `try`
-  that turns an `OSError` into a one-line message; `snprintf(NULL, 0,
-  ...)` of the C library prints to the console; `malloc` of a size near
-  2³² returns a pointer into the heap; and `strtoul` does not negate a
-  value that is exactly `ULONG_MAX`.
 - **Documents** (§1.3, §2, §4.4): ISA.md §10 could say that `INT`,
   `.BLK`, and `.RES` take a value before it wraps; SYSTEM.md §1 that the
   emulator and the simulation memory never return 0 for a console read

@@ -22,9 +22,9 @@ static unsigned digit(int c)
 }
 
 // Reads an unsigned number, as strtoul does, and sets *neg if it had a
-// minus sign. The result saturates at ULONG_MAX. If no digits are read,
-// *end is s.
-static unsigned long parse(const char *s, char **end, int base, int *neg)
+// minus sign. The result saturates at ULONG_MAX, and *over says that it
+// did. If no digits are read, *end is s.
+static unsigned long parse(const char *s, char **end, int base, int *neg, int *over)
 {
     const char *p = s;
     while (isspace(*p))
@@ -41,30 +41,31 @@ static unsigned long parse(const char *s, char **end, int base, int *neg)
     }
 
     unsigned long v = 0;
-    int any = 0, over = 0;
+    int any = 0;
+    *over = 0;
     for (unsigned d; (d = digit(*p)) < (unsigned)base; p++) {
         any = 1;
         if (v > (ULONG_MAX - d) / (unsigned)base)
-            over = 1;
+            *over = 1;
         else
             v = v * (unsigned)base + d;
     }
     if (end)
         *end = (char *)(any ? p : s);
-    return over ? ULONG_MAX : v;
+    return *over ? ULONG_MAX : v;
 }
 
 unsigned long strtoul(const char *s, char **end, int base)
 {
-    int neg;
-    unsigned long v = parse(s, end, base, &neg);
-    return neg && v != ULONG_MAX ? 0UL - v : v;
+    int neg, over;
+    unsigned long v = parse(s, end, base, &neg, &over);
+    return neg && !over ? 0UL - v : v;
 }
 
 long strtol(const char *s, char **end, int base)
 {
-    int neg;
-    unsigned long v = parse(s, end, base, &neg);
+    int neg, over;
+    unsigned long v = parse(s, end, base, &neg, &over);
     if (neg)
         return v > (unsigned long)LONG_MAX + 1 ? LONG_MIN : (long)(0UL - v);
     return v > LONG_MAX ? LONG_MAX : (long)v;

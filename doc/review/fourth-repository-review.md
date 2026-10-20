@@ -84,15 +84,23 @@ C17 7.21.6.5 allows a null buffer with a size of 0, to measure the output. In `l
 
 prints `12345[5]` instead of `[5]`. The same for `vsnprintf`. **Fix:** a flag in `struct out` that `printf` and `vprintf` set, instead of the test of `buf`.
 
+**Resolved**: `struct out` has a `console` flag, which only `vprintf` sets, and `finish` writes the final NUL only when `cap` is not 0, so a null buffer of size 0 is never touched.
+
 ### 3.3 `malloc` of a size near 2³² returns a pointer
 
 In `libc/src/malloc.c`, `more()` computes `pages = (size - (heap_end - brk_) + PAGE - 1) / PAGE`. For `malloc(0xFFFFFFF0)` the rounded size is `0xFFFFFFF8`, the sum wraps, `pages` is 0, `memory.grow(0)` succeeds, and `brk_ += size` wraps back below itself. `malloc` returns a pointer into the heap, with a block size of `0xFFFFFFF8`; `calloc(1, 0xFFFFFFF0)` then writes past the memory and traps with code 2. Every size from about 2³² − 65536 + the free bytes at the end of the heap up to `0xFFFFFFF0` is affected. **Fix:** return `NULL` when `size - (heap_end - brk_)` would not fit a page count, that is, when it exceeds `SIZE_MAX - (PAGE - 1)`.
+
+**Resolved**: `more()` returns `NULL` in that case, before it calls `memory.grow`.
 
 ### 3.4 `strtoul("-4294967295")` gives 4294967295, not 1
 
 In `libc/src/stdlib.c`, `parse` returns `ULONG_MAX` both for an overflow and for a value that is exactly `ULONG_MAX`, and `strtoul` skips the negation when the value is `ULONG_MAX`. C17 7.22.1.4 negates the value in `unsigned long`, so −(2³² − 1) is 1. **Fix:** let `parse` report the overflow apart from the value, and negate unless it overflowed.
 
+**Resolved**: `parse` sets a flag `*over` when the value saturates, and `strtoul` negates unless it is set. `strtol` takes the flag too and is unchanged otherwise.
+
 `libc/test/limits.c` has the three cases of §3.2 to §3.4, runs last among the C library's tests, and fails until they are fixed, so `make -C runtime test` ends in `FAIL libc/limits`.
+
+**Resolved** with §3.2 to §3.4: `libc.a` and the `.wasm` files of the C library's tests are rebuilt, and all twelve tests pass. `bench/bench.wasm` is not rebuilt: it calls `printf` only to print its results, outside the timed phases, and never with a null buffer.
 
 ### 3.5 Not closed
 

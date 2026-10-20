@@ -27,6 +27,9 @@ static struct block *more(size_t size)
         heap_end = __builtin_wasm_memory_size(0) * PAGE;
     }
     if (size > heap_end - brk_) {
+        // The page count would wrap: more than all of memory
+        if (size - (heap_end - brk_) > SIZE_MAX - (PAGE - 1))
+            return NULL;
         size_t pages = (size - (heap_end - brk_) + PAGE - 1) / PAGE;
         if (__builtin_wasm_memory_grow(0, pages) == SIZE_MAX)
             return NULL;

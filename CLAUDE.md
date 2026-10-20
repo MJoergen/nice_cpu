@@ -54,7 +54,7 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
 ## Commands
 
     make                             # help: the top-level targets, which run the ones below
-    make test                        # every quick make test below, in order
+    make test                        # every quick make test below, in parallel
     cd assembler && make test        # .nasm -> .bin comparisons, then test/errors.py
     cd assembler && make typecheck   # mypy --strict
     cd emulator  && make test        # zig unit tests, example and probe programs, test/errors.py

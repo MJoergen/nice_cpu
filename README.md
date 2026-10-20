@@ -57,7 +57,7 @@ the emulator is unlikely to build with a newer or older version. On the
 download page, pick 0.15.2 rather than the latest release or master.
 
     make                              # list the top-level targets
-    make test                         # all of the tests below, in order
+    make test                         # all of the tests below, in parallel
 
     cd assembler && make test         # test the assembler
     cd emulator && make test          # build and test the emulator

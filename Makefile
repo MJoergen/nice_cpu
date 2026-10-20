@@ -1,7 +1,7 @@
 # Top-level Makefile: runs the targets of the subdirectories' Makefiles.
 # Each subdirectory can also be used on its own; see CLAUDE.md and README.md.
 
-# The quick tests, in dependency order. The hdl tests need GHDL.
+# The quick tests. The hdl tests need GHDL.
 TEST_DIRS      = assembler emulator runtime translator bench hdl doc/intro doc
 TYPECHECK_DIRS = assembler translator bench doc
 CLEAN_DIRS     = assembler emulator runtime bench hdl doc/intro
@@ -27,8 +27,17 @@ help:
 	@echo "Each subdirectory has its own Makefile, for example:"
 	@echo "  make -C emulator test"
 
+# The emulator, which most of the tests run, is built first. Then the
+# subdirectories run their tests at the same time, in JOBS jobs, one per
+# CPU, unless make was given -j. The output of each is kept together.
+JOBS ?= $(shell nproc)
+
 test:
-	@for d in $(TEST_DIRS); do $(MAKE) -C $$d test || exit 1; done
+	@$(MAKE) --no-print-directory -C emulator build
+	@$(MAKE) $(if $(filter -j%,$(MAKEFLAGS)),,-j$(JOBS)) -O $(addprefix test-,$(TEST_DIRS))
+
+$(addprefix test-,$(TEST_DIRS)): test-%:
+	@$(MAKE) -C $* test
 
 typecheck:
 	@for d in $(TYPECHECK_DIRS); do $(MAKE) -C $$d typecheck || exit 1; done
@@ -73,4 +82,4 @@ all: test typecheck lint pdfcheck
 clean:
 	@for d in $(CLEAN_DIRS); do $(MAKE) -C $$d clean || exit 1; done
 
-.PHONY: help test typecheck lint formal slow hazards pdf pdfcheck diagrams all clean
+.PHONY: help test $(addprefix test-,$(TEST_DIRS)) typecheck lint formal slow hazards pdf pdfcheck diagrams all clean

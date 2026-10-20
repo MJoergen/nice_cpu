@@ -6,7 +6,8 @@
 -- shift itself. The ALU of both cores shares one adder. This test checks:
 -- * shift_fast of shift_prep gives what shift gives, for every operation,
 --   with every count from 0 to 70, with counts near the multiples of 33 up
---   to 2^32, and with random counts and values.
+--   to 1353, near 2^31 and 2^32, and at each power of two, and with random
+--   counts and values.
 -- * The ALU gives what the operations of ISA.md §5.1 give, written here as
 --   plain arithmetic and logic with no shared adder.
 -- The run stops with status 0 when every check passes, and 1 at the first
@@ -158,11 +159,10 @@ begin
                for n in 0 to 70 loop
                   check_shift(op_v, s0_v, to_stdlogicvector(n, 32), c_v);
                end loop;
-               for m in 1 to 130150523 loop
+               for m in 1 to 41 loop
                   for d in -1 to 1 loop
                      check_shift(op_v, s0_v, to_stdlogicvector(33 * m + d, 32), c_v);
                   end loop;
-                  exit when m > 40;
                end loop;
                for i in 0 to 31 loop
                   check_shift(op_v, s0_v, X"FFFFFFFF" - i, c_v);

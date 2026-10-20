@@ -40,11 +40,6 @@ added 2026-10-20. The section numbers are its.
   `pipecycles.py` count the same trace differently, 1775455 against
   1775661 instructions, since one skips a trace line that the program's
   console output precedes (§3.5).
-- **The moves left text behind** (§2): the review notes cite ISA.md
-  §8.4, §8.6, and §9.4 by their old numbers (§2.7, §5.1).
-- **Smaller ones** (§2.7): "some five cycles" in
-  `translator/README.md`, the third two-cycle case in `hdl/README.md`,
-  a done sub-item below, and the header of `tb_shift.vhd`.
 - **The diagrams of MICROARCH.md** (§2.8): `interrupt.tex` shows the
   dropped instruction's address on `target_o` in the cycle of the take,
   where the re-timed core puts the next instruction's, 0014 and 0020 in

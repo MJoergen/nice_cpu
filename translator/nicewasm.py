@@ -2031,8 +2031,8 @@ def if_convert(items: List[Item]) -> List[Item]:
     """Turns a conditional jump over a few instructions into those
     instructions with the opposite condition: ?Z MOVE R15, L, then x and y,
     then L, becomes ?!Z x and ?!Z y. On the FPGA core a taken conditional
-    jump costs some five cycles, and a skipped instruction one (doc/
-    MICROARCH.md). A skipped instruction makes no access (§3), so the
+    jump costs six cycles more than a skipped instruction (doc/
+    MICROARCH.md §5.4). A skipped instruction makes no access (§3), so the
     instructions may access memory. None of them may write the flags or
     be conditional already, and no label may come between the jump and L,
     which the jump must reach first. A jump that ends the skipped code,
@@ -2247,9 +2247,9 @@ def invert_back_edges(items: List[Item], prefix: str) -> List[Item]:
     """Turns the conditional jump back to the start of a loop at its end
     into a conditional jump on the opposite condition to the code after
     it, and an unconditional jump back. On the FPGA core a taken
-    conditional jump costs some five cycles more than a skipped one, and
-    an unconditional jump to a label two (doc/MICROARCH.md). So each
-    round of a loop saves two cycles, and leaving it costs five more.
+    conditional jump costs six cycles more than a skipped one, and an
+    unconditional jump to a label two (doc/MICROARCH.md §5.4). So each
+    round of a loop saves three cycles, and leaving it costs six more.
     If an unconditional jump follows, the two jumps swap their targets
     instead. The new labels are prefix and a number."""
     out: List[Item] = []

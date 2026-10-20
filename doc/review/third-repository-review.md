@@ -163,6 +163,8 @@ In SYSTEM.md, Memory map, a blank line follows the row of the character screen, 
 - `hdl/test/tb_shift.vhd` says it checks "counts near the multiples of 33 up to 2^32"; its loop runs to m = 41, so to 1353, and the top of the range is covered by the loops over `0xFFFFFFFF − i` and `0x80000000 + i` instead. The loop `for m in 1 to 130150523 ... exit when m > 40` could be `for m in 1 to 41`.
 - The nine stale references of §5.1 in `doc/review/`, which cite ISA.md §8.4, §8.6, and §9.4 as they were on their dates. The notes are history, so a sentence in REFERENCES.md that they cite sections as numbered then is enough.
 
+**Resolved**: `translator/README.md` and the two docstrings of `nicewasm.py` that said the same say six cycles, and a loop's round saves three; `hdl/README.md` names the counts that PREPARE cannot reduce and the third cycle of a rotation through C; `tb_shift.vhd` loops to 41 and its header says what it covers. The sub-item of TODO.md went with the review's commit, and the sentence in REFERENCES.md with `check_refs.py`.
+
 ### 2.8 The diagrams of §3 and §6
 
 The block diagram `pipeline.png` and its text twin in §3 show the stages, the three paths through DBUS, the registers PREPARE reads from WRITE, the early redirect, and the flush as the code has them, and the registers the header of `pipeline.tex` names, `req_r`, `stb_r`, `ring_r`, `dec_r`, `prep_r`, `rd_stb_r`, `rd_addr_r`, and `w_r.uop`, all exist and sit where the bars are. Two small things: DECODE has held a second instruction, `dec_q`, since the re-timing, which the header's list does not name, and the flush arrow ends at FETCH while the header says the flush reaches every stage.

@@ -566,7 +566,9 @@ writes takes the value WRITE wrote last, WRITE's one bypass; a field
 that needs an adder on it, or a read address, waits a cycle
 (ASSUMPTIONS.md, item 1; MICROARCH.md §7.4). Three rare cases take WRITE
 two cycles: a destination adjusted by one, a jump to a computed target,
-and a shift by a count from memory (MICROARCH.md §7.4). `test/bubble.nasm`
+and a shift by a count that PREPARE cannot reduce, such as one from
+memory or through an adder, which takes three for a rotation through C
+(MICROARCH.md §7.3 and §7.4). `test/bubble.nasm`
 measures what a jump costs, with the cycle counter on a memory that never
 stalls: 6 cycles over a fall-through for a jump that WRITE resolves,
 aligned or not, 2 for one that DECODE resolves, and one more for an

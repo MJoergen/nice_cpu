@@ -629,8 +629,8 @@ to the label that follows it.
 
 Next, a conditional jump over up to four instructions goes away, and
 they get the opposite condition instead. On the FPGA core, a taken
-conditional jump costs some five cycles more than a skipped instruction
-(doc/MICROARCH.md). The instructions must not write the flags or be
+conditional jump costs six cycles more than a skipped instruction
+(doc/MICROARCH.md §5.4). The instructions must not write the flags or be
 conditional already, and no label may come between them. A skipped
 instruction makes no memory access (ISA.md §3), so they may access
 memory. So `if (x) y = 9;` is `MOVE[M] R0, x` and `?!Z MOVE y, 9`. The
@@ -651,11 +651,11 @@ since the stubs run rarely: copies there cost words and save little.
 Code that no jump reaches any more goes.
 
 A `br_if` back to the start of a loop, at the end of the loop, is
-usually taken. A taken conditional jump costs some five cycles more than
-a skipped one on the FPGA core, and an unconditional jump to a label
+usually taken. A taken conditional jump costs six cycles more than a
+skipped one on the FPGA core, and an unconditional jump to a label
 two. So the `br_if` becomes a conditional jump out of the loop, on the
 opposite condition, and an unconditional jump back. Each round of the
-loop then saves two cycles, and leaving it costs five more. If an
+loop then saves three cycles, and leaving it costs six more. If an
 unconditional jump follows the `br_if`, the two swap their targets
 instead: the conditional jump goes where the unconditional one went, on
 the opposite condition, and the unconditional one goes back, with no new

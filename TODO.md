@@ -4,8 +4,76 @@ This is the single list of open items for the repository: work not done
 yet, questions not decided, claims not checked, and ideas for later. Each
 item names where it comes from. Add new items here, not in other files.
 
-Every finding of the reviews in [doc/review/](doc/review/) is closed. No code
-has TODO or FIXME comments.
+Every finding of the reviews in [doc/review/](doc/review/) before
+2026-10-20 is closed. The open findings of the review of 2026-10-20 are
+the first section below. No code has TODO or FIXME comments.
+
+## Findings of the review of 2026-10-20
+
+The open items of
+[doc/review/third-repository-review.md](doc/review/third-repository-review.md),
+added 2026-10-20. The section numbers are its.
+
+- **A `0<0` shift into R15 jumps to its source on the pipelined core**
+  (§1.4). WRITE tests the opcode alone for a `MOVE`'s ready target, and
+  `0<0` is opcode 0000 of the shift class, so `0<0 R15, R1, 1` redirects
+  FETCH to R1 and writes R1 << 1 to R15. Fix: `two_v` also when
+  `u_v.inst.shift` is set, in `hdl/src/pipe_write.vhd`; then a case in
+  `emulator/test/r15.nasm` or `hdl/test/hazard.nasm`, and a jump template
+  with a shift in `hdl/test/random_prog.py`, which never writes R15 with
+  an ordinary instruction. The review's programs against the operand
+  rules (§1.5) are worth keeping as a hazard program.
+- **The cycle model's bubble after a jump taken in WRITE** (§3.1).
+  `bench/README.md` and the docstring of `bench/pipecycles.py` explain
+  `--flush 7` with a registered flush that the core does not have: the
+  flush is combinational, and the measured bubble is 6 cycles, for an
+  aligned target and for one that spans two pairs alike (§1.2). Say that
+  7 is the value that fits the benchmark, or find the cycle the model
+  lacks; the hand-counted cases of `pipecycles.py --test` and
+  `cycprof.py --test` encode the 7.
+- **Rules of `hazards.py` and the model that are not the core's** (§3.2,
+  §3.3): a jump through a register counts as one DECODE resolves, and
+  `MOVE R15, Rx` as a two-cycle jump; a shift count through an adder
+  (`c[R]`, `--R`), which the translator's signed byte loads use 4175
+  times in the benchmark, is not charged the cycle WRITE spends on it.
+  The translator could avoid that count too, at an instruction or a
+  register.
+- **The `hand.nasm` rows of the benchmark tables** (§1.3) in
+  `bench/README.md` and `hdl/README.md` give 1216653 cycles on the
+  pipelined core, with 60191 for `rng64` and 262436 for `bst`; the core
+  at 69405dd, whose logic is that of the commit of the tables, gives
+  1215117, 59679, and 261412. The translated program's rows reproduce
+  exactly. Measure again, and name the commit beside each table.
+- **The four options of the re-timed core** are documented as off by
+  default in `pipecycles.py`; they are on (§3.4). `hazards.py` and
+  `pipecycles.py` count the same trace differently, 1775455 against
+  1775661 instructions, since one skips a trace line that the program's
+  console output precedes (§3.5).
+- **The moves left text behind** (§2): "SYSTEM.md ISA §2" six times in
+  ABI.md and WASM.md (§2.1); the memory map of SYSTEM.md is two tables
+  (§2.2); the slides send a C compiler to ISA.md for its calling
+  convention, which is in ABI.md (§2.6); HISTORY.md calls the translated
+  code "the code of the translator", cites ISA.md §9.4, and gives the
+  core's cycles as the model's (§2.5); the review notes cite ISA.md
+  §8.4, §8.6, and §9.4 by their old numbers (§2.7, §5.1).
+- **MICROARCH.md and ASSUMPTIONS.md lag the re-timing** (§2.3, §2.4):
+  §3 and §4 give the words and micro-operations per instruction of the
+  old table; §7.4 says two cycles where a rotation through C takes
+  three; §5.5 and `pipe_fetch.vhd` say no store retires in the cycle
+  after a redirect, which DECODE's redirect does not guarantee, and the
+  compare is safe for another reason; ASSUMPTIONS.md item 6 names
+  `w_r.cnt_done`, which does not exist, and item 1 has a paragraph
+  Markdown renders as code. Smaller ones in §2.7: "some five cycles" in
+  `translator/README.md`, the third two-cycle case in `hdl/README.md`,
+  a done sub-item below, and the header of `tb_shift.vhd`.
+- **Multiplication by a constant is tuned to the 35-cycle multiplier**
+  (§4.1). The comments at `MUL_STEPS` and `MUL64_STEPS` and
+  `translator/README.md` justify the budgets with a product that took
+  35 cycles until 2026-10-16; it takes 3. By the model, `MUL_STEPS` = 2
+  saves 0.2% of the benchmark's cycles, and `rng64`'s 28 steps beside
+  one product could be three products of the math unit.
+- **A check of the section references and links of the Markdown files**
+  as a repository test (§5.1), from the review's script.
 
 ## FPGA core
 
@@ -167,9 +235,8 @@ has TODO or FIXME comments.
     and in the byte accesses, whose word index and shift count now come
     before the compare. Speculative reads (above) would remove it.
   - *The address register written by the instruction before*, about 3%
-    now that the byte accesses compute theirs before the compare.
-    MICROARCH.md §5 could state this stall in so many words; §3 implies
-    it.
+    now that the byte accesses compute theirs before the compare
+    (MICROARCH.md §5.1).
   - *Loop back edges* cost the two cycles of an early redirect each round.
   - *`@Rx++` for a pointer walk*, as `hand.nasm` does, needs a word
     pointer kept in step with the byte address, which is out of reach

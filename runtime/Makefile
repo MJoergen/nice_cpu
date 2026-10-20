@@ -9,8 +9,8 @@ EMU = ../emulator/zig-out/bin/niceemu
 # assembled and run, and the output and exit status are compared with
 # test/X.expected. The tests in SOFT_TESTS run a second time as X_soft,
 # with muldiv_soft.nasm instead, and are compared with test/X_soft.expected.
-TESTS = start start_wasm mul trap div div64 mul64 bits device
-SOFT_TESTS = mul div mul64 div64
+TESTS = start start_wasm mul trap div div64 mul64 bits device edge trapvec
+SOFT_TESTS = mul div mul64 div64 edge
 START_start_wasm = start_wasm.nasm
 START_trap       = start_wasm.nasm
 OPTS_start      = -d 0xfffffeff:1
@@ -20,6 +20,8 @@ OPTS_div        = -d 0x4b:32
 OPTS_div64      = -d 0x6f:64
 OPTS_mul64      = -d 0x48:16
 OPTS_bits       = -d 0x54:54
+OPTS_edge       = -d 0xd8:124
+OPTS_trapvec    = -d 0x1b:4
 OPTS_device     = -s -d 0x7f:8 -d 0xffff0000:3 -d 0xffff0052:1 -d 0xffff07ce:2
 INPUT_device    = test/device.input
 
@@ -49,7 +51,7 @@ endef
 # as the console input. The console output, main's result in R1, and the
 # exit status are compared with test/X.expected. The .wasm files are
 # checked in, so make test needs no Zig or Rust; make wasm rebuilds them.
-ZIG_TESTS = nicezig
+ZIG_TESTS = nicezig zigpoll
 RUST_TESTS = nicers
 
 define check_wasm

@@ -72,8 +72,10 @@ program (ABI.md), so no other file may define these names either.
 
 Division by zero is undefined in C, so the division routines return some
 value for it and do not trap. The wasm translator checks for 0 before it
-calls them. The most negative number divided by −1 gives the most
-negative number.
+calls them. In `muldiv_mpu.nasm` the quotient is all ones and the
+remainder the dividend (SYSTEM.md §2). `muldiv_soft.nasm` gives the same,
+except that `__div` and `__div64` give 1 for a negative dividend. The most
+negative number divided by −1 gives the most negative number.
 
 The comments in the files give the number of steps each routine takes.
 The division routines take the same number for all operands of one sign,
@@ -204,7 +206,8 @@ The library is small on purpose:
 - No `errno`. `strtol` and `strtoul` saturate on overflow.
 - No `exit`. `abort` traps (WASM.md).
 - `malloc` is first fit, with an 8-byte header on each block, and merges
-  neighbouring free blocks. The heap starts at wasm-ld's `__heap_base`
+  neighbouring free blocks. `realloc` to a smaller size, 0 included,
+  keeps the block. The heap starts at wasm-ld's `__heap_base`
   and grows with `memory.grow`, so only up to nicewasm's
   `--memory-pages`.
 
@@ -305,8 +308,8 @@ them and `libc.a`. Each is translated, joined with `start_wasm.nasm`,
 exit status are compared with `libc/test/X.expected`, which was written
 by hand from the source.
 
-Then it runs the tests of `nice.zig` and `nice.rs`, `test/nicezig.zig` and
-`test/nicers.rs`, the same way, with `test/X.input` as the console input
+Then it runs the tests of `nice.zig` and `nice.rs`, `test/nicezig.zig`,
+`test/zigpoll.zig`, and `test/nicers.rs`, the same way, with `test/X.input` as the console input
 and `test/X.expected`, written by hand from the source. Their `.wasm`
 files are checked in; `make wasm` rebuilds them, with Zig 0.15 and rustc
 with the `wasm32-unknown-unknown` target.

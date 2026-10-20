@@ -17,8 +17,9 @@
 %
 %   FETCH, on the instruction address          req_r and stb_r (pipe_fetch)
 %   FETCH, at its output                       ring_r (pipe_fetch)
-%   DECODE, between taking an instruction      dec_r (pipe_decode)
-%     and splitting it
+%   DECODE, between taking an instruction      dec_r, and dec_q, the
+%     and splitting it                           instruction after it, which
+%                                              waits there (pipe_decode)
 %   PREPARE, at its input                      prep_r (pipe_prepare)
 %   PREPARE, on its read request               rd_stb_r, rd_addr_r (pipe_prepare)
 %   WRITE, at its input                        w_r.uop (pipe_write)
@@ -127,8 +128,15 @@
       {registers,\\ SR, PC};
 
    % The flush and redirect from WRITE, to every stage, and the early
-   % redirect from DECODE, to FETCH.
+   % redirect from DECODE, to FETCH. The branches to DECODE and PREPARE
+   % pass below the jump and above the registers, so no lines cross.
    \draw[wire] ([yshift = -2mm] write.west) -| (regsx) |- (fetch.west);
+   \coordinate (flushd) at ([yshift = -3mm] decode.west);
+   \coordinate (flushp) at ([yshift =  3mm] prepare.west);
+   \draw[wire] (regsx |- flushd) -- (flushd);
+   \draw[wire] (regsx |- flushp) -- (flushp);
+   \fill (regsx |- flushd) circle (0.8pt);
+   \fill (regsx |- flushp) circle (0.8pt);
    \node[wirelabel, anchor = south, rotate = 90]
       at ($ (regsx |- fetch.west)!0.5!(regsx |- prepare.west) $) {flush and redirect};
    \draw[wire] (decode.west) -- ([xshift = -8mm] decode.west) |- ([yshift = -2.5mm] fetch.west);

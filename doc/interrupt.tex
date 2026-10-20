@@ -15,7 +15,10 @@
 % at VBASE * 256 + 9 = 0x0009 on the data bus (VEC). The entry is reported
 % (retire_o, "IRQ") in the cycle its data comes, and FETCH is redirected
 % there (target_o). FETCH is redirected in the cycle of the take too, and
-% then stops until the entry is done.
+% then stops until the entry is done. The target of the take is the
+% address of the instruction after the dropped one (u_v.inst.next_pc in
+% pipe_write.vhd); FETCH never fetches from it, as it is redirected again
+% to the entry.
 %
 % All values below are read off a GHDL simulation of hdl/test/irqwave.nasm
 % on the pipelined core, with "--irq 2:9 --irq 10:9" (make test,
@@ -68,7 +71,7 @@
  \nextwave{dbus\_addr\_o}            \unknown[x]{3} \known{0009}{1} \unknown[x]{11}
  \nextwave{dbus\_ack\_i}             \bit{0}{4} \bit{1}{1} \bit{0}{10}
  \nextwave{WRITE: flush\_o}          \bit{0}{2} \bit{1}{1} \bit{0}{1} \bit{1}{1} \bit{0}{8} \bit{1}{1} \bit{0}{1}
- \nextwave{WRITE: target\_o}         \unknown[x]{2} \known{0012}{1} \unknown[x]{1} \known{0025}{1} \unknown[x]{8} \known{0012}{1} \unknown[x]{1}
+ \nextwave{WRITE: target\_o}         \unknown[x]{2} \known{0014}{1} \unknown[x]{1} \known{0025}{1} \unknown[x]{8} \known{0012}{1} \unknown[x]{1}
  \nextwave{retire\_o}                \unknown[x]{1} \known{0010}{1} \unknown[x]{2} \known{IRQ}{1} \unknown[x]{7} \known{0025}{1} \known{0027}{1} \unknown[x]{1}
 \end{wave}
 
@@ -89,7 +92,7 @@
  \nextwave{dbus\_addr\_o}            \unknown[x]{2} \known{0028}{1} \unknown[x]{2} \known{0009}{1} \unknown[x]{2}
  \nextwave{dbus\_ack\_i}             \bit{0}{3} \bit{1}{1} \bit{0}{2} \bit{1}{1} \bit{0}{1}
  \nextwave{WRITE: flush\_o}          \bit{0}{4} \bit{1}{1} \bit{0}{1} \bit{1}{1} \bit{0}{1}
- \nextwave{WRITE: target\_o}         \unknown[x]{4} \known{001E}{1} \unknown[x]{1} \known{0025}{1} \unknown[x]{1}
+ \nextwave{WRITE: target\_o}         \unknown[x]{4} \known{0020}{1} \unknown[x]{1} \known{0025}{1} \unknown[x]{1}
  \nextwave{retire\_o}                \known{0018}{1} \known{001A}{1} \unknown[x]{1} \known{001C}{1} \unknown[x]{2} \known{IRQ}{1} \unknown[x]{1}
 \end{wave}
 

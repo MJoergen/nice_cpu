@@ -171,6 +171,8 @@ The block diagram `pipeline.png` and its text twin in §3 show the stages, the t
 
 The timing diagram `interrupt.png` was read off the core before the re-timing. On the re-timed core, with the instrumentation of a scratch copy printing its sixteen signals once per cycle for `irqwave.nasm`, every signal in both panels still matches, cycle for cycle, from the panels' start cycles 9 and 32 on, but one: `target_o` in the cycle of the take. WRITE now puts the next instruction's address there, `u_v.inst.next_pc`, where the old core put the dropped instruction's: 0014 in place of 0012 at t = 2 of panel (a), and 0020 in place of 001E at t = 4 of panel (b). FETCH never fetches from it, since it stops during the vector read and is redirected to the routine with the entry, so the core is right and the two values are stale. **Fix:** the two values in `interrupt.tex`, a sentence in its header that the target of the take is the next instruction's address, which FETCH never fetches, and `make diagrams`.
 
+**Resolved**: `interrupt.tex` shows 0014 and 0020, and its header says that the target of the take is the next instruction's address, which FETCH never fetches. `pipeline.tex` names `dec_q` and draws the flush into DECODE and PREPARE as well, below the jump and above the register path, so that no lines cross. Both are rendered again.
+
 ## 3. The cycle model, bench/pipecycles.py, and bench/hazards.py
 
 ### 3.1 The bubble after a jump taken in WRITE

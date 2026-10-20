@@ -40,12 +40,6 @@ added 2026-10-20. The section numbers are its.
   `pipecycles.py` count the same trace differently, 1775455 against
   1775661 instructions, since one skips a trace line that the program's
   console output precedes (§3.5).
-- **The diagrams of MICROARCH.md** (§2.8): `interrupt.tex` shows the
-  dropped instruction's address on `target_o` in the cycle of the take,
-  where the re-timed core puts the next instruction's, 0014 and 0020 in
-  place of 0012 and 001E, which FETCH never fetches; and the header of
-  `pipeline.tex` does not name DECODE's second slot, `dec_q`, and draws
-  the flush to FETCH alone. Fix the values and `make diagrams`.
 - **Multiplication by a constant is tuned to the 35-cycle multiplier**
   (§4.1). The comments at `MUL_STEPS` and `MUL64_STEPS` and
   `translator/README.md` justify the budgets with a product that took

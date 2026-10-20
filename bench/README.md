@@ -175,16 +175,21 @@ share of all instructions:
       registers read from the previous instruction: R2 8.7%, R1 7.0%, ...
 
 The last lines count what costs a cycle on the core which forms every operand value, address, and shift count in PREPARE: the shifts by the kind of their count (a
-constant, R0 and R15 included, a register, or memory), the shifts whose
+constant, R0 and R15 included, a register, memory, or an adder, `c[R]`
+or `--R`, which WRITE reduces in a cycle of its own whoever wrote R), the shifts whose
 count register the previous instruction writes, the sources in mode 001
 or 011 and the store addresses in mode 011, 101, or 111 whose register
 the previous instruction writes, the same for stores through `@R` or
 `@R++`, the taken jumps that WRITE resolves, by their target (a
 constant, a word in memory, or computed), and the register destinations
-in mode 001 or 010. In both programs, no shift's count
+in mode 001 or 010. A row under "jump that DECODE resolves" counts
+the unconditional jumps to R15 through a register, which that row
+includes but which WRITE resolves. In both programs, no shift's count
 register and no source in mode 001 or 011 came from the previous
 instruction, and there were no computed jumps that WRITE resolved and
-no destinations in mode 001 or 010.
+no destinations in mode 001 or 010. The translated program's signed byte
+loads rotate by `8[c]`, 4175 counts through an adder, and `hand.nasm`
+has six jumps through a register.
 
 MICROARCH.md §5.6 has a table of these shares and the decisions it led to. `hazards.py --test` checks the counts on a small program whose hazards
 are counted by hand in the script, and `make test` runs it. `make

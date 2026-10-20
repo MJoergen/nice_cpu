@@ -11,7 +11,7 @@ The question asked was the same as last time: not whether each part works, but w
 - **`make -C translator diff OLD=aa8a512`**: the translator against its version at the last review, on 360 random modules in six modes, with traps, growth, `--no-mpu`, `--library`, and `--unchecked`. No difference.
 - **Every `FILE.md §n.m` reference in the repository** against the headings of ISA.md, SYSTEM.md, MICROARCH.md, and the others, with a script (§5.1), since two sections of ISA.md moved out and its numbering changed.
 - **The bubble after a jump** on the pipelined core, measured with the cycle counter on nine four-instruction programs, for a fall-through, a skipped jump, a jump taken in WRITE, a target that spans two pairs, an early redirect, `MOVE R15, R3`, and `ADD R15, R3, 0` (§1.2), beside the cycle model's figures for the same programs (§3.1).
-- **Programs written to break the operand rules of the re-timed core**, run on both cores and the emulator (§1.5), which found the bug of §1.4.
+- **Programs written to break the operand rules of the re-timed core**, run on both cores and the emulator (§1.5), which found the bug of §1.4. The counts of §3.2 and §3.3 are rows of `hazards.py` now.
 - **The benchmark with smaller budgets for a multiplication by a constant**, by the cycle model (§4.1).
 
 ## Summary

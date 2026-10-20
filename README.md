@@ -107,7 +107,7 @@ whole program is assembled at once.
         |  assembler/niceasm.py
         v
     full.bin
-        |  emulator/zig-out/bin/niceemu, or later the FPGA core
+        |  emulator/zig-out/bin/niceemu, or the FPGA core
         v
     console output, the registers, and an exit status
 

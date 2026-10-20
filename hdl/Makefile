@@ -384,15 +384,18 @@ emulator:
 	$(MAKE) -C ../emulator build
 
 # The out-of-context timing of the pipelined core in Vivado, which timing.tcl
-# describes: the worst register-to-register paths go to build/timing.rpt, and
-# the worst one is printed. About 10 minutes.
+# describes: the worst register-to-register paths go to build/timing.rpt, the
+# worst from an input to build/timing_in.rpt, and the worst to an output to
+# build/timing_out.rpt. The worst of each is printed. About 10 minutes.
 VIVADO ?= /opt/Xilinx/2025.1/Vivado/bin/vivado
 
 timing:
 	@mkdir -p $(BUILD)
 	@cd $(BUILD) && $(VIVADO) -mode batch -nolog -nojournal -source ../timing.tcl > timing.log 2>&1 || \
 	  { tail -20 timing.log; exit 1; }
-	@grep -m1 -E "^Slack" $(BUILD)/timing.rpt; grep -m2 -E "^  (Source|Destination):" $(BUILD)/timing.rpt
+	@for r in timing timing_in timing_out; do \
+	  echo "$$r.rpt:"; grep -m1 -E "^Slack" $(BUILD)/$$r.rpt; \
+	  grep -m2 -E "^  (Source|Destination):" $(BUILD)/$$r.rpt; done
 
 # Checks the style of every VHDL file against CODING_STYLE.md. Long lines are
 # only warnings.

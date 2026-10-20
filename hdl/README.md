@@ -138,6 +138,11 @@ warns about lines over 100 columns.
 measures it ([timing.tcl](timing.tcl)): synthesis, placement, and routing
 for the part of the MEGA65 with a 10 ns clock. It prints the worst
 register-to-register path and leaves the 50 worst in `build/timing.rpt`.
+It does the same for the paths from an input, in `build/timing_in.rpt`,
+and to an output, in `build/timing_out.rpt`, but for `retire_o` and
+`stats_o`. Their delays outside the core are 0, so their slack is the
+time left to the system around the core: for the data bus, its address
+decode, its block RAMs, and its read mux.
 It takes about 10 minutes, and `VIVADO` names the executable.
 
 `tb_mpu` checks every word of the math unit against `numeric_std`: for 20

@@ -14,13 +14,6 @@ The open items of
 [doc/review/third-repository-review.md](doc/review/third-repository-review.md),
 added 2026-10-20. The section numbers are its.
 
-- **The `hand.nasm` rows of the benchmark tables** (§1.3) in
-  `bench/README.md` and `hdl/README.md` give 1216653 cycles on the
-  pipelined core, with 60191 for `rng64` and 262436 for `bst`; the core
-  at 69405dd, whose logic is that of the commit of the tables, gives
-  1215117, 59679, and 261412. The translated program's rows reproduce
-  exactly. Measure again, and name the commit beside each table.
-
 ## FPGA core
 
 - **The pipelined core: what is left.** `hdl/src/pipeline.vhd` passes

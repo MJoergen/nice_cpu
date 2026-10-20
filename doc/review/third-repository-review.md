@@ -64,6 +64,8 @@ So a jump that WRITE resolves costs 6 cycles over a fall-through, whatever the t
 
 The other four phases agree. No logic of the core, the memory model, the testbench, or the program changed between dcc491a and 69405dd, only comments and formal properties, so the rows were measured on some earlier state of the core; the differences are exactly 512 and 1024 cycles, a cycle for each round of a loop. The derived figures hold, 2.47 cycles per instruction and 4.6 times faster than the multi-cycle core, and the model's distance in the `make compare` table moves from −1.3% to −0.5% on `rng64`, from −8.1% to −7.8% on `bst`, and from −7.7% to −7.6% in all. **Fix:** the three rows in `bench/README.md`, and `hdl/README.md`'s 1216653; and name the commit beside each measured table, since the code, not the date, decides whether a run reproduces.
 
+**Resolved**: both programs measured again on both cores at commit 8f899fe, after §3.2, §3.3, and §4.1, which changed the translated program. `hand.nasm` gives 1215117 cycles on the pipelined core, as above, and 5598318 on the multi-cycle core, as before. The translated program gives 2241652 and 19043715, against 2275410 and 19486758 before §3.3 and §4.1, 1.5% and 2.3% fewer. The tables of `bench/README.md` and `hdl/README.md` have the new rows, and each names the commit; the per-phase remarks under them were checked against the new figures.
+
 ### 1.4 A `0<0` shift into R15 jumps to its source
 
 `pipe_write.vhd`, in the destination case for mode 000:

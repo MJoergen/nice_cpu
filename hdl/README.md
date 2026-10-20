@@ -543,13 +543,13 @@ decides on a data read with WRITE's decisions of the same cycle, a flush
 reaches every stage at once, and WRITE drives its stores onto the bus. In the best case one micro-operation retires each cycle.
 `cputest` takes about 1.2 cycles per instruction on memory that never
 stalls, and `hazard.nasm`, which is all hazards, 1.9. The benchmark of
-[bench/](../bench/README.md) runs like this, against the
-multi-cycle core's numbers there:
+[bench/](../bench/README.md) runs like this at commit 8f899fe, against
+the multi-cycle core's numbers there:
 
 | Program | Instructions | Cycles | Cycles per instruction | Multi-cycle core |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 1730635 | 2275410 | 1.31 | 11.3, 8.6 times slower |
-| `hand.nasm` | 491617 | 1216653 | 2.47 | 11.4, 4.6 times slower |
+| `bench.c` through nicewasm | 1681080 | 2241652 | 1.33 | 11.3, 8.5 times slower |
+| `hand.nasm` | 491617 | 1215117 | 2.47 | 11.4, 4.6 times slower |
 
 The instruction counts equal the emulator's. In `hand.nasm`, `vm` (4.5
 cycles per instruction) ends each handler of three or four instructions

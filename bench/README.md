@@ -121,23 +121,24 @@ A byte load of linear memory stays several instructions, since the
 memory is byte-addressed and packed four to a word (WASM.md).
 
 On the multi-cycle core, which takes about ten cycles for a plain
-instruction, the two programs run like this:
+instruction, the two programs run like this, measured at commit 8f899fe:
 
 | Program | Instructions | Cycles | Cycles per instruction | GHDL time |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 1730635 | 19486758 | 11.3 | 38 minutes on a busy machine |
+| `bench.c` through nicewasm | 1681080 | 19043715 | 11.3 | 38 minutes on a busy machine |
 | `hand.nasm` | 491617 | 5598318 | 11.4 | 8 minutes on a busy machine |
 
-So the hand-written program is 3.5 times shorter in instructions and 3.5
-times faster in cycles. In the translated program, `vm` and `strings` have the most cycles per instruction, 12.0 and 11.9, and `rng64` in the hand-written one, 14.0,
-because its reads of the math unit wait for the multiplier.
+So the hand-written program is 3.4 times shorter in instructions and 3.4
+times faster in cycles. In the translated program, `rng64` and `vm` have
+the most cycles per instruction, 12.0 and 11.7, and `vm` in the
+hand-written one, 12.8.
 
-`make core CORE=pipeline` runs them on the pipelined core, on the same programs as the multi-cycle core above:
+`make core CORE=pipeline` runs them on the pipelined core, on the same programs as the multi-cycle core above, at the same commit:
 
 | Program | Instructions | Cycles | Cycles per instruction | Faster than the multi-cycle core |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 1730635 | 2275410 | 1.31 | 8.6 times |
-| `hand.nasm` | 491617 | 1216653 | 2.47 | 4.6 times |
+| `bench.c` through nicewasm | 1681080 | 2241652 | 1.33 | 8.5 times |
+| `hand.nasm` | 491617 | 1215117 | 2.47 | 4.6 times |
 
 
 
@@ -267,20 +268,20 @@ phases.
 
 `make compare` puts the estimate beside the cycles the pipelined core
 took, phase by phase, from the output of `make core CORE=pipeline`,
-which must have run first, on the same `.bin`. For example:
+which must have run first, on the same `.bin`. At commit 8f899fe:
 
 | Phase | `bench.c`, model | Core | Model against the core | `hand.nasm`, model | Core | Model against the core |
 |---|---|---|---|---|---|---|
-| `rng64` | 92743 | 95360 | −2.7% | 59407 | 60191 | −1.3% |
-| `crc32` | 72506 | 81009 | −10.5% | 37900 | 41756 | −9.2% |
-| `bst` | 407758 | 409898 | −0.5% | 241068 | 262436 | −8.1% |
-| `heapsort` | 378235 | 386801 | −2.2% | 279938 | 290524 | −3.6% |
-| `vm` | 1096097 | 1146157 | −4.4% | 444041 | 500056 | −11.2% |
-| `strings` | 151675 | 156185 | −2.9% | 60613 | 61690 | −1.8% |
-| total | 2199014 | 2275410 | −3.4% | 1122967 | 1216653 | −7.7% |
+| `rng64` | 69704 | 70785 | −1.5% | 59407 | 59679 | −0.5% |
+| `crc32` | 72507 | 81010 | −10.5% | 37900 | 41756 | −9.2% |
+| `bst` | 405711 | 407851 | −0.5% | 241068 | 261412 | −7.8% |
+| `heapsort` | 375849 | 384074 | −2.1% | 279938 | 290524 | −3.6% |
+| `vm` | 1096098 | 1142158 | −4.0% | 444041 | 500056 | −11.2% |
+| `strings` | 151264 | 155774 | −2.9% | 60613 | 61690 | −1.7% |
+| total | 2171133 | 2241652 | −3.1% | 1122967 | 1215117 | −7.6% |
 
 The model is below the core in every phase, by up to 11%, most in
-`crc32` and `vm`. 
+`crc32` and `vm`.
 
 `cycprof.py` charges the model's cycles to the source lines of a program,
 and `make profile` writes `build/bench.cyc.txt` and `build/hand.cyc.txt`.

@@ -11,15 +11,15 @@ single instruction word format with conditional execution on every
 instruction, and memory-to-memory operands with pre-decrement, post-increment,
 and indexed addressing.
 
-The sources disagree in places and leave gaps, so the first step was to write
-a complete specification. The FPGA implementation follows it. So far the
-repository holds the specification, an assembler, an emulator, a runtime
-library with integer and floating-point routines, and a WebAssembly
-translator that runs C, Zig, and Rust programs. The `hdl/` directory holds
-two cores, a simple multi-cycle one and the pipelined one of MICROARCH.md,
-which both pass every comparison with the emulator, the test setup for
-them, and formal checks of their ports and of three stages of the
-pipeline.
+The [sources](doc/REFERENCES.md) disagree in places and leave gaps, so
+the first step was to write a complete specification. The repository
+holds the specification, an assembler, an emulator, a runtime library
+with integer and floating-point routines, and a WebAssembly translator
+that runs C, Zig, and Rust programs. The `hdl/` directory holds two
+different FPGA implementations, a simple multi-cycle one and the
+pipelined one of MICROARCH.md, which both pass every comparison with the
+emulator, the test setup for them, and formal checks of their ports and
+of three stages of the pipeline.
 
 The core is FPGA-agnostic. This repository has no board top level and no
 synthesis for a particular board. The example design for the MEGA65 lives in
@@ -33,7 +33,7 @@ the separate [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) reposito
 | [doc/intro/](doc/intro/nice_intro.pdf) | A beginner's introduction to NICE: slides, with example programs that assemble and run. |
 | [runtime/ABI.md](runtime/ABI.md) | The C ABI: registers, calls, the stack, and the runtime library's conventions. |
 | [translator/WASM.md](translator/WASM.md) | How WebAssembly maps to NICE. |
-| [doc/SYSTEM.md](doc/SYSTEM.md) | The devices that the emulator and the FPGA core map into the I/O range: console, math unit, performance counters, and timer. |
+| [doc/SYSTEM.md](doc/SYSTEM.md) | The devices that the emulator maps into the I/O range: console, math unit, performance counters, and timer. |
 | [doc/MICROARCH.md](doc/MICROARCH.md) | The design note for the pipelined FPGA core. |
 | [doc/REFERENCES.md](doc/REFERENCES.md) | The NICE and QNICE sources the specification is based on. |
 | [doc/HISTORY.md](doc/HISTORY.md) | How the design and the tools got here: what the documents used to say, and the steps of the optimizations. |

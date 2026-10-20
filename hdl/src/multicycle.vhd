@@ -310,8 +310,11 @@ begin
                   state       <= RETIRE_ST;
                elsif iw(27 downto 26) = "11" then
                   state <= RETIRE_ST;
-                  if iw(20 downto 8) /= 0 or (iw(25 downto 21) /= "00010" and iw(7 downto 0) /= 0) then
+                  x_v := to_integer(iw(3 downto 0));
+                  if ctrl_reserved(iw) then
                      halt <= HALT_RESERVED;
+                  elsif ctrl_saved(iw) and in_service = '0' then
+                     halt <= HALT_SAVED_OUTSIDE_ISR;
                   else
                      case iw(25 downto 21) is
                         when "00000" =>
@@ -334,6 +337,20 @@ begin
                               int_vector <= iw(7 downto 0);
                               state      <= VEC_ST;
                            end if;
+
+                        -- The saved-state instructions. R15 already holds
+                        -- the address of the next instruction.
+                        when "00100" =>
+                           set_reg(regs_v, x_v, saved_pc);
+
+                        when "00101" =>
+                           set_reg(regs_v, x_v, saved_sr);
+
+                        when "00110" =>
+                           saved_pc <= regs(x_v);
+
+                        when "00111" =>
+                           saved_sr <= regval(14, regs(x_v));
 
                         when others =>
                            halt <= HALT_RESERVED;

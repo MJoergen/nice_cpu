@@ -52,6 +52,14 @@ package nice_pkg is
    -- instructions.
    function const_fields(iw : std_logic_vector(31 downto 0)) return std_logic_vector;
 
+   -- A control word with a bit set that ISA.md §5.3 requires to be 0: in
+   -- bits 20..8, or in the argument, which only INT and the saved-state
+   -- instructions have.
+   function ctrl_reserved(iw : std_logic_vector(31 downto 0)) return boolean;
+
+   -- A saved-state instruction: RDSPC, WRSPC, RDSSR, or WRSSR (ISA.md §5.3).
+   function ctrl_saved(iw : std_logic_vector(31 downto 0)) return boolean;
+
    -- The condition of an instruction word, tested against sr (ISA.md §3).
    function condition(iw : std_logic_vector(31 downto 0);
                       sr : std_logic_vector(31 downto 0)) return std_logic;
@@ -167,6 +175,23 @@ package body nice_pkg is
       end if;
       return res_v;
    end function regval;
+
+   function ctrl_reserved(iw : std_logic_vector(31 downto 0)) return boolean is
+   begin
+      case iw(25 downto 21) is
+         when "00010" =>
+            return iw(20 downto 8) /= 0;
+         when "00100" | "00101" | "00110" | "00111" =>
+            return iw(20 downto 4) /= 0;
+         when others =>
+            return iw(20 downto 0) /= 0;
+      end case;
+   end function ctrl_reserved;
+
+   function ctrl_saved(iw : std_logic_vector(31 downto 0)) return boolean is
+   begin
+      return iw(25 downto 23) = "001";
+   end function ctrl_saved;
 
    function field(iw : std_logic_vector(31 downto 0);
                   i  : natural range 0 to 2) return std_logic_vector is

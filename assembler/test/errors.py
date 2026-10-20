@@ -65,6 +65,11 @@ CASES: List[Tuple[str, str]] = [
     (" INT 256", "1: error: interrupt vector 256 is out of range 0..255"),
     (" INT -1", "1: error: interrupt vector -1 is out of range 0..255"),
     (" INT v\n .ORG 256\nv HALT", "1: error: interrupt vector 256 is out of range 0..255"),
+    (" RDSPC", "1: error: RDSPC takes 1 operand, got 0"),
+    (" WRSPC R1, R2", "1: error: WRSPC takes 1 operand, got 2"),
+    (" RDSSR 5", "1: error: RDSSR takes a register, not '5'"),
+    (" WRSSR @R1", "1: error: WRSSR takes a register, not '@R1'"),
+    (" RDSPC[M] R1", "1: error: RDSPC takes no modifiers"),
     # Conditions and modifiers
     ("?Q MOVE R1, R2", "1: error: bad condition '?Q'"),
     ("?Z", "1: error: condition without an instruction"),

@@ -83,6 +83,7 @@ departs from it.
 | [test/condlate.nasm](test/condlate.nasm) | Conditional late shifts, adjusted destinations in R14, `HALT` and `INT` right after two-cycle flag writes, and more forms of R15. |
 | [test/irqhazard.nasm](test/irqhazard.nasm) | Late shifts, adjusted destinations, and side effects on R14 and R15, for a request before each step. |
 | [test/shiftjump.nasm](test/shiftjump.nasm) | Every shift with R15 as its destination, `0<0` among them, whose opcode is `MOVE`'s. |
+| [test/saved.nasm](test/saved.nasm) | `RDSPC`, `WRSPC`, `RDSSR`, and `WRSSR` next to the instructions that use what they read or write, a jump with `RDSPC R15`, and `WRSPC R15`. |
 | [test/bubble.nasm](test/bubble.nasm) | Measures the bubbles of the pipelined core with the cycle counter, and checks itself. |
 | [test/random_prog.py](test/random_prog.py) | Writes random programs, and random interrupt requests for them. |
 | [test/random_stats.py](test/random_stats.py) | Shows how the random programs spend their steps, and how often they make each hazard. |
@@ -288,7 +289,8 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
 - 30 random programs from `test/random_prog.py`, each stopped at 3000 steps,
   on a memory that stalls in 30% of the cycles. Besides random ALU and
   shift instructions, they use R15 with every side effect, `HALT`, `RTI`,
-  `INT`, reserved control words, and the read counter. Most jumps skip
+  `INT`, the saved-state instructions, reserved control words, and the
+  read counter. Most jumps skip
   only a few instructions, sources often read a register that one of the
   last three instructions wrote, and each interrupt vector leads to a
   short routine that ends with `RTI`. A random program may read any address, and now and then one reaches the cycle counter at

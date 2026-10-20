@@ -22,7 +22,7 @@ OPTS_wrap      = -d 0xffffffff:1
 # Probes of single rules of doc/ISA.md, in test/X.nasm. The expected values
 # are in the comments of each program. Run make bins after changing one.
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest console screen iofetch \
-  reads reserved mpu mpu64 perf timer input
+  reads reserved mpu mpu64 perf timer input saved
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
@@ -45,6 +45,7 @@ OPTS_timer_noirq = --no-timer-irq --irq 7:0x41 --irq 17:0x41 --irq 20:0x41 --irq
   --irq 26:0x41 --irq 29:0x41 --irq 32:0x41 --irq 35:0x41 --irq 42:0x41 --irq 50:0x42 \
   -d 0xffffff10:4
 OPTS_input   = --input test/input.txt
+OPTS_saved   = -t --nmi 12:1 -d 0x200:3
 
 define check
 	@$(EMU) $(OPTS_$(1)) $(2) < /dev/null > test/$(1).out; echo "exit $$?" >> test/$(1).out

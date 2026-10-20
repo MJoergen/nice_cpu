@@ -157,7 +157,7 @@ one write port. DECODE emits:
 | `S0` | s0 has a side effect on a register other than R0 (modes 001, 010, 101, and 110) | Reads s0 if it is in memory. Writes Rx ± 1. |
 | `S1` | the same for s1 | Reads s0 first, if it is a memory operand not yet read. Then reads s1 if it is in memory, and writes Ry ± 1. |
 | `OP` | always, for ALU and SHIFT instructions | Reads the memory sources not yet read. Computes r. Writes the destination and applies its side effect. Updates the flags. |
-| `CTRL` | control instructions | `HALT`, `RTI`, `INT`, or a reserved word. |
+| `CTRL` | control instructions | `HALT`, `RTI`, `INT`, a saved-state instruction, or a reserved word. |
 
 Reads happen in field order, s0 then s1, as ISA §8.2 requires. That is why `S1`
 also reads an s0 that has no micro-op of its own.
@@ -422,7 +422,10 @@ read is taken after that instruction. Software cannot tell this from a
 request that arrived one instruction later, and ISA §7.1 leaves the timing of
 the request signals to the hardware interface.
 
-`INT` and `RTI` run in WRITE as `CTRL` micro-ops, and flush.
+`INT` and `RTI` run in WRITE as `CTRL` micro-ops, and flush. So do `RDSPC` and
+`RDSSR`, so that younger instructions read the register they wrote. `WRSPC` and
+`WRSSR` need no flush, because only the control instructions, which run in
+WRITE in order, read saved_pc and saved_sr.
 
 ![Interrupt timing](interrupt.png)
 

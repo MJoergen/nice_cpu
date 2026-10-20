@@ -38,7 +38,8 @@ package trace_pkg is
       HALT_HALT,
       HALT_RESERVED,
       HALT_NESTED_INT,
-      HALT_RTI_OUTSIDE_ISR
+      HALT_RTI_OUTSIDE_ISR,
+      HALT_SAVED_OUTSIDE_ISR
    );
 
    type t_regs is array (0 to 15) of std_logic_vector(31 downto 0);
@@ -86,11 +87,12 @@ package body trace_pkg is
    function halt_text(halt : t_halt) return string is
    begin
       case halt is
-         when HALT_NONE            => return "running";
-         when HALT_HALT            => return "HALT";
-         when HALT_RESERVED        => return "reserved control instruction";
-         when HALT_NESTED_INT      => return "INT inside an interrupt routine";
-         when HALT_RTI_OUTSIDE_ISR => return "RTI outside an interrupt routine";
+         when HALT_NONE              => return "running";
+         when HALT_HALT              => return "HALT";
+         when HALT_RESERVED          => return "reserved control instruction";
+         when HALT_NESTED_INT        => return "INT inside an interrupt routine";
+         when HALT_RTI_OUTSIDE_ISR   => return "RTI outside an interrupt routine";
+         when HALT_SAVED_OUTSIDE_ISR => return "saved PC or SR access outside an interrupt routine";
       end case;
    end function halt_text;
 

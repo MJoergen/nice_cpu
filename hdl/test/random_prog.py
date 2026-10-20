@@ -23,8 +23,9 @@ enough to be worth comparing:
   reach the program by chance; both models then run the changed program.
 - Control instructions are rare. Most INTs have the condition ?!I. HALT
   and the reserved control words always have a condition. INT inside an
-  interrupt routine and RTI outside one still halt the processor now and
-  then, and so do HALT and the reserved words.
+  interrupt routine and RTI and the saved-state instructions outside one
+  still halt the processor now and then, and so do HALT and the reserved
+  words.
 - A source or base register is often one that the last three
   instructions wrote, so that a register is often read right after it is
   written (MICROARCH.md §5.1).
@@ -35,7 +36,9 @@ enough to be worth comparing:
   low words, where an interrupt with an empty vector table entry goes.
 - Each vector of the vector table leads to a routine of a few random
   instructions that ends with RTI, so that the program goes on after an
-  interrupt, and later requests are taken too. The routines start at
+  interrupt, and later requests are taken too. Some routines read saved_pc
+  and write it back, or change the flags in saved_sr (ISA.md §5.3), right
+  before RTI. The routines start at
   ROUTINES. A store, or a write of VBASE in R14, can still send an
   interrupt elsewhere. The words below DATA return from an interrupt whose
   vector table entry holds 0, and otherwise restart the program.
@@ -69,6 +72,8 @@ SET_E = [0x01E38730, 0x40000000]
 MOVE_C = 0x00001800  # MOVE R0, c: add the destination register << 14
 RTI = 0x0C200000
 RTI_IF_I = 0x7C200000  # ?I RTI
+RDSPC, RDSSR, WRSPC, WRSSR = 0x0C800000, 0x0CA00000, 0x0CC00000, 0x0CE00000
+XOR_C = 0x01400030  # XOR R0, R0, c: add the register << 14 and << 7
 
 
 def constant(rng: random.Random) -> int:
@@ -195,13 +200,17 @@ def instruction(rng: random.Random, recent: list[list[int]]) -> list[int]:
     if kind < 0.0005:
         return [cond << 28 | 0b11 << 26]  # HALT
     if kind < 0.001:
-        # A reserved command, or HALT, RTI, or INT with a bit set that must
-        # be 0 (ISA.md §5.3).
-        bad = rng.choice((rng.randrange(3, 32) << 21, 1 << rng.randrange(8, 21),
-                          0b00001 << 21 | 1 << rng.randrange(8), 1 << rng.randrange(8)))
+        # A reserved command, or HALT, RTI, INT, or a saved-state
+        # instruction with a bit set that must be 0 (ISA.md §5.3).
+        bad = rng.choice((rng.choice([3] + list(range(8, 32))) << 21, 1 << rng.randrange(8, 21),
+                          0b00001 << 21 | 1 << rng.randrange(8), 1 << rng.randrange(8),
+                          rng.randrange(4, 8) << 21 | 1 << rng.randrange(4, 8)))
         return [cond << 28 | 0b11 << 26 | bad]
     if kind < 0.0015:
         return [cond << 28 | 0b11 << 26 | 0b00001 << 21]  # RTI
+    if kind < 0.002:
+        # A saved-state instruction, which halts outside an interrupt routine
+        return [cond << 28 | 0b11 << 26 | rng.randrange(4, 8) << 21 | rng.randrange(16)]
     # INT mostly with ?!I, so that it seldom halts.
     if kind < 0.0075:
         cond = 0b1111 if rng.random() < 0.8 else cond
@@ -223,6 +232,14 @@ def routine(rng: random.Random) -> list[int]:
     words = []
     for _ in range(rng.randrange(1, 6)):
         words += plain(rng, 0 if rng.random() < 0.7 else rng.randrange(16), recent)
+    x = rng.randrange(1, 13)
+    kind = rng.random()
+    if kind < 0.2:
+        words += [RDSPC | x, WRSPC | x]
+    elif kind < 0.4:
+        words += [RDSSR | x, XOR_C | x << 14 | x << 7, rng.randrange(32) << 25, WRSSR | x]
+    elif kind < 0.5:
+        words += [RDSSR | 14]
     return words + [RTI]
 
 

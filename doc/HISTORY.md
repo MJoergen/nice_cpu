@@ -44,6 +44,10 @@ two kinds of access. Appendix B records the two rules.
 - Before the re-timing, the translated byte accesses read their shift count
   from a table in memory, which was 3% of the benchmark's instructions.
   They now compute it in a register ahead of the bounds check.
+- The fetch statistics (MICROARCH.md §8.1) were a device of their own at
+  `0xFFFFFF50`–`0xFFFFFF7F`, and ordinary memory in the emulator. On
+  2026-10-20 they became part of the performance counters of SYSTEM.md §3,
+  at the same addresses, and the emulator reads them as 0.
 
 ## The random test programs
 

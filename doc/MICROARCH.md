@@ -555,36 +555,38 @@ each RAM and the address of the UART. These rules hold for every setting:
   aligned words, so the decoder compares address bits 31..5.
   A read of a result holds off its ACK until the result is ready, so the
   data bus must allow a slave to take many cycles.
-- **Performance counters.** `hdl/src/perf.vhd` at `0xFFFFFF40`–`0xFFFFFF4F`
-  (SYSTEM §3). The core raises `instret_o` for one cycle per completed
-  instruction. A read of `INSTR_LO` must count every older instruction,
-  and not its own. So the pipelined core counts an instruction with a data
-  read in the cycle the bus accepts its last read, and one without in the
-  cycle it retires. The counters return a count from before that cycle's,
-  and PREPARE issues a younger read only then. `hdl/test/instret.nasm`
-  checks this, also behind a read that waits on the bus.
+- **Performance counters.** At `0xFFFFFF40`–`0xFFFFFF7F` (SYSTEM §3), in
+  two devices. The cycle and instruction counters are `hdl/src/perf.vhd`
+  at `0xFFFFFF40`–`0xFFFFFF4F`. The core raises `instret_o` for one cycle
+  per completed instruction. A read of `INSTR_LO` must count every older
+  instruction, and not its own. So the pipelined core counts an
+  instruction with a data read in the cycle the bus accepts its last
+  read, and one without in the cycle it retires. The counters return a
+  count from before that cycle's, and PREPARE issues a younger read only
+  then. `hdl/test/instret.nasm` checks this, also behind a read that
+  waits on the bus.
+- **Fetch statistics.** The rest of the performance counters,
+  `hdl/src/fetch_stats.vhd` at `0xFFFFFF50`–`0xFFFFFF7F` (§8.1), 48 words,
+  so the decoder compares address bits 31..6 and leaves out
+  `0xFFFFFF40`–`0xFFFFFF4F`. The pipelined core reports what FETCH and
+  DECODE do in each cycle on its port `stats_o`, and the device counts it:
+  the words in FETCH's buffer, the cycles DECODE waits for words, the
+  cycles FETCH has no room for a request, and more. They show how much of
+  the buffer is used, and so whether its 16 words are too many or too few.
 - **Timer.** `hdl/src/timer.vhd` at `0xFFFFFF10`–`0xFFFFFF1F` (SYSTEM §4),
   with its request on the core's IRQ port. It is the only device that
   raises IRQ so far, so it needs no interrupt controller.
-- **Fetch statistics.** `hdl/src/fetch_stats.vhd` at
-  `0xFFFFFF50`–`0xFFFFFF7F` (§8.1), 48 words, so the decoder compares
-  address bits 31..6 and leaves out `0xFFFFFF40`–`0xFFFFFF4F`. The
-  pipelined core reports what FETCH and DECODE do in each cycle on its
-  port `stats_o`, and the device counts it: the words in FETCH's buffer,
-  the cycles DECODE waits for words, the cycles FETCH has no room for a
-  request, and more. They show how much of the buffer is used, and so
-  whether its 16 words are too many or too few.
 - **Stack.** The runtime puts the stack just below `0xFFFFFF00`. A memory map
   that runs the runtime's programs needs RAM there as well as at address 0.
 
 ### 8.1 Fetch statistics
 
 `hdl/src/fetch_stats.vhd` counts what FETCH and DECODE of the pipelined
-core (§3) do, in 48 words of I/O at `0xFFFFFF50`–`0xFFFFFF7F`. They help to
-judge the size of FETCH's buffer. They are a property of this core, not of
-the ISA, so ISA.md does not describe them. The emulator has none, and the
-range is ordinary memory there. The generic `G_ENABLE` leaves them out of
-the core; every word then reads 0.
+core (§3) do, in the last 48 words of the performance counters of SYSTEM
+§3, at `0xFFFFFF50`–`0xFFFFFF7F`. They help to judge the size of FETCH's
+buffer. They are a property of this core, so SYSTEM.md leaves them to this
+section. The emulator has none, and their words read 0 there. The generic
+`G_ENABLE` leaves them out of the core; every word then reads 0.
 
 | Address | Name | A data read returns | A write |
 |---|---|---|---|

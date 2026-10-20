@@ -14,15 +14,6 @@ The open items of
 [doc/review/third-repository-review.md](doc/review/third-repository-review.md),
 added 2026-10-20. The section numbers are its.
 
-- **A `0<0` shift into R15 jumps to its source on the pipelined core**
-  (§1.4). WRITE tests the opcode alone for a `MOVE`'s ready target, and
-  `0<0` is opcode 0000 of the shift class, so `0<0 R15, R1, 1` redirects
-  FETCH to R1 and writes R1 << 1 to R15. Fix: `two_v` also when
-  `u_v.inst.shift` is set, in `hdl/src/pipe_write.vhd`; then a case in
-  `emulator/test/r15.nasm` or `hdl/test/hazard.nasm`, and a jump template
-  with a shift in `hdl/test/random_prog.py`, which never writes R15 with
-  an ordinary instruction. The review's programs against the operand
-  rules (§1.5) are worth keeping as a hazard program.
 - **The cycle model's bubble after a jump taken in WRITE** (§3.1).
   `bench/README.md` and the docstring of `bench/pipecycles.py` explain
   `--flush 7` with a registered flush that the core does not have: the

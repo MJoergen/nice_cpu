@@ -13,7 +13,7 @@ enough to be worth comparing:
 - Ordinary instructions read R15 only in the modes without a side effect,
   and never write it. The other uses of R15 come from templates that keep
   PC on the program (see r15_template): forward jumps, also with an ALU
-  operation and the destinations R15++ and R15--; the sources --R15,
+  operation or a shift and the destinations R15++ and R15--; the sources --R15,
   @--R15, R15++, and @R15++; and stores through @R15, @R15++, @--R15, and
   0[R15], which change the program as it runs (ISA.md §8.2).
 - Constant words are mostly small numbers, so that shift counts around 32
@@ -143,7 +143,11 @@ def r15_template(rng: random.Random, cond: int, recent: list[list[int]]) -> list
     if kind == 0:
         alu &= ~(1 << 26)  # no carry input, so that r = c
         # A jump through dest R15, R15++, or R15--, with MOVE, ADD, SUB, or
-        # OR: dest, s0 = c, s1 = 0 (or R0 for MOVE).
+        # OR: dest, s0 = c, s1 = 0 (or R0 for MOVE). Or the shift 0<0 R15,
+        # c, 1, whose target is 2c: the opcode of MOVE in the shift class.
+        if rng.random() < 0.2:
+            iw = cond << 28 | alu | 1 << 27 | 15 << 14 | 0x30 << 7 | 0x30
+            return [iw, -4, 1]
         mode = rng.choice((0b000, 0b001, 0b010))
         op = rng.choice((0x0, 0x3, 0x1, 0xF))
         s1 = 0 if op == 0 else 0x30
@@ -178,7 +182,8 @@ def r15_template(rng: random.Random, cond: int, recent: list[list[int]]) -> list
 
 def instruction(rng: random.Random, recent: list[list[int]]) -> list[int]:
     """One instruction. A forward jump leaves its target as -1 for MOVE
-    R15, c, and -1 - mode for the jumps of r15_template."""
+    R15, c, -1 - mode for the jumps of r15_template, and -4 for its shift,
+    whose constant is half the target."""
     cond = 0 if rng.random() < 0.7 else rng.randrange(16)
     kind = rng.random()
     # HALT, the reserved words, and RTI, which halts outside an interrupt
@@ -257,12 +262,21 @@ def main() -> None:
     for i, words in enumerate(program):
         # The jump target t is the constant c of dest mode 000 (and of MOVE
         # R15, c), c + 1 for R15-- and c - 1 for R15++, since those store
-        # r - 1 and r + 1 (ISA.md §4.2). The template's s1 is 0.
+        # r - 1 and r + 1 (ISA.md §4.2), and 2c for the shift. The
+        # template's s1 is 0, or 1 for the shift.
         for j, word in enumerate(words):
-            if j > 0 and word in (-1, -2, -3):
+            if j > 0 and word in (-1, -2, -3, -4):
                 near = starts[i + 1 : i + JUMP_SPAN]
-                t = rng.choice(near if rng.random() < NEAR else starts[i + 1:])
-                words[j] = (t + {-1: 0, -2: 1, -3: -1}[word]) & 0xFFFFFFFF
+                later = starts[i + 1:]
+                if word == -4:
+                    # The shift doubles its constant, so the target is even:
+                    # one of the even starts ahead, or the program's.
+                    near = [s for s in near if s % 2 == 0]
+                    later = [s for s in later if s % 2 == 0] or [CODE]
+                t = rng.choice(near if near and rng.random() < NEAR else later)
+                words[j] = (t + {-1: 0, -2: 1, -3: -1, -4: 0}[word]) & 0xFFFFFFFF
+                if word == -4:
+                    words[j] >>= 1
         for j, word in enumerate(words):
             image[starts[i] + j] = word
 

@@ -460,10 +460,12 @@ begin
                               wreg_v := x_v;
                               wval_v := res_v.r;
                               -- A jump: a MOVE's target is its source, ready
-                              -- now; any other is ready a cycle later.
+                              -- now; any other is ready a cycle later. MOVE
+                              -- is opcode 0000 of the ALU class only: the
+                              -- shift 0<0 has the same opcode.
                               if x_v = 15 then
                                  target_v := v0_v;
-                                 two_v    := u_v.inst.op /= "0000";
+                                 two_v    := u_v.inst.op /= "0000" or u_v.inst.shift = '1';
                               end if;
                            when "001" | "010" =>
                               wreg_v   := x_v;

@@ -29,19 +29,11 @@ the separate [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) reposito
 
 | Path | What it is |
 |---|---|
-| [doc/ISA.md](doc/ISA.md) | The instruction set: the specification for everything else here. |
-| [doc/intro/](doc/intro/nice_intro.pdf) | A beginner's introduction to NICE: slides, with example programs that assemble and run. |
-| [runtime/ABI.md](runtime/ABI.md) | The C ABI: registers, calls, the stack, and the runtime library's conventions. |
-| [translator/WASM.md](translator/WASM.md) | How WebAssembly maps to NICE. |
-| [doc/SYSTEM.md](doc/SYSTEM.md) | The devices that the emulator maps into the I/O range: console, math unit, performance counters, and timer. |
-| [doc/MICROARCH.md](doc/MICROARCH.md) | The design note for the pipelined FPGA core. |
-| [doc/REFERENCES.md](doc/REFERENCES.md) | The NICE and QNICE sources the specification is based on. |
-| [doc/HISTORY.md](doc/HISTORY.md) | How the design and the tools got here: what the documents used to say, and the steps of the optimizations. |
-| [doc/review/](doc/review/) | Notes on how each ISA decision was reached, and the reviews of the tools. ISA.md supersedes them. |
+| [doc/](doc/README.md) | The specification, [ISA.md](doc/ISA.md), and the other documents: the I/O devices, the design note for the pipelined core, the sources, the history, the reviews, and a beginner's introduction in slides. |
 | [assembler/](assembler/README.md) | `niceasm`, the assembler: one Python 3 script with no dependencies. |
 | [emulator/](emulator/README.md) | `niceemu`, the emulator, written in Zig. |
-| [runtime/](runtime/README.md) | The start-up code and runtime library for C and wasm programs, and a small C library. |
-| [translator/](translator/README.md) | `nicewasm`, which translates WebAssembly into NICE assembly. |
+| [runtime/](runtime/README.md) | The start-up code and runtime library for C and wasm programs, and a small C library. [ABI.md](runtime/ABI.md) gives the C ABI: registers, calls, the stack, and the runtime library's conventions. |
+| [translator/](translator/README.md) | `nicewasm`, which translates WebAssembly into NICE assembly. [WASM.md](translator/WASM.md) says how WebAssembly maps to NICE. |
 | [bench/](bench/README.md) | A benchmark of translated code: six kernels with known results, timed with the performance counters, and the same benchmark written by hand. |
 | [hdl/](hdl/README.md) | The FPGA implementation in VHDL: a multi-cycle core and a pipelined core, the memory model and trace writer they are tested with, and the formal checks. |
 | [TODO.md](TODO.md) | The single list of open items, undecided questions, and ideas for later. |

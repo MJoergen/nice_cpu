@@ -13,6 +13,7 @@ The question asked was the same as last time: not whether each part works, but w
 - **The bubble after a jump** on the pipelined core, measured with the cycle counter on nine four-instruction programs, for a fall-through, a skipped jump, a jump taken in WRITE, a target that spans two pairs, an early redirect, `MOVE R15, R3`, and `ADD R15, R3, 0` (§1.2), beside the cycle model's figures for the same programs (§3.1).
 - **Programs written to break the operand rules of the re-timed core**, run on both cores and the emulator (§1.5), which found the bug of §1.4. The counts of §3.2 and §3.3 are rows of `hazards.py` now.
 - **The benchmark with smaller budgets for a multiplication by a constant**, by the cycle model (§4.1).
+- **The three diagrams of MICROARCH.md §3 and §6**: the block diagram and its text twin against the entities and their registers, and the interrupt timing diagram against a scratch copy of the re-timed core instrumented to print its sixteen signals once per cycle for `irqwave.nasm` (§2.8).
 
 ## Summary
 
@@ -137,6 +138,12 @@ In SYSTEM.md, Memory map, a blank line follows the row of the character screen, 
 - TODO.md, under "Faster and smaller translated code", asks that "MICROARCH.md §5 could state this stall in so many words" for the address register written by the instruction before. §5.1 has stated it since the re-timing.
 - `hdl/test/tb_shift.vhd` says it checks "counts near the multiples of 33 up to 2^32"; its loop runs to m = 41, so to 1353, and the top of the range is covered by the loops over `0xFFFFFFFF − i` and `0x80000000 + i` instead. The loop `for m in 1 to 130150523 ... exit when m > 40` could be `for m in 1 to 41`.
 - The nine stale references of §5.1 in `doc/review/`, which cite ISA.md §8.4, §8.6, and §9.4 as they were on their dates. The notes are history, so a sentence in REFERENCES.md that they cite sections as numbered then is enough.
+
+### 2.8 The diagrams of §3 and §6
+
+The block diagram `pipeline.png` and its text twin in §3 show the stages, the three paths through DBUS, the registers PREPARE reads from WRITE, the early redirect, and the flush as the code has them, and the registers the header of `pipeline.tex` names, `req_r`, `stb_r`, `ring_r`, `dec_r`, `prep_r`, `rd_stb_r`, `rd_addr_r`, and `w_r.uop`, all exist and sit where the bars are. Two small things: DECODE has held a second instruction, `dec_q`, since the re-timing, which the header's list does not name, and the flush arrow ends at FETCH while the header says the flush reaches every stage.
+
+The timing diagram `interrupt.png` was read off the core before the re-timing. On the re-timed core, with the instrumentation of a scratch copy printing its sixteen signals once per cycle for `irqwave.nasm`, every signal in both panels still matches, cycle for cycle, from the panels' start cycles 9 and 32 on, but one: `target_o` in the cycle of the take. WRITE now puts the next instruction's address there, `u_v.inst.next_pc`, where the old core put the dropped instruction's: 0014 in place of 0012 at t = 2 of panel (a), and 0020 in place of 001E at t = 4 of panel (b). FETCH never fetches from it, since it stops during the vector read and is redirected to the routine with the entry, so the core is right and the two values are stale. **Fix:** the two values in `interrupt.tex`, a sentence in its header that the target of the take is the next instruction's address, which FETCH never fetches, and `make diagrams`.
 
 ## 3. The cycle model, bench/pipecycles.py, and bench/hazards.py
 

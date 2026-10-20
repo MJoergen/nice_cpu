@@ -57,6 +57,12 @@ added 2026-10-20. The section numbers are its.
   Markdown renders as code. Smaller ones in §2.7: "some five cycles" in
   `translator/README.md`, the third two-cycle case in `hdl/README.md`,
   a done sub-item below, and the header of `tb_shift.vhd`.
+- **The diagrams of MICROARCH.md** (§2.8): `interrupt.tex` shows the
+  dropped instruction's address on `target_o` in the cycle of the take,
+  where the re-timed core puts the next instruction's, 0014 and 0020 in
+  place of 0012 and 001E, which FETCH never fetches; and the header of
+  `pipeline.tex` does not name DECODE's second slot, `dec_q`, and draws
+  the flush to FETCH alone. Fix the values and `make diagrams`.
 - **Multiplication by a constant is tuned to the 35-cycle multiplier**
   (§4.1). The comments at `MUL_STEPS` and `MUL64_STEPS` and
   `translator/README.md` justify the budgets with a product that took

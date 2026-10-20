@@ -647,6 +647,8 @@ random, from the seed `G_SEED`, so that the tests check that the core
 waits for a request to be accepted. When both ports reach one word in one
 cycle, the instruction port reads the old value.
 
+## The console
+
 The I/O range follows ISA.md §8.3. The instruction port reads 0 there. The
 console is at `0xFFFFFF00`. A write sends bits 7..0 to the trace writer in
 the cycle the write is accepted, and stores nothing. A read returns `0x100`
@@ -659,6 +661,21 @@ with `emulator/test/input.txt`.
 The read counter is at `0xFFFFFF01`, as in the emulator. A data read returns
 the number of data reads of it since the last write, and a write sets that
 number. The rest of the I/O range is plain memory, as in the emulator.
+
+## The timer
+
+`timer` holds the timer of SYSTEM.md §4: `TIMER_PERIOD`, `TIMER_COUNT`, and
+`TIMER_VECTOR` at offsets 0, 1, and 2. Its bus port is a pipelined Wishbone
+slave with a 4-bit address, like that of the performance counters. The bus
+decoder selects it for `0xFFFFFF10`–`0xFFFFFF1F`.
+
+It counts down in each cycle with `tick_i` high. A system ties `tick_i` to
+`'1'`, so that the timer counts clock cycles. `tb_core` connects it to
+the core's report of each step, so that it counts as the emulator does.
+Its request goes to the core's IRQ port, with the valid/ready handshake of
+`src/multicycle.vhd`. It holds `valid` and the vector until `ready`, and a
+request raised while one waits merges with it. While no request is raised,
+`ready` has no effect, so `ready` may go to more than one device.
 
 ## The math unit
 
@@ -702,21 +719,6 @@ snapshot, and a read of the high word returns the snapshot's high word.
 
 The generic `G_RESET` sets the counters' value after reset. It is 0, as
 SYSTEM.md §3 requires, except in `tb_perf`, which starts near a wrap.
-
-## The timer
-
-`timer` holds the timer of SYSTEM.md §4: `TIMER_PERIOD`, `TIMER_COUNT`, and
-`TIMER_VECTOR` at offsets 0, 1, and 2. Its bus port is a pipelined Wishbone
-slave with a 4-bit address, like that of the performance counters. The bus
-decoder selects it for `0xFFFFFF10`–`0xFFFFFF1F`.
-
-It counts down in each cycle with `tick_i` high. A system ties `tick_i` to
-`'1'`, so that the timer counts clock cycles. `tb_core` connects it to
-the core's report of each step, so that it counts as the emulator does.
-Its request goes to the core's IRQ port, with the valid/ready handshake of
-`src/multicycle.vhd`. It holds `valid` and the vector until `ready`, and a
-request raised while one waits merges with it. While no request is raised,
-`ready` has no effect, so `ready` may go to more than one device.
 
 ## The fetch statistics
 

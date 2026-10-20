@@ -110,6 +110,8 @@ In `libc/src/stdlib.c`, `parse` returns `ULONG_MAX` both for an overflow and for
 
 `nice.rs`'s `poke` and `pollc` returning a byte, since no rustc is installed to rebuild `nicers.wasm`; `pollc` returning "no byte waiting", which the emulator never gives (§2); the counters' low and high words across a wrap of the low word, which cannot be reached; and the float routines, which the translator's tests cover.
 
+**Resolved** for `nice.rs` on 2026-10-20, with rustc 1.99.1 at hand: `runtime/test/rustpoll.rs` is the Rust twin of `zigpoll.zig`, with the same input and the same expected output, worked out by hand: `pollc` returning `Byte` for a waiting byte, `getc` reading the next, `End` and `None` at the end of the input twice, and `poke` writing a word that `peek` reads back. `nicers.rs` rebuilt with this rustc still passes, so `make wasm` works with it; the checked-in `nicers.wasm` is kept. The other three stay as they are, for the reasons above.
+
 ### 3.6 A failing C library test leaves its build files behind
 
 `make -C runtime/libc test` removes each test's `.out.nasm`, `.full.nasm`, `.out.bin`, `.raw`, and `.status` after the last test, so a test that fails, as `limits` does now, stops make before the cleanup, and the files of every test stay in `test/`, where git does not ignore them. **Fix:** remove them before each test as well as after, or list the patterns in `.gitignore`.

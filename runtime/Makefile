@@ -52,7 +52,7 @@ endef
 # exit status are compared with test/X.expected. The .wasm files are
 # checked in, so make test needs no Zig or Rust; make wasm rebuilds them.
 ZIG_TESTS = nicezig zigpoll
-RUST_TESTS = nicers
+RUST_TESTS = nicers rustpoll
 
 define check_wasm
 	@$(PYTHON) ../translator/nicewasm.py -o test/$(1).out.nasm test/$(1).wasm

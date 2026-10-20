@@ -11,8 +11,6 @@ No code has TODO or FIXME comments.
 The findings of [doc/review/fourth-repository-review.md](doc/review/fourth-repository-review.md)
 that are not closed yet. Every finding of the earlier reviews is closed.
 
-- **`nice.rs`** has no test of `poke` and of `pollc` returning a byte,
-  until a rustc is at hand to rebuild `runtime/test/nicers.wasm` (§3.5).
 - **The fuzzer of the translator** still has no blocks with several
   values and no traps in its model (§4.3).
 - **The math unit's products** (§6.5): `hdl/formal/mpu.sby` proves that a

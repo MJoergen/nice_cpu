@@ -309,8 +309,9 @@ exit status are compared with `libc/test/X.expected`, which was written
 by hand from the source.
 
 Then it runs the tests of `nice.zig` and `nice.rs`, `test/nicezig.zig`,
-`test/zigpoll.zig`, and `test/nicers.rs`, the same way, with `test/X.input` as the console input
-and `test/X.expected`, written by hand from the source. Their `.wasm`
+`test/zigpoll.zig`, `test/nicers.rs`, and `test/rustpoll.rs`, the same
+way, with `test/X.input` as the console input and `test/X.expected`,
+written by hand from the source. Their `.wasm`
 files are checked in; `make wasm` rebuilds them, with Zig 0.15 and rustc
 with the `wasm32-unknown-unknown` target.
 

@@ -22,6 +22,7 @@ results were worked out by hand from the sources."""
 
 from __future__ import annotations
 
+import concurrent.futures
 import os
 import re
 import shutil
@@ -2720,6 +2721,24 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
     return problems
 
 
+def run_case(tmp: str, keep: Optional[str], index: int, name: str, wasm: Union[bytes, str], extra: str,
+             expected: int, floats: Tuple[str, Set[str]], mpu: bool) -> List[str]:
+    """Runs one case in a directory of its own under tmp, so that the
+    cases can go in parallel. Returns the problems, as check does."""
+    work = os.path.join(tmp, f"{'mpu' if mpu else 'soft'}{index}")
+    os.mkdir(work)
+    if isinstance(wasm, bytes):
+        wasm_file = os.path.join(work, FILE_NAMES.get(name, name + ".wasm"))
+        with open(wasm_file, "wb") as f:
+            f.write(wasm)
+    else:
+        wasm_file = os.path.join(HERE, wasm + ".wasm")
+    try:
+        return check(name, wasm_file, extra, expected, work, floats, mpu, keep)
+    except RuntimeError as e:
+        return [str(e)]
+
+
 def main() -> None:
     # --keep DIR copies each program to DIR/X.bin, or DIR/X_soft.bin with
     # --no-mpu, for the tests of the FPGA core in hdl/.
@@ -2731,20 +2750,16 @@ def main() -> None:
         sys.exit("usage: run.py [--keep DIR]")
     failed = 0
     with tempfile.TemporaryDirectory() as tmp:
+        jobs: List[Tuple[int, str, Union[bytes, str], str, int, Tuple[str, Set[str]], bool]] = []
         for mpu in (True, False):
             floats = float_library(tmp, mpu)
-            suffix = "" if mpu else " (--no-mpu)"
-            for name, wasm, extra, expected in CASES:
-                if isinstance(wasm, bytes):
-                    wasm_file = os.path.join(tmp, FILE_NAMES.get(name, name + ".wasm"))
-                    with open(wasm_file, "wb") as f:
-                        f.write(wasm)
-                else:
-                    wasm_file = os.path.join(HERE, wasm + ".wasm")
-                try:
-                    problems = check(name, wasm_file, extra, expected, tmp, floats, mpu, keep)
-                except RuntimeError as e:
-                    problems = [str(e)]
+            for index, (name, wasm, extra, expected) in enumerate(CASES):
+                jobs.append((index, name, wasm, extra, expected, floats, mpu))
+        # The cases run in parallel, and are reported in order.
+        with concurrent.futures.ThreadPoolExecutor(os.cpu_count()) as pool:
+            results = pool.map(lambda job: run_case(tmp, keep, *job), jobs)
+            for (_, name, _, _, _, _, mpu), problems in zip(jobs, results):
+                suffix = "" if mpu else " (--no-mpu)"
                 if problems:
                     failed += 1
                     print(f"FAIL {name}{suffix}")

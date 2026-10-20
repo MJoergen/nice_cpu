@@ -46,6 +46,7 @@ written, all three in the model. make test runs 40 seeds in each mode."""
 
 from __future__ import annotations
 
+import concurrent.futures
 import os
 import random
 import shutil
@@ -996,12 +997,13 @@ def main() -> None:
         if do_reduce:
             reduce(first, tmp, nompu)
             return
+        # The seeds run in parallel, each with files of its own name.
         failures = []
-        for seed in range(first, first + count):
-            problem = check(seed, tmp, nompu)
-            if problem is not None:
-                failures.append(problem)
-                print("FAIL " + problem)
+        with concurrent.futures.ThreadPoolExecutor(os.cpu_count()) as pool:
+            for problem in pool.map(lambda seed: check(seed, tmp, nompu), range(first, first + count)):
+                if problem is not None:
+                    failures.append(problem)
+                    print("FAIL " + problem)
     suffix = ", --no-mpu" if nompu else ""
     print(f"{'FAIL' if failures else 'PASS'} fuzz ({count} cases{suffix})")
     if failures:

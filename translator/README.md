@@ -782,6 +782,9 @@ target. The Rust modules were built with rustc 1.99.0. `test/errors.py`
 checks every error message. `test/run.py --keep DIR` also leaves each
 program in `DIR/X.bin`, or `DIR/X_soft.bin` for the run with `--no-mpu`,
 for `make programs` in `hdl/`, which runs them on the FPGA core.
+`test/run.py`, `test/fuzz.py`, and `test/errors.py` run their cases in
+parallel, one per CPU, each with files of its own, and report them
+in order.
 
 `test/fuzz.py FIRST COUNT` builds random modules from a syntax tree
 whose nodes also evaluate themselves in Python, so each module comes

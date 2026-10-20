@@ -573,19 +573,19 @@ decides on a data read with WRITE's decisions of the same cycle, a flush
 reaches every stage at once, and WRITE drives its stores onto the bus. In the best case one micro-operation retires each cycle.
 `cputest` takes about 1.2 cycles per instruction on memory that never
 stalls, and `hazard.nasm`, which is all hazards, 1.9. The benchmark of
-[bench/](../bench/README.md) runs like this at commit 8f899fe, against
+[bench/](../bench/README.md) runs like this at commit 1b18fd6, against
 the multi-cycle core's numbers there:
 
 | Program | Instructions | Cycles | Cycles per instruction | Multi-cycle core |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 1681080 | 2241652 | 1.33 | 11.3, 8.5 times slower |
-| `hand.nasm` | 491617 | 1215117 | 2.47 | 11.4, 4.6 times slower |
+| `bench.c` through nicewasm | 1681080 | 2331640 | 1.39 | 11.3, 8.2 times slower |
+| `hand.nasm` | 491617 | 1288181 | 2.62 | 11.4, 4.3 times slower |
 
-The instruction counts equal the emulator's. In `hand.nasm`, `vm` (4.5
+The instruction counts equal the emulator's. In `hand.nasm`, `vm` (4.9
 cycles per instruction) ends each handler of three or four instructions
 with a jump through a table, whose address PREPARE must wait for, since
 the instruction before loads its index, and which flushes the pipeline;
-`strings` (2.9) and `bst` (2.3) read the math unit right after writing
+`strings` (2.9) and `bst` (2.4) read the math unit right after writing
 its operands.  `make -C bench compare` puts the estimate of
 `bench/pipecycles.py` beside these cycles, phase by phase.
 

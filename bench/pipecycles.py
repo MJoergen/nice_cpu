@@ -94,6 +94,11 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   MOVE, whose target is its source), take N cycles more in WRITE
   ("adjust"). The waits in PREPARE hold for a skipped instruction too,
   as DECODE cannot tell; the cycles in WRITE only for one that runs.
+- --read-late N (1 by default, 0 turns it off): WRITE takes read data N
+  cycles after its ACK (MICROARCH.md §5.3), but for a micro-op whose read
+  data only goes into a register: s0 or s1 with a side effect, and a MOVE
+  into a register other than R15, which take it in the cycle of the ACK
+  ("readlate").
 - Not modelled: interrupts (an entry is treated as a flush), self-modifying
   code checks, the INSTR_LO retire rule, wrong-path fetch traffic, and bus
   stalls other than the math unit.
@@ -116,7 +121,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 PHASES = ["rng64", "crc32", "bst", "heapsort", "vm", "strings"]
 CAUSES = ["startup", "fetch", "flush", "early", "sr", "jumpwait", "agen", "shiftreg", "sumwait",
-          "bus", "mpu", "shiftlate", "adjust", "interrupt"]
+          "bus", "mpu", "readlate", "shiftlate", "adjust", "interrupt"]
 CAUSE_TEXT = {
     "multi": "multi-micro-op instructions",
     "startup": "pipeline start",
@@ -130,6 +135,7 @@ CAUSE_TEXT = {
     "sumwait": "sum operand or store address register just written",
     "bus": "data bus: read after store, two reads in a micro-op",
     "mpu": "math unit result not ready",
+    "readlate": "read data used by more than a register write",
     "shiftlate": "shift count reduced in WRITE (memory, adder, R14, C<C)",
     "adjust": "destination adjusted by 1, or a computed jump",
     "interrupt": "interrupt entries",
@@ -181,7 +187,8 @@ def div_cycles(n: int, d: int, bits: int, skip: int) -> int:
 
 
 class Uop:
-    __slots__ = ("reads", "bases", "store", "store_base", "writes", "sidefx", "sr_write")
+    __slots__ = ("reads", "bases", "store", "store_base", "writes", "sidefx", "sr_write",
+                 "bypass")
 
     def __init__(self) -> None:
         self.reads: List[int] = []           # operand index, 0 = s0, 1 = s1
@@ -191,6 +198,7 @@ class Uop:
         self.writes: List[int] = []          # registers written
         self.sidefx: List[bool] = []         # whether each write is a +/- 1
         self.sr_write = False
+        self.bypass = True                    # its read data only goes into a register
 
 
 class Info:
@@ -263,6 +271,10 @@ def decode(iw: int) -> Info:
         op.writes.append(dr)
         op.sidefx.append(False)
     op.sr_write = bool((iw >> 25) & 1) or 14 in op.writes
+    # The read data of a MOVE into a register other than R15 goes into the
+    # register only (--read-late). MOVE is opcode 0000 without bit 27, the
+    # shift 0<0 has the same opcode.
+    op.bypass = not (iw >> 27) & 1 and (iw >> 21) & 15 == 0 and dm == 0 and dr != 15
     # The rules of a core that forms every operand value, address, and
     # shift count in PREPARE (--shift-late, --shift-reg, --sum-wait, and
     # --dest-adjust). R0 is a constant, and DECODE knows R15.
@@ -321,7 +333,7 @@ class Model:
     def __init__(self, mem: Dict[int, int], ibuf: int = 8, flush: int = 7, early: int = 2,
                  agen: int = 1, sidefx_fast: bool = False, mul: int = 3,
                  div_skip: int = 8, shift_late: int = 1, shift_reg: int = 1,
-                 sum_wait: int = 1, dest_adjust: int = 1) -> None:
+                 sum_wait: int = 1, dest_adjust: int = 1, read_late: int = 1) -> None:
         self.mem = mem
         self.bp = max(2, ibuf // 2)
         self.flush, self.early, self.agen = flush, early, agen
@@ -329,6 +341,7 @@ class Model:
         self.mul, self.div_skip = mul, div_skip
         self.shift_late, self.shift_reg = shift_late, shift_reg
         self.sum_wait, self.dest_adjust = sum_wait, dest_adjust
+        self.read_late = read_late
         self.bubble = {"flush": flush, "early": early, "interrupt": flush + 1}
         self.cache: Dict[int, Info] = {}
         self.regs = [0] * 16
@@ -447,9 +460,10 @@ class Model:
                     unit = MPU_RESULTS.get(a)
                     if unit is not None and self.mpu_ready[unit] > acc:
                         acc = self.mpu_ready[unit]
-                    if acc + 1 > data:
-                        data = acc + 1
-                        dtg = "mpu" if acc > t else "flow"
+                    late = 0 if u.bypass else self.read_late
+                    if acc + 1 + late > data:
+                        data = acc + 1 + late
+                        dtg = "mpu" if acc > t else "readlate" if late else "flow"
                     self.last_bus = acc
                     if a == INSTR_LO:
                         counter_read_time = acc
@@ -797,12 +811,13 @@ OPTION_TESTS = [
         HALT
 """,
      # MOVE R2 done 5, MOVE R3 done 6. The first SHL reads through R2,
-     # written two micro-ops back: free, so it would be done at 7, and is
-     # done at 8. The C<C by R3 would be done at 9, and takes two cycles
-     # more for the count mod 33: 11. The SHR by 2[R3] would be done at
-     # 12, and is at 13. The SHL by R3, written long before, takes no
-     # cycle more: 14. HALT done 15, so 16 cycles.
-     {"shift_late": 1}, 7, 16, {"startup": 5, "shiftlate": 4}),
+     # written two micro-ops back: free, so it would be done at 7, but its
+     # count comes from memory a cycle late (--read-late): 8, and is done
+     # at 9. The C<C by R3 would be done at 10, and takes two cycles more
+     # for the count mod 33: 12. The SHR by 2[R3] would be done at 13, and
+     # is at 14. The SHL by R3, written long before, takes no cycle more:
+     # 15. HALT done 16, so 17 cycles.
+     {"shift_late": 1}, 7, 17, {"startup": 5, "readlate": 1, "shiftlate": 4}),
     ("--shift-reg 1: a count register from the previous micro-op; a constant count",
      """        MOVE R3, 3
         SHL R1, R1, R3
@@ -844,6 +859,22 @@ a       ?!Z ADD R15, R3, 2
      # of 7, is done 17, and flushes: pair 4 fetched 20, DECODE 22, HALT
      # done 25: flush 7. So 26 cycles.
      {"dest_adjust": 1}, 5, 26, {"startup": 5, "adjust": 2, "flush": 14}),
+    ("--read-late 1: read data into a register, into the ALU, and into a store",
+     """        MOVE R2, 0x100
+        MOVE R1, @R2
+        ADD R1, R1, @R3
+        MOVE R4, @R2++
+        MOVE @R3, @R2
+        HALT
+""",
+     # MOVE R2 done 5. MOVE R1, @R2 reads through R2 from the previous
+     # micro-op: agen, done 7, and its data goes into R1 only. The ADD
+     # reads through R3: it would be done at 8, and takes its data a cycle
+     # late: 9. MOVE R4, @R2++ is S0, which reads into s0 and writes R2,
+     # done 10, and OP, which moves s0 into R4, done 11. MOVE @R3, @R2 reads through R2 from the
+     # previous micro-op but one: it would be done at 12, and stores its
+     # data a cycle late: 13. HALT done 14, so 15 cycles.
+     {"read_late": 1}, 6, 15, {"startup": 5, "multi": 1, "agen": 1, "readlate": 2}),
 ]
 
 
@@ -897,6 +928,9 @@ def main() -> None:
     ap.add_argument("--dest-adjust", type=int, default=1, metavar="N",
                     help="extra WRITE cycles of a destination in mode 001 or 010, or of a "
                          "computed jump (1)")
+    ap.add_argument("--read-late", type=int, default=1, metavar="N",
+                    help="cycles from a read's ACK to WRITE, but for a micro-op whose data "
+                         "only goes into a register (1)")
     ap.add_argument("--phases", type=int, metavar="N",
                     help="fail unless each program reads INSTR_LO around N phases")
     ap.add_argument("--against", metavar="FILE",
@@ -913,7 +947,7 @@ def main() -> None:
         if not binp:
             sys.exit("pipecycles.py: a trace needs --bin")
         m = Model(load_bin(binp), a.ibuf, a.flush, a.early, a.agen, a.sidefx_fast, a.mul,
-                  a.div_skip, a.shift_late, a.shift_reg, a.sum_wait, a.dest_adjust)
+                  a.div_skip, a.shift_late, a.shift_reg, a.sum_wait, a.dest_adjust, a.read_late)
         run_model(m, hazards.trace_lines(path))
         print(report(os.path.basename(path), m))
         if a.phases is not None and len(m.counter_reads) != 2 * a.phases:

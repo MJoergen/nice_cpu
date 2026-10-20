@@ -106,7 +106,7 @@ No code has TODO or FIXME comments.
 - **The cycle the model lacks.** `bench/pipecycles.py` charges a jump
   taken in WRITE 7 cycles, where the core's bubble is 6
   (`hdl/test/bubble.nasm`), because 7 brings the model closer to the
-  core on the benchmark, which it still underestimates by 3% and 8%
+  core on the benchmark, which it still underestimates by 3% and 7%
   (`make compare` in `bench/`). Find what the extra cycle stands for,
   for example by printing each retire's cycle from a scratch copy of the
   core and comparing it with the model's, instruction by instruction

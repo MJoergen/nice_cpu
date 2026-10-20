@@ -2,8 +2,8 @@
 # Each subdirectory can also be used on its own; see CLAUDE.md and README.md.
 
 # The quick tests, in dependency order. The hdl tests need GHDL.
-TEST_DIRS      = assembler emulator runtime translator bench hdl doc/intro
-TYPECHECK_DIRS = assembler translator bench
+TEST_DIRS      = assembler emulator runtime translator bench hdl doc/intro doc
+TYPECHECK_DIRS = assembler translator bench doc
 CLEAN_DIRS     = assembler emulator runtime bench hdl doc/intro
 
 help:

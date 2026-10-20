@@ -16,6 +16,9 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
   out of the other docs, which say only what is true now.
 - `doc/intro/`: beginner's slides (`nice_intro.tex`, built `nice_intro.pdf`)
   and their example programs. ISA.md wins over them.
+- `doc/check_refs.py`: checks every `FILE.md §n.m` reference in the repository
+  against the headings of the documents, and every link of every Markdown
+  file. `make -C doc test` runs it.
 - `doc/MICROARCH.md`: design note for the FPGA core. ISA.md wins over it.
   Its block diagram is `doc/pipeline.tex`, and its interrupt timing diagram
   `doc/interrupt.tex`, rendered to PNGs by `make diagrams`; edit the `.tex`
@@ -75,6 +78,8 @@ So far: the spec, an assembler, an emulator, a runtime library, and a wasm trans
     cd doc/intro && make test        # run the slides' example programs
     cd doc/intro && make pdf         # rebuild the slides (pdflatex, beamer)
     cd doc/intro && make pdfcheck    # check that nice_intro.pdf matches the .tex
+    cd doc && make test              # the section references and links of every Markdown file
+    cd doc && make typecheck         # mypy --strict
     make diagrams                    # render the diagrams in doc/ to PNG (pdflatex, pdftoppm)
 
 Vivado 2025.1 is installed but not on PATH: `/opt/Xilinx/2025.1/Vivado/bin/vivado`.

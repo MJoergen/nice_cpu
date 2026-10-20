@@ -99,7 +99,7 @@ The bug came from a second reader's programs, in the scratchpad of the review, r
 
 ### 2.1 ABI.md and WASM.md: "SYSTEM.md ISA §2"
 
-The move of the devices out of ISA.md turned each "ISA §8.4" into "[SYSTEM.md ISA §2](...)", and left "ISA" in the link text: ABI.md lines 115, 126 (three times), and 140, and WASM.md line 110. **Fix:** "SYSTEM.md §2", and so on.
+The move of the devices out of ISA.md turned each "ISA §8.4" into a link to SYSTEM.md whose text is "SYSTEM.md ISA §2", with "ISA" left in: ABI.md lines 115, 126 (three times), and 140, and WASM.md line 110. **Fix:** "SYSTEM.md §2", and so on.
 
 ### 2.2 SYSTEM.md: the memory map is two tables
 
@@ -187,6 +187,8 @@ The difference is 0.2% of the cycles and 0.7% of the instructions, in `bst`, `he
 ### 5.1 A check of the section references
 
 The script that found the nine stale references in `doc/review/` reads every `FILE.md §n.m` in the repository and checks the section against the headings of that file. It found none outside `doc/review/`, which shows the moves were done with care, but ABI.md's six "SYSTEM.md ISA §2" are the kind of slip it does not see, and the next move will make more of both. **Fix:** a small script under `doc/`, run by the top-level `make test`, that checks the section references, the relative links, and the anchors of every Markdown file in the repository, and that accepts the old numbers in `doc/review/` or a list of exceptions. The review's script is a start.
+
+**Resolved**: `doc/check_refs.py`, run by `make -C doc test` and so by the top-level `make test`, checks the section references in every tracked file but the review notes, and the file and the heading of every link in every Markdown file. It found nothing more at this commit.
 
 ## What is correct
 

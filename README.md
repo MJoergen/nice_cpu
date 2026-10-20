@@ -66,6 +66,7 @@ download page, pick 0.15.2 rather than the latest release or master.
     cd bench && make test             # run the benchmark on the emulator and check its results
     cd hdl && make test               # test both cores (needs GHDL)
     cd doc/intro && make test         # run the example programs of the introduction
+    cd doc && make test               # check the section references and links of the documents
 
 To assemble and run a program:
 

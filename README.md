@@ -138,10 +138,11 @@ the join.
 - The `.bin` format is the text format of the 2004 `NICE.pm` assembler, so
   its example binaries can be compared directly.
 - The FPGA cores take the place of `niceemu` at the end of the pipeline.
-  `hdl/` runs the same programs on them and compares their traces with
-  the emulator's: `emulator/test/cputest.nasm` and the `--trace` format
-  are there for that, and `make -C hdl programs` runs the runtime's and
-  the translator's test programs on a core.
+  `hdl/` runs the same programs on them in simulation, in GHDL, and
+  compares their traces with the emulator's: `emulator/test/cputest.nasm`
+  and the `--trace` format are there for that, and `make -C hdl programs`
+  simulates a core running the runtime's and the translator's test
+  programs. No test runs on an FPGA board.
 
 **Compilers.** No compiler targets NICE directly yet. ABI.md defines
 the C ABI for one, with a one-word `char` and `CHAR_BIT` = 32. Until there

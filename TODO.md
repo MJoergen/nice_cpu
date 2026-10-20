@@ -22,9 +22,6 @@ added 2026-10-20. The section numbers are its.
   7 is the value that fits the benchmark, or find the cycle the model
   lacks; the hand-counted cases of `pipecycles.py --test` and
   `cycprof.py --test` encode the 7.
-- **The translator's signed byte loads rotate by a count through an
-  adder** (§3.3), `8[c]` or `16[c]`, which WRITE reduces in a cycle of
-  its own, 4175 times in the benchmark.
 - **The `hand.nasm` rows of the benchmark tables** (§1.3) in
   `bench/README.md` and `hdl/README.md` give 1216653 cycles on the
   pipelined core, with 60191 for `rng64` and 262436 for `bst`; the core

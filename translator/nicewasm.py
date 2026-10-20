@@ -3717,15 +3717,17 @@ class FunctionTranslator:
         return last + moves[-1:] if results else []
 
     def narrow(self, base: str, offset: int, n: int, const: Optional[int],
-               access: Callable[[Callable[[int], str], Union[int, str], bool], None]) -> None:
+               access: Callable[[Callable[[int], str], Union[int, str], bool], None],
+               lead: int = 0) -> None:
         """An access of 1 or 2 bytes at base + offset, with the bounds
         check (address). Unless the address is a constant, two shifts give
-        the word index w and the count c = 8p modulo 32 of the byte p of
-        the address in its word, before the compare, so that the access
-        waits for neither. access(word, p, stub) emits the code, with
-        word(j) the operand of word j from w, and p a number or the
-        register c, a count that only rotations may use, since only they
-        take it modulo 32 (ISA.md §5.2). Bytes p and p + 1 of a word hold 2
+        the word index w and the count c = 8(p + lead) modulo 32 of the
+        byte p of the address in its word, before the compare, so that the
+        access waits for neither, and the count is a plain register, which
+        a rotation takes with no cycle of its own (doc/MICROARCH.md §7.3).
+        access(word, p, stub) emits the code, with word(j) the operand of
+        word j from w, and p a number or the register c, a count that only
+        rotations may use, since only they take it modulo 32 (ISA.md §5.2). Bytes p and p + 1 of a word hold 2
         bytes unless p = 3, when they straddle two words. The code checks
         that from the address, and access runs again in a stub after the
         epilogue for p = 3."""
@@ -3734,7 +3736,7 @@ class FunctionTranslator:
 
         def prep(a: str) -> None:
             self.emit("SHR", w, a, "2")     # the word index
-            self.emit("SHL", c, a, "3")     # 8p, modulo 32
+            self.emit("SHL", c, f"{lead}[{a}]" if lead else a, "3")  # 8(p + lead), modulo 32
 
         addr, a, k = self.address(base, offset, n, const, fold, prep)
         if addr is not None:
@@ -3756,7 +3758,8 @@ class FunctionTranslator:
                     d: str, stub: bool) -> None:
         """Loads the n = 1 or 2 bytes from byte p of word(0) into d, with
         the sign for signed. p is a number, or a register with 8p modulo
-        32, by which a rotation brings byte p down to bit 0. For n = 2 and
+        32, by which a rotation brings byte p down to bit 0, or for signed
+        8(p + n), by which it brings the bytes up to bit 31. For n = 2 and
         p = 3, the second byte is the low byte of word(1). A sign comes
         down from bit 31 with C<0 and C>0 (§5.2)."""
         if n == 2 and p == 3:
@@ -3776,7 +3779,7 @@ class FunctionTranslator:
             if isinstance(p, int):
                 self.emit("SHL", d, word(0), str(32 - 8 * n - 8 * p), stub=stub)
             else:
-                self.emit("ROR", d, word(0), f"{8 * n}[{p}]", stub=stub)
+                self.emit("ROR", d, word(0), p, stub=stub)
             self.emit("C<0[M]", "R0", d, "1", stub=stub)
             self.emit("C>0", d, d, str(32 - 8 * n), stub=stub)
         else:
@@ -4163,7 +4166,8 @@ class FunctionTranslator:
             return
         if n < 4:
             self.narrow(base[0], offset, n, const,
-                        lambda word, p, stub: self.load_narrow(n, signed, word, p, res[0], stub))
+                        lambda word, p, stub: self.load_narrow(n, signed, word, p, res[0], stub),
+                        n if signed else 0)
             if not signed:
                 self.set_bound(res[0], (1 << (8 * n)) - 1)
             if len(dest) == 2:

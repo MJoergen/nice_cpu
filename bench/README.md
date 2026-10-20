@@ -188,9 +188,8 @@ to R15 of a register or a sum is resolved in WRITE, in one cycle, and
 any other operation on R15 computes its target. In both programs, no
 shift's count register and no source in mode 001 or 011 came from the
 previous instruction, and there were no computed jumps and no
-destinations in mode 001 or 010. The translated program's signed byte
-loads rotate by `8[c]`, 4175 counts through an adder, and `hand.nasm`
-has six jumps to a register.
+destinations in mode 001 or 010, and no shift whose count WRITE
+reduces. `hand.nasm` has six jumps to a register.
 
 MICROARCH.md §5.6 has a table of these shares and the decisions it led to. `hazards.py --test` checks the counts on a small program whose hazards
 are counted by hand in the script, and `make test` runs it. `make
@@ -237,7 +236,7 @@ its micro-op in c + 5, PREPARE passes it on in c + 6, and WRITE runs it
 in c + 7, 7 cycles after a fall-through would have run.
 
 The phases of the translated program take an estimated
-2203014 cycles, 1.27 per instruction, and those of `hand.nasm` 1122967,
+2199014 cycles, 1.27 per instruction, and those of `hand.nasm` 1122967,
 2.3 per instruction: the hand-written code has more instructions with
 side effects, memory operands, and reads of the math unit, and fewer
 instructions in all. Options such as `--flush`, `--early`, `--agen`,
@@ -255,9 +254,8 @@ PREPARE forms; and `--dest-adjust N` gives a register destination in
 mode 001 or 010, and a jump to a computed target, N cycles more in
 WRITE. A store through `@R` or `@R++` never waits, since WRITE takes
 the value it wrote last. With the four rules, the translated program's
-phases take 2203014 cycles, against 2197301 without, 4000 of them for
-the counts `8[c]` of its signed byte loads, and those of `hand.nasm`
-1122967 against 1121943. `pipecycles.py --test` checks the model on
+phases take 2199014 cycles, against 2197301 without, and those of
+`hand.nasm` 1122967 against 1121943. `pipecycles.py --test` checks the model on
 small programs whose cycles are worked out by hand in the script, and
 `make test` runs it, and then the model on both programs with `--phases
 6`, which fails unless each reads the instruction counter around its six

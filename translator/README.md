@@ -549,8 +549,9 @@ vm's fetch of an opcode, an `i32.load8_u`, is:
     ROR     R1, @___wasm_memory[R2], R1
     AND     R1, R1, 0xFF
 
-A signed load rotates the bytes up to bit 31 instead, by `8[c]` or
-`16[c]`, which is c + 8 or c + 16, and then shifts them down with the
+A signed load gets c from `SHL c, 1[a], 3` or `SHL c, 2[a], 3`
+instead, which is 8p + 8 or 8p + 16 modulo 32, rotates the bytes up to
+bit 31 by it, and then shifts them down with the
 sign, by `C<0[M]` and `C>0`. A store rotates the mask of the bits to
 keep, such as `ROL R4, -256, R3`, ANDs the word with it, rotates the new
 bytes into place, and writes the word back with `OR`. A store of a

@@ -491,7 +491,8 @@ in the shifter's path. Where the count is reduced:
   a rotation through C by a register. The shift then takes two cycles,
   or three for a rotation through C, whose count mod 33 takes a cycle of
   its own. Neither benchmark has one: the translated byte accesses compute
-  their shift count in a register ahead of the bounds check
+  their shift count in a register ahead of the bounds check, a signed
+  load's with the bytes it loads added in
   ([translator/README.md](../translator/README.md)).
 
 ### 7.4 Operands, and the value written last

@@ -182,14 +182,15 @@ or 011 and the store addresses in mode 011, 101, or 111 whose register
 the previous instruction writes, the same for stores through `@R` or
 `@R++`, the taken jumps that WRITE resolves, by their target (a
 constant, a word in memory, or computed), and the register destinations
-in mode 001 or 010. A row under "jump that DECODE resolves" counts
-the unconditional jumps to R15 through a register, which that row
-includes but which WRITE resolves. In both programs, no shift's count
-register and no source in mode 001 or 011 came from the previous
-instruction, and there were no computed jumps that WRITE resolved and
-no destinations in mode 001 or 010. The translated program's signed byte
+in mode 001 or 010. A jump that DECODE resolves is `MOVE R15, c` or
+`ADD R15, R15, c` with the condition "always", as in the core; a `MOVE`
+to R15 of a register or a sum is resolved in WRITE, in one cycle, and
+any other operation on R15 computes its target. In both programs, no
+shift's count register and no source in mode 001 or 011 came from the
+previous instruction, and there were no computed jumps and no
+destinations in mode 001 or 010. The translated program's signed byte
 loads rotate by `8[c]`, 4175 counts through an adder, and `hand.nasm`
-has six jumps through a register.
+has six jumps to a register.
 
 MICROARCH.md §5.6 has a table of these shares and the decisions it led to. `hazards.py --test` checks the counts on a small program whose hazards
 are counted by hand in the script, and `make test` runs it. `make
@@ -265,13 +266,13 @@ which must have run first, on the same `.bin`. For example:
 
 | Phase | `bench.c`, model | Core | Model against the core | `hand.nasm`, model | Core | Model against the core |
 |---|---|---|---|---|---|---|
-| `rng64` | 92743 | 95360 | −2.7% | 59402 | 60191 | −1.3% |
-| `crc32` | 72506 | 81009 | −10.5% | 37895 | 41756 | −9.2% |
-| `bst` | 407758 | 409898 | −0.5% | 241063 | 262436 | −8.1% |
-| `heapsort` | 378235 | 386801 | −2.2% | 279933 | 290524 | −3.6% |
-| `vm` | 1096097 | 1146157 | −4.4% | 444036 | 500056 | −11.2% |
-| `strings` | 151675 | 156185 | −2.9% | 60608 | 61690 | −1.8% |
-| total | 2199014 | 2275410 | −3.4% | 1122937 | 1216653 | −7.7% |
+| `rng64` | 92743 | 95360 | −2.7% | 59407 | 60191 | −1.3% |
+| `crc32` | 72506 | 81009 | −10.5% | 37900 | 41756 | −9.2% |
+| `bst` | 407758 | 409898 | −0.5% | 241068 | 262436 | −8.1% |
+| `heapsort` | 378235 | 386801 | −2.2% | 279938 | 290524 | −3.6% |
+| `vm` | 1096097 | 1146157 | −4.4% | 444041 | 500056 | −11.2% |
+| `strings` | 151675 | 156185 | −2.9% | 60613 | 61690 | −1.8% |
+| total | 2199014 | 2275410 | −3.4% | 1122967 | 1216653 | −7.7% |
 
 The model is below the core in every phase, by up to 11%, most in
 `crc32` and `vm`. 

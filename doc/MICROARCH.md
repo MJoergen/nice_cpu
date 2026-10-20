@@ -276,9 +276,11 @@ WRITE flushes the stages above it and redirects FETCH when:
 - An `INT`, an `RTI`, or an interrupt (§6) is taken.
 - A store may hit a word already fetched (§5.5).
 
-DECODE redirects early for jumps it can resolve itself: condition "always",
-destination R15 in mode 000, and a source with no memory access, such as
-`MOVE PC, label` and `ADD PC, PC, offset`. qnice_cpu does the same.
+DECODE redirects early for the jumps it can resolve itself, with the
+condition "always" and the C bit clear: `MOVE PC, label`, with M clear
+too, and `ADD PC, PC, offset`, in either order of the sources. Their
+target is a constant, or the next instruction's address plus a
+constant. Every other jump, `MOVE PC, R3` included, is resolved in WRITE. qnice_cpu does the same.
 
 A side effect on R15 in `S0` or `S1`, such as `MOVE R1, @R15++`, must not
 flush the instruction's own later micro-ops. As in qnice_cpu, the flush waits

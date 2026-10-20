@@ -22,9 +22,7 @@ added 2026-10-20. The section numbers are its.
   7 is the value that fits the benchmark, or find the cycle the model
   lacks; the hand-counted cases of `pipecycles.py --test` and
   `cycprof.py --test` encode the 7.
-- **Rules of `hazards.py` and the model that are not the core's** (§3.2,
-  §3.3): a jump through a register counts as one DECODE resolves, and
-  `MOVE R15, Rx` as a two-cycle jump; a shift count through an adder
+- **A rule of the model that is not the core's** (§3.3): a shift count through an adder
   (`c[R]`, `--R`), which the translator's signed byte loads use 4175
   times in the benchmark, is not charged the cycle WRITE spends on it.
   The translator could avoid that count too, at an instruction or a

@@ -29,8 +29,9 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   by at most --ibuf words (default 8) that DECODE has not taken yet.
 - DECODE takes one instruction per cycle. SEQUENCER issues one micro-op per
   cycle, so an instruction of n micro-ops costs n cycles ("multi-micro-op").
-- A jump that DECODE resolves (condition always, dest R15 in mode 000, no
-  data read: hazards.py's early_jump) restarts FETCH in the cycle after
+- A jump that DECODE resolves (MOVE R15, c and ADD R15, R15, c, with the
+  condition always and the C bit clear: hazards.py's early_jump) restarts
+  FETCH in the cycle after
   DECODE: the target is in DECODE 3 cycles after the jump, a bubble of
   --early (2) cycles. Every other taken jump (conditional jumps, returns
   MOVE R15, @SP++, table jumps, control instructions) is resolved in WRITE
@@ -81,8 +82,8 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   ("sumwait"). The waits are not added: a micro-op waits for the latest
   of them, charged to the first that binds.
   --dest-adjust N: a register destination in mode 001 or 010, and a jump
-  to a computed target (dest R15 in mode 000, but for a MOVE of a
-  constant or of a memory operand), take N cycles more in WRITE
+  to a computed target (dest R15 in mode 000 of an operation other than
+  MOVE, whose target is its source), take N cycles more in WRITE
   ("adjust"). The waits in PREPARE hold for a skipped instruction too,
   as DECODE cannot tell; the cycles in WRITE only for one that runs.
 - Not modelled: interrupts (an entry is treated as a flush), self-modifying
@@ -268,7 +269,7 @@ def decode(iw: int) -> Info:
     if dm in (3, 5, 7) and base_of(dm, dr) is not None:
         info.sum_regs.append(dr)
     move = not (iw >> 27) & 1 and (iw >> 21) & 15 == 0
-    computed = dm == 0 and dr == 15 and not (move and (m0 >= 4 or (m0, r0) == (3, 0)))
+    computed = dm == 0 and dr == 15 and not move
     info.adjust = (dm in (1, 2) and dr != 0) or computed
     uops.append(op)
     info.uops = uops
@@ -814,18 +815,20 @@ OPTION_TESTS = [
      # takes from its last value: done 10. MOVE R2 done 11. MOVE 1[R2]
      # needs the sum in PREPARE: done 13. HALT done 14, so 15 cycles.
      {"sum_wait": 1}, 8, 15, {"startup": 5, "sumwait": 2}),
-    ("--dest-adjust 1: R1++ as a destination; a computed jump, a jump to a constant",
+    ("--dest-adjust 1: R1++ as a destination; a computed jump, jumps to a register and a constant",
      """        MOVE R1++, 5
         MOVE R3, a
         ?!Z MOVE R15, R3
         HALT
-a       ?!Z MOVE R15, b
-b       HALT
+a       ?!Z ADD R15, R3, 2
+        HALT
 """,
      # MOVE R1++ done 6, a cycle late. MOVE R3 done 7. The jump to R3 (Z is
-     # clear) would be done 8, is done 9, and flushes: a (word 6, pair 3)
-     # fetched 12, DECODE 14, done 17: flush 7. The jump to b takes no
-     # cycle more, and flushes: HALT done 25. So 26 cycles.
+     # clear) takes its target from the source, no cycle more: done 8, and
+     # it flushes: a (words 6 and 7, pair 3) fetched 11, DECODE 13. The ADD
+     # at a jumps to a + 2, the HALT at word 8: it would be done 16, a flush
+     # of 7, is done 17, and flushes: pair 4 fetched 20, DECODE 22, HALT
+     # done 25: flush 7. So 26 cycles.
      {"dest_adjust": 1}, 5, 26, {"startup": 5, "adjust": 2, "flush": 14}),
 ]
 

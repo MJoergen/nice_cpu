@@ -66,9 +66,8 @@ class Instr:
     sum_regs: FrozenSet[int] = frozenset()  # Registers of sources in modes 001 and 011
     store_sum_reg: int = 0     # The register of a store's address in mode 011, 101, or 111
     store_ptr_reg: int = 0     # The register of a store through @R or @R++
-    jump_kind: str = ""        # A jump WRITE resolves: "constant", "memory", or "computed"
+    jump_kind: str = ""        # A jump WRITE resolves: "constant", "memory", "register", or "computed"
     dest_adjust: bool = False  # A register destination in mode 001 or 010
-    reg_jump: bool = False     # An early_jump through a register, which WRITE resolves
 
 
 def decode(iw: int) -> Instr:
@@ -111,7 +110,13 @@ def decode(iw: int) -> Instr:
             r15_pointer = True
     elif dr != 0:
         writes.add(dr)
-    early_jump = not conditional and dm == 0 and dr == 15 and mem_reads == 0
+    # DECODE resolves only MOVE R15, c and ADD R15, R15, c, with the
+    # condition "always" and the C bit clear, and the MOVE with M clear
+    # too (MICROARCH.md §5.4, src/pipe_decode.vhd).
+    f0, f1, f2 = (iw >> 14) & 0x7F, (iw >> 7) & 0x7F, iw & 0x7F
+    early_jump = (iw >> 27) == 0 and f0 == 0x0F and (
+        ((iw >> 21) & 0x3F == 0 and (f1, f2) == (0x30, 0)) or
+        ((iw >> 26) & 1 == 0 and (iw >> 21) & 15 == 3 and {f1, f2} == {0x0F, 0x30}))
     d = Instr(conditional, False, frozenset(reads), frozenset(writes), mem_reads, store,
               constants + 1, uops, bool(m) or 14 in writes, 15 in writes, early_jump,
               r15_known, r15_pointer)
@@ -127,15 +132,6 @@ def decode(iw: int) -> Instr:
             # cycle of its own (MICROARCH.md §7.3), whoever wrote R.
             d.shift_count = "adder" if m1 in (1, 3) else "register"
             d.count_reg = r1
-    # DECODE resolves only MOVE R15, c and ADD R15, R15, c (MICROARCH.md
-    # §5.4). early_jump counts every unconditional jump to R15 in mode 000
-    # that reads no memory; this row shows the others among them.
-    f1, f2 = (iw >> 7) & 0x7F, iw & 0x7F
-    shift = (iw >> 27) & 1
-    op = (iw >> 21) & 15
-    resolved = not shift and ((op == 0 and f1 == 0x30 and f2 == 0) or
-                              (op == 3 and not (iw >> 26) & 1 and {f1, f2} == {0x0F, 0x30}))
-    d.reg_jump = early_jump and not resolved
     d.sum_regs = frozenset(r for mode, r in sources if mode in (1, 3) and r not in known)
     if dr not in known:
         if dm in (3, 5, 7):
@@ -143,12 +139,17 @@ def decode(iw: int) -> Instr:
         elif dm in (4, 6):
             d.store_ptr_reg = dr
     d.dest_adjust = dm in (1, 2) and dr != 0
+    # The target of MOVE R15, x is the source, which WRITE has at the start
+    # of its cycle (MICROARCH.md §5.4). Any other write of R15, by an
+    # operation or a side effect, has a computed target.
     if 15 in writes and not early_jump:
         move = not (iw >> 27) & 1 and (iw >> 21) & 15 == 0
         if move and dm == 0 and dr == 15 and (m0, r0) == (3, 0):
             d.jump_kind = "constant"
         elif move and dm == 0 and dr == 15 and m0 in MEMORY:
             d.jump_kind = "memory"
+        elif move and dm == 0 and dr == 15:
+            d.jump_kind = "register"
         else:
             d.jump_kind = "computed"
     return d
@@ -163,7 +164,6 @@ LABELS = [
     "jump: writes R15, or control",
     "conditional jump",
     "jump that DECODE resolves",
-    "the same, through a register, which WRITE resolves",
     "writes SR",
     "conditional, SR written by the previous instruction",
     "conditional, SR written two back, not one",
@@ -188,6 +188,7 @@ LABELS = [
     "store through @R or @R++, R from the previous",
     "taken jump resolved in WRITE, to a constant",
     "taken jump resolved in WRITE, to a word in memory",
+    "taken jump resolved in WRITE, to a register or a sum",
     "taken jump resolved in WRITE, to a computed target",
     "register destination in mode 001 or 010",
 ]
@@ -223,7 +224,6 @@ class Profile:
         c["jump: writes R15, or control"] += d.redirect
         c["conditional jump"] += d.redirect and d.conditional
         c["jump that DECODE resolves"] += d.early_jump
-        c["the same, through a register, which WRITE resolves"] += d.reg_jump
         c["writes SR"] += d.sr_write
         c["R14 read as an operand or base"] += 14 in d.reads
         c["R14 written as a register"] += 14 in d.writes
@@ -235,7 +235,7 @@ class Profile:
         if d.jump_kind and not d.skipped:
             c["taken jump resolved in WRITE, to " + {
                 "constant": "a constant", "memory": "a word in memory",
-                "computed": "a computed target"}[d.jump_kind]] += 1
+                "register": "a register or a sum", "computed": "a computed target"}[d.jump_kind]] += 1
         c["register destination in mode 001 or 010"] += d.dest_adjust
         h = self.history
         if h:
@@ -368,13 +368,14 @@ def trace_lines(path: str) -> Iterator[str]:
 #                                      data read; reads R8 from the previous
 # tab:   .DAT j1
 # j1:    MOVE R7, j2                   writes R7
-#        ?!Z MOVE R15, R7              conditional; a computed jump, taken (to the next
-#                                      instruction); reads R7 from the previous
+#        ?!Z MOVE R15, R7              conditional; a jump to a register, taken (to the
+#                                      next instruction); reads R7 from the previous
 # j2:    ?!Z MOVE R15, j3              conditional; a jump to a constant, taken
 # j3:    MOVE R9, j4                   writes R9
-#        MOVE R15, R9                  a jump through a register, which WRITE resolves, and
-#                                      which early_jump counts too; reads R9 from the previous
+#        MOVE R15, R9                  a jump to a register, which WRITE resolves, though
+#                                      it is unconditional; reads R9 from the previous
 # j4:    0<0 R2, R6, 2[R6]             count through an adder
+#        ADD R15, R15, R0              a jump to a computed target (the next instruction)
 #        HALT                          control: a jump, and SR counts as written
 TEST_TRACE = """\
 00000000 00005800 R1=00000005
@@ -400,14 +401,15 @@ TEST_TRACE = """\
 00000023 b003c380
 00000024 b003d800
 00000026 00025800 R9=00000029
-00000028 0003c480 R15=00000029
+00000028 0003c480
 00000029 08008336 R2=00000060
-0000002b 0c000000 HALT
-Halted (HALT) after 26 steps, PC=0000002c
+0000002b 0063c780
+0000002c 0c000000 HALT
+Halted (HALT) after 27 steps, PC=0000002d
 R0  00000000 R1  00000000 R2  00000060 R3  00000000
 """
-TEST_WORDS = {1: 10, 2: 16}
-TEST_UOPS = {1: 25, 2: 1}
+TEST_WORDS = {1: 11, 2: 16}
+TEST_UOPS = {1: 26, 2: 1}
 TEST_RAW_REGS = {1: 4, 2: 3, 6: 1, 7: 1, 8: 1, 9: 1, 13: 1}
 TEST_COUNTS = {
     "conditional": 5,
@@ -415,10 +417,9 @@ TEST_COUNTS = {
     "data read": 3,
     "two data reads": 0,
     "store": 3,
-    "jump: writes R15, or control": 6,
+    "jump: writes R15, or control": 7,
     "conditional jump": 2,
-    "jump that DECODE resolves": 2,
-    "the same, through a register, which WRITE resolves": 1,
+    "jump that DECODE resolves": 1,
     "writes SR": 3,
     "conditional, SR written by the previous instruction": 2,
     "conditional, SR written two back, not one": 0,
@@ -431,7 +432,7 @@ TEST_COUNTS = {
     "reads a register written three back, not one or two": 1,
     "R14 read as an operand or base": 1,
     "R14 written as a register": 1,
-    "R15 read where DECODE knows PC": 0,
+    "R15 read where DECODE knows PC": 1,
     "R15 as a pointer, or with a side effect": 0,
     "shift, count a constant": 1,
     "shift, count a register": 1,
@@ -443,6 +444,7 @@ TEST_COUNTS = {
     "store through @R or @R++, R from the previous": 1,
     "taken jump resolved in WRITE, to a constant": 1,
     "taken jump resolved in WRITE, to a word in memory": 1,
+    "taken jump resolved in WRITE, to a register or a sum": 2,
     "taken jump resolved in WRITE, to a computed target": 1,
     "register destination in mode 001 or 010": 1,
 }
@@ -451,8 +453,8 @@ TEST_COUNTS = {
 def test() -> None:
     p = profile(TEST_TRACE.splitlines())
     bad = []
-    if (p.instructions, p.skipped) != (26, 3):
-        bad.append(f"{p.instructions} instructions, {p.skipped} skipped, expected 26 and 3")
+    if (p.instructions, p.skipped) != (27, 3):
+        bad.append(f"{p.instructions} instructions, {p.skipped} skipped, expected 27 and 3")
     for what, have, want in (("words", p.words, TEST_WORDS), ("micro-ops", p.uops, TEST_UOPS),
                              ("registers", p.raw_regs, TEST_RAW_REGS)):
         if have != want:

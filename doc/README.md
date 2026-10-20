@@ -15,8 +15,9 @@ specification, and it wins over every other document here.
 
 ## Diagrams
 
-`pipeline.tex` is the block diagram of MICROARCH.md, and `interrupt.tex`
-its interrupt timing diagram. `make diagrams` in the top directory renders
+`pipeline.tex` is the block diagram of MICROARCH.md, `flow.tex` its
+timing diagram of one instruction, and `interrupt.tex` its interrupt
+timing diagram. `make diagrams` in the top directory renders
 them to PNGs. Edit the `.tex`, and commit both it and the `.png`.
 
 ## Test

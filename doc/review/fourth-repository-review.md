@@ -69,6 +69,8 @@ Each new test was run against an injected bug and failed on it, but `r0dest` and
 
 One observation for SYSTEM.md §1: it says a console read with no byte waiting returns 0. The emulator never reaches that state, since a read waits for a byte or the end of the input, as the emulator's README says, and the simulation memory of the cores reads a file the same way. **Fix:** a sentence in SYSTEM.md §1 that the emulator and the simulation memory never return 0 there, so that only a UART does.
 
+**Resolved**: SYSTEM.md §1 has that sentence, checked against `emulator/src/cpu.zig` and `hdl/sim/wb_mem.vhd`, which returns a byte or `0x200`.
+
 ## 3. The runtime library and the C library
 
 ### 3.1 Coverage

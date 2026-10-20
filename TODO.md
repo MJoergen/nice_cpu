@@ -4,15 +4,8 @@ This is the single list of open items for the repository: work not done
 yet, questions not decided, claims not checked, and ideas for later. Each
 item names where it comes from. Add new items here, not in other files.
 
-Every finding of the reviews in [doc/review/](doc/review/) before
-2026-10-20 is closed. The open findings of the review of 2026-10-20 are
-the first section below. No code has TODO or FIXME comments.
-
-## Findings of the review of 2026-10-20
-
-The open items of
-[doc/review/third-repository-review.md](doc/review/third-repository-review.md),
-added 2026-10-20. The section numbers are its.
+Every finding of the reviews in [doc/review/](doc/review/) is closed.
+No code has TODO or FIXME comments.
 
 ## FPGA core
 

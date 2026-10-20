@@ -30,6 +30,8 @@ Nothing else is wrong in the core, the translator, the emulator, or the runtime 
 
 Every finding has a fix. None changes what a program computes.
 
+Every finding was fixed on 2026-10-20, in the commits after the review's own, one for each, with a **Resolved** paragraph under it; §3.3 took two, one for the model and one for the translator. The fixes of §3.3 and §4.1 make the translated benchmark 1.5% faster on the pipelined core. TODO.md has the one new item the fixes turned up, the cycle the model lacks after a taken jump (§3.1).
+
 ## 1. The pipelined core
 
 ### 1.1 What was checked

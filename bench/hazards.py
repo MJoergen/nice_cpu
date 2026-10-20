@@ -63,6 +63,7 @@ class Instr:
     # R0 and R15, which DECODE knows, count as constants.
     shift_count: str = ""      # A shift's count: "constant", "register", "adder", or "memory"
     count_reg: int = 0         # The register of a shift's count, if one
+    count_late: int = 0        # Cycles more that WRITE takes to reduce a shift's count
     sum_regs: FrozenSet[int] = frozenset()  # Registers of sources in modes 001 and 011
     store_sum_reg: int = 0     # The register of a store's address in mode 011, 101, or 111
     store_ptr_reg: int = 0     # The register of a store through @R or @R++
@@ -132,6 +133,17 @@ def decode(iw: int) -> Instr:
             # cycle of its own (MICROARCH.md §7.3), whoever wrote R.
             d.shift_count = "adder" if m1 in (1, 3) else "register"
             d.count_reg = r1
+        # WRITE reduces the count in a cycle of its own when it is read
+        # from memory, comes through an adder or with a side effect, is R14,
+        # or is the count of a rotation through C, and not a constant word,
+        # whose count mod 33 takes another cycle (src/pipe_prepare.vhd,
+        # late_v). A count in a register that the micro-op before writes
+        # is late too; that is "shift count register written by the
+        # previous instruction".
+        rotc = (iw >> 21) & 7 == 5
+        if (m1 in MEMORY or (r1 != 0 and m1 in (1, 2, 3)) or (r1 == 14 and m1 == 0) or
+                (rotc and (m1, r1) != (3, 0))):
+            d.count_late = 2 if rotc else 1
     d.sum_regs = frozenset(r for mode, r in sources if mode in (1, 3) and r not in known)
     if dr not in known:
         if dm in (3, 5, 7):
@@ -182,6 +194,7 @@ LABELS = [
     "shift, count a register",
     "shift, count in memory",
     "shift, count through an adder (c[R] or --R)",
+    "shift whose count WRITE reduces in a cycle of its own",
     "shift count register written by the previous instruction",
     "source in mode 001 or 011, register from the previous",
     "store in mode 011, 101, or 111, register from the previous",
@@ -236,6 +249,7 @@ class Profile:
             c["taken jump resolved in WRITE, to " + {
                 "constant": "a constant", "memory": "a word in memory",
                 "register": "a register or a sum", "computed": "a computed target"}[d.jump_kind]] += 1
+        c["shift whose count WRITE reduces in a cycle of its own"] += bool(d.count_late)
         c["register destination in mode 001 or 010"] += d.dest_adjust
         h = self.history
         if h:
@@ -356,7 +370,8 @@ def trace_lines(path: str) -> Iterator[str]:
 # done:  MOVE R6, 3                    writes R6
 #        SHL R1, R1, R6                count a register, R6 from the previous
 #        SHL R1, R1, 2                 count a constant; reads R1 from the previous
-#        SHR R1, R1, @R13              count in memory, a data read; reads R1 from the previous
+#        SHR R1, R1, @R13              count in memory, which WRITE reduces, a data read;
+#                                      reads R1 from the previous
 #        ADD R2, 0x100[R1], R0         a source in mode 011, R1 from the previous
 #        MOVE @R2, R1                  a store through @R2, R2 from the previous; reads R1
 #                                      from two back
@@ -374,7 +389,7 @@ def trace_lines(path: str) -> Iterator[str]:
 # j3:    MOVE R9, j4                   writes R9
 #        MOVE R15, R9                  a jump to a register, which WRITE resolves, though
 #                                      it is unconditional; reads R9 from the previous
-# j4:    0<0 R2, R6, 2[R6]             count through an adder
+# j4:    0<0 R2, R6, 2[R6]             count through an adder, which WRITE reduces
 #        ADD R15, R15, R0              a jump to a computed target (the next instruction)
 #        HALT                          control: a jump, and SR counts as written
 TEST_TRACE = """\
@@ -438,6 +453,7 @@ TEST_COUNTS = {
     "shift, count a register": 1,
     "shift, count in memory": 1,
     "shift, count through an adder (c[R] or --R)": 1,
+    "shift whose count WRITE reduces in a cycle of its own": 2,
     "shift count register written by the previous instruction": 1,
     "source in mode 001 or 011, register from the previous": 1,
     "store in mode 011, 101, or 111, register from the previous": 1,

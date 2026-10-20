@@ -237,24 +237,27 @@ its micro-op in c + 5, PREPARE passes it on in c + 6, and WRITE runs it
 in c + 7, 7 cycles after a fall-through would have run.
 
 The phases of the translated program take an estimated
-2199014 cycles, 1.27 per instruction, and those of `hand.nasm` 1125497,
+2203014 cycles, 1.27 per instruction, and those of `hand.nasm` 1122967,
 2.3 per instruction: the hand-written code has more instructions with
 side effects, memory operands, and reads of the math unit, and fewer
 instructions in all. Options such as `--flush`, `--early`, `--agen`,
 `--mul`, and `--div-skip` set the model's parameters, to try a design
-change before it is built. Four options, each 1 by default, are the rules of the core, which forms every operand value, address, and shift count in PREPARE (MICROARCH.md §7.3 and §7.4); 0 turns a rule off: `--shift-mem N`
-gives a shift by a count in memory N cycles more in WRITE;
-`--shift-reg N` makes a shift wait N cycles in PREPARE for a count
-register that the previous micro-op writes, as `--agen` does for an
-address register; `--sum-wait N` does the same for a source in mode 001
+change before it is built. Four options, each 1 by default, are the rules of the core, which forms every operand value, address, and shift count in PREPARE (MICROARCH.md §7.3 and §7.4); 0 turns a rule off: `--shift-late N`
+gives a shift whose count WRITE reduces N cycles more in WRITE, and a
+rotation through C 2N: a count from memory, through an adder (`c[R]` or
+`--R`), with a side effect, in R14, or of `C<C` or `C>C`, but for a
+constant word (MICROARCH.md §7.3);
+`--shift-reg N` makes a shift wait N cycles in PREPARE for any other
+count register that the previous micro-op writes, as `--agen` does for
+an address register; `--sum-wait N` does the same for a source in mode 001
 or 011, and a store address in mode 011, 101, or 111, the sums that
 PREPARE forms; and `--dest-adjust N` gives a register destination in
 mode 001 or 010, and a jump to a computed target, N cycles more in
 WRITE. A store through `@R` or `@R++` never waits, since WRITE takes
 the value it wrote last. With the four rules, the translated program's
-phases take the same 2199014 cycles as without, since its byte accesses
-rotate by a register written well before, against 2197301 without,
-and those of `hand.nasm` 1122937 against 1121913. `pipecycles.py --test` checks the model on
+phases take 2203014 cycles, against 2197301 without, 4000 of them for
+the counts `8[c]` of its signed byte loads, and those of `hand.nasm`
+1122967 against 1121943. `pipecycles.py --test` checks the model on
 small programs whose cycles are worked out by hand in the script, and
 `make test` runs it, and then the model on both programs with `--phases
 6`, which fails unless each reads the instruction counter around its six

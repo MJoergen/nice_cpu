@@ -195,6 +195,8 @@ MICROARCH.md §7.3 lists the counts that WRITE reduces in a cycle of its own: fr
 
 **Fix:** a rule for a count in mode 001 or 011 with a register, charged like `--shift-mem`, and a row for it in `hazards.py`. The translator could also avoid it: `ROR d, word, c` and then a shift by the constant, one instruction more, or a second count register formed before the compare, which costs a register. The model, with the rule, would say which is cheaper.
 
+**Resolved**: `hazards.py` works out `count_late` by the core's rule, `late_v` in `pipe_prepare.vhd`: a count from memory, through an adder, with a side effect, in R14, or of a rotation through C by anything but a constant word, which takes a second cycle more. It has a row for it. The model's `--shift-mem` became `--shift-late`, which charges those cycles, and `--shift-reg` covers the other register counts; `pipecycles.py --test` has each kind. With the rule the model charges the translated program 4175 cycles more, 4000 of them in its phases.
+
 ### 3.4 The defaults of the four rules
 
 The docstring of `pipecycles.py` says the four rules of the re-timed core are "each off (0) by default", and the help of `--shift-mem`, `--shift-reg`, `--sum-wait`, and `--dest-adjust` ends in "(0)". Their default is 1, in `Model.__init__` and in `argparse`, as `bench/README.md` says: "Four options, each 1 by default". **Fix:** the docstring and the four help strings.

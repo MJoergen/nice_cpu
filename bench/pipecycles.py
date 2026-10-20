@@ -72,12 +72,16 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   values. The bus is held until then ("MPU wait").
 - A core that forms every operand value, address, and shift count in
   PREPARE, one stage before WRITE, as the re-timed core does, has four
-  more rules, each 1 by default; 0 turns one off. --shift-mem N: a shift (bit 27 set, not a control
-  instruction) whose count s1 is in memory takes N cycles more in WRITE,
-  where the count is reduced ("shiftmem"). --shift-reg N: a shift whose
-  count is a register (s1 in mode 000 to 011, not R0 or R15) waits in
+  more rules, each 1 by default; 0 turns one off. --shift-late N: a
+  shift (bit 27 set, not a control instruction) whose count WRITE
+  reduces, as hazards.py's count_late says, takes N cycles more in
+  WRITE, and 2N for a rotation through C ("shiftlate"): a count from
+  memory, through an adder (c[R] or --R), with a side effect, in R14, or
+  of C<C or C>C, but for a constant word. --shift-reg N: a shift whose
+  count is any other register (s1 in mode 000, not R0 or R15) waits in
   PREPARE until N cycles after the micro-op that writes it left WRITE,
-  as for --agen ("shiftreg"). --sum-wait N: the same for a source in
+  as for --agen ("shiftreg"); the core reduces that count in WRITE too,
+  at the same cost. --sum-wait N: the same for a source in
   mode 001 or 011 and a store address in mode 011, 101, or 111, the sums
   ("sumwait"). The waits are not added: a micro-op waits for the latest
   of them, charged to the first that binds.
@@ -108,7 +112,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 PHASES = ["rng64", "crc32", "bst", "heapsort", "vm", "strings"]
 CAUSES = ["startup", "fetch", "flush", "early", "sr", "jumpwait", "agen", "shiftreg", "sumwait",
-          "bus", "mpu", "shiftmem", "adjust", "interrupt"]
+          "bus", "mpu", "shiftlate", "adjust", "interrupt"]
 CAUSE_TEXT = {
     "multi": "multi-micro-op instructions",
     "startup": "pipeline start",
@@ -122,7 +126,7 @@ CAUSE_TEXT = {
     "sumwait": "sum operand or store address register just written",
     "bus": "data bus: read after store, two reads in a micro-op",
     "mpu": "math unit result not ready",
-    "shiftmem": "shift count from memory, reduced in WRITE",
+    "shiftlate": "shift count reduced in WRITE (memory, adder, R14, C<C)",
     "adjust": "destination adjusted by 1, or a computed jump",
     "interrupt": "interrupt entries",
 }
@@ -188,7 +192,7 @@ class Uop:
 class Info:
     """What the model needs of one instruction word."""
     __slots__ = ("cond", "control", "words", "uops", "redirect", "early", "dm", "dr",
-                 "src", "nreads", "shift_mem", "shift_regs", "sum_regs", "adjust")
+                 "src", "nreads", "shift_late", "shift_regs", "sum_regs", "adjust")
     cond: bool
     control: bool
     words: int
@@ -199,7 +203,7 @@ class Info:
     dr: int
     src: Tuple[Tuple[int, int], Tuple[int, int]]
     nreads: int
-    shift_mem: bool         # a shift whose count s1 is in memory
+    shift_late: int         # WRITE's cycles to reduce a shift's count, 0 to 2
     shift_regs: List[int]   # the register of a shift's count, if one
     sum_regs: List[int]     # registers of sum operands and store addresses
     adjust: bool            # a destination in mode 001 or 010, or a computed jump
@@ -222,7 +226,7 @@ def decode(iw: int) -> Info:
     info.dr = (iw >> 14) & 15
     info.src = (((iw >> 11) & 7, (iw >> 7) & 15), ((iw >> 4) & 7, iw & 15))
     info.nreads = h.mem_reads
-    info.shift_mem, info.shift_regs, info.sum_regs, info.adjust = False, [], [], False
+    info.shift_late, info.shift_regs, info.sum_regs, info.adjust = 0, [], [], False
     if h.control:
         u = Uop()
         u.sr_write = True
@@ -256,12 +260,12 @@ def decode(iw: int) -> Info:
         op.sidefx.append(False)
     op.sr_write = bool((iw >> 25) & 1) or 14 in op.writes
     # The rules of a core that forms every operand value, address, and
-    # shift count in PREPARE (--shift-mem, --shift-reg, --sum-wait, and
+    # shift count in PREPARE (--shift-late, --shift-reg, --sum-wait, and
     # --dest-adjust). R0 is a constant, and DECODE knows R15.
     (m0, r0), (m1, r1) = info.src
     if (iw >> 27) & 1:
-        info.shift_mem = m1 in MEMORY
-        if m1 < 4 and base_of(m1, r1) is not None:
+        info.shift_late = h.count_late
+        if not h.count_late and m1 == 0 and base_of(m1, r1) is not None:
             info.shift_regs = [r1]
     for m, r in info.src:
         if m in (1, 3) and base_of(m, r) is not None:
@@ -312,14 +316,14 @@ def read_addresses(info: Info, pc: int, regs: List[int], mem: Dict[int, int]) ->
 class Model:
     def __init__(self, mem: Dict[int, int], ibuf: int = 8, flush: int = 7, early: int = 2,
                  agen: int = 1, sidefx_fast: bool = False, mul: int = 3,
-                 div_skip: int = 8, shift_mem: int = 1, shift_reg: int = 1,
+                 div_skip: int = 8, shift_late: int = 1, shift_reg: int = 1,
                  sum_wait: int = 1, dest_adjust: int = 1) -> None:
         self.mem = mem
         self.bp = max(2, ibuf // 2)
         self.flush, self.early, self.agen = flush, early, agen
         self.sidefx_fast = sidefx_fast
         self.mul, self.div_skip = mul, div_skip
-        self.shift_mem, self.shift_reg = shift_mem, shift_reg
+        self.shift_late, self.shift_reg = shift_late, shift_reg
         self.sum_wait, self.dest_adjust = sum_wait, dest_adjust
         self.bubble = {"flush": flush, "early": early, "interrupt": flush + 1}
         self.cache: Dict[int, Info] = {}
@@ -485,7 +489,7 @@ class Model:
                     self.gaps[tag] += gap
             # Extra cycles in WRITE, for an instruction that runs.
             if last and not skipped:
-                for extra, tag in ((self.shift_mem if info.shift_mem else 0, "shiftmem"),
+                for extra, tag in ((self.shift_late * info.shift_late, "shiftlate"),
                                    (self.dest_adjust if info.adjust else 0, "adjust")):
                     if extra > 0:
                         done += extra
@@ -779,16 +783,22 @@ f       MOVE R15, @R13++
 
 # The same, with options of the model set.
 OPTION_TESTS = [
-    ("--shift-mem 1: a shift by a memory operand takes a cycle more in WRITE",
+    ("--shift-late 1: counts from memory, of C<C, and through an adder; a count in a register",
      """        MOVE R2, 0x100
         MOVE R3, 1
         SHL R1, R3, @R2
+        C<C R1, R1, R3
+        SHR R1, R1, 2[R3]
+        SHL R1, R1, R3
         HALT
 """,
-     # MOVE R2 done 5, MOVE R3 done 6. The SHL reads through R2, written
-     # two micro-ops back: free, so it would be done at 7, and is done at
-     # 8. HALT done 9, so 10 cycles.
-     {"shift_mem": 1}, 4, 10, {"startup": 5, "shiftmem": 1}),
+     # MOVE R2 done 5, MOVE R3 done 6. The first SHL reads through R2,
+     # written two micro-ops back: free, so it would be done at 7, and is
+     # done at 8. The C<C by R3 would be done at 9, and takes two cycles
+     # more for the count mod 33: 11. The SHR by 2[R3] would be done at
+     # 12, and is at 13. The SHL by R3, written long before, takes no
+     # cycle more: 14. HALT done 15, so 16 cycles.
+     {"shift_late": 1}, 7, 16, {"startup": 5, "shiftlate": 4}),
     ("--shift-reg 1: a count register from the previous micro-op; a constant count",
      """        MOVE R3, 3
         SHL R1, R1, R3
@@ -872,8 +882,9 @@ def main() -> None:
                     help="cycles from the write of an operand to the read of a product (3)")
     ap.add_argument("--div-skip", type=int, default=8,
                     help="quotient bits a divider skips in one cycle (8, 0 = none)")
-    ap.add_argument("--shift-mem", type=int, default=1, metavar="N",
-                    help="extra WRITE cycles of a shift by a memory operand (1)")
+    ap.add_argument("--shift-late", type=int, default=1, metavar="N",
+                    help="extra WRITE cycles of a shift whose count WRITE reduces, twice for "
+                         "C<C and C>C (1)")
     ap.add_argument("--shift-reg", type=int, default=1, metavar="N",
                     help="stall of a shift count register written by the previous micro-op (1)")
     ap.add_argument("--sum-wait", type=int, default=1, metavar="N",
@@ -898,7 +909,7 @@ def main() -> None:
         if not binp:
             sys.exit("pipecycles.py: a trace needs --bin")
         m = Model(load_bin(binp), a.ibuf, a.flush, a.early, a.agen, a.sidefx_fast, a.mul,
-                  a.div_skip, a.shift_mem, a.shift_reg, a.sum_wait, a.dest_adjust)
+                  a.div_skip, a.shift_late, a.shift_reg, a.sum_wait, a.dest_adjust)
         run_model(m, hazards.trace_lines(path))
         print(report(os.path.basename(path), m))
         if a.phases is not None and len(m.counter_reads) != 2 * a.phases:

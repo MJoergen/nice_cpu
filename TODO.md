@@ -19,8 +19,10 @@ No code has TODO or FIXME comments.
   - Speed: the core alone meets a 10 ns clock out of context (Vivado
     2025.1, `make timing` in `hdl/`), with a margin of a few tenths of a
     nanosecond ([doc/review/pipeline-timing.md](doc/review/pipeline-timing.md)).
-    NiceMonMEGA65 still runs it at
-    33.3 MHz, and must be tried at 100 MHz. See the clock items below.
+    In NiceMonMEGA65 it reached about 78 MHz before WRITE stopped taking
+    read data from the bus into the ALU
+    ([doc/review/pipeline-timing.md](doc/review/pipeline-timing.md), Read
+    data). See the items under "Pipelined core" below.
 - **Test order steps not done** (MICROARCH.md §9):
   - Step 4, hazard programs: `hdl/test/hazard.nasm`,
     `hdl/test/sidefx_prog.py`, and `hdl/test/smc_prog.py`, which both
@@ -86,11 +88,16 @@ No code has TODO or FIXME comments.
   FETCH's precomputed heads. Decide after NiceMonMEGA65 has been tried
   at 100 MHz.
 - **What the system adds to the core's paths.** Out of context, the
-  inputs arrive at time 0. In the system, the data bus's read data goes
-  straight into WRITE's operands in the cycle of the ACK, and
-  `dbus_stall_i` into WRITE's retire and so into the flush; the memory
-  and the decoder must register what they drive. `retire_o` and the bus
-  outputs are combinational and were never counted.
+  inputs arrive at time 0 and the outputs are due at time 10 ns, so
+  `make timing` in `hdl/` reports their slack as the time left to the
+  system. Read data goes into WRITE only for a register write (6.5 ns
+  left), but `dbus_ack_i` goes into WRITE's retire and so into FETCH
+  (2.8 ns left), and the store goes onto the bus from WRITE in the cycle
+  it runs (1.2 ns left for the address, 1.4 ns for the data). Next: the
+  store from a register in DBUS, which costs a cycle for a read right
+  after a store (MICROARCH.md §5.3, rule 3), and a skid buffer between
+  DECODE and PREPARE for the handshake. Measure each in NiceMonMEGA65.
+  `retire_o` is combinational and is not counted.
 - **NiceMonMEGA65 reads the registers from `retire_o.regs`**, which is
   `w_n.regs` of WRITE, before the register. Its worst path ends there. A
   registered copy is enough for nicemon. Fix in NiceMonMEGA65, and say in

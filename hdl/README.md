@@ -602,7 +602,10 @@ memory or through an adder, which takes three for a rotation through C
 measures what a jump costs, with the cycle counter on a memory that never
 stalls: 6 cycles over a fall-through for a jump that WRITE resolves,
 aligned or not, 2 for one that DECODE resolves, and one more for an
-operation other than `MOVE` into R15.
+operation other than `MOVE` into R15. It also measures four reads in a
+row: WRITE takes read data from DBUS's FIFO, a cycle after its ACK,
+unless it only goes into a register (MICROARCH.md §5.3), so four `ADD`s
+from memory take 2 cycles more than four `MOVE`s.
 
 The condition is tested once per instruction, in PREPARE if no older
 micro-operation may still change SR, otherwise in WRITE. A data read waits

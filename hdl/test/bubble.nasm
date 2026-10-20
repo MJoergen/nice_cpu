@@ -5,7 +5,11 @@
 ; memory that never stalls: a jump that WRITE resolves costs 6 cycles over
 ; a fall-through, aligned or not; a jump that DECODE resolves 2
 ; (MICROARCH.md §5.4); and an operation other than MOVE into R15 one more
-; (§7.4). The program checks itself: R12 counts the cases that gave another
+; (§7.4). The last three cases are four reads in a row: WRITE takes read
+; data a cycle after its ACK, unless it only goes into a register
+; (§5.3), so four ADDs from memory take 2 cycles more than four MOVEs, and
+; four MOVEs from memory into memory 4 more than the 11 they took when
+; WRITE took every read in the cycle of its ACK. The program checks itself: R12 counts the cases that gave another
 ; value, and is 0 at the end if all passed. It runs on the pipelined core
 ; only, since the multi-cycle core has other bubbles and the emulator
 ; counts steps, not cycles. Each case starts on an even address, so that
@@ -84,5 +88,39 @@ a6      MOVE    R2, @CYCLES
 a7      MOVE    R2, @CYCLES
         SUB     R4, R2, R1
         SUB[M]  R0, R4, 10
+        ?!Z ADD R12, R12, 1
+; four MOVEs from memory into a register, each in the cycle of its ACK: 8
+        .ORG    0x240
+        MOVE    R3, 0x400
+        MOVE    R1, @CYCLES
+        MOVE    R5, @R3
+        MOVE    R5, @R3
+        MOVE    R5, @R3
+        MOVE    R5, @R3
+        MOVE    R2, @CYCLES
+        SUB     R4, R2, R1
+        SUB[M]  R0, R4, 8
+        ?!Z ADD R12, R12, 1
+; four ADDs from memory, each a cycle after its ACK, two of them hidden: 10
+        .ORG    0x280
+        MOVE    R1, @CYCLES
+        ADD     R5, R5, @R3
+        ADD     R5, R5, @R3
+        ADD     R5, R5, @R3
+        ADD     R5, R5, @R3
+        MOVE    R2, @CYCLES
+        SUB     R4, R2, R1
+        SUB[M]  R0, R4, 10
+        ?!Z ADD R12, R12, 1
+; four MOVEs from memory into memory, each store a cycle after its ACK: 15
+        .ORG    0x2C0
+        MOVE    R1, @CYCLES
+        MOVE    @R3, @R3
+        MOVE    @R3, @R3
+        MOVE    @R3, @R3
+        MOVE    @R3, @R3
+        MOVE    R2, @CYCLES
+        SUB     R4, R2, R1
+        SUB[M]  R0, R4, 15
         ?!Z ADD R12, R12, 1
         HALT

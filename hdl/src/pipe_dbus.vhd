@@ -8,7 +8,8 @@
 -- in order. A FIFO of tags, one for each request accepted and not yet
 -- acknowledged, tells reads from writes. A second FIFO holds the data of
 -- the reads that WRITE has not used yet. WRITE may also use the data of a
--- read in the cycle its ACK comes, ack_read_o.
+-- read in the cycle its ACK comes, ack_read_o, if it only goes into a
+-- register (MICROARCH.md §5.3).
 --
 -- The registers are the two FIFOs. The bus outputs and ack_read_o depend
 -- combinationally on the requests of PREPARE and WRITE and on the bus.

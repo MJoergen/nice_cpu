@@ -39,9 +39,12 @@
 %         (w_r.commits = 1). instret_o counts it, as the bus accepts its
 %         last read. WRITE holds OP and waits for the data, so ADD 000A
 %         waits in PREPARE, and DECODE emits nothing.
-%   t=8   The data comes. WRITE adds, puts the store on the bus, writes
-%         R3 + 1, and retires the instruction.
-%   t=9   The store's ACK. ADD 000A retires.
+%   t=8   The data comes, into DBUS's FIFO. It goes into the ALU and the
+%         store, so WRITE takes it from there a cycle later (MICROARCH.md
+%         §5.3).
+%   t=9   WRITE adds, puts the store on the bus, writes R3 + 1, and
+%         retires the instruction.
+%   t=10  The store's ACK. ADD 000A retires.
 
 \documentclass[varwidth = 40cm, border = 8pt]{standalone}
 \usepackage{timing}
@@ -51,26 +54,26 @@
 
 \begin{document}
 
-\begin{wave}{19}{10}
- \nextwave{ibus\_addr\_o}            \known{0006}{1} \known{0008}{1} \known{000A}{1} \known{000C}{1} \known{000E}{1} \known{0010}{1} \known{0012}{1} \known{0014}{1} \known{0016}{1} \known{0018}{1}
- \nextwave{ibus\_ack\_i}             \bit{1}{10}
- \nextwave{FETCH: addr\_o}           \known{0002}{1} \known{0004}{1} \known{0006}{1} \known{0008}{1} \known{000A}{1} \unknown[x]{1} \known{000C}{1} \known{000E}{1} \unknown[x]{1} \known{0010}{1}
- \nextwave{DECODE: dec\_r}           \known{0000}{1} \known{0002}{1} \known{0004}{1} \known{0006}{1} \known{0008}{2} \known{000A}{1} \known{000C}{2} \known{000E}{1}
- \nextwave{DECODE: uop\_o}           \known{OP 0000}{1} \known{OP 0002}{1} \known{OP 0004}{1} \known{OP 0006}{1} \known{S0 0008}{1} \known{OP 0008}{1} \known{OP 000A}{1} \unknown[x]{1} \known{OP 000C}{1} \known{OP 000E}{1}
- \nextwave{PREPARE: prep\_r}         \unknown[x]{1} \known{OP 0000}{1} \known{OP 0002}{1} \known{OP 0004}{1} \known{OP 0006}{1} \known{S0 0008}{1} \known{OP 0008}{1} \known{OP 000A}{2} \known{OP 000C}{1}
- \nextwave{PREPARE: load\_o}         \bit{0}{6} \bit{1}{1} \bit{0}{3}
- \nextwave{WRITE: w\_r.uop}          \unknown[x]{2} \known{OP 0000}{1} \known{OP 0002}{1} \known{OP 0004}{1} \known{OP 0006}{1} \known{S0 0008}{1} \known{OP 0008}{2} \known{OP 000A}{1}
- \nextwave{WRITE: w\_r.commits}      \known{0}{7} \known{1}{2} \known{0}{1}
- \nextwave{dbus\_stb\_o}             \bit{0}{7} \bit{1}{2} \bit{0}{1}
- \nextwave{dbus\_we\_o}              \bit{0}{8} \bit{1}{1} \bit{0}{1}
- \nextwave{dbus\_addr\_o}            \unknown[x]{7} \known{0020}{1} \known{0100}{1} \unknown[x]{1}
- \nextwave{dbus\_data\_o}            \unknown[x]{8} \known{0130}{1} \unknown[x]{1}
- \nextwave{dbus\_ack\_i}             \bit{0}{8} \bit{1}{2}
- \nextwave{dbus\_data\_i}            \unknown[x]{8} \known{0100}{1} \unknown[x]{1}
- \nextwave{retire\_o}                \unknown[x]{2} \known{0000}{1} \known{0002}{1} \known{0004}{1} \known{0006}{1} \unknown[x]{2} \known{0008}{1} \known{000A}{1}
- \nextwave{instret\_o}               \bit{0}{2} \bit{1}{4} \bit{0}{1} \bit{1}{1} \bit{0}{1} \bit{1}{1}
- \nextwave{WRITE: R2}                \known{0000}{4} \known{0031}{3} \known{0030}{3}
- \nextwave{WRITE: R3}                \known{0000}{5} \known{0100}{4} \known{0101}{1}
+\begin{wave}{19}{11}
+ \nextwave{ibus\_addr\_o}            \known{0006}{1} \known{0008}{1} \known{000A}{1} \known{000C}{1} \known{000E}{1} \known{0010}{1} \known{0012}{1} \known{0014}{1} \known{0016}{1} \known{0018}{1} \known{001A}{1}
+ \nextwave{ibus\_ack\_i}             \bit{1}{11}
+ \nextwave{FETCH: addr\_o}           \known{0002}{1} \known{0004}{1} \known{0006}{1} \known{0008}{1} \known{000A}{1} \unknown[x]{1} \known{000C}{1} \known{000E}{1} \unknown[x]{2} \known{0010}{1}
+ \nextwave{DECODE: dec\_r}           \known{0000}{1} \known{0002}{1} \known{0004}{1} \known{0006}{1} \known{0008}{2} \known{000A}{1} \known{000C}{3} \known{000E}{1}
+ \nextwave{DECODE: uop\_o}           \known{OP 0000}{1} \known{OP 0002}{1} \known{OP 0004}{1} \known{OP 0006}{1} \known{S0 0008}{1} \known{OP 0008}{1} \known{OP 000A}{1} \unknown[x]{2} \known{OP 000C}{1} \known{OP 000E}{1}
+ \nextwave{PREPARE: prep\_r}         \unknown[x]{1} \known{OP 0000}{1} \known{OP 0002}{1} \known{OP 0004}{1} \known{OP 0006}{1} \known{S0 0008}{1} \known{OP 0008}{1} \known{OP 000A}{3} \known{OP 000C}{1}
+ \nextwave{PREPARE: load\_o}         \bit{0}{6} \bit{1}{1} \bit{0}{4}
+ \nextwave{WRITE: w\_r.uop}          \unknown[x]{2} \known{OP 0000}{1} \known{OP 0002}{1} \known{OP 0004}{1} \known{OP 0006}{1} \known{S0 0008}{1} \known{OP 0008}{3} \known{OP 000A}{1}
+ \nextwave{WRITE: w\_r.commits}      \known{0}{7} \known{1}{3} \known{0}{1}
+ \nextwave{dbus\_stb\_o}             \bit{0}{7} \bit{1}{1} \bit{0}{1} \bit{1}{1} \bit{0}{1}
+ \nextwave{dbus\_we\_o}              \bit{0}{9} \bit{1}{1} \bit{0}{1}
+ \nextwave{dbus\_addr\_o}            \unknown[x]{7} \known{0020}{1} \unknown[x]{1} \known{0100}{1} \unknown[x]{1}
+ \nextwave{dbus\_data\_o}            \unknown[x]{9} \known{0130}{1} \unknown[x]{1}
+ \nextwave{dbus\_ack\_i}             \bit{0}{8} \bit{1}{1} \bit{0}{1} \bit{1}{1}
+ \nextwave{dbus\_data\_i}            \unknown[x]{8} \known{0100}{1} \unknown[x]{2}
+ \nextwave{retire\_o}                \unknown[x]{2} \known{0000}{1} \known{0002}{1} \known{0004}{1} \known{0006}{1} \unknown[x]{3} \known{0008}{1} \known{000A}{1}
+ \nextwave{instret\_o}               \bit{0}{2} \bit{1}{4} \bit{0}{1} \bit{1}{1} \bit{0}{2} \bit{1}{1}
+ \nextwave{WRITE: R2}                \known{0000}{4} \known{0031}{3} \known{0030}{4}
+ \nextwave{WRITE: R3}                \known{0000}{5} \known{0100}{5} \known{0101}{1}
 \end{wave}
 
 \end{document}

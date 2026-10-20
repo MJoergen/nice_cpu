@@ -80,6 +80,11 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
    writer's contract asks (`src/trace_pkg.vhd`, e), at the cost of a
    longer path from the ALU to the bus. A faster clock would register the
    store and delay its instruction's report instead.
+
+   Read data takes the other way. WRITE takes it from DBUS's FIFO, a cycle
+   after its ACK, unless it only goes into a register (MICROARCH.md
+   §5.3). So no path runs from the bus through the ALU into the rest of
+   the core.
 8. **A store accepted in cycle c is seen by an instruction fetch accepted
    in cycle c + 1 or later.** This is a contract on the system, stated in
    the header of `src/pipeline.vhd`. `wb_mem` and `wb_dmux`, which has no

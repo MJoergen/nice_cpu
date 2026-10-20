@@ -28,8 +28,9 @@
 % dec_r, the micro-operation from dec_r reaches prep_r, and the one from
 % prep_r reaches w_r.uop, each through logic only. WRITE's store and DBUS
 % have no register: WRITE drives its store onto the bus in the cycle it
-% runs, and the read data reaches WRITE in the cycle its ACK comes, past
-% DBUS's FIFO.
+% runs, and read data that only goes into a register reaches WRITE in the
+% cycle its ACK comes, past DBUS's FIFO. Other read data comes from the
+% FIFO.
 
 \documentclass[border=8pt]{standalone}
 
@@ -208,7 +209,8 @@
    \node[anchor = west, font = \sffamily\scriptsize, align = left]
       at ([xshift = 2.5mm] legendff.east)
       {a register on the main path. WRITE drives its stores onto the data bus in the cycle it\\
-       runs them, and takes read data in the cycle its ACK comes, so neither path has one.};
+       runs them, so that path has none. It takes read data from DBUS's FIFO, but for data\\
+       that only goes into a register, which it takes in the cycle its ACK comes.};
 
 \end{tikzpicture}
 

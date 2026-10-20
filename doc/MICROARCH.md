@@ -188,10 +188,11 @@ address 0008, on the core, with values read off a simulation of
 into `S0` and `OP`, one per cycle (t = 4 and 5). WRITE runs `S0` at
 t = 6, which writes R2. In the same cycle PREPARE forms the address of
 s1 and loads the read. The read is on the bus at t = 7, while WRITE
-waits in `OP` for its data. The data comes at t = 8. WRITE adds, puts
-the store on the bus, writes R3, and retires the instruction. The wait
-for the data costs one cycle: the instruction after it waits in PREPARE
-at t = 7.
+waits in `OP` for its data. The data comes at t = 8, into DBUS's FIFO.
+It goes into the ALU and the store, so WRITE takes it from there at
+t = 9 (§5.3). WRITE adds, puts the store on the bus, writes R3, and
+retires the instruction. The wait for the data costs two cycles: the
+instruction after it waits in PREPARE at t = 7 and 8.
 
 ## 5. Hazards
 
@@ -267,6 +268,17 @@ When PREPARE issues an instruction's first data read, the core commits to
 that instruction. No interrupt is taken before it (§6).
 
 Stores are issued in WRITE, which is in order, so they need no extra rule.
+
+WRITE takes read data from DBUS's FIFO, in the cycle after its ACK,
+unless the data only goes into a register: s0 or s1 with a side effect,
+which keep it for the operation, and a `MOVE` into a register other than
+R15. Those take it in the cycle of the ACK. The vector of an interrupt
+entry is a jump, so it comes from the FIFO too (§6). So no path runs from the
+data bus through the ALU, the shifter, a store, or a jump in one cycle
+([review/pipeline-timing.md](review/pipeline-timing.md), Read data).
+Any other micro-operation that reads memory waits a cycle, unless PREPARE
+issued its read early enough. That is 4% of the cycles of the translated
+benchmark and 6% of the hand-written one's.
 
 A data read directly after a store is 0.3% of the translated benchmark's
 instructions and 8% of the hand-written one's (§5.6). So rule 3 matters:
@@ -419,8 +431,8 @@ shows both cases on the core, with values read off a simulation of
 `hdl/test/irqwave.nasm`. In (a) the request comes while WRITE holds an
 instruction that has not begun. `irq_ready_o` rises at once, the flush
 drops that instruction, WRITE reads the vector table entry on the data
-bus, and the entry retires and redirects FETCH in the cycle the data
-comes. In (b) the request comes in the cycle after PREPARE issued the
+bus, and the entry retires and redirects FETCH in the cycle after the
+data comes, since WRITE takes the vector from DBUS's FIFO (§5.3). In (b) the request comes in the cycle after PREPARE issued the
 data read of `MOVE R2, @data`. That instruction is committed
 (`w_r.commits` = 1), so `irq_ready_o` waits until it has retired, and the
 request is taken before the next one.

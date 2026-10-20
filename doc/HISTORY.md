@@ -26,6 +26,12 @@ two kinds of access. §9.4, the mapping of WebAssembly, is
   clock to about 49 MHz. It was re-timed for 100 MHz on 2026-10-19, so that
   PREPARE reads the registers and forms the operand values, addresses, and
   shift counts ([review/pipeline-timing.md](review/pipeline-timing.md)).
+- Until 2026-10-20, WRITE took all read data in the cycle of its ACK,
+  straight from the bus. In NiceMonMEGA65 the path from the block RAM
+  through the ALU into FETCH held the clock to about 78 MHz. Now only data
+  that goes into a register takes that way, and the rest comes from DBUS's
+  FIFO a cycle later ([review/pipeline-timing.md](review/pipeline-timing.md),
+  Read data).
 - The same first version merged the adjusted destination of a register in
   mode 001 or 010 into one write, and found every jump target through the
   ALU. Now three rare cases take WRITE two cycles (MICROARCH.md §7.4).

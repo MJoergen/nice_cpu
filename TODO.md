@@ -28,12 +28,6 @@ added 2026-10-20. The section numbers are its.
   at 69405dd, whose logic is that of the commit of the tables, gives
   1215117, 59679, and 261412. The translated program's rows reproduce
   exactly. Measure again, and name the commit beside each table.
-- **Multiplication by a constant is tuned to the 35-cycle multiplier**
-  (§4.1). The comments at `MUL_STEPS` and `MUL64_STEPS` and
-  `translator/README.md` justify the budgets with a product that took
-  35 cycles until 2026-10-16; it takes 3. By the model, `MUL_STEPS` = 2
-  saves 0.2% of the benchmark's cycles, and `rng64`'s 28 steps beside
-  one product could be three products of the math unit.
 
 ## FPGA core
 
@@ -139,7 +133,7 @@ added 2026-10-20. The section numbers are its.
   the instruction is certain to run. The waits are a conditional read
   after a write of SR, 0.0% of the translated benchmark's instructions and
   3.8% of the hand-written one's, and a read after a conditional jump,
-  5.5% and 7.6% (MICROARCH.md §5.6). Allowing speculative reads of RAM, but
+  5.6% and 7.6% (MICROARCH.md §5.6). Allowing speculative reads of RAM, but
   not of the I/O range, needs a change to ISA.md §8.2 and a check of each
   read against older stores. Decide once the pipelined core shows what the
   waits cost. The bypasses and the slow path for R14 were decided from the

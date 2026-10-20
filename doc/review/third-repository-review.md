@@ -225,6 +225,8 @@ By the cycle model, on the benchmark:
 
 The difference is 0.2% of the cycles and 0.7% of the instructions, in `bst`, `heapsort`, and `strings`. `rng64`, whose loop is an `i64.mul` by `0x2545F4914F6CDD1D`, runs 28 shift and add steps beside one product of the math unit; with `MUL64_STEPS` = 0 it calls `__mul64` instead and takes 6% more cycles, so the inline code is still the better of the two that exist, but three products of the math unit, about 18 cycles, would beat its 28 steps. **Fix:** say in the comments and the README what the math unit costs now, set `MUL_STEPS` to 2 or 3, and let `mul64_const` use the math unit for the cross products too, measured with `make cycles` and then `make core CORE=pipeline`.
 
+**Resolved**: by the model, with the fixes of §3.2 and §3.3 in, `MUL_STEPS` of 0, 2, 3, or 4 give the same 2194173 cycles, and every `MUL64_STEPS` from 0 to 16 loses to three products of the math unit, since `rng64` then takes 69704 cycles, not 92743. So `MUL_STEPS` is 3, enough for x × 31 and x × 10; `mul64_const` no longer gives up to `__mul64` when neither cross product has a plan, but takes it from the math unit, and `MUL64_STEPS` is 4. The comments and `translator/README.md` give the math unit's cost of today. The benchmark's phases run 1681080 instructions, not 1730635, from a module of 8447 words, not 8560, and take 2171133 cycles by the model, not 2199014 (1.3% fewer). `make -C translator diff` against the commit before finds no difference. The core's cycles are in §1.3.
+
 ## 5. Tests and CI
 
 ### 5.1 A check of the section references

@@ -1214,16 +1214,18 @@ def flag_use_def(ins: Ins) -> Tuple[FrozenSet[str], FrozenSet[str]]:
 
 # The most instructions that a multiplication by a constant may take as
 # shifts, additions, and subtractions (mul_plan). The math unit takes
-# three instructions, but its product comes some 35 cycles after the
-# operands on the FPGA core (SYSTEM.md §2, doc/MICROARCH.md), while each of
-# these takes one. Eight cover the FNV prime 16777619 = 2^24 + 13 * 31,
-# and any constant with up to four bits set.
-MUL_STEPS = 8
+# three instructions, and on the FPGA core its product can be read three
+# cycles after the write of the operand (SYSTEM.md §2, hdl/src/mpu.vhd),
+# so a read right after the write waits about two. Each of these
+# instructions takes one cycle. Three cover x * 31 and x * 10, and the
+# cycle estimate of bench/ (bench/README.md) finds no gain in more.
+MUL_STEPS = 3
 
 # The most steps for the product of a word with a word of an i64 constant
-# (mul64_const). These run while the math unit computes another product,
-# which takes some 35 cycles, so they cost little up to about that many.
-MUL64_STEPS = 16
+# (mul64_const), in place of a product of the math unit, which costs
+# two instructions and its wait. These run while the math unit computes
+# xl * cl.
+MUL64_STEPS = 4
 
 # A step of a multiplication by a constant: ("shl", a, k) is value a
 # shifted left by k, ("add", a, b) and ("sub", a, b) are a + b and a - b.
@@ -3980,15 +3982,14 @@ class FunctionTranslator:
 
     def mul64_const(self, r: Reader, at: int, what: str) -> bool:
         """An i64.mul by a constant c = 2^32 * ch + cl, inline with the math
-        unit, if it is used and if a product of a word with ch or cl can be
-        made of at most MUL64_STEPS shifts, additions, and subtractions
-        (mul_plan). Returns whether it was. With x = 2^32 * xh + xl, the
+        unit, if it is used. Returns whether it was. With x = 2^32 * xh + xl, the
         product modulo 2^64 is xl * cl + 2^32 * (xl * ch + xh * cl), and
         only the low words of the last two products count. The math unit
         computes xl * cl, all 64 bits, while the shifts and additions
-        compute the others, so the wait for the math unit overlaps them.
-        A product that has no such plan uses the math unit after the first.
-        Its result may go straight to a local."""
+        compute the others if they can, in at most MUL64_STEPS each
+        (mul_plan), so the wait for the math unit overlaps them. A product
+        that has no such plan uses the math unit after the first. Its
+        result may go straight to a local."""
         if not self.t.mpu:
             return False
         consts = self.const_value(2, I64), self.const_value(1, I64)
@@ -3999,8 +4000,6 @@ class FunctionTranslator:
         # The products of the high word: (operand word, constant word, plan).
         cross = [(0, ch, mul_plan(ch, MUL64_STEPS) if ch else ()),
                  (1, cl, mul_plan(cl, MUL64_STEPS) if cl else ())]
-        if all(plan is None for _, _, plan in cross):
-            return False
         fwd = self.forward(r, at, I64, 2)
         a, b = self.pop([I64, I64], at, what)
         x = a if consts[1] is not None else b

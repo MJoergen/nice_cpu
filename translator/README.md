@@ -150,9 +150,9 @@ pointers. nicewasm supports all of them. A Rust program uses a table and
 `call_indirect` for `dyn` trait calls.
 
 The optimizations change nothing in WASM.md. The size of translated code
-is measured in words (`make words` in `bench/`): `test/safe.zig` is 5171
+is measured in words (`make words` in `bench/`): `test/safe.zig` is 5170
 words and the float library 7083. The benchmark of [bench/](../bench/)
-runs 1730635 instructions in its phases, from a module of 8560 words.
+runs 1681080 instructions in its phases, from a module of 8447 words.
 [doc/review/code-size-plan.md](../doc/review/code-size-plan.md) has the
 measurements of the plan, and [doc/HISTORY.md](../doc/HISTORY.md) lists
 the steps that got the code here.
@@ -196,23 +196,22 @@ the steps that got the code here.
   than 0 and −1 needs none of these checks, and an unsigned `i32`
   division or remainder by a power of 2 is a `SHR` or an `AND`.
 - **Multiplication by a constant:** an `i32.mul` by a constant is at
-  most eight shifts, additions, and subtractions, if that many will do.
-  So x × 31 is `SHL t, x, 5` and `SUB d, t, x`, and x × 16777619, the
-  FNV prime 2^24 + 13 × 31, takes eight. The math unit takes three
-  instructions, but on the FPGA core its product comes some 35 cycles
-  after the operands, and each of these instructions takes one. Eight
-  cover every constant with up to four bits set. A multiplication by any
+  most three shifts, additions, and subtractions, if that many will do.
+  So x × 31 is `SHL t, x, 5` and `SUB d, t, x`. The math unit takes
+  three instructions, and on the FPGA core its product can be read three
+  cycles after the operand is written, so a read right after the write
+  waits about two; each of these instructions takes one. By the cycle
+  estimate of `bench/`, more steps gain nothing. A multiplication by any
   other constant uses the math unit, or with `--no-mpu` calls `__mul`.
 - **i64 multiplication by a constant:** with x = 2^32 · xh + xl and the
   constant c = 2^32 · ch + cl, the product is xl · cl + 2^32 · (xl · ch +
   xh · cl), modulo 2^64. Of the last two products only the low words
-  count, so each can be shifts, additions, and subtractions, up to 16 for
-  each. They run while the math unit computes xl · cl, so they cost
-  little: the math unit needs some 35 cycles anyway. xorshift64*'s
-  constant 0x2545F4914F6CDD1D takes 12 and 16, and the multiplication
-  some 40 cycles on the FPGA core instead of some 130 with `__mul64`. A
-  product that needs more steps uses the math unit after the first one.
-  If both would, or with `--no-mpu`, the multiplication calls `__mul64`.
+  count. The math unit computes xl · cl, and then each of the two others
+  in turn, but one that takes at most four shifts, additions, and
+  subtractions is computed so, while the math unit computes xl · cl.
+  xorshift64*'s constant 0x2545F4914F6CDD1D takes three products of the
+  math unit, nine instructions. With `--no-mpu` the multiplication calls
+  `__mul64`.
 - **Comparisons:** `eqz`, `eq`, `ne`, `lt`, `gt`, `le`, and `ge`, signed
   and unsigned, for `i32` and `i64`.
 - **Shifts:** `shl`, `shr_s`, `shr_u`, `rotl`, and `rotr`, for `i32` and

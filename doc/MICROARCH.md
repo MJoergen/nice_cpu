@@ -344,21 +344,21 @@ the condition is known. These are the shares of all instructions:
 
 | | `bench.c` through nicewasm | `hand.nasm` |
 |---|---|---|
-| Instructions | 1775661 | 494272 |
-| Skipped | 19.7% | 18.4% |
-| Words per instruction, mean | 1.84 | 1.62 |
+| Instructions | 1726106 | 494272 |
+| Skipped | 20.3% | 18.4% |
+| Words per instruction, mean | 1.86 | 1.62 |
 | Micro-ops per instruction, mean | 1.00 | 1.18 |
-| Conditional | 21.7% | 27.7% |
-| Data read | 11.3% | 41.7% |
-| Store | 5.1% | 15.5% |
-| Jump: writes R15, or a control instruction | 19.5% | 21.1% |
-| Reads a register the previous instruction writes | 32.2% | 30.0% |
-| Reads a register written two back, not one | 8.0% | 14.0% |
-| Conditional, SR written by the previous instruction | 19.5% | 20.3% |
+| Conditional | 22.3% | 27.7% |
+| Data read | 12.0% | 41.7% |
+| Store | 5.9% | 15.5% |
+| Jump: writes R15, or a control instruction | 20.1% | 21.1% |
+| Reads a register the previous instruction writes | 29.9% | 30.0% |
+| Reads a register written two back, not one | 7.3% | 14.0% |
+| Conditional, SR written by the previous instruction | 20.1% | 20.3% |
 | Conditional with a data read, SR written by the previous | 0.0% | 3.8% |
-| Data read after a store | 0.3% | 8.1% |
-| Data read after a conditional jump | 5.5% | 7.6% |
-| R14 read as an operand | 2.9% | 6.6% |
+| Data read after a store | 0.8% | 8.1% |
+| Data read after a conditional jump | 5.6% | 7.6% |
+| R14 read as an operand | 3.0% | 6.6% |
 | R15 as a pointer, or with a side effect | 0% | 0% |
 
 The numbers support three decisions: FETCH reads two words per cycle (§3),

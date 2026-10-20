@@ -59,13 +59,13 @@ These are the tables from the emulator. First `bench.c`
 through nicewasm:
 
     phase      instructions       cycles  result
-    rng64            89632        89660  0e18cd0a  ok
+    rng64            52768        52796  0e18cd0a  ok
     crc32            65816        65844  2df3b109  ok
-    bst             315589       315617  55a72225  ok
-    heapsort        312536       312564  bdb22882  ok
+    bst             310469       310497  55a72225  ok
+    heapsort        307416       307444  bdb22882  ok
     vm              840049       840077  04156880  ok
-    strings         107013       107041  d9867cf6  ok
-    total          1730635      1730803
+    strings         104562       104590  d9867cf6  ok
+    total          1681080      1681248
 
 Then `hand.nasm`:
 
@@ -108,13 +108,13 @@ The ratio of the instruction counts, translated to hand-written:
 
 | Phase | Ratio | Where the translated code loses |
 |---|---|---|
-| `rng64` | 2.2 | `i64` shifts and the 64-bit product take the same two-word steps either way. |
+| `rng64` | 1.3 | `i64` shifts take the same two-word steps either way, and the 64-bit product three products of the math unit. |
 | `crc32` | 2.4 | A byte load is seven instructions with its own bounds check, against a word read with a side effect on the pointer and shifts by hand. The table lookups need no check. |
 | `bst` | 2.7 | Each node's fields take a compare and a skipped jump before their reads, which the hand-written code does without. |
 | `heapsort` | 1.8 | The array elements take a compare and a skipped jump before their reads and writes, and the signed comparisons take two instructions either way. |
 | `vm` | 7.5 | The `br_table` checks its index, each stack cell is a checked word access, and the bytecode fetch is a byte load of seven instructions, where the hand-written interpreter has one word per opcode and the operands in registers. |
-| `strings` | 5.1 | Every character is a byte load of seven instructions, where the hand-written strings have one character per word. |
-| total | 3.5 | |
+| `strings` | 4.9 | Every character is a byte load of seven instructions, where the hand-written strings have one character per word. |
+| total | 3.4 | |
 
 What remains is in TODO.md, under "Faster and smaller translated code".
 A byte load of linear memory stays several instructions, since the
@@ -217,16 +217,16 @@ charged to the rule that caused it, so the output says where the time
 goes, and a program that reads the instruction counter around each phase,
 as both programs do, gets a row per phase:
 
-    bench.bin: 1775661 instructions, 2290661 cycles (estimate), CPI 1.290
-      cycles above 1/instruction: 515000
-      taken jumps resolved in WRITE (flush)                        267400  0.151/instr  51.9%
-      jumps DECODE resolves (early-redirect bubble)                 66391  0.037/instr  12.9%
+    bench.bin: 1726106 instructions, 2247688 cycles (estimate), CPI 1.302
+      cycles above 1/instruction: 521582
+      taken jumps resolved in WRITE (flush)                        267400  0.155/instr  51.3%
+      jumps DECODE resolves (early-redirect bubble)                 66051  0.038/instr  12.7%
       ...
 
       phase         instr    cycles    CPI   main extra cycles per instruction
-      rng64         89632     92743  1.035   early 0.02, fetch 0.01, flush 0.00, multi 0.00
+      rng64         52768     69704  1.321   mpu 0.26, early 0.04, fetch 0.02, flush 0.00
       ...
-      total       1730635   2199014  1.271
+      total       1681080   2171133  1.292
 
 The bubble of 7 is the core's. A jump leaves WRITE in cycle c − 1, and
 WRITE's registered flush redirects FETCH in cycle c. FETCH issues the
@@ -236,7 +236,7 @@ its micro-op in c + 5, PREPARE passes it on in c + 6, and WRITE runs it
 in c + 7, 7 cycles after a fall-through would have run.
 
 The phases of the translated program take an estimated
-2199014 cycles, 1.27 per instruction, and those of `hand.nasm` 1122967,
+2171133 cycles, 1.29 per instruction, and those of `hand.nasm` 1122967,
 2.3 per instruction: the hand-written code has more instructions with
 side effects, memory operands, and reads of the math unit, and fewer
 instructions in all. Options such as `--flush`, `--early`, `--agen`,
@@ -254,7 +254,7 @@ PREPARE forms; and `--dest-adjust N` gives a register destination in
 mode 001 or 010, and a jump to a computed target, N cycles more in
 WRITE. A store through `@R` or `@R++` never waits, since WRITE takes
 the value it wrote last. With the four rules, the translated program's
-phases take 2199014 cycles, against 2197301 without, and those of
+phases take 2171133 cycles, against 2169420 without, and those of
 `hand.nasm` 1122967 against 1121943. `pipecycles.py --test` checks the model on
 small programs whose cycles are worked out by hand in the script, and
 `make test` runs it, and then the model on both programs with `--phases
@@ -301,7 +301,7 @@ are worked out by hand in the script, and `make test` runs it.
 nicewasm, the measure that [translator/README.md](../translator/README.md)
 quotes for `test/safe.zig` and the float library. `make words` prints it
 for `bench.wasm`, `translator/test/safe.wasm`, and `runtime/float.wasm`:
-8560, 5171, and 7083 words. Each module is translated and
+8447, 5170, and 7083 words. Each module is translated and
 assembled on its own, with the labels it uses but does not define, such
 as the runtime's routines, defined as 0 first; a constant takes a whole
 word whatever its value (ISA.md §3), so that changes no size. The count

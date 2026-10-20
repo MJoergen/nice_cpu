@@ -70,8 +70,8 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   with n the divider's cycles. The signed dividers divide the absolute
   values. The bus is held until then ("MPU wait").
 - A core that forms every operand value, address, and shift count in
-  PREPARE, one stage before WRITE, has four more rules, each off (0) by
-  default. --shift-mem N: a shift (bit 27 set, not a control
+  PREPARE, one stage before WRITE, as the re-timed core does, has four
+  more rules, each 1 by default; 0 turns one off. --shift-mem N: a shift (bit 27 set, not a control
   instruction) whose count s1 is in memory takes N cycles more in WRITE,
   where the count is reduced ("shiftmem"). --shift-reg N: a shift whose
   count is a register (s1 in mode 000 to 011, not R0 or R15) waits in
@@ -870,15 +870,15 @@ def main() -> None:
     ap.add_argument("--div-skip", type=int, default=8,
                     help="quotient bits a divider skips in one cycle (8, 0 = none)")
     ap.add_argument("--shift-mem", type=int, default=1, metavar="N",
-                    help="extra WRITE cycles of a shift by a memory operand (0)")
+                    help="extra WRITE cycles of a shift by a memory operand (1)")
     ap.add_argument("--shift-reg", type=int, default=1, metavar="N",
-                    help="stall of a shift count register written by the previous micro-op (0)")
+                    help="stall of a shift count register written by the previous micro-op (1)")
     ap.add_argument("--sum-wait", type=int, default=1, metavar="N",
                     help="stall of a sum operand or store address register written by the "
-                         "previous micro-op (0)")
+                         "previous micro-op (1)")
     ap.add_argument("--dest-adjust", type=int, default=1, metavar="N",
                     help="extra WRITE cycles of a destination in mode 001 or 010, or of a "
-                         "computed jump (0)")
+                         "computed jump (1)")
     ap.add_argument("--phases", type=int, metavar="N",
                     help="fail unless each program reads INSTR_LO around N phases")
     ap.add_argument("--against", metavar="FILE",

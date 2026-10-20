@@ -197,6 +197,8 @@ MICROARCH.md §7.3 lists the counts that WRITE reduces in a cycle of its own: fr
 
 The docstring of `pipecycles.py` says the four rules of the re-timed core are "each off (0) by default", and the help of `--shift-mem`, `--shift-reg`, `--sum-wait`, and `--dest-adjust` ends in "(0)". Their default is 1, in `Model.__init__` and in `argparse`, as `bench/README.md` says: "Four options, each 1 by default". **Fix:** the docstring and the four help strings.
 
+**Resolved**: the docstring says each is 1 by default, and 0 turns one off, and the four help strings end in "(1)".
+
 ### 3.5 Two counts of one trace
 
 `make hazards` says `bench.bin` runs 1775455 instructions and `make cycles` 1775661, from the same trace. `profile()` in `hazards.py` takes a trace line only when its first two words are the address and the instruction word, and `run_model()` in `pipecycles.py` also searches for them later in the line, where the console's output of the program precedes them, since the emulator writes both to stdout. The benchmark prints 206 characters that are not followed by a newline, and `hazards.py` drops the instruction after each. The shares of MICROARCH.md §5.6 are not affected at this size, but the two tools should read a trace the same way. **Fix:** one parser in `hazards.py`, used by both.

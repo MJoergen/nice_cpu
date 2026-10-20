@@ -12,7 +12,21 @@ working reference for it. [ASSUMPTIONS.md](ASSUMPTIONS.md) lists where the
 pipelined core settles a question that MICROARCH.md leaves open, or
 departs from it.
 
-## Contents
+- [Folder contents](#folder-contents)
+- [Running the tests](#running-the-tests)
+- [The formal checks](#the-formal-checks)
+- [The multi-cycle core](#the-multi-cycle-core)
+- [The pipelined core](#the-pipelined-core)
+- [The data bus decoder](#the-data-bus-decoder)
+- [The memory model](#the-memory-model)
+- [The console](#the-console)
+- [The timer](#the-timer)
+- [The math unit](#the-math-unit)
+- [The performance counters](#the-performance-counters)
+- [The fetch statistics](#the-fetch-statistics)
+- [The trace writer](#the-trace-writer)
+
+## Folder contents
 
 | Path | What it is |
 |---|---|

@@ -96,7 +96,6 @@ multi-micro-op cycles + the charged gaps, exactly.
 
 import argparse
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -307,9 +306,6 @@ def read_addresses(info: Info, pc: int, regs: List[int], mem: Dict[int, int]) ->
         if m in (2, 6):
             local[r] = (val(r) + 1) & 0xFFFFFFFF
     return out
-
-
-TRACE_RE = re.compile(r"([0-9a-f]{8}) ([0-9a-f]{8})(?= |$)")
 
 
 class Model:
@@ -566,27 +562,11 @@ class Model:
 
 
 def run_model(model: Model, lines: Iterable[str]) -> Model:
-    for line in lines:
-        if line.startswith("Halted") or line.startswith("Stopped"):
-            break
-        parts = line.split()
-        if not parts:
-            continue
-        if parts[0] in ("NMI", "IRQ"):
+    for step in hazards.steps(lines):
+        if step is None:
             model.interrupt()
             continue
-        if len(parts) >= 2 and len(parts[0]) == 8 and len(parts[1]) == 8:
-            try:
-                pc, iw = int(parts[0], 16), int(parts[1], 16)
-            except ValueError:
-                continue
-            rest = parts[2:]
-        else:
-            m = TRACE_RE.search(line)
-            if not m:
-                continue
-            pc, iw = int(m.group(1), 16), int(m.group(2), 16)
-            rest = line[m.end():].split()
+        pc, iw, rest = step
         skipped = bool(rest) and rest[0] == "skipped"
         model.step(pc, iw, skipped, [] if skipped else rest)
     return model

@@ -165,7 +165,7 @@ the distributions of the instruction length in words and of the
 micro-operations, and then one line per hazard with its count and its
 share of all instructions:
 
-    hand: 494070 instructions, 91075 skipped (18.4%)
+    hand: 494272 instructions, 91075 skipped (18.4%)
       words        1: 39.0%  2: 59.7%  3: 1.3%  4: 0.0%   mean 1.62
       micro-ops    1: 82.3%  2: 17.5%  3: 0.2%   mean 1.18
       conditional                                                  137036  27.7%

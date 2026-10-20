@@ -36,10 +36,7 @@ added 2026-10-20. The section numbers are its.
   1215117, 59679, and 261412. The translated program's rows reproduce
   exactly. Measure again, and name the commit beside each table.
 - **The four options of the re-timed core** are documented as off by
-  default in `pipecycles.py`; they are on (§3.4). `hazards.py` and
-  `pipecycles.py` count the same trace differently, 1775455 against
-  1775661 instructions, since one skips a trace line that the program's
-  console output precedes (§3.5).
+  default in `pipecycles.py`; they are on (§3.4).
 - **Multiplication by a constant is tuned to the 35-cycle multiplier**
   (§4.1). The comments at `MUL_STEPS` and `MUL64_STEPS` and
   `translator/README.md` justify the budgets with a product that took

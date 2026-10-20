@@ -201,6 +201,8 @@ The docstring of `pipecycles.py` says the four rules of the re-timed core are "e
 
 `make hazards` says `bench.bin` runs 1775455 instructions and `make cycles` 1775661, from the same trace. `profile()` in `hazards.py` takes a trace line only when its first two words are the address and the instruction word, and `run_model()` in `pipecycles.py` also searches for them later in the line, where the console's output of the program precedes them, since the emulator writes both to stdout. The benchmark prints 206 characters that are not followed by a newline, and `hazards.py` drops the instruction after each. The shares of MICROARCH.md §5.6 are not affected at this size, but the two tools should read a trace the same way. **Fix:** one parser in `hazards.py`, used by both.
 
+**Resolved**: `hazards.steps()` reads a trace for both tools, and finds a step or an interrupt entry after console output on its line. Both now count 1775661 instructions for `bench.bin`, the emulator's count, and 494272 for `hand.bin`, not 494070; the table of MICROARCH.md §5.6 has the new counts, and one share moved, a store in `hand.nasm`, 15.5%.
+
 ## 4. The translator
 
 ### 4.1 Multiplication by a constant, tuned to a multiplier that is gone

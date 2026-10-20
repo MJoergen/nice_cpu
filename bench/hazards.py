@@ -15,7 +15,8 @@ with the one, two, or three before it. A skipped instruction counts as if
 it ran, because DECODE sees its operands before the condition is known, so
 a register it would write counts as written. An interrupt entry starts the
 sequence afresh, as it flushes the pipeline. The console output in the
-trace and the lines after the halt are skipped.
+trace and the lines after the halt are skipped (steps(), which
+pipecycles.py reads a trace with too).
 
 The last counts are for a core that forms every operand value, address,
 and shift count in PREPARE, the rules of pipecycles.py's --shift-mem,
@@ -26,10 +27,11 @@ target, and register destinations with a side effect.
 """
 
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
-from typing import Dict, FrozenSet, Iterable, Iterator, List
+from typing import Dict, FrozenSet, Iterable, Iterator, List, Optional, Tuple
 
 # The modes of ISA.md §4: those with a side effect on the register, those
 # that read memory as a source, and those that take a constant word.
@@ -288,22 +290,35 @@ class Profile:
         return "\n".join(lines)
 
 
+STEP_RE = re.compile(r"([0-9a-f]{8}) ([0-9a-f]{8})(?= |$)")
+ENTRY_RE = re.compile(r"(?:NMI|IRQ) [0-9a-f]{2}(?= |$)")
+
+
+def steps(lines: Iterable[str]) -> Iterator[Optional[Tuple[int, int, List[str]]]]:
+    """The steps of a trace: the address, the instruction word, and the
+    rest of the line for an instruction, and None for an interrupt entry.
+    The emulator writes the program's console output to stdout too, so a
+    step may follow output that did not end in a newline, on the same
+    line. The lines after the halt are not steps."""
+    for line in lines:
+        if line.startswith(("Halted", "Stopped")):
+            return
+        m = STEP_RE.match(line) or STEP_RE.search(line)
+        e = ENTRY_RE.search(line)
+        if e and (m is None or e.start() < m.start()):
+            yield None
+        elif m:
+            yield int(m.group(1), 16), int(m.group(2), 16), line[m.end():].split()
+
+
 def profile(lines: Iterable[str]) -> Profile:
     p = Profile()
-    for line in lines:
-        parts = line.split()
-        if len(parts) >= 2 and parts[0] in ("NMI", "IRQ"):
+    for step in steps(lines):
+        if step is None:
             p.interrupt()
             continue
-        if len(parts) < 2 or len(parts[0]) != 8 or len(parts[1]) != 8:
-            continue
-        try:
-            int(parts[0], 16)
-            iw = int(parts[1], 16)
-        except ValueError:
-            continue
-        d = decode(iw)
-        d.skipped = "skipped" in parts[2:]
+        d = decode(step[1])
+        d.skipped = "skipped" in step[2]
         p.add(d)
     return p
 

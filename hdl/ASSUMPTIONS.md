@@ -32,8 +32,8 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
    mux, an adder, the shifter or the ALU, and the register write out of one
    cycle ([doc/review/pipeline-timing.md](../doc/review/pipeline-timing.md)).
 
-   The registers are in WRITE, not in a module of their own as in
-   qnice_cpu's `registers.vhd`. They are `w_r.regs`, R0 to R15 in
+   The registers are in WRITE, not in a module of their own. They are
+   `w_r.regs`, R0 to R15 in
    WRITE's state record (`src/pipe_pkg.vhd`), so they are flip-flops,
    not block RAM. There is one write port. PREPARE reads three registers
    at once, for the destination, s0, and s1, each a 16-way mux, and the

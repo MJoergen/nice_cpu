@@ -4,3 +4,17 @@ __pycache__/
 runtime/libc/build/
 runtime/libc/libc.a
 bench/build/
+# The build files of the runtime's tests, which a failing test leaves
+# behind for a look; the next passing run removes them.
+runtime/test/*.out
+runtime/test/*.out.nasm
+runtime/test/*.out.bin
+runtime/test/*.full.nasm
+runtime/test/*.raw
+runtime/test/*.status
+runtime/libc/test/*.out
+runtime/libc/test/*.out.nasm
+runtime/libc/test/*.out.bin
+runtime/libc/test/*.full.nasm
+runtime/libc/test/*.raw
+runtime/libc/test/*.status

@@ -114,6 +114,8 @@ In `libc/src/stdlib.c`, `parse` returns `ULONG_MAX` both for an overflow and for
 
 `make -C runtime/libc test` removes each test's `.out.nasm`, `.full.nasm`, `.out.bin`, `.raw`, and `.status` after the last test, so a test that fails, as `limits` does now, stops make before the cleanup, and the files of every test stay in `test/`, where git does not ignore them. **Fix:** remove them before each test as well as after, or list the patterns in `.gitignore`.
 
+**Resolved**: `.gitignore` lists the build files of `runtime/test/` and `runtime/libc/test/`, which have the same cleanup. A failing test leaves them for a look, and the next passing run removes them.
+
 ## 4. The translator
 
 ### 4.1 Coverage

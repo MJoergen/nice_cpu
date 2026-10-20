@@ -11,9 +11,6 @@ No code has TODO or FIXME comments.
 The findings of [doc/review/fourth-repository-review.md](doc/review/fourth-repository-review.md)
 that are not closed yet. Every finding of the earlier reviews is closed.
 
-- **A failing C library test** stops `make -C runtime/libc test` before
-  the line that removes the tests' build files, which git does not
-  ignore (§3.6).
 - **`nice.rs`** has no test of `poke` and of `pollc` returning a byte,
   until a rustc is at hand to rebuild `runtime/test/nicers.wasm` (§3.5).
 - **The fuzzer of the translator** still has no blocks with several

@@ -124,3 +124,64 @@ lbl     .ORG    0x300                   ; the label names the new address
         .RES    3                       ; 0x301-0x303
 res_end .DAT    res_end                 ; 0x304
         .RES    0
+; Added by the coverage audit. Each comment gives the address and the words,
+; derived by hand from ISA.md section 2: a field is mode<<4 | register, dest
+; is bits 20..14, s0 13..7, s1 6..0, ADD is opcode 3 (0x00600000), and the
+; constant words follow in field order dest, s0, s1.
+        .ORG    0x400
+; s1 in the modes not used there above (dest R1 = 0x4000, s0 R2 = 0x100)
+        ADD     R1, R2, --R3            ; 400: s1 0x13: 00604113
+        ADD     R1, R2, R3++            ; 401: s1 0x23: 00604123
+        ADD     R1, R2, 6[R3]           ; 402: s1 0x33: 00604133, 403: 6
+        ADD     R1, R2, @R3             ; 404: s1 0x43: 00604143
+        ADD     R1, R2, @--R3           ; 405: s1 0x53: 00604153
+        ADD     R1, R2, @R3++           ; 406: s1 0x63: 00604163
+        ADD     R1, R2, @6[R3]          ; 407: s1 0x73: 00604173, 408: 6
+        ADD     R1, R2, @6              ; 409: s1 0x70: 00604170, 40a: 6
+; three constant words: 0x70<<14 | 0x30<<7 | 0x30
+        ADD     @1, 2, 3                ; 40b: 007c1830, 40c-40e: 1, 2, 3
+; c alone as a destination is mode 011 with R0: 0x30<<14 | 0x01<<7
+        MOVE    5, R1                   ; 40f: 000c0080, 410: 5
+; R15++ in every field: 0x2f<<14 | 0x2f<<7 | 0x2f
+        ADD     R15++, R15++, R15++     ; 411: 006bd7af
+; tabs as separators: 0x0e<<14 | 0x04<<7
+	MOVE	R14,	R4		; 412: 00038200
+; a leading 0 is decimal, upper case prefixes, signs, chains, and wrap
+        .dat    08, 0XAB, 0B11, +5, 1-2-3, 0xFFFFFFFF+2, -0xFFFFFFFF
+                                        ; 413-419: 8, ab, 3, 5, fffffffc, 1, 1
+; .ASCII_B with 1 to 3 characters, the first in the low byte, padded with 0
+        .ASCII_B 'A'                    ; 41a: 00000041
+        .ASCII_B "AB"                   ; 41b: 00004241
+        .ascii_b 'ABC'                  ; 41c: 00434241
+; a quote of the other kind, no escapes, and ',' and '*' in a string
+        .ASCII_L "it's"                 ; 41d-421: 69 74 27 73 0
+        .ASCII_L '"\n*,'                ; 422-427: 22 5c 6e 2a 2c 0
+; lower case condition and modifier, INT at its limit and with an expression
+        ?!e HALT                        ; 428: NEG 1, SEL 110: ec000000
+        SHL[m]  R1, R2, R3              ; 429: 08000000 | M 02000000: 0a004103
+        INT     255                     ; 42a: 0c4000ff
+VEC     .EQU    0x1F
+        INT     VEC+1                   ; 42b: 0c400020
+; an .EQU standing for a whole operand, in both fields, and after @
+OPW     .EQU    @4[R1]
+PDEC    .EQU    --R2
+RG      .EQU    R5
+        MOVE    OPW, OPW                ; 42c: 0x71<<14 | 0x71<<7: 001c7880, 42d-42e: 4, 4
+        MOVE    R1, @PDEC               ; 42f: 0x01<<14 | 0x52<<7: 00006900
+        MOVE    @PINC, R1               ; 430: 0x63<<14 | 0x01<<7: 0018c080
+        MOVE    RG--, @7[RG]            ; 431: 0x15<<14 | 0x75<<7: 00057a80, 432: 7
+; an .EQU used twice in one value, used before its definition, naming a later label
+DA      .EQU    3
+DB      .EQU    DA+DA-1
+        .DAT    DB                      ; 433: 5
+        .DAT    FWD                     ; 434: 9
+FWD     .EQU    9
+FL      .EQU    flab
+        .DAT    FL                      ; 435: 436
+flab    .DAT    0x55                    ; 436: 55
+; a label alone on a line, a label before a condition, a '*' comment after an operand
+alone:
+        .DAT    alone                   ; 437: 437
+clab    ?Z HALT                         ; 438: 3c000000
+        .DAT    clab                    ; 439: 438
+        MOVE    R1 ,R2 * comment        ; 43a: 00004100

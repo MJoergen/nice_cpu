@@ -10,8 +10,9 @@ dependencies beyond the standard library. It implements the assembler syntax in
 
 This assembles every program in `test/` and compares the result with
 the expected `.bin` file. It then runs `test/errors.py`, which assembles a
-list of one-line faulty programs and checks the error message, the exit
-status, and that no output file is written.
+list of short faulty programs and checks the error message, the exit
+status, and that no output file is written. It also checks short good
+programs, the format of several errors, and the command line.
 
 The script is fully type-annotated. `make typecheck` checks it with
 `mypy --strict` (install mypy first).
@@ -39,6 +40,12 @@ by `.ORG` and words reserved by `.RES` are not listed.
 
 - Operands are separated by whitespace or by one comma. A comma anywhere
   else, such as after the mnemonic or two in a row, is an error.
+- `;` starts a comment anywhere outside a string. `*` starts one only at
+  the start of a word, so `R2 *note` is `R2` and a comment, but `R2*note`
+  is an error.
+- A line with one word that is not a mnemonic or a directive is a label,
+  even when it is indented. So a misspelt `HALT` or `RTI` alone on a line
+  is not reported: it is read as a label.
 - A label or `.EQU` name cannot be a mnemonic or look like a register (`R`
   followed by digits, so `R16` is rejected too).
 - An `.EQU` value is a number, an expression, a register, or a complete
@@ -46,9 +53,11 @@ by `.ORG` and words reserved by `.RES` are not listed.
   when it is a whole operand, the part after `@`, the register in `--Rx`,
   `Rx++`, `Rx--`, or `c[Rx]`, or a term in an expression. In an expression
   the value must be a number or an expression. Each value is checked where it
-  is defined.
+  is defined, except that an undefined symbol in it is reported only where
+  the name is used.
 - Numbers are digits only: no `_` separators.
-- Strings have no escape sequences.
+- Strings have no escape sequences. The source is read byte by byte, as
+  Latin-1, so each byte of a string is one character: a UTF-8 `é` gives two.
 - `.ORG`, `.BLK`, and `.RES` arguments must not refer to labels defined later.
 - A `.BLK` or `.RES` count must not be negative, and the block must end at or
   before address `0xFFFFFFFF`. Other statements wrap from `0xFFFFFFFF` to 0.
@@ -60,7 +69,7 @@ by `.ORG` and words reserved by `.RES` are not listed.
 | File | What it checks |
 |---|---|
 | `count`, `replicate`, `print` | The 2004 example programs by B. Ulmann ([examples.zip](http://www.vaxman.de/projects/nice/examples.zip)). The `.bin` files are the original `NICE.pm` output and match byte for byte. |
-| `encoding` | Every addressing mode, opcode, alias, condition, control instruction, and directive; register spellings; and `.EQU` chains and operands. The expected output was checked by hand against ISA.md, including the worked example in §11. |
+| `encoding` | Every addressing mode in every field, opcode, alias, condition, control instruction, and directive; three constant words; number spellings and expressions; register spellings; and `.EQU` chains and operands. The expected output was checked by hand against ISA.md, including the worked example in §11. The comments of the later lines give the derivation. |
 | `wrap` | Address wrap from `0xFFFFFFFF` to 0. |
 | `crlf` | CRLF line endings and a program with no `.ORG`. |
-| `errors.py` | One case per error message, including every bug fixed after [the review](../doc/review/assembler-review.md), and generated programs such as `.EQU` chains of 1200 names. |
+| `errors.py` | One case per error message, including every bug fixed after [the review](../doc/review/assembler-review.md); generated programs such as `.EQU` chains of 1200 names; an empty file and one with no final newline; the exact output for two errors; and the command line: `-o`, a missing file, a directory in place of a file, and bad arguments. |

@@ -200,3 +200,11 @@ benchmark's module became 8560, not 8623.
 - With a bubble of 5 after a jump taken in WRITE, as the model of
   `bench/pipecycles.py` had before, its totals were 7.5% and 15.7% below
   the pipelined core's.
+
+## The start-up code for a monitor
+
+The runtime library once had `start_mon.nasm` and `start_wasm_mon.nasm`,
+start-up code for a program that a monitor in ROM loads at `0x8000` and
+calls as a subroutine. ABI.md described them under "Programs under a
+monitor". They were removed, because the monitor and the system around
+the core belong in [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65).

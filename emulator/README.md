@@ -16,11 +16,22 @@ in `../assembler/test/` (the three 2004 programs and `wrap`) and the probe
 programs `test/*.nasm`, comparing the output and exit status of each with
 `test/X.expected`.
 Finally `test/errors.py` checks the error messages and exit statuses of the
-command line and the loader. The probes are assembled with niceasm, and
+command line and the loader, and the exit status and some output lines of
+runs that stop in each way: `HALT`, the other halts, and the step limit,
+`-n 0` included. The probes are assembled with niceasm, and
 `make bins` reassembles them after a change.
 
 `test/reserved.nasm` runs a reserved control word, which halts the
 processor with exit status 2.
+
+Some probes check corners that cputest leaves out: `r0dest` and
+`r15modes` the remaining addressing modes of R0 and R15, `r14mem` R14 as
+an address, `skipconst` the constant words of skipped and control
+instructions, `carryin` and `shiftc` the carry input and the shift counts
+at their edges, `wrapmem` the wrap of addresses at `0xFFFFFFFF`, and
+`smcown` an instruction that overwrites its own constant word.
+`scrbound` runs twice, with `-s` and with `-2004 -s`, to check the bounds
+of the screen.
 
 `test/cputest.nasm` is a self-checking test of the whole instruction set:
 every opcode, shift, addressing mode, and condition, the flags, R0, R14, and

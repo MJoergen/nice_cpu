@@ -22,7 +22,8 @@ OPTS_wrap      = -d 0xffffffff:1
 # Probes of single rules of doc/ISA.md, in test/X.nasm. The expected values
 # are in the comments of each program. Run make bins after changing one.
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest console screen iofetch \
-  reads reserved mpu mpu64 perf timer input
+  reads reserved mpu mpu64 perf timer input r15modes r0dest r14mem skipconst carryin shiftc \
+  wrapmem smcown scrbound
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
@@ -45,6 +46,16 @@ OPTS_timer_noirq = --no-timer-irq --irq 7:0x41 --irq 17:0x41 --irq 20:0x41 --irq
   --irq 26:0x41 --irq 29:0x41 --irq 32:0x41 --irq 35:0x41 --irq 42:0x41 --irq 50:0x42 \
   -d 0xffffff10:4
 OPTS_input   = --input test/input.txt
+OPTS_r15modes = -d 6:1 -d 0xa:1
+OPTS_r0dest  = -d 0:2
+OPTS_r14mem  = -d 0x01000010:2 -d 0x01ffffff:1
+OPTS_carryin = -d 0x200:16
+OPTS_shiftc  = -d 0x200:28
+OPTS_wrapmem = -d 0xffffff01:1 -d 0xffffffff:1
+OPTS_smcown  = -d 5:1
+OPTS_scrbound = -s
+# scrbound again, with the screen at 0x400.
+OPTS_scrbound2004 = -2004 -s
 
 define check
 	@$(EMU) $(OPTS_$(1)) $(2) < /dev/null > test/$(1).out; echo "exit $$?" >> test/$(1).out
@@ -60,6 +71,7 @@ test: build
 	$(foreach t,$(EXAMPLES),$(call check,$(t),$(ASM)/$(t).bin))
 	$(foreach t,$(PROBES),$(call check,$(t),test/$(t).bin))
 	$(call check,timer_noirq,test/timer.bin,timer)
+	$(call check,scrbound2004,test/scrbound.bin)
 	@rm -f test/*.out
 	@$(PYTHON) test/errors.py
 

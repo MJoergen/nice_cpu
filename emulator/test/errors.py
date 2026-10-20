@@ -2,11 +2,13 @@
 """Tests of niceemu's command line and loader.
 
 CASES are command lines, some with a .bin file, that must fail with exit
-status 1 and print the expected message on stderr."""
+status 1 and print the expected message on stderr. RUNS are programs that
+run and stop, each with its exit status and lines of its output."""
 
 from __future__ import annotations
 
 import os
+import select
 import subprocess
 import sys
 import tempfile
@@ -62,6 +64,47 @@ CASES: List[Tuple[List[str], Optional[str], str]] = [
      "BIN:3: error: address 00000000 is already loaded by line 1"),
 ]
 
+# Runs that succeed: (contents of the .bin file, arguments before it, exit
+# status, lines that stdout must have, or must not have if they start with
+# "!"). 0c000000 is HALT, 0c200000 RTI, 0c400001 INT 1, and 0c600000 a
+# reserved control word.
+RUNS: List[Tuple[str, List[str], int, List[str]]] = [
+    ("00000000 0c000000", [], 0, ["Halted (HALT) after 1 steps, PC=00000001"]),
+    # RTI outside an interrupt routine, a reserved word, and INT inside the
+    # routine of INT 1, which starts at word 2.
+    ("00000000 0c200000", [], 2, ["Halted (RTI outside an interrupt routine) after 1 steps, PC=00000001"]),
+    ("00000000 0c600000", [], 2, ["Halted (reserved control instruction) after 1 steps, PC=00000001"]),
+    ("00000000 0c400001\n00000001 00000002\n00000002 0c400001", [], 2,
+     ["Halted (INT inside an interrupt routine) after 2 steps, PC=00000003"]),
+    ("00000000 00000000", ["-n", "5", "--no-cycle-counter"], 3,
+     ["Stopped at the step limit after 5 steps, PC=00000005"]),
+    # -n 0 runs nothing. A HALT at the step limit still counts as a halt.
+    ("00000000 0c000000", ["-n", "0"], 3, ["Stopped at the step limit after 0 steps, PC=00000000"]),
+    ("00000000 0c000000", ["-n", "1"], 0, ["Halted (HALT) after 1 steps, PC=00000001"]),
+    # An interrupt entry is a step: -n 1 stops right after the NMI's entry,
+    # at the routine at 0x10, with I set.
+    ("00000000 0c000000\n00000003 00000010", ["-n", "1", "--nmi", "0:3"], 3,
+     ["Stopped at the step limit after 1 steps, PC=00000010",
+      "R12 00000000 R13 00000000 R14 81000000 R15 00000010", "!Pending"]),
+    # A request still pending at the step limit, with E = 0, and one for a
+    # step after the halt, which is never raised.
+    ("00000000 00000000", ["-n", "2", "--irq", "1:5"], 3,
+     ["Stopped at the step limit after 2 steps, PC=00000002", "Pending: IRQ 05"]),
+    ("00000000 0c000000", ["--nmi", "1:5", "--irq", "1:6"], 0, ["!Pending"]),
+    # MOVE @TIMER_PERIOD, P; HALT. With P = 1 the timer raises a request at
+    # the end of step 0, which is pending, with E = 0, at the end. With
+    # P = 2 the only request comes at the end of the HALT's step, the last
+    # one, and it is not listed (README.md, Memory map).
+    ("00000000 000c1800\n00000001 ffffff10\n00000002 00000001\n00000003 0c000000", [], 0,
+     ["Halted (HALT) after 2 steps, PC=00000004", "Pending: IRQ 00"]),
+    ("00000000 000c1800\n00000001 ffffff10\n00000002 00000002\n00000003 0c000000", [], 0,
+     ["Halted (HALT) after 2 steps, PC=00000004", "!Pending"]),
+    # A dump that wraps from 0xFFFFFFFF to 0 stays on one line, and a dump
+    # of no words prints nothing.
+    ("00000000 0c000000", ["-d", "0xfffffffe:3", "-d", "5:0"], 0,
+     ["fffffffe: 00000000 00000000 0c000000", "!00000005:"]),
+]
+
 
 def run(tmp: str, args: List[str], text: Optional[str]) -> subprocess.CompletedProcess[str]:
     path = os.path.join(tmp, "t.bin")
@@ -98,14 +141,27 @@ def main() -> None:
             failed += 1
             print("FAIL -h")
 
-        # The exit status of each way to stop: HALT, any other halt, the step
-        # limit. 0c200000 is RTI outside an interrupt routine.
-        for text, args, status in [("00000000 0c000000", [], 0), ("00000000 0c200000", [], 2),
-                                   ("00000000 00000000", ["-n", "5", "--no-cycle-counter"], 3)]:
+        # The exit status of each way to stop, and lines the output must
+        # have, or must not have when they start with "!".
+        for text, args, status, lines in RUNS:
             p = run(tmp, args + ["BIN"], text)
+            out = p.stdout.splitlines()
+            problems = []
             if p.returncode != status:
+                problems.append(f"exit status {p.returncode}, expected {status}")
+            for line in lines:
+                if line.startswith("!"):
+                    if any(o.startswith(line[1:]) for o in out):
+                        problems.append(f"unexpected '{line[1:]}'")
+                elif line not in out:
+                    problems.append(f"expected '{line}'")
+            if p.stderr:
+                problems.append(f"unexpected stderr:\n{p.stderr}")
+            if problems:
                 failed += 1
-                print(f"FAIL {text!r}: exit status {p.returncode}, expected {status}")
+                print(f"FAIL {args} {text!r}")
+                for msg in problems:
+                    print("    " + msg.replace("\n", "\n    "))
 
         # A pipe closed early ends the trace quietly, with status 141.
         with open(path, "w") as f:
@@ -118,7 +174,24 @@ def main() -> None:
         if proc.wait() != 141 or err:
             failed += 1
             print(f"FAIL closed pipe: exit status {proc.returncode}, stderr {err!r}")
-    total = len(CASES) + 5
+
+        # Before a console read waits for input, the output so far is
+        # flushed, so that a prompt shows. The program prints "?", reads a
+        # byte, and echoes it. The byte is sent only once the "?" has come.
+        with open(path, "w") as f:
+            f.write("00000000 001c1800\n00000001 ffffff00\n00000002 0000003f\n"
+                    "00000003 00007800\n00000004 ffffff00\n"
+                    "00000005 001c0080\n00000006 ffffff00\n00000007 0c000000\n")
+        prompt = subprocess.Popen([NICEEMU, path], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE)
+        assert prompt.stdout is not None
+        ready, _, _ = select.select([prompt.stdout], [], [], 5)
+        first = os.read(prompt.stdout.fileno(), 1) if ready else b""
+        rest, err_b = prompt.communicate(b"x", timeout=10)
+        if first != b"?" or not rest.startswith(b"xHalted (HALT) after 4 steps") or err_b:
+            failed += 1
+            print(f"FAIL prompt: {first!r} first, then {rest[:40]!r}, stderr {err_b!r}")
+    total = len(CASES) + len(RUNS) + 3
     print(f"PASS errors ({total} cases)" if not failed else f"FAIL errors ({failed} of {total})")
     sys.exit(1 if failed else 0)
 

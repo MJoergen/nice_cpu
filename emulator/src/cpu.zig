@@ -1099,6 +1099,105 @@ test "shifts (§5.2)" {
     try testing.expectEqual(Result{ .r = 0xF }, shift(0b0010, 0, 4, 1));
 }
 
+/// The loop of §5.2, run n times as written, with no reduction of the
+/// count: the model that `shift` is compared with. Bit 3 of `op` is the
+/// direction, and bits 2..0 pick the fill and whether the bit shifted out
+/// goes to C, as in the table of §5.2.
+fn shiftLoop(op: u4, s0: u32, n: u32, c_in: u1) Result {
+    const right = op >= 8;
+    const k = op & 7;
+    var d = s0;
+    var c = c_in;
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        const out: u1 = @truncate(if (right) d else d >> 31);
+        const fill: u1 = switch (k) {
+            0, 3 => 0,
+            1, 4 => 1,
+            2, 5 => c,
+            else => out,
+        };
+        d = if (right) (d >> 1) | (@as(u32, fill) << 31) else (d << 1) | fill;
+        if (k == 3 or k == 4 or k == 5 or k == 7) c = out;
+    }
+    const to_c = k == 3 or k == 4 or k == 5 or k == 7;
+    return .{ .r = d, .c = if (to_c) c else 0 };
+}
+
+test "every shift, with C = 0 and 1, for the counts around 32 and 33 (§5.2)" {
+    const values = [_]u32{ 0, 0xFFFF_FFFF, 0x8000_0001, 0x9ABC_DEF1, 0x4000_0002 };
+    const counts = [_]u32{ 0, 1, 2, 31, 32, 33, 34, 63, 64, 65, 66, 67, 99 };
+    for (0..16) |op| {
+        for (values) |v| {
+            for ([_]u1{ 0, 1 }) |c| {
+                for (counts) |n| {
+                    const want = shiftLoop(@intCast(op), v, n, c);
+                    testing.expectEqual(want, shift(@intCast(op), v, n, c)) catch |err| {
+                        std.debug.print("op {b:0>4}, s0 {x:0>8}, n {d}, C {d}\n", .{ op, v, n, c });
+                        return err;
+                    };
+                }
+                // n = 2^32 - 1 is too long to loop. By the closed forms of
+                // §5.2 it is 31 steps for the 32-bit rotations (31 mod 32),
+                // 3 for C<C and C>C (2^32 = 4 mod 33, as 2^10 = 1 mod 33),
+                // and as any count above 32 for the shifts with a fixed fill.
+                const k = op & 7;
+                const same: u32 = if (k == 6 or k == 7) 31 else if (k == 5) 3 else 33;
+                try testing.expectEqual(shiftLoop(@intCast(op), v, same, c), shift(@intCast(op), v, 0xFFFF_FFFF, c));
+            }
+        }
+    }
+}
+
+test "shift results worked out by hand (§5.2)" {
+    // n = 0: r = s0. C keeps its value where the bit shifted out goes to
+    // C, and is 0 for the other shifts.
+    for (0..16) |op| {
+        const to_c = switch (op & 7) {
+            3, 4, 5, 7 => true,
+            else => false,
+        };
+        try testing.expectEqual(Result{ .r = 0x1234_5678, .c = @intFromBool(to_c) }, shift(@intCast(op), 0x1234_5678, 0, 1));
+        try testing.expectEqual(Result{ .r = 0x1234_5678, .c = 0 }, shift(@intCast(op), 0x1234_5678, 0, 0));
+    }
+    // C<C and C>C by 33 and 66 rotate the 33 bits back into place.
+    for ([_]u4{ 0b0101, 0b1101 }) |op| {
+        for ([_]u32{ 33, 66 }) |n| {
+            try testing.expectEqual(Result{ .r = 0x1234_5678, .c = 1 }, shift(op, 0x1234_5678, n, 1));
+            try testing.expectEqual(Result{ .r = 0x1234_5678, .c = 0 }, shift(op, 0x1234_5678, n, 0));
+        }
+    }
+    // C<C by 34 = 1 mod 33: C = 1 comes in, bit 31 = 0 goes out.
+    try testing.expectEqual(Result{ .r = 0x2468_ACF1, .c = 0 }, shift(0b0101, 0x1234_5678, 34, 1));
+    try testing.expectEqual(Result{ .r = 0x2468_ACF1, .c = 0 }, shift(0b0101, 0x1234_5678, 67, 1));
+    // C<C by 2^32 - 1 = 3 mod 33, C = 1: 0x80000000 -> 1 (C = 1) -> 3
+    // (C = 0) -> 6 (C = 0).
+    try testing.expectEqual(Result{ .r = 6, .c = 0 }, shift(0b0101, 0x8000_0000, 0xFFFF_FFFF, 1));
+    // C>C by 1: bit 0 = 0 goes to C, C = 1 comes in at the top.
+    try testing.expectEqual(Result{ .r = 0x891A_2B3C, .c = 0 }, shift(0b1101, 0x1234_5678, 1, 1));
+    // C<0 by 31, 32, 33 of 1: bit 0 is the last bit out at n = 32 only.
+    try testing.expectEqual(Result{ .r = 0x8000_0000, .c = 0 }, shift(0b0011, 1, 31, 0));
+    try testing.expectEqual(Result{ .r = 0, .c = 1 }, shift(0b0011, 1, 32, 0));
+    try testing.expectEqual(Result{ .r = 0, .c = 0 }, shift(0b0011, 1, 33, 1));
+    // 1>C by 32 and 33 of 0: C is bit 31 of s0, then the fill bit.
+    try testing.expectEqual(Result{ .r = 0xFFFF_FFFF, .c = 0 }, shift(0b1100, 0, 32, 1));
+    try testing.expectEqual(Result{ .r = 0xFFFF_FFFF, .c = 1 }, shift(0b1100, 0, 33, 0));
+    // 0<C and C>0 fill with C for any count, and leave C = 0.
+    try testing.expectEqual(Result{ .r = 0xFFFF_FFFF, .c = 0 }, shift(0b0010, 0, 64, 1));
+    try testing.expectEqual(Result{ .r = 0, .c = 0 }, shift(0b0010, 0xFFFF_FFFF, 64, 0));
+    try testing.expectEqual(Result{ .r = 0xFFFF_FFFF, .c = 0 }, shift(0b1010, 0, 0xFFFF_FFFF, 1));
+    // 1>0 by 2^32 - 1: all ones, and C = 0.
+    try testing.expectEqual(Result{ .r = 0xFFFF_FFFF, .c = 0 }, shift(0b1001, 0, 0xFFFF_FFFF, 1));
+    // Rotations: by 32 and 64 r = s0, by 33 one step, by 2^32 - 1 one step
+    // back. C<< and >>C copy the last bit rotated, bit 0 or bit 31 of r.
+    try testing.expectEqual(Result{ .r = 0x8000_0001 }, shift(0b0110, 0x8000_0001, 64, 1));
+    try testing.expectEqual(Result{ .r = 0x0000_0003 }, shift(0b0110, 0x8000_0001, 33, 0));
+    try testing.expectEqual(Result{ .r = 0xC000_0000 }, shift(0b0110, 0x8000_0001, 0xFFFF_FFFF, 0));
+    try testing.expectEqual(Result{ .r = 2, .c = 0 }, shift(0b0111, 2, 64, 1));
+    try testing.expectEqual(Result{ .r = 0x8000_0002, .c = 1 }, shift(0b1111, 0x4000_0001, 0xFFFF_FFFF, 0));
+    try testing.expectEqual(Result{ .r = 0xC000_0000, .c = 1 }, shift(0b1111, 0x8000_0001, 65, 0));
+}
+
 test "shifts write C only with M (§5.2)" {
     // C<1 R1, R2, 1 with R2 = 0x80000000, without and with M.
     var cpu = try run(&.{
@@ -1224,6 +1323,21 @@ test "HALT inside an interrupt routine, and INT inside one (§7.2)" {
     cpu = try run(&.{ INT + 2, 0, 3, INT + 2 });
     defer cpu.deinit();
     try testing.expectEqual(.nested_int, cpu.halt_reason);
+}
+
+test "a halted processor takes no interrupts, and counts nothing (§7.1)" {
+    var cpu = try interruptTestCpu();
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{HALT});
+    try cpu.step();
+    try testing.expectEqual(.halt, cpu.halt_reason);
+    cpu.requestNmi(6);
+    try cpu.step();
+    try testing.expectEqual(1, cpu.regs[15]);
+    try testing.expect(!cpu.in_service);
+    try testing.expectEqual(6, cpu.nmi_pending);
+    try testing.expectEqual(1, cpu.perf.instrs);
+    try testing.expectEqual(1, cpu.perf.cycles);
 }
 
 test "VBASE selects the vector table (§7.3)" {
@@ -1391,6 +1505,25 @@ test "the math unit takes writes to A and B only, and memory keeps nothing" {
     try testing.expectEqual(0, cpu.peek(mpu_base));
 }
 
+test "a write to one half of C or D keeps the other half (SYSTEM §2)" {
+    // mpu64.nasm writes all four words, low first, so a write of a low
+    // word that cleared the high word would go unseen there.
+    var mpu: Mpu = .{};
+    mpu.write(17, 0x1111_1111); // C_HI
+    mpu.write(16, 0x2222_2222); // C_LO
+    mpu.write(19, 0x3333_3333); // D_HI
+    mpu.write(18, 0x4444_4444); // D_LO
+    try testing.expectEqual(0x1111_1111_2222_2222, mpu.c);
+    try testing.expectEqual(0x3333_3333_4444_4444, mpu.d);
+    mpu.write(16, 5);
+    mpu.write(19, 6);
+    try testing.expectEqual([4]u32{ 5, 0x1111_1111, 0x4444_4444, 6 }, [4]u32{ mpu.read(16), mpu.read(17), mpu.read(18), mpu.read(19) });
+    // The 64-bit operands do not touch A and B, nor the other way round.
+    mpu.write(0, 7);
+    try testing.expectEqual(0, mpu.read(1));
+    try testing.expectEqual(0x1111_1111_0000_0005, mpu.c);
+}
+
 test "a read of a counter's low word keeps its high word for the next read (SYSTEM §3)" {
     var perf: Perf = .{ .instrs = 0xFFFF_FFFF, .cycles = 0x1_2345_6789 };
     try testing.expectEqual(0xFFFF_FFFF, perf.read(2));
@@ -1455,6 +1588,16 @@ test "the counters count instructions and steps, and ignore writes (SYSTEM §3)"
     try testing.expectEqual(Perf{}, cpu.perf);
 }
 
+test "the counters wrap from 2^64 - 1 to 0 (SYSTEM §3)" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    cpu.perf.instrs = std.math.maxInt(u64);
+    cpu.perf.cycles = std.math.maxInt(u64);
+    try cpu.step(); // a NOP at 0
+    try testing.expectEqual(0, cpu.perf.instrs);
+    try testing.expectEqual(0, cpu.perf.cycles);
+}
+
 test "without the cycle counter, its two words are memory (--no-cycle-counter)" {
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
@@ -1494,6 +1637,28 @@ test "the timer counts down from the write and raises a request every P steps (S
     try testing.expectEqual(0, timer.read(1));
     timer.tick();
     try testing.expectEqual(0, timer.read(1));
+}
+
+test "a new period written while the timer runs restarts the count (SYSTEM §4)" {
+    // timer.nasm writes a nonzero period only while the timer is stopped.
+    var timer: Timer = .{ .vector = 9 };
+    timer.write(0, 5);
+    timer.tick();
+    timer.tick();
+    try testing.expectEqual(3, timer.read(1));
+    timer.write(0, 2); // P = 2 and COUNT = 2, from 3
+    try testing.expectEqual(2, timer.read(1));
+    timer.tick(); // the cycle of the write counts: 1
+    try testing.expectEqual(null, timer.raised);
+    timer.tick(); // the second cycle after the write: a request, COUNT = P
+    try testing.expectEqual(9, timer.raised);
+    try testing.expectEqual(2, timer.read(1));
+    // P = 1 raises a request at the end of every cycle.
+    timer.raised = null;
+    timer.write(0, 1);
+    timer.tick();
+    try testing.expectEqual(9, timer.raised);
+    try testing.expectEqual(1, timer.read(1));
 }
 
 test "the timer's request is an IRQ, and merges with a pending one (SYSTEM §4)" {
@@ -1610,4 +1775,74 @@ test "trace: an interrupt line shows no write of the instruction before (§7.2)"
         \\NMI 06            R14=81000000 R15=00000040
         \\
     , try traceSteps(&cpu, &buf, 1));
+}
+
+test "trace: control instructions and the halts other than HALT (§5.3, §7)" {
+    // 0: INT 2;  1: HALT;  2: .DAT 3 (vector 2);  3: RTI. INT lists I and
+    // the jump to 3, RTI the restored SR and the jump back to 1.
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{ INT + 2, HALT, 3, RTI });
+    var buf: [512]u8 = undefined;
+    try testing.expectEqualStrings(
+        \\00000000 0c400002 R14=81000000 R15=00000003
+        \\00000003 0c200000 R14=01000000 R15=00000001
+        \\00000001 0c000000 HALT
+        \\
+    , try traceSteps(&cpu, &buf, 3));
+
+    // A skipped control word, then a reserved one: command 3.
+    var cpu2 = Cpu.init(testing.allocator);
+    defer cpu2.deinit();
+    try load(&cpu2, 0, &.{ 0x8C60_0000, 0x0C60_0000 });
+    try testing.expectEqualStrings(
+        \\00000000 8c600000 skipped
+        \\00000001 0c600000 reserved control instruction
+        \\
+    , try traceSteps(&cpu2, &buf, 2));
+
+    // INT inside the routine of INT 2, which starts at 3.
+    var cpu3 = Cpu.init(testing.allocator);
+    defer cpu3.deinit();
+    try load(&cpu3, 0, &.{ INT + 2, 0, 3, INT + 2 });
+    try testing.expectEqualStrings(
+        \\00000000 0c400002 R14=81000000 R15=00000003
+        \\00000003 0c400002 INT inside an interrupt routine
+        \\
+    , try traceSteps(&cpu3, &buf, 2));
+
+    // RTI outside an interrupt routine.
+    var cpu4 = Cpu.init(testing.allocator);
+    defer cpu4.deinit();
+    try load(&cpu4, 0, &.{RTI});
+    try testing.expectEqualStrings(
+        \\00000000 0c200000 RTI outside an interrupt routine
+        \\
+    , try traceSteps(&cpu4, &buf, 1));
+}
+
+test "trace: console output comes before the line of the instruction that wrote it" {
+    // MOVE @0xFFFFFF00, 0x1FF;  MOVE @0xFFFFFF00, 0;  HALT. Each write
+    // prints bits 7..0, 0xFF and then 0, whatever they are, and memory
+    // keeps nothing. The trace shows the whole word written.
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), console_addr, 0x1FF,
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), console_addr, 0,
+        HALT,
+    });
+    var buf: [512]u8 = undefined;
+    var w: std.Io.Writer = .fixed(&buf);
+    cpu.console = &w;
+    cpu.trace = &w;
+    for (0..3) |_| try cpu.step();
+    try testing.expectEqualStrings(
+        "\xff00000000 000c1800 [ffffff00]=000001ff\n" ++
+            "\x0000000003 000c1800 [ffffff00]=00000000\n" ++
+            "00000006 0c000000 HALT\n",
+        w.buffered(),
+    );
+    try testing.expectEqual(0, cpu.peek(console_addr));
+    try testing.expectEqual(1, cpu.mem.pages.count()); // only the program's page
 }

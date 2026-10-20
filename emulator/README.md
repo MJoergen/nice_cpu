@@ -72,8 +72,9 @@ dropped from the bottom. Characters outside printable ASCII show as blanks.
 Both come after the registers, the dumps first.
 
 The exit status is 0 after `HALT`, 2 after any other halt (a reserved control
-word, a nested `INT`, or `RTI` outside an interrupt routine), 3 at the step
-limit, and 1 for a usage, file, or memory error. If stdout is a pipe that
+word, a nested `INT`, or `RTI` or a saved-state instruction such as `RDSPC`
+outside an interrupt routine), 3 at the step limit, and 1 for a usage, file,
+or memory error. If stdout is a pipe that
 closes early, as in `niceemu -t x.bin | head`, niceemu stops quietly with
 status 141, as a filter killed by SIGPIPE would.
 

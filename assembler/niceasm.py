@@ -44,7 +44,11 @@ MNEMONICS: Dict[str, Tuple[int, int, int]] = {
     "SHR": (SHIFT, 0x8, 3), "ROR": (SHIFT, 0xE, 3), "BPR": (SHIFT, 0xF, 3),
 
     "HALT": (CTRL, 0x00, 0), "RTI": (CTRL, 0x01, 0), "INT": (CTRL, 0x02, 1),
+    "RDSPC": (CTRL, 0x04, 1), "RDSSR": (CTRL, 0x05, 1),
+    "WRSPC": (CTRL, 0x06, 1), "WRSSR": (CTRL, 0x07, 1),
 }
+
+INT_COMMAND = 0x02  # the one control instruction whose operand is a number
 
 DIRECTIVES = {".EQU", ".ORG", ".DAT", ".BLK", ".RES", ".ASCII_L", ".ASCII_B"}
 
@@ -427,11 +431,16 @@ class Assembler:
         iw = cond << 28
         if cls == CTRL:
             iw |= 0x0C000000 | opcode << 21
-            if args:
+            if args and opcode == INT_COMMAND:
                 v = self.value(args[0])
                 if not 0 <= v <= 255:
                     raise AsmError(f"interrupt vector {v} is out of range 0..255")
                 iw |= v
+            elif args:
+                reg = self.register(args[0])
+                if reg is None:
+                    raise AsmError(f"{name} takes a register, not '{args[0]}'")
+                iw |= reg
             self.emit(iw, line_no)
             return
 

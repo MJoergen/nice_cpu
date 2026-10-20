@@ -73,6 +73,13 @@ No code has TODO or FIXME comments.
   that raises IRQ, so it drives the core's IRQ port directly. A second
   device needs a controller that merges the requests and says which vector
   goes first. No device raises NMI.
+- **A debug device for single-stepping and breakpoints.** A device that
+  raises NMI when software arms it lets a debug routine single-step:
+  it arms the device and runs `RTI`, and ISA.md §7.1 runs exactly one
+  instruction before the NMI is taken. Breakpoints replace an
+  instruction with `INT`, and the routine returns to it with `WRSPC`
+  (ISA.md §7.4). Undecided: whether the device and the routine live in
+  SYSTEM.md and the emulator, or only in NiceMonMEGA65.
 
 ## Pipelined core
 

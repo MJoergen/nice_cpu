@@ -124,3 +124,10 @@ lbl     .ORG    0x300                   ; the label names the new address
         .RES    3                       ; 0x301-0x303
 res_end .DAT    res_end                 ; 0x304
         .RES    0
+; the saved-state instructions take a register, an alias included
+        .ORG    0x310
+        RDSPC   R1
+        WRSPC   PC
+        RDSSR   R14
+        ?!Z WRSSR R0
+        WRSPC   CHAIN_A

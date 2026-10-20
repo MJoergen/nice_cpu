@@ -349,7 +349,7 @@
 %
    \begin{frame}
     \frametitle{Control instructions}
-    The control class has three commands, chosen by bits 25..21:
+    The control class has seven commands, chosen by bits 25..21:
     \begin{center}
      \begin{tabular}{|l|l|l|l|}
       \hline
@@ -360,6 +360,8 @@
        \code{00001}&\code{RTI}&\code{0x0C200000}&Return from interrupt\\
        \code{00010}&\code{INT n}&\code{0x0C400000} + n&Software interrupt\\
         &&&with vector n (0--255)\\
+       \code{00100}--&\code{RDSPC}, \code{RDSSR},&\code{0x0C800000}--&Read or write the\\
+       \code{00111}&\code{WRSPC}, \code{WRSSR}&\code{0x0CE00000} + x&saved PC or SR\\
       \hline
      \end{tabular}
     \end{center}
@@ -369,7 +371,7 @@
       \code{?Z HALT} halts only if \code{Z} is set.
      \item They never change the flags \code{X}, \code{C}, \code{Z},
       \code{N}, or \code{V}, except that \code{RTI} restores all of
-      \code{SR}.
+      \code{SR}, and \code{RDSPC R14} and \code{RDSSR R14} write it.
     \end{itemize}
    \end{frame}
 %

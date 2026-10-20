@@ -186,9 +186,11 @@ endef
 # cores, plain and on a stalling memory, compared with the emulator, and
 # irqhazard also with a request before each step, through
 # test/irq_sweep.py, without delays. test/samereg_prog.py writes one more,
-# with one register in all three fields of a shift.
+# with one register in all three fields of a shift. test/saved.nasm puts the
+# saved-state instructions of ISA.md §5.3 next to the instructions that use
+# what they read or write.
 HAZARD_PROGS = latecount twocycle r15mix r14cond r0odd smclate readorder instret_late \
-  jumpwords condlate irqhazard shiftjump
+  jumpwords condlate irqhazard shiftjump saved
 
 # test/fstats.nasm reads the fetch statistics (MICROARCH.md §8.1), which
 # only the pipelined core has, and checks itself. The emulator has none, so the run

@@ -45,7 +45,7 @@ class Instr:
     """What DECODE learns from one instruction word."""
 
     conditional: bool          # The condition is not "always"
-    control: bool              # HALT, RTI, INT, or a reserved word
+    control: bool              # A control instruction (ISA.md §5.3)
     reads: FrozenSet[int]      # Registers read as operands or bases, R0 left out
     writes: FrozenSet[int]     # Registers written by the result or a side effect
     mem_reads: int             # Data reads

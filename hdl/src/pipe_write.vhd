@@ -347,8 +347,11 @@ begin
          elsif u_v.kind = UOP_CTRL then
             -- ISA.md §5.3
             done_v := true;
-            if iw_v(20 downto 8) /= 0 or (iw_v(25 downto 21) /= "00010" and iw_v(7 downto 0) /= 0) then
+            x_v := to_integer(iw_v(3 downto 0));
+            if ctrl_reserved(iw_v) then
                halt_v := HALT_RESERVED;
+            elsif ctrl_saved(iw_v) and w_r.in_service = '0' then
+               halt_v := HALT_SAVED_OUTSIDE_ISR;
             else
                case iw_v(25 downto 21) is
                   when "00000" =>
@@ -377,6 +380,32 @@ begin
                         n_v.vec_issued := '0';
                         flush_v        := true;
                         done_v         := false;
+                     end if;
+
+                  -- The saved-state instructions. A read flushes, so that
+                  -- the younger instructions read the register it wrote;
+                  -- a write needs nothing, as only control instructions,
+                  -- which run here in order, read saved_pc and saved_sr.
+                  -- R15 reads as the next instruction, which w_r.regs(15)
+                  -- is not yet. Command bit 0 selects SR.
+                  when "00100" | "00101" =>
+                     wval_v := w_r.saved_pc when iw_v(21) = '0' else w_r.saved_sr;
+                     if x_v /= 0 then
+                        n_v.regs(x_v) := regval(x_v, wval_v);
+                        n_v.last      := regval(x_v, wval_v);
+                     end if;
+                     if x_v = 15 then
+                        n_v.jump := '1';
+                        target_v := wval_v;
+                     end if;
+                     flush_v := true;
+
+                  when "00110" | "00111" =>
+                     wval_v := u_v.inst.next_pc when x_v = 15 else w_r.regs(x_v);
+                     if iw_v(21) = '0' then
+                        n_v.saved_pc := wval_v;
+                     else
+                        n_v.saved_sr := regval(14, wval_v);
                      end if;
 
                   when others =>

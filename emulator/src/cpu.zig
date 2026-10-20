@@ -28,6 +28,8 @@ pub const HaltReason = enum {
     nested_int,
     /// `RTI` while `in_service` = 0 (§7.4).
     rti_outside_isr,
+    /// `RDSPC`, `WRSPC`, `RDSSR`, or `WRSSR` while `in_service` = 0 (§5.3).
+    saved_outside_isr,
 
     pub fn describe(self: HaltReason) []const u8 {
         return switch (self) {
@@ -36,6 +38,7 @@ pub const HaltReason = enum {
             .reserved => "reserved control instruction",
             .nested_int => "INT inside an interrupt routine",
             .rti_outside_isr => "RTI outside an interrupt routine",
+            .saved_outside_isr => "saved PC or SR access outside an interrupt routine",
         };
     }
 };
@@ -660,12 +663,20 @@ pub const Cpu = struct {
         }
     }
 
-    /// §5.3: HALT, RTI, INT and the reserved commands.
+    /// §5.3: HALT, RTI, INT, the saved-state instructions, and the
+    /// reserved commands.
     fn control(self: *Cpu, iw: u32) void {
         const cmd: u5 = @truncate(iw >> 21);
         const vector: u8 = @truncate(iw);
-        if (iw & 0x001F_FF00 != 0 or (cmd != 0b00010 and vector != 0)) {
+        const x: u4 = @truncate(iw);
+        const saved = cmd >= 0b00100 and cmd <= 0b00111;
+        const arg_max: u8 = if (cmd == 0b00010) 0xFF else if (saved) 0x0F else 0;
+        if (iw & 0x001F_FF00 != 0 or vector > arg_max) {
             self.halt_reason = .reserved;
+            return;
+        }
+        if (saved and !self.in_service) {
+            self.halt_reason = .saved_outside_isr;
             return;
         }
         switch (cmd) {
@@ -687,6 +698,12 @@ pub const Cpu = struct {
                 }
                 self.enterInterrupt(vector);
             },
+            // Rx as a register-direct operand (§4.3): getReg and setReg
+            // apply the rules for R0, R14, and R15.
+            0b00100 => self.setReg(x, self.saved_pc),
+            0b00101 => self.setReg(x, self.saved_sr),
+            0b00110 => self.saved_pc = self.getReg(x),
+            0b00111 => self.saved_sr = self.getReg(x) | one_bit,
             else => self.halt_reason = .reserved,
         }
     }
@@ -883,6 +900,10 @@ const OR = 0b1111;
 const HALT = 0x0C00_0000;
 const RTI = 0x0C20_0000;
 const INT = 0x0C40_0000;
+const RDSPC = 0x0C80_0000;
+const RDSSR = 0x0CA0_0000;
+const WRSPC = 0x0CC0_0000;
+const WRSSR = 0x0CE0_0000;
 
 /// A processor with `words` loaded at `addr`.
 fn load(cpu: *Cpu, addr: u32, words: []const u32) !void {
@@ -1250,6 +1271,115 @@ test "reserved control words halt, unless skipped (§5.3)" {
     cpu = try run(&.{RTI});
     defer cpu.deinit();
     try testing.expectEqual(.rti_outside_isr, cpu.halt_reason);
+}
+
+test "saved-state instructions: reserved arguments, and only in a routine (§5.3)" {
+    for ([_]u32{ RDSPC + 0x10, WRSPC + 0x80, RDSSR + 0x100, WRSSR + 0x10_0000 }) |iw| {
+        var cpu = try run(&.{ iw, HALT });
+        defer cpu.deinit();
+        try testing.expectEqual(.reserved, cpu.halt_reason);
+    }
+    for ([_]u32{ RDSPC + 1, WRSPC + 1, RDSSR + 1, WRSSR + 1 }) |iw| {
+        var cpu = try run(&.{ iw, HALT });
+        defer cpu.deinit();
+        try testing.expectEqual(.saved_outside_isr, cpu.halt_reason);
+        try testing.expectEqual(0, cpu.regs[1]);
+    }
+    // Skipped, they do not halt.
+    var cpu = try run(&.{ 0x8C80_0001, HALT });
+    defer cpu.deinit();
+    try testing.expectEqual(.halt, cpu.halt_reason);
+}
+
+test "a breakpoint routine returns to its INT (§7.4)" {
+    // 0: MOVE R14, 1                 ; VBASE = 1
+    // 2: INT 3                       ; the breakpoint, then the routine's
+    //                                ; WRSSR sets C, so ?C MOVE R2, 7 runs
+    // 3: ?C MOVE R2, 7
+    // 5: HALT
+    // 0x103: .DAT 0x20
+    // 0x20: ADD R1, R1, 1            ; counts the entries
+    // 0x22: SUB[M] R0, R1, 2
+    // 0x24: ?Z MOVE @2, 0            ; on the second entry, a NOP replaces the INT
+    // 0x27: RDSPC R3;  SUB R3, R3, 1;  WRSPC R3   ; return to the INT
+    // 0x2B: RDSSR R4;  OR R4, R4, C;  AND R4, R4, ~bit 24;  WRSSR R4
+    // 0x31: RTI
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{
+        alu_iw(.always, MOVE, .none, reg(14), imm(0), reg(0)), 1,
+        INT + 3,
+        alu_iw(.c, MOVE, .none, reg(2), imm(0), reg(0)), 7,
+        HALT,
+    });
+    try load(&cpu, 0x103, &.{0x20});
+    try load(&cpu, 0x20, &.{
+        alu_iw(.always, ADD, .none, reg(1), reg(1), imm(0)), 1,
+        alu_iw(.always, SUB, .m, reg(0), reg(1), imm(0)), 2,
+        alu_iw(.z, MOVE, .none, ind_imm(0), imm(0), reg(0)), 2, 0,
+        RDSPC + 3,
+        alu_iw(.always, SUB, .none, reg(3), reg(3), imm(0)), 1,
+        WRSPC + 3,
+        RDSSR + 4,
+        alu_iw(.always, OR, .none, reg(4), reg(4), imm(0)), 1 << sr_c,
+        alu_iw(.always, AND, .none, reg(4), reg(4), imm(0)), 0xFEFF_FFFF,
+        WRSSR + 4,
+        RTI,
+    });
+    try runToHalt(&cpu);
+    try testing.expectEqual(.halt, cpu.halt_reason);
+    // Entered twice: the first RTI went back to the INT, the second to
+    // the NOP that replaced it.
+    try testing.expectEqual(2, cpu.getReg(1));
+    try testing.expectEqual(7, cpu.getReg(2));
+    try testing.expectEqual(2, cpu.getReg(3));
+    try testing.expectEqual(0x0100_0001 | 1 << sr_c, cpu.getReg(14));
+    try testing.expectEqual(0x0100_0001 | 1 << sr_c, cpu.saved_sr);
+    try testing.expectEqual(6, cpu.regs[15]);
+}
+
+test "saved-state instructions with R0, R14, and R15 (§4.3, §5.3)" {
+    // 0: MOVE R14, 1;  2: INT 3;  3: HALT;  0x103: .DAT 0x20
+    // 0x20: WRSPC R0      ; saved_pc = 0
+    //       RDSPC R1      ; R1 = 0
+    //       WRSPC R15     ; saved_pc = 0x23, the next instruction
+    //       RDSPC R2      ; R2 = 0x23
+    //       RDSSR R0      ; discarded
+    //       WRSSR R0      ; saved_sr = 0x01000000: bit 24 set
+    //       RDSSR R14     ; SR = 0x01000000: I and VBASE cleared
+    //       ADD R5, R14, 0  ; R5 = 0x01000000
+    // 0x29: ADD R6, R15, 3  ; R6 = 0x2B + 3 = 0x2E, the address of the RTI
+    //       WRSPC R6
+    //       RDSPC R15     ; jumps to 0x2E
+    //       HALT          ; at 0x2D, never reached
+    //       RTI           ; at 0x2E, returns to itself, then halts there
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{ alu_iw(.always, MOVE, .none, reg(14), imm(0), reg(0)), 1, INT + 3, HALT });
+    try load(&cpu, 0x103, &.{0x20});
+    try load(&cpu, 0x20, &.{
+        WRSPC + 0,
+        RDSPC + 1,
+        WRSPC + 15,
+        RDSPC + 2,
+        RDSSR + 0,
+        WRSSR + 0,
+        RDSSR + 14,
+        alu_iw(.always, ADD, .none, reg(5), reg(14), imm(0)), 0,
+        alu_iw(.always, ADD, .none, reg(6), reg(15), imm(0)), 3,
+        WRSPC + 6,
+        RDSPC + 15,
+        HALT,
+        RTI,
+    });
+    try runToHalt(&cpu);
+    try testing.expectEqual(.rti_outside_isr, cpu.halt_reason);
+    try testing.expectEqual(0, cpu.getReg(1));
+    try testing.expectEqual(0x23, cpu.getReg(2));
+    try testing.expectEqual(0x0100_0000, cpu.getReg(5));
+    try testing.expectEqual(0x2E, cpu.getReg(6));
+    try testing.expectEqual(0x2F, cpu.regs[15]);
+    try testing.expectEqual(0x0100_0000, cpu.getReg(14));
 }
 
 test "the whole address space exists and wraps (§1.1)" {

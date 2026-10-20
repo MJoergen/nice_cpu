@@ -96,12 +96,12 @@ Software can read and write every bit except bit 24. Instructions with the M bit
 
 ### 1.4 Hidden state
 
-These are not visible as registers. They exist for interrupts (§7) and halting:
+These are not registers. They exist for interrupts (§7) and halting:
 
 | State | Meaning |
 |---|---|
 | `in_service` | 1 while an interrupt service routine runs, from interrupt entry until `RTI`. |
-| `saved_pc`, `saved_sr` | The PC and SR saved on interrupt entry and restored by `RTI`. |
+| `saved_pc`, `saved_sr` | The PC and SR saved on interrupt entry and restored by `RTI`. An interrupt routine reads and writes them with `RDSPC`, `WRSPC`, `RDSSR`, and `WRSSR` (§5.3). |
 | `after_rti` | Set to 1 by `RTI`. Cleared to 0 when the next instruction completes, whether or not its condition is true. While it is 1, no IRQ or NMI is taken (§7.1). |
 | `halted` | 1 after `HALT` or any other halt (§5.3, §7.2, §7.4). Only reset clears it. |
 
@@ -122,14 +122,14 @@ Control instructions divide the bits below the class differently:
 
 | Bits | 31 | 30..28 | 27 | 26 | 25..21 | 20..8 | 7..0 |
 |---|---|---|---|---|---|---|---|
-| Control | NEG | SEL | 1 | 1 | command | 0 | vector |
+| Control | NEG | SEL | 1 | 1 | command | 0 | argument |
 
 - **NEG, SEL**: the condition (§3).
 - **Bits 27..26** select the class: `0x` ALU, `10` SHIFT, `11` control.
 - **C** (ALU only): use the C flag as carry or borrow input (§5.1).
 - **M**: update the flags from the result (§6).
 - **dest, s0, s1**: the three operand fields (§4).
-- **command, vector**: the control instruction and, for `INT`, its vector number (§5.3).
+- **command, argument**: the control instruction and its argument: the vector number for `INT`, a register number for the saved-state instructions, else 0 (§5.3).
 
 The all-zero word is `MOVE R0, R0` with condition "always", so it does nothing. It is the canonical NOP.
 
@@ -335,13 +335,19 @@ Arithmetic shift right is two instructions: `C<0[M] R0, Rx, 1` copies the sign b
 | 00000 | `HALT` | `0x0C000000` | halted ← 1. The processor stops. Only reset restarts it. |
 | 00001 | `RTI` | `0x0C200000` | Return from interrupt (§7.4). |
 | 00010 | `INT n` | `0x0C400000` + n | Software interrupt with vector n, 0–255 (§7.2). |
+| 00100 | `RDSPC Rx` | `0x0C800000` + x | Rx ← saved_pc. |
+| 00101 | `RDSSR Rx` | `0x0CA00000` + x | Rx ← saved_sr. |
+| 00110 | `WRSPC Rx` | `0x0CC00000` + x | saved_pc ← Rx. |
+| 00111 | `WRSSR Rx` | `0x0CE00000` + x | saved_sr ← Rx, with bit 24 set to 1. |
 | others | | | Reserved. Executing one halts the processor. |
 
-Bits 20..8 must be 0, and bits 7..0 must be 0 except in `INT`. An instruction that breaks this is reserved and halts the processor.
+Bits 20..8 must be 0. Bits 7..0 hold the vector number in `INT`, and the register number x, 0–15, in bits 3..0 of the four saved-state instructions. Every other bit of 7..0 must be 0. An instruction that breaks this is reserved and halts the processor.
+
+**Saved-state instructions.** `RDSPC`, `WRSPC`, `RDSSR`, and `WRSSR` let an interrupt routine read and change where `RTI` returns to, and the SR it restores. A debugger needs them: it must know where the program stopped, and a breakpoint routine entered by `INT` must return to the address of the `INT`, not the one after it. They read and write Rx as a register-direct operand (mode 000) would, so the rules of §4.3 apply: R0 reads 0 and ignores the write, R15 reads the address of the next instruction and a write to it is a jump, and a write to R14 sets bit 24. They make no data accesses and leave after_rti as it is. In their command, bit 1 is 1 for a write and bit 0 is 1 for SR. Each one executed while `in_service` = 0 halts the processor, because saved_pc and saved_sr have no meaning outside an interrupt routine.
 
 The condition field applies, so `?Z HALT` halts only when Z = 1. This includes reserved words: a reserved control word whose condition is false is skipped like any other instruction and does not halt the processor.
 
-Control instructions have no M bit and never update X, C, Z, N, or V. `HALT` leaves SR unchanged, `INT` changes only I (§7.2), and `RTI` replaces SR with the saved copy (§7.4).
+Control instructions have no M bit and never update X, C, Z, N, or V. `HALT` leaves SR unchanged, `INT` changes only I (§7.2), and `RTI` replaces SR with the saved copy (§7.4). `RDSPC R14` and `RDSSR R14` write SR as any write to R14 does. The other saved-state instructions leave SR unchanged.
 
 ## 6. Flags
 
@@ -409,6 +415,13 @@ To set the table address without touching the flags:
 `RTI` executed while `in_service` = 0 halts the processor.
 
 Because SR is restored, an interrupt routine may change any flag freely, E and I included. An interrupt routine must save and restore any other registers it uses.
+
+An interrupt routine can change where `RTI` returns to with `WRSPC`, and the SR it restores with `WRSSR` (§5.3). For example, a breakpoint routine entered by `INT` returns to the `INT` itself with:
+
+        RDSPC   R1              ; the address after the INT
+        SUB     R1, R1, 1
+        WRSPC   R1
+        RTI
 
 ## 8. Reset, memory, and I/O
 
@@ -506,6 +519,7 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
   - `MOVE`, `DBL`, `DEC`, and `NOT` take dest and s0.
   - The other ALU and SHIFT instructions take dest, s0, and s1.
   - `HALT` and `RTI` take none, and `INT` takes the vector number.
+  - `RDSPC`, `WRSPC`, `RDSSR`, and `WRSSR` take one register.
 - **Unused fields** are encoded as R0 (`000 0000`).
 
 ### 10.2 Operands
@@ -570,7 +584,7 @@ It executes as follows:
 |---|---|---|---|
 | 0, C | M | 0000–1111 | `MOVE SUB MDBL ADD DBL DEC NOT NOR IAND NAND XOR IOR XNOR AND ONE OR` |
 | 10 | M | 0000–1111 | `0<0 0<1 0<C C<0 C<1 C<C <<< C<< 0>0 1>0 C>0 0>C 1>C C>C >>> >>C` |
-| 11 | command, bits 25..21 | | `HALT` (0), `RTI` (1), `INT` (2), reserved (3–31) |
+| 11 | command, bits 25..21 | | `HALT` (0), `RTI` (1), `INT` (2), `RDSPC` (4), `RDSSR` (5), `WRSPC` (6), `WRSSR` (7), reserved (3, 8–31) |
 
 ## Appendix B: Departures from the sources
 
@@ -582,7 +596,7 @@ It executes as follows:
 | Order of constant words | dest, s0, s1 (emulator and its binaries) | 1997 article: s1, s2, dest |
 | R15 as an operand | Address of the next instruction (1999 article, emulator, QNICE) | 1997 article: the current instruction |
 | Interrupt model | Hidden saved PC and SR, `RTI`, `INT`, no nesting (QNICE) | Articles and web page: R13 receives the return address and software nests interrupts |
-| HALT encoding space | Control group with `HALT`, `RTI`, `INT`; reserved commands halt | Web page: spare bits "have no meaning and should be zero" |
+| HALT encoding space | Control group with `HALT`, `RTI`, `INT`, and the saved-state instructions; reserved commands halt | Web page: spare bits "have no meaning and should be zero" |
 | Carry input to `SUB` | Subtracts C (borrow) | 1997 article: every arithmetic op adds C. The emulator subtracts it, as here. |
 | `MOVE`, `DEC` with the C bit | C bit ignored (emulator) | 1997 article: adds C |
 | `ONE` | r = 1 (emulator and web page) | The 74181 background suggests all ones |
@@ -595,6 +609,7 @@ It executes as follows:
 | Missing memory, I/O | Reads return 0; I/O at `0xFFFFFF00`–`0xFFFFFFFF` | Not specified anywhere |
 | SR bit 24 within an instruction | Always 1; every write to R14, side effects included, sets it (§4.3) | Not specified anywhere. The emulator forces it only before and after each instruction. |
 | `R14--` and `R14++` as destinations | r is written, then decremented or incremented, and each write sets bit 24 (§4.2) | Not specified anywhere |
+| Saved PC and SR | An interrupt routine reads and writes them with `RDSPC`, `WRSPC`, `RDSSR`, and `WRSSR` (§5.3) | Not specified anywhere |
 | Interrupt entry details | Entry sets I; NMI is taken before IRQ; NMI does not nest either (§7.1, §7.2) | Not specified anywhere. The articles have NMI and IRQ serviced "the same way". |
 | Pending interrupt requests | Deferred, never lost; same-kind requests may merge (§7.1) | Not specified anywhere |
 | Interrupts right after `RTI` | No IRQ or NMI until the instruction after `RTI` completes (`after_rti`, §7.1) | Not specified anywhere. QNICE guarantees the same progress. |

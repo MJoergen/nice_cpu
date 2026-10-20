@@ -11,7 +11,7 @@ const usage =
     \\of 0xFFFFFF00 returns the next byte of stdin plus 0x100, or 0x200 after
     \\the end of the input.
     \\The timer is at 0xFFFFFF10-0xFFFFFF1F, the math unit at 0xFFFFFF20-
-    \\0xFFFFFF3F, and the performance counters at 0xFFFFFF40-0xFFFFFF4F.
+    \\0xFFFFFF3F, and the performance counters at 0xFFFFFF40-0xFFFFFF7F.
     \\
     \\Options:
     \\  -t, --trace          Print one line per instruction.

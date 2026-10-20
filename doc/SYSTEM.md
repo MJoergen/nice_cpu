@@ -22,12 +22,9 @@ this file.
 The I/O range, and what the systems put in it. The emulator's own map, with
 its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 
-
-
 | Address | Words | What |
 |---|---|---|
 | `0xFFFF0000`–`0xFFFF07CF` | 2000 | The emulator's character screen, 80×25 (§1). |
-
 | `0xFFFFFF00` | 1 | Console (§1). |
 | `0xFFFFFF01` | 1 | Read counter (§1). |
 | `0xFFFFFF02`–`0xFFFFFF0F` | 14 | Reserved for I/O. |

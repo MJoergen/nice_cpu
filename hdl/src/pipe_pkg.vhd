@@ -241,7 +241,7 @@ package pipe_pkg is
       jump       : std_logic;                       -- The instruction has written R15
       s0val      : std_logic_vector(31 downto 0);   -- s0, from S0 or S1
       s1val      : std_logic_vector(31 downto 0);   -- s1, from S1
-      busy       : std_logic;                       -- An access waits on the bus
+      busy       : std_logic;                       -- A vector read or I/O store waits on the bus
       last       : std_logic_vector(31 downto 0);   -- The value written last (MICROARCH.md §7.4)
       cnt_step   : natural range 0 to 2;            -- How far the shift count is prepared
       m33sum     : natural range 0 to 255;          -- Its digit sum, for the count mod 33

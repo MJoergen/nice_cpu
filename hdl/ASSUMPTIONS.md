@@ -48,8 +48,8 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
    `src/pipeline.vhd` connects them. Each part keeps its state in
    registers, but not every output is registered: PREPARE decides on a
    read with WRITE's decisions of the same cycle, a flush reaches every
-   stage at once, and WRITE drives its stores onto the bus. Registering
-   those would cost cycles (item 7). The micro-operations, the decode
+   stage at once, and WRITE drives its vector reads onto the bus.
+   Registering those would cost cycles (item 7). The micro-operations, the decode
    functions, and WRITE's state record are in `src/pipe_pkg.vhd`, and the
    parts both cores share (the ALU, the shifter, the fields) in
    `src/nice_pkg.vhd`.
@@ -72,14 +72,17 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
 
 ## The data bus
 
-7. **WRITE drives its stores and vector reads onto the bus
-   combinationally**, and holds them while STALL is high. PREPARE loads
-   its reads into a register first. So a read leaves one cycle after
-   PREPARE decides on it, and a store in the cycle WRITE runs it. That
-   lets a store retire in the cycle the bus accepts it, which the trace
-   writer's contract asks (`src/trace_pkg.vhd`, e), at the cost of a
-   longer path from the ALU to the bus. A faster clock would register the
-   store and delay its instruction's report instead.
+7. **WRITE puts its stores into a register in DBUS**, which holds each
+   on the bus while STALL is high, and PREPARE loads its reads into a
+   register too. So a read leaves one cycle after PREPARE decides on it,
+   and a store one cycle after WRITE runs it, and no path runs from the
+   ALU to the bus (MICROARCH.md §5.3). A store into memory retires when it
+   goes into the register. A store into the I/O range retires in the cycle
+   the bus accepts it, as the trace writer's contract asks for the console
+   (`src/trace_pkg.vhd`, e), and the timer for its count of steps. It
+   costs a cycle more, but the I/O range is not memory, and its stores are
+   rare. WRITE's vector reads still go onto the bus combinationally; they
+   come once per interrupt.
 
    Read data takes the other way. WRITE takes it from DBUS's FIFO, a cycle
    after its ACK, unless it only goes into a register (MICROARCH.md
@@ -89,7 +92,7 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
    in cycle c + 1 or later.** This is a contract on the system, stated in
    the header of `src/pipeline.vhd`. `wb_mem` and `wb_dmux`, which has no
    buffer, keep it. A refetch after a store into fetched code relies on
-   it.
+   it, and so does FETCH's wait for the store in DBUS (MICROARCH.md §5.5).
 9. **The read of a performance counter.** SYSTEM.md §3 wants a read of
    `INSTR_LO` to count every older instruction, and MICROARCH.md §8 lets
    the core raise `instret_o` early for that. The core raises it in the

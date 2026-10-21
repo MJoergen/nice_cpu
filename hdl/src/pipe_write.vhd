@@ -4,17 +4,18 @@
 -- WRITE holds the architectural state: the registers, SR, PC, and the
 -- hidden state of ISA.md §1.4. It runs the micro-operation in w_r.uop when
 -- its read data has come: it computes the result, writes the registers,
--- puts a store on the data bus and holds it there until the bus accepts
--- it, and updates the flags. It takes interrupts before an instruction,
+-- puts a store into DBUS's store register, and updates the flags. A store
+-- into the I/O range waits in WRITE, w_r.busy, until the bus accepts it
+-- (MICROARCH.md §5.3). It takes interrupts before an instruction,
 -- runs the control instructions, and flushes the pipeline (see
 -- src/pipeline.vhd). Its state is the record w_r (t_write), which PREPARE
 -- reads too.
 --
 -- The registers are w_r. The other outputs depend combinationally on w_r
--- and on the inputs of the same cycle: the store and the vector read go
--- straight onto the bus, a flush reaches every stage at once, and the
--- report of a step comes in the cycle it retires, with the registers it
--- leaves (retire_o), as the trace writer's contract asks
+-- and on the inputs of the same cycle: the store goes into DBUS's register,
+-- the vector read straight onto the bus, a flush reaches every stage at
+-- once, and the report of a step comes in the cycle it retires, with the
+-- registers it leaves (retire_o), as the trace writer's contract asks
 -- (src/trace_pkg.vhd).
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
@@ -24,6 +25,8 @@
 --    order, and tag_cnt_i the data bus requests in flight.
 -- c) A device holds nmi_valid_i or irq_valid_i, and the vector, stable
 --    until WRITE raises the matching take.
+-- d) st_valid_i is '1' while a store waits in DBUS's register, and st_acc_i
+--    when the bus accepts it.
 --
 -- RESET
 -- Synchronous. It sets the state of ISA.md §8.1.
@@ -62,11 +65,16 @@ entity pipe_write is
       tag_cnt_i    : in  natural range 0 to C_MAX_OUT;
       dbus_stall_i : in  std_logic;
       dbus_data_i  : in  std_logic_vector(31 downto 0);
-      req_o        : out std_logic;
-      we_o         : out std_logic;
+      req_o        : out std_logic;   -- The vector read
       addr_o       : out std_logic_vector(31 downto 0);
-      data_o       : out std_logic_vector(31 downto 0);
       pop_o        : out natural range 0 to 2;
+
+      -- The store, into DBUS's store register (src/pipe_dbus.vhd)
+      st_valid_i   : in  std_logic;
+      st_acc_i     : in  std_logic;
+      st_o         : out std_logic;
+      st_addr_o    : out std_logic_vector(31 downto 0);
+      st_data_o    : out std_logic_vector(31 downto 0);
 
       -- Interrupt requests
       nmi_valid_i  : in  std_logic;
@@ -109,10 +117,11 @@ architecture synthesis of pipe_write is
    signal w_target  : std_logic_vector(31 downto 0);
    signal w_accept  : std_logic;
    signal w_req     : std_logic;
-   signal w_we      : std_logic;
    signal w_addr    : std_logic_vector(31 downto 0);
-   signal w_data    : std_logic_vector(31 downto 0);
    signal w_pop     : natural range 0 to 2;
+   signal w_st      : std_logic;
+   signal w_st_addr : std_logic_vector(31 downto 0);
+   signal w_st_data : std_logic_vector(31 downto 0);
    signal w_instret : std_logic;
    signal take_nmi  : std_logic;
    signal take_irq  : std_logic;
@@ -135,10 +144,11 @@ begin
 
    accept_o   <= w_accept;
    req_o      <= w_req;
-   we_o       <= w_we;
    addr_o     <= w_addr;
-   data_o     <= w_data;
    pop_o      <= w_pop;
+   st_o       <= w_st;
+   st_addr_o  <= w_st_addr;
+   st_data_o  <= w_st_data;
    take_nmi_o <= take_nmi;
    take_irq_o <= take_irq;
    state_o    <= w_r;
@@ -191,10 +201,9 @@ begin
       u_v         := w_r.uop;
       iw_v        := u_v.inst.iw;
       w_req       <= '0';
-      w_we        <= '0';
       w_addr      <= (others => '0');
-      w_data      <= (others => '0');
       w_pop       <= 0;
+      w_st        <= '0';
       w_instret   <= '0';
       w_flush     <= '0';
       take_nmi    <= '0';
@@ -241,8 +250,8 @@ begin
       bdata_v(0) := rq_r(0) when rq_cnt_r >= 1 else dbus_data_i;
       bdata_v(1) := rq_r(1) when rq_cnt_r >= 2 else dbus_data_i;
 
-      -- Room on the data bus for an access of WRITE's own
-      room_v := rd_stb_r = '0' and tag_cnt_r < C_MAX_OUT;
+      -- Room on the data bus for WRITE's vector read
+      room_v := rd_stb_r = '0' and tag_cnt_r < C_MAX_OUT and st_valid_i = '0';
 
       -- The condition (ISA.md §3). A micro-operation in a later cycle of
       -- its own keeps the condition of its first, since it may have
@@ -537,22 +546,23 @@ begin
                      n_v.regs(14) := flags(n_v.regs(14), fres_v);
                   end if;
 
-                  -- The store, held on the bus until it is accepted
+                  -- The store, into DBUS's store register when it is free
+                  -- or frees itself now. A store into memory retires then.
+                  -- One into the I/O range retires when the bus accepts it,
+                  -- so that a device sees it in the cycle of its step, as
+                  -- the timer's count of steps needs (SYSTEM.md §4).
                   if store_v then
                      done_v := false;
-                     if room_v then
-                        w_req  <= '1';
-                        w_we   <= '1';
-                        w_addr <= a_v;
-                        w_data <= res_v.r;
-                        if dbus_stall_i = '0' then
-                           done_v := true;
-                        end if;
+                     if w_r.busy = '1' then
+                        done_v := st_acc_i = '1';
+                     elsif rd_stb_r = '0' and (st_valid_i = '0' or st_acc_i = '1') then
+                        w_st   <= '1';
+                        done_v := a_v(31 downto 8) /= X"FFFFFF";
+                        n_v.busy := to_sl(not done_v);
                      end if;
                      if not done_v then
                         w_pop <= 0;
                      end if;
-                     n_v.busy := to_sl(room_v and dbus_stall_i = '1');
 
                      -- A store into a word fetched but not retired
                      if done_v and hit_v then
@@ -645,6 +655,10 @@ begin
       if p_move = '1' then
          n_v.uop := p_out;
       end if;
+
+      -- The store's address and data, which DBUS takes when w_st is '1'
+      w_st_addr <= a_v;
+      w_st_data <= res_v.r;
 
       w_done   <= to_sl(done_v);
       w_flush  <= to_sl(flush_v);

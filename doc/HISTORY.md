@@ -32,6 +32,12 @@ two kinds of access. §9.4, the mapping of WebAssembly, is
   that goes into a register takes that way, and the rest comes from DBUS's
   FIFO a cycle later ([review/pipeline-timing.md](review/pipeline-timing.md),
   Read data).
+- Until 2026-10-21, WRITE put each store straight onto the data bus, and
+  held it there until the bus accepted it. In NiceMonMEGA65 the path from
+  WRITE's decision to store through the system's address decode into the
+  block RAM's write enable held the MEGA65 R6 just below 100 MHz. Now a
+  store goes out from a register in DBUS a cycle later
+  ([review/pipeline-timing.md](review/pipeline-timing.md), Stores).
 - The same first version merged the adjusted destination of a register in
   mode 001 or 010 into one write, and found every jump target through the
   ALU. Now three rare cases take WRITE two cycles (MICROARCH.md §7.4).

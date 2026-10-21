@@ -719,14 +719,15 @@ data bus port, each an entity of its own:
 | DECODE | `pipe_decode` | Takes one whole instruction, with one more behind it, decodes its fields, and splits it into micro-operations, one per cycle (MICROARCH.md §4). Redirects FETCH at once for `MOVE R15, c` and `ADD R15, R15, c` with condition "always". |
 | PREPARE | `pipe_prepare` | Reads the registers and forms every operand value and address, reduces the shift count, tests the condition when it can, and issues the data reads. |
 | WRITE | `pipe_write` | Computes, writes the registers and SR, issues the store, takes interrupts, and runs the control instructions. Its one bypass is the value it wrote last. |
-| DBUS | `pipe_dbus` | The data bus port, with the tags and the read data of the requests in flight. |
+| DBUS | `pipe_dbus` | The data bus port, with the tags and the read data of the requests in flight, and the register from which a store goes onto the bus. |
 
 `pipeline` connects the parts.
 Each stage holds one item and passes it on when the next stage frees
 itself. Each part keeps its state in registers, but some of the signals
 between them are combinational, as each part's header lists: PREPARE
 decides on a data read with WRITE's decisions of the same cycle, a flush
-reaches every stage at once, and WRITE drives its stores onto the bus. In the best case one micro-operation retires each cycle.
+reaches every stage at once, and WRITE drives its vector reads onto the
+bus. Its stores go out from a register in DBUS, a cycle later. In the best case one micro-operation retires each cycle.
 `cputest` takes about 1.2 cycles per instruction on memory that never
 stalls, and `hazard.nasm`, which is all hazards, 1.9. The benchmark of
 [bench/](../bench/README.md) runs like this at commit 1b18fd6, against

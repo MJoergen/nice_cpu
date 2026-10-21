@@ -10,7 +10,8 @@
 -- the bus port. Its count of requests in flight must be the tag count of
 -- pipe_dbus, which ties the two together for k-induction.
 --
--- The covers show four requests in flight, and the FIFO of read data full.
+-- The covers show four requests in flight, the FIFO of read data full,
+-- and a store that waits in st_r while four are in flight.
 --
 -- RESET
 -- The first cycle is a reset.
@@ -27,10 +28,11 @@ entity formal_pipe_dbus is
       rd_stb_i     : in  std_logic;
       rd_addr_i    : in  std_logic_vector(31 downto 0);
       w_req_i      : in  std_logic;
-      w_we_i       : in  std_logic;
       w_addr_i     : in  std_logic_vector(31 downto 0);
-      w_data_i     : in  std_logic_vector(31 downto 0);
       w_pop_i      : in  natural range 0 to 2;
+      st_i         : in  std_logic;
+      st_addr_i    : in  std_logic_vector(31 downto 0);
+      st_data_i    : in  std_logic_vector(31 downto 0);
       dbus_stall_i : in  std_logic;
       dbus_ack_i   : in  std_logic;
       dbus_data_i  : in  std_logic_vector(31 downto 0)
@@ -44,6 +46,8 @@ architecture synthesis of formal_pipe_dbus is
    signal ack_read   : std_logic;
    signal tag_cnt    : natural range 0 to C_MAX_OUT;
    signal reads_owed : natural range 0 to C_MAX_OUT;
+   signal st_valid   : std_logic;
+   signal st_acc     : std_logic;
    signal dbus_cyc   : std_logic;
    signal dbus_stb   : std_logic;
    signal dbus_we    : std_logic;
@@ -62,6 +66,7 @@ begin
 
    -- psl c_four : cover {tag_cnt = C_MAX_OUT and rst_i = '0'};
    -- psl c_full : cover {rq_cnt = C_MAX_OUT and rst_i = '0'};
+   -- psl c_st_wait : cover {st_valid = '1' and tag_cnt = C_MAX_OUT and rst_i = '0'; st_acc = '1'};
 
 
    i_pipe_dbus : entity work.pipe_dbus
@@ -74,10 +79,13 @@ begin
          rd_stb_i     => rd_stb_i,
          rd_addr_i    => rd_addr_i,
          w_req_i      => w_req_i,
-         w_we_i       => w_we_i,
          w_addr_i     => w_addr_i,
-         w_data_i     => w_data_i,
          w_pop_i      => w_pop_i,
+         st_i         => st_i,
+         st_addr_i    => st_addr_i,
+         st_data_i    => st_data_i,
+         st_valid_o   => st_valid,
+         st_acc_o     => st_acc,
          rq_o         => rq,
          rq_cnt_o     => rq_cnt,
          ack_read_o   => ack_read,

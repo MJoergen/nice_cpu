@@ -277,3 +277,54 @@ with 2.80 ns left, enough for an ACK from a register. The store still
 goes onto the bus from WRITE in the cycle it runs (hdl/ASSUMPTIONS.md,
 item 7), with 1.15 ns left for the address and 1.43 ns for the data,
 and is what TODO.md takes up next.
+
+## Stores
+
+On 2026-10-21 a fresh build of NiceMonMEGA65 missed 100 MHz on the
+MEGA65 R6 by 0.205 ns, with nice_cpu at 68f40ee (issue 34 on GitHub).
+The worst path ran from WRITE's micro-operation through its decision to
+store, out of `dbus_addr_o` and `dbus_we_o`, and through the system's
+address decode into the block RAM's write enable. The Nexys4DDR, a
+slower part, ran at 75 MHz.
+
+WRITE now puts a store into a register in DBUS, which drives the bus
+from the next cycle on (MICROARCH.md §5.3). Three things follow:
+
+- **A read after a store waits a cycle more**, since it can only go on
+  the bus after the store (rule 3). An upper bound is the number of reads
+  that PREPARE loaded in the cycle an older store retired: 11936 cycles
+  of the translated benchmark (0.51%) and 39527 of `hand.nasm` (3.07%).
+- **A store into the I/O range retires only when the bus accepts it**,
+  a cycle later. The timer counts steps, and its rule that the write's
+  step counts needs the write in the cycle the step is counted on
+  `instret_o` (SYSTEM.md §4). Without this, the timer test ran for ever
+  and interrupts landed on other instructions than in the emulator.
+- **FETCH waits** while the store waits in the register after a redirect,
+  or for more than a cycle, since WRITE's check of fetched code
+  (MICROARCH.md §5.5) does not cover those fetches.
+
+The cycles of `make core CORE=pipeline` in `bench/`:
+
+| | Translated | `hand.nasm` |
+|---|---|---|
+| WRITE puts the store on the bus, as at 68f40ee | 2331640 | 1288181 |
+| FETCH waits for every store in the register | 2359147, +1.18% | 1343206, +4.27% |
+| FETCH waits only as above, as the core does | 2351908, +0.87% | 1333925, +3.55% |
+
+Most of what is left over the bound is `rng64`, which writes the
+operands of the math unit, in the I/O range, and reads the product right
+after: +10.2% for the translated program and +7.5% for `hand.nasm`.
+
+Out of context, one run of `make timing`:
+
+| | 68f40ee | With the store register |
+|---|---|---|
+| Between registers | +0.20 ns | +0.20 ns, `w_r` to FETCH's `head_r` |
+| `w_r` to DECODE's enables (the handshake) | +0.37 ns | +0.24 ns |
+| Left to the system by `dbus_addr_o` | 1.15 ns | 4.52 ns |
+| Left to the system by `dbus_data_o` | 1.43 ns | 4.82 ns |
+| Worst output | the store | `instret_o`, 2.62 ns |
+
+The store's address and data now come from a register and a mux. The
+paths between registers are where they were, within placement. The
+handshake into DECODE is next in TODO.md.

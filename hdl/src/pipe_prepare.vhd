@@ -24,10 +24,13 @@
 -- The registers are prep_r, the request register, and what PREPARE knows
 -- of the current instruction. ready_o, move_o, uop_o, load_o,
 -- first_read_o, and count_o depend combinationally on the state of WRITE
--- and on the bus in the same cycle: a read may go out in the cycle WRITE
--- retires an older store, and a micro-operation moves on in the cycle
--- WRITE frees itself. Such a store counts among the requests in flight,
--- of which there may be no more than C_MAX_OUT (src/pipe_dbus.vhd, b).
+-- and on the bus in the same cycle: a micro-operation moves on in the
+-- cycle WRITE frees itself, and a read is loaded in the cycle the bus
+-- accepts the store that waits in DBUS. No read is loaded while a store
+-- will wait in DBUS in the next cycle, so that the two are never on the
+-- bus together (src/pipe_dbus.vhd, a): none while an older store retires
+-- into DBUS now. A waiting store counts among the requests in flight, of
+-- which there may be no more than C_MAX_OUT (src/pipe_dbus.vhd, b).
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) w_i is WRITE's state, and done_i, flush_i, accept_i, take_nmi_i, and
@@ -35,6 +38,9 @@
 -- b) tag_cnt_i counts the data bus requests accepted and not acknowledged.
 -- c) WRITE neither flushes nor takes an interrupt while the instruction in
 --    PREPARE has made a data read.
+-- d) st_valid_i is '1' while a store waits in DBUS, and st_acc_i when the
+--    bus accepts it. WRITE queues a store only from a store micro-operation
+--    of its own, and only while no read waits in the request register.
 --
 -- RESET
 -- Synchronous. It empties the stage and drops the request.
@@ -82,6 +88,8 @@ entity pipe_prepare is
       -- The data read, held until the bus accepts it
       dbus_stall_i : in  std_logic;
       tag_cnt_i    : in  natural range 0 to C_MAX_OUT;
+      st_valid_i   : in  std_logic;   -- A store waits in DBUS
+      st_acc_i     : in  std_logic;   -- The bus accepts it now
       rd_stb_o     : out std_logic;
       rd_addr_o    : out std_logic_vector(31 downto 0);
       load_o       : out std_logic;   -- A data read is loaded now
@@ -290,11 +298,13 @@ begin
       intr_ok   := started_v or p_committed_r = '1' or (not older_v and w_r.after_rti = '1') or
                    not ((nmi_valid_i = '1' and w_r.in_service = '0') or irq_v);
 
-      -- The bus takes the read when C_MAX_OUT will not be in flight, counting
-      -- the store of an older micro-operation that retires now.
+      -- The bus takes the read when C_MAX_OUT will not be in flight, and no
+      -- store waits in DBUS in the next cycle: none waits that the bus does
+      -- not accept now, and an older micro-operation queues none now.
       store_v := older_v and w_done = '1' and wu_v.store = '1';
-      bus_ok  := (rd_stb_r = '0' or dbus_stall_i = '0') and
-                 tag_cnt_r + to_nat(rd_stb_r) + to_nat(store_v) < C_MAX_OUT;
+      bus_ok  := (rd_stb_r = '0' or dbus_stall_i = '0') and not store_v and
+                 (st_valid_i = '0' or st_acc_i = '1') and
+                 tag_cnt_r + to_nat(rd_stb_r) + to_nat(st_valid_i) < C_MAX_OUT;
 
       load_v := '0';
       if u_v.valid = '1' and ck_v = '1' and cv_v = '1' and p_loaded_r < nr_v and
@@ -426,6 +436,7 @@ begin
       signal f_tag       : natural range 0 to C_MAX_OUT + 1;
       signal f_rd_stall  : std_logic;          -- and was stalled
       signal f_rd_addr   : std_logic_vector(31 downto 0);
+      signal f_st_may    : std_logic := '0';   -- A store may wait in DBUS now
       signal f_open      : std_logic := '0';   -- DECODE is in an instruction
       signal f_inst      : t_inst;             -- and this one
       signal f_kind      : t_kind;             -- The kind of its last micro-operation
@@ -435,7 +446,6 @@ begin
 
 
       p_model : process (clk_i)
-         variable wstore_v : boolean;   -- WRITE's store retires now
       begin
          if rising_edge(clk_i) then
             f_first <= '0';
@@ -462,11 +472,14 @@ begin
             f_rd_stall <= rd_stb_r and dbus_stall_i and not rst_i;
             f_rd_addr  <= rd_addr_r;
             -- PREPARE's read, or else, when there is room, a vector read of
-            -- WRITE, or a store, which retires when the bus accepts it
-            wstore_v   := w_done = '1' and w_r.uop.valid = '1' and w_r.uop.store = '1';
+            -- WRITE, or the store that waits in DBUS
             f_tag      <= tag_cnt_r + to_nat((rd_stb_r = '1' and dbus_stall_i = '0') or
                                              (rd_stb_r = '0' and tag_cnt_r < C_MAX_OUT and
-                                                (w_r.mode = VEC_ST or wstore_v)));
+                                                (w_r.mode = VEC_ST or st_valid_i = '1')));
+            -- The store that waits, and has not been accepted, or one that
+            -- WRITE queues now
+            f_st_may   <= not rst_i and ((st_valid_i and not st_acc_i) or
+                                         (w_r.uop.valid and w_r.uop.store and not rd_stb_r));
 
             if seq_emit = '1' then
                f_open <= not seq_uop.last;
@@ -506,14 +519,19 @@ begin
       -- psl f_keep_read : assume always (w_flush or take_nmi or take_irq) -> not (rd_stb_r or p_load);
       -- psl f_accept : assume always w_accept -> not w_flush;
 
-      -- DBUS: requests in flight, PREPARE's read among them
+      -- DBUS: requests in flight, PREPARE's read among them, and the store
+      -- that waits
       -- psl f_tags : assume always tag_cnt_r <= C_MAX_OUT;
       -- psl f_tag_grow : assume always f_first = '0' -> tag_cnt_r <= f_tag;
+      -- psl f_st_acc : assume always
+      --    st_acc_i = (st_valid_i and to_sl(tag_cnt_r < C_MAX_OUT) and not dbus_stall_i);
+      -- psl f_st_queue : assume always st_valid_i -> f_st_may;
 
       -- The read request
       -- psl f_rd_hold : assert always (f_rd_stall and not rst_i) ->
       --    (rd_stb_r = '1' and rd_addr_r = f_rd_addr);
       -- psl f_rd_room : assert always (rst_i = '0' and rd_stb_r = '1') -> tag_cnt_r < C_MAX_OUT;
+      -- psl f_rd_alone : assert always rst_i = '0' -> not (rd_stb_r = '1' and st_valid_i = '1');
       -- A read is on the bus only while the core runs: a halted core
       -- makes no data read
       -- psl f_rd_run : assert always (rst_i = '0' and rd_stb_r = '1') -> w_r.mode = RUN_ST;

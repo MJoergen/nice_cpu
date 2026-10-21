@@ -22,15 +22,15 @@
 %                                              waits there (pipe_decode)
 %   PREPARE, at its input                      prep_r (pipe_prepare)
 %   PREPARE, on its read request               rd_stb_r, rd_addr_r (pipe_prepare)
+%   DBUS, on WRITE's store                     st_r (pipe_dbus)
 %   WRITE, at its input                        w_r.uop (pipe_write)
 %
 % So no register sits between two blocks: the words from ring_r reach
 % dec_r, the micro-operation from dec_r reaches prep_r, and the one from
-% prep_r reaches w_r.uop, each through logic only. WRITE's store and DBUS
-% have no register: WRITE drives its store onto the bus in the cycle it
-% runs, and read data that only goes into a register reaches WRITE in the
-% cycle its ACK comes, past DBUS's FIFO. Other read data comes from the
-% FIFO.
+% prep_r reaches w_r.uop, each through logic only. WRITE's store goes
+% into a register in DBUS, st_r, which drives the bus in the next cycle.
+% Read data that only goes into a register reaches WRITE in the cycle its
+% ACK comes, past DBUS's FIFO. Other read data comes from the FIFO.
 
 \documentclass[border=8pt]{standalone}
 
@@ -104,7 +104,7 @@
    \node[block, inner sep = 0pt,
          fit = {([xshift = -14mm] dbusx |- prepare.north)
                 ([xshift =  14mm] dbusx |- write.south)}] (dbus) {DBUS\\[-0.5mm]
-                {\scriptsize tags and read data}};
+                {\scriptsize tags, read data,\\[-1mm] \scriptsize and store}};
 
    % PREPARE's read requests and WRITE's stores go out through it; the read
    % data comes back to WRITE.
@@ -198,8 +198,10 @@
    \node[ffh] at ([yshift = -2.2mm] prepare.north) {};
    \node[ffh] at ([yshift = -2.2mm] write.north) {};
 
-   % PREPARE's read request, at the right of its block
+   % PREPARE's read request, at the right of its block, and DBUS's store
+   % register, at the left of its block
    \node[ffv] at ([xshift = -2.2mm] prepare.east) {};
+   \node[ffv] at ([xshift = 2.2mm, yshift = 2.5mm] dbus.west |- write.east) {};
 
    %% ---------------------------------------------------------------
    %% Legend
@@ -208,9 +210,9 @@
    \node[ffv, anchor = west] (legendff) at ([yshift = -9mm] top.south west) {};
    \node[anchor = west, font = \sffamily\scriptsize, align = left]
       at ([xshift = 2.5mm] legendff.east)
-      {a register on the main path. WRITE drives its stores onto the data bus in the cycle it\\
-       runs them, so that path has none. It takes read data from DBUS's FIFO, but for data\\
-       that only goes into a register, which it takes in the cycle its ACK comes.};
+      {a register on the main path. WRITE's stores go onto the data bus from a register in\\
+       DBUS, a cycle after WRITE runs them. WRITE takes read data from DBUS's FIFO, but for\\
+       data that only goes into a register, which it takes in the cycle its ACK comes.};
 
 \end{tikzpicture}
 

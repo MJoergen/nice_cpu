@@ -87,13 +87,24 @@ No code has TODO or FIXME comments.
   inputs arrive at time 0 and the outputs are due at time 10 ns, so
   `make timing` in `hdl/` reports their slack as the time left to the
   system. Read data goes into WRITE only for a register write (6.5 ns
-  left), but `dbus_ack_i` goes into WRITE's retire and so into FETCH
-  (2.8 ns left), and the store goes onto the bus from WRITE in the cycle
-  it runs (1.2 ns left for the address, 1.4 ns for the data). Next: the
-  store from a register in DBUS, which costs a cycle for a read right
-  after a store (MICROARCH.md §5.3, rule 3), and a skid buffer between
-  DECODE and PREPARE for the handshake. Measure each in NiceMonMEGA65.
+  left), but `dbus_ack_i` goes into WRITE's retire and so into FETCH, and
+  `instret_o` comes from WRITE's retire (2.6 ns left). A store goes onto
+  the bus from DBUS's store register (4.5 ns left for the address, 4.8 ns
+  for the data).
+  Measure the store register in NiceMonMEGA65 on both boards. Next: a
+  skid buffer between DECODE and PREPARE for the handshake.
   `retire_o` is combinational and is not counted.
+- **Stores into the I/O range wait in WRITE** until the bus accepts them
+  (MICROARCH.md §5.3), so that the timer sees each in the cycle of its
+  step. That costs `rng64` of the benchmark about 10% (translated) and 7%
+  (`hand.nasm`), which store to the math unit. Counting such a store on
+  `instret_o` when the bus accepts it, as a read is counted, would let it
+  retire into the register like any other, but an interrupt must then not
+  be taken between its retire and its count.
+- **`bench/pipecycles.py` does not model the store register**: a read
+  after a store waits for the store to leave DBUS, a store into the I/O
+  range waits in WRITE, and FETCH waits after a redirect. `make compare`
+  shows how far the estimate falls behind.
 - **NiceMonMEGA65 reads the registers from `retire_o.regs`**, which is
   `w_n.regs` of WRITE, before the register. Its worst path ends there. A
   registered copy is enough for nicemon. Fix in NiceMonMEGA65, and say in

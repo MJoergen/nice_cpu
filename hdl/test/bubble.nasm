@@ -9,8 +9,11 @@
 ; data a cycle after its ACK, unless it only goes into a register
 ; (§5.3), so four ADDs from memory take 2 cycles more than four MOVEs, and
 ; four MOVEs from memory into memory 4 more than the 11 they took when
-; WRITE took every read in the cycle of its ACK. The program checks itself: R12 counts the cases that gave another
-; value, and is 0 at the end if all passed. It runs on the pipelined core
+; WRITE took every read in the cycle of its ACK. Each store goes on the
+; bus from DBUS's store register a cycle after WRITE runs it, and the read
+; after it waits for that (§5.3, rule 3), which adds 4 more. The program
+; checks itself: R12 counts the cases that gave another value, and is 0
+; at the end if all passed. It runs on the pipelined core
 ; only, since the multi-cycle core has other bubbles and the emulator
 ; counts steps, not cycles. Each case starts on an even address, so that
 ; the layout of each is that of the review's programs.
@@ -112,7 +115,8 @@ a7      MOVE    R2, @CYCLES
         SUB     R4, R2, R1
         SUB[M]  R0, R4, 10
         ?!Z ADD R12, R12, 1
-; four MOVEs from memory into memory, each store a cycle after its ACK: 15
+; four MOVEs from memory into memory, each store a cycle after its ACK,
+; and each read after the store before: 19
         .ORG    0x2C0
         MOVE    R1, @CYCLES
         MOVE    @R3, @R3
@@ -121,6 +125,6 @@ a7      MOVE    R2, @CYCLES
         MOVE    @R3, @R3
         MOVE    R2, @CYCLES
         SUB     R4, R2, R1
-        SUB[M]  R0, R4, 15
+        SUB[M]  R0, R4, 19
         ?!Z ADD R12, R12, 1
         HALT

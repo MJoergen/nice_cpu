@@ -25,7 +25,8 @@
 -- This entity connects them, and checks the invariants below in
 -- simulation. Some of the signals between the parts are combinational,
 -- as each part's header says: PREPARE decides on a read with WRITE's
--- decisions of the same cycle, and WRITE drives its stores onto the bus.
+-- decisions of the same cycle, and WRITE drives its vector reads onto the
+-- bus.
 --
 -- Each stage holds one item, and passes it on when the next stage is free
 -- or frees itself in the same cycle.
@@ -53,12 +54,18 @@
 -- instruction is certain to run: its condition is true; the older
 -- micro-operation in WRITE, if any, will not jump, halt, or store into
 -- fetched code, and has issued its store; no interrupt may be taken before
--- the instruction; and every older instruction has been counted on
--- instret_o. WRITE issues stores and vector reads straight onto the bus,
--- and holds them there while the bus stalls them. The two never compete:
--- WRITE issues an access only when every read that PREPARE loaded is on the
--- bus or done. The ACKs come back in order. A FIFO of tags tells reads from
--- writes, and a FIFO holds the data of reads that WRITE has not used yet.
+-- the instruction; every older instruction has been counted on
+-- instret_o; and no store will wait in DBUS in the next cycle. WRITE puts
+-- its stores into DBUS's store register, which drives the bus from the
+-- next cycle on, and its vector reads straight onto the bus, and holds
+-- them there while the bus stalls them. A store into memory retires when
+-- it goes into the register, and one into the I/O range when the bus
+-- accepts it. None of them compete: WRITE issues an access only when every
+-- read that PREPARE loaded is on the bus or done, and a vector read only
+-- when no store waits. The ACKs come back in order. A FIFO of tags tells
+-- reads from writes, and a FIFO holds the data of reads that WRITE has not
+-- used yet. FETCH makes no new request while a store waits in DBUS that
+-- WRITE's check of fetched code (MICROARCH.md §5.5) did not cover.
 --
 -- CONTROL FLOW (MICROARCH.md §5.4). WRITE flushes every younger stage and
 -- redirects FETCH after an instruction that wrote R15, after RTI, at the
@@ -168,6 +175,12 @@ architecture synthesis of pipeline is
    signal f_target   : std_logic_vector(31 downto 0);
    signal f_stop     : std_logic;
    signal f_stats    : t_fetch_events;
+   signal f_stb      : std_logic;   -- FETCH's request, before f_block
+   signal f_stall    : std_logic;
+   signal f_redir_r  : std_logic;   -- FETCH was redirected a cycle ago
+   signal f_hold_r   : std_logic;   -- FETCH waits for the store in DBUS
+   signal f_held_r   : std_logic;   -- The bus stalled FETCH's request a cycle ago
+   signal f_block    : std_logic;   -- FETCH makes no new request now
 
    -- DECODE
    signal d_redirect : std_logic;
@@ -196,6 +209,8 @@ architecture synthesis of pipeline is
    signal ack_read   : std_logic;
    signal tag_cnt_r  : natural range 0 to C_MAX_OUT;
    signal reads_owed : natural range 0 to C_MAX_OUT;   -- Reads accepted, without their ACK
+   signal st_valid   : std_logic;                      -- A store waits in DBUS
+   signal st_acc     : std_logic;                      -- The bus accepts it now
 
    -- WRITE
    signal w_r       : t_write;
@@ -203,11 +218,12 @@ architecture synthesis of pipeline is
    signal w_flush   : std_logic;
    signal w_target  : std_logic_vector(31 downto 0);
    signal w_accept  : std_logic;   -- WRITE takes the micro-operation in PREPARE
-   signal w_req     : std_logic;
-   signal w_we      : std_logic;
+   signal w_req     : std_logic;   -- The vector read of WRITE
    signal w_addr    : std_logic_vector(31 downto 0);
-   signal w_data    : std_logic_vector(31 downto 0);
    signal w_pop     : natural range 0 to 2;
+   signal w_st      : std_logic;   -- WRITE puts a store into DBUS
+   signal w_st_addr : std_logic_vector(31 downto 0);
+   signal w_st_data : std_logic_vector(31 downto 0);
    signal w_instret : std_logic;
    signal take_nmi  : std_logic;
    signal take_irq  : std_logic;
@@ -222,6 +238,32 @@ begin
    f_target   <= w_target when w_flush = '1' else d_dest;
    f_stop     <= '0' when w_r.mode = RUN_ST else '1';
 
+   -- WRITE checks a store against the words that FETCH holds and will
+   -- request in the next cycle (MICROARCH.md §5.5), but the store reaches
+   -- memory a cycle or more later, from DBUS. So FETCH puts no new request
+   -- on the bus while the store waits there after that cycle, or after a
+   -- redirect in the cycle the store was queued or the one before, which
+   -- the check did not see. A request that the bus stalls stays on it: it
+   -- was in FETCH's range when WRITE checked the store.
+   f_block    <= f_hold_r and st_valid and not f_held_r;
+   ibus_stb_o <= f_stb and not f_block;
+   f_stall    <= ibus_stall_i or f_block;
+
+   p_hold : process (clk_i)
+   begin
+      if rising_edge(clk_i) then
+         f_redir_r <= f_redirect;
+         f_hold_r  <= (st_valid and not st_acc) or
+                      (w_st and (f_redirect or f_redir_r));
+         f_held_r  <= f_stb and not f_block and ibus_stall_i;
+         if rst_i = '1' then
+            f_redir_r <= '0';
+            f_hold_r  <= '0';
+            f_held_r  <= '0';
+         end if;
+      end if;
+   end process p_hold;
+
 
    i_pipe_fetch : entity work.pipe_fetch
       generic map (
@@ -231,8 +273,8 @@ begin
          clk_i           => clk_i,
          rst_i           => rst_i,
          ibus_cyc_o      => ibus_cyc_o,
-         ibus_stb_o      => ibus_stb_o,
-         ibus_stall_i    => ibus_stall_i,
+         ibus_stb_o      => f_stb,
+         ibus_stall_i    => f_stall,
          ibus_ack_i      => ibus_ack_i,
          ibus_addr_o     => ibus_addr_o,
          ibus_data_i     => ibus_data_i,
@@ -291,6 +333,8 @@ begin
          prep_o       => prep_r,
          dbus_stall_i => dbus_stall_i,
          tag_cnt_i    => tag_cnt_r,
+         st_valid_i   => st_valid,
+         st_acc_i     => st_acc,
          rd_stb_o     => rd_stb_r,
          rd_addr_o    => rd_addr_r,
          load_o       => p_load,
@@ -305,10 +349,13 @@ begin
          rd_stb_i     => rd_stb_r,
          rd_addr_i    => rd_addr_r,
          w_req_i      => w_req,
-         w_we_i       => w_we,
          w_addr_i     => w_addr,
-         w_data_i     => w_data,
          w_pop_i      => w_pop,
+         st_i         => w_st,
+         st_addr_i    => w_st_addr,
+         st_data_i    => w_st_data,
+         st_valid_o   => st_valid,
+         st_acc_o     => st_acc,
          rq_o         => rq_r,
          rq_cnt_o     => rq_cnt_r,
          ack_read_o   => ack_read,
@@ -346,10 +393,13 @@ begin
          dbus_stall_i => dbus_stall_i,
          dbus_data_i  => dbus_data_i,
          req_o        => w_req,
-         we_o         => w_we,
          addr_o       => w_addr,
-         data_o       => w_data,
          pop_o        => w_pop,
+         st_valid_i   => st_valid,
+         st_acc_i     => st_acc,
+         st_o         => w_st,
+         st_addr_o    => w_st_addr,
+         st_data_o    => w_st_data,
          nmi_valid_i  => nmi_valid_i,
          nmi_vector_i => nmi_vector_i,
          irq_valid_i  => irq_valid_i,
@@ -367,7 +417,7 @@ begin
 
    nmi_ready_o <= take_nmi;
    irq_ready_o <= take_irq;
-   halted_o    <= '1' when w_r.mode = HALTED_ST else '0';
+   halted_o    <= '1' when w_r.mode = HALTED_ST and st_valid = '0' else '0';
    instret_o   <= rd_count or w_instret;
 
 
@@ -375,6 +425,8 @@ begin
       variable stats_v : t_fetch_events;
    begin
       stats_v         := f_stats;
+      -- Only the bus's stalls, not FETCH's waits for a store in DBUS
+      stats_v.stall   := f_stb and not f_block and ibus_stall_i;
       stats_v.starve  := d_starve;
       stats_v.blocked := d_blocked;
       stats_v.words   := f_consume;
@@ -398,6 +450,12 @@ begin
             assert not (rd_stb_r = '1' and w_req = '1')
                report "pipeline: a read of PREPARE and an access of WRITE on the bus at once"
                severity failure;
+            assert not (st_valid = '1' and (rd_stb_r = '1' or w_req = '1'))
+               report "pipeline: a waiting store and another access on the bus at once"
+               severity failure;
+            assert not (w_st = '1' and st_valid = '1' and st_acc = '0')
+               report "pipeline: a store queued while the store register is full"
+               severity failure;
             -- No flush or interrupt drops an instruction in PREPARE that has
             -- made a data read (src/pipe_prepare.vhd, c).
             assert not ((w_flush = '1' or take_nmi = '1' or take_irq = '1') and
@@ -405,7 +463,7 @@ begin
                report "pipeline: a flush or interrupt drops an instruction with a data read"
                severity failure;
             -- The data of a read finds room in DBUS (src/pipe_dbus.vhd, c).
-            assert not ((rd_stb_r = '1' or (w_req = '1' and w_we = '0')) and dbus_stall_i = '0' and
+            assert not ((rd_stb_r = '1' or w_req = '1') and dbus_stall_i = '0' and
                         rq_cnt_r + reads_owed >= C_MAX_OUT + w_pop)
                report "pipeline: a read accepted without room for its data"
                severity failure;

@@ -190,9 +190,10 @@ t = 6, which writes R2. In the same cycle PREPARE forms the address of
 s1 and loads the read. The read is on the bus at t = 7, while WRITE
 waits in `OP` for its data. The data comes at t = 8, into DBUS's FIFO.
 It goes into the ALU and the store, so WRITE takes it from there at
-t = 9 (§5.3). WRITE adds, puts the store on the bus, writes R3, and
-retires the instruction. The wait for the data costs two cycles: the
-instruction after it waits in PREPARE at t = 7 and 8.
+t = 9 (§5.3). WRITE adds, puts the store into DBUS's store register,
+writes R3, and retires the instruction. The store is on the bus at
+t = 10. The wait for the data costs two cycles: the instruction after it
+waits in PREPARE at t = 7 and 8.
 
 ## 5. Hazards
 
@@ -251,7 +252,8 @@ issues a data read only when the instruction is certain to run:
 1. Its condition is known (§5.2).
 2. No older micro-op in flight can still redirect: a write to R15, `RTI`,
    `INT`, a halt, or a store that may hit fetched code (§5.5).
-3. Every older store has been issued, so the read cannot overtake it.
+3. Every older store is on the bus, or was: the bus accepts it no later
+   than the cycle PREPARE loads the read, so the read cannot overtake it.
 4. No interrupt request is pending that could be taken before it (§6): an
    NMI that is valid while `in_service` = 0, or an IRQ that is valid while
    `in_service` = 0 and either E = 1 or an older micro-op in flight may
@@ -267,7 +269,20 @@ issues a data read only when the instruction is certain to run:
 When PREPARE issues an instruction's first data read, the core commits to
 that instruction. No interrupt is taken before it (§6).
 
-Stores are issued in WRITE, which is in order, so they need no extra rule.
+Stores are issued in WRITE, which is in order. WRITE puts a store into
+DBUS's store register, which drives the bus from the next cycle until the
+bus accepts it. The register is free again in that cycle, so a store can
+follow a store in every cycle. So no path runs from WRITE's decision to
+store into the system's address decode and its memories in one cycle
+([review/pipeline-timing.md](review/pipeline-timing.md), Stores).
+
+A store into memory retires when it goes into the register. A store into
+the I/O range retires only when the bus accepts it, a cycle later at the
+earliest. Then a device sees the store in the cycle its instruction is
+counted on `instret_o`, as the timer, which counts steps, needs
+(SYSTEM.md §4), and the trace writer prints a byte to the console before
+its instruction's line (§9). Stores into the I/O range are rare, but
+for the math unit.
 
 WRITE takes read data from DBUS's FIFO, in the cycle after its ACK,
 unless the data only goes into a register: s0 or s1 with a side effect,
@@ -282,8 +297,11 @@ benchmark and 6% of the hand-written one's.
 
 A data read directly after a store is 0.3% of the translated benchmark's
 instructions and 8% of the hand-written one's (§5.6). So rule 3 matters:
-the read must be allowed in the cycle after the bus accepts the store, not
-after the store's instruction retires.
+PREPARE may load the read in the cycle the bus accepts the store, so that
+the read is on the bus in the next cycle. That is still a cycle after the
+store's instruction retires, because the store waits a cycle in DBUS.
+That costs at most 0.5% of the cycles of the translated benchmark and
+3.1% of the hand-written one's.
 
 Rules 1 and 2 cost a cycle or two for a conditional read after a write of
 SR, and for a read after a conditional jump. These are 0 to 4% and 5 to 8%
@@ -360,6 +378,16 @@ lies in the block of FETCH's oldest word, which WRITE tests directly.
 The store address itself comes from PREPARE (§7.4), or is the
 value WRITE wrote last.
 
+The store reaches memory a cycle or more after WRITE checks it, from
+DBUS's store register (§5.3). FETCH requests no word beyond the two
+blocks in that cycle, so the check also covers the request the bus may
+accept together with the store. It does not cover a request after a
+redirect in the cycle WRITE checks the store or the one before, when
+FETCH's range was stale or empty, nor one made while the bus stalls the
+store. So FETCH makes no new request in those cases while the store
+waits in the register. A request that the bus already stalls stays on
+the bus: it was in FETCH's range when WRITE checked the store.
+
 A store into the storing instruction's own constant words must not change
 it, and refetching from the next instruction gives that.
 
@@ -405,8 +433,8 @@ state of ISA §7.1, and requests are never lost.
 WRITE takes a request before an instruction, the first one after reset
 included, when ISA §7.1 allows it: not halted, `in_service` = 0,
 `after_rti` = 0, and E = 1 for IRQ. NMI goes first. Entry (ISA §7.2) flushes
-the pipeline, saves PC and SR, reads the vector through the data port, and
-redirects FETCH.
+the pipeline, saves PC and SR, reads the vector through the data port once
+no store waits in DBUS (§5.3), and redirects FETCH.
 
 A request is taken at the first instruction boundary where ISA §7.1 allows
 it, as in the emulator. ISA §7.1 says a request "is taken" when the
@@ -680,9 +708,8 @@ R0–R14 in order, R15 only after a jump, the memory write, and the halt reason.
 The report is a `t_retire` record (`hdl/src/trace_pkg.vhd`), and the writer
 is `hdl/sim/trace.vhd`. The record's contract wants a store to the console
 accepted on the bus no later than the cycle its instruction is reported. So
-WRITE puts its store on the bus combinationally, holds it there while the
-bus stalls it, and retires and reports the instruction in the cycle the
-bus accepts it.
+WRITE retires and reports a store into the I/O range in the cycle the bus
+accepts it from DBUS's store register (§5.3).
 
 **The testbench** has a sparse dual-port memory model that loads `.bin` files,
 a console model that writes each byte into the trace stream when it is

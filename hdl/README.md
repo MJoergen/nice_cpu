@@ -69,6 +69,7 @@ departs from it.
 | [test/irq_compare.py](test/irq_compare.py) | Compares a run with interrupt requests against the emulator, from the steps where the core took them. |
 | [test/irq_sweep.py](test/irq_sweep.py) | Runs a program with an NMI before each of its steps, and with an IRQ before each. |
 | [test/sidefx_prog.py](test/sidefx_prog.py) | Writes a program with every pair of side effects on one register. |
+| [test/pcfx_prog.py](test/pcfx_prog.py) | Writes a program with every pair of side effects on R15. |
 | [test/smc_prog.py](test/smc_prog.py) | Writes a program that stores into its own code 1 to 40 words ahead. |
 | [test/samereg_prog.py](test/samereg_prog.py) | Writes a program with one register in all three fields of a shift, for every pair of source modes. |
 | [test/latecount.nasm](test/latecount.nasm) | Every shift count that WRITE reduces in a cycle of its own, and every reader of such a shift's result. |
@@ -253,6 +254,12 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   or R14, which holds every pair of side effects on one register, and
   every pair of a `SUB` that writes the register and a `SUB` that uses it
   next, or one instruction later. It does not check itself.
+  `test/pcfx_prog.py` does the same for R15, whose side effects are
+  jumps, in one instruction only. Each instruction sits in a block of its
+  own, with words around it that lead to the next block, and the script
+  models each instruction to choose its operation, constants, and address
+  so that it gets there. It checks itself: R12 is 0 at the end only if
+  every block ran once.
   `test/smc_prog.py` writes a program that stores a NOP over a `HALT` 1
   to 40 words ahead, from the next word to beyond FETCH's buffer and its
   requests in flight, so that some store lands in the pair whose fetch

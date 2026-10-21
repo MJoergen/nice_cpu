@@ -24,8 +24,8 @@ program. The other register is R3, which holds an address in the same
 region, so the first SUB of a pair leaves a register destination with an
 address too. The program does not check itself. The makefile compares the
 core's trace with the emulator's, which shows every register and memory
-write. R15 is left out: its side effects are jumps, and test/hazard.nasm
-and test/random_prog.py cover them.
+write. R15 is left out: its side effects are jumps, and
+test/pcfx_prog.py covers them.
 """
 
 import sys

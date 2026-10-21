@@ -712,8 +712,9 @@ data read right before the entry.
 4. Hazard programs: back-to-back flag use, every pair of side effects on
    the same register, R14 and R15 as pointers, stores into the next few
    instructions, and jumps over `HALT`. They are `hdl/test/hazard.nasm`
-   and the programs that `hdl/test/sidefx_prog.py` and
-   `hdl/test/smc_prog.py` write, the last with stores 1 to 40 words ahead,
+   and the programs that `hdl/test/sidefx_prog.py`,
+   `hdl/test/pcfx_prog.py`, and `hdl/test/smc_prog.py` write, the second
+   with every pair of side effects on R15, the last with stores 1 to 40 words ahead,
    past the end of FETCH's range (§5.5), and the programs against the
    operand rules of §7.4 that hdl/README.md lists, `latecount.nasm` to
    `shiftjump.nasm`, with `samereg_prog.py`.

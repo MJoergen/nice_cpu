@@ -14,7 +14,7 @@
 ; exit status 2 instead of 0, and R12 names the section. The makefile
 ; checks that the emulator's run exits with 0, and then compares the core's
 ; trace with the emulator's. Every pair of side effects on one register is
-; in sidefx_prog.py.
+; in sidefx_prog.py and pcfx_prog.py.
 ;
 ; The program runs with an NMI or an IRQ before any one of its steps, for
 ; step 5 of the test order (test/irq_sweep.py), and still passes its checks.
@@ -95,6 +95,15 @@ start   MOVE    SP, stack
         ?C ADD  R1, R1, 1       ; 9
         ?Z ADD  R1, R1, 1       ; 10
         ?X ADD  R1, R1, 0x100
+; The same through the side effects of two sources. s0 takes VBASE from 0
+; to 0xFFFFFF, and s1 carries from it into the flags, so that VBASE is 0
+; again when the instruction ends.
+        MOVE    R14, 0x41000000 ; E = 1
+        ADD     R0, --R14, R14++ ; 0x41FFFFFF, then 0x42000000 + bit 24: X = 1
+        ?X ADD  R1, R1, 1       ; 11
+        ADD     R0, --R14, R14++ ; 0x43FFFFFF, then 0x44000000 + bit 24: C = 1
+        ?C ADD  R1, R1, 1       ; 12
+        ?X ADD  R1, R1, 0x100
 ; An instruction with M set and R14 as a register destination computes no
 ; flags, though its result is 0. It clears E too, and an IRQ waits until
 ; the OR sets it again.
@@ -104,7 +113,7 @@ start   MOVE    SP, stack
 ; An instruction without M keeps the flags.
         SUB[M]  R0, R0, R0      ; Z = 1
         ADD     R3, R0, 1
-        ?Z ADD  R1, R1, 1       ; 11
+        ?Z ADD  R1, R1, 1       ; 13
 ; C as the carry input and as the fill bit of a shift, from the instruction
 ; before.
         MOVE    R4, 0xFFFFFFFF
@@ -113,7 +122,7 @@ start   MOVE    SP, stack
         ADD[CM] R7, R0, 0       ; R7 = 0
         SUB[M]  R0, R0, 1       ; C = 1
         0<C     R8, R0, 1       ; R8 = 1
-        SUB[M]  R0, R1, 11
+        SUB[M]  R0, R1, 13
         ?!Z MOVE PC, fail
         SUB[M]  R0, R5, 0
         ?!Z MOVE PC, fail
@@ -146,7 +155,11 @@ start   MOVE    SP, stack
         ADD[M]  R0, R0, 1       ; Z = 0
         ?Z MOVE @R3++, 0x88     ; skipped
         ?!Z ADD R10, @R4, @--R3 ; 3 + 0x77: R10 = 0x7A, R3 = data, count 4
-        MOVE    R11, @R4        ; R11 = 4
+        MOVE    R14, 0x41000000 ; X = 0
+        ADD     R0, --R14, R14++ ; X = 1, as in section 1
+        ?!X MOVE R7, @R4        ; skipped: no read
+        ?X MOVE R2, @R4         ; R2 = 4, count 5
+        MOVE    R11, @R4        ; R11 = 5
         SUB[M]  R0, R5, 0x55
         ?!Z MOVE PC, fail
         SUB[M]  R0, R6, 0
@@ -159,7 +172,9 @@ start   MOVE    SP, stack
         ?!Z MOVE PC, fail
         SUB[M]  R0, R10, 0x7A
         ?!Z MOVE PC, fail
-        SUB[M]  R0, R11, 4
+        SUB[M]  R0, R11, 5
+        ?!Z MOVE PC, fail
+        SUB[M]  R0, R2, 4
         ?!Z MOVE PC, fail
         SUB[M]  R0, R3, data
         ?!Z MOVE PC, fail

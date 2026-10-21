@@ -154,10 +154,11 @@ SWEEP_DELAYS_pipeline = 0,1,2,3
 IRQ_COMPARE = $(PYTHON) test/irq_compare.py --emu $(EMU) $(IRQ_LATE)
 
 # The hazard programs of MICROARCH.md §9, step 4: test/hazard.nasm, the
-# programs that test/sidefx_prog.py and test/smc_prog.py write, and the
-# HAZARD_PROGS below, each also on a memory that stalls. smc_prog.py's
-# program stores into its own code 1 to 40 words ahead, and checks itself
-# like hazard.nasm.
+# programs that test/sidefx_prog.py, test/pcfx_prog.py, and
+# test/smc_prog.py write, and the HAZARD_PROGS below, each also on a
+# memory that stalls. pcfx_prog.py's program has every pair of side
+# effects on R15, and smc_prog.py's stores into its own code 1 to 40 words
+# ahead. Both check themselves like hazard.nasm.
 # hazard.nasm checks itself, so the emulator's run must end at its last HALT,
 # with R12 = 0 and exit status 0, before the core's trace means anything.
 # test/irq_sweep.py then runs hazard.nasm with an NMI before each of its
@@ -299,6 +300,8 @@ $(eval $(call core_run,$(1),hazard,$(BUILD)/hazard.bin,,check_core check_selfche
 $(eval $(call core_run,$(1),hazard_stall,$(BUILD)/hazard.bin,-gG_STALL=30 -gG_SEED=13))
 $(eval $(call core_run,$(1),sidefx,$(BUILD)/sidefx.bin))
 $(eval $(call core_run,$(1),sidefx_stall,$(BUILD)/sidefx.bin,-gG_STALL=30 -gG_SEED=15))
+$(eval $(call core_run,$(1),pcfx,$(BUILD)/pcfx.bin,,check_core check_selfcheck))
+$(eval $(call core_run,$(1),pcfx_stall,$(BUILD)/pcfx.bin,-gG_STALL=30 -gG_SEED=29))
 $(eval $(call core_run,$(1),smc,$(BUILD)/smc.bin,,check_core check_selfcheck))
 $(eval $(call core_run,$(1),smc_stall,$(BUILD)/smc.bin,-gG_STALL=30 -gG_SEED=21))
 $(foreach t,$(HAZARD_PROGS),$(eval $(call core_run,$(1),$(t),$(BUILD)/$(t).bin)))

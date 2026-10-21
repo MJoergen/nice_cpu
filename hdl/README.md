@@ -352,9 +352,10 @@ SymbiYosys, and the solvers Yices 2 and Boolector. Tested with Yosys 0.33,
 the plugin and GHDL 4.1.0 of Ubuntu 24.04 (packages `yosys`,
 `yosys-plugin-ghdl`, and `ghdl-gcc`, whose libraries the plugin loads),
 SymbiYosys at its tag `yosys-0.33`, Yices 2.6.4, and Boolector 3.2.3,
-which CI installs, and with Yosys 0.56 and GHDL 6.0; the jobs of the
-shared functions, of DECODE, and of the devices have run with the latter
-only so far (TODO.md). Boolector is built from source, with the scripts in its
+which CI installs, and with Yosys 0.56 and GHDL 6.0. GHDL 4.1 cannot
+synthesise `shift_right` or `shift_left` of `numeric_std_unsigned` by an
+amount that is not constant, so the formal code uses `srl` and `sll`
+instead. Boolector is built from source, with the scripts in its
 `contrib/` for CaDiCaL and btor2tools: the `boolector` package of Ubuntu
 24.04 is version 1.5, which SymbiYosys cannot drive.
 

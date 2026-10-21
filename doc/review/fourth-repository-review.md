@@ -202,6 +202,8 @@ The math unit, the performance counters, and the fetch statistics had testbenche
 
 The three jobs ran with Yosys 0.56 and GHDL 6.0.0-dev here, as did those of §6.1 and §6.2. CI's Yosys 0.33 and GHDL 4.1 have not run them yet (TODO.md).
 
+**Resolved:** CI passed every job but `mpu prove`, whose VHDL import failed: GHDL 4.1 cannot synthesise `shift_right` of `numeric_std_unsigned` by an amount that is not constant, which `div_inv` used three times. They are `srl` and `sll` now, the same logical shifts. `mpu prove` and `mpu cover` pass with CI's Yosys 0.33, plugin, GHDL 4.1, and SymbiYosys, run from their packages here.
+
 ### 6.6 A ROM is state in an induction step
 
 The first run of the lemmas of §6.1 failed `f_loop` on `C<C` by 58 with a counterexample that simulation contradicted. The table of `mod33`, a constant array that GHDL synthesises as a ROM, becomes a `$mem` cell in Yosys, whose contents are initial state: right from reset, so the bounded check of the whole core is exact, but free in the induction step of a k-induction, where the solver starts from any state. So the multi-cycle core's `prove` task, and PREPARE's, have been proving their properties for every table, which is sound and harmless there, and the lemma failed because it is about the table. `nice_pkg.sby` maps the table to logic with `memory_map`, which leaves nothing in the file that is state. Worth knowing for every future proof that depends on `C_MOD33`, and for a shadow memory in a wrapper.

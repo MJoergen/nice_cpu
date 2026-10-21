@@ -4,17 +4,8 @@ This is the single list of open items for the repository: work not done
 yet, questions not decided, claims not checked, and ideas for later. Each
 item names where it comes from. Add new items here, not in other files.
 
+Every finding of the reviews in [doc/review/](doc/review/) is closed.
 No code has TODO or FIXME comments.
-
-## From the fourth repository review (2026-10-20)
-
-The findings of [doc/review/fourth-repository-review.md](doc/review/fourth-repository-review.md)
-that are not closed yet. Every finding of the earlier reviews is closed.
-
-- **CI's formal tools** (§6.5): the jobs of the shared functions, DECODE,
-  the performance counters, the fetch statistics, and the math unit ran
-  with Yosys 0.56 and GHDL 6.0 only. CI's Yosys 0.33 and GHDL 4.1 have
-  not run them.
 
 ## FPGA core
 

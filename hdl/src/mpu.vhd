@@ -519,11 +519,11 @@ begin
             return false;
          end if;
          k_v    := C_N - count;
-         mask_v := shift_right(C_ONES, count);
+         mask_v := C_ONES srl count;
          rem_v  := zext(rem_in, 2 * C_N);
          -- The registers hold what the ghosts say.
-         if gq /= zext(quo and mask_v, 2 * C_N) or gp /= zext(shift_right(n, count), 2 * C_N) or
-            shift_right(quo, k_v) /= shift_right(shift_left(n, k_v), k_v) then
+         if gq /= zext(quo and mask_v, 2 * C_N) or gp /= zext(n srl count, 2 * C_N) or
+            (quo srl k_v) /= ((n sll k_v) srl k_v) then
             return false;
          end if;
          -- p = m + rem, without a wrap

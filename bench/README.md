@@ -134,12 +134,12 @@ the most cycles per instruction, 12.0 and 11.7, and `vm` in the
 hand-written one, 12.8.
 
 `make core CORE=pipeline` runs them on the pipelined core, on the same
-programs as the multi-cycle core above, at commit 4bbbb81, which leaves
+programs as the multi-cycle core above, at commit bb8fdb6, which leaves
 the multi-cycle core as it was:
 
 | Program | Instructions | Cycles | Cycles per instruction | Faster than the multi-cycle core |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 1681080 | 2351908 | 1.40 | 8.1 times |
+| `bench.c` through nicewasm | 1681080 | 2349181 | 1.40 | 8.1 times |
 | `hand.nasm` | 491617 | 1333925 | 2.71 | 4.2 times |
 
 
@@ -275,17 +275,17 @@ phases.
 
 `make compare` puts the estimate beside the cycles the pipelined core
 took, phase by phase, from the output of `make core CORE=pipeline`,
-which must have run first, on the same `.bin`. At commit 4bbbb81:
+which must have run first, on the same `.bin`. At commit bb8fdb6:
 
 | Phase | `bench.c`, model | Core | Model against the core | `hand.nasm`, model | Core | Model against the core |
 |---|---|---|---|---|---|---|
 | `rng64` | 74312 | 83076 | −10.5% | 62481 | 66339 | −5.8% |
-| `crc32` | 76603 | 85108 | −10.0% | 41998 | 45855 | −8.4% |
+| `crc32` | 76603 | 83061 | −7.8% | 41998 | 45855 | −8.4% |
 | `bst` | 405711 | 412973 | −1.8% | 256281 | 279699 | −8.4% |
-| `heapsort` | 375849 | 386464 | −2.7% | 289631 | 305038 | −5.1% |
+| `heapsort` | 375849 | 385784 | −2.6% | 289631 | 305038 | −5.1% |
 | `vm` | 1170099 | 1220162 | −4.1% | 492044 | 574061 | −14.3% |
 | `strings` | 157523 | 164125 | −4.0% | 61170 | 62933 | −2.8% |
-| total | 2260097 | 2351908 | −3.9% | 1203605 | 1333925 | −9.8% |
+| total | 2260097 | 2349181 | −3.8% | 1203605 | 1333925 | −9.8% |
 
 The model is below the core in every phase, by up to 14%, most in `vm`
 of `hand.nasm` and in `rng64` and `crc32` of the translated program. It

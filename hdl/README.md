@@ -747,12 +747,12 @@ reaches every stage at once. Its stores and vector reads go out from a
 register in DBUS, a cycle later. In the best case one micro-operation retires each cycle.
 `cputest` takes about 1.2 cycles per instruction on memory that never
 stalls, and `hazard.nasm`, which is all hazards, 1.9. The benchmark of
-[bench/](../bench/README.md) runs like this at commit 4bbbb81, against
+[bench/](../bench/README.md) runs like this at commit bb8fdb6, against
 the multi-cycle core's numbers there:
 
 | Program | Instructions | Cycles | Cycles per instruction | Multi-cycle core |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 1681080 | 2351908 | 1.40 | 11.3, 8.1 times slower |
+| `bench.c` through nicewasm | 1681080 | 2349181 | 1.40 | 11.3, 8.1 times slower |
 | `hand.nasm` | 491617 | 1333925 | 2.71 | 11.4, 4.2 times slower |
 
 The instruction counts equal the emulator's. In `hand.nasm`, `vm` (5.1

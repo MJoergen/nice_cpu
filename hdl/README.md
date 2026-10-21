@@ -669,6 +669,13 @@ combinationally on `ready`.
 
 `halted_o` is 1 once the core has halted. Only reset restarts it.
 
+`regs_o` gives R0 to R15 from the core's registers, for a monitor that
+shows them. In the cycle after a step is reported on `retire_o`, they are
+the registers of that report. `tb_core` and the formal checks of both
+cores' ports check that. `retire_o` is for simulation: in the pipelined
+core it comes from WRITE's next state, before the register, so a design
+that reads it adds WRITE's longest paths to its own.
+
 In `tb_core`, the generic `G_CYCLE_COUNTER` set to false sends the
 two words of the cycle counter to the memory model instead of `perf`, as
 `--no-cycle-counter` does in the emulator. The generic `G_INTERRUPTS` takes the emulator's options,

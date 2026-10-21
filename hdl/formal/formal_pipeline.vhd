@@ -56,6 +56,8 @@ architecture synthesis of formal_pipeline is
    signal halted    : std_logic;
    signal instret   : std_logic;
    signal retire    : t_retire;
+   signal retire_d  : t_retire := C_RETIRE_NONE;
+   signal regs      : t_regs;
    signal ibus_wait : natural range 0 to 9;
    signal dbus_wait : natural range 0 to 5;
 
@@ -63,6 +65,9 @@ begin
 
    -- psl default clock is rising_edge(clk_i);
    -- psl f_initial_reset : assume rst_i;
+
+   -- regs_o holds the registers of a step from the cycle after its report.
+   -- psl f_regs : assert always retire_d.valid = '1' -> regs = retire_d.regs;
 
    -- A halted core makes no data access, and no new instruction fetch: a
    -- request still on the instruction bus is one the bus stalled before
@@ -107,6 +112,7 @@ begin
          irq_vector_i => irq_vector_i,
          halted_o     => halted,
          instret_o    => instret,
+         regs_o       => regs,
          retire_o     => retire,
          stats_o      => open
       ); -- i_pipeline
@@ -175,5 +181,17 @@ begin
          ready_i => irq_ready,
          data_i  => irq_vector_i
       ); -- i_irq_check
+
+
+   -- The step reported in the cycle before, but for one in a reset
+   p_retire_d : process (clk_i)
+   begin
+      if rising_edge(clk_i) then
+         retire_d <= retire;
+         if rst_i = '1' then
+            retire_d.valid <= '0';
+         end if;
+      end if;
+   end process p_retire_d;
 
 end architecture synthesis;

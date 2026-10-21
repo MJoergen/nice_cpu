@@ -236,6 +236,7 @@ architecture simulation of tb_core is
    signal console_data  : std_logic_vector(7 downto 0);
 
    signal retire : t_retire;
+   signal regs   : t_regs;
    signal tick   : std_logic;
    signal done   : std_logic;
    signal status : natural;
@@ -287,6 +288,7 @@ begin
             irq_vector_i => core_irq_vector,
             halted_o     => open,
             instret_o    => instret,
+            regs_o       => regs,
             retire_o     => retire
          ); -- i_multicycle
 
@@ -318,6 +320,7 @@ begin
             irq_vector_i => core_irq_vector,
             halted_o     => open,
             instret_o    => instret,
+            regs_o       => regs,
             retire_o     => retire,
             stats_o      => fetch_events
          ); -- i_pipeline
@@ -601,6 +604,22 @@ begin
          end loop;
       end if;
    end process p_intr;
+
+
+   -- regs_o holds the registers of a step from the cycle after its report.
+   p_regs : process (clk)
+      variable retire_v : t_retire := C_RETIRE_NONE;
+   begin
+      if rising_edge(clk) then
+         assert retire_v.valid = '0' or regs = retire_v.regs
+            report "tb_core: regs_o is not the registers of the step reported before"
+            severity failure;
+         retire_v := retire;
+         if rst = '1' then
+            retire_v.valid := '0';
+         end if;
+      end if;
+   end process p_regs;
 
 
    p_finish : process

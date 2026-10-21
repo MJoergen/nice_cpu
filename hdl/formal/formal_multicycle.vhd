@@ -44,6 +44,8 @@ architecture synthesis of formal_multicycle is
    signal halted    : std_logic;
    signal instret   : std_logic;
    signal retire    : t_retire;
+   signal retire_d  : t_retire := C_RETIRE_NONE;
+   signal regs      : t_regs;
    signal ibus_wait : natural range 0 to 2;
    signal dbus_wait : natural range 0 to 2;
 
@@ -51,6 +53,9 @@ begin
 
    -- psl default clock is rising_edge(clk_i);
    -- psl f_initial_reset : assume rst_i;
+
+   -- regs_o holds the registers of a step from the cycle after its report.
+   -- psl f_regs : assert always retire_d.valid = '1' -> regs = retire_d.regs;
 
    -- The core makes one request at a time, and holds CYC until its ACK. So
    -- a request waits for its ACK exactly while CYC is high and STB low.
@@ -93,6 +98,7 @@ begin
          irq_vector_i => irq_vector_i,
          halted_o     => halted,
          instret_o    => instret,
+         regs_o       => regs,
          retire_o     => retire
       ); -- i_multicycle
 
@@ -156,5 +162,17 @@ begin
          ready_i => irq_ready,
          data_i  => irq_vector_i
       ); -- i_irq_check
+
+
+   -- The step reported in the cycle before, but for one in a reset
+   p_retire_d : process (clk_i)
+   begin
+      if rising_edge(clk_i) then
+         retire_d <= retire;
+         if rst_i = '1' then
+            retire_d.valid <= '0';
+         end if;
+      end if;
+   end process p_retire_d;
 
 end architecture synthesis;

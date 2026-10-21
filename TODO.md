@@ -106,9 +106,9 @@ No code has TODO or FIXME comments.
   range waits in WRITE, and FETCH waits after a redirect. `make compare`
   shows how far the estimate falls behind.
 - **NiceMonMEGA65 reads the registers from `retire_o.regs`**, which is
-  `w_n.regs` of WRITE, before the register. Its worst path ends there. A
-  registered copy is enough for nicemon. Fix in NiceMonMEGA65, and say in
-  `hdl/src/trace_pkg.vhd` that `retire_o` is for simulation and is slow.
+  `w_n.regs` of WRITE, before the register. A copy of it in a register is
+  still fed from `w_n`, so its paths are WRITE's longest. Both cores now
+  have `regs_o` from their registers. NiceMonMEGA65 should read that.
 
 - **The cycle the model lacks.** `bench/pipecycles.py` charges a jump
   taken in WRITE 7 cycles, where the core's bubble is 6

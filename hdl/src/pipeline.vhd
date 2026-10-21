@@ -152,6 +152,11 @@ entity pipeline is
       -- interrupt entry, for the instruction counter (SYSTEM.md §3)
       instret_o    : out std_logic;
 
+      -- R0-R15 as the core holds them, from registers, for a monitor that
+      -- shows them. In the cycle after a step is reported on retire_o, they
+      -- are the registers of that report.
+      regs_o       : out t_regs;
+
       -- One report per step, for sim/trace.vhd
       retire_o     : out t_retire;
 
@@ -419,6 +424,7 @@ begin
    irq_ready_o <= take_irq;
    halted_o    <= '1' when w_r.mode = HALTED_ST and st_valid = '0' else '0';
    instret_o   <= rd_count or w_instret;
+   regs_o      <= w_r.regs;
 
 
    p_stats : process (all)

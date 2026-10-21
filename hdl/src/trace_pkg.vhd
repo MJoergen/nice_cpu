@@ -26,6 +26,10 @@
 -- e) A store to the console is accepted on the data bus no later than the
 --    cycle its instruction is reported, so that its byte comes before its
 --    trace line, as in the emulator.
+--
+-- The report is for simulation. The pipelined core forms it from WRITE's
+-- next state, before the register, so its paths are among the longest of
+-- the core. A design on an FPGA reads the registers from regs_o instead.
 
 library ieee;
    use ieee.std_logic_1164.all;

@@ -102,6 +102,11 @@ entity multicycle is
       -- interrupt entry, for the instruction counter (SYSTEM.md §3)
       instret_o    : out std_logic;
 
+      -- R0-R15 as the core holds them, from registers, for a monitor that
+      -- shows them. In the cycle after a step is reported on retire_o, they
+      -- are the registers of that report.
+      regs_o       : out t_regs;
+
       -- One report per step, for sim/trace.vhd
       retire_o     : out t_retire
    );
@@ -178,6 +183,7 @@ begin
 
    halted_o  <= '1' when state = HALTED_ST else '0';
    instret_o <= '1' when state = RETIRE_ST and rep_intr = '0' else '0';
+   regs_o    <= regs;
 
 
    p_fsm : process (clk_i)

@@ -58,6 +58,12 @@
 -- test/irq_compare.py reads the log, for cores that take a request later
 -- than the step it was raised for (MICROARCH.md §9).
 --
+-- With G_RETIRE_LOG, p_retire_log writes a line to that file for each
+-- step the core reports: the cycle it is reported in, counting from the
+-- first cycle after reset, and the address of the instruction in hex, or
+-- "intr" for an interrupt entry. bench/pipecycles.py --retires compares
+-- the cycles with its model's, step by step.
+--
 -- The timer counts the steps, as the emulator's does: its tick is the
 -- core's instret_o, and the report of each interrupt entry. A data read of
 -- TIMER_COUNT must see the ticks of every older instruction, and the
@@ -91,6 +97,7 @@ entity tb_core is
       G_MAX_STEPS     : positive := 100_000_000;
       G_INTERRUPTS    : string   := "";
       G_INTR_LOG      : string   := "";
+      G_RETIRE_LOG    : string   := "";
       -- Each request is raised this many cycles after its step allows.
       G_INTR_DELAY    : natural  := 0;
       G_CYCLE_COUNTER : boolean  := true;
@@ -624,6 +631,34 @@ begin
          end if;
       end if;
    end process p_regs;
+
+
+   p_retire_log : process (clk)
+      file     log_f      : text;
+      variable log_open_v : boolean := false;
+      variable cycle_v    : natural := 0;
+      variable l          : line;
+   begin
+      if rising_edge(clk) and rst = '0' and G_RETIRE_LOG /= "" then
+         if retire.valid = '1' then
+            if not log_open_v then
+               file_open(log_f, G_RETIRE_LOG, write_mode);
+               log_open_v := true;
+            end if;
+            write(l, integer'image(cycle_v) & " ");
+            if retire.intr = '1' then
+               write(l, string'("intr"));
+            else
+               write(l, to_hstring(retire.addr));
+            end if;
+            writeline(log_f, l);
+            if retire.halt /= HALT_NONE then
+               flush(log_f);
+            end if;
+         end if;
+         cycle_v := cycle_v + 1;
+      end if;
+   end process p_retire_log;
 
 
    p_finish : process

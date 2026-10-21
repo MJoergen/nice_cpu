@@ -26,24 +26,33 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
 - FETCH reads an aligned pair of words per cycle, from the redirect target
   on. The pair fetched in cycle f is in ICACHE in f + 1 and DECODE can take
   the instruction in f + 2, once all its words are there. FETCH runs ahead
-  by at most --ibuf words (default 8) that DECODE has not taken yet.
+  by at most --ibuf words (default 16, the buffer of hdl/src/pipe_fetch.vhd)
+  that DECODE has not taken yet. After reset, the first pair is fetched in
+  cycle 1.
 - DECODE takes one instruction per cycle. SEQUENCER issues one micro-op per
   cycle, so an instruction of n micro-ops costs n cycles ("multi-micro-op").
-- A jump that DECODE resolves (MOVE R15, c and ADD R15, R15, c, with the
-  condition always and the C bit clear: hazards.py's early_jump) restarts
-  FETCH in the cycle after
-  DECODE: the target is in DECODE 3 cycles after the jump, a bubble of
-  --early (2) cycles. Every other taken jump (conditional jumps, returns
-  MOVE R15, @SP++, table jumps, control instructions) is resolved in WRITE
-  by its last micro-op and refetches: the target reaches WRITE --flush (7)
-  cycles later than a fall-through would. That is the core's bubble
-  (hdl/test/bubble.nasm measures it): the jump leaves WRITE in cycle
-  c - 2 and flushes in the same cycle, the redirect reaches FETCH from a
-  register in c - 1, FETCH issues the request in c (on the bus in
-  c + 1), the memory acknowledges in c + 2, DECODE takes the instruction
-  in c + 3 and emits its micro-op in c + 4, PREPARE passes it on in
-  c + 5, and WRITE runs it in c + 6.
-  A skipped jump costs nothing itself.
+- DECODE holds two instructions (dec_r, which it splits into micro-ops,
+  and dec_q, the next) and skid_r, a micro-op that PREPARE did not take
+  (hdl/src/pipe_decode.vhd). It takes an instruction when dec_q is free,
+  which is once the last micro-op of the instruction before the one in
+  dec_r is split off. A micro-op is split off once the one before has
+  entered PREPARE, in which it may still wait.
+- A redirect in cycle x puts the target's pair on the bus in x + 2, and
+  DECODE takes the target in x + 4. A jump that DECODE resolves (MOVE R15,
+  c and ADD R15, R15, c, with the condition always and the C bit clear:
+  hazards.py's early_jump) redirects FETCH in the cycle DECODE takes it,
+  d, so the target is in DECODE in d + 4, a bubble of --early (3) cycles.
+  Every other taken jump (conditional jumps, returns MOVE R15, @SP++,
+  table jumps, control instructions) is resolved in WRITE by its last
+  micro-op, which flushes in the cycle it leaves WRITE, c - 2. The
+  redirect reaches FETCH from a register in c - 1, FETCH issues the
+  request in c, it is on the bus in c + 1, the memory acknowledges in
+  c + 2, DECODE takes the instruction in c + 3 and emits its micro-op in
+  c + 4, PREPARE passes it on in c + 5, and WRITE runs it in c + 6,
+  --flush (7) cycles later than a fall-through would. hdl/test/bubble.nasm
+  measures 7, and 2 for an early jump, since its read of the cycle
+  counter before the jump hides a cycle. A skipped jump costs nothing
+  itself.
 - Registers: bypasses from WRITE make ALU operand dependences free. A
   register used as the base of a data read (the address is formed in
   PREPARE) is ready only the cycle after the micro-op that writes it leaves
@@ -53,20 +62,35 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   through @R or @R++ does not wait: WRITE takes the value it wrote last
   (MICROARCH.md §7.4). A skipped writer counts as writing, as DECODE
   cannot tell.
-- Data reads are issued in PREPARE (MICROARCH.md §5.3): a conditional
-  instruction's read waits until the cycle after the last older SR writer
-  (M = 1, R14 written, control) has left WRITE ("SR stall"), and a read waits
-  until the cycle after an older skipped jump has left WRITE ("jump wait").
+- Data reads are loaded in PREPARE (MICROARCH.md §5.3). A read waits until
+  the cycle after the last older SR writer (M = 1, R14 written, control)
+  has left WRITE ("SR stall"), whatever its condition: the core decides
+  every read's condition first, though MICROARCH.md §5.2 exempts the
+  condition "always". A read after a skipped jump may load in the cycle the
+  jump leaves WRITE, when it is in PREPARE anyway, so that costs nothing.
   A skipped instruction waits too, but makes no access.
-- The data bus takes one access per cycle, in program order. Reads go in
-  PREPARE, stores in WRITE, so a read directly after a store, or a second
-  read in one micro-op, waits a cycle ("data bus"). RAM answers in the next
-  cycle, in time for WRITE.
+- The data bus takes one access per cycle, in program order. A read loaded
+  in PREPARE in cycle t is on the bus in t + --read-bus (1), since the
+  request is a register, and RAM answers in the cycle after that
+  ("readbus"). A store leaves WRITE into DBUS's store register, and is on
+  the bus from the next cycle until the bus takes it. One into memory
+  retires as it leaves WRITE, one into the I/O range when the bus takes
+  it ("data bus"). So a read loaded while a store is in WRITE follows it
+  on the bus at no cost, and a second read in one micro-op waits a cycle
+  ("data bus"). FETCH puts no request on the bus while a store waits in
+  the register after its first cycle there, nor in the cycle after WRITE
+  queued a store, when DECODE redirected FETCH in that cycle or the one
+  before (hdl/src/pipeline.vhd): the target of a jump that DECODE
+  resolves right after a store comes a cycle later. The bus decoder,
+  hdl/src/wb_dmux.vhd, passes a request to another slave than the one
+  before (RAM, the math unit, the counters, the fetch statistics, the
+  timer) only a cycle after the last ACK: --slave-gap (1) cycles more
+  ("data bus").
 - The math unit, as in hdl/src/mpu.vhd: a write to A or B (C or D), accepted
   in cycle t, starts the multiplier and the two dividers (the two 64-bit
   dividers), and a read of a result waits for its unit. The multiplier takes
-  two cycles, so a read of a product is accepted in cycle t + --mul (3) at
-  the earliest. A divider takes a cycle to start, then one cycle per
+  two cycles, so a read of a product is accepted on the bus in cycle t +
+  --mul (3) at the earliest. A divider takes a cycle to start, then one cycle per
   quotient bit, but --div-skip (8) bits in one cycle while they are all 0,
   which the model works out from the operands in the trace: a read of a
   quotient or remainder is accepted in cycle t + 2 + n at the earliest,
@@ -103,7 +127,16 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
 
 Each cycle a micro-op leaves WRITE later than one after its predecessor is
 charged to the constraint that bound it, so cycles = instructions +
-multi-micro-op cycles + the charged gaps, exactly.
+multi-micro-op cycles + the charged gaps, exactly. The gap has up to three
+parts: the wait to enter WRITE, charged to what held the micro-op up before
+it, the wait for its read data, and the wait for the bus to take its
+store into the I/O range.
+
+The model gives the core's cycles for both benchmark programs to within
+0.02%. --retires FILE compares the model with the retire log of the core,
+which hdl/test/tb_core.vhd writes with G_RETIRE_LOG (make core in bench/):
+for each step, the core's cycles since the step before less the model's,
+summed by the cause the model charged and by address.
 """
 
 import argparse
@@ -111,34 +144,35 @@ import os
 import subprocess
 import sys
 import tempfile
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 import hazards
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 PHASES = ["rng64", "crc32", "bst", "heapsort", "vm", "strings"]
-CAUSES = ["startup", "fetch", "flush", "early", "sr", "jumpwait", "agen", "shiftreg", "sumwait",
-          "bus", "mpu", "readlate", "shiftlate", "adjust", "interrupt"]
+CAUSES = ["startup", "fetch", "flush", "early", "sr", "agen", "shiftreg", "sumwait",
+          "bus", "mpu", "readbus", "readlate", "shiftlate", "adjust", "interrupt"]
 CAUSE_TEXT = {
     "multi": "multi-micro-op instructions",
     "startup": "pipeline start",
     "fetch": "fetch-bound (2 words/cycle, unaligned targets, buffer)",
     "flush": "taken jumps resolved in WRITE (flush)",
     "early": "jumps DECODE resolves (early-redirect bubble)",
-    "sr": "conditional data read waits for SR",
-    "jumpwait": "data read waits for an older skipped jump",
+    "sr": "data read waits for an older write of SR",
     "agen": "address register written by the previous micro-op",
     "shiftreg": "shift count register written by the previous micro-op",
     "sumwait": "sum operand or store address register just written",
     "bus": "data bus: read after store, two reads in a micro-op",
     "mpu": "math unit result not ready",
+    "readbus": "read data a cycle after the bus (registered request)",
     "readlate": "read data used by more than a register write",
     "shiftlate": "shift count reduced in WRITE (memory, adder, R14, C<C)",
     "adjust": "destination adjusted by 1, or a computed jump",
     "interrupt": "interrupt entries",
 }
 INSTR_LO = 0xFFFFFF42
+IO_BASE = 0xFFFFFF00
 MEMORY = (4, 5, 6, 7)
 SIDE = (1, 2, 5, 6)
 
@@ -151,6 +185,19 @@ MPU_RESULTS = {0xFFFFFF22: "mul", 0xFFFFFF23: "mul", 0xFFFFFF24: "mul", 0xFFFFFF
                0xFFFFFF34: "sdiv64", 0xFFFFFF35: "sdiv64", 0xFFFFFF36: "sdiv64",
                0xFFFFFF37: "sdiv64", 0xFFFFFF38: "udiv64", 0xFFFFFF39: "udiv64",
                0xFFFFFF3A: "udiv64", 0xFFFFFF3B: "udiv64"}
+
+
+def slave(addr: int) -> str:
+    """The slave of the data bus that addr reaches, as in hdl/test/tb_core.vhd."""
+    if addr >> 4 == 0xFFFFFF10 >> 4:
+        return "timer"
+    if addr >> 5 == 0xFFFFFF20 >> 5:
+        return "mpu"
+    if addr >> 4 == 0xFFFFFF40 >> 4:
+        return "perf"
+    if addr >> 6 == 0xFFFFFF40 >> 6 and (addr >> 4) & 3:
+        return "stats"
+    return "mem"
 
 
 def absolute(x: int, bits: int) -> int:
@@ -328,10 +375,11 @@ def read_addresses(info: Info, pc: int, regs: List[int], mem: Dict[int, int]) ->
 
 
 class Model:
-    def __init__(self, mem: Dict[int, int], ibuf: int = 8, flush: int = 7, early: int = 2,
+    def __init__(self, mem: Dict[int, int], ibuf: int = 16, flush: int = 7, early: int = 3,
                  agen: int = 1, sidefx_fast: bool = False, mul: int = 3,
                  div_skip: int = 8, shift_late: int = 1, shift_reg: int = 1,
-                 sum_wait: int = 1, dest_adjust: int = 1, read_late: int = 1) -> None:
+                 sum_wait: int = 1, dest_adjust: int = 1, read_late: int = 1,
+                 read_bus: int = 1, slave_gap: int = 1) -> None:
         self.mem = mem
         self.bp = max(2, ibuf // 2)
         self.flush, self.early, self.agen = flush, early, agen
@@ -340,6 +388,8 @@ class Model:
         self.shift_late, self.shift_reg = shift_late, shift_reg
         self.sum_wait, self.dest_adjust = sum_wait, dest_adjust
         self.read_late = read_late
+        self.read_bus = read_bus
+        self.slave_gap = slave_gap
         self.bubble = {"flush": flush, "early": early, "interrupt": flush + 1}
         self.cache: Dict[int, Info] = {}
         self.regs = [0] * 16
@@ -352,21 +402,26 @@ class Model:
         self.stream_base = 0          # pair number of the target's pair
         self.ftimes: List[Tuple[int, str]] = []
         self.leave: List[int] = []
-        self.restart: Tuple[int, str] = (0, "startup")
+        self.restart: Tuple[int, str] = (1, "startup")
+        # The cycles in which FETCH may put no request on the bus, for a
+        # store in DBUS, and the cycles in which WRITE queued the last
+        # stores.
+        self.fblock: Set[int] = set()
+        self.store_w: List[int] = []
         self.expect_pc = 0
         # Pipeline.
         self.d_prev = -10
         self.leave_prev = -10
         self.s_prev = -10
-        self.p_prev = -10
+        self.pin_prev = -10       # cycle the previous micro-op entered PREPARE
         self.w_prev = -10         # cycle the previous micro-op entered WRITE
         self.done_prev = -1       # cycle the previous micro-op left WRITE
         self.first = True
         self.last_bus = -10
+        self.last_slave = "mem"
         self.reg_ready = [-10] * 16
         self.reg_done = [-10] * 16  # cycle the last write of each register left WRITE
         self.sr_ready = -10
-        self.jump_ready = -10
         # The math unit: its operands, and the cycle in which a read of each
         # unit's result can be accepted.
         self.mpu_ops = {0xFFFFFF20: 0, 0xFFFFFF21: 0, 0xFFFFFF30: 0, 0xFFFFFF31: 0,
@@ -388,8 +443,14 @@ class Model:
                     raise RuntimeError("fetch buffer smaller than an instruction")
                 if lv > t:
                     t = lv
-            f.append((t, tag))
+            f.append((self.unblocked(t), tag))
         return f[k]
+
+    def unblocked(self, t: int) -> int:
+        """The first cycle from t in which FETCH may put a request on the bus."""
+        while t in self.fblock:
+            t += 1
+        return t
 
     def new_stream(self, pc: int, when: Tuple[int, str]) -> None:
         self.stream_base = pc >> 1
@@ -425,7 +486,15 @@ class Model:
         addrs: List[int] = []
         if not skipped and info.nreads:
             addrs = read_addresses(info, pc, self.regs, self.mem)
+        store_addr = 0
+        for c in changes:
+            if c[0] == "[":
+                store_addr = int(c[1:].split("]=")[0], 16)
         first_s = -1
+        # The instruction moves into dec_r once the last micro-op of the
+        # one before is split off, into PREPARE or skid_r, which frees
+        # dec_q for the next (hdl/src/pipe_decode.vhd).
+        enter = max(d + 1, self.s_prev + 1)
         counter_read_time = None
         for j, u in enumerate(info.uops):
             # SEQUENCER
@@ -433,35 +502,41 @@ class Model:
                 s, stag = d + 1, dtag
             else:
                 s, stag = self.s_prev + 1, "flow"
-            if self.p_prev > s:
-                s, stag = self.p_prev, "flow"
+            # A micro-op is split off when skid_r is empty: once the one
+            # before has entered PREPARE, if it waited in skid_r.
+            if self.pin_prev > s:
+                s, stag = self.pin_prev, "flow"
             if first_s < 0:
                 first_s = s
-            # PREPARE
+            # PREPARE: it enters in pin, and may wait there.
             p, ptag = s + 1, stag
             if self.w_prev > p:
                 p, ptag = self.w_prev, "flow"
+            pin = p
             data = -10
+            dtg = "flow"
             for operand, base in zip(u.reads, u.bases):
                 t, tag = p, ptag
                 if base is not None and self.reg_ready[base] > t:
                     t, tag = self.reg_ready[base], "agen"
-                if info.cond and self.sr_ready > t:
+                if self.sr_ready > t:
                     t, tag = self.sr_ready, "sr"
-                if self.jump_ready > t:
-                    t, tag = self.jump_ready, "jumpwait"
                 if not skipped:
-                    if self.last_bus + 1 > t:
-                        t, tag = self.last_bus + 1, "bus"
+                    # Loaded in t, the read is on the bus in t + --read-bus,
+                    # after the access before it.
                     a = addrs[operand]
-                    acc = t
+                    free = self.bus_free(a)
+                    if free > t + self.read_bus:
+                        t, tag = free - self.read_bus, "bus"
+                    acc = t + self.read_bus
                     unit = MPU_RESULTS.get(a)
                     if unit is not None and self.mpu_ready[unit] > acc:
                         acc = self.mpu_ready[unit]
                     late = 0 if u.bypass else self.read_late
                     if acc + 1 + late > data:
                         data = acc + 1 + late
-                        dtg = "mpu" if acc > t else "readlate" if late else "flow"
+                        dtg = ("mpu" if acc > t + self.read_bus else "readlate" if late else
+                               "readbus" if self.read_bus else "flow")
                     self.last_bus = acc
                     if a == INSTR_LO:
                         counter_read_time = acc
@@ -476,33 +551,32 @@ class Model:
                     for r in regs if n > 0 else []:
                         if self.reg_done[r] + n > p:
                             p, ptag = self.reg_done[r] + n, tag
-            # WRITE
+            # WRITE. The gap after the micro-op before is charged in three
+            # parts: the wait to enter WRITE, the wait for read data, and
+            # the wait for the bus to take a store.
             w, wtag = self.done_prev + 1, "flow"
             if p + 1 > w:
                 w, wtag = p + 1, ptag
-            done, tag = w, wtag
-            if data > done:
-                done, tag = data, dtg
-            if u.store and not skipped:
-                if self.last_bus + 1 > done:
-                    done, tag = self.last_bus + 1, "bus"
-                self.last_bus = done
-            gap = done - self.done_prev - 1
+            done = max(w, data)
+            parts = [(w - self.done_prev - 1, wtag), (done - w, dtg)]
             if self.first:
                 self.gaps["startup"] += done
                 self.first = False
-            elif gap > 0:
-                assert tag != "flow"
-                rt = self.restart[1]
-                if j == 0 and k0 == 0 and tag == "fetch" and rt in self.bubble:
-                    # The first instruction after a redirect: the bubble is
-                    # the redirect's, the rest (an unaligned or long target
-                    # instruction) is fetch's.
-                    b = min(gap, self.bubble[rt])
-                    self.gaps[rt] += b
-                    gap -= b
-                if gap:
-                    self.gaps[tag] += gap
+            else:
+                for n, tag in parts:
+                    if n <= 0:
+                        continue
+                    assert tag != "flow"
+                    rt = self.restart[1]
+                    if j == 0 and k0 == 0 and tag == "fetch" and rt in self.bubble:
+                        # The first instruction after a redirect: the bubble
+                        # is the redirect's, the rest (an unaligned or long
+                        # target instruction) is fetch's.
+                        b = min(n, self.bubble[rt])
+                        self.gaps[rt] += b
+                        n -= b
+                    if n:
+                        self.gaps[tag] += n
             # Extra cycles in WRITE, for an instruction that runs.
             if last and not skipped:
                 for extra, tag in ((self.shift_late * info.shift_late, "shiftlate"),
@@ -510,9 +584,23 @@ class Model:
                     if extra > 0:
                         done += extra
                         self.gaps[tag] += extra
-                if u.store:
-                    self.last_bus = done
-            self.s_prev, self.p_prev, self.w_prev, self.done_prev = s, p, w, done
+            # A store goes into DBUS's register as it leaves WRITE, and
+            # is on the bus from the next cycle. One into the I/O range
+            # retires when the bus takes it.
+            if u.store and not skipped:
+                acc = max(done + 1, self.bus_free(store_addr))
+                self.last_bus = acc
+                # FETCH makes no request while the store waits in DBUS
+                # after its first cycle there (hdl/src/pipeline.vhd).
+                self.fblock.update(range(done + 2, acc + 1))
+                self.store_w = self.store_w[-1:] + [done]
+                if len(self.fblock) > 64:
+                    self.fblock = {c for c in self.fblock if c > done - 16}
+                if store_addr >= IO_BASE:
+                    self.gaps["bus"] += acc - done
+                    done = acc
+            self.s_prev, self.w_prev, self.done_prev = s, w, done
+            self.pin_prev = pin
             for r, fx in zip(u.writes, u.sidefx):
                 if fx and self.sidefx_fast:
                     continue
@@ -528,7 +616,7 @@ class Model:
             lv.append(first_s)
         for k in range(k0, k1 + 1):
             lv[k] = first_s
-        self.d_prev, self.leave_prev = d, first_s
+        self.d_prev, self.leave_prev = d, enter
         if counter_read_time is not None:
             self.counter_reads.append((self.instructions - 1, counter_read_time, self.total(),
                                        dict(self.gaps, multi=self.multi)))
@@ -547,13 +635,27 @@ class Model:
         nxt = (pc + info.words) & 0xFFFFFFFF
         if info.redirect and not skipped:
             if info.early:
+                # Nor in the cycle after WRITE queues a store, if DECODE
+                # redirected FETCH in that cycle or the one before.
+                for w in self.store_w:
+                    if w in (d, d + 1):
+                        self.fblock.add(w + 1)
                 self.restart_after(d + self.early - 1, "early")
             else:
                 self.restart_after(self.done_prev + self.flush - 4, "flush")
         else:
-            if info.redirect:  # skipped jump: younger reads wait for it
-                self.jump_ready = self.done_prev + 1
             self.expect_pc = nxt
+
+    def bus_free(self, addr: int) -> int:
+        """The first cycle the data bus takes an access to addr. The bus
+        decoder passes a request to another slave than the one before
+        only --slave-gap cycles after the last ACK (hdl/src/wb_dmux.vhd)."""
+        sl = slave(addr)
+        free = self.last_bus + 1
+        if sl != self.last_slave:
+            free += self.slave_gap
+        self.last_slave = sl
+        return free
 
     def mpu_write(self, addr: int, t: int) -> None:
         """A write to an operand of the math unit, accepted in cycle t,
@@ -575,7 +677,7 @@ class Model:
     def restart_after(self, t: int, tag: str) -> None:
         self.ftimes = []
         self.leave = []
-        self.restart = (t, tag)
+        self.restart = (self.unblocked(t), tag)
         self.stream_base = -1  # set by the next instruction
 
     def total(self) -> int:
@@ -591,6 +693,65 @@ def run_model(model: Model, lines: Iterable[str]) -> Model:
         skipped = bool(rest) and rest[0] == "skipped"
         model.step(pc, iw, skipped, [] if skipped else rest)
     return model
+
+
+def retires(model: Model, lines: Iterable[str], core_log: str, top: int = 20) -> str:
+    """The model's cycle of each step beside the core's, from the retire
+    log of tb_core (G_RETIRE_LOG), up to the first step at another
+    address. For each step, the core's cycles since the step before less
+    the model's are charged to the causes that the model charged that
+    step's own gap to, "none" if it charged none, and to the step's
+    address. The table gives the sums by cause, and the addresses with
+    the largest sums."""
+    core: List[Tuple[int, str]] = []
+    with open(core_log) as f:
+        for line in f:
+            c, a = line.split()
+            core.append((int(c), a))
+    mine: List[Tuple[int, str, str, int]] = []   # cycle, address, cause, iw
+    for step in hazards.steps(lines):
+        before = dict(model.gaps, multi=model.multi)
+        if step is None:
+            model.interrupt()
+            addr, iw = "intr", 0
+        else:
+            pc, iw, rest = step
+            skipped = bool(rest) and rest[0] == "skipped"
+            model.step(pc, iw, skipped, [] if skipped else rest)
+            addr = f"{pc:08X}"
+        after = dict(model.gaps, multi=model.multi)
+        causes = "+".join(k for k in after if after[k] != before[k]) or "none"
+        mine.append((model.total() - 1, addr, causes, iw))
+    # The two runs part where the program prints a cycle count of its own,
+    # which differs, so the comparison ends at the first step that does.
+    n = min(len(core), len(mine))
+    for i in range(n):
+        if core[i][1] != mine[i][1]:
+            n = i
+            break
+    core, mine = core[:n], mine[:n]
+    by_cause: Dict[str, List[int]] = {}
+    by_addr: Dict[str, List[int]] = {}
+    for i in range(1, n):
+        d = (core[i][0] - core[i - 1][0]) - (mine[i][0] - mine[i - 1][0])
+        addr_key = f"{mine[i][1]} {mine[i][3]:08X} {mine[i][2]}"
+        for table, key in ((by_cause, mine[i][2]), (by_addr, addr_key)):
+            row = table.setdefault(key, [0, 0, 0])
+            row[0] += 1
+            row[1] += d
+            row[2] += d != 0
+    total = (core[-1][0] - core[0][0]) - (mine[-1][0] - mine[0][0])
+    out = [f"  {n} steps compared, until the runs part",
+           f"  core {core[-1][0] - core[0][0]} cycles, model {mine[-1][0] - mine[0][0]}, "
+           f"core - model {total}", "",
+           f"  {'cause of the model':24s} {'steps':>9s} {'core - model':>13s} {'differ':>9s}"]
+    for key, (k, d, nd) in sorted(by_cause.items(), key=lambda kv: -abs(kv[1][1])):
+        out.append(f"  {key:24s} {k:9d} {d:13d} {nd:9d}")
+    out += ["", f"  {'address  word     cause':40s} {'steps':>9s} {'core - model':>13s} "
+                f"{'differ':>9s}"]
+    for key, (k, d, nd) in sorted(by_addr.items(), key=lambda kv: -abs(kv[1][1]))[:top]:
+        out.append(f"  {key:40s} {k:9d} {d:13d} {nd:9d}")
+    return "\n".join(out)
 
 
 def load_bin(path: str) -> Dict[int, int]:
@@ -666,36 +827,39 @@ def report(name: str, m: Model) -> str:
     return "\n".join(lines)
 
 
-# --test: snippets with the cycles worked out by hand from the model.
+# --test: snippets with the cycles worked out by hand from the model. Each
+# gives the core's cycles, step by step, in the retire log of tb_core.
 TESTS = [
     ("straight-line 1-word register code: 1 per instruction plus the start",
      "\n".join(["        ADD R1, R2, R3", "        ADD R2, R1, R1"] * 50) + "\n        HALT\n",
-     # 101 instructions. The first in DECODE at 2, WRITE at 5, so 6 cycles
+     # 101 instructions. FETCH's first request is on the bus in cycle 1, so
+     # the first instruction is in DECODE at 3, WRITE at 6, so 7 cycles
      # for it, then one per instruction.
-     101, 106, {"startup": 5}),
+     101, 107, {"startup": 6}),
     ("2-word instructions: fetch keeps up",
      "\n".join(["        ADD R1, R2, 0x1234"] * 100) + "\n        HALT\n",
-     100 + 1, 106, {"startup": 5}),
+     100 + 1, 107, {"startup": 6}),
     ("3-word instructions: fetch-bound at 1.5 cycles per instruction",
      "\n".join(["        ADD R1, 0x1234, 0x5678"] * 100) + "\n        HALT\n",
-     # The first needs pair 1, fetched at 1: DECODE 3, done 6 (startup).
-     # HALT at word 300, pair 150, fetched at 150: DECODE 152, done 155, so
-     # 156 cycles: 155 - 6 - 100 = 49 fetch-bound.
-     101, 156, {"startup": 6, "fetch": 49}),
+     # The first needs pair 1, fetched at 2: DECODE 4, done 7 (startup).
+     # HALT at word 300, pair 150, fetched at 151: DECODE 153, done 156, so
+     # 157 cycles: 156 - 7 - 100 = 49 fetch-bound.
+     101, 157, {"startup": 7, "fetch": 49}),
     ("a counted loop: SUB[M] then ?!Z jump back, each taken jump flushes",
      """        MOVE R1, 10
 loop    SUB[M] R1, R1, 1
         ?!Z MOVE R15, loop
         HALT
 """,
-     # MOVE (2 words) done 5. Each iteration SUB (2 words) + jump (2 words).
-     # Taken jump done at t: target SUB fetched at t+3, DECODE t+5, WRITE t+8:
+     # MOVE (2 words) done 6. Each iteration SUB (2 words) + jump (2 words).
+     # Taken jump done at t: the redirect reaches FETCH from a register in
+     # t + 1, the target SUB is fetched at t + 3, DECODE t + 5, WRITE t + 8:
      # a gap of 7 for each of the 9 taken jumps. The first SUB and the jump
-     # come straight from the stream: SUB at 6, jump at 7. Then 9 x (1 + 7)
-     # ... the HALT after the untaken jump needs pair 3 (words 6), fine.
-     # Instructions: 1 + 10 * 2 + 1 = 22; cycles 22 + 5 (start) + 63 = 90.
-     22, 90, {"startup": 5, "flush": 63}),
-    ("unconditional MOVE R15, label: DECODE redirect, 2-cycle bubble",
+     # come straight from the stream: SUB at 7, jump at 8. The HALT after
+     # the untaken jump needs pair 3 (word 6), fine.
+     # Instructions: 1 + 10 * 2 + 1 = 22; cycles 22 + 6 (start) + 63 = 91.
+     22, 91, {"startup": 6, "flush": 63}),
+    ("unconditional MOVE R15, label: DECODE redirect, 3-cycle bubble",
      """        MOVE R15, a
         HALT
 a       MOVE R15, b
@@ -704,13 +868,30 @@ b       MOVE R15, c
         HALT
 c       HALT
 """,
-     # Each jump is 2 words, DECODE at d, the target fetched at d + 1 and in
-     # DECODE at d + 3: a bubble of 2. Jump 1 is done at 5. a is at word 3,
-     # odd, so its words 3 and 4 are in pairs 1 and 2, DECODE at d + 4: early
-     # 2 and fetch 1. b (word 6) and c (word 9, one word) cost 2 each.
-     # 4 instructions + 5 (start) + 6 + 1 = 16.
-     4, 16, {"startup": 5, "early": 6, "fetch": 1}),
-    ("conditional read after SUB[M]: one SR stall; unconditional: none",
+     # Each jump is 2 words, DECODE at d, the target fetched at d + 2 and in
+     # DECODE at d + 4: a bubble of 3. Jump 1 is in DECODE at 3, done at 6.
+     # a is at word 3, odd, so its words 3 and 4 are in pairs 1 and 2,
+     # fetched at 5 and 6, DECODE at 8, done 11: early 3 and fetch 1. b
+     # (word 6) and c (word 9, one word) cost 3 each: done 15 and 19.
+     # 4 instructions + 6 (start) + 9 + 1 = 20.
+     4, 20, {"startup": 6, "early": 9, "fetch": 1}),
+    ("a store, then a jump DECODE resolves: FETCH waits for the store",
+     """        MOVE R11, 0x200
+        MOVE @R11++, 0
+        ADD R1, R1, 1
+        MOVE R15, next
+        HALT
+next    HALT
+""",
+     # MOVE R11 done 6. The store (words 2, 3) leaves WRITE in 7, into
+     # DBUS's register, and is on the bus in 8. ADD done 8. The jump (6, 7)
+     # is in DECODE at 6 and redirects FETCH: next (word 9, pair 4) would be
+     # fetched at 8, but FETCH puts no request on the bus in the cycle
+     # after WRITE queues a store, when a redirect came in that cycle or
+     # the one before. So it is fetched at 9, DECODE 11, and done 14: early
+     # 4. 5 instructions + 6 (start) + 4 = 15.
+     5, 15, {"startup": 6, "early": 4}),
+    ("a read after SUB[M] waits for SR, with a condition or without",
      """        MOVE R2, 0x100
         SUB[M] R1, R2, 1
         ?!Z MOVE R3, @R2
@@ -718,9 +899,13 @@ c       HALT
         MOVE R3, @R2
         HALT
 """,
-     # MOVE R2 writes R2, the SUB reads it: free. ?!Z MOVE R3, @R2 waits a
-     # cycle for SR (R2 was written two micro-ops back: no agen stall).
-     6, 12, {"startup": 5, "sr": 1}),
+     # MOVE R2 writes R2, the SUB reads it: free, done 7. ?!Z MOVE R3, @R2
+     # would load its read in PREPARE in 7, but the SUB in WRITE may write
+     # SR: it loads in 8, a cycle for SR (R2 was written two micro-ops back:
+     # no agen stall). The read is on the bus in 9, its data in 10, done 10:
+     # a cycle for the bus. The second SUB[M] is done 11, and the MOVE
+     # without a condition waits the same way: done 14. HALT done 15.
+     6, 16, {"startup": 6, "sr": 2, "readbus": 2}),
     ("push, push, pop: address register from the previous micro-op",
      """        MOVE R13, 0x200
         MOVE @--R13, 1
@@ -728,23 +913,26 @@ c       HALT
         MOVE R1, @R13++
         HALT
 """,
-     # Push 1 needs R13 - 1 from MOVE R13: sumwait 1. Push 2 needs R13 - 1
-     # from push 1: sumwait 1. The pop's S0 needs R13 from push 2 for its
-     # read: agen 1, and the read follows the store of push 2 on the bus,
-     # which the agen wait covers. Instructions 5, micro-ops 6.
-     5, 5 + 1 + 5 + 3, {"startup": 5, "multi": 1, "sumwait": 2, "agen": 1}),
+     # MOVE R13 done 6. Push 1 needs R13 - 1 from MOVE R13: sumwait 1, done
+     # 8, its store on the bus in 9. Push 2 needs R13 - 1 from push 1:
+     # sumwait 1, done 10, its store on the bus in 11. The pop's S0 needs
+     # R13 from push 2 for its read: agen 1, loaded in 11, on the bus in
+     # 12, data in 13, done 13: readbus 1. Its OP is done 14, HALT 15.
+     # Instructions 5, micro-ops 6.
+     5, 16, {"startup": 6, "multi": 1, "sumwait": 2, "agen": 1, "readbus": 1}),
     ("math unit: write A and B, read the product",
      """        MOVE @0xFFFFFF20, 7
         MOVE @0xFFFFFF21, 6
         MOVE R1, @0xFFFFFF22
         HALT
 """,
-     # Two 3-word stores, done at 6 (start) and 7: the second starts the
-     # computation in cycle 7. The read is in PREPARE at 7, after the
-     # store on the bus at 8, but the product can be read at 7 + 3 = 10,
-     # data in WRITE at 11: a gap of 11 - 7 - 1 = 3. HALT done at 12, so
-     # 13 cycles.
-     4, 13, {"startup": 6, "mpu": 3}),
+     # Two 3-word stores into the I/O range, each of which retires when the
+     # bus takes it, a cycle after WRITE: the first in WRITE at 7, done 8,
+     # the second in WRITE at 9, done 10, which starts the computation. The
+     # read is loaded in PREPARE in 10 and on the bus in 11, but the product
+     # can be read at 10 + 3 = 13, data in WRITE at 14: a gap of 14 - 10 -
+     # 1 = 3. HALT done at 15, so 16 cycles.
+     4, 16, {"startup": 7, "bus": 2, "mpu": 3}),
     ("math unit: 9 / 7 unsigned skips 24 quotient bits in 3 cycles",
      """        MOVE @0xFFFFFF20, 9
         MOVE @0xFFFFFF21, 7
@@ -754,9 +942,9 @@ c       HALT
      # As above, but the divider: 3 cycles skip 8 bits each, since the
      # dividend's top 24 bits are 0 and 9 shifted into view is not less
      # than 7 until then, and 8 cycles run the rest, n = 11, as tb_mpu
-     # counts it. The read is accepted at 7 + 2 + 11 = 20, data at 21:
-     # a gap of 13. HALT done at 22, so 23 cycles.
-     4, 23, {"startup": 6, "mpu": 13}),
+     # counts it. The read is accepted at 10 + 2 + 11 = 23, data at 24:
+     # a gap of 13. HALT done at 25, so 26 cycles.
+     4, 26, {"startup": 7, "bus": 2, "mpu": 13}),
     ("math unit: -7 / 2 signed divides 7 by 2, n = 11",
      """        MOVE @0xFFFFFF20, 0xFFFFFFF9
         MOVE @0xFFFFFF21, 2
@@ -764,8 +952,8 @@ c       HALT
         HALT
 """,
      # The signed divider takes the absolute values: 7 / 2 skips 24 bits
-     # in 3 cycles and runs 8, n = 11, so the same 23 cycles.
-     4, 23, {"startup": 6, "mpu": 13}),
+     # in 3 cycles and runs 8, n = 11, so the same 26 cycles.
+     4, 26, {"startup": 7, "bus": 2, "mpu": 13}),
     ("math unit: 0xFFFFFFF9 / 2 unsigned skips nothing, n = 32",
      """        MOVE @0xFFFFFF20, 0xFFFFFFF9
         MOVE @0xFFFFFF21, 2
@@ -773,9 +961,30 @@ c       HALT
         HALT
 """,
      # The unsigned divider sees a dividend whose top bits are 1, so no
-     # cycle skips: n = 32. The read is accepted at 7 + 2 + 32 = 41,
-     # data at 42: a gap of 34. HALT done at 43, so 44 cycles.
-     4, 44, {"startup": 6, "mpu": 34}),
+     # cycle skips: n = 32. The read is accepted at 10 + 2 + 32 = 44,
+     # data at 45: a gap of 34. HALT done at 46, so 47 cycles.
+     4, 47, {"startup": 7, "bus": 2, "mpu": 34}),
+    ("the data bus between two slaves: the math unit, then RAM, and back",
+     """        MOVE R2, 0x100
+        MOVE @0xFFFFFF20, R2
+        MOVE R1, @R3
+        MOVE @0xFFFFFF21, R2
+        MOVE @R2, 5
+        MOVE R1, @R3
+        HALT
+""",
+     # MOVE R2 done 6. The store to A is in WRITE at 7, on the bus in 8,
+     # done 8: bus 1, and the math unit acknowledges it in 9. The read of
+     # RAM at R3 = 0 would be on the bus in 9, but the bus decoder passes a
+     # request to another slave only a cycle after the last ACK: loaded in
+     # 9, on the bus in 10, data in 11, done 11: bus 1, readbus 1. The
+     # store to B, to the math unit again, is in WRITE at 12 and on the
+     # bus in 13, done 13: bus 1. The store to RAM is done 14, as it goes
+     # into DBUS's register, and is on the bus in 15, a cycle after the
+     # math unit's ACK. The read of RAM after it waits for it: loaded in
+     # 15, on the bus in 16, done 17: bus 1, readbus 1. HALT done 18, so 19
+     # cycles.
+     7, 19, {"startup": 6, "bus": 4, "readbus": 2}),
     ("a skipped jump, then a read; a call and a return",
      """        MOVE R13, 0x200
         ?Z MOVE R15, 0
@@ -785,16 +994,49 @@ c       HALT
         HALT
 f       MOVE R15, @R13++
 """,
-     # MOVE R13 (words 0,1) done 5. ?Z MOVE R15, 0 (2,3) skipped, done 6.
-     # MOVE R1, @R13 (4) waits for the skipped jump: PREPARE at 7, done 8,
-     # jumpwait 1. The call ADD @--R13, 2, R15 (5,6) is a store, no stall:
-     # done 9, its DECODE held to 7 by the read's wait. MOVE R15, f (7,8):
-     # DECODE 7, done 10, and early: f (word 10, pair 5) fetched at 8,
-     # DECODE 10, S0 done 13: early 2. The S0 needs R13 from the call, two
-     # micro-ops back: free. Its OP is done 14 and flushes: HALT (word 9)
-     # fetched 17, DECODE 19, done 22: flush 7. So 23 cycles:
-     # 7 instructions, 1 multi, 5 start, 1 + 2 + 7.
-     7, 23, {"startup": 5, "multi": 1, "jumpwait": 1, "early": 2, "flush": 7}),
+     # MOVE R13 (words 0, 1) done 6. ?Z MOVE R15, 0 (2, 3) skipped, done 7.
+     # MOVE R1, @R13 (4) loads its read in 7, as the skipped jump leaves
+     # WRITE without a flush: on the bus in 8, data in 9, done 9: readbus
+     # 1. The call ADD @--R13, 2, R15 (5, 6) is a store, no stall: done 10.
+     # MOVE R15, f (7, 8): DECODE 7, done 11, and early: f (word 10, pair
+     # 5) fetched at 9, DECODE 11, S0 in PREPARE at 13, in WRITE at 14:
+     # early 2, as the jump was in DECODE well before its WRITE. The S0
+     # needs R13 from the call, two micro-ops back: free. Its read is on
+     # the bus in 14, data in 15, done 15: readbus 1. Its OP is done 16
+     # and flushes: HALT (word 9) done 24: flush 7. So 25 cycles:
+     # 7 instructions, 1 multi, 6 start, 1 + 2 + 1 + 7.
+     7, 25, {"startup": 6, "multi": 1, "readbus": 2, "early": 2, "flush": 7}),
+    ("DECODE goes on while PREPARE waits: a loop that prints",
+     """        MOVE R13, 0x300
+        MOVE R1, str
+        ADD @--R13, 2, R15
+        MOVE R15, puts
+        HALT
+puts    MOVE[M] R2, @R1++
+        ?Z MOVE R15, @R13++
+        MOVE @0xFFFFFF00, R2
+        MOVE R15, puts
+str     .DAT 0x41, 0x42, 0
+""",
+     # MOVE R13 done 6, MOVE R1 7, the call 8. MOVE R15, puts (6, 7) is in
+     # DECODE at 6, done 9: puts (word 9, pair 4) fetched 8, DECODE 10. Its
+     # S0 reads through R1, in WRITE at 13, data 14, done 14: early 3,
+     # readbus 1. Its OP is done 15. The ?Z MOVE R15, @R13++ is skipped,
+     # but its S0 enters PREPARE in 15 and waits there for SR until 16,
+     # done 17: sr 1. Its OP is split off in 15 into skid_r, and is done 18.
+     # So the store moves into DECODE's dec_r in 16, which frees dec_q, and
+     # DECODE takes the jump in 16, where it would take it in 17 without
+     # skid_r. The store to the console is in WRITE at 19 and retires when
+     # the bus takes it, done 20: bus 1. The jump is done 21. It redirected
+     # FETCH in 16: puts fetched 18, DECODE 20, its S0 in WRITE at 23, done
+     # 24: early 1, readbus 1. So each round after the first takes 10
+     # cycles. In the third, the MOVE[M] reads 0, and the ?Z jump returns:
+     # its S0 reads the stack after SR, done 38: sr 1, readbus 1, and its
+     # OP, done 39, flushes: HALT (word 8) done 47: flush 7. So 48 cycles:
+     # 15 instructions, 6 multi, 6 start, early 3 + 1 + 1, readbus 4, sr 3,
+     # bus 2, and flush 7.
+     15, 48, {"startup": 6, "multi": 6, "early": 5, "readbus": 4, "sr": 3, "bus": 2,
+              "flush": 7}),
 ]
 
 # The same, with options of the model set.
@@ -808,24 +1050,24 @@ OPTION_TESTS = [
         SHL R1, R1, R3
         HALT
 """,
-     # MOVE R2 done 5, MOVE R3 done 6. The first SHL reads through R2,
-     # written two micro-ops back: free, so it would be done at 7, but its
-     # count comes from memory a cycle late (--read-late): 8, and is done
-     # at 9. The C<C by R3 would be done at 10, and takes two cycles more
-     # for the count mod 33: 12. The SHR by 2[R3] would be done at 13, and
-     # is at 14. The SHL by R3, written long before, takes no cycle more:
-     # 15. HALT done 16, so 17 cycles.
-     {"shift_late": 1}, 7, 17, {"startup": 5, "readlate": 1, "shiftlate": 4}),
+     # MOVE R2 done 6, MOVE R3 done 7. The first SHL reads through R2,
+     # written two micro-ops back: free, loaded in 7, on the bus in 8, and
+     # its count comes from memory a cycle late (--read-late): 10, and it is
+     # done at 11. The C<C by R3 would be done at 12, and takes two cycles
+     # more for the count mod 33: 14. The SHR by 2[R3] would be done at 15,
+     # and is at 16. The SHL by R3, written long before, takes no cycle
+     # more: 17. HALT done 18, so 19 cycles.
+     {"shift_late": 1}, 7, 19, {"startup": 6, "readlate": 2, "shiftlate": 4}),
     ("--shift-reg 1: a count register from the previous micro-op; a constant count",
      """        MOVE R3, 3
         SHL R1, R1, R3
         SHL R1, R1, 2
         HALT
 """,
-     # MOVE R3 done 5. The first SHL needs R3 in PREPARE in cycle 6, not 5:
-     # done 7. The second SHL shifts by a constant: done 8, though R1 is
-     # written by the previous micro-op. HALT done 9, so 10 cycles.
-     {"shift_reg": 1}, 4, 10, {"startup": 5, "shiftreg": 1}),
+     # MOVE R3 done 6. The first SHL needs R3 in PREPARE in cycle 7, not 6:
+     # done 8. The second SHL shifts by a constant: done 9, though R1 is
+     # written by the previous micro-op. HALT done 10, so 11 cycles.
+     {"shift_reg": 1}, 4, 11, {"startup": 6, "shiftreg": 1}),
     ("--sum-wait 1: c[R] as a value, @R and c[R] as a store's address",
      """        MOVE R2, 0x100
         ADD R1, 4[R2], R3
@@ -836,12 +1078,12 @@ OPTION_TESTS = [
         MOVE 1[R2], R1
         HALT
 """,
-     # MOVE R2 done 5. The ADD's 4[R2] needs R2 from the previous micro-op:
-     # done 7. MOVE @R2 stores through R2, written two back: done 8. MOVE
-     # R2 done 9. MOVE @R2 stores through the R2 WRITE just wrote, which it
-     # takes from its last value: done 10. MOVE R2 done 11. MOVE 1[R2]
-     # needs the sum in PREPARE: done 13. HALT done 14, so 15 cycles.
-     {"sum_wait": 1}, 8, 15, {"startup": 5, "sumwait": 2}),
+     # MOVE R2 done 6. The ADD's 4[R2] needs R2 from the previous micro-op:
+     # done 8. MOVE @R2 stores through R2, written two back: done 9. MOVE
+     # R2 done 10. MOVE @R2 stores through the R2 WRITE just wrote, which it
+     # takes from its last value: done 11. MOVE R2 done 12. MOVE 1[R2]
+     # needs the sum in PREPARE: done 14. HALT done 15, so 16 cycles.
+     {"sum_wait": 1}, 8, 16, {"startup": 6, "sumwait": 2}),
     ("--dest-adjust 1: R1++ as a destination; a computed jump, jumps to a register and a constant",
      """        MOVE R1++, 5
         MOVE R3, a
@@ -850,29 +1092,33 @@ OPTION_TESTS = [
 a       ?!Z ADD R15, R3, 2
         HALT
 """,
-     # MOVE R1++ done 6, a cycle late. MOVE R3 done 7. The jump to R3 (Z is
-     # clear) takes its target from the source, no cycle more: done 8, and
-     # it flushes: a (words 6 and 7, pair 3) fetched 11, DECODE 13. The ADD
-     # at a jumps to a + 2, the HALT at word 8: it would be done 16, a flush
-     # of 7, is done 17, and flushes: pair 4 fetched 20, DECODE 22, HALT
-     # done 25: flush 7. So 26 cycles.
-     {"dest_adjust": 1}, 5, 26, {"startup": 5, "adjust": 2, "flush": 14}),
+     # MOVE R1++ done 7, a cycle late. MOVE R3 done 8. The jump to R3 (Z is
+     # clear) takes its target from the source, no cycle more: done 9, and
+     # it flushes: a (words 6 and 7, pair 3) fetched 12, DECODE 14. The ADD
+     # at a jumps to a + 2, the HALT at word 8: it would be done 17, a flush
+     # of 7, is done 18, and flushes: pair 4 fetched 21, DECODE 23, HALT
+     # done 26: flush 7. So 27 cycles.
+     {"dest_adjust": 1}, 5, 27, {"startup": 6, "adjust": 2, "flush": 14}),
     ("--read-late 1: read data into a register, into the ALU, and into a store",
-     """        MOVE R2, 0x100
+     """        MOVE R3, 0x200
+        MOVE R2, 0x100
         MOVE R1, @R2
         ADD R1, R1, @R3
         MOVE R4, @R2++
         MOVE @R3, @R2
         HALT
 """,
-     # MOVE R2 done 5. MOVE R1, @R2 reads through R2 from the previous
-     # micro-op: agen, done 7, and its data goes into R1 only. The ADD
-     # reads through R3: it would be done at 8, and takes its data a cycle
-     # late: 9. MOVE R4, @R2++ is S0, which reads into s0 and writes R2,
-     # done 10, and OP, which moves s0 into R4, done 11. MOVE @R3, @R2 reads through R2 from the
-     # previous micro-op but one: it would be done at 12, and stores its
-     # data a cycle late: 13. HALT done 14, so 15 cycles.
-     {"read_late": 1}, 6, 15, {"startup": 5, "multi": 1, "agen": 1, "readlate": 2}),
+     # MOVE R3 done 6, MOVE R2 done 7. MOVE R1, @R2 reads through R2 from
+     # the previous micro-op: agen, loaded in 8, on the bus in 9, data in
+     # 10, which goes into R1 only: done 10, readbus 1. The ADD reads
+     # through R3: loaded in 9, data in 11, which it takes a cycle late:
+     # done 12, readlate 1. MOVE R4, @R2++ is S0, which reads into s0 and
+     # writes R2, loaded in 11, done 13, and OP, which moves s0 into R4,
+     # done 14. MOVE @R3, @R2 reads through R2 from the micro-op before the
+     # one before: loaded in 14, data in 16, which it stores a cycle late:
+     # done 17, readlate 2. HALT done 18, so 19 cycles.
+     {"read_late": 1}, 7, 19, {"startup": 6, "multi": 1, "agen": 1, "readbus": 1,
+                              "readlate": 3}),
 ]
 
 
@@ -906,9 +1152,9 @@ def main() -> None:
     ap.add_argument("files", nargs="*")
     ap.add_argument("--test", action="store_true")
     ap.add_argument("--bin", help="the .bin of a trace FILE")
-    ap.add_argument("--ibuf", type=int, default=8, help="words FETCH may run ahead (8)")
+    ap.add_argument("--ibuf", type=int, default=16, help="words FETCH may run ahead (16)")
     ap.add_argument("--flush", type=int, default=7, help="bubble of a jump taken in WRITE (7)")
-    ap.add_argument("--early", type=int, default=2, help="bubble of a jump DECODE resolves (2)")
+    ap.add_argument("--early", type=int, default=3, help="bubble of a jump DECODE resolves (3)")
     ap.add_argument("--agen", type=int, default=1, help="address-register stall (1, 0 = none)")
     ap.add_argument("--sidefx-fast", action="store_true", help="side-effect writes need no agen stall")
     ap.add_argument("--mul", type=int, default=3,
@@ -929,11 +1175,21 @@ def main() -> None:
     ap.add_argument("--read-late", type=int, default=1, metavar="N",
                     help="cycles from a read's ACK to WRITE, but for a micro-op whose data "
                          "only goes into a register (1)")
+    ap.add_argument("--read-bus", type=int, default=1, metavar="N",
+                    help="cycles from PREPARE's load of a read to the bus (1)")
+    ap.add_argument("--slave-gap", type=int, default=1, metavar="N",
+                    help="cycles more for an access to another slave of the data bus than "
+                         "the one before (1)")
     ap.add_argument("--phases", type=int, metavar="N",
                     help="fail unless each program reads INSTR_LO around N phases")
     ap.add_argument("--against", metavar="FILE",
                     help="the core's output for the same program (make core in bench/), "
                          "to compare the phases with")
+    ap.add_argument("--retires", metavar="FILE",
+                    help="the core's retire log for the same program (G_RETIRE_LOG of "
+                         "hdl/test/tb_core.vhd), to compare step by step")
+    ap.add_argument("--top", type=int, default=20, metavar="N",
+                    help="with --retires, the N addresses that differ most (20)")
     a = ap.parse_args()
     if a.test:
         test()
@@ -945,7 +1201,11 @@ def main() -> None:
         if not binp:
             sys.exit("pipecycles.py: a trace needs --bin")
         m = Model(load_bin(binp), a.ibuf, a.flush, a.early, a.agen, a.sidefx_fast, a.mul,
-                  a.div_skip, a.shift_late, a.shift_reg, a.sum_wait, a.dest_adjust, a.read_late)
+                  a.div_skip, a.shift_late, a.shift_reg, a.sum_wait, a.dest_adjust, a.read_late,
+                  a.read_bus, a.slave_gap)
+        if a.retires:
+            print(retires(m, hazards.trace_lines(path), a.retires, a.top))
+            continue
         run_model(m, hazards.trace_lines(path))
         print(report(os.path.basename(path), m))
         if a.phases is not None and len(m.counter_reads) != 2 * a.phases:

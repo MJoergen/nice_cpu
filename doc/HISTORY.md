@@ -212,6 +212,29 @@ benchmark's module became 8560, not 8623.
 - With a bubble of 5 after a jump taken in WRITE, as the model of
   `bench/pipecycles.py` had before, its totals were 7.5% and 15.7% below
   the pipelined core's.
+- Until 2026-10-21 the model charged a jump taken in WRITE 7 cycles,
+  where the core's bubble was 6, because 7 brought its totals closer to
+  the core's: 3.1% and 7.6% below them, against 4.7% and 11.8% with 6.
+  The core's retire log (`G_RETIRE_LOG` of `hdl/test/tb_core.vhd`),
+  compared with the model step by step (`pipecycles.py --retires`),
+  showed that the extra cycle stood in for five rules the model lacked: a
+  read is on the bus a cycle after PREPARE loads it, since the request is
+  a register; a jump that DECODE resolves costs 3 cycles, not 2, which
+  `hdl/test/bubble.nasm` measures as 2 behind its read of the cycle
+  counter; every data read waits for an older write of SR, not only a
+  conditional one; an access to another slave of the data bus waits a
+  cycle after the last ACK; and FETCH's buffer holds 16 words, not 8. A
+  read after a skipped jump, which the model had made wait a cycle, may
+  go in the cycle the jump leaves WRITE, at no cost. With these, and a
+  bubble of 6, the model was within 0.03% of the core at e8c36af in every
+  phase of both programs.
+- Meanwhile the core gained DBUS's store register, DECODE's skid
+  register, and WRITE's redirect from a register, which made its bubble
+  7, and the model, with the old rules, fell 5.2% and 13.1% below it.
+  The retire log showed what to add: FETCH starts a cycle later after
+  reset; a store into the I/O range retires when the bus takes it; FETCH
+  waits for a store in DBUS after DECODE's redirect; and DECODE takes an
+  instruction once the last micro-op before is split off into skid_r.
 
 ## The start-up code for a monitor
 

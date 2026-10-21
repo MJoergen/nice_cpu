@@ -92,7 +92,7 @@ def listing(lines: List[str], runs: "collections.Counter[int]", costs: Costs) ->
 
 # --test: a counted loop, with the charges worked out from the model as
 # pipecycles.py's test of the same loop does. The first instruction gets
-# the 5 cycles of the pipeline start. Each of the 9 taken jumps costs 7
+# the 6 cycles of the pipeline start. Each of the 9 taken jumps costs 7
 # cycles, charged to the SUB at its target, which waits for the refetch.
 # The jump itself and the HALT after its last, untaken, run cost nothing.
 TEST = """        MOVE R1, 10
@@ -100,7 +100,7 @@ loop    SUB[M] R1, R1, 1
         ?!Z MOVE R15, loop
         HALT
 """
-TEST_LINES = [(1, 5, {"startup": 5}), (10, 63, {"flush": 63}), (10, 0, {}), (1, 0, {})]
+TEST_LINES = [(1, 6, {"startup": 6}), (10, 63, {"flush": 63}), (10, 0, {}), (1, 0, {})]
 
 
 def test() -> None:

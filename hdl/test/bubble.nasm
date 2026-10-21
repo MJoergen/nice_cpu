@@ -5,7 +5,9 @@
 ; memory that never stalls, with a cycle more for each jump that WRITE
 ; resolves, since its redirect reaches FETCH from a register: such a jump
 ; costs 7 cycles over a fall-through, aligned or not; a jump that DECODE
-; resolves 2 (MICROARCH.md §5.4); and an operation other than MOVE into
+; resolves 2 (MICROARCH.md §5.4), since the read before it holds the
+; stream up a cycle while DECODE has the jump, which hides one cycle of
+; the 3 it costs in a stream without reads; and an operation other than MOVE into
 ; R15 one more (§7.4). The last three cases are four reads in a row: WRITE takes read
 ; data a cycle after its ACK, unless it only goes into a register
 ; (§5.3), so four ADDs from memory take 2 cycles more than four MOVEs, and

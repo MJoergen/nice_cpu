@@ -728,6 +728,13 @@ emulator with `--no-timer-irq`, so that the log's requests stand in for
 those of its timer, and a core may take a timer request late like any
 other. `make test` writes the log for the runs of `timer.nasm` too.
 
+With the generic `G_RETIRE_LOG`, `tb_core` writes a retire log: a line
+for each step the core reports, with the cycle it is reported in,
+counting from the first cycle after reset, and the address of the
+instruction in hex, or `intr` for an interrupt entry. `make -C bench
+core` writes it, and `bench/pipecycles.py --retires` compares it with
+the cycle model, step by step ([bench/README.md](../bench/README.md#the-cycle-estimate)).
+
 `test/irq_compare.py` reads the log, for a core that may take a request
 later than the step it was raised for, as the pipelined core may
 (MICROARCH.md §6 and §9). It runs the emulator with each request that the
@@ -802,7 +809,9 @@ memory or through an adder, which takes three for a rotation through C
 measures what a jump costs, with the cycle counter on a memory that never
 stalls: 7 cycles over a fall-through for a jump that WRITE resolves,
 aligned or not, since its redirect reaches FETCH from a register, 2 for one that DECODE resolves, and one more for an
-operation other than `MOVE` into R15. It also measures four reads in a
+operation other than `MOVE` into R15. Its read of the counter before the
+jump holds the stream up a cycle, which hides one cycle of the early
+bubble, 3 in a stream of instructions without reads. It also measures four reads in a
 row: WRITE takes read data from DBUS's FIFO, a cycle after its ACK,
 unless it only goes into a register (MICROARCH.md §5.3), so four `ADD`s
 from memory take 2 cycles more than four `MOVE`s.

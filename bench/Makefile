@@ -48,13 +48,15 @@ test: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 # the generic G_CORE of hdl/test/tb_core.vhd, is multicycle for the
 # multi-cycle core or pipeline for the pipelined one. Each takes about 20
 # minutes: the pipelined core runs fewer cycles, but more logic in each. The program is given relative to
-# hdl/build, where GHDL runs, and the output is written there too.
+# hdl/build, where GHDL runs, and the output is written there too, with
+# the retire log that pipecycles.py --retires reads, $(1)_$(CORE).retires.
 CORE ?= multicycle
 
 define core_run
 	@echo "$(1) on the $(CORE) core:"
 	@cd ../hdl/build && $(GHDL) --elab-run --std=08 tb_core -gG_CORE=$(CORE) \
 	  -gG_BIN_FILE=../../bench/$(BUILD)/$(1).bin -gG_TRACE_FILE=$(1)_$(CORE).out -gG_TRACE=false \
+	  -gG_RETIRE_LOG=$(1)_$(CORE).retires \
 	  > $(1)_$(CORE).log 2>&1; status=$$?; sed '/^Halted/,$$d' $(1)_$(CORE).out; \
 	  if [ $$status -ne 0 ]; then cat $(1)_$(CORE).log; exit 1; fi
 

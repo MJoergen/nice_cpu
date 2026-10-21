@@ -208,11 +208,14 @@ traces. It is a model built from MICROARCH.md, not the core. Each
 instruction of the trace is decoded as `hazards.py` decodes it, split
 into its micro-operations, and sent through FETCH, DECODE, SEQUENCER,
 PREPARE, and WRITE under the rules of §3 to §5: two words fetched per
-cycle, a bubble of 2 cycles for a jump that DECODE resolves and of 7 for
-one resolved in WRITE, a data read that waits for an older write of SR
-or an older skipped jump, an address register written by the previous
-micro-operation, one data access per cycle on the bus, read data that
-reaches WRITE a cycle after its ACK unless it only goes into a register,
+cycle, a bubble of 3 cycles for a jump that DECODE resolves and of 7 for
+one resolved in WRITE, DECODE's skid register, a data read that waits for an older write of SR,
+an address register written by the previous micro-operation, one data
+access per cycle on the bus, a read that is on the bus a cycle after
+PREPARE loads it, a store that is on the bus from DBUS's store register
+a cycle after WRITE and that FETCH waits for, a cycle more for an access to another slave of the bus
+than the one before, read data that reaches WRITE a cycle after its ACK
+unless it only goes into a register,
 and the math unit of `hdl/src/mpu.vhd`: a product two cycles after the write of an operand,
 and a quotient after one cycle per bit, less the runs of eight zero bits
 that the divider skips, which the model works out from the operands in
@@ -221,35 +224,41 @@ charged to the rule that caused it, so the output says where the time
 goes, and a program that reads the instruction counter around each phase,
 as both programs do, gets a row per phase:
 
-    bench.bin: 1726106 instructions, 2338396 cycles (estimate), CPI 1.355
-      cycles above 1/instruction: 612290
-      taken jumps resolved in WRITE (flush)                        266700  0.155/instr  43.6%
-      jumps DECODE resolves (early-redirect bubble)                 63898  0.037/instr  10.4%
+    bench.bin: 1726106 instructions, 2467770 cycles (estimate), CPI 1.430
+      cycles above 1/instruction: 741664
       ...
+      taken jumps resolved in WRITE (flush)                        267400  0.155/instr  36.1%
+      jumps DECODE resolves (early-redirect bubble)                 78654  0.046/instr  10.6%
+      ...
+      read data a cycle after the bus (registered request)         103527  0.060/instr  14.0%
+      read data used by more than a register write                 180432  0.105/instr  24.3%
 
       phase         instr    cycles    CPI   main extra cycles per instruction
-      rng64         52768     74312  1.408   mpu 0.34, early 0.04, fetch 0.02, readlate 0.01
+      rng64         52768     83026  1.573   mpu 0.34, bus 0.15, early 0.06, fetch 0.02
       ...
-      total       1681080   2260097  1.344
+      total       1681080   2384296  1.418
 
-The model's 7 is the core's bubble, as `hdl/test/bubble.nasm` measures.
-A jump leaves WRITE in cycle c − 2 and flushes in the same cycle, and
-the redirect reaches FETCH from a register in c − 1 (MICROARCH.md §5.4).
-FETCH issues the request in c, so it is on the bus in c + 1, and the
-memory acknowledges in c + 2. DECODE takes the instruction in c + 3 and
-emits its micro-op in c + 4, PREPARE passes it on in c + 5, and WRITE
-runs it in c + 6. With it the model is 5.2% below the core's cycles for
-the translated program and 13.1% below for `hand.nasm`, and with
-`--flush 8` 3.7% and 9.4%, so a cycle per jump is still missing from
-the model (TODO.md). The hand-counted cases of `pipecycles.py --test`
-and `cycprof.py --test` use the 7.
+The bubbles are the core's. A jump that WRITE resolves leaves WRITE in
+cycle c − 2 and flushes in the same cycle, and the redirect reaches
+FETCH from a register in c − 1 (MICROARCH.md §5.4). FETCH issues the
+request in c, so it is on the bus in c + 1, and the memory acknowledges
+in c + 2. DECODE takes the instruction in c + 3 and emits its micro-op
+in c + 4, PREPARE passes it on in c + 5, and WRITE runs it in c + 6: 7
+cycles. A jump that DECODE resolves redirects FETCH in the cycle DECODE
+takes it, d, so the target is in DECODE in d + 4, 3 cycles later than
+the instruction after the jump would have been, and a cycle more right
+after a store, which FETCH waits for. `hdl/test/bubble.nasm` measures 7
+and 2, since its read of the cycle counter before the jump holds the
+stream up a cycle, which hides one cycle of the early bubble but none of
+the flush. Each case of `pipecycles.py --test` gives the core's cycles,
+step by step, with `--retires` below.
 
 The phases of the translated program take an estimated
-2260097 cycles, 1.34 per instruction, and those of `hand.nasm` 1203605,
-2.4 per instruction: the hand-written code has more instructions with
+2384296 cycles, 1.42 per instruction, and those of `hand.nasm` 1384800,
+2.8 per instruction: the hand-written code has more instructions with
 side effects, memory operands, and reads of the math unit, and fewer
 instructions in all. Options such as `--flush`, `--early`, `--agen`,
-`--mul`, and `--div-skip` set the model's parameters, to try a design
+`--read-bus`, `--slave-gap`, `--mul`, and `--div-skip` set the model's parameters, to try a design
 change before it is built. Four options, each 1 by default, are the rules of the core, which forms every operand value, address, and shift count in PREPARE (MICROARCH.md §7.3 and §7.4); 0 turns a rule off: `--shift-late N`
 gives a shift whose count WRITE reduces N cycles more in WRITE, and a
 rotation through C 2N: a count from memory, through an adder (`c[R]` or
@@ -263,12 +272,12 @@ PREPARE forms; and `--dest-adjust N` gives a register destination in
 mode 001 or 010, and a jump to a computed target, N cycles more in
 WRITE. A store through `@R` or `@R++` never waits, since WRITE takes
 the value it wrote last. With the four rules, the translated program's
-phases take 2260097 cycles, against 2258384 without, and those of
-`hand.nasm` 1203605 against 1202581. A fifth, `--read-late N`, also 1 by
+phases take 2384296 cycles, against 2382583 without, and those of
+`hand.nasm` 1384800 against 1383776. A fifth, `--read-late N`, also 1 by
 default, has WRITE take read data N cycles after its ACK, but for a
 micro-op whose data only goes into a register: s0 or s1 with a side
 effect, and a `MOVE` into a register other than R15 (MICROARCH.md §5.3).
-Without it, the phases take 2171133 cycles and 1122967. `pipecycles.py --test` checks the model on
+Without it, the phases take 2294308 cycles and 1304162. `pipecycles.py --test` checks the model on
 small programs whose cycles are worked out by hand in the script, and
 `make test` runs it, and then the model on both programs with `--phases
 6`, which fails unless each reads the instruction counter around its six
@@ -276,21 +285,40 @@ phases.
 
 `make compare` puts the estimate beside the cycles the pipelined core
 took, phase by phase, from the output of `make core CORE=pipeline`,
-which must have run first, on the same `.bin`. At commit 1a41b0c:
+which must have run first, on the same `.bin`. With the core at commit
+1a41b0c:
 
-| Phase | `bench.c`, model | Core | Model against the core | `hand.nasm`, model | Core | Model against the core |
+| Phase | `bench.c`, model | Core | Model − core | `hand.nasm`, model | Core | Model − core |
 |---|---|---|---|---|---|---|
-| `rng64` | 74312 | 83082 | −10.6% | 62481 | 67107 | −6.9% |
-| `crc32` | 76603 | 83067 | −7.8% | 41998 | 47135 | −10.9% |
-| `bst` | 405711 | 416052 | −2.5% | 256281 | 293384 | −12.6% |
-| `heapsort` | 375849 | 387338 | −3.0% | 289631 | 309144 | −6.3% |
-| `vm` | 1170099 | 1248168 | −6.3% | 492044 | 602064 | −18.3% |
-| `strings` | 157523 | 166928 | −5.6% | 61170 | 66045 | −7.4% |
-| total | 2260097 | 2384635 | −5.2% | 1203605 | 1384879 | −13.1% |
+| `rng64` | 83026 | 83082 | −56 | 67094 | 67107 | −13 |
+| `crc32` | 83010 | 83067 | −57 | 47122 | 47135 | −13 |
+| `bst` | 415995 | 416052 | −57 | 293371 | 293384 | −13 |
+| `heapsort` | 387282 | 387338 | −56 | 309131 | 309144 | −13 |
+| `vm` | 1248112 | 1248168 | −56 | 602050 | 602064 | −14 |
+| `strings` | 166871 | 166928 | −57 | 66032 | 66045 | −13 |
+| total | 2384296 | 2384635 | −339 | 1384800 | 1384879 | −79 |
 
-The model is below the core in every phase, by up to 18%, most in `vm`
-of `hand.nasm`, which jumps the most, and in `rng64` of the translated
-program. It does not model DBUS's store register yet (TODO.md).
+The difference is all but the same in every phase of a program, so it
+lies at the reads of the instruction counter around the phases, whose
+timing the model does not follow exactly, and not in the phases.
+
+`make core` also has the testbench write a retire log,
+`hdl/build/bench_pipeline.retires` and `hand_pipeline.retires`
+(`G_RETIRE_LOG` of `hdl/test/tb_core.vhd`): a line per step, with the
+cycle it retired in and its address. `pipecycles.py --retires FILE`
+compares the model with it, step by step. For each step it takes the
+core's cycles since the step before, less the model's, and sums them by
+the cause the model charged the step and by address, so the rules the
+model lacks show up as causes and addresses with large sums. The runs
+part where the program prints the cycles it measured, since the core's
+differ from the emulator's, and the comparison stops there:
+
+    python3 pipecycles.py --retires ../hdl/build/hand_pipeline.retires build/hand.bin
+
+At commit 1a41b0c the model is 295 cycles below the core over the first
+1613484 steps of the translated program, which take the core 2283598
+cycles, and 63 below it over the 494212 steps of `hand.nasm`, which take
+1392934.
 
 `cycprof.py` charges the model's cycles to the source lines of a program,
 and `make profile` writes `build/bench.cyc.txt` and `build/hand.cyc.txt`.
@@ -302,7 +330,7 @@ cycles land on the instruction in whose WRITE the model saw them wait: a
 taken jump's on the instruction at its target, and a math unit wait's on
 the read of the result. In heapsort's inner loop, for example:
 
-        7722   13400         ADD     R7, R1, 2                  early13400
+        7722   26800         ADD     R7, R1, 2                  early20100 fetch6700
         7722                 SUB[M]  R0, R7, R8
         7722                 ?V XOR  R14, R14, 0x10000000
 

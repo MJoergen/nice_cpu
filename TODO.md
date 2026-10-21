@@ -93,23 +93,11 @@ No code has TODO or FIXME comments.
   `instret_o` when the bus accepts it, as a read is counted, would let it
   retire into the register like any other, but an interrupt must then not
   be taken between its retire and its count.
-- **`bench/pipecycles.py` does not model the store register**: a read
-  after a store waits for the store to leave DBUS, a store into the I/O
-  range waits in WRITE, and FETCH waits after a redirect. `make compare`
-  shows how far the estimate falls behind.
 - **NiceMonMEGA65 reads the registers from `retire_o.regs`**, which is
   `w_n.regs` of WRITE, before the register. A copy of it in a register is
   still fed from `w_n`, so its paths are WRITE's longest. Both cores now
   have `regs_o` from their registers. NiceMonMEGA65 should read that.
 
-- **The cycle the model lacks.** `bench/pipecycles.py` charges a jump
-  taken in WRITE 7 cycles, the core's bubble (`hdl/test/bubble.nasm`),
-  and underestimates the core on the benchmark by 5.2% and 13.1%
-  (`make compare` in `bench/`). With 8 it is 3.7% and 9.4% below, so a
-  cycle per jump is missing from the model. Find what the extra cycle stands for,
-  for example by printing each retire's cycle from a scratch copy of the
-  core and comparing it with the model's, instruction by instruction
-  (doc/review/third-repository-review.md §3.1).
 - **Speculative reads of RAM** (MICROARCH.md §5.3). Data reads wait until
   the instruction is certain to run. The waits are a conditional read
   after a write of SR, 0.0% of the translated benchmark's instructions and
@@ -149,33 +137,37 @@ No code has TODO or FIXME comments.
   What happens then is undefined (WASM.md). An idea: a check against a
   stack limit in each function's prologue, at a cost in code size.
 - **Faster and smaller translated code.** `bench/` runs 1730635
-  instructions, against 491617 for `hand.nasm`, and takes about 2.28
-  million cycles on the pipelined core (`make compare`), 2.20 million by
-  the estimate of `bench/pipecycles.py`
+  instructions, against 491617 for `hand.nasm`, and takes about 2.38
+  million cycles in its phases on the pipelined core, as the estimate of
+  `bench/pipecycles.py` does (`make compare`)
   ([translator/README.md](translator/README.md), How functions are
   translated). Trusting the alignment hint would save nothing, as one
   compare covers the bounds and the alignment. What is left, by the
   estimate:
-  - *Taken jumps resolved in WRITE*, about half of the cycles
+  - *Taken jumps resolved in WRITE*, about a third of the cycles
     above one per instruction: the interpreter's table jumps, which no layout
     avoids, and `br_if`s whose common path is the taken one. nicewasm
     guesses that the shorter arm of a diamond is the rarer one; branch
     probabilities from a profile would do better.
-  - *Waits on the math unit*, about 4% now that the multiplier takes
+  - *Read data that goes into the ALU or a store*, which WRITE takes a
+    cycle after its ACK, about a quarter (MICROARCH.md §5.3).
+  - *Waits on the math unit*, about 6% now that the multiplier takes
     two cycles: the interpreter's `MUL`, `__mul64` in `runtime/`, and
     `% 26` in strings read the result right after writing the operands,
     and a division still takes up to 34 cycles. Hiding a wait needs
     independent work in between, which the translator rarely has without
     moving stores past loads. `__mul64` could overlap its partial
     products.
-  - *A read right after a skipped bounds-check jump*, about a fifth, in
-    chains of dependent loads, where no instruction can fill the slot,
-    and in the byte accesses, whose word index and shift count now come
-    before the compare. Speculative reads (above) would remove it.
-  - *The address register written by the instruction before*, about 3%
-    now that the byte accesses compute theirs before the compare
+  - *Reads that PREPARE loads in the cycle it gets them*, about 15%: the
+    request is a register, so the data comes two cycles later, one more
+    than WRITE needs, unless a stall let the read go out early. A read
+    right after a skipped bounds-check jump costs no more than another,
+    since it loads in the cycle the jump leaves WRITE, so speculative
+    reads (above) would not save that cycle.
+  - *The address register written by the instruction before*, almost
+    nothing now that the byte accesses compute theirs before the compare
     (MICROARCH.md §5.1).
-  - *Loop back edges* cost the two cycles of an early redirect each round.
+  - *Loop back edges* cost the three cycles of an early redirect each round.
   - *`@Rx++` for a pointer walk*, as `hand.nasm` does, needs a word
     pointer kept in step with the byte address, which is out of reach
     without loop analysis on an intermediate form.

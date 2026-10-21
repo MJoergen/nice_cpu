@@ -38,9 +38,11 @@
 -- b) tag_cnt_i counts the data bus requests accepted and not acknowledged.
 -- c) WRITE neither flushes nor takes an interrupt while the instruction in
 --    PREPARE has made a data read.
--- d) st_valid_i is '1' while a store waits in DBUS, and st_acc_i when the
---    bus accepts it. WRITE queues a store only from a store micro-operation
---    of its own, and only while no read waits in the request register.
+-- d) st_valid_i is '1' while a store or a vector read of WRITE waits in
+--    DBUS, and st_acc_i when the bus accepts it. WRITE queues a store only
+--    from a store micro-operation of its own, and a vector read only during
+--    an interrupt entry, and either only while no read waits in the request
+--    register.
 --
 -- RESET
 -- Synchronous. It empties the stage and drops the request.
@@ -88,7 +90,7 @@ entity pipe_prepare is
       -- The data read, held until the bus accepts it
       dbus_stall_i : in  std_logic;
       tag_cnt_i    : in  natural range 0 to C_MAX_OUT;
-      st_valid_i   : in  std_logic;   -- A store waits in DBUS
+      st_valid_i   : in  std_logic;   -- A store or vector read waits in DBUS
       st_acc_i     : in  std_logic;   -- The bus accepts it now
       rd_stb_o     : out std_logic;
       rd_addr_o    : out std_logic_vector(31 downto 0);
@@ -414,8 +416,8 @@ begin
    -- - WRITE neither flushes nor takes an interrupt while PREPARE holds an
    --   instruction that has made a data read (contract c), or has a read
    --   on the bus or about to be loaded.
-   -- - The data bus requests in flight grow only by PREPARE's read, or
-   --   WRITE's store or vector read when there is room.
+   -- - The data bus requests in flight grow only by PREPARE's read, or the
+   --   store or vector read that waits in DBUS, when there is room.
    -- The assertions say that the read request keeps to the bus (held
    -- while stalled, and never with C_MAX_OUT requests in flight), that a
    -- micro-operation makes no more reads than it has, and all of them
@@ -436,7 +438,7 @@ begin
       signal f_tag       : natural range 0 to C_MAX_OUT + 1;
       signal f_rd_stall  : std_logic;          -- and was stalled
       signal f_rd_addr   : std_logic_vector(31 downto 0);
-      signal f_st_may    : std_logic := '0';   -- A store may wait in DBUS now
+      signal f_st_may    : std_logic := '0';   -- An access may wait in DBUS now
       signal f_open      : std_logic := '0';   -- DECODE is in an instruction
       signal f_inst      : t_inst;             -- and this one
       signal f_kind      : t_kind;             -- The kind of its last micro-operation
@@ -471,15 +473,16 @@ begin
 
             f_rd_stall <= rd_stb_r and dbus_stall_i and not rst_i;
             f_rd_addr  <= rd_addr_r;
-            -- PREPARE's read, or else, when there is room, a vector read of
-            -- WRITE, or the store that waits in DBUS
+            -- PREPARE's read, or else, when there is room, the store or
+            -- vector read that waits in DBUS
             f_tag      <= tag_cnt_r + to_nat((rd_stb_r = '1' and dbus_stall_i = '0') or
                                              (rd_stb_r = '0' and tag_cnt_r < C_MAX_OUT and
-                                                (w_r.mode = VEC_ST or st_valid_i = '1')));
-            -- The store that waits, and has not been accepted, or one that
-            -- WRITE queues now
+                                                st_valid_i = '1'));
+            -- The access that waits, and has not been accepted, or a store
+            -- or vector read that WRITE queues now
             f_st_may   <= not rst_i and ((st_valid_i and not st_acc_i) or
-                                         (w_r.uop.valid and w_r.uop.store and not rd_stb_r));
+                                         (w_r.uop.valid and w_r.uop.store and not rd_stb_r) or
+                                         (to_sl(w_r.mode = VEC_ST) and not rd_stb_r));
 
             if seq_emit = '1' then
                f_open <= not seq_uop.last;

@@ -11,7 +11,8 @@
 --   DECODE    src/pipe_decode.vhd. Takes one whole instruction into
 --             dec_r. Redirects FETCH at once for a jump it can resolve.
 --             Splits the instruction in dec_r into micro-operations
---             (src/pipe_pkg.vhd), one per cycle, into prep_r.
+--             (src/pipe_pkg.vhd), one per cycle, into prep_r, through
+--             skid_r when PREPARE cannot take one.
 --   PREPARE   src/pipe_prepare.vhd. Tests the condition, and issues the
 --             data reads of the micro-operation in prep_r. Then passes it
 --             to w_r.uop.
@@ -25,11 +26,12 @@
 -- This entity connects them, and checks the invariants below in
 -- simulation. Some of the signals between the parts are combinational,
 -- as each part's header says: PREPARE decides on a read with WRITE's
--- decisions of the same cycle, and WRITE drives its vector reads onto the
--- bus.
+-- decisions of the same cycle.
 --
 -- Each stage holds one item, and passes it on when the next stage is free
--- or frees itself in the same cycle.
+-- or frees itself in the same cycle. DECODE splits off a micro-operation
+-- whether PREPARE takes it or not, and keeps one it does not take in
+-- skid_r, so that its registers do not wait on PREPARE's decisions.
 --
 -- REGISTERS. WRITE is the only stage that writes the registers, and it does
 -- so in program order. So the registers it holds, w_r.regs, are the
@@ -56,13 +58,12 @@
 -- fetched code, and has issued its store; no interrupt may be taken before
 -- the instruction; every older instruction has been counted on
 -- instret_o; and no store will wait in DBUS in the next cycle. WRITE puts
--- its stores into DBUS's store register, which drives the bus from the
--- next cycle on, and its vector reads straight onto the bus, and holds
--- them there while the bus stalls them. A store into memory retires when
--- it goes into the register, and one into the I/O range when the bus
--- accepts it. None of them compete: WRITE issues an access only when every
--- read that PREPARE loaded is on the bus or done, and a vector read only
--- when no store waits. The ACKs come back in order. A FIFO of tags tells
+-- its stores and its vector reads into DBUS's register, which drives the
+-- bus from the next cycle on, until the bus accepts them. A store into
+-- memory retires when it goes into the register, and one into the I/O
+-- range when the bus accepts it. The two never compete: WRITE issues an
+-- access only when every read that PREPARE loaded is on the bus or done.
+-- The ACKs come back in order. A FIFO of tags tells
 -- reads from writes, and a FIFO holds the data of reads that WRITE has not
 -- used yet. FETCH makes no new request while a store waits in DBUS that
 -- WRITE's check of fetched code (MICROARCH.md §5.5) did not cover.
@@ -72,8 +73,9 @@
 -- start and end of an interrupt entry or INT, after a halt, and after a
 -- store into a word that is fetched but not retired (MICROARCH.md §5.5).
 -- Those words are the range that pipe_fetch reports and the instructions in
--- dec_r and prep_r. DECODE redirects FETCH itself for "MOVE R15, c" and
--- "ADD R15, R15, c" with condition "always". WRITE then does not flush.
+-- dec_r, dec_q, skid_r, and prep_r. DECODE redirects FETCH itself for
+-- "MOVE R15, c" and "ADD R15, R15, c" with condition "always". WRITE then
+-- does not flush.
 --
 -- INTERRUPTS (MICROARCH.md §6) are taken in WRITE before an instruction,
 -- as soon as ISA.md §7.1 allows: before the instruction's first
@@ -192,6 +194,7 @@ architecture synthesis of pipeline is
    signal d_dest     : std_logic_vector(31 downto 0);
    signal dec_r      : t_inst;
    signal dec_q      : t_inst;
+   signal skid       : t_inst;   -- The instruction of DECODE's skid_r
    signal seq_uop    : t_uop;
    signal seq_emit   : std_logic;
    signal d_starve   : std_logic;
@@ -223,10 +226,9 @@ architecture synthesis of pipeline is
    signal w_flush   : std_logic;
    signal w_target  : std_logic_vector(31 downto 0);
    signal w_accept  : std_logic;   -- WRITE takes the micro-operation in PREPARE
-   signal w_req     : std_logic;   -- The vector read of WRITE
-   signal w_addr    : std_logic_vector(31 downto 0);
    signal w_pop     : natural range 0 to 2;
-   signal w_st      : std_logic;   -- WRITE puts a store into DBUS
+   signal w_st      : std_logic;   -- WRITE puts a store or a vector read into DBUS
+   signal w_st_we   : std_logic;   -- A store
    signal w_st_addr : std_logic_vector(31 downto 0);
    signal w_st_data : std_logic_vector(31 downto 0);
    signal w_instret : std_logic;
@@ -249,7 +251,9 @@ begin
    -- on the bus while the store waits there after that cycle, or after a
    -- redirect in the cycle the store was queued or the one before, which
    -- the check did not see. A request that the bus stalls stays on it: it
-   -- was in FETCH's range when WRITE checked the store.
+   -- was in FETCH's range when WRITE checked the store. A vector read in
+   -- the register holds FETCH too, but FETCH is stopped during an
+   -- interrupt entry anyway.
    f_block    <= f_hold_r and st_valid and not f_held_r;
    ibus_stb_o <= f_stb and not f_block;
    f_stall    <= ibus_stall_i or f_block;
@@ -312,6 +316,7 @@ begin
          uop_o      => seq_uop,
          inst_o     => dec_r,
          inst2_o    => dec_q,
+         skid_o     => skid,
          starve_o   => d_starve,
          blocked_o  => d_blocked
       ); -- i_pipe_decode
@@ -353,10 +358,9 @@ begin
          rst_i        => rst_i,
          rd_stb_i     => rd_stb_r,
          rd_addr_i    => rd_addr_r,
-         w_req_i      => w_req,
-         w_addr_i     => w_addr,
          w_pop_i      => w_pop,
          st_i         => w_st,
+         st_we_i      => w_st_we,
          st_addr_i    => w_st_addr,
          st_data_i    => w_st_data,
          st_valid_o   => st_valid,
@@ -390,19 +394,17 @@ begin
          f_blk_i      => f_blk,
          dec_i        => dec_r,
          dec2_i       => dec_q,
+         skid_i       => skid,
          prep_i       => prep_r,
          rq_i         => rq_r,
          rq_cnt_i     => rq_cnt_r,
          ack_read_i   => ack_read,
-         tag_cnt_i    => tag_cnt_r,
-         dbus_stall_i => dbus_stall_i,
          dbus_data_i  => dbus_data_i,
-         req_o        => w_req,
-         addr_o       => w_addr,
          pop_o        => w_pop,
          st_valid_i   => st_valid,
          st_acc_i     => st_acc,
          st_o         => w_st,
+         st_we_o      => w_st_we,
          st_addr_o    => w_st_addr,
          st_data_o    => w_st_data,
          nmi_valid_i  => nmi_valid_i,
@@ -453,14 +455,11 @@ begin
             assert not (seq_emit = '1' and not decoded_ok(seq_uop))
                report "pipeline: DECODE's fields disagree with the instruction word"
                severity failure;
-            assert not (rd_stb_r = '1' and w_req = '1')
+            assert not (st_valid = '1' and rd_stb_r = '1')
                report "pipeline: a read of PREPARE and an access of WRITE on the bus at once"
                severity failure;
-            assert not (st_valid = '1' and (rd_stb_r = '1' or w_req = '1'))
-               report "pipeline: a waiting store and another access on the bus at once"
-               severity failure;
             assert not (w_st = '1' and st_valid = '1' and st_acc = '0')
-               report "pipeline: a store queued while the store register is full"
+               report "pipeline: an access queued while DBUS's register is full"
                severity failure;
             -- No flush or interrupt drops an instruction in PREPARE that has
             -- made a data read (src/pipe_prepare.vhd, c).
@@ -469,7 +468,7 @@ begin
                report "pipeline: a flush or interrupt drops an instruction with a data read"
                severity failure;
             -- The data of a read finds room in DBUS (src/pipe_dbus.vhd, c).
-            assert not ((rd_stb_r = '1' or w_req = '1') and dbus_stall_i = '0' and
+            assert not (dbus_stb_o = '1' and dbus_we_o = '0' and dbus_stall_i = '0' and
                         rq_cnt_r + reads_owed >= C_MAX_OUT + w_pop)
                report "pipeline: a read accepted without room for its data"
                severity failure;

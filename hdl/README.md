@@ -78,6 +78,7 @@ departs from it.
 | [test/r14cond.nasm](test/r14cond.nasm) | SR written by side effects and adjusted destinations, then conditional instructions and reads; `INT` and `RTI` with conditions. |
 | [test/r0odd.nasm](test/r0odd.nasm) | R0 in every mode as count, source, and destination. |
 | [test/smclate.nasm](test/smclate.nasm) | Stores into fetched code from late shifts and two-cycle instructions, and into the constants of early jumps. |
+| [test/smcskid.nasm](test/smcskid.nasm) | Stores into the target of an early jump while it waits in DECODE, in `dec_r` and in `skid_r`. |
 | [test/readorder.nasm](test/readorder.nasm) | The number and order of the data reads of late shifts, adjusted destinations, and skipped instructions, through the read counter. |
 | [test/instret_late.nasm](test/instret_late.nasm) | The instruction counter read right after late shifts, adjusted destinations, stores, skipped instructions, and `INT`. |
 | [test/jumpwords.nasm](test/jumpwords.nasm) | Jumps into constant words and to the instruction itself, with conditions on I. It ends at a reserved word. |
@@ -489,7 +490,7 @@ nothing, with its constant words in the order dest, s0, s1 (ISA.md
 §2.3), and that it redirects FETCH only as it takes `MOVE R15, c` or
 `ADD R15, R15, c`, to the target that ISA.md §4.3 gives. The invariants
 tie `dec_r`, `dec_q`, and the id counter to the last micro-operation
-emitted. PREPARE's proof assumes that a new instruction's id differs
+split off, and `skid_r` to it and to the last one emitted. PREPARE's proof assumes that a new instruction's id differs
 from the last one emitted, also across a flush, where DECODE proves
 consecutive ids only since the flush; `p_check` in the whole core asserts
 what PREPARE relies on, that a new instruction in PREPARE never has the
@@ -731,18 +732,19 @@ data bus port, each an entity of its own:
 | Stage | Where | What it does |
 |---|---|---|
 | FETCH | `pipe_fetch` | Reads pairs of words ahead on the instruction bus, several requests in flight, into a ring of 16 words. Presents the next four to DECODE. |
-| DECODE | `pipe_decode` | Takes one whole instruction, with one more behind it, decodes its fields, and splits it into micro-operations, one per cycle (MICROARCH.md §4). Redirects FETCH at once for `MOVE R15, c` and `ADD R15, R15, c` with condition "always". |
+| DECODE | `pipe_decode` | Takes one whole instruction, with one more behind it, decodes its fields, and splits it into micro-operations, one per cycle (MICROARCH.md §4), with a skid register for one that PREPARE does not take. Redirects FETCH at once for `MOVE R15, c` and `ADD R15, R15, c` with condition "always". |
 | PREPARE | `pipe_prepare` | Reads the registers and forms every operand value and address, reduces the shift count, tests the condition when it can, and issues the data reads. |
 | WRITE | `pipe_write` | Computes, writes the registers and SR, issues the store, takes interrupts, and runs the control instructions. Its one bypass is the value it wrote last. |
-| DBUS | `pipe_dbus` | The data bus port, with the tags and the read data of the requests in flight, and the register from which a store goes onto the bus. |
+| DBUS | `pipe_dbus` | The data bus port, with the tags and the read data of the requests in flight, and the register from which a store or a vector read goes onto the bus. |
 
 `pipeline` connects the parts.
 Each stage holds one item and passes it on when the next stage frees
-itself. Each part keeps its state in registers, but some of the signals
+itself. DECODE keeps a micro-operation that PREPARE does not take in a
+skid register, so that its own registers do not wait on PREPARE. Each part keeps its state in registers, but some of the signals
 between them are combinational, as each part's header lists: PREPARE
 decides on a data read with WRITE's decisions of the same cycle, a flush
-reaches every stage at once, and WRITE drives its vector reads onto the
-bus. Its stores go out from a register in DBUS, a cycle later. In the best case one micro-operation retires each cycle.
+reaches every stage at once. Its stores and vector reads go out from a
+register in DBUS, a cycle later. In the best case one micro-operation retires each cycle.
 `cputest` takes about 1.2 cycles per instruction on memory that never
 stalls, and `hazard.nasm`, which is all hazards, 1.9. The benchmark of
 [bench/](../bench/README.md) runs like this at commit 4bbbb81, against
@@ -785,7 +787,8 @@ in PREPARE until the core is certain to run its instruction, as
 MICROARCH.md §5.3 asks: the condition is true, the older micro-operation
 in WRITE cannot jump, halt, or store into fetched code and has issued its
 store, no interrupt can be taken first, and every older instruction is
-counted on `instret_o`. Stores and vector reads leave from WRITE. The ACKs
+counted on `instret_o`. Stores and vector reads leave from WRITE, through
+DBUS's register. The ACKs
 come back in order, and at most 4 data requests are in flight, so the
 core needs the data bus decoder of `src/wb_dmux.vhd`, which `tb_core`
 has.

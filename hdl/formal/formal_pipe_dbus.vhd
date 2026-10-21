@@ -11,7 +11,8 @@
 -- pipe_dbus, which ties the two together for k-induction.
 --
 -- The covers show four requests in flight, the FIFO of read data full,
--- and a store that waits in st_r while four are in flight.
+-- a store that waits in st_r while four are in flight, and a vector read
+-- from st_r whose data comes back.
 --
 -- RESET
 -- The first cycle is a reset.
@@ -27,10 +28,9 @@ entity formal_pipe_dbus is
       rst_i        : in  std_logic;
       rd_stb_i     : in  std_logic;
       rd_addr_i    : in  std_logic_vector(31 downto 0);
-      w_req_i      : in  std_logic;
-      w_addr_i     : in  std_logic_vector(31 downto 0);
       w_pop_i      : in  natural range 0 to 2;
       st_i         : in  std_logic;
+      st_we_i      : in  std_logic;
       st_addr_i    : in  std_logic_vector(31 downto 0);
       st_data_i    : in  std_logic_vector(31 downto 0);
       dbus_stall_i : in  std_logic;
@@ -67,6 +67,7 @@ begin
    -- psl c_four : cover {tag_cnt = C_MAX_OUT and rst_i = '0'};
    -- psl c_full : cover {rq_cnt = C_MAX_OUT and rst_i = '0'};
    -- psl c_st_wait : cover {st_valid = '1' and tag_cnt = C_MAX_OUT and rst_i = '0'; st_acc = '1'};
+   -- psl c_st_read : cover {st_acc = '1' and dbus_we = '0' and rst_i = '0'; [*]; ack_read = '1'};
 
 
    i_pipe_dbus : entity work.pipe_dbus
@@ -78,10 +79,9 @@ begin
          rst_i        => rst_i,
          rd_stb_i     => rd_stb_i,
          rd_addr_i    => rd_addr_i,
-         w_req_i      => w_req_i,
-         w_addr_i     => w_addr_i,
          w_pop_i      => w_pop_i,
          st_i         => st_i,
+         st_we_i      => st_we_i,
          st_addr_i    => st_addr_i,
          st_data_i    => st_data_i,
          st_valid_o   => st_valid,

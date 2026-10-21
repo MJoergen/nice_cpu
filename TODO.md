@@ -72,27 +72,27 @@ No code has TODO or FIXME comments.
 
 ## Pipelined core
 
-- **The margin at 100 MHz is thin** (pipeline-timing.md). The worst paths out of context are within a few tenths
-  of a nanosecond of 10 ns, and several differ only by placement: the
-  flush, through PREPARE's handshake, into DECODE's registers; the store
-  address through the block compare into the flush; and the next
-  address of an instruction from FETCH's head into DECODE. The full
-  design places worse than the core alone. Ideas, each worth a few
-  tenths: a second slot in PREPARE, so that DECODE's emit does not wait
-  on WRITE's decision; the condition and the data count of WRITE's
-  micro-operation tested a cycle ahead; DECODE's next address from
-  FETCH's precomputed heads. Decide after NiceMonMEGA65 has been tried
-  at 100 MHz.
+- **The margin at 100 MHz is thin** (pipeline-timing.md, The handshake).
+  The R6 meets 100 MHz in NiceMonMEGA65, and the Nexys4DDR (a -1 part)
+  83.33 MHz. The worst paths are within a few tenths of a nanosecond of
+  10 ns on the R6's part, and several differ only by placement: WRITE's
+  flush and redirect into PREPARE's `prep_r` and FETCH's `head_r`, WRITE's
+  ALU into its own next state, and FETCH's next address, from its ring
+  through DECODE's instruction length into `head_r`. Ideas: the condition
+  and the data count of WRITE's micro-operation tested a cycle ahead;
+  DECODE's next address from FETCH's precomputed heads; a redirect from
+  WRITE registered a cycle later, which costs a cycle per jump that WRITE
+  resolves; `irq_ready_o` from a register, since a device acts on it in
+  the same cycle. Measure the skid register and the vector read in
+  NiceMonMEGA65 first.
 - **What the system adds to the core's paths.** Out of context, the
   inputs arrive at time 0 and the outputs are due at time 10 ns, so
   `make timing` in `hdl/` reports their slack as the time left to the
   system. Read data goes into WRITE only for a register write (6.5 ns
   left), but `dbus_ack_i` goes into WRITE's retire and so into FETCH, and
-  `instret_o` comes from WRITE's retire (2.6 ns left). A store goes onto
-  the bus from DBUS's store register (4.5 ns left for the address, 4.8 ns
-  for the data).
-  Measure the store register in NiceMonMEGA65 on both boards. Next: a
-  skid buffer between DECODE and PREPARE for the handshake.
+  `instret_o` comes from WRITE's retire (2.6 ns left). A store or a
+  vector read goes onto the bus from DBUS's register (4.5 ns left for the
+  address, 4.8 ns for the data, with the store alone).
   `retire_o` is combinational and is not counted.
 - **Stores into the I/O range wait in WRITE** until the bus accepts them
   (MICROARCH.md §5.3), so that the timer sees each in the cycle of its

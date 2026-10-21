@@ -328,3 +328,48 @@ Out of context, one run of `make timing`:
 The store's address and data now come from a register and a mux. The
 paths between registers are where they were, within placement. The
 handshake into DECODE is next in TODO.md.
+
+## The handshake
+
+On 2026-10-21 NiceMonMEGA65 met 100 MHz on the MEGA65 R6 with the
+default directives, once it read the registers from `regs_o`, but the
+Nexys4DDR (`xc7a100tcsg324-1`) missed it by 0.27 ns (issue 34 on
+GitHub). Every failing path started at WRITE. The largest group ran from
+WRITE's state through PREPARE's decision to move on, into the enables of
+DECODE's `dec_r` and `dec_q`. Three endpoints ran from WRITE's decision
+to read the vector of an interrupt entry, through DBUS, into the block
+RAM's address.
+
+Two changes followed:
+
+- **A skid register in DECODE.** DECODE splits off a micro-operation
+  whenever its skid register is empty, whether PREPARE takes it or not,
+  and keeps one that PREPARE does not take in the register. So the
+  enables of DECODE's registers come from its own registers. PREPARE gets
+  a micro-operation in every cycle it can take one, as before, and the
+  benchmark's cycles barely move. WRITE's check of stores into fetched
+  code (MICROARCH.md §5.5) covers the instruction in the skid register
+  too, and `hdl/test/smcskid.nasm` fails without that.
+- **The vector read through DBUS's register.** WRITE puts the read of an
+  interrupt entry's vector into the register that its stores go through
+  (Stores, above). An interrupt entry takes a cycle more.
+
+`make timing` in `hdl/` now takes the part of either board and the
+directives NiceMonMEGA65 builds with, and counts the endpoints with less
+than 1 ns of slack by the registers they start and end at. One run each:
+
+| | Before | Skid register | And the vector read |
+|---|---|---|---|
+| R6 part, default directives | +0.131 ns, 0 failing | +0.326 ns, 0 failing | −0.224 ns, 8 failing |
+| Endpoints under 1 ns there | 628 | 342 | 425 |
+| Nexys4DDR part, NiceMonMEGA65's directives | −1.610 ns, 1015 failing | −1.135 ns, 644 failing | −1.538 ns, 623 failing |
+
+The groups into DECODE's enables, 482 endpoints, are gone from every
+run. What is left moves with placement by half a nanosecond: the eight
+failing endpoints of the last R6 run are FETCH's next address, from its
+ring through DECODE's instruction length into `head_r`, which neither
+change touches. Out of context, the Nexys4DDR's part fails by about 1 ns
+more than in NiceMonMEGA65, so there the figures only compare versions
+of the core. The worst groups now are WRITE's flush and redirect into
+PREPARE's `prep_r` and FETCH's `head_r`, WRITE's own next state, and
+FETCH's next address.

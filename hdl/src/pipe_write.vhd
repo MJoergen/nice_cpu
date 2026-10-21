@@ -4,7 +4,7 @@
 -- WRITE holds the architectural state: the registers, SR, PC, and the
 -- hidden state of ISA.md §1.4. It runs the micro-operation in w_r.uop when
 -- its read data has come: it computes the result, writes the registers,
--- puts a store into DBUS's store register, and updates the flags. A store
+-- puts a store into DBUS's register, and updates the flags. A store
 -- into the I/O range waits in WRITE, w_r.busy, until the bus accepts it
 -- (MICROARCH.md §5.3). It takes interrupts before an instruction,
 -- runs the control instructions, and flushes the pipeline (see
@@ -12,9 +12,9 @@
 -- reads too.
 --
 -- The registers are w_r. The other outputs depend combinationally on w_r
--- and on the inputs of the same cycle: the store goes into DBUS's register,
--- the vector read straight onto the bus, a flush reaches every stage at
--- once, and the report of a step comes in the cycle it retires, with the
+-- and on the inputs of the same cycle: the store and the vector read go
+-- into DBUS's register, a flush reaches every stage at once, and the
+-- report of a step comes in the cycle it retires, with the
 -- registers it leaves (retire_o), as the trace writer's contract asks
 -- (src/trace_pkg.vhd).
 --
@@ -22,11 +22,11 @@
 -- a) uop_i is PREPARE's micro-operation, which WRITE takes when move_i is
 --    '1'. move_i is '1' only when accept_o is.
 -- b) rq_i, rq_cnt_i, and ack_read_i give the read data that has come, in
---    order, and tag_cnt_i the data bus requests in flight.
+--    order.
 -- c) A device holds nmi_valid_i or irq_valid_i, and the vector, stable
 --    until WRITE raises the matching take.
--- d) st_valid_i is '1' while a store waits in DBUS's register, and st_acc_i
---    when the bus accepts it.
+-- d) st_valid_i is '1' while a store or a vector read waits in DBUS's
+--    register, and st_acc_i when the bus accepts it.
 --
 -- RESET
 -- Synchronous. It sets the state of ISA.md §8.1.
@@ -56,23 +56,22 @@ entity pipe_write is
       f_blk_i      : in  std_logic_vector(31 downto 5);   -- Lags f_addr_i by a cycle
       dec_i        : in  t_inst;
       dec2_i       : in  t_inst;
+      skid_i       : in  t_inst;
       prep_i       : in  t_uop;
 
       -- The data bus (src/pipe_dbus.vhd)
       rq_i         : in  t_words(0 to C_MAX_OUT - 1);
       rq_cnt_i     : in  natural range 0 to C_MAX_OUT;
       ack_read_i   : in  std_logic;
-      tag_cnt_i    : in  natural range 0 to C_MAX_OUT;
-      dbus_stall_i : in  std_logic;
       dbus_data_i  : in  std_logic_vector(31 downto 0);
-      req_o        : out std_logic;   -- The vector read
-      addr_o       : out std_logic_vector(31 downto 0);
       pop_o        : out natural range 0 to 2;
 
-      -- The store, into DBUS's store register (src/pipe_dbus.vhd)
+      -- The store or the vector read, into DBUS's register
+      -- (src/pipe_dbus.vhd)
       st_valid_i   : in  std_logic;
       st_acc_i     : in  std_logic;
       st_o         : out std_logic;
+      st_we_o      : out std_logic;   -- '1' for a store, '0' for a vector read
       st_addr_o    : out std_logic_vector(31 downto 0);
       st_data_o    : out std_logic_vector(31 downto 0);
 
@@ -104,11 +103,11 @@ architecture synthesis of pipe_write is
    signal f_blk        : std_logic_vector(31 downto 5);
    signal dec_r        : t_inst;
    signal dec2_r       : t_inst;
+   signal skid_r       : t_inst;
    signal prep_r       : t_uop;
    signal rq_r         : t_words(0 to C_MAX_OUT - 1);
    signal rq_cnt_r     : natural range 0 to C_MAX_OUT;
    signal ack_read     : std_logic;
-   signal tag_cnt_r    : natural range 0 to C_MAX_OUT;
 
    signal w_r       : t_write;
    signal w_n       : t_write;
@@ -116,10 +115,9 @@ architecture synthesis of pipe_write is
    signal w_flush   : std_logic;
    signal w_target  : std_logic_vector(31 downto 0);
    signal w_accept  : std_logic;
-   signal w_req     : std_logic;
-   signal w_addr    : std_logic_vector(31 downto 0);
    signal w_pop     : natural range 0 to 2;
    signal w_st      : std_logic;
+   signal w_st_we   : std_logic;
    signal w_st_addr : std_logic_vector(31 downto 0);
    signal w_st_data : std_logic_vector(31 downto 0);
    signal w_instret : std_logic;
@@ -136,17 +134,16 @@ begin
    f_blk        <= f_blk_i;
    dec_r        <= dec_i;
    dec2_r       <= dec2_i;
+   skid_r       <= skid_i;
    prep_r       <= prep_i;
    rq_r         <= rq_i;
    rq_cnt_r     <= rq_cnt_i;
    ack_read     <= ack_read_i;
-   tag_cnt_r    <= tag_cnt_i;
 
    accept_o   <= w_accept;
-   req_o      <= w_req;
-   addr_o     <= w_addr;
    pop_o      <= w_pop;
    st_o       <= w_st;
+   st_we_o    <= w_st_we;
    st_addr_o  <= w_st_addr;
    st_data_o  <= w_st_data;
    take_nmi_o <= take_nmi;
@@ -200,10 +197,9 @@ begin
       n_v.rep     := C_RETIRE_NONE;
       u_v         := w_r.uop;
       iw_v        := u_v.inst.iw;
-      w_req       <= '0';
-      w_addr      <= (others => '0');
       w_pop       <= 0;
       w_st        <= '0';
+      w_st_we     <= '1';
       w_instret   <= '0';
       w_flush     <= '0';
       take_nmi    <= '0';
@@ -250,8 +246,8 @@ begin
       bdata_v(0) := rq_r(0) when rq_cnt_r >= 1 else dbus_data_i;
       bdata_v(1) := rq_r(1) when rq_cnt_r >= 2 else dbus_data_i;
 
-      -- Room on the data bus for WRITE's vector read
-      room_v := rd_stb_r = '0' and tag_cnt_r < C_MAX_OUT and st_valid_i = '0';
+      -- Room in DBUS's register for WRITE's vector read
+      room_v := rd_stb_r = '0' and (st_valid_i = '0' or st_acc_i = '1');
 
       -- The condition (ISA.md §3). A micro-operation in a later cycle of
       -- its own keeps the condition of its first, since it may have
@@ -287,6 +283,7 @@ begin
       hit_v := near(a_v, f_addr, f_blk, 5) or a_v(31 downto 5) = f_blk + 1 or
                (dec_r.valid = '1' and near(a_v, dec_r.addr, dec_r.blk, 2)) or
                (dec2_r.valid = '1' and near(a_v, dec2_r.addr, dec2_r.blk, 2)) or
+               (skid_r.valid = '1' and near(a_v, skid_r.addr, skid_r.blk, 2)) or
                (prep_r.valid = '1' and near(a_v, prep_r.inst.addr, prep_r.inst.blk, 2));
 
       -- An instruction boundary where ISA.md §7.1 allows an interrupt, and
@@ -315,13 +312,14 @@ begin
          n_v.uop.valid  := '0';
          flush_v        := true;
       elsif w_r.mode = VEC_ST then
-         -- The vector table entry is at VBASE * 256 + v.
+         -- The vector table entry is at VBASE * 256 + v. Its read goes into
+         -- DBUS's register, which drives the bus from the next cycle on.
          if w_r.vec_issued = '0' then
             if room_v then
-               w_req          <= '1';
-               w_addr         <= w_r.regs(14)(23 downto 0) & w_r.vec;
-               n_v.busy       := dbus_stall_i;
-               n_v.vec_issued := not dbus_stall_i;
+               w_st           <= '1';
+               w_st_we        <= '0';
+               a_v            := w_r.regs(14)(23 downto 0) & w_r.vec;
+               n_v.vec_issued := '1';
             end if;
          elsif avail_v >= 1 then
             w_pop        <= 1;
@@ -546,7 +544,7 @@ begin
                      n_v.regs(14) := flags(n_v.regs(14), fres_v);
                   end if;
 
-                  -- The store, into DBUS's store register when it is free
+                  -- The store, into DBUS's register when it is free
                   -- or frees itself now. A store into memory retires then.
                   -- One into the I/O range retires when the bus accepts it,
                   -- so that a device sees it in the cycle of its step, as
@@ -656,7 +654,8 @@ begin
          n_v.uop := p_out;
       end if;
 
-      -- The store's address and data, which DBUS takes when w_st is '1'
+      -- The address and data of the store or the vector read, which DBUS
+      -- takes when w_st is '1'
       w_st_addr <= a_v;
       w_st_data <= res_v.r;
 

@@ -8,12 +8,20 @@
 -- "MOVE R15, c" and "ADD R15, R15, c" with condition "always" it
 -- redirects FETCH at once (MICROARCH.md §5.4), as it takes them.
 --
--- The registers are dec_r, dec_q, the micro-operation to emit, and the
--- id of the next instruction. consume_o, redirect_o, and target_o depend
--- combinationally on the words from FETCH and on dec_q alone, so that
--- the path from WRITE's decisions ends here and not in FETCH. emit_o
--- depends on ready_i and flush_i, so that an instruction moves on in the
--- cycle the next stage frees itself.
+-- The splitting goes on whenever skid_r is empty, whether PREPARE takes
+-- the micro-operation or not. One that PREPARE does not take waits in
+-- skid_r, and goes to PREPARE from there, before any other. So the
+-- enables of dec_r, dec_q, and skid_r come from DECODE's own registers,
+-- not from PREPARE's decisions against WRITE in the same cycle
+-- (MICROARCH.md §3). It costs no cycle: PREPARE gets a micro-operation in
+-- every cycle it can take one, as long as DECODE has one.
+--
+-- The registers are dec_r, dec_q, the micro-operation to split off next,
+-- skid_r, and the id of the next instruction. consume_o, redirect_o, and
+-- target_o depend combinationally on the words from FETCH and on dec_q
+-- alone, so that the path from WRITE's decisions ends here and not in
+-- FETCH. emit_o depends on ready_i and flush_i, so that a micro-operation
+-- moves on in the cycle the next stage frees itself.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) ready_i is '1' when PREPARE takes uop_o at the end of the cycle.
@@ -56,10 +64,11 @@ entity pipe_decode is
       ready_i    : in  std_logic;
       emit_o     : out std_logic;
       uop_o      : out t_uop;
-      -- The instructions in dec_r and dec_q, for the check of stores
-      -- into fetched code
+      -- The instructions in dec_r, dec_q, and skid_r, for the check of
+      -- stores into fetched code
       inst_o     : out t_inst;
       inst2_o    : out t_inst;
+      skid_o     : out t_inst;
 
       -- For the fetch statistics: DECODE is free, but the words of the
       -- next instruction are not all there; or they are, but DECODE is busy
@@ -86,13 +95,18 @@ architecture synthesis of pipe_decode is
    signal id_r    : std_logic_vector(2 downto 0);
 
    -- Splitting it into micro-operations
-   signal dec_r       : t_inst;   -- The instruction being split
-   signal dec_q       : t_inst;   -- The one after it, waiting
+   signal dec_r       : t_inst;      -- The instruction being split
+   signal dec_q       : t_inst;      -- The one after it, waiting
    signal seq_kind_r  : t_kind;
    signal seq_first_r : std_logic;
    signal seq_uop     : t_uop;
-   signal seq_emit    : std_logic;
+   signal seq_adv     : std_logic;   -- The micro-operation is split off now
    signal dec_free    : std_logic;
+
+   -- The micro-operation that PREPARE did not take, and what goes to it
+   signal skid_r   : t_uop;
+   signal out_uop  : t_uop;
+   signal out_emit : std_logic;
 
 begin
 
@@ -105,10 +119,16 @@ begin
    consume_o  <= f_consume;
    redirect_o <= d_load and d_early;
    target_o   <= d_dest;
-   emit_o     <= seq_emit;
-   uop_o      <= seq_uop;
+   emit_o     <= out_emit;
+   uop_o      <= out_uop;
    inst_o     <= dec_r;
    inst2_o    <= dec_q;
+
+   p_skid_inst : process (all)
+   begin
+      skid_o       <= skid_r.inst;
+      skid_o.valid <= skid_r.valid;
+   end process p_skid_inst;
 
 
    p_decode : process (all)
@@ -198,14 +218,18 @@ begin
       seq_uop        <= uop_v;
    end process p_seq_uop;
 
-   seq_emit <= dec_r.valid and p_ready and not w_flush;
-   dec_free <= not dec_r.valid or (seq_emit and seq_uop.last);
+   seq_adv  <= dec_r.valid and not skid_r.valid;
+   dec_free <= not dec_r.valid or (seq_adv and seq_uop.last);
+
+   -- To PREPARE: the micro-operation in skid_r, else the one split off now
+   out_uop  <= skid_r when skid_r.valid = '1' else seq_uop;
+   out_emit <= (skid_r.valid or dec_r.valid) and p_ready and not w_flush;
 
 
    p_seq : process (clk_i)
    begin
       if rising_edge(clk_i) then
-         if seq_emit = '1' then
+         if seq_adv = '1' then
             seq_kind_r  <= next_kind(dec_r.iw, seq_kind_r);
             seq_first_r <= '0';
             if seq_uop.last = '1' then
@@ -233,14 +257,23 @@ begin
             id_r <= id_r + 1;
          end if;
 
+         -- skid_r takes each micro-operation split off while it is empty,
+         -- and keeps it if PREPARE does not take it.
+         if skid_r.valid = '0' then
+            skid_r <= seq_uop;
+         end if;
+         skid_r.valid <= (skid_r.valid or seq_adv) and not p_ready;
+
          if w_flush = '1' then
-            dec_r.valid <= '0';
-            dec_q.valid <= '0';
+            dec_r.valid  <= '0';
+            dec_q.valid  <= '0';
+            skid_r.valid <= '0';
          end if;
 
          if rst_i = '1' then
             dec_r       <= C_INST_NONE;
             dec_q       <= C_INST_NONE;
+            skid_r      <= C_UOP_NONE;
             seq_kind_r  <= UOP_OP;
             seq_first_r <= '0';
             id_r        <= (others => '0');
@@ -264,14 +297,20 @@ begin
    -- dest, s0, s1 (ISA.md §2.3); and what it redirects FETCH to: the
    -- target of MOVE R15, c or ADD R15, R15, c (MICROARCH.md §5.4), and
    -- only as it takes such an instruction. The invariants after them tie
-   -- dec_r, dec_q, and the id counter to the last micro-operation
-   -- emitted, so that k-induction proves it all for every cycle.
+   -- dec_r, dec_q, and the id counter to the last micro-operation split
+   -- off, and skid_r to it and to the last one emitted, so that
+   -- k-induction proves it all for every cycle.
 
    gen_formal : if G_FORMAL generate
       signal f_open  : std_logic := '0';   -- The last emitted micro-operation was not its instruction's last
       signal f_since : std_logic := '0';   -- An instruction was emitted since the last flush
       signal f_inst  : t_inst;             -- The instruction of the last emitted micro-operation
       signal f_kind  : t_kind;             -- Its kind
+      -- The same for the last micro-operation split off
+      signal g_open  : std_logic := '0';
+      signal g_since : std_logic := '0';
+      signal g_inst  : t_inst;
+      signal g_kind  : t_kind;
 
       -- The fields of an instruction that DECODE fills in agree with its
       -- word: those that decoded_ok checks, and next_pc, the block, and
@@ -331,15 +370,23 @@ begin
       p_model : process (clk_i)
       begin
          if rising_edge(clk_i) then
-            if seq_emit = '1' then
-               f_open  <= not seq_uop.last;
+            if out_emit = '1' then
+               f_open  <= not out_uop.last;
                f_since <= '1';
-               f_inst  <= dec_r;
-               f_kind  <= seq_kind_r;
+               f_inst  <= out_uop.inst;
+               f_kind  <= out_uop.kind;
+            end if;
+            if seq_adv = '1' then
+               g_open  <= not seq_uop.last;
+               g_since <= '1';
+               g_inst  <= dec_r;
+               g_kind  <= seq_kind_r;
             end if;
             if rst_i = '1' or w_flush = '1' then
                f_open  <= '0';
                f_since <= '0';
+               g_open  <= '0';
+               g_since <= '0';
             end if;
          end if;
       end process p_model;
@@ -350,18 +397,18 @@ begin
       -- psl f_count_range : assume always f_count <= 4;
 
       -- What PREPARE assumes of DECODE
-      -- psl f_emit : assert always (rst_i = '0' and seq_emit = '1') ->
-      --    (seq_uop.valid = '1' and p_ready = '1' and w_flush = '0');
-      -- psl f_last : assert always (rst_i = '0' and seq_emit = '1') ->
-      --    seq_uop.last = is_last(seq_uop.kind);
-      -- psl f_next_uop : assert always (rst_i = '0' and seq_emit = '1' and f_open = '1') ->
-      --    (seq_uop.first = '0' and seq_uop.inst = f_inst and
-      --     seq_uop.kind = next_kind(f_inst.iw, f_kind));
-      -- psl f_new_inst : assert always (rst_i = '0' and seq_emit = '1' and f_open = '0') ->
-      --    (seq_uop.first = '1' and seq_uop.kind = first_kind(seq_uop.inst.iw) and
-      --     (f_since = '0' or seq_uop.inst.id = f_inst.id + 1));
-      -- psl f_decoded : assert always (rst_i = '0' and seq_emit = '1') ->
-      --    (decoded_ok(seq_uop) and inst_ok(seq_uop.inst));
+      -- psl f_emit : assert always (rst_i = '0' and out_emit = '1') ->
+      --    (out_uop.valid = '1' and p_ready = '1' and w_flush = '0');
+      -- psl f_last : assert always (rst_i = '0' and out_emit = '1') ->
+      --    out_uop.last = is_last(out_uop.kind);
+      -- psl f_next_uop : assert always (rst_i = '0' and out_emit = '1' and f_open = '1') ->
+      --    (out_uop.first = '0' and out_uop.inst = f_inst and
+      --     out_uop.kind = next_kind(f_inst.iw, f_kind));
+      -- psl f_new_inst : assert always (rst_i = '0' and out_emit = '1' and f_open = '0') ->
+      --    (out_uop.first = '1' and out_uop.kind = first_kind(out_uop.inst.iw) and
+      --     (f_since = '0' or out_uop.inst.id = f_inst.id + 1));
+      -- psl f_decoded : assert always (rst_i = '0' and out_emit = '1') ->
+      --    (decoded_ok(out_uop) and inst_ok(out_uop.inst));
 
       -- What DECODE takes from FETCH, and the constant words it keeps
       -- psl f_take : assert always rst_i = '0' ->
@@ -382,26 +429,45 @@ begin
 
       -- A flush empties the stage
       -- psl f_flushed : assert always {w_flush and not rst_i} |=>
-      --    {rst_i = '1' or (dec_r.valid = '0' and dec_q.valid = '0')};
+      --    {rst_i = '1' or (dec_r.valid = '0' and dec_q.valid = '0' and skid_r.valid = '0')};
+
+      -- The instructions held: skid_r's is reported
+      -- psl f_skid_o : assert always rst_i = '0' ->
+      --    (skid_o.valid = skid_r.valid and (skid_r.valid = '0' or skid_o.addr = skid_r.inst.addr));
 
       -- The invariants
       -- psl f_inv_mid : assert always (rst_i = '0' and dec_r.valid = '1' and seq_first_r = '0') ->
-      --    (f_open = '1' and dec_r = f_inst and seq_kind_r = next_kind(f_inst.iw, f_kind));
-      -- psl f_inv_open : assert always (rst_i = '0' and f_open = '1') ->
-      --    (dec_r.valid = '1' and seq_first_r = '0' and f_since = '1' and is_last(f_kind) = '0');
+      --    (g_open = '1' and dec_r = g_inst and seq_kind_r = next_kind(g_inst.iw, g_kind));
+      -- psl f_inv_open : assert always (rst_i = '0' and g_open = '1') ->
+      --    (dec_r.valid = '1' and seq_first_r = '0' and g_since = '1' and is_last(g_kind) = '0');
       -- psl f_inv_first : assert always (rst_i = '0' and dec_r.valid = '1' and seq_first_r = '1') ->
-      --    (seq_kind_r = first_kind(dec_r.iw) and (f_since = '0' or dec_r.id = f_inst.id + 1));
+      --    (seq_kind_r = first_kind(dec_r.iw) and (g_since = '0' or dec_r.id = g_inst.id + 1));
       -- psl f_inv_queue : assert always (rst_i = '0' and dec_q.valid = '1') ->
       --    (dec_r.valid = '1' and dec_q.id = dec_r.id + 1);
       -- psl f_inv_id : assert always rst_i = '0' ->
       --    ((dec_r.valid = '1' and id_r = dec_r.id + 1 + to_nat(dec_q.valid)) or
-      --     (dec_r.valid = '0' and (f_since = '0' or id_r = f_inst.id + 1)));
+      --     (dec_r.valid = '0' and (g_since = '0' or id_r = g_inst.id + 1)));
       -- psl f_inv_insts : assert always rst_i = '0' ->
       --    ((dec_r.valid = '0' or inst_ok(dec_r)) and (dec_q.valid = '0' or inst_ok(dec_q)) and
-      --     (f_since = '0' or inst_ok(f_inst)));
+      --     (g_since = '0' or inst_ok(g_inst)));
 
-      -- psl c_three : cover {seq_emit = '1' and inst_len(seq_uop.inst.iw) = 4};
-      -- psl c_queue : cover {dec_q.valid = '1' and seq_emit = '1' and seq_uop.first = '0'};
+      -- skid_r holds the last micro-operation split off, and it follows
+      -- the last one emitted. While it is empty, the two are the same.
+      -- psl f_inv_skid : assert always (rst_i = '0' and skid_r.valid = '1') ->
+      --    (g_since = '1' and skid_r.inst = g_inst and skid_r.kind = g_kind and
+      --     skid_r.last = is_last(g_kind) and g_open = not skid_r.last and
+      --     decoded_ok(skid_r) and inst_ok(skid_r.inst) and
+      --     (f_open = '0' or (skid_r.first = '0' and g_inst = f_inst and
+      --                       g_kind = next_kind(f_inst.iw, f_kind))) and
+      --     (f_open = '1' or (skid_r.first = '1' and skid_r.kind = first_kind(skid_r.inst.iw) and
+      --                       (f_since = '0' or skid_r.inst.id = f_inst.id + 1))));
+      -- psl f_inv_same : assert always (rst_i = '0' and skid_r.valid = '0') ->
+      --    (f_open = g_open and f_since = g_since and
+      --     (g_since = '0' or (f_inst = g_inst and f_kind = g_kind)));
+
+      -- psl c_three : cover {out_emit = '1' and inst_len(out_uop.inst.iw) = 4};
+      -- psl c_queue : cover {dec_q.valid = '1' and out_emit = '1' and out_uop.first = '0'};
+      -- psl c_skid : cover {skid_r.valid = '1' and dec_q.valid = '1' and out_emit = '1'};
       -- psl c_redirect : cover {redirect_o = '1' and dec_r.valid = '1'};
       -- psl c_flush : cover {w_flush = '1' and dec_q.valid = '1' and rst_i = '0'};
    end generate gen_formal;

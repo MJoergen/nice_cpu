@@ -133,7 +133,10 @@ The parts do this:
   micro-operations of §4, one per cycle. It holds a second instruction
   behind the one it splits, so that it takes instructions from FETCH
   without waiting on the stages below it, which keeps WRITE's decisions
-  off the path into FETCH.
+  off the path into FETCH. It splits off a micro-operation whether
+  PREPARE takes it or not, and keeps one that PREPARE does not take in a
+  skid register, which goes to PREPARE first. So DECODE's registers do
+  not wait on PREPARE's decisions either, at no cost in cycles.
 - **PREPARE** reads the registers, forms operand values and addresses
   (§7.4), reduces the shift count (§7.3), and issues data reads.
 - **WRITE** holds the ALU and the shifter, writes registers and memory,
@@ -145,7 +148,9 @@ Each stage holds one item and passes it on when the next stage is free,
 or frees itself in the same cycle. The handshake of each stage is
 written by hand, not built from generic valid/ready pipeline stages,
 because PREPARE's decisions depend on the state of WRITE in the same
-cycle (§5.3).
+cycle (§5.3). DECODE's skid register ends that path, so that it reaches
+PREPARE's registers but not DECODE's
+([review/pipeline-timing.md](review/pipeline-timing.md), The handshake).
 
 ## 4. Micro-operations
 
@@ -274,7 +279,9 @@ DBUS's store register, which drives the bus from the next cycle until the
 bus accepts it. The register is free again in that cycle, so a store can
 follow a store in every cycle. So no path runs from WRITE's decision to
 store into the system's address decode and its memories in one cycle
-([review/pipeline-timing.md](review/pipeline-timing.md), Stores).
+([review/pipeline-timing.md](review/pipeline-timing.md), Stores). The
+vector read of an interrupt entry (§6) goes through the same register,
+for the same reason. It costs a cycle per entry.
 
 A store into memory retires when it goes into the register. A store into
 the I/O range retires only when the bus accepts it, a cycle later at the
@@ -351,8 +358,8 @@ next PC to FETCH's current address. After an early redirect by DECODE (§5.4)
 they are two: the words from the storing instruction up to the jump, and the
 words from the jump's target to FETCH's current address. So WRITE checks the
 range held in FETCH, from the oldest word in its buffer to its current
-address, and the one to four words of each instruction in DECODE and
-PREPARE. On a hit, it flushes and refetches from the
+address, and the one to four words of each instruction in DECODE, its
+skid register among them, and PREPARE. On a hit, it flushes and refetches from the
 next instruction. Over-approximating is safe, because a needless flush costs
 only cycles.
 
@@ -434,7 +441,9 @@ WRITE takes a request before an instruction, the first one after reset
 included, when ISA §7.1 allows it: not halted, `in_service` = 0,
 `after_rti` = 0, and E = 1 for IRQ. NMI goes first. Entry (ISA §7.2) flushes
 the pipeline, saves PC and SR, reads the vector through the data port once
-no store waits in DBUS (§5.3), and redirects FETCH.
+no store waits in DBUS (§5.3), and redirects FETCH. The vector read goes
+through DBUS's register, as a store does, so it is on the bus a cycle
+after WRITE issues it.
 
 A request is taken at the first instruction boundary where ISA §7.1 allows
 it, as in the emulator. ISA §7.1 says a request "is taken" when the
@@ -458,9 +467,10 @@ the request signals to the hardware interface.
 shows both cases on the core, with values read off a simulation of
 `hdl/test/irqwave.nasm`. In (a) the request comes while WRITE holds an
 instruction that has not begun. `irq_ready_o` rises at once, the flush
-drops that instruction, WRITE reads the vector table entry on the data
-bus, and the entry retires and redirects FETCH in the cycle after the
-data comes, since WRITE takes the vector from DBUS's FIFO (§5.3). In (b) the request comes in the cycle after PREPARE issued the
+drops that instruction, WRITE puts the read of the vector table entry
+into DBUS's register, which drives the bus in the next cycle, and the
+entry retires and redirects FETCH in the cycle after the data comes,
+since WRITE takes the vector from DBUS's FIFO (§5.3). In (b) the request comes in the cycle after PREPARE issued the
 data read of `MOVE R2, @data`. That instruction is committed
 (`w_r.commits` = 1), so `irq_ready_o` waits until it has retired, and the
 request is taken before the next one.

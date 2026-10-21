@@ -2,12 +2,12 @@
 --
 -- THEORY OF OPERATION
 -- Two stages make data accesses: PREPARE its reads, from a request
--- register that holds each until the bus accepts it; and WRITE its vector
--- reads, straight onto the bus, and its stores, through the store register
--- st_r here. WRITE puts a store into st_r, which drives the bus from the
--- next cycle on, until the bus accepts it (MICROARCH.md §5.3). So no path
--- runs from WRITE's decision to store to the bus. The three never compete
--- (see src/pipeline.vhd). The bus is pipelined Wishbone, and the ACKs come
+-- register that holds each until the bus accepts it; and WRITE its stores
+-- and its vector reads, through the register st_r here. WRITE puts an
+-- access into st_r, which drives the bus from the next cycle on, until the
+-- bus accepts it (MICROARCH.md §5.3). So no path runs from WRITE's
+-- decisions to the bus. The two never compete (see src/pipeline.vhd). The
+-- bus is pipelined Wishbone, and the ACKs come
 -- back in order. A FIFO of tags, one for each request accepted and not yet
 -- acknowledged, tells reads from writes. A second FIFO holds the data of
 -- the reads that WRITE has not used yet. WRITE may also use the data of a
@@ -15,20 +15,19 @@
 -- register (MICROARCH.md §5.3).
 --
 -- The registers are the two FIFOs and st_r. The bus outputs and ack_read_o
--- depend combinationally on st_r, on the reads of PREPARE and WRITE, and
--- on the bus. DAT_O is 0 for a read, so that it stays unchanged while the
--- bus stalls a read, as wb_master_check asks.
+-- depend combinationally on st_r, on PREPARE's read, and on the bus. DAT_O
+-- is 0 for a read, so that it stays unchanged while the bus stalls a read,
+-- as wb_master_check asks.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
--- a) rd_stb_i and w_req_i are never '1' together, nor while a store
---    waits in st_r (st_valid_o).
+-- a) rd_stb_i is never '1' while an access waits in st_r (st_valid_o).
 -- b) WRITE pops no more data than has come, and makes no read when
 --    C_MAX_OUT are in flight; PREPARE neither.
 -- c) A read is accepted only when the read data not used yet and the reads
 --    owed, less what WRITE pops in that cycle, are fewer than C_MAX_OUT.
 --    Else its data would find no room.
--- d) WRITE queues a store, st_i, only when st_r is empty or the bus
---    accepts its store in that cycle (st_acc_o).
+-- d) WRITE queues an access, st_i, only when st_r is empty or the bus
+--    accepts its access in that cycle (st_acc_o).
 --
 -- RESET
 -- Synchronous. It empties the FIFOs and st_r.
@@ -54,16 +53,16 @@ entity pipe_dbus is
       rd_stb_i     : in  std_logic;
       rd_addr_i    : in  std_logic_vector(31 downto 0);
 
-      -- The vector read of WRITE, and the read data it uses now
-      w_req_i      : in  std_logic;
-      w_addr_i     : in  std_logic_vector(31 downto 0);
+      -- The read data that WRITE uses now
       w_pop_i      : in  natural range 0 to 2;
 
-      -- The store of WRITE, which waits in st_r until the bus accepts it
+      -- The store or vector read of WRITE, which waits in st_r until the
+      -- bus accepts it
       st_i         : in  std_logic;
+      st_we_i      : in  std_logic;   -- '1' for a store, '0' for a vector read
       st_addr_i    : in  std_logic_vector(31 downto 0);
       st_data_i    : in  std_logic_vector(31 downto 0);
-      st_valid_o   : out std_logic;   -- A store waits in st_r
+      st_valid_o   : out std_logic;   -- An access waits in st_r
       st_acc_o     : out std_logic;   -- The bus accepts it now
 
       -- The read data that WRITE has not used yet, oldest first
@@ -90,8 +89,6 @@ architecture synthesis of pipe_dbus is
 
    signal rd_stb_r  : std_logic;
    signal rd_addr_r : std_logic_vector(31 downto 0);
-   signal w_req     : std_logic;
-   signal w_addr    : std_logic_vector(31 downto 0);
    signal w_pop     : natural range 0 to 2;
 
    signal tags_r     : std_logic_vector(0 to C_MAX_OUT - 1);   -- '1' for a write
@@ -102,7 +99,8 @@ architecture synthesis of pipe_dbus is
    signal accept     : std_logic;
    signal ack_read   : std_logic;
    signal reads_owed : natural range 0 to C_MAX_OUT;
-   signal st_valid_r : std_logic;                              -- st_r: a store waits
+   signal st_valid_r : std_logic;                              -- st_r: an access waits
+   signal st_we_r    : std_logic;                              -- and is a store
    signal st_addr_r  : std_logic_vector(31 downto 0);
    signal st_data_r  : std_logic_vector(31 downto 0);
    signal st_out     : std_logic;                              -- It is on the bus
@@ -112,8 +110,6 @@ begin
 
    rd_stb_r  <= rd_stb_i;
    rd_addr_r <= rd_addr_i;
-   w_req     <= w_req_i;
-   w_addr    <= w_addr_i;
    w_pop     <= w_pop_i;
 
    rq_o         <= rq_r;
@@ -122,20 +118,19 @@ begin
    tag_cnt_o    <= tag_cnt_r;
    reads_owed_o <= reads_owed;
 
-   -- The store goes on the bus when fewer than C_MAX_OUT are in flight.
+   -- The access in st_r goes on the bus when fewer than C_MAX_OUT are in
+   -- flight.
    st_out     <= '1' when st_valid_r = '1' and tag_cnt_r < C_MAX_OUT else '0';
    st_acc     <= st_out and not dbus_stall_i;
    st_valid_o <= st_valid_r;
    st_acc_o   <= st_acc;
 
-   dbus_stb    <= rd_stb_r or w_req or st_out;
+   dbus_stb    <= rd_stb_r or st_out;
    dbus_stb_o  <= dbus_stb;
    dbus_cyc_o  <= '1' when dbus_stb = '1' or tag_cnt_r > 0 else '0';
-   dbus_we_o   <= st_out;
-   dbus_addr_o <= st_addr_r when st_out = '1' else
-                  w_addr when w_req = '1' else
-                  rd_addr_r;
-   dbus_data_o <= st_data_r when st_out = '1' else (others => '0');
+   dbus_we_o   <= st_out and st_we_r;
+   dbus_addr_o <= st_addr_r when st_out = '1' else rd_addr_r;
+   dbus_data_o <= st_data_r when st_out = '1' and st_we_r = '1' else (others => '0');
    accept      <= dbus_stb and not dbus_stall_i;
    ack_read    <= dbus_ack_i and not tags_r(0);
 
@@ -155,7 +150,7 @@ begin
             tcnt_v := tcnt_v - 1;
          end if;
          if accept = '1' then
-            tags_v(tcnt_v) := st_out;
+            tags_v(tcnt_v) := st_out and st_we_r;
             tcnt_v         := tcnt_v + 1;
          end if;
          tags_r    <= tags_v(0 to C_MAX_OUT - 1);
@@ -181,12 +176,13 @@ begin
          rq_r     <= rq_v(0 to C_MAX_OUT - 1);
          rq_cnt_r <= rcnt_v;
 
-         -- The store, until the bus accepts it
+         -- The access of WRITE, until the bus accepts it
          if st_acc = '1' then
             st_valid_r <= '0';
          end if;
          if st_i = '1' then
             st_valid_r <= '1';
+            st_we_r    <= st_we_i;
             st_addr_r  <= st_addr_i;
             st_data_r  <= st_data_i;
          end if;
@@ -234,9 +230,7 @@ begin
       -- The cycle before: a reset, and a stalled request with its fields
       signal f_rst_d    : std_logic := '1';
       signal f_rd_stall : std_logic := '0';
-      signal f_w_stall  : std_logic := '0';
       signal f_rd_addr  : std_logic_vector(31 downto 0);
-      signal f_w_addr   : std_logic_vector(31 downto 0);
 
       signal f_r : std_logic_vector(2 downto 0);
       signal f_n : std_logic_vector(2 downto 0);
@@ -247,7 +241,7 @@ begin
       attribute anyconst of f_n : signal is true;
       attribute anyconst of f_v : signal is true;
    begin
-      f_read <= accept and not st_out;
+      f_read <= accept and not (st_out and st_we_r);
 
 
       p_count : process (clk_i)
@@ -256,7 +250,7 @@ begin
             if accept = '1' then
                f_acc <= f_acc + 1;
                if f_acc = f_r then
-                  f_we <= st_out;
+                  f_we <= st_out and st_we_r;
                end if;
             end if;
             if f_read = '1' then
@@ -272,9 +266,7 @@ begin
 
             f_rst_d    <= rst_i;
             f_rd_stall <= rd_stb_r and dbus_stall_i and not rst_i;
-            f_w_stall  <= w_req and dbus_stall_i and not rst_i;
             f_rd_addr  <= rd_addr_r;
-            f_w_addr   <= w_addr;
 
             if rst_i = '1' then
                f_acc  <= "000";
@@ -294,17 +286,14 @@ begin
 
       -- PREPARE and WRITE: the contracts, a stalled read held, and no read
       -- in the cycle after a reset
-      -- psl f_one : assume always not (rd_stb_r and w_req);
-      -- psl f_st_alone : assume always st_valid_r -> not (rd_stb_r or w_req);
+      -- psl f_st_alone : assume always st_valid_r -> not rd_stb_r;
       -- psl f_st_room : assume always st_i -> (st_valid_r = '0' or st_acc = '1');
-      -- psl f_out : assume always (rd_stb_r or w_req) -> tag_cnt_r < C_MAX_OUT;
+      -- psl f_out : assume always rd_stb_r -> tag_cnt_r < C_MAX_OUT;
       -- psl f_pops : assume always w_pop <= rq_cnt_r + to_nat(ack_read);
       -- psl f_rq_room : assume always f_read -> rq_cnt_r + reads_owed < C_MAX_OUT + w_pop;
       -- psl f_rd_hold : assume always (f_rd_stall and not rst_i) ->
       --    (rd_stb_r = '1' and rd_addr_r = f_rd_addr);
-      -- psl f_w_hold : assume always (f_w_stall and not rst_i) ->
-      --    (w_req = '1' and w_addr = f_w_addr);
-      -- psl f_quiet : assume always f_rst_d -> not (rd_stb_r or w_req);
+      -- psl f_quiet : assume always f_rst_d -> not rd_stb_r;
 
       -- The invariants
       -- psl f_tags : assert always rst_i = '0' -> tag_cnt_r = to_integer(f_acc - f_ack);

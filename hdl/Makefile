@@ -188,9 +188,10 @@ endef
 # cores, plain and on a stalling memory, compared with the emulator, and
 # irqhazard also with a request before each step, through
 # test/irq_sweep.py, without delays. test/samereg_prog.py writes one more,
-# with one register in all three fields of a shift.
+# with one register in all three fields of a shift. smcskid came later:
+# stores into an instruction in DECODE's skid register.
 HAZARD_PROGS = latecount twocycle r15mix r14cond r0odd smclate readorder instret_late \
-  jumpwords condlate irqhazard shiftjump
+  jumpwords condlate irqhazard shiftjump smcskid
 
 # test/fstats.nasm reads the fetch statistics (MICROARCH.md §8.1), which
 # only the pipelined core has, and checks itself. The emulator has none, so the run

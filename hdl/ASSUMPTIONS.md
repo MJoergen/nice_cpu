@@ -47,8 +47,8 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
    data bus port, in `src/pipe_dbus.vhd`.
    `src/pipeline.vhd` connects them. Each part keeps its state in
    registers, but not every output is registered: PREPARE decides on a
-   read with WRITE's decisions of the same cycle, a flush reaches every
-   stage at once, and WRITE drives its vector reads onto the bus.
+   read with WRITE's decisions of the same cycle, and a flush reaches
+   every stage at once.
    Registering those would cost cycles (item 7). The micro-operations, the decode
    functions, and WRITE's state record are in `src/pipe_pkg.vhd`, and the
    parts both cores share (the ALU, the shifter, the fields) in
@@ -59,9 +59,10 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
 4. **At most 4 data bus requests are in flight**, `C_MAX_OUT`.
 5. **An instruction in flight has a 3-bit id**, which PREPARE compares
    with the one in WRITE to tell an older instruction from an earlier
-   micro-operation of its own. No more than five instructions are in
-   flight between DECODE and WRITE: DECODE holds two, the one it splits
-   and the one after it (MICROARCH.md §3).
+   micro-operation of its own. No more than six instructions are in
+   flight between DECODE and WRITE: DECODE holds three, the one it
+   splits, the one after it, and the one of the micro-operation in its
+   skid register (MICROARCH.md §3).
 6. **WRITE takes two cycles for three rare cases** (MICROARCH.md §7.4):
    a register destination in mode 001 or 010, a jump to a target that is
    not a `MOVE`'s source, and a shift whose count PREPARE could not
@@ -81,8 +82,8 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
    the bus accepts it, as the trace writer's contract asks for the console
    (`src/trace_pkg.vhd`, e), and the timer for its count of steps. It
    costs a cycle more, but the I/O range is not memory, and its stores are
-   rare. WRITE's vector reads still go onto the bus combinationally; they
-   come once per interrupt.
+   rare. WRITE's vector reads go through the same register, so an
+   interrupt entry takes a cycle more. They come once per interrupt.
 
    Read data takes the other way. WRITE takes it from DBUS's FIFO, a cycle
    after its ACK, unless it only goes into a register (MICROARCH.md

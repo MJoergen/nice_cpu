@@ -388,18 +388,31 @@ emulator:
 	$(MAKE) -C ../emulator build
 
 # The out-of-context timing of the pipelined core in Vivado, which timing.tcl
-# describes: the worst register-to-register paths go to build/timing.rpt, the
-# worst from an input to build/timing_in.rpt, and the worst to an output to
-# build/timing_out.rpt. The worst of each is printed. About 10 minutes.
+# describes, for the part of BOARD (mega65 or nexys4ddr) with the directives
+# of FLOW (default, or timing as NiceMonMEGA65 builds), and a clock of PERIOD
+# ns. The reports go to build/timing/BOARD-FLOW/: the worst
+# register-to-register paths to timing.rpt, the worst from an input to
+# timing_in.rpt, the worst to an output to timing_out.rpt, and the endpoints
+# with less than 1 ns of slack, by group, to timing_groups.rpt. The worst of
+# each is printed, and the groups. About 10 minutes with the default flow.
 VIVADO ?= /opt/Xilinx/2025.1/Vivado/bin/vivado
+BOARD  ?= mega65
+FLOW   ?= default
+PERIOD ?= 10.0
+PART_mega65    = xc7a200tfbg484-2
+PART_nexys4ddr = xc7a100tcsg324-1
+TIMING_DIR = $(BUILD)/timing/$(BOARD)-$(FLOW)
 
 timing:
-	@mkdir -p $(BUILD)
-	@cd $(BUILD) && $(VIVADO) -mode batch -nolog -nojournal -source ../timing.tcl > timing.log 2>&1 || \
+	@test -n "$(PART_$(BOARD))" || { echo "unknown BOARD $(BOARD)"; exit 1; }
+	@mkdir -p $(TIMING_DIR)
+	@cd $(TIMING_DIR) && $(VIVADO) -mode batch -nolog -nojournal -source $(CURDIR)/timing.tcl \
+	  -tclargs $(PART_$(BOARD)) $(FLOW) $(PERIOD) > timing.log 2>&1 || \
 	  { tail -20 timing.log; exit 1; }
 	@for r in timing timing_in timing_out; do \
-	  echo "$$r.rpt:"; grep -m1 -E "^Slack" $(BUILD)/$$r.rpt; \
-	  grep -m2 -E "^  (Source|Destination):" $(BUILD)/$$r.rpt; done
+	  echo "$$r.rpt:"; grep -m1 -E "^Slack" $(TIMING_DIR)/$$r.rpt; \
+	  grep -m2 -E "^  (Source|Destination):" $(TIMING_DIR)/$$r.rpt; done
+	@cat $(TIMING_DIR)/timing_groups.rpt
 
 # Checks the style of every VHDL file against CODING_STYLE.md. Long lines are
 # only warnings.

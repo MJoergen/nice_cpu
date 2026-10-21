@@ -147,14 +147,22 @@ warns about lines over 100 columns.
 `make timing` runs Vivado on the pipelined core alone, out of context, as
 [doc/review/pipeline-timing.md](../doc/review/pipeline-timing.md)
 measures it ([timing.tcl](timing.tcl)): synthesis, placement, and routing
-for the part of the MEGA65 with a 10 ns clock. It prints the worst
-register-to-register path and leaves the 50 worst in `build/timing.rpt`.
-It does the same for the paths from an input, in `build/timing_in.rpt`,
-and to an output, in `build/timing_out.rpt`, but for `retire_o` and
-`stats_o`. Their delays outside the core are 0, so their slack is the
+with a 10 ns clock. `BOARD` selects the part: `mega65` (the default,
+`xc7a200tfbg484-2`) or `nexys4ddr` (`xc7a100tcsg324-1`). `FLOW` selects the
+directives: `default`, or `timing`, those NiceMonMEGA65 builds with.
+`PERIOD` sets the clock in ns. The reports go to
+`build/timing/BOARD-FLOW/`, so that runs for several boards can go at once.
+It prints the worst register-to-register path and leaves the 50 worst in
+`timing.rpt`. It does the same for the paths from an input, in
+`timing_in.rpt`, and to an output, in `timing_out.rpt`, but for `retire_o`
+and `stats_o`. Their delays outside the core are 0, so their slack is the
 time left to the system around the core: for the data bus, its address
-decode, its block RAMs, and its read mux.
-It takes about 10 minutes, and `VIVADO` names the executable.
+decode, its block RAMs, and its read mux. Last, it prints
+`timing_groups.rpt`: the endpoints with less than 1 ns of slack, counted by
+the register or port they start from and the one they end at, with the
+worst slack of each group.
+It takes about 10 minutes with the default flow, and `VIVADO` names the
+executable.
 
 `tb_mpu` checks every word of the math unit against `numeric_std`: for 20
 corner cases and 2000 random pairs of A and B, and for 16 corner cases and

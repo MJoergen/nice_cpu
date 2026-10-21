@@ -285,12 +285,18 @@ instructions and 8% of the hand-written one's (§5.6). So rule 3 matters:
 the read must be allowed in the cycle after the bus accepts the store, not
 after the store's instruction retires.
 
-Rules 1 and 2 cost a cycle or two for a conditional read after a write of
-SR, and for a read after a conditional jump. These are 0 to 4% and 5 to 8%
-of the instructions (§5.6), so data reads stay exact for now. If the cost
-turns out to matter, the ISA could later let reads of RAM (not of the I/O
-range) be speculative. That needs a check of each read against older
-stores, so the core does not do it.
+Rules 1 and 2 cost little. A read after a skipped jump does not wait, since
+PREPARE issues it in the cycle the jump retires. The testbench counts the
+cycles in which a read waits only for rule 1 or 2
+([hdl/README.md](../hdl/README.md), The pipelined core). On the benchmark,
+the reads that went on to WRITE waited 166 cycles for their condition in the
+translated program, 0.007% of its cycles, and 18822 in the hand-written one,
+1.5%, and never for an older micro-operation. The hand-written program's
+other 52002 waits, 4%, were all behind a jump that was taken, so the read
+was on the wrong path and was dropped. So a speculative read could save at
+most 1.5%. It would need a change to ISA §8.2, a compare against the I/O
+range in PREPARE, and a way to cancel a read on the bus at a flush. Data
+reads stay exact.
 
 ### 5.4 Control flow
 
@@ -392,7 +398,7 @@ the condition is known. These are the shares of all instructions:
 
 The numbers support three decisions: FETCH reads two words per cycle (§3),
 a register written by the previous instruction is read without a wait
-(§5.1), and so is R14 (§5.4). They left speculative reads out (§5.3). The reads from the previous
+(§5.1), and so is R14 (§5.4). They left speculative reads out, and the core's waits confirm it (§5.3). The reads from the previous
 instruction are value chains, mostly in R1 to R4, not stack operations: R13
 alone is under 1% in both programs.
 

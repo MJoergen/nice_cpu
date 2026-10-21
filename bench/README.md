@@ -142,6 +142,17 @@ the multi-cycle core as it was:
 | `bench.c` through nicewasm | 1681080 | 2331640 | 1.39 | 8.2 times |
 | `hand.nasm` | 491617 | 1288181 | 2.62 | 4.3 times |
 
+On the pipelined core, `make core` also prints how long data reads waited
+for their condition or for an older micro-operation, the waits that
+speculative reads would remove ([hdl/README.md](../hdl/README.md), The
+pipelined core). The cycles count from reset, so they include the start-up
+and the output:
+
+    bench: Read waits: 2410729 cycles; went on: 166 for the condition, 0 for an older micro-operation; dropped: 0, 0
+    hand:  Read waits: 1296040 cycles; went on: 18822 for the condition, 0 for an older micro-operation; dropped: 0, 52002
+
+So such waits cost 0.007% and 1.5% of the cycles (MICROARCH.md §5.3).
+
 
 
 The hand-written program gains less, because more of its time goes to

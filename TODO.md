@@ -13,9 +13,6 @@ No code has TODO or FIXME comments.
   every test that the multi-cycle core passes ([hdl/README.md](hdl/README.md)).
   [hdl/ASSUMPTIONS.md](hdl/ASSUMPTIONS.md) lists where it settles or
   departs from [doc/MICROARCH.md](doc/MICROARCH.md). Open:
-  - The cost of the waits that MICROARCH.md §5.3 and §5.6 discuss, from
-    the pipelined core's cycles for the benchmark (`make core
-    CORE=pipeline` in `bench/`), to decide on speculative reads (below).
   - Speed: the core alone meets a 10 ns clock out of context (Vivado
     2025.1, `make timing` in `hdl/`), with a margin of a few tenths of a
     nanosecond ([doc/review/pipeline-timing.md](doc/review/pipeline-timing.md)).
@@ -114,15 +111,15 @@ No code has TODO or FIXME comments.
   for example by printing each retire's cycle from a scratch copy of the
   core and comparing it with the model's, instruction by instruction
   (doc/review/third-repository-review.md §3.1).
-- **Speculative reads of RAM** (MICROARCH.md §5.3). Data reads wait until
-  the instruction is certain to run. The waits are a conditional read
-  after a write of SR, 0.0% of the translated benchmark's instructions and
-  3.8% of the hand-written one's, and a read after a conditional jump,
-  5.6% and 7.6% (MICROARCH.md §5.6). Allowing speculative reads of RAM, but
-  not of the I/O range, needs a change to ISA.md §8.2 and a check of each
-  read against older stores. Decide once the pipelined core shows what the
-  waits cost. The bypasses and the slow path for R14 were decided from the
-  same measurements (MICROARCH.md §5.6).
+- **The model's wait after a skipped jump.** `bench/pipecycles.py` makes
+  a data read wait until the cycle after an older skipped jump has left
+  WRITE ("jump wait"), and charges the translated benchmark 65295 cycles
+  for it. The core issues the read in the cycle the jump retires, and
+  waits for no older micro-operation on the benchmark (MICROARCH.md §5.3,
+  `hdl/test/readwait.nasm`, case 2). Drop the rule, and the hand-counted
+  cases of `pipecycles.py --test` and `cycprof.py --test` that encode it.
+  The model then underestimates the core by more, which bears on "The
+  cycle the model lacks" above.
 
 ## Toolchain
 
@@ -172,10 +169,10 @@ No code has TODO or FIXME comments.
     independent work in between, which the translator rarely has without
     moving stores past loads. `__mul64` could overlap its partial
     products.
-  - *A read right after a skipped bounds-check jump*, about a fifth, in
-    chains of dependent loads, where no instruction can fill the slot,
-    and in the byte accesses, whose word index and shift count now come
-    before the compare. Speculative reads (above) would remove it.
+  - *A read right after a skipped bounds-check jump*, about a fifth by
+    the estimate, costs nothing on the core, which issues the read in the
+    cycle the jump retires (MICROARCH.md §5.3). The estimate is wrong
+    there ("The model's wait after a skipped jump", above).
   - *The address register written by the instruction before*, about 3%
     now that the byte accesses compute theirs before the compare
     (MICROARCH.md §5.1).

@@ -198,6 +198,19 @@ HAZARD_PROGS = latecount twocycle r15mix r14cond r0odd smclate readorder instret
 # core with the cycle counter, which the emulator counts in steps, and
 # checks itself the same way. $(1) is the name of the run, $(2) the
 # program, and $(3) any more generics.
+# test/readwait.nasm makes one data read that waits a cycle for its
+# condition, one that waits a cycle for an older micro-operation, and one
+# on the wrong path that waits 2 cycles for an older one, as tb_core counts
+# them on the pipelined core and prints when it halts. $(1) is the name of
+# the run.
+define check_waits
+	@if grep -q ' cycles; went on: 1 for the condition, 1 for an older micro-operation; dropped: 0, 2$$' \
+	  $(RUNDIR)/core.log; \
+	then echo "PASS $(CORE) $(1) waits"; \
+	else echo "FAIL $(CORE) $(1) waits"; grep '^Read waits:' $(RUNDIR)/core.log; exit 1; fi
+
+endef
+
 define check_selfonly
 	@($(in_rundir) && $(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(2)) -gG_TRACE_FILE=core.out \
 	  -gG_TRACE=false $(3) > core.log 2>&1); echo "exit $$?" >> $(RUNDIR)/core.out
@@ -308,6 +321,7 @@ $(eval $(call core_run,$(1),samereg_stall,$(BUILD)/samereg.bin,-gG_STALL=30 -gG_
 $(if $(filter pipeline,$(1)),$(eval $(call core_run,$(1),fstats,$(BUILD)/fstats.bin,,check_selfonly)))
 $(if $(filter pipeline,$(1)),$(eval $(call core_run,$(1),fstats_stall,$(BUILD)/fstats.bin,-gG_STALL=30 -gG_SEED=19,check_selfonly)))
 $(if $(filter pipeline,$(1)),$(eval $(call core_run,$(1),bubble,$(BUILD)/bubble.bin,,check_selfonly)))
+$(if $(filter pipeline,$(1)),$(eval $(call core_run,$(1),readwait,$(BUILD)/readwait.bin,,check_core check_waits)))
 $(foreach t,$(RANDOM_SEEDS),$(eval $(call random_run,$(1),$(t))))
 endef
 

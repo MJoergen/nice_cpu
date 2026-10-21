@@ -84,6 +84,7 @@ departs from it.
 | [test/irqhazard.nasm](test/irqhazard.nasm) | Late shifts, adjusted destinations, and side effects on R14 and R15, for a request before each step. |
 | [test/shiftjump.nasm](test/shiftjump.nasm) | Every shift with R15 as its destination, `0<0` among them, whose opcode is `MOVE`'s. |
 | [test/bubble.nasm](test/bubble.nasm) | Measures the bubbles of the pipelined core with the cycle counter, and checks itself. |
+| [test/readwait.nasm](test/readwait.nasm) | Data reads that wait for their condition and for an older micro-operation, which `tb_core` counts on the pipelined core. |
 | [test/random_prog.py](test/random_prog.py) | Writes random programs, and random interrupt requests for them. |
 | [test/random_stats.py](test/random_stats.py) | Shows how the random programs spend their steps, and how often they make each hazard. |
 | [test/trace_reads.py](test/trace_reads.py) | Finds the first line where two traces differ, and shows the data reads of that instruction. |
@@ -295,7 +296,9 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   emulator has no fetch statistics, so the run is not compared with it:
   it must end with R12 = 0 and exit status 0. `test/bubble.nasm` runs
   the same way: it reads the cycle counter before and after each kind of
-  jump, and checks the bubbles below.
+  jump, and checks the bubbles below. `test/readwait.nasm` is compared
+  with the emulator, and `tb_core`'s line of read waits (The pipelined
+  core) must give 1 and 1 that went on, and 0 and 2 dropped.
 - 30 random programs from `test/random_prog.py`, each stopped at 3000 steps,
   on a memory that stalls in 30% of the cycles. Besides random ALU and
   shift instructions, they use R15 with every side effect, `HALT`, `RTI`,
@@ -766,6 +769,20 @@ counted on `instret_o`. Stores and vector reads leave from WRITE. The ACKs
 come back in order, and at most 4 data requests are in flight, so the
 core needs the data bus decoder of `src/wb_dmux.vhd`, which `tb_core`
 has.
+
+When the pipelined core halts, `tb_core` prints the cycles from reset, and
+those in which a data read waited only for its condition or for an older
+micro-operation in WRITE that is not a store: rule 1 or 2 of MICROARCH.md
+§5.3. A wait for a store, an interrupt, an operand, or the bus does not
+count. It charges each wait to the micro-operation in PREPARE, and adds it
+up when that goes on to WRITE or is dropped by a flush or an interrupt:
+
+    Read waits: C cycles; went on: S for the condition, W for an older micro-operation; dropped: S, W
+
+Reading early could save at most the waits that went on. `make core
+CORE=pipeline` in `bench/` prints the line for the benchmark
+([bench/README.md](../bench/README.md)), and `test/readwait.nasm` checks
+it.
 
 WRITE flushes the pipeline after a jump that DECODE did not resolve, after
 `RTI`, `INT`, an interrupt entry, and a halt, and after a store into a word

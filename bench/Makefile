@@ -56,6 +56,7 @@ define core_run
 	@cd ../hdl/build && $(GHDL) --elab-run --std=08 tb_core -gG_CORE=$(CORE) \
 	  -gG_BIN_FILE=../../bench/$(BUILD)/$(1).bin -gG_TRACE_FILE=$(1)_$(CORE).out -gG_TRACE=false \
 	  > $(1)_$(CORE).log 2>&1; status=$$?; sed '/^Halted/,$$d' $(1)_$(CORE).out; \
+	  grep '^Read waits:' $(1)_$(CORE).log; \
 	  if [ $$status -ne 0 ]; then cat $(1)_$(CORE).log; exit 1; fi
 
 endef

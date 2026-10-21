@@ -42,7 +42,10 @@ two kinds of access. §9.4, the mapping of WebAssembly, is
   measured again on 2026-10-19, on the optimized translation: data reads
   went from 25.9% to 11.3% of the instructions, and a data read after a
   store from 15.3% to 0.3%, but a read after a conditional jump from 0.9% to
-  5.5%. The decisions stand.
+  5.5%. The decisions stand. Speculative reads stayed an open question
+  until 2026-10-21, when the testbench counted the core's own waits on the
+  benchmark (MICROARCH.md §5.3). The cycle model had charged a read after
+  a skipped jump a cycle that the core does not take.
 - The proof of the data bus port found that a read could go out in the
   cycle WRITE puts a store on the bus with three requests in flight, which
   made five. It also found that the write data changed on the bus while a

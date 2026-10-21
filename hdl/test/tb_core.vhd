@@ -117,7 +117,7 @@ architecture simulation of tb_core is
    -- Parses the emulator's options "--irq STEP:VEC" and "--nmi STEP:VEC".
    -- Numbers are decimal, or hex after 0x.
    function parse(s : string) return t_requests is
-      variable res_v    : t_requests(0 to 63);
+      variable res_v    : t_requests(0 to 1023);
       variable count_v  : natural  := 0;
       variable pos_v    : positive := s'low;
       variable number_v : natural;
@@ -165,6 +165,9 @@ architecture simulation of tb_core is
          assert pos_v + 5 <= s'high and
                 (s(pos_v to pos_v + 5) = "--nmi " or s(pos_v to pos_v + 5) = "--irq ")
             report "tb_core: G_INTERRUPTS wants --nmi STEP:VEC or --irq STEP:VEC"
+            severity failure;
+         assert count_v <= res_v'high
+            report "tb_core: more than 1024 requests in G_INTERRUPTS"
             severity failure;
          res_v(count_v).nmi := s(pos_v to pos_v + 5) = "--nmi ";
          pos_v := pos_v + 6;

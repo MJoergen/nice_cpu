@@ -15,8 +15,9 @@ help:
 	@echo "  make typecheck   mypy --strict on the Python tools"
 	@echo "  make lint        vsg style check of the VHDL (pip install vsg)"
 	@echo "  make formal      SymbiYosys checks of the cores, their stages, the devices, and the shared functions"
-	@echo "  make slow        the runtime and translator programs, and the"
-	@echo "                   benchmark, on the multi-cycle core (minutes)"
+	@echo "  make slow        the runtime and translator programs, the benchmark,"
+	@echo "                   and the full interrupt sweeps, on the multi-cycle"
+	@echo "                   core (hours)"
 	@echo "  make hazards     count the pipeline hazards in the benchmark"
 	@echo "  make pdf         rebuild the introduction slides"
 	@echo "  make pdfcheck    check that nice_intro.pdf matches the .tex"
@@ -51,6 +52,7 @@ formal:
 slow:
 	$(MAKE) -C hdl programs
 	$(MAKE) -C bench core
+	$(MAKE) -C hdl sweep
 
 hazards:
 	$(MAKE) -C bench hazards

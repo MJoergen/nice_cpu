@@ -212,9 +212,9 @@ emulator's exactly.
 but for the pipelined core's `stats_o`, and the rest of the testbench
 serves them both. `make test` runs them on
 each core in `CORES`, both by default, and `make test CORES=pipeline` on
-one. `make random` and `make programs` run the core in `CORE`, and pass it
-on to `test/irq_sweep.py` and `test/programs.py` with their option
-`--core`. The PASS and FAIL lines name the core. The trace, the output,
+one. `make random`, `make programs`, and `make sweep` run the core in
+`CORE`, and pass it on to `test/irq_sweep.py` and `test/programs.py` with
+their option `--core`. The PASS and FAIL lines name the core. The trace, the output,
 and the exit status of each must match those of `niceemu -t` on the same
 program, with the same interrupt requests. The pipelined core may take a
 request later than the emulator (MICROARCH.md §6), so its runs with
@@ -299,8 +299,19 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   `test/irq_compare.py`. The runs go in parallel, on all
   cores; set the number with `-j`. Each worker runs GHDL in its own
   directory under `build/sweep`, because the LLVM and GCC backends of GHDL
-  write an executable where they run. `test/irqhazard.nasm` is swept the
-  same way, without the delays.
+  write an executable where they run. `test/irqhazard.nasm` and
+  `test/latecount.nasm` are swept the same way, without the delays.
+- The programs of `test/pcfx_prog.py` and `test/sidefx_prog.py` swept
+  with `--stride 16`: each run raises a request before every 16th step,
+  from step k, and 16 runs, k = 0 to 15, cover every step. A request
+  taken adds the steps of its entry and its routine, so `irq_sweep.py`
+  shifts the later requests of a run by them, and counts the steps that a
+  request came before. `sidefx_prog.py`'s program writes R14 with any
+  value, so at some steps there is no vector table. `irq_sweep.py` drops
+  a request whose entry finds no vector word that names the same routine
+  as the one for VBASE = 0, and says how many steps it left out: about
+  280 of 7444 for NMI, and 75 for IRQ. `make sweep` sweeps the two with
+  one request per run instead.
 - `cputest`, `reads`, `mpu`, `mpu64`, `perf`, and `timer` again, on a memory that
   stalls in 30% of the cycles.
 - On the pipelined core only, `test/fstats.nasm`, also on a memory that
@@ -346,6 +357,14 @@ of those that read one. Then `test/programs.py` runs each on the core and
 on the emulator and compares them, as `make test` does, with the console
 input on both sides. The runtime's clock reads the cycle counter, so these
 runs make its two words memory, as the random programs do.
+
+`make sweep` sweeps the programs of `test/pcfx_prog.py` and
+`test/sidefx_prog.py` on the core in `CORE` with one request per run, as
+`hazard.nasm` is swept, but without the delays. A run of the whole
+program for each of its 9500 steps and each kind of request makes some
+19000 runs. On 20 CPUs, that took 2 hours on the multi-cycle core and 5
+on the pipelined one on 2026-10-21, and both passed. `make slow` at the
+top runs it on the multi-cycle core.
 
 `make random` runs more random programs, with the seeds, step count, and
 stall rate given as variables:

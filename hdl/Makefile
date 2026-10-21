@@ -151,6 +151,7 @@ IRQ_LATE = $(if $(filter pipeline,$(CORE)),--read-delay)
 # it arrives at different points within an instruction.
 SWEEP_DELAYS_multicycle = 0,3,7
 SWEEP_DELAYS_pipeline = 0,1,2,3
+SWEEP_STRIDE = 16
 IRQ_COMPARE = $(PYTHON) test/irq_compare.py --emu $(EMU) $(IRQ_LATE)
 
 # The hazard programs of MICROARCH.md §9, step 4: test/hazard.nasm, the
@@ -163,7 +164,12 @@ IRQ_COMPARE = $(PYTHON) test/irq_compare.py --emu $(EMU) $(IRQ_LATE)
 # with R12 = 0 and exit status 0, before the core's trace means anything.
 # test/irq_sweep.py then runs hazard.nasm with an NMI before each of its
 # steps, and with an IRQ before each, on the stalling memory (MICROARCH.md
-# §9, step 5). It runs them in parallel, on all cores.
+# §9, step 5). It runs them in parallel, on all cores. It sweeps
+# irqhazard.nasm and latecount.nasm the same way, without the delays, and
+# the programs of pcfx_prog.py and sidefx_prog.py with a request before
+# every SWEEP_STRIDE-th step in each run, which takes SWEEP_STRIDE runs per
+# kind instead of one per step. make sweep sweeps those two with one
+# request per run instead, on CORE.
 define check_selfcheck
 	@if grep -q '^R12 00000000' $(RUNDIR)/core.expected && \
 	  tail -n 1 $(RUNDIR)/core.expected | grep -qx 'exit 0'; then echo "PASS emulator $(1)"; \
@@ -284,6 +290,9 @@ endef
 define core_runs
 $(eval $(call sweep_run,$(1),hazard,--delays $$(SWEEP_DELAYS_$(1)) --self-check))
 $(eval $(call sweep_run,$(1),irqhazard))
+$(eval $(call sweep_run,$(1),latecount))
+$(eval $(call sweep_run,$(1),pcfx,--stride $(SWEEP_STRIDE)))
+$(eval $(call sweep_run,$(1),sidefx,--stride $(SWEEP_STRIDE)))
 $(foreach t,$(EXAMPLES),$(eval $(call core_run,$(1),$(t),../assembler/test/$(t).bin)))
 $(foreach t,$(PROBES),$(eval $(call core_run,$(1),$(t),../emulator/test/$(t).bin)))
 $(eval $(call core_run,$(1),shift,$(BUILD)/shift.bin))
@@ -330,6 +339,13 @@ runs: $(UNITS:%=run/unit/%) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(R
 # the emulator's trace and the core's differ.
 random: emulator analyse
 	@$(MAKE) --no-print-directory $(PARALLEL) $(RANDOM_$(CORE))
+
+# The programs of pcfx_prog.py and sidefx_prog.py swept with one request
+# per run, on CORE, one after the other, as each uses every CPU. It takes
+# two hours on the multi-cycle core and five on the pipelined one, on 20 CPUs.
+sweep: emulator analyse $(BUILD)/pcfx.bin $(BUILD)/sidefx.bin
+	$(call check_sweep,pcfx)
+	$(call check_sweep,sidefx)
 
 # The runtime's and the translator's test programs on the core (MICROARCH.md
 # §9, step 6). runtime/Makefile with KEEP and translator/test/run.py with
@@ -425,4 +441,4 @@ lint:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: test runs programs random analyse synth formal emulator timing lint clean
+.PHONY: test runs programs random sweep analyse synth formal emulator timing lint clean

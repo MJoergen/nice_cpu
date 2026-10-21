@@ -24,14 +24,6 @@ No code has TODO or FIXME comments.
     ([doc/review/pipeline-timing.md](doc/review/pipeline-timing.md), Read
     data). See the items under "Pipelined core" below.
 - **Test order steps not done** (MICROARCH.md §9):
-  - Step 5: `hdl/test/irq_sweep.py` runs `hazard.nasm` with an NMI before
-    each step, and with an IRQ before each, and both cores pass, and
-    `irqhazard.nasm` too. `latecount.nasm` was swept the same way by hand
-    on 2026-10-20, and both cores pass. Not swept: the program of `sidefx_prog.py`, which writes R14
-    with any value, so E and VBASE too, and that of `pcfx_prog.py`,
-    whose words 0 to 9 hold its trampoline, not a vector table. For the pipelined core, the sweep
-    compares with `irq_compare.py --read-delay`, and both cores are swept
-    with the request raised up to a few cycles late as well.
   - Step 6: `make programs` in `hdl/` runs the runtime's and the
     translator's test programs on the core, and both cores pass. Left out: the random modules of `translator/test/fuzz.py`,
     `runtime/libc/test/fuzz_printf.py`, which needs clang, and the

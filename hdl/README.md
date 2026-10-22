@@ -301,6 +301,9 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   directory under `build/sweep`, because the LLVM and GCC backends of GHDL
   write an executable where they run. `test/irqhazard.nasm` and
   `test/latecount.nasm` are swept the same way, without the delays.
+  For each kind, `irq_sweep.py` says how many steps no request came
+  before because it had to wait (ISA.md §7): those of an `INT` routine
+  and the step after its `RTI`, and for IRQ, those with E = 0.
 - The programs of `test/pcfx_prog.py` and `test/sidefx_prog.py` swept
   with `--stride 16`: each run raises a request before every 16th step,
   from step k, and 16 runs, k = 0 to 15, cover every step. A request

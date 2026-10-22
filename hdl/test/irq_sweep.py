@@ -43,7 +43,11 @@ interrupt entry must find a vector word in the program's image that
 names the same routine as the entry for VBASE = 0, which every swept
 program has. If one does not, its request is dropped from the run, which is planned again,
 and the step it would have come before is left out, counted in the
-summary. Without
+summary. A request
+raised before a step of an INT routine, or before the step after its RTI,
+waits until the step after that (ISA.md §7), and an IRQ raised before a
+step with E = 0 waits for E = 1, so those steps are not counted either;
+the summary counts them too. Without
 --stride, each run has one request, and there are N runs per kind.
 """
 
@@ -57,9 +61,12 @@ from core_runs import DEFAULT_BUILD, DEFAULT_CORE, DEFAULT_EMU, Core, difference
 from irq_compare import check as irq_compare
 
 ENTRY = re.compile(r"(NMI|IRQ) ([0-9a-f]{2}) ")
-INSN = re.compile(r"[0-9a-f]{8} [0-9a-f]{8}")
+INSN = re.compile(r"[0-9a-f]{8} ([0-9a-f]{8})")
 R14 = re.compile(r"\bR14=([0-9a-f]{8})")
 IO = 0xFFFFFF00
+CONTROL = 0x0FE00000
+RTI = 0x0C200000
+INT = 0x0C400000
 
 
 def image(binfile: str) -> dict[int, int]:
@@ -94,6 +101,33 @@ def scan(trace: str, extra: int, words: dict[int, int]) -> tuple[set[int], list[
         for v in R14.findall(line):
             r14 = int(v, 16)
     return covered, bad
+
+
+def held(trace: str) -> tuple[set[int], set[int]]:
+    """The steps of a run without interrupts that no request can come
+    before, as they are in an INT routine or directly after its RTI, and
+    those that start with E = 0."""
+    r14, n, service, after_rti = 0x01000000, 0, False, False
+    blocked: set[int] = set()
+    masked: set[int] = set()
+    for line in trace.splitlines():
+        m = INSN.match(line)
+        if m:
+            if service or after_rti:
+                blocked.add(n)
+            if not r14 & 0x40000000:
+                masked.add(n)
+            after_rti = False
+            if not line.endswith("skipped"):
+                word = int(m.group(1), 16) & CONTROL
+                if word == INT:
+                    service = True
+                elif word == RTI and service:
+                    service, after_rti = False, True
+            n += 1
+        for v in R14.findall(line):
+            r14 = int(v, 16)
+    return blocked, masked
 
 
 def plan(args: argparse.Namespace, steps: int, extra: int, words: dict[int, int], kind: str,
@@ -206,13 +240,24 @@ def main() -> None:
     if failures:
         print(f"FAIL irq_sweep {args.core} {name}: {len(failures)} of {len(jobs)} runs")
         sys.exit(1)
+    blocked, masked = held(plain)
     summary = []
     for kind, vec in kinds:
         runs = [f.result() for (k, _, _), f in plans.items() if k == kind]
         covered = set().union(*(c for _, c, _ in runs))
         dropped = set().union(*(d for _, _, d in runs))
+        notes = []
+        waited = blocked - covered - dropped
+        if waited:
+            notes.append(f"{len(waited)} in an INT routine or after RTI")
+        if kind == "irq":
+            waited = masked - blocked - covered - dropped
+            if waited:
+                notes.append(f"{len(waited)} with E = 0")
+        if dropped:
+            notes.append(f"{len(dropped)} left out, no vector table")
         summary.append(f"{kind} before {len(covered)} of {steps} steps"
-                       + (f" ({len(dropped)} left out, no vector table)" if dropped else ""))
+                       + (f" ({', '.join(notes)})" if notes else ""))
     print(f"PASS irq_sweep {args.core} {name}: {len(jobs)} runs, {', '.join(summary)}")
 
 

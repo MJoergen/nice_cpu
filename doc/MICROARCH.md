@@ -330,11 +330,24 @@ WRITE flushes the stages above it and redirects FETCH when:
 - An `INT`, an `RTI`, or an interrupt (§6) is taken.
 - A store may hit a word already fetched (§5.5).
 
+The flush empties the stages above WRITE in the cycle WRITE decides it.
+The redirect reaches FETCH a cycle later, from registers, so that no path
+runs from WRITE's decisions through FETCH's adders
+([review/pipeline-timing.md](review/pipeline-timing.md), The redirect).
+FETCH goes on with the old stream for that cycle, and DECODE drops what
+it takes from it. That costs a cycle per jump that WRITE resolves: a
+taken jump in WRITE costs 7 cycles over a fall-through
+(`hdl/test/bubble.nasm`). The translated benchmark takes 1.5% more
+cycles for it, and the hand-written one 3.8%.
+
 DECODE redirects early for the jumps it can resolve itself, with the
 condition "always" and the C bit clear: `MOVE PC, label`, with M clear
 too, and `ADD PC, PC, offset`, in either order of the sources. Their
 target is a constant, or the next instruction's address plus a
-constant. Every other jump, `MOVE PC, R3` included, is resolved in WRITE.
+constant. Both are two words, so the target is the constant word, or the
+instruction's address plus 2 plus that word. DECODE forms the
+instruction's address plus 1 to 4 beside the read of its words, so that
+one adder follows them. Every other jump, `MOVE PC, R3` included, is resolved in WRITE.
 
 A side effect on R15 in `S0` or `S1`, such as `MOVE R1, @R15++`, must not
 flush the instruction's own later micro-ops. So the flush waits
@@ -390,8 +403,9 @@ DBUS's store register (§5.3). FETCH requests no word beyond the two
 blocks in that cycle, so the check also covers the request the bus may
 accept together with the store. It does not cover a request after a
 redirect in the cycle WRITE checks the store or the one before, when
-FETCH's range was stale or empty, nor one made while the bus stalls the
-store. So FETCH makes no new request in those cases while the store
+FETCH's range was stale or empty, nor after the redirect of WRITE's own
+flush, which comes a cycle after the store (§5.4), nor one made while
+the bus stalls the store. So FETCH makes no new request in those cases while the store
 waits in the register. A request that the bus already stalls stays on
 the bus: it was in FETCH's range when WRITE checked the store.
 

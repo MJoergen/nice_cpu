@@ -17,8 +17,9 @@
 % (MICROARCH.md §5.3), so it is on the bus a cycle after the take. The entry is reported
 % (retire_o, "IRQ") in the cycle after its data comes, as WRITE takes the
 % vector from DBUS's FIFO (MICROARCH.md §5.3), and FETCH is redirected
-% there (target_o). FETCH is redirected in the cycle of the take too, and
-% then stops until the entry is done. The target of the take is the
+% there (target_o) in the next cycle, from a register (MICROARCH.md §5.4).
+% FETCH is redirected in the cycle after the take too, and then stops
+% until the entry is done. The target of the take is the
 % address of the instruction after the dropped one (u_v.inst.next_pc in
 % pipe_write.vhd); FETCH never fetches from it, as it is redirected again
 % to the entry.
@@ -26,7 +27,7 @@
 % All values below are read off a GHDL simulation of hdl/test/irqwave.nasm
 % on the pipelined core, with "--irq 2:9 --irq 10:9" (make test,
 % INTR_irqwave) and a memory that never stalls. Cycle 0 is the first cycle
-% after reset. Panel (a) starts at cycle 9 and panel (b) at cycle 34.
+% after reset. Panel (a) starts at cycle 9 and panel (b) at cycle 36.
 % Changing the program or the core invalidates them. The addresses:
 %
 %   0010-0024  the main program: 0010 sets E, 0012-001A and 001E-0022 are
@@ -44,7 +45,7 @@
 %           0012, which has not begun, so it takes the request at once.
 %     t=3   The vector read goes into DBUS's register; t=4 it is on the
 %           bus; t=5 its data; t=6 the entry.
-%     t=15  The routine's RTI retires and flushes back to 0012.
+%     t=16  The routine's RTI retires and flushes back to 0012.
 % (b) t=1   PREPARE loads the read of 001C, while WRITE retires 001A.
 %     t=2   The request comes. 001C has issued its read (commits = 1), so
 %           no request may be taken before it.
@@ -61,22 +62,22 @@
 
 {\sffamily (a) A request taken at once}\par\medskip
 
-\begin{wave}{15}{17}
- \nextwave{irq\_valid\_i}            \bit{0}{2} \bit{1}{1} \bit{0}{14}
- \nextwave{irq\_vector\_i}           \unknown[x]{2} \known{09}{1} \unknown[x]{14}
- \nextwave{irq\_ready\_o}            \bit{0}{2} \bit{1}{1} \bit{0}{14}
- \nextwave{PREPARE: prep\_r}         \known{0010}{1} \known{0012}{1} \known{0014}{1} \unknown[x]{10} \known{0025}{1} \known{0027}{1} \known{0028}{1} \unknown[x]{1}
- \nextwave{PREPARE: load\_o}         \bit{0}{17}
- \nextwave{WRITE: w\_r.uop}          \unknown[x]{1} \known{0010}{1} \known{0012}{1} \unknown[x]{11} \known{0025}{1} \known{0027}{1} \unknown[x]{1}
- \nextwave{WRITE: w\_r.mode}         \known{RUN}{3} \known{VEC}{4} \known{RUN}{10}
- \nextwave{WRITE: w\_r.commits}      \known{0}{17}
- \nextwave{WRITE: w\_r.in\_service}  \bit{0}{7} \bit{1}{9} \bit{0}{1}
- \nextwave{dbus\_stb\_o}             \bit{0}{4} \bit{1}{1} \bit{0}{12}
- \nextwave{dbus\_addr\_o}            \unknown[x]{4} \known{0009}{1} \unknown[x]{12}
- \nextwave{dbus\_ack\_i}             \bit{0}{5} \bit{1}{1} \bit{0}{11}
- \nextwave{WRITE: flush\_o}          \bit{0}{2} \bit{1}{1} \bit{0}{3} \bit{1}{1} \bit{0}{8} \bit{1}{1} \bit{0}{1}
- \nextwave{WRITE: target\_o}         \unknown[x]{2} \known{0014}{1} \unknown[x]{3} \known{0025}{1} \unknown[x]{8} \known{0012}{1} \unknown[x]{1}
- \nextwave{retire\_o}                \unknown[x]{1} \known{0010}{1} \unknown[x]{4} \known{IRQ}{1} \unknown[x]{7} \known{0025}{1} \known{0027}{1} \unknown[x]{1}
+\begin{wave}{15}{18}
+ \nextwave{irq\_valid\_i}            \bit{0}{2} \bit{1}{1} \bit{0}{15}
+ \nextwave{irq\_vector\_i}           \unknown[x]{2} \known{09}{1} \unknown[x]{15}
+ \nextwave{irq\_ready\_o}            \bit{0}{2} \bit{1}{1} \bit{0}{15}
+ \nextwave{PREPARE: prep\_r}         \known{0010}{1} \known{0012}{1} \known{0014}{1} \unknown[x]{11} \known{0025}{1} \known{0027}{1} \known{0028}{1} \unknown[x]{1}
+ \nextwave{PREPARE: load\_o}         \bit{0}{18}
+ \nextwave{WRITE: w\_r.uop}          \unknown[x]{1} \known{0010}{1} \known{0012}{1} \unknown[x]{12} \known{0025}{1} \known{0027}{1} \unknown[x]{1}
+ \nextwave{WRITE: w\_r.mode}         \known{RUN}{3} \known{VEC}{4} \known{RUN}{11}
+ \nextwave{WRITE: w\_r.commits}      \known{0}{18}
+ \nextwave{WRITE: w\_r.in\_service}  \bit{0}{7} \bit{1}{10} \bit{0}{1}
+ \nextwave{dbus\_stb\_o}             \bit{0}{4} \bit{1}{1} \bit{0}{13}
+ \nextwave{dbus\_addr\_o}            \unknown[x]{4} \known{0009}{1} \unknown[x]{13}
+ \nextwave{dbus\_ack\_i}             \bit{0}{5} \bit{1}{1} \bit{0}{12}
+ \nextwave{WRITE: flush\_o}          \bit{0}{2} \bit{1}{1} \bit{0}{3} \bit{1}{1} \bit{0}{9} \bit{1}{1} \bit{0}{1}
+ \nextwave{WRITE: target\_o}         \unknown[x]{2} \known{0014}{1} \unknown[x]{3} \known{0025}{1} \unknown[x]{9} \known{0012}{1} \unknown[x]{1}
+ \nextwave{retire\_o}                \unknown[x]{1} \known{0010}{1} \unknown[x]{4} \known{IRQ}{1} \unknown[x]{8} \known{0025}{1} \known{0027}{1} \unknown[x]{1}
 \end{wave}
 
 \bigskip

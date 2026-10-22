@@ -94,6 +94,12 @@ architecture synthesis of pipe_decode is
    signal d_dest  : std_logic_vector(31 downto 0);
    signal id_r    : std_logic_vector(2 downto 0);
 
+   -- The address after an instruction of each length, summed in parallel
+   -- with the read of its words, so that the length only picks one
+   type t_nexts is array (1 to 4) of std_logic_vector(31 downto 0);
+
+   signal d_next : t_nexts;
+
    -- Splitting it into micro-operations
    signal dec_r       : t_inst;      -- The instruction being split
    signal dec_q       : t_inst;      -- The one after it, waiting
@@ -131,6 +137,11 @@ begin
    end process p_skid_inst;
 
 
+   gen_next : for i in 1 to 4 generate
+      d_next(i) <= f_addr + i;
+   end generate gen_next;
+
+
    p_decode : process (all)
       variable inst_v  : t_inst;
       variable cf_v    : std_logic_vector(0 to 2);
@@ -148,7 +159,7 @@ begin
       inst_v.id      := id_r;
       inst_v.addr    := f_addr;
       inst_v.blk     := next_block(f_addr, 2);
-      inst_v.next_pc := f_addr + len_v;
+      inst_v.next_pc := d_next(len_v);
       inst_v.iw      := iw_v;
       k_v            := 1;
       for i in 0 to 2 loop
@@ -169,15 +180,13 @@ begin
       -- The jumps that DECODE resolves (MICROARCH.md §5.4), early_form of
       -- src/pipe_pkg.vhd: "MOVE R15, c" and "ADD R15, R15, c". They read
       -- no register but R15, and nothing changes R15 before them in the
-      -- instruction.
+      -- instruction. Each is two words, the constant the second, so the
+      -- target is c or the address plus 2 plus c, with one adder after
+      -- the words.
       early_v := to_sl(early_form(iw_v));
-      dest_v  := inst_v.consts(1);
+      dest_v  := f_words(1);
       if early_v = '1' and iw_v(24 downto 21) = "0011" then
-         if field(iw_v, 1) = "0001111" then
-            dest_v := inst_v.next_pc + inst_v.consts(2);
-         else
-            dest_v := inst_v.next_pc + inst_v.consts(1);
-         end if;
+         dest_v := d_next(2) + f_words(1);
       end if;
       inst_v.early := early_v;
       d_early      <= early_v;

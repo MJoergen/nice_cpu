@@ -38,7 +38,9 @@
 %   t=7   The read is on the bus, and the instruction is committed
 %         (w_r.commits = 1). instret_o counts it, as the bus accepts its
 %         last read. WRITE holds OP and waits for the data, so ADD 000A
-%         waits in PREPARE, and DECODE emits nothing.
+%         waits in PREPARE, and DECODE emits nothing. It splits ADD 000C
+%         off into its skid register all the same, and goes on taking
+%         000E and, at t=8, the HALT (MICROARCH.md §3).
 %   t=8   The data comes, into DBUS's FIFO. It goes into the ALU and the
 %         store, so WRITE takes it from there a cycle later (MICROARCH.md
 %         §5.3).
@@ -59,8 +61,8 @@
 \begin{wave}{19}{12}
  \nextwave{ibus\_addr\_o}            \known{0006}{1} \known{0008}{1} \known{000A}{1} \known{000C}{1} \known{000E}{1} \known{0010}{1} \known{0012}{1} \known{0014}{1} \known{0016}{1} \known{0018}{1} \known{001A}{1} \known{001C}{1}
  \nextwave{ibus\_ack\_i}             \bit{1}{12}
- \nextwave{FETCH: addr\_o}           \known{0002}{1} \known{0004}{1} \known{0006}{1} \known{0008}{1} \known{000A}{1} \unknown[x]{1} \known{000C}{1} \known{000E}{1} \unknown[x]{2} \known{0010}{1} \known{0011}{1}
- \nextwave{DECODE: dec\_r}           \known{0000}{1} \known{0002}{1} \known{0004}{1} \known{0006}{1} \known{0008}{2} \known{000A}{1} \known{000C}{3} \known{000E}{1} \known{0010}{1}
+ \nextwave{FETCH: addr\_o}           \known{0002}{1} \known{0004}{1} \known{0006}{1} \known{0008}{1} \known{000A}{1} \unknown[x]{1} \known{000C}{1} \known{000E}{1} \known{0010}{1} \unknown[x]{2} \known{0011}{1}
+ \nextwave{DECODE: dec\_r}           \known{0000}{1} \known{0002}{1} \known{0004}{1} \known{0006}{1} \known{0008}{2} \known{000A}{1} \known{000C}{1} \known{000E}{3} \known{0010}{1}
  \nextwave{DECODE: uop\_o}           \known{OP 0000}{1} \known{OP 0002}{1} \known{OP 0004}{1} \known{OP 0006}{1} \known{S0 0008}{1} \known{OP 0008}{1} \known{OP 000A}{1} \unknown[x]{2} \known{OP 000C}{1} \known{OP 000E}{1} \known{\small CTRL 0010}{1}
  \nextwave{PREPARE: prep\_r}         \unknown[x]{1} \known{OP 0000}{1} \known{OP 0002}{1} \known{OP 0004}{1} \known{OP 0006}{1} \known{S0 0008}{1} \known{OP 0008}{1} \known{OP 000A}{3} \known{OP 000C}{1} \known{OP 000E}{1}
  \nextwave{PREPARE: load\_o}         \bit{0}{6} \bit{1}{1} \bit{0}{5}

@@ -668,7 +668,11 @@ for one cycle, in `BOUNDARY`, when it takes the request. `ready` depends
 combinationally on `valid`, so a device must not make `valid` depend
 combinationally on `ready`.
 
-`halted_o` is 1 once the core has halted. Only reset restarts it.
+`halted_o` is 1 once the core has halted. Only reset restarts it. The
+pipelined core raises it once no request of its own is left on either
+bus, so that a halted core makes no new request. `tb_core` runs a few
+cycles past the end of the trace, so that `p_check` in
+`src/pipeline.vhd` checks that too.
 
 `regs_o` gives R0 to R15 from the core's registers, for a monitor that
 shows them. In the cycle after a step is reported on `retire_o`, they are
@@ -747,19 +751,19 @@ reaches every stage at once. Its stores and vector reads go out from a
 register in DBUS, a cycle later. In the best case one micro-operation retires each cycle.
 `cputest` takes about 1.2 cycles per instruction on memory that never
 stalls, and `hazard.nasm`, which is all hazards, 1.9. The benchmark of
-[bench/](../bench/README.md) runs like this at commit bb8fdb6, against
+[bench/](../bench/README.md) runs like this at commit NEWCOMMIT, against
 the multi-cycle core's numbers there:
 
 | Program | Instructions | Cycles | Cycles per instruction | Multi-cycle core |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 1681080 | 2349181 | 1.40 | 11.3, 8.1 times slower |
-| `hand.nasm` | 491617 | 1333925 | 2.71 | 11.4, 4.2 times slower |
+| `bench.c` through nicewasm | 1681080 | 2384635 | 1.42 | 11.3, 8.0 times slower |
+| `hand.nasm` | 491617 | 1384879 | 2.82 | 11.4, 4.0 times slower |
 
-The instruction counts equal the emulator's. In `hand.nasm`, `vm` (5.1
+The instruction counts equal the emulator's. In `hand.nasm`, `vm` (5.4
 cycles per instruction) ends each handler of three or four instructions
 with a jump through a table, whose address PREPARE must wait for, since
 the instruction before loads its index, and which flushes the pipeline;
-`strings` (3.0) and `bst` (2.4) read the math unit right after writing
+`strings` (3.1) and `bst` (2.5) read the math unit right after writing
 its operands.  `make -C bench compare` puts the estimate of
 `bench/pipecycles.py` beside these cycles, phase by phase.
 
@@ -774,8 +778,8 @@ and a shift by a count that PREPARE cannot reduce, such as one from
 memory or through an adder, which takes three for a rotation through C
 (MICROARCH.md §7.3 and §7.4). `test/bubble.nasm`
 measures what a jump costs, with the cycle counter on a memory that never
-stalls: 6 cycles over a fall-through for a jump that WRITE resolves,
-aligned or not, 2 for one that DECODE resolves, and one more for an
+stalls: 7 cycles over a fall-through for a jump that WRITE resolves,
+aligned or not, since its redirect reaches FETCH from a register, 2 for one that DECODE resolves, and one more for an
 operation other than `MOVE` into R15. It also measures four reads in a
 row: WRITE takes read data from DBUS's FIFO, a cycle after its ACK,
 unless it only goes into a register (MICROARCH.md §5.3), so four `ADD`s

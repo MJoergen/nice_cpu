@@ -72,19 +72,19 @@ No code has TODO or FIXME comments.
 
 ## Pipelined core
 
-- **The margin at 100 MHz is thin** (pipeline-timing.md, The handshake).
+- **The margin at 100 MHz is thin** (pipeline-timing.md, The redirect).
   The R6 meets 100 MHz in NiceMonMEGA65, and the Nexys4DDR (a -1 part)
-  83.33 MHz. The worst paths are within a few tenths of a nanosecond of
-  10 ns on the R6's part, and several differ only by placement: WRITE's
-  flush and redirect into PREPARE's `prep_r` and FETCH's `head_r`, WRITE's
-  ALU into its own next state, and FETCH's next address, from its ring
-  through DECODE's instruction length into `head_r`. Ideas: the condition
-  and the data count of WRITE's micro-operation tested a cycle ahead;
-  DECODE's next address from FETCH's precomputed heads; a redirect from
-  WRITE registered a cycle later, which costs a cycle per jump that WRITE
-  resolves; `irq_ready_o` from a register, since a device acts on it in
-  the same cycle. Measure the skid register and the vector read in
-  NiceMonMEGA65 first.
+  83.33 MHz. Out of context, the worst paths now run from WRITE's
+  decisions, the flush and the end of its micro-operation, into the
+  enables of PREPARE's `prep_r` and WRITE's own `w_r`: the next
+  micro-operation moves into WRITE in the cycle WRITE frees itself. A
+  stand-in that took those decisions from registers removed them, but
+  a real fix needs WRITE to know a cycle ahead that it will be free, or a
+  buffer between PREPARE and WRITE with its own register hazards. Then
+  WRITE's ALU into its own next state, and FETCH's next address from its
+  ring. `irq_ready_o` is still combinational from WRITE, and a device acts
+  on it in the same cycle. Measure the redirect and FETCH's next address
+  in NiceMonMEGA65 first.
 - **What the system adds to the core's paths.** Out of context, the
   inputs arrive at time 0 and the outputs are due at time 10 ns, so
   `make timing` in `hdl/` reports their slack as the time left to the
@@ -111,10 +111,10 @@ No code has TODO or FIXME comments.
   have `regs_o` from their registers. NiceMonMEGA65 should read that.
 
 - **The cycle the model lacks.** `bench/pipecycles.py` charges a jump
-  taken in WRITE 7 cycles, where the core's bubble is 6
-  (`hdl/test/bubble.nasm`), because 7 brings the model closer to the
-  core on the benchmark, which it still underestimates by 3% and 7%
-  (`make compare` in `bench/`). Find what the extra cycle stands for,
+  taken in WRITE 7 cycles, the core's bubble (`hdl/test/bubble.nasm`),
+  and underestimates the core on the benchmark by 5.2% and 13.1%
+  (`make compare` in `bench/`). With 8 it is 3.7% and 9.4% below, so a
+  cycle per jump is missing from the model. Find what the extra cycle stands for,
   for example by printing each retire's cycle from a scratch copy of the
   core and comparing it with the model's, instruction by instruction
   (doc/review/third-repository-review.md §3.1).

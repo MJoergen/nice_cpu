@@ -75,7 +75,10 @@
 -- Those words are the range that pipe_fetch reports and the instructions in
 -- dec_r, dec_q, skid_r, and prep_r. DECODE redirects FETCH itself for
 -- "MOVE R15, c" and "ADD R15, R15, c" with condition "always". WRITE then
--- does not flush.
+-- does not flush. WRITE's redirect reaches FETCH a cycle after its flush,
+-- from w_redir_r and w_target_r. DECODE drops what it takes in that cycle,
+-- and halted_o waits until FETCH has no request left, so that a halted
+-- core requests nothing.
 --
 -- INTERRUPTS (MICROARCH.md §6) are taken in WRITE before an instruction,
 -- as soon as ISA.md §7.1 allows: before the instruction's first
@@ -185,6 +188,8 @@ architecture synthesis of pipeline is
    signal f_stb      : std_logic;   -- FETCH's request, before f_block
    signal f_stall    : std_logic;
    signal f_redir_r  : std_logic;   -- FETCH was redirected a cycle ago
+   signal w_redir_r  : std_logic;   -- WRITE flushed a cycle ago: FETCH follows now
+   signal w_target_r : std_logic_vector(31 downto 0);
    signal f_hold_r   : std_logic;   -- FETCH waits for the store in DBUS
    signal f_held_r   : std_logic;   -- The bus stalled FETCH's request a cycle ago
    signal f_block    : std_logic;   -- FETCH makes no new request now
@@ -192,9 +197,10 @@ architecture synthesis of pipeline is
    -- DECODE
    signal d_redirect : std_logic;
    signal d_dest     : std_logic_vector(31 downto 0);
+   signal d_flush    : std_logic;   -- DECODE drops what it holds and takes
    signal dec_r      : t_inst;
    signal dec_q      : t_inst;
-   signal skid       : t_inst;   -- The instruction of DECODE's skid_r
+   signal skid       : t_inst;      -- The instruction of DECODE's skid_r
    signal seq_uop    : t_uop;
    signal seq_emit   : std_logic;
    signal d_starve   : std_logic;
@@ -241,19 +247,24 @@ begin
    -- FETCH
    ---------------------------------------------------------------------------
 
-   f_redirect <= w_flush or d_redirect;
-   f_target   <= w_target when w_flush = '1' else d_dest;
+   -- WRITE's redirect reaches FETCH a cycle after its flush, from
+   -- registers, so that no path runs from WRITE's decisions into FETCH's
+   -- adders (MICROARCH.md §5.4). In between, FETCH goes on with the old
+   -- stream, and DECODE drops what it takes from it.
+   f_redirect <= w_redir_r or d_redirect;
+   f_target   <= w_target_r when w_redir_r = '1' else d_dest;
    f_stop     <= '0' when w_r.mode = RUN_ST else '1';
+   d_flush    <= w_flush or w_redir_r;
 
    -- WRITE checks a store against the words that FETCH holds and will
    -- request in the next cycle (MICROARCH.md §5.5), but the store reaches
    -- memory a cycle or more later, from DBUS. So FETCH puts no new request
    -- on the bus while the store waits there after that cycle, or after a
-   -- redirect in the cycle the store was queued or the one before, which
-   -- the check did not see. A request that the bus stalls stays on it: it
-   -- was in FETCH's range when WRITE checked the store. A vector read in
-   -- the register holds FETCH too, but FETCH is stopped during an
-   -- interrupt entry anyway.
+   -- redirect in the cycle the store was queued, the one before, or the
+   -- one after, for WRITE's own flush, which the check did not see. A
+   -- request that the bus stalls stays on it: it was in FETCH's range when
+   -- WRITE checked the store. A vector read in the register holds FETCH
+   -- too, but FETCH is stopped during an interrupt entry anyway.
    f_block    <= f_hold_r and st_valid and not f_held_r;
    ibus_stb_o <= f_stb and not f_block;
    f_stall    <= ibus_stall_i or f_block;
@@ -261,12 +272,15 @@ begin
    p_hold : process (clk_i)
    begin
       if rising_edge(clk_i) then
-         f_redir_r <= f_redirect;
-         f_hold_r  <= (st_valid and not st_acc) or
-                      (w_st and (f_redirect or f_redir_r));
+         f_redir_r  <= f_redirect;
+         w_redir_r  <= w_flush;
+         w_target_r <= w_target;
+         f_hold_r   <= (st_valid and not st_acc) or
+                       (w_st and (w_flush or f_redirect or f_redir_r));
          f_held_r  <= f_stb and not f_block and ibus_stall_i;
          if rst_i = '1' then
             f_redir_r <= '0';
+            w_redir_r <= '0';
             f_hold_r  <= '0';
             f_held_r  <= '0';
          end if;
@@ -310,7 +324,7 @@ begin
          consume_o  => f_consume,
          redirect_o => d_redirect,
          target_o   => d_dest,
-         flush_i    => w_flush,
+         flush_i    => d_flush,
          ready_i    => p_ready,
          emit_o     => seq_emit,
          uop_o      => seq_uop,
@@ -424,9 +438,13 @@ begin
 
    nmi_ready_o <= take_nmi;
    irq_ready_o <= take_irq;
-   halted_o    <= '1' when w_r.mode = HALTED_ST and st_valid = '0' else '0';
-   instret_o   <= rd_count or w_instret;
-   regs_o      <= w_r.regs;
+   -- Once FETCH has no request left, so that a halted core makes no new
+   -- request on either bus. FETCH may make one in the cycle of the halt,
+   -- before WRITE's redirect reaches it, and its wait for a store in DBUS
+   -- may hold one back.
+   halted_o  <= '1' when w_r.mode = HALTED_ST and st_valid = '0' and f_stb = '0' else '0';
+   instret_o <= rd_count or w_instret;
+   regs_o    <= w_r.regs;
 
 
    p_stats : process (all)
@@ -446,6 +464,8 @@ begin
 
    -- The invariants that the theory of operation above relies on.
    p_check : process (clk_i)
+      variable stb_v   : std_logic := '0';   -- The instruction bus a cycle ago
+      variable stall_v : std_logic := '0';
    begin
       if rising_edge(clk_i) then
          if rst_i = '0' then
@@ -490,7 +510,16 @@ begin
                         (rq_cnt_r + to_nat(ack_read) /= w_pop or reads_owed /= to_nat(ack_read)))
                report "pipeline: a flush with read data owed"
                severity failure;
+            -- A halted core makes no new instruction fetch: a request still
+            -- on the bus is one the bus stalled before (formal_pipeline,
+            -- f_halt_ibus). FETCH may still make one after the halt, so
+            -- halted_o waits until it has none.
+            assert not (halted_o = '1' and ibus_stb_o = '1' and not (stb_v = '1' and stall_v = '1'))
+               report "pipeline: a new instruction fetch after a halt"
+               severity failure;
          end if;
+         stb_v   := ibus_stb_o;
+         stall_v := ibus_stall_i;
       end if;
    end process p_check;
 

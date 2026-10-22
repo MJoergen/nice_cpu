@@ -373,3 +373,67 @@ more than in NiceMonMEGA65, so there the figures only compare versions
 of the core. The worst groups now are WRITE's flush and redirect into
 PREPARE's `prep_r` and FETCH's `head_r`, WRITE's own next state, and
 FETCH's next address.
+
+## The redirect
+
+On 2026-10-22 NiceMonMEGA65 measured the skid register in the system
+(issue 34 on GitHub). The groups into DECODE were gone, but the
+Nexys4DDR at 100 MHz missed by 0.395 ns, and the R6 with the default
+directives by 0.257 ns. The worst groups ran from WRITE: its redirect
+into FETCH's `head_r` and `pair_r`, its own next state, and the flush
+into PREPARE's `prep_r`.
+
+Three stand-ins, in the manner of the Method above, measured what each
+fix would be worth: (a) FETCH's redirect and target from registers, (b)
+WRITE's done, flush, and accept into PREPARE and DECODE from registers,
+and (c) both. One run each, out of context:
+
+| Version | Nexys4DDR part, NiceMonMEGA65's directives | R6 part, default directives |
+|---|---|---|
+| 8712ed0 | −1.538 ns, 623 failing | −0.224 ns, 8 failing |
+| (a) | −1.253 ns, 650 failing | +0.152 ns, 0 failing |
+| (b) | −1.589 ns, 201 failing | +0.027 ns, 0 failing |
+| (c) | −1.202 ns, 57 failing | −0.039 ns, 2 failing |
+
+With (c), what was left was FETCH's next address, from its ring through
+DECODE's instruction length into `head_r`, then WRITE's ALU into its own
+next state. (b) has no cheap real form: WRITE would have to know a cycle
+ahead that it will be free, or a buffer between PREPARE and WRITE would
+bring register hazards of its own. So the core took (a) and the next
+address:
+
+- **WRITE's redirect reaches FETCH a cycle after its flush**, from
+  registers (MICROARCH.md §5.4). DECODE drops what it takes in that
+  cycle, FETCH's wait for a store in DBUS (§5.5) covers the redirect
+  after the store's own flush, and `halted_o` waits until FETCH has no
+  request left, so that a halted core makes no new fetch. `tb_core` now
+  runs a few cycles past the end of each run, so that `p_check` in
+  `src/pipeline.vhd` sees the halted core; neither it nor the bounded
+  check did before. A jump that WRITE resolves costs
+  7 cycles over a fall-through, from 6 (`hdl/test/bubble.nasm`).
+- **DECODE forms the address after an instruction of each length**
+  beside the read of its words, and an early jump's target as the
+  address plus 2 plus its constant word, so that one adder follows the
+  words where there were two.
+
+The cycles of `make core CORE=pipeline` in `bench/`, against those of
+`bench/pipecycles.py --flush 8`, which estimated the cost first:
+
+| | Translated | `hand.nasm` |
+|---|---|---|
+| 8712ed0 | 2349181 | 1333925 |
+| With the registered redirect | 2384635, +1.51% | 1384879, +3.82% |
+| The model's estimate | +1.6% | +4.2% |
+
+Out of context, one run each:
+
+| | 8712ed0 | Now |
+|---|---|---|
+| R6 part, default directives | −0.224 ns, 8 failing | −0.157 ns, 76 failing |
+| R6 part, NiceMonMEGA65's directives | | +0.211 ns, 0 failing |
+| Nexys4DDR part, NiceMonMEGA65's directives | −1.538 ns, 623 failing | −1.160 ns, 464 failing |
+
+The redirect is gone from the worst groups, and FETCH's next address
+went from the R6's worst path to +0.40 ns. What is left is (b): the
+flush, from the check of stores against FETCH's block, into the
+enables of `prep_r` and `w_r`.

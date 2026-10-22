@@ -2,10 +2,11 @@
 ; (SYSTEM.md §3): the cycles between a read of CYCLE_LO before and one
 ; after each kind of jump, and after a fall-through for comparison. The
 ; values are those of doc/review/third-repository-review.md §1.2, on a
-; memory that never stalls: a jump that WRITE resolves costs 6 cycles over
-; a fall-through, aligned or not; a jump that DECODE resolves 2
-; (MICROARCH.md §5.4); and an operation other than MOVE into R15 one more
-; (§7.4). The last three cases are four reads in a row: WRITE takes read
+; memory that never stalls, with a cycle more for each jump that WRITE
+; resolves, since its redirect reaches FETCH from a register: such a jump
+; costs 7 cycles over a fall-through, aligned or not; a jump that DECODE
+; resolves 2 (MICROARCH.md §5.4); and an operation other than MOVE into
+; R15 one more (§7.4). The last three cases are four reads in a row: WRITE takes read
 ; data a cycle after its ACK, unless it only goes into a register
 ; (§5.3), so four ADDs from memory take 2 cycles more than four MOVEs, and
 ; four MOVEs from memory into memory 4 more than the 11 they took when
@@ -36,17 +37,17 @@ a1      MOVE    R2, @CYCLES
         SUB     R4, R2, R1
         SUB[M]  R0, R4, 3
         ?!Z ADD R12, R12, 1
-; a taken conditional jump, resolved in WRITE: 3 + 6
+; a taken conditional jump, resolved in WRITE: 3 + 7
         .ORG    0xC0
         ADD[M]  R0, R0, 1
         MOVE    R1, @CYCLES
         ?!Z MOVE R15, a2
 a2      MOVE    R2, @CYCLES
         SUB     R4, R2, R1
-        SUB[M]  R0, R4, 9
+        SUB[M]  R0, R4, 10
         ?!Z ADD R12, R12, 1
 ; the same to a target on an odd address, whose instruction spans two
-; pairs: a cycle more in the fall-through, and the same 6 for the jump
+; pairs: a cycle more in the fall-through, and the same 7 for the jump
         .ORG    0x100
         ADD[M]  R0, R0, 1
         MOVE    R1, @CYCLES
@@ -63,7 +64,7 @@ a3      MOVE    R2, @CYCLES
         MOVE    R0, R0
 a4      MOVE    R2, @CYCLES
         SUB     R4, R2, R1
-        SUB[M]  R0, R4, 10
+        SUB[M]  R0, R4, 11
         ?!Z ADD R12, R12, 1
 ; a jump that DECODE resolves: 3 + 2
         .ORG    0x180
@@ -73,7 +74,7 @@ a5      MOVE    R2, @CYCLES
         SUB     R4, R2, R1
         SUB[M]  R0, R4, 5
         ?!Z ADD R12, R12, 1
-; MOVE R15, R3: the target is the source, ready in WRITE's first cycle: 3 + 6
+; MOVE R15, R3: the target is the source, ready in WRITE's first cycle: 3 + 7
         .ORG    0x1C0
         MOVE    R3, a6
         MOVE    R1, @CYCLES
@@ -81,16 +82,16 @@ a5      MOVE    R2, @CYCLES
         .DAT    0
 a6      MOVE    R2, @CYCLES
         SUB     R4, R2, R1
-        SUB[M]  R0, R4, 9
+        SUB[M]  R0, R4, 10
         ?!Z ADD R12, R12, 1
-; ADD R15, R3, 0: a second cycle in WRITE: 3 + 7
+; ADD R15, R3, 0: a second cycle in WRITE: 3 + 8
         .ORG    0x200
         MOVE    R3, a7
         MOVE    R1, @CYCLES
         ADD     R15, R3, 0
 a7      MOVE    R2, @CYCLES
         SUB     R4, R2, R1
-        SUB[M]  R0, R4, 10
+        SUB[M]  R0, R4, 11
         ?!Z ADD R12, R12, 1
 ; four MOVEs from memory into a register, each in the cycle of its ACK: 8
         .ORG    0x240

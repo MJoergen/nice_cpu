@@ -68,7 +68,8 @@
 -- timer with one from --irq.
 --
 -- The run ends when the trace writer has printed the end of the run. The
--- simulation then stops with the emulator's exit status.
+-- simulation goes on for a few cycles, so that the core's own checks see
+-- it halted, and then stops with the emulator's exit status.
 
 library ieee;
    use ieee.std_logic_1164.all;
@@ -625,6 +626,9 @@ begin
    p_finish : process
    begin
       wait until done = '1';
+      for i in 1 to 4 loop
+         wait until rising_edge(clk);
+      end loop;
       stop(status);
    end process p_finish;
 

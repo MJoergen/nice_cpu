@@ -196,3 +196,11 @@ files byte for byte, and the emulator's results for them were checked by
 hand. Both tools also have probe programs for single rules of the ISA and a
 script that checks every error message. `emulator/test/cputest.nasm` checks
 the whole instruction set by itself, and is meant for the FPGA core as well.
+
+## License
+
+The code and the documents are under the [MIT license](LICENSE). The three
+2004 example programs (`count`, `replicate`, and `print`), their sources and
+their `.bin` files in `assembler/test/`, are by B. Ulmann and T. Kratz and
+are not covered by it; see
+[doc/REFERENCES.md](doc/REFERENCES.md).

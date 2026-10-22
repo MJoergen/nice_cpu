@@ -16,6 +16,14 @@ Author indexes: [Ulmann's publication list](http://www.vaxman.de/publications/pu
 
 No independent NICE implementations were found.
 
+**Terms.** The sources above are the work of their authors, and this
+repository gives no license for them. The `.bin` files of `count`,
+`replicate`, and `print` in `assembler/test/` are the original `NICE.pm`
+output from the 2004 example programs, and those programs are by B. Ulmann
+and T. Kratz. The MIT license of the repository ([LICENSE](../LICENSE)) does
+not cover them. The specification in ISA.md is original text that follows
+these sources.
+
 ## QNICE: the reference for gaps the NICE sources leave open
 
 | Document | Links | Notes |

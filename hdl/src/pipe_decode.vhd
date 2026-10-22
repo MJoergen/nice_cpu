@@ -462,14 +462,19 @@ begin
 
       -- skid_r holds the last micro-operation split off, and it follows
       -- the last one emitted. While it is empty, the two are the same.
+      -- The cases of f_open are assertions of their own, as GHDL 4.1, in
+      -- CI, cannot synthesize them as "f_open = '0' or ..." in one.
       -- psl f_inv_skid : assert always (rst_i = '0' and skid_r.valid = '1') ->
       --    (g_since = '1' and skid_r.inst = g_inst and skid_r.kind = g_kind and
       --     skid_r.last = is_last(g_kind) and g_open = not skid_r.last and
-      --     decoded_ok(skid_r) and inst_ok(skid_r.inst) and
-      --     (f_open = '0' or (skid_r.first = '0' and g_inst = f_inst and
-      --                       g_kind = next_kind(f_inst.iw, f_kind))) and
-      --     (f_open = '1' or (skid_r.first = '1' and skid_r.kind = first_kind(skid_r.inst.iw) and
-      --                       (f_since = '0' or skid_r.inst.id = f_inst.id + 1))));
+      --     decoded_ok(skid_r) and inst_ok(skid_r.inst));
+      -- psl f_inv_skid_open : assert always
+      --    (rst_i = '0' and skid_r.valid = '1' and f_open = '1') ->
+      --    (skid_r.first = '0' and g_inst = f_inst and g_kind = next_kind(f_inst.iw, f_kind));
+      -- psl f_inv_skid_new : assert always
+      --    (rst_i = '0' and skid_r.valid = '1' and f_open = '0') ->
+      --    (skid_r.first = '1' and skid_r.kind = first_kind(skid_r.inst.iw) and
+      --     (f_since = '0' or skid_r.inst.id = f_inst.id + 1));
       -- psl f_inv_same : assert always (rst_i = '0' and skid_r.valid = '0') ->
       --    (f_open = g_open and f_since = g_since and
       --     (g_since = '0' or (f_inst = g_inst and f_kind = g_kind)));

@@ -442,6 +442,8 @@ Interrupt entry (§7.2), including `INT`, makes one data access: the read of the
 
 **Instruction fetches are not ordered.** The processor may fetch instruction words and constant words early, more than once, or for instructions that never run. It may do so in any order relative to data accesses. Only the result is defined: each instruction runs with the words that memory held when the instructions before it had completed. This lets a pipelined processor fetch ahead, and lets instruction fetches and data accesses use separate buses.
 
+**Memory model.** The memory model is strong: data accesses are sequentially consistent. Loads and stores are never reordered with each other, so no fence or barrier is needed, and the ISA has none. Self-modifying code needs no cache flush or barrier either. The ISA describes one processor. It does not specify what happens with a second bus master.
+
 ### 8.3 Input and output
 
 I/O is memory-mapped. There are no I/O instructions. Addresses `0xFFFFFF00`–`0xFFFFFFFF` are reserved for I/O devices. The ISA defines no device. The devices of the emulator and the FPGA implementation are in [SYSTEM.md](SYSTEM.md).

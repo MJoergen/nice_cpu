@@ -143,7 +143,7 @@ For source operands, bit 6 of the field (mode bit 2) means "the operand is in me
 
 ### 2.3 Constant words
 
-A field whose mode ends in `11` (modes 011 and 111) takes one constant word. Constant words follow the instruction word in **field order: dest, s0, s1**. Only the fields that use a constant take a word.
+A field whose mode ends in `11` (modes 011 and 111) takes one constant word. Constant words follow the instruction word in **field order: dest, s0, s1**. Only the fields that use a constant take a word. Control instructions (§5) take none.
 
 Example: `ADD @0x40, R1, 7` is three words: the instruction word, `0x00000040` (dest) and `0x00000007` (s1).
 
@@ -168,7 +168,7 @@ The condition is tested against SR as it was before the instruction started.
 
 In this document, "the M bit" always means instruction bit 25 (modify flags), and "the E flag" means SR bit 30. The 2004 sources call SR bit 30 M, so the assembler also accepts `?M` and `?!M` as aliases for `?E` and `?!E`.
 
-A skipped instruction still consumes its constant words, so PC moves past the whole instruction. A skipped instruction has no other effect: it reads no operand from memory, writes nothing, applies no increments or decrements, and changes no flags.
+A skipped instruction still consumes its constant words (a control instruction has none), so PC moves past the whole instruction. A skipped instruction has no other effect: it reads no operand from memory, writes nothing, applies no increments or decrements, and changes no flags.
 
 ## 4. Addressing modes
 
@@ -372,7 +372,7 @@ Before each instruction, the first one after reset included, the processor check
 - A halted processor takes no interrupts.
 - No IRQ or NMI is taken while `after_rti` = 1, so the instruction directly after an `RTI` always runs first. That instruction may itself be an `INT`, which works normally. This guarantees that the interrupted program makes progress. A deferred request is taken before the second instruction after `RTI`, unless the first one is an `INT` (then the request waits for that routine's `RTI` as well), halts the processor, or, for an IRQ, leaves E = 0 (then the IRQ waits until software sets E).
 
-**Pending requests are deferred, never lost.** An NMI or IRQ that cannot be taken when it arrives stays pending until it is taken. That happens when `in_service` = 1, or for an IRQ when E = 0. Requests of the same kind that arrive while one is already pending may merge into one, so software must not rely on counting interrupts. A request still pending when the processor halts is never taken, because only reset restarts the processor.
+**Pending requests are deferred, never lost.** An NMI or IRQ that cannot be taken when it arrives stays pending until it is taken. That happens when `in_service` = 1, or for an IRQ when E = 0. Requests of the same kind that arrive while one is already pending merge into one, which keeps the vector of the first, so software must not rely on counting interrupts. A request still pending when the processor halts is never taken, because only reset restarts the processor.
 
 When the processor accepts a request, the device supplies an 8-bit vector number v. The ISA does not say how requests are signaled and acknowledged: edge or level, the handshake, and how a request is held pending are hardware interface matters. The rules above are what software sees.
 
@@ -498,9 +498,9 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
     [label]  [?cond]  MNEMONIC[mods]  dest, s0, s1    ; comment
 
 - **Case.** Labels and `.EQU` names are case-sensitive. Mnemonics, register names, conditions, modifiers, and directives are not.
-- **Comments.** A comment starts with `;` or `*` and runs to the end of the line.
+- **Comments.** A comment starts with `;` anywhere outside a string, or with `*` at the start of a word, and runs to the end of the line.
 - **Separators.** Operands are separated by whitespace or by one comma.
-- **Labels.** A label is the first word on a line that is not a mnemonic or a directive. It may end with `:`, and so may an `.EQU` name. Its value is the address of what follows on that line; on a `.ORG` line, that is the new address. A label or `.EQU` name cannot be a mnemonic or a register name.
+- **Labels.** A label is the first word on a line that is not a mnemonic or a directive. It may end with `:`, and so may an `.EQU` name. Its value is the address of what follows on that line; on a `.ORG` line, that is the new address. A label or `.EQU` name is an ASCII letter or `_` followed by ASCII letters, digits, `_`, and `.`. It cannot be a mnemonic, a register name, or look like one: `R` followed by digits, so `R16` is rejected too.
 - **Conditions.** `?cond` is one of the condition codes in §3, such as `?Z` or `?!C`. Without one, the instruction is unconditional. `?M`/`?!M` are accepted as aliases for `?E`/`?!E`.
 - **Modifiers.** `[M]` sets the M bit and `[C]` sets the C bit. `[CM]` and `[MC]` set both. `[C]` is accepted only on ALU instructions.
 - **Operand counts.** The assembler expects exactly the operands the instruction uses:
@@ -521,7 +521,7 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
 | `c`, `c[Rx]` | A constant, mode 011. As a source its value is Rx + c. As a destination it writes mem[Rx + c]. |
 | `@c`, `@c[Rx]` | Memory at Rx + c, mode 111. |
 
-- **Numbers and expressions.** `0x` hex, `0b` binary, and plain decimal. The prefix and the digits may be in either case. There is no `#` prefix and no `$`. A label or an `.EQU` name may appear wherever a number may. A constant may also be an expression: numbers and symbols joined with `+` and `-`, with an optional leading sign and no spaces, such as `end-data` or `-1`. The value wraps modulo 2³², except for `INT`, `.BLK`, and `.RES`, which take it before it wraps and reject it out of range, so `INT 0xFFFFFFFF+1` is an error, not vector 0.
+- **Numbers and expressions.** `0x` hex, `0b` binary, and plain decimal. The prefix and the digits may be in either case. There is no `#` prefix and no `$`. A label or an `.EQU` name may appear wherever a number may. A constant may also be an expression: numbers and symbols joined with `+` and `-`, with an optional leading sign and no spaces, such as `end-data` or `-1`. Each number must be below 2³², so `4294967296` and `0x100000000` are errors. The value of an expression wraps modulo 2³², except for `INT`, `.BLK`, and `.RES`, which take it before it wraps and reject it out of range, so `INT 0xFFFFFFFF+1` is an error, not vector 0.
 - **Register aliases.** Programs define them with `.EQU`, for example `SP .EQU R13` and `PC .EQU R15`.
 
 ### 10.3 Directives
@@ -598,7 +598,7 @@ It executes as follows:
 | SR bit 24 within an instruction | Always 1; every write to R14, side effects included, sets it (§4.3) | Not specified anywhere. The emulator forces it only before and after each instruction. |
 | `R14--` and `R14++` as destinations | r is written, then decremented or incremented, and each write sets bit 24 (§4.2) | Not specified anywhere |
 | Interrupt entry details | Entry sets I; NMI is taken before IRQ; NMI does not nest either (§7.1, §7.2) | Not specified anywhere. The articles have NMI and IRQ serviced "the same way". |
-| Pending interrupt requests | Deferred, never lost; same-kind requests may merge (§7.1) | Not specified anywhere |
+| Pending interrupt requests | Deferred, never lost; same-kind requests merge, keeping the first vector (§7.1) | Not specified anywhere |
 | Interrupts right after `RTI` | No IRQ or NMI until the instruction after `RTI` completes (`after_rti`, §7.1) | Not specified anywhere. QNICE guarantees the same progress. |
 | Memory access order | Each data access exactly once, unmerged, and in program order. Instruction fetches may run ahead, repeat, or be wasted (§8.2) | Not specified anywhere |
 | Instruction fetches from the I/O range | Read 0 and never reach a device (§8.3) | Not specified anywhere |

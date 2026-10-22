@@ -42,7 +42,7 @@ The screen word has the character in bits 7..0, the background color in bits 31.
 
 **Console.** The emulator maps a console at `0xFFFFFF00`. Each write prints bits 7..0 of the word. Each data read takes the next input byte, if there is one, and returns it in bits 7..0 with bit 8 set. With no byte waiting, a read returns 0. When the emulator's input has ended, a read returns `0x200` (bit 9) instead; a UART's input never ends. The emulator never returns 0: a read waits for the next byte or the end of the input. The simulation memory of the FPGA core does the same, so only a UART returns 0. The emulator reads its input from stdin, so stdin from `/dev/null` gives a console with no input. The simulation memory of the FPGA core reads a file too, as the emulator's `--input` does, and returns `0x200` without one. This repository has no UART. A system built on the FPGA core, such as the example design in [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), maps one at the same address, with the same bits (MICROARCH.md §8). Programs use the console for input and output.
 
-**Read counter.** At `0xFFFFFF01` the emulator and the simulation memory of the FPGA core map a read counter for tests. A data read of it returns the number of data reads of it since the last write to it, and a write sets that number. Tests use it to count the data accesses of ISA §8.2.
+**Read counter.** At `0xFFFFFF01` the emulator and the simulation memory of the FPGA core map a read counter for tests. A data read of it returns the number of data reads of it since the last write to it, and a write sets that number. It is 0 at the start of a run, and a reset of the processor does not clear it. Tests use it to count the data accesses of ISA §8.2.
 
 ## 2. Math unit
 
@@ -124,7 +124,7 @@ The emulator and the FPGA implementation map a timer at `0xFFFFFF10`–`0xFFFFFF
 - While P ≠ 0, COUNT decreases by one at the end of each cycle, the cycle of the write to `TIMER_PERIOD` included. When COUNT reaches 0, the timer raises IRQ with vector v, and COUNT is set to P again. So the first request comes at the end of the P-th cycle, counting from the write, and then one comes every P cycles.
 - P = 0 stops the timer, and COUNT stays 0. A request that is already pending stays pending.
 - The emulator counts one cycle for each step, as its cycle counter does (§3). The FPGA implementation counts clock cycles.
-- A request keeps the vector it was raised with. If the timer's last request is still pending when it raises the next one, the two merge (ISA §7.1). So a timer whose period is shorter than its interrupt routine, or than a stretch of code with E = 0, loses requests. To keep time, read the cycle counter rather than count interrupts.
+- A request keeps the vector it was raised with. If the timer's last request is still pending when it raises the next one, the two merge (ISA §7.1), and the pending one keeps its vector. So a timer whose period is shorter than its interrupt routine, or than a stretch of code with E = 0, loses requests. To keep time, read the cycle counter rather than count interrupts.
 - The interrupt routine need not acknowledge the request. Taking it is enough.
 - Reset sets P, COUNT, and v to 0, with no request pending.
 

@@ -47,7 +47,7 @@ def main() -> None:
     p.add_argument("dirs", nargs="+", metavar="DIR")
     p.add_argument("--stall", type=int, default=0, help="G_STALL of the memory, in percent")
     p.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1)
-    p.add_argument("--core", default=DEFAULT_CORE, help="G_CORE of tb_core (default multicycle)")
+    p.add_argument("--core", default=DEFAULT_CORE, help="G_CORE of tb_core (default pipeline)")
     p.add_argument("--build", default=DEFAULT_BUILD)
     p.add_argument("--emu", default=DEFAULT_EMU)
     p.add_argument("--ghdl", default=os.environ.get("GHDL", "ghdl"))

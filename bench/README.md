@@ -10,12 +10,12 @@ NICE with other processors.
 
     make            # run both on the emulator and print their tables
     make test       # the same, and check every result
-    make core       # run both on the multi-cycle core in GHDL (about 20 minutes)
-    make core CORE=pipeline  # the same on the pipelined core (about 20 minutes)
+    make core       # run both on the pipelined core in GHDL (about 20 minutes)
+    make core CORE=multicycle  # the same on the multi-cycle core (about 20 minutes)
     make hazards    # count the pipeline hazards of MICROARCH.md §5 in both
     make cycles     # estimate the cycles of both on the pipelined core of MICROARCH.md
     make profile    # the same, charged to the source lines, in build/*.cyc.txt
-    make compare    # the estimate beside the pipelined core's cycles, after make core CORE=pipeline
+    make compare    # the estimate beside the pipelined core's cycles, after make core
     make words      # the size in words of the benchmark, safe.zig, and float modules
     make native     # build and run bench.c on the host, as a check
     make wasm       # rebuild bench.wasm from bench.c (needs clang)
@@ -133,7 +133,7 @@ times faster in cycles. In the translated program, `rng64` and `vm` have
 the most cycles per instruction, 12.0 and 11.7, and `vm` in the
 hand-written one, 12.8.
 
-`make core CORE=pipeline` runs them on the pipelined core, on the same
+`make core` runs them on the pipelined core (the default), on the same
 programs as the multi-cycle core above, at commit 1a41b0c, which leaves
 the multi-cycle core as it was:
 
@@ -284,7 +284,7 @@ small programs whose cycles are worked out by hand in the script, and
 phases.
 
 `make compare` puts the estimate beside the cycles the pipelined core
-took, phase by phase, from the output of `make core CORE=pipeline`,
+took, phase by phase, from the output of `make core`,
 which must have run first, on the same `.bin`. With the core at commit
 1a41b0c:
 

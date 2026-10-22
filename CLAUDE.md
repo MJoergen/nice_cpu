@@ -30,12 +30,12 @@ translator, and two FPGA cores. See README.md.
   benchmark written by hand, the ceiling to compare with. `expected.py`
   computes the results in Python, and `make test` checks both against them.
 - `hdl/`: VHDL-2008, GHDL. Two cores with the same ports, but for the
-  pipelined one's `stats_o`: a simple multi-cycle one in
-  `src/multicycle.vhd`, the reference, and the pipelined one of
-  MICROARCH.md in `src/pipeline.vhd`, which connects
+  pipelined one's `stats_o`: the pipelined one of
+  MICROARCH.md in `src/pipeline.vhd`, the default, which connects
   `src/pipe_fetch.vhd`, `pipe_decode.vhd`, `pipe_prepare.vhd`,
   `pipe_dbus.vhd`, and `pipe_write.vhd`, with `pipe_pkg.vhd`; its choices
-  are in `hdl/ASSUMPTIONS.md`. Both use
+  are in `hdl/ASSUMPTIONS.md`; and a simple multi-cycle one in
+  `src/multicycle.vhd`, the variant. Both use
   `src/nice_pkg.vhd` and `src/trace_pkg.vhd`. Style follows `hdl/CODING_STYLE.md`,
   checked by vsg with `hdl/vsg.yml`.
 
@@ -51,11 +51,11 @@ translator, and two FPGA cores. See README.md.
     cd translator && make test       # test/run.py, then test/errors.py
     cd translator && make typecheck  # mypy --strict
     cd bench     && make test        # the benchmark on the emulator, with its results checked
-    cd bench     && make core        # the benchmark on a core in GHDL, CORE=multicycle or pipeline (minutes)
+    cd bench     && make core        # the benchmark on a core in GHDL, CORE=pipeline or multicycle (minutes)
     cd bench     && make hazards     # how often the pipeline hazards of MICROARCH.md §5 occur
     cd bench     && make cycles      # the estimated cycles on the pipelined core, per phase
     cd bench     && make profile     # the same, per source line, in bench/build/*.cyc.txt
-    cd bench     && make compare     # the estimate beside the pipelined core's cycles, after make core CORE=pipeline
+    cd bench     && make compare     # the estimate beside the pipelined core's cycles, after make core
     cd bench     && make words       # the size in words of the benchmark, safe.zig, and float modules
     cd bench     && make typecheck   # mypy --strict
     cd hdl && make test              # synth check, unit tests, tb_trace, then both cores diffed against niceemu

@@ -2,8 +2,9 @@
 -- "niceemu --trace", so that the two can be compared with diff.
 --
 -- THEORY OF OPERATION
--- G_CORE names the core: "multicycle" for src/multicycle.vhd. Every core
--- has the same ports, so the rest of the testbench serves them all. Only
+-- G_CORE names the core: "pipeline" for src/pipeline.vhd, "multicycle" for
+-- src/multicycle.vhd. Every core has the same ports, so the rest of the
+-- testbench serves them all. Only
 -- the pipelined core has stats_o, for the fetch statistics.
 -- The core runs on the memory model, sim/wb_mem.vhd, which loads G_BIN_FILE.
 -- Its console reads the bytes of G_INPUT_FILE, as the emulator's --input
@@ -89,7 +90,7 @@ library ieee;
 
 entity tb_core is
    generic (
-      G_CORE          : string   := "multicycle";
+      G_CORE          : string   := "pipeline";
       G_BIN_FILE      : string;
       G_TRACE_FILE    : string;
       G_INPUT_FILE    : string   := "";

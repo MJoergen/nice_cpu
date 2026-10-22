@@ -45,12 +45,12 @@ test: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 	  && echo "PASS pipecycles.py --phases 6"
 
 # Runs both on a core in GHDL, so that the cycles are the core's: CORE,
-# the generic G_CORE of hdl/test/tb_core.vhd, is multicycle for the
-# multi-cycle core or pipeline for the pipelined one. Each takes about 20
+# the generic G_CORE of hdl/test/tb_core.vhd, is pipeline for the
+# pipelined core or multicycle for the multi-cycle one. Each takes about 20
 # minutes: the pipelined core runs fewer cycles, but more logic in each. The program is given relative to
 # hdl/build, where GHDL runs, and the output is written there too, with
 # the retire log that pipecycles.py --retires reads, $(1)_$(CORE).retires.
-CORE ?= multicycle
+CORE ?= pipeline
 
 define core_run
 	@echo "$(1) on the $(CORE) core:"
@@ -93,7 +93,7 @@ cycles: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py $(BUILD)/bench.bin $(BUILD)/hand.bin
 
 # The estimate beside the cycles the pipelined core took, phase by phase,
-# from the output of make core CORE=pipeline, which must have run first
+# from the output of make core, which must have run first
 # (README.md, The cycle estimate).
 compare: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --against ../hdl/build/bench_pipeline.out $(BUILD)/bench.bin

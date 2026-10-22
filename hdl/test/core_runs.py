@@ -16,7 +16,7 @@ import threading
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_BUILD = os.path.join(HERE, "..", "build")
 DEFAULT_EMU = os.path.join(HERE, "..", "..", "emulator", "zig-out", "bin", "niceemu")
-DEFAULT_CORE = "multicycle"
+DEFAULT_CORE = "pipeline"
 
 
 def run_emulator(emu: str, binfile: str, opts: list[str]) -> str:

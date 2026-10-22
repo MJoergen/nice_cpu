@@ -7,8 +7,8 @@ the specification.
 This directory holds two cores, and the test setup that checks them
 (MICROARCH.md §9): a memory model, a console, and a trace writer whose
 output can be compared with `niceemu --trace`. The pipelined core is the
-one of MICROARCH.md. The simple multi-cycle core came first, and is the
-working reference for it. [ASSUMPTIONS.md](ASSUMPTIONS.md) lists where the
+one of MICROARCH.md, and the default. The simple multi-cycle core came first,
+and is the working reference for it. [ASSUMPTIONS.md](ASSUMPTIONS.md) lists where the
 pipelined core settles a question that MICROARCH.md leaves open, or
 departs from it.
 
@@ -208,7 +208,7 @@ step limits. The output and exit status of each run must match the
 emulator's exactly.
 
 `tb_core` runs these programs on the core that its generic `G_CORE` names:
-`multicycle` by default, or `pipeline`. Both cores have the same ports,
+`pipeline` by default, or `multicycle`. Both cores have the same ports,
 but for the pipelined core's `stats_o`, and the rest of the testbench
 serves them both. `make test` runs them on
 each core in `CORES`, both by default, and `make test CORES=pipeline` on
@@ -365,9 +365,9 @@ runs make its two words memory, as the random programs do.
 `test/sidefx_prog.py` on the core in `CORE` with one request per run, as
 `hazard.nasm` is swept, but without the delays. A run of the whole
 program for each of its 9500 steps and each kind of request makes some
-19000 runs. On 20 CPUs, that took 2 hours on the multi-cycle core and 5
-on the pipelined one on 2026-10-21, and both passed. `make slow` at the
-top runs it on the multi-cycle core.
+19000 runs. On 20 CPUs, that took 5 hours on the pipelined core and 2
+on the multi-cycle one on 2026-10-21, and both passed. `make slow` at the
+top runs it on `CORE`, the pipelined core by default.
 
 `make random` runs more random programs, with the seeds, step count, and
 stall rate given as variables:

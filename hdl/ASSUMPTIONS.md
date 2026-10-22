@@ -124,7 +124,7 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
 12. **`irq_compare.py --read-delay`** checks exactly that: a request may be
     taken late by the run of steps right before its entry that are
     instructions with a data read, and by nothing else. `make test
-    CORE=pipeline` and `irq_sweep.py` use it, and skip the exact diff
+    CORE=pipeline` (the default) and `irq_sweep.py` use it, and skip the exact diff
     against the emulator for runs with requests, which cannot hold
     (MICROARCH.md §9).
 13. **The timer in `tb_core` ticks with `instret_o`** and the report of

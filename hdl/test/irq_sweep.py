@@ -192,7 +192,7 @@ def main() -> None:
     p.add_argument("--stride", type=int,
                    help="raise a request before every this many steps in each run (default: one per run)")
     p.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1)
-    p.add_argument("--core", default=DEFAULT_CORE, help="G_CORE of tb_core (default multicycle)")
+    p.add_argument("--core", default=DEFAULT_CORE, help="G_CORE of tb_core (default pipeline)")
     p.add_argument("--build", default=DEFAULT_BUILD)
     p.add_argument("--emu", default=DEFAULT_EMU)
     p.add_argument("--ghdl", default=os.environ.get("GHDL", "ghdl"))

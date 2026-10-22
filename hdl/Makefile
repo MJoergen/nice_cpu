@@ -76,12 +76,12 @@ endef
 $(TRACE_RUNS:%=run/trace/%): run/trace/%: $(BUILD)/trace.bin
 	$(call check_trace,$*)
 
-# The core that tb_core runs, its generic G_CORE: multicycle for
-# src/multicycle.vhd, or pipeline for src/pipeline.vhd. The PASS and FAIL
+# The core that tb_core runs, its generic G_CORE: pipeline for
+# src/pipeline.vhd, or multicycle for src/multicycle.vhd. The PASS and FAIL
 # lines name it. make test runs the cores of CORES; make random and make
 # programs run CORE.
-CORE ?= multicycle
-CORES ?= multicycle pipeline
+CORE ?= pipeline
+CORES ?= pipeline multicycle
 
 # tb_core runs a program on the core. Its trace, output, and
 # exit status must equal those of "niceemu -t" on the same program, with the
@@ -342,7 +342,7 @@ random: emulator analyze
 
 # The programs of pcfx_prog.py and sidefx_prog.py swept with one request
 # per run, on CORE, one after the other, as each uses every CPU. It takes
-# two hours on the multi-cycle core and five on the pipelined one, on 20 CPUs.
+# five hours on the pipelined core and two on the multi-cycle one, on 20 CPUs.
 sweep: emulator analyze $(BUILD)/pcfx.bin $(BUILD)/sidefx.bin
 	$(call check_sweep,pcfx)
 	$(call check_sweep,sidefx)

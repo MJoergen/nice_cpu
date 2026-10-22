@@ -14,8 +14,8 @@ No code has TODO or FIXME comments.
   [hdl/ASSUMPTIONS.md](hdl/ASSUMPTIONS.md) lists where it settles or
   departs from [doc/MICROARCH.md](doc/MICROARCH.md). Open:
   - The cost of the waits that MICROARCH.md §5.3 and §5.6 discuss, from
-    the pipelined core's cycles for the benchmark (`make core
-    CORE=pipeline` in `bench/`), to decide on speculative reads (below).
+    the pipelined core's cycles for the benchmark (`make core`
+    in `bench/`), to decide on speculative reads (below).
   - Speed: the core alone meets a 10 ns clock out of context (Vivado
     2025.1, `make timing` in `hdl/`), with a margin of a few tenths of a
     nanosecond ([doc/review/pipeline-timing.md](doc/review/pipeline-timing.md)).

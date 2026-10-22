@@ -139,6 +139,10 @@ and output in `core.out`, the emulator's in `core.expected`, and GHDL's
 messages in `core.log`. `make run/pipeline/NAME` repeats one run, for
 example `make run/pipeline/hazard_stall`.
 
+`test/programs.py` runs a `.bin` on a core in GHDL and compares its output
+with the emulator's. `--stall PERCENT` sets `G_STALL` of the memory, and
+`--core` picks the core (`make programs`).
+
 `make lint` checks the style of every VHDL file against
 [CODING_STYLE.md](CODING_STYLE.md), as far as
 [vsg](https://vhdl-style-guide.readthedocs.io/) can, with the rules in
@@ -664,6 +668,8 @@ right, not fast: an instruction takes about ten cycles.
 | `DEST_ADJ` | For a register destination with mode 001 or 010 only, steps the register after the result. |
 | `VEC` | Reads the vector table entry for IRQ, NMI, and `INT`. |
 | `RETIRE` | Reports the step on `retire_o`. |
+| `FETCH_WAIT`, `SRC_WAIT`, `DEST_WAIT`, `VEC_WAIT` | Wait for the ACK of the read that `FETCH`, `SRC`, or `VEC` issued, or of the store that `EXEC` issued. |
+| `HALTED` | Entered from `RETIRE` when the step halted. Only reset leaves it. |
 
 It has the two Wishbone ports of the memory model: a read-only instruction
 bus and a data bus. The instruction bus is 64 bits wide, as MICROARCH.md §1
@@ -896,7 +902,8 @@ port for the data bus. The instruction port is 64 bits wide. Its address a
 names the aligned pair of words 2a and 2a + 1, and it returns word 2a in
 bits 31..0 and word 2a + 1 in bits 63..32. The data port is 32 bits wide.
 Both are pipelined Wishbone slaves that acknowledge each request in the
-cycle after they accept it. By default they never stall. The generic
+cycle after they accept it, never later, so a delayed ACK reaches the core
+only in the formal jobs, which let a slave answer at any pace. By default they never stall. The generic
 `G_STALL` makes each port stall in that percentage of the cycles, at
 random, from the seed `G_SEED`, so that the tests check that the core
 waits for a request to be accepted. When both ports reach one word in one

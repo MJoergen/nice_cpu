@@ -20,10 +20,15 @@
 %   DECODE, between taking an instruction      dec_r, and dec_q, the
 %     and splitting it                           instruction after it, which
 %                                              waits there (pipe_decode)
+%   DECODE, on a micro-operation that          skid_r (pipe_decode), which
+%     PREPARE does not take                    goes to PREPARE first
 %   PREPARE, at its input                      prep_r (pipe_prepare)
 %   PREPARE, on its read request               rd_stb_r, rd_addr_r (pipe_prepare)
 %   DBUS, on WRITE's store                     st_r (pipe_dbus)
 %   WRITE, at its input                        w_r.uop (pipe_write)
+%   pipeline, on WRITE's flush                 w_redir_r and w_target_r
+%                                              (pipeline), which redirect
+%                                              FETCH a cycle later
 %
 % So no register sits between two blocks: the words from ring_r reach
 % dec_r, the micro-operation from dec_r reaches prep_r, and the one from

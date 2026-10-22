@@ -715,8 +715,8 @@ section. The emulator has none, and their words read 0 there. The generic
 | `0xFFFFFF54` | `FS_FULL` | the cycles in which FETCH could have sent a request, but its buffer had no room | is ignored |
 | `0xFFFFFF55` | `FS_STALL` | the cycles in which the instruction bus stalled a request | is ignored |
 | `0xFFFFFF56` | `FS_PAIRS` | the pairs of words that arrived on the instruction bus, wasted ones included | is ignored |
-| `0xFFFFFF57` | `FS_WORDS` | the words that DECODE took | is ignored |
-| `0xFFFFFF58` | `FS_JUMPS` | the jumps that DECODE resolved | is ignored |
+| `0xFFFFFF57` | `FS_WORDS` | the words that FETCH passed to DECODE, also in a cycle when a flush drops them | is ignored |
+| `0xFFFFFF58` | `FS_JUMPS` | the jumps that DECODE redirected FETCH for, also in a cycle when a flush drops them | is ignored |
 | `0xFFFFFF59` | `FS_FLUSHES` | the flushes of the pipeline by WRITE | is ignored |
 | `0xFFFFFF5A` | `FS_MIN` | the fewest words in the buffer in a cycle counted, or 31 if none was | is ignored |
 | `0xFFFFFF5B` | `FS_MAX` | the most words in the buffer in a cycle counted | is ignored |

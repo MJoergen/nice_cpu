@@ -4,8 +4,9 @@ This is the single list of open items for the repository: work not done
 yet, questions not decided, claims not checked, and ideas for later. Each
 item names where it comes from. Add new items here, not in other files.
 
-Every finding of the reviews in [doc/review/](doc/review/) is closed.
-No code has TODO or FIXME comments.
+Every finding of the reviews in [doc/review/](doc/review/) is closed or
+listed here, the last ones under "Left from the fifth review". No code has
+TODO or FIXME comments.
 
 ## FPGA core
 
@@ -13,9 +14,8 @@ No code has TODO or FIXME comments.
   every test that the multi-cycle core passes ([hdl/README.md](hdl/README.md)).
   [hdl/ASSUMPTIONS.md](hdl/ASSUMPTIONS.md) lists where it settles or
   departs from [doc/MICROARCH.md](doc/MICROARCH.md). Open:
-  - The cost of the waits that MICROARCH.md §5.3 and §5.6 discuss, from
-    the pipelined core's cycles for the benchmark (`make core`
-    in `bench/`), to decide on speculative reads (below).
+  - The decision on speculative reads (below). The cost of the waits is
+    in MICROARCH.md §5.3 and §5.6 and in [bench/README.md](bench/README.md).
   - Speed: the core alone meets a 10 ns clock out of context (Vivado
     2025.1, `make timing` in `hdl/`) with the `timing` flow, by a few
     tenths of a nanosecond (+0.16 ns on 2026-10-22). With the `default`
@@ -55,6 +55,36 @@ No code has TODO or FIXME comments.
   0.56 the bounded check reaches 12 cycles in 13 minutes, where CI's
   Yosys 0.33 did not finish 9 in 20; the depth can grow when CI's tools
   do.
+
+## Left from the fifth review
+
+([doc/review/fifth-repository-review.md](doc/review/fifth-repository-review.md))
+
+- **Two timing claims below are not recorded.** "The R6 meets 100 MHz in
+  NiceMonMEGA65" disagrees with [pipeline-timing.md](doc/review/pipeline-timing.md),
+  whose last R6 build missed by 0.257 ns, and nothing records the
+  Nexys4DDR at 83.33 MHz (the last run there was 75 MHz). Run
+  `make timing` and the builds again, or reword both to what is recorded
+  (§8.2).
+- **`p_check` in `pipeline.vhd` does not assert PREPARE's assumptions
+  about WRITE** (`f_takes`, `f_sr_stable`, and the others), so the whole
+  core checks them only through the tests. Assert them, or name them as
+  unchecked in hdl/README.md and MICROARCH.md §9 (§7.2).
+- **The Vivado path** is machine-specific in `hdl/Makefile` and
+  `hdl/CLAUDE.md`. Keep it as the default, or take it from the
+  environment only (§1.6).
+- **The 2004 example programs** (`count`, `replicate`, `print`) have no
+  license. The MIT license excludes them. Ask B. Ulmann (§1.6).
+- **niceasm is slow on a 50 KB line of `[`:** 17 s in the regex of
+  `instruction`. No real program has such a line (§3.2).
+- **nicewasm takes time quadratic in the depth of nested blocks:** 3000
+  nested blocks take 7 s (§6.4).
+- **Only CI checks that the emulator's `test/*.bin` match their `.nasm`**
+  (`make bins && git diff`). `make test` in `emulator/` does not. Add the
+  check to it (§4.2).
+- **A program killed by a signal while stdout is a pipe or file** loses
+  the console output still in the emulator's buffer. Documented in
+  emulator/README.md (§4.1).
 
 ## Devices
 

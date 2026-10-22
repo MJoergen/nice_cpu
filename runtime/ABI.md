@@ -130,7 +130,7 @@ Division by zero is undefined in C, so these routines may return any value for i
 | `void nice_putc(int c)` | Writes bits 7..0 of `c` to the console. |
 | `int nice_getc(void)` | Waits for the next input byte from the console and returns it, 0 to 255. Returns −1 once the input has ended. |
 | `int nice_pollc(void)` | Like `nice_getc`, but returns −2 at once if no byte is waiting. |
-| `void nice_print(const char *s)` | Writes the characters of `s` up to its first 0 to the console, with no newline. |
+| `void nice_print(const char *s)` | Writes the characters of `s` up to its first 0 to the console, with no newline. In assembly, one character per word. The C library's `nice_print` takes the bytes of a C string instead (runtime/README.md). |
 | `unsigned long long nice_cycles(void)` | The cycle counter. |
 | `unsigned long long nice_instructions(void)` | The instruction counter. |
 | `void nice_screen_put(int col, int row, int c)` | Writes `c`, the character in bits 7..0 and its colors above ([SYSTEM.md](../doc/SYSTEM.md) §1), to column `col`, 0 to 79, of row `row`, 0 to 24. |

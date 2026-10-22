@@ -180,9 +180,10 @@ the steps that got the code here.
 - **Instructions:** `drop`, `select` (both forms), `local.get`,
   `local.set`, `local.tee`, `global.get`, `global.set`, `i32.const`,
   `i64.const`, `i32.wrap_i64`, `i64.extend_i32_s`, and `i64.extend_i32_u`.
-  `unreachable` traps with code 1 through `___wasm_trap_vector`, as WASM.md says. Each trap sets R2 and jumps to a helper for its code,
-  such as `W.trap1`, which sets R1 and jumps through the vector. So a
-  trap takes four words, not six.
+- **Traps:** `unreachable` traps with code 1 through
+  `___wasm_trap_vector`, as WASM.md says. Each trap sets R2 and jumps to a
+  helper for its code, such as `W.trap1`, which sets R1 and jumps through
+  the vector. So a trap takes four words, not six.
 - **Integer operations,** for `i32` and `i64`: `add`, `sub`,
   `mul`, `div_s`, `div_u`, `rem_s`, `rem_u`, `and`, `or`, `xor`, `clz`,
   `ctz`, `popcnt`, and the `sign-ext` instructions `extend8_s`,

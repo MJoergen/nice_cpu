@@ -3,7 +3,8 @@
 #define _NICE_H
 
 // The device routines of ABI.md, with the same names and meanings as
-// in the runtime library. Programs use these, not the addresses below.
+// in the runtime library, but for nice_print, which takes the bytes of a
+// C string, not one character per word. Programs use these, not the addresses below.
 
 // Writes bits 7..0 of c to the console.
 void nice_putc(int c);

@@ -65,9 +65,12 @@ unit, and translated code that uses the math unit needs them (see
 [translator/README.md](../translator/README.md), `--no-mpu`). A program
 translated with `--no-mpu` must use `muldiv_soft.nasm`.
 
-Some labels are not C routines: the `__mpu.` names above, and
-`__udivmod` and `__udivmod64` in `muldiv_soft.nasm`, the unsigned divisions
-that the division routines share. Every label is global in the joined
+Some labels are not C routines: the `__mpu.` names above, the `__nice.`
+names in `lib.nasm` that give the devices' addresses (`__nice.console`,
+`__nice.cycle_lo`, `__nice.cycle_hi`, `__nice.instr_lo`, `__nice.instr_hi`,
+and `__nice.screen`), and `__udivmod` and `__udivmod64` in
+`muldiv_soft.nasm`, the unsigned divisions that the division routines
+share. Every label is global in the joined
 program (ABI.md), so no other file may define these names either.
 
 Division by zero is undefined in C, so the division routines return some
@@ -165,8 +168,10 @@ calls to this library. `nicewasm` rejects a library module that uses them.
 `libc/` is a small C standard library for C code that reaches NICE
 through wasm. It is written in C and compiled to wasm, to the archive
 `libc/libc.a`, which `make -C runtime/libc` builds with clang. wasm-ld
-links it into the program's module and keeps only the functions the
-program uses. So it adds nothing to the joined assembly files.
+links it into the program's module and, as it collects unused sections by
+default, keeps only the functions the program uses. So it adds
+nothing to the joined assembly files. With the Zig recipe below, the
+image holds the whole library, about 81 KB of wasm.
 
 | Header | Functions |
 |---|---|
@@ -189,7 +194,7 @@ that `--input` names. Clang's own `stddef.h`,
 
 The library is small on purpose:
 
-- No `FILE`, `stdin`, `stdout`, `fprintf`, `ungetc`, or `fgets`.
+- No `FILE`, `stdin`, `stdout`, `fprintf`, `ungetc`, or `fgets`. In `stdlib.h`, no `strtoll`, `strtoull`, `strtod`, `atof`, `rand`, `srand`, `qsort`, `bsearch`, `div`, `getenv`, or `system`. In `string.h`, no `strcoll`, `strspn`, `strcspn`, `strpbrk`, `strtok`, or `strerror`.
 - `scanf` and `sscanf` support white space and ordinary characters in the
   format, `*` to read without storing, a width, the length modifiers
   `hh h l ll z t j`, and the conversions `d i u o x X p c s [ n %`. A set

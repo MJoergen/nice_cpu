@@ -73,6 +73,20 @@ two kinds of access. §9.4, the mapping of WebAssembly, is
   had read `retire_o.regs` of the pipelined core, which is WRITE's next
   state before the register, and a copy of it ended WRITE's longest paths.
   `regs_o` comes from the registers themselves.
+- Until 2026-10-21, DECODE's enables came from PREPARE's decisions against
+  WRITE in the same cycle, and WRITE read the vector of an interrupt entry
+  straight from the bus. Now DECODE keeps a micro-operation that PREPARE
+  does not take in a skid register (bb8fdb6), and WRITE issues the vector
+  read through DBUS's register, as it does a store. An interrupt entry
+  takes a cycle more, and the benchmark 0.12% fewer cycles.
+- Until 2026-10-22, WRITE's redirect reached FETCH in the cycle of the
+  flush. Now it comes from registers, a cycle later (1a41b0c), so that no
+  path runs from WRITE's decisions through FETCH's adders. A jump that
+  WRITE resolves costs 7 cycles over a fall-through, from 6.
+- The assembler once took a lone word on an indented line, such as a
+  misspelt `HALT`, as a label without a word. Now it warns, checks the
+  symbols of every `.EQU` also when the name is never used, and lets
+  `INT`, `.BLK`, and `.RES` take the value before it wraps (af454a6).
 
 ## The random test programs
 

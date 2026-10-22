@@ -115,8 +115,12 @@ wasm:
 emulator:
 	$(MAKE) -C ../emulator build
 
+# Needs mypy (pip install mypy).
+typecheck:
+	cd libc/test && $(PYTHON) -m mypy --strict fuzz_printf.py
+
 clean:
 	rm -f test/*.out test/*.out.nasm test/*.out.bin test/*.full.nasm test/*.raw test/*.status float.nasm
 	$(MAKE) -C libc clean
 
-.PHONY: test emulator clean float wasm
+.PHONY: test emulator typecheck clean float wasm

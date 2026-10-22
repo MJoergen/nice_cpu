@@ -84,7 +84,11 @@ build:
 bins:
 	@for t in $(PROBES); do $(PYTHON) ../assembler/niceasm.py test/$$t.nasm || exit 1; done
 
+# Needs mypy (pip install mypy).
+typecheck:
+	$(PYTHON) -m mypy --strict test/errors.py
+
 clean:
 	rm -rf zig-out .zig-cache test/*.out
 
-.PHONY: test build bins clean
+.PHONY: test build bins typecheck clean

@@ -418,7 +418,7 @@ class Assembler:
         m = re.match(r"([^\[]+)(?:\[(.*)\])?$", mtok)
         if not m or m.group(1).upper() not in MNEMONICS:
             if mtok.split("[")[0].upper() in MNEMONICS:
-                raise AsmError(f"'{mtok}': bad modifier, expected [M], [C] or [CM]")
+                raise AsmError(f"'{mtok}': bad modifier, expected [M], [C], or [CM]")
             raise AsmError(f"unknown mnemonic '{mtok}'")
         name = m.group(1).upper()
         cls, opcode, nops = MNEMONICS[name]
@@ -558,7 +558,7 @@ class Assembler:
             return
         all_tok = list(tok)
 
-        # A label is a first word that is not a condition, mnemonic or directive.
+        # A label is a first word that is not a condition, mnemonic, or directive.
         label = None
         if not self.is_keyword(tok[0]):
             if tok[0].startswith("."):
@@ -663,7 +663,7 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        with open(out, "w") as f:
+        with open(out, "w", newline="") as f:
             for addr, word in asm.output():
                 f.write(f"{addr:08x} {word:08x}\n")
     except OSError as e:

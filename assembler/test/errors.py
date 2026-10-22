@@ -83,7 +83,7 @@ CASES: List[Tuple[str, str]] = [
     ("?1 .DAT 1", "1: error: a directive cannot have a condition"),
     ("?1 .ORG 5", "1: error: a directive cannot have a condition"),
     (" MOVE [M] R1, R2", "1: error: 'MOVE [M]': write the modifier without a space, as MOVE[M]"),
-    (" MOVE[M R1, R2", "1: error: 'MOVE[M': bad modifier, expected [M], [C] or [CM]"),
+    (" MOVE[M R1, R2", "1: error: 'MOVE[M': bad modifier, expected [M], [C], or [CM]"),
     # Mnemonics and directives
     (" MOV R1, R2", "1: error: unknown mnemonic 'MOV'"),
     ("LOOP MOV R1, R2", "1: error: unknown mnemonic 'MOV' ('LOOP' is read as a label)"),

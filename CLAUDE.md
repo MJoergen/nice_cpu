@@ -17,25 +17,18 @@ translator, and two FPGA cores. See README.md.
   out of the other docs, which say only what is true now.
 - `doc/intro/`: beginner's slides (`nice_intro.tex`, built `nice_intro.pdf`)
   and their example programs. ISA.md wins over them.
-- `doc/check_refs.py`: checks every `FILE.md §n.m` reference in the repository
-  against the headings of the documents, and every link of every Markdown
-  file. `make -C doc test` runs it.
 - `doc/MICROARCH.md`: design note for the FPGA core. ISA.md wins over it.
   Its block diagram is `doc/pipeline.tex`, and its timing diagrams
   `doc/flow.tex` and `doc/interrupt.tex`, rendered to PNGs by `make diagrams`; edit the `.tex`
   and commit both. The timing values are read off a simulation by hand.
 - `assembler/niceasm.py`: Python 3, standard library only, `mypy --strict` clean.
-- `emulator/src/cpu.zig` (core, unit tests) and `main.zig` (CLI, loader). Zig 0.15.
+- `emulator/`: Zig 0.15.
 - `runtime/`: start-up code and runtime routines in NICE assembly (`runtime/ABI.md`).
 - `translator/nicewasm.py`: wasm -> NICE assembly (`translator/WASM.md`). Same rules as niceasm.py.
 - `bench/bench.c`: a benchmark of translated code, six kernels with known
   results, timed with the performance counters. `hand.nasm` is the same
   benchmark written by hand, the ceiling to compare with. `expected.py`
   computes the results in Python, and `make test` checks both against them.
-  `hazards.py` counts the pipeline hazards of MICROARCH.md §5 in a program,
-  `pipecycles.py` estimates a program's cycles on the pipelined core,
-  `cycprof.py` charges them to the source lines, and `words.py` gives the
-  size in words of a translated module.
 - `hdl/`: VHDL-2008, GHDL. Two cores with the same ports, but for the
   pipelined one's `stats_o`: a simple multi-cycle one in
   `src/multicycle.vhd`, the reference, and the pipelined one of
@@ -43,13 +36,7 @@ translator, and two FPGA cores. See README.md.
   `src/pipe_fetch.vhd`, `pipe_decode.vhd`, `pipe_prepare.vhd`,
   `pipe_dbus.vhd`, and `pipe_write.vhd`, with `pipe_pkg.vhd`; its choices
   are in `hdl/ASSUMPTIONS.md`. Both use
-  `src/nice_pkg.vhd` and `src/trace_pkg.vhd`. Also the math unit in
-  `src/mpu.vhd`, the performance counters in `src/perf.vhd`, the timer in
-  `src/timer.vhd`, the fetch statistics of the pipelined core in
-  `src/fetch_stats.vhd`, the data bus decoder in `src/wb_dmux.vhd`, the
-  simulation-only memory model and trace writer in `sim/`, the
-  testbenches, test programs, and random program generator in `test/`,
-  and the formal checks in `formal/`. Style follows `hdl/CODING_STYLE.md`,
+  `src/nice_pkg.vhd` and `src/trace_pkg.vhd`. Style follows `hdl/CODING_STYLE.md`,
   checked by vsg with `hdl/vsg.yml`.
 
 ## Commands
@@ -83,10 +70,6 @@ translator, and two FPGA cores. See README.md.
     cd doc && make test              # the section references and links of every Markdown file
     cd doc && make typecheck         # mypy --strict
     make diagrams                    # render the diagrams in doc/ to PNG (pdflatex, pdftoppm)
-
-Vivado 2025.1 is installed but not on PATH: `/opt/Xilinx/2025.1/Vivado/bin/vivado`.
-`make timing` in `hdl/` runs the out-of-context timing script `hdl/timing.tcl`
-of `doc/review/pipeline-timing.md` (Method).
 
 Run the relevant `make test` after every change.
 

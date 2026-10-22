@@ -10,8 +10,7 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
 ## Structure
 
 1. **Registers are read in PREPARE, not in DECODE, and WRITE has one
-   bypass.** MICROARCH.md §3 and §5.1 once had DECODE read three
-   registers, with bypasses from WRITE. The core reads them in PREPARE,
+   bypass.** MICROARCH.md §3 and §5.1 describe it. The core reads them in PREPARE,
    one stage before WRITE, and forms every operand value and address
    there (MICROARCH.md §7.4). WRITE is the only stage that writes the
    registers, in program order, so only the micro-operation in WRITE can
@@ -123,8 +122,8 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
     step S had already issued a data read, as MICROARCH.md §6 allows.
 12. **`irq_compare.py --read-delay`** checks exactly that: a request may be
     taken late by the run of steps right before its entry that are
-    instructions with a data read, and by nothing else. `make test
-    CORE=pipeline` (the default) and `irq_sweep.py` use it, and skip the exact diff
+    instructions with a data read, and by nothing else. `make test` on the pipelined core, `make sweep`, and
+    `irq_sweep.py` use it, and skip the exact diff
     against the emulator for runs with requests, which cannot hold
     (MICROARCH.md §9).
 13. **The timer in `tb_core` ticks with `instret_o`** and the report of

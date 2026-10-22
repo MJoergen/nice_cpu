@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Writes a random NICE program for the multicycle core's tests.
+"""Writes a random NICE program for the tests of both cores.
 
 Usage: random_prog.py SEED OUT.bin
 

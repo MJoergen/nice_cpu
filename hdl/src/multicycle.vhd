@@ -516,7 +516,7 @@ begin
    gen_formal : if G_FORMAL generate
       signal dbus_wait : boolean;
    begin
-      -- The state has one of its 12 values, and each bus is busy in its
+      -- The state has one of its 14 values, and each bus is busy in its
       -- wait states and only there. Without this the k-induction of
       -- formal/multicycle.sby starts from states that reset never leads
       -- to, such as a pending fetch in HALTED_ST.

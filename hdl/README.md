@@ -224,7 +224,8 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   `assembler/test/`.
 - The emulator's probes in `emulator/test/`, `cputest` among them, with the
   interrupt options that `emulator/Makefile` gives them, but `scrbound`,
-  which checks the emulator's screen. Their memory dumps
+  `screencolor`, and `screeninvert`, which check the emulator's screen and
+  need `--color` and `--invert-fg`. Their memory dumps
   are left out, because the trace lists every memory write. The trace does
   not list data reads, but `reads` counts them with the read counter, so
   its registers show whether the core made each read exactly once and in
@@ -442,7 +443,7 @@ and never stalls.
 
 The `prove` task proves the assertions for every cycle by k-induction. The
 induction needs invariants that tie the ports to the core's state: the state
-is one of its 12 values, and each bus has CYC high exactly in its wait
+is one of its 14 values, and each bus has CYC high exactly in its wait
 states. The core asserts them itself when its generic `G_FORMAL` is true;
 `formal_multicycle` sets it, and the other users leave it false. The
 `cover` task shows that each port can do what the properties talk about: a
@@ -493,7 +494,7 @@ cycle, so its block is the one before `blk_o` or `blk_o` itself, which is
 what WRITE's compare with the fetched words relies on (MICROARCH.md
 §5.5). The invariants tie that counter, the
 requests to drop, the next pair to request, the buffer, and `end_o` to
-each other, which makes the assertions inductive in one step. Boolector
+each other, which makes the assertions inductive in two steps. Boolector
 proves them in about a minute; Yices does not finish. Breaking the drop
 of stale words, or of an odd address's low word, fails the proof.
 

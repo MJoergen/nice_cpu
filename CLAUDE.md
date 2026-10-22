@@ -46,8 +46,10 @@ translator, and two FPGA cores. See README.md.
     cd assembler && make test        # .nasm -> .bin comparisons, then test/errors.py
     cd assembler && make typecheck   # mypy --strict
     cd emulator  && make test        # zig unit tests, example and probe programs, test/errors.py
+    cd emulator  && make typecheck   # mypy --strict
     cd emulator  && make bins        # reassemble test/*.bin after editing a probe .nasm
     cd runtime   && make test        # join, assemble, and run each test/*.nasm
+    cd runtime   && make typecheck   # mypy --strict
     cd translator && make test       # test/run.py, errors.py, fuzz.py in four modes, and passes.py
     cd translator && make typecheck  # mypy --strict
     cd bench     && make test        # the benchmark on the emulator, with its results checked
@@ -59,6 +61,7 @@ translator, and two FPGA cores. See README.md.
     cd bench     && make words       # the size in words of the benchmark, safe.zig, and float modules
     cd bench     && make typecheck   # mypy --strict
     cd hdl && make test              # synth check, unit tests, tb_trace, then both cores diffed against niceemu
+    cd hdl && make typecheck         # mypy --strict
     cd hdl && make lint              # vsg style check (pip install vsg)
     cd hdl && make formal            # SymbiYosys: the ports of both cores and wb_dmux; proofs of FETCH, DECODE, PREPARE, DBUS, the shared functions, and the devices
     cd hdl && make timing            # the pipelined core's worst paths out of context in Vivado, BOARD=mega65 or nexys4ddr, FLOW=default or timing (10 minutes)

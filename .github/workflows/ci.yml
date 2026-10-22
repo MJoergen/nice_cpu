@@ -29,11 +29,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
+      - run: pip install mypy
       # Zig 0.15 is the only supported version (see README.md).
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.15.2
       - run: make test
+      - run: make typecheck
       # The example programs of the introduction slides.
       - run: make -C ../doc/intro test
       # The probe .bin files must match their .nasm sources.
@@ -52,10 +54,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
+      - run: pip install mypy
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.15.2
       - run: make test
+      - run: make typecheck
 
   translator:
     runs-on: ubuntu-latest
@@ -126,6 +130,8 @@ jobs:
       # The style of CODING_STYLE.md, as far as vsg can check it.
       - run: pip install vsg==3.35.0
       - run: make lint
+      - run: pip install mypy
+      - run: make typecheck
 
   formal:
     runs-on: ubuntu-24.04

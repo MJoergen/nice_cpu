@@ -3,7 +3,7 @@
 
 # The quick tests. The hdl tests need GHDL.
 TEST_DIRS      = assembler emulator runtime translator bench hdl doc/intro doc
-TYPECHECK_DIRS = assembler translator bench doc
+TYPECHECK_DIRS = assembler emulator runtime translator bench hdl doc
 CLEAN_DIRS     = assembler emulator runtime bench hdl doc/intro
 
 help:

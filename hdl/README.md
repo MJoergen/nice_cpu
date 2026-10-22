@@ -236,8 +236,7 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   `tick_i` is the core's `instret_o` and its report of each interrupt
   entry, so that a read of `TIMER_COUNT` sees the ticks of every older
   instruction on any core. Its request and those of the
-  interrupt source share the core's IRQ port, with the interrupt source's
-  vector when both are raised, as the emulator merges them.
+  interrupt source share the core's IRQ port, with the vector of the one raised first when both are pending, as the emulator merges them.
 - `test/shift.nasm`.
 - `test/irqwave.nasm`, with two IRQs: one that comes before an instruction
   that has not begun, and one that comes just after the next instruction
@@ -709,7 +708,7 @@ two words of the cycle counter to the memory model instead of `perf`, as
 `--no-cycle-counter` does in the emulator. The generic `G_INTERRUPTS` takes the emulator's options,
 for example `--nmi 2:1 --irq 2:2`. A request for step S is raised once S
 steps have retired, as the emulator raises it before step S. A second request
-of the same kind replaces the vector of one still pending, as the emulator
+of the same kind merges with one still pending and leaves its vector, as the emulator
 merges them.
 
 With the generic `G_INTR_DELAY` = N, each request is raised N cycles

@@ -87,9 +87,9 @@ def infer(log: str) -> tuple[list[str], list[Take], list[str]]:
                 problems.append(f"log line {n}: {kind} entry at step {step} with no request accepted")
                 continue
             accepted[kind] = []
-            if vector != reqs[-1][1]:
+            if vector != reqs[0][1]:
                 problems.append(f"log line {n}: {kind} entry at step {step} with vector {vector:02x}, "
-                                f"but the last request raised has {reqs[-1][1]:02x}")
+                                f"but the first request raised has {reqs[0][1]:02x}")
             takes.append(Take(kind, reqs[0][0], reqs[0][1], step, vector))
             options += [f"--{kind}", f"{step}:{vector}"]
         else:

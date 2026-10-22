@@ -12,7 +12,7 @@
 --
 -- A request stays raised, with its vector, until the core takes it with
 -- irq_ready_i. A new request raised before then merges with it, as ISA.md
--- §7.1 allows. Stopping the timer leaves a raised request as it is. While
+-- §7.1 says, and the raised request keeps its vector. Stopping the timer leaves a raised request as it is. While
 -- no request is raised, irq_ready_i has no effect, so the core's ready may
 -- go to more than one device.
 --

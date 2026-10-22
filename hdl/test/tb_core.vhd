@@ -33,8 +33,8 @@
 -- "--nmi 2:1 --irq 2:2", and the interrupt source p_intr raises the same
 -- requests. A request for step S is raised once S steps have been reported,
 -- that is, before step S, as in the emulator. A request of the same kind
--- that is raised while one is pending replaces its vector, as the emulator
--- merges them (ISA.md §7.1). The multi-cycle core takes requests only
+-- that is raised while one is pending merges with it and leaves its vector,
+-- as the emulator merges them (ISA.md §7.1). The multi-cycle core takes requests only
 -- between steps, so its trace matches the emulator's exactly.
 --
 -- With G_INTR_DELAY = N, each request is raised N cycles later instead, so
@@ -70,9 +70,10 @@
 -- TIMER_COUNT must see the ticks of every older instruction, and the
 -- pipelined core raises instret_o in time for that, but may report a step
 -- later (src/pipeline.vhd). Its request and the IRQ of p_intr reach the core
--- as one request, with the vector of p_intr's when both are raised, and the
--- core's ready takes both. That is how the emulator merges a request of the
--- timer with one from --irq.
+-- as one request, with the vector of the one raised first (p_intr's, when
+-- both are raised in the same cycle), and the core's ready takes both.
+-- That is how the emulator merges a request of the timer with one from
+-- --irq.
 --
 -- The run ends when the trace writer has printed the end of the run. The
 -- simulation goes on for a few cycles, so that the core's own checks see
@@ -514,6 +515,9 @@ begin
       -- The cycles until each request is raised, or -1
       type     t_waits is array (C_REQUESTS'range) of integer;
       variable wait_v : t_waits := (others => -1);
+      -- A request of this kind was raised in this cycle already
+      variable nmi_set_v : boolean;
+      variable irq_set_v : boolean;
       -- The timer's ticks, and whether its last request still waits
       variable ticks_v       : natural := 0;
       variable timer_waits_v : boolean := false;
@@ -555,7 +559,8 @@ begin
             nmi_valid <= '0';
          end if;
          -- A new request of the timer. It merges with one of p_intr that
-         -- waits, and the core then takes that one's vector.
+         -- waits, and the core then takes that one's vector, since that
+         -- one was raised first.
          if timer_valid = '1' and not timer_waits_v then
             if irq_valid = '1' then
                log("raised", ticks_v, false, irq_vector);
@@ -587,6 +592,8 @@ begin
             steps_v := steps_v + 1;
          end if;
 
+         nmi_set_v := false;
+         irq_set_v := false;
          for i in C_REQUESTS'range loop
             if wait_v(i) > 0 then
                wait_v(i) := wait_v(i) - 1;
@@ -605,12 +612,22 @@ begin
                else
                   log("raised", steps_v + 1, C_REQUESTS(i).nmi, C_REQUESTS(i).vector);
                end if;
+               -- A request that finds one of its kind pending merges with it
+               -- and leaves its vector. The timer's request is one of the
+               -- IRQs.
                if C_REQUESTS(i).nmi then
-                  nmi_valid  <= '1';
-                  nmi_vector <= C_REQUESTS(i).vector;
+                  if not nmi_set_v and (nmi_valid = '0' or nmi_ready = '1') then
+                     nmi_valid  <= '1';
+                     nmi_vector <= C_REQUESTS(i).vector;
+                  end if;
+                  nmi_set_v := true;
                else
-                  irq_valid  <= '1';
-                  irq_vector <= C_REQUESTS(i).vector;
+                  if not irq_set_v and (irq_valid = '0' or irq_ready = '1') and
+                     (timer_valid = '0' or irq_ready = '1') then
+                     irq_valid  <= '1';
+                     irq_vector <= C_REQUESTS(i).vector;
+                  end if;
+                  irq_set_v := true;
                end if;
             end if;
          end loop;

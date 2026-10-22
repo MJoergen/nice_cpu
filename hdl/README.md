@@ -843,6 +843,26 @@ older instruction and not its own (SYSTEM.md §3).
 The core reports each step in the cycle it retires. Its process `p_check`
 asserts, in simulation, the invariants that its design relies on.
 
+### Integrating the core
+
+The pipelined core needs more of its system than the multi-cycle core. The
+rules are in full in MICROARCH.md §8, and the formal checkers and the header
+of `src/pipeline.vhd` rely on them:
+
+- A slave sends its ACK in a later cycle than the one that accepts the
+  request, in the order of the requests, only while CYC is high, and only
+  for a request the core made. Reset the slaves with the core. The core drops
+  CYC in the reset cycle, and an ACK with nothing pending is a range error in
+  simulation.
+- A store that the data bus accepts in cycle c is seen by an instruction
+  fetch accepted in cycle c + 1 or later, so a write buffer may not hold
+  a store back past a later fetch.
+- Up to 8 instruction requests and 4 data requests are in flight. A slave
+  that cannot take more raises STALL.
+- A device holds `valid` and the vector until `ready`, and `valid` may not
+  depend combinationally on `nmi_ready_o` or `irq_ready_o`, which
+  depend combinationally on `valid`.
+
 ## The data bus decoder
 
 `wb_dmux` connects the core's data bus, a pipelined Wishbone master, to

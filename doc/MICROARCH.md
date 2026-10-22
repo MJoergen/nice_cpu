@@ -633,6 +633,27 @@ system built from them must follow these rules:
   RAM, through a 64-bit port and a 32-bit port. Any memory that the data
   port sees must be visible to the instruction port too, except the I/O
   range.
+- **ACKs.** A slave sends its ACK in a later cycle than the one that
+  accepts the request, never in the same one, and in the order of its
+  requests. FETCH and DBUS count a request from the cycle after it is
+  accepted, so a same-cycle ACK is never counted. A slave sends ACK only
+  while CYC is high, and only for a request the core made. An ACK with
+  nothing pending decrements a counter that is zero: a range error in
+  simulation, a wrapped counter in hardware. The core drops CYC in the
+  reset cycle, so a slave must be reset with the core, and a block RAM
+  must gate its ACK with CYC.
+- **Stores are visible.** A store that the data bus accepts in cycle c is
+  seen by an instruction fetch that the instruction bus accepts in cycle
+  c + 1 or later (hdl/ASSUMPTIONS.md, item 8). A write buffer between the
+  core and the memory would break self-modifying code and the argument of
+  §5.5.
+- **Requests in flight.** FETCH has up to 8 requests in flight on the
+  instruction bus, and DBUS up to 4 on the data bus. A slave that cannot
+  take more must raise STALL.
+- **Interrupt ports.** A device holds `valid` and the vector stable until
+  the core raises `ready`. `nmi_ready_o` and `irq_ready_o` depend
+  combinationally on `valid`, so a device must not make `valid` depend
+  combinationally on `ready`.
 - **Unmapped addresses.** Both buses need a default slave that acknowledges a
   read with 0 and drops a write (ISA §8.2). Without one, the core would wait
   forever.

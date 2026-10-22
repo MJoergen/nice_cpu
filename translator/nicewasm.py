@@ -766,7 +766,7 @@ def parse_custom(m: Module, s: Reader) -> None:
         while not s.at_end():
             sub_id = s.byte()
             size = s.u32()
-            sub = Reader(s.data, s.pos, s.pos + size)
+            sub = Reader(s.data, s.pos, min(s.pos + size, s.end))
             s.pos = sub.end
             if sub_id == 1:
                 for _ in range(sub.u32()):
@@ -5116,8 +5116,11 @@ def main() -> None:
         print(f"{args.input}{where}: error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    with open(out, "w") as f:
-        f.write("\n".join(lines) + "\n")
+    try:
+        with open(out, "w") as f:
+            f.write("\n".join(lines) + "\n")
+    except OSError as e:
+        sys.exit(f"{e.filename}: {e.strerror}")
 
 
 if __name__ == "__main__":

@@ -31,8 +31,9 @@ the runtime library instead of using the math unit, and the program must be join
 module, or as `file: error: message` when there is no offset. An input
 that cannot be read prints `file: message`, such as `file: No such file
 or directory`, and an output that would overwrite the input prints
-`file: the output file would overwrite the input; use -o`, both without
-`error:`. The exit status is 1 after an error, and no output is written.
+`file: the output file would overwrite the input; use -o`, and an output file that cannot be written prints `file: message` too, all without
+`error:`. The exit status is 1 after an error, and no output is written; a
+mistake in the options exits with 2, as argparse does.
 nicewasm stops at the first error.
 
 The output is one assembly file. A program is made by joining it with the
@@ -170,7 +171,7 @@ the steps that got the code here.
   and `reinterpret` move the bits, and `abs`, `neg`, and `copysign` change
   the sign bit inline. Everything else calls the float library,
   `runtime/float.nasm`, so a program that uses floats must be joined with
-  it, after `runtime/lib.nasm` and the muldiv file. `trunc` traps with code 5 for a NaN or a
+  it, after `runtime/lib.nasm` and the muldiv file. `float.nasm` is generated; `make -C runtime float.nasm` builds it. `trunc` traps with code 5 for a NaN or a
   value whose integer part does not fit, and `trunc_sat` saturates
   instead.
 - **Control:** `block`, `loop`, `if`, `else`, `end`, `br`, `br_if`,
@@ -244,7 +245,7 @@ the steps that got the code here.
   table.
 - **Exports:** functions and globals get the label `_name`, as WASM.md says.
   A name that is not a C identifier gets no label, in a library module
-  too. Exports of the memory and of the table are ignored: the memory is at
+  too, and in a program a name that starts with `_` gets none either. Exports of the memory and of the table are ignored: the memory is at
   `___wasm_memory`, and a function pointer is a table index. So the
   `memory` export that Zig always emits does no harm. An export of a memory
   or table that the module does not have is an error. Exporting an imported
@@ -282,7 +283,7 @@ the steps that got the code here.
 Not supported yet: function types with more than one result (a block
 type may have several), passive data and element segments, `memory.init`,
 `data.drop`, the table instructions such as `table.get` and `table.grow`,
-`ref.func` outside element segments, the tail calls `return_call` and
+`ref.func` outside element segments, `ref.null` and `ref.is_null`, the tail calls `return_call` and
 `return_call_indirect`, SIMD, and exceptions.
 
 nicewasm checks the types on the operand stack as wasm validation does,

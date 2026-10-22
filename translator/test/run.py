@@ -3185,6 +3185,14 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         exports(("main", 0, 0)),
         code((0, i32_const(3))),
         section(0, wname("name") + b"\x01\x05\x01\x00\x09ab")), "", 3),
+    # A name subsection whose declared size runs past the end of the file
+    # is ignored too.
+    ("longnames", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((0, i32_const(3))),
+        section(0, wname("name") + b"\x01\xff\xff\xff\xff\x0f\x03\x00\x02ab")), "", 3),
     # An i64.mul by a constant whose result goes to a local by local.tee
     # and stays on the stack: x = 5, x * 3 = 15, plus the local: 30.
     ("multee", main_of(c64(5) + local_set(3) + local_get(3) + c64(3) + b"\x7e" + local_tee(4)

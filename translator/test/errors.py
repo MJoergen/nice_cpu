@@ -376,7 +376,7 @@ def main() -> None:
         # Without -o, the output of t.nasm would be t.nasm itself.
         with open(out, "wb") as f:
             f.write(module(MAIN))
-        p =subprocess.run([sys.executable, NICEWASM, out], capture_output=True, text=True)
+        p = subprocess.run([sys.executable, NICEWASM, out], capture_output=True, text=True)
         expected = f"{out}: the output file would overwrite the input; use -o"
         with open(out, "rb") as f:
             unchanged = f.read() == module(MAIN)
@@ -391,7 +391,15 @@ def main() -> None:
         if p.returncode != 1 or p.stderr.strip() != expected or os.path.exists(out + "2"):
             failed += 1
             print(f"FAIL: expected '{expected}'\n  got (exit {p.returncode}): {p.stderr.strip()}")
-    n = len(CASES) + len(OPTION_CASES) + len(COMMAND_CASES) + 2
+        # An output file that cannot be written.
+        bad = os.path.join(tmp, "nonexistent", "x.nasm")
+        p = subprocess.run([sys.executable, NICEWASM, "-o", bad, out],
+                           capture_output=True, text=True)
+        expected = f"{bad}: No such file or directory"
+        if p.returncode != 1 or p.stderr.strip() != expected:
+            failed += 1
+            print(f"FAIL: expected '{expected}'\n  got (exit {p.returncode}): {p.stderr.strip()}")
+    n = len(CASES) + len(OPTION_CASES) + len(COMMAND_CASES) + 3
     print(f"{'FAIL' if failed else 'PASS'} errors ({n} cases)")
     if failed:
         sys.exit(1)

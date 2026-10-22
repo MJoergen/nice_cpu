@@ -200,7 +200,7 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
     if (opts.path.len == 0) return fail("no program given\n\n{s}", .{usage});
     opts.dumps = dumps.items;
     // Insertion sort is stable, so of two requests of one kind at one step
-    // the later one wins (they merge, ISA.md §7.1).
+    // the earlier one wins (they merge, ISA.md §7.1).
     std.sort.insertion(Request, requests.items, {}, Request.before);
     opts.requests = requests.items;
     return opts;

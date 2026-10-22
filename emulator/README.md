@@ -172,8 +172,7 @@ The timer counts steps as well, so its requests come every P steps. A
 request raised by the last step of a run is not listed as pending at the
 end, as on the FPGA core, where it only reaches the core after that step.
 The timer's requests are IRQs, like those of `--irq`. A request merges
-with one that is pending, and an `--irq` request replaces the vector of a
-pending one. `test/timer.nasm` checks the counting, the stop, the
+with one that is pending, and the pending one keeps its vector. `test/timer.nasm` checks the counting, the stop, the
 merging, and that a request keeps the vector it was raised with when
 the vector is written while it is pending.
 
@@ -203,7 +202,7 @@ with `--trace` it comes before line N + 1, and `--nmi 0:5` raises an NMI
 before the first instruction. A request is raised whether or not it can be
 taken. If it cannot, it stays pending, as ISA.md §7.1 says, and a request
 still pending at a halt is never taken. A request of a kind that is already
-pending replaces it, so the vector given last wins, whether the two were
+pending merges with it, so the vector given first wins, whether the two were
 given for the same step or for different steps. Requests for steps that are
 never reached, because the processor halts or `-n` stops it, are never
 raised. The probes `test/irq.nasm`, `test/merge.nasm`, `test/after.nasm`, and

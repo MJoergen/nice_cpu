@@ -393,15 +393,15 @@ pub const Cpu = struct {
     }
 
     /// Raise the maskable interrupt request with vector `v`. Requests that
-    /// arrive while one is pending merge into one (§7.1).
+    /// arrive while one is pending merge into it, which keeps its vector (§7.1).
     pub fn requestIrq(self: *Cpu, v: u8) void {
-        self.irq_pending = v;
+        if (self.irq_pending == null) self.irq_pending = v;
     }
 
     /// Raise the non-maskable interrupt request with vector `v`. Requests
-    /// that arrive while one is pending merge into one (§7.1).
+    /// that arrive while one is pending merge into it, which keeps its vector (§7.1).
     pub fn requestNmi(self: *Cpu, v: u8) void {
-        self.nmi_pending = v;
+        if (self.nmi_pending == null) self.nmi_pending = v;
     }
 
     pub fn getReg(self: *const Cpu, r: u4) u32 {
@@ -498,7 +498,7 @@ pub const Cpu = struct {
         // The timer's request merges with one that is pending, and keeps
         // the vector of that one (SYSTEM §4).
         if (self.timer.raised) |v| {
-            if (self.timer_irq and self.irq_pending == null) self.requestIrq(v);
+            if (self.timer_irq) self.requestIrq(v);
             self.timer.raised = null;
         }
 
@@ -1678,11 +1678,11 @@ test "the timer's request is an IRQ, and merges with a pending one (SYSTEM §4)"
     try cpu.step(); // E = 0: the request is pending, and a NOP runs
     try testing.expectEqual(0x10, cpu.irq_pending);
     try testing.expectEqual(5, cpu.regs[15]);
-    cpu.requestIrq(7); // a request from elsewhere replaces it
+    cpu.requestIrq(7); // a request from elsewhere merges with it, and 0x10 stays
     try cpu.write(timer_base + 2, 0x11);
     try cpu.step(); // a NOP; the timer's second request is raised at its end
-    try cpu.step(); // it merges with the pending one, which keeps vector 7
-    try testing.expectEqual(7, cpu.irq_pending);
+    try cpu.step(); // it merges with the pending one, which keeps vector 0x10
+    try testing.expectEqual(0x10, cpu.irq_pending);
     cpu.setReg(14, 1 << sr_e);
     cpu.irq_pending = null;
     try cpu.step(); // a NOP; the timer's third request, with vector 0x11

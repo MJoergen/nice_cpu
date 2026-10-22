@@ -1,16 +1,17 @@
 ; Requests of one kind merge while one is pending (ISA.md §7.1), run with
 ;   --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
-; Two NMIs raised at the same step merge, and the second vector wins. IRQ 3
-; waits for E, and IRQ 4, raised at a later step, replaces it. IRQ 5 waits
+; Two NMIs raised at the same step merge, and the first vector wins. IRQ 3
+; waits for E, and IRQ 4, raised at a later step, merges with it and does not
+; replace it. IRQ 5 waits
 ; for RTI, and then for the HALT after it, so it is still pending at the end.
 ; The steps are:
 ;    0    MOVE: VBASE = 1
-;    1-3  NMI 02, MOVE R1, RTI
+;    1-3  NMI 01, MOVE R1, RTI
 ;    4    MOVE R3 (after RTI, so first)
 ;    5    OR: E = 1
-;    6-8  IRQ 04, MOVE R2, RTI
+;    6-8  IRQ 03, MOVE R2, RTI
 ;    9    HALT (after RTI, so first)
-; At the end R1 = 2, R2 = 4, R3 = 3, and IRQ 05 is pending.
+; At the end R1 = 1, R2 = 3, R3 = 3, and IRQ 05 is pending.
         MOVE    R14, 1          ; words 0,1: VBASE = 1: the table is at 0x100
         MOVE    R3, 3           ; words 2,3
         OR      R14, R14, 0x40000000 ; words 4,5: E = 1

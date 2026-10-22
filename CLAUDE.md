@@ -48,7 +48,7 @@ translator, and two FPGA cores. See README.md.
     cd emulator  && make test        # zig unit tests, example and probe programs, test/errors.py
     cd emulator  && make bins        # reassemble test/*.bin after editing a probe .nasm
     cd runtime   && make test        # join, assemble, and run each test/*.nasm
-    cd translator && make test       # test/run.py, then test/errors.py
+    cd translator && make test       # test/run.py, errors.py, fuzz.py in four modes, and passes.py
     cd translator && make typecheck  # mypy --strict
     cd bench     && make test        # the benchmark on the emulator, with its results checked
     cd bench     && make core        # the benchmark on a core in GHDL, CORE=pipeline or multicycle (minutes)

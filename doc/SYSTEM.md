@@ -64,7 +64,7 @@ The first 16 words work on the 32-bit operands A and B:
 | `0xFFFFFF29` | `UDIV_R` | the remainder of A / B, unsigned | is ignored |
 | `0xFFFFFF2A`–`0xFFFFFF2F` | | 0 | is ignored |
 
-The next 16 words work on the 64-bit operands C and D. Each 64-bit value takes two words, low word first, as in ISA §9.3:
+The next 16 words work on the 64-bit operands C and D. Each 64-bit value takes two words, low word first, as in [ABI.md](../runtime/ABI.md):
 
 | Address | Name | A data read returns | A write |
 |---|---|---|---|

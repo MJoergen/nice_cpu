@@ -61,6 +61,18 @@ two kinds of access. §9.4, the mapping of WebAssembly, is
   `0xFFFFFF50`–`0xFFFFFF7F`, and ordinary memory in the emulator. On
   2026-10-20 they became part of the performance counters of SYSTEM.md §3,
   at the same addresses, and the emulator reads them as 0.
+- MICROARCH.md §3 and §5.1 once had DECODE read three registers, with
+  bypasses from WRITE. The core now reads them in PREPARE, one stage
+  before WRITE (hdl/ASSUMPTIONS.md item 1).
+- The pipelined core became the default core (753100a): `CORE` in `hdl/`
+  and `bench/`, `G_CORE` of `tb_core`, the `--core` option of the test
+  scripts, and the CI job default to it, and the documents call the
+  multi-cycle core the variant. Before, the multi-cycle core was the
+  default.
+- Both cores give their registers on `regs_o` (77d6ac6). NiceMonMEGA65
+  had read `retire_o.regs` of the pipelined core, which is WRITE's next
+  state before the register, and a copy of it ended WRITE's longest paths.
+  `regs_o` comes from the registers themselves.
 
 ## The random test programs
 
@@ -235,6 +247,14 @@ benchmark's module became 8560, not 8623.
   reset; a store into the I/O range retires when the bus takes it; FETCH
   waits for a store in DBUS after DECODE's redirect; and DECODE takes an
   instruction once the last micro-op before is split off into skid_r.
+
+## The assembler's checks
+
+On 2026-10-20 (af454a6) the assembler began to warn about a lone word on
+an indented line that it reads as a label, such as a misspelled `HALT`. It
+checks the symbols of every `.EQU` value once the labels are known, also
+when the name is never used, and reports each on the `.EQU` line. `INT`,
+`.BLK`, and `.RES` take their value before it wraps.
 
 ## The start-up code for a monitor
 

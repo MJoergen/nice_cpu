@@ -89,8 +89,8 @@ No code has TODO or FIXME comments.
   `retire_o` is combinational and is not counted.
 - **Stores into the I/O range wait in WRITE** until the bus accepts them
   (MICROARCH.md §5.3), so that the timer sees each in the cycle of its
-  step. That costs `rng64` of the benchmark about 10% (translated) and 7%
-  (`hand.nasm`), which store to the math unit. Counting such a store on
+  step. That costs `rng64` of the benchmark about 10.2% (translated) and
+  7.5% (`hand.nasm`), which store to the math unit. Counting such a store on
   `instret_o` when the bus accepts it, as a read is counted, would let it
   retire into the register like any other, but an interrupt must then not
   be taken between its retire and its count.
@@ -131,8 +131,8 @@ No code has TODO or FIXME comments.
   ([translator/README.md](translator/README.md), Supported features):
   function types with more than one result, passive data and element
   segments, `memory.init`, `data.drop`, the table instructions such as
-  `table.get` and `table.grow`, `ref.func` outside element segments, the
-  tail calls `return_call` and `return_call_indirect`, SIMD, and
+  `table.get` and `table.grow`, `ref.func` outside element segments, `ref.null` and
+  `ref.is_null`, the tail calls `return_call` and `return_call_indirect`, SIMD, and
   exceptions.
 - **Stack overflow** is not detected in translated code, unlike in wasm.
   What happens then is undefined (WASM.md). An idea: a check against a

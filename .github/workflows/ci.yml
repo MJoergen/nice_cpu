@@ -74,6 +74,20 @@ jobs:
       - run: make test
       - run: make typecheck
 
+  doc:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: doc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: pip install mypy
+      - run: make test
+      - run: make typecheck
+
   bench:
     runs-on: ubuntu-latest
     defaults:

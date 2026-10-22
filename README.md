@@ -16,8 +16,8 @@ the first step was to write a complete specification. The repository
 holds the specification, an assembler, an emulator, a runtime library
 with integer and floating-point routines, and a WebAssembly translator
 that runs C, Zig, and Rust programs. The `hdl/` directory holds two
-different FPGA implementations, a simple multi-cycle one and the
-pipelined one of MICROARCH.md, which both pass every comparison with the
+different FPGA implementations, the pipelined one of MICROARCH.md, which
+is the default, and a simple multi-cycle one, which both pass every comparison with the
 emulator, the test setup for them, and formal checks of their ports, of
 four stages of the pipeline, of the devices, and of the shifter and the
 ALU for every input.
@@ -41,7 +41,7 @@ the separate [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) reposito
 
 ## Quick start
 
-You need Python 3. Zig 0.15 is needed only to build the emulator
+You need Python 3.10 or later and GNU make 4 or later, with coreutils, as on Linux. Zig 0.15 is needed only to build the emulator
 ([download](https://ziglang.org/download/), or see
 [installing Zig](https://ziglang.org/learn/getting-started/)). All the tests
 but those of the assembler and the documents run programs on the emulator,
@@ -67,6 +67,7 @@ download page, pick 0.15.2 rather than the latest release or master.
 
 To assemble and run a program:
 
+    make -C emulator build
     assembler/niceasm.py -o count.bin assembler/test/count.nasm
     emulator/zig-out/bin/niceemu count.bin
 
@@ -166,8 +167,9 @@ needed only for `make wasm` in `translator/`, which rebuilds the compiled
 test modules. Their `.wasm` files are checked in, so `make test` needs no
 C or Rust compiler. The same holds for the C library's tests in
 `runtime/libc/`, which `make -C runtime/libc wasm` rebuilds. The tests use
-`make`, `cat`, `cmp`, `diff`, `sed`, `grep`, and `cut`. GitHub Actions runs every `make test` and `make typecheck` on each
-push.
+`make`, `cat`, `cmp`, `diff`, `sed`, `grep`, `cut`, and `nproc`. GitHub Actions runs every `make test` and
+`make typecheck`, the document checks, `make programs` on both cores, `make lint`,
+`make formal`, and `make pdfcheck` on each push.
 
 ## The specification
 

@@ -119,8 +119,8 @@ The parts do this:
   port is 64 bits wide and reads an aligned pair of words. Its address a names words 2a and
   2a + 1, and it returns word 2a in bits 31..0 and word 2a + 1 in bits
   63..32, low word first as in ABI.md. The multi-cycle core has the same
-  port. An instruction is about 1.8 words on average
-  in translated code and 1.6 in hand-written code (§5.6), so a port that
+  port. An instruction is about 1.86 words on average
+  in translated code and 1.62 in hand-written code (§5.6), so a port that
   delivers one word per cycle would hold the core to about one instruction
   per two cycles, whatever the rest of the pipeline did. FETCH keeps the
   words in a buffer, and presents up to four of them to DECODE: the
@@ -302,7 +302,7 @@ Any other micro-operation that reads memory waits a cycle, unless PREPARE
 issued its read early enough. That is 4% of the cycles of the translated
 benchmark and 6% of the hand-written one's.
 
-A data read directly after a store is 0.3% of the translated benchmark's
+A data read directly after a store is 0.8% of the translated benchmark's
 instructions and 8% of the hand-written one's (§5.6). So rule 3 matters:
 PREPARE may load the read in the cycle the bus accepts the store, so that
 the read is on the bus in the next cycle. That is still a cycle after the
@@ -808,7 +808,7 @@ cycle, is still open (TODO.md).
 ## 10. Repository and boards
 
 - **Directory.** The HDL lives in `hdl/`, with its own `make test`. Its commit
-  subjects start with `nicehdl:`. Synthesisable code goes in `hdl/src/`, the
+  subjects start with `nicehdl:`. Synthesizable code goes in `hdl/src/`, the
   simulation models in `hdl/sim/`, and the testbenches in `hdl/test/`.
 - **No board.** This repository targets no particular board. Everything that
   depends on a board, including the RAM and the UART, is in the example

@@ -46,7 +46,7 @@ by `.ORG` and words reserved by `.RES` are not listed.
   is an error.
 - A line with one word that is not a mnemonic or a directive is a label,
   even when it is indented. When it is indented and has no `:`, as a
-  misspelt `HALT` or `RTI` alone on a line would be, the assembler prints
+  misspelled `HALT` or `RTI` alone on a line would be, the assembler prints
   `file:line: warning: message` and assembles the program.
 - A label or `.EQU` name cannot be a mnemonic or look like a register (`R`
   followed by digits, so `R16` is rejected too).

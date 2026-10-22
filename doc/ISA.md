@@ -361,7 +361,7 @@ If M = 0, the flags do not change. This holds for every instruction, shifts incl
 
 ## 7. Interrupts
 
-NICE has one maskable interrupt request (IRQ), one non-maskable interrupt request (NMI) and a software interrupt (`INT`). The hardware saves PC and SR in hidden registers, `RTI` restores them, and interrupts do not nest.
+NICE has one maskable interrupt request (IRQ), one non-maskable interrupt request (NMI), and a software interrupt (`INT`). The hardware saves PC and SR in hidden registers, `RTI` restores them, and interrupts do not nest.
 
 ### 7.1 When an interrupt is taken
 

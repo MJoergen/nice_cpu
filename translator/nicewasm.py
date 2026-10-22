@@ -549,7 +549,12 @@ def parse_limits(s: Reader, what: str) -> Tuple[int, Optional[int]]:
     if flags not in (0, 1):
         raise WasmError(f"a shared or 64-bit {what} is not supported", at)
     minimum = s.u32()
-    return minimum, (s.u32() if flags == 1 else None)
+    maximum = s.u32() if flags == 1 else None
+    if maximum is not None and minimum > maximum:
+        raise WasmError(f"the {what}'s minimum size {minimum} is above its maximum, {maximum}", at)
+    if what == "memory" and max(minimum, maximum or 0) > 65536:
+        raise WasmError("a memory may have at most 65536 pages", at)
+    return minimum, maximum
 
 
 def parse_section(m: Module, sec_id: int, s: Reader, sec_start: int) -> None:
@@ -597,6 +602,9 @@ def parse_section(m: Module, sec_id: int, s: Reader, sec_start: int) -> None:
             check_types(ft.params + ft.results, what, at)
             if len(ft.results) > 1:
                 raise WasmError(f"{what}: more than one result is not supported yet", at)
+            for other in m.imports:
+                if other.module == module and other.name == name and other.type_idx != type_idx:
+                    raise WasmError(f"{what}: it is imported twice with different types", at)
             m.imports.append(Import(module, name, type_idx))
     elif sec_id == 3:
         for _ in range(s.u32()):
@@ -5106,6 +5114,8 @@ def main() -> None:
             sys.exit(f"--library: {args.library!r} is not a C identifier")
         if args.library_memory is not None and args.library is None:
             sys.exit("--library-memory: only a library module (--library) takes it")
+        if args.library_memory is not None and args.library_memory < 0:
+            sys.exit("--library-memory: the number of bytes must not be negative")
         if args.memory_pages is not None and args.library is not None:
             sys.exit("--memory-pages: a library module (--library) cannot grow its memory")
         lines = translate(data, os.path.basename(args.input), not args.no_bounds_checks,

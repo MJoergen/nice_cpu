@@ -256,7 +256,9 @@ the steps that got the code here.
   `f32.const`, or `f64.const` initial value. `global.set` on an immutable
   global is an error, and so is a mutability byte other than 0 or 1.
 - **Memory:** one memory at `___wasm_memory`, with words reserved up to
-  the cap.
+  the cap. A memory's or a table's minimum size above its maximum is an error, and so
+  is a memory of more than 65536 pages. A function imported twice with different
+  types is an error.
 - **Data segments:** active ones, whose offset is an `i32.const`. The words
   they set are `.DAT` words in the program image, and a word that a
   segment sets only part of has its other bytes 0. A later segment
@@ -310,7 +312,7 @@ module in these ways:
   image, with the data segments in it. By default, that is up to the end of
   the last data segment or the highest initial value of a mutable `i32`
   global, which for compiler output is the stack pointer. With
-  `--library-memory BYTES`, it is BYTES, rounded up to a word. An access
+  `--library-memory BYTES`, it is BYTES, which may not be negative, rounded up to a word. An access
   past it traps with code 2.
 
 ## How functions are translated

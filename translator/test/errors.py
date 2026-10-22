@@ -320,6 +320,13 @@ OPTION_CASES += [
      "--memory-pages: 3 is above the memory's maximum size, 2"),
     (["--memory-pages", "2"], module(MAIN), "--memory-pages: the module has no memory"),
     (["--memory-pages", "65536"], module(memory(1)), "--memory-pages: the memory must be below 65536 pages"),
+    ([], module(section(5, vec([b"\x01\x03\x02"]))),
+     "the memory's minimum size 3 is above its maximum, 2"),
+    ([], module(memory(65537)), "a memory may have at most 65536 pages"),
+    ([], module(section(4, vec([b"\x70\x01\x03\x02"]))),
+     "the table's minimum size 3 is above its maximum, 2"),
+    ([], module(types(([], []), ([I32], [])), imports(("env", "foo", 0), ("env", "foo", 1))),
+     "import env.foo: it is imported twice with different types"),
 ]
 
 # Errors in the command line: (options, expected message). The module is
@@ -327,6 +334,8 @@ OPTION_CASES += [
 COMMAND_CASES: List[Tuple[List[str], str]] = [
     (["--library", "1x"], "--library: '1x' is not a C identifier"),
     (["--library-memory", "16"], "--library-memory: only a library module (--library) takes it"),
+    (["--library", "lib", "--library-memory", "-4"],
+     "--library-memory: the number of bytes must not be negative"),
     (["--library", "lib", "--memory-pages", "2"],
      "--memory-pages: a library module (--library) cannot grow its memory"),
 ]

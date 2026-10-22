@@ -16,7 +16,7 @@ and the emulator steps (SYSTEM.md §3), so its two words are memory on both
 sides: G_CYCLE_COUNTER=false and --no-cycle-counter.
 
 The runs go in parallel, the longest first, as test/core_runs.py
-describes. The VHDL must be analysed in BUILD already.
+describes. The VHDL must be analyzed in BUILD already.
 """
 
 import argparse

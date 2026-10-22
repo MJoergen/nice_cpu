@@ -2648,7 +2648,7 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
                          code((0, f64(0xBFF0000000000000) + fop(0xAB))), ), "", 5),
     ("trunc_nan", module(types(MAIN_TYPE), funcs(0), exports(("main", 0, 0)),
                          code((0, f32(0x7FC00000) + fop(0xAE) + WRAP)), ), "", 5),
-    # A library module: main calls its __twice, labelled ___twice, which
+    # A library module: main calls its __twice, labeled ___twice, which
     # uses the module's own stack and memory. 2 * 21 = 42.
     ("library", LIB_MODULE, LIB_ASM.format("MOVE R1, 21", "___twice", "MOVE R0, R0"), 42),
     # peek100 reads past the 64 bytes that are reserved, so it traps with

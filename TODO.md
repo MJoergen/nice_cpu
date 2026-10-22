@@ -175,7 +175,7 @@ No code has TODO or FIXME comments.
     shifts, and remainders), to drop the bounds checks of counted loops.
   - WASM.md could say where a trap's R2 points when nicewasm copies
     or moves code: at the first instruction of the original copy, and
-    the code of a neighbouring access may lie between that instruction
+    the code of a neighboring access may lie between that instruction
     and the rest of the trapping instruction's code.
   - *Two guesses that could become options.* The shorter arm of a diamond
     is taken for the rarer one, which cost 2500 cycles in `strstr`, where

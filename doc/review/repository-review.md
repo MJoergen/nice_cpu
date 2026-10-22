@@ -56,7 +56,7 @@ The read counter, the math unit, and the counters are devices in `read`, `peek`,
 
 The 600 random modules all gave the model's result. They cover the rules of the README's "How functions are translated": a deferred constant or local as an operand, the settling of deferred values before a `local.set` or `local.tee` of the same local, at the start of a block for the values the block takes and for every local, and at `else` and `end` for the results; deferred values carried by `br`, `br_if`, and `br_table` and across calls; results written straight to a local, with other copies of the local's old value settled first; comparisons and `eqz` that set only the flags before `br_if` and `if`, including the signed ones through `?V XOR R14, R14, 0x10000000`; `i64` shifts by a constant inline and by a variable through the helpers; loads and stores of every width through the inline path, the helpers, and the constant-address path; `select`, `wrap`, `extend`, and `reinterpret` of deferred values; and locals in R7–R11 saved and restored across calls, with `i64` locals in register pairs and more locals than registers.
 
-Three mismatches came up while the model was being written, and all three were bugs in the model, not in the translator: a `br_table` default that was modelled as the wrong label, a branch through a loop, and the labels around `br_table`. I mention them because they show what the test checks.
+Three mismatches came up while the model was being written, and all three were bugs in the model, not in the translator: a `br_table` default that was modeled as the wrong label, a branch through a loop, and the labels around `br_table`. I mention them because they show what the test checks.
 
 ### 4.2 Notes
 

@@ -125,8 +125,8 @@ run under nvc.
 
     cd hdl && make test
 
-`make test` builds the emulator, analyses the VHDL, checks that GHDL can
-synthesise both cores, the math unit, the performance counters, the timer,
+`make test` builds the emulator, analyzes the VHDL, checks that GHDL can
+synthesize both cores, the math unit, the performance counters, the timer,
 the fetch statistics, and the data bus decoder (`ghdl --synth`), and runs the tests, those of
 the cores once for each core. Everything it makes goes in `build/`.
 `make clean` removes it.
@@ -391,7 +391,7 @@ the plugin and GHDL 4.1.0 of Ubuntu 24.04 (packages `yosys`,
 `yosys-plugin-ghdl`, and `ghdl-gcc`, whose libraries the plugin loads),
 SymbiYosys at its tag `yosys-0.33`, Yices 2.6.4, and Boolector 3.2.3,
 which CI installs, and with Yosys 0.56 and GHDL 6.0. GHDL 4.1 cannot
-synthesise `shift_right` or `shift_left` of `numeric_std_unsigned` by an
+synthesize `shift_right` or `shift_left` of `numeric_std_unsigned` by an
 amount that is not constant, so the formal code uses `srl` and `sll`
 instead. Boolector is built from source, with the scripts in its
 `contrib/` for CaDiCaL and btor2tools: the `boolector` package of Ubuntu

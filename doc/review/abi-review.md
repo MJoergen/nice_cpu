@@ -6,7 +6,7 @@ Reviewed on 2026-10-14: `doc/ISA.md` §9.3 and §9.4 at commit f1ec763 ("ISA: ad
 
 ## Summary
 
-**The mechanics are right.** The call sequences push the correct return address for a 2-word and a 1-word jump, the frame table agrees with the prologue and epilogue, the first stack argument is at mem[SP + 1] on entry, both examples assemble to what the text says they do, the compiler's and translator's label prefixes are valid labels that cannot clash with C names, and `.BLK` zeros are in the `.bin`, so "static data gets its initial values when the image is loaded" holds for zero-initialised data too.
+**The mechanics are right.** The call sequences push the correct return address for a 2-word and a 1-word jump, the frame table agrees with the prologue and epilogue, the first stack argument is at mem[SP + 1] on entry, both examples assemble to what the text says they do, the compiler's and translator's label prefixes are valid labels that cannot clash with C names, and `.BLK` zeros are in the `.bin`, so "static data gets its initial values when the image is loaded" holds for zero-initialized data too.
 
 The problems are in the rules around the mechanics:
 
@@ -115,7 +115,7 @@ ISA.md:580: "such an access uses the word that the formula above gives, wrapping
 
 ### 3.4 `nice.peek` and `nice.poke` are I/O
 
-ISA.md:582–587 say the translator "replaces each call with the instruction shown". These imports exist to reach devices, so they need the §8.2 promise: each one is performed exactly once, in program order, even when the result is unused. As written, an optimising translator may drop a `peek` whose result is dead.
+ISA.md:582–587 say the translator "replaces each call with the instruction shown". These imports exist to reach devices, so they need the §8.2 promise: each one is performed exactly once, in program order, even when the result is unused. As written, an optimizing translator may drop a `peek` whose result is dead.
 
 ### 3.5 Exact-width types
 
@@ -145,7 +145,7 @@ ISA.md:645 lists only the shift count. NICE also has no arithmetic right shift, 
 - **The C example.** `@1[SP]` is mem[SP + 1], the first stack argument. The call pushes the address of `ADD SP, SP, 1`. The flags are untouched because no `[M]` is used.
 - **The wasm example.** `SHR` and `SHL` are the aliases of `0>0` and `0<0` in §5.2 and in the assembler. `@___wasm_memory[R5]` is mode 111 with a label as the constant, which §10.2 allows. The byte extraction matches the formula at ISA.md:570, and it uses only the scratch registers R5 and R6.
 - **Labels.** The assembler accepts `[A-Za-z_][A-Za-z0-9_.]*`, so `_main`, `___wasm_memory`, `L.12`, and `W.f12` are all valid, none is a mnemonic or register, and a `_`-prefixed name can never be one.
-- **Zero-initialised data.** `.BLK` ranges are expanded into zero words in the `.bin`, so the loader sets them.
+- **Zero-initialized data.** `.BLK` ranges are expanded into zero words in the `.bin`, so the loader sets them.
 - **The data model.** Every type's size is a multiple of `char`, `long` holds at least 32 bits, and `long long` holds 64, so the model is permitted by C17 5.2.4.2.1. `unsigned char` promotes to `unsigned int`, which is also permitted.
 - **Return values.** The register rules for single-word and two-word results agree between §9.3 and §9.4, and "the lower-numbered register holds the low word" matches R1 low, R2 high.
 

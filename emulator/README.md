@@ -112,7 +112,7 @@ address twice and a file with no words are errors.
 | `0xFFFFFF80`–`0xFFFFFFFF` | 128 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. |
 
 The screen has one word per character, with the character in bits 7..0 and
-its colour above. It is ordinary memory, and `--screen` prints the
+its color above. It is ordinary memory, and `--screen` prints the
 characters when the program has halted. `test/screen.nasm` writes to it. The
 2004 emulator has the screen at `0x400`, where it overlaps the code of any
 program longer than 1024 words. `-2004` puts it there for the 2004

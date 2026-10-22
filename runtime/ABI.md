@@ -133,7 +133,7 @@ Division by zero is undefined in C, so these routines may return any value for i
 | `void nice_print(const char *s)` | Writes the characters of `s` up to its first 0 to the console, with no newline. |
 | `unsigned long long nice_cycles(void)` | The cycle counter. |
 | `unsigned long long nice_instructions(void)` | The instruction counter. |
-| `void nice_screen_put(int col, int row, int c)` | Writes `c`, the character in bits 7..0 and its colour above, to column `col`, 0 to 79, of row `row`, 0 to 24. |
+| `void nice_screen_put(int col, int row, int c)` | Writes `c`, the character in bits 7..0 and its color above, to column `col`, 0 to 79, of row `row`, 0 to 24. |
 | `void nice_screen_clear(void)` | Writes a blank, `0x20`, to each of the screen's 2000 words. |
 
 - Each routine makes the data accesses that its device needs, and no others. `nice_getc` reads the console until a byte is there or the input has ended; `nice_pollc` reads it once.

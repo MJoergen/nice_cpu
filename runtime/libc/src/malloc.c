@@ -1,7 +1,7 @@
 // A first-fit allocator. The heap starts at __heap_base, which wasm-ld
 // puts after the data and the stack, and grows with memory.grow. Each
 // block has an 8-byte header. Free blocks are kept in a list sorted by
-// address, and neighbours are merged when a block is freed.
+// address, and neighbors are merged when a block is freed.
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>

@@ -121,7 +121,7 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   data only goes into a register: s0 or s1 with a side effect, and a MOVE
   into a register other than R15, which take it in the cycle of the ACK
   ("readlate").
-- Not modelled: interrupts (an entry is treated as a flush), self-modifying
+- Not modeled: interrupts (an entry is treated as a flush), self-modifying
   code checks, the INSTR_LO retire rule, wrong-path fetch traffic, and bus
   stalls other than the math unit.
 

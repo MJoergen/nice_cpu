@@ -25,7 +25,7 @@ unsigned long long nice_cycles(void);
 unsigned long long nice_instructions(void);
 
 // The emulator's 80x25 character screen. nice_screen_put writes c, the
-// character in bits 7..0 and its colour above, to a column, 0 to 79, of a
+// character in bits 7..0 and its color above, to a column, 0 to 79, of a
 // row, 0 to 24. nice_screen_clear writes a blank, 0x20, to every word.
 void nice_screen_put(int col, int row, int c);
 void nice_screen_clear(void);

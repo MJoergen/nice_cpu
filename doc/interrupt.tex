@@ -35,7 +35,7 @@
 %   0025, 0027 the routine: ADD R3, R3, 1, then RTI
 %   0028       data, which PREPARE briefly holds as an instruction after RTI
 %
-% A bus is drawn grey (x) in every cycle in which it carries nothing:
+% A bus is drawn gray (x) in every cycle in which it carries nothing:
 % irq_vector_i while irq_valid_i is low, prep_r and w_r.uop while they hold
 % no micro-operation, dbus_addr_o while dbus_stb_o is low, target_o
 % while flush_o is low, and retire_o while it reports no step. prep_r and

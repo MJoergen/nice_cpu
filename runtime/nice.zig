@@ -63,7 +63,7 @@ pub fn instructions() u64 {
 pub const screen_cols = 80;
 pub const screen_rows = 25;
 
-/// Writes c, the character in bits 7..0 and its colour above, to a column,
+/// Writes c, the character in bits 7..0 and its color above, to a column,
 /// 0 to 79, of a row, 0 to 24.
 pub fn screenPut(col: u32, row: u32, c: u32) void {
     nice_screen_put(@bitCast(col), @bitCast(row), @bitCast(c));

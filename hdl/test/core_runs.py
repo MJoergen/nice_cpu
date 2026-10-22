@@ -1,7 +1,7 @@
 """Runs programs on the core and on the emulator, for irq_sweep.py and
 programs.py.
 
-A run on the core is GHDL's --elab-run of tb_core, with the VHDL analysed
+A run on the core is GHDL's --elab-run of tb_core, with the VHDL analyzed
 in BUILD already, and the core that its generic G_CORE names. Runs may go
 in parallel, from threads: each thread runs GHDL in its own directory
 under BUILD/WORK, because GHDL's LLVM and GCC backends write an executable

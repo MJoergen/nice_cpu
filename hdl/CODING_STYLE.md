@@ -5,7 +5,7 @@ The VHDL in `hdl/` follows the style of
 in short form. `make lint` checks what it can with
 [vsg](https://vhdl-style-guide.readthedocs.io/) and [vsg.yml](vsg.yml).
 
-All code is VHDL-2008, analysed with plain `ghdl --std=08` (no `-frelaxed`).
+All code is VHDL-2008, analyzed with plain `ghdl --std=08` (no `-frelaxed`).
 
 ## Files
 
@@ -35,7 +35,7 @@ All code is VHDL-2008, analysed with plain `ghdl --std=08` (no `-frelaxed`).
 
 - `clk_i` and `rst_i` come first in a port list.
 - Optional suffixes: `_r` for a register and `_v` for a variable.
-- An instance of one entity is labelled `i_<entity>`.
+- An instance of one entity is labeled `i_<entity>`.
 
 ## Layout
 
@@ -48,7 +48,7 @@ All code is VHDL-2008, analysed with plain `ghdl --std=08` (no `-frelaxed`).
 - Put spaces around operators: `C_LEN * 4 - 1`, `addr + 1`.
 - Write bit-string literals in upper case: `X"1FFF"`.
 - In an architecture body, two blank lines separate each process and
-  instance from its neighbours, but one follows `begin`. Elsewhere, one
+  instance from its neighbors, but one follows `begin`. Elsewhere, one
   blank line separates ideas, where the author sees fit.
 - A case alternative with one short statement may sit on the line of its
   `when`, so that the case reads as a table. Align the `=>` of such a table.

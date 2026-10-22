@@ -17,7 +17,7 @@
 ;
 ; The screen. nice_screen_clear writes 0x20 to all 2000 words, then
 ; nice_screen_put writes "O" and "K" to row 0, columns 0 and 1, "!" with a
-; colour, 0xC80FF021, to row 1, column 2, at 0xFFFF0000 + 80 + 2 =
+; color, 0xC80FF021, to row 1, column 2, at 0xFFFF0000 + 80 + 2 =
 ; 0xFFFF0052, and "Z" to row 24, column 79, the last word, 0xFFFF07CF.
 ; -s prints the rows with their trailing blanks dropped, so rows 2-23 are
 ; just "|". The dumps show the words, with the blank at 0xFFFF07CE that

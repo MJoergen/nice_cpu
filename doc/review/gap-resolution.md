@@ -73,7 +73,7 @@ Item numbers match the review file.
 |---|---|---|---|
 | 12–15 | Multiply: counter, wrong add register, r5 not cleared, wrong stores | Article | Fix the examples. Afterwards they can become the first test programs, as `test/*.asm` are in qnice_cpu. |
 | 16 | Interrupt example | Article | See items 2–4. |
-| 17 | Self-replicating program | Article | Its behaviour is correct. Use it to state the `Rx++` destination semantics (item 24). |
+| 17 | Self-replicating program | Article | Its behavior is correct. Use it to state the `Rx++` destination semantics (item 24). |
 
 ### 3.1 Fetch, length, and PC
 
@@ -93,7 +93,7 @@ Item numbers match the review file.
 | 24 | `Rx++`/`Rx--` as destination | Article | Resolved by WEB and EMU: the result is written to Rx, then Rx is incremented or decremented, so Rx = result ± 1. |
 | 25 | Destination mode 011 = 111 | Article | Resolved by EMU: destination modes 011 and 111 are aliases. Reserve 011 only if an extension needs it. |
 | 26 | R0 with side effects | Article | Resolved by EMU: R0 reads 0, and writes and increments are discarded. `@R0` addresses word 0. |
-| 27 | R14 written while M = 1 | **QNICE** | The explicit write wins over the flag update. The emulator updates flags before `write_destination`, and qnice_cpu's `registers.vhd` "resolves its two write ports in favour of the ordinary one". 2004: EMU lets the flag update overwrite the explicit write. That is a bug, not a design; keep this rule. |
+| 27 | R14 written while M = 1 | **QNICE** | The explicit write wins over the flag update. The emulator updates flags before `write_destination`, and qnice_cpu's `registers.vhd` "resolves its two write ports in favor of the ordinary one". 2004: EMU lets the flag update overwrite the explicit write. That is a bug, not a design; keep this rule. |
 
 ### 3.3 Arithmetic and flags
 
@@ -105,7 +105,7 @@ Item numbers match the review file.
 | 31 | `one` = 1 or all ones | **Open** | Contested. The 1999 article's 74181 lineage implies all ones (`$FFFFFFFF`). WEB says "d = 1", and EMU intends 1 (but crashes on it). Michael decides. |
 | 32 | `mdbl` formula | Article | Resolved by the 1999 article: it is the 74181's "A plus AB", so s1 + (s1 ∧ s2) is deliberate. (`dbl` = 2·s1. The 1999 article's 2·s2 is a typo.) |
 | 33 | `move`/`dec` with the C bit | Partial | Follows item 29: `move<c>` = s1 + C and `dec<c>` = s1 − 1 − C. 2004: EMU's `MOVE` and `DEC` ignore the C bit. The simpler choice is to follow EMU. |
-| 34 | C bit on logic ops | **Open** | Either the C bit is ignored (identical behaviour) or the encoding is reserved. Recommended: ignored. |
+| 34 | C bit on logic ops | **Open** | Either the C bit is ignored (identical behavior) or the encoding is reserved. Recommended: ignored. |
 | 35 | When X is updated | Partial | QNICE's X means something different (it is the bit shifted out on the right), so it gives no direct answer. Following the item 28 pattern, X is written whenever Z and N are written. |
 
 ### 3.4 Shifts

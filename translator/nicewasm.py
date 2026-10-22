@@ -18,7 +18,7 @@ each value on the wasm operand stack. An i32 or f32 takes one word, and an
 i64 or f64 two, low word first. A constant or the value of a local is
 copied to registers of its own only when it must be; until then, the
 instructions that use it take the constant or the local as their operand.
-The back end (Allocator) colours the virtual registers with R1-R12 by
+The back end (Allocator) colors the virtual registers with R1-R12 by
 iterated register coalescing, and puts the values that do not fit in frame
 words, addressed from SP. There is no frame pointer.
 """
@@ -1287,7 +1287,7 @@ def mul_plan(c: int, budget: int) -> Optional[Tuple[Step, ...]]:
 class Allocator:
     """Gives the virtual registers of a function's code physical registers
     or frame words, by iterated register coalescing (George and Appel,
-    "Iterated register coalescing", 1996): Chaitin-Briggs graph colouring,
+    "Iterated register coalescing", 1996): Chaitin-Briggs graph coloring,
     with conservative coalescing of moves by the Briggs and George tests,
     also with the physical registers that calls and the ABI demand.
 
@@ -1295,11 +1295,11 @@ class Allocator:
     come from its operands (operand_reg), and for a call or an exit also
     from the registers it names. A conditional instruction may leave its
     destination as it was, so it also uses it. A virtual register that
-    gets no colour is spilled to a frame word, %sN, which becomes
+    gets no color is spilled to a frame word, %sN, which becomes
     @k[R13] when the frame is laid out (frame_words). NICE takes a memory
     operand almost anywhere, so a spilled register is usually used in
     place. Only where it is an address, or changed by a side effect, does
-    a short-lived temporary take its place, and the colouring runs again.
+    a short-lived temporary take its place, and the coloring runs again.
 
     Spill costs weight each use and def by 10 for each loop around it, so
     the registers go to the values used in the inner loops."""
@@ -1525,7 +1525,7 @@ class Allocator:
         """Splits each virtual register into webs: the sets of its defs
         that reach a common use, with those uses. A local that the wasm
         code uses for unrelated values thus becomes several registers, each
-        of which may get its own colour. A def that may leave the old
+        of which may get its own color. A def that may leave the old
         value, by its condition or a side effect, joins the webs of the
         defs that reach it."""
         sites: List[Tuple[int, str]] = []    # each def of a virtual register: (instruction, register)
@@ -1624,7 +1624,7 @@ class Allocator:
                 ops.append(o)
             ins.ops = ops
 
-    # The colouring (George and Appel's names).
+    # The coloring (George and Appel's names).
 
     def build(self) -> None:
         self.adj_set: set[Tuple[str, str]] = set()
@@ -1857,7 +1857,7 @@ class Allocator:
         self.freeze_moves(m)
 
     def assign_colors(self) -> None:
-        used: set[str] = set()  # the colours given so far
+        used: set[str] = set()  # the colors given so far
         while self.select:
             n = self.select.pop()
             self.on_stack.discard(n)
@@ -1869,7 +1869,7 @@ class Allocator:
             if not ok:
                 self.spilled.add(n)
                 continue
-            # A colour that a move partner has makes the move go away.
+            # A color that a move partner has makes the move go away.
             partners = []
             for m in sorted(self.move_list.get(n, set())):
                 for r in self.moves[m]:

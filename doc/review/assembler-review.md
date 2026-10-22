@@ -145,7 +145,7 @@ Negative tests to add, one line each:
 
 ## 5. Second round, commit 0670e53
 
-**How it was checked.** `make test` (six programs and 71 error cases) and `make typecheck` pass. I re-ran every probe from sections 1 and 2 and confirmed the new behaviour, then ran about forty new probes aimed at the rewritten parts: `.EQU` values that are whole operands, `.EQU` validation and loop detection in pass 0, `.BLK` stored as ranges with the overlap check, the comma-aware tokenizer, and the label-on-`.ORG` rule.
+**How it was checked.** `make test` (six programs and 71 error cases) and `make typecheck` pass. I re-ran every probe from sections 1 and 2 and confirmed the new behavior, then ran about forty new probes aimed at the rewritten parts: `.EQU` values that are whole operands, `.EQU` validation and loop detection in pass 0, `.BLK` stored as ranges with the overlap check, the comma-aware tokenizer, and the label-on-`.ORG` rule.
 
 ### 5.1 Confirmed fixed
 

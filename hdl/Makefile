@@ -326,7 +326,7 @@ endef
 
 $(foreach c,$(sort $(CORES) $(CORE)),$(eval $(call core_runs,$(c))))
 
-test: emulator analyse synth
+test: emulator analyze synth
 	@$(MAKE) --no-print-directory $(PARALLEL) runs
 
 # The runs of make test: the unit tests, tb_trace, and those of each core in
@@ -337,13 +337,13 @@ runs: $(UNITS:%=run/unit/%) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(R
 #     make random RANDOM_SEEDS="$$(seq 31 90)" RANDOM_STALL=60 RANDOM_STEPS=5000
 # test/trace_reads.py shows the data reads of the first instruction where
 # the emulator's trace and the core's differ.
-random: emulator analyse
+random: emulator analyze
 	@$(MAKE) --no-print-directory $(PARALLEL) $(RANDOM_$(CORE))
 
 # The programs of pcfx_prog.py and sidefx_prog.py swept with one request
 # per run, on CORE, one after the other, as each uses every CPU. It takes
 # two hours on the multi-cycle core and five on the pipelined one, on 20 CPUs.
-sweep: emulator analyse $(BUILD)/pcfx.bin $(BUILD)/sidefx.bin
+sweep: emulator analyze $(BUILD)/pcfx.bin $(BUILD)/sidefx.bin
 	$(call check_sweep,pcfx)
 	$(call check_sweep,sidefx)
 
@@ -354,7 +354,7 @@ sweep: emulator analyse $(BUILD)/pcfx.bin $(BUILD)/sidefx.bin
 # and compares them. It takes minutes, so make test leaves it out.
 PROGRAMS = $(BUILD)/programs
 
-programs: emulator analyse
+programs: emulator analyze
 	@rm -rf $(PROGRAMS)
 	@$(MAKE) --no-print-directory -C ../runtime test KEEP=$(abspath $(PROGRAMS)/runtime) \
 	  > $(BUILD)/programs_runtime.log 2>&1 || { cat $(BUILD)/programs_runtime.log; exit 1; }
@@ -362,11 +362,11 @@ programs: emulator analyse
 	  > $(BUILD)/programs_translator.log 2>&1 || { cat $(BUILD)/programs_translator.log; exit 1; }
 	@$(PYTHON) test/programs.py --core $(CORE) --build $(BUILD) --emu $(EMU) $(PROGRAMS)/runtime $(PROGRAMS)/translator
 
-analyse:
+analyze:
 	@mkdir -p $(BUILD)
 	cd $(BUILD) && $(GHDL) -a --std=08 $(addprefix ../,$(SOURCES) $(SIM_SOURCES) $(TEST_SOURCES))
 
-# Checks that GHDL can synthesise the core, the math unit, the performance
+# Checks that GHDL can synthesize the core, the math unit, the performance
 # counters, the timer, and the data bus decoder, with the generics in
 # SYNTH_GENERICS_unit.
 SYNTH = multicycle pipeline mpu perf timer fetch_stats wb_dmux
@@ -378,7 +378,7 @@ define check_synth
 
 endef
 
-synth: analyse
+synth: analyze
 	$(foreach u,$(SYNTH),$(call check_synth,$(u)))
 
 # The formal checks of formal/: each task of each .sby file must pass. The
@@ -441,4 +441,4 @@ lint:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: test runs programs random sweep analyse synth formal emulator timing lint clean
+.PHONY: test runs programs random sweep analyze synth formal emulator timing lint clean

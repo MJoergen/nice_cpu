@@ -109,7 +109,7 @@ These don't change the ISA, but they matter because examples are often read as t
 31. **`one`: value 1 or all ones?** The table says `d = 1`, but it sits among bitwise logic functions, where the constant-true function is `$FFFFFFFF`. The X flag ("result was $FFFFFFFF") hints all-ones matters. Decide.
 32. **`mdbl` (`d = s1 + (s1 ∧ s2)`)** is unusual and unexplained. It is either a deliberate "conditional double" (s2 = all ones gives 2·s1, s2 = 0 gives s1) or a typo. Confirm the intended function.
 33. **`move` and `dec` with the C bit.** They are classed arithmetic, so `move<c>` gives s1 + C (an add-carry-to-zero) and `dec<c>` gives s1 − 1 + C. Plausibly intentional; state it, plus the flags they produce.
-34. **C bit on logic instructions.** "Not affected", but is an encoding with C = 1 on a logic op valid (identical behaviour) or reserved?
+34. **C bit on logic instructions.** "Not affected", but is an encoding with C = 1 on a logic op valid (identical behavior) or reserved?
 35. **X flag** is listed but its use is never explained. Define when it is updated (presumably with Z and N when M = 1).
 
 ### 3.4 Shift instructions
@@ -135,7 +135,7 @@ These don't change the ISA, but they matter because examples are often read as t
 
 ### 3.7 System-level items never mentioned
 51. **Reset state:** initial PC (the examples use `.org $0`), initial SR (I cleared? vector base?), register contents.
-52. **Address space:** 32-bit word addresses are implied (PC is 32 bits) but never stated. Behaviour of accesses to non-existent memory is undefined.
+52. **Address space:** 32-bit word addresses are implied (PC is 32 bits) but never stated. Behavior of accesses to non-existent memory is undefined.
 53. **I/O:** no I/O instructions, so memory-mapped I/O is implied but not stated.
 54. **No subroutine call or return.** A call can be built from two instructions (`mov @r12++,#3[r15]` then `mov r15,#sub`, with the right offset for the constant words) and return is `mov r15,@--r12`. That works but is easy to get wrong; the ISA document should define the idiom (or pseudo-instructions `call`/`ret`) and the stack convention (R12, growing upward, as the examples use).
 55. **No signed compare conditions.** Conditions test one flag only, so signed `<`, `≤`, `>` (which need N ⊕ V, Z ∨ (N ⊕ V)) need multi-instruction sequences. Not a contradiction, but a known cost of the design.

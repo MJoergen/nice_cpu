@@ -19,7 +19,7 @@
 %   000A-000E  ADD R4, R4, 1
 %   0010       HALT
 %
-% A bus is drawn grey (x) in every cycle in which it carries nothing:
+% A bus is drawn gray (x) in every cycle in which it carries nothing:
 % FETCH's addr_o while DECODE takes no word (consume_i = 0), DECODE's
 % uop_o while it emits none, prep_r and w_r.uop while they hold no
 % micro-operation, dbus_addr_o while dbus_stb_o is low, dbus_data_o while

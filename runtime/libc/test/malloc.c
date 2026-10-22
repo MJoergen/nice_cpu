@@ -1,6 +1,6 @@
 // The corners of the allocator that test/stdlib.c leaves out: free(NULL),
 // malloc(0), alignment, the merging of a freed block with both its
-// neighbours, splitting, a rest too small to split, realloc in place,
+// neighbors, splitting, a rest too small to split, realloc in place,
 // smaller, to 0, from NULL, and by copying, calloc's overflow check and
 // zeroing, and the heap's exhaustion and recovery. main returns 0.
 //

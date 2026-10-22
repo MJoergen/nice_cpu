@@ -51,7 +51,7 @@ architecture simulation of tb_wb_dmux is
 
    type t_counts is array (0 to C_SLAVES - 1) of natural;
 
-   -- The slaves' behaviour: the stall rate and the chance of an ACK in each
+   -- The slaves' behavior: the stall rate and the chance of an ACK in each
    -- cycle, in percent, and whether the slave stalls while it owes an ACK.
    constant C_STALL : t_percents := (30, 20, 0);
    constant C_ACK   : t_percents := (100, 15, 5);

@@ -46,7 +46,7 @@ Memory is `[]u32` from 0 to `--mem-size`, and `--mem-size` is a `u32`. So no add
           MOVE R1, @R13
           HALT
 
-  ends with R1 = 0 and exit status 0, and the trace shows `[001fffff]=0000002a` as if the store had stuck. The ISA says the write is ignored, so the behaviour is legal, but the emulator is the one place that could tell the programmer.
+  ends with R1 = 0 and exit status 0, and the trace shows `[001fffff]=0000002a` as if the store had stuck. The ISA says the write is ignored, so the behavior is legal, but the emulator is the one place that could tell the programmer.
 
 **Fix.** Make memory sparse: a map from page number (say the top 20 bits) to a `[4096]u32` page, allocated on first write. Then `--mem-size` goes away, the loader accepts any address, and the ISA's full address space is available. If the dense array stays, mark dropped writes in the trace (for example `[001fffff]=0000002a!`) and say in the README that `wrap.bin` cannot be run.
 

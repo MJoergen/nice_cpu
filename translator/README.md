@@ -606,10 +606,10 @@ each virtual register into webs: each web is the definitions that reach
 a common use, with those uses. A local that the wasm code
 reuses for unrelated values thus gets a register for each of them.
 
-The registers are coloured by iterated register coalescing (George and
+The registers are colored by iterated register coalescing (George and
 Appel, 1996), with R1–R12. A move between two registers that do not
 interfere is removed if, by the tests of Briggs and George, that cannot
-make the colouring fail. This includes moves to and from the physical
+make the coloring fail. This includes moves to and from the physical
 registers of calls, so an argument is often computed straight into R1.
 A call may change R1–R6 and the flags, as ABI.md allows, so a value that
 is live across a call gets one of R7–R12, which ABI.md preserves. A call
@@ -618,13 +618,13 @@ R1–R6. A value that is not live across a call gets one of R1–R6 if it
 can, since the function must save each of R7–R12 that it uses.
 
 If there are too few registers, the values with the lowest cost for
-their number of neighbours go to frame words. The cost of a value counts
+their number of neighbors go to frame words. The cost of a value counts
 its uses and definitions, each weighted by 10 for each loop around it,
 so values in inner loops keep their registers. NICE takes a memory
 operand almost anywhere, so a value in a frame word is used in place, as
 in `ADD R1, @2[R13], R3`. Only where it is an address, as in `@x[Rn]`,
 or is changed by a side effect, does it go to a temporary register for
-that one instruction, and the colouring runs again. Values in frame
+that one instruction, and the coloring runs again. Values in frame
 words that are never live at the same time share a word.
 
 Then nicewasm removes each `MOVE` of a register to itself and each jump

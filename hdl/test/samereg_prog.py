@@ -11,7 +11,7 @@ destination then depend on each other through the side effects, the value
 written last, and the sums that PREPARE forms (MICROARCH.md §7.4), and the
 count comes late to WRITE in most of the forms (§7.3). R2 starts at 0x20
 before each shift, so the counts are near 32 and 33, where the shifts
-change their behaviour (ISA.md §5.2), and the addresses fall in the data
+change their behavior (ISA.md §5.2), and the addresses fall in the data
 words at 0x18 to 0x37. C is set before each shift, for the shifts that
 rotate through it. Then the same with R14, where every write sets bit 24
 and SR is the count: R14 starts at 0x05000020, C set, so the addresses

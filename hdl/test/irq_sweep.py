@@ -15,7 +15,7 @@ and with --self-check, end as test/hazard.nasm does when it passes: with
 R12 = 0 and exit status 0.
 
 The runs are independent, so they go in parallel, as test/core_runs.py
-describes. The VHDL must be analysed in BUILD already.
+describes. The VHDL must be analyzed in BUILD already.
 
 For the multi-cycle core the request step decides where the request is
 taken. For the pipelined core it does not (MICROARCH.md §9). With

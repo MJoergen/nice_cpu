@@ -4,7 +4,7 @@ This document specifies the NICE ("NICE Is Charmingly Elegant") 32-bit processor
 
 The sources are listed in [REFERENCES.md](REFERENCES.md). Where they disagree, this order applies:
 
-1. The intended behaviour of the 2004 emulator `NICE.pm` and the 2004 web page. The emulator's bugs are not part of the ISA.
+1. The intended behavior of the 2004 emulator `NICE.pm` and the 2004 web page. The emulator's bugs are not part of the ISA.
 2. The 1999 and 1997 articles.
 3. QNICE, the 16-bit descendant of NICE, as implemented in [MJoergen/qnice_cpu](https://github.com/MJoergen/qnice_cpu), for anything the NICE sources leave open, such as interrupts.
 
@@ -374,7 +374,7 @@ Before each instruction, the first one after reset included, the processor check
 
 **Pending requests are deferred, never lost.** An NMI or IRQ that cannot be taken when it arrives stays pending until it is taken. That happens when `in_service` = 1, or for an IRQ when E = 0. Requests of the same kind that arrive while one is already pending may merge into one, so software must not rely on counting interrupts. A request still pending when the processor halts is never taken, because only reset restarts the processor.
 
-When the processor accepts a request, the device supplies an 8-bit vector number v. The ISA does not say how requests are signalled and acknowledged: edge or level, the handshake, and how a request is held pending are hardware interface matters. The rules above are what software sees.
+When the processor accepts a request, the device supplies an 8-bit vector number v. The ISA does not say how requests are signaled and acknowledged: edge or level, the handshake, and how a request is held pending are hardware interface matters. The rules above are what software sees.
 
 ### 7.2 Interrupt entry
 

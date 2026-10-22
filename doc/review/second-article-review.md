@@ -20,7 +20,7 @@
 | 32 | `mdbl` formula | Same formula, s1 + (s1 ∧ s2). On the 74181 it is the arithmetic function "A plus AB". | **Resolved: deliberate, not a typo.** It is spelled `mdb1` in A2, which is a typesetting slip. |
 | 8 | `move` vs `mov` | A2 uses `move` consistently. | **Confirmed** `move`, which agrees with QNICE. |
 | 10 | R13 wording | "Whenever an interrupt occurs, the current address of the program counter is copied to this register." | **Confirmed:** R13 is written on every interrupt, maskable or not. |
-| 12, 14, 15 | Multiplication example bugs | The counter is initialised (`move r6, #$20`), r5 is cleared, and r3/r4 are stored. | **Fixed** in A2. Item 13 is not fixed (see §2). |
+| 12, 14, 15 | Multiplication example bugs | The counter is initialized (`move r6, #$20`), r5 is cleared, and r3/r4 are stored. | **Fixed** in A2. Item 13 is not fixed (see §2). |
 | 51 | Reset state | "On startup of the machine, this register [PC] is reset to zero." | **Confirmed** PC = 0, which agrees with QNICE. SR and the other registers are still unspecified. |
 | 54 | Call/return | A2 gives a calling idiom (`add @--r12, #2, pc` then `move pc, #sub`, with return `move pc, @r12++`). Its stack grows **downwards**: push with `@--r12`, pop with `@r12++`. | **Partly resolved.** The stack direction now agrees with QNICE. The stack pointer is still R12, where QNICE uses R13. The idiom only works if R15 reads as the next instruction (see item 21). |
 | 60 | Assembler directives | Defines `.org`, `.equ`, `.dat`, and `.reserve`; the label/condition/instruction/operand fields; `;` comments; and `?[!]bit` conditions. "When no condition is specified, the 1 bit … is used." | **Partly resolved.** |
@@ -59,7 +59,7 @@ A2 also drops A1's explicit "+1" wording. It says only "uses the current value o
 6. **Interrupt enable is still the wrong bit (item 2).** A2 enables interrupts with `or sr, sr, #$0100`, which is bit 8. A1 used `$0200` (bit 9). Both figures put I at bit 24 (`$01000000`). The two articles disagree with each other *and* with the figure.
 7. **The IVT base is still shifted left (item 3).** It is still `0<0 sr, #ivt, #8`. It should be a right shift.
 8. **Multiplication still adds the wrong register (item 13).** It still has `add<m> r3, r3, r1`, which should be `r2`.
-9. **The stack pointer starts in the wrong place (new).** A2's stack grows down, but it initialises `r12` to `start_stack`, a label at the *start* of the `.reserve $1000` block. The first push therefore writes just below the block, over whatever precedes it (the IVT in the listing). The label should go at the end of the block. This happened because the stack direction changed without the label moving.
+9. **The stack pointer starts in the wrong place (new).** A2's stack grows down, but it initializes `r12` to `start_stack`, a label at the *start* of the `.reserve $1000` block. The first push therefore writes just below the block, over whatever precedes it (the IVT in the listing). The label should go at the end of the block. This happened because the stack direction changed without the label moving.
 10. **`#` dropped from constants (new).** A1 says a constant always needs a leading `#`. A2 writes `?z move pc, $1234` (§3.2) and, in the design discussion, `move $1234, @r1--` (§2.3). The second example also:
     - puts the source first, the opposite of NICE's destination-first order;
     - uses `@r1--`, post-decrement indirect, which is not one of the eight addressing modes.

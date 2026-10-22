@@ -75,13 +75,15 @@ Run the relevant `make test` after every change.
 
 ## Conventions
 
-- Behaviour changes start in ISA.md; code follows the spec, never the reverse.
+- Behavior changes start in ISA.md; code follows the spec, never the reverse.
   Departures from the sources go in ISA.md Appendix B.
 - Every bug fix or new rule gets a test: an `errors.py` case, a line in
   `assembler/test/encoding.nasm`, or an emulator probe with a hand-checked
   `.expected` file. Never generate `.expected` or `.bin` files by copying tool
   output without checking it.
 - The 2004 example `.bin` files are original `NICE.pm` output; do not change them.
-- Keep the READMEs in sync with the tools' options, formats, and error behaviour.
+- Keep the READMEs in sync with the tools' options, formats, and error behavior.
 - Docs: plain, short sentences. Use the Oxford comma by default ("a, b, and c").
+- American spelling everywhere, in docs, comments, and identifiers
+  ("behavior", "color", "analyze", "labeled", "gray").
 - Commit subjects: `niceasm: ...`, `niceemu: ...`, `runtime: ...`, `nicewasm: ...`, `nicehdl: ...`, `bench: ...`, `intro: ...`, `ISA: ...`, `Review: ...`.

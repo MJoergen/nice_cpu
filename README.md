@@ -176,7 +176,7 @@ format, conditional execution, addressing modes, execution, flags,
 interrupts, reset, memory, the I/O range, software conventions, the assembler syntax, and the `.bin` object format. Where the sources disagree, it follows this
 order:
 
-1. The intended behaviour of the 2004 emulator `NICE.pm` and web page (not
+1. The intended behavior of the 2004 emulator `NICE.pm` and web page (not
    its bugs).
 2. The 1999 and 1997 articles.
 3. QNICE, the 16-bit descendant of NICE, as implemented in

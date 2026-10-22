@@ -93,7 +93,7 @@ pub fn instructions() -> u64 {
 pub const SCREEN_COLS: u32 = 80;
 pub const SCREEN_ROWS: u32 = 25;
 
-/// Writes c, the character in bits 7..0 and its colour above, to a column,
+/// Writes c, the character in bits 7..0 and its color above, to a column,
 /// 0 to 79, of a row, 0 to 24.
 pub fn screen_put(col: u32, row: u32, c: u32) {
     unsafe { nice_screen_put(col as i32, row as i32, c as i32) }

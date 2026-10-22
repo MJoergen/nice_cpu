@@ -7,7 +7,7 @@
 ;
 ; Row 0 of the screen at 0xFFFF0000 also shows what is printed as a blank:
 ; 0x7F (DEL), 0xC1 (bits 7..0 above 0x7E), and a space. Bits above bit 7
-; are a colour and are ignored, so 0x141 prints "A".
+; are a color and are ignored, so 0x141 prints "A".
 ;
 ;   -s:        row 0 "  A !", rows 1-23 empty, row 24 "Z" in column 79.
 ;              "X" at 0xFFFEFFFF and "Y" at 0xFFFF07D0 are not shown.

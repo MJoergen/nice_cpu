@@ -206,7 +206,7 @@ The library is small on purpose:
 - No `errno`. `strtol` and `strtoul` saturate on overflow.
 - No `exit`. `abort` traps (WASM.md).
 - `malloc` is first fit, with an 8-byte header on each block, and merges
-  neighbouring free blocks. `realloc` to a smaller size, 0 included,
+  neighboring free blocks. `realloc` to a smaller size, 0 included,
   keeps the block. The heap starts at wasm-ld's `__heap_base`
   and grows with `memory.grow`, so only up to nicewasm's
   `--memory-pages`.

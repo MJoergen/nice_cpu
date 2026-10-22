@@ -63,7 +63,7 @@ define core_run
 endef
 
 core: $(BUILD)/bench.bin $(BUILD)/hand.bin
-	$(MAKE) -C ../hdl analyse
+	$(MAKE) -C ../hdl analyze
 	$(foreach p,$(PROGRAMS),$(call core_run,$(p)))
 
 $(BUILD)/bench.nasm: bench.wasm ../translator/nicewasm.py

@@ -36,8 +36,8 @@
      \item In 2006, its 16 bit descendant QNICE (``Quite NICE'') followed
       \cite{qnice}. QNICE runs on FPGAs today.
      \item This project gives NICE a complete specification, an assembler,
-      an emulator, a runtime library, a WebAssembly translator, and a
-      first FPGA core -- and next, a faster one.
+      an emulator, a runtime library, a WebAssembly translator, and
+      two FPGA cores, a simple one and a pipelined one.
      \item This introduction explains NICE step by step. It assumes you
       know what a register and a memory address are, and nothing more.
     \end{itemize}
@@ -125,7 +125,7 @@
       \begin{center}
        \code{MOVE @0xFFFFFF00, 0x41} \quad prints \code{A}
       \end{center}
-     \item The FPGA implementation will have a UART at the same address.
+     \item A system built on an FPGA core maps a UART at the same address.
      \item Reading a memory address where nothing is connected returns 0.
     \end{itemize}
    \end{frame}
@@ -869,8 +869,8 @@ Stopped at the step limit after 8 steps, PC=00000004
    \begin{itemize}
     \item The first line changes nothing: \code{R1} was 0 already.
     \item \code{R15} is shown only when an instruction jumps.
-    \item The FPGA implementation will write the same trace, so the two can
-     be compared line by line.
+    \item The FPGA cores write the same trace, so they can be
+     compared with the emulator line by line.
    \end{itemize}
   \end{frame}
 %
@@ -911,7 +911,7 @@ Stopped at the step limit after 8 steps, PC=00000004
        one, which write the same trace as the emulator for every test
        program.
      \end{itemize}
-    \item Next comes a faster clock for the \textbf{pipelined core}.
+    \item The \textbf{pipelined core} meets a 10 ns clock out of context.
      The system around it, with RAM and a UART, is built in the separate
      NiceMonMEGA65 repository.
     \item A C compiler that targets NICE directly would be great, too.

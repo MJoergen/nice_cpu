@@ -63,6 +63,8 @@ line such as `Pending: IRQ 05` follows the first line.
 |---|---|
 | `-t`, `--trace` | Print one line per instruction (see below). |
 | `-s`, `--screen` | After halting, print the 80×25 character screen. |
+| `--color` | Like `--screen`, with the colors of each word as 24-bit ANSI escapes (see below). |
+| `--invert-fg` | Like `--color`, with the foreground inverted, as in the 2004 IDE. |
 | `-2004` | Put the screen at `0x400`, as the 2004 emulator does. |
 | `-d`, `--dump ADDR:N` | After halting, print N memory words from ADDR. May be repeated. |
 | `-n`, `--max-steps N` | Stop after N steps. The default is 100000000. |
@@ -81,6 +83,13 @@ its first word. `--screen` prints `Screen:` and then one line per row,
 starting with `|`, with trailing blanks dropped from each row and blank rows
 dropped from the bottom. Characters outside printable ASCII show as blanks.
 Both come after the registers, the dumps first.
+
+With `--color`, each row also has the colors of its words (SYSTEM.md §1). The
+background is bits 31..20 and the foreground bits 19..8, as 4-bit red, green,
+and blue. The row has one escape, `ESC[48;2;R;G;B;38;2;R;G;Bm`, at its start
+and wherever the colors change, and `ESC[0m` at its end. The foreground is
+not inverted, as it is in the 2004 IDE, unless `--invert-fg` asks for it. Then
+each foreground component `n` becomes `0xF − n`, and the background stays.
 
 The exit status is 0 after `HALT`, 2 after any other halt (a reserved control
 word, a nested `INT`, or `RTI` outside an interrupt routine), 3 at the step
@@ -112,7 +121,7 @@ address twice and a file with no words are errors.
 | `0xFFFFFF80`–`0xFFFFFFFF` | 128 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. |
 
 The screen has one word per character, with the character in bits 7..0 and
-its color above. It is ordinary memory, and `--screen` prints the
+its colors above. It is ordinary memory, and `--screen` prints the
 characters when the program has halted. `test/screen.nasm` writes to it. The
 2004 emulator has the screen at `0x400`, where it overlaps the code of any
 program longer than 1024 words. `-2004` puts it there for the 2004

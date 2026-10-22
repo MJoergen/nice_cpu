@@ -21,7 +21,7 @@ OPTS_wrap      = -d 0xffffffff:1
 
 # Probes of single rules of doc/ISA.md, in test/X.nasm. The expected values
 # are in the comments of each program. Run make bins after changing one.
-PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest console screen iofetch \
+PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest console screen screencolor screeninvert iofetch \
   reads reserved mpu mpu64 perf timer input r15modes r0dest r14mem skipconst carryin shiftc \
   wrapmem smcown scrbound
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
@@ -32,6 +32,8 @@ OPTS_merge   = --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
 OPTS_after   = --nmi 3:1 --nmi 10:1 -d 0x200:6
 OPTS_start   = -t --nmi 0:3
 OPTS_screen  = -s
+OPTS_screencolor = --color
+OPTS_screeninvert = --invert-fg
 OPTS_iofetch = -d 0xffffff80:1 -d 0xffffffff:1
 OPTS_reads   = -d 0xffffff01:1
 OPTS_mpu     = -d 0x200:72 -d 0xffffff20:16

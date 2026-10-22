@@ -16,6 +16,8 @@ const usage =
     \\Options:
     \\  -t, --trace          Print one line per instruction.
     \\  -s, --screen         Print the 80x25 character screen at 0xFFFF0000.
+    \\      --color          Like --screen, with the colors as ANSI escapes.
+    \\      --invert-fg      With --color, invert the foreground, as the 2004 IDE does.
     \\  -2004                Put the screen at 0x400, as the 2004 emulator does.
     \\  -d, --dump ADDR:N    Print N memory words from ADDR. May be repeated.
     \\  -n, --max-steps N    Stop after N steps (default 100000000).
@@ -36,7 +38,9 @@ const usage =
 ;
 
 /// The character screen (doc/SYSTEM.md §1). Each word holds a character in
-/// bits 7..0 and its color above. The 2004 emulator has it at 0x400.
+/// bits 7..0, its background color in bits 31..20, and its foreground color
+/// in bits 19..8, each as 4-bit R, G, and B. The 2004 emulator has it at
+/// 0x400.
 const screen_base = 0xFFFF0000;
 const screen_base_2004 = 0x400;
 const screen_width = 80;
@@ -59,6 +63,8 @@ const Options = struct {
     path: []const u8,
     trace: bool = false,
     screen: bool = false,
+    color: bool = false,
+    invert_fg: bool = false,
     screen_base: u32 = screen_base,
     dumps: []const Dump = &.{},
     /// Sorted by step, in command-line order within a step.
@@ -151,6 +157,13 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
             opts.trace = true;
         } else if (std.mem.eql(u8, arg, "-s") or std.mem.eql(u8, arg, "--screen")) {
             opts.screen = true;
+        } else if (std.mem.eql(u8, arg, "--color")) {
+            opts.screen = true;
+            opts.color = true;
+        } else if (std.mem.eql(u8, arg, "--invert-fg")) {
+            opts.screen = true;
+            opts.color = true;
+            opts.invert_fg = true;
         } else if (std.mem.eql(u8, arg, "-2004")) {
             opts.screen_base = screen_base_2004;
         } else if (std.mem.eql(u8, arg, "-d") or std.mem.eql(u8, arg, "--dump")) {
@@ -307,7 +320,7 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
     }
     try printRegisters(out, &cpu);
     for (opts.dumps) |d| try printMemory(out, &cpu, d);
-    if (opts.screen) try printScreen(out, &cpu, opts.screen_base);
+    if (opts.screen) try printScreen(out, &cpu, opts.screen_base, opts.color, opts.invert_fg);
 
     return if (!cpu.halted()) 3 else if (cpu.halt_reason == .halt) 0 else 2;
 }
@@ -329,22 +342,77 @@ fn printMemory(out: *std.Io.Writer, cpu: *const Cpu, d: Dump) !void {
     }
 }
 
+/// A color as 8-bit R, G, and B.
+const Rgb = [3]u8;
+
+/// The background color of a screen word, from bits 31..20. Each 4-bit
+/// component n becomes the byte n * 0x11, so 0xF is full intensity.
+fn screenBackground(w: u32) Rgb {
+    return .{ nibble(w, 28), nibble(w, 24), nibble(w, 20) };
+}
+
+/// The foreground color of a screen word, from bits 19..8. The 2004 IDE
+/// inverts these components, so that 0x0 is full intensity; `invert` does the
+/// same. Without it, 0xF is full intensity.
+fn screenForeground(w: u32, invert: bool) Rgb {
+    const x: u32 = if (invert) 0xFFF00 else 0;
+    return .{ nibble(w ^ x, 16), nibble(w ^ x, 12), nibble(w ^ x, 8) };
+}
+
+fn nibble(w: u32, shift: u5) u8 {
+    return @as(u8, @as(u4, @truncate(w >> shift))) * 0x11;
+}
+
 /// Print the screen, one row per line, without trailing blanks. Characters
-/// outside printable ASCII show as blanks.
-fn printScreen(out: *std.Io.Writer, cpu: *const Cpu, base: u32) !void {
+/// outside printable ASCII show as blanks. With `color`, each row has the
+/// colors of its words as 24-bit ANSI escapes, changing only where they
+/// change, and ends with a reset. With `invert`, the foreground is inverted.
+fn printScreen(out: *std.Io.Writer, cpu: *const Cpu, base: u32, color: bool, invert: bool) !void {
+    var words: [screen_height][screen_width]u32 = undefined;
     var rows: [screen_height][screen_width]u8 = undefined;
     var last_row: usize = 0;
-    for (&rows, 0..) |*row, y| {
-        for (row, 0..) |*ch, x| {
-            const c: u8 = @truncate(cpu.peek(base + @as(u32, @intCast(y * screen_width + x))));
+    for (&rows, &words, 0..) |*row, *word_row, y| {
+        for (row, word_row, 0..) |*ch, *w, x| {
+            w.* = cpu.peek(base + @as(u32, @intCast(y * screen_width + x)));
+            const c: u8 = @truncate(w.*);
             ch.* = if (c > ' ' and c < 0x7F) c else ' ';
             if (ch.* != ' ') last_row = y + 1;
         }
     }
     try out.writeAll("Screen:\n");
-    for (rows[0..last_row]) |*row| {
-        try out.print("|{s}\n", .{std.mem.trimRight(u8, row, " ")});
+    for (rows[0..last_row], words[0..last_row]) |*row, *word_row| {
+        try out.writeByte('|');
+        const text = std.mem.trimRight(u8, row, " ");
+        if (!color) {
+            try out.writeAll(text);
+        } else {
+            var prev: ?[2]Rgb = null;
+            for (text, word_row[0..text.len]) |ch, w| {
+                const now = [2]Rgb{ screenBackground(w), screenForeground(w, invert) };
+                if (prev == null or !std.meta.eql(prev.?, now)) {
+                    try out.print("\x1b[48;2;{d};{d};{d};38;2;{d};{d};{d}m", .{
+                        now[0][0], now[0][1], now[0][2], now[1][0], now[1][1], now[1][2],
+                    });
+                    prev = now;
+                }
+                try out.writeByte(ch);
+            }
+            try out.writeAll("\x1b[0m");
+        }
+        try out.writeByte('\n');
     }
+}
+
+test "screen colors" {
+    // No inversion: 0 is no intensity, 0xF is full.
+    try std.testing.expectEqual(Rgb{ 0, 0, 0 }, screenBackground(0x000FFF41));
+    try std.testing.expectEqual(Rgb{ 0xFF, 0xFF, 0xFF }, screenForeground(0x000FFF41, false));
+    try std.testing.expectEqual(Rgb{ 0x11, 0x22, 0xEE }, screenBackground(0x12E00000));
+    try std.testing.expectEqual(Rgb{ 0x00, 0x77, 0xAA }, screenForeground(0x00007A41, false));
+    // Inverted, the foreground is 0xF - n, and the rest of the word is not
+    // touched.
+    try std.testing.expectEqual(Rgb{ 0xFF, 0x88, 0x55 }, screenForeground(0x00007A41, true));
+    try std.testing.expectEqual(Rgb{ 0, 0, 0 }, screenForeground(0x000FFF41, true));
 }
 
 test {

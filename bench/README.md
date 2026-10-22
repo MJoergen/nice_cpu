@@ -134,13 +134,13 @@ the most cycles per instruction, 12.0 and 11.7, and `vm` in the
 hand-written one, 12.8.
 
 `make core CORE=pipeline` runs them on the pipelined core, on the same
-programs as the multi-cycle core above, at commit bb8fdb6, which leaves
+programs as the multi-cycle core above, at commit 1a41b0c, which leaves
 the multi-cycle core as it was:
 
 | Program | Instructions | Cycles | Cycles per instruction | Faster than the multi-cycle core |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 1681080 | 2349181 | 1.40 | 8.1 times |
-| `hand.nasm` | 491617 | 1333925 | 2.71 | 4.2 times |
+| `bench.c` through nicewasm | 1681080 | 2384635 | 1.42 | 8.0 times |
+| `hand.nasm` | 491617 | 1384879 | 2.82 | 4.0 times |
 
 
 
@@ -232,16 +232,17 @@ as both programs do, gets a row per phase:
       ...
       total       1681080   2260097  1.344
 
-The core's bubble is 6 cycles, as `hdl/test/bubble.nasm` measures. A
-jump leaves WRITE in cycle c − 1 and flushes in the same cycle, since
-the flush is combinational. FETCH issues the request in c, so it is on
-the bus in c + 1, and the memory acknowledges in c + 2. DECODE takes the
-instruction in c + 3 and emits its micro-op in c + 4, PREPARE passes it
-on in c + 5, and WRITE runs it in c + 6. The model's 7 is a fit: with
-`--flush 6` it is 4.6% below the core's cycles for the translated
-program and 10.5% below for `hand.nasm`, with 7 3.1% and 6.6%, so the
-extra cycle stands in for something the model lacks. The hand-counted
-cases of `pipecycles.py --test` and `cycprof.py --test` use the 7.
+The model's 7 is the core's bubble, as `hdl/test/bubble.nasm` measures.
+A jump leaves WRITE in cycle c − 2 and flushes in the same cycle, and
+the redirect reaches FETCH from a register in c − 1 (MICROARCH.md §5.4).
+FETCH issues the request in c, so it is on the bus in c + 1, and the
+memory acknowledges in c + 2. DECODE takes the instruction in c + 3 and
+emits its micro-op in c + 4, PREPARE passes it on in c + 5, and WRITE
+runs it in c + 6. With it the model is 5.2% below the core's cycles for
+the translated program and 13.1% below for `hand.nasm`, and with
+`--flush 8` 3.7% and 9.4%, so a cycle per jump is still missing from
+the model (TODO.md). The hand-counted cases of `pipecycles.py --test`
+and `cycprof.py --test` use the 7.
 
 The phases of the translated program take an estimated
 2260097 cycles, 1.34 per instruction, and those of `hand.nasm` 1203605,
@@ -275,21 +276,21 @@ phases.
 
 `make compare` puts the estimate beside the cycles the pipelined core
 took, phase by phase, from the output of `make core CORE=pipeline`,
-which must have run first, on the same `.bin`. At commit bb8fdb6:
+which must have run first, on the same `.bin`. At commit 1a41b0c:
 
 | Phase | `bench.c`, model | Core | Model against the core | `hand.nasm`, model | Core | Model against the core |
 |---|---|---|---|---|---|---|
-| `rng64` | 74312 | 83076 | −10.5% | 62481 | 66339 | −5.8% |
-| `crc32` | 76603 | 83061 | −7.8% | 41998 | 45855 | −8.4% |
-| `bst` | 405711 | 412973 | −1.8% | 256281 | 279699 | −8.4% |
-| `heapsort` | 375849 | 385784 | −2.6% | 289631 | 305038 | −5.1% |
-| `vm` | 1170099 | 1220162 | −4.1% | 492044 | 574061 | −14.3% |
-| `strings` | 157523 | 164125 | −4.0% | 61170 | 62933 | −2.8% |
-| total | 2260097 | 2349181 | −3.8% | 1203605 | 1333925 | −9.8% |
+| `rng64` | 74312 | 83082 | −10.6% | 62481 | 67107 | −6.9% |
+| `crc32` | 76603 | 83067 | −7.8% | 41998 | 47135 | −10.9% |
+| `bst` | 405711 | 416052 | −2.5% | 256281 | 293384 | −12.6% |
+| `heapsort` | 375849 | 387338 | −3.0% | 289631 | 309144 | −6.3% |
+| `vm` | 1170099 | 1248168 | −6.3% | 492044 | 602064 | −18.3% |
+| `strings` | 157523 | 166928 | −5.6% | 61170 | 66045 | −7.4% |
+| total | 2260097 | 2384635 | −5.2% | 1203605 | 1384879 | −13.1% |
 
-The model is below the core in every phase, by up to 14%, most in `vm`
-of `hand.nasm` and in `rng64` and `crc32` of the translated program. It
-does not model DBUS's store register yet (TODO.md).
+The model is below the core in every phase, by up to 18%, most in `vm`
+of `hand.nasm`, which jumps the most, and in `rng64` of the translated
+program. It does not model DBUS's store register yet (TODO.md).
 
 `cycprof.py` charges the model's cycles to the source lines of a program,
 and `make profile` writes `build/bench.cyc.txt` and `build/hand.cyc.txt`.

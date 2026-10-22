@@ -751,7 +751,7 @@ reaches every stage at once. Its stores and vector reads go out from a
 register in DBUS, a cycle later. In the best case one micro-operation retires each cycle.
 `cputest` takes about 1.2 cycles per instruction on memory that never
 stalls, and `hazard.nasm`, which is all hazards, 1.9. The benchmark of
-[bench/](../bench/README.md) runs like this at commit NEWCOMMIT, against
+[bench/](../bench/README.md) runs like this at commit 1a41b0c, against
 the multi-cycle core's numbers there:
 
 | Program | Instructions | Cycles | Cycles per instruction | Multi-cycle core |

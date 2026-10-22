@@ -36,15 +36,13 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   --early (2) cycles. Every other taken jump (conditional jumps, returns
   MOVE R15, @SP++, table jumps, control instructions) is resolved in WRITE
   by its last micro-op and refetches: the target reaches WRITE --flush (7)
-  cycles later than a fall-through would. The core's bubble is 6
+  cycles later than a fall-through would. That is the core's bubble
   (hdl/test/bubble.nasm measures it): the jump leaves WRITE in cycle
-  c - 1 and flushes in the same cycle, since the flush is combinational,
-  FETCH issues the request in c (on the bus in c + 1), the memory
-  acknowledges in c + 2, DECODE takes the instruction in c + 3 and emits
-  its micro-op in c + 4, PREPARE passes it on in c + 5, and WRITE runs it
-  in c + 6. The default of 7 is a fit, not the core's timing: with it the
-  model comes closer to the core's cycles for the benchmark (make
-  compare), so the extra cycle stands in for something the model lacks.
+  c - 2 and flushes in the same cycle, the redirect reaches FETCH from a
+  register in c - 1, FETCH issues the request in c (on the bus in
+  c + 1), the memory acknowledges in c + 2, DECODE takes the instruction
+  in c + 3 and emits its micro-op in c + 4, PREPARE passes it on in
+  c + 5, and WRITE runs it in c + 6.
   A skipped jump costs nothing itself.
 - Registers: bypasses from WRITE make ALU operand dependences free. A
   register used as the base of a data read (the address is formed in

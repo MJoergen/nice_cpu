@@ -10,8 +10,8 @@ NICE with other processors.
 
     make            # run both on the emulator and print their tables
     make test       # the same, and check every result
-    make core       # run both on the pipelined core in GHDL (about 20 minutes)
-    make core CORE=multicycle  # the same on the multi-cycle core (about 20 minutes)
+    make core       # run both on the pipelined core in GHDL (about 40 minutes)
+    make core CORE=multicycle  # the same on the multi-cycle core (about 40 minutes)
     make hazards    # count the pipeline hazards of MICROARCH.md §5 in both
     make cycles     # estimate the cycles of both on the pipelined core of MICROARCH.md
     make profile    # the same, charged to the source lines, in build/*.cyc.txt

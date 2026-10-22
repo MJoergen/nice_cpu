@@ -142,7 +142,7 @@ example `make run/pipeline/hazard_stall`.
 `make lint` checks the style of every VHDL file against
 [CODING_STYLE.md](CODING_STYLE.md), as far as
 [vsg](https://vhdl-style-guide.readthedocs.io/) can, with the rules in
-[vsg.yml](vsg.yml). It needs `pip install vsg`. It fails on errors and only
+[vsg.yml](vsg.yml). It needs `pip install vsg==3.35.0`, the version CI uses. It fails on errors and only
 warns about lines over 100 columns.
 
 `make timing` runs Vivado on the pipelined core alone, out of context, as

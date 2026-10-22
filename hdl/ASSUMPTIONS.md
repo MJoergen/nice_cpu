@@ -152,3 +152,11 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
     `formal/pipeline.sby` checks its ports and its own assertions for the
     first 8 cycles after reset. The simulation tests check the same
     assertions on every run.
+16. **Some registers have no reset, on purpose.** WRITE's `saved_pc`,
+    `saved_sr`, `s0val`, `s1val`, `last`, `m33sum`, `cnt`, `vec`,
+    `vec_intr`, and `vec_nmi`, PREPARE's `rd_addr_r`, DBUS's `tags_r`,
+    `rq_r`, `st_we_r`, `st_addr_r`, and `st_data_r`, and FETCH's `ring_r`
+    are not reset. Every use is gated by a valid bit or a count, which
+    are reset, so the unreset value is never used. The outputs follow:
+    `dbus_addr_o`, for one, is 'U' in simulation until the first request,
+    where the multi-cycle core's outputs start at '0'.

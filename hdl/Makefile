@@ -435,10 +435,14 @@ timing:
 # only warnings.
 VSG ?= vsg
 
+# Needs mypy (pip install mypy).
+typecheck:
+	cd test && $(PYTHON) -m mypy --strict *.py
+
 lint:
 	$(VSG) -c vsg.yml -of syntastic -f $(SOURCES) $(SIM_SOURCES) $(TEST_SOURCES)
 
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: test runs programs random sweep analyze synth formal emulator timing lint clean
+.PHONY: test runs programs random sweep analyze synth formal emulator timing typecheck lint clean

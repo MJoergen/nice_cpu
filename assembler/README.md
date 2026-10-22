@@ -63,7 +63,19 @@ by `.ORG` and words reserved by `.RES` are not listed.
 - `.ORG`, `.BLK`, and `.RES` arguments must not refer to labels defined later.
 - A `.BLK` or `.RES` count must not be negative, and the block must end at or
   before address `0xFFFFFFFF`. Other statements wrap from `0xFFFFFFFF` to 0.
-- Writing two words to the same address is an error.
+- Writing two words to the same address is an error. So is any overlap of
+  a `.BLK` or `.RES` with another `.BLK`, `.RES`, or word, `.RES` against
+  `.RES` included. Blocks that only touch are fine.
+- `.BLK n` writes n lines of output, with no upper limit: `.BLK 0xFFFFFFFF`
+  writes about 38 GB. Use `.RES` for a large reservation, which writes
+  nothing.
+- `.ASCII_B ''` emits nothing, and `.ASCII_L ''` emits one 0 word.
+- The output is sorted by address, not by source order. With a wrap, the
+  words at 0 come before those at `0xFFFFFFFE` (`test/wrap.nasm`).
+- Whitespace is what Python's `str.isspace()` says, so a form feed and
+  the Latin-1 character `0xA0` separate words too.
+- Warnings print before errors. A run that fails leaves an existing output
+  file as it was. `-o -` writes a file named `-`, not stdout.
 - A UTF-8 byte order mark at the start of the file is ignored.
 
 ## Tests

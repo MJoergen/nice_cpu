@@ -17,8 +17,9 @@ No code has TODO or FIXME comments.
     the pipelined core's cycles for the benchmark (`make core`
     in `bench/`), to decide on speculative reads (below).
   - Speed: the core alone meets a 10 ns clock out of context (Vivado
-    2025.1, `make timing` in `hdl/`), with a margin of a few tenths of a
-    nanosecond ([doc/review/pipeline-timing.md](doc/review/pipeline-timing.md)).
+    2025.1, `make timing` in `hdl/`) with the `timing` flow, by a few
+    tenths of a nanosecond (+0.16 ns on 2026-10-22). With the `default`
+    flow it misses by 0.12 ns, on 4 endpoints ([doc/review/pipeline-timing.md](doc/review/pipeline-timing.md)).
     In NiceMonMEGA65 it reached about 78 MHz before WRITE stopped taking
     read data from the bus into the ALU
     ([doc/review/pipeline-timing.md](doc/review/pipeline-timing.md), Read
@@ -136,7 +137,7 @@ No code has TODO or FIXME comments.
 - **Stack overflow** is not detected in translated code, unlike in wasm.
   What happens then is undefined (WASM.md). An idea: a check against a
   stack limit in each function's prologue, at a cost in code size.
-- **Faster and smaller translated code.** `bench/` runs 1730635
+- **Faster and smaller translated code.** `bench/` runs 1681080
   instructions, against 491617 for `hand.nasm`, and takes about 2.38
   million cycles in its phases on the pipelined core, as the estimate of
   `bench/pipecycles.py` does (`make compare`)

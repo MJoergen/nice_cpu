@@ -433,6 +433,12 @@ Out of context, one run each:
 | R6 part, NiceMonMEGA65's directives | | +0.211 ns, 0 failing |
 | Nexys4DDR part, NiceMonMEGA65's directives | −1.538 ns, 623 failing | −1.160 ns, 464 failing |
 
+On 2026-10-22, at the release candidate, one run each: the R6 part met 10 ns with
+NiceMonMEGA65's directives (+0.163 ns, 0 failing) and missed by 0.115 ns, on 4
+endpoints, with the default directives. The Nexys4DDR part missed by 0.650 ns
+(389 failing) with NiceMonMEGA65's directives and 1.262 ns (603 failing) with
+the default ones.
+
 The redirect is gone from the worst groups, and FETCH's next address
 went from the R6's worst path to +0.40 ns. What is left is (b): the
 flush, from the check of stores against FETCH's block, into the

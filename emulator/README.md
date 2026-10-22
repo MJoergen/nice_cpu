@@ -78,8 +78,8 @@ line such as `Pending: IRQ 05` follows the first line.
 Numbers in options are decimal, or hex after `0x` or `0X`, with no sign or
 `_`.
 
-`--dump` prints eight words per line, each line starting with the address of
-its first word. `--screen` prints `Screen:` and then one line per row,
+`--dump` prints eight words per line. Each line starts with the address of
+its first word and a colon, and each word is 8 hex digits after a blank. `--screen` prints `Screen:` and then one line per row,
 starting with `|`, with trailing blanks dropped from each row and blank rows
 dropped from the bottom. Characters outside printable ASCII show as blanks.
 Both come after the registers, the dumps first.
@@ -93,7 +93,11 @@ each foreground component `n` becomes `0xF − n`, and the background stays.
 
 The exit status is 0 after `HALT`, 2 after any other halt (a reserved control
 word, a nested `INT`, or `RTI` outside an interrupt routine), 3 at the step
-limit, and 1 for a usage, file, or memory error. If stdout is a pipe that
+limit, and 1 for a usage, file, or memory error, an out-of-memory
+condition, or an output that cannot be written. Diagnostics go to stderr,
+and only `-h` prints on stdout. `--` is not an option, so a program path
+that starts with `-` cannot be given, and an empty argument counts as no
+program. If stdout is a pipe that
 closes early, as in `niceemu -t x.bin | head`, niceemu stops quietly with
 status 141, as a filter killed by SIGPIPE would.
 
@@ -102,7 +106,9 @@ status 141, as a filter killed by SIGPIPE would.
 A `.bin` file has one line per word, as niceasm writes it (ISA.md §10.4):
 an address and a word, both in hex, separated by blanks. niceasm writes 8
 digits; the loader accepts 1 to 8, in upper or lower case, and nothing else:
-no `0x` prefix, sign, or `_`. Blank lines are ignored. Loading the same
+no `0x` prefix, sign, or `_`. Blank lines are ignored, and so are tabs,
+trailing blanks, CRLF line ends, and a missing final newline. A UTF-8 byte
+order mark is an error. This is more lenient than ISA.md §10.4. Loading the same
 address twice and a file with no words are errors.
 
 ## Memory map
@@ -129,12 +135,12 @@ programs, such as `print.nasm`.
 
 The console stores nothing. Its output comes before the `Halted` line, and
 with `--trace` it is mixed in with the trace lines. `test/console.nasm`
-writes to it. The FPGA core will have a UART at the same address.
+writes to it. This repository has no UART. A system built on the FPGA core maps one at the same address (SYSTEM.md §1).
 
 Each data read of the console takes the next byte of the input, which is
 stdin unless `--input` names a file. It returns the byte in bits 7..0 with
 bit 8 set, so a 0 byte reads as `0x100`. Once the input has ended, every
-read returns `0x200`. For no input at all, give stdin from `/dev/null`, or
+read returns `0x200`. A read error on the input counts as its end. For no input at all, give stdin from `/dev/null`, or
 `--input /dev/null`. On a terminal, a read waits until a whole line has
 been typed, and Ctrl-D ends the input. Before it reads, the emulator
 flushes its output, so that a prompt shows before the program waits for
@@ -194,7 +200,8 @@ I/O range runs through it as NOPs. `test/iofetch.nasm` shows this.
 All 2³² words of memory exist, and addresses wrap from `0xFFFFFFFF` to 0
 (ISA.md §1.1). Memory is allocated in pages of 4096 words when a nonzero
 word is first written to them, so a program only costs the memory it
-touches.
+touches. There is no bound: a program that writes one word to each of many
+pages can use up to 16 GiB before the emulator runs out of memory.
 
 ## Interrupts
 

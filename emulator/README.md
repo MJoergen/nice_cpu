@@ -138,7 +138,10 @@ read returns `0x200`. For no input at all, give stdin from `/dev/null`, or
 `--input /dev/null`. On a terminal, a read waits until a whole line has
 been typed, and Ctrl-D ends the input. Before it reads, the emulator
 flushes its output, so that a prompt shows before the program waits for
-the answer. `test/input.nasm` reads `test/input.txt`. Reads by `--dump`
+the answer. When stdout is a terminal, it also flushes after each console
+write, so that Ctrl-C loses nothing. Otherwise the output is buffered, and
+is written when the buffer fills, before a read, and at the end of the run,
+so a program that is killed by a signal loses what is still in the buffer. `test/input.nasm` reads `test/input.txt`. Reads by `--dump`
 take no input. `make test` runs every program with stdin from `/dev/null`.
 
 The read counter makes the data reads of ISA.md §8.2 visible: how many

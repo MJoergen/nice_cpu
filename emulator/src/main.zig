@@ -267,6 +267,7 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
 
     if (opts.trace) cpu.trace = out;
     cpu.console = out;
+    cpu.console_flush = std.fs.File.stdout().isTty();
     cpu.cycle_counter = opts.cycle_counter;
     cpu.timer_irq = opts.timer_irq;
     var in_buf: [4096]u8 = undefined;

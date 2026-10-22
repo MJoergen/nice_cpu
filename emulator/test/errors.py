@@ -8,12 +8,14 @@ run and stop, each with its exit status and lines of its output."""
 from __future__ import annotations
 
 import os
+import pty
 import select
 import subprocess
 import sys
 import tempfile
 from typing import List, Optional, Tuple
 
+NICEASM = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "assembler", "niceasm.py")
 NICEEMU = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "zig-out", "bin", "niceemu")
 
 # (arguments, contents of the .bin file or None, expected stderr line). In
@@ -191,7 +193,29 @@ def main() -> None:
         if first != b"?" or not rest.startswith(b"xHalted (HALT) after 4 steps") or err_b:
             failed += 1
             print(f"FAIL prompt: {first!r} first, then {rest[:40]!r}, stderr {err_b!r}")
-    total = len(CASES) + len(RUNS) + 3
+
+        # On a terminal, the console output shows at once, so that it is not
+        # lost when the user stops a program that loops. The program prints
+        # "A" and loops. The "A" must come within 5 seconds, long before the
+        # default step limit ends the run.
+        loop_asm = os.path.join(tmp, "loop.nasm")
+        loop_bin = os.path.join(tmp, "loop.bin")
+        with open(loop_asm, "w") as f:
+            f.write(" MOVE @0xFFFFFF00, 0x41\nloop MOVE R15, loop\n")
+        subprocess.run([sys.executable, NICEASM, "-o", loop_bin, loop_asm], check=True)
+        master, slave = pty.openpty()
+        tty = subprocess.Popen([NICEEMU, "-n", "1000000000000", loop_bin], stdin=subprocess.DEVNULL,
+                               stdout=slave, stderr=subprocess.PIPE)
+        os.close(slave)
+        with open(master, "rb", buffering=0) as screen:
+            ready, _, _ = select.select([screen], [], [], 5)
+            shown = screen.read(1) if ready else b""
+            tty.kill()
+            tty.communicate()
+        if shown != b"A":
+            failed += 1
+            print(f"FAIL terminal output: {shown!r}, expected b'A' within 5 seconds")
+    total = len(CASES) + len(RUNS) + 4
     print(f"PASS errors ({total} cases)" if not failed else f"FAIL errors ({failed} of {total})")
     sys.exit(1 if failed else 0)
 

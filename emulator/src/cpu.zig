@@ -323,6 +323,9 @@ pub const Cpu = struct {
     /// instead of to memory. This device belongs to the emulator, not to
     /// the ISA (§8.3).
     console: ?*std.Io.Writer,
+    /// Flush `console` after each byte, so that a terminal shows the output
+    /// at once and a Ctrl-C does not lose it.
+    console_flush: bool,
     /// When set, a data read of `console_addr` takes the next byte from
     /// here and returns it with `console_byte`, or returns `console_end`
     /// once it is empty. Unset, as in most unit tests, the read falls
@@ -360,6 +363,7 @@ pub const Cpu = struct {
             .last_write = null,
             .read_count = 0,
             .console = null,
+            .console_flush = false,
             .input = null,
             .mpu = .{},
             .perf = .{},
@@ -463,7 +467,10 @@ pub const Cpu = struct {
     /// A memory write by the processor (§8.2).
     pub fn write(self: *Cpu, addr: u32, value: u32) Error!void {
         if (addr == console_addr) {
-            if (self.console) |w| try w.writeByte(@truncate(value));
+            if (self.console) |w| {
+                try w.writeByte(@truncate(value));
+                if (self.console_flush) try w.flush();
+            }
         }
         if (addr == counter_addr) {
             self.read_count = value;

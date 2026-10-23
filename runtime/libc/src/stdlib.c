@@ -1,5 +1,7 @@
+#include <assert.h>
 #include <ctype.h>
 #include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 int abs(int x) { return x < 0 ? -x : x; }
@@ -9,6 +11,12 @@ long long llabs(long long x) { return x < 0 ? -x : x; }
 _Noreturn void abort(void)
 {
     __builtin_trap();           // wasm unreachable: a trap (WASM.md)
+}
+
+_Noreturn void __assert_fail(const char *expr, const char *file, int line, const char *func)
+{
+    printf("%s:%d: %s: Assertion `%s' failed.\n", file, line, func, expr);
+    abort();
 }
 
 // The value of a digit or letter in bases up to 36, or 36 if it is neither.

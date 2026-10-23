@@ -1,0 +1,5 @@
+start
+passed
+test/assert.c:11: check: Assertion `x > 0' failed.
+R1  00000001
+exit 2

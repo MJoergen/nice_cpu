@@ -101,7 +101,7 @@ The emulator and the FPGA implementation map performance counters at `0xFFFFFF40
 | `0xFFFFFF50`–`0xFFFFFF7F` | | the fetch statistics (MICROARCH.md §8.1), or 0 in the emulator | as MICROARCH.md §8.1 says, or is ignored in the emulator |
 
 - The **instruction counter** counts the instructions that have completed since reset. Every instruction counts, including one whose condition is false, a control instruction, and `INT`. An interrupt entry for IRQ or NMI does not count, because it is not an instruction. An instruction that reads `INSTR_LO` reads the number of instructions that completed before it.
-- The **cycle counter** counts the clock cycles since reset. The emulator has no clock, so it counts one cycle for each instruction and each interrupt entry, that is, for each step. Its cycle counter is an approximation and differs from the FPGA implementation's.
+- The **cycle counter** counts the clock cycles since reset while the core runs, and stops when the core is held or has halted, so a reading after a halt does not change. The emulator has no clock, so it counts one cycle for each instruction and each interrupt entry, that is, for each step. Its cycle counter is an approximation and differs from the FPGA implementation's.
 - Reset sets both counters and both snapshots to 0. Neither counter can be written. A program measures an interval as the difference of two readings.
 - A counter wraps from `0xFFFFFFFF_FFFFFFFF` to 0. At one count per cycle at 100 MHz that takes over 5000 years.
 - The **fetch statistics** count what the instruction fetch of the pipelined FPGA core does in each cycle, to judge the size of its buffer. They depend on the core, so MICROARCH.md §8.1 describes them. The emulator has none: their words read 0 and ignore writes, and are not memory.
@@ -123,7 +123,7 @@ The emulator and the FPGA implementation map a timer at `0xFFFFFF10`–`0xFFFFFF
 
 - While P ≠ 0, COUNT decreases by one at the end of each cycle, the cycle of the write to `TIMER_PERIOD` included. When COUNT reaches 0, the timer raises IRQ with vector v, and COUNT is set to P again. So the first request comes at the end of the P-th cycle, counting from the write, and then one comes every P cycles.
 - P = 0 stops the timer, and COUNT stays 0. A request that is already pending stays pending.
-- The emulator counts one cycle for each step, as its cycle counter does (§3). The FPGA implementation counts clock cycles.
+- The emulator counts one cycle for each step, as its cycle counter does (§3). The FPGA implementation counts clock cycles while the core runs. Like the cycle counter, COUNT stops when the core is held or has halted.
 - A request keeps the vector it was raised with. If the timer's last request is still pending when it raises the next one, the two merge (ISA §7.1), and the pending one keeps its vector. So a timer whose period is shorter than its interrupt routine, or than a stretch of code with E = 0, loses requests. To keep time, read the cycle counter rather than count interrupts.
 - The interrupt routine need not acknowledge the request. Taking it is enough.
 - Reset sets P, COUNT, and v to 0, with no request pending.

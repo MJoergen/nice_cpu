@@ -104,6 +104,10 @@ __nice.instr_lo .EQU    0xFFFFFF42
 __nice.instr_hi .EQU    0xFFFFFF43
 __nice.screen   .EQU    0xFFFF0000              ; 80 columns, 25 rows
 
+; exit: halts with the status in R1, as after main returns (ABI.md). 1 step.
+_exit
+        HALT
+
 ; nice_putc: writes bits 7..0 of R1 to the console. 2 steps.
 _nice_putc
         MOVE    @__nice.console, R1

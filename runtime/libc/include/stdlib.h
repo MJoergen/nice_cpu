@@ -17,6 +17,15 @@ long atol(const char *s);
 long strtol(const char *s, char **end, int base);
 unsigned long strtoul(const char *s, char **end, int base);
 
+#define RAND_MAX 32767
+
+int rand(void);
+void srand(unsigned seed);
+
 _Noreturn void abort(void);
+// Not defined in C: the translator turns this import into the assembly
+// routine _exit (WASM.md).
+__attribute__((import_module("env"), import_name("exit")))
+_Noreturn void exit(int status);
 
 #endif

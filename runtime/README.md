@@ -177,7 +177,7 @@ image holds the whole library, about 81 KB of wasm.
 |---|---|
 | `stdio.h` | `putchar`, `puts`, `getchar`, `printf`, `sprintf`, `snprintf`, `vprintf`, `vsprintf`, `vsnprintf`, `scanf`, `sscanf`, `vscanf`, `vsscanf` |
 | `string.h` | `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`, `strnlen`, `strcmp`, `strncmp`, `strcpy`, `strncpy`, `strcat`, `strncat`, `strchr`, `strrchr`, `strstr` |
-| `stdlib.h` | `malloc`, `calloc`, `realloc`, `free`, `abs`, `labs`, `llabs`, `atoi`, `atol`, `strtol`, `strtoul`, `abort` |
+| `stdlib.h` | `malloc`, `calloc`, `realloc`, `free`, `abs`, `labs`, `llabs`, `atoi`, `atol`, `strtol`, `strtoul`, `rand`, `srand`, `abort`, `exit` |
 | `assert.h` | `assert` and `static_assert`. A failed `assert` prints `file:line: function: Assertion `expr' failed.` and calls `abort`. `-DNDEBUG` removes the checks. |
 | `time.h` | `clock`, with `CLOCKS_PER_SEC` 1000000 and `clock_t` unsigned, from the microsecond counter of SYSTEM.md §3; `time`, which returns −1 because no device has the date; and the types `clock_t` and `time_t`. |
 | `ctype.h` | `isalnum`, `isalpha`, `iscntrl`, `isdigit`, `isgraph`, `islower`, `isprint`, `ispunct`, `isspace`, `isupper`, `isxdigit`, `tolower`, `toupper` |
@@ -196,7 +196,7 @@ that `--input` names. Clang's own `stddef.h`,
 
 The library is small on purpose:
 
-- No `FILE`, `stdin`, `stdout`, `fprintf`, `ungetc`, or `fgets`. In `stdlib.h`, no `strtoll`, `strtoull`, `strtod`, `atof`, `rand`, `srand`, `qsort`, `bsearch`, `div`, `getenv`, or `system`. In `string.h`, no `strcoll`, `strspn`, `strcspn`, `strpbrk`, `strtok`, or `strerror`.
+- No `FILE`, `stdin`, `stdout`, `fprintf`, `ungetc`, or `fgets`. In `stdlib.h`, no `strtoll`, `strtoull`, `strtod`, `atof`, `qsort`, `bsearch`, `div`, `getenv`, or `system`. In `string.h`, no `strcoll`, `strspn`, `strcspn`, `strpbrk`, `strtok`, or `strerror`.
 - `scanf` and `sscanf` support white space and ordinary characters in the
   format, `*` to read without storing, a width, the length modifiers
   `hh h l ll z t j`, and the conversions `d i u o x X p c s [ n %`. A set
@@ -211,7 +211,8 @@ The library is small on purpose:
   unknown conversion. `%p` prints `0x` and the address in hex, `0x0` for a
   null pointer.
 - No `errno`. `strtol` and `strtoul` saturate on overflow.
-- No `exit`. `abort` traps (WASM.md).
+- `exit` is the assembly routine `_exit`: a `HALT` with the status in R1, so the emulator exits with status 0. There is no `atexit`. `abort` traps (WASM.md).
+- `rand` is the linear congruential generator of the C standard's example, `srand(1)` at start.
 - `malloc` is first fit, with an 8-byte header on each block, and merges
   neighboring free blocks. `realloc` to a smaller size, 0 included,
   keeps the block. The heap starts at wasm-ld's `__heap_base`

@@ -16,7 +16,7 @@ OBJS = $(SRCS:src/%.c=build/%.o)
 # The test programs, test/X.c. Their .wasm files are checked in, so make
 # test needs no C compiler; make wasm rebuilds them. A test/X.input file is
 # the console input of test X.
-TESTS = stdio string stdlib scanf nice printf strings numbers sscanf malloc abort limits assert time
+TESTS = stdio string stdlib scanf nice printf strings numbers sscanf malloc abort exit limits assert time
 
 libc.a: $(OBJS)
 	rm -f $@

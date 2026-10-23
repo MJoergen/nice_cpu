@@ -16,6 +16,13 @@ int main(void)
     v = strtol("abc", &end, 10);
     printf("%ld %d\n", v, *end == 'a');
 
+    // The generator starts as after srand(1), and srand restarts it.
+    printf("%d %d %d\n", rand(), rand(), rand());
+    srand(42);
+    printf("%d %d %d\n", rand(), rand(), rand());
+    srand(1);
+    printf("%d %d\n", rand(), RAND_MAX);
+
     // Blocks are the size asked for plus an 8-byte header, rounded up to 8.
     char *p = malloc(10), *q = malloc(10), *r = malloc(100);
     printf("%d %d %d\n", (int)(q - p), (int)(r - q), (int)((unsigned long)p % 8));

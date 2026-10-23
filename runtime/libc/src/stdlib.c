@@ -8,6 +8,16 @@ int abs(int x) { return x < 0 ? -x : x; }
 long labs(long x) { return x < 0 ? -x : x; }
 long long llabs(long long x) { return x < 0 ? -x : x; }
 
+static unsigned rand_state = 1;
+
+void srand(unsigned seed) { rand_state = seed; }
+
+int rand(void)
+{
+    rand_state = rand_state * 1103515245u + 12345u;
+    return (rand_state >> 16) & RAND_MAX;
+}
+
 _Noreturn void abort(void)
 {
     __builtin_trap();           // wasm unreachable: a trap (WASM.md)

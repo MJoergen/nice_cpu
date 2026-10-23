@@ -139,7 +139,7 @@ To get an IRQ through vector table entry `0x41` every 100000 cycles, that is, ev
 
 A board that wraps the FPGA core, such as [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), may differ from the emulator in the points below. Its own README has the details.
 
-- **Reserved words.** `0xFFFFFF02`–`0xFFFFFF0F` and `0xFFFFFF80`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. The emulator reads them as 0. NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF8F` for its screen registers, and some more for control registers that only its command-line interface writes.
+- **Reserved words.** `0xFFFFFF02`–`0xFFFFFF0F` and `0xFFFFFF80`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. The emulator treats them as ordinary memory for data accesses, and only instruction fetches read 0 ([ISA.md §8.3](ISA.md)). NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF8F` for its screen registers, and some more for control registers that only its command-line interface writes.
 - **Screen.** A board's screen may be larger than the emulator's 80×25. NiceMonMEGA65's has up to 32K words. The color format of §1 applies unchanged. The offset and cursor registers belong to the board.
 - **Console input.** A UART or a keyboard feeds the same console at `0xFFFFFF00`, with the same bits (§1). A break from the keyboard may end the input, and a read then returns `0x200`.
 - **Input FIFO.** A system's input FIFO may lose bytes. NiceMonMEGA65 drops input that arrives before the program starts, because the FIFO is in reset while the core is held, and drops bytes on overflow.

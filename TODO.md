@@ -11,21 +11,13 @@ TODO or FIXME comments.
 ## FPGA core
 
 - **Test order steps not done** (MICROARCH.md §9):
-  - Step 7: `hdl/test/random_prog.py` was tuned with
-    `hdl/test/random_stats.py`, and both cores pass seeds 1 to 90, with
-    the shift jumps it makes since 2026-10-20, and since 2026-10-23 with
-    M set in 75% of the ALU and shift instructions, so that a conditional
-    instruction right after a write of SR is 18% of the instructions,
-    against 15 to 20% in the benchmark. Still weak: about a third of the
-    runs halt before the step limit (seeds 1 to 90: 35 of 90): 16 at a
-    reserved word, 15 at an RTI outside a routine (the `?I RTI` that starts
-    the program, with I set by a write of SR), 2 at an INT, and 2 at a HALT.
-    The INT halts were 15 before that RTI, from an interrupt whose vector
-    entry, after a write of VBASE, held 0 or CODE or a word that a store had
-    changed, so that in_service stayed 1. The reserved halts have not been
-    traced. `make random`
-    runs one seed at a time; `programs.py` could run them in parallel, and
-    a wider range of seeds (say 1 to 1000) has not been run on either core.
+  - Step 7: `hdl/test/random_prog.py` is tuned with
+    `hdl/test/random_stats.py`, and both cores pass seeds 1 to 1000
+    (`make random-sweep`). Still weak: about a third of the runs halt
+    before the step limit (seeds 1 to 90: 35 of 90): 16 at a reserved
+    word, which has not been traced, 15 at an RTI outside a routine (the
+    `?I RTI` that starts the program, with I set by a write of SR), 2 at an
+    INT, and 2 at a HALT.
 - **Formal checks with SymbiYosys** (MICROARCH.md §9). `make formal` proves
   the ports of the multi-cycle core and the data bus decoder, the timer,
   the math unit, the performance counters, the fetch statistics, and

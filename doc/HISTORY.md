@@ -119,6 +119,15 @@ of `random_stats.py` for seeds 31 to 90 before and after:
 On seeds 1 to 30, a register read right after its write went from 16% to
 33% of the instructions, and jumps from 16% to 24%.
 
+On 2026-10-23 the program began with `?I RTI`, INT became `?!I` in 95% of
+its uses, and RTI `?I` in 80%. A write of VBASE puts the vector table among
+the low words, where an entry holds 0 or CODE, or a word that a store
+changed, so that an interrupt did not return and the next INT halted. For
+seeds 1 to 90, the INT halts fell from 15 to 2, and the interrupts taken
+rose from 207 to 316 of about 405. The RTI halts rose from 1 to 15, and the
+runs that halt before the step limit stayed at about 35 of 90. Seeds 1 to
+1000 then passed on both cores, with `make random-sweep`.
+
 ## The size and speed of translated code
 
 The code that the translator writes is about half the size it was, after four steps with no change

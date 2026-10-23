@@ -25,6 +25,11 @@ void nice_print(const char *s);
 unsigned long long nice_cycles(void);
 unsigned long long nice_instructions(void);
 
+// The microseconds since reset, from the counter of SYSTEM.md §3 that is
+// exact on every board. The same rule about interrupt routines applies.
+// There is no assembly routine for it: it is C only.
+unsigned long long nice_micros(void);
+
 // The emulator's 80x25 character screen. nice_screen_put writes c, the
 // character in bits 7..0 and its color above, to a column, 0 to 79, of a
 // row, 0 to 24. nice_screen_clear writes a blank, 0x20, to every word.
@@ -42,6 +47,8 @@ void nice_screen_clear(void);
 #define NICE_CYCLE_HI 0xFFFFFF41u
 #define NICE_INSTR_LO 0xFFFFFF42u
 #define NICE_INSTR_HI 0xFFFFFF43u
+#define NICE_TIME_LO 0xFFFFFF44u
+#define NICE_TIME_HI 0xFFFFFF45u
 #define NICE_SCREEN 0xFFFF0000u
 
 // Reads the NICE word at a word address.

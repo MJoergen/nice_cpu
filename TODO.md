@@ -52,6 +52,10 @@ TODO or FIXME comments.
   that raises IRQ, so it drives the core's IRQ port directly. A second
   device needs a controller that merges the requests and says which vector
   goes first. No device raises NMI.
+- **A real-time clock.** The microsecond counter (SYSTEM.md §3) counts
+  running time since reset, so `time.h` has `clock` but no calendar: `time`
+  returns −1, and `difftime`, `gmtime`, `mktime`, and `strftime` are
+  missing. A device with the date, set by the board, would let `time` work.
 
 ## Toolchain
 

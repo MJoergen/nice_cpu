@@ -50,6 +50,13 @@ unsigned long long nice_instructions(void)
     return (unsigned long long)hi << 32 | lo;
 }
 
+unsigned long long nice_micros(void)
+{
+    unsigned lo = nice_peek(NICE_TIME_LO);
+    unsigned hi = nice_peek(NICE_TIME_HI);
+    return (unsigned long long)hi << 32 | lo;
+}
+
 void nice_screen_put(int col, int row, int c)
 {
     nice_poke(NICE_SCREEN + (unsigned)row * NICE_SCREEN_COLS + (unsigned)col, (unsigned)c);

@@ -179,8 +179,9 @@ image holds the whole library, about 81 KB of wasm.
 | `string.h` | `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`, `strnlen`, `strcmp`, `strncmp`, `strcpy`, `strncpy`, `strcat`, `strncat`, `strchr`, `strrchr`, `strstr` |
 | `stdlib.h` | `malloc`, `calloc`, `realloc`, `free`, `abs`, `labs`, `llabs`, `atoi`, `atol`, `strtol`, `strtoul`, `abort` |
 | `assert.h` | `assert` and `static_assert`. A failed `assert` prints `file:line: function: Assertion `expr' failed.` and calls `abort`. `-DNDEBUG` removes the checks. |
+| `time.h` | `clock`, with `CLOCKS_PER_SEC` 1000000 and `clock_t` unsigned, from the microsecond counter of SYSTEM.md §3; `time`, which returns −1 because no device has the date; and the types `clock_t` and `time_t`. |
 | `ctype.h` | `isalnum`, `isalpha`, `iscntrl`, `isdigit`, `isgraph`, `islower`, `isprint`, `ispunct`, `isspace`, `isupper`, `isxdigit`, `tolower`, `toupper` |
-| `nice.h` | The device routines (see above): `nice_putc`, `nice_getc`, `nice_pollc`, `nice_print`, `nice_cycles`, `nice_instructions`, `nice_screen_put`, and `nice_screen_clear`. Also `nice_peek` and `nice_poke`, the `nice` imports of WASM.md, and the devices' addresses, for devices that have no routine. |
+| `nice.h` | The device routines (see above): `nice_putc`, `nice_getc`, `nice_pollc`, `nice_print`, `nice_cycles`, `nice_instructions`, `nice_micros` (C only, with no assembly routine), `nice_screen_put`, and `nice_screen_clear`. Also `nice_peek` and `nice_poke`, the `nice` imports of WASM.md, and the devices' addresses, for devices that have no routine. |
 
 The device routines, in `src/nice.c`, are the only functions that touch
 hardware. They use `nice_peek` and `nice_poke`. `nice_print` writes the

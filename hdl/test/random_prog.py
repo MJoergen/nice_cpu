@@ -57,6 +57,7 @@ CODE = 0x10000  # The program
 ROUTINES = 0x8000  # The interrupt routines
 DATA = 0x1000  # The data region
 VECTORS = range(0x80, 0x84)  # Vector table entries, at VBASE = 0, above most small constants
+M_CHANCE = 0.75  # The chance that an ALU or SHIFT instruction sets the flags (M = 1)
 LOCAL = 0.4  # The chance that a register field takes a register written just before
 NEAR = 0.9  # The chance that a forward jump skips at most JUMP_SPAN - 1 instructions
 JUMP_SPAN = 5
@@ -122,7 +123,7 @@ def plain(rng: random.Random, cond: int, recent: list[list[int]]) -> list[int]:
     """An ALU or SHIFT instruction that writes no R15."""
     shift = rng.random() < 0.35
     iw = cond << 28 | (0b10 if shift else rng.randrange(2)) << 26
-    iw |= rng.randrange(2) << 25 | rng.randrange(16) << 21
+    iw |= (rng.random() < M_CHANCE) << 25 | rng.randrange(16) << 21
     fields = [operand(rng, True, recent), operand(rng, False, recent), operand(rng, False, recent)]
     iw |= fields[0] << 14 | fields[1] << 7 | fields[2]
     remember(recent, written(fields))

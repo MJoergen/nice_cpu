@@ -27,12 +27,14 @@ TODO or FIXME comments.
 - **Test order steps not done** (MICROARCH.md §9):
   - Step 7: `hdl/test/random_prog.py` was tuned with
     `hdl/test/random_stats.py`, and both cores pass seeds 1 to 90, with
-    the shift jumps it makes since 2026-10-20. Still weak: a conditional instruction right after a write of
-    SR is 10% of the instructions, against 15 to 20% in the benchmark,
-    and about half of the runs halt before the step limit, mostly at a
-    word that a store changed, or after an interrupt that a write of VBASE
-    sent astray. `make random` runs one seed at a time; `programs.py`
-    could run them in parallel.
+    the shift jumps it makes since 2026-10-20, and since 2026-10-23 with
+    M set in 75% of the ALU and shift instructions, so that a conditional
+    instruction right after a write of SR is 18% of the instructions,
+    against 15 to 20% in the benchmark. Still weak: about half of the runs
+    halt before the step limit, mostly at a word that a store changed, or
+    after an interrupt that a write of VBASE sent astray. `make random`
+    runs one seed at a time; `programs.py` could run them in parallel, and
+    a wider range of seeds (say 1 to 1000) has not been run on either core.
 - **Formal checks with SymbiYosys** (MICROARCH.md §9). `make formal` proves
   the ports of the multi-cycle core and the data bus decoder, the timer,
   the math unit, the performance counters, the fetch statistics, and

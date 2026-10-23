@@ -101,10 +101,6 @@ TODO or FIXME comments.
   `instret_o` when the bus accepts it, as a read is counted, would let it
   retire into the register like any other, but an interrupt must then not
   be taken between its retire and its count.
-- **NiceMonMEGA65 reads the registers from `retire_o.regs`**, which is
-  `w_n.regs` of WRITE, before the register. A copy of it in a register is
-  still fed from `w_n`, so its paths are WRITE's longest. Both cores now
-  have `regs_o` from their registers. NiceMonMEGA65 should read that.
 
 ## Toolchain
 

@@ -17,6 +17,7 @@ this file.
 - [2. Math unit](#2-math-unit)
 - [3. Performance counters](#3-performance-counters)
 - [4. Timer](#4-timer)
+- [5. Systems built on the FPGA core](#5-systems-built-on-the-fpga-core)
 
 ## Memory map
 
@@ -40,7 +41,7 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 
 The screen word has the character in bits 7..0, the background color in bits 31..20, and the foreground color in bits 19..8. Each color is three 4-bit components, red, green, and blue, from the high bits to the low. A component `n` gives the byte `n × 0x11`, so `0x0` is no intensity and `0xF` is full. The emulator's option `--color` prints the screen with these colors as ANSI escapes. Programs that write the 2004 layout should note one difference: the 2004 IDE (`nice_ide.pl`) inverts the three foreground components, so that `0x0` is full intensity and `0xF` is none, and here it is not inverted. The emulator's option `--invert-fg` inverts it, for the 2004 programs. A word with only a character, such as `0x41`, is black on black here, but white on black in the 2004 IDE. The background is the same in both.
 
-**Console.** The emulator maps a console at `0xFFFFFF00`. Each write prints bits 7..0 of the word. Each data read takes the next input byte, if there is one, and returns it in bits 7..0 with bit 8 set. With no byte waiting, a read returns 0. When the input has ended, a read returns `0x200` (bit 9) instead; a UART's input never ends. The emulator and the simulation memory of the FPGA core never return 0: a read waits for the next byte or the end of the input. Only a UART returns 0. The emulator reads its input from stdin, so stdin from `/dev/null` gives a console with no input. The simulation memory of the FPGA core reads a file too, as the emulator's `--input` does, and returns `0x200` without one. This repository has no UART. A system built on the FPGA core, such as the example design in [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), maps one at the same address, with the same bits (MICROARCH.md §8). Programs use the console for input and output.
+**Console.** The emulator maps a console at `0xFFFFFF00`. Each write prints bits 7..0 of the word. Each data read takes the next input byte, if there is one, and returns it in bits 7..0 with bit 8 set. With no byte waiting, a read returns 0. When the input has ended, a read returns `0x200` (bit 9) instead; a UART's input ends only if the system provides a break (§5). The emulator and the simulation memory of the FPGA core never return 0: a read waits for the next byte or the end of the input. Only a UART returns 0. The emulator reads its input from stdin, so stdin from `/dev/null` gives a console with no input. The simulation memory of the FPGA core reads a file too, as the emulator's `--input` does, and returns `0x200` without one. This repository has no UART. A system built on the FPGA core, such as the example design in [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), maps one at the same address, with the same bits (MICROARCH.md §8). Programs use the console for input and output.
 
 **Read counter.** At `0xFFFFFF01` the emulator and the simulation memory of the FPGA core map a read counter for tests. A data read of it returns the number of data reads of it since the last write to it, and a write sets that number. It is 0 at the start of a run, and a reset of the processor does not clear it. Tests use it to count the data accesses of ISA §8.2.
 
@@ -133,3 +134,14 @@ To get an IRQ through vector table entry `0x41` every 100000 cycles, that is, ev
     MOVE @TIMER_VECTOR, 0x41
     MOVE @TIMER_PERIOD, 100000
     OR   R14, R14, 0x40000000     ; E = 1
+
+## 5. Systems built on the FPGA core
+
+A board that wraps the FPGA core, such as [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), may differ from the emulator in the points below. Its own README has the details.
+
+- **Reserved words.** `0xFFFFFF02`–`0xFFFFFF0F` and `0xFFFFFF80`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. The emulator reads them as 0. NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF8F` for its screen registers, and some more for control registers that only its command-line interface writes.
+- **Screen.** A board's screen may be larger than the emulator's 80×25. NiceMonMEGA65's has up to 32K words. The color format of §1 applies unchanged. The offset and cursor registers belong to the board.
+- **Console input.** A UART or a keyboard feeds the same console at `0xFFFFFF00`, with the same bits (§1). A break from the keyboard may end the input, and a read then returns `0x200`.
+- **Input FIFO.** A system's input FIFO may lose bytes. NiceMonMEGA65 drops input that arrives before the program starts, because the FIFO is in reset while the core is held, and drops bytes on overflow.
+- **ROM.** A system may map a ROM at 0 that it can hide, so that a program loads at 0 as in the emulator.
+- **Aliasing.** A system with 64K words of RAM may decode only the low 16 address bits. Then `0xFFFFFF02`–`0xFFFFFFFF` alias the RAM words `0xFF02`–`0xFFFF`, and `0xFFFF8000`–`0xFFFFFEFF` alias `0x8000`–`0xFEFF`. That is a property of the system, not a bug.

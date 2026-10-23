@@ -176,7 +176,7 @@ image holds the whole library, about 81 KB of wasm.
 | Header | Functions |
 |---|---|
 | `stdio.h` | `FILE`, `stdin`, `stdout`, `stderr`, `putchar`, `puts`, `getchar`, `fputc`, `putc`, `fputs`, `fgetc`, `getc`, `ungetc`, `fgets`, `fflush`, `printf`, `fprintf`, `sprintf`, `snprintf`, `vprintf`, `vfprintf`, `vsprintf`, `vsnprintf`, `scanf`, `fscanf`, `sscanf`, `vscanf`, `vfscanf`, `vsscanf` |
-| `string.h` | `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`, `strnlen`, `strcmp`, `strncmp`, `strcpy`, `strncpy`, `strcat`, `strncat`, `strchr`, `strrchr`, `strstr` |
+| `string.h` | `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`, `strnlen`, `strcmp`, `strncmp`, `strcpy`, `strncpy`, `strcat`, `strncat`, `strchr`, `strrchr`, `strstr`, `strcspn` |
 | `stdlib.h` | `malloc`, `calloc`, `realloc`, `free`, `abs`, `labs`, `llabs`, `atoi`, `atol`, `strtol`, `strtoul`, `rand`, `srand`, `abort`, `exit` |
 | `assert.h` | `assert` and `static_assert`. A failed `assert` prints `file:line: function: Assertion `expr' failed.` and calls `abort`. `-DNDEBUG` removes the checks. |
 | `time.h` | `clock`, with `CLOCKS_PER_SEC` 1000000 and `clock_t` unsigned, from the microsecond counter of SYSTEM.md §3; `time`, which returns −1 because no device has the date; and the types `clock_t` and `time_t`. |
@@ -196,7 +196,7 @@ that `--input` names. Clang's own `stddef.h`,
 
 The library is small on purpose:
 
-- The only streams are `stdin`, `stdout`, and `stderr`, all on the console. `stdout` and `stderr` are the same stream, and the output functions ignore which stream they get. There is no `fopen`, `fclose`, `fread`, `fwrite`, `fseek`, `feof`, or `ferror`. `ungetc` holds one byte per stream. In `stdlib.h`, no `strtoll`, `strtoull`, `strtod`, `atof`, `qsort`, `bsearch`, `div`, `getenv`, or `system`. In `string.h`, no `strcoll`, `strspn`, `strcspn`, `strpbrk`, `strtok`, or `strerror`.
+- The only streams are `stdin`, `stdout`, and `stderr`, all on the console. `stdout` and `stderr` are the same stream, and the output functions ignore which stream they get. There is no `fopen`, `fclose`, `fread`, `fwrite`, `fseek`, `feof`, or `ferror`. `ungetc` holds one byte per stream. In `stdlib.h`, no `strtoll`, `strtoull`, `strtod`, `atof`, `qsort`, `bsearch`, `div`, `getenv`, or `system`. In `string.h`, no `strcoll`, `strspn`, `strpbrk`, `strtok`, or `strerror`.
 - `scanf` and `sscanf` support white space and ordinary characters in the
   format, `*` to read without storing, a width, the length modifiers
   `hh h l ll z t j`, and the conversions `d i u o x X p c s [ n %`. A set

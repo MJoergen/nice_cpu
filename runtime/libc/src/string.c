@@ -128,3 +128,11 @@ char *strstr(const char *haystack, const char *needle)
             return (char *)haystack;
     return n ? NULL : (char *)haystack;
 }
+
+size_t strcspn(const char *s, const char *reject)
+{
+    const char *p = s;
+    while (*p && !strchr(reject, *p))
+        p++;
+    return (size_t)(p - s);
+}

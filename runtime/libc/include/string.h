@@ -20,5 +20,6 @@ char *strncat(char *dst, const char *src, size_t n);
 char *strchr(const char *s, int c);
 char *strrchr(const char *s, int c);
 char *strstr(const char *haystack, const char *needle);
+size_t strcspn(const char *s, const char *reject);
 
 #endif

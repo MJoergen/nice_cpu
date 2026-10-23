@@ -14,6 +14,8 @@ int main(void)
            strncmp("abcx", "abcy", 3), strcmp("\xff", "a") > 0);
     printf("[%s] [%s]\n", strchr(a, 'l'), strrchr(a, 'l'));
     printf("[%s] %d %d\n", strstr(a, "NI"), strstr(a, "xyz") == NULL, strchr(a, 'q') == NULL);
+    printf("%zu %zu %zu %zu %zu\n", strcspn(a, ", "), strcspn(a, "xyz"), strcspn(a, "Hx"),
+           strcspn(a, ""), strcspn("", "abc"));
 
     char b[8];
     strncpy(b, "ab", sizeof b);

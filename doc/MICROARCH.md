@@ -289,7 +289,11 @@ earliest. Then a device sees the store in the cycle its instruction is
 counted on `instret_o`, as the timer, which counts steps, needs
 (SYSTEM.md §4), and the trace writer prints a byte to the console before
 its instruction's line (§9). Stores into the I/O range are rare, but
-for the math unit.
+for the math unit. Letting a store into the math unit retire when it goes
+into the register, as a store into memory does, saves 0.4% of the cycles
+of the translated benchmark and 0.1% of the hand-written one's, since a
+read of the result waits for the store anyway. That was investigated and
+will not be done.
 
 WRITE takes read data from DBUS's FIFO, in the cycle after its ACK,
 unless the data only goes into a register: s0 or s1 with a side effect,

@@ -37,7 +37,12 @@ two kinds of access. §9.4, the mapping of WebAssembly, is
   WRITE's decision to store through the system's address decode into the
   block RAM's write enable held the MEGA65 R6 just below 100 MHz. Now a
   store goes out from a register in DBUS a cycle later
-  ([review/pipeline-timing.md](review/pipeline-timing.md), Stores).
+  ([review/pipeline-timing.md](review/pipeline-timing.md), Stores). On
+  2026-10-23 a store into the math unit was made to retire when it goes
+  into the register, as one into memory does, which saved 0.39% of the
+  translated benchmark's cycles and 0.08% of `hand.nasm`'s. It was
+  reverted as a won't fix: too little for a special case of the I/O
+  range.
 - The same first version merged the adjusted destination of a register in
   mode 001 or 010 into one write, and found every jump target through the
   ALU. Now three rare cases take WRITE two cycles (MICROARCH.md §7.4).

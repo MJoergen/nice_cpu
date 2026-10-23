@@ -93,13 +93,6 @@ TODO or FIXME comments.
   vector read goes onto the bus from DBUS's register (4.5 ns left for the
   address, 4.8 ns for the data, with the store alone).
   `retire_o` is combinational and is not counted.
-- **Stores into the I/O range wait in WRITE** until the bus accepts them
-  (MICROARCH.md §5.3), so that the timer sees each in the cycle of its
-  step. That costs `rng64` of the benchmark about 10.2% (translated) and
-  7.5% (`hand.nasm`), which store to the math unit. Counting such a store on
-  `instret_o` when the bus accepts it, as a read is counted, would let it
-  retire into the register like any other, but an interrupt must then not
-  be taken between its retire and its count.
 
 ## Toolchain
 

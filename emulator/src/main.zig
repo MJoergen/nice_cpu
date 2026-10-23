@@ -25,8 +25,9 @@ const usage =
     \\      --irq STEP:VEC   Raise IRQ with vector VEC before step STEP.
     \\      --nmi STEP:VEC   Raise NMI with vector VEC before step STEP.
     \\                       Both may be repeated. Steps count from 0.
-    \\      --no-cycle-counter  Make 0xFFFFFF40 and 0xFFFFFF41 ordinary memory,
-    \\                       for comparing traces with an FPGA core.
+    \\      --no-cycle-counter  Make 0xFFFFFF40, 0xFFFFFF41, 0xFFFFFF44, and
+    \\                       0xFFFFFF45 ordinary memory, for comparing traces
+    \\                       with an FPGA core.
     \\      --no-timer-irq   The timer counts, but raises no requests, so that
     \\                       --irq can raise them where an FPGA core took them.
     \\  -h, --help           Print this help.

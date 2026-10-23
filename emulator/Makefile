@@ -23,7 +23,7 @@ OPTS_wrap      = -d 0xffffffff:1
 # are in the comments of each program. Run make bins after changing one.
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest console screen screencolor screeninvert iofetch \
   reads reserved mpu mpu64 perf timer input r15modes r0dest r14mem skipconst carryin shiftc \
-  wrapmem smcown scrbound
+  wrapmem smcown scrbound time
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
@@ -38,8 +38,9 @@ OPTS_iofetch = -d 0xffffff80:1 -d 0xffffffff:1
 OPTS_reads   = -d 0xffffff01:1
 OPTS_mpu     = -d 0x200:72 -d 0xffffff20:16
 OPTS_mpu64   = -d 0x200:72 -d 0xffffff20:32
-OPTS_perf    = --nmi 3:0x41 -d 0xffffff40:5
+OPTS_perf    = --nmi 3:0x41 -d 0xffffff40:6
 OPTS_timer   = -d 0xffffff10:4
+OPTS_time    = -d 0xffffff44:2
 # timer again, with the timer's requests raised by --irq instead, before
 # the steps after those that raise them in timer.nasm's table: 6, 16, 19,
 # 22, 25, 28, 31, 34, 41, and 49, the last with vector 0x42. The output

@@ -71,7 +71,7 @@ line such as `Pending: IRQ 05` follows the first line.
 | `-i`, `--input FILE` | Read the console's input from FILE instead of stdin; `-` is stdin. A directory is an error. |
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
-| `--no-cycle-counter` | Make `0xFFFFFF40` and `0xFFFFFF41`, the cycle counter, ordinary memory (see Memory map). |
+| `--no-cycle-counter` | Make the cycle counter and the microsecond counter, `0xFFFFFF40`, `0xFFFFFF41`, `0xFFFFFF44`, and `0xFFFFFF45`, ordinary memory (see Memory map). |
 | `--no-timer-irq` | The timer counts, but raises no requests, so that `--irq` can raise them instead (see Memory map). |
 | `-h`, `--help` | Print the usage on stdout. |
 
@@ -162,18 +162,21 @@ results for the current operands. Its words store nothing else.
 `test/mpu.nasm` and `test/mpu64.nasm` check every result, with division by
 zero and the signed overflow.
 
-The performance counters count the instructions and the steps since reset.
-The emulator has no clock, so its cycle counter counts one cycle per step,
-that is, per instruction and per interrupt entry. It differs from the FPGA
-core's, which counts clock cycles. A read of a low word takes a snapshot of
+The performance counters count the instructions, the steps, and the
+microseconds since reset. The emulator has no clock, so its cycle counter
+counts one cycle per step, that is, per instruction and per interrupt entry,
+and its microsecond counter counts one microsecond per step. They differ
+from the FPGA core's, which counts clock cycles and real microseconds. A read of a low word takes a snapshot of
 its counter, and a read of the high word returns the snapshot's high word.
 `--dump` shows the low words and the snapshots without taking a snapshot.
-Writes are ignored. `test/perf.nasm` checks the instruction counter.
+Writes are ignored. `test/perf.nasm` checks the instruction counter, and
+`test/time.nasm` the microsecond counter.
 The emulator has none of the FPGA core's fetch statistics, at
 `0xFFFFFF50`–`0xFFFFFF7F`: their words read 0 and ignore writes.
 
-`--no-cycle-counter` makes the two words of the cycle counter ordinary
-memory, like the rest of the I/O range. A program that reads them then
+`--no-cycle-counter` makes the words of the cycle counter and the
+microsecond counter, `0xFFFFFF40`, `0xFFFFFF41`, `0xFFFFFF44`, and
+`0xFFFFFF45`, ordinary memory, like the rest of the I/O range. A program that reads them then
 runs the same on the emulator and on an FPGA core whose cycle count
 cannot be predicted, so their traces can be compared. The random programs
 of the HDL tests run this way ([hdl/README.md](../hdl/README.md)). The

@@ -211,6 +211,10 @@ pub const Perf = struct {
     /// has no clock, so this stands in for the clock cycles.
     cycles: u64 = 0,
     cycles_snap: u64 = 0,
+    /// One microsecond per step. The emulator has no clock, so this stands
+    /// in for the microseconds that an FPGA core counts.
+    micros: u64 = 0,
+    micros_snap: u64 = 0,
     instrs: u64 = 0,
     instrs_snap: u64 = 0,
 
@@ -219,6 +223,7 @@ pub const Perf = struct {
         switch (i) {
             0 => self.cycles_snap = self.cycles,
             2 => self.instrs_snap = self.instrs,
+            4 => self.micros_snap = self.micros,
             else => {},
         }
         return self.peek(i);
@@ -231,6 +236,8 @@ pub const Perf = struct {
             1 => @truncate(self.cycles_snap >> 32),
             2 => @truncate(self.instrs),
             3 => @truncate(self.instrs_snap >> 32),
+            4 => @truncate(self.micros),
+            5 => @truncate(self.micros_snap >> 32),
             else => 0,
         };
     }
@@ -241,8 +248,12 @@ fn perfWord(addr: u32) ?u6 {
     return if (addr -% perf_base < 64) @truncate(addr -% perf_base) else null;
 }
 
-/// The words of the cycle counter, `CYCLE_LO` and `CYCLE_HI`.
-const cycle_words = 2;
+/// Whether word `i` of the performance counters belongs to a clock-driven
+/// counter, the cycle counter or the microsecond counter, which
+/// `--no-cycle-counter` turns into memory.
+fn clockWord(i: u6) bool {
+    return i < 2 or i == 4 or i == 5;
+}
 
 /// The first of the 16 words of the timer (SYSTEM §4).
 pub const timer_base: u32 = io_base + 0x10;
@@ -446,11 +457,11 @@ pub const Cpu = struct {
     }
 
     /// The word of the performance counters that `addr` names, if it names
-    /// one that is a device: not a word of the cycle counter when that is
-    /// switched off.
+    /// one that is a device: not a word of the cycle counter or the
+    /// microsecond counter when those are switched off.
     fn perfDevice(self: *const Cpu, addr: u32) ?u6 {
         const i = perfWord(addr) orelse return null;
-        return if (self.cycle_counter or i >= cycle_words) i else null;
+        return if (self.cycle_counter or !clockWord(i)) i else null;
     }
 
     /// A look at memory from outside the processor, for dumps and tests.
@@ -497,6 +508,7 @@ pub const Cpu = struct {
         if (self.halted()) return;
         defer {
             self.perf.cycles +%= 1;
+            self.perf.micros +%= 1;
             self.timer.tick();
         }
         const before = self.regs;
@@ -1542,7 +1554,7 @@ test "a read of a counter's low word keeps its high word for the next read (SYST
     try testing.expectEqual(0, perf.read(1));
     try testing.expectEqual(0x2345_6789, perf.read(0));
     try testing.expectEqual(1, perf.read(1));
-    try testing.expectEqual(0, perf.read(4));
+    try testing.expectEqual(0, perf.read(6));
     try testing.expectEqual(0, perf.read(15));
     // The fetch statistics read 0.
     try testing.expectEqual(0, perf.read(16));
@@ -1551,6 +1563,20 @@ test "a read of a counter's low word keeps its high word for the next read (SYST
     perf.cycles = 0x5_0000_0000;
     try testing.expectEqual(0, perf.peek(0));
     try testing.expectEqual(1, perf.peek(1));
+}
+
+test "the microsecond counter has a snapshot of its own (SYSTEM §3)" {
+    var perf: Perf = .{ .micros = 0x1_FFFF_FFFF, .instrs = 0x7_0000_0000 };
+    try testing.expectEqual(0xFFFF_FFFF, perf.read(4));
+    perf.micros += 1; // the low word wraps between the two reads
+    try testing.expectEqual(1, perf.read(5)); // the snapshot, not the counter
+    try testing.expectEqual(0, perf.read(4));
+    try testing.expectEqual(2, perf.read(5));
+    try testing.expectEqual(0, perf.read(1)); // the cycle snapshot is untouched
+    try testing.expectEqual(0, perf.read(3));
+    perf.micros = 0x5_0000_0000; // peek takes no snapshot
+    try testing.expectEqual(0, perf.peek(4));
+    try testing.expectEqual(2, perf.peek(5));
 }
 
 test "the counters count instructions and steps, and ignore writes (SYSTEM §3)" {
@@ -1600,12 +1626,14 @@ test "the counters wrap from 2^64 - 1 to 0 (SYSTEM §3)" {
     defer cpu.deinit();
     cpu.perf.instrs = std.math.maxInt(u64);
     cpu.perf.cycles = std.math.maxInt(u64);
+    cpu.perf.micros = std.math.maxInt(u64);
     try cpu.step(); // a NOP at 0
     try testing.expectEqual(0, cpu.perf.instrs);
     try testing.expectEqual(0, cpu.perf.cycles);
+    try testing.expectEqual(0, cpu.perf.micros);
 }
 
-test "without the cycle counter, its two words are memory (--no-cycle-counter)" {
+test "without the cycle counter, its words and the microsecond counter's are memory (--no-cycle-counter)" {
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
     cpu.cycle_counter = false;
@@ -1616,6 +1644,11 @@ test "without the cycle counter, its two words are memory (--no-cycle-counter)" 
     try testing.expectEqual(6, cpu.peek(perf_base + 1));
     try testing.expectEqual(0, cpu.read(perf_base + 2));
     try testing.expectEqual(0, cpu.perf.cycles_snap); // no snapshot was taken
+    try cpu.write(perf_base + 4, 8);
+    try cpu.write(perf_base + 5, 9);
+    try testing.expectEqual(8, cpu.read(perf_base + 4));
+    try testing.expectEqual(9, cpu.peek(perf_base + 5));
+    try testing.expectEqual(0, cpu.perf.micros_snap);
     cpu.cycle_counter = true;
     try testing.expectEqual(0, cpu.read(perf_base)); // the counter again, not the memory
 }

@@ -28,7 +28,8 @@
 ; 18 steps and 17 instructions. PC = 0x19 after the HALT at 0x18. The dump
 ; reads the counters without taking snapshots: the steps, 18 = 0x12, the
 ; cycle snapshot's high word 0, the instructions, 17 = 0x11, the
-; instruction snapshot's high word 0, and a spare word, 0. The writes left
+; instruction snapshot's high word 0, and the microsecond counter, 18 =
+; 0x12, and its snapshot's high word 0 (test/time.nasm). The writes left
 ; no trace in memory.
 CYCLE_LO .EQU   0xFFFFFF40
 CYCLE_HI .EQU   0xFFFFFF41

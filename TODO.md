@@ -61,9 +61,6 @@ TODO or FIXME comments.
   environment only (§1.6).
 - **The 2004 example programs** (`count`, `replicate`, `print`) have no
   license. The MIT license excludes them. Ask B. Ulmann (§1.6).
-- **A program killed by a signal while stdout is a pipe or file** loses
-  the console output still in the emulator's buffer. Documented in
-  emulator/README.md (§4.1).
 
 ## Devices
 

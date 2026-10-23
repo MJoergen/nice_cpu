@@ -147,7 +147,9 @@ flushes its output, so that a prompt shows before the program waits for
 the answer. When stdout is a terminal, it also flushes after each console
 write, so that Ctrl-C loses nothing. Otherwise the output is buffered, and
 is written when the buffer fills, before a read, and at the end of the run,
-so a program that is killed by a signal loses what is still in the buffer. `test/input.nasm` reads `test/input.txt`. Reads by `--dump`
+and on SIGINT, SIGTERM, and SIGHUP, which the emulator then dies of. Only
+SIGKILL loses what is still in the buffer. The signals are noticed every
+65,536 steps. `test/input.nasm` reads `test/input.txt`. Reads by `--dump`
 take no input. `make test` runs every program with stdin from `/dev/null`.
 
 The read counter makes the data reads of ISA.md §8.2 visible: how many

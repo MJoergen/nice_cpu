@@ -77,6 +77,43 @@ const Options = struct {
     help: bool = false,
 };
 
+/// The signal that asked the run to stop, or 0. Set by `onSignal`.
+var stop_signal: std.atomic.Value(u8) = .init(0);
+
+/// How often, in steps, the run loop looks at `stop_signal`.
+const signal_check_mask: u64 = 0xFFFF;
+
+fn onSignal(sig: i32) callconv(.c) void {
+    stop_signal.store(@intCast(sig), .release);
+}
+
+/// Catch the signals that end a run from outside, so that the buffered
+/// output can be written first. No SA_RESTART, as the default is.
+fn catchSignals() void {
+    const act: std.posix.Sigaction = .{
+        .handler = .{ .handler = onSignal },
+        .mask = std.posix.sigemptyset(),
+        .flags = 0,
+    };
+    for ([_]u8{ std.posix.SIG.INT, std.posix.SIG.TERM, std.posix.SIG.HUP }) |sig| {
+        std.posix.sigaction(sig, &act, null);
+    }
+}
+
+/// Write the output so far, then die of `sig` with the default action, so
+/// that the parent sees the signal.
+fn dieOfSignal(out: *std.Io.Writer, sig: u8) noreturn {
+    out.flush() catch {};
+    const dfl: std.posix.Sigaction = .{
+        .handler = .{ .handler = std.posix.SIG.DFL },
+        .mask = std.posix.sigemptyset(),
+        .flags = 0,
+    };
+    std.posix.sigaction(sig, &dfl, null);
+    std.posix.raise(sig) catch {};
+    std.process.exit(128 + @as(u8, sig));
+}
+
 pub fn main() !void {
     var arena_state: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
     defer arena_state.deinit();
@@ -295,7 +332,12 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
     // A step is one instruction, or the entry into an interrupt.
     var steps: u64 = 0;
     var next: usize = 0;
+    catchSignals();
     while (!cpu.halted() and steps < opts.max_steps) : (steps += 1) {
+        if (steps & signal_check_mask == 0) {
+            const sig = stop_signal.load(.acquire);
+            if (sig != 0) dieOfSignal(out, sig);
+        }
         while (next < opts.requests.len and opts.requests[next].step == steps) : (next += 1) {
             const r = opts.requests[next];
             switch (r.kind) {

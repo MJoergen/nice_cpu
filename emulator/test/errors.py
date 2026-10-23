@@ -10,9 +10,11 @@ from __future__ import annotations
 import os
 import pty
 import select
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 from typing import List, Optional, Tuple
 
 NICEASM = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "assembler", "niceasm.py")
@@ -215,7 +217,20 @@ def main() -> None:
         if shown != b"A":
             failed += 1
             print(f"FAIL terminal output: {shown!r}, expected b'A' within 5 seconds")
-    total = len(CASES) + len(RUNS) + 4
+
+        # A program killed by SIGTERM, SIGINT, or SIGHUP with stdout a pipe
+        # still writes its buffered output, and then dies of the signal.
+        # The program prints "A" and loops.
+        for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            killed = subprocess.Popen([NICEEMU, "-n", "1000000000000", loop_bin], stdin=subprocess.DEVNULL,
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            time.sleep(1)
+            killed.send_signal(sig)
+            out_b, err_b = killed.communicate(timeout=10)
+            if out_b != b"A" or killed.returncode != -sig or err_b:
+                failed += 1
+                print(f"FAIL {sig.name}: output {out_b!r}, exit status {killed.returncode}, stderr {err_b!r}")
+    total = len(CASES) + len(RUNS) + 7
     print(f"PASS errors ({total} cases)" if not failed else f"FAIL errors ({failed} of {total})")
     sys.exit(1 if failed else 0)
 

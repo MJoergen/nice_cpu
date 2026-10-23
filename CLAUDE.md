@@ -34,6 +34,8 @@ translator, and two FPGA cores. See README.md.
   them. `expected.py` computes the results in Python, and `make test`
   checks all three against them.
   `dhrystone/` is Dhrystone 2.1 on the C library, checked by `dhrycheck.py`.
+- `release/`: `RELEASE.md` is the checklist for a release, and `release.py` scripts its mechanical
+  parts (preflight, the gates and their stamp, CI, the tag). `test.py` tests it. Same rules as niceasm.py.
 - `hdl/`: VHDL-2008, GHDL. Two cores with the same ports, but for the
   pipelined one's `stats_o`: the pipelined one of
   MICROARCH.md in `src/pipeline.vhd`, the default, which connects
@@ -80,6 +82,9 @@ translator, and two FPGA cores. See README.md.
     cd doc/intro && make pdfcheck    # check that nice_intro.pdf matches the .tex
     cd doc && make test              # the section references and links of every Markdown file
     cd doc && make typecheck         # mypy --strict
+    make release-check               # the gates of release/RELEASE.md and the stamp for tagging (hours)
+    cd release && make test          # the tests of release.py
+    cd release && make typecheck     # mypy --strict
     make diagrams                    # render the diagrams in doc/ to PNG (pdflatex, pdftoppm)
 
 Run the relevant `make test` after every change.
@@ -100,4 +105,4 @@ Vivado 2025.1 is installed at `/opt/Xilinx/2025.1/Vivado/bin/vivado`, not on PAT
 - Docs: plain, short sentences. Use the Oxford comma by default ("a, b, and c").
 - American spelling everywhere, in docs, comments, and identifiers
   ("behavior", "color", "analyze", "labeled", "gray").
-- Commit subjects: `niceasm: ...`, `niceemu: ...`, `runtime: ...`, `nicewasm: ...`, `nicecc: ...`, `nicehdl: ...`, `bench: ...`, `intro: ...`, `ISA: ...`, `Review: ...`.
+- Commit subjects: `niceasm: ...`, `niceemu: ...`, `runtime: ...`, `nicewasm: ...`, `nicecc: ...`, `nicehdl: ...`, `bench: ...`, `release: ...`, `intro: ...`, `ISA: ...`, `Review: ...`.

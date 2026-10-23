@@ -4,6 +4,7 @@ __pycache__/
 runtime/libc/build/
 runtime/libc/libc.a
 bench/build/
+release/build/
 # The build files of the runtime's tests, which a failing test leaves
 # behind for a look; the next passing run removes them.
 runtime/test/*.out

@@ -38,11 +38,6 @@ jobs:
       - run: make typecheck
       # The example programs of the introduction slides.
       - run: make -C ../doc/intro test
-      # The probe .bin files must match their .nasm sources.
-      - name: Check that the probe binaries are up to date
-        run: |
-          make bins
-          git diff --exit-code -- test
 
   runtime:
     runs-on: ubuntu-latest

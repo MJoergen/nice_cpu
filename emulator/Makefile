@@ -68,7 +68,7 @@ endef
 
 # The unit tests run in Debug, for its safety checks; niceemu itself is
 # built ReleaseSafe, which keeps the checks but runs much faster.
-test: build
+test: build bincheck
 	$(ZIG) build test --summary all
 	$(foreach t,$(EXAMPLES),$(call check,$(t),$(ASM)/$(t).bin))
 	$(foreach t,$(PROBES),$(call check,$(t),test/$(t).bin))
@@ -84,6 +84,14 @@ build:
 bins:
 	@for t in $(PROBES); do $(PYTHON) ../assembler/niceasm.py test/$$t.nasm || exit 1; done
 
+# Fail if a probe's .bin differs from what niceasm makes of its .nasm.
+bincheck:
+	@d=$$(mktemp -d); trap 'rm -rf $$d' EXIT; \
+	for t in $(PROBES); do \
+	  $(PYTHON) ../assembler/niceasm.py -o $$d/$$t.bin test/$$t.nasm || exit 1; \
+	  cmp -s $$d/$$t.bin test/$$t.bin || { echo "STALE test/$$t.bin: run make bins"; exit 1; }; \
+	done; echo "PASS bincheck"
+
 # Needs mypy (pip install mypy).
 typecheck:
 	$(PYTHON) -m mypy --strict test/errors.py
@@ -91,4 +99,4 @@ typecheck:
 clean:
 	rm -rf zig-out .zig-cache test/*.out
 
-.PHONY: test build bins typecheck clean
+.PHONY: test build bins bincheck typecheck clean

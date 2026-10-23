@@ -353,6 +353,7 @@ sweep: emulator analyze $(BUILD)/pcfx.bin $(BUILD)/sidefx.bin
 # test/programs.py runs each on the core and on the emulator, in parallel,
 # and compares them. It takes minutes, so make test leaves it out.
 PROGRAMS = $(BUILD)/programs
+FUZZ_PROGRAMS = 10
 
 programs: emulator analyze
 	@rm -rf $(PROGRAMS)
@@ -360,7 +361,10 @@ programs: emulator analyze
 	  > $(BUILD)/programs_runtime.log 2>&1 || { cat $(BUILD)/programs_runtime.log; exit 1; }
 	@$(PYTHON) ../translator/test/run.py --keep $(PROGRAMS)/translator \
 	  > $(BUILD)/programs_translator.log 2>&1 || { cat $(BUILD)/programs_translator.log; exit 1; }
-	@$(PYTHON) test/programs.py --core $(CORE) --build $(BUILD) --emu $(EMU) $(PROGRAMS)/runtime $(PROGRAMS)/translator
+	@for m in "" --no-mpu --unchecked --grow; do \
+	  $(PYTHON) ../translator/test/fuzz.py $$m --keep $(PROGRAMS)/fuzz 1 $(FUZZ_PROGRAMS) \
+	    || exit 1; done > $(BUILD)/programs_fuzz.log 2>&1 || { cat $(BUILD)/programs_fuzz.log; exit 1; }
+	@$(PYTHON) test/programs.py --core $(CORE) --build $(BUILD) --emu $(EMU) $(PROGRAMS)/runtime $(PROGRAMS)/translator $(PROGRAMS)/fuzz
 
 analyze:
 	@mkdir -p $(BUILD)

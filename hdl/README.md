@@ -355,11 +355,13 @@ shares. With `--generator`, it measures another version of
 `random_prog.py`.
 
 `make programs` runs the test programs of the runtime and of the
-translator on the core (MICROARCH.md §9, step 6). It is not part of
-`make test`, because it takes minutes: some 2 million steps in 448
+translator, and 10 random modules of `translator/test/fuzz.py` in each of
+its four modes (`FUZZ_PROGRAMS`), on the core (MICROARCH.md §9, step 6). It is not part of
+`make test`, because it takes minutes: some 2 million steps in 490
 programs, at GHDL's 3300 steps a second, on all cores. CI runs it on
-both. `make test KEEP=DIR`
-in `runtime/` and `test/run.py --keep DIR` in `translator/` run their
+both. It does not run `runtime/libc/test/fuzz_printf.py`, which
+needs clang, or the benchmark, which `make core` in `bench/` runs. `make test KEEP=DIR`
+in `runtime/` and `test/run.py --keep DIR` and `test/fuzz.py --keep DIR` in `translator/` run their
 tests and leave the programs in `build/programs`, with the console input
 of those that read one. Then `test/programs.py` runs each on the core and
 on the emulator and compares them, as `make test` does, with the console

@@ -5,7 +5,8 @@ Usage: programs.py [options] DIR...
 
 Step 6 of the test order in MICROARCH.md §9: the runtime's and the
 translator's test programs, which "make test KEEP=DIR" in runtime/ and
-"test/run.py --keep DIR" in translator/ leave in DIR. Each DIR/X.bin runs
+"test/run.py --keep DIR" in translator/ leave in DIR, and the random
+modules that "test/fuzz.py --keep DIR" leaves. Each DIR/X.bin runs
 on the core in tb_core and on the emulator, with DIR/X.input as the
 console input if it exists, and with no input otherwise. The trace, the
 output, and the exit status of the two must be the same, as in the

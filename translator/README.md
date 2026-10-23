@@ -818,7 +818,8 @@ of bounds, and `--grow` for `--memory-pages 2`. `make test` runs 40
 seeds with the math unit, 40 with `--no-mpu`, and 20 each with
 `--unchecked` and `--grow`, and says how many of them trap;
 `test/fuzz.py 1 1000` runs more, and `test/fuzz.py --reduce SEED 1`
-shrinks a failing module and writes it with its translation.
+shrinks a failing module and writes it with its translation. With `--keep DIR`, `fuzz.py` copies each program to
+`DIR/fuzzSEED.bin`, with the mode added to the name, for `make programs` in `hdl/`.
 
 `test/passes.py` runs some of the passes over a function's code on code
 built by hand: `hoist_into_slots` after the write of an address

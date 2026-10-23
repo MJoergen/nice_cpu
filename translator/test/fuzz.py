@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A random test of nicewasm against a model of wasm written in Python.
 
-Usage: fuzz.py [--no-mpu] [--unchecked] [--grow] [--reduce] FIRST COUNT
+Usage: fuzz.py [--no-mpu] [--unchecked] [--grow] [--keep DIR] [--reduce] FIRST COUNT
 
 Each case is a module built from a random syntax tree. Every node of the
 tree emits its wasm bytes and evaluates itself in Python with the
@@ -58,7 +58,9 @@ with muldiv_soft.nasm instead of muldiv_mpu.nasm. With --unchecked,
 nicewasm is run with --no-bounds-checks, and with --grow with
 --memory-pages 2, so that the bounds checks compare with the words that
 memory.grow keeps. With --unchecked, no access is out of bounds; the other
-traps stay. With --reduce, FIRST is
+traps stay. With --keep DIR, each program is copied to DIR/fuzzSEED.bin, with
+_nompu, _unchecked, or _grow added for the mode, for hdl/test/programs.py.
+With --reduce, FIRST is
 a failing seed: statements are removed from the functions while the
 mismatch persists, and the reduced module and its translation, if
 nicewasm accepts it, are written to fuzz_FIRST.wasm and fuzz_FIRST.nasm in
@@ -1510,15 +1512,19 @@ def pipeline(mod: bytes, tmp: str, opts: List[str], name: str) -> Tuple[Optional
     return None, p.stdout
 
 
-def check(seed: int, tmp: str, opts: List[str]) -> Tuple[Optional[str], Outcome]:
+def check(seed: int, tmp: str, opts: List[str], keep: Optional[str] = None) -> Tuple[Optional[str], Outcome]:
     """Runs one seed. Returns a description of the failure, or None, and
-    the outcome the model expected."""
+    the outcome the model expected. With keep, the program is copied to
+    keep/fuzzSEED.bin, with the mode in the name."""
     fns, segment = build(seed, "--no-bounds-checks" not in opts)
     mod, expected = finish(fns, segment)
     try:
         got, output = pipeline(mod, tmp, opts, f"fuzz{seed}")
     except RuntimeError as e:
         return f"seed {seed}: " + str(e).replace("\n", "\n  "), expected
+    if keep is not None:
+        suffix = "".join(a.replace("--", "_").replace("-", "") for a in MODES if MODES[a][0] in opts)
+        shutil.copy(os.path.join(tmp, f"fuzz{seed}.bin"), os.path.join(keep, f"fuzz{seed}{suffix}.bin"))
     if got == expected:
         return None, expected
     first = output.splitlines()[0] if output else ""
@@ -1571,6 +1577,14 @@ MODES = {"--no-mpu": ["--no-mpu"], "--unchecked": ["--no-bounds-checks"],
 
 def main() -> None:
     args = sys.argv[1:]
+    keep = None
+    if "--keep" in args:
+        i = args.index("--keep")
+        if i + 1 >= len(args):
+            sys.exit(__doc__.split("\n\n")[1])
+        keep = args[i + 1]
+        del args[i:i + 2]
+        os.makedirs(keep, exist_ok=True)
     opts = [o for a in args for o in MODES.get(a, [])]
     do_reduce = "--reduce" in args
     numbers = [a for a in args if not a.startswith("--")]
@@ -1585,7 +1599,7 @@ def main() -> None:
         failures = []
         traps = 0
         with concurrent.futures.ThreadPoolExecutor(os.cpu_count()) as pool:
-            for problem, expected in pool.map(lambda seed: check(seed, tmp, opts), range(first, first + count)):
+            for problem, expected in pool.map(lambda seed: check(seed, tmp, opts, keep), range(first, first + count)):
                 traps += expected[0] == "trap"
                 if problem is not None:
                     failures.append(problem)

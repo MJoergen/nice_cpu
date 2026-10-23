@@ -25,10 +25,6 @@ TODO or FIXME comments.
     ([doc/review/pipeline-timing.md](doc/review/pipeline-timing.md), Read
     data). See the items under "Pipelined core" below.
 - **Test order steps not done** (MICROARCH.md §9):
-  - Step 6: `make programs` in `hdl/` runs the runtime's and the
-    translator's test programs on the core, and both cores pass. Left out: the random modules of `translator/test/fuzz.py`,
-    `runtime/libc/test/fuzz_printf.py`, which needs clang, and the
-    benchmark, which `make core` in `bench/` runs already.
   - Step 7: `hdl/test/random_prog.py` was tuned with
     `hdl/test/random_stats.py`, and both cores pass seeds 1 to 90, with
     the shift jumps it makes since 2026-10-20. Still weak: a conditional instruction right after a write of

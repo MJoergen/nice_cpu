@@ -464,3 +464,13 @@ the Nexys4DDR at 100 MHz was worse, −0.246 ns on 195 endpoints, so 100 MHz
 on that part depends on placement. NiceMonMEGA65 runs it at 90 MHz. Before
 the redirect change, at e693cb8 and 8712ed0, it met 83.33 MHz with +0.114
 and +0.112 ns. `make hwtest` passed on both boards at 20e9da1.
+
+NiceMonMEGA65 built the core again on 2026-10-23 at nice_cpu 4cd869e,
+and `make hwtest` passed all 59 tests on both boards. One run each:
+
+| Board and clock | Flow | Setup slack | Hold slack |
+|---|---|---|---|
+| R6, 100 MHz | default | +0.174 ns | +0.041 ns |
+| Nexys4DDR, 90 MHz | timing | +0.043 ns | +0.030 ns |
+
+The Nexys4DDR's margin is thin, and it was not tried at 100 MHz again.

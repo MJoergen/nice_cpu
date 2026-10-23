@@ -43,6 +43,16 @@ two kinds of access. §9.4, the mapping of WebAssembly, is
   translated benchmark's cycles and 0.08% of `hand.nasm`'s. It was
   reverted as a won't fix: too little for a special case of the I/O
   range.
+- The timing of the pipelined core is closed. In NiceMonMEGA65 the R6
+  meets 100 MHz and the Nexys4DDR 90 MHz, with 0.174 ns and 0.043 ns of
+  slack at 4cd869e ([review/pipeline-timing.md](review/pipeline-timing.md),
+  In the system). Further fixes are a won't fix: WRITE's decisions, the
+  flush and the end of its micro-operation, into the enables of
+  PREPARE's and WRITE's registers (a real fix needs WRITE to know a cycle
+  ahead that it will be free, or a buffer between PREPARE and WRITE with
+  its own register hazards), WRITE's ALU into its own next state, FETCH's
+  next address from its ring, and `irq_ready_o` being combinational from
+  WRITE.
 - The same first version merged the adjusted destination of a register in
   mode 001 or 010 into one write, and found every jump target through the
   ALU. Now three rare cases take WRITE two cycles (MICROARCH.md §7.4).

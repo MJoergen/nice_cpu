@@ -10,18 +10,6 @@ TODO or FIXME comments.
 
 ## FPGA core
 
-- **The pipelined core: what is left.** `hdl/src/pipeline.vhd` passes
-  every test that the multi-cycle core passes ([hdl/README.md](hdl/README.md)).
-  [hdl/ASSUMPTIONS.md](hdl/ASSUMPTIONS.md) lists where it settles or
-  departs from [doc/MICROARCH.md](doc/MICROARCH.md). Open:
-  - Speed: the core alone meets a 10 ns clock out of context (Vivado
-    2025.1, `make timing` in `hdl/`) with the `timing` flow, by a few
-    tenths of a nanosecond (+0.16 ns on 2026-10-22). With the `default`
-    flow it misses by 0.12 ns, on 4 endpoints ([doc/review/pipeline-timing.md](doc/review/pipeline-timing.md)).
-    In NiceMonMEGA65 it reached about 78 MHz before WRITE stopped taking
-    read data from the bus into the ALU
-    ([doc/review/pipeline-timing.md](doc/review/pipeline-timing.md), Read
-    data). See the items under "Pipelined core" below.
 - **Test order steps not done** (MICROARCH.md §9):
   - Step 7: `hdl/test/random_prog.py` was tuned with
     `hdl/test/random_stats.py`, and both cores pass seeds 1 to 90, with
@@ -67,23 +55,6 @@ TODO or FIXME comments.
   that raises IRQ, so it drives the core's IRQ port directly. A second
   device needs a controller that merges the requests and says which vector
   goes first. No device raises NMI.
-
-## Pipelined core
-
-- **The margin at 100 MHz is thin** (pipeline-timing.md, The redirect).
-  In NiceMonMEGA65 the R6 meets 100 MHz and the Nexys4DDR (a -1 part)
-  90 MHz, as measured at 20e9da1 (pipeline-timing.md, In the system; not
-  measured again at later commits). Out of context, the worst paths now run from WRITE's
-  decisions, the flush and the end of its micro-operation, into the
-  enables of PREPARE's `prep_r` and WRITE's own `w_r`: the next
-  micro-operation moves into WRITE in the cycle WRITE frees itself. A
-  stand-in that took those decisions from registers removed them, but
-  a real fix needs WRITE to know a cycle ahead that it will be free, or a
-  buffer between PREPARE and WRITE with its own register hazards. Then
-  WRITE's ALU into its own next state, and FETCH's next address from its
-  ring. `irq_ready_o` is still combinational from WRITE, and a device acts
-  on it in the same cycle. Measure the redirect and FETCH's next address
-  in NiceMonMEGA65 first.
 
 ## Toolchain
 

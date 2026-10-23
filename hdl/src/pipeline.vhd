@@ -464,8 +464,9 @@ begin
 
    -- The invariants that the theory of operation above relies on.
    p_check : process (clk_i)
-      variable stb_v   : std_logic := '0';   -- The instruction bus a cycle ago
-      variable stall_v : std_logic := '0';
+      variable stb_v    : std_logic := '0';   -- The instruction bus a cycle ago
+      variable stall_v  : std_logic := '0';
+      variable st_may_v : std_logic := '0';   -- An access could wait in DBUS now
    begin
       if rising_edge(clk_i) then
          if rst_i = '0' then
@@ -517,9 +518,22 @@ begin
             assert not (halted_o = '1' and ibus_stb_o = '1' and not (stb_v = '1' and stall_v = '1'))
                report "pipeline: a new instruction fetch after a halt"
                severity failure;
+            -- PREPARE's assumptions about WRITE and DBUS that need no model
+            -- (src/pipe_prepare.vhd, f_accept and f_st_queue). The others
+            -- are checked only by the tests and the bounded check.
+            assert not (w_accept = '1' and w_flush = '1')
+               report "pipeline: WRITE takes a micro-operation and flushes at once"
+               severity failure;
+            -- An access waits in DBUS only if one was queued or held a cycle ago
+            assert not (st_valid = '1' and st_may_v = '0')
+               report "pipeline: an access waits in DBUS that nothing queued"
+               severity failure;
          end if;
-         stb_v   := ibus_stb_o;
-         stall_v := ibus_stall_i;
+         stb_v    := ibus_stb_o;
+         stall_v  := ibus_stall_i;
+         st_may_v := not rst_i and ((st_valid and not st_acc) or
+                                    (w_r.uop.valid and w_r.uop.store and not rd_stb_r) or
+                                    (to_sl(w_r.mode = VEC_ST) and not rd_stb_r));
       end if;
    end process p_check;
 

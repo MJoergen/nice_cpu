@@ -60,10 +60,6 @@ TODO or FIXME comments.
 
 ([doc/review/fifth-repository-review.md](doc/review/fifth-repository-review.md))
 
-- **`p_check` in `pipeline.vhd` does not assert PREPARE's assumptions
-  about WRITE** (`f_takes`, `f_sr_stable`, and the others), so the whole
-  core checks them only through the tests. Assert them, or name them as
-  unchecked in hdl/README.md and MICROARCH.md §9 (§7.2).
 - **The Vivado path** is machine-specific in `hdl/Makefile` and
   `hdl/CLAUDE.md`. Keep it as the default, or take it from the
   environment only (§1.6).

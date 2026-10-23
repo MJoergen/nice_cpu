@@ -554,7 +554,11 @@ bus while the read is stalled.
 
 The assumptions of each proof that name another stage are checked in the
 whole core by `p_check` in `src/pipeline.vhd`, on every simulation and in
-`formal_pipeline`.
+`formal_pipeline`, but for PREPARE's assumptions about WRITE and DBUS that
+need its model registers: `f_takes`, `f_sr_stable`, `f_cond_stable`,
+`f_run`, and `f_tag_grow`. `p_check` asserts `f_accept` and `f_st_queue`.
+The five are covered only by the tests and by the bounded check of the
+whole core.
 
 `formal_pipeline` puts the four checkers on the pipelined core, with
 `G_MAX_PENDING` 8 on the instruction bus and 4 on the data bus. The core's

@@ -817,7 +817,9 @@ unit, the performance counters, the timer, and the fetch statistics of
 (hdl/README.md). The
 assumptions that name another stage are checked in the whole core by
 `p_check` in `hdl/src/pipeline.vhd`, on every simulation run and in the
-bounded check. For the whole pipelined core, the port checks and the
+bounded check, but for PREPARE's `f_takes`, `f_sr_stable`,
+`f_cond_stable`, `f_run`, and `f_tag_grow`, which need its model registers
+and are covered only by the tests and the bounded check. For the whole pipelined core, the port checks and the
 core's own assertions hold for the first 8 cycles after reset, and the
 simulation tests check the same assertions on every run. The most
 important of them is the data access rule of §5.3: every data access

@@ -37,20 +37,19 @@ TODO or FIXME comments.
   the ports of the multi-cycle core and the data bus decoder, the timer,
   the math unit, the performance counters, the fetch statistics, and
   FETCH, DECODE, PREPARE, and DBUS of the pipelined core, for every
-  cycle, and the shifter, the ALU, and the block compares of the store
-  check for every input. For the whole pipelined core it checks the ports
-  and the core's own assertions, the data access rule among them, only
-  for the first 8 cycles after reset ([hdl/README.md](hdl/README.md)).
-  Open: WRITE is mostly ISA semantics, which the trace diff checks
-  better, and only the bounded check covers it, so that a halted core
-  makes no store or vector read is proved for 8 cycles only, where
-  PREPARE's reads and FETCH's requests are proved for every cycle. A
-  proof of the whole core for every cycle, which needs invariants that
-  tie the stages together; and the order of the data accesses checked
-  against a model of the program, not only through the tests. With Yosys
-  0.56 the bounded check reaches 12 cycles in 13 minutes, where CI's
-  Yosys 0.33 did not finish 9 in 20; the depth can grow when CI's tools
-  do.
+  cycle, WRITE's halt (it stays halted until reset and makes no store,
+  vector read, interrupt entry, or accept), and the shifter, the ALU, and
+  the block compares of the store check for every input. For the whole
+  pipelined core it checks the ports and the core's own assertions, the
+  data access rule among them, only for the first 8 cycles after reset
+  ([hdl/README.md](hdl/README.md)). WRITE's other behavior is ISA
+  semantics, which the trace diff checks better, so no proof of it is
+  planned. Open: a proof of the whole core for every cycle, which needs
+  invariants that tie the stages together and is not planned; and the
+  order of the data accesses checked against a model of the program, not
+  only through the tests. With Yosys 0.56 the bounded check reaches 12
+  cycles in 13 minutes, where CI's Yosys 0.33 did not finish 9 in 20; the
+  depth can grow when CI's tools do.
 
 ## Left from the fifth review
 

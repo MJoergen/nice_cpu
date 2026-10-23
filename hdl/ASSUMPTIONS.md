@@ -141,7 +141,12 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
 15. **FETCH, DECODE, PREPARE, and DBUS are proven, the rest of the core
     is checked for 8 cycles.** `formal/pipe_fetch.sby`, `pipe_decode.sby`,
     `pipe_prepare.sby`, and `pipe_dbus.sby` prove the four for every
-    cycle, with invariants under their `G_FORMAL`, and with assumptions
+    cycle, and `pipe_write.sby` proves WRITE's halt: it stays halted
+    until reset and makes no store, vector read, interrupt entry, or
+    accept. Together with PREPARE's `f_rd_run` and the definition of
+    `halted_o`, that is why a halted core makes no data access, for every
+    cycle. The four have invariants under their `G_FORMAL`, and
+    assumptions
     that model the stages beside them, which `p_check` in
     `src/pipeline.vhd` checks in the whole core, and which DECODE's proof
     discharges for PREPARE's. `formal/nice_pkg.sby` proves the shifter,

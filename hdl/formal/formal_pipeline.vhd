@@ -72,6 +72,9 @@ begin
    -- A halted core makes no data access, and no new instruction fetch: a
    -- request still on the instruction bus is one the bus stalled before
    -- the halt (src/pipe_fetch.vhd, f_stop).
+   -- The data bus part holds for every cycle by the proofs of WRITE's halt,
+   -- PREPARE's f_rd_run, and the definition of halted_o; the check here is
+   -- of the whole core together.
    -- psl f_halt_dbus : assert always (rst_i = '0' and halted = '1') -> dbus_stb = '0';
    -- psl f_halt_ibus : assert always (rst_i = '0' and halted = '1' and ibus_stb = '1') ->
    --    (prev(ibus_stb) = '1' and prev(ibus_stall_i) = '1');

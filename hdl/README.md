@@ -107,6 +107,8 @@ departs from it.
 | [formal/pipe_prepare.sby](formal/pipe_prepare.sby) | The SymbiYosys job for it. |
 | [formal/formal_pipe_dbus.vhd](formal/formal_pipe_dbus.vhd) | DBUS of the pipelined core, whose properties are in `src/pipe_dbus.vhd`. |
 | [formal/pipe_dbus.sby](formal/pipe_dbus.sby) | The SymbiYosys job for it. |
+| [formal/formal_pipe_write.vhd](formal/formal_pipe_write.vhd) | WRITE of the pipelined core, with the properties of its halt. |
+| [formal/pipe_write.sby](formal/pipe_write.sby) | The SymbiYosys job for it. |
 | [formal/formal_pipeline.vhd](formal/formal_pipeline.vhd) | The pipelined core with a checker on each of its four ports. |
 | [formal/pipeline.sby](formal/pipeline.sby) | The SymbiYosys job for it. |
 | [formal/formal_perf.vhd](formal/formal_perf.vhd) | The performance counters with checks of their bus port against a model of the counters. |

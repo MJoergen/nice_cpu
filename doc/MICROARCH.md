@@ -825,8 +825,12 @@ simulation tests check the same assertions on every run. The most
 important of them is the data access rule of §5.3: every data access
 belongs to an instruction that retires, which the core asserts as no
 flush leaving read data owed. The accesses issue in program order by
-construction. A proof of WRITE alone, and of the whole core for every
-cycle, is still open (TODO.md).
+construction. That a halted core makes no data access holds for every
+cycle by the proofs together: a halted WRITE stays halted until reset and
+issues nothing (`hdl/formal/formal_pipe_write.vhd`), PREPARE puts a read
+on the bus only while WRITE runs, and `halted_o` waits until DBUS's
+register is empty. A proof of the whole core for every cycle is still
+open (TODO.md).
 
 ## 10. Repository and boards
 

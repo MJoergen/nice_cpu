@@ -310,12 +310,11 @@ class Assembler:
             return hi | reg, None
 
         reg = 0                                         # c and c[Rx]
-        m = re.match(r"(.*)\[(.*)\]$", p)
-        if m:
-            p = m.group(1)
-            index = self.register(m.group(2))
+        if p.endswith("]") and "[" in p:
+            p, _, inner = p[:-1].rpartition("[")
+            index = self.register(inner)
             if index is None:
-                raise AsmError(f"{shown}: '{m.group(2)}' is not a register")
+                raise AsmError(f"{shown}: '{inner}' is not a register")
             reg = index
         elif "[" in p:
             raise AsmError(f"{shown}: bad index, expected c[Rx]")

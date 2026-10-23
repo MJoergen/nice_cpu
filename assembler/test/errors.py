@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from typing import List, Tuple
 
 NICEASM = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "niceasm.py")
@@ -391,6 +392,16 @@ def main() -> None:
         if p.returncode == 0 or not kept:
             failed += 1
             print("FAIL output overwrites the input")
+        # An operand of 50,000 "[" and no "]" is rejected at once, not in quadratic time.
+        slow = os.path.join(tmp, "slow.nasm")
+        with open(slow, "w") as f:
+            f.write(" MOVE R1, 5" + "[" * 50000 + "\n")
+        t0 = time.monotonic()
+        p = subprocess.run([sys.executable, NICEASM, "-o", os.path.join(tmp, "slow.bin"), slow],
+                           capture_output=True, text=True)
+        if p.returncode != 1 or "bad index" not in p.stderr or time.monotonic() - t0 > 5:
+            failed += 1
+            print("FAIL a long run of [ in an operand")
         # The command line and file errors.
         cli = os.path.join(tmp, "cli")
         os.makedirs(os.path.join(cli, "dir"))
@@ -412,7 +423,7 @@ def main() -> None:
                 or os.path.exists(os.path.join(cli, "ok.bin"))):
             failed += 1
             print("FAIL -o out.txt")
-    total = len(CASES) + len(GOOD) + len(RAW) + len(STDERR) + len(WARN) + len(CLI) + 2
+    total = len(CASES) + len(GOOD) + len(RAW) + len(STDERR) + len(WARN) + len(CLI) + 3
     print(f"PASS errors ({total} cases)" if not failed else f"FAIL errors ({failed} of {total})")
     sys.exit(1 if failed else 0)
 

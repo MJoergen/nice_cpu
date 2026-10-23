@@ -443,3 +443,24 @@ The redirect is gone from the worst groups, and FETCH's next address
 went from the R6's worst path to +0.40 ns. What is left is (b): the
 flush, from the check of stores against FETCH's block, into the
 enables of `prep_r` and `w_r`.
+
+## In the system
+
+NiceMonMEGA65 measured the core with the registered redirect at 20e9da1
+and reported it in issue 34 on GitHub. These figures are its, not `make
+timing`'s here, and they were not measured again at later commits. One
+run each:
+
+| Board and clock | Directives | Slack |
+|---|---|---|
+| R6, 100 MHz | NiceMonMEGA65's | +0.570 ns |
+| R6, 100 MHz | default | +0.238 ns |
+| Nexys4DDR, 90 MHz | NiceMonMEGA65's | +0.173 ns |
+| Nexys4DDR, 100 MHz | NiceMonMEGA65's | −0.024 ns, 2 failing |
+
+The two failing endpoints are FETCH's next address, from `ring_r` into
+`head_r`. With set D (`-flatten_hierarchy full` and `ExtraNetDelay_high`)
+the Nexys4DDR at 100 MHz was worse, −0.246 ns on 195 endpoints, so 100 MHz
+on that part depends on placement. NiceMonMEGA65 runs it at 90 MHz. Before
+the redirect change, at e693cb8 and 8712ed0, it met 83.33 MHz with +0.114
+and +0.112 ns. `make hwtest` passed on both boards at 20e9da1.

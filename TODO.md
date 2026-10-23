@@ -60,12 +60,6 @@ TODO or FIXME comments.
 
 ([doc/review/fifth-repository-review.md](doc/review/fifth-repository-review.md))
 
-- **Two timing claims below are not recorded.** "The R6 meets 100 MHz in
-  NiceMonMEGA65" disagrees with [pipeline-timing.md](doc/review/pipeline-timing.md),
-  whose last R6 build missed by 0.257 ns, and nothing records the
-  Nexys4DDR at 83.33 MHz (the last run there was 75 MHz). Run
-  `make timing` and the builds again, or reword both to what is recorded
-  (§8.2).
 - **`p_check` in `pipeline.vhd` does not assert PREPARE's assumptions
   about WRITE** (`f_takes`, `f_sr_stable`, and the others), so the whole
   core checks them only through the tests. Assert them, or name them as
@@ -96,8 +90,9 @@ TODO or FIXME comments.
 ## Pipelined core
 
 - **The margin at 100 MHz is thin** (pipeline-timing.md, The redirect).
-  The R6 meets 100 MHz in NiceMonMEGA65, and the Nexys4DDR (a -1 part)
-  83.33 MHz. Out of context, the worst paths now run from WRITE's
+  In NiceMonMEGA65 the R6 meets 100 MHz and the Nexys4DDR (a -1 part)
+  90 MHz, as measured at 20e9da1 (pipeline-timing.md, In the system; not
+  measured again at later commits). Out of context, the worst paths now run from WRITE's
   decisions, the flush and the end of its micro-operation, into the
   enables of PREPARE's `prep_r` and WRITE's own `w_r`: the next
   micro-operation moves into WRITE in the cycle WRITE frees itself. A

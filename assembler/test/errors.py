@@ -423,7 +423,17 @@ def main() -> None:
                 or os.path.exists(os.path.join(cli, "ok.bin"))):
             failed += 1
             print("FAIL -o out.txt")
-    total = len(CASES) + len(GOOD) + len(RAW) + len(STDERR) + len(WARN) + len(CLI) + 3
+        # --symbols writes the labels, sorted by address and then by name.
+        with open(os.path.join(cli, "sym.nasm"), "w") as f:
+            f.write("a MOVE R1, 1\nb\nc HALT\n.ORG 0x10\nd HALT\n")
+        p = subprocess.run([sys.executable, NICEASM, "--symbols", "sym.txt", "sym.nasm"], cwd=cli,
+                           capture_output=True, text=True)
+        with open(os.path.join(cli, "sym.txt")) as f:
+            got = f.read()
+        if p.returncode != 0 or got != "00000000 a\n00000002 b\n00000002 c\n00000010 d\n":
+            failed += 1
+            print("FAIL --symbols sym.txt")
+    total = len(CASES) + len(GOOD) + len(RAW) + len(STDERR) + len(WARN) + len(CLI) + 4
     print(f"PASS errors ({total} cases)" if not failed else f"FAIL errors ({failed} of {total})")
     sys.exit(1 if failed else 0)
 

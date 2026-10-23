@@ -638,6 +638,8 @@ def main() -> None:
     ap.add_argument("input", help="assembly source (.nasm)")
     ap.add_argument("-o", dest="output",
                     help="output file (default: input with .bin extension)")
+    ap.add_argument("--symbols", metavar="FILE",
+                    help="also write the labels to FILE, one 'address name' line each")
     args = ap.parse_args()
 
     out = args.output or os.path.splitext(args.input)[0] + ".bin"
@@ -665,6 +667,10 @@ def main() -> None:
         with open(out, "w", newline="") as f:
             for addr, word in asm.output():
                 f.write(f"{addr:08x} {word:08x}\n")
+        if args.symbols:
+            with open(args.symbols, "w", newline="") as f:
+                for name, addr in sorted(asm.labels.items(), key=lambda kv: (kv[1], kv[0])):
+                    f.write(f"{addr:08x} {name}\n")
     except OSError as e:
         sys.exit(f"{e.filename}: {e.strerror}")
 

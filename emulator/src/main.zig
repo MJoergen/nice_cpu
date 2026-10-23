@@ -25,6 +25,9 @@ const usage =
     \\      --irq STEP:VEC   Raise IRQ with vector VEC before step STEP.
     \\      --nmi STEP:VEC   Raise NMI with vector VEC before step STEP.
     \\                       Both may be repeated. Steps count from 0.
+    \\      --symbols FILE   Read labels from FILE, as niceasm --symbols writes it, and
+    \\                       name the location of a halt other than HALT, and of a
+    \\                       wasm trap (translator/WASM.md), after the halt message.
     \\      --no-cycle-counter  Make 0xFFFFFF40, 0xFFFFFF41, 0xFFFFFF44, and
     \\                       0xFFFFFF45 ordinary memory, for comparing traces
     \\                       with an FPGA core.
@@ -75,8 +78,100 @@ const Options = struct {
     timer_irq: bool = true,
     /// The console input file, or "-" for stdin.
     input: []const u8 = "-",
+    /// The label file of niceasm --symbols, or "" for none.
+    symbols: []const u8 = "",
     help: bool = false,
 };
+
+/// A label and its address, from a file of niceasm --symbols.
+const Symbol = struct {
+    addr: u32,
+    name: []const u8,
+
+    fn before(_: void, a: Symbol, b: Symbol) bool {
+        return a.addr < b.addr;
+    }
+};
+
+/// Read a file of lines "address name", as niceasm --symbols writes it.
+/// The result is sorted by address.
+fn loadSymbols(arena: std.mem.Allocator, path: []const u8) error{ Load, OutOfMemory }![]Symbol {
+    const text = std.fs.cwd().readFileAlloc(arena, path, 1 << 30) catch |err| {
+        std.debug.print("niceemu: cannot read {s}: {s}\n", .{ path, @errorName(err) });
+        return error.Load;
+    };
+    var syms: std.ArrayList(Symbol) = .empty;
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    var line_no: usize = 0;
+    while (lines.next()) |raw| {
+        line_no += 1;
+        const line = std.mem.trim(u8, raw, " \t\r");
+        if (line.len == 0) continue;
+        var it = std.mem.tokenizeAny(u8, line, " \t");
+        const a = it.next().?;
+        const name = it.next() orelse
+            return loadError(path, line_no, "expected 'address name', found only '{s}'", .{a});
+        if (it.next()) |extra|
+            return loadError(path, line_no, "unexpected '{s}' after the name", .{extra});
+        try syms.append(arena, .{ .addr = try parseHex(path, line_no, a), .name = name });
+    }
+    std.sort.insertion(Symbol, syms.items, {}, Symbol.before);
+    return syms.items;
+}
+
+/// The symbol at or before `addr` that comes first in the file, among
+/// those at the same address, or null if `addr` is before them all.
+fn findSymbol(syms: []const Symbol, addr: u32) ?Symbol {
+    var lo: usize = 0;
+    var hi: usize = syms.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        if (syms[mid].addr <= addr) lo = mid + 1 else hi = mid;
+    }
+    if (lo == 0) return null;
+    var i = lo - 1;
+    while (i > 0 and syms[i - 1].addr == syms[i].addr) i -= 1;
+    return syms[i];
+}
+
+/// Print `addr` as "name+0x1f", or just "name", or as hex if no symbol
+/// is at or before it.
+fn printLocation(out: *std.Io.Writer, syms: []const Symbol, addr: u32) !void {
+    const sym = findSymbol(syms, addr) orelse return out.print("{x:0>8}", .{addr});
+    if (addr == sym.addr) return out.writeAll(sym.name);
+    try out.print("{s}+0x{x}", .{ sym.name, addr - sym.addr });
+}
+
+/// The meaning of a wasm trap code (translator/WASM.md).
+fn trapName(code: u32) []const u8 {
+    return switch (code) {
+        1 => "unreachable",
+        2 => "memory access out of bounds",
+        3 => "division by zero",
+        4 => "integer overflow",
+        5 => "float to integer conversion",
+        6 => "call_indirect: bad index",
+        7 => "call_indirect: type mismatch",
+        else => "unknown code",
+    };
+}
+
+/// After a halt other than HALT, or at the step limit: where the program
+/// was, and for a halt at the default trap handler, `___wasm_trap`, where
+/// the wasm instruction trapped, from R2.
+fn printWhere(out: *std.Io.Writer, cpu: *const Cpu, syms: []const Symbol) !void {
+    // After a halt, PC is the address after the halting instruction.
+    const pc = if (cpu.halted()) cpu.getReg(15) -% 1 else cpu.getReg(15);
+    try out.writeAll("At ");
+    try printLocation(out, syms, pc);
+    try out.writeByte('\n');
+    const at = findSymbol(syms, pc) orelse return;
+    if (cpu.halted() and pc == at.addr and std.mem.eql(u8, at.name, "___wasm_trap")) {
+        try out.print("Trap {d} ({s}) at ", .{ cpu.getReg(1), trapName(cpu.getReg(1)) });
+        try printLocation(out, syms, cpu.getReg(2));
+        try out.writeByte('\n');
+    }
+}
 
 /// The signal that asked the run to stop, or 0. Set by `onSignal`.
 var stop_signal: std.atomic.Value(u8) = .init(0);
@@ -179,7 +274,7 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "-i", "--input", "--irq", "--nmi" }) |o| {
+        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "-i", "--input", "--irq", "--nmi", "--symbols" }) |o| {
             if (std.mem.eql(u8, arg, o)) break true;
         } else false;
         const value = if (takes_value) blk: {
@@ -223,6 +318,8 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
                 .kind = if (std.mem.eql(u8, arg, "--irq")) .irq else .nmi,
                 .vector = try parseNumber(u8, arg, value[colon + 1 ..]),
             });
+        } else if (std.mem.eql(u8, arg, "--symbols")) {
+            opts.symbols = value;
         } else if (std.mem.eql(u8, arg, "--no-cycle-counter")) {
             opts.cycle_counter = false;
         } else if (std.mem.eql(u8, arg, "--no-timer-irq")) {
@@ -302,6 +399,7 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
     };
     var cpu = Cpu.init(arena);
     try load(arena, &cpu, opts.path, text);
+    const syms: []const Symbol = if (opts.symbols.len != 0) try loadSymbols(arena, opts.symbols) else &.{};
 
     if (opts.trace) cpu.trace = out;
     cpu.console = out;
@@ -355,6 +453,7 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
     } else {
         try out.print("Stopped at the step limit after {d} steps, PC={x:0>8}\n", .{ steps, cpu.regs[15] });
     }
+    if (syms.len != 0 and !(cpu.halted() and cpu.halt_reason == .halt)) try printWhere(out, &cpu, syms);
     // A request still pending now was never taken (ISA.md §7.1).
     if (cpu.nmi_pending != null or cpu.irq_pending != null) {
         try out.writeAll("Pending:");
@@ -445,6 +544,22 @@ fn printScreen(out: *std.Io.Writer, cpu: *const Cpu, base: u32, color: bool, inv
         }
         try out.writeByte('\n');
     }
+}
+
+test "findSymbol takes the nearest label at or before, the first at a tie" {
+    const syms = [_]Symbol{
+        .{ .addr = 2, .name = "a" },
+        .{ .addr = 8, .name = "b" },
+        .{ .addr = 8, .name = "c" },
+        .{ .addr = 0x20, .name = "d" },
+    };
+    try std.testing.expect(findSymbol(&syms, 1) == null);
+    try std.testing.expectEqualStrings("a", findSymbol(&syms, 2).?.name);
+    try std.testing.expectEqualStrings("a", findSymbol(&syms, 7).?.name);
+    try std.testing.expectEqualStrings("b", findSymbol(&syms, 8).?.name);
+    try std.testing.expectEqualStrings("b", findSymbol(&syms, 0x1F).?.name);
+    try std.testing.expectEqualStrings("d", findSymbol(&syms, 0xFFFFFFFF).?.name);
+    try std.testing.expect(findSymbol(&.{}, 5) == null);
 }
 
 test "screen colors" {

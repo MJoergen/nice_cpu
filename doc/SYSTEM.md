@@ -90,7 +90,7 @@ A use of the MPU takes several instructions, and an interrupt may come between t
 
 ## 3. Performance counters
 
-The emulator and the FPGA implementation map performance counters at `0xFFFFFF40`–`0xFFFFFF7F`: two 64-bit counters, and the fetch statistics of the FPGA implementation.
+The emulator and the FPGA implementation map performance counters at `0xFFFFFF40`–`0xFFFFFF7F`: three 64-bit counters, and the fetch statistics of the FPGA implementation.
 
 | Address | Name | A data read returns | A write |
 |---|---|---|---|
@@ -98,12 +98,15 @@ The emulator and the FPGA implementation map performance counters at `0xFFFFFF40
 | `0xFFFFFF41` | `CYCLE_HI` | bits 63..32 of the cycle counter's snapshot | is ignored |
 | `0xFFFFFF42` | `INSTR_LO` | bits 31..0 of the instruction counter, and takes a snapshot of it | is ignored |
 | `0xFFFFFF43` | `INSTR_HI` | bits 63..32 of the instruction counter's snapshot | is ignored |
-| `0xFFFFFF44`–`0xFFFFFF4F` | | 0 | is ignored |
+| `0xFFFFFF44` | `TIME_LO` | bits 31..0 of the microsecond counter, and takes a snapshot of it | is ignored |
+| `0xFFFFFF45` | `TIME_HI` | bits 63..32 of the microsecond counter's snapshot | is ignored |
+| `0xFFFFFF46`–`0xFFFFFF4F` | | 0 | is ignored |
 | `0xFFFFFF50`–`0xFFFFFF7F` | | the fetch statistics (MICROARCH.md §8.1), or 0 in the emulator | as MICROARCH.md §8.1 says, or is ignored in the emulator |
 
 - The **instruction counter** counts the instructions that have completed since reset. Every instruction counts, including one whose condition is false, a control instruction, and `INT`. An interrupt entry for IRQ or NMI does not count, because it is not an instruction. An instruction that reads `INSTR_LO` reads the number of instructions that completed before it.
 - The **cycle counter** counts the clock cycles since reset while the core runs, and stops when the core is held or has halted, so a reading after a halt does not change. The emulator has no clock, so it counts one cycle for each instruction and each interrupt entry, that is, for each step. Its cycle counter is an approximation and differs from the FPGA implementation's.
-- Reset sets both counters and both snapshots to 0. Neither counter can be written. A program measures an interval as the difference of two readings.
+- The **microsecond counter** counts microseconds since reset while the core runs, and stops when the core is held or has halted, like the cycle counter. The FPGA implementation derives it from its clock frequency, so the count is exact for any frequency: it adds 1000000 to an accumulator in each cycle, and counts a microsecond and subtracts the clock frequency in hertz each time the sum reaches it. The emulator has no clock, so it counts one microsecond for each step, as its cycle counter counts one cycle. A program that needs a time in seconds divides by 1000000, whatever the board.
+- Reset sets all three counters and their snapshots to 0. No counter can be written. A program measures an interval as the difference of two readings.
 - A counter wraps from `0xFFFFFFFF_FFFFFFFF` to 0. At one count per cycle at 100 MHz that takes over 5000 years.
 - The **fetch statistics** count what the instruction fetch of the pipelined FPGA core does in each cycle, to judge the size of its buffer. They depend on the core, so MICROARCH.md §8.1 describes them. The emulator has none: their words read 0 and ignore writes, and are not memory.
 

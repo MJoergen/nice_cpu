@@ -30,7 +30,10 @@ enough to be worth comparing:
   written (MICROARCH.md §5.1).
 - Most forward jumps skip only a few instructions, so that most of the
   program runs before the jump back to its start.
-- The program starts by setting E, so that IRQs are taken, and by
+- The program starts with ?I RTI, so that an interrupt whose vector table
+  entry holds CODE returns (a write of VBASE puts the table among the low
+  words, where such entries are common), by setting E, so that IRQs are
+  taken, and by
   pointing R1 to R13 into the data region, so that fewer stores reach the
   low words, where an interrupt with an empty vector table entry goes.
 - Each vector of the vector table leads to a routine of a few random
@@ -202,10 +205,12 @@ def instruction(rng: random.Random, recent: list[list[int]]) -> list[int]:
                           0b00001 << 21 | 1 << rng.randrange(8), 1 << rng.randrange(8)))
         return [cond << 28 | 0b11 << 26 | bad]
     if kind < 0.0015:
+        # RTI mostly with ?I, so that it seldom halts outside a routine.
+        cond = 0b0111 if rng.random() < 0.8 else cond
         return [cond << 28 | 0b11 << 26 | 0b00001 << 21]  # RTI
     # INT mostly with ?!I, so that it seldom halts.
     if kind < 0.0075:
-        cond = 0b1111 if rng.random() < 0.8 else cond
+        cond = 0b1111 if rng.random() < 0.95 else cond
         return [cond << 28 | 0b11 << 26 | 0b00010 << 21 | rng.choice(VECTORS)]  # INT
     if kind < 0.05:
         return r15_template(rng, cond, recent)
@@ -232,9 +237,10 @@ def main() -> None:
     rng = random.Random(seed)
 
     recent: list[list[int]] = []
-    # The program starts by setting E, and by pointing R1 to R13 into the
+    # The program starts with ?I RTI, so that an interrupt whose vector table
+    # entry holds CODE returns, then sets E, and points R1 to R13 into the
     # data region, so that fewer stores reach the low words.
-    prologue = [list(SET_E)] + [[MOVE_C | reg << 14, DATA + 4 * reg] for reg in range(1, 14)]
+    prologue = [[RTI_IF_I], list(SET_E)] + [[MOVE_C | reg << 14, DATA + 4 * reg] for reg in range(1, 14)]
     program = prologue + [instruction(rng, recent) for _ in range(INSTRUCTIONS)]
     starts = []
     addr = CODE

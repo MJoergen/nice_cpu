@@ -15,7 +15,9 @@
 # or to an output is the time left to the system around the core: for the
 # data bus, its address decode, its block RAMs, and its read mux. Those
 # paths go to timing_in.rpt and timing_out.rpt. They leave out retire_o
-# and stats_o, which only the trace and the statistics read.
+# and stats_o, which only the trace and the statistics read. The 50 worst
+# input paths all start at rst_i on some parts, so timing_ack.rpt has the
+# worst paths from dbus_ack_i alone.
 #
 # timing_groups.rpt counts the endpoints with less than 1 ns of slack, by
 # the register or port they start from and the register or port they end
@@ -67,6 +69,8 @@ report_timing -from [all_inputs] -to [all_registers] -max_paths 50 -nworst 1 \
   -file timing_in.rpt
 report_timing -from [all_registers] -to $outputs -max_paths 50 -nworst 1 \
   -file timing_out.rpt
+report_timing -from [get_ports dbus_ack_i] -to [all_registers] -max_paths 5 -nworst 1 \
+  -file timing_ack.rpt
 
 # The name of a group: a port without its index, or a register as stage
 # and name, such as "write w_r.uop" for i_pipe_write/w_r_reg[uop][src][0][0].

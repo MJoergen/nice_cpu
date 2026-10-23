@@ -84,15 +84,6 @@ TODO or FIXME comments.
   ring. `irq_ready_o` is still combinational from WRITE, and a device acts
   on it in the same cycle. Measure the redirect and FETCH's next address
   in NiceMonMEGA65 first.
-- **What the system adds to the core's paths.** Out of context, the
-  inputs arrive at time 0 and the outputs are due at time 10 ns, so
-  `make timing` in `hdl/` reports their slack as the time left to the
-  system. Read data goes into WRITE only for a register write (6.5 ns
-  left), but `dbus_ack_i` goes into WRITE's retire and so into FETCH, and
-  `instret_o` comes from WRITE's retire (2.6 ns left). A store or a
-  vector read goes onto the bus from DBUS's register (4.5 ns left for the
-  address, 4.8 ns for the data, with the store alone).
-  `retire_o` is combinational and is not counted.
 
 ## Toolchain
 

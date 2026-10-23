@@ -168,8 +168,36 @@ decode, its block RAMs, and its read mux. Last, it prints
 `timing_groups.rpt`: the endpoints with less than 1 ns of slack, counted by
 the register or port they start from and the one they end at, with the
 worst slack of each group.
+`timing_ack.rpt` has the 5 worst paths from `dbus_ack_i` alone, since `rst_i`
+can fill the 50 of `timing_in.rpt`.
 It takes about 10 minutes with the default flow, and `VIVADO` names the
 executable.
+
+What a system may add to the core's ports, from `make timing` at 2026-10-23
+(`timing` and `default` flows, one run each; a run varies by a few tenths of
+a nanosecond with placement). The slack is the time left to the system at
+the clock of the first column:
+
+| Clock and part | `dbus_ack_i` | `instret_o` |
+|---|---|---|
+| 100 MHz, MEGA65 (-2) | 3.1 to 3.4 ns | 2.6 to 3.0 ns |
+| 100 MHz, Nexys4DDR (-1) | 2.0 to 2.2 ns | 1.1 to 1.8 ns |
+| 90 MHz, Nexys4DDR (-1) | 3.1 to 3.2 ns | 2.1 to 2.4 ns |
+
+- `instret_o` has the least. It comes from WRITE's retire, and the counters
+  of SYSTEM.md §3 must see it in that cycle (MICROARCH.md §8), so a system
+  should not register it without changing that rule.
+- `dbus_ack_i` goes into WRITE's retire and so into FETCH, through 10 LUT
+  levels. A system should drive it from a register, or from little logic,
+  not from an address decode and a wait-state mux.
+- A store or a vector read leaves DBUS's register. `dbus_addr_o` and
+  `dbus_data_o` have 2.6 ns or more in every run (the least is
+  `dbus_data_o` on the MEGA65), and most have 4 ns or more. Read data goes
+  into WRITE only for a register write.
+- At 90 MHz on the Nexys4DDR the core alone still fails by 0.3 ns, on paths
+  inside it (WRITE into PREPARE's enables), but NiceMonMEGA65 meets 90 MHz
+  in the system ([pipeline-timing.md](../doc/review/pipeline-timing.md),
+  In the system).
 
 `tb_mpu` checks every word of the math unit against `numeric_std`: for 20
 corner cases and 2000 random pairs of A and B, and for 16 corner cases and

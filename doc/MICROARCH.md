@@ -698,6 +698,9 @@ system built from them must follow these rules:
 - **Timer.** `hdl/src/timer.vhd` at `0xFFFFFF10`–`0xFFFFFF1F` (SYSTEM §4),
   with its request on the core's IRQ port. It is the only device that
   raises IRQ so far, so it needs no interrupt controller.
+- **Timing.** `instret_o` and `dbus_ack_i` have the least time left to the
+  system: about 1 to 3 ns of a 10 ns clock, from WRITE's retire. See
+  [hdl/README.md](../hdl/README.md), `make timing`, for the figures.
 - **Stack.** The runtime puts the stack just below `0xFFFFFF00`. A memory map
   that runs the runtime's programs needs RAM there as well as at address 0.
 

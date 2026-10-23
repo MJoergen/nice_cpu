@@ -86,6 +86,7 @@ is joined into every program. Each follows one part of
 | `niceemu`, the emulator | [emulator/](emulator/) | Zig 0.15 | `.bin` | Console output, the registers, memory dumps, and a trace | ISA.md §1–8, SYSTEM.md |
 | The runtime library | [runtime/](runtime/) | NICE assembly | | | ABI.md and WASM.md |
 | `nicewasm`, the wasm translator | [translator/nicewasm.py](translator/nicewasm.py) | Python 3, standard library only | `.wasm` | `.nasm` | WASM.md |
+| `nicebuild`, the build script | [translator/nicebuild.py](translator/nicebuild.py) | Python 3, standard library only | `.c`, `.zig`, or `.rs` | `.bin` | translator README |
 
 A program is built in these steps. There is no linker. The pieces are
 assembly files, joined with `cat` in the order ABI.md gives, and the
@@ -117,6 +118,11 @@ the last two steps, as in the quick start above. The
 [translator README](translator/README.md) gives the exact clang, Zig, and Rust
 command lines for the first step, and the [runtime README](runtime/README.md)
 the join.
+
+`translator/nicebuild.py` runs all of these steps for a C, Zig, or Rust
+source file, and writes the `.bin` file:
+
+    translator/nicebuild.py -o prog.bin prog.c
 
 **How the tools use each other.**
 

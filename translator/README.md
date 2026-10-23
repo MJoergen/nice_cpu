@@ -36,6 +36,28 @@ or directory`, and an output that would overwrite the input prints
 mistake in the options exits with 2, as argparse does.
 nicewasm stops at the first error.
 
+`nicebuild.py` does all of the steps below: it compiles the sources, translates,
+joins, and assembles. The extension of the inputs picks the language: `.c`,
+`.zig`, or `.rs`.
+
+    ./nicebuild.py [-o output.bin] [-O LEVEL] [-I DIR] [-D MACRO[=VALUE]]
+                   [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-bounds-checks]
+                   [--memory-pages N] [--keep] input.c... | input.zig | input.rs
+
+Without `-o`, the output is the first input with the extension `.bin`.
+The defaults are the options of the recipes below. `-O` is a clang level
+for C, a mode for Zig such as `ReleaseSafe`, and an `opt-level` for
+Rust. `--stack` and `--memory` set the stack size and the initial memory;
+the default stack is 4096 bytes, or 16384 for Zig in Debug or ReleaseSafe.
+`-I` and `-D` are for C. C files are linked with the C library, and Zig
+gets `runtime/nice.zig` as the module `nice`. Zig and Rust take one source file,
+the root of the program, and a Rust program that wants `nice.rs` mounts it
+itself (runtime README). The float library
+is joined if the program calls it. `--keep` leaves the `.wasm`, `.nasm`,
+and joined `.full.nasm` files next to the output. The script builds
+`runtime/libc/libc.a` and `runtime/float.nasm` first if needed. `CLANG`,
+`ZIG`, and `RUSTC` in the environment name the compilers.
+
 The output is one assembly file. A program is made by joining it with the
 start-up code, the program's other files, and the runtime library, in the
 order of ABI.md. For example, for C code compiled with clang:

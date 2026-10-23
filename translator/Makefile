@@ -48,7 +48,7 @@ diff: emulator
 
 # Needs mypy (pip install mypy).
 typecheck:
-	cd test && MYPYPATH=../../assembler:.. $(PYTHON) -m mypy --strict ../nicewasm.py run.py errors.py \
+	cd test && MYPYPATH=../../assembler:.. $(PYTHON) -m mypy --strict ../nicewasm.py ../nicebuild.py run.py errors.py \
 	  wasm.py fuzz.py passes.py diff_fuzz.py
 
 wasm:

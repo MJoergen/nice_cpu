@@ -10,7 +10,9 @@ translated wasm code call. They follow the C ABI of
 |---|---|
 | `start.nasm` | Start-up code for a program without a wasm module. |
 | `start_wasm.nasm` | Start-up code for a program with a wasm module. It calls `___wasm_start` before `main`. |
+| `start_wasm_trap.nasm` | `start_wasm.nasm` with the trap report below installed first. |
 | `lib.nasm` | The runtime routines in assembly, except those below. |
+| `trapmsg.nasm` | The trap report below. It goes after `lib.nasm`, and only with `start_wasm_trap.nasm`. |
 | `muldiv_mpu.nasm` | The multiply and divide routines: `__mul`, `__div`, `__mod`, `__udiv`, `__umod`, and their `64` versions, with the math unit of SYSTEM.md §2. |
 | `muldiv_soft.nasm` | The same routines in software, for a system without the math unit. |
 | `float.zig` | The source of the float routines (see below). |
@@ -93,6 +95,8 @@ routines take 4 steps each, `__mul64` 10, and the other `long long` ones 7.
 |---|---|
 | `___wasm_trap_vector` | The word that wasm traps jump through. It starts as `___wasm_trap`. |
 | `___wasm_trap` | The default handler: the reserved control word `0x0FE00000`. It halts with the trap's code in R1 and address in R2. The emulator exits with status 2, not 0 as after `HALT`. |
+
+**The trap report.** The default handler halts without a word. `trapmsg.nasm` has `___trap_report`, a handler that first writes a line to the console, such as `trap 2: out of bounds memory access at 00003dc9`, with the code of R1 and the address of R2, and then jumps to `___wasm_trap`. So the processor still halts there, with R1 and R2 as the trap left them, and the emulator still exits with status 2. `start_wasm_trap.nasm` is `start_wasm.nasm` with one more instruction, which stores `___trap_report` in `___wasm_trap_vector`. A program that uses it joins `trapmsg.nasm` after the other files, and `nicebuild.py` does both unless it is given `--no-trap-report`. The report uses R3, R10, and R11 and the stack at SP, so after a stack overflow it may fail itself. The address is a NICE address. With `niceasm.py --symbols`, `nicebuild.py --symbols`, and `niceemu --symbols`, the emulator names the function.
 
 ## Device routines
 

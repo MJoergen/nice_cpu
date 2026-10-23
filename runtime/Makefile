@@ -9,10 +9,12 @@ EMU = ../emulator/zig-out/bin/niceemu
 # assembled and run, and the output and exit status are compared with
 # test/X.expected. The tests in SOFT_TESTS run a second time as X_soft,
 # with muldiv_soft.nasm instead, and are compared with test/X_soft.expected.
-TESTS = start start_wasm mul trap div div64 mul64 bits device edge trapvec
+TESTS = start start_wasm mul trap div div64 mul64 bits device edge trapvec trapreport
 SOFT_TESTS = mul div mul64 div64 edge
 START_start_wasm = start_wasm.nasm
 START_trap       = start_wasm.nasm
+START_trapreport = start_wasm_trap.nasm
+AFTER_trapreport = trapmsg.nasm
 OPTS_start      = -d 0xfffffeff:1
 OPTS_start_wasm = -d 0x1b:1 -d 0xfffffeff:1
 OPTS_mul        = -d 0x34:10
@@ -35,7 +37,7 @@ endef
 
 # $(1) is the name of the run, $(2) the test, and $(3) the muldiv file.
 define check
-	@cat $(or $(START_$(2)),start.nasm) test/$(2).nasm lib.nasm $(3) > test/$(1).out.nasm
+	@cat $(or $(START_$(2)),start.nasm) test/$(2).nasm lib.nasm $(3) $(AFTER_$(2)) > test/$(1).out.nasm
 	@$(ASM) -o test/$(1).out.bin test/$(1).out.nasm
 	@$(EMU) $(OPTS_$(2)) $(if $(INPUT_$(2)),--input $(INPUT_$(2))) test/$(1).out.bin > test/$(1).out; \
 	  echo "exit $$?" >> test/$(1).out

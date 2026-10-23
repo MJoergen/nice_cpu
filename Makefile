@@ -2,9 +2,11 @@
 # Each subdirectory can also be used on its own; see CLAUDE.md and README.md.
 
 # The quick tests. The hdl tests need GHDL.
-TEST_DIRS      = assembler emulator runtime translator bench hdl doc/intro doc
-TYPECHECK_DIRS = assembler emulator runtime translator bench hdl doc
+TEST_DIRS      = assembler emulator runtime translator bench hdl doc/intro doc release
+TYPECHECK_DIRS = assembler emulator runtime translator bench hdl doc release
 CLEAN_DIRS     = assembler emulator runtime bench hdl doc/intro
+
+PYTHON ?= python3
 
 help:
 	@echo "NICE CPU: top-level targets"
@@ -18,6 +20,7 @@ help:
 	@echo "  make slow        the runtime and translator programs, the benchmark,"
 	@echo "                   and the full interrupt sweeps, on CORE (default"
 	@echo "                   pipeline; hours)"
+	@echo "  make release-check  the gates of RELEASE.md, then a stamp for release.py tag (hours)"
 	@echo "  make hazards     count the pipeline hazards in the benchmark"
 	@echo "  make pdf         rebuild the introduction slides"
 	@echo "  make pdfcheck    check that nice_intro.pdf matches the .tex"
@@ -57,6 +60,10 @@ slow:
 hazards:
 	$(MAKE) -C bench hazards
 
+# The release procedure of RELEASE.md; see release/README.md.
+release-check:
+	$(PYTHON) release/release.py check
+
 pdf:
 	$(MAKE) -C doc/intro pdf
 
@@ -84,4 +91,4 @@ all: test typecheck lint pdfcheck
 clean:
 	@for d in $(CLEAN_DIRS); do $(MAKE) -C $$d clean || exit 1; done
 
-.PHONY: help test $(addprefix test-,$(TEST_DIRS)) typecheck lint formal slow hazards pdf pdfcheck diagrams all clean
+.PHONY: help test $(addprefix test-,$(TEST_DIRS)) typecheck lint formal slow release-check hazards pdf pdfcheck diagrams all clean

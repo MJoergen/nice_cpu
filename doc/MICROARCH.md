@@ -312,10 +312,10 @@ That costs at most 0.5% of the cycles of the translated benchmark and
 
 Rules 1 and 2 cost a cycle or two for a conditional read after a write of
 SR, and for a read after a conditional jump. These are 0 to 4% and 5 to 8%
-of the instructions (§5.6), so data reads stay exact for now. If the cost
-turns out to matter, the ISA could later let reads of RAM (not of the I/O
-range) be speculative. That needs a check of each read against older
-stores, so the core does not do it.
+of the instructions (§5.6), so data reads stay exact. Letting reads of RAM
+(not of the I/O range) be speculative would need a change to ISA §8.2 and a
+check of each read against older stores. That was investigated and will not
+be done.
 
 ### 5.4 Control flow
 

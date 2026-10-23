@@ -14,8 +14,6 @@ TODO or FIXME comments.
   every test that the multi-cycle core passes ([hdl/README.md](hdl/README.md)).
   [hdl/ASSUMPTIONS.md](hdl/ASSUMPTIONS.md) lists where it settles or
   departs from [doc/MICROARCH.md](doc/MICROARCH.md). Open:
-  - The decision on speculative reads (below). The cost of the waits is
-    in MICROARCH.md §5.3 and §5.6 and in [bench/README.md](bench/README.md).
   - Speed: the core alone meets a 10 ns clock out of context (Vivado
     2025.1, `make timing` in `hdl/`) with the `timing` flow, by a few
     tenths of a nanosecond (+0.16 ns on 2026-10-22). With the `default`
@@ -110,16 +108,6 @@ TODO or FIXME comments.
   `w_n.regs` of WRITE, before the register. A copy of it in a register is
   still fed from `w_n`, so its paths are WRITE's longest. Both cores now
   have `regs_o` from their registers. NiceMonMEGA65 should read that.
-
-- **Speculative reads of RAM** (MICROARCH.md §5.3). Data reads wait until
-  the instruction is certain to run. The waits are a conditional read
-  after a write of SR, 0.0% of the translated benchmark's instructions and
-  3.8% of the hand-written one's, and a read after a conditional jump,
-  5.6% and 7.6% (MICROARCH.md §5.6). Allowing speculative reads of RAM, but
-  not of the I/O range, needs a change to ISA.md §8.2 and a check of each
-  read against older stores. Decide once the pipelined core shows what the
-  waits cost. The bypasses and the slow path for R14 were decided from the
-  same measurements (MICROARCH.md §5.6).
 
 ## Toolchain
 

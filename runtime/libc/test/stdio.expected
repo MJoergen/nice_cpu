@@ -12,6 +12,9 @@ ff FF 10 0xff 010 0
 22 [overflowing tex]
 5 [0beef]
 5 ff 0x0
+B
+fputs
+5-x
 0x1234
 R1  00000007
 exit 0

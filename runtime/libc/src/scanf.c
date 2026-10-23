@@ -7,12 +7,12 @@
 #include <ctype.h>
 #include <limits.h>
 #include <stdio.h>
-#include "internal.h"
 
-// Where the input comes from: the string s, or the console if s is NULL.
+// Where the input comes from: the string s, or the stream f if s is NULL.
 // count is the number of bytes taken, for %n.
 struct in {
     const char *s;
+    FILE *f;
     int count;
 };
 
@@ -25,7 +25,7 @@ static int get(struct in *in)
     if (in->s)
         c = *in->s ? (unsigned char)*in->s++ : EOF;
     else
-        c = getchar();
+        c = fgetc(in->f);
     if (c != EOF)
         in->count++;
     return c;
@@ -39,7 +39,7 @@ static void unget(struct in *in, int c)
     if (in->s)
         in->s--;
     else
-        __stdin_back = c;
+        ungetc(c, in->f);
 }
 
 // The value of a digit or letter in bases up to 36, or 36 if c is neither.
@@ -267,14 +267,28 @@ done:
 
 int vsscanf(const char *s, const char *fmt, va_list ap)
 {
-    struct in in = {s, 0};
+    struct in in = {s, NULL, 0};
+    return scan(&in, fmt, ap);
+}
+
+int vfscanf(FILE *f, const char *fmt, va_list ap)
+{
+    struct in in = {NULL, f, 0};
     return scan(&in, fmt, ap);
 }
 
 int vscanf(const char *fmt, va_list ap)
 {
-    struct in in = {NULL, 0};
-    return scan(&in, fmt, ap);
+    return vfscanf(stdin, fmt, ap);
+}
+
+int fscanf(FILE *f, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vfscanf(f, fmt, ap);
+    va_end(ap);
+    return n;
 }
 
 int sscanf(const char *s, const char *fmt, ...)

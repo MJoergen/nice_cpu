@@ -66,8 +66,7 @@ TODO or FIXME comments.
   assembled at once, so every label is global (ABI.md).
 - **The C library is small** ([runtime/README.md](runtime/README.md#c-library)).
   Missing: float conversions in `printf` and `scanf`, which would pull in
-  the float library; `FILE`, `stdin`, and `stdout`; `errno`; and `exit`,
-  which needs a way for wasm code to halt.
+  the float library; and `errno`.
 - **Heap support for Rust.** `runtime/nice.rs` has the device routines
   and the console ([runtime/README.md](runtime/README.md#zig-and-rust)),
   but no `#[global_allocator]` for `alloc`. Neither it nor `nice.zig` has

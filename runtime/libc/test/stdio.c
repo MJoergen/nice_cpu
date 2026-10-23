@@ -31,5 +31,9 @@ int main(void)
 #pragma clang diagnostic ignored "-Wformat"
     printf("%+u % x %p\n", 5u, 255u, (void *)0);
 #pragma clang diagnostic pop
+    fputc('B', stdout);
+    putc('\n', stdout);
+    fputs("fputs\n", stderr);
+    fprintf(stdout, "%d-%s\n", 5, "x");
     return printf("%p\n", (void *)0x1234);
 }

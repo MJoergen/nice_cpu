@@ -175,7 +175,7 @@ image holds the whole library, about 81 KB of wasm.
 
 | Header | Functions |
 |---|---|
-| `stdio.h` | `putchar`, `puts`, `getchar`, `printf`, `sprintf`, `snprintf`, `vprintf`, `vsprintf`, `vsnprintf`, `scanf`, `sscanf`, `vscanf`, `vsscanf` |
+| `stdio.h` | `FILE`, `stdin`, `stdout`, `stderr`, `putchar`, `puts`, `getchar`, `fputc`, `putc`, `fputs`, `fgetc`, `getc`, `ungetc`, `fgets`, `fflush`, `printf`, `fprintf`, `sprintf`, `snprintf`, `vprintf`, `vfprintf`, `vsprintf`, `vsnprintf`, `scanf`, `fscanf`, `sscanf`, `vscanf`, `vfscanf`, `vsscanf` |
 | `string.h` | `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`, `strnlen`, `strcmp`, `strncmp`, `strcpy`, `strncpy`, `strcat`, `strncat`, `strchr`, `strrchr`, `strstr` |
 | `stdlib.h` | `malloc`, `calloc`, `realloc`, `free`, `abs`, `labs`, `llabs`, `atoi`, `atol`, `strtol`, `strtoul`, `rand`, `srand`, `abort`, `exit` |
 | `assert.h` | `assert` and `static_assert`. A failed `assert` prints `file:line: function: Assertion `expr' failed.` and calls `abort`. `-DNDEBUG` removes the checks. |
@@ -186,8 +186,8 @@ image holds the whole library, about 81 KB of wasm.
 The device routines, in `src/nice.c`, are the only functions that touch
 hardware. They use `nice_peek` and `nice_poke`. `nice_print` writes the
 bytes of a C string in linear memory, where `_nice_print` in `lib.nasm`
-writes one character per word. `putchar` and `puts` write with `nice_putc` and
-`nice_print`, and `getchar` reads with `nice_getc` (SYSTEM.md §1).
+writes one character per word. `fputc`, `fputs`, and `puts` write with `nice_putc` and
+`nice_print`, and `fgetc` reads with `nice_getc` (SYSTEM.md §1).
 `getchar` waits until a byte is there. It
 returns `EOF` once the emulator's input has ended, which a UART's input
 never does. The emulator reads the input from stdin, or from the file
@@ -196,13 +196,13 @@ that `--input` names. Clang's own `stddef.h`,
 
 The library is small on purpose:
 
-- No `FILE`, `stdin`, `stdout`, `fprintf`, `ungetc`, or `fgets`. In `stdlib.h`, no `strtoll`, `strtoull`, `strtod`, `atof`, `qsort`, `bsearch`, `div`, `getenv`, or `system`. In `string.h`, no `strcoll`, `strspn`, `strcspn`, `strpbrk`, `strtok`, or `strerror`.
+- The only streams are `stdin`, `stdout`, and `stderr`, all on the console. `stdout` and `stderr` are the same stream, and the output functions ignore which stream they get. There is no `fopen`, `fclose`, `fread`, `fwrite`, `fseek`, `feof`, or `ferror`. `ungetc` holds one byte per stream. In `stdlib.h`, no `strtoll`, `strtoull`, `strtod`, `atof`, `qsort`, `bsearch`, `div`, `getenv`, or `system`. In `string.h`, no `strcoll`, `strspn`, `strcspn`, `strpbrk`, `strtok`, or `strerror`.
 - `scanf` and `sscanf` support white space and ordinary characters in the
   format, `*` to read without storing, a width, the length modifiers
   `hh h l ll z t j`, and the conversions `d i u o x X p c s [ n %`. A set
   in `[` may hold ranges such as `a-z`, and `^` first negates it. There
   are no float conversions. `scanf` gives back the one byte it read too
-  far, for the next `getchar` or `scanf`.
+  far, for the next `getchar` or `scanf`, with `ungetc`.
 - `printf` supports the flags `- + space # 0`, with `+` and space for the
   signed conversions only, as C defines them, a width and a precision
   (either may be `*`), the length modifiers `hh h l ll z t j`, and the

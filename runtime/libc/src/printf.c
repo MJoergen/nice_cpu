@@ -8,20 +8,20 @@
 #include <stdio.h>
 #include <string.h>
 
-// Where the output goes: the console if console is set, else buf, which
+// Where the output goes: the stream f if it is not NULL, else buf, which
 // has room for cap bytes and may be NULL if cap is 0. len counts every
 // byte, also those that did not fit.
 struct out {
     char *buf;
     size_t cap;
     size_t len;
-    int console;
+    FILE *f;
 };
 
 static void emit(struct out *o, char c)
 {
-    if (o->console)
-        putchar(c);
+    if (o->f)
+        fputc(c, o->f);
     else if (o->len + 1 < o->cap)
         o->buf[o->len] = c;
     o->len++;
@@ -256,11 +256,25 @@ int vsprintf(char *buf, const char *fmt, va_list ap)
     return vsnprintf(buf, SIZE_MAX, fmt, ap);
 }
 
-int vprintf(const char *fmt, va_list ap)
+int vfprintf(FILE *f, const char *fmt, va_list ap)
 {
-    struct out o = {NULL, 0, 0, 1};
+    struct out o = {NULL, 0, 0, f};
     format(&o, fmt, ap);
     return (int)o.len;
+}
+
+int vprintf(const char *fmt, va_list ap)
+{
+    return vfprintf(stdout, fmt, ap);
+}
+
+int fprintf(FILE *f, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vfprintf(f, fmt, ap);
+    va_end(ap);
+    return n;
 }
 
 int printf(const char *fmt, ...)

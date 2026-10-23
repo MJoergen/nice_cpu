@@ -42,7 +42,8 @@ joins, and assembles. The extension of the inputs picks the language: `.c`,
 
     ./nicebuild.py [-o output.bin] [-O LEVEL] [-I DIR] [-D MACRO[=VALUE]]
                    [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-bounds-checks]
-                   [--memory-pages N] [--keep] input.c... | input.zig | input.rs
+                   [--memory-pages N] [--no-trap-report] [--symbols] [--keep]
+                   input.c... | input.zig | input.rs
 
 Without `-o`, the output is the first input with the extension `.bin`.
 The defaults are the options of the recipes below. `-O` is a clang level
@@ -53,7 +54,12 @@ the default stack is 4096 bytes, or 16384 for Zig in Debug or ReleaseSafe.
 gets `runtime/nice.zig` as the module `nice`. Zig and Rust take one source file,
 the root of the program, and a Rust program that wants `nice.rs` mounts it
 itself (runtime README). The float library
-is joined if the program calls it. `--keep` leaves the `.wasm`, `.nasm`,
+is joined if the program calls it. A wasm trap writes a line with its code and
+address to the console before the processor halts, as `trapmsg.nasm` of the
+runtime README does; `--no-trap-report` leaves it out, so that a trap halts
+silently. `--symbols` also writes the labels to `output.sym`, with the
+functions of the program by their names, for `niceemu --symbols`, which then
+names the function of a trap. `--keep` leaves the `.wasm`, `.nasm`,
 and joined `.full.nasm` files next to the output. The script builds
 `runtime/libc/libc.a` and `runtime/float.nasm` first if needed. `CLANG`,
 `ZIG`, and `RUSTC` in the environment name the compilers.

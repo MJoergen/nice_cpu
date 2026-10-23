@@ -68,6 +68,21 @@ def float_labels(float_nasm: str) -> Set[str]:
     return set(re.findall(r"^(__[A-Za-z0-9_]+)", float_nasm, re.M))
 
 
+def write_symbols(sym: str, program: str, output: str) -> None:
+    """Writes the labels of the assembler's file sym to output, but with the
+    name of each wasm function, from the comment before it in program, in
+    place of its label W.fN, and without the labels inside the functions."""
+    names = {f"W.f{n}": name for n, name in re.findall(r"^; Function (\d+): (\S+)$", program, re.M)}
+    lines = []
+    for line in read(sym).splitlines():
+        addr, label = line.split(" ", 1)
+        if re.match(r"W\.f\d+\.", label):
+            continue
+        lines.append(f"{addr} {names.get(label, label)}")
+    with open(output, "w", encoding="latin-1", newline="") as f:
+        f.write("\n".join(lines) + "\n")
+
+
 def compile_wasm(lang: str, args: argparse.Namespace, wasm: str) -> None:
     """Compiles the inputs to the wasm module in the file wasm."""
     if lang == "c":
@@ -113,6 +128,12 @@ def main() -> None:
     ap.add_argument("--no-mpu", action="store_true", help="translate for a system without the math unit")
     ap.add_argument("--no-bounds-checks", action="store_true", help="pass --no-bounds-checks to nicewasm")
     ap.add_argument("--memory-pages", type=int, metavar="N", help="pass --memory-pages to nicewasm")
+    ap.add_argument("--no-trap-report", action="store_true",
+                    help="halt silently at a wasm trap, as the default handler does, "
+                    "without the message of runtime/trapmsg.nasm")
+    ap.add_argument("--symbols", action="store_true",
+                    help="write the labels to a .sym file next to the output, with the "
+                    "functions of the program by name, for niceemu --symbols")
     ap.add_argument("--keep", action="store_true",
                     help="keep the intermediate .wasm, .nasm, and joined .nasm files next to the output")
     args = ap.parse_args()
@@ -145,17 +166,24 @@ def main() -> None:
         # The order of ABI.md: start-up, program, runtime, muldiv, and float
         # if the program calls it.
         program = read(prog)
-        parts = [read(os.path.join(RUNTIME, "start_wasm.nasm")), program,
+        start = "start_wasm.nasm" if args.no_trap_report else "start_wasm_trap.nasm"
+        parts = [read(os.path.join(RUNTIME, start)), program,
                  read(os.path.join(RUNTIME, "lib.nasm")),
                  read(os.path.join(RUNTIME, "muldiv_soft.nasm" if args.no_mpu else "muldiv_mpu.nasm"))]
         float_nasm = read(os.path.join(RUNTIME, "float.nasm"))
         if float_labels(float_nasm) & set(re.findall(r"[A-Za-z0-9_.]+", program)):
             parts.append(float_nasm)
+        if not args.no_trap_report:
+            parts.append(read(os.path.join(RUNTIME, "trapmsg.nasm")))
         full = os.path.join(tmp, "full.nasm")
         with open(full, "w", encoding="latin-1", newline="") as f:
             f.write("".join(p if p.endswith("\n") else p + "\n" for p in parts))
 
-        run([python, os.path.join(ROOT, "assembler", "niceasm.py"), "-o", out, full])
+        sym = os.path.join(tmp, "full.sym")
+        run([python, os.path.join(ROOT, "assembler", "niceasm.py"), "-o", out,
+             *(["--symbols", sym] if args.symbols else []), full])
+        if args.symbols:
+            write_symbols(sym, program, base + ".sym")
 
         if args.keep:
             shutil.copy(wasm, base + ".wasm")

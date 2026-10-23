@@ -4,8 +4,12 @@
 --
 -- THEORY OF OPERATION
 -- The wrapper models the counters of SYSTEM.md §3: a 64-bit counter of
--- every cycle, a 64-bit counter of the cycles with instret_i high, and a
--- snapshot of each, which a read of its low word takes. f_expect is what a
+-- every cycle, a 64-bit counter of the cycles with instret_i high, a 64-bit
+-- counter of microseconds, and a snapshot of each, which a read of its low
+-- word takes. The microsecond counter has an accumulator that adds 1000000 in
+-- each cycle with run_i high, and counts a microsecond when the sum reaches
+-- G_CLK_HZ; the model has the same accumulator, but the proof uses a small
+-- G_CLK_HZ that is not a multiple of 1 MHz. f_expect is what a
 -- read accepted in this cycle must return: the low word of a counter, the
 -- high word of its snapshot, or 0 for a spare word. The assertions say that
 -- the port never stalls, that it acknowledges each accepted request in the
@@ -26,7 +30,8 @@ library ieee;
 
 entity formal_perf is
    generic (
-      G_RESET : std_logic_vector(63 downto 0) := (others => '0')
+      G_RESET  : std_logic_vector(63 downto 0) := (others => '0');
+      G_CLK_HZ : natural range 1000000 to 500000000 := 1500000
    );
    port (
       clk_i     : in  std_logic;
@@ -52,6 +57,9 @@ architecture synthesis of formal_perf is
    signal f_instrs   : std_logic_vector(63 downto 0) := G_RESET;
    signal f_cyc_snap : std_logic_vector(63 downto 0) := G_RESET;
    signal f_ins_snap : std_logic_vector(63 downto 0) := G_RESET;
+   signal f_micros   : std_logic_vector(63 downto 0) := G_RESET;
+   signal f_mic_snap : std_logic_vector(63 downto 0) := G_RESET;
+   signal f_frac     : natural range 0 to G_CLK_HZ - 1 := 0;
    signal f_expect   : std_logic_vector(31 downto 0);
    signal f_last_r   : std_logic_vector(31 downto 0) := (others => '0');
    -- The low word of the cycle counter wrapped since the last read of it.
@@ -66,6 +74,8 @@ begin
       f_cyc_snap(63 downto 32) when X"1",
       f_instrs(31 downto 0) when X"2",
       f_ins_snap(63 downto 32) when X"3",
+      f_micros(31 downto 0) when X"4",
+      f_mic_snap(63 downto 32) when X"5",
       X"00000000" when others;
 
 
@@ -74,6 +84,12 @@ begin
       if rising_edge(clk_i) then
          if run_i = '1' then
             f_cycles <= f_cycles + 1;
+            if f_frac + 1000000 >= G_CLK_HZ then
+               f_frac   <= f_frac + 1000000 - G_CLK_HZ;
+               f_micros <= f_micros + 1;
+            else
+               f_frac <= f_frac + 1000000;
+            end if;
          end if;
          if instret_i = '1' then
             f_instrs <= f_instrs + 1;
@@ -91,6 +107,9 @@ begin
             if wb_addr_i = X"2" then
                f_ins_snap <= f_instrs;
             end if;
+            if wb_addr_i = X"4" then
+               f_mic_snap <= f_micros;
+            end if;
          end if;
 
          if rst_i = '1' then
@@ -98,6 +117,9 @@ begin
             f_instrs   <= G_RESET;
             f_cyc_snap <= G_RESET;
             f_ins_snap <= G_RESET;
+            f_micros   <= G_RESET;
+            f_mic_snap <= G_RESET;
+            f_frac     <= 0;
             f_wrap_r   <= '0';
          end if;
       end if;
@@ -116,13 +138,15 @@ begin
 
    -- psl c_cycle_hi : cover {f_read = '1' and wb_addr_i = X"1" and f_cyc_snap /= G_RESET};
    -- psl c_instr_hi : cover {f_read = '1' and wb_addr_i = X"3" and f_ins_snap /= G_RESET};
+   -- psl c_time_hi : cover {f_read = '1' and wb_addr_i = X"5" and f_mic_snap /= G_RESET};
    -- psl c_wrap : cover {f_read = '1' and wb_addr_i = X"1" and f_wrap_r = '1' and
    --    f_cyc_snap(31 downto 0) /= X"00000000"};
 
 
    i_perf : entity work.perf
       generic map (
-         G_RESET => G_RESET
+         G_RESET  => G_RESET,
+         G_CLK_HZ => G_CLK_HZ
       )
       port map (
          clk_i      => clk_i,

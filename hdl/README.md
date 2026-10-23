@@ -370,7 +370,8 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   last three instructions wrote, and each interrupt vector leads to a
   short routine that ends with `RTI`. A random program may read any address, and now and then one reaches the cycle counter at
   `0xFFFFFF40`, where the core counts cycles and the emulator counts steps
-  (SYSTEM.md §3). So these runs make its two words ordinary memory on both
+  (SYSTEM.md §3). The microsecond counter at `0xFFFFFF44` differs likewise.
+  So these runs make the words of both counters ordinary memory on both
   sides, with the generic `G_CYCLE_COUNTER` and the emulator's
   `--no-cycle-counter`. The generic `G_FETCH_STATS` false makes the
   fetch statistics read 0 and ignore writes, as in the emulator. The
@@ -612,8 +613,9 @@ cycles take 5 minutes and 12 take 13. The simulation tests check the same
 assertions on every run.
 
 `formal_perf` checks the performance counters against a model in the
-wrapper: two 64-bit counters, one of every cycle with `run_i` high and one of the cycles
-with `instret_i` high, and a snapshot of each, which a read of its low
+wrapper: three 64-bit counters, one of every cycle with `run_i` high, one of the cycles
+with `instret_i` high, and one of microseconds, with `G_CLK_HZ` 1.5 MHz so that
+the accumulator is not trivial, and a snapshot of each, which a read of its low
 word takes. It asserts that the port never stalls, that it acknowledges
 each request in the next cycle, and that a read returns the low word of
 its counter, the high word of its snapshot, or 0 for a spare word. So a
@@ -1009,7 +1011,8 @@ correction is proven by hand, and `tb_mpu` checks the products' values
 ## The performance counters
 
 `perf` holds the performance counters of SYSTEM.md §3: `CYCLE_LO` and
-`CYCLE_HI` at offsets 0 and 1, and `INSTR_LO` and `INSTR_HI` at 2 and 3. It
+`CYCLE_HI` at offsets 0 and 1, `INSTR_LO` and `INSTR_HI` at 2 and 3, and
+`TIME_LO` and `TIME_HI` at 4 and 5. It
 is a pipelined Wishbone slave with a 4-bit address. It never stalls, and it
 acknowledges each request in the next cycle. The bus decoder selects it for
 `0xFFFFFF40`–`0xFFFFFF4F`.
@@ -1021,6 +1024,14 @@ entry. An instruction makes its data reads before its own `RETIRE`, so a
 read of `INSTR_LO` returns the number of instructions before it, as SYSTEM.md
 §3 requires. A read of a low word copies its 64-bit counter into a
 snapshot, and a read of the high word returns the snapshot's high word.
+
+The microsecond counter counts in the cycles that the cycle counter counts.
+An accumulator adds 1000000 in each of them. When the sum reaches the
+generic `G_CLK_HZ`, the clock frequency in hertz, the counter counts a
+microsecond and the accumulator keeps the sum less `G_CLK_HZ`. So it is
+exact at 100 MHz, 90 MHz, or any frequency of 1 MHz or more, with one adder
+and no divider. `G_CLK_HZ` defaults to 100 MHz, and a system with another
+clock sets it.
 
 The generic `G_RESET` sets the counters' value after reset. It is 0, as
 SYSTEM.md §3 requires, except in `tb_perf`, which starts near a wrap.

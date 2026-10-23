@@ -10,6 +10,8 @@
 -- * A read of a high word returns the snapshot that the last read of the
 --   low word took, also when the low word has wrapped since. The two
 --   counters have a snapshot each.
+-- * The microsecond counter, at G_CLK_HZ = 1500000, counts 2 microseconds
+--   in 3 cycles, exactly, and also stops while run_i is low.
 -- * The spare words read 0, and writes change nothing.
 -- * Reset sets the counters and the snapshots to G_RESET.
 -- The run stops with status 0 when every check passes, and 1 at the first
@@ -32,6 +34,8 @@ architecture simulation of tb_perf is
    constant C_CYCLE_HI : natural := 1;
    constant C_INSTR_LO : natural := 2;
    constant C_INSTR_HI : natural := 3;
+   constant C_TIME_LO  : natural := 4;
+   constant C_TIME_HI  : natural := 5;
 
    signal clk : std_logic;
    signal rst : std_logic := '1';
@@ -58,7 +62,8 @@ begin
 
    i_perf : entity work.perf
       generic map (
-         G_RESET => C_RESET
+         G_RESET  => C_RESET,
+         G_CLK_HZ => 1500000
       )
       port map (
          clk_i      => clk,
@@ -207,7 +212,7 @@ begin
       end if;
 
       -- The spare words read 0, and writes change nothing.
-      for i in 4 to 15 loop
+      for i in 6 to 15 loop
          check(i, X"00000000", "a spare word");
       end loop;
       for i in 0 to 15 loop
@@ -228,6 +233,54 @@ begin
       check(C_INSTR_HI, X"00000000", "the snapshot after a second reset");
       check(C_INSTR_LO, X"FFFFFFF0", "the counter after a second reset");
       check(C_CYCLE_HI, X"00000000", "the snapshot after a second reset");
+
+      -- The microsecond counter, from a clean start. G_CLK_HZ = 1500000 makes
+      -- 2 microseconds in 3 cycles, and G_RESET puts the low word 16 below a
+      -- wrap, 24 cycles away.
+      check(C_TIME_HI, X"00000000", "the time snapshot after reset");
+      read_word(C_TIME_LO, first_v);
+      if first_v(31 downto 4) /= X"FFFFFFF" then
+         fail("the time just after reset is " & to_hstring(first_v));
+      end if;
+      clocks(40);
+      check(C_TIME_HI, X"00000000", "the time snapshot before the wrap");
+      read_word(C_TIME_LO, first_v);
+      if first_v(31 downto 8) /= X"000000" then
+         fail("the time after the wrap is " & to_hstring(first_v));
+      end if;
+      check(C_TIME_HI, X"00000001", "the time snapshot after the wrap");
+
+      -- 30 cycles are exactly 20 microseconds, whatever the phase.
+      read_word(C_TIME_LO, first_v);
+      clocks(29);
+      read_word(C_TIME_LO, second_v);
+      if second_v - first_v /= 20 then
+         fail("reads 30 cycles apart differ by " & to_hstring(second_v - first_v) & " us");
+      end if;
+
+      -- With run_i low the time stands still, and it resumes.
+      read_word(C_TIME_LO, first_v);
+      run <= '0';
+      clocks(50);
+      read_word(C_TIME_LO, second_v);
+      if second_v - first_v > 2 then -- at most the cycles up to the read's edge count
+         fail("the time moved by " & to_hstring(second_v - first_v) & " with run_i low");
+      end if;
+      read_word(C_TIME_LO, first_v);
+      if first_v /= second_v then
+         fail("the time moved between reads with run_i low");
+      end if;
+      run <= '1';
+      clocks(30);
+      read_word(C_TIME_LO, second_v);
+      if second_v - first_v < 20 then
+         fail("the time did not resume with run_i high");
+      end if;
+
+      -- Writes change nothing.
+      access_word('1', C_TIME_LO, X"DEADBEEF", first_v);
+      access_word('1', C_TIME_HI, X"DEADBEEF", first_v);
+      check(C_TIME_HI, X"00000001", "the time snapshot after writes");
 
       report "tb_perf: all checks passed";
       stop(0);

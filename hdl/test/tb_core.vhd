@@ -25,9 +25,10 @@
 -- 0xFFFFFF50 read 0 and ignore writes, as in the emulator (SYSTEM.md §3).
 --
 -- With G_CYCLE_COUNTER false, CYCLE_LO and CYCLE_HI at 0xFFFFFF40 and
--- 0xFFFFFF41 are memory, as with the emulator's --no-cycle-counter. The
--- core's cycle count depends on the memory's stalls, so a program that
--- reads it could not be compared with the emulator otherwise.
+-- 0xFFFFFF41, and TIME_LO and TIME_HI at 0xFFFFFF44 and 0xFFFFFF45, are
+-- memory, as with the emulator's --no-cycle-counter. The core's cycle count
+-- depends on the memory's stalls, so a program that reads it or the time
+-- could not be compared with the emulator otherwise.
 --
 -- G_INTERRUPTS takes the emulator's interrupt options, for example
 -- "--nmi 2:1 --irq 2:2", and the interrupt source p_intr raises the same
@@ -350,7 +351,8 @@ begin
 
    dbus_sel <= C_MPU when dbus_addr(31 downto 5) = X"FFFFFF" & "001" else
                C_PERF when dbus_addr(31 downto 4) = X"FFFFFF4" and
-                           (G_CYCLE_COUNTER or dbus_addr(3 downto 1) /= "000") else
+                           (G_CYCLE_COUNTER or (dbus_addr(3 downto 1) /= "000" and
+                                                dbus_addr(3 downto 1) /= "010")) else
                C_TIMER when dbus_addr(31 downto 4) = X"FFFFFF1" else
                C_STATS when dbus_addr(31 downto 6) = X"FFFFFF" & "01" and
                             dbus_addr(5 downto 4) /= "00" else

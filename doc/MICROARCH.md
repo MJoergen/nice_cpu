@@ -678,8 +678,9 @@ system built from them must follow these rules:
   A read of a result holds off its ACK until the result is ready, so the
   data bus must allow a slave to take many cycles.
 - **Performance counters.** At `0xFFFFFF40`–`0xFFFFFF7F` (SYSTEM §3), in
-  two devices. The cycle and instruction counters are `hdl/src/perf.vhd`
-  at `0xFFFFFF40`–`0xFFFFFF4F`. The core raises `instret_o` for one cycle
+  two devices. The cycle, instruction, and microsecond counters are
+  `hdl/src/perf.vhd` at `0xFFFFFF40`–`0xFFFFFF4F`. Its generic `G_CLK_HZ`
+  is the clock frequency, for the microsecond counter. The core raises `instret_o` for one cycle
   per completed instruction. A read of `INSTR_LO` must count every older
   instruction, and not its own. So the pipelined core counts an
   instruction with a data read in the cycle the bus accepts its last

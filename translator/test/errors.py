@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from typing import List, Optional, Tuple
 
 from wasm import call_indirect, table
@@ -392,6 +393,15 @@ def main() -> None:
         if p.returncode != 1 or p.stderr.strip() != expected or not unchanged:
             failed += 1
             print(f"FAIL: expected '{expected}'\n  got (exit {p.returncode}): {p.stderr.strip()}")
+        # 8000 nested blocks translate in about a second, not quadratic time.
+        deep = os.path.join(tmp, "deep.wasm")
+        with open(deep, "wb") as f:
+            f.write(one(bytes([0x02, 0x40]) * 8000 + br(7999) + bytes([0x0B]) * 8000 + i32_const(0)))
+        t0 = time.monotonic()
+        p = subprocess.run([sys.executable, NICEWASM, "-o", out + "3", deep], capture_output=True, text=True)
+        if p.returncode != 0 or time.monotonic() - t0 > 4:
+            failed += 1
+            print(f"FAIL: 8000 nested blocks (exit {p.returncode}, {time.monotonic() - t0:.1f} s)\n{p.stderr}")
         # An input file that cannot be read.
         missing = os.path.join(tmp, "missing.wasm")
         p = subprocess.run([sys.executable, NICEWASM, "-o", out + "2", missing],
@@ -408,7 +418,7 @@ def main() -> None:
         if p.returncode != 1 or p.stderr.strip() != expected:
             failed += 1
             print(f"FAIL: expected '{expected}'\n  got (exit {p.returncode}): {p.stderr.strip()}")
-    n = len(CASES) + len(OPTION_CASES) + len(COMMAND_CASES) + 3
+    n = len(CASES) + len(OPTION_CASES) + len(COMMAND_CASES) + 4
     print(f"{'FAIL' if failed else 'PASS'} errors ({n} cases)")
     if failed:
         sys.exit(1)

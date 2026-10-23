@@ -2343,9 +2343,12 @@ def fill_jump_slots(items: List[Item]) -> List[Item]:
 
     p = 0
     while p < len(items):
-        jump, q = items[p], next_item(p, 1)
+        jump = items[p]
         p += 1
-        if not (isinstance(jump, Ins) and jump.kind == "jump" and jump.cond and q < len(items)):
+        if not (isinstance(jump, Ins) and jump.kind == "jump" and jump.cond):
+            continue
+        q = next_item(p - 1, 1)
+        if q >= len(items):
             continue
         read = items[q]
         if not (isinstance(read, Ins) and reads_memory(read)):
@@ -2462,9 +2465,9 @@ def hoist_into_slots(items: List[Item]) -> List[Item]:
     while p < len(items):
         jump = items[p]
         p += 1
-        q = skip(p)
         if not isinstance(jump, Ins):
             continue
+        q = skip(p)
         if jump.kind == "jump" and jump.cond:
             ok = q < len(items) and plain(items[q]) and reads_memory(items[q])  # type: ignore[arg-type]
         else:
@@ -4855,11 +4858,14 @@ class FunctionTranslator:
         comes_back: Dict[str, Optional[List[Item]]] = {}
         names: List[str] = []  # the labels at the start of the code in stub_code
         stub_code: List[Item] = []
+        has_ins = False  # whether stub_code holds an instruction
         for it in body + self.stubs:
             if isinstance(it, Label):
-                if any(isinstance(x, Ins) for x in stub_code):
-                    names, stub_code = [], []
+                if has_ins:
+                    names, stub_code, has_ins = [], [], False
                 names.append(it.name)
+            elif isinstance(it, Ins):
+                has_ins = True
             stub_code.append(it)
             if not (isinstance(it, Ins) and it.kind == "jump"):
                 continue
@@ -4869,7 +4875,7 @@ class FunctionTranslator:
                 simple = not any(isinstance(x, Ins) and x.cond for x in stub_code)
                 comes_back.update((name, stub_code if simple else None) for name in names)
             if not it.cond:
-                names, stub_code = [], []
+                names, stub_code, has_ins = [], [], False
         out: List[Item] = []
         done = 0  # body[:done] is in out
         gone: set[str] = set()  # the labels of the stubs that go

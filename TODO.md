@@ -65,8 +65,6 @@ TODO or FIXME comments.
   environment only (§1.6).
 - **The 2004 example programs** (`count`, `replicate`, `print`) have no
   license. The MIT license excludes them. Ask B. Ulmann (§1.6).
-- **nicewasm takes time quadratic in the depth of nested blocks:** 3000
-  nested blocks take 7 s (§6.4).
 - **Only CI checks that the emulator's `test/*.bin` match their `.nasm`**
   (`make bins && git diff`). `make test` in `emulator/` does not. Add the
   check to it (§4.2).

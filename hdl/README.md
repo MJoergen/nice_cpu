@@ -177,7 +177,8 @@ it, that the two halves and the units in each do not wait for each other, that a
 each other in order, and that reset clears the operands.
 
 `tb_perf` starts the counters just below a wrap of their low words. It
-checks that the cycle counter counts every cycle, that the instruction
+checks that the cycle counter counts every cycle with `run_i` high and
+stands still with it low, that the instruction
 counter counts the cycles with `instret_i` high, and that a read of a high
 word returns the snapshot of the last read of the low word, across the
 wrap. It also checks the spare words, that writes change nothing, and reset.
@@ -574,7 +575,7 @@ cycles take 5 minutes and 12 take 13. The simulation tests check the same
 assertions on every run.
 
 `formal_perf` checks the performance counters against a model in the
-wrapper: two 64-bit counters, one of every cycle and one of the cycles
+wrapper: two 64-bit counters, one of every cycle with `run_i` high and one of the cycles
 with `instret_i` high, and a snapshot of each, which a read of its low
 word takes. It asserts that the port never stalls, that it acknowledges
 each request in the next cycle, and that a read returns the low word of
@@ -931,8 +932,9 @@ number. The rest of the I/O range is plain memory, as in the emulator.
 slave with a 4-bit address, like that of the performance counters. The bus
 decoder selects it for `0xFFFFFF10`–`0xFFFFFF1F`.
 
-It counts down in each cycle with `tick_i` high. A system ties `tick_i` to
-`'1'`, so that the timer counts clock cycles. `tb_core` connects it to
+It counts down in each cycle with `tick_i` high. A system drives `tick_i`
+with "the core is running", so that the timer counts clock cycles and
+stops at a halt. `tb_core` connects it to
 the core's report of each step, so that it counts as the emulator does.
 Its request goes to the core's IRQ port, with the valid/ready handshake of
 `src/multicycle.vhd`. It holds `valid` and the vector until `ready`, and a

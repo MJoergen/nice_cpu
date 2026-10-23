@@ -32,6 +32,7 @@ entity formal_perf is
       clk_i     : in  std_logic;
       rst_i     : in  std_logic;
       instret_i : in  std_logic;
+      run_i     : in  std_logic;
       wb_cyc_i  : in  std_logic;
       wb_stb_i  : in  std_logic;
       wb_we_i   : in  std_logic;
@@ -71,11 +72,13 @@ begin
    p_model : process (clk_i)
    begin
       if rising_edge(clk_i) then
-         f_cycles <= f_cycles + 1;
+         if run_i = '1' then
+            f_cycles <= f_cycles + 1;
+         end if;
          if instret_i = '1' then
             f_instrs <= f_instrs + 1;
          end if;
-         if f_cycles(31 downto 0) = X"FFFFFFFF" then
+         if run_i = '1' and f_cycles(31 downto 0) = X"FFFFFFFF" then
             f_wrap_r <= '1';
          end if;
 
@@ -125,6 +128,7 @@ begin
          clk_i      => clk_i,
          rst_i      => rst_i,
          instret_i  => instret_i,
+         run_i      => run_i,
          wb_cyc_i   => wb_cyc_i,
          wb_stb_i   => wb_stb_i,
          wb_stall_o => wb_stall,

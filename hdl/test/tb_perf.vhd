@@ -5,6 +5,8 @@
 -- words wrap early in the test. The checks:
 -- * Reads accepted n cycles apart see cycle counts n apart.
 -- * The instruction counter counts the cycles with instret_i high.
+-- * The cycle counter stops while run_i is low, and the instruction counter
+--   does not depend on it.
 -- * A read of a high word returns the snapshot that the last read of the
 --   low word took, also when the low word has wrapped since. The two
 --   counters have a snapshot each.
@@ -35,6 +37,7 @@ architecture simulation of tb_perf is
    signal rst : std_logic := '1';
 
    signal instret  : std_logic                     := '0';
+   signal run      : std_logic                     := '1';
    signal cyc      : std_logic                     := '0';
    signal stb      : std_logic                     := '0';
    signal stall    : std_logic;
@@ -61,6 +64,7 @@ begin
          clk_i      => clk,
          rst_i      => rst,
          instret_i  => instret,
+         run_i      => run,
          wb_cyc_i   => cyc,
          wb_stb_i   => stb,
          wb_stall_o => stall,
@@ -182,6 +186,25 @@ begin
       check(C_INSTR_HI, X"00000000", "the instruction snapshot before the wrap");
       check(C_INSTR_LO, X"00000007", "23 instructions");
       check(C_INSTR_HI, X"00000001", "the instruction snapshot after the wrap");
+
+      -- With run_i low the cycle counter stands still, and resumes with it.
+      read_word(C_CYCLE_LO, first_v);
+      run <= '0';
+      clocks(50);
+      read_word(C_CYCLE_LO, second_v);
+      if second_v - first_v /= 1 then -- only the cycle after the first read's edge counts
+         fail("the cycle counter moved by " & to_hstring(second_v - first_v) & " with run_i low");
+      end if;
+      read_word(C_CYCLE_LO, first_v);
+      if first_v /= second_v then
+         fail("the cycle counter moved between reads with run_i low");
+      end if;
+      run <= '1';
+      clocks(5);
+      read_word(C_CYCLE_LO, second_v);
+      if second_v - first_v < 5 then
+         fail("the cycle counter did not resume with run_i high");
+      end if;
 
       -- The spare words read 0, and writes change nothing.
       for i in 4 to 15 loop

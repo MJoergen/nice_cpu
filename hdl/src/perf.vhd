@@ -5,7 +5,9 @@
 --   1  CYCLE_HI   3  INSTR_HI
 --
 -- THEORY OF OPERATION
--- The cycle counter counts every clock cycle after reset. The instruction
+-- The cycle counter counts the clock cycles after reset in which run_i is
+-- high. A system drives run_i with "the core is running", so that the counter
+-- stops at a halt, as the emulator's does. The instruction
 -- counter counts the cycles in which instret_i is high, and the core raises
 -- it once for each instruction that completes.
 --
@@ -23,6 +25,7 @@
 -- a) STB is high only for requests to the counters: the bus decoder decodes
 --    the address bits above bit 3.
 -- b) instret_i is high for one cycle per completed instruction.
+-- c) run_i is low while the core is held or halted. It defaults to '1'.
 --
 -- RESET
 -- Synchronous. It sets both counters and both snapshots to G_RESET, which
@@ -44,6 +47,9 @@ entity perf is
 
       -- High for one cycle when an instruction completes
       instret_i  : in  std_logic;
+
+      -- High in each cycle that the cycle counter counts
+      run_i      : in  std_logic := '1';
 
       wb_cyc_i   : in  std_logic;
       wb_stb_i   : in  std_logic;
@@ -74,7 +80,9 @@ begin
    p_count : process (clk_i)
    begin
       if rising_edge(clk_i) then
-         cycles_r <= cycles_r + 1;
+         if run_i = '1' then
+            cycles_r <= cycles_r + 1;
+         end if;
          if instret_i = '1' then
             instrs_r <= instrs_r + 1;
          end if;

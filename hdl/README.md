@@ -249,7 +249,8 @@ serves them both. `make test` runs them on
 each core in `CORES`, both by default, and `make test CORES=pipeline` on
 one. `make random`, `make programs`, and `make sweep` run the core in
 `CORE`, and pass it on to `test/irq_sweep.py` and `test/programs.py` with
-their option `--core`. The PASS and FAIL lines name the core. The trace, the output,
+their option `--core`. `make random-sweep` runs seeds 1 to `RANDOM_LAST`
+(1000) of `make random` on each core of `CORES` in turn. The PASS and FAIL lines name the core. The trace, the output,
 and the exit status of each must match those of `niceemu -t` on the same
 program, with the same interrupt requests. The pipelined core may take a
 request later than the emulator (MICROARCH.md §6), so its runs with

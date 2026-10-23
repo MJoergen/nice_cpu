@@ -340,6 +340,15 @@ runs: $(UNITS:%=run/unit/%) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(R
 random: emulator analyze
 	@$(MAKE) --no-print-directory $(PARALLEL) $(RANDOM_$(CORE))
 
+# The seeds 1 to RANDOM_LAST of make random on each core of CORES in turn,
+# as each run uses every CPU. Run it where hdl/src stays unchanged: GHDL
+# checks the timestamps of the sources.
+RANDOM_LAST ?= 1000
+random-sweep:
+	@for c in $(CORES); do \
+	  $(MAKE) --no-print-directory CORE=$$c RANDOM_SEEDS="$$(seq 1 $(RANDOM_LAST))" random || exit 1; \
+	done
+
 # The programs of pcfx_prog.py and sidefx_prog.py swept with one request
 # per run, on CORE, one after the other, as each uses every CPU. It takes
 # five hours on the pipelined core and two on the multi-cycle one, on 20 CPUs.

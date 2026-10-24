@@ -19,7 +19,7 @@ from typing import Callable, List
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
 from nicewasm import (Ins, Item, Label, duplicate_tails, early_exit, hoist_into_slots,  # noqa: E402
-                      tail_calls)
+                      predict_back_edges, tail_calls)
 
 
 def text(items: List[Item]) -> List[str]:
@@ -147,7 +147,30 @@ def early_exit_call() -> None:
     assert got is None, got
 
 
-CASES: List[Callable[[], None]] = [hoist_after_write, hoist_after_jump, tail_call_plain,
+def predicted_back_edge() -> None:
+    """A conditional jump back at the end of a loop becomes ADD R15, R15,
+    top-next, which DECODE predicts taken (doc/MICROARCH.md §5.4), with
+    the label next after it, also when an unconditional jump follows. A
+    forward jump, and one not marked as a jump back, stay as they were."""
+    def back() -> Ins:
+        j = Ins("MOVE", ["R15", "W.f0.L1"], "!Z", "jump", ["W.f0.L1"])
+        j.back = True
+        return j
+
+    forward = Ins("MOVE", ["R15", "W.f0.L2"], "Z", "jump", ["W.f0.L2"])
+    plain = Ins("MOVE", ["R15", "W.f0.L1"], "!Z", "jump", ["W.f0.L1"])
+    items: List[Item] = [Label("W.f0.L1"), Ins("SUB", ["R1", "R1", "1"]), back(), forward, plain,
+                         Ins("MOVE", ["R15", "W.f0.L3"], "", "jump", ["W.f0.L3"]),
+                         Label("W.f0.L2"), Label("W.f0.L3")]
+    out = predict_back_edges(items, "W.f0.B")
+    assert text(out) == ["W.f0.L1:", "SUB     R1, R1, 1", "?!Z ADD R15, R15, W.f0.L1-W.f0.B0",
+                         "W.f0.B0:", "?Z MOVE R15, W.f0.L2", "?!Z MOVE R15, W.f0.L1",
+                         "MOVE    R15, W.f0.L3", "W.f0.L2:", "W.f0.L3:"], text(out)
+    jump = out[2]
+    assert isinstance(jump, Ins) and jump.kind == "jump" and jump.targets == ["W.f0.L1", "W.f0.B0"]
+
+
+CASES: List[Callable[[], None]] = [predicted_back_edge, hoist_after_write, hoist_after_jump, tail_call_plain,
                                    tail_call_data, no_tail_copies_in_stubs, early_exit_flags,
                                    early_exit_call]
 

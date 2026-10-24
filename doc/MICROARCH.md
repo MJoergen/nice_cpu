@@ -379,9 +379,9 @@ PC, label-next`, where `next` labels the instruction after the jump. A
 jump back that is mostly skipped is better written as `MOVE PC, label`,
 which costs nothing when skipped. The hand-written benchmark does both,
 and saves 9.6% of its cycles. The
-translated benchmark puts each loop's back edge on an unconditional jump
-and its exits on forward conditional jumps, so it neither gains nor
-loses.
+translated benchmark closes its loops with the predicted form too, and
+saves 1.2% of its cycles over putting an unconditional jump back after a
+skipped conditional one.
 
 A side effect on R15 in `S0` or `S1`, such as `MOVE R1, @R15++`, must not
 flush the instruction's own later micro-ops. So the flush waits

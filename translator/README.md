@@ -686,15 +686,17 @@ since the stubs run rarely: copies there cost words and save little.
 Code that no jump reaches any more goes.
 
 A `br_if` back to the start of a loop, at the end of the loop, is
-usually taken. A taken conditional jump costs six cycles more than a
-skipped one on the FPGA core, and an unconditional jump to a label
-two. So the `br_if` becomes a conditional jump out of the loop, on the
-opposite condition, and an unconditional jump back. Each round of the
-loop then saves three cycles, and leaving it costs six more. If an
-unconditional jump follows the `br_if`, the two swap their targets
-instead: the conditional jump goes where the unconditional one went, on
-the opposite condition, and the unconditional one goes back, with no new
-label.
+usually taken. On the FPGA core DECODE predicts a conditional `ADD PC,
+PC, offset` taken when the offset is negative, and a predicted jump costs
+what an unconditional jump to a label does, two cycles, and nothing more
+when skipped (MICROARCH.md §5.4). So the `br_if` becomes `?cc ADD R15,
+R15, top-next`, where `next` is a new label right after it. Each round of
+the loop then costs two cycles and one instruction less than a skipped
+conditional jump out and an unconditional one back, and leaving it, a
+mispredict, costs six cycles more, as a taken conditional jump did. If an
+unconditional jump follows the `br_if`, leaving the loop takes two more
+cycles than if the two swapped targets, but a loop that runs three rounds
+or more still gains.
 
 A `br_if` out of a block whose other arm ends in a `br` forward, as in
 `block; block; c; br_if 0; A; br 1; end; B; end`, jumps over arm A to

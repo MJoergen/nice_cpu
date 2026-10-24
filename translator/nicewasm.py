@@ -2253,37 +2253,29 @@ def swap_arms(items: List[Item], prefix: str) -> List[Item]:
                 default=len(out) - 1)
     return out[:stubs + 1] + moved + out[stubs + 1:]
 
-def invert_back_edges(items: List[Item], prefix: str) -> List[Item]:
-    """Turns the conditional jump back to the start of a loop at its end
-    into a conditional jump on the opposite condition to the code after
-    it, and an unconditional jump back. On the FPGA core a taken
-    conditional jump costs six cycles more than a skipped one, and an
-    unconditional jump to a label two (doc/MICROARCH.md §5.4). So each
-    round of a loop saves three cycles, and leaving it costs six more.
-    If an unconditional jump follows, the two jumps swap their targets
-    instead. The new labels are prefix and a number."""
+def predict_back_edges(items: List[Item], prefix: str) -> List[Item]:
+    """Turns the conditional jump back to the start of a loop at its end,
+    ?cc MOVE R15, top, into ?cc ADD R15, R15, top-next, where the new
+    label next follows it. On the FPGA core DECODE predicts a conditional
+    ADD PC, PC, offset taken when the offset is negative, so a round of
+    the loop costs what an unconditional jump to a label does, two cycles,
+    and the jump costs nothing more when it is skipped. Leaving the loop
+    is a mispredict, which costs what a taken conditional MOVE did: six
+    cycles more than a skipped one (doc/MICROARCH.md §5.4). The jump
+    names both labels in its targets, so that the control flow sees the
+    fall-through too. The new labels are prefix and a number."""
     out: List[Item] = []
     n = 0
-    for i, it in enumerate(items):
+    for it in items:
         if not (isinstance(it, Ins) and it.back and it.kind == "jump" and it.cond
                 and len(it.targets) == 1 and it.ops[1:] == it.targets):
             out.append(it)
             continue
-        k = i + 1
-        while k < len(items) and isinstance(items[k], str) and str(items[k]).lstrip().startswith(";"):
-            k += 1
-        nxt = items[k] if k < len(items) else None
-        back = Ins("MOVE", ["R15", it.targets[0]], "", "jump", [it.targets[0]], depth=it.depth)
-        if (isinstance(nxt, Ins) and nxt.kind == "jump" and not nxt.cond and len(nxt.targets) == 1
-                and nxt.ops[1:] == nxt.targets):
-            out.append(Ins(it.op, ["R15", nxt.targets[0]], negate(it.cond), "jump",
-                           [nxt.targets[0]], depth=it.depth))
-            items[k] = back
-            continue
         name = f"{prefix}{n}"
         n += 1
-        out += [Ins(it.op, ["R15", name], negate(it.cond), "jump", [name], depth=it.depth),
-                back, Label(name)]
+        out += [Ins("ADD", ["R15", "R15", f"{it.targets[0]}-{name}"], it.cond, "jump",
+                    [it.targets[0], name], depth=it.depth),
+                Label(name)]
     return out
 
 
@@ -5048,7 +5040,7 @@ class FunctionTranslator:
         n_slots = alloc.n_slots
         items = swap_arms(items, f"{self.t.prefix}f{self.idx}.A")
         items = tidy(duplicate_tails(items, len(saved) + 1 + (n_slots > 0)))
-        items = fill_jump_slots(invert_back_edges(items, f"{self.t.prefix}f{self.idx}.B"))
+        items = fill_jump_slots(predict_back_edges(items, f"{self.t.prefix}f{self.idx}.B"))
         name = printable(self.t.m.names.get(self.idx, ""))
         out = [f"; Function {self.idx}" + (f": {name}" if name else "")]
         out += self.t.labels.get(self.idx, [])

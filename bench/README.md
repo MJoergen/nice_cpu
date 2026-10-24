@@ -66,13 +66,13 @@ These are the tables from the emulator. First `bench.c`
 through nicewasm:
 
     phase      instructions       cycles  result
-    rng64            52768        52796  0e18cd0a  ok
-    crc32            65816        65844  2df3b109  ok
-    bst             310469       310497  55a72225  ok
-    heapsort        307416       307444  bdb22882  ok
+    rng64            51746        51774  0e18cd0a  ok
+    crc32            63514        63542  2df3b109  ok
+    bst             297825       297853  55a72225  ok
+    heapsort        298396       298424  bdb22882  ok
     vm              840049       840077  04156880  ok
-    strings         104562       104590  d9867cf6  ok
-    total          1681080      1681248
+    strings         101281       101309  d9867cf6  ok
+    total          1652811      1652979
 
 Then `hand.nasm`:
 
@@ -157,7 +157,9 @@ Since DECODE predicts backward conditional jumps taken
 ([MICROARCH.md](../doc/MICROARCH.md) §5.4), and `hand.nasm` closes its
 loops with them, `hand.nasm` takes 1252613 cycles on the pipelined
 core, 2.55 per instruction and 9.6% fewer than the 1384879 of the
-program at that commit. `bench.c` takes the same.
+program at that commit. `bench.c` closes its loops the same way
+(translator/README.md), and the model puts it at 2356816 cycles, 1.43
+per instruction and 1.2% fewer than the 2384635 above.
 
 
 The hand-written program gains less, because more of its time goes to
@@ -287,7 +289,7 @@ as both programs do, gets a row per phase:
       phase         instr    cycles    CPI   main extra cycles per instruction
       rng64         52768     83026  1.573   mpu 0.34, bus 0.15, early 0.06, fetch 0.02
       ...
-      total       1681080   2384296  1.418
+      total       1652811   2356816  1.426
 
 The bubbles are the core's. A jump that WRITE resolves leaves WRITE in
 cycle c − 2 and flushes in the same cycle, and the redirect reaches
@@ -307,7 +309,7 @@ the flush. Each case of `pipecycles.py --test` gives the core's cycles,
 step by step, with `--retires` below.
 
 The phases of the translated program take an estimated
-2384296 cycles, 1.42 per instruction, and those of `hand.nasm` 1252534,
+2356816 cycles, 1.43 per instruction, and those of `hand.nasm` 1252534,
 2.6 per instruction: the hand-written code has more instructions with
 side effects, memory operands, and reads of the math unit, and fewer
 instructions in all. Options such as `--flush`, `--early`, `--agen`,

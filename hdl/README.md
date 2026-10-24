@@ -18,6 +18,7 @@ departs from it.
 - [The multi-cycle core](#the-multi-cycle-core)
 - [The pipelined core](#the-pipelined-core)
 - [The data bus decoder](#the-data-bus-decoder)
+- [The debug link](#the-debug-link)
 - [The memory model](#the-memory-model)
 - [The console](#the-console)
 - [The timer](#the-timer)
@@ -46,6 +47,7 @@ departs from it.
 | [src/timer.vhd](src/timer.vhd) | The timer of SYSTEM.md §4, a Wishbone slave with an interrupt request port. |
 | [src/fetch_stats.vhd](src/fetch_stats.vhd) | The fetch statistics of MICROARCH.md §8.1, counters of FETCH and DECODE of the pipelined core, a Wishbone slave. |
 | [src/wb_dmux.vhd](src/wb_dmux.vhd) | The data bus decoder, which keeps the ACKs of several slaves in order. |
+| [src/debug_link.vhd](src/debug_link.vhd) | The byte-stream part of the debug link of DEBUG.md: packets, the debug registers, notices, and a Wishbone master. |
 | [src/trace_pkg.vhd](src/trace_pkg.vhd) | `t_retire`, the record in which the core reports each step to the trace writer. |
 | [sim/trace.vhd](sim/trace.vhd) | The trace writer. Simulation only. |
 | [sim/wb_mem.vhd](sim/wb_mem.vhd) | The memory model, with the console and the read counter. Simulation only. |
@@ -57,6 +59,8 @@ departs from it.
 | [test/tb_fetch_stats.vhd](test/tb_fetch_stats.vhd) | A self-checking test of the fetch statistics. |
 | [test/fstats.nasm](test/fstats.nasm) | A program that reads the fetch statistics on the pipelined core, and checks itself. |
 | [test/tb_wb_dmux.vhd](test/tb_wb_dmux.vhd) | A self-checking test of the data bus decoder. |
+| [test/tb_debug_link.vhd](test/tb_debug_link.vhd) | A self-checking test of the debug link, with the byte streams of DEBUG.md §8 and its errors, notices, timeout, and console. |
+| [test/tb_link.vhd](test/tb_link.vhd) | The debug link connected to a core, the data bus decoder, the memory model, and the math unit, as a board connects them. It loads and runs `test/linkecho.nasm` over the link, from `test/link_init.bin`. |
 | [test/tb_trace.vhd](test/tb_trace.vhd) | A test of the trace writer, which stands in for the core and runs [test/trace.nasm](test/trace.nasm). |
 | [test/tb_core.vhd](test/tb_core.vhd) | Runs a program on a core, which its generic `G_CORE` names, with an interrupt source, and writes its trace. |
 | [test/shift.nasm](test/shift.nasm) | Every shift, with the counts that are hard to get right. |
@@ -236,6 +240,24 @@ ACK, as the math unit does. It checks that each ACK reaches the master in
 the order of the requests, with the data of the slave and the request it
 answers, that a slave gets STB only for a request to it and only while no
 other slave owes an ACK, and that a request that may pass is not stalled.
+
+`tb_debug_link` plays a host and a board against the debug link, and
+compares every byte that the link sends with a string whose checksum was
+worked out by hand: the examples of DEBUG.md §8, the errors `e01` to `e03`,
+the dropped packets, the timeout, console bytes both ways with ESC ESC, the
+notices `b`, `h`, and `o`, the clear, and the hold and restart.
+
+`tb_link` runs on each core of `CORES`. It is the debug link as a board
+uses it: the link is a second master of the data bus, and owns it while
+the processor is held or halted. The test reaches the memory model and the
+math unit through `wb_dmux`, loads `test/linkecho.nasm` with a `W`, starts
+it, and checks its echo of console bytes, `e02` while it runs, the halt
+after a UART break with the registers it left, the restart of DEBUG.md §8,
+and a hold while it runs. The testbench shows three things a board must
+do: each master sees only its own STALL and ACK; the devices are reset at
+a start, when `hold_o` falls, and not while the processor is held, so that
+the link can reach them; and an instruction ACK that comes after a hold
+reset the core is ignored, as Wishbone ignores an ACK while CYC is low.
 
 `tb_trace` runs four times, each against the emulator on the same program
 with the same NMI: with the full trace, without the trace, and stopped at two
@@ -931,6 +953,17 @@ not on that cycle's ACK.
 STB and STALL pass combinationally, so the decoder adds no cycle of
 latency: a store accepted in cycle c reaches the memory in cycle c,
 before an instruction fetch accepted in cycle c + 1.
+
+## The debug link
+
+`debug_link` is the part of the debug link of DEBUG.md that needs no FPGA
+primitive: a byte stream in and out, with valid and ready, so a board puts
+a UART receiver and transmitter on it. Its header lists the ports and what
+the board's bus must do for a link access: a link read of the console or
+the read counter returns 0 and has no side effect, and a link write is
+ignored. It holds the debug registers of §6 itself, takes R0 to R15 and the
+halt as inputs, drives `hold_o` and `rom_hide_o`, and asks the board to
+clear the memory with `clear_o` and `clear_done_i`.
 
 ## The memory model
 

@@ -4,9 +4,9 @@ ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
 BUILD = build
 
-SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/perf.vhd src/timer.vhd src/fetch_stats.vhd src/wb_dmux.vhd
+SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/perf.vhd src/timer.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd
-TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_timer.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd \
+TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_timer.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd test/tb_debug_link.vhd test/tb_link.vhd \
   test/tb_trace.vhd test/tb_core.vhd
 
 # The runs of make test and make random go in parallel: each
@@ -42,7 +42,7 @@ $(BUILD)/%.nasm: test/%_prog.py
 # src/nice_pkg.vhd, tb_mpu the math unit, tb_perf the performance counters,
 # tb_timer the timer, tb_fetch_stats the fetch statistics, and tb_wb_dmux
 # the data bus decoder.
-UNITS = tb_mem tb_shift tb_mpu tb_perf tb_timer tb_fetch_stats tb_wb_dmux
+UNITS = tb_mem tb_shift tb_mpu tb_perf tb_timer tb_fetch_stats tb_wb_dmux tb_debug_link
 GENERICS_tb_mem = -gG_BIN_FILE=$(abspath test/mem.bin) -gG_INPUT_FILE=$(abspath test/mem.input)
 
 $(UNITS:%=run/unit/%): run/unit/%:
@@ -82,6 +82,16 @@ $(TRACE_RUNS:%=run/trace/%): run/trace/%: $(BUILD)/trace.bin
 # programs run CORE.
 CORE ?= pipeline
 CORES ?= pipeline multicycle
+
+# tb_link connects the debug link to a core, the data bus decoder, the
+# memory model, and the math unit, and loads and runs test/linkecho.nasm
+# over the link. It runs on each core of CORES.
+LINK_RUNS = $(CORES:%=run/link/%)
+
+$(LINK_RUNS): run/link/%: $(BUILD)/linkecho.bin
+	@($(in_rundir) && $(GHDLRUN) tb_link -gG_CORE=$* -gG_INIT_FILE=$(abspath test/link_init.bin) \
+	  -gG_PROG_FILE=$(abspath $(BUILD)/linkecho.bin) > tb_link.log 2>&1); \
+	if [ $$? -eq 0 ]; then echo "PASS tb_link $*"; else echo "FAIL tb_link $*"; cat $(RUNDIR)/tb_link.log; exit 1; fi
 
 # tb_core runs a program on the core. Its trace, output, and
 # exit status must equal those of "niceemu -t" on the same program, with the
@@ -329,9 +339,9 @@ $(foreach c,$(sort $(CORES) $(CORE)),$(eval $(call core_runs,$(c))))
 test: emulator analyze synth
 	@$(MAKE) --no-print-directory $(PARALLEL) runs
 
-# The runs of make test: the unit tests, tb_trace, and those of each core in
-# CORES.
-runs: $(UNITS:%=run/unit/%) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
+# The runs of make test: the unit tests, tb_link and tb_trace, and those of
+# each core in CORES.
+runs: $(UNITS:%=run/unit/%) $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
 
 # More random programs than make test runs, for example
 #     make random RANDOM_SEEDS="$$(seq 31 90)" RANDOM_STALL=60 RANDOM_STEPS=5000
@@ -382,7 +392,7 @@ analyze:
 # Checks that GHDL can synthesize the core, the math unit, the performance
 # counters, the timer, and the data bus decoder, with the generics in
 # SYNTH_GENERICS_unit.
-SYNTH = multicycle pipeline mpu perf timer fetch_stats wb_dmux
+SYNTH = multicycle pipeline mpu perf timer fetch_stats wb_dmux debug_link
 SYNTH_GENERICS_wb_dmux = -gG_SLAVES=4
 
 define check_synth

@@ -202,7 +202,7 @@ def main() -> None:
         # On a terminal, the console output shows at once, so that it is not
         # lost when the user stops a program that loops. The program prints
         # "A" and loops. The "A" must come within 5 seconds, long before the
-        # default step limit ends the run.
+        # program is stopped.
         loop_asm = os.path.join(tmp, "loop.nasm")
         loop_bin = os.path.join(tmp, "loop.bin")
         with open(loop_asm, "w") as f:

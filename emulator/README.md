@@ -67,7 +67,7 @@ line such as `Pending: IRQ 05` follows the first line.
 | `--invert-fg` | Like `--color`, with the foreground inverted, as in the 2004 IDE. |
 | `-2004` | Put the screen at `0x400`, as the 2004 emulator does. |
 | `-d`, `--dump ADDR:N` | After halting, print N memory words from ADDR. May be repeated. |
-| `-n`, `--max-steps N` | Stop after N steps. The default is 100000000. |
+| `-n`, `--max-steps N` | Stop after N steps. There is no limit by default. |
 | `-i`, `--input FILE` | Read the console's input from FILE instead of stdin; `-` is stdin. A directory is an error. |
 | `--symbols FILE` | Read the labels of `niceasm.py --symbols` from FILE. After a halt other than `HALT`, or at the step limit, print `At label+0x1f`, the location of the halt. After a halt at the default wasm trap handler, `___wasm_trap`, also print `Trap CODE (cause) at label+0x1f`, from R1 and R2 ([WASM.md](../translator/WASM.md)). Each label is the nearest one at or before the address, the first in the file if several are at one address. |
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |

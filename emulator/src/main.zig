@@ -20,7 +20,7 @@ const usage =
     \\      --invert-fg      With --color, invert the foreground, as the 2004 IDE does.
     \\  -2004                Put the screen at 0x400, as the 2004 emulator does.
     \\  -d, --dump ADDR:N    Print N memory words from ADDR. May be repeated.
-    \\  -n, --max-steps N    Stop after N steps (default 100000000).
+    \\  -n, --max-steps N    Stop after N steps (default: no limit).
     \\  -i, --input FILE     Read the console input from FILE, or stdin for -.
     \\      --irq STEP:VEC   Raise IRQ with vector VEC before step STEP.
     \\      --nmi STEP:VEC   Raise NMI with vector VEC before step STEP.
@@ -73,7 +73,7 @@ const Options = struct {
     dumps: []const Dump = &.{},
     /// Sorted by step, in command-line order within a step.
     requests: []const Request = &.{},
-    max_steps: u64 = 100_000_000,
+    max_steps: u64 = std.math.maxInt(u64),
     cycle_counter: bool = true,
     timer_irq: bool = true,
     /// The console input file, or "-" for stdin.

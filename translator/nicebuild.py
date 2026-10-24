@@ -30,9 +30,15 @@ LIBC = os.path.join(RUNTIME, "libc")
 
 
 def run(cmd: List[str]) -> None:
-    """Runs a command, and exits with its status if it fails."""
+    """Runs a command, and exits with its status if it fails. The command
+    gets no MAKEFLAGS: when this script runs from a parallel make, the flags
+    name a jobserver whose file descriptors a Python child does not have,
+    and make and rustc, which both use it, would warn about that."""
+    env = os.environ.copy()
+    env.pop("MAKEFLAGS", None)
+    env.pop("MFLAGS", None)
     try:
-        status = subprocess.run(cmd).returncode
+        status = subprocess.run(cmd, env=env).returncode
     except OSError as e:
         sys.exit(f"nicebuild: {cmd[0]}: {e.strerror}")
     if status != 0:

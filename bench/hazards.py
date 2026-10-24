@@ -6,7 +6,9 @@
 
 A FILE that ends in .bin is run on the emulator with --trace. The emulator
 is ../emulator/zig-out/bin/niceemu next to this script, or $NICEEMU. Any
-other FILE is a trace that "niceemu --trace" wrote.
+other FILE is a trace that "niceemu --trace" wrote. A trace shows no
+constant words, so in one every conditional jump counts as resolved in
+WRITE, also a backward one that DECODE predicts (MICROARCH.md §5.4).
 
 Each instruction in the trace is decoded (ISA.md §2 and §4) into the
 registers it reads and writes, its data accesses, its constant words, and
@@ -71,7 +73,9 @@ class Instr:
     dest_adjust: bool = False  # A register destination in mode 001 or 010
 
 
-def decode(iw: int) -> Instr:
+def decode(iw: int, c: int = 0) -> Instr:
+    """The instruction word iw, with c its first constant word, which
+    decides whether DECODE predicts a conditional jump."""
     conditional = ((iw >> 31) & 1, (iw >> 28) & 7) != (0, 0)
     if (iw >> 26) & 3 == 3:
         return Instr(conditional, True, frozenset(), frozenset(), 0, False, 1, 1,
@@ -111,13 +115,18 @@ def decode(iw: int) -> Instr:
             r15_pointer = True
     elif dr != 0:
         writes.add(dr)
-    # DECODE resolves only MOVE R15, c and ADD R15, R15, c, with the
-    # condition "always" and the C bit clear, and the MOVE with M clear
-    # too (MICROARCH.md §5.4, src/pipe_decode.vhd).
+    # DECODE redirects early only for MOVE R15, c and ADD R15, R15, c,
+    # with the condition "always" and the C bit clear, and the MOVE with M
+    # clear too, and for the ADD with another condition when c is
+    # negative, a backward jump it predicts taken (MICROARCH.md §5.4,
+    # src/pipe_decode.vhd).
     f0, f1, f2 = (iw >> 14) & 0x7F, (iw >> 7) & 0x7F, iw & 0x7F
-    early_jump = (iw >> 27) == 0 and f0 == 0x0F and (
-        ((iw >> 21) & 0x3F == 0 and (f1, f2) == (0x30, 0)) or
-        ((iw >> 26) & 1 == 0 and (iw >> 21) & 15 == 3 and {f1, f2} == {0x0F, 0x30}))
+    alu = (iw >> 27) & 1 == 0 and f0 == 0x0F
+    relative = (alu and (iw >> 26) & 1 == 0 and (iw >> 21) & 15 == 3 and
+                {f1, f2} == {0x0F, 0x30})
+    early_jump = (not conditional and alu and (
+        ((iw >> 21) & 0x3F == 0 and (f1, f2) == (0x30, 0)) or relative)) or (
+        conditional and relative and bool(c >> 31))
     d = Instr(conditional, False, frozenset(reads), frozenset(writes), mem_reads, store,
               constants + 1, uops, bool(m) or 14 in writes, 15 in writes, early_jump,
               r15_known, r15_pointer)
@@ -325,16 +334,31 @@ def steps(lines: Iterable[str]) -> Iterator[Optional[Tuple[int, int, List[str]]]
             yield int(m.group(1), 16), int(m.group(2), 16), line[m.end():].split()
 
 
-def profile(lines: Iterable[str]) -> Profile:
+def profile(lines: Iterable[str], mem: Optional[Dict[int, int]] = None) -> Profile:
+    """The counts of a trace. mem is the program's image, for the
+    constant words, which the trace does not show. Without it, every
+    conditional jump counts as resolved in WRITE."""
     p = Profile()
     for step in steps(lines):
         if step is None:
             p.interrupt()
             continue
-        d = decode(step[1])
+        c = 0 if mem is None else mem.get((step[0] + 1) & 0xFFFFFFFF, 0)
+        d = decode(step[1], c)
         d.skipped = "skipped" in step[2]
         p.add(d)
     return p
+
+
+def load_bin(path: str) -> Dict[int, int]:
+    """The words of a .bin file (ISA.md §10.4), by address."""
+    mem = {}
+    with open(path) as f:
+        for line in f:
+            p = line.split()
+            if len(p) == 2:
+                mem[int(p[0], 16)] = int(p[1], 16)
+    return mem
 
 
 def trace_lines(path: str) -> Iterator[str]:
@@ -492,7 +516,8 @@ def main() -> None:
         sys.exit(__doc__.split("\n\n")[1])
     for path in args:
         name = os.path.splitext(os.path.basename(path))[0] if path.endswith(".bin") else path
-        print(profile(trace_lines(path)).report(name))
+        mem = load_bin(path) if path.endswith(".bin") else None
+        print(profile(trace_lines(path), mem).report(name))
 
 
 if __name__ == "__main__":

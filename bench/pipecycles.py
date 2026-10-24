@@ -39,10 +39,13 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   entered PREPARE, in which it may still wait.
 - A redirect in cycle x puts the target's pair on the bus in x + 2, and
   DECODE takes the target in x + 4. A jump that DECODE resolves (MOVE R15,
-  c and ADD R15, R15, c, with the condition always and the C bit clear:
-  hazards.py's early_jump) redirects FETCH in the cycle DECODE takes it,
-  d, so the target is in DECODE in d + 4, a bubble of --early (3) cycles.
-  Every other taken jump (conditional jumps, returns MOVE R15, @SP++,
+  c and ADD R15, R15, c, with the condition always and the C bit clear,
+  and the ADD with another condition when c is negative: hazards.py's
+  early_jump) redirects FETCH in the cycle DECODE takes it, d, so the
+  target is in DECODE in d + 4, a bubble of --early (3) cycles. Such a
+  conditional jump that is skipped costs a flush, like a taken jump that
+  WRITE resolves, and FETCH refetches the next instruction. Every other
+  taken jump (conditional jumps, returns MOVE R15, @SP++,
   table jumps, control instructions) is resolved in WRITE by its last
   micro-op, which flushes in the cycle it leaves WRITE, c - 2. The
   redirect reaches FETCH from a register in c - 1, FETCH issues the
@@ -51,8 +54,8 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   c + 4, PREPARE passes it on in c + 5, and WRITE runs it in c + 6,
   --flush (7) cycles later than a fall-through would. hdl/test/bubble.nasm
   measures 7, and 2 for an early jump, since its read of the cycle
-  counter before the jump hides a cycle. A skipped jump costs nothing
-  itself.
+  counter before the jump hides a cycle. Any other skipped jump costs
+  nothing itself.
 - Registers: bypasses from WRITE make ALU operand dependences free. A
   register used as the base of a data read (the address is formed in
   PREPARE) is ready only the cycle after the micro-op that writes it leaves
@@ -68,6 +71,9 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   every read's condition first, though MICROARCH.md §5.2 exempts the
   condition "always". A read after a skipped jump may load in the cycle the
   jump leaves WRITE, when it is in PREPARE anyway, so that costs nothing.
+  No read loads before an older jump leaves WRITE (MICROARCH.md §5.3, rule
+  2, "jump"). That matters after a jump that DECODE resolves with an ADD,
+  which takes WRITE two cycles, when its target waits in PREPARE already.
   A skipped instruction waits too, but makes no access.
 - The data bus takes one access per cycle, in program order. A read loaded
   in PREPARE in cycle t is on the bus in t + --read-bus (1), since the
@@ -151,7 +157,7 @@ import hazards
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 PHASES = ["rng64", "crc32", "bst", "heapsort", "vm", "strings"]
-CAUSES = ["startup", "fetch", "flush", "early", "sr", "agen", "shiftreg", "sumwait",
+CAUSES = ["startup", "fetch", "flush", "early", "sr", "jump", "agen", "shiftreg", "sumwait",
           "bus", "mpu", "readbus", "readlate", "shiftlate", "adjust", "interrupt"]
 CAUSE_TEXT = {
     "multi": "multi-micro-op instructions",
@@ -160,6 +166,7 @@ CAUSE_TEXT = {
     "flush": "taken jumps resolved in WRITE (flush)",
     "early": "jumps DECODE resolves (early-redirect bubble)",
     "sr": "data read waits for an older write of SR",
+    "jump": "data read waits for an older jump to be done",
     "agen": "address register written by the previous micro-op",
     "shiftreg": "shift count register written by the previous micro-op",
     "sumwait": "sum operand or store address register just written",
@@ -271,8 +278,8 @@ def base_of(mode: int, reg: int) -> Optional[int]:
     return None if reg in (0, 15) else reg
 
 
-def decode(iw: int) -> Info:
-    h = hazards.decode(iw)
+def decode(iw: int, c: int = 0) -> Info:
+    h = hazards.decode(iw, c)
     info = Info()
     info.cond = h.conditional
     info.control = h.control
@@ -391,7 +398,7 @@ class Model:
         self.read_bus = read_bus
         self.slave_gap = slave_gap
         self.bubble = {"flush": flush, "early": early, "interrupt": flush + 1}
-        self.cache: Dict[int, Info] = {}
+        self.cache: Dict[Tuple[int, int], Info] = {}
         self.regs = [0] * 16
         self.regs[14] = 0x01000000
         self.instructions = 0
@@ -422,6 +429,7 @@ class Model:
         self.reg_ready = [-10] * 16
         self.reg_done = [-10] * 16  # cycle the last write of each register left WRITE
         self.sr_ready = -10
+        self.jump_ready = -10     # first cycle a read may load after the last jump
         # The math unit: its operands, and the cycle in which a read of each
         # unit's result can be accepted.
         self.mpu_ops = {0xFFFFFF20: 0, 0xFFFFFF21: 0, 0xFFFFFF30: 0, 0xFFFFFF31: 0,
@@ -464,9 +472,12 @@ class Model:
         self.last_bus = max(self.last_bus, self.done_prev + 1)
 
     def step(self, pc: int, iw: int, skipped: bool, changes: List[str]) -> None:
-        info = self.cache.get(iw)
+        # The sign of the first constant word, which decides whether
+        # DECODE predicts a conditional jump.
+        sign = self.mem.get((pc + 1) & 0xFFFFFFFF, 0) & 0x80000000
+        info = self.cache.get((iw, sign))
         if info is None:
-            info = self.cache[iw] = decode(iw)
+            info = self.cache[(iw, sign)] = decode(iw, sign)
         if self.stream_base == -1:
             self.stream_base = pc >> 1  # the target of a redirect
         elif pc != self.expect_pc:
@@ -521,6 +532,11 @@ class Model:
                     t, tag = self.reg_ready[base], "agen"
                 if self.sr_ready > t:
                     t, tag = self.sr_ready, "sr"
+                # Nor while an older jump in WRITE may still redirect
+                # (MICROARCH.md §5.3, rule 2): until the cycle it is done,
+                # which is a cycle late for an ADD into R15.
+                if self.jump_ready > t:
+                    t, tag = self.jump_ready, "jump"
                 if not skipped:
                     # Loaded in t, the read is on the bus in t + --read-bus,
                     # after the access before it.
@@ -608,6 +624,8 @@ class Model:
                 self.reg_done[r] = done
             if u.sr_write:
                 self.sr_ready = done + 1
+            if last and info.redirect:
+                self.jump_ready = done
                 self.reg_ready[14] = done + self.agen
                 self.reg_done[14] = done
         # Leaving DECODE frees the fetch buffer.
@@ -633,7 +651,11 @@ class Model:
                     self.mpu_ops[addr] = val
                     self.mpu_write(addr, self.last_bus)
         nxt = (pc + info.words) & 0xFFFFFFFF
-        if info.redirect and not skipped:
+        if info.early and skipped:
+            # A backward jump that DECODE predicted taken, not taken: WRITE
+            # flushes, and FETCH refetches the next instruction.
+            self.restart_after(self.done_prev + self.flush - 4, "flush")
+        elif info.redirect and not skipped:
             if info.early:
                 # Nor in the cycle after WRITE queues a store, if DECODE
                 # redirected FETCH in that cycle or the one before.
@@ -754,14 +776,7 @@ def retires(model: Model, lines: Iterable[str], core_log: str, top: int = 20) ->
     return "\n".join(out)
 
 
-def load_bin(path: str) -> Dict[int, int]:
-    mem = {}
-    with open(path) as f:
-        for line in f:
-            p = line.split()
-            if len(p) == 2:
-                mem[int(p[0], 16)] = int(p[1], 16)
-    return mem
+load_bin = hazards.load_bin
 
 
 def breakdown(gaps: Dict[str, int], instructions: int, cycles: int, indent: str = "  ") -> List[str]:
@@ -859,6 +874,39 @@ loop    SUB[M] R1, R1, 1
      # the untaken jump needs pair 3 (word 6), fine.
      # Instructions: 1 + 10 * 2 + 1 = 22; cycles 22 + 6 (start) + 63 = 91.
      22, 91, {"startup": 6, "flush": 63}),
+    ("the same loop with ?!Z ADD R15, R15, offset: DECODE predicts it taken",
+     """        MOVE R1, 10
+loop    SUB[M] R1, R1, 1
+        ?!Z ADD R15, R15, loop-next
+next    HALT
+""",
+     # The offset is negative, so DECODE redirects FETCH to loop as it
+     # takes the jump, as for an unconditional jump: a bubble of 3, of
+     # which the ADD's second cycle in WRITE hides one, early 2 and adjust
+     # 1 for each of the 9 taken jumps. The last jump is skipped: WRITE
+     # flushes, and FETCH refetches the HALT, a flush of 7.
+     # 22 instructions + 6 (start) + 18 + 9 + 7 = 62.
+     22, 62, {"startup": 6, "early": 18, "adjust": 9, "flush": 7}),
+    ("a read at the head of a loop waits for the predicted jump to leave WRITE",
+     """        MOVE R2, 0x200
+        MOVE R6, 3
+l       MOVE R3, @R2++
+        XOR @0xFFFFFF20, R5, R3
+        MOVE R5, @0xFFFFFF24
+        DEC[M] R6, R6
+        ?!Z ADD R15, R15, l-n
+n       HALT
+""",
+     # The read of the math unit's product waits for it (mpu 3 a round),
+     # and meanwhile DECODE takes the jump and redirects FETCH, so the S0
+     # of MOVE R3, @R2++ is in PREPARE when the jump enters WRITE. The
+     # jump's ADD takes two cycles there (adjust 1), and the read loads
+     # only in the second, a cycle after DEC[M]'s SR would allow: 1 more
+     # in each of the 2 taken rounds, charged to the read's data, readbus.
+     # The skipped jump flushes (7). Without the wait it would be 49
+     # cycles; tb_core's retire log of the pipelined core gives 51.
+     18, 51, {"startup": 6, "multi": 3, "flush": 7, "bus": 3, "mpu": 9, "readbus": 3,
+              "adjust": 2}),
     ("unconditional MOVE R15, label: DECODE redirect, 3-cycle bubble",
      """        MOVE R15, a
         HALT

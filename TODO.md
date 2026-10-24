@@ -36,6 +36,18 @@ TODO or FIXME comments.
   reaches 12 cycles in 13 minutes, where CI's Yosys 0.33 did not finish 9
   in 20; the depth can grow when CI's tools do.
 
+- **Jumps that DECODE predicts** (MICROARCH.md §5.4). It predicts a
+  backward conditional `ADD PC, PC, offset` taken, and `bench/hand.nasm`
+  and `simple.nasm` close their loops with it. Open:
+  - A mnemonic in niceasm for a relative jump, so that a program need not
+    label the instruction after the jump. It would change the encoding of
+    what the programmer wrote, so it needs a decision first.
+  - The runtime's loops: `runtime/lib.nasm`, `muldiv_soft.nasm`, and
+    `trapmsg.nasm` have nine conditional jumps back, all `MOVE PC, label`.
+  - A branch-target buffer, for the indirect jumps that no static rule
+    predicts, such as the `vm` phase's dispatch: 28001 flushes in each
+    benchmark program, 8% of the translated one's cycles.
+
 ## Left from the fifth review
 
 ([doc/review/fifth-repository-review.md](doc/review/fifth-repository-review.md))

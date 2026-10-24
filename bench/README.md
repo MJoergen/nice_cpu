@@ -103,7 +103,11 @@ same work:
   operation itself, side effects on pointers, tail calls, and the math
   unit used directly, with an operand left in place where it does not
   change. The interpreter dispatches through a jump table, as the
-  translated `switch` does, not through addresses in the program.
+  translated `switch` does, not through addresses in the program. A
+  conditional jump back that is mostly taken, such as a loop's back
+  edge, is `ADD PC, PC, label-next`, where `next` labels the
+  instruction after the jump, which DECODE predicts taken
+  ([MICROARCH.md](../doc/MICROARCH.md) §5.4).
 - The data layout is the natural one for a word-addressed machine. The
   byte buffer stays packed, four bytes to a word, as in linear memory.
   The strings have one character per word, as a C `char` does in ABI.md, the interpreter's program has one word per opcode or operand, and
@@ -149,6 +153,10 @@ the multi-cycle core as it was:
 | `bench.c` through nicewasm | 1681080 | 2384635 | 1.42 | 8.0 times |
 | `hand.nasm` | 491617 | 1384879 | 2.82 | 4.0 times |
 
+Since DECODE predicts backward conditional jumps taken
+([MICROARCH.md](../doc/MICROARCH.md) §5.4), and `hand.nasm` closes its
+loops with them, `hand.nasm` takes 1287563 cycles on the pipelined
+core, 2.62 per instruction and 7.0% fewer. `bench.c` takes the same.
 
 
 The hand-written program gains less, because more of its time goes to
@@ -168,7 +176,8 @@ frame, loads folded into the one instruction that uses them, the math
 unit inline, and the C library routines of `strings` as separate
 functions, called by the ABI. It uses no `@R++` or `--R`, no conditional
 instruction but a jump, and no flags from an earlier operation, and each
-case of the `switch` jumps back to the top of the loop. Before the
+case of the `switch` jumps back to the top of the loop. A loop tested at
+the bottom closes with `ADD PC, PC, label-next`, as in `hand.nasm`. Before the
 strings phase, outside its timing, the byte buffer is unpacked to one
 byte per word, as `unsigned char buf[]` is with `CHAR_BIT` = 32. The
 other four phases are those of `hand.nasm`.
@@ -181,10 +190,10 @@ The two phases, in instructions on the emulator and in cycles by
 | `vm`, instructions | 840049 | 314016 | 112013 |
 | `vm`, cycles | 1248112 | 768069 | 602050 |
 | `strings`, instructions | 104562 | 47293 | 21140 |
-| `strings`, cycles | 166871 | 112468 | 66032 |
+| `strings`, cycles | 166871 | 110956 | 56309 |
 
 So such a compiler would take 1.62 times fewer cycles than nicewasm in
-`vm` and 1.48 times fewer in `strings`, about three quarters and half of
+`vm` and 1.50 times fewer in `strings`, about three quarters and half of
 what `hand.nasm` saves. `make test` checks its results as it checks the
 others'. `make core` does not run it.
 
@@ -224,7 +233,10 @@ the previous instruction writes, the same for stores through `@R` or
 `@R++`, the taken jumps that WRITE resolves, by their target (a
 constant, a word in memory, or computed), and the register destinations
 in mode 001 or 010. A jump that DECODE resolves is `MOVE R15, c` or
-`ADD R15, R15, c` with the condition "always", as in the core; a `MOVE`
+`ADD R15, R15, c` with the condition "always", or the `ADD` with
+another condition and `c` negative, which DECODE predicts taken, as in
+the core (MICROARCH.md §5.4). A trace shows no constant words, so this
+last one counts only when FILE is a `.bin`. A `MOVE`
 to R15 of a register or a sum is resolved in WRITE, in one cycle, and
 any other operation on R15 computes its target. In both programs, no
 shift's count register and no source in mode 001 or 011 came from the
@@ -285,15 +297,17 @@ in c + 4, PREPARE passes it on in c + 5, and WRITE runs it in c + 6: 7
 cycles. A jump that DECODE resolves redirects FETCH in the cycle DECODE
 takes it, d, so the target is in DECODE in d + 4, 3 cycles later than
 the instruction after the jump would have been, and a cycle more right
-after a store, which FETCH waits for. `hdl/test/bubble.nasm` measures 7
+after a store, which FETCH waits for. A jump that DECODE predicted taken
+and that is skipped costs a flush, like a taken jump that WRITE
+resolves. `hdl/test/bubble.nasm` measures 7
 and 2, since its read of the cycle counter before the jump holds the
 stream up a cycle, which hides one cycle of the early bubble but none of
 the flush. Each case of `pipecycles.py --test` gives the core's cycles,
 step by step, with `--retires` below.
 
 The phases of the translated program take an estimated
-2384296 cycles, 1.42 per instruction, and those of `hand.nasm` 1384800,
-2.8 per instruction: the hand-written code has more instructions with
+2384296 cycles, 1.42 per instruction, and those of `hand.nasm` 1287484,
+2.6 per instruction: the hand-written code has more instructions with
 side effects, memory operands, and reads of the math unit, and fewer
 instructions in all. Options such as `--flush`, `--early`, `--agen`,
 `--read-bus`, `--slave-gap`, `--mul`, and `--div-skip` set the model's parameters, to try a design
@@ -311,11 +325,11 @@ mode 001 or 010, and a jump to a computed target, N cycles more in
 WRITE. A store through `@R` or `@R++` never waits, since WRITE takes
 the value it wrote last. With the four rules, the translated program's
 phases take 2384296 cycles, against 2382583 without, and those of
-`hand.nasm` 1384800 against 1383776. A fifth, `--read-late N`, also 1 by
+`hand.nasm` 1287484 against 1284118. A fifth, `--read-late N`, also 1 by
 default, has WRITE take read data N cycles after its ACK, but for a
 micro-op whose data only goes into a register: s0 or s1 with a side
 effect, and a `MOVE` into a register other than R15 (MICROARCH.md §5.3).
-Without it, the phases take 2294308 cycles and 1304162. `pipecycles.py --test` checks the model on
+Without it, the phases take 2294308 cycles and 1207869. `pipecycles.py --test` checks the model on
 small programs whose cycles are worked out by hand in the script, and
 `make test` runs it, and then the model on both programs with `--phases
 6`, which fails unless each reads the instruction counter around its six
@@ -323,18 +337,19 @@ phases.
 
 `make compare` puts the estimate beside the cycles the pipelined core
 took, phase by phase, from the output of `make core`,
-which must have run first, on the same `.bin`. With the core at commit
-1a41b0c:
+which must have run first, on the same `.bin`. With the core that
+predicts backward jumps (MICROARCH.md §5.4), which leaves `bench.c` as
+it was at commit 1a41b0c:
 
 | Phase | `bench.c`, model | Core | Model − core | `hand.nasm`, model | Core | Model − core |
 |---|---|---|---|---|---|---|
-| `rng64` | 83026 | 83082 | −56 | 67094 | 67107 | −13 |
-| `crc32` | 83010 | 83067 | −57 | 47122 | 47135 | −13 |
-| `bst` | 415995 | 416052 | −57 | 293371 | 293384 | −13 |
-| `heapsort` | 387282 | 387338 | −56 | 309131 | 309144 | −13 |
+| `rng64` | 83026 | 83082 | −56 | 62257 | 62270 | −13 |
+| `crc32` | 83010 | 83067 | −57 | 40233 | 40246 | −13 |
+| `bst` | 415995 | 416052 | −57 | 229751 | 229764 | −13 |
+| `heapsort` | 387282 | 387338 | −56 | 296884 | 296897 | −13 |
 | `vm` | 1248112 | 1248168 | −56 | 602050 | 602064 | −14 |
-| `strings` | 166871 | 166928 | −57 | 66032 | 66045 | −13 |
-| total | 2384296 | 2384635 | −339 | 1384800 | 1384879 | −79 |
+| `strings` | 166871 | 166928 | −57 | 56309 | 56322 | −13 |
+| total | 2384296 | 2384635 | −339 | 1287484 | 1287563 | −79 |
 
 The difference is all but the same in every phase of a program, so it
 lies at the reads of the instruction counter around the phases, whose

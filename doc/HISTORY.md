@@ -98,6 +98,17 @@ two kinds of access. §9.4, the mapping of WebAssembly, is
   flush. Now it comes from registers, a cycle later (1a41b0c), so that no
   path runs from WRITE's decisions through FETCH's adders. A jump that
   WRITE resolves costs 7 cycles over a fall-through, from 6.
+- Until 2026-10-24, DECODE redirected FETCH only for jumps with the
+  condition "always", and WRITE resolved every conditional jump (issue 46
+  on GitHub). Now DECODE predicts a backward conditional `ADD PC, PC,
+  offset` taken (MICROARCH.md §5.4), and `bench/hand.nasm` and
+  `simple.nasm` close their loops with it, where they had `MOVE PC,
+  label`. On the pipelined core the phases of `hand.nasm` went from
+  1384879 to 1287563 cycles, 7.0% fewer, and by `bench/pipecycles.py`
+  `simple.nasm` took 5.7% fewer. `bench.c` took the same. The model of
+  `pipecycles.py` then gained the wait of a read for an older jump
+  (MICROARCH.md §5.3, rule 2), which only an `ADD` into R15 that DECODE
+  resolves makes cost a cycle.
 - The assembler once took a lone word on an indented line, such as a
   misspelt `HALT`, as a label without a word. Now it warns, checks the
   symbols of every `.EQU` also when the name is never used, and lets

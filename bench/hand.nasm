@@ -8,6 +8,11 @@
 ;   operation itself, side effects on pointers, tail calls, and the math
 ;   unit used directly, with an operand left in place where it does not
 ;   change.
+; - A conditional jump back that is mostly taken, such as a loop's back
+;   edge, is ADD PC, PC, label-next, where next labels the instruction
+;   after the jump. DECODE predicts it taken, so it costs what an
+;   unconditional jump does (MICROARCH.md §5.4). One that is mostly
+;   skipped stays a MOVE PC, label, which costs nothing when skipped.
 ; - The data layout is the natural one for a word-addressed machine. The
 ;   byte buffer stays packed, four bytes to a word, as in linear memory.
 ;   The strings have one character per word, as a C char does in ISA.md
@@ -202,14 +207,14 @@ pu.loop MOVE    @MPU_C_LO, R1
         MOVE[M] R2, @UDIV64_Q_HI
         ?!Z MOVE PC, pu.loop
         MOVE[M] R0, R1
-        ?!Z MOVE PC, pu.loop
-        SUB     R4, digits.end, R3      ; the digits
+        ?!Z ADD PC, PC, pu.loop-pu.b1
+pu.b1   SUB     R4, digits.end, R3      ; the digits
         SUB[M]  R4, 12, R4              ; the spaces before them
         ?C MOVE PC, pu.out              ; more than 12 digits
         ?Z MOVE PC, pu.out
 pu.pad  MOVE    @CONSOLE, 32
         DEC[M]  R4, R4
-        ?!Z MOVE PC, pu.pad
+        ?!Z ADD PC, PC, pu.pad-pu.out
 pu.out  MOVE    R1, R3
         MOVE    PC, puts
 
@@ -224,8 +229,8 @@ ph.loop ROL     R1, R1, 4
         ?!C ADD R2, R2, 39              ; 58 + 39 = 97 = 'a'
         MOVE    @CONSOLE, R2
         DEC[M]  R3, R3
-        ?!Z MOVE PC, ph.loop
-        MOVE    PC, @SP++
+        ?!Z ADD PC, PC, ph.loop-ph.b1
+ph.b1   MOVE    PC, @SP++
 
 ; ---------------------------------------------------------------------------
 ; rng64: xorshift64*, with the state in R2:R1. Each value takes three
@@ -301,8 +306,9 @@ rng.buf
         MOVE    @R7++, R5
         MOVE    @R7++, R6
         DEC[M]  R8, R8
-        ?!Z MOVE PC, rng.buf
+        ?!Z ADD PC, PC, rng.buf-rng.b1
 
+rng.b1
         MOVE    R7, arr
         MOVE    R8, 512
 rng.arr
@@ -355,8 +361,8 @@ rng.arr
         MOVE    @MPU_A, R2
         ADD     @R7++, R6, @UMUL_LO
         DEC[M]  R8, R8
-        ?!Z MOVE PC, rng.arr
-        XOR     R1, R1, R2              ; the two words of the state
+        ?!Z ADD PC, PC, rng.arr-rng.b2
+rng.b2  XOR     R1, R1, R2              ; the two words of the state
         MOVE    PC, @SP++
 
 ; ---------------------------------------------------------------------------
@@ -383,8 +389,9 @@ crc.tab SUB     R2, R3, table           ; the index
         ?C XOR  R2, R2, 0xEDB88320
         MOVE    @R3++, R2
         SUB[M]  R0, R3, table+256
-        ?!Z MOVE PC, crc.tab
+        ?!Z ADD PC, PC, crc.tab-crc.b1
 
+crc.b1
         MOVE    R1, 0xFFFFFFFF          ; the crc
         MOVE    R3, buf
         MOVE    R5, BUF_WORDS
@@ -409,8 +416,8 @@ crc.sum MOVE    R2, @R3++
         SHR     R1, R1, 8
         XOR     R1, R1, @table[R4]
         DEC[M]  R5, R5
-        ?!Z MOVE PC, crc.sum
-        NOT     R1, R1
+        ?!Z ADD PC, PC, crc.sum-crc.b2
+crc.b2  NOT     R1, R1
         MOVE    PC, @SP++
 
 ; ---------------------------------------------------------------------------
@@ -434,7 +441,7 @@ bst.walk
         ADD     R2, R3, 3               ; the right link
         ?N SUB  R2, R2, 1               ; or the left one if key is less
         MOVE[M] R3, @R2
-        ?!Z MOVE PC, bst.walk
+        ?!Z ADD PC, PC, bst.walk-bst.new
 bst.new MOVE    @R2, R11
         MOVE    @R11++, R1
         MOVE    @R11++, 1
@@ -444,8 +451,9 @@ bst.new MOVE    @R2, R11
 bst.dup ADD     @1[R3], @1[R3], 1
 bst.next
         SUB[M]  R0, R9, R10
-        ?!Z MOVE PC, bst.ins
+        ?!Z ADD PC, PC, bst.ins-bst.b1
 
+bst.b1
         MOVE    R2, 1                   ; the depth
         MOVE    R3, FNV_BASIS           ; the hash
         MOVE[M] R1, @root
@@ -491,8 +499,9 @@ hs.build
         ADD     @--SP, 2, PC
         MOVE    PC, hs.sift
         DEC[M]  R8, R8
-        ?!C MOVE PC, hs.build           ; until i was 0
+        ?!C ADD PC, PC, hs.build-hs.b1  ; until i was 0
 
+hs.b1
         MOVE    R2, ARR_WORDS-1         ; end
 hs.ext  MOVE    R3, @arr
         MOVE    @arr, @arr[R2]
@@ -501,8 +510,9 @@ hs.ext  MOVE    R3, @arr
         ADD     @--SP, 2, PC
         MOVE    PC, hs.sift             ; sift(0, end)
         DEC[M]  R2, R2
-        ?!Z MOVE PC, hs.ext
+        ?!Z ADD PC, PC, hs.ext-hs.b2
 
+hs.b2
         MOVE    @MPU_B, FNV_PRIME
         MOVE    R5, FNV_BASIS
         MOVE    R2, arr
@@ -516,8 +526,8 @@ hs.chk  MOVE    R3, @R2++
         XOR     @MPU_A, R5, R3
         MOVE    R5, @UMUL_LO
         DEC[M]  R6, R6
-        ?!Z MOVE PC, hs.chk
-        MOVE    R1, R5
+        ?!Z ADD PC, PC, hs.chk-hs.b3
+hs.b3   MOVE    R1, R5
         MOVE    PC, @SP++
 hs.bad  MOVE    R1, 0
         MOVE    PC, @SP++
@@ -656,14 +666,15 @@ str.ch  AND     R5, R4, 255
         ?Z MOVE PC, str.end
         SHR     R4, R4, 8
         DEC[M]  R11, R11
-        ?!Z MOVE PC, str.ch
-        MOVE    R4, @R7++
+        ?!Z ADD PC, PC, str.ch-str.b1
+str.b1  MOVE    R4, @R7++
         MOVE    R11, 4
         MOVE    PC, str.ch
 str.end MOVE    @R8++, 0
         DEC[M]  R10, R10
-        ?!Z MOVE PC, str.make
+        ?!Z ADD PC, PC, str.make-str.b2
 
+str.b2
         MOVE    R9, 1                   ; j
 str.outer
         MOVE    R10, @strs[R9]          ; the string to place
@@ -677,8 +688,8 @@ str.inner
 str.cmp SUB[M]  R4, @R1++, @R2++
         ?!Z MOVE PC, str.diff
         MOVE[M] R0, @-1[R1]             ; the character, 0 at the end
-        ?!Z MOVE PC, str.cmp
-        MOVE    PC, str.place           ; equal
+        ?!Z ADD PC, PC, str.cmp-str.b3
+str.b3  MOVE    PC, str.place           ; equal
 str.diff
         ?N MOVE PC, str.place           ; strs[k - 1] is smaller
         MOVE    @strs[R11], @strs[R12]
@@ -688,8 +699,9 @@ str.place
         MOVE    @strs[R11], R10
         ADD     R9, R9, 1
         SUB[M]  R0, R9, STR_COUNT
-        ?!Z MOVE PC, str.outer
+        ?!Z ADD PC, PC, str.outer-str.b4
 
+str.b4
         MOVE    R2, joined
         MOVE    R9, strs
         MOVE    R10, STR_COUNT
@@ -697,11 +709,11 @@ str.join
         MOVE    R1, @R9++
 str.copy
         MOVE[M] @R2++, @R1++
-        ?!Z MOVE PC, str.copy
-        SUB     R2, R2, 1               ; the next string goes over the 0
+        ?!Z ADD PC, PC, str.copy-str.b5
+str.b5  SUB     R2, R2, 1               ; the next string goes over the 0
         DEC[M]  R10, R10
-        ?!Z MOVE PC, str.join
-        SUB     R7, R2, joined          ; the total length
+        ?!Z ADD PC, PC, str.join-str.b6
+str.b6  SUB     R7, R2, joined          ; the total length
 
         MOVE    R1, joined
         MOVE    R6, 0                   ; the matches of "ab"
@@ -709,8 +721,8 @@ str.scan
         MOVE[M] R3, @R1++
         ?Z MOVE PC, str.hash
         SUB[M]  R0, R3, 97
-        ?!Z MOVE PC, str.scan
-        SUB[M]  R0, @R1, 98
+        ?!Z ADD PC, PC, str.scan-str.b7
+str.b7  SUB[M]  R0, @R1, 98
         ?Z ADD  R6, R6, 1
         MOVE    PC, str.scan
 
@@ -722,8 +734,8 @@ str.hash
 str.fnv XOR     @MPU_A, R5, @R1++
         MOVE    R5, @UMUL_LO
         DEC[M]  R8, R8
-        ?!Z MOVE PC, str.fnv
-        MOVE    @MPU_A, R7
+        ?!Z ADD PC, PC, str.fnv-str.b8
+str.b8  MOVE    @MPU_A, R7
         MOVE    @MPU_B, 65599
         ADD     R1, R5, @UMUL_LO        ; h + total * 65599
         ADD     R1, R1, R6              ; + matches

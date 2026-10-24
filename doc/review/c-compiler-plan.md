@@ -115,20 +115,35 @@ Taken on 2026-10-24:
    know where a compared value comes from.
 5. **The C accepted at first is C89**, with K&R definitions and
    structure assignment, which Dhrystone needs, and `long long`, which
-   `rng64` in `bench.c` needs. Calls to variadic functions such as
-   `printf` are in. Floating-point arithmetic, bit-fields, and the
-   definition of variadic functions come later. Dhrystone declares two
+   `rng64` in `bench.c` needs. Variadic functions are in, both calls and
+   definitions (see 6). Floating-point arithmetic and bit-fields come
+   later. Dhrystone declares two
    `float` variables but uses them only outside the `NICE` port, so the
    first version must accept `float` declarations. The front end includes
    its own preprocessor, for `#include`, `#define`, and `#ifdef`.
+6. **The C library is compiled natively**, from the sources in
+   `runtime/libc/src` that the wasm build uses. Calling the wasm library
+   instead would copy every string into linear memory, packed four bytes
+   to a word, and lose the gain of `CHAR_BIT` = 32 in string code. The
+   few places tied to wasm go under `#ifdef`: the heap of `malloc.c`,
+   which uses the wasm memory builtins, the builtins behind `memcpy`,
+   `memmove`, and `memset`, and the device routines of `nice.c`, which
+   `runtime/lib.nasm` already has. New headers give `limits.h`,
+   `stdint.h`, `stddef.h`, and `stdarg.h` for `CHAR_BIT` = 32. Variadic
+   definitions come with the first version, because the ABI puts every
+   argument of a variadic call on the stack: `stdarg.h` is macros, with
+   `va_start(ap, last)` as `&last + 1`, as long as the compiler leaves a
+   stack parameter whose address is taken in the slot it arrived in. The
+   wasm build stays for the wasm path. The float library stays wasm until
+   the compiler has floating-point arithmetic.
 
 ## Still open
 
 These are in TODO.md:
 
-- The C library and wasm. The C library and the float library are wasm
-  today, with byte addresses. Either the C library is compiled anew, or C
-  calls into wasm across the pointer boundary of WASM.md.
+- The float library, once the compiler has floating-point arithmetic:
+  called in wasm across the pointer boundary of WASM.md, or compiled
+  natively.
 - Safety: wasm traps on an access out of bounds, and C does not. Is an
   optional check mode wanted?
 - The linker: keep joining files, as ABI.md does now, or write one.

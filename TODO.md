@@ -66,9 +66,10 @@ TODO or FIXME comments.
   expected gain and the decisions taken: the goal is cycles on the
   pipelined core, `CHAR_BIT` is 32, the front end is our own, in
   Python, the intermediate form is SSA from the start, and the C accepted
-  at first is C89 with `long long`. Still open:
-  - The C library: compiled anew, or called in wasm across the pointer
-    boundary of WASM.md.
+  at first is C89 with `long long` and variadic functions, and the C
+  library is compiled natively from the same sources. Still open:
+  - The float library, once there is float arithmetic: called in wasm
+    across the pointer boundary of WASM.md, or compiled natively.
   - An optional check mode for accesses out of bounds.
   - A linker, or files joined as now (below).
   - The tests: against the host, the benchmark, Dhrystone, and a fuzzer.

@@ -145,6 +145,7 @@ begin
       variable halt_v   : t_halt;
       variable rti_v    : boolean;
       variable bound_v  : boolean;
+      variable intr_v   : boolean;   -- An interrupt is taken now
       variable pbound_v : boolean;   -- A step boundary, where the core may pause
       variable pause_v  : boolean;
       variable room_v   : boolean;
@@ -253,6 +254,8 @@ begin
                   (u_v.valid = '0' or u_v.first = '1');
       pause_v  := pbound_v and w_r.after_go = '0' and pause_i = '1';
       bound_v  := pbound_v and not pause_v and w_r.in_service = '0' and w_r.after_rti = '0';
+      intr_v   := bound_v and (nmi_valid_i = '1' or
+                               (irq_valid_i = '1' and w_r.regs(14)(C_SR_E) = '1'));
 
       if bound_v and nmi_valid_i = '1' then
          take_nmi_o  <= '1';
@@ -281,7 +284,7 @@ begin
             target_v     := w_r.regs(15);
             flush_v      := true;
          end if;
-      elsif bound_v and (nmi_valid_i = '1' or (irq_valid_i = '1' and w_r.regs(14)(C_SR_E) = '1')) then
+      elsif intr_v then
          -- ISA.md §7.2. The micro-operation in WRITE has not begun, so it
          -- goes with the rest of the pipeline.
          n_v.mode       := VEC_ST;
@@ -628,8 +631,7 @@ begin
       end if;
 
       -- WRITE takes the next micro-operation when it is free.
-      if (w_r.uop.valid = '0' or done_v) and not flush_v and n_v.mode = RUN_ST and
-         not (bound_v and (nmi_valid_i = '1' or (irq_valid_i = '1' and w_r.regs(14)(C_SR_E) = '1'))) then
+      if (w_r.uop.valid = '0' or done_v) and not flush_v and n_v.mode = RUN_ST and not intr_v then
          accept_v := '1';
       else
          accept_v := '0';

@@ -12,6 +12,10 @@
 int main(void)
 {
     char buf[16];
+    // n = 1 reads nothing, stores "", and returns buf, not NULL.
+    buf[0] = 'x';
+    char *q = fgets(buf, 1, stdin);
+    printf("%d %d\n", q == buf, buf[0]);
     fgets(buf, sizeof buf, stdin);
     fputs(buf, stdout);
 

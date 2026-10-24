@@ -56,6 +56,12 @@ TODO or FIXME comments.
   running time since reset, so `time.h` has `clock` but no calendar: `time`
   returns −1, and `difftime`, `gmtime`, `mktime`, and `strftime` are
   missing. A device with the date, set by the board, would let `time` work.
+- **Pause in the debug link** (DEBUG.md). Version 1 has no run control: a
+  hold stops a program and leaves R0–R15 not defined. Stage 2 is a pause
+  input to the cores, taken where WRITE checks for an interrupt, with a
+  `halt_reason_o` port, so that a paused program can resume and its
+  registers can be read. Later stages: single step, breakpoints, and
+  watchpoints.
 
 ## Toolchain
 

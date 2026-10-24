@@ -33,7 +33,8 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (§4). |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (§2). |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (§3). |
-| `0xFFFFFF80`–`0xFFFFFFFF` | 128 | Reserved for I/O. |
+| `0xFFFFFF80`–`0xFFFFFFDF` | 96 | Reserved for I/O. |
+| `0xFFFFFFE0`–`0xFFFFFFFF` | 32 | Reserved for I/O. The debug link's registers are here, for the link only ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)). |
 
 ## 1. Console, screen, and read counter
 
@@ -147,4 +148,5 @@ A board that wraps the FPGA core, such as [NiceMonMEGA65](https://github.com/MJo
 - **Console input.** A UART or a keyboard feeds the same console at `0xFFFFFF00`, with the same bits (§1). A break from the keyboard may end the input, and a read then returns `0x200`.
 - **Input FIFO.** A system's input FIFO may lose bytes. NiceMonMEGA65 drops input that arrives before the program starts, because the FIFO is in reset while the core is held, and drops bytes on overflow.
 - **ROM.** A system may map a ROM at 0 that it can hide, so that a program loads at 0 as in the emulator.
+- **Debug link.** A board may serve the debug link of [DEBUG.md](DEBUG.md) on its UART, as the emulator serves it over TCP. Its debug registers at `0xFFFFFFE0`–`0xFFFFFFFF` are for the link only, so a program's data accesses there go to whatever the board has there otherwise.
 - **Aliasing.** A system with 64K words of RAM may decode only the low 16 address bits. Then `0xFFFFFF02`–`0xFFFFFFFF` alias the RAM words `0xFF02`–`0xFFFF`, and `0xFFFF8000`–`0xFFFFFEFF` alias `0x8000`–`0xFEFF`. That is a property of the system, not a bug.

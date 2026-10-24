@@ -57,6 +57,8 @@ translator, and two FPGA cores. See README.md.
     cd translator && make typecheck  # mypy --strict
     cd bench     && make test        # the benchmark on the emulator, with its results checked
     cd bench     && make core        # the benchmark on a core in GHDL, CORE=pipeline or multicycle (minutes)
+    cd bench     && make dhry        # Dhrystone on the emulator
+    cd bench     && make core-dhry   # Dhrystone on a core in GHDL, CORE as above, with its output checked (minutes)
     cd bench     && make hazards     # how often the pipeline hazards of MICROARCH.md §5 occur
     cd bench     && make cycles      # the estimated cycles on the pipelined core, per phase
     cd bench     && make profile     # the same, per source line, in bench/build/*.cyc.txt

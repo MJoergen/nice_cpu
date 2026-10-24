@@ -13,9 +13,14 @@ LDFLAGS = -nostdlib -Wl,--no-entry -Wl,--export=main -Wl,--stack-first -Wl,-z,st
 SRCS = $(wildcard src/*.c)
 OBJS = $(SRCS:src/%.c=build/%.o)
 
-# mchess keeps move lists of several KB on the stack in a recursion five
-# deep, so it is linked with 32 KB of stack. The later option wins.
-BIGSTACK = -Wl,-z,stack-size=32768
+# mchess keeps a move list of 2.5 KB on the stack in each level of its
+# search: five levels, and then one per capture in the quiescence search,
+# at most 30, since no king is taken. With main and the root, that is about
+# 100 KB, so it is linked with a 128 KB stack in a memory of four pages.
+# 64 KB overflows in the first search from the opening position, which
+# takes 10^10 steps, so test/mchess.input has no "go". The later options
+# win.
+BIGSTACK = -Wl,-z,stack-size=131072 -Wl,--initial-memory=262144
 
 # The test programs, test/X.c. Their .wasm files are checked in, so make
 # test needs no C compiler; make wasm rebuilds them. A test/X.input file is

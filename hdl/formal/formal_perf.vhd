@@ -6,10 +6,11 @@
 -- The wrapper models the counters of SYSTEM.md §3: a 64-bit counter of
 -- every cycle, a 64-bit counter of the cycles with instret_i high, a 64-bit
 -- counter of microseconds, and a snapshot of each, which a read of its low
--- word takes. The microsecond counter has an accumulator that adds 1000000 in
--- each cycle with run_i high, and counts a microsecond when the sum reaches
--- G_CLK_HZ; the model has the same accumulator, but the proof uses a small
--- G_CLK_HZ that is not a multiple of 1 MHz. f_expect is what a
+-- word takes. The clock is 1.5 MHz, C_CLK_HZ, so the microsecond counter
+-- must count two microseconds in every three cycles with run_i high: the
+-- model counts those cycles modulo 3 and has no accumulator, so the proof
+-- also checks the arithmetic of perf's, which subtracts 1500000 from
+-- 2000000 and from 1500000 in turn. f_expect is what a
 -- read accepted in this cycle must return: the low word of a counter, the
 -- high word of its snapshot, or 0 for a spare word. The assertions say that
 -- the port never stalls, that it acknowledges each accepted request in the
@@ -30,8 +31,7 @@ library ieee;
 
 entity formal_perf is
    generic (
-      G_RESET  : std_logic_vector(63 downto 0) := (others => '0');
-      G_CLK_HZ : natural range 1000000 to 500000000 := 1500000
+      G_RESET : std_logic_vector(63 downto 0) := (others => '0')
    );
    port (
       clk_i     : in  std_logic;
@@ -48,6 +48,9 @@ end entity formal_perf;
 
 architecture synthesis of formal_perf is
 
+   -- The clock frequency: two microseconds in every three cycles.
+   constant C_CLK_HZ : natural := 1500000;
+
    signal wb_stall : std_logic;
    signal wb_ack   : std_logic;
    signal wb_data  : std_logic_vector(31 downto 0);
@@ -59,7 +62,9 @@ architecture synthesis of formal_perf is
    signal f_ins_snap : std_logic_vector(63 downto 0) := G_RESET;
    signal f_micros   : std_logic_vector(63 downto 0) := G_RESET;
    signal f_mic_snap : std_logic_vector(63 downto 0) := G_RESET;
-   signal f_frac     : natural range 0 to G_CLK_HZ - 1 := 0;
+   -- The cycles with run_i high so far, modulo 3. The first of each three
+   -- counts no microsecond, the other two one each.
+   signal f_phase    : natural range 0 to 2 := 0;
    signal f_expect   : std_logic_vector(31 downto 0);
    signal f_last_r   : std_logic_vector(31 downto 0) := (others => '0');
    -- The low word of the cycle counter wrapped since the last read of it.
@@ -84,11 +89,11 @@ begin
       if rising_edge(clk_i) then
          if run_i = '1' then
             f_cycles <= f_cycles + 1;
-            if f_frac + 1000000 >= G_CLK_HZ then
-               f_frac   <= f_frac + 1000000 - G_CLK_HZ;
-               f_micros <= f_micros + 1;
+            if f_phase = 0 then
+               f_phase <= 1;
             else
-               f_frac <= f_frac + 1000000;
+               f_phase  <= (f_phase + 1) mod 3;
+               f_micros <= f_micros + 1;
             end if;
          end if;
          if instret_i = '1' then
@@ -119,7 +124,7 @@ begin
             f_ins_snap <= G_RESET;
             f_micros   <= G_RESET;
             f_mic_snap <= G_RESET;
-            f_frac     <= 0;
+            f_phase    <= 0;
             f_wrap_r   <= '0';
          end if;
       end if;
@@ -146,7 +151,7 @@ begin
    i_perf : entity work.perf
       generic map (
          G_RESET  => G_RESET,
-         G_CLK_HZ => G_CLK_HZ
+         G_CLK_HZ => C_CLK_HZ
       )
       port map (
          clk_i      => clk_i,

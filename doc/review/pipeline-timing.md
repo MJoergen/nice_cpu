@@ -355,8 +355,10 @@ Two changes followed:
   (Stores, above). An interrupt entry takes a cycle more.
 
 `make timing` in `hdl/` now takes the part of either board and the
-directives NiceMonMEGA65 builds with, and counts the endpoints with less
-than 1 ns of slack by the registers they start and end at. One run each:
+directives NiceMonMEGA65 built with then, the `timing` flow, and counts the
+endpoints with less than 1 ns of slack by the registers they start and end
+at. "NiceMonMEGA65's directives" below means that flow. Since its 671172e,
+NiceMonMEGA65 uses it only for the Nexys4DDR. One run each:
 
 | | Before | Skid register | And the vector read |
 |---|---|---|---|

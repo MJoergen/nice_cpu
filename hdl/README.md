@@ -160,7 +160,7 @@ warns about lines over 100 columns.
 measures it ([timing.tcl](timing.tcl)): synthesis, placement, and routing
 with a 10 ns clock. `BOARD` selects the part: `mega65` (the default,
 `xc7a200tfbg484-2`) or `nexys4ddr` (`xc7a100tcsg324-1`). `FLOW` selects the
-directives: `default`, or `timing`, those NiceMonMEGA65 builds with.
+directives: `default`, or `timing`, those NiceMonMEGA65's Nexys4DDR build uses.
 `PERIOD` sets the clock in ns. The reports go to
 `build/timing/BOARD-FLOW/`, so that runs for several boards can go at once.
 It prints the worst register-to-register path and leaves the 50 worst in

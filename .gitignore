@@ -18,3 +18,5 @@ runtime/libc/test/*.out.bin
 runtime/libc/test/*.full.nasm
 runtime/libc/test/*.raw
 runtime/libc/test/*.status
+# nicebuild.py output written at the top level by mistake
+/*.bin

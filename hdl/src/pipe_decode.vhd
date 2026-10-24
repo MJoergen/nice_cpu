@@ -82,13 +82,6 @@ end entity pipe_decode;
 
 architecture synthesis of pipe_decode is
 
-   signal f_addr    : std_logic_vector(31 downto 0);
-   signal f_words   : t_words4;
-   signal f_count   : natural range 0 to 4;
-   signal f_consume : natural range 0 to 4;
-   signal w_flush   : std_logic;
-   signal p_ready   : std_logic;
-
    -- Taking an instruction into dec_r
    signal d_inst  : t_inst;
    signal d_ok    : std_logic;
@@ -120,13 +113,6 @@ architecture synthesis of pipe_decode is
 
 begin
 
-   f_addr  <= f_addr_i;
-   f_words <= f_words_i;
-   f_count <= f_count_i;
-   w_flush <= flush_i;
-   p_ready <= ready_i;
-
-   consume_o  <= f_consume;
    redirect_o <= d_load and d_early;
    target_o   <= d_dest;
    valid_o    <= out_valid;
@@ -142,7 +128,7 @@ begin
 
 
    gen_next : for i in 1 to 4 generate
-      d_next(i) <= f_addr + i;
+      d_next(i) <= f_addr_i + i;
    end generate gen_next;
 
 
@@ -155,20 +141,20 @@ begin
       variable early_v : std_logic;
       variable dest_v  : std_logic_vector(31 downto 0);
    begin
-      iw_v           := f_words(0);
+      iw_v           := f_words_i(0);
       cf_v           := const_fields(iw_v);
       len_v          := inst_len(iw_v);
       inst_v         := C_INST_NONE;
       inst_v.valid   := '1';
       inst_v.id      := id_r;
-      inst_v.addr    := f_addr;
-      inst_v.blk     := next_block(f_addr, 2);
+      inst_v.addr    := f_addr_i;
+      inst_v.blk     := next_block(f_addr_i, 2);
       inst_v.next_pc := d_next(len_v);
       inst_v.iw      := iw_v;
       k_v            := 1;
       for i in 0 to 2 loop
          if cf_v(i) = '1' then
-            inst_v.consts(i) := f_words(k_v);
+            inst_v.consts(i) := f_words_i(k_v);
             k_v              := minimum(k_v + 1, 3);
          end if;
          inst_v.m(i) := mode(iw_v, i);
@@ -188,26 +174,26 @@ begin
       -- R15 before them in the instruction. Each is two words, the
       -- constant the second, so the target is c or the address plus 2
       -- plus c, with one adder after the words.
-      early_v := to_sl(early_form(iw_v, f_words(1)));
-      dest_v  := f_words(1);
+      early_v := to_sl(early_form(iw_v, f_words_i(1)));
+      dest_v  := f_words_i(1);
       if early_v = '1' and iw_v(24 downto 21) = "0011" then
-         dest_v := d_next(2) + f_words(1);
+         dest_v := d_next(2) + f_words_i(1);
       end if;
       inst_v.early := early_v;
       d_early      <= early_v;
       d_dest       <= dest_v;
 
       d_inst <= inst_v;
-      d_ok   <= '1' when f_count >= len_v else '0';
+      d_ok   <= '1' when f_count_i >= len_v else '0';
    end process p_decode;
 
    -- An instruction is taken when the second slot is free, so that
    -- consume_o depends on nothing downstream of DECODE. A flush drops it
    -- again, below.
    d_load    <= d_ok and not dec_q.valid;
-   starve_o  <= not d_ok and not dec_q.valid and not w_flush and not rst_i;
-   blocked_o <= d_ok and dec_q.valid and not w_flush and not rst_i;
-   f_consume <= inst_len(f_words(0)) when d_load = '1' else 0;
+   starve_o  <= not d_ok and not dec_q.valid and not flush_i and not rst_i;
+   blocked_o <= d_ok and dec_q.valid and not flush_i and not rst_i;
+   consume_o <= inst_len(f_words_i(0)) when d_load = '1' else 0;
 
 
    -- The micro-operation to emit, with what each stage after DECODE needs
@@ -237,8 +223,8 @@ begin
 
    -- To PREPARE: the micro-operation in skid_r, else the one split off now
    out_uop   <= skid_r when skid_r.valid = '1' else seq_uop;
-   out_valid <= (skid_r.valid or dec_r.valid) and not w_flush;
-   out_emit  <= out_valid and p_ready;
+   out_valid <= (skid_r.valid or dec_r.valid) and not flush_i;
+   out_emit  <= out_valid and ready_i;
 
 
    p_seq : process (clk_i)
@@ -277,9 +263,9 @@ begin
          if skid_r.valid = '0' then
             skid_r <= seq_uop;
          end if;
-         skid_r.valid <= (skid_r.valid or seq_adv) and not p_ready;
+         skid_r.valid <= (skid_r.valid or seq_adv) and not ready_i;
 
-         if w_flush = '1' then
+         if flush_i = '1' then
             dec_r.valid  <= '0';
             dec_q.valid  <= '0';
             skid_r.valid <= '0';
@@ -364,7 +350,7 @@ begin
          return ok_v;
       end function inst_ok;
 
-      -- The constant word of field i of the instruction in f_words(0),
+      -- The constant word of field i of the instruction in f_words_i(0),
       -- counted in the order dest, s0, s1 (ISA.md §2.3).
       function const_word(words : t_words4;
                           i     : natural range 0 to 2) return std_logic_vector is
@@ -409,7 +395,7 @@ begin
                g_inst  <= dec_r;
                g_kind  <= seq_kind_r;
             end if;
-            if rst_i = '1' or w_flush = '1' then
+            if rst_i = '1' or flush_i = '1' then
                f_open  <= '0';
                f_since <= '0';
                g_open  <= '0';
@@ -421,11 +407,11 @@ begin
       -- psl default clock is rising_edge(clk_i);
 
       -- FETCH
-      -- psl f_count_range : assume always f_count <= 4;
+      -- psl f_count_range : assume always f_count_i <= 4;
 
       -- What PREPARE assumes of DECODE
       -- psl f_emit : assert always (rst_i = '0' and out_valid = '1') ->
-      --    (out_uop.valid = '1' and w_flush = '0');
+      --    (out_uop.valid = '1' and flush_i = '0');
       -- psl f_last : assert always (rst_i = '0' and out_emit = '1') ->
       --    out_uop.last = is_last(out_uop.kind);
       -- psl f_next_uop : assert always (rst_i = '0' and out_emit = '1' and f_open = '1') ->
@@ -439,23 +425,23 @@ begin
 
       -- What DECODE takes from FETCH, and the constant words it keeps
       -- psl f_take : assert always rst_i = '0' ->
-      --    (f_consume <= f_count and (f_consume = 0 or f_consume = inst_len(f_words(0))));
+      --    (consume_o <= f_count_i and (consume_o = 0 or consume_o = inst_len(f_words_i(0))));
       -- psl f_load : assert always (rst_i = '0' and d_load = '1') ->
-      --    (d_inst.addr = f_addr and d_inst.iw = f_words(0) and inst_ok(d_inst));
+      --    (d_inst.addr = f_addr_i and d_inst.iw = f_words_i(0) and inst_ok(d_inst));
 
       gen_consts : for i in 0 to 2 generate
-         -- psl f_const : assert always (rst_i = '0' and d_load = '1' and const_fields(f_words(0))(i) = '1') ->
-         --    d_inst.consts(i) = const_word(f_words, i);
+         -- psl f_const : assert always (rst_i = '0' and d_load = '1' and const_fields(f_words_i(0))(i) = '1') ->
+         --    d_inst.consts(i) = const_word(f_words_i, i);
       end generate gen_consts;
 
       -- The jumps DECODE resolves
       -- psl f_redirect : assert always (rst_i = '0' and d_load = '1') ->
-      --    (d_early = to_sl(early_form(f_words(0), f_words(1))));
+      --    (d_early = to_sl(early_form(f_words_i(0), f_words_i(1))));
       -- psl f_target : assert always (rst_i = '0' and redirect_o = '1') ->
-      --    (f_consume = 2 and d_dest = early_target(f_addr, f_words));
+      --    (consume_o = 2 and d_dest = early_target(f_addr_i, f_words_i));
 
       -- A flush empties the stage
-      -- psl f_flushed : assert always {w_flush and not rst_i} |=>
+      -- psl f_flushed : assert always {flush_i and not rst_i} |=>
       --    {rst_i = '1' or (dec_r.valid = '0' and dec_q.valid = '0' and skid_r.valid = '0')};
 
       -- The instructions held: skid_r's is reported
@@ -501,7 +487,7 @@ begin
       -- psl c_queue : cover {dec_q.valid = '1' and out_emit = '1' and out_uop.first = '0'};
       -- psl c_skid : cover {skid_r.valid = '1' and dec_q.valid = '1' and out_emit = '1'};
       -- psl c_redirect : cover {redirect_o = '1' and dec_r.valid = '1'};
-      -- psl c_flush : cover {w_flush = '1' and dec_q.valid = '1' and rst_i = '0'};
+      -- psl c_flush : cover {flush_i = '1' and dec_q.valid = '1' and rst_i = '0'};
    end generate gen_formal;
 
 end architecture synthesis;

@@ -108,16 +108,7 @@ end entity pipe_prepare;
 
 architecture synthesis of pipe_prepare is
 
-   signal seq_uop   : t_uop;
-   signal seq_valid : std_logic;
-   signal seq_emit  : std_logic;   -- PREPARE takes DECODE's micro-operation
-   signal w_r       : t_write;
-   signal w_done    : std_logic;
-   signal w_flush   : std_logic;
-   signal w_accept  : std_logic;
-   signal take_nmi  : std_logic;
-   signal take_irq  : std_logic;
-   signal tag_cnt_r : natural range 0 to C_MAX_OUT;
+   signal seq_emit : std_logic;   -- PREPARE takes DECODE's micro-operation
 
    signal prep_r        : t_uop;
    signal p_loaded_r    : natural range 0 to 2;   -- Reads of prep_r loaded
@@ -139,19 +130,9 @@ architecture synthesis of pipe_prepare is
 
 begin
 
-   seq_uop   <= uop_i;
-   seq_valid <= valid_i;
-   w_r       <= w_i;
-   w_done    <= done_i;
-   w_flush   <= flush_i;
-   w_accept  <= ready_i;
-   take_nmi  <= take_nmi_i;
-   take_irq  <= take_irq_i;
-   tag_cnt_r <= tag_cnt_i;
-
-   p_move   <= p_valid and w_accept;
+   p_move   <= p_valid and ready_i;
    p_ready  <= not prep_r.valid or p_move;
-   seq_emit <= seq_valid and p_ready;
+   seq_emit <= valid_i and p_ready;
 
    ready_o      <= p_ready;
    valid_o      <= p_valid;
@@ -200,23 +181,23 @@ begin
       variable pause_ok  : boolean;
    begin
       u_v     := prep_r;
-      wu_v    := w_r.uop;
+      wu_v    := w_i.uop;
       older_v := wu_v.valid = '1' and wu_v.inst.id /= u_v.inst.id;
 
       -- The condition (ISA.md §3), against SR before the instruction
       ck_v := '0';
-      cv_v := condition(u_v.inst.iw, w_r.regs(14));
+      cv_v := condition(u_v.inst.iw, w_i.regs(14));
       if u_v.first = '1' then
-         if w_r.mode = RUN_ST and not (wu_v.valid = '1' and wu_v.may_sr = '1') then
+         if w_i.mode = RUN_ST and not (wu_v.valid = '1' and wu_v.may_sr = '1') then
             ck_v := '1';
          end if;
       elsif p_ck_r = '1' then
          ck_v := '1';
          cv_v := p_cv_r;
-      elsif wu_v.valid = '0' and w_r.mode = RUN_ST then
+      elsif wu_v.valid = '0' and w_i.mode = RUN_ST then
          -- The instruction's first micro-operation has retired.
          ck_v := '1';
-         cv_v := w_r.cond;
+         cv_v := w_i.cond;
       end if;
 
       -- The value or address of each field (ISA.md §4.1 and §4.2), from
@@ -232,9 +213,9 @@ begin
          x_v := u_v.inst.x(i);
          m_v := u_v.inst.m(i);
          if x_v = 15 then
-            base_v(i) := w_r.regs(15) when not older_v and w_r.jump = '1' else u_v.inst.next_pc;
+            base_v(i) := w_i.regs(15) when not older_v and w_i.jump = '1' else u_v.inst.next_pc;
          else
-            base_v(i) := w_r.regs(x_v);
+            base_v(i) := w_i.regs(x_v);
          end if;
          case m_v is
             when "001" | "101"  => val_v(i) := regval(x_v, base_v(i) - 1);
@@ -299,37 +280,37 @@ begin
       -- The older micro-operation in WRITE will not jump, halt, or store
       -- into fetched code, and is counted on instret_o. Either it retires
       -- now, or it has made its reads and makes no store.
-      quiet_v  := wu_v.store = '0' and wu_v.may_jump = '0' and w_r.jump = '0' and
+      quiet_v  := wu_v.store = '0' and wu_v.may_jump = '0' and w_i.jump = '0' and
                   wu_v.counted = '1';
-      older_ok := not older_v or (w_done = '1' and w_flush = '0') or quiet_v;
+      older_ok := not older_v or (done_i = '1' and flush_i = '0') or quiet_v;
 
       -- No interrupt may be taken before this instruction (MICROARCH.md
       -- §5.3, rule 4). None can be if the instruction has made a data read
       -- or begun to retire, or follows RTI directly.
       started_v := not older_v and
-                   ((wu_v.valid = '1' and wu_v.first = '0') or (wu_v.valid = '0' and w_r.mid = '1'));
-      irq_v     := irq_valid_i = '1' and w_r.in_service = '0' and
-                   (w_r.regs(14)(C_SR_E) = '1' or (wu_v.valid = '1' and wu_v.may_sr = '1'));
-      intr_ok   := started_v or p_committed_r = '1' or (not older_v and w_r.after_rti = '1') or
-                   not ((nmi_valid_i = '1' and w_r.in_service = '0') or irq_v);
+                   ((wu_v.valid = '1' and wu_v.first = '0') or (wu_v.valid = '0' and w_i.mid = '1'));
+      irq_v     := irq_valid_i = '1' and w_i.in_service = '0' and
+                   (w_i.regs(14)(C_SR_E) = '1' or (wu_v.valid = '1' and wu_v.may_sr = '1'));
+      intr_ok   := started_v or p_committed_r = '1' or (not older_v and w_i.after_rti = '1') or
+                   not ((nmi_valid_i = '1' and w_i.in_service = '0') or irq_v);
       -- Nor a pause (MICROARCH.md §6.1), but before the first step after
       -- one. The instruction after RTI is not exempt, as the core pauses
       -- after RTI too (hdl/ASSUMPTIONS.md, item 19).
-      pause_ok  := started_v or p_committed_r = '1' or (not older_v and w_r.after_go = '1') or
+      pause_ok  := started_v or p_committed_r = '1' or (not older_v and w_i.after_go = '1') or
                    pause_i = '0';
 
       -- The bus takes the read when C_MAX_OUT will not be in flight, and no
       -- store waits in DBUS in the next cycle: none waits that the bus does
       -- not accept now, and an older micro-operation queues none now.
-      store_v := older_v and w_done = '1' and wu_v.store = '1';
+      store_v := older_v and done_i = '1' and wu_v.store = '1';
       bus_ok  := (rd_stb_r = '0' or dbus_stall_i = '0') and not store_v and
                  (st_valid_i = '0' or st_acc_i = '1') and
-                 tag_cnt_r + to_nat(rd_stb_r) + to_nat(st_valid_i) < C_MAX_OUT;
+                 tag_cnt_i + to_nat(rd_stb_r) + to_nat(st_valid_i) < C_MAX_OUT;
 
       load_v := '0';
       if u_v.valid = '1' and ck_v = '1' and cv_v = '1' and p_loaded_r < nr_v and
          older_ok and intr_ok and pause_ok and not busy_v and bus_ok and
-         w_r.mode = RUN_ST and w_flush = '0' and take_nmi = '0' and take_irq = '0' then
+         w_i.mode = RUN_ST and flush_i = '0' and take_nmi_i = '0' and take_irq_i = '0' then
          load_v := '1';
       end if;
       p_load       <= load_v;
@@ -397,10 +378,10 @@ begin
          end if;
 
          if seq_emit = '1' then
-            prep_r <= seq_uop;
+            prep_r <= uop_i;
          end if;
 
-         if w_flush = '1' then
+         if flush_i = '1' then
             prep_r.valid  <= '0';
             p_loaded_r    <= 0;
             p_ck_r        <= '0';
@@ -470,45 +451,45 @@ begin
          if rising_edge(clk_i) then
             f_first <= '0';
 
-            if w_flush = '1' then
+            if flush_i = '1' then
                f_uop <= C_UOP_NONE;
             elsif p_move = '1' then
                f_uop <= p_out;
-            elsif w_done = '1' then
+            elsif done_i = '1' then
                f_uop <= C_UOP_NONE;
             else
-               f_uop <= w_r.uop;
+               f_uop <= w_i.uop;
             end if;
 
-            f_sr        <= w_r.regs(14);
-            f_sr_free   <= rst_i or w_flush or take_nmi or take_irq or
-                           (w_done and w_r.uop.valid and w_r.uop.may_sr);
-            f_cond      <= w_r.cond;
-            f_cond_free <= rst_i or w_flush or take_nmi or take_irq or
-                           (w_done and w_r.uop.valid and w_r.uop.first);
-            f_mode      <= w_r.mode;
-            f_mode_free <= rst_i or w_flush or take_nmi or take_irq;
+            f_sr        <= w_i.regs(14);
+            f_sr_free   <= rst_i or flush_i or take_nmi_i or take_irq_i or
+                           (done_i and w_i.uop.valid and w_i.uop.may_sr);
+            f_cond      <= w_i.cond;
+            f_cond_free <= rst_i or flush_i or take_nmi_i or take_irq_i or
+                           (done_i and w_i.uop.valid and w_i.uop.first);
+            f_mode      <= w_i.mode;
+            f_mode_free <= rst_i or flush_i or take_nmi_i or take_irq_i;
 
             f_rd_stall <= rd_stb_r and dbus_stall_i and not rst_i;
             f_rd_addr  <= rd_addr_r;
             -- PREPARE's read, or else, when there is room, the store or
             -- vector read that waits in DBUS
-            f_tag      <= tag_cnt_r + to_nat((rd_stb_r = '1' and dbus_stall_i = '0') or
-                                             (rd_stb_r = '0' and tag_cnt_r < C_MAX_OUT and
+            f_tag      <= tag_cnt_i + to_nat((rd_stb_r = '1' and dbus_stall_i = '0') or
+                                             (rd_stb_r = '0' and tag_cnt_i < C_MAX_OUT and
                                                 st_valid_i = '1'));
             -- The access that waits, and has not been accepted, or a store
             -- or vector read that WRITE queues now
             f_st_may   <= not rst_i and ((st_valid_i and not st_acc_i) or
-                                         (w_r.uop.valid and w_r.uop.store and not rd_stb_r) or
-                                         (to_sl(w_r.mode = VEC_ST) and not rd_stb_r));
+                                         (w_i.uop.valid and w_i.uop.store and not rd_stb_r) or
+                                         (to_sl(w_i.mode = VEC_ST) and not rd_stb_r));
 
             if seq_emit = '1' then
-               f_open <= not seq_uop.last;
-               f_inst <= seq_uop.inst;
-               f_kind <= seq_uop.kind;
+               f_open <= not uop_i.last;
+               f_inst <= uop_i.inst;
+               f_kind <= uop_i.kind;
             end if;
 
-            if rst_i = '1' or w_flush = '1' then
+            if rst_i = '1' or flush_i = '1' then
                f_uop  <= C_UOP_NONE;
                f_open <= '0';
             end if;
@@ -518,43 +499,43 @@ begin
       -- psl default clock is rising_edge(clk_i);
 
       -- DECODE
-      -- psl f_emit : assume always seq_valid -> seq_uop.valid;
-      -- psl f_last : assume always seq_emit -> seq_uop.last = is_last(seq_uop.kind);
+      -- psl f_emit : assume always valid_i -> uop_i.valid;
+      -- psl f_last : assume always seq_emit -> uop_i.last = is_last(uop_i.kind);
       -- psl f_next_uop : assume always (seq_emit and f_open) ->
-      --    (seq_uop.first = '0' and seq_uop.inst = f_inst and
-      --     seq_uop.kind = next_kind(f_inst.iw, f_kind));
+      --    (uop_i.first = '0' and uop_i.inst = f_inst and
+      --     uop_i.kind = next_kind(f_inst.iw, f_kind));
       -- psl f_new_inst : assume always (seq_emit and not f_open) ->
-      --    (seq_uop.first = '1' and seq_uop.inst.id /= f_inst.id and
-      --     seq_uop.kind = first_kind(seq_uop.inst.iw));
-      -- psl f_decoded : assume always seq_emit -> decoded_ok(seq_uop);
+      --    (uop_i.first = '1' and uop_i.inst.id /= f_inst.id and
+      --     uop_i.kind = first_kind(uop_i.inst.iw));
+      -- psl f_decoded : assume always seq_emit -> decoded_ok(uop_i);
 
       -- WRITE
-      -- psl f_takes : assume always f_first = '0' -> w_r.uop = f_uop;
-      -- psl f_sr_stable : assume always (f_first = '0' and f_sr_free = '0') -> w_r.regs(14) = f_sr;
+      -- psl f_takes : assume always f_first = '0' -> w_i.uop = f_uop;
+      -- psl f_sr_stable : assume always (f_first = '0' and f_sr_free = '0') -> w_i.regs(14) = f_sr;
       -- psl f_cond_stable : assume always (f_first = '0' and f_cond_free = '0') ->
-      --    w_r.cond = f_cond;
+      --    w_i.cond = f_cond;
       -- psl f_run : assume always (f_first = '0' and f_mode_free = '0' and f_mode = RUN_ST) ->
-      --    w_r.mode = RUN_ST;
-      -- psl f_keep : assume always (w_flush or take_nmi or take_irq) -> not p_committed_r;
-      -- psl f_keep_read : assume always (w_flush or take_nmi or take_irq) -> not (rd_stb_r or p_load);
-      -- psl f_accept : assume always w_accept -> not w_flush;
+      --    w_i.mode = RUN_ST;
+      -- psl f_keep : assume always (flush_i or take_nmi_i or take_irq_i) -> not p_committed_r;
+      -- psl f_keep_read : assume always (flush_i or take_nmi_i or take_irq_i) -> not (rd_stb_r or p_load);
+      -- psl f_accept : assume always ready_i -> not flush_i;
 
       -- DBUS: requests in flight, PREPARE's read among them, and the store
       -- that waits
-      -- psl f_tags : assume always tag_cnt_r <= C_MAX_OUT;
-      -- psl f_tag_grow : assume always f_first = '0' -> tag_cnt_r <= f_tag;
+      -- psl f_tags : assume always tag_cnt_i <= C_MAX_OUT;
+      -- psl f_tag_grow : assume always f_first = '0' -> tag_cnt_i <= f_tag;
       -- psl f_st_acc : assume always
-      --    st_acc_i = (st_valid_i and to_sl(tag_cnt_r < C_MAX_OUT) and not dbus_stall_i);
+      --    st_acc_i = (st_valid_i and to_sl(tag_cnt_i < C_MAX_OUT) and not dbus_stall_i);
       -- psl f_st_queue : assume always st_valid_i -> f_st_may;
 
       -- The read request
       -- psl f_rd_hold : assert always (f_rd_stall and not rst_i) ->
       --    (rd_stb_r = '1' and rd_addr_r = f_rd_addr);
-      -- psl f_rd_room : assert always (rst_i = '0' and rd_stb_r = '1') -> tag_cnt_r < C_MAX_OUT;
+      -- psl f_rd_room : assert always (rst_i = '0' and rd_stb_r = '1') -> tag_cnt_i < C_MAX_OUT;
       -- psl f_rd_alone : assert always rst_i = '0' -> not (rd_stb_r = '1' and st_valid_i = '1');
       -- A read is on the bus only while the core runs: a halted core
       -- makes no data read
-      -- psl f_rd_run : assert always (rst_i = '0' and rd_stb_r = '1') -> w_r.mode = RUN_ST;
+      -- psl f_rd_run : assert always (rst_i = '0' and rd_stb_r = '1') -> w_i.mode = RUN_ST;
 
       -- The reads of a micro-operation
       -- psl f_none_loaded : assert always (rst_i = '0' and prep_r.valid = '0') -> p_loaded_r = 0;
@@ -585,31 +566,31 @@ begin
       -- WRITE holds an earlier micro-operation of the instruction in
       -- prep_r, or the last of the instruction before it.
       -- psl f_inv_same : assert always
-      --    (rst_i = '0' and prep_r.valid = '1' and w_r.uop.valid = '1' and
-      --     w_r.uop.inst.id = prep_r.inst.id) -> (w_r.uop.last = '0' and prep_r.first = '0');
+      --    (rst_i = '0' and prep_r.valid = '1' and w_i.uop.valid = '1' and
+      --     w_i.uop.inst.id = prep_r.inst.id) -> (w_i.uop.last = '0' and prep_r.first = '0');
       -- psl f_inv_older : assert always
-      --    (rst_i = '0' and prep_r.valid = '1' and w_r.uop.valid = '1' and
-      --     w_r.uop.inst.id /= prep_r.inst.id) -> (w_r.uop.last = '1' and prep_r.first = '1');
+      --    (rst_i = '0' and prep_r.valid = '1' and w_i.uop.valid = '1' and
+      --     w_i.uop.inst.id /= prep_r.inst.id) -> (w_i.uop.last = '1' and prep_r.first = '1');
       -- psl f_inv_write : assert always
-      --    (rst_i = '0' and prep_r.valid = '0' and w_r.uop.valid = '1') ->
-      --    (w_r.uop.inst.id = f_inst.id and w_r.uop.last = not f_open);
-      -- psl f_inv_wkind : assert always (rst_i = '0' and w_r.uop.valid = '1') ->
-      --    w_r.uop.last = is_last(w_r.uop.kind);
+      --    (rst_i = '0' and prep_r.valid = '0' and w_i.uop.valid = '1') ->
+      --    (w_i.uop.inst.id = f_inst.id and w_i.uop.last = not f_open);
+      -- psl f_inv_wkind : assert always (rst_i = '0' and w_i.uop.valid = '1') ->
+      --    w_i.uop.last = is_last(w_i.uop.kind);
       -- psl f_inv_ck_inst : assert always (rst_i = '0' and p_ck_r = '1') ->
       --    ((prep_r.valid = '1' and prep_r.first = '0') or (prep_r.valid = '0' and f_open = '1'));
       -- psl f_inv_open : assert always (rst_i = '0' and p_committed_r = '1') ->
       --    (f_open = '1' or prep_r.valid = '1');
-      -- psl f_inv_run : assert always (rst_i = '0' and p_committed_r = '1') -> w_r.mode = RUN_ST;
+      -- psl f_inv_run : assert always (rst_i = '0' and p_committed_r = '1') -> w_i.mode = RUN_ST;
       -- psl f_inv_ck : assert always (rst_i = '0' and p_committed_r = '1' and p_ck_r = '1') ->
       --    p_cv_r = '1';
       -- psl f_inv_first : assert always
       --    (rst_i = '0' and p_committed_r = '1' and prep_r.valid = '1' and prep_r.first = '1') ->
-      --    (condition(prep_r.inst.iw, w_r.regs(14)) = '1' and
-      --     not (w_r.uop.valid = '1' and w_r.uop.may_sr = '1'));
+      --    (condition(prep_r.inst.iw, w_i.regs(14)) = '1' and
+      --     not (w_i.uop.valid = '1' and w_i.uop.may_sr = '1'));
       -- psl f_inv_retired : assert always
       --    (rst_i = '0' and p_committed_r = '1' and p_ck_r = '0' and
       --     not (prep_r.valid = '1' and prep_r.first = '1')) ->
-      --    (w_r.cond = '1' and not (w_r.uop.valid = '1' and w_r.uop.first = '1'));
+      --    (w_i.cond = '1' and not (w_i.uop.valid = '1' and w_i.uop.first = '1'));
 
       -- psl c_two : cover {rst_i = '0' and p_load = '1' and p_loaded_r = 1};
       -- psl c_stall : cover {f_rd_stall = '1' and rst_i = '0'};

@@ -101,64 +101,12 @@ end entity pipe_write;
 
 architecture synthesis of pipe_write is
 
-   signal p_valid      : std_logic;
-   signal p_out        : t_uop;
-   signal p_first_read : std_logic;
-   signal rd_stb_r     : std_logic;
-   signal f_addr       : std_logic_vector(31 downto 0);
-   signal f_blk        : std_logic_vector(31 downto 5);
-   signal dec_r        : t_inst;
-   signal dec2_r       : t_inst;
-   signal skid_r       : t_inst;
-   signal prep_r       : t_uop;
-   signal rq_r         : t_words(0 to C_MAX_OUT - 1);
-   signal rq_cnt_r     : natural range 0 to C_MAX_OUT;
-   signal ack_read     : std_logic;
-
-   signal w_r       : t_write;
-   signal w_n       : t_write;
-   signal w_done    : std_logic;
-   signal w_flush   : std_logic;
-   signal w_target  : std_logic_vector(31 downto 0);
-   signal w_accept  : std_logic;
-   signal w_pop     : natural range 0 to 2;
-   signal w_st      : std_logic;
-   signal w_st_we   : std_logic;
-   signal w_st_addr : std_logic_vector(31 downto 0);
-   signal w_st_data : std_logic_vector(31 downto 0);
-   signal w_instret : std_logic;
-   signal take_nmi  : std_logic;
-   signal take_irq  : std_logic;
+   signal w_r : t_write;
+   signal w_n : t_write;
 
 begin
 
-   p_valid      <= valid_i;
-   p_out        <= uop_i;
-   p_first_read <= first_read_i;
-   rd_stb_r     <= rd_stb_i;
-   f_addr       <= f_addr_i;
-   f_blk        <= f_blk_i;
-   dec_r        <= dec_i;
-   dec2_r       <= dec2_i;
-   skid_r       <= skid_i;
-   prep_r       <= prep_i;
-   rq_r         <= rq_i;
-   rq_cnt_r     <= rq_cnt_i;
-   ack_read     <= ack_read_i;
-
-   ready_o    <= w_accept;
-   pop_o      <= w_pop;
-   st_o       <= w_st;
-   st_we_o    <= w_st_we;
-   st_addr_o  <= w_st_addr;
-   st_data_o  <= w_st_data;
-   take_nmi_o <= take_nmi;
-   take_irq_o <= take_irq;
-   state_o    <= w_r;
-   done_o     <= w_done;
-   flush_o    <= w_flush;
-   target_o   <= w_target;
-   instret_o  <= w_instret;
+   state_o <= w_r;
 
 
    p_write : process (all)
@@ -206,13 +154,13 @@ begin
       n_v.rep     := C_RETIRE_NONE;
       u_v         := w_r.uop;
       iw_v        := u_v.inst.iw;
-      w_pop       <= 0;
-      w_st        <= '0';
-      w_st_we     <= '1';
-      w_instret   <= '0';
-      w_flush     <= '0';
-      take_nmi    <= '0';
-      take_irq    <= '0';
+      pop_o       <= 0;
+      st_o        <= '0';
+      st_we_o     <= '1';
+      instret_o   <= '0';
+      flush_o     <= '0';
+      take_nmi_o  <= '0';
+      take_irq_o  <= '0';
       done_v      := false;
       flush_v     := false;
       halt_v      := HALT_NONE;
@@ -240,9 +188,9 @@ begin
 
       -- The read data, from DBUS's FIFO, so that no path runs from the bus
       -- through the ALU, the shifter, the store, or a jump.
-      avail_v   := rq_cnt_r;
-      data_v(0) := rq_r(0);
-      data_v(1) := rq_r(1);
+      avail_v   := rq_cnt_i;
+      data_v(0) := rq_i(0);
+      data_v(1) := rq_i(1);
 
       -- A micro-operation whose read data only goes into a register may take
       -- it straight from the bus, in the cycle its ACK comes: s0 and s1 with
@@ -251,12 +199,12 @@ begin
       byp_v      := u_v.kind = UOP_S0 or u_v.kind = UOP_S1 or
                     (u_v.kind = UOP_OP and u_v.inst.op = "0000" and u_v.inst.shift = '0' and
                       u_v.inst.m(0) = "000" and u_v.inst.x(0) /= 15);
-      bavail_v   := rq_cnt_r + to_nat(ack_read) when byp_v else rq_cnt_r;
-      bdata_v(0) := rq_r(0) when rq_cnt_r >= 1 else dbus_data_i;
-      bdata_v(1) := rq_r(1) when rq_cnt_r >= 2 else dbus_data_i;
+      bavail_v   := rq_cnt_i + to_nat(ack_read_i) when byp_v else rq_cnt_i;
+      bdata_v(0) := rq_i(0) when rq_cnt_i >= 1 else dbus_data_i;
+      bdata_v(1) := rq_i(1) when rq_cnt_i >= 2 else dbus_data_i;
 
       -- Room in DBUS's register for WRITE's vector read
-      room_v := rd_stb_r = '0' and (st_valid_i = '0' or st_acc_i = '1');
+      room_v := rd_stb_i = '0' and (st_valid_i = '0' or st_acc_i = '1');
 
       -- The condition (ISA.md §3). A micro-operation in a later cycle of
       -- its own keeps the condition of its first, since it may have
@@ -285,15 +233,15 @@ begin
 
       -- The destination address of a store, and whether it lies in a word
       -- fetched but not retired (MICROARCH.md §5.5): FETCH holds at most
-      -- 16 words from f_addr on, and an instruction at most 4. Decided
+      -- 16 words from f_addr_i on, and an instruction at most 4. Decided
       -- here, from the operand alone, so that the flush depends on as
       -- little as possible.
       a_v   := base_v(0);
-      hit_v := near(a_v, f_addr, f_blk, 5) or a_v(31 downto 5) = f_blk + 1 or
-               (dec_r.valid = '1' and near(a_v, dec_r.addr, dec_r.blk, 2)) or
-               (dec2_r.valid = '1' and near(a_v, dec2_r.addr, dec2_r.blk, 2)) or
-               (skid_r.valid = '1' and near(a_v, skid_r.addr, skid_r.blk, 2)) or
-               (prep_r.valid = '1' and near(a_v, prep_r.inst.addr, prep_r.inst.blk, 2));
+      hit_v := near(a_v, f_addr_i, f_blk_i, 5) or a_v(31 downto 5) = f_blk_i + 1 or
+               (dec_i.valid = '1' and near(a_v, dec_i.addr, dec_i.blk, 2)) or
+               (dec2_i.valid = '1' and near(a_v, dec2_i.addr, dec2_i.blk, 2)) or
+               (skid_i.valid = '1' and near(a_v, skid_i.addr, skid_i.blk, 2)) or
+               (prep_i.valid = '1' and near(a_v, prep_i.inst.addr, prep_i.inst.blk, 2));
 
       -- A step boundary where no data access of the next instruction has
       -- begun. The core pauses there whatever in_service and after_rti are,
@@ -307,13 +255,13 @@ begin
       bound_v  := pbound_v and not pause_v and w_r.in_service = '0' and w_r.after_rti = '0';
 
       if bound_v and nmi_valid_i = '1' then
-         take_nmi     <= '1';
-         n_v.vec      := nmi_vector_i;
-         n_v.vec_nmi  := '1';
+         take_nmi_o  <= '1';
+         n_v.vec     := nmi_vector_i;
+         n_v.vec_nmi := '1';
       elsif bound_v and irq_valid_i = '1' and w_r.regs(14)(C_SR_E) = '1' then
-         take_irq     <= '1';
-         n_v.vec      := irq_vector_i;
-         n_v.vec_nmi  := '0';
+         take_irq_o  <= '1';
+         n_v.vec     := irq_vector_i;
+         n_v.vec_nmi := '0';
       end if;
 
       if pause_v then
@@ -346,13 +294,13 @@ begin
          -- DBUS's register, which drives the bus from the next cycle on.
          if w_r.vec_issued = '0' then
             if room_v then
-               w_st           <= '1';
-               w_st_we        <= '0';
+               st_o           <= '1';
+               st_we_o        <= '0';
                a_v            := w_r.regs(14)(23 downto 0) & w_r.vec;
                n_v.vec_issued := '1';
             end if;
          elsif avail_v >= 1 then
-            w_pop        <= 1;
+            pop_o        <= 1;
             n_v.saved_pc := w_r.regs(15) when w_r.vec_intr = '1' else u_v.inst.next_pc;
             n_v.saved_sr := w_r.regs(14);
             n_v.in_service    := '1';
@@ -372,7 +320,7 @@ begin
             n_v.after_go   := '0';
             if w_r.vec_intr = '0' then
                -- INT is an instruction.
-               w_instret     <= not u_v.counted;
+               instret_o     <= not u_v.counted;
                n_v.after_rti := '0';
             end if;
          end if;
@@ -481,7 +429,7 @@ begin
                   end if;
                else
                   done_v := true;
-                  w_pop  <= nr_v;
+                  pop_o  <= nr_v;
                   cnt_v  := w_r.cnt when u_v.cnt_late = '1' else u_v.cnt;
 
                   case u_v.kind is
@@ -584,13 +532,13 @@ begin
                      done_v := false;
                      if w_r.busy = '1' then
                         done_v := st_acc_i = '1';
-                     elsif rd_stb_r = '0' and (st_valid_i = '0' or st_acc_i = '1') then
-                        w_st   <= '1';
+                     elsif rd_stb_i = '0' and (st_valid_i = '0' or st_acc_i = '1') then
+                        st_o   <= '1';
                         done_v := a_v(31 downto 8) /= X"FFFFFF";
                         n_v.busy := to_sl(not done_v);
                      end if;
                      if not done_v then
-                        w_pop <= 0;
+                        pop_o <= 0;
                      end if;
 
                      -- A store into a word fetched but not retired
@@ -633,7 +581,7 @@ begin
                if cond_v = '0' then
                   n_v.rep.mem_we := '0';
                end if;
-               w_instret <= not u_v.counted;
+               instret_o <= not u_v.counted;
 
                if not rti_v and n_v.jump = '0' then
                   n_v.regs(15) := u_v.inst.next_pc;
@@ -675,7 +623,7 @@ begin
       end if;
 
       -- A first data read of an instruction commits it.
-      if p_first_read = '1' then
+      if first_read_i = '1' then
          n_v.commits := n_v.commits + 1;
       end if;
 
@@ -686,19 +634,19 @@ begin
       else
          accept_v := '0';
       end if;
-      w_accept <= accept_v;
-      if p_valid = '1' and accept_v = '1' then
-         n_v.uop := p_out;
+      ready_o <= accept_v;
+      if valid_i = '1' and accept_v = '1' then
+         n_v.uop := uop_i;
       end if;
 
       -- The address and data of the store or the vector read, which DBUS
-      -- takes when w_st is '1'
-      w_st_addr <= a_v;
-      w_st_data <= res_v.r;
+      -- takes when st_o is '1'
+      st_addr_o <= a_v;
+      st_data_o <= res_v.r;
 
-      w_done   <= to_sl(done_v);
-      w_flush  <= to_sl(flush_v);
-      w_target <= target_v;
+      done_o   <= to_sl(done_v);
+      flush_o  <= to_sl(flush_v);
+      target_o <= target_v;
       w_n      <= n_v;
    end process p_write;
 

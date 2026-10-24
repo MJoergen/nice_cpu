@@ -87,10 +87,6 @@ end entity pipe_dbus;
 
 architecture synthesis of pipe_dbus is
 
-   signal rd_stb_r  : std_logic;
-   signal rd_addr_r : std_logic_vector(31 downto 0);
-   signal w_pop     : natural range 0 to 2;
-
    signal tags_r     : std_logic_vector(0 to C_MAX_OUT - 1);   -- '1' for a write
    signal tag_cnt_r  : natural range 0 to C_MAX_OUT;
    signal rq_r       : t_words(0 to C_MAX_OUT - 1);            -- Read data not used yet
@@ -108,10 +104,6 @@ architecture synthesis of pipe_dbus is
 
 begin
 
-   rd_stb_r  <= rd_stb_i;
-   rd_addr_r <= rd_addr_i;
-   w_pop     <= w_pop_i;
-
    rq_o         <= rq_r;
    rq_cnt_o     <= rq_cnt_r;
    ack_read_o   <= ack_read;
@@ -125,11 +117,11 @@ begin
    st_valid_o <= st_valid_r;
    st_acc_o   <= st_acc;
 
-   dbus_stb    <= rd_stb_r or st_out;
+   dbus_stb    <= rd_stb_i or st_out;
    dbus_stb_o  <= dbus_stb;
    dbus_cyc_o  <= '1' when dbus_stb = '1' or tag_cnt_r > 0 else '0';
    dbus_we_o   <= st_out and st_we_r;
-   dbus_addr_o <= st_addr_r when st_out = '1' else rd_addr_r;
+   dbus_addr_o <= st_addr_r when st_out = '1' else rd_addr_i;
    dbus_data_o <= st_data_r when st_out = '1' and st_we_r = '1' else (others => '0');
    accept      <= dbus_stb and not dbus_stall_i;
    ack_read    <= dbus_ack_i and not tags_r(0);
@@ -163,7 +155,7 @@ begin
             rq_v(rcnt_v) := dbus_data_i;
             rcnt_v       := rcnt_v + 1;
          end if;
-         case w_pop is
+         case w_pop_i is
             when 1 =>
                rq_v   := rq_v(1 to C_MAX_OUT) & X"00000000";
                rcnt_v := rcnt_v - 1;
@@ -262,11 +254,11 @@ begin
             if ack_read = '1' then
                f_rack <= f_rack + 1;
             end if;
-            f_pop <= f_pop + w_pop;
+            f_pop <= f_pop + w_pop_i;
 
             f_rst_d    <= rst_i;
-            f_rd_stall <= rd_stb_r and dbus_stall_i and not rst_i;
-            f_rd_addr  <= rd_addr_r;
+            f_rd_stall <= rd_stb_i and dbus_stall_i and not rst_i;
+            f_rd_addr  <= rd_addr_i;
 
             if rst_i = '1' then
                f_acc  <= "000";
@@ -286,14 +278,14 @@ begin
 
       -- PREPARE and WRITE: the contracts, a stalled read held, and no read
       -- in the cycle after a reset
-      -- psl f_st_alone : assume always st_valid_r -> not rd_stb_r;
+      -- psl f_st_alone : assume always st_valid_r -> not rd_stb_i;
       -- psl f_st_room : assume always st_i -> (st_valid_r = '0' or st_acc = '1');
-      -- psl f_out : assume always rd_stb_r -> tag_cnt_r < C_MAX_OUT;
-      -- psl f_pops : assume always w_pop <= rq_cnt_r + to_nat(ack_read);
-      -- psl f_rq_room : assume always f_read -> rq_cnt_r + reads_owed < C_MAX_OUT + w_pop;
+      -- psl f_out : assume always rd_stb_i -> tag_cnt_r < C_MAX_OUT;
+      -- psl f_pops : assume always w_pop_i <= rq_cnt_r + to_nat(ack_read);
+      -- psl f_rq_room : assume always f_read -> rq_cnt_r + reads_owed < C_MAX_OUT + w_pop_i;
       -- psl f_rd_hold : assume always (f_rd_stall and not rst_i) ->
-      --    (rd_stb_r = '1' and rd_addr_r = f_rd_addr);
-      -- psl f_quiet : assume always f_rst_d -> not rd_stb_r;
+      --    (rd_stb_i = '1' and rd_addr_i = f_rd_addr);
+      -- psl f_quiet : assume always f_rst_d -> not rd_stb_i;
 
       -- The invariants
       -- psl f_tags : assert always rst_i = '0' -> tag_cnt_r = to_integer(f_acc - f_ack);

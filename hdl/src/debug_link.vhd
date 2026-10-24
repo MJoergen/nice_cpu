@@ -34,8 +34,11 @@
 --    its read data valid with the ACK.
 -- c) rx_ready_o goes low for at most a few cycles after a byte, for as long
 --    as a Wishbone write takes, so a UART receiver that cannot wait must be
---    able to hold a byte for that long. It never goes low for a memory
---    clear: clear_o (below) does not hold up the receiver.
+--    able to hold a byte for that long. It goes low for longer only after
+--    the tag of a packet that waits for the answer to the last request, or
+--    for a clear (below) that a dropped W started. A host that waits for
+--    its answers (DEBUG.md §3) sends no such tag, but for one after a
+--    dropped packet, before the clear ends.
 -- d) free_i is the number of console bytes that the program's input buffer
 --    can take, and shows a byte of con_in_valid_o 2 cycles after the
 --    strobe. A strobe is always accepted: it comes only while free_i was
@@ -49,7 +52,9 @@
 --    until the board has set every word of the memory to 0 and answers
 --    with one cycle of clear_done_i, which is not before the cycle after
 --    clear_o rose. While clear_o is high, the board owns the memory, so
---    the master makes no access. The answer to the request waits for it.
+--    the master makes no access. The answer to the request waits for it,
+--    and so does the next request, also when the W that started the clear
+--    was dropped.
 --
 -- The host side:
 -- * rx_*: a byte from the host, with valid and ready, and rx_break_i, a
@@ -333,7 +338,9 @@ begin
 
          acc_v  := rx_valid_i = '1' and rx_rdy = '1';
          b_v    := rx_data_i;
-         busy_v := ans_req_tgl /= ans_ack_tgl;
+         -- A W that a dropped packet ended may have started a clear, which
+         -- no answer waits for.
+         busy_v := ans_req_tgl /= ans_ack_tgl or clearing_r = '1';
 
          if gap_r /= 0 then
             gap_r <= gap_r - 1;
@@ -385,7 +392,7 @@ begin
                   end if;
                end if;
 
-            -- The tag waits for the answer to the last request.
+            -- The tag waits for the answer to the last request, and for a clear.
             when RX_HOLD_ST =>
                if not busy_v then
                   rx_st <= RX_PAY_ST;

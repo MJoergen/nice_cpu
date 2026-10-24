@@ -231,7 +231,10 @@ by reading the register first.
   clears the memory and then starts a program at address 0, from memory
   that is all 0. A host that loads a program next writes `0x5`, to clear
   and stay held, or `0xD`, to keep the ROM hidden as well. The `k` answer
-  comes when the memory is clear, within the 100 ms of §5.
+  comes when the memory is clear, within the 100 ms of §5. A `W` writes
+  each word as it arrives, so a dropped `W` (§5) may still start a clear.
+  A request that comes while the memory clears is carried out after the
+  clear ends.
 - **ROM.** A system without a ROM, such as the emulator, reads bit 3 as 1
   and ignores writes to it.
 

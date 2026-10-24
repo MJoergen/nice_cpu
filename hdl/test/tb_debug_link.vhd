@@ -7,14 +7,15 @@
 -- checksum, which is the sum of the bytes from the tag to the last payload
 -- byte, mod 256, worked out by hand. ESC is the byte 0xFF.
 -- The board is a memory of 4096 words on a Wishbone slave that stalls in
--- every other cycle, a memory clear that takes 30 cycles, and a core model
--- that halts when the test says so, and loses its registers and its halt
--- while it is held, as the real core does.
+-- every other cycle, a memory clear that takes 30 cycles, or 300 where the
+-- test says so, and a core model that halts when the test says so, and
+-- loses its registers and its halt while it is held, as the real core does.
 -- The checks, in the order of the run:
 -- * the notice `b01` after reset, and the examples of DEBUG.md §8;
 -- * lowercase digits, a bad checksum, an unknown tag, a payload with a bad
 --   length or a bad digit, and a W with too many words;
--- * the debug registers, a clear of the memory, and a start;
+-- * the debug registers, a clear of the memory, one that a dropped packet
+--   started, and a start;
 -- * the errors while the program runs, and that no word is written then;
 -- * console bytes both ways, ESC ESC, the overflow notice `o`, and the
 --   order of console bytes and packets;
@@ -65,6 +66,7 @@ architecture simulation of tb_debug_link is
    signal rom_hide   : std_logic;
    signal clear      : std_logic;
    signal clear_done : std_logic                      := '0';
+   signal clear_len  : natural                        := 30;
    signal halted     : std_logic                      := '0';
    signal reason     : std_logic_vector(2 downto 0)   := "000";
    signal regs       : std_logic_vector(511 downto 0) := (others => '0');
@@ -187,9 +189,12 @@ begin
                wb_rdata <= X"DEADBEEF";
             end if;
          end if;
+         assert clear = '0' or wb_cyc = '0'
+            report "tb_debug_link: an access during a clear"
+            severity failure;
          if clear = '1' then
             clear_cnt_v := clear_cnt_v + 1;
-            if clear_cnt_v = 30 then
+            if clear_cnt_v = clear_len then
                mem         <= (others => (others => '0'));
                clear_done  <= '1';
                clear_cnt_v := 0;
@@ -396,6 +401,19 @@ begin
       assert hold = '1' and rom_hide = '0' and clear = '0'
          report "tb_debug_link: state after a clear"
          severity failure;
+
+      -- A clear that a dropped packet started: the clear starts with the
+      -- word, before the bad checksum. The next request waits for the clear,
+      -- so its word is not lost, and p_board checks that the master makes
+      -- no access during the clear.
+      clear_len <= 300;
+      send(C_ESC & "WFFFFFFF0000100000005#B8");
+      send(C_ESC & "W00000100000111223344#2D");
+      expect(C_ESC & "k000001000001#AD", "write after a dropped clear");
+      check_mem(256, X"11223344", "write after a dropped clear");
+      clear_len <= 30;
+      send(C_ESC & "WFFFFFFF0000100000005#B7");
+      expect(C_ESC & "kFFFFFFF00001#46", "clear again");
 
       -- A clear that hides the ROM and stays held, then a plain start.
       send(C_ESC & "WFFFFFFF000010000000D#C6");

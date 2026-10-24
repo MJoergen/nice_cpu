@@ -301,3 +301,14 @@ start-up code for a program that a monitor in ROM loads at `0x8000` and
 calls as a subroutine. ABI.md described them under "Programs under a
 monitor". They were removed, because the monitor and the system around
 the core belong in [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65).
+
+## The debug link's proof
+
+The formal proof of `hdl/src/debug_link.vhd`, added on 2026-10-24, found
+these ways for the link to use the memory when it may not:
+
+- A request waited only for the answer to the last one. A `W` writes each
+  word as it arrives, so a `W` that started a clear and was then dropped
+  left no answer to wait for, and the next request could use the memory
+  while the board cleared it. Now a request also waits for the clear
+  (DEBUG.md §6).

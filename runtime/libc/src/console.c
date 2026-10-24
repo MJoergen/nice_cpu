@@ -80,19 +80,24 @@ int ungetc(int c, FILE *f)
     return f->back;
 }
 
+// NULL only at the end of the input before the first byte, as C says: with
+// n = 1 nothing is read, and s becomes "".
 char *fgets(char *s, int n, FILE *f)
 {
     int k = 0;
+    if (n <= 0)
+        return NULL;
     while (k < n - 1) {
         int c = fgetc(f);
-        if (c == EOF)
+        if (c == EOF) {
+            if (k == 0)
+                return NULL;
             break;
+        }
         s[k++] = (char)c;
         if (c == '\n')
             break;
     }
-    if (k == 0)
-        return NULL;
     s[k] = '\0';
     return s;
 }

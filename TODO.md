@@ -116,8 +116,8 @@ TODO or FIXME comments.
 - **Stack overflow** is not detected in translated code, unlike in wasm.
   What happens then is undefined (WASM.md). An idea: a check against a
   stack limit in each function's prologue, at a cost in code size.
-- **Faster and smaller translated code.** `bench/` runs 1681080
-  instructions, against 491309 for `hand.nasm`, and takes about 2.38
+- **Faster and smaller translated code.** `bench/` runs 1652811
+  instructions, against 491309 for `hand.nasm`, and takes about 2.36
   million cycles in its phases on the pipelined core, as the estimate of
   `bench/pipecycles.py` does (`make compare`)
   ([translator/README.md](translator/README.md), How functions are

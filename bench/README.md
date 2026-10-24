@@ -158,8 +158,9 @@ Since DECODE predicts backward conditional jumps taken
 loops with them, `hand.nasm` takes 1252613 cycles on the pipelined
 core, 2.55 per instruction and 9.6% fewer than the 1384879 of the
 program at that commit. `bench.c` closes its loops the same way
-(translator/README.md), and the model puts it at 2356816 cycles, 1.43
-per instruction and 1.2% fewer than the 2384635 above.
+(translator/README.md), and takes 2357155 cycles for 1652811
+instructions, 1.43 per instruction and 1.2% fewer than the 2384635
+above.
 
 
 The hand-written program gains less, because more of its time goes to
@@ -327,12 +328,12 @@ PREPARE forms; and `--dest-adjust N` gives a register destination in
 mode 001 or 010, and a jump to a computed target, N cycles more in
 WRITE. A store through `@R` or `@R++` never waits, since WRITE takes
 the value it wrote last. With the four rules, the translated program's
-phases take 2384296 cycles, against 2382583 without, and those of
+phases take 2356816 cycles, against 2354763 without, and those of
 `hand.nasm` 1252534 against 1248275. A fifth, `--read-late N`, also 1 by
 default, has WRITE take read data N cycles after its ACK, but for a
 micro-op whose data only goes into a register: s0 or s1 with a side
 effect, and a `MOVE` into a register other than R15 (MICROARCH.md §5.3).
-Without it, the phases take 2294308 cycles and 1172037. `pipecycles.py --test` checks the model on
+Without it, the phases take 2266828 cycles and 1172037. `pipecycles.py --test` checks the model on
 small programs whose cycles are worked out by hand in the script, and
 `make test` runs it, and then the model on both programs with `--phases
 6`, which fails unless each reads the instruction counter around its six
@@ -341,18 +342,18 @@ phases.
 `make compare` puts the estimate beside the cycles the pipelined core
 took, phase by phase, from the output of `make core`,
 which must have run first, on the same `.bin`. With the core that
-predicts backward jumps (MICROARCH.md §5.4), which leaves `bench.c` as
-it was at commit 1a41b0c:
+predicts backward jumps (MICROARCH.md §5.4), and both programs closing
+their loops with them:
 
 | Phase | `bench.c`, model | Core | Model − core | `hand.nasm`, model | Core | Model − core |
 |---|---|---|---|---|---|---|
-| `rng64` | 83026 | 83082 | −56 | 62257 | 62270 | −13 |
-| `crc32` | 83010 | 83067 | −57 | 40233 | 40246 | −13 |
-| `bst` | 415995 | 416052 | −57 | 225654 | 225667 | −13 |
-| `heapsort` | 387282 | 387338 | −56 | 273617 | 273630 | −13 |
+| `rng64` | 82515 | 82571 | −56 | 62257 | 62270 | −13 |
+| `crc32` | 80708 | 80765 | −57 | 40233 | 40246 | −13 |
+| `bst` | 403351 | 403408 | −57 | 225654 | 225667 | −13 |
+| `heapsort` | 378602 | 378658 | −56 | 273617 | 273630 | −13 |
 | `vm` | 1248112 | 1248168 | −56 | 602050 | 602064 | −14 |
-| `strings` | 166871 | 166928 | −57 | 48723 | 48736 | −13 |
-| total | 2384296 | 2384635 | −339 | 1252534 | 1252613 | −79 |
+| `strings` | 163528 | 163585 | −57 | 48723 | 48736 | −13 |
+| total | 2356816 | 2357155 | −339 | 1252534 | 1252613 | −79 |
 
 The difference is all but the same in every phase of a program, so it
 lies at the reads of the instruction counter around the phases, whose
@@ -399,7 +400,7 @@ are worked out by hand in the script, and `make test` runs it.
 nicewasm, the measure that [translator/README.md](../translator/README.md)
 quotes for `test/safe.zig` and the float library. `make words` prints it
 for `bench.wasm`, `translator/test/safe.wasm`, and `runtime/float.wasm`:
-8611, 5170, and 7083 words. Each module is translated and
+8537, 5170, and 7083 words. Each module is translated and
 assembled on its own, with the labels it uses but does not define, such
 as the runtime's routines, defined as 0 first; a constant takes a whole
 word whatever its value (ISA.md §3), so that changes no size. The count

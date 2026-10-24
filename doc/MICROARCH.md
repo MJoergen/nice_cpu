@@ -345,7 +345,7 @@ FETCH goes on with the old stream for that cycle, and DECODE drops what
 it takes from it. That costs a cycle per jump that WRITE resolves: a
 taken jump in WRITE costs 7 cycles over a fall-through
 (`hdl/test/bubble.nasm`). The translated benchmark takes 1.5% more
-cycles for it, and the hand-written one 3.8%.
+cycles for it, and the hand-written one 2.8%.
 
 DECODE redirects early for the jumps it can resolve itself, with the
 condition "always" and the C bit clear: `MOVE PC, label`, with M clear

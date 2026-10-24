@@ -184,11 +184,6 @@ TODO or FIXME comments.
   but its harness is GPL-3, so it would live outside this repository.
   `bench/` has no float phase, because one would measure the float library
   more than the translator.
-- **A test of `nicebuild.py`.** Nothing runs it, so its `--symbols` and
-  `--no-trap-report` options, and its choice of `start_wasm_trap.nasm`, are
-  tested only by hand (with `translator/test/mchess.c`, on a stack that is too
-  small). The pieces are tested: `runtime/test/trapreport.nasm`, the
-  emulator's `trapsym` probe, and the assembler's `--symbols` case.
 - **WASM.md, "Traps", shows C code that does not build.** It stores a
   function pointer in `extern void (*__wasm_trap_vector)(int, unsigned)`.
   clang reports the symbol undefined, and a C function pointer is a table

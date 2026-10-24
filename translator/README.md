@@ -59,7 +59,9 @@ address to the console before the processor halts, as `trapmsg.nasm` of the
 runtime README does; `--no-trap-report` leaves it out, so that a trap halts
 silently. `--symbols` also writes the labels to `output.sym`, with the
 functions of the program by their names, for `niceemu --symbols`, which then
-names the function of a trap. `--keep` leaves the `.wasm`, `.nasm`,
+names the function of a trap. A Zig program is then built with `-fno-strip`,
+because ReleaseSmall leaves the names out of the wasm; the `.bin` is the
+same. `--keep` leaves the `.wasm`, `.nasm`,
 and joined `.full.nasm` files next to the output. The script builds
 `runtime/libc/libc.a` and `runtime/float.nasm` first if needed. `CLANG`,
 `ZIG`, and `RUSTC` in the environment name the compilers.
@@ -800,7 +802,7 @@ survives a call of a helper, as it does any ABI.md call.
 
 ## Test
 
-    make test        # run the test modules, then test/fuzz.py, test/passes.py, and test/errors.py
+    make test        # run the test modules, then test/fuzz.py, test/passes.py, test/errors.py, and test/build.py
     make typecheck   # mypy --strict
     make wasm        # rebuild test/*.wasm from test/*.c, test/*.zig, and test/*.rs
     make diff        # compare with an older translator, OLD=main, on random modules (minutes)
@@ -816,7 +818,16 @@ byte with `test/wasm.py`. The others are compiled from `test/*.c`,
 `make test` needs no compiler. `make wasm` needs clang with the wasm32
 target, `wasm-ld`, Zig 0.15, and rustc with the `wasm32-unknown-unknown`
 target. The Rust modules were built with rustc 1.99.0. `test/errors.py`
-checks every error message. `test/run.py --keep DIR` also leaves each
+checks every error message. `test/build.py` runs `nicebuild.py`: the
+mistakes in its options, and then a program in each language whose
+compiler is installed. `abort.c` of the C library's tests is built with
+`--symbols` and `--keep`, and its run must print the trap report and the
+emulator's name of the trap, `abort`; built with `--no-trap-report`, it
+must halt without the report. `hello.zig` is built with and without
+`--symbols`, which must give the same `.bin`, and `hellors.rs` with it.
+Every `.sym` file must name every function. A language whose compiler is
+missing is skipped, and the PASS line says which; CI has Zig only.
+`test/run.py --keep DIR` also leaves each
 program in `DIR/X.bin`, or `DIR/X_soft.bin` for the run with `--no-mpu`,
 for `make programs` in `hdl/`, which runs them on the FPGA core.
 `test/run.py`, `test/fuzz.py`, and `test/errors.py` run their cases in

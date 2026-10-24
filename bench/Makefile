@@ -65,6 +65,8 @@ test: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/dhry.bin
 	@$(PYTHON) dhrycheck.py --test
 	@$(EMU) --input $(DHRY_RUNS) $(BUILD)/dhry.bin < /dev/null > $(BUILD)/dhry.out
 	@$(PYTHON) dhrycheck.py --runs $$(cat $(DHRY_RUNS)) $(BUILD)/dhry.out
+	@echo 0 | $(EMU) $(BUILD)/dhry.bin | grep -q 'must be at least 1' && echo "PASS dhrystone with 0 runs"
+	@echo x | $(EMU) $(BUILD)/dhry.bin | grep -q 'must be at least 1' && echo "PASS dhrystone with no number"
 
 # Runs both on a core in GHDL, so that the cycles are the core's: CORE,
 # the generic G_CORE of hdl/test/tb_core.vhd, is pipeline for the

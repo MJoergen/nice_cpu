@@ -64,17 +64,20 @@ TODO or FIXME comments.
   ([README.md](README.md), Compilers).
   [doc/review/c-compiler-plan.md](doc/review/c-compiler-plan.md) has the
   expected gain and the decisions taken: the goal is cycles on the
-  pipelined core, `CHAR_BIT` is 32, the front end is our own, in
-  Python, the intermediate form is SSA from the start, and the C accepted
-  at first is C89 with `long long` and variadic functions, and the C
-  library is compiled natively from the same sources. Still open:
+  pipelined core; `CHAR_BIT` is 32; the front end is our own, in
+  Python; the intermediate form is SSA from the start; the C accepted at
+  first is C89 with `long long` and variadic functions; the C library is
+  compiled natively from the same sources; and there is no linker. Still
+  open:
   - The float library, once there is float arithmetic: called in wasm
     across the pointer boundary of WASM.md, or compiled natively.
   - An optional check mode for accesses out of bounds.
-  - A linker, or files joined as now (below).
   - The tests: against the host, the benchmark, Dhrystone, and a fuzzer.
 - **A linker.** There is none. Programs are joined with `cat` and
-  assembled at once, so every label is global (ABI.md).
+  assembled at once, so every label is global (ABI.md). The C compiler
+  does without one (c-compiler-plan.md, decision 7). Short of a linker,
+  the C library could be split into one file per function, and only the
+  files whose labels a program uses joined.
 - **The C library is small** ([runtime/README.md](runtime/README.md#c-library)).
   Missing: float conversions in `printf` and `scanf`, which would pull in
   the float library; and `errno`.

@@ -136,6 +136,16 @@ Taken on 2026-10-24:
    stack parameter whose address is taken in the slot it arrived in. The
    wasm build stays for the wasm path. The float library stays wasm until
    the compiler has floating-point arithmetic.
+7. **There is no linker.** Programs are joined and assembled at once, as
+   ABI.md describes, and the compiler names its labels by ABI.md's rules
+   for units. A linker would change no instruction in a loop, and it
+   would need an object format with symbols and relocations, which the
+   `.bin` format of ISA.md §10.4 does not have. A driver like
+   `translator/nicebuild.py` compiles each `.c` file as a unit named
+   after it, joins the files in ABI.md's order, and assembles the result.
+   If the size of programs comes to matter, the C library can be split
+   into one file per function, and the driver can join only the files
+   whose labels the program uses, until none is missing.
 
 ## Still open
 
@@ -146,7 +156,6 @@ These are in TODO.md:
   natively.
 - Safety: wasm traps on an access out of bounds, and C does not. Is an
   optional check mode wanted?
-- The linker: keep joining files, as ABI.md does now, or write one.
 - Tests: compare with the same C run on the host, as `make native` does,
   plus the benchmark and Dhrystone checks, and a fuzzer like
   `translator/test/fuzz.py`.

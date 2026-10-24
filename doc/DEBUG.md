@@ -109,10 +109,16 @@ program's data accesses, with these differences:
   request that reads or writes any other word then is answered with the
   error `02`, and reads or writes nothing. So a host holds the processor,
   or waits for it to halt, before it reads or writes the memory.
-- No link read has a side effect. A link read of the console or the read
-  counter (SYSTEM.md §1) returns 0, takes no input byte, and is not
-  counted. A link read of `CYCLE_LO`, `INSTR_LO`, or `TIME_LO` (SYSTEM.md
-  §3) returns the counter's low word and takes no snapshot.
+- No link read has a side effect that a program can see. A link read of
+  the console or the read counter (SYSTEM.md §1) returns 0, takes no input
+  byte, and is not counted. A link read of `CYCLE_LO`, `INSTR_LO`, or
+  `TIME_LO` (SYSTEM.md §3) returns the counter's low word. The emulator
+  takes no snapshot then, but a board may, as a property of the system.
+  A program cannot tell, because the link reads a counter only while the
+  processor is held or halted, and a start resets the counters and their
+  snapshots (§6). A host can: on such a board, a read of `CYCLE_HI`,
+  `INSTR_HI`, or `TIME_HI` after a link read of the low word returns the
+  snapshot of that read.
 - A link write to the console or the read counter is ignored. A link write
   to another device register acts as a program's write.
 

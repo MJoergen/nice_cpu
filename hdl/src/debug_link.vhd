@@ -24,8 +24,9 @@
 --    the read counter (0xFFFFFF01) as the board's own link rule: a read
 --    returns 0 and takes no input byte and counts nothing, and a write is
 --    ignored. A read of CYCLE_LO, INSTR_LO, or TIME_LO (SYSTEM.md §3)
---    returns the low word and takes no snapshot. The simplest board gives
---    these addresses a link-only path that these accesses take. The
+--    returns the low word, and may take a snapshot, as perf.vhd does
+--    (DEBUG.md §3). The simplest board gives the console and the read
+--    counter a link-only path that these accesses take. The
 --    processor never uses the bus while this master does: the master
 --    works only while hold_o is high or halted_i is high.
 -- b) The Wishbone slave is pipelined, as the cores' data bus is: it sends

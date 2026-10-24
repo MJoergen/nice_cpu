@@ -93,4 +93,4 @@ Run the relevant `make test` after every change.
 - Docs: plain, short sentences. Use the Oxford comma by default ("a, b, and c").
 - American spelling everywhere, in docs, comments, and identifiers
   ("behavior", "color", "analyze", "labeled", "gray").
-- Commit subjects: `niceasm: ...`, `niceemu: ...`, `runtime: ...`, `nicewasm: ...`, `nicehdl: ...`, `bench: ...`, `intro: ...`, `ISA: ...`, `Review: ...`.
+- Commit subjects: `niceasm: ...`, `niceemu: ...`, `runtime: ...`, `nicewasm: ...`, `nicecc: ...`, `nicehdl: ...`, `bench: ...`, `intro: ...`, `ISA: ...`, `Review: ...`.

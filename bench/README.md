@@ -449,10 +449,13 @@ separately, and `-fno-inline` keeps the procedures apart. Inlining them
 would take about 7% off the instructions. `main` returns no value, so R1 means
 nothing at the end.
 
-`dhrycheck.py` checks the output: each of the 22 final values against
-the "should be" line under it, with `Number_Of_Runs + 10` for
-`Arr_2_Glob[8][7]`, and the three result lines. `make test` runs it on
-the emulator's output and `make core-dhry` on the core's.
+`dhrycheck.py` checks the output against a table of its own: the 22
+final values in order, with their names and their "should be" lines,
+where `Arr_2_Glob[8][7]` is the number of runs plus 10 and the two
+`Ptr_Comp` are one address, not 0; the number of runs, which `--runs`
+gives it from `dhry.input`; and the three result lines, which must agree
+with each other and with the number of runs. `make test` runs it on the
+emulator's output and `make core-dhry` on the core's.
 
 100 runs, measured at commit 06cfabb:
 

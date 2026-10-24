@@ -113,6 +113,21 @@ RUNS: List[Tuple[str, List[str], int, List[str]]] = [
 ]
 
 
+# Files for --symbols: (contents, expected stderr line, with SYM for the
+# file's path, or None for a file in order). The program is a reserved
+# control word at 0, so the run halts with status 2 and names the location.
+# The file in order has a blank line, CRLF ends, and two labels at 0, of
+# which the first is named: "At start".
+SYMBOL_FILES: List[Tuple[str, Optional[str]]] = [
+    ("00000000\n", "SYM:1: error: expected 'address name', found only '00000000'"),
+    ("zz start\n", "SYM:1: error: 'zz' is not a hex number"),
+    ("000000001 start\n", "SYM:1: error: '000000001' has more than 8 hex digits"),
+    ("0x0 start\n", "SYM:1: error: '0x0' is not a hex number"),
+    ("\n00000000 start extra\n", "SYM:2: error: unexpected 'extra' after the name"),
+    ("\r\n00000000 start\r\n00000000 zero\r\n00000001 next\r\n", None),
+]
+
+
 def run(tmp: str, args: List[str], text: Optional[str]) -> subprocess.CompletedProcess[str]:
     path = os.path.join(tmp, "t.bin")
     if text is not None:
@@ -139,6 +154,34 @@ def main() -> None:
             if problems:
                 failed += 1
                 print(f"FAIL {args} {text!r}")
+                for msg in problems:
+                    print("    " + msg.replace("\n", "\n    "))
+
+        # The format of a --symbols file.
+        sym = os.path.join(tmp, "t.sym")
+        for text, message in SYMBOL_FILES:
+            with open(sym, "w", newline="") as f:
+                f.write(text)
+            p = run(tmp, ["--symbols", sym, "BIN"], "00000000 0c600000")
+            problems = []
+            if message is None:
+                if p.returncode != 2:
+                    problems.append(f"exit status {p.returncode}, expected 2")
+                if "At start" not in p.stdout.splitlines():
+                    problems.append(f"expected 'At start', got:\n{p.stdout}")
+                if p.stderr:
+                    problems.append(f"unexpected stderr:\n{p.stderr}")
+            else:
+                message = message.replace("SYM", sym)
+                if p.returncode != 1:
+                    problems.append(f"exit status {p.returncode}, expected 1")
+                if message not in p.stderr.splitlines():
+                    problems.append(f"expected '{message}', got:\n{p.stderr}")
+                if p.stdout:
+                    problems.append(f"unexpected output:\n{p.stdout}")
+            if problems:
+                failed += 1
+                print(f"FAIL --symbols {text!r}")
                 for msg in problems:
                     print("    " + msg.replace("\n", "\n    "))
 
@@ -233,7 +276,7 @@ def main() -> None:
             if out_b != b"A" or killed.returncode != -sig or err_b:
                 failed += 1
                 print(f"FAIL {sig.name}: output {out_b!r}, exit status {killed.returncode}, stderr {err_b!r}")
-    total = len(CASES) + len(RUNS) + 7
+    total = len(CASES) + len(SYMBOL_FILES) + len(RUNS) + 7
     print(f"PASS errors ({total} cases)" if not failed else f"FAIL errors ({failed} of {total})")
     sys.exit(1 if failed else 0)
 

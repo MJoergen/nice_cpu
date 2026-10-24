@@ -3,6 +3,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Prints the next three values of rand, one call per statement: C does not
+// say in which order the arguments of a call are evaluated.
+static void three(void)
+{
+    int a = rand();
+    int b = rand();
+    int c = rand();
+    printf("%d %d %d\n", a, b, c);
+}
+
 int main(void)
 {
     printf("%d %ld %lld\n", abs(-5), labs(-6L), llabs(-7LL));
@@ -17,9 +27,9 @@ int main(void)
     printf("%ld %d\n", v, *end == 'a');
 
     // The generator starts as after srand(1), and srand restarts it.
-    printf("%d %d %d\n", rand(), rand(), rand());
+    three();
     srand(42);
-    printf("%d %d %d\n", rand(), rand(), rand());
+    three();
     srand(1);
     printf("%d %d\n", rand(), RAND_MAX);
 

@@ -96,8 +96,12 @@ def compile_wasm(lang: str, args: argparse.Namespace, wasm: str) -> None:
     elif lang == "zig":
         mode = args.opt or "ReleaseSmall"
         stack = args.stack or (16384 if mode in ("Debug", "ReleaseSafe") else 4096)
+        # --symbols needs the names of the functions, which ReleaseSmall and
+        # -fstrip leave out of the wasm. nicewasm reads nothing else of what
+        # -fno-strip keeps, so the .bin is the same either way.
+        strip = "-fno-strip" if args.symbols else "-fstrip"
         run([os.environ.get("ZIG", "zig"), "build-exe", "-target", "wasm32-freestanding",
-             "-fno-entry", "-rdynamic", "-O", mode, "-fstrip", "--stack", str(stack),
+             "-fno-entry", "-rdynamic", "-O", mode, strip, "--stack", str(stack),
              f"--initial-memory={args.memory}", "--dep", "nice",
              f"-Mroot={args.inputs[0]}", f"-Mnice={os.path.join(RUNTIME, 'nice.zig')}",
              f"-femit-bin={wasm}"])

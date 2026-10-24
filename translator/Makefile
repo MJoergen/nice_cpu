@@ -20,7 +20,8 @@ RUST_TESTS = rust rusttrap hellors
 # modules with test/fuzz.py: 40 with the math unit, 40 without, and 20 each
 # without bounds checks and with a memory that can grow. Then the passes on
 # code built by hand in test/passes.py, then check the error messages in
-# test/errors.py.
+# test/errors.py, and run nicebuild.py in test/build.py, for each language
+# whose compiler is installed.
 test: emulator
 	@$(PYTHON) test/run.py
 	@$(PYTHON) test/fuzz.py 1 40
@@ -29,6 +30,7 @@ test: emulator
 	@$(PYTHON) test/fuzz.py --grow 1 20
 	@$(PYTHON) test/passes.py
 	@$(PYTHON) test/errors.py
+	@$(PYTHON) test/build.py
 
 emulator:
 	$(MAKE) -C ../emulator build
@@ -49,7 +51,7 @@ diff: emulator
 # Needs mypy (pip install mypy).
 typecheck:
 	cd test && MYPYPATH=../../assembler:.. $(PYTHON) -m mypy --strict ../nicewasm.py ../nicebuild.py run.py errors.py \
-	  wasm.py fuzz.py passes.py diff_fuzz.py
+	  wasm.py fuzz.py passes.py diff_fuzz.py build.py
 
 wasm:
 	@for t in $(C_TESTS); do \

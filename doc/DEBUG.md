@@ -180,7 +180,7 @@ has a side effect (§3). Then the host reads what the request changes, such
 as the control register, to learn whether it took effect. A system
 sends the first byte of every answer within 100 ms of the last byte of the
 request, a clear of the memory included (§6). The whole answer may take
-longer: a 65535-word `r` takes about 45 s at 115200 baud.
+longer: a 65535-word `r` takes about 2.6 s at 2 Mbaud.
 
 ## 6. The debug registers
 
@@ -246,7 +246,7 @@ and bit 3 at 0. A system without one waits, held, with bit 0 at 1.
 ## 7. Transports
 
 - **UART.** NiceMonMEGA65 carries the link on its debug UART, 8-N-1, at
-  115200 baud unless it was built for another rate. A UART break, a frame
+  2 Mbaud unless it was built for another rate. A UART break, a frame
   of ten 0 bits, ends the program's input, as a break from the keyboard
   does (SYSTEM.md §5). Then the console reads `0x200` (SYSTEM.md §1)
   until the next start.

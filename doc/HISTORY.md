@@ -329,6 +329,14 @@ these ways for the link to use the memory when it may not:
   while the program ran or the memory cleared. Now a `W` that wraps is
   answered with `e02`, in the emulator too (DEBUG.md §3).
 
+## The debug UART's rate
+
+NiceMonMEGA65's debug UART ran at 115200 baud until it moved to 2 Mbaud
+(MJoergen/NiceMonMEGA65@a922a42). A 65535-word `r` took about 45 s then,
+and `primes.bin` took 6.9 s to load, against 2.6 s and 0.7 s now. Bitstreams
+built before the change still run at 115200 baud, so the tools' `--baud`
+default of 2000000 does not fit them.
+
 ## When `halted_o` rises
 
 Until 2026-10-24, the pipelined core raised `halted_o` once it made no new

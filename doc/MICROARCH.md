@@ -145,10 +145,16 @@ The parts do this:
   flight, and the read data that WRITE has not used yet.
 
 Each stage holds one item and passes it on when the next stage is free,
-or frees itself in the same cycle. The handshake of each stage is
-written by hand, not built from generic valid/ready pipeline stages,
-because PREPARE's decisions depend on the state of WRITE in the same
-cycle (§5.3). DECODE's skid register ends that path, so that it reaches
+or frees itself in the same cycle. DECODE passes micro-operations to
+PREPARE, and PREPARE to WRITE, through valid/ready handshakes: one moves
+in a cycle with valid and ready both high, and valid does not depend on
+ready. They are not generic valid/ready pipeline stages, though, and a
+register slice between two of them would break the core. WRITE's flush
+empties the stages beside the handshakes, WRITE's check of stores into
+fetched code (§5.5) reads every stage's registers, and PREPARE's
+decisions depend on the state of WRITE in the same cycle (§5.3). FETCH's
+words and DBUS's read data move several at a time, and have no such
+handshake. DECODE's skid register ends that path, so that it reaches
 PREPARE's registers but not DECODE's
 ([review/pipeline-timing.md](review/pipeline-timing.md), The handshake).
 

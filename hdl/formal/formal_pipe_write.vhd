@@ -26,7 +26,7 @@ entity formal_pipe_write is
    port (
       clk_i        : in  std_logic;
       rst_i        : in  std_logic;
-      move_i       : in  std_logic;
+      valid_i      : in  std_logic;
       first_read_i : in  std_logic;
       rd_stb_i     : in  std_logic;
       rq_cnt_i     : in  natural range 0 to C_MAX_OUT;
@@ -51,7 +51,7 @@ architecture synthesis of formal_pipe_write is
    signal skid     : t_inst;
    signal prep     : t_uop;
    signal rq       : t_words(0 to C_MAX_OUT - 1);
-   signal accept   : std_logic;
+   signal ready    : std_logic;
    signal pop      : natural range 0 to 2;
    signal st       : std_logic;
    signal st_we    : std_logic;
@@ -88,7 +88,7 @@ begin
    -- Halted WRITE makes no access to the data bus, takes no interrupt, and
    -- accepts no micro-operation.
    -- psl f_halt_quiet : assert always w.mode = HALTED_ST ->
-   --    (st = '0' and take_nmi = '0' and take_irq = '0' and accept = '0');
+   --    (st = '0' and take_nmi = '0' and take_irq = '0' and ready = '0');
 
    -- Nothing leaves the halt but a reset: not an interrupt, not a bus
    -- reply, not a micro-operation from PREPARE.
@@ -104,11 +104,11 @@ begin
       port map (
          clk_i        => clk_i,
          rst_i        => rst_i,
-         move_i       => move_i,
+         valid_i      => valid_i,
          uop_i        => uop,
          first_read_i => first_read_i,
          rd_stb_i     => rd_stb_i,
-         accept_o     => accept,
+         ready_o      => ready,
          f_addr_i     => f_addr_i,
          f_blk_i      => f_blk_i,
          dec_i        => dec,

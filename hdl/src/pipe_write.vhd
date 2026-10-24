@@ -19,8 +19,9 @@
 -- (src/trace_pkg.vhd).
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
--- a) uop_i is PREPARE's micro-operation, which WRITE takes when move_i is
---    '1'. move_i is '1' only when accept_o is.
+-- a) uop_i is PREPARE's micro-operation, which WRITE takes in a cycle
+--    with valid_i and ready_o both high. valid_i does not depend on
+--    ready_o.
 -- b) rq_i, rq_cnt_i, and ack_read_i give the read data that has come, in
 --    order.
 -- c) A device holds nmi_valid_i or irq_valid_i, and the vector, stable
@@ -45,11 +46,11 @@ entity pipe_write is
       rst_i        : in  std_logic;
 
       -- From PREPARE
-      move_i       : in  std_logic;
+      valid_i      : in  std_logic;
       uop_i        : in  t_uop;
       first_read_i : in  std_logic;
       rd_stb_i     : in  std_logic;
-      accept_o     : out std_logic;   -- WRITE takes PREPARE's micro-operation
+      ready_o      : out std_logic;   -- WRITE is free for PREPARE's micro-operation
 
       -- The words fetched but not retired (MICROARCH.md §5.5)
       f_addr_i     : in  std_logic_vector(31 downto 0);
@@ -95,7 +96,7 @@ end entity pipe_write;
 
 architecture synthesis of pipe_write is
 
-   signal p_move       : std_logic;
+   signal p_valid      : std_logic;
    signal p_out        : t_uop;
    signal p_first_read : std_logic;
    signal rd_stb_r     : std_logic;
@@ -126,7 +127,7 @@ architecture synthesis of pipe_write is
 
 begin
 
-   p_move       <= move_i;
+   p_valid      <= valid_i;
    p_out        <= uop_i;
    p_first_read <= first_read_i;
    rd_stb_r     <= rd_stb_i;
@@ -140,7 +141,7 @@ begin
    rq_cnt_r     <= rq_cnt_i;
    ack_read     <= ack_read_i;
 
-   accept_o   <= w_accept;
+   ready_o    <= w_accept;
    pop_o      <= w_pop;
    st_o       <= w_st;
    st_we_o    <= w_st_we;
@@ -192,6 +193,7 @@ begin
       variable rti_v    : boolean;
       variable bound_v  : boolean;
       variable room_v   : boolean;
+      variable accept_v : std_logic;
    begin
       n_v         := w_r;
       n_v.rep     := C_RETIRE_NONE;
@@ -650,11 +652,12 @@ begin
       -- WRITE takes the next micro-operation when it is free.
       if (w_r.uop.valid = '0' or done_v) and not flush_v and n_v.mode = RUN_ST and
          not (bound_v and (nmi_valid_i = '1' or (irq_valid_i = '1' and w_r.regs(14)(C_SR_E) = '1'))) then
-         w_accept <= '1';
+         accept_v := '1';
       else
-         w_accept <= '0';
+         accept_v := '0';
       end if;
-      if p_move = '1' then
+      w_accept <= accept_v;
+      if p_valid = '1' and accept_v = '1' then
          n_v.uop := p_out;
       end if;
 

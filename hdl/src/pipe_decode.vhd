@@ -20,11 +20,14 @@
 -- skid_r, and the id of the next instruction. consume_o, redirect_o, and
 -- target_o depend combinationally on the words from FETCH and on dec_q
 -- alone, so that the path from WRITE's decisions ends here and not in
--- FETCH. emit_o depends on ready_i and flush_i, so that a micro-operation
--- moves on in the cycle the next stage frees itself.
+-- FETCH. The port to PREPARE is a valid/ready handshake: a
+-- micro-operation moves on in a cycle with valid_o and ready_i both high,
+-- so in the cycle the next stage frees itself. valid_o depends on flush_i,
+-- and not on ready_i.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
--- a) ready_i is '1' when PREPARE takes uop_o at the end of the cycle.
+-- a) PREPARE takes uop_o at the end of a cycle with valid_o and ready_i
+--    both high.
 -- b) flush_i empties the stage, and wins over everything else.
 --
 -- RESET
@@ -61,8 +64,8 @@ entity pipe_decode is
       flush_i    : in  std_logic;
 
       -- To PREPARE
+      valid_o    : out std_logic;
       ready_i    : in  std_logic;
-      emit_o     : out std_logic;
       uop_o      : out t_uop;
       -- The instructions in dec_r, dec_q, and skid_r, for the check of
       -- stores into fetched code
@@ -110,9 +113,10 @@ architecture synthesis of pipe_decode is
    signal dec_free    : std_logic;
 
    -- The micro-operation that PREPARE did not take, and what goes to it
-   signal skid_r   : t_uop;
-   signal out_uop  : t_uop;
-   signal out_emit : std_logic;
+   signal skid_r    : t_uop;
+   signal out_uop   : t_uop;
+   signal out_valid : std_logic;
+   signal out_emit  : std_logic;   -- PREPARE takes out_uop
 
 begin
 
@@ -125,7 +129,7 @@ begin
    consume_o  <= f_consume;
    redirect_o <= d_load and d_early;
    target_o   <= d_dest;
-   emit_o     <= out_emit;
+   valid_o    <= out_valid;
    uop_o      <= out_uop;
    inst_o     <= dec_r;
    inst2_o    <= dec_q;
@@ -232,8 +236,9 @@ begin
    dec_free <= not dec_r.valid or (seq_adv and seq_uop.last);
 
    -- To PREPARE: the micro-operation in skid_r, else the one split off now
-   out_uop  <= skid_r when skid_r.valid = '1' else seq_uop;
-   out_emit <= (skid_r.valid or dec_r.valid) and p_ready and not w_flush;
+   out_uop   <= skid_r when skid_r.valid = '1' else seq_uop;
+   out_valid <= (skid_r.valid or dec_r.valid) and not w_flush;
+   out_emit  <= out_valid and p_ready;
 
 
    p_seq : process (clk_i)
@@ -419,8 +424,8 @@ begin
       -- psl f_count_range : assume always f_count <= 4;
 
       -- What PREPARE assumes of DECODE
-      -- psl f_emit : assert always (rst_i = '0' and out_emit = '1') ->
-      --    (out_uop.valid = '1' and p_ready = '1' and w_flush = '0');
+      -- psl f_emit : assert always (rst_i = '0' and out_valid = '1') ->
+      --    (out_uop.valid = '1' and w_flush = '0');
       -- psl f_last : assert always (rst_i = '0' and out_emit = '1') ->
       --    out_uop.last = is_last(out_uop.kind);
       -- psl f_next_uop : assert always (rst_i = '0' and out_emit = '1' and f_open = '1') ->

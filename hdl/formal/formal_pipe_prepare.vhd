@@ -20,10 +20,10 @@ entity formal_pipe_prepare is
    port (
       clk_i        : in  std_logic;
       rst_i        : in  std_logic;
-      emit_i       : in  std_logic;
+      valid_i      : in  std_logic;
       done_i       : in  std_logic;
       flush_i      : in  std_logic;
-      accept_i     : in  std_logic;
+      ready_i      : in  std_logic;
       take_nmi_i   : in  std_logic;
       take_irq_i   : in  std_logic;
       nmi_valid_i  : in  std_logic;
@@ -40,7 +40,7 @@ architecture synthesis of formal_pipe_prepare is
    signal uop        : t_uop;
    signal w          : t_write;
    signal ready      : std_logic;
-   signal move       : std_logic;
+   signal valid      : std_logic;
    signal uop_out    : t_uop;
    signal first_read : std_logic;
    signal prep       : t_uop;
@@ -66,18 +66,18 @@ begin
       port map (
          clk_i        => clk_i,
          rst_i        => rst_i,
-         emit_i       => emit_i,
+         valid_i      => valid_i,
          uop_i        => uop,
          ready_o      => ready,
          w_i          => w,
          done_i       => done_i,
          flush_i      => flush_i,
-         accept_i     => accept_i,
+         ready_i      => ready_i,
          take_nmi_i   => take_nmi_i,
          take_irq_i   => take_irq_i,
          nmi_valid_i  => nmi_valid_i,
          irq_valid_i  => irq_valid_i,
-         move_o       => move,
+         valid_o      => valid,
          uop_o        => uop_out,
          first_read_o => first_read,
          prep_o       => prep,

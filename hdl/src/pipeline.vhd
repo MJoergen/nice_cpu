@@ -29,9 +29,13 @@
 -- decisions of the same cycle.
 --
 -- Each stage holds one item, and passes it on when the next stage is free
--- or frees itself in the same cycle. DECODE splits off a micro-operation
--- whether PREPARE takes it or not, and keeps one it does not take in
--- skid_r, so that its registers do not wait on PREPARE's decisions.
+-- or frees itself in the same cycle. DECODE to PREPARE and PREPARE to
+-- WRITE are valid/ready handshakes: a micro-operation moves in a cycle
+-- with valid and ready both high, and valid does not depend on ready. A
+-- flush and WRITE's checks act beside them. DECODE splits off a
+-- micro-operation whether PREPARE takes it or not, and keeps one it does
+-- not take in skid_r, so that its registers do not wait on PREPARE's
+-- decisions.
 --
 -- REGISTERS. WRITE is the only stage that writes the registers, and it does
 -- so in program order. So the registers it holds, w_r.regs, are the
@@ -202,7 +206,7 @@ architecture synthesis of pipeline is
    signal dec_q      : t_inst;
    signal skid       : t_inst;      -- The instruction of DECODE's skid_r
    signal seq_uop    : t_uop;
-   signal seq_emit   : std_logic;
+   signal d_valid    : std_logic;
    signal d_starve   : std_logic;
    signal d_blocked  : std_logic;
 
@@ -212,7 +216,7 @@ architecture synthesis of pipeline is
    signal p_out        : t_uop;
    signal p_load       : std_logic;
    signal p_first_read : std_logic;
-   signal p_move       : std_logic;
+   signal p_valid      : std_logic;
    signal rd_stb_r     : std_logic;
    signal rd_addr_r    : std_logic_vector(31 downto 0);
    signal rd_count     : std_logic;   -- Counts an instruction on instret_o
@@ -231,7 +235,7 @@ architecture synthesis of pipeline is
    signal w_done    : std_logic;   -- The micro-operation in WRITE retires
    signal w_flush   : std_logic;
    signal w_target  : std_logic_vector(31 downto 0);
-   signal w_accept  : std_logic;   -- WRITE takes the micro-operation in PREPARE
+   signal w_ready   : std_logic;   -- WRITE is free for the micro-operation in PREPARE
    signal w_pop     : natural range 0 to 2;
    signal w_st      : std_logic;   -- WRITE puts a store or a vector read into DBUS
    signal w_st_we   : std_logic;   -- A store
@@ -325,8 +329,8 @@ begin
          redirect_o => d_redirect,
          target_o   => d_dest,
          flush_i    => d_flush,
+         valid_o    => d_valid,
          ready_i    => p_ready,
-         emit_o     => seq_emit,
          uop_o      => seq_uop,
          inst_o     => dec_r,
          inst2_o    => dec_q,
@@ -340,18 +344,18 @@ begin
       port map (
          clk_i        => clk_i,
          rst_i        => rst_i,
-         emit_i       => seq_emit,
+         valid_i      => d_valid,
          uop_i        => seq_uop,
          ready_o      => p_ready,
          w_i          => w_r,
          done_i       => w_done,
          flush_i      => w_flush,
-         accept_i     => w_accept,
+         ready_i      => w_ready,
          take_nmi_i   => take_nmi,
          take_irq_i   => take_irq,
          nmi_valid_i  => nmi_valid_i,
          irq_valid_i  => irq_valid_i,
-         move_o       => p_move,
+         valid_o      => p_valid,
          uop_o        => p_out,
          first_read_o => p_first_read,
          prep_o       => prep_r,
@@ -399,11 +403,11 @@ begin
       port map (
          clk_i        => clk_i,
          rst_i        => rst_i,
-         move_i       => p_move,
+         valid_i      => p_valid,
          uop_i        => p_out,
          first_read_i => p_first_read,
          rd_stb_i     => rd_stb_r,
-         accept_o     => w_accept,
+         ready_o      => w_ready,
          f_addr_i     => f_addr,
          f_blk_i      => f_blk,
          dec_i        => dec_r,
@@ -473,7 +477,7 @@ begin
             assert not (rd_count = '1' and w_instret = '1')
                report "pipeline: two instructions counted in one cycle"
                severity failure;
-            assert not (seq_emit = '1' and not decoded_ok(seq_uop))
+            assert not (d_valid = '1' and p_ready = '1' and not decoded_ok(seq_uop))
                report "pipeline: DECODE's fields disagree with the instruction word"
                severity failure;
             assert not (st_valid = '1' and rd_stb_r = '1')
@@ -521,7 +525,7 @@ begin
             -- PREPARE's assumptions about WRITE and DBUS that need no model
             -- (src/pipe_prepare.vhd, f_accept and f_st_queue). The others
             -- are checked only by the tests and the bounded check.
-            assert not (w_accept = '1' and w_flush = '1')
+            assert not (w_ready = '1' and w_flush = '1')
                report "pipeline: WRITE takes a micro-operation and flushes at once"
                severity failure;
             -- An access waits in DBUS only if one was queued or held a cycle ago

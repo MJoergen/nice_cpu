@@ -34,7 +34,7 @@ architecture synthesis of formal_pipe_decode is
    signal consume  : natural range 0 to 4;
    signal redirect : std_logic;
    signal target   : std_logic_vector(31 downto 0);
-   signal emit     : std_logic;
+   signal valid    : std_logic;
    signal uop      : t_uop;
    signal inst     : t_inst;
    signal inst2    : t_inst;
@@ -65,8 +65,8 @@ begin
          redirect_o => redirect,
          target_o   => target,
          flush_i    => flush_i,
+         valid_o    => valid,
          ready_i    => ready_i,
-         emit_o     => emit,
          uop_o      => uop,
          inst_o     => inst,
          inst2_o    => inst2,

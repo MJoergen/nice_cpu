@@ -21,10 +21,11 @@
 %
 % A bus is drawn gray (x) in every cycle in which it carries nothing:
 % FETCH's addr_o while DECODE takes no word (consume_i = 0), DECODE's
-% uop_o while it emits none, prep_r and w_r.uop while they hold no
-% micro-operation, dbus_addr_o while dbus_stb_o is low, dbus_data_o while
-% dbus_we_o is low, dbus_data_i but for a read's ACK, and retire_o while
-% it reports no step. ibus_addr_o is shown as the address of the first
+% uop_o while PREPARE takes none (valid_o and ready_i not both high),
+% prep_r and w_r.uop while they hold no micro-operation, dbus_addr_o
+% while dbus_stb_o is low, dbus_data_o while dbus_we_o is low,
+% dbus_data_i but for a read's ACK, and retire_o while it reports no
+% step. ibus_addr_o is shown as the address of the first
 % word of the pair. A micro-operation is shown as its kind and the
 % address of its instruction. R2 and R3 are WRITE's registers, w_r.regs.
 %

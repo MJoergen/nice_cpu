@@ -22,7 +22,7 @@
 -- its last read, count_o.
 --
 -- The registers are prep_r, the request register, and what PREPARE knows
--- of the current instruction. ready_o, move_o, uop_o, load_o,
+-- of the current instruction. ready_o, valid_o, uop_o, load_o,
 -- first_read_o, and count_o depend combinationally on the state of WRITE
 -- and on the bus in the same cycle: a micro-operation moves on in the
 -- cycle WRITE frees itself, and a read is loaded in the cycle the bus
@@ -32,8 +32,12 @@
 -- into DBUS now. A waiting store counts among the requests in flight, of
 -- which there may be no more than C_MAX_OUT (src/pipe_dbus.vhd, b).
 --
+-- Both micro-operation ports are valid/ready handshakes: a micro-operation
+-- moves in a cycle with valid and ready both high, and valid does not
+-- depend on ready. ready_o depends on ready_i.
+--
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
--- a) w_i is WRITE's state, and done_i, flush_i, accept_i, take_nmi_i, and
+-- a) w_i is WRITE's state, and done_i, flush_i, ready_i, take_nmi_i, and
 --    take_irq_i are WRITE's decisions in the same cycle.
 -- b) tag_cnt_i counts the data bus requests accepted and not acknowledged.
 -- c) WRITE neither flushes nor takes an interrupt while the instruction in
@@ -65,7 +69,7 @@ entity pipe_prepare is
       rst_i        : in  std_logic;
 
       -- From DECODE
-      emit_i       : in  std_logic;
+      valid_i      : in  std_logic;
       uop_i        : in  t_uop;
       ready_o      : out std_logic;
 
@@ -73,7 +77,7 @@ entity pipe_prepare is
       w_i          : in  t_write;
       done_i       : in  std_logic;
       flush_i      : in  std_logic;
-      accept_i     : in  std_logic;
+      ready_i      : in  std_logic;   -- WRITE takes uop_o
       take_nmi_i   : in  std_logic;
       take_irq_i   : in  std_logic;
 
@@ -82,7 +86,7 @@ entity pipe_prepare is
       irq_valid_i  : in  std_logic;
 
       -- To WRITE
-      move_o       : out std_logic;
+      valid_o      : out std_logic;
       uop_o        : out t_uop;
       first_read_o : out std_logic;   -- The first data read of an instruction
       prep_o       : out t_uop;       -- prep_r, for the check of stores into fetched code
@@ -104,7 +108,8 @@ end entity pipe_prepare;
 architecture synthesis of pipe_prepare is
 
    signal seq_uop   : t_uop;
-   signal seq_emit  : std_logic;
+   signal seq_valid : std_logic;
+   signal seq_emit  : std_logic;   -- PREPARE takes DECODE's micro-operation
    signal w_r       : t_write;
    signal w_done    : std_logic;
    signal w_flush   : std_logic;
@@ -124,7 +129,9 @@ architecture synthesis of pipe_prepare is
    signal p_first_read  : std_logic;
    signal p_last_read   : std_logic;
    signal p_addr        : std_logic_vector(31 downto 0);
-   signal p_move        : std_logic;
+   signal p_valid       : std_logic;              -- The micro-operation may go on
+   signal p_ready       : std_logic;
+   signal p_move        : std_logic;              -- WRITE takes it
    signal rd_stb_r      : std_logic;
    signal rd_addr_r     : std_logic_vector(31 downto 0);
    signal rd_last_r     : std_logic;              -- rd_stb_r is its instruction's last read
@@ -132,17 +139,21 @@ architecture synthesis of pipe_prepare is
 begin
 
    seq_uop   <= uop_i;
-   seq_emit  <= emit_i;
+   seq_valid <= valid_i;
    w_r       <= w_i;
    w_done    <= done_i;
    w_flush   <= flush_i;
-   w_accept  <= accept_i;
+   w_accept  <= ready_i;
    take_nmi  <= take_nmi_i;
    take_irq  <= take_irq_i;
    tag_cnt_r <= tag_cnt_i;
 
-   ready_o      <= not prep_r.valid or p_move;
-   move_o       <= p_move;
+   p_move   <= p_valid and w_accept;
+   p_ready  <= not prep_r.valid or p_move;
+   seq_emit <= seq_valid and p_ready;
+
+   ready_o      <= p_ready;
+   valid_o      <= p_valid;
    uop_o        <= p_out;
    first_read_o <= p_first_read;
    prep_o       <= prep_r;
@@ -323,11 +334,11 @@ begin
 
       -- The micro-operation may go on when its values are ready and its
       -- reads are loaded, or it has none, or its condition is false.
-      p_move <= '0';
-      if u_v.valid = '1' and w_accept = '1' then
+      p_valid <= '0';
+      if u_v.valid = '1' then
          if (ck_v = '1' and cv_v = '0') or
             (not busy_v and (nr_v = 0 or (ck_v = '1' and p_loaded_r + to_nat(load_v) = nr_v))) then
-            p_move <= '1';
+            p_valid <= '1';
          end if;
       end if;
 
@@ -500,8 +511,7 @@ begin
       -- psl default clock is rising_edge(clk_i);
 
       -- DECODE
-      -- psl f_emit : assume always seq_emit ->
-      --    (seq_uop.valid = '1' and (prep_r.valid = '0' or p_move = '1'));
+      -- psl f_emit : assume always seq_valid -> seq_uop.valid;
       -- psl f_last : assume always seq_emit -> seq_uop.last = is_last(seq_uop.kind);
       -- psl f_next_uop : assume always (seq_emit and f_open) ->
       --    (seq_uop.first = '0' and seq_uop.inst = f_inst and

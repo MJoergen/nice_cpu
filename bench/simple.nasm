@@ -450,8 +450,6 @@ bst.new MOVE    @R2, R11
         MOVE    @R11++, 1
         MOVE    @R11++, 0
         MOVE    @R11++, 0
-        MOVE    PC, bst.next
-bst.dup ADD     @1[R3], @1[R3], 1
 bst.next
         SUB[M]  R0, R9, R10
         ?!Z ADD PC, PC, bst.ins-bst.b1
@@ -464,6 +462,9 @@ bst.b1
         ?!Z MOVE PC, bst.walkf
         MOVE    R1, R3
         MOVE    PC, @SP++
+
+bst.dup ADD     @1[R3], @1[R3], 1       ; the key is there: count it
+        MOVE    PC, bst.next
 
 ; bst.walkf: R1 = a node that is not null, R2 = its depth, R3 = the hash,
 ; which it returns in R3. Uses R1 and R2. The call for a child is two
@@ -531,7 +532,7 @@ hs.chk  MOVE    R3, @R2++
         DEC[M]  R6, R6
         ?!Z ADD PC, PC, hs.chk-hs.b3
 hs.b3   MOVE    R1, R5
-        MOVE    PC, @SP++
+hs.ret  MOVE    PC, @SP++
 hs.bad  MOVE    R1, 0
         MOVE    PC, @SP++
 
@@ -542,7 +543,7 @@ hs.bad  MOVE    R1, 0
 hs.sift MOVE    R6, @arr[R1]            ; a[i]
 hs.loop ADD     R3, R1, 1[R1]           ; l
         SUB[M]  R0, R3, R2
-        ?!C MOVE PC, @SP++              ; l >= n
+        ?!C MOVE PC, hs.ret             ; l >= n
         MOVE    R4, @arr[R3]            ; a[m], with m = l
         MOVE    R5, R3
         ADD     R7, R3, 1
@@ -554,12 +555,12 @@ hs.loop ADD     R3, R1, 1[R1]           ; l
         ?N MOVE R4, @arr[R7]
 hs.cmp  SUB[M]  R0, R6, R4              ; a[i] - a[m]
         ?V XOR  R14, R14, SIGN_N
-        ?!N MOVE PC, @SP++              ; a[m] <= a[i]
+        ?!N MOVE PC, hs.ret             ; a[m] <= a[i]
         MOVE    @arr[R1], R4
         MOVE    @arr[R5], R6            ; now i = m, in R5
         ADD     R3, R5, 1[R5]           ; l
         SUB[M]  R0, R3, R2
-        ?!C MOVE PC, @SP++
+        ?!C MOVE PC, hs.ret
         MOVE    R4, @arr[R3]
         MOVE    R1, R3
         ADD     R7, R3, 1
@@ -571,7 +572,7 @@ hs.cmp  SUB[M]  R0, R6, R4              ; a[i] - a[m]
         ?N MOVE R4, @arr[R7]
 hs.cmp2 SUB[M]  R0, R6, R4
         ?V XOR  R14, R14, SIGN_N
-        ?!N MOVE PC, @SP++
+        ?!N MOVE PC, hs.ret
         MOVE    @arr[R5], R4
         MOVE    @arr[R1], R6            ; now i = m, in R1
         MOVE    PC, hs.loop

@@ -378,7 +378,7 @@ when its loops end with a conditional backward jump, written as `ADD PC,
 PC, label-next`, where `next` labels the instruction after the jump. A
 jump back that is mostly skipped is better written as `MOVE PC, label`,
 which costs nothing when skipped. The hand-written benchmark does both,
-and saves 7% of its cycles. The
+and saves 9.6% of its cycles. The
 translated benchmark puts each loop's back edge on an unconditional jump
 and its exits on forward conditional jumps, so it neither gains nor
 loses.
@@ -456,20 +456,20 @@ the condition is known. These are the shares of all instructions:
 
 | | `bench.c` through nicewasm | `hand.nasm` |
 |---|---|---|
-| Instructions | 1726040 | 494272 |
+| Instructions | 1726040 | 493964 |
 | Skipped | 20.3% | 18.4% |
-| Words per instruction, mean | 1.86 | 1.62 |
-| Micro-ops per instruction, mean | 1.00 | 1.18 |
+| Words per instruction, mean | 1.86 | 1.66 |
+| Micro-ops per instruction, mean | 1.00 | 1.14 |
 | Conditional | 22.3% | 27.7% |
-| Data read | 11.9% | 41.7% |
+| Data read | 11.9% | 38.3% |
 | Store | 5.8% | 15.5% |
-| Jump: writes R15, or a control instruction | 20.1% | 21.1% |
-| Reads a register the previous instruction writes | 29.9% | 30.0% |
-| Reads a register written two back, not one | 7.3% | 14.0% |
+| Jump: writes R15, or a control instruction | 20.1% | 21.0% |
+| Reads a register the previous instruction writes | 29.9% | 30.2% |
+| Reads a register written two back, not one | 7.3% | 13.9% |
 | Conditional, SR written by the previous instruction | 20.1% | 20.3% |
-| Conditional with a data read, SR written by the previous | 0.0% | 3.8% |
+| Conditional with a data read, SR written by the previous | 0.0% | 0.0% |
 | Data read after a store | 0.7% | 8.1% |
-| Data read after a conditional jump | 5.6% | 7.6% |
+| Data read after a conditional jump | 5.6% | 7.9% |
 | R14 read as an operand | 3.0% | 6.6% |
 | R15 as a pointer, or with a side effect | 0% | 0% |
 

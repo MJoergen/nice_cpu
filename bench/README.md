@@ -79,11 +79,11 @@ Then `hand.nasm`:
     phase      instructions       cycles  result
     rng64            39949        39953  0e18cd0a  ok
     crc32            27658        27662  2df3b109  ok
-    bst             115203       115207  55a72225  ok
-    heapsort        175654       175658  bdb22882  ok
+    bst             114179       114183  55a72225  ok
+    heapsort        177189       177193  bdb22882  ok
     vm              112013       112017  04156880  ok
-    strings          21140        21144  d9867cf6  ok
-    total           491617       491641
+    strings          20321        20325  d9867cf6  ok
+    total           491309       491333
 
 The instruction count leaves out the reads of the counters, and the
 cycle count includes them. The emulator counts one cycle per
@@ -122,9 +122,9 @@ The ratio of the instruction counts, translated to hand-written:
 | `rng64` | 1.3 | `i64` shifts take the same two-word steps either way, and the 64-bit product three products of the math unit. |
 | `crc32` | 2.4 | A byte load is seven instructions with its own bounds check, against a word read with a side effect on the pointer and shifts by hand. The table lookups need no check. |
 | `bst` | 2.7 | Each node's fields take a compare and a skipped jump before their reads, which the hand-written code does without. |
-| `heapsort` | 1.8 | The array elements take a compare and a skipped jump before their reads and writes, and the signed comparisons take two instructions either way. |
+| `heapsort` | 1.7 | The array elements take a compare and a skipped jump before their reads and writes, and the signed comparisons take two instructions either way. |
 | `vm` | 7.5 | The `br_table` checks its index, each stack cell is a checked word access, and the bytecode fetch is a byte load of seven instructions, where the hand-written interpreter has one word per opcode and the operands in registers. |
-| `strings` | 4.9 | Every character is a byte load of seven instructions, where the hand-written strings have one character per word. |
+| `strings` | 5.1 | Every character is a byte load of seven instructions, where the hand-written strings have one character per word. |
 | total | 3.4 | |
 
 What remains is in TODO.md, under "Faster and smaller translated code".
@@ -155,8 +155,9 @@ the multi-cycle core as it was:
 
 Since DECODE predicts backward conditional jumps taken
 ([MICROARCH.md](../doc/MICROARCH.md) §5.4), and `hand.nasm` closes its
-loops with them, `hand.nasm` takes 1287563 cycles on the pipelined
-core, 2.62 per instruction and 7.0% fewer. `bench.c` takes the same.
+loops with them, `hand.nasm` takes 1252613 cycles on the pipelined
+core, 2.55 per instruction and 9.6% fewer than the 1384879 of the
+program at that commit. `bench.c` takes the same.
 
 
 The hand-written program gains less, because more of its time goes to
@@ -189,8 +190,8 @@ The two phases, in instructions on the emulator and in cycles by
 |---|---|---|---|
 | `vm`, instructions | 840049 | 314016 | 112013 |
 | `vm`, cycles | 1248112 | 768069 | 602050 |
-| `strings`, instructions | 104562 | 47293 | 21140 |
-| `strings`, cycles | 166871 | 110956 | 56309 |
+| `strings`, instructions | 104562 | 47293 | 20321 |
+| `strings`, cycles | 166871 | 110956 | 48723 |
 
 So such a compiler would take 1.62 times fewer cycles than nicewasm in
 `vm` and 1.50 times fewer in `strings`, about three quarters and half of
@@ -215,12 +216,12 @@ the distributions of the instruction length in words and of the
 micro-operations, and then one line per hazard with its count and its
 share of all instructions:
 
-    hand: 494272 instructions, 91075 skipped (18.4%)
-      words        1: 39.0%  2: 59.7%  3: 1.3%  4: 0.0%   mean 1.62
-      micro-ops    1: 82.3%  2: 17.5%  3: 0.2%   mean 1.18
+    hand: 493964 instructions, 91075 skipped (18.4%)
+      words        1: 35.6%  2: 63.1%  3: 1.3%  4: 0.0%   mean 1.66
+      micro-ops    1: 85.7%  2: 14.1%  3: 0.2%   mean 1.14
       conditional                                                  137036  27.7%
       ...
-      reads a register the previous instruction writes             148135  30.0%
+      reads a register the previous instruction writes             149002  30.2%
       ...
       registers read from the previous instruction: R2 8.7%, R1 7.0%, ...
 
@@ -306,7 +307,7 @@ the flush. Each case of `pipecycles.py --test` gives the core's cycles,
 step by step, with `--retires` below.
 
 The phases of the translated program take an estimated
-2384296 cycles, 1.42 per instruction, and those of `hand.nasm` 1287484,
+2384296 cycles, 1.42 per instruction, and those of `hand.nasm` 1252534,
 2.6 per instruction: the hand-written code has more instructions with
 side effects, memory operands, and reads of the math unit, and fewer
 instructions in all. Options such as `--flush`, `--early`, `--agen`,
@@ -325,11 +326,11 @@ mode 001 or 010, and a jump to a computed target, N cycles more in
 WRITE. A store through `@R` or `@R++` never waits, since WRITE takes
 the value it wrote last. With the four rules, the translated program's
 phases take 2384296 cycles, against 2382583 without, and those of
-`hand.nasm` 1287484 against 1284118. A fifth, `--read-late N`, also 1 by
+`hand.nasm` 1252534 against 1248275. A fifth, `--read-late N`, also 1 by
 default, has WRITE take read data N cycles after its ACK, but for a
 micro-op whose data only goes into a register: s0 or s1 with a side
 effect, and a `MOVE` into a register other than R15 (MICROARCH.md §5.3).
-Without it, the phases take 2294308 cycles and 1207869. `pipecycles.py --test` checks the model on
+Without it, the phases take 2294308 cycles and 1172037. `pipecycles.py --test` checks the model on
 small programs whose cycles are worked out by hand in the script, and
 `make test` runs it, and then the model on both programs with `--phases
 6`, which fails unless each reads the instruction counter around its six
@@ -345,11 +346,11 @@ it was at commit 1a41b0c:
 |---|---|---|---|---|---|---|
 | `rng64` | 83026 | 83082 | −56 | 62257 | 62270 | −13 |
 | `crc32` | 83010 | 83067 | −57 | 40233 | 40246 | −13 |
-| `bst` | 415995 | 416052 | −57 | 229751 | 229764 | −13 |
-| `heapsort` | 387282 | 387338 | −56 | 296884 | 296897 | −13 |
+| `bst` | 415995 | 416052 | −57 | 225654 | 225667 | −13 |
+| `heapsort` | 387282 | 387338 | −56 | 273617 | 273630 | −13 |
 | `vm` | 1248112 | 1248168 | −56 | 602050 | 602064 | −14 |
-| `strings` | 166871 | 166928 | −57 | 56309 | 56322 | −13 |
-| total | 2384296 | 2384635 | −339 | 1287484 | 1287563 | −79 |
+| `strings` | 166871 | 166928 | −57 | 48723 | 48736 | −13 |
+| total | 2384296 | 2384635 | −339 | 1252534 | 1252613 | −79 |
 
 The difference is all but the same in every phase of a program, so it
 lies at the reads of the instruction counter around the phases, whose

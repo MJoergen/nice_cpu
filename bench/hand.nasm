@@ -12,7 +12,12 @@
 ;   edge, is ADD PC, PC, label-next, where next labels the instruction
 ;   after the jump. DECODE predicts it taken, so it costs what an
 ;   unconditional jump does (MICROARCH.md §5.4). One that is mostly
-;   skipped stays a MOVE PC, label, which costs nothing when skipped.
+;   skipped stays a MOVE PC, label, which costs nothing when skipped. A
+;   loop is laid out so that its hot jump goes back: a block that is
+;   mostly reached by a jump is placed before the jump (str.diff).
+; - A conditional return is a MOVE PC, label to a MOVE PC, @SP++ that
+;   others share (hs.ret). Skipped, it costs nothing, where a conditional
+;   MOVE PC, @SP++ costs the two cycles of its read and its jump.
 ; - The data layout is the natural one for a word-addressed machine. The
 ;   byte buffer stays packed, four bytes to a word, as in linear memory.
 ;   The strings have one character per word, as a C char does in ISA.md
@@ -447,8 +452,6 @@ bst.new MOVE    @R2, R11
         MOVE    @R11++, 1
         MOVE    @R11++, 0
         MOVE    @R11++, 0
-        MOVE    PC, bst.next
-bst.dup ADD     @1[R3], @1[R3], 1
 bst.next
         SUB[M]  R0, R9, R10
         ?!Z ADD PC, PC, bst.ins-bst.b1
@@ -461,6 +464,9 @@ bst.b1
         ?!Z MOVE PC, bst.walkf
         MOVE    R1, R3
         MOVE    PC, @SP++
+
+bst.dup ADD     @1[R3], @1[R3], 1       ; the key is there: count it
+        MOVE    PC, bst.next
 
 ; bst.walkf: R1 = a node that is not null, R2 = its depth, R3 = the hash,
 ; which it returns in R3. Uses R1 and R2. The call for a child is two
@@ -528,7 +534,7 @@ hs.chk  MOVE    R3, @R2++
         DEC[M]  R6, R6
         ?!Z ADD PC, PC, hs.chk-hs.b3
 hs.b3   MOVE    R1, R5
-        MOVE    PC, @SP++
+hs.ret  MOVE    PC, @SP++
 hs.bad  MOVE    R1, 0
         MOVE    PC, @SP++
 
@@ -539,7 +545,7 @@ hs.bad  MOVE    R1, 0
 hs.sift MOVE    R6, @arr[R1]            ; a[i]
 hs.loop ADD     R3, R1, 1[R1]           ; l
         SUB[M]  R0, R3, R2
-        ?!C MOVE PC, @SP++              ; l >= n
+        ?!C MOVE PC, hs.ret             ; l >= n
         MOVE    R4, @arr[R3]            ; a[m], with m = l
         MOVE    R5, R3
         ADD     R7, R3, 1
@@ -551,12 +557,12 @@ hs.loop ADD     R3, R1, 1[R1]           ; l
         ?N MOVE R4, @arr[R7]
 hs.cmp  SUB[M]  R0, R6, R4              ; a[i] - a[m]
         ?V XOR  R14, R14, SIGN_N
-        ?!N MOVE PC, @SP++              ; a[m] <= a[i]
+        ?!N MOVE PC, hs.ret             ; a[m] <= a[i]
         MOVE    @arr[R1], R4
         MOVE    @arr[R5], R6            ; now i = m, in R5
         ADD     R3, R5, 1[R5]           ; l
         SUB[M]  R0, R3, R2
-        ?!C MOVE PC, @SP++
+        ?!C MOVE PC, hs.ret
         MOVE    R4, @arr[R3]
         MOVE    R1, R3
         ADD     R7, R3, 1
@@ -568,7 +574,7 @@ hs.cmp  SUB[M]  R0, R6, R4              ; a[i] - a[m]
         ?N MOVE R4, @arr[R7]
 hs.cmp2 SUB[M]  R0, R6, R4
         ?V XOR  R14, R14, SIGN_N
-        ?!N MOVE PC, @SP++
+        ?!N MOVE PC, hs.ret
         MOVE    @arr[R5], R4
         MOVE    @arr[R1], R6            ; now i = m, in R1
         MOVE    PC, hs.loop
@@ -679,6 +685,11 @@ str.b2
 str.outer
         MOVE    R10, @strs[R9]          ; the string to place
         MOVE    R11, R9                 ; k
+        MOVE    PC, str.inner
+str.diff
+        ?N MOVE PC, str.place           ; strs[k - 1] is smaller
+        MOVE    @strs[R11], @strs[R12]
+        MOVE    R11, R12
 str.inner
         MOVE[M] R0, R11
         ?Z MOVE PC, str.place
@@ -686,15 +697,10 @@ str.inner
         MOVE    R1, @strs[R12]          ; strs[k - 1]
         MOVE    R2, R10
 str.cmp SUB[M]  R4, @R1++, @R2++
-        ?!Z MOVE PC, str.diff
-        MOVE[M] R0, @-1[R1]             ; the character, 0 at the end
+        ?!Z ADD PC, PC, str.diff-str.eq ; the strings differ: mostly taken
+str.eq  MOVE[M] R0, @-1[R1]             ; the character, 0 at the end
         ?!Z ADD PC, PC, str.cmp-str.b3
 str.b3  MOVE    PC, str.place           ; equal
-str.diff
-        ?N MOVE PC, str.place           ; strs[k - 1] is smaller
-        MOVE    @strs[R11], @strs[R12]
-        MOVE    R11, R12
-        MOVE    PC, str.inner
 str.place
         MOVE    @strs[R11], R10
         ADD     R9, R9, 1

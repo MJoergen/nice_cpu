@@ -184,7 +184,7 @@ pointers. nicewasm supports all of them. A Rust program uses a table and
 The optimizations change nothing in WASM.md. The size of translated code
 is measured in words (`make words` in `bench/`): `test/safe.zig` is 5170
 words and the float library 7083. The benchmark of [bench/](../bench/)
-runs 1681080 instructions in its phases, from a module of 8447 words.
+runs 1681080 instructions in its phases, from a module of 8611 words.
 [doc/review/code-size-plan.md](../doc/review/code-size-plan.md) has the
 measurements of the plan, and [doc/HISTORY.md](../doc/HISTORY.md) lists
 the steps that got the code here.

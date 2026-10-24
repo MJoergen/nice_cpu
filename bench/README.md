@@ -262,14 +262,14 @@ charged to the rule that caused it, so the output says where the time
 goes, and a program that reads the instruction counter around each phase,
 as both programs do, gets a row per phase:
 
-    bench.bin: 1726106 instructions, 2467770 cycles (estimate), CPI 1.430
-      cycles above 1/instruction: 741664
+    bench.bin: 1726040 instructions, 2466576 cycles (estimate), CPI 1.429
+      cycles above 1/instruction: 740536
       ...
-      taken jumps resolved in WRITE (flush)                        267400  0.155/instr  36.1%
-      jumps DECODE resolves (early-redirect bubble)                 78654  0.046/instr  10.6%
+      taken jumps resolved in WRITE (flush)                        267540  0.155/instr  36.1%
+      jumps DECODE resolves (early-redirect bubble)                 79046  0.046/instr  10.7%
       ...
-      read data a cycle after the bus (registered request)         103527  0.060/instr  14.0%
-      read data used by more than a register write                 180432  0.105/instr  24.3%
+      read data a cycle after the bus (registered request)         103494  0.060/instr  14.0%
+      read data used by more than a register write                 179438  0.104/instr  24.2%
 
       phase         instr    cycles    CPI   main extra cycles per instruction
       rng64         52768     83026  1.573   mpu 0.34, bus 0.15, early 0.06, fetch 0.02
@@ -381,7 +381,7 @@ are worked out by hand in the script, and `make test` runs it.
 nicewasm, the measure that [translator/README.md](../translator/README.md)
 quotes for `test/safe.zig` and the float library. `make words` prints it
 for `bench.wasm`, `translator/test/safe.wasm`, and `runtime/float.wasm`:
-8447, 5170, and 7083 words. Each module is translated and
+8611, 5170, and 7083 words. Each module is translated and
 assembled on its own, with the labels it uses but does not define, such
 as the runtime's routines, defined as 0 first; a constant takes a whole
 word whatever its value (ISA.md §3), so that changes no size. The count

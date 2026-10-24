@@ -8,7 +8,9 @@
 ; resolves 2 (MICROARCH.md §5.4), since the read before it holds the
 ; stream up a cycle while DECODE has the jump, which hides one cycle of
 ; the 3 it costs in a stream without reads; and an operation other than MOVE into
-; R15 one more (§7.4). The last three cases are four reads in a row: WRITE takes read
+; R15 one more (§7.4). A backward conditional ADD R15, R15, offset, which
+; DECODE predicts taken, costs the 2 of a jump DECODE resolves when taken,
+; and the 7 of a jump WRITE resolves when skipped. The last three cases are four reads in a row: WRITE takes read
 ; data a cycle after its ACK, unless it only goes into a register
 ; (§5.3), so four ADDs from memory take 2 cycles more than four MOVEs, and
 ; four MOVEs from memory into memory 4 more than the 11 they took when
@@ -129,5 +131,32 @@ a7      MOVE    R2, @CYCLES
         MOVE    R2, @CYCLES
         SUB     R4, R2, R1
         SUB[M]  R0, R4, 19
+        ?!Z ADD R12, R12, 1
+        MOVE    R15, s12
+; a conditional ADD R15, R15, offset with a negative offset, a backward
+; jump that DECODE predicts taken: taken, 3 + 2, the same as a jump that
+; DECODE resolves. A NOP keeps the ADD[M] from holding the read before the
+; jump up a cycle, which would hide one more cycle of the bubble.
+        .ORG    0x300
+a12     MOVE    R2, @CYCLES
+        SUB     R4, R2, R1
+        SUB[M]  R0, R4, 5
+        ?!Z ADD R12, R12, 1
+        MOVE    R15, s13
+s12     ADD[M]  R0, R0, 1       ; Z = 0
+        MOVE    R0, R0
+        MOVE    R1, @CYCLES
+        ?!Z ADD R15, R15, a12-t12
+t12     HALT
+; the same, skipped: WRITE flushes and refetches the next instruction,
+; 3 + 7, the same as the taken jump at 0xC0, which has the layout of this
+; one, without the NOP
+        .ORG    0x340
+s13     ADD[M]  R0, R0, 1       ; Z = 0
+b13     MOVE    R1, @CYCLES
+        ?Z ADD  R15, R15, b13-a13
+a13     MOVE    R2, @CYCLES
+        SUB     R4, R2, R1
+        SUB[M]  R0, R4, 10
         ?!Z ADD R12, R12, 1
         HALT

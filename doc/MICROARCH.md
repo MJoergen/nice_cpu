@@ -325,7 +325,8 @@ be done.
 
 WRITE flushes the stages above it and redirects FETCH when:
 
-- A micro-op writes R15. This is every jump that DECODE did not resolve.
+- A micro-op writes R15. This is every jump that DECODE did not redirect
+  FETCH for.
   The target of `MOVE R15, x` is the source itself, a constant, a
   register, or a word read from memory, which WRITE has at the start of
   its cycle, so the redirect does not wait for the ALU. Any other
@@ -333,6 +334,8 @@ WRITE flushes the stages above it and redirects FETCH when:
   and redirects in the next (§7.4). Neither benchmark has one (§5.6).
 - An `INT`, an `RTI`, or an interrupt (§6) is taken.
 - A store may hit a word already fetched (§5.5).
+- A jump that DECODE predicted taken is skipped. Its target is the next
+  instruction.
 
 The flush empties the stages above WRITE in the cycle WRITE decides it.
 The redirect reaches FETCH a cycle later, from registers, so that no path
@@ -351,7 +354,34 @@ target is a constant, or the next instruction's address plus a
 constant. Both are two words, so the target is the constant word, or the
 instruction's address plus 2 plus that word. DECODE forms the
 instruction's address plus 1 to 4 beside the read of its words, so that
-one adder follows them. Every other jump, `MOVE PC, R3` included, is resolved in WRITE.
+one adder follows them. Every other jump, `MOVE PC, R3` included, is resolved in WRITE,
+but for the one that DECODE predicts.
+
+DECODE also predicts one kind of conditional jump: `ADD PC, PC, offset`,
+with any other condition and the C bit clear, is predicted taken when
+the offset is negative, so when the jump goes backward, as a loop's back
+edge does. DECODE redirects FETCH for it as for an unconditional jump.
+WRITE then checks the condition. If it is true, the jump retires with no
+flush. If it is false, WRITE flushes and redirects FETCH to the next
+instruction, as for a taken jump that it resolves: a mispredict costs
+the 7 cycles of such a jump (`hdl/test/bubble.nasm`). The prediction
+needs no other logic. Rule 2 of §5.3 already holds back the data reads
+after the jump until it retires, and stores happen only in WRITE, so the
+predicted path has no side effect before the jump is resolved. §5.5
+already covers FETCH's two ranges after an early redirect.
+
+The prediction is static. It looks only at the sign bit of the constant
+word, and only in this form. For `MOVE PC, label` it would need a 32-bit
+compare of the constant with the instruction's address in DECODE, beside
+the adder of the target, which is a timing risk. A program gains from it
+when its loops end with a conditional backward jump, written as `ADD PC,
+PC, label-next`, where `next` labels the instruction after the jump. A
+jump back that is mostly skipped is better written as `MOVE PC, label`,
+which costs nothing when skipped. The hand-written benchmark does both,
+and saves 7% of its cycles. The
+translated benchmark puts each loop's back edge on an unconditional jump
+and its exits on forward conditional jumps, so it neither gains nor
+loses.
 
 A side effect on R15 in `S0` or `S1`, such as `MOVE R1, @R15++`, must not
 flush the instruction's own later micro-ops. So the flush waits
@@ -724,7 +754,7 @@ section. The emulator has none, and their words read 0 there. The generic
 | `0xFFFFFF55` | `FS_STALL` | the cycles in which the instruction bus stalled a request | is ignored |
 | `0xFFFFFF56` | `FS_PAIRS` | the pairs of words that arrived on the instruction bus, wasted ones included | is ignored |
 | `0xFFFFFF57` | `FS_WORDS` | the words that FETCH passed to DECODE, also in a cycle when a flush drops them | is ignored |
-| `0xFFFFFF58` | `FS_JUMPS` | the jumps that DECODE redirected FETCH for, also in a cycle when a flush drops them | is ignored |
+| `0xFFFFFF58` | `FS_JUMPS` | the jumps that DECODE redirected FETCH for (§5.4), predicted ones that are skipped too, also in a cycle when a flush drops them | is ignored |
 | `0xFFFFFF59` | `FS_FLUSHES` | the flushes of the pipeline by WRITE | is ignored |
 | `0xFFFFFF5A` | `FS_MIN` | the fewest words in the buffer in a cycle counted, or 31 if none was | is ignored |
 | `0xFFFFFF5B` | `FS_MAX` | the most words in the buffer in a cycle counted | is ignored |

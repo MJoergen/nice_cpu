@@ -177,13 +177,14 @@ begin
       inst_v.mbit  := iw_v(25);
       inst_v.cbit  := iw_v(26);
 
-      -- The jumps that DECODE resolves (MICROARCH.md §5.4), early_form of
-      -- src/pipe_pkg.vhd: "MOVE R15, c" and "ADD R15, R15, c". They read
-      -- no register but R15, and nothing changes R15 before them in the
-      -- instruction. Each is two words, the constant the second, so the
-      -- target is c or the address plus 2 plus c, with one adder after
-      -- the words.
-      early_v := to_sl(early_form(iw_v));
+      -- The jumps that DECODE redirects FETCH for (MICROARCH.md §5.4),
+      -- early_form of src/pipe_pkg.vhd: "MOVE R15, c" and "ADD R15, R15,
+      -- c", and a conditional "ADD R15, R15, c" with c negative, which it
+      -- predicts taken. They read no register but R15, and nothing changes
+      -- R15 before them in the instruction. Each is two words, the
+      -- constant the second, so the target is c or the address plus 2
+      -- plus c, with one adder after the words.
+      early_v := to_sl(early_form(iw_v, f_words(1)));
       dest_v  := f_words(1);
       if early_v = '1' and iw_v(24 downto 21) = "0011" then
          dest_v := d_next(2) + f_words(1);
@@ -321,6 +322,18 @@ begin
       signal g_inst  : t_inst;
       signal g_kind  : t_kind;
 
+      -- The first constant word of an instruction, which decides whether
+      -- DECODE predicts a conditional jump.
+      function first_const(inst : t_inst) return std_logic_vector is
+      begin
+         for i in 0 to 2 loop
+            if const_fields(inst.iw)(i) = '1' then
+               return inst.consts(i);
+            end if;
+         end loop;
+         return X"00000000";
+      end function first_const;
+
       -- The fields of an instruction that DECODE fills in agree with its
       -- word: those that decoded_ok checks, and next_pc, the block, and
       -- whether DECODE resolves it.
@@ -337,7 +350,7 @@ begin
                  inst.op = iw_v(24 downto 21) and
                  inst.mbit = iw_v(25) and
                  inst.cbit = iw_v(26) and
-                 inst.early = to_sl(early_form(iw_v));
+                 inst.early = to_sl(early_form(iw_v, first_const(inst)));
          for i in 0 to 2 loop
             if inst.m(i) /= mode(iw_v, i) or inst.x(i) /= reg(iw_v, i) then
                ok_v := false;
@@ -432,7 +445,7 @@ begin
 
       -- The jumps DECODE resolves
       -- psl f_redirect : assert always (rst_i = '0' and d_load = '1') ->
-      --    (d_early = to_sl(early_form(f_words(0))));
+      --    (d_early = to_sl(early_form(f_words(0), f_words(1))));
       -- psl f_target : assert always (rst_i = '0' and redirect_o = '1') ->
       --    (f_consume = 2 and d_dest = early_target(f_addr, f_words));
 

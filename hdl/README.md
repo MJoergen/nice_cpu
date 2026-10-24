@@ -85,7 +85,7 @@ departs from it.
 | [test/smcskid.nasm](test/smcskid.nasm) | Stores into the target of an early jump while it waits in DECODE, in `dec_r` and in `skid_r`. |
 | [test/readorder.nasm](test/readorder.nasm) | The number and order of the data reads of late shifts, adjusted destinations, and skipped instructions, through the read counter. |
 | [test/instret_late.nasm](test/instret_late.nasm) | The instruction counter read right after late shifts, adjusted destinations, stores, skipped instructions, and `INT`. |
-| [test/jumpwords.nasm](test/jumpwords.nasm) | Jumps into constant words and to the instruction itself, with conditions on I. It ends at a reserved word. |
+| [test/jumpwords.nasm](test/jumpwords.nasm) | Jumps into constant words and to the instruction itself, with conditions on I, and backward conditional jumps, which DECODE predicts taken. It ends at a reserved word. |
 | [test/condlate.nasm](test/condlate.nasm) | Conditional late shifts, adjusted destinations in R14, `HALT` and `INT` right after two-cycle flag writes, and more forms of R15. |
 | [test/irqhazard.nasm](test/irqhazard.nasm) | Late shifts, adjusted destinations, and side effects on R14 and R15, for a request before each step. |
 | [test/shiftjump.nasm](test/shiftjump.nasm) | Every shift with R15 as its destination, `0<0` among them, whose opcode is `MOVE`'s. |
@@ -910,7 +910,9 @@ memory or through an adder, which takes three for a rotation through C
 measures what a jump costs, with the cycle counter on a memory that never
 stalls: 7 cycles over a fall-through for a jump that WRITE resolves,
 aligned or not, since its redirect reaches FETCH from a register, 2 for one that DECODE resolves, and one more for an
-operation other than `MOVE` into R15. Its read of the counter before the
+operation other than `MOVE` into R15. A backward conditional `ADD R15,
+R15, offset`, which DECODE predicts taken, costs 2 when taken and 7 when
+skipped (MICROARCH.md §5.4). Its read of the counter before the
 jump holds the stream up a cycle, which hides one cycle of the early
 bubble, 3 in a stream of instructions without reads. It also measures four reads in a
 row: WRITE takes read data from DBUS's FIFO, a cycle after its ACK,
@@ -1118,7 +1120,7 @@ pipelined core reports for each cycle on its port `stats_o`. FETCH fills in
 the words in its buffer, the room held for the requests in flight, a
 request held back for lack of room, a stalled request, and an arriving
 pair. DECODE fills in the cycles it waits for words or holds them back,
-and the words it takes. `pipeline` adds the jumps that DECODE resolves and
+and the words it takes. `pipeline` adds the jumps that DECODE redirects FETCH for and
 the flushes of WRITE. The multi-cycle core has no such port, and `tb_core`
 gives the device `C_FETCH_EVENTS_NONE` with it.
 

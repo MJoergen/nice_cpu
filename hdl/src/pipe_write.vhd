@@ -607,7 +607,11 @@ begin
                if not rti_v and n_v.jump = '0' then
                   n_v.regs(15) := u_v.inst.next_pc;
                end if;
-               if rti_v or (n_v.jump = '1' and u_v.inst.early = '0') then
+               -- A jump that DECODE did not redirect FETCH for, or one it
+               -- predicted taken that is skipped (MICROARCH.md §5.4), whose
+               -- target is the next instruction.
+               if rti_v or (n_v.jump = '1' and u_v.inst.early = '0') or
+                  (u_v.inst.early = '1' and cond_v = '0') then
                   flush_v := true;
                end if;
                if halt_v /= HALT_NONE then

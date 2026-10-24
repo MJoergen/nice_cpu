@@ -338,3 +338,10 @@ board that hands the data bus to another master while the core is stopped
 hid those ACKs, which was harmless only because a reset follows a halt.
 With the pause of MICROARCH.md §6.1, which no reset follows, both
 `halted_o` and `paused_o` wait until no bus cycle is open.
+
+## The emulator's step limit
+
+Until 2026-10-24 (22eacce) the emulator stopped a program after
+100000000 steps unless `-n` gave another limit, with the line "Stopped
+at the step limit". There is no limit by default now: a program runs
+until it halts or is killed, and `-n` sets a limit when one is wanted.

@@ -215,7 +215,7 @@ The library is small on purpose:
   unknown conversion. `%p` prints `0x` and the address in hex, `0x0` for a
   null pointer.
 - No `errno`. `strtol` and `strtoul` saturate on overflow.
-- `exit` is the assembly routine `_exit`: a `HALT` with the status in R1, so the emulator exits with status 0. There is no `atexit`. `abort` traps (WASM.md).
+- `exit` is the assembly routine `_exit`: a `HALT` with the status in R1, so the emulator exits with status 0. `EXIT_SUCCESS` is 0 and `EXIT_FAILURE` 1. There is no `atexit`. `abort` traps (WASM.md).
 - `rand` is the linear congruential generator of the C standard's example, `srand(1)` at start.
 - `malloc` is first fit, with an 8-byte header on each block, and merges
   neighboring free blocks. `realloc` to a smaller size, 0 included,

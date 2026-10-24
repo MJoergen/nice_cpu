@@ -81,7 +81,9 @@ request and its answer.
 | any | | `e` | the request's tag and an error code |
 
 - `R` reads the N words from A upwards, and `W` writes N words there. An
-  address past `0xFFFFFFFF` wraps to 0.
+  address past `0xFFFFFFFF` wraps to 0, but a `W` that wraps is answered
+  with `e02` (below): it would write the control register (§6) and then
+  the memory, which the program, once started, or a clear may use.
 - N is 0 to 65535. N = 0 reads or writes nothing, and is answered as any
   other request, so the host can use it to test the link.
 - The answers repeat A and N, so that a host can tell an answer to an
@@ -129,7 +131,7 @@ two hex digits, its ASCII code, so `R` is `52` and `W` is `57`. The codes:
 | Code | Meaning |
 |---|---|
 | `01` | The tag is not a request of this version. |
-| `02` | The program runs, and the request reaches a word that is not a debug register. |
+| `02` | The program runs, and the request reaches a word that is not a debug register; or a `W` wraps past `0xFFFFFFFF`. |
 | `03` | The payload has the wrong length, or a byte that is not a hex digit. |
 
 When more than one error applies, the answer gives the first in the

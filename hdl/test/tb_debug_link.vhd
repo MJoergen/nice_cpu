@@ -15,7 +15,7 @@
 -- * lowercase digits, a bad checksum, an unknown tag, a payload with a bad
 --   length or a bad digit, and a W with too many words;
 -- * the debug registers, a clear of the memory, one that a dropped packet
---   started, and a start;
+--   started, a W that wraps past 0xFFFFFFFF, and a start;
 -- * the errors while the program runs, and that no word is written then;
 -- * console bytes both ways, ESC ESC, the overflow notice `o`, and the
 --   order of console bytes and packets;
@@ -414,6 +414,17 @@ begin
       clear_len <= 30;
       send(C_ESC & "WFFFFFFF0000100000005#B7");
       expect(C_ESC & "kFFFFFFF00001#46", "clear again");
+
+      -- A W that wraps past 0xFFFFFFFF is e02, also while held, and writes
+      -- nothing: neither the start in its first word nor word 0.
+      send(C_ESC & "WFFFFFFF00011" & "00000000000000000000000000000000" &
+           "00000000000000000000000000000000" & "00000000000000000000000000000000" &
+           "00000000000000000000000000000000" & "00001234#BD");
+      expect(C_ESC & "e5702#33", "W that wraps");
+      check_mem(0, X"00000000", "W that wraps");
+      assert hold = '1'
+         report "tb_debug_link: a W that wraps starts the processor"
+         severity failure;
 
       -- A clear that hides the ROM and stays held, then a plain start.
       send(C_ESC & "WFFFFFFF000010000000D#C6");

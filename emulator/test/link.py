@@ -216,6 +216,12 @@ def test_errors() -> None:
     e.expect("clear", ok(CONTROL, 1))
     e.send(read(0x200, 1) + read(CONTROL, 1))
     e.expect("cleared", answer(0x200, [0]) + answer(CONTROL, [0x9]))
+    # A W that wraps past 0xFFFFFFFF is 02, also while held, and writes
+    # nothing: not the start in its first word, nor word 0. An R may wrap.
+    e.send(write(CONTROL, [0x0] + [0] * 15 + [0x1234]))
+    e.expect("W wraps", pkt("e", "5702"))
+    e.send(read(0xFFFFFFFF, 2) + read(CONTROL, 1))
+    e.expect("R wraps", answer(0xFFFFFFFF, [0, 0]) + answer(CONTROL, [0x9]))
     # A second host is closed at once, with nothing sent.
     other = e.connect()
     other.settimeout(2)

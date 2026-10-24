@@ -270,6 +270,7 @@ pub const Link = struct {
         const n = parseHex(p, 8, 4) orelse return self.sendError(self.tag, 3);
         // Decided from A and N alone, before any data word.
         if (self.running() and reachesMemory(a, n)) return self.sendError(self.tag, 2);
+        if (self.tag == 'W' and wraps(a, n)) return self.sendError(self.tag, 2);
         var head: [12]u8 = undefined;
         _ = hex(head[0..8], a);
         _ = hex(head[8..12], n);
@@ -409,6 +410,11 @@ fn reachesMemory(a: u32, n: u32) bool {
     return n != 0 and (a < debug_base or n > 0 -% a);
 }
 
+/// Whether N words from A run past 0xFFFFFFFF, which a W may not (DEBUG.md §3).
+fn wraps(a: u32, n: u32) bool {
+    return a != 0 and n > 0 -% a;
+}
+
 /// The sum mod 256 of the tag and the payload (DEBUG.md §2).
 fn checksum(tag: u8, payload: []const u8) u8 {
     var sum = tag;
@@ -461,6 +467,20 @@ test "the debug registers are the only words a running program allows" {
     try t.expect(reachesMemory(0xFFFFFFDF, 1));
     try t.expect(!reachesMemory(0xFFFFFFFF, 1));
     try t.expect(reachesMemory(0xFFFFFFFF, 2));
+}
+
+test "a W may not wrap past 0xFFFFFFFF" {
+    const t = std.testing;
+    try t.expect(!wraps(0, 0));
+    try t.expect(!wraps(0, 65535));
+    try t.expect(!wraps(0xFFFFFFFF, 0));
+    try t.expect(!wraps(0xFFFFFFFF, 1));
+    try t.expect(wraps(0xFFFFFFFF, 2));
+    try t.expect(!wraps(0xFFFFFFF0, 16));
+    try t.expect(wraps(0xFFFFFFF0, 17));
+    try t.expect(!wraps(0xFFFF0001, 65535));
+    try t.expect(!wraps(0xFFFF0000, 65535));
+    try t.expect(wraps(0xFFFF0002, 65535));
 }
 
 test "hex fields" {

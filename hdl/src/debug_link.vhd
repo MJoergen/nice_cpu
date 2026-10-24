@@ -217,6 +217,13 @@ architecture synthesis of debug_link is
       return to_integer(a(4 downto 0)) + to_integer(n) > 32;
    end function non_dbg;
 
+   -- True if the n words from a run past 0xFFFFFFFF, which a W may not
+   function wraps(a : t_word; n : std_logic_vector(15 downto 0)) return boolean is
+   begin
+      return a(31 downto 16) = X"FFFF" and
+             to_integer(a(15 downto 0)) + to_integer(n) > 2 ** 16;
+   end function wraps;
+
    -- The p_rx side
    signal rx_st      : t_rx_st                      := RX_IDLE_ST;
    signal rx_rdy     : std_logic;
@@ -424,6 +431,9 @@ begin
                                  -- The error 02 is decided here, before any data word.
                                  if bad_r = '0' and hold_r = '0' and halted_r = '0' and
                                     non_dbg(req_addr_r, n_v) then
+                                    err02_r <= '1';
+                                 end if;
+                                 if bad_r = '0' and tag_r = X"57" and wraps(req_addr_r, n_v) then
                                     err02_r <= '1';
                                  end if;
                               end if;

@@ -246,7 +246,7 @@ compares every byte that the link sends with a string whose checksum was
 worked out by hand: the examples of DEBUG.md §8, the errors `e01` to `e03`,
 the dropped packets, the timeout, console bytes both ways with ESC ESC, the
 notices `b`, `h`, and `o`, the clear, one that a dropped packet started,
-and the hold and restart.
+a `W` that wraps past `0xFFFFFFFF`, and the hold and restart.
 
 `tb_link` runs on each core of `CORES`. It is the debug link as a board
 uses it: the link is a second master of the data bus, and owns it while

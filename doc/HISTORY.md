@@ -312,3 +312,8 @@ these ways for the link to use the memory when it may not:
   left no answer to wait for, and the next request could use the memory
   while the board cleared it. Now a request also waits for the clear
   (DEBUG.md §6).
+- Error `02` was decided only while the program ran. A `W` sent while it
+  was held could write the control register, to start it or to clear,
+  and then wrap past `0xFFFFFFFF` to address 0, which the board wrote
+  while the program ran or the memory cleared. Now a `W` that wraps is
+  answered with `e02`, in the emulator too (DEBUG.md §3).

@@ -2,7 +2,7 @@
 ; trapmsg.nasm joined after lib.nasm. A trap as the translator emits it
 ; (WASM.md): R1 = 2, R2 = the trapping code's address, 0x1abc, and a jump
 ; through ___wasm_trap_vector. The report writes
-; "trap 2: out of bounds memory access at 00001abc" and a newline, and then
+; "trap 2: memory access out of bounds at 00001abc" and a newline, and then
 ; the processor halts at ___wasm_trap as in trap.nasm, with exit status 2,
 ; R1 = 2, and R2 = 0x1abc.
 ;

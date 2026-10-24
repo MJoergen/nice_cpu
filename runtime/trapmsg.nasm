@@ -2,8 +2,9 @@
 ; ___wasm_trap_vector. It goes after lib.nasm, which it uses.
 ;
 ; ___trap_report: a wasm trap handler. It writes one line to the console,
-; such as "trap 2: out of bounds memory access at 00003dc9", with the
-; trap's code from R1 and its address from R2, and then jumps to
+; such as "trap 2: memory access out of bounds at 00003dc9", with the
+; trap's code from R1 and its address from R2, named as the emulator's
+; --symbols names them, and then jumps to
 ; ___wasm_trap, the default handler. So the processor halts as without the
 ; report, with R1 and R2 as the trap left them. R3 is 0 and R10 and R11
 ; are changed. Uses the stack at SP, like a call.
@@ -51,7 +52,7 @@ ___trap.names
         .DAT    ___trap.n4, ___trap.n5, ___trap.n6, ___trap.n7
 ___trap.n0      .ASCII_L 'unknown trap'
 ___trap.n1      .ASCII_L 'unreachable'
-___trap.n2      .ASCII_L 'out of bounds memory access'
+___trap.n2      .ASCII_L 'memory access out of bounds'
 ___trap.n3      .ASCII_L 'division by zero'
 ___trap.n4      .ASCII_L 'integer overflow'
 ___trap.n5      .ASCII_L 'float to integer conversion'

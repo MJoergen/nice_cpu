@@ -4,18 +4,20 @@ A benchmark for code that reaches NICE through wasm: `bench.c`, compiled
 with clang and the small C library, translated by `nicewasm`, and run on
 the emulator or on the core. Next to it is `hand.nasm`, the same
 benchmark written in NICE assembly by hand, which shows how far the
-translated code is from what the machine can do. Both are for measuring
+translated code is from what the machine can do. `simple.nasm` is
+`hand.nasm` with two phases written as a simple C compiler would emit
+them (see A simple compiler below). They are for measuring
 the translator's output and the core, phase by phase, not for comparing
 NICE with other processors.
 
-    make            # run both on the emulator and print their tables
+    make            # run the three on the emulator and print their tables
     make dhry       # run Dhrystone 2.1 on the emulator
     make test       # the same, and check every result
     make core       # run both on the pipelined core in GHDL (about 40 minutes)
     make core CORE=multicycle  # the same on the multi-cycle core (about 40 minutes)
     make core-dhry  # run Dhrystone on a core in GHDL, CORE as above, and check it (4 minutes)
     make hazards    # count the pipeline hazards of MICROARCH.md §5 in both
-    make cycles     # estimate the cycles of both on the pipelined core of MICROARCH.md
+    make cycles     # estimate the cycles of the three on the pipelined core of MICROARCH.md
     make profile    # the same, charged to the source lines, in build/*.cyc.txt
     make compare    # the estimate beside the pipelined core's cycles, after make core
     make words      # the size in words of the benchmark, safe.zig, and float modules
@@ -154,6 +156,37 @@ what a pipeline cannot hide: `vm` jumps through a table every three or
 four instructions, which flushes the pipeline, and `strings` and `bst`
 read the math unit right after writing its operands
 ([hdl/README.md](../hdl/README.md), The pipelined core).
+
+## A simple compiler
+
+`simple.nasm` estimates what a C compiler that targets NICE directly
+would gain over nicewasm ([doc/review/c-compiler-plan.md](../doc/review/c-compiler-plan.md)).
+It is `hand.nasm` with the `vm` and `strings` phases written the way a
+simple compiler would emit them from `bench.c` with `CHAR_BIT` = 32
+([ABI.md](../runtime/ABI.md)): locals in registers, local arrays in the
+frame, loads folded into the one instruction that uses them, the math
+unit inline, and the C library routines of `strings` as separate
+functions, called by the ABI. It uses no `@R++` or `--R`, no conditional
+instruction but a jump, and no flags from an earlier operation, and each
+case of the `switch` jumps back to the top of the loop. Before the
+strings phase, outside its timing, the byte buffer is unpacked to one
+byte per word, as `unsigned char buf[]` is with `CHAR_BIT` = 32. The
+other four phases are those of `hand.nasm`.
+
+The two phases, in instructions on the emulator and in cycles by
+`make cycles`:
+
+| Phase | nicewasm | `simple.nasm` | `hand.nasm` |
+|---|---|---|---|
+| `vm`, instructions | 840049 | 314016 | 112013 |
+| `vm`, cycles | 1248112 | 768069 | 602050 |
+| `strings`, instructions | 104562 | 47293 | 21140 |
+| `strings`, cycles | 166871 | 112468 | 66032 |
+
+So such a compiler would take 1.62 times fewer cycles than nicewasm in
+`vm` and 1.48 times fewer in `strings`, about three quarters and half of
+what `hand.nasm` saves. `make test` checks its results as it checks the
+others'. `make core` does not run it.
 
 ## The hazard profile
 

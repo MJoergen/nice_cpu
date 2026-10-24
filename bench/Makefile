@@ -12,9 +12,12 @@ CFLAGS = --target=wasm32 -mbulk-memory -O2 -ffreestanding -nostdlibinc -isystem 
 LDFLAGS = -nostdlib -Wl,--no-entry -Wl,--export=main -Wl,--stack-first -Wl,-z,stack-size=4096 \
   -Wl,--initial-memory=65536
 
-# The two programs: bench, translated from bench.wasm, and hand, the
-# hand-written hand.nasm.
-PROGRAMS = bench hand
+# The programs: bench, translated from bench.wasm, hand, the hand-written
+# hand.nasm, and simple, hand.nasm with vm and strings as a simple C
+# compiler would emit them (README.md, A simple compiler). make core runs
+# the first two.
+PROGRAMS = bench hand simple
+CORE_PROGRAMS = bench hand
 
 # Dhrystone 2.1, ported in dhrystone/ (README.md, Dhrystone), and its
 # console input, the number of runs. The 1988 C of its sources is compiled
@@ -27,19 +30,21 @@ DHRY_RUNS = $(DHRY)/dhry.input
 
 # Runs both on the emulator and prints their tables. bench.wasm is checked
 # in, so this needs no C compiler.
-run: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
+run: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin emulator
 	@echo "bench.c through nicewasm:"
 	@$(EMU) $(BUILD)/bench.bin < /dev/null | sed '/^Halted/,$$d'
 	@echo "hand.nasm:"
 	@$(EMU) $(BUILD)/hand.bin < /dev/null | sed '/^Halted/,$$d'
+	@echo "simple.nasm:"
+	@$(EMU) $(BUILD)/simple.bin < /dev/null | sed '/^Halted/,$$d'
 
 # Runs Dhrystone on the emulator and prints its output.
 dhry: $(BUILD)/dhry.bin emulator
 	@$(EMU) --input $(DHRY_RUNS) $(BUILD)/dhry.bin < /dev/null | sed '/^Halted/,$$d'
 
 # The same, and checks that every phase has its expected result, that main
-# returns 0 in R1, and that the expected values in bench.c and hand.nasm
-# are those of expected.py.
+# returns 0 in R1, and that the expected values in bench.c, hand.nasm, and
+# simple.nasm are those of expected.py.
 define check
 	@$(EMU) $(BUILD)/$(1).bin < /dev/null > $(BUILD)/$(1).out; sed '/^Halted/,$$d' $(BUILD)/$(1).out
 	@if grep -q ' R1  00000000 ' $(BUILD)/$(1).out && ! grep -q FAIL $(BUILD)/$(1).out; \
@@ -47,14 +52,15 @@ define check
 
 endef
 
-test: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/dhry.bin emulator
-	@$(PYTHON) expected.py --check bench.c hand.nasm
+test: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/dhry.bin emulator
+	@$(PYTHON) expected.py --check bench.c hand.nasm simple.nasm
 	@$(PYTHON) hazards.py --test
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --test
 	@NICEEMU=$(EMU) $(PYTHON) cycprof.py --test
 	@$(PYTHON) words.py --test
 	$(foreach p,$(PROGRAMS),$(call check,$(p)))
-	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --phases 6 $(BUILD)/bench.bin $(BUILD)/hand.bin > /dev/null \
+	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --phases 6 $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin \
+	  > /dev/null \
 	  && echo "PASS pipecycles.py --phases 6"
 	@$(PYTHON) dhrycheck.py --test
 	@$(EMU) --input $(DHRY_RUNS) $(BUILD)/dhry.bin < /dev/null > $(BUILD)/dhry.out
@@ -80,7 +86,7 @@ endef
 
 core: $(BUILD)/bench.bin $(BUILD)/hand.bin
 	$(MAKE) -C ../hdl analyze
-	$(foreach p,$(PROGRAMS),$(call core_run,$(p)))
+	$(foreach p,$(CORE_PROGRAMS),$(call core_run,$(p)))
 
 # Dhrystone on a core in GHDL, CORE as above, with its output checked.
 core-dhry: $(BUILD)/dhry.bin
@@ -111,6 +117,10 @@ $(BUILD)/hand.full.nasm: ../runtime/start.nasm hand.nasm
 	@mkdir -p $(BUILD)
 	cat $^ > $@
 
+$(BUILD)/simple.full.nasm: ../runtime/start.nasm simple.nasm
+	@mkdir -p $(BUILD)
+	cat $^ > $@
+
 $(BUILD)/%.bin: $(BUILD)/%.full.nasm ../assembler/niceasm.py
 	$(ASM) -o $@ $<
 
@@ -119,11 +129,11 @@ $(BUILD)/%.bin: $(BUILD)/%.full.nasm ../assembler/niceasm.py
 hazards: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 	@NICEEMU=$(EMU) $(PYTHON) hazards.py $(BUILD)/bench.bin $(BUILD)/hand.bin
 
-# Estimates the cycles of both programs on the pipelined core of
+# Estimates the cycles of the three programs on the pipelined core of
 # doc/MICROARCH.md, from the emulator's traces (README.md, The cycle
 # estimate).
-cycles: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
-	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py $(BUILD)/bench.bin $(BUILD)/hand.bin
+cycles: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin emulator
+	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin
 
 # The estimate beside the cycles the pipelined core took, phase by phase,
 # from the output of make core, which must have run first

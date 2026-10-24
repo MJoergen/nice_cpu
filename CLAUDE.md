@@ -27,8 +27,10 @@ translator, and two FPGA cores. See README.md.
 - `translator/nicewasm.py`: wasm -> NICE assembly (`translator/WASM.md`). Same rules as niceasm.py.
 - `bench/bench.c`: a benchmark of translated code, six kernels with known
   results, timed with the performance counters. `hand.nasm` is the same
-  benchmark written by hand, the ceiling to compare with. `expected.py`
-  computes the results in Python, and `make test` checks both against them.
+  benchmark written by hand, the ceiling to compare with. `simple.nasm` is
+  `hand.nasm` with `vm` and `strings` as a simple C compiler would emit
+  them. `expected.py` computes the results in Python, and `make test`
+  checks all three against them.
   `dhrystone/` is Dhrystone 2.1 on the C library, checked by `dhrycheck.py`.
 - `hdl/`: VHDL-2008, GHDL. Two cores with the same ports, but for the
   pipelined one's `stats_o`: the pipelined one of

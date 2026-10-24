@@ -446,8 +446,9 @@ endef
 synth: analyze
 	$(foreach u,$(SYNTH),$(call check_synth,$(u)))
 
-# The formal checks of formal/: each task of each .sby file must pass. The
-# work directories go in $(BUILD).
+# The formal checks of formal/: each task of each .sby file must pass. Each
+# is a target formal/FILE/TASK, and they run in parallel, as the runs of
+# make test do. The work directories go in $(BUILD).
 SBY ?= sby
 FORMAL = nice_pkg multicycle timer wb_dmux pipe_fetch pipe_decode pipe_prepare pipe_dbus pipe_write pipeline perf fetch_stats mpu debug_link
 FORMAL_TASKS = prove cover
@@ -458,15 +459,20 @@ FORMAL_TASKS_debug_link = prove prove_held cover
 
 define check_formal
 	@mkdir -p $(BUILD)
-	@cd formal && $(SBY) -f --prefix ../$(BUILD)/$(1) $(1).sby $(2) > ../$(BUILD)/formal_$(1)_$(2).log 2>&1; \
+	@cd formal && $(SBY) -f -d ../$(BUILD)/$(1)_$(2) $(1).sby $(2) > ../$(BUILD)/formal_$(1)_$(2).log 2>&1; \
 	if [ $$? -eq 0 ]; then echo "PASS formal $(1) $(2)"; else echo "FAIL formal $(1) $(2)"; \
 	  grep -E "Assert failed|Unreached|ERROR|summary: +(failed|counterexample|unreached)" \
 	    ../$(BUILD)/formal_$(1)_$(2).log; exit 1; fi
 
 endef
 
+FORMAL_RUNS = $(foreach f,$(FORMAL),$(foreach t,$(or $(FORMAL_TASKS_$(f)),$(FORMAL_TASKS)),formal/$(f)/$(t)))
+.PHONY: $(FORMAL_RUNS)
+$(FORMAL_RUNS):
+	$(call check_formal,$(word 2,$(subst /, ,$@)),$(word 3,$(subst /, ,$@)))
+
 formal:
-	$(foreach f,$(FORMAL),$(foreach t,$(or $(FORMAL_TASKS_$(f)),$(FORMAL_TASKS)),$(call check_formal,$(f),$(t))))
+	@$(MAKE) --no-print-directory $(PARALLEL) $(FORMAL_RUNS)
 
 emulator:
 	$(MAKE) -C ../emulator build

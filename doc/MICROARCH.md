@@ -732,8 +732,11 @@ section. The emulator has none, and their words read 0 there. The generic
 | `0xFFFFFF5D`–`0xFFFFFF5F` | | 0 | is ignored |
 | `0xFFFFFF60` + n | `FS_HIST` + n | the cycles counted with n words in the buffer, for n = 0 to 31 | is ignored |
 
-- While R = 1, each clock cycle counts. Reset sets R to 1 and clears the
-  counters, so they count from reset.
+- While R = 1, each clock cycle counts in which the core runs. The
+  counters stop while the core is held or has halted, as the cycle counter
+  of SYSTEM.md §3 does, so a reading after a halt does not change. R stays
+  as it is. Reset sets R to 1 and clears the counters, so they count from
+  reset.
 - A clear sets `FS_MIN` to 31 and every other counter to 0. A write to
   `FS_CTRL` takes effect from the next cycle, and the cycle of a write of 0
   still counts.

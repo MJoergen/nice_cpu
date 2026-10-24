@@ -12,6 +12,8 @@
 --   events. FS_MIN, FS_MAX, and FS_HELD_MAX follow count and held.
 -- * Stopped counters keep their values, and writes to other words change
 --   nothing. A write of 1 starts them again without clearing them.
+-- * With run_i low, no cycle counts, and FS_CTRL still reads 1. When run_i
+--   is high again, the counters go on from where they stopped.
 -- * A second instance, with G_ENABLE false, acknowledges every request and
 --   reads 0.
 -- The run stops with status 0 when every check passes, and 1 at the first
@@ -47,6 +49,7 @@ architecture simulation of tb_fetch_stats is
 
    signal clk : std_logic;
    signal rst : std_logic := '1';
+   signal run : std_logic := '1';
 
    signal events   : t_fetch_events                := C_FETCH_EVENTS_NONE;
    signal cyc      : std_logic                     := '0';
@@ -72,6 +75,7 @@ begin
       port map (
          clk_i      => clk,
          rst_i      => rst,
+         run_i      => run,
          events_i   => events,
          wb_cyc_i   => cyc,
          wb_stb_i   => stb(0),
@@ -286,6 +290,32 @@ begin
       check(C_HIST, 4, "running again");
       check(C_HIST + 2, 2, "running again");
       check(C_HIST + 5, 1, "running again");
+
+      -- With run_i low, no cycle counts, though R is 1. When run_i is high
+      -- again, three cycles with no word in the buffer count: two, and the
+      -- write of 0.
+      run <= '0';
+      write_word(C_CTRL, 1);
+      cycle(9, 9, starve => '1', pair => '1', words => 2, jump => '1', flush => '1');
+      cycle(9, 9, blocked => '1', full => '1', stalled => '1');
+      events <= C_FETCH_EVENTS_NONE;
+      clocks(5);
+      check(C_CTRL, 1, "run_i low");
+      check(C_CYCLES, 8, "run_i low");
+      check(C_STARVE, 1, "run_i low");
+      check(C_BLOCKED, 1, "run_i low");
+      check(C_PAIRS, 3, "run_i low");
+      check(C_WORDS, 7, "run_i low");
+      check(C_FLUSHES, 2, "run_i low");
+      check(C_MAX, 7, "run_i low");
+      check(C_HELD_MAX, 12, "run_i low");
+      check(C_HIST + 9, 0, "run_i low");
+      run <= '1';
+      clocks(2);
+      write_word(C_CTRL, 0);
+      check(C_CYCLES, 11, "run_i high again");
+      check(C_HIST, 7, "run_i high again");
+      check(C_HIST + 9, 0, "run_i high again");
 
       -- Reset clears the counters and runs them: the read of FS_CTRL and
       -- the write that stops them.

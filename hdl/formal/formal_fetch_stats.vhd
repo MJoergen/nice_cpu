@@ -1,6 +1,6 @@
 -- The fetch statistics with checks of their port, for SymbiYosys. Every
--- input is free, so the solver tries every bus master and every report of
--- FETCH and DECODE.
+-- input is free, so the solver tries every bus master, every report of
+-- FETCH and DECODE, and every run_i.
 --
 -- THEORY OF OPERATION
 -- Two devices share the inputs: one with G_ENABLE true, whose properties
@@ -26,6 +26,7 @@ entity formal_fetch_stats is
    port (
       clk_i     : in  std_logic;
       rst_i     : in  std_logic;
+      run_i     : in  std_logic;
       count_i   : in  natural range 0 to 31;
       held_i    : in  natural range 0 to 31;
       starve_i  : in  std_logic;
@@ -118,6 +119,7 @@ begin
       port map (
          clk_i      => clk_i,
          rst_i      => rst_i,
+         run_i      => run_i,
          events_i   => events,
          wb_cyc_i   => wb_cyc_i,
          wb_stb_i   => wb_stb_i,
@@ -137,6 +139,7 @@ begin
       port map (
          clk_i      => clk_i,
          rst_i      => rst_i,
+         run_i      => run_i,
          events_i   => events,
          wb_cyc_i   => wb_cyc_i,
          wb_stb_i   => wb_stb_i,

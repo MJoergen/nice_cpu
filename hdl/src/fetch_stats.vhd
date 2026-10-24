@@ -9,11 +9,13 @@
 --   0x14  FS_FULL      0x19  FS_FLUSHES
 --
 -- THEORY OF OPERATION
--- The counters count while the run bit of FS_CTRL is 1. In each cycle
--- counted, FS_CYCLES and FS_HIST + count count one, and each other counter
--- counts the events of events_i in that cycle. FS_MIN and FS_MAX follow
--- the smallest and largest count, and FS_HELD_MAX the largest held. All
--- counters are 32 bits wide and wrap.
+-- The counters count in the cycles in which the run bit of FS_CTRL is 1
+-- and run_i is high. A system drives run_i with "the core is running", as
+-- it drives that of perf.vhd, so that the counters stop while the core is
+-- held or has halted. In each cycle counted, FS_CYCLES and FS_HIST + count
+-- count one, and each other counter counts the events of events_i in that
+-- cycle. FS_MIN and FS_MAX follow the smallest and largest count, and
+-- FS_HELD_MAX the largest held. All counters are 32 bits wide and wrap.
 --
 -- A write to FS_CTRL sets the run bit to bit 0 of the value written. If
 -- bit 1 is set, it also clears the counters: FS_MIN to 31, and every other
@@ -34,6 +36,7 @@
 --    address.
 -- b) events_i describes one cycle of the core, and is C_FETCH_EVENTS_NONE
 --    for a core without FETCH and DECODE.
+-- c) run_i is low while the core is held or halted. It defaults to '1'.
 --
 -- RESET
 -- Synchronous. It clears the counters, sets the run bit, and drops any ACK
@@ -56,6 +59,8 @@ entity fetch_stats is
    port (
       clk_i      : in  std_logic;
       rst_i      : in  std_logic;
+      -- The core is running
+      run_i      : in  std_logic                     := '1';
 
       -- What FETCH and DECODE did in this cycle
       events_i   : in  t_fetch_events;
@@ -122,7 +127,7 @@ begin
 
       begin
          if rising_edge(clk_i) then
-            if run_r = '1' then
+            if run_r = '1' and run_i = '1' then
                add(C_CYCLES, 1);
                add(C_STARVE, events_i.starve);
                add(C_BLOCKED, events_i.blocked);
@@ -269,7 +274,7 @@ begin
                f_held_r  <= held_r;
                f_bin_r   <= events_i.count;
 
-               if run_r = '1' then
+               if run_r = '1' and run_i = '1' then
                   for n in 1 to 31 loop
                      for d in 1 to 5 loop
                         if (32 + events_i.count) / 2 ** d = n then
@@ -305,14 +310,17 @@ begin
          -- psl f_max_held : assert always rst_i = '0' -> max_r <= held_r;
 
          -- A cycle counted adds one to FS_CYCLES and to the histogram's
-         -- bin of its count. Stopped counters keep their values, and a
-         -- write of 1 to FS_CTRL starts them without a clear.
+         -- bin of its count. Stopped counters keep their values, whether
+         -- the run bit or run_i stops them, and a write of 1 to FS_CTRL
+         -- starts them without a clear.
          -- psl f_cycle : assert always
-         --    {run_r and not (f_ctrl and wb_data_i(1)) and not rst_i} |=>
+         --    {run_r and run_i and not (f_ctrl and wb_data_i(1)) and not rst_i} |=>
          --    {count_r(C_CYCLES) = f_count_r(C_CYCLES) + 1 and
          --     hist_r(f_bin_r) = f_hist_r(f_bin_r) + 1};
          -- psl f_stopped : assert always
          --    {not run_r and not f_ctrl and not rst_i} |=> {f_same and not run_r};
+         -- psl f_paused : assert always
+         --    {not run_i and not f_ctrl and not rst_i} |=> {f_same = '1' and run_r = prev(run_r)};
          -- psl f_start : assert always
          --    {run_r = '0' and f_ctrl = '1' and wb_data_i(1 downto 0) = "01" and rst_i = '0'} |=>
          --    {f_same and run_r};

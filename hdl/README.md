@@ -1087,6 +1087,11 @@ and the words it takes. `pipeline` adds the jumps that DECODE resolves and
 the flushes of WRITE. The multi-cycle core has no such port, and `tb_core`
 gives the device `C_FETCH_EVENTS_NONE` with it.
 
+A cycle counts only while `run_i` is high, as in `perf`. A system drives it
+with "the core is running", so that the counters stop while the core is
+held or has halted. It defaults to `'1'`, and `tb_core` leaves it so, since
+its run ends at the halt.
+
 With the generic `G_ENABLE` false there are no counters, and every word
 reads 0. `tb_core` passes its generic `G_FETCH_STATS` on to it.
 `formal/fetch_stats.sby` proves the port, what each cycle does to the

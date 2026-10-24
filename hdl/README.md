@@ -659,9 +659,10 @@ assertions on every run.
 
 `formal_perf` checks the performance counters against a model in the
 wrapper: three 64-bit counters, one of every cycle with `run_i` high, one of the cycles
-with `instret_i` high, and one of microseconds, with `G_CLK_HZ` 1.5 MHz so that
-the accumulator is not trivial, and a snapshot of each, which a read of its low
-word takes. It asserts that the port never stalls, that it acknowledges
+with `instret_i` high, and one of microseconds at a clock of 1.5 MHz, which
+the model counts as two in every three cycles, without `perf`'s
+accumulator, so that the proof checks its arithmetic, and a snapshot of
+each, which a read of its low word takes. It asserts that the port never stalls, that it acknowledges
 each request in the next cycle, and that a read returns the low word of
 its counter, the high word of its snapshot, or 0 for a spare word. So a
 read of `CYCLE_HI` returns the high word of the counter as it was at the

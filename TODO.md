@@ -62,6 +62,19 @@ TODO or FIXME comments.
 - **A C compiler for NICE.** None targets NICE directly. ABI.md
   defines the C ABI for one. Until then, C reaches NICE through wasm
   ([README.md](README.md), Compilers).
+  [doc/review/c-compiler-plan.md](doc/review/c-compiler-plan.md) has the
+  expected gain and the decisions taken: the goal is cycles on the
+  pipelined core, `CHAR_BIT` is 32, and the front end is our own, in
+  Python. Still open:
+  - The intermediate form: SSA from the start, or a direct code generator
+    first.
+  - The C accepted at first: C89 or C99, and which of `long long`,
+    floats, structure results, variadic functions, and bit-fields.
+  - The C library: compiled anew, or called in wasm across the pointer
+    boundary of WASM.md.
+  - An optional check mode for accesses out of bounds.
+  - A linker, or files joined as now (below).
+  - The tests: against the host, the benchmark, Dhrystone, and a fuzzer.
 - **A linker.** There is none. Programs are joined with `cat` and
   assembled at once, so every label is global (ABI.md).
 - **The C library is small** ([runtime/README.md](runtime/README.md#c-library)).

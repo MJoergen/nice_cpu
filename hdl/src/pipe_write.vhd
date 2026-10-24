@@ -204,7 +204,9 @@ begin
       bdata_v(0) := rq_i(0) when rq_cnt_i >= 1 else dbus_data_i;
       bdata_v(1) := rq_i(1) when rq_cnt_i >= 2 else dbus_data_i;
 
-      -- Room in DBUS's register for WRITE's vector read
+      -- Room in DBUS's register for the store or the vector read: no read
+      -- of PREPARE's is on the bus (src/pipe_dbus.vhd, contract a), and the
+      -- register is free or frees itself now
       room_v := rd_stb_i = '0' and (st_valid_i = '0' or st_acc_i = '1');
 
       -- The condition (ISA.md §3). A micro-operation in a later cycle of
@@ -535,7 +537,7 @@ begin
                      done_v := false;
                      if w_r.busy = '1' then
                         done_v := st_acc_i = '1';
-                     elsif rd_stb_i = '0' and (st_valid_i = '0' or st_acc_i = '1') then
+                     elsif room_v then
                         st_o   <= '1';
                         done_v := a_v(31 downto 8) /= X"FFFFFF";
                         n_v.busy := to_sl(not done_v);

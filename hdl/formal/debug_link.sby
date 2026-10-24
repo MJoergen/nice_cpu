@@ -1,0 +1,32 @@
+# The debug link (formal_debug_link.vhd, and the properties under G_FORMAL
+# in debug_link.vhd). "prove" proves the assertions for every cycle by
+# k-induction, "prove_held" the same for a system without a ROM that boots
+# held, and "cover" reaches each cover statement.
+
+[tasks]
+prove
+prove_held
+cover
+
+[options]
+prove: mode prove
+prove: depth 4
+prove_held: mode prove
+prove_held: depth 4
+cover: mode cover
+cover: depth 70
+
+[engines]
+smtbmc yices
+
+[script]
+plugin -i ghdl
+prove: ghdl --std=08 -fpsl debug_link.vhd wb_master_check.vhd formal_debug_link.vhd -e formal_debug_link
+prove_held: ghdl --std=08 -fpsl -gG_HAS_ROM=false -gG_BOOT_HELD=true debug_link.vhd wb_master_check.vhd formal_debug_link.vhd -e formal_debug_link
+cover: ghdl --std=08 -fpsl debug_link.vhd wb_master_check.vhd formal_debug_link.vhd -e formal_debug_link
+prep -top formal_debug_link
+
+[files]
+../src/debug_link.vhd
+wb_master_check.vhd
+formal_debug_link.vhd

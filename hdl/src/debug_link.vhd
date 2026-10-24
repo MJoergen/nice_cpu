@@ -75,6 +75,18 @@
 -- * rom_hide_o: bit 3. '1' where the RAM is at 0.
 -- * halted_i and halt_reason_i: the core's halt (DEBUG.md §6).
 --
+-- FORMAL
+-- With G_FORMAL, the properties that need the state of the processes, for
+-- formal/formal_debug_link.vhd: p_out parses the bytes that the host
+-- takes, as DEBUG.md §1 and §2 frame them, and every packet is whole, with
+-- a known tag, upper-case hex digits, `#`, and its checksum, and a console
+-- byte goes out only between packets; no answer starts during a clear;
+-- rx_ready_o is low only as contract c says; and hold_o and rom_hide_o
+-- change only on a write to the control register, at the end of a clear,
+-- or at reset. The invariants i_* tie p_rx, p_acc, p_tx, and the parser
+-- together, so that k-induction proves it all. The properties of the ports
+-- are in formal/formal_debug_link.vhd.
+--
 -- RESET
 -- Synchronous. It sends `b01`, empties everything, and leaves the
 -- processor held with G_BOOT_HELD, or running with the ROM shown otherwise.
@@ -90,7 +102,10 @@ entity debug_link is
       -- The most clock cycles between two bytes of a packet, 100 ms
       G_TIMEOUT   : positive := 10_000_000;
       G_HAS_ROM   : boolean  := true;
-      G_BOOT_HELD : boolean  := false
+      G_BOOT_HELD : boolean  := false;
+      -- The properties of formal/formal_debug_link.vhd that name the
+      -- registers here
+      G_FORMAL    : boolean  := false
    );
    port (
       clk_i          : in  std_logic;
@@ -109,7 +124,7 @@ entity debug_link is
       con_valid_i    : in  std_logic;
       con_ready_o    : out std_logic;
       con_data_i     : in  std_logic_vector(7 downto 0);
-      con_in_valid_o : out std_logic;
+      con_in_valid_o : out std_logic := '0';
       con_in_data_o  : out std_logic_vector(7 downto 0);
       free_i         : in  std_logic_vector(15 downto 0);
       eoi_o          : out std_logic;
@@ -799,7 +814,7 @@ begin
                   elsif nd_v = 0 then
                      tx_st <= TX_HASH_ST;
                   else
-                     sh_r   <= shift_left(val_v, 32 - 4 * nd_v);
+                     sh_r   <= val_v sll (32 - 4 * nd_v);
                      ndig_r <= nd_v;
                      tx_st  <= TX_DIG_ST;
                   end if;
@@ -848,5 +863,282 @@ begin
          end if;
       end if;
    end process p_tx;
+
+   gen_formal : if G_FORMAL generate
+      type t_out_st is (OUT_IDLE_ST, OUT_ESC_ST, OUT_PAY_ST, OUT_CC1_ST, OUT_CC2_ST);
+
+      -- The framing of the output, from the bytes that the host took
+      signal f_out_st  : t_out_st                     := OUT_IDLE_ST;
+      signal f_out_sum : t_byte                       := (others => '0');
+      signal f_out_hi  : std_logic_vector(3 downto 0) := (others => '0');
+      signal f_bad     : std_logic                    := '0';
+
+      signal f_take   : std_logic;                     -- The host takes a byte
+      signal f_tag    : std_logic;                     -- The byte out is a tag
+      signal f_ctrl   : std_logic;                     -- A write of the control register
+      signal f_answer : boolean;                       -- p_tx sends an answer
+      signal f_ans    : boolean;                       -- An answer is due
+      signal f_past   : boolean;                       -- p_rx is past the tag of a packet
+      signal f_data   : boolean;                       -- p_rx is past A and N of a good W
+      signal f_got    : boolean;                       -- p_rx is past A and N of a good R
+      signal f_mem    : boolean;                       -- The link may reach the memory
+      signal f_cur    : t_word;                        -- The word p_rx writes next
+      signal f_end    : std_logic_vector(32 downto 0); -- A + N of the request
+      signal f_tx_end : std_logic_vector(32 downto 0); -- The same, from p_tx
+
+      function f_is_digit(b : t_byte) return boolean is
+      begin
+         return (b >= X"30" and b <= X"39") or (b >= X"41" and b <= X"46");
+      end function f_is_digit;
+
+      function f_digit(b : t_byte) return std_logic_vector is
+      begin
+         if b <= X"39" then
+            return b(3 downto 0);
+         end if;
+         return b(3 downto 0) + 9;
+      end function f_digit;
+
+      function f_dbg(a : t_word) return boolean is
+      begin
+         return a(31 downto 5) = (31 downto 5 => '1');
+      end function f_dbg;
+
+   begin
+
+      f_take <= out_valid_r and tx_ready_i;
+      f_tag  <= '1' when f_out_st = OUT_ESC_ST and out_valid_r = '1' and out_data_r /= C_ESC else
+                '0';
+      f_ctrl <= '1' when acc_st = ACC_IDLE_ST and acc_go = '1' and acc_we = '1' and
+                         acc_addr = X"FFFFFFF0" else
+                '0';
+
+      f_answer <= tx_st /= TX_IDLE_ST and tx_st /= TX_CON2_ST and
+                  (kind_r = PKT_K or kind_r = PKT_E or kind_r = PKT_R);
+      f_ans    <= ans_req_tgl /= ans_ack_tgl;
+      f_past   <= rx_st = RX_PAY_ST or rx_st = RX_CC1_ST or rx_st = RX_CC2_ST or
+                  rx_st = RX_CALL_ST or rx_st = RX_WAIT_ST;
+      f_data   <= tag_r = X"57" and dig_r >= 12 and bad_r = '0' and err02_r = '0' and f_past;
+      f_got    <= tag_r = X"52" and dig_r >= 12 and bad_r = '0' and err02_r = '0' and
+                  (rx_st = RX_PAY_ST or rx_st = RX_CC1_ST or rx_st = RX_CC2_ST);
+      f_mem    <= (hold_r = '1' or halted_r = '1') and clearing_r = '0';
+      f_end    <= ('0' & req_addr_r) + req_n_r;
+      f_tx_end <= ('0' & tx_addr_r) + tx_cnt_r;
+      f_cur    <= req_addr_r + wcnt_r - 1 when rx_st = RX_CALL_ST or rx_st = RX_WAIT_ST else
+                  req_addr_r + wcnt_r when wcnt_r <= to_integer(req_n_r) else
+                  req_addr_r + req_n_r;
+
+
+      -- Parses the bytes that the host takes, as DEBUG.md §1 and §2 frame
+      -- them. f_bad is a byte out of place, a bad tag, or a bad checksum.
+      p_out : process (clk_i)
+      begin
+         if rising_edge(clk_i) then
+            f_bad <= '0';
+            if f_take = '1' then
+               case f_out_st is
+
+                  when OUT_IDLE_ST =>
+                     if out_data_r = C_ESC then
+                        f_out_st <= OUT_ESC_ST;
+                     end if;
+
+                  when OUT_ESC_ST =>
+                     if out_data_r = C_ESC then
+                        f_out_st <= OUT_IDLE_ST;
+                     elsif out_data_r = X"62" or out_data_r = X"68" or out_data_r = X"6F" or
+                           out_data_r = X"6B" or out_data_r = X"65" or out_data_r = X"72" then
+                        f_out_sum <= out_data_r;
+                        f_out_st  <= OUT_PAY_ST;
+                     else
+                        f_bad <= '1';
+                     end if;
+
+                  when OUT_PAY_ST =>
+                     if out_data_r = X"23" then
+                        f_out_st <= OUT_CC1_ST;
+                     elsif f_is_digit(out_data_r) then
+                        f_out_sum <= f_out_sum + out_data_r;
+                     else
+                        f_bad <= '1';
+                     end if;
+
+                  when OUT_CC1_ST =>
+                     f_out_hi <= f_digit(out_data_r);
+                     f_out_st <= OUT_CC2_ST;
+                     if not f_is_digit(out_data_r) then
+                        f_bad <= '1';
+                     end if;
+
+                  when OUT_CC2_ST =>
+                     f_out_st <= OUT_IDLE_ST;
+                     if not f_is_digit(out_data_r) or
+                        (f_out_hi & f_digit(out_data_r)) /= f_out_sum then
+                        f_bad <= '1';
+                     end if;
+
+               end case;
+            end if;
+
+            if rst_i = '1' then
+               f_out_st <= OUT_IDLE_ST;
+               f_bad    <= '0';
+            end if;
+         end if;
+      end process p_out;
+
+
+      -- psl default clock is rising_edge(clk_i);
+
+      -- The output: every packet is whole, with a known tag, upper-case hex
+      -- digits, `#`, and its checksum. A console byte goes out only between
+      -- packets, so nothing comes between the bytes of a packet, and no
+      -- answer starts during a clear.
+      -- psl f_framing : assert always f_bad = '0';
+      -- psl f_con_between : assert always
+      --    con_ready_o = '1' -> (f_out_st = OUT_IDLE_ST and out_valid_r = '0');
+      -- psl f_clear_answer : assert always
+      --    (f_tag = '1' and (out_data_r = X"6B" or out_data_r = X"65" or out_data_r = X"72")) ->
+      --    clearing_r = '0';
+
+      -- The receiver waits 2 cycles after a byte, 1 cycle to start the write
+      -- of a data word, and then only for a Wishbone access, or with a tag
+      -- for the answer to the last request or for a clear.
+      -- psl f_ready : assert always
+      --    rx_rdy = '0' -> (gap_r /= 0 or rx_st = RX_HOLD_ST or rx_st = RX_CALL_ST or
+      --                     (rx_st = RX_WAIT_ST and (acc_done_r = '1' or wb_cyc_r = '1')));
+      -- psl f_ready_clear : assert always
+      --    clearing_r = '1' -> not (rx_st = RX_WAIT_ST and acc_done_r = '0');
+      -- psl f_call : assert always
+      --    {rx_st = RX_CALL_ST and rst_i = '0'} |=> {rst_i = '1' or rx_st = RX_WAIT_ST};
+
+      -- psl f_hold : assert always
+      --    {rst_i = '0' and f_ctrl = '0' and not (clearing_r = '1' and clear_done_i = '1')} |=>
+      --    {stable(hold_r) and stable(hide_r)};
+
+      -- The invariants of the proof. Each state is one of its values.
+      -- psl i_acc_st : assert always
+      --    acc_st = ACC_IDLE_ST or acc_st = ACC_REQ_ST or acc_st = ACC_WAIT_ST;
+      -- psl i_tx_st : assert always
+      --    tx_st = TX_IDLE_ST or tx_st = TX_CON2_ST or tx_st = TX_TAG_ST or tx_st = TX_FIELD_ST or
+      --    tx_st = TX_CALL_ST or tx_st = TX_WAIT_ST or tx_st = TX_DIG_ST or tx_st = TX_HASH_ST or
+      --    tx_st = TX_CC1_ST or tx_st = TX_CC2_ST;
+      -- psl i_kind : assert always
+      --    (kind_r = PKT_B or kind_r = PKT_H or kind_r = PKT_O or kind_r = PKT_K or
+      --     kind_r = PKT_E or kind_r = PKT_R) and
+      --    (ans_kind_r = PKT_K or ans_kind_r = PKT_E or ans_kind_r = PKT_R);
+      -- psl i_out_st : assert always
+      --    f_out_st = OUT_IDLE_ST or f_out_st = OUT_ESC_ST or f_out_st = OUT_PAY_ST or
+      --    f_out_st = OUT_CC1_ST or f_out_st = OUT_CC2_ST;
+
+      -- A halt that p_acc keeps is still the
+      -- core's while the processor runs, by the assumption of contract e.
+      -- psl i_halted : assert always (halted_r = '1' and hold_r = '0') -> halted_i = '1';
+      -- psl i_strobe : assert always con_in_valid_o = '1' -> gap_r = 2;
+      -- psl i_clear : assert always clearing_r = '1' -> hold_r = '1';
+
+      -- p_acc: one access at a time, for p_rx's write or p_tx's read.
+      -- psl i_acc_idle : assert always
+      --    acc_st = ACC_IDLE_ST -> (wb_cyc_r = '0' and wb_stb_r = '0');
+      -- psl i_acc_req : assert always
+      --    acc_st = ACC_REQ_ST -> (wb_cyc_r = '1' and wb_stb_r = '1');
+      -- psl i_acc_wait : assert always
+      --    acc_st = ACC_WAIT_ST -> (wb_cyc_r = '1' and wb_stb_r = '0');
+      -- psl i_acc_busy : assert always
+      --    acc_st /= ACC_IDLE_ST ->
+      --    (acc_done_r = '0' and f_mem and not f_dbg(wb_addr_r) and
+      --     ((rx_st = RX_WAIT_ST and wb_we_r = '1' and wb_addr_r = cur_addr_r) or
+      --      (tx_st = TX_WAIT_ST and wb_we_r = '0' and wb_addr_r = tx_addr_r)));
+      -- psl i_acc_done : assert always
+      --    ((rx_st = RX_WAIT_ST or tx_st = TX_WAIT_ST) and acc_st = ACC_IDLE_ST) ->
+      --    acc_done_r = '1';
+      -- psl i_rx_go : assert always (rx_go_r = '1') = (rx_st = RX_CALL_ST);
+      -- psl i_tx_go : assert always (tx_go_r = '1') = (tx_st = TX_CALL_ST);
+      -- psl i_calls : assert always
+      --    (rx_st = RX_CALL_ST or tx_st = TX_CALL_ST) -> acc_st = ACC_IDLE_ST;
+
+      -- p_rx: a packet is past its tag only while no answer is due. The
+      -- words of a good W follow A without a wrap, and reach the memory only
+      -- while the link may.
+      -- psl i_rx_ans : assert always f_past -> not f_ans;
+      -- psl i_rx_hold : assert always
+      --    rx_st = RX_HOLD_ST ->
+      --    (dig_r = 0 and nib_r = 0 and wcnt_r = 0 and bad_r = '0' and err02_r = '0');
+      -- psl i_rx_head : assert always dig_r <= 12 -> (wcnt_r = 0 and nib_r = 0);
+      -- psl i_rx_call : assert always
+      --    (rx_st = RX_CALL_ST or rx_st = RX_WAIT_ST) ->
+      --    (f_data and wcnt_r >= 1 and wcnt_r <= to_integer(req_n_r));
+      -- psl i_rx_wrap : assert always f_data -> f_end(32) = '0' or f_end = '1' & X"00000000";
+      -- psl i_rx_cur : assert always f_data -> cur_addr_r = f_cur;
+      -- psl i_rx_mem : assert always
+      --    (f_data and not f_dbg(cur_addr_r) and
+      --     (rx_st = RX_CALL_ST or rx_st = RX_WAIT_ST or wcnt_r < to_integer(req_n_r))) -> f_mem;
+      -- psl i_rx_clear : assert always
+      --    (clearing_r = '1' and f_past) ->
+      --    (tag_r = X"57" and dig_r >= 12 and err02_r = '0' and
+      --     (cur_addr_r >= X"FFFFFFF0" or
+      --      (rx_st /= RX_CALL_ST and rx_st /= RX_WAIT_ST and wcnt_r >= to_integer(req_n_r))) and
+      --     (bad_r = '1' or f_end(32) = '0' or f_end = '1' & X"00000000"));
+      -- psl i_rx_read : assert always
+      --    f_got -> (hold_r = '1' or halted_r = '1' or not non_dbg(req_addr_r, req_n_r));
+
+      -- p_tx: an answer is sent only while it is due, and an `r` reads the
+      -- words from A on, only where the link may.
+      -- psl i_tx_ans : assert always
+      --    f_answer -> (f_ans and clearing_r = '0' and kind_r = ans_kind_r);
+      -- psl i_ans_clear : assert always (f_ans and clearing_r = '1') -> ans_kind_r /= PKT_R;
+      -- psl i_ans_read : assert always
+      --    (f_ans and ans_kind_r = PKT_R) ->
+      --    (hold_r = '1' or halted_r = '1' or not non_dbg(req_addr_r, req_n_r));
+      -- psl i_tx_call : assert always
+      --    (tx_st = TX_CALL_ST or tx_st = TX_WAIT_ST) ->
+      --    (kind_r = PKT_R and tx_cnt_r /= X"0000" and (f_mem or f_dbg(tx_addr_r)));
+      -- psl i_tx_addr : assert always
+      --    (f_answer and kind_r = PKT_R and tx_st /= TX_TAG_ST) ->
+      --    (tx_cnt_r <= req_n_r and f_tx_end(31 downto 0) = f_end(31 downto 0));
+      -- psl i_tx_tag : assert always
+      --    (f_answer and tx_st = TX_TAG_ST) -> (tx_addr_r = req_addr_r and tx_cnt_r = req_n_r);
+
+      -- p_tx and the parser agree on the bytes sent so far.
+      -- psl i_out_idle : assert always
+      --    (tx_st = TX_IDLE_ST and out_valid_r = '0') -> f_out_st = OUT_IDLE_ST;
+      -- psl i_out_last : assert always
+      --    (tx_st = TX_IDLE_ST and out_valid_r = '1') ->
+      --    ((f_out_st = OUT_IDLE_ST and out_data_r /= C_ESC) or
+      --     (f_out_st = OUT_ESC_ST and out_data_r = C_ESC) or
+      --     (f_out_st = OUT_CC2_ST and f_out_hi = f_out_sum(7 downto 4) and
+      --      out_data_r = hex_char(f_out_sum(3 downto 0))));
+      -- psl i_out_con2 : assert always
+      --    tx_st = TX_CON2_ST ->
+      --    ((out_valid_r = '1' and out_data_r = C_ESC and f_out_st = OUT_IDLE_ST) or
+      --     (out_valid_r = '0' and f_out_st = OUT_ESC_ST));
+      -- psl i_out_tag : assert always
+      --    tx_st = TX_TAG_ST ->
+      --    ((out_valid_r = '1' and out_data_r = C_ESC and f_out_st = OUT_IDLE_ST) or
+      --     (out_valid_r = '0' and f_out_st = OUT_ESC_ST)) and tx_sum_r = X"00";
+      -- psl i_out_pay : assert always
+      --    (tx_st = TX_FIELD_ST or tx_st = TX_DIG_ST or tx_st = TX_HASH_ST or
+      --     tx_st = TX_CALL_ST or tx_st = TX_WAIT_ST) ->
+      --    ((out_valid_r = '1' and f_out_st = OUT_ESC_ST and out_data_r = kind_char(kind_r) and
+      --      tx_sum_r = out_data_r) or
+      --     (out_valid_r = '1' and f_out_st = OUT_PAY_ST and f_is_digit(out_data_r) and
+      --      tx_sum_r = f_out_sum + out_data_r) or
+      --     (out_valid_r = '0' and f_out_st = OUT_PAY_ST and tx_sum_r = f_out_sum));
+      -- psl i_out_cc1 : assert always
+      --    tx_st = TX_CC1_ST ->
+      --    ((out_valid_r = '1' and out_data_r = X"23" and f_out_st = OUT_PAY_ST) or
+      --     (out_valid_r = '0' and f_out_st = OUT_CC1_ST)) and tx_sum_r = f_out_sum;
+      -- psl i_out_cc2 : assert always
+      --    tx_st = TX_CC2_ST ->
+      --    ((out_valid_r = '1' and out_data_r = hex_char(tx_sum_r(7 downto 4)) and
+      --      f_out_st = OUT_CC1_ST) or
+      --     (out_valid_r = '0' and f_out_st = OUT_CC2_ST and f_out_hi = tx_sum_r(7 downto 4))) and
+      --    tx_sum_r = f_out_sum;
+      -- psl i_dig : assert always tx_st = TX_DIG_ST -> ndig_r >= 1;
+
+      -- psl c_halt : cover {f_tag = '1' and out_data_r = X"68"};
+      -- psl c_overflow : cover {f_tag = '1' and out_data_r = X"6F"};
+
+   end generate gen_formal;
 
 end architecture synthesis;

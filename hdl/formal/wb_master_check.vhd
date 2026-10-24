@@ -16,7 +16,8 @@
 -- - No more than G_MAX_PENDING requests wait at a time.
 -- - Reset drops CYC and STB.
 -- The covers show that a read, a write, and a stalled request can happen.
--- A port with G_READ_ONLY has no write to cover.
+-- A port with G_READ_ONLY has no write to cover, and one with
+-- G_COVER_READ false a read too deep for its cover task.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) A read-only port ties we_i and data_i to constants.
@@ -31,7 +32,9 @@ entity wb_master_check is
       G_ADDR_SIZE   : positive := 32;
       G_DATA_SIZE   : positive := 32;
       -- A read-only port has no write to cover
-      G_READ_ONLY   : boolean  := false
+      G_READ_ONLY   : boolean  := false;
+      -- A port whose read lies deeper than its cover task looks
+      G_COVER_READ  : boolean  := true
    );
    port (
       clk_i     : in  std_logic;
@@ -101,8 +104,11 @@ begin
    -- psl f_max_pending : assert always pending <= G_MAX_PENDING;
    -- psl f_reset : assert always {rst_i} |=> {not cyc_i and not stb_i};
 
-   -- psl c_read : cover {accept and not we_i; [*1 to inf]; ack_i};
    -- psl c_stall : cover {cyc_i and stb_i and stall_i; accept};
+
+   gen_read : if G_COVER_READ generate
+      -- psl c_read : cover {accept and not we_i; [*1 to inf]; ack_i};
+   end generate gen_read;
 
    gen_write : if not G_READ_ONLY generate
       -- psl c_write : cover {accept and we_i; [*1 to inf]; ack_i};

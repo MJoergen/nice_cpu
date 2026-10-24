@@ -121,6 +121,8 @@ departs from it.
 | [formal/fetch_stats.sby](formal/fetch_stats.sby) | The SymbiYosys job for it. |
 | [formal/formal_mpu.vhd](formal/formal_mpu.vhd) | The math unit with checks of its bus port, whose other properties are in `src/mpu.vhd`. |
 | [formal/mpu.sby](formal/mpu.sby) | The SymbiYosys job for it. |
+| [formal/formal_debug_link.vhd](formal/formal_debug_link.vhd) | The debug link with checks of its ports, whose other properties are in `src/debug_link.vhd`. |
+| [formal/debug_link.sby](formal/debug_link.sby) | The SymbiYosys job for it. |
 
 ## Running the tests
 
@@ -667,6 +669,36 @@ of each subtree, and each node is asserted to be the sum of its two
 children. Boolector proves it all by k-induction in about 3 minutes;
 Yices does not finish in 15.
 
+`formal_debug_link` checks the debug link from the host, the program,
+the core, and the board, with every input free. It assumes a Wishbone
+slave as `wb_master_check` does, and a core whose halt ends only by a
+reset, by `hold_o` or by `rst_i`. It asserts that the master keeps to the
+rules of `wb_master_check` with one access at a time, only while
+`hold_o` or `halted_i` is high, and never while `clear_o` is high; that
+`con_in_valid_o` is high at most one cycle in three, only while the
+program ran and `free_i` was not 0 the cycle before; that `clear_o` stays
+high until `clear_done_i`; that `tx_valid_o` and `tx_data_o` hold until
+the host takes the byte, and a console byte taken is the next one out;
+and that `eoi_o` rises only after a break and falls only at a start or
+reset. The properties under `G_FORMAL` in `src/debug_link.vhd` name its
+registers. A parser of the bytes the host takes asserts that every packet
+is whole, a known tag, upper-case hex digits, `#`, and the right
+checksum, that a console byte goes out only between packets, and that no
+answer starts during a clear. `rx_ready_o` is low only for 2 cycles after
+a byte, for the write of a data word, which waits only for the Wishbone
+access and never for a clear, and for a tag that waits for an answer or a
+clear. `hold_o` and `rom_hide_o` change only on a write to the control
+register, at the end of a clear, or at reset. Invariants tie the
+receiver, the accesses, the sender, and the parser together, so that
+k-induction of depth 4 proves it all in a few seconds. `G_TIMEOUT` is 3, so the timeout is reached.
+`prove_held` repeats the proof for a system without a ROM that boots
+held, where `rom_hide_o` is always 1. The `cover` task shows a write to
+the memory, a stalled request, an `h`, an `o`, a console byte for the
+program, and the end of a clear, within 70 cycles. A read of the memory
+needs a whole `R` and the start of its answer, about 90 cycles, so
+`wb_master_check` leaves its read cover out with `G_COVER_READ`, and the
+simulation tests show the read.
+
 `formal_mpu` checks the bus port of the math unit with a count of the
 ACKs owed: at most one, an ACK only when one is owed, STALL high exactly
 while a read waits for its ACK, and an ACK in the next cycle for a write
@@ -965,6 +997,8 @@ the read counter returns 0 and has no side effect, and a link write is
 ignored. It holds the debug registers of §6 itself, takes R0 to R15 and the
 halt as inputs, drives `hold_o` and `rom_hide_o`, and asks the board to
 clear the memory with `clear_o` and `clear_done_i`.
+`formal/debug_link.sby` proves its ports and the guarantees of its
+header (The formal checks).
 
 ## The memory model
 

@@ -407,10 +407,12 @@ synth: analyze
 # The formal checks of formal/: each task of each .sby file must pass. The
 # work directories go in $(BUILD).
 SBY ?= sby
-FORMAL = nice_pkg multicycle timer wb_dmux pipe_fetch pipe_decode pipe_prepare pipe_dbus pipe_write pipeline perf fetch_stats mpu
+FORMAL = nice_pkg multicycle timer wb_dmux pipe_fetch pipe_decode pipe_prepare pipe_dbus pipe_write pipeline perf fetch_stats mpu debug_link
 FORMAL_TASKS = prove cover
 # The pipelined core is checked for a bounded number of cycles only.
 FORMAL_TASKS_pipeline = bmc cover
+# The debug link is proven twice, with and without a ROM.
+FORMAL_TASKS_debug_link = prove prove_held cover
 
 define check_formal
 	@mkdir -p $(BUILD)

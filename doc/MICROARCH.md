@@ -145,18 +145,32 @@ The parts do this:
   flight, and the read data that WRITE has not used yet.
 
 Each stage holds one item and passes it on when the next stage is free,
-or frees itself in the same cycle. DECODE passes micro-operations to
-PREPARE, and PREPARE to WRITE, through valid/ready handshakes: one moves
-in a cycle with valid and ready both high, and valid does not depend on
-ready. They are not generic valid/ready pipeline stages, though, and a
-register slice between two of them would break the core. WRITE's flush
-empties the stages beside the handshakes, WRITE's check of stores into
-fetched code (§5.5) reads every stage's registers, and PREPARE's
-decisions depend on the state of WRITE in the same cycle (§5.3). FETCH's
-words and DBUS's read data move several at a time, and have no such
-handshake. DECODE's skid register ends that path, so that it reaches
+or frees itself in the same cycle. DECODE's skid register ends the path
+from WRITE's state through PREPARE's decisions, so that it reaches
 PREPARE's registers but not DECODE's
 ([review/pipeline-timing.md](review/pipeline-timing.md), The handshake).
+
+Some interfaces are AXI-style valid/ready handshakes: an item moves in a
+cycle with valid and ready both high, and valid does not depend on ready.
+The others are not, for the reasons below.
+
+| Interface | AXI-style | Why not |
+|---|---|---|
+| FETCH to DECODE | No | FETCH shows up to four words, and DECODE takes as many as the instruction is long, 0 to 4, so that a whole instruction moves in one cycle. |
+| DECODE to PREPARE | Yes: `valid_o`, `ready_i` | |
+| PREPARE to WRITE | Yes: `valid_o`, `ready_i` | |
+| PREPARE's data read to DBUS | No | The request register drives the bus, and PREPARE watches the bus's stall itself. It loads a read only when no store waits in DBUS in the next cycle (§5.3), which needs DBUS's state, not just a ready. |
+| WRITE's store or vector read to DBUS | No | WRITE checks DBUS's register and the bus's acceptance itself. A store into the I/O range retires only when the bus accepts it (§5.3). |
+| DBUS's read data to WRITE | No | WRITE reads the data of up to two reads at once, from the FIFO or straight from the bus, and pops 0 to 2 of them. |
+| WRITE's flush and redirect | No | They empty every younger stage, and act beside the handshakes. |
+| Instruction and data buses | Wishbone | Pipelined Wishbone: `stb` and `stall` are valid and not ready, and `ack` returns each reply. |
+| Interrupt requests | Yes: `nmi_valid_i`, `nmi_ready_o`, and the same for IRQ | Ready depends on valid, as AXI allows (§6). |
+
+Even the AXI-style interfaces are not generic valid/ready pipeline
+stages, and a register slice between two of them would break the core.
+Valid falls without a transfer on a flush. WRITE's check of stores into
+fetched code (§5.5) reads every stage's registers. PREPARE's decisions
+depend on the state of WRITE in the same cycle (§5.3).
 
 ## 4. Micro-operations
 

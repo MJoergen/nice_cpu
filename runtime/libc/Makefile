@@ -13,10 +13,14 @@ LDFLAGS = -nostdlib -Wl,--no-entry -Wl,--export=main -Wl,--stack-first -Wl,-z,st
 SRCS = $(wildcard src/*.c)
 OBJS = $(SRCS:src/%.c=build/%.o)
 
+# mchess keeps move lists of several KB on the stack in a recursion five
+# deep, so it is linked with 32 KB of stack. The later option wins.
+BIGSTACK = -Wl,-z,stack-size=32768
+
 # The test programs, test/X.c. Their .wasm files are checked in, so make
 # test needs no C compiler; make wasm rebuilds them. A test/X.input file is
 # the console input of test X.
-TESTS = stdio stream string stdlib scanf nice printf strings numbers sscanf malloc abort exit limits assert time
+TESTS = stdio stream string stdlib scanf nice printf strings numbers sscanf malloc abort exit limits assert time mchess
 
 libc.a: $(OBJS)
 	rm -f $@
@@ -28,7 +32,7 @@ build/%.o: src/%.c $(wildcard include/*.h)
 
 wasm: libc.a
 	@for t in $(TESTS); do \
-	  $(CLANG) $(CFLAGS) $(LDFLAGS) -o test/$$t.wasm test/$$t.c libc.a || exit 1; \
+	  $(CLANG) $(CFLAGS) $(LDFLAGS) $$(if [ $$t = mchess ]; then echo $(BIGSTACK); fi) -o test/$$t.wasm test/$$t.c libc.a || exit 1; \
 	done
 
 # Each test/X.wasm is translated and joined with the start-up code,

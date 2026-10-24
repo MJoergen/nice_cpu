@@ -1,0 +1,10 @@
+perft 1
+perft 2
+perft 3
+show
+move e2e5
+move e2e4
+move e2e4
+show
+foo
+quit

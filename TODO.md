@@ -64,12 +64,9 @@ TODO or FIXME comments.
   ([README.md](README.md), Compilers).
   [doc/review/c-compiler-plan.md](doc/review/c-compiler-plan.md) has the
   expected gain and the decisions taken: the goal is cycles on the
-  pipelined core, `CHAR_BIT` is 32, and the front end is our own, in
-  Python. Still open:
-  - The intermediate form: SSA from the start, or a direct code generator
-    first.
-  - The C accepted at first: C89 or C99, and which of `long long`,
-    floats, structure results, variadic functions, and bit-fields.
+  pipelined core, `CHAR_BIT` is 32, the front end is our own, in
+  Python, the intermediate form is SSA from the start, and the C accepted
+  at first is C89 with `long long`. Still open:
   - The C library: compiled anew, or called in wasm across the pointer
     boundary of WASM.md.
   - An optional check mode for accesses out of bounds.

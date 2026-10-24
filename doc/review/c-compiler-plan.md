@@ -107,17 +107,25 @@ Taken on 2026-10-24:
    and `mypy --strict` clean, as niceasm and nicewasm are. Clang and LLVM
    need 8-bit bytes. GCC's word-addressed ports are mostly abandoned. Our
    own front end gives full control over `CHAR_BIT` = 32.
+4. **The intermediate form is SSA from the start.** A direct code
+   generator would reach the level of `simple.nasm` sooner, but most of
+   what is left after that needs SSA: `@R++` pointer walks need loop
+   analysis, conditional instructions in place of short jumps need the
+   merges that φ functions describe, and flags from the operation need to
+   know where a compared value comes from.
+5. **The C accepted at first is C89**, with K&R definitions and
+   structure assignment, which Dhrystone needs, and `long long`, which
+   `rng64` in `bench.c` needs. Calls to variadic functions such as
+   `printf` are in. Floating-point arithmetic, bit-fields, and the
+   definition of variadic functions come later. Dhrystone declares two
+   `float` variables but uses them only outside the `NICE` port, so the
+   first version must accept `float` declarations. The front end includes
+   its own preprocessor, for `#include`, `#define`, and `#ifdef`.
 
 ## Still open
 
 These are in TODO.md:
 
-- The intermediate form: SSA from the start, which loop analysis and
-  conditional execution need later, or a direct code generator first.
-- The C the compiler accepts at first: C89 or C99, and which of
-  `long long`, `float`, `double`, structure results, variadic functions,
-  and bit-fields. Dhrystone needs K&R definitions, structure assignment,
-  and `printf`.
 - The C library and wasm. The C library and the float library are wasm
   today, with byte addresses. Either the C library is compiled anew, or C
   calls into wasm across the pointer boundary of WASM.md.

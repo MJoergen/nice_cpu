@@ -6,10 +6,10 @@
 -- its read data has come: it computes the result, writes the registers,
 -- puts a store into DBUS's register, and updates the flags. A store
 -- into the I/O range waits in WRITE, w_r.busy, until the bus accepts it
--- (MICROARCH.md §5.3). It takes interrupts before an instruction,
--- runs the control instructions, and flushes the pipeline (see
--- src/pipeline.vhd). Its state is the record w_r (t_write), which PREPARE
--- reads too.
+-- (MICROARCH.md §5.3). It takes interrupts before an instruction, pauses
+-- there (MICROARCH.md §6.1), runs the control instructions, and flushes
+-- the pipeline (see src/pipeline.vhd). Its state is the record w_r
+-- (t_write), which PREPARE reads too.
 --
 -- The registers are w_r. The other outputs depend combinationally on w_r
 -- and on the inputs of the same cycle: the store and the vector read go
@@ -28,6 +28,8 @@
 --    until WRITE raises the matching take.
 -- d) st_valid_i is '1' while a store or a vector read waits in DBUS's
 --    register, and st_acc_i when the bus accepts it.
+-- e) pause_i comes from a flip-flop, and does not depend combinationally on
+--    WRITE's outputs.
 --
 -- RESET
 -- Synchronous. It sets the state of ISA.md §8.1.
@@ -83,6 +85,9 @@ entity pipe_write is
       irq_vector_i : in  std_logic_vector(7 downto 0);
       take_nmi_o   : out std_logic;
       take_irq_o   : out std_logic;
+
+      -- A pause before the next step (MICROARCH.md §6.1)
+      pause_i      : in  std_logic;
 
       -- WRITE's state, and its decisions in this cycle
       state_o      : out t_write;
@@ -192,6 +197,8 @@ begin
       variable halt_v   : t_halt;
       variable rti_v    : boolean;
       variable bound_v  : boolean;
+      variable pbound_v : boolean;   -- A step boundary, where the core may pause
+      variable pause_v  : boolean;
       variable room_v   : boolean;
       variable accept_v : std_logic;
    begin
@@ -288,12 +295,16 @@ begin
                (skid_r.valid = '1' and near(a_v, skid_r.addr, skid_r.blk, 2)) or
                (prep_r.valid = '1' and near(a_v, prep_r.inst.addr, prep_r.inst.blk, 2));
 
-      -- An instruction boundary where ISA.md §7.1 allows an interrupt, and
-      -- no data access of the next instruction has begun.
-      bound_v := w_r.mode = RUN_ST and rst_i = '0' and w_r.commits = 0 and w_r.mid = '0' and
-                 w_r.busy = '0' and w_r.cnt_step = 0 and w_r.exec_done = '0' and
-                 (u_v.valid = '0' or u_v.first = '1') and
-                 w_r.in_service = '0' and w_r.after_rti = '0';
+      -- A step boundary where no data access of the next instruction has
+      -- begun. The core pauses there whatever in_service and after_rti are,
+      -- but not before the first step after a pause, and ahead of an
+      -- interrupt (MICROARCH.md §6.1). It takes an interrupt there where
+      -- ISA.md §7.1 allows one.
+      pbound_v := w_r.mode = RUN_ST and rst_i = '0' and w_r.commits = 0 and w_r.mid = '0' and
+                  w_r.busy = '0' and w_r.cnt_step = 0 and w_r.exec_done = '0' and
+                  (u_v.valid = '0' or u_v.first = '1');
+      pause_v  := pbound_v and w_r.after_go = '0' and pause_i = '1';
+      bound_v  := pbound_v and not pause_v and w_r.in_service = '0' and w_r.after_rti = '0';
 
       if bound_v and nmi_valid_i = '1' then
          take_nmi     <= '1';
@@ -305,7 +316,24 @@ begin
          n_v.vec_nmi  := '0';
       end if;
 
-      if bound_v and (nmi_valid_i = '1' or (irq_valid_i = '1' and w_r.regs(14)(C_SR_E) = '1')) then
+      if pause_v then
+         -- The micro-operation in WRITE has not begun, so it goes with the
+         -- rest of the pipeline, and FETCH stops at R15.
+         n_v.mode      := PAUSED_ST;
+         n_v.uop.valid := '0';
+         target_v      := w_r.regs(15);
+         flush_v       := true;
+      elsif w_r.mode = PAUSED_ST then
+         -- The pipeline is empty. When pause_i falls, FETCH starts again at
+         -- R15, so that it sees what a system wrote to memory meanwhile, and
+         -- the core runs one step, whatever pause_i is then.
+         if pause_i = '0' then
+            n_v.mode     := RUN_ST;
+            n_v.after_go := '1';
+            target_v     := w_r.regs(15);
+            flush_v      := true;
+         end if;
+      elsif bound_v and (nmi_valid_i = '1' or (irq_valid_i = '1' and w_r.regs(14)(C_SR_E) = '1')) then
          -- ISA.md §7.2. The micro-operation in WRITE has not begun, so it
          -- goes with the rest of the pipeline.
          n_v.mode       := VEC_ST;
@@ -341,6 +369,7 @@ begin
             n_v.rep.vector := w_r.vec;
             n_v.rep.addr   := u_v.inst.addr;
             n_v.rep.iw     := iw_v;
+            n_v.after_go   := '0';
             if w_r.vec_intr = '0' then
                -- INT is an instruction.
                w_instret     <= not u_v.counted;
@@ -622,6 +651,7 @@ begin
                   flush_v  := true;
                end if;
                n_v.after_rti := to_sl(rti_v);
+               n_v.after_go  := '0';
                n_v.mid       := '0';
                n_v.jump      := '0';
                if u_v.committed = '1' then
@@ -684,6 +714,7 @@ begin
             w_r.regs       <= C_REGS_RESET;
             w_r.in_service <= '0';
             w_r.after_rti  <= '0';
+            w_r.after_go   <= '0';
             w_r.halt       <= HALT_NONE;
             w_r.cond       <= '0';
             w_r.mid        <= '0';

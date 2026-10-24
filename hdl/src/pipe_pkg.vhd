@@ -227,7 +227,7 @@ package pipe_pkg is
 
    type t_words is array (natural range <>) of std_logic_vector(31 downto 0);
 
-   type t_wmode is (RUN_ST, VEC_ST, HALTED_ST);
+   type t_wmode is (RUN_ST, VEC_ST, HALTED_ST, PAUSED_ST);
 
    -- The state of WRITE
    type t_write is record
@@ -236,6 +236,7 @@ package pipe_pkg is
       regs       : t_regs;
       in_service : std_logic;
       after_rti  : std_logic;
+      after_go   : std_logic;                       -- The first step after a pause
       saved_pc   : std_logic_vector(31 downto 0);
       saved_sr   : std_logic_vector(31 downto 0);
       halt       : t_halt;

@@ -108,7 +108,13 @@ $(LINK_RUNS): run/link/%: $(BUILD)/linkecho.bin
 # do not depend on the cycles an instruction takes. timer runs the timer,
 # src/timer.vhd, which counts steps here, as the emulator's does. cputest,
 # reads, mpu, mpu64, perf, and timer run a second time with a memory that
-# stalls in 30% of the cycles.
+# stalls in 30% of the cycles. cputest and after run again with random
+# pauses, and cputest and irq with pauses held for a random time, so that
+# requests come while the core is paused. cputest, reads, irq, and
+# test/rtiread.nasm run one step at a time. rtiread returns from an
+# interrupt to instructions with data reads, which a step over RTI must not
+# run. These are G_PAUSE, G_PAUSE_HOLD, and G_SINGLE_STEP of
+# test/tb_core.vhd, and must not change the trace (MICROARCH.md §6.1).
 EXAMPLES = count replicate print wrap
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest \
   console screen iofetch reads reserved mpu mpu64 perf timer input \
@@ -119,6 +125,10 @@ INTR_after = --nmi 3:1 --nmi 10:1
 INTR_start = --nmi 0:3
 INTR_perf  = --nmi 3:0x41
 INTR_perf_stall = $(INTR_perf)
+INTR_irq_step   = $(INTR_irq)
+INTR_irq_hold   = $(INTR_irq)
+INTR_after_pause = $(INTR_after)
+INTR_rtiread_step = --nmi 2:1 --nmi 5:1
 # The program of the interrupt timing diagram, doc/interrupt.tex: a request
 # taken at once, and one that comes just after a data read was issued.
 INTR_irqwave = --irq 2:9 --irq 10:9
@@ -129,6 +139,20 @@ TIMER_timer_stall = yes
 requests = $(INTR_$(1))$(TIMER_$(1))
 # The console input of a run, a file, as the emulator's --input takes it.
 INPUT_input = ../emulator/test/input.txt
+
+# test/pausepatch.nasm runs one step at a time, and tb_core writes a word
+# of its code while the core is paused (G_PATCH_STEP). The emulator sees no
+# such write, so the trace is compared with the hand-checked
+# test/pausepatch.expected instead. $(1) is the name of the run, $(2) the
+# program, and $(3) any more generics.
+define check_expected
+	@($(in_rundir) && $(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(2)) -gG_TRACE_FILE=core.out \
+	  $(3) > core.log 2>&1); echo "exit $$?" >> $(RUNDIR)/core.out
+	@if cmp -s test/$(1).expected $(RUNDIR)/core.out; then echo "PASS $(CORE) $(1)"; \
+	else echo "FAIL $(CORE) $(1)"; cat $(RUNDIR)/core.log; \
+	  diff test/$(1).expected $(RUNDIR)/core.out | head -20; exit 1; fi
+
+endef
 
 # $(1) is the name of the run, $(2) the program, and $(3) any more generics.
 define check_core
@@ -232,8 +256,13 @@ endef
 # emulator count differently, is memory in both: G_CYCLE_COUNTER=false and
 # --no-cycle-counter. The fetch statistics read 0 and ignore writes in
 # both: G_FETCH_STATS=false. random_prog.py writes the program, and
-# prints the requests, which go in random_N.opts.
+# prints the requests, which go in random_N.opts. The seeds of PAUSE_SEEDS
+# run again with random pauses, as random_pause_N, and with pauses held for
+# a random time, as random_hold_N (G_PAUSE and G_PAUSE_HOLD of
+# test/tb_core.vhd), which must not change the trace. In check_random, $(2)
+# is any more generics, and $(3) the suffix of the name.
 RANDOM_SEEDS = $(shell seq 1 30)
+PAUSE_SEEDS = $(shell seq 1 8)
 RANDOM_STEPS = 3000
 RANDOM_STALL = 30
 
@@ -245,15 +274,15 @@ define check_random
 	@o=$$(cat $(BUILD)/random_$(1).opts); \
 	  ($(in_rundir) && $(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(BUILD)/random_$(1).bin) \
 	  -gG_TRACE_FILE=core.out -gG_MAX_STEPS=$(RANDOM_STEPS) -gG_STALL=$(RANDOM_STALL) -gG_SEED=$(1) \
-	  -gG_CYCLE_COUNTER=false -gG_FETCH_STATS=false \
+	  -gG_CYCLE_COUNTER=false -gG_FETCH_STATS=false $(2) \
 	  $${o:+"-gG_INTERRUPTS=$$o"} -gG_INTR_LOG=core.intr > core.log 2>&1); \
 	  echo "exit $$?" >> $(RUNDIR)/core.out
 	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter $$(cat $(BUILD)/random_$(1).opts) $(BUILD)/random_$(1).bin \
 	  < /dev/null > $(RUNDIR)/core.expected; echo "exit $$?" >> $(RUNDIR)/core.expected
-	$(if $(IRQ_LATE),,@if cmp -s $(RUNDIR)/core.expected $(RUNDIR)/core.out; then echo "PASS $(CORE) random $(1)"; \
-	else echo "FAIL $(CORE) random $(1)"; cat $(RUNDIR)/core.log; \
+	$(if $(IRQ_LATE),,@if cmp -s $(RUNDIR)/core.expected $(RUNDIR)/core.out; then echo "PASS $(CORE) random$(3) $(1)"; \
+	else echo "FAIL $(CORE) random$(3) $(1)"; cat $(RUNDIR)/core.log; \
 	  diff $(RUNDIR)/core.expected $(RUNDIR)/core.out | head -20; exit 1; fi)
-	@$(IRQ_COMPARE) --name random_$(1) $(BUILD)/random_$(1).bin $(RUNDIR)/core.out \
+	@$(IRQ_COMPARE) --name random$(3)_$(1) $(BUILD)/random_$(1).bin $(RUNDIR)/core.out \
 	  $(RUNDIR)/core.intr -- -n $(RANDOM_STEPS) --no-cycle-counter
 
 endef
@@ -283,15 +312,16 @@ run/$(1)/sweep_$(2): $(BUILD)/$(2).bin
 
 endef
 
-# The same for a random program, run/CORE/random_SEED, which RANDOM_CORE
-# lists too: $(1) is the core and $(2) the seed.
+# The same for a random program, run/CORE/randomSUFFIX_SEED, which
+# RANDOM_CORE lists too: $(1) is the core, $(2) the seed, $(3) any more
+# generics, and $(4) the suffix.
 define random_run
-RUNS_$(1) += run/$(1)/random_$(2)
-RANDOM_$(1) += run/$(1)/random_$(2)
-.PHONY: run/$(1)/random_$(2)
-run/$(1)/random_$(2): override CORE = $(1)
-run/$(1)/random_$(2): $(BUILD)/random_$(2).bin $(BUILD)/random_$(2).opts
-	$$(call check_random,$(2))
+RUNS_$(1) += run/$(1)/random$(4)_$(2)
+RANDOM_$(1) += run/$(1)/random$(4)_$(2)
+.PHONY: run/$(1)/random$(4)_$(2)
+run/$(1)/random$(4)_$(2): override CORE = $(1)
+run/$(1)/random$(4)_$(2): $(BUILD)/random_$(2).bin $(BUILD)/random_$(2).opts
+	$$(call check_random,$(2),$(3),$(4))
 
 endef
 
@@ -312,6 +342,16 @@ $(eval $(call core_run,$(1),mpu_stall,../emulator/test/mpu.bin,-gG_STALL=30 -gG_
 $(eval $(call core_run,$(1),mpu64_stall,../emulator/test/mpu64.bin,-gG_STALL=30 -gG_SEED=5))
 $(eval $(call core_run,$(1),perf_stall,../emulator/test/perf.bin,-gG_STALL=30 -gG_SEED=9))
 $(eval $(call core_run,$(1),timer_stall,../emulator/test/timer.bin,-gG_STALL=30 -gG_SEED=11))
+$(eval $(call core_run,$(1),cputest_pause,../emulator/test/cputest.bin,-gG_PAUSE=60 -gG_STALL=30 -gG_SEED=23))
+$(eval $(call core_run,$(1),cputest_hold,../emulator/test/cputest.bin,-gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=31))
+$(eval $(call core_run,$(1),cputest_step,../emulator/test/cputest.bin,-gG_SINGLE_STEP=true))
+$(eval $(call core_run,$(1),reads_step,../emulator/test/reads.bin,-gG_SINGLE_STEP=true -gG_STALL=30 -gG_SEED=25))
+$(eval $(call core_run,$(1),irq_step,../emulator/test/irq.bin,-gG_SINGLE_STEP=true))
+$(eval $(call core_run,$(1),irq_hold,../emulator/test/irq.bin,-gG_PAUSE=10 -gG_PAUSE_HOLD=40 -gG_STALL=30 -gG_SEED=33))
+$(eval $(call core_run,$(1),after_pause,../emulator/test/after.bin,-gG_PAUSE=50 -gG_SEED=27))
+$(eval $(call core_run,$(1),rtiread_step,$(BUILD)/rtiread.bin,-gG_SINGLE_STEP=true))
+$(eval $(call core_run,$(1),pausepatch,$(BUILD)/pausepatch.bin,-gG_SINGLE_STEP=true -gG_PATCH_STEP=2 \
+  -gG_PATCH_ADDR=5 -gG_PATCH_DATA=00010100,check_expected))
 $(eval $(call core_run,$(1),instret,$(BUILD)/instret.bin))
 $(eval $(call core_run,$(1),instret_stall,$(BUILD)/instret.bin,-gG_STALL=30 -gG_SEED=17))
 $(eval $(call core_run,$(1),irqwave,$(BUILD)/irqwave.bin))
@@ -332,6 +372,8 @@ $(if $(filter pipeline,$(1)),$(eval $(call core_run,$(1),fstats,$(BUILD)/fstats.
 $(if $(filter pipeline,$(1)),$(eval $(call core_run,$(1),fstats_stall,$(BUILD)/fstats.bin,-gG_STALL=30 -gG_SEED=19,check_selfonly)))
 $(if $(filter pipeline,$(1)),$(eval $(call core_run,$(1),bubble,$(BUILD)/bubble.bin,,check_selfonly)))
 $(foreach t,$(RANDOM_SEEDS),$(eval $(call random_run,$(1),$(t))))
+$(foreach t,$(PAUSE_SEEDS),$(eval $(call random_run,$(1),$(t),-gG_PAUSE=50,_pause)))
+$(foreach t,$(PAUSE_SEEDS),$(eval $(call random_run,$(1),$(t),-gG_PAUSE=5 -gG_PAUSE_HOLD=40,_hold)))
 endef
 
 $(foreach c,$(sort $(CORES) $(CORE)),$(eval $(call core_runs,$(c))))

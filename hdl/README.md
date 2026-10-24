@@ -48,7 +48,7 @@ departs from it.
 | [src/fetch_stats.vhd](src/fetch_stats.vhd) | The fetch statistics of MICROARCH.md §8.1, counters of FETCH and DECODE of the pipelined core, a Wishbone slave. |
 | [src/wb_dmux.vhd](src/wb_dmux.vhd) | The data bus decoder, which keeps the ACKs of several slaves in order. |
 | [src/debug_link.vhd](src/debug_link.vhd) | The byte-stream part of the debug link of DEBUG.md: packets, the debug registers, notices, and a Wishbone master. |
-| [src/trace_pkg.vhd](src/trace_pkg.vhd) | `t_retire`, the record in which the core reports each step to the trace writer. |
+| [src/trace_pkg.vhd](src/trace_pkg.vhd) | `t_retire`, the record in which the core reports each step to the trace writer, and `t_halt`, the type of the cores' `halt_reason_o`. |
 | [sim/trace.vhd](sim/trace.vhd) | The trace writer. Simulation only. |
 | [sim/wb_mem.vhd](sim/wb_mem.vhd) | The memory model, with the console and the read counter. Simulation only. |
 | [test/tb_mem.vhd](test/tb_mem.vhd) | A self-checking test of the memory model, which loads [test/mem.bin](test/mem.bin) and reads [test/mem.input](test/mem.input) as its console input. |
@@ -89,6 +89,8 @@ departs from it.
 | [test/condlate.nasm](test/condlate.nasm) | Conditional late shifts, adjusted destinations in R14, `HALT` and `INT` right after two-cycle flag writes, and more forms of R15. |
 | [test/irqhazard.nasm](test/irqhazard.nasm) | Late shifts, adjusted destinations, and side effects on R14 and R15, for a request before each step. |
 | [test/shiftjump.nasm](test/shiftjump.nasm) | Every shift with R15 as its destination, `0<0` among them, whose opcode is `MOVE`'s. |
+| [test/rtiread.nasm](test/rtiread.nasm) | `RTI` that returns to instructions with data reads, run one step at a time. |
+| [test/pausepatch.nasm](test/pausepatch.nasm) | A word of code that `tb_core` writes while the core is paused, with its hand-checked trace in [test/pausepatch.expected](test/pausepatch.expected). |
 | [test/bubble.nasm](test/bubble.nasm) | Measures the bubbles of the pipelined core with the cycle counter, and checks itself. |
 | [test/random_prog.py](test/random_prog.py) | Writes random programs, and random interrupt requests for them. |
 | [test/random_stats.py](test/random_stats.py) | Shows how the random programs spend their steps, and how often they make each hazard. |
@@ -111,7 +113,7 @@ departs from it.
 | [formal/pipe_prepare.sby](formal/pipe_prepare.sby) | The SymbiYosys job for it. |
 | [formal/formal_pipe_dbus.vhd](formal/formal_pipe_dbus.vhd) | DBUS of the pipelined core, whose properties are in `src/pipe_dbus.vhd`. |
 | [formal/pipe_dbus.sby](formal/pipe_dbus.sby) | The SymbiYosys job for it. |
-| [formal/formal_pipe_write.vhd](formal/formal_pipe_write.vhd) | WRITE of the pipelined core, with the properties of its halt. |
+| [formal/formal_pipe_write.vhd](formal/formal_pipe_write.vhd) | WRITE of the pipelined core, with the properties of its halt and its pause. |
 | [formal/pipe_write.sby](formal/pipe_write.sby) | The SymbiYosys job for it. |
 | [formal/formal_pipeline.vhd](formal/formal_pipeline.vhd) | The pipelined core with a checker on each of its four ports. |
 | [formal/pipeline.sby](formal/pipeline.sby) | The SymbiYosys job for it. |
@@ -481,8 +483,14 @@ assumes the rules of the other side of its port and asserts the core's:
   It asserts that the core raises `ready` only for a request, and never in
   reset.
 
-`formal_multicycle` also asserts that a halted core makes no request, so
-that the system around the core may take the buses over after a halt.
+`formal_multicycle` also asserts the rules of a stopped core
+(MICROARCH.md §6.1), with `pause_i` free, so that the system around the
+core may take the buses over: a halted core has no bus cycle open and
+stays halted until reset, with `halt_reason_o` other than `HALT_NONE`
+exactly then; a core that is paused, with `pause_i` still 1, stays paused
+with no bus cycle open and `regs_o` unchanged; it is never paused and
+halted at once; and once `paused_o` falls, it reports a step on
+`retire_o` before `paused_o` rises again.
 
 `formal_wb_dmux` checks the data bus decoder with three slaves and up to
 three ACKs owed. Every input is free. It assumes that the master raises
@@ -611,6 +619,14 @@ datum, so the read data come in the order of their ACKs, none lost.  DBUS
 drives 0 as the write data of a read, so that it does not change on the
 bus while the read is stalled.
 
+`formal_pipe_write` proves for every cycle, with every input free, that a
+halted WRITE stays halted until reset, and that neither a halted nor a
+paused WRITE makes a store or a vector read, takes an interrupt, or
+accepts a micro-operation. It also proves that once WRITE leaves
+`PAUSED_ST`, it reports a step before it pauses again, whether or not
+`paused_o` had risen: it does not pause while `after_go` is 1, and only a
+report clears it.
+
 The assumptions of each proof that name another stage are checked in the
 whole core by `p_check` in `src/pipeline.vhd`, on every simulation and in
 `formal_pipeline`, but for PREPARE's assumptions about WRITE and DBUS that
@@ -628,11 +644,15 @@ stay out of it: each is proven for every cycle with free inputs, which
 covers everything the whole core can do, so their shadow registers would
 add only time to the bounded check, a sixth with DECODE's in a trial. It
 also asserts
-what `formal_multicycle` asserts of the multi-cycle core: a halted core
-makes no data access, and no new instruction fetch. The pipeline is too
+what `formal_multicycle` asserts of the multi-cycle core about a halted
+and a paused core, with `pause_i` free. The pipeline is too
 deep for k-induction without many more invariants, so its `bmc` task
 checks only the first 8 cycles after reset, which hold an interrupt
-entry, a first store, and a halt, as its covers show. With Yosys 0.33 a
+entry, a first store, and a pause, which its cover reaches at step 4, so
+the rules of a paused core are checked from there. Its cover reaches a
+halt and the first step after a pause only at step 9, so the bounded
+check cannot see them, and the rules of a halted core and the report
+after a pause hold for every cycle only through `formal_pipe_write`. With Yosys 0.33 a
 9th cycle did not finish in 20 minutes; with Yosys 0.56 and its ABC, 10
 cycles take 5 minutes and 12 take 13. The simulation tests check the same
 assertions on every run.
@@ -754,7 +774,7 @@ right, not fast: an instruction takes about ten cycles.
 
 | State | What it does |
 |---|---|
-| `BOUNDARY` | Takes a pending NMI or IRQ (ISA.md §7.1), or starts an instruction. |
+| `BOUNDARY` | Pauses while `pause_i` is 1, takes a pending NMI or IRQ (ISA.md §7.1), or starts an instruction. |
 | `FETCH` | Reads the instruction word, then each constant word, and increments R15 after each. |
 | `COND` | Tests the condition, and runs a control instruction. |
 | `SRC` | Evaluates s0, then s1, with their side effects. |
@@ -764,6 +784,7 @@ right, not fast: an instruction takes about ten cycles.
 | `VEC` | Reads the vector table entry for IRQ, NMI, and `INT`. |
 | `RETIRE` | Reports the step on `retire_o`. |
 | `FETCH_WAIT`, `SRC_WAIT`, `DEST_WAIT`, `VEC_WAIT` | Wait for the ACK of the read that `FETCH`, `SRC`, or `VEC` issued, or of the store that `EXEC` issued. |
+| `PAUSED` | Waits while `pause_i` is 1, then goes back to `BOUNDARY` for one step (MICROARCH.md §6.1). |
 | `HALTED` | Entered from `RETIRE` when the step halted. Only reset leaves it. |
 
 It has the two Wishbone ports of the memory model: a read-only instruction
@@ -791,11 +812,37 @@ for one cycle, in `BOUNDARY`, when it takes the request. `ready` depends
 combinationally on `valid`, so a device must not make `valid` depend
 combinationally on `ready`.
 
-`halted_o` is 1 once the core has halted. Only reset restarts it. The
-pipelined core raises it once no request of its own is left on either
-bus, so that a halted core makes no new request. `tb_core` runs a few
-cycles past the end of the trace, so that `p_check` in
-`src/pipeline.vhd` checks that too.
+`halted_o` is 1 once the core has halted and no bus cycle is open: CYC
+is 0 on both buses, so every ACK owed has come. Only reset restarts it.
+The multi-cycle core has no bus cycle open once it has halted. The
+pipelined core may still have requests in flight, and may make one more
+in the cycle it halts, so it waits. A system may then take the buses
+over, and no late ACK of the core reaches its other master. Until
+2026-10-24 the pipelined core's `halted_o` waited only for its last
+request, not for the ACKs (doc/HISTORY.md). `tb_core` runs a few cycles
+past the end of the trace, so that `p_check` in `src/pipeline.vhd` sees
+the core halted.
+
+`halt_reason_o` is the reason of the step that halted the core, a
+`t_halt` of `src/trace_pkg.vhd`, while `halted_o` is 1, and `HALT_NONE`
+before. A reset clears it. `halt_code` in `trace_pkg` gives its code in
+DEBUG.md §6. So a system need not read the reason off `retire_o`.
+
+`pause_i` and `paused_o` are for a debugger (MICROARCH.md §6.1). While
+`pause_i` is 1, the core stops at the next step boundary, where it would
+take an interrupt, whatever `in_service` and `after_rti` are, and ahead of
+an interrupt. `paused_o` is 1 there once no bus cycle is open, as for
+`halted_o`. When `pause_i` is 0 while the core is paused, it goes on and
+runs one step, which may be an interrupt entry, whatever `pause_i` is
+then. So one cycle of `pause_i` = 0 runs exactly one step, and `paused_o`
+drops for at least a cycle. A halted core ignores `pause_i`, and
+`paused_o` stays 0, so a system that raises `pause_i` waits for `paused_o`
+or `halted_o`. `pause_i` must come from a flip-flop, and must not depend
+combinationally on the core's outputs. With `pause_i` held at 1 through a
+reset, the core pauses before its first step. While the core is paused, a
+system may read `regs_o` and write memory: the core fetches from R15
+again when it goes on. Both cores have the three ports, with the same
+behavior.
 
 `regs_o` gives R0 to R15 from the core's registers, for a monitor that
 shows them. In the cycle after a step is reported on `retire_o`, they are
@@ -811,6 +858,23 @@ for example `--nmi 2:1 --irq 2:2`. A request for step S is raised once S
 steps have retired, as the emulator raises it before step S. A second request
 of the same kind merges with one still pending and leaves its vector, as the emulator
 merges them.
+
+With the generic `G_PAUSE` = P, `tb_core` raises `pause_i` in a random
+P percent of the cycles. With `G_PAUSE_HOLD` = H as well, a pause starts
+in P percent of the cycles and is held until the core has paused, then
+for a random 0 to H - 1 cycles more, so that interrupt requests come
+while the core is paused. With `G_SINGLE_STEP`, it holds `pause_i` at 1
+from reset on, lowers it for one cycle each time the core has paused,
+and checks that each such pulse runs exactly one step. None of them may
+change the trace. With `G_PATCH_STEP` = S as well, `tb_core` writes
+`G_PATCH_DATA`, a word in hex, to `G_PATCH_ADDR` through the data bus
+while the core is paused after S steps, and hides the write's ACK from
+the core. `make test` runs `test/pausepatch.nasm` so, and compares its
+trace with the hand-checked `test/pausepatch.expected`, since the
+emulator sees no such write. `tb_core` also checks that no bus cycle is
+open while `paused_o` or `halted_o` is 1, that the two are never 1 at
+once, that `regs_o` does not change while the core is paused, and that
+`halt_reason_o` is the reason of the halting step.
 
 With the generic `G_INTR_DELAY` = N, each request is raised N cycles
 after its step would raise it, and none after the end of the run. The
@@ -938,7 +1002,12 @@ will receive, and the instructions in DECODE's and PREPARE's registers
 (MICROARCH.md §5.5).
 
 An interrupt is taken in WRITE before an instruction, unless the
-instruction has issued a data read. Then it is taken after it. `instret_o`
+instruction has issued a data read. Then it is taken after it. A pause is
+taken at the same boundaries, and also inside an interrupt routine and
+after `RTI`, ahead of an interrupt. It flushes the pipeline, so that FETCH
+waits at R15, and WRITE waits in `PAUSED_ST`. PREPARE issues no first data
+read of a new instruction while `pause_i` is 1, but for the first step
+after a pause (MICROARCH.md §5.3, rule 4). `instret_o`
 counts an instruction in the cycle the bus accepts its last data read, or
 when it retires if it reads nothing. So a read of `INSTR_LO` counts every
 older instruction and not its own (SYSTEM.md §3).
@@ -965,6 +1034,10 @@ of `src/pipeline.vhd` rely on them:
 - A device holds `valid` and the vector until `ready`, and `valid` may not
   depend combinationally on `nmi_ready_o` or `irq_ready_o`, which
   depend combinationally on `valid`.
+- `pause_i` comes from a flip-flop, and does not depend combinationally on
+  the core's outputs. It feeds the flush, `nmi_ready_o`, and
+  `irq_ready_o`, and the core's timing at 100 MHz is tight. A system that
+  raises it waits for `paused_o` or `halted_o`.
 
 ## The data bus decoder
 

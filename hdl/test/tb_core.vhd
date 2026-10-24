@@ -76,6 +76,32 @@
 -- That is how the emulator merges a request of the timer with one from
 -- --irq.
 --
+-- With G_PAUSE = P, p_pause raises pause_i (MICROARCH.md §6.1) in a random
+-- P percent of the cycles, from G_SEED, so that the core pauses and goes
+-- on at random boundaries, and often runs a single step. With
+-- G_PAUSE_HOLD = H > 0 as well, a pause starts in a random P percent of
+-- the cycles, and pause_i stays '1' until the core has paused, and then
+-- for a random 0 to H - 1 cycles more. So interrupt requests come during a
+-- real pause, and are taken when the core goes on. A pause must not change
+-- what the core does, so the trace stays that of the emulator. The core's
+-- cycle count does change, so such a run needs G_CYCLE_COUNTER false or a
+-- program that does not read it.
+--
+-- With G_SINGLE_STEP, p_pause holds pause_i at '1' through reset and after,
+-- and lowers it for one cycle each time the core has paused, so that the
+-- core runs one step at a time. Each such pulse must run exactly one step,
+-- and the trace must still be the emulator's. With G_PATCH_STEP = S too,
+-- p_pause writes the word G_PATCH_DATA, in hex, to G_PATCH_ADDR through the
+-- data bus while the core is paused after S steps, as a debugger would.
+-- The core holds the buses idle then, and does not see the write's ACK.
+-- That changes the program, so such a run is compared with a hand-checked
+-- trace, not with the emulator's.
+--
+-- p_stopped checks that the core is quiet while paused_o or halted_o is
+-- '1', that its registers do not change while it is paused, and that
+-- halt_reason_o is the reason of the step that halted it, and HALT_NONE
+-- before.
+--
 -- The run ends when the trace writer has printed the end of the run. The
 -- simulation goes on for a few cycles, so that the core's own checks see
 -- it halted, and then stops with the emulator's exit status.
@@ -83,6 +109,8 @@
 library ieee;
    use ieee.std_logic_1164.all;
    use ieee.numeric_std_unsigned.all;
+   use ieee.math_real.floor;
+   use ieee.math_real.uniform;
 
    use std.env.all;
    use std.textio.all;
@@ -107,7 +135,14 @@ entity tb_core is
       G_FETCH_STATS   : boolean  := true;
       -- The memory's stall rate in percent, and its seed (sim/wb_mem.vhd).
       G_STALL         : natural  := 0;
-      G_SEED          : positive := 1
+      G_SEED          : positive := 1;
+      -- The pauses, and a write to memory while paused (above)
+      G_PAUSE         : natural  := 0;
+      G_PAUSE_HOLD    : natural  := 0;
+      G_SINGLE_STEP   : boolean  := false;
+      G_PATCH_STEP    : integer  := -1;
+      G_PATCH_ADDR    : natural  := 0;
+      G_PATCH_DATA    : string   := "00000000"
    );
 end entity tb_core;
 
@@ -198,6 +233,26 @@ architecture simulation of tb_core is
 
    constant C_REQUESTS : t_requests := parse(G_INTERRUPTS);
 
+   -- A word in hex, for G_PATCH_DATA
+   function hex_word(s : string) return std_logic_vector is
+      variable res_v   : std_logic_vector(31 downto 0) := (others => '0');
+      variable digit_v : natural;
+   begin
+      for i in s'range loop
+         case s(i) is
+            when '0' to '9' => digit_v := character'pos(s(i)) - character'pos('0');
+            when 'a' to 'f' => digit_v := character'pos(s(i)) - character'pos('a') + 10;
+            when 'A' to 'F' => digit_v := character'pos(s(i)) - character'pos('A') + 10;
+            when others     =>
+               assert false
+                  report "tb_core: bad hex digit in G_PATCH_DATA"
+                  severity failure;
+         end case;
+         res_v := res_v(27 downto 0) & to_slv(digit_v, 4);
+      end loop;
+      return res_v;
+   end function hex_word;
+
    signal clk : std_logic;
    signal rst : std_logic;
 
@@ -207,6 +262,18 @@ architecture simulation of tb_core is
    signal ibus_ack   : std_logic;
    signal ibus_addr  : std_logic_vector(30 downto 0);
    signal ibus_data  : std_logic_vector(63 downto 0);
+
+   -- The core's side of the data bus, and p_pause's write while paused,
+   -- which takes the bus while patch_cyc is '1'
+   signal core_cyc      : std_logic;
+   signal core_stb      : std_logic;
+   signal core_stall    : std_logic;
+   signal core_ack      : std_logic;
+   signal core_we       : std_logic;
+   signal core_addr     : std_logic_vector(31 downto 0);
+   signal core_data_out : std_logic_vector(31 downto 0);
+   signal patch_cyc     : std_logic := '0';
+   signal patch_stb     : std_logic := '0';
 
    signal dbus_cyc      : std_logic;
    signal dbus_stb      : std_logic;
@@ -249,11 +316,15 @@ architecture simulation of tb_core is
    signal console_valid : std_logic;
    signal console_data  : std_logic_vector(7 downto 0);
 
-   signal retire : t_retire;
-   signal regs   : t_regs;
-   signal tick   : std_logic;
-   signal done   : std_logic;
-   signal status : natural;
+   signal pause       : std_logic := '0';
+   signal paused      : std_logic;
+   signal halted      : std_logic;
+   signal halt_reason : t_halt;
+   signal retire      : t_retire;
+   signal regs        : t_regs;
+   signal tick        : std_logic;
+   signal done        : std_logic;
+   signal status      : natural;
 
 begin
 
@@ -278,65 +349,71 @@ begin
 
       i_multicycle : entity work.multicycle
          port map (
-            clk_i        => clk,
-            rst_i        => rst,
-            ibus_cyc_o   => ibus_cyc,
-            ibus_stb_o   => ibus_stb,
-            ibus_stall_i => ibus_stall,
-            ibus_ack_i   => ibus_ack,
-            ibus_addr_o  => ibus_addr,
-            ibus_data_i  => ibus_data,
-            dbus_cyc_o   => dbus_cyc,
-            dbus_stb_o   => dbus_stb,
-            dbus_stall_i => dbus_stall,
-            dbus_ack_i   => dbus_ack,
-            dbus_we_o    => dbus_we,
-            dbus_addr_o  => dbus_addr,
-            dbus_data_o  => dbus_data_out,
-            dbus_data_i  => dbus_data_in,
-            nmi_valid_i  => nmi_valid,
-            nmi_ready_o  => nmi_ready,
-            nmi_vector_i => nmi_vector,
-            irq_valid_i  => core_irq_valid,
-            irq_ready_o  => irq_ready,
-            irq_vector_i => core_irq_vector,
-            halted_o     => open,
-            instret_o    => instret,
-            regs_o       => regs,
-            retire_o     => retire
+            clk_i         => clk,
+            rst_i         => rst,
+            ibus_cyc_o    => ibus_cyc,
+            ibus_stb_o    => ibus_stb,
+            ibus_stall_i  => ibus_stall,
+            ibus_ack_i    => ibus_ack,
+            ibus_addr_o   => ibus_addr,
+            ibus_data_i   => ibus_data,
+            dbus_cyc_o    => core_cyc,
+            dbus_stb_o    => core_stb,
+            dbus_stall_i  => core_stall,
+            dbus_ack_i    => core_ack,
+            dbus_we_o     => core_we,
+            dbus_addr_o   => core_addr,
+            dbus_data_o   => core_data_out,
+            dbus_data_i   => dbus_data_in,
+            nmi_valid_i   => nmi_valid,
+            nmi_ready_o   => nmi_ready,
+            nmi_vector_i  => nmi_vector,
+            irq_valid_i   => core_irq_valid,
+            irq_ready_o   => irq_ready,
+            irq_vector_i  => core_irq_vector,
+            pause_i       => pause,
+            paused_o      => paused,
+            halted_o      => halted,
+            halt_reason_o => halt_reason,
+            instret_o     => instret,
+            regs_o        => regs,
+            retire_o      => retire
          ); -- i_multicycle
 
    elsif G_CORE = "pipeline" generate
 
       i_pipeline : entity work.pipeline
          port map (
-            clk_i        => clk,
-            rst_i        => rst,
-            ibus_cyc_o   => ibus_cyc,
-            ibus_stb_o   => ibus_stb,
-            ibus_stall_i => ibus_stall,
-            ibus_ack_i   => ibus_ack,
-            ibus_addr_o  => ibus_addr,
-            ibus_data_i  => ibus_data,
-            dbus_cyc_o   => dbus_cyc,
-            dbus_stb_o   => dbus_stb,
-            dbus_stall_i => dbus_stall,
-            dbus_ack_i   => dbus_ack,
-            dbus_we_o    => dbus_we,
-            dbus_addr_o  => dbus_addr,
-            dbus_data_o  => dbus_data_out,
-            dbus_data_i  => dbus_data_in,
-            nmi_valid_i  => nmi_valid,
-            nmi_ready_o  => nmi_ready,
-            nmi_vector_i => nmi_vector,
-            irq_valid_i  => core_irq_valid,
-            irq_ready_o  => irq_ready,
-            irq_vector_i => core_irq_vector,
-            halted_o     => open,
-            instret_o    => instret,
-            regs_o       => regs,
-            retire_o     => retire,
-            stats_o      => fetch_events
+            clk_i         => clk,
+            rst_i         => rst,
+            ibus_cyc_o    => ibus_cyc,
+            ibus_stb_o    => ibus_stb,
+            ibus_stall_i  => ibus_stall,
+            ibus_ack_i    => ibus_ack,
+            ibus_addr_o   => ibus_addr,
+            ibus_data_i   => ibus_data,
+            dbus_cyc_o    => core_cyc,
+            dbus_stb_o    => core_stb,
+            dbus_stall_i  => core_stall,
+            dbus_ack_i    => core_ack,
+            dbus_we_o     => core_we,
+            dbus_addr_o   => core_addr,
+            dbus_data_o   => core_data_out,
+            dbus_data_i   => dbus_data_in,
+            nmi_valid_i   => nmi_valid,
+            nmi_ready_o   => nmi_ready,
+            nmi_vector_i  => nmi_vector,
+            irq_valid_i   => core_irq_valid,
+            irq_ready_o   => irq_ready,
+            irq_vector_i  => core_irq_vector,
+            pause_i       => pause,
+            paused_o      => paused,
+            halted_o      => halted,
+            halt_reason_o => halt_reason,
+            instret_o     => instret,
+            regs_o        => regs,
+            retire_o      => retire,
+            stats_o       => fetch_events
          ); -- i_pipeline
 
    else generate
@@ -347,6 +424,15 @@ begin
          severity failure;
 
    end generate gen_core;
+
+
+   dbus_cyc      <= patch_cyc or core_cyc;
+   dbus_stb      <= patch_stb when patch_cyc = '1' else core_stb;
+   dbus_we       <= '1' when patch_cyc = '1' else core_we;
+   dbus_addr     <= to_slv(G_PATCH_ADDR, 32) when patch_cyc = '1' else core_addr;
+   dbus_data_out <= hex_word(G_PATCH_DATA) when patch_cyc = '1' else core_data_out;
+   core_stall    <= dbus_stall or patch_cyc;
+   core_ack      <= dbus_ack and not patch_cyc;
 
 
    dbus_sel <= C_MPU when dbus_addr(31 downto 5) = X"FFFFFF" & "001" else
@@ -637,6 +723,101 @@ begin
    end process p_intr;
 
 
+   p_pause : process (clk)
+      variable seed1_v   : positive := G_SEED;
+      variable seed2_v   : positive := 7;
+      variable r_v       : real;
+      variable steps_v   : natural  := 0;       -- The steps reported
+      variable since_v   : natural  := 0;       -- The steps since the last pulse
+      variable pulse_v   : boolean  := false;
+      variable hold_v    : natural  := 0;
+      variable patched_v : boolean  := false;
+   begin
+      if rising_edge(clk) then
+         if retire.valid = '1' then
+            steps_v := steps_v + 1;
+            since_v := since_v + 1;
+         end if;
+
+         -- The write to memory: one request, then its ACK
+         if dbus_stall = '0' then
+            patch_stb <= '0';
+         end if;
+         if dbus_ack = '1' then
+            patch_cyc <= '0';
+         end if;
+
+         if G_SINGLE_STEP then
+            pause <= '1';
+            if paused = '1' and pause = '1' and patch_cyc = '0' then
+               assert not pulse_v or since_v = 1
+                  report "tb_core: a pulse of pause_i ran " & integer'image(since_v) & " steps"
+                  severity failure;
+               if steps_v = G_PATCH_STEP and not patched_v then
+                  patch_cyc <= '1';
+                  patch_stb <= '1';
+                  patched_v := true;
+               else
+                  pause   <= '0';
+                  pulse_v := true;
+                  since_v := 0;
+               end if;
+            end if;
+         elsif G_PAUSE > 0 then
+            uniform(seed1_v, seed2_v, r_v);
+            if G_PAUSE_HOLD = 0 then
+               pause <= '1' when r_v * 100.0 < real(G_PAUSE) else '0';
+            elsif pause = '0' then
+               if r_v * 100.0 < real(G_PAUSE) then
+                  pause  <= '1';
+                  uniform(seed1_v, seed2_v, r_v);
+                  hold_v := natural(floor(r_v * real(G_PAUSE_HOLD)));
+               end if;
+            elsif paused = '1' then
+               if hold_v = 0 then
+                  pause <= '0';
+               else
+                  hold_v := hold_v - 1;
+               end if;
+            end if;
+         end if;
+      end if;
+   end process p_pause;
+
+
+   p_stopped : process (clk)
+      variable halt_v   : t_halt    := HALT_NONE;   -- The reason of the last step reported
+      variable paused_v : std_logic := '0';         -- paused_o a cycle ago
+      variable regs_v   : t_regs;
+   begin
+      if rising_edge(clk) then
+         if rst = '0' then
+            assert not ((paused = '1' or halted = '1') and
+                        (ibus_cyc = '1' or ibus_stb = '1' or core_cyc = '1' or core_stb = '1'))
+               report "tb_core: a bus cycle while the core is paused or halted"
+               severity failure;
+            assert not (paused = '1' and halted = '1')
+               report "tb_core: paused_o and halted_o at once"
+               severity failure;
+            assert not (paused = '1' and paused_v = '1' and regs /= regs_v)
+               report "tb_core: the registers changed while the core was paused"
+               severity failure;
+            assert (halted = '1' and halt_reason = halt_v) or (halted = '0' and halt_reason = HALT_NONE)
+               report "tb_core: halt_reason_o is " & t_halt'image(halt_reason)
+               severity failure;
+         end if;
+         if retire.valid = '1' then
+            halt_v := retire.halt;
+         end if;
+         if rst = '1' then
+            halt_v := HALT_NONE;
+         end if;
+         paused_v := paused;
+         regs_v   := regs;
+      end if;
+   end process p_stopped;
+
+
    -- regs_o holds the registers of a step from the cycle after its report.
    p_regs : process (clk)
       variable retire_v : t_retire := C_RETIRE_NONE;
@@ -695,7 +876,7 @@ begin
       variable idle_v : natural := 0;
    begin
       wait until rising_edge(clk);
-      if rst = '1' or retire.valid = '1' then
+      if rst = '1' or retire.valid = '1' or paused = '1' then
          idle_v := 0;
       else
          idle_v := idle_v + 1;

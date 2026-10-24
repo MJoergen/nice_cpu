@@ -1,7 +1,7 @@
 # WRITE of the pipelined core (formal_pipe_write.vhd). "prove" proves the
 # assertions for every cycle by k-induction, and "cover" reaches each
-# cover statement. The properties are about the halt only: the rest of
-# WRITE is ISA semantics, which the trace diff checks better.
+# cover statement. The properties are about the halt and the pause only:
+# the rest of WRITE is ISA semantics, which the trace diff checks better.
 
 [tasks]
 prove

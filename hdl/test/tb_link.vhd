@@ -93,7 +93,7 @@ architecture simulation of tb_link is
    signal hold          : std_logic;
    signal hold_d        : std_logic := '1';
    signal halted        : std_logic;
-   signal halt          : t_halt    := HALT_NONE;
+   signal halt          : t_halt;
    signal halt_reason   : std_logic_vector(2 downto 0);
    signal regs          : t_regs;
    signal regs_flat     : std_logic_vector(511 downto 0);
@@ -177,65 +177,71 @@ begin
 
       i_multicycle : entity work.multicycle
          port map (
-            clk_i        => clk,
-            rst_i        => core_rst,
-            ibus_cyc_o   => ibus_cyc,
-            ibus_stb_o   => ibus_stb,
-            ibus_stall_i => ibus_stall,
-            ibus_ack_i   => core_iack,
-            ibus_addr_o  => ibus_addr,
-            ibus_data_i  => ibus_data,
-            dbus_cyc_o   => core_cyc,
-            dbus_stb_o   => core_stb,
-            dbus_stall_i => core_stall,
-            dbus_ack_i   => core_ack,
-            dbus_we_o    => core_we,
-            dbus_addr_o  => core_addr,
-            dbus_data_o  => core_data_out,
-            dbus_data_i  => dbus_data_in,
-            nmi_valid_i  => '0',
-            nmi_ready_o  => open,
-            nmi_vector_i => X"00",
-            irq_valid_i  => '0',
-            irq_ready_o  => open,
-            irq_vector_i => X"00",
-            halted_o     => halted,
-            instret_o    => open,
-            regs_o       => regs,
-            retire_o     => retire
+            clk_i         => clk,
+            rst_i         => core_rst,
+            ibus_cyc_o    => ibus_cyc,
+            ibus_stb_o    => ibus_stb,
+            ibus_stall_i  => ibus_stall,
+            ibus_ack_i    => core_iack,
+            ibus_addr_o   => ibus_addr,
+            ibus_data_i   => ibus_data,
+            dbus_cyc_o    => core_cyc,
+            dbus_stb_o    => core_stb,
+            dbus_stall_i  => core_stall,
+            dbus_ack_i    => core_ack,
+            dbus_we_o     => core_we,
+            dbus_addr_o   => core_addr,
+            dbus_data_o   => core_data_out,
+            dbus_data_i   => dbus_data_in,
+            nmi_valid_i   => '0',
+            nmi_ready_o   => open,
+            nmi_vector_i  => X"00",
+            irq_valid_i   => '0',
+            irq_ready_o   => open,
+            irq_vector_i  => X"00",
+            pause_i       => '0',
+            paused_o      => open,
+            halted_o      => halted,
+            halt_reason_o => halt,
+            instret_o     => open,
+            regs_o        => regs,
+            retire_o      => retire
          ); -- i_multicycle
 
    elsif G_CORE = "pipeline" generate
 
       i_pipeline : entity work.pipeline
          port map (
-            clk_i        => clk,
-            rst_i        => core_rst,
-            ibus_cyc_o   => ibus_cyc,
-            ibus_stb_o   => ibus_stb,
-            ibus_stall_i => ibus_stall,
-            ibus_ack_i   => core_iack,
-            ibus_addr_o  => ibus_addr,
-            ibus_data_i  => ibus_data,
-            dbus_cyc_o   => core_cyc,
-            dbus_stb_o   => core_stb,
-            dbus_stall_i => core_stall,
-            dbus_ack_i   => core_ack,
-            dbus_we_o    => core_we,
-            dbus_addr_o  => core_addr,
-            dbus_data_o  => core_data_out,
-            dbus_data_i  => dbus_data_in,
-            nmi_valid_i  => '0',
-            nmi_ready_o  => open,
-            nmi_vector_i => X"00",
-            irq_valid_i  => '0',
-            irq_ready_o  => open,
-            irq_vector_i => X"00",
-            halted_o     => halted,
-            instret_o    => open,
-            regs_o       => regs,
-            retire_o     => retire,
-            stats_o      => unused_fetch_events
+            clk_i         => clk,
+            rst_i         => core_rst,
+            ibus_cyc_o    => ibus_cyc,
+            ibus_stb_o    => ibus_stb,
+            ibus_stall_i  => ibus_stall,
+            ibus_ack_i    => core_iack,
+            ibus_addr_o   => ibus_addr,
+            ibus_data_i   => ibus_data,
+            dbus_cyc_o    => core_cyc,
+            dbus_stb_o    => core_stb,
+            dbus_stall_i  => core_stall,
+            dbus_ack_i    => core_ack,
+            dbus_we_o     => core_we,
+            dbus_addr_o   => core_addr,
+            dbus_data_o   => core_data_out,
+            dbus_data_i   => dbus_data_in,
+            nmi_valid_i   => '0',
+            nmi_ready_o   => open,
+            nmi_vector_i  => X"00",
+            irq_valid_i   => '0',
+            irq_ready_o   => open,
+            irq_vector_i  => X"00",
+            pause_i       => '0',
+            paused_o      => open,
+            halted_o      => halted,
+            halt_reason_o => halt,
+            instret_o     => open,
+            regs_o        => regs,
+            retire_o      => retire,
+            stats_o       => unused_fetch_events
          ); -- i_pipeline
 
    else generate
@@ -248,20 +254,8 @@ begin
    end generate gen_core;
 
 
-   -- The halt reason of DEBUG.md §6, from the report of the halting step.
-   p_halt : process (clk)
-   begin
-      if rising_edge(clk) then
-         if retire.valid = '1' and retire.halt /= HALT_NONE then
-            halt <= retire.halt;
-         end if;
-         if core_rst = '1' then
-            halt <= HALT_NONE;
-         end if;
-      end if;
-   end process p_halt;
-
-   halt_reason <= std_logic_vector(to_unsigned(t_halt'pos(halt), 3));
+   -- The halt reason of DEBUG.md §6
+   halt_reason <= halt_code(halt);
 
    gen_regs : for n in 0 to 15 generate
       regs_flat(32 * n + 31 downto 32 * n) <= regs(n);

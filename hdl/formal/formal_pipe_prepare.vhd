@@ -1,6 +1,6 @@
 -- PREPARE of the pipelined core, for SymbiYosys. Every input is free, so
 -- the solver plays every DECODE, WRITE, and data bus that keep to the
--- assumptions in src/pipe_prepare.vhd.
+-- assumptions in src/pipe_prepare.vhd, and every pause.
 --
 -- THEORY OF OPERATION
 -- The properties are in pipe_prepare itself, under G_FORMAL, because
@@ -28,6 +28,7 @@ entity formal_pipe_prepare is
       take_irq_i   : in  std_logic;
       nmi_valid_i  : in  std_logic;
       irq_valid_i  : in  std_logic;
+      pause_i      : in  std_logic;
       dbus_stall_i : in  std_logic;
       tag_cnt_i    : in  natural range 0 to C_MAX_OUT;
       st_valid_i   : in  std_logic;
@@ -77,6 +78,7 @@ begin
          take_irq_i   => take_irq_i,
          nmi_valid_i  => nmi_valid_i,
          irq_valid_i  => irq_valid_i,
+         pause_i      => pause_i,
          valid_o      => valid,
          uop_o        => uop_out,
          first_read_o => first_read,

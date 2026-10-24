@@ -22,6 +22,7 @@
 --   VEC       Read the vector table entry, for IRQ, NMI, and INT.
 --   RETIRE    Report the step on retire_o, and an instruction on
 --             instret_o.
+--   PAUSED    Wait before the next step, while pause_i is '1'.
 --
 -- The instruction bus is 64 bits wide, as MICROARCH.md §1 requires of both
 -- cores. A read returns the aligned pair of words 2a and 2a + 1 for the pair
@@ -41,6 +42,15 @@
 -- vector until the core raises ready, which it does for one cycle in the
 -- BOUNDARY state when it takes the request.
 --
+-- PAUSE (MICROARCH.md §6.1). While pause_i is '1', the core goes from
+-- BOUNDARY to PAUSED instead of starting a step, whatever in_service and
+-- after_rti are, and ahead of an interrupt. paused_o is '1' there. When
+-- pause_i is '0', it goes back to BOUNDARY and runs one step, which may be
+-- an interrupt entry, whatever pause_i is then: after_go marks that step
+-- until it is reported. No bus cycle is open in BOUNDARY, PAUSED, or
+-- HALTED, so paused_o and halted_o rise only once the core is quiet, as in
+-- src/pipeline.vhd.
+--
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) The bus slaves acknowledge every request.
 -- b) A device holds nmi_valid_i or irq_valid_i, and the vector, stable until
@@ -48,6 +58,10 @@
 -- c) nmi_ready_o and irq_ready_o depend combinationally on nmi_valid_i and
 --    irq_valid_i, so a device must not make valid depend combinationally on
 --    ready.
+-- d) pause_i comes from a flip-flop, and does not depend combinationally on
+--    the core's outputs: it feeds nmi_ready_o and irq_ready_o.
+-- e) A system that raises pause_i waits for paused_o or halted_o, as the
+--    core may halt before it pauses.
 --
 -- RESET
 -- Synchronous. It sets the state of ISA.md §8.1 and drops any bus request.
@@ -66,49 +80,56 @@ entity multicycle is
       G_FORMAL : boolean := false
    );
    port (
-      clk_i        : in  std_logic;
-      rst_i        : in  std_logic;
+      clk_i         : in  std_logic;
+      rst_i         : in  std_logic;
 
       -- Instruction bus: read only
-      ibus_cyc_o   : out std_logic                     := '0';
-      ibus_stb_o   : out std_logic                     := '0';
-      ibus_stall_i : in  std_logic;
-      ibus_ack_i   : in  std_logic;
-      ibus_addr_o  : out std_logic_vector(30 downto 0) := (others => '0');
-      ibus_data_i  : in  std_logic_vector(63 downto 0);
+      ibus_cyc_o    : out std_logic                     := '0';
+      ibus_stb_o    : out std_logic                     := '0';
+      ibus_stall_i  : in  std_logic;
+      ibus_ack_i    : in  std_logic;
+      ibus_addr_o   : out std_logic_vector(30 downto 0) := (others => '0');
+      ibus_data_i   : in  std_logic_vector(63 downto 0);
 
       -- Data bus: read and write
-      dbus_cyc_o   : out std_logic                     := '0';
-      dbus_stb_o   : out std_logic                     := '0';
-      dbus_stall_i : in  std_logic;
-      dbus_ack_i   : in  std_logic;
-      dbus_we_o    : out std_logic                     := '0';
-      dbus_addr_o  : out std_logic_vector(31 downto 0) := (others => '0');
-      dbus_data_o  : out std_logic_vector(31 downto 0) := (others => '0');
-      dbus_data_i  : in  std_logic_vector(31 downto 0);
+      dbus_cyc_o    : out std_logic                     := '0';
+      dbus_stb_o    : out std_logic                     := '0';
+      dbus_stall_i  : in  std_logic;
+      dbus_ack_i    : in  std_logic;
+      dbus_we_o     : out std_logic                     := '0';
+      dbus_addr_o   : out std_logic_vector(31 downto 0) := (others => '0');
+      dbus_data_o   : out std_logic_vector(31 downto 0) := (others => '0');
+      dbus_data_i   : in  std_logic_vector(31 downto 0);
 
       -- Interrupt requests
-      nmi_valid_i  : in  std_logic;
-      nmi_ready_o  : out std_logic;
-      nmi_vector_i : in  std_logic_vector(7 downto 0);
-      irq_valid_i  : in  std_logic;
-      irq_ready_o  : out std_logic;
-      irq_vector_i : in  std_logic_vector(7 downto 0);
+      nmi_valid_i   : in  std_logic;
+      nmi_ready_o   : out std_logic;
+      nmi_vector_i  : in  std_logic_vector(7 downto 0);
+      irq_valid_i   : in  std_logic;
+      irq_ready_o   : out std_logic;
+      irq_vector_i  : in  std_logic_vector(7 downto 0);
 
-      -- '1' once the core has halted (ISA.md §1.4)
-      halted_o     : out std_logic;
+      -- Pause before the next step, and '1' while paused (MICROARCH.md §6.1)
+      pause_i       : in  std_logic;
+      paused_o      : out std_logic;
+
+      -- '1' once the core has halted, and no bus cycle is open (ISA.md §1.4)
+      halted_o      : out std_logic;
+
+      -- Why the core halted, while halted_o is '1' (ISA.md §1.4)
+      halt_reason_o : out t_halt;
 
       -- '1' for one cycle when an instruction completes, but not an
       -- interrupt entry, for the instruction counter (SYSTEM.md §3)
-      instret_o    : out std_logic;
+      instret_o     : out std_logic;
 
       -- R0-R15 as the core holds them, from registers, for a monitor that
       -- shows them. In the cycle after a step is reported on retire_o, they
       -- are the registers of that report.
-      regs_o       : out t_regs;
+      regs_o        : out t_regs;
 
       -- One report per step, for sim/trace.vhd
-      retire_o     : out t_retire
+      retire_o      : out t_retire
    );
 end entity multicycle;
 
@@ -128,6 +149,7 @@ architecture synthesis of multicycle is
       VEC_ST,
       VEC_WAIT_ST,
       RETIRE_ST,
+      PAUSED_ST,
       HALTED_ST
    );
 
@@ -146,6 +168,7 @@ architecture synthesis of multicycle is
    -- Hidden state (ISA.md §1.4)
    signal in_service : std_logic;
    signal after_rti  : std_logic;
+   signal after_go   : std_logic;                       -- The first step after a pause
    signal saved_pc   : std_logic_vector(31 downto 0);
    signal saved_sr   : std_logic_vector(31 downto 0);
    signal halt       : t_halt;
@@ -167,23 +190,28 @@ architecture synthesis of multicycle is
    signal rep_skipped : std_logic;
    signal rep_mem_we  : std_logic;
 
+   signal pause    : boolean;
    signal take_nmi : boolean;
    signal take_irq : boolean;
 
 begin
 
-   -- ISA.md §7.1. NMI goes first.
+   -- A pause goes first, then ISA.md §7.1, where NMI goes first.
+   pause    <= state = BOUNDARY_ST and rst_i = '0' and pause_i = '1' and after_go = '0';
    take_nmi <= state = BOUNDARY_ST and rst_i = '0' and nmi_valid_i = '1' and
-               in_service = '0' and after_rti = '0';
+               in_service = '0' and after_rti = '0' and not pause;
    take_irq <= state = BOUNDARY_ST and rst_i = '0' and irq_valid_i = '1' and
-               in_service = '0' and after_rti = '0' and regs(14)(C_SR_E) = '1' and not take_nmi;
+               in_service = '0' and after_rti = '0' and regs(14)(C_SR_E) = '1' and not take_nmi and
+               not pause;
 
    nmi_ready_o <= '1' when take_nmi else '0';
    irq_ready_o <= '1' when take_irq else '0';
 
-   halted_o  <= '1' when state = HALTED_ST else '0';
-   instret_o <= '1' when state = RETIRE_ST and rep_intr = '0' else '0';
-   regs_o    <= regs;
+   halted_o      <= '1' when state = HALTED_ST else '0';
+   paused_o      <= '1' when state = PAUSED_ST else '0';
+   halt_reason_o <= halt when state = HALTED_ST else HALT_NONE;
+   instret_o     <= '1' when state = RETIRE_ST and rep_intr = '0' else '0';
+   regs_o        <= regs;
 
 
    p_fsm : process (clk_i)
@@ -255,7 +283,9 @@ begin
                rep_skipped <= '0';
                rep_mem_we  <= '0';
                rep_addr    <= regs(15);
-               if take_nmi then
+               if pause then
+                  state <= PAUSED_ST;
+               elsif take_nmi then
                   rep_intr   <= '1';
                   rep_nmi    <= '1';
                   int_vector <= nmi_vector_i;
@@ -469,7 +499,14 @@ begin
                end if;
 
             when RETIRE_ST =>
-               state <= HALTED_ST when halt /= HALT_NONE else BOUNDARY_ST;
+               after_go <= '0';
+               state    <= HALTED_ST when halt /= HALT_NONE else BOUNDARY_ST;
+
+            when PAUSED_ST =>
+               if pause_i = '0' then
+                  after_go <= '1';
+                  state    <= BOUNDARY_ST;
+               end if;
 
             when HALTED_ST =>
                null;
@@ -482,6 +519,7 @@ begin
             regs       <= C_REGS_RESET;
             in_service <= '0';
             after_rti  <= '0';
+            after_go   <= '0';
             halt       <= HALT_NONE;
             fetch_iw   <= '0';
             ibus_cyc_o <= '0';
@@ -516,7 +554,7 @@ begin
    gen_formal : if G_FORMAL generate
       signal dbus_wait : boolean;
    begin
-      -- The state has one of its 14 values, and each bus is busy in its
+      -- The state has one of its 15 values, and each bus is busy in its
       -- wait states and only there. Without this the k-induction of
       -- formal/multicycle.sby starts from states that reset never leads
       -- to, such as a pending fetch in HALTED_ST.

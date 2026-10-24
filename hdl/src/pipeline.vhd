@@ -80,14 +80,25 @@
 -- dec_r, dec_q, skid_r, and prep_r. DECODE redirects FETCH itself for
 -- "MOVE R15, c" and "ADD R15, R15, c" with condition "always". WRITE then
 -- does not flush. WRITE's redirect reaches FETCH a cycle after its flush,
--- from w_redir_r and w_target_r. DECODE drops what it takes in that cycle,
--- and halted_o waits until FETCH has no request left, so that a halted
--- core requests nothing.
+-- from w_redir_r and w_target_r. DECODE drops what it takes in that cycle.
 --
 -- INTERRUPTS (MICROARCH.md §6) are taken in WRITE before an instruction,
 -- as soon as ISA.md §7.1 allows: before the instruction's first
 -- micro-operation runs, if no data read of it is issued yet. PREPARE
 -- issues no read while a request is pending that could be taken first.
+--
+-- PAUSE (MICROARCH.md §6.1). While pause_i is '1', WRITE stops at the next
+-- step boundary, where it would check for an interrupt, whatever in_service
+-- and after_rti are, and ahead of an interrupt. It flushes the pipeline
+-- there, so that FETCH waits at R15 with no request. PREPARE issues no
+-- first data read of a new instruction while pause_i is '1', but for the
+-- first step after a pause. When pause_i is '0' in PAUSED_ST, the core
+-- goes on, and runs one step, which may be an interrupt entry, whatever
+-- pause_i is then: w_r.after_go marks it until it is reported.
+--
+-- QUIET. halted_o and paused_o rise only once no bus cycle is open, so
+-- that a system may take the buses over while the core is stopped. No
+-- request comes in either mode, and the ACKs that are still owed have come.
 --
 -- INSTRET. An instruction is counted on instret_o when its last
 -- micro-operation retires, or, if it reads memory, in the cycle the bus
@@ -106,6 +117,10 @@
 -- c) nmi_ready_o and irq_ready_o depend combinationally on nmi_valid_i and
 --    irq_valid_i, so a device must not make valid depend combinationally on
 --    ready.
+-- d) pause_i comes from a flip-flop, and does not depend combinationally on
+--    the core's outputs: it feeds the flush, nmi_ready_o, and irq_ready_o.
+-- e) A system that raises pause_i waits for paused_o or halted_o, as the
+--    core may halt before it pauses.
 --
 -- RESET
 -- Synchronous. It sets the state of ISA.md §8.1, empties the pipeline, and
@@ -125,54 +140,61 @@ entity pipeline is
       G_FORMAL : boolean := false
    );
    port (
-      clk_i        : in  std_logic;
-      rst_i        : in  std_logic;
+      clk_i         : in  std_logic;
+      rst_i         : in  std_logic;
 
       -- Instruction bus: read only
-      ibus_cyc_o   : out std_logic;
-      ibus_stb_o   : out std_logic;
-      ibus_stall_i : in  std_logic;
-      ibus_ack_i   : in  std_logic;
-      ibus_addr_o  : out std_logic_vector(30 downto 0);
-      ibus_data_i  : in  std_logic_vector(63 downto 0);
+      ibus_cyc_o    : out std_logic;
+      ibus_stb_o    : out std_logic;
+      ibus_stall_i  : in  std_logic;
+      ibus_ack_i    : in  std_logic;
+      ibus_addr_o   : out std_logic_vector(30 downto 0);
+      ibus_data_i   : in  std_logic_vector(63 downto 0);
 
       -- Data bus: read and write
-      dbus_cyc_o   : out std_logic;
-      dbus_stb_o   : out std_logic;
-      dbus_stall_i : in  std_logic;
-      dbus_ack_i   : in  std_logic;
-      dbus_we_o    : out std_logic;
-      dbus_addr_o  : out std_logic_vector(31 downto 0);
-      dbus_data_o  : out std_logic_vector(31 downto 0);
-      dbus_data_i  : in  std_logic_vector(31 downto 0);
+      dbus_cyc_o    : out std_logic;
+      dbus_stb_o    : out std_logic;
+      dbus_stall_i  : in  std_logic;
+      dbus_ack_i    : in  std_logic;
+      dbus_we_o     : out std_logic;
+      dbus_addr_o   : out std_logic_vector(31 downto 0);
+      dbus_data_o   : out std_logic_vector(31 downto 0);
+      dbus_data_i   : in  std_logic_vector(31 downto 0);
 
       -- Interrupt requests
-      nmi_valid_i  : in  std_logic;
-      nmi_ready_o  : out std_logic;
-      nmi_vector_i : in  std_logic_vector(7 downto 0);
-      irq_valid_i  : in  std_logic;
-      irq_ready_o  : out std_logic;
-      irq_vector_i : in  std_logic_vector(7 downto 0);
+      nmi_valid_i   : in  std_logic;
+      nmi_ready_o   : out std_logic;
+      nmi_vector_i  : in  std_logic_vector(7 downto 0);
+      irq_valid_i   : in  std_logic;
+      irq_ready_o   : out std_logic;
+      irq_vector_i  : in  std_logic_vector(7 downto 0);
 
-      -- '1' once the core has halted (ISA.md §1.4)
-      halted_o     : out std_logic;
+      -- Pause before the next step, and '1' while paused (MICROARCH.md §6.1)
+      pause_i       : in  std_logic;
+      paused_o      : out std_logic;
+
+      -- '1' once the core has halted, and no bus cycle is open (ISA.md §1.4)
+      halted_o      : out std_logic;
+
+      -- Why the core halted, while halted_o is '1' (ISA.md §1.4)
+      halt_reason_o : out t_halt;
 
       -- '1' for one cycle for each completed instruction, but not for an
       -- interrupt entry, for the instruction counter (SYSTEM.md §3)
-      instret_o    : out std_logic;
+      instret_o     : out std_logic;
 
       -- R0-R15 as the core holds them, from registers, for a monitor that
       -- shows them. In the cycle after a step is reported on retire_o, they
       -- are the registers of that report.
-      regs_o       : out t_regs;
+      regs_o        : out t_regs;
 
       -- One report per step, for sim/trace.vhd
-      retire_o     : out t_retire;
+      retire_o      : out t_retire;
 
       -- What FETCH and DECODE did in each cycle, for the fetch statistics,
       -- src/fetch_stats.vhd (MICROARCH.md §8.1). The multi-cycle core has no
       -- such port.
-      stats_o      : out t_fetch_events
+      stats_o       : out t_fetch_events
    );
 end entity pipeline;
 
@@ -244,6 +266,7 @@ architecture synthesis of pipeline is
    signal w_instret : std_logic;
    signal take_nmi  : std_logic;
    signal take_irq  : std_logic;
+   signal quiet     : std_logic;   -- No bus cycle is open
 
 begin
 
@@ -355,6 +378,7 @@ begin
          take_irq_i   => take_irq,
          nmi_valid_i  => nmi_valid_i,
          irq_valid_i  => irq_valid_i,
+         pause_i      => pause_i,
          valid_o      => p_valid,
          uop_o        => p_out,
          first_read_o => p_first_read,
@@ -431,6 +455,7 @@ begin
          irq_vector_i => irq_vector_i,
          take_nmi_o   => take_nmi,
          take_irq_o   => take_irq,
+         pause_i      => pause_i,
          state_o      => w_r,
          done_o       => w_done,
          flush_o      => w_flush,
@@ -442,13 +467,16 @@ begin
 
    nmi_ready_o <= take_nmi;
    irq_ready_o <= take_irq;
-   -- Once FETCH has no request left, so that a halted core makes no new
-   -- request on either bus. FETCH may make one in the cycle of the halt,
-   -- before WRITE's redirect reaches it, and its wait for a store in DBUS
-   -- may hold one back.
-   halted_o  <= '1' when w_r.mode = HALTED_ST and st_valid = '0' and f_stb = '0' else '0';
-   instret_o <= rd_count or w_instret;
-   regs_o    <= w_r.regs;
+   -- Once no bus cycle is open (QUIET above). FETCH may make a request in
+   -- the cycle WRITE halts or pauses, before WRITE's redirect reaches it,
+   -- its wait for a store in DBUS may hold one back, and the ACKs of
+   -- requests in flight come later.
+   quiet         <= '1' when ibus_cyc_o = '0' and dbus_cyc_o = '0' else '0';
+   halted_o      <= '1' when w_r.mode = HALTED_ST and quiet = '1' else '0';
+   paused_o      <= '1' when w_r.mode = PAUSED_ST and quiet = '1' else '0';
+   halt_reason_o <= w_r.halt when halted_o = '1' else HALT_NONE;
+   instret_o     <= rd_count or w_instret;
+   regs_o        <= w_r.regs;
 
 
    p_stats : process (all)
@@ -468,8 +496,6 @@ begin
 
    -- The invariants that the theory of operation above relies on.
    p_check : process (clk_i)
-      variable stb_v    : std_logic := '0';   -- The instruction bus a cycle ago
-      variable stall_v  : std_logic := '0';
       variable st_may_v : std_logic := '0';   -- An access could wait in DBUS now
    begin
       if rising_edge(clk_i) then
@@ -515,13 +541,6 @@ begin
                         (rq_cnt_r + to_nat(ack_read) /= w_pop or reads_owed /= to_nat(ack_read)))
                report "pipeline: a flush with read data owed"
                severity failure;
-            -- A halted core makes no new instruction fetch: a request still
-            -- on the bus is one the bus stalled before (formal_pipeline,
-            -- f_halt_ibus). FETCH may still make one after the halt, so
-            -- halted_o waits until it has none.
-            assert not (halted_o = '1' and ibus_stb_o = '1' and not (stb_v = '1' and stall_v = '1'))
-               report "pipeline: a new instruction fetch after a halt"
-               severity failure;
             -- PREPARE's assumptions about WRITE and DBUS that need no model
             -- (src/pipe_prepare.vhd, f_accept and f_st_queue). The others
             -- are checked only by the tests and the bounded check.
@@ -533,8 +552,6 @@ begin
                report "pipeline: an access waits in DBUS that nothing queued"
                severity failure;
          end if;
-         stb_v    := ibus_stb_o;
-         stall_v  := ibus_stall_i;
          st_may_v := not rst_i and ((st_valid and not st_acc) or
                                     (w_r.uop.valid and w_r.uop.store and not rd_stb_r) or
                                     (to_sl(w_r.mode = VEC_ST) and not rd_stb_r));

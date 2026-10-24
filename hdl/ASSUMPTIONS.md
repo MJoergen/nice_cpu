@@ -3,7 +3,7 @@
 The pipelined core, `src/pipeline.vhd`, follows
 [doc/MICROARCH.md](../doc/MICROARCH.md). Where the note left a question
 open, or where the core first did something else, this file says what the
-core does and why. MICROARCH.md has since taken up items 1, 9, 10, and 15. ISA.md is not changed. Items that need a
+core does and why. MICROARCH.md has since taken up items 1, 9, 10, 15, and 17 to 19. ISA.md is not changed. Items that need a
 change outside `hdl/` are marked **Outside hdl/**, and are also in
 [TODO.md](../TODO.md).
 
@@ -143,7 +143,8 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
     `pipe_prepare.sby`, and `pipe_dbus.sby` prove the four for every
     cycle, and `pipe_write.sby` proves WRITE's halt: it stays halted
     until reset and makes no store, vector read, interrupt entry, or
-    accept. Together with PREPARE's `f_rd_run` and the definition of
+    accept. It proves the same of WRITE's pause, and that WRITE reports a
+    step after it leaves `PAUSED_ST` before it pauses again. Together with PREPARE's `f_rd_run` and the definition of
     `halted_o`, that is why a halted core makes no data access, for every
     cycle. The four have invariants under their `G_FORMAL`, and
     assumptions
@@ -165,3 +166,28 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
     are reset, so the unreset value is never used. The outputs follow:
     `dbus_addr_o`, for one, is 'U' in simulation until the first request,
     where the multi-cycle core's outputs start at '0'.
+
+## The pause
+
+17. **A pause goes ahead of an interrupt** at the same boundary (MICROARCH.md
+    §6.1). WRITE's step boundary is the one where it checks for an
+    interrupt, without the conditions of ISA.md §7.1, so that the core
+    can pause inside an interrupt routine and after `RTI`. A request that
+    is pending then is taken when the core goes on, as the first step.
+18. **`after_go` marks the first step after a pause.** WRITE sets it when it
+    leaves `PAUSED_ST`, and clears it when it reports a step: an
+    instruction or an interrupt entry. While it is 1, WRITE does not pause,
+    so that one cycle of `pause_i` = 0 runs exactly one step. WRITE leaves
+    `PAUSED_ST` when `pause_i` is 0 whether or not `paused_o` had risen,
+    so a fall while the core still waits for its ACKs runs one step too.
+    It leaves with a flush to R15, so that FETCH fetches again what a
+    system may have written meanwhile.
+19. **The pause term of rule 4 is separate** from the term of the requests,
+    `pause_ok` beside `intr_ok` in PREPARE. The first step after a pause
+    is exempt from it, but not from the requests, or a request that comes
+    just after the core goes on could be taken late. The instruction after
+    `RTI` is not exempt from it. That exemption could not show anyway:
+    when no older instruction is in WRITE, WRITE is at a step boundary,
+    and pauses and flushes in the cycle that PREPARE would issue the
+    read. So giving the term the exemption changes no run, and only the
+    mutation that drops the term fails `cputest_step` and `reads_step`.

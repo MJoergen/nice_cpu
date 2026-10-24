@@ -328,3 +328,13 @@ these ways for the link to use the memory when it may not:
   and then wrap past `0xFFFFFFFF` to address 0, which the board wrote
   while the program ran or the memory cleared. Now a `W` that wraps is
   answered with `e02`, in the emulator too (DEBUG.md §3).
+
+## When `halted_o` rises
+
+Until 2026-10-24, the pipelined core raised `halted_o` once it made no new
+request: no store or vector read waited in DBUS, and FETCH had no request
+on the bus. ACKs of requests in flight could still come after it rose. A
+board that hands the data bus to another master while the core is stopped
+hid those ACKs, which was harmless only because a reset follows a halt.
+With the pause of MICROARCH.md §6.1, which no reset follows, both
+`halted_o` and `paused_o` wait until no bus cycle is open.

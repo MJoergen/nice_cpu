@@ -1,7 +1,15 @@
 -- The multi-cycle core with the checkers of its bus and interrupt ports,
 -- for SymbiYosys. Every input is free, so the solver tries every slave,
--- every interrupt source, and every instruction stream that keeps to the
--- checkers' assumptions.
+-- every interrupt source, every pause, and every instruction stream that
+-- keeps to the checkers' assumptions.
+--
+-- THEORY OF OPERATION
+-- Besides the checkers' assertions: the core goes quiet when it halts or
+-- pauses, and stays quiet until reset or until it goes on; regs_o does not
+-- change while paused; and once the core goes on, it reports a step on
+-- retire_o before it pauses again (MICROARCH.md §6.1). The last holds as
+-- the core does not pause while after_go is '1', and only a report clears
+-- that.
 --
 -- RESET
 -- The first cycle is a reset, so the core starts from the state of
@@ -25,7 +33,8 @@ entity formal_multicycle is
       nmi_valid_i  : in  std_logic;
       nmi_vector_i : in  std_logic_vector(7 downto 0);
       irq_valid_i  : in  std_logic;
-      irq_vector_i : in  std_logic_vector(7 downto 0)
+      irq_vector_i : in  std_logic_vector(7 downto 0);
+      pause_i      : in  std_logic
    );
 end entity formal_multicycle;
 
@@ -41,13 +50,25 @@ architecture synthesis of formal_multicycle is
    signal dbus_data : std_logic_vector(31 downto 0);
    signal nmi_ready : std_logic;
    signal irq_ready : std_logic;
+   signal paused    : std_logic;
    signal halted    : std_logic;
+   signal reason    : t_halt;
    signal instret   : std_logic;
    signal retire    : t_retire;
    signal retire_d  : t_retire := C_RETIRE_NONE;
    signal regs      : t_regs;
    signal ibus_wait : natural range 0 to 2;
    signal dbus_wait : natural range 0 to 2;
+
+   -- The cycle before, but for a reset then: paused_o, halted_o, pause_i,
+   -- and regs_o
+   signal paused_d : std_logic := '0';
+   signal halted_d : std_logic := '0';
+   signal pause_d  : std_logic := '0';
+   signal regs_d   : t_regs;
+
+   -- paused_o has fallen, and no step has been reported since
+   signal owed_r : std_logic := '0';
 
 begin
 
@@ -64,9 +85,28 @@ begin
    -- psl f_dbus_wait : assert always rst_i = '0' ->
    --    (dbus_wait = 1) = (dbus_cyc = '1' and dbus_stb = '0');
 
-   -- A halted core makes no request
-   -- psl f_halt_idle : assert always
-   --    (rst_i = '0' and halted = '1') -> (ibus_stb = '0' and dbus_stb = '0');
+   -- A halted core has no bus cycle open, and stays halted until reset. Its
+   -- reason is on halt_reason_o.
+   -- psl f_halt_idle : assert always (rst_i = '0' and halted = '1') ->
+   --    (ibus_cyc = '0' and ibus_stb = '0' and dbus_cyc = '0' and dbus_stb = '0');
+   -- psl f_halt_stays : assert always (rst_i = '0' and halted_d = '1') -> halted = '1';
+   -- psl f_halt_reason : assert always rst_i = '0' -> ((halted = '1') = (reason /= HALT_NONE));
+
+   -- A paused core stays paused while pause_i is '1', with no bus cycle
+   -- open and the registers unchanged. It is never paused and halted.
+   -- psl f_pause_quiet : assert always (rst_i = '0' and paused_d = '1' and pause_d = '1') ->
+   --    (paused = '1' and ibus_cyc = '0' and ibus_stb = '0' and dbus_cyc = '0' and
+   --     dbus_stb = '0');
+   -- psl f_pause_regs : assert always (rst_i = '0' and paused_d = '1' and paused = '1') ->
+   --    regs = regs_d;
+   -- psl f_pause_halt : assert always rst_i = '0' -> not (paused = '1' and halted = '1');
+
+   -- Once paused_o falls, a step is reported before it rises again.
+   -- psl f_go_report : assert always (rst_i = '0' and owed_r = '1') -> paused = '0';
+
+   -- psl c_pause : cover {paused = '1' and rst_i = '0'};
+   -- psl c_go_step : cover {owed_r = '1' and retire.valid = '1' and rst_i = '0'};
+   -- psl c_halt : cover {halted = '1' and rst_i = '0'};
 
 
    i_multicycle : entity work.multicycle
@@ -74,32 +114,35 @@ begin
          G_FORMAL => true
       )
       port map (
-         clk_i        => clk_i,
-         rst_i        => rst_i,
-         ibus_cyc_o   => ibus_cyc,
-         ibus_stb_o   => ibus_stb,
-         ibus_stall_i => ibus_stall_i,
-         ibus_ack_i   => ibus_ack_i,
-         ibus_addr_o  => ibus_addr,
-         ibus_data_i  => ibus_data_i,
-         dbus_cyc_o   => dbus_cyc,
-         dbus_stb_o   => dbus_stb,
-         dbus_stall_i => dbus_stall_i,
-         dbus_ack_i   => dbus_ack_i,
-         dbus_we_o    => dbus_we,
-         dbus_addr_o  => dbus_addr,
-         dbus_data_o  => dbus_data,
-         dbus_data_i  => dbus_data_i,
-         nmi_valid_i  => nmi_valid_i,
-         nmi_ready_o  => nmi_ready,
-         nmi_vector_i => nmi_vector_i,
-         irq_valid_i  => irq_valid_i,
-         irq_ready_o  => irq_ready,
-         irq_vector_i => irq_vector_i,
-         halted_o     => halted,
-         instret_o    => instret,
-         regs_o       => regs,
-         retire_o     => retire
+         clk_i         => clk_i,
+         rst_i         => rst_i,
+         ibus_cyc_o    => ibus_cyc,
+         ibus_stb_o    => ibus_stb,
+         ibus_stall_i  => ibus_stall_i,
+         ibus_ack_i    => ibus_ack_i,
+         ibus_addr_o   => ibus_addr,
+         ibus_data_i   => ibus_data_i,
+         dbus_cyc_o    => dbus_cyc,
+         dbus_stb_o    => dbus_stb,
+         dbus_stall_i  => dbus_stall_i,
+         dbus_ack_i    => dbus_ack_i,
+         dbus_we_o     => dbus_we,
+         dbus_addr_o   => dbus_addr,
+         dbus_data_o   => dbus_data,
+         dbus_data_i   => dbus_data_i,
+         nmi_valid_i   => nmi_valid_i,
+         nmi_ready_o   => nmi_ready,
+         nmi_vector_i  => nmi_vector_i,
+         irq_valid_i   => irq_valid_i,
+         irq_ready_o   => irq_ready,
+         irq_vector_i  => irq_vector_i,
+         pause_i       => pause_i,
+         paused_o      => paused,
+         halted_o      => halted,
+         halt_reason_o => reason,
+         instret_o     => instret,
+         regs_o        => regs,
+         retire_o      => retire
       ); -- i_multicycle
 
 
@@ -164,13 +207,24 @@ begin
       ); -- i_irq_check
 
 
-   -- The step reported in the cycle before, but for one in a reset
+   -- The step reported in the cycle before, but for one in a reset, the
+   -- signals of the cycle before, and owed_r
    p_retire_d : process (clk_i)
    begin
       if rising_edge(clk_i) then
          retire_d <= retire;
+         paused_d <= paused and not rst_i;
+         halted_d <= halted and not rst_i;
+         pause_d  <= pause_i and not rst_i;
+         regs_d   <= regs;
+         if retire.valid = '1' then
+            owed_r <= '0';
+         elsif paused_d = '1' and paused = '0' then
+            owed_r <= '1';
+         end if;
          if rst_i = '1' then
             retire_d.valid <= '0';
+            owed_r         <= '0';
          end if;
       end if;
    end process p_retire_d;

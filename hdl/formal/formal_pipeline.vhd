@@ -1,7 +1,7 @@
 -- The pipelined core with the checkers of its bus and interrupt ports, for
 -- SymbiYosys. Every input is free, so the solver tries every slave, every
--- interrupt source, and every instruction stream that keeps to the
--- checkers' assumptions.
+-- interrupt source, every pause, and every instruction stream that keeps
+-- to the checkers' assumptions.
 --
 -- THEORY OF OPERATION
 -- Besides the checkers' assertions, the core's own, in its process
@@ -10,10 +10,14 @@
 -- and no flush while a data read waits to be issued or its data is owed.
 -- The last is the data access rule of MICROARCH.md §9: every data read
 -- belongs to an instruction that retires. So do the properties of FETCH
--- under G_FORMAL, and a halted core makes no request, as
--- formal_multicycle asserts of the multi-cycle core. The pipeline is too
--- deep for k-induction without many invariants, so pipeline.sby checks a
--- bounded number of cycles from reset.
+-- under G_FORMAL, and the properties of the halt and the pause that
+-- formal_multicycle proves of the multi-cycle core: the core goes quiet
+-- when it halts or pauses and stays quiet until reset or until it goes
+-- on, regs_o does not change while paused, and once the core goes on it
+-- reports a step before it pauses again. The pipeline is too deep for
+-- k-induction without many invariants, so pipeline.sby checks a bounded
+-- number of cycles from reset. formal_pipe_write proves the last for
+-- every cycle at the level of WRITE.
 --
 -- RESET
 -- The first cycle is a reset, so the core starts from the state of
@@ -37,7 +41,8 @@ entity formal_pipeline is
       nmi_valid_i  : in  std_logic;
       nmi_vector_i : in  std_logic_vector(7 downto 0);
       irq_valid_i  : in  std_logic;
-      irq_vector_i : in  std_logic_vector(7 downto 0)
+      irq_vector_i : in  std_logic_vector(7 downto 0);
+      pause_i      : in  std_logic
    );
 end entity formal_pipeline;
 
@@ -53,13 +58,25 @@ architecture synthesis of formal_pipeline is
    signal dbus_data : std_logic_vector(31 downto 0);
    signal nmi_ready : std_logic;
    signal irq_ready : std_logic;
+   signal paused    : std_logic;
    signal halted    : std_logic;
+   signal reason    : t_halt;
    signal instret   : std_logic;
    signal retire    : t_retire;
    signal retire_d  : t_retire := C_RETIRE_NONE;
    signal regs      : t_regs;
    signal ibus_wait : natural range 0 to 9;
    signal dbus_wait : natural range 0 to 5;
+
+   -- The cycle before, but for a reset then: paused_o, halted_o, pause_i,
+   -- and regs_o
+   signal paused_d : std_logic := '0';
+   signal halted_d : std_logic := '0';
+   signal pause_d  : std_logic := '0';
+   signal regs_d   : t_regs;
+
+   -- paused_o has fallen, and no step has been reported since
+   signal owed_r : std_logic := '0';
 
 begin
 
@@ -69,21 +86,36 @@ begin
    -- regs_o holds the registers of a step from the cycle after its report.
    -- psl f_regs : assert always retire_d.valid = '1' -> regs = retire_d.regs;
 
-   -- A halted core makes no data access, and no new instruction fetch: a
-   -- request still on the instruction bus is one the bus stalled before
-   -- the halt (src/pipe_fetch.vhd, f_stop).
-   -- The data bus part holds for every cycle by the proofs of WRITE's halt,
-   -- PREPARE's f_rd_run, and the definition of halted_o; the check here is
-   -- of the whole core together.
-   -- psl f_halt_dbus : assert always (rst_i = '0' and halted = '1') -> dbus_stb = '0';
-   -- psl f_halt_ibus : assert always (rst_i = '0' and halted = '1' and ibus_stb = '1') ->
-   --    (prev(ibus_stb) = '1' and prev(ibus_stall_i) = '1');
+   -- A halted core has no bus cycle open, and stays halted until reset. Its
+   -- reason is on halt_reason_o. The data bus part holds for every cycle by
+   -- the proofs of WRITE's halt, PREPARE's f_rd_run, and the definition of
+   -- halted_o; the check here is of the whole core together.
+   -- psl f_halt_dbus : assert always (rst_i = '0' and halted = '1') ->
+   --    (dbus_cyc = '0' and dbus_stb = '0');
+   -- psl f_halt_ibus : assert always (rst_i = '0' and halted = '1') ->
+   --    (ibus_cyc = '0' and ibus_stb = '0');
+   -- psl f_halt_stays : assert always (rst_i = '0' and halted_d = '1') -> halted = '1';
+   -- psl f_halt_reason : assert always rst_i = '0' -> ((halted = '1') = (reason /= HALT_NONE));
+
+   -- A paused core stays paused while pause_i is '1', with no bus cycle
+   -- open and the registers unchanged. It is never paused and halted.
+   -- psl f_pause_quiet : assert always (rst_i = '0' and paused_d = '1' and pause_d = '1') ->
+   --    (paused = '1' and ibus_cyc = '0' and ibus_stb = '0' and dbus_cyc = '0' and
+   --     dbus_stb = '0');
+   -- psl f_pause_regs : assert always (rst_i = '0' and paused_d = '1' and paused = '1') ->
+   --    regs = regs_d;
+   -- psl f_pause_halt : assert always rst_i = '0' -> not (paused = '1' and halted = '1');
+
+   -- Once paused_o falls, a step is reported before it rises again.
+   -- psl f_go_report : assert always (rst_i = '0' and owed_r = '1') -> paused = '0';
 
    -- How deep the bounded check must go to see an instruction retire, a
-   -- store, and a halt.
+   -- store, a halt, a pause, and a step after a pause.
    -- psl c_retire : cover {retire.valid = '1' and rst_i = '0'};
    -- psl c_store : cover {dbus_stb = '1' and dbus_we = '1' and rst_i = '0'};
    -- psl c_halt : cover {halted = '1' and rst_i = '0'};
+   -- psl c_pause : cover {paused = '1' and rst_i = '0'};
+   -- psl c_go_step : cover {owed_r = '1' and retire.valid = '1' and rst_i = '0'};
 
 
    i_pipeline : entity work.pipeline
@@ -91,33 +123,36 @@ begin
          G_FORMAL => true
       )
       port map (
-         clk_i        => clk_i,
-         rst_i        => rst_i,
-         ibus_cyc_o   => ibus_cyc,
-         ibus_stb_o   => ibus_stb,
-         ibus_stall_i => ibus_stall_i,
-         ibus_ack_i   => ibus_ack_i,
-         ibus_addr_o  => ibus_addr,
-         ibus_data_i  => ibus_data_i,
-         dbus_cyc_o   => dbus_cyc,
-         dbus_stb_o   => dbus_stb,
-         dbus_stall_i => dbus_stall_i,
-         dbus_ack_i   => dbus_ack_i,
-         dbus_we_o    => dbus_we,
-         dbus_addr_o  => dbus_addr,
-         dbus_data_o  => dbus_data,
-         dbus_data_i  => dbus_data_i,
-         nmi_valid_i  => nmi_valid_i,
-         nmi_ready_o  => nmi_ready,
-         nmi_vector_i => nmi_vector_i,
-         irq_valid_i  => irq_valid_i,
-         irq_ready_o  => irq_ready,
-         irq_vector_i => irq_vector_i,
-         halted_o     => halted,
-         instret_o    => instret,
-         regs_o       => regs,
-         retire_o     => retire,
-         stats_o      => open
+         clk_i         => clk_i,
+         rst_i         => rst_i,
+         ibus_cyc_o    => ibus_cyc,
+         ibus_stb_o    => ibus_stb,
+         ibus_stall_i  => ibus_stall_i,
+         ibus_ack_i    => ibus_ack_i,
+         ibus_addr_o   => ibus_addr,
+         ibus_data_i   => ibus_data_i,
+         dbus_cyc_o    => dbus_cyc,
+         dbus_stb_o    => dbus_stb,
+         dbus_stall_i  => dbus_stall_i,
+         dbus_ack_i    => dbus_ack_i,
+         dbus_we_o     => dbus_we,
+         dbus_addr_o   => dbus_addr,
+         dbus_data_o   => dbus_data,
+         dbus_data_i   => dbus_data_i,
+         nmi_valid_i   => nmi_valid_i,
+         nmi_ready_o   => nmi_ready,
+         nmi_vector_i  => nmi_vector_i,
+         irq_valid_i   => irq_valid_i,
+         irq_ready_o   => irq_ready,
+         irq_vector_i  => irq_vector_i,
+         pause_i       => pause_i,
+         paused_o      => paused,
+         halted_o      => halted,
+         halt_reason_o => reason,
+         instret_o     => instret,
+         regs_o        => regs,
+         retire_o      => retire,
+         stats_o       => open
       ); -- i_pipeline
 
 
@@ -186,13 +221,24 @@ begin
       ); -- i_irq_check
 
 
-   -- The step reported in the cycle before, but for one in a reset
+   -- The step reported in the cycle before, but for one in a reset, the
+   -- signals of the cycle before, and owed_r
    p_retire_d : process (clk_i)
    begin
       if rising_edge(clk_i) then
          retire_d <= retire;
+         paused_d <= paused and not rst_i;
+         halted_d <= halted and not rst_i;
+         pause_d  <= pause_i and not rst_i;
+         regs_d   <= regs;
+         if retire.valid = '1' then
+            owed_r <= '0';
+         elsif paused_d = '1' and paused = '0' then
+            owed_r <= '1';
+         end if;
          if rst_i = '1' then
             retire_d.valid <= '0';
+            owed_r         <= '0';
          end if;
       end if;
    end process p_retire_d;

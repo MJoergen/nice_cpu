@@ -23,7 +23,8 @@ TODO or FIXME comments.
   timer, the math unit, the performance counters, the fetch statistics,
   the debug link, and FETCH, DECODE, PREPARE, and DBUS of the pipelined
   core, for every cycle, WRITE's halt (it stays halted until reset and
-  makes no store, vector read, interrupt entry, or accept), and the
+  makes no store, vector read, interrupt entry, or accept) and its pause
+  (the same, and a step reported after each pause), and the
   shifter, the ALU, and the block compares of the store check for every
   input. For the whole pipelined core it checks the ports and the core's
   own assertions, the data access rule among them, only for the first 8
@@ -69,11 +70,14 @@ TODO or FIXME comments.
   returns −1, and `difftime`, `gmtime`, `mktime`, and `strftime` are
   missing. A device with the date, set by the board, would let `time` work.
 - **Pause in the debug link** (DEBUG.md). Version 1 has no run control: a
-  hold stops a program and leaves R0–R15 not defined. Stage 2 is a pause
-  input to the cores, taken where WRITE checks for an interrupt, with a
-  `halt_reason_o` port, so that a paused program can resume and its
-  registers can be read. Later stages: single step, breakpoints, and
-  watchpoints.
+  hold stops a program and leaves R0–R15 not defined. Both cores have a
+  pause and a `halt_reason_o` port now (MICROARCH.md §6.1). Still to do:
+  DEBUG.md version 2, with the pause, and whether the counters and the
+  timer stop while paused; the pause in niceemu and in
+  `src/debug_link.vhd`; then single step (stage 3), breakpoints, which
+  raise `pause_i` early enough for the pipelined core's fetch ahead
+  (stage 4), watchpoints, and writable registers and a port for the hidden
+  state of ISA.md §1.4 (stage 6).
 
 ## Toolchain
 

@@ -81,9 +81,10 @@ entity pipe_prepare is
       take_nmi_i   : in  std_logic;
       take_irq_i   : in  std_logic;
 
-      -- The interrupt requests (MICROARCH.md §5.3, rule 4)
+      -- The interrupt requests and the pause (MICROARCH.md §5.3, rule 4)
       nmi_valid_i  : in  std_logic;
       irq_valid_i  : in  std_logic;
+      pause_i      : in  std_logic;
 
       -- To WRITE
       valid_o      : out std_logic;
@@ -196,6 +197,7 @@ begin
       variable started_v : boolean;
       variable load_v    : std_logic;
       variable irq_v     : boolean;
+      variable pause_ok  : boolean;
    begin
       u_v     := prep_r;
       wu_v    := w_r.uop;
@@ -310,6 +312,11 @@ begin
                    (w_r.regs(14)(C_SR_E) = '1' or (wu_v.valid = '1' and wu_v.may_sr = '1'));
       intr_ok   := started_v or p_committed_r = '1' or (not older_v and w_r.after_rti = '1') or
                    not ((nmi_valid_i = '1' and w_r.in_service = '0') or irq_v);
+      -- Nor a pause (MICROARCH.md §6.1), but before the first step after
+      -- one. The instruction after RTI is not exempt, as the core pauses
+      -- after RTI too (hdl/ASSUMPTIONS.md, item 19).
+      pause_ok  := started_v or p_committed_r = '1' or (not older_v and w_r.after_go = '1') or
+                   pause_i = '0';
 
       -- The bus takes the read when C_MAX_OUT will not be in flight, and no
       -- store waits in DBUS in the next cycle: none waits that the bus does
@@ -321,7 +328,7 @@ begin
 
       load_v := '0';
       if u_v.valid = '1' and ck_v = '1' and cv_v = '1' and p_loaded_r < nr_v and
-         older_ok and intr_ok and not busy_v and bus_ok and
+         older_ok and intr_ok and pause_ok and not busy_v and bus_ok and
          w_r.mode = RUN_ST and w_flush = '0' and take_nmi = '0' and take_irq = '0' then
          load_v := '1';
       end if;

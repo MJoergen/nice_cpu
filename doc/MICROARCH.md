@@ -34,6 +34,7 @@ question that this note left open, `hdl/ASSUMPTIONS.md` says how.
   - [5.5 Self-modifying code](#55-self-modifying-code)
   - [5.6 How often the hazards occur](#56-how-often-the-hazards-occur)
 - [6. Interrupts](#6-interrupts)
+  - [6.1 Pause](#61-pause)
 - [7. Datapath details](#7-datapath-details)
   - [7.1 Register values](#71-register-values)
   - [7.2 ALU](#72-alu)
@@ -291,6 +292,14 @@ issues a data read only when the instruction is certain to run:
    request that came between the two reads of `ADD R1, @R2, @R3` would
    hold the second read off for ever.
 
+   A pause (§6.1) has a term of its own: while `pause_i` = 1, no
+   instruction issues its first data read. An instruction that has issued
+   one, or whose first micro-op has retired, is exempt, as above. So is the
+   first step after the core goes on, but only from this term, not from
+   the interrupt requests, so that a request that comes just after the
+   core goes on is not taken late. The instruction after an `RTI` is not
+   exempt from it, since the core pauses after `RTI` too (§6.1).
+
 When PREPARE issues an instruction's first data read, the core commits to
 that instruction. No interrupt is taken before it (§6).
 
@@ -542,6 +551,52 @@ since WRITE takes the vector from DBUS's FIFO (§5.3). In (b) the request comes 
 data read of `MOVE R2, @data`. That instruction is committed
 (`w_r.commits` = 1), so `irq_ready_o` waits until it has retired, and the
 request is taken before the next one.
+
+### 6.1 Pause
+
+Both cores have a pause for a debugger: an input `pause_i` and an output
+`paused_o`. The ISA has no such state. A program cannot tell that the core
+paused, but by its cycle counts.
+
+While `pause_i` = 1, the core stops at the next step boundary, where WRITE
+checks for an interrupt, whatever `in_service` and `after_rti` are. So it
+can pause inside an interrupt routine and right after `RTI`. These are the
+boundaries of the emulator's steps, and an interrupt entry is a step of
+its own. A pause goes ahead of an NMI or an IRQ at the same boundary. An
+instruction that has issued a data read is committed (§5.3) and finishes
+first, and rule 4 of §5.3 keeps the next one from committing, so the core
+reaches the boundary.
+
+The pipelined core flushes there, so that FETCH waits at R15 with no
+request, and WRITE is in its mode `PAUSED_ST`. The multi-cycle core has a
+state `PAUSED` after `BOUNDARY`. `paused_o` is 1 there once no bus cycle
+is open: CYC is 0 on both buses, and every ACK owed has come. `halted_o`
+waits in the same way. So a system may take the buses over while the core
+is paused or halted, and no late ACK of the core reaches its other
+master. Every older step is complete then, R15 holds the address of the
+next instruction, and `regs_o` holds R0–R15. A system may write memory
+while the core is paused: the core fetches from R15 again when it goes on.
+
+When `pause_i` is 0 in `PAUSED_ST`, the core goes on. It sets `after_go`
+as it leaves, and clears it when it reports the next step. While
+`after_go` is 1, the core does not pause, so it runs one step whatever
+`pause_i` is, and always makes progress. That step may be an interrupt
+entry: a request pending when the core goes on is taken first. So one
+cycle of `pause_i` = 0 while `paused_o` = 1 runs exactly one step, and
+`paused_o` drops for at least a cycle. A fall of `pause_i` while the core
+still runs toward the boundary only cancels the pause. With `pause_i` held
+at 1 through a reset, the core pauses before its first step.
+
+A halted core ignores `pause_i`, and `paused_o` stays 0, as it could not
+go on. No committed instruction can halt, so a raised `pause_i` always ends
+in exactly one of `paused_o` and `halted_o`, and a system waits for
+either. `pause_i` must come from a flip-flop and must not depend
+combinationally on the core's outputs: it feeds the flush, `nmi_ready_o`,
+and `irq_ready_o`.
+
+`halt_reason_o` is the reason of the step that halted the core, a
+`t_halt`, while `halted_o` is 1, and `HALT_NONE` before. So a system need
+not catch it from `retire_o`, which is for simulation.
 
 ## 7. Datapath details
 
@@ -853,9 +908,12 @@ data read right before the entry.
    `shiftjump.nasm`, with `samereg_prog.py`.
 5. The interrupt probes, and requests at every point in a hazard program,
    which `hdl/test/irq_sweep.py` makes.
-6. The runtime and translator test programs, which `make programs` in
+6. Pauses (§6.1): probes and random programs with random pauses, short and
+   held, and one step at a time, which must not change the trace, and a
+   word of code written while the core is paused (hdl/README.md).
+7. The runtime and translator test programs, which `make programs` in
    `hdl/` runs.
-7. Random instruction streams, run on both and diffed:
+8. Random instruction streams, run on both and diffed:
    `hdl/test/random_prog.py`, measured with `hdl/test/random_stats.py`.
 
 **Formal checks**: each stage on its own where it can
@@ -889,8 +947,9 @@ flush leaving read data owed. The accesses issue in program order by
 construction. That a halted core makes no data access holds for every
 cycle by the proofs together: a halted WRITE stays halted until reset and
 issues nothing (`hdl/formal/formal_pipe_write.vhd`), PREPARE puts a read
-on the bus only while WRITE runs, and `halted_o` waits until DBUS's
-register is empty. A proof of the whole core for every cycle is still
+on the bus only while WRITE runs, and `halted_o` waits until no bus cycle
+is open. The same goes for a paused core, and WRITE reports a step after
+a pause before it pauses again (§6.1). A proof of the whole core for every cycle is still
 open (TODO.md).
 
 ## 10. Repository and boards

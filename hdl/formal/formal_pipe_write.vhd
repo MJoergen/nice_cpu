@@ -7,10 +7,14 @@
 -- A halted WRITE stays halted until reset, and makes no store, vector
 -- read, interrupt entry, or micro-operation accept in the meantime. With
 -- the properties of PREPARE (f_rd_run) and the definition of halted_o in
--- src/pipeline.vhd, which waits for DBUS's register to empty, that is why
+-- src/pipeline.vhd, which waits until no bus cycle is open, that is why
 -- a halted core makes no data access, for every cycle and not only for the
--- first ones of pipeline.sby. The record inputs are free signals here
--- (anyseq), since the top level has only plain ports.
+-- first ones of pipeline.sby. A paused WRITE makes none of them either,
+-- for every pause, as pause_i is free. And once it leaves PAUSED_ST, it
+-- reports a step on retire_o before it pauses again (MICROARCH.md §6.1),
+-- since it does not pause while w_r.after_go is '1', and only a report
+-- clears that. The record inputs are free signals here (anyseq), since
+-- the top level has only plain ports.
 --
 -- RESET
 -- The first cycle is a reset.
@@ -39,7 +43,8 @@ entity formal_pipe_write is
       irq_valid_i  : in  std_logic;
       irq_vector_i : in  std_logic_vector(7 downto 0);
       f_addr_i     : in  std_logic_vector(31 downto 0);
-      f_blk_i      : in  std_logic_vector(31 downto 5)
+      f_blk_i      : in  std_logic_vector(31 downto 5);
+      pause_i      : in  std_logic
    );
 end entity formal_pipe_write;
 
@@ -70,6 +75,12 @@ architecture synthesis of formal_pipe_write is
    signal halted_d : std_logic := '0';
    signal rst_d    : std_logic := '1';
 
+   -- WRITE was in PAUSED_ST in the cycle before, but for a reset then, and
+   -- it has left PAUSED_ST and has reported no step since
+   signal paused_d : std_logic := '0';
+   signal left     : std_logic;
+   signal owed_r   : std_logic := '0';
+
    attribute anyseq : boolean;
    attribute anyseq of uop  : signal is true;
    attribute anyseq of dec  : signal is true;
@@ -94,10 +105,24 @@ begin
    -- reply, not a micro-operation from PREPARE.
    -- psl f_halt_sticky : assert always (halted_d = '1' and rst_d = '0') -> w.mode = HALTED_ST;
 
-   -- How deep the proof must see a halt, a store, and a vector read.
+   -- A paused WRITE makes no access to the data bus, takes no interrupt,
+   -- and accepts no micro-operation either.
+   -- psl f_pause_quiet : assert always w.mode = PAUSED_ST ->
+   --    (st = '0' and take_nmi = '0' and take_irq = '0' and ready = '0');
+
+   -- Once WRITE leaves PAUSED_ST, it reports a step before it pauses
+   -- again. f_go_owed and f_go_paused make it inductive.
+   -- psl f_go_report : assert always (rst_i = '0' and owed_r = '1') -> w.mode /= PAUSED_ST;
+   -- psl f_go_owed : assert always (rst_i = '0' and owed_r = '1') -> w.after_go = '1';
+   -- psl f_go_paused : assert always (rst_i = '0' and w.mode = PAUSED_ST) -> w.after_go = '0';
+
+   -- How deep the proof must see a halt, a store, a vector read, a pause,
+   -- and a step after a pause.
    -- psl c_halt : cover {w.mode = HALTED_ST and rst_i = '0'};
    -- psl c_store : cover {st = '1' and st_we = '1' and rst_i = '0'};
    -- psl c_vector : cover {st = '1' and st_we = '0' and rst_i = '0'};
+   -- psl c_pause : cover {w.mode = PAUSED_ST and rst_i = '0'};
+   -- psl c_go_step : cover {owed_r = '1' and retire.valid = '1' and rst_i = '0'};
 
 
    i_pipe_write : entity work.pipe_write
@@ -132,6 +157,7 @@ begin
          irq_vector_i => irq_vector_i,
          take_nmi_o   => take_nmi,
          take_irq_o   => take_irq,
+         pause_i      => pause_i,
          state_o      => w,
          done_o       => done,
          flush_o      => flush,
@@ -141,11 +167,22 @@ begin
       ); -- i_pipe_write
 
 
+   left <= paused_d and to_sl(w.mode /= PAUSED_ST);
+
    p_prev : process (clk_i)
    begin
       if rising_edge(clk_i) then
          halted_d <= to_sl(w.mode = HALTED_ST);
          rst_d    <= rst_i;
+         paused_d <= to_sl(w.mode = PAUSED_ST) and not rst_i;
+         if retire.valid = '1' then
+            owed_r <= '0';
+         elsif left = '1' then
+            owed_r <= '1';
+         end if;
+         if rst_i = '1' then
+            owed_r <= '0';
+         end if;
       end if;
    end process p_prev;
 

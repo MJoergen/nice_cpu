@@ -29,7 +29,9 @@
 --
 -- The report is for simulation. The pipelined core forms it from WRITE's
 -- next state, before the register, so its paths are among the longest of
--- the core. A design on an FPGA reads the registers from regs_o instead.
+-- the core. A design on an FPGA reads the registers from regs_o instead,
+-- and the halt reason from halt_reason_o. So t_halt is a port type of both
+-- cores too, and t_regs the type of regs_o.
 
 library ieee;
    use ieee.std_logic_1164.all;
@@ -83,6 +85,10 @@ package trace_pkg is
    -- The text the emulator prints for each reason.
    function halt_text(halt : t_halt) return string;
 
+   -- The code of each reason in the halt reason register of DEBUG.md §6,
+   -- 0 for HALT_NONE. Code 5, the emulator's step limit, has no value here.
+   function halt_code(halt : t_halt) return std_logic_vector;
+
 end package trace_pkg;
 
 package body trace_pkg is
@@ -97,5 +103,16 @@ package body trace_pkg is
          when HALT_RTI_OUTSIDE_ISR => return "RTI outside an interrupt routine";
       end case;
    end function halt_text;
+
+   function halt_code(halt : t_halt) return std_logic_vector is
+   begin
+      case halt is
+         when HALT_NONE            => return "000";
+         when HALT_HALT            => return "001";
+         when HALT_RESERVED        => return "010";
+         when HALT_NESTED_INT      => return "011";
+         when HALT_RTI_OUTSIDE_ISR => return "100";
+      end case;
+   end function halt_code;
 
 end package body trace_pkg;

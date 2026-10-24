@@ -2,9 +2,11 @@
 
 const std = @import("std");
 const Cpu = @import("cpu.zig").Cpu;
+const Link = @import("link.zig").Link;
 
 const usage =
     \\Usage: niceemu [options] program.bin
+    \\       niceemu --link PORT [options] [program.bin]
     \\
     \\Runs the program from address 0 until it halts, then prints the
     \\registers. A write to 0xFFFFFF00 prints its low byte on stdout. A read
@@ -33,6 +35,8 @@ const usage =
     \\                       with an FPGA core.
     \\      --no-timer-irq   The timer counts, but raises no requests, so that
     \\                       --irq can raise them where an FPGA core took them.
+    \\      --link PORT      Serve the debug link of doc/DEBUG.md on PORT of
+    \\                       127.0.0.1, or on a free port for 0, until a signal.
     \\  -h, --help           Print this help.
     \\
     \\Numbers may be decimal or 0x hex. Exit status: 0 after HALT, 1 on a
@@ -80,6 +84,8 @@ const Options = struct {
     input: []const u8 = "-",
     /// The label file of niceasm --symbols, or "" for none.
     symbols: []const u8 = "",
+    /// The port of --link, or null to run the program once.
+    link: ?u16 = null,
     help: bool = false,
 };
 
@@ -269,12 +275,13 @@ fn parseNumber(comptime T: type, opt: []const u8, s: []const u8) !T {
 fn parseArgs(arena: std.mem.Allocator) !Options {
     const args = try std.process.argsAlloc(arena);
     var opts: Options = .{ .path = "" };
+    var input_given = false;
     var dumps: std.ArrayList(Dump) = .empty;
     var requests: std.ArrayList(Request) = .empty;
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "-i", "--input", "--irq", "--nmi", "--symbols" }) |o| {
+        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "-i", "--input", "--irq", "--nmi", "--symbols", "--link" }) |o| {
             if (std.mem.eql(u8, arg, o)) break true;
         } else false;
         const value = if (takes_value) blk: {
@@ -310,6 +317,7 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
             opts.max_steps = try parseNumber(u64, arg, value);
         } else if (std.mem.eql(u8, arg, "-i") or std.mem.eql(u8, arg, "--input")) {
             opts.input = value;
+            input_given = true;
         } else if (std.mem.eql(u8, arg, "--irq") or std.mem.eql(u8, arg, "--nmi")) {
             const colon = std.mem.indexOfScalar(u8, value, ':') orelse
                 return fail("{s} wants STEP:VEC, not '{s}'", .{ arg, value });
@@ -320,6 +328,8 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
             });
         } else if (std.mem.eql(u8, arg, "--symbols")) {
             opts.symbols = value;
+        } else if (std.mem.eql(u8, arg, "--link")) {
+            opts.link = try parseNumber(u16, arg, value);
         } else if (std.mem.eql(u8, arg, "--no-cycle-counter")) {
             opts.cycle_counter = false;
         } else if (std.mem.eql(u8, arg, "--no-timer-irq")) {
@@ -332,7 +342,8 @@ fn parseArgs(arena: std.mem.Allocator) !Options {
             opts.path = arg;
         }
     }
-    if (opts.path.len == 0) return fail("no program given\n\n{s}", .{usage});
+    if (opts.link != null and input_given) return fail("--input cannot be given with --link", .{});
+    if (opts.path.len == 0 and opts.link == null) return fail("no program given\n\n{s}", .{usage});
     opts.dumps = dumps.items;
     // Insertion sort is stable, so of two requests of one kind at one step
     // the earlier one wins (they merge, ISA.md §7.1).
@@ -393,13 +404,16 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
         return 0;
     }
 
-    const text = std.fs.cwd().readFileAlloc(arena, opts.path, 1 << 30) catch |err| {
-        std.debug.print("niceemu: cannot read {s}: {s}\n", .{ opts.path, @errorName(err) });
-        return error.Load;
-    };
     var cpu = Cpu.init(arena);
-    try load(arena, &cpu, opts.path, text);
+    if (opts.path.len != 0) {
+        const text = std.fs.cwd().readFileAlloc(arena, opts.path, 1 << 30) catch |err| {
+            std.debug.print("niceemu: cannot read {s}: {s}\n", .{ opts.path, @errorName(err) });
+            return error.Load;
+        };
+        try load(arena, &cpu, opts.path, text);
+    }
     const syms: []const Symbol = if (opts.symbols.len != 0) try loadSymbols(arena, opts.symbols) else &.{};
+    if (opts.link) |port| return serve(arena, opts, syms, &cpu, port);
 
     if (opts.trace) cpu.trace = out;
     cpu.console = out;
@@ -446,14 +460,19 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
         }
         try cpu.step();
     }
+    return report(out, opts, syms, &cpu, steps);
+}
 
+/// Print why the run stopped, the registers, the dumps, and the screen, and
+/// return the exit status.
+fn report(out: *std.Io.Writer, opts: Options, syms: []const Symbol, cpu: *Cpu, steps: u64) !u8 {
     // After a halt, PC is the address after the halting instruction.
     if (cpu.halted()) {
         try out.print("Halted ({s}) after {d} steps, PC={x:0>8}\n", .{ cpu.halt_reason.describe(), steps, cpu.regs[15] });
     } else {
         try out.print("Stopped at the step limit after {d} steps, PC={x:0>8}\n", .{ steps, cpu.regs[15] });
     }
-    if (syms.len != 0 and !(cpu.halted() and cpu.halt_reason == .halt)) try printWhere(out, &cpu, syms);
+    if (syms.len != 0 and !(cpu.halted() and cpu.halt_reason == .halt)) try printWhere(out, cpu, syms);
     // A request still pending now was never taken (ISA.md §7.1).
     if (cpu.nmi_pending != null or cpu.irq_pending != null) {
         try out.writeAll("Pending:");
@@ -461,11 +480,91 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
         if (cpu.irq_pending) |v| try out.print(" IRQ {x:0>2}", .{v});
         try out.writeByte('\n');
     }
-    try printRegisters(out, &cpu);
-    for (opts.dumps) |d| try printMemory(out, &cpu, d);
-    if (opts.screen) try printScreen(out, &cpu, opts.screen_base, opts.color, opts.invert_fg);
+    try printRegisters(out, cpu);
+    for (opts.dumps) |d| try printMemory(out, cpu, d);
+    if (opts.screen) try printScreen(out, cpu, opts.screen_base, opts.color, opts.invert_fg);
 
     return if (!cpu.halted()) 3 else if (cpu.halt_reason == .halt) 0 else 2;
+}
+
+/// Where `serve` prints, so that a signal can flush it before the exit.
+var serve_out: ?*std.Io.Writer = null;
+
+/// End the emulator with status 0 if a signal asked it to stop.
+fn exitOnSignal() void {
+    if (stop_signal.load(.acquire) == 0) return;
+    if (serve_out) |w| w.flush() catch {};
+    std.process.exit(0);
+}
+
+/// Serve the debug link (doc/DEBUG.md) on `port`, and run each program
+/// that the host starts. What a run prints goes to stderr. Runs until a
+/// signal.
+fn serve(arena: std.mem.Allocator, opts: Options, syms: []const Symbol, cpu: *Cpu, port: u16) !u8 {
+    var err_buf: [64 * 1024]u8 = undefined;
+    var err_w = std.fs.File.stderr().writerStreaming(&err_buf);
+    const out = &err_w.interface;
+    serve_out = out;
+    catchSignals();
+
+    var link: Link = undefined;
+    const actual = link.open(arena, cpu, port, exitOnSignal) catch |err| {
+        std.debug.print("niceemu: cannot serve the link on port {d}: {s}\n", .{ port, @errorName(err) });
+        return error.Load;
+    };
+    if (port == 0) std.debug.print("link: port {d}\n", .{actual});
+    if (opts.trace) cpu.trace = out;
+    cpu.console = &link.console_w;
+    cpu.input = &link.reader;
+    cpu.cycle_counter = opts.cycle_counter;
+    cpu.timer_irq = opts.timer_irq;
+
+    var steps: u64 = 0;
+    var next: usize = 0;
+    var reported = false;
+    while (true) {
+        exitOnSignal();
+        if (link.started) {
+            link.started = false;
+            cpu.reset();
+            steps = 0;
+            next = 0;
+            reported = false;
+        }
+        if (!link.running()) {
+            if (link.halted() and !reported) {
+                _ = try report(out, opts, syms, cpu, steps);
+                link.notifyHalt();
+                reported = true;
+            }
+            try out.flush();
+            try link.service(100);
+            continue;
+        }
+        // A chunk of steps, then the link is served. A step is as in `run`.
+        var n: u32 = 0;
+        while (n < 4096 and link.running() and !link.started) : (n += 1) {
+            if (steps == opts.max_steps) {
+                link.limit_hit = true;
+                break;
+            }
+            while (next < opts.requests.len and opts.requests[next].step == steps) : (next += 1) {
+                const r = opts.requests[next];
+                switch (r.kind) {
+                    .irq => cpu.requestIrq(r.vector),
+                    .nmi => cpu.requestNmi(r.vector),
+                }
+            }
+            try cpu.step();
+            if (cpu.stopped) {
+                cpu.stopped = false;
+                break;
+            }
+            steps += 1;
+        }
+        link.console_w.flush() catch {};
+        try link.service(0);
+    }
 }
 
 fn printRegisters(out: *std.Io.Writer, cpu: *const Cpu) !void {
@@ -576,4 +675,5 @@ test "screen colors" {
 
 test {
     _ = @import("cpu.zig");
+    _ = @import("link.zig");
 }

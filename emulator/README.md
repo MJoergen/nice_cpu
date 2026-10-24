@@ -20,6 +20,10 @@ command line and the loader, and the exit status and some output lines of
 runs that stop in each way: `HALT`, the other halts, and the step limit,
 `-n 0` included. The probes are assembled with niceasm, and
 `make bins` reassembles them after a change.
+Then `test/link.py` runs niceemu with `--link 0` and checks the debug link
+over TCP (see Debug link below): the packets of DEBUG.md §8 byte for byte,
+the errors and drops, a program loaded, run, halted, and restarted, the
+overflow notice, and the step limit.
 
 `test/reserved.nasm` runs a reserved control word, which halts the
 processor with exit status 2.
@@ -74,6 +78,7 @@ line such as `Pending: IRQ 05` follows the first line.
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
 | `--no-cycle-counter` | Make the cycle counter and the microsecond counter, `0xFFFFFF40`, `0xFFFFFF41`, `0xFFFFFF44`, and `0xFFFFFF45`, ordinary memory (see Memory map). |
 | `--no-timer-irq` | The timer counts, but raises no requests, so that `--irq` can raise them instead (see Memory map). |
+| `--link PORT` | Serve the debug link on PORT of `127.0.0.1` instead of running the program once (see Debug link below). With PORT 0, pick a free port and print `link: port N` on stderr. The program file is optional. `--input` is an error with it. |
 | `-h`, `--help` | Print the usage on stdout. |
 
 Numbers in options are decimal, or hex after `0x` or `0X`, with no sign or
@@ -208,6 +213,21 @@ All 2³² words of memory exist, and addresses wrap from `0xFFFFFFFF` to 0
 word is first written to them, so a program only costs the memory it
 touches. There is no bound: a program that writes one word to each of many
 pages can use up to 16 GiB before the emulator runs out of memory.
+
+## Debug link
+
+With `--link PORT`, niceemu serves the debug link of
+[DEBUG.md](../doc/DEBUG.md) on a TCP port, as DEBUG.md §7 says. It starts
+held, with the program file in memory if one was given, and runs a program
+each time the host starts one. The console's input and output go over the
+link, and what a run prints after it halts, and the trace, go to stderr.
+stdout stays empty. It runs until a signal, and then exits with status 0.
+
+It serves the link every 4096 steps while a program runs, and at least
+every 100 ms while the processor is held or halted, or a console read
+waits. A `W` writes its words when its checksum has been checked, so a `W`
+with a bad checksum writes nothing. One with a bad payload writes the whole
+words before the bad byte, at most N.
 
 ## Interrupts
 

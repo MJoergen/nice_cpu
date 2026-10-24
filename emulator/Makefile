@@ -78,6 +78,7 @@ test: build bincheck
 	$(call check,scrbound2004,test/scrbound.bin)
 	@rm -f test/*.out
 	@$(PYTHON) test/errors.py
+	@$(PYTHON) test/link.py
 
 build:
 	$(ZIG) build -Doptimize=ReleaseSafe
@@ -96,7 +97,7 @@ bincheck:
 
 # Needs mypy (pip install mypy).
 typecheck:
-	$(PYTHON) -m mypy --strict test/errors.py
+	$(PYTHON) -m mypy --strict test/errors.py test/link.py
 
 clean:
 	rm -rf zig-out .zig-cache test/*.out

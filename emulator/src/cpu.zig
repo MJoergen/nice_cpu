@@ -357,6 +357,10 @@ pub const Cpu = struct {
     /// A test then raises them with `--irq` at the steps where an FPGA core
     /// took them, as it does for the requests it raises itself.
     timer_irq: bool,
+    /// Set by the debug link when a hold or a start ends a console read
+    /// that waits (DEBUG.md §6). The rest of the step then writes no
+    /// memory and no trace line. The run loop clears it after the step.
+    stopped: bool,
 
     /// A processor after reset (§8.1), with empty memory allocated from `gpa`.
     pub fn init(gpa: std.mem.Allocator) Cpu {
@@ -381,6 +385,7 @@ pub const Cpu = struct {
             .timer = .{},
             .cycle_counter = true,
             .timer_irq = true,
+            .stopped = false,
         };
         cpu.reset();
         return cpu;
@@ -477,6 +482,7 @@ pub const Cpu = struct {
 
     /// A memory write by the processor (§8.2).
     pub fn write(self: *Cpu, addr: u32, value: u32) Error!void {
+        if (self.stopped) return;
         if (addr == console_addr) {
             if (self.console) |w| {
                 try w.writeByte(@truncate(value));
@@ -542,6 +548,7 @@ pub const Cpu = struct {
         self.after_rti = false;
         const pc = self.regs[15];
         const ex = try self.execute();
+        if (self.stopped) return;
         self.perf.instrs +%= 1;
         if (self.trace) |w| try self.traceInstruction(w, pc, ex.iw, ex.executed, before);
     }

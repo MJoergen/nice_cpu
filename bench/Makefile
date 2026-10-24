@@ -64,7 +64,7 @@ test: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/dhry.bin
 	  && echo "PASS pipecycles.py --phases 6"
 	@$(PYTHON) dhrycheck.py --test
 	@$(EMU) --input $(DHRY_RUNS) $(BUILD)/dhry.bin < /dev/null > $(BUILD)/dhry.out
-	@$(PYTHON) dhrycheck.py $(BUILD)/dhry.out
+	@$(PYTHON) dhrycheck.py --runs $$(cat $(DHRY_RUNS)) $(BUILD)/dhry.out
 
 # Runs both on a core in GHDL, so that the cycles are the core's: CORE,
 # the generic G_CORE of hdl/test/tb_core.vhd, is pipeline for the
@@ -95,7 +95,7 @@ core-dhry: $(BUILD)/dhry.bin
 	  -gG_BIN_FILE=../../bench/$(BUILD)/dhry.bin -gG_INPUT_FILE=../../bench/$(DHRY_RUNS) \
 	  -gG_TRACE_FILE=dhry_$(CORE).out -gG_TRACE=false > dhry_$(CORE).log 2>&1; status=$$?; \
 	  sed '/^Halted/,$$d' dhry_$(CORE).out; if [ $$status -ne 0 ]; then cat dhry_$(CORE).log; exit 1; fi
-	@$(PYTHON) dhrycheck.py ../hdl/build/dhry_$(CORE).out
+	@$(PYTHON) dhrycheck.py --runs $$(cat $(DHRY_RUNS)) ../hdl/build/dhry_$(CORE).out
 
 $(BUILD)/bench.nasm: bench.wasm ../translator/nicewasm.py
 	@mkdir -p $(BUILD)

@@ -330,9 +330,6 @@ begin
             end if;
          end if;
       elsif w_r.mode = RUN_ST and u_v.valid = '1' then
-         wreg_v := 0;
-         wval_v := (others => '0');
-
          if cond_v = '0' then
             done_v := true;
          elsif u_v.kind = UOP_CTRL then

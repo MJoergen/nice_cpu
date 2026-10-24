@@ -457,13 +457,13 @@ gives it from `dhry.input`; and the three result lines, which must agree
 with each other and with the number of runs. `make test` runs it on the
 emulator's output and `make core-dhry` on the core's.
 
-100 runs, measured at commit 06cfabb:
+100 runs, measured at commit 4a3c917:
 
 | Where | Cycles per run | DMIPS/MHz |
 |---|---|---|
 | emulator (one cycle per instruction) | 1559 | 0.365 |
 | multi-cycle core | 17948 | 0.031 |
-| pipelined core | 2348 | 0.242 |
+| pipelined core | 2353 | 0.241 |
 
 The emulator's row counts instructions. For comparison, Arm gives 0.87
 DMIPS/MHz for the Cortex-M0 under the ground rules. The translation

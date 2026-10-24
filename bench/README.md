@@ -441,7 +441,8 @@ is `nice_cycles`. The original prints its results with `%f`, which the C
 library cannot print, and needs a run of two seconds. The port prints
 the cycles of all the runs and of one run, and the Dhrystone MIPS per
 MHz, 10⁶ / (1757 × cycles per run), with three decimals in integer
-arithmetic, for any number of runs.
+arithmetic, for any number of runs from 1. Given 0, or no number, it says
+that the number must be at least 1, and `main` returns 1.
 
 The sources are K&R C, so `make wasm` compiles them as C89. It follows
 the ground rules in `dhry.h`: `dhry_1.c` and `dhry_2.c` are compiled

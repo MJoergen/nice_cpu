@@ -127,10 +127,21 @@ main ()
   printf ("Please give the number of runs through the benchmark: ");
   {
     int n;
+#ifdef NICE
+    n = 0;              /* if the input holds no number */
+#endif
     scanf ("%d", &n);
     Number_Of_Runs = n;
   }
   printf ("\n");
+#ifdef NICE
+  /* The port divides by the number of runs. */
+  if (Number_Of_Runs < 1)
+  {
+    printf ("The number of runs must be at least 1\n");
+    return 1;
+  }
+#endif
 
   printf ("Execution starts, %d runs through Dhrystone\n", Number_Of_Runs);
 

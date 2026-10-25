@@ -967,6 +967,7 @@ begin
       signal f_cur    : t_word;                        -- The word p_rx writes next
       signal f_end    : std_logic_vector(32 downto 0); -- A + N of the request
       signal f_tx_end : std_logic_vector(32 downto 0); -- The same, from p_tx
+      signal f_step_d : std_logic := '0';              -- A step cycle without a reset, a cycle ago
 
       function f_is_digit(b : t_byte) return boolean is
       begin
@@ -989,6 +990,14 @@ begin
    begin
 
       f_take <= out_valid_r and tx_ready_i;
+
+      p_f_step : process (clk_i)
+      begin
+         if rising_edge(clk_i) then
+            f_step_d <= step_r and not rst_i;
+         end if;
+      end process p_f_step;
+
       f_tag  <= '1' when f_out_st = OUT_ESC_ST and out_valid_r = '1' and out_data_r /= C_ESC else
                 '0';
       f_ctrl <= '1' when acc_st = ACC_IDLE_ST and acc_go = '1' and acc_we = '1' and
@@ -1105,8 +1114,9 @@ begin
       -- not own the memory from the write until the step has ended.
       -- psl f_step_pulse : assert always
       --    step_r = '1' -> (pause_r = '0' and stepping_r = '1' and hold_r = '0');
-      -- psl f_step_once : assert always
-      --    {step_r = '1' and rst_i = '0'} |=> {pause_r = '1' and step_r = '0'};
+      -- A sequence here would have a cover that needs a whole W, deeper than the cover
+      -- task looks.
+      -- psl f_step_once : assert always f_step_d = '1' -> (pause_r = '1' and step_r = '0');
       -- psl f_step_paused : assert always {pause_own = '0'} |=> {step_r = '0'};
       -- psl f_step_own : assert always stepping_r = '1' -> pause_own = '0';
 

@@ -83,12 +83,11 @@ end entity pipe_decode;
 architecture synthesis of pipe_decode is
 
    -- Taking an instruction into dec_r
-   signal d_inst  : t_inst;
-   signal d_ok    : std_logic;
-   signal d_load  : std_logic;
-   signal d_early : std_logic;
-   signal d_dest  : std_logic_vector(31 downto 0);
-   signal id_r    : std_logic_vector(2 downto 0);
+   signal d_inst : t_inst;
+   signal d_ok   : std_logic;
+   signal d_load : std_logic;
+   signal d_dest : std_logic_vector(31 downto 0);
+   signal id_r   : std_logic_vector(2 downto 0);
 
    -- The address after an instruction of each length, summed in parallel
    -- with the read of its words, so that the length only picks one
@@ -113,7 +112,7 @@ architecture synthesis of pipe_decode is
 
 begin
 
-   redirect_o <= d_load and d_early;
+   redirect_o <= d_load and d_inst.early;
    target_o   <= d_dest;
    valid_o    <= out_valid;
    uop_o      <= out_uop;
@@ -179,7 +178,6 @@ begin
          dest_v := d_next(2) + f_words_i(1);
       end if;
       inst_v.early := early_v;
-      d_early      <= early_v;
       d_dest       <= dest_v;
 
       d_inst <= inst_v;
@@ -421,7 +419,7 @@ begin
 
       -- The jumps DECODE resolves
       -- psl f_redirect : assert always (rst_i = '0' and d_load = '1') ->
-      --    (d_early = to_sl(early_form(f_words_i(0), f_words_i(1))));
+      --    (d_inst.early = to_sl(early_form(f_words_i(0), f_words_i(1))));
       -- psl f_target : assert always (rst_i = '0' and redirect_o = '1') ->
       --    (consume_o = 2 and d_dest = early_target(f_addr_i, f_words_i));
 

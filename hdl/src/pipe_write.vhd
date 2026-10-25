@@ -610,7 +610,7 @@ begin
             -- Nothing changes until the micro-operation retires, but a
             -- move to VEC_ST, the bus state, and the result of a first
             -- cycle.
-            if w_r.exec_done = '0' and not two_v then
+            if not two_v then
                n_v.regs  := w_r.regs;
                n_v.last  := w_r.last;
                n_v.jump  := w_r.jump;

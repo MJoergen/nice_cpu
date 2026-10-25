@@ -97,6 +97,13 @@ architecture synthesis of formal_debug_link is
    signal hold_d           : std_logic := '0';
    signal eoi_d            : std_logic := '0';
 
+   -- The conditions of the halt and pause assumptions, one cycle before. The
+   -- assumptions are plain Booleans on them: the formal job's toolchain does
+   -- not apply an assume with a sequence and |=>, and induction then finds
+   -- a halt that ends without a reset.
+   signal halt_keep_d  : std_logic := '0';
+   signal pause_keep_d : std_logic := '0';
+
 begin
 
    p_delay : process (clk_i)
@@ -107,6 +114,8 @@ begin
          con_in_valid_dd <= con_in_valid_d;
          hold_d          <= hold;
          eoi_d           <= eoi;
+         halt_keep_d     <= halted_i and not hold and not rst_i;
+         pause_keep_d    <= paused_i and pause and not hold and not rst_i;
       end if;
    end process p_delay;
 
@@ -133,14 +142,12 @@ begin
    -- psl f_initial_reset : assume rst_i;
 
    -- The core: its halt ends only by a reset (contract e).
-   -- psl f_halted : assume always
-   --    {halted_i and not hold and not rst_i} |=> {halted_i};
+   -- psl f_halted : assume always halt_keep_d = '1' -> halted_i = '1';
 
    -- The pause: never with a halt, and it lasts while pause_o is high and
    -- the core is not reset (contract e).
    -- psl f_paused_halt : assume always not (paused_i and halted_i);
-   -- psl f_paused : assume always
-   --    {paused_i and pause and not hold and not rst_i} |=> {paused_i};
+   -- psl f_paused : assume always pause_keep_d = '1' -> paused_i = '1';
 
    -- The Wishbone master
    -- psl f_wb_hold : assert always wb_cyc -> (hold = '1' or halted_i = '1' or paused_i = '1');

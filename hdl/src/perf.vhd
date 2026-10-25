@@ -78,11 +78,11 @@ end entity perf;
 architecture synthesis of perf is
 
    signal cycles_r      : std_logic_vector(63 downto 0) := G_RESET;
-   signal cycles_snap_r : std_logic_vector(63 downto 0) := G_RESET;
+   signal cycles_snap_r : std_logic_vector(31 downto 0) := G_RESET(63 downto 32);
    signal instrs_r      : std_logic_vector(63 downto 0) := G_RESET;
-   signal instrs_snap_r : std_logic_vector(63 downto 0) := G_RESET;
+   signal instrs_snap_r : std_logic_vector(31 downto 0) := G_RESET(63 downto 32);
    signal micros_r      : std_logic_vector(63 downto 0) := G_RESET;
-   signal micros_snap_r : std_logic_vector(63 downto 0) := G_RESET;
+   signal micros_snap_r : std_logic_vector(31 downto 0) := G_RESET(63 downto 32);
 
    -- The microseconds so far in the current second, scaled by G_CLK_HZ
    signal frac_r : natural range 0 to G_CLK_HZ - 1 := 0;
@@ -96,15 +96,17 @@ begin
 
 
    p_count : process (clk_i)
+      variable frac_v : natural;
    begin
       if rising_edge(clk_i) then
          if run_i = '1' then
             cycles_r <= cycles_r + 1;
-            if frac_r + 1000000 >= G_CLK_HZ then
-               frac_r   <= frac_r + 1000000 - G_CLK_HZ;
+            frac_v := frac_r + 1000000;
+            if frac_v >= G_CLK_HZ then
+               frac_r   <= frac_v - G_CLK_HZ;
                micros_r <= micros_r + 1;
             else
-               frac_r <= frac_r + 1000000;
+               frac_r <= frac_v;
             end if;
          end if;
          if instret_i = '1' then
@@ -130,24 +132,24 @@ begin
             case wb_addr_i is
                when X"0" =>
                   wb_data_o     <= cycles_r(31 downto 0);
-                  cycles_snap_r <= cycles_r;
+                  cycles_snap_r <= cycles_r(63 downto 32);
 
                when X"1" =>
-                  wb_data_o <= cycles_snap_r(63 downto 32);
+                  wb_data_o <= cycles_snap_r;
 
                when X"2" =>
                   wb_data_o     <= instrs_r(31 downto 0);
-                  instrs_snap_r <= instrs_r;
+                  instrs_snap_r <= instrs_r(63 downto 32);
 
                when X"3" =>
-                  wb_data_o <= instrs_snap_r(63 downto 32);
+                  wb_data_o <= instrs_snap_r;
 
                when X"4" =>
                   wb_data_o     <= micros_r(31 downto 0);
-                  micros_snap_r <= micros_r;
+                  micros_snap_r <= micros_r(63 downto 32);
 
                when X"5" =>
-                  wb_data_o <= micros_snap_r(63 downto 32);
+                  wb_data_o <= micros_snap_r;
 
                when others =>
                   wb_data_o <= (others => '0');
@@ -156,9 +158,9 @@ begin
 
          if rst_i = '1' then
             wb_ack_o      <= '0';
-            cycles_snap_r <= G_RESET;
-            instrs_snap_r <= G_RESET;
-            micros_snap_r <= G_RESET;
+            cycles_snap_r <= G_RESET(63 downto 32);
+            instrs_snap_r <= G_RESET(63 downto 32);
+            micros_snap_r <= G_RESET(63 downto 32);
          end if;
       end if;
    end process p_bus;

@@ -118,7 +118,6 @@ architecture synthesis of pipe_prepare is
    signal p_counted_r   : std_logic;
    signal p_out         : t_uop;
    signal p_load        : std_logic;
-   signal p_first_read  : std_logic;
    signal p_last_read   : std_logic;
    signal p_addr        : std_logic_vector(31 downto 0);
    signal p_valid       : std_logic;              -- The micro-operation may go on
@@ -137,7 +136,6 @@ begin
    ready_o      <= p_ready;
    valid_o      <= p_valid;
    uop_o        <= p_out;
-   first_read_o <= p_first_read;
    prep_o       <= prep_r;
    rd_stb_o     <= rd_stb_r;
    rd_addr_o    <= rd_addr_r;
@@ -315,7 +313,7 @@ begin
          load_v := '1';
       end if;
       p_load       <= load_v;
-      p_first_read <= load_v and not p_committed_r;
+      first_read_o <= load_v and not p_committed_r;
       last_v := load_v = '1' and p_loaded_r + 1 = nr_v and not later_reads(u_v.inst.iw, u_v.kind);
       p_last_read  <= to_sl(last_v);
 

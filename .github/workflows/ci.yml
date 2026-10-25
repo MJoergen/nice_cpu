@@ -70,6 +70,8 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.15.2
+      # test/build.py builds the C library, which needs llvm-ar.
+      - run: sudo apt-get update && sudo apt-get install -y llvm lld
       - run: make test
       - run: make typecheck
 
@@ -119,14 +121,34 @@ jobs:
           version: 0.15.2
       - run: sudo apt-get update && sudo apt-get install -y ghdl
       - run: make test
-      # The runtime's and the translator's programs, on both cores.
-      - run: make programs
-      - run: make programs CORE=multicycle
       # The style of CODING_STYLE.md, as far as vsg can check it.
       - run: pip install vsg==3.35.0
       - run: make lint
       - run: pip install mypy
       - run: make typecheck
+
+  # The runtime's and the translator's programs on each core. Each takes
+  # hours in GHDL, so they run apart from the hdl job to stay under the
+  # 6 hour limit of a job.
+  programs:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        core: [pipeline, multicycle]
+    defaults:
+      run:
+        working-directory: hdl
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      - run: sudo apt-get update && sudo apt-get install -y ghdl
+      - run: make programs CORE=${{ matrix.core }}
 
   formal:
     runs-on: ubuntu-24.04

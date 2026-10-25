@@ -964,6 +964,7 @@ begin
       signal f_data   : boolean;                       -- p_rx is past A and N of a good W
       signal f_got    : boolean;                       -- p_rx is past A and N of a good R
       signal f_mem    : boolean;                       -- The link may reach the memory
+      signal f_pay_ok : boolean;                       -- The byte out fits the packet's payload
       signal f_cur    : t_word;                        -- The word p_rx writes next
       signal f_end    : std_logic_vector(32 downto 0); -- A + N of the request
       signal f_tx_end : std_logic_vector(32 downto 0); -- The same, from p_tx
@@ -1079,6 +1080,14 @@ begin
          end if;
       end process p_out;
 
+
+      -- The byte out in a payload: a kind, a digit, or nothing yet. A signal
+      -- of its own, as GHDL 4.1 fails on these terms in one psl.
+      f_pay_ok <= (out_valid_r = '1' and f_out_st = OUT_ESC_ST and out_data_r = kind_char(kind_r) and
+                   tx_sum_r = out_data_r) or
+                  (out_valid_r = '1' and f_out_st = OUT_PAY_ST and f_is_digit(out_data_r) and
+                   tx_sum_r = f_out_sum + out_data_r) or
+                  (out_valid_r = '0' and f_out_st = OUT_PAY_ST and tx_sum_r = f_out_sum);
 
       -- psl default clock is rising_edge(clk_i);
 
@@ -1223,12 +1232,7 @@ begin
       --     (out_valid_r = '0' and f_out_st = OUT_ESC_ST)) and tx_sum_r = X"00";
       -- psl i_out_pay : assert always
       --    (tx_st = TX_FIELD_ST or tx_st = TX_DIG_ST or tx_st = TX_HASH_ST or
-      --     tx_st = TX_CALL_ST or tx_st = TX_WAIT_ST) ->
-      --    ((out_valid_r = '1' and f_out_st = OUT_ESC_ST and out_data_r = kind_char(kind_r) and
-      --      tx_sum_r = out_data_r) or
-      --     (out_valid_r = '1' and f_out_st = OUT_PAY_ST and f_is_digit(out_data_r) and
-      --      tx_sum_r = f_out_sum + out_data_r) or
-      --     (out_valid_r = '0' and f_out_st = OUT_PAY_ST and tx_sum_r = f_out_sum));
+      --     tx_st = TX_CALL_ST or tx_st = TX_WAIT_ST) -> f_pay_ok;
       -- psl i_out_cc1 : assert always
       --    tx_st = TX_CC1_ST ->
       --    ((out_valid_r = '1' and out_data_r = X"23" and f_out_st = OUT_PAY_ST) or

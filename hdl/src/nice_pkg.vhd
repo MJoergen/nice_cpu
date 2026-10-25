@@ -83,7 +83,10 @@ package nice_pkg is
 
    function mod33(n : std_logic_vector(31 downto 0)) return natural;
 
-   function shift_count(n : std_logic_vector(31 downto 0)) return t_shift_count;
+   -- Without mod33, m33 is 0: the multicycle core computes it in a state of
+   -- its own, and shift_prep does not use it.
+   function shift_count(n          : std_logic_vector(31 downto 0);
+                        with_mod33 : boolean := true) return t_shift_count;
 
    -- ISA.md §5.2. c is the C flag. The carry of the result is the C flag
    -- after the shift, before M is applied. cnt is shift_count(n).
@@ -307,10 +310,11 @@ package body nice_pkg is
       end if;
    end function rot33_k;
 
-   function shift_count(n : std_logic_vector(31 downto 0)) return t_shift_count is
+   function shift_count(n          : std_logic_vector(31 downto 0);
+                        with_mod33 : boolean := true) return t_shift_count is
       variable res_v : t_shift_count;
    begin
-      res_v.m33 := mod33(n);
+      res_v.m33 := mod33(n) when with_mod33 else 0;
       res_v.sat := 33 when n > 33 else to_integer(n(5 downto 0));
       res_v.nz  := '1' when n /= 0 else '0';
       return res_v;
@@ -402,9 +406,11 @@ package body nice_pkg is
       variable m33_v : natural range 0 to 32;
       variable n5_v  : natural range 0 to 31;
       variable to_c  : boolean;
+      variable cnt_v : t_shift_count;
    begin
-      p_v.sat := 33 when n > 33 else to_integer(n(5 downto 0));
-      p_v.nz  := '1' when n /= 0 else '0';
+      cnt_v   := shift_count(n, false);
+      p_v.sat := cnt_v.sat;
+      p_v.nz  := cnt_v.nz;
       m33_v   := mod33(n) when with_mod33 else 0;
       n5_v    := to_integer(n(4 downto 0));
       -- Only 011, 100, 101, and 111 send the bit shifted out to C.

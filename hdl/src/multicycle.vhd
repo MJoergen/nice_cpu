@@ -247,13 +247,15 @@ begin
       -- The value of source i is known.
       procedure src_done(i : natural range 1 to 2;
                          v : std_logic_vector(31 downto 0)) is
+         variable cnt_v : t_shift_count;
       begin
          srcs(i) <= v;
          if i = 2 then
             -- The reduced counts of a shift. mod 33 is slow, and gets
             -- MOD33_ST of its own.
-            src2_count.sat <= 33 when v > 33 else to_integer(v(5 downto 0));
-            src2_count.nz  <= '1' when v /= 0 else '0';
+            cnt_v          := shift_count(v, false);
+            src2_count.sat <= cnt_v.sat;
+            src2_count.nz  <= cnt_v.nz;
          end if;
          if i = 1 then
             src_idx <= 2;

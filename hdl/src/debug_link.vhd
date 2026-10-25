@@ -1086,7 +1086,7 @@ begin
       f_pay_ok <= (out_valid_r = '1' and f_out_st = OUT_ESC_ST and out_data_r = kind_char(kind_r) and
                    tx_sum_r = out_data_r) or
                   (out_valid_r = '1' and f_out_st = OUT_PAY_ST and f_is_digit(out_data_r) and
-                   tx_sum_r = f_out_sum + out_data_r) or
+                    tx_sum_r = f_out_sum + out_data_r) or
                   (out_valid_r = '0' and f_out_st = OUT_PAY_ST and tx_sum_r = f_out_sum);
 
       -- psl default clock is rising_edge(clk_i);

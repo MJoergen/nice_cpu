@@ -24,10 +24,10 @@
 -- that may still arrive, counting those it will drop. So no ACK is ever
 -- refused, and at most C_DEPTH / 2 requests are in flight.
 --
--- The words read so far, and those still to arrive, lie in one range,
--- addr_o to end_o - 1, modulo 2^32. The core compares each store with it,
--- to find stores into fetched code (MICROARCH.md §5.5). The range may hold
--- words not in the buffer yet, which is safe.
+-- The words read so far, and those still to arrive, lie in at most
+-- C_DEPTH words from addr_o on, modulo 2^32. The core compares each store
+-- with them, to find stores into fetched code (MICROARCH.md §5.5). The
+-- range may hold words not in the buffer yet, which is safe.
 --
 -- stats_o reports the buffer's words, and the room held for the requests
 -- in flight, in each cycle, for the fetch statistics (MICROARCH.md §8.1).
@@ -78,7 +78,6 @@ entity pipe_fetch is
       count_o         : out natural range 0 to 4;
       consume_i       : in  natural range 0 to 4;
       -- One past the last word fetched or being fetched
-      end_o           : out std_logic_vector(31 downto 0);
 
       -- For the fetch statistics: the fields of FETCH, the rest 0
       stats_o         : out t_fetch_events
@@ -96,7 +95,6 @@ architecture synthesis of pipe_fetch is
    signal count_r : natural range 0 to C_DEPTH;
    signal head_r  : std_logic_vector(31 downto 0);         -- Its address
    signal blk_r   : std_logic_vector(31 downto 5);         -- The block after its block, a cycle late
-   signal end_r   : std_logic_vector(31 downto 0);
 
    signal stb_r     : std_logic                     := '0';
    signal req_r     : std_logic_vector(30 downto 0);            -- The pair on the bus
@@ -123,7 +121,6 @@ begin
 
    addr_o  <= head_r;
    blk_o   <= blk_r;
-   end_o   <= end_r;
    count_o <= minimum(count_r, 4);
 
    gen_words : for i in 0 to 3 generate
@@ -192,7 +189,6 @@ begin
             stb_r     <= '1';
             req_r     <= pair_r;
             pair_r    <= pair_r + 1;
-            end_r     <= (pair_r & '0') + 2;
             pending_v := pending_v + 1;
          end if;
 
@@ -217,7 +213,6 @@ begin
             drop_r  <= pending_v;
             count_r <= 0;
             head_r  <= redirect_addr_i;
-            end_r   <= redirect_addr_i;
             pair_r  <= redirect_addr_i(31 downto 1);
             odd_r   <= redirect_addr_i(0);
          end if;
@@ -230,7 +225,6 @@ begin
             rd_r      <= 0;
             head_r    <= (others => '0');
             blk_r     <= (others => '0');
-            end_r     <= (others => '0');
             req_r     <= (others => '0');
             pair_r    <= (others => '0');
             odd_r     <= '0';
@@ -255,6 +249,7 @@ begin
       signal f_hits : t_hits(0 to C_DEPTH / 2);
       signal f_live : natural range 0 to C_DEPTH / 2;   -- Requests not dropped
       signal f_good : std_logic;                         -- An ACK holds f_v
+      signal end_r  : std_logic_vector(31 downto 0);     -- addr_o to end_r - 1 holds the words
 
       attribute anyconst : boolean;
       attribute anyconst of f_a : signal is true;
@@ -265,6 +260,21 @@ begin
                          (f_a(0) = '1' and ibus_data_i(63 downto 32) = f_v) else
                 '0';
 
+
+      p_end : process (clk_i)
+      begin
+         if rising_edge(clk_i) then
+            if load = '1' then
+               end_r <= (pair_r & '0') + 2;
+            end if;
+            if redirect_i = '1' then
+               end_r <= redirect_addr_i;
+            end if;
+            if rst_i = '1' then
+               end_r <= (others => '0');
+            end if;
+         end if;
+      end process p_end;
 
       p_hits : process (clk_i)
          variable hits_v : t_hits(0 to C_DEPTH / 2 + 1);

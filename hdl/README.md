@@ -562,7 +562,7 @@ assertions say that whenever DECODE sees that address, it sees that value:
 the words come from the addresses that `addr_o` names, also after a
 redirect, a redirect to an odd address, and a redirect with requests in
 flight, whose words must be dropped. They also say that the words lie in
-the range that `end_o` closes, which the core compares with each store,
+the range that FETCH's end register closes, which bounds the words the core compares with each store,
 and they check the bus port as `wb_master_check` does, but on the
 counter of requests in flight. `stop_i` is the halt of `pipeline.vhd`,
 and after a cycle of it FETCH makes no new request: a request stays on
@@ -572,7 +572,7 @@ is at most 16 words, and the oldest word moves by at most four words a
 cycle, so its block is the one before `blk_o` or `blk_o` itself, which is
 what WRITE's compare with the fetched words relies on (MICROARCH.md
 §5.5). The invariants tie that counter, the
-requests to drop, the next pair to request, the buffer, and `end_o` to
+requests to drop, the next pair to request, the buffer, and that register to
 each other, which makes the assertions inductive in two steps. Boolector
 proves them in about a minute; Yices does not finish. Breaking the drop
 of stale words, or of an odd address's low word, fails the proof.

@@ -76,8 +76,8 @@
 -- redirects FETCH after an instruction that wrote R15, after RTI, at the
 -- start and end of an interrupt entry or INT, after a halt, and after a
 -- store into a word that is fetched but not retired (MICROARCH.md §5.5).
--- Those words are the range that pipe_fetch reports and the instructions in
--- dec_r, dec_q, skid_r, and prep_r. DECODE redirects FETCH itself for
+-- Those words are the 16 that pipe_fetch holds from its addr_o on and the
+-- instructions in dec_r, dec_q, skid_r, and prep_r. DECODE redirects FETCH itself for
 -- "MOVE R15, c" and "ADD R15, R15, c" with condition "always". WRITE then
 -- does not flush. WRITE's redirect reaches FETCH a cycle after its flush,
 -- from w_redir_r and w_target_r. DECODE drops what it takes in that cycle.
@@ -203,7 +203,6 @@ architecture synthesis of pipeline is
    -- FETCH
    signal f_addr     : std_logic_vector(31 downto 0);
    signal f_blk      : std_logic_vector(31 downto 5);
-   signal f_end      : std_logic_vector(31 downto 0);
    signal f_words    : t_words4;
    signal f_count    : natural range 0 to 4;
    signal f_consume  : natural range 0 to 4;
@@ -338,7 +337,6 @@ begin
          words_o         => f_words,
          count_o         => f_count,
          consume_i       => f_consume,
-         end_o           => f_end,
          stats_o         => f_stats
       ); -- i_pipe_fetch
 

@@ -11,7 +11,7 @@
 -- order, also after a redirect, a redirect to an odd address, and a
 -- redirect with requests still in flight, whose words must be dropped.
 -- They also check the bus port, as formal/wb_master_check.vhd does, and
--- that the words lie in the range that end_o closes.
+-- that the words lie in the range that its end register closes.
 --
 -- The covers show a redirect to an odd address followed by words, and
 -- four words presented at once.
@@ -46,7 +46,6 @@ architecture synthesis of formal_pipe_fetch is
    signal addr      : std_logic_vector(31 downto 0);
    signal words     : t_words4;
    signal count     : natural range 0 to 4;
-   signal fetch_end : std_logic_vector(31 downto 0);
    signal odd       : std_logic := '0';   -- The last redirect was to an odd address
 
 begin
@@ -92,7 +91,6 @@ begin
          words_o         => words,
          count_o         => count,
          consume_i       => consume_i,
-         end_o           => fetch_end,
          stats_o         => open
       ); -- i_pipe_fetch
 

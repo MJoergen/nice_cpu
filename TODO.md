@@ -71,12 +71,12 @@ TODO or FIXME comments.
   missing. A device with the date, set by the board, would let `time` work.
 - **Run control in the debug link** (DEBUG.md). Version 2 has the pause,
   in niceemu and in `src/debug_link.vhd`. A board must stop the counters
-  and the timer while `paused_o` is 1, and take no snapshot on a link read
-  then (NiceMonMEGA65). Still to do: single step (stage 3), breakpoints,
-  which raise `pause_i` early enough for the pipelined core's fetch ahead
-  (stage 4), watchpoints, and writable registers and a port for the hidden
-  state of ISA.md §1.4 (stage 6). A pause cannot interrupt a console read
-  that waits in niceemu (DEBUG.md §7); a board's read does not wait.
+  and the timer while `paused_o` is 1 (NiceMonMEGA65). Still to do: single
+  step (stage 3), breakpoints, which raise `pause_i` early enough for the
+  pipelined core's fetch ahead (stage 4), watchpoints, and writable
+  registers and a port for the hidden state of ISA.md §1.4 (stage 6). A
+  pause cannot interrupt a console read that waits in niceemu (DEBUG.md §7);
+  a board's read does not wait.
 
 ## Toolchain
 

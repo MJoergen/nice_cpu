@@ -118,13 +118,15 @@ program's data accesses, with these differences:
   byte, and is not counted. A link read of `CYCLE_LO`, `INSTR_LO`, or
   `TIME_LO` (SYSTEM.md §3) returns the counter's low word. The emulator
   takes no snapshot then, but a board may, as a property of the system.
-  A program cannot tell, because the link reads a counter only while the
-  processor is held, halted, or paused. A start resets the counters and
-  their snapshots (§6), and the counters stop while the processor is paused,
-  where a link read takes no snapshot, so that the program's own snapshot
-  survives the pause. A host can tell: on such a board, while the processor
-  is held or halted, a read of `CYCLE_HI`, `INSTR_HI`, or `TIME_HI` after a
-  link read of the low word returns the snapshot of that read.
+  A start resets the counters and their snapshots (§6), and the counters
+  stop while the processor is paused. A host can tell: on such a board,
+  while the processor is held, halted, or paused, a read of `CYCLE_HI`,
+  `INSTR_HI`, or `TIME_HI` after a link read of the low word returns the
+  snapshot of that read. A program can tell only after a pause. If it read
+  a low word before the pause, and the host read the same low word while
+  paused, the program's next read of the high word returns the high word at
+  the pause, not at its own read. The two differ only if the low word
+  wrapped in between.
 - A link write to the console or the read counter is ignored. A link write
   to another device register acts as a program's write. A host that writes a
   device register or the memory while the processor is paused changes what
@@ -267,10 +269,10 @@ stay paused, or at 0 to go on.
 - **While paused.** The link reaches the whole address map, as while held or
   halted. R0–R15 are defined (above). A host may write memory, code
   included, because the processor fetches from R15 again when it goes on.
-  The counters and the timer stop, and a link read of a counter takes no
-  snapshot (§3), so the program cannot tell that it was paused, but by the
-  wall clock. A pause fires no timer interrupt when the processor goes on.
-  Console bytes from the host go into the input buffer (§1).
+  The counters and the timer stop, so the program cannot tell that it was
+  paused, but by the wall clock, and by a snapshot that a host's read
+  replaced (§3). A pause fires no timer interrupt when the processor goes
+  on. Console bytes from the host go into the input buffer (§1).
 - **Go on.** A write of 0 to bit 4 of a paused processor, with bit 0 at 0,
   makes it go on from R15. Single step is not in this version, and needs a
   bit of its own.

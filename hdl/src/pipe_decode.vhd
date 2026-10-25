@@ -161,8 +161,7 @@ begin
          inst_v.x(i) := reg(iw_v, i);
       end loop;
       inst_v.side  := to_sl(side(iw_v, 1)) & to_sl(side(iw_v, 2));
-      inst_v.ctrl  := to_sl(is_ctrl(iw_v));
-      inst_v.shift := iw_v(27) and not inst_v.ctrl;
+      inst_v.shift := iw_v(27) and not to_sl(is_ctrl(iw_v));
       inst_v.op    := iw_v(24 downto 21);
       inst_v.mbit  := iw_v(25);
       inst_v.cbit  := iw_v(26);

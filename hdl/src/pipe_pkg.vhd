@@ -51,7 +51,6 @@ package pipe_pkg is
       m       : t_modes;                         -- The mode of each field
       x       : t_regnums;                       -- The register of each field
       side    : std_logic_vector(1 to 2);        -- The source has a side effect
-      ctrl    : std_logic;                       -- A control instruction
       shift   : std_logic;                       -- A shift, else an ALU operation
       op      : std_logic_vector(3 downto 0);    -- The operation
       mbit    : std_logic;                       -- Writes the flags
@@ -70,7 +69,6 @@ package pipe_pkg is
       m       => (others => (others => '0')),
       x       => (others => 0),
       side    => "00",
-      ctrl    => '0',
       shift   => '0',
       op      => (others => '0'),
       mbit    => '0',
@@ -515,7 +513,6 @@ package body pipe_pkg is
    begin
       iw_v := inst.iw;
       ok_v := inst.side = to_sl(side(iw_v, 1)) & to_sl(side(iw_v, 2)) and
-              inst.ctrl = to_sl(is_ctrl(iw_v)) and
               inst.shift = (iw_v(27) and not to_sl(is_ctrl(iw_v))) and
               inst.op = iw_v(24 downto 21) and
               inst.mbit = iw_v(25) and

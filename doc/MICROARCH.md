@@ -592,7 +592,8 @@ go on. No committed instruction can halt, so a raised `pause_i` always ends
 in exactly one of `paused_o` and `halted_o`, and a system waits for
 either. `pause_i` must come from a flip-flop and must not depend
 combinationally on the core's outputs: it feeds the flush, `nmi_ready_o`,
-and `irq_ready_o`.
+and `irq_ready_o`. The debug link drives it from bit 4 of its control
+register (DEBUG.md §6), and waits for `paused_o` or `halted_o`.
 
 `halt_reason_o` is the reason of the step that halted the core, a
 `t_halt`, while `halted_o` is 1, and `HALT_NONE` before. So a system need

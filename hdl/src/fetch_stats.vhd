@@ -78,7 +78,9 @@ end entity fetch_stats;
 
 architecture synthesis of fetch_stats is
 
-   -- The counters, in the order of their addresses from 0x11
+   -- The control register, and the counters in the order of their
+   -- addresses from 0x11
+   constant C_CTRL    : natural := 16#10#;
    constant C_CYCLES  : natural := 0;
    constant C_STARVE  : natural := 1;
    constant C_BLOCKED : natural := 2;
@@ -125,6 +127,15 @@ begin
             end if;
          end procedure add;
 
+         procedure clear is
+         begin
+            count_r <= (others => (others => '0'));
+            hist_r  <= (others => (others => '0'));
+            min_r   <= 31;
+            max_r   <= 0;
+            held_r  <= 0;
+         end procedure clear;
+
       begin
          if rising_edge(clk_i) then
             if run_r = '1' and run_i = '1' then
@@ -143,24 +154,16 @@ begin
                held_r                 <= maximum(held_r, events_i.held);
             end if;
 
-            if accept = '1' and wb_we_i = '1' and wb_addr_i = "010000" then
+            if accept = '1' and wb_we_i = '1' and to_integer(wb_addr_i) = C_CTRL then
                run_r <= wb_data_i(0);
                if wb_data_i(1) = '1' then
-                  count_r <= (others => (others => '0'));
-                  hist_r  <= (others => (others => '0'));
-                  min_r   <= 31;
-                  max_r   <= 0;
-                  held_r  <= 0;
+                  clear;
                end if;
             end if;
 
             if rst_i = '1' then
-               run_r   <= '1';
-               count_r <= (others => (others => '0'));
-               hist_r  <= (others => (others => '0'));
-               min_r   <= 31;
-               max_r   <= 0;
-               held_r  <= 0;
+               run_r <= '1';
+               clear;
             end if;
          end if;
       end process p_count;
@@ -175,7 +178,7 @@ begin
             if accept = '1' and wb_we_i = '0' then
                n_v       := to_integer(wb_addr_i);
                wb_data_o <= (others => '0');
-               if n_v = 16#10# then
+               if n_v = C_CTRL then
                   wb_data_o(0) <= run_r;
                elsif n_v >= 16#11# and n_v < 16#11# + C_COUNTS then
                   wb_data_o <= count_r(n_v - 16#11#);
@@ -236,7 +239,7 @@ begin
             f_sum <= sum_v(1);
          end process p_sum;
 
-         f_ctrl <= '1' when accept = '1' and wb_we_i = '1' and wb_addr_i = "010000" else
+         f_ctrl <= '1' when accept = '1' and wb_we_i = '1' and to_integer(wb_addr_i) = C_CTRL else
                    '0';
          f_same <= '1' when count_r = f_count_r and hist_r = f_hist_r and min_r = f_min_r and
                             max_r = f_max_r and held_r = f_held_r else
@@ -252,7 +255,7 @@ begin
          begin
             n_v := to_integer(wb_addr_i);
             case n_v is
-               when 16#10#           => f_expect <= (0 => run_r, others => '0');
+               when C_CTRL            => f_expect <= (0 => run_r, others => '0');
                when 16#11# to 16#19# => f_expect <= count_r(n_v - 16#11#);
                when 16#1A#           => f_expect <= std_logic_vector(to_unsigned(min_r, 32));
                when 16#1B#           => f_expect <= std_logic_vector(to_unsigned(max_r, 32));

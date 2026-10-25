@@ -259,14 +259,16 @@ begin
       intr_v   := bound_v and (nmi_valid_i = '1' or
                                (irq_valid_i = '1' and w_r.regs(14)(C_SR_E) = '1'));
 
-      if bound_v and nmi_valid_i = '1' then
-         take_nmi_o  <= '1';
-         n_v.vec     := nmi_vector_i;
-         n_v.vec_nmi := '1';
-      elsif bound_v and irq_valid_i = '1' and w_r.regs(14)(C_SR_E) = '1' then
-         take_irq_o  <= '1';
-         n_v.vec     := irq_vector_i;
-         n_v.vec_nmi := '0';
+      if intr_v then
+         if nmi_valid_i = '1' then
+            take_nmi_o  <= '1';
+            n_v.vec     := nmi_vector_i;
+            n_v.vec_nmi := '1';
+         else
+            take_irq_o  <= '1';
+            n_v.vec     := irq_vector_i;
+            n_v.vec_nmi := '0';
+         end if;
       end if;
 
       if pause_v then

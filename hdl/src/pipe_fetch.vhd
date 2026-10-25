@@ -106,6 +106,7 @@ architecture synthesis of pipe_fetch is
 
    signal load : std_logic;
    signal room : std_logic;
+   signal want : std_logic;
 
    -- head_r after DECODE takes 1 to 4 words, computed ahead so that
    -- consume_i only picks one
@@ -136,9 +137,10 @@ begin
    -- arrive has room.
    room <= '1' when count_r + 2 * pending_r + 2 <= C_DEPTH else
            '0';
-   load <= '1' when rst_i = '0' and redirect_i = '0' and stop_i = '0' and
-                    (stb_r = '0' or ibus_stall_i = '0') and room = '1' else
+   want <= '1' when rst_i = '0' and redirect_i = '0' and stop_i = '0' and
+                    (stb_r = '0' or ibus_stall_i = '0') else
            '0';
+   load <= want and room;
 
 
    p_stats : process (all)
@@ -147,9 +149,7 @@ begin
       stats_v       := C_FETCH_EVENTS_NONE;
       stats_v.count := count_r;
       stats_v.held  := count_r + 2 * pending_r;
-      stats_v.full  := '1' when rst_i = '0' and redirect_i = '0' and stop_i = '0' and
-                                (stb_r = '0' or ibus_stall_i = '0') and room = '0' else
-                       '0';
+      stats_v.full  := want and not room;
       stats_v.stall := stb_r and ibus_stall_i;
       stats_v.pair  := ibus_ack_i;
       stats_o       <= stats_v;

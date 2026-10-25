@@ -177,6 +177,7 @@ begin
       variable store_v   : boolean;   -- WRITE puts a store on the bus now
       variable started_v : boolean;
       variable load_v    : std_logic;
+      variable last_v    : boolean;
       variable irq_v     : boolean;
       variable pause_ok  : boolean;
    begin
@@ -315,10 +316,8 @@ begin
       end if;
       p_load       <= load_v;
       p_first_read <= load_v and not p_committed_r;
-      p_last_read  <= '0';
-      if load_v = '1' and p_loaded_r + 1 = nr_v and not later_reads(u_v.inst.iw, u_v.kind) then
-         p_last_read <= '1';
-      end if;
+      last_v := load_v = '1' and p_loaded_r + 1 = nr_v and not later_reads(u_v.inst.iw, u_v.kind);
+      p_last_read  <= to_sl(last_v);
 
       -- The micro-operation may go on when its values are ready and its
       -- reads are loaded, or it has none, or its condition is false.
@@ -333,10 +332,7 @@ begin
       u_v.cond_known := ck_v;
       u_v.cond_val   := cv_v;
       u_v.committed  := p_committed_r or load_v;
-      u_v.counted    := p_counted_r;
-      if load_v = '1' and p_loaded_r + 1 = nr_v and not later_reads(u_v.inst.iw, u_v.kind) then
-         u_v.counted := '1';
-      end if;
+      u_v.counted    := p_counted_r or to_sl(last_v);
       u_v.val      := val_v;
       u_v.src      := src_v;
       u_v.cnt      := cnt_v;

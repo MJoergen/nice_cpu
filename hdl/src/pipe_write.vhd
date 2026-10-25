@@ -114,8 +114,6 @@ begin
       variable u_v      : t_uop;
       variable iw_v     : std_logic_vector(31 downto 0);
       variable cond_v   : std_logic;
-      variable data_v   : t_words(0 to 1);
-      variable avail_v  : natural range 0 to C_MAX_OUT + 1;
       variable byp_v    : boolean;   -- The micro-operation may take its read data from the bus
       variable bdata_v  : t_words(0 to 1);
       variable bavail_v : natural range 0 to C_MAX_OUT + 1;
@@ -187,11 +185,9 @@ begin
       -- sets it below.
       target_v    := w_r.regs(15) when w_r.jump = '1' else u_v.inst.next_pc;
 
-      -- The read data, from DBUS's FIFO, so that no path runs from the bus
-      -- through the ALU, the shifter, the store, or a jump.
-      avail_v   := rq_cnt_i;
-      data_v(0) := rq_i(0);
-      data_v(1) := rq_i(1);
+      -- The read data is rq_i and rq_cnt_i, DBUS's FIFO, so that no path runs
+      -- from the bus through the ALU, the shifter, the store, or a jump.
+      -- bdata_v and bavail_v below are the exception, for a register only.
 
       -- A micro-operation whose read data only goes into a register may take
       -- it straight from the bus, in the cycle its ACK comes: s0 and s1 with
@@ -306,14 +302,14 @@ begin
                a_v            := w_r.regs(14)(23 downto 0) & w_r.vec;
                n_v.vec_issued := '1';
             end if;
-         elsif avail_v >= 1 then
+         elsif rq_cnt_i >= 1 then
             pop_o        <= 1;
             n_v.saved_pc := w_r.regs(15) when w_r.vec_intr = '1' else u_v.inst.next_pc;
             n_v.saved_sr := w_r.regs(14);
             n_v.in_service    := '1';
             n_v.regs(14)(C_SR_I) := '1';
-            n_v.regs(15) := data_v(0);
-            target_v     := data_v(0);
+            n_v.regs(15) := rq_i(0);
+            target_v     := rq_i(0);
             n_v.mode     := RUN_ST;
             n_v.uop.valid := '0';
             flush_v      := true;
@@ -399,7 +395,7 @@ begin
                -- The sources (ISA.md §4.1): from memory, from S0 and S1 for
                -- the operation, or as PREPARE formed them
                if rd_v(1) = '1' then
-                  v0_v := data_v(0);
+                  v0_v := rq_i(0);
                   k_v  := 1;
                elsif u_v.kind = UOP_OP and (u_v.inst.side(1) = '1' or u_v.inst.side(2) = '1') then
                   v0_v := w_r.s0val;
@@ -407,7 +403,7 @@ begin
                   v0_v := base_v(1);
                end if;
                if rd_v(2) = '1' then
-                  v1_v := data_v(k_v);
+                  v1_v := rq_i(k_v);
                elsif u_v.kind = UOP_OP and u_v.inst.side(2) = '1' then
                   v1_v := w_r.s1val;
                else

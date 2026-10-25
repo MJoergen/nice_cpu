@@ -326,28 +326,14 @@ begin
       end function first_const;
 
       -- The fields of an instruction that DECODE fills in agree with its
-      -- word: those that decoded_ok checks, and next_pc, the block, and
+      -- word: those that inst_fields_ok checks, and next_pc, the block, and
       -- whether DECODE resolves it.
       function inst_ok(inst : t_inst) return boolean is
-         variable iw_v : std_logic_vector(31 downto 0);
-         variable ok_v : boolean;
       begin
-         iw_v := inst.iw;
-         ok_v := inst.next_pc = inst.addr + inst_len(iw_v) and
-                 inst.blk = next_block(inst.addr, 2) and
-                 inst.side = to_sl(side(iw_v, 1)) & to_sl(side(iw_v, 2)) and
-                 inst.ctrl = to_sl(is_ctrl(iw_v)) and
-                 inst.shift = (iw_v(27) and not to_sl(is_ctrl(iw_v))) and
-                 inst.op = iw_v(24 downto 21) and
-                 inst.mbit = iw_v(25) and
-                 inst.cbit = iw_v(26) and
-                 inst.early = to_sl(early_form(iw_v, first_const(inst)));
-         for i in 0 to 2 loop
-            if inst.m(i) /= mode(iw_v, i) or inst.x(i) /= reg(iw_v, i) then
-               ok_v := false;
-            end if;
-         end loop;
-         return ok_v;
+         return inst_fields_ok(inst) and
+                inst.next_pc = inst.addr + inst_len(inst.iw) and
+                inst.blk = next_block(inst.addr, 2) and
+                inst.early = to_sl(early_form(inst.iw, first_const(inst)));
       end function inst_ok;
 
       -- The constant word of field i of the instruction in f_words_i(0),

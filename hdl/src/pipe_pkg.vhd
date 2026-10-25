@@ -275,8 +275,12 @@ package pipe_pkg is
 
    function popcount(v : std_logic_vector) return natural;
 
+   -- The fields of an instruction that DECODE copies out of its word agree
+   -- with the word, for the checks in simulation and the formal proofs.
+   function inst_fields_ok(inst : t_inst) return boolean;
+
    -- The fields that DECODE fills in agree with the instruction word and
-   -- the kind, for the checks in simulation and the formal proofs.
+   -- the kind, again for the checks.
    function decoded_ok(u : t_uop) return boolean;
 
 end package pipe_pkg;
@@ -505,28 +509,35 @@ package body pipe_pkg is
       return res_v;
    end function next_block;
 
-   function decoded_ok(u : t_uop) return boolean is
+   function inst_fields_ok(inst : t_inst) return boolean is
       variable iw_v : std_logic_vector(31 downto 0);
       variable ok_v : boolean;
    begin
-      iw_v := u.inst.iw;
-      ok_v := u.wreg = uop_wreg(iw_v, u.kind) and
-              u.reads = uop_reads(iw_v, u.kind) and
-              u.store = to_sl(uop_store(iw_v, u.kind)) and
-              u.may_sr = to_sl(uop_may_sr(iw_v, u.kind)) and
-              u.may_jump = to_sl(uop_may_jump(iw_v, u.kind)) and
-              u.inst.side = to_sl(side(iw_v, 1)) & to_sl(side(iw_v, 2)) and
-              u.inst.ctrl = to_sl(is_ctrl(iw_v)) and
-              u.inst.shift = (iw_v(27) and not to_sl(is_ctrl(iw_v))) and
-              u.inst.op = iw_v(24 downto 21) and
-              u.inst.mbit = iw_v(25) and
-              u.inst.cbit = iw_v(26);
+      iw_v := inst.iw;
+      ok_v := inst.side = to_sl(side(iw_v, 1)) & to_sl(side(iw_v, 2)) and
+              inst.ctrl = to_sl(is_ctrl(iw_v)) and
+              inst.shift = (iw_v(27) and not to_sl(is_ctrl(iw_v))) and
+              inst.op = iw_v(24 downto 21) and
+              inst.mbit = iw_v(25) and
+              inst.cbit = iw_v(26);
       for i in 0 to 2 loop
-         if u.inst.m(i) /= mode(iw_v, i) or u.inst.x(i) /= reg(iw_v, i) then
+         if inst.m(i) /= mode(iw_v, i) or inst.x(i) /= reg(iw_v, i) then
             ok_v := false;
          end if;
       end loop;
       return ok_v;
+   end function inst_fields_ok;
+
+   function decoded_ok(u : t_uop) return boolean is
+      variable iw_v : std_logic_vector(31 downto 0);
+   begin
+      iw_v := u.inst.iw;
+      return u.wreg = uop_wreg(iw_v, u.kind) and
+             u.reads = uop_reads(iw_v, u.kind) and
+             u.store = to_sl(uop_store(iw_v, u.kind)) and
+             u.may_sr = to_sl(uop_may_sr(iw_v, u.kind)) and
+             u.may_jump = to_sl(uop_may_jump(iw_v, u.kind)) and
+             inst_fields_ok(u.inst);
    end function decoded_ok;
 
    function popcount(v : std_logic_vector) return natural is

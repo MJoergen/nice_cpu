@@ -155,8 +155,6 @@ package pipe_pkg is
       flush   => '0'
    );
 
-   function to_sl(b : boolean) return std_logic;
-
    function to_nat(b : std_logic) return natural;
 
    function to_nat(b : boolean) return natural;
@@ -166,8 +164,6 @@ package pipe_pkg is
 
    function reg(iw : std_logic_vector(31 downto 0);
                 i  : natural range 0 to 2) return natural;
-
-   function is_ctrl(iw : std_logic_vector(31 downto 0)) return boolean;
 
    -- The number of words of the instruction (ISA.md §2.3)
    function inst_len(iw : std_logic_vector(31 downto 0)) return natural;
@@ -285,15 +281,6 @@ end package pipe_pkg;
 
 package body pipe_pkg is
 
-   function to_sl(b : boolean) return std_logic is
-   begin
-      if b then
-         return '1';
-      else
-         return '0';
-      end if;
-   end function to_sl;
-
    function to_nat(b : std_logic) return natural is
    begin
       if b = '1' then
@@ -329,11 +316,6 @@ package body pipe_pkg is
       f_v := field(iw, i);
       return to_integer(f_v(3 downto 0));
    end function reg;
-
-   function is_ctrl(iw : std_logic_vector(31 downto 0)) return boolean is
-   begin
-      return iw(27 downto 26) = "11";
-   end function is_ctrl;
 
    function inst_len(iw : std_logic_vector(31 downto 0)) return natural is
       variable cf_v  : std_logic_vector(0 to 2);

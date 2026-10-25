@@ -344,7 +344,7 @@ begin
                if condition(iw, regs(14)) = '0' then
                   rep_skipped <= '1';
                   state       <= RETIRE_ST;
-               elsif iw(27 downto 26) = "11" then
+               elsif is_ctrl(iw) then
                   state <= RETIRE_ST;
                   if iw(20 downto 8) /= 0 or (iw(25 downto 21) /= "00010" and iw(7 downto 0) /= 0) then
                      halt <= HALT_RESERVED;

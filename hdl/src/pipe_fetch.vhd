@@ -45,6 +45,7 @@ library ieee;
    use ieee.std_logic_1164.all;
    use ieee.numeric_std_unsigned.all;
 
+   use work.nice_pkg.all;
    use work.pipe_pkg.all;
 
 entity pipe_fetch is

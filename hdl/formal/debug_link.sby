@@ -21,12 +21,13 @@ smtbmc yices
 
 [script]
 plugin -i ghdl
-prove: ghdl --std=08 -fpsl debug_link.vhd wb_master_check.vhd formal_debug_link.vhd -e formal_debug_link
-prove_held: ghdl --std=08 -fpsl -gG_HAS_ROM=false -gG_BOOT_HELD=true debug_link.vhd wb_master_check.vhd formal_debug_link.vhd -e formal_debug_link
-cover: ghdl --std=08 -fpsl debug_link.vhd wb_master_check.vhd formal_debug_link.vhd -e formal_debug_link
+prove: ghdl --std=08 -fpsl nice_pkg.vhd debug_link.vhd wb_master_check.vhd formal_debug_link.vhd -e formal_debug_link
+prove_held: ghdl --std=08 -fpsl -gG_HAS_ROM=false -gG_BOOT_HELD=true nice_pkg.vhd debug_link.vhd wb_master_check.vhd formal_debug_link.vhd -e formal_debug_link
+cover: ghdl --std=08 -fpsl nice_pkg.vhd debug_link.vhd wb_master_check.vhd formal_debug_link.vhd -e formal_debug_link
 prep -top formal_debug_link
 
 [files]
+../src/nice_pkg.vhd
 ../src/debug_link.vhd
 wb_master_check.vhd
 formal_debug_link.vhd

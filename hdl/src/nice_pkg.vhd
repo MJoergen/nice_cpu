@@ -40,6 +40,11 @@ package nice_pkg is
       v : std_logic;
    end record t_result;
 
+   function to_sl(b : boolean) return std_logic;
+
+   -- Whether the instruction is a control instruction (ISA.md §5.3).
+   function is_ctrl(iw : std_logic_vector(31 downto 0)) return boolean;
+
    -- The value of register x after a write of v (ISA.md §4.3).
    function regval(x : natural range 0 to 15;
                    v : std_logic_vector(31 downto 0)) return std_logic_vector;
@@ -147,14 +152,19 @@ end package nice_pkg;
 
 package body nice_pkg is
 
-   function to_sl_pkg(b : boolean) return std_logic is
+   function to_sl(b : boolean) return std_logic is
    begin
       if b then
          return '1';
       else
          return '0';
       end if;
-   end function to_sl_pkg;
+   end function to_sl;
+
+   function is_ctrl(iw : std_logic_vector(31 downto 0)) return boolean is
+   begin
+      return iw(27 downto 26) = "11";
+   end function is_ctrl;
 
    function regval(x : natural range 0 to 15;
                    v : std_logic_vector(31 downto 0)) return std_logic_vector is
@@ -180,7 +190,7 @@ package body nice_pkg is
    function const_fields(iw : std_logic_vector(31 downto 0)) return std_logic_vector is
       variable res_v : std_logic_vector(0 to 2) := "000";
    begin
-      if iw(27 downto 26) /= "11" then
+      if not is_ctrl(iw) then
          for i in 0 to 2 loop
             if field(iw, i)(5 downto 4) = "11" then
                res_v(i) := '1';
@@ -232,7 +242,7 @@ package body nice_pkg is
          when others =>
             -- The arithmetic operations. C is the borrow for SUB and DEC.
             res_v.r := sum_v(31 downto 0);
-            res_v.c := sum_v(32) xor to_sl_pkg(op = "0001" or op = "0101");
+            res_v.c := sum_v(32) xor to_sl(op = "0001" or op = "0101");
             res_v.v := (s0(31) xor res_v.r(31)) and (b_v(31) xor res_v.r(31));
       end case;
       return res_v;

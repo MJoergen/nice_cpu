@@ -106,6 +106,8 @@ library ieee;
    use ieee.std_logic_1164.all;
    use ieee.numeric_std_unsigned.all;
 
+   use work.nice_pkg.all;
+
 entity debug_link is
    generic (
       -- The most clock cycles between two bytes of a packet, 100 ms
@@ -183,14 +185,6 @@ architecture synthesis of debug_link is
    constant C_ESC : t_byte := X"FF";
 
    constant C_VERSION : t_word := X"00000003";
-
-   function to_sl(b : boolean) return std_logic is
-   begin
-      if b then
-         return '1';
-      end if;
-      return '0';
-   end function to_sl;
 
    function is_hex(b : t_byte) return boolean is
    begin

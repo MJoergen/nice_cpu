@@ -11,12 +11,12 @@
 -- master. p_tx sends the output: the answers, the notices (§4), and the
 -- console bytes of the program, one whole packet at a time, so nothing
 -- comes between the bytes of a packet. When more than one is waiting, the
--- order is: an answer, `b`, `o`, a console byte, and `h`. So `h` comes
--- after the last console byte that the program wrote.
+-- order is: an answer, `b`, `o`, a console byte, `h`, and `p`. So `h` and
+-- `p` come after the last console byte that the program wrote.
 --
 -- The link reaches no word but the debug registers while the program runs
--- (§3), so the Wishbone master is used only while the processor is held or
--- halted.
+-- (§3), so the Wishbone master is used only while the processor is held,
+-- halted, or paused.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) Every access on the Wishbone master is a link access (§3). The
@@ -28,7 +28,9 @@
 --    (DEBUG.md §3). The simplest board gives the console and the read
 --    counter a link-only path that these accesses take. The
 --    processor never uses the bus while this master does: the master
---    works only while hold_o is high or halted_i is high.
+--    works only while hold_o, halted_i, or the link's paused flag is high.
+--    While the processor is paused, a link read of a counter takes no
+--    snapshot (DEBUG.md §3), and the counters and the timer stop.
 -- b) The Wishbone slave is pipelined, as the cores' data bus is: it sends
 --    ACK in a later cycle than the one that accepts a request, and holds
 --    its read data valid with the ACK.
@@ -43,11 +45,13 @@
 --    can take, and shows a byte of con_in_valid_o 2 cycles after the
 --    strobe. A strobe is always accepted: it comes only while free_i was
 --    not 0 two cycles earlier.
--- e) halted_i and regs_i come from a core that rst_i = hold_o resets, so
---    they may change to 0 once hold_o is high. This unit keeps the last
---    values of a halt itself (§6). regs_i is R0 to R15, R(n) in bits
---    32 * n + 31 .. 32 * n, and valid as long as halted_i is high. A board
---    without the registers ties it to 0.
+-- e) halted_i, paused_i, and regs_i come from a core that rst_i = hold_o
+--    resets, so they may change to 0 once hold_o is high. This unit keeps
+--    the last values of a halt or a pause itself (§6). regs_i is R0 to R15,
+--    R(n) in bits 32 * n + 31 .. 32 * n, and valid as long as halted_i or
+--    paused_i is high. A board without the registers ties it to 0. A core
+--    pauses only after pause_o was high (MICROARCH.md §6.1), never together
+--    with a halt, and never while hold_o is high.
 -- f) A clear: clear_o goes high when the link asks for it, and stays high
 --    until the board has set every word of the memory to 0 and answers
 --    with one cycle of clear_done_i, which is not before the cycle after
@@ -74,6 +78,9 @@
 --   which is a start.
 -- * rom_hide_o: bit 3. '1' where the RAM is at 0.
 -- * halted_i and halt_reason_i: the core's halt (DEBUG.md §6).
+-- * pause_o and paused_i: bit 4, the request of a pause, which comes from a
+--   flip-flop as MICROARCH.md §6.1 requires, and the core's pause. The
+--   board stops the counters and the timer while paused_i is high.
 --
 -- FORMAL
 -- With G_FORMAL, the properties that need the state of the processes, for
@@ -88,7 +95,7 @@
 -- are in formal/formal_debug_link.vhd.
 --
 -- RESET
--- Synchronous. It sends `b01`, empties everything, and leaves the
+-- Synchronous. It sends `b02`, empties everything, and leaves the
 -- processor held with G_BOOT_HELD, or running with the ROM shown otherwise.
 -- G_HAS_ROM is false on a system without a ROM: bit 3 then reads 1 and
 -- ignores writes, and rom_hide_o is 1.
@@ -136,6 +143,8 @@ entity debug_link is
       clear_done_i   : in  std_logic;
       halted_i       : in  std_logic;
       halt_reason_i  : in  std_logic_vector(2 downto 0);
+      pause_o        : out std_logic;
+      paused_i       : in  std_logic;
       regs_i         : in  std_logic_vector(511 downto 0);
 
       -- The memory: a pipelined Wishbone master, as the data bus of the cores
@@ -167,11 +176,11 @@ architecture synthesis of debug_link is
 
    type t_acc_st is (ACC_IDLE_ST, ACC_REQ_ST, ACC_WAIT_ST);
 
-   type t_pkt is (PKT_B, PKT_H, PKT_O, PKT_K, PKT_E, PKT_R);
+   type t_pkt is (PKT_B, PKT_H, PKT_O, PKT_K, PKT_E, PKT_R, PKT_P);
 
    constant C_ESC : t_byte := X"FF";
 
-   constant C_VERSION : t_word := X"00000001";
+   constant C_VERSION : t_word := X"00000002";
 
    function to_sl(b : boolean) return std_logic is
    begin
@@ -217,6 +226,7 @@ architecture synthesis of debug_link is
          when PKT_K => return X"6B";
          when PKT_E => return X"65";
          when PKT_R => return X"72";
+         when PKT_P => return X"70";
       end case;
    end function kind_char;
 
@@ -287,6 +297,7 @@ architecture synthesis of debug_link is
    signal tx_go_r     : std_logic                    := '0';
    signal b_pend_r    : std_logic                    := '1';
    signal h_sent_r    : std_logic                    := '0';
+   signal p_sent_r    : std_logic                    := '0';
 
    -- The p_acc side
    signal acc_st      : t_acc_st                     := ACC_IDLE_ST;
@@ -297,6 +308,8 @@ architecture synthesis of debug_link is
    signal acc_rdata_r : t_word                       := (others => '0');
    signal hold_r      : std_logic                    := '0';
    signal halted_r    : std_logic                    := '0';
+   signal pause_r     : std_logic                    := '0';
+   signal paused_r    : std_logic                    := '0';
    signal reason_r    : std_logic_vector(2 downto 0) := (others => '0');
    signal hide_r      : std_logic                    := '0';
    signal eoi_r       : std_logic                    := '0';
@@ -308,6 +321,11 @@ architecture synthesis of debug_link is
    signal wb_we_r     : std_logic                    := '0';
    signal wb_addr_r   : t_word                       := (others => '0');
    signal wb_data_r   : t_word                       := (others => '0');
+
+   -- The link owns the memory while the core is paused and the request of
+   -- the pause stands. A write of 0 to bit 4 ends it at once, before the
+   -- core has gone on.
+   signal pause_own : std_logic;
 
 begin
 
@@ -445,7 +463,7 @@ begin
                                  cur_addr_r <= req_addr_r;
                                  -- The error 02 is decided here, before any data word.
                                  if bad_r = '0' and hold_r = '0' and halted_r = '0' and
-                                    non_dbg(req_addr_r, n_v) then
+                                    pause_own = '0' and non_dbg(req_addr_r, n_v) then
                                     err02_r <= '1';
                                  end if;
                                  if bad_r = '0' and tag_r = X"57" and wraps(req_addr_r, n_v) then
@@ -558,6 +576,8 @@ begin
 
    hold_o     <= hold_r;
    eoi_o      <= eoi_r;
+   pause_o    <= pause_r;
+   pause_own  <= paused_r and pause_r;
    clear_o    <= clearing_r;
    rom_hide_o <= hide_r when G_HAS_ROM else
                  '1';
@@ -584,6 +604,16 @@ begin
             regs_r   <= regs_i;
          end if;
 
+         -- The registers at a pause stay through a hold, as those of a halt.
+         -- The flag follows the core a cycle later, so that regs_r is valid
+         -- when it rises.
+         if paused_i = '1' and hold_r = '0' then
+            paused_r <= '1';
+            regs_r   <= regs_i;
+         else
+            paused_r <= '0';
+         end if;
+
          if rx_break_i = '1' then
             eoi_r <= '1';
          end if;
@@ -605,7 +635,8 @@ begin
                      if acc_we = '1' then
                         -- Only the control register takes a write, and not during a clear.
                         if idx_v = 16 and clearing_r = '0' then
-                           nh_v := word_r(0);
+                           nh_v    := word_r(0);
+                           pause_r <= word_r(4);
                            if G_HAS_ROM then
                               hide_r <= word_r(3);
                            end if;
@@ -623,6 +654,7 @@ begin
                            rd_v(0) := hold_r;
                            rd_v(1) := halted_r;
                            rd_v(3) := hide_r or not to_sl(G_HAS_ROM);
+                           rd_v(4) := pause_own;
                         elsif idx_v = 17 then
                            rd_v(2 downto 0) := reason_r;
                         elsif idx_v = 18 then
@@ -671,6 +703,8 @@ begin
             acc_done_r <= '0';
             hold_r     <= to_sl(G_BOOT_HELD);
             halted_r   <= '0';
+            pause_r    <= '0';
+            paused_r   <= '0';
             reason_r   <= "000";
             hide_r     <= '0';
             eoi_r      <= '0';
@@ -714,6 +748,9 @@ begin
          end if;
          if halted_r = '0' then
             h_sent_r <= '0';
+         end if;
+         if pause_own = '0' then
+            p_sent_r <= '0';
          end if;
 
          if tx_st = TX_CALL_ST then
@@ -761,6 +798,11 @@ begin
                      h_sent_r <= '1';
                      put(C_ESC, false);
                      tx_st <= TX_TAG_ST;
+                  elsif pause_own = '1' and p_sent_r = '0' then
+                     kind_r   <= PKT_P;
+                     p_sent_r <= '1';
+                     put(C_ESC, false);
+                     tx_st <= TX_TAG_ST;
                   end if;
 
                when TX_CON2_ST =>
@@ -786,7 +828,7 @@ begin
                            val_v(2 downto 0) := reason_r;
                            nd_v := 2;
                         end if;
-                     when PKT_O =>
+                     when PKT_O | PKT_P =>
                         null;
                      when PKT_K | PKT_R =>
                         if fld_r = 0 then
@@ -858,6 +900,7 @@ begin
             tx_go_r     <= '0';
             b_pend_r    <= '1';
             h_sent_r    <= '0';
+            p_sent_r    <= '0';
             ans_ack_tgl <= '0';
             o_ack_tgl   <= '0';
          end if;
@@ -921,7 +964,7 @@ begin
       f_data   <= tag_r = X"57" and dig_r >= 12 and bad_r = '0' and err02_r = '0' and f_past;
       f_got    <= tag_r = X"52" and dig_r >= 12 and bad_r = '0' and err02_r = '0' and
                   (rx_st = RX_PAY_ST or rx_st = RX_CC1_ST or rx_st = RX_CC2_ST);
-      f_mem    <= (hold_r = '1' or halted_r = '1') and clearing_r = '0';
+      f_mem    <= (hold_r = '1' or halted_r = '1' or pause_own = '1') and clearing_r = '0';
       f_end    <= ('0' & req_addr_r) + req_n_r;
       f_tx_end <= ('0' & tx_addr_r) + tx_cnt_r;
       f_cur    <= req_addr_r + wcnt_r - 1 when rx_st = RX_CALL_ST or rx_st = RX_WAIT_ST else
@@ -947,7 +990,8 @@ begin
                      if out_data_r = C_ESC then
                         f_out_st <= OUT_IDLE_ST;
                      elsif out_data_r = X"62" or out_data_r = X"68" or out_data_r = X"6F" or
-                           out_data_r = X"6B" or out_data_r = X"65" or out_data_r = X"72" then
+                           out_data_r = X"6B" or out_data_r = X"65" or out_data_r = X"72" or
+                           out_data_r = X"70" then
                         f_out_sum <= out_data_r;
                         f_out_st  <= OUT_PAY_ST;
                      else
@@ -1014,7 +1058,7 @@ begin
 
       -- psl f_hold : assert always
       --    {rst_i = '0' and f_ctrl = '0' and not (clearing_r = '1' and clear_done_i = '1')} |=>
-      --    {stable(hold_r) and stable(hide_r)};
+      --    {stable(hold_r) and stable(hide_r) and stable(pause_r)};
 
       -- The invariants of the proof. Each state is one of its values.
       -- psl i_acc_st : assert always
@@ -1025,7 +1069,7 @@ begin
       --    tx_st = TX_CC1_ST or tx_st = TX_CC2_ST;
       -- psl i_kind : assert always
       --    (kind_r = PKT_B or kind_r = PKT_H or kind_r = PKT_O or kind_r = PKT_K or
-      --     kind_r = PKT_E or kind_r = PKT_R) and
+      --     kind_r = PKT_E or kind_r = PKT_R or kind_r = PKT_P) and
       --    (ans_kind_r = PKT_K or ans_kind_r = PKT_E or ans_kind_r = PKT_R);
       -- psl i_out_st : assert always
       --    f_out_st = OUT_IDLE_ST or f_out_st = OUT_ESC_ST or f_out_st = OUT_PAY_ST or
@@ -1080,7 +1124,8 @@ begin
       --      (rx_st /= RX_CALL_ST and rx_st /= RX_WAIT_ST and wcnt_r >= to_integer(req_n_r))) and
       --     (bad_r = '1' or f_end(32) = '0' or f_end = '1' & X"00000000"));
       -- psl i_rx_read : assert always
-      --    f_got -> (hold_r = '1' or halted_r = '1' or not non_dbg(req_addr_r, req_n_r));
+      --    f_got ->
+      --    (hold_r = '1' or halted_r = '1' or pause_own = '1' or not non_dbg(req_addr_r, req_n_r));
 
       -- p_tx: an answer is sent only while it is due, and an `r` reads the
       -- words from A on, only where the link may.
@@ -1089,7 +1134,7 @@ begin
       -- psl i_ans_clear : assert always (f_ans and clearing_r = '1') -> ans_kind_r /= PKT_R;
       -- psl i_ans_read : assert always
       --    (f_ans and ans_kind_r = PKT_R) ->
-      --    (hold_r = '1' or halted_r = '1' or not non_dbg(req_addr_r, req_n_r));
+      --    (hold_r = '1' or halted_r = '1' or pause_own = '1' or not non_dbg(req_addr_r, req_n_r));
       -- psl i_tx_call : assert always
       --    (tx_st = TX_CALL_ST or tx_st = TX_WAIT_ST) ->
       --    (kind_r = PKT_R and tx_cnt_r /= X"0000" and (f_mem or f_dbg(tx_addr_r)));

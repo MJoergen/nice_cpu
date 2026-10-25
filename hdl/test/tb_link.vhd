@@ -7,7 +7,7 @@
 -- which loads G_INIT_FILE. Its data bus goes through src/wb_dmux.vhd to
 -- the memory model, the math unit, src/mpu.vhd, and the console, p_con.
 -- The link is the second master of the data bus. It owns the bus while
--- the processor is held or halted, as debug_link's contract (a) says, and
+-- the processor is held, halted, or paused, as debug_link's contract (a) says, and
 -- the core owns it otherwise. hold_o holds the core in reset, and its
 -- fall, a start, resets the math unit.
 --
@@ -23,14 +23,15 @@
 -- sends against the exact string. The checksums of the fixed strings are
 -- the sum of the bytes from the tag to the end of the payload, mod 256,
 -- worked out with a script, not taken from a simulation. The checks:
--- * `b01`, and the W and R of DEBUG.md §8, through the decoder to memory;
+-- * `b02`, and the W and R of DEBUG.md §8, through the decoder to memory;
 -- * a word that G_INIT_FILE loaded, and the math unit through the decoder;
 -- * the link's reads of the console and the read counter, and its writes
 --   to the console, which the program must not see;
 -- * the load, the start, the echo of console bytes and of ESC ESC, `e02`
 --   and the control register while the program runs;
 -- * a UART break, the halt notice, and the registers the program left;
--- * the restart of DEBUG.md §8, and a hold while the program runs.
+-- * the restart of DEBUG.md §8, the pause with the core's own bus, registers,
+--   and console, and a hold while the program runs.
 -- The run stops with status 0 when every check passes, and 1 at the first
 -- that fails.
 
@@ -93,6 +94,8 @@ architecture simulation of tb_link is
    signal hold          : std_logic;
    signal hold_d        : std_logic := '1';
    signal halted        : std_logic;
+   signal pause         : std_logic;
+   signal paused        : std_logic;
    signal halt          : t_halt;
    signal halt_reason   : std_logic_vector(2 downto 0);
    signal regs          : t_regs;
@@ -199,8 +202,8 @@ begin
             irq_valid_i   => '0',
             irq_ready_o   => open,
             irq_vector_i  => X"00",
-            pause_i       => '0',
-            paused_o      => open,
+            pause_i       => pause,
+            paused_o      => paused,
             halted_o      => halted,
             halt_reason_o => halt,
             instret_o     => open,
@@ -234,8 +237,8 @@ begin
             irq_valid_i   => '0',
             irq_ready_o   => open,
             irq_vector_i  => X"00",
-            pause_i       => '0',
-            paused_o      => open,
+            pause_i       => pause,
+            paused_o      => paused,
             halted_o      => halted,
             halt_reason_o => halt,
             instret_o     => open,
@@ -263,7 +266,7 @@ begin
 
 
    -- The link owns the data bus while the processor is held or halted.
-   link_owns_bus <= hold or halted;
+   link_owns_bus <= hold or halted or paused;
 
    dbus_cyc      <= link_cyc when link_owns_bus = '1' else core_cyc;
    dbus_stb      <= link_stb when link_owns_bus = '1' else core_stb;
@@ -440,6 +443,8 @@ begin
          clear_done_i   => '0',
          halted_i       => halted,
          halt_reason_i  => halt_reason,
+         pause_o        => pause,
+         paused_i       => paused,
          regs_i         => regs_flat,
          wb_cyc_o       => link_cyc,
          wb_stb_o       => link_stb,
@@ -524,6 +529,27 @@ begin
          used_v := used_v + s'length;
       end procedure expect;
 
+      -- Waits for the bytes of a and b, in either order, and compares them.
+      procedure expect_either(a : string; b : string; what : string) is
+         variable n_v : natural := 0;
+      begin
+         while got_len < used_v + a'length + b'length and n_v < 100000 loop
+            wait until rising_edge(clk);
+            n_v := n_v + 1;
+         end loop;
+         if got_len < used_v + a'length + b'length then
+            fail(what & ": the answer is short, [" & got(used_v + 1 to got_len) & "]");
+         end if;
+         if got(used_v + 1 to used_v + a'length + b'length) = a & b then
+            null;
+         elsif got(used_v + 1 to used_v + a'length + b'length) = b & a then
+            null;
+         else
+            fail(what & ": got [" & got(used_v + 1 to used_v + a'length + b'length) & "]");
+         end if;
+         used_v := used_v + a'length + b'length;
+      end procedure expect_either;
+
       -- Checks that the link sends nothing more.
       procedure quiet(what : string) is
       begin
@@ -580,7 +606,7 @@ begin
       cycles(3);
       rst <= '0';
 
-      expect(C_ESC & "b01#C3", "b01");
+      expect(C_ESC & "b02#C4", "b02");
 
       -- DEBUG.md §8, through the decoder to the memory model
       send(C_ESC & "W0000010000021122334455667788#E2");
@@ -645,6 +671,39 @@ begin
       expect(C_ESC & "kFFFFFFF00001#46", "restart");
       send("A");
       expect("A", "echo after the restart");
+
+      -- A pause: the core, not a model, stops at a step boundary. The `k` and
+      -- the `p` come in either order. The registers and the memory are then
+      -- reached, a console byte waits, and the program goes on from where it
+      -- was. R2 counts the bytes echoed since the restart.
+      cycles(200);
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", "pause");
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000018#D6", "paused");
+      send(C_ESC & "RFFFFFFE20001#2E");
+      expect(C_ESC & "rFFFFFFE2000100000001#CF", "R2 while paused");
+      send(C_ESC & "R000001000001#94");
+      expect(C_ESC & "r00000100000111223344#48", "memory while paused");
+      send("B");
+      quiet("console byte while paused");
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "go on");
+      expect("B", "echo after the pause");
+      cycles(200);
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", "pause again");
+      send(C_ESC & "RFFFFFFE20001#2E");
+      expect(C_ESC & "rFFFFFFE2000100000002#D0", "R2 after go on");
+      -- A hold keeps the registers, and the next start runs from address 0.
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold after the pause");
+      send(C_ESC & "RFFFFFFE20001#2E");
+      expect(C_ESC & "rFFFFFFE2000100000002#D0", "R2 kept by the hold");
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "start after the pause");
+      send("C");
+      expect("C", "echo after the start");
 
       -- A hold while the program runs, with no notice
       send(C_ESC & "WFFFFFFF0000100000009#BB");

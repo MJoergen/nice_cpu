@@ -249,16 +249,20 @@ other slave owes an ACK, and that a request that may pass is not stalled.
 compares every byte that the link sends with a string whose checksum was
 worked out by hand: the examples of DEBUG.md §8, the errors `e01` to `e03`,
 the dropped packets, the timeout, console bytes both ways with ESC ESC, the
-notices `b`, `h`, and `o`, the clear, one that a dropped packet started,
-a `W` that wraps past `0xFFFFFFFF`, and the hold and restart.
+notices `b`, `h`, `o`, and `p`, the clear, one that a dropped packet started,
+a `W` that wraps past `0xFFFFFFFF`, the hold and restart, and the pause: its
+notice after and before the answer, the memory and registers while paused,
+a hold and a start that keep or begin a pause, a go on, and a halt that
+goes first.
 
 `tb_link` runs on each core of `CORES`. It is the debug link as a board
 uses it: the link is a second master of the data bus, and owns it while
-the processor is held or halted. The test reaches the memory model and the
+the processor is held, halted, or paused. The test reaches the memory model and the
 math unit through `wb_dmux`, loads `test/linkecho.nasm` with a `W`, starts
 it, and checks its echo of console bytes, `e02` while it runs, the halt
 after a UART break with the registers it left, the restart of DEBUG.md §8,
-and a hold while it runs. The testbench shows three things a board must
+a pause of the core with its registers, memory, and console, and a hold
+while it runs. The testbench shows three things a board must
 do: each master sees only its own STALL and ACK; the devices are reset at
 a start, when `hold_o` falls, and not while the processor is held, so that
 the link can reach them; and an instruction ACK that comes after a hold
@@ -693,9 +697,10 @@ Yices does not finish in 15.
 `formal_debug_link` checks the debug link from the host, the program,
 the core, and the board, with every input free. It assumes a Wishbone
 slave as `wb_master_check` does, and a core whose halt ends only by a
-reset, by `hold_o` or by `rst_i`. It asserts that the master keeps to the
+reset, by `hold_o` or by `rst_i`, and a pause that lasts while `pause_o` is
+high and the core is not reset. It asserts that the master keeps to the
 rules of `wb_master_check` with one access at a time, only while
-`hold_o` or `halted_i` is high, and never while `clear_o` is high; that
+`hold_o`, `halted_i`, or `paused_i` is high, and never while `clear_o` is high; that
 `con_in_valid_o` is high at most one cycle in three, only while the
 program ran and `free_i` was not 0 the cycle before; that `clear_o` stays
 high until `clear_done_i`; that `tx_valid_o` and `tx_data_o` hold until
@@ -1071,8 +1076,10 @@ a UART receiver and transmitter on it. Its header lists the ports and what
 the board's bus must do for a link access: a link read of the console or
 the read counter returns 0 and has no side effect, and a link write is
 ignored. It holds the debug registers of §6 itself, takes R0 to R15 and the
-halt as inputs, drives `hold_o` and `rom_hide_o`, and asks the board to
-clear the memory with `clear_o` and `clear_done_i`.
+halt as inputs, drives `hold_o`, `rom_hide_o`, and `pause_o`, takes
+`paused_i`, and asks the board to
+clear the memory with `clear_o` and `clear_done_i`. The board stops the
+counters and the timer while the core is paused.
 `formal/debug_link.sby` proves its ports and the guarantees of its
 header (The formal checks).
 

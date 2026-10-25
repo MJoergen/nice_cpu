@@ -4,11 +4,12 @@
 --
 -- THEORY OF OPERATION
 -- The assumptions are the contracts: the slave of wb_master_check, and a
--- core whose halt ends only by a reset, by hold_o or by rst_i (contract e).
+-- core whose halt ends only by a reset, by hold_o or by rst_i, and whose
+-- pause lasts as long as pause_o and hold_o allow (contract e).
 -- The assertions:
 -- - The Wishbone master keeps to the pipelined rules of wb_master_check,
---   with one access at a time. It works only while hold_o or halted_i is
---   high, and never while clear_o is high (contracts a and f).
+--   with one access at a time. It works only while hold_o, halted_i, or
+--   paused_i is high, and never while clear_o is high (contracts a and f).
 -- - con_in_valid_o is high only for one cycle in three, only while the
 --   program ran, and only while free_i was not 0 the cycle before, which
 --   is two cycles before the strobe's byte reaches free_i (contract d).
@@ -26,7 +27,8 @@
 -- ties the count of wb_master_check to the master.
 -- The covers show a write to the memory, a console byte for the program,
 -- and the end of a clear; those of wb_master_check a stalled write, and
--- those of debug_link an `h` and an `o`. A read of the memory needs a
+-- those of debug_link an `h` and an `o`. A `p` needs a whole `W` of the
+-- control register first, about 80 cycles, and a read of the memory needs a
 -- whole `R` and the start of its answer, about 90 cycles, deeper than the
 -- cover task looks, so tb_debug_link shows it instead.
 --
@@ -55,6 +57,7 @@ entity formal_debug_link is
       clear_done_i  : in  std_logic;
       halted_i      : in  std_logic;
       halt_reason_i : in  std_logic_vector(2 downto 0);
+      paused_i      : in  std_logic;
       regs_i        : in  std_logic_vector(511 downto 0);
       wb_stall_i    : in  std_logic;
       wb_ack_i      : in  std_logic;
@@ -72,6 +75,7 @@ architecture synthesis of formal_debug_link is
    signal con_in_data  : std_logic_vector(7 downto 0);
    signal eoi          : std_logic;
    signal hold         : std_logic;
+   signal pause        : std_logic;
    signal rom_hide     : std_logic;
    signal clear        : std_logic;
    signal wb_cyc       : std_logic;
@@ -113,8 +117,14 @@ begin
    -- psl f_halted : assume always
    --    {halted_i and not hold and not rst_i} |=> {halted_i};
 
+   -- The pause: never with a halt, and it lasts while pause_o is high and
+   -- the core is not reset (contract e).
+   -- psl f_paused_halt : assume always not (paused_i and halted_i);
+   -- psl f_paused : assume always
+   --    {paused_i and pause and not hold and not rst_i} |=> {paused_i};
+
    -- The Wishbone master
-   -- psl f_wb_hold : assert always wb_cyc -> (hold = '1' or halted_i = '1');
+   -- psl f_wb_hold : assert always wb_cyc -> (hold = '1' or halted_i = '1' or paused_i = '1');
    -- psl f_wb_clear : assert always clear -> not wb_cyc;
    -- psl f_wb_owed : assert always
    --    (wb_cyc = '1' and wb_stb = '0') = (pending = 1) and (wb_stb = '1' -> pending = 0);
@@ -180,6 +190,8 @@ begin
          clear_done_i   => clear_done_i,
          halted_i       => halted_i,
          halt_reason_i  => halt_reason_i,
+         pause_o        => pause,
+         paused_i       => paused_i,
          regs_i         => regs_i,
          wb_cyc_o       => wb_cyc,
          wb_stb_o       => wb_stb,

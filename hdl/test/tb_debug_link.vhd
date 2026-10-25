@@ -8,10 +8,11 @@
 -- byte, mod 256, worked out by hand. ESC is the byte 0xFF.
 -- The board is a memory of 4096 words on a Wishbone slave that stalls in
 -- every other cycle, a memory clear that takes 30 cycles, or 300 where the
--- test says so, and a core model that halts when the test says so, and
--- loses its registers and its halt while it is held, as the real core does.
+-- test says so, and a core model that halts when the test says so, pauses
+-- some cycles after a request, and loses its registers, its halt, and its
+-- pause while it is held, as the real core does.
 -- The checks, in the order of the run:
--- * the notice `b01` after reset, and the examples of DEBUG.md §8;
+-- * the notice `b02` after reset, and the examples of DEBUG.md §8;
 -- * lowercase digits, a bad checksum, an unknown tag, a payload with a bad
 --   length or a bad digit, and a W with too many words;
 -- * the debug registers, a clear of the memory, one that a dropped packet
@@ -21,7 +22,10 @@
 --   order of console bytes and packets;
 -- * the timeout, an ESC with no letter, and the end of the input;
 -- * the halt notice `h`, the registers and the halt kept while held, and
---   the restart.
+--   the restart;
+-- * the pause: bit 4, the notice `p` after and before the answer, the memory,
+--   the registers, and the console while paused, a hold and a start that
+--   keep or begin a pause, a go on, and a halt that ignores a request.
 -- The run stops with status 0 when every check passes, and 1 at the first
 -- that fails.
 
@@ -71,6 +75,9 @@ architecture simulation of tb_debug_link is
    signal reason     : std_logic_vector(2 downto 0)   := "000";
    signal regs       : std_logic_vector(511 downto 0) := (others => '0');
    signal core_halt  : std_logic                      := '0';
+   signal pause      : std_logic;
+   signal paused     : std_logic                      := '0';
+   signal pause_wait : natural                        := 40;
 
    signal wb_cyc   : std_logic;
    signal wb_stb   : std_logic;
@@ -128,6 +135,8 @@ begin
          clear_done_i   => clear_done,
          halted_i       => halted,
          halt_reason_i  => reason,
+         pause_o        => pause,
+         paused_i       => paused,
          regs_i         => regs,
          wb_cyc_o       => wb_cyc,
          wb_stb_o       => wb_stb,
@@ -209,13 +218,28 @@ begin
    -- The core: it halts when asked, and loses everything while it is held.
    -- R(n) is 0x1234560n while it runs or is halted.
    p_core : process (clk)
+      variable wait_v : natural := 0;
    begin
       if rising_edge(clk) then
          if hold = '1' then
             halted <= '0';
             reason <= "000";
             regs   <= (others => '0');
+            paused <= '0';
+            wait_v := 0;
          else
+            -- A pause comes pause_wait cycles after the request, and a halt
+            -- goes first.
+            if pause = '1' and halted = '0' and core_halt = '0' then
+               if wait_v >= pause_wait then
+                  paused <= '1';
+               else
+                  wait_v := wait_v + 1;
+               end if;
+            else
+               paused <= '0';
+               wait_v := 0;
+            end if;
             for n in 0 to 15 loop
                regs(32 * n + 31 downto 32 * n) <= X"123456" & "0000" &
                                                   std_logic_vector(to_unsigned(n, 4));
@@ -328,7 +352,7 @@ begin
       rst <= '0';
 
       -- Reset: a notice, and the processor held with the ROM shown.
-      expect(C_ESC & "b01#C3", "b01");
+      expect(C_ESC & "b02#C4", "b02");
       assert hold = '1' and rom_hide = '0' and eoi = '0'
          report "tb_debug_link: state after reset"
          severity failure;
@@ -385,7 +409,7 @@ begin
 
       -- The registers while held: version, free space, reserved words, and control.
       send(C_ESC & "RFFFFFFF20001#2F");
-      expect(C_ESC & "rFFFFFFF2000100000001#D0", "version");
+      expect(C_ESC & "rFFFFFFF2000100000002#D1", "version");
       send(C_ESC & "RFFFFFFF30001#30");
       expect(C_ESC & "rFFFFFFF3000100000008#D8", "free space");
       send(C_ESC & "RFFFFFFF40002#32");
@@ -585,6 +609,89 @@ begin
       send(C_ESC & "RFFFFFFF10001#2E");
       expect(C_ESC & "rFFFFFFF1000100000000#CE", "reason after the restart");
       quiet("restart");
+
+      -- A pause request: k first, and p when the core has paused. Bit 4
+      -- reads 1 then, and the link reaches the memory.
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "pause request");
+      expect(C_ESC & "p#70", "p");
+      quiet("p once");
+      assert pause = '1' and paused = '1'
+         report "tb_debug_link: pause"
+         severity failure;
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000018#D6", "control while paused");
+      send(C_ESC & "R000001000001#94");
+      expect(C_ESC & "r00000100000155555555#5C", "read while paused");
+      send(C_ESC & "W00000101000166666666#4A");
+      expect(C_ESC & "k000001010001#AE", "write while paused");
+      check_mem(257, X"66666666", "write while paused");
+      send(C_ESC & "RFFFFFFEF0001#42");
+      expect(C_ESC & "rFFFFFFEF00011234560F#0D", "R15 while paused");
+      -- A console byte waits for the program.
+      send("K");
+      expect_in("K", "console byte while paused");
+
+      -- A hold ends the pause and keeps the registers, as after a halt.
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold paused");
+      cycles(5);
+      assert hold = '1' and pause = '0' and regs = (511 downto 0 => '0')
+         report "tb_debug_link: hold paused"
+         severity failure;
+      send(C_ESC & "RFFFFFFEF0001#42");
+      expect(C_ESC & "rFFFFFFEF00011234560F#0D", "R15 kept by a hold");
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000009#D6", "control held after a pause");
+      quiet("hold paused");
+
+      -- A request while held does not read 1, and the start pauses before
+      -- the first step.
+      send(C_ESC & "WFFFFFFF0000100000019#BC");
+      expect(C_ESC & "kFFFFFFF00001#46", "request while held");
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000009#D6", "request reads 0 while held");
+      quiet("request while held");
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "start paused");
+      expect(C_ESC & "p#70", "p at start");
+      assert paused = '1'
+         report "tb_debug_link: start paused"
+         severity failure;
+
+      -- A write of 0 to bit 4 goes on, and the memory is out of reach at
+      -- once. No notice follows.
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "go on");
+      send(C_ESC & "R000001000001#94");
+      expect(C_ESC & "e5202#2E", "e02 after go on");
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000008#D5", "control after go on");
+      quiet("go on");
+      assert pause = '0' and paused = '0'
+         report "tb_debug_link: go on"
+         severity failure;
+
+      -- A pause that is quick comes before the answer: a notice may come
+      -- between a request and its answer.
+      pause_wait <= 1;
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect(C_ESC & "p#70" & C_ESC & "kFFFFFFF00001#46", "p before k");
+      quiet("p before k");
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "go on again");
+      quiet("go on again");
+      pause_wait <= 40;
+
+      -- A halt goes first: a halted core ignores the request, bit 4 reads 0,
+      -- and no p follows the h.
+      core_halt <= '1';
+      expect(C_ESC & "h01#C9", "halt before pause");
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "request when halted");
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF000010000000A#DE", "control when halted");
+      quiet("request when halted");
 
       report "tb_debug_link: pass";
       stop(0);

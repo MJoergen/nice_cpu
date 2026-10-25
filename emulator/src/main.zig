@@ -557,6 +557,7 @@ fn serve(arena: std.mem.Allocator, opts: Options, syms: []const Symbol, cpu: *Cp
                 }
             }
             try cpu.step();
+            link.step_due = false;
             if (cpu.stopped) {
                 cpu.stopped = false;
                 break;

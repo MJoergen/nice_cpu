@@ -23,7 +23,7 @@
 -- sends against the exact string. The checksums of the fixed strings are
 -- the sum of the bytes from the tag to the end of the payload, mod 256,
 -- worked out with a script, not taken from a simulation. The checks:
--- * `b02`, and the W and R of DEBUG.md §8, through the decoder to memory;
+-- * `b03`, and the W and R of DEBUG.md §8, through the decoder to memory;
 -- * a word that G_INIT_FILE loaded, and the math unit through the decoder;
 -- * the link's reads of the console and the read counter, and its writes
 --   to the console, which the program must not see;
@@ -31,7 +31,10 @@
 --   and the control register while the program runs;
 -- * a UART break, the halt notice, and the registers the program left;
 -- * the restart of DEBUG.md §8, the pause with the core's own bus, registers,
---   and console, and a hold while the program runs.
+--   and console, and a hold while the program runs;
+-- * the single step: R15 after each step of the echo program, with a console
+--   byte and without, a step into HALT, the writes with bit 5 that do not
+--   step, and an INT with the registers of each step from niceemu --trace.
 -- The run stops with status 0 when every check passes, and 1 at the first
 -- that fails.
 
@@ -58,6 +61,10 @@ architecture simulation of tb_link is
 
    constant C_TIMEOUT : positive  := 2000;
    constant C_ESC     : character := character'val(255);
+
+   -- The words of the INT program of the step test, from niceasm
+   constant C_INT_PROG : string := "00039800" & "00000001" & "0C400000" & "0060C1B0" & "00000001" &
+                                   "0C000000" & "0C200000";
 
    -- The slaves of the data bus decoder
    constant C_MEM    : natural := 0;
@@ -600,13 +607,37 @@ begin
          n := n_v;
       end procedure load;
 
+      -- The value of register n, read over the link while the core is paused
+      -- or halted.
+      procedure reg_is(n : natural; v : std_logic_vector(31 downto 0); what : string) is
+         variable a_v : string(1 to 8) := to_hstring(unsigned'(X"FFFFFFE0") + n);
+         variable r_v : string(1 to 20);
+      begin
+         r_v := a_v & "0001" & to_hstring(v);
+         send(C_ESC & "R" & a_v & "0001#" & cc("R" & a_v & "0001"));
+         expect(C_ESC & "r" & r_v & "#" & cc("r" & r_v), what);
+      end procedure reg_is;
+
+      -- One step of a paused core: bits 4 and 5. The `k` and the `p` come in
+      -- either order, and a console byte that the step wrote comes before the
+      -- `p`.
+      procedure step(out_s : string; what : string) is
+      begin
+         send(C_ESC & "WFFFFFFF0000100000038#BD");
+         if out_s'length = 0 then
+            expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", what);
+         else
+            expect_either(C_ESC & "kFFFFFFF00001#46", out_s & C_ESC & "p#70", what);
+         end if;
+      end procedure step;
+
       variable words_v : natural;
 
    begin
       cycles(3);
       rst <= '0';
 
-      expect(C_ESC & "b02#C4", "b02");
+      expect(C_ESC & "b03#C5", "b02");
 
       -- DEBUG.md §8, through the decoder to the memory model
       send(C_ESC & "W0000010000021122334455667788#E2");
@@ -711,6 +742,118 @@ begin
       send(C_ESC & "RFFFFFFF00002#2E");
       expect(C_ESC & "rFFFFFFF000020000000900000000#57", "held");
       quiet("after the hold");
+
+      -- The single step (DEBUG.md §6). A start with bits 4 and 5 set pauses
+      -- before the first step and does not step, so R15 is 0. Without a console
+      -- byte, the program loops through the words 0, 2, 4, 5, 7: the read,
+      -- the AND with 0x200, the HALT that is skipped, the AND with 0x100, and
+      -- the jump back. R1 is 0 for the byte that is not there.
+      send(C_ESC & "WFFFFFFF0000100000038#BD");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", "start paused with bit 5");
+      reg_is(15, X"00000000", "R15 at the start");
+      step("", "step 1");
+      reg_is(15, X"00000002", "R15 after step 1");
+      reg_is(1, X"00000000", "R1 after step 1");
+      step("", "step 2");
+      reg_is(15, X"00000004", "R15 after step 2");
+      step("", "step 3");
+      reg_is(15, X"00000005", "R15 after step 3");
+      step("", "step 4");
+      reg_is(15, X"00000007", "R15 after step 4");
+      step("", "step 5");
+      reg_is(15, X"00000000", "R15 after step 5");
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000018#D6", "paused after the steps");
+      -- With a byte: the read (R1 = 0x178), the two ANDs, the HALT that is
+      -- skipped, the jump that is not taken, the echo, the ADD, and the jump back.
+      send("x");
+      cycles(50);
+      step("", "byte step 1");
+      reg_is(15, X"00000002", "R15 after byte step 1");
+      reg_is(1, X"00000178", "R1 after byte step 1");
+      step("", "byte step 2");
+      step("", "byte step 3");
+      step("", "byte step 4");
+      reg_is(15, X"00000007", "R15 after byte step 4");
+      step("", "byte step 5");
+      reg_is(15, X"00000009", "R15 after byte step 5");
+      step("x", "byte step 6, the echo");
+      reg_is(15, X"0000000B", "R15 after byte step 6");
+      step("", "byte step 7");
+      reg_is(15, X"0000000D", "R15 after byte step 7");
+      step("", "byte step 8");
+      reg_is(15, X"00000000", "R15 after byte step 8");
+      -- A write with bit 5 and bit 0 holds, and does not step.
+      send(C_ESC & "WFFFFFFF0000100000039#BE");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold with bit 5");
+      quiet("no p after the hold with bit 5");
+      send(C_ESC & "RFFFFFFF00002#2E");
+      expect(C_ESC & "rFFFFFFF000020000000900000000#57", "held with bit 5");
+      -- A step of a held core starts it paused, with no step: R15 is 0.
+      send(C_ESC & "WFFFFFFF0000100000038#BD");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", "start with bit 5");
+      reg_is(15, X"00000000", "R15 after the start with bit 5");
+      -- Bit 5 without bit 4 goes on, and with bit 4 a step of a running core
+      -- is a pause request.
+      send(C_ESC & "WFFFFFFF0000100000028#BC");
+      expect(C_ESC & "kFFFFFFF00001#46", "go on with bit 5 only");
+      quiet("no p after go on with bit 5 only");
+      send(C_ESC & "R000001000001#94");
+      expect(C_ESC & "e5202#2E", "e02 after go on with bit 5 only");
+      send(C_ESC & "WFFFFFFF0000100000038#BD");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", "step while running");
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000018#D6", "paused by the step while running");
+      -- A step into HALT: a start paused at address 0, the end of the input,
+      -- and the read, the AND, and the HALT, which ends in h, not p. R15 is
+      -- the address after the HALT.
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold before the halt steps");
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", "start paused for the halt");
+      wait until rising_edge(clk);
+      rx_break <= '1';
+      wait until rising_edge(clk);
+      rx_break <= '0';
+      cycles(10);
+      step("", "halt step 1");
+      reg_is(1, X"00000200", "R1 after the break");
+      step("", "halt step 2");
+      send(C_ESC & "WFFFFFFF0000100000038#BD");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "h01#C9", "step into HALT");
+      reg_is(15, X"00000005", "R15 after the HALT");
+      send(C_ESC & "RFFFFFFF00002#2E");
+      expect(C_ESC & "rFFFFFFF000020000000A00000001#60", "halted by the step");
+      -- A step of a halted core does nothing.
+      send(C_ESC & "WFFFFFFF0000100000038#BD");
+      expect(C_ESC & "kFFFFFFF00001#46", "step when halted");
+      quiet("no notice after a step when halted");
+
+      -- An INT, as the registers of niceemu --trace show them: R14 = 1, then
+      -- INT 0 enters the routine at word 6 with the in-service bit set, the
+      -- RTI returns to word 3, the ADD, and the HALT.
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold before the INT program");
+      send(C_ESC & "W000000000007" & C_INT_PROG & "#" & cc("W000000000007" & C_INT_PROG));
+      expect(C_ESC & "k000000000007#" & cc("k000000000007"), "load the INT program");
+      send(C_ESC & "W000001000001" & "00000006#" & cc("W000001000001" & "00000006"));
+      expect(C_ESC & "k000001000001#" & cc("k000001000001"), "load the vector");
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", "start the INT program paused");
+      step("", "INT step 1");
+      reg_is(14, X"01000001", "R14 after the first step");
+      reg_is(15, X"00000002", "R15 after the first step");
+      step("", "INT step 2");
+      reg_is(14, X"81000001", "R14 in the routine");
+      reg_is(15, X"00000006", "R15 in the routine");
+      step("", "INT step 3");
+      reg_is(14, X"01000001", "R14 after the RTI");
+      reg_is(15, X"00000003", "R15 after the RTI");
+      step("", "INT step 4");
+      reg_is(3, X"00000001", "R3 after the ADD");
+      reg_is(15, X"00000005", "R15 after the ADD");
+      send(C_ESC & "WFFFFFFF0000100000038#BD");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "h01#C9", "step into the INT HALT");
 
       report "tb_link: pass";
       stop(0);

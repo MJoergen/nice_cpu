@@ -11,7 +11,7 @@ const Cpu = cpu_zig.Cpu;
 /// The escape byte, which starts a packet (DEBUG.md §1).
 pub const esc: u8 = 0xFF;
 /// The protocol version (DEBUG.md §4, §6).
-const version: u8 = 2;
+const version: u8 = 3;
 /// The program's input buffer, in bytes (DEBUG.md §7).
 pub const input_size = 2048;
 /// The packet timeout of DEBUG.md §5.
@@ -28,6 +28,7 @@ const ctl_halted: u32 = 1 << 1;
 const ctl_clear: u32 = 1 << 2;
 const ctl_rom_hidden: u32 = 1 << 3;
 const ctl_pause: u32 = 1 << 4;
+const ctl_step: u32 = 1 << 5;
 
 pub const Link = struct {
     cpu: *Cpu,
@@ -43,6 +44,9 @@ pub const Link = struct {
     pause_req: bool = false,
     /// The processor has paused: bit 4 reads 1. Only the run loop sets it.
     paused: bool = false,
+    /// A step of a paused processor has been asked for and not yet run: the
+    /// run loop takes one step before it pauses again (DEBUG.md §6).
+    step_due: bool = false,
     /// The step limit stopped the run: halt reason 5.
     limit_hit: bool = false,
     /// A start that the run loop has not carried out yet. It resets the
@@ -116,7 +120,7 @@ pub const Link = struct {
     /// Whether a pause request takes effect now, between two steps. A halt
     /// goes first, so not at the step limit (DEBUG.md §6).
     pub fn pauseDue(self: *const Link, at_limit: bool) bool {
-        return self.running() and self.pause_req and !at_limit;
+        return self.running() and self.pause_req and !at_limit and !self.step_due;
     }
 
     /// Pause the processor, and send the console output so far and the `p`
@@ -360,6 +364,11 @@ pub const Link = struct {
         } else if (!self.pause_req) {
             // Cancels a request, or makes a paused processor go on.
             self.paused = false;
+        } else if (value & ctl_step != 0 and self.paused) {
+            // One step, and then the run loop pauses again. Bit 5 does
+            // nothing unless the processor is paused.
+            self.paused = false;
+            self.step_due = true;
         }
     }
 
@@ -368,12 +377,14 @@ pub const Link = struct {
         if (!self.held) self.interrupted = true;
         self.held = true;
         self.paused = false;
+        self.step_due = false;
     }
 
     fn start(self: *Link) void {
         self.held = false;
         self.paused = false;
         self.started = true;
+        self.step_due = false;
         self.interrupted = true;
         self.limit_hit = false;
         self.input_head = 0;

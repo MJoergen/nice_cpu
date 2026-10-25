@@ -29,8 +29,8 @@
 --    counter a link-only path that these accesses take. The
 --    processor never uses the bus while this master does: the master
 --    works only while hold_o, halted_i, or the link's paused flag is high.
---    While the processor is paused, a link read of a counter takes no
---    snapshot (DEBUG.md §3), and the counters and the timer stop.
+--    While the processor is paused, the counters and the timer stop, and a
+--    link read of a counter may take a snapshot (DEBUG.md §3).
 -- b) The Wishbone slave is pipelined, as the cores' data bus is: it sends
 --    ACK in a later cycle than the one that accepts a request, and holds
 --    its read data valid with the ACK.
@@ -81,6 +81,8 @@
 -- * pause_o and paused_i: bit 4, the request of a pause, which comes from a
 --   flip-flop as MICROARCH.md §6.1 requires, and the core's pause. The
 --   board stops the counters and the timer while paused_i is high.
+--   A step (DEBUG.md §6) drops pause_o for exactly one cycle while the core
+--   is paused, and raises it again.
 --
 -- FORMAL
 -- With G_FORMAL, the properties that need the state of the processes, for
@@ -95,7 +97,7 @@
 -- are in formal/formal_debug_link.vhd.
 --
 -- RESET
--- Synchronous. It sends `b02`, empties everything, and leaves the
+-- Synchronous. It sends `b03`, empties everything, and leaves the
 -- processor held with G_BOOT_HELD, or running with the ROM shown otherwise.
 -- G_HAS_ROM is false on a system without a ROM: bit 3 then reads 1 and
 -- ignores writes, and rom_hide_o is 1.
@@ -180,7 +182,7 @@ architecture synthesis of debug_link is
 
    constant C_ESC : t_byte := X"FF";
 
-   constant C_VERSION : t_word := X"00000002";
+   constant C_VERSION : t_word := X"00000003";
 
    function to_sl(b : boolean) return std_logic is
    begin
@@ -310,6 +312,9 @@ architecture synthesis of debug_link is
    signal halted_r    : std_logic                    := '0';
    signal pause_r     : std_logic                    := '0';
    signal paused_r    : std_logic                    := '0';
+   signal step_r      : std_logic                    := '0';
+   signal stepping_r  : std_logic                    := '0';
+   signal fell_r      : std_logic                    := '0';
    signal reason_r    : std_logic_vector(2 downto 0) := (others => '0');
    signal hide_r      : std_logic                    := '0';
    signal eoi_r       : std_logic                    := '0';
@@ -324,7 +329,9 @@ architecture synthesis of debug_link is
 
    -- The link owns the memory while the core is paused and the request of
    -- the pause stands. A write of 0 to bit 4 ends it at once, before the
-   -- core has gone on.
+   -- core has gone on. A step ends it too, from the write until the core has
+   -- gone on and paused or halted again: paused_r still follows the old
+   -- pause for a cycle, and pause_r is high again.
    signal pause_own : std_logic;
 
 begin
@@ -577,7 +584,7 @@ begin
    hold_o     <= hold_r;
    eoi_o      <= eoi_r;
    pause_o    <= pause_r;
-   pause_own  <= paused_r and pause_r;
+   pause_own  <= paused_r and pause_r and not stepping_r;
    clear_o    <= clearing_r;
    rom_hide_o <= hide_r when G_HAS_ROM else
                  '1';
@@ -614,6 +621,24 @@ begin
             paused_r <= '0';
          end if;
 
+         -- A step: pause_r was low for this cycle, and is high again. The
+         -- step ends when the core has dropped paused_i and then raised
+         -- paused_i or halted_i. A hold ends it as well.
+         if step_r = '1' then
+            step_r  <= '0';
+            pause_r <= '1';
+         end if;
+         if stepping_r = '1' and step_r = '0' then
+            if paused_i = '0' then
+               fell_r <= '1';
+            elsif fell_r = '1' then
+               stepping_r <= '0';
+            end if;
+            if halted_i = '1' and fell_r = '1' then
+               stepping_r <= '0';
+            end if;
+         end if;
+
          if rx_break_i = '1' then
             eoi_r <= '1';
          end if;
@@ -637,6 +662,14 @@ begin
                         if idx_v = 16 and clearing_r = '0' then
                            nh_v    := word_r(0);
                            pause_r <= word_r(4);
+                           -- Bit 5 steps a paused core, and does nothing otherwise.
+                           if word_r(5) = '1' and word_r(4) = '1' and word_r(2) = '0' and
+                              word_r(0) = '0' and pause_own = '1' then
+                              pause_r    <= '0';
+                              step_r     <= '1';
+                              stepping_r <= '1';
+                              fell_r     <= '0';
+                           end if;
                            if G_HAS_ROM then
                               hide_r <= word_r(3);
                            end if;
@@ -697,6 +730,9 @@ begin
             eoi_r    <= '0';
          end if;
          hold_r <= nh_v;
+         if nh_v = '1' then
+            stepping_r <= '0';
+         end if;
 
          if rst_i = '1' then
             acc_st     <= ACC_IDLE_ST;
@@ -705,6 +741,9 @@ begin
             halted_r   <= '0';
             pause_r    <= '0';
             paused_r   <= '0';
+            step_r     <= '0';
+            stepping_r <= '0';
+            fell_r     <= '0';
             reason_r   <= "000";
             hide_r     <= '0';
             eoi_r      <= '0';
@@ -1057,8 +1096,19 @@ begin
       --    {rx_st = RX_CALL_ST and rst_i = '0'} |=> {rst_i = '1' or rx_st = RX_WAIT_ST};
 
       -- psl f_hold : assert always
-      --    {rst_i = '0' and f_ctrl = '0' and not (clearing_r = '1' and clear_done_i = '1')} |=>
+      --    {rst_i = '0' and f_ctrl = '0' and step_r = '0' and
+      --     not (clearing_r = '1' and clear_done_i = '1')} |=>
       --    {stable(hold_r) and stable(hide_r) and stable(pause_r)};
+
+      -- A step (DEBUG.md §6) lowers pause_r for exactly one cycle, only after
+      -- a cycle in which the link owned the paused core, and the link does
+      -- not own the memory from the write until the step has ended.
+      -- psl f_step_pulse : assert always
+      --    step_r = '1' -> (pause_r = '0' and stepping_r = '1' and hold_r = '0');
+      -- psl f_step_once : assert always
+      --    {step_r = '1' and rst_i = '0'} |=> {pause_r = '1' and step_r = '0'};
+      -- psl f_step_paused : assert always {pause_own = '0'} |=> {step_r = '0'};
+      -- psl f_step_own : assert always stepping_r = '1' -> pause_own = '0';
 
       -- The invariants of the proof. Each state is one of its values.
       -- psl i_acc_st : assert always

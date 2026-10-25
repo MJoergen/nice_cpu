@@ -9,10 +9,11 @@
 -- The board is a memory of 4096 words on a Wishbone slave that stalls in
 -- every other cycle, a memory clear that takes 30 cycles, or 300 where the
 -- test says so, and a core model that halts when the test says so, pauses
--- some cycles after a request, and loses its registers, its halt, and its
+-- some cycles after a request, goes on for a step_wait cycles when
+-- pause_o falls while it is paused, and loses its registers, its halt, and its
 -- pause while it is held, as the real core does.
 -- The checks, in the order of the run:
--- * the notice `b02` after reset, and the examples of DEBUG.md §8;
+-- * the notice `b03` after reset, and the examples of DEBUG.md §8;
 -- * lowercase digits, a bad checksum, an unknown tag, a payload with a bad
 --   length or a bad digit, and a W with too many words;
 -- * the debug registers, a clear of the memory, one that a dropped packet
@@ -25,7 +26,10 @@
 --   the restart;
 -- * the pause: bit 4, the notice `p` after and before the answer, the memory,
 --   the registers, and the console while paused, a hold and a start that
---   keep or begin a pause, a go on, and a halt that ignores a request.
+--   keep or begin a pause, a go on, and a halt that ignores a request;
+-- * the step: bit 5, pause_o low for exactly one cycle, bit 4 and the memory
+--   during the step, one `p` after it, a step into a halt, a hold during the
+--   step, and a write with bit 5 that does not step.
 -- The run stops with status 0 when every check passes, and 1 at the first
 -- that fails.
 
@@ -78,6 +82,10 @@ architecture simulation of tb_debug_link is
    signal pause      : std_logic;
    signal paused     : std_logic                      := '0';
    signal pause_wait : natural                        := 40;
+   signal step_wait  : natural                        := 20;
+   signal step_halts : std_logic                      := '0';
+   signal short_runs : natural                        := 0;
+   signal long_runs  : natural                        := 0;
 
    signal wb_cyc   : std_logic;
    signal wb_stb   : std_logic;
@@ -219,6 +227,8 @@ begin
    -- R(n) is 0x1234560n while it runs or is halted.
    p_core : process (clk)
       variable wait_v : natural := 0;
+      variable go_v   : boolean := false;
+      variable step_v : natural := 0;
    begin
       if rising_edge(clk) then
          if hold = '1' then
@@ -227,16 +237,42 @@ begin
             regs   <= (others => '0');
             paused <= '0';
             wait_v := 0;
+            go_v   := false;
          else
             -- A pause comes pause_wait cycles after the request, and a halt
-            -- goes first.
+            -- goes first. When pause falls while the core is paused, it goes
+            -- on, and runs for step_wait cycles whatever pause is, as the
+            -- cores do after a go on (MICROARCH.md §6.1): it pauses again
+            -- then if pause is 1, and halts if step_halts says so.
             if pause = '1' and halted = '0' and core_halt = '0' then
-               if wait_v >= pause_wait then
+               if go_v then
+                  if step_v >= step_wait then
+                     go_v := false;
+                     if step_halts = '1' then
+                        halted <= '1';
+                        reason <= "001";
+                     else
+                        paused <= '1';
+                     end if;
+                  else
+                     step_v := step_v + 1;
+                  end if;
+               elsif wait_v >= pause_wait then
                   paused <= '1';
                else
                   wait_v := wait_v + 1;
                end if;
             else
+               if paused = '1' and pause = '0' then
+                  go_v   := true;
+                  step_v := 0;
+               elsif go_v then
+                  if step_v >= step_wait then
+                     go_v := false;
+                  else
+                     step_v := step_v + 1;
+                  end if;
+               end if;
                paused <= '0';
                wait_v := 0;
             end if;
@@ -251,6 +287,26 @@ begin
          end if;
       end if;
    end process p_core;
+
+
+   -- The runs of cycles with pause_o low that start while the core is paused:
+   -- a step has one cycle, a go on more.
+   p_runs : process (clk)
+      variable run_v : natural := 0;
+   begin
+      if rising_edge(clk) then
+         if pause = '0' and (paused = '1' or run_v > 0) then
+            run_v := run_v + 1;
+         else
+            if run_v = 1 then
+               short_runs <= short_runs + 1;
+            elsif run_v > 1 then
+               long_runs <= long_runs + 1;
+            end if;
+            run_v := 0;
+         end if;
+      end if;
+   end process p_runs;
 
 
    p_test : process
@@ -306,6 +362,24 @@ begin
          used_v := used_v + s'length;
       end procedure expect;
 
+      -- Waits for the bytes of a and b, in either order, and compares them.
+      procedure expect_either(a : string; b : string; what : string) is
+         variable n_v : natural := 0;
+      begin
+         while got_len < used_v + a'length + b'length and n_v < 20000 loop
+            wait until rising_edge(clk);
+            n_v := n_v + 1;
+         end loop;
+         if got_len < used_v + a'length + b'length then
+            fail(what & ": the answer is short, " & integer'image(got_len - used_v) & " bytes");
+         end if;
+         if got(used_v + 1 to used_v + a'length + b'length) /= a & b and
+            got(used_v + 1 to used_v + a'length + b'length) /= b & a then
+            fail(what & ": got [" & got(used_v + 1 to used_v + a'length + b'length) & "]");
+         end if;
+         used_v := used_v + a'length + b'length;
+      end procedure expect_either;
+
       -- Checks that the link sends nothing more.
       procedure quiet(what : string) is
       begin
@@ -352,7 +426,7 @@ begin
       rst <= '0';
 
       -- Reset: a notice, and the processor held with the ROM shown.
-      expect(C_ESC & "b02#C4", "b02");
+      expect(C_ESC & "b03#C5", "b02");
       assert hold = '1' and rom_hide = '0' and eoi = '0'
          report "tb_debug_link: state after reset"
          severity failure;
@@ -409,7 +483,7 @@ begin
 
       -- The registers while held: version, free space, reserved words, and control.
       send(C_ESC & "RFFFFFFF20001#2F");
-      expect(C_ESC & "rFFFFFFF2000100000002#D1", "version");
+      expect(C_ESC & "rFFFFFFF2000100000003#D2", "version");
       send(C_ESC & "RFFFFFFF30001#30");
       expect(C_ESC & "rFFFFFFF3000100000008#D8", "free space");
       send(C_ESC & "RFFFFFFF40002#32");
@@ -682,6 +756,110 @@ begin
       expect(C_ESC & "kFFFFFFF00001#46", "go on again");
       quiet("go on again");
       pause_wait <= 40;
+
+      -- The step (DEBUG.md §6): pause, then a write with bits 4 and 5. pause_o
+      -- is low for one cycle. Bit 4 reads 0 and the memory is out of reach
+      -- until the step ends, then one p follows.
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "pause before the step");
+      expect(C_ESC & "p#70", "p before the step");
+      wait until rising_edge(clk);
+      assert short_runs = 0 and long_runs = 3
+         report "tb_debug_link: runs before the step " & integer'image(short_runs) & " " &
+                integer'image(long_runs)
+         severity failure;
+      step_wait <= 400;
+      send(C_ESC & "WFFFFFFF0000100000038#BD");
+      expect(C_ESC & "kFFFFFFF00001#46", "step");
+      send(C_ESC & "R000001000001#94");
+      expect(C_ESC & "e5202#2E", "e02 during the step");
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000008#D5", "control during the step");
+      expect(C_ESC & "p#70", "p after the step");
+      quiet("p once after the step");
+      assert short_runs = 1 and long_runs = 3
+         report "tb_debug_link: pause_o low for one cycle"
+         severity failure;
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000018#D6", "control after the step");
+      send(C_ESC & "R000001000001#94");
+      expect(C_ESC & "r00000100000155555555#5C", "memory after the step");
+      -- A quick step: the k and the p come in either order, and there is one
+      -- of each.
+      step_wait <= 1;
+      send(C_ESC & "WFFFFFFF0000100000038#BD");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", "quick step");
+      quiet("quick step");
+      assert short_runs = 2 and long_runs = 3
+         report "tb_debug_link: quick step"
+         severity failure;
+      -- A step is one pause_o fall each, also back to back.
+      step_wait <= 20;
+      for i in 1 to 3 loop
+         send(C_ESC & "WFFFFFFF0000100000038#BD");
+         expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", "repeated step");
+      end loop;
+      assert short_runs = 5 and long_runs = 3
+         report "tb_debug_link: repeated steps"
+         severity failure;
+      -- A hold during the step is a hold of a running core: no notice, and
+      -- the next start paused sends its p.
+      step_wait <= 400;
+      send(C_ESC & "WFFFFFFF0000100000038#BD");
+      expect(C_ESC & "kFFFFFFF00001#46", "step before the hold");
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold during the step");
+      cycles(500);
+      quiet("hold during the step");
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000009#D6", "control held during the step");
+      step_wait <= 20;
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "start paused after the hold");
+      expect(C_ESC & "p#70", "p after the hold");
+      -- A write with bit 5 does not step unless the core is paused: the
+      -- bit with bit 0 holds, and the bit alone goes on.
+      send(C_ESC & "WFFFFFFF0000100000039#BE");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold with bit 5");
+      quiet("hold with bit 5");
+      assert short_runs = 6 and long_runs = 3
+         report "tb_debug_link: hold with bit 5 " & integer'image(short_runs) & " " &
+                integer'image(long_runs)
+         severity failure;
+      send(C_ESC & "WFFFFFFF0000100000038#BD");
+      expect(C_ESC & "kFFFFFFF00001#46", "start with bit 5");
+      expect(C_ESC & "p#70", "p after the start with bit 5");
+      assert short_runs = 6 and long_runs = 3
+         report "tb_debug_link: start with bit 5"
+         severity failure;
+      send(C_ESC & "WFFFFFFF0000100000028#BC");
+      expect(C_ESC & "kFFFFFFF00001#46", "go on with bit 5 only");
+      quiet("go on with bit 5 only");
+      -- A step request while the pause is still on its way acts as a pause
+      -- request: no step, and one p.
+      pause_wait <= 2000;
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "request before the early step");
+      send(C_ESC & "WFFFFFFF0000100000038#BD");
+      expect(C_ESC & "kFFFFFFF00001#46", "early step");
+      expect(C_ESC & "p#70", "p after the early step");
+      pause_wait <= 40;
+      quiet("early step");
+      assert short_runs = 6
+         report "tb_debug_link: early step"
+         severity failure;
+      -- A step into a halt ends in h, not p, and bit 4 reads 0.
+      step_halts <= '1';
+      send(C_ESC & "WFFFFFFF0000100000038#BD");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "h01#C9", "step into a halt");
+      quiet("step into a halt");
+      send(C_ESC & "RFFFFFFF00002#2E");
+      expect(C_ESC & "rFFFFFFF000020000000A00000001#60", "control after the halt step");
+      step_halts <= '0';
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold after the halt step");
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "restart after the halt step");
 
       -- A halt goes first: a halted core ignores the request, bit 4 reads 0,
       -- and no p follows the h.

@@ -8,9 +8,9 @@ the program halts. The link shares one byte stream with the console
 [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) over its debug
 UART. Both follow this file, so one host tool works with either.
 
-The link is a property of the system, not of the ISA. This is version 2 of
-the protocol. Its run control is the pause (§6). It has no step or
-breakpoints yet.
+The link is a property of the system, not of the ISA. This is version 3 of
+the protocol. Its run control is the pause and the single step (§6). It has
+no breakpoints yet.
 
 "SYSTEM.md §1" refers to a section of SYSTEM.md, and a plain "§2" to a
 section of this file.
@@ -157,14 +157,14 @@ the control register causes may come before the `k` of that write.
 
 | Notice | Payload | Meaning |
 |---|---|---|
-| `b` | version | The system has powered up or been reset, or a host has connected over TCP (§7). The version is `02`. |
+| `b` | version | The system has powered up or been reset, or a host has connected over TCP (§7). The version is `03`. |
 | `h` | reason | The processor has halted. The reason is the halt reason of §6, `01`–`05`. The last console byte that the program wrote comes before the notice. |
-| `p` | none | The processor has paused: a pause request (§6) has taken effect, and bit 4 of the control register reads 1. The last console byte that the program wrote comes before the notice. |
+| `p` | none | The processor has paused: a pause request or a step (§6) has taken effect, and bit 4 of the control register reads 1. The last console byte that the program wrote comes before the notice. |
 | `o` | none | A console byte from the host was lost, because the program's input buffer was full. |
 
 The system sends `o` once, and no other until its input buffer has room
 again. A console byte dropped while the processor is held or halted (§1)
-sends no `o`. A pause ends in exactly one of `p` and `h` (§6), so a host
+sends no `o`. A pause or a step ends in exactly one of `p` and `h` (§6), so a host
 that waits for either knows which came.
 
 ## 5. Errors and timeouts
@@ -202,10 +202,10 @@ system has there otherwise.
 
 | Address | Register |
 |---|---|
-| `0xFFFFFFE0`–`0xFFFFFFEF` | R0 to R15, read only. After a halt, until the next start, they are the values the program left, with R15 the address after the halting instruction, as the emulator prints them, also while the processor is held after the halt. While the processor is paused, they are the values after the last step, with R15 the address of the next instruction, and a hold of the paused processor keeps them until the next start. From a start, or from a go on after a pause, until the next halt or pause, their values are not defined. |
+| `0xFFFFFFE0`–`0xFFFFFFEF` | R0 to R15, read only. After a halt, until the next start, they are the values the program left, with R15 the address after the halting instruction, as the emulator prints them, also while the processor is held after the halt. While the processor is paused, they are the values after the last step, with R15 the address of the next instruction, and a hold of the paused processor keeps them until the next start. From a start, or from a go on or a step after a pause, until the next halt or pause, their values are not defined. |
 | `0xFFFFFFF0` | Control (below). |
 | `0xFFFFFFF1` | The halt reason, read only: 0 while the processor has not halted, 1 for `HALT`, 2 for a reserved control word, 3 for `INT` inside an interrupt routine, 4 for `RTI` outside one (ISA §5.3, §7.2, §7.4), and 5 when the emulator's step limit stopped the program (§7). |
-| `0xFFFFFFF2` | The protocol version, read only: 2. A host checks it before it uses the pause. |
+| `0xFFFFFFF2` | The protocol version, read only: 3. A host checks it before it uses the pause or the step. |
 | `0xFFFFFFF3` | The free space, read only: the number of console bytes that the program's input buffer can take now. It reads so while the processor is held or halted too, although the bytes sent then are dropped (§1), and a start empties the buffer. |
 | `0xFFFFFFF4`–`0xFFFFFFFF` | Reserved. They read 0 and take no write. |
 
@@ -219,13 +219,16 @@ register:
 | 2 | 0 | 1 first clears the memory to 0, with the processor held |
 | 3 | 1 while the ROM is hidden | 1 hides the ROM, so the RAM is at 0, and 0 shows it |
 | 4 | 1 while the processor is paused | 1 asks for a pause, and 0 cancels the request or goes on |
+| 5 | 0 | 1 with bit 4 set and bit 0 clear runs one step of a paused processor (below) |
 
 The other bits read 0 and take no write. The processor runs while bits 0,
 1, and 4 all read 0. That includes the time between a pause request and the
-step boundary where it takes effect. Every write to the control register
-writes bits 0, 2, 3, and 4 at once, so a host keeps bit 3 as it is in each
-write, for example by reading the register first, and bit 4 as it reads to
-stay paused, or at 0 to go on.
+step boundary where it takes effect, and the time of a step. Every write to
+the control register writes bits 0, 2, 3, 4, and 5 at once, so a host keeps
+bit 3 as it is in each write, for example by reading the register first,
+and bit 4 as it reads to stay paused, or at 0 to go on. Bit 5 reads 0, so a
+host that writes back what it read never steps by accident, and a host of
+version 2 writes it as 0.
 
 - **Start.** When bit 0 goes from 1 to 0, the processor starts at address
   0, as the emulator starts a run. The math unit, the performance counters,
@@ -274,12 +277,44 @@ stay paused, or at 0 to go on.
   replaced (§3). A pause fires no timer interrupt when the processor goes
   on. Console bytes from the host go into the input buffer (§1).
 - **Go on.** A write of 0 to bit 4 of a paused processor, with bit 0 at 0,
-  makes it go on from R15. Single step is not in this version, and needs a
-  bit of its own.
+  makes it go on from R15.
+- **Step.** A write with bits 4 and 5 set, and bit 0 at 0, to a paused
+  processor runs one step from R15. Then the processor pauses again, and
+  the system sends `p`. If the step halts, the processor halts instead,
+  and the system sends `h`, as for a pause (above). That includes the stop
+  by the emulator's step limit. A step is one step of the emulator: one
+  instruction, or one interrupt entry (MICROARCH.md §6.1). A request that is
+  pending when the step starts is taken first, so that step is the entry,
+  and R15 then reads the address of the routine's first instruction.
+  - Bit 5 does nothing unless bit 4 reads 1, that is, the processor is
+    paused. A write with bit 5 set to a processor that runs, is held, has
+    halted, or is still on its way to a pause, acts as the same write with
+    bit 5 at 0. A write with bit 5 set and bit 4 at 0 goes on, as without
+    bit 5.
+  - Bit 4 reads 0 from the write until the step has ended in `p` or `h`,
+    and the link reaches only the debug registers then, as while the
+    program runs: a request to any other word gets `e02`. R0–R15 are not
+    defined then. A host waits for `p` or `h`, or polls until bit 4 or bit
+    1 reads 1, as after a pause request.
+  - The counters and the timer run during the step, as while the program
+    runs, and stop again at the pause. So `CYCLE_LO` grows by the cycles of
+    the step, and the timer may raise a request in the step, which the next
+    step takes. A program cannot tell that it was stepped, but by the wall
+    clock, and by a snapshot that a host's read replaced (§3).
+  - The console works as while the program runs: its output comes before
+    the `p` or `h`, and a console read that waits for input waits inside
+    the step.
+  - A hold during the step acts as a hold of a running program: R0–R15
+    are not defined after it.
+  - A step has a side effect, so a host does not resend it blindly (§3).
+    The `p` or `h` tells that the step ran, even when the `k` was lost.
 - **Start paused.** A start with bit 4 set pauses before the first step,
   and the system sends `p`. So a host can load a program and keep it at its
   first instruction. With bit 3 at 0, a write of `0x11`
-  holds with the request, and a write of `0x10` then starts paused.
+  holds with the request, and a write of `0x10` then starts paused. A write
+  with bit 5 set that starts the processor (bit 0 from 1 to 0) starts it
+  paused, as without bit 5, and does not step. So `0x18` with the ROM
+  hidden, then `0x38` for each step, steps a program from address 0.
 
 After a reset of the system, a system that boots a ROM runs with bit 0 at 0
 and bit 3 at 0. A system without one waits, held, with bit 0 at 1.
@@ -329,7 +364,8 @@ command line, with these differences:
 - A pause takes effect between two steps, at once, and the emulator sends
   `p`. The exception is a console read that waits for input (SYSTEM.md §1):
   the processor is inside a step then, and pauses after the next byte
-  arrives or the input ends. A host can send a console byte, or hold.
+  arrives or the input ends. A host can send a console byte, or hold. The
+  same holds for a console read inside a step of §6.
 - Its step limit (`--max-steps`), `--irq`, and `--nmi` count the steps of
   each run that the link starts. When the step limit stops the program, the
   halt reason is 5, and the emulator sends `h` with it.
@@ -352,7 +388,7 @@ to the last `8`, mod 256. FF is the byte `0xFF`, and the rest is ASCII.
     host:    FF "R000001000001#94"
     system:  FF "r00000100000111223344#48"
 
-A system reset sends `FF "b02#C4"`, and a `HALT` sends `FF "h01#C9"`. The
+A system reset sends `FF "b03#C5"`, and a `HALT` sends `FF "h01#C9"`. The
 same `R` sent while the program runs gets `FF "e5202#2E"`.
 
 After a halt, the host restarts the program with two writes to the
@@ -373,3 +409,18 @@ A board may send the `p` before the `k`:
     system:  FF "p#70"
     host:    FF "WFFFFFFF0000100000008#BA"
     system:  FF "kFFFFFFF00001#46"
+
+To step a program from address 0, the host starts it paused, with the ROM
+hidden. It reads R15, steps, and reads R15 again. The first instruction of
+the program is one word long:
+
+    host:    FF "WFFFFFFF0000100000018#BB"
+    system:  FF "kFFFFFFF00001#46"
+    system:  FF "p#70"
+    host:    FF "RFFFFFFEF0001#42"
+    system:  FF "rFFFFFFEF000100000000#E2"
+    host:    FF "WFFFFFFF0000100000038#BD"
+    system:  FF "kFFFFFFF00001#46"
+    system:  FF "p#70"
+    host:    FF "RFFFFFFEF0001#42"
+    system:  FF "rFFFFFFEF000100000001#E3"

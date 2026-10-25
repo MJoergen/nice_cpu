@@ -43,6 +43,17 @@ loop    ADD     R2, R2, 1
         MOVE    R15, loop
 """
 
+# The first instruction is one word long (DEBUG.md §8).
+ONE = """
+        MOVE    R2, R3
+loop    MOVE    R15, loop
+"""
+
+# Halts at its first instruction.
+STOP = """
+        HALT
+"""
+
 # Never halts, and never reads the console.
 SPIN = """
 loop    MOVE    R15, loop
@@ -72,7 +83,7 @@ def answer(addr: int, words: List[int]) -> bytes:
 
 
 CONTROL = 0xFFFFFFF0
-HELLO = b"\xffb02#C4"
+HELLO = b"\xffb03#C5"
 PAUSED = b"\xffp#70"
 
 
@@ -161,7 +172,7 @@ def test_example() -> None:
     e.expect("control held", answer(CONTROL, [0x9]))
     # The halt reason, the version, the free space, and a reserved word.
     e.send(read(0xFFFFFFF1, 4))
-    e.expect("F1-F4", answer(0xFFFFFFF1, [0, 2, 2048, 0]))
+    e.expect("F1-F4", answer(0xFFFFFFF1, [0, 3, 2048, 0]))
     status, out, _ = e.stop()
     expect("exit status", bytes([status]), b"\x00")
     expect("stdout", out, b"")
@@ -218,7 +229,7 @@ def test_errors() -> None:
     e.send(write(0xFFFFFF01, [5]) + write(0xFFFFFFF2, [7]))
     e.expect("ignored writes", ok(0xFFFFFF01, 1) + ok(0xFFFFFFF2, 1))
     e.send(read(0xFFFFFF01, 1) + read(0xFFFFFFF2, 1))
-    e.expect("read counter", answer(0xFFFFFF01, [0]) + answer(0xFFFFFFF2, [2]))
+    e.expect("read counter", answer(0xFFFFFF01, [0]) + answer(0xFFFFFFF2, [3]))
     # A clear: 0x5 clears and stays held.
     e.send(write(CONTROL, [0x5]))
     e.expect("clear", ok(CONTROL, 1))
@@ -435,6 +446,149 @@ def test_pause(count: List[int], echo: List[int]) -> None:
     e.stop()
 
 
+def regs_after_steps(irq: str, steps: int, opts: List[str]) -> List[Tuple[int, int, Optional[int]]]:
+    """R13, R14, and R15 after each of the first `steps` steps of irq.bin,
+    from `niceemu --trace`: a line shows the registers that its step wrote,
+    and the pc of the next line is R15 after the step, but for an entry, whose line
+    shows the vector. Then R15 is None."""
+    proc = subprocess.run([NICEEMU, "-t", "-n", str(steps + 1)] + opts + [irq], capture_output=True, text=True)
+    r = {13: 0, 14: 0}
+    lines = proc.stdout.splitlines()[:steps + 1]
+    out = []
+    for i in range(steps):
+        for part in lines[i].split():
+            if part[0] == "R" and "=" in part and part[1:part.index("=")] in ("13", "14"):
+                r[int(part[1:part.index("=")])] = int(part.split("=")[1], 16)
+        nxt = lines[i + 1]
+        r15 = None if nxt[0] in "NI" else int(nxt.split()[0], 16)
+        out.append((r[13], r[14], r15))
+    return out
+
+
+def test_step(count: List[int], one: List[int], stop: List[int], echo: List[int], irq: List[int], irq_bin: str) -> None:
+    """The single step of §6: bit 5, the `p` or `h` after it, the cases where
+    it does nothing, the step that waits for a byte, and the interrupt entry."""
+    # The example of §8, with its checksums written out.
+    e = Emu()
+    e.expect("hello", HELLO, timeout=5)
+    e.send(write(0, one))
+    e.expect("load one", ok(0, len(one)))
+    e.send(ESC + b"WFFFFFFF0000100000018#BB")
+    e.expect("start paused", b"\xffkFFFFFFF00001#46" + PAUSED)
+    e.send(ESC + b"RFFFFFFEF0001#42")
+    e.expect("R15 at 0", ESC + b"rFFFFFFEF000100000000#E2")
+    e.send(ESC + b"WFFFFFFF0000100000038#BD")
+    e.expect("step", b"\xffkFFFFFFF00001#46" + PAUSED)
+    e.send(ESC + b"RFFFFFFEF0001#42")
+    e.expect("R15 at 1", ESC + b"rFFFFFFEF000100000001#E3")
+    e.stop()
+
+    # R2 and R15 after each step of COUNT: ADD is two words, and MOVE R15 jumps
+    # back. A step of a processor that is not paused does nothing, and a write
+    # with bit 5 and without bit 4 goes on.
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, count) + write(CONTROL, [0x38]))
+    e.expect("load, bit 5 at a start", ok(0, len(count)) + ok(CONTROL, 1) + PAUSED)
+    expect("start with bit 5 does not step", bytes([word(e, 0xFFFFFFEF)]), bytes([0]))
+    for n, (r2, r15) in enumerate([(1, 2), (1, 0), (2, 2), (2, 0)]):
+        e.send(write(CONTROL, [0x38]))
+        e.expect(f"step {n}", ok(CONTROL, 1) + PAUSED)
+        expect(f"control after step {n}", bytes([word(e, CONTROL)]), bytes([0x18]))
+        expect(f"R2 and R15 after step {n}", bytes([word(e, 0xFFFFFFE2), word(e, 0xFFFFFFEF)]), bytes([r2, r15]))
+    # Bit 5 reads 0, and a write of 0x28 goes on.
+    e.send(write(CONTROL, [0x28]))
+    e.expect("bit 5 without bit 4", ok(CONTROL, 1))
+    e.send(read(0, 1))
+    e.expect("runs", pkt("e", "5202"))
+    # A step request to a running processor is a pause request.
+    e.send(write(CONTROL, [0x38]))
+    e.expect("step while running", ok(CONTROL, 1) + PAUSED)
+    # Held: a step with bit 0 set holds, and bit 0 at 0 starts, paused, with no step.
+    e.send(write(CONTROL, [0x39]))
+    e.expect("step while held", ok(CONTROL, 1))
+    expect("held", bytes([word(e, CONTROL)]), bytes([0x9]))
+    e.send(write(CONTROL, [0x39]))
+    e.expect("step with hold again", ok(CONTROL, 1))
+    expect("no p", e.take(1, timeout=0.3), b"")
+    e.send(write(CONTROL, [0x38]))
+    e.expect("start with bit 5", ok(CONTROL, 1) + PAUSED)
+    expect("R15 after the start", bytes([word(e, 0xFFFFFFEF)]), bytes([0]))
+    e.stop()
+
+    # A step into HALT ends in h, not p.
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, stop) + write(CONTROL, [0x18]))
+    e.expect("stop loaded", ok(0, len(stop)) + ok(CONTROL, 1) + PAUSED)
+    e.send(write(CONTROL, [0x38]))
+    e.expect("step into HALT", ok(CONTROL, 1) + b"\xffh01#C9")
+    expect("halted", bytes([word(e, CONTROL)]), bytes([0xA]))
+    e.send(write(CONTROL, [0x38]))
+    e.expect("step when halted", ok(CONTROL, 1))
+    expect("still halted, no notice", e.take(1, timeout=0.3), b"")
+    e.stop()
+
+    # The step limit counts the steps: the second step ends in h05.
+    e = Emu(["-n", "2"])
+    e.take(len(HELLO))
+    e.send(write(0, count) + write(CONTROL, [0x18]))
+    e.expect("limit loaded", ok(0, len(count)) + ok(CONTROL, 1) + PAUSED)
+    e.send(write(CONTROL, [0x38]))
+    e.expect("first step", ok(CONTROL, 1) + PAUSED)
+    e.send(write(CONTROL, [0x38]))
+    e.expect("second step", ok(CONTROL, 1) + b"\xffh05#CD")
+    e.stop()
+
+    # A step at a console read waits for a byte, and the link reaches only the
+    # debug registers until it ends. A hold ends the wait.
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, echo) + write(CONTROL, [0x18]))
+    e.expect("echo loaded", ok(0, len(echo)) + ok(CONTROL, 1) + PAUSED)
+    e.send(write(CONTROL, [0x38]))
+    e.expect("echo step", ok(CONTROL, 1))
+    expect("no p while the read waits", e.take(1, timeout=0.3), b"")
+    expect("bit 4 reads 0", bytes([word(e, CONTROL)]), bytes([0x8]))
+    e.send(read(0, 1))
+    e.expect("e02 in the step", pkt("e", "5202"))
+    e.send(b"a")
+    e.expect("p after the byte", PAUSED)
+    expect("R1 holds the byte", bytes([word(e, 0xFFFFFFE1) & 0xFF]), b"a")
+    # AND, the HALT that is not taken, the echo, ADD, and the jump back.
+    for n in range(5):
+        e.send(write(CONTROL, [0x38]))
+        e.expect(f"echo step {n}", ok(CONTROL, 1) + (b"a" if n == 2 else b"") + PAUSED)
+    e.send(write(CONTROL, [0x38]))
+    e.expect("read step", ok(CONTROL, 1))
+    e.send(write(CONTROL, [0x9]))
+    e.expect("hold in the step", ok(CONTROL, 1))
+    expect("held, no p", e.take(1, timeout=0.3), b"")
+    expect("held control", bytes([word(e, CONTROL)]), bytes([0x9]))
+    e.stop()
+
+    # R13, R14, and R15 after each step, with an NMI and an IRQ: an entry is a
+    # step of its own, and they match the trace.
+    opts = ["--nmi", "2:1", "--irq", "2:2"]
+    steps = 14
+    want = regs_after_steps(irq_bin, steps, opts)
+    # R15 before an entry: the words 4 and 10 are the next instructions of
+    # irq.nasm after steps 1 and 7.
+    here = {1: 4, 7: 10}
+    e = Emu(opts)
+    e.take(len(HELLO))
+    e.send(write(0, irq) + write(CONTROL, [0x18]))
+    e.expect("irq loaded", ok(0, len(irq)) + ok(CONTROL, 1) + PAUSED)
+    for n in range(steps):
+        e.send(write(CONTROL, [0x38]))
+        e.expect(f"irq step {n}", ok(CONTROL, 1) + PAUSED)
+        got = (word(e, 0xFFFFFFED), word(e, 0xFFFFFFEE), word(e, 0xFFFFFFEF))
+        w13, w14, w15 = want[n]
+        if got != (w13, w14, here[n] if w15 is None else w15):
+            failures.append(f"irq step {n}: R13, R14, R15 = {got}, trace has {want[n]}, {here.get(n)}")
+    e.stop()
+
+
 def test_usage() -> None:
     proc = subprocess.run([NICEEMU, "--link", "0", "--input", "x"], capture_output=True, text=True)
     want = "niceemu: --input cannot be given with --link\n"
@@ -447,12 +601,18 @@ def main() -> None:
         echo = assemble(tmp, "echo", ECHO)
         spin = assemble(tmp, "spin", SPIN)
         count = assemble(tmp, "count", COUNT)
-    tests: List[Callable[[], None]] = [
-        test_example, test_errors, lambda: test_run(echo), lambda: test_overflow(spin),
-        lambda: test_step_limit(spin), lambda: test_pause(count, echo), test_usage,
-    ]
-    for t in tests:
-        t()
+        one = assemble(tmp, "one", ONE)
+        stop = assemble(tmp, "stop", STOP)
+        with open(os.path.join(HERE, "irq.nasm")) as src:
+            irq = assemble(tmp, "irq", src.read())
+        irq_bin = os.path.join(tmp, "irq.bin")
+        tests: List[Callable[[], None]] = [
+            test_example, test_errors, lambda: test_run(echo), lambda: test_overflow(spin),
+            lambda: test_step_limit(spin), lambda: test_pause(count, echo),
+            lambda: test_step(count, one, stop, echo, irq, irq_bin), test_usage,
+        ]
+        for t in tests:
+            t()
     for f in failures:
         print("FAIL " + f)
     print(f"PASS link ({len(tests)} tests)" if not failures else f"FAIL link ({len(failures)} checks)")

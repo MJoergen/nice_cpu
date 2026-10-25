@@ -69,14 +69,17 @@ TODO or FIXME comments.
   running time since reset, so `time.h` has `clock` but no calendar: `time`
   returns −1, and `difftime`, `gmtime`, `mktime`, and `strftime` are
   missing. A device with the date, set by the board, would let `time` work.
-- **Run control in the debug link** (DEBUG.md). Version 2 has the pause,
-  in niceemu and in `src/debug_link.vhd`. A board must stop the counters
-  and the timer while `paused_o` is 1 (NiceMonMEGA65). Still to do: single
-  step (stage 3), breakpoints, which raise `pause_i` early enough for the
-  pipelined core's fetch ahead (stage 4), watchpoints, and writable
-  registers and a port for the hidden state of ISA.md §1.4 (stage 6). A
-  pause cannot interrupt a console read that waits in niceemu (DEBUG.md §7);
-  a board's read does not wait.
+- **Run control in the debug link** (DEBUG.md). Version 3 has the pause and
+  the single step, in niceemu and in `src/debug_link.vhd`. A board must stop
+  the counters and the timer while `paused_o` is 1 (NiceMonMEGA65). Still to
+  do: breakpoints, which raise `pause_i` early enough for the pipelined
+  core's fetch ahead (stage 4), watchpoints, and writable registers and a
+  port for the hidden state of ISA.md §1.4 (stage 6). A step is one per
+  write; a count of steps, and a read-only register that counts them so a
+  host can tell whether a step ran when both the `k` and the `p` were lost,
+  can come with the breakpoints if a host needs them. A pause cannot
+  interrupt a console read that waits in niceemu (DEBUG.md §7); a board's
+  read does not wait.
 
 ## Toolchain
 

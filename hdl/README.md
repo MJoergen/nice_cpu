@@ -253,7 +253,9 @@ notices `b`, `h`, `o`, and `p`, the clear, one that a dropped packet started,
 a `W` that wraps past `0xFFFFFFFF`, the hold and restart, and the pause: its
 notice after and before the answer, the memory and registers while paused,
 a hold and a start that keep or begin a pause, a go on, and a halt that
-goes first.
+goes first; and the step: `pause_o` low for exactly one cycle, bit 4 and the
+memory during the step, one `p` after it, a quick step, a hold during the
+step, a write with bit 5 that does not step, and a step into a halt.
 
 `tb_link` runs on each core of `CORES`. It is the debug link as a board
 uses it: the link is a second master of the data bus, and owns it while
@@ -261,8 +263,10 @@ the processor is held, halted, or paused. The test reaches the memory model and 
 math unit through `wb_dmux`, loads `test/linkecho.nasm` with a `W`, starts
 it, and checks its echo of console bytes, `e02` while it runs, the halt
 after a UART break with the registers it left, the restart of DEBUG.md §8,
-a pause of the core with its registers, memory, and console, and a hold
-while it runs. The testbench shows three things a board must
+a pause of the core with its registers, memory, and console, a hold
+while it runs, and the single step: R15 after each step of the echo program,
+a step into `HALT`, the writes with bit 5 that do not step, and an `INT` with
+the registers of each step as `niceemu --trace` shows them. The testbench shows three things a board must
 do: each master sees only its own STALL and ACK; the devices are reset at
 a start, when `hold_o` falls, and not while the processor is held, so that
 the link can reach them; and an instruction ACK that comes after a hold
@@ -707,7 +711,9 @@ high until `clear_done_i`; that `tx_valid_o` and `tx_data_o` hold until
 the host takes the byte, and a console byte taken is the next one out;
 and that `eoi_o` rises only after a break and falls only at a start or
 reset. The properties under `G_FORMAL` in `src/debug_link.vhd` name its
-registers. A parser of the bytes the host takes asserts that every packet
+registers: `pause_r` is low for exactly one cycle per step, only after a
+cycle in which the link owned the paused core, and the link owns nothing
+while it steps. A parser of the bytes the host takes asserts that every packet
 is whole, a known tag, upper-case hex digits, `#`, and the right
 checksum, that a console byte goes out only between packets, and that no
 answer starts during a clear. `rx_ready_o` is low only for 2 cycles after
@@ -1078,8 +1084,11 @@ the read counter returns 0 and has no side effect, and a link write is
 ignored. It holds the debug registers of §6 itself, takes R0 to R15 and the
 halt as inputs, drives `hold_o`, `rom_hide_o`, and `pause_o`, takes
 `paused_i`, and asks the board to
-clear the memory with `clear_o` and `clear_done_i`. The board stops the
-counters and the timer while the core is paused.
+clear the memory with `clear_o` and `clear_done_i`. A write with bits 4 and
+5 to a paused core is a step: `pause_o` drops for one cycle and rises
+again, and the link does not own the memory until the core has paused or
+halted again. The board stops the counters and the timer while the core is
+paused, and not during a step.
 `formal/debug_link.sby` proves its ports and the guarantees of its
 header (The formal checks).
 

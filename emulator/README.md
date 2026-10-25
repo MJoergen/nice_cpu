@@ -23,7 +23,10 @@ runs that stop in each way: `HALT`, the other halts, and the step limit,
 Then `test/link.py` runs niceemu with `--link 0` and checks the debug link
 over TCP (see Debug link below): the packets of DEBUG.md §8 byte for byte,
 the errors and drops, a program loaded, run, halted, and restarted, the
-overflow notice, and the step limit.
+overflow notice, the step limit, and the single step: its example of DEBUG.md §8,
+the cases where bit 5 does nothing, a step into `HALT` and to the step limit,
+a step at a console read, and R13–R15 after each step across interrupt entries,
+compared with `--trace`.
 
 `test/reserved.nasm` runs a reserved control word, which halts the
 processor with exit status 2.
@@ -226,7 +229,10 @@ stdout stays empty. It runs until a signal, and then exits with status 0.
 It serves the link every 4096 steps while a program runs, and at least
 every 100 ms while the processor is held, halted, or paused, or a console
 read waits. A pause takes effect between two steps, except while a console
-read waits, when it takes effect after the next byte (DEBUG.md §7). A `W` writes its words when its checksum has been checked, so a `W`
+read waits, when it takes effect after the next byte (DEBUG.md §7). A step
+of a paused processor (bit 5, DEBUG.md §6) runs one step of `--max-steps`
+and `--trace`, an instruction or an interrupt entry, and then pauses again.
+A `W` writes its words when its checksum has been checked, so a `W`
 with a bad checksum writes nothing. One with a bad payload writes the whole
 words before the bad byte, at most N.
 

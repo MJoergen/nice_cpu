@@ -219,6 +219,7 @@ architecture synthesis of pipeline is
    signal f_hold_r   : std_logic;   -- FETCH waits for the store in DBUS
    signal f_held_r   : std_logic;   -- The bus stalled FETCH's request a cycle ago
    signal f_block    : std_logic;   -- FETCH makes no new request now
+   signal f_bstall   : std_logic;   -- The bus stalls FETCH's request
 
    -- DECODE
    signal d_redirect : std_logic;
@@ -295,6 +296,7 @@ begin
    f_block    <= f_hold_r and st_valid and not f_held_r;
    ibus_stb_o <= f_stb and not f_block;
    f_stall    <= ibus_stall_i or f_block;
+   f_bstall   <= f_stb and not f_block and ibus_stall_i;
 
    p_hold : process (clk_i)
    begin
@@ -304,7 +306,7 @@ begin
          w_target_r <= w_target;
          f_hold_r   <= (st_valid and not st_acc) or
                        (w_st and (w_flush or f_redirect or f_redir_r));
-         f_held_r  <= f_stb and not f_block and ibus_stall_i;
+         f_held_r  <= f_bstall;
          if rst_i = '1' then
             f_redir_r <= '0';
             w_redir_r <= '0';
@@ -484,7 +486,7 @@ begin
    begin
       stats_v         := f_stats;
       -- Only the bus's stalls, not FETCH's waits for a store in DBUS
-      stats_v.stall   := f_stb and not f_block and ibus_stall_i;
+      stats_v.stall   := f_bstall;
       stats_v.starve  := d_starve;
       stats_v.blocked := d_blocked;
       stats_v.words   := f_consume;

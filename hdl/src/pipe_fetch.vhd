@@ -31,6 +31,7 @@
 --
 -- stats_o reports the buffer's words, and the room held for the requests
 -- in flight, in each cycle, for the fetch statistics (MICROARCH.md §8.1).
+-- It leaves the stall to the pipeline, which sees the bus stall alone.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) The bus slave acknowledges every request, in order.
@@ -150,7 +151,6 @@ begin
       stats_v.count := count_r;
       stats_v.held  := count_r + 2 * pending_r;
       stats_v.full  := want and not room;
-      stats_v.stall := stb_r and ibus_stall_i;
       stats_v.pair  := ibus_ack_i;
       stats_o       <= stats_v;
    end process p_stats;

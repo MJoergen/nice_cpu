@@ -531,6 +531,7 @@ fn serve(arena: std.mem.Allocator, opts: Options, syms: []const Symbol, cpu: *Cp
             next = 0;
             reported = false;
         }
+        if (link.pauseDue(steps == opts.max_steps)) link.pause();
         if (!link.running()) {
             if (link.halted() and !reported) {
                 _ = try report(out, opts, syms, cpu, steps);
@@ -543,7 +544,7 @@ fn serve(arena: std.mem.Allocator, opts: Options, syms: []const Symbol, cpu: *Cp
         }
         // A chunk of steps, then the link is served. A step is as in `run`.
         var n: u32 = 0;
-        while (n < 4096 and link.running() and !link.started) : (n += 1) {
+        while (n < 4096 and link.running() and !link.started and !link.pauseDue(steps == opts.max_steps)) : (n += 1) {
             if (steps == opts.max_steps) {
                 link.limit_hit = true;
                 break;

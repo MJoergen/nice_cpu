@@ -11,7 +11,7 @@ const Cpu = cpu_zig.Cpu;
 /// The escape byte, which starts a packet (DEBUG.md §1).
 pub const esc: u8 = 0xFF;
 /// The protocol version (DEBUG.md §4, §6).
-const version: u8 = 1;
+const version: u8 = 2;
 /// The program's input buffer, in bytes (DEBUG.md §7).
 pub const input_size = 2048;
 /// The packet timeout of DEBUG.md §5.
@@ -27,6 +27,7 @@ const ctl_hold: u32 = 1 << 0;
 const ctl_halted: u32 = 1 << 1;
 const ctl_clear: u32 = 1 << 2;
 const ctl_rom_hidden: u32 = 1 << 3;
+const ctl_pause: u32 = 1 << 4;
 
 pub const Link = struct {
     cpu: *Cpu,
@@ -38,6 +39,10 @@ pub const Link = struct {
 
     /// Bit 0 of the control register.
     held: bool = true,
+    /// Bit 4 as last written: a pause is asked for (DEBUG.md §6).
+    pause_req: bool = false,
+    /// The processor has paused: bit 4 reads 1. Only the run loop sets it.
+    paused: bool = false,
     /// The step limit stopped the run: halt reason 5.
     limit_hit: bool = false,
     /// A start that the run loop has not carried out yet. It resets the
@@ -102,9 +107,24 @@ pub const Link = struct {
         return !self.started and (self.cpu.halted() or self.limit_hit);
     }
 
-    /// Whether the program runs: bits 0 and 1 of the control register are 0.
+    /// Whether the program runs: bits 0, 1, and 4 of the control register
+    /// read 0.
     pub fn running(self: *const Link) bool {
-        return !self.held and !self.halted();
+        return !self.held and !self.halted() and !self.paused;
+    }
+
+    /// Whether a pause request takes effect now, between two steps. A halt
+    /// goes first, so not at the step limit (DEBUG.md §6).
+    pub fn pauseDue(self: *const Link, at_limit: bool) bool {
+        return self.running() and self.pause_req and !at_limit;
+    }
+
+    /// Pause the processor, and send the console output so far and the `p`
+    /// notice.
+    pub fn pause(self: *Link) void {
+        self.paused = true;
+        self.console_w.flush() catch {};
+        self.sendPacket('p', "");
     }
 
     /// The halt reason of DEBUG.md §6.
@@ -249,10 +269,10 @@ pub const Link = struct {
         }
     }
 
-    /// A console byte from the host. It reaches the program only while it
-    /// runs, before the end of the input.
+    /// A console byte from the host. It reaches the program while it runs
+    /// or is paused, before the end of the input.
     fn consoleByte(self: *Link, b: u8) void {
-        if (!self.running() or self.input_end) return;
+        if (self.held or self.halted() or self.input_end) return;
         if (self.input_len == input_size) {
             if (!self.overflow_sent) self.sendPacket('o', "");
             self.overflow_sent = true;
@@ -306,7 +326,8 @@ pub const Link = struct {
     fn readDebug(self: *Link, addr: u32) u32 {
         return switch (addr - debug_base) {
             0x00...0x0F => self.cpu.getReg(@truncate(addr)),
-            0x10 => @as(u32, @intFromBool(self.held)) | @as(u32, @intFromBool(self.halted())) << 1 | ctl_rom_hidden,
+            0x10 => @as(u32, @intFromBool(self.held)) | @as(u32, @intFromBool(self.halted())) << 1 | ctl_rom_hidden |
+                @as(u32, @intFromBool(self.paused)) << 4,
             0x11 => self.haltReason(),
             0x12 => version,
             0x13 => @intCast(input_size - self.input_len),
@@ -331,20 +352,27 @@ pub const Link = struct {
             self.cpu.mem.deinit();
             self.cpu.mem = .init(self.gpa);
         }
+        self.pause_req = value & ctl_pause != 0;
         if (value & ctl_hold != 0) {
             self.hold();
         } else if (self.held) {
             self.start();
+        } else if (!self.pause_req) {
+            // Cancels a request, or makes a paused processor go on.
+            self.paused = false;
         }
     }
 
+    /// A hold ends a pause, and R0–R15 stay as they are.
     fn hold(self: *Link) void {
         if (!self.held) self.interrupted = true;
         self.held = true;
+        self.paused = false;
     }
 
     fn start(self: *Link) void {
         self.held = false;
+        self.paused = false;
         self.started = true;
         self.interrupted = true;
         self.limit_hit = false;
@@ -450,12 +478,14 @@ test "the checksums of DEBUG.md §8" {
     try t.expectEqual(0xAE, checksum('k', "000001000002"));
     try t.expectEqual(0x94, checksum('R', "000001000001"));
     try t.expectEqual(0x48, checksum('r', "00000100000111223344"));
-    try t.expectEqual(0xC3, checksum('b', "01"));
     try t.expectEqual(0xC9, checksum('h', "01"));
     try t.expectEqual(0x2E, checksum('e', "5202"));
     try t.expectEqual(0xBB, checksum('W', "FFFFFFF0000100000009"));
     try t.expectEqual(0xBA, checksum('W', "FFFFFFF0000100000008"));
     try t.expectEqual(0x46, checksum('k', "FFFFFFF00001"));
+    try t.expectEqual(0xC4, checksum('b', "02"));
+    try t.expectEqual(0x70, checksum('p', ""));
+    try t.expectEqual(0xBB, checksum('W', "FFFFFFF0000100000018"));
 }
 
 test "the debug registers are the only words a running program allows" {

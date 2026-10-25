@@ -36,6 +36,13 @@ loop    MOVE    R1, @CONSOLE
         MOVE    R15, loop
 """
 
+# Counts in R2, and never reads the console or halts. R15 is 0 or 2 between
+# two steps.
+COUNT = """
+loop    ADD     R2, R2, 1
+        MOVE    R15, loop
+"""
+
 # Never halts, and never reads the console.
 SPIN = """
 loop    MOVE    R15, loop
@@ -65,7 +72,8 @@ def answer(addr: int, words: List[int]) -> bytes:
 
 
 CONTROL = 0xFFFFFFF0
-HELLO = b"\xffb01#C3"
+HELLO = b"\xffb02#C4"
+PAUSED = b"\xffp#70"
 
 
 def assemble(tmp: str, name: str, text: str) -> List[int]:
@@ -153,7 +161,7 @@ def test_example() -> None:
     e.expect("control held", answer(CONTROL, [0x9]))
     # The halt reason, the version, the free space, and a reserved word.
     e.send(read(0xFFFFFFF1, 4))
-    e.expect("F1-F4", answer(0xFFFFFFF1, [0, 1, 2048, 0]))
+    e.expect("F1-F4", answer(0xFFFFFFF1, [0, 2, 2048, 0]))
     status, out, _ = e.stop()
     expect("exit status", bytes([status]), b"\x00")
     expect("stdout", out, b"")
@@ -210,7 +218,7 @@ def test_errors() -> None:
     e.send(write(0xFFFFFF01, [5]) + write(0xFFFFFFF2, [7]))
     e.expect("ignored writes", ok(0xFFFFFF01, 1) + ok(0xFFFFFFF2, 1))
     e.send(read(0xFFFFFF01, 1) + read(0xFFFFFFF2, 1))
-    e.expect("read counter", answer(0xFFFFFF01, [0]) + answer(0xFFFFFFF2, [1]))
+    e.expect("read counter", answer(0xFFFFFF01, [0]) + answer(0xFFFFFFF2, [2]))
     # A clear: 0x5 clears and stays held.
     e.send(write(CONTROL, [0x5]))
     e.expect("clear", ok(CONTROL, 1))
@@ -315,6 +323,118 @@ def test_step_limit(spin: List[int]) -> None:
         failures.append(f"stderr: {want!r} not in {err!r}")
 
 
+def word(e: Emu, addr: int) -> int:
+    """The word at addr, read over the link."""
+    e.send(read(addr, 1))
+    got = e.take(len(answer(addr, [0])))
+    expect(f"answer at {addr:08X}", got[:14], answer(addr, [0])[:14])
+    return int(got[-11:-3], 16)
+
+
+def test_pause(count: List[int], echo: List[int]) -> None:
+    """The pause of §6: bit 4, the `p` notice, the registers, a hold, a start
+    paused, a halt first, and the console."""
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, count) + write(CONTROL, [0x8]))
+    e.expect("load and start", ok(0, len(count)) + ok(CONTROL, 1))
+    # A request. Bit 4 reads 1 once the processor has paused, and the memory
+    # is reached then.
+    e.send(write(CONTROL, [0x18]))
+    e.expect("pause request", ok(CONTROL, 1))
+    e.expect("p", PAUSED)
+    expect("paused control", bytes([word(e, CONTROL)]), bytes([0x18]))
+    r2 = word(e, 0xFFFFFFE2)
+    r15 = word(e, 0xFFFFFFEF)
+    if r2 == 0 or r15 not in (0, 2):
+        failures.append(f"paused registers: R2 = {r2}, R15 = {r15}")
+    e.send(read(0, 1))
+    e.expect("memory while paused", answer(0, count[:1]))
+    # Nothing moves while paused, and a console byte waits in the buffer.
+    e.send(b"x")
+    time.sleep(0.2)
+    expect("R2 while paused", bytes([word(e, 0xFFFFFFE2) == r2]), b"\x01")
+    expect("free space while paused", bytes([word(e, 0xFFFFFFF3) == 2047]), b"\x01")
+    # A write of 0 to bit 4 goes on. The memory is out of reach again.
+    e.send(write(CONTROL, [0x8]))
+    e.expect("go on", ok(CONTROL, 1))
+    e.send(read(0, 1))
+    e.expect("e02 running", pkt("e", "5202"))
+    expect("running control", bytes([word(e, CONTROL)]), bytes([0x8]))
+    # A second pause: R2 has grown. A hold keeps the registers, and ends the
+    # pause.
+    e.send(write(CONTROL, [0x18]))
+    e.expect("second request", ok(CONTROL, 1))
+    e.expect("second p", PAUSED)
+    r2b = word(e, 0xFFFFFFE2)
+    if r2b <= r2:
+        failures.append(f"R2 did not grow after go on: {r2} then {r2b}")
+    e.send(write(CONTROL, [0x9]))
+    e.expect("hold paused", ok(CONTROL, 1))
+    expect("held control", bytes([word(e, CONTROL)]), bytes([0x9]))
+    expect("held keeps R2", bytes([word(e, 0xFFFFFFE2) == r2b]), b"\x01")
+    # A start with bit 4 set pauses before the first step: R15 is 0, the
+    # input buffer is empty again, and R2 is not defined.
+    e.send(write(CONTROL, [0x19]))
+    e.expect("hold with request", ok(CONTROL, 1))
+    expect("request reads 0 while held", bytes([word(e, CONTROL)]), bytes([0x9]))
+    e.send(write(CONTROL, [0x18]))
+    e.expect("start paused", ok(CONTROL, 1))
+    e.expect("p at start", PAUSED)
+    expect("start paused control", bytes([word(e, CONTROL)]), bytes([0x18]))
+    expect("start paused R15", bytes([word(e, 0xFFFFFFEF)]), bytes([0]))
+    # A cancelled request: held, a request, and a write of 0 before the start.
+    e.send(write(CONTROL, [0x9]))
+    e.expect("hold again", ok(CONTROL, 1))
+    e.send(write(CONTROL, [0x19]))
+    e.expect("request while held", ok(CONTROL, 1))
+    e.send(write(CONTROL, [0x9]))
+    e.expect("cancel", ok(CONTROL, 1))
+    e.send(write(CONTROL, [0x8]))
+    e.expect("start", ok(CONTROL, 1))
+    expect("no p after a cancel", e.take(1, timeout=0.5), b"")
+    e.send(write(CONTROL, [0x9]))
+    e.expect("hold", ok(CONTROL, 1))
+    e.stop()
+
+    # The console read that waits is inside a step: a request waits for a
+    # byte. A paused processor keeps what it is sent.
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, echo) + write(CONTROL, [0x8]))
+    e.expect("echo loaded", ok(0, len(echo)) + ok(CONTROL, 1))
+    e.send(write(CONTROL, [0x18]))
+    e.expect("echo request", ok(CONTROL, 1))
+    expect("no p while the read waits", e.take(1, timeout=0.5), b"")
+    # The pause comes after the instruction that read the byte, and before
+    # the one that echoes it.
+    e.send(b"a")
+    e.expect("p after the byte", PAUSED)
+    e.send(b"bc")
+    expect("no echo while paused", e.take(1, timeout=0.5), b"")
+    expect("free space with two waiting", bytes([word(e, 0xFFFFFFF3) == 2046]), b"\x01")
+    e.send(write(CONTROL, [0x8]))
+    e.expect("echo go on", ok(CONTROL, 1))
+    e.expect("echo abc", b"abc")
+    e.send(write(CONTROL, [0x9]))
+    e.expect("echo hold", ok(CONTROL, 1))
+    e.stop()
+
+    # A halt goes first: at the step limit, a request ends in h, not p, and
+    # a halted processor ignores a request.
+    e = Emu(["-n", "0"])
+    e.take(len(HELLO))
+    e.send(write(0, count) + write(CONTROL, [0x18]))
+    e.expect("limit start", ok(0, len(count)) + ok(CONTROL, 1))
+    e.expect("h05 first", b"\xffh05#CD")
+    expect("halted control", bytes([word(e, CONTROL)]), bytes([0xA]))
+    e.send(write(CONTROL, [0x18]))
+    e.expect("request when halted", ok(CONTROL, 1))
+    expect("still halted", bytes([word(e, CONTROL)]), bytes([0xA]))
+    expect("no p when halted", e.take(1, timeout=0.5), b"")
+    e.stop()
+
+
 def test_usage() -> None:
     proc = subprocess.run([NICEEMU, "--link", "0", "--input", "x"], capture_output=True, text=True)
     want = "niceemu: --input cannot be given with --link\n"
@@ -326,9 +446,10 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         echo = assemble(tmp, "echo", ECHO)
         spin = assemble(tmp, "spin", SPIN)
+        count = assemble(tmp, "count", COUNT)
     tests: List[Callable[[], None]] = [
         test_example, test_errors, lambda: test_run(echo), lambda: test_overflow(spin),
-        lambda: test_step_limit(spin), test_usage,
+        lambda: test_step_limit(spin), lambda: test_pause(count, echo), test_usage,
     ]
     for t in tests:
         t()

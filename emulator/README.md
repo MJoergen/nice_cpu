@@ -224,8 +224,9 @@ link, and what a run prints after it halts, and the trace, go to stderr.
 stdout stays empty. It runs until a signal, and then exits with status 0.
 
 It serves the link every 4096 steps while a program runs, and at least
-every 100 ms while the processor is held or halted, or a console read
-waits. A `W` writes its words when its checksum has been checked, so a `W`
+every 100 ms while the processor is held, halted, or paused, or a console
+read waits. A pause takes effect between two steps, except while a console
+read waits, when it takes effect after the next byte (DEBUG.md §7). A `W` writes its words when its checksum has been checked, so a `W`
 with a bad checksum writes nothing. One with a bad payload writes the whole
 words before the bad byte, at most N.
 

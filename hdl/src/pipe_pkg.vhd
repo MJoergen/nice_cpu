@@ -259,19 +259,6 @@ package pipe_pkg is
       rep        : t_retire;                        -- The report, but its registers
    end record t_write;
 
-   -- The value of a source field that is not in memory (ISA.md §4.1).
-   function src_value(m : std_logic_vector(2 downto 0);
-                      x : natural range 0 to 15;
-                      b : std_logic_vector(31 downto 0);
-                      c : std_logic_vector(31 downto 0)) return std_logic_vector;
-
-   -- The address of a memory operand, source or destination, before any
-   -- side effect of its own (ISA.md §4.1 and §4.2).
-   function mem_addr(m : std_logic_vector(2 downto 0);
-                     x : natural range 0 to 15;
-                     b : std_logic_vector(31 downto 0);
-                     c : std_logic_vector(31 downto 0)) return std_logic_vector;
-
    -- a lies in the aligned block of 2^bits words that holds lo, or in the
    -- block after it, whose number the caller computed ahead. That covers
    -- the 2^bits words from lo on, with no subtraction: two equality
@@ -501,30 +488,6 @@ package body pipe_pkg is
       end if;
       return add_v;
    end function early_form;
-
-   function src_value(m : std_logic_vector(2 downto 0);
-                      x : natural range 0 to 15;
-                      b : std_logic_vector(31 downto 0);
-                      c : std_logic_vector(31 downto 0)) return std_logic_vector is
-   begin
-      case m is
-         when "001"  => return regval(x, b - 1);
-         when "011"  => return b + c;
-         when others => return b;
-      end case;
-   end function src_value;
-
-   function mem_addr(m : std_logic_vector(2 downto 0);
-                     x : natural range 0 to 15;
-                     b : std_logic_vector(31 downto 0);
-                     c : std_logic_vector(31 downto 0)) return std_logic_vector is
-   begin
-      case m is
-         when "101"         => return regval(x, b - 1);
-         when "011" | "111" => return b + c;
-         when others        => return b;
-      end case;
-   end function mem_addr;
 
    function near(a       : std_logic_vector(31 downto 0);
                  lo      : std_logic_vector(31 downto 0);

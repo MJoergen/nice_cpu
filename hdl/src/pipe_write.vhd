@@ -625,7 +625,7 @@ begin
       end if;
 
       -- WRITE takes the next micro-operation when it is free.
-      if (w_r.uop.valid = '0' or done_v) and not flush_v and n_v.mode = RUN_ST and not intr_v then
+      if (w_r.uop.valid = '0' or done_v) and not flush_v and n_v.mode = RUN_ST then
          accept_v := '1';
       else
          accept_v := '0';

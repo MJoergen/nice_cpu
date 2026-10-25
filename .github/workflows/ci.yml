@@ -186,6 +186,14 @@ jobs:
           curl -sSL https://github.com/SRI-CSL/yices2/releases/download/Yices-2.6.4/yices-2.6.4-x86_64-pc-linux-gnu.tar.gz | tar xz -C /tmp
           sudo cp /tmp/yices-2.6.4/bin/* /usr/local/bin/
       - run: make formal
+      # The counterexamples of a failed proof.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: formal-traces
+          path: |
+            hdl/build/*/engine_*/trace*.vcd
+            hdl/build/formal_*.log
 
   intro:
     runs-on: ubuntu-latest

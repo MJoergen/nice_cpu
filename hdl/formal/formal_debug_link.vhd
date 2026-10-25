@@ -89,7 +89,26 @@ architecture synthesis of formal_debug_link is
    signal con_due  : std_logic                    := '0';
    signal con_byte : std_logic_vector(7 downto 0) := (others => '0');
 
+   -- The input state of the cycles before, for f_strobe. GHDL 4.1 of the
+   -- formal job fails on prev with a count.
+   signal free_nz_d        : std_logic := '0';
+   signal con_in_valid_d   : std_logic := '0';
+   signal con_in_valid_dd  : std_logic := '0';
+   signal hold_d           : std_logic := '0';
+   signal eoi_d            : std_logic := '0';
+
 begin
+
+   p_delay : process (clk_i)
+   begin
+      if rising_edge(clk_i) then
+         free_nz_d       <= '1' when free_i /= X"0000" else '0';
+         con_in_valid_d  <= con_in_valid;
+         con_in_valid_dd <= con_in_valid_d;
+         hold_d          <= hold;
+         eoi_d           <= eoi;
+      end if;
+   end process p_delay;
 
    -- A console byte taken is the next byte out.
    p_con : process (clk_i)
@@ -132,8 +151,8 @@ begin
    -- The program's input
    -- psl f_strobe : assert always
    --    {not rst_i; not rst_i; con_in_valid} |->
-   --    {prev(free_i) /= X"0000" and prev(con_in_valid) = '0' and
-   --     prev(con_in_valid, 2) = '0' and prev(hold) = '0' and prev(eoi) = '0'};
+   --    {free_nz_d = '1' and con_in_valid_d = '0' and
+   --     con_in_valid_dd = '0' and hold_d = '0' and eoi_d = '0'};
 
    -- The clear
    -- psl f_clear : assert always

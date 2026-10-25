@@ -615,10 +615,7 @@ begin
                n_v.last  := w_r.last;
                n_v.jump  := w_r.jump;
             end if;
-            n_v.s0val := w_r.s0val;
-            n_v.s1val := w_r.s1val;
-            n_v.in_service := w_r.in_service;
-            n_v.rep        := C_RETIRE_NONE;
+            n_v.rep := C_RETIRE_NONE;
          end if;
       end if;
 

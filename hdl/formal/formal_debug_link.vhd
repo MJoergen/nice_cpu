@@ -152,8 +152,11 @@ begin
    -- The Wishbone master
    -- psl f_wb_hold : assert always wb_cyc -> (hold = '1' or halted_i = '1' or paused_i = '1');
    -- psl f_wb_clear : assert always clear -> not wb_cyc;
-   -- psl f_wb_owed : assert always
-   --    (wb_cyc = '1' and wb_stb = '0') = (pending = 1) and (wb_stb = '1' -> pending = 0);
+   -- The toolchain of the formal job does not apply an = between two
+   -- Booleans, so each equality is two implications.
+   -- psl f_wb_owed : assert always (wb_cyc = '1' and wb_stb = '0') -> pending = 1;
+   -- psl f_wb_owed_back : assert always pending = 1 -> (wb_cyc = '1' and wb_stb = '0');
+   -- psl f_wb_stb : assert always wb_stb = '1' -> pending = 0;
 
    -- The program's input
    -- psl f_strobe : assert always

@@ -1165,8 +1165,10 @@ begin
       -- psl i_acc_done : assert always
       --    ((rx_st = RX_WAIT_ST or tx_st = TX_WAIT_ST) and acc_st = ACC_IDLE_ST) ->
       --    acc_done_r = '1';
-      -- psl i_rx_go : assert always (rx_go_r = '1') = (rx_st = RX_CALL_ST);
-      -- psl i_tx_go : assert always (tx_go_r = '1') = (tx_st = TX_CALL_ST);
+      -- psl i_rx_go : assert always rx_go_r = '1' -> rx_st = RX_CALL_ST;
+      -- psl i_rx_go_back : assert always rx_st = RX_CALL_ST -> rx_go_r = '1';
+      -- psl i_tx_go : assert always tx_go_r = '1' -> tx_st = TX_CALL_ST;
+      -- psl i_tx_go_back : assert always tx_st = TX_CALL_ST -> tx_go_r = '1';
       -- psl i_calls : assert always
       --    (rx_st = RX_CALL_ST or tx_st = TX_CALL_ST) -> acc_st = ACC_IDLE_ST;
 

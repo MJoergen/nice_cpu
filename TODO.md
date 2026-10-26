@@ -52,8 +52,8 @@ from the fifth review". No code has TODO or FIXME comments.
 ## Left from the sixth review
 
 ([doc/review/sixth-repository-review.md](doc/review/sixth-repository-review.md),
-2026-10-26, at b2ac5a5, one commit after RC05. Nothing of it is fixed yet;
-the section numbers are the review's.)
+2026-10-26, at b2ac5a5, one commit after RC05. Each finding that is fixed
+has a "Resolved" paragraph there; the section numbers are the review's.)
 
 - **The release gate.** Tag after the push's CI run is green, with an
   annotated tag whose message is the tag's section of RELEASE_NOTES.md.
@@ -93,18 +93,18 @@ the section numbers are the review's.)
 - **The debug link's documents.** The board contracts, the bad-checksum
   `W` difference, and a table of the versions in DEBUG.md; the proof's
   wording; the untested halt reasons and `link.py` cases (§3.2 to §3.7).
-- **Stale text.** "Condition always" in `pipe_decode.vhd`, `pipeline.vhd`,
-  and hdl/README.md; the cycle counter at hdl/README.md:1180; the step
-  numbers of §9 in five places; HISTORY.md's missing entries;
-  RELEASE_NOTES.md's missing upgrade notes and labels; README.md's "four
-  stages" and "four tools"; CLAUDE.md's Layout; DEBUG.md in
-  `check_refs.py` (§7.5, §9).
-- **Smaller.** Terms for Dhrystone (§1.5); `mchess.expected`'s provenance
-  (§5.2); the Zig library size claim (§5.1); `--stack` needs `--memory` (§5.3); `trapmsg.nasm` for codes
-  above 7, `CLOCKS_PER_SEC`, the reserved labels, ABI.md's join order
-  (§5.4); the wall-clock limit of `errors.py` (§6.3); `nicebuild.py`'s
+- **Stale text that waits for the figures.** The "1.72 ceiling" of
+  c-compiler-plan.md (§9.4), RC03's Dhrystone figure in RELEASE_NOTES.md
+  (§9.1), and hdl/README.md:972's cycles per instruction (§9.6), with the
+  rest of the figures above. HISTORY.md's present-tense entries (§9.2)
+  name no entry yet.
+- **Smaller.** Terms for Dhrystone (§1.5); `trapmsg.nasm` for codes above
+  7, which prints `code + 0x30` and so a wrong digit for 10 and up, and
+  `CLOCKS_PER_SEC` as `clock_t`, which changes `mchess.wasm` (§5.4); the
+  wall-clock limit of `errors.py` (§6.3); `nicebuild.py`'s
   `--allow-undefined`, `--stack 0`, and messages (§6.4); `--irq` against
-  the timer at one step (§4.3).
+  the timer at one step (§4.3). Nothing checks that the checked-in
+  `.wasm` files match their sources: `mchess.wasm` did not after 7b1411f.
 
 ## Left from the fifth review
 

@@ -93,8 +93,7 @@ the section numbers are the review's.)
   RELEASE_NOTES.md's missing upgrade notes and labels; README.md's "four
   stages" and "four tools"; CLAUDE.md's Layout; DEBUG.md in
   `check_refs.py` (§7.5, §9).
-- **Smaller.** `llvm-ar` checked and named (§1.4); the `.wasm` executable
-  bits and `.mypy_cache` (§1.5); terms for Dhrystone and `mchess.c`, and
+- **Smaller.** The `.wasm` executable bits and `.mypy_cache` (§1.5); terms for Dhrystone and `mchess.c`, and
   `mchess.expected`'s provenance (§1.5, §5.2); the Zig library size claim
   (§5.1); `--stack` needs `--memory` (§5.3); `trapmsg.nasm` for codes
   above 7, `CLOCKS_PER_SEC`, the reserved labels, ABI.md's join order

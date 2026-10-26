@@ -44,6 +44,8 @@ NiceMonMEGA65's submodule points at 62f2da2 (2026-10-25), 32 commits behind main
 
 README.md:174-176 says `make test` needs no C or Rust compiler. When clang and `wasm-ld` are found, `translator/test/build.py` builds C, and that runs `make -C runtime/libc libc.a`, whose Makefile line 3 has `AR = llvm-ar`, not `?=`. A machine with clang and `wasm-ld` but no `llvm-ar` fails `make -C translator test` with two failures; the reader reproduced it. `llvm-ar` is named only in a comment of ci.yml. **Fix:** check for `llvm-ar` in `clang_for_wasm32()` as for `wasm-ld`, and name it in README.md:177.
 
+**Resolved**: `clang_for_wasm32()` also requires `llvm-ar` on `PATH`, or the program named by `AR`, and the skip note names all three tools. `AR` in `runtime/libc/Makefile` is now `?=`, so it can be set. README.md names `llvm-ar` and `AR`.
+
 ### 1.5 Smaller
 
 - 19 of the 41 `.wasm` files have the executable bit again (bench.wasm, dhry.wasm, the C library's tests), though 82c72f1 cleared it after the fifth review: the `wasm` recipes restore it on every rebuild. A `chmod` in the recipes.

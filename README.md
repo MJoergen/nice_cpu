@@ -169,12 +169,13 @@ program, so it is not one of the joined files.
 **Host tools.** Python 3 runs `niceasm`, `nicewasm`, and the test scripts.
 Nothing beyond the standard library is needed, and `make typecheck` checks
 the Python with `mypy --strict` if mypy is installed. Zig 0.15 builds
-`niceemu` and compiles the Zig test modules. clang with the wasm32 target
-and `wasm-ld`, and rustc with the `wasm32-unknown-unknown` target, are
+`niceemu` and compiles the Zig test modules. clang with the wasm32 target,
+`wasm-ld`, and `llvm-ar`, and rustc with the `wasm32-unknown-unknown` target, are
 needed only for `make wasm` in `translator/`, which rebuilds the compiled
 test modules. Their `.wasm` files are checked in, so `make test` needs no
 C or Rust compiler. The same holds for the C library's tests in
-`runtime/libc/`, which `make -C runtime/libc wasm` rebuilds. The tests use
+`runtime/libc/`, which `make -C runtime/libc wasm` rebuilds. If `llvm-ar` has
+another name, set `AR`. The tests use
 `make`, `cat`, `cmp`, `diff`, `sed`, `grep`, `cut`, and `nproc`. GitHub Actions runs every `make test` and
 `make typecheck`, the document checks, `make programs` on both cores, `make lint`,
 `make formal`, and `make pdfcheck` on each push.

@@ -151,11 +151,11 @@ def compiler(variable: str, default: str) -> Optional[str]:
 
 
 def clang_for_wasm32(clang: str) -> bool:
-    """Whether clang has the wasm32 target and finds wasm-ld."""
+    """Whether clang has the wasm32 target and finds wasm-ld and llvm-ar."""
     p = subprocess.run([clang, "--target=wasm32", "-x", "c", "-c", "-o", os.devnull, "-"],
                        input="int x;\n", capture_output=True, text=True)
     ld = subprocess.run([clang, "--target=wasm32", "-print-prog-name=wasm-ld"], capture_output=True, text=True)
-    return p.returncode == 0 and os.path.isabs(ld.stdout.strip())
+    return p.returncode == 0 and os.path.isabs(ld.stdout.strip()) and compiler("AR", "llvm-ar") is not None
 
 
 def rustc_for_wasm32(rustc: str) -> bool:
@@ -178,7 +178,7 @@ def main() -> None:
             test_c(tmp)
             ran.append("C")
         else:
-            skipped.append("C (no clang for wasm32)")
+            skipped.append("C (no clang, wasm-ld, or llvm-ar for wasm32)")
         if compiler("ZIG", "zig"):
             test_zig(tmp)
             ran.append("Zig")

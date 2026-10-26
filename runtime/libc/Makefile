@@ -1,6 +1,6 @@
 PYTHON ?= python3
 CLANG ?= clang
-AR = llvm-ar
+AR ?= llvm-ar
 NICEWASM = $(PYTHON) ../../translator/nicewasm.py
 ASM = $(PYTHON) ../../assembler/niceasm.py
 EMU = ../../emulator/zig-out/bin/niceemu

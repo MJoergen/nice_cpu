@@ -61,6 +61,11 @@ has a "Resolved" paragraph there; the section numbers are the review's.)
   The debug link has the pause and the single step (DEBUG.md §6) since
   it was written. Merge it after a rebase onto main, or close it as not
   needed.
+- **The CI shard of `libc_mchess`** runs 1 to 3 hours, the others 6 to 12
+  minutes: that one program has 11.35 of the 18.1 million steps of
+  `make programs`, so no split helps. A shorter perft in the core runs
+  (depth 2 instead of 3) would cut it, at the price of fewer steps of
+  the C library under test; decide whether that is worth it.
 - **In-system timing at RC05** (§2.4): a build of NiceMonMEGA65's tag `RC05` on both boards, with its figures in pipeline-timing.md.
 - **Smaller.** Terms for Dhrystone (§1.5); `CLOCKS_PER_SEC` as `clock_t`,
   which changes `mchess.wasm` (§5.4); the

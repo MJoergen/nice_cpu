@@ -109,6 +109,8 @@ The in-system results, the MEGA65 R6 at 100 MHz and the Nexys4DDR at 90 MHz, wer
 - Nothing checks that `bench.wasm` and `dhry.wasm` are current. They are: `make wasm` in a clone gives both byte for byte.
 - DEBUG.md §8's example of a step assumes the processor is held before the write of `0x18`; the text does not say so.
 
+**Resolved**: `make wasmcheck` rebuilds every checked-in `.wasm` file, compares it, and puts the checked-in one back. All 41 match, but for the four Rust modules, whose bytes depend on the version of rustc (a note, not a failure); changing a C test's constant makes it report `STALE`. DEBUG.md §8 says that the processor is held before the first write.
+
 ## 3. The debug link
 
 The reader checked DEBUG.md rule by rule against `link.zig` and `debug_link.vhd`, recomputed 26 checksums, ran `tb_link` on both cores, and ran the proof (`prove` and `prove_held` pass locally; the `cover` task takes about 20 minutes, and CI's formal job 27 minutes for it).
@@ -178,6 +180,10 @@ Commit 4c42461 installed handlers for SIGINT, SIGTERM, and SIGHUP that set `stop
 - emulator/README.md:135's memory map omits the microsecond counter; the synopsis at line 53 lacks the `--link` form; line 79 does not describe the `.sym` format, nor that `.EQU` names are left out where assembler/README.md says "every label"; nothing warns that no step limit means a program may run forever; `hdl/test/tb_trace.vhd:29` and `hdl/sim/trace.vhd` still call 100000000 "the emulator's default for `-n`".
 - `--no-cycle-counter` makes `TIME_LO` and `TIME_HI` plain memory too, and an empty `.sym` file is accepted silently. Both untested, both fine.
 
+**Resolved**: Except the alias that hides the `Trap` line, which no real program has.
+- `test/irqtimer.nasm` pins that `--irq` and the timer's request before the same step keep the vector of `--irq`. I predicted its 13 steps, R5 = 2, R6 = 1, and R10 = 1 by hand first. The README says so, which fits the first-vector rule: the `--irq` request is pending before the step, and the timer's joins it.
+- emulator/README.md has the `--link` form of the synopsis, the microsecond counter in the memory map, the format of the `.sym` file with no `.EQU` names, that a second label at one address is never named, and that without `-n` a program that never halts runs until it is killed. `hdl/sim/trace.vhd` no longer calls 100000000 the emulator's default.
+
 ## 5. The runtime and the C library
 
 ### 5.1 The 81 KB claim is wrong the other way
@@ -231,6 +237,8 @@ The differential test of nicewasm at b2ac5a5 against 9d8f13d: 1040 modules (300 
 
 `test/errors.py:402` fails the "8000 nested blocks" case when the translation takes more than 4 s of wall-clock time. Under a load of 134 it took 4.0 s of wall time for 0.25 s of CPU time and failed; alone it passes. `make -C translator test` stops at the first failure, so `build.py` did not run in that pass. **Fix:** measure CPU time, or allow 30 s; a quadratic regression would still show as minutes.
 
+**Resolved**: The test measures the child's CPU time with `os.wait4`, which is that child's alone however many tests run, and allows 10 s. With a limit of 0.01 s the case fails.
+
 ### 6.4 `nicebuild.py`
 
 - The README says the defaults are those of its recipes. The C recipe has `-Wl,--allow-undefined`, which `nicebuild.py` omits, and there is no way to join a `.nasm` file, so a C program that calls hand-written assembly cannot be built with it (`undefined symbol`).
@@ -239,6 +247,13 @@ The differential test of nicewasm at b2ac5a5 against 9d8f13d: 1040 modules (300 
 - translator/README.md lists `--no-bounds-checks` and `--memory-pages` in the synopsis without describing them.
 - `test/build.py` does not cover `-D`, `-I`, `--stack`, `--memory`, `--no-mpu`, floats, several C files, a failing compiler, or an unwritable output.
 - Static prediction costs six cycles at each exit of a loop that runs once; translator/README.md:690-700 says only that the predicted form "still gains" from three rounds on.
+
+**Resolved**:
+- The README says that the defaults are those of the recipes but for `-Wl,--allow-undefined`, which only the new `--asm FILE` adds. `--asm` joins an assembly file after the program, so a C program can call hand-written assembly.
+- `-o` into a missing or unwritable directory is refused before the build, with the message of the other tools. A missing `--asm` file is too. A failing step names the script, not "python3".
+- `--stack` and `--memory` must be positive: 0 and −5 are errors.
+- `test/build.py` covers `-D`, `-I`, two C files, `--asm`, `--stack`, `--memory`, `--no-mpu`, the float library, a compiler that fails, and an unwritable output.
+- translator/README.md says that a loop that runs once pays the six cycles and gains nothing.
 
 ### 6.5 Stale figures
 

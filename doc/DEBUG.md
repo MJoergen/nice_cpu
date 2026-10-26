@@ -527,8 +527,9 @@ A board may send the `p` before the `k`:
     system:  FF "kFFFFFFF00001#46"
 
 To step a program from address 0, the host starts it paused, with the ROM
-hidden. It reads R15, steps, and reads R15 again. The first instruction of
-the program is one word long:
+hidden. The processor is held before the first write, as it is at the start
+of the emulator, after a halt followed by a hold (§6), or after a write of `0x9`. It reads R15, steps, and reads R15 again.
+The first instruction of the program is one word long:
 
     host:    FF "WFFFFFFF0000100000018#BB"
     system:  FF "kFFFFFFF00001#46"

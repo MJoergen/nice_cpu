@@ -538,8 +538,8 @@ until `ready` takes it, which is what `handshake_check` assumes of a
 device, and that the bus port acknowledges each request in the next cycle
 and never stalls.
 
-The `prove` task proves the assertions for every cycle by k-induction. The
-induction needs invariants that tie the ports to the core's state: the state
+The `prove` task proves the assertions for every cycle by k-induction of
+depth 2, in a few seconds. The induction needs invariants that tie the ports to the core's state: the state
 is one of its 14 values, and each bus has CYC high exactly in its wait
 states. The core asserts them itself when its generic `G_FORMAL` is true;
 `formal_multicycle` sets it, and the other users leave it false. The

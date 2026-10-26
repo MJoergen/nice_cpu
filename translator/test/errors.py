@@ -397,11 +397,19 @@ def main() -> None:
         deep = os.path.join(tmp, "deep.wasm")
         with open(deep, "wb") as f:
             f.write(one(bytes([0x02, 0x40]) * 8000 + br(7999) + bytes([0x0B]) * 8000 + i32_const(0)))
-        t0 = time.monotonic()
-        p = subprocess.run([sys.executable, NICEWASM, "-o", out + "3", deep], capture_output=True, text=True)
-        if p.returncode != 0 or time.monotonic() - t0 > 4:
+        # The CPU time of the child is measured, not the wall-clock time,
+        # which a loaded machine stretches; a quadratic translation would
+        # take minutes. wait4 gives that child's time, whatever else runs.
+        errfile = os.path.join(tmp, "deep.err")
+        with open(errfile, "w") as err:
+            child = subprocess.Popen([sys.executable, NICEWASM, "-o", out + "3", deep], stderr=err)
+        _, status, usage = os.wait4(child.pid, 0)
+        child.returncode = os.waitstatus_to_exitcode(status)
+        cpu = usage.ru_utime + usage.ru_stime
+        if child.returncode != 0 or cpu > 10:
             failed += 1
-            print(f"FAIL: 8000 nested blocks (exit {p.returncode}, {time.monotonic() - t0:.1f} s)\n{p.stderr}")
+            with open(errfile) as err:
+                print(f"FAIL: 8000 nested blocks (exit {child.returncode}, {cpu:.1f} s of CPU time)\n{err.read()}")
         # An input file that cannot be read.
         missing = os.path.join(tmp, "missing.wasm")
         p = subprocess.run([sys.executable, NICEWASM, "-o", out + "2", missing],

@@ -391,6 +391,7 @@ RELEASE_NOTES.md:136 has 0.241 under RC03, and c-compiler-plan.md:91 has 2348 an
 - The predictor's entry has a517599's layout and f678c7b's loop closing, with the figures after them.
 - New entries: the handshakes, the counters at a halt (`perf` and `fetch_stats`), and the merge rule. The layout of `hand.nasm` and the loop closing of nicewasm are in the predictor's entry.
 - The start-up code for a monitor has its date. The assembler's checks are in their own section only, and the copy among the pipelined core's entries, with "misspelt", is gone.
+- The present tense is gone from the entries on the timing being closed, speculative reads, the assembler's checks, and the random programs' vector table: the verbs are in the past tense, and the closing of the timing has its date.
 
 ### 9.3 TODO.md and the step numbers
 

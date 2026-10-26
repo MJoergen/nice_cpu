@@ -43,9 +43,9 @@ two kinds of access. §9.4, the mapping of WebAssembly, is
   translated benchmark's cycles and 0.08% of `hand.nasm`'s. It was
   reverted as a won't fix: too little for a special case of the I/O
   range.
-- The timing of the pipelined core is closed. In NiceMonMEGA65 the R6
-  meets 100 MHz and the Nexys4DDR 90 MHz, with 0.174 ns and 0.043 ns of
-  slack at 4cd869e ([review/pipeline-timing.md](review/pipeline-timing.md),
+- The timing of the pipelined core was closed on 2026-10-23. In
+  NiceMonMEGA65 the R6 met 100 MHz and the Nexys4DDR 90 MHz, with 0.174 ns
+  and 0.043 ns of slack at 4cd869e ([review/pipeline-timing.md](review/pipeline-timing.md),
   In the system). Further fixes are a won't fix: WRITE's decisions, the
   flush and the end of its micro-operation, into the enables of
   PREPARE's and WRITE's registers (a real fix needs WRITE to know a cycle
@@ -56,14 +56,14 @@ two kinds of access. §9.4, the mapping of WebAssembly, is
 - The same first version merged the adjusted destination of a register in
   mode 001 or 010 into one write, and found every jump target through the
   ALU. Now three rare cases take WRITE two cycles (MICROARCH.md §7.4).
-- The first version had no speculative reads, and still has none. The
+- The first version had no speculative reads. The
   numbers of MICROARCH.md §5.6, measured on 2026-10-15, decided that FETCH
   reads two words a cycle, that a register written by the previous
   instruction is read without a wait, and that R14 is too. The table was
   measured again on 2026-10-19, on the optimized translation: data reads
   went from 25.9% to 11.3% of the instructions, and a data read after a
   store from 15.3% to 0.3%, but a read after a conditional jump from 0.9% to
-  5.5%. The decisions stand. Speculative reads were a won't fix on these
+  5.5%. The decisions stood. Speculative reads were a won't fix on these
   percentages alone. The testbench then counted the core's own waits on
   the benchmark (MICROARCH.md §5.3), and confirmed it: the waits that a
   speculative read could remove are 0.006% and 0.18% of the cycles. An
@@ -160,8 +160,8 @@ On seeds 1 to 30, a register read right after its write went from 16% to
 33% of the instructions, and jumps from 16% to 24%.
 
 On 2026-10-23 the program began with `?I RTI`, INT became `?!I` in 95% of
-its uses, and RTI `?I` in 80%. A write of VBASE puts the vector table among
-the low words, where an entry holds 0 or CODE, or a word that a store
+its uses, and RTI `?I` in 80%. A write of VBASE put the vector table among
+the low words, where an entry held 0 or CODE, or a word that a store
 changed, so that an interrupt did not return and the next INT halted. For
 seeds 1 to 90, the INT halts fell from 15 to 2, and the interrupts taken
 rose from 207 to 316 of about 405. The RTI halts rose from 1 to 15, and the
@@ -257,8 +257,8 @@ Then, still on 2026-10-19, the accesses of 1 and 2 bytes took their
 shift count from a register, computed with the word index before the
 bounds check, in place of a table in memory, and rotations in place of
 shifts (below). That is for the core as it is since it was re-timed
-for 100 MHz the same day, which forms every shift count in PREPARE: a
-count read from memory costs a cycle more in WRITE. A store of 1 or 2 bytes is an
+for 100 MHz the same day, which formed every shift count in PREPARE: a
+count read from memory cost a cycle more in WRITE. A store of 1 or 2 bytes is an
 instruction longer, but one of a constant 0 is one shorter, and the
 loads are as long as before. The benchmark ran 1730635
 instructions in its phases, not 1729523. By `bench/pipecycles.py`, the
@@ -329,10 +329,10 @@ benchmark's module became 8560, not 8623.
 ## The assembler's checks
 
 On 2026-10-20 (af454a6) the assembler began to warn about a lone word on
-an indented line that it reads as a label, such as a misspelled `HALT`. It
-checks the symbols of every `.EQU` value once the labels are known, also
-when the name is never used, and reports each on the `.EQU` line. `INT`,
-`.BLK`, and `.RES` take their value before it wraps.
+an indented line that it read as a label, such as a misspelled `HALT`. It
+checked the symbols of every `.EQU` value once the labels were known, also
+when the name was never used, and reported each on the `.EQU` line. `INT`,
+`.BLK`, and `.RES` took their value before it wrapped.
 
 ## The start-up code for a monitor
 

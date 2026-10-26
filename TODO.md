@@ -63,7 +63,6 @@ has a "Resolved" paragraph there; the section numbers are the review's.)
   needed.
 - **Out-of-context timing figures.** A row per figure in
   pipeline-timing.md, and an in-system build at RC05 (§2.4).
-- **HISTORY.md's present-tense entries** (§9.2) name no entry yet.
 - **Smaller figures** (§8.6): the run times of `make core` and `make core-dhry`
   in bench/Makefile and bench/README.md; one sentence for the cost of a jump
   DECODE resolves; a commit name on every new table of bench/README.md;

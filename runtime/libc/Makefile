@@ -46,7 +46,9 @@ wasm: libc.a
 # output, main's result in R1, and the exit status are compared with
 # test/X.expected. With KEEP=DIR, an absolute path, each test also leaves
 # its program in DIR/libc_X.bin, and its console input in DIR/libc_X.input,
-# for the tests of the FPGA core in hdl/. The step count and the other registers are left out, so
+# for the tests of the FPGA core in hdl/. If test/X.core.input exists, that is
+# the input it leaves. mchess.core.input has no "perft 3", which takes 11
+# million steps and, in GHDL, hours. The step count and the other registers are left out, so
 # that the expected files do not change with the compiler.
 define check
 	@$(NICEWASM) -o test/$(1).out.nasm test/$(1).wasm
@@ -54,7 +56,7 @@ define check
 	@$(ASM) -o test/$(1).out.bin test/$(1).full.nasm
 	@$(EMU) $(if $(wildcard test/$(1).input),--input test/$(1).input) test/$(1).out.bin < /dev/null > test/$(1).raw; echo "exit $$?" > test/$(1).status
 	$(if $(KEEP),@mkdir -p $(KEEP) && cp test/$(1).out.bin $(KEEP)/libc_$(1).bin)
-	$(if $(KEEP),$(if $(wildcard test/$(1).input),@cp test/$(1).input $(KEEP)/libc_$(1).input))
+	$(if $(KEEP),$(if $(wildcard test/$(1).input),@cp $(or $(wildcard test/$(1).core.input),test/$(1).input) $(KEEP)/libc_$(1).input))
 	@sed '/^\(Halted\|Stopped\)/,$$d' test/$(1).raw > test/$(1).out
 	@grep -o ' R1  [0-9a-f]*' test/$(1).raw | cut -c2- >> test/$(1).out; cat test/$(1).status >> test/$(1).out
 	@if cmp -s test/$(1).out test/$(1).expected; then echo "PASS libc/$(1)"; \

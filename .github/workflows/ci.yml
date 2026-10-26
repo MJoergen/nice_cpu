@@ -130,8 +130,9 @@ jobs:
   # The runtime's and the translator's programs on each core. They take
   # hours in GHDL, so they run apart from the hdl job, in three shards of each
   # core (hdl/Makefile, SHARD), to stay far under the 6 hour limit of a job.
-  # The shares have equal emulator steps, but libc_mchess alone has 63% of
-  # them (11.35 of 18.1 million), so its share is the long one: 1 to 3 hours.
+  # The shares have equal emulator steps. libc_mchess runs without its
+  # "perft 3" here (runtime/libc/Makefile), since that has 11.35 of the
+  # 18.1 million steps of all the programs.
   programs:
     runs-on: ubuntu-latest
     strategy:

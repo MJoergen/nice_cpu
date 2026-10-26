@@ -209,6 +209,11 @@ architecture synthesis of debug_link is
 
    constant C_ESC : t_byte := X"FF";
 
+   -- The tags of a request, and the byte that ends a packet's payload
+   constant C_TAG_R : t_byte := X"52";   -- 'R', a read
+   constant C_TAG_W : t_byte := X"57";   -- 'W', a write
+   constant C_HASH  : t_byte := X"23";   -- '#', before the checksum
+
    constant C_VERSION : t_word := X"00000004";
 
    function is_hex(b : t_byte) return boolean is
@@ -489,11 +494,11 @@ begin
                if acc_v then
                   if b_v = C_ESC then
                      rx_st <= RX_ESC_ST;
-                  elsif b_v = X"23" then
+                  elsif b_v = C_HASH then
                      rx_st <= RX_CC1_ST;
                   else
                      sum_r <= sum_r + b_v;
-                     if tag_r = X"52" or tag_r = X"57" then
+                     if tag_r = C_TAG_R or tag_r = C_TAG_W then
                         if dig_r < 2 ** 20 then
                            dig_r <= dig_r + 1;
                         end if;
@@ -511,11 +516,11 @@ begin
                                  -- The error 02 is decided here, before any data word.
                                  if bad_r = '0' and
                                     ((mem_own = '0' and non_dbg(req_addr_r, n_v)) or
-                                     (tag_r = X"57" and wraps(req_addr_r, n_v))) then
+                                     (tag_r = C_TAG_W and wraps(req_addr_r, n_v))) then
                                     err02_r <= '1';
                                  end if;
                               end if;
-                           elsif tag_r = X"57" then
+                           elsif tag_r = C_TAG_W then
                               word_r <= word_r(27 downto 0) & h_v;
                               if nib_r = 7 then
                                  nib_r <= 0;
@@ -561,15 +566,15 @@ begin
                   elsif cc_bad_r = '0' and is_hex(b_v) and (cc_hi_r & hex_of(b_v)) = sum_r then
                      -- A good packet. Its error is the first one that applies.
                      code_v := X"00";
-                     if tag_r /= X"52" and tag_r /= X"57" then
+                     if tag_r /= C_TAG_R and tag_r /= C_TAG_W then
                         code_v := X"01";
                      elsif err02_r = '1' then
                         code_v := X"02";
                      elsif bad_r = '1' then
                         code_v := X"03";
-                     elsif tag_r = X"52" and dig_r /= 12 then
+                     elsif tag_r = C_TAG_R and dig_r /= 12 then
                         code_v := X"03";
-                     elsif tag_r = X"57" and
+                     elsif tag_r = C_TAG_W and
                            not (dig_r >= 12 and nib_r = 0 and wcnt_r = to_integer(req_n_r)) then
                         code_v := X"03";
                      end if;
@@ -577,7 +582,7 @@ begin
                      ans_code_r <= code_v;
                      if code_v /= X"00" then
                         ans_kind_r <= PKT_E;
-                     elsif tag_r = X"52" then
+                     elsif tag_r = C_TAG_R then
                         ans_kind_r <= PKT_R;
                      else
                         ans_kind_r <= PKT_K;
@@ -1013,7 +1018,7 @@ begin
                   end if;
 
                when TX_HASH_ST =>
-                  put(X"23", false);
+                  put(C_HASH, false);
                   tx_st <= TX_CC1_ST;
 
                when TX_CC1_ST =>
@@ -1129,8 +1134,8 @@ begin
       f_ans    <= ans_req_tgl /= ans_ack_tgl;
       f_past   <= rx_st = RX_PAY_ST or rx_st = RX_CC1_ST or rx_st = RX_CC2_ST or
                   rx_st = RX_CALL_ST or rx_st = RX_WAIT_ST;
-      f_data   <= tag_r = X"57" and dig_r >= 12 and bad_r = '0' and err02_r = '0' and f_past;
-      f_got    <= tag_r = X"52" and dig_r >= 12 and bad_r = '0' and err02_r = '0' and
+      f_data   <= tag_r = C_TAG_W and dig_r >= 12 and bad_r = '0' and err02_r = '0' and f_past;
+      f_got    <= tag_r = C_TAG_R and dig_r >= 12 and bad_r = '0' and err02_r = '0' and
                   (rx_st = RX_PAY_ST or rx_st = RX_CC1_ST or rx_st = RX_CC2_ST);
       f_mem    <= mem_own = '1' and clearing_r = '0';
       f_end    <= ('0' & req_addr_r) + req_n_r;
@@ -1167,7 +1172,7 @@ begin
                      end if;
 
                   when OUT_PAY_ST =>
-                     if out_data_r = X"23" then
+                     if out_data_r = C_HASH then
                         f_out_st <= OUT_CC1_ST;
                      elsif f_is_digit(out_data_r) then
                         f_out_sum <= f_out_sum + out_data_r;
@@ -1326,7 +1331,7 @@ begin
       --     (rx_st = RX_CALL_ST or rx_st = RX_WAIT_ST or wcnt_r < to_integer(req_n_r))) -> f_mem;
       -- psl i_rx_clear : assert always
       --    (clearing_r = '1' and f_past) ->
-      --    (tag_r = X"57" and dig_r >= 12 and err02_r = '0' and
+      --    (tag_r = C_TAG_W and dig_r >= 12 and err02_r = '0' and
       --     (cur_addr_r >= X"FFFFFFF0" or
       --      (rx_st /= RX_CALL_ST and rx_st /= RX_WAIT_ST and wcnt_r >= to_integer(req_n_r))) and
       --     (bad_r = '1' or f_end(32) = '0' or f_end = '1' & X"00000000"));
@@ -1373,7 +1378,7 @@ begin
       --     tx_st = TX_CALL_ST or tx_st = TX_WAIT_ST) -> f_pay_ok;
       -- psl i_out_cc1 : assert always
       --    tx_st = TX_CC1_ST ->
-      --    ((out_valid_r = '1' and out_data_r = X"23" and f_out_st = OUT_PAY_ST) or
+      --    ((out_valid_r = '1' and out_data_r = C_HASH and f_out_st = OUT_PAY_ST) or
       --     (out_valid_r = '0' and f_out_st = OUT_CC1_ST)) and tx_sum_r = f_out_sum;
       -- psl i_out_cc2 : assert always
       --    tx_st = TX_CC2_ST ->

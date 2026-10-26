@@ -8,6 +8,8 @@ translator, and two FPGA cores. See README.md.
 
 - `TODO.md`: the single list of open items, undecided questions, and ideas.
   Add new ones there, not in other files or code comments.
+- `RELEASE_NOTES.md`: the user-visible changes of each `RC*` tag, newest
+  first, by component. Add a section for every new tag when it is created.
 - `doc/ISA.md`: the specification. It is authoritative for all code here.
   `doc/review/` records how decisions were reached; ISA.md supersedes it.
 - `doc/SYSTEM.md`: the devices that the emulator maps into the I/O range

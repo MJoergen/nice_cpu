@@ -38,6 +38,7 @@ the separate [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) reposito
 | [bench/](bench/README.md) | A benchmark of translated code: six kernels with known results, timed with the performance counters, and the same benchmark written by hand. |
 | [hdl/](hdl/README.md) | The FPGA implementation in VHDL: a multi-cycle core and a pipelined core, the memory model and trace writer they are tested with, and the formal checks. |
 | [TODO.md](TODO.md) | The single list of open items, undecided questions, and ideas for later. |
+| [RELEASE_NOTES.md](RELEASE_NOTES.md) | The changes in each release candidate, newest first. |
 
 ## Quick start
 

@@ -9,12 +9,14 @@ EMU = ../emulator/zig-out/bin/niceemu
 # assembled and run, and the output and exit status are compared with
 # test/X.expected. The tests in SOFT_TESTS run a second time as X_soft,
 # with muldiv_soft.nasm instead, and are compared with test/X_soft.expected.
-TESTS = start start_wasm mul trap div div64 mul64 bits device edge trapvec trapreport
+TESTS = start start_wasm mul trap div div64 mul64 bits device edge trapvec trapreport trapreport_big
 SOFT_TESTS = mul div mul64 div64 edge
 START_start_wasm = start_wasm.nasm
 START_trap       = start_wasm.nasm
 START_trapreport = start_wasm_trap.nasm
 AFTER_trapreport = trapmsg.nasm
+START_trapreport_big = start_wasm_trap.nasm
+AFTER_trapreport_big = trapmsg.nasm
 OPTS_start      = -d 0xfffffeff:1
 OPTS_start_wasm = -d 0x1b:1 -d 0xfffffeff:1
 OPTS_mul        = -d 0x34:10

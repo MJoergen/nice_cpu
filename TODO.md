@@ -98,9 +98,8 @@ has a "Resolved" paragraph there; the section numbers are the review's.)
   (§9.1), and hdl/README.md:972's cycles per instruction (§9.6), with the
   rest of the figures above. HISTORY.md's present-tense entries (§9.2)
   name no entry yet.
-- **Smaller.** Terms for Dhrystone (§1.5); `trapmsg.nasm` for codes above
-  7, which prints `code + 0x30` and so a wrong digit for 10 and up, and
-  `CLOCKS_PER_SEC` as `clock_t`, which changes `mchess.wasm` (§5.4); the
+- **Smaller.** Terms for Dhrystone (§1.5); `CLOCKS_PER_SEC` as `clock_t`,
+  which changes `mchess.wasm` (§5.4); the
   wall-clock limit of `errors.py` (§6.3); `nicebuild.py`'s
   `--allow-undefined`, `--stack 0`, and messages (§6.4); `--irq` against
   the timer at one step (§4.3). Nothing checks that the checked-in

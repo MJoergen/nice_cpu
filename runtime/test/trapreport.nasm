@@ -11,10 +11,10 @@
 ; 0x1ac3 and ___wasm_trap at 0x1ac4, so PC = 0x1ac5 after the halt. The
 ; report leaves R3 = 0, R10 = 2, R11 = 0x1abc, and the flag Z set by its
 ; last DEC. SP = 0xFFFFFEFF, as in trap.nasm. Steps: 12 up to the jump to
-; the report, 2 to save R1 and R2, 3 + 22 for "trap " and 2 for the digit,
-; 3 + 10 for ": ", 4 + 110 for the name, 3 + 18 for " at ", 1 + 48 for the 8
+; the report, 2 to save R1 and R2, 3 + 22 for "trap " and 4 for the digit,
+; 3 + 10 for ": ", 6 + 110 for the name, 3 + 18 for " at ", 1 + 48 for the 8
 ; digits, 1 for the newline, 3 to restore and jump, and the reserved word
-; = 243.
+; = 247.
 
 ___wasm_start
         MOVE    R15, @R13++

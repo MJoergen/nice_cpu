@@ -345,12 +345,19 @@ store's instruction retires, because the store waits a cycle in DBUS.
 That costs at most 0.5% of the cycles of the translated benchmark and
 3.1% of the hand-written one's.
 
-Rules 1 and 2 cost a cycle or two for a conditional read after a write of
-SR, and for a read after a conditional jump. These are 0 to 4% and 5 to 8%
-of the instructions (§5.6), so data reads stay exact. Letting reads of RAM
-(not of the I/O range) be speculative would need a change to ISA §8.2 and a
-check of each read against older stores. That was investigated and will not
-be done.
+Rules 1 and 2 cost little. A read after a skipped jump does not wait, since
+PREPARE issues it in the cycle the jump retires. The testbench counts the
+cycles in which a read waits only for rule 1 or 2
+([hdl/README.md](../hdl/README.md), The pipelined core). On the benchmark
+(`make core` in `bench/`, at ffd0a16), the reads that went on to WRITE waited 146
+cycles in the translated program, 0.006% of its cycles, all for their
+condition. In the hand-written program they waited 269 cycles for their
+condition and 2002 for an older micro-operation, 0.18% of its cycles. Its
+other 52002 waits, 4.1%, were behind a jump that was taken, so the read was
+on the wrong path and was dropped. So a speculative read could save at most
+0.18%. It would need a change to ISA §8.2, a compare against the I/O range
+in PREPARE, and a way to cancel a read on the bus at a flush. Data reads
+stay exact, and speculative reads will not be done.
 
 ### 5.4 Control flow
 
@@ -506,7 +513,7 @@ the condition is known. These are the shares of all instructions:
 
 The numbers support three decisions: FETCH reads two words per cycle (§3),
 a register written by the previous instruction is read without a wait
-(§5.1), and so is R14 (§5.4). They left speculative reads out (§5.3). The reads from the previous
+(§5.1), and so is R14 (§5.4). They left speculative reads out, and the core's waits confirm it (§5.3). The reads from the previous
 instruction are value chains, mostly in R1 to R4, not stack operations: R13
 alone is under 1% in both programs.
 

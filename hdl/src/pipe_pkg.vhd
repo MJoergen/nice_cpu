@@ -130,7 +130,8 @@ package pipe_pkg is
    );
 
    -- What FETCH and DECODE did in one cycle, for the fetch statistics,
-   -- src/fetch_stats.vhd (MICROARCH.md §8.1)
+   -- src/fetch_stats.vhd (MICROARCH.md §8.1), and the waits and moves of
+   -- PREPARE, which only the testbench counts
    type t_fetch_events is record
       count   : natural range 0 to 31;           -- Words in FETCH's buffer
       held    : natural range 0 to 31;           -- Those, and room held for the requests in flight
@@ -142,6 +143,9 @@ package pipe_pkg is
       words   : natural range 0 to 4;            -- Words that DECODE takes
       jump    : std_logic;                       -- DECODE redirects FETCH
       flush   : std_logic;                       -- WRITE flushes and redirects FETCH
+      wait_sr : std_logic;                       -- A data read waits for the condition
+      wait_wr : std_logic;                       -- A data read waits for an older micro-op
+      moved   : std_logic;                       -- PREPARE passes a micro-op on to WRITE
    end record t_fetch_events;
 
    constant C_FETCH_EVENTS_NONE : t_fetch_events := (
@@ -154,7 +158,10 @@ package pipe_pkg is
       pair    => '0',
       words   => 0,
       jump    => '0',
-      flush   => '0'
+      flush   => '0',
+      wait_sr => '0',
+      wait_wr => '0',
+      moved   => '0'
    );
 
    function to_nat(b : std_logic) return natural;

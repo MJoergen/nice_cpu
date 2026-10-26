@@ -63,7 +63,12 @@ two kinds of access. §9.4, the mapping of WebAssembly, is
   measured again on 2026-10-19, on the optimized translation: data reads
   went from 25.9% to 11.3% of the instructions, and a data read after a
   store from 15.3% to 0.3%, but a read after a conditional jump from 0.9% to
-  5.5%. The decisions stand, and speculative reads are a won't fix.
+  5.5%. The decisions stand. Speculative reads were a won't fix on these
+  percentages alone. The testbench then counted the core's own waits on
+  the benchmark (MICROARCH.md §5.3), and confirmed it: the waits that a
+  speculative read could remove are 0.006% and 0.18% of the cycles. An
+  earlier count, made before the early redirect of backward jumps, gave
+  0.007% and 1.5%.
 - The proof of the data bus port found that a read could go out in the
   cycle WRITE puts a store on the bus with three requests in flight, which
   made five. It also found that the write data changed on the bus while a

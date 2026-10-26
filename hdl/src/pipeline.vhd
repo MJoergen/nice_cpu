@@ -1,7 +1,8 @@
 -- The pipelined NICE core of doc/MICROARCH.md. It has the ports of the
 -- multi-cycle core, src/multicycle.vhd, and reports the same steps. Its
 -- one more port, stats_o, reports what FETCH and DECODE do in each cycle,
--- for the fetch statistics, src/fetch_stats.vhd.
+-- for the fetch statistics, src/fetch_stats.vhd, and when PREPARE waits
+-- to issue a data read, for the testbench.
 --
 -- THEORY OF OPERATION
 -- The pipeline (MICROARCH.md §3), one entity for each part:
@@ -264,6 +265,8 @@ architecture synthesis of pipeline is
    signal rd_stb_r     : std_logic;
    signal rd_addr_r    : std_logic_vector(31 downto 0);
    signal rd_count     : std_logic;   -- Counts an instruction on instret_o
+   signal p_wait_sr    : std_logic;
+   signal p_wait_wr    : std_logic;
 
    -- DBUS
    signal rq_r       : t_words(0 to C_MAX_OUT - 1);
@@ -417,7 +420,9 @@ begin
          rd_stb_o     => rd_stb_r,
          rd_addr_o    => rd_addr_r,
          load_o       => p_load,
-         count_o      => rd_count
+         count_o      => rd_count,
+         wait_sr_o    => p_wait_sr,
+         wait_wr_o    => p_wait_wr
       ); -- i_pipe_prepare
 
 
@@ -517,6 +522,9 @@ begin
       stats_v.words   := f_consume;
       stats_v.jump    := d_redirect;
       stats_v.flush   := w_flush;
+      stats_v.wait_sr := p_wait_sr;
+      stats_v.wait_wr := p_wait_wr;
+      stats_v.moved   := p_valid and w_ready;
       stats_o         <= stats_v;
    end process p_stats;
 

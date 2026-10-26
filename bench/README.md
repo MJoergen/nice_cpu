@@ -162,6 +162,17 @@ program at that commit. `bench.c` closes its loops the same way
 instructions, 1.43 per instruction and 1.2% fewer than the 2384635
 above.
 
+On the pipelined core, `make core` also prints how long data reads waited
+for their condition or for an older micro-operation, the waits that
+speculative reads would remove ([hdl/README.md](../hdl/README.md), The
+pipelined core). The cycles count from reset, so they include the start-up
+and the output:
+
+    bench: Read waits: 2439238 cycles; went on: 146 for the condition, 0 for an older micro-operation; dropped: 0, 0
+    hand:  Read waits: 1260303 cycles; went on: 269 for the condition, 2002 for an older micro-operation; dropped: 0, 52002
+
+So such waits cost 0.006% and 0.18% of the cycles (MICROARCH.md §5.3).
+
 
 The hand-written program gains less, because more of its time goes to
 what a pipeline cannot hide: `vm` jumps through a table every three or

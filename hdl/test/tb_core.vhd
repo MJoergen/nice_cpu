@@ -19,6 +19,15 @@
 -- address compare that names the slave, dbus_sel, is here.
 -- The trace writer, sim/trace.vhd, prints each step the core reports.
 --
+-- When the pipelined core halts, the testbench prints to the standard
+-- output the cycles from reset, and the cycles in which a data read
+-- waited only for its condition (S) or for an older micro-operation (W)
+-- (src/pipe_prepare.vhd). It charges them to the micro-operation in
+-- PREPARE, and when that goes on to WRITE, or is dropped by a flush or an
+-- interrupt, to one of two sums: "Read waits: C cycles; went on: S for
+-- the condition, W for an older micro-operation; dropped: S, W". Only the
+-- waits of those that went on could be saved by reading early.
+--
 -- G_FETCH_STATS is the generic G_ENABLE of the fetch statistics. Only the
 -- pipelined core reports the events they count; with the multi-cycle core
 -- they count only cycles. With G_FETCH_STATS false, their 48 words at
@@ -370,6 +379,16 @@ architecture simulation of tb_core is
    signal tick        : std_logic;
    signal done        : std_logic;
    signal status      : natural;
+
+   -- The cycles from reset, and the waits of PREPARE among them: of the
+   -- micro-operation in PREPARE, of those that went on, and of those
+   -- dropped, each for the condition (0) and for an older one (1)
+   type t_rwaits is array (0 to 1) of natural;
+
+   signal n_cycles : natural := 0;
+   signal n_held   : t_rwaits := (0, 0);
+   signal n_went   : t_rwaits := (0, 0);
+   signal n_drop   : t_rwaits := (0, 0);
 
 begin
 
@@ -944,12 +963,44 @@ begin
    end process p_retire_log;
 
 
+   p_waits : process (clk)
+      variable held_v : t_rwaits;
+   begin
+      if rising_edge(clk) and rst = '0' then
+         n_cycles <= n_cycles + 1;
+         held_v   := n_held;
+         if fetch_events.wait_sr = '1' then
+            held_v(0) := held_v(0) + 1;
+         end if;
+         if fetch_events.wait_wr = '1' then
+            held_v(1) := held_v(1) + 1;
+         end if;
+         if fetch_events.flush = '1' or nmi_ready = '1' or irq_ready = '1' then
+            n_drop <= (n_drop(0) + held_v(0), n_drop(1) + held_v(1));
+            held_v := (0, 0);
+         elsif fetch_events.moved = '1' then
+            n_went <= (n_went(0) + held_v(0), n_went(1) + held_v(1));
+            held_v := (0, 0);
+         end if;
+         n_held <= held_v;
+      end if;
+   end process p_waits;
+
+
    p_finish : process
+      variable l : line;
    begin
       wait until done = '1';
       for i in 1 to 4 loop
          wait until rising_edge(clk);
       end loop;
+      if G_CORE = "pipeline" then
+         write(l, "Read waits: " & integer'image(n_cycles) & " cycles; went on: " &
+                  integer'image(n_went(0)) & " for the condition, " &
+                  integer'image(n_went(1)) & " for an older micro-operation; dropped: " &
+                  integer'image(n_drop(0)) & ", " & integer'image(n_drop(1)));
+         writeline(output, l);
+      end if;
       stop(status);
    end process p_finish;
 

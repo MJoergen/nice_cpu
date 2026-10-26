@@ -59,8 +59,9 @@ the section numbers are the review's.)
   annotated tag whose message is the tag's section of RELEASE_NOTES.md.
   Rebase and merge `origin/release-script` after its six fixes (§10). Move
   NiceMonMEGA65's pin to RC05 and tag it there (§1.1, §1.2). Close PR #35,
-  delete `origin/claude/project-thread-cmdpdw`, and keep PR #36 and
-  `origin/read-waits` until decided (§1.3).
+  delete `origin/claude/project-thread-cmdpdw`, keep PR #36 until decided,
+  and delete `origin/read-waits`, whose figures and test are on main
+  (§1.3).
 - **Three behavior edges.** `debug_link.vhd` lets the second checksum byte
   of a dropped packet through to the program (§3.1); `niceasm.py
   --symbols` can overwrite its input (§4.1); `niceemu` ignores Ctrl-C while
@@ -81,10 +82,8 @@ the section numbers are the review's.)
   predictor entry, and the word counts (§8.2 to §8.6, §6.5, §9.2). One
   pass of `make hazards`, `make cycles`, `make compare`, `make words`,
   `make dhry`, and `make core-dhry`, with the commit named.
-- **Speculative reads.** The figures of `origin/read-waits` into
-  MICROARCH.md §5.3 and HISTORY.md, then the branch can go (§2.3). A row
-  per out-of-context timing figure in pipeline-timing.md, and an
-  in-system build at RC05 (§2.4).
+- **Out-of-context timing figures.** A row per figure in
+  pipeline-timing.md, and an in-system build at RC05 (§2.4).
 - **The debug link's documents.** The board contracts, the bad-checksum
   `W` difference, and a table of the versions in DEBUG.md; the proof's
   wording; the untested halt reasons and `link.py` cases (§3.2 to §3.7).

@@ -18,6 +18,11 @@
 -- instruction has made a data read (committed) and been counted on
 -- instret_o (counted).
 --
+-- wait_sr_o and wait_wr_o mark the cycles in which a data read waits only
+-- for rule 1 or rule 2 of MICROARCH.md §5.3: for the condition, or for an
+-- older micro-operation in WRITE that is not a store. Speculative reads
+-- would save at most these cycles. Nothing in the core uses them.
+--
 -- An instruction with a data read is counted in the cycle the bus accepts
 -- its last read, count_o.
 --
@@ -102,7 +107,12 @@ entity pipe_prepare is
       load_o       : out std_logic;   -- A data read is loaded now
 
       -- Counts an instruction on instret_o
-      count_o      : out std_logic
+      count_o      : out std_logic;
+
+      -- A data read waits only for the condition, or for an older
+      -- micro-operation (MICROARCH.md §5.3, rules 1 and 2)
+      wait_sr_o    : out std_logic;
+      wait_wr_o    : out std_logic
    );
 end entity pipe_prepare;
 
@@ -126,6 +136,8 @@ architecture synthesis of pipe_prepare is
    signal rd_stb_r      : std_logic;
    signal rd_addr_r     : std_logic_vector(31 downto 0);
    signal rd_last_r     : std_logic;              -- rd_stb_r is its instruction's last read
+   signal p_wait_sr     : std_logic;
+   signal p_wait_wr     : std_logic;
 
 begin
 
@@ -140,6 +152,8 @@ begin
    rd_stb_o  <= rd_stb_r;
    rd_addr_o <= rd_addr_r;
    load_o    <= p_load;
+   wait_sr_o <= p_wait_sr;
+   wait_wr_o <= p_wait_wr;
 
    -- An instruction with a data read is counted in the cycle the bus
    -- accepts its last read. The counter returns its value from before the
@@ -178,6 +192,7 @@ begin
       variable last_v    : boolean;
       variable irq_v     : boolean;
       variable pause_ok  : boolean;
+      variable held_v    : boolean;   -- Only rule 1 or 2 holds a read back
    begin
       u_v     := prep_r;
       wu_v    := w_i.uop;
@@ -318,6 +333,16 @@ begin
       first_read_o <= load_v and not p_committed_r;
       last_v := load_v = '1' and p_loaded_r + 1 = nr_v and not later_reads(u_v.inst.iw, u_v.kind);
       p_last_read  <= to_sl(last_v);
+
+      -- The read would go now but for rules 1 and 2: its condition is
+      -- unknown, or it is true and an older micro-operation that is not
+      -- a store holds it back. Rule 3 still holds a read after a store.
+      held_v := u_v.valid = '1' and load_v = '0' and (ck_v = '0' or cv_v = '1') and
+                p_loaded_r < nr_v and (not older_v or done_i = '1' or wu_v.store = '0') and
+                intr_ok and pause_ok and not busy_v and bus_ok and
+                w_i.mode = RUN_ST and flush_i = '0' and take_nmi_i = '0' and take_irq_i = '0';
+      p_wait_sr <= '1' when held_v and ck_v = '0' else '0';
+      p_wait_wr <= '1' when held_v and ck_v = '1' else '0';
 
       -- The micro-operation may go on when its values are ready and its
       -- reads are loaded, or it has none, or its condition is false.

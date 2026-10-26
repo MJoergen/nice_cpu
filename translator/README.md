@@ -50,6 +50,9 @@ The defaults are the options of the recipes below. `-O` is a clang level
 for C, a mode for Zig such as `ReleaseSafe`, and an `opt-level` for
 Rust. `--stack` and `--memory` set the stack size and the initial memory;
 the default stack is 4096 bytes, or 16384 for Zig in Debug or ReleaseSafe.
+The stack is in the memory, whose default is 65536 bytes, so a larger
+`--stack` needs a larger `--memory` too: `--stack 131072` alone fails with
+wasm-ld's "initial memory too small", and `--memory 262144` fixes it.
 `-I` and `-D` are for C. C files are linked with the C library, and Zig
 gets `runtime/nice.zig` as the module `nice`. Zig and Rust take one source file,
 the root of the program, and a Rust program that wants `nice.rs` mounts it

@@ -163,6 +163,8 @@ runtime/README.md:178: a Zig program linked with `libc.a` "holds the whole libra
 
 `nicebuild.py --stack 131072 mchess.c` fails with wasm-ld's "initial memory too small"; it works with `--memory 262144`. Only a comment in runtime/libc/Makefile (`BIGSTACK`) says so. **Fix:** a sentence in translator/README.md, or raise `--memory` to cover the stack.
 
+**Resolved**: translator/README.md says that a stack above the memory's default needs `--memory`, with the example. Reproduced first: the error is wasm-ld-18's "initial memory too small, 131136 bytes needed", and `--memory 262144` builds.
+
 ### 5.4 Smaller
 
 - `trapmsg.nasm:24` names a code outside 1 to 7 by `code & 7`, and line 19 prints `code + 0x30`: code 12 prints "trap <: integer overflow". The emulator says "unknown code", trapmsg "unknown trap". A compare against 8.

@@ -67,12 +67,6 @@ has a "Resolved" paragraph there; the section numbers are the review's.)
   (depth 2 instead of 3) would cut it, at the price of fewer steps of
   the C library under test; decide whether that is worth it.
 - **In-system timing at RC05** (§2.4): a build of NiceMonMEGA65's tag `RC05` on both boards, with its figures in pipeline-timing.md.
-- **Smaller.** Terms for Dhrystone (§1.5); `CLOCKS_PER_SEC` as `clock_t`,
-  which changes `mchess.wasm` (§5.4); the
-  wall-clock limit of `errors.py` (§6.3); `nicebuild.py`'s
-  `--allow-undefined`, `--stack 0`, and messages (§6.4); `--irq` against
-  the timer at one step (§4.3). Nothing checks that the checked-in
-  `.wasm` files match their sources: `mchess.wasm` did not after 7b1411f.
 
 ## Left from the fifth review
 

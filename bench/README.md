@@ -120,11 +120,11 @@ The ratio of the instruction counts, translated to hand-written:
 | Phase | Ratio | Where the translated code loses |
 |---|---|---|
 | `rng64` | 1.3 | `i64` shifts take the same two-word steps either way, and the 64-bit product three products of the math unit. |
-| `crc32` | 2.4 | A byte load is seven instructions with its own bounds check, against a word read with a side effect on the pointer and shifts by hand. The table lookups need no check. |
-| `bst` | 2.7 | Each node's fields take a compare and a skipped jump before their reads, which the hand-written code does without. |
+| `crc32` | 2.3 | A byte load is seven instructions with its own bounds check, against a word read with a side effect on the pointer and shifts by hand. The table lookups need no check. |
+| `bst` | 2.6 | Each node's fields take a compare and a skipped jump before their reads, which the hand-written code does without. |
 | `heapsort` | 1.7 | The array elements take a compare and a skipped jump before their reads and writes, and the signed comparisons take two instructions either way. |
 | `vm` | 7.5 | The `br_table` checks its index, each stack cell is a checked word access, and the bytecode fetch is a byte load of seven instructions, where the hand-written interpreter has one word per opcode and the operands in registers. |
-| `strings` | 5.1 | Every character is a byte load of seven instructions, where the hand-written strings have one character per word. |
+| `strings` | 5.0 | Every character is a byte load of seven instructions, where the hand-written strings have one character per word. |
 | total | 3.4 | |
 
 What remains is in TODO.md, under "Faster and smaller translated code".
@@ -204,11 +204,11 @@ The two phases, in instructions on the emulator and in cycles by
 |---|---|---|---|
 | `vm`, instructions | 840049 | 314016 | 112013 |
 | `vm`, cycles | 1248112 | 768069 | 602050 |
-| `strings`, instructions | 104562 | 47293 | 20321 |
-| `strings`, cycles | 166871 | 110956 | 48723 |
+| `strings`, instructions | 101281 | 47293 | 20321 |
+| `strings`, cycles | 163528 | 110956 | 48723 |
 
 So such a compiler would take 1.62 times fewer cycles than nicewasm in
-`vm` and 1.50 times fewer in `strings`, about three quarters and half of
+`vm` and 1.47 times fewer in `strings`, about three quarters and half of
 what `hand.nasm` saves. `make test` checks its results as it checks the
 others'. `make core` does not run it.
 
@@ -289,17 +289,17 @@ charged to the rule that caused it, so the output says where the time
 goes, and a program that reads the instruction counter around each phase,
 as both programs do, gets a row per phase:
 
-    bench.bin: 1726040 instructions, 2466576 cycles (estimate), CPI 1.429
-      cycles above 1/instruction: 740536
+    bench.bin: 1697422 instructions, 2438761 cycles (estimate), CPI 1.437
+      cycles above 1/instruction: 741339
       ...
-      taken jumps resolved in WRITE (flush)                        267540  0.155/instr  36.1%
-      jumps DECODE resolves (early-redirect bubble)                 79046  0.046/instr  10.7%
+      taken jumps resolved in WRITE (flush)                        267540  0.158/instr  36.1%
+      jumps DECODE resolves (early-redirect bubble)                 60047  0.035/instr   8.1%
       ...
-      read data a cycle after the bus (registered request)         103494  0.060/instr  14.0%
-      read data used by more than a register write                 179438  0.104/instr  24.2%
+      read data a cycle after the bus (registered request)         103494  0.061/instr  14.0%
+      read data used by more than a register write                 179438  0.106/instr  24.2%
 
       phase         instr    cycles    CPI   main extra cycles per instruction
-      rng64         52768     83026  1.573   mpu 0.34, bus 0.15, early 0.06, fetch 0.02
+      rng64         51746     82515  1.595   mpu 0.35, bus 0.15, early 0.06, adjust 0.02
       ...
       total       1652811   2356816  1.426
 
@@ -368,7 +368,7 @@ their loops with them:
 
 The difference is all but the same in every phase of a program, so it
 lies at the reads of the instruction counter around the phases, whose
-timing the model does not follow exactly, and not in the phases.
+timing the model does not follow exactly, and not in the phases. `make compare` prints the percentages of the table's last column, not the cycles.
 
 `make core` also has the testbench write a retire log,
 `hdl/build/bench_pipeline.retires` and `hand_pipeline.retires`
@@ -383,10 +383,10 @@ differ from the emulator's, and the comparison stops there:
 
     python3 pipecycles.py --retires ../hdl/build/hand_pipeline.retires build/hand.bin
 
-At commit 1a41b0c the model is 295 cycles below the core over the first
-1613484 steps of the translated program, which take the core 2283598
-cycles, and 63 below it over the 494212 steps of `hand.nasm`, which take
-1392934.
+At commit 98d2bed the model is 289 cycles below the core over the first
+1588218 steps of the translated program, which take the core 2258468
+cycles, and 21 above it over the 493904 steps of `hand.nasm`, which take
+1260090.
 
 `cycprof.py` charges the model's cycles to the source lines of a program,
 and `make profile` writes `build/bench.cyc.txt` and `build/hand.cyc.txt`.
@@ -411,7 +411,7 @@ are worked out by hand in the script, and `make test` runs it.
 nicewasm, the measure that [translator/README.md](../translator/README.md)
 quotes for `test/safe.zig` and the float library. `make words` prints it
 for `bench.wasm`, `translator/test/safe.wasm`, and `runtime/float.wasm`:
-8537, 5170, and 7083 words. Each module is translated and
+8537, 5156, and 7079 words. Each module is translated and
 assembled on its own, with the labels it uses but does not define, such
 as the runtime's routines, defined as 0 first; a constant takes a whole
 word whatever its value (ISA.md §3), so that changes no size. The count
@@ -469,15 +469,15 @@ gives it from `dhry.input`; and the three result lines, which must agree
 with each other and with the number of runs. `make test` runs it on the
 emulator's output and `make core-dhry` on the core's.
 
-100 runs, measured at commit 4a3c917:
+100 runs, measured at commit 98d2bed:
 
 | Where | Cycles per run | DMIPS/MHz |
 |---|---|---|
-| emulator (one cycle per instruction) | 1559 | 0.365 |
-| multi-cycle core | 17948 | 0.031 |
-| pipelined core | 2353 | 0.241 |
+| emulator (one cycle per instruction) | 1508 | 0.377 |
+| multi-cycle core | 17479 | 0.032 |
+| pipelined core | 2302 | 0.247 |
 
-The emulator's row counts instructions. For comparison, Arm gives 0.87
+The emulator's row counts instructions. The program prints DMIPS/MHz truncated to three decimals. For comparison, Arm gives 0.87
 DMIPS/MHz for the Cortex-M0 under the ground rules. The translation
 through wasm accounts for much of the gap, judging by the ratios of
 `hand.nasm` above.

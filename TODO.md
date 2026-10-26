@@ -68,10 +68,6 @@ has a "Resolved" paragraph there; the section numbers are the review's.)
   The debug link has the pause and the single step (DEBUG.md §6) since
   it was written. Merge it after a rebase onto main, or close it as not
   needed.
-- **Three behavior edges.** `debug_link.vhd` lets the second checksum byte
-  of a dropped packet through to the program (§3.1); `niceasm.py
-  --symbols` can overwrite its input (§4.1); `niceemu` ignores Ctrl-C while
-  it waits for console input (§4.2). Each with a test.
 - **Issue #53's seven simplifications** of `debug_link.vhd`: do them, or
   drop them here (§2.1). The won't-do items of #51, #54, and 2026-10-23
   go under "Decided against" (§2.2).
@@ -82,22 +78,16 @@ has a "Resolved" paragraph there; the section numbers are the review's.)
   `tb_perf` run at 33333333 Hz, and SYSTEM.md §3 says "the integer part of
   N·10⁶/G_CLK_HZ, for 1 MHz and up" (§7.3). `run_i` as a rule of
   MICROARCH.md §8, and the counters in `tb_core` (§7.4, §3.4).
-- **The figures of the predictor's era.** The translated column of
-  MICROARCH.md §5.6, two percentages of §5.3, the quoted outputs, the
-  ratio table, and the Dhrystone table of bench/README.md, HISTORY.md's
-  predictor entry, and the word counts (§8.2 to §8.6, §6.5, §9.2). One
-  pass of `make hazards`, `make cycles`, `make compare`, `make words`,
-  `make dhry`, and `make core-dhry`, with the commit named.
 - **Out-of-context timing figures.** A row per figure in
   pipeline-timing.md, and an in-system build at RC05 (§2.4).
 - **The debug link's documents.** The board contracts, the bad-checksum
   `W` difference, and a table of the versions in DEBUG.md; the proof's
   wording; the untested halt reasons and `link.py` cases (§3.2 to §3.7).
-- **Stale text that waits for the figures.** The "1.72 ceiling" of
-  c-compiler-plan.md (§9.4), RC03's Dhrystone figure in RELEASE_NOTES.md
-  (§9.1), and hdl/README.md:972's cycles per instruction (§9.6), with the
-  rest of the figures above. HISTORY.md's present-tense entries (§9.2)
-  name no entry yet.
+- **HISTORY.md's present-tense entries** (§9.2) name no entry yet.
+- **Smaller figures** (§8.6): the run times of `make core` and `make core-dhry`
+  in bench/Makefile and bench/README.md; one sentence for the cost of a jump
+  DECODE resolves; a commit name on every new table of bench/README.md;
+  the `--no-bounds-checks` figures of c-compiler-plan.md.
 - **Smaller.** Terms for Dhrystone (§1.5); `CLOCKS_PER_SEC` as `clock_t`,
   which changes `mchess.wasm` (§5.4); the
   wall-clock limit of `errors.py` (§6.3); `nicebuild.py`'s
@@ -209,11 +199,11 @@ has a "Resolved" paragraph there; the section numbers are the review's.)
     than WRITE needs, unless a stall let the read go out early. A read
     right after a skipped bounds-check jump costs no more than another,
     since it loads in the cycle the jump leaves WRITE, so speculative
-    reads (above) would not save that cycle.
+    reads (MICROARCH.md §5.3) would not save that cycle.
   - *The address register written by the instruction before*, almost
     nothing now that the byte accesses compute theirs before the compare
     (MICROARCH.md §5.1).
-  - *Loop back edges* cost the three cycles of an early redirect each round.
+  - *Loop back edges* cost the two cycles of an early redirect each round.
   - *`@Rx++` for a pointer walk*, as `hand.nasm` does, needs a word
     pointer kept in step with the byte address, which is out of reach
     without loop analysis on an intermediate form.

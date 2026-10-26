@@ -215,6 +215,8 @@ The differential test of nicewasm at b2ac5a5 against 9d8f13d: 1040 modules (300 
 - TODO.md:156 "Loop back edges cost the three cycles of an early redirect each round": two since the predictor.
 - translator/README.md:829 "CI has Zig only": ci.yml has installed clang and lld since 0ba0ec7.
 
+**Resolved**: translator/README.md and bench/README.md say 5156 and 7079 words. TODO.md says two cycles. translator/README.md says that CI has Zig and clang, not Rust.
+
 ## 7. The cores
 
 ### 7.1 No behavior change but the predictor
@@ -274,6 +276,8 @@ The table at MICROARCH.md:486-503 was measured at d5e3cd0, before f678c7b closed
 
 Words per instruction, micro-ops, the two 0.0% rows, and R14 hold. **Fix:** paste the column from `make hazards`, with the commit named.
 
+**Resolved**: The translated column of MICROARCH.md §5.6 is `make hazards` of 98d2bed, and the share rows that the review lists changed. All figures of §8 and §6.5 are from one pass at 98d2bed (HEAD of the branch when it ran): `make hazards`, `cycles`, `compare`, `words`, `dhry`, `core-dhry` on both cores, and `make core` on the pipelined one. The cycles of `make core` are unchanged, 2357155 and 1252613.
+
 ### 8.3 Two percentages of §5.3
 
 | MICROARCH.md | Says | The model's charge now, of all cycles | Written at |
@@ -283,12 +287,16 @@ Words per instruction, micro-ops, the two 0.0% rows, and R14 hold. **Fix:** past
 
 The other figures of §5.3 hold: 0.8% and 8% of instructions (line 338), "0 to 4% and 5 to 8%" (line 347), and the 0.4% and 0.1% of line 322 come from an experiment that `make compare` cannot repeat. **Fix:** the two sentences, from `make cycles`.
 
+**Resolved**: MICROARCH.md §5.3 says 7% and 12% for the reads that WRITE takes a cycle after the ACK, and at most 0.9% and 3.5% for a read directly after a store. The review's 3.15% is 44711 of 1260293 cycles, which is 3.5%.
+
 ### 8.4 bench/README.md's quoted outputs
 
 - The `pipecycles.py` excerpt at lines 281-293 mixes two measurements: the summary line (1726040 instructions, 2466576 cycles, CPI 1.429), the "cycles above" line (740536), the flush row (0.155 per instruction), the early-redirect row (79046, 10.7%), and the `rng64` row (52768, 83026, 1.573) are d5e3cd0's, while cfdebb5 updated the total row alone (1652811, 2356816, 1.426). Now: 1697422, 2438761, 1.437; 741339; 0.158; 60047 and 8.1%; 51746, 82515, 1.595.
 - The `--retires` paragraph at lines 375-378 gives 1a41b0c's figures (295 cycles below over 1613484 steps; 63 below over 494212). Now: 289 below over 1588218 steps, and 21 above over 493904 of `hand.nasm`. The `cycprof` example after it shows a `fetch` term the line no longer has.
 - The table at lines 192-199: `strings` through nicewasm is 101281 instructions and 163528 cycles, not 104562 and 166871 (pre-f678c7b), so line 200's "1.50 times fewer" is 1.47.
 - The ratio table at lines 123-129: `crc32` 2.4, `bst` 2.7, and `strings` 5.1 are 2.30, 2.61, and 4.98 now; `rng64`, `heapsort`, `vm`, and the total hold.
+
+**Resolved**: The excerpt of `pipecycles.py`, the ratio table (2.3, 2.6, 5.0), the `strings` rows and the 1.47 of the `simple.nasm` table, and the `--retires` paragraph (289 below over 1588218 steps; 21 above over 493904) are from 98d2bed. The compare table already held. `make compare` prints the last column's percentages, and the README says so.
 
 ### 8.5 The Dhrystone table
 
@@ -302,6 +310,8 @@ bench/README.md:461 says "100 runs, measured at commit 4a3c917"; no such commit 
 
 RELEASE_NOTES.md:136 has 0.241 under RC03, and c-compiler-plan.md:91 has 2348 and 0.242: four values of one figure in four places. The port prints the figure truncated to three decimals, which line 442 could say. **Fix:** the table from the three commands, with a commit that exists, and the same figure in the notes.
 
+**Resolved**: The table of bench/README.md says "measured at commit 98d2bed": 1508 and 0.377, 17479 and 0.032, 2302 and 0.247. RELEASE_NOTES.md and c-compiler-plan.md say 0.247 and 2302. The README says the figure is truncated to three decimals. `make dhry` and `make core-dhry` on both cores pass.
+
 ### 8.6 Smaller
 
 - MICROARCH.md:124 "1.62 in hand-written code"; the table at line 490 and `make hazards` say 1.66, since a517599.
@@ -310,6 +320,8 @@ RELEASE_NOTES.md:136 has 0.241 under RC03, and c-compiler-plan.md:91 has 2348 an
 - The cost of a jump DECODE resolves: translator/README.md:693 says two cycles, bench/README.md:265 and TODO.md:156 three. `bubble.nasm` measures three in a stream and two behind a counter read, and §5.4 says "two" for the predicted form. One sentence that says both.
 - `make compare` prints percentages only, so the README's per-phase differences (−56 and so on) cannot be read off its output. Neither pipecycles.py nor the README says the model ignores the pause.
 - The new tables of bench/README.md (the `simple.nasm` table, the compare table, the 1252613 paragraph, the hazards sample, the `--retires` paragraph) name no commit, where the older ones do.
+
+**Resolved**: MICROARCH.md says 1.66. Not done: the run times of bench/Makefile and bench/README.md (`make core` took far less than 46 minutes on an idle machine, and was not timed), the cost of a jump DECODE resolves in one sentence, and a commit name on every new table.
 
 ## 9. The documents as a set
 
@@ -322,7 +334,8 @@ RELEASE_NOTES.md:136 has 0.241 under RC03, and c-compiler-plan.md:91 has 2348 an
 - RC03's 0.241 DMIPS/MHz was RC05's figure, and is stale now (§8.5).
 - Line 118's list lacks the Oxford comma.
 
-**Resolved**: Except the 0.241 DMIPS/MHz of RC03, which waits for the re-measurement of §8.5.
+**Resolved**:
+- RC03 says 0.247 DMIPS/MHz, as §8.5 measures.
 - RC05's upgrade notes name the three ports of `debug_link.vhd` and the wait of `halted_o`.
 - RC02's and RC04's upgrade notes name `run_i` of `perf.vhd` and of `fetch_stats.vhd`, and RC03's name `G_CLK_HZ`.
 - RC03's upgrade notes name the new global labels and `start_wasm_trap.nasm`.
@@ -358,11 +371,12 @@ RELEASE_NOTES.md:136 has 0.241 under RC03, and c-compiler-plan.md:91 has 2348 an
 - No sentence anywhere says that ISA.md and SYSTEM.md win over DEBUG.md.
 - REFERENCES.md's review list omits c-compiler-plan.md, whose "1.72 ceiling" (line 22) is 22eacce's figure, dated; it is about 1.88 now.
 
-**Resolved**: Except the "1.72 ceiling" of c-compiler-plan.md, which waits for the re-measurement of §8.
+**Resolved**:
 - README.md says five stages and five tools, four of them on the host, and that the emulator follows DEBUG.md too.
 - CLAUDE.md's Layout has doc/DEBUG.md, `nicebuild.py`, `runtime/libc/`, and `hdl/CLAUDE.md`. Its commands mention `link.py`, `bincheck`, `build.py`, the C library tests, and `dhrycheck.py`.
 - DEBUG.md says that ISA.md and SYSTEM.md win over it, and CLAUDE.md says so in the Layout.
 - REFERENCES.md's list of reviews has c-compiler-plan.md.
+- c-compiler-plan.md's table and ceiling are those of 98d2bed: 1652811 and 491309 instructions, 2357155 and 1252613 cycles, and 1.88.
 
 ### 9.5 `check_refs.py` does not know DEBUG.md
 
@@ -374,7 +388,7 @@ RELEASE_NOTES.md:136 has 0.241 under RC03, and c-compiler-plan.md:91 has 2348 an
 
 HISTORY.md:113 "misspelt"; emulator/test/link.py:397 "cancelled"; an en dash in `link.zig:375`; `mchess.c` "colour" (third party); hdl/README.md:972 quotes `strings` at 3.1 and `bst` at 2.5 cycles per instruction at 1a41b0c, dated, where they are 2.40 and 1.98 now.
 
-**Resolved**: Except the figures of hdl/README.md:972, which wait for the re-measurement of §8. "Misspelt" went with the duplicate entry of §9.2. link.py says "canceled", and link.zig has no en dash. `release/test.py` keeps "cancelled", which is the value that GitHub's API gives for a job.
+**Resolved**: hdl/README.md's table is that of 98d2bed, with `strings` at 2.4 and `bst` at 2.0 cycles per instruction. "Misspelt" went with the duplicate entry of §9.2. link.py says "canceled", and link.zig has no en dash. `release/test.py` keeps "cancelled", which is the value that GitHub's API gives for a job.
 
 ## 10. The release-script branch
 

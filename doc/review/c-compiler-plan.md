@@ -15,13 +15,13 @@ core:
 
 | Program | Instructions | Cycles | Cycles per instruction |
 |---|---|---|---|
-| `bench.c` through nicewasm | 1681080 | 2384635 | 1.42 |
-| `hand.nasm` | 491617 | 1384879 | 2.82 |
+| `bench.c` through nicewasm | 1652811 | 2357155 | 1.43 |
+| `hand.nasm` | 491309 | 1252613 | 2.55 |
 
 The hand-written program has 3.4 times fewer instructions but takes only
-1.72 times fewer cycles. Its dense instructions, with operands in memory,
+1.88 times fewer cycles. Its dense instructions, with operands in memory,
 side effects, and table jumps, meet more of the pipeline's hazards
-([MICROARCH.md §5](../MICROARCH.md)). So 1.72 is the ceiling for any
+([MICROARCH.md §5](../MICROARCH.md)). So 1.88 is the ceiling for any
 compiler on this core. More needs changes to the core as well.
 
 The bounds checks are not where the time goes. With
@@ -88,7 +88,7 @@ were measured.
   `switch` dispatch copied into each case, and math unit scheduling. It
   comes within 10 to 20% of `hand.nasm`: 1.4 to 1.6 times faster than
   nicewasm.
-- **Dhrystone**, at 2348 cycles per run on the pipelined core and 0.242
+- **Dhrystone**, at 2302 cycles per run on the pipelined core and 0.247
   DMIPS/MHz, would move to about 1500 to 1800 cycles and 0.32 to 0.38
   DMIPS/MHz. The Cortex-M0 has 0.87. Most of the remaining gap is the
   core's cycles per instruction, not the compiler.

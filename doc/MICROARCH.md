@@ -121,7 +121,7 @@ The parts do this:
   2a + 1, and it returns word 2a in bits 31..0 and word 2a + 1 in bits
   63..32, low word first as in ABI.md. The multi-cycle core has the same
   port. An instruction is about 1.86 words on average
-  in translated code and 1.62 in hand-written code (§5.6), so a port that
+  in translated code and 1.66 in hand-written code (§5.6), so a port that
   delivers one word per cycle would hold the core to about one instruction
   per two cycles, whatever the rest of the pipeline did. FETCH keeps the
   words in a buffer, and presents up to four of them to DECODE: the
@@ -334,16 +334,16 @@ entry is a jump, so it comes from the FIFO too (§6). So no path runs from the
 data bus through the ALU, the shifter, a store, or a jump in one cycle
 ([review/pipeline-timing.md](review/pipeline-timing.md), Read data).
 Any other micro-operation that reads memory waits a cycle, unless PREPARE
-issued its read early enough. That is 4% of the cycles of the translated
-benchmark and 6% of the hand-written one's.
+issued its read early enough. That is 7% of the cycles of the translated
+benchmark and 12% of the hand-written one's.
 
 A data read directly after a store is 0.8% of the translated benchmark's
 instructions and 8% of the hand-written one's (§5.6). So rule 3 matters:
 PREPARE may load the read in the cycle the bus accepts the store, so that
 the read is on the bus in the next cycle. That is still a cycle after the
 store's instruction retires, because the store waits a cycle in DBUS.
-That costs at most 0.5% of the cycles of the translated benchmark and
-3.1% of the hand-written one's.
+That costs at most 0.9% of the cycles of the translated benchmark and
+3.5% of the hand-written one's.
 
 Rules 1 and 2 cost little. A read after a skipped jump does not wait, since
 PREPARE issues it in the cycle the jump retires. The testbench counts the
@@ -494,20 +494,20 @@ the condition is known. These are the shares of all instructions:
 
 | | `bench.c` through nicewasm | `hand.nasm` |
 |---|---|---|
-| Instructions | 1726040 | 493964 |
-| Skipped | 20.3% | 18.4% |
+| Instructions | 1697422 | 493964 |
+| Skipped | 19.1% | 18.4% |
 | Words per instruction, mean | 1.86 | 1.66 |
 | Micro-ops per instruction, mean | 1.00 | 1.14 |
-| Conditional | 22.3% | 27.7% |
-| Data read | 11.9% | 38.3% |
-| Store | 5.8% | 15.5% |
-| Jump: writes R15, or a control instruction | 20.1% | 21.0% |
-| Reads a register the previous instruction writes | 29.9% | 30.2% |
-| Reads a register written two back, not one | 7.3% | 13.9% |
-| Conditional, SR written by the previous instruction | 20.1% | 20.3% |
+| Conditional | 22.7% | 27.7% |
+| Data read | 12.1% | 38.3% |
+| Store | 5.9% | 15.5% |
+| Jump: writes R15, or a control instruction | 18.7% | 21.0% |
+| Reads a register the previous instruction writes | 30.4% | 30.2% |
+| Reads a register written two back, not one | 8.3% | 13.9% |
+| Conditional, SR written by the previous instruction | 20.4% | 20.3% |
 | Conditional with a data read, SR written by the previous | 0.0% | 0.0% |
-| Data read after a store | 0.7% | 8.1% |
-| Data read after a conditional jump | 5.6% | 7.9% |
+| Data read after a store | 0.8% | 8.1% |
+| Data read after a conditional jump | 5.8% | 7.9% |
 | R14 read as an operand | 3.0% | 6.6% |
 | R15 as a pointer, or with a side effect | 0% | 0% |
 

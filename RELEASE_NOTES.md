@@ -151,7 +151,7 @@ changes since the one before that a user of the tools or the cores can see.
 **Benchmarks**
 
 - Dhrystone 2.1 runs on the C library and is checked on the emulator and
-  both cores (`make dhry`, `make core-dhry`). The pipelined core does 0.241
+  both cores (`make dhry`, `make core-dhry`). The pipelined core does 0.247
   DMIPS/MHz.
 
 ## RC02 (2026-10-23)

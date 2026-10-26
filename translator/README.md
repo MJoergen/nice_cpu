@@ -188,8 +188,8 @@ pointers. nicewasm supports all of them. A Rust program uses a table and
 `call_indirect` for `dyn` trait calls.
 
 The optimizations change nothing in WASM.md. The size of translated code
-is measured in words (`make words` in `bench/`): `test/safe.zig` is 5170
-words and the float library 7083. The benchmark of [bench/](../bench/)
+is measured in words (`make words` in `bench/`): `test/safe.zig` is 5156
+words and the float library 7079. The benchmark of [bench/](../bench/)
 runs 1652811 instructions in its phases, from a module of 8537 words.
 [doc/review/code-size-plan.md](../doc/review/code-size-plan.md) has the
 measurements of the plan, and [doc/HISTORY.md](../doc/HISTORY.md) lists
@@ -830,7 +830,7 @@ emulator's name of the trap, `abort`; built with `--no-trap-report`, it
 must halt without the report. `hello.zig` is built with and without
 `--symbols`, which must give the same `.bin`, and `hellors.rs` with it.
 Every `.sym` file must name every function. A language whose compiler is
-missing is skipped, and the PASS line says which; CI has Zig only.
+missing is skipped, and the PASS line says which; CI has Zig and clang, not Rust.
 `test/run.py --keep DIR` also leaves each
 program in `DIR/X.bin`, or `DIR/X_soft.bin` for the run with `--no-mpu`,
 for `make programs` in `hdl/`, which runs them on the FPGA core.

@@ -42,17 +42,23 @@ joins, and assembles. The extension of the inputs picks the language: `.c`,
 
     ./nicebuild.py [-o output.bin] [-O LEVEL] [-I DIR] [-D MACRO[=VALUE]]
                    [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-bounds-checks]
-                   [--memory-pages N] [--no-trap-report] [--symbols] [--keep]
-                   input.c... | input.zig | input.rs
+                   [--memory-pages N] [--asm FILE]... [--no-trap-report] [--symbols]
+                   [--keep] input.c... | input.zig | input.rs
 
 Without `-o`, the output is the first input with the extension `.bin`.
-The defaults are the options of the recipes below. `-O` is a clang level
+The defaults are the options of the recipes below, but for `-Wl,--allow-undefined`,
+which only `--asm` adds. `-O` is a clang level
 for C, a mode for Zig such as `ReleaseSafe`, and an `opt-level` for
 Rust. `--stack` and `--memory` set the stack size and the initial memory;
 the default stack is 4096 bytes, or 16384 for Zig in Debug or ReleaseSafe.
 The stack is in the memory, whose default is 65536 bytes, so a larger
 `--stack` needs a larger `--memory` too: `--stack 131072` alone fails with
 wasm-ld's "initial memory too small", and `--memory 262144` fixes it.
+`--stack` and `--memory` must be positive.
+`--asm FILE` joins a NICE assembly file after the program, so that a C, Zig, or
+Rust program can call a function that the file defines, as the label
+`_name` of ABI.md; for C it also lets the link leave the function undefined.
+With it the program can call hand-written assembly. The option can repeat.
 `-I` and `-D` are for C. C files are linked with the C library, and Zig
 gets `runtime/nice.zig` as the module `nice`. Zig and Rust take one source file,
 the root of the program, and a Rust program that wants `nice.rs` mounts it
@@ -69,6 +75,9 @@ and joined `.full.nasm` files next to the output. The script builds
 `runtime/libc/libc.a` and `runtime/float.nasm` first if needed. `CLANG`,
 `ZIG`, and `RUSTC` in the environment name the compilers. If the compiler of
 the language is not installed, the script says so and exits with status 1.
+It also checks the output directory and the `--asm` files before it compiles.
+A step that fails ends the script with "nicebuild: NAME failed with status N",
+where NAME is the compiler or the Python script.
 
 The output is one assembly file. A program is made by joining it with the
 start-up code, the program's other files, and the runtime library, in the
@@ -703,7 +712,8 @@ conditional jump out and an unconditional one back, and leaving it, a
 mispredict, costs six cycles more, as a taken conditional jump did. If an
 unconditional jump follows the `br_if`, leaving the loop takes two more
 cycles than if the two swapped targets, but a loop that runs three rounds
-or more still gains.
+or more still gains. A loop that runs once pays the six cycles at its
+exit and gains nothing.
 
 A `br_if` out of a block whose other arm ends in a `br` forward, as in
 `block; block; c; br_if 0; A; br 1; end; B; end`, jumps over arm A to

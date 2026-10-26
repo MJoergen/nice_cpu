@@ -9,7 +9,8 @@ take one source file, the root of the program.
 
 Usage: nicebuild.py [-o output.bin] [-O LEVEL] [-I DIR] [-D MACRO[=VALUE]]
                     [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-bounds-checks]
-                    [--memory-pages N] [--keep] input.c... | input.zig | input.rs
+                    [--memory-pages N] [--asm FILE]... [--keep]
+                    input.c... | input.zig | input.rs
 """
 
 from __future__ import annotations
@@ -42,7 +43,9 @@ def run(cmd: List[str]) -> None:
     except OSError as e:
         sys.exit(f"nicebuild: {cmd[0]}: {e.strerror}")
     if status != 0:
-        sys.exit(f"nicebuild: {os.path.basename(cmd[0])} failed with status {status}")
+        # A Python script is named, not the interpreter.
+        name = cmd[1] if os.path.basename(cmd[0]).startswith("python") else cmd[0]
+        sys.exit(f"nicebuild: {os.path.basename(name)} failed with status {status}")
 
 
 def need_compiler(lang: str) -> None:
@@ -104,6 +107,7 @@ def compile_wasm(lang: str, args: argparse.Namespace, wasm: str) -> None:
              f"-O{args.opt or '2'}", "-ffreestanding",
              "-nostdlibinc", "-isystem", os.path.join(LIBC, "include"),
              *[f"-I{d}" for d in args.includes], *[f"-D{d}" for d in args.defines],
+             *(["-Wl,--allow-undefined"] if args.asm else []),
              "-nostdlib", "-Wl,--no-entry", "-Wl,--export=main", "-Wl,--stack-first",
              f"-Wl,-z,stack-size={args.stack or 4096}", f"-Wl,--initial-memory={args.memory}",
              "-o", wasm, *args.inputs, os.path.join(LIBC, "libc.a")])
@@ -146,6 +150,9 @@ def main() -> None:
     ap.add_argument("--no-mpu", action="store_true", help="translate for a system without the math unit")
     ap.add_argument("--no-bounds-checks", action="store_true", help="pass --no-bounds-checks to nicewasm")
     ap.add_argument("--memory-pages", type=int, metavar="N", help="pass --memory-pages to nicewasm")
+    ap.add_argument("--asm", action="append", default=[], metavar="FILE",
+                    help="join the NICE assembly FILE after the program, so that it can define "
+                    "the functions that the program declares and does not define; repeatable")
     ap.add_argument("--no-trap-report", action="store_true",
                     help="halt silently at a wasm trap, as the default handler does, "
                     "without the message of runtime/trapmsg.nasm")
@@ -157,10 +164,22 @@ def main() -> None:
     args = ap.parse_args()
 
     lang = language(args.inputs)
+    for name, value in (("--stack", args.stack), ("--memory", args.memory)):
+        if value is not None and value <= 0:
+            sys.exit(f"nicebuild: {name} must be positive, not {value}")
     if lang != "c" and (args.includes or args.defines):
         sys.exit("nicebuild: -I and -D are for C only")
+    for path in args.asm:
+        if not os.path.isfile(path):
+            sys.exit(f"nicebuild: {path}: No such file or directory")
     out = args.output or os.path.splitext(args.inputs[0])[0] + ".bin"
     base = os.path.splitext(out)[0]
+    # The output is found out about now, not after the whole build.
+    outdir = os.path.dirname(os.path.abspath(out))
+    if not os.path.isdir(outdir):
+        sys.exit(f"nicebuild: {out}: No such file or directory")
+    if not os.access(outdir, os.W_OK):
+        sys.exit(f"nicebuild: {out}: Permission denied")
     python = sys.executable
 
     need_compiler(lang)
@@ -186,7 +205,7 @@ def main() -> None:
         # if the program calls it.
         program = read(prog)
         start = "start_wasm.nasm" if args.no_trap_report else "start_wasm_trap.nasm"
-        parts = [read(os.path.join(RUNTIME, start)), program,
+        parts = [read(os.path.join(RUNTIME, start)), program, *[read(f) for f in args.asm],
                  read(os.path.join(RUNTIME, "lib.nasm")),
                  read(os.path.join(RUNTIME, "muldiv_soft.nasm" if args.no_mpu else "muldiv_mpu.nasm"))]
         float_nasm = read(os.path.join(RUNTIME, "float.nasm"))

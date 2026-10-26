@@ -28,6 +28,11 @@ ERRORS: List[Tuple[List[str], str]] = [
     (["a.c", "b.zig"], "nicebuild: the inputs are in more than one language"),
     (["a.zig", "b.zig"], "nicebuild: zig takes one source file, the root of the program"),
     (["-I", "inc", "a.rs"], "nicebuild: -I and -D are for C only"),
+    (["--stack", "0", "a.c"], "nicebuild: --stack must be positive, not 0"),
+    (["--stack", "-5", "a.c"], "nicebuild: --stack must be positive, not -5"),
+    (["--memory", "0", "a.c"], "nicebuild: --memory must be positive, not 0"),
+    (["--asm", "missing.nasm", "a.c"], "nicebuild: missing.nasm: No such file or directory"),
+    (["-o", "/nonexistent/x.bin", "a.c"], "nicebuild: /nonexistent/x.bin: No such file or directory"),
 ]
 
 failed = 0
@@ -121,6 +126,64 @@ def test_c(tmp: str) -> None:
         check_run("C without the trap report", run(quiet), 2, ["before", "!trap 1:"])
 
 
+# A C program of two files, a header, a macro, a function in assembly, and a
+# float, to build with the options that the other tests leave out.
+MAIN_C = """#include <stdio.h>
+#include "val.h"
+extern int twice(int);
+int helper(int);
+int main(void) {
+    volatile float f = 3;
+    printf("%d %d %s %d\\n", twice(21), helper(SCALE), NAME, (int)(f * 1.5f));
+    return 0;
+}
+"""
+HELPER_C = "int helper(int x) { return x + 1; }\n"
+TWICE_NASM = "_twice  ADD     R1, R1, R1\n        MOVE    R15, @R13++\n"
+
+
+def test_c_options(tmp: str) -> None:
+    """-D, -I, two C files, --asm, --stack, --memory, the float library, and
+    --no-mpu give the same program; a compiler that fails, and an output
+    that cannot be written, are reported."""
+    src = os.path.join(tmp, "opts")
+    os.makedirs(os.path.join(src, "inc"))
+    for name, text in (("main.c", MAIN_C), ("helper.c", HELPER_C), ("twice.nasm", TWICE_NASM),
+                       (os.path.join("inc", "val.h"), "#define SCALE 5\n")):
+        with open(os.path.join(src, name), "w") as f:
+            f.write(text)
+    base = ["-I", os.path.join(src, "inc"), "-D", 'NAME="hi"', "--asm", os.path.join(src, "twice.nasm"),
+            os.path.join(src, "main.c"), os.path.join(src, "helper.c")]
+    for name, extra in (("default", []), ("big stack", ["--stack", "8192", "--memory", "131072"]),
+                        ("no mpu", ["--no-mpu"])):
+        out = os.path.join(tmp, name.replace(" ", "_") + ".bin")
+        if check_build("C options, " + name, ["-o", out] + extra + base, out):
+            check_run("C options, " + name, run(out), 0, ["42 6 hi 4"])
+    bad = os.path.join(src, "bad.c")
+    with open(bad, "w") as f:
+        f.write("int main(void) { return }\n")
+    p = build(["-o", os.path.join(tmp, "bad.bin"), bad])
+    if p.returncode != 1 or "nicebuild: clang failed with status 1" not in p.stderr.splitlines():
+        fail("a C file that does not compile", f"exit status {p.returncode}\n{p.stderr}")
+    if os.path.exists(os.path.join(tmp, "bad.bin")):
+        fail("a .bin file of a C file that does not compile")
+
+
+def test_unwritable(tmp: str) -> None:
+    """An output directory without write permission is found before the build.
+    Root writes anywhere, so the test is skipped for root."""
+    if os.geteuid() == 0:
+        return
+    locked = os.path.join(tmp, "locked")
+    os.makedirs(locked)
+    os.chmod(locked, 0o500)
+    out = os.path.join(locked, "x.bin")
+    p = build(["-o", out, "a.c"])
+    if p.returncode != 1 or f"nicebuild: {out}: Permission denied" not in p.stderr.splitlines():
+        fail("an output directory without write permission", f"exit status {p.returncode}\n{p.stderr}")
+    os.chmod(locked, 0o700)
+
+
 def test_zig(tmp: str) -> None:
     """hello.zig greets and returns 0. --symbols names every function, so it
     keeps the wasm's names, and the .bin is the same with and without it."""
@@ -176,12 +239,15 @@ def main() -> None:
         message = f"nicebuild: no-such-compiler: not found; install it or set {var}"
         if p.returncode != 1 or message not in p.stderr.splitlines() or p.stdout:
             fail(f"missing {name}", f"exit status {p.returncode}\n{p.stdout}{p.stderr}")
+    with tempfile.TemporaryDirectory() as tmp:
+        test_unwritable(tmp)
     ran = ["errors"]
     skipped = []
     with tempfile.TemporaryDirectory() as tmp:
         clang = compiler("CLANG", "clang")
         if clang and clang_for_wasm32(clang):
             test_c(tmp)
+            test_c_options(tmp)
             ran.append("C")
         else:
             skipped.append("C (no clang, wasm-ld, or llvm-ar for wasm32)")

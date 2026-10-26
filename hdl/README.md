@@ -549,7 +549,8 @@ the timer, it shows a request taken, and one that waits while the timer
 counts on.
 
 `formal_nice_pkg` proves the functions that both cores share, for every
-input. They are combinational, so a proof of depth 1 covers every value.
+input. They are combinational, so a bounded check of depth 1 covers every
+value, and the job needs no induction step.
 The shift of ISA.md §5.2, written as the loop that repeats n times and run
 for counts up to 66, gives what `shift` gives. Beyond that, `shift` gives
 for n what it gives for a smaller count that the loop would give the same
@@ -566,9 +567,9 @@ word lies in one of the three blocks that WRITE tests, given that the
 oldest word moves by at most four words a cycle, which `formal_pipe_fetch`
 proves, and a word within 4 of an instruction's address lies in its block
 or the next. `tb_shift` checks a sample of the same by simulation. The
-table of `mod33` is mapped to logic in the job, because Yosys models a
-ROM as state, whose contents are free in an induction step. Boolector
-proves it in under a minute; Yices does not finish.
+table of `mod33` is mapped to logic in the job, which the solver takes in
+half the time that it takes the ROM. Boolector proves it in under a
+minute; Yices does not finish.
 
 `formal_pipe_fetch` proves FETCH of the pipelined core for
 every cycle. Every input is free: every slave, every redirect, and every

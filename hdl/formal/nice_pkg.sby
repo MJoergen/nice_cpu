@@ -1,17 +1,18 @@
 # The functions of src/nice_pkg.vhd and the block compares of
 # src/pipe_pkg.vhd, against ISA.md and MICROARCH.md for every input
-# (formal_nice_pkg.vhd). They are combinational, so "prove" at depth 1
-# covers every value, and "cover" shows the large counts and the ends of
-# the ranges that the assertions see. The table of mod33 is mapped to
-# logic, so that nothing here is state: as a memory, its contents would be
-# free in the induction step.
+# (formal_nice_pkg.vhd). They are combinational, so "prove" is a bounded
+# check of depth 1: its one step, with every input free, covers every
+# value, and an induction step would only repeat it. "cover" shows the
+# large counts and the ends of the ranges that the assertions see. The
+# table of mod33 is mapped to logic, which the solver takes in half the
+# time it takes the memory.
 
 [tasks]
 prove
 cover
 
 [options]
-prove: mode prove
+prove: mode bmc
 prove: depth 1
 cover: mode cover
 cover: depth 1

@@ -720,9 +720,10 @@ once a cycle has counted, and that `FS_MAX` is at most `FS_HELD_MAX`.
 The last needs the one assumption, that the buffer holds no more words
 than are held. The sum of 32 counters is too much for the solver in one
 step, so ghost counters in a binary tree over the bins count the cycles
-of each subtree, and each node is asserted to be the sum of its two
-children. Boolector proves it all by k-induction in about 3 minutes;
-Yices does not finish in 15.
+of each subtree. The root is asserted to be `FS_CYCLES`, and each node
+the sum of its two children, which gives the sum of the bins without
+any one assertion adding 32 counters. Boolector proves it all by
+k-induction in under a minute; Yices does not finish in 15.
 
 `formal_debug_link` checks the debug link from the host, the program,
 the core, and the board, with every input free. It assumes a Wishbone

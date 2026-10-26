@@ -212,7 +212,6 @@ begin
       -- read returns the word as it is in the cycle the read is accepted.
 
       gen_formal : if G_FORMAL generate
-         signal f_sum     : std_logic_vector(31 downto 0);
          signal f_ctrl    : std_logic;                       -- A write to FS_CTRL
          signal f_expect  : std_logic_vector(31 downto 0);   -- What a read returns
          signal f_same    : std_logic;                       -- The counters did not change
@@ -229,17 +228,6 @@ begin
          -- node counts the cycles counted with the count in its subtree.
          signal f_tree_r : t_counts(1 to 31);
       begin
-
-         -- The sum of the bins, added in the order of the tree below
-         p_sum : process (all)
-            variable sum_v : t_counts(1 to 63);
-         begin
-            sum_v(32 to 63) := hist_r;
-            for n in 31 downto 1 loop
-               sum_v(n) := sum_v(2 * n) + sum_v(2 * n + 1);
-            end loop;
-            f_sum <= sum_v(1);
-         end process p_sum;
 
          f_ctrl <= '1' when accept = '1' and wb_we_i = '1' and to_integer(wb_addr_i) = C_CTRL else
                    '0';
@@ -296,8 +284,8 @@ begin
 
          -- psl default clock is rising_edge(clk_i);
 
-         -- The invariants
-         -- psl f_hist_sum : assert always rst_i = '0' -> f_sum = count_r(C_CYCLES);
+         -- The invariants. The root counts every cycle counted, and each node
+         -- is the sum of its children, so the bins sum to FS_CYCLES.
          -- psl f_root : assert always rst_i = '0' -> f_tree_r(1) = count_r(C_CYCLES);
 
          gen_tree : for n in 1 to 15 generate

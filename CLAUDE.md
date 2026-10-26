@@ -82,6 +82,9 @@ translator, and two FPGA cores. See README.md.
 
 Run the relevant `make test` after every change.
 
+Vivado 2025.1 is installed at `/opt/Xilinx/2025.1/Vivado/bin/vivado`, not on PATH.
+`hdl/Makefile` defaults `VIVADO` to that path, so `make timing` works as is.
+
 ## Conventions
 
 - Behavior changes start in ISA.md; code follows the spec, never the reverse.

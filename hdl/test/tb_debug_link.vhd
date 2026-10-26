@@ -586,6 +586,12 @@ begin
       expect_in("A" & character'val(255) & "B", "console in");
       quiet("console in");
 
+      -- A packet whose checksum starts with a bad digit is dropped with both
+      -- bytes of cc. Only the "4" after them reaches the program.
+      send(C_ESC & "R000001000001#Z94");
+      expect_in("4", "bad high digit of cc");
+      quiet("bad high digit of cc");
+
       -- Overflow: one notice, until there is room again.
       free <= X"0000";
       cycles(5);

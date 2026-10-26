@@ -287,6 +287,10 @@ def test_run(echo: List[int]) -> None:
     e.expect("start", b"\xffkFFFFFFF00001#46")
     e.send(b"Hi" + ESC + ESC)
     e.expect("echo", b"Hi\xff\xff")
+    # A packet with a bad high digit of cc is dropped with both bytes of cc,
+    # so only the "4" after them reaches the program.
+    e.send(b"\xffR000001000001#Z94")
+    e.expect("bad cc digit", b"4")
     # While it runs, the memory is not reached, the debug registers are.
     e.send(b"\xffR000001000001#94")
     e.expect("e02", b"\xffe5202#2E")
@@ -297,13 +301,13 @@ def test_run(echo: List[int]) -> None:
     e.expect("halt", b"\xffh01#C9")
     e.sock.close()
     # A new host may connect after a half-close. The registers are those
-    # the program left: R1 = 0x200, R2 = 3 bytes echoed.
+    # the program left: R1 = 0x200, R2 = 4 bytes echoed.
     e.sock = e.connect()
     e.buf = b""
     expect("b again", e.take(len(HELLO)), HELLO)
     e.send(read(0xFFFFFFE1, 2) + read(CONTROL, 2))
     e.expect("after halt",
-             answer(0xFFFFFFE1, [0x200, 3]) + answer(CONTROL, [0xA, 1]))
+             answer(0xFFFFFFE1, [0x200, 4]) + answer(CONTROL, [0xA, 1]))
     # The restart of §8. The end of the input is cleared.
     e.send(b"\xffWFFFFFFF0000100000009#BB")
     e.expect("hold", b"\xffkFFFFFFF00001#46")
@@ -321,7 +325,7 @@ def test_run(echo: List[int]) -> None:
     status, out, err = e.stop()
     expect("exit status", bytes([status]), b"\x00")
     expect("stdout", out, b"")
-    want = b"Halted (HALT) after 21 steps, PC=00000005\n"
+    want = b"Halted (HALT) after 27 steps, PC=00000005\n"
     if want not in err:
         failures.append(f"stderr: {want!r} not in {err!r}")
 

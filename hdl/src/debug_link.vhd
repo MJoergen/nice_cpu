@@ -279,6 +279,7 @@ architecture synthesis of debug_link is
    signal tag_r      : t_byte                       := (others => '0');
    signal sum_r      : t_byte                       := (others => '0');
    signal cc_hi_r    : std_logic_vector(3 downto 0) := (others => '0');
+   signal cc_bad_r   : std_logic := '0';  -- the high digit of cc was not a hex digit
    signal dig_r      : natural range 0 to 2 ** 20   := 0;
    signal nib_r      : natural range 0 to 7         := 0;
    signal wcnt_r     : natural range 0 to 2 ** 17   := 0;
@@ -532,11 +533,15 @@ begin
                if acc_v then
                   if b_v = C_ESC then
                      rx_st <= RX_ESC_ST;
-                  elsif is_hex(b_v) then
-                     cc_hi_r <= hex_of(b_v);
-                     rx_st   <= RX_CC2_ST;
                   else
-                     rx_st <= RX_IDLE_ST;
+                     -- Any other byte is the high digit. A bad one fails the
+                     -- checksum at the next byte, so that no byte of the
+                     -- packet reaches the program.
+                     cc_bad_r <= not to_sl(is_hex(b_v));
+                     if is_hex(b_v) then
+                        cc_hi_r <= hex_of(b_v);
+                     end if;
+                     rx_st <= RX_CC2_ST;
                   end if;
                end if;
 
@@ -545,7 +550,7 @@ begin
                   rx_st <= RX_IDLE_ST;
                   if b_v = C_ESC then
                      rx_st <= RX_ESC_ST;
-                  elsif is_hex(b_v) and (cc_hi_r & hex_of(b_v)) = sum_r then
+                  elsif cc_bad_r = '0' and is_hex(b_v) and (cc_hi_r & hex_of(b_v)) = sum_r then
                      -- A good packet. Its error is the first one that applies.
                      code_v := X"00";
                      if tag_r /= X"52" and tag_r /= X"57" then

@@ -364,6 +364,10 @@ architecture synthesis of debug_link is
    -- pause for a cycle, and pause_r is high again.
    signal pause_own : std_logic;
 
+   -- The link may reach the whole memory: the core is held or halted, or the
+   -- link owns it (pause_own). Otherwise it reaches the debug registers only.
+   signal mem_own : std_logic;
+
 begin
 
    ---------------------------------------------------------------------------
@@ -499,8 +503,7 @@ begin
                               if dig_r = 11 then
                                  cur_addr_r <= req_addr_r;
                                  -- The error 02 is decided here, before any data word.
-                                 if bad_r = '0' and hold_r = '0' and halted_r = '0' and
-                                    pause_own = '0' and non_dbg(req_addr_r, n_v) then
+                                 if bad_r = '0' and mem_own = '0' and non_dbg(req_addr_r, n_v) then
                                     err02_r <= '1';
                                  end if;
                                  if bad_r = '0' and tag_r = X"57" and wraps(req_addr_r, n_v) then
@@ -622,6 +625,7 @@ begin
    own_stop   <= paused_i and not paused_r and not pause_d_r and not hold_r;
    brk_addr_o <= brk_addr_r;
    brk_en_o   <= brk_en_r;
+   mem_own    <= hold_r or halted_r or pause_own;
    clear_o    <= clearing_r;
    rom_hide_o <= hide_r when G_HAS_ROM else
                  '1';
@@ -1128,7 +1132,7 @@ begin
       f_data   <= tag_r = X"57" and dig_r >= 12 and bad_r = '0' and err02_r = '0' and f_past;
       f_got    <= tag_r = X"52" and dig_r >= 12 and bad_r = '0' and err02_r = '0' and
                   (rx_st = RX_PAY_ST or rx_st = RX_CC1_ST or rx_st = RX_CC2_ST);
-      f_mem    <= (hold_r = '1' or halted_r = '1' or pause_own = '1') and clearing_r = '0';
+      f_mem    <= mem_own = '1' and clearing_r = '0';
       f_end    <= ('0' & req_addr_r) + req_n_r;
       f_tx_end <= ('0' & tx_addr_r) + tx_cnt_r;
       f_cur    <= req_addr_r + wcnt_r - 1 when rx_st = RX_CALL_ST or rx_st = RX_WAIT_ST else
@@ -1328,7 +1332,7 @@ begin
       --     (bad_r = '1' or f_end(32) = '0' or f_end = '1' & X"00000000"));
       -- psl i_rx_read : assert always
       --    f_got ->
-      --    (hold_r = '1' or halted_r = '1' or pause_own = '1' or not non_dbg(req_addr_r, req_n_r));
+      --    (mem_own = '1' or not non_dbg(req_addr_r, req_n_r));
 
       -- p_tx: an answer is sent only while it is due, and an `r` reads the
       -- words from A on, only where the link may.
@@ -1337,7 +1341,7 @@ begin
       -- psl i_ans_clear : assert always (f_ans and clearing_r = '1') -> ans_kind_r /= PKT_R;
       -- psl i_ans_read : assert always
       --    (f_ans and ans_kind_r = PKT_R) ->
-      --    (hold_r = '1' or halted_r = '1' or pause_own = '1' or not non_dbg(req_addr_r, req_n_r));
+      --    (mem_own = '1' or not non_dbg(req_addr_r, req_n_r));
       -- psl i_tx_call : assert always
       --    (tx_st = TX_CALL_ST or tx_st = TX_WAIT_ST) ->
       --    (kind_r = PKT_R and tx_cnt_r /= X"0000" and (f_mem or f_dbg(tx_addr_r)));

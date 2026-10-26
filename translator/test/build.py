@@ -170,6 +170,12 @@ def main() -> None:
         p = build(args)
         if p.returncode != 1 or message not in p.stderr.splitlines() or p.stdout:
             fail(" ".join(args), f"exit status {p.returncode}\n{p.stdout}{p.stderr}")
+    for var, name, ext in [("CLANG", "clang", "c"), ("ZIG", "zig", "zig"), ("RUSTC", "rustc", "rs")]:
+        env = dict(os.environ, **{var: "no-such-compiler"})
+        p = subprocess.run([sys.executable, NICEBUILD, f"a.{ext}"], env=env, capture_output=True, text=True)
+        message = f"nicebuild: no-such-compiler: not found; install it or set {var}"
+        if p.returncode != 1 or message not in p.stderr.splitlines() or p.stdout:
+            fail(f"missing {name}", f"exit status {p.returncode}\n{p.stdout}{p.stderr}")
     ran = ["errors"]
     skipped = []
     with tempfile.TemporaryDirectory() as tmp:

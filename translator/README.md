@@ -64,7 +64,8 @@ because ReleaseSmall leaves the names out of the wasm; the `.bin` is the
 same. `--keep` leaves the `.wasm`, `.nasm`,
 and joined `.full.nasm` files next to the output. The script builds
 `runtime/libc/libc.a` and `runtime/float.nasm` first if needed. `CLANG`,
-`ZIG`, and `RUSTC` in the environment name the compilers.
+`ZIG`, and `RUSTC` in the environment name the compilers. If the compiler of
+the language is not installed, the script says so and exits with status 1.
 
 The output is one assembly file. A program is made by joining it with the
 start-up code, the program's other files, and the runtime library, in the

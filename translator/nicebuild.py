@@ -45,6 +45,14 @@ def run(cmd: List[str]) -> None:
         sys.exit(f"nicebuild: {os.path.basename(cmd[0])} failed with status {status}")
 
 
+def need_compiler(lang: str) -> None:
+    """Exits with a clear message if the compiler of lang is not installed."""
+    var, default = {"c": ("CLANG", "clang"), "zig": ("ZIG", "zig"), "rust": ("RUSTC", "rustc")}[lang]
+    tool = os.environ.get(var, default)
+    if shutil.which(tool) is None:
+        sys.exit(f"nicebuild: {tool}: not found; install it or set {var}")
+
+
 def read(path: str) -> str:
     with open(path, encoding="latin-1") as f:
         return f.read()
@@ -155,6 +163,7 @@ def main() -> None:
     base = os.path.splitext(out)[0]
     python = sys.executable
 
+    need_compiler(lang)
     if lang == "c":
         run(["make", "-s", "-C", LIBC, "libc.a"])
     run(["make", "-s", "-C", RUNTIME, "float.nasm"])

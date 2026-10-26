@@ -65,6 +65,8 @@ begin
          redirect_o => redirect,
          target_o   => target,
          flush_i    => flush_i,
+         brk_addr_i => (others => (others => '0')),
+         brk_en_i   => (others => '0'),
          valid_o    => valid,
          ready_i    => ready_i,
          uop_o      => uop,

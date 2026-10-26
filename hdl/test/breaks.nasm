@@ -1,5 +1,5 @@
 ; Breakpoints for tb_core's G_BREAK_AT, at "4 5 8 D", with
-;   --irq 6:2 --nmi 8:2
+;   --irq 6:2 --nmi 8:2 --irq 18:2
 ; test/break_stops.py gets the stops of the emulator (doc/DEBUG.md §6). The
 ; steps and the stops are:
 ;    0,1    set VBASE = 1, E = 1, and R1
@@ -16,9 +16,13 @@
 ;   11,12   ADD, RTI
 ;   13      SUB, back from the NMI, and stop at 8
 ;   14,15   ?Z, the jump, and stop at 4
-;   16,17   MOVE, SUB, and stop at 8
-;   18      ?Z, taken this time
-;   19      HALT
+;   16,17   MOVE, SUB
+;   18      IRQ: the entry goes first at 8, which the pipelined core
+;           has fetched already
+;           stop at D
+;   19,20   ADD, RTI, and stop at 8
+;   21      ?Z, taken this time
+;   22      HALT
 ; The word at 5 is the constant of the MOVE at 4, and never a stop.
         MOVE    R14, 0x40000001 ; words 0,1: VBASE = 1, E = 1
         MOVE    R1, 3           ; words 2,3

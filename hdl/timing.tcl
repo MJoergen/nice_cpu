@@ -5,7 +5,8 @@
 # hdl/, which runs it in the directory of the reports and prints the worst
 # path of each and the groups.
 #
-# The arguments, all optional, are the part, the flow, and the period in ns:
+# The arguments, all optional, are the part, the flow, the period in ns,
+# and the number of breakpoints, G_BREAKS (doc/DEBUG.md §6), 4 by default:
 #   default  the directives of Vivado's defaults
 #   timing   the directives that NiceMonMEGA65 builds with: synthesis
 #            PerformanceOptimized with retiming, Explore, ExtraTimingOpt,
@@ -27,6 +28,7 @@
 set part   [expr {$argc > 0 ? [lindex $argv 0] : "xc7a200tfbg484-2"}]
 set flow   [expr {$argc > 1 ? [lindex $argv 1] : "default"}]
 set period [expr {$argc > 2 ? [lindex $argv 2] : 10.0}]
+set breaks [expr {$argc > 3 ? [lindex $argv 3] : 4}]
 set margin 1.0
 
 if {$flow eq "default"} {
@@ -49,7 +51,7 @@ set src [file normalize [file join [file dirname [info script]] src]]
 read_vhdl -vhdl2008 [list $src/nice_pkg.vhd $src/trace_pkg.vhd $src/pipe_pkg.vhd \
   $src/pipe_fetch.vhd $src/pipe_decode.vhd $src/pipe_prepare.vhd $src/pipe_dbus.vhd \
   $src/pipe_write.vhd $src/pipeline.vhd]
-synth_design -top pipeline -part $part -mode out_of_context {*}$d_synth
+synth_design -top pipeline -part $part -mode out_of_context -generic G_BREAKS=$breaks {*}$d_synth
 create_clock -period $period -name clk [get_ports clk_i]
 set_input_delay -clock clk 0 [get_ports -filter {DIRECTION == IN && NAME != clk_i}]
 set_output_delay -clock clk 0 [all_outputs]

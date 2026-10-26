@@ -433,6 +433,9 @@ begin
    elsif G_CORE = "pipeline" generate
 
       i_pipeline : entity work.pipeline
+         generic map (
+            G_BREAKS => C_BREAKS.count
+         )
          port map (
             clk_i         => clk,
             rst_i         => rst,
@@ -458,6 +461,8 @@ begin
             irq_vector_i  => core_irq_vector,
             pause_i       => pause,
             paused_o      => paused,
+            brk_addr_i    => C_BREAKS.addrs,
+            brk_en_i      => (others => '1'),
             halted_o      => halted,
             halt_reason_o => halt_reason,
             instret_o     => instret,

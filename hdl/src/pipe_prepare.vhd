@@ -294,9 +294,11 @@ begin
                    not ((nmi_valid_i = '1' and w_i.in_service = '0') or irq_v);
       -- Nor a pause (MICROARCH.md §6.1), but before the first step after
       -- one. The instruction after RTI is not exempt, as the core pauses
-      -- after RTI too (hdl/ASSUMPTIONS.md, item 19).
+      -- after RTI too (hdl/ASSUMPTIONS.md, item 19). A breakpoint at the
+      -- instruction is a pause of the core's own, which WRITE takes when
+      -- it finds the flag here or in its own micro-operation.
       pause_ok  := started_v or p_committed_r = '1' or (not older_v and w_i.after_go = '1') or
-                   pause_i = '0';
+                   (pause_i = '0' and u_v.inst.brk = '0');
 
       -- The bus takes the read when C_MAX_OUT will not be in flight, and no
       -- store waits in DBUS in the next cycle: none waits that the bus does

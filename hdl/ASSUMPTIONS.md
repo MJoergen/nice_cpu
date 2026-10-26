@@ -3,7 +3,7 @@
 The pipelined core, `src/pipeline.vhd`, follows
 [doc/MICROARCH.md](../doc/MICROARCH.md). Where the note left a question
 open, or where the core first did something else, this file says what the
-core does and why. MICROARCH.md has since taken up items 1, 9, 10, 15, and 17 to 19. ISA.md is not changed. Items that need a
+core does and why. MICROARCH.md has since taken up items 1, 9, 10, 15, and 17 to 22. ISA.md is not changed. Items that need a
 change outside `hdl/` are marked **Outside hdl/**, and are also in
 [TODO.md](../TODO.md).
 
@@ -191,3 +191,27 @@ change outside `hdl/` are marked **Outside hdl/**, and are also in
     and pauses and flushes in the cycle that PREPARE would issue the
     read. So giving the term the exemption changes no run, and only the
     mutation that drops the term fails `cputest_step` and `reads_step`.
+
+## The breakpoints
+
+20. **DECODE compares the breakpoints** with the address of each
+    instruction it takes, and the flag `brk` goes with the instruction
+    (MICROARCH.md §6.1). The compare runs from FETCH's address and the
+    breakpoint inputs into `dec_r` and `dec_q`, off WRITE's paths. A
+    breakpoint written while the core runs therefore misses the
+    instructions that DECODE holds already, as DEBUG.md §6 allows. While
+    the core is paused, the pipeline is empty, so a breakpoint written
+    then is exact.
+21. **WRITE takes the flag from PREPARE when it holds no micro-op.**
+    PREPARE holds back the data read of a flagged instruction, so such an
+    instruction never reaches WRITE, and WRITE would wait for ever. While
+    WRITE is empty, `prep_r` holds the oldest instruction in flight, if
+    any, so its flag is that of the next step. `prep_r` is a register.
+    Dropping this fails `breaks` and `breaks_stall`.
+22. **An interrupt entry goes before a breakpoint**, as in niceemu. WRITE
+    pauses on the flag only when it takes no interrupt in that cycle.
+    Stopping first would match niceemu only with R15 compared in WRITE,
+    since at a boundary right after a jump neither WRITE nor PREPARE holds
+    the next instruction yet. The IRQ before step 18 of `test/breaks.nasm`
+    comes with the flagged instruction already in the pipeline, and a
+    core that stops first fails `breaks`.

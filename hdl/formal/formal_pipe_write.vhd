@@ -13,7 +13,10 @@
 -- for every pause, as pause_i is free. And once it leaves PAUSED_ST, it
 -- reports a step on retire_o before it pauses again (MICROARCH.md §6.1),
 -- since it does not pause while w_r.after_go is '1', and only a report
--- clears that. The record inputs are free signals here (anyseq), since
+-- clears that. WRITE pauses without pause_i only on the breakpoint flag
+-- of the next instruction, in its own micro-operation or, while it holds
+-- none, in PREPARE's; and it then stays paused until pause_i has been
+-- '1' (doc/DEBUG.md §6). The record inputs are free signals here (anyseq), since
 -- the top level has only plain ports.
 --
 -- RESET
@@ -81,6 +84,15 @@ architecture synthesis of formal_pipe_write is
    signal left     : std_logic;
    signal owed_r   : std_logic := '0';
 
+   -- The cycle before: pause_i, w.brk_wait, and the breakpoint flag of the
+   -- next instruction
+   signal pause_d  : std_logic := '0';
+   signal wait_d   : std_logic := '0';
+   signal flag     : std_logic;
+   signal flag_d   : std_logic := '0';
+   -- WRITE enters PAUSED_ST now
+   signal enters   : std_logic;
+
    attribute anyseq : boolean;
    attribute anyseq of uop  : signal is true;
    attribute anyseq of dec  : signal is true;
@@ -116,6 +128,14 @@ begin
    -- psl f_go_owed : assert always (rst_i = '0' and owed_r = '1') -> w.after_go = '1';
    -- psl f_go_paused : assert always (rst_i = '0' and w.mode = PAUSED_ST) -> w.after_go = '0';
 
+   -- A pause without pause_i is at a breakpoint, and lasts until pause_i
+   -- has been '1'.
+   -- psl f_brk_own : assert always (rst_d = '0' and enters = '1' and pause_d = '0') ->
+   --    (flag_d = '1' and w.brk_wait = '1');
+   -- psl f_brk_hold : assert always (rst_i = '0' and rst_d = '0' and wait_d = '1' and pause_d = '0') ->
+   --    w.mode = PAUSED_ST;
+   -- psl f_brk_wait : assert always (rst_i = '0' and w.brk_wait = '1') -> w.mode = PAUSED_ST;
+
    -- How deep the proof must see a halt, a store, a vector read, a pause,
    -- and a step after a pause.
    -- psl c_halt : cover {w.mode = HALTED_ST and rst_i = '0'};
@@ -123,6 +143,9 @@ begin
    -- psl c_vector : cover {st = '1' and st_we = '0' and rst_i = '0'};
    -- psl c_pause : cover {w.mode = PAUSED_ST and rst_i = '0'};
    -- psl c_go_step : cover {owed_r = '1' and retire.valid = '1' and rst_i = '0'};
+   -- psl c_brk : cover {enters = '1' and pause_d = '0' and rst_i = '0'};
+   -- psl c_brk_go : cover {enters = '1' and pause_d = '0' and rst_i = '0';
+   --    (w.mode = PAUSED_ST)[*]; w.mode = RUN_ST and rst_i = '0'};
 
 
    i_pipe_write : entity work.pipe_write
@@ -168,6 +191,9 @@ begin
 
 
    left <= paused_d and to_sl(w.mode /= PAUSED_ST);
+   enters <= not paused_d and to_sl(w.mode = PAUSED_ST);
+   flag   <= w.uop.inst.brk when w.uop.valid = '1' else
+             prep.valid and prep.first and prep.inst.brk;
 
    p_prev : process (clk_i)
    begin
@@ -175,6 +201,9 @@ begin
          halted_d <= to_sl(w.mode = HALTED_ST);
          rst_d    <= rst_i;
          paused_d <= to_sl(w.mode = PAUSED_ST) and not rst_i;
+         pause_d  <= pause_i;
+         wait_d   <= w.brk_wait;
+         flag_d   <= flag;
          if retire.valid = '1' then
             owed_r <= '0';
          elsif left = '1' then

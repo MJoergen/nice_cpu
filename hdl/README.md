@@ -91,7 +91,7 @@ departs from it.
 | [test/shiftjump.nasm](test/shiftjump.nasm) | Every shift with R15 as its destination, `0<0` among them, whose opcode is `MOVE`'s. |
 | [test/rtiread.nasm](test/rtiread.nasm) | `RTI` that returns to instructions with data reads, run one step at a time. |
 | [test/pausepatch.nasm](test/pausepatch.nasm) | A word of code that `tb_core` writes while the core is paused, with its hand-checked trace in [test/pausepatch.expected](test/pausepatch.expected). |
-| [test/breaks.nasm](test/breaks.nasm) | Stops at breakpoints in a loop, at a data read, at a false condition, in an interrupt routine, after `RTI`, and at a jump target with an IRQ pending. |
+| [test/breaks.nasm](test/breaks.nasm) | Stops at breakpoints in a loop, at a data read, at a false condition, in an interrupt routine, after `RTI`, and with an IRQ pending at a jump target and at an instruction that the pipelined core holds already. |
 | [test/break_stops.py](test/break_stops.py) | Lists the stops of a program at its breakpoints on the emulator, over the debug link, as `tb_core` lists the core's. |
 | [test/bubble.nasm](test/bubble.nasm) | Measures the bubbles of the pipelined core with the cycle counter, and checks itself. |
 | [test/random_prog.py](test/random_prog.py) | Writes random programs, and random interrupt requests for them. |
@@ -115,7 +115,7 @@ departs from it.
 | [formal/pipe_prepare.sby](formal/pipe_prepare.sby) | The SymbiYosys job for it. |
 | [formal/formal_pipe_dbus.vhd](formal/formal_pipe_dbus.vhd) | DBUS of the pipelined core, whose properties are in `src/pipe_dbus.vhd`. |
 | [formal/pipe_dbus.sby](formal/pipe_dbus.sby) | The SymbiYosys job for it. |
-| [formal/formal_pipe_write.vhd](formal/formal_pipe_write.vhd) | WRITE of the pipelined core, with the properties of its halt and its pause. |
+| [formal/formal_pipe_write.vhd](formal/formal_pipe_write.vhd) | WRITE of the pipelined core, with the properties of its halt, its pause, and its breakpoints. |
 | [formal/pipe_write.sby](formal/pipe_write.sby) | The SymbiYosys job for it. |
 | [formal/formal_pipeline.vhd](formal/formal_pipeline.vhd) | The pipelined core with a checker on each of its four ports. |
 | [formal/pipeline.sby](formal/pipeline.sby) | The SymbiYosys job for it. |
@@ -167,8 +167,9 @@ measures it ([timing.tcl](timing.tcl)): synthesis, placement, and routing
 with a 10 ns clock. `BOARD` selects the part: `mega65` (the default,
 `xc7a200tfbg484-2`) or `nexys4ddr` (`xc7a100tcsg324-1`). `FLOW` selects the
 directives: `default`, or `timing`, those NiceMonMEGA65's Nexys4DDR build uses.
-`PERIOD` sets the clock in ns. The reports go to
-`build/timing/BOARD-FLOW/`, so that runs for several boards can go at once.
+`PERIOD` sets the clock in ns, and `BREAKS` the number of breakpoints,
+`G_BREAKS`, 4 by default as on the boards. The reports go to
+`build/timing/BOARD-FLOW-BREAKS/`, so that runs for several boards can go at once.
 It prints the worst register-to-register path and leaves the 50 worst in
 `timing.rpt`. It does the same for the paths from an input, in
 `timing_in.rpt`, and to an output, in `timing_out.rpt`, but for `retire_o`
@@ -638,7 +639,10 @@ paused WRITE makes a store or a vector read, takes an interrupt, or
 accepts a micro-operation. It also proves that once WRITE leaves
 `PAUSED_ST`, it reports a step before it pauses again, whether or not
 `paused_o` had risen: it does not pause while `after_go` is 1, and only a
-report clears it.
+report clears it. And it pauses without `pause_i` only on the breakpoint
+flag of the next instruction, in its own micro-operation or, while it
+holds none, in PREPARE's, and then stays paused until `pause_i` has been
+1.
 
 The assumptions of each proof that name another stage are checked in the
 whole core by `p_check` in `src/pipeline.vhd`, on every simulation and in
@@ -658,7 +662,11 @@ covers everything the whole core can do, so their shadow registers would
 add only time to the bounded check, a sixth with DECODE's in a trial. It
 also asserts
 what `formal_multicycle` asserts of the multi-cycle core about a halted
-and a paused core, with `pause_i` free. The pipeline is too
+and a paused core, with `pause_i` free, and about two breakpoints. Their
+addresses and enable bits are free, but change only in a reset, since a
+change while the core runs may miss an instruction. It also asserts that
+no instruction at an enabled breakpoint retires without a stop first,
+but as the first step after `pause_i` was 1. The pipeline is too
 deep for k-induction without many more invariants, so its `bmc` task
 checks only the first 8 cycles after reset, which hold an interrupt
 entry, a first store, and a pause, which its cover reaches at step 4, so
@@ -861,18 +869,22 @@ system may read `regs_o` and write memory: the core fetches from R15
 again when it goes on. Both cores have the three ports, with the same
 behavior.
 
-The multi-cycle core has the breakpoints of DEBUG.md §6: the generic
-`G_BREAKS`, from 0 to 8, and the ports `brk_addr_i`, a `t_brk_addrs` of
-`src/trace_pkg.vhd`, and `brk_en_i`, one bit each, from flip-flops.
-Breakpoints from `G_BREAKS` up are ignored. `BOUNDARY` compares R15 with
-the enabled ones after its checks for a pause and an interrupt, so an
-interrupt entry goes first, as in niceemu. The compare does not depend on
-`in_service` or `after_rti`, and the first step after a pause is exempt.
-At a breakpoint the core pauses, and stays paused until `pause_i` has been
-1 and is 0 again. So a system sees `paused_o` rise while `pause_i` is 0,
-raises `pause_i`, and then goes on or steps as after any pause. It finds
-the breakpoint by R15 on `regs_o`. With `G_BREAKS` = 0, the core is the
-one without breakpoints. The pipelined core does not have them yet (#55).
+Both cores have the breakpoints of DEBUG.md §6 (MICROARCH.md §6.1): the
+generic `G_BREAKS`, from 0 to 8, and the ports `brk_addr_i`, a
+`t_brk_addrs` of `src/trace_pkg.vhd`, and `brk_en_i`, one bit each, from
+flip-flops. Breakpoints from `G_BREAKS` up are ignored. A breakpoint
+fires after the checks for a pause and an interrupt, so an interrupt
+entry goes first, as in niceemu. It does not depend on `in_service` or
+`after_rti`, and the first step after a pause is exempt. The multi-cycle
+core compares R15 in `BOUNDARY`. The pipelined core compares the address
+of each instruction in DECODE, and pauses on the flag in WRITE, so a
+breakpoint written while it runs may miss an instruction that DECODE
+holds already (ASSUMPTIONS.md, items 20 to 22). At a breakpoint the core
+pauses, and stays paused until `pause_i` has been 1 and is 0 again. So a
+system sees `paused_o` rise while `pause_i` is 0, raises `pause_i`, and
+then goes on or steps as after any pause. It finds the breakpoint by R15
+on `regs_o`. With `G_BREAKS` = 0, the core is the one without
+breakpoints.
 
 `regs_o` gives R0 to R15 from the core's registers, for a monitor that
 shows them. In the cycle after a step is reported on `retire_o`, they are

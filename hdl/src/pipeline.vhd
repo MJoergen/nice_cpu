@@ -96,6 +96,19 @@
 -- goes on, and runs one step, which may be an interrupt entry, whatever
 -- pause_i is then: w_r.after_go marks it until it is reported.
 --
+-- BREAKPOINTS (doc/DEBUG.md §6). DECODE compares the address of each
+-- instruction it takes with the enabled breakpoints, and marks a hit in
+-- the instruction's record. The mark acts as a pause request of the
+-- core's own, for that instruction alone: PREPARE issues no first data
+-- read of it, and WRITE pauses before it, below an interrupt, where the
+-- core would pause on pause_i, with the same exemption of the first step
+-- after a pause. WRITE finds the mark in its own micro-operation, or,
+-- while it holds none, in PREPARE's, since PREPARE does not pass on a
+-- marked instruction with a data read. The core then stays paused until
+-- pause_i has been '1' and is '0' again, w_r.brk_wait, so that the system
+-- has time to raise it. A breakpoint written while the core runs may
+-- miss an instruction that DECODE has taken already.
+--
 -- QUIET. halted_o and paused_o rise only once no bus cycle is open, so
 -- that a system may take the buses over while the core is stopped. No
 -- request comes in either mode, and the ACKs that are still owed have come.
@@ -121,6 +134,9 @@
 --    the core's outputs: it feeds the flush, nmi_ready_o, and irq_ready_o.
 -- e) A system that raises pause_i waits for paused_o or halted_o, as the
 --    core may halt before it pauses.
+-- f) brk_addr_i and brk_en_i come from flip-flops. A system that enables
+--    breakpoints raises pause_i once paused_o rises without it, and lowers
+--    it to go on.
 --
 -- RESET
 -- Synchronous. It sets the state of ISA.md §8.1, empties the pipeline, and
@@ -137,7 +153,9 @@ library ieee;
 entity pipeline is
    generic (
       -- Adds the invariants that a formal proof needs.
-      G_FORMAL : boolean := false
+      G_FORMAL : boolean := false;
+      -- The number of breakpoints, 0 to C_BREAKS_MAX (doc/DEBUG.md §6)
+      G_BREAKS : natural range 0 to C_BREAKS_MAX := 0
    );
    port (
       clk_i         : in  std_logic;
@@ -172,6 +190,10 @@ entity pipeline is
       -- Pause before the next step, and '1' while paused (MICROARCH.md §6.1)
       pause_i       : in  std_logic;
       paused_o      : out std_logic;
+
+      -- The breakpoints: addresses, and one enable bit each (above)
+      brk_addr_i    : in  t_brk_addrs;
+      brk_en_i      : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0);
 
       -- '1' once the core has halted, and no bus cycle is open (ISA.md §1.4)
       halted_o      : out std_logic;
@@ -342,6 +364,9 @@ begin
 
 
    i_pipe_decode : entity work.pipe_decode
+      generic map (
+         G_BREAKS => G_BREAKS
+      )
       port map (
          clk_i      => clk_i,
          rst_i      => rst_i,
@@ -352,6 +377,8 @@ begin
          redirect_o => d_redirect,
          target_o   => d_dest,
          flush_i    => d_flush,
+         brk_addr_i => brk_addr_i,
+         brk_en_i   => brk_en_i,
          valid_o    => d_valid,
          ready_i    => p_ready,
          uop_o      => seq_uop,

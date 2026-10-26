@@ -126,9 +126,8 @@ the section numbers are the review's.)
 - **Run control in the debug link** (DEBUG.md). Version 3 has the pause and
   the single step, in niceemu and in `src/debug_link.vhd`. A board must stop
   the counters and the timer while `paused_o` is 1 (NiceMonMEGA65). DEBUG.md
-  version 4 specifies the breakpoints (stage 4, #55). niceemu and the
-  multi-cycle core have them, and the pipelined core and
-  `src/debug_link.vhd` do not yet. Still to do after them:
+  version 4 specifies the breakpoints (stage 4, #55). niceemu and both
+  cores have them, and `src/debug_link.vhd` does not yet. Still to do after them:
   watchpoints, and writable registers and a
   port for the hidden state of ISA.md §1.4 (stage 6). A step is one per
   write; a count of steps, and a read-only register that counts them so a

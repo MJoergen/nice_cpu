@@ -7,9 +7,9 @@
 -- puts a store into DBUS's register, and updates the flags. A store
 -- into the I/O range waits in WRITE, w_r.busy, until the bus accepts it
 -- (MICROARCH.md §5.3). It takes interrupts before an instruction, pauses
--- there (MICROARCH.md §6.1), runs the control instructions, and flushes
--- the pipeline (see src/pipeline.vhd). Its state is the record w_r
--- (t_write), which PREPARE reads too.
+-- there (MICROARCH.md §6.1), also at a breakpoint, runs the control
+-- instructions, and flushes the pipeline (see src/pipeline.vhd). Its
+-- state is the record w_r (t_write), which PREPARE reads too.
 --
 -- The registers are w_r. The other outputs depend combinationally on w_r
 -- and on the inputs of the same cycle: the store and the vector read go
@@ -145,6 +145,9 @@ begin
       variable bound_v  : boolean;
       variable intr_v   : boolean;   -- An interrupt is taken now
       variable pbound_v : boolean;   -- A step boundary, where the core may pause
+      variable rpause_v : boolean;   -- A pause on pause_i
+      variable brk_v    : boolean;   -- The next instruction is at a breakpoint
+      variable bpause_v : boolean;   -- A pause at a breakpoint
       variable pause_v  : boolean;
       variable room_v   : boolean;
       variable accept_v : std_logic;
@@ -250,10 +253,23 @@ begin
       pbound_v := w_r.mode = RUN_ST and rst_i = '0' and w_r.commits = 0 and w_r.mid = '0' and
                   w_r.busy = '0' and w_r.cnt_step = 0 and w_r.exec_done = '0' and
                   (u_v.valid = '0' or u_v.first = '1');
-      pause_v  := pbound_v and w_r.after_go = '0' and pause_i = '1';
-      bound_v  := pbound_v and not pause_v and w_r.in_service = '0' and w_r.after_rti = '0';
+      rpause_v := pbound_v and w_r.after_go = '0' and pause_i = '1';
+      bound_v  := pbound_v and not rpause_v and w_r.in_service = '0' and w_r.after_rti = '0';
       intr_v   := bound_v and (nmi_valid_i = '1' or
                                (irq_valid_i = '1' and w_r.regs(14)(C_SR_E) = '1'));
+
+      -- A breakpoint (doc/DEBUG.md §6) is a pause of the core's own, below
+      -- an interrupt, and with the same exemption as the pause. Its flag
+      -- is that of the next instruction: the one in WRITE, or, while WRITE
+      -- is empty, the one in PREPARE, which holds back its data read and
+      -- so never reaches WRITE.
+      if u_v.valid = '1' then
+         brk_v := u_v.inst.brk = '1';
+      else
+         brk_v := prep_i.valid = '1' and prep_i.first = '1' and prep_i.inst.brk = '1';
+      end if;
+      bpause_v := pbound_v and not rpause_v and w_r.after_go = '0' and brk_v and not intr_v;
+      pause_v  := rpause_v or bpause_v;
 
       if intr_v then
          if nmi_valid_i = '1' then
@@ -270,7 +286,10 @@ begin
       if pause_v then
          -- The micro-operation in WRITE has not begun, so it goes with the
          -- rest of the pipeline, and FETCH stops at R15.
+         -- At a breakpoint, brk_wait holds the core paused until pause_i
+         -- has been '1', so that the system has time to see it.
          n_v.mode      := PAUSED_ST;
+         n_v.brk_wait  := to_sl(bpause_v);
          n_v.uop.valid := '0';
          target_v      := w_r.regs(15);
          flush_v       := true;
@@ -278,7 +297,9 @@ begin
          -- The pipeline is empty. When pause_i falls, FETCH starts again at
          -- R15, so that it sees what a system wrote to memory meanwhile, and
          -- the core runs one step, whatever pause_i is then.
-         if pause_i = '0' then
+         if pause_i = '1' then
+            n_v.brk_wait := '0';
+         elsif w_r.brk_wait = '0' then
             n_v.mode     := RUN_ST;
             n_v.after_go := '1';
             target_v     := w_r.regs(15);
@@ -659,6 +680,7 @@ begin
             w_r.in_service <= '0';
             w_r.after_rti  <= '0';
             w_r.after_go   <= '0';
+            w_r.brk_wait   <= '0';
             w_r.halt       <= HALT_NONE;
             w_r.cond       <= '0';
             w_r.mid        <= '0';

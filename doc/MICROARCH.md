@@ -298,7 +298,9 @@ issues a data read only when the instruction is certain to run:
    first step after the core goes on, but only from this term, not from
    the interrupt requests, so that a request that comes just after the
    core goes on is not taken late. The instruction after an `RTI` is not
-   exempt from it, since the core pauses after `RTI` too (§6.1).
+   exempt from it, since the core pauses after `RTI` too (§6.1). An
+   instruction at a breakpoint (§6.1) counts as a pause of its own: it
+   issues no first data read, with the same exemptions.
 
 When PREPARE issues an instruction's first data read, the core commits to
 that instruction. No interrupt is taken before it (§6).
@@ -594,6 +596,35 @@ either. `pause_i` must come from a flip-flop and must not depend
 combinationally on the core's outputs: it feeds the flush, `nmi_ready_o`,
 and `irq_ready_o`. The debug link drives it from bit 4 of its control
 register (DEBUG.md §6), and waits for `paused_o` or `halted_o`.
+
+Breakpoints (DEBUG.md §6) are pauses of the core's own. Each core has
+a generic `G_BREAKS`, from 0 to 8, and inputs for the addresses and the
+enable bits, from flip-flops of the debug link. At a step boundary, the
+core checks for a pause request first, then for an NMI or an IRQ that
+ISA §7.1 allows, and last whether the next instruction is at an enabled
+breakpoint. So an interrupt entry goes first, as in niceemu, and the
+breakpoint fires when its instruction is next again, after the `RTI`.
+The check does not depend on `in_service` or `after_rti`, and the first
+step after a pause is exempt from it, as from the pause.
+
+The multi-cycle core compares R15 in `BOUNDARY`. The pipelined core
+compares the address of each instruction that DECODE takes, and carries
+the result with it as a flag, `brk`, so that no compare lies on WRITE's
+paths. PREPARE holds back the first data read of a flagged instruction
+(§5.3), and WRITE pauses before it, at the same boundary as for
+`pause_i`. WRITE takes the flag from its own micro-op, or, when it holds
+none, from PREPARE's, since a flagged instruction with a data read never
+leaves PREPARE. At a boundary where neither holds the next instruction
+yet, after a jump for example, there is no flag, and the core takes a
+pending request, as niceemu does. So the result does not depend on how
+long the fetch takes. A breakpoint written while the core runs may miss
+an instruction that DECODE has taken already, which DEBUG.md §6 allows.
+
+At a breakpoint, the core stays paused until `pause_i` has been 1 and is
+0 again: `brk_wait` in WRITE, and in the multi-cycle core. So the debug
+link sees `paused_o` rise while `pause_i` is 0, and has time to raise
+`pause_i`. Then go on and step work as after any pause. The link finds
+the breakpoint by R15 on `regs_o`; the cores have no output for it.
 
 `halt_reason_o` is the reason of the step that halted the core, a
 `t_halt`, while `halted_o` is 1, and `HALT_NONE` before. So a system need
@@ -911,7 +942,8 @@ data read right before the entry.
    which `hdl/test/irq_sweep.py` makes.
 6. Pauses (§6.1): probes and random programs with random pauses, short and
    held, and one step at a time, which must not change the trace, and a
-   word of code written while the core is paused (hdl/README.md).
+   word of code written while the core is paused (hdl/README.md). The
+   stops at breakpoints, compared with niceemu's.
 7. The runtime and translator test programs, which `make programs` in
    `hdl/` runs.
 8. Random instruction streams, run on both and diffed:

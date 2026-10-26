@@ -48,6 +48,7 @@ package pipe_pkg is
       iw      : std_logic_vector(31 downto 0);
       consts  : t_fields;                        -- The constant word of each field
       early   : std_logic;                       -- DECODE has redirected FETCH to it
+      brk     : std_logic;                       -- An enabled breakpoint is at addr
       m       : t_modes;                         -- The mode of each field
       x       : t_regnums;                       -- The register of each field
       side    : std_logic_vector(1 to 2);        -- The source has a side effect
@@ -66,6 +67,7 @@ package pipe_pkg is
       iw      => (others => '0'),
       consts  => (others => (others => '0')),
       early   => '0',
+      brk     => '0',
       m       => (others => (others => '0')),
       x       => (others => 0),
       side    => "00",
@@ -231,6 +233,7 @@ package pipe_pkg is
       in_service : std_logic;
       after_rti  : std_logic;
       after_go   : std_logic;                       -- The first step after a pause
+      brk_wait   : std_logic;                       -- Paused at a breakpoint, before pause_i
       saved_pc   : std_logic_vector(31 downto 0);
       saved_sr   : std_logic_vector(31 downto 0);
       halt       : t_halt;

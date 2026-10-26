@@ -14,7 +14,13 @@
 -- formal_multicycle proves of the multi-cycle core: the core goes quiet
 -- when it halts or pauses and stays quiet until reset or until it goes
 -- on, regs_o does not change while paused, and once the core goes on it
--- reports a step before it pauses again. The pipeline is too deep for
+-- reports a step before it pauses again. Two breakpoints, with free
+-- addresses and enable bits that change only in a reset, as a change
+-- while the core runs may miss an instruction (src/pipeline.vhd): the
+-- core pauses without pause_i only when R15 was an enabled breakpoint,
+-- and then stays paused until pause_i has been '1'; and it never runs an
+-- instruction at an enabled breakpoint without a stop first, but as the
+-- first step after pause_i was '1'. The pipeline is too deep for
 -- k-induction without many invariants, so pipeline.sby checks a bounded
 -- number of cycles from reset. formal_pipe_write proves the last for
 -- every cycle at the level of WRITE.
@@ -26,6 +32,7 @@
 library ieee;
    use ieee.std_logic_1164.all;
 
+   use work.nice_pkg.all;
    use work.trace_pkg.all;
 
 entity formal_pipeline is
@@ -42,7 +49,9 @@ entity formal_pipeline is
       nmi_vector_i : in  std_logic_vector(7 downto 0);
       irq_valid_i  : in  std_logic;
       irq_vector_i : in  std_logic_vector(7 downto 0);
-      pause_i      : in  std_logic
+      pause_i      : in  std_logic;
+      brk_addr_i   : in  t_brk_addrs;
+      brk_en_i     : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0)
    );
 end entity formal_pipeline;
 
@@ -78,6 +87,33 @@ architecture synthesis of formal_pipeline is
    -- paused_o has fallen, and no step has been reported since
    signal owed_r : std_logic := '0';
 
+   constant C_BREAKS : natural := 2;
+
+   -- The breakpoints of the cycle before
+   signal brk_addr_d : t_brk_addrs;
+   signal brk_en_d   : std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+   -- R15 was an enabled breakpoint in the cycle before
+   signal hit_d      : std_logic := '0';
+   -- The core paused without pause_i, and pause_i has been '0' since
+   signal wait_r     : std_logic := '0';
+   -- paused_o rose while pause_i was '0' in the cycle before
+   signal own        : boolean;
+   -- pause_i has been '1' since the last step was reported
+   signal asked_r    : std_logic := '0';
+
+   -- addr is an enabled breakpoint.
+   function hit(addrs : t_brk_addrs;
+                en    : std_logic_vector;
+                addr  : std_logic_vector(31 downto 0)) return boolean is
+   begin
+      for i in 0 to C_BREAKS - 1 loop
+         if en(i) = '1' and addrs(i) = addr then
+            return true;
+         end if;
+      end loop;
+      return false;
+   end function hit;
+
 begin
 
    -- psl default clock is rising_edge(clk_i);
@@ -109,6 +145,21 @@ begin
    -- Once paused_o falls, a step is reported before it rises again.
    -- psl f_go_report : assert always (rst_i = '0' and owed_r = '1') -> paused = '0';
 
+   -- The breakpoints change only in a reset.
+   -- psl f_brk_stable : assume always rst_i = '0' ->
+   --    (brk_addr_i(0 to C_BREAKS - 1) = brk_addr_d(0 to C_BREAKS - 1) and
+   --     brk_en_i(C_BREAKS - 1 downto 0) = brk_en_d(C_BREAKS - 1 downto 0));
+
+   -- A pause of the core's own is at a breakpoint, and lasts until pause_i
+   -- has been '1'. No instruction at a breakpoint runs without a stop
+   -- first, but the first after pause_i was '1'.
+   own <= rst_i = '0' and paused = '1' and paused_d = '0' and pause_d = '0';
+   -- psl f_brk_hit : assert always own -> hit_d = '1';
+   -- psl f_brk_wait : assert always (rst_i = '0' and wait_r = '1') -> paused = '1';
+   -- psl f_brk_miss : assert always
+   --    (rst_i = '0' and retire.valid = '1' and retire.intr = '0' and asked_r = '0') ->
+   --    not hit(brk_addr_i, brk_en_i, retire.addr);
+
    -- How deep the bounded check must go to see an instruction retire, a
    -- store, a halt, a pause, and a step after a pause.
    -- psl c_retire : cover {retire.valid = '1' and rst_i = '0'};
@@ -116,11 +167,13 @@ begin
    -- psl c_halt : cover {halted = '1' and rst_i = '0'};
    -- psl c_pause : cover {paused = '1' and rst_i = '0'};
    -- psl c_go_step : cover {owed_r = '1' and retire.valid = '1' and rst_i = '0'};
+   -- psl c_brk : cover {own};
 
 
    i_pipeline : entity work.pipeline
       generic map (
-         G_FORMAL => true
+         G_FORMAL => true,
+         G_BREAKS => C_BREAKS
       )
       port map (
          clk_i         => clk_i,
@@ -147,6 +200,8 @@ begin
          irq_vector_i  => irq_vector_i,
          pause_i       => pause_i,
          paused_o      => paused,
+         brk_addr_i    => brk_addr_i,
+         brk_en_i      => brk_en_i,
          halted_o      => halted,
          halt_reason_o => reason,
          instret_o     => instret,
@@ -231,6 +286,19 @@ begin
          halted_d <= halted and not rst_i;
          pause_d  <= pause_i and not rst_i;
          regs_d   <= regs;
+         brk_addr_d <= brk_addr_i;
+         brk_en_d   <= brk_en_i;
+         hit_d      <= to_sl(hit(brk_addr_i, brk_en_i, regs(15)));
+         if pause_i = '1' then
+            wait_r <= '0';
+         elsif own then
+            wait_r <= '1';
+         end if;
+         if pause_i = '1' then
+            asked_r <= '1';
+         elsif retire.valid = '1' then
+            asked_r <= '0';
+         end if;
          if retire.valid = '1' then
             owed_r <= '0';
          elsif paused_d = '1' and paused = '0' then
@@ -239,6 +307,8 @@ begin
          if rst_i = '1' then
             retire_d.valid <= '0';
             owed_r         <= '0';
+            wait_r         <= '0';
+            asked_r        <= '0';
          end if;
       end if;
    end process p_retire_d;

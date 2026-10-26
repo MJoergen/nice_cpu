@@ -8,6 +8,13 @@
 -- "MOVE R15, c" and "ADD R15, R15, c" with condition "always" it
 -- redirects FETCH at once (MICROARCH.md §5.4), as it takes them.
 --
+-- BREAKPOINTS (doc/DEBUG.md §6). DECODE compares the address of each
+-- instruction it takes with the enabled breakpoints, and marks a hit in
+-- its record, inst.brk. PREPARE and WRITE pause before the instruction
+-- on that flag (MICROARCH.md §6.1). The compare runs from FETCH's address
+-- and the breakpoint registers into dec_r and dec_q, off the paths of the
+-- later stages.
+--
 -- The splitting goes on whenever skid_r is empty, whether PREPARE takes
 -- the micro-operation or not. One that PREPARE does not take waits in
 -- skid_r, and goes to PREPARE from there, before any other. So the
@@ -44,7 +51,9 @@ library ieee;
 entity pipe_decode is
    generic (
       -- Adds the properties of a formal proof.
-      G_FORMAL : boolean := false
+      G_FORMAL : boolean := false;
+      -- The number of breakpoints, 0 to C_BREAKS_MAX (doc/DEBUG.md §6)
+      G_BREAKS : natural range 0 to C_BREAKS_MAX := 0
    );
    port (
       clk_i      : in  std_logic;
@@ -62,6 +71,10 @@ entity pipe_decode is
 
       -- WRITE empties the pipeline.
       flush_i    : in  std_logic;
+
+      -- The breakpoints, from flip-flops: 0 to G_BREAKS - 1 are used.
+      brk_addr_i : in  t_brk_addrs;
+      brk_en_i   : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0);
 
       -- To PREPARE
       valid_o    : out std_logic;
@@ -87,6 +100,7 @@ architecture synthesis of pipe_decode is
    signal d_ok   : std_logic;
    signal d_load : std_logic;
    signal d_dest : std_logic_vector(31 downto 0);
+   signal d_brk  : std_logic;   -- An enabled breakpoint is at f_addr_i
    signal id_r   : std_logic_vector(2 downto 0);
 
    -- The address after an instruction of each length, summed in parallel
@@ -129,6 +143,17 @@ begin
    gen_next : for i in 1 to 4 generate
       d_next(i) <= f_addr_i + i;
    end generate gen_next;
+
+
+   p_brk : process (all)
+   begin
+      d_brk <= '0';
+      for i in 0 to G_BREAKS - 1 loop
+         if brk_en_i(i) = '1' and brk_addr_i(i) = f_addr_i then
+            d_brk <= '1';
+         end if;
+      end loop;
+   end process p_brk;
 
 
    p_decode : process (all)
@@ -178,6 +203,7 @@ begin
          dest_v := d_next(2) + f_words_i(1);
       end if;
       inst_v.early := early_v;
+      inst_v.brk   := d_brk;
       d_dest       <= dest_v;
 
       d_inst <= inst_v;

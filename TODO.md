@@ -61,9 +61,6 @@ has a "Resolved" paragraph there; the section numbers are the review's.)
   The debug link has the pause and the single step (DEBUG.md §6) since
   it was written. Merge it after a rebase onto main, or close it as not
   needed.
-- **Issue #53's seven simplifications** of `debug_link.vhd`: do them, or
-  drop them here (§2.1). The won't-do items of #51, #54, and 2026-10-23
-  go under "Decided against" (§2.2).
 - **Out-of-context timing figures.** A row per figure in
   pipeline-timing.md, and an in-system build at RC05 (§2.4).
 - **The debug link's documents.** The board contracts, the bad-checksum
@@ -233,6 +230,9 @@ has a "Resolved" paragraph there; the section numbers are the review's.)
 
 Kept here so that they are not proposed again.
 
+- **One block per notice in `TX_IDLE_ST`** of `debug_link.vhd` (item 6 of
+  #53, §2.1). Folding the five blocks into one that sends the chosen kind
+  touches the `i_out_*` proofs, and gains a few lines.
 - **Annotated tags for `RC01` to `RC05`** (§1.1). They stay lightweight:
   re-tagging means force-pushing tags that others may have fetched. The next
   tag is made by `release.py tag`, and is annotated.

@@ -79,6 +79,15 @@ Seventeen issues closed since the fifth review, #34 and #38 to #54. The reader c
 
 Issue #53 ends with seven checkboxes for `debug_link.vhd`: the memory condition written four times, two `err02_r` tests (now lines 468 and 471), `f_digit` beside `hex_of`, the register window test written three times, the tag literals `X"52"`, `X"57"`, and `X"23"` (fourteen times), one block per notice in `TX_IDLE_ST`, and `to_sl`. Only `to_sl` was done, with #54. The issue is closed, the boxes are unchecked, and neither TODO.md nor HISTORY.md says they are left or dropped. **Fix:** do them, or a TODO.md item.
 
+**Resolved**: Six of the seven; `to_sl` was done before.
+- `mem_own` names the memory condition (hold, halt, or the link's pause), in the code and in the two properties.
+- One test decides the error 02.
+- `is_dbg` is the one test of the register window, in `non_dbg`, the access process, and the properties.
+- `C_TAG_R`, `C_TAG_W`, and `C_HASH` replace the tag literals.
+- The checker uses `hex_of`, and `f_digit` is gone. A mistake in `hex_of` is then not caught by the proof, but `tb_debug_link` checks every checksum digit.
+- Won't fix: one block per notice in `TX_IDLE_ST`. It is the riskiest of the seven, it touches the `i_out_*` proofs, and it gains a few lines.
+- `make synth`, `tb_debug_link`, `tb_link` on both cores, and the lint of `debug_link.vhd` pass after each commit, and the three `debug_link` proofs pass after the last.
+
 ### 2.2 Decisions recorded only in issue comments
 
 Items 9 and 10 of #51 (won't do) and the items #54 left alone (the math unit's divider, `_o` against `_r`) are only in the issues. TODO.md's "Decided against" also lacks the won't-fix items of 2026-10-23: speculative reads, the math unit's store retiring early, and the timing fixes of #34; HISTORY.md:44-66 and MICROARCH.md §5.3 have them. **Fix:** a line each in "Decided against".

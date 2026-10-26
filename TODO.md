@@ -128,7 +128,9 @@ the section numbers are the review's.)
   the counters and the timer while `paused_o` is 1 (NiceMonMEGA65). DEBUG.md
   version 4 specifies the breakpoints (stage 4, #55). niceemu, both cores,
   and `src/debug_link.vhd` have them; NiceMonMEGA65 must connect the link's
-  `brk_addr_o` and `brk_en_o` to the core. Still to do after them:
+  `brk_addr_o` and `brk_en_o` to the core, and check that its Nexys4DDR
+  build still meets 90 MHz (doc/review/pipeline-timing.md, Breakpoints).
+  Still to do after them:
   watchpoints, and writable registers and a
   port for the hidden state of ISA.md §1.4 (stage 6). A step is one per
   write; a count of steps, and a read-only register that counts them so a

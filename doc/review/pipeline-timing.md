@@ -476,3 +476,25 @@ and `make hwtest` passed all 59 tests on both boards. One run each:
 | Nexys4DDR, 90 MHz | timing | +0.043 ns | +0.030 ns |
 
 The Nexys4DDR's margin is thin, and it was not tried at 100 MHz again.
+
+## Breakpoints
+
+The breakpoints of DEBUG.md §6 (issue 55, at 891c104) add a pause of
+the core's own to WRITE. DECODE compares the address ahead, so WRITE sees
+only the flag `inst.brk`. But a breakpoint ranks below an interrupt, so
+the decision to take an interrupt, from SR's E bit, now goes into the
+pause, and the pause drives the flush and the enables. `make timing` on
+2026-10-26 at 820e0c4, with `BREAKS` 0 and 4, one run each:
+
+| Board, clock, and flow | 0 breakpoints | 4 breakpoints |
+|---|---|---|
+| MEGA65, 100 MHz, default | +0.134 ns | +0.373 ns |
+| Nexys4DDR, 90 MHz, timing | +0.083 ns, 304 under 1 ns | +0.034 ns, 651 under 1 ns |
+| Nexys4DDR, 100 MHz, default | −0.855 ns, 583 failing | −1.723 ns, 663 failing |
+
+The MEGA65's difference is within the variation of placement. On the
+Nexys4DDR at 90 MHz the core still meets, but twice as many endpoints come
+within 1 ns, most of them WRITE into its own enables. A breakpoint above
+an interrupt would shorten the path, but DEBUG.md and niceemu rank it
+below, so it stays. NiceMonMEGA65 has not yet built the core with the
+breakpoints connected.

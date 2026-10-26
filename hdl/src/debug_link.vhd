@@ -252,13 +252,19 @@ architecture synthesis of debug_link is
       end case;
    end function kind_char;
 
+   -- True if a is in the window of the debug registers, the last 32 words
+   function is_dbg(a : t_word) return boolean is
+   begin
+      return a(31 downto 5) = (31 downto 5 => '1');
+   end function is_dbg;
+
    -- True if the n words from a reach a word that is not a debug register
    function non_dbg(a : t_word; n : std_logic_vector(15 downto 0)) return boolean is
    begin
       if n = X"0000" then
          return false;
       end if;
-      if a(31 downto 5) /= (31 downto 5 => '1') then
+      if not is_dbg(a) then
          return true;
       end if;
       return to_integer(a(4 downto 0)) + to_integer(n) > 32;
@@ -710,7 +716,7 @@ begin
             when ACC_IDLE_ST =>
                if acc_go = '1' then
                   acc_done_r <= '0';
-                  if acc_addr(31 downto 5) = (31 downto 5 => '1') then
+                  if is_dbg(acc_addr) then
                      idx_v := to_integer(acc_addr(4 downto 0));
                      acc_done_r <= '1';
                      if acc_we = '1' then
@@ -1083,11 +1089,6 @@ begin
          return b(3 downto 0) + 9;
       end function f_digit;
 
-      function f_dbg(a : t_word) return boolean is
-      begin
-         return a(31 downto 5) = (31 downto 5 => '1');
-      end function f_dbg;
-
    begin
 
       f_take <= out_valid_r and tx_ready_i;
@@ -1108,7 +1109,7 @@ begin
                 '0';
 
       f_brk_w <= '1' when acc_st = ACC_IDLE_ST and acc_go = '1' and acc_we = '1' and
-                          f_dbg(acc_addr) and (acc_addr(4 downto 0) = "10100" or
+                          is_dbg(acc_addr) and (acc_addr(4 downto 0) = "10100" or
                                                acc_addr(4 downto 3) = "11") else
                  '0';
       f_kept  <= brk_addr_r = f_brk_d and brk_en_r = f_en_d;
@@ -1294,7 +1295,7 @@ begin
       --    acc_st = ACC_WAIT_ST -> (wb_cyc_r = '1' and wb_stb_r = '0');
       -- psl i_acc_busy : assert always
       --    acc_st /= ACC_IDLE_ST ->
-      --    (acc_done_r = '0' and f_mem and not f_dbg(wb_addr_r) and
+      --    (acc_done_r = '0' and f_mem and not is_dbg(wb_addr_r) and
       --     ((rx_st = RX_WAIT_ST and wb_we_r = '1' and wb_addr_r = cur_addr_r) or
       --      (tx_st = TX_WAIT_ST and wb_we_r = '0' and wb_addr_r = tx_addr_r)));
       -- psl i_acc_done : assert always
@@ -1321,7 +1322,7 @@ begin
       -- psl i_rx_wrap : assert always f_data -> f_end(32) = '0' or f_end = '1' & X"00000000";
       -- psl i_rx_cur : assert always f_data -> cur_addr_r = f_cur;
       -- psl i_rx_mem : assert always
-      --    (f_data and not f_dbg(cur_addr_r) and
+      --    (f_data and not is_dbg(cur_addr_r) and
       --     (rx_st = RX_CALL_ST or rx_st = RX_WAIT_ST or wcnt_r < to_integer(req_n_r))) -> f_mem;
       -- psl i_rx_clear : assert always
       --    (clearing_r = '1' and f_past) ->
@@ -1343,7 +1344,7 @@ begin
       --    (mem_own = '1' or not non_dbg(req_addr_r, req_n_r));
       -- psl i_tx_call : assert always
       --    (tx_st = TX_CALL_ST or tx_st = TX_WAIT_ST) ->
-      --    (kind_r = PKT_R and tx_cnt_r /= X"0000" and (f_mem or f_dbg(tx_addr_r)));
+      --    (kind_r = PKT_R and tx_cnt_r /= X"0000" and (f_mem or is_dbg(tx_addr_r)));
       -- psl i_tx_addr : assert always
       --    (f_answer and kind_r = PKT_R and tx_st /= TX_TAG_ST) ->
       --    (tx_cnt_r <= req_n_r and f_tx_end(31 downto 0) = f_end(31 downto 0));

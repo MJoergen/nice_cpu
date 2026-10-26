@@ -8,7 +8,7 @@
 typedef unsigned long clock_t;
 typedef long long time_t;
 
-#define CLOCKS_PER_SEC 1000000
+#define CLOCKS_PER_SEC ((clock_t)1000000)
 
 // The microseconds since reset, modulo 2^32, about 71 minutes. It is
 // unsigned, so the difference of two readings is right across a wrap.

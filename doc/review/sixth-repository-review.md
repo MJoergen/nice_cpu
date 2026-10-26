@@ -305,6 +305,13 @@ RELEASE_NOTES.md:136 has 0.241 under RC03, and c-compiler-plan.md:91 has 2348 an
 - RC03's 0.241 DMIPS/MHz was RC05's figure, and is stale now (§8.5).
 - Line 118's list lacks the Oxford comma.
 
+**Resolved**: Except the 0.241 DMIPS/MHz of RC03, which waits for the re-measurement of §8.5.
+- RC05's upgrade notes name the three ports of `debug_link.vhd` and the wait of `halted_o`.
+- RC02's and RC04's upgrade notes name `run_i` of `perf.vhd` and of `fetch_stats.vhd`, and RC03's name `G_CLK_HZ`.
+- RC03's upgrade notes name the new global labels and `start_wasm_trap.nasm`.
+- RC02's specification section lists the rules of 8cd38a6.
+- The list has its Oxford comma.
+
 ### 9.2 HISTORY.md
 
 - Lines 106-108: "1384879 to 1287563 cycles, 7.0% fewer ... `bench.c` took the same". a517599 took `hand.nasm` to 1252613, 9.6%, and f678c7b and cfdebb5 took 1.2% off `bench.c`; MICROARCH.md:410-412 and bench/README.md:159-162 have the current figures, and no entry gets to them.

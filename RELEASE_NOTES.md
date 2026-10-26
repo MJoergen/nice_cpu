@@ -10,6 +10,11 @@ changes since the one before that a user of the tools or the cores can see.
 
 - Both cores have a new input, `pause_i`. Tie it to `'0'` if the system does
   not pause the core.
+- `debug_link.vhd` has three new ports without defaults: the output
+  `pause_o`, and the inputs `paused_i` and `halt_reason_i`. Connect them to
+  the core's `pause_i`, `paused_o`, and `halt_reason_o`.
+- `halted_o` of both cores now rises only once no bus cycle is open, as
+  `paused_o` does, so a system can take over the buses when it rises.
 - The debug link is now version 3. A host checks the version register at
   `0xFFFFFFF2` before it uses the pause or the single step.
 
@@ -51,6 +56,12 @@ changes since the one before that a user of the tools or the cores can see.
 - Dhrystone refuses fewer than one run.
 
 ## RC04 (2026-10-24)
+
+**Upgrade notes.**
+
+- `fetch_stats.vhd` has a new input, `run_i`, which defaults to `'1'`. Drive
+  it with "the core is running", as for `perf.vhd`, so that the statistics
+  stop while the core is held or halted.
 
 **Specification and documents**
 
@@ -94,6 +105,13 @@ changes since the one before that a user of the tools or the cores can see.
 
 - `niceemu` has no step limit by default. It was 100000000. Use `-n N` to
   set one.
+- `perf.vhd` has a new generic, `G_CLK_HZ`, which defaults to 100000000.
+  Set it to the system's clock frequency, or the microsecond counter runs
+  at the wrong rate.
+- New global labels in the runtime: `_exit`, `___trap_report`, and the
+  `___trap.*` labels of `trapmsg.nasm`. A program that defines one of them
+  does not assemble together with the runtime. `start_wasm_trap.nasm` is a
+  new start-up file.
 
 **Specification and documents**
 
@@ -116,7 +134,7 @@ changes since the one before that a user of the tools or the cores can see.
 **Runtime and C library**
 
 - New: `assert.h`, `time.h` with `clock`, `exit`, `rand`, `srand`, `stdin`,
-  `stdout`, `stderr` and the `FILE` functions, and `strcspn`.
+  `stdout`, `stderr`, and the `FILE` functions, and `strcspn`.
 - `trapmsg.nasm` prints the code and address of a wasm trap.
 - mchess, a chess engine, is a test of the C library.
 
@@ -142,11 +160,20 @@ changes since the one before that a user of the tools or the cores can see.
 
 - Interrupt requests of one kind that merge now keep the vector of the
   first request. Before, which vector was kept was left open.
+- `perf.vhd` has a new input, `run_i`, which defaults to `'1'`. Drive it
+  with "the core is running", so that the cycle counter stops while the
+  core is held or halted.
 
 **Specification and documents**
 
 - ISA.md states the memory model: data accesses are sequentially
   consistent, and no fence or barrier is needed.
+- ISA.md states that same-kind interrupt requests merge, that each number
+  in a program must be below 2^32, the syntax of symbols and the stricter
+  rule for labels, that `*` starts a comment only at the start of a word,
+  and that control instructions take no constant words. SYSTEM.md says the
+  read counter is 0 at the start of a run, and that a reset does not
+  clear it.
 - SYSTEM.md says how a system built on the FPGA core may differ from the
   emulator.
 - The cycle counter and the timer's COUNT stop when the core halts.

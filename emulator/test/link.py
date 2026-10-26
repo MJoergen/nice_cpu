@@ -54,6 +54,23 @@ STOP = """
         HALT
 """
 
+# The halt reasons 2, 3, and 4 (ISA.md §5.3, §7.2, §7.4): a reserved control
+# word, INT inside an interrupt routine, and RTI outside one.
+RESERVED = """
+        .DAT    0x0FE00000
+"""
+INT_IN_ISR = """
+        MOVE    R14, 0x00000001
+        INT     2
+        HALT
+isr     INT     3
+        .ORG    0x102
+        .DAT    isr
+"""
+RTI_OUTSIDE = """
+        RTI
+"""
+
 # Never halts, and never reads the console.
 SPIN = """
 loop    MOVE    R15, loop
@@ -361,6 +378,35 @@ def test_step_limit(spin: List[int]) -> None:
     want = b"Stopped at the step limit after 10 steps, PC=00000000\n"
     if want not in err:
         failures.append(f"stderr: {want!r} not in {err!r}")
+
+
+def test_halts(reserved: List[int], int_in_isr: List[int], rti: List[int], spin: List[int]) -> None:
+    """The halt reasons 2 to 4 reach the host as `h` and in the register
+    (§4, §6), and a clear of the memory stops a running program (§6)."""
+    for name, prog, reason, note in (
+        ("reserved", reserved, 2, b"\xffh02#CA"),
+        ("INT in a routine", int_in_isr, 3, b"\xffh03#CB"),
+        ("RTI outside", rti, 4, b"\xffh04#CC"),
+    ):
+        e = Emu()
+        e.take(len(HELLO))
+        e.send(write(0, prog) + write(CONTROL, [0x8]))
+        e.expect(name + " start", ok(0, len(prog)) + ok(CONTROL, 1))
+        e.expect(name + " notice", note)
+        e.send(read(CONTROL, 2))
+        e.expect(name + " reason", answer(CONTROL, [0xA, reason]))
+        e.stop()
+    # A clear while the program runs holds it first. Bit 2 with bit 0 set
+    # clears and stays held, with no notice.
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, spin) + write(CONTROL, [0x8]))
+    e.expect("spin start", ok(0, len(spin)) + ok(CONTROL, 1))
+    e.send(write(CONTROL, [0xD]))
+    e.expect("clear while running", ok(CONTROL, 1))
+    e.send(read(0, 1) + read(CONTROL, 2))
+    e.expect("cleared", answer(0, [0]) + answer(CONTROL, [0x9, 0]))
+    e.stop()
 
 
 def word(e: Emu, addr: int) -> int:
@@ -822,12 +868,16 @@ def main() -> None:
         at10 = assemble(tmp, "at10", AT10)
         load = assemble(tmp, "load", LOAD)
         skip = assemble(tmp, "skip", SKIP)
+        reserved = assemble(tmp, "reserved", RESERVED)
+        int_in_isr = assemble(tmp, "int_in_isr", INT_IN_ISR)
+        rti = assemble(tmp, "rti", RTI_OUTSIDE)
         with open(os.path.join(HERE, "irq.nasm")) as src:
             irq = assemble(tmp, "irq", src.read())
         irq_bin = os.path.join(tmp, "irq.bin")
         tests: List[Callable[[], None]] = [
             test_example, test_errors, lambda: test_run(echo), lambda: test_overflow(spin),
-            lambda: test_step_limit(spin), lambda: test_pause(count, echo),
+            lambda: test_step_limit(spin), lambda: test_halts(reserved, int_in_isr, rti, spin),
+            lambda: test_pause(count, echo),
             lambda: test_step(count, one, stop, echo, irq, irq_bin),
             lambda: test_break(at10, load, count, skip, stop, irq), test_usage,
         ]

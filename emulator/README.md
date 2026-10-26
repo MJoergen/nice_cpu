@@ -23,7 +23,8 @@ runs that stop in each way: `HALT`, the other halts, and the step limit,
 Then `test/link.py` runs niceemu with `--link 0` and checks the debug link
 over TCP (see Debug link below): the packets of DEBUG.md §8 byte for byte,
 the errors and drops, a program loaded, run, halted, and restarted, the
-overflow notice, the step limit, the single step: its example of DEBUG.md §8,
+overflow notice, the step limit, the halt reasons 2 to 4, a clear of a running
+program, the single step: its example of DEBUG.md §8,
 the cases where bit 5 does nothing, a step into `HALT` and to the step limit,
 a step at a console read, and R13–R15 after each step across interrupt entries,
 compared with `--trace`, and the breakpoints: their example of DEBUG.md §8,

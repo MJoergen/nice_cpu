@@ -63,9 +63,6 @@ has a "Resolved" paragraph there; the section numbers are the review's.)
   needed.
 - **Out-of-context timing figures.** A row per figure in
   pipeline-timing.md, and an in-system build at RC05 (§2.4).
-- **The debug link's documents.** The board contracts, the bad-checksum
-  `W` difference, and a table of the versions in DEBUG.md; the proof's
-  wording; the untested halt reasons and `link.py` cases (§3.2 to §3.7).
 - **HISTORY.md's present-tense entries** (§9.2) name no entry yet.
 - **Smaller figures** (§8.6): the run times of `make core` and `make core-dhry`
   in bench/Makefile and bench/README.md; one sentence for the cost of a jump

@@ -153,6 +153,8 @@ hdl/README.md and TODO.md say the proof covers that bytes after a halt are dropp
 - `link.py` does not test a half-closed reconnect, a clear while running, a lowercase tag, a pause during a console wait, or the timeout.
 - With `-n N`, the Nth step ends in `h05`, never in `p`; a host should know. `send` blocks, and the timeout is measured at service time, not at arrival.
 
+**Resolved**: `tb_link` halts the core with the reasons 2, 3, and 4 through the link, and `emulator/test/link.py` does the same, with a clear of a running program. Both fail when the expected reason is changed. The rest of the list was done already: `link.py` had the half-closed reconnect, the lowercase tag, a hold and a pause during a console wait, and the timeout. DEBUG.md §7 now says that the Nth step under `-n N` ends in `h05` and that the emulator measures the 100 ms when it serves the link. `send` blocking is the host tool's matter, not the protocol's.
+
 ## 4. The emulator and the assembler
 
 ### 4.1 `niceasm.py --symbols` can overwrite its input

@@ -274,7 +274,7 @@ math unit through `wb_dmux`, loads `test/linkecho.nasm` with a `W`, starts
 it, and checks its echo of console bytes, `e02` while it runs, the halt
 after a UART break with the registers it left, the restart of DEBUG.md §8,
 a pause of the core with its registers, memory, and console, a hold
-while it runs, and the single step: R15 after each step of the echo program,
+while it runs, the halt reasons 2 to 4, and the single step: R15 after each step of the echo program,
 a step into `HALT`, the writes with bit 5 that do not step, and an `INT` with
 the registers of each step as `niceemu --trace` shows them, and the
 breakpoints, 4 on the link and the core: a stop before the echo, a step and

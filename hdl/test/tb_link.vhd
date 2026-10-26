@@ -37,7 +37,8 @@
 --   step, and an INT with the registers of each step from niceemu --trace;
 -- * the breakpoints: a stop of the core's own before the echo, `x`, the stop
 --   register, a step and a go on from a breakpoint, which run its
---   instruction, and a breakpoint disabled while paused.
+--   instruction, and a breakpoint disabled while paused;
+-- * the halt reasons 2, 3, and 4, with their notices.
 -- The run stops with status 0 when every check passes, and 1 at the first
 -- that fails.
 
@@ -649,6 +650,25 @@ begin
          end if;
       end procedure step;
 
+      -- A program of n words loaded at 0 with the vector 0 at 4, run from a
+      -- hold, and the halt notice and the halt reason register that follow.
+      procedure halts_with(prog : string; n : string; reason : character; what : string) is
+         constant C_VEC : string := "W000001000001" & "00000004";
+      begin
+         send(C_ESC & "WFFFFFFF0000100000009#BB");
+         expect(C_ESC & "kFFFFFFF00001#46", "hold before " & what);
+         send(C_ESC & "W00000000" & n & prog & "#" & cc("W00000000" & n & prog));
+         expect(C_ESC & "k00000000" & n & "#" & cc("k00000000" & n), "load " & what);
+         send(C_ESC & C_VEC & "#" & cc(C_VEC));
+         expect(C_ESC & "k000001000001#" & cc("k000001000001"), "load the vector of " & what);
+         send(C_ESC & "WFFFFFFF0000100000008#BA");
+         expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "h0" & reason & "#" & cc("h0" & reason),
+                       what);
+         send(C_ESC & "RFFFFFFF10001#" & cc("RFFFFFFF10001"));
+         expect(C_ESC & "rFFFFFFF10001" & "0000000" & reason & "#" &
+                cc("rFFFFFFF10001" & "0000000" & reason), what & ": reason");
+      end procedure halts_with;
+
       variable words_v : natural;
 
    begin
@@ -919,6 +939,13 @@ begin
       send("w");
       expect("w", "echo with none");
       quiet("no stop with none");
+
+      -- The other halt reasons (DEBUG.md §6), each as niceemu halts with it:
+      -- a reserved control word, INT inside a routine, and RTI outside one.
+      halts_with("0FE00000", "0001", '2', "a reserved control word");
+      halts_with("00039800" & "00000001" & "0C400000" & "0C000000" & "0C400000", "0005", '3',
+                 "INT in a routine");
+      halts_with("0C200000", "0001", '4', "RTI outside a routine");
 
       report "tb_link: pass";
       stop(0);

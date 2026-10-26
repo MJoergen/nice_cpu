@@ -92,6 +92,7 @@ translator, and two FPGA cores. See README.md.
     make release-check               # the gates of release/RELEASE.md and the stamp for tagging (hours)
     cd release && make test          # the tests of release.py
     cd release && make typecheck     # mypy --strict
+    make wasmcheck                   # rebuild the checked-in .wasm files and compare (clang, zig, rustc)
     make diagrams                    # render the diagrams in doc/ to PNG (pdflatex, pdftoppm)
 
 Run the relevant `make test` after every change.

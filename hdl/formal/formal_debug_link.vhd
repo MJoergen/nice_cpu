@@ -36,6 +36,13 @@
 -- of its answer, about 90 cycles, deeper than the cover task looks, so
 -- tb_debug_link shows them instead.
 --
+-- NOT PROVEN
+-- That console bytes the host sends after a halt are dropped (DEBUG.md §1):
+-- f_strobe looks at hold_d and eoi_d, not at halted_i, so only
+-- tb_debug_link checks the drop after a halt. Contract (e) is an assumption
+-- here, and the pipelined core meets it only as formal_pipe_write and
+-- tb_link show.
+--
 -- RESET
 -- The first cycle is a reset.
 

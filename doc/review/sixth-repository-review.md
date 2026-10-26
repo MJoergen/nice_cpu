@@ -145,6 +145,8 @@ DEBUG.md says the version register reads 3 (line 208) and never says what versio
 
 hdl/README.md and TODO.md say the proof covers that bytes after a halt are dropped; `f_strobe` does not check `halted_r`, and that rule is proven nowhere. No cover reaches `p`, `s`, or an `r` of memory, which the header admits, and contract (e) is asserted nowhere formally for the pipelined core. **Fix:** say what the testbench alone checks.
 
+**Resolved**: hdl/README.md and the header of `formal_debug_link.vhd` say what is not proven: the drop of console bytes after a halt (`f_strobe` looks at the hold and the end of the input only, so `tb_debug_link` alone checks it), the covers of a `p`, a step, and a read of the memory, and contract (e). The sentence the review quotes was no longer in hdl/README.md or TODO.md.
+
 ### 3.7 Tests
 
 - Halt reasons 2 to 4 through the link are tested in the emulator only; `tb_link` halts with `HALT`.

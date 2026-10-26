@@ -761,6 +761,13 @@ needs a whole `R` and the start of its answer, about 90 cycles, so
 `wb_master_check` leaves its read cover out with `G_COVER_READ`, and the
 simulation tests show the read.
 
+The proof does not cover everything the debug link promises. Console bytes
+that the host sends after a halt are dropped (DEBUG.md §1), but
+`con_in_valid_o` is asserted only against the hold and the end of the
+input, not against `halted_i`, so only `tb_debug_link` checks the drop.
+No cover reaches a `p`, a step, or a read of the memory. Contract (e) is
+assumed of the core, and not proven of the pipelined core as a whole.
+
 `formal_mpu` checks the bus port of the math unit with a count of the
 ACKs owed: at most one, an ACK only when one is owed, STALL high exactly
 while a read waits for its ACK, and an ACK in the next cycle for a write

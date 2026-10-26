@@ -1086,14 +1086,6 @@ begin
          return (b >= X"30" and b <= X"39") or (b >= X"41" and b <= X"46");
       end function f_is_digit;
 
-      function f_digit(b : t_byte) return std_logic_vector is
-      begin
-         if b <= X"39" then
-            return b(3 downto 0);
-         end if;
-         return b(3 downto 0) + 9;
-      end function f_digit;
-
    begin
 
       f_take <= out_valid_r and tx_ready_i;
@@ -1181,7 +1173,7 @@ begin
                      end if;
 
                   when OUT_CC1_ST =>
-                     f_out_hi <= f_digit(out_data_r);
+                     f_out_hi <= hex_of(out_data_r);
                      f_out_st <= OUT_CC2_ST;
                      if not f_is_digit(out_data_r) then
                         f_bad <= '1';
@@ -1190,7 +1182,7 @@ begin
                   when OUT_CC2_ST =>
                      f_out_st <= OUT_IDLE_ST;
                      if not f_is_digit(out_data_r) or
-                        (f_out_hi & f_digit(out_data_r)) /= f_out_sum then
+                        (f_out_hi & hex_of(out_data_r)) /= f_out_sum then
                         f_bad <= '1';
                      end if;
 

@@ -55,12 +55,6 @@ from the fifth review". No code has TODO or FIXME comments.
 2026-10-26, at b2ac5a5, one commit after RC05. Each finding that is fixed
 has a "Resolved" paragraph there; the section numbers are the review's.)
 
-- **PR #36, undecided.** It adds `RDSPC`, `RDSSR`, `WRSPC`, and `WRSSR`
-  (control commands 4 to 7) to read and write the saved PC and SR from an
-  interrupt routine, for breakpoints and single-stepping from software.
-  The debug link has the pause and the single step (DEBUG.md §6) since
-  it was written. Merge it after a rebase onto main, or close it as not
-  needed.
 - **In-system timing at RC05** (§2.4): a build of NiceMonMEGA65's tag `RC05` on both boards, with its figures in pipeline-timing.md.
 
 ## Left from the fifth review
@@ -218,6 +212,11 @@ Kept here so that they are not proposed again.
 - **One block per notice in `TX_IDLE_ST`** of `debug_link.vhd` (item 6 of
   #53, §2.1). Folding the five blocks into one that sends the chosen kind
   touches the `i_out_*` proofs, and gains a few lines.
+- **PR #36** (`RDSPC`, `RDSSR`, `WRSPC`, and `WRSSR`, control commands 4 to 7,
+  to read and write the saved PC and SR from an interrupt routine). Closed on
+  2026-10-26: the debug link's pause and single step (DEBUG.md §6) cover
+  breakpoints and stepping from the host. Its branch,
+  `claude/project-thread-k4m3qt`, stays.
 - **Annotated tags for `RC01` to `RC05`** (§1.1). They stay lightweight:
   re-tagging means force-pushing tags that others may have fetched. The next
   tag is made by `release.py tag`, and is annotated.

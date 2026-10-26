@@ -10,10 +10,12 @@
 -- every other cycle, a memory clear that takes 30 cycles, or 300 where the
 -- test says so, and a core model that halts when the test says so, pauses
 -- some cycles after a request, goes on for a step_wait cycles when
--- pause_o falls while it is paused, and loses its registers, its halt, and its
--- pause while it is held, as the real core does.
+-- pause_o falls while it is paused, pauses on its own when brk_hit says it
+-- is at a breakpoint, and then waits until pause_o has been high, and loses
+-- its registers, its halt, and its pause while it is held, as the real core
+-- does. R15 is 0x1234560F while it runs.
 -- The checks, in the order of the run:
--- * the notice `b03` after reset, and the examples of DEBUG.md §8;
+-- * the notice `b04` after reset, and the examples of DEBUG.md §8;
 -- * lowercase digits, a bad checksum, an unknown tag, a payload with a bad
 --   length or a bad digit, and a W with too many words;
 -- * the debug registers, a clear of the memory, one that a dropped packet
@@ -29,7 +31,12 @@
 --   keep or begin a pause, a go on, and a halt that ignores a request;
 -- * the step: bit 5, pause_o low for exactly one cycle, bit 4 and the memory
 --   during the step, one `p` after it, a step into a halt, a hold during the
---   step, and a write with bit 5 that does not step.
+--   step, and a write with bit 5 that does not step;
+-- * the breakpoints: their registers and ports, the entries past G_BREAKS,
+--   `x` with the lowest number at a pause, a start, and a step, the stop
+--   register and how long it lasts, a stop of the core's own that raises
+--   pause_o, a `p` when R15 matches no enabled breakpoint, and a reset that
+--   clears them.
 -- The run stops with status 0 when every check passes, and 1 at the first
 -- that fails.
 
@@ -38,6 +45,8 @@ library ieee;
    use ieee.numeric_std.all;
 
    use std.env.all;
+
+   use work.trace_pkg.all;
 
 entity tb_debug_link is
 end entity tb_debug_link;
@@ -86,6 +95,9 @@ architecture simulation of tb_debug_link is
    signal step_halts : std_logic                      := '0';
    signal short_runs : natural                        := 0;
    signal long_runs  : natural                        := 0;
+   signal brk_hit    : std_logic                      := '0';
+   signal brk_addr   : t_brk_addrs;
+   signal brk_en     : std_logic_vector(C_BREAKS_MAX - 1 downto 0);
 
    signal wb_cyc   : std_logic;
    signal wb_stb   : std_logic;
@@ -118,7 +130,8 @@ begin
       generic map (
          G_TIMEOUT   => C_TIMEOUT,
          G_HAS_ROM   => true,
-         G_BOOT_HELD => true
+         G_BOOT_HELD => true,
+         G_BREAKS    => 4
       )
       port map (
          clk_i          => clk,
@@ -146,6 +159,8 @@ begin
          pause_o        => pause,
          paused_i       => paused,
          regs_i         => regs,
+         brk_addr_o     => brk_addr,
+         brk_en_o       => brk_en,
          wb_cyc_o       => wb_cyc,
          wb_stb_o       => wb_stb,
          wb_stall_i     => wb_stall,
@@ -229,6 +244,7 @@ begin
       variable wait_v : natural := 0;
       variable go_v   : boolean := false;
       variable step_v : natural := 0;
+      variable bw_v   : boolean := false;
    begin
       if rising_edge(clk) then
          if hold = '1' then
@@ -238,13 +254,24 @@ begin
             paused <= '0';
             wait_v := 0;
             go_v   := false;
+            bw_v   := false;
          else
             -- A pause comes pause_wait cycles after the request, and a halt
             -- goes first. When pause falls while the core is paused, it goes
             -- on, and runs for step_wait cycles whatever pause is, as the
             -- cores do after a go on (MICROARCH.md §6.1): it pauses again
-            -- then if pause is 1, and halts if step_halts says so.
-            if pause = '1' and halted = '0' and core_halt = '0' then
+            -- then if pause is 1, and halts if step_halts says so. A pause at
+            -- a breakpoint lasts until pause has been 1.
+            if pause = '1' then
+               bw_v := false;
+            end if;
+            if bw_v then
+               null;
+            elsif brk_hit = '1' and pause = '0' and paused = '0' and not go_v and
+                  halted = '0' and core_halt = '0' then
+               paused <= '1';
+               bw_v   := true;
+            elsif pause = '1' and halted = '0' and core_halt = '0' then
                if go_v then
                   if step_v >= step_wait then
                      go_v := false;
@@ -426,7 +453,7 @@ begin
       rst <= '0';
 
       -- Reset: a notice, and the processor held with the ROM shown.
-      expect(C_ESC & "b03#C5", "b02");
+      expect(C_ESC & "b04#C6", "b04");
       assert hold = '1' and rom_hide = '0' and eoi = '0'
          report "tb_debug_link: state after reset"
          severity failure;
@@ -481,13 +508,13 @@ begin
       check_mem(768, X"00000000", "W with a bad digit");
       quiet("errors");
 
-      -- The registers while held: version, free space, reserved words, and control.
+      -- The registers while held: version, free space, the breakpoints, and control.
       send(C_ESC & "RFFFFFFF20001#2F");
-      expect(C_ESC & "rFFFFFFF2000100000003#D2", "version");
+      expect(C_ESC & "rFFFFFFF2000100000004#D3", "version");
       send(C_ESC & "RFFFFFFF30001#30");
       expect(C_ESC & "rFFFFFFF3000100000008#D8", "free space");
       send(C_ESC & "RFFFFFFF40002#32");
-      expect(C_ESC & "rFFFFFFF400020000000000000000#52", "reserved");
+      expect(C_ESC & "rFFFFFFF400020000000000000004#56", "enable bits and count");
       send(C_ESC & "RFFFFFFF00001#2D");
       expect(C_ESC & "rFFFFFFF0000100000001#CE", "control while held");
 
@@ -870,6 +897,119 @@ begin
       send(C_ESC & "RFFFFFFF00001#2D");
       expect(C_ESC & "rFFFFFFF000010000000A#DE", "control when halted");
       quiet("request when halted");
+
+      -- The breakpoints (DEBUG.md §6), set while held: 4 of them, so the
+      -- words and bits past them read 0 and take no write. 0, 1, and 3 are
+      -- enabled, and 1 and 3 are at R15, so the lowest there is 1.
+      core_halt <= '0';
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold for the breakpoints");
+      send(C_ESC & "RFFFFFFF40004#34");
+      expect(C_ESC & "rFFFFFFF4000400000000000000040000000000000000#58", "F4 to F7");
+      send(C_ESC & "WFFFFFFF80008000001001234560F000002001234560F" &
+           "11111111111111111111111111111111#BA");
+      expect(C_ESC & "kFFFFFFF80008#55", "write the addresses");
+      send(C_ESC & "RFFFFFFF80008#3C");
+      expect(C_ESC & "rFFFFFFF80008000001001234560F000002001234560F" &
+             "00000000000000000000000000000000#B5",
+             "read the addresses");
+      send(C_ESC & "WFFFFFFF40001000000FF#E2");
+      expect(C_ESC & "kFFFFFFF40001#4A", "enable all");
+      send(C_ESC & "RFFFFFFF40001#31");
+      expect(C_ESC & "rFFFFFFF400010000000F#E7", "four enable bits");
+      send(C_ESC & "WFFFFFFF400010000000B#C8");
+      expect(C_ESC & "kFFFFFFF40001#4A", "enable 0, 1, and 3");
+      assert brk_en = X"0B" and brk_addr(0) = X"00000100" and
+             brk_addr(1) = X"1234560F" and brk_addr(3) = X"1234560F" and
+             brk_addr(4) = X"00000000" and brk_addr(7) = X"00000000"
+         report "tb_debug_link: the breakpoint ports"
+         severity failure;
+      quiet("breakpoints while held");
+
+      -- A start paused stops at R15, so x01 comes, and the stop register
+      -- reads 0x101. A step stops there again.
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "start paused at a breakpoint");
+      expect(C_ESC & "x01#D9", "x at start");
+      quiet("x once");
+      send(C_ESC & "RFFFFFFF60001#33");
+      expect(C_ESC & "rFFFFFFF6000100000101#D5", "stop register at start");
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000018#D6", "control at a breakpoint");
+      send(C_ESC & "WFFFFFFF0000100000038#BD");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "x01#D9", "step to a breakpoint");
+      quiet("step to a breakpoint");
+      send(C_ESC & "RFFFFFFF60001#33");
+      expect(C_ESC & "rFFFFFFF6000100000101#D5", "stop register after the step");
+
+      -- A hold keeps the stop register, and a start clears it.
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold at a breakpoint");
+      send(C_ESC & "RFFFFFFF60001#33");
+      expect(C_ESC & "rFFFFFFF6000100000101#D5", "stop register kept by a hold");
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "start after the breakpoint");
+      send(C_ESC & "RFFFFFFF60001#33");
+      expect(C_ESC & "rFFFFFFF6000100000000#D3", "stop register after a start");
+      quiet("start after the breakpoint");
+
+      -- A stop of the core's own: the link raises pause_o and sends x01,
+      -- and the processor is paused as after a request. A change of the
+      -- breakpoints then keeps the stop register.
+      brk_hit <= '1';
+      expect(C_ESC & "x01#D9", "x of the core's own");
+      brk_hit <= '0';
+      quiet("x of the core's own once");
+      assert pause = '1' and paused = '1'
+         report "tb_debug_link: a stop of the core's own"
+         severity failure;
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000018#D6", "control at a stop of the core's own");
+      send(C_ESC & "WFFFFFFF4000100000000#B6");
+      expect(C_ESC & "kFFFFFFF40001#4A", "disable while paused");
+      send(C_ESC & "RFFFFFFF60001#33");
+      expect(C_ESC & "rFFFFFFF6000100000101#D5", "stop register after a change");
+
+      -- A go on clears the stop register, and the core runs.
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "go on from a breakpoint");
+      send(C_ESC & "RFFFFFFF60001#33");
+      expect(C_ESC & "rFFFFFFF6000100000000#D3", "stop register after a go on");
+      quiet("go on from a breakpoint");
+      assert pause = '0' and paused = '0'
+         report "tb_debug_link: go on from a breakpoint"
+         severity failure;
+
+      -- With no enabled breakpoint at R15, a pause and a stop of the core's
+      -- own both send p, and the stop register reads 0.
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "pause with no breakpoint");
+      expect(C_ESC & "p#70", "p with no breakpoint");
+      send(C_ESC & "RFFFFFFF60001#33");
+      expect(C_ESC & "rFFFFFFF6000100000000#D3", "stop register after p");
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "go on after p");
+      cycles(50);
+      brk_hit <= '1';
+      expect(C_ESC & "p#70", "p of the core's own");
+      brk_hit <= '0';
+      quiet("p of the core's own");
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000018#D6", "control after p of the core's own");
+
+      -- A reset clears the breakpoints.
+      rst <= '1';
+      cycles(3);
+      rst <= '0';
+      expect(C_ESC & "b04#C6", "b04 after reset");
+      send(C_ESC & "RFFFFFFF80001#35");
+      expect(C_ESC & "rFFFFFFF8000100000000#D5", "address after reset");
+      send(C_ESC & "RFFFFFFF40001#31");
+      expect(C_ESC & "rFFFFFFF4000100000000#D1", "enable bits after reset");
+      assert brk_en = X"00" and brk_addr(1) = X"00000000"
+         report "tb_debug_link: the breakpoint ports after reset"
+         severity failure;
+      quiet("reset");
 
       report "tb_debug_link: pass";
       stop(0);

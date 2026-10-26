@@ -11,12 +11,24 @@
 -- master. p_tx sends the output: the answers, the notices (§4), and the
 -- console bytes of the program, one whole packet at a time, so nothing
 -- comes between the bytes of a packet. When more than one is waiting, the
--- order is: an answer, `b`, `o`, a console byte, `h`, and `p`. So `h` and
--- `p` come after the last console byte that the program wrote.
+-- order is: an answer, `b`, `o`, a console byte, `h`, and `p` or `x`. So
+-- the notices of a stop come after the last console byte that the program
+-- wrote.
 --
 -- The link reaches no word but the debug registers while the program runs
 -- (§3), so the Wishbone master is used only while the processor is held,
 -- halted, or paused.
+--
+-- BREAKPOINTS
+-- G_BREAKS breakpoints, 0 to C_BREAKS_MAX (DEBUG.md §6). p_acc holds their
+-- enable bits and addresses, which go to the core on brk_en_o and
+-- brk_addr_o. The core compares them and pauses at one on its own, with
+-- pause_o low. Then p_acc raises pause_o, so the stop is a pause as any
+-- other, which the core leaves only after pause_o has been high. At every
+-- stop, when paused_i rises, p_acc compares R15 with the enabled
+-- breakpoints, and keeps the lowest number that matches in the stop
+-- register until the core leaves the pause, or the next start. p_tx then
+-- sends `x` with the number, or `p` if none matches.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) Every access on the Wishbone master is a link access (§3). The
@@ -50,8 +62,12 @@
 --    the last values of a halt or a pause itself (§6). regs_i is R0 to R15,
 --    R(n) in bits 32 * n + 31 .. 32 * n, and valid as long as halted_i or
 --    paused_i is high. A board without the registers ties it to 0. A core
---    pauses only after pause_o was high (MICROARCH.md §6.1), never together
---    with a halt, and never while hold_o is high.
+--    pauses never together with a halt, and never while hold_o is high. It
+--    pauses only after pause_o was high (MICROARCH.md §6.1), or at an
+--    enabled breakpoint of brk_addr_o and brk_en_o, and the latter while
+--    pause_o was low the cycle before paused_i rose. It leaves that pause
+--    only after pause_o has been high. A board without breakpoints sets
+--    G_BREAKS to 0, and the link reads it so (DEBUG.md §6).
 -- f) A clear: clear_o goes high when the link asks for it, and stays high
 --    until the board has set every word of the memory to 0 and answers
 --    with one cycle of clear_done_i, which is not before the cycle after
@@ -83,6 +99,8 @@
 --   board stops the counters and the timer while paused_i is high.
 --   A step (DEBUG.md §6) drops pause_o for exactly one cycle while the core
 --   is paused, and raises it again.
+-- * brk_addr_o and brk_en_o: the breakpoints, for the core. The entries from
+--   G_BREAKS up are 0.
 --
 -- FORMAL
 -- With G_FORMAL, the properties that need the state of the processes, for
@@ -92,12 +110,15 @@
 -- byte goes out only between packets; no answer starts during a clear;
 -- rx_ready_o is low only as contract c says; and hold_o and rom_hide_o
 -- change only on a write to the control register, at the end of a clear,
--- or at reset. The invariants i_* tie p_rx, p_acc, p_tx, and the parser
+-- or at reset, or, for pause_o, at a stop of the core's own; and the
+-- breakpoints change only on a write of their registers or at reset. The
+-- invariants i_* tie p_rx, p_acc, p_tx, and the parser
 -- together, so that k-induction proves it all. The properties of the ports
 -- are in formal/formal_debug_link.vhd.
 --
 -- RESET
--- Synchronous. It sends `b03`, empties everything, and leaves the
+-- Synchronous. It sends `b04`, empties everything, clears the breakpoints,
+-- and leaves the
 -- processor held with G_BOOT_HELD, or running with the ROM shown otherwise.
 -- G_HAS_ROM is false on a system without a ROM: bit 3 then reads 1 and
 -- ignores writes, and rom_hide_o is 1.
@@ -107,6 +128,7 @@ library ieee;
    use ieee.numeric_std_unsigned.all;
 
    use work.nice_pkg.all;
+   use work.trace_pkg.all;
 
 entity debug_link is
    generic (
@@ -114,6 +136,7 @@ entity debug_link is
       G_TIMEOUT   : positive := 10_000_000;
       G_HAS_ROM   : boolean  := true;
       G_BOOT_HELD : boolean  := false;
+      G_BREAKS    : natural range 0 to C_BREAKS_MAX := 0;
       -- The properties of formal/formal_debug_link.vhd that name the
       -- registers here
       G_FORMAL    : boolean  := false
@@ -150,6 +173,8 @@ entity debug_link is
       pause_o        : out std_logic;
       paused_i       : in  std_logic;
       regs_i         : in  std_logic_vector(511 downto 0);
+      brk_addr_o     : out t_brk_addrs;
+      brk_en_o       : out std_logic_vector(C_BREAKS_MAX - 1 downto 0);
 
       -- The memory: a pipelined Wishbone master, as the data bus of the cores
       wb_cyc_o       : out std_logic;
@@ -180,11 +205,11 @@ architecture synthesis of debug_link is
 
    type t_acc_st is (ACC_IDLE_ST, ACC_REQ_ST, ACC_WAIT_ST);
 
-   type t_pkt is (PKT_B, PKT_H, PKT_O, PKT_K, PKT_E, PKT_R, PKT_P);
+   type t_pkt is (PKT_B, PKT_H, PKT_O, PKT_K, PKT_E, PKT_R, PKT_P, PKT_X);
 
    constant C_ESC : t_byte := X"FF";
 
-   constant C_VERSION : t_word := X"00000003";
+   constant C_VERSION : t_word := X"00000004";
 
    function is_hex(b : t_byte) return boolean is
    begin
@@ -223,6 +248,7 @@ architecture synthesis of debug_link is
          when PKT_E => return X"65";
          when PKT_R => return X"72";
          when PKT_P => return X"70";
+         when PKT_X => return X"78";
       end case;
    end function kind_char;
 
@@ -294,6 +320,7 @@ architecture synthesis of debug_link is
    signal b_pend_r    : std_logic                    := '1';
    signal h_sent_r    : std_logic                    := '0';
    signal p_sent_r    : std_logic                    := '0';
+   signal tx_stop_r   : t_byte                       := (others => '0');
 
    -- The p_acc side
    signal acc_st      : t_acc_st                     := ACC_IDLE_ST;
@@ -320,6 +347,14 @@ architecture synthesis of debug_link is
    signal wb_we_r     : std_logic                    := '0';
    signal wb_addr_r   : t_word                       := (others => '0');
    signal wb_data_r   : t_word                       := (others => '0');
+   signal brk_addr_r  : t_brk_addrs                  := (others => (others => '0'));
+   signal brk_en_r    : std_logic_vector(C_BREAKS_MAX - 1 downto 0) := (others => '0');
+   signal pause_d_r   : std_logic                    := '0';
+   -- The stop register: bit 8 and the number of the breakpoint at R15
+   signal stop_r : std_logic_vector(8 downto 0) := (others => '0');
+
+   -- The core has paused on its own, at a breakpoint: pause_o was low.
+   signal own_stop : std_logic;
 
    -- The link owns the memory while the core is paused and the request of
    -- the pause stands. A write of 0 to bit 4 ends it at once, before the
@@ -579,6 +614,9 @@ begin
    eoi_o      <= eoi_r;
    pause_o    <= pause_r;
    pause_own  <= paused_r and pause_r and not stepping_r;
+   own_stop   <= paused_i and not paused_r and not pause_d_r and not hold_r;
+   brk_addr_o <= brk_addr_r;
+   brk_en_o   <= brk_en_r;
    clear_o    <= clearing_r;
    rom_hide_o <= hide_r when G_HAS_ROM else
                  '1';
@@ -591,12 +629,28 @@ begin
 
 
    p_acc : process (clk_i)
-      variable nh_v  : std_logic;
-      variable rd_v  : t_word;
-      variable idx_v : natural range 0 to 31;
+      variable nh_v   : std_logic;
+      variable rd_v   : t_word;
+      variable idx_v  : natural range 0 to 31;
+      variable stop_v : std_logic_vector(8 downto 0);
    begin
       if rising_edge(clk_i) then
-         nh_v := hold_r;
+         nh_v      := hold_r;
+         pause_d_r <= pause_r;
+
+         -- At a stop, the lowest enabled breakpoint at R15, until the core
+         -- leaves the pause or the next start. A hold keeps it.
+         if paused_i = '1' and paused_r = '0' and hold_r = '0' then
+            stop_v := (others => '0');
+            for i in G_BREAKS - 1 downto 0 loop
+               if brk_en_r(i) = '1' and brk_addr_r(i) = regs_i(511 downto 480) then
+                  stop_v := '1' & to_slv(i, 8);
+               end if;
+            end loop;
+            stop_r <= stop_v;
+         elsif paused_i = '0' and paused_r = '1' and hold_r = '0' then
+            stop_r <= (others => '0');
+         end if;
 
          -- What the core left at a halt stays until the next start.
          if halted_i = '1' and hold_r = '0' then
@@ -652,7 +706,14 @@ begin
                      idx_v := to_integer(acc_addr(4 downto 0));
                      acc_done_r <= '1';
                      if acc_we = '1' then
-                        -- Only the control register takes a write, and not during a clear.
+                        -- The breakpoints take a write, and the control register,
+                        -- but not during a clear.
+                        if idx_v = 20 then
+                           brk_en_r(G_BREAKS - 1 downto 0) <= word_r(G_BREAKS - 1 downto 0);
+                        end if;
+                        if idx_v >= 24 and idx_v - 24 < G_BREAKS then
+                           brk_addr_r(idx_v - 24) <= word_r;
+                        end if;
                         if idx_v = 16 and clearing_r = '0' then
                            nh_v    := word_r(0);
                            pause_r <= word_r(4);
@@ -688,6 +749,14 @@ begin
                            rd_v := C_VERSION;
                         elsif idx_v = 19 then
                            rd_v(15 downto 0) := free_i;
+                        elsif idx_v = 20 then
+                           rd_v(C_BREAKS_MAX - 1 downto 0) := brk_en_r;
+                        elsif idx_v = 21 then
+                           rd_v := to_slv(G_BREAKS, 32);
+                        elsif idx_v = 22 then
+                           rd_v(8 downto 0) := stop_r;
+                        elsif idx_v >= 24 and idx_v - 24 < G_BREAKS then
+                           rd_v := brk_addr_r(idx_v - 24);
                         end if;
                         acc_rdata_r <= rd_v;
                      end if;
@@ -727,6 +796,15 @@ begin
          if nh_v = '1' then
             stepping_r <= '0';
          end if;
+         -- A stop at a breakpoint is a pause: the request stands, so the core
+         -- goes on only after a go on. It wins over a write of bit 4 in
+         -- this cycle, which came before the stop, but not over a hold.
+         if own_stop = '1' and nh_v = '0' then
+            pause_r <= '1';
+         end if;
+         if hold_r = '1' and nh_v = '0' then
+            stop_r <= (others => '0');
+         end if;
 
          if rst_i = '1' then
             acc_st     <= ACC_IDLE_ST;
@@ -744,6 +822,10 @@ begin
             clearing_r <= '0';
             wb_cyc_r   <= '0';
             wb_stb_r   <= '0';
+            brk_addr_r <= (others => (others => '0'));
+            brk_en_r   <= (others => '0');
+            pause_d_r  <= '0';
+            stop_r     <= (others => '0');
          end if;
       end if;
    end process p_acc;
@@ -832,7 +914,12 @@ begin
                      put(C_ESC, false);
                      tx_st <= TX_TAG_ST;
                   elsif pause_own = '1' and p_sent_r = '0' then
-                     kind_r   <= PKT_P;
+                     -- `x` with the stop's number, which is kept for its payload
+                     kind_r    <= PKT_P;
+                     tx_stop_r <= stop_r(7 downto 0);
+                     if stop_r(8) = '1' then
+                        kind_r <= PKT_X;
+                     end if;
                      p_sent_r <= '1';
                      put(C_ESC, false);
                      tx_st <= TX_TAG_ST;
@@ -863,6 +950,11 @@ begin
                         end if;
                      when PKT_O | PKT_P =>
                         null;
+                     when PKT_X =>
+                        if fld_r = 0 then
+                           val_v(7 downto 0) := tx_stop_r;
+                           nd_v := 2;
+                        end if;
                      when PKT_K | PKT_R =>
                         if fld_r = 0 then
                            val_v := req_addr_r;
@@ -963,6 +1055,12 @@ begin
       signal f_end    : std_logic_vector(32 downto 0); -- A + N of the request
       signal f_tx_end : std_logic_vector(32 downto 0); -- The same, from p_tx
       signal f_step_d : std_logic := '0';              -- A step cycle without a reset, a cycle ago
+      signal f_brk_w  : std_logic;                     -- A write of the breakpoints
+      signal f_brk_d  : t_brk_addrs;                   -- The addresses a cycle ago
+      -- The enable bits a cycle ago
+      signal f_en_d : std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+      signal f_kept : boolean;                     -- The breakpoints are as a cycle ago
+      signal f_top  : boolean;                     -- The entries from G_BREAKS up are 0
 
       function f_is_digit(b : t_byte) return boolean is
       begin
@@ -990,6 +1088,8 @@ begin
       begin
          if rising_edge(clk_i) then
             f_step_d <= step_r and not rst_i;
+            f_brk_d  <= brk_addr_r;
+            f_en_d   <= brk_en_r;
          end if;
       end process p_f_step;
 
@@ -998,6 +1098,22 @@ begin
       f_ctrl <= '1' when acc_st = ACC_IDLE_ST and acc_go = '1' and acc_we = '1' and
                          acc_addr = X"FFFFFFF0" else
                 '0';
+
+      f_brk_w <= '1' when acc_st = ACC_IDLE_ST and acc_go = '1' and acc_we = '1' and
+                          f_dbg(acc_addr) and (acc_addr(4 downto 0) = "10100" or
+                                               acc_addr(4 downto 3) = "11") else
+                 '0';
+      f_kept  <= brk_addr_r = f_brk_d and brk_en_r = f_en_d;
+
+      p_f_top : process (all)
+      begin
+         f_top <= true;
+         for i in G_BREAKS to C_BREAKS_MAX - 1 loop
+            if brk_en_r(i) = '1' or brk_addr_r(i) /= X"00000000" then
+               f_top <= false;
+            end if;
+         end loop;
+      end process p_f_top;
 
       f_answer <= tx_st /= TX_IDLE_ST and tx_st /= TX_CON2_ST and
                   (kind_r = PKT_K or kind_r = PKT_E or kind_r = PKT_R);
@@ -1034,7 +1150,7 @@ begin
                         f_out_st <= OUT_IDLE_ST;
                      elsif out_data_r = X"62" or out_data_r = X"68" or out_data_r = X"6F" or
                            out_data_r = X"6B" or out_data_r = X"65" or out_data_r = X"72" or
-                           out_data_r = X"70" then
+                           out_data_r = X"70" or out_data_r = X"78" then
                         f_out_sum <= out_data_r;
                         f_out_st  <= OUT_PAY_ST;
                      else
@@ -1110,7 +1226,24 @@ begin
       -- psl f_hold : assert always
       --    {rst_i = '0' and f_ctrl = '0' and step_r = '0' and
       --     not (clearing_r = '1' and clear_done_i = '1')} |=>
-      --    {stable(hold_r) and stable(hide_r) and stable(pause_r)};
+      --    {stable(hold_r) and stable(hide_r)};
+      -- psl f_hold_pause : assert always
+      --    {rst_i = '0' and f_ctrl = '0' and step_r = '0' and own_stop = '0' and
+      --     not (clearing_r = '1' and clear_done_i = '1')} |=>
+      --    {stable(pause_r)};
+
+      -- The breakpoints (DEBUG.md §6): they change only on a write of their
+      -- registers, and the entries from G_BREAKS up stay 0. A stop of the
+      -- core's own raises pause_o, unless the processor is held then, so the
+      -- core does not wait for it forever. The stop register names a
+      -- breakpoint that the link has.
+      -- psl f_brk_write : assert always {rst_i = '0' and f_brk_w = '0'} |=> {f_kept};
+      -- psl f_brk_zero : assert always f_top;
+      -- psl f_brk_own : assert always
+      --    {own_stop = '1' and rst_i = '0'} |=> {rst_i = '1' or pause_r = '1' or hold_r = '1'};
+      -- psl f_brk_stop : assert always
+      --    stop_r(8) = '1' -> to_integer(stop_r(7 downto 0)) < G_BREAKS;
+      -- psl i_stop_zero : assert always stop_r(8) = '0' -> stop_r(7 downto 0) = X"00";
 
       -- A step (DEBUG.md §6) lowers pause_r for exactly one cycle, only after
       -- a cycle in which the link owned the paused core, and the link does
@@ -1132,7 +1265,7 @@ begin
       --    tx_st = TX_CC1_ST or tx_st = TX_CC2_ST;
       -- psl i_kind : assert always
       --    (kind_r = PKT_B or kind_r = PKT_H or kind_r = PKT_O or kind_r = PKT_K or
-      --     kind_r = PKT_E or kind_r = PKT_R or kind_r = PKT_P) and
+      --     kind_r = PKT_E or kind_r = PKT_R or kind_r = PKT_P or kind_r = PKT_X) and
       --    (ans_kind_r = PKT_K or ans_kind_r = PKT_E or ans_kind_r = PKT_R);
       -- psl i_out_st : assert always
       --    f_out_st = OUT_IDLE_ST or f_out_st = OUT_ESC_ST or f_out_st = OUT_PAY_ST or
@@ -1243,6 +1376,8 @@ begin
 
       -- psl c_halt : cover {f_tag = '1' and out_data_r = X"68"};
       -- psl c_overflow : cover {f_tag = '1' and out_data_r = X"6F"};
+      -- A stop of the core's own needs no W, so a `p` comes soon after.
+      -- psl c_own : cover {f_tag = '1' and out_data_r = X"70"};
 
    end generate gen_formal;
 

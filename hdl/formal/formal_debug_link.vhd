@@ -5,7 +5,9 @@
 -- THEORY OF OPERATION
 -- The assumptions are the contracts: the slave of wb_master_check, and a
 -- core whose halt ends only by a reset, by hold_o or by rst_i, and whose
--- pause lasts as long as pause_o and hold_o allow (contract e).
+-- pause lasts as long as pause_o and hold_o allow (contract e). The core
+-- may pause at any time, also with pause_o low, as at a breakpoint. Such a
+-- pause lasts until pause_o has been high. The link has two breakpoints.
 -- The assertions:
 -- - The Wishbone master keeps to the pipelined rules of wb_master_check,
 --   with one access at a time. It works only while hold_o, halted_i, or
@@ -23,14 +25,16 @@
 -- G_FORMAL: the framing of the output, so that nothing comes between the
 -- bytes of a packet, no answer during a clear, why rx_ready_o is low
 -- (contract c), when hold_o and rom_hide_o change (DEBUG.md §6), and the
--- invariants that make the proof inductive. The invariant f_wb_owed here
+-- invariants that make the proof inductive, and the breakpoints: their
+-- registers, and the stop of the core's own, which raises pause_o. The invariant f_wb_owed here
 -- ties the count of wb_master_check to the master.
 -- The covers show a write to the memory, a console byte for the program,
 -- and the end of a clear; those of wb_master_check a stalled write, and
--- those of debug_link an `h` and an `o`. A `p` needs a whole `W` of the
--- control register first, about 80 cycles, and a read of the memory needs a
--- whole `R` and the start of its answer, about 90 cycles, deeper than the
--- cover task looks, so tb_debug_link shows it instead.
+-- those of debug_link an `h`, an `o`, and the `p` of a stop of the core's
+-- own. A `p` of a request needs a whole `W` of the control register first,
+-- about 80 cycles, and a read of the memory needs a whole `R` and the start
+-- of its answer, about 90 cycles, deeper than the cover task looks, so
+-- tb_debug_link shows them instead.
 --
 -- RESET
 -- The first cycle is a reset.
@@ -38,6 +42,8 @@
 library ieee;
    use ieee.std_logic_1164.all;
    use ieee.numeric_std_unsigned.all;
+
+   use work.trace_pkg.all;
 
 entity formal_debug_link is
    generic (
@@ -83,6 +89,8 @@ architecture synthesis of formal_debug_link is
    signal wb_we        : std_logic;
    signal wb_addr      : std_logic_vector(31 downto 0);
    signal wb_data      : std_logic_vector(31 downto 0);
+   signal brk_addr     : t_brk_addrs;
+   signal brk_en       : std_logic_vector(C_BREAKS_MAX - 1 downto 0);
 
    -- A console byte taken, which is the next byte out
    signal pending  : natural range 0 to 2;          -- The ACKs owed to the master
@@ -104,6 +112,13 @@ architecture synthesis of formal_debug_link is
    signal halt_keep_d  : std_logic := '0';
    signal pause_keep_d : std_logic := '0';
 
+   -- A pause of the core's own, at a breakpoint: paused_i rose while pause_o
+   -- was low the cycle before, and pause_o has not been high since.
+   signal paused_d : std_logic := '0';
+   signal pause_d  : std_logic := '0';
+   signal own_wait : std_logic;
+   signal wait_r   : std_logic := '0';
+
 begin
 
    p_delay : process (clk_i)
@@ -115,9 +130,14 @@ begin
          hold_d          <= hold;
          eoi_d           <= eoi;
          halt_keep_d     <= halted_i and not hold and not rst_i;
-         pause_keep_d    <= paused_i and pause and not hold and not rst_i;
+         pause_keep_d    <= paused_i and (pause or own_wait) and not hold and not rst_i;
+         paused_d        <= paused_i and not rst_i;
+         pause_d         <= pause and not rst_i;
+         wait_r          <= own_wait and not hold and not rst_i;
       end if;
    end process p_delay;
+
+   own_wait <= not pause and (wait_r or (paused_i and not paused_d and not pause_d));
 
    -- A console byte taken is the next byte out.
    p_con : process (clk_i)
@@ -145,7 +165,8 @@ begin
    -- psl f_halted : assume always halt_keep_d = '1' -> halted_i = '1';
 
    -- The pause: never with a halt, and it lasts while pause_o is high and
-   -- the core is not reset (contract e).
+   -- the core is not reset, and at a breakpoint until pause_o has been high
+   -- (contract e).
    -- psl f_paused_halt : assume always not (paused_i and halted_i);
    -- psl f_paused : assume always pause_keep_d = '1' -> paused_i = '1';
 
@@ -194,6 +215,7 @@ begin
          G_TIMEOUT   => 3,
          G_HAS_ROM   => G_HAS_ROM,
          G_BOOT_HELD => G_BOOT_HELD,
+         G_BREAKS    => 2,
          G_FORMAL    => true
       )
       port map (
@@ -222,6 +244,8 @@ begin
          pause_o        => pause,
          paused_i       => paused_i,
          regs_i         => regs_i,
+         brk_addr_o     => brk_addr,
+         brk_en_o       => brk_en,
          wb_cyc_o       => wb_cyc,
          wb_stb_o       => wb_stb,
          wb_stall_i     => wb_stall_i,

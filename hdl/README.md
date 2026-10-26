@@ -252,13 +252,17 @@ other slave owes an ACK, and that a request that may pass is not stalled.
 compares every byte that the link sends with a string whose checksum was
 worked out by hand: the examples of DEBUG.md §8, the errors `e01` to `e03`,
 the dropped packets, the timeout, console bytes both ways with ESC ESC, the
-notices `b`, `h`, `o`, and `p`, the clear, one that a dropped packet started,
+notices `b`, `h`, `o`, `p`, and `x`, the clear, one that a dropped packet started,
 a `W` that wraps past `0xFFFFFFFF`, the hold and restart, and the pause: its
 notice after and before the answer, the memory and registers while paused,
 a hold and a start that keep or begin a pause, a go on, and a halt that
 goes first; and the step: `pause_o` low for exactly one cycle, bit 4 and the
 memory during the step, one `p` after it, a quick step, a hold during the
-step, a write with bit 5 that does not step, and a step into a halt.
+step, a write with bit 5 that does not step, and a step into a halt; and
+the breakpoints: their registers and ports, `x` with the lowest number at a
+start, a step, and a stop of the core's own, the stop register and how long
+it lasts, `p` when no enabled breakpoint is at R15, and a reset that clears
+them.
 
 `tb_link` runs on each core of `CORES`. It is the debug link as a board
 uses it: the link is a second master of the data bus, and owns it while
@@ -269,7 +273,9 @@ after a UART break with the registers it left, the restart of DEBUG.md §8,
 a pause of the core with its registers, memory, and console, a hold
 while it runs, and the single step: R15 after each step of the echo program,
 a step into `HALT`, the writes with bit 5 that do not step, and an `INT` with
-the registers of each step as `niceemu --trace` shows them. The testbench shows three things a board must
+the registers of each step as `niceemu --trace` shows them, and the
+breakpoints, 4 on the link and the core: a stop before the echo, a step and
+a go on from a breakpoint, and a breakpoint disabled while paused. The testbench shows three things a board must
 do: each master sees only its own STALL and ACK; the devices are reset at
 a start, when `hold_o` falls, and not while the processor is held, so that
 the link can reach them; and an instruction ACK that comes after a hold
@@ -733,13 +739,18 @@ answer starts during a clear. `rx_ready_o` is low only for 2 cycles after
 a byte, for the write of a data word, which waits only for the Wishbone
 access and never for a clear, and for a tag that waits for an answer or a
 clear. `hold_o` and `rom_hide_o` change only on a write to the control
-register, at the end of a clear, or at reset. Invariants tie the
+register, at the end of a clear, or at reset, and `pause_o` also at a stop
+of the core's own, which it then raises unless the processor is held. With
+two breakpoints, their registers change only on a write and at reset, the
+entries from `G_BREAKS` up stay 0, and the stop register names one of the
+two. Invariants tie the
 receiver, the accesses, the sender, and the parser together, so that
 k-induction of depth 4 proves it all in a few seconds. `G_TIMEOUT` is 3, so the timeout is reached.
 `prove_held` repeats the proof for a system without a ROM that boots
 held, where `rom_hide_o` is always 1. The `cover` task shows a write to
-the memory, a stalled request, an `h`, an `o`, a console byte for the
-program, and the end of a clear, within 70 cycles. A read of the memory
+the memory, a stalled request, an `h`, an `o`, the `p` of a stop of the
+core's own, a console byte for the program, and the end of a clear, within
+70 cycles. A read of the memory
 needs a whole `R` and the start of its answer, about 90 cycles, so
 `wb_master_check` leaves its read cover out with `G_COVER_READ`, and the
 simulation tests show the read.
@@ -1128,6 +1139,17 @@ clear the memory with `clear_o` and `clear_done_i`. A write with bits 4 and
 again, and the link does not own the memory until the core has paused or
 halted again. The board stops the counters and the timer while the core is
 paused, and not during a step.
+
+The generic `G_BREAKS`, from 0 to 8, gives the link the breakpoints of
+DEBUG.md §6. It holds their enable bits and addresses, and drives them to
+the core on `brk_en_o` and `brk_addr_o`, which connect to the core's
+`brk_en_i` and `brk_addr_i`, with the same `G_BREAKS` on both. When the
+core pauses on its own, with `pause_o` low, the link raises `pause_o`, so
+the stop is a pause like any other. At every pause it compares R15 with the
+enabled breakpoints, sends `x` with the lowest number that matches, or `p`,
+and keeps the number in the stop register until the core goes on, steps, or
+starts. A reset clears the breakpoints. A hold, a start, and a clear keep
+them.
 `formal/debug_link.sby` proves its ports and the guarantees of its
 header (The formal checks).
 

@@ -23,7 +23,7 @@
 -- sends against the exact string. The checksums of the fixed strings are
 -- the sum of the bytes from the tag to the end of the payload, mod 256,
 -- worked out with a script, not taken from a simulation. The checks:
--- * `b03`, and the W and R of DEBUG.md §8, through the decoder to memory;
+-- * `b04`, and the W and R of DEBUG.md §8, through the decoder to memory;
 -- * a word that G_INIT_FILE loaded, and the math unit through the decoder;
 -- * the link's reads of the console and the read counter, and its writes
 --   to the console, which the program must not see;
@@ -34,7 +34,10 @@
 --   and console, and a hold while the program runs;
 -- * the single step: R15 after each step of the echo program, with a console
 --   byte and without, a step into HALT, the writes with bit 5 that do not
---   step, and an INT with the registers of each step from niceemu --trace.
+--   step, and an INT with the registers of each step from niceemu --trace;
+-- * the breakpoints: a stop of the core's own before the echo, `x`, the stop
+--   register, a step and a go on from a breakpoint, which run its
+--   instruction, and a breakpoint disabled while paused.
 -- The run stops with status 0 when every check passes, and 1 at the first
 -- that fails.
 
@@ -107,6 +110,8 @@ architecture simulation of tb_link is
    signal halt_reason   : std_logic_vector(2 downto 0);
    signal regs          : t_regs;
    signal regs_flat     : std_logic_vector(511 downto 0);
+   signal brk_addr      : t_brk_addrs;
+   signal brk_en        : std_logic_vector(C_BREAKS_MAX - 1 downto 0);
    signal retire        : t_retire;
    signal link_owns_bus : std_logic;
 
@@ -186,6 +191,9 @@ begin
    gen_core : if G_CORE = "multicycle" generate
 
       i_multicycle : entity work.multicycle
+         generic map (
+            G_BREAKS => 4
+         )
          port map (
             clk_i         => clk,
             rst_i         => core_rst,
@@ -211,8 +219,8 @@ begin
             irq_vector_i  => X"00",
             pause_i       => pause,
             paused_o      => paused,
-            brk_addr_i    => (others => (others => '0')),
-            brk_en_i      => (others => '0'),
+            brk_addr_i    => brk_addr,
+            brk_en_i      => brk_en,
             halted_o      => halted,
             halt_reason_o => halt,
             instret_o     => open,
@@ -223,6 +231,9 @@ begin
    elsif G_CORE = "pipeline" generate
 
       i_pipeline : entity work.pipeline
+         generic map (
+            G_BREAKS => 4
+         )
          port map (
             clk_i         => clk,
             rst_i         => core_rst,
@@ -248,8 +259,8 @@ begin
             irq_vector_i  => X"00",
             pause_i       => pause,
             paused_o      => paused,
-            brk_addr_i    => (others => (others => '0')),
-            brk_en_i      => (others => '0'),
+            brk_addr_i    => brk_addr,
+            brk_en_i      => brk_en,
             halted_o      => halted,
             halt_reason_o => halt,
             instret_o     => open,
@@ -429,7 +440,8 @@ begin
       generic map (
          G_TIMEOUT   => C_TIMEOUT,
          G_HAS_ROM   => false,
-         G_BOOT_HELD => true
+         G_BOOT_HELD => true,
+         G_BREAKS    => 4
       )
       port map (
          clk_i          => clk,
@@ -457,6 +469,8 @@ begin
          pause_o        => pause,
          paused_i       => paused,
          regs_i         => regs_flat,
+         brk_addr_o     => brk_addr,
+         brk_en_o       => brk_en,
          wb_cyc_o       => link_cyc,
          wb_stb_o       => link_stb,
          wb_stall_i     => link_stall,
@@ -641,7 +655,7 @@ begin
       cycles(3);
       rst <= '0';
 
-      expect(C_ESC & "b03#C5", "b02");
+      expect(C_ESC & "b04#C6", "b04");
 
       -- DEBUG.md §8, through the decoder to the memory model
       send(C_ESC & "W0000010000021122334455667788#E2");
@@ -858,6 +872,53 @@ begin
       reg_is(15, X"00000005", "R15 after the ADD");
       send(C_ESC & "WFFFFFFF0000100000038#BD");
       expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "h01#C9", "step into the INT HALT");
+
+      -- The breakpoints (DEBUG.md §6), with the echo program again: 0 at the
+      -- echo, word 9, and 1 at the ADD after it, word 11. The core stops at 0
+      -- on its own, before the echo, and sends x00. A step runs the echo.
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold before the breakpoints");
+      load(words_v);
+      expect(C_ESC & "k00000000000F#C1", "load for the breakpoints");
+      send(C_ESC & "WFFFFFFF80002000000090000000B#" & cc("WFFFFFFF80002000000090000000B"));
+      expect(C_ESC & "kFFFFFFF80002#" & cc("kFFFFFFF80002"), "the addresses");
+      send(C_ESC & "WFFFFFFF4000100000001#B7");
+      expect(C_ESC & "kFFFFFFF40001#4A", "enable 0");
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "start with a breakpoint");
+      send("y");
+      expect(C_ESC & "x00#D8", "x at the echo");
+      quiet("no echo at the breakpoint");
+      reg_is(15, X"00000009", "R15 at the breakpoint");
+      reg_is(1, X"00000179", "R1 at the breakpoint");
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000018#D6", "paused at the breakpoint");
+      send(C_ESC & "RFFFFFFF60001#33");
+      expect(C_ESC & "rFFFFFFF6000100000100#D4", "stop register at the breakpoint");
+      step("y", "step from the breakpoint");
+      reg_is(15, X"0000000B", "R15 after the step from the breakpoint");
+      send(C_ESC & "RFFFFFFF60001#33");
+      expect(C_ESC & "rFFFFFFF6000100000000#D3", "stop register after the step");
+      -- With both enabled, a go on from 11 runs the ADD and does not stop
+      -- there. The next byte stops at 0, and a go on from there at 1.
+      send(C_ESC & "WFFFFFFF4000100000003#B9");
+      expect(C_ESC & "kFFFFFFF40001#4A", "enable 0 and 1");
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "go on from 11");
+      quiet("no stop at 11 after a go on");
+      send("z");
+      expect(C_ESC & "x00#D8", "x at the echo again");
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect_either(C_ESC & "kFFFFFFF00001#46", "z" & C_ESC & "x01#D9", "go on to 1");
+      reg_is(15, X"0000000B", "R15 at breakpoint 1");
+      -- Disabled while paused, they stop nothing.
+      send(C_ESC & "WFFFFFFF4000100000000#B6");
+      expect(C_ESC & "kFFFFFFF40001#4A", "disable");
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "go on with none");
+      send("w");
+      expect("w", "echo with none");
+      quiet("no stop with none");
 
       report "tb_link: pass";
       stop(0);

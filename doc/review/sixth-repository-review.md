@@ -132,6 +132,8 @@ hdl/README.md and TODO.md say the proof covers that bytes after a halt are dropp
 
 `niceasm.py:649` checks that the `.bin` output is not the input and exits with "the output file would overwrite the input". Line 670 opens the `--symbols` file with no such check, after the `.bin` is written. `niceasm.py --symbols prog.nasm prog.nasm` replaces the source with its label list, and `-o f --symbols f` leaves `f` as the label list. An unwritable `--symbols` path exits 1 after the `.bin` was written, where the README says a failed run writes no output. **Fix:** the same check for `--symbols`, against the input and against `-o`, before anything is written; an `errors.py` case.
 
+**Resolved**: `--symbols` is refused when it names the input or the output, with "the symbols file would overwrite the input" (or "output"), before anything is written. The file is opened before the `.bin` is written, so an unwritable path writes nothing. Three `errors.py` cases, and a check that the input is unchanged.
+
 ### 4.2 `niceemu` cannot be interrupted while it waits for input
 
 Commit 4c42461 installed handlers for SIGINT, SIGTERM, and SIGHUP that set `stop_signal` (`main.zig:183-203`), checked every 65536 steps (`main.zig:451-452`), so that the output is flushed; emulator/README.md:157-161 says the emulator then dies of the signal. While the program waits in a console read (`cpu.zig:449`), no step runs, the check is never reached, and the read restarts after EINTR, so Ctrl-C does nothing. Before 4c42461 the default action killed the process. Reproduced. **Fix:** after a read returns EINTR, treat a set `stop_signal` as the end of the input, so the run ends through the normal path.

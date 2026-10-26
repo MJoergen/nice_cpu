@@ -22,8 +22,8 @@ The script is fully type-annotated. `make typecheck` checks it with
     ./niceasm.py [-o output.bin] [--symbols output.sym] input.nasm
 
 Without `-o`, the output goes to `input.bin`. If that is the input file
-itself, the assembler refuses with a message. With `--symbols`, it
-also writes every label to the given file, one line per label: the 8-digit
+itself, the assembler refuses with a message, as it does if `--symbols`
+names the input or the output. With `--symbols`, it also writes every label to the given file, one line per label: the 8-digit
 hex address, a space, and the name, sorted by address and then by name. The
 emulator reads this file (`niceemu --symbols`). Errors in the program are
 printed as `file:line: error: message`, followed by a count of them, and

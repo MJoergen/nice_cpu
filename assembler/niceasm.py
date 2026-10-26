@@ -648,6 +648,12 @@ def main() -> None:
             lines = f.readlines()
         if os.path.exists(out) and os.path.samefile(out, args.input):
             sys.exit(f"{args.input}: the output file would overwrite the input; use -o")
+        if args.symbols:
+            for other, what in ((args.input, "input"), (out, "output")):
+                if (os.path.realpath(args.symbols) == os.path.realpath(other)
+                        or (os.path.exists(args.symbols) and os.path.exists(other)
+                            and os.path.samefile(args.symbols, other))):
+                    sys.exit(f"{args.symbols}: the symbols file would overwrite the {what}")
     except OSError as e:
         sys.exit(f"{e.filename}: {e.strerror}")
     if lines and lines[0].startswith("\xef\xbb\xbf"):  # UTF-8 byte order mark
@@ -664,13 +670,15 @@ def main() -> None:
         sys.exit(1)
 
     try:
+        if args.symbols:  # open it first, so that a bad path writes nothing
+            sym = open(args.symbols, "w", newline="")
         with open(out, "w", newline="") as f:
             for addr, word in asm.output():
                 f.write(f"{addr:08x} {word:08x}\n")
         if args.symbols:
-            with open(args.symbols, "w", newline="") as f:
+            with sym:
                 for name, addr in sorted(asm.labels.items(), key=lambda kv: (kv[1], kv[0])):
-                    f.write(f"{addr:08x} {name}\n")
+                    sym.write(f"{addr:08x} {name}\n")
     except OSError as e:
         sys.exit(f"{e.filename}: {e.strerror}")
 

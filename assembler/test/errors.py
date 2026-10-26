@@ -358,6 +358,10 @@ CLI: List[Tuple[List[str], int, str]] = [
     (["-o", "ok.nasm", "ok.nasm"], 1, "ok.nasm: the output file would overwrite the input; use -o"),
     (["-o", "nodir/ok.bin", "ok.nasm"], 1, "nodir/ok.bin: No such file or directory"),
     (["-o", "dir", "ok.nasm"], 1, "dir: Is a directory"),
+    (["--symbols", "ok.nasm", "ok.nasm"], 1, "ok.nasm: the symbols file would overwrite the input"),
+    (["-o", "ok.sym", "--symbols", "ok.sym", "ok.nasm"], 1,
+     "ok.sym: the symbols file would overwrite the output"),
+    (["--symbols", "nodir/ok.sym", "ok.nasm"], 1, "nodir/ok.sym: No such file or directory"),
     ([], 2, "niceasm.py: error: the following arguments are required: input"),
     (["ok.nasm", "x.nasm"], 2, "niceasm.py: error: unrecognized arguments: x.nasm"),
 ]
@@ -414,6 +418,11 @@ def main() -> None:
                 print(f"FAIL niceasm.py {' '.join(args)}")
                 for msg in problems:
                     print("    " + msg.replace("\n", "\n    "))
+        # A refused run leaves the input as it was, and writes nothing.
+        with open(os.path.join(cli, "ok.nasm")) as f:
+            if f.read() != " HALT\n" or os.path.exists(os.path.join(cli, "ok.sym")):
+                failed += 1
+                print("FAIL a refused --symbols wrote a file")
         # -o writes there, and not to the default output name.
         p = subprocess.run([sys.executable, NICEASM, "-o", "out.txt", "ok.nasm"], cwd=cli,
                            capture_output=True, text=True)

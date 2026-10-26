@@ -36,7 +36,16 @@ help:
 # CPU, unless make was given -j. The output of each is kept together.
 JOBS ?= $(shell nproc)
 
+# The hdl tests run GHDL, so a missing GHDL stops make test before anything
+# runs, not minutes in. Without GHDL, drop hdl: make test TEST_DIRS="...".
+GHDL ?= ghdl
+
 test:
+	@if echo " $(TEST_DIRS) " | grep -q ' hdl ' && ! command -v $(GHDL) >/dev/null 2>&1; then \
+	  echo "make test: $(GHDL) not found, and the tests of hdl need GHDL (README.md)."; \
+	  echo "Install it, set GHDL, or leave hdl out: make test TEST_DIRS=\"$(filter-out hdl,$(TEST_DIRS))\""; \
+	  exit 1; \
+	fi
 	@$(MAKE) --no-print-directory -C emulator build
 	@$(MAKE) $(if $(filter -j%,$(MAKEFLAGS)),,-j$(JOBS)) -O $(addprefix test-,$(TEST_DIRS))
 

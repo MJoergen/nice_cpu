@@ -55,6 +55,7 @@ departs from it.
 | [test/tb_shift.vhd](test/tb_shift.vhd) | A self-checking test of the ALU and the shifter of `src/nice_pkg.vhd`: the shifter the pipelined core uses, from a prepared count, against the one the multi-cycle core uses, and the ALU against the operations written out. |
 | [test/tb_mpu.vhd](test/tb_mpu.vhd) | A self-checking test of the math unit. |
 | [test/tb_perf.vhd](test/tb_perf.vhd) | A self-checking test of the performance counters. |
+| [test/tb_perf_hz.vhd](test/tb_perf_hz.vhd) | A self-checking test of the microsecond counter at 33333333, 83333333, and 100000000 Hz, against the integer part of N·10⁶/`G_CLK_HZ`. |
 | [test/tb_timer.vhd](test/tb_timer.vhd) | A self-checking test of the timer. |
 | [test/tb_fetch_stats.vhd](test/tb_fetch_stats.vhd) | A self-checking test of the fetch statistics. |
 | [test/fstats.nasm](test/fstats.nasm) | A program that reads the fetch statistics on the pipelined core, and checks itself. |

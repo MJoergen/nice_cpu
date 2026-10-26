@@ -945,30 +945,44 @@ def gen_set(ctx: Ctx, depth: int) -> Stmt:
 
 
 def gen_loop(ctx: Ctx, depth: int) -> Stmt:
-    """A loop that runs 1 to 4 times, counted in a counter local."""
+    """A loop that runs 1 to 4 times, counted in a counter local. Shape 0
+    ends with `br_if 0` on an unsigned i32 compare; the others vary the
+    compare (signed, `ne`, i64), put statements after the back edge, or
+    reach the loop through `if; br 1; end`."""
     if ctx.loop_depth >= 2:
         return gen_set(ctx, depth)
     ctr, k = ctx.counters[ctx.loop_depth], ctx.rng.randrange(1, 5)
+    shape = ctx.rng.choice([0, 0, 1, 2, 3])
+    cmp_name, t = ("lt_u", I32) if shape == 0 else (ctx.rng.choice(["lt_u", "lt_s", "ne"]), ctx.rng.choice([I32, I64]))
     ctx.loop_depth += 1
     ctx.labels.append(("loop", []))
     stmts = [gen_stmt(ctx, depth - 1) for _ in range(ctx.rng.randrange(1, 4))]
+    tail = [gen_stmt(ctx, depth - 1) for _ in range(ctx.rng.randrange(1, 3))] if shape == 2 else []
     ctx.labels.pop()
     ctx.loop_depth -= 1
 
     def run(st: State) -> None:
         st.locals[ctr] = 0
-        while True:
-            try:
+        try:
+            while True:
                 for s in stmts:
                     s.run(st)
-            except Branch as b:
-                assert b.depth != 0  # no branch targets the loop itself
-                raise Branch(b.depth - 1, b.values)
-            st.locals[ctr] = (st.locals[ctr] + 1) & M32
-            if st.locals[ctr] >= k:
-                return
+                st.locals[ctr] = (st.locals[ctr] + 1) & M32
+                if st.locals[ctr] >= k:
+                    for s in tail:
+                        s.run(st)
+                    return
+        except Branch as b:
+            assert b.depth != 0  # no branch targets the loop itself
+            raise Branch(b.depth - 1, b.values)
+    cond = local_get(ctr) + i32_const(1) + ADD + local_tee(ctr)
+    cond += (EXTEND_U + i64_const(k) if t == I64 else i32_const(k)) + opcode(CMP, cmp_name, t)
+    if shape == 3:
+        back = cond + if_() + br(1) + END
+    else:
+        back = cond + br_if(0)
     code = i32_const(0) + local_set(ctr) + loop() + b"".join(s.code for s in stmts)
-    code += local_get(ctr) + i32_const(1) + ADD + local_tee(ctr) + i32_const(k) + LT_U + br_if(0) + END
+    code += back + b"".join(s.code for s in tail) + END
     return Stmt(code, run)
 
 

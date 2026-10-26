@@ -196,6 +196,8 @@ The differential test of nicewasm at b2ac5a5 against 9d8f13d: 1040 modules (300 
 
 `gen_loop` (`test/fuzz.py:947-971`) always ends a loop with `local.get; i32.const 1; add; local.tee; i32.const k; i32.lt_u; br_if 0; end`, and asserts that no branch in the body targets the loop. So neither the fuzzer nor the differential test sees a middle back edge, a `br_table` to a loop, a `br 0`, a signed, 64-bit, or float condition, values on the stack at the branch, or adjacent nested back edges. The hand tests cover them, outside the repository. **Fix:** a second loop shape in `gen_loop`, and the hand harness as a test.
 
+**Resolved**: `gen_loop` picks one of four shapes. Shape 0 is the old one. The others compare signed, with `ne`, or in i64, put one or two statements after the back edge `br_if 0` (a middle back edge), or reach the loop through `if; br 1; end`. Not done: a `br_table` into a loop, an f64 condition, values on the stack at the branch, and adjacent nested back edges; the hand harness stays outside the repository.
+
 ### 6.3 A test that fails under load
 
 `test/errors.py:402` fails the "8000 nested blocks" case when the translation takes more than 4 s of wall-clock time. Under a load of 134 it took 4.0 s of wall time for 0.25 s of CPU time and failed; alone it passes. `make -C translator test` stops at the first failure, so `build.py` did not run in that pass. **Fix:** measure CPU time, or allow 30 s; a quadratic regression would still show as minutes.

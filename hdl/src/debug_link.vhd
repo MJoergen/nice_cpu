@@ -503,10 +503,9 @@ begin
                               if dig_r = 11 then
                                  cur_addr_r <= req_addr_r;
                                  -- The error 02 is decided here, before any data word.
-                                 if bad_r = '0' and mem_own = '0' and non_dbg(req_addr_r, n_v) then
-                                    err02_r <= '1';
-                                 end if;
-                                 if bad_r = '0' and tag_r = X"57" and wraps(req_addr_r, n_v) then
+                                 if bad_r = '0' and
+                                    ((mem_own = '0' and non_dbg(req_addr_r, n_v)) or
+                                     (tag_r = X"57" and wraps(req_addr_r, n_v))) then
                                     err02_r <= '1';
                                  end if;
                               end if;

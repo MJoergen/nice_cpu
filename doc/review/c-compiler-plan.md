@@ -25,8 +25,9 @@ side effects, and table jumps, meet more of the pipeline's hazards
 compiler on this core. More needs changes to the core as well.
 
 The bounds checks are not where the time goes. With
-`nicewasm --no-bounds-checks`, the phases take 1641660 instructions, 2%
-fewer, and about 2412000 cycles by `pipecycles.py`, slightly more. One
+`nicewasm --no-bounds-checks`, the phases take 1613391 instructions, 2.4%
+fewer, and 2382535 cycles by `pipecycles.py`, 1.1% more than the 2356816
+of the default (measured at commit 98d2bed). One
 compare checks both the bounds and the alignment, so without it the
 accesses take the general path more often.
 

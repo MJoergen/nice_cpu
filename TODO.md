@@ -61,12 +61,7 @@ has a "Resolved" paragraph there; the section numbers are the review's.)
   The debug link has the pause and the single step (DEBUG.md §6) since
   it was written. Merge it after a rebase onto main, or close it as not
   needed.
-- **Out-of-context timing figures.** A row per figure in
-  pipeline-timing.md, and an in-system build at RC05 (§2.4).
-- **Smaller figures** (§8.6): the run times of `make core` and `make core-dhry`
-  in bench/Makefile and bench/README.md; one sentence for the cost of a jump
-  DECODE resolves; a commit name on every new table of bench/README.md;
-  the `--no-bounds-checks` figures of c-compiler-plan.md.
+- **In-system timing at RC05** (§2.4): a build of NiceMonMEGA65's tag `RC05` on both boards, with its figures in pipeline-timing.md.
 - **Smaller.** Terms for Dhrystone (§1.5); `CLOCKS_PER_SEC` as `clock_t`,
   which changes `mchess.wasm` (§5.4); the
   wall-clock limit of `errors.py` (§6.3); `nicebuild.py`'s

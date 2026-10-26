@@ -102,6 +102,8 @@ Commit e92703a says speculative reads were investigated and will not be done; MI
 
 The in-system results, the MEGA65 R6 at 100 MHz and the Nexys4DDR at 90 MHz, were measured at 4cd869e. Since then the predictor, the pause, the handshakes, and #51 and #54 each reported `make timing` out of context in their commit messages, and pipeline-timing.md does not record them; RELEASE_NOTES.md says nothing about timing. **Fix:** a row per commit in pipeline-timing.md, and an in-system build at RC05.
 
+**Resolved**: Only c96cdb0's message had a timing figure (0.379 ns, R6, 100 MHz), so there are no rows per commit to recover. pipeline-timing.md has a section "Since 4cd869e" with c96cdb0's figure and a run at 53af956: R6, default flow, 100 MHz, +0.619 ns with no failing endpoint; Nexys4DDR, timing flow, 100 MHz, −0.862 ns with 475 failing, as at 90 MHz it has always needed. Not done: an in-system build at RC05, which needs NiceMonMEGA65 and the boards.
+
 ### 2.5 Smaller
 
 - Nothing checks that `bench.wasm` and `dhry.wasm` are current. They are: `make wasm` in a clone gives both byte for byte.
@@ -360,7 +362,11 @@ RELEASE_NOTES.md:136 has 0.241 under RC03, and c-compiler-plan.md:91 has 2348 an
 - `make compare` prints percentages only, so the README's per-phase differences (−56 and so on) cannot be read off its output. Neither pipecycles.py nor the README says the model ignores the pause.
 - The new tables of bench/README.md (the `simple.nasm` table, the compare table, the 1252613 paragraph, the hazards sample, the `--retires` paragraph) name no commit, where the older ones do.
 
-**Resolved**: MICROARCH.md says 1.66. Not done: the run times of bench/Makefile and bench/README.md (`make core` took far less than 46 minutes on an idle machine, and was not timed), the cost of a jump DECODE resolves in one sentence, and a commit name on every new table.
+**Resolved**: MICROARCH.md says 1.66.
+- The run times were measured on an idle machine at 53af956: `make core` took 1294 s (22 minutes) on the pipelined core and 2269 s (38 minutes) on the multi-cycle one, and `make core-dhry` 143 s and 162 s. bench/Makefile and bench/README.md say so.
+- The cost of a jump DECODE resolves is in translator/README.md and bench/README.md: a bubble of 3 cycles in a stream without reads, and 2 behind a read. The translator's sentence that a skipped predicted jump costs nothing more was wrong (it costs 7) and is gone.
+- The hazards sample, the `simple.nasm` table, and the paragraph of 1252613 cycles in bench/README.md name 98d2bed.
+- The `--no-bounds-checks` figures of c-compiler-plan.md are 1613391 instructions (2.4% fewer) and 2382535 cycles by `pipecycles.py` (1.1% more than the default's 2356816), at 98d2bed.
 
 ## 9. The documents as a set
 

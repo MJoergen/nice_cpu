@@ -13,9 +13,9 @@ NICE with other processors.
     make            # run the three on the emulator and print their tables
     make dhry       # run Dhrystone 2.1 on the emulator
     make test       # the same, and check every result
-    make core       # run both on the pipelined core in GHDL (about 40 minutes)
-    make core CORE=multicycle  # the same on the multi-cycle core (about 40 minutes)
-    make core-dhry  # run Dhrystone on a core in GHDL, CORE as above, and check it (4 minutes)
+    make core       # run both on the pipelined core in GHDL (about 22 minutes)
+    make core CORE=multicycle  # the same on the multi-cycle core (about 38 minutes)
+    make core-dhry  # run Dhrystone on a core in GHDL, CORE as above, and check it (about 2.5 minutes)
     make hazards    # count the pipeline hazards of MICROARCH.md §5 in both
     make cycles     # estimate the cycles of the three on the pipelined core of MICROARCH.md
     make profile    # the same, charged to the source lines, in build/*.cyc.txt
@@ -156,7 +156,7 @@ the multi-cycle core as it was:
 Since DECODE predicts backward conditional jumps taken
 ([MICROARCH.md](../doc/MICROARCH.md) §5.4), and `hand.nasm` closes its
 loops with them, `hand.nasm` takes 1252613 cycles on the pipelined
-core, 2.55 per instruction and 9.6% fewer than the 1384879 of the
+core at commit 98d2bed, 2.55 per instruction and 9.6% fewer than the 1384879 of the
 program at that commit. `bench.c` closes its loops the same way
 (translator/README.md), and takes 2357155 cycles for 1652811
 instructions, 1.43 per instruction and 1.2% fewer than the 2384635
@@ -198,7 +198,7 @@ byte per word, as `unsigned char buf[]` is with `CHAR_BIT` = 32. The
 other four phases are those of `hand.nasm`.
 
 The two phases, in instructions on the emulator and in cycles by
-`make cycles`:
+`make cycles`, at commit 98d2bed:
 
 | Phase | nicewasm | `simple.nasm` | `hand.nasm` |
 |---|---|---|---|
@@ -228,7 +228,7 @@ counts as if it ran, because DECODE sees its operands before the condition
 is known. For each program the output gives the number of instructions,
 the distributions of the instruction length in words and of the
 micro-operations, and then one line per hazard with its count and its
-share of all instructions:
+share of all instructions. This is the output for `hand.nasm` at commit 98d2bed:
 
     hand: 493964 instructions, 91075 skipped (18.4%)
       words        1: 35.6%  2: 63.1%  3: 1.3%  4: 0.0%   mean 1.66
@@ -273,7 +273,7 @@ traces. It is a model built from MICROARCH.md, not the core. Each
 instruction of the trace is decoded as `hazards.py` decodes it, split
 into its micro-operations, and sent through FETCH, DECODE, SEQUENCER,
 PREPARE, and WRITE under the rules of §3 to §5: two words fetched per
-cycle, a bubble of 3 cycles for a jump that DECODE resolves and of 7 for
+cycle, a bubble of 3 cycles for a jump that DECODE resolves (2 behind a read, which holds the stream up a cycle) and of 7 for
 one resolved in WRITE, DECODE's skid register, a data read that waits for an older write of SR,
 an address register written by the previous micro-operation, one data
 access per cycle on the bus, a read that is on the bus a cycle after

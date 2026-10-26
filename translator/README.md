@@ -694,8 +694,9 @@ Code that no jump reaches any more goes.
 A `br_if` back to the start of a loop, at the end of the loop, is
 usually taken. On the FPGA core DECODE predicts a conditional `ADD PC,
 PC, offset` taken when the offset is negative, and a predicted jump costs
-what an unconditional jump to a label does, two cycles, and nothing more
-when skipped (MICROARCH.md §5.4). So the `br_if` becomes `?cc ADD R15,
+what an unconditional jump to a label does when taken, a bubble of 3
+cycles in a stream without reads and 2 behind a read, which holds the
+stream up a cycle (`hdl/test/bubble.nasm`, MICROARCH.md §5.4). So the `br_if` becomes `?cc ADD R15,
 R15, top-next`, where `next` is a new label right after it. Each round of
 the loop then costs two cycles and one instruction less than a skipped
 conditional jump out and an unconditional one back, and leaving it, a

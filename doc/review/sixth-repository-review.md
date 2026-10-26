@@ -138,6 +138,8 @@ hdl/README.md and TODO.md say the proof covers that bytes after a halt are dropp
 
 Commit 4c42461 installed handlers for SIGINT, SIGTERM, and SIGHUP that set `stop_signal` (`main.zig:183-203`), checked every 65536 steps (`main.zig:451-452`), so that the output is flushed; emulator/README.md:157-161 says the emulator then dies of the signal. While the program waits in a console read (`cpu.zig:449`), no step runs, the check is never reached, and the read restarts after EINTR, so Ctrl-C does nothing. Before 4c42461 the default action killed the process. Reproduced. **Fix:** after a read returns EINTR, treat a set `stop_signal` as the end of the input, so the run ends through the normal path.
 
+**Resolved**: Zig's file reader restarts a read after EINTR, so it cannot report it. The console input is now read by a small reader in `main.zig` (`InterruptibleReader`) that fails on EINTR, which the console read already takes for the end of the input. The run loop also checks `stop_signal` after the loop, as the program may halt before the next check. `errors.py` sends SIGTERM, SIGINT, and SIGHUP to a program that waits on an open, silent pipe, and expects its output and death by the signal. It fails without the change. README.md says so.
+
 ### 4.3 Smaller
 
 - `--irq` at step N and the timer's request at the same step: `--irq` wins (`main.zig:454-460` runs before `cpu.zig:525-528`), against the first-vector rule of RC02. No document says it, and no probe pins it.

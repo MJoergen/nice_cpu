@@ -161,7 +161,8 @@ write, so that Ctrl-C loses nothing. Otherwise the output is buffered, and
 is written when the buffer fills, before a read, and at the end of the run,
 and on SIGINT, SIGTERM, and SIGHUP, which the emulator then dies of. Only
 SIGKILL loses what is still in the buffer. The signals are noticed every
-65,536 steps. `test/input.nasm` reads `test/input.txt`. Reads by `--dump`
+65,536 steps, and at once while the program waits for console input, which
+the signal ends. `test/input.nasm` reads `test/input.txt`. Reads by `--dump`
 take no input. `make test` runs every program with stdin from `/dev/null`.
 
 The read counter makes the data reads of ISA.md §8.2 visible: how many

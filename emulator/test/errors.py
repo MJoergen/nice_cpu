@@ -276,7 +276,28 @@ def main() -> None:
             if out_b != b"A" or killed.returncode != -sig or err_b:
                 failed += 1
                 print(f"FAIL {sig.name}: output {out_b!r}, exit status {killed.returncode}, stderr {err_b!r}")
-    total = len(CASES) + len(SYMBOL_FILES) + len(RUNS) + 7
+        # The same while the program waits in a console read: stdin is a pipe
+        # that stays open and silent. The program prints "A" and reads.
+        wait_asm = os.path.join(tmp, "wait.nasm")
+        wait_bin = os.path.join(tmp, "wait.bin")
+        with open(wait_asm, "w") as f:
+            f.write(" MOVE @0xFFFFFF00, 0x41\n MOVE R1, @0xFFFFFF00\n HALT\n")
+        subprocess.run([sys.executable, NICEASM, "-o", wait_bin, wait_asm], check=True)
+        for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            waiting = subprocess.Popen([NICEEMU, wait_bin], stdin=subprocess.PIPE,
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            time.sleep(1)
+            waiting.send_signal(sig)
+            try:
+                out_b, err_b = waiting.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                waiting.kill()
+                out_b, err_b = waiting.communicate()
+            if out_b != b"A" or waiting.returncode != -sig or err_b:
+                failed += 1
+                print(f"FAIL {sig.name} in a console read: output {out_b!r}, "
+                      f"exit status {waiting.returncode}, stderr {err_b!r}")
+    total = len(CASES) + len(SYMBOL_FILES) + len(RUNS) + 10
     print(f"PASS errors ({total} cases)" if not failed else f"FAIL errors ({failed} of {total})")
     sys.exit(1 if failed else 0)
 

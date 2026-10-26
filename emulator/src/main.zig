@@ -189,6 +189,34 @@ fn onSignal(sig: i32) callconv(.c) void {
     stop_signal.store(@intCast(sig), .release);
 }
 
+/// A reader of a file descriptor that, unlike `std.fs.File.Reader`, gives up
+/// when a signal interrupts the read. The console read then returns the end
+/// of the input, and the run loop sees `stop_signal` at its next check.
+const InterruptibleReader = struct {
+    fd: std.posix.fd_t,
+    interface: std.Io.Reader,
+
+    fn init(fd: std.posix.fd_t, buffer: []u8) InterruptibleReader {
+        return .{
+            .fd = fd,
+            .interface = .{ .vtable = &.{ .stream = stream }, .buffer = buffer, .seek = 0, .end = 0 },
+        };
+    }
+
+    fn stream(io_reader: *std.Io.Reader, w: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize {
+        const self: *InterruptibleReader = @alignCast(@fieldParentPtr("interface", io_reader));
+        const dest = limit.slice(try w.writableSliceGreedy(1));
+        const rc = std.posix.system.read(self.fd, dest.ptr, dest.len);
+        switch (std.posix.errno(rc)) {
+            .SUCCESS => {},
+            else => return error.ReadFailed,
+        }
+        if (rc == 0) return error.EndOfStream;
+        w.advance(@intCast(rc));
+        return @intCast(rc);
+    }
+};
+
 /// Catch the signals that end a run from outside, so that the buffered
 /// output can be written first. No SA_RESTART, as the default is.
 fn catchSignals() void {
@@ -421,7 +449,7 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
     cpu.cycle_counter = opts.cycle_counter;
     cpu.timer_irq = opts.timer_irq;
     var in_buf: [4096]u8 = undefined;
-    var in_r: std.fs.File.Reader = undefined;
+    var in_r: InterruptibleReader = undefined;
     const in_file = if (std.mem.eql(u8, opts.input, "-")) std.fs.File.stdin() else std.fs.cwd().openFile(opts.input, .{}) catch |err| {
         std.debug.print("niceemu: cannot read {s}: {s}\n", .{ opts.input, @errorName(err) });
         return error.Load;
@@ -440,7 +468,7 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
     }
     // Streaming, so that stdin may be a terminal or a pipe. Nothing is read
     // until the program reads the console.
-    in_r = in_file.readerStreaming(&in_buf);
+    in_r = InterruptibleReader.init(in_file.handle, &in_buf);
     cpu.input = &in_r.interface;
     // A step is one instruction, or the entry into an interrupt.
     var steps: u64 = 0;
@@ -460,6 +488,10 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
         }
         try cpu.step();
     }
+    // A signal that interrupted a console read ended the input, and the
+    // program may have halted before the next check above.
+    const sig = stop_signal.load(.acquire);
+    if (sig != 0) dieOfSignal(out, sig);
     return report(out, opts, syms, &cpu, steps);
 }
 

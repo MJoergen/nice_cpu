@@ -71,7 +71,10 @@ begin
       pair    => pair_i,
       words   => words_i,
       jump    => jump_i,
-      flush   => flush_i
+      flush   => flush_i,
+      wait_sr => '0',
+      wait_wr => '0',
+      moved   => '0'
    );
 
    accept <= wb_cyc_i and wb_stb_i;

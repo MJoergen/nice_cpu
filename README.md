@@ -19,7 +19,7 @@ that runs C, Zig, and Rust programs. The `hdl/` directory holds two
 different FPGA implementations, the pipelined one of MICROARCH.md, which
 is the default, and a simple multi-cycle one, which both pass every comparison with the
 emulator, the test setup for them, and formal checks of their ports, of
-four stages of the pipeline, of the devices, and of the shifter and the
+five stages of the pipeline, of the devices, and of the shifter and the
 ALU for every input.
 
 The core is FPGA-agnostic. This repository has no board top level and no
@@ -78,14 +78,14 @@ meant for comparing the FPGA core with the emulator.
 
 ## Toolchain
 
-There are four tools. Three run on the host, and one is NICE assembly that
+There are five tools. Four run on the host, and one is NICE assembly that
 is joined into every program. Each follows one part of
 [doc/ISA.md](doc/ISA.md).
 
 | Tool | Where | Written in | Reads | Writes | Follows |
 |---|---|---|---|---|---|
 | `niceasm`, the assembler | [assembler/niceasm.py](assembler/niceasm.py) | Python 3, standard library only | `.nasm` | `.bin` | ISA.md §10 |
-| `niceemu`, the emulator | [emulator/](emulator/) | Zig 0.15 | `.bin` | Console output, the registers, memory dumps, and a trace | ISA.md §1–8, SYSTEM.md |
+| `niceemu`, the emulator | [emulator/](emulator/) | Zig 0.15 | `.bin` | Console output, the registers, memory dumps, and a trace | ISA.md §1–8, SYSTEM.md, DEBUG.md |
 | The runtime library | [runtime/](runtime/) | NICE assembly | | | ABI.md and WASM.md |
 | `nicewasm`, the wasm translator | [translator/nicewasm.py](translator/nicewasm.py) | Python 3, standard library only | `.wasm` | `.nasm` | WASM.md |
 | `nicebuild`, the build script | [translator/nicebuild.py](translator/nicebuild.py) | Python 3, standard library only | `.c`, `.zig`, or `.rs` | `.bin` | translator README |

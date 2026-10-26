@@ -17,6 +17,10 @@ translator, and two FPGA cores. See README.md.
   defines no device. ISA.md wins over it.
 - `doc/HISTORY.md`: what used to be true, and how the code got here. Keep it
   out of the other docs, which say only what is true now.
+- `doc/DEBUG.md`: the debug link, which a host uses to read and write the
+  memory and to load, start, pause, and step a program. The emulator serves
+  it with `--link`, and the board repository over its UART. ISA.md and
+  SYSTEM.md win over it.
 - `doc/intro/`: beginner's slides (`nice_intro.tex`, built `nice_intro.pdf`)
   and their example programs. ISA.md wins over them.
 - `doc/MICROARCH.md`: design note for the FPGA core. ISA.md wins over it.
@@ -26,7 +30,9 @@ translator, and two FPGA cores. See README.md.
 - `assembler/niceasm.py`: Python 3, standard library only, `mypy --strict` clean.
 - `emulator/`: Zig 0.15.
 - `runtime/`: start-up code and runtime routines in NICE assembly (`runtime/ABI.md`).
+  `runtime/libc/` is the C library for translated programs.
 - `translator/nicewasm.py`: wasm -> NICE assembly (`translator/WASM.md`). Same rules as niceasm.py.
+  `translator/nicebuild.py` builds a `.c`, `.zig`, or `.rs` file into a `.bin`.
 - `bench/bench.c`: a benchmark of translated code, six kernels with known
   results, timed with the performance counters. `hand.nasm` is the same
   benchmark written by hand, the ceiling to compare with. `simple.nasm` is
@@ -44,7 +50,7 @@ translator, and two FPGA cores. See README.md.
   are in `hdl/ASSUMPTIONS.md`; and a simple multi-cycle one in
   `src/multicycle.vhd`, the variant. Both use
   `src/nice_pkg.vhd` and `src/trace_pkg.vhd`. Style follows `hdl/CODING_STYLE.md`,
-  checked by vsg with `hdl/vsg.yml`.
+  checked by vsg with `hdl/vsg.yml`. `hdl/CLAUDE.md` has the Vivado path.
 
 ## Commands
 
@@ -52,16 +58,17 @@ translator, and two FPGA cores. See README.md.
     make test                        # every quick make test below, in parallel
     cd assembler && make test        # .nasm -> .bin comparisons, then test/errors.py
     cd assembler && make typecheck   # mypy --strict
-    cd emulator  && make test        # zig unit tests, example and probe programs, test/errors.py
+    cd emulator  && make test        # zig unit tests, example and probe programs, test/errors.py and link.py
     cd emulator  && make typecheck   # mypy --strict
+    cd emulator  && make bincheck    # fail if a probe .bin is stale
     cd emulator  && make bins        # reassemble test/*.bin after editing a probe .nasm
-    cd runtime   && make test        # join, assemble, and run each test/*.nasm
+    cd runtime   && make test        # join, assemble, and run each test/*.nasm, then the C library tests
     cd runtime   && make typecheck   # mypy --strict
-    cd translator && make test       # test/run.py, errors.py, fuzz.py in four modes, and passes.py
+    cd translator && make test       # test/run.py, errors.py, fuzz.py in four modes, passes.py, and build.py
     cd translator && make typecheck  # mypy --strict
     cd bench     && make test        # the benchmark on the emulator, with its results checked
     cd bench     && make core        # the benchmark on a core in GHDL, CORE=pipeline or multicycle (minutes)
-    cd bench     && make dhry        # Dhrystone on the emulator
+    cd bench     && make dhry        # Dhrystone on the emulator, checked by dhrycheck.py
     cd bench     && make core-dhry   # Dhrystone on a core in GHDL, CORE as above, with its output checked (minutes)
     cd bench     && make hazards     # how often the pipeline hazards of MICROARCH.md §5 occur
     cd bench     && make cycles      # the estimated cycles on the pipelined core, per phase

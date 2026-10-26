@@ -325,6 +325,12 @@ RELEASE_NOTES.md:136 has 0.241 under RC03, and c-compiler-plan.md:91 has 2348 an
 - No sentence anywhere says that ISA.md and SYSTEM.md win over DEBUG.md.
 - REFERENCES.md's review list omits c-compiler-plan.md, whose "1.72 ceiling" (line 22) is 22eacce's figure, dated; it is about 1.88 now.
 
+**Resolved**: Except the "1.72 ceiling" of c-compiler-plan.md, which waits for the re-measurement of §8.
+- README.md says five stages and five tools, four of them on the host, and that the emulator follows DEBUG.md too.
+- CLAUDE.md's Layout has doc/DEBUG.md, `nicebuild.py`, `runtime/libc/`, and `hdl/CLAUDE.md`. Its commands mention `link.py`, `bincheck`, `build.py`, the C library tests, and `dhrycheck.py`.
+- DEBUG.md says that ISA.md and SYSTEM.md win over it, and CLAUDE.md says so in the Layout.
+- REFERENCES.md's list of reviews has c-compiler-plan.md.
+
 ### 9.5 `check_refs.py` does not know DEBUG.md
 
 `doc/check_refs.py:30`'s `DOCUMENTS` lacks DEBUG.md, so the sixty-odd citations of "DEBUG.md §n" in SYSTEM.md, the READMEs, TODO.md, and RELEASE_NOTES.md are not checked. The reader read them all: every section exists. **Fix:** one line.

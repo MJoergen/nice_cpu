@@ -8,9 +8,9 @@ the program halts. The link shares one byte stream with the console
 [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) over its debug
 UART. Both follow this file, so one host tool works with either.
 
-The link is a property of the system, not of the ISA. This is version 4 of
-the protocol. Its run control is the pause, the single step, and the
-breakpoints (§6).
+The link is a property of the system, not of the ISA. ISA.md and
+SYSTEM.md win over this file. This is version 4 of the protocol. Its run
+control is the pause, the single step, and the breakpoints (§6).
 
 "SYSTEM.md §1" refers to a section of SYSTEM.md, and a plain "§2" to a
 section of this file.

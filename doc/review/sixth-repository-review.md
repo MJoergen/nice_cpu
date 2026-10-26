@@ -357,6 +357,8 @@ RELEASE_NOTES.md:136 has 0.241 under RC03, and c-compiler-plan.md:91 has 2348 an
 
 HISTORY.md:113 "misspelt"; emulator/test/link.py:397 "cancelled"; an en dash in `link.zig:375`; `mchess.c` "colour" (third party); hdl/README.md:972 quotes `strings` at 3.1 and `bst` at 2.5 cycles per instruction at 1a41b0c, dated, where they are 2.40 and 1.98 now.
 
+**Resolved**: Except the figures of hdl/README.md:972, which wait for the re-measurement of §8. "Misspelt" went with the duplicate entry of §9.2. link.py says "canceled", and link.zig has no en dash. `release/test.py` keeps "cancelled", which is the value that GitHub's API gives for a job.
+
 ## 10. The release-script branch
 
 `origin/release-script` is one commit, ba6a473 of 2026-10-23 on a2c82f1, 96 commits behind main. It adds `release/RELEASE.md`, a checklist of eight steps from the clean tree to the board; `release/release.py` (408 lines: `preflight`, `check`, `figures`, `ci`, `notes`, `tag`); `test.py`, a README, and a Makefile; a `release` job in ci.yml; and `make release-check` at the top. It rebases onto b2ac5a5 without a conflict, and its own `make test` and `make typecheck` pass after the rebase. Its `tag` makes an annotated tag with the draft notes as the message (`git tag -a`), refuses without a stamp of `check` and a green `ci`, and pushes only on request.

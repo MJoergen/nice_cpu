@@ -419,7 +419,7 @@ def test_pause(count: List[int], echo: List[int]) -> None:
     e.expect("p at start", PAUSED)
     expect("start paused control", bytes([word(e, CONTROL)]), bytes([0x18]))
     expect("start paused R15", bytes([word(e, 0xFFFFFFEF)]), bytes([0]))
-    # A cancelled request: held, a request, and a write of 0 before the start.
+    # A canceled request: held, a request, and a write of 0 before the start.
     e.send(write(CONTROL, [0x9]))
     e.expect("hold again", ok(CONTROL, 1))
     e.send(write(CONTROL, [0x19]))

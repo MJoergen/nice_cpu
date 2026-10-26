@@ -431,7 +431,7 @@ pub const Link = struct {
         self.stop_break = null;
     }
 
-    /// A hold ends a pause, and R0–R15 stay as they are.
+    /// A hold ends a pause, and R0 to R15 stay as they are.
     fn hold(self: *Link) void {
         if (!self.held) self.interrupted = true;
         self.held = true;

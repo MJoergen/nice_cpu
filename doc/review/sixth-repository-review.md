@@ -157,6 +157,8 @@ runtime/README.md:178: a Zig program linked with `libc.a` "holds the whole libra
 - runtime/README.md:307 says the expected values of the C library tests "were checked by hand". `mchess.expected` is 600 lines of ANSI output and was not. The reader checked it instead against a native clang build on the same input, identical, and the perft counts 20, 400, and 8902. Say so.
 - The search that needs the 128 KB stack is not exercised: the test runs perft only, 11.35 million steps in 2.5 s.
 
+**Resolved**: The provenance of `mchess.expected` and the unexercised search are in runtime/README.md. The license line was added with 1.5.
+
 ### 5.3 `--stack` needs `--memory`
 
 `nicebuild.py --stack 131072 mchess.c` fails with wasm-ld's "initial memory too small"; it works with `--memory 262144`. Only a comment in runtime/libc/Makefile (`BIGSTACK`) says so. **Fix:** a sentence in translator/README.md, or raise `--memory` to cover the stack.

@@ -318,7 +318,11 @@ are checked in, so no C compiler is needed; `make -C libc wasm` rebuilds
 them and `libc.a`. Each is translated, joined with `start_wasm.nasm`,
 `lib.nasm`, and `muldiv_mpu.nasm`, and run. Its console output, `main`'s result in R1, and the
 exit status are compared with `libc/test/X.expected`, which was written
-by hand from the source.
+by hand from the source. The exception is `mchess.expected`, 600 lines of
+board output. It was checked against a native build of `mchess.c` on the
+same input, and the perft counts 20, 400, and 8902 are the known ones for
+the start position. The test runs perft only, so the search of `mchess`,
+which needs the 128 KB stack, is not exercised.
 
 Then it runs the tests of `nice.zig` and `nice.rs`, `test/nicezig.zig`,
 `test/zigpoll.zig`, `test/nicers.rs`, and `test/rustpoll.rs`, the same

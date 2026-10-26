@@ -175,6 +175,10 @@ runtime/README.md:178: a Zig program linked with `libc.a` "holds the whole libra
 - ABI.md:100 gives the join order as the start-up code, the units, the wasm module, and the runtime library; `nicebuild.py` joins the start-up code, the program, `lib.nasm`, a muldiv file, `float.nasm` if any of its labels is used, and `trapmsg.nasm`.
 - WASM.md's "From C" recipe for a trap handler cannot be built, since `nicebuild.py` cannot add an assembly file; TODO.md:189-194 has it.
 
+**Resolved**: Except the first item (`trapmsg.nasm` for a code above 7, which needs a decision on what it prints), `CLOCKS_PER_SEC`'s type (a cast changes `mchess.wasm`; left), and the "From C" recipe (TODO.md has it).
+- runtime/README.md says that a microsecond is a step in the emulator and that `clock` wraps after 71.6 minutes on a board, lists `_exit`, `___trap_report`, and `___trap.*` among the reserved labels, says that `stdout` and `stderr` are two `FILE` objects on one console and that `abort` and a failed `assert` give status 2, and lists the functions the library lacks.
+- ABI.md's join order names the parts of the runtime library.
+
 ## 6. The translator and `nicebuild.py`
 
 ### 6.1 Loop closing holds

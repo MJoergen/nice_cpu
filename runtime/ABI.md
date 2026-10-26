@@ -97,7 +97,7 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 - A C function or variable `name` with external linkage gets the label `_name`. So `main` is `_main`, and a C function called `move` does not clash with the mnemonic `MOVE`. Names with internal linkage are covered below.
 - Every other label that the compiler emits contains a `.` (see Programs and units). No C identifier contains a `.`, so these cannot clash with external C names.
 
-**Programs and units.** There is no linker. A program is one assembly file, made by joining these files in this order: the start-up code; the compiled units and hand-written assembly files, in any order; the translated wasm module if there is one ([WASM.md](../translator/WASM.md)); and the runtime library. Every label and `.EQU` name must therefore be unique in the whole program. The assembler rejects a second definition.
+**Programs and units.** There is no linker. A program is one assembly file, made by joining these files in this order: the start-up code; the compiled units and hand-written assembly files, in any order; the translated wasm module if there is one ([WASM.md](../translator/WASM.md)); and the runtime library, which is `lib.nasm`, one of the muldiv files, `float.nasm` if the program uses it, and `trapmsg.nasm` if the start-up code installs the trap report ([runtime README](README.md)), in this order. Every label and `.EQU` name must therefore be unique in the whole program. The assembler rejects a second definition.
 
 - Only the start-up code may use `.ORG`, because a `.ORG` in one file moves every file after it. Anything that must sit at a fixed address, such as an interrupt vector table (ISA §7.3), therefore belongs in the start-up code.
 

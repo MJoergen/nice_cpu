@@ -70,9 +70,10 @@ translated with `--no-mpu` must use `muldiv_soft.nasm`.
 Some labels are not C routines: the `__mpu.` names above, the `__nice.`
 names in `lib.nasm` that give the devices' addresses (`__nice.console`,
 `__nice.cycle_lo`, `__nice.cycle_hi`, `__nice.instr_lo`, `__nice.instr_hi`,
-and `__nice.screen`), and `__udivmod` and `__udivmod64` in
+and `__nice.screen`), `__udivmod` and `__udivmod64` in
 `muldiv_soft.nasm`, the unsigned divisions that the division routines
-share. Every label is global in the joined
+share, `_exit` in `lib.nasm`, and `___trap_report` and the `___trap.`
+names in `trapmsg.nasm`. Every label is global in the joined
 program (ABI.md), so no other file may define these names either.
 
 Division by zero is undefined in C, so the division routines return some
@@ -183,7 +184,7 @@ Zig keeps only the objects of `libc.a` that the program references.
 | `string.h` | `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`, `strnlen`, `strcmp`, `strncmp`, `strcpy`, `strncpy`, `strcat`, `strncat`, `strchr`, `strrchr`, `strstr`, `strcspn` |
 | `stdlib.h` | `malloc`, `calloc`, `realloc`, `free`, `abs`, `labs`, `llabs`, `atoi`, `atol`, `strtol`, `strtoul`, `rand`, `srand`, `abort`, `exit` |
 | `assert.h` | `assert` and `static_assert`. A failed `assert` prints `file:line: function: Assertion `expr' failed.` and calls `abort`. `-DNDEBUG` removes the checks. |
-| `time.h` | `clock`, with `CLOCKS_PER_SEC` 1000000 and `clock_t` unsigned, from the microsecond counter of SYSTEM.md §3; `time`, which returns −1 because no device has the date; and the types `clock_t` and `time_t`. |
+| `time.h` | `clock`, with `CLOCKS_PER_SEC` 1000000 and `clock_t` unsigned, from the microsecond counter of SYSTEM.md §3, which counts one microsecond per step in the emulator, and wraps after 71.6 minutes on a board; `time`, which returns −1 because no device has the date; and the types `clock_t` and `time_t`. |
 | `ctype.h` | `isalnum`, `isalpha`, `iscntrl`, `isdigit`, `isgraph`, `islower`, `isprint`, `ispunct`, `isspace`, `isupper`, `isxdigit`, `tolower`, `toupper` |
 | `nice.h` | The device routines (see above): `nice_putc`, `nice_getc`, `nice_pollc`, `nice_print`, `nice_cycles`, `nice_instructions`, `nice_micros` (C only, with no assembly routine), `nice_screen_put`, and `nice_screen_clear`. Also `nice_peek` and `nice_poke`, the `nice` imports of WASM.md, and the devices' addresses, for devices that have no routine. |
 
@@ -200,7 +201,7 @@ that `--input` names. Clang's own `stddef.h`,
 
 The library is small on purpose:
 
-- The only streams are `stdin`, `stdout`, and `stderr`, all on the console. `stdout` and `stderr` are the same stream, and the output functions ignore which stream they get. There is no `fopen`, `fclose`, `fread`, `fwrite`, `fseek`, `feof`, or `ferror`. `ungetc` holds one byte per stream. In `stdlib.h`, no `strtoll`, `strtoull`, `strtod`, `atof`, `qsort`, `bsearch`, `div`, `getenv`, or `system`. In `string.h`, no `strcoll`, `strspn`, `strpbrk`, `strtok`, or `strerror`.
+- The only streams are `stdin`, `stdout`, and `stderr`, all on the console. `stdout` and `stderr` are two `FILE` objects that write to the same console, and the output functions ignore which stream they get. There is no `fopen`, `fclose`, `fread`, `fwrite`, `fseek`, `feof`, or `ferror`. `ungetc` holds one byte per stream. In `stdio.h`, no `perror`, `setvbuf`, `rewind`, or `clearerr`. In `stdlib.h`, no `strtoll`, `strtoull`, `strtod`, `atof`, `atoll`, `qsort`, `bsearch`, `div`, `ldiv`, `getenv`, or `system`. In `string.h`, no `strcoll`, `strspn`, `strpbrk`, `strtok`, `strdup`, or `strerror`. In `ctype.h`, no `isblank`. In `time.h`, no `difftime`, `mktime`, or `strftime`.
 - `scanf` and `sscanf` support white space and ordinary characters in the
   format, `*` to read without storing, a width, the length modifiers
   `hh h l ll z t j`, and the conversions `d i u o x X p c s [ n %`. A set
@@ -215,7 +216,7 @@ The library is small on purpose:
   unknown conversion. `%p` prints `0x` and the address in hex, `0x0` for a
   null pointer.
 - No `errno`. `strtol` and `strtoul` saturate on overflow.
-- `exit` is the assembly routine `_exit`: a `HALT` with the status in R1, so the emulator exits with status 0. `EXIT_SUCCESS` is 0 and `EXIT_FAILURE` 1. There is no `atexit`. `abort` traps (WASM.md).
+- `exit` is the assembly routine `_exit`: a `HALT` with the status in R1, so the emulator exits with status 0. `EXIT_SUCCESS` is 0 and `EXIT_FAILURE` 1. There is no `atexit`. `abort` and a failed `assert` trap (WASM.md), so the emulator exits with status 2.
 - `rand` is the linear congruential generator of the C standard's example, `srand(1)` at start.
 - `malloc` is first fit, with an 8-byte header on each block, and merges
   neighboring free blocks. `realloc` to a smaller size, 0 included,

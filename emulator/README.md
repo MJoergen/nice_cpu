@@ -55,6 +55,7 @@ some checks set E with no vector table in place.
 ## Usage
 
     niceemu [options] program.bin
+    niceemu --link PORT [options] [program.bin]
 
 The program is loaded, the processor is reset (PC = 0) and it runs until it
 halts. Then the emulator prints why it stopped, the number of steps, and the
@@ -78,9 +79,9 @@ line such as `Pending: IRQ 05` follows the first line.
 | `--invert-fg` | Like `--color`, with the foreground inverted, as in the 2004 IDE. |
 | `-2004` | Put the screen at `0x400`, as the 2004 emulator does. |
 | `-d`, `--dump ADDR:N` | After halting, print N memory words from ADDR. May be repeated. |
-| `-n`, `--max-steps N` | Stop after N steps. There is no limit by default. |
+| `-n`, `--max-steps N` | Stop after N steps. There is no limit by default, so a program that never halts runs until it is killed. |
 | `-i`, `--input FILE` | Read the console's input from FILE instead of stdin; `-` is stdin. A directory is an error. |
-| `--symbols FILE` | Read the labels of `niceasm.py --symbols` from FILE. After a halt other than `HALT`, or at the step limit, print `At label+0x1f`, the location of the halt. After a halt at the default wasm trap handler, `___wasm_trap`, also print `Trap CODE (cause) at label+0x1f`, from R1 and R2 ([WASM.md](../translator/WASM.md)). Each label is the nearest one at or before the address, the first in the file if several are at one address. |
+| `--symbols FILE` | Read the labels of `niceasm.py --symbols` from FILE. After a halt other than `HALT`, or at the step limit, print `At label+0x1f`, the location of the halt. After a halt at the default wasm trap handler, `___wasm_trap`, also print `Trap CODE (cause) at label+0x1f`, from R1 and R2 ([WASM.md](../translator/WASM.md)). Each line of the file is an 8-digit hex address, a space, and a label; `.EQU` names are not in it, only the labels of instructions and data. Each label is the nearest one at or before the address, the first in the file if several are at one address, so a second label at the same address is never named. |
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
 | `--no-cycle-counter` | Make the cycle counter and the microsecond counter, `0xFFFFFF40`, `0xFFFFFF41`, `0xFFFFFF44`, and `0xFFFFFF45`, ordinary memory (see Memory map). |
@@ -136,7 +137,7 @@ address twice and a file with no words are errors.
 | `0xFFFFFF02`–`0xFFFFFF0F` | 14 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (SYSTEM.md §4). Raises IRQ once every P steps. |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (SYSTEM.md §2). Multiplies and divides A and B, and divides C and D. |
-| `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (SYSTEM.md §3). Cycles and instructions, 64 bits each. The fetch statistics of the FPGA core, at `0xFFFFFF50`–`0xFFFFFF7F`, read 0. |
+| `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (SYSTEM.md §3). Cycles, instructions, and microseconds, 64 bits each. The fetch statistics of the FPGA core, at `0xFFFFFF50`–`0xFFFFFF7F`, read 0. |
 | `0xFFFFFF80`–`0xFFFFFFFF` | 128 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. |
 
 The screen has one word per character, with the character in bits 7..0 and
@@ -200,7 +201,9 @@ The timer counts steps as well, so its requests come every P steps. A
 request raised by the last step of a run is not listed as pending at the
 end, as on the FPGA core, where it only reaches the core after that step.
 The timer's requests are IRQs, like those of `--irq`. A request merges
-with one that is pending, and the pending one keeps its vector. `test/timer.nasm` checks the counting, the stop, the
+with one that is pending, and the pending one keeps its vector. So when `--irq` and the timer raise a request before the same step, the vector
+of `--irq` is kept: it is pending before the step begins, and the timer's
+request merges with it (`test/irqtimer.nasm`). `test/timer.nasm` checks the counting, the stop, the
 merging, and that a request keeps the vector it was raised with when
 the vector is written while it is pending.
 

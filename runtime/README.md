@@ -174,8 +174,8 @@ through wasm. It is written in C and compiled to wasm, to the archive
 `libc/libc.a`, which `make -C runtime/libc` builds with clang. wasm-ld
 links it into the program's module and, as it collects unused sections by
 default, keeps only the functions the program uses. So it adds
-nothing to the joined assembly files. With the Zig recipe below, the
-image holds the whole library, about 81 KB of wasm.
+nothing to the joined assembly files. The Zig recipe below does the same:
+Zig keeps only the objects of `libc.a` that the program references.
 
 | Header | Functions |
 |---|---|

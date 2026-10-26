@@ -149,6 +149,8 @@ Commit 4c42461 installed handlers for SIGINT, SIGTERM, and SIGHUP that set `stop
 
 runtime/README.md:178: a Zig program linked with `libc.a` "holds the whole library, about 81 KB of wasm". The fifth review (§5.2) made the claim; the reader rebuilt the example, and Zig keeps only the objects the program references: 3590 bytes of wasm, 4180 words, against 13155 bytes for the whole library. 81 KB is the size of the `.bin` file. **Fix:** drop the sentence, or say that both compilers keep only what is used.
 
+**Resolved**: runtime/README.md drops the 81 KB and says that Zig keeps only the objects of `libc.a` that the program references, as wasm-ld does.
+
 ### 5.2 mchess
 
 - `mchess.c` has no author, origin, or license line, and the author's own repository has no license file. A header line, for a release.

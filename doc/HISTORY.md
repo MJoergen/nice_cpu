@@ -114,10 +114,34 @@ two kinds of access. §9.4, the mapping of WebAssembly, is
   `pipecycles.py` then gained the wait of a read for an older jump
   (MICROARCH.md §5.3, rule 2), which only an `ADD` into R15 that DECODE
   resolves makes cost a cycle.
-- The assembler once took a lone word on an indented line, such as a
-  misspelt `HALT`, as a label without a word. Now it warns, checks the
-  symbols of every `.EQU` also when the name is never used, and lets
-  `INT`, `.BLK`, and `.RES` take the value before it wraps (af454a6).
+- Later on 2026-10-24, the layout of `hand.nasm` took advantage of the
+  predictor too (a517599): `bst.dup` moved out so that `bst.new` falls
+  into `bst.next`, the conditional returns of heapsort jump to a shared
+  `MOVE PC, @SP++`, and `str.diff` stands before `str.cmp`, a predicted
+  jump back. `hand.nasm` then took 1252613 cycles, 9.6% fewer than without
+  the predictor, not 7.0%. And nicewasm closed its loops with the
+  predicted jump (f678c7b): `bench.c` went from 2384635 to 2357155 cycles
+  on the core (cfdebb5), 1.2% fewer.
+- Until 2026-10-24, DECODE's `emit_o` and PREPARE's `move_o` depended on
+  the next stage being ready (aebd390). They became `valid_o`, which does
+  not, and WRITE's `accept_o` became `ready_o`. Each taking stage ANDs
+  valid and ready itself, so the cycle counts did not change.
+
+## The counters at a halt
+
+The emulator's cycle counter stopped at a halt, and the cores' did not.
+On 2026-10-23, `perf` got `run_i`, so that a system can drive it with "the
+core is running", and the cycle counter stops at a halt (8463689). On
+2026-10-24, `fetch_stats` got it too (40e709f), since a read of the
+statistics after a halt changed them. Both default to `'1'`, so a system
+that does not drive `run_i` sees no change.
+
+## Merged interrupt requests
+
+ISA.md §7.1 once left open which vector a request kept when it found one
+of its kind pending. The emulator kept the newer vector for `--irq` and
+`--nmi`, and the older for the timer. On 2026-10-22 the rule became that
+the first vector is kept, in the emulator (2b7a24e) and in both cores.
 
 ## The random test programs
 
@@ -315,8 +339,9 @@ when the name is never used, and reports each on the `.EQU` line. `INT`,
 The runtime library once had `start_mon.nasm` and `start_wasm_mon.nasm`,
 start-up code for a program that a monitor in ROM loads at `0x8000` and
 calls as a subroutine. ABI.md described them under "Programs under a
-monitor". They were removed, because the monitor and the system around
-the core belong in [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65).
+monitor". They were removed on 2026-10-20 (68f9b0b), because the monitor
+and the system around the core belong in
+[NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65).
 
 ## The debug link's proof
 

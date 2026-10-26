@@ -318,6 +318,11 @@ RELEASE_NOTES.md:136 has 0.241 under RC03, and c-compiler-plan.md:91 has 2348 an
 - No entry for the merge rule (2b7a24e), the counters stopping at a halt (8463689), the fetch statistics stopping (40e709f), the handshakes (aebd390), `hand.nasm`'s layout (a517599), or nicewasm's loop closing (f678c7b).
 - The entry for the start-up code of a monitor is undated (68f9b0b, 2026-10-20); "The assembler's checks" appears twice, once with "misspelt" (line 113); several entries are in the present tense.
 
+**Resolved**: Except the present tense, which names no entry.
+- The predictor's entry has a517599's layout and f678c7b's loop closing, with the figures after them.
+- New entries: the handshakes, the counters at a halt (`perf` and `fetch_stats`), and the merge rule. The layout of `hand.nasm` and the loop closing of nicewasm are in the predictor's entry.
+- The start-up code for a monitor has its date. The assembler's checks are in their own section only, and the copy among the pipelined core's entries, with "misspelt", is gone.
+
 ### 9.3 TODO.md and the step numbers
 
 - "Decided against" lacks the items of §2.2.

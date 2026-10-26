@@ -139,6 +139,8 @@ perf.vhd:37 and fetch_stats.vhd:39, contract (c): "`run_i` is low while the core
 
 DEBUG.md says the version register reads 3 (line 208) and never says what versions 1 and 2 were. RC04 shipped version 1 without saying so, version 2 was never tagged, and RELEASE_NOTES.md gives the two steps under RC05. **Fix:** a table of the versions beside the register.
 
+**Resolved**: DEBUG.md §6 has the table, with RC04 for version 1, "never tagged" for version 2, and RC05 for version 3.
+
 ### 3.6 What the proof covers is overstated
 
 hdl/README.md and TODO.md say the proof covers that bytes after a halt are dropped; `f_strobe` does not check `halted_r`, and that rule is proven nowhere. No cover reaches `p`, `s`, or an `r` of memory, which the header admits, and contract (e) is asserted nowhere formally for the pipelined core. **Fix:** say what the testbench alone checks.

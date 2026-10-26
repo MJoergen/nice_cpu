@@ -219,7 +219,18 @@ system has there otherwise.
 | `0xFFFFFFF7` | Reserved. It reads 0 and takes no write. |
 | `0xFFFFFFF8`–`0xFFFFFFFF` | The addresses of breakpoints 0 to 7. The words from `0xFFFFFFF8` + N up read 0 and take no write. |
 
-A write to a read-only register is ignored. The bits of the control register:
+A write to a read-only register is ignored. The versions:
+
+| Version | Adds | Released |
+|---|---|---|
+| 1 | The requests, the notices, and the control register with bits 0 to 3. | RC04 |
+| 2 | The pause: bit 4 of the control register, and the notice `p`. | Never tagged. |
+| 3 | The single step: bit 5 of the control register. | RC05 |
+
+A system of version 1 has no pause and no step. A host reads the register
+before it uses either.
+
+The bits of the control register:
 
 | Bit | Read | Write |
 |---|---|---|

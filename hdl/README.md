@@ -83,6 +83,7 @@ departs from it.
 | [test/r0odd.nasm](test/r0odd.nasm) | R0 in every mode as count, source, and destination. |
 | [test/smclate.nasm](test/smclate.nasm) | Stores into fetched code from late shifts and two-cycle instructions, and into the constants of early jumps. |
 | [test/smcskid.nasm](test/smcskid.nasm) | Stores into the target of an early jump while it waits in DECODE, in `dec_r` and in `skid_r`. |
+| [test/predict.nasm](test/predict.nasm) | Predicted jumps in the shapes of loops: two back to back, flags from the instruction before, stores into the target, into the jump's offset, and into the word after it, and a nested loop. |
 | [test/readorder.nasm](test/readorder.nasm) | The number and order of the data reads of late shifts, adjusted destinations, and skipped instructions, through the read counter. |
 | [test/instret_late.nasm](test/instret_late.nasm) | The instruction counter read right after late shifts, adjusted destinations, stores, skipped instructions, and `INT`. |
 | [test/jumpwords.nasm](test/jumpwords.nasm) | Jumps into constant words and to the instruction itself, with conditions on I, and backward conditional jumps, which DECODE predicts taken. It ends at a reserved word. |

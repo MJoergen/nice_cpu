@@ -71,9 +71,6 @@ has a "Resolved" paragraph there; the section numbers are the review's.)
 - **Issue #53's seven simplifications** of `debug_link.vhd`: do them, or
   drop them here (§2.1). The won't-do items of #51, #54, and 2026-10-23
   go under "Decided against" (§2.2).
-- **The predictor in random code.** A template with backward conditional
-  jumps in `random_prog.py`, and a predictor program in `HAZARD_PROGS`
-  (§7.2). A second loop shape in the translator's `gen_loop` (§6.2).
 - **The microsecond counter** proven and tested at 1.5 MHz only: a
   `tb_perf` run at 33333333 Hz, and SYSTEM.md §3 says "the integer part of
   N·10⁶/G_CLK_HZ, for 1 MHz and up" (§7.3). `run_i` as a rule of

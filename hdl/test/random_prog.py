@@ -64,6 +64,7 @@ M_CHANCE = 0.75  # The chance that an ALU or SHIFT instruction sets the flags (M
 LOCAL = 0.4  # The chance that a register field takes a register written just before
 NEAR = 0.9  # The chance that a forward jump skips at most JUMP_SPAN - 1 instructions
 JUMP_SPAN = 5
+BACK_SPAN = 12  # How far back a predicted jump goes, in instructions
 COUNTER = 0xFFFFFF01  # The read counter (SYSTEM.md §1)
 
 # MOVE R15, c: a jump to the constant word that follows.
@@ -184,6 +185,19 @@ def r15_template(rng: random.Random, cond: int, recent: list[list[int]]) -> list
     return [iw] + ([0] if dest == 0x3F else []) + w + [0]
 
 
+def back_jump(rng: random.Random) -> list[int]:
+    """A conditional ADD R15, R15, c, with R15 in either source, which
+    DECODE predicts taken for a negative c. A -5 leaves the offset to a
+    start among the last BACK_SPAN instructions, worked out in main(). The
+    C and M bits are 0, so that the result is R15 + c."""
+    cond = rng.randrange(1, 16)
+    if rng.random() < 0.5:
+        s0, s1 = 15, 0x30
+    else:
+        s0, s1 = 0x30, 15
+    return [cond << 28 | 0x3 << 21 | 15 << 14 | s0 << 7 | s1, -5]
+
+
 def instruction(rng: random.Random, recent: list[list[int]]) -> list[int]:
     """One instruction. A forward jump leaves its target as -1 for MOVE
     R15, c, -1 - mode for the jumps of r15_template, and -4 for its shift,
@@ -214,6 +228,8 @@ def instruction(rng: random.Random, recent: list[list[int]]) -> list[int]:
         return [cond << 28 | 0b11 << 26 | 0b00010 << 21 | rng.choice(VECTORS)]  # INT
     if kind < 0.05:
         return r15_template(rng, cond, recent)
+    if kind < 0.07:
+        return back_jump(rng)
     if kind < 0.15:
         # Jumps are about a fifth of the instructions in the benchmark
         # (MICROARCH.md §5.6), and half of these are conditional.
@@ -272,7 +288,12 @@ def main() -> None:
         # r - 1 and r + 1 (ISA.md §4.2), and 2c for the shift. The
         # template's s1 is 0, or 1 for the shift.
         for j, word in enumerate(words):
-            if j > 0 and word in (-1, -2, -3, -4):
+            if j > 0 and word == -5:
+                # R15 is the address after the constant, so the offset is
+                # the target less that.
+                back = starts[max(0, i - BACK_SPAN) : i + 1]
+                words[j] = (rng.choice(back) - (starts[i] + len(words))) & 0xFFFFFFFF
+            elif j > 0 and word in (-1, -2, -3, -4):
                 near = starts[i + 1 : i + JUMP_SPAN]
                 later = starts[i + 1:]
                 if word == -4:

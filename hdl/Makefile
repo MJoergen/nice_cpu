@@ -258,7 +258,7 @@ endef
 # with one register in all three fields of a shift. smcskid came later:
 # stores into an instruction in DECODE's skid register.
 HAZARD_PROGS = latecount twocycle r15mix r14cond r0odd smclate readorder instret_late \
-  jumpwords condlate irqhazard shiftjump smcskid
+  jumpwords condlate irqhazard shiftjump smcskid predict
 
 # test/fstats.nasm reads the fetch statistics (MICROARCH.md §8.1), which
 # only the pipelined core has, and checks itself. The emulator has none, so the run

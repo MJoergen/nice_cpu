@@ -18,10 +18,11 @@ cover: smtbmc yices
 
 [script]
 plugin -i ghdl
-prove: ghdl --std=08 -fpsl perf.vhd formal_perf.vhd -e formal_perf
-cover: ghdl --std=08 -fpsl -gG_RESET=0000000000000000000000000000000011111111111111111111111111110000 perf.vhd formal_perf.vhd -e formal_perf
+prove: ghdl --std=08 -fpsl perf.vhd wb_slave_check.vhd formal_perf.vhd -e formal_perf
+cover: ghdl --std=08 -fpsl -gG_RESET=0000000000000000000000000000000011111111111111111111111111110000 perf.vhd wb_slave_check.vhd formal_perf.vhd -e formal_perf
 prep -top formal_perf
 
 [files]
 ../src/perf.vhd
+wb_slave_check.vhd
 formal_perf.vhd

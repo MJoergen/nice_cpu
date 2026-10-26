@@ -5,10 +5,10 @@
 -- THEORY OF OPERATION
 -- Two devices share the inputs: one with G_ENABLE true, whose properties
 -- and invariants are in fetch_stats itself, under G_FORMAL, because they
--- name its counters, and one with G_ENABLE false. The assertions here say
--- that each port never stalls and acknowledges each accepted request in
--- the next cycle and nothing else, as formal_timer states it, and that
--- every read of the device without counters returns 0. The one assumption
+-- name its counters, and one with G_ENABLE false. A wb_slave_check on each
+-- port says that it never stalls and acknowledges each request in the
+-- next cycle and nothing else, and f_off that every read of the device
+-- without counters returns 0. The one assumption
 -- is that the buffer holds no more words than FETCH holds room for, words
 -- in flight included, which is what count and held of t_fetch_events mean.
 -- The covers show a read of a histogram bin after a stop and a start, and
@@ -102,10 +102,6 @@ begin
    -- psl f_initial_reset : assume rst_i;
    -- psl f_held : assume always count_i <= held_i;
 
-   -- psl f_no_stall : assert always not stall_on and not stall_off;
-   -- psl f_ack : assert always
-   --    {not rst_i} |=> {ack_on = (prev(wb_cyc_i) and prev(wb_stb_i)) and ack_on = ack_off};
-   -- psl f_ack_reset : assert always rst_i |=> not ack_on and not ack_off;
    -- psl f_off : assert always data_off = X"00000000";
 
    -- psl c_restart : cover {accept = '1' and wb_we_i = '0' and wb_addr_i = "100011" and
@@ -153,5 +149,27 @@ begin
          wb_data_i  => wb_data_i,
          wb_data_o  => data_off
       ); -- i_fetch_stats_off
+
+
+   i_wb_slave_check_on : entity work.wb_slave_check
+      port map (
+         clk_i   => clk_i,
+         rst_i   => rst_i,
+         cyc_i   => wb_cyc_i,
+         stb_i   => wb_stb_i,
+         stall_i => stall_on,
+         ack_i   => ack_on
+      ); -- i_wb_slave_check_on
+
+
+   i_wb_slave_check_off : entity work.wb_slave_check
+      port map (
+         clk_i   => clk_i,
+         rst_i   => rst_i,
+         cyc_i   => wb_cyc_i,
+         stb_i   => wb_stb_i,
+         stall_i => stall_off,
+         ack_i   => ack_off
+      ); -- i_wb_slave_check_off
 
 end architecture synthesis;

@@ -17,9 +17,10 @@ smtbmc yices
 
 [script]
 plugin -i ghdl
-ghdl --std=08 -fpsl timer.vhd formal_timer.vhd -e formal_timer
+ghdl --std=08 -fpsl timer.vhd wb_slave_check.vhd formal_timer.vhd -e formal_timer
 prep -top formal_timer
 
 [files]
 ../src/timer.vhd
+wb_slave_check.vhd
 formal_timer.vhd

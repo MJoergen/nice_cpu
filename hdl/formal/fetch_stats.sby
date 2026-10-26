@@ -18,7 +18,7 @@ cover: smtbmc yices
 
 [script]
 plugin -i ghdl
-ghdl --std=08 -fpsl nice_pkg.vhd trace_pkg.vhd pipe_pkg.vhd fetch_stats.vhd formal_fetch_stats.vhd -e formal_fetch_stats
+ghdl --std=08 -fpsl nice_pkg.vhd trace_pkg.vhd pipe_pkg.vhd fetch_stats.vhd wb_slave_check.vhd formal_fetch_stats.vhd -e formal_fetch_stats
 prep -top formal_fetch_stats
 
 [files]
@@ -26,4 +26,5 @@ prep -top formal_fetch_stats
 ../src/trace_pkg.vhd
 ../src/pipe_pkg.vhd
 ../src/fetch_stats.vhd
+wb_slave_check.vhd
 formal_fetch_stats.vhd

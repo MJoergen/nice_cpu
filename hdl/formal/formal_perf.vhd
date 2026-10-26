@@ -12,9 +12,9 @@
 -- also checks the arithmetic of perf's, which subtracts 1500000 from
 -- 2000000 and from 1500000 in turn. f_expect is what a
 -- read accepted in this cycle must return: the low word of a counter, the
--- high word of its snapshot, or 0 for a spare word. The assertions say that
--- the port never stalls, that it acknowledges each accepted request in the
--- next cycle and nothing else, and that the data of a read's ACK is
+-- high word of its snapshot, or 0 for a spare word. wb_slave_check says
+-- that the port never stalls and acknowledges each request in the next
+-- cycle and nothing else, and f_data that the data of a read's ACK is
 -- f_expect of the cycle it was accepted. So a read of CYCLE_HI after one
 -- of CYCLE_LO returns the high word of the counter at the time of the read
 -- of CYCLE_LO, also when the low word wrapped in between. Writes are not
@@ -134,10 +134,6 @@ begin
    -- psl default clock is rising_edge(clk_i);
    -- psl f_initial_reset : assume rst_i;
 
-   -- psl f_no_stall : assert always not wb_stall;
-   -- psl f_ack : assert always
-   --    {not rst_i} |=> {wb_ack = (prev(wb_cyc_i) and prev(wb_stb_i))};
-   -- psl f_ack_reset : assert always rst_i |=> not wb_ack;
    -- psl f_data : assert always
    --    {f_read and not rst_i} |=> {wb_data = f_last_r};
 
@@ -167,5 +163,16 @@ begin
          wb_data_i  => wb_data_i,
          wb_data_o  => wb_data
       ); -- i_perf
+
+
+   i_wb_slave_check : entity work.wb_slave_check
+      port map (
+         clk_i   => clk_i,
+         rst_i   => rst_i,
+         cyc_i   => wb_cyc_i,
+         stb_i   => wb_stb_i,
+         stall_i => wb_stall,
+         ack_i   => wb_ack
+      ); -- i_wb_slave_check
 
 end architecture synthesis;

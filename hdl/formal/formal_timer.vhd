@@ -6,8 +6,9 @@
 -- The interrupt port is the source side of the core's valid/ready port,
 -- which formal_multicycle checks from the other side with
 -- handshake_check: once VALID is high, it stays high, with the vector
--- unchanged, until READY takes the request. The bus port acknowledges each
--- accepted request in the next cycle, and nothing else. The covers show
+-- unchanged, until READY takes the request. wb_slave_check watches the bus
+-- port, which acknowledges each request in the next cycle, and nothing
+-- else. The covers show
 -- that a request is raised and taken, and that one waits while the timer
 -- counts on.
 --
@@ -50,12 +51,6 @@ begin
    --    {rst_i = '1' or (irq_valid = '1' and stable(irq_vector))};
    -- psl f_valid_reset : assert always rst_i |=> not irq_valid;
 
-   -- The bus port
-   -- psl f_no_stall : assert always not wb_stall;
-   -- psl f_ack : assert always
-   --    {not rst_i} |=> {wb_ack = (prev(wb_cyc_i) and prev(wb_stb_i))};
-   -- psl f_ack_reset : assert always rst_i |=> not wb_ack;
-
    -- psl c_take : cover {irq_valid and irq_ready_i};
    -- psl c_wait : cover {irq_valid and not irq_ready_i and tick_i;
    --    irq_valid and not irq_ready_i and tick_i;
@@ -79,5 +74,16 @@ begin
          irq_ready_i  => irq_ready_i,
          irq_vector_o => irq_vector
       ); -- i_timer
+
+
+   i_wb_slave_check : entity work.wb_slave_check
+      port map (
+         clk_i   => clk_i,
+         rst_i   => rst_i,
+         cyc_i   => wb_cyc_i,
+         stb_i   => wb_stb_i,
+         stall_i => wb_stall,
+         ack_i   => wb_ack
+      ); -- i_wb_slave_check
 
 end architecture synthesis;

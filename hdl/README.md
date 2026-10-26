@@ -101,6 +101,7 @@ departs from it.
 | [test/random_stats.py](test/random_stats.py) | Shows how the random programs spend their steps, and how often they make each hazard. |
 | [test/trace_reads.py](test/trace_reads.py) | Finds the first line where two traces differ, and shows the data reads of that instruction. |
 | [formal/wb_master_check.vhd](formal/wb_master_check.vhd) | Formal properties of a Wishbone master port. |
+| [formal/wb_slave_check.vhd](formal/wb_slave_check.vhd) | Formal properties of a Wishbone slave port that never stalls and answers in the next cycle. |
 | [formal/handshake_check.vhd](formal/handshake_check.vhd) | Formal properties of a valid/ready port that takes requests. |
 | [formal/core_check.vhd](formal/core_check.vhd) | Formal properties of the ports of a core: a checker on each of its four ports, and the rules of a stopped core. |
 | [formal/formal_multicycle.vhd](formal/formal_multicycle.vhd) | The multi-cycle core with `core_check`. |
@@ -537,8 +538,8 @@ the most ACKs owed, and a switch from one slave to another.
 `formal_timer` checks the timer's ports from the other side. Every input
 is free. It asserts that a raised request stays raised, with its vector,
 until `ready` takes it, which is what `handshake_check` assumes of a
-device, and that the bus port acknowledges each request in the next cycle
-and never stalls.
+device, and, with `wb_slave_check`, that the bus port acknowledges each
+request in the next cycle and never stalls.
 
 The `prove` task proves the assertions for every cycle by k-induction of
 depth 2, in a few seconds. The induction needs invariants that tie the ports to the core's state: the state
@@ -699,18 +700,18 @@ with `instret_i` high, and one of microseconds at a clock of 1.5 MHz, which
 the model counts as two in every three cycles, without `perf`'s
 accumulator, so that the proof checks its arithmetic, and a snapshot of
 each, which a read of its low word takes. It asserts that the port never stalls, that it acknowledges
-each request in the next cycle, and that a read returns the low word of
+each request in the next cycle (`wb_slave_check`), and that a read returns the low word of
 its counter, the high word of its snapshot, or 0 for a spare word. So a
 read of `CYCLE_HI` returns the high word of the counter as it was at the
 last read of `CYCLE_LO`, also when the low word wrapped in between, and
 writes change nothing. Its `prove` task uses PDR, which finds the
 invariant that the counters equal the model, so `perf` needs no
-`G_FORMAL`. It takes a few seconds. The `cover` task starts the counters
+`G_FORMAL`. It takes about half a minute. The `cover` task starts the counters
 near a wrap, with `G_RESET`, and shows a read of `CYCLE_HI` after one.
 
 `formal_fetch_stats` connects two fetch statistics to the same inputs,
 one with `G_ENABLE` true and one with it false. Both ports never stall
-and acknowledge each request in the next cycle, and every read of the
+and acknowledge each request in the next cycle (`wb_slave_check`), and every read of the
 one without counters returns 0. The other properties are in
 `src/fetch_stats.vhd` under `G_FORMAL`, because they name its counters. A
 read returns the word as it is in the cycle the read is accepted. A cycle

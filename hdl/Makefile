@@ -425,9 +425,13 @@ $(foreach c,$(sort $(CORES) $(CORE)),$(eval $(call core_runs,$(c))))
 test: emulator analyze synth
 	@$(MAKE) --no-print-directory $(PARALLEL) runs
 
+# How test/programs.py divides the programs into shards.
+run/split:
+	@$(PYTHON) test/programs.py --test
+
 # The runs of make test: the unit tests, tb_link and tb_trace, and those of
 # each core in CORES.
-runs: $(UNITS:%=run/unit/%) $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
+runs: run/split $(UNITS:%=run/unit/%) $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
 
 # More random programs than make test runs, for example
 #     make random RANDOM_SEEDS="$$(seq 31 90)" RANDOM_STALL=60 RANDOM_STEPS=5000

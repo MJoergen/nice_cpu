@@ -3,7 +3,9 @@
 
 Usage: programs.py [options] DIR...
 
-With --shard I/N it runs only the Ith share of N, as one of N CI jobs.
+With --shard I/N it runs only the Ith share of N, as one of N CI jobs. The
+shares have nearly equal steps on the emulator. "programs.py --test" checks
+how they are made.
 
 Step 7 of the test order in MICROARCH.md §9: the runtime's and the
 translator's test programs, which "make test KEEP=DIR" in runtime/ and
@@ -30,27 +32,67 @@ import sys
 from core_runs import DEFAULT_BUILD, DEFAULT_CORE, DEFAULT_EMU, Core, difference, run_emulator
 
 
+def emulate(args: argparse.Namespace, binfile: str) -> str:
+    """The emulator's trace, output, and exit status of the program."""
+    infile = binfile[: -len(".bin")] + ".input"
+    opts = ["--no-cycle-counter", *(["--input", infile] if os.path.exists(infile) else [])]
+    return run_emulator(args.emu, binfile, opts)
+
+
+def steps(args: argparse.Namespace, binfile: str) -> int:
+    """The steps the emulator takes, the lines of its trace. The trace of the
+    longest program is hundreds of megabytes, so it is not kept."""
+    return emulate(args, binfile).count("\n")
+
+
 def check(args: argparse.Namespace, core: Core, binfile: str, seed: int) -> str | None:
     """Returns None if the run passes, or what went wrong."""
     name = os.path.basename(binfile)
+    expected = emulate(args, binfile)
     infile = binfile[: -len(".bin")] + ".input"
-    has_input = os.path.exists(infile)
-    expected = run_emulator(
-        args.emu, binfile, ["--no-cycle-counter", *(["--input", infile] if has_input else [])]
-    )
     generics = ["-gG_CYCLE_COUNTER=false", f"-gG_STALL={args.stall}", f"-gG_SEED={seed}"]
-    if has_input:
+    if os.path.exists(infile):
         generics.append("-gG_INPUT_FILE=" + os.path.abspath(infile))
     diff = difference(expected, core.run(binfile, generics))
     return None if diff is None else f"{name}: {diff}"
 
 
+def split(weights: dict[str, int], count: int) -> list[list[str]]:
+    """The programs in COUNT shares of nearly equal total weight: the
+    heaviest first, each into the share with the least so far."""
+    shares: list[list[str]] = [[] for _ in range(count)]
+    load = [0] * count
+    for name in sorted(weights, key=lambda n: (-weights[n], n)):
+        i = load.index(min(load))
+        shares[i].append(name)
+        load[i] += weights[name]
+    return shares
+
+
+def self_test() -> None:
+    """The shares hold every program once, and balance as well as they can:
+    a program with most of the steps has a share of its own."""
+    weight = {f"p{i}": w for i, w in enumerate([1000, 40, 35, 30, 25, 20, 15, 10, 5, 5, 3, 2])}
+    for count in (1, 2, 3, 5):
+        shares = split(weight, count)
+        names = sorted(n for share in shares for n in share)
+        assert names == sorted(weight), (count, shares)
+    assert split(weight, 3)[0] == ["p0"], split(weight, 3)
+    loads = sorted(sum(weight[n] for n in share) for share in split(weight, 3))
+    assert loads[1] - loads[0] <= 40 and loads[2] == 1000, loads
+    assert split({"a": 5, "b": 5}, 4) == [["a"], ["b"], [], []]
+    print("PASS programs.py --test")
+
+
 def main() -> None:
+    if sys.argv[1:] == ["--test"]:
+        self_test()
+        return
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("dirs", nargs="+", metavar="DIR")
     p.add_argument("--stall", type=int, default=0, help="G_STALL of the memory, in percent")
     p.add_argument("--shard", default="1/1", metavar="I/N",
-                   help="run every Nth program of the list, longest first, from the Ith (default 1/1)")
+                   help="run the Ith of N shares of nearly equal steps (default 1/1)")
     p.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1)
     p.add_argument("--core", default=DEFAULT_CORE, help="G_CORE of tb_core (default pipeline)")
     p.add_argument("--build", default=DEFAULT_BUILD)
@@ -61,18 +103,23 @@ def main() -> None:
     programs = [os.path.join(d, f) for d in args.dirs for f in os.listdir(d) if f.endswith(".bin")]
     if not programs:
         sys.exit("programs: no .bin files")
-    # The size of a program is a guess at its length, and the longest go
-    # first, so that no long run starts last.
-    programs.sort(key=lambda f: (-os.path.getsize(f), f))
     try:
         index, count = (int(x) for x in args.shard.split("/"))
         if not 1 <= index <= count:
             raise ValueError
     except ValueError:
         sys.exit(f"programs: --shard wants I/N with 1 <= I <= N, not {args.shard}")
-    # Shard I of N takes the programs I, I + N, and so on, so that each has
-    # a share of the long ones.
-    programs = programs[index - 1 :: count]
+    programs.sort()
+    # The emulator runs every program first, in every shard: it takes
+    # seconds, and its steps are what the core's time follows. The shares
+    # are of nearly equal total steps. The longest program, libc_mchess,
+    # has most of them, so it gets a share of its own when it can, and the
+    # others share the rest.
+    with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
+        weight = dict(zip(programs, pool.map(lambda f: steps(args, f), programs)))
+    shares = split(weight, count)
+    # Within the share, the longest first, so that no long run starts last.
+    programs = sorted(shares[index - 1], key=lambda f: (-weight[f], f))
 
     core = Core(args.ghdl, args.build, "programs", args.core)
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:

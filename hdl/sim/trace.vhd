@@ -58,7 +58,7 @@ entity trace is
       -- False prints only the console output and the end of the run, as
       -- niceemu does without --trace.
       G_TRACE     : boolean  := true;
-      -- The emulator's default for -n.
+      -- The step limit of a run. The emulator has none unless -n gives one.
       G_MAX_STEPS : positive := 100_000_000
    );
    port (

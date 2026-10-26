@@ -39,6 +39,7 @@ wasm: libc.a
 	@for t in $(TESTS); do \
 	  $(CLANG) $(CFLAGS) $(LDFLAGS) $$(if [ $$t = mchess ]; then echo $(BIGSTACK); fi) -o test/$$t.wasm test/$$t.c libc.a || exit 1; \
 	done
+	@chmod -x test/*.wasm
 
 # Each test/X.wasm is translated and joined with the start-up code,
 # lib.nasm, and muldiv_mpu.nasm. It is assembled and run, and the console

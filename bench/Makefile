@@ -169,6 +169,7 @@ wasm:
 	$(CLANG) $(CFLAGS) $(LDFLAGS) -o bench.wasm bench.c $(LIBC)/libc.a
 	$(CLANG) $(DHRY_CFLAGS) $(LDFLAGS) -o $(DHRY)/dhry.wasm $(DHRY)/dhry_1.c $(DHRY)/dhry_2.c \
 	  $(LIBC)/libc.a
+	@chmod -x bench.wasm $(DHRY)/dhry.wasm
 
 # Builds and runs bench.c on the host, as a second check of its results.
 # The counters read 0 there.

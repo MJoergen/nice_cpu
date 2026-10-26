@@ -9,7 +9,9 @@
 -- change while paused; and once the core goes on, it reports a step on
 -- retire_o before it pauses again (MICROARCH.md §6.1). The last holds as
 -- the core does not pause while after_go is '1', and only a report clears
--- that.
+-- that. Two breakpoints, with free addresses and enable bits: the core
+-- pauses without pause_i only when R15 was an enabled breakpoint, and then
+-- stays paused until pause_i has been '1'.
 --
 -- RESET
 -- The first cycle is a reset, so the core starts from the state of
@@ -34,7 +36,9 @@ entity formal_multicycle is
       nmi_vector_i : in  std_logic_vector(7 downto 0);
       irq_valid_i  : in  std_logic;
       irq_vector_i : in  std_logic_vector(7 downto 0);
-      pause_i      : in  std_logic
+      pause_i      : in  std_logic;
+      brk_addr_i   : in  t_brk_addrs;
+      brk_en_i     : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0)
    );
 end entity formal_multicycle;
 
@@ -70,6 +74,15 @@ architecture synthesis of formal_multicycle is
    -- paused_o has fallen, and no step has been reported since
    signal owed_r : std_logic := '0';
 
+   constant C_BREAKS : natural := 2;
+
+   -- R15 was an enabled breakpoint in the cycle before
+   signal hit_d  : std_logic := '0';
+   -- The core paused without pause_i, and pause_i has been '0' since
+   signal wait_r : std_logic := '0';
+   -- paused_o rose while pause_i was '0' in the cycle before
+   signal own    : boolean;
+
 begin
 
    -- psl default clock is rising_edge(clk_i);
@@ -104,14 +117,23 @@ begin
    -- Once paused_o falls, a step is reported before it rises again.
    -- psl f_go_report : assert always (rst_i = '0' and owed_r = '1') -> paused = '0';
 
+   -- A pause of the core's own is at a breakpoint, and lasts until pause_i
+   -- has been '1'.
+   own <= rst_i = '0' and paused = '1' and paused_d = '0' and pause_d = '0';
+   -- psl f_brk_hit : assert always own -> hit_d = '1';
+   -- psl f_brk_wait : assert always (rst_i = '0' and wait_r = '1') -> paused = '1';
+
    -- psl c_pause : cover {paused = '1' and rst_i = '0'};
+   -- psl c_brk : cover {own};
+   -- psl c_brk_go : cover {own; (paused = '1')[*]; paused = '0' and rst_i = '0'};
    -- psl c_go_step : cover {owed_r = '1' and retire.valid = '1' and rst_i = '0'};
    -- psl c_halt : cover {halted = '1' and rst_i = '0'};
 
 
    i_multicycle : entity work.multicycle
       generic map (
-         G_FORMAL => true
+         G_FORMAL => true,
+         G_BREAKS => C_BREAKS
       )
       port map (
          clk_i         => clk_i,
@@ -138,6 +160,8 @@ begin
          irq_vector_i  => irq_vector_i,
          pause_i       => pause_i,
          paused_o      => paused,
+         brk_addr_i    => brk_addr_i,
+         brk_en_i      => brk_en_i,
          halted_o      => halted,
          halt_reason_o => reason,
          instret_o     => instret,
@@ -217,6 +241,17 @@ begin
          halted_d <= halted and not rst_i;
          pause_d  <= pause_i and not rst_i;
          regs_d   <= regs;
+         hit_d    <= '0';
+         for i in 0 to C_BREAKS - 1 loop
+            if brk_en_i(i) = '1' and brk_addr_i(i) = regs(15) then
+               hit_d <= '1';
+            end if;
+         end loop;
+         if pause_i = '1' then
+            wait_r <= '0';
+         elsif own then
+            wait_r <= '1';
+         end if;
          if retire.valid = '1' then
             owed_r <= '0';
          elsif paused_d = '1' and paused = '0' then
@@ -225,6 +260,7 @@ begin
          if rst_i = '1' then
             retire_d.valid <= '0';
             owed_r         <= '0';
+            wait_r         <= '0';
          end if;
       end if;
    end process p_retire_d;

@@ -5,8 +5,8 @@
 -- THEORY OF OPERATION
 -- A state machine follows the steps of ISA.md §5 in order:
 --
---   BOUNDARY  Take a pending NMI or IRQ (ISA.md §7.1), or start an
---             instruction.
+--   BOUNDARY  Take a pending NMI or IRQ (ISA.md §7.1), stop at a
+--             breakpoint, or start an instruction.
 --   FETCH     Read the instruction word, then each constant word, through
 --             the instruction bus. Each read increments R15.
 --   COND      Test the condition. Run a control instruction.
@@ -22,7 +22,8 @@
 --   VEC       Read the vector table entry, for IRQ, NMI, and INT.
 --   RETIRE    Report the step on retire_o, and an instruction on
 --             instret_o.
---   PAUSED    Wait before the next step, while pause_i is '1'.
+--   PAUSED    Wait before the next step, while pause_i is '1', or after a
+--             breakpoint.
 --
 -- The instruction bus is 64 bits wide, as MICROARCH.md §1 requires of both
 -- cores. A read returns the aligned pair of words 2a and 2a + 1 for the pair
@@ -51,6 +52,18 @@
 -- HALTED, so paused_o and halted_o rise only once the core is quiet, as in
 -- src/pipeline.vhd.
 --
+-- BREAKPOINTS (doc/DEBUG.md §6). Breakpoint i, for i below G_BREAKS, is
+-- enabled when brk_en_i(i) is '1', at the address brk_addr_i(i). BOUNDARY
+-- compares R15 with them after its checks for a pause and an interrupt, so
+-- an interrupt entry goes first. The check does not depend on in_service
+-- or after_rti, so a breakpoint fires in an interrupt routine and at the
+-- instruction after an RTI, and the first step after a pause is exempt
+-- from it, as from the pause. At a breakpoint the core pauses, as for a
+-- pause request of its own, and brk_wait holds it paused until pause_i
+-- has been '1' and is '0' again. So a system sees paused_o rise while
+-- pause_i is '0', and has time to raise pause_i. Then go on and step work
+-- as after any pause. The system finds the breakpoint by R15 on regs_o.
+--
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) The bus slaves acknowledge every request.
 -- b) A device holds nmi_valid_i or irq_valid_i, and the vector, stable until
@@ -62,6 +75,9 @@
 --    the core's outputs: it feeds nmi_ready_o and irq_ready_o.
 -- e) A system that raises pause_i waits for paused_o or halted_o, as the
 --    core may halt before it pauses.
+-- f) brk_addr_i and brk_en_i come from flip-flops. A system that enables
+--    breakpoints raises pause_i once paused_o rises without it, and lowers
+--    it to go on.
 --
 -- RESET
 -- Synchronous. It sets the state of ISA.md §8.1 and drops any bus request.
@@ -77,7 +93,9 @@ library ieee;
 entity multicycle is
    generic (
       -- Adds the invariants that formal/multicycle.sby needs.
-      G_FORMAL : boolean := false
+      G_FORMAL : boolean                       := false;
+      -- The number of breakpoints, from 0 to 8 (doc/DEBUG.md §6)
+      G_BREAKS : natural range 0 to C_BREAKS_MAX := 0
    );
    port (
       clk_i         : in  std_logic;
@@ -112,6 +130,10 @@ entity multicycle is
       -- Pause before the next step, and '1' while paused (MICROARCH.md §6.1)
       pause_i       : in  std_logic;
       paused_o      : out std_logic;
+
+      -- The breakpoints: addresses, and one enable bit each (above)
+      brk_addr_i    : in  t_brk_addrs;
+      brk_en_i      : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0);
 
       -- '1' once the core has halted, and no bus cycle is open (ISA.md §1.4)
       halted_o      : out std_logic;
@@ -169,6 +191,7 @@ architecture synthesis of multicycle is
    signal in_service : std_logic;
    signal after_rti  : std_logic;
    signal after_go   : std_logic;                       -- The first step after a pause
+   signal brk_wait   : std_logic;                       -- Stopped at a breakpoint, before pause_i
    signal saved_pc   : std_logic_vector(31 downto 0);
    signal saved_sr   : std_logic_vector(31 downto 0);
    signal halt       : t_halt;
@@ -193,6 +216,8 @@ architecture synthesis of multicycle is
    signal pause    : boolean;
    signal take_nmi : boolean;
    signal take_irq : boolean;
+   signal brk_hit  : boolean;
+   signal brk_stop : boolean;
 
 begin
 
@@ -203,6 +228,21 @@ begin
    take_irq <= state = BOUNDARY_ST and rst_i = '0' and irq_valid_i = '1' and
                in_service = '0' and after_rti = '0' and regs(14)(C_SR_E) = '1' and not take_nmi and
                not pause;
+
+   -- R15 is the address of an enabled breakpoint.
+   p_brk_hit : process (all)
+   begin
+      brk_hit <= false;
+      for i in 0 to G_BREAKS - 1 loop
+         if brk_en_i(i) = '1' and brk_addr_i(i) = regs(15) then
+            brk_hit <= true;
+         end if;
+      end loop;
+   end process p_brk_hit;
+
+   -- A breakpoint goes after a pause and an interrupt entry.
+   brk_stop <= state = BOUNDARY_ST and rst_i = '0' and after_go = '0' and brk_hit and
+               not pause and not take_nmi and not take_irq;
 
    nmi_ready_o <= '1' when take_nmi else '0';
    irq_ready_o <= '1' when take_irq else '0';
@@ -297,6 +337,9 @@ begin
                   rep_nmi    <= '0';
                   int_vector <= irq_vector_i;
                   state      <= VEC_ST;
+               elsif brk_stop then
+                  brk_wait <= '1';
+                  state    <= PAUSED_ST;
                else
                   fetch_iw <= '1';
                   state    <= FETCH_ST;
@@ -505,7 +548,9 @@ begin
                state    <= HALTED_ST when halt /= HALT_NONE else BOUNDARY_ST;
 
             when PAUSED_ST =>
-               if pause_i = '0' then
+               if pause_i = '1' then
+                  brk_wait <= '0';
+               elsif brk_wait = '0' then
                   after_go <= '1';
                   state    <= BOUNDARY_ST;
                end if;
@@ -522,6 +567,7 @@ begin
             in_service <= '0';
             after_rti  <= '0';
             after_go   <= '0';
+            brk_wait   <= '0';
             halt       <= HALT_NONE;
             fetch_iw   <= '0';
             ibus_cyc_o <= '0';
@@ -569,6 +615,8 @@ begin
       --    rst_i = '0' -> (ibus_cyc_o = '1') = (state = FETCH_WAIT_ST);
       -- psl f_dbus_state : assert always
       --    rst_i = '0' -> (dbus_cyc_o = '1') = dbus_wait;
+      -- psl f_brk_wait : assert always
+      --    rst_i = '0' -> (brk_wait = '1' -> state = PAUSED_ST);
    end generate gen_formal;
 
 end architecture synthesis;

@@ -211,6 +211,8 @@ begin
             irq_vector_i  => X"00",
             pause_i       => pause,
             paused_o      => paused,
+            brk_addr_i    => (others => (others => '0')),
+            brk_en_i      => (others => '0'),
             halted_o      => halted,
             halt_reason_o => halt,
             instret_o     => open,

@@ -49,6 +49,12 @@ package trace_pkg is
 
    type t_regs is array (0 to 15) of std_logic_vector(31 downto 0);
 
+   -- The most breakpoints a core has (doc/DEBUG.md §6)
+   constant C_BREAKS_MAX : natural := 8;
+
+   -- Their addresses. A core with G_BREAKS = N uses 0 to N - 1.
+   type t_brk_addrs is array (0 to C_BREAKS_MAX - 1) of std_logic_vector(31 downto 0);
+
    type t_retire is record
       valid    : std_logic;
       intr     : std_logic;                       -- An interrupt entry, not an instruction

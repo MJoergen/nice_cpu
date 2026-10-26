@@ -91,6 +91,8 @@ departs from it.
 | [test/shiftjump.nasm](test/shiftjump.nasm) | Every shift with R15 as its destination, `0<0` among them, whose opcode is `MOVE`'s. |
 | [test/rtiread.nasm](test/rtiread.nasm) | `RTI` that returns to instructions with data reads, run one step at a time. |
 | [test/pausepatch.nasm](test/pausepatch.nasm) | A word of code that `tb_core` writes while the core is paused, with its hand-checked trace in [test/pausepatch.expected](test/pausepatch.expected). |
+| [test/breaks.nasm](test/breaks.nasm) | Stops at breakpoints in a loop, at a data read, at a false condition, in an interrupt routine, after `RTI`, and at a jump target with an IRQ pending. |
+| [test/break_stops.py](test/break_stops.py) | Lists the stops of a program at its breakpoints on the emulator, over the debug link, as `tb_core` lists the core's. |
 | [test/bubble.nasm](test/bubble.nasm) | Measures the bubbles of the pipelined core with the cycle counter, and checks itself. |
 | [test/random_prog.py](test/random_prog.py) | Writes random programs, and random interrupt requests for them. |
 | [test/random_stats.py](test/random_stats.py) | Shows how the random programs spend their steps, and how often they make each hazard. |
@@ -498,7 +500,10 @@ stays halted until reset, with `halt_reason_o` other than `HALT_NONE`
 exactly then; a core that is paused, with `pause_i` still 1, stays paused
 with no bus cycle open and `regs_o` unchanged; it is never paused and
 halted at once; and once `paused_o` falls, it reports a step on
-`retire_o` before `paused_o` rises again.
+`retire_o` before `paused_o` rises again. With two breakpoints, whose
+addresses and enable bits are free, it asserts that the core pauses
+without `pause_i` only when R15 was an enabled breakpoint, and then stays
+paused until `pause_i` has been 1.
 
 `formal_wb_dmux` checks the data bus decoder with three slaves and up to
 three ACKs owed. Every input is free. It assumes that the master raises
@@ -786,7 +791,7 @@ right, not fast: an instruction takes about ten cycles.
 
 | State | What it does |
 |---|---|
-| `BOUNDARY` | Pauses while `pause_i` is 1, takes a pending NMI or IRQ (ISA.md §7.1), or starts an instruction. |
+| `BOUNDARY` | Pauses while `pause_i` is 1, takes a pending NMI or IRQ (ISA.md §7.1), stops at a breakpoint, or starts an instruction. |
 | `FETCH` | Reads the instruction word, then each constant word, and increments R15 after each. |
 | `COND` | Tests the condition, and runs a control instruction. |
 | `SRC` | Evaluates s0, then s1, with their side effects. |
@@ -796,7 +801,7 @@ right, not fast: an instruction takes about ten cycles.
 | `VEC` | Reads the vector table entry for IRQ, NMI, and `INT`. |
 | `RETIRE` | Reports the step on `retire_o`. |
 | `FETCH_WAIT`, `SRC_WAIT`, `DEST_WAIT`, `VEC_WAIT` | Wait for the ACK of the read that `FETCH`, `SRC`, or `VEC` issued, or of the store that `EXEC` issued. |
-| `PAUSED` | Waits while `pause_i` is 1, then goes back to `BOUNDARY` for one step (MICROARCH.md §6.1). |
+| `PAUSED` | Waits while `pause_i` is 1, and after a breakpoint until `pause_i` has been 1, then goes back to `BOUNDARY` for one step (MICROARCH.md §6.1). |
 | `HALTED` | Entered from `RETIRE` when the step halted. Only reset leaves it. |
 
 It has the two Wishbone ports of the memory model: a read-only instruction
@@ -856,6 +861,19 @@ system may read `regs_o` and write memory: the core fetches from R15
 again when it goes on. Both cores have the three ports, with the same
 behavior.
 
+The multi-cycle core has the breakpoints of DEBUG.md §6: the generic
+`G_BREAKS`, from 0 to 8, and the ports `brk_addr_i`, a `t_brk_addrs` of
+`src/trace_pkg.vhd`, and `brk_en_i`, one bit each, from flip-flops.
+Breakpoints from `G_BREAKS` up are ignored. `BOUNDARY` compares R15 with
+the enabled ones after its checks for a pause and an interrupt, so an
+interrupt entry goes first, as in niceemu. The compare does not depend on
+`in_service` or `after_rti`, and the first step after a pause is exempt.
+At a breakpoint the core pauses, and stays paused until `pause_i` has been
+1 and is 0 again. So a system sees `paused_o` rise while `pause_i` is 0,
+raises `pause_i`, and then goes on or steps as after any pause. It finds
+the breakpoint by R15 on `regs_o`. With `G_BREAKS` = 0, the core is the
+one without breakpoints. The pipelined core does not have them yet (#55).
+
 `regs_o` gives R0 to R15 from the core's registers, for a monitor that
 shows them. In the cycle after a step is reported on `retire_o`, they are
 the registers of that report. `tb_core` and the formal checks of both
@@ -887,6 +905,15 @@ emulator sees no such write. `tb_core` also checks that no bus cycle is
 open while `paused_o` or `halted_o` is 1, that the two are never 1 at
 once, that `regs_o` does not change while the core is paused, and that
 `halt_reason_o` is the reason of the halting step.
+
+The generic `G_BREAK_AT` lists the addresses of breakpoints in hex,
+between blanks, at most 8. `tb_core` gives the core them all enabled, and
+goes on from each stop at one, with `pause_i` 1 for a cycle. With
+`G_BREAK_LOG`, it writes `stop` and R0 to R15 in hex to that file at each
+stop. `test/break_stops.py` writes the same list for the emulator, from
+the `x` notices of its debug link, and `make test` compares the two for
+`test/breaks.nasm`. A stop is not a step, so the trace stays the
+emulator's.
 
 With the generic `G_INTR_DELAY` = N, each request is raised N cycles
 after its step would raise it, and none after the end of the run. The

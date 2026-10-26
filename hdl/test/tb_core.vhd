@@ -97,6 +97,17 @@
 -- That changes the program, so such a run is compared with a hand-checked
 -- trace, not with the emulator's.
 --
+-- G_BREAK_AT lists the addresses of breakpoints, in hex, between blanks,
+-- at most 8 (doc/DEBUG.md §6). The core gets them all enabled, and
+-- G_BREAKS = their number. When the core stops at one, with paused_o
+-- '1' while pause_i is '0', p_pause raises pause_i for a cycle and then
+-- lowers it, so the core goes on, as the debug link does after an `x`.
+-- With G_BREAK_LOG, it writes a line to that file at each such stop:
+-- "stop" and R0-R15 in hex, as test/break_stops.py writes them for the
+-- emulator. A stop is not a step, so the trace stays the emulator's. With
+-- G_PAUSE or G_SINGLE_STEP, the pauses that those raise go on from the
+-- stops too, and a pause at a breakpoint is not logged.
+--
 -- p_stopped checks that the core is quiet while paused_o or halted_o is
 -- '1', that its registers do not change while it is paused, and that
 -- halt_reason_o is the reason of the step that halted it, and HALT_NONE
@@ -142,7 +153,10 @@ entity tb_core is
       G_SINGLE_STEP   : boolean  := false;
       G_PATCH_STEP    : integer  := -1;
       G_PATCH_ADDR    : natural  := 0;
-      G_PATCH_DATA    : string   := "00000000"
+      G_PATCH_DATA    : string   := "00000000";
+      -- The breakpoints, and the log of the stops at them (above)
+      G_BREAK_AT      : string   := "";
+      G_BREAK_LOG     : string   := ""
    );
 end entity tb_core;
 
@@ -245,13 +259,44 @@ architecture simulation of tb_core is
             when 'A' to 'F' => digit_v := character'pos(s(i)) - character'pos('A') + 10;
             when others     =>
                assert false
-                  report "tb_core: bad hex digit in G_PATCH_DATA"
+                  report "tb_core: bad hex digit in " & s
                   severity failure;
          end case;
          res_v := res_v(27 downto 0) & to_slv(digit_v, 4);
       end loop;
       return res_v;
    end function hex_word;
+
+   type t_breaks is record
+      count : natural range 0 to C_BREAKS_MAX;
+      addrs : t_brk_addrs;
+   end record t_breaks;
+
+   -- The addresses of G_BREAK_AT, and their number
+   function parse_breaks(s : string) return t_breaks is
+      variable res_v   : t_breaks := (count => 0, addrs => (others => (others => '0')));
+      variable pos_v   : positive := s'low;
+      variable start_v : positive;
+   begin
+      while pos_v <= s'high loop
+         if s(pos_v) = ' ' then
+            pos_v := pos_v + 1;
+         else
+            start_v := pos_v;
+            while pos_v <= s'high and s(pos_v) /= ' ' loop
+               pos_v := pos_v + 1;
+            end loop;
+            assert res_v.count < C_BREAKS_MAX
+               report "tb_core: more than 8 breakpoints in G_BREAK_AT"
+               severity failure;
+            res_v.addrs(res_v.count) := hex_word(s(start_v to pos_v - 1));
+            res_v.count              := res_v.count + 1;
+         end if;
+      end loop;
+      return res_v;
+   end function parse_breaks;
+
+   constant C_BREAKS : t_breaks := parse_breaks(G_BREAK_AT);
 
    signal clk : std_logic;
    signal rst : std_logic;
@@ -348,6 +393,9 @@ begin
    gen_core : if G_CORE = "multicycle" generate
 
       i_multicycle : entity work.multicycle
+         generic map (
+            G_BREAKS => C_BREAKS.count
+         )
          port map (
             clk_i         => clk,
             rst_i         => rst,
@@ -373,6 +421,8 @@ begin
             irq_vector_i  => core_irq_vector,
             pause_i       => pause,
             paused_o      => paused,
+            brk_addr_i    => C_BREAKS.addrs,
+            brk_en_i      => (others => '1'),
             halted_o      => halted,
             halt_reason_o => halt_reason,
             instret_o     => instret,
@@ -732,6 +782,10 @@ begin
       variable pulse_v   : boolean  := false;
       variable hold_v    : natural  := 0;
       variable patched_v : boolean  := false;
+      variable going_v   : boolean  := false;   -- Going on from a stop
+      file     log_f     : text;
+      variable log_v     : boolean  := false;   -- log_f is open
+      variable l         : line;
    begin
       if rising_edge(clk) then
          if retire.valid = '1' then
@@ -778,6 +832,29 @@ begin
                   pause <= '0';
                else
                   hold_v := hold_v - 1;
+               end if;
+            end if;
+         elsif C_BREAKS.count > 0 then
+            -- A stop at a breakpoint: pause_i '1' for a cycle, and then '0'
+            -- until the core has gone on
+            if pause = '1' then
+               pause   <= '0';
+               going_v := true;
+            elsif paused = '0' then
+               going_v := false;
+            elsif not going_v then
+               pause <= '1';
+               if G_BREAK_LOG /= "" then
+                  if not log_v then
+                     file_open(log_f, G_BREAK_LOG, write_mode);
+                     log_v := true;
+                  end if;
+                  write(l, string'("stop"));
+                  for i in regs'range loop
+                     write(l, " " & to_hstring(regs(i)));
+                  end loop;
+                  writeline(log_f, l);
+                  flush(log_f);
                end if;
             end if;
          end if;

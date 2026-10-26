@@ -140,6 +140,32 @@ requests = $(INTR_$(1))$(TIMER_$(1))
 # The console input of a run, a file, as the emulator's --input takes it.
 INPUT_input = ../emulator/test/input.txt
 
+# test/breaks.nasm stops at the breakpoints of BREAKS_breaks, in hex, with
+# the requests of INTR_breaks: in a loop, at an instruction with a data
+# read, at a false condition, at an interrupt routine, after an RTI, and
+# at a jump target with an IRQ pending (doc/DEBUG.md §6). tb_core's
+# G_BREAK_AT sets them, and its G_BREAK_LOG lists the stops. check_breaks
+# compares that list with the emulator's, from test/break_stops.py. The
+# run breaks_stall does the same on a stalling memory, and breaks_hold
+# adds pauses held for a random time, which must not change the trace.
+# A pause at a breakpoint is not a stop of the core's own, so that run's
+# list is not compared. Only the multi-cycle core has breakpoints yet.
+BREAKS_breaks = 4 5 8 D
+BREAKS_breaks_stall = $(BREAKS_breaks)
+INTR_breaks = --irq 6:2 --nmi 8:2
+INTR_breaks_stall = $(INTR_breaks)
+INTR_breaks_hold = $(INTR_breaks)
+BREAK_GENERICS = "-gG_BREAK_AT=$(BREAKS_breaks)" -gG_BREAK_LOG=stops.out
+
+# $(1) is the name of the run, and $(2) the program.
+define check_breaks
+	@$(PYTHON) test/break_stops.py --emu $(EMU) $(2) "$(BREAKS_$(1))" -- $(INTR_$(1)) \
+	  > $(RUNDIR)/stops.expected
+	@if cmp -s $(RUNDIR)/stops.expected $(RUNDIR)/stops.out; then echo "PASS $(CORE) $(1) stops"; \
+	else echo "FAIL $(CORE) $(1) stops"; diff $(RUNDIR)/stops.expected $(RUNDIR)/stops.out; exit 1; fi
+
+endef
+
 # test/pausepatch.nasm runs one step at a time, and tb_core writes a word
 # of its code while the core is paused (G_PATCH_STEP). The emulator sees no
 # such write, so the trace is compared with the hand-checked
@@ -352,6 +378,9 @@ $(eval $(call core_run,$(1),after_pause,../emulator/test/after.bin,-gG_PAUSE=50 
 $(eval $(call core_run,$(1),rtiread_step,$(BUILD)/rtiread.bin,-gG_SINGLE_STEP=true))
 $(eval $(call core_run,$(1),pausepatch,$(BUILD)/pausepatch.bin,-gG_SINGLE_STEP=true -gG_PATCH_STEP=2 \
   -gG_PATCH_ADDR=5 -gG_PATCH_DATA=00010100,check_expected))
+$(if $(filter multicycle,$(1)),$(eval $(call core_run,$(1),breaks,$(BUILD)/breaks.bin,$(BREAK_GENERICS),check_core check_breaks)))
+$(if $(filter multicycle,$(1)),$(eval $(call core_run,$(1),breaks_stall,$(BUILD)/breaks.bin,$(BREAK_GENERICS) -gG_STALL=30 -gG_SEED=35,check_core check_breaks)))
+$(if $(filter multicycle,$(1)),$(eval $(call core_run,$(1),breaks_hold,$(BUILD)/breaks.bin,$(BREAK_GENERICS) -gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=37)))
 $(eval $(call core_run,$(1),instret,$(BUILD)/instret.bin))
 $(eval $(call core_run,$(1),instret_stall,$(BUILD)/instret.bin,-gG_STALL=30 -gG_SEED=17))
 $(eval $(call core_run,$(1),irqwave,$(BUILD)/irqwave.bin))

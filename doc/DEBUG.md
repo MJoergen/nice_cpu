@@ -119,7 +119,7 @@ program's data accesses, with these differences:
   `TIME_LO` (SYSTEM.md §3) returns the counter's low word. The emulator
   takes no snapshot then, but a board may, as a property of the system.
   A start resets the counters and their snapshots (§6), and the counters
-  stop while the processor is paused. A host can tell: on such a board,
+  stop while the processor is paused (MICROARCH.md §8). A host can tell: on such a board,
   while the processor is held, halted, or paused, a read of `CYCLE_HI`,
   `INSTR_HI`, or `TIME_HI` after a link read of the low word returns the
   snapshot of that read. A program can tell only after a pause. If it read

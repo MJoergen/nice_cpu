@@ -8,7 +8,7 @@
 -- THEORY OF OPERATION
 -- The cycle counter counts the clock cycles after reset in which run_i is
 -- high. A system drives run_i with "the core is running", so that the counter
--- stops at a halt, as the emulator's does. The instruction
+-- stops while the core is paused or halted, as the emulator's does at a halt. The instruction
 -- counter counts the cycles in which instret_i is high, and the core raises
 -- it once for each instruction that completes.
 --
@@ -34,7 +34,9 @@
 -- a) STB is high only for requests to the counters: the bus decoder decodes
 --    the address bits above bit 3.
 -- b) instret_i is high for one cycle per completed instruction.
--- c) run_i is low while the core is held or halted. It defaults to '1'.
+-- c) run_i is low while the core is held, paused, or halted: a system drives
+--    it with "not paused_o and not halted_o" of the core, and low too while
+--    it holds the core. It defaults to '1'.
 --
 -- RESET
 -- Synchronous. It sets both counters and both snapshots to G_RESET, which

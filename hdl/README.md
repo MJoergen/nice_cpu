@@ -932,7 +932,9 @@ trace with the hand-checked `test/pausepatch.expected`, since the
 emulator sees no such write. `tb_core` also checks that no bus cycle is
 open while `paused_o` or `halted_o` is 1, that the two are never 1 at
 once, that `regs_o` does not change while the core is paused, and that
-`halt_reason_o` is the reason of the halting step.
+`halt_reason_o` is the reason of the halting step. It also drives `run_i` of the
+counters with `not paused_o and not halted_o`, and checks that the cycle counter
+counts exactly the cycles after reset in which that is 1.
 
 The generic `G_BREAK_AT` lists the addresses of breakpoints in hex,
 between blanks, at most 8. `tb_core` gives the core them all enabled, and
@@ -1297,8 +1299,8 @@ gives the device `C_FETCH_EVENTS_NONE` with it.
 
 A cycle counts only while `run_i` is high, as in `perf`. A system drives it
 with "the core is running", so that the counters stop while the core is
-held or has halted. It defaults to `'1'`, and `tb_core` leaves it so, since
-its run ends at the halt.
+held, paused, or halted. It defaults to `'1'`. `tb_core` drives it with
+`not paused_o and not halted_o`.
 
 With the generic `G_ENABLE` false there are no counters, and every word
 reads 0. `tb_core` passes its generic `G_FETCH_STATS` on to it.

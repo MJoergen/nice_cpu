@@ -832,6 +832,11 @@ system built from them must follow these rules:
   count from before that cycle's, and PREPARE issues a younger read only
   then. `hdl/test/instret.nasm` checks this, also behind a read that
   waits on the bus.
+- **Counter run input.** A system drives `run_i` of `perf.vhd` and
+  `fetch_stats.vhd` with "the core is running": 0 while it holds the core,
+  and while `paused_o` or `halted_o` is 1, and 1 otherwise. A device that
+  counts cycles then stops with the core, as the emulator's does. `tb_core`
+  does so and checks the cycle counter.
 - **Fetch statistics.** The rest of the performance counters,
   `hdl/src/fetch_stats.vhd` at `0xFFFFFF50`–`0xFFFFFF7F` (§8.1), 48 words,
   so the decoder compares address bits 31..6 and leaves out
@@ -877,8 +882,8 @@ section. The emulator has none, and their words read 0 there. The generic
 | `0xFFFFFF60` + n | `FS_HIST` + n | the cycles counted with n words in the buffer, for n = 0 to 31 | is ignored |
 
 - While R = 1, each clock cycle counts in which the core runs. The
-  counters stop while the core is held or has halted, as the cycle counter
-  of SYSTEM.md §3 does, so a reading after a halt does not change. R stays
+  counters stop while the core is held, paused, or halted, as the cycle
+  counter of SYSTEM.md §3 does, so a reading after a halt does not change. R stays
   as it is. Reset sets R to 1 and clears the counters, so they count from
   reset.
 - A clear sets `FS_MIN` to 31 and every other counter to 0. A write to

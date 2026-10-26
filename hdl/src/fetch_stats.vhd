@@ -12,7 +12,7 @@
 -- The counters count in the cycles in which the run bit of FS_CTRL is 1
 -- and run_i is high. A system drives run_i with "the core is running", as
 -- it drives that of perf.vhd, so that the counters stop while the core is
--- held or has halted. In each cycle counted, FS_CYCLES and FS_HIST + count
+-- held, paused, or halted. In each cycle counted, FS_CYCLES and FS_HIST + count
 -- count one, and each other counter counts the events of events_i in that
 -- cycle. FS_MIN and FS_MAX follow the smallest and largest count, and
 -- FS_HELD_MAX the largest held. All counters are 32 bits wide and wrap.
@@ -36,7 +36,9 @@
 --    address.
 -- b) events_i describes one cycle of the core, and is C_FETCH_EVENTS_NONE
 --    for a core without FETCH and DECODE.
--- c) run_i is low while the core is held or halted. It defaults to '1'.
+-- c) run_i is low while the core is held, paused, or halted: a system drives
+--    it with "not paused_o and not halted_o" of the core, and low too while
+--    it holds the core. It defaults to '1'.
 --
 -- RESET
 -- Synchronous. It clears the counters, sets the run bit, and drops any ACK

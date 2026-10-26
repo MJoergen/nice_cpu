@@ -114,6 +114,8 @@ DEBUG.md §3 says a `W` with a bad checksum "may leave some words written", and 
 
 perf.vhd:37 and fetch_stats.vhd:39, contract (c): "`run_i` is low while the core is held or halted". DEBUG.md:122 says the counters stop while the processor is paused, and TODO.md says a board must stop them. Nothing tests a core and its counters together (§7.4).
 
+**Resolved** with §7.4: MICROARCH.md §8 says that the counters stop while the core is paused, and `tb_core` checks it.
+
 ### 3.5 The versions
 
 DEBUG.md says the version register reads 3 (line 208) and never says what versions 1 and 2 were. RC04 shipped version 1 without saying so, version 2 was never tagged, and RELEASE_NOTES.md gives the two steps under RC05. **Fix:** a table of the versions beside the register.
@@ -240,6 +242,12 @@ The reader extracted the sources at each of the 35 commits since 9d8f13d that to
 ### 7.4 `run_i` is not a rule of the system
 
 MICROARCH.md §8's rules for a system do not say that it drives `run_i` of the counters and the fetch statistics, nor with what; the fetch statistics bullet says only that they stop "while the core is held or has halted". perf.vhd:37 and fetch_stats.vhd:39 say "held or halted", DEBUG.md:122 says the counters stop while paused, and SYSTEM.md:108-109 says "held or has halted". No test joins a core with the counters: `tb_core` leaves `run_i` at its default `'1'`, and `tb_link` wires no counters or timer. **Fix:** a bullet in §8, "`run_i` is 0 while the core is held, paused, or halted, from `paused_o` and `halted_o`", the same words in the two headers, and the counters in `tb_core`.
+
+**Resolved**: All of it.
+- MICROARCH.md §8 has a bullet, "Counter run input": a system drives `run_i` with 0 while it holds the core and while `paused_o` or `halted_o` is 1.
+- The headers of perf.vhd and fetch_stats.vhd, their contract (c), the fetch statistics bullet, SYSTEM.md §3, and hdl/README.md say "held, paused, or halted".
+- `tb_core` drives `run_i` of both devices with `not paused_o and not halted_o`. `p_counters` reads the cycle counter by an external name and compares it, in every cycle, with a count of the cycles after reset in which neither is 1. A mutant with `run_i` at `'1'` fails it in a run with `G_PAUSE`. The test passes on both cores.
+- Not done: the fetch statistics' counters are not read in the testbench, because their array type is private. The formal proof covers that they stop when `run_i` is low.
 
 ### 7.5 Stale text
 

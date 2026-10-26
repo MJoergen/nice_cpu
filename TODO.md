@@ -71,8 +71,6 @@ has a "Resolved" paragraph there; the section numbers are the review's.)
 - **Issue #53's seven simplifications** of `debug_link.vhd`: do them, or
   drop them here (§2.1). The won't-do items of #51, #54, and 2026-10-23
   go under "Decided against" (§2.2).
-- **`run_i` as a rule of the system.** A bullet in MICROARCH.md §8, the
-  same words in the two headers, and the counters in `tb_core` (§7.4, §3.4).
 - **Out-of-context timing figures.** A row per figure in
   pipeline-timing.md, and an in-system build at RC05 (§2.4).
 - **The debug link's documents.** The board contracts, the bad-checksum

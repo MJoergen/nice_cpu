@@ -122,6 +122,10 @@
 -- halt_reason_o is the reason of the step that halted it, and HALT_NONE
 -- before.
 --
+-- p_counters checks that the cycle counter counts the cycles in which neither
+-- paused_o nor halted_o is '1', which is how a system drives run_i of the
+-- counters (MICROARCH.md §8).
+--
 -- The run ends when the trace writer has printed the end of the run. The
 -- simulation goes on for a few cycles, so that the core's own checks see
 -- it halted, and then stops with the emulator's exit status.
@@ -373,6 +377,7 @@ architecture simulation of tb_core is
    signal pause       : std_logic := '0';
    signal paused      : std_logic;
    signal halted      : std_logic;
+   signal run         : std_logic;   -- The core is running, for the counters
    signal halt_reason : t_halt;
    signal retire      : t_retire;
    signal regs        : t_regs;
@@ -539,6 +544,8 @@ begin
       ); -- i_wb_dmux
 
 
+   run <= not paused and not halted;
+
    tick <= instret or (retire.valid and retire.intr);
 
    core_irq_valid  <= irq_valid or timer_valid;
@@ -595,6 +602,7 @@ begin
          clk_i      => clk,
          rst_i      => rst,
          instret_i  => instret,
+         run_i      => run,
          wb_cyc_i   => dbus_cyc,
          wb_stb_i   => slave_stb(C_PERF),
          wb_stall_o => slave_stall(C_PERF),
@@ -633,6 +641,7 @@ begin
          clk_i      => clk,
          rst_i      => rst,
          events_i   => fetch_events,
+         run_i      => run,
          wb_cyc_i   => dbus_cyc,
          wb_stb_i   => slave_stb(C_STATS),
          wb_stall_o => slave_stall(C_STATS),
@@ -918,6 +927,27 @@ begin
          regs_v   := regs;
       end if;
    end process p_stopped;
+
+
+   -- The cycle counter counts the cycles after reset in which the core is
+   -- running, so it stops while paused_o or halted_o is '1'.
+   p_counters : process (clk)
+      variable cycles_v : std_logic_vector(63 downto 0);   -- The counter
+      variable count_v  : natural := 0;                    -- The cycles counted so far
+   begin
+      if rising_edge(clk) then
+         cycles_v := << signal .tb_core.i_perf.cycles_r : std_logic_vector(63 downto 0) >>;
+         assert cycles_v = to_slv(count_v, 64)
+            report "tb_core: the cycle counter is " & to_string(cycles_v) & ", not "
+                   & integer'image(count_v)
+            severity failure;
+         if rst = '1' then
+            count_v := 0;
+         elsif paused = '0' and halted = '0' then
+            count_v := count_v + 1;
+         end if;
+      end if;
+   end process p_counters;
 
 
    -- regs_o holds the registers of a step from the cycle after its report.

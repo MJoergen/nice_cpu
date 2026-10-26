@@ -24,7 +24,8 @@ from the fifth review". No code has TODO or FIXME comments.
   the debug link, and FETCH, DECODE, PREPARE, and DBUS of the pipelined
   core, for every cycle, WRITE's halt (it stays halted until reset and
   makes no store, vector read, interrupt entry, or accept) and its pause
-  (the same, and a step reported after each pause), and the
+  (the same, and a step reported after each pause), and its interrupt
+  takes (only when requested, and one at a time), and the
   shifter, the ALU, and the block compares of the store check for every
   input. For the whole pipelined core it checks the ports and the core's
   own assertions, the data access rule among them, only for the first 8

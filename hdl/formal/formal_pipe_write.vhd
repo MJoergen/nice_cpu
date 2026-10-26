@@ -16,8 +16,11 @@
 -- clears that. WRITE pauses without pause_i only on the breakpoint flag
 -- of the next instruction, in its own micro-operation or, while it holds
 -- none, in PREPARE's; and it then stays paused until pause_i has been
--- '1' (doc/DEBUG.md §6). The record inputs are free signals here (anyseq), since
--- the top level has only plain ports.
+-- '1' (doc/DEBUG.md §6). It takes an interrupt only when one is
+-- requested, never in a reset, and never two at once, which is what
+-- handshake_check asserts of the core's ready outputs in formal_pipeline,
+-- here for every cycle. The record inputs are free signals here (anyseq),
+-- since the top level has only plain ports.
 --
 -- RESET
 -- The first cycle is a reset.
@@ -121,6 +124,14 @@ begin
    -- and accepts no micro-operation either.
    -- psl f_pause_quiet : assert always w.mode = PAUSED_ST ->
    --    (st = '0' and take_nmi = '0' and take_irq = '0' and ready = '0');
+
+   -- WRITE takes an interrupt only when it is requested, and one at a time,
+   -- never in a reset. take_nmi_o and take_irq_o are the ready outputs of
+   -- the pipelined core, so these are the assertions of
+   -- formal/handshake_check.vhd, for every cycle.
+   -- psl f_take_nmi : assert always take_nmi -> (nmi_valid_i = '1' and rst_i = '0');
+   -- psl f_take_irq : assert always take_irq -> (irq_valid_i = '1' and rst_i = '0');
+   -- psl f_take_one : assert always not (take_nmi and take_irq);
 
    -- Once WRITE leaves PAUSED_ST, it reports a step before it pauses
    -- again. f_go_owed and f_go_paused make it inductive.

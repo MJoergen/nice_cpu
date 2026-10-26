@@ -658,7 +658,10 @@ accepts a micro-operation. It also proves that once WRITE leaves
 report clears it. And it pauses without `pause_i` only on the breakpoint
 flag of the next instruction, in its own micro-operation or, while it
 holds none, in PREPARE's, and then stays paused until `pause_i` has been
-1.
+1. And it takes an interrupt only when one is requested, never in reset,
+and never two at once. WRITE's takes are the core's `nmi_ready_o` and
+`irq_ready_o`, so these are the assertions of `handshake_check`, for
+every cycle and not only in `formal_pipeline`.
 
 The assumptions of each proof that name another stage are checked in the
 whole core by `p_check` in `src/pipeline.vhd`, on every simulation and in

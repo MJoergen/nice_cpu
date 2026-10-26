@@ -903,7 +903,8 @@ begin
             assert not (paused = '1' and paused_v = '1' and regs /= regs_v)
                report "tb_core: the registers changed while the core was paused"
                severity failure;
-            assert (halted = '1' and halt_reason = halt_v) or (halted = '0' and halt_reason = HALT_NONE)
+            assert (halted = '1' and halt_reason = halt_v)
+                   or (halted = '0' and halt_reason = HALT_NONE)
                report "tb_core: halt_reason_o is " & t_halt'image(halt_reason)
                severity failure;
          end if;

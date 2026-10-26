@@ -125,9 +125,10 @@ the section numbers are the review's.)
   missing. A device with the date, set by the board, would let `time` work.
 - **Run control in the debug link** (DEBUG.md). Version 3 has the pause and
   the single step, in niceemu and in `src/debug_link.vhd`. A board must stop
-  the counters and the timer while `paused_o` is 1 (NiceMonMEGA65). Still to
-  do: breakpoints, which raise `pause_i` early enough for the pipelined
-  core's fetch ahead (stage 4), watchpoints, and writable registers and a
+  the counters and the timer while `paused_o` is 1 (NiceMonMEGA65). DEBUG.md
+  version 4 specifies the breakpoints (stage 4, #55), which niceemu, both
+  cores, and `src/debug_link.vhd` do not have yet. Still to do after them:
+  watchpoints, and writable registers and a
   port for the hidden state of ISA.md §1.4 (stage 6). A step is one per
   write; a count of steps, and a read-only register that counts them so a
   host can tell whether a step ran when both the `k` and the `p` were lost,

@@ -8,9 +8,9 @@ the program halts. The link shares one byte stream with the console
 [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) over its debug
 UART. Both follow this file, so one host tool works with either.
 
-The link is a property of the system, not of the ISA. This is version 3 of
-the protocol. Its run control is the pause and the single step (§6). It has
-no breakpoints yet.
+The link is a property of the system, not of the ISA. This is version 4 of
+the protocol. Its run control is the pause, the single step, and the
+breakpoints (§6).
 
 "SYSTEM.md §1" refers to a section of SYSTEM.md, and a plain "§2" to a
 section of this file.
@@ -157,15 +157,21 @@ the control register causes may come before the `k` of that write.
 
 | Notice | Payload | Meaning |
 |---|---|---|
-| `b` | version | The system has powered up or been reset, or a host has connected over TCP (§7). The version is `03`. |
+| `b` | version | The system has powered up or been reset, or a host has connected over TCP (§7). The version is `04`. |
 | `h` | reason | The processor has halted. The reason is the halt reason of §6, `01`–`05`. The last console byte that the program wrote comes before the notice. |
-| `p` | none | The processor has paused: a pause request or a step (§6) has taken effect, and bit 4 of the control register reads 1. The last console byte that the program wrote comes before the notice. |
+| `x` | breakpoint | The processor has paused, and R15 is the address of an enabled breakpoint (§6). The payload is its number, `00`–`07`, the lowest if more than one has that address. Bit 4 of the control register reads 1. The last console byte that the program wrote comes before the notice. |
+| `p` | none | The processor has paused: a pause request or a step (§6) has taken effect, and bit 4 of the control register reads 1. R15 is not the address of an enabled breakpoint. The last console byte that the program wrote comes before the notice. |
 | `o` | none | A console byte from the host was lost, because the program's input buffer was full. |
 
 The system sends `o` once, and no other until its input buffer has room
 again. A console byte dropped while the processor is held or halted (§1)
-sends no `o`. A pause or a step ends in exactly one of `p` and `h` (§6), so a host
-that waits for either knows which came.
+sends no `o`. Every stop of the processor sends exactly one of `h`, `x`, and
+`p`: `h` if it halted, otherwise `x` if R15 is the address of an enabled
+breakpoint, and otherwise `p`. The notice depends only on the state at the
+stop, not on what caused it. So a host that waits for any of the three
+knows which came. A breakpoint can stop a running program at any time, so
+a host takes an `x` that it did not ask for, as it takes an `h`. A host of
+version 3 enables no breakpoint, so it never sees `x`.
 
 ## 5. Errors and timeouts
 
@@ -205,9 +211,13 @@ system has there otherwise.
 | `0xFFFFFFE0`–`0xFFFFFFEF` | R0 to R15, read only. After a halt, until the next start, they are the values the program left, with R15 the address after the halting instruction, as the emulator prints them, also while the processor is held after the halt. While the processor is paused, they are the values after the last step, with R15 the address of the next instruction, and a hold of the paused processor keeps them until the next start. From a start, or from a go on or a step after a pause, until the next halt or pause, their values are not defined. |
 | `0xFFFFFFF0` | Control (below). |
 | `0xFFFFFFF1` | The halt reason, read only: 0 while the processor has not halted, 1 for `HALT`, 2 for a reserved control word, 3 for `INT` inside an interrupt routine, 4 for `RTI` outside one (ISA §5.3, §7.2, §7.4), and 5 when the emulator's step limit stopped the program (§7). |
-| `0xFFFFFFF2` | The protocol version, read only: 3. A host checks it before it uses the pause or the step. |
+| `0xFFFFFFF2` | The protocol version, read only: 4. A host checks it before it uses the pause, the step, or a breakpoint. |
 | `0xFFFFFFF3` | The free space, read only: the number of console bytes that the program's input buffer can take now. It reads so while the processor is held or halted too, although the bytes sent then are dropped (§1), and a start empties the buffer. |
-| `0xFFFFFFF4`–`0xFFFFFFFF` | Reserved. They read 0 and take no write. |
+| `0xFFFFFFF4` | The enable bits of the breakpoints. Bit i enables breakpoint i. The bits from N up read 0 and take no write. |
+| `0xFFFFFFF5` | The number of breakpoints N, read only: 0 to 8. A system without breakpoints reads 0. |
+| `0xFFFFFFF6` | The stop, read only. 0 unless the processor is paused with `x`. Then bit 8 is 1, and bits 7–0 are the breakpoint's number, as the `x` carried. |
+| `0xFFFFFFF7` | Reserved. It reads 0 and takes no write. |
+| `0xFFFFFFF8`–`0xFFFFFFFF` | The addresses of breakpoints 0 to 7. The words from `0xFFFFFFF8` + N up read 0 and take no write. |
 
 A write to a read-only register is ignored. The bits of the control
 register:
@@ -261,14 +271,15 @@ version 2 writes it as 0.
   and ignores writes to it.
 - **Pause.** A write of 1 to bit 4 of a running processor asks for a pause.
   The processor stops at the next step boundary, ahead of an interrupt
-  (MICROARCH.md §6.1), and the system sends `p`. Bit 4 reads 1 only then:
+  (MICROARCH.md §6.1), and the system sends `p`, or `x` if R15 is the
+  address of an enabled breakpoint (§4). Bit 4 reads 1 only then:
   the processor has stopped, and no bus cycle is open. A request that is
-  still on its way reads 0, so a host waits for `p`, or polls until bit 4
-  or bit 1 reads 1. A write of 0 before that cancels the request, and the
-  processor may pause before the write arrives.
+  still on its way reads 0, so a host waits for `p` or `x`, or polls until
+  bit 4 or bit 1 reads 1. A write of 0 before that cancels the request, and
+  the processor may pause before the write arrives.
 - **Pause and halt.** A halt goes first. A halted processor ignores the
   pause, and bit 4 reads 0. So a request ends in exactly one of bit 4 and
-  bit 1, and in exactly one of `p` and `h`.
+  bit 1, and in exactly one of `p`, `x`, and `h`.
 - **While paused.** The link reaches the whole address map, as while held or
   halted. R0–R15 are defined (above). A host may write memory, code
   included, because the processor fetches from R15 again when it goes on.
@@ -280,7 +291,9 @@ version 2 writes it as 0.
   makes it go on from R15.
 - **Step.** A write with bits 4 and 5 set, and bit 0 at 0, to a paused
   processor runs one step from R15. Then the processor pauses again, and
-  the system sends `p`. If the step halts, the processor halts instead,
+  the system sends `p`, or `x` if R15 is then the address of an enabled
+  breakpoint (§4). So a host learns that the next instruction is a
+  breakpoint without a list of its own. If the step halts, the processor halts instead,
   and the system sends `h`, as for a pause (above). That includes the stop
   by the emulator's step limit. A step is one step of the emulator: one
   instruction, or one interrupt entry (MICROARCH.md §6.1). A request that is
@@ -291,30 +304,78 @@ version 2 writes it as 0.
     halted, or is still on its way to a pause, acts as the same write with
     bit 5 at 0. A write with bit 5 set and bit 4 at 0 goes on, as without
     bit 5.
-  - Bit 4 reads 0 from the write until the step has ended in `p` or `h`,
+  - Bit 4 reads 0 from the write until the step has ended in `p`, `x`, or
+    `h`,
     and the link reaches only the debug registers then, as while the
     program runs: a request to any other word gets `e02`. R0–R15 are not
-    defined then. A host waits for `p` or `h`, or polls until bit 4 or bit
-    1 reads 1, as after a pause request.
+    defined then. A host waits for `p`, `x`, or `h`, or polls until bit 4
+    or bit 1 reads 1, as after a pause request.
   - The counters and the timer run during the step, as while the program
     runs, and stop again at the pause. So `CYCLE_LO` grows by the cycles of
     the step, and the timer may raise a request in the step, which the next
     step takes. A program cannot tell that it was stepped, but by the wall
     clock, and by a snapshot that a host's read replaced (§3).
   - The console works as while the program runs: its output comes before
-    the `p` or `h`, and a console read that waits for input waits inside
-    the step.
+    the notice, and a console read that waits for input waits inside the
+    step.
   - A hold during the step acts as a hold of a running program: R0–R15
     are not defined after it.
   - A step has a side effect, so a host does not resend it blindly (§3).
-    The `p` or `h` tells that the step ran, even when the `k` was lost.
+    The notice tells that the step ran, even when the `k` was lost.
 - **Start paused.** A start with bit 4 set pauses before the first step,
-  and the system sends `p`. So a host can load a program and keep it at its
+  and the system sends `p`, or `x` if a breakpoint is enabled at address 0.
+  So a host can load a program and keep it at its
   first instruction. With bit 3 at 0, a write of `0x11`
   holds with the request, and a write of `0x10` then starts paused. A write
   with bit 5 set that starts the processor (bit 0 from 1 to 0) starts it
   paused, as without bit 5, and does not step. So `0x18` with the ROM
   hidden, then `0x38` for each step, steps a program from address 0.
+
+**Breakpoints.** A breakpoint is an address and an enable bit. Only the
+address of an instruction's first word matches, and there are no ranges,
+masks, or hit counts. At each step boundary, the processor checks, in
+this order:
+
+1. A pause request (bit 4): the processor pauses.
+2. An NMI or an IRQ that ISA §7.1 allows: the processor takes the entry,
+   which is a step of its own.
+3. A breakpoint: if R15 is the address of an enabled breakpoint, the
+   processor pauses before that instruction runs, and the system sends
+   `x`.
+
+So a breakpoint fires just before its instruction runs, and an interrupt
+entry goes first. The breakpoint fires inside an interrupt routine too,
+and at the instruction after an `RTI`. A skipped instruction, whose
+condition is false, is a step (ISA §3), so a breakpoint at it fires.
+
+- **The first step is exempt.** The first step after a go on or a step is
+  exempt from 1 and 3, so a go on from a breakpoint runs its instruction,
+  and does not stop at it again. If an interrupt request is pending when
+  the processor goes on, that first step is the entry. The processor then
+  stops at the same breakpoint again after the `RTI`, as its instruction is
+  again the next to run.
+- **A stop at a breakpoint is a pause.** After `x`, the processor is paused
+  exactly as after `p`: bit 4 reads 1, R0–R15 are defined, the counters and
+  the timer are stopped, and the link reaches the whole address map. Go on
+  and step work as from `p`. Only the notice and the stop register differ.
+  A host that writes back the control register as it reads stays paused.
+- **The stop register.** Notices are not resent. If an `x` is lost, the
+  host sees only that bit 4 reads 1, and `0xFFFFFFF6` tells it why, as
+  `0xFFFFFFF1` does for a lost `h`. It keeps its value until the next go
+  on, step, or start, also if the host changes the breakpoints meanwhile.
+  A hold of the paused processor keeps it, as it keeps R0–R15.
+- **When a write takes effect.** The link writes the enable bits and the
+  addresses as they arrive, also while the program runs. A write while the
+  program runs takes effect within a few cycles. So a breakpoint set then
+  may miss an instruction that is already on its way, and one cleared then
+  may still stop at one. If R15 then matches no enabled breakpoint, the
+  notice is `p`, by the rule of §4. A host that needs the change to be
+  exact pauses first. A write while the processor is paused, held, or
+  halted is exact.
+- **Lifetime.** The enable bits and the addresses are kept across a hold, a
+  start, and a clear, so a host sets them while the processor is held and
+  then starts it. Only a reset of the system clears them, to 0, and that
+  sends `b`.
 
 After a reset of the system, a system that boots a ROM runs with bit 0 at 0
 and bit 3 at 0. A system without one waits, held, with bit 0 at 1.
@@ -366,6 +427,9 @@ command line, with these differences:
   the processor is inside a step then, and pauses after the next byte
   arrives or the input ends. A host can send a console byte, or hold. The
   same holds for a console read inside a step of §6.
+- It has four breakpoints. It checks them at each step boundary, in the
+  order of §6, and a write to their registers takes effect at the next
+  boundary.
 - Its step limit (`--max-steps`), `--irq`, and `--nmi` count the steps of
   each run that the link starts. When the step limit stops the program, the
   halt reason is 5, and the emulator sends `h` with it.
@@ -388,7 +452,7 @@ to the last `8`, mod 256. FF is the byte `0xFF`, and the rest is ASCII.
     host:    FF "R000001000001#94"
     system:  FF "r00000100000111223344#48"
 
-A system reset sends `FF "b03#C5"`, and a `HALT` sends `FF "h01#C9"`. The
+A system reset sends `FF "b04#C6"`, and a `HALT` sends `FF "h01#C9"`. The
 same `R` sent while the program runs gets `FF "e5202#2E"`.
 
 After a halt, the host restarts the program with two writes to the
@@ -424,3 +488,22 @@ the program is one word long:
     system:  FF "p#70"
     host:    FF "RFFFFFFEF0001#42"
     system:  FF "rFFFFFFEF000100000001#E3"
+
+To stop a program at address `0x10`, the host sets breakpoint 0 there
+while the processor is held, enables it, and starts the program, with the
+ROM hidden. The processor stops before the instruction at `0x10`. The host
+reads R15 and the stop register, and goes on, which runs that instruction:
+
+    host:    FF "WFFFFFFF8000100000010#BB"
+    system:  FF "kFFFFFFF80001#4E"
+    host:    FF "WFFFFFFF4000100000001#B7"
+    system:  FF "kFFFFFFF40001#4A"
+    host:    FF "WFFFFFFF0000100000008#BA"
+    system:  FF "kFFFFFFF00001#46"
+    system:  FF "x00#D8"
+    host:    FF "RFFFFFFEF0001#42"
+    system:  FF "rFFFFFFEF000100000010#E3"
+    host:    FF "RFFFFFFF60001#33"
+    system:  FF "rFFFFFFF6000100000100#D4"
+    host:    FF "WFFFFFFF0000100000008#BA"
+    system:  FF "kFFFFFFF00001#46"

@@ -3,6 +3,8 @@
 
 Usage: programs.py [options] DIR...
 
+With --shard I/N it runs only the Ith share of N, as one of N CI jobs.
+
 Step 7 of the test order in MICROARCH.md §9: the runtime's and the
 translator's test programs, which "make test KEEP=DIR" in runtime/ and
 "test/run.py --keep DIR" in translator/ leave in DIR, and the random
@@ -47,6 +49,8 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("dirs", nargs="+", metavar="DIR")
     p.add_argument("--stall", type=int, default=0, help="G_STALL of the memory, in percent")
+    p.add_argument("--shard", default="1/1", metavar="I/N",
+                   help="run every Nth program of the list, longest first, from the Ith (default 1/1)")
     p.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1)
     p.add_argument("--core", default=DEFAULT_CORE, help="G_CORE of tb_core (default pipeline)")
     p.add_argument("--build", default=DEFAULT_BUILD)
@@ -60,6 +64,15 @@ def main() -> None:
     # The size of a program is a guess at its length, and the longest go
     # first, so that no long run starts last.
     programs.sort(key=lambda f: (-os.path.getsize(f), f))
+    try:
+        index, count = (int(x) for x in args.shard.split("/"))
+        if not 1 <= index <= count:
+            raise ValueError
+    except ValueError:
+        sys.exit(f"programs: --shard wants I/N with 1 <= I <= N, not {args.shard}")
+    # Shard I of N takes the programs I, I + N, and so on, so that each has
+    # a share of the long ones.
+    programs = programs[index - 1 :: count]
 
     core = Core(args.ghdl, args.build, "programs", args.core)
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
@@ -69,7 +82,8 @@ def main() -> None:
     failures = [r for r in results if r is not None]
     for r in failures:
         print("FAIL " + r)
-    print(f"{'FAIL' if failures else 'PASS'} programs {args.core}: {len(programs) - len(failures)} of "
+    shard = "" if args.shard == "1/1" else f" shard {args.shard}"
+    print(f"{'FAIL' if failures else 'PASS'} programs {args.core}{shard}: {len(programs) - len(failures)} of "
           f"{len(programs)} in {', '.join(args.dirs)}")
     if failures:
         sys.exit(1)

@@ -107,7 +107,7 @@ If a figure in the documents changed, go back to step 2.4.
 
 Push the release candidate and wait for every job of
 [ci.yml](../.github/workflows/ci.yml) to pass on that exact commit. That
-includes the two `programs` jobs, which take hours, one for each core.
+includes the `programs` jobs, which take hours, three shards for each core.
 Cut no tag before they are done.
 `python3 release/release.py ci --wait` does it. If `origin` is not on
 GitHub, add `--repo OWNER/NAME`.

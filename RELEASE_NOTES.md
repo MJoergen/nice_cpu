@@ -4,6 +4,20 @@ The release candidates of nice_cpu, newest first. Each section lists the
 changes since the one before that a user of the tools or the cores can see.
 [doc/HISTORY.md](doc/HISTORY.md) has the full story.
 
+The board repository [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65)
+pins one of these. Its tag for each is:
+
+| nice_cpu | NiceMonMEGA65 |
+|---|---|
+| `RC05` | `RC05` |
+| `RC04` | `RC04` |
+| `RC03` | none |
+| `RC02` | `RC02` |
+| `RC01` | none |
+
+The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
+The other two pin the tagged commit.
+
 ## RC05 (2026-10-26)
 
 **Upgrade notes.**

@@ -460,6 +460,9 @@ sweep: emulator analyze $(BUILD)/pcfx.bin $(BUILD)/sidefx.bin
 PROGRAMS = $(BUILD)/programs
 FUZZ_PROGRAMS = 10
 
+# SHARD = I/N runs the Ith of N shares of the programs, as CI does.
+SHARD = 1/1
+
 programs: emulator analyze
 	@rm -rf $(PROGRAMS)
 	@$(MAKE) --no-print-directory -C ../runtime test KEEP=$(abspath $(PROGRAMS)/runtime) \
@@ -469,7 +472,7 @@ programs: emulator analyze
 	@for m in "" --no-mpu --unchecked --grow; do \
 	  $(PYTHON) ../translator/test/fuzz.py $$m --keep $(PROGRAMS)/fuzz 1 $(FUZZ_PROGRAMS) \
 	    || exit 1; done > $(BUILD)/programs_fuzz.log 2>&1 || { cat $(BUILD)/programs_fuzz.log; exit 1; }
-	@$(PYTHON) test/programs.py --core $(CORE) --build $(BUILD) --emu $(EMU) $(PROGRAMS)/runtime $(PROGRAMS)/translator $(PROGRAMS)/fuzz
+	@$(PYTHON) test/programs.py --core $(CORE) --build $(BUILD) --emu $(EMU) --shard $(SHARD) $(PROGRAMS)/runtime $(PROGRAMS)/translator $(PROGRAMS)/fuzz
 
 analyze:
 	@mkdir -p $(BUILD)

@@ -55,9 +55,6 @@ from the fifth review". No code has TODO or FIXME comments.
 2026-10-26, at b2ac5a5, one commit after RC05. Each finding that is fixed
 has a "Resolved" paragraph there; the section numbers are the review's.)
 
-- **The release gate.** Tag NiceMonMEGA65 `RC05`, and say in RELEASE_NOTES.md
-  which board tag goes with each RC (§1.2). Split the programs jobs of CI in
-  two (§1.1). Decide on `origin/formal-refactor` (§1.3).
 - **PR #36, undecided.** It adds `RDSPC`, `RDSSR`, `WRSPC`, and `WRSSR`
   (control commands 4 to 7) to read and write the saved PC and SR from an
   interrupt routine, for breakpoints and single-stepping from software.
@@ -236,6 +233,9 @@ has a "Resolved" paragraph there; the section numbers are the review's.)
 
 Kept here so that they are not proposed again.
 
+- **Annotated tags for `RC01` to `RC05`** (§1.1). They stay lightweight:
+  re-tagging means force-pushing tags that others may have fetched. The next
+  tag is made by `release.py tag`, and is annotated.
 - **Four ways to fewer pipeline stalls in translated code**, tried in the
   translator and dropped, measured with
   `bench/pipecycles.py`:

@@ -77,6 +77,8 @@ Issue #53 ends with seven checkboxes for `debug_link.vhd`: the memory condition 
 
 Items 9 and 10 of #51 (won't do) and the items #54 left alone (the math unit's divider, `_o` against `_r`) are only in the issues. TODO.md's "Decided against" also lacks the won't-fix items of 2026-10-23: speculative reads, the math unit's store retiring early, and the timing fixes of #34; HISTORY.md:44-66 and MICROARCH.md §5.3 have them. **Fix:** a line each in "Decided against".
 
+**Resolved**: "Decided against" has an entry for items 9 and 10 of #51 with the items #54 left alone, one for speculative reads, one for the store into the math unit, and one for the timing fixes of #34. Each names HISTORY.md or MICROARCH.md for its figures.
+
 ### 2.3 The evidence against speculative reads is on a branch
 
 Commit e92703a says speculative reads were investigated and will not be done; MICROARCH.md §5.3 says so without figures, and HISTORY.md:59-66 gives the §5.6 percentages only. The measurement, 166 cycles (0.007%) of the translated benchmark, 18822 (1.5%) of the hand-written one, and 52002 waits on a path that was flushed, is only on `origin/read-waits`, with `readwait.nasm`. That commit's message also says the model charges a read after a skipped jump a wait that the core does not take, "a new TODO item"; the commit does not touch TODO.md, main has no such item, and on main the model charges nothing (`pipecycles.py`, "costs nothing") and is within 0.1% of the core (§8.1), so it was fixed without a record. **Fix:** the figures in §5.3 and HISTORY.md; then the branch can go.
@@ -316,7 +318,7 @@ RELEASE_NOTES.md:136 has 0.241 under RC03, and c-compiler-plan.md:91 has 2348 an
 - TODO.md:150-152 and :156 (§8.6, §6.5). The Vivado item of "Left from the fifth review": the root CLAUDE.md:87 has the path too, since ac01285.
 - PR #36 is in no item; `origin/read-waits` promises an item that was never written.
 
-**Resolved**: The step numbers. TODO.md, hdl/README.md, hdl/Makefile, and hdl/test/programs.py name step 7 for the runtime and translator programs and step 8 for the random programs, as MICROARCH.md §9 numbers them. The rest of §9.3 is open.
+**Resolved**: The step numbers. TODO.md, hdl/README.md, hdl/Makefile, and hdl/test/programs.py name step 7 for the runtime and translator programs and step 8 for the random programs, as MICROARCH.md §9 numbers them. The "Decided against" items are §2.2's. The root CLAUDE.md is named in the Vivado item of TODO.md. PR #36 has an item, as undecided. The item that `origin/read-waits` promises is not needed: the model charges the read after a skipped jump nothing now (§2.3). Lines 150-156 of the old TODO.md wait for the re-measurement of §8.
 
 ### 9.4 README.md and CLAUDE.md
 

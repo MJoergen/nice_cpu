@@ -62,6 +62,12 @@ the section numbers are the review's.)
   delete `origin/claude/project-thread-cmdpdw`, keep PR #36 until decided,
   and delete `origin/read-waits`, whose figures and test are on main
   (§1.3).
+- **PR #36, undecided.** It adds `RDSPC`, `RDSSR`, `WRSPC`, and `WRSSR`
+  (control commands 4 to 7) to read and write the saved PC and SR from an
+  interrupt routine, for breakpoints and single-stepping from software.
+  The debug link has the pause and the single step (DEBUG.md §6) since
+  it was written. Merge it after a rebase onto main, or close it as not
+  needed.
 - **Three behavior edges.** `debug_link.vhd` lets the second checksum byte
   of a dropped packet through to the program (§3.1); `niceasm.py
   --symbols` can overwrite its input (§4.1); `niceemu` ignores Ctrl-C while
@@ -104,8 +110,8 @@ the section numbers are the review's.)
 
 ([doc/review/fifth-repository-review.md](doc/review/fifth-repository-review.md))
 
-- **The Vivado path** is machine-specific in `hdl/Makefile` and
-  `hdl/CLAUDE.md`. Keep it as the default, or take it from the
+- **The Vivado path** is machine-specific in `hdl/Makefile`,
+  `hdl/CLAUDE.md`, and the root `CLAUDE.md`. Keep it as the default, or take it from the
   environment only (§1.6).
 - **The 2004 example programs** (`count`, `replicate`, `print`) have no
   license. The MIT license excludes them. Ask B. Ulmann (§1.6).
@@ -273,6 +279,27 @@ Kept here so that they are not proposed again.
     bus delays anyway, and the pushes and pops of the hand-written
     runtime. Interleaving crc32's two byte loads gained nothing for the
     same reason.
+- **Two simplifications of the pipelined stages** (issue #51, items 9 and
+  10), each about three lines. WRITE's register write is in two
+  branches, and merging them reshapes the re-timed WRITE paths; the
+  second also keys the R15 flush on `u_v.wreg`, so that it does not wait
+  for the write mux. DECODE's two refill branches could share a mux, but
+  it would sit ahead of `first_kind` and lengthen the path from FETCH's
+  words. Left alone in issue #54 for the same kind of reason: the math
+  unit's two divide start blocks (a procedure would take six
+  parameters), and reading the `_o` ports instead of their `_r` copies
+  (it breaks the convention of every entity).
+- **Speculative reads.** The waits they could remove are 0.006% and
+  0.18% of the cycles (MICROARCH.md §5.3, HISTORY.md).
+- **A store into the math unit that retires when it goes into the
+  register**, as one into memory does. It saved 0.39% of the translated
+  benchmark's cycles and 0.08% of `hand.nasm`'s, too little for a special
+  case of the I/O range (HISTORY.md).
+- **More timing fixes of the pipelined core** (issue #34): WRITE's
+  decisions into the enables of PREPARE's and WRITE's registers, WRITE's
+  ALU into its own next state, FETCH's next address from its ring, and
+  `irq_ready_o` combinational from WRITE (HISTORY.md,
+  [pipeline-timing.md](doc/review/pipeline-timing.md)).
 - **Python 3.7 for the hdl scripts.** They need Python 3.10 (`str | None`),
   as README.md says. Sixteen of them would need `from __future__ import
   annotations` for 3.7, and nothing asks for it (sixth review §1.5).

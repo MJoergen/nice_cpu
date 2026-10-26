@@ -477,6 +477,27 @@ and `make hwtest` passed all 59 tests on both boards. One run each:
 
 The Nexys4DDR's margin is thin, and it was not tried at 100 MHz again.
 
+## Since 4cd869e
+
+The in-system figures above are those of 4cd869e. Since then the
+predictor, the pause, the handshakes, and the single step changed the core.
+The commits recorded only one out-of-context figure: c96cdb0, which added
+the predictor, met 100 MHz on the R6 part with 0.379 ns of slack. On
+2026-10-26, at 53af956, `make timing` gave, one run each:
+
+| Part | Flow | Clock | Worst setup slack | Endpoints under 1 ns, failing |
+|---|---|---|---|---|
+| R6 (`xc7a200tfbg484-2`) | default | 100 MHz | +0.619 ns, `w_r.regs` into DBUS's `rq_r` | 26, 0 |
+| Nexys4DDR (`xc7a100tcsg324-1`) | timing | 100 MHz | −0.862 ns | 947, 475 |
+
+The Nexys4DDR runs at 90 MHz, and the same run at 100 MHz failed before
+too (−1.160 ns at the registered redirect, and −0.650 ns at the release
+candidate of 2026-10-22). The R6 part meets 100 MHz out of context with
+more margin than at c96cdb0. Neither is an in-system figure: the system
+around the core changes the placement. An in-system build at RC05, with
+NiceMonMEGA65's tag `RC05` and its `make hwtest`, needs that repository
+and the boards, and has not been done.
+
 ## Breakpoints
 
 The breakpoints of DEBUG.md §6 (issue 55, at 891c104) add a pause of

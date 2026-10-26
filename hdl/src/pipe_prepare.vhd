@@ -133,13 +133,13 @@ begin
    p_ready  <= not prep_r.valid or p_move;
    seq_emit <= valid_i and p_ready;
 
-   ready_o      <= p_ready;
-   valid_o      <= p_valid;
-   uop_o        <= p_out;
-   prep_o       <= prep_r;
-   rd_stb_o     <= rd_stb_r;
-   rd_addr_o    <= rd_addr_r;
-   load_o       <= p_load;
+   ready_o   <= p_ready;
+   valid_o   <= p_valid;
+   uop_o     <= p_out;
+   prep_o    <= prep_r;
+   rd_stb_o  <= rd_stb_r;
+   rd_addr_o <= rd_addr_r;
+   load_o    <= p_load;
 
    -- An instruction with a data read is counted in the cycle the bus
    -- accepts its last read. The counter returns its value from before the

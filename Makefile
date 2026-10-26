@@ -26,7 +26,7 @@ help:
 	@echo "  make pdfcheck    check that nice_intro.pdf matches the .tex"
 	@echo "  make diagrams    render the diagrams in doc/ (pdflatex, pdftoppm)"
 	@echo "  make all         test, typecheck, lint, and pdfcheck"
-	@echo "  make clean       remove build output"
+	@echo "  make clean       remove build output and the Python and mypy caches"
 	@echo ""
 	@echo "Each subdirectory has its own Makefile, for example:"
 	@echo "  make -C emulator test"
@@ -91,5 +91,6 @@ all: test typecheck lint pdfcheck
 
 clean:
 	@for d in $(CLEAN_DIRS); do $(MAKE) -C $$d clean || exit 1; done
+	@find . -path ./.git -prune -o \( -name .mypy_cache -o -name __pycache__ \) -type d -print0 | xargs -0 -r rm -rf
 
 .PHONY: help test $(addprefix test-,$(TEST_DIRS)) typecheck lint formal slow release-check hazards pdf pdfcheck diagrams all clean

@@ -1,5 +1,6 @@
 hdl/build/
 __pycache__/
+.mypy_cache/
 *.swp
 runtime/libc/build/
 runtime/libc/libc.a

@@ -121,9 +121,13 @@ DEBUG.md §5: "Every byte up to the `#` and the two bytes of cc after it belongs
 
 The six contracts a system keeps for `debug_link.vhd`, (a) to (f), are in its header and in hdl/README.md:1077-1095. DEBUG.md §7 gives the differences of the emulator and of a board, but not these, and neither says that the input FIFO must not let a `p` or `h` overtake a program byte. **Fix:** a list in DEBUG.md §7, or in SYSTEM.md §5.
 
+**Resolved**: DEBUG.md §7 has a list, "A board that carries the link has to do more than follow this file": the link accesses, the bus, the receiver, the console input and output (a buffer must not let a `p` or an `h` overtake a byte), the registers of the core, the counters, and the clear.
+
 ### 3.3 A `W` with a bad checksum
 
 DEBUG.md §3 says a `W` with a bad checksum "may leave some words written", and `debug_link.vhd` writes the words as they arrive. emulator/README.md:235-237 says the emulator writes nothing. DEBUG.md §7 lists the emulator's differences; this one is not among them. **Fix:** a line in §7.
+
+**Resolved**: DEBUG.md §7 says in the emulator's list that a `W` with a bad checksum writes nothing there, and that a board may leave some words written.
 
 ### 3.4 The counters while paused
 

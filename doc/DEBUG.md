@@ -219,8 +219,7 @@ system has there otherwise.
 | `0xFFFFFFF7` | Reserved. It reads 0 and takes no write. |
 | `0xFFFFFFF8`–`0xFFFFFFFF` | The addresses of breakpoints 0 to 7. The words from `0xFFFFFFF8` + N up read 0 and take no write. |
 
-A write to a read-only register is ignored. The bits of the control
-register:
+A write to a read-only register is ignored. The bits of the control register:
 
 | Bit | Read | Write |
 |---|---|---|
@@ -441,6 +440,47 @@ command line, with these differences:
 - `-2004`, `--symbols`, `--no-cycle-counter`, and its other options work as
   usual.
 - It runs until it is stopped by a signal, and then exits with status 0.
+- A `W` writes its words when its checksum has been checked, so a `W` with
+  a bad checksum writes nothing (§3). One with a bad payload writes the
+  whole words before the bad byte, at most N. A board may leave some words
+  of a `W` with a bad checksum written.
+- With `--max-steps N`, the Nth step of a paused processor ends in `h` with
+  the reason 5, never in `p`. A host that steps a program under that limit
+  waits for either notice.
+- It measures the 100 ms of §5 when it serves the link, not when a byte
+  arrives. A byte can wait for the next service, so a gap that it measures
+  may be longer than the host's by up to the service interval.
+
+A board that carries the link has to do more than follow this file. These
+are the rules that `hdl/src/debug_link.vhd` asks of its board:
+
+- **Link accesses.** The link reads and writes the memory only while the
+  processor is held, halted, or paused, and the processor uses no bus then.
+  A link read of the console or the read counter returns 0, takes no input
+  byte, and counts nothing, and a link write to them is ignored (§3). The
+  simplest board gives them a path that only the link uses.
+- **Memory bus.** The link's bus master is pipelined. The slave answers a
+  request with an ACK in a later cycle, with the read data valid in that
+  cycle.
+- **Receiver.** The link may hold the receiver for as long as a write to
+  the memory takes, a few cycles after a byte, so a UART receiver that
+  cannot wait has to hold a byte for that long. It holds it for longer
+  after the tag of a request that waits for its answer, and while the memory
+  is cleared.
+- **Console input.** The board's input buffer takes a byte from the link
+  at any time, and tells the link how many more bytes it can take. A start
+  empties it (§6).
+- **Console output.** The program's console bytes go to the link in the
+  order the program wrote them. A buffer between the program and the link
+  must not let a `p` or an `h` overtake a byte that the program wrote
+  before. The link sends `h` and `p` after the last byte it has taken.
+- **Registers of the core.** R0 to R15, the halt, and the pause come from a
+  core that the hold resets. The link keeps the values of a halt or a pause
+  itself, and a core pauses only after the link asked for it.
+- **Counters.** The counters and the timer stop while the processor is
+  paused, and run during a step (MICROARCH.md §8).
+- **Clear.** When the link asks for a clear, the board sets every word of
+  the memory to 0 and then says so. The link makes no access meanwhile.
 
 ## 8. An example
 

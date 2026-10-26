@@ -23,10 +23,13 @@ runs that stop in each way: `HALT`, the other halts, and the step limit,
 Then `test/link.py` runs niceemu with `--link 0` and checks the debug link
 over TCP (see Debug link below): the packets of DEBUG.md §8 byte for byte,
 the errors and drops, a program loaded, run, halted, and restarted, the
-overflow notice, the step limit, and the single step: its example of DEBUG.md §8,
+overflow notice, the step limit, the single step: its example of DEBUG.md §8,
 the cases where bit 5 does nothing, a step into `HALT` and to the step limit,
 a step at a console read, and R13–R15 after each step across interrupt entries,
-compared with `--trace`.
+compared with `--trace`, and the breakpoints: their example of DEBUG.md §8,
+the stop register, a step and a start that end at one, two at one address,
+a skipped instruction and a `HALT` at one, what keeps and clears them, and
+an interrupt entry that goes first.
 
 `test/reserved.nasm` runs a reserved control word, which halts the
 processor with exit status 2.
@@ -232,6 +235,12 @@ read waits. A pause takes effect between two steps, except while a console
 read waits, when it takes effect after the next byte (DEBUG.md §7). A step
 of a paused processor (bit 5, DEBUG.md §6) runs one step of `--max-steps`
 and `--trace`, an instruction or an interrupt entry, and then pauses again.
+It has four breakpoints (DEBUG.md §6). Before each step, after the
+`--irq` and `--nmi` requests of that step are raised, it stops at a
+breakpoint at R15, unless the step is an interrupt entry or the first after
+a go on or a step. A stop does not count as a step, so the requests and
+`--max-steps` count as without breakpoints. A write to their registers
+takes effect before the next step, and a host's connection clears them.
 A `W` writes its words when its checksum has been checked, so a `W`
 with a bad checksum writes nothing. One with a bad payload writes the whole
 words before the bad byte, at most N.

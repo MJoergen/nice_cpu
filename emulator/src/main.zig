@@ -556,8 +556,14 @@ fn serve(arena: std.mem.Allocator, opts: Options, syms: []const Symbol, cpu: *Cp
                     .nmi => cpu.requestNmi(r.vector),
                 }
             }
+            // After the requests of this step, as an entry goes first.
+            if (link.breakDue()) {
+                link.pause();
+                break;
+            }
             try cpu.step();
             link.step_due = false;
+            link.after_go = false;
             if (cpu.stopped) {
                 cpu.stopped = false;
                 break;

@@ -553,6 +553,15 @@ pub const Cpu = struct {
         if (self.trace) |w| try self.traceInstruction(w, pc, ex.iw, ex.executed, before);
     }
 
+    /// Whether the next step is an interrupt entry (§7.1), as `step`
+    /// decides it, the timer's request included.
+    pub fn entryDue(self: *const Cpu) bool {
+        if (self.halted() or self.after_rti or self.in_service) return false;
+        if (self.nmi_pending != null) return true;
+        const irq = self.irq_pending != null or (self.timer_irq and self.timer.raised != null);
+        return irq and self.flag(sr_e) == 1;
+    }
+
     /// §7.2: interrupt entry, for IRQ, NMI and INT.
     fn enterInterrupt(self: *Cpu, v: u8) void {
         const sr = self.getReg(14);

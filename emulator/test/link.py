@@ -59,6 +59,28 @@ SPIN = """
 loop    MOVE    R15, loop
 """
 
+# Jumps to a loop at 0x10, for the breakpoint of DEBUG.md §8.
+AT10 = """
+        MOVE    R15, loop
+        .ORG    0x10
+loop    MOVE    R15, loop
+"""
+
+# Reads data into R2 at 0, and counts the passes in R3.
+LOAD = """
+loop    MOVE    R2, @data
+        ADD     R3, R3, 1
+        MOVE    R15, loop
+data    .DAT    7
+"""
+
+# Counts in R2, and skips the HALT at 2, as Z is 0.
+SKIP = """
+loop    ADD     R2, R2, 1
+        ?Z HALT
+        MOVE    R15, loop
+"""
+
 
 def pkt(tag: str, payload: str) -> bytes:
     """ESC, the tag, the payload, '#', and the checksum (DEBUG.md §2)."""
@@ -83,7 +105,7 @@ def answer(addr: int, words: List[int]) -> bytes:
 
 
 CONTROL = 0xFFFFFFF0
-HELLO = b"\xffb03#C5"
+HELLO = b"\xffb04#C6"
 PAUSED = b"\xffp#70"
 
 
@@ -172,7 +194,10 @@ def test_example() -> None:
     e.expect("control held", answer(CONTROL, [0x9]))
     # The halt reason, the version, the free space, and a reserved word.
     e.send(read(0xFFFFFFF1, 4))
-    e.expect("F1-F4", answer(0xFFFFFFF1, [0, 3, 2048, 0]))
+    e.expect("F1-F4", answer(0xFFFFFFF1, [0, 4, 2048, 0]))
+    # The breakpoints: four, none enabled, no stop, and the addresses 0.
+    e.send(read(0xFFFFFFF5, 11))
+    e.expect("F5-FF", answer(0xFFFFFFF5, [4] + [0] * 10))
     status, out, _ = e.stop()
     expect("exit status", bytes([status]), b"\x00")
     expect("stdout", out, b"")
@@ -229,7 +254,7 @@ def test_errors() -> None:
     e.send(write(0xFFFFFF01, [5]) + write(0xFFFFFFF2, [7]))
     e.expect("ignored writes", ok(0xFFFFFF01, 1) + ok(0xFFFFFFF2, 1))
     e.send(read(0xFFFFFF01, 1) + read(0xFFFFFFF2, 1))
-    e.expect("read counter", answer(0xFFFFFF01, [0]) + answer(0xFFFFFFF2, [3]))
+    e.expect("read counter", answer(0xFFFFFF01, [0]) + answer(0xFFFFFFF2, [4]))
     # A clear: 0x5 clears and stays held.
     e.send(write(CONTROL, [0x5]))
     e.expect("clear", ok(CONTROL, 1))
@@ -589,6 +614,193 @@ def test_step(count: List[int], one: List[int], stop: List[int], echo: List[int]
     e.stop()
 
 
+BREAK_EN = 0xFFFFFFF4
+STOP_REG = 0xFFFFFFF6
+BREAK0 = 0xFFFFFFF8
+
+
+def hit(n: int) -> bytes:
+    """The `x` notice of breakpoint n (DEBUG.md §4)."""
+    return pkt("x", f"{n:02X}")
+
+
+def set_breaks(e: Emu, addrs: List[int], en: int) -> None:
+    """Write the addresses of breakpoints 0 up, and then the enable bits."""
+    e.send(write(BREAK0, addrs) + write(BREAK_EN, [en]))
+    e.expect("set breakpoints", ok(BREAK0, len(addrs)) + ok(BREAK_EN, 1))
+
+
+def test_break(at10: List[int], load: List[int], count: List[int], skip: List[int],
+               stop: List[int], irq: List[int]) -> None:
+    """The breakpoints of §6: the `x` notice, the stop register, the first
+    step exempt, an interrupt entry first, and what keeps and clears them."""
+    # The example of §8, with its checksums written out. The go on runs the
+    # instruction at 0x10, a jump to itself, which stops there again.
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, at10))
+    e.expect("load at10", ok(0, len(at10)))
+    e.send(ESC + b"WFFFFFFF8000100000010#BB")
+    e.expect("address", ESC + b"kFFFFFFF80001#4E")
+    e.send(ESC + b"WFFFFFFF4000100000001#B7")
+    e.expect("enable", ESC + b"kFFFFFFF40001#4A")
+    e.send(ESC + b"WFFFFFFF0000100000008#BA")
+    e.expect("start to x", ESC + b"kFFFFFFF00001#46" + ESC + b"x00#D8")
+    e.send(ESC + b"RFFFFFFEF0001#42")
+    e.expect("R15 at 0x10", ESC + b"rFFFFFFEF000100000010#E3")
+    e.send(ESC + b"RFFFFFFF60001#33")
+    e.expect("stop register", ESC + b"rFFFFFFF6000100000100#D4")
+    expect("control at x", bytes([word(e, CONTROL)]), bytes([0x18]))
+    e.send(ESC + b"WFFFFFFF0000100000008#BA")
+    e.expect("go on to x", ESC + b"kFFFFFFF00001#46" + ESC + b"x00#D8")
+    e.stop()
+
+    # A breakpoint at the start address, at an instruction with a data read,
+    # fires before the first instruction and on each pass. Disabled, it lets
+    # the program run, and the stop register reads 0 after a go on.
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, load))
+    e.expect("load load", ok(0, len(load)))
+    set_breaks(e, [0], 1)
+    e.send(write(CONTROL, [0x8]))
+    e.expect("start at a breakpoint", ok(CONTROL, 1) + hit(0))
+    expect("R2, R3 before the first", bytes([word(e, 0xFFFFFFE2), word(e, 0xFFFFFFE3)]), bytes([0, 0]))
+    for n in range(1, 3):
+        e.send(write(CONTROL, [0x8]))
+        e.expect(f"pass {n}", ok(CONTROL, 1) + hit(0))
+        expect(f"R2, R3 after pass {n}", bytes([word(e, 0xFFFFFFE2), word(e, 0xFFFFFFE3)]), bytes([7, n]))
+    e.send(write(BREAK_EN, [0]) + write(CONTROL, [0x8]))
+    e.expect("disable and go on", ok(BREAK_EN, 1) + ok(CONTROL, 1))
+    expect("no x when disabled", e.take(1, timeout=0.3), b"")
+    expect("stop register after a go on", bytes([word(e, STOP_REG)]), bytes([0]))
+    e.send(write(CONTROL, [0x18]))
+    e.expect("pause, not at a breakpoint", ok(CONTROL, 1) + PAUSED)
+    expect("stop register after p", bytes([word(e, STOP_REG)]), bytes([0]))
+    e.stop()
+
+    # A step that ends at a breakpoint sends x, and a start paused at one
+    # too. Two at one address send the lower number. Bits from N up and
+    # addresses from N up take no write.
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, count))
+    e.expect("load count", ok(0, len(count)))
+    set_breaks(e, [5, 2, 2, 7, 9], 0xFE)
+    e.send(read(BREAK_EN, 1) + read(0xFFFFFFFC, 1))
+    e.expect("no bits and addresses from N", answer(BREAK_EN, [0xE]) + answer(0xFFFFFFFC, [0]))
+    e.send(write(CONTROL, [0x18]))
+    e.expect("start paused at 0", ok(CONTROL, 1) + PAUSED)
+    e.send(write(CONTROL, [0x38]))
+    e.expect("step to 2", ok(CONTROL, 1) + hit(1))
+    expect("stop register 1", bytes([word(e, STOP_REG) >> 8, word(e, STOP_REG) & 0xFF]), bytes([1, 1]))
+    e.send(write(CONTROL, [0x38]))
+    e.expect("step to 0", ok(CONTROL, 1) + PAUSED)
+    set_breaks(e, [0], 0x1)
+    e.send(write(CONTROL, [0x9]) + write(CONTROL, [0x18]))
+    e.expect("start paused at a breakpoint", ok(CONTROL, 1) + ok(CONTROL, 1) + hit(0))
+    # A hold and a clear keep the stop register and the breakpoints, and a
+    # start clears the stop register and keeps the breakpoints.
+    e.send(write(CONTROL, [0x9]))
+    e.expect("hold at x", ok(CONTROL, 1))
+    expect("hold keeps the stop", bytes([word(e, STOP_REG) >> 8]), bytes([1]))
+    e.send(write(CONTROL, [0x5]))
+    e.expect("clear", ok(CONTROL, 1))
+    expect("clear keeps the stop", bytes([word(e, STOP_REG) >> 8]), bytes([1]))
+    e.send(read(BREAK_EN, 1) + read(BREAK0, 2))
+    e.expect("clear keeps them", answer(BREAK_EN, [1]) + answer(BREAK0, [0, 2]))
+    e.send(write(0, count) + write(BREAK_EN, [0]) + write(CONTROL, [0x8]))
+    e.expect("reload and start", ok(0, len(count)) + ok(BREAK_EN, 1) + ok(CONTROL, 1))
+    expect("start clears the stop", bytes([word(e, STOP_REG)]), bytes([0]))
+    e.send(read(BREAK0, 2))
+    e.expect("start keeps them", answer(BREAK0, [0, 2]))
+    e.send(write(BREAK_EN, [1]))
+    e.expect("enable while running", ok(BREAK_EN, 1) + hit(0))
+    # A new connection clears them, with its b.
+    e.sock.close()
+    time.sleep(0.3)
+    e.sock = e.connect()
+    e.buf = b""
+    e.expect("b again", HELLO)
+    e.send(read(BREAK_EN, 1) + read(BREAK0, 2))
+    e.expect("connection clears them", answer(BREAK_EN, [0]) + answer(BREAK0, [0, 0]))
+    e.stop()
+
+    # A skipped instruction is a step, so a breakpoint at it fires.
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, skip))
+    e.expect("load skip", ok(0, len(skip)))
+    set_breaks(e, [2], 1)
+    e.send(write(CONTROL, [0x8]))
+    e.expect("skipped HALT", ok(CONTROL, 1) + hit(0))
+    e.send(write(CONTROL, [0x8]))
+    e.expect("skipped HALT again", ok(CONTROL, 1) + hit(0))
+    expect("R2 after two passes", bytes([word(e, 0xFFFFFFE2)]), bytes([2]))
+    e.stop()
+
+    # A HALT at a breakpoint: x first, then h after a go on.
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, stop))
+    e.expect("load stop", ok(0, len(stop)))
+    set_breaks(e, [0], 1)
+    e.send(write(CONTROL, [0x8]))
+    e.expect("x before HALT", ok(CONTROL, 1) + hit(0))
+    e.send(write(CONTROL, [0x8]))
+    e.expect("h after the go on", ok(CONTROL, 1) + b"\xffh01#C9")
+    e.stop()
+
+    # irq.nasm with one IRQ, raised before step 5, the A3 at word 10: the
+    # entry goes first, and the breakpoint at 10 fires after the RTI, at the
+    # instruction after it. The log at 0x200 is A1 A2 C1 C2 then.
+    def log(e: Emu) -> List[int]:
+        e.send(read(0x200, 4))
+        got = e.take(len(answer(0x200, [0] * 4)))
+        return [int(got[14 + 8 * i:22 + 8 * i], 16) for i in range(4)]
+
+    e = Emu(["--irq", "5:2"])
+    e.take(len(HELLO))
+    e.send(write(0, irq))
+    e.expect("load irq", ok(0, len(irq)))
+    set_breaks(e, [10], 1)
+    e.send(write(CONTROL, [0x8]))
+    e.expect("entry first", ok(CONTROL, 1) + hit(0))
+    expect("log after the RTI", bytes(log(e)), bytes([0xA1, 0xA2, 0xC1, 0xC2]))
+    e.stop()
+
+    # A breakpoint at the IRQ routine's first instruction fires inside it.
+    e = Emu(["--irq", "5:2"])
+    e.take(len(HELLO))
+    e.send(write(0, irq))
+    e.expect("load irq", ok(0, len(irq)))
+    set_breaks(e, [20], 1)
+    e.send(write(CONTROL, [0x8]))
+    e.expect("in the routine", ok(CONTROL, 1) + hit(0))
+    expect("log in the routine", bytes(log(e)), bytes([0xA1, 0xA2, 0, 0]))
+    e.stop()
+
+    # Stepped to the breakpoint at 10 before step 5, the go on takes the IRQ
+    # raised then first, and stops at 10 again after the RTI.
+    e = Emu(["--irq", "5:2"])
+    e.take(len(HELLO))
+    e.send(write(0, irq))
+    e.expect("load irq", ok(0, len(irq)))
+    set_breaks(e, [10], 1)
+    e.send(write(CONTROL, [0x18]))
+    e.expect("irq start paused", ok(CONTROL, 1) + PAUSED)
+    for n in range(4):
+        e.send(write(CONTROL, [0x38]))
+        e.expect(f"irq step {n}", ok(CONTROL, 1) + PAUSED)
+    e.send(write(CONTROL, [0x38]))
+    e.expect("step to 10", ok(CONTROL, 1) + hit(0))
+    expect("log at 10", bytes(log(e)), bytes([0xA1, 0xA2, 0, 0]))
+    e.send(write(CONTROL, [0x8]))
+    e.expect("go on to the entry", ok(CONTROL, 1) + hit(0))
+    expect("log after the RTI", bytes(log(e)), bytes([0xA1, 0xA2, 0xC1, 0xC2]))
+    e.stop()
+
+
 def test_usage() -> None:
     proc = subprocess.run([NICEEMU, "--link", "0", "--input", "x"], capture_output=True, text=True)
     want = "niceemu: --input cannot be given with --link\n"
@@ -603,13 +815,17 @@ def main() -> None:
         count = assemble(tmp, "count", COUNT)
         one = assemble(tmp, "one", ONE)
         stop = assemble(tmp, "stop", STOP)
+        at10 = assemble(tmp, "at10", AT10)
+        load = assemble(tmp, "load", LOAD)
+        skip = assemble(tmp, "skip", SKIP)
         with open(os.path.join(HERE, "irq.nasm")) as src:
             irq = assemble(tmp, "irq", src.read())
         irq_bin = os.path.join(tmp, "irq.bin")
         tests: List[Callable[[], None]] = [
             test_example, test_errors, lambda: test_run(echo), lambda: test_overflow(spin),
             lambda: test_step_limit(spin), lambda: test_pause(count, echo),
-            lambda: test_step(count, one, stop, echo, irq, irq_bin), test_usage,
+            lambda: test_step(count, one, stop, echo, irq, irq_bin),
+            lambda: test_break(at10, load, count, skip, stop, irq), test_usage,
         ]
         for t in tests:
             t()

@@ -11,7 +11,7 @@ const Cpu = cpu_zig.Cpu;
 /// The escape byte, which starts a packet (DEBUG.md §1).
 pub const esc: u8 = 0xFF;
 /// The protocol version (DEBUG.md §4, §6).
-const version: u8 = 3;
+const version: u8 = 4;
 /// The program's input buffer, in bytes (DEBUG.md §7).
 pub const input_size = 2048;
 /// The packet timeout of DEBUG.md §5.
@@ -19,6 +19,10 @@ const timeout_ms = 100;
 /// The debug registers, for the link only (DEBUG.md §6).
 const debug_base: u32 = 0xFFFF_FFE0;
 const control_addr: u32 = debug_base + 0x10;
+/// The number of breakpoints (DEBUG.md §6, §7).
+const breaks = 4;
+const break_en_addr: u32 = debug_base + 0x14;
+const break_addr0: u32 = debug_base + 0x18;
 /// The longest payload of a request: A, N, and 65535 words.
 const max_payload = 12 + 8 * 0xFFFF;
 
@@ -47,6 +51,15 @@ pub const Link = struct {
     /// A step of a paused processor has been asked for and not yet run: the
     /// run loop takes one step before it pauses again (DEBUG.md §6).
     step_due: bool = false,
+    /// The first step after a go on or a step, which no pause request and
+    /// no breakpoint stops (DEBUG.md §6).
+    after_go: bool = false,
+    /// The enable bits and the addresses of the breakpoints (DEBUG.md §6).
+    break_en: u32 = 0,
+    break_addr: [breaks]u32 = @splat(0),
+    /// The breakpoint of the last `x`, until the next go on, step, or start:
+    /// the stop register.
+    stop_break: ?u8 = null,
     /// The step limit stopped the run: halt reason 5.
     limit_hit: bool = false,
     /// A start that the run loop has not carried out yet. It resets the
@@ -123,12 +136,36 @@ pub const Link = struct {
         return self.running() and self.pause_req and !at_limit and !self.step_due;
     }
 
-    /// Pause the processor, and send the console output so far and the `p`
-    /// notice.
+    /// The lowest enabled breakpoint at `addr`, if any.
+    fn breakAt(self: *const Link, addr: u32) ?u8 {
+        for (self.break_addr, 0..) |a, i| {
+            if (self.break_en >> @intCast(i) & 1 == 1 and a == addr) return @intCast(i);
+        }
+        return null;
+    }
+
+    /// Whether a breakpoint stops the processor now, before the next step:
+    /// R15 is an enabled breakpoint, and the step is not the first after a go
+    /// on or a step, nor an interrupt entry, which goes first (DEBUG.md §6).
+    pub fn breakDue(self: *const Link) bool {
+        return self.running() and !self.after_go and !self.cpu.entryDue() and
+            self.breakAt(self.cpu.getReg(15)) != null;
+    }
+
+    /// Pause the processor, and send the console output so far and the
+    /// notice: `x` if R15 is an enabled breakpoint, and `p` otherwise
+    /// (DEBUG.md §4). A stop at a breakpoint sets bit 4 as a request does.
     pub fn pause(self: *Link) void {
         self.paused = true;
+        self.pause_req = true;
         self.console_w.flush() catch {};
-        self.sendPacket('p', "");
+        self.stop_break = self.breakAt(self.cpu.getReg(15));
+        if (self.stop_break) |i| {
+            var buf: [2]u8 = undefined;
+            self.sendPacket('x', hex(&buf, i));
+        } else {
+            self.sendPacket('p', "");
+        }
     }
 
     /// The halt reason of DEBUG.md §6.
@@ -183,6 +220,9 @@ pub const Link = struct {
         self.conn_eof = false;
         posix.setsockopt(fd, posix.IPPROTO.TCP, posix.TCP.NODELAY, &std.mem.toBytes(@as(c_int, 1))) catch {};
         self.state = .idle;
+        // Every `b` means that no breakpoint is left (DEBUG.md §6, §7).
+        self.break_en = 0;
+        self.break_addr = @splat(0);
         var buf: [2]u8 = undefined;
         self.sendPacket('b', hex(&buf, version));
     }
@@ -335,6 +375,10 @@ pub const Link = struct {
             0x11 => self.haltReason(),
             0x12 => version,
             0x13 => @intCast(input_size - self.input_len),
+            0x14 => self.break_en,
+            0x15 => breaks,
+            0x16 => if (self.stop_break) |i| 0x100 | @as(u32, i) else 0,
+            0x18...0x18 + breaks - 1 => self.break_addr[addr - break_addr0],
             else => 0,
         };
     }
@@ -342,6 +386,14 @@ pub const Link = struct {
     /// A link write (DEBUG.md §3).
     fn writeWord(self: *Link, addr: u32, value: u32) void {
         if (addr == control_addr) return self.writeControl(value);
+        if (addr == break_en_addr) {
+            self.break_en = value & ((1 << breaks) - 1);
+            return;
+        }
+        if (addr >= break_addr0 and addr < break_addr0 + breaks) {
+            self.break_addr[addr - break_addr0] = value;
+            return;
+        }
         if (addr >= debug_base) return;
         if (addr == cpu_zig.console_addr or addr == cpu_zig.counter_addr) return;
         // Out of memory leaves the word unwritten.
@@ -363,13 +415,20 @@ pub const Link = struct {
             self.start();
         } else if (!self.pause_req) {
             // Cancels a request, or makes a paused processor go on.
-            self.paused = false;
+            if (self.paused) self.goOn();
         } else if (value & ctl_step != 0 and self.paused) {
             // One step, and then the run loop pauses again. Bit 5 does
             // nothing unless the processor is paused.
-            self.paused = false;
+            self.goOn();
             self.step_due = true;
         }
+    }
+
+    /// A paused processor goes on, for a go on or a step.
+    fn goOn(self: *Link) void {
+        self.paused = false;
+        self.after_go = true;
+        self.stop_break = null;
     }
 
     /// A hold ends a pause, and R0–R15 stay as they are.
@@ -378,6 +437,7 @@ pub const Link = struct {
         self.held = true;
         self.paused = false;
         self.step_due = false;
+        self.after_go = false;
     }
 
     fn start(self: *Link) void {
@@ -385,6 +445,8 @@ pub const Link = struct {
         self.paused = false;
         self.started = true;
         self.step_due = false;
+        self.after_go = false;
+        self.stop_break = null;
         self.interrupted = true;
         self.limit_hit = false;
         self.input_head = 0;

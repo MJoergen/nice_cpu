@@ -329,6 +329,8 @@ RELEASE_NOTES.md:136 has 0.241 under RC03, and c-compiler-plan.md:91 has 2348 an
 
 `doc/check_refs.py:30`'s `DOCUMENTS` lacks DEBUG.md, so the sixty-odd citations of "DEBUG.md §n" in SYSTEM.md, the READMEs, TODO.md, and RELEASE_NOTES.md are not checked. The reader read them all: every section exists. **Fix:** one line.
 
+**Resolved**: `DOCUMENTS` has DEBUG.md. A citation of a section that does not exist, tried once by hand in SYSTEM.md, fails `make -C doc test`, and every real citation passes.
+
 ### 9.6 Nits
 
 HISTORY.md:113 "misspelt"; emulator/test/link.py:397 "cancelled"; an en dash in `link.zig:375`; `mchess.c` "colour" (third party); hdl/README.md:972 quotes `strings` at 3.1 and `bst` at 2.5 cycles per instruction at 1a41b0c, dated, where they are 2.40 and 1.98 now.

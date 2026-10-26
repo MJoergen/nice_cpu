@@ -30,6 +30,7 @@ from typing import Dict, List, Set
 DOCUMENTS = {
     "ISA.md": "doc/ISA.md",
     "SYSTEM.md": "doc/SYSTEM.md",
+    "DEBUG.md": "doc/DEBUG.md",
     "MICROARCH.md": "doc/MICROARCH.md",
     "HISTORY.md": "doc/HISTORY.md",
     "REFERENCES.md": "doc/REFERENCES.md",

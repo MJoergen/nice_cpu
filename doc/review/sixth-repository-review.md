@@ -56,6 +56,15 @@ README.md:174-176 says `make test` needs no C or Rust compiler. When clang and `
 - Dhrystone 2.1 (`bench/dhrystone/`) has no stated terms, and `mchess.c` has no author, origin, or license line; README.md's License section covers "the code and the documents", which over-reaches for both.
 - `timer.vhd:15` is 113 characters (390cfc6 joined the header's sentences) and `tb_core.vhd:805` is 104; vsg warns.
 
+**Resolved**: Six of the seven.
+- The `wasm` recipes of runtime/libc, bench, and translator end with `chmod -x`, the 19 files are back to mode 644, and `make -C doc test` fails if a checked-in `.wasm` file is executable.
+- `.mypy_cache/` is in `.gitignore`, and the top-level `make clean` also removes the `.mypy_cache` and `__pycache__` directories.
+- The top-level `make test` stops at once, with a message that names `TEST_DIRS`, when `hdl` is among them and GHDL is not found. `GHDL` names the program, as in hdl/Makefile.
+- `nicebuild.py` checks for the compiler of the language (`CLANG`, `ZIG`, or `RUSTC`) before it runs anything, and `test/build.py` has a case for each.
+- `timer.vhd:15` and `tb_core.vhd:824` are wrapped; vsg no longer warns about either.
+- The Python 3.10 of the hdl scripts is won't fix, as TODO.md's "Decided against" now says.
+- Dhrystone's terms are left. `mchess.c` is by the repository's author: its header has a copyright and license line, and README.md's License section says that the license covers it and does not cover Dhrystone.
+
 ## 2. The closed issues and pull requests
 
 Seventeen issues closed since the fifth review, #34 and #38 to #54. The reader checked each against the commits that closed it and found all done in substance. Two were done differently from what they asked, and the difference is recorded: the three won't-fix items of #34 in HISTORY.md and pipeline-timing.md, and #46, where nicewasm closes its loops with the predicted jump instead of leaving them as they were.

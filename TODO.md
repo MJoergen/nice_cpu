@@ -93,9 +93,8 @@ the section numbers are the review's.)
   RELEASE_NOTES.md's missing upgrade notes and labels; README.md's "four
   stages" and "four tools"; CLAUDE.md's Layout; DEBUG.md in
   `check_refs.py` (§7.5, §9).
-- **Smaller.** The `.wasm` executable bits and `.mypy_cache` (§1.5); terms for Dhrystone and `mchess.c`, and
-  `mchess.expected`'s provenance (§1.5, §5.2); the Zig library size claim
-  (§5.1); `--stack` needs `--memory` (§5.3); `trapmsg.nasm` for codes
+- **Smaller.** Terms for Dhrystone (§1.5); `mchess.expected`'s provenance
+  (§5.2); the Zig library size claim (§5.1); `--stack` needs `--memory` (§5.3); `trapmsg.nasm` for codes
   above 7, `CLOCKS_PER_SEC`, the reserved labels, ABI.md's join order
   (§5.4); the wall-clock limit of `errors.py` (§6.3); `nicebuild.py`'s
   `--allow-undefined`, `--stack 0`, and messages (§6.4); `--irq` against
@@ -274,6 +273,9 @@ Kept here so that they are not proposed again.
     bus delays anyway, and the pushes and pops of the hand-written
     runtime. Interleaving crc32's two byte loads gained nothing for the
     same reason.
+- **Python 3.7 for the hdl scripts.** They need Python 3.10 (`str | None`),
+  as README.md says. Sixteen of them would need `from __future__ import
+  annotations` for 3.7, and nothing asks for it (sixth review §1.5).
 - **A condition or instruction for signed comparison.** A signed a < b
   takes two instructions, `?V XOR R14, R14, 0x10000000` and then `?N`,
   as ISA.md §9.2 shows and nicewasm does. It stays that way.

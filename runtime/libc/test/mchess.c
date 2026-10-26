@@ -20,6 +20,9 @@
  *
  * Not implemented: castling, en passant, UCI, time control,
  * opening book.
+ *
+ * Copyright (c) 2026 Michael Jørgensen. MIT license, as the rest of this
+ * repository (see LICENSE).
  ***************************************************************/
 
 #include <assert.h>

@@ -22,7 +22,7 @@ cover: smtbmc yices
 
 [script]
 plugin -i ghdl
-ghdl --std=08 -fpsl nice_pkg.vhd trace_pkg.vhd pipe_pkg.vhd pipe_fetch.vhd pipe_decode.vhd pipe_prepare.vhd pipe_dbus.vhd pipe_write.vhd pipeline.vhd wb_master_check.vhd handshake_check.vhd formal_pipeline.vhd -e formal_pipeline
+ghdl --std=08 -fpsl nice_pkg.vhd trace_pkg.vhd pipe_pkg.vhd pipe_fetch.vhd pipe_decode.vhd pipe_prepare.vhd pipe_dbus.vhd pipe_write.vhd pipeline.vhd wb_master_check.vhd handshake_check.vhd core_check.vhd formal_pipeline.vhd -e formal_pipeline
 prep -top formal_pipeline
 
 [files]
@@ -37,4 +37,5 @@ prep -top formal_pipeline
 ../src/pipeline.vhd
 wb_master_check.vhd
 handshake_check.vhd
+core_check.vhd
 formal_pipeline.vhd

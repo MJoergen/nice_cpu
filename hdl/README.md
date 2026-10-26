@@ -102,7 +102,8 @@ departs from it.
 | [test/trace_reads.py](test/trace_reads.py) | Finds the first line where two traces differ, and shows the data reads of that instruction. |
 | [formal/wb_master_check.vhd](formal/wb_master_check.vhd) | Formal properties of a Wishbone master port. |
 | [formal/handshake_check.vhd](formal/handshake_check.vhd) | Formal properties of a valid/ready port that takes requests. |
-| [formal/formal_multicycle.vhd](formal/formal_multicycle.vhd) | The multi-cycle core with a checker on each of its four ports. |
+| [formal/core_check.vhd](formal/core_check.vhd) | Formal properties of the ports of a core: a checker on each of its four ports, and the rules of a stopped core. |
+| [formal/formal_multicycle.vhd](formal/formal_multicycle.vhd) | The multi-cycle core with `core_check`. |
 | [formal/multicycle.sby](formal/multicycle.sby) | The SymbiYosys job for it. |
 | [formal/formal_timer.vhd](formal/formal_timer.vhd) | The timer with checks of its bus and interrupt ports. |
 | [formal/timer.sby](formal/timer.sby) | The SymbiYosys job for it. |
@@ -120,7 +121,7 @@ departs from it.
 | [formal/pipe_dbus.sby](formal/pipe_dbus.sby) | The SymbiYosys job for it. |
 | [formal/formal_pipe_write.vhd](formal/formal_pipe_write.vhd) | WRITE of the pipelined core, with the properties of its halt, its pause, and its breakpoints. |
 | [formal/pipe_write.sby](formal/pipe_write.sby) | The SymbiYosys job for it. |
-| [formal/formal_pipeline.vhd](formal/formal_pipeline.vhd) | The pipelined core with a checker on each of its four ports. |
+| [formal/formal_pipeline.vhd](formal/formal_pipeline.vhd) | The pipelined core with `core_check`. |
 | [formal/pipeline.sby](formal/pipeline.sby) | The SymbiYosys job for it. |
 | [formal/formal_perf.vhd](formal/formal_perf.vhd) | The performance counters with checks of their bus port against a model of the counters. |
 | [formal/perf.sby](formal/perf.sby) | The SymbiYosys job for it. |
@@ -486,7 +487,8 @@ instead. Boolector is built from source, with the scripts in its
 `contrib/` for CaDiCaL and btor2tools: the `boolector` package of Ubuntu
 24.04 is version 1.5, which SymbiYosys cannot drive.
 
-`formal_multicycle` connects the multi-cycle core to four checkers. Every
+`formal_multicycle` connects the multi-cycle core to `core_check`, which
+both cores share, and which puts a checker on each of four ports. Every
 input is free, apart from a reset in the first cycle, so the solver plays
 every slave, every interrupt source, and every program. Each checker
 assumes the rules of the other side of its port and asserts the core's:
@@ -506,7 +508,7 @@ assumes the rules of the other side of its port and asserts the core's:
   It asserts that the core raises `ready` only for a request, and never in
   reset.
 
-`formal_multicycle` also asserts the rules of a stopped core
+`core_check` also asserts the rules of a stopped core
 (MICROARCH.md §6.1), with `pause_i` free, so that the system around the
 core may take the buses over: a halted core has no bus cycle open and
 stays halted until reset, with `halt_reason_o` other than `HALT_NONE`
@@ -665,21 +667,21 @@ need its model registers: `f_takes`, `f_sr_stable`, `f_cond_stable`,
 The five are covered only by the tests and by the bounded check of the
 whole core.
 
-`formal_pipeline` puts the four checkers on the pipelined core, with
-`G_MAX_PENDING` 8 on the instruction bus and 4 on the data bus. The core's
+`formal_pipeline` puts `core_check` on the pipelined core, with 8 requests
+waiting at most on the instruction bus and 4 on the data bus. The core's
 own assertions hold there too: those of `pipe_fetch`, and those of its
 process `p_check`, among them the data access rule of MICROARCH.md §9,
 that no flush leaves read data owed. The properties of DECODE and PREPARE
 stay out of it: each is proven for every cycle with free inputs, which
 covers everything the whole core can do, so their shadow registers would
 add only time to the bounded check, a sixth with DECODE's in a trial. It
-also asserts
-what `formal_multicycle` asserts of the multi-cycle core about a halted
-and a paused core, with `pause_i` free, and about two breakpoints. Their
-addresses and enable bits are free, but change only in a reset, since a
-change while the core runs may miss an instruction. It also asserts that
-no instruction at an enabled breakpoint retires without a stop first,
-but as the first step after `pause_i` was 1. The pipeline is too
+also asserts,
+through `core_check`, what it asserts of the multi-cycle core about a
+halted and a paused core, with `pause_i` free, and about two breakpoints.
+Their addresses and enable bits are free, but change only in a reset,
+since a change while the core runs may miss an instruction. It also
+asserts that no instruction at an enabled breakpoint retires without a
+stop first, but as the first step after `pause_i` was 1. The pipeline is too
 deep for k-induction without many more invariants, so its `bmc` task
 checks only the first 8 cycles after reset, which hold an interrupt
 entry, a first store, and a pause, which its cover reaches at step 4, so

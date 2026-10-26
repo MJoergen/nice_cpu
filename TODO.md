@@ -5,8 +5,8 @@ yet, questions not decided, claims not checked, and ideas for later. Each
 item names where it comes from. Add new items here, not in other files.
 
 Every finding of the reviews in [doc/review/](doc/review/) is closed or
-listed here, the last ones under "Left from the fifth review". No code has
-TODO or FIXME comments.
+listed here, the last ones under "Left from the sixth review" and "Left
+from the fifth review". No code has TODO or FIXME comments.
 
 ## FPGA core
 
@@ -48,6 +48,60 @@ TODO or FIXME comments.
   - A branch-target buffer, for the indirect jumps that no static rule
     predicts, such as the `vm` phase's dispatch: 28001 flushes in each
     benchmark program, 8% of the translated one's cycles.
+
+## Left from the sixth review
+
+([doc/review/sixth-repository-review.md](doc/review/sixth-repository-review.md),
+2026-10-26, at b2ac5a5, one commit after RC05. Nothing of it is fixed yet;
+the section numbers are the review's.)
+
+- **The release gate.** Tag after the push's CI run is green, with an
+  annotated tag whose message is the tag's section of RELEASE_NOTES.md.
+  Rebase and merge `origin/release-script` after its six fixes (§10). Move
+  NiceMonMEGA65's pin to RC05 and tag it there (§1.1, §1.2). Close PR #35,
+  delete `origin/claude/project-thread-cmdpdw`, and keep PR #36 and
+  `origin/read-waits` until decided (§1.3).
+- **Three behavior edges.** `debug_link.vhd` lets the second checksum byte
+  of a dropped packet through to the program (§3.1); `niceasm.py
+  --symbols` can overwrite its input (§4.1); `niceemu` ignores Ctrl-C while
+  it waits for console input (§4.2). Each with a test.
+- **Issue #53's seven simplifications** of `debug_link.vhd`: do them, or
+  drop them here (§2.1). The won't-do items of #51, #54, and 2026-10-23
+  go under "Decided against" (§2.2).
+- **The predictor in random code.** A template with backward conditional
+  jumps in `random_prog.py`, and a predictor program in `HAZARD_PROGS`
+  (§7.2). A second loop shape in the translator's `gen_loop` (§6.2).
+- **The microsecond counter** proven and tested at 1.5 MHz only: a
+  `tb_perf` run at 33333333 Hz, and SYSTEM.md §3 says "the integer part of
+  N·10⁶/G_CLK_HZ, for 1 MHz and up" (§7.3). `run_i` as a rule of
+  MICROARCH.md §8, and the counters in `tb_core` (§7.4, §3.4).
+- **The figures of the predictor's era.** The translated column of
+  MICROARCH.md §5.6, two percentages of §5.3, the quoted outputs, the
+  ratio table, and the Dhrystone table of bench/README.md, HISTORY.md's
+  predictor entry, and the word counts (§8.2 to §8.6, §6.5, §9.2). One
+  pass of `make hazards`, `make cycles`, `make compare`, `make words`,
+  `make dhry`, and `make core-dhry`, with the commit named.
+- **Speculative reads.** The figures of `origin/read-waits` into
+  MICROARCH.md §5.3 and HISTORY.md, then the branch can go (§2.3). A row
+  per out-of-context timing figure in pipeline-timing.md, and an
+  in-system build at RC05 (§2.4).
+- **The debug link's documents.** The board contracts, the bad-checksum
+  `W` difference, and a table of the versions in DEBUG.md; the proof's
+  wording; the untested halt reasons and `link.py` cases (§3.2 to §3.7).
+- **Stale text.** "Condition always" in `pipe_decode.vhd`, `pipeline.vhd`,
+  and hdl/README.md; the cycle counter at hdl/README.md:1180; the step
+  numbers of §9 in five places; HISTORY.md's missing entries;
+  RELEASE_NOTES.md's missing upgrade notes and labels; README.md's "four
+  stages" and "four tools"; CLAUDE.md's Layout; DEBUG.md in
+  `check_refs.py` (§7.5, §9).
+- **Smaller.** `llvm-ar` checked and named (§1.4); the `.wasm` executable
+  bits and `.mypy_cache` (§1.5); terms for Dhrystone and `mchess.c`, and
+  `mchess.expected`'s provenance (§1.5, §5.2); the Zig library size claim
+  (§5.1); `--stack` needs `--memory` (§5.3); `trapmsg.nasm` for codes
+  above 7, `CLOCKS_PER_SEC`, the reserved labels, ABI.md's join order
+  (§5.4); the wall-clock limit of `errors.py` (§6.3); `nicebuild.py`'s
+  `--allow-undefined`, `--stack 0`, and messages (§6.4); `--irq` against
+  the timer at one step (§4.3).
 
 ## Left from the fifth review
 

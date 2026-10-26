@@ -316,6 +316,8 @@ RELEASE_NOTES.md:136 has 0.241 under RC03, and c-compiler-plan.md:91 has 2348 an
 - TODO.md:150-152 and :156 (§8.6, §6.5). The Vivado item of "Left from the fifth review": the root CLAUDE.md:87 has the path too, since ac01285.
 - PR #36 is in no item; `origin/read-waits` promises an item that was never written.
 
+**Resolved**: The step numbers. TODO.md, hdl/README.md, hdl/Makefile, and hdl/test/programs.py name step 7 for the runtime and translator programs and step 8 for the random programs, as MICROARCH.md §9 numbers them. The rest of §9.3 is open.
+
 ### 9.4 README.md and CLAUDE.md
 
 - README.md:22 says formal checks cover "four stages of the pipeline"; with WRITE's halt and pause it is five.

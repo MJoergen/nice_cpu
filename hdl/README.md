@@ -426,7 +426,7 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   on them.
 
 `test/random_stats.py` shows how well the random programs test the core
-(MICROARCH.md §9, step 7). It runs a range of seeds on the emulator, as
+(MICROARCH.md §9, step 8). It runs a range of seeds on the emulator, as
 `make test` does, and reports where the steps run, how much of each
 program runs, how many interrupt requests are taken, how the runs end, and
 how often they make the hazards of MICROARCH.md §5, beside the benchmark's
@@ -435,7 +435,7 @@ shares. With `--generator`, it measures another version of
 
 `make programs` runs the test programs of the runtime and of the
 translator, and 10 random modules of `translator/test/fuzz.py` in each of
-its four modes (`FUZZ_PROGRAMS`), on the core (MICROARCH.md §9, step 6). It is not part of
+its four modes (`FUZZ_PROGRAMS`), on the core (MICROARCH.md §9, step 7). It is not part of
 `make test`, because it takes minutes: some 2 million steps in 490
 programs, at GHDL's 3300 steps a second, on all cores. CI runs it on
 both. It does not run `runtime/libc/test/fuzz_printf.py`, which

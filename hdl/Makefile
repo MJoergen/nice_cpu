@@ -453,7 +453,7 @@ sweep: emulator analyze $(BUILD)/pcfx.bin $(BUILD)/sidefx.bin
 	$(call check_sweep,sidefx)
 
 # The runtime's and the translator's test programs on the core (MICROARCH.md
-# §9, step 6). runtime/Makefile with KEEP and translator/test/run.py with
+# §9, step 7). runtime/Makefile with KEEP and translator/test/run.py with
 # --keep run their tests and leave the programs in $(PROGRAMS), and
 # test/programs.py runs each on the core and on the emulator, in parallel,
 # and compares them. It takes minutes, so make test leaves it out.

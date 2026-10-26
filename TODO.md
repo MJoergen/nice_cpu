@@ -11,7 +11,7 @@ from the fifth review". No code has TODO or FIXME comments.
 ## FPGA core
 
 - **Test order steps not done** (MICROARCH.md §9):
-  - Step 7: `hdl/test/random_prog.py` is tuned with
+  - Step 8: `hdl/test/random_prog.py` is tuned with
     `hdl/test/random_stats.py`, and both cores pass seeds 1 to 1000
     (`make random-sweep`). Still weak: about a third of the runs halt
     before the step limit (seeds 1 to 90: 35 of 90): 16 at a reserved

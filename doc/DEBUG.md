@@ -215,7 +215,7 @@ system has there otherwise.
 | `0xFFFFFFF3` | The free space, read only: the number of console bytes that the program's input buffer can take now. It reads so while the processor is held or halted too, although the bytes sent then are dropped (§1), and a start empties the buffer. |
 | `0xFFFFFFF4` | The enable bits of the breakpoints. Bit i enables breakpoint i. The bits from N up read 0 and take no write. |
 | `0xFFFFFFF5` | The number of breakpoints N, read only: 0 to 8. A system without breakpoints reads 0. |
-| `0xFFFFFFF6` | The stop, read only. 0 unless the processor is paused with `x`. Then bit 8 is 1, and bits 7–0 are the breakpoint's number, as the `x` carried. |
+| `0xFFFFFFF6` | The stop, read only. From an `x` until the next go on, step, or start, bit 8 is 1, and bits 7–0 are the breakpoint's number, as the `x` carried. Otherwise 0. |
 | `0xFFFFFFF7` | Reserved. It reads 0 and takes no write. |
 | `0xFFFFFFF8`–`0xFFFFFFFF` | The addresses of breakpoints 0 to 7. The words from `0xFFFFFFF8` + N up read 0 and take no write. |
 
@@ -374,8 +374,9 @@ condition is false, is a step (ISA §3), so a breakpoint at it fires.
   halted is exact.
 - **Lifetime.** The enable bits and the addresses are kept across a hold, a
   start, and a clear, so a host sets them while the processor is held and
-  then starts it. Only a reset of the system clears them, to 0, and that
-  sends `b`.
+  then starts it. A reset of the system clears them, to 0, and so does a
+  host's connection over TCP (§7). So after every `b`, they are 0, and a
+  host finds none left by an earlier one.
 
 After a reset of the system, a system that boots a ROM runs with bit 0 at 0
 and bit 3 at 0. A system without one waits, held, with bit 0 at 1.
@@ -390,9 +391,9 @@ and bit 3 at 0. A system without one waits, held, with bit 0 at 1.
 - **TCP.** The emulator serves the link on a TCP port, on `127.0.0.1`
   only. It serves one host at a time: while a host is connected, it accepts
   another and closes that connection at once, with nothing sent. It sends
-  `b` to each host that connects. A host ends the program's input by
-  closing its half of the connection for writing (a TCP half-close), and
-  keeps reading the answers and the output. Then the console reads `0x200`,
+  `b` to each host that connects, and clears the breakpoints (§6). A host
+  ends the program's input by closing its half of the connection for
+  writing (a TCP half-close), and keeps reading the answers and the output. Then the console reads `0x200`,
   as after a UART break. A host that sends after that must connect again.
   A host that has half-closed does not keep another out: it counts as
   disconnected when another connects.

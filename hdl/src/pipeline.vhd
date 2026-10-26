@@ -78,10 +78,12 @@
 -- start and end of an interrupt entry or INT, after a halt, and after a
 -- store into a word that is fetched but not retired (MICROARCH.md §5.5).
 -- Those words are the 16 that pipe_fetch holds from its addr_o on and the
--- instructions in dec_r, dec_q, skid_r, and prep_r. DECODE redirects FETCH itself for
--- "MOVE R15, c" and "ADD R15, R15, c" with condition "always". WRITE then
--- does not flush. WRITE's redirect reaches FETCH a cycle after its flush,
--- from w_redir_r and w_target_r. DECODE drops what it takes in that cycle.
+-- instructions in dec_r, dec_q, skid_r, and prep_r. DECODE redirects
+-- FETCH itself for "MOVE R15, c" and "ADD R15, R15, c" with condition
+-- "always", and for a conditional "ADD R15, R15, c" with a negative c.
+-- WRITE then does not flush, but for a conditional one whose condition is
+-- false. WRITE's redirect reaches FETCH a cycle after its flush, from
+-- w_redir_r and w_target_r. DECODE drops what it takes in that cycle.
 --
 -- INTERRUPTS (MICROARCH.md §6) are taken in WRITE before an instruction,
 -- as soon as ISA.md §7.1 allows: before the instruction's first

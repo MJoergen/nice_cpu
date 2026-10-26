@@ -221,6 +221,11 @@ MICROARCH.md §8's rules for a system do not say that it drives `run_i` of the c
 - hdl/README.md:849 "one cycle of `pause_i` = 0 runs exactly one step" lacks "while the core is paused", which MICROARCH.md §6.1 has; a pulse before the core reaches the boundary only cancels the pause.
 - The step numbers of MICROARCH.md §9 (§9.3).
 
+**Resolved**: Three of the four; the step numbers are §9.3's.
+- `pipe_decode.vhd`, `pipeline.vhd`, and hdl/README.md say that DECODE also redirects FETCH for a conditional `ADD R15, R15, c` with a negative `c`, and `pipeline.vhd` says that WRITE then flushes only when the condition is false.
+- hdl/README.md says that the cycle counter counts the cycles after reset in which `run_i` is high.
+- hdl/README.md says that one cycle of `pause_i` = 0 runs one step "while the core is paused".
+
 ## 8. The benchmarks and the figures of MICROARCH.md
 
 ### 8.1 What agrees

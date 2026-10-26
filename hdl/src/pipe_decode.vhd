@@ -5,8 +5,9 @@
 -- present and it has room: into dec_r, the instruction it splits into
 -- micro-operations (src/pipe_pkg.vhd), one per cycle, for PREPARE, or
 -- into dec_q, the one after it, which moves up when dec_r frees. For
--- "MOVE R15, c" and "ADD R15, R15, c" with condition "always" it
--- redirects FETCH at once (MICROARCH.md §5.4), as it takes them.
+-- "MOVE R15, c" and "ADD R15, R15, c" with condition "always", and for a
+-- conditional "ADD R15, R15, c" with a negative c, it redirects FETCH at
+-- once (MICROARCH.md §5.4), as it takes them.
 --
 -- BREAKPOINTS (doc/DEBUG.md §6). DECODE compares the address of each
 -- instruction it takes with the enabled breakpoints, and marks a hit in

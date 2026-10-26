@@ -873,7 +873,7 @@ take an interrupt, whatever `in_service` and `after_rti` are, and ahead of
 an interrupt. `paused_o` is 1 there once no bus cycle is open, as for
 `halted_o`. When `pause_i` is 0 while the core is paused, it goes on and
 runs one step, which may be an interrupt entry, whatever `pause_i` is
-then. So one cycle of `pause_i` = 0 runs exactly one step, and `paused_o`
+then. So one cycle of `pause_i` = 0 while the core is paused runs exactly one step, and `paused_o`
 drops for at least a cycle. A halted core ignores `pause_i`, and
 `paused_o` stays 0, so a system that raises `pause_i` waits for `paused_o`
 or `halted_o`. `pause_i` must come from a flip-flop, and must not depend
@@ -995,7 +995,7 @@ data bus port, each an entity of its own:
 | Stage | Where | What it does |
 |---|---|---|
 | FETCH | `pipe_fetch` | Reads pairs of words ahead on the instruction bus, several requests in flight, into a ring of 16 words. Presents the next four to DECODE. |
-| DECODE | `pipe_decode` | Takes one whole instruction, with one more behind it, decodes its fields, and splits it into micro-operations, one per cycle (MICROARCH.md §4), with a skid register for one that PREPARE does not take. Redirects FETCH at once for `MOVE R15, c` and `ADD R15, R15, c` with condition "always". |
+| DECODE | `pipe_decode` | Takes one whole instruction, with one more behind it, decodes its fields, and splits it into micro-operations, one per cycle (MICROARCH.md §4), with a skid register for one that PREPARE does not take. Redirects FETCH at once for `MOVE R15, c` and `ADD R15, R15, c` with condition "always", and for a conditional `ADD R15, R15, c` with a negative `c`. |
 | PREPARE | `pipe_prepare` | Reads the registers and forms every operand value and address, reduces the shift count, tests the condition when it can, and issues the data reads. |
 | WRITE | `pipe_write` | Computes, writes the registers and SR, issues the store, takes interrupts, and runs the control instructions. Its one bypass is the value it wrote last. |
 | DBUS | `pipe_dbus` | The data bus port, with the tags and the read data of the requests in flight, and the register from which a store or a vector read goes onto the bus. |
@@ -1255,7 +1255,8 @@ is a pipelined Wishbone slave with a 4-bit address. It never stalls, and it
 acknowledges each request in the next cycle. The bus decoder selects it for
 `0xFFFFFF40`–`0xFFFFFF4F`.
 
-The cycle counter counts every clock cycle after reset. The instruction
+The cycle counter counts every clock cycle after reset in which `run_i` is
+high. The instruction
 counter counts the core's `instret_o`, which the multi-cycle core raises for
 one cycle in `RETIRE` after each instruction, but not after an interrupt
 entry. An instruction makes its data reads before its own `RETIRE`, so a

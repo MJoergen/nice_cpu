@@ -210,7 +210,7 @@ the whole instruction set by itself, and is meant for the FPGA core as well.
 
 The code and the documents are under the [MIT license](LICENSE), `mchess.c`
 included. Dhrystone 2.1 in `bench/dhrystone/` is not covered by it; it is
-R. P. Weicker's, and its terms are its own. The three
+R. P. Weicker's, and its files state no terms (bench/README.md, Dhrystone). The three
 2004 example programs (`count`, `replicate`, and `print`), their sources and
 their `.bin` files in `assembler/test/`, are by B. Ulmann and T. Kratz and
 are not covered by it; see

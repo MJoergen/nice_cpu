@@ -441,7 +441,9 @@ to a shorter run on the core.
 `dhry_1.c`, and `dhry_2.c`, from his 1990 posting to alt.sources, as
 extracted in [Keith-S-Thompson/dhrystone](https://github.com/Keith-S-Thompson/dhrystone)
 (`v2.1`). It is the benchmark that small processors publish numbers
-for. It needs `malloc`, `strcpy`, `strcmp`, `printf`, and `scanf` from
+for. The files state no license, and the MIT license of this repository does not
+cover them (README.md). Whoever redistributes them must find out the terms
+for themselves; the headers ask only that results be sent to the authors. It needs `malloc`, `strcpy`, `strcmp`, `printf`, and `scanf` from
 the C library, and reads the number of runs from the console,
 `dhrystone/dhry.input`.
 

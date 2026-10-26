@@ -55,13 +55,9 @@ from the fifth review". No code has TODO or FIXME comments.
 2026-10-26, at b2ac5a5, one commit after RC05. Each finding that is fixed
 has a "Resolved" paragraph there; the section numbers are the review's.)
 
-- **The release gate.** Tag after the push's CI run is green, with an
-  annotated tag whose message is the tag's section of RELEASE_NOTES.md.
-  Rebase and merge `origin/release-script` after its six fixes (§10). Move
-  NiceMonMEGA65's pin to RC05 and tag it there (§1.1, §1.2). Close PR #35,
-  delete `origin/claude/project-thread-cmdpdw`, keep PR #36 until decided,
-  and delete `origin/read-waits`, whose figures and test are on main
-  (§1.3).
+- **The release gate.** Tag NiceMonMEGA65 `RC05`, and say in RELEASE_NOTES.md
+  which board tag goes with each RC (§1.2). Split the programs jobs of CI in
+  two (§1.1). Decide on `origin/formal-refactor` (§1.3).
 - **PR #36, undecided.** It adds `RDSPC`, `RDSSR`, `WRSPC`, and `WRSSR`
   (control commands 4 to 7) to read and write the saved PC and SR from an
   interrupt routine, for breakpoints and single-stepping from software.

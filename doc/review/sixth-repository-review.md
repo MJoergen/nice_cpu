@@ -28,9 +28,13 @@ Reviewed on 2026-10-26: the state of the repository at commit b2ac5a5 ("ISA: REL
 
 Every tag is lightweight (`git cat-file -t` says `commit`), so `git tag -n` shows the commit's subject, and no tag says what it is. `RW01`, on 9d8f13d, is explained in the fifth review and nowhere else. RELEASE_NOTES.md was written after RC05 was tagged, so RC05 has none of it. CI fails since the fifth review were of two kinds, and both were avoidable locally: `make lint` (vsg's `concurrent_006` in `pipe_prepare.vhd:136-140`, fixed by 1208d47; an indent in `debug_link.vhd:1089`) and `formal debug_link prove` (an induction counterexample at a3d5011, and the GHDL crash, which does not show with the local GHDL 6). **Fix:** tag after the push's run is green, with an annotated tag whose message is the tag's section of RELEASE_NOTES.md; `release.py tag` of §10 does the second. The programs jobs could run `--stall` and the plain mode in two jobs each, so that a run finishes in two hours.
 
+**Resolved**: Partly. The CI run of the tag `RC05` is green, with the two programs jobs in 4 h 33 min. Not done: the annotated tags (the five that exist stay lightweight; the next one is made by `release.py tag`), and the split of the programs jobs.
+
 ### 1.2 NiceMonMEGA65 pins a commit before RC05
 
 NiceMonMEGA65's submodule points at 62f2da2 (2026-10-25), 32 commits behind main, before the debug link's version 3 (696a372) and before RC05; its tags are `RC02` and `RC04`. A reader who follows README.md to the board gets a core and a link that do not serve the single step DEBUG.md describes. **Fix:** move the pin and tag the board repository `RC05`, and say in RELEASE_NOTES.md which board tag goes with each RC.
+
+**Resolved**: Partly. The board's pin is at RC05 (f4a3cdb of NiceMonMEGA65). Not done: the board's tag `RC05`, and the line in RELEASE_NOTES.md of which board tag goes with each RC.
 
 ### 1.3 Branches and pull requests
 
@@ -39,6 +43,8 @@ NiceMonMEGA65's submodule points at 62f2da2 (2026-10-25), 32 commits behind main
 - **`origin/claude/project-thread-cmdpdw`**: a seven-line experimental predictor of 2026-10-17, 339 commits behind. Delete, with a line in "Decided against" if the `MOVE` form was rejected for timing.
 - **`origin/read-waits`** (6af54d5): the measurement behind the decision against speculative reads (§2.3). Keep until its figures are in MICROARCH.md.
 - **`origin/release-script`**: §10.
+
+**Resolved**: PR #35 is closed, and `claude/project-thread-cmdpdw`, `read-waits`, and `release-script` are deleted. PR #36 stays, and TODO.md points to it. `origin/formal-refactor` is not in the review, and is still there.
 
 ### 1.4 A hidden requirement: `llvm-ar`
 
@@ -418,6 +424,8 @@ HISTORY.md:113 "misspelt"; emulator/test/link.py:397 "cancelled"; an en dash in 
 - **F.** The stamp is per commit, so a docs-only commit after `check` needs it again; `--cores pipeline` alone marks the slow checks done; `make slow` lacks `core-dhry`; the `vsg` version is not compared with ci.yml's pin; RELEASE.md step 6's job list and CLAUDE.md's Layout need the new files.
 
 If a smaller change is wanted: merge RELEASE.md alone, with D, E, and the job list fixed, and a `ci` command that requires all jobs green. The checklist's steps 1 to 5 are what §8 and §9 of this review did by hand.
+
+**Resolved**: `release/` is on the branch (ffd0a16), with A to F done: `check` has no PDF step, `CI_JOBS` and the stamp follow the review, RELEASE.md links the board's CLAUDE.md, the notes section is a step and the tag's message, and `vsg`'s version is compared with ci.yml's. The checks have not run on a real release yet; the first `release.py tag` is that test.
 
 ## What is correct
 

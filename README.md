@@ -1,6 +1,7 @@
 # nice_cpu
 
 [![CI](https://github.com/MJoergen/nice_cpu/actions/workflows/ci.yml/badge.svg)](https://github.com/MJoergen/nice_cpu/actions/workflows/ci.yml)
+[![MEGA65 100 MHz](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/MJoergen/NiceMonMEGA65/main/badge-mega65.json)](https://github.com/MJoergen/NiceMonMEGA65#the-timing-badge)
 
 An implementation of the NICE processor on an FPGA.
 

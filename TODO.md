@@ -10,16 +10,16 @@ from the fifth review". No code has TODO or FIXME comments.
 
 ## FPGA core
 
-- **A badge for "meets 100 MHz on the MEGA65"** (a design note, 2026-10-27).
-  NiceMonMEGA65 writes the result of each tag it builds to a small JSON
-  file in its repository (the tag, the commit, the slack, the date, and met
-  or missed), and the README here shows it as a shields.io endpoint badge,
-  next to the CI badge. It is the board repository's `bump` script that
-  writes the file, so this repository stays free of it. Open here: add the
-  badge line to README.md once that file exists; calibrate the budget in
-  `hdl/test/timing_budget.py` against the in-system slack of the next two
-  tags (the ports' 1.5 ns is a guess from the out-of-context runs). A
-  nightly run of the same script on `main` could give a second badge.
+- **Calibrate the timing budget** (a design note, 2026-10-27). The badge
+  "meets 100 MHz on the MEGA65" is in README.md; NiceMonMEGA65's `make bump`
+  writes its JSON file, so this repository stays free of it. Open here: set
+  the budget in `hdl/test/timing_budget.py` from the in-system slack of the
+  ports, which NiceMonMEGA65 posts per tag on its issue 19. RC06 gave +0.92
+  ns into the core and +0.46 ns out of it, against 2.25 and 2.46 ns out of
+  context, so the system takes about 1.3 and 2.0 ns. The budget of 1.5 ns
+  for both is too lax for the outputs. Wait for RC07, then give inputs and
+  outputs their own numbers. A nightly run of the same script on `main`
+  could give a second badge.
   A second badge for the Nexys4DDR at 90 MHz needs only another JSON file
   from the same `bump` script and a README line here, but one more build
   per bump (the `timing` flow, 15 to 30 minutes). Here it gets no budget in

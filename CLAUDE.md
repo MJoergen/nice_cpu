@@ -94,7 +94,7 @@ translator, and two FPGA cores. See README.md.
     cd doc/intro && make pdfcheck    # check that nice_intro.pdf matches the .tex
     cd doc && make test              # the section references and links of every Markdown file
     cd doc && make typecheck         # mypy --strict
-    make release-check               # the gates of release/RELEASE.md and the stamp for tagging (hours)
+    make release-check               # the gates of release/RELEASE.md and the stamp for tagging (about an hour)
     cd release && make test          # the tests of release.py
     cd release && make typecheck     # mypy --strict
     make wasmcheck                   # rebuild the checked-in .wasm files and compare (clang, zig, rustc)

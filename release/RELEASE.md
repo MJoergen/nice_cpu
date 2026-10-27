@@ -103,7 +103,9 @@ diagram check of step 2, and writes the stamp. The slides are checked by
 
 ## 4. Formal checks
 
-Run these alone, not next to other work, as some proofs take minutes. CI
+Run these alone, not next to other work, as some proofs take minutes;
+`release.py check` runs only `make timing` beside them, one Vivado run of
+three minutes. CI
 pins older SymbiYosys and Yosys versions than a local install, so a proof
 that passes on one and fails on the other is worth a look.
 
@@ -111,15 +113,18 @@ that passes on one and fails on the other is worth a look.
 
 ## 5. Slow checks
 
-These need GHDL, and take about half an hour on the pipelined core and an
-hour on the multi-cycle one. Run them with each core:
+These need GHDL. They run on both cores at once, in parallel:
 
-    make slow                 # CORE=pipeline, the default
-    make slow CORE=multicycle
+    make slow                 # CORES="pipeline multicycle", the default
+    make slow CORES=pipeline  # one core
 
-That is `bench make core` (the benchmark on the core), `bench make
-core-dhry` (Dhrystone on the core), and `hdl make strides` (the interrupt sweeps with strides 17,
-31, and 64). Every line must say `PASS`, and both cores must agree with
+That is, for each core, `bench make core` (the benchmark's two programs,
+each a run of its own), `bench make core-dhry` (Dhrystone), and `hdl make
+strides` (the interrupt sweeps with strides 17, 31, and 64). Each
+benchmark run and Dhrystone takes one CPU, and the sweeps share the rest.
+The longest run, the benchmark on the multi-cycle core, sets the time: on
+20 CPUs, `make slow` took 33 minutes on 2026-10-27.
+Every line must say `PASS`, and both cores must agree with
 `niceemu`. `hdl make sweep`, with one interrupt per run, takes hours and is
 not part of the release; it is run after a change to the interrupt path
 (CLAUDE.md, Conventions).

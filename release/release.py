@@ -14,6 +14,7 @@ exit with status 1.
 """
 
 import argparse
+import concurrent.futures
 import datetime
 import json
 import re
@@ -221,11 +222,11 @@ def make_step(name: str, args: list[str], log: Path) -> dict[str, object]:
 
 def timing_budget(board: str = "mega65") -> dict[str, object]:
     """Runs make -C hdl timing and reads the budget it judged. Never fails
-    the release: a miss, a Vivado error, or a skip is recorded and shown."""
+    the release: a miss, a Vivado error, or a skip is recorded. It prints
+    nothing, as it runs beside make formal; show_timing shows the result."""
     out_dir = ROOT / "hdl" / "build" / "timing" / f"{board}-default-4"
     (out_dir / "budget.json").unlink(missing_ok=True)
     log = BUILD / "timing.log"
-    print("  timing (not a gate) ... ", end="", flush=True)
     with open(log, "w") as f:
         p = subprocess.run(["make", "-C", "hdl", "timing", f"BOARD={board}", "FLOW=default"],
                            cwd=ROOT, stdout=f, stderr=subprocess.STDOUT)
@@ -235,8 +236,11 @@ def timing_budget(board: str = "mega65") -> dict[str, object]:
         result = {"status": "error", "board": board}
     if p.returncode != 0:
         result["status"] = "error"
-    print(f"{result['status']} ({log.relative_to(ROOT)})")
     return result  # type: ignore[no-any-return]
+
+
+def show_timing(result: dict[str, object]) -> None:
+    print(f"  timing (not a gate) ... {result['status']} (release/build/timing.log)")
 
 
 def cmd_check(a: argparse.Namespace) -> int:
@@ -259,17 +263,21 @@ def cmd_check(a: argparse.Namespace) -> int:
             raise Failure(f"changed: {changed}")
 
     step("make all", ["make", "all"])
-    if not a.skip_formal:
-        step("make formal", ["make", "formal"])
-    if not a.skip_slow:
-        for core in a.cores:
-            step(f"make slow {core}", ["make", "slow", f"CORE={core}"])
-            if core == "pipeline":
-                step("bench compare", ["make", "-C", "bench", "compare"])
-    # The timing is shown, never a gate (RELEASE.md step 5, Timing).
+    # The timing is shown, never a gate (RELEASE.md step 5, Timing). Vivado's
+    # slack does not depend on the load, so it runs beside make formal.
     timing: dict[str, object] = {"status": "skipped"}
-    if not a.skip_timing:
-        timing = timing_budget()
+    with concurrent.futures.ThreadPoolExecutor(1) as pool:
+        timed = None if a.skip_timing else pool.submit(timing_budget)
+        if not a.skip_formal:
+            step("make formal", ["make", "formal"])
+        if timed is not None:
+            timing = timed.result()
+            show_timing(timing)
+    if not a.skip_slow:
+        # Both cores at once, in parallel (Makefile, make slow).
+        step("make slow", ["make", "slow", "CORES=" + " ".join(a.cores)])
+        if "pipeline" in a.cores:
+            step("bench compare", ["make", "-C", "bench", "compare"])
     # The slides need no step: make all ran pdfcheck, and the PDF holds its build date.
     step("diagrams", ["make", "diagrams"])
     if not tree_is_clean():

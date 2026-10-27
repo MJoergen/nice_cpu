@@ -18,8 +18,9 @@ help:
 	@echo "  make lint        vsg style check of the VHDL (pip install vsg)"
 	@echo "  make formal      SymbiYosys checks of the cores, their stages, the devices, and the shared functions"
 	@echo "  make slow        the benchmark, Dhrystone, and the interrupt sweeps with more"
-	@echo "                   strides, on CORE (default pipeline; about an hour)"
-	@echo "  make release-check  the gates of RELEASE.md, then a stamp for release.py tag (hours)"
+	@echo "                   strides, on each core of CORES (default both), in parallel"
+	@echo "                   (33 minutes on 20 CPUs)"
+	@echo "  make release-check  the gates of RELEASE.md, then a stamp for release.py tag (about an hour)"
 	@echo "  make hazards     count the pipeline hazards in the benchmark"
 	@echo "  make wasmcheck   rebuild the checked-in .wasm files and compare them (clang, zig, rustc)"
 	@echo "  make pdf         rebuild the introduction slides"
@@ -61,10 +62,29 @@ lint:
 formal:
 	$(MAKE) -C hdl formal
 
+# make slow: on each core of CORES, the benchmark's two programs, Dhrystone,
+# and the interrupt sweeps with more strides, all at once. The emulator,
+# the VHDL, and the programs are built first, and the runs are told so
+# with PREBUILT=1, as two builds at once would race. Each single
+# simulation takes a CPU, and the sweeps of each core share the rest.
+CORES ?= pipeline multicycle
+SLOW_RUNS = $(foreach c,$(CORES),$(foreach r,bench hand dhry strides,slow/$(c)/$(r)))
+SWEEP_JOBS = $(shell n=$$(( ($(JOBS) - 3 * $(words $(CORES))) / $(words $(CORES)) )); echo $$(( n > 0 ? n : 1 )))
+
 slow:
-	$(MAKE) -C bench core
-	$(MAKE) -C bench core-dhry
-	$(MAKE) -C hdl strides
+	$(MAKE) -C emulator build
+	$(MAKE) -C hdl analyze build/pcfx.bin build/sidefx.bin
+	$(MAKE) -C bench build/bench.bin build/hand.bin build/dhry.bin
+	@$(MAKE) --no-print-directory -j$(words $(SLOW_RUNS)) -O $(SLOW_RUNS)
+
+slow/%/bench:
+	@$(MAKE) --no-print-directory -C bench core CORE=$* CORE_PROGRAMS=bench PREBUILT=1
+slow/%/hand:
+	@$(MAKE) --no-print-directory -C bench core CORE=$* CORE_PROGRAMS=hand PREBUILT=1
+slow/%/dhry:
+	@$(MAKE) --no-print-directory -C bench core-dhry CORE=$* PREBUILT=1
+slow/%/strides:
+	@$(MAKE) --no-print-directory -C hdl strides CORE=$* PREBUILT=1 SWEEP_JOBS=$(SWEEP_JOBS)
 
 hazards:
 	$(MAKE) -C bench hazards

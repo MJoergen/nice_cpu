@@ -495,7 +495,7 @@ programs: emulator analyze
 
 analyze:
 	@mkdir -p $(BUILD)
-	cd $(BUILD) && $(GHDL) -a --std=08 $(addprefix ../,$(SOURCES) $(SIM_SOURCES) $(TEST_SOURCES))
+	$(if $(PREBUILT),,cd $(BUILD) && $(GHDL) -a --std=08 $(addprefix ../,$(SOURCES) $(SIM_SOURCES) $(TEST_SOURCES)))
 
 # Checks that GHDL can synthesize the core, the math unit, the performance
 # counters, the timer, and the data bus decoder, with the generics in
@@ -540,8 +540,10 @@ $(FORMAL_RUNS):
 formal:
 	@$(MAKE) --no-print-directory $(PARALLEL) $(FORMAL_RUNS)
 
+# PREBUILT=1 says that the emulator is built and the VHDL analyzed, so that
+# the runs of the top-level make slow, which go in parallel, do neither.
 emulator:
-	$(MAKE) -C ../emulator build
+	$(if $(PREBUILT),,$(MAKE) -C ../emulator build)
 
 # The out-of-context timing of the pipelined core in Vivado, which timing.tcl
 # describes, for the part of BOARD (mega65 or nexys4ddr) with the directives

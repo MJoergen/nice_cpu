@@ -9,11 +9,12 @@ The board repository [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65)
 pins one of these. From `V1.0` on, its tag that moves the submodule has the
 same name, and its releases that leave the submodule alone add a third
 number: `V1.0.1` and `V1.0.2` pin `V1.0`
-([release/RELEASE.md](release/RELEASE.md#version-names)). Its tags for the
-release candidates were:
+([release/RELEASE.md](release/RELEASE.md#version-names)). Its tag that
+pins each is:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|
+| `V1.0` | `V1.0` |
 | `RC06` | `RC06` |
 | `RC05` | `RC05` |
 | `RC04` | `RC04` |
@@ -23,6 +24,82 @@ release candidates were:
 
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
+
+## V1.0 (2026-10-27)
+
+The first release that is not a candidate. The cores, the debug link, and
+the address map are those of RC06; this release moves the tools to Zig
+0.17, lays out NICE assembly in columns, and names the releases as
+versions.
+
+**Upgrade notes.**
+
+- Zig 0.17.0 is now the only supported version. Zig 0.15 no longer builds
+  `niceemu` or the Zig runtime modules.
+- No interface changes: the ports of both cores, `wb_dmux`, the devices,
+  `debug_link.vhd`, and the address map of SYSTEM.md are as in RC06. A
+  system built for RC06 needs no change in its VHDL.
+- Releases are now named `Vmajor.minor`. NiceMonMEGA65's release with
+  the same name pins this one, and its releases that keep the submodule
+  add a third number, such as `V1.0.1`
+  ([release/RELEASE.md](release/RELEASE.md#version-names)).
+
+**Specification and documents**
+
+- DEBUG.md's table of protocol versions lists version 4, the breakpoints
+  of RC06.
+- All NICE assembly in the documents and the slides is laid out in
+  columns.
+
+**Emulator (`niceemu`)**
+
+- Builds with Zig 0.17.0, on its `std.Io` interface. Its behavior, the
+  trace format, and the debug link do not change.
+
+**Assembler (`niceasm`)**
+
+- Every `.nasm` file in the repository is laid out in columns: the label
+  in column 0, the condition in column 8, the mnemonic in column 16, the
+  operands in column 24, and the comment in column 40, with spaces only.
+  The binaries do not change.
+- `nicefmt.py` checks that layout, and with `--write` fixes a file. It
+  keeps every word and comment. `make test` checks every `.nasm` file.
+- `nice.vim` is a Vim syntax file for `.nasm` files (assembler/README.md).
+
+**Runtime and C library**
+
+- The Zig modules are rebuilt with Zig 0.17. The float library is 6895
+  words, not 7079, and `test/safe.zig` 5932, not 5156.
+
+**Translator (`nicewasm`, `nicebuild.py`)**
+
+- The output of `nicewasm` follows the column layout.
+- The README no longer warns against Zig's own wasm backend
+  (`-fno-llvm`): with Zig 0.17, `runtime/test/nicezig.zig` built with it
+  prints the same as with LLVM.
+
+**FPGA cores**
+
+- No change to `hdl/src`. `make timing` compares the MEGA65 slacks with a
+  budget in `hdl/test/timing_budget.py`: the core alone meets 10 ns, and
+  its ports leave 1.5 ns to the system around it. A miss warns and fails
+  nothing.
+- README.md shows a badge for 100 MHz on the MEGA65, which NiceMonMEGA65
+  writes for its last tag. RC06 met it there: WNS +0.376 ns.
+
+**Benchmarks**
+
+- The cycle counts do not change: 2356816 estimated cycles in the phases
+  of the translated benchmark on the pipelined core, as at RC06.
+
+**Release**
+
+- `release.py tag` names the tag `V1.0`, then the next minor version, and
+  refuses a name that is not `Vmajor.minor` or does not come after the
+  last tag.
+- `release.py check` runs `make timing` and records the budget result in
+  the stamp, without gating on it. NiceMonMEGA65 (RELEASE.md step 7)
+  follows the tag and gates nothing.
 
 ## RC06 (2026-10-26)
 

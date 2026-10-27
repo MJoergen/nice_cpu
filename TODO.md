@@ -17,7 +17,7 @@ has TODO or FIXME comments.
   ports, which NiceMonMEGA65 posts per tag on its issue 19. RC06 gave +0.92
   ns into the core and +0.46 ns out of it, against 2.25 and 2.46 ns out of
   context, so the system takes about 1.3 and 2.0 ns. The budget of 1.5 ns
-  for both is too lax for the outputs. Wait for RC07, then give inputs and
+  for both is too lax for the outputs. Wait for V1.0, then give inputs and
   outputs their own numbers. A nightly run of the same script on `main`
   could give a second badge.
   A second badge for the Nexys4DDR at 90 MHz needs only another JSON file
@@ -231,7 +231,7 @@ Kept here so that they are not proposed again.
 - **Annotated tags for `RC01` to `RC06`** (sixth review §1.1). They stay
   lightweight: re-tagging means force-pushing tags that others may have
   fetched. `RC06` was made by hand, before `release.py tag` was used. From
-  `RC07` on, `release.py tag` makes them, annotated.
+  `V1.0` on, `release.py tag` makes them, annotated.
 - **Four ways to fewer pipeline stalls in translated code**, tried in the
   translator and dropped, measured with
   `bench/pipecycles.py`:

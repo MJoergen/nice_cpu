@@ -29,7 +29,9 @@ BUILD = ROOT / "release" / "build"
 STAMP = BUILD / "stamp.json"
 
 ZIG_VERSION = "0.17.0"
-TAG_PATTERN = re.compile(r"^RC(\d+)$")
+TAG_PATTERN = re.compile(r"^V(\d+)\.(\d+)$")
+# The release candidates RC01 to RC06 came before V1.0.
+OLD_TAG_PATTERN = re.compile(r"^RC(\d+)$")
 
 CI_YML = ROOT / ".github" / "workflows" / "ci.yml"
 NOTES_FILE = ROOT / "RELEASE_NOTES.md"
@@ -85,16 +87,29 @@ def tree_is_clean() -> bool:
     return git("status", "--porcelain") == ""
 
 
+def tag_key(name: str) -> Optional[tuple[int, int, int]]:
+    """The order of a release tag: the RCnn tags before the Vmajor.minor
+    ones. None for any other name."""
+    if m := OLD_TAG_PATTERN.match(name):
+        return (0, int(m[1]), 0)
+    if m := TAG_PATTERN.match(name):
+        return (1, int(m[1]), int(m[2]))
+    return None
+
+
 def release_tags() -> list[str]:
-    """The tags named RCnn, oldest first."""
-    tags = [t for t in git("tag", "--list").split() if TAG_PATTERN.match(t)]
-    return sorted(tags, key=lambda t: int(t[2:]))
+    """The tags named RCnn and Vmajor.minor, oldest first."""
+    tags = [t for t in git("tag", "--list").split() if tag_key(t)]
+    return sorted(tags, key=lambda t: tag_key(t) or (0, 0, 0))
 
 
 def next_tag() -> str:
-    tags = release_tags()
-    n = int(tags[-1][2:]) + 1 if tags else 1
-    return f"RC{n:02d}"
+    """The next minor version. A new major version is named by hand."""
+    tags = [t for t in release_tags() if TAG_PATTERN.match(t)]
+    if not tags:
+        return "V1.0"
+    _, major, minor = tag_key(tags[-1]) or (0, 1, -1)
+    return f"V{major}.{minor + 1}"
 
 
 def say(ok: bool, text: str) -> bool:
@@ -413,7 +428,10 @@ def cmd_tag(a: argparse.Namespace) -> int:
     print("Tag (RELEASE.md step 8)")
     name = a.name or next_tag()
     if not TAG_PATTERN.match(name):
-        raise Failure(f"{name} does not follow the RCnn pattern of the earlier tags")
+        raise Failure(f"{name} is not a version Vmajor.minor, such as V1.0")
+    tags = release_tags()
+    if tags and (tag_key(name) or (0, 0, 0)) <= (tag_key(tags[-1]) or (0, 0, 0)):
+        raise Failure(f"{name} does not come after the last tag, {tags[-1]}")
     if name in git("tag", "--list").split():
         raise Failure(f"tag {name} exists")
     if not tree_is_clean():
@@ -469,7 +487,7 @@ def main() -> int:
     c.set_defaults(fn=cmd_ci)
     sub.add_parser("notes").set_defaults(fn=cmd_notes)
     c = sub.add_parser("tag")
-    c.add_argument("name", nargs="?", help="default: the next RCnn")
+    c.add_argument("name", nargs="?", help="default: the next minor version, such as V1.1")
     c.add_argument("--allow-partial", action="store_true", help="accept a stamp that skipped steps")
     c.add_argument("--repo", metavar="OWNER/NAME", help="the GitHub repository, if origin is not it")
     c.set_defaults(fn=cmd_tag)

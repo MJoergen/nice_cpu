@@ -14,6 +14,28 @@ design that shows the core meets 100 MHz on the MEGA65. That is an
 achievement to keep, not a gate: step 7 happens after the tag, and a miss
 only shows (the badge, and the release notes of the next tag).
 
+## Version names
+
+A release here is named `Vmajor.minor`: `V1.0`, `V1.1`, and so on, with a
+new major version when a change asks for it. The release candidates
+`RC01` to `RC06` came before `V1.0`.
+
+Every release here gets a release of NiceMonMEGA65 with the same name,
+which moves its `nice_cpu` submodule to the tag. A release of
+NiceMonMEGA65 that leaves the submodule alone adds a third number:
+
+| NiceMonMEGA65 | `nice_cpu` | What it is |
+|---|---|---|
+| `V1.0` | `V1.0` | the submodule moved to `V1.0` |
+| `V1.0.1` | `V1.0` | a change in NiceMonMEGA65 only |
+| `V1.0.2` | `V1.0` | another one |
+| `V1.1` | `V1.1` | the submodule moved to `V1.1` |
+
+So the first two numbers of a NiceMonMEGA65 tag always name the
+`nice_cpu` tag it pins. NiceMonMEGA65 pins only tags of this repository,
+never a commit between them. If it needs a fix from here, that is a
+release here first.
+
 The mechanical parts are scripted by [release.py](README.md),
 which each step names. `make release-check` runs steps 2.4 to 5, and
 leaves a stamp that `release.py tag` requires. The rest is by hand.
@@ -146,7 +168,8 @@ from a clone with the submodule, or later, at your pace.
 
 2. Follow the "After a submodule bump" steps of its
    [CLAUDE.md](https://github.com/MJoergen/NiceMonMEGA65/blob/main/CLAUDE.md),
-   and its own release checklist. Anything that changed in the address map, a
+   and its own release checklist, and tag it with the same name as the tag here
+   (Version names). Anything that changed in the address map, a
    device, or the ports of the core (see "Interface changes" below) must be
    matched in `src/` there.
 3. Its bump script writes the result for the tag (the timing in the system,
@@ -183,14 +206,16 @@ record it in the release notes:
    tag in [RELEASE_NOTES.md](../RELEASE_NOTES.md), and without green CI. It
    shows the section, asks before it makes an annotated tag with the section
    as its message, and asks again before it pushes. NiceMonMEGA65 pins the
-   submodule to this tag (its `git submodule status` shows `(RC01)`, for
-   example), so the name follows the earlier tags. The section says what
+   submodule to this tag (its `git submodule status` shows `(V1.0)`, for
+   example), and its own tag has the same name (Version names). `tag`
+   takes the next minor version unless given a name, and refuses a name
+   that is not `Vmajor.minor` or does not come after the last tag. The section says what
    changed since the last release, in particular the Zig version, the effect
    on the benchmark cycles, and any interface change from the list above.
    By hand:
 
-       git tag -a --cleanup=whitespace RCnn -m "<the section>"
-       git push origin RCnn
+       git tag -a --cleanup=whitespace V1.0 -m "<the section>"
+       git push origin V1.0
 
 4. Then step 7, whenever you like. Reference this tag in the tag message
    of NiceMonMEGA65.

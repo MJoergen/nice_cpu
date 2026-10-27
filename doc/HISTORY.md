@@ -384,6 +384,15 @@ Until 2026-10-24 (22eacce) the emulator stopped a program after
 at the step limit". There is no limit by default now: a program runs
 until it halts or is killed, and `-n` sets a limit when one is wanted.
 
+## Release names
+
+Until 2026-10-27 the releases were candidates, `RC01` to `RC06`, and
+NiceMonMEGA65 had no tags of its own between them. Its tags `RC02`, `RC04`,
+`RC05`, and `RC06` share the name of a tag here; its `RC02` pins
+`4cd869e`, a commit before this repository's `RC02`. From `V1.0` on, the
+releases are versions, and NiceMonMEGA65 adds a third number for its
+releases that keep the submodule (release/RELEASE.md, Version names).
+
 ## Zig 0.15
 
 Until 2026-10-27 the supported Zig was 0.15.2. The emulator moved to the

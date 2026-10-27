@@ -68,9 +68,12 @@ def test_next_tag() -> None:
 
     with mock.patch.object(release, "git", tags("RC01\nRC02\nRW01\nRC10\nRC9\nv1")):
         check(release.release_tags() == ["RC01", "RC02", "RC9", "RC10"], "RCnn tags in numeric order")
-        check(release.next_tag() == "RC11", "next after RC10")
+        check(release.next_tag() == "V1.0", "V1.0 after the RCnn tags")
+    with mock.patch.object(release, "git", tags("V1.10\nRC06\nV2.0\nV1.9\nV1\nV1.0.1\nv2.1")):
+        check(release.release_tags() == ["RC06", "V1.9", "V1.10", "V2.0"], "versions after RCnn, in numeric order")
+        check(release.next_tag() == "V2.1", "the next minor version")
     with mock.patch.object(release, "git", tags("RW01")):
-        check(release.next_tag() == "RC01", "first tag")
+        check(release.next_tag() == "V1.0", "first tag")
 
 
 def test_ci_status() -> None:

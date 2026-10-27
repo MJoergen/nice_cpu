@@ -1,11 +1,16 @@
 # Release notes
 
-The release candidates of nice_cpu, newest first. Each section lists the
+The releases of nice_cpu, newest first: the versions from `V1.0` on, and
+the release candidates `RC01` to `RC06` before them. Each section lists the
 changes since the one before that a user of the tools or the cores can see.
 [doc/HISTORY.md](doc/HISTORY.md) has the full story.
 
 The board repository [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65)
-pins one of these. Its tag for each is:
+pins one of these. From `V1.0` on, its tag that moves the submodule has the
+same name, and its releases that leave the submodule alone add a third
+number: `V1.0.1` and `V1.0.2` pin `V1.0`
+([release/RELEASE.md](release/RELEASE.md#version-names)). Its tags for the
+release candidates were:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|

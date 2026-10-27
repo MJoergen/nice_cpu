@@ -3,6 +3,7 @@
 
     release.py preflight        step 1: tree, branch, toolchain, tools
     release.py check            steps 2.4 and 3 to 5: run the gates, write the stamp
+                                (the timing budget is shown, not a gate)
     release.py figures          step 2.4: the benchmark figures in bench/README.md
     release.py ci [--wait]      step 6: every CI job passed on HEAD
     release.py notes            a draft of the section of RELEASE_NOTES.md
@@ -203,6 +204,26 @@ def make_step(name: str, args: list[str], log: Path) -> dict[str, object]:
     return {"name": name, "seconds": round(secs)}
 
 
+def timing_budget(board: str = "mega65") -> dict[str, object]:
+    """Runs make -C hdl timing and reads the budget it judged. Never fails
+    the release: a miss, a Vivado error, or a skip is recorded and shown."""
+    out_dir = ROOT / "hdl" / "build" / "timing" / f"{board}-default-4"
+    (out_dir / "budget.json").unlink(missing_ok=True)
+    log = BUILD / "timing.log"
+    print("  timing (not a gate) ... ", end="", flush=True)
+    with open(log, "w") as f:
+        p = subprocess.run(["make", "-C", "hdl", "timing", f"BOARD={board}", "FLOW=default"],
+                           cwd=ROOT, stdout=f, stderr=subprocess.STDOUT)
+    try:
+        result = json.loads((out_dir / "budget.json").read_text())
+    except (OSError, ValueError):
+        result = {"status": "error", "board": board}
+    if p.returncode != 0:
+        result["status"] = "error"
+    print(f"{result['status']} ({log.relative_to(ROOT)})")
+    return result  # type: ignore[no-any-return]
+
+
 def cmd_check(a: argparse.Namespace) -> int:
     print("Check (RELEASE.md steps 2.4 to 5)")
     if not tree_is_clean():
@@ -230,6 +251,10 @@ def cmd_check(a: argparse.Namespace) -> int:
             step(f"make slow {core}", ["make", "slow", f"CORE={core}"])
             if core == "pipeline":
                 step("bench compare", ["make", "-C", "bench", "compare"])
+    # The timing is shown, never a gate (RELEASE.md step 5, Timing).
+    timing: dict[str, object] = {"status": "skipped"}
+    if not a.skip_timing:
+        timing = timing_budget()
     # The slides need no step: make all ran pdfcheck, and the PDF holds its build date.
     step("diagrams", ["make", "diagrams"])
     if not tree_is_clean():
@@ -245,10 +270,14 @@ def cmd_check(a: argparse.Namespace) -> int:
         "date": datetime.datetime.now().isoformat(timespec="seconds"),
         "cores": [] if a.skip_slow else sorted(a.cores),
         "formal": not a.skip_formal,
+        "timing": timing,
         "steps": steps,
     }
     STAMP.write_text(json.dumps(stamp, indent=2) + "\n")
     print(f"Passed on {sha[:7]}; stamp in {STAMP.relative_to(ROOT)}")
+    if timing["status"] != "met":
+        print(f"WARNING: the timing budget is {timing['status']} (hdl/test/timing_budget.py); "
+              "tag does not need it, but the release notes should say so.")
     if a.skip_slow or a.skip_formal or set(a.cores) < set(CORES):
         print("The stamp records the skipped steps, and tag refuses it unless --allow-partial is given.")
     return 0
@@ -406,6 +435,9 @@ def cmd_tag(a: argparse.Namespace) -> int:
     if state != "passed":
         raise Failure(f"CI: {text}")
     print(f"  stamp and CI are good for {sha[:7]}")
+    timing = stamp.get("timing")
+    status = timing.get("status") if isinstance(timing, dict) else None
+    print(f"  timing budget: {status or 'not in the stamp'}" + ("" if status == "met" else " (no gate)"))
     print(f"\nTag {name} on {sha[:7]}, with the section of RELEASE_NOTES.md as its message:\n\n{message}")
     if not confirm(f"Create tag {name}?"):
         return 1
@@ -416,7 +448,7 @@ def cmd_tag(a: argparse.Namespace) -> int:
         print(f"  pushed {name}")
     else:
         print(f"  not pushed: git push origin {name}")
-    print("Next: the NiceMonMEGA65 submodule pointer and tag (RELEASE.md step 8.4).")
+    print("Next, when you like: the NiceMonMEGA65 bump (RELEASE.md step 7). It does not gate this release.")
     return 0
 
 
@@ -428,6 +460,7 @@ def main() -> int:
     c.add_argument("--cores", nargs="+", default=CORES, choices=CORES, help="cores for make slow")
     c.add_argument("--skip-slow", action="store_true", help="skip make slow (a partial stamp)")
     c.add_argument("--skip-formal", action="store_true", help="skip make formal (a partial stamp)")
+    c.add_argument("--skip-timing", action="store_true", help="skip make timing, which is no gate (10 minutes)")
     c.set_defaults(fn=cmd_check)
     sub.add_parser("figures").set_defaults(fn=cmd_figures)
     c = sub.add_parser("ci")

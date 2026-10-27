@@ -4,14 +4,15 @@ The steps to take before a release, in order. Each step is cheaper than the
 ones after it, so a problem is found as early as possible. Do not go on to
 the next step while one fails.
 
-A release needs a clean working tree on `main`. The slow checks and the
-board check in [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65)
-come last because they take the longest.
+A release needs a clean working tree on `main`. The slow checks come last
+because they take the longest.
 
-This repository is FPGA-agnostic and has no bitstream. NiceMonMEGA65 carries
-the core to the boards as a git submodule, so a release here is also a
-commit that NiceMonMEGA65 can pin. Its own checklist is `release/RELEASE.md`
-in that repository.
+This repository is FPGA-agnostic and has no bitstream, and it does not
+depend on any board repository. It can be released at any time. NiceMonMEGA65
+carries the core to the boards as a git submodule, and it is the example
+design that shows the core meets 100 MHz on the MEGA65. That is an
+achievement to keep, not a gate: step 7 happens after the tag, and a miss
+only shows (the badge, and the release notes of the next tag).
 
 The mechanical parts are scripted by [release.py](README.md),
 which each step names. `make release-check` runs steps 2.4 to 5, and
@@ -103,6 +104,24 @@ Then refresh the estimate against the core:
 
 If a figure in the documents changed, go back to step 2.4.
 
+### Timing
+
+`release.py check` also runs `make -C hdl timing` (`BOARD=mega65`, about 10
+minutes) and compares the slacks with the budget in
+[hdl/test/timing_budget.py](../hdl/test/timing_budget.py): the core alone must
+meet the 10 ns clock, and the paths to and from the core's ports must leave
+the system around it 1.5 ns. This is **not a gate**. A miss prints a warning
+and goes into the stamp, and `tag` shows it. If it missed, say so in the
+release notes, with the cause, or the commit to blame. The out-of-context
+figures are a proxy: the memory logic of a real system takes some of the
+time left, so the budget for the ports is a margin, not a promise. Skip the
+run with `--skip-timing`.
+
+A change to `hdl/src` that touches the paths of the groups in
+`timing_groups.rpt` needs a `make timing` before and after it, with both
+figures in the commit message, so that a feature does not quietly take the
+100 MHz.
+
 ## 6. CI
 
 Push the release candidate and wait for every job of
@@ -112,35 +131,36 @@ Cut no tag before they are done.
 `python3 release/release.py ci --wait` does it. If `origin` is not on
 GitHub, add `--repo OWNER/NAME`.
 
-## 7. NiceMonMEGA65
+## 7. NiceMonMEGA65 (after the tag, not a gate)
 
-NiceMonMEGA65 is the integration test of the core on real boards: a board
-can differ from the simulation in timing, which no test here shows. Do this
-after the steps above pass, from a clone with the submodule.
+NiceMonMEGA65 is the example design and the real-world test of the core: a
+board can differ from the simulation in timing, which no test here shows.
+It depends on this repository, never the other way. Do this after the tag,
+from a clone with the submodule, or later, at your pace.
 
-1. In NiceMonMEGA65, point the `nice_cpu` submodule at the commit to release:
+1. In NiceMonMEGA65, point the `nice_cpu` submodule at the tag:
 
        git -C nice_cpu fetch
-       git -C nice_cpu checkout <commit>
+       git -C nice_cpu checkout <tag>
        git submodule status
 
 2. Follow the "After a submodule bump" steps of its
-   [CLAUDE.md](https://github.com/MJoergen/NiceMonMEGA65/blob/main/CLAUDE.md):
-   build the emulator, and re-read its table "Compared with the emulator".
-   Anything that changed in the address map, a device, or the ports of the
-   core (see "Interface changes" below) must be matched in `src/`.
-3. Run its release checklist, at least steps 3 to 7: its simulation tests
-   with both `NICE=pipeline` and `NICE=multi`, its formal checks, the
-   bitstreams for the boards with timing met, and `make hwtest` on each
-   board. Every check must pass, and the bitstream must be built from the
-   commit that you tag here.
-4. Check the timing against this repository's. `make -C hdl timing` here
-   (`BOARD=mega65` or `nexys4ddr`, `FLOW=default` or `timing`) must give
-   about what NiceMonMEGA65 gets in Vivado. A large difference means the
-   figures in [doc/MICROARCH.md](../doc/MICROARCH.md) or the open items in
+   [CLAUDE.md](https://github.com/MJoergen/NiceMonMEGA65/blob/main/CLAUDE.md),
+   and its own release checklist. Anything that changed in the address map, a
+   device, or the ports of the core (see "Interface changes" below) must be
+   matched in `src/` there.
+3. Its bump script writes the result for the tag (the timing in the system,
+   the date, and the tag) to the file that the badge in
+   [README.md](../README.md) reads. If the timing was missed, the badge
+   shows it, and the cause is an item in [TODO.md](../TODO.md) here.
+4. Compare its timing with `make -C hdl timing` here (`BOARD=mega65`,
+   `FLOW=default` or `timing`). A large difference means the budget in
+   `timing_budget.py`, the figures in
+   [doc/MICROARCH.md](../doc/MICROARCH.md), or the open items in
    [TODO.md](../TODO.md) are out of date.
-5. If NiceMonMEGA65 needed a change, make it a commit there with the new
-   submodule pointer, and do not release this repository until both pass.
+
+If NiceMonMEGA65 needs a change to follow an interface change, it is a
+commit there. A release here never waits for it.
 
 ### Interface changes
 
@@ -171,6 +191,5 @@ record it in the release notes:
        git tag -a --cleanup=whitespace RCnn -m "<the section>"
        git push origin RCnn
 
-4. In NiceMonMEGA65, commit the new submodule pointer, tag it as its
-   checklist says, and attach the bitstreams. Reference this tag in its tag
-   message.
+4. Then step 7, whenever you like. Reference this tag in the tag message
+   of NiceMonMEGA65.

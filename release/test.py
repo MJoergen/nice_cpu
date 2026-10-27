@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Tests of the parts of release.py that need no repository, tools, or network."""
 
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from unittest import mock
 
@@ -134,6 +136,35 @@ def test_stamp_covers() -> None:
         check(not release.stamp_covers("aaa", "bbb"), "another document changed")
 
 
-for t in (test_figure_lines, test_bench_totals, test_next_tag, test_ci_status, test_notes_section, test_stamp_covers):
+def test_timing_budget() -> None:
+    """A miss, an error, and a met budget are recorded, and none raises."""
+    with tempfile.TemporaryDirectory() as t:
+        root = Path(t)
+        out = root / "hdl" / "build" / "timing" / "mega65-default-4"
+        out.mkdir(parents=True)
+        (root / "release" / "build").mkdir(parents=True)
+        code = 0
+        written = ""
+
+        def run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+            if written:
+                (out / "budget.json").write_text(written)
+            return subprocess.CompletedProcess([], code)
+
+        with mock.patch.object(release, "ROOT", root), mock.patch.object(release, "BUILD", root / "release" / "build"), \
+                mock.patch.object(subprocess, "run", run):
+            check(release.timing_budget()["status"] == "error", "no budget.json is an error")
+            written = '{"status": "missed", "board": "mega65"}'
+            check(release.timing_budget()["status"] == "missed", "a miss is recorded")
+            written = '{"status": "met", "board": "mega65"}'
+            check(release.timing_budget()["status"] == "met", "a met budget")
+            code = 1
+            check(release.timing_budget()["status"] == "error", "a failed make is an error, not a raise")
+            (out / "budget.json").write_text('{"status": "met"}')
+            written = ""
+            check(release.timing_budget()["status"] == "error", "a stale budget.json is not read")
+
+
+for t in (test_timing_budget, test_figure_lines, test_bench_totals, test_next_tag, test_ci_status, test_notes_section, test_stamp_covers):
     t()
 print("release tests passed")

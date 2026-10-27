@@ -26,6 +26,14 @@ The core is FPGA-agnostic. This repository has no board top level and no
 synthesis for a particular board. The example design for the MEGA65 lives in
 the separate [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) repository.
 
+That design is an example, not a dependency: nothing here refers to it in
+code or in a gate, and a release does not wait for it. It shows that the
+pipelined core meets 100 MHz on the MEGA65, and this repository avoids
+changes that would take that away. `make -C hdl timing` here checks the
+core alone against a budget, and
+[release/RELEASE.md](release/RELEASE.md) (step 7) says how NiceMonMEGA65
+follows a tag.
+
 ## Contents
 
 | Path | What it is |

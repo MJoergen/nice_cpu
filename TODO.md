@@ -10,6 +10,24 @@ from the fifth review". No code has TODO or FIXME comments.
 
 ## FPGA core
 
+- **A badge for "meets 100 MHz on the MEGA65"** (a design note, 2026-10-27).
+  NiceMonMEGA65 writes the result of each tag it builds to a small JSON
+  file in its repository (the tag, the commit, the slack, the date, and met
+  or missed), and the README here shows it as a shields.io endpoint badge,
+  next to the CI badge. It is the board repository's `bump` script that
+  writes the file, so this repository stays free of it. Open here: add the
+  badge line to README.md once that file exists; calibrate the budget in
+  `hdl/test/timing_budget.py` against the in-system slack of the next two
+  tags (the ports' 1.5 ns is a guess from the out-of-context runs). A
+  nightly run of the same script on `main` could give a second badge.
+  A second badge for the Nexys4DDR at 90 MHz needs only another JSON file
+  from the same `bump` script and a README line here, but one more build
+  per bump (the `timing` flow, 15 to 30 minutes). Here it gets no budget in
+  `timing_budget.py`: the core alone misses 90 MHz there by about 0.3 ns out
+  of context (hdl/README.md), so only the in-system result counts. Add a
+  regression guard only if a change gets past the MEGA65 budget and costs the
+  Nexys its 90 MHz.
+
 - **Test order steps not done** (MICROARCH.md §9):
   - Step 8: `hdl/test/random_prog.py` is tuned with
     `hdl/test/random_stats.py`, and both cores pass seeds 1 to 1000

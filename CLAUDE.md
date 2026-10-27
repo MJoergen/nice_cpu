@@ -102,6 +102,12 @@ Vivado 2025.1 is installed at `/opt/Xilinx/2025.1/Vivado/bin/vivado`, not on PAT
 
 ## Conventions
 
+- Nothing in this repository depends on NiceMonMEGA65, and no release waits
+  for it. The pipelined core meeting 100 MHz on the MEGA65 is a goal to keep:
+  a change under `hdl/src/pipe_*` that touches the paths of `timing_groups.rpt`
+  needs `make -C hdl timing` before and after, with both figures in the commit
+  message. `hdl/test/timing_budget.py` holds the budget; a miss warns and never
+  fails (release/RELEASE.md, Timing).
 - Behavior changes start in ISA.md; code follows the spec, never the reverse.
   Departures from the sources go in ISA.md Appendix B.
 - Every bug fix or new rule gets a test: an `errors.py` case, a line in

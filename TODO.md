@@ -236,9 +236,10 @@ Kept here so that they are not proposed again.
   2026-10-26: the debug link's pause and single step (DEBUG.md §6) cover
   breakpoints and stepping from the host. Its branch,
   `claude/project-thread-k4m3qt`, stays.
-- **Annotated tags for `RC01` to `RC05`** (§1.1). They stay lightweight:
-  re-tagging means force-pushing tags that others may have fetched. The next
-  tag is made by `release.py tag`, and is annotated.
+- **Annotated tags for `RC01` to `RC06`** (sixth review §1.1). They stay
+  lightweight: re-tagging means force-pushing tags that others may have
+  fetched. `RC06` was made by hand, before `release.py tag` was used. From
+  `RC07` on, `release.py tag` makes them, annotated.
 - **Four ways to fewer pipeline stalls in translated code**, tried in the
   translator and dropped, measured with
   `bench/pipecycles.py`:

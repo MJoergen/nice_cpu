@@ -9,6 +9,7 @@ pins one of these. Its tag for each is:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|
+| `RC06` | `RC06` |
 | `RC05` | `RC05` |
 | `RC04` | `RC04` |
 | `RC03` | none |
@@ -16,7 +17,76 @@ pins one of these. Its tag for each is:
 | `RC01` | none |
 
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
-The other two pin the tagged commit.
+The others pin the tagged commit.
+
+## RC06 (2026-10-26)
+
+**Upgrade notes.**
+
+- Both cores have two new inputs without defaults, `brk_addr_i` and
+  `brk_en_i`, and a generic `G_BREAKS` (0 to 8, default 0). A system
+  without breakpoints ties `brk_en_i` to all zeros. Otherwise connect them
+  to the new outputs `brk_addr_o` and `brk_en_o` of `debug_link.vhd`, with
+  the same `G_BREAKS` on both.
+- A core with breakpoints can pause on its own: `paused_o` rises while
+  `pause_i` is 0. It goes on only after `pause_i` has been 1 and is 0
+  again. `debug_link.vhd` does this.
+- `run_i` of the performance counters and the fetch statistics must now
+  be low while the core is paused, too: drive it with
+  `not paused_o and not halted_o` of the core, and low while it is held.
+- The debug link is now version 4. A host checks the version register at
+  `0xFFFFFFF2` before it uses a breakpoint.
+
+**Specification and documents**
+
+- DEBUG.md: debug link version 4 adds up to eight breakpoints (#55), the
+  notice `x`, and the stop register, which lasts until the next go on. A
+  connection clears the breakpoints.
+- SYSTEM.md: the cycle and microsecond counters stop while the core is
+  paused. The microsecond counter is exact for any clock of 1 MHz or more.
+
+**Emulator (`niceemu`)**
+
+- `--link` serves debug link version 4, with four breakpoints.
+- A signal ends a console read, so Ctrl-C works while a program waits for
+  input.
+
+**Assembler (`niceasm`)**
+
+- `--symbols` is refused when it names the input or the output.
+
+**Runtime and C library**
+
+- The trap report prints `trap ?: unknown trap` for a code above 7.
+- `CLOCKS_PER_SEC` is a `clock_t`.
+
+**Translator (`nicewasm`, `nicebuild.py`)**
+
+- `nicebuild.py` has `--asm`, rejects a stack or memory size that is not
+  positive, checks the output path early, names the failing script, and
+  says so when the compiler is not installed.
+
+**FPGA cores**
+
+- Both cores and `debug_link.vhd` have breakpoints (#55). DECODE of the
+  pipelined core compares the addresses ahead, so the cycle counts do not
+  change.
+- `debug_link.vhd` drops a packet whose checksum has a high digit that is
+  not hex, and none of its bytes reaches the program, as in niceemu.
+- The formal checks prove the multi-cycle core's ports by k-induction, and
+  WRITE's interrupt ports of the pipelined core for every cycle.
+
+**Benchmarks**
+
+- The cycle counts do not change: 2356816 estimated cycles in the phases
+  of the translated benchmark on the pipelined core, as at RC05.
+
+**Release**
+
+- `release/RELEASE.md` is the release checklist, and `release/release.py`
+  scripts its mechanical parts. `make release-check` runs the gates.
+- `make wasmcheck` rebuilds the checked-in `.wasm` files and compares them.
+- CI runs the programs on each core in three shards.
 
 ## RC05 (2026-10-26)
 

@@ -105,6 +105,7 @@ float:
 	$(ZIG) build-exe -target wasm32-freestanding -fno-entry -fno-compiler-rt -O ReleaseSmall \
 	  -fstrip --stack 1024 --initial-memory=65536 $(FLOAT_EXPORTS:%=--export=%) \
 	  -femit-bin=float.wasm build/float.zig
+	chmod -x float.wasm
 	rm -rf build float.wasm.o
 
 # Rebuilds the .wasm files of the Zig and Rust tests. This needs Zig 0.17
@@ -120,6 +121,7 @@ wasm:
 	    -C strip=debuginfo -C link-arg=-zstack-size=4096 -C link-arg=--initial-memory=65536 \
 	    -o test/$$t.wasm test/$$t.rs || exit 1; \
 	done
+	@chmod -x test/*.wasm
 	@rm -f test/*.wasm.o
 
 emulator:

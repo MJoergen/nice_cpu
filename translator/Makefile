@@ -59,7 +59,6 @@ wasm:
 	    -Wl,--allow-undefined -Wl,--stack-first -Wl,-z,stack-size=4096 -Wl,--initial-memory=65536 \
 	    -o test/$$t.wasm test/$$t.c || exit 1; \
 	done
-	@chmod -x test/*.wasm
 	@for t in $(ZIG_TESTS); do \
 	  $(ZIG) build-exe -target wasm32-freestanding -fno-entry -rdynamic -O ReleaseSmall -fstrip \
 	    --stack 4096 --initial-memory=65536 -femit-bin=test/$$t.wasm test/$$t.zig || exit 1; \
@@ -73,6 +72,7 @@ wasm:
 	    -C strip=debuginfo -C link-arg=-zstack-size=4096 -C link-arg=--initial-memory=65536 \
 	    -o test/$$t.wasm test/$$t.rs || exit 1; \
 	done
+	@chmod -x test/*.wasm
 	@rm -f test/*.wasm.o
 
 .PHONY: test emulator typecheck wasm diff

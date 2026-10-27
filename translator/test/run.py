@@ -330,7 +330,7 @@ SHAPES = {"bound": (r"SUB\[M\]", False),
           # A byte load: the word index and the rotation count come before
           # the compare, and fill_jump_slots moves neither to after the jump.
           "oobbyte": (r"^ +SHR +(R\d+), (R\d+), 2\n +SHL +(R\d+), \2, 3\n"
-                      r" +SUB\[M\] +R0, \2, 65536\n +\?!C MOVE +R15, \S+\n"
+                      r" +SUB\[M\] +R0, \2, 65536\n +\?!C +MOVE +R15, \S+\n"
                       r" +ROR +R\d+, @___wasm_memory\[\1\], \3$", True),
           # A byte store: the mask comes from a rotation, not a table.
           "oobbytecarry": (r"^ +ROL +(R\d+), -256, R\d+\n +AND +R\d+, \1, @___wasm_memory", True)}

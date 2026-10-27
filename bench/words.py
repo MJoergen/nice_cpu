@@ -57,11 +57,11 @@ def translate(wasm: str, library: str, tmp: str) -> List[str]:
 # word, and each constant one more (ISA.md §3): MOVE R1, 0x1234 is 2, the
 # call's ADD with its constant 2 is 2, and the jump to the undefined label
 # is 2. .RES emits nothing, and .DAT one word. So 7 words.
-TEST = """        MOVE R1, 0x1234
-        ADD @--R13, 2, R15
-        MOVE R15, __helper
-        .RES 10
-x       .DAT 7
+TEST = """                MOVE    R1, 0x1234
+                ADD     @--R13, 2, R15
+                MOVE    R15, __helper
+                .RES    10
+x               .DAT    7
 """
 
 

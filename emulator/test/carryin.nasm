@@ -24,37 +24,37 @@
 ; Steps: 1 + 8 * 4 + 1 = 34. R13 = 0x210, and R1 and R14 hold the last
 ; case's values. HALT is word 0x39, so PC = 0x3A. The dump shows the
 ; eight pairs of result and SR.
-        MOVE    R13, 0x200
-        MOVE    R14, 0x04000000
-        SUB[CM] R1, 0, 0xFFFFFFFF
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0x04000000
-        SUB[CM] R1, 0x80000000, 0
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0x04000000
-        ADD[CM] R1, 0xFFFFFFFF, 0xFFFFFFFF
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0x04000000
-        MDBL[CM] R1, 0x7FFFFFFF, 0x0000FFFF
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0x04000000
-        DBL[CM] R1, 0x80000000
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0x04000000
-        IAND[CM] R1, 0x0F0F0F0F, 0xFFFF0000
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0x04000000
-        IOR[CM] R1, 0xFFFFFFFF, 0
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0x04000000
-        XNOR[CM] R1, 0x12345678, 0x12345678
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        HALT
+                MOVE    R13, 0x200
+                MOVE    R14, 0x04000000
+                SUB[CM] R1, 0, 0xFFFFFFFF
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0x04000000
+                SUB[CM] R1, 0x80000000, 0
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0x04000000
+                ADD[CM] R1, 0xFFFFFFFF, 0xFFFFFFFF
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0x04000000
+                MDBL[CM] R1, 0x7FFFFFFF, 0x0000FFFF
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0x04000000
+                DBL[CM] R1, 0x80000000
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0x04000000
+                IAND[CM] R1, 0x0F0F0F0F, 0xFFFF0000
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0x04000000
+                IOR[CM] R1, 0xFFFFFFFF, 0
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0x04000000
+                XNOR[CM] R1, 0x12345678, 0x12345678
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                HALT

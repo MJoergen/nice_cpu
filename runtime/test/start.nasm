@@ -5,5 +5,5 @@
 ; at 0xFFFFFEFF. Steps: MOVE SP, R1 = 0, R2 = 0, the call (2), MOVE R1,
 ; return, HALT = 8.
 
-_main   MOVE    R1, 42
-        MOVE    R15, @R13++
+_main           MOVE    R1, 42
+                MOVE    R15, @R13++

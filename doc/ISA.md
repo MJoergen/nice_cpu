@@ -394,8 +394,8 @@ The vector table has 256 words and starts at address VBASE × 256. Entry v holds
 
 To set the table address without touching the flags:
 
-    AND  R14, R14, 0xFF000000        ; keep the flags
-    OR   R14, R14, TABLE_ADDR_DIV_256 ; set VBASE
+                    AND     R14, R14, 0xFF000000  ; keep the flags
+                    OR      R14, R14, TABLE_ADDR_DIV_256  ; set VBASE
 
 ### 7.4 Return
 
@@ -479,9 +479,9 @@ The call works because PC reads as the address after `ADD`'s constant word, whic
 
 There is no condition or instruction for a signed comparison. A signed a < b is N XOR V after `SUB[M]`, and it is tested with two instructions:
 
-        SUB[M] R0, a, b
-    ?V  XOR R14, R14, 0x10000000    ; flip N when V is set
-    ?N  MOVE PC, less               ; a < b signed; ?!N for a >= b
+                    SUB[M]  R0, a, b
+            ?V      XOR     R14, R14, 0x10000000  ; flip N when V is set
+            ?N      MOVE    PC, less        ; a < b signed; ?!N for a >= b
 
 After the `XOR`, N is a < b. The write to R14 takes the written value, and leaves the other flags as they were (§4.3). For a > b or a <= b, swap the operands of `SUB[M]`.
 
@@ -546,7 +546,7 @@ The `.bin` format is plain text with one line per assembled word: an 8-digit hex
 
 From the 2004 web page:
 
-    ?!Z ADD[M] @R3++, --R2, @0x12345678[R1]
+            ?!Z     ADD[M]  @R3++, --R2, @0x12345678[R1]
 
 | Part | Bits |
 |---|---|

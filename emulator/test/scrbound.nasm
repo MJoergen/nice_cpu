@@ -16,16 +16,16 @@
 ;
 ; Rows 1-23 print as "|", because only blank rows at the bottom are
 ; dropped. Steps: 12 + 1 = 13. HALT is word 36 = 0x24, so PC = 0x25.
-        MOVE    @0xFFFF0000, 0x7F
-        MOVE    @0xFFFF0001, 0xC1
-        MOVE    @0xFFFF0002, 0x141
-        MOVE    @0xFFFF0003, 0x20
-        MOVE    @0xFFFF0004, 0x21
-        MOVE    @0xFFFF07CF, 0x5A
-        MOVE    @0xFFFF07D0, 0x59
-        MOVE    @0xFFFEFFFF, 0x58
-        MOVE    @0x400, 0x61
-        MOVE    @0xBCF, 0x7A
-        MOVE    @0xBD0, 0x79
-        MOVE    @0x3FF, 0x78
-        HALT
+                MOVE    @0xFFFF0000, 0x7F
+                MOVE    @0xFFFF0001, 0xC1
+                MOVE    @0xFFFF0002, 0x141
+                MOVE    @0xFFFF0003, 0x20
+                MOVE    @0xFFFF0004, 0x21
+                MOVE    @0xFFFF07CF, 0x5A
+                MOVE    @0xFFFF07D0, 0x59
+                MOVE    @0xFFFEFFFF, 0x58
+                MOVE    @0x400, 0x61
+                MOVE    @0xBCF, 0x7A
+                MOVE    @0xBD0, 0x79
+                MOVE    @0x3FF, 0x78
+                HALT

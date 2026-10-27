@@ -24,15 +24,15 @@
 ;   21      ?Z, taken this time
 ;   22      HALT
 ; The word at 5 is the constant of the MOVE at 4, and never a stop.
-        MOVE    R14, 0x40000001 ; words 0,1: VBASE = 1, E = 1
-        MOVE    R1, 3           ; words 2,3
-loop    MOVE    R2, @data       ; words 4,5
-        SUB[M]  R1, R1, 1       ; words 6,7
-        ?Z MOVE R15, done       ; words 8,9
-        MOVE    R15, loop       ; words 10,11
-done    HALT                    ; word 12
-intr    ADD     R4, R4, 1       ; words 13,14
-        RTI                     ; word 15
-data    .DAT    7               ; word 16
-        .ORG    0x102
-        .DAT    intr
+                MOVE    R14, 0x40000001  ; words 0,1: VBASE = 1, E = 1
+                MOVE    R1, 3           ; words 2,3
+loop            MOVE    R2, @data       ; words 4,5
+                SUB[M]  R1, R1, 1       ; words 6,7
+        ?Z      MOVE    R15, done       ; words 8,9
+                MOVE    R15, loop       ; words 10,11
+done            HALT                    ; word 12
+intr            ADD     R4, R4, 1       ; words 13,14
+                RTI                     ; word 15
+data            .DAT    7               ; word 16
+                .ORG    0x102
+                .DAT    intr

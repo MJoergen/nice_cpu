@@ -75,13 +75,13 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 
 **Frames.** A function needs no frame pointer. If it uses one, it must build the frame this way. A debugger can then follow the chain of frames through the functions that use one:
 
-    MOVE @--SP, R12          ; save the caller's FP
-    MOVE R12, SP             ; FP points at the saved FP
-    SUB  SP, SP, n           ; n words for locals and saved registers
-    ...
-    MOVE SP, R12             ; drop the locals
-    MOVE R12, @SP++          ; restore the caller's FP
-    MOVE PC, @SP++           ; return
+                    MOVE    @--SP, R12      ; save the caller's FP
+                    MOVE    R12, SP         ; FP points at the saved FP
+                    SUB     SP, SP, n       ; n words for locals and saved registers
+                    ...
+                    MOVE    SP, R12         ; drop the locals
+                    MOVE    R12, @SP++      ; restore the caller's FP
+                    MOVE    PC, @SP++       ; return
 
 | Address | Contents |
 |---|---|
@@ -150,15 +150,15 @@ Division by zero is undefined in C, so these routines may return any value for i
 
 compile to:
 
-    _f      ADD  R1, R1, @1[SP]  ; e is the first stack argument
-            MOVE PC, @SP++       ; return
-            ...
-            MOVE @--SP, 5        ; e goes on the stack
-            MOVE R1, 1           ; a to d go in registers
-            MOVE R2, 2
-            MOVE R3, 3
-            MOVE R4, 4
-            ADD  @--SP, 2, PC    ; call f
-            MOVE PC, _f
-            ADD  SP, SP, 1       ; remove e
-            MOVE @_x, R1         ; x = f(...)
+    _f              ADD     R1, R1, @1[SP]  ; e is the first stack argument
+                    MOVE    PC, @SP++       ; return
+                    ...
+                    MOVE    @--SP, 5        ; e goes on the stack
+                    MOVE    R1, 1           ; a to d go in registers
+                    MOVE    R2, 2
+                    MOVE    R3, 3
+                    MOVE    R4, 4
+                    ADD     @--SP, 2, PC    ; call f
+                    MOVE    PC, _f
+                    ADD     SP, SP, 1       ; remove e
+                    MOVE    @_x, R1         ; x = f(...)

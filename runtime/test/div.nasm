@@ -34,43 +34,43 @@
 ; total is 5 + 6 + 8 * 39 + 1 + 1 = 325. R3-R6 stay 0 (div.expected).
 ; R14 = 0x09000000: Z from the last DEC[M].
 
-_main   MOVE    R7, pairs
-        MOVE    R8, results
-        MOVE    R9, 8                   ; number of pairs
-        MOVE    R10, 0xA
-        MOVE    R11, 0xB
-        MOVE    R12, 0xC
-loop    MOVE    R1, @R7
-        MOVE    R2, @1[R7]
-        ADD     @--R13, 2, R15
-        MOVE    R15, __udiv
-        MOVE    @R8++, R1
-        MOVE    R1, @R7
-        MOVE    R2, @1[R7]
-        ADD     @--R13, 2, R15
-        MOVE    R15, __umod
-        MOVE    @R8++, R1
-        MOVE    R1, @R7
-        MOVE    R2, @1[R7]
-        ADD     @--R13, 2, R15
-        MOVE    R15, __div
-        MOVE    @R8++, R1
-        MOVE    R1, @R7
-        MOVE    R2, @1[R7]
-        ADD     @--R13, 2, R15
-        MOVE    R15, __mod
-        MOVE    @R8++, R1
-        ADD     R7, R7, 2
-        DEC[M]  R9, R9
-        ?!Z MOVE R15, loop
-        MOVE    R15, @R13++
+_main           MOVE    R7, pairs
+                MOVE    R8, results
+                MOVE    R9, 8           ; number of pairs
+                MOVE    R10, 0xA
+                MOVE    R11, 0xB
+                MOVE    R12, 0xC
+loop            MOVE    R1, @R7
+                MOVE    R2, @1[R7]
+                ADD     @--R13, 2, R15
+                MOVE    R15, __udiv
+                MOVE    @R8++, R1
+                MOVE    R1, @R7
+                MOVE    R2, @1[R7]
+                ADD     @--R13, 2, R15
+                MOVE    R15, __umod
+                MOVE    @R8++, R1
+                MOVE    R1, @R7
+                MOVE    R2, @1[R7]
+                ADD     @--R13, 2, R15
+                MOVE    R15, __div
+                MOVE    @R8++, R1
+                MOVE    R1, @R7
+                MOVE    R2, @1[R7]
+                ADD     @--R13, 2, R15
+                MOVE    R15, __mod
+                MOVE    @R8++, R1
+                ADD     R7, R7, 2
+                DEC[M]  R9, R9
+        ?!Z     MOVE    R15, loop
+                MOVE    R15, @R13++
 
-pairs   .DAT    100, 7
-        .DAT    0xFFFFFFF9, 2
-        .DAT    7, 0xFFFFFFFE
-        .DAT    0xFFFFFFFF, 0xFFFFFFFF
-        .DAT    0x80000000, 0xC0000000
-        .DAT    0xFFFFFFFF, 0x80000001
-        .DAT    0x12345678, 0x1000
-        .DAT    1000000007, 13
-results .BLK    32
+pairs           .DAT    100, 7
+                .DAT    0xFFFFFFF9, 2
+                .DAT    7, 0xFFFFFFFE
+                .DAT    0xFFFFFFFF, 0xFFFFFFFF
+                .DAT    0x80000000, 0xC0000000
+                .DAT    0xFFFFFFFF, 0x80000001
+                .DAT    0x12345678, 0x1000
+                .DAT    1000000007, 13
+results         .BLK    32

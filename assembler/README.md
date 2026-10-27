@@ -40,6 +40,13 @@ hex word, in address order. This is the format the 2004 `NICE.pm` assembler
 writes, so its example binaries can be compared directly. Addresses skipped
 by `.ORG` and words reserved by `.RES` are not listed.
 
+## Source layout
+
+The assembler accepts any spacing. The sources in this repository use
+spaces only, in columns: the label in column 0, the condition in column 8,
+the mnemonic in column 16, the operands in column 24, and the comment in
+column 40. A label of 8 or more characters stands on a line of its own.
+
 ## Details beyond ISA.md
 
 - Operands are separated by whitespace or by one comma. A comma anywhere

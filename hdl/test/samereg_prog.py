@@ -27,8 +27,8 @@ DESTS = ["{r}", "{r}--", "{r}++", "@{r}++", "@--{r}", "1[{r}]"]
 S0 = ["{r}", "--{r}", "{r}++", "2[{r}]", "@{r}", "@--{r}", "@{r}++", "@2[{r}]"]
 S1 = ["{r}", "--{r}", "{r}++", "3[{r}]", "@{r}", "@--{r}", "@{r}++", "@3[{r}]"]
 DATA = [
-    "        .DAT    " + ", ".join(f"0x{v:02X}" for v in range(0x18, 0x28)),
-    "        .DAT    " + ", ".join(f"0x{v:02X}" for v in range(0x28, 0x38)),
+    "                .DAT    " + ", ".join(f"0x{v:02X}" for v in range(0x18, 0x28)),
+    "                .DAT    " + ", ".join(f"0x{v:02X}" for v in range(0x28, 0x38)),
 ]
 
 
@@ -50,19 +50,19 @@ def program() -> list[str]:
         "; fields, for every pair of source modes and six destination modes. R2",
         "; starts at 0x20, so the counts are near 32 and 33, and the addresses",
         "; fall in the data at 0x18 to 0x37. Then the same with R14.",
-        "        MOVE    R15, start",
-        "        .ORG    0x18",
+        "                MOVE    R15, start",
+        "                .ORG    0x18",
     ] + DATA + [
-        "        .ORG    0x100",
-        "start   MOVE    R1, 0x9ABCDEF1",
+        "                .ORG    0x100",
+        "start           MOVE    R1, 0x9ABCDEF1",
     ]
-    lines += shifts(OPS, "R2", ["        MOVE    R2, 0x20",
-                                "        SUB[M]  R0, R0, 1       ; C = 1"])
-    lines += shifts(OPS_R14, "R14", ["        MOVE    R14, 0x05000020 ; C = 1"])
+    lines += shifts(OPS, "R2", ["                MOVE    R2, 0x20",
+                                "                SUB[M]  R0, R0, 1       ; C = 1"])
+    lines += shifts(OPS_R14, "R14", ["                MOVE    R14, 0x05000020  ; C = 1"])
     lines += [
-        "        MOVE    R14, 0x01000000",
-        "        HALT",
-        "        .ORG    0x01000018",
+        "                MOVE    R14, 0x01000000",
+        "                HALT",
+        "                .ORG    0x01000018",
     ] + DATA
     return lines
 

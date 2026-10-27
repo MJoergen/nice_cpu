@@ -33,38 +33,38 @@
 ;
 ; Steps: 3 + 9 * 13 + 9 = 129. R6 = 0x200 + 72 = 0x248, R7 = 0 with Z set
 ; (R14 = 0x09000000), R8 = CASES + 18 = 0x3d, and R9 = MPU + 10.
-MPU     .EQU    0xFFFFFF20
-        MOVE    R8, CASES
-        MOVE    R6, 0x200
-        MOVE    R7, 9
-LOOP    MOVE    @MPU, @R8++
-        MOVE    @MPU+1, @R8++
-        MOVE    R9, MPU+2
-        MOVE    @R6++, @R9++
-        MOVE    @R6++, @R9++
-        MOVE    @R6++, @R9++
-        MOVE    @R6++, @R9++
-        MOVE    @R6++, @R9++
-        MOVE    @R6++, @R9++
-        MOVE    @R6++, @R9++
-        MOVE    @R6++, @R9++
-        DEC[M]  R7, R7
-    ?!Z MOVE    R15, LOOP
-        MOVE    @MPU+4, 5
-        MOVE    R1, @MPU+4
-        MOVE    R2, @MPU+10
-        MOVE    @MPU, 6
-        MOVE    @MPU+1, 7
-        MOVE    R3, @MPU+4
-        MOVE    R4, @MPU
-        MOVE    R5, @MPU+1
-        HALT
-CASES   .DAT    7, 3
-        .DAT    0xFFFFFFF9, 2
-        .DAT    7, 0xFFFFFFFE
-        .DAT    0xFFFFFFF9, 0xFFFFFFFE
-        .DAT    0xFFFFFFFF, 0xFFFFFFFF
-        .DAT    0x80000000, 0xFFFFFFFF
-        .DAT    0x80000000, 0x80000000
-        .DAT    0x7FFFFFFF, 0x7FFFFFFF
-        .DAT    0xFFFFFFFB, 0
+MPU             .EQU    0xFFFFFF20
+                MOVE    R8, CASES
+                MOVE    R6, 0x200
+                MOVE    R7, 9
+LOOP            MOVE    @MPU, @R8++
+                MOVE    @MPU+1, @R8++
+                MOVE    R9, MPU+2
+                MOVE    @R6++, @R9++
+                MOVE    @R6++, @R9++
+                MOVE    @R6++, @R9++
+                MOVE    @R6++, @R9++
+                MOVE    @R6++, @R9++
+                MOVE    @R6++, @R9++
+                MOVE    @R6++, @R9++
+                MOVE    @R6++, @R9++
+                DEC[M]  R7, R7
+        ?!Z     MOVE    R15, LOOP
+                MOVE    @MPU+4, 5
+                MOVE    R1, @MPU+4
+                MOVE    R2, @MPU+10
+                MOVE    @MPU, 6
+                MOVE    @MPU+1, 7
+                MOVE    R3, @MPU+4
+                MOVE    R4, @MPU
+                MOVE    R5, @MPU+1
+                HALT
+CASES           .DAT    7, 3
+                .DAT    0xFFFFFFF9, 2
+                .DAT    7, 0xFFFFFFFE
+                .DAT    0xFFFFFFF9, 0xFFFFFFFE
+                .DAT    0xFFFFFFFF, 0xFFFFFFFF
+                .DAT    0x80000000, 0xFFFFFFFF
+                .DAT    0x80000000, 0x80000000
+                .DAT    0x7FFFFFFF, 0x7FFFFFFF
+                .DAT    0xFFFFFFFB, 0

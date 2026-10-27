@@ -39,61 +39,61 @@
 ; Steps: 1 + 14 * 4 + 1 = 58. R13 = 0x200 + 28 = 0x21C, and R1 and R14
 ; hold the last case's values. HALT is word 0x62, so PC = 0x63. The dump
 ; shows the 14 pairs.
-        MOVE    R13, 0x200
-        MOVE    R14, 0x03FFFFFF
-        C<0[M]  R1, R14++, 0
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0x03FFFFFF
-        SHL[M]  R1, R14++, 0
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0x04000000
-        C<C[M]  R1, 0x12345678, 66
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0x04000000
-        C>C[M]  R1, 0x12345678, 33
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0
-        C>C[M]  R1, 0x12345678, 66
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0
-        C<C[M]  R1, 0x87654321, 65
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0
-        >>C[M]  R1, 0x40000001, 0xFFFFFFFF
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0x04000000
-        C<<[M]  R1, 2, 64
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0
-        <<<[M]  R1, 0x80000001, 0xFFFFFFFF
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0
-        C<1[M]  R1, 0, 0xFFFFFFFF
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0x04000000
-        1>C[M]  R1, 0, 32
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0x04000000
-        0>C[M]  R1, 0xFFFFFFFF, 33
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0x04000000
-        0<1[M]  R1, 0, 64
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        MOVE    R14, 0x04000000
-        C>0[M]  R1, 0x12345678, 34
-        MOVE    @R13++, R1
-        MOVE    @R13++, R14
-        HALT
+                MOVE    R13, 0x200
+                MOVE    R14, 0x03FFFFFF
+                C<0[M]  R1, R14++, 0
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0x03FFFFFF
+                SHL[M]  R1, R14++, 0
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0x04000000
+                C<C[M]  R1, 0x12345678, 66
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0x04000000
+                C>C[M]  R1, 0x12345678, 33
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0
+                C>C[M]  R1, 0x12345678, 66
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0
+                C<C[M]  R1, 0x87654321, 65
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0
+                >>C[M]  R1, 0x40000001, 0xFFFFFFFF
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0x04000000
+                C<<[M]  R1, 2, 64
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0
+                <<<[M]  R1, 0x80000001, 0xFFFFFFFF
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0
+                C<1[M]  R1, 0, 0xFFFFFFFF
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0x04000000
+                1>C[M]  R1, 0, 32
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0x04000000
+                0>C[M]  R1, 0xFFFFFFFF, 33
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0x04000000
+                0<1[M]  R1, 0, 64
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                MOVE    R14, 0x04000000
+                C>0[M]  R1, 0x12345678, 34
+                MOVE    @R13++, R1
+                MOVE    @R13++, R14
+                HALT

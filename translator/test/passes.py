@@ -69,7 +69,7 @@ def hoist_after_jump() -> None:
     items: List[Item] = [Ins("MOVE", ["R15", "W.f0.L1"], "C", "jump", ["W.f0.L1"]),
                          access("%v4", "%v1"), Ins("ADD", ["%v7", "%v6", "%v8"]), Label("W.f0.L1")]
     got = text(hoist_into_slots(items))
-    want = ["?C MOVE R15, W.f0.L1", "ADD     %v7, %v6, %v8", "MOVE    %v4, @___wasm_memory[%v1]",
+    want = ["?C      MOVE    R15, W.f0.L1", "ADD     %v7, %v6, %v8", "MOVE    %v4, @___wasm_memory[%v1]",
             "W.f0.L1:"]
     assert got == want, got
 
@@ -105,7 +105,7 @@ def no_tail_copies_in_stubs() -> None:
                          Label("W.f0.S0"), Ins("MOVE", ["R2", "W.f0.L2"]),
                          Ins("MOVE", ["R15", "W.f0.L1"], "", "jump", ["W.f0.L1"])]
     got = text(duplicate_tails(items, 1))
-    want = ["W.f0:", "ADD     R1, R1, 1", "RET", "W.f0.L2:", "?C MOVE R15, W.f0.S0",
+    want = ["W.f0:", "ADD     R1, R1, 1", "RET", "W.f0.L2:", "?C      MOVE    R15, W.f0.S0",
             "ADD     R1, R1, 2", "W.f0.L1:", "ADD     R1, R1, 1", "RET", "W.f0.S0:",
             "MOVE    R2, W.f0.L2", "MOVE    R15, W.f0.L1"]
     assert got == want, got
@@ -129,7 +129,7 @@ def early_exit_flags() -> None:
     got = early_exit(early_function([Ins("MOVE", ["R7", "R1"]), test],
                                     [Ins("MOVE", ["R1", "0"]), ret()]), ["R7", "R8"], "W.f0.E")
     assert got is not None
-    want = [["SUB[M]  R0, R1, 5", "?Z MOVE R15, W.f0.E"],
+    want = [["SUB[M]  R0, R1, 5", "?Z      MOVE    R15, W.f0.E"],
             ["MOVE    R7, R1", "SUB     R8, R7, 5", "ADD     R1, R7, R8", "RET", "W.f0.L1:",
              "MOVE    R1, 0", "RET"],
             ["W.f0.E:", "MOVE    R1, 0"]]
@@ -163,8 +163,8 @@ def predicted_back_edge() -> None:
                          Ins("MOVE", ["R15", "W.f0.L3"], "", "jump", ["W.f0.L3"]),
                          Label("W.f0.L2"), Label("W.f0.L3")]
     out = predict_back_edges(items, "W.f0.B")
-    assert text(out) == ["W.f0.L1:", "SUB     R1, R1, 1", "?!Z ADD R15, R15, W.f0.L1-W.f0.B0",
-                         "W.f0.B0:", "?Z MOVE R15, W.f0.L2", "?!Z MOVE R15, W.f0.L1",
+    assert text(out) == ["W.f0.L1:", "SUB     R1, R1, 1", "?!Z     ADD     R15, R15, W.f0.L1-W.f0.B0",
+                         "W.f0.B0:", "?Z      MOVE    R15, W.f0.L2", "?!Z     MOVE    R15, W.f0.L1",
                          "MOVE    R15, W.f0.L3", "W.f0.L2:", "W.f0.L3:"], text(out)
     jump = out[2]
     assert isinstance(jump, Ins) and jump.kind == "jump" and jump.targets == ["W.f0.L1", "W.f0.B0"]

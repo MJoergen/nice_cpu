@@ -5,8 +5,8 @@
 ; covers both: background 255,0,0 and foreground 255,255,255. "C" has
 ; background 0,0,0 and foreground 255,255,0, so it gets another. Each row ends
 ; with a reset. A word with color 0 would be black on black.
-SCREEN  .EQU    0xFFFF0000
-        MOVE    @SCREEN, 0xF00FFF41     ; words 0-2: "A"
-        MOVE    @0xFFFF0001, 0xF00FFF42 ; words 3-5: "B"
-        MOVE    @0xFFFF0002, 0x000FF043 ; words 6-8: "C"
-        HALT                            ; word 9
+SCREEN          .EQU    0xFFFF0000
+                MOVE    @SCREEN, 0xF00FFF41  ; words 0-2: "A"
+                MOVE    @0xFFFF0001, 0xF00FFF42  ; words 3-5: "B"
+                MOVE    @0xFFFF0002, 0x000FF043  ; words 6-8: "C"
+                HALT                    ; word 9

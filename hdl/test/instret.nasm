@@ -22,19 +22,19 @@
 ;   12   HALT
 ;
 ; The trace shows every value, and must equal the emulator's.
-INSTR_LO .EQU   0xFFFFFF42
-MEM      .EQU   0x100
-MEM2     .EQU   0x101
-        MOVE    @MEM, 1
-        MOVE    R1, @INSTR_LO
-        MOVE    R2, @MEM
-        MOVE    R3, @INSTR_LO
-        MOVE    @MEM, @INSTR_LO
-        MOVE    @MEM, 2
-        ADD     R4, @INSTR_LO, @INSTR_LO
-        MOVE    @MEM, 3
-        MOVE    @MEM2, @INSTR_LO
-        MOVE    R5, @INSTR_LO
-        MOVE    R6, @MEM2
-        ADD     R7, @INSTR_LO, R0
-        HALT
+INSTR_LO        .EQU    0xFFFFFF42
+MEM             .EQU    0x100
+MEM2            .EQU    0x101
+                MOVE    @MEM, 1
+                MOVE    R1, @INSTR_LO
+                MOVE    R2, @MEM
+                MOVE    R3, @INSTR_LO
+                MOVE    @MEM, @INSTR_LO
+                MOVE    @MEM, 2
+                ADD     R4, @INSTR_LO, @INSTR_LO
+                MOVE    @MEM, 3
+                MOVE    @MEM2, @INSTR_LO
+                MOVE    R5, @INSTR_LO
+                MOVE    R6, @MEM2
+                ADD     R7, @INSTR_LO, R0
+                HALT

@@ -139,7 +139,7 @@ int main(void) {
 }
 """
 HELPER_C = "int helper(int x) { return x + 1; }\n"
-TWICE_NASM = "_twice  ADD     R1, R1, R1\n        MOVE    R15, @R13++\n"
+TWICE_NASM = "_twice          ADD     R1, R1, R1\n                MOVE    R15, @R13++\n"
 
 
 def test_c_options(tmp: str) -> None:

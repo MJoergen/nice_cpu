@@ -27,19 +27,19 @@
 ;
 ; Steps: 13. PC = 0x22 after the HALT. The flags never change: R14 =
 ; 0x01000000. The dumps show W3 at 6 and 0x1234 at 10.
-W1      .EQU    0x00008780      ; MOVE R2, R15
-W2      .EQU    0x00010780      ; MOVE R4, R15
-W3      .EQU    0x00018780      ; MOVE R6, R15
-        ADD     R1, --R15, W1   ; words 0,1
-        ADD     R3, @--R15, W2  ; words 2,3
-        MOVE    R9, W3          ; words 4,5
-        MOVE    @--R15, R9      ; word 6
-        MOVE    R10, 0x1234     ; words 7,8
-        MOVE    @R15++, R10     ; word 9
-        HALT                    ; word 10
-        MOVE    R7, @10         ; words 11,12
-        MOVE    R15--, done+1   ; words 13,14
-        HALT                    ; word 15
-        .ORG    0x20
-done    MOVE    R8, R15         ; word 0x20
-        HALT                    ; word 0x21
+W1              .EQU    0x00008780      ; MOVE R2, R15
+W2              .EQU    0x00010780      ; MOVE R4, R15
+W3              .EQU    0x00018780      ; MOVE R6, R15
+                ADD     R1, --R15, W1   ; words 0,1
+                ADD     R3, @--R15, W2  ; words 2,3
+                MOVE    R9, W3          ; words 4,5
+                MOVE    @--R15, R9      ; word 6
+                MOVE    R10, 0x1234     ; words 7,8
+                MOVE    @R15++, R10     ; word 9
+                HALT                    ; word 10
+                MOVE    R7, @10         ; words 11,12
+                MOVE    R15--, done+1   ; words 13,14
+                HALT                    ; word 15
+                .ORG    0x20
+done            MOVE    R8, R15         ; word 0x20
+                HALT                    ; word 0x21

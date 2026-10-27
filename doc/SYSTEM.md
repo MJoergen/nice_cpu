@@ -135,9 +135,9 @@ The emulator and the FPGA implementation map a timer at `0xFFFFFF10`–`0xFFFFFF
 
 To get an IRQ through vector table entry `0x41` every 100000 cycles, that is, every millisecond at 100 MHz:
 
-    MOVE @TIMER_VECTOR, 0x41
-    MOVE @TIMER_PERIOD, 100000
-    OR   R14, R14, 0x40000000     ; E = 1
+                    MOVE    @TIMER_VECTOR, 0x41
+                    MOVE    @TIMER_PERIOD, 100000
+                    OR      R14, R14, 0x40000000  ; E = 1
 
 ## 5. Systems built on the FPGA core
 

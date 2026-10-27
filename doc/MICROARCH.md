@@ -647,9 +647,10 @@ The multi-cycle core applies it on every write instead, which gives the same
 values.
 
 
-    regval(x, v) = 0            if x = 0
-                   v OR 2^24    if x = 14
-                   v            otherwise
+    regval(x,
+                    v)      = 0            if x = 0
+    v               OR      2^24    if x = 14
+    v               otherwise
 
 This covers several rules of ISA §4.3 that are easy to miss. `@--R0` addresses
 word 0, not `0xFFFFFFFF`. `@--R14` after reset addresses `0x01FFFFFF`. `--R0`
@@ -898,9 +899,9 @@ section. The emulator has none, and their words read 0 there. The generic
 
 To measure a piece of code, and then read the counters at leisure:
 
-    MOVE @FS_CTRL, 3        ; clear, and run
-    ...                     ; the code
-    MOVE @FS_CTRL, 0        ; stop
+                    MOVE    @FS_CTRL, 3     ; clear, and run
+                    ...                     ; the code
+                    MOVE    @FS_CTRL, 0     ; stop
 
 ## 9. Verification
 

@@ -119,10 +119,10 @@ so their labels are their C names with `_` in front.
 
 From assembly, for example:
 
-        MOVE    R1, text
-        ADD     @--R13, 2, R15
-        MOVE    R15, _nice_print
-        ...
+                    MOVE    R1, text
+                    ADD     @--R13, 2, R15
+                    MOVE    R15, _nice_print
+                    ...
 text    .ASCII_L 'Hello'
 
 The counter routines read the low word first, as SYSTEM.md §3 describes.

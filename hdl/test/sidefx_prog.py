@@ -65,7 +65,7 @@ def sub(fields: list[str], m: bool) -> str:
 
 
 def reset(reg: str) -> str:
-    return f"        MOVE    {reg}, 0x{R14_BASE if reg == 'R14' else BASE:X}"
+    return f"                MOVE    {reg}, 0x{R14_BASE if reg == 'R14' else BASE:X}"
 
 
 def single(reg: str, m: bool) -> list[str]:
@@ -102,7 +102,7 @@ def readers(reg: str) -> list[str]:
 
 def pairs(reg: str) -> list[str]:
     lines = [f"; A SUB that writes {reg}, then a SUB that uses it, next or one later."]
-    for gap in ([], ["        MOVE    R0, R0"]):
+    for gap in ([], ["                MOVE    R0, R0"]):
         for w in writers(reg):
             for r in readers(reg):
                 lines += [reset(reg), w] + gap + [r]
@@ -113,13 +113,13 @@ def program() -> list[str]:
     lines = [
         "; Written by test/sidefx_prog.py. Every pair of side effects on one",
         "; register, within one instruction and in two.",
-        "        MOVE    R15, start",
-        f"        .ORG    {NMI}",
-        "        .DAT    nmi, irq",
+        "                MOVE    R15, start",
+        f"                .ORG    {NMI}",
+        "                .DAT    nmi, irq",
         "nmi     RTI",
         "irq     RTI",
-        "start   MOVE    R14, 0x40000000 ; E = 1, VBASE = 0",
-        f"        MOVE    R3, 0x{DATA + 4:X}",
+        "start           MOVE    R14, 0x40000000  ; E = 1, VBASE = 0",
+        f"                MOVE    R3, 0x{DATA + 4:X}",
     ]
     lines += single("R2", False)
     lines += single("R14", False)
@@ -127,12 +127,12 @@ def program() -> list[str]:
     lines += pairs("R2")
     lines += pairs("R14")
     lines += [
-        "        HALT",
-        f"        .ORG    0x{DATA:X}",
-        "        .DAT    " + ", ".join(f"0x{0x100 + i:X}" for i in range(16)),
+        "                HALT",
+        f"                .ORG    0x{DATA:X}",
+        "                .DAT    " + ", ".join(f"0x{0x100 + i:X}" for i in range(16)),
     ]
     for vbase in range(BASE - REACH, BASE + REACH + 1):
-        lines += [f"        .ORG    0x{vbase << 8 | NMI:X}", "        .DAT    nmi, irq"]
+        lines += [f"                .ORG    0x{vbase << 8 | NMI:X}", "                .DAT    nmi, irq"]
     return lines
 
 

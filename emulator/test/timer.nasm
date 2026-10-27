@@ -66,38 +66,38 @@
 ; end, E and Z from the flags of step 28 that the routines restored, and
 ; the HALT is the 56th step. The dump of the timer shows P = 0, COUNT = 0,
 ; v = 0x42, and a spare word, 0.
-TIMER_PERIOD .EQU 0xFFFFFF10
-TIMER_COUNT  .EQU 0xFFFFFF11
-TIMER_VECTOR .EQU 0xFFFFFF12
-        MOVE    R1, @TIMER_COUNT
-        MOVE    @TIMER_VECTOR, 0x141
-        MOVE    R2, @TIMER_VECTOR
-        MOVE    @TIMER_PERIOD, 4
-        MOVE    R3, @TIMER_COUNT
-        MOVE    R4, @TIMER_PERIOD
-        MOVE    R5, @TIMER_COUNT
-        MOVE    R7, @TIMER_COUNT
-        MOVE    @TIMER_PERIOD, 0
-        MOVE    R8, @TIMER_COUNT
-        OR      R14, R14, 0x40000000
-        MOVE    @TIMER_PERIOD, 3
-loop    ADD     R9, R9, 1
-        SUB[M]  R0, R6, 4
-        ?!Z MOVE R15, loop
-        MOVE    @TIMER_PERIOD, 0
-        AND     R14, R14, 0xBFFFFFFF
-        MOVE    @TIMER_PERIOD, 1
-        MOVE    @TIMER_PERIOD, 0
-        MOVE    @TIMER_VECTOR, 0x142
-        OR      R14, R14, 0x40000000
-        AND     R14, R14, 0xBFFFFFFF
-        MOVE    @TIMER_PERIOD, 1
-        MOVE    @TIMER_PERIOD, 0
-        OR      R14, R14, 0x40000000
-        HALT
-        .ORG    0x41
-        .DAT    on_irq, on_irq2
-on_irq  ADD     R6, R6, 1
-        RTI
-on_irq2 ADD     R10, R10, 1
-        RTI
+TIMER_PERIOD    .EQU    0xFFFFFF10
+TIMER_COUNT     .EQU    0xFFFFFF11
+TIMER_VECTOR    .EQU    0xFFFFFF12
+                MOVE    R1, @TIMER_COUNT
+                MOVE    @TIMER_VECTOR, 0x141
+                MOVE    R2, @TIMER_VECTOR
+                MOVE    @TIMER_PERIOD, 4
+                MOVE    R3, @TIMER_COUNT
+                MOVE    R4, @TIMER_PERIOD
+                MOVE    R5, @TIMER_COUNT
+                MOVE    R7, @TIMER_COUNT
+                MOVE    @TIMER_PERIOD, 0
+                MOVE    R8, @TIMER_COUNT
+                OR      R14, R14, 0x40000000
+                MOVE    @TIMER_PERIOD, 3
+loop            ADD     R9, R9, 1
+                SUB[M]  R0, R6, 4
+        ?!Z     MOVE    R15, loop
+                MOVE    @TIMER_PERIOD, 0
+                AND     R14, R14, 0xBFFFFFFF
+                MOVE    @TIMER_PERIOD, 1
+                MOVE    @TIMER_PERIOD, 0
+                MOVE    @TIMER_VECTOR, 0x142
+                OR      R14, R14, 0x40000000
+                AND     R14, R14, 0xBFFFFFFF
+                MOVE    @TIMER_PERIOD, 1
+                MOVE    @TIMER_PERIOD, 0
+                OR      R14, R14, 0x40000000
+                HALT
+                .ORG    0x41
+                .DAT    on_irq, on_irq2
+on_irq          ADD     R6, R6, 1
+                RTI
+on_irq2         ADD     R10, R10, 1
+                RTI

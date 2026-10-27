@@ -16,22 +16,22 @@
 ;   16    A3 (after RTI, so first)
 ;   17    HALT
 ; The log is B3 B4 A1 B1 B1 A3.
-        MOVE    R14, 1          ; words 0,1: VBASE = 1: the table is at 0x100
-        MOVE    R13, 0x200      ; words 2,3
-        INT     3               ; word 4
-        INT     4               ; word 5
-        MOVE    @R13++, 0xA1    ; words 6,7
-?!1     MOVE    @R13++, 0xA2    ; words 8,9: never runs
-        MOVE    @R13++, 0xA3    ; words 10,11
-        HALT                    ; word 12
-nmi     MOVE    @R13++, 0xB1    ; words 13,14
-        RTI                     ; word 15
-v3      MOVE    @R13++, 0xB3    ; words 16,17
-        RTI                     ; word 18
-v4      MOVE    @R13++, 0xB4    ; words 19,20
-        RTI                     ; word 21
-        .ORG    0x101
-        .DAT    nmi
-        .ORG    0x103
-        .DAT    v3
-        .DAT    v4
+                MOVE    R14, 1          ; words 0,1: VBASE = 1: the table is at 0x100
+                MOVE    R13, 0x200      ; words 2,3
+                INT     3               ; word 4
+                INT     4               ; word 5
+                MOVE    @R13++, 0xA1    ; words 6,7
+        ?!1     MOVE    @R13++, 0xA2    ; words 8,9: never runs
+                MOVE    @R13++, 0xA3    ; words 10,11
+                HALT                    ; word 12
+nmi             MOVE    @R13++, 0xB1    ; words 13,14
+                RTI                     ; word 15
+v3              MOVE    @R13++, 0xB3    ; words 16,17
+                RTI                     ; word 18
+v4              MOVE    @R13++, 0xB4    ; words 19,20
+                RTI                     ; word 21
+                .ORG    0x101
+                .DAT    nmi
+                .ORG    0x103
+                .DAT    v3
+                .DAT    v4

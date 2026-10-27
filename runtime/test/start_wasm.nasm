@@ -9,12 +9,12 @@
 ; R1 = 0, R2 = 0, 4 in main, and HALT = 1 + 4 + 4 + 2 + 4 + 1 = 16.
 
 ___wasm_start
-        MOVE    @flag, 41
-        MOVE    R1, 5
-        MOVE    R2, 7
-        MOVE    R15, @R13++
-_main   ADD     R1, R1, R2
-        ADD     R1, R1, @flag
-        ADD     R1, R1, 1
-        MOVE    R15, @R13++
-flag    .DAT    0
+                MOVE    @flag, 41
+                MOVE    R1, 5
+                MOVE    R2, 7
+                MOVE    R15, @R13++
+_main           ADD     R1, R1, R2
+                ADD     R1, R1, @flag
+                ADD     R1, R1, 1
+                MOVE    R15, @R13++
+flag            .DAT    0

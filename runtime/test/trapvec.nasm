@@ -16,14 +16,14 @@
 ; handler = 13. SP = 0xFFFFFEFF, as main left it: the handler is entered
 ; by a jump.
 
-_main   MOVE    @saved, @___wasm_trap_vector
-        MOVE    @___wasm_trap_vector, handler
-        MOVE    R1, 4
-        MOVE    R2, _main
-        MOVE    R15, @___wasm_trap_vector
-        HALT                            ; not reached
-handler MOVE    @got, R1
-        MOVE    @got+1, R2
-        HALT
-saved   .BLK    1
-got     .BLK    2
+_main           MOVE    @saved, @___wasm_trap_vector
+                MOVE    @___wasm_trap_vector, handler
+                MOVE    R1, 4
+                MOVE    R2, _main
+                MOVE    R15, @___wasm_trap_vector
+                HALT                    ; not reached
+handler         MOVE    @got, R1
+                MOVE    @got+1, R2
+                HALT
+saved           .BLK    1
+got             .BLK    2

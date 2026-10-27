@@ -28,32 +28,32 @@
 ; R6 = 0, and R5 = the high word of 0x9ABCDEF0 * 0x87654321 plus the low
 ; word of 0x9ABCDEF0 * 0x0FEDCBA9, mod 2^32: 0xB17E4B17.
 
-_main   MOVE    R7, pairs
-        MOVE    R8, results
-        MOVE    R9, 8                   ; number of pairs
-        MOVE    R10, 0xA
-        MOVE    R11, 0xB
-        MOVE    R12, 0xC
-loop    MOVE    R1, @R7
-        MOVE    R2, @1[R7]
-        MOVE    R3, @2[R7]
-        MOVE    R4, @3[R7]
-        ADD     @--R13, 2, R15
-        MOVE    R15, __mul64
-        MOVE    @R8++, R1
-        MOVE    @R8++, R2
-        ADD     R7, R7, 4
-        DEC[M]  R9, R9
-        ?!Z MOVE R15, loop
-        MOVE    R15, @R13++
+_main           MOVE    R7, pairs
+                MOVE    R8, results
+                MOVE    R9, 8           ; number of pairs
+                MOVE    R10, 0xA
+                MOVE    R11, 0xB
+                MOVE    R12, 0xC
+loop            MOVE    R1, @R7
+                MOVE    R2, @1[R7]
+                MOVE    R3, @2[R7]
+                MOVE    R4, @3[R7]
+                ADD     @--R13, 2, R15
+                MOVE    R15, __mul64
+                MOVE    @R8++, R1
+                MOVE    @R8++, R2
+                ADD     R7, R7, 4
+                DEC[M]  R9, R9
+        ?!Z     MOVE    R15, loop
+                MOVE    R15, @R13++
 
 ; Each pair is a then b, each low word first.
-pairs   .DAT    6, 0, 7, 0
-        .DAT    0, 0, 5, 0
-        .DAT    5, 0, 0, 0
-        .DAT    0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
-        .DAT    0, 1, 0, 1
-        .DAT    0xFFFFFFFF, 0, 0xFFFFFFFF, 0
-        .DAT    0xFFFFFFFD, 0xFFFFFFFF, 5, 0
-        .DAT    0x9ABCDEF0, 0x12345678, 0x87654321, 0x0FEDCBA9
-results .BLK    16
+pairs           .DAT    6, 0, 7, 0
+                .DAT    0, 0, 5, 0
+                .DAT    5, 0, 0, 0
+                .DAT    0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+                .DAT    0, 1, 0, 1
+                .DAT    0xFFFFFFFF, 0, 0xFFFFFFFF, 0
+                .DAT    0xFFFFFFFD, 0xFFFFFFFF, 5, 0
+                .DAT    0x9ABCDEF0, 0x12345678, 0x87654321, 0x0FEDCBA9
+results         .BLK    16

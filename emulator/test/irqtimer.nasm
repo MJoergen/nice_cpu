@@ -19,18 +19,18 @@
 ;   12    HALT (first after RTI)
 ; At the end R5 = 2, R6 = 1, R10 = 1, R14 = 0x41000000 (E and the 0x01000000 of reset), after 13 steps. If
 ; the timer's vector were kept in step 5, R6 would be 2 and R10 0.
-TIMER_PERIOD .EQU 0xFFFFFF10
-TIMER_VECTOR .EQU 0xFFFFFF12
-        MOVE    @TIMER_VECTOR, 0x141
-        OR      R14, R14, 0x40000000
-        MOVE    @TIMER_PERIOD, 3
-        ADD     R5, R5, 1
-        ADD     R5, R5, 1
-        MOVE    @TIMER_PERIOD, 0
-        HALT
-        .ORG    0x41
-        .DAT    on_irq, on_irq2
-on_irq  ADD     R6, R6, 1
-        RTI
-on_irq2 ADD     R10, R10, 1
-        RTI
+TIMER_PERIOD    .EQU    0xFFFFFF10
+TIMER_VECTOR    .EQU    0xFFFFFF12
+                MOVE    @TIMER_VECTOR, 0x141
+                OR      R14, R14, 0x40000000
+                MOVE    @TIMER_PERIOD, 3
+                ADD     R5, R5, 1
+                ADD     R5, R5, 1
+                MOVE    @TIMER_PERIOD, 0
+                HALT
+                .ORG    0x41
+                .DAT    on_irq, on_irq2
+on_irq          ADD     R6, R6, 1
+                RTI
+on_irq2         ADD     R10, R10, 1
+                RTI

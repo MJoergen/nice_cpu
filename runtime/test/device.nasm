@@ -35,66 +35,66 @@
 ; last nice_screen_put. R14 = 0x09000000: Z from the last DEC[M] of
 ; nice_screen_clear.
 
-_main   ADD     @--R13, 2, R15
-        MOVE    R15, _nice_instructions
-        MOVE    @results, R1
-        MOVE    @results+1, R2
-        ADD     @--R13, 2, R15
-        MOVE    R15, _nice_cycles
-        MOVE    @results+2, R1
-        MOVE    @results+3, R2
+_main           ADD     @--R13, 2, R15
+                MOVE    R15, _nice_instructions
+                MOVE    @results, R1
+                MOVE    @results+1, R2
+                ADD     @--R13, 2, R15
+                MOVE    R15, _nice_cycles
+                MOVE    @results+2, R1
+                MOVE    @results+3, R2
 
-        MOVE    R1, text
-        ADD     @--R13, 2, R15
-        MOVE    R15, _nice_print
-        MOVE    R1, 0x10A
-        ADD     @--R13, 2, R15
-        MOVE    R15, _nice_putc
-        ADD     @--R13, 2, R15
-        MOVE    R15, _nice_getc
-        MOVE    @results+4, R1
-        ADD     @--R13, 2, R15
-        MOVE    R15, _nice_pollc
-        MOVE    @results+5, R1
-        ADD     @--R13, 2, R15
-        MOVE    R15, _nice_pollc
-        MOVE    @results+6, R1
-        ADD     @--R13, 2, R15
-        MOVE    R15, _nice_getc
-        MOVE    @results+7, R1
-        MOVE    R1, @results+4
-        ADD     @--R13, 2, R15
-        MOVE    R15, _nice_putc
-        MOVE    R1, @results+5
-        ADD     @--R13, 2, R15
-        MOVE    R15, _nice_putc
-        MOVE    R1, 10
-        ADD     @--R13, 2, R15
-        MOVE    R15, _nice_putc
+                MOVE    R1, text
+                ADD     @--R13, 2, R15
+                MOVE    R15, _nice_print
+                MOVE    R1, 0x10A
+                ADD     @--R13, 2, R15
+                MOVE    R15, _nice_putc
+                ADD     @--R13, 2, R15
+                MOVE    R15, _nice_getc
+                MOVE    @results+4, R1
+                ADD     @--R13, 2, R15
+                MOVE    R15, _nice_pollc
+                MOVE    @results+5, R1
+                ADD     @--R13, 2, R15
+                MOVE    R15, _nice_pollc
+                MOVE    @results+6, R1
+                ADD     @--R13, 2, R15
+                MOVE    R15, _nice_getc
+                MOVE    @results+7, R1
+                MOVE    R1, @results+4
+                ADD     @--R13, 2, R15
+                MOVE    R15, _nice_putc
+                MOVE    R1, @results+5
+                ADD     @--R13, 2, R15
+                MOVE    R15, _nice_putc
+                MOVE    R1, 10
+                ADD     @--R13, 2, R15
+                MOVE    R15, _nice_putc
 
-        ADD     @--R13, 2, R15
-        MOVE    R15, _nice_screen_clear
-        MOVE    R1, 0
-        MOVE    R2, 0
-        MOVE    R3, 0x4F
-        ADD     @--R13, 2, R15
-        MOVE    R15, _nice_screen_put
-        MOVE    R1, 1
-        MOVE    R2, 0
-        MOVE    R3, 0x4B
-        ADD     @--R13, 2, R15
-        MOVE    R15, _nice_screen_put
-        MOVE    R1, 2
-        MOVE    R2, 1
-        MOVE    R3, 0xC80FF021
-        ADD     @--R13, 2, R15
-        MOVE    R15, _nice_screen_put
-        MOVE    R1, 79
-        MOVE    R2, 24
-        MOVE    R3, 0x5A
-        ADD     @--R13, 2, R15
-        MOVE    R15, _nice_screen_put
-        MOVE    R15, @R13++
+                ADD     @--R13, 2, R15
+                MOVE    R15, _nice_screen_clear
+                MOVE    R1, 0
+                MOVE    R2, 0
+                MOVE    R3, 0x4F
+                ADD     @--R13, 2, R15
+                MOVE    R15, _nice_screen_put
+                MOVE    R1, 1
+                MOVE    R2, 0
+                MOVE    R3, 0x4B
+                ADD     @--R13, 2, R15
+                MOVE    R15, _nice_screen_put
+                MOVE    R1, 2
+                MOVE    R2, 1
+                MOVE    R3, 0xC80FF021
+                ADD     @--R13, 2, R15
+                MOVE    R15, _nice_screen_put
+                MOVE    R1, 79
+                MOVE    R2, 24
+                MOVE    R3, 0x5A
+                ADD     @--R13, 2, R15
+                MOVE    R15, _nice_screen_put
+                MOVE    R15, @R13++
 
-text    .ASCII_L 'Hi'
-results .BLK    8
+text            .ASCII_L 'Hi'
+results         .BLK    8

@@ -16,13 +16,13 @@
 ; 8 steps. PC = 0x10 after the HALT at 0xF. The dump reads the counter
 ; without taking a snapshot: 8 steps, and the snapshot's high word, 0. The
 ; write left no trace.
-TIME_LO .EQU    0xFFFFFF44
-TIME_HI .EQU    0xFFFFFF45
-        MOVE    R1, @TIME_HI    ; words 0,1
-        MOVE    R2, @TIME_LO    ; words 2,3
-        MOVE    R3, @TIME_HI    ; words 4,5
-        MOVE    R4, @TIME_LO    ; words 6,7
-        MOVE    R5, @TIME_HI    ; words 8,9
-        MOVE    @TIME_LO, 0x55  ; words 10-12
-        MOVE    R6, @TIME_LO    ; words 13,14
-        HALT                    ; word 15
+TIME_LO         .EQU    0xFFFFFF44
+TIME_HI         .EQU    0xFFFFFF45
+                MOVE    R1, @TIME_HI    ; words 0,1
+                MOVE    R2, @TIME_LO    ; words 2,3
+                MOVE    R3, @TIME_HI    ; words 4,5
+                MOVE    R4, @TIME_LO    ; words 6,7
+                MOVE    R5, @TIME_HI    ; words 8,9
+                MOVE    @TIME_LO, 0x55  ; words 10-12
+                MOVE    R6, @TIME_LO    ; words 13,14
+                HALT                    ; word 15

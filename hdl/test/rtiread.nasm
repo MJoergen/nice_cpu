@@ -12,13 +12,13 @@
 ;    7,8  a read, RTI
 ;    9    two reads after RTI
 ;   10    HALT
-        MOVE    R14, 1          ; VBASE = 1: the table is at 0x100
-        MOVE    R2, data
-        MOVE    R1, @R2
-        ADD     R3, @R2, @R2
-        HALT
-nmi     ADD     R4, R4, @R2
-        RTI
-data    .DAT    0x1234
-        .ORG    0x101
-        .DAT    nmi
+                MOVE    R14, 1          ; VBASE = 1: the table is at 0x100
+                MOVE    R2, data
+                MOVE    R1, @R2
+                ADD     R3, @R2, @R2
+                HALT
+nmi             ADD     R4, R4, @R2
+                RTI
+data            .DAT    0x1234
+                .ORG    0x101
+                .DAT    nmi

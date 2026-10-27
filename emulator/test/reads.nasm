@@ -21,22 +21,22 @@
 ; Steps: 14 before INT, INT, and 2 in the routine: 17. PC = 0x69 after the
 ; HALT. R14 = 0x01FFFFFF with I set by INT: 0x81FFFFFF. The dump reads the
 ; counter without counting: 105 = 0x69.
-COUNT   .EQU    0xFFFFFF01
-        MOVE    R4, COUNT
-        MOVE    R3, 0x33
-        MOVE    @R4, 0
-        MOVE    R1, @R4
-        .DAT    0x000081C4
-        ADD     R5, @R4, @R4
-        SUB     R6, @R4, @R4
-        ?Z MOVE R7, @R4
-        MOVE    @R4, 100
-        MOVE    R8, @R4
-        MOVE    R11, R4
-        MOVE    R10, @R11++
-        MOVE    R12, @--R11
-        OR      R14, R14, 0xFFFFFF
-        INT     1
-        .ORG    0x67
-        MOVE    R13, @R4
-        HALT
+COUNT           .EQU    0xFFFFFF01
+                MOVE    R4, COUNT
+                MOVE    R3, 0x33
+                MOVE    @R4, 0
+                MOVE    R1, @R4
+                .DAT    0x000081C4
+                ADD     R5, @R4, @R4
+                SUB     R6, @R4, @R4
+        ?Z      MOVE    R7, @R4
+                MOVE    @R4, 100
+                MOVE    R8, @R4
+                MOVE    R11, R4
+                MOVE    R10, @R11++
+                MOVE    R12, @--R11
+                OR      R14, R14, 0xFFFFFF
+                INT     1
+                .ORG    0x67
+                MOVE    R13, @R4
+                HALT

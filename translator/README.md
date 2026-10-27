@@ -474,10 +474,10 @@ the last word of any memory. So one unsigned compare of t checks the
 bounds and the alignment at once, and the offset goes into the word
 operand. An `i32.load` at offset 4 in a memory of one page is:
 
-    ROR     R2, R1, 2
-    SUB[M]  R0, R2, 16383
-    ?!C MOVE R15, W.f0.L1
-    MOVE    R1, @___wasm_memory+1[R2]
+                    ROR     R2, R1, 2
+                    SUB[M]  R0, R2, 16383
+            ?!C     MOVE    R15, W.f0.L1
+                    MOVE    R1, @___wasm_memory+1[R2]
 
 If the compare fails, a stub after the epilogue gets the base back with
 `ROL` and calls a helper such as `W.cload4`, which is followed by two
@@ -511,9 +511,9 @@ If d is below the limit L of the compare, the compare is of i with L -
 d, and d goes into the word operand. So for `(i << 2) + 8480`, an
 `i32.load` is:
 
-    SUB[M]  R0, R7, 14264
-    ?!C MOVE R15, W.f6.L8
-    MOVE    R5, @___wasm_memory+2120[R7]
+                    SUB[M]  R0, R7, 14264
+            ?!C     MOVE    R15, W.f6.L8
+                    MOVE    R5, @___wasm_memory+2120[R7]
 
 If i passes the compare, i + d is below L, so the access is in bounds,
 and its word index does not wrap. If not, the stub computes t with an
@@ -547,8 +547,8 @@ the words of the access, 1 or 2, and d including a quarter of the
 access's offset. So in crc32, `table[(crc ^ b) & 255]` with the table at
 word 3144 is:
 
-    AND     R1, R1, 255
-    MOVE    R5, @___wasm_memory+3144[R1]
+                    AND     R1, R1, 255
+                    MOVE    R5, @___wasm_memory+3144[R1]
 
 With a memory that can grow, the access keeps its compare. Without
 bounds checks, if B + d is below 2^30, i + d is the word index, so d
@@ -590,12 +590,12 @@ unless an instruction moves to between them (below). Only a rotation
 takes its count modulo 32 (ISA.md §5.2), so the code rotates by c. The
 vm's fetch of an opcode, an `i32.load8_u`, is:
 
-    SHR     R2, R3, 2
-    SHL     R1, R3, 3
-    SUB[M]  R0, R3, 65536
-    ?!C MOVE R15, W.f7.L20
-    ROR     R1, @___wasm_memory[R2], R1
-    AND     R1, R1, 0xFF
+                    SHR     R2, R3, 2
+                    SHL     R1, R3, 3
+                    SUB[M]  R0, R3, 65536
+            ?!C     MOVE    R15, W.f7.L20
+                    ROR     R1, @___wasm_memory[R2], R1
+                    AND     R1, R1, 0xFF
 
 A signed load gets c from `SHL c, 1[a], 3` or `SHL c, 2[a], 3`
 instead, which is 8p + 8 or 8p + 16 modulo 32, rotates the bytes up to

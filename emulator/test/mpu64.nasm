@@ -29,32 +29,32 @@
 ;
 ; Steps: 3 + 9 * 15 + 1 = 139. R6 = 0x200 + 72 = 0x248, R7 = 0 with Z set
 ; (R14 = 0x09000000), R8 = CASES + 36, and R9 = MPU + 0x1C.
-MPU     .EQU    0xFFFFFF20
-        MOVE    R8, CASES
-        MOVE    R6, 0x200
-        MOVE    R7, 9
-LOOP    MOVE    @MPU+0x10, @R8++
-        MOVE    @MPU+0x11, @R8++
-        MOVE    @MPU+0x12, @R8++
-        MOVE    @MPU+0x13, @R8++
-        MOVE    R9, MPU+0x14
-        MOVE    @R6++, @R9++
-        MOVE    @R6++, @R9++
-        MOVE    @R6++, @R9++
-        MOVE    @R6++, @R9++
-        MOVE    @R6++, @R9++
-        MOVE    @R6++, @R9++
-        MOVE    @R6++, @R9++
-        MOVE    @R6++, @R9++
-        DEC[M]  R7, R7
-    ?!Z MOVE    R15, LOOP
-        HALT
-CASES   .DAT    100, 0, 7, 0
-        .DAT    0xFFFFFFF9, 0xFFFFFFFF, 2, 0
-        .DAT    7, 0, 0xFFFFFFFE, 0xFFFFFFFF
-        .DAT    0, 0x80000000, 0xFFFFFFFF, 0xFFFFFFFF
-        .DAT    0xFFFFFFFB, 0xFFFFFFFF, 0, 0
-        .DAT    0x9ABCDEF0, 0x12345678, 0, 1
-        .DAT    3, 0x100, 0x100000, 0
-        .DAT    0xFFFFFFFD, 0xFFFFFEFF, 0x100000, 0
-        .DAT    0xFFFFFFFF, 0x7FFFFFFF, 3, 0
+MPU             .EQU    0xFFFFFF20
+                MOVE    R8, CASES
+                MOVE    R6, 0x200
+                MOVE    R7, 9
+LOOP            MOVE    @MPU+0x10, @R8++
+                MOVE    @MPU+0x11, @R8++
+                MOVE    @MPU+0x12, @R8++
+                MOVE    @MPU+0x13, @R8++
+                MOVE    R9, MPU+0x14
+                MOVE    @R6++, @R9++
+                MOVE    @R6++, @R9++
+                MOVE    @R6++, @R9++
+                MOVE    @R6++, @R9++
+                MOVE    @R6++, @R9++
+                MOVE    @R6++, @R9++
+                MOVE    @R6++, @R9++
+                MOVE    @R6++, @R9++
+                DEC[M]  R7, R7
+        ?!Z     MOVE    R15, LOOP
+                HALT
+CASES           .DAT    100, 0, 7, 0
+                .DAT    0xFFFFFFF9, 0xFFFFFFFF, 2, 0
+                .DAT    7, 0, 0xFFFFFFFE, 0xFFFFFFFF
+                .DAT    0, 0x80000000, 0xFFFFFFFF, 0xFFFFFFFF
+                .DAT    0xFFFFFFFB, 0xFFFFFFFF, 0, 0
+                .DAT    0x9ABCDEF0, 0x12345678, 0, 1
+                .DAT    3, 0x100, 0x100000, 0
+                .DAT    0xFFFFFFFD, 0xFFFFFEFF, 0x100000, 0
+                .DAT    0xFFFFFFFF, 0x7FFFFFFF, 3, 0

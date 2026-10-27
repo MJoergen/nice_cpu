@@ -790,7 +790,10 @@ def negate(cond: str) -> str:
 
 
 def instr(mnemonic: str, *operands: str) -> str:
-    return f"        {mnemonic + ' ':<8}{', '.join(operands)}".rstrip()
+    """One line of output: the condition, if the mnemonic starts with one,
+    in column 8, the mnemonic in column 16, and the operands in column 24."""
+    cond, _, mnemonic = mnemonic.rpartition(" ")
+    return f"{'':8}{cond:<8}{mnemonic + ' ':<8}{', '.join(operands)}".rstrip()
 
 
 def byte_copy() -> List[str]:
@@ -2860,7 +2863,7 @@ class Translator:
                 if isinstance(values, list):
                     last = start + len(values) - 1
                     where = f"word {start}" if last == start else f"words {start} to {last}"
-                    out.append(f"        ; {where}: data segments")
+                    out.append(f"                ; {where}: data segments")
                     for i in range(0, len(values), 8):
                         out.append(instr(".DAT", *(f"0x{w:08X}" for w in values[i:i + 8])))
                 else:
@@ -2868,7 +2871,7 @@ class Translator:
                     out.append(instr(".BLK" if self.library else ".RES", str(values)))
             if self.growable:
                 assert self.cap is not None
-                out.append(f"        ; pages {pages} to {self.cap - 1}, for memory.grow")
+                out.append(f"                ; pages {pages} to {self.cap - 1}, for memory.grow")
                 out.append(instr(".RES", str((self.cap - pages) * WORDS_PER_PAGE)))
         return out
 
@@ -2901,7 +2904,7 @@ class Translator:
                 out.append(f"W.zero{gaps}")
                 out += [instr("MOVE", "@R5++", "R0")] * ZERO_UNROLL
                 out.append(instr("DEC[M]", "R6", "R6"))
-                out.append(f"        ?!Z MOVE R15, W.zero{gaps}")
+                out.append(instr("?!Z MOVE", "R15", f"W.zero{gaps}"))
                 gaps += 1
             out += [instr("MOVE", "@R5++", "R0")] * (values % ZERO_UNROLL)
         if self.growable:
@@ -3461,7 +3464,7 @@ class FunctionTranslator:
             d = self.deferred[k]
             if d is not None and d.local == i:
                 self.settle(k)
-        self.body.append(f"        ; {'local.tee' if tee else 'local.set'} {i}")
+        self.body.append(f"                ; {'local.tee' if tee else 'local.set'} {i}")
         r.pos = nxt.pos
         return dest, Deferred(dest, i) if tee else None
 
@@ -4375,7 +4378,7 @@ class FunctionTranslator:
                     continue
                 if op not in (0x05, 0x0B) or dead_blocks:
                     continue
-            comment = f"        ; {name}"
+            comment = f"                ; {name}"
             if op in (0x43, 0x44):
                 comment += f" 0x{imm:0{8 if op == 0x43 else 16}X}"  # the bits
             elif imm is not None:

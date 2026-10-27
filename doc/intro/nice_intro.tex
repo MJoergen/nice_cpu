@@ -652,14 +652,14 @@
    of each instruction:
    {\scriptsize
    \begin{verbatim}
-                            PC      .EQU    R15
-                                    .ORG    0
-00000000 00005800 00000000          MOVE    R1, 0
-00000002 00009800 00001000          MOVE    R2, 0x1000
-00000004 00604082           LOOP    ADD     R1, R1, R2
-00000005 02a08100                   DEC[M]  R2, R2
-00000006 b003d800 00000004      ?!Z MOVE    PC, LOOP
-00000008 0c000000                   HALT
+                            PC              .EQU    R15
+                                            .ORG    0
+00000000 00005800 00000000                  MOVE    R1, 0
+00000002 00009800 00001000                  MOVE    R2, 0x1000
+00000004 00604082           LOOP            ADD     R1, R1, R2
+00000005 02a08100                           DEC[M]  R2, R2
+00000006 b003d800 00000004          ?!Z     MOVE    PC, LOOP
+00000008 0c000000                           HALT
    \end{verbatim}
    }
    \begin{itemize}
@@ -673,19 +673,19 @@
 %
   \begin{frame}[fragile]
    \frametitle{Code example: copy a block of memory}
-   {\footnotesize
+   {\scriptsize
    \begin{verbatim}
-PC      .EQU    R15
-        MOVE    R1, SRC         ; source pointer
-        MOVE    R2, DST         ; destination pointer
-        MOVE    R3, 5           ; word count
-LOOP    MOVE    @R2++, @R1++    ; copy a word, advance both pointers
-        DEC[M]  R3, R3
-    ?!Z MOVE    PC, LOOP
-        HALT
+PC              .EQU    R15
+                MOVE    R1, SRC         ; source pointer
+                MOVE    R2, DST         ; destination pointer
+                MOVE    R3, 5           ; word count
+LOOP            MOVE    @R2++, @R1++    ; copy a word, advance both pointers
+                DEC[M]  R3, R3
+        ?!Z     MOVE    PC, LOOP
+                HALT
 
-SRC     .DAT    1, 2, 3, 4, 5
-DST     .BLK    5               ; 5 words of 0
+SRC             .DAT    1, 2, 3, 4, 5
+DST             .BLK    5               ; 5 words of 0
    \end{verbatim}
    }
    \begin{itemize}
@@ -701,24 +701,24 @@ DST     .BLK    5               ; 5 words of 0
    \frametitle{Code example: Hello, NICE!}
    {\scriptsize
    \begin{verbatim}
-SP      .EQU    R13
-PC      .EQU    R15
-CONSOLE .EQU    0xFFFFFF00
+SP              .EQU    R13
+PC              .EQU    R15
+CONSOLE         .EQU    0xFFFFFF00
 
-        MOVE    SP, 0x1000      ; set up the stack
-        MOVE    R1, TEXT        ; the argument: the string's address
-        ADD     @--SP, 2, PC    ; push the return address ...
-        MOVE    PC, PUTS        ; ... and jump: a subroutine call
-        MOVE    @CONSOLE, 10    ; a newline
-        HALT
+                MOVE    SP, 0x1000      ; set up the stack
+                MOVE    R1, TEXT        ; the argument: the string's address
+                ADD     @--SP, 2, PC    ; push the return address ...
+                MOVE    PC, PUTS        ; ... and jump: a subroutine call
+                MOVE    @CONSOLE, 10    ; a newline
+                HALT
 
 ; PUTS prints the string at R1. The string ends with a 0 word.
-PUTS    MOVE[M] R2, @R1++       ; next character, and set Z if it is 0
-    ?Z  MOVE    PC, @SP++       ; at the end: return
-        MOVE    @CONSOLE, R2    ; print the character
-        MOVE    PC, PUTS        ; and loop
+PUTS            MOVE[M] R2, @R1++       ; next character, and set Z if it is 0
+        ?Z      MOVE    PC, @SP++       ; at the end: return
+                MOVE    @CONSOLE, R2    ; print the character
+                MOVE    PC, PUTS        ; and loop
 
-TEXT    .ASCII_L 'Hello, NICE!'
+TEXT            .ASCII_L 'Hello, NICE!'
    \end{verbatim}
    }
    \code{.ASCII\_L} stores one character per word and adds a 0 word at
@@ -773,26 +773,26 @@ TEXT    .ASCII_L 'Hello, NICE!'
    \frametitle{Code example: an interrupt routine}
    {\fontsize{7}{8}\selectfont
    \begin{verbatim}
-SP      .EQU    R13
-SR      .EQU    R14
-PC      .EQU    R15
-CONSOLE .EQU    0xFFFFFF00
+SP              .EQU    R13
+SR              .EQU    R14
+PC              .EQU    R15
+CONSOLE         .EQU    0xFFFFFF00
 
-        .ORG    0
-        MOVE    SP, 0x1000
-        OR      SR, SR, 1               ; VBASE = 1: the table is at 0x100
-        OR      SR, SR, 0x40000000      ; E = 1: accept IRQs
-        MOVE    R1, 20
-WAIT    DEC[M]  R1, R1                  ; count down from 20 ...
-    ?!Z MOVE    PC, WAIT                ; ... while the IRQs come in
-        MOVE    @CONSOLE, 10            ; a newline
-        HALT
+                .ORG    0
+                MOVE    SP, 0x1000
+                OR      SR, SR, 1       ; VBASE = 1: the table is at 0x100
+                OR      SR, SR, 0x40000000  ; E = 1: accept IRQs
+                MOVE    R1, 20
+WAIT            DEC[M]  R1, R1          ; count down from 20 ...
+        ?!Z     MOVE    PC, WAIT        ; ... while the IRQs come in
+                MOVE    @CONSOLE, 10    ; a newline
+                HALT
 
-ISR     MOVE    @CONSOLE, 0x2A          ; print '*'
-        RTI                             ; restore PC and SR, and return
+ISR             MOVE    @CONSOLE, 0x2A  ; print '*'
+                RTI                     ; restore PC and SR, and return
 
-        .ORG    0x105                   ; vector 5 of the table at 0x100
-        .DAT    ISR
+                .ORG    0x105           ; vector 5 of the table at 0x100
+                .DAT    ISR
    \end{verbatim}
    }
    \code{niceemu --irq 5:5 --irq 12:5 irq.bin} raises two IRQs with vector

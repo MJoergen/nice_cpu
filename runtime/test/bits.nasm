@@ -29,52 +29,52 @@
 ; low word's count, 4, in R3, and the high word in R4. R10-R12 survive the
 ; calls. R14 = 0x09000000: Z from the last DEC[M].
 
-_main   MOVE    R7, values
-        MOVE    R8, results
-        MOVE    R9, 6                   ; number of values
-        MOVE    R10, 0xA
-        MOVE    R11, 0xB
-        MOVE    R12, 0xC
-loop    MOVE    R1, @R7
-        ADD     @--R13, 2, R15
-        MOVE    R15, __clz
-        MOVE    @R8++, R1
-        MOVE    R1, @R7
-        ADD     @--R13, 2, R15
-        MOVE    R15, __ctz
-        MOVE    @R8++, R1
-        MOVE    R1, @R7
-        ADD     @--R13, 2, R15
-        MOVE    R15, __popcnt
-        MOVE    @R8++, R1
-        MOVE    R1, @R7
-        MOVE    R2, @1[R7]
-        ADD     @--R13, 2, R15
-        MOVE    R15, __clz64
-        MOVE    @R8++, R1
-        MOVE    @R8++, R2
-        MOVE    R1, @R7
-        MOVE    R2, @1[R7]
-        ADD     @--R13, 2, R15
-        MOVE    R15, __ctz64
-        MOVE    @R8++, R1
-        MOVE    @R8++, R2
-        MOVE    R1, @R7
-        MOVE    R2, @1[R7]
-        ADD     @--R13, 2, R15
-        MOVE    R15, __popcnt64
-        MOVE    @R8++, R1
-        MOVE    @R8++, R2
-        ADD     R7, R7, 2
-        DEC[M]  R9, R9
-        ?!Z MOVE R15, loop
-        MOVE    R15, @R13++
+_main           MOVE    R7, values
+                MOVE    R8, results
+                MOVE    R9, 6           ; number of values
+                MOVE    R10, 0xA
+                MOVE    R11, 0xB
+                MOVE    R12, 0xC
+loop            MOVE    R1, @R7
+                ADD     @--R13, 2, R15
+                MOVE    R15, __clz
+                MOVE    @R8++, R1
+                MOVE    R1, @R7
+                ADD     @--R13, 2, R15
+                MOVE    R15, __ctz
+                MOVE    @R8++, R1
+                MOVE    R1, @R7
+                ADD     @--R13, 2, R15
+                MOVE    R15, __popcnt
+                MOVE    @R8++, R1
+                MOVE    R1, @R7
+                MOVE    R2, @1[R7]
+                ADD     @--R13, 2, R15
+                MOVE    R15, __clz64
+                MOVE    @R8++, R1
+                MOVE    @R8++, R2
+                MOVE    R1, @R7
+                MOVE    R2, @1[R7]
+                ADD     @--R13, 2, R15
+                MOVE    R15, __ctz64
+                MOVE    @R8++, R1
+                MOVE    @R8++, R2
+                MOVE    R1, @R7
+                MOVE    R2, @1[R7]
+                ADD     @--R13, 2, R15
+                MOVE    R15, __popcnt64
+                MOVE    @R8++, R1
+                MOVE    @R8++, R2
+                ADD     R7, R7, 2
+                DEC[M]  R9, R9
+        ?!Z     MOVE    R15, loop
+                MOVE    R15, @R13++
 
 ; Low word first.
-values  .DAT    0, 0
-        .DAT    1, 0
-        .DAT    0x80000000, 0
-        .DAT    0, 0x00010000
-        .DAT    0xFFFFFFFF, 0xFFFFFFFF
-        .DAT    0x000000F0, 0x0F0F0000
-results .BLK    54
+values          .DAT    0, 0
+                .DAT    1, 0
+                .DAT    0x80000000, 0
+                .DAT    0, 0x00010000
+                .DAT    0xFFFFFFFF, 0xFFFFFFFF
+                .DAT    0x000000F0, 0x0F0F0000
+results         .BLK    54

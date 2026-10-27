@@ -37,56 +37,56 @@
 ; + 1 = 517. R3:R4 keep the last divisor, -2, and R5:R6 stay 0
 ; (div64.expected).
 
-_main   MOVE    R7, pairs
-        MOVE    R8, results
-        MOVE    R9, 8                   ; number of pairs
-        MOVE    R10, 0xA
-        MOVE    R11, 0xB
-        MOVE    R12, 0xC
-loop    MOVE    R1, @R7
-        MOVE    R2, @1[R7]
-        MOVE    R3, @2[R7]
-        MOVE    R4, @3[R7]
-        ADD     @--R13, 2, R15
-        MOVE    R15, __udiv64
-        MOVE    @R8++, R1
-        MOVE    @R8++, R2
-        MOVE    R1, @R7
-        MOVE    R2, @1[R7]
-        MOVE    R3, @2[R7]
-        MOVE    R4, @3[R7]
-        ADD     @--R13, 2, R15
-        MOVE    R15, __umod64
-        MOVE    @R8++, R1
-        MOVE    @R8++, R2
-        MOVE    R1, @R7
-        MOVE    R2, @1[R7]
-        MOVE    R3, @2[R7]
-        MOVE    R4, @3[R7]
-        ADD     @--R13, 2, R15
-        MOVE    R15, __div64
-        MOVE    @R8++, R1
-        MOVE    @R8++, R2
-        MOVE    R1, @R7
-        MOVE    R2, @1[R7]
-        MOVE    R3, @2[R7]
-        MOVE    R4, @3[R7]
-        ADD     @--R13, 2, R15
-        MOVE    R15, __mod64
-        MOVE    @R8++, R1
-        MOVE    @R8++, R2
-        ADD     R7, R7, 4
-        DEC[M]  R9, R9
-        ?!Z MOVE R15, loop
-        MOVE    R15, @R13++
+_main           MOVE    R7, pairs
+                MOVE    R8, results
+                MOVE    R9, 8           ; number of pairs
+                MOVE    R10, 0xA
+                MOVE    R11, 0xB
+                MOVE    R12, 0xC
+loop            MOVE    R1, @R7
+                MOVE    R2, @1[R7]
+                MOVE    R3, @2[R7]
+                MOVE    R4, @3[R7]
+                ADD     @--R13, 2, R15
+                MOVE    R15, __udiv64
+                MOVE    @R8++, R1
+                MOVE    @R8++, R2
+                MOVE    R1, @R7
+                MOVE    R2, @1[R7]
+                MOVE    R3, @2[R7]
+                MOVE    R4, @3[R7]
+                ADD     @--R13, 2, R15
+                MOVE    R15, __umod64
+                MOVE    @R8++, R1
+                MOVE    @R8++, R2
+                MOVE    R1, @R7
+                MOVE    R2, @1[R7]
+                MOVE    R3, @2[R7]
+                MOVE    R4, @3[R7]
+                ADD     @--R13, 2, R15
+                MOVE    R15, __div64
+                MOVE    @R8++, R1
+                MOVE    @R8++, R2
+                MOVE    R1, @R7
+                MOVE    R2, @1[R7]
+                MOVE    R3, @2[R7]
+                MOVE    R4, @3[R7]
+                ADD     @--R13, 2, R15
+                MOVE    R15, __mod64
+                MOVE    @R8++, R1
+                MOVE    @R8++, R2
+                ADD     R7, R7, 4
+                DEC[M]  R9, R9
+        ?!Z     MOVE    R15, loop
+                MOVE    R15, @R13++
 
 ; Each pair is a then b, each low word first.
-pairs   .DAT    100, 0, 7, 0
-        .DAT    0xFFFFFFF9, 0xFFFFFFFF, 2, 0
-        .DAT    0, 1, 3, 0
-        .DAT    0x9ABCDEF0, 0x12345678, 0, 1
-        .DAT    0, 0x80000000, 0, 0xC0000000
-        .DAT    0xFFFFFFFF, 0xFFFFFFFF, 1, 0x80000000
-        .DAT    0xA7640007, 0x0DE0B6B3, 1000000007, 0
-        .DAT    7, 0, 0xFFFFFFFE, 0xFFFFFFFF
-results .BLK    64
+pairs           .DAT    100, 0, 7, 0
+                .DAT    0xFFFFFFF9, 0xFFFFFFFF, 2, 0
+                .DAT    0, 1, 3, 0
+                .DAT    0x9ABCDEF0, 0x12345678, 0, 1
+                .DAT    0, 0x80000000, 0, 0xC0000000
+                .DAT    0xFFFFFFFF, 0xFFFFFFFF, 1, 0x80000000
+                .DAT    0xA7640007, 0x0DE0B6B3, 1000000007, 0
+                .DAT    7, 0, 0xFFFFFFFE, 0xFFFFFFFF
+results         .BLK    64

@@ -25,22 +25,22 @@
 ;
 ; Steps: 17. HALT is word 0x1A, so PC = 0x1B. The dumps show 0 and 0x66 at
 ; 0x01000010, and 0xFFFFFFFF at 0x01FFFFFF.
-        MOVE    @0x01FFFFFF, 0x99
-        MOVE    R14, 0
-        MOVE    R1, @--R14
-        MOVE    R2, R14
-        MOVE    R14, 0x10
-        MOVE    R3, @R14++
-        MOVE    R4, R14
-        MOVE    @R14++, 0x66
-        MOVE    R5, R14
-        MOVE    R14, 0
-        SUB[M]  @--R14, R0, 1
-        MOVE    R6, R14
-        MOVE    R14, 0x10
-        ADD[M]  @R14, R0, 0
-        MOVE    R7, R14
-        MOVE    R8, @0x01000010
-        HALT
-        .ORG    0x01000010
-        .DAT    0x5A
+                MOVE    @0x01FFFFFF, 0x99
+                MOVE    R14, 0
+                MOVE    R1, @--R14
+                MOVE    R2, R14
+                MOVE    R14, 0x10
+                MOVE    R3, @R14++
+                MOVE    R4, R14
+                MOVE    @R14++, 0x66
+                MOVE    R5, R14
+                MOVE    R14, 0
+                SUB[M]  @--R14, R0, 1
+                MOVE    R6, R14
+                MOVE    R14, 0x10
+                ADD[M]  @R14, R0, 0
+                MOVE    R7, R14
+                MOVE    R8, @0x01000010
+                HALT
+                .ORG    0x01000010
+                .DAT    0x5A

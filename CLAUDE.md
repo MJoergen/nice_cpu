@@ -117,6 +117,11 @@ Vivado 2025.1 is installed at `/opt/Xilinx/2025.1/Vivado/bin/vivado`, not on PAT
 - The 2004 example `.bin` files are original `NICE.pm` output; do not change them.
 - Keep the READMEs in sync with the tools' options, formats, and error behavior.
 - Docs: plain, short sentences. Use the Oxford comma by default ("a, b, and c").
+- NICE assembly (`.nasm` files, listings in docs, and the output of
+  generators) is laid out in columns, with spaces only and no tabs: the
+  label in column 0, the condition in column 8, the mnemonic in column 16,
+  the operands in column 24, and the comment in column 40. A label of 8 or
+  more characters goes on a line of its own.
 - American spelling everywhere, in docs, comments, and identifiers
   ("behavior", "color", "analyze", "labeled", "gray").
 - Commit subjects: `niceasm: ...`, `niceemu: ...`, `runtime: ...`, `nicewasm: ...`, `nicecc: ...`, `nicehdl: ...`, `bench: ...`, `release: ...`, `intro: ...`, `ISA: ...`, `Review: ...`.

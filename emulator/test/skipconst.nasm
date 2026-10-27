@@ -29,22 +29,22 @@
 ; Steps: 2 + 9 skipped + INT + 2 in isr + 2 = 16. PC = 0x1A after the
 ; HALT at 0x19. R1 = 0 and R2 = 0x200 show that no skipped instruction ran
 ; or applied a side effect. RTI restores R14 = 0x01000001.
-H       .EQU    0x0C000000
-        MOVE    R14, 1          ; words 0,1
-        MOVE    R2, 0x200       ; words 2,3
-?!1     SHL     R1, R2, H       ; words 4,5
-?!1     SHL     @H, R2++, H     ; words 6-8
-?!1     ROL     @H, H, H        ; words 9-12
-?!1     SHL     @R2++, H, R2    ; words 13,14
-?!1     MOVE    @H, R2          ; words 15,16
-?!1     MOVE    R1, @H[R2]      ; words 17,18
-?!1     INT     0xFF            ; word 19
-        .DAT    0x8C0FFFFF      ; word 20
-        .DAT    0x3C600000      ; word 21
-        INT     0x33            ; word 22
-        MOVE    R3, 1           ; words 23,24
-        HALT                    ; word 25
-isr     MOVE    R5, R15         ; word 26
-        RTI                     ; word 27
-        .ORG    0x133
-        .DAT    isr
+H               .EQU    0x0C000000
+                MOVE    R14, 1          ; words 0,1
+                MOVE    R2, 0x200       ; words 2,3
+        ?!1     SHL     R1, R2, H       ; words 4,5
+        ?!1     SHL     @H, R2++, H     ; words 6-8
+        ?!1     ROL     @H, H, H        ; words 9-12
+        ?!1     SHL     @R2++, H, R2    ; words 13,14
+        ?!1     MOVE    @H, R2          ; words 15,16
+        ?!1     MOVE    R1, @H[R2]      ; words 17,18
+        ?!1     INT     0xFF            ; word 19
+                .DAT    0x8C0FFFFF      ; word 20
+                .DAT    0x3C600000      ; word 21
+                INT     0x33            ; word 22
+                MOVE    R3, 1           ; words 23,24
+                HALT                    ; word 25
+isr             MOVE    R5, R15         ; word 26
+                RTI                     ; word 27
+                .ORG    0x133
+                .DAT    isr

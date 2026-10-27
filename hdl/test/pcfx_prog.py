@@ -254,17 +254,17 @@ def program() -> list[str]:
         "; Written by test/pcfx_prog.py. Every mode in every field of one",
         "; instruction, all on R15. R1 counts the blocks, and R12 is 0 at the",
         "; end only if every block ran once.",
-        "        .ORG    0",
-        f"        .DAT    {', '.join(['0'] * NMI)}",
-        "        .DAT    nmi, irq",
-        "        ADD     R15, R12, start",
-        "        .ORG    14",
+        "                .ORG    0",
+        f"                .DAT    {', '.join(['0'] * NMI)}",
+        "                .DAT    nmi, irq",
+        "                ADD     R15, R12, start",
+        "                .ORG    14",
         "nmi     RTI",
         "irq     RTI",
-        f"        .ORG    0x{START:X}",
-        "start   MOVE    R14, 0x40000000 ; E = 1, VBASE = 0",
-        "        MOVE    R1, 0",
-        "        MOVE    R15, b0",
+        f"                .ORG    0x{START:X}",
+        "start           MOVE    R14, 0x40000000  ; E = 1, VBASE = 0",
+        "                MOVE    R1, 0",
+        "                MOVE    R15, b0",
     ]
     cases = list(itertools.product(range(8), repeat=3))
     end = BASE + BLOCK * len(cases)
@@ -277,20 +277,20 @@ def program() -> list[str]:
             text = (DEST if i == 0 else SOURCE)[m]
             fields.append(text.format(c=next(taken)) if m & 3 == 3 else text)
         blocks.append((b, [
-            f"        .ORG    0x{b:X}",
+            f"                .ORG    0x{b:X}",
             f"b{k:<6}MOVE    R11, b{k + 1}",
-            f"        MOVE    R12, b{k + 1}-start",
-            "        ADD[M]  R1, R1, 1       ; Z = 0 and N = 0",
-            f"        .DAT    {', '.join([f'0x{J:X}'] * PRE)}",
-            f"        ?!{guard} {name}[M] {', '.join(fields)}" if guard else f"        {name:<8}{', '.join(fields)}",
-            f"        .DAT    {', '.join([f'0x{fill:X}'] * POST)}",
+            f"                MOVE    R12, b{k + 1}-start",
+            "                ADD[M]  R1, R1, 1       ; Z = 0 and N = 0",
+            f"                .DAT    {', '.join([f'0x{J:X}'] * PRE)}",
+            f"        {'?!' + guard:<8}{name + '[M]':<8}{', '.join(fields)}" if guard else f"                {name:<8}{', '.join(fields)}",
+            f"                .DAT    {', '.join([f'0x{fill:X}'] * POST)}",
         ]))
     blocks.append((end, [
-        f"        .ORG    0x{end:X}",
+        f"                .ORG    0x{end:X}",
         f"b{len(cases):<6}MOVE    R12, 1",
-        f"        SUB[M]  R0, R1, {len(cases)}",
-        "        ?Z MOVE R12, 0",
-        "        HALT",
+        f"                SUB[M]  R0, R1, {len(cases)}",
+        "        ?Z      MOVE    R12, 0",
+        "                HALT",
     ]))
     for _, block in sorted(blocks):
         lines += block

@@ -25,29 +25,29 @@
 ; each __mul takes 4 steps, so the total is 5 + 6 + 10 * (7 + 4) + 1 + 1
 ; = 123, and R2 keeps the last operand, 0x9ABCDEF0 (mul.expected).
 
-_main   MOVE    R7, pairs
-        MOVE    R8, results
-        MOVE    R9, 10                  ; number of pairs
-        MOVE    R10, 0xA
-        MOVE    R11, 0xB
-        MOVE    R12, 0xC
-loop    MOVE    R1, @R7++
-        MOVE    R2, @R7++
-        ADD     @--R13, 2, R15
-        MOVE    R15, __mul
-        MOVE    @R8++, R1
-        DEC[M]  R9, R9
-        ?!Z MOVE R15, loop
-        MOVE    R15, @R13++
+_main           MOVE    R7, pairs
+                MOVE    R8, results
+                MOVE    R9, 10          ; number of pairs
+                MOVE    R10, 0xA
+                MOVE    R11, 0xB
+                MOVE    R12, 0xC
+loop            MOVE    R1, @R7++
+                MOVE    R2, @R7++
+                ADD     @--R13, 2, R15
+                MOVE    R15, __mul
+                MOVE    @R8++, R1
+                DEC[M]  R9, R9
+        ?!Z     MOVE    R15, loop
+                MOVE    R15, @R13++
 
-pairs   .DAT    6, 7
-        .DAT    0, 5
-        .DAT    5, 0
-        .DAT    0xFFFFFFFF, 0xFFFFFFFF
-        .DAT    0x10000, 0x10000
-        .DAT    0xFFFFFFFF, 7
-        .DAT    0x80000000, 3
-        .DAT    1, 0x80000000
-        .DAT    0xFFFFFFFD, 0xFFFFFFFB
-        .DAT    0x12345678, 0x9ABCDEF0
-results .BLK    10
+pairs           .DAT    6, 7
+                .DAT    0, 5
+                .DAT    5, 0
+                .DAT    0xFFFFFFFF, 0xFFFFFFFF
+                .DAT    0x10000, 0x10000
+                .DAT    0xFFFFFFFF, 7
+                .DAT    0x80000000, 3
+                .DAT    1, 0x80000000
+                .DAT    0xFFFFFFFD, 0xFFFFFFFB
+                .DAT    0x12345678, 0x9ABCDEF0
+results         .BLK    10

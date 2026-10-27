@@ -11,9 +11,9 @@
 ; code 12 as for code 2.
 
 ___wasm_start
-        MOVE    R15, @R13++
-        .ORG    0x1abc
-_main   MOVE    R1, 12
-        MOVE    R2, _main
-        MOVE    R15, @___wasm_trap_vector
-        HALT                            ; not reached
+                MOVE    R15, @R13++
+                .ORG    0x1abc
+_main           MOVE    R1, 12
+                MOVE    R2, _main
+                MOVE    R15, @___wasm_trap_vector
+                HALT                    ; not reached

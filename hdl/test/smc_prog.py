@@ -33,18 +33,18 @@ def program() -> list[str]:
         "; Written by test/smc_prog.py. A store of a NOP over a HALT 1 to 40",
         "; words ahead. R1 counts the HALTs passed, and R12 is 0 at the end",
         "; only if all were.",
-        "        MOVE    R12, 1",
-        "        MOVE    R1, 0",
+        "                MOVE    R12, 1",
+        "                MOVE    R1, 0",
     ]
     for d in DISTANCES:
-        lines.append(f"        MOVE    @t{d}, 0        ; {d} word{'s' if d > 1 else ''} ahead")
-        lines += ["        .DAT    0"] * (d - 1)
+        lines.append(f"                MOVE    @t{d}, 0        ; {d} word{'s' if d > 1 else ''} ahead")
+        lines += ["                .DAT    0"] * (d - 1)
         lines.append(f"t{d}     HALT")
-        lines.append("        ADD     R1, R1, 1")
+        lines.append("                ADD     R1, R1, 1")
     lines += [
-        f"        SUB[M]  R0, R1, {len(DISTANCES)}",
-        "        ?Z MOVE R12, 0",
-        "        HALT",
+        f"                SUB[M]  R0, R1, {len(DISTANCES)}",
+        "        ?Z      MOVE    R12, 0",
+        "                HALT",
     ]
     return lines
 

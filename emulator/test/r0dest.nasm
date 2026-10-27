@@ -17,15 +17,15 @@
 ;
 ; Steps: 12. PC = 0x17 after the HALT at 0x16. No flags change. The dump
 ; shows 0x44 and 2.
-        MOVE    R15, start      ; words 0,1
-start   MOVE    R0--, 5         ; words 2,3
-        ADD     R1, R0, 7       ; words 4,5
-        MOVE    @--R0, 0x22     ; words 6,7
-        MOVE    R2, @0          ; words 8,9
-        MOVE    R3, @-1         ; words 10,11
-        MOVE    @R0++, 0x33     ; words 12,13
-        MOVE    R4, @0          ; words 14,15
-        MOVE    @R0, 0x44       ; words 16,17
-        MOVE    R5, @0          ; words 18,19
-        MOVE    R6, @1          ; words 20,21
-        HALT                    ; word 22
+                MOVE    R15, start      ; words 0,1
+start           MOVE    R0--, 5         ; words 2,3
+                ADD     R1, R0, 7       ; words 4,5
+                MOVE    @--R0, 0x22     ; words 6,7
+                MOVE    R2, @0          ; words 8,9
+                MOVE    R3, @-1         ; words 10,11
+                MOVE    @R0++, 0x33     ; words 12,13
+                MOVE    R4, @0          ; words 14,15
+                MOVE    @R0, 0x44       ; words 16,17
+                MOVE    R5, @0          ; words 18,19
+                MOVE    R6, @1          ; words 20,21
+                HALT                    ; word 22

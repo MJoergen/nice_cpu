@@ -27,75 +27,75 @@ ESC = b"\xff"
 # Echoes each input byte, and halts at the end of the input, with the
 # number of bytes echoed in R2.
 ECHO = """
-CONSOLE .EQU    0xFFFFFF00
-loop    MOVE    R1, @CONSOLE
-        AND[M]  R0, R1, 0x200
-        ?!Z HALT
-        MOVE    @CONSOLE, R1
-        ADD     R2, R2, 1
-        MOVE    R15, loop
+CONSOLE         .EQU    0xFFFFFF00
+loop            MOVE    R1, @CONSOLE
+                AND[M]  R0, R1, 0x200
+        ?!Z     HALT
+                MOVE    @CONSOLE, R1
+                ADD     R2, R2, 1
+                MOVE    R15, loop
 """
 
 # Counts in R2, and never reads the console or halts. R15 is 0 or 2 between
 # two steps.
 COUNT = """
-loop    ADD     R2, R2, 1
-        MOVE    R15, loop
+loop            ADD     R2, R2, 1
+                MOVE    R15, loop
 """
 
 # The first instruction is one word long (DEBUG.md §8).
 ONE = """
-        MOVE    R2, R3
-loop    MOVE    R15, loop
+                MOVE    R2, R3
+loop            MOVE    R15, loop
 """
 
 # Halts at its first instruction.
 STOP = """
-        HALT
+                HALT
 """
 
 # The halt reasons 2, 3, and 4 (ISA.md §5.3, §7.2, §7.4): a reserved control
 # word, INT inside an interrupt routine, and RTI outside one.
 RESERVED = """
-        .DAT    0x0FE00000
+                .DAT    0x0FE00000
 """
 INT_IN_ISR = """
-        MOVE    R14, 0x00000001
-        INT     2
-        HALT
-isr     INT     3
-        .ORG    0x102
-        .DAT    isr
+                MOVE    R14, 0x00000001
+                INT     2
+                HALT
+isr             INT     3
+                .ORG    0x102
+                .DAT    isr
 """
 RTI_OUTSIDE = """
-        RTI
+                RTI
 """
 
 # Never halts, and never reads the console.
 SPIN = """
-loop    MOVE    R15, loop
+loop            MOVE    R15, loop
 """
 
 # Jumps to a loop at 0x10, for the breakpoint of DEBUG.md §8.
 AT10 = """
-        MOVE    R15, loop
-        .ORG    0x10
-loop    MOVE    R15, loop
+                MOVE    R15, loop
+                .ORG    0x10
+loop            MOVE    R15, loop
 """
 
 # Reads data into R2 at 0, and counts the passes in R3.
 LOAD = """
-loop    MOVE    R2, @data
-        ADD     R3, R3, 1
-        MOVE    R15, loop
-data    .DAT    7
+loop            MOVE    R2, @data
+                ADD     R3, R3, 1
+                MOVE    R15, loop
+data            .DAT    7
 """
 
 # Counts in R2, and skips the HALT at 2, as Z is 0.
 SKIP = """
-loop    ADD     R2, R2, 1
-        ?Z HALT
-        MOVE    R15, loop
+loop            ADD     R2, R2, 1
+        ?Z      HALT
+                MOVE    R15, loop
 """
 
 

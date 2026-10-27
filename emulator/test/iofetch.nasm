@@ -7,11 +7,11 @@
 ; the second pass: 138. R1 = 0x0C000000, because a data read sees the
 ; stored word. R3 = 1. MOVE[M] R0, R3 with R3 = 1 clears every flag, so
 ; R14 = 0x01000000. Both dumps show 0c000000.
-        MOVE[M] R0, R3                  
-        ?!Z MOVE R15, done
-        MOVE    R3, 1
-        MOVE    @0xFFFFFF80, 0x0C000000
-        MOVE    @0xFFFFFFFF, 0x0C000000
-        MOVE    R1, @0xFFFFFF80
-        MOVE    R15, 0xFFFFFF80
-done    HALT
+                MOVE[M] R0, R3
+        ?!Z     MOVE    R15, done
+                MOVE    R3, 1
+                MOVE    @0xFFFFFF80, 0x0C000000
+                MOVE    @0xFFFFFFFF, 0x0C000000
+                MOVE    R1, @0xFFFFFF80
+                MOVE    R15, 0xFFFFFF80
+done            HALT

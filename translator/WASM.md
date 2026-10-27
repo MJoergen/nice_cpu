@@ -132,13 +132,13 @@ The routines for `i64` and floating point are in the same library and listed in 
 **Example.** With R1 holding a byte address *b*, and no bounds check:
 
     ; i32.load8_u
-            SHR  R5, R1, 2               ; word index b / 4
-            MOVE R5, @___wasm_memory[R5] ; the word that holds byte b
-            AND  R6, R1, 3               ; b mod 4
-            SHL  R6, R6, 3               ; bit position 8 * (b mod 4)
-            SHR  R5, R5, R6
-            AND  R1, R5, 0xFF
+                    SHR     R5, R1, 2       ; word index b / 4
+                    MOVE    R5, @___wasm_memory[R5]  ; the word that holds byte b
+                    AND     R6, R1, 3       ; b mod 4
+                    SHL     R6, R6, 3       ; bit position 8 * (b mod 4)
+                    SHR     R5, R5, R6
+                    AND     R1, R5, 0xFF
 
     ; i32.load, when b is a multiple of 4
-            SHR  R5, R1, 2
-            MOVE R1, @___wasm_memory[R5]
+                    SHR     R5, R1, 2
+                    MOVE    R1, @___wasm_memory[R5]

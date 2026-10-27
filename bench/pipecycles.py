@@ -846,25 +846,25 @@ def report(name: str, m: Model) -> str:
 # gives the core's cycles, step by step, in the retire log of tb_core.
 TESTS = [
     ("straight-line 1-word register code: 1 per instruction plus the start",
-     "\n".join(["        ADD R1, R2, R3", "        ADD R2, R1, R1"] * 50) + "\n        HALT\n",
+     "\n".join(["                ADD     R1, R2, R3", "                ADD     R2, R1, R1"] * 50) + "\n                HALT\n",
      # 101 instructions. FETCH's first request is on the bus in cycle 1, so
      # the first instruction is in DECODE at 3, WRITE at 6, so 7 cycles
      # for it, then one per instruction.
      101, 107, {"startup": 6}),
     ("2-word instructions: fetch keeps up",
-     "\n".join(["        ADD R1, R2, 0x1234"] * 100) + "\n        HALT\n",
+     "\n".join(["                ADD     R1, R2, 0x1234"] * 100) + "\n                HALT\n",
      100 + 1, 107, {"startup": 6}),
     ("3-word instructions: fetch-bound at 1.5 cycles per instruction",
-     "\n".join(["        ADD R1, 0x1234, 0x5678"] * 100) + "\n        HALT\n",
+     "\n".join(["                ADD     R1, 0x1234, 0x5678"] * 100) + "\n                HALT\n",
      # The first needs pair 1, fetched at 2: DECODE 4, done 7 (startup).
      # HALT at word 300, pair 150, fetched at 151: DECODE 153, done 156, so
      # 157 cycles: 156 - 7 - 100 = 49 fetch-bound.
      101, 157, {"startup": 7, "fetch": 49}),
     ("a counted loop: SUB[M] then ?!Z jump back, each taken jump flushes",
-     """        MOVE R1, 10
-loop    SUB[M] R1, R1, 1
-        ?!Z MOVE R15, loop
-        HALT
+     """                MOVE    R1, 10
+loop            SUB[M]  R1, R1, 1
+        ?!Z     MOVE    R15, loop
+                HALT
 """,
      # MOVE (2 words) done 6. Each iteration SUB (2 words) + jump (2 words).
      # Taken jump done at t: the redirect reaches FETCH from a register in
@@ -875,10 +875,10 @@ loop    SUB[M] R1, R1, 1
      # Instructions: 1 + 10 * 2 + 1 = 22; cycles 22 + 6 (start) + 63 = 91.
      22, 91, {"startup": 6, "flush": 63}),
     ("the same loop with ?!Z ADD R15, R15, offset: DECODE predicts it taken",
-     """        MOVE R1, 10
-loop    SUB[M] R1, R1, 1
-        ?!Z ADD R15, R15, loop-next
-next    HALT
+     """                MOVE    R1, 10
+loop            SUB[M]  R1, R1, 1
+        ?!Z     ADD     R15, R15, loop-next
+next            HALT
 """,
      # The offset is negative, so DECODE redirects FETCH to loop as it
      # takes the jump, as for an unconditional jump: a bubble of 3, of
@@ -888,14 +888,14 @@ next    HALT
      # 22 instructions + 6 (start) + 18 + 9 + 7 = 62.
      22, 62, {"startup": 6, "early": 18, "adjust": 9, "flush": 7}),
     ("a read at the head of a loop waits for the predicted jump to leave WRITE",
-     """        MOVE R2, 0x200
-        MOVE R6, 3
-l       MOVE R3, @R2++
-        XOR @0xFFFFFF20, R5, R3
-        MOVE R5, @0xFFFFFF24
-        DEC[M] R6, R6
-        ?!Z ADD R15, R15, l-n
-n       HALT
+     """                MOVE    R2, 0x200
+                MOVE    R6, 3
+l               MOVE    R3, @R2++
+                XOR     @0xFFFFFF20, R5, R3
+                MOVE    R5, @0xFFFFFF24
+                DEC[M]  R6, R6
+        ?!Z     ADD     R15, R15, l-n
+n               HALT
 """,
      # The read of the math unit's product waits for it (mpu 3 a round),
      # and meanwhile DECODE takes the jump and redirects FETCH, so the S0
@@ -908,13 +908,13 @@ n       HALT
      18, 51, {"startup": 6, "multi": 3, "flush": 7, "bus": 3, "mpu": 9, "readbus": 3,
               "adjust": 2}),
     ("unconditional MOVE R15, label: DECODE redirect, 3-cycle bubble",
-     """        MOVE R15, a
-        HALT
-a       MOVE R15, b
-        HALT
-b       MOVE R15, c
-        HALT
-c       HALT
+     """                MOVE    R15, a
+                HALT
+a               MOVE    R15, b
+                HALT
+b               MOVE    R15, c
+                HALT
+c               HALT
 """,
      # Each jump is 2 words, DECODE at d, the target fetched at d + 2 and in
      # DECODE at d + 4: a bubble of 3. Jump 1 is in DECODE at 3, done at 6.
@@ -924,12 +924,12 @@ c       HALT
      # 4 instructions + 6 (start) + 9 + 1 = 20.
      4, 20, {"startup": 6, "early": 9, "fetch": 1}),
     ("a store, then a jump DECODE resolves: FETCH waits for the store",
-     """        MOVE R11, 0x200
-        MOVE @R11++, 0
-        ADD R1, R1, 1
-        MOVE R15, next
-        HALT
-next    HALT
+     """                MOVE    R11, 0x200
+                MOVE    @R11++, 0
+                ADD     R1, R1, 1
+                MOVE    R15, next
+                HALT
+next            HALT
 """,
      # MOVE R11 done 6. The store (words 2, 3) leaves WRITE in 7, into
      # DBUS's register, and is on the bus in 8. ADD done 8. The jump (6, 7)
@@ -940,12 +940,12 @@ next    HALT
      # 4. 5 instructions + 6 (start) + 4 = 15.
      5, 15, {"startup": 6, "early": 4}),
     ("a read after SUB[M] waits for SR, with a condition or without",
-     """        MOVE R2, 0x100
-        SUB[M] R1, R2, 1
-        ?!Z MOVE R3, @R2
-        SUB[M] R1, R2, 1
-        MOVE R3, @R2
-        HALT
+     """                MOVE    R2, 0x100
+                SUB[M]  R1, R2, 1
+        ?!Z     MOVE    R3, @R2
+                SUB[M]  R1, R2, 1
+                MOVE    R3, @R2
+                HALT
 """,
      # MOVE R2 writes R2, the SUB reads it: free, done 7. ?!Z MOVE R3, @R2
      # would load its read in PREPARE in 7, but the SUB in WRITE may write
@@ -955,11 +955,11 @@ next    HALT
      # without a condition waits the same way: done 14. HALT done 15.
      6, 16, {"startup": 6, "sr": 2, "readbus": 2}),
     ("push, push, pop: address register from the previous micro-op",
-     """        MOVE R13, 0x200
-        MOVE @--R13, 1
-        MOVE @--R13, 2
-        MOVE R1, @R13++
-        HALT
+     """                MOVE    R13, 0x200
+                MOVE    @--R13, 1
+                MOVE    @--R13, 2
+                MOVE    R1, @R13++
+                HALT
 """,
      # MOVE R13 done 6. Push 1 needs R13 - 1 from MOVE R13: sumwait 1, done
      # 8, its store on the bus in 9. Push 2 needs R13 - 1 from push 1:
@@ -969,10 +969,10 @@ next    HALT
      # Instructions 5, micro-ops 6.
      5, 16, {"startup": 6, "multi": 1, "sumwait": 2, "agen": 1, "readbus": 1}),
     ("math unit: write A and B, read the product",
-     """        MOVE @0xFFFFFF20, 7
-        MOVE @0xFFFFFF21, 6
-        MOVE R1, @0xFFFFFF22
-        HALT
+     """                MOVE    @0xFFFFFF20, 7
+                MOVE    @0xFFFFFF21, 6
+                MOVE    R1, @0xFFFFFF22
+                HALT
 """,
      # Two 3-word stores into the I/O range, each of which retires when the
      # bus takes it, a cycle after WRITE: the first in WRITE at 7, done 8,
@@ -982,10 +982,10 @@ next    HALT
      # 1 = 3. HALT done at 15, so 16 cycles.
      4, 16, {"startup": 7, "bus": 2, "mpu": 3}),
     ("math unit: 9 / 7 unsigned skips 24 quotient bits in 3 cycles",
-     """        MOVE @0xFFFFFF20, 9
-        MOVE @0xFFFFFF21, 7
-        MOVE R1, @0xFFFFFF28
-        HALT
+     """                MOVE    @0xFFFFFF20, 9
+                MOVE    @0xFFFFFF21, 7
+                MOVE    R1, @0xFFFFFF28
+                HALT
 """,
      # As above, but the divider: 3 cycles skip 8 bits each, since the
      # dividend's top 24 bits are 0 and 9 shifted into view is not less
@@ -994,32 +994,32 @@ next    HALT
      # a gap of 13. HALT done at 25, so 26 cycles.
      4, 26, {"startup": 7, "bus": 2, "mpu": 13}),
     ("math unit: -7 / 2 signed divides 7 by 2, n = 11",
-     """        MOVE @0xFFFFFF20, 0xFFFFFFF9
-        MOVE @0xFFFFFF21, 2
-        MOVE R1, @0xFFFFFF26
-        HALT
+     """                MOVE    @0xFFFFFF20, 0xFFFFFFF9
+                MOVE    @0xFFFFFF21, 2
+                MOVE    R1, @0xFFFFFF26
+                HALT
 """,
      # The signed divider takes the absolute values: 7 / 2 skips 24 bits
      # in 3 cycles and runs 8, n = 11, so the same 26 cycles.
      4, 26, {"startup": 7, "bus": 2, "mpu": 13}),
     ("math unit: 0xFFFFFFF9 / 2 unsigned skips nothing, n = 32",
-     """        MOVE @0xFFFFFF20, 0xFFFFFFF9
-        MOVE @0xFFFFFF21, 2
-        MOVE R1, @0xFFFFFF28
-        HALT
+     """                MOVE    @0xFFFFFF20, 0xFFFFFFF9
+                MOVE    @0xFFFFFF21, 2
+                MOVE    R1, @0xFFFFFF28
+                HALT
 """,
      # The unsigned divider sees a dividend whose top bits are 1, so no
      # cycle skips: n = 32. The read is accepted at 10 + 2 + 32 = 44,
      # data at 45: a gap of 34. HALT done at 46, so 47 cycles.
      4, 47, {"startup": 7, "bus": 2, "mpu": 34}),
     ("the data bus between two slaves: the math unit, then RAM, and back",
-     """        MOVE R2, 0x100
-        MOVE @0xFFFFFF20, R2
-        MOVE R1, @R3
-        MOVE @0xFFFFFF21, R2
-        MOVE @R2, 5
-        MOVE R1, @R3
-        HALT
+     """                MOVE    R2, 0x100
+                MOVE    @0xFFFFFF20, R2
+                MOVE    R1, @R3
+                MOVE    @0xFFFFFF21, R2
+                MOVE    @R2, 5
+                MOVE    R1, @R3
+                HALT
 """,
      # MOVE R2 done 6. The store to A is in WRITE at 7, on the bus in 8,
      # done 8: bus 1, and the math unit acknowledges it in 9. The read of
@@ -1034,13 +1034,13 @@ next    HALT
      # cycles.
      7, 19, {"startup": 6, "bus": 4, "readbus": 2}),
     ("a skipped jump, then a read; a call and a return",
-     """        MOVE R13, 0x200
-        ?Z MOVE R15, 0
-        MOVE R1, @R13
-        ADD @--R13, 2, R15
-        MOVE R15, f
-        HALT
-f       MOVE R15, @R13++
+     """                MOVE    R13, 0x200
+        ?Z      MOVE    R15, 0
+                MOVE    R1, @R13
+                ADD     @--R13, 2, R15
+                MOVE    R15, f
+                HALT
+f               MOVE    R15, @R13++
 """,
      # MOVE R13 (words 0, 1) done 6. ?Z MOVE R15, 0 (2, 3) skipped, done 7.
      # MOVE R1, @R13 (4) loads its read in 7, as the skipped jump leaves
@@ -1055,16 +1055,16 @@ f       MOVE R15, @R13++
      # 7 instructions, 1 multi, 6 start, 1 + 2 + 1 + 7.
      7, 25, {"startup": 6, "multi": 1, "readbus": 2, "early": 2, "flush": 7}),
     ("DECODE goes on while PREPARE waits: a loop that prints",
-     """        MOVE R13, 0x300
-        MOVE R1, str
-        ADD @--R13, 2, R15
-        MOVE R15, puts
-        HALT
-puts    MOVE[M] R2, @R1++
-        ?Z MOVE R15, @R13++
-        MOVE @0xFFFFFF00, R2
-        MOVE R15, puts
-str     .DAT 0x41, 0x42, 0
+     """                MOVE    R13, 0x300
+                MOVE    R1, str
+                ADD     @--R13, 2, R15
+                MOVE    R15, puts
+                HALT
+puts            MOVE[M] R2, @R1++
+        ?Z      MOVE    R15, @R13++
+                MOVE    @0xFFFFFF00, R2
+                MOVE    R15, puts
+str             .DAT    0x41, 0x42, 0
 """,
      # MOVE R13 done 6, MOVE R1 7, the call 8. MOVE R15, puts (6, 7) is in
      # DECODE at 6, done 9: puts (word 9, pair 4) fetched 8, DECODE 10. Its
@@ -1090,13 +1090,13 @@ str     .DAT 0x41, 0x42, 0
 # The same, with options of the model set.
 OPTION_TESTS = [
     ("--shift-late 1: counts from memory, of C<C, and through an adder; a count in a register",
-     """        MOVE R2, 0x100
-        MOVE R3, 1
-        SHL R1, R3, @R2
-        C<C R1, R1, R3
-        SHR R1, R1, 2[R3]
-        SHL R1, R1, R3
-        HALT
+     """                MOVE    R2, 0x100
+                MOVE    R3, 1
+                SHL     R1, R3, @R2
+                C<C     R1, R1, R3
+                SHR     R1, R1, 2[R3]
+                SHL     R1, R1, R3
+                HALT
 """,
      # MOVE R2 done 6, MOVE R3 done 7. The first SHL reads through R2,
      # written two micro-ops back: free, loaded in 7, on the bus in 8, and
@@ -1107,24 +1107,24 @@ OPTION_TESTS = [
      # more: 17. HALT done 18, so 19 cycles.
      {"shift_late": 1}, 7, 19, {"startup": 6, "readlate": 2, "shiftlate": 4}),
     ("--shift-reg 1: a count register from the previous micro-op; a constant count",
-     """        MOVE R3, 3
-        SHL R1, R1, R3
-        SHL R1, R1, 2
-        HALT
+     """                MOVE    R3, 3
+                SHL     R1, R1, R3
+                SHL     R1, R1, 2
+                HALT
 """,
      # MOVE R3 done 6. The first SHL needs R3 in PREPARE in cycle 7, not 6:
      # done 8. The second SHL shifts by a constant: done 9, though R1 is
      # written by the previous micro-op. HALT done 10, so 11 cycles.
      {"shift_reg": 1}, 4, 11, {"startup": 6, "shiftreg": 1}),
     ("--sum-wait 1: c[R] as a value, @R and c[R] as a store's address",
-     """        MOVE R2, 0x100
-        ADD R1, 4[R2], R3
-        MOVE @R2, R1
-        MOVE R2, 0x200
-        MOVE @R2, R1
-        MOVE R2, 0x300
-        MOVE 1[R2], R1
-        HALT
+     """                MOVE    R2, 0x100
+                ADD     R1, 4[R2], R3
+                MOVE    @R2, R1
+                MOVE    R2, 0x200
+                MOVE    @R2, R1
+                MOVE    R2, 0x300
+                MOVE    1[R2], R1
+                HALT
 """,
      # MOVE R2 done 6. The ADD's 4[R2] needs R2 from the previous micro-op:
      # done 8. MOVE @R2 stores through R2, written two back: done 9. MOVE
@@ -1133,12 +1133,12 @@ OPTION_TESTS = [
      # needs the sum in PREPARE: done 14. HALT done 15, so 16 cycles.
      {"sum_wait": 1}, 8, 16, {"startup": 6, "sumwait": 2}),
     ("--dest-adjust 1: R1++ as a destination; a computed jump, jumps to a register and a constant",
-     """        MOVE R1++, 5
-        MOVE R3, a
-        ?!Z MOVE R15, R3
-        HALT
-a       ?!Z ADD R15, R3, 2
-        HALT
+     """                MOVE    R1++, 5
+                MOVE    R3, a
+        ?!Z     MOVE    R15, R3
+                HALT
+a       ?!Z     ADD     R15, R3, 2
+                HALT
 """,
      # MOVE R1++ done 7, a cycle late. MOVE R3 done 8. The jump to R3 (Z is
      # clear) takes its target from the source, no cycle more: done 9, and
@@ -1148,13 +1148,13 @@ a       ?!Z ADD R15, R3, 2
      # done 26: flush 7. So 27 cycles.
      {"dest_adjust": 1}, 5, 27, {"startup": 6, "adjust": 2, "flush": 14}),
     ("--read-late 1: read data into a register, into the ALU, and into a store",
-     """        MOVE R3, 0x200
-        MOVE R2, 0x100
-        MOVE R1, @R2
-        ADD R1, R1, @R3
-        MOVE R4, @R2++
-        MOVE @R3, @R2
-        HALT
+     """                MOVE    R3, 0x200
+                MOVE    R2, 0x100
+                MOVE    R1, @R2
+                ADD     R1, R1, @R3
+                MOVE    R4, @R2++
+                MOVE    @R3, @R2
+                HALT
 """,
      # MOVE R3 done 6, MOVE R2 done 7. MOVE R1, @R2 reads through R2 from
      # the previous micro-op: agen, loaded in 8, on the bus in 9, data in

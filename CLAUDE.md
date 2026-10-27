@@ -114,3 +114,6 @@ Vivado 2025.1 is installed at `/opt/Xilinx/2025.1/Vivado/bin/vivado`, not on PAT
 - American spelling everywhere, in docs, comments, and identifiers
   ("behavior", "color", "analyze", "labeled", "gray").
 - Commit subjects: `niceasm: ...`, `niceemu: ...`, `runtime: ...`, `nicewasm: ...`, `nicecc: ...`, `nicehdl: ...`, `bench: ...`, `release: ...`, `intro: ...`, `ISA: ...`, `Review: ...`.
+- Commit messages follow the 50/72 style: the subject, prefix included, is at
+  most 50 characters. A blank line follows it. The body is wrapped at 70
+  characters per line.

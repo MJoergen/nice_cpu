@@ -189,6 +189,13 @@ can fill the 50 of `timing_in.rpt`.
 It takes about 10 minutes with the default flow, and `VIVADO` names the
 executable.
 
+At the end it judges the slacks against the budget of the board in
+[test/timing_budget.py](test/timing_budget.py), at a 10 ns clock: the core
+alone must meet the clock, and the ports must leave the system 1.5 ns
+(`mega65` only). It prints the result, writes `budget.json` beside the
+reports, and says `MISSED` on a miss, but exits 0. `release.py check` puts
+the result in its stamp, and no release waits for it.
+
 What a system may add to the core's ports, from `make timing` at 2026-10-23
 (`timing` and `default` flows, one run each; a run varies by a few tenths of
 a nanosecond with placement). The slack is the time left to the system at

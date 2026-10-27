@@ -429,9 +429,13 @@ test: emulator analyze synth
 run/split:
 	@$(PYTHON) test/programs.py --test
 
+# The check of the timing budget against made-up reports.
+run/budget:
+	@$(PYTHON) test/timing_budget.py --test
+
 # The runs of make test: the unit tests, tb_link and tb_trace, and those of
 # each core in CORES.
-runs: run/split $(UNITS:%=run/unit/%) $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
+runs: run/split run/budget $(UNITS:%=run/unit/%) $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
 
 # More random programs than make test runs, for example
 #     make random RANDOM_SEEDS="$$(seq 31 90)" RANDOM_STALL=60 RANDOM_STEPS=5000
@@ -536,6 +540,9 @@ emulator:
 # timing_in.rpt, the worst to an output to timing_out.rpt, and the endpoints
 # with less than 1 ns of slack, by group, to timing_groups.rpt. The worst of
 # each is printed, and the groups. About 10 minutes with the default flow.
+# Last it compares the slacks with the budget of the board in
+# test/timing_budget.py, writes budget.json, and prints "MISSED" on a miss,
+# but still exits 0: a miss is to be seen, not to stop anything.
 VIVADO ?= /opt/Xilinx/2025.1/Vivado/bin/vivado
 BOARD  ?= mega65
 FLOW   ?= default
@@ -555,6 +562,7 @@ timing:
 	  echo "$$r.rpt:"; grep -m1 -E "^Slack" $(TIMING_DIR)/$$r.rpt; \
 	  grep -m2 -E "^  (Source|Destination):" $(TIMING_DIR)/$$r.rpt; done
 	@cat $(TIMING_DIR)/timing_groups.rpt
+	@$(PYTHON) test/timing_budget.py $(TIMING_DIR) $(BOARD) $(PERIOD)
 
 # Checks the style of every VHDL file against CODING_STYLE.md. Long lines are
 # only warnings.

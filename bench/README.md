@@ -13,9 +13,9 @@ NICE with other processors.
     make            # run the three on the emulator and print their tables
     make dhry       # run Dhrystone 2.1 on the emulator
     make test       # the same, and check every result
-    make core       # run both on the pipelined core in GHDL (about 22 minutes)
-    make core CORE=multicycle  # the same on the multi-cycle core (about 38 minutes)
-    make core-dhry  # run Dhrystone on a core in GHDL, CORE as above, and check it (about 2.5 minutes)
+    make core       # run both on the pipelined core in GHDL (about 21 minutes)
+    make core CORE=multicycle  # the same on the multi-cycle core (about 57 minutes)
+    make core-dhry  # run Dhrystone on a core in GHDL, CORE as above, and check it (about 2.5 minutes, 139 seconds on the pipelined core and 164 on the multi-cycle one)
     make hazards    # count the pipeline hazards of MICROARCH.md §5 in both
     make cycles     # estimate the cycles of the three on the pipelined core of MICROARCH.md
     make profile    # the same, charged to the source lines, in build/*.cyc.txt
@@ -132,14 +132,14 @@ A byte load of linear memory stays several instructions, since the
 memory is byte-addressed and packed four to a word (WASM.md).
 
 On the multi-cycle core, which takes about ten cycles for a plain
-instruction, the two programs run like this, measured at commit 8f899fe:
+instruction, the two programs run like this, measured at commit 3064119:
 
 | Program | Instructions | Cycles | Cycles per instruction | GHDL time |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 1681080 | 19043715 | 11.3 | 38 minutes on a busy machine |
-| `hand.nasm` | 491617 | 5598318 | 11.4 | 8 minutes on a busy machine |
+| `bench.c` through nicewasm | 1652811 | 18780501 | 11.4 | 57 minutes for both, on an idle machine |
+| `hand.nasm` | 491309 | 5645640 | 11.5 | |
 
-So the hand-written program is 3.4 times shorter in instructions and 3.4
+So the hand-written program is 3.4 times shorter in instructions and 3.3
 times faster in cycles. In the translated program, `rng64` and `vm` have
 the most cycles per instruction, 12.0 and 11.7, and `vm` in the
 hand-written one, 12.8.

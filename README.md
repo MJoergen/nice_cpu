@@ -30,8 +30,10 @@ the separate [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) reposito
 That design is an example, not a dependency: nothing here refers to it in
 code or in a gate, and a release does not wait for it. It shows that the
 pipelined core meets 100 MHz on the MEGA65, and this repository avoids
-changes that would take that away. `make -C hdl timing` here checks the
-core alone against a budget, and
+changes that would take that away. The MEGA65 badge at the top shows the
+result of the last tag that NiceMonMEGA65 built, not of `main` here: after
+a new tag it shows the one before until NiceMonMEGA65 follows.
+`make -C hdl timing` here checks the core alone against a budget, and
 [release/RELEASE.md](release/RELEASE.md) (step 7) says how NiceMonMEGA65
 follows a tag.
 

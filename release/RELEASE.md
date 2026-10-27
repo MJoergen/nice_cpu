@@ -151,8 +151,9 @@ from a clone with the submodule, or later, at your pace.
    matched in `src/` there.
 3. Its bump script writes the result for the tag (the timing in the system,
    the date, and the tag) to the file that the badge in
-   [README.md](../README.md) reads. If the timing was missed, the badge
-   shows it, and the cause is an item in [TODO.md](../TODO.md) here.
+   [README.md](../README.md) reads. Until then the badge still shows the
+   tag before. If the timing was missed, the badge shows it, and the cause
+   is an item in [TODO.md](../TODO.md) here.
 4. Compare its timing with `make -C hdl timing` here (`BOARD=mega65`,
    `FLOW=default` or `timing`). A large difference means the budget in
    `timing_budget.py`, the figures in

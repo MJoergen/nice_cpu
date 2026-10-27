@@ -494,9 +494,18 @@ The Nexys4DDR runs at 90 MHz, and the same run at 100 MHz failed before
 too (−1.160 ns at the registered redirect, and −0.650 ns at the release
 candidate of 2026-10-22). The R6 part meets 100 MHz out of context with
 more margin than at c96cdb0. Neither is an in-system figure: the system
-around the core changes the placement. An in-system build at RC05, with
-NiceMonMEGA65's tag `RC05` and its `make hwtest`, needs that repository
-and the boards, and has not been done.
+around the core changes the placement. No in-system build of RC05 was
+made; RC06's is below.
+
+## In system at RC06
+
+NiceMonMEGA65's `make bump TAG=RC06` built the MEGA65 R6 design at 100 MHz
+with the default flow and Vivado 2025.1 (its issue 19, 2026-10-27): WNS
++0.376 ns, TNS 0, WHS +0.054 ns. An earlier build of the same sources gave
++0.595 ns, so a result varies by a few tenths of a nanosecond between
+runs. The worst path into the core had +0.917 ns, from the RAM into
+WRITE, and the worst out of it +0.456 ns, from PREPARE's `rd_addr_r` to
+the enable of the timer's `irq_vector_o`. The Nexys4DDR was not built.
 
 ## Breakpoints
 

@@ -104,7 +104,7 @@ Commit e92703a says speculative reads were investigated and will not be done; MI
 
 The in-system results, the MEGA65 R6 at 100 MHz and the Nexys4DDR at 90 MHz, were measured at 4cd869e. Since then the predictor, the pause, the handshakes, and #51 and #54 each reported `make timing` out of context in their commit messages, and pipeline-timing.md does not record them; RELEASE_NOTES.md says nothing about timing. **Fix:** a row per commit in pipeline-timing.md, and an in-system build at RC05.
 
-**Resolved**: Only c96cdb0's message had a timing figure (0.379 ns, R6, 100 MHz), so there are no rows per commit to recover. pipeline-timing.md has a section "Since 4cd869e" with c96cdb0's figure and a run at 53af956: R6, default flow, 100 MHz, +0.619 ns with no failing endpoint; Nexys4DDR, timing flow, 100 MHz, −0.862 ns with 475 failing, as at 90 MHz it has always needed. Not done: an in-system build at RC05, which needs NiceMonMEGA65 and the boards.
+**Resolved**: Only c96cdb0's message had a timing figure (0.379 ns, R6, 100 MHz), so there are no rows per commit to recover. pipeline-timing.md has a section "Since 4cd869e" with c96cdb0's figure and a run at 53af956: R6, default flow, 100 MHz, +0.619 ns with no failing endpoint; Nexys4DDR, timing flow, 100 MHz, −0.862 ns with 475 failing, as at 90 MHz it has always needed. Not done: an in-system build at RC05, which needs NiceMonMEGA65 and the boards. NiceMonMEGA65 built RC06 in system instead, on the MEGA65 R6 (pipeline-timing.md, "In system at RC06"); TODO.md drops the item.
 
 ### 2.5 Smaller
 

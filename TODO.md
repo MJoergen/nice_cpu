@@ -5,8 +5,8 @@ yet, questions not decided, claims not checked, and ideas for later. Each
 item names where it comes from. Add new items here, not in other files.
 
 Every finding of the reviews in [doc/review/](doc/review/) is closed or
-listed here, the last ones under "Left from the sixth review" and "Left
-from the fifth review". No code has TODO or FIXME comments.
+listed here, the last ones under "Left from the fifth review". No code
+has TODO or FIXME comments.
 
 ## FPGA core
 
@@ -67,14 +67,6 @@ from the fifth review". No code has TODO or FIXME comments.
   - A branch-target buffer, for the indirect jumps that no static rule
     predicts, such as the `vm` phase's dispatch: 28001 flushes in each
     benchmark program, 8% of the translated one's cycles.
-
-## Left from the sixth review
-
-([doc/review/sixth-repository-review.md](doc/review/sixth-repository-review.md),
-2026-10-26, at b2ac5a5, one commit after RC05. Each finding that is fixed
-has a "Resolved" paragraph there; the section numbers are the review's.)
-
-- **In-system timing at RC05** (§2.4): a build of NiceMonMEGA65's tag `RC05` on both boards, with its figures in pipeline-timing.md.
 
 ## Left from the fifth review
 

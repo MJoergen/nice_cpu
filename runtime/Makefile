@@ -84,7 +84,10 @@ float.nasm: float.wasm ../translator/nicewasm.py
 	$(PYTHON) ../translator/nicewasm.py --library float -o float.nasm float.wasm
 
 # Rebuilds float.wasm from float.zig and parts of Zig's compiler_rt. This
-# needs Zig 0.15.
+# needs Zig 0.17. Each compiler_rt file imports compiler_rt.zig, whose
+# first top-level comptime block exports all of compiler_rt. The copy
+# leaves that block out, so that only the files float.zig imports export
+# their routines.
 FLOAT_EXPORTS = __addsf3 __subsf3 __mulsf3 __divsf3 __adddf3 __subdf3 __muldf3 __divdf3 \
   __eqsf2 __nesf2 __ltsf2 __lesf2 __gtsf2 __gesf2 __eqdf2 __nedf2 __ltdf2 __ledf2 __gtdf2 __gedf2 \
   __floatsisf __floatunsisf __floatdisf __floatundisf __floatsidf __floatunsidf __floatdidf \
@@ -94,14 +97,17 @@ FLOAT_EXPORTS = __addsf3 __subsf3 __mulsf3 __divsf3 __adddf3 __subdf3 __muldf3 _
 
 float:
 	rm -rf build && mkdir build
-	cp -r "$$($(ZIG) env | sed -n 's/.*\.lib_dir = "\(.*\)".*/\1/p')/compiler_rt" build/
+	lib=$$($(ZIG) env | sed -n 's/.*\.lib_dir = "\(.*\)".*/\1/p'); \
+	cp -r "$$lib/compiler_rt" build/ && \
+	awk '!done && /^comptime \{/ { skip = 1 } skip { if (/^\}/) { skip = 0; done = 1 } next } { print } \
+	  END { if (!done) exit 1 }' "$$lib/compiler_rt.zig" > build/compiler_rt.zig
 	cp float.zig build/
 	$(ZIG) build-exe -target wasm32-freestanding -fno-entry -fno-compiler-rt -O ReleaseSmall \
 	  -fstrip --stack 1024 --initial-memory=65536 $(FLOAT_EXPORTS:%=--export=%) \
 	  -femit-bin=float.wasm build/float.zig
 	rm -rf build float.wasm.o
 
-# Rebuilds the .wasm files of the Zig and Rust tests. This needs Zig 0.15
+# Rebuilds the .wasm files of the Zig and Rust tests. This needs Zig 0.17
 # and rustc with the wasm32-unknown-unknown target.
 wasm:
 	@for t in $(ZIG_TESTS); do \

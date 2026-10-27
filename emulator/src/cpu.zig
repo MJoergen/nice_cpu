@@ -862,7 +862,7 @@ fn alu_iw(cond: Cond, op: u4, cm: enum { none, m, c, cm }, d: u7, s0: u7, s1: u7
         .c => 0b010,
         .cm => 0b011,
     };
-    return @as(u32, @intFromEnum(cond)) << 28 | bits << 25 | @as(u32, op) << 21 |
+    return @as(u32, @backingInt(cond)) << 28 | bits << 25 | @as(u32, op) << 21 |
         @as(u32, d) << 14 | @as(u32, s0) << 7 | s1;
 }
 

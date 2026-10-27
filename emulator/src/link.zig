@@ -37,8 +37,9 @@ const ctl_step: u32 = 1 << 5;
 pub const Link = struct {
     cpu: *Cpu,
     gpa: std.mem.Allocator,
-    listener: posix.socket_t,
-    conn: ?posix.socket_t = null,
+    io: std.Io,
+    listener: std.Io.net.Server,
+    conn: ?std.Io.net.Stream = null,
     /// The host has closed its half of the connection for writing.
     conn_eof: bool = false,
 
@@ -97,26 +98,21 @@ pub const Link = struct {
 
     /// Listen on `port` of 127.0.0.1, or on a free port for 0, and return
     /// the port. `self` must not move afterwards.
-    pub fn open(self: *Link, gpa: std.mem.Allocator, cpu: *Cpu, port: u16, on_wait: *const fn () void) !u16 {
-        const fd = try posix.socket(posix.AF.INET, posix.SOCK.STREAM | posix.SOCK.CLOEXEC, 0);
-        errdefer posix.close(fd);
-        try posix.setsockopt(fd, posix.SOL.SOCKET, posix.SO.REUSEADDR, &std.mem.toBytes(@as(c_int, 1)));
-        var addr = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, port);
-        try posix.bind(fd, &addr.any, addr.getOsSockLen());
-        try posix.listen(fd, 1);
-        var len = addr.getOsSockLen();
-        try posix.getsockname(fd, &addr.any, &len);
+    pub fn open(self: *Link, gpa: std.mem.Allocator, io: std.Io, cpu: *Cpu, port: u16, on_wait: *const fn () void) !u16 {
+        const addr: std.Io.net.IpAddress = .{ .ip4 = .loopback(port) };
+        const server = try addr.listen(io, .{ .kernel_backlog = 1, .reuse_address = true });
         self.* = .{
+            .io = io,
             .cpu = cpu,
             .gpa = gpa,
-            .listener = fd,
+            .listener = server,
             .on_wait = on_wait,
             .console_w = .{ .vtable = &.{ .drain = drainConsole }, .buffer = undefined },
             .reader = .{ .vtable = &.{ .stream = streamInput }, .buffer = undefined, .seek = 0, .end = 0 },
         };
         self.console_w.buffer = &self.console_buf;
         self.reader.buffer = &self.reader_buf;
-        return addr.getPort();
+        return server.socket.address.getPort();
     }
 
     /// Whether the processor has halted, or the step limit stopped it.
@@ -172,7 +168,7 @@ pub const Link = struct {
     fn haltReason(self: *const Link) u32 {
         if (!self.halted()) return 0;
         if (self.limit_hit) return 5;
-        return @intFromEnum(self.cpu.halt_reason);
+        return @backingInt(self.cpu.halt_reason);
     }
 
     /// Send the console output so far, and the `h` notice.
@@ -186,22 +182,23 @@ pub const Link = struct {
     /// `timeout` ms for something to happen, or not at all for 0.
     pub fn service(self: *Link, timeout: i32) !void {
         var fds = [2]posix.pollfd{
-            .{ .fd = self.listener, .events = posix.POLL.IN, .revents = 0 },
-            .{ .fd = self.conn orelse -1, .events = if (self.conn_eof) 0 else posix.POLL.IN, .revents = 0 },
+            .{ .fd = self.listener.socket.handle, .events = posix.POLL.IN, .revents = 0 },
+            .{ .fd = if (self.conn) |c| c.socket.handle else -1, .events = if (self.conn_eof) 0 else posix.POLL.IN, .revents = 0 },
         };
         if (try posix.poll(&fds, timeout) == 0) return;
         if (fds[0].revents & posix.POLL.IN != 0) self.accept();
         if (fds[1].revents != 0 and self.conn_eof) return self.disconnect();
         if (fds[1].revents != 0 and self.conn != null) {
             var buf: [4096]u8 = undefined;
-            const n = posix.recv(self.conn.?, &buf, 0) catch return self.disconnect();
+            var vec = [1][]u8{&buf};
+            const n = (self.conn.?.readWithControl(self.io, &vec, &.{}) catch return self.disconnect()).data_len;
             if (n == 0) {
                 // A half-close or a disconnect: both end the input.
                 self.conn_eof = true;
                 self.input_end = true;
                 return;
             }
-            const now = std.time.milliTimestamp();
+            const now = std.Io.Timestamp.now(self.io, .awake).toMilliseconds();
             for (buf[0..n]) |b| self.receive(b, now);
         }
     }
@@ -210,13 +207,14 @@ pub const Link = struct {
     /// unless the first has closed its half for writing: a host that sends
     /// nothing more cannot be told from one that has gone.
     fn accept(self: *Link) void {
-        const fd = posix.accept(self.listener, null, null, posix.SOCK.CLOEXEC) catch return;
+        const stream = self.listener.accept(self.io) catch return;
         if (self.conn != null and !self.conn_eof) {
-            posix.close(fd);
+            stream.close(self.io);
             return;
         }
-        if (self.conn) |old| posix.close(old);
-        self.conn = fd;
+        if (self.conn) |old| old.close(self.io);
+        self.conn = stream;
+        const fd = stream.socket.handle;
         self.conn_eof = false;
         posix.setsockopt(fd, posix.IPPROTO.TCP, posix.TCP.NODELAY, &std.mem.toBytes(@as(c_int, 1))) catch {};
         self.state = .idle;
@@ -228,7 +226,7 @@ pub const Link = struct {
     }
 
     fn disconnect(self: *Link) void {
-        if (self.conn) |fd| posix.close(fd);
+        if (self.conn) |c| c.close(self.io);
         self.conn = null;
         self.conn_eof = false;
         self.input_end = true;
@@ -236,12 +234,9 @@ pub const Link = struct {
 
     /// Send `bytes` to the host, if one is connected.
     fn send(self: *Link, bytes: []const u8) void {
-        var rest = bytes;
-        while (rest.len != 0) {
-            const fd = self.conn orelse return;
-            const n = posix.send(fd, rest, posix.MSG.NOSIGNAL) catch return self.disconnect();
-            rest = rest[n..];
-        }
+        const c = self.conn orelse return;
+        var w = c.writer(self.io, &.{});
+        w.interface.writeAll(bytes) catch return self.disconnect();
     }
 
     /// Send ESC, `tag`, `payload`, `#`, and the checksum, whole.

@@ -26,7 +26,7 @@ tools. Item 2 is by hand.
 1. `git status` is clean, and the branch is `main`, up to date with `origin`.
 2. [TODO.md](../TODO.md) lists only what is open. Nothing in it blocks the
    release, or the release notes say why it is acceptable.
-3. The toolchain is the one in [README.md](../README.md): Zig 0.15.2, not the
+3. The toolchain is the one in [README.md](../README.md): Zig 0.17.0, not the
    latest release or master. Check `zig version`.
 
 ## 2. Documentation

@@ -24,29 +24,14 @@
 //! module that uses them, so a build that does fails.
 
 const std = @import("std");
-const int_from_float = @import("compiler_rt/int_from_float.zig");
 
 comptime {
-    _ = @import("compiler_rt/addsf3.zig");
-    _ = @import("compiler_rt/subsf3.zig");
-    _ = @import("compiler_rt/mulsf3.zig");
-    _ = @import("compiler_rt/adddf3.zig");
-    _ = @import("compiler_rt/subdf3.zig");
-    _ = @import("compiler_rt/muldf3.zig");
-    _ = @import("compiler_rt/cmpsf2.zig");
-    _ = @import("compiler_rt/gesf2.zig");
-    _ = @import("compiler_rt/cmpdf2.zig");
-    _ = @import("compiler_rt/gedf2.zig");
-    _ = @import("compiler_rt/floatsisf.zig");
-    _ = @import("compiler_rt/floatunsisf.zig");
-    _ = @import("compiler_rt/floatdisf.zig");
-    _ = @import("compiler_rt/floatundisf.zig");
-    _ = @import("compiler_rt/floatsidf.zig");
-    _ = @import("compiler_rt/floatunsidf.zig");
-    _ = @import("compiler_rt/floatdidf.zig");
-    _ = @import("compiler_rt/floatundidf.zig");
-    _ = @import("compiler_rt/extendsfdf2.zig");
-    _ = @import("compiler_rt/truncdfsf2.zig");
+    _ = @import("compiler_rt/addf3.zig");
+    _ = @import("compiler_rt/mulf3.zig");
+    _ = @import("compiler_rt/comparef.zig");
+    _ = @import("compiler_rt/float_from_int.zig");
+    _ = @import("compiler_rt/extendf.zig");
+    _ = @import("compiler_rt/truncf.zig");
     // The 128-bit shifts that the f64 routines need. The build leaves out
     // the rest of compiler_rt, whose __fixsfsi and the like have C's
     // meaning, not the one below.
@@ -56,7 +41,7 @@ comptime {
 /// The bits of a float type, and its layout.
 fn Layout(comptime T: type) type {
     return struct {
-        const Bits = std.meta.Int(.unsigned, @bitSizeOf(T));
+        const Bits = @Int(.unsigned, @bitSizeOf(T));
         const mant = std.math.floatMantissaBits(T); // fraction bits: 23 or 52
         const bias = (1 << (std.math.floatExponentBits(T) - 1)) - 1;
         const sign: Bits = 1 << (@bitSizeOf(T) - 1);
@@ -75,7 +60,60 @@ fn Layout(comptime T: type) type {
 
 fn fix(comptime I: type, comptime T: type, x: Layout(T).Bits) I {
     if (Layout(T).isNan(x)) return 0;
-    return int_from_float.intFromFloat(I, @as(T, @bitCast(x)));
+    return intFromFloat(I, @as(T, @bitCast(x)));
+}
+
+/// The conversion of a float that is not a NaN to an integer, saturating.
+/// It is intFromFloat of compiler_rt/int_from_float.zig, unchanged but for
+/// the f80 case, which is left out. That file is not imported, as it
+/// exports __fixsfsi and the like with C's meaning.
+inline fn intFromFloat(comptime I: type, a: anytype) I {
+    const math = std.math;
+    const F = @TypeOf(a);
+    const float_bits = @typeInfo(F).float.bits;
+    const int_bits = @typeInfo(I).int.bits;
+    const rep_t = @Int(.unsigned, float_bits);
+    const sig_bits = math.floatMantissaBits(F);
+    const exp_bits = math.floatExponentBits(F);
+    const fractional_bits = math.floatFractionalBits(F);
+
+    const implicit_bit = @as(rep_t, 1) << sig_bits;
+    const max_exp = (1 << (exp_bits - 1));
+    const exp_bias = max_exp - 1;
+    const sig_mask = (@as(rep_t, 1) << sig_bits) - 1;
+
+    // Break a into sign, exponent, significand
+    const a_rep: rep_t = @bitCast(a);
+    const negative = (a_rep >> (float_bits - 1)) != 0;
+    const exponent = @as(i32, @intCast((a_rep << 1) >> (sig_bits + 1))) - exp_bias;
+    const significand: rep_t = (a_rep & sig_mask) | implicit_bit;
+
+    // If the exponent is negative, the result rounds to zero.
+    if (exponent < 0) return 0;
+
+    // If the value is too large for the integer type, saturate.
+    switch (@typeInfo(I).int.signedness) {
+        .unsigned => {
+            if (negative) return 0;
+            if (@as(c_uint, @intCast(exponent)) >= @min(int_bits, max_exp)) return math.maxInt(I);
+        },
+        .signed => if (@as(c_uint, @intCast(exponent)) >= @min(int_bits - 1, max_exp)) {
+            return if (negative) math.minInt(I) else math.maxInt(I);
+        },
+    }
+
+    // If 0 <= exponent < sig_bits, right shift to get the result.
+    // Otherwise, shift left.
+    var result: I = undefined;
+    if (exponent < fractional_bits) {
+        result = @intCast(significand >> @intCast(fractional_bits - exponent));
+    } else {
+        result = @as(I, @intCast(significand)) << @intCast(exponent - fractional_bits);
+    }
+
+    if ((@typeInfo(I).int.signedness == .signed) and negative)
+        return ~result +% 1;
+    return result;
 }
 
 export fn __fixsfsi(x: u32) i32 {

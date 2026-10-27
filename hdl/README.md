@@ -135,7 +135,7 @@ departs from it.
 
 ## Running the tests
 
-You need GHDL, Python 3, and Zig 0.15 for the emulator. Tested with
+You need GHDL, Python 3, and Zig 0.17 for the emulator. Tested with
 GHDL 6.0.0-dev and GHDL 4.1.0 (mcode backend). CI installs 4.1.0, the
 `ghdl` package of Ubuntu 24.04. The memory model and the trace writer also
 run under nvc.

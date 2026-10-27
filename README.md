@@ -54,17 +54,17 @@ follows a tag.
 
 ## Quick start
 
-You need Python 3.10 or later and GNU make 4 or later, with coreutils, as on Linux. Zig 0.15 is needed only to build the emulator
+You need Python 3.10 or later and GNU make 4 or later, with coreutils, as on Linux. Zig 0.17 is needed only to build the emulator
 ([download](https://ziglang.org/download/), or see
 [installing Zig](https://ziglang.org/learn/getting-started/)). All the tests
 but those of the assembler and the documents run programs on the emulator,
 so they build it first. The `.wasm` files the tests translate are checked
 in, so the tests need no C, Zig, or Rust compiler for wasm.
 
-**Use Zig 0.15 exactly (tested with 0.15.2).** It is the only supported
+**Use Zig 0.17 exactly (tested with 0.17.0).** It is the only supported
 version. Zig changes its language and standard library between releases, so
 the emulator is unlikely to build with a newer or older version. On the
-download page, pick 0.15.2 rather than the latest release or master.
+download page, pick 0.17.0 rather than the latest release or master.
 
     make                              # list the top-level targets
     make test                         # all of the tests below, in parallel (stops at once without GHDL)
@@ -96,7 +96,7 @@ is joined into every program. Each follows one part of
 | Tool | Where | Written in | Reads | Writes | Follows |
 |---|---|---|---|---|---|
 | `niceasm`, the assembler | [assembler/niceasm.py](assembler/niceasm.py) | Python 3, standard library only | `.nasm` | `.bin` | ISA.md §10 |
-| `niceemu`, the emulator | [emulator/](emulator/) | Zig 0.15 | `.bin` | Console output, the registers, memory dumps, and a trace | ISA.md §1–8, SYSTEM.md, DEBUG.md |
+| `niceemu`, the emulator | [emulator/](emulator/) | Zig 0.17 | `.bin` | Console output, the registers, memory dumps, and a trace | ISA.md §1–8, SYSTEM.md, DEBUG.md |
 | The runtime library | [runtime/](runtime/) | NICE assembly | | | ABI.md and WASM.md |
 | `nicewasm`, the wasm translator | [translator/nicewasm.py](translator/nicewasm.py) | Python 3, standard library only | `.wasm` | `.nasm` | WASM.md |
 | `nicebuild`, the build script | [translator/nicebuild.py](translator/nicebuild.py) | Python 3, standard library only | `.c`, `.zig`, or `.rs` | `.bin` | translator README |
@@ -179,7 +179,7 @@ program, so it is not one of the joined files.
 
 **Host tools.** Python 3 runs `niceasm`, `nicewasm`, and the test scripts.
 Nothing beyond the standard library is needed, and `make typecheck` checks
-the Python with `mypy --strict` if mypy is installed. Zig 0.15 builds
+the Python with `mypy --strict` if mypy is installed. Zig 0.17 builds
 `niceemu` and compiles the Zig test modules. clang with the wasm32 target,
 `wasm-ld`, and `llvm-ar`, and rustc with the `wasm32-unknown-unknown` target, are
 needed only for `make wasm` in `translator/`, which rebuilds the compiled

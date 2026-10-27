@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent
 BUILD = ROOT / "release" / "build"
 STAMP = BUILD / "stamp.json"
 
-ZIG_VERSION = "0.15.2"
+ZIG_VERSION = "0.17.0"
 TAG_PATTERN = re.compile(r"^RC(\d+)$")
 
 CI_YML = ROOT / ".github" / "workflows" / "ci.yml"

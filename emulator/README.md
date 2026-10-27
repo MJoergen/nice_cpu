@@ -4,7 +4,7 @@ An emulator for the NICE processor, written in [Zig](https://ziglang.org). It im
 [doc/ISA.md](../doc/ISA.md) and the devices of [doc/SYSTEM.md](../doc/SYSTEM.md), and runs the `.bin` files that
 [niceasm](../assembler/README.md) writes.
 
-It needs Zig 0.15 (tested with 0.15.2), and Python 3 for `make test`.
+It needs Zig 0.17 (tested with 0.17.0), and Python 3 for `make test`.
 
 ## Build and test
 

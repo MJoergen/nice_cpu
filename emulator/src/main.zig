@@ -101,8 +101,8 @@ const Symbol = struct {
 
 /// Read a file of lines "address name", as niceasm --symbols writes it.
 /// The result is sorted by address.
-fn loadSymbols(arena: std.mem.Allocator, path: []const u8) error{ Load, OutOfMemory }![]Symbol {
-    const text = std.fs.cwd().readFileAlloc(arena, path, 1 << 30) catch |err| {
+fn loadSymbols(arena: std.mem.Allocator, io: std.Io, path: []const u8) error{ Load, OutOfMemory }![]Symbol {
+    const text = std.Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(1 << 30)) catch |err| {
         std.debug.print("niceemu: cannot read {s}: {s}\n", .{ path, @errorName(err) });
         return error.Load;
     };
@@ -185,11 +185,11 @@ var stop_signal: std.atomic.Value(u8) = .init(0);
 /// How often, in steps, the run loop looks at `stop_signal`.
 const signal_check_mask: u64 = 0xFFFF;
 
-fn onSignal(sig: i32) callconv(.c) void {
-    stop_signal.store(@intCast(sig), .release);
+fn onSignal(sig: std.posix.SIG) callconv(.c) void {
+    stop_signal.store(@intCast(@backingInt(sig)), .release);
 }
 
-/// A reader of a file descriptor that, unlike `std.fs.File.Reader`, gives up
+/// A reader of a file descriptor that, unlike `std.Io.File.Reader`, gives up
 /// when a signal interrupts the read. The console read then returns the end
 /// of the input, and the run loop sees `stop_signal` at its next check.
 const InterruptibleReader = struct {
@@ -225,7 +225,7 @@ fn catchSignals() void {
         .mask = std.posix.sigemptyset(),
         .flags = 0,
     };
-    for ([_]u8{ std.posix.SIG.INT, std.posix.SIG.TERM, std.posix.SIG.HUP }) |sig| {
+    for ([_]std.posix.SIG{ .INT, .TERM, .HUP }) |sig| {
         std.posix.sigaction(sig, &act, null);
     }
 }
@@ -239,24 +239,24 @@ fn dieOfSignal(out: *std.Io.Writer, sig: u8) noreturn {
         .mask = std.posix.sigemptyset(),
         .flags = 0,
     };
-    std.posix.sigaction(sig, &dfl, null);
-    std.posix.raise(sig) catch {};
+    std.posix.sigaction(@fromBackingInt(@intCast(sig)), &dfl, null);
+    std.posix.raise(@fromBackingInt(@intCast(sig))) catch {};
     std.process.exit(128 + @as(u8, sig));
 }
 
-pub fn main() !void {
-    var arena_state: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
+pub fn main(init: std.process.Init) !void {
+    const arena = init.arena.allocator();
+    const io = init.io;
+    const args = try init.minimal.args.toSlice(arena);
 
     var out_buf: [64 * 1024]u8 = undefined;
     // Streaming, not positional: when stdout is a file shared with other
     // writers, as in `(niceemu x.bin; echo) > log`, the output must go
     // where the file offset is.
-    var out_w = std.fs.File.stdout().writerStreaming(&out_buf);
+    var out_w = std.Io.File.stdout().writerStreaming(io, &out_buf);
     const out = &out_w.interface;
 
-    const status = run(arena, out) catch |err| switch (err) {
+    const status = run(arena, io, args, out) catch |err| switch (err) {
         error.Usage, error.Load => 1,
         error.OutOfMemory => blk: {
             out.flush() catch {};
@@ -272,7 +272,7 @@ pub fn main() !void {
 
 /// Exit after stdout failed. A closed pipe, as in `niceemu -t x.bin | head`,
 /// ends the program quietly with the status of a filter killed by SIGPIPE.
-fn outputFailed(out_w: *const std.fs.File.Writer) noreturn {
+fn outputFailed(out_w: *const std.Io.File.Writer) noreturn {
     const err = out_w.err orelse error.Unexpected;
     if (err == error.BrokenPipe) std.process.exit(128 + 13);
     std.debug.print("niceemu: cannot write the output: {s}\n", .{@errorName(err)});
@@ -300,8 +300,7 @@ fn parseNumber(comptime T: type, opt: []const u8, s: []const u8) !T {
     };
 }
 
-fn parseArgs(arena: std.mem.Allocator) !Options {
-    const args = try std.process.argsAlloc(arena);
+fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
     var opts: Options = .{ .path = "" };
     var input_given = false;
     var dumps: std.ArrayList(Dump) = .empty;
@@ -424,8 +423,8 @@ fn loadError(path: []const u8, line_no: usize, comptime fmt: []const u8, args: a
     return error.Load;
 }
 
-fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
-    const opts = try parseArgs(arena);
+fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, out: *std.Io.Writer) !u8 {
+    const opts = try parseArgs(arena, args);
     if (opts.help) {
         // Through `out`, so that a closed pipe is handled as for any output.
         try out.writeAll(usage);
@@ -434,30 +433,30 @@ fn run(arena: std.mem.Allocator, out: *std.Io.Writer) !u8 {
 
     var cpu = Cpu.init(arena);
     if (opts.path.len != 0) {
-        const text = std.fs.cwd().readFileAlloc(arena, opts.path, 1 << 30) catch |err| {
+        const text = std.Io.Dir.cwd().readFileAlloc(io, opts.path, arena, .limited(1 << 30)) catch |err| {
             std.debug.print("niceemu: cannot read {s}: {s}\n", .{ opts.path, @errorName(err) });
             return error.Load;
         };
         try load(arena, &cpu, opts.path, text);
     }
-    const syms: []const Symbol = if (opts.symbols.len != 0) try loadSymbols(arena, opts.symbols) else &.{};
-    if (opts.link) |port| return serve(arena, opts, syms, &cpu, port);
+    const syms: []const Symbol = if (opts.symbols.len != 0) try loadSymbols(arena, io, opts.symbols) else &.{};
+    if (opts.link) |port| return serve(arena, io, opts, syms, &cpu, port);
 
     if (opts.trace) cpu.trace = out;
     cpu.console = out;
-    cpu.console_flush = std.fs.File.stdout().isTty();
+    cpu.console_flush = std.Io.File.stdout().isTty(io) catch false;
     cpu.cycle_counter = opts.cycle_counter;
     cpu.timer_irq = opts.timer_irq;
     var in_buf: [4096]u8 = undefined;
     var in_r: InterruptibleReader = undefined;
-    const in_file = if (std.mem.eql(u8, opts.input, "-")) std.fs.File.stdin() else std.fs.cwd().openFile(opts.input, .{}) catch |err| {
+    const in_file = if (std.mem.eql(u8, opts.input, "-")) std.Io.File.stdin() else std.Io.Dir.cwd().openFile(io, opts.input, .{}) catch |err| {
         std.debug.print("niceemu: cannot read {s}: {s}\n", .{ opts.input, @errorName(err) });
         return error.Load;
     };
     // A directory opens, but every read of it fails, which would pass for
     // the end of the input.
     if (!std.mem.eql(u8, opts.input, "-")) {
-        const stat = in_file.stat() catch |err| {
+        const stat = in_file.stat(io) catch |err| {
             std.debug.print("niceemu: cannot read {s}: {s}\n", .{ opts.input, @errorName(err) });
             return error.Load;
         };
@@ -532,15 +531,15 @@ fn exitOnSignal() void {
 /// Serve the debug link (doc/DEBUG.md) on `port`, and run each program
 /// that the host starts. What a run prints goes to stderr. Runs until a
 /// signal.
-fn serve(arena: std.mem.Allocator, opts: Options, syms: []const Symbol, cpu: *Cpu, port: u16) !u8 {
+fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symbol, cpu: *Cpu, port: u16) !u8 {
     var err_buf: [64 * 1024]u8 = undefined;
-    var err_w = std.fs.File.stderr().writerStreaming(&err_buf);
+    var err_w = std.Io.File.stderr().writerStreaming(io, &err_buf);
     const out = &err_w.interface;
     serve_out = out;
     catchSignals();
 
     var link: Link = undefined;
-    const actual = link.open(arena, cpu, port, exitOnSignal) catch |err| {
+    const actual = link.open(arena, io, cpu, port, exitOnSignal) catch |err| {
         std.debug.print("niceemu: cannot serve the link on port {d}: {s}\n", .{ port, @errorName(err) });
         return error.Load;
     };
@@ -664,7 +663,7 @@ fn printScreen(out: *std.Io.Writer, cpu: *const Cpu, base: u32, color: bool, inv
     try out.writeAll("Screen:\n");
     for (rows[0..last_row], words[0..last_row]) |*row, *word_row| {
         try out.writeByte('|');
-        const text = std.mem.trimRight(u8, row, " ");
+        const text = std.mem.trimEnd(u8, row, " ");
         if (!color) {
             try out.writeAll(text);
         } else {

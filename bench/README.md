@@ -411,7 +411,7 @@ are worked out by hand in the script, and `make test` runs it.
 nicewasm, the measure that [translator/README.md](../translator/README.md)
 quotes for `test/safe.zig` and the float library. `make words` prints it
 for `bench.wasm`, `translator/test/safe.wasm`, and `runtime/float.wasm`:
-8537, 5156, and 7079 words. Each module is translated and
+8537, 5932, and 6895 words. Each module is translated and
 assembled on its own, with the labels it uses but does not define, such
 as the runtime's routines, defined as 0 first; a constant takes a whole
 word whatever its value (ISA.md §3), so that changes no size. The count

@@ -135,14 +135,13 @@ ReleaseSafe and Debug work too. They need `--stack 16384`, or at least
 more than 4096, if the program can panic: Zig's panic handler puts a
 4 KB buffer on the stack, and with too small a stack it traps with code
 2, out of bounds, before it reaches its own trap. `test/safe.zig` is
-about 5200 words built with ReleaseSafe, and about 16000 built with
+about 5900 words built with ReleaseSafe, and about 11900 built with
 Debug.
 
 `-fstrip` drops the DWARF sections, which make up almost all of a
 ReleaseSafe or Debug module. nicewasm ignores them, but they make the
-file large. Do not use `-fno-llvm`: Zig 0.15's own wasm backend encodes
-the initial value of `__stack_pointer` wrongly, so every stack access is
-out of bounds.
+file large. Use the LLVM backend, the default: no test here covers
+Zig's own wasm backend (`-fno-llvm`).
 
 The memory options keep the memory small. nicewasm reserves the module's
 initial memory with `.RES`, so the memory is not in the `.bin` file, and
@@ -174,7 +173,7 @@ overflow-checks` and `-C debug-assertions`.
 
 ## Target
 
-nicewasm aims at the default wasm32 feature set of Zig 0.15:
+nicewasm aims at the default wasm32 feature set of Zig 0.17:
 `bulk-memory-opt`, `call-indirect-overlong`, `extended-const`,
 `multivalue`, `mutable-globals`, `nontrapping-fptoint`, and `sign-ext`.
 Clang's default set, `mutable-globals` and `sign-ext`, is a subset of it,
@@ -197,8 +196,8 @@ pointers. nicewasm supports all of them. A Rust program uses a table and
 `call_indirect` for `dyn` trait calls.
 
 The optimizations change nothing in WASM.md. The size of translated code
-is measured in words (`make words` in `bench/`): `test/safe.zig` is 5156
-words and the float library 7079. The benchmark of [bench/](../bench/)
+is measured in words (`make words` in `bench/`): `test/safe.zig` is 5932
+words and the float library 6895. The benchmark of [bench/](../bench/)
 runs 1652811 instructions in its phases, from a module of 8537 words.
 [doc/review/code-size-plan.md](../doc/review/code-size-plan.md) has the
 measurements of the plan, and [doc/HISTORY.md](../doc/HISTORY.md) lists
@@ -831,7 +830,7 @@ R2 at the start of the code that trapped. Most modules are built byte by
 byte with `test/wasm.py`. The others are compiled from `test/*.c`,
 `test/*.zig`, and `test/*.rs`. Their `.wasm` files are checked in, so
 `make test` needs no compiler. `make wasm` needs clang with the wasm32
-target, `wasm-ld`, Zig 0.15, and rustc with the `wasm32-unknown-unknown`
+target, `wasm-ld`, Zig 0.17, and rustc with the `wasm32-unknown-unknown`
 target. The Rust modules were built with rustc 1.99.0. `test/errors.py`
 checks every error message. `test/build.py` runs `nicebuild.py`: the
 mistakes in its options, and then a program in each language whose

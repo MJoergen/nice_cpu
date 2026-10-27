@@ -161,9 +161,9 @@ because compiler_rt's gives 0 when the quotient is subnormal.
 
 The routines use the words `WL.float.memory` as their own stack, 256
 words that are part of the program image. Assembled, `float.nasm` is about
-7100 words, 7340 with its stack.
+6900 words, 7150 with its stack.
 
-`make float` rebuilds `float.wasm` from `float.zig`. It needs Zig 0.15,
+`make float` rebuilds `float.wasm` from `float.zig`. It needs Zig 0.17,
 whose compiler_rt sources it copies next to `float.zig`. The routines must
 not use the wasm float instructions, as `nicewasm` translates those into
 calls to this library. `nicewasm` rejects a library module that uses them.
@@ -331,7 +331,7 @@ Then it runs the tests of `nice.zig` and `nice.rs`, `test/nicezig.zig`,
 `test/zigpoll.zig`, `test/nicers.rs`, and `test/rustpoll.rs`, the same
 way, with `test/X.input` as the console input and `test/X.expected`,
 written by hand from the source. Their `.wasm`
-files are checked in; `make wasm` rebuilds them, with Zig 0.15 and rustc
+files are checked in; `make wasm` rebuilds them, with Zig 0.17 and rustc
 with the `wasm32-unknown-unknown` target.
 
 `make -C libc fuzz` needs clang. It runs `libc/test/fuzz_printf.py`,

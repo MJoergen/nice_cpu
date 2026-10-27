@@ -30,10 +30,10 @@ jobs:
         with:
           python-version: "3.x"
       - run: pip install mypy
-      # Zig 0.15 is the only supported version (see README.md).
+      # Zig 0.17 is the only supported version (see README.md).
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.15.2
+          version: 0.17.0
       - run: make test
       - run: make typecheck
       # The example programs of the introduction slides.
@@ -52,7 +52,7 @@ jobs:
       - run: pip install mypy
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.15.2
+          version: 0.17.0
       - run: make test
       - run: make typecheck
 
@@ -69,7 +69,7 @@ jobs:
       - run: pip install mypy
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.15.2
+          version: 0.17.0
       # test/build.py builds the C library, which needs llvm-ar.
       - run: sudo apt-get update && sudo apt-get install -y llvm lld
       - run: make test
@@ -102,7 +102,7 @@ jobs:
       - run: pip install mypy
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.15.2
+          version: 0.17.0
       - run: make test
       - run: make typecheck
 
@@ -118,7 +118,7 @@ jobs:
           python-version: "3.x"
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.15.2
+          version: 0.17.0
       - run: sudo apt-get update && sudo apt-get install -y ghdl
       - run: make test
       # The style of CODING_STYLE.md, as far as vsg can check it.
@@ -150,7 +150,7 @@ jobs:
           python-version: "3.x"
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.15.2
+          version: 0.17.0
       - run: sudo apt-get update && sudo apt-get install -y ghdl
       - run: make programs CORE=${{ matrix.core }} SHARD=${{ matrix.shard }}
 

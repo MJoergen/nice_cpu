@@ -383,3 +383,20 @@ Until 2026-10-24 (22eacce) the emulator stopped a program after
 100000000 steps unless `-n` gave another limit, with the line "Stopped
 at the step limit". There is no limit by default now: a program runs
 until it halts or is killed, and `-n` sets a limit when one is wanted.
+
+## Zig 0.15
+
+Until 2026-10-27 the supported Zig was 0.15.2. The emulator moved to the
+`std.Io` interface of Zig 0.17: `main` takes `std.process.Init`, the files
+are `std.Io.File`, and the debug link uses `std.Io.net` instead of the
+socket calls of `std.posix`, which 0.17 no longer has. `float.zig` copies
+compiler_rt's `intFromFloat`, which 0.17 no longer makes public, and the
+float build leaves out the block of `compiler_rt.zig` that exports all of
+compiler_rt, which the files of 0.17's compiler_rt import.
+
+The Zig modules were rebuilt with 0.17. `test/safe.zig` became 5932 words,
+not 5156, with ReleaseSafe, and 11879, not 12399, with Debug. The float
+library became 6895 words, not 7079. The translator's README warned
+against `-fno-llvm`, because Zig 0.15's own wasm backend encoded the
+initial value of `__stack_pointer` wrongly. With 0.17, `runtime/test/nicezig.zig`
+built with `-fno-llvm` prints the same as with LLVM.

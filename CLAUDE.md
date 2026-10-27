@@ -28,7 +28,7 @@ translator, and two FPGA cores. See README.md.
   `doc/flow.tex` and `doc/interrupt.tex`, rendered to PNGs by `make diagrams`; edit the `.tex`
   and commit both. The timing values are read off a simulation by hand.
 - `assembler/niceasm.py`: Python 3, standard library only, `mypy --strict` clean.
-- `emulator/`: Zig 0.15.
+- `emulator/`: Zig 0.17.
 - `runtime/`: start-up code and runtime routines in NICE assembly (`runtime/ABI.md`).
   `runtime/libc/` is the C library for translated programs.
 - `translator/nicewasm.py`: wasm -> NICE assembly (`translator/WASM.md`). Same rules as niceasm.py.

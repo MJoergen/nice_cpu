@@ -226,6 +226,7 @@ A write to a read-only register is ignored. The versions:
 | 1 | The requests, the notices, and the control register with bits 0 to 3. | RC04 |
 | 2 | The pause: bit 4 of the control register, and the notice `p`. | Never tagged. |
 | 3 | The single step: bit 5 of the control register. | RC05 |
+| 4 | The breakpoints: the notice `x`, and the registers `0xFFFFFFF4` to `0xFFFFFFFF`. | RC06 |
 
 A system of version 1 has no pause and no step. A host reads the register
 before it uses either.

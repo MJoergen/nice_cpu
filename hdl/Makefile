@@ -456,9 +456,20 @@ random-sweep:
 # The programs of pcfx_prog.py and sidefx_prog.py swept with one request
 # per run, on CORE, one after the other, as each uses every CPU. It takes
 # four hours on the pipelined core and two on the multi-cycle one, on 20 CPUs.
+# make slow runs strides instead; this is for a change to the interrupt path.
 sweep: emulator analyze $(BUILD)/pcfx.bin $(BUILD)/sidefx.bin
 	$(call check_sweep,pcfx)
 	$(call check_sweep,sidefx)
+
+# The same two programs swept on CORE with each stride of SLOW_STRIDES, in
+# SWEEP_JOBS workers. make test sweeps them with SWEEP_STRIDE; 17 and 31
+# shift the requests against those, and 64 leaves most of each run without
+# one, closer to the one request per run of make sweep. make slow runs it.
+SLOW_STRIDES = 17,31,64
+SWEEP_JOBS ?= $(JOBS)
+strides: emulator analyze $(BUILD)/pcfx.bin $(BUILD)/sidefx.bin
+	$(call check_sweep,pcfx,--stride $(SLOW_STRIDES) -j $(SWEEP_JOBS))
+	$(call check_sweep,sidefx,--stride $(SLOW_STRIDES) -j $(SWEEP_JOBS))
 
 # The runtime's and the translator's test programs on the core (MICROARCH.md
 # §9, step 7). runtime/Makefile with KEEP and translator/test/run.py with
@@ -578,4 +589,4 @@ lint:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: test runs programs random sweep analyze synth formal emulator timing typecheck lint clean
+.PHONY: test runs programs random sweep strides analyze synth formal emulator timing typecheck lint clean

@@ -118,8 +118,11 @@ These need GHDL and take hours. Run them with each core:
 
 That is `hdl make programs` (the runtime and translator programs), `bench
 make core` (the benchmark on the core), `bench make core-dhry` (Dhrystone on
-the core), and `hdl make sweep` (one interrupt per run). Every line must say
-`PASS`, and both cores must agree with `niceemu`.
+the core), and `hdl make strides` (the interrupt sweeps with strides 17,
+31, and 64). Every line must say `PASS`, and both cores must agree with
+`niceemu`. `hdl make sweep`, with one interrupt per run, takes hours and is
+not part of the release; it is run after a change to the interrupt path
+(CLAUDE.md, Conventions).
 
 Then refresh the estimate against the core:
 

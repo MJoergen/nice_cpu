@@ -32,7 +32,8 @@ last step gets no delayed request (see main).
 
 With --stride K, a run raises a request before every Kth step of the
 program, from step k, and K runs, k = 0 to K - 1, cover every step. That
-takes K runs per kind instead of N, each a little longer. Each request
+takes K runs per kind instead of N, each a little longer. Several strides,
+comma-separated, make the runs of each, in one pool. Each request
 taken adds H steps, its entry and its routine, which a run of the
 emulator with one request measures, so the request before the program's
 step P, after i requests taken, is raised for step P + H * i. The sweep
@@ -131,10 +132,11 @@ def held(trace: str) -> tuple[set[int], set[int]]:
 
 
 def plan(args: argparse.Namespace, steps: int, extra: int, words: dict[int, int], kind: str,
-         vec: int, first: int) -> tuple[list[int], set[int], set[int]]:
+         vec: int, stride: int, first: int) -> tuple[list[int], set[int], set[int]]:
     """The steps to raise requests for, in a run from the program's step
-    first, the program's steps they come before, and those left out."""
-    wanted = list(range(first, steps, args.stride or steps))
+    first and every stride steps, the program's steps they come before, and
+    those left out."""
+    wanted = list(range(first, steps, stride))
     dropped: set[int] = set()
     while True:
         keep = [s for s in wanted if s not in dropped]
@@ -150,10 +152,10 @@ def plan(args: argparse.Namespace, steps: int, extra: int, words: dict[int, int]
 
 
 def check(args: argparse.Namespace, core: Core, kind: str, vec: int, raised: list[int],
-          delay: int) -> str | None:
+          delay: int, stride: int) -> str | None:
     """Returns None if the run passes, or what went wrong."""
     opts = [o for s in raised for o in (f"--{kind}", f"{s}:{vec}")]
-    first = f"{raised[0]}, every {args.stride}" if len(raised) > 1 else str(raised[0])
+    first = f"{raised[0]}, every {stride}" if len(raised) > 1 else str(raised[0])
     name = f"--{kind} {first}:{vec} delay {delay}"
     expected = run_emulator(args.emu, args.program, opts)
     if "Pending:" in expected:
@@ -189,8 +191,9 @@ def main() -> None:
                    help="the core may take a request late, after instructions with a data read")
     p.add_argument("--delays", type=lambda s: [int(d) for d in s.split(",")], default=[0],
                    help="the delays of the request in cycles, comma-separated (default 0)")
-    p.add_argument("--stride", type=int,
-                   help="raise a request before every this many steps in each run (default: one per run)")
+    p.add_argument("--stride", type=lambda s: [int(k) for k in s.split(",")],
+                   help="raise a request before every this many steps in each run, "
+                   "or each of several, comma-separated (default: one per run)")
     p.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1)
     p.add_argument("--core", default=DEFAULT_CORE, help="G_CORE of tb_core (default pipeline)")
     p.add_argument("--build", default=DEFAULT_BUILD)
@@ -218,19 +221,20 @@ def main() -> None:
             if not m:
                 sys.exit(f"irq_sweep: the program does not halt with one {kind}:\n{one[-400:]}")
             extra[kind] = int(m.group(1)) - steps
-        plans = {(kind, vec, k): pool.submit(plan, args, steps, extra[kind], words, kind, vec, k)
-                 for kind, vec in kinds for k in range(min(args.stride or steps, steps))}
+        strides = args.stride or [steps]
+        plans = {(kind, vec, n, k): pool.submit(plan, args, steps, extra[kind], words, kind, vec, n, k)
+                 for kind, vec in kinds for n in strides for k in range(min(n, steps))}
         # A request delayed into the last step, the halt, would be pending
         # at the end, which the emulator cannot be told: it raises a
         # request only before a step.
         jobs = []
-        for (kind, vec, k), f in plans.items():
+        for (kind, vec, n, k), f in plans.items():
             raised = f.result()[0]
-            last = (steps - 1 - k) % (args.stride or steps) == 0
+            last = (steps - 1 - k) % n == 0
             for d in args.delays:
                 kept = raised[:-1] if d > 0 and last else raised
                 if kept:
-                    jobs.append((kind, vec, kept, d))
+                    jobs.append((kind, vec, kept, d, n))
         results = list(pool.map(lambda j: check(args, core, *j), jobs))
     core.clean()
 
@@ -243,7 +247,7 @@ def main() -> None:
     blocked, masked = held(plain)
     summary = []
     for kind, vec in kinds:
-        runs = [f.result() for (k, _, _), f in plans.items() if k == kind]
+        runs = [f.result() for (k, _, _, _), f in plans.items() if k == kind]
         covered = set().union(*(c for _, c, _ in runs))
         dropped = set().union(*(d for _, _, d in runs))
         notes = []

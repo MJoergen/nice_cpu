@@ -18,8 +18,8 @@ help:
 	@echo "  make lint        vsg style check of the VHDL (pip install vsg)"
 	@echo "  make formal      SymbiYosys checks of the cores, their stages, the devices, and the shared functions"
 	@echo "  make slow        the runtime and translator programs, the benchmark,"
-	@echo "                   Dhrystone, and the full interrupt sweeps, on CORE (default"
-	@echo "                   pipeline; hours)"
+	@echo "                   Dhrystone, and the interrupt sweeps with more strides, on CORE"
+	@echo "                   (default pipeline; hours)"
 	@echo "  make release-check  the gates of RELEASE.md, then a stamp for release.py tag (hours)"
 	@echo "  make hazards     count the pipeline hazards in the benchmark"
 	@echo "  make wasmcheck   rebuild the checked-in .wasm files and compare them (clang, zig, rustc)"
@@ -66,7 +66,7 @@ slow:
 	$(MAKE) -C hdl programs
 	$(MAKE) -C bench core
 	$(MAKE) -C bench core-dhry
-	$(MAKE) -C hdl sweep
+	$(MAKE) -C hdl strides
 
 hazards:
 	$(MAKE) -C bench hazards

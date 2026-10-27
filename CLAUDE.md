@@ -87,7 +87,8 @@ translator, and two FPGA cores. See README.md.
     cd hdl && make timing            # the pipelined core's worst paths out of context in Vivado, BOARD=mega65 or nexys4ddr, FLOW=default or timing (3 minutes)
     cd hdl && make programs          # the runtime and translator programs on CORE, or its share SHARD=I/N (minutes)
     cd hdl && make random-sweep      # random programs, seeds 1 to RANDOM_LAST (1000), on each core of CORES (an hour or more)
-    cd hdl && make sweep             # pcfx and sidefx with one interrupt per run on CORE (hours)
+    cd hdl && make strides           # pcfx and sidefx swept with strides 17, 31, and 64 on CORE (minutes)
+    cd hdl && make sweep             # pcfx and sidefx with one interrupt per run on CORE, after an interrupt-path change (hours)
     cd doc/intro && make test        # run the slides' example programs
     cd doc/intro && make pdf         # rebuild the slides (pdflatex, beamer)
     cd doc/intro && make pdfcheck    # check that nice_intro.pdf matches the .tex
@@ -112,6 +113,9 @@ Vivado 2025.1 is installed at `/opt/Xilinx/2025.1/Vivado/bin/vivado`, not on PAT
   needs `make -C hdl timing` before and after, with both figures in the commit
   message. `hdl/test/timing_budget.py` holds the budget; a miss warns and never
   fails (release/RELEASE.md, Timing).
+- A change to the interrupt path of a core (WRITE's interrupt entry, RTI,
+  or the request ports) needs `make -C hdl sweep CORE=...` on that core,
+  with one interrupt per run, which takes hours. No release runs it.
 - Behavior changes start in ISA.md; code follows the spec, never the reverse.
   Departures from the sources go in ISA.md Appendix B.
 - Every bug fix or new rule gets a test: an `errors.py` case, a line in

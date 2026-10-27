@@ -303,7 +303,7 @@ emulator's exactly.
 but for the pipelined core's `stats_o`, and the rest of the testbench
 serves them both. `make test` runs them on
 each core in `CORES`, both by default, and `make test CORES=pipeline` on
-one. `make random`, `make programs`, and `make sweep` run the core in
+one. `make random`, `make programs`, `make sweep`, and `make strides` run the core in
 `CORE`, and pass it on to `test/irq_sweep.py` and `test/programs.py` with
 their option `--core`. `make random-sweep` runs seeds 1 to `RANDOM_LAST`
 (1000) of `make random` on each core of `CORES` in turn. The PASS and FAIL lines name the core. The trace, the output,
@@ -465,8 +465,16 @@ runs make its two words memory, as the random programs do.
 `hazard.nasm` is swept, but without the delays. A run of the whole
 program for each of its 9500 steps and each kind of request makes some
 19000 runs. On 20 CPUs, that took 3.8 hours on the pipelined core and 2
-on the multi-cycle one on 2026-10-27, and both passed. `make slow` at the
-top runs it on `CORE`, the pipelined core by default.
+on the multi-cycle one on 2026-10-27, and both passed. Run it after a
+change to the interrupt path: WRITE's interrupt entry, RTI, or the
+request ports.
+
+`make strides` sweeps the same two programs on `CORE` with each stride of
+`SLOW_STRIDES`, 17, 31, and 64, in one pool of `SWEEP_JOBS` workers.
+`make test` sweeps them with stride 16; 17 and 31 shift the requests
+against those, and 64 leaves most of each run without one. That is 448
+runs, which took 5.7 minutes on the pipelined core on 20 CPUs. `make slow`
+at the top runs it, not `make sweep`.
 
 `make random` runs more random programs, with the seeds, step count, and
 stall rate given as variables:

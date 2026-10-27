@@ -106,7 +106,7 @@ If a figure in the documents changed, go back to step 2.4.
 
 ### Timing
 
-`release.py check` also runs `make -C hdl timing` (`BOARD=mega65`, about 10
+`release.py check` also runs `make -C hdl timing` (`BOARD=mega65`, about 3
 minutes) and compares the slacks with the budget in
 [hdl/test/timing_budget.py](../hdl/test/timing_budget.py): the core alone must
 meet the 10 ns clock, and the paths to and from the core's ports must leave

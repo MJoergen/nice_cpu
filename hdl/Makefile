@@ -455,7 +455,7 @@ random-sweep:
 
 # The programs of pcfx_prog.py and sidefx_prog.py swept with one request
 # per run, on CORE, one after the other, as each uses every CPU. It takes
-# five hours on the pipelined core and two on the multi-cycle one, on 20 CPUs.
+# four hours on the pipelined core and two on the multi-cycle one, on 20 CPUs.
 sweep: emulator analyze $(BUILD)/pcfx.bin $(BUILD)/sidefx.bin
 	$(call check_sweep,pcfx)
 	$(call check_sweep,sidefx)
@@ -539,7 +539,7 @@ emulator:
 # register-to-register paths to timing.rpt, the worst from an input to
 # timing_in.rpt, the worst to an output to timing_out.rpt, and the endpoints
 # with less than 1 ns of slack, by group, to timing_groups.rpt. The worst of
-# each is printed, and the groups. About 10 minutes with the default flow.
+# each is printed, and the groups. About 3 minutes with the default flow.
 # Last it compares the slacks with the budget of the board in
 # test/timing_budget.py, writes budget.json, and prints "MISSED" on a miss,
 # but still exits 0: a miss is to be seen, not to stop anything.

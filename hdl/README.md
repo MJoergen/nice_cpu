@@ -186,7 +186,7 @@ the register or port they start from and the one they end at, with the
 worst slack of each group.
 `timing_ack.rpt` has the 5 worst paths from `dbus_ack_i` alone, since `rst_i`
 can fill the 50 of `timing_in.rpt`.
-It takes about 10 minutes with the default flow, and `VIVADO` names the
+It takes about 3 minutes with the default flow, and `VIVADO` names the
 executable.
 
 At the end it judges the slacks against the budget of the board in
@@ -447,8 +447,9 @@ shares. With `--generator`, it measures another version of
 `make programs` runs the test programs of the runtime and of the
 translator, and 10 random modules of `translator/test/fuzz.py` in each of
 its four modes (`FUZZ_PROGRAMS`), on the core (MICROARCH.md §9, step 7). It is not part of
-`make test`, because it takes minutes: some 2 million steps in 490
-programs, at GHDL's 3300 steps a second, on all cores. CI runs it on
+`make test`, because it takes 25 minutes on the pipelined core and 51 on the
+multi-cycle one, on 20 CPUs: some 2 million steps in 490
+programs, at GHDL's 3300 steps a second. CI runs it on
 both, each in three shards (`SHARD=I/3`, the Ith of N shares of the programs,
 longest first), so that no job is far from the 6 hour limit. It does not run `runtime/libc/test/fuzz_printf.py`, which
 needs clang, or the benchmark, which `make core` in `bench/` runs. `make test KEEP=DIR`
@@ -463,8 +464,8 @@ runs make its two words memory, as the random programs do.
 `test/sidefx_prog.py` on the core in `CORE` with one request per run, as
 `hazard.nasm` is swept, but without the delays. A run of the whole
 program for each of its 9500 steps and each kind of request makes some
-19000 runs. On 20 CPUs, that took 5 hours on the pipelined core and 2
-on the multi-cycle one on 2026-10-21, and both passed. `make slow` at the
+19000 runs. On 20 CPUs, that took 3.8 hours on the pipelined core and 2
+on the multi-cycle one on 2026-10-27, and both passed. `make slow` at the
 top runs it on `CORE`, the pipelined core by default.
 
 `make random` runs more random programs, with the seeds, step count, and

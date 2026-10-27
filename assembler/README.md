@@ -47,6 +47,11 @@ spaces only, in columns: the label in column 0, the condition in column 8,
 the mnemonic in column 16, the operands in column 24, and the comment in
 column 40. A label of 8 or more characters stands on a line of its own.
 
+`nicefmt.py FILE...` reports the first line of each file that is not in this
+layout and exits with status 1. `nicefmt.py --write FILE...` rewrites the
+files, keeping every word and comment. A string that holds a `;` is kept
+whole.
+
 ## Details beyond ISA.md
 
 - Operands are separated by whitespace or by one comma. A comma anywhere

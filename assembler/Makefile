@@ -12,12 +12,20 @@ test:
 	done
 	@rm -f test/*.out
 	@$(PYTHON) test/errors.py
+	@$(PYTHON) test/fmt.py
+	@$(MAKE) --no-print-directory layout
+
+# Checks that every .nasm file of the repository is in the layout of
+# CLAUDE.md. crlf.nasm tests the line ends, so it is not.
+layout:
+	@cd .. && git ls-files '*.nasm' | grep -v crlf.nasm | xargs $(PYTHON) assembler/nicefmt.py
+	@echo "PASS layout"
 
 # Needs mypy (pip install mypy).
 typecheck:
-	$(PYTHON) -m mypy --strict niceasm.py test/errors.py
+	$(PYTHON) -m mypy --strict niceasm.py nicefmt.py test/errors.py test/fmt.py
 
 clean:
 	rm -f test/*.out
 
-.PHONY: test typecheck clean
+.PHONY: test layout typecheck clean

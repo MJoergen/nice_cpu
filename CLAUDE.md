@@ -28,6 +28,7 @@ translator, and two FPGA cores. See README.md.
   `doc/flow.tex` and `doc/interrupt.tex`, rendered to PNGs by `make diagrams`; edit the `.tex`
   and commit both. The timing values are read off a simulation by hand.
 - `assembler/niceasm.py`: Python 3, standard library only, `mypy --strict` clean.
+  `assembler/nicefmt.py` checks the column layout of `.nasm` files, or fixes it with `--write`.
 - `emulator/`: Zig 0.17.
 - `runtime/`: start-up code and runtime routines in NICE assembly (`runtime/ABI.md`).
   `runtime/libc/` is the C library for translated programs.
@@ -56,7 +57,7 @@ translator, and two FPGA cores. See README.md.
 
     make                             # help: the top-level targets, which run the ones below
     make test                        # every quick make test below, in parallel
-    cd assembler && make test        # .nasm -> .bin comparisons, then test/errors.py
+    cd assembler && make test        # .nasm -> .bin comparisons, test/errors.py and fmt.py, and the layout of every .nasm
     cd assembler && make typecheck   # mypy --strict
     cd emulator  && make test        # zig unit tests, example and probe programs, test/errors.py and link.py
     cd emulator  && make typecheck   # mypy --strict
@@ -121,7 +122,9 @@ Vivado 2025.1 is installed at `/opt/Xilinx/2025.1/Vivado/bin/vivado`, not on PAT
   generators) is laid out in columns, with spaces only and no tabs: the
   label in column 0, the condition in column 8, the mnemonic in column 16,
   the operands in column 24, and the comment in column 40. A label of 8 or
-  more characters goes on a line of its own.
+  more characters goes on a line of its own. `assembler/nicefmt.py --write`
+  fixes a file, and `make test` checks every `.nasm` file. Listings in
+  docs and strings in Python are not checked.
 - American spelling everywhere, in docs, comments, and identifiers
   ("behavior", "color", "analyze", "labeled", "gray").
 - Commit subjects: `niceasm: ...`, `niceemu: ...`, `runtime: ...`, `nicewasm: ...`, `nicecc: ...`, `nicehdl: ...`, `bench: ...`, `release: ...`, `intro: ...`, `ISA: ...`, `Review: ...`.

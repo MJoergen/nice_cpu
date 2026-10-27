@@ -3,8 +3,8 @@
 How the repository got to its present state, moved out of the other
 documents so that they describe only what is true now. The specification
 is [ISA.md](ISA.md). The reasoning behind each ISA decision and the reviews
-of the tools are in [review/](review/). The open items are in
-[../TODO.md](../TODO.md).
+of the tools are in [review/](review/). The open items are the
+[issues](https://github.com/MJoergen/nice_cpu/issues).
 
 ## The ISA for the pipelined core
 
@@ -383,6 +383,15 @@ Until 2026-10-24 (22eacce) the emulator stopped a program after
 100000000 steps unless `-n` gave another limit, with the line "Stopped
 at the step limit". There is no limit by default now: a program runs
 until it halts or is killed, and `-n` sets a limit when one is wanted.
+
+## TODO.md
+
+Until V1.0 (2026-10-27) [TODO.md](../TODO.md) was the single list of open
+items, ideas, and what was decided against
+([as at V1.0](https://github.com/MJoergen/nice_cpu/blob/V1.0/TODO.md)).
+Its open items became the issues #57 to #75, and its section "Decided
+against" became [review/decisions.md](review/decisions.md). The reviews
+before then name TODO.md for their open items.
 
 ## Release names
 

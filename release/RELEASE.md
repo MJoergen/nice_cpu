@@ -46,8 +46,9 @@ Run `python3 release/release.py preflight`. It checks items 1 and 3 and the
 tools. Item 2 is by hand.
 
 1. `git status` is clean, and the branch is `main`, up to date with `origin`.
-2. [TODO.md](../TODO.md) lists only what is open. Nothing in it blocks the
-   release, or the release notes say why it is acceptable.
+2. No open [issue](https://github.com/MJoergen/nice_cpu/issues) blocks the release, or the release notes
+   say why it is acceptable. The milestone of the release has no open
+   issue left: close it, or move what remains to the next milestone.
 3. The toolchain is the one in [README.md](../README.md): Zig 0.17.0, not the
    latest release or master. Check `zig version`.
 
@@ -176,12 +177,12 @@ from a clone with the submodule, or later, at your pace.
    the date, and the tag) to the file that the badge in
    [README.md](../README.md) reads. Until then the badge still shows the
    tag before. If the timing was missed, the badge shows it, and the cause
-   is an item in [TODO.md](../TODO.md) here.
+   is an [issue](https://github.com/MJoergen/nice_cpu/issues) here.
 4. Compare its timing with `make -C hdl timing` here (`BOARD=mega65`,
    `FLOW=default` or `timing`). A large difference means the budget in
    `timing_budget.py`, the figures in
-   [doc/MICROARCH.md](../doc/MICROARCH.md), or the open items in
-   [TODO.md](../TODO.md) are out of date.
+   [doc/MICROARCH.md](../doc/MICROARCH.md), or the open
+   [issues](https://github.com/MJoergen/nice_cpu/issues) are out of date.
 
 If NiceMonMEGA65 needs a change to follow an interface change, it is a
 commit there. A release here never waits for it.

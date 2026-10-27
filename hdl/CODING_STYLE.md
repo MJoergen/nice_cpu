@@ -74,7 +74,7 @@ All code is VHDL-2008, analyzed with plain `ghdl --std=08` (no `-frelaxed`).
 
 - Full sentences. Comment why, not what.
 - Use ` -- ` as a dash in prose.
-- Open items go in [TODO.md](../TODO.md), not in comments.
+- Open items go in the [issues](https://github.com/MJoergen/nice_cpu/issues), not in comments.
 
 ## Exceptions
 

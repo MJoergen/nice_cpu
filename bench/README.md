@@ -127,7 +127,7 @@ The ratio of the instruction counts, translated to hand-written:
 | `strings` | 5.0 | Every character is a byte load of seven instructions, where the hand-written strings have one character per word. |
 | total | 3.4 | |
 
-What remains is in TODO.md, under "Faster and smaller translated code".
+What remains is in issue [#73](https://github.com/MJoergen/nice_cpu/issues/73).
 A byte load of linear memory stays several instructions, since the
 memory is byte-addressed and packed four to a word (WASM.md).
 

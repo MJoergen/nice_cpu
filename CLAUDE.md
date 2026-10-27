@@ -6,8 +6,11 @@ translator, and two FPGA cores. See README.md.
 
 ## Layout
 
-- `TODO.md`: the single list of open items, undecided questions, and ideas.
-  Add new ones there, not in other files or code comments.
+- Open items, undecided questions, and ideas are GitHub issues, labeled
+  `bug`, `enhancement`, `documentation`, `question`, or `idea`, with the
+  milestone of the next release when planned. File new ones there, not in
+  files or code comments. `TODO.md` only points there.
+  `doc/review/decisions.md` lists what was decided against.
 - `RELEASE_NOTES.md`: the user-visible changes of each release tag
   (`Vmajor.minor`, the `RC*` tags before `V1.0`), newest first, by component. Add a section for every new tag when it is created.
 - `doc/ISA.md`: the specification. It is authoritative for all code here.

@@ -996,7 +996,7 @@ issues nothing (`hdl/formal/formal_pipe_write.vhd`), PREPARE puts a read
 on the bus only while WRITE runs, and `halted_o` waits until no bus cycle
 is open. The same goes for a paused core, and WRITE reports a step after
 a pause before it pauses again (§6.1). A proof of the whole core for every cycle is still
-open (TODO.md).
+open ([#59](https://github.com/MJoergen/nice_cpu/issues/59)).
 
 ## 10. Repository and boards
 

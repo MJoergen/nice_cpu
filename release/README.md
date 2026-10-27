@@ -2,7 +2,7 @@
 
 `release.py` scripts the mechanical parts of [RELEASE.md](RELEASE.md).
 Python 3, standard library only, `mypy --strict` clean. The judgment calls
-stay with you: whether the open items of [TODO.md](../TODO.md) block a
+stay with you: whether the open [issues](https://github.com/MJoergen/nice_cpu/issues) block a
 release, whether the documents still tell the truth, and the NiceMonMEGA65 step,
 which follows the tag and gates nothing.
 

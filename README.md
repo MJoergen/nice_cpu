@@ -49,7 +49,7 @@ follows a tag.
 | [bench/](bench/README.md) | A benchmark of translated code: six kernels with known results, timed with the performance counters, and the same benchmark written by hand. |
 | [hdl/](hdl/README.md) | The FPGA implementation in VHDL: a multi-cycle core and a pipelined core, the memory model and trace writer they are tested with, and the formal checks. |
 | [release/](release/README.md) | `release.py`, which scripts the mechanical parts of [RELEASE.md](release/RELEASE.md). |
-| [TODO.md](TODO.md) | The single list of open items, undecided questions, and ideas for later. |
+| [TODO.md](TODO.md) | Where the open items are: the [issues](https://github.com/MJoergen/nice_cpu/issues), and [doc/review/decisions.md](doc/review/decisions.md) for what was decided against. |
 | [RELEASE_NOTES.md](RELEASE_NOTES.md) | The changes in each release candidate, newest first. |
 
 ## Quick start
@@ -165,7 +165,7 @@ source file, and writes the `.bin` file:
   programs. No test runs on an FPGA board.
 
 **Compilers.** No compiler targets NICE directly
-[yet](TODO.md#toolchain). ABI.md defines the C ABI for one, with a
+[yet](https://github.com/MJoergen/nice_cpu/issues/66). ABI.md defines the C ABI for one, with a
 one-word `char` and `CHAR_BIT` = 32. Until there is one, compiled code
 reaches NICE through WebAssembly: clang (with `wasm-ld`), Zig, and Rust
 all have a wasm32 target, and `nicewasm` translates the compiler's

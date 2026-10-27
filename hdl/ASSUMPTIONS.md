@@ -4,8 +4,8 @@ The pipelined core, `src/pipeline.vhd`, follows
 [doc/MICROARCH.md](../doc/MICROARCH.md). Where the note left a question
 open, or where the core first did something else, this file says what the
 core does and why. MICROARCH.md has since taken up items 1, 9, 10, 15, and 17 to 22. ISA.md is not changed. Items that need a
-change outside `hdl/` are marked **Outside hdl/**, and are also in
-[TODO.md](../TODO.md).
+change outside `hdl/` are marked **Outside hdl/**, and are also
+[issues](https://github.com/MJoergen/nice_cpu/issues).
 
 ## Structure
 

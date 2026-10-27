@@ -52,6 +52,13 @@ layout and exits with status 1. `nicefmt.py --write FILE...` rewrites the
 files, keeping every word and comment. A string that holds a `;` is kept
 whole.
 
+## Editor support
+
+`nice.vim` is a Vim syntax file for `.nasm` files. Copy it to
+`~/.vim/syntax/nice.vim` and add `autocmd BufRead,BufNewFile *.nasm set
+filetype=nice` to `~/.vimrc`, because Vim takes `*.nasm` for another
+assembler.
+
 ## Details beyond ISA.md
 
 - Operands are separated by whitespace or by one comma. A comma anywhere

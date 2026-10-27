@@ -111,18 +111,22 @@ that passes on one and fails on the other is worth a look.
 
 ## 5. Slow checks
 
-These need GHDL and take hours. Run them with each core:
+These need GHDL, and take about half an hour on the pipelined core and an
+hour on the multi-cycle one. Run them with each core:
 
     make slow                 # CORE=pipeline, the default
     make slow CORE=multicycle
 
-That is `hdl make programs` (the runtime and translator programs), `bench
-make core` (the benchmark on the core), `bench make core-dhry` (Dhrystone on
-the core), and `hdl make strides` (the interrupt sweeps with strides 17,
+That is `bench make core` (the benchmark on the core), `bench make
+core-dhry` (Dhrystone on the core), and `hdl make strides` (the interrupt sweeps with strides 17,
 31, and 64). Every line must say `PASS`, and both cores must agree with
 `niceemu`. `hdl make sweep`, with one interrupt per run, takes hours and is
 not part of the release; it is run after a change to the interrupt path
 (CLAUDE.md, Conventions).
+
+`hdl make programs`, the runtime and translator programs on the core, is
+not part of `make slow`: CI runs it on both cores, in three shards each,
+and step 6 needs those jobs to pass.
 
 Then refresh the estimate against the core:
 

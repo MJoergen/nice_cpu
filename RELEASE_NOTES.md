@@ -26,6 +26,98 @@ pins each is:
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
 
+## V1.1 (2026-10-28)
+
+A disassembler, `errno` in the C library, and debug link version 5, in
+which a clear ends the halt. The long simulations run in nvc, so
+`make slow` takes 4 minutes instead of about 8 hours at V1.0.
+
+**Upgrade notes.**
+
+- The debug link is now version 5: when a clear starts, bit 1 of the
+  control register, the halt reason, and the stop register read 0
+  (#79). `debug_link.vhd` and `niceemu --link` both do this. Its ports
+  do not change, and a host of versions 1 to 4 works with it. This is a
+  new minor of major 0 (DEBUG.md §9).
+- No other interface change: the ports of both cores, `wb_dmux`, the
+  devices, and the address map of SYSTEM.md are as in V1.0. A system
+  built for V1.0 needs no change in its VHDL.
+- `make slow` and `release.py check` need nvc, tested with 1.20 here
+  and 1.23 in CI. `make slow SIM=ghdl` runs them in GHDL instead.
+- Zig 0.17.0, as in V1.0.
+
+**Specification and documents**
+
+- DEBUG.md §9 sets the rules for versions (#81). The version byte is a
+  major in bits 7–4 and a minor in bits 3–0. A new minor keeps every
+  host of an older minor of its major working. The table of versions
+  moves to §9.
+- WASM.md, "Traps", installs a trap handler in NICE assembly, not in C
+  code that does not build (#75).
+- The seventh review, `doc/review/seventh-repository-review.md`, of the
+  changes since V1.0. Its fixes are in the sections below.
+- Open items, undecided questions, and ideas are GitHub issues.
+  `TODO.md` only points there, and `doc/review/decisions.md` lists what
+  was decided against.
+
+**Emulator (`niceemu`)**
+
+- With `--link`, a pause ends a console read that waits for input
+  (#56). The processor pauses before the read, with nothing taken, and
+  a go on runs it again. A step at such a read pauses again at once. An
+  instruction that reads the console twice gets back the byte its first
+  read took.
+- `--link` serves debug link version 5.
+
+**Assembler (`niceasm`)**
+
+- `nicedis.py` disassembles a `.bin` file into `.nasm` in the layout of
+  `nicefmt.py`, which `niceasm` assembles back to the same words (#80).
+  With `--symbols` it uses the labels of a symbol file, read as
+  `niceemu --symbols` reads it. `--start` and `--end` are decimal, or
+  hex with `0x`.
+
+**Runtime and C library**
+
+- `errno.h`, with `EINVAL`, `EDOM`, `ERANGE`, and `EILSEQ` (#82).
+  `strtol` and `strtoul`, and so `atoi` and `atol`, set `errno` to
+  `ERANGE` on an overflow.
+- `strtol` and `strtoul` convert nothing for a base other than 0 and 2
+  to 36, and set `errno` to `EINVAL`. Before, a base above 36 read past
+  the end of the string.
+
+**FPGA cores**
+
+- `debug_link.vhd` follows version 5. No other change to `hdl/src` but
+  in `G_FORMAL` and comments.
+- `make timing` has its own budgets for the inputs and the outputs of
+  the core: 1.5 and 2.2 ns, from what NiceMonMEGA65 measured in its
+  system at V1.0 (#57).
+- `SIM=nvc` runs the core simulations in nvc, with the same traces as
+  GHDL (#77). `make test` stays in GHDL, which is faster on short runs.
+- `make strides` sweeps the interrupt programs with strides 17, 31, and
+  64 in minutes. `make sweep`, one interrupt per run, takes hours and is
+  run only after a change to the interrupt path.
+- `make formal` proves every assumption of a stage proof of the stage
+  it names. CI runs it with the OSS CAD Suite, and the bounded check of
+  the whole pipelined core covers 12 cycles, not 8.
+
+**Benchmarks**
+
+- The cycle counts do not change: 2356816 estimated cycles in the phases
+  of the translated benchmark on the pipelined core, as at V1.0.
+
+**Release**
+
+- `make slow` runs both cores at once, in nvc, and leaves `hdl make
+  programs` to CI (#76). It took 4 minutes on 20 CPUs.
+- CI runs the programs in nvc, one job per core, on Node 24 actions and
+  Ubuntu 24.04. It checks the digest of the OSS CAD Suite it downloads.
+- The checklist names the debug link's version among the interface
+  changes, and its row in DEBUG.md §9 among the documents.
+- A release here that misses timing on the MEGA65 gets no release of
+  NiceMonMEGA65.
+
 ## V1.0 (2026-10-27)
 
 The first release that is not a candidate. The cores, the debug link, and

@@ -327,8 +327,8 @@ version 2 writes it as 0.
     step takes. A program cannot tell that it was stepped, but by the wall
     clock, and by a snapshot that a host's read replaced (§3).
   - The console works as while the program runs: its output comes before
-    the notice, and a console read that waits for input waits inside the
-    step.
+    the notice. In the emulator, a step at a console read that would wait
+    for input does not run (§7).
   - A hold during the step acts as a hold of a running program: R0–R15
     are not defined after it.
   - A step has a side effect, so a host does not resend it blindly (§3).
@@ -435,10 +435,19 @@ command line, with these differences:
 - It serves the link while a program runs and while a console read waits,
   often enough to answer within the 100 ms of §5. Its README says how often.
 - A pause takes effect between two steps, at once, and the emulator sends
-  `p`. The exception is a console read that waits for input (SYSTEM.md §1):
-  the processor is inside a step then, and pauses after the next byte
-  arrives or the input ends. A host can send a console byte, or hold. The
-  same holds for a console read inside a step of §6.
+  `p`, or `x` at a breakpoint. That includes a console read that waits for
+  input (SYSTEM.md §1): a pause request undoes the step of the read. The
+  processor pauses before it, with R15 the address of the read, and no
+  byte taken. The counters and the timer are as they were before the step.
+  A go on runs the read again.
+- A step of §6 at a console read that would wait does not run either:
+  the processor pauses again, with R15 unchanged, and sends `p`, or `x` at
+  a breakpoint. With a byte in the input buffer, or after the end of the
+  input, the read does not wait, and the step runs. So a host sends a byte
+  and steps again.
+- A board's console read does not wait (SYSTEM.md §1). A program that
+  polls the console runs its loop there, and its breakpoints in the loop
+  stop it. In the emulator the program sits at the read, so they do not.
 - It has four breakpoints. It checks them at each step boundary, in the
   order of §6, and a write to their registers takes effect at the next
   boundary.

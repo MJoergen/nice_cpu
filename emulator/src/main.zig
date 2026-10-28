@@ -592,11 +592,16 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
                 link.pause();
                 break;
             }
+            const saved = cpu.save();
             try cpu.step();
             link.step_due = false;
             link.after_go = false;
             if (cpu.stopped) {
                 cpu.stopped = false;
+                if (link.undo) {
+                    link.undo = false;
+                    cpu.putBack(saved);
+                }
                 break;
             }
             steps += 1;

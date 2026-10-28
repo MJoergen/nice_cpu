@@ -460,3 +460,12 @@ at a start. A host that loaded a program after a halt, with a write of
 `0x5` or `0xD`, then read "halted" and the old program's reason, although
 the old program was gone (#79). Version 5 ends them when a clear starts,
 and keeps the `h` of a halt that has not gone out yet (DEBUG.md §6).
+
+## A pause while a console read waits
+
+Until 2026-10-28, a pause request in the emulator took effect only after
+a console read that waited for input had its byte, or the input ended. A
+step at such a read waited inside the step too. So a host could not
+pause a program that waited at its input, while the board, whose read
+does not wait, paused at once (#56). Now a pause request undoes the step
+of the read, and the processor pauses before it (DEBUG.md §7).

@@ -124,6 +124,7 @@ def answer(addr: int, words: List[int]) -> bytes:
 CONTROL = 0xFFFFFFF0
 HELLO = b"\xffb05#C7"
 PAUSED = b"\xffp#70"
+CYCLE_LO = 0xFFFFFF40
 
 
 def assemble(tmp: str, name: str, text: str) -> List[int]:
@@ -489,25 +490,40 @@ def test_pause(count: List[int], echo: List[int]) -> None:
     e.expect("hold", ok(CONTROL, 1))
     e.stop()
 
-    # The console read that waits is inside a step: a request waits for a
-    # byte. A paused processor keeps what it is sent.
+    # A pause while a console read waits undoes the step of the read: the
+    # processor pauses before it, with R15 at the read, no byte taken, and
+    # the counters as they were. A paused processor keeps what it is sent.
     e = Emu()
     e.take(len(HELLO))
     e.send(write(0, echo) + write(CONTROL, [0x8]))
     e.expect("echo loaded", ok(0, len(echo)) + ok(CONTROL, 1))
+    time.sleep(0.2)
     e.send(write(CONTROL, [0x18]))
-    e.expect("echo request", ok(CONTROL, 1))
-    expect("no p while the read waits", e.take(1, timeout=0.5), b"")
-    # The pause comes after the instruction that read the byte, and before
-    # the one that echoes it.
-    e.send(b"a")
-    e.expect("p after the byte", PAUSED)
-    e.send(b"bc")
-    expect("no echo while paused", e.take(1, timeout=0.5), b"")
-    expect("free space with two waiting", bytes([word(e, 0xFFFFFFF3) == 2046]), b"\x01")
+    e.expect("p while the read waits", ok(CONTROL, 1) + PAUSED)
+    expect("R15 at the read", bytes([word(e, 0xFFFFFFEF)]), b"\x00")
+    expect("no byte in R1", bytes([word(e, 0xFFFFFFE1)]), b"\x00")
+    expect("no step counted", bytes([word(e, CYCLE_LO)]), b"\x00")
+    # A go on runs the read again, and it waits again.
     e.send(write(CONTROL, [0x8]))
     e.expect("echo go on", ok(CONTROL, 1))
+    time.sleep(0.2)
+    e.send(write(CONTROL, [0x18]))
+    e.expect("second p", ok(CONTROL, 1) + PAUSED)
+    expect("still no step", bytes([word(e, CYCLE_LO)]), b"\x00")
+    e.send(b"abc")
+    expect("no echo while paused", e.take(1, timeout=0.5), b"")
+    expect("free space with three waiting", bytes([word(e, 0xFFFFFFF3) == 2045]), b"\x01")
+    e.send(write(CONTROL, [0x8]))
+    e.expect("echo go on with bytes", ok(CONTROL, 1))
     e.expect("echo abc", b"abc")
+    # Three passes of six steps: the read, AND, the HALT not taken, the
+    # echo, ADD, and the jump back. Then the read waits at 0.
+    time.sleep(0.2)
+    e.send(write(CONTROL, [0x18]))
+    e.expect("p after abc", ok(CONTROL, 1) + PAUSED)
+    expect("R15 at the read again", bytes([word(e, 0xFFFFFFEF)]), b"\x00")
+    expect("R2 counts three", bytes([word(e, 0xFFFFFFE2)]), b"\x03")
+    expect("18 steps", bytes([word(e, CYCLE_LO)]), b"\x12")
     e.send(write(CONTROL, [0x9]))
     e.expect("echo hold", ok(CONTROL, 1))
     e.stop()
@@ -548,7 +564,8 @@ def regs_after_steps(irq: str, steps: int, opts: List[str]) -> List[Tuple[int, i
 
 def test_step(count: List[int], one: List[int], stop: List[int], echo: List[int], irq: List[int], irq_bin: str) -> None:
     """The single step of §6: bit 5, the `p` or `h` after it, the cases where
-    it does nothing, the step that waits for a byte, and the interrupt entry."""
+    it does nothing, the step at a console read that would wait, and the
+    interrupt entry."""
     # The example of §8, with its checksums written out.
     e = Emu()
     e.expect("hello", HELLO, timeout=5)
@@ -621,30 +638,32 @@ def test_step(count: List[int], one: List[int], stop: List[int], echo: List[int]
     e.expect("second step", ok(CONTROL, 1) + b"\xffh05#CD")
     e.stop()
 
-    # A step at a console read waits for a byte, and the link reaches only the
-    # debug registers until it ends. A hold ends the wait.
+    # A step at a console read that would wait does not run: the processor
+    # pauses again at once, with R15 at the read. With a byte in the input
+    # buffer, the step runs.
     e = Emu()
     e.take(len(HELLO))
     e.send(write(0, echo) + write(CONTROL, [0x18]))
     e.expect("echo loaded", ok(0, len(echo)) + ok(CONTROL, 1) + PAUSED)
     e.send(write(CONTROL, [0x38]))
-    e.expect("echo step", ok(CONTROL, 1))
-    expect("no p while the read waits", e.take(1, timeout=0.3), b"")
-    expect("bit 4 reads 0", bytes([word(e, CONTROL)]), bytes([0x8]))
-    e.send(read(0, 1))
-    e.expect("e02 in the step", pkt("e", "5202"))
-    e.send(b"a")
-    e.expect("p after the byte", PAUSED)
+    e.expect("echo step", ok(CONTROL, 1) + PAUSED)
+    expect("R15 at the read", bytes([word(e, 0xFFFFFFEF)]), b"\x00")
+    expect("no step counted", bytes([word(e, CYCLE_LO)]), b"\x00")
+    e.send(b"a" + write(CONTROL, [0x38]))
+    e.expect("step with a byte", ok(CONTROL, 1) + PAUSED)
     expect("R1 holds the byte", bytes([word(e, 0xFFFFFFE1) & 0xFF]), b"a")
     # AND, the HALT that is not taken, the echo, ADD, and the jump back.
     for n in range(5):
         e.send(write(CONTROL, [0x38]))
         e.expect(f"echo step {n}", ok(CONTROL, 1) + (b"a" if n == 2 else b"") + PAUSED)
+    # At the read again, with a breakpoint there: the step that does not run
+    # ends in x.
+    set_breaks(e, [0], 1)
     e.send(write(CONTROL, [0x38]))
-    e.expect("read step", ok(CONTROL, 1))
+    e.expect("read step at a breakpoint", ok(CONTROL, 1) + hit(0))
+    expect("six steps", bytes([word(e, CYCLE_LO)]), b"\x06")
     e.send(write(CONTROL, [0x9]))
-    e.expect("hold in the step", ok(CONTROL, 1))
-    expect("held, no p", e.take(1, timeout=0.3), b"")
+    e.expect("hold", ok(CONTROL, 1))
     expect("held control", bytes([word(e, CONTROL)]), bytes([0x9]))
     e.stop()
 

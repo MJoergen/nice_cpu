@@ -236,10 +236,12 @@ stdout stays empty. It runs until a signal, and then exits with status 0.
 
 It serves the link every 4096 steps while a program runs, and at least
 every 100 ms while the processor is held, halted, or paused, or a console
-read waits. A pause takes effect between two steps, except while a console
-read waits, when it takes effect after the next byte (DEBUG.md §7). A step
-of a paused processor (bit 5, DEBUG.md §6) runs one step of `--max-steps`
-and `--trace`, an instruction or an interrupt entry, and then pauses again.
+read waits. A pause takes effect between two steps. A pause while a
+console read waits undoes the step of the read, and pauses before it
+(DEBUG.md §7). A step of a paused processor (bit 5, DEBUG.md §6) runs one
+step of `--max-steps` and `--trace`, an instruction or an interrupt entry,
+and then pauses again. A step at a console read that would wait does not
+run, and pauses again at once.
 It has four breakpoints (DEBUG.md §6). Before each step, after the
 `--irq` and `--nmi` requests of that step are raised, it stops at a
 breakpoint at R15, unless the step is an interrupt entry or the first after

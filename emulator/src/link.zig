@@ -71,6 +71,9 @@ pub const Link = struct {
     started: bool = false,
     /// Set by a hold or a start, so that a waiting console read gives up.
     interrupted: bool = false,
+    /// Set when a pause request ends a waiting console read: the run loop
+    /// puts the processor back as it was before the step (DEBUG.md §7).
+    undo: bool = false,
     /// Called while a console read waits, to end the emulator on a signal.
     on_wait: *const fn () void,
 
@@ -482,15 +485,20 @@ pub const Link = struct {
     }
 
     /// The next input byte of the program. While none is there, the link is
-    /// served. A hold or a start ends the wait, and so does the end of the
-    /// input. Then the read returns the end of the input, and the step
-    /// stops.
+    /// served. The end of the input ends the wait, and the read returns
+    /// it. A hold or a start ends the wait and stops the step, and a pause
+    /// request, also that of a step, undoes the step (DEBUG.md §7).
     fn streamInput(r: *std.Io.Reader, w: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize {
         const self: *Link = @fieldParentPtr("reader", r);
         if (limit == .nothing) return 0;
         self.interrupted = false;
         while (self.input_len == 0) {
             if (self.input_end) return error.EndOfStream;
+            if (self.pause_req) {
+                self.cpu.stopped = true;
+                self.undo = true;
+                return error.EndOfStream;
+            }
             self.console_w.flush() catch {};
             self.on_wait();
             self.service(timeout_ms) catch return error.ReadFailed;

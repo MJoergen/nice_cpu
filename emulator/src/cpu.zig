@@ -357,9 +357,10 @@ pub const Cpu = struct {
     /// A test then raises them with `--irq` at the steps where an FPGA core
     /// took them, as it does for the requests it raises itself.
     timer_irq: bool,
-    /// Set by the debug link when a hold or a start ends a console read
-    /// that waits (DEBUG.md §6). The rest of the step then writes no
-    /// memory and no trace line. The run loop clears it after the step.
+    /// Set by the debug link when a hold, a start, or a pause request ends
+    /// a console read that waits (DEBUG.md §6, §7). The rest of the step
+    /// then writes no memory and no trace line. The run loop clears it
+    /// after the step.
     stopped: bool,
 
     /// A processor after reset (§8.1), with empty memory allocated from `gpa`.
@@ -551,6 +552,52 @@ pub const Cpu = struct {
         if (self.stopped) return;
         self.perf.instrs +%= 1;
         if (self.trace) |w| try self.traceInstruction(w, pc, ex.iw, ex.executed, before);
+    }
+
+    /// What a step may change before a console read that waits, with the
+    /// counters and the timer, which it changes at its end. The debug link
+    /// saves it before each step, and puts it back when a pause request
+    /// undoes the step (DEBUG.md §7). A step writes no memory and no device
+    /// before its reads.
+    pub const Saved = struct {
+        regs: [16]u32,
+        in_service: bool,
+        after_rti: bool,
+        saved_pc: u32,
+        saved_sr: u32,
+        nmi_pending: ?u8,
+        irq_pending: ?u8,
+        read_count: u32,
+        perf: Perf,
+        timer: Timer,
+    };
+
+    pub fn save(self: *const Cpu) Saved {
+        return .{
+            .regs = self.regs,
+            .in_service = self.in_service,
+            .after_rti = self.after_rti,
+            .saved_pc = self.saved_pc,
+            .saved_sr = self.saved_sr,
+            .nmi_pending = self.nmi_pending,
+            .irq_pending = self.irq_pending,
+            .read_count = self.read_count,
+            .perf = self.perf,
+            .timer = self.timer,
+        };
+    }
+
+    pub fn putBack(self: *Cpu, s: Saved) void {
+        self.regs = s.regs;
+        self.in_service = s.in_service;
+        self.after_rti = s.after_rti;
+        self.saved_pc = s.saved_pc;
+        self.saved_sr = s.saved_sr;
+        self.nmi_pending = s.nmi_pending;
+        self.irq_pending = s.irq_pending;
+        self.read_count = s.read_count;
+        self.perf = s.perf;
+        self.timer = s.timer;
     }
 
     /// Whether the next step is an interrupt entry (§7.1), as `step`

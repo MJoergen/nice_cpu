@@ -85,6 +85,8 @@ assembler/README.md:67 says so; `address()` calls `int(text, 0)`, so `--start 01
 
 `listing()` finds the next label with `next((s for s in starts if s > addr), end)` for every instruction, a scan of the sorted list. 60000 words with 8000 symbols took 6.0 s. **Fix:** `bisect.bisect_right(starts, addr)`.
 
+**Resolved**: by `bisect.bisect_right`. The same 60000 words with 8000 symbols take 0.6 s.
+
 ### 4.4 Smaller
 
 - `assembler/test/dis.py` finds the binaries with `git ls-files "*.bin"`, so it raises `CalledProcessError` outside a checkout and covers the 47 tracked files, not the build outputs. The reader ran the 112 on disk too; see below.

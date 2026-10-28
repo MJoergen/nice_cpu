@@ -16,6 +16,7 @@ never spans a label of the symbols file.
 from __future__ import annotations
 
 import argparse
+import bisect
 import re
 import sys
 from typing import Callable, Dict, List, Mapping, NamedTuple, Optional, Set, Tuple
@@ -245,8 +246,8 @@ def listing(words: Mapping[int, int], symbols: List[Tuple[int, str]],
             body += nicefmt.format_line(n)
         label = good_here[-1] if good_here else ""
 
-        k = next((s for s in starts if s > addr), end)  # the next label ends the instruction
-        limit = min(k, end)
+        k = bisect.bisect_right(starts, addr)  # the next label ends the instruction
+        limit = min(starts[k], end) if k < len(starts) else end
         insn = decode(addr, lambda a: words.get(a) if a < limit else None)
         notes.clear()
         if insn.dat():

@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <ctype.h>
+#include <errno.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,6 +8,8 @@
 int abs(int x) { return x < 0 ? -x : x; }
 long labs(long x) { return x < 0 ? -x : x; }
 long long llabs(long long x) { return x < 0 ? -x : x; }
+
+int errno;
 
 static unsigned rand_state = 1;
 
@@ -41,7 +44,8 @@ static unsigned digit(int c)
 
 // Reads an unsigned number, as strtoul does, and sets *neg if it had a
 // minus sign. The result saturates at ULONG_MAX, and *over says that it
-// did. If no digits are read, *end is s.
+// did. If no digits are read, *end is s. The callers set errno to ERANGE
+// on an overflow, and leave it alone otherwise.
 static unsigned long parse(const char *s, char **end, int base, int *neg, int *over)
 {
     const char *p = s;
@@ -77,6 +81,8 @@ unsigned long strtoul(const char *s, char **end, int base)
 {
     int neg, over;
     unsigned long v = parse(s, end, base, &neg, &over);
+    if (over)
+        errno = ERANGE;
     return neg && !over ? 0UL - v : v;
 }
 
@@ -84,9 +90,11 @@ long strtol(const char *s, char **end, int base)
 {
     int neg, over;
     unsigned long v = parse(s, end, base, &neg, &over);
-    if (neg)
-        return v > (unsigned long)LONG_MAX + 1 ? LONG_MIN : (long)(0UL - v);
-    return v > LONG_MAX ? LONG_MAX : (long)v;
+    if (neg ? v > (unsigned long)LONG_MAX + 1 : v > LONG_MAX) {
+        errno = ERANGE;
+        return neg ? LONG_MIN : LONG_MAX;
+    }
+    return neg ? (long)(0UL - v) : (long)v;
 }
 
 long atol(const char *s) { return strtol(s, NULL, 10); }

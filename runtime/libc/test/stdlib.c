@@ -1,4 +1,5 @@
 // stdlib.h: integers, number parsing, and the allocator. main returns 0.
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +16,7 @@ static void three(void)
 
 int main(void)
 {
+    printf("%d %d %d\n", errno, ERANGE, EDOM);   // errno is 0 at start
     printf("%d %ld %lld\n", abs(-5), labs(-6L), llabs(-7LL));
     printf("%d %d\n", atoi("  -123abc"), atoi("x"));
     char *end;
@@ -25,6 +27,34 @@ int main(void)
     printf("%lu\n", strtoul("-1", NULL, 10));
     v = strtol("abc", &end, 10);
     printf("%ld %d\n", v, *end == 'a');
+
+    // An overflow sets errno to ERANGE, and a call without one leaves it
+    // alone.
+    errno = 0;
+    v = strtol("2147483647", NULL, 10);
+    printf("%ld %d\n", v, errno);
+    v = strtol("-2147483648", NULL, 10);
+    printf("%ld %d\n", v, errno);
+    v = strtol("2147483648", NULL, 10);
+    printf("%ld %d\n", v, errno);
+    v = strtol("7", NULL, 10);
+    printf("%ld %d\n", v, errno);
+    errno = 0;
+    v = strtol("-2147483649", NULL, 10);
+    printf("%ld %d\n", v, errno);
+    errno = 0;
+    unsigned long u = strtoul("4294967295", NULL, 10);
+    printf("%lu %d\n", u, errno);
+    u = strtoul("-4294967295", NULL, 10);
+    printf("%lu %d\n", u, errno);
+    u = strtoul("4294967296", NULL, 10);
+    printf("%lu %d\n", u, errno);
+    errno = 0;
+    u = strtoul("-4294967296", NULL, 0);
+    printf("%lu %d\n", u, errno);
+    errno = 0;
+    u = strtoul("0x100000000", NULL, 0);
+    printf("%lu %d\n", u, errno);
 
     // The generator starts as after srand(1), and srand restarts it.
     three();

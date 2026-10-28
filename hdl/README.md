@@ -191,8 +191,9 @@ executable.
 
 At the end it judges the slacks against the budget of the board in
 [test/timing_budget.py](test/timing_budget.py), at a 10 ns clock: the core
-alone must meet the clock, and the ports must leave the system 1.5 ns
-(`mega65` only). It prints the result, writes `budget.json` beside the
+alone must meet the clock, and the inputs and the outputs must leave the
+system 1.5 and 2.2 ns (`mega65` only). The two come from the slack of the
+ports inside NiceMonMEGA65 at `V1.0`, and keep about 0.2 ns of it. It prints the result, writes `budget.json` beside the
 reports, and says `MISSED` on a miss, but exits 0. `release.py check` puts
 the result in its stamp, and no release waits for it.
 

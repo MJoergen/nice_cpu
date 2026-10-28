@@ -4,6 +4,10 @@ Ideas that were weighed and dropped, with the reason, so that they are not
 proposed again. The open items are the
 [issues](https://github.com/MJoergen/nice_cpu/issues) of the repository.
 
+- **A timing budget for the Nexys4DDR** (#57). The core alone misses 90
+  MHz there by about 0.3 ns out of context (hdl/README.md), so only the
+  in-system result counts. Add a guard only if a change meets the MEGA65
+  budget and costs the Nexys4DDR its 90 MHz.
 - **One block per notice in `TX_IDLE_ST`** of `debug_link.vhd` (item 6 of
   #53, §2.1). Folding the five blocks into one that sends the chosen kind
   touches the `i_out_*` proofs, and gains a few lines.

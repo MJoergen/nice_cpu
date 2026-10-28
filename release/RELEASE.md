@@ -147,13 +147,15 @@ If a figure in the documents changed, go back to step 2.4.
 `release.py check` also runs `make -C hdl timing` (`BOARD=mega65`, about 3
 minutes) and compares the slacks with the budget in
 [hdl/test/timing_budget.py](../hdl/test/timing_budget.py): the core alone must
-meet the 10 ns clock, and the paths to and from the core's ports must leave
-the system around it 1.5 ns. This is **not a gate**. A miss prints a warning
-and goes into the stamp, and `tag` shows it. If it missed, say so in the
-release notes, with the cause, or the commit to blame. The out-of-context
-figures are a proxy: the memory logic of a real system takes some of the
-time left, so the budget for the ports is a margin, not a promise. Skip the
-run with `--skip-timing`.
+meet the 10 ns clock, and the paths from the core's inputs and to its
+outputs must leave the system around it 1.5 and 2.2 ns. This is **not a
+gate**. A miss prints a warning and goes into the stamp, and `tag` shows
+it. If it missed, say so in the release notes, with the cause, or the
+commit to blame. The out-of-context figures are a proxy: the memory and
+the devices of a real system take some of the time left, so the budget
+for the ports is a margin, not a promise. The two figures keep about 0.2
+ns of the slack that NiceMonMEGA65 measured inside its system at `V1.0`.
+Skip the run with `--skip-timing`.
 
 A change to `hdl/src` that touches the paths of the groups in
 `timing_groups.rpt` needs a `make timing` before and after it, with both

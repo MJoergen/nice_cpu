@@ -136,6 +136,8 @@ The top-level `make slow` builds the emulator, analyzes the VHDL for `SIM`, asse
 - hdl/README.md:148 says `make test` took 15 minutes in nvc and 5 in GHDL; the sentence is right, and worth keeping, as the number surprises.
 - HISTORY.md has entries for the proofs, CI's formal tools, TODO.md, the clear, and the pause, but none for what `make slow` used to be (the programs and `make sweep` in GHDL, one core at a time) or for GHDL as the only simulator. **Fix:** one entry.
 
+**Resolved**: README.md's table says "each release". HISTORY.md has an entry for `make slow`, which also says GHDL was the only simulator. The two times of `make core CORE=multicycle` are left as they are until the next measurement; the other two items need no change.
+
 ## What is correct
 
 - `make test`, `make slow` on both cores, the nine formal tasks, lint, every typecheck, `make wasmcheck`, and `make -C doc test` pass at bebbdc0, and the tree is clean after them. The CI pins exist.

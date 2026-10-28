@@ -452,6 +452,16 @@ against `-fno-llvm`, because Zig 0.15's own wasm backend encoded the
 initial value of `__stack_pointer` wrongly. With 0.17, `runtime/test/nicezig.zig`
 built with `-fno-llvm` prints the same as with LLVM.
 
+## `make slow`
+
+Until 2026-10-27 (#76) `make slow` ran on one core, CORE, at a time, in
+GHDL, the only simulator then: the runtime and translator programs, the
+benchmark, Dhrystone, and `make sweep`, one after the other: 4.7 hours on
+the pipelined core and 3.3 on the multi-cycle one at `V1.0`. Now it runs the benchmark, Dhrystone, and the stride
+sweeps of `make strides` on both cores at once, in nvc (#77), and leaves
+the programs to CI. `make sweep` is run only after a change to the
+interrupt path.
+
 ## A clear and the halt state
 
 Until 2026-10-28, debug link version 4, a clear kept bit 1 of the

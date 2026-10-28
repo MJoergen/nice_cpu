@@ -619,4 +619,4 @@ system of version 5. The versions:
 | 2 | The pause: bit 4 of the control register, and the notice `p`. | | Never tagged. |
 | 3 | The single step: bit 5 of the control register. | | RC05 |
 | 4 | The breakpoints: the notice `x`, and the registers `0xFFFFFFF4` to `0xFFFFFFFF`. | | RC06 |
-| 5 | | A clear ends the halt and the stop: bit 1, the halt reason, and the stop register read 0 after it. | Not yet tagged. |
+| 5 | | A clear ends the halt and the stop: bit 1, the halt reason, and the stop register read 0 after it. | V1.1 |

@@ -56,6 +56,18 @@ int main(void)
     u = strtoul("0x100000000", NULL, 0);
     printf("%lu %d\n", u, errno);
 
+    // A base other than 0 and 2 to 36 reads nothing and sets EINVAL.
+    static const int bad[] = {-1, 1, 37};
+    for (int i = 0; i < 3; i++) {
+        const char *s = " 12";
+        errno = 0;
+        v = strtol(s, &end, bad[i]);
+        printf("%ld %d %d\n", v, end == s, errno);
+    }
+    errno = 0;
+    u = strtoul("12", NULL, 99);
+    printf("%lu %d %d\n", u, errno, EINVAL);
+
     // The generator starts as after srand(1), and srand restarts it.
     three();
     srand(42);

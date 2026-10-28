@@ -44,14 +44,22 @@ static unsigned digit(int c)
 
 // Reads an unsigned number, as strtoul does, and sets *neg if it had a
 // minus sign. The result saturates at ULONG_MAX, and *over says that it
-// did. If no digits are read, *end is s. The callers set errno to ERANGE
-// on an overflow, and leave it alone otherwise.
+// did. If no digits are read, *end is s. A base other than 0 and 2 to 36
+// reads no digits and sets errno to EINVAL. The callers set errno to
+// ERANGE on an overflow, and leave it alone otherwise.
 static unsigned long parse(const char *s, char **end, int base, int *neg, int *over)
 {
+    *neg = 0;
+    *over = 0;
+    if (base < 0 || base == 1 || base > 36) {
+        errno = EINVAL;
+        if (end)
+            *end = (char *)s;
+        return 0;
+    }
     const char *p = s;
     while (isspace(*p))
         p++;
-    *neg = 0;
     if (*p == '-' || *p == '+')
         *neg = *p++ == '-';
     if ((base == 0 || base == 16) && p[0] == '0' && (p[1] == 'x' || p[1] == 'X') &&
@@ -64,7 +72,6 @@ static unsigned long parse(const char *s, char **end, int base, int *neg, int *o
 
     unsigned long v = 0;
     int any = 0;
-    *over = 0;
     for (unsigned d; (d = digit(*p)) < (unsigned)base; p++) {
         any = 1;
         if (v > (ULONG_MAX - d) / (unsigned)base)

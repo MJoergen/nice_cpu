@@ -185,7 +185,7 @@ Zig keeps only the objects of `libc.a` that the program references.
 | `stdlib.h` | `malloc`, `calloc`, `realloc`, `free`, `abs`, `labs`, `llabs`, `atoi`, `atol`, `strtol`, `strtoul`, `rand`, `srand`, `abort`, `exit` |
 | `assert.h` | `assert` and `static_assert`. A failed `assert` prints `file:line: function: Assertion `expr' failed.` and calls `abort`. `-DNDEBUG` removes the checks. |
 | `time.h` | `clock`, with `CLOCKS_PER_SEC` 1000000 and `clock_t` unsigned, from the microsecond counter of SYSTEM.md §3, which counts one microsecond per step in the emulator, and wraps after 71.6 minutes on a board; `time`, which returns −1 because no device has the date; and the types `clock_t` and `time_t`. |
-| `errno.h` | `errno`, one for the whole program, 0 at start, and the codes `EDOM`, `ERANGE`, and `EILSEQ`. Only `strtol` and `strtoul` set it, and so `atoi` and `atol`, to `ERANGE` on an overflow. |
+| `errno.h` | `errno`, one for the whole program, 0 at start, and the codes `EINVAL`, `EDOM`, `ERANGE`, and `EILSEQ`. Only `strtol` and `strtoul` set it, and so `atoi` and `atol`: to `ERANGE` on an overflow, and to `EINVAL` for a base other than 0 and 2 to 36. |
 | `ctype.h` | `isalnum`, `isalpha`, `iscntrl`, `isdigit`, `isgraph`, `islower`, `isprint`, `ispunct`, `isspace`, `isupper`, `isxdigit`, `tolower`, `toupper` |
 | `nice.h` | The device routines (see above): `nice_putc`, `nice_getc`, `nice_pollc`, `nice_print`, `nice_cycles`, `nice_instructions`, `nice_micros` (C only, with no assembly routine), `nice_screen_put`, and `nice_screen_clear`. Also `nice_peek` and `nice_poke`, the `nice` imports of WASM.md, and the devices' addresses, for devices that have no routine. |
 
@@ -216,7 +216,7 @@ The library is small on purpose:
   take their argument and are printed as they stand, as is any other
   unknown conversion. `%p` prints `0x` and the address in hex, `0x0` for a
   null pointer.
-- `strtol` and `strtoul` saturate on overflow and set `errno` to `ERANGE`. No other function sets `errno`: `malloc` returns `NULL` with no code, and `scanf` keeps the low bits of a number too large for its type, as C leaves it undefined.
+- `strtol` and `strtoul` saturate on overflow and set `errno` to `ERANGE`. A base other than 0 and 2 to 36 converts nothing, as no digits, and sets `errno` to `EINVAL`. No other function sets `errno`: `malloc` returns `NULL` with no code, and `scanf` keeps the low bits of a number too large for its type, as C leaves it undefined.
 - `exit` is the assembly routine `_exit`: a `HALT` with the status in R1, so the emulator exits with status 0. `EXIT_SUCCESS` is 0 and `EXIT_FAILURE` 1. There is no `atexit`. `abort` and a failed `assert` trap (WASM.md), so the emulator exits with status 2.
 - `rand` is the linear congruential generator of the C standard's example, `srand(1)` at start.
 - `malloc` is first fit, with an 8-byte header on each block, and merges

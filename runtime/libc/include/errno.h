@@ -5,6 +5,7 @@
 extern int errno;
 #define errno errno
 
+#define EINVAL 22
 #define EDOM 33
 #define ERANGE 34
 #define EILSEQ 84

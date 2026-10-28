@@ -10,7 +10,7 @@ const Cpu = cpu_zig.Cpu;
 
 /// The escape byte, which starts a packet (DEBUG.md §1).
 pub const esc: u8 = 0xFF;
-/// The protocol version (DEBUG.md §4, §6).
+/// The protocol version, major 0 and minor 5 (DEBUG.md §9).
 const version: u8 = 5;
 /// The program's input buffer, in bytes (DEBUG.md §7).
 pub const input_size = 2048;

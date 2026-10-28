@@ -857,6 +857,44 @@ def test_break(at10: List[int], load: List[int], count: List[int], skip: List[in
     e.stop()
 
 
+def test_old_host(stop: List[int], echo: List[int]) -> None:
+    """A host of version 1 works with this system (§9). It checks the
+    major and the minor, knows bits 0 to 3 of the control register, writes
+    back what it reads with 0 for the other bits, and gets no notice but h."""
+    e = Emu()
+    hello = e.take(len(HELLO))
+    expect("b", hello[:2], b"\xffb")
+    version = int(hello[2:4], 16)
+    expect("major 0, minor 1 or more", bytes([version >> 4, version & 0xF >= 1]), b"\x00\x01")
+
+    def control(set_bits: int, clear_bits: int) -> None:
+        value = (word(e, CONTROL) & 0xF | set_bits) & ~clear_bits
+        e.send(write(CONTROL, [value]))
+        e.expect(f"write {value:X}", ok(CONTROL, 1))
+
+    # Load, start, halt, and again, each load after a clear and a hold.
+    for prog in (stop, stop):
+        control(0x5, 0)
+        e.send(write(0, prog))
+        e.expect("load", ok(0, len(prog)))
+        control(0, 0x5)
+        e.expect("halt", b"\xffh01#C9")
+        e.send(read(CONTROL, 2))
+        e.expect("halted", answer(CONTROL, [0xA, 1]))
+    # A program that runs until the host holds it.
+    control(0x5, 0)
+    e.send(write(0, echo))
+    e.expect("load echo", ok(0, len(echo)))
+    control(0, 0x5)
+    e.send(b"Hi")
+    e.expect("echo", b"Hi")
+    control(0x1, 0)
+    e.send(read(CONTROL, 2))
+    e.expect("held", answer(CONTROL, [0x9, 0]))
+    expect("no other notice", e.take(1, timeout=0.5), b"")
+    e.stop()
+
+
 def test_usage() -> None:
     proc = subprocess.run([NICEEMU, "--link", "0", "--input", "x"], capture_output=True, text=True)
     want = "niceemu: --input cannot be given with --link\n"
@@ -885,7 +923,8 @@ def main() -> None:
             lambda: test_step_limit(spin), lambda: test_halts(reserved, int_in_isr, rti, spin),
             lambda: test_pause(count, echo),
             lambda: test_step(count, one, stop, echo, irq, irq_bin),
-            lambda: test_break(at10, load, count, skip, stop, irq), test_usage,
+            lambda: test_break(at10, load, count, skip, stop, irq),
+            lambda: test_old_host(stop, echo), test_usage,
         ]
         for t in tests:
             t()

@@ -37,7 +37,8 @@
 --   `x` with the lowest number at a pause, a start, and a step, the stop
 --   register and how long it lasts, a stop of the core's own that raises
 --   pause_o, a `p` when R15 matches no enabled breakpoint, and a reset that
---   clears them.
+--   clears them;
+-- * a host of version 1, which loads, starts, and restarts (DEBUG.md §9).
 -- The run stops with status 0 when every check passes, and 1 at the first
 -- that fails.
 
@@ -1044,6 +1045,29 @@ begin
          report "tb_debug_link: the breakpoint ports after reset"
          severity failure;
       quiet("reset");
+
+      -- A host of version 1 (DEBUG.md §9): it writes bits 0 to 3 of the
+      -- control register only, loads, starts, and restarts, and gets no
+      -- notice but h.
+      core_halt <= '0';
+      send(C_ESC & "WFFFFFFF000010000000D#C6");
+      expect(C_ESC & "kFFFFFFF00001#46", "old host: clear");
+      send(C_ESC & "W00000100000111223344#2D");
+      expect(C_ESC & "k000001000001#AD", "old host: load");
+      for run in 1 to 2 loop
+         send(C_ESC & "WFFFFFFF0000100000008#BA");
+         expect(C_ESC & "kFFFFFFF00001#46", "old host: start");
+         core_halt <= '1';
+         expect(C_ESC & "h01#C9", "old host: halt");
+         send(C_ESC & "RFFFFFFF00002#2E");
+         expect(C_ESC & "rFFFFFFF000020000000A00000001#60", "old host: control and reason");
+         send(C_ESC & "WFFFFFFF000010000000D#C6");
+         expect(C_ESC & "kFFFFFFF00001#46", "old host: clear after the halt");
+         core_halt <= '0';
+      end loop;
+      send(C_ESC & "R000001000001#94");
+      expect(C_ESC & "r00000100000100000000#34", "old host: cleared");
+      quiet("old host");
 
       report "tb_debug_link: pass";
       stop(0);

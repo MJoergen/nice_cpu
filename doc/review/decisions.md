@@ -4,6 +4,10 @@ Ideas that were weighed and dropped, with the reason, so that they are not
 proposed again. The open items are the
 [issues](https://github.com/MJoergen/nice_cpu/issues) of the repository.
 
+- **Version negotiation on the debug link** (#81), where a host asks the
+  system to act as an older version. The rules of DEBUG.md §9 keep older
+  hosts working without it, and it would add state to `debug_link.vhd` and
+  its proofs.
 - **A timing budget for the Nexys4DDR** (#57). The core alone misses 90
   MHz there by about 0.3 ns out of context (hdl/README.md), so only the
   in-system result counts. Add a guard only if a change meets the MEGA65

@@ -9,8 +9,9 @@ the program halts. The link shares one byte stream with the console
 UART. Both follow this file, so one host tool works with either.
 
 The link is a property of the system, not of the ISA. ISA.md and
-SYSTEM.md win over this file. This is version 5 of the protocol. Its run
-control is the pause, the single step, and the breakpoints (§6).
+SYSTEM.md win over this file. This is version `05` of the protocol,
+major 0 and minor 5 (§9). Its run control is the pause, the single step,
+and the breakpoints (§6).
 
 "SYSTEM.md §1" refers to a section of SYSTEM.md, and a plain "§2" to a
 section of this file.
@@ -25,6 +26,7 @@ section of this file.
 - [6. The debug registers](#6-the-debug-registers)
 - [7. Transports](#7-transports)
 - [8. An example](#8-an-example)
+- [9. Versions](#9-versions)
 
 ## 1. The byte stream
 
@@ -157,7 +159,7 @@ the control register causes may come before the `k` of that write.
 
 | Notice | Payload | Meaning |
 |---|---|---|
-| `b` | version | The system has powered up or been reset, or a host has connected over TCP (§7). The version is `05`. |
+| `b` | version | The system has powered up or been reset, or a host has connected over TCP (§7). The version is `05` (§9). |
 | `h` | reason | The processor has halted. The reason is the halt reason of §6, `01`–`05`. The last console byte that the program wrote comes before the notice. |
 | `x` | breakpoint | The processor has paused, and R15 is the address of an enabled breakpoint (§6). The payload is its number, `00`–`07`, the lowest if more than one has that address. Bit 4 of the control register reads 1. The last console byte that the program wrote comes before the notice. |
 | `p` | none | The processor has paused: a pause request or a step (§6) has taken effect, and bit 4 of the control register reads 1. R15 is not the address of an enabled breakpoint. The last console byte that the program wrote comes before the notice. |
@@ -211,26 +213,15 @@ system has there otherwise.
 | `0xFFFFFFE0`–`0xFFFFFFEF` | R0 to R15, read only. After a halt, until the next start or clear, they are the values the program left, with R15 the address after the halting instruction, as the emulator prints them, also while the processor is held after the halt. While the processor is paused, they are the values after the last step, with R15 the address of the next instruction, and a hold of the paused processor keeps them until the next start or clear. From a start or a clear, or from a go on or a step after a pause, until the next halt or pause, their values are not defined. |
 | `0xFFFFFFF0` | Control (below). |
 | `0xFFFFFFF1` | The halt reason, read only: 0 while the processor has not halted, and after a clear, 1 for `HALT`, 2 for a reserved control word, 3 for `INT` inside an interrupt routine, 4 for `RTI` outside one (ISA §5.3, §7.2, §7.4), and 5 when the emulator's step limit stopped the program (§7). |
-| `0xFFFFFFF2` | The protocol version, read only: 5. A host checks it before it uses the pause, the step, or a breakpoint. |
+| `0xFFFFFFF2` | The protocol version, read only: 5 (§9). Bits 31–8 read 0. A host checks it before it uses the pause, the step, or a breakpoint. |
 | `0xFFFFFFF3` | The free space, read only: the number of console bytes that the program's input buffer can take now. It reads so while the processor is held or halted too, although the bytes sent then are dropped (§1), and a start empties the buffer. |
 | `0xFFFFFFF4` | The enable bits of the breakpoints. Bit i enables breakpoint i. The bits from N up read 0 and take no write. |
 | `0xFFFFFFF5` | The number of breakpoints N, read only: 0 to 8. A system without breakpoints reads 0. |
 | `0xFFFFFFF6` | The stop, read only. From an `x` until the next go on, step, start, or clear, bit 8 is 1, and bits 7–0 are the breakpoint's number, as the `x` carried. Otherwise 0. |
-| `0xFFFFFFF7` | Reserved. It reads 0 and takes no write. |
+| `0xFFFFFFF7` | Reserved for a later minor (§9). It reads 0 and takes no write. |
 | `0xFFFFFFF8`–`0xFFFFFFFF` | The addresses of breakpoints 0 to 7. The words from `0xFFFFFFF8` + N up read 0 and take no write. |
 
-A write to a read-only register is ignored. The versions:
-
-| Version | Adds | Released |
-|---|---|---|
-| 1 | The requests, the notices, and the control register with bits 0 to 3. | RC04 |
-| 2 | The pause: bit 4 of the control register, and the notice `p`. | Never tagged. |
-| 3 | The single step: bit 5 of the control register. | RC05 |
-| 4 | The breakpoints: the notice `x`, and the registers `0xFFFFFFF4` to `0xFFFFFFFF`. | RC06 |
-| 5 | A clear ends the halt and the stop: bit 1, the halt reason, and the stop register read 0 after it. | Not yet tagged. |
-
-A system of version 1 has no pause and no step. A host reads the register
-before it uses either.
+A write to a read-only register is ignored.
 
 The bits of the control register:
 
@@ -570,3 +561,53 @@ reads R15 and the stop register, and goes on, which runs that instruction:
     system:  FF "rFFFFFFF6000100000100#D4"
     host:    FF "WFFFFFFF0000100000008#BA"
     system:  FF "kFFFFFFF00001#46"
+
+## 9. Versions
+
+The version is one byte, the payload of `b` and the value of
+`0xFFFFFFF2`. Bits 7–4 are the major, and bits 3–0 the minor. This is
+version `05`: major 0, minor 5.
+
+A new minor keeps working with every host of an older minor of the same
+major. A system of a new minor follows these rules:
+
+- A new feature does nothing until a host turns it on, and it is off
+  after every `b`: a reset of the system turns it off, and so does a
+  host's connection over TCP (§7).
+- A new notice comes only from a feature that the host turned on.
+- A new bit of the control register changes nothing when it is written as
+  0, or as the value it reads. A host that writes back what it reads, and
+  0 for the bits it does not know, gets what it got from the older minor.
+- A new register takes a word that read 0 and took no write in the older
+  minor, such as `0xFFFFFFF7`.
+- A behavior may change only where no host that follows the older minor
+  could rely on the old one. Version 5 is one: a clear ends the halt, and
+  a host of version 4 that loads a program after a halt had no use for the
+  old program's halt reason. The table lists each change, and HISTORY.md
+  tells why.
+
+A new major may change anything else, and the next one is `0x10`. It keeps
+the packets of §2, the notice `b`, and an `R` of `0xFFFFFFF2` with its
+answer, so a host can learn the version of any system. The rules hold in
+major 0 as in any other major. When a major has used minor 15, the next
+version is a new major that changes nothing else.
+
+A host:
+
+- works with a system of its own major and of at least the minor it
+  needs, and stops with a message on any other major;
+- on an older minor of its major, stops with a message, or uses only what
+  that minor has: a host of version 4 that finds version 2 leaves out the
+  step and the breakpoints;
+- drops a notice whose tag it does not know (§5).
+
+Versions 1 to 5 follow these rules, so a host of any of them works with a
+system of version 5. The versions:
+
+| Version | Adds | Changes | Released |
+|---|---|---|---|
+| 1 | The requests, the notices, and the control register with bits 0 to 3. | | RC04 |
+| 2 | The pause: bit 4 of the control register, and the notice `p`. | | Never tagged. |
+| 3 | The single step: bit 5 of the control register. | | RC05 |
+| 4 | The breakpoints: the notice `x`, and the registers `0xFFFFFFF4` to `0xFFFFFFFF`. | | RC06 |
+| 5 | | A clear ends the halt and the stop: bit 1, the halt reason, and the stop register read 0 after it. | Not yet tagged. |

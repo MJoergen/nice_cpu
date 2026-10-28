@@ -120,7 +120,7 @@ departs from it.
 | [formal/pipe_prepare.sby](formal/pipe_prepare.sby) | The SymbiYosys job for it. |
 | [formal/formal_pipe_dbus.vhd](formal/formal_pipe_dbus.vhd) | DBUS of the pipelined core, whose properties are in `src/pipe_dbus.vhd`. |
 | [formal/pipe_dbus.sby](formal/pipe_dbus.sby) | The SymbiYosys job for it. |
-| [formal/formal_pipe_write.vhd](formal/formal_pipe_write.vhd) | WRITE of the pipelined core, with the properties of its halt, its pause, and its breakpoints. |
+| [formal/formal_pipe_write.vhd](formal/formal_pipe_write.vhd) | WRITE of the pipelined core, with the properties of its halt, its pause, and its breakpoints, and PREPARE's assumptions about it. |
 | [formal/pipe_write.sby](formal/pipe_write.sby) | The SymbiYosys job for it. |
 | [formal/formal_pipeline.vhd](formal/formal_pipeline.vhd) | The pipelined core with `core_check`. |
 | [formal/pipeline.sby](formal/pipeline.sby) | The SymbiYosys job for it. |
@@ -643,17 +643,19 @@ free, within assumptions that model DECODE and WRITE as far as PREPARE
 relies on them: DECODE emits the micro-operations of each instruction in
 order, with the fields it decodes agreeing with the instruction word
 (`decoded_ok` in `src/pipe_pkg.vhd`, which `pipeline` also asserts in
-simulation), WRITE takes what PREPARE moves on, SR and WRITE's condition of the
-instruction change only when WRITE retires a micro-operation that may
-change them, and WRITE neither flushes nor takes an interrupt while
-PREPARE holds an instruction that has made a data read. The assertions
+simulation), WRITE holds what PREPARE moves on while it runs, SR and
+WRITE's condition of the instruction change only while WRITE holds a
+micro-operation that may change them, and WRITE neither flushes nor takes
+an interrupt while PREPARE holds an instruction that has made a data
+read. The assertions
 say that the read request is held while the bus stalls it, that it never
 goes out with `C_MAX_OUT` requests in flight, that a micro-operation makes
 all its reads and no more before it moves on unless its condition is
 false, that PREPARE never finds the condition false of an instruction
 that has made a data read (MICROARCH.md §5.3), and that a read is on the
-bus only while the core runs, so that a halted core makes no data read.
-PREPARE counts a store that
+bus only while the core runs, so that a halted core makes no data read,
+and that what PREPARE moves on agrees with its instruction word, which
+the proof of WRITE assumes. PREPARE counts a store that
 WRITE puts on the bus in the cycle of a read, so that no more than
 `C_MAX_OUT` requests are in flight.
 
@@ -665,7 +667,11 @@ assertions say that the request's ACK is taken for a read exactly when it
 was one, and that WRITE finds the datum's value wherever DBUS shows that
 datum, so the read data come in the order of their ACKs, none lost.  DBUS
 drives 0 as the write data of a read, so that it does not change on the
-bus while the read is stalled.
+bus while the read is stalled. It also proves PREPARE's assumptions about
+DBUS: the count of requests in flight stays in its range, and grows by at
+most the one request the bus accepts, and the bus accepts the access that
+waits in `st_r` exactly when fewer than `C_MAX_OUT` are in flight and the
+bus does not stall.
 
 `formal_pipe_write` proves for every cycle, with every input free, that a
 halted WRITE stays halted until reset, and that neither a halted nor a
@@ -681,13 +687,27 @@ and never two at once. WRITE's takes are the core's `nmi_ready_o` and
 `irq_ready_o`, so these are the assertions of `handshake_check`, for
 every cycle and not only in `formal_pipeline`.
 
-The assumptions of each proof that name another stage are checked in the
-whole core by `p_check` in `src/pipeline.vhd`, on every simulation and in
-`formal_pipeline`, but for PREPARE's assumptions about WRITE and DBUS that
-need its model registers: `f_takes`, `f_sr_stable`, `f_cond_stable`,
-`f_run`, and `f_tag_grow`. `p_check` asserts `f_accept` and `f_st_queue`.
-The five are covered only by the tests and by the bounded check of the
-whole core.
+`formal_pipe_write` also proves PREPARE's assumptions about WRITE, with
+the model registers of PREPARE's proof: while WRITE runs, it holds the
+micro-operation PREPARE moved on until it retires it or flushes; SR
+changes only while WRITE holds a micro-operation that may change it, or
+with a flush, an interrupt entry, or a reset; WRITE's condition likewise,
+while it holds an instruction's first micro-operation, or else to the
+condition PREPARE found for the one it holds; and WRITE leaves `RUN_ST`
+only with a flush, an interrupt entry, or a reset. These are weaker than
+what PREPARE's proof assumed before: a micro-operation of two cycles
+changes SR and the condition in its first, and WRITE clears only the
+valid bit of a micro-operation it drops, and keeps that of INT through
+`VEC_ST`. The proof of PREPARE holds with them, with one more invariant.
+Its only assumption about PREPARE, that the micro-operation agrees with
+its instruction word, is what PREPARE's proof asserts as `f_out_decoded`.
+
+So every assumption of a stage proof is proven of the stage it names, or
+checked in the whole core by `p_check` in `src/pipeline.vhd`, on every
+simulation and in `formal_pipeline`. DECODE's proof discharges PREPARE's
+assumptions about DECODE, and the proofs of WRITE and DBUS most of those
+about them, all that need PREPARE's model registers among them. `p_check`
+asserts the rest: `f_keep`, `f_keep_read`, `f_accept`, and `f_st_queue`.
 
 `formal_pipeline` puts `core_check` on the pipelined core, with 8 requests
 waiting at most on the instruction bus and 4 on the data bus. The core's

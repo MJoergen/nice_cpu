@@ -144,13 +144,14 @@ change outside `hdl/` are marked **Outside hdl/**, and are also
     cycle, and `pipe_write.sby` proves WRITE's halt: it stays halted
     until reset and makes no store, vector read, interrupt entry, or
     accept. It proves the same of WRITE's pause, and that WRITE reports a
-    step after it leaves `PAUSED_ST` before it pauses again. Together with PREPARE's `f_rd_run` and the definition of
+    step after it leaves `PAUSED_ST` before it pauses again, and what
+    PREPARE's proof assumes of WRITE. Together with PREPARE's `f_rd_run` and the definition of
     `halted_o`, that is why a halted core makes no data access, for every
     cycle. The four have invariants under their `G_FORMAL`, and
     assumptions
     that model the stages beside them, which `p_check` in
-    `src/pipeline.vhd` checks in the whole core, and which DECODE's proof
-    discharges for PREPARE's. `formal/nice_pkg.sby` proves the shifter,
+    `src/pipeline.vhd` checks in the whole core, or the proof of the stage
+    they name discharges: DECODE's, WRITE's, and DBUS's for PREPARE's. `formal/nice_pkg.sby` proves the shifter,
     the ALU, and the block compares for every input. FETCH and the
     functions need Boolector, which CI installs; Yices does not finish
     their induction, but proves the other three. The whole core is too

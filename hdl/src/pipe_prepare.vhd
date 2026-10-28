@@ -429,10 +429,12 @@ begin
    -- - DECODE emits only when PREPARE is ready, and the micro-operations
    --   of each instruction in order, with a new id for each instruction,
    --   and the fields it decodes agree with the instruction word.
-   -- - WRITE takes what PREPARE moves on. SR changes only when WRITE
-   --   retires a micro-operation that may change it, and WRITE's condition
-   --   of the instruction only when it retires an instruction's first.
-   --   WRITE leaves RUN_ST only with a flush or an interrupt.
+   -- - While WRITE runs, it holds what PREPARE moved on, until it retires
+   --   it or flushes. SR changes only while WRITE holds a micro-operation
+   --   that may change it, and WRITE's condition of the instruction only
+   --   while it holds an instruction's first, or else to the condition
+   --   of the micro-operation it holds, if PREPARE knew it. WRITE leaves
+   --   RUN_ST only with a flush or an interrupt.
    -- - WRITE neither flushes nor takes an interrupt while PREPARE holds an
    --   instruction that has made a data read (contract c), or has a read
    --   on the bus or about to be loaded.
@@ -444,15 +446,20 @@ begin
    -- before it moves on unless its condition is false, and that PREPARE
    -- never finds the condition false of an instruction that has made a
    -- data read (the data access rule of MICROARCH.md §5.3). The invariants
-   -- after them make it all inductive.
+   -- after them make it all inductive. The proofs of DECODE, WRITE, and
+   -- DBUS prove most of the assumptions about them, all that need the
+   -- model registers here among them, and p_check in src/pipeline.vhd
+   -- asserts the rest in the whole core.
 
    gen_formal : if G_FORMAL generate
       signal f_first     : std_logic := '1';   -- The first cycle
-      signal f_uop       : t_uop     := C_UOP_NONE;   -- WRITE's next micro-operation
+      signal f_uop       : t_uop     := C_UOP_NONE;   -- WRITE's micro-operation
       signal f_sr        : std_logic_vector(31 downto 0);
       signal f_sr_free   : std_logic;          -- SR may change now
       signal f_cond      : std_logic;
       signal f_cond_free : std_logic;          -- WRITE's condition may change now
+      signal f_cond_set  : std_logic;          -- or become this, PREPARE's condition
+      signal f_cond_val  : std_logic;
       signal f_mode      : t_wmode;
       signal f_mode_free : std_logic;          -- The mode may change now
       signal f_tag       : natural range 0 to C_MAX_OUT + 1;
@@ -478,16 +485,16 @@ begin
                f_uop <= p_out;
             elsif done_i = '1' then
                f_uop <= C_UOP_NONE;
-            else
-               f_uop <= w_i.uop;
             end if;
 
             f_sr        <= w_i.regs(14);
             f_sr_free   <= rst_i or flush_i or take_nmi_i or take_irq_i or
-                           (done_i and w_i.uop.valid and w_i.uop.may_sr);
+                           (w_i.uop.valid and w_i.uop.may_sr);
             f_cond      <= w_i.cond;
             f_cond_free <= rst_i or flush_i or take_nmi_i or take_irq_i or
-                           (done_i and w_i.uop.valid and w_i.uop.first);
+                           (w_i.uop.valid and w_i.uop.first);
+            f_cond_set  <= w_i.uop.valid and w_i.uop.cond_known;
+            f_cond_val  <= w_i.uop.cond_val;
             f_mode      <= w_i.mode;
             f_mode_free <= rst_i or flush_i or take_nmi_i or take_irq_i;
 
@@ -530,11 +537,14 @@ begin
       --     uop_i.kind = first_kind(uop_i.inst.iw));
       -- psl f_decoded : assume always seq_emit -> decoded_ok(uop_i);
 
-      -- WRITE
-      -- psl f_takes : assume always f_first = '0' -> w_i.uop = f_uop;
+      -- WRITE. formal/formal_pipe_write.vhd proves the first four of WRITE,
+      -- with the same model. Outside RUN_ST, WRITE may keep the micro-
+      -- operation of INT, which the flush of its entry leaves.
+      -- psl f_takes : assume always (f_first = '0' and w_i.mode = RUN_ST) ->
+      --    (w_i.uop.valid = f_uop.valid and (f_uop.valid = '0' or w_i.uop = f_uop));
       -- psl f_sr_stable : assume always (f_first = '0' and f_sr_free = '0') -> w_i.regs(14) = f_sr;
       -- psl f_cond_stable : assume always (f_first = '0' and f_cond_free = '0') ->
-      --    w_i.cond = f_cond;
+      --    (w_i.cond = f_cond or (f_cond_set = '1' and w_i.cond = f_cond_val));
       -- psl f_run : assume always (f_first = '0' and f_mode_free = '0' and f_mode = RUN_ST) ->
       --    w_i.mode = RUN_ST;
       -- psl f_keep : assume always (flush_i or take_nmi_i or take_irq_i) -> not p_committed_r;
@@ -542,8 +552,9 @@ begin
       -- psl f_accept : assume always ready_i -> not flush_i;
 
       -- DBUS: requests in flight, PREPARE's read among them, and the store
-      -- that waits
-      -- psl f_tags : assume always tag_cnt_i <= C_MAX_OUT;
+      -- that waits. formal/formal_pipe_dbus.vhd proves the first three of
+      -- DBUS, with the same model.
+      -- psl f_tags : assume always rst_i = '0' -> tag_cnt_i <= C_MAX_OUT;
       -- psl f_tag_grow : assume always f_first = '0' -> tag_cnt_i <= f_tag;
       -- psl f_st_acc : assume always
       --    st_acc_i = (st_valid_i and to_sl(tag_cnt_i < C_MAX_OUT) and not dbus_stall_i);
@@ -557,6 +568,10 @@ begin
       -- A read is on the bus only while the core runs: a halted core
       -- makes no data read
       -- psl f_rd_run : assert always (rst_i = '0' and rd_stb_r = '1') -> w_i.mode = RUN_ST;
+
+      -- What WRITE takes agrees with the instruction word, as WRITE's proof
+      -- assumes
+      -- psl f_out_decoded : assert always (rst_i = '0' and p_valid = '1') -> decoded_ok(p_out);
 
       -- The reads of a micro-operation
       -- psl f_none_loaded : assert always (rst_i = '0' and prep_r.valid = '0') -> p_loaded_r = 0;
@@ -574,7 +589,8 @@ begin
       -- a data read runs in RUN_ST. PREPARE knows its condition as true,
       -- or it is the first micro-operation, still here, whose condition
       -- holds on SR, which no micro-operation in WRITE may change, or its
-      -- first micro-operation has retired with the condition true.
+      -- first micro-operation has retired with the condition true, and
+      -- WRITE holds none whose condition PREPARE found false.
       -- psl f_inv_prep : assert always (rst_i = '0' and prep_r.valid = '1') ->
       --    (prep_r.inst = f_inst and prep_r.kind = f_kind and
       --     prep_r.last = is_last(prep_r.kind) and
@@ -587,16 +603,16 @@ begin
       -- WRITE holds an earlier micro-operation of the instruction in
       -- prep_r, or the last of the instruction before it.
       -- psl f_inv_same : assert always
-      --    (rst_i = '0' and prep_r.valid = '1' and w_i.uop.valid = '1' and
-      --     w_i.uop.inst.id = prep_r.inst.id) -> (w_i.uop.last = '0' and prep_r.first = '0');
+      --    (rst_i = '0' and prep_r.valid = '1' and f_uop.valid = '1' and
+      --     f_uop.inst.id = prep_r.inst.id) -> (f_uop.last = '0' and prep_r.first = '0');
       -- psl f_inv_older : assert always
-      --    (rst_i = '0' and prep_r.valid = '1' and w_i.uop.valid = '1' and
-      --     w_i.uop.inst.id /= prep_r.inst.id) -> (w_i.uop.last = '1' and prep_r.first = '1');
+      --    (rst_i = '0' and prep_r.valid = '1' and f_uop.valid = '1' and
+      --     f_uop.inst.id /= prep_r.inst.id) -> (f_uop.last = '1' and prep_r.first = '1');
       -- psl f_inv_write : assert always
-      --    (rst_i = '0' and prep_r.valid = '0' and w_i.uop.valid = '1') ->
-      --    (w_i.uop.inst.id = f_inst.id and w_i.uop.last = not f_open);
-      -- psl f_inv_wkind : assert always (rst_i = '0' and w_i.uop.valid = '1') ->
-      --    w_i.uop.last = is_last(w_i.uop.kind);
+      --    (rst_i = '0' and prep_r.valid = '0' and f_uop.valid = '1') ->
+      --    (f_uop.inst.id = f_inst.id and f_uop.last = not f_open);
+      -- psl f_inv_wkind : assert always (rst_i = '0' and f_uop.valid = '1') ->
+      --    f_uop.last = is_last(f_uop.kind);
       -- psl f_inv_ck_inst : assert always (rst_i = '0' and p_ck_r = '1') ->
       --    ((prep_r.valid = '1' and prep_r.first = '0') or (prep_r.valid = '0' and f_open = '1'));
       -- psl f_inv_open : assert always (rst_i = '0' and p_committed_r = '1') ->
@@ -611,7 +627,8 @@ begin
       -- psl f_inv_retired : assert always
       --    (rst_i = '0' and p_committed_r = '1' and p_ck_r = '0' and
       --     not (prep_r.valid = '1' and prep_r.first = '1')) ->
-      --    (w_i.cond = '1' and not (w_i.uop.valid = '1' and w_i.uop.first = '1'));
+      --    (w_i.cond = '1' and not (w_i.uop.valid = '1' and w_i.uop.first = '1') and
+      --     not (f_uop.valid = '1' and f_uop.cond_known = '1' and f_uop.cond_val = '0'));
 
       -- psl c_two : cover {rst_i = '0' and p_load = '1' and p_loaded_r = 1};
       -- psl c_stall : cover {f_rd_stall = '1' and rst_i = '0'};

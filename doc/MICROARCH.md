@@ -979,12 +979,12 @@ ISA.md §5 for every input, and the block compares of §5.5 against the
 ranges they stand for (`hdl/formal/formal_nice_pkg.vhd`). The math
 unit, the performance counters, the timer, and the fetch statistics of
 §8.1 are proven for every cycle too, each in a job of its own
-(hdl/README.md). The
-assumptions that name another stage are checked in the whole core by
-`p_check` in `hdl/src/pipeline.vhd`, on every simulation run and in the
-bounded check, but for PREPARE's `f_takes`, `f_sr_stable`,
-`f_cond_stable`, `f_run`, and `f_tag_grow`, which need its model registers
-and are covered only by the tests and the bounded check. For the whole pipelined core, the port checks and the
+(hdl/README.md). Each
+assumption that names another stage is proven of that stage, or checked
+in the whole core by `p_check` in `hdl/src/pipeline.vhd`, on every
+simulation run and in the bounded check. The proof of WRITE proves what
+PREPARE's proof assumes of it, and that of DBUS what it assumes of DBUS,
+with the same model registers. For the whole pipelined core, the port checks and the
 core's own assertions hold for the first 8 cycles after reset, and the
 simulation tests check the same assertions on every run. The most
 important of them is the data access rule of §5.3: every data access

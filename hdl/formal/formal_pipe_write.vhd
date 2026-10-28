@@ -1,7 +1,9 @@
 -- WRITE of the pipelined core, for SymbiYosys. Every input is free, so the
 -- solver plays every PREPARE, data bus, and interrupt source, whether or not
 -- they keep to the interface contracts of src/pipe_write.vhd: the
--- properties here need none of them.
+-- properties here need none of them, but that the micro-operation PREPARE
+-- moves on agrees with its instruction word, as PREPARE's proof asserts
+-- (f_out_decoded in src/pipe_prepare.vhd).
 --
 -- THEORY OF OPERATION
 -- A halted WRITE stays halted until reset, and makes no store, vector
@@ -21,6 +23,19 @@
 -- handshake_check asserts of the core's ready outputs in formal_pipeline,
 -- here for every cycle. The record inputs are free signals here (anyseq),
 -- since the top level has only plain ports.
+--
+-- It also proves the assumptions about WRITE that PREPARE's proof makes
+-- with its model registers, with the same model: while WRITE runs, it
+-- holds what PREPARE moved on, until it retires it or flushes; SR changes
+-- only while WRITE holds a micro-operation that may change it, or with a
+-- flush, an interrupt entry, or a reset; WRITE's condition likewise, while
+-- it holds an instruction's first, or else to the condition of the one it
+-- holds, as PREPARE found it; and WRITE leaves RUN_ST only with a flush,
+-- an interrupt entry, or a reset. Each change can come in a cycle before
+-- the micro-operation retires: a micro-operation that takes two cycles
+-- writes its result and its condition in the first. And WRITE clears only
+-- the valid bit of a micro-operation it drops, and keeps the one of INT
+-- through VEC_ST, so the first holds only in RUN_ST.
 --
 -- RESET
 -- The first cycle is a reset.
@@ -96,6 +111,20 @@ architecture synthesis of formal_pipe_write is
    -- WRITE enters PAUSED_ST now
    signal enters   : std_logic;
 
+   -- PREPARE's model of WRITE (src/pipe_prepare.vhd, p_model): the
+   -- micro-operation WRITE holds, and from the cycle before, SR, the
+   -- condition, and the mode, and whether each may change
+   signal f_first     : std_logic := '1';
+   signal f_uop       : t_uop     := C_UOP_NONE;
+   signal f_sr        : std_logic_vector(31 downto 0);
+   signal f_sr_free   : std_logic;
+   signal f_cond      : std_logic;
+   signal f_cond_free : std_logic;
+   signal f_cond_set  : std_logic;
+   signal f_cond_val  : std_logic;
+   signal f_mode      : t_wmode;
+   signal f_mode_free : std_logic;
+
    attribute anyseq : boolean;
    attribute anyseq of uop  : signal is true;
    attribute anyseq of dec  : signal is true;
@@ -110,6 +139,8 @@ begin
    -- psl f_initial_reset : assume rst_i;
    -- The range of the port, which synthesis does not keep
    -- psl f_cnt_range : assume always rq_cnt_i <= C_MAX_OUT;
+   -- PREPARE's f_out_decoded
+   -- psl f_decoded : assume always valid_i -> decoded_ok(uop);
 
    -- Halted WRITE makes no access to the data bus, takes no interrupt, and
    -- accepts no micro-operation.
@@ -147,14 +178,35 @@ begin
    --    w.mode = PAUSED_ST;
    -- psl f_brk_wait : assert always (rst_i = '0' and w.brk_wait = '1') -> w.mode = PAUSED_ST;
 
+   -- PREPARE's assumptions about WRITE (src/pipe_prepare.vhd)
+   -- psl f_takes : assert always (f_first = '0' and w.mode = RUN_ST) ->
+   --    (w.uop.valid = f_uop.valid and (f_uop.valid = '0' or w.uop = f_uop));
+   -- psl f_sr_stable : assert always (f_first = '0' and f_sr_free = '0') -> w.regs(14) = f_sr;
+   -- psl f_cond_stable : assert always (f_first = '0' and f_cond_free = '0') ->
+   --    (w.cond = f_cond or (f_cond_set = '1' and w.cond = f_cond_val));
+   -- psl f_run : assert always (f_first = '0' and f_mode_free = '0' and f_mode = RUN_ST) ->
+   --    w.mode = RUN_ST;
+   -- The invariants that make them inductive: the micro-operation agrees
+   -- with its instruction word, the second cycle of one is of an operation
+   -- with a register destination, and WRITE holds none while halted or
+   -- paused.
+   -- psl f_wdecoded : assert always (rst_i = '0' and w.uop.valid = '1') -> decoded_ok(w.uop);
+   -- psl f_exec : assert always (rst_i = '0' and w.exec_done = '1') ->
+   --    (w.uop.valid = '1' and w.uop.kind = UOP_OP and w.mode = RUN_ST and
+   --     (w.uop.inst.m(0) = "000" or w.uop.inst.m(0) = "001" or w.uop.inst.m(0) = "010"));
+   -- psl f_idle : assert always (rst_i = '0' and (w.mode = PAUSED_ST or w.mode = HALTED_ST)) ->
+   --    w.uop.valid = '0';
+
    -- How deep the proof must see a halt, a store, a vector read, a pause,
-   -- and a step after a pause.
+   -- and a step after a pause, and that INT's micro-operation stays
+   -- through VEC_ST.
    -- psl c_halt : cover {w.mode = HALTED_ST and rst_i = '0'};
    -- psl c_store : cover {st = '1' and st_we = '1' and rst_i = '0'};
    -- psl c_vector : cover {st = '1' and st_we = '0' and rst_i = '0'};
    -- psl c_pause : cover {w.mode = PAUSED_ST and rst_i = '0'};
    -- psl c_go_step : cover {owed_r = '1' and retire.valid = '1' and rst_i = '0'};
    -- psl c_brk : cover {enters = '1' and pause_d = '0' and rst_i = '0'};
+   -- psl c_int_keep : cover {w.mode = VEC_ST and w.uop.valid = '1' and rst_i = '0'};
    -- psl c_brk_go : cover {enters = '1' and pause_d = '0' and rst_i = '0';
    --    (w.mode = PAUSED_ST)[*]; w.mode = RUN_ST and rst_i = '0'};
 
@@ -222,6 +274,28 @@ begin
          end if;
          if rst_i = '1' then
             owed_r <= '0';
+         end if;
+
+         f_first <= '0';
+         if flush = '1' then
+            f_uop <= C_UOP_NONE;
+         elsif valid_i = '1' and ready = '1' then
+            f_uop <= uop;
+         elsif done = '1' then
+            f_uop <= C_UOP_NONE;
+         end if;
+         f_sr        <= w.regs(14);
+         f_sr_free   <= rst_i or flush or take_nmi or take_irq or
+                        (w.uop.valid and w.uop.may_sr);
+         f_cond      <= w.cond;
+         f_cond_free <= rst_i or flush or take_nmi or take_irq or
+                        (w.uop.valid and w.uop.first);
+         f_cond_set  <= w.uop.valid and w.uop.cond_known;
+         f_cond_val  <= w.uop.cond_val;
+         f_mode      <= w.mode;
+         f_mode_free <= rst_i or flush or take_nmi or take_irq;
+         if rst_i = '1' then
+            f_uop <= C_UOP_NONE;
          end if;
       end if;
    end process p_prev;

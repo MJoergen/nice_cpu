@@ -359,6 +359,28 @@ these ways for the link to use the memory when it may not:
   while the program ran or the memory cleared. Now a `W` that wraps is
   answered with `e02`, in the emulator too (DEBUG.md §3).
 
+## PREPARE's assumptions about WRITE
+
+Until 2026-10-28, five assumptions of PREPARE's proof were checked by no
+tool: `f_takes`, `f_sr_stable`, `f_cond_stable`, and `f_run` about WRITE,
+and `f_tag_grow` about DBUS. The whole core passed `G_FORMAL` only to
+FETCH, so only their consequences were tested. When the proofs of WRITE
+and DBUS took them on ([#59](https://github.com/MJoergen/nice_cpu/issues/59)),
+three of the four about WRITE proved stronger than WRITE:
+
+- `f_takes` asked that WRITE's micro-operation equal a model record in
+  every cycle. WRITE clears only the valid bit of one it drops, and keeps
+  the micro-operation of INT, valid, through `VEC_ST`. Now the record
+  must match only in `RUN_ST`, and only while it is valid.
+- `f_sr_stable` and `f_cond_stable` let SR and the condition change only
+  when a micro-operation retires. A micro-operation of two cycles writes
+  them in its first. Now they may change while WRITE holds one that may
+  change them, and the condition of a later micro-operation may become
+  the one PREPARE found for it.
+
+The core was correct: PREPARE's proof holds with the weaker assumptions,
+with one more invariant.
+
 ## The debug UART's rate
 
 NiceMonMEGA65's debug UART ran at 115200 baud until it moved to 2 Mbaud

@@ -580,7 +580,8 @@ begin
                severity failure;
             -- PREPARE's assumptions about WRITE and DBUS that need no model
             -- (src/pipe_prepare.vhd, f_accept and f_st_queue). The others
-            -- are checked only by the tests and the bounded check.
+            -- are proven of WRITE and DBUS (formal/formal_pipe_write.vhd
+            -- and formal_pipe_dbus.vhd).
             assert not (w_ready = '1' and w_flush = '1')
                report "pipeline: WRITE takes a micro-operation and flushes at once"
                severity failure;

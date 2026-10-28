@@ -10,6 +10,12 @@
 -- the bus port. Its count of requests in flight must be the tag count of
 -- pipe_dbus, which ties the two together for k-induction.
 --
+-- It also proves PREPARE's assumptions about DBUS (src/pipe_prepare.vhd):
+-- that the count of requests in flight grows by at most the one the bus
+-- accepts, PREPARE's read or else the access that waits in st_r, when there
+-- is room, with the same model as PREPARE's; that the count stays in its
+-- range; and when the bus accepts the access that waits.
+--
 -- The covers show four requests in flight, the FIFO of read data full,
 -- a store that waits in st_r while four are in flight, and a vector read
 -- from st_r whose data comes back.
@@ -20,6 +26,7 @@
 library ieee;
    use ieee.std_logic_1164.all;
 
+   use work.nice_pkg.all;
    use work.pipe_pkg.all;
 
 entity formal_pipe_dbus is
@@ -55,6 +62,10 @@ architecture synthesis of formal_pipe_dbus is
    signal dbus_data  : std_logic_vector(31 downto 0);
    signal pending    : natural range 0 to C_MAX_OUT + 1;
 
+   -- PREPARE's model of the count in flight (src/pipe_prepare.vhd, p_model)
+   signal f_first : std_logic := '1';
+   signal f_tag   : natural range 0 to C_MAX_OUT + 1;
+
 begin
 
    -- psl default clock is rising_edge(clk_i);
@@ -63,6 +74,12 @@ begin
    -- psl f_pop_range : assume always w_pop_i <= 2;
 
    -- psl f_pending : assert always rst_i = '0' -> pending = tag_cnt;
+
+   -- PREPARE's assumptions about DBUS
+   -- psl f_tags : assert always rst_i = '0' -> tag_cnt <= C_MAX_OUT;
+   -- psl f_tag_grow : assert always f_first = '0' -> tag_cnt <= f_tag;
+   -- psl f_st_acc : assert always
+   --    st_acc = (st_valid and to_sl(tag_cnt < C_MAX_OUT) and not dbus_stall_i);
 
    -- psl c_four : cover {tag_cnt = C_MAX_OUT and rst_i = '0'};
    -- psl c_full : cover {rq_cnt = C_MAX_OUT and rst_i = '0'};
@@ -118,5 +135,15 @@ begin
          data_i    => dbus_data,
          pending_o => pending
       ); -- i_wb_master_check
+
+
+   p_model : process (clk_i)
+   begin
+      if rising_edge(clk_i) then
+         f_first <= '0';
+         f_tag   <= tag_cnt + to_nat((rd_stb_i = '1' and dbus_stall_i = '0') or
+                                     (rd_stb_i = '0' and tag_cnt < C_MAX_OUT and st_valid = '1'));
+      end if;
+   end process p_model;
 
 end architecture synthesis;

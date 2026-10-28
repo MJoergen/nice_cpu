@@ -140,7 +140,7 @@ begin
    -- The range of the port, which synthesis does not keep
    -- psl f_cnt_range : assume always rq_cnt_i <= C_MAX_OUT;
    -- PREPARE's f_out_decoded
-   -- psl f_decoded : assume always valid_i -> decoded_ok(uop);
+   -- psl f_decoded : assume always (rst_i = '0' and valid_i = '1') -> decoded_ok(uop);
 
    -- Halted WRITE makes no access to the data bus, takes no interrupt, and
    -- accepts no micro-operation.

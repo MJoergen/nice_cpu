@@ -61,6 +61,8 @@ The tests of a pause during a waiting read in `link.py` sleep 0.2 s so that the 
 
 `hdl/formal/formal_pipe_write.vhd:143` assumes `always valid_i -> decoded_ok(uop)`, and the comment names PREPARE's `f_out_decoded`. `hdl/src/pipe_prepare.vhd:574` asserts it under `rst_i = '0'`. So in a reset cycle WRITE's proof assumes more than PREPARE proves. WRITE ignores its input in reset, so nothing follows from it, but the commit's claim that every assumption of a stage proof is proven of the stage it names has this one-cycle gap. **Fix:** guard the assumption with `rst_i = '0'` too.
 
+**Resolved**: `f_decoded` assumes `(rst_i = '0' and valid_i = '1') -> decoded_ok(uop)`, which is what `f_out_decoded` asserts. `pipe_write` prove and cover pass.
+
 ### 3.2 No property states the behavior of #79
 
 `formal_debug_link.vhd` gained only the invariant `i_cleared` (`cleared_r = '1' -> hold_r = '1'`). Nothing in the proof says that bit 1, the reason, and the stop register read 0 after a clear; `tb_debug_link` covers it, with a clear after a halt, a clear before a late `h`, the stop register after a clear at a breakpoint, and a version-1 host that loads, starts, halts, and restarts. The "clear before the h" case uses `expect_either`, so the order of `k` and `h` is not pinned, as DEBUG.md allows. Not covered: a clear while paused, not at a breakpoint, and a clear in the cycle of a halt; by the code, `halted_r` is masked by `cleared_r` in both. **Fix:** an assertion or a cover for the three registers after a clear, and the two testbench cases, if cheap.

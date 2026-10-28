@@ -985,7 +985,7 @@ in the whole core by `p_check` in `hdl/src/pipeline.vhd`, on every
 simulation run and in the bounded check. The proof of WRITE proves what
 PREPARE's proof assumes of it, and that of DBUS what it assumes of DBUS,
 with the same model registers. For the whole pipelined core, the port checks and the
-core's own assertions hold for the first 8 cycles after reset, and the
+core's own assertions hold for the first 12 cycles after reset, and the
 simulation tests check the same assertions on every run. The most
 important of them is the data access rule of §5.3: every data access
 belongs to an instruction that retires, which the core asserts as no

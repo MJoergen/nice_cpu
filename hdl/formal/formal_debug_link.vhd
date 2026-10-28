@@ -104,8 +104,8 @@ architecture synthesis of formal_debug_link is
    signal con_due  : std_logic                    := '0';
    signal con_byte : std_logic_vector(7 downto 0) := (others => '0');
 
-   -- The input state of the cycles before, for f_strobe. GHDL 4.1 of the
-   -- formal job fails on prev with a count.
+   -- The input state of the cycles before, for f_strobe. GHDL 4.1, which
+   -- the formal job used to run, fails on prev with a count.
    signal free_nz_d        : std_logic := '0';
    signal con_in_valid_d   : std_logic := '0';
    signal con_in_valid_dd  : std_logic := '0';

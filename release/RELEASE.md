@@ -109,8 +109,9 @@ diagram check of step 2, and writes the stamp. The slides are checked by
 Run these alone, not next to other work, as some proofs take minutes;
 `release.py check` runs only `make timing` beside them, one Vivado run of
 three minutes. CI
-pins older SymbiYosys and Yosys versions than a local install, so a proof
-that passes on one and fails on the other is worth a look.
+pins an OSS CAD Suite (hdl/README.md, The formal checks), which may differ
+from a local install, so a proof that passes on one and fails on the
+other is worth a look.
 
     make formal
 

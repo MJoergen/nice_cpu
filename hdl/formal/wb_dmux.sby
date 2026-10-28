@@ -1,7 +1,9 @@
 # The ports of the data bus decoder (formal_wb_dmux.vhd). "prove" proves
 # the assertions for every cycle with PDR, which finds the invariants that
 # tie the decoder's count to the checker's, and "cover" reaches each cover
-# statement.
+# statement. ABC refuses the undefined bits that a read out of the range of
+# sel_i or owner_r gives, a case the simulation never reaches, so the prove
+# task makes them free in every cycle.
 
 [tasks]
 prove
@@ -20,6 +22,8 @@ cover: smtbmc yices
 plugin -i ghdl
 ghdl --std=08 -fpsl wb_dmux.vhd formal_wb_dmux.vhd -e formal_wb_dmux
 prep -top formal_wb_dmux
+prove: techmap
+prove: setundef -anyseq
 
 [files]
 ../src/wb_dmux.vhd

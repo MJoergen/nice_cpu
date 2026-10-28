@@ -161,34 +161,12 @@ jobs:
         working-directory: hdl
     steps:
       - uses: actions/checkout@v4
-      # The versions of hdl/README.md, The formal checks. The GHDL plugin
-      # loads the libraries of ghdl-gcc.
+      # The tools of hdl/README.md, The formal checks: a pinned OSS CAD
+      # Suite, with Yosys, the GHDL plugin, SymbiYosys, Yices, and
+      # Boolector. Its programs set up their own environment.
       - run: |
-          sudo apt-get update
-          sudo apt-get install -y yosys yosys-plugin-ghdl ghdl-gcc
-      # Boolector 3.2.3, built from source: Ubuntu 24.04 packages 1.5, which
-      # smtbmc cannot drive.
-      - uses: actions/cache@v4
-        id: boolector
-        with:
-          path: /opt/boolector
-          key: boolector-3.2.3-ubuntu-24.04
-      - if: steps.boolector.outputs.cache-hit != 'true'
-        working-directory: /tmp
-        run: |
-          git clone --depth 1 --branch 3.2.3 https://github.com/Boolector/boolector.git
-          cd boolector
-          ./contrib/setup-cadical.sh
-          ./contrib/setup-btor2tools.sh
-          ./configure.sh --prefix /opt/boolector
-          make -C build -j4 install
-      - run: echo /opt/boolector/bin >> "$GITHUB_PATH"
-      - run: |
-          git clone --depth 1 --branch yosys-0.33 https://github.com/YosysHQ/sby.git /tmp/sby
-          sudo make -C /tmp/sby install PREFIX=/usr/local
-      - run: |
-          curl -sSL https://github.com/SRI-CSL/yices2/releases/download/Yices-2.6.4/yices-2.6.4-x86_64-pc-linux-gnu.tar.gz | tar xz -C /tmp
-          sudo cp /tmp/yices-2.6.4/bin/* /usr/local/bin/
+          curl -sSL https://github.com/YosysHQ/oss-cad-suite-build/releases/download/2026-09-30/oss-cad-suite-linux-x64-20260930.tgz | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/oss-cad-suite/bin" >> "$GITHUB_PATH"
       - run: make formal
       # The counterexamples of a failed proof.
       - if: failure()

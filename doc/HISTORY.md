@@ -381,6 +381,17 @@ three of the four about WRITE proved stronger than WRITE:
 The core was correct: PREPARE's proof holds with the weaker assumptions,
 with one more invariant.
 
+## CI's formal tools
+
+Until 2026-10-28, CI's formal job installed Yosys 0.33 and GHDL 4.1 from
+the packages of Ubuntu 24.04, SymbiYosys at its tag `yosys-0.33`, Yices
+2.6.4, and Boolector 3.2.3, built from source. With that Yosys the bounded
+check of the whole pipelined core did not finish a 9th cycle in 20
+minutes, so it checked 8, and missed the halt and the first step after a
+pause that its cover reaches at step 9. CI now installs a pinned OSS CAD
+Suite, and the check covers 12 cycles. GHDL 4.1 is why the formal code
+uses `srl` and `sll`.
+
 ## The debug UART's rate
 
 NiceMonMEGA65's debug UART ran at 115200 baud until it moved to 2 Mbaud

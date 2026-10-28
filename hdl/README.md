@@ -495,16 +495,13 @@ the names of the I/O words it knows:
 
 `make formal` runs the SymbiYosys jobs in `formal/`. It is not part of
 `make test`, because it needs more tools: Yosys with the GHDL plugin,
-SymbiYosys, and the solvers Yices 2 and Boolector. Tested with Yosys 0.33,
-the plugin and GHDL 4.1.0 of Ubuntu 24.04 (packages `yosys`,
-`yosys-plugin-ghdl`, and `ghdl-gcc`, whose libraries the plugin loads),
-SymbiYosys at its tag `yosys-0.33`, Yices 2.6.4, and Boolector 3.2.3,
-which CI installs, and with Yosys 0.56 and GHDL 6.0. GHDL 4.1 cannot
+SymbiYosys, and the solvers Yices 2 and Boolector. CI installs the OSS
+CAD Suite of 2026-09-30, which has them all: Yosys 0.69, GHDL 7.0.0-dev
+with its plugin, Yices 2.7.0, and Boolector 3.2.4. It is also tested with
+Yosys 0.56 and GHDL 6.0. GHDL 4.1, which CI used before, cannot
 synthesize `shift_right` or `shift_left` of `numeric_std_unsigned` by an
 amount that is not constant, so the formal code uses `srl` and `sll`
-instead. Boolector is built from source, with the scripts in its
-`contrib/` for CaDiCaL and btor2tools: the `boolector` package of Ubuntu
-24.04 is version 1.5, which SymbiYosys cannot drive.
+instead.
 
 `formal_multicycle` connects the multi-cycle core to `core_check`, which
 both cores share, and which puts a checker on each of four ports. Every
@@ -725,15 +722,16 @@ since a change while the core runs may miss an instruction. It also
 asserts that no instruction at an enabled breakpoint retires without a
 stop first, but as the first step after `pause_i` was 1. The pipeline is too
 deep for k-induction without many more invariants, so its `bmc` task
-checks only the first 8 cycles after reset, which hold an interrupt
-entry, a first store, and a pause, which its cover reaches at step 4, so
-the rules of a paused core are checked from there. Its cover reaches a
-halt and the first step after a pause only at step 9, so the bounded
-check cannot see them, and the rules of a halted core and the report
-after a pause hold for every cycle only through `formal_pipe_write`. With Yosys 0.33 a
-9th cycle did not finish in 20 minutes; with Yosys 0.56 and its ABC, 10
-cycles take 5 minutes and 12 take 13. The simulation tests check the same
-assertions on every run.
+checks only the first 12 cycles after reset. They hold an interrupt
+entry, a first store, and a pause, which its cover reaches at step 4, and
+a halt and the first step after a pause, which it reaches at step 9. The
+rules of a halted core and the report after a pause hold for every cycle
+through `formal_pipe_write`. The 12 cycles take 3 minutes with Yosys 0.56
+and its ABC, and each further cycle many times more. ABC refuses the
+undefined bits that a read out of an index's range gives, which the
+simulation never reaches, so the task makes them free in every cycle, as
+`wb_dmux.sby` does. The simulation tests check the same assertions on
+every run.
 
 `formal_perf` checks the performance counters against a model in the
 wrapper: three 64-bit counters, one of every cycle with `run_i` high, one of the cycles

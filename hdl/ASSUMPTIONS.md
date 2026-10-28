@@ -139,7 +139,7 @@ change outside `hdl/` are marked **Outside hdl/**, and are also
 ## Formal checks
 
 15. **FETCH, DECODE, PREPARE, and DBUS are proven, the rest of the core
-    is checked for 8 cycles.** `formal/pipe_fetch.sby`, `pipe_decode.sby`,
+    is checked for 12 cycles.** `formal/pipe_fetch.sby`, `pipe_decode.sby`,
     `pipe_prepare.sby`, and `pipe_dbus.sby` prove the four for every
     cycle, and `pipe_write.sby` proves WRITE's halt: it stays halted
     until reset and makes no store, vector read, interrupt entry, or
@@ -157,7 +157,7 @@ change outside `hdl/` are marked **Outside hdl/**, and are also
     their induction, but proves the other three. The whole core is too
     deep for that without many more invariants, so
     `formal/pipeline.sby` checks its ports and its own assertions for the
-    first 8 cycles after reset. The simulation tests check the same
+    first 12 cycles after reset. The simulation tests check the same
     assertions on every run.
 16. **Some registers have no reset, on purpose.** WRITE's `saved_pc`,
     `saved_sr`, `s0val`, `s1val`, `last`, `m33sum`, `cnt`, `vec`,

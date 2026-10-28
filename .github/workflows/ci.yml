@@ -166,9 +166,12 @@ jobs:
       - uses: actions/checkout@v7
       # The tools of hdl/README.md, The formal checks: a pinned OSS CAD
       # Suite, with Yosys, the GHDL plugin, SymbiYosys, Yices, and
-      # Boolector. Its programs set up their own environment.
+      # Boolector. Its programs set up their own environment. The digest is
+      # the one GitHub gives for the release asset.
       - run: |
-          curl -sSL https://github.com/YosysHQ/oss-cad-suite-build/releases/download/2026-09-30/oss-cad-suite-linux-x64-20260930.tgz | tar xz -C "$RUNNER_TEMP"
+          curl -sSLo "$RUNNER_TEMP/oss-cad-suite.tgz" https://github.com/YosysHQ/oss-cad-suite-build/releases/download/2026-09-30/oss-cad-suite-linux-x64-20260930.tgz
+          echo "9e50078dd84062bb78b19cc27a2185b9d37f8cd3d80c03242ec6d85044895fc1  $RUNNER_TEMP/oss-cad-suite.tgz" | sha256sum -c
+          tar xzf "$RUNNER_TEMP/oss-cad-suite.tgz" -C "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/oss-cad-suite/bin" >> "$GITHUB_PATH"
       - run: make formal
       # The counterexamples of a failed proof.

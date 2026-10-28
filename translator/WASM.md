@@ -81,11 +81,11 @@ The module's own stack is separate. Compilers for wasm keep the variables whose 
 | 6 | `call_indirect`: index past the end of the table, or an empty entry |
 | 7 | `call_indirect`: type mismatch |
 
-The runtime library defines `___wasm_trap_vector` and starts it with the address of its default handler, `___wasm_trap`. The handler is the reserved control word `0x0FE00000` (ISA §5.3), so the processor halts with R1 and R2 as the trap left them. Unlike a `HALT`, this halt cannot be mistaken for the normal end of the program. The emulator reports it as an abnormal halt. A program built with `nicebuild.py` installs a handler that first writes the code and address to the console ([runtime README](../runtime/README.md)). A label may be defined only once ([ABI.md](../runtime/ABI.md)), so a program cannot replace `___wasm_trap`. Instead, it installs its own handler at run time by storing the handler's address in the vector. From C, that is:
+The runtime library defines `___wasm_trap_vector` and starts it with the address of its default handler, `___wasm_trap`. The handler is the reserved control word `0x0FE00000` (ISA §5.3), so the processor halts with R1 and R2 as the trap left them. Unlike a `HALT`, this halt cannot be mistaken for the normal end of the program. The emulator reports it as an abnormal halt. A program built with `nicebuild.py` installs a handler that first writes the code and address to the console ([runtime README](../runtime/README.md)). A label may be defined only once ([ABI.md](../runtime/ABI.md)), so a program cannot replace `___wasm_trap`. Instead, it installs its own handler at run time by storing the handler's address in the vector:
 
-    extern void (*__wasm_trap_vector)(int code, unsigned addr);
-    ...
-    __wasm_trap_vector = my_trap;
+                    MOVE    @___wasm_trap_vector, handler
+
+The handler and this store are NICE assembly, joined with the program, as in `runtime/trapmsg.nasm`. Wasm code cannot install a handler. It cannot name the vector, which is not in linear memory, and a wasm function pointer is a table index, not the NICE address that the vector holds.
 
 A handler is entered by a jump, not a call, so mem[SP] is not a return address, and SP is wherever the trapping function left it. A handler must therefore not return.
 

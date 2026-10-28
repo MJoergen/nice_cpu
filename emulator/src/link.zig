@@ -11,7 +11,7 @@ const Cpu = cpu_zig.Cpu;
 /// The escape byte, which starts a packet (DEBUG.md §1).
 pub const esc: u8 = 0xFF;
 /// The protocol version (DEBUG.md §4, §6).
-const version: u8 = 4;
+const version: u8 = 5;
 /// The program's input buffer, in bytes (DEBUG.md §7).
 pub const input_size = 2048;
 /// The packet timeout of DEBUG.md §5.
@@ -63,6 +63,9 @@ pub const Link = struct {
     stop_break: ?u8 = null,
     /// The step limit stopped the run: halt reason 5.
     limit_hit: bool = false,
+    /// A clear since the last start: bit 1 and the halt reason read 0, but
+    /// the `h` of a halt before the clear still goes out with its reason.
+    cleared: bool = false,
     /// A start that the run loop has not carried out yet. It resets the
     /// processor there, and not inside a waiting console read.
     started: bool = false,
@@ -365,9 +368,9 @@ pub const Link = struct {
     fn readDebug(self: *Link, addr: u32) u32 {
         return switch (addr - debug_base) {
             0x00...0x0F => self.cpu.getReg(@truncate(addr)),
-            0x10 => @as(u32, @intFromBool(self.held)) | @as(u32, @intFromBool(self.halted())) << 1 | ctl_rom_hidden |
-                @as(u32, @intFromBool(self.paused)) << 4,
-            0x11 => self.haltReason(),
+            0x10 => @as(u32, @intFromBool(self.held)) | @as(u32, @intFromBool(self.halted() and !self.cleared)) << 1 |
+                ctl_rom_hidden | @as(u32, @intFromBool(self.paused)) << 4,
+            0x11 => if (self.cleared) 0 else self.haltReason(),
             0x12 => version,
             0x13 => @intCast(input_size - self.input_len),
             0x14 => self.break_en,
@@ -402,6 +405,9 @@ pub const Link = struct {
             self.hold();
             self.cpu.mem.deinit();
             self.cpu.mem = .init(self.gpa);
+            // The old program is gone, and so are its halt and its stop.
+            self.cleared = true;
+            self.stop_break = null;
         }
         self.pause_req = value & ctl_pause != 0;
         if (value & ctl_hold != 0) {
@@ -444,6 +450,7 @@ pub const Link = struct {
         self.stop_break = null;
         self.interrupted = true;
         self.limit_hit = false;
+        self.cleared = false;
         self.input_head = 0;
         self.input_len = 0;
         self.input_end = false;

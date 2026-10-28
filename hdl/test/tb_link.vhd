@@ -23,7 +23,7 @@
 -- sends against the exact string. The checksums of the fixed strings are
 -- the sum of the bytes from the tag to the end of the payload, mod 256,
 -- worked out with a script, not taken from a simulation. The checks:
--- * `b04`, and the W and R of DEBUG.md §8, through the decoder to memory;
+-- * `b05`, and the W and R of DEBUG.md §8, through the decoder to memory;
 -- * a word that G_INIT_FILE loaded, and the math unit through the decoder;
 -- * the link's reads of the console and the read counter, and its writes
 --   to the console, which the program must not see;
@@ -675,7 +675,7 @@ begin
       cycles(3);
       rst <= '0';
 
-      expect(C_ESC & "b04#C6", "b04");
+      expect(C_ESC & "b05#C7", "b05");
 
       -- DEBUG.md §8, through the decoder to the memory model
       send(C_ESC & "W0000010000021122334455667788#E2");

@@ -9,7 +9,7 @@ the program halts. The link shares one byte stream with the console
 UART. Both follow this file, so one host tool works with either.
 
 The link is a property of the system, not of the ISA. ISA.md and
-SYSTEM.md win over this file. This is version 4 of the protocol. Its run
+SYSTEM.md win over this file. This is version 5 of the protocol. Its run
 control is the pause, the single step, and the breakpoints (§6).
 
 "SYSTEM.md §1" refers to a section of SYSTEM.md, and a plain "§2" to a
@@ -157,7 +157,7 @@ the control register causes may come before the `k` of that write.
 
 | Notice | Payload | Meaning |
 |---|---|---|
-| `b` | version | The system has powered up or been reset, or a host has connected over TCP (§7). The version is `04`. |
+| `b` | version | The system has powered up or been reset, or a host has connected over TCP (§7). The version is `05`. |
 | `h` | reason | The processor has halted. The reason is the halt reason of §6, `01`–`05`. The last console byte that the program wrote comes before the notice. |
 | `x` | breakpoint | The processor has paused, and R15 is the address of an enabled breakpoint (§6). The payload is its number, `00`–`07`, the lowest if more than one has that address. Bit 4 of the control register reads 1. The last console byte that the program wrote comes before the notice. |
 | `p` | none | The processor has paused: a pause request or a step (§6) has taken effect, and bit 4 of the control register reads 1. R15 is not the address of an enabled breakpoint. The last console byte that the program wrote comes before the notice. |
@@ -208,14 +208,14 @@ system has there otherwise.
 
 | Address | Register |
 |---|---|
-| `0xFFFFFFE0`–`0xFFFFFFEF` | R0 to R15, read only. After a halt, until the next start, they are the values the program left, with R15 the address after the halting instruction, as the emulator prints them, also while the processor is held after the halt. While the processor is paused, they are the values after the last step, with R15 the address of the next instruction, and a hold of the paused processor keeps them until the next start. From a start, or from a go on or a step after a pause, until the next halt or pause, their values are not defined. |
+| `0xFFFFFFE0`–`0xFFFFFFEF` | R0 to R15, read only. After a halt, until the next start or clear, they are the values the program left, with R15 the address after the halting instruction, as the emulator prints them, also while the processor is held after the halt. While the processor is paused, they are the values after the last step, with R15 the address of the next instruction, and a hold of the paused processor keeps them until the next start or clear. From a start or a clear, or from a go on or a step after a pause, until the next halt or pause, their values are not defined. |
 | `0xFFFFFFF0` | Control (below). |
-| `0xFFFFFFF1` | The halt reason, read only: 0 while the processor has not halted, 1 for `HALT`, 2 for a reserved control word, 3 for `INT` inside an interrupt routine, 4 for `RTI` outside one (ISA §5.3, §7.2, §7.4), and 5 when the emulator's step limit stopped the program (§7). |
-| `0xFFFFFFF2` | The protocol version, read only: 4. A host checks it before it uses the pause, the step, or a breakpoint. |
+| `0xFFFFFFF1` | The halt reason, read only: 0 while the processor has not halted, and after a clear, 1 for `HALT`, 2 for a reserved control word, 3 for `INT` inside an interrupt routine, 4 for `RTI` outside one (ISA §5.3, §7.2, §7.4), and 5 when the emulator's step limit stopped the program (§7). |
+| `0xFFFFFFF2` | The protocol version, read only: 5. A host checks it before it uses the pause, the step, or a breakpoint. |
 | `0xFFFFFFF3` | The free space, read only: the number of console bytes that the program's input buffer can take now. It reads so while the processor is held or halted too, although the bytes sent then are dropped (§1), and a start empties the buffer. |
 | `0xFFFFFFF4` | The enable bits of the breakpoints. Bit i enables breakpoint i. The bits from N up read 0 and take no write. |
 | `0xFFFFFFF5` | The number of breakpoints N, read only: 0 to 8. A system without breakpoints reads 0. |
-| `0xFFFFFFF6` | The stop, read only. From an `x` until the next go on, step, or start, bit 8 is 1, and bits 7–0 are the breakpoint's number, as the `x` carried. Otherwise 0. |
+| `0xFFFFFFF6` | The stop, read only. From an `x` until the next go on, step, start, or clear, bit 8 is 1, and bits 7–0 are the breakpoint's number, as the `x` carried. Otherwise 0. |
 | `0xFFFFFFF7` | Reserved. It reads 0 and takes no write. |
 | `0xFFFFFFF8`–`0xFFFFFFFF` | The addresses of breakpoints 0 to 7. The words from `0xFFFFFFF8` + N up read 0 and take no write. |
 
@@ -227,6 +227,7 @@ A write to a read-only register is ignored. The versions:
 | 2 | The pause: bit 4 of the control register, and the notice `p`. | Never tagged. |
 | 3 | The single step: bit 5 of the control register. | RC05 |
 | 4 | The breakpoints: the notice `x`, and the registers `0xFFFFFFF4` to `0xFFFFFFFF`. | RC06 |
+| 5 | A clear ends the halt and the stop: bit 1, the halt reason, and the stop register read 0 after it. | Not yet tagged. |
 
 A system of version 1 has no pause and no step. A host reads the register
 before it uses either.
@@ -236,7 +237,7 @@ The bits of the control register:
 | Bit | Read | Write |
 |---|---|---|
 | 0 | 1 while the processor is held | 1 holds the processor in reset, and 0 starts it |
-| 1 | 1 after a halt | ignored |
+| 1 | 1 after a halt, until a start or a clear | ignored |
 | 2 | 0 | 1 first clears the memory to 0, with the processor held |
 | 3 | 1 while the ROM is hidden | 1 hides the ROM, so the RAM is at 0, and 0 shows it |
 | 4 | 1 while the processor is paused | 1 asks for a pause, and 0 cancels the request or goes on |
@@ -262,11 +263,12 @@ version 2 writes it as 0.
   program again by itself.
 - **Hold.** Writing 1 to bit 0 stops a running program at once. It sends no
   `h` notice. Bit 1, the halt reason, and R0–R15 keep their values while
-  the processor is held, so a host can read them after a halt in either
-  state. A hold of a paused processor keeps R0–R15 as they were at the
-  pause, until the next start, so a host can pause, read, and stop. A hold
-  that stops a running program leaves R0–R15 not defined. A hold ends the
-  pause: bit 4 reads 0 while the processor is held.
+  the processor is held, until a clear, so a host can read them after a
+  halt in either state. A hold of a paused processor keeps R0–R15 as they
+  were at the pause, until the next start or clear, so a host can pause,
+  read, and stop. A hold that stops a running program leaves R0–R15 not
+  defined. A hold ends the pause: bit 4 reads 0 while the processor is
+  held.
 - **Halt.** A stop by the emulator's step limit is a halt: bit 1 reads 1.
 - **Clear.** A write with bit 2 set clears every word of the memory, the
   screen included, and holds the processor first if it runs. Bit 3 takes
@@ -278,6 +280,13 @@ version 2 writes it as 0.
   each word as it arrives, so a dropped `W` (§5) may still start a clear.
   A request that comes while the memory clears is carried out after the
   clear ends.
+- **Clear and halt.** A clear wipes the old program, and with it its halt
+  and its stop. When the clear starts, bit 1, the halt reason, and the stop
+  register read 0, and R0–R15 are not defined until the next halt or
+  pause. So after a load, the control register reads held, not halted.
+  The `h` of a halt before the clear still comes, with its reason, also
+  if it comes after the `k` of the clear. A system of version 4 keeps
+  bit 1, the reason, and the stop register over a clear.
 - **ROM.** A system without a ROM, such as the emulator, reads bit 3 as 1
   and ignores writes to it.
 - **Pause.** A write of 1 to bit 4 of a running processor asks for a pause.
@@ -373,8 +382,8 @@ condition is false, is a step (ISA §3), so a breakpoint at it fires.
 - **The stop register.** Notices are not resent. If an `x` is lost, the
   host sees only that bit 4 reads 1, and `0xFFFFFFF6` tells it why, as
   `0xFFFFFFF1` does for a lost `h`. It keeps its value until the next go
-  on, step, or start, also if the host changes the breakpoints meanwhile.
-  A hold of the paused processor keeps it, as it keeps R0–R15.
+  on, step, start, or clear, also if the host changes the breakpoints
+  meanwhile. A hold of the paused processor keeps it, as it keeps R0–R15.
 - **When a write takes effect.** The link writes the enable bits and the
   addresses as they arrive, also while the program runs. A write while the
   program runs takes effect within a few cycles. So a breakpoint set then
@@ -505,7 +514,7 @@ to the last `8`, mod 256. FF is the byte `0xFF`, and the rest is ASCII.
     host:    FF "R000001000001#94"
     system:  FF "r00000100000111223344#48"
 
-A system reset sends `FF "b04#C6"`, and a `HALT` sends `FF "h01#C9"`. The
+A system reset sends `FF "b05#C7"`, and a `HALT` sends `FF "h01#C9"`. The
 same `R` sent while the program runs gets `FF "e5202#2E"`.
 
 After a halt, the host restarts the program with two writes to the

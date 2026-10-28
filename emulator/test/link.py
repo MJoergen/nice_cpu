@@ -122,7 +122,7 @@ def answer(addr: int, words: List[int]) -> bytes:
 
 
 CONTROL = 0xFFFFFFF0
-HELLO = b"\xffb04#C6"
+HELLO = b"\xffb05#C7"
 PAUSED = b"\xffp#70"
 
 
@@ -211,7 +211,7 @@ def test_example() -> None:
     e.expect("control held", answer(CONTROL, [0x9]))
     # The halt reason, the version, the free space, and a reserved word.
     e.send(read(0xFFFFFFF1, 4))
-    e.expect("F1-F4", answer(0xFFFFFFF1, [0, 4, 2048, 0]))
+    e.expect("F1-F4", answer(0xFFFFFFF1, [0, 5, 2048, 0]))
     # The breakpoints: four, none enabled, no stop, and the addresses 0.
     e.send(read(0xFFFFFFF5, 11))
     e.expect("F5-FF", answer(0xFFFFFFF5, [4] + [0] * 10))
@@ -271,7 +271,7 @@ def test_errors() -> None:
     e.send(write(0xFFFFFF01, [5]) + write(0xFFFFFFF2, [7]))
     e.expect("ignored writes", ok(0xFFFFFF01, 1) + ok(0xFFFFFFF2, 1))
     e.send(read(0xFFFFFF01, 1) + read(0xFFFFFFF2, 1))
-    e.expect("read counter", answer(0xFFFFFF01, [0]) + answer(0xFFFFFFF2, [4]))
+    e.expect("read counter", answer(0xFFFFFF01, [0]) + answer(0xFFFFFFF2, [5]))
     # A clear: 0x5 clears and stays held.
     e.send(write(CONTROL, [0x5]))
     e.expect("clear", ok(CONTROL, 1))
@@ -374,6 +374,9 @@ def test_step_limit(spin: List[int]) -> None:
     e.expect("h05", b"\xffh05#CD")
     e.send(read(CONTROL, 2))
     e.expect("reason 5", answer(CONTROL, [0xA, 5]))
+    # A clear ends the halt state, also that of the step limit.
+    e.send(write(CONTROL, [0x5]) + read(CONTROL, 2))
+    e.expect("clear after reason 5", ok(CONTROL, 1) + answer(CONTROL, [0x9, 0]))
     _, _, err = e.stop()
     want = b"Stopped at the step limit after 10 steps, PC=00000000\n"
     if want not in err:
@@ -382,7 +385,8 @@ def test_step_limit(spin: List[int]) -> None:
 
 def test_halts(reserved: List[int], int_in_isr: List[int], rti: List[int], spin: List[int]) -> None:
     """The halt reasons 2 to 4 reach the host as `h` and in the register
-    (§4, §6), and a clear of the memory stops a running program (§6)."""
+    (§4, §6), a clear ends the halt state, and a clear of the memory stops
+    a running program (§6)."""
     for name, prog, reason, note in (
         ("reserved", reserved, 2, b"\xffh02#CA"),
         ("INT in a routine", int_in_isr, 3, b"\xffh03#CB"),
@@ -395,6 +399,8 @@ def test_halts(reserved: List[int], int_in_isr: List[int], rti: List[int], spin:
         e.expect(name + " notice", note)
         e.send(read(CONTROL, 2))
         e.expect(name + " reason", answer(CONTROL, [0xA, reason]))
+        e.send(write(CONTROL, [0x5]) + read(CONTROL, 2))
+        e.expect(name + " cleared", ok(CONTROL, 1) + answer(CONTROL, [0x9, 0]))
         e.stop()
     # A clear while the program runs holds it first. Bit 2 with bit 0 set
     # clears and stays held, with no notice.
@@ -749,14 +755,14 @@ def test_break(at10: List[int], load: List[int], count: List[int], skip: List[in
     set_breaks(e, [0], 0x1)
     e.send(write(CONTROL, [0x9]) + write(CONTROL, [0x18]))
     e.expect("start paused at a breakpoint", ok(CONTROL, 1) + ok(CONTROL, 1) + hit(0))
-    # A hold and a clear keep the stop register and the breakpoints, and a
-    # start clears the stop register and keeps the breakpoints.
+    # A hold keeps the stop register, and a clear clears it. Both keep the
+    # breakpoints, and so does a start.
     e.send(write(CONTROL, [0x9]))
     e.expect("hold at x", ok(CONTROL, 1))
     expect("hold keeps the stop", bytes([word(e, STOP_REG) >> 8]), bytes([1]))
     e.send(write(CONTROL, [0x5]))
     e.expect("clear", ok(CONTROL, 1))
-    expect("clear keeps the stop", bytes([word(e, STOP_REG) >> 8]), bytes([1]))
+    expect("clear clears the stop", word(e, STOP_REG).to_bytes(4, "big"), bytes(4))
     e.send(read(BREAK_EN, 1) + read(BREAK0, 2))
     e.expect("clear keeps them", answer(BREAK_EN, [1]) + answer(BREAK0, [0, 2]))
     e.send(write(0, count) + write(BREAK_EN, [0]) + write(CONTROL, [0x8]))

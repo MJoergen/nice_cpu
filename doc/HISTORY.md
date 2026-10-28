@@ -451,3 +451,12 @@ library became 6895 words, not 7079. The translator's README warned
 against `-fno-llvm`, because Zig 0.15's own wasm backend encoded the
 initial value of `__stack_pointer` wrongly. With 0.17, `runtime/test/nicezig.zig`
 built with `-fno-llvm` prints the same as with LLVM.
+
+## A clear and the halt state
+
+Until 2026-10-28, debug link version 4, a clear kept bit 1 of the
+control register, the halt reason, and the stop register. They ended only
+at a start. A host that loaded a program after a halt, with a write of
+`0x5` or `0xD`, then read "halted" and the old program's reason, although
+the old program was gone (#79). Version 5 ends them when a clear starts,
+and keeps the `h` of a halt that has not gone out yet (DEBUG.md §6).

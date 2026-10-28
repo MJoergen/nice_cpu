@@ -15,7 +15,7 @@
 -- its registers, its halt, and its pause while it is held, as the real core
 -- does. R15 is 0x1234560F while it runs.
 -- The checks, in the order of the run:
--- * the notice `b04` after reset, and the examples of DEBUG.md §8;
+-- * the notice `b05` after reset, and the examples of DEBUG.md §8;
 -- * lowercase digits, a bad checksum, an unknown tag, a payload with a bad
 --   length or a bad digit, and a W with too many words;
 -- * the debug registers, a clear of the memory, one that a dropped packet
@@ -29,6 +29,7 @@
 -- * the pause: bit 4, the notice `p` after and before the answer, the memory,
 --   the registers, and the console while paused, a hold and a start that
 --   keep or begin a pause, a go on, and a halt that ignores a request;
+-- * a clear that ends the halt, and an `h` not yet sent that it keeps;
 -- * the step: bit 5, pause_o low for exactly one cycle, bit 4 and the memory
 --   during the step, one `p` after it, a step into a halt, a hold during the
 --   step, and a write with bit 5 that does not step;
@@ -453,7 +454,7 @@ begin
       rst <= '0';
 
       -- Reset: a notice, and the processor held with the ROM shown.
-      expect(C_ESC & "b04#C6", "b04");
+      expect(C_ESC & "b05#C7", "b05");
       assert hold = '1' and rom_hide = '0' and eoi = '0'
          report "tb_debug_link: state after reset"
          severity failure;
@@ -510,7 +511,7 @@ begin
 
       -- The registers while held: version, free space, the breakpoints, and control.
       send(C_ESC & "RFFFFFFF20001#2F");
-      expect(C_ESC & "rFFFFFFF2000100000004#D3", "version");
+      expect(C_ESC & "rFFFFFFF2000100000005#D4", "version");
       send(C_ESC & "RFFFFFFF30001#30");
       expect(C_ESC & "rFFFFFFF3000100000008#D8", "free space");
       send(C_ESC & "RFFFFFFF40002#32");
@@ -904,6 +905,29 @@ begin
       expect(C_ESC & "rFFFFFFF000010000000A#DE", "control when halted");
       quiet("request when halted");
 
+      -- A clear ends the halt: bit 1 and the reason read 0.
+      send(C_ESC & "WFFFFFFF000010000000D#C6");
+      expect(C_ESC & "kFFFFFFF00001#46", "clear after a halt");
+      send(C_ESC & "RFFFFFFF00002#2E");
+      expect(C_ESC & "rFFFFFFF000020000000900000000#57", "control and reason after a clear");
+      quiet("clear after a halt");
+
+      -- A halt whose h has not gone out when a clear comes: the h still
+      -- goes out, with its reason, and the clear ends the halt.
+      core_halt <= '0';
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "start before a late h");
+      tx_ok     <= '0';
+      core_halt <= '1';
+      cycles(10);
+      send(C_ESC & "WFFFFFFF000010000000D#C6");
+      cycles(10);
+      tx_ok <= '1';
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "h01#C9", "clear before the h");
+      quiet("clear before the h");
+      send(C_ESC & "RFFFFFFF00002#2E");
+      expect(C_ESC & "rFFFFFFF000020000000900000000#57", "control and reason after the late h");
+
       -- The breakpoints (DEBUG.md §6), set while held: 4 of them, so the
       -- words and bits past them read 0 and take no write. 0, 1, and 3 are
       -- enabled, and 1 and 3 are at R15, so the lowest there is 1.
@@ -948,11 +972,15 @@ begin
       send(C_ESC & "RFFFFFFF60001#33");
       expect(C_ESC & "rFFFFFFF6000100000101#D5", "stop register after the step");
 
-      -- A hold keeps the stop register, and a start clears it.
+      -- A hold keeps the stop register, and a clear or a start clears it.
       send(C_ESC & "WFFFFFFF0000100000009#BB");
       expect(C_ESC & "kFFFFFFF00001#46", "hold at a breakpoint");
       send(C_ESC & "RFFFFFFF60001#33");
       expect(C_ESC & "rFFFFFFF6000100000101#D5", "stop register kept by a hold");
+      send(C_ESC & "WFFFFFFF000010000000D#C6");
+      expect(C_ESC & "kFFFFFFF00001#46", "clear at a breakpoint");
+      send(C_ESC & "RFFFFFFF60001#33");
+      expect(C_ESC & "rFFFFFFF6000100000000#D3", "stop register after a clear");
       send(C_ESC & "WFFFFFFF0000100000008#BA");
       expect(C_ESC & "kFFFFFFF00001#46", "start after the breakpoint");
       send(C_ESC & "RFFFFFFF60001#33");
@@ -1007,7 +1035,7 @@ begin
       rst <= '1';
       cycles(3);
       rst <= '0';
-      expect(C_ESC & "b04#C6", "b04 after reset");
+      expect(C_ESC & "b05#C7", "b05 after reset");
       send(C_ESC & "RFFFFFFF80001#35");
       expect(C_ESC & "rFFFFFFF8000100000000#D5", "address after reset");
       send(C_ESC & "RFFFFFFF40001#31");

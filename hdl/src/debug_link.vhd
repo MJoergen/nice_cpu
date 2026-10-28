@@ -117,7 +117,7 @@
 -- are in formal/formal_debug_link.vhd.
 --
 -- RESET
--- Synchronous. It sends `b04`, empties everything, clears the breakpoints,
+-- Synchronous. It sends `b05`, empties everything, clears the breakpoints,
 -- and leaves the
 -- processor held with G_BOOT_HELD, or running with the ROM shown otherwise.
 -- G_HAS_ROM is false on a system without a ROM: bit 3 then reads 1 and
@@ -214,7 +214,7 @@ architecture synthesis of debug_link is
    constant C_TAG_W : t_byte := X"57";   -- 'W', a write
    constant C_HASH  : t_byte := X"23";   -- '#', before the checksum
 
-   constant C_VERSION : t_word := X"00000004";
+   constant C_VERSION : t_word := X"00000005";
 
    function is_hex(b : t_byte) return boolean is
    begin
@@ -362,6 +362,9 @@ architecture synthesis of debug_link is
    signal brk_addr_r  : t_brk_addrs                  := (others => (others => '0'));
    signal brk_en_r    : std_logic_vector(C_BREAKS_MAX - 1 downto 0) := (others => '0');
    signal pause_d_r   : std_logic                    := '0';
+   -- A clear since the last start: bit 1 and the halt reason read 0, but
+   -- the `h` of a halt before the clear still goes out with its reason.
+   signal cleared_r : std_logic := '0';
    -- The stop register: bit 8 and the number of the breakpoint at R15
    signal stop_r : std_logic_vector(8 downto 0) := (others => '0');
 
@@ -751,6 +754,9 @@ begin
                               clearing_r <= '1';
                               clr_hold_r <= word_r(0);
                               nh_v       := '1';
+                              -- The old program is gone, and so are its halt and its stop.
+                              cleared_r  <= '1';
+                              stop_r     <= (others => '0');
                            end if;
                         end if;
                      else
@@ -759,11 +765,13 @@ begin
                            rd_v := regs_r(32 * idx_v + 31 downto 32 * idx_v);
                         elsif idx_v = 16 then
                            rd_v(0) := hold_r;
-                           rd_v(1) := halted_r;
+                           rd_v(1) := halted_r and not cleared_r;
                            rd_v(3) := hide_r or not to_sl(G_HAS_ROM);
                            rd_v(4) := pause_own;
                         elsif idx_v = 17 then
-                           rd_v(2 downto 0) := reason_r;
+                           if cleared_r = '0' then
+                              rd_v(2 downto 0) := reason_r;
+                           end if;
                         elsif idx_v = 18 then
                            rd_v := C_VERSION;
                         elsif idx_v = 19 then
@@ -807,9 +815,10 @@ begin
 
          -- A start: the control register goes from held to running.
          if hold_r = '1' and nh_v = '0' then
-            halted_r <= '0';
-            reason_r <= "000";
-            eoi_r    <= '0';
+            halted_r  <= '0';
+            reason_r  <= "000";
+            cleared_r <= '0';
+            eoi_r     <= '0';
          end if;
          hold_r <= nh_v;
          if nh_v = '1' then
@@ -839,6 +848,7 @@ begin
             hide_r     <= '0';
             eoi_r      <= '0';
             clearing_r <= '0';
+            cleared_r  <= '0';
             wb_cyc_r   <= '0';
             wb_stb_r   <= '0';
             brk_addr_r <= (others => (others => '0'));
@@ -1282,6 +1292,7 @@ begin
       -- psl i_halted : assert always (halted_r = '1' and hold_r = '0') -> halted_i = '1';
       -- psl i_strobe : assert always con_in_valid_o = '1' -> gap_r = 2;
       -- psl i_clear : assert always clearing_r = '1' -> hold_r = '1';
+      -- psl i_cleared : assert always cleared_r = '1' -> hold_r = '1';
 
       -- p_acc: one access at a time, for p_rx's write or p_tx's read.
       -- psl i_acc_idle : assert always

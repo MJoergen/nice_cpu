@@ -20,9 +20,11 @@ A release here is named `Vmajor.minor`: `V1.0`, `V1.1`, and so on, with a
 new major version when a change asks for it. The release candidates
 `RC01` to `RC06` came before `V1.0`.
 
-Every release here gets a release of NiceMonMEGA65 with the same name,
-which moves its `nice_cpu` submodule to the tag. A release of
-NiceMonMEGA65 that leaves the submodule alone adds a third number:
+A release here that meets timing on the MEGA65 gets a release of
+NiceMonMEGA65 with the same name, which moves its `nice_cpu` submodule
+to the tag. One that misses gets none, and NiceMonMEGA65 stays on the
+last tag that met. A release of NiceMonMEGA65 that leaves the submodule
+alone adds a third number:
 
 | NiceMonMEGA65 | `nice_cpu` | What it is |
 |---|---|---|
@@ -30,6 +32,7 @@ NiceMonMEGA65 that leaves the submodule alone adds a third number:
 | `V1.0.1` | `V1.0` | a change in NiceMonMEGA65 only |
 | `V1.0.2` | `V1.0` | another one |
 | `V1.1` | `V1.1` | the submodule moved to `V1.1` |
+| none | `V1.2` | `V1.2` missed timing on the MEGA65 |
 
 So the first two numbers of a NiceMonMEGA65 tag always name the
 `nice_cpu` tag it pins. NiceMonMEGA65 pins only tags of this repository,
@@ -181,10 +184,10 @@ from a clone with the submodule, or later, at your pace.
 
 2. Follow the "After a submodule bump" steps of its
    [CLAUDE.md](https://github.com/MJoergen/NiceMonMEGA65/blob/main/CLAUDE.md),
-   and its own release checklist, and tag it with the same name as the tag here
-   (Version names). Anything that changed in the address map, a
-   device, or the ports of the core (see "Interface changes" below) must be
-   matched in `src/` there.
+   and its own release checklist, and, if it meets timing, tag it with the
+   same name as the tag here (Version names). Anything that changed in
+   the address map, a device, or the ports of the core (see "Interface
+   changes" below) must be matched in `src/` there.
 3. Its bump script writes the result for the tag (the timing in the system,
    the date, and the tag) to the file that the badge in
    [README.md](../README.md) reads. Until then the badge still shows the

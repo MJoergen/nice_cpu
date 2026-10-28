@@ -6,9 +6,10 @@ changes since the one before that a user of the tools or the cores can see.
 [doc/HISTORY.md](doc/HISTORY.md) has the full story.
 
 The board repository [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65)
-pins one of these. From `V1.0` on, its tag that moves the submodule has the
-same name, and its releases that leave the submodule alone add a third
-number: `V1.0.1` and `V1.0.2` pin `V1.0`
+pins one of these. From `V1.0` on, its tag that moves the submodule, if
+the tag meets timing on the MEGA65, has the same name, and its releases
+that leave the submodule alone add a third number: `V1.0.1` and `V1.0.2`
+pin `V1.0`
 ([release/RELEASE.md](release/RELEASE.md#version-names)). Its tag that
 pins each is:
 

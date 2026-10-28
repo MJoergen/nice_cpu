@@ -12,6 +12,8 @@ Reviewed on 2026-10-28: the 18 commits since the tag `V1.0` (2026-10-27), at com
 
 **The rest is small**: a version in hdl/README.md (§6.1), a download that CI does not check (§6.2), a reset guard that an assumption lacks (§3.1), three mismatches between `nicedis` and its README or `niceemu` (§4.1, §4.2), a scan that is quadratic in the symbols (§4.3), and an invalid base that runs past a string in the C library (§5.1).
 
+**Every finding is closed** on the branch `review-2026-10-28`, with a commit for each finding or pair of findings and a **Resolved** paragraph under each. The fix of §2.1 puts back the bytes that an undone step took. The rest are tests, a guard, a property, the parsing of `nicedis`, an invalid base in the C library, a digest in CI, and documents. Three parts are left, each with its reason: a testbench case for a clear in the cycle of a halt (§3.2), the build outputs in `dis.py` (§4.4), and the two times of `make core CORE=multicycle` (§6.4). What is left for the tag is the `V1.1` section of RELEASE_NOTES.md (§1.2).
+
 ## 1. The release
 
 ### 1.1 DEBUG.md's version table is not on the checklist

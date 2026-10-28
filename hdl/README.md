@@ -463,9 +463,9 @@ its four modes (`FUZZ_PROGRAMS`), on the core (MICROARCH.md §9, step 7). It is 
 `make test`, because it takes 25 minutes on the pipelined core and 51 on the
 multi-cycle one, on 20 CPUs: some 2 million steps in 490
 programs, at GHDL's 3300 steps a second. In nvc, `SIM=nvc`, it took 5
-and 3 minutes on 2026-10-28. CI runs it on
-both, each in three shards (`SHARD=I/3`, the Ith of N shares of the programs,
-longest first), so that no job is far from the 6 hour limit. That run is the release's: the
+and 3 minutes on 2026-10-28. CI runs it in nvc on
+both cores, a job for each. `SHARD=I/N` runs the Ith of N shares of the
+programs, of nearly equal steps, longest first. That run is the release's: the
 top-level `make slow` leaves `make programs` out ([RELEASE.md](../release/RELEASE.md)). It does not run `runtime/libc/test/fuzz_printf.py`, which
 needs clang, or the benchmark, which `make core` in `bench/` runs. `make test KEEP=DIR`
 in `runtime/` and `test/run.py --keep DIR` and `test/fuzz.py --keep DIR` in `translator/` run their

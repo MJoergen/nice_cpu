@@ -480,7 +480,7 @@ strides: emulator analyze $(BUILD)/pcfx.bin $(BUILD)/sidefx.bin
 PROGRAMS = $(BUILD)/programs
 FUZZ_PROGRAMS = 10
 
-# SHARD = I/N runs the Ith of N shares of the programs, as CI does.
+# SHARD = I/N runs the Ith of N shares of the programs.
 SHARD = 1/1
 
 programs: emulator analyze

@@ -3,7 +3,7 @@
 
 Usage: programs.py [options] DIR...
 
-With --shard I/N it runs only the Ith share of N, as one of N CI jobs. The
+With --shard I/N it runs only the Ith share of N, as one of N jobs. The
 shares have nearly equal steps on the emulator. "programs.py --test" checks
 how they are made.
 

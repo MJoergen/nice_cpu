@@ -138,7 +138,7 @@ not part of the release; it is run after a change to the interrupt path
 (CLAUDE.md, Conventions).
 
 `hdl make programs`, the runtime and translator programs on the core, is
-not part of `make slow`: CI runs it on both cores, in three shards each,
+not part of `make slow`: CI runs it on both cores, in nvc,
 and step 6 needs those jobs to pass.
 
 Then refresh the estimate against the core:
@@ -171,7 +171,7 @@ figures in the commit message, so that a feature does not quietly take the
 
 Push the release candidate and wait for every job of
 [ci.yml](../.github/workflows/ci.yml) to pass on that exact commit. That
-includes the `programs` jobs, which take hours, three shards for each core.
+includes the `programs` jobs, one for each core.
 Cut no tag before they are done.
 `python3 release/release.py ci --wait` does it. If `origin` is not on
 GitHub, add `--repo OWNER/NAME`.

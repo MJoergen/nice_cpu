@@ -93,6 +93,8 @@ assembler/README.md:67 says so; `address()` calls `int(text, 0)`, so `--start 01
 - The symbols file is read as Latin-1 and names are printed through the locale, so a non-ASCII name comes out re-encoded. It can only reach a comment, as such a name is never a valid label.
 - The README does not list the exact error texts; it gives the `file:line: error:` form and the exit statuses 0, 1, and 2, which match.
 
+**Resolved** in part: outside a checkout, `dis.py` walks the tree for `.bin` files, without `build`, `zig-out`, and `.zig-cache`; in a checkout it still asks git, as the tests of other directories write and remove `.out.bin` files beside their sources while `make test` runs in parallel, and a walk would race with them. The build outputs stay out. The other two items need no change.
+
 ## 5. The runtime and the C library
 
 ### 5.1 A base above 36 runs past the string

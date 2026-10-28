@@ -98,10 +98,24 @@ def symbols_of(path: str, d: str) -> Optional[str]:
     return sym
 
 
+def bin_files() -> List[str]:
+    """The tracked .bin files, or outside a checkout those of the tree but for
+    the build directories. In a checkout, the files that the tests of other
+    directories write and remove while make test runs in parallel stay out."""
+    if os.path.isdir(os.path.join(ROOT, ".git")):
+        return subprocess.run(["git", "ls-files", "*.bin"], cwd=ROOT, capture_output=True,
+                              text=True, check=True).stdout.split()
+    skip = {"build", "zig-out", ".zig-cache"}
+    files = []
+    for top, dirs, names in os.walk(ROOT):
+        dirs[:] = sorted(n for n in dirs if n not in skip)
+        files += [os.path.relpath(os.path.join(top, n), ROOT) for n in sorted(names) if n.endswith(".bin")]
+    return files
+
+
 def main() -> None:
     failed = 0
-    files = subprocess.run(["git", "ls-files", "*.bin"], cwd=ROOT, capture_output=True,
-                           text=True, check=True).stdout.split()
+    files = bin_files()
     with tempfile.TemporaryDirectory() as d:
         n_sym = 0
         for name in files:

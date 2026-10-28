@@ -6,13 +6,13 @@ on:
 
 jobs:
   assembler:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: assembler
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
       - run: pip install mypy
@@ -20,13 +20,13 @@ jobs:
       - run: make typecheck
 
   emulator:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: emulator
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
       - run: pip install mypy
@@ -40,13 +40,13 @@ jobs:
       - run: make -C ../doc/intro test
 
   runtime:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: runtime
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
       - run: pip install mypy
@@ -57,13 +57,13 @@ jobs:
       - run: make typecheck
 
   translator:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: translator
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
       - run: pip install mypy
@@ -76,13 +76,13 @@ jobs:
       - run: make typecheck
 
   doc:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: doc
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
       - run: pip install mypy
@@ -90,13 +90,13 @@ jobs:
       - run: make typecheck
 
   bench:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: bench
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
       - run: pip install mypy
@@ -107,13 +107,13 @@ jobs:
       - run: make typecheck
 
   hdl:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: hdl
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
       - uses: mlugg/setup-zig@v2
@@ -144,8 +144,8 @@ jobs:
       run:
         working-directory: hdl
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
       - uses: mlugg/setup-zig@v2
@@ -163,7 +163,7 @@ jobs:
       run:
         working-directory: hdl
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The tools of hdl/README.md, The formal checks: a pinned OSS CAD
       # Suite, with Yosys, the GHDL plugin, SymbiYosys, Yices, and
       # Boolector. Its programs set up their own environment.
@@ -173,7 +173,7 @@ jobs:
       - run: make formal
       # The counterexamples of a failed proof.
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: formal-traces
           path: |
@@ -181,13 +181,13 @@ jobs:
             hdl/build/formal_*.log
 
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: release
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
       - run: pip install mypy
@@ -195,12 +195,12 @@ jobs:
       - run: make typecheck
 
   intro:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: doc/intro
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # pdflatex with beamer, and pdftotext.
       - run: |
           sudo apt-get update

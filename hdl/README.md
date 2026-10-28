@@ -141,7 +141,7 @@ GHDL 6.0.0-dev and GHDL 4.1.0 (mcode backend). CI installs 4.1.0, the
 `ghdl` package of Ubuntu 24.04.
 
 `SIM=nvc` runs the simulations in [nvc](https://www.nickg.me.uk/nvc/)
-instead, tested with nvc 1.20. Its traces are byte for byte those of
+instead, tested with nvc 1.20 locally and 1.23.0 in CI. Its traces are byte for byte those of
 GHDL, and it is several times faster on the long runs (`make programs`,
 `make sweep`, and the benchmark in `bench/`). On short runs it is slower,
 because its compiler takes about a second of CPU time on each: `make test`

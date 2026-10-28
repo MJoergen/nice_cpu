@@ -117,6 +117,8 @@ assembler/README.md:67 says so; `address()` calls `int(text, 0)`, so `--start 01
 
 hdl/README.md:144 says nvc is "tested with nvc 1.20"; `ci.yml`'s programs jobs install 1.23.0 from its release package. **Fix:** "tested with nvc 1.20 locally and 1.23.0 in CI", or move the local install to 1.23.0.
 
+**Resolved**: by the first.
+
 ### 6.2 The OSS CAD Suite download is not checked
 
 `ci.yml`'s formal job pipes `curl` of the 2026-09-30 tarball into `tar` with no digest, where the programs jobs check the nvc package with `sha256sum -c`. The suite puts a whole toolchain on `PATH`. **Fix:** the same check, with the digest of the release asset.

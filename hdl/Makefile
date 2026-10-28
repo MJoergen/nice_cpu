@@ -1,4 +1,3 @@
-GHDL ?= ghdl
 PYTHON ?= python3
 ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
@@ -12,14 +11,16 @@ TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_perf.vh
 # The runs of make test and make random go in parallel: each
 # is a target run/GROUP/NAME, where GROUP is unit, trace, or a core. A run
 # leaves its files in its own directory, RUNDIR, $(BUILD)/run/GROUP/NAME,
-# and GHDL runs there, because its LLVM and GCC backends write an
-# executable where they run. Paths given to GHDL are absolute. The runs
+# and the simulator runs there, because GHDL's LLVM and GCC backends write
+# an executable where they run. Paths given to it are absolute. The runs
 # take JOBS jobs, one per CPU, unless make was given -j; their PASS and FAIL
 # lines come in the order they finish.
 JOBS ?= $(shell nproc)
 PARALLEL = $(if $(filter -j%,$(MAKEFLAGS)),,-j$(JOBS)) -O
 RUNDIR = $(BUILD)/$@
-GHDLRUN = $(GHDL) --elab-run --std=08 --workdir=$(abspath $(BUILD))
+
+SIM_BUILD = $(abspath $(BUILD))
+include sim.mk
 # Empties RUNDIR and changes to it, in the shell of one recipe line.
 in_rundir = rm -rf $(RUNDIR) && mkdir -p $(RUNDIR) && cd $(RUNDIR)
 
@@ -46,7 +47,7 @@ UNITS = tb_mem tb_shift tb_mpu tb_perf tb_perf_hz tb_timer tb_fetch_stats tb_wb_
 GENERICS_tb_mem = -gG_BIN_FILE=$(abspath test/mem.bin) -gG_INPUT_FILE=$(abspath test/mem.input)
 
 $(UNITS:%=run/unit/%): run/unit/%:
-	@($(in_rundir) && $(GHDLRUN) $* $(GENERICS_$*) > $*.log 2>&1); \
+	@($(in_rundir) && $(call sim_run,$*,$(GENERICS_$*)) > $*.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS $*"; else echo "FAIL $*"; cat $(RUNDIR)/$*.log; exit 1; fi
 
 # tb_trace stands in for the core and runs test/trace.nasm. Each run's output
@@ -63,8 +64,8 @@ OPTS_nmi       = -t -n 6 --nmi 5:0x20
 OPTS_full      = -t --nmi 5:0x20
 
 define check_trace
-	@($(in_rundir) && $(GHDLRUN) tb_trace -gG_BIN_FILE=$(abspath $(BUILD)/trace.bin) -gG_TRACE_FILE=trace.out \
-	  $(GENERICS_$(1)) > trace.log 2>&1); echo "exit $$?" >> $(RUNDIR)/trace.out
+	@($(in_rundir) && $(call sim_run,tb_trace,-gG_BIN_FILE=$(abspath $(BUILD)/trace.bin) -gG_TRACE_FILE=trace.out \
+	  $(GENERICS_$(1))) > trace.log 2>&1); echo "exit $$?" >> $(RUNDIR)/trace.out
 	@$(EMU) $(OPTS_$(1)) $(BUILD)/trace.bin < /dev/null > $(RUNDIR)/trace.expected; \
 	  echo "exit $$?" >> $(RUNDIR)/trace.expected
 	@if cmp -s $(RUNDIR)/trace.expected $(RUNDIR)/trace.out; then echo "PASS tb_trace $(1)"; \
@@ -89,8 +90,8 @@ CORES ?= pipeline multicycle
 LINK_RUNS = $(CORES:%=run/link/%)
 
 $(LINK_RUNS): run/link/%: $(BUILD)/linkecho.bin
-	@($(in_rundir) && $(GHDLRUN) tb_link -gG_CORE=$* -gG_INIT_FILE=$(abspath test/link_init.bin) \
-	  -gG_PROG_FILE=$(abspath $(BUILD)/linkecho.bin) > tb_link.log 2>&1); \
+	@($(in_rundir) && $(call sim_run,tb_link,-gG_CORE=$* -gG_INIT_FILE=$(abspath test/link_init.bin) \
+	  -gG_PROG_FILE=$(abspath $(BUILD)/linkecho.bin)) > tb_link.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS tb_link $*"; else echo "FAIL tb_link $*"; cat $(RUNDIR)/tb_link.log; exit 1; fi
 
 # tb_core runs a program on the core. Its trace, output, and
@@ -173,8 +174,8 @@ endef
 # test/pausepatch.expected instead. $(1) is the name of the run, $(2) the
 # program, and $(3) any more generics.
 define check_expected
-	@($(in_rundir) && $(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(2)) -gG_TRACE_FILE=core.out \
-	  $(3) > core.log 2>&1); echo "exit $$?" >> $(RUNDIR)/core.out
+	@($(in_rundir) && $(call sim_run,tb_core,-gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(2)) \
+	  -gG_TRACE_FILE=core.out $(3)) > core.log 2>&1); echo "exit $$?" >> $(RUNDIR)/core.out
 	@if cmp -s test/$(1).expected $(RUNDIR)/core.out; then echo "PASS $(CORE) $(1)"; \
 	else echo "FAIL $(CORE) $(1)"; cat $(RUNDIR)/core.log; \
 	  diff test/$(1).expected $(RUNDIR)/core.out | head -20; exit 1; fi
@@ -183,11 +184,11 @@ endef
 
 # $(1) is the name of the run, $(2) the program, and $(3) any more generics.
 define check_core
-	@($(in_rundir) && $(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(2)) -gG_TRACE_FILE=core.out \
-	  $(if $(INTR_$(1)),"-gG_INTERRUPTS=$(INTR_$(1))") \
+	@($(in_rundir) && $(call sim_run,tb_core,-gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(2)) \
+	  -gG_TRACE_FILE=core.out $(if $(INTR_$(1)),"-gG_INTERRUPTS=$(INTR_$(1))") \
 	  $(if $(call requests,$(1)),-gG_INTR_LOG=core.intr) \
 	  $(if $(INPUT_$(1)),-gG_INPUT_FILE=$(abspath $(INPUT_$(1)))) \
-	  $(3) > core.log 2>&1); echo "exit $$?" >> $(RUNDIR)/core.out
+	  $(3)) > core.log 2>&1); echo "exit $$?" >> $(RUNDIR)/core.out
 	@$(EMU) -t $(INTR_$(1)) $(if $(INPUT_$(1)),--input $(INPUT_$(1))) $(2) < /dev/null \
 	  > $(RUNDIR)/core.expected; \
 	  echo "exit $$?" >> $(RUNDIR)/core.expected
@@ -241,7 +242,7 @@ endef
 
 # $(1) is the program, in $(BUILD), and $(2) any more options.
 define check_sweep
-	@$(PYTHON) test/irq_sweep.py --core $(CORE) $(IRQ_LATE) $(2) --stall 30 --build $(BUILD) --emu $(EMU) \
+	@$(PYTHON) test/irq_sweep.py --core $(CORE) $(SIM_ARGS) $(IRQ_LATE) $(2) --stall 30 --build $(BUILD) --emu $(EMU) \
 	  $(BUILD)/$(1).bin
 
 endef
@@ -281,8 +282,8 @@ define check_waits
 endef
 
 define check_selfonly
-	@($(in_rundir) && $(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(2)) -gG_TRACE_FILE=core.out \
-	  -gG_TRACE=false $(3) > core.log 2>&1); echo "exit $$?" >> $(RUNDIR)/core.out
+	@($(in_rundir) && $(call sim_run,tb_core,-gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(2)) \
+	  -gG_TRACE_FILE=core.out -gG_TRACE=false $(3)) > core.log 2>&1); echo "exit $$?" >> $(RUNDIR)/core.out
 	@if grep -q '^R12 00000000' $(RUNDIR)/core.out && \
 	  tail -n 1 $(RUNDIR)/core.out | grep -qx 'exit 0'; then echo "PASS $(CORE) $(1)"; \
 	else echo "FAIL $(CORE) $(1)"; cat $(RUNDIR)/core.log; tail -n 6 $(RUNDIR)/core.out; exit 1; fi
@@ -312,10 +313,10 @@ $(BUILD)/random_%.bin $(BUILD)/random_%.opts: test/random_prog.py
 
 define check_random
 	@o=$$(cat $(BUILD)/random_$(1).opts); \
-	  ($(in_rundir) && $(GHDLRUN) tb_core -gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(BUILD)/random_$(1).bin) \
+	  ($(in_rundir) && $(call sim_run,tb_core,-gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(BUILD)/random_$(1).bin) \
 	  -gG_TRACE_FILE=core.out -gG_MAX_STEPS=$(RANDOM_STEPS) -gG_STALL=$(RANDOM_STALL) -gG_SEED=$(1) \
 	  -gG_CYCLE_COUNTER=false -gG_FETCH_STATS=false $(2) \
-	  $${o:+"-gG_INTERRUPTS=$$o"} -gG_INTR_LOG=core.intr > core.log 2>&1); \
+	  $${o:+"-gG_INTERRUPTS=$$o"} -gG_INTR_LOG=core.intr) > core.log 2>&1); \
 	  echo "exit $$?" >> $(RUNDIR)/core.out
 	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter $$(cat $(BUILD)/random_$(1).opts) $(BUILD)/random_$(1).bin \
 	  < /dev/null > $(RUNDIR)/core.expected; echo "exit $$?" >> $(RUNDIR)/core.expected
@@ -491,11 +492,18 @@ programs: emulator analyze
 	@for m in "" --no-mpu --unchecked --grow; do \
 	  $(PYTHON) ../translator/test/fuzz.py $$m --keep $(PROGRAMS)/fuzz 1 $(FUZZ_PROGRAMS) \
 	    || exit 1; done > $(BUILD)/programs_fuzz.log 2>&1 || { cat $(BUILD)/programs_fuzz.log; exit 1; }
-	@$(PYTHON) test/programs.py --core $(CORE) --build $(BUILD) --emu $(EMU) --shard $(SHARD) $(PROGRAMS)/runtime $(PROGRAMS)/translator $(PROGRAMS)/fuzz
+	@$(PYTHON) test/programs.py --core $(CORE) $(SIM_ARGS) --build $(BUILD) --emu $(EMU) --shard $(SHARD) $(PROGRAMS)/runtime $(PROGRAMS)/translator $(PROGRAMS)/fuzz
 
-analyze:
+# Analyzes the VHDL for SIM, and analyze-ghdl for GHDL's synthesis.
+analyze: analyze-$(SIM)
+
+analyze-ghdl:
 	@mkdir -p $(BUILD)
 	$(if $(PREBUILT),,cd $(BUILD) && $(GHDL) -a --std=08 $(addprefix ../,$(SOURCES) $(SIM_SOURCES) $(TEST_SOURCES)))
+
+analyze-nvc:
+	@mkdir -p $(BUILD)
+	$(if $(PREBUILT),,$(NVC) $(NVCOPTS) -a $(SOURCES) $(SIM_SOURCES) $(TEST_SOURCES))
 
 # Checks that GHDL can synthesize the core, the math unit, the performance
 # counters, the timer, and the data bus decoder, with the generics in
@@ -509,7 +517,7 @@ define check_synth
 
 endef
 
-synth: analyze
+synth: analyze-ghdl
 	$(foreach u,$(SYNTH),$(call check_synth,$(u)))
 
 # The formal checks of formal/: each task of each .sby file must pass. Each
@@ -591,4 +599,4 @@ lint:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: test runs programs random sweep strides analyze synth formal emulator timing typecheck lint clean
+.PHONY: test runs programs random sweep strides analyze analyze-ghdl analyze-nvc synth formal emulator timing typecheck lint clean

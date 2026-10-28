@@ -29,7 +29,7 @@ import concurrent.futures
 import os
 import sys
 
-from core_runs import DEFAULT_BUILD, DEFAULT_CORE, DEFAULT_EMU, Core, difference, run_emulator
+from core_runs import DEFAULT_BUILD, DEFAULT_CORE, DEFAULT_EMU, Core, add_sim_args, difference, run_emulator
 
 
 def emulate(args: argparse.Namespace, binfile: str) -> str:
@@ -97,7 +97,7 @@ def main() -> None:
     p.add_argument("--core", default=DEFAULT_CORE, help="G_CORE of tb_core (default pipeline)")
     p.add_argument("--build", default=DEFAULT_BUILD)
     p.add_argument("--emu", default=DEFAULT_EMU)
-    p.add_argument("--ghdl", default=os.environ.get("GHDL", "ghdl"))
+    add_sim_args(p)
     args = p.parse_args()
 
     programs = [os.path.join(d, f) for d in args.dirs for f in os.listdir(d) if f.endswith(".bin")]
@@ -121,7 +121,7 @@ def main() -> None:
     # Within the share, the longest first, so that no long run starts last.
     programs = sorted(shares[index - 1], key=lambda f: (-weight[f], f))
 
-    core = Core(args.ghdl, args.build, "programs", args.core)
+    core = Core(args, args.build, "programs", args.core)
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
         results = list(pool.map(lambda j: check(args, core, j[1], j[0] + 1), enumerate(programs)))
     core.clean()

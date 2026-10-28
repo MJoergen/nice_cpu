@@ -33,6 +33,7 @@ departs from it.
 |---|---|
 | [CODING_STYLE.md](CODING_STYLE.md) | The style of the VHDL. |
 | [vsg.yml](vsg.yml) | The rules of CODING_STYLE.md for vsg, which `make lint` runs. |
+| [sim.mk](sim.mk) | The commands of the simulators, GHDL and nvc, for the Makefile and `bench/Makefile`. |
 | [src/multicycle.vhd](src/multicycle.vhd) | The multi-cycle core. |
 | [src/pipeline.vhd](src/pipeline.vhd) | The pipelined core: its stages connected, and the invariants they keep. |
 | [src/pipe_fetch.vhd](src/pipe_fetch.vhd) | FETCH of the pipelined core. |
@@ -70,7 +71,7 @@ departs from it.
 | [test/instret.nasm](test/instret.nasm) | Reads of the instruction counter right after a store, after a read, and twice in one instruction. |
 | [test/hazard.nasm](test/hazard.nasm) | The hazards of MICROARCH.md §5, each with no padding. It checks itself. |
 | [test/programs.py](test/programs.py) | Runs the programs in some directories on the core and on the emulator, for `make programs`. |
-| [test/core_runs.py](test/core_runs.py) | Runs a program on the core, or on the emulator, for `irq_sweep.py` and `programs.py`. |
+| [test/core_runs.py](test/core_runs.py) | Runs a program on the core, or on the emulator, for `irq_sweep.py` and `programs.py`, in GHDL or nvc. |
 | [test/irq_compare.py](test/irq_compare.py) | Compares a run with interrupt requests against the emulator, from the steps where the core took them. |
 | [test/irq_sweep.py](test/irq_sweep.py) | Runs a program with an NMI before each of its steps, and with an IRQ before each. |
 | [test/sidefx_prog.py](test/sidefx_prog.py) | Writes a program with every pair of side effects on one register. |
@@ -137,8 +138,19 @@ departs from it.
 
 You need GHDL, Python 3, and Zig 0.17 for the emulator. Tested with
 GHDL 6.0.0-dev and GHDL 4.1.0 (mcode backend). CI installs 4.1.0, the
-`ghdl` package of Ubuntu 24.04. The memory model and the trace writer also
-run under nvc.
+`ghdl` package of Ubuntu 24.04.
+
+`SIM=nvc` runs the simulations in [nvc](https://www.nickg.me.uk/nvc/)
+instead, tested with nvc 1.20. Its traces are byte for byte those of
+GHDL, and it is several times faster on the long runs (`make programs`,
+`make sweep`, and the benchmark in `bench/`). On short runs it is slower,
+because its compiler takes about a second of CPU time on each: `make test`
+took 15 minutes in nvc and 5 in GHDL on 20 CPUs. GHDL is still needed for
+the synthesis check of `make test` and for `make formal`. The top-level
+`make slow` runs in nvc.
+[sim.mk](sim.mk) holds the commands of both: nvc analyzes into
+`build/nvc`, and elaborates each run in memory. `make analyze` analyzes
+for `SIM`.
 
     cd hdl && make test
 
@@ -152,12 +164,12 @@ The runs go in parallel, one per CPU, or as many as `-j` gives, and
 their PASS and FAIL lines come in the order they finish. Each run leaves
 its files in a directory of its own, `build/run/GROUP/NAME`, where GROUP
 is `unit`, `trace`, or the core: for a run on a core, the core's trace
-and output in `core.out`, the emulator's in `core.expected`, and GHDL's
-messages in `core.log`. `make run/pipeline/NAME` repeats one run, for
+and output in `core.out`, the emulator's in `core.expected`, and the
+simulator's messages in `core.log`. `make run/pipeline/NAME` repeats one run, for
 example `make run/pipeline/hazard_stall`.
 
-`test/programs.py` runs a `.bin` on a core in GHDL and compares its output
-with the emulator's. `--stall PERCENT` sets `G_STALL` of the memory, and
+`test/programs.py` runs a `.bin` on a core in the simulator and compares its output
+with the emulator's. `--sim` picks GHDL or nvc. `--stall PERCENT` sets `G_STALL` of the memory, and
 `--core` picks the core (`make programs`).
 
 `make lint` checks the style of every VHDL file against
@@ -390,7 +402,7 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   instruction: 3 and 7 cycles on the multi-cycle core, and 1, 2, and 3
   on the pipelined one. A delayed run is compared only through
   `test/irq_compare.py`. The runs go in parallel, on all
-  cores; set the number with `-j`. Each worker runs GHDL in its own
+  cores; set the number with `-j`. Each worker runs the simulator in its own
   directory under `build/sweep`, because the LLVM and GCC backends of GHDL
   write an executable where they run. `test/irqhazard.nasm` and
   `test/latecount.nasm` are swept the same way, without the delays.
@@ -450,7 +462,8 @@ translator, and 10 random modules of `translator/test/fuzz.py` in each of
 its four modes (`FUZZ_PROGRAMS`), on the core (MICROARCH.md §9, step 7). It is not part of
 `make test`, because it takes 25 minutes on the pipelined core and 51 on the
 multi-cycle one, on 20 CPUs: some 2 million steps in 490
-programs, at GHDL's 3300 steps a second. CI runs it on
+programs, at GHDL's 3300 steps a second. In nvc, `SIM=nvc`, it took 5
+and 3 minutes on 2026-10-28. CI runs it on
 both, each in three shards (`SHARD=I/3`, the Ith of N shares of the programs,
 longest first), so that no job is far from the 6 hour limit. That run is the release's: the
 top-level `make slow` leaves `make programs` out ([RELEASE.md](../release/RELEASE.md)). It does not run `runtime/libc/test/fuzz_printf.py`, which

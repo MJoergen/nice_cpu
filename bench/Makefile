@@ -1,6 +1,5 @@
 PYTHON ?= python3
 CLANG ?= clang
-GHDL ?= ghdl
 NICEWASM = $(PYTHON) ../translator/nicewasm.py
 ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
@@ -68,34 +67,38 @@ test: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/dhry.bin
 	@echo 0 | $(EMU) $(BUILD)/dhry.bin | grep -q 'must be at least 1' && echo "PASS dhrystone with 0 runs"
 	@echo x | $(EMU) $(BUILD)/dhry.bin | grep -q 'must be at least 1' && echo "PASS dhrystone with no number"
 
-# Runs both on a core in GHDL, so that the cycles are the core's: CORE,
+# Runs both on a core in the simulator, SIM of ../hdl/sim.mk, so that the
+# cycles are the core's: CORE,
 # the generic G_CORE of hdl/test/tb_core.vhd, is pipeline for the
 # pipelined core or multicycle for the multi-cycle one. On an idle machine
 # the pipelined core takes about 22 minutes and the multi-cycle core about
 # 38: the pipelined core runs fewer cycles, but more logic in each. The program is given relative to
-# hdl/build, where GHDL runs, and the output is written there too, with
-# the retire log that pipecycles.py --retires reads, $(1)_$(CORE).retires.
-# GHDL runs in a directory of its own for each program and core, as the
-# runs of hdl/ do, because its LLVM and GCC backends write an executable
-# where they run; so the top-level make slow can run them all at once.
+# hdl/build, where the simulator runs, and the output is written there too,
+# with the retire log that pipecycles.py --retires reads,
+# $(1)_$(CORE).retires. The simulator runs in a directory of its own for
+# each program and core, as the runs of hdl/ do, because GHDL's LLVM and GCC
+# backends write an executable where they run; so the top-level make slow
+# can run them all at once.
 # The files stay in hdl/build. PREBUILT=1 skips the analysis, which make
 # slow has done.
 CORE ?= pipeline
 HDL_BUILD = $(abspath ../hdl/build)
-ANALYZE = $(if $(PREBUILT),,$(MAKE) -C ../hdl analyze)
+SIM_BUILD = $(HDL_BUILD)
+include ../hdl/sim.mk
+ANALYZE = $(if $(PREBUILT),,$(MAKE) -C ../hdl analyze SIM=$(SIM))
 
 # Runs tb_core on CORE in its own directory: $(1) is the name of the run,
 # $(2) the program, and $(3) more generics.
-define ghdl_core
+define sim_core
 mkdir -p $(HDL_BUILD)/bench_run/$(1)_$(CORE) && cd $(HDL_BUILD)/bench_run/$(1)_$(CORE) && \
-	  $(GHDL) --elab-run --std=08 --workdir=$(HDL_BUILD) tb_core -gG_CORE=$(CORE) \
-	  -gG_BIN_FILE=$(abspath $(2)) -gG_TRACE_FILE=$(HDL_BUILD)/$(1)_$(CORE).out -gG_TRACE=false $(3) \
+	  $(call sim_run,tb_core,-gG_CORE=$(CORE) \
+	  -gG_BIN_FILE=$(abspath $(2)) -gG_TRACE_FILE=$(HDL_BUILD)/$(1)_$(CORE).out -gG_TRACE=false $(3)) \
 	  > $(HDL_BUILD)/$(1)_$(CORE).log 2>&1; status=$$?; sed '/^Halted/,$$d' $(HDL_BUILD)/$(1)_$(CORE).out
 endef
 
 define core_run
 	@echo "$(1) on the $(CORE) core:"
-	@$(call ghdl_core,$(1),$(BUILD)/$(1).bin,-gG_RETIRE_LOG=$(HDL_BUILD)/$(1)_$(CORE).retires); \
+	@$(call sim_core,$(1),$(BUILD)/$(1).bin,-gG_RETIRE_LOG=$(HDL_BUILD)/$(1)_$(CORE).retires); \
 	  grep '^Read waits:' $(HDL_BUILD)/$(1)_$(CORE).log; \
 	  if [ $$status -ne 0 ]; then cat $(HDL_BUILD)/$(1)_$(CORE).log; exit 1; fi
 
@@ -105,10 +108,10 @@ core: $(BUILD)/bench.bin $(BUILD)/hand.bin
 	$(ANALYZE)
 	$(foreach p,$(CORE_PROGRAMS),$(call core_run,$(p)))
 
-# Dhrystone on a core in GHDL, CORE as above, with its output checked.
+# Dhrystone on a core in the simulator, CORE and SIM as above, with its output checked.
 core-dhry: $(BUILD)/dhry.bin
 	$(ANALYZE)
-	@$(call ghdl_core,dhry,$(BUILD)/dhry.bin,-gG_INPUT_FILE=$(abspath $(DHRY_RUNS))); \
+	@$(call sim_core,dhry,$(BUILD)/dhry.bin,-gG_INPUT_FILE=$(abspath $(DHRY_RUNS))); \
 	  if [ $$status -ne 0 ]; then cat $(HDL_BUILD)/dhry_$(CORE).log; exit 1; fi
 	@$(PYTHON) dhrycheck.py --runs $$(cat $(DHRY_RUNS)) ../hdl/build/dhry_$(CORE).out
 

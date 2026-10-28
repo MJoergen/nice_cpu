@@ -15,7 +15,8 @@ NICE with other processors.
     make test       # the same, and check every result
     make core       # run both on the pipelined core in GHDL (about 21 minutes)
     make core CORE=multicycle  # the same on the multi-cycle core (about 57 minutes)
-    make core-dhry  # run Dhrystone on a core in GHDL, CORE as above, and check it (about 2.5 minutes, 139 seconds on the pipelined core and 164 on the multi-cycle one)
+    make core SIM=nvc          # the same in nvc (3 minutes, and 2 on the multi-cycle core)
+    make core-dhry  # run Dhrystone on a core in GHDL, CORE as above, and check it (about 2.5 minutes, 139 seconds on the pipelined core and 164 on the multi-cycle one; 21 and 12 in nvc)
     make hazards    # count the pipeline hazards of MICROARCH.md §5 in both
     make cycles     # estimate the cycles of the three on the pipelined core of MICROARCH.md
     make profile    # the same, charged to the source lines, in build/*.cyc.txt

@@ -119,7 +119,8 @@ other is worth a look.
 
 ## 5. Slow checks
 
-These need GHDL. They run on both cores at once, in parallel:
+These need nvc ([hdl/README.md](../hdl/README.md), Running the tests).
+They run on both cores at once, in parallel:
 
     make slow                 # CORES="pipeline multicycle", the default
     make slow CORES=pipeline  # one core
@@ -128,8 +129,9 @@ That is, for each core, `bench make core` (the benchmark's two programs,
 each a run of its own), `bench make core-dhry` (Dhrystone), and `hdl make
 strides` (the interrupt sweeps with strides 17, 31, and 64). Each
 benchmark run and Dhrystone takes one CPU, and the sweeps share the rest.
-The longest run, the benchmark on the multi-cycle core, sets the time: on
-20 CPUs, `make slow` took 33 minutes on 2026-10-27.
+On 20 CPUs, `make slow` took 4 minutes on 2026-10-28. `SIM=ghdl` runs
+them in GHDL instead, which took 33 minutes on 2026-10-27, bound by the
+benchmark on the multi-cycle core.
 Every line must say `PASS`, and both cores must agree with
 `niceemu`. `hdl make sweep`, with one interrupt per run, takes hours and is
 not part of the release; it is run after a change to the interrupt path

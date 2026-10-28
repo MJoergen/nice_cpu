@@ -47,7 +47,7 @@ translator, and two FPGA cores. See README.md.
   `dhrystone/` is Dhrystone 2.1 on the C library, checked by `dhrycheck.py`.
 - `release/`: `RELEASE.md` is the checklist for a release, and `release.py` scripts its mechanical
   parts (preflight, the gates and their stamp, CI, the tag). `test.py` tests it. Same rules as niceasm.py.
-- `hdl/`: VHDL-2008, GHDL. Two cores with the same ports, but for the
+- `hdl/`: VHDL-2008, GHDL, and nvc for the long runs (`hdl/sim.mk`). Two cores with the same ports, but for the
   pipelined one's `stats_o`: the pipelined one of
   MICROARCH.md in `src/pipeline.vhd`, the default, which connects
   `src/pipe_fetch.vhd`, `pipe_decode.vhd`, `pipe_prepare.vhd`,
@@ -72,9 +72,9 @@ translator, and two FPGA cores. See README.md.
     cd translator && make test       # test/run.py, errors.py, fuzz.py in four modes, passes.py, and build.py
     cd translator && make typecheck  # mypy --strict
     cd bench     && make test        # the benchmark on the emulator, with its results checked
-    cd bench     && make core        # the benchmark on a core in GHDL, CORE=pipeline or multicycle (minutes)
+    cd bench     && make core        # the benchmark on a core in simulation, CORE=pipeline or multicycle, SIM=ghdl or nvc (minutes)
     cd bench     && make dhry        # Dhrystone on the emulator, checked by dhrycheck.py
-    cd bench     && make core-dhry   # Dhrystone on a core in GHDL, CORE as above, with its output checked (minutes)
+    cd bench     && make core-dhry   # Dhrystone on a core in simulation, CORE and SIM as above, with its output checked (minutes)
     cd bench     && make hazards     # how often the pipeline hazards of MICROARCH.md §5 occur
     cd bench     && make cycles      # the estimated cycles on the pipelined core, per phase
     cd bench     && make profile     # the same, per source line, in bench/build/*.cyc.txt
@@ -86,10 +86,10 @@ translator, and two FPGA cores. See README.md.
     cd hdl && make lint              # vsg style check (pip install vsg)
     cd hdl && make formal            # SymbiYosys: the ports of both cores and wb_dmux; proofs of FETCH, DECODE, PREPARE, DBUS, WRITE's halt and pause, the shared functions, the devices, and the debug link
     cd hdl && make timing            # the pipelined core's worst paths out of context in Vivado, BOARD=mega65 or nexys4ddr, FLOW=default or timing (3 minutes)
-    cd hdl && make programs          # the runtime and translator programs on CORE, or its share SHARD=I/N (minutes)
+    cd hdl && make programs          # the runtime and translator programs on CORE, or its share SHARD=I/N, SIM=ghdl or nvc (minutes)
     cd hdl && make random-sweep      # random programs, seeds 1 to RANDOM_LAST (1000), on each core of CORES (an hour or more)
     cd hdl && make strides           # pcfx and sidefx swept with strides 17, 31, and 64 on CORE (minutes)
-    cd hdl && make sweep             # pcfx and sidefx with one interrupt per run on CORE, after an interrupt-path change (hours)
+    cd hdl && make sweep             # pcfx and sidefx with one interrupt per run on CORE, after an interrupt-path change, SIM=nvc for speed (hours)
     cd doc/intro && make test        # run the slides' example programs
     cd doc/intro && make pdf         # rebuild the slides (pdflatex, beamer)
     cd doc/intro && make pdfcheck    # check that nice_intro.pdf matches the .tex

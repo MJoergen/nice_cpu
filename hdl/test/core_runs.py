@@ -1,13 +1,15 @@
 """Runs programs on the core and on the emulator, for irq_sweep.py and
 programs.py.
 
-A run on the core is GHDL's --elab-run of tb_core, with the VHDL analyzed
-in BUILD already, and the core that its generic G_CORE names. Runs may go
-in parallel, from threads: each thread runs GHDL in its own directory
-under BUILD/WORK, because GHDL's LLVM and GCC backends write an executable
-where they run.
+A run on the core is a run of tb_core in the simulator, GHDL's
+--elab-run or nvc's elaboration in memory, with the VHDL analyzed in BUILD
+already (hdl/Makefile, SIM), and the core that its generic G_CORE names.
+Runs may go in parallel, from threads: each thread runs the simulator in
+its own directory under BUILD/WORK, because GHDL's LLVM and GCC backends
+write an executable where they run.
 """
 
+import argparse
 import os
 import shutil
 import subprocess
@@ -17,6 +19,25 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_BUILD = os.path.join(HERE, "..", "build")
 DEFAULT_EMU = os.path.join(HERE, "..", "..", "emulator", "zig-out", "bin", "niceemu")
 DEFAULT_CORE = "pipeline"
+SIMS = ["ghdl", "nvc"]
+
+
+def add_sim_args(p: argparse.ArgumentParser) -> None:
+    """The options that choose the simulator, as hdl/Makefile passes them."""
+    p.add_argument("--sim", choices=SIMS, default="ghdl", help="the simulator (default ghdl)")
+    p.add_argument("--ghdl", default=os.environ.get("GHDL", "ghdl"))
+    p.add_argument("--nvc", default=os.environ.get("NVC", "nvc"))
+
+
+def sim_command(sim: str, tool: str, build: str, unit: str, generics: list[str]) -> list[str]:
+    """The command that runs the testbench unit with the generics, in the
+    simulator sim, whose program is tool, with the VHDL analyzed in build,
+    and the options of hdl/sim.mk."""
+    if sim == "nvc":
+        work = os.path.join(build, "nvc")
+        return [tool, "--std=2008", "--work=work:" + work, "-H", "1g",
+                "-e", "--jit", "--no-save", *generics, unit, "-r"]
+    return [tool, "--elab-run", "--std=08", "--workdir=" + build, unit, *generics]
 
 
 def run_emulator(emu: str, binfile: str, opts: list[str]) -> str:
@@ -33,8 +54,10 @@ def run_emulator(emu: str, binfile: str, opts: list[str]) -> str:
 class Core:
     """Runs a core in tb_core, each thread in its own directory."""
 
-    def __init__(self, ghdl: str, build: str, work: str, core: str = DEFAULT_CORE) -> None:
-        self.ghdl = ghdl
+    def __init__(self, args: argparse.Namespace, build: str, work: str, core: str = DEFAULT_CORE) -> None:
+        """args holds the options of add_sim_args."""
+        self.sim: str = args.sim
+        self.tool: str = args.nvc if self.sim == "nvc" else args.ghdl
         self.core = core
         self.build = os.path.abspath(build)
         self.root = os.path.join(self.build, work)
@@ -63,17 +86,16 @@ class Core:
         d = self.directory()
         trace = os.path.join(d, "core.out")
         log = os.path.join(d, "intr.log")
-        cmd = [
-            self.ghdl, "--elab-run", "--std=08", "--workdir=" + self.build, "tb_core",
+        cmd = sim_command(self.sim, self.tool, self.build, "tb_core", [
             "-gG_CORE=" + self.core, "-gG_BIN_FILE=" + os.path.abspath(binfile),
             "-gG_TRACE_FILE=" + trace, "-gG_INTR_LOG=" + log, *generics,
-        ]
+        ])
         for path in (trace, log):
             if os.path.exists(path):
                 os.remove(path)
         r = subprocess.run(cmd, cwd=d, stdin=subprocess.DEVNULL, capture_output=True, text=True)
         if not os.path.exists(trace):
-            return f"no trace from GHDL, exit {r.returncode}\n" + r.stdout + r.stderr, ""
+            return f"no trace from {self.sim}, exit {r.returncode}\n" + r.stdout + r.stderr, ""
         with open(trace, errors="replace") as f:
             out = f.read()
         if r.returncode not in (0, 2, 3):

@@ -163,7 +163,7 @@ source file, and writes the `.bin` file:
 - The `.bin` format is the text format of the 2004 `NICE.pm` assembler, so
   its example binaries can be compared directly.
 - The FPGA cores take the place of `niceemu` at the end of the pipeline.
-  `hdl/` runs the same programs on them in simulation, in GHDL, and
+  `hdl/` runs the same programs on them in simulation, in GHDL or nvc, and
   compares their traces with the emulator's: `emulator/test/cputest.nasm`
   and the `--trace` format are there for that, and `make -C hdl programs`
   simulates a core running the runtime's and the translator's test

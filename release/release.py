@@ -52,7 +52,8 @@ TOOLS = {
     "gh": "release.py ci",
     "make": "everything",
     "zig": "the emulator",
-    "ghdl": "make test, make slow",
+    "ghdl": "make test",
+    "nvc": "make slow",
     "sby": "make formal",
     "yosys": "make formal",
     "vsg": "make lint, at the version of ci.yml",
@@ -274,7 +275,7 @@ def cmd_check(a: argparse.Namespace) -> int:
             timing = timed.result()
             show_timing(timing)
     if not a.skip_slow:
-        # Both cores at once, in parallel (Makefile, make slow).
+        # Both cores at once, in parallel, in nvc (Makefile, make slow).
         step("make slow", ["make", "slow", "CORES=" + " ".join(a.cores)])
         if "pipeline" in a.cores:
             step("bench compare", ["make", "-C", "bench", "compare"])

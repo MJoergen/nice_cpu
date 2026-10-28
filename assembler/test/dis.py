@@ -53,10 +53,16 @@ ERRORS: List[Tuple[str, Optional[str], List[str], str, int]] = [
     ("0x0 1\n", None, [], "x.bin:1: error: expected an address and a word in hex", 1),
     ("0 1\n00000000 2\n", None, [], "x.bin:2: error: address 0x00000000 appears twice", 1),
     ("\n\n", None, [], "x.bin: error: no words", 1),
-    ("0 0\n", "0 start\n", [], "x.sym:1: error: expected an 8-digit hex address, a space, and a name", 1),
-    ("0 0\n", "00000000  start\n", [], "x.sym:1: error: expected an 8-digit hex address, a space, and a name", 1),
+    ("0 0\n", "\nstart\n", [], "x.sym:2: error: expected a hex address and a name", 1),
+    ("0 0\n", "000000000 start\n", [], "x.sym:1: error: expected a hex address and a name", 1),
+    ("0 0\n", "0x0 start\n", [], "x.sym:1: error: expected a hex address and a name", 1),
     ("0 0\n", None, ["--start", "x"], "error: argument --start: bad address 'x'", 2),
+    ("0 0\n", None, ["--start", "0b1"], "error: argument --start: bad address '0b1'", 2),
+    ("0 0\n", None, ["--start", "-1"], "error: argument --start: bad address '-1'", 2),
+    ("0 0\n", None, ["--start", "0x100000000"],
+     "error: argument --start: address '0x100000000' is out of range", 2),
     ("0 0\n", None, ["--end", "0x100000001"], "error: argument --end: address '0x100000001' is out of range", 2),
+    ("0 0\n", None, ["--start", "5", "--end", "5"], "error: --start must be below --end", 2),
 ]
 
 
@@ -154,6 +160,22 @@ def main() -> None:
                 "                MOVE    R1, far         ; far = 0x00000040\n")
         if r.stdout != want:
             print(f"FAIL --start and --end:\n{r.stdout}")
+            failed += 1
+        # The same in decimal, where 021 is 21, not octal.
+        r = run([NICEDIS, os.path.join(HERE, "disedge.bin"), "--symbols",
+                 os.path.join(HERE, "disedge.sym"), "--start", "021", "--end", "23"])
+        if r.stdout != want:
+            print(f"FAIL decimal --start and --end:\n{r.stdout}")
+            failed += 1
+        # A symbols file as niceemu takes it: blank lines, short hex, tabs,
+        # and spaces around a line.
+        sym = os.path.join(d, "lenient.sym")
+        with open(sym, "w") as f:
+            f.write("\n  40\tfar \r\n\n")
+        r = run([NICEDIS, os.path.join(HERE, "disedge.bin"), "--symbols", sym,
+                 "--start", "0x15", "--end", "0x17"])
+        if r.stdout != want:
+            print(f"FAIL a lenient symbols file:\n{r.stdout}")
             failed += 1
 
         for words, syms, result in API:

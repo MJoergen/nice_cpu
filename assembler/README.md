@@ -64,7 +64,8 @@ whole.
 of [ISA.md §10](../doc/ISA.md#10-assembler-syntax) and the layout above.
 `niceasm` assembles the output back to the same words. `--start` and
 `--end` list only the words from `ADDR` up to, but not including, the end
-address. An address is decimal, or hex with `0x`.
+address. An address is decimal, or hex with `0x`; `010` is 10. `--start`
+must be below `--end`. A range with no words in it prints nothing.
 
 It reads the `.bin` file as `niceemu` does: 1 to 8 hex digits, blank lines
 allowed, and the lines in any order. A bad line, an address given twice,
@@ -93,7 +94,9 @@ The rules of the output:
   instructions, or as `.DAT`, since nothing tells it from code.
 
 With `--symbols FILE`, the labels of `niceasm --symbols` or
-`nicebuild.py --symbols`:
+`nicebuild.py --symbols`, read as `niceemu` reads them: a line is 1 to 8
+hex digits and a name, with spaces or tabs between, and blank lines are
+skipped:
 
 - Each label is shown at its address. A label of 8 or more characters
   stands on a line of its own, and so does each label but the last at one

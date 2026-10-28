@@ -39,7 +39,7 @@ FIELD_NAMES = ["dest", "s0", "s1"]
 MIN_LABEL = 16
 
 BIN_LINE = re.compile(r"([0-9a-fA-F]{1,8})[ \t]+([0-9a-fA-F]{1,8})$")
-SYM_LINE = re.compile(r"([0-9a-fA-F]{8}) (.+)$")
+SYM_LINE = re.compile(r"([0-9a-fA-F]{1,8})[ \t]+(.+)$")
 
 Reader = Callable[[int], Optional[int]]
 Namer = Callable[[int], Optional[str]]
@@ -289,27 +289,41 @@ def read_bin(path: str) -> Dict[int, int]:
 
 
 def read_symbols(path: str) -> List[Tuple[int, str]]:
-    """The labels of a symbols file of niceasm or nicebuild.py, in file order."""
+    """The labels of a symbols file of niceasm or nicebuild.py, in file order,
+    with the leniency of niceemu's loader."""
     symbols: List[Tuple[int, str]] = []
     with open(path, encoding="latin-1") as f:
         for n, line in enumerate(f, 1):
-            text = line.rstrip("\r\n")
+            text = line.strip(" \t\r\n")
+            if not text:
+                continue
             m = SYM_LINE.match(text)
-            if not m or m.group(2).strip() != m.group(2):
-                raise DisError(f"{path}:{n}: error: expected an 8-digit hex address, "
-                               f"a space, and a name")
+            if not m:
+                raise DisError(f"{path}:{n}: error: expected a hex address and a name")
             symbols.append((int(m.group(1), 16), m.group(2)))
     return symbols
 
 
-def address(text: str) -> int:
-    try:
-        v = int(text, 0)
-    except ValueError:
+ADDR = re.compile(r"0[xX]([0-9a-fA-F]+)$|([0-9]+)$")
+
+
+def address(text: str, top: int) -> int:
+    """A decimal address, or a hex one with 0x, from 0 to top."""
+    m = ADDR.match(text)
+    if not m:
         raise argparse.ArgumentTypeError(f"bad address '{text}'")
-    if not 0 <= v <= MASK + 1:
+    v = int(m.group(1), 16) if m.group(1) is not None else int(m.group(2), 10)
+    if v > top:
         raise argparse.ArgumentTypeError(f"address '{text}' is out of range")
     return v
+
+
+def start_address(text: str) -> int:
+    return address(text, MASK)
+
+
+def end_address(text: str) -> int:
+    return address(text, MASK + 1)
 
 
 def main() -> None:
@@ -317,11 +331,13 @@ def main() -> None:
     ap.add_argument("input", help="program (.bin)")
     ap.add_argument("--symbols", metavar="FILE",
                     help="labels of niceasm --symbols or nicebuild.py --symbols")
-    ap.add_argument("--start", type=address, default=0, metavar="ADDR",
+    ap.add_argument("--start", type=start_address, default=0, metavar="ADDR",
                     help="first address to list (default 0)")
-    ap.add_argument("--end", type=address, default=MASK + 1, metavar="ADDR",
+    ap.add_argument("--end", type=end_address, default=MASK + 1, metavar="ADDR",
                     help="address after the last one to list (default: all)")
     args = ap.parse_args()
+    if args.start >= args.end:
+        ap.error("--start must be below --end")
     try:
         words = read_bin(args.input)
         symbols = read_symbols(args.symbols) if args.symbols else []

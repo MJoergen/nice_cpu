@@ -77,9 +77,13 @@ Every hunk of `pipe_prepare.vhd` is a comment or inside `gen_formal : if G_FORMA
 
 `nicedis.py`'s `read_symbols` matches every line against `SYM_LINE`, so a file with a blank line ends with "expected an 8-digit hex address, a space, and a name". `niceemu --symbols` (`main.zig:104`, `loadSymbols`) trims each line, skips blank ones, and takes short hex. The README says it reads "the symbols files of `niceasm --symbols` and `nicebuild.py --symbols`", which have no blank lines, but a hand-edited file that `niceemu` takes is refused. The reverse holds for a name with a space, which `nicedis` takes and `niceemu` refuses; that is harmless. **Fix:** skip blank lines, and either accept what `niceemu` accepts or say in the README that the address is 8 digits and a line is never blank.
 
+**Resolved**: `read_symbols` trims each line, skips blank ones, and takes 1 to 8 hex digits, then spaces or tabs, then the name, as `loadSymbols` does. The README says so. `dis.py` lists disedge.bin with a file of blank lines, short hex, and a tab, and refuses a line with no address, 9 digits, or `0x`.
+
 ### 4.2 `--start` and `--end` are not "decimal, or hex with `0x`"
 
 assembler/README.md:67 says so; `address()` calls `int(text, 0)`, so `--start 010` is refused ("bad address '010'") where `niceasm` reads `010` as 10, and `--start 0b1` is accepted. A start beyond the file, or beyond `--end`, prints nothing and exits 0. **Fix:** parse `0x` and plain decimal explicitly, refuse a start above `0xFFFFFFFF`, and either refuse an empty range or say that it prints nothing.
+
+**Resolved**: `address()` takes `0x` and hex digits, or decimal digits, so `010` is 10 and `0b1` and `-1` are refused. `--start` is at most `0xFFFFFFFF`, and `--end` at most `0x100000000`. A `--start` not below `--end` is an error, exit status 2. A range with no words prints nothing, as the README now says. `dis.py` has a case for each, and lists 021 to 23 the same as 0x15 to 0x17.
 
 ### 4.3 The listing is quadratic in the symbols
 

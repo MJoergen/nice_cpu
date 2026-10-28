@@ -1,0 +1,7 @@
+                MOVE    R14, R0
+                MOVE    R1, R0
+                MOVE    R2, 0x1000
+LOOP            ADD     R1, R1, R2
+                DEC[M]  R2, R2
+        ?!Z     MOVE    R15, 0x4
+                HALT

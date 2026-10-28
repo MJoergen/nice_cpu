@@ -1,0 +1,23 @@
+far             .EQU    0x00000040
+second          .EQU    0x00000050
+                MOVE    R1, entry_point  ; entry_point = 0x00000010
+low             MOVE    R1, 0x2
+                SHL     R1, entry_point, 0x10  ; entry_point = 0x00000010
+                SHL     R1, entry_point, @entry_point  ; entry_point = 0x00000010
+                .DAT    0x00004124      ; MOVE R1, R2 (s1: R4++)
+                .DAT    0x00004130, 0x00000005  ; MOVE R1, R2 (s1: 0x5)
+                .DAT    0x01c04103      ; ONE R1 (s0: R2, s1: R3)
+                .DAT    0x0c600000      ; reserved control word
+                .DAT    0x3c000100      ; reserved control word
+entry_point
+start           INT     33
+                .DAT    0x00005800      ; MOVE R1, ? (cut off)
+; add
+                HALT
+                MOVE    @0x30, R1       ; foo::bar = 0x00000030
+                MOVE    R1, far         ; far = 0x00000040
+                MOVE    R15, second     ; second = 0x00000050
+                .DAT    0x00005800      ; MOVE R1, ? (cut off)
+                .ORG    0x0000001b
+                HALT
+                .DAT    0x00005830, 0x00000007  ; MOVE R1, 0x7 (s1: ?) (cut off)

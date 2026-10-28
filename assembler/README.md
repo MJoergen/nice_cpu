@@ -2,7 +2,9 @@
 
 A simple assembler for the NICE processor: one Python 3 script with no
 dependencies beyond the standard library. It implements the assembler syntax in
-[doc/ISA.md §10](../doc/ISA.md#10-assembler-syntax).
+[doc/ISA.md §10](../doc/ISA.md#10-assembler-syntax). Next to it are
+`nicefmt`, which checks the layout of the sources, and `nicedis`, the
+[disassembler](#disassembler).
 
 ## Test
 
@@ -12,9 +14,11 @@ This assembles every program in `test/` and compares the result with
 the expected `.bin` file. It then runs `test/errors.py`, which assembles a
 list of short faulty programs and checks the error message, the exit
 status, and that no output file is written. It also checks short good
-programs, the format of several errors, and the command line.
+programs, the format of several errors, and the command line. Then it
+runs the tests of `nicefmt` and `nicedis`, and checks the layout of every
+`.nasm` file.
 
-The script is fully type-annotated. `make typecheck` checks it with
+The scripts are fully type-annotated. `make typecheck` checks them with
 `mypy --strict` (install mypy first).
 
 ## Usage
@@ -51,6 +55,72 @@ column 40. A label of 8 or more characters stands on a line of its own.
 layout and exits with status 1. `nicefmt.py --write FILE...` rewrites the
 files, keeping every word and comment. A string that holds a `;` is kept
 whole.
+
+## Disassembler
+
+    ./nicedis.py [--symbols FILE] [--start ADDR] [--end ADDR] input.bin
+
+`nicedis.py` writes the program of a `.bin` file to stdout in the syntax
+of [ISA.md §10](../doc/ISA.md#10-assembler-syntax) and the layout above.
+`niceasm` assembles the output back to the same words. `--start` and
+`--end` list only the words from `ADDR` up to, but not including, the end
+address. An address is decimal, or hex with `0x`.
+
+It reads the `.bin` file as `niceemu` does: 1 to 8 hex digits, blank lines
+allowed, and the lines in any order. A bad line, an address given twice,
+or a file with no words is an error, printed as `file:line: error:
+message`. The exit status is 0 on success, 1 after an error, and 2 for a
+bad command line.
+
+The rules of the output:
+
+- An instruction takes its constant words with it. The output shows them
+  as operands, in hex: `MOVE R1, 0x1000`. The vector of `INT` is decimal.
+- Mnemonics are the ones of ISA.md, with the alias for a SHIFT
+  instruction where one exists (`SHL`, `ROL`, `BPL`, `SHR`, `ROR`, `BPR`).
+  "Always" is no condition, and "never" is `?!1`. Registers are `R0` to
+  `R15`, never `SP` or `PC`, which are names that programs define.
+- Words that no instruction of the syntax gives are `.DAT`, with what they
+  would do as a comment. These are the reserved control words (ISA.md
+  §5.3), and `MOVE`, `DBL`, `DEC`, `NOT`, and `ONE` with an unused field
+  that is not R0 (§4.4), constant words included:
+  `.DAT 0x00004130, 0x00000005 ; MOVE R1, R2 (s1: 0x5)`.
+- An instruction whose constant words fall in a gap, after the end of the
+  file or of the range, or past address `0xFFFFFFFF` is cut off. Its words
+  up to there are a `.DAT`, with `?` for the missing constants in the
+  comment. A gap is a `.ORG` line.
+- The words are read one instruction after the other. Data is shown as
+  instructions, or as `.DAT`, since nothing tells it from code.
+
+With `--symbols FILE`, the labels of `niceasm --symbols` or
+`nicebuild.py --symbols`:
+
+- Each label is shown at its address. A label of 8 or more characters
+  stands on a line of its own, and so does each label but the last at one
+  address.
+- An instruction never spans a label, since each label starts a
+  statement. If it would, its words before the label are a `.DAT`, and the
+  next line starts at the label. So the code after a string comes out
+  right when it has a label.
+- A constant of 16 or more that is the address of a label is shown as the
+  label, with the value in the comment: `MOVE R15, loop ; loop =
+  0x00000123`. Smaller constants, such as the 2 of a call, stay numbers,
+  and so does the count of a SHIFT instruction. Of several labels at one
+  address, the first one in the file that `niceasm` accepts is shown.
+- A name that `niceasm` does not accept as a label, such as the `::` or `$`
+  names of Rust and Zig functions that `nicebuild.py` writes, a mnemonic,
+  a register name, or a name that occurs twice, is only a comment: on a
+  line of its own at its address if a word is there, and in the comment of a constant, which
+  stays a number.
+- A label that the output uses but does not define, because no word is at
+  its address or it is outside the range, is defined with `.EQU` at the
+  top.
+
+Other tools import `nicedis.disassemble(addr, read, symbols)`. It
+disassembles the instruction at `addr`, where `read(a)` returns the word
+at `a` or `None`, and returns the text and the number of words it used.
+`symbols` maps addresses to names, which are shown as above but without
+the comment, and may be any names, since nothing reassembles the text.
 
 ## Editor support
 
@@ -108,4 +178,5 @@ assembler.
 | `encoding` | Every addressing mode in every field, opcode, alias, condition, control instruction, and directive; three constant words; number spellings and expressions; register spellings; and `.EQU` chains and operands. The expected output was checked by hand against ISA.md, including the worked example in §11. The comments of the later lines give the derivation. |
 | `wrap` | Address wrap from `0xFFFFFFFF` to 0. |
 | `crlf` | CRLF line endings and a program with no `.ORG`. |
+| `dis.py` | `nicedis`: every `.bin` file of the repository disassembled and reassembled to the same words, without symbols and with them where its `.nasm` file or `.sym` file gives them, and each listing in the layout; the hand-checked listings `count.lst` and `disedge.lst`; `disassemble()`; `--start` and `--end`; and the errors. `disedge.bin` and `disedge.sym` hold the cases no assembled program has: the `.DAT` words, cut-off instructions, a gap, a label inside an instruction, and the names that are not labels. |
 | `errors.py` | One case per error message, including every bug fixed after [the review](../doc/review/assembler-review.md); generated programs such as `.EQU` chains of 1200 names; an empty file and one with no final newline; the exact output for two errors, and for warnings; and the command line: `-o`, a missing file, a directory in place of a file, and bad arguments. |

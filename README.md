@@ -42,7 +42,7 @@ follows a tag.
 | Path | What it is |
 |---|---|
 | [doc/](doc/README.md) | The specification, [ISA.md](doc/ISA.md), and the other documents: the I/O devices ([SYSTEM.md](doc/SYSTEM.md)), the design note for the pipelined core, the sources, the history, the reviews, and a beginner's introduction in slides. |
-| [assembler/](assembler/README.md) | `niceasm`, the assembler: one Python 3 script with no dependencies. |
+| [assembler/](assembler/README.md) | `niceasm`, the assembler, and `nicedis`, the disassembler: Python 3 scripts with no dependencies. |
 | [emulator/](emulator/README.md) | `niceemu`, the emulator, written in Zig. |
 | [runtime/](runtime/README.md) | The start-up code and runtime library for C and wasm programs, and a small C library. [ABI.md](runtime/ABI.md) gives the C ABI: registers, calls, the stack, and the runtime library's conventions. |
 | [translator/](translator/README.md) | `nicewasm`, which translates WebAssembly into NICE assembly. [WASM.md](translator/WASM.md) says how WebAssembly maps to NICE. |
@@ -89,13 +89,14 @@ meant for comparing the FPGA core with the emulator.
 
 ## Toolchain
 
-There are five tools. Four run on the host, and one is NICE assembly that
+There are six tools. Five run on the host, and one is NICE assembly that
 is joined into every program. Each follows one part of
 [doc/ISA.md](doc/ISA.md).
 
 | Tool | Where | Written in | Reads | Writes | Follows |
 |---|---|---|---|---|---|
 | `niceasm`, the assembler | [assembler/niceasm.py](assembler/niceasm.py) | Python 3, standard library only | `.nasm` | `.bin` | ISA.md §10 |
+| `nicedis`, the disassembler | [assembler/nicedis.py](assembler/nicedis.py) | Python 3, standard library only | `.bin` and `.sym` | `.nasm` | ISA.md §10 |
 | `niceemu`, the emulator | [emulator/](emulator/) | Zig 0.17 | `.bin` | Console output, the registers, memory dumps, and a trace | ISA.md §1–8, SYSTEM.md, DEBUG.md |
 | The runtime library | [runtime/](runtime/) | NICE assembly | | | ABI.md and WASM.md |
 | `nicewasm`, the wasm translator | [translator/nicewasm.py](translator/nicewasm.py) | Python 3, standard library only | `.wasm` | `.nasm` | WASM.md |
@@ -155,6 +156,10 @@ source file, and writes the `.bin` file:
 - The tests of the runtime use `niceasm` and `niceemu`. The tests of
   `nicewasm` use all three other tools: they translate each module, join it
   with the runtime, assemble it, and run it.
+- `nicedis` reads the `.bin` files of `niceasm` and the symbols files of
+  `niceasm --symbols` and `nicebuild.py --symbols`. `niceasm` assembles
+  its output back to the same words. Host tools import its
+  `disassemble()`.
 - The `.bin` format is the text format of the 2004 `NICE.pm` assembler, so
   its example binaries can be compared directly.
 - The FPGA cores take the place of `niceemu` at the end of the pipeline.
@@ -177,7 +182,7 @@ programs can use the small C library in
 functions, `malloc`, and a few more. It is compiled to wasm with the
 program, so it is not one of the joined files.
 
-**Host tools.** Python 3 runs `niceasm`, `nicewasm`, and the test scripts.
+**Host tools.** Python 3 runs `niceasm`, `nicedis`, `nicewasm`, and the test scripts.
 Nothing beyond the standard library is needed, and `make typecheck` checks
 the Python with `mypy --strict` if mypy is installed. Zig 0.17 builds
 `niceemu` and compiles the Zig test modules. clang with the wasm32 target,

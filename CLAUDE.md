@@ -32,6 +32,7 @@ translator, and two FPGA cores. See README.md.
   and commit both. The timing values are read off a simulation by hand.
 - `assembler/niceasm.py`: Python 3, standard library only, `mypy --strict` clean.
   `assembler/nicefmt.py` checks the column layout of `.nasm` files, or fixes it with `--write`.
+  `assembler/nicedis.py` disassembles a `.bin` file back to `.nasm`. Same rules as niceasm.py.
 - `emulator/`: Zig 0.17.
 - `runtime/`: start-up code and runtime routines in NICE assembly (`runtime/ABI.md`).
   `runtime/libc/` is the C library for translated programs.
@@ -60,7 +61,7 @@ translator, and two FPGA cores. See README.md.
 
     make                             # help: the top-level targets, which run the ones below
     make test                        # every quick make test below, in parallel
-    cd assembler && make test        # .nasm -> .bin comparisons, test/errors.py and fmt.py, and the layout of every .nasm
+    cd assembler && make test        # .nasm -> .bin comparisons, test/errors.py, fmt.py, and dis.py, and the layout of every .nasm
     cd assembler && make typecheck   # mypy --strict
     cd emulator  && make test        # zig unit tests, example and probe programs, test/errors.py and link.py
     cd emulator  && make typecheck   # mypy --strict

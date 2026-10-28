@@ -18,7 +18,7 @@ Reviewed on 2026-10-28: the 18 commits since the tag `V1.0` (2026-10-27), at com
 
 [DEBUG.md](../DEBUG.md) §9's table says of version 5: "Not yet tagged." At `V1.0` the same cell for version 4 was filled in by hand. Nothing in [RELEASE.md](../../release/RELEASE.md) says to do it, and step 8.3 lets `tag` accept only commits that change RELEASE_NOTES.md and TODO.md after the stamp, so a change to DEBUG.md after `release.py check` makes the stamp stale. **Fix:** write `V1.1` in the cell before `release.py check`, and add the cell to step 2 of RELEASE.md, next to the sentence about a new debug link version.
 
-**Resolved** in part: 4d7607a writes `V1.1` in the cell. RELEASE.md does not yet name the cell.
+**Resolved**: 4d7607a writes `V1.1` in the cell, and step 2.8 of RELEASE.md says to name the tag in the row of a new version before `release.py check`.
 
 ### 1.2 What the `V1.1` section must say
 
@@ -33,7 +33,7 @@ Reviewed on 2026-10-28: the 18 commits since the tag `V1.0` (2026-10-27), at com
 
 Issue #79, the version 5 change, is closed without the `V1.1` milestone, which has 8 closed issues and no open one. RELEASE.md's list under "Interface changes" (step 7) names the ports, the address map, the output ports, and the clock assumptions, but not the debug link's version, which an integrator's host sees. **Fix:** add the milestone to #79; add "the version and the rules of the debug link (DEBUG.md §9)" to the list.
 
-**Resolved** in part: dff63e9 adds the `V1.1` section, and it says each of the above: the new minor, no interface change, the pause at a waiting read, `nicedis`, `errno`, nvc, `make slow`, `make strides`, and `make sweep`. It says the pause takes nothing, which §2.1 qualifies until that is fixed. The milestone of #79 and the list of step 7 are as before.
+**Resolved** in part: #79 has the `V1.1` milestone, and the list of step 7 names the version and the rules of the debug link. The `V1.1` section is written at the tag. A first draft, dff63e9, was taken back with the tag that was pushed before this review; the section must say the above, and that `strtol` and `strtoul` set `EINVAL` for a bad base (§5.1). With §2.1 fixed, the pause at a waiting read takes no byte.
 
 ## 2. The emulator and the debug link
 

@@ -79,7 +79,9 @@ tools. Item 2 is by hand.
    after `release.py check`: `tag` accepts commits since the stamp that
    change only RELEASE_NOTES.md and TODO.md. A new debug link version
    says whether it is a new minor or a new major, and a change in a new
-   minor follows the rules of DEBUG.md §9.
+   minor follows the rules of DEBUG.md §9. Its row in the table of
+   versions of DEBUG.md §9 names the new tag before `release.py check`,
+   as a change to DEBUG.md after the stamp makes it stale.
 
 ## 3. Quick checks
 
@@ -217,7 +219,8 @@ record it in the release notes:
 - the ports of either core, or of `wb_dmux` and the devices;
 - the I/O address map of [doc/SYSTEM.md](../doc/SYSTEM.md);
 - `regs_o`, `retire_o`, `stats_o`, or the reset and interrupt behavior;
-- the clock assumptions of the timer and the performance counters.
+- the clock assumptions of the timer and the performance counters;
+- the version and the rules of the debug link (DEBUG.md §9).
 
 ## 8. Release
 

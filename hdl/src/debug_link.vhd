@@ -1294,6 +1294,9 @@ begin
       -- psl i_strobe : assert always con_in_valid_o = '1' -> gap_r = 2;
       -- psl i_clear : assert always clearing_r = '1' -> hold_r = '1';
       -- psl i_cleared : assert always cleared_r = '1' -> hold_r = '1';
+      -- After a clear the stop register reads 0 until the next start, and
+      -- bit 1 and the reason are masked where they are read (DEBUG.md §6).
+      -- psl f_cleared_stop : assert always cleared_r = '1' -> stop_r = '0' & X"00";
 
       -- p_acc: one access at a time, for p_rx's write or p_tx's read.
       -- psl i_acc_idle : assert always

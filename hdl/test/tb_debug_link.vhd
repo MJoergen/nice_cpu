@@ -29,7 +29,8 @@
 -- * the pause: bit 4, the notice `p` after and before the answer, the memory,
 --   the registers, and the console while paused, a hold and a start that
 --   keep or begin a pause, a go on, and a halt that ignores a request;
--- * a clear that ends the halt, and an `h` not yet sent that it keeps;
+-- * a clear that ends the halt, an `h` not yet sent that it keeps, and a
+--   clear while paused;
 -- * the step: bit 5, pause_o low for exactly one cycle, bit 4 and the memory
 --   during the step, one `p` after it, a step into a halt, a hold during the
 --   step, and a write with bit 5 that does not step;
@@ -928,6 +929,20 @@ begin
       quiet("clear before the h");
       send(C_ESC & "RFFFFFFF00002#2E");
       expect(C_ESC & "rFFFFFFF000020000000900000000#57", "control and reason after the late h");
+
+      -- A clear while paused, not at a breakpoint: bit 1, the reason, and
+      -- the stop register read 0, and bit 4 reads 0, as the clear holds.
+      core_halt <= '0';
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "start paused before a clear");
+      expect(C_ESC & "p#70", "p before a clear");
+      send(C_ESC & "WFFFFFFF000010000000D#C6");
+      expect(C_ESC & "kFFFFFFF00001#46", "clear while paused");
+      send(C_ESC & "RFFFFFFF00002#2E");
+      expect(C_ESC & "rFFFFFFF000020000000900000000#57", "control and reason after a paused clear");
+      send(C_ESC & "RFFFFFFF60001#33");
+      expect(C_ESC & "rFFFFFFF6000100000000#D3", "stop register after a paused clear");
+      quiet("clear while paused");
 
       -- The breakpoints (DEBUG.md §6), set while held: 4 of them, so the
       -- words and bits past them read 0 and take no write. 0, 1, and 3 are

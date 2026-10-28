@@ -238,7 +238,7 @@ It serves the link every 4096 steps while a program runs, and at least
 every 100 ms while the processor is held, halted, or paused, or a console
 read waits. A pause takes effect between two steps. A pause while a
 console read waits undoes the step of the read, and pauses before it
-(DEBUG.md §7). A step of a paused processor (bit 5, DEBUG.md §6) runs one
+(DEBUG.md §7). The bytes that the step took go back to the input buffer. A step of a paused processor (bit 5, DEBUG.md §6) runs one
 step of `--max-steps` and `--trace`, an instruction or an interrupt entry,
 and then pauses again. A step at a console read that would wait does not
 run, and pauses again at once.

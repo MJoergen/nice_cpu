@@ -438,7 +438,8 @@ command line, with these differences:
   `p`, or `x` at a breakpoint. That includes a console read that waits for
   input (SYSTEM.md §1): a pause request undoes the step of the read. The
   processor pauses before it, with R15 the address of the read, and no
-  byte taken. The counters and the timer are as they were before the step.
+  byte taken, also none by an earlier read of the same instruction. The
+  counters and the timer are as they were before the step.
   A go on runs the read again.
 - A step of §6 at a console read that would wait does not run either:
   the processor pauses again, with R15 unchanged, and sends `p`, or `x` at

@@ -43,9 +43,13 @@ DEBUG.md §7 says a pause request undoes the step of a console read that waits: 
 
 Reproduced over the link with that instruction followed by `HALT`: after `a` and a pause, `p` came, R15 read the address of the `ADD`, and the free space (`0xFFFFFFF3`) read 2048, not 2047. After a go on, the program waited for two new bytes. The bytes are still in the ring buffer, because `input_head` only advances. **Fix:** save the three fields of the link with the `Saved` snapshot, and put them back on undo; or make the undo apply only when the wait is the first console read of the step; or state the limit in DEBUG.md §7 and emulator/README.md. Any of the three gets a test in `emulator/test/link.py`.
 
+**Resolved**: the link counts the bytes that a step takes, and an undo puts them back in the ring before `input_head`. The buffer is empty at an undo, as the step waited, so the bytes are still there. Saving the three fields would not do: a byte that arrives during the step and is taken by its first read would be lost. `link.py`'s `test_step` steps `ADD R3, @CONSOLE, @CONSOLE` with one byte waiting, and then with a second; DEBUG.md §7 and emulator/README.md say that no earlier read of the instruction keeps its byte.
+
 ### 2.2 Tests
 
 The tests of a pause during a waiting read in `link.py` sleep 0.2 s so that the read waits before the pause is sent. A pause that arrived first would take effect between steps and give the same `p`, R15, and counters, so the undo path is covered only while the timing holds; the step at a waiting read is deterministic and does cover it. `test_old_host` checks the version rules through the `b` payload, the version register, and the major and minor, but nothing reads `0xFFFFFFF7` or the high bits of `0xFFFFFFF2`, which DEBUG.md §9 says read 0; the code does so. No test covers §2.1. **Fix:** a test for §2.1 with the fix, and one line each for the two registers.
+
+**Resolved**: the test of §2.1 steps at the second read, which is deterministic, and `test_old_host` reads `0xFFFFFFF2` as 5 and `0xFFFFFFF7` as 0. The tests that sleep stay; the step test covers the undo without them.
 
 ### 2.3 What agrees
 

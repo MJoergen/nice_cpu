@@ -49,6 +49,13 @@ ONE = """
 loop            MOVE    R15, loop
 """
 
+# Reads the console twice in one instruction (DEBUG.md §7).
+TWICE = """
+CONSOLE         .EQU    0xFFFFFF00
+                ADD     R3, @CONSOLE, @CONSOLE
+                HALT
+"""
+
 # Halts at its first instruction.
 STOP = """
                 HALT
@@ -562,7 +569,8 @@ def regs_after_steps(irq: str, steps: int, opts: List[str]) -> List[Tuple[int, i
     return out
 
 
-def test_step(count: List[int], one: List[int], stop: List[int], echo: List[int], irq: List[int], irq_bin: str) -> None:
+def test_step(count: List[int], one: List[int], stop: List[int], echo: List[int], twice: List[int],
+              irq: List[int], irq_bin: str) -> None:
     """The single step of §6: bit 5, the `p` or `h` after it, the cases where
     it does nothing, the step at a console read that would wait, and the
     interrupt entry."""
@@ -665,6 +673,25 @@ def test_step(count: List[int], one: List[int], stop: List[int], echo: List[int]
     e.send(write(CONTROL, [0x9]))
     e.expect("hold", ok(CONTROL, 1))
     expect("held control", bytes([word(e, CONTROL)]), bytes([0x9]))
+    e.stop()
+
+    # An instruction that reads the console twice, with one byte waiting:
+    # the first read takes it, and the second waits. The step does not run,
+    # and the byte is back in the buffer. With a second byte, it runs, and
+    # R3 is 0x161 + 0x162 (SYSTEM.md §1).
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, twice) + write(CONTROL, [0x18]))
+    e.expect("twice loaded", ok(0, len(twice)) + ok(CONTROL, 1) + PAUSED)
+    e.send(b"a" + write(CONTROL, [0x38]))
+    e.expect("step at the second read", ok(CONTROL, 1) + PAUSED)
+    expect("R15 at the double read", bytes([word(e, 0xFFFFFFEF)]), b"\x00")
+    expect("the byte is back", bytes([word(e, 0xFFFFFFF3) == 2047]), b"\x01")
+    e.send(b"b" + write(CONTROL, [0x38]))
+    e.expect("step with two bytes", ok(CONTROL, 1) + PAUSED)
+    expect("R15 after the double read", bytes([word(e, 0xFFFFFFEF)]), b"\x03")
+    expect("R3 holds both bytes", bytes([word(e, 0xFFFFFFE3) == 0x2C3]), b"\x01")
+    expect("the buffer is empty", bytes([word(e, 0xFFFFFFF3) == 2048]), b"\x01")
     e.stop()
 
     # R13, R14, and R15 after each step, with an NMI and an IRQ: an entry is a
@@ -900,6 +927,10 @@ def test_old_host(stop: List[int], echo: List[int]) -> None:
         e.expect("halt", b"\xffh01#C9")
         e.send(read(CONTROL, 2))
         e.expect("halted", answer(CONTROL, [0xA, 1]))
+    # The registers it does not know read 0 but for the version, which reads
+    # 5 with its high bits 0.
+    e.send(read(0xFFFFFFF2, 1) + read(0xFFFFFFF7, 1))
+    e.expect("version and 0xFFFFFFF7", answer(0xFFFFFFF2, [5]) + answer(0xFFFFFFF7, [0]))
     # A program that runs until the host holds it.
     control(0x5, 0)
     e.send(write(0, echo))
@@ -928,6 +959,7 @@ def main() -> None:
         count = assemble(tmp, "count", COUNT)
         one = assemble(tmp, "one", ONE)
         stop = assemble(tmp, "stop", STOP)
+        twice = assemble(tmp, "twice", TWICE)
         at10 = assemble(tmp, "at10", AT10)
         load = assemble(tmp, "load", LOAD)
         skip = assemble(tmp, "skip", SKIP)
@@ -941,7 +973,7 @@ def main() -> None:
             test_example, test_errors, lambda: test_run(echo), lambda: test_overflow(spin),
             lambda: test_step_limit(spin), lambda: test_halts(reserved, int_in_isr, rti, spin),
             lambda: test_pause(count, echo),
-            lambda: test_step(count, one, stop, echo, irq, irq_bin),
+            lambda: test_step(count, one, stop, echo, twice, irq, irq_bin),
             lambda: test_break(at10, load, count, skip, stop, irq),
             lambda: test_old_host(stop, echo), test_usage,
         ]

@@ -85,6 +85,8 @@ pub const Link = struct {
     input_end: bool = false,
     /// An `o` was sent, and the buffer has had no room since.
     overflow_sent: bool = false,
+    /// The bytes the current step has taken, which an undo puts back.
+    taken: usize = 0,
 
     // The packet being received (DEBUG.md §2, §5).
     state: enum { idle, escape, payload, cc_high, cc_low } = .idle,
@@ -460,6 +462,15 @@ pub const Link = struct {
         self.overflow_sent = false;
     }
 
+    /// Put back the bytes the step took, for an undo. The buffer is empty
+    /// then, as the step waited for a byte, so they are still in the ring
+    /// before `input_head`.
+    pub fn putBackInput(self: *Link) void {
+        self.input_head = (self.input_head + input_size - self.taken) % input_size;
+        self.input_len += self.taken;
+        self.taken = 0;
+    }
+
     /// The console output of the program: every 0xFF becomes ESC ESC.
     fn drainConsole(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
         const self: *Link = @fieldParentPtr("console_w", w);
@@ -511,6 +522,7 @@ pub const Link = struct {
         self.input_head = (self.input_head + 1) % input_size;
         self.input_len -= 1;
         self.overflow_sent = false;
+        self.taken += 1;
         try w.writeByte(b);
         return 1;
     }

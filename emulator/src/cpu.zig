@@ -557,8 +557,9 @@ pub const Cpu = struct {
     /// What a step may change before a console read that waits, with the
     /// counters and the timer, which it changes at its end. The debug link
     /// saves it before each step, and puts it back when a pause request
-    /// undoes the step (DEBUG.md §7). A step writes no memory and no device
-    /// before its reads.
+    /// undoes the step (DEBUG.md §7), and puts back the console bytes that
+    /// the step took. A step writes no memory and no device before its
+    /// reads.
     pub const Saved = struct {
         regs: [16]u32,
         in_service: bool,

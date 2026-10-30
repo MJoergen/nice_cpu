@@ -61,7 +61,9 @@ keyboard, a cursor, and the pace of a board (#83).
   The console reads the file of `--input`, if given, then the keys typed
   into the window, and not stdin. A read returns 0 while no byte waits.
 - The run is paced at one step per microsecond, so that the microsecond
-  counter and the timer keep the host's time. `--speed N` sets another
+  counter keeps the host's time. The timer still counts one cycle per
+  step, so its period of P cycles lasts P microseconds, not P/100 as at
+  100 MHz. `--speed N` sets another
   rate, and `--speed 0` runs as fast as the host can.
 - At the halt or the step limit, the report is printed, and the window
   stays until it is closed. Closing it before ends the run with the new

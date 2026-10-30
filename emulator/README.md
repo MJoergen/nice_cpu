@@ -148,7 +148,9 @@ bytes of SYSTEM.md §1, and not stdin. A read with no byte waiting returns
 bytes, and a key whose bytes do not all fit is dropped.
 
 The emulator runs one step per microsecond, so that the microsecond counter
-and the timer keep the time of the host's clock. `--speed` sets another
+keeps the time of the host's clock. The cycle counter and the timer still
+count one cycle per step, so a timer period of P lasts P microseconds,
+where on a board of 100 MHz it lasts P/100 (SYSTEM.md §1). `--speed` sets another
 rate, and `--speed 0` runs as fast as the host can. A run that falls more
 than 100 ms behind the rate starts the pace again from there, rather than
 catch up in a burst.

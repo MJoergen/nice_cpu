@@ -21,6 +21,8 @@
 -- - eoi_o rises only after rx_break_i, and falls only at a start, when
 --   hold_o falls, or at reset (DEBUG.md §7).
 -- - With G_HAS_ROM false, rom_hide_o is always 1.
+-- The side client is free: it may ask for any word at any time, and drop
+-- or change its request before side_done_o (contract g asks it not to).
 -- The properties that name the registers of debug_link are there, under
 -- G_FORMAL: the framing of the output, so that nothing comes between the
 -- bytes of a packet, no answer during a clear, why rx_ready_o is low
@@ -28,6 +30,9 @@
 -- invariants that make the proof inductive, and the breakpoints: their
 -- registers, and the stop of the core's own, which raises pause_o. The invariant f_wb_owed here
 -- ties the count of wb_master_check to the master.
+-- The side client is free with G_SIDE, so the proofs hold for every side
+-- client, and for none. The covers run without one, so that they show
+-- the host's way, and the side client's covers run apart.
 -- The covers show a write to the memory, a console byte for the program,
 -- and the end of a clear; those of wb_master_check a stalled write, and
 -- those of debug_link an `h`, an `o`, and the `p` of a stop of the core's
@@ -55,7 +60,10 @@ library ieee;
 entity formal_debug_link is
    generic (
       G_HAS_ROM   : boolean := true;
-      G_BOOT_HELD : boolean := false
+      G_BOOT_HELD : boolean := false;
+      -- A side client (contract g), or none, as on a board that leaves the
+      -- side port open
+      G_SIDE      : boolean := true
    );
    port (
       clk_i         : in  std_logic;
@@ -72,6 +80,10 @@ entity formal_debug_link is
       halt_reason_i : in  std_logic_vector(2 downto 0);
       paused_i      : in  std_logic;
       regs_i        : in  std_logic_vector(511 downto 0);
+      side_valid_i  : in  std_logic;
+      side_we_i     : in  std_logic;
+      side_addr_i   : in  std_logic_vector(31 downto 0);
+      side_data_i   : in  std_logic_vector(31 downto 0);
       wb_stall_i    : in  std_logic;
       wb_ack_i      : in  std_logic;
       wb_data_i     : in  std_logic_vector(31 downto 0)
@@ -98,6 +110,9 @@ architecture synthesis of formal_debug_link is
    signal wb_data      : std_logic_vector(31 downto 0);
    signal brk_addr     : t_brk_addrs;
    signal brk_en       : std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+   signal side_done    : std_logic;
+   signal side_err     : std_logic;
+   signal side_data    : std_logic_vector(31 downto 0);
 
    -- A console byte taken, which is the next byte out
    signal pending  : natural range 0 to 2;          -- The ACKs owed to the master
@@ -212,6 +227,20 @@ begin
    -- psl c_strobe : cover {con_in_valid and not rst_i};
    -- psl c_clear : cover {clear and clear_done_i};
 
+
+   -- The side client: a word of the memory, and a refusal. Without one,
+   -- the covers above show the host's way to each.
+   gen_side : if G_SIDE generate
+      -- psl c_side_mem : cover
+      --    {side_valid_i = '1' and side_addr_i(31 downto 5) /= (31 downto 5 => '1') and
+      --     side_done = '1' and side_err = '0'};
+      -- psl c_side_err : cover {side_done = '1' and side_err = '1'};
+   end generate gen_side;
+
+   gen_no_side : if not G_SIDE generate
+      -- psl f_no_side : assume always side_valid_i = '0';
+   end generate gen_no_side;
+
    gen_no_rom : if not G_HAS_ROM generate
       -- psl f_no_rom : assert always rom_hide = '1';
    end generate gen_no_rom;
@@ -253,6 +282,13 @@ begin
          regs_i         => regs_i,
          brk_addr_o     => brk_addr,
          brk_en_o       => brk_en,
+         side_valid_i   => side_valid_i,
+         side_we_i      => side_we_i,
+         side_addr_i    => side_addr_i,
+         side_data_i    => side_data_i,
+         side_done_o    => side_done,
+         side_err_o     => side_err,
+         side_data_o    => side_data,
          wb_cyc_o       => wb_cyc,
          wb_stb_o       => wb_stb,
          wb_stall_i     => wb_stall_i,

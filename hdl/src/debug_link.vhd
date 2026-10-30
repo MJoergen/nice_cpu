@@ -6,18 +6,28 @@
 -- Three processes. p_rx splits the incoming bytes into console bytes and
 -- packets (§1, §2), checks the checksum and the timeout (§5), decides the
 -- errors (§3), and writes the words of a W as they arrive. p_acc executes
--- one word access at a time, for p_rx and p_tx: it holds the debug
--- registers of §6 itself, and sends any other address to the Wishbone
--- master. p_tx sends the output: the answers, the notices (§4), and the
--- console bytes of the program, one whole packet at a time, so nothing
--- comes between the bytes of a packet. When more than one is waiting, the
--- order is: an answer, `b`, `o`, a console byte, `h`, and `p` or `x`. So
--- the notices of a stop come after the last console byte that the program
--- wrote.
+-- one word access at a time, for p_rx, p_tx, and the side client: it holds
+-- the debug registers of §6 itself, and sends any other address to the
+-- Wishbone master. p_tx sends the output: the answers, the notices (§4),
+-- and the console bytes of the program, one whole packet at a time, so
+-- nothing comes between the bytes of a packet. When more than one is
+-- waiting, the order is: an answer, `b`, `o`, a console byte, `h`, and `p`
+-- or `x`. So the notices of a stop come after the last console byte that
+-- the program wrote.
 --
 -- The link reaches no word but the debug registers while the program runs
 -- (§3), so the Wishbone master is used only while the processor is held,
--- halted, or paused.
+-- halted, or paused. p_acc checks this at every word, as a side client may
+-- start the program between the words of a host's packet.
+--
+-- THE SIDE CLIENT
+-- A second client of p_acc, word by word, for a debugger inside the
+-- system (DEBUG.md §3). Its requests are served as the host's words are:
+-- a write of the control register holds, starts, clears, pauses, or steps,
+-- and a word that is not a debug register is refused while the program
+-- runs. The host's requests go first, and a request waits for a clear.
+-- The side client gets no notices and no console bytes. The host gets
+-- the notices of a stop that the side client caused.
 --
 -- BREAKPOINTS
 -- G_BREAKS breakpoints, 0 to C_BREAKS_MAX (DEBUG.md §6). p_acc holds their
@@ -52,7 +62,8 @@
 --    the tag of a packet that waits for the answer to the last request, or
 --    for a clear (below) that a dropped W started. A host that waits for
 --    its answers (DEBUG.md §3) sends no such tag, but for one after a
---    dropped packet, before the clear ends.
+--    dropped packet, before the clear ends. A side client (g) adds the
+--    time of its own access, and of a clear that it starts during a W.
 -- d) free_i is the number of console bytes that the program's input buffer
 --    can take, and shows a byte of con_in_valid_o 2 cycles after the
 --    strobe. A strobe is always accepted: it comes only while free_i was
@@ -60,8 +71,10 @@
 -- e) halted_i, paused_i, and regs_i come from a core that rst_i = hold_o
 --    resets, so they may change to 0 once hold_o is high. This unit keeps
 --    the last values of a halt or a pause itself (§6). regs_i is R0 to R15,
---    R(n) in bits 32 * n + 31 .. 32 * n, and valid as long as halted_i or
---    paused_i is high. A board without the registers ties it to 0. A core
+--    R(n) in bits 32 * n + 31 .. 32 * n: the core's committed registers in
+--    every cycle, which the link reads while the processor runs, and keeps
+--    while halted_i or paused_i is high. A board without the registers ties
+--    it to 0. A core
 --    pauses never together with a halt, and never while hold_o is high. It
 --    pauses only after pause_o was high (MICROARCH.md §6.1), or at an
 --    enabled breakpoint of brk_addr_o and brk_en_o, and the latter while
@@ -75,6 +88,12 @@
 --    the master makes no access. The answer to the request waits for it,
 --    and so does the next request, also when the W that started the clear
 --    was dropped.
+-- g) The side client raises side_valid_i with side_we_i, side_addr_i, and
+--    side_data_i, and holds them until side_done_o, which is high for one
+--    cycle. side_err_o then says the request was refused: a word that is
+--    not a debug register while the processor runs. side_data_o is the
+--    word read, valid from side_done_o until the next request is done. A
+--    new request may start the cycle after side_done_o.
 --
 -- The host side:
 -- * rx_*: a byte from the host, with valid and ready, and rx_break_i, a
@@ -111,7 +130,10 @@
 -- rx_ready_o is low only as contract c says; and hold_o and rom_hide_o
 -- change only on a write to the control register, at the end of a clear,
 -- or at reset, or, for pause_o, at a stop of the core's own; and the
--- breakpoints change only on a write of their registers or at reset. The
+-- breakpoints change only on a write of their registers or at reset; a
+-- read of R0 to R15 while the processor runs returns regs_i of its cycle;
+-- and the side client gets one done for each request, refused only for a
+-- word that is not a debug register while the program runs. The
 -- invariants i_* tie p_rx, p_acc, p_tx, and the parser
 -- together, so that k-induction proves it all. The properties of the ports
 -- are in formal/formal_debug_link.vhd.
@@ -175,6 +197,16 @@ entity debug_link is
       regs_i         : in  std_logic_vector(511 downto 0);
       brk_addr_o     : out t_brk_addrs;
       brk_en_o       : out std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+
+      -- A second client of the debug registers and the memory, inside the
+      -- system (contract g). A board without one leaves the inputs open.
+      side_valid_i   : in  std_logic                     := '0';
+      side_we_i      : in  std_logic                     := '0';
+      side_addr_i    : in  std_logic_vector(31 downto 0) := (others => '0');
+      side_data_i    : in  std_logic_vector(31 downto 0) := (others => '0');
+      side_done_o    : out std_logic;
+      side_err_o     : out std_logic;
+      side_data_o    : out std_logic_vector(31 downto 0);
 
       -- The memory: a pipelined Wishbone master, as the data bus of the cores
       wb_cyc_o       : out std_logic;
@@ -340,6 +372,7 @@ architecture synthesis of debug_link is
    signal acc_go      : std_logic;
    signal acc_we      : std_logic;
    signal acc_addr    : t_word;
+   signal acc_wdata   : t_word;
    signal acc_done_r  : std_logic                    := '0';
    signal acc_rdata_r : t_word                       := (others => '0');
    signal hold_r      : std_logic                    := '0';
@@ -369,6 +402,18 @@ architecture synthesis of debug_link is
    -- The stop register: bit 8 and the number of the breakpoint at R15
    signal stop_r : std_logic_vector(8 downto 0) := (others => '0');
 
+   -- p_acc takes the request of acc_go: at once for a debug register, and
+   -- for another word only after a clear. The request is the side
+   -- client's when neither p_rx nor p_tx asks (host_go), and acc_side_r
+   -- says whose the access on the bus is.
+   signal acc_take    : std_logic;
+   signal host_go     : std_logic;
+   signal side_go     : std_logic;
+   signal acc_side_r  : std_logic := '0';
+   signal side_done_r : std_logic := '0';
+   signal side_err_r  : std_logic := '0';
+   signal side_data_r : t_word    := (others => '0');
+
    -- The core has paused on its own, at a breakpoint: pause_o was low.
    signal own_stop : std_logic;
 
@@ -382,6 +427,10 @@ architecture synthesis of debug_link is
    -- The link may reach the whole memory: the core is held or halted, or the
    -- link owns it (pause_own). Otherwise it reaches the debug registers only.
    signal mem_own : std_logic;
+
+   -- p_acc reaches the memory: mem_own, and for a pause, the core's own flag
+   -- as well, so that the pause lasts through the access (contract e).
+   signal mem_ok : std_logic;
 
 begin
 
@@ -595,10 +644,12 @@ begin
                   end if;
                end if;
 
-            -- The write of a data word: one cycle to start, then wait.
+            -- The write of a data word: until p_acc takes it, then wait.
             when RX_CALL_ST =>
-               rx_go_r <= '0';
-               rx_st   <= RX_WAIT_ST;
+               if acc_take = '1' then
+                  rx_go_r <= '0';
+                  rx_st   <= RX_WAIT_ST;
+               end if;
 
             when RX_WAIT_ST =>
                if acc_done_r = '1' then
@@ -627,10 +678,26 @@ begin
    ---------------------------------------------------------------------------
 
    -- The reads of the answer have priority, as p_rx is then not writing.
-   acc_go   <= rx_go_r or tx_go_r;
-   acc_we   <= not tx_go_r;
-   acc_addr <= tx_addr_r when tx_go_r = '1' else
-               cur_addr_r;
+   -- The host's requests have priority over the side client's, which waits
+   -- until p_acc has done the last one.
+   host_go   <= rx_go_r or tx_go_r;
+   side_go   <= side_valid_i and not host_go and not side_done_r;
+   acc_go    <= host_go or side_go;
+   acc_we    <= '0' when tx_go_r = '1' else
+                '1' when rx_go_r = '1' else
+                side_we_i;
+   acc_addr  <= tx_addr_r when tx_go_r = '1' else
+                cur_addr_r when rx_go_r = '1' else
+                side_addr_i;
+   acc_wdata <= word_r when rx_go_r = '1' else
+                side_data_i;
+   acc_take  <= '1' when acc_st = ACC_IDLE_ST and acc_go = '1' and
+                         (is_dbg(acc_addr) or clearing_r = '0') else
+                '0';
+
+   side_done_o <= side_done_r;
+   side_err_o  <= side_err_r;
+   side_data_o <= side_data_r;
 
    hold_o     <= hold_r;
    eoi_o      <= eoi_r;
@@ -640,6 +707,7 @@ begin
    brk_addr_o <= brk_addr_r;
    brk_en_o   <= brk_en_r;
    mem_own    <= hold_r or halted_r or pause_own;
+   mem_ok     <= hold_r or halted_r or (pause_own and paused_i);
    clear_o    <= clearing_r;
    rom_hide_o <= hide_r when G_HAS_ROM else
                  '1';
@@ -658,8 +726,9 @@ begin
       variable stop_v : std_logic_vector(8 downto 0);
    begin
       if rising_edge(clk_i) then
-         nh_v      := hold_r;
-         pause_d_r <= pause_r;
+         nh_v        := hold_r;
+         pause_d_r   <= pause_r;
+         side_done_r <= '0';
 
          -- At a stop, the lowest enabled breakpoint at R15, until the core
          -- leaves the pause or the next start. A hold keeps it.
@@ -723,37 +792,46 @@ begin
          case acc_st is
 
             when ACC_IDLE_ST =>
-               if acc_go = '1' then
-                  acc_done_r <= '0';
+               if acc_take = '1' then
+                  acc_side_r <= not host_go;
+                  if host_go = '1' then
+                     acc_done_r <= '0';
+                  end if;
                   if is_dbg(acc_addr) then
                      idx_v := to_integer(acc_addr(4 downto 0));
-                     acc_done_r <= '1';
+                     if host_go = '1' then
+                        acc_done_r <= '1';
+                     else
+                        side_done_r <= '1';
+                        side_err_r  <= '0';
+                     end if;
                      if acc_we = '1' then
                         -- The breakpoints take a write, and the control register,
                         -- but not during a clear.
                         if idx_v = 20 then
-                           brk_en_r(G_BREAKS - 1 downto 0) <= word_r(G_BREAKS - 1 downto 0);
+                           brk_en_r(G_BREAKS - 1 downto 0) <= acc_wdata(G_BREAKS - 1 downto 0);
                         end if;
                         if idx_v >= 24 and idx_v - 24 < G_BREAKS then
-                           brk_addr_r(idx_v - 24) <= word_r;
+                           brk_addr_r(idx_v - 24) <= acc_wdata;
                         end if;
                         if idx_v = 16 and clearing_r = '0' then
-                           nh_v    := word_r(0);
-                           pause_r <= word_r(4);
+                           nh_v    := acc_wdata(0);
+                           pause_r <= acc_wdata(4);
                            -- Bit 5 steps a paused core, and does nothing otherwise.
-                           if word_r(5) = '1' and word_r(4) = '1' and word_r(2) = '0' and
-                              word_r(0) = '0' and pause_own = '1' then
+                           if acc_wdata(5) = '1' and acc_wdata(4) = '1' and
+                              acc_wdata(2) = '0' and acc_wdata(0) = '0' and
+                              pause_own = '1' then
                               pause_r    <= '0';
                               step_r     <= '1';
                               stepping_r <= '1';
                               fell_r     <= '0';
                            end if;
                            if G_HAS_ROM then
-                              hide_r <= word_r(3);
+                              hide_r <= acc_wdata(3);
                            end if;
-                           if word_r(2) = '1' then
+                           if acc_wdata(2) = '1' then
                               clearing_r <= '1';
-                              clr_hold_r <= word_r(0);
+                              clr_hold_r <= acc_wdata(0);
                               nh_v       := '1';
                               -- The old program is gone, and so are its halt and its stop.
                               cleared_r  <= '1';
@@ -762,7 +840,11 @@ begin
                         end if;
                      else
                         rd_v := (others => '0');
-                        if idx_v < 16 then
+                        if idx_v < 16 and hold_r = '0' and halted_r = '0' and
+                           paused_r = '0' then
+                           -- The running core's registers, from this cycle
+                           rd_v := regs_i(32 * idx_v + 31 downto 32 * idx_v);
+                        elsif idx_v < 16 then
                            rd_v := regs_r(32 * idx_v + 31 downto 32 * idx_v);
                         elsif idx_v = 16 then
                            rd_v(0) := hold_r;
@@ -786,14 +868,32 @@ begin
                         elsif idx_v >= 24 and idx_v - 24 < G_BREAKS then
                            rd_v := brk_addr_r(idx_v - 24);
                         end if;
-                        acc_rdata_r <= rd_v;
+                        if host_go = '1' then
+                           acc_rdata_r <= rd_v;
+                        else
+                           side_data_r <= rd_v;
+                        end if;
+                     end if;
+                  elsif mem_ok = '0' then
+                     -- The program runs (§3). The side client gets an error.
+                     -- The host's packet checked it before its first word,
+                     -- so only a side client's start, go on, step, or clear
+                     -- since then gets here, and the word is skipped: a
+                     -- write is lost, and a read returns 0.
+                     if host_go = '1' then
+                        acc_done_r  <= '1';
+                        acc_rdata_r <= (others => '0');
+                     else
+                        side_done_r <= '1';
+                        side_err_r  <= '1';
+                        side_data_r <= (others => '0');
                      end if;
                   else
                      wb_cyc_r  <= '1';
                      wb_stb_r  <= '1';
                      wb_we_r   <= acc_we;
                      wb_addr_r <= acc_addr;
-                     wb_data_r <= word_r;
+                     wb_data_r <= acc_wdata;
                      acc_st    <= ACC_REQ_ST;
                   end if;
                end if;
@@ -806,10 +906,16 @@ begin
 
             when ACC_WAIT_ST =>
                if wb_ack_i = '1' then
-                  acc_rdata_r <= wb_data_i;
-                  wb_cyc_r    <= '0';
-                  acc_done_r  <= '1';
-                  acc_st      <= ACC_IDLE_ST;
+                  wb_cyc_r <= '0';
+                  acc_st   <= ACC_IDLE_ST;
+                  if acc_side_r = '1' then
+                     side_data_r <= wb_data_i;
+                     side_done_r <= '1';
+                     side_err_r  <= '0';
+                  else
+                     acc_rdata_r <= wb_data_i;
+                     acc_done_r  <= '1';
+                  end if;
                end if;
 
          end case;
@@ -836,9 +942,12 @@ begin
          end if;
 
          if rst_i = '1' then
-            acc_st     <= ACC_IDLE_ST;
-            acc_done_r <= '0';
-            hold_r     <= to_sl(G_BOOT_HELD);
+            acc_st      <= ACC_IDLE_ST;
+            acc_done_r  <= '0';
+            acc_side_r  <= '0';
+            side_done_r <= '0';
+            side_err_r  <= '0';
+            hold_r      <= to_sl(G_BOOT_HELD);
             halted_r   <= '0';
             pause_r    <= '0';
             paused_r   <= '0';
@@ -899,8 +1008,10 @@ begin
          end if;
 
          if tx_st = TX_CALL_ST then
-            tx_go_r <= '0';
-            tx_st   <= TX_WAIT_ST;
+            if acc_take = '1' then
+               tx_go_r <= '0';
+               tx_st   <= TX_WAIT_ST;
+            end if;
          elsif tx_st = TX_WAIT_ST then
             -- A word of an `r` answer
             if acc_done_r = '1' then
@@ -1078,19 +1189,33 @@ begin
       signal f_ans    : boolean;                       -- An answer is due
       signal f_past   : boolean;                       -- p_rx is past the tag of a packet
       signal f_data   : boolean;                       -- p_rx is past A and N of a good W
-      signal f_got    : boolean;                       -- p_rx is past A and N of a good R
       signal f_mem    : boolean;                       -- The link may reach the memory
       signal f_pay_ok : boolean;                       -- The byte out fits the packet's payload
       signal f_cur    : t_word;                        -- The word p_rx writes next
       signal f_end    : std_logic_vector(32 downto 0); -- A + N of the request
       signal f_tx_end : std_logic_vector(32 downto 0); -- The same, from p_tx
       signal f_step_d : std_logic := '0';              -- A step cycle without a reset, a cycle ago
+      signal f_ctrl_d : std_logic := '0';              -- A write of the control register then
       signal f_brk_w  : std_logic;                     -- A write of the breakpoints
       signal f_brk_d  : t_brk_addrs;                   -- The addresses a cycle ago
       -- The enable bits a cycle ago
       signal f_en_d : std_logic_vector(C_BREAKS_MAX - 1 downto 0);
       signal f_kept : boolean;                     -- The breakpoints are as a cycle ago
       signal f_top  : boolean;                     -- The entries from G_BREAKS up are 0
+
+      -- A read of R0 to R15 while the processor runs, taken a cycle ago, for
+      -- the host or the side client, and the register in that cycle
+      signal f_live_d : std_logic := '0';
+      signal f_side_d : std_logic := '0';
+      signal f_reg_d  : t_word    := (others => '0');
+
+      -- The side client: a request taken and not yet done, and whether its
+      -- done is to say refused
+      signal f_side_take : std_logic;
+      signal f_side_pend : std_logic := '0';
+      signal f_side_ref  : std_logic := '0';
+      -- The side client started the clear that runs
+      signal f_side_clr : std_logic := '0';
 
       function f_is_digit(b : t_byte) return boolean is
       begin
@@ -1105,10 +1230,42 @@ begin
       begin
          if rising_edge(clk_i) then
             f_step_d <= step_r and not rst_i;
+            f_ctrl_d <= f_ctrl;
             f_brk_d  <= brk_addr_r;
             f_en_d   <= brk_en_r;
          end if;
       end process p_f_step;
+
+      f_side_take <= acc_take and not host_go;
+
+      p_f_regs : process (clk_i)
+      begin
+         if rising_edge(clk_i) then
+            f_live_d <= '0';
+            if acc_take = '1' and acc_we = '0' and acc_addr(31 downto 4) = X"FFFFFFE" and
+               hold_r = '0' and halted_r = '0' and paused_r = '0' and rst_i = '0' then
+               f_live_d <= '1';
+            end if;
+            f_side_d <= not host_go;
+            f_reg_d  <= regs_i(32 * to_integer(acc_addr(3 downto 0)) + 31 downto
+                               32 * to_integer(acc_addr(3 downto 0)));
+
+            if side_done_r = '1' then
+               f_side_pend <= '0';
+            end if;
+            if f_side_take = '1' then
+               f_side_pend <= '1';
+               f_side_ref  <= '1' when not is_dbg(acc_addr) and mem_ok = '0' else
+                              '0';
+            end if;
+            if f_ctrl = '1' and clearing_r = '0' and acc_wdata(2) = '1' then
+               f_side_clr <= not host_go;
+            end if;
+            if rst_i = '1' then
+               f_side_pend <= '0';
+            end if;
+         end if;
+      end process p_f_regs;
 
       f_tag  <= '1' when f_out_st = OUT_ESC_ST and out_valid_r = '1' and out_data_r /= C_ESC else
                 '0';
@@ -1138,8 +1295,6 @@ begin
       f_past   <= rx_st = RX_PAY_ST or rx_st = RX_CC1_ST or rx_st = RX_CC2_ST or
                   rx_st = RX_CALL_ST or rx_st = RX_WAIT_ST;
       f_data   <= tag_r = C_TAG_W and dig_r >= 12 and bad_r = '0' and err02_r = '0' and f_past;
-      f_got    <= tag_r = C_TAG_R and dig_r >= 12 and bad_r = '0' and err02_r = '0' and
-                  (rx_st = RX_PAY_ST or rx_st = RX_CC1_ST or rx_st = RX_CC2_ST);
       f_mem    <= mem_own = '1' and clearing_r = '0';
       f_end    <= ('0' & req_addr_r) + req_n_r;
       f_tx_end <= ('0' & tx_addr_r) + tx_cnt_r;
@@ -1221,13 +1376,14 @@ begin
       -- The output: every packet is whole, with a known tag, upper-case hex
       -- digits, `#`, and its checksum. A console byte goes out only between
       -- packets, so nothing comes between the bytes of a packet, and no
-      -- answer starts during a clear.
+      -- answer starts during a clear of the host's. A clear of the side
+      -- client may start in the middle of an answer.
       -- psl f_framing : assert always f_bad = '0';
       -- psl f_con_between : assert always
       --    con_ready_o = '1' -> (f_out_st = OUT_IDLE_ST and out_valid_r = '0');
       -- psl f_clear_answer : assert always
       --    (f_tag = '1' and (out_data_r = X"6B" or out_data_r = X"65" or out_data_r = X"72")) ->
-      --    clearing_r = '0';
+      --    (clearing_r = '0' or f_side_clr = '1');
 
       -- The receiver waits 2 cycles after a byte, 1 cycle to start the write
       -- of a data word, and then only for a Wishbone access, or with a tag
@@ -1238,7 +1394,32 @@ begin
       -- psl f_ready_clear : assert always
       --    clearing_r = '1' -> not (rx_st = RX_WAIT_ST and acc_done_r = '0');
       -- psl f_call : assert always
-      --    {rx_st = RX_CALL_ST and rst_i = '0'} |=> {rst_i = '1' or rx_st = RX_WAIT_ST};
+      --    {rx_st = RX_CALL_ST and acc_take = '1' and rst_i = '0'} |=>
+      --    {rst_i = '1' or rx_st = RX_WAIT_ST};
+      -- A word of the host waits only for an access of the side client, or
+      -- a clear that it started.
+      -- psl f_call_wait : assert always
+      --    ((rx_st = RX_CALL_ST or tx_st = TX_CALL_ST) and acc_take = '0') ->
+      --    ((acc_st /= ACC_IDLE_ST and acc_side_r = '1') or clearing_r = '1');
+
+      -- R0 to R15 while the processor runs are the core's of the cycle of
+      -- the read (DEBUG.md §6).
+      -- psl f_regs_live : assert always
+      --    f_live_d = '1' ->
+      --    ((f_side_d = '0' and acc_rdata_r = f_reg_d) or
+      --     (f_side_d = '1' and side_data_r = f_reg_d));
+
+      -- The side client (contract g): one done for each request taken, and
+      -- the error only for a word that is not a debug register while the
+      -- processor runs. No request is taken while one is open, and the
+      -- host's go first.
+      -- psl f_side_done : assert always side_done_r = '1' -> f_side_pend = '1';
+      -- psl f_side_once : assert always (f_side_take = '1' and rst_i = '0') -> f_side_pend = '0';
+      -- psl f_side_err : assert always
+      --    side_done_r = '1' -> (side_err_r = '1' -> f_side_ref = '1');
+      -- psl f_side_ok : assert always
+      --    side_done_r = '1' -> (f_side_ref = '1' -> side_err_r = '1');
+      -- psl f_side_host : assert always f_side_take = '1' -> host_go = '0';
 
       -- psl f_hold : assert always
       --    {rst_i = '0' and f_ctrl = '0' and step_r = '0' and
@@ -1269,7 +1450,10 @@ begin
       --    step_r = '1' -> (pause_r = '0' and stepping_r = '1' and hold_r = '0');
       -- A sequence here would have a cover that needs a whole W, deeper than the cover
       -- task looks.
-      -- psl f_step_once : assert always f_step_d = '1' -> (pause_r = '1' and step_r = '0');
+      -- A write of the control register in the cycle after the step, which
+      -- only the other client can make, sets pause_r as it says.
+      -- psl f_step_once : assert always
+      --    f_step_d = '1' -> ((pause_r = '1' or f_ctrl_d = '1') and step_r = '0');
       -- psl f_step_paused : assert always {pause_own = '0'} |=> {step_r = '0'};
       -- psl f_step_own : assert always stepping_r = '1' -> pause_own = '0';
 
@@ -1298,7 +1482,8 @@ begin
       -- bit 1 and the reason are masked where they are read (DEBUG.md §6).
       -- psl f_cleared_stop : assert always cleared_r = '1' -> stop_r = '0' & X"00";
 
-      -- p_acc: one access at a time, for p_rx's write or p_tx's read.
+      -- p_acc: one access at a time, for p_rx's write, p_tx's read, or the
+      -- side client's. The memory is reached only while the link may.
       -- psl i_acc_idle : assert always
       --    acc_st = ACC_IDLE_ST -> (wb_cyc_r = '0' and wb_stb_r = '0');
       -- psl i_acc_req : assert always
@@ -1306,10 +1491,20 @@ begin
       -- psl i_acc_wait : assert always
       --    acc_st = ACC_WAIT_ST -> (wb_cyc_r = '1' and wb_stb_r = '0');
       -- psl i_acc_busy : assert always
-      --    acc_st /= ACC_IDLE_ST ->
-      --    (acc_done_r = '0' and f_mem and not is_dbg(wb_addr_r) and
+      --    acc_st /= ACC_IDLE_ST -> (f_mem and mem_ok = '1' and not is_dbg(wb_addr_r));
+      -- psl i_acc_host : assert always
+      --    (acc_st /= ACC_IDLE_ST and acc_side_r = '0') ->
+      --    (acc_done_r = '0' and
       --     ((rx_st = RX_WAIT_ST and wb_we_r = '1' and wb_addr_r = cur_addr_r) or
       --      (tx_st = TX_WAIT_ST and wb_we_r = '0' and wb_addr_r = tx_addr_r)));
+      -- psl i_acc_side : assert always
+      --    (acc_st /= ACC_IDLE_ST and acc_side_r = '1') ->
+      --    (rx_st /= RX_WAIT_ST and tx_st /= TX_WAIT_ST and f_side_pend = '1' and
+      --     side_done_r = '0' and f_side_ref = '0');
+      -- psl i_side_pend : assert always
+      --    (f_side_pend = '1' and rst_i = '0') ->
+      --    ((acc_st /= ACC_IDLE_ST and acc_side_r = '1') or
+      --     (acc_st = ACC_IDLE_ST and side_done_r = '1'));
       -- psl i_acc_done : assert always
       --    ((rx_st = RX_WAIT_ST or tx_st = TX_WAIT_ST) and acc_st = ACC_IDLE_ST) ->
       --    acc_done_r = '1';
@@ -1318,11 +1513,11 @@ begin
       -- psl i_tx_go : assert always tx_go_r = '1' -> tx_st = TX_CALL_ST;
       -- psl i_tx_go_back : assert always tx_st = TX_CALL_ST -> tx_go_r = '1';
       -- psl i_calls : assert always
-      --    (rx_st = RX_CALL_ST or tx_st = TX_CALL_ST) -> acc_st = ACC_IDLE_ST;
+      --    ((rx_st = RX_CALL_ST or tx_st = TX_CALL_ST) and acc_st /= ACC_IDLE_ST) ->
+      --    acc_side_r = '1';
 
       -- p_rx: a packet is past its tag only while no answer is due. The
-      -- words of a good W follow A without a wrap, and reach the memory only
-      -- while the link may.
+      -- words of a good W follow A without a wrap.
       -- psl i_rx_ans : assert always f_past -> not f_ans;
       -- psl i_rx_hold : assert always
       --    rx_st = RX_HOLD_ST ->
@@ -1333,30 +1528,14 @@ begin
       --    (f_data and wcnt_r >= 1 and wcnt_r <= to_integer(req_n_r));
       -- psl i_rx_wrap : assert always f_data -> f_end(32) = '0' or f_end = '1' & X"00000000";
       -- psl i_rx_cur : assert always f_data -> cur_addr_r = f_cur;
-      -- psl i_rx_mem : assert always
-      --    (f_data and not is_dbg(cur_addr_r) and
-      --     (rx_st = RX_CALL_ST or rx_st = RX_WAIT_ST or wcnt_r < to_integer(req_n_r))) -> f_mem;
-      -- psl i_rx_clear : assert always
-      --    (clearing_r = '1' and f_past) ->
-      --    (tag_r = C_TAG_W and dig_r >= 12 and err02_r = '0' and
-      --     (cur_addr_r >= X"FFFFFFF0" or
-      --      (rx_st /= RX_CALL_ST and rx_st /= RX_WAIT_ST and wcnt_r >= to_integer(req_n_r))) and
-      --     (bad_r = '1' or f_end(32) = '0' or f_end = '1' & X"00000000"));
-      -- psl i_rx_read : assert always
-      --    f_got ->
-      --    (mem_own = '1' or not non_dbg(req_addr_r, req_n_r));
 
       -- p_tx: an answer is sent only while it is due, and an `r` reads the
-      -- words from A on, only where the link may.
+      -- words from A on.
       -- psl i_tx_ans : assert always
-      --    f_answer -> (f_ans and clearing_r = '0' and kind_r = ans_kind_r);
-      -- psl i_ans_clear : assert always (f_ans and clearing_r = '1') -> ans_kind_r /= PKT_R;
-      -- psl i_ans_read : assert always
-      --    (f_ans and ans_kind_r = PKT_R) ->
-      --    (mem_own = '1' or not non_dbg(req_addr_r, req_n_r));
+      --    f_answer -> (f_ans and kind_r = ans_kind_r and (clearing_r = '0' or f_side_clr = '1'));
       -- psl i_tx_call : assert always
       --    (tx_st = TX_CALL_ST or tx_st = TX_WAIT_ST) ->
-      --    (kind_r = PKT_R and tx_cnt_r /= X"0000" and (f_mem or is_dbg(tx_addr_r)));
+      --    (kind_r = PKT_R and tx_cnt_r /= X"0000");
       -- psl i_tx_addr : assert always
       --    (f_answer and kind_r = PKT_R and tx_st /= TX_TAG_ST) ->
       --    (tx_cnt_r <= req_n_r and f_tx_end(31 downto 0) = f_end(31 downto 0));

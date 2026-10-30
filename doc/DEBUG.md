@@ -134,6 +134,18 @@ program's data accesses, with these differences:
   device register or the memory while the processor is paused changes what
   the program sees when it goes on.
 
+**A client in the system.** A system may have a client of its own for the
+debug registers and the memory, such as a debugger on the board. Its
+accesses are the link's for the rules of this section: while the program
+runs, it reaches only the debug registers. There is no lock between it and
+the host. It may hold, start, clear, pause, or step the processor at any
+time, also between two packets of the host or two words of one, so the
+host may read a state it did not set, and gets the notices of a stop that
+the client caused (§4). A word of a host's packet that comes after the
+client has started the program, or gone on, is not carried out: a write is
+lost, and a read returns 0. The answer is still `k` or `r`. A word that
+comes during a clear waits for it, and so does the answer.
+
 **Errors.** The system answers a packet with a good checksum that it
 cannot carry out with `e`, the packet's tag, and an error code. The tag is
 two hex digits, its ASCII code, so `R` is `52` and `W` is `57`. The codes:
@@ -210,7 +222,7 @@ system has there otherwise.
 
 | Address | Register |
 |---|---|
-| `0xFFFFFFE0`–`0xFFFFFFEF` | R0 to R15, read only. After a halt, until the next start or clear, they are the values the program left, with R15 the address after the halting instruction, as the emulator prints them, also while the processor is held after the halt. While the processor is paused, they are the values after the last step, with R15 the address of the next instruction, and a hold of the paused processor keeps them until the next start or clear. From a start or a clear, or from a go on or a step after a pause, until the next halt or pause, their values are not defined. |
+| `0xFFFFFFE0`–`0xFFFFFFEF` | R0 to R15, read only. After a halt, until the next start or clear, they are the values the program left, with R15 the address after the halting instruction, as the emulator prints them, also while the processor is held after the halt. While the processor is paused, they are the values after the last step, with R15 the address of the next instruction, and a hold of the paused processor keeps them until the next start or clear. While the processor runs, from a start, a go on, or a step until the next halt or pause, a system should return the current values, as the emulator and the cores' link do: they change under the read, so the words of one answer may come from different moments, and a live R15 shows where a program spins. A system without them returns values that are not defined. After a clear, and while the processor is held after a hold of a running one, their values are not defined. |
 | `0xFFFFFFF0` | Control (below). |
 | `0xFFFFFFF1` | The halt reason, read only: 0 while the processor has not halted, and after a clear, 1 for `HALT`, 2 for a reserved control word, 3 for `INT` inside an interrupt routine, 4 for `RTI` outside one (ISA §5.3, §7.2, §7.4), and 5 when the emulator's step limit stopped the program (§7). |
 | `0xFFFFFFF2` | The protocol version, read only: 5 (§9). Bits 31–8 read 0. A host checks it before it uses the pause, the step, or a breakpoint. |
@@ -630,4 +642,4 @@ system of version 5. The versions:
 | 2 | The pause: bit 4 of the control register, and the notice `p`. | | Never tagged. |
 | 3 | The single step: bit 5 of the control register. | | RC05 |
 | 4 | The breakpoints: the notice `x`, and the registers `0xFFFFFFF4` to `0xFFFFFFFF`. | | RC06 |
-| 5 | | A clear ends the halt and the stop: bit 1, the halt reason, and the stop register read 0 after it. | V1.1 |
+| 5 | | A clear ends the halt and the stop: bit 1, the halt reason, and the stop register read 0 after it. Since V1.2, R0–R15 read the current values while the processor runs, where they were not defined. | V1.1 |

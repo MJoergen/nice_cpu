@@ -13,7 +13,8 @@
 -- pause_o falls while it is paused, pauses on its own when brk_hit says it
 -- is at a breakpoint, and then waits until pause_o has been high, and loses
 -- its registers, its halt, and its pause while it is held, as the real core
--- does. R15 is 0x1234560F while it runs.
+-- does. R15 is 0x1234560F while it runs, and R14 0x7777777E while it
+-- runs and 0x1234560E when it stops.
 -- The checks, in the order of the run:
 -- * the notice `b05` after reset, and the examples of DEBUG.md §8;
 -- * lowercase digits, a bad checksum, an unknown tag, a payload with a bad
@@ -27,7 +28,8 @@
 -- * the halt notice `h`, the registers and the halt kept while held, and
 --   the restart;
 -- * the pause: bit 4, the notice `p` after and before the answer, the memory,
---   the registers, and the console while paused, a hold and a start that
+--   the registers, and the console while paused, the registers while the
+--   core runs, a hold and a start that
 --   keep or begin a pause, a go on, and a halt that ignores a request;
 -- * a clear that ends the halt, an `h` not yet sent that it keeps, and a
 --   clear while paused;
@@ -39,7 +41,11 @@
 --   register and how long it lasts, a stop of the core's own that raises
 --   pause_o, a `p` when R15 matches no enabled breakpoint, and a reset that
 --   clears them;
--- * a host of version 1, which loads, starts, and restarts (DEBUG.md §9).
+-- * a host of version 1, which loads, starts, and restarts (DEBUG.md §9);
+-- * the side client: the memory while held, reads all the time beside the
+--   host's packets, a clear between two words of a host's W, a start, the
+--   errors and the registers while running, and a pause and a step that
+--   send the host p.
 -- The run stops with status 0 when every check passes, and 1 at the first
 -- that fails.
 
@@ -114,6 +120,29 @@ architecture simulation of tb_debug_link is
    signal mem    : t_mem   := (others => (others => '0'));
    signal writes : natural := 0;
 
+   -- The side client, which p_side drives: one request of p_test for each
+   -- toggle of side_req, answered by a toggle of side_ack with the result,
+   -- or, while side_loop is high, reads of 0x100 and the control register,
+   -- which must return side_word and side_ctrl.
+   signal side_valid : std_logic                     := '0';
+   signal side_we    : std_logic                     := '0';
+   signal side_addr  : std_logic_vector(31 downto 0) := (others => '0');
+   signal side_wdata : std_logic_vector(31 downto 0) := (others => '0');
+   signal side_done  : std_logic;
+   signal side_err   : std_logic;
+   signal side_rdata : std_logic_vector(31 downto 0);
+   signal side_req   : std_logic                     := '0';
+   signal side_ack   : std_logic                     := '0';
+   signal req_we     : std_logic                     := '0';
+   signal req_addr   : std_logic_vector(31 downto 0) := (others => '0');
+   signal req_wdata  : std_logic_vector(31 downto 0) := (others => '0');
+   signal res_err    : std_logic                     := '0';
+   signal res_data   : std_logic_vector(31 downto 0) := (others => '0');
+   signal side_loop  : std_logic                     := '0';
+   signal side_word  : std_logic_vector(31 downto 0) := (others => '0');
+   signal side_ctrl  : std_logic_vector(31 downto 0) := (others => '0');
+   signal side_reads : natural                       := 0;
+
    -- Every byte sent to the host, and every console byte for the program
    signal got     : string(1 to 4096);
    signal got_len : natural := 0;
@@ -164,6 +193,13 @@ begin
          regs_i         => regs,
          brk_addr_o     => brk_addr,
          brk_en_o       => brk_en,
+         side_valid_i   => side_valid,
+         side_we_i      => side_we,
+         side_addr_i    => side_addr,
+         side_data_i    => side_wdata,
+         side_done_o    => side_done,
+         side_err_o     => side_err,
+         side_data_o    => side_rdata,
          wb_cyc_o       => wb_cyc,
          wb_stb_o       => wb_stb,
          wb_stall_i     => wb_stall,
@@ -310,6 +346,11 @@ begin
                regs(32 * n + 31 downto 32 * n) <= X"123456" & "0000" &
                                                   std_logic_vector(to_unsigned(n, 4));
             end loop;
+            -- R14 moves while the core runs, so a read then is told from
+            -- the values of the last stop.
+            if paused = '0' and halted = '0' then
+               regs(14 * 32 + 31 downto 14 * 32) <= X"7777777E";
+            end if;
             if core_halt = '1' then
                halted <= '1';
                reason <= "001";
@@ -337,6 +378,51 @@ begin
          end if;
       end if;
    end process p_runs;
+
+
+   -- The side client: valid and the request held until done.
+   p_side : process
+      variable n_v : natural;
+
+      procedure one(we : std_logic; a : std_logic_vector(31 downto 0);
+                    d : std_logic_vector(31 downto 0)) is
+      begin
+         side_valid <= '1';
+         side_we    <= we;
+         side_addr  <= a;
+         side_wdata <= d;
+         n_v        := 0;
+         loop
+            wait until rising_edge(clk);
+            exit when side_done = '1';
+            n_v := n_v + 1;
+            assert n_v < 2000
+               report "tb_debug_link: no side_done"
+               severity failure;
+         end loop;
+         side_valid <= '0';
+      end procedure one;
+
+   begin
+      wait until rising_edge(clk);
+      if side_req /= side_ack then
+         one(req_we, req_addr, req_wdata);
+         res_err  <= side_err;
+         res_data <= side_rdata;
+         side_ack <= side_req;
+      elsif side_loop = '1' then
+         one('0', X"00000100", X"00000000");
+         assert side_err = '0' and side_rdata = side_word
+            report "tb_debug_link: side read of 0x100 is " & to_hstring(side_rdata)
+            severity failure;
+         one('0', X"FFFFFFF0", X"00000000");
+         assert side_err = '0' and side_rdata = side_ctrl
+            report "tb_debug_link: side read of the control register is " &
+                   to_hstring(side_rdata)
+            severity failure;
+         side_reads <= side_reads + 2;
+      end if;
+   end process p_side;
 
 
    p_test : process
@@ -443,6 +529,22 @@ begin
          wait until rising_edge(clk) and con_ready = '1';
          con_valid <= '0';
       end procedure con_put;
+
+      -- One access of the side client, and its result
+      procedure side(we : std_logic; a : std_logic_vector(31 downto 0);
+                     d : std_logic_vector(31 downto 0); err : std_logic;
+                     v : std_logic_vector(31 downto 0); what : string) is
+      begin
+         req_we    <= we;
+         req_addr  <= a;
+         req_wdata <= d;
+         side_req  <= not side_req;
+         wait until side_ack = side_req;
+         if res_err /= err or (err = '0' and we = '0' and res_data /= v) then
+            fail(what & ": side error " & std_logic'image(res_err) & ", data " &
+                 to_hstring(res_data));
+         end if;
+      end procedure side;
 
       procedure check_mem(a : natural; v : std_logic_vector(31 downto 0); what : string) is
       begin
@@ -777,6 +879,9 @@ begin
       expect(C_ESC & "e5202#2E", "e02 after go on");
       send(C_ESC & "RFFFFFFF00001#2D");
       expect(C_ESC & "rFFFFFFF0000100000008#D5", "control after go on");
+      -- The registers are the running core's (DEBUG.md §6).
+      send(C_ESC & "RFFFFFFEE0001#41");
+      expect(C_ESC & "rFFFFFFEE00017777777E#27", "R14 while running");
       quiet("go on");
       assert pause = '0' and paused = '0'
          report "tb_debug_link: go on"
@@ -788,6 +893,8 @@ begin
       send(C_ESC & "WFFFFFFF0000100000018#BB");
       expect(C_ESC & "p#70" & C_ESC & "kFFFFFFF00001#46", "p before k");
       quiet("p before k");
+      send(C_ESC & "RFFFFFFEE0001#41");
+      expect(C_ESC & "rFFFFFFEE00011234560E#0B", "R14 while paused again");
       send(C_ESC & "WFFFFFFF0000100000008#BA");
       expect(C_ESC & "kFFFFFFF00001#46", "go on again");
       quiet("go on again");
@@ -1083,6 +1190,65 @@ begin
       send(C_ESC & "R000001000001#94");
       expect(C_ESC & "r00000100000100000000#34", "old host: cleared");
       quiet("old host");
+
+      -- The side client (contract g of debug_link): it reaches the memory
+      -- while the processor is held, and the host sees what it wrote.
+      side('1', X"00000100", X"CAFEF00D", '0', X"00000000", "side write while held");
+      side('0', X"00000100", X"00000000", '0', X"CAFEF00D", "side read while held");
+      check_mem(256, X"CAFEF00D", "side write while held");
+      send(C_ESC & "R000001000001#94");
+      expect(C_ESC & "r000001000001CAFEF00D#AD", "host read of a side write");
+
+      -- The side client reads all the time while the host reads and writes.
+      side_word <= X"CAFEF00D";
+      side_ctrl <= X"00000009";
+      side_loop <= '1';
+      send(C_ESC & "R000001000002#95");
+      expect(C_ESC & "r000001000002CAFEF00D00000000#2E", "host read beside the side");
+      send(C_ESC & "W00000101000112345678#3E");
+      expect(C_ESC & "k000001010001#AE", "host write beside the side");
+      check_mem(257, X"12345678", "host write beside the side");
+      side_loop <= '0';
+      cycles(50);
+      if side_reads < 20 then
+         fail("side reads beside the host: " & integer'image(side_reads));
+      end if;
+      quiet("side reads");
+
+      -- A clear of the side client between two words of a host's W. The
+      -- second word waits for the clear, and the answer too.
+      clear_len <= 300;
+      send(C_ESC & "W0000020000020000AAAA");
+      side('1', X"FFFFFFF0", X"0000000D", '0', X"00000000", "side clear");
+      send("0000BBBB#27");
+      expect(C_ESC & "k000002000002#AF", "host W across a side clear");
+      check_mem(512, X"00000000", "the word before the side clear");
+      check_mem(513, X"0000BBBB", "the word after the side clear");
+      clear_len <= 30;
+
+      -- A start of the side client: the memory is out of reach, and the
+      -- registers are the running core's. The host gets no notice.
+      side('1', X"FFFFFFF0", X"00000008", '0', X"00000000", "side start");
+      side('0', X"00000201", X"00000000", '1', X"00000000", "side read while running");
+      side('1', X"00000201", X"11111111", '1', X"00000000", "side write while running");
+      check_mem(513, X"0000BBBB", "side write while running");
+      side('0', X"FFFFFFEE", X"00000000", '0', X"7777777E", "side R14 while running");
+      side('0', X"FFFFFFF0", X"00000000", '0', X"00000008", "side control while running");
+      send(C_ESC & "R000001000001#94");
+      expect(C_ESC & "e5202#2E", "host e02 after a side start");
+      quiet("side start");
+
+      -- A pause and a step of the side client: the host gets each p.
+      step_wait <= 20;
+      side('1', X"FFFFFFF0", X"00000018", '0', X"00000000", "side pause");
+      expect(C_ESC & "p#70", "p of a side pause");
+      side('0', X"FFFFFFEE", X"00000000", '0', X"1234560E", "side R14 while paused");
+      side('0', X"00000201", X"00000000", '0', X"0000BBBB", "side read while paused");
+      side('1', X"FFFFFFF0", X"00000038", '0', X"00000000", "side step");
+      expect(C_ESC & "p#70", "p of a side step");
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000018#D6", "control after a side step");
+      quiet("side step");
 
       report "tb_debug_link: pass";
       stop(0);

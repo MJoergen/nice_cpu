@@ -529,7 +529,7 @@ FORMAL_TASKS = prove cover
 # The pipelined core is checked for a bounded number of cycles only.
 FORMAL_TASKS_pipeline = bmc cover
 # The debug link is proven twice, with and without a ROM.
-FORMAL_TASKS_debug_link = prove prove_held cover
+FORMAL_TASKS_debug_link = prove prove_held cover cover_side
 
 define check_formal
 	@mkdir -p $(BUILD)

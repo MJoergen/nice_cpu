@@ -463,6 +463,12 @@ def test_pause(count: List[int], echo: List[int]) -> None:
     e.send(read(0, 1))
     e.expect("e02 running", pkt("e", "5202"))
     expect("running control", bytes([word(e, CONTROL)]), bytes([0x8]))
+    # The registers are the running program's (§6): R2 moves.
+    r2a = word(e, 0xFFFFFFE2)
+    time.sleep(0.05)
+    r2c = word(e, 0xFFFFFFE2)
+    if not r2 < r2a < r2c:
+        failures.append(f"R2 did not move while running: {r2}, {r2a}, {r2c}")
     # A second pause: R2 has grown. A hold keeps the registers, and ends the
     # pause.
     e.send(write(CONTROL, [0x18]))

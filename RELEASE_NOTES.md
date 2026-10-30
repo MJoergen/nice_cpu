@@ -40,9 +40,11 @@ keyboard, a cursor, and the pace of a board (#83).
 - SYSTEM.md §1 now defines the bytes of the keys, which NiceMonMEGA65's
   keyboards already send, and the cursor at `0xFFFFFF80`–`0xFFFFFF82`,
   numbered as the board's screen registers. In the emulator these words
-  stay ordinary memory. No other interface change: the ports of both
-  cores, `wb_dmux`, the devices, and the debug link are as in V1.1, and
-  `hdl/src` does not change.
+  stay ordinary memory. The ports of both cores, `wb_dmux`, and the
+  devices are as in V1.1.
+- The debug link (`hdl/src/debug_link.vhd`) has a side port for a client
+  inside the system (#86). Its inputs have defaults, so a board that
+  does not connect it builds as before. The protocol is still version 5.
 - Zig 0.17.0, as in V1.1.
 
 **Specification and documents**
@@ -55,6 +57,10 @@ keyboard, a cursor, and the pace of a board (#83).
   that a read does not wait then.
 - DEBUG.md §7: the emulator serves the link on `127.0.0.1` unless it is
   given another address (#84).
+- DEBUG.md §6: while the processor runs, a system should return the
+  current R0–R15, as the emulator always did (#85). §3: a system may have
+  a client of its own for the debug registers and the memory, with no
+  lock between it and the host (#86).
 
 **Emulator (`niceemu`)**
 
@@ -77,6 +83,20 @@ keyboard, a cursor, and the pace of a board (#83).
 - `--link ADDR:PORT` serves the debug link on ADDR, so that with
   `0.0.0.0` a host on another computer can connect (#84). `--link PORT`
   still serves it on `127.0.0.1` only. The link has no authentication.
+
+**FPGA cores**
+
+- The debug link returns the core's registers while the processor runs,
+  not those of the last stop, so a host sees R15 move (#85).
+- The debug link has a side port, word by word, for a client inside the
+  system, such as an on-board debugger: `side_valid_i`, `side_we_i`,
+  `side_addr_i`, `side_data_i`, `side_done_o`, `side_err_o`, and
+  `side_data_o` (contract g in its header). The host keeps the UART or
+  TCP line while the client works, and gets the notices of its stops
+  (#86). A host's word now waits for the link to take it, so a word that
+  comes during another client's access is not lost.
+- `make formal` proves the link with a free side client, and the covers
+  run with and without one.
 
 **Benchmarks**
 

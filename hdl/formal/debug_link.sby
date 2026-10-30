@@ -1,12 +1,14 @@
 # The debug link (formal_debug_link.vhd, and the properties under G_FORMAL
 # in debug_link.vhd). "prove" proves the assertions for every cycle by
 # k-induction, "prove_held" the same for a system without a ROM that boots
-# held, and "cover" reaches each cover statement.
+# held, "cover" reaches each cover statement without a side client, and
+# "cover_side" those of the side client.
 
 [tasks]
 prove
 prove_held
 cover
+cover_side
 
 [options]
 prove: mode prove
@@ -15,6 +17,8 @@ prove_held: mode prove
 prove_held: depth 4
 cover: mode cover
 cover: depth 70
+cover_side: mode cover
+cover_side: depth 70
 
 [engines]
 smtbmc yices
@@ -23,7 +27,8 @@ smtbmc yices
 plugin -i ghdl
 prove: ghdl --std=08 -fpsl nice_pkg.vhd trace_pkg.vhd debug_link.vhd wb_master_check.vhd formal_debug_link.vhd -e formal_debug_link
 prove_held: ghdl --std=08 -fpsl -gG_HAS_ROM=false -gG_BOOT_HELD=true nice_pkg.vhd trace_pkg.vhd debug_link.vhd wb_master_check.vhd formal_debug_link.vhd -e formal_debug_link
-cover: ghdl --std=08 -fpsl nice_pkg.vhd trace_pkg.vhd debug_link.vhd wb_master_check.vhd formal_debug_link.vhd -e formal_debug_link
+cover: ghdl --std=08 -fpsl -gG_SIDE=false nice_pkg.vhd trace_pkg.vhd debug_link.vhd wb_master_check.vhd formal_debug_link.vhd -e formal_debug_link
+cover_side: ghdl --std=08 -fpsl nice_pkg.vhd trace_pkg.vhd debug_link.vhd wb_master_check.vhd formal_debug_link.vhd -e formal_debug_link
 prep -top formal_debug_link
 
 [files]

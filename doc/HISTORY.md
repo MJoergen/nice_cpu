@@ -479,3 +479,24 @@ step at such a read waited inside the step too. So a host could not
 pause a program that waited at its input, while the board, whose read
 does not wait, paused at once (#56). Now a pause request undoes the step
 of the read, and the processor pauses before it (DEBUG.md §7).
+
+## The registers while the program runs
+
+Until 2026-10-30, DEBUG.md §6 left R0–R15 not defined while the program
+ran. The emulator returned the current values, and the cores' debug link
+the copy of the last pause or halt, however old. An on-board debugger
+that polls R15 to show where a program spins saw it stand still (#85).
+Now the link returns the core's registers of the cycle of the read, and
+§6 says a system should.
+
+## The debug link's side port
+
+Until 2026-10-30, the debug link had one client, the host on the byte
+streams. NiceMonMEGA65's on-board debugger first spoke the packets of
+DEBUG.md §2 into the line, which took the line from the host while it was
+up (#86). The side port gives it word accesses instead. p_rx and p_tx
+used to raise their request for one cycle, which p_acc took at once, as
+nothing else could be busy then. A word of the host now waits until p_acc
+takes it, and p_acc checks at every word that it may reach the memory,
+since the side client may start the program between two words of a
+host's packet.

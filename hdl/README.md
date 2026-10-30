@@ -288,7 +288,10 @@ step, a write with bit 5 that does not step, and a step into a halt; and
 the breakpoints: their registers and ports, `x` with the lowest number at a
 start, a step, and a stop of the core's own, the stop register and how long
 it lasts, `p` when no enabled breakpoint is at R15, and a reset that clears
-them.
+them; the registers while the core runs; and the side client: the memory
+while held, reads all the time beside the host's packets, a clear between
+two words of a host's `W`, a start, its errors and the registers while
+running, and a pause and a step that send the host `p`.
 
 `tb_link` runs on each core of `CORES`. It is the debug link as a board
 uses it: the link is a second master of the data bus, and owns it while
@@ -781,8 +784,8 @@ the sum of its two children, which gives the sum of the bins without
 any one assertion adding 32 counters. Boolector proves it all by
 k-induction in under a minute; Yices does not finish in 15.
 
-`formal_debug_link` checks the debug link from the host, the program,
-the core, and the board, with every input free. It assumes a Wishbone
+`formal_debug_link` checks the debug link from the host, the side client,
+the program, the core, and the board, with every input free. It assumes a Wishbone
 slave as `wb_master_check` does, and a core whose halt ends only by a
 reset, by `hold_o` or by `rst_i`, and a pause that lasts while `pause_o` is
 high and the core is not reset. It asserts that the master keeps to the
@@ -799,10 +802,15 @@ cycle in which the link owned the paused core, and the link owns nothing
 while it steps. A parser of the bytes the host takes asserts that every packet
 is whole, a known tag, upper-case hex digits, `#`, and the right
 checksum, that a console byte goes out only between packets, and that no
-answer starts during a clear. `rx_ready_o` is low only for 2 cycles after
-a byte, for the write of a data word, which waits only for the Wishbone
-access and never for a clear, and for a tag that waits for an answer or a
-clear. `hold_o` and `rom_hide_o` change only on a write to the control
+answer starts during a clear that the host started. `rx_ready_o` is low only for 2 cycles after
+a byte, for the write of a data word, which waits for the Wishbone
+access, and for the side client's access or a clear that it started
+only, and for a tag that waits for an answer or a
+clear. A read of R0 to R15 while the processor runs returns the core's
+register of that cycle. The side client gets one `side_done_o` for each
+request taken, `side_err_o` only for a word that is not a debug register
+while the processor runs, and no request is taken while one is open or
+the host asks. `hold_o` and `rom_hide_o` change only on a write to the control
 register, at the end of a clear, or at reset, and `pause_o` also at a stop
 of the core's own, which it then raises unless the processor is held. With
 two breakpoints, their registers change only on a write and at reset, the
@@ -811,10 +819,11 @@ two. Invariants tie the
 receiver, the accesses, the sender, and the parser together, so that
 k-induction of depth 4 proves it all in a few seconds. `G_TIMEOUT` is 3, so the timeout is reached.
 `prove_held` repeats the proof for a system without a ROM that boots
-held, where `rom_hide_o` is always 1. The `cover` task shows a write to
+held, where `rom_hide_o` is always 1. The `cover` task, with the side
+client tied off by `G_SIDE`, shows a write to
 the memory, a stalled request, an `h`, an `o`, the `p` of a stop of the
 core's own, a console byte for the program, and the end of a clear, within
-70 cycles. A read of the memory
+70 cycles. `cover_side` shows a side access of the memory and a refusal. A read of the memory
 needs a whole `R` and the start of its answer, about 90 cycles, so
 `wb_master_check` leaves its read cover out with `G_COVER_READ`, and the
 simulation tests show the read.
@@ -1225,7 +1234,16 @@ clear the memory with `clear_o` and `clear_done_i`. A write with bits 4 and
 5 to a paused core is a step: `pause_o` drops for one cycle and rises
 again, and the link does not own the memory until the core has paused or
 halted again. The board stops the counters and the timer while the core is
-paused, and not during a step.
+paused, and not during a step. While the processor runs, a read of R0 to
+R15 returns `regs_i` of that cycle, and otherwise the copy of the last halt
+or pause.
+
+The side port, `side_valid_i` to `side_data_o`, is a second client of the
+debug registers and the memory, word by word, for a debugger inside the
+system (DEBUG.md §3). Its request is held until `side_done_o`, with
+`side_err_o` for a word that is not a debug register while the processor
+runs (contract g of the header). The host's words go first. A board without
+a side client leaves the port open: its inputs default to 0.
 
 The generic `G_BREAKS`, from 0 to 8, gives the link the breakpoints of
 DEBUG.md §6. It holds their enable bits and addresses, and drives them to

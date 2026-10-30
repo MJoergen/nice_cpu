@@ -50,6 +50,11 @@ CASES: List[Tuple[List[str], Optional[str], str]] = [
     (["-d", "0x:1", "BIN"], "00000000 0c000000", "niceemu: -d: bad number '0x'"),
     (["-d", "0xg:1", "BIN"], "00000000 0c000000", "niceemu: -d: bad number '0xg'"),
     (["does-not-exist.bin"], None, "niceemu: cannot read does-not-exist.bin: FileNotFound"),
+    (["--speed", "5", "BIN"], "00000000 0c000000", "niceemu: --speed needs --window"),
+    (["--window", "--speed", "x", "BIN"], "00000000 0c000000", "niceemu: --speed: bad number 'x'"),
+    # make test builds without -Dwindow; test/window.py tests the window.
+    (["--window", "BIN"], "00000000 0c000000",
+     "niceemu: --window needs a build with -Dwindow (emulator/README.md)"),
     (["BIN", "--input"], "00000000 0c000000", "niceemu: --input needs a value"),
     (["-i", "does-not-exist.txt", "BIN"], "00000000 0c000000",
      "niceemu: cannot read does-not-exist.txt: FileNotFound"),

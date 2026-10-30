@@ -27,6 +27,8 @@ pub const Window = struct {
     /// Open the window. `file` is the input of `--input`, if given, which
     /// the console reads before the keys.
     pub fn open(self: *Window, gpa: std.mem.Allocator, invert: bool, file: ?*std.Io.Reader) !void {
+        // A signal ends the run as without the window, not as a close.
+        _ = c.SDL_SetHint(c.SDL_HINT_NO_SIGNAL_HANDLERS, "1");
         if (!c.SDL_Init(c.SDL_INIT_VIDEO)) return sdlError("SDL_Init");
         errdefer c.SDL_Quit();
         var window: ?*c.SDL_Window = null;

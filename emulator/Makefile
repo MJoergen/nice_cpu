@@ -89,6 +89,10 @@ build:
 window:
 	$(ZIG) build -Doptimize=ReleaseSafe -Dwindow
 
+# The window's tests, on SDL's dummy video driver, so with no display.
+window-test: window
+	@$(PYTHON) test/window.py
+
 # Reassemble the probes with niceasm.
 bins:
 	@for t in $(PROBES); do $(PYTHON) ../assembler/niceasm.py test/$$t.nasm || exit 1; done
@@ -103,9 +107,9 @@ bincheck:
 
 # Needs mypy (pip install mypy).
 typecheck:
-	$(PYTHON) -m mypy --strict test/errors.py test/link.py font/gen_font.py
+	$(PYTHON) -m mypy --strict test/errors.py test/link.py test/window.py font/gen_font.py
 
 clean:
 	rm -rf zig-out .zig-cache zig-pkg test/*.out
 
-.PHONY: test build window bins bincheck typecheck clean
+.PHONY: test build window window-test bins bincheck typecheck clean

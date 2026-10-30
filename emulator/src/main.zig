@@ -4,6 +4,8 @@ const std = @import("std");
 const Cpu = @import("cpu.zig").Cpu;
 const Link = @import("link.zig").Link;
 const frame = @import("frame.zig");
+const build_options = @import("build_options");
+const Window = if (build_options.window) @import("window.zig").Window else void;
 
 const usage =
     \\Usage: niceemu [options] program.bin
@@ -38,11 +40,18 @@ const usage =
     \\                       --irq can raise them where an FPGA core took them.
     \\      --link PORT      Serve the debug link of doc/DEBUG.md on PORT of
     \\                       127.0.0.1, or on a free port for 0, until a signal.
+    \\      --window         Show the screen in a window while the program runs, and
+    \\                       keep it after the halt until it is closed. The console
+    \\                       reads --input, if given, then the keys typed into the
+    \\                       window, and a read returns 0 while no byte waits.
+    \\                       Needs a build with -Dwindow.
+    \\      --speed N        With --window, run N steps a second (default 1000000,
+    \\                       one per microsecond), or as fast as possible for 0.
     \\  -h, --help           Print this help.
     \\
     \\Numbers may be decimal or 0x hex. Exit status: 0 after HALT, 1 on a
     \\usage, file or memory error, 2 after any other halt, 3 at the step
-    \\limit.
+    \\limit, 4 when the window was closed before either.
     \\
 ;
 
@@ -81,10 +90,16 @@ const Options = struct {
     timer_irq: bool = true,
     /// The console input file, or "-" for stdin.
     input: []const u8 = "-",
+    /// Whether --input was given, as the window reads stdin only then.
+    input_given: bool = false,
     /// The label file of niceasm --symbols, or "" for none.
     symbols: []const u8 = "",
     /// The port of --link, or null to run the program once.
     link: ?u16 = null,
+    /// Show the screen in a window (doc/SYSTEM.md §1).
+    window: bool = false,
+    /// Steps a second with the window, or 0 for as fast as possible.
+    speed: u64 = 1_000_000,
     help: bool = false,
 };
 
@@ -301,13 +316,13 @@ fn parseNumber(comptime T: type, opt: []const u8, s: []const u8) !T {
 
 fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
     var opts: Options = .{ .path = "" };
-    var input_given = false;
+    var speed_given = false;
     var dumps: std.ArrayList(Dump) = .empty;
     var requests: std.ArrayList(Request) = .empty;
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "-i", "--input", "--irq", "--nmi", "--symbols", "--link" }) |o| {
+        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "-i", "--input", "--irq", "--nmi", "--symbols", "--link", "--speed" }) |o| {
             if (std.mem.eql(u8, arg, o)) break true;
         } else false;
         const value = if (takes_value) blk: {
@@ -343,7 +358,7 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
             opts.max_steps = try parseNumber(u64, arg, value);
         } else if (std.mem.eql(u8, arg, "-i") or std.mem.eql(u8, arg, "--input")) {
             opts.input = value;
-            input_given = true;
+            opts.input_given = true;
         } else if (std.mem.eql(u8, arg, "--irq") or std.mem.eql(u8, arg, "--nmi")) {
             const colon = std.mem.indexOfScalar(u8, value, ':') orelse
                 return fail("{s} wants STEP:VEC, not '{s}'", .{ arg, value });
@@ -356,6 +371,11 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
             opts.symbols = value;
         } else if (std.mem.eql(u8, arg, "--link")) {
             opts.link = try parseNumber(u16, arg, value);
+        } else if (std.mem.eql(u8, arg, "--window")) {
+            opts.window = true;
+        } else if (std.mem.eql(u8, arg, "--speed")) {
+            opts.speed = try parseNumber(u64, arg, value);
+            speed_given = true;
         } else if (std.mem.eql(u8, arg, "--no-cycle-counter")) {
             opts.cycle_counter = false;
         } else if (std.mem.eql(u8, arg, "--no-timer-irq")) {
@@ -368,7 +388,10 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
             opts.path = arg;
         }
     }
-    if (opts.link != null and input_given) return fail("--input cannot be given with --link", .{});
+    if (opts.link != null and opts.input_given) return fail("--input cannot be given with --link", .{});
+    if (speed_given and !opts.window) return fail("--speed needs --window", .{});
+    if (opts.window and !build_options.window) return fail("--window needs a build with -Dwindow (emulator/README.md)", .{});
+    if (opts.window and opts.link != null) return fail("--window cannot be given with --link yet", .{});
     if (opts.path.len == 0 and opts.link == null) return fail("no program given\n\n{s}", .{usage});
     opts.dumps = dumps.items;
     // Insertion sort is stable, so of two requests of one kind at one step
@@ -467,37 +490,124 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, out: *s
     // Streaming, so that stdin may be a terminal or a pipe. Nothing is read
     // until the program reads the console.
     in_r = InterruptibleReader.init(in_file.handle, &in_buf);
+    catchSignals();
+    if (comptime build_options.window) {
+        if (opts.window) return runWindow(arena, io, out, opts, syms, &cpu, if (opts.input_given) &in_r.interface else null);
+    }
     cpu.input = .fromReader(&in_r.interface);
     // A step is one instruction, or the entry into an interrupt.
     var steps: u64 = 0;
     var next: usize = 0;
-    catchSignals();
     while (!cpu.halted() and steps < opts.max_steps) : (steps += 1) {
         if (steps & signal_check_mask == 0) {
             const sig = stop_signal.load(.acquire);
             if (sig != 0) dieOfSignal(out, sig);
         }
-        while (next < opts.requests.len and opts.requests[next].step == steps) : (next += 1) {
-            const r = opts.requests[next];
-            switch (r.kind) {
-                .irq => cpu.requestIrq(r.vector),
-                .nmi => cpu.requestNmi(r.vector),
-            }
-        }
+        raiseRequests(&cpu, opts, steps, &next);
         try cpu.step();
     }
     // A signal that interrupted a console read ended the input, and the
     // program may have halted before the next check above.
     const sig = stop_signal.load(.acquire);
     if (sig != 0) dieOfSignal(out, sig);
-    return report(out, opts, syms, &cpu, steps);
+    return report(out, opts, syms, &cpu, steps, false);
+}
+
+/// Raise the requests of --irq and --nmi for step `steps`. `next` is the
+/// first request not raised yet.
+fn raiseRequests(cpu: *Cpu, opts: Options, steps: u64, next: *usize) void {
+    while (next.* < opts.requests.len and opts.requests[next.*].step == steps) : (next.* += 1) {
+        const r = opts.requests[next.*];
+        switch (r.kind) {
+            .irq => cpu.requestIrq(r.vector),
+            .nmi => cpu.requestNmi(r.vector),
+        }
+    }
+}
+
+/// Keeps the speed of --speed: how long to wait after a number of steps,
+/// so that they take as long as they would at `speed` steps a second.
+const Pacer = struct {
+    speed: u64,
+    /// The time and the steps from which the pace counts.
+    start_ns: i96,
+    start_steps: u64 = 0,
+
+    /// A run that falls further behind than this starts the pace again
+    /// rather than catch up in a burst.
+    const slack_ns = 100 * std.time.ns_per_ms;
+
+    /// The ms to wait now, after `steps` steps, at the time `now_ns`.
+    fn wait(self: *Pacer, steps: u64, now_ns: i96) u32 {
+        if (self.speed == 0) return 0;
+        const due: i96 = @intCast(@as(u128, steps - self.start_steps) * std.time.ns_per_s / self.speed);
+        const elapsed = now_ns - self.start_ns;
+        if (elapsed > due + slack_ns) {
+            self.start_ns = now_ns;
+            self.start_steps = steps;
+            return 0;
+        }
+        if (due <= elapsed) return 0;
+        return @intCast(@divFloor(due - elapsed, std.time.ns_per_ms));
+    }
+};
+
+/// The steps of a chunk, between two looks at the window: a millisecond at
+/// `speed`, or 65536 without a pace.
+fn chunkSteps(speed: u64) u64 {
+    return if (speed == 0) 65536 else @max(1, speed / 1000);
+}
+
+/// Run the program with the window (doc/SYSTEM.md §1): the console reads
+/// `file`, if given, then the keys. After the halt or the step limit, the
+/// report is printed, and the window stays until it is closed. Closing it
+/// before ends the run.
+fn runWindow(arena: std.mem.Allocator, io: std.Io, out: *std.Io.Writer, opts: Options, syms: []const Symbol, cpu: *Cpu, file: ?*std.Io.Reader) !u8 {
+    var win: Window = undefined;
+    win.open(arena, opts.invert_fg, file) catch return error.Load;
+    defer win.close(arena);
+    cpu.input = win.queue.input();
+    const now = struct {
+        fn ns(i: std.Io) i96 {
+            return std.Io.Timestamp.now(i, .awake).toNanoseconds();
+        }
+    }.ns;
+    var pacer: Pacer = .{ .speed = opts.speed, .start_ns = now(io) };
+    const chunk = chunkSteps(opts.speed);
+    var steps: u64 = 0;
+    var next: usize = 0;
+    var closed = false;
+    while (!cpu.halted() and steps < opts.max_steps) {
+        const sig = stop_signal.load(.acquire);
+        if (sig != 0) dieOfSignal(out, sig);
+        const end = @min(opts.max_steps, steps +| chunk);
+        while (!cpu.halted() and steps < end) : (steps += 1) {
+            raiseRequests(cpu, opts, steps, &next);
+            try cpu.step();
+        }
+        // Show the console output with the screen.
+        out.flush() catch {};
+        if (!win.pump(cpu, opts.screen_base, @intCast(pacer.wait(steps, now(io))))) {
+            closed = true;
+            break;
+        }
+    }
+    const status = try report(out, opts, syms, cpu, steps, closed);
+    try out.flush();
+    while (!closed and win.pump(cpu, opts.screen_base, 100)) {
+        const sig = stop_signal.load(.acquire);
+        if (sig != 0) dieOfSignal(out, sig);
+    }
+    return status;
 }
 
 /// Print why the run stopped, the registers, the dumps, and the screen, and
 /// return the exit status.
-fn report(out: *std.Io.Writer, opts: Options, syms: []const Symbol, cpu: *Cpu, steps: u64) !u8 {
+fn report(out: *std.Io.Writer, opts: Options, syms: []const Symbol, cpu: *Cpu, steps: u64, closed: bool) !u8 {
     // After a halt, PC is the address after the halting instruction.
-    if (cpu.halted()) {
+    if (closed) {
+        try out.print("Stopped when the window was closed after {d} steps, PC={x:0>8}\n", .{ steps, cpu.regs[15] });
+    } else if (cpu.halted()) {
         try out.print("Halted ({s}) after {d} steps, PC={x:0>8}\n", .{ cpu.halt_reason.describe(), steps, cpu.regs[15] });
     } else {
         try out.print("Stopped at the step limit after {d} steps, PC={x:0>8}\n", .{ steps, cpu.regs[15] });
@@ -514,7 +624,7 @@ fn report(out: *std.Io.Writer, opts: Options, syms: []const Symbol, cpu: *Cpu, s
     for (opts.dumps) |d| try printMemory(out, cpu, d);
     if (opts.screen) try printScreen(out, cpu, opts.screen_base, opts.color, opts.invert_fg);
 
-    return if (!cpu.halted()) 3 else if (cpu.halt_reason == .halt) 0 else 2;
+    return if (closed) 4 else if (!cpu.halted()) 3 else if (cpu.halt_reason == .halt) 0 else 2;
 }
 
 /// Where `serve` prints, so that a signal can flush it before the exit.
@@ -564,7 +674,7 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
         if (link.pauseDue(steps == opts.max_steps)) link.pause();
         if (!link.running()) {
             if (link.halted() and !reported) {
-                _ = try report(out, opts, syms, cpu, steps);
+                _ = try report(out, opts, syms, cpu, steps, false);
                 link.notifyHalt();
                 reported = true;
             }
@@ -683,6 +793,32 @@ test "findSymbol takes the nearest label at or before, the first at a tie" {
     try std.testing.expectEqualStrings("b", findSymbol(&syms, 0x1F).?.name);
     try std.testing.expectEqualStrings("d", findSymbol(&syms, 0xFFFFFFFF).?.name);
     try std.testing.expect(findSymbol(&.{}, 5) == null);
+}
+
+test "the pacer waits until the steps are due at their speed" {
+    const ms = std.time.ns_per_ms;
+    var p: Pacer = .{ .speed = 1_000_000, .start_ns = 0 };
+    // 1000 steps at one a microsecond are due at 1 ms.
+    try std.testing.expectEqual(1, p.wait(1000, 0));
+    try std.testing.expectEqual(0, p.wait(1000, ms / 2 * 3));
+    try std.testing.expectEqual(3, p.wait(5000, 2 * ms));
+    // Less than 1 ms ahead waits 0.
+    try std.testing.expectEqual(0, p.wait(5000, 4 * ms + 1));
+    // 100 ms behind is within the slack; more starts the pace again.
+    try std.testing.expectEqual(0, p.wait(5000, 105 * ms));
+    try std.testing.expectEqual(0, p.start_steps);
+    try std.testing.expectEqual(0, p.wait(5000, 106 * ms));
+    try std.testing.expectEqual(5000, p.start_steps);
+    try std.testing.expectEqual(2, p.wait(7000, 106 * ms));
+    // Without a speed, it never waits.
+    var q: Pacer = .{ .speed = 0, .start_ns = 0 };
+    try std.testing.expectEqual(0, q.wait(1_000_000, 0));
+}
+
+test "a chunk is a millisecond of steps, or 65536 without a pace" {
+    try std.testing.expectEqual(1000, chunkSteps(1_000_000));
+    try std.testing.expectEqual(1, chunkSteps(500));
+    try std.testing.expectEqual(65536, chunkSteps(0));
 }
 
 test {

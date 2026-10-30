@@ -12,6 +12,7 @@ The window of `--window` needs a build with `-Dwindow`, below.
     make          # unit tests, example and probe programs, test/errors.py
     make build    # just build zig-out/bin/niceemu
     make window   # build it with the window of --window
+    make window-test  # build it so, and run test/window.py
 
 `make window` builds niceemu with `zig build -Dwindow`. The window uses
 [SDL 3](https://libsdl.org), which the build fetches from
@@ -21,6 +22,8 @@ first build takes a few minutes of CPU time; later ones take SDL from the Zig
 cache. Zig unpacks the source into `zig-pkg/`, which `make clean`
 removes. Without `-Dwindow`, the build fetches nothing and needs only Zig.
 `make test` and `make build` build without the window.
+`make window-test` runs `test/window.py` on that build, with SDL's dummy
+video driver, so it needs no display (see Window below).
 
 `make test` runs the unit tests in `src/cpu.zig`, then the example programs
 in `../assembler/test/` (the three 2004 programs and `wrap`) and the probe
@@ -97,6 +100,8 @@ line such as `Pending: IRQ 05` follows the first line.
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
 | `--no-cycle-counter` | Make the cycle counter and the microsecond counter, `0xFFFFFF40`, `0xFFFFFF41`, `0xFFFFFF44`, and `0xFFFFFF45`, ordinary memory (see Memory map). |
 | `--no-timer-irq` | The timer counts, but raises no requests, so that `--irq` can raise them instead (see Memory map). |
+| `--window` | Show the screen in a window while the program runs, and keep it after the halt until it is closed (see Window below). Needs a build with `-Dwindow`. |
+| `--speed N` | With `--window`, run N steps a second, 1000000 by default, or as fast as the host can for 0. |
 | `--link PORT` | Serve the debug link on PORT of `127.0.0.1` instead of running the program once (see Debug link below). With PORT 0, pick a free port and print `link: port N` on stderr. The program file is optional. `--input` is an error with it. |
 | `-h`, `--help` | Print the usage on stdout. |
 
@@ -118,13 +123,53 @@ each foreground component `n` becomes `0xF − n`, and the background stays.
 
 The exit status is 0 after `HALT`, 2 after any other halt (a reserved control
 word, a nested `INT`, or `RTI` outside an interrupt routine), 3 at the step
-limit, and 1 for a usage, file, or memory error, an out-of-memory
+limit, 4 when the window of `--window` was closed before either, and 1 for a usage, file, or memory error, an out-of-memory
 condition, or an output that cannot be written. Diagnostics go to stderr,
 and only `-h` prints on stdout. `--` is not an option, so a program path
 that starts with `-` cannot be given, and an empty argument counts as no
 program. If stdout is a pipe that
 closes early, as in `niceemu -t x.bin | head`, niceemu stops quietly with
 status 141, as a filter killed by SIGPIPE would.
+
+## Window
+
+With `--window`, niceemu shows the 80×25 screen in a window of 1280×800
+pixels while the program runs, as SYSTEM.md §1 specifies. A resized window
+scales the screen and keeps its aspect. The characters are from the font
+Spleen 16×32, as on NiceMonMEGA65, in `src/font.zig`, which
+`font/gen_font.py` generates (`font/LICENSE.spleen` has its license). The
+window draws a cursor from `0xFFFFFF80`–`0xFFFFFF82`, and redraws about 60
+times a second. `-2004` and `--invert-fg` work with it as with `--screen`.
+
+The console writes to stdout, as without the window. It reads the file of
+`--input`, if given, and then the keys typed into the window, with the
+bytes of SYSTEM.md §1, and not stdin. A read with no byte waiting returns
+0, and a read never returns `0x200`. The keys wait in a buffer of 2048
+bytes, and a key whose bytes do not all fit is dropped.
+
+The emulator runs one step per microsecond, so that the microsecond counter
+and the timer keep the time of the host's clock. `--speed` sets another
+rate, and `--speed 0` runs as fast as the host can. A run that falls more
+than 100 ms behind the rate starts the pace again from there, rather than
+catch up in a burst.
+
+At the halt, or at the step limit, niceemu prints the report as without
+the window, and the window stays, with the last screen, until it is
+closed. Then niceemu exits with the status of the halt. Closing the window
+before ends the run: the first line of the report is `Stopped when the
+window was closed after N steps, PC=...`, and the exit status is 4. SIGINT,
+SIGTERM, and SIGHUP end niceemu as without the window, also while the
+window stays after the halt. Ctrl-C in the window is a key, `0x03`.
+
+`--window` cannot be given with `--link` yet.
+
+`test/window.py` runs niceemu with SDL's dummy video driver
+(`SDL_VIDEODRIVER=dummy`), which needs no display, but can type no key and
+close no window. It checks the report at the halt with `--color`, the
+reads of `--input` and then 0, that stdin is not read, the pace of the
+default speed and of `--speed 0`, and that a signal ends a run with no
+report. The key table and the drawing of the screen are unit tests in
+`src/keys.zig` and `src/frame.zig`.
 
 ## Program files
 
@@ -149,7 +194,7 @@ address twice and a file with no words are errors.
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (SYSTEM.md §4). Raises IRQ once every P steps. |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (SYSTEM.md §2). Multiplies and divides A and B, and divides C and D. |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (SYSTEM.md §3). Cycles, instructions, and microseconds, 64 bits each. The fetch statistics of the FPGA core, at `0xFFFFFF50`–`0xFFFFFF7F`, read 0. |
-| `0xFFFFFF80`–`0xFFFFFFFF` | 128 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. |
+| `0xFFFFFF80`–`0xFFFFFFFF` | 128 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (SYSTEM.md §1). |
 
 The screen has one word per character, with the character in bits 7..0 and
 its colors above. It is ordinary memory, and `--screen` prints the
@@ -162,7 +207,8 @@ The console stores nothing. Its output comes before the `Halted` line, and
 with `--trace` it is mixed in with the trace lines. `test/console.nasm`
 writes to it. This repository has no UART. A system built on the FPGA core maps one at the same address (SYSTEM.md §1).
 
-Each data read of the console takes the next byte of the input, which is
+Without `--window` (see Window above), each data read of the console takes
+the next byte of the input, which is
 stdin unless `--input` names a file. It returns the byte in bits 7..0 with
 bit 8 set, so a 0 byte reads as `0x100`. Once the input has ended, every
 read returns `0x200`. A read error on the input counts as its end. For no input at all, give stdin from `/dev/null`, or

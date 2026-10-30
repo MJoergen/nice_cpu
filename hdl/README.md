@@ -198,8 +198,9 @@ the register or port they start from and the one they end at, with the
 worst slack of each group.
 `timing_ack.rpt` has the 5 worst paths from `dbus_ack_i` alone, since `rst_i`
 can fill the 50 of `timing_in.rpt`.
-It takes about 3 minutes with the default flow, and `VIVADO` names the
-executable.
+It takes about 3 minutes with the default flow. `VIVADO` names the
+executable, `/opt/Xilinx/2025.1/Vivado/bin/vivado` unless the environment
+or the command line sets it.
 
 At the end it judges the slacks against the budget of the board in
 [test/timing_budget.py](test/timing_budget.py), at a 10 ns clock: the core

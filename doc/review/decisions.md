@@ -4,6 +4,10 @@ Ideas that were weighed and dropped, with the reason, so that they are not
 proposed again. The open items are the
 [issues](https://github.com/MJoergen/nice_cpu/issues) of the repository.
 
+- **Taking the Vivado path from the environment only** (#61). `hdl/Makefile`
+  keeps `/opt/Xilinx/2025.1/Vivado/bin/vivado` as the default of `VIVADO`,
+  so `make timing` works as is where Vivado is installed there, and
+  `make timing VIVADO=...` or the environment names another.
 - **Version negotiation on the debug link** (#81), where a host asks the
   system to act as an older version. The rules of DEBUG.md §9 keep older
   hosts working without it, and it would add state to `debug_link.vhd` and

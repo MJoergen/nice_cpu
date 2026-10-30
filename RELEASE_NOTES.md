@@ -53,6 +53,8 @@ keyboard, a cursor, and the pace of a board (#83).
   does. With `--link`, the keys and the host's bytes share the input
   buffer, as a board's keyboard and UART share its FIFO. DEBUG.md §7 says
   that a read does not wait then.
+- DEBUG.md §7: the emulator serves the link on `127.0.0.1` unless it is
+  given another address (#84).
 
 **Emulator (`niceemu`)**
 
@@ -72,6 +74,9 @@ keyboard, a cursor, and the pace of a board (#83).
   run, also while the processor is held, and closing it ends niceemu.
 - `make window-test` runs `test/window.py` on SDL's dummy video driver,
   with no display, and CI runs it in a job of its own.
+- `--link ADDR:PORT` serves the debug link on ADDR, so that with
+  `0.0.0.0` a host on another computer can connect (#84). `--link PORT`
+  still serves it on `127.0.0.1` only. The link has no authentication.
 
 **Benchmarks**
 

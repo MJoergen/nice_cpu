@@ -149,10 +149,12 @@ def assemble(tmp: str, name: str, text: str) -> List[int]:
 
 
 class Emu:
-    """A niceemu --link 0, and a host connected to it."""
+    """A niceemu --link 0, or on `addr`, and a host connected to it."""
 
-    def __init__(self, args: List[str] = []) -> None:
-        self.proc = subprocess.Popen([NICEEMU, "--link", "0"] + args, stdin=subprocess.DEVNULL,
+    def __init__(self, args: List[str] = [], addr: str = "127.0.0.1") -> None:
+        self.addr = addr
+        link = "0" if addr == "127.0.0.1" else f"{addr}:0"
+        self.proc = subprocess.Popen([NICEEMU, "--link", link] + args, stdin=subprocess.DEVNULL,
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         assert self.proc.stderr is not None
         line = self.proc.stderr.readline().decode()
@@ -163,7 +165,7 @@ class Emu:
         self.buf = b""
 
     def connect(self) -> socket.socket:
-        return socket.create_connection(("127.0.0.1", self.port), timeout=5)
+        return socket.create_connection((self.addr, self.port), timeout=5)
 
     def send(self, data: bytes) -> None:
         self.sock.sendall(data)
@@ -945,6 +947,23 @@ def test_old_host(stop: List[int], echo: List[int]) -> None:
     e.stop()
 
 
+def test_address() -> None:
+    """--link ADDR:PORT serves on ADDR only. All of 127.0.0.0/8 is
+    loopback on Linux, so 127.0.0.2 is an address other than the
+    default."""
+    e = Emu(addr="127.0.0.2")
+    expect("b on connect", e.take(len(HELLO)), HELLO)
+    e.send(read(CONTROL, 1))
+    e.expect("control held", answer(CONTROL, [0x9]))
+    try:
+        socket.create_connection(("127.0.0.1", e.port), timeout=5).close()
+        failures.append("127.0.0.2: a connect to 127.0.0.1 was accepted")
+    except ConnectionRefusedError:
+        pass
+    status, out, _ = e.stop()
+    expect("exit status", bytes([status]), b"\x00")
+
+
 def test_usage() -> None:
     proc = subprocess.run([NICEEMU, "--link", "0", "--input", "x"], capture_output=True, text=True)
     want = "niceemu: --input cannot be given with --link\n"
@@ -975,7 +994,7 @@ def main() -> None:
             lambda: test_pause(count, echo),
             lambda: test_step(count, one, stop, echo, twice, irq, irq_bin),
             lambda: test_break(at10, load, count, skip, stop, irq),
-            lambda: test_old_host(stop, echo), test_usage,
+            lambda: test_old_host(stop, echo), test_address, test_usage,
         ]
         for t in tests:
             t()

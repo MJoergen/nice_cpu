@@ -9,7 +9,7 @@ const Window = if (build_options.window) @import("window.zig").Window else void;
 
 const usage =
     \\Usage: niceemu [options] program.bin
-    \\       niceemu --link PORT [options] [program.bin]
+    \\       niceemu --link [ADDR:]PORT [options] [program.bin]
     \\
     \\Runs the program from address 0 until it halts, then prints the
     \\registers. A write to 0xFFFFFF00 prints its low byte on stdout. A read
@@ -38,8 +38,10 @@ const usage =
     \\                       with an FPGA core.
     \\      --no-timer-irq   The timer counts, but raises no requests, so that
     \\                       --irq can raise them where an FPGA core took them.
-    \\      --link PORT      Serve the debug link of doc/DEBUG.md on PORT of
-    \\                       127.0.0.1, or on a free port for 0, until a signal.
+    \\      --link [ADDR:]PORT  Serve the debug link of doc/DEBUG.md on PORT of
+    \\                       ADDR (default 127.0.0.1), or on a free port for 0,
+    \\                       until a signal. ADDR is an IPv4 address, or an IPv6
+    \\                       one in brackets; 0.0.0.0 lets other computers connect.
     \\      --window         Show the screen in a window while the program runs, and
     \\                       keep it after the halt until it is closed. The console
     \\                       reads --input, if given, then the keys typed into the
@@ -94,8 +96,8 @@ const Options = struct {
     input_given: bool = false,
     /// The label file of niceasm --symbols, or "" for none.
     symbols: []const u8 = "",
-    /// The port of --link, or null to run the program once.
-    link: ?u16 = null,
+    /// The address of --link, or null to run the program once.
+    link: ?std.Io.net.IpAddress = null,
     /// Show the screen in a window (doc/SYSTEM.md §1).
     window: bool = false,
     /// Steps a second with the window, or 0 for as fast as possible.
@@ -299,6 +301,20 @@ fn fail(comptime fmt: []const u8, args: anytype) error{Usage} {
 }
 
 /// Parse the value `s` of option `opt`: decimal, or hex after 0x.
+/// The `[ADDR:]PORT` of --link: ADDR is an IPv4 address, or an IPv6 one in
+/// brackets, and 127.0.0.1 if none is given.
+fn parseLink(opt: []const u8, s: []const u8) !std.Io.net.IpAddress {
+    const net = std.Io.net;
+    const colon = std.mem.findScalarLast(u8, s, ':') orelse
+        return .{ .ip4 = .loopback(try parseNumber(u16, opt, s)) };
+    const addr = s[0..colon];
+    const port = try parseNumber(u16, opt, s[colon + 1 ..]);
+    if (addr.len >= 2 and addr[0] == '[' and addr[addr.len - 1] == ']') {
+        return net.IpAddress.parseIp6(addr[1 .. addr.len - 1], port) catch fail("{s}: bad address '{s}'", .{ opt, addr });
+    }
+    return net.IpAddress.parseIp4(addr, port) catch fail("{s}: bad address '{s}'", .{ opt, addr });
+}
+
 fn parseNumber(comptime T: type, opt: []const u8, s: []const u8) !T {
     const hex = std.mem.startsWith(u8, s, "0x") or std.mem.startsWith(u8, s, "0X");
     const base: u8 = if (hex) 16 else 10;
@@ -370,7 +386,7 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
         } else if (std.mem.eql(u8, arg, "--symbols")) {
             opts.symbols = value;
         } else if (std.mem.eql(u8, arg, "--link")) {
-            opts.link = try parseNumber(u16, arg, value);
+            opts.link = try parseLink(arg, value);
         } else if (std.mem.eql(u8, arg, "--window")) {
             opts.window = true;
         } else if (std.mem.eql(u8, arg, "--speed")) {
@@ -461,7 +477,7 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, out: *s
         try load(arena, &cpu, opts.path, text);
     }
     const syms: []const Symbol = if (opts.symbols.len != 0) try loadSymbols(arena, io, opts.symbols) else &.{};
-    if (opts.link) |port| return serve(arena, io, opts, syms, &cpu, port);
+    if (opts.link) |addr| return serve(arena, io, opts, syms, &cpu, addr);
 
     if (opts.trace) cpu.trace = out;
     cpu.console = out;
@@ -640,10 +656,10 @@ fn exitOnSignal() void {
     std.process.exit(0);
 }
 
-/// Serve the debug link (doc/DEBUG.md) on `port`, and run each program
+/// Serve the debug link (doc/DEBUG.md) on `addr`, and run each program
 /// that the host starts. What a run prints goes to stderr. Runs until a
 /// signal, or with --window until the window is closed.
-fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symbol, cpu: *Cpu, port: u16) !u8 {
+fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symbol, cpu: *Cpu, addr: std.Io.net.IpAddress) !u8 {
     var err_buf: [64 * 1024]u8 = undefined;
     var err_w = std.Io.File.stderr().writerStreaming(io, &err_buf);
     const out = &err_w.interface;
@@ -651,11 +667,11 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
     catchSignals();
 
     var link: Link = undefined;
-    const actual = link.open(arena, io, cpu, port, exitOnSignal) catch |err| {
-        std.debug.print("niceemu: cannot serve the link on port {d}: {s}\n", .{ port, @errorName(err) });
+    const actual = link.open(arena, io, cpu, addr, exitOnSignal) catch |err| {
+        std.debug.print("niceemu: cannot serve the link on {f}: {s}\n", .{ addr, @errorName(err) });
         return error.Load;
     };
-    if (port == 0) std.debug.print("link: port {d}\n", .{actual});
+    if (addr.getPort() == 0) std.debug.print("link: port {d}\n", .{actual});
     if (opts.trace) cpu.trace = out;
     cpu.console = &link.console_w;
     cpu.cycle_counter = opts.cycle_counter;

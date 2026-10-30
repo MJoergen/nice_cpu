@@ -400,7 +400,7 @@ and bit 3 at 0. A system without one waits, held, with bit 0 at 1.
   does (SYSTEM.md §5). Then the console reads `0x200` (SYSTEM.md §1)
   until the next start.
 - **TCP.** The emulator serves the link on a TCP port, on `127.0.0.1`
-  only. It serves one host at a time: while a host is connected, it accepts
+  unless it is given another address. It serves one host at a time: while a host is connected, it accepts
   another and closes that connection at once, with nothing sent. It sends
   `b` to each host that connects, and clears the breakpoints (§6). A host
   ends the program's input by closing its half of the connection for
@@ -422,8 +422,13 @@ the end of the input (§6).
 The emulator, serving the link, works as when it runs a program from the
 command line, with these differences:
 
-- `--link PORT` serves the link on PORT. With PORT 0, the emulator picks a
-  free port and prints `link: port N` on stderr.
+- `--link PORT` serves the link on PORT of `127.0.0.1`. With PORT 0, the
+  emulator picks a free port and prints `link: port N` on stderr.
+  `--link ADDR:PORT` serves it on ADDR, an IPv4 address of the computer,
+  or an IPv6 one in brackets. `0.0.0.0` is all of its IPv4 addresses,
+  so that a host on another computer can connect. The link has
+  no authentication: anyone who can reach the port can read and write the
+  memory and run programs.
 - It starts held, and starts the program only when the host clears bit 0 of
   the control register.
 - Its memory starts as a `.bin` file given on its command line, if one is,

@@ -69,7 +69,7 @@ some checks set E with no vector table in place.
 ## Usage
 
     niceemu [options] program.bin
-    niceemu --link PORT [options] [program.bin]
+    niceemu --link [ADDR:]PORT [options] [program.bin]
 
 The program is loaded, the processor is reset (PC = 0) and it runs until it
 halts. Then the emulator prints why it stopped, the number of steps, and the
@@ -102,7 +102,7 @@ line such as `Pending: IRQ 05` follows the first line.
 | `--no-timer-irq` | The timer counts, but raises no requests, so that `--irq` can raise them instead (see Memory map). |
 | `--window` | Show the screen in a window while the program runs, and keep it after the halt until it is closed (see Window below). Needs a build with `-Dwindow`. |
 | `--speed N` | With `--window`, run N steps a second, 1000000 by default, or as fast as the host can for 0. |
-| `--link PORT` | Serve the debug link on PORT of `127.0.0.1` instead of running the program once (see Debug link below). With PORT 0, pick a free port and print `link: port N` on stderr. The program file is optional. `--input` is an error with it. |
+| `--link [ADDR:]PORT` | Serve the debug link on PORT of ADDR, `127.0.0.1` if no ADDR is given, instead of running the program once (see Debug link below). ADDR is an IPv4 address, or an IPv6 one in brackets, such as `[::1]`. With PORT 0, pick a free port and print `link: port N` on stderr. The program file is optional. `--input` is an error with it. |
 | `-h`, `--help` | Print the usage on stdout. |
 
 Numbers in options are decimal, or hex after `0x` or `0X`, with no sign or
@@ -295,9 +295,16 @@ pages can use up to 16 GiB before the emulator runs out of memory.
 ## Debug link
 
 With `--link PORT`, niceemu serves the debug link of
-[DEBUG.md](../doc/DEBUG.md) on a TCP port, as DEBUG.md §7 says. It starts
-held, with the program file in memory if one was given, and runs a program
-each time the host starts one. The console's input and output go over the
+[DEBUG.md](../doc/DEBUG.md) on a TCP port of `127.0.0.1`, as DEBUG.md §7
+says. With `--link 0.0.0.0:PORT`, a host on another computer can connect.
+The link has no authentication, so anyone who can reach the port can read
+and write the memory and run programs. On a network you do not trust,
+keep the default and forward the port over SSH instead:
+
+    ssh -L 4510:127.0.0.1:4510 emuhost 'niceemu --link 4510 prog.bin'
+
+niceemu starts held, with the program file in memory if one was given,
+and runs a program each time the host starts one. The console's input and output go over the
 link, and what a run prints after it halts, and the trace, go to stderr.
 stdout stays empty. It runs until a signal, and then exits with status 0.
 With `--window`, closing the window ends it too (see Window above).

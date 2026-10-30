@@ -1,4 +1,5 @@
-//! The debug link of doc/DEBUG.md, served on a TCP port of 127.0.0.1.
+//! The debug link of doc/DEBUG.md, served on a TCP port, of 127.0.0.1 unless
+//! the command line names another address.
 //! One host at a time reads and writes the memory, loads and starts a
 //! program, and learns when it halts. The link shares its byte stream with
 //! the console.
@@ -105,10 +106,9 @@ pub const Link = struct {
     reader: std.Io.Reader,
     reader_buf: [16]u8 = undefined,
 
-    /// Listen on `port` of 127.0.0.1, or on a free port for 0, and return
-    /// the port. `self` must not move afterwards.
-    pub fn open(self: *Link, gpa: std.mem.Allocator, io: std.Io, cpu: *Cpu, port: u16, on_wait: *const fn () void) !u16 {
-        const addr: std.Io.net.IpAddress = .{ .ip4 = .loopback(port) };
+    /// Listen on `addr`, or on a free port of it for port 0, and return the
+    /// port. `self` must not move afterwards.
+    pub fn open(self: *Link, gpa: std.mem.Allocator, io: std.Io, cpu: *Cpu, addr: std.Io.net.IpAddress, on_wait: *const fn () void) !u16 {
         const server = try addr.listen(io, .{ .kernel_backlog = 1, .reuse_address = true });
         self.* = .{
             .io = io,
@@ -655,7 +655,7 @@ test "with the window, keys go to the buffer, wait for room, or are dropped" {
     var cpu = Cpu.init(t.allocator);
     defer cpu.deinit();
     var link: Link = undefined;
-    _ = try link.open(t.allocator, t.io, &cpu, 0, noWait);
+    _ = try link.open(t.allocator, t.io, &cpu, .{ .ip4 = .loopback(0) }, noWait);
     defer link.listener.deinit(t.io);
     defer link.payload.deinit(t.allocator);
     var q: keys.Queue = .{ .file = null };

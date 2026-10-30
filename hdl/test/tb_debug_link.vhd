@@ -24,7 +24,8 @@
 -- * the errors while the program runs, and that no word is written then;
 -- * console bytes both ways, ESC ESC, the overflow notice `o`, and the
 --   order of console bytes and packets;
--- * the timeout, an ESC with no letter, and the end of the input;
+-- * the timeout, an ESC with no letter, the end of the input, and the
+--   resume that starts it anew, also with a break in the same cycle;
 -- * the halt notice `h`, the registers and the halt kept while held, and
 --   the restart;
 -- * the pause: bit 4, the notice `p` after and before the answer, the memory,
@@ -74,6 +75,7 @@ architecture simulation of tb_debug_link is
    signal rx_ready : std_logic;
    signal rx_data  : std_logic_vector(7 downto 0) := (others => '0');
    signal rx_break : std_logic                    := '0';
+   signal resume   : std_logic                    := '0';
    signal tx_valid : std_logic;
    signal tx_ready : std_logic;
    signal tx_data  : std_logic_vector(7 downto 0);
@@ -172,6 +174,7 @@ begin
          rx_ready_o     => rx_ready,
          rx_data_i      => rx_data,
          rx_break_i     => rx_break,
+         rx_resume_i    => resume,
          tx_valid_o     => tx_valid,
          tx_ready_i     => tx_ready,
          tx_data_o      => tx_data,
@@ -766,6 +769,48 @@ begin
       send("H");
       quiet("dropped after the end of the input");
       expect_in("", "after the end of the input");
+      free <= X"0008";
+
+      -- A resume starts the line's input anew: eoi falls, and a console
+      -- byte reaches the program again, as the first byte of a new
+      -- connection does. A resume without an end changes nothing.
+      resume <= '1';
+      cycles(1);
+      resume <= '0';
+      cycles(3);
+      assert eoi = '0'
+         report "tb_debug_link: no resume"
+         severity failure;
+      send("I");
+      expect_in("I", "after the resume");
+      quiet("after the resume");
+      resume <= '1';
+      cycles(1);
+      resume <= '0';
+      send("K");
+      expect_in("K", "after a resume without an end");
+      -- A break with a resume in the same cycle is undone, and one after
+      -- it ends the input again.
+      rx_break <= '1';
+      resume   <= '1';
+      cycles(1);
+      rx_break <= '0';
+      resume   <= '0';
+      cycles(3);
+      assert eoi = '0'
+         report "tb_debug_link: a break with a resume"
+         severity failure;
+      rx_break <= '1';
+      cycles(1);
+      rx_break <= '0';
+      cycles(3);
+      assert eoi = '1'
+         report "tb_debug_link: no end of input after the resume"
+         severity failure;
+      free <= X"0000";
+      send("L");
+      quiet("dropped after the second end");
+      expect_in("", "after the second end");
       free <= X"0008";
 
       -- A halt: the last console byte, then h.

@@ -362,6 +362,10 @@ was deaf to the keyboard until a reset
 ([#89](https://github.com/MJoergen/nice_cpu/issues/89)). Now the end is
 the line's: the host's bytes are dropped, and the keys still reach the
 program. Over TCP a new connection ends the end; before, only a start did.
+The link of `hdl/src/debug_link.vhd` could not do that for a board until
+later that day, when it got `rx_resume_i`
+([#90](https://github.com/MJoergen/nice_cpu/issues/90)): its end lasted
+until the next start, whatever the transport.
 
 ## The debug link's proof
 

@@ -35,8 +35,10 @@
 -- * the restart of DEBUG.md §8, the pause with the core's own bus, registers,
 --   and console, and a hold while the program runs;
 -- * the single step: R15 after each step of the echo program, with a console
---   byte and without, a step into HALT, the writes with bit 5 that do not
---   step, and an INT with the registers of each step from niceemu --trace;
+--   byte and without, the end of the input and a resume, after which a byte
+--   reaches the program and is echoed, a step into HALT, the writes with
+--   bit 5 that do not step, and an INT with the registers of each step from
+--   niceemu --trace;
 -- * the breakpoints: a stop of the core's own before the echo, `x`, the stop
 --   register, a step and a go on from a breakpoint, which run its
 --   instruction, and a breakpoint disabled while paused;
@@ -91,6 +93,7 @@ architecture simulation of tb_link is
    signal rx_ready : std_logic;
    signal rx_data  : std_logic_vector(7 downto 0) := (others => '0');
    signal rx_break : std_logic                    := '0';
+   signal resume   : std_logic                    := '0';
    signal tx_valid : std_logic;
    signal tx_data  : std_logic_vector(7 downto 0);
 
@@ -453,6 +456,7 @@ begin
          rx_ready_o     => rx_ready,
          rx_data_i      => rx_data,
          rx_break_i     => rx_break,
+         rx_resume_i    => resume,
          tx_valid_o     => tx_valid,
          tx_ready_i     => '1',
          tx_data_o      => tx_data,
@@ -844,13 +848,45 @@ begin
       expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", "step while running");
       send(C_ESC & "RFFFFFFF00001#2D");
       expect(C_ESC & "rFFFFFFF0000100000018#D6", "paused by the step while running");
-      -- A step into HALT: a start paused at address 0, the end of the input,
-      -- and the read, the AND, and the HALT, which ends in h, not p. R15 is
-      -- the address after the HALT.
+      -- The end of the input and a resume: a start paused at address 0, a
+      -- break, then a resume, as a new connection on a board's TCP server,
+      -- and a byte from the new host, which the read returns (R1 = 0x141)
+      -- and the program echoes, as in the steps with a byte above.
       send(C_ESC & "WFFFFFFF0000100000009#BB");
       expect(C_ESC & "kFFFFFFF00001#46", "hold before the halt steps");
       send(C_ESC & "WFFFFFFF0000100000018#BB");
       expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", "start paused for the halt");
+      wait until rising_edge(clk);
+      rx_break <= '1';
+      wait until rising_edge(clk);
+      rx_break <= '0';
+      cycles(10);
+      if eoi /= '1' then
+         fail("no end of input before the resume");
+      end if;
+      wait until rising_edge(clk);
+      resume <= '1';
+      wait until rising_edge(clk);
+      resume <= '0';
+      cycles(10);
+      if eoi /= '0' then
+         fail("no resume");
+      end if;
+      send("A");
+      cycles(50);
+      step("", "resume step 1");
+      reg_is(1, X"00000141", "R1 after the resume");
+      step("", "resume step 2");
+      step("", "resume step 3");
+      step("", "resume step 4");
+      step("", "resume step 5");
+      step("A", "resume step 6, the echo");
+      step("", "resume step 7");
+      step("", "resume step 8");
+      reg_is(15, X"00000000", "R15 after the resume steps");
+      -- A step into HALT: the end of the input again, and the read, the AND,
+      -- and the HALT, which ends in h, not p. R15 is the address after the
+      -- HALT.
       wait until rising_edge(clk);
       rx_break <= '1';
       wait until rising_edge(clk);

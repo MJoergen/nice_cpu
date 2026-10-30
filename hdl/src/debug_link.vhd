@@ -96,19 +96,28 @@
 --    new request may start the cycle after side_done_o.
 --
 -- The host side:
--- * rx_*: a byte from the host, with valid and ready, and rx_break_i, a
---   pulse for a UART break. It ends the line's input (eoi_o) until the
---   next start (SYSTEM.md §5, DEBUG.md §7).
+-- * rx_*: a byte from the host, with valid and ready, and two pulses.
+--   rx_break_i is a UART break: it ends the line's input (eoi_o) until
+--   the next start, or until rx_resume_i, which starts the line's input
+--   anew, as a new connection does where the connection is the line
+--   (SYSTEM.md §5, DEBUG.md §7). A board whose transport has connections
+--   pulses rx_resume_i when a host connects, no earlier than the break
+--   of the connection before; one without leaves it open. A resume wins
+--   over a break in the same cycle, and a break after it ends the new
+--   line's input. Both take effect from the next cycle: a byte taken in
+--   the cycle of a break still goes to the program, and one taken in the
+--   cycle of a resume is still dropped. A resume changes nothing else:
+--   not the breakpoints, the hold, the pause, or the program's state.
 -- * tx_*: a byte to the host.
 -- The program side:
 -- * con_*: a byte that the program wrote to 0xFFFFFF00, with valid and
 --   ready. The link sends it, and a 0xFF as ESC ESC.
 -- * con_in_valid_o and con_in_data_o: a one-cycle strobe with a console
 --   byte from the host, for the program's input buffer.
--- * eoi_o: '1' from a break until the next start, the end of the line's
---   input. While it is high, the board drops the host's console bytes,
---   and the console reads 0x200 once its input buffer is empty. A
---   keyboard's bytes still go into the buffer (SYSTEM.md §5).
+-- * eoi_o: '1' from a break until the next start or resume, the end of
+--   the line's input. While it is high, the board drops the host's
+--   console bytes, and the console reads 0x200 once its input buffer is
+--   empty. A keyboard's bytes still go into the buffer (SYSTEM.md §5).
 -- Processor control:
 -- * hold_o: the control register's bit 0. It resets the core and the
 --   devices. The board empties the program's input buffer when it falls,
@@ -174,6 +183,7 @@ entity debug_link is
       rx_ready_o     : out std_logic;
       rx_data_i      : in  std_logic_vector(7 downto 0);
       rx_break_i     : in  std_logic;
+      rx_resume_i    : in  std_logic                     := '0';
       tx_valid_o     : out std_logic;
       tx_ready_i     : in  std_logic;
       tx_data_o      : out std_logic_vector(7 downto 0);
@@ -781,8 +791,15 @@ begin
             end if;
          end if;
 
+         -- A break ends the line's input, and a resume starts it anew. The
+         -- resume wins in the same cycle: the break is then the old line's,
+         -- as when a board's TCP server ends one connection and opens the
+         -- next at once.
          if rx_break_i = '1' then
             eoi_r <= '1';
+         end if;
+         if rx_resume_i = '1' then
+            eoi_r <= '0';
          end if;
 
          -- The end of a clear

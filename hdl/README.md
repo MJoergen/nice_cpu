@@ -795,8 +795,9 @@ rules of `wb_master_check` with one access at a time, only while
 program ran and `free_i` was not 0 the cycle before; that `clear_o` stays
 high until `clear_done_i`; that `tx_valid_o` and `tx_data_o` hold until
 the host takes the byte, and a console byte taken is the next one out;
-and that `eoi_o` rises only after a break and falls only at a start or
-reset. The properties under `G_FORMAL` in `src/debug_link.vhd` name its
+and that `eoi_o` rises only after a break, falls only at a start, at reset,
+or after `rx_resume_i`, and is low in the cycle after `rx_resume_i`. The
+properties under `G_FORMAL` in `src/debug_link.vhd` name its
 registers: `pause_r` is low for exactly one cycle per step, only after a
 cycle in which the link owned the paused core, and the link owns nothing
 while it steps. A parser of the bytes the host takes asserts that every packet
@@ -1237,6 +1238,14 @@ halted again. The board stops the counters and the timer while the core is
 paused, and not during a step. While the processor runs, a read of R0 to
 R15 returns `regs_i` of that cycle, and otherwise the copy of the last halt
 or pause.
+
+The host's line ends with `rx_break_i`, a pulse for a UART break: `eoi_o`
+rises, the link drops the host's console bytes, and the board's console
+reads `0x200` once its buffer is empty, until the next start or a pulse of
+`rx_resume_i`, which starts the line's input anew, as a new connection does
+on a board that serves the link over TCP (DEBUG.md §7). A resume wins over
+a break in the same cycle, and changes nothing else. A board without
+connections leaves the port open.
 
 The side port, `side_valid_i` to `side_data_o`, is a second client of the
 debug registers and the memory, word by word, for a debugger inside the

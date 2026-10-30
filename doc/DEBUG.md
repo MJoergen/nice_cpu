@@ -172,7 +172,7 @@ the control register causes may come before the `k` of that write.
 
 | Notice | Payload | Meaning |
 |---|---|---|
-| `b` | version | The system has powered up or been reset, or a host has connected over TCP (§7). The version is `05` (§9). |
+| `b` | version | The system has powered up or been reset, or a host has connected to the emulator over TCP (§7). The version is `05` (§9). |
 | `h` | reason | The processor has halted. The reason is the halt reason of §6, `01`–`05`. The last console byte that the program wrote comes before the notice. |
 | `x` | breakpoint | The processor has paused, and R15 is the address of an enabled breakpoint (§6). The payload is its number, `00`–`07`, the lowest if more than one has that address. Bit 4 of the control register reads 1. The last console byte that the program wrote comes before the notice. |
 | `p` | none | The processor has paused: a pause request or a step (§6) has taken effect, and bit 4 of the control register reads 1. R15 is not the address of an enabled breakpoint. The last console byte that the program wrote comes before the notice. |
@@ -399,8 +399,8 @@ condition is false, is a step (ISA §3), so a breakpoint at it fires.
 - **Lifetime.** The enable bits and the addresses are kept across a hold, a
   start, and a clear, so a host sets them while the processor is held and
   then starts it. A reset of the system clears them, to 0, and so does a
-  host's connection over TCP (§7). So after every `b`, they are 0, and a
-  host finds none left by an earlier one.
+  host's connection to the emulator over TCP (§7). So after every `b`,
+  they are 0, and a host finds none left by an earlier one.
 
 After a reset of the system, a system that boots a ROM runs with bit 0 at 0
 and bit 3 at 0. A system without one waits, held, with bit 0 at 1.
@@ -415,24 +415,29 @@ and bit 3 at 0. A system without one waits, held, with bit 0 at 1.
   still reach the program, so a monitor that a host leaves keeps running
   on the keyboard. A break is the host's deliberate act, and a host that
   only leaves sends none, so the end lasts until the next start.
-- **TCP.** The emulator serves the link on a TCP port, on `127.0.0.1`
-  unless it is given another address. It serves one host at a time: while a host is connected, it accepts
-  another and closes that connection at once, with nothing sent. It sends
-  `b` to each host that connects, and clears the breakpoints (§6). A host
-  ends the line's input by closing its half of the connection for
-  writing (a TCP half-close), and keeps reading the answers and the output. Then the console reads `0x200`
-  once its buffer is empty, as after a UART break. A host that sends after that must connect again.
-  A host that has half-closed does not keep another out: it counts as
-  disconnected when another connects. Over TCP the connection is the
-  line: a new connection starts the line's input anew, the console no
-  longer reads `0x200`, and the new host's bytes reach the program. So a
-  program that read the end may read bytes again, if it is still running.
+- **TCP.** Over TCP the connection is the line. A host ends the line's
+  input by closing its half of the connection for writing (a TCP
+  half-close), and keeps reading the answers and the output. Then the
+  console reads `0x200` once its buffer is empty, as after a UART break.
+  A host that sends after that must connect again. A new connection
+  starts the line's input anew: the console no longer reads `0x200`, and
+  the new host's bytes reach the program. So a program that read the end
+  may read bytes again, if it is still running. The emulator serves the
+  link on a TCP port, on `127.0.0.1` unless it is given another address.
+  It serves one host at a time: while a host is connected, it accepts
+  another and closes that connection at once, with nothing sent. A host
+  that has half-closed does not keep another out: it counts as
+  disconnected when another connects. The emulator sends `b` to each
+  host that connects, and clears the breakpoints (§6). A board that
+  serves the link over TCP, as NiceMonMEGA65 does on its Ethernet port,
+  need not: without a `b`, the breakpoints and all else stay as the last
+  host left them.
 
 When a host disconnects, the program keeps running, and the memory keeps
-its contents for the next host. The emulator cannot tell a disconnect from
-a half-close, so a disconnect ends the line's input too: its console
-reads `0x200` until the next start or the next connection. The output and the notices sent while
-no host is connected are lost.
+its contents for the next host. A system cannot tell a disconnect from a
+half-close, so a disconnect ends the line's input too: the console reads
+`0x200` until the next start or the next connection. The output and the
+notices sent while no host is connected are lost.
 
 On either transport, the host's console bytes that arrive after the end of
 the line's input are dropped, with no `o` notice, while a keyboard's bytes
@@ -522,6 +527,12 @@ are the rules that `hdl/src/debug_link.vhd` asks of its board:
 - **Console input.** The board's input buffer takes a byte from the link
   at any time, and tells the link how many more bytes it can take. A start
   empties it (§6).
+- **Connections.** Where the connection is the line, the board pulses
+  `rx_resume_i` when a host connects, no earlier than the break of the
+  connection before it, and the line's input starts anew: `eoi_o` falls,
+  and the host's console bytes reach the program again. The board's end
+  of the input follows `eoi_o`, so the console stops reading `0x200`.
+  The UART needs no pulse: its end lasts until the next start.
 - **Console output.** The program's console bytes go to the link in the
   order the program wrote them. A buffer between the program and the link
   must not let a `p` or an `h` overtake a byte that the program wrote
@@ -613,7 +624,7 @@ major. A system of a new minor follows these rules:
 
 - A new feature does nothing until a host turns it on, and it is off
   after every `b`: a reset of the system turns it off, and so does a
-  host's connection over TCP (§7).
+  host's connection to the emulator over TCP (§7).
 - A new notice comes only from a feature that the host turned on.
 - A new bit of the control register changes nothing when it is written as
   0, or as the value it reads. A host that writes back what it reads, and

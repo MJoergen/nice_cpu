@@ -19,7 +19,8 @@
 -- - tx_valid_o stays high, with tx_data_o unchanged, until tx_ready_i,
 --   and a console byte taken is the next byte out.
 -- - eoi_o rises only after rx_break_i, and falls only at a start, when
---   hold_o falls, or at reset (DEBUG.md §7).
+--   hold_o falls, at reset, or after rx_resume_i, after which it is
+--   always low, also with rx_break_i in the same cycle (DEBUG.md §7).
 -- - With G_HAS_ROM false, rom_hide_o is always 1.
 -- The side client is free: it may ask for any word at any time, and drop
 -- or change its request before side_done_o (contract g asks it not to).
@@ -71,6 +72,7 @@ entity formal_debug_link is
       rx_valid_i    : in  std_logic;
       rx_data_i     : in  std_logic_vector(7 downto 0);
       rx_break_i    : in  std_logic;
+      rx_resume_i   : in  std_logic;
       tx_ready_i    : in  std_logic;
       con_valid_i   : in  std_logic;
       con_data_i    : in  std_logic_vector(7 downto 0);
@@ -221,11 +223,14 @@ begin
    -- The end of the input
    -- psl f_eoi_rise : assert always {not eoi; eoi} |-> {prev(rx_break_i)};
    -- psl f_eoi_fall : assert always
-   --    {eoi; not eoi} |-> {prev(rst_i) = '1' or (prev(hold) = '1' and hold = '0')};
+   --    {eoi; not eoi} |-> {prev(rst_i) = '1' or prev(rx_resume_i) = '1' or
+   --                        (prev(hold) = '1' and hold = '0')};
+   -- psl f_eoi_resume : assert always {rx_resume_i} |=> {not eoi};
 
    -- psl c_write : cover {wb_cyc and wb_stb and wb_we and not wb_stall_i};
    -- psl c_strobe : cover {con_in_valid and not rst_i};
    -- psl c_clear : cover {clear and clear_done_i};
+   -- psl c_resume : cover {eoi and rx_resume_i and not rst_i; not eoi};
 
 
    -- The side client: a word of the memory, and a refusal. Without one,
@@ -261,6 +266,7 @@ begin
          rx_ready_o     => rx_ready,
          rx_data_i      => rx_data_i,
          rx_break_i     => rx_break_i,
+         rx_resume_i    => rx_resume_i,
          tx_valid_o     => tx_valid,
          tx_ready_i     => tx_ready_i,
          tx_data_o      => tx_data,

@@ -62,8 +62,10 @@ the end of a host's input no longer silences the keyboard (#89).
   stay ordinary memory. The ports of both cores, `wb_dmux`, and the
   devices are as in V1.1.
 - The debug link (`hdl/src/debug_link.vhd`) has a side port for a client
-  inside the system (#86). Its inputs have defaults, so a board that
-  does not connect it builds as before. The protocol is still version 5.
+  inside the system (#86), and `rx_resume_i`, a pulse that starts the
+  line's input anew after a break, for a board that serves the link over
+  TCP (#90). The new inputs have defaults, so a board that does not
+  connect them builds as before. The protocol is still version 5.
 - Zig 0.17.0, as in V1.1.
 
 **Specification and documents**
@@ -152,8 +154,17 @@ the end of a host's input no longer silences the keyboard (#89).
   TCP line while the client works, and gets the notices of its stops
   (#86). A host's word now waits for the link to take it, so a word that
   comes during another client's access is not lost.
+- The debug link has `rx_resume_i`, a pulse that starts the line's input
+  anew after a break: `eoi_o` falls, and the host's console bytes reach
+  the program again. A board that serves the link over TCP pulses it when
+  a host connects, as the emulator starts the line anew at a connection
+  (#90). Nothing else changes: the breakpoints, the hold, and the pause
+  stay. A resume wins over a break in the same cycle. DEBUG.md §7 lists
+  it among the rules the link asks of its board, and says which of its
+  TCP rules are the emulator's.
 - `make formal` proves the link with a free side client, and the covers
-  run with and without one.
+  run with and without one. It proves that `eoi_o` is low in the cycle
+  after `rx_resume_i`.
 
 **Benchmarks**
 

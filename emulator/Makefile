@@ -103,7 +103,7 @@ bincheck:
 
 # Needs mypy (pip install mypy).
 typecheck:
-	$(PYTHON) -m mypy --strict test/errors.py test/link.py
+	$(PYTHON) -m mypy --strict test/errors.py test/link.py font/gen_font.py
 
 clean:
 	rm -rf zig-out .zig-cache zig-pkg test/*.out

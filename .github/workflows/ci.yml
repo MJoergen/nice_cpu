@@ -39,6 +39,25 @@ jobs:
       # The example programs of the introduction slides.
       - run: make -C ../doc/intro test
 
+  # The window of --window: zig build -Dwindow fetches SDL and compiles it
+  # from source (emulator/README.md). setup-zig keeps the Zig cache, so SDL
+  # is compiled again only when the cache is cold. A job of its own, as
+  # make window-test replaces the niceemu that make test built.
+  emulator-window:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: emulator
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0
+      - run: make window-test
+
   runtime:
     runs-on: ubuntu-24.04
     defaults:

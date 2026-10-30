@@ -104,6 +104,11 @@ evidence, but run them locally too. Do not edit `hdl/src` while they run.
 Every part must pass. A bug fix or new rule has its test (CLAUDE.md,
 "Conventions"). The 2004 example `.bin` files must be unchanged.
 
+CI also runs `make -C emulator window-test`, the window on a build with
+SDL (emulator/README.md, Window), in a job of its own. It is not in `make
+test`, as its build replaces the emulator that the other tests run, so
+its gate is the green CI run of §6.
+
 `release.py check` runs steps 3 to 5 in one go, and step 2.4 and the
 diagram check of step 2, and writes the stamp. The slides are checked by
 `make all`. The sections below say what it runs.

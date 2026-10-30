@@ -449,6 +449,11 @@ command line, with these differences:
 - A board's console read does not wait (SYSTEM.md §1). A program that
   polls the console runs its loop there, and its breakpoints in the loop
   stop it. In the emulator the program sits at the read, so they do not.
+- With `--window`, the emulator's console read does not wait either, and
+  returns 0 when no byte is waiting, as a board's does. Then the two
+  points above about a read that waits do not apply. The keys typed into
+  the window go into the same input buffer as the host's bytes
+  (SYSTEM.md §1).
 - It has four breakpoints. It checks them at each step boundary, in the
   order of §6, and a write to their registers takes effect at the next
   boundary.

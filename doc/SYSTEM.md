@@ -3,8 +3,8 @@
 The ISA ([ISA.md](ISA.md)) reserves the I/O range `0xFFFFFF00`–`0xFFFFFFFF`
 and defines no device (ISA §8.3). This file describes the devices that the
 emulator ([emulator/](../emulator/README.md)) and the FPGA implementation
-([hdl/](../hdl/README.md)) map into it, and the character screen that only
-the emulator has. They are properties of those systems, not of the ISA. The
+([hdl/](../hdl/README.md)) map into it, and the character screen, window, and
+keyboard that only the emulator has. They are properties of those systems, not of the ISA. The
 runtime library ([runtime/](../runtime/README.md)) has routines for them.
 
 "ISA §8.2" refers to a section of ISA.md, and a plain "§2" to a section of
@@ -33,7 +33,8 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (§4). |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (§2). |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (§3). |
-| `0xFFFFFF80`–`0xFFFFFFDF` | 96 | Reserved for I/O. |
+| `0xFFFFFF80`–`0xFFFFFF82` | 3 | Reserved for I/O. The emulator's window draws its cursor from them (§1). |
+| `0xFFFFFF83`–`0xFFFFFFDF` | 93 | Reserved for I/O. |
 | `0xFFFFFFE0`–`0xFFFFFFFF` | 32 | Reserved for I/O. The debug link's registers are here, for the link only ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)). |
 
 ## 1. Console, screen, and read counter
@@ -42,7 +43,39 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 
 The screen word has the character in bits 7..0, the background color in bits 31..20, and the foreground color in bits 19..8. Each color is three 4-bit components, red, green, and blue, from the high bits to the low. A component `n` gives the byte `n × 0x11`, so `0x0` is no intensity and `0xF` is full. The emulator's option `--color` prints the screen with these colors as ANSI escapes. Programs that write the 2004 layout should note one difference: the 2004 IDE (`nice_ide.pl`) inverts the three foreground components, so that `0x0` is full intensity and `0xF` is none, and here it is not inverted. The emulator's option `--invert-fg` inverts it, for the 2004 programs. A word with only a character, such as `0x41`, is black on black here, but white on black in the 2004 IDE. The background is the same in both.
 
-**Console.** The emulator maps a console at `0xFFFFFF00`. Each write prints bits 7..0 of the word. Each data read takes the next input byte, if there is one, and returns it in bits 7..0 with bit 8 set. With no byte waiting, a read returns 0. When the input has ended, a read returns `0x200` (bit 9) instead; a UART's input ends only if the system provides a break (§5). The emulator and the simulation memory of the FPGA core never return 0: a read waits for the next byte or the end of the input. Only a UART returns 0. The emulator reads its input from stdin, so stdin from `/dev/null` gives a console with no input. The simulation memory of the FPGA core reads a file too, as the emulator's `--input` does, and returns `0x200` without one. This repository has no UART. A system built on the FPGA core, such as the example design in [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), maps one at the same address, with the same bits (MICROARCH.md §8). Programs use the console for input and output.
+**Console.** The emulator maps a console at `0xFFFFFF00`. Each write prints bits 7..0 of the word. Each data read takes the next input byte, if there is one, and returns it in bits 7..0 with bit 8 set. With no byte waiting, a read returns 0. When the input has ended, a read returns `0x200` (bit 9) instead; a UART's input ends only if the system provides a break (§5). The emulator and the simulation memory of the FPGA core never return 0: a read waits for the next byte or the end of the input. Only a UART and the emulator's window (below) return 0. The emulator reads its input from stdin, so stdin from `/dev/null` gives a console with no input. The simulation memory of the FPGA core reads a file too, as the emulator's `--input` does, and returns `0x200` without one. This repository has no UART. A system built on the FPGA core, such as the example design in [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), maps one at the same address, with the same bits (MICROARCH.md §8). Programs use the console for input and output.
+
+**Window.** The emulator built with a window (its README says how) shows the screen in a window with its option `--window`, 1280×800 pixels, while the program runs. Each character is 16×32 pixels, from the Spleen font, with the colors above. The window shows the 2000 words of the screen and nothing else; the console still writes to stdout, or to the host with `--link`. When the program halts, the window stays, with the last screen, until it is closed. Closing the window before then ends the run. With `--link` ([DEBUG.md §7](DEBUG.md#7-transports)), the window opens when the emulator starts and stays open over every run. It shows the screen also while the processor is held, halted, or paused, so the host's writes to the screen show at once. Closing the window ends the emulator, as a signal does.
+
+**Cursor.** The window draws a cursor from three words, numbered as the screen registers of NiceMonMEGA65 (§5). In the emulator they are ordinary memory, which the window only reads:
+
+| Address | What |
+|---|---|
+| `0xFFFFFF80` | State. Bit 6 shows the cursor, bit 5 makes it blink, about twice a second, and bit 4 makes it small, the bottom 4 lines of the character. The other bits are ignored. |
+| `0xFFFFFF81` | The cursor's column, 0 to 79. |
+| `0xFFFFFF82` | The cursor's row, 0 to 24. |
+
+The cursor swaps the foreground and background colors of its character. With a column or row out of range, no cursor is shown. The words are 0 at the start of a run, so the cursor is off.
+
+**Keyboard.** With `--window`, the console reads the input of `--input`, if given, and then the keys typed into the window. It does not read stdin. A read returns 0 when no byte is waiting, as from a UART. Without `--link` it never returns `0x200`, as a keyboard has no end. A key gives these bytes, as xterm sends them:
+
+| Key | Bytes |
+|---|---|
+| Letters, digits, symbols | The ASCII of the character typed, with the host's keyboard layout |
+| Return, Enter | CR (`0x0D`) |
+| Backspace, Delete | DEL (`0x7F`) |
+| Tab, Esc | TAB (`0x09`), ESC (`0x1B`) |
+| Up, Down, Right, Left | `ESC [ A`, `ESC [ B`, `ESC [ C`, `ESC [ D` |
+| F1 to F4 | `ESC O P`, `ESC O Q`, `ESC O R`, `ESC O S` |
+| F5 to F8 | `ESC [ 15 ~`, `ESC [ 17 ~`, `ESC [ 18 ~`, `ESC [ 19 ~` |
+| F9 to F12 | `ESC [ 20 ~`, `ESC [ 21 ~`, `ESC [ 23 ~`, `ESC [ 24 ~` |
+| Ctrl with a letter | Its control code, `0x01` to `0x1A`, so Ctrl-C is `0x03` |
+
+A character outside ASCII and the other keys give nothing. A held key repeats as the host repeats it.
+
+With `--link`, the keys and the bytes from the host go into the one input buffer, in the order they arrive, as a board's keyboard and UART share one FIFO (§5). Keys typed while the processor is held or has halted are dropped, and keys typed while it is paused wait in the buffer, as the host's bytes do. The bytes of a key wait until the buffer has room for them and two more, so that a byte from the host still finds room. When the host's input ends, a read returns `0x200` once the buffer is empty, and keys are dropped until the next start, as after a break on a board's UART.
+
+**Pacing.** With `--window`, the emulator runs one step per microsecond, so the microsecond counter (§3) and the timer (§4) keep the time of the host's clock, and a program that waits on them runs at the speed it would on a board. The counters still count one per step. The option `--speed` sets another rate in steps per second, and `--speed 0` runs as fast as the host can.
 
 **Read counter.** At `0xFFFFFF01` the emulator and the simulation memory of the FPGA core map a read counter for tests. A data read of it returns the number of data reads of it since the last write to it, and a write sets that number. It is 0 at the start of a run, and a reset of the processor does not clear it. Tests use it to count the data accesses of ISA §8.2.
 
@@ -144,8 +177,8 @@ To get an IRQ through vector table entry `0x41` every 100000 cycles, that is, ev
 A board that wraps the FPGA core, such as [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), may differ from the emulator in the points below. Its own README has the details.
 
 - **Reserved words.** `0xFFFFFF02`–`0xFFFFFF0F` and `0xFFFFFF80`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. The emulator treats them as ordinary memory for data accesses, and only instruction fetches read 0 ([ISA.md §8.3](ISA.md)). NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF8F` for its screen registers, `0xFFFFFF90`–`0xFFFFFF9F` for its board's devices, and `0xFFFFFFE0`–`0xFFFFFFFF` for the debug registers of the link (**Debug link** below).
-- **Screen.** A board's screen may be larger than the emulator's 80×25. NiceMonMEGA65's has up to 32K words. The color format of §1 applies unchanged. The offset and cursor registers belong to the board.
-- **Console input.** A UART or a keyboard feeds the same console at `0xFFFFFF00`, with the same bits (§1). A break on the UART may end the input, and a read then returns `0x200`. A keyboard sends no break.
+- **Screen.** A board's screen may be larger than the emulator's 80×25. NiceMonMEGA65's has up to 32K words. The color format of §1 applies unchanged. The display offset belongs to the board. The emulator's window draws the cursor from the board's cursor registers (§1), but has no offset.
+- **Console input.** A UART or a keyboard feeds the same console at `0xFFFFFF00`, with the same bits (§1). A break on the UART may end the input, and a read then returns `0x200`. A keyboard sends no break. A board's keyboard gives the bytes of the window's keys (§1), and may have more keys.
 - **Input FIFO.** A system's input FIFO may lose bytes. NiceMonMEGA65 drops a UART byte that arrives when the FIFO is full, with the link's `o` notice ([DEBUG.md §4](DEBUG.md#4-notices)), or after a break. Input that arrives while the processor is held or has halted is dropped, as by `niceemu --link`, and input that arrives while it is paused waits in the FIFO ([DEBUG.md §1](DEBUG.md#1-the-byte-stream)). A keyboard byte waits until the FIFO has room for two, so that a UART byte still finds room.
 - **ROM.** A system may map a ROM at 0 that it can hide, so that a program loads at 0 as in the emulator.
 - **Debug link.** A board may serve the debug link of [DEBUG.md](DEBUG.md) on its UART, as the emulator serves it over TCP. Its debug registers at `0xFFFFFFE0`–`0xFFFFFFFF` are for the link only, so a program's data accesses there go to whatever the board has there otherwise.

@@ -3,23 +3,29 @@
 
 SDL's dummy video driver runs the window without a display, so no key can
 be typed and the window cannot be closed. Each test reads the report,
-which comes at the halt, and then ends niceemu with SIGTERM."""
+which comes at the halt, and then ends niceemu with SIGTERM. test_link
+runs --window with --link, with the host of link.py."""
 
 from __future__ import annotations
 
 import os
 import select
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
 import time
 from typing import List, Optional
 
+import link
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 NICEASM = os.path.join(HERE, "..", "..", "assembler", "niceasm.py")
 NICEEMU = os.path.join(HERE, "..", "zig-out", "bin", "niceemu")
-ENV = dict(os.environ, SDL_VIDEODRIVER="dummy")
+# Also for the niceemu that link.Emu starts.
+os.environ["SDL_VIDEODRIVER"] = "dummy"
+ENV = dict(os.environ)
 
 # Reads the console three times, into R1, R2, and R3.
 POLL = """
@@ -27,6 +33,17 @@ CONSOLE         .EQU    0xFFFFFF00
                 MOVE    R1, @CONSOLE
                 MOVE    R2, @CONSOLE
                 MOVE    R3, @CONSOLE
+                HALT
+"""
+
+# Reads the console until a byte or the end comes, and counts the reads in
+# R2.
+WAIT = """
+CONSOLE         .EQU    0xFFFFFF00
+loop            MOVE    R1, @CONSOLE
+                ADD     R2, R2, 1
+                AND[M]  R0, R1, 0x300
+        ?Z      MOVE    R15, loop
                 HALT
 """
 
@@ -137,13 +154,54 @@ def test_signal(tmp: str) -> None:
     expect("output", p.stdout.read(), b"")
 
 
+def test_link(tmp: str) -> None:
+    """With --link, a console read returns 0 while no byte waits, and the
+    run is paced. The end of the input still reads 0x200."""
+    words = link.assemble(tmp, "wait", WAIT)
+    halt = b"\xffh01#C9"
+    e = link.Emu(["--window"])
+    e.expect("hello", link.HELLO)
+    e.send(link.write(0, words))
+    e.expect("load", link.ok(0, len(words)))
+    e.send(link.write(link.CONTROL, [0x8]))
+    e.expect("start", link.ok(link.CONTROL, 1))
+    time.sleep(0.2)
+    e.send(b"A")
+    e.expect("halt at a byte", halt)
+    expect("R1 at a byte", link.word(e, 0xFFFFFFE1), 0x141)
+    # About 50000 reads in 0.2 s at one step per microsecond, 4 steps each.
+    reads = link.word(e, 0xFFFFFFE2)
+    if not 1000 < reads < 200000:
+        fail(f"{reads} reads in 0.2 s")
+    # Hold, start again, and end the input with a half-close.
+    e.send(link.write(link.CONTROL, [0x9]))
+    e.expect("hold", link.ok(link.CONTROL, 1))
+    e.send(link.write(link.CONTROL, [0x8]))
+    e.expect("start again", link.ok(link.CONTROL, 1))
+    e.sock.shutdown(socket.SHUT_WR)
+    e.expect("halt at the end", halt)
+    e.sock.close()
+    e.sock = e.connect()
+    e.buf = b""
+    e.expect("hello again", link.HELLO)
+    expect("R1 at the end", link.word(e, 0xFFFFFFE1), 0x200)
+    status, out, err = e.stop()
+    expect("exit status", status, 0)
+    expect("stdout", out, b"")
+    if err.count(b"Halted (HALT)") != 2:
+        fail(f"stderr {err!r}")
+    if link.failures:
+        fail("; ".join(link.failures))
+
+
 def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         test_screen()
         test_poll(tmp)
         test_speed(tmp)
         test_signal(tmp)
-    print("PASS window (4 tests)")
+        test_link(tmp)
+    print("PASS window (5 tests)")
 
 
 if __name__ == "__main__":

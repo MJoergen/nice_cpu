@@ -7,6 +7,7 @@ const std = @import("std");
 const posix = std.posix;
 const cpu_zig = @import("cpu.zig");
 const Cpu = cpu_zig.Cpu;
+const keys = @import("keys.zig");
 
 /// The escape byte, which starts a packet (DEBUG.md §1).
 pub const esc: u8 = 0xFF;
@@ -462,6 +463,36 @@ pub const Link = struct {
         self.overflow_sent = false;
     }
 
+    /// The console's input with the window (doc/SYSTEM.md §1): a read takes
+    /// the next byte of the buffer, and returns 0 rather than wait for one.
+    /// So no read stops a step, and none is undone.
+    pub fn pollInput(self: *Link) cpu_zig.Input {
+        return .{ .ctx = self, .next_fn = nextNoWait };
+    }
+
+    fn nextNoWait(ctx: *anyopaque) cpu_zig.Input.Next {
+        const self: *Link = @ptrCast(@alignCast(ctx));
+        if (self.input_len == 0) return if (self.input_end) .end else .none;
+        const b = self.input[self.input_head];
+        self.input_head = (self.input_head + 1) % input_size;
+        self.input_len -= 1;
+        self.overflow_sent = false;
+        return .{ .byte = b };
+    }
+
+    /// Move the keys typed into the window to the input buffer (doc/SYSTEM.md
+    /// §1). Keys are dropped while the processor is held or has halted, and
+    /// after the end of the input. A byte waits until the buffer has room for
+    /// two, so that a byte from the host still finds room.
+    pub fn takeKeys(self: *Link, q: *keys.Queue) void {
+        if (self.held or self.halted() or self.input_end) return q.clear();
+        while (input_size - self.input_len >= 2) {
+            const b = q.pop() orelse return;
+            self.input[(self.input_head + self.input_len) % input_size] = b;
+            self.input_len += 1;
+        }
+    }
+
     /// Put back the bytes the step took, for an undo. The buffer is empty
     /// then, as the step waited for a byte, so they are still in the ring
     /// before `input_head`.
@@ -615,4 +646,58 @@ test "hex fields" {
     try t.expectEqual(0xABCDEF, parseHex("00abCDef", 0, 8));
     try t.expectEqual(null, parseHex("00abCDeg", 0, 8));
     try t.expectEqual(null, parseHex("0001", 0, 8));
+}
+
+fn noWait() void {}
+
+test "with the window, keys go to the buffer, wait for room, or are dropped" {
+    const t = std.testing;
+    var cpu = Cpu.init(t.allocator);
+    defer cpu.deinit();
+    var link: Link = undefined;
+    _ = try link.open(t.allocator, t.io, &cpu, 0, noWait);
+    defer link.listener.deinit(t.io);
+    defer link.payload.deinit(t.allocator);
+    var q: keys.Queue = .{ .file = null };
+    const in = link.pollInput();
+    // Held, as at the start: the keys are dropped.
+    q.push("a");
+    link.takeKeys(&q);
+    try t.expectEqual(0, q.len);
+    try t.expectEqual(0, link.input_len);
+    // Running: a read with no byte returns none, then the key's bytes.
+    link.start();
+    try t.expectEqual(cpu_zig.Input.Next.none, in.next());
+    q.push(keys.bytes(.up));
+    link.takeKeys(&q);
+    try t.expectEqual(3, link.input_len);
+    try t.expectEqual(cpu_zig.Input.Next{ .byte = 0x1b }, in.next());
+    try t.expectEqual(cpu_zig.Input.Next{ .byte = '[' }, in.next());
+    try t.expectEqual(cpu_zig.Input.Next{ .byte = 'A' }, in.next());
+    // Room for three bytes: two move, and the third waits, so that one
+    // byte from the host still finds room.
+    link.input_len = input_size - 3;
+    q.push("xyz");
+    link.takeKeys(&q);
+    try t.expectEqual(input_size - 1, link.input_len);
+    try t.expectEqual(1, q.len);
+    link.input_len = 0;
+    link.takeKeys(&q);
+    try t.expectEqual(1, link.input_len);
+    // Paused, the keys go in as while it runs.
+    link.paused = true;
+    q.push("p");
+    link.takeKeys(&q);
+    try t.expectEqual(2, link.input_len);
+    link.paused = false;
+    // After the end of the input, the buffer is read, then the end, and
+    // the keys are dropped.
+    link.input_end = true;
+    q.push("e");
+    link.takeKeys(&q);
+    try t.expectEqual(0, q.len);
+    try t.expectEqual(2, link.input_len);
+    _ = in.next();
+    _ = in.next();
+    try t.expectEqual(cpu_zig.Input.Next.end, in.next());
 }

@@ -391,7 +391,6 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
     if (opts.link != null and opts.input_given) return fail("--input cannot be given with --link", .{});
     if (speed_given and !opts.window) return fail("--speed needs --window", .{});
     if (opts.window and !build_options.window) return fail("--window needs a build with -Dwindow (emulator/README.md)", .{});
-    if (opts.window and opts.link != null) return fail("--window cannot be given with --link yet", .{});
     if (opts.path.len == 0 and opts.link == null) return fail("no program given\n\n{s}", .{usage});
     opts.dumps = dumps.items;
     // Insertion sort is stable, so of two requests of one kind at one step
@@ -537,20 +536,29 @@ const Pacer = struct {
     /// rather than catch up in a burst.
     const slack_ns = 100 * std.time.ns_per_ms;
 
+    /// Count the pace from `steps` at `now_ns`, after a time without steps.
+    fn restart(self: *Pacer, steps: u64, now_ns: i96) void {
+        self.start_ns = now_ns;
+        self.start_steps = steps;
+    }
+
     /// The ms to wait now, after `steps` steps, at the time `now_ns`.
     fn wait(self: *Pacer, steps: u64, now_ns: i96) u32 {
         if (self.speed == 0) return 0;
         const due: i96 = @intCast(@as(u128, steps - self.start_steps) * std.time.ns_per_s / self.speed);
         const elapsed = now_ns - self.start_ns;
         if (elapsed > due + slack_ns) {
-            self.start_ns = now_ns;
-            self.start_steps = steps;
+            self.restart(steps, now_ns);
             return 0;
         }
         if (due <= elapsed) return 0;
         return @intCast(@divFloor(due - elapsed, std.time.ns_per_ms));
     }
 };
+
+fn nowNs(io: std.Io) i96 {
+    return std.Io.Timestamp.now(io, .awake).toNanoseconds();
+}
 
 /// The steps of a chunk, between two looks at the window: a millisecond at
 /// `speed`, or 65536 without a pace.
@@ -567,12 +575,7 @@ fn runWindow(arena: std.mem.Allocator, io: std.Io, out: *std.Io.Writer, opts: Op
     win.open(arena, opts.invert_fg, file) catch return error.Load;
     defer win.close(arena);
     cpu.input = win.queue.input();
-    const now = struct {
-        fn ns(i: std.Io) i96 {
-            return std.Io.Timestamp.now(i, .awake).toNanoseconds();
-        }
-    }.ns;
-    var pacer: Pacer = .{ .speed = opts.speed, .start_ns = now(io) };
+    var pacer: Pacer = .{ .speed = opts.speed, .start_ns = nowNs(io) };
     const chunk = chunkSteps(opts.speed);
     var steps: u64 = 0;
     var next: usize = 0;
@@ -587,7 +590,7 @@ fn runWindow(arena: std.mem.Allocator, io: std.Io, out: *std.Io.Writer, opts: Op
         }
         // Show the console output with the screen.
         out.flush() catch {};
-        if (!win.pump(cpu, opts.screen_base, @intCast(pacer.wait(steps, now(io))))) {
+        if (!win.pump(cpu, opts.screen_base, @intCast(pacer.wait(steps, nowNs(io))))) {
             closed = true;
             break;
         }
@@ -639,7 +642,7 @@ fn exitOnSignal() void {
 
 /// Serve the debug link (doc/DEBUG.md) on `port`, and run each program
 /// that the host starts. What a run prints goes to stderr. Runs until a
-/// signal.
+/// signal, or with --window until the window is closed.
 fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symbol, cpu: *Cpu, port: u16) !u8 {
     var err_buf: [64 * 1024]u8 = undefined;
     var err_w = std.Io.File.stderr().writerStreaming(io, &err_buf);
@@ -655,9 +658,20 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
     if (port == 0) std.debug.print("link: port {d}\n", .{actual});
     if (opts.trace) cpu.trace = out;
     cpu.console = &link.console_w;
-    cpu.input = .fromReader(&link.reader);
     cpu.cycle_counter = opts.cycle_counter;
     cpu.timer_irq = opts.timer_irq;
+    // With the window, the console reads do not wait, and the run is paced
+    // (doc/SYSTEM.md §1).
+    const windowed = build_options.window and opts.window;
+    var win: Window = undefined;
+    if (windowed) {
+        win.open(arena, opts.invert_fg, null) catch return error.Load;
+        cpu.input = link.pollInput();
+    } else {
+        cpu.input = .fromReader(&link.reader);
+    }
+    var pacer: Pacer = .{ .speed = if (windowed) opts.speed else 0, .start_ns = nowNs(io) };
+    const chunk: u64 = if (windowed) chunkSteps(opts.speed) else 4096;
 
     var steps: u64 = 0;
     var next: usize = 0;
@@ -670,6 +684,7 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
             steps = 0;
             next = 0;
             reported = false;
+            pacer.restart(0, nowNs(io));
         }
         if (link.pauseDue(steps == opts.max_steps)) link.pause();
         if (!link.running()) {
@@ -679,12 +694,18 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
                 reported = true;
             }
             try out.flush();
-            try link.service(100);
+            if (windowed) {
+                try link.service(0);
+                lookAtWindow(arena, &win, &link, cpu, opts, 10);
+                pacer.restart(steps, nowNs(io));
+            } else {
+                try link.service(100);
+            }
             continue;
         }
         // A chunk of steps, then the link is served. A step is as in `run`.
-        var n: u32 = 0;
-        while (n < 4096 and link.running() and !link.started and !link.pauseDue(steps == opts.max_steps)) : (n += 1) {
+        var n: u64 = 0;
+        while (n < chunk and link.running() and !link.started and !link.pauseDue(steps == opts.max_steps)) : (n += 1) {
             if (steps == opts.max_steps) {
                 link.limit_hit = true;
                 break;
@@ -719,7 +740,20 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
         }
         link.console_w.flush() catch {};
         try link.service(0);
+        if (windowed) lookAtWindow(arena, &win, &link, cpu, opts, pacer.wait(steps, nowNs(io)));
     }
+}
+
+/// Pump the window of `serve`, waiting up to `wait_ms` for an event, and
+/// move the keys typed to the link's input. Closing the window ends the
+/// emulator with status 0, as a signal does.
+fn lookAtWindow(gpa: std.mem.Allocator, win: *Window, link: *Link, cpu: *Cpu, opts: Options, wait_ms: u32) void {
+    if (!win.pump(cpu, opts.screen_base, @intCast(wait_ms))) {
+        win.close(gpa);
+        if (serve_out) |w| w.flush() catch {};
+        std.process.exit(0);
+    }
+    link.takeKeys(&win.queue);
 }
 
 fn printRegisters(out: *std.Io.Writer, cpu: *const Cpu) !void {

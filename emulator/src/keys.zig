@@ -73,15 +73,26 @@ pub const Queue = struct {
         return .{ .ctx = self, .next_fn = next };
     }
 
+    /// The next byte of the keys, if any.
+    pub fn pop(self: *Queue) ?u8 {
+        if (self.len == 0) return null;
+        const b = self.buf[self.head];
+        self.head = (self.head + 1) % size;
+        self.len -= 1;
+        return b;
+    }
+
+    /// Drop the keys.
+    pub fn clear(self: *Queue) void {
+        self.len = 0;
+    }
+
     fn next(ctx: *anyopaque) Input.Next {
         const self: *Queue = @ptrCast(@alignCast(ctx));
         if (self.file) |r| {
             if (r.takeByte()) |b| return .{ .byte = b } else |_| self.file = null;
         }
-        if (self.len == 0) return .none;
-        const b = self.buf[self.head];
-        self.head = (self.head + 1) % size;
-        self.len -= 1;
+        const b = self.pop() orelse return .none;
         return .{ .byte = b };
     }
 };

@@ -161,15 +161,23 @@ window was closed after N steps, PC=...`, and the exit status is 4. SIGINT,
 SIGTERM, and SIGHUP end niceemu as without the window, also while the
 window stays after the halt. Ctrl-C in the window is a key, `0x03`.
 
-`--window` cannot be given with `--link` yet.
+With `--link`, the window opens when niceemu starts and stays open over
+every run, and shows the screen also while the processor is held, halted,
+or paused. The console reads the link's input buffer, into which the keys
+go too, as SYSTEM.md §1 says, and a read does not wait. So a pause or a
+step at a console read is never undone (DEBUG.md §7). The runs are paced
+as without the link. Closing the window ends niceemu with status 0, as a
+signal does.
 
 `test/window.py` runs niceemu with SDL's dummy video driver
 (`SDL_VIDEODRIVER=dummy`), which needs no display, but can type no key and
 close no window. It checks the report at the halt with `--color`, the
 reads of `--input` and then 0, that stdin is not read, the pace of the
 default speed and of `--speed 0`, and that a signal ends a run with no
-report. The key table and the drawing of the screen are unit tests in
-`src/keys.zig` and `src/frame.zig`.
+report. With `--link`, as a host, it checks that a read returns 0 until a
+byte comes, the pace, and the end of the input. The key table and the
+drawing of the screen are unit tests in `src/keys.zig` and `src/frame.zig`,
+and the keys' way into the link's buffer one in `src/link.zig`.
 
 ## Program files
 
@@ -290,10 +298,13 @@ held, with the program file in memory if one was given, and runs a program
 each time the host starts one. The console's input and output go over the
 link, and what a run prints after it halts, and the trace, go to stderr.
 stdout stays empty. It runs until a signal, and then exits with status 0.
+With `--window`, closing the window ends it too (see Window above).
 
 It serves the link every 4096 steps while a program runs, and at least
 every 100 ms while the processor is held, halted, or paused, or a console
-read waits. A pause takes effect between two steps. A pause while a
+read waits. With `--window`, it serves the link and the window after each
+millisecond of steps at the pace of `--speed` (65536 steps for `--speed 0`),
+and about every 10 ms while the processor is held, halted, or paused. A pause takes effect between two steps. A pause while a
 console read waits undoes the step of the read, and pauses before it
 (DEBUG.md §7). The bytes that the step took go back to the input buffer. A step of a paused processor (bit 5, DEBUG.md §6) runs one
 step of `--max-steps` and `--trace`, an instruction or an interrupt entry,

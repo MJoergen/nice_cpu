@@ -73,7 +73,7 @@ The cursor swaps the foreground and background colors of its character. With a c
 
 A character outside ASCII and the other keys give nothing. A held key repeats as the host repeats it.
 
-With `--link`, the keys and the bytes from the host go into the one input buffer, in the order they arrive, as a board's keyboard and UART share one FIFO (§5). Keys typed while the processor is held or has halted are dropped, and keys typed while it is paused wait in the buffer, as the host's bytes do. The bytes of a key wait until the buffer has room for them and two more, so that a byte from the host still finds room. When the host's input ends, a read returns `0x200` once the buffer is empty, and keys are dropped until the next start, as after a break on a board's UART.
+With `--link`, the keys and the bytes from the host go into the one input buffer, in the order they arrive, as a board's keyboard and UART share one FIFO (§5). Keys typed while the processor is held or has halted are dropped, and keys typed while it is paused wait in the buffer, as the host's bytes do. A byte of a key waits until the buffer has room for two bytes, so that a byte from the host still finds room. When the host's input ends, a read returns `0x200` once the buffer is empty, and keys are dropped until the next start, as after a break on a board's UART.
 
 **Pacing.** With `--window`, the emulator runs one step per microsecond, so the microsecond counter (§3) and the timer (§4) keep the time of the host's clock, and a program that waits on them runs at the speed it would on a board. The counters still count one per step. The option `--speed` sets another rate in steps per second, and `--speed 0` runs as fast as the host can.
 

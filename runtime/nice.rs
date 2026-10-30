@@ -54,8 +54,9 @@ pub fn write(s: &[u8]) {
     }
 }
 
-/// Waits for the next input byte. Returns None once the emulator's input
-/// has ended, which a UART's input never does.
+/// Waits for the next input byte. Returns None once the line's input has
+/// ended: the emulator's stdin or the host of the debug link. A keyboard's
+/// bytes may still come after that (SYSTEM.md §1).
 pub fn getc() -> Option<u8> {
     let c = unsafe { nice_getc() };
     if c < 0 { None } else { Some(c as u8) }

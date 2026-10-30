@@ -42,8 +42,9 @@ So the console is 8-bit clean, and a terminal that knows nothing of the
 link shows the program's output almost unchanged.
 
 Console bytes from the host reach the program while it runs or is paused.
-While the processor is held or halted (§6), and after the end of the input
-(§7), they are dropped. A paused processor keeps them in the input buffer,
+While the processor is held or halted (§6), and after the end of the
+line's input (§7), they are dropped; a keyboard's bytes are not
+(SYSTEM.md §1, §5). A paused processor keeps them in the input buffer,
 and the program reads them when it goes on. A console byte that
 arrives while the program's input buffer is full is lost, and the system
 sends an overflow notice (§4). A host avoids the loss by sending no more
@@ -408,28 +409,35 @@ and bit 3 at 0. A system without one waits, held, with bit 0 at 1.
 
 - **UART.** NiceMonMEGA65 carries the link on its debug UART, 8-N-1, at
   2 Mbaud unless it was built for another rate. A UART break, a frame
-  of ten 0 bits, ends the program's input, as a break from the keyboard
-  does (SYSTEM.md §5). Then the console reads `0x200` (SYSTEM.md §1)
-  until the next start.
+  of ten 0 bits, ends the line's input (SYSTEM.md §5): the host's
+  console bytes are dropped until the next start, and the console reads
+  `0x200` (SYSTEM.md §1) once its buffer is empty. A keyboard's bytes
+  still reach the program, so a monitor that a host leaves keeps running
+  on the keyboard. A break is the host's deliberate act, and a host that
+  only leaves sends none, so the end lasts until the next start.
 - **TCP.** The emulator serves the link on a TCP port, on `127.0.0.1`
   unless it is given another address. It serves one host at a time: while a host is connected, it accepts
   another and closes that connection at once, with nothing sent. It sends
   `b` to each host that connects, and clears the breakpoints (§6). A host
-  ends the program's input by closing its half of the connection for
-  writing (a TCP half-close), and keeps reading the answers and the output. Then the console reads `0x200`,
-  as after a UART break. A host that sends after that must connect again.
+  ends the line's input by closing its half of the connection for
+  writing (a TCP half-close), and keeps reading the answers and the output. Then the console reads `0x200`
+  once its buffer is empty, as after a UART break. A host that sends after that must connect again.
   A host that has half-closed does not keep another out: it counts as
-  disconnected when another connects.
+  disconnected when another connects. Over TCP the connection is the
+  line: a new connection starts the line's input anew, the console no
+  longer reads `0x200`, and the new host's bytes reach the program. So a
+  program that read the end may read bytes again, if it is still running.
 
 When a host disconnects, the program keeps running, and the memory keeps
 its contents for the next host. The emulator cannot tell a disconnect from
-a half-close, so a disconnect ends the program's input too: its console
-reads `0x200` until the next start. The output and the notices sent while
+a half-close, so a disconnect ends the line's input too: its console
+reads `0x200` until the next start or the next connection. The output and the notices sent while
 no host is connected are lost.
 
-On either transport, the console bytes that arrive after the end of the
-input are dropped until the next start, with no `o` notice. A start clears
-the end of the input (§6).
+On either transport, the host's console bytes that arrive after the end of
+the line's input are dropped, with no `o` notice, while a keyboard's bytes
+go into the buffer (SYSTEM.md §1, §5). A start clears the end of the input
+(§6), and over TCP so does a new connection.
 
 The emulator, serving the link, works as when it runs a program from the
 command line, with these differences:

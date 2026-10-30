@@ -26,11 +26,12 @@
 ; Code: start.nasm is words 0-8. main is 115 words, 9-0x7B: 57 instructions
 ; of 2 words and the return. text is 0x7C-0x7E, and results 0x7F-0x86.
 ; Steps, from the comments in lib.nasm: main itself runs 58 instructions,
-; and the 16 calls 3 (nice_instructions) + 3 (nice_cycles) + 10
-; (nice_print) + 4 + 4 + 8 + 8 (nice_getc, nice_pollc, nice_pollc,
-; nice_getc) + 4 * 2 (nice_putc) + 6002 (nice_screen_clear) + 4 * 6
-; (nice_screen_put) = 6074 steps. With the 5 of the start-up code and
-; HALT, that is 5 + 58 + 6074 + 1 = 6138 steps. At the end R1 = 79 = 0x4F,
+; and the 16 calls 3 (nice_instructions) + 3 (nice_cycles) + 6 + 6 * 2
+; (nice_print, through ___putc_vector) + 4 + 4 + 8 + 8 (nice_getc,
+; nice_pollc, nice_pollc, nice_getc) + 4 * 3 (nice_putc, through the
+; vector) + 6002 (nice_screen_clear) + 4 * 6 (nice_screen_put) = 6086
+; steps. With the 5 of the start-up code and HALT, that is
+; 5 + 58 + 6086 + 1 = 6150 steps. At the end R1 = 79 = 0x4F,
 ; R2 = 80 * 24 + 79 = 0x7CF, R3 = 0x5A, and R4 = 64 * 24 = 0x600, from the
 ; last nice_screen_put. R14 = 0x09000000: Z from the last DEC[M] of
 ; nice_screen_clear.

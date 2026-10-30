@@ -97,7 +97,7 @@
 --
 -- The host side:
 -- * rx_*: a byte from the host, with valid and ready, and rx_break_i, a
---   pulse for a UART break. It ends the console's input (eoi_o) until the
+--   pulse for a UART break. It ends the line's input (eoi_o) until the
 --   next start (SYSTEM.md §5, DEBUG.md §7).
 -- * tx_*: a byte to the host.
 -- The program side:
@@ -105,8 +105,10 @@
 --   ready. The link sends it, and a 0xFF as ESC ESC.
 -- * con_in_valid_o and con_in_data_o: a one-cycle strobe with a console
 --   byte from the host, for the program's input buffer.
--- * eoi_o: '1' from a break until the next start, the end of the input.
---   While it is high, the console reads 0x200.
+-- * eoi_o: '1' from a break until the next start, the end of the line's
+--   input. While it is high, the board drops the host's console bytes,
+--   and the console reads 0x200 once its input buffer is empty. A
+--   keyboard's bytes still go into the buffer (SYSTEM.md §5).
 -- Processor control:
 -- * hold_o: the control register's bit 0. It resets the core and the
 --   devices. The board empties the program's input buffer when it falls,

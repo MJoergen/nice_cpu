@@ -341,7 +341,27 @@ start-up code for a program that a monitor in ROM loads at `0x8000` and
 calls as a subroutine. ABI.md described them under "Programs under a
 monitor". They were removed on 2026-10-20 (68f9b0b), because the monitor
 and the system around the core belong in
-[NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65).
+[NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65). They came
+back on 2026-10-30 ([#87](https://github.com/MJoergen/nice_cpu/issues/87)),
+with `start_wasm_trap_mon.nasm` as a third, for the ROM monitor of
+NiceMonMEGA65 (MJoergen/NiceMonMEGA65#24): the start-up files are the
+only ones with `.ORG`, and `_exit` was in
+`lib.nasm`, so no other repository could supply them. The entry registers
+of the monitor and the putc vector are new
+([#88](https://github.com/MJoergen/nice_cpu/issues/88)). Until then
+`_exit` was a `HALT` in `lib.nasm`, and `nice_putc` and `nice_print`
+wrote the console directly, as did the C library's `nice_putc`, in C, so
+no hook in `lib.nasm` could have reached `printf`.
+
+## The end of the input and the keyboard
+
+Until 2026-10-30, the end of the host's input, a break on a board's UART
+or a half-close or disconnect on the emulator's TCP link, dropped the
+keyboard's bytes too until the next start, so a monitor that a host left
+was deaf to the keyboard until a reset
+([#89](https://github.com/MJoergen/nice_cpu/issues/89)). Now the end is
+the line's: the host's bytes are dropped, and the keys still reach the
+program. Over TCP a new connection ends the end; before, only a start did.
 
 ## The debug link's proof
 

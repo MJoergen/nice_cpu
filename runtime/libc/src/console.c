@@ -50,7 +50,7 @@ int puts(const char *s)
 }
 
 // Waits for the next input byte. nice_getc returns -1, which is EOF, once
-// the emulator's input has ended.
+// the line's input has ended.
 int fgetc(FILE *f)
 {
     if (f->back != EOF) {

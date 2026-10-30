@@ -31,8 +31,9 @@ pub fn write(s: []const u8) void {
     for (s) |c| nice_putc(c);
 }
 
-/// Waits for the next input byte. Returns null once the emulator's input
-/// has ended, which a UART's input never does.
+/// Waits for the next input byte. Returns null once the line's input has
+/// ended: the emulator's stdin or the host of the debug link. A keyboard's
+/// bytes may still come after that (SYSTEM.md §1).
 pub fn getc() ?u8 {
     const c = nice_getc();
     return if (c < 0) null else @intCast(c);

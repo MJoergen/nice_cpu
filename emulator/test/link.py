@@ -36,6 +36,18 @@ loop            MOVE    R1, @CONSOLE
                 MOVE    R15, loop
 """
 
+# Echoes each input byte, and reads on at the end of the input, as a
+# monitor does, so it never halts. R2 counts the bytes echoed.
+ECHO_ON = """
+CONSOLE         .EQU    0xFFFFFF00
+loop            MOVE    R1, @CONSOLE
+                AND[M]  R0, R1, 0x100
+        ?Z      MOVE    R15, loop       ; the end, 0x200: read again
+                MOVE    @CONSOLE, R1
+                ADD     R2, R2, 1
+                MOVE    R15, loop
+"""
+
 # Counts in R2, and never reads the console or halts. R15 is 0 or 2 between
 # two steps.
 COUNT = """
@@ -355,6 +367,34 @@ def test_run(echo: List[int]) -> None:
     want = b"Halted (HALT) after 27 steps, PC=00000005\n"
     if want not in err:
         failures.append(f"stderr: {want!r} not in {err!r}")
+
+
+def test_reconnect(echo_on: List[int]) -> None:
+    """A half-close ends the line's input, and a program that reads on gets
+    0x200 and keeps running. A new host's connection starts the line anew:
+    its bytes reach the program, which echoes them to it (DEBUG.md §7)."""
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, echo_on))
+    e.expect("load", ok(0, len(echo_on)))
+    e.send(write(CONTROL, [0x8]))
+    e.expect("start", ok(CONTROL, 1))
+    e.send(b"ab")
+    e.expect("echo", b"ab")
+    e.sock.shutdown(socket.SHUT_WR)
+    # The program reads the end and goes on, and nothing comes.
+    expect("quiet after the half-close", e.take(1, timeout=0.3), b"")
+    e.sock.close()
+    e.sock = e.connect()
+    e.buf = b""
+    expect("b again", e.take(len(HELLO)), HELLO)
+    e.send(b"c")
+    e.expect("echo to the new host", b"c")
+    e.send(read(0xFFFFFFE2, 1))
+    e.expect("3 bytes echoed", answer(0xFFFFFFE2, [3]))
+    status, out, err = e.stop()
+    expect("exit status", bytes([status]), b"\x00")
+    expect("stdout", out, b"")
 
 
 def test_overflow(spin: List[int]) -> None:
@@ -980,6 +1020,7 @@ def test_usage() -> None:
 def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         echo = assemble(tmp, "echo", ECHO)
+        echo_on = assemble(tmp, "echo_on", ECHO_ON)
         spin = assemble(tmp, "spin", SPIN)
         count = assemble(tmp, "count", COUNT)
         one = assemble(tmp, "one", ONE)
@@ -995,7 +1036,8 @@ def main() -> None:
             irq = assemble(tmp, "irq", src.read())
         irq_bin = os.path.join(tmp, "irq.bin")
         tests: List[Callable[[], None]] = [
-            test_example, test_errors, lambda: test_run(echo), lambda: test_overflow(spin),
+            test_example, test_errors, lambda: test_run(echo), lambda: test_reconnect(echo_on),
+            lambda: test_overflow(spin),
             lambda: test_step_limit(spin), lambda: test_halts(reserved, int_in_isr, rti, spin),
             lambda: test_pause(count, echo),
             lambda: test_step(count, one, stop, echo, twice, irq, irq_bin),

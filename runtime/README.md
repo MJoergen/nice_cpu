@@ -11,6 +11,7 @@ translated wasm code call. They follow the C ABI of
 | `start.nasm` | Start-up code for a program without a wasm module. |
 | `start_wasm.nasm` | Start-up code for a program with a wasm module. It calls `___wasm_start` before `main`. |
 | `start_wasm_trap.nasm` | `start_wasm.nasm` with the trap report below installed first. |
+| `start_mon.nasm`, `start_wasm_mon.nasm`, `start_wasm_trap_mon.nasm` | The same three for a program that a monitor in ROM runs (ABI.md, "Programs under a monitor"): at `0x8000`, above the ROM, on the monitor's stack, with the monitor's putc routine in `___putc_vector`, and returning to the monitor instead of halting. |
 | `lib.nasm` | The runtime routines in assembly, except those below. |
 | `trapmsg.nasm` | The trap report below. It goes after `lib.nasm`, and only with `start_wasm_trap.nasm`. |
 | `muldiv_mpu.nasm` | The multiply and divide routines: `__mul`, `__div`, `__mod`, `__udiv`, `__umod`, and their `64` versions, with the math unit of SYSTEM.md §2. |
@@ -30,8 +31,17 @@ two muldiv files, and `float.nasm` if the program uses floats. For example:
     emulator/zig-out/bin/niceemu full.bin
 
 The start-up code sets SP to `0xFFFFFF00`, calls `_main` with R1 = 0 and
-R2 = 0 (no `argc` or `argv`), and halts with `main`'s result in R1. The
-start-up files are the only ones that use `.ORG`.
+R2 = 0 (no `argc` or `argv`), and halts with `main`'s result in R1. Each
+start-up file also defines `_exit`, the C library's `exit`: in these
+three, the `HALT` after `main`. The `_mon` versions are for a program that
+a monitor in ROM, such as the one of
+[NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), loads at
+`0x8000` and calls with R1 = its putc routine or 0, R2 = `argc`, and
+R3 = `argv`: they leave SP as the monitor set it, store a nonzero R1 in
+`___putc_vector`, pass `argc` and `argv` to `main`, and return to the
+monitor with `main`'s result in R1 instead of halting, and their `_exit`
+restores SP and returns the same way. The start-up files are the only ones
+that use `.ORG`.
 
 ## Routines
 
@@ -72,8 +82,9 @@ names in `lib.nasm` that give the devices' addresses (`__nice.console`,
 `__nice.cycle_lo`, `__nice.cycle_hi`, `__nice.instr_lo`, `__nice.instr_hi`,
 and `__nice.screen`), `__udivmod` and `__udivmod64` in
 `muldiv_soft.nasm`, the unsigned divisions that the division routines
-share, `_exit` in `lib.nasm`, and `___trap_report` and the `___trap.`
-names in `trapmsg.nasm`. Every label is global in the joined
+share, `___putc_vector` and `___console_putc` in `lib.nasm`, `_exit` in
+the start-up files and `___exit.sp` in the `_mon` ones, and
+`___trap_report` and the `___trap.` names in `trapmsg.nasm`. Every label is global in the joined
 program (ABI.md), so no other file may define these names either.
 
 Division by zero is undefined in C, so the division routines return some
@@ -97,7 +108,7 @@ routines take 4 steps each, `__mul64` 10, and the other `long long` ones 7.
 | `___wasm_trap_vector` | The word that wasm traps jump through. It starts as `___wasm_trap`. |
 | `___wasm_trap` | The default handler: the reserved control word `0x0FE00000`. It halts with the trap's code in R1 and address in R2. The emulator exits with status 2, not 0 as after `HALT`. |
 
-**The trap report.** The default handler halts without a word. `trapmsg.nasm` has `___trap_report`, a handler that first writes a line to the console, such as `trap 2: memory access out of bounds at 00003dc9`, with the code of R1 and the address of R2, naming the trap as `niceemu --symbols` does (a code above 7 is `trap ?: unknown trap`), and then jumps to `___wasm_trap`. So the processor still halts there, with R1 and R2 as the trap left them, and the emulator still exits with status 2. `start_wasm_trap.nasm` is `start_wasm.nasm` with one more instruction, which stores `___trap_report` in `___wasm_trap_vector`. A program that uses it joins `trapmsg.nasm` after the other files, and `nicebuild.py` does both unless it is given `--no-trap-report`. The report uses R3, R10, and R11 and the stack at SP, so after a stack overflow it may fail itself. The address is a NICE address. With `niceasm.py --symbols`, `nicebuild.py --symbols`, and `niceemu --symbols`, the emulator names the function.
+**The trap report.** The default handler halts without a word. `trapmsg.nasm` has `___trap_report`, a handler that first writes a line to the console, such as `trap 2: memory access out of bounds at 00003dc9`, with the code of R1 and the address of R2, naming the trap as `niceemu --symbols` does (a code above 7 is `trap ?: unknown trap`), and then jumps to `___wasm_trap`. So the processor still halts there, with R1 and R2 as the trap left them, and the emulator still exits with status 2. `start_wasm_trap.nasm` is `start_wasm.nasm` with one more instruction, which stores `___trap_report` in `___wasm_trap_vector`. A program that uses it joins `trapmsg.nasm` after the other files, and `nicebuild.py` does both unless it is given `--no-trap-report`. The report prints with `nice_print` and `nice_putc`, so through `___putc_vector` (below), and under a monitor on the monitor's output. It uses R9, R10, and R11, the routine behind the vector may change R3–R6 and the flags, and it uses the stack at SP, so after a stack overflow it may fail itself. The address is a NICE address. With `niceasm.py --symbols`, `nicebuild.py --symbols`, and `niceemu --symbols`, the emulator names the function.
 
 ## Device routines
 
@@ -108,10 +119,10 @@ so their labels are their C names with `_` in front.
 
 | Label | C declaration | What it does | Changes |
 |---|---|---|---|
-| `_nice_putc` | `void nice_putc(int c)` | Writes bits 7..0 of R1 to the console. | none |
-| `_nice_getc` | `int nice_getc(void)` | Waits for the next input byte and returns it, 0 to 255, or −1 once the input has ended. | flags |
+| `_nice_putc` | `void nice_putc(int c)` | Writes bits 7..0 of R1 through `___putc_vector` (below). | none, or what the routine behind the vector changes |
+| `_nice_getc` | `int nice_getc(void)` | Waits for the next input byte and returns it, 0 to 255, or −1 once the line's input has ended (SYSTEM.md §1). | flags |
 | `_nice_pollc` | `int nice_pollc(void)` | Like `nice_getc`, but returns −2 at once if no byte is waiting. | flags |
-| `_nice_print` | `void nice_print(const char *s)` | Writes the string at R1, one character per word, up to its first 0 word, with no newline. | R1, R2, flags |
+| `_nice_print` | `void nice_print(const char *s)` | Writes the string at R1, one character per word, up to its first 0 word, with no newline, through `___putc_vector`. | R1, flags, and what the routine changes |
 | `_nice_cycles` | `unsigned long long nice_cycles(void)` | R1:R2 = the cycle counter. | none |
 | `_nice_instructions` | `unsigned long long nice_instructions(void)` | R1:R2 = the instruction counter. | none |
 | `_nice_screen_put` | `void nice_screen_put(int col, int row, int c)` | Writes R3 to column R1, 0 to 79, of row R2, 0 to 24. | R2, R4 |
@@ -124,6 +135,17 @@ From assembly, for example:
                     MOVE    R15, _nice_print
                     ...
 text    .ASCII_L 'Hello'
+
+`___putc_vector` is the word that `_nice_putc` jumps through, and that
+`_nice_print` calls through for each character, with its pointer in R7
+across the calls. It starts as `___console_putc`, which writes bits 7..0
+of R1 to the console and changes nothing. The start-up code of a program
+under a monitor stores the monitor's putc routine in it (ABI.md), and an
+assembly program may store a routine of its own, which follows the C ABI,
+takes the character in bits 7..0 of R1, and may change R1–R6 and the
+flags, as `_nice_putc` and `_nice_print` then may. The vector costs a step
+per character; a UART's rate is the limit on a board anyway. The input
+has no vector, as the console's input is the line and the keyboard both.
 
 The counter routines read the low word first, as SYSTEM.md §3 describes.
 So an interrupt service routine that reads a counter can spoil the reading
@@ -190,13 +212,18 @@ Zig keeps only the objects of `libc.a` that the program references.
 | `nice.h` | The device routines (see above): `nice_putc`, `nice_getc`, `nice_pollc`, `nice_print`, `nice_cycles`, `nice_instructions`, `nice_micros` (C only, with no assembly routine), `nice_screen_put`, and `nice_screen_clear`. Also `nice_peek` and `nice_poke`, the `nice` imports of WASM.md, and the devices' addresses, for devices that have no routine. |
 
 The device routines, in `src/nice.c`, are the only functions that touch
-hardware. They use `nice_peek` and `nice_poke`. `nice_print` writes the
+hardware. They use `nice_peek` and `nice_poke`. `nice_putc` is not among
+them: `nice.h` declares it as an import from `env`, as `stdlib.h` declares
+`exit`, so it is `_nice_putc` of `lib.nasm` (WASM.md), and every byte of
+the library's output goes through `___putc_vector`, at the cost of a call
+per byte. `nice_print` writes the
 bytes of a C string in linear memory, where `_nice_print` in `lib.nasm`
 writes one character per word. `fputc`, `fputs`, and `puts` write with `nice_putc` and
 `nice_print`, and `fgetc` reads with `nice_getc` (SYSTEM.md §1).
 `getchar` waits until a byte is there. It
-returns `EOF` once the emulator's input has ended, which a UART's input
-never does. The emulator reads the input from stdin, or from the file
+returns `EOF` once the line's input has ended, that of the emulator's
+stdin or of the debug link's host; a keyboard's bytes may still come
+after that (SYSTEM.md §1). The emulator reads the input from stdin, or from the file
 that `--input` names. Clang's own `stddef.h`,
 `stdint.h`, `stdarg.h`, `stdbool.h`, and `limits.h` complete the headers.
 
@@ -217,7 +244,7 @@ The library is small on purpose:
   unknown conversion. `%p` prints `0x` and the address in hex, `0x0` for a
   null pointer.
 - `strtol` and `strtoul` saturate on overflow and set `errno` to `ERANGE`. A base other than 0 and 2 to 36 converts nothing, as no digits, and sets `errno` to `EINVAL`. No other function sets `errno`: `malloc` returns `NULL` with no code, and `scanf` keeps the low bits of a number too large for its type, as C leaves it undefined.
-- `exit` is the assembly routine `_exit`: a `HALT` with the status in R1, so the emulator exits with status 0. `EXIT_SUCCESS` is 0 and `EXIT_FAILURE` 1. There is no `atexit`. `abort` and a failed `assert` trap (WASM.md), so the emulator exits with status 2.
+- `exit` is the assembly routine `_exit` of the start-up code: with `start_wasm.nasm`, the `HALT` after `main`, with the status in R1, so the emulator exits with status 0, and under a monitor a return to it (ABI.md). `EXIT_SUCCESS` is 0 and `EXIT_FAILURE` 1. There is no `atexit`. `abort` and a failed `assert` trap (WASM.md), so the emulator exits with status 2.
 - `rand` is the linear congruential generator of the C standard's example, `srand(1)` at start.
 - `malloc` is first fit, with an 8-byte header on each block, and merges
   neighboring free blocks. `realloc` to a smaller size, 0 included,
@@ -278,7 +305,7 @@ prints a byte slice instead.
 | Screen | `screenPut(col, row, c)`, `screenClear()`, `screen_cols`, `screen_rows` | `screen_put(col, row, c)`, `screen_clear()`, `SCREEN_COLS`, `SCREEN_ROWS` |
 
 `getc` waits until a byte is there, and returns null or `None` once the
-emulator's input has ended, as `nice_getc` returns −1. There is no
+line's input has ended, as `nice_getc` returns −1. There is no
 formatted input, as `scanf` gives C.
 
 For Zig, add the file as the module `nice`, and import it with
@@ -306,8 +333,13 @@ This builds the emulator, then joins each `test/X.nasm` with a start-up file,
 compares the output and exit status with `test/X.expected`. The tests of
 the muldiv routines run a second time with `muldiv_soft.nasm`, and compare
 with `test/X_soft.expected`. `test/device.nasm` reads `test/device.input`
-as its console input. The expected values were checked by hand. The
-comments in each test show how.
+as its console input. The tests of the `_mon` start-up files, and
+`test/exit_mon.nasm`, are joined after `test/monitor.nasm`, a stand-in for
+a monitor at address 0, which calls the program at `0x8000` with a putc
+routine of its own, `argc` = 1, and an `argv`, and halts when the program
+returns, with the number of bytes its routine wrote in R2. `test/exit.nasm`
+and `test/exit_mon.nasm` call `exit` from inside a nested call. The
+expected values were checked by hand. The comments in each test show how.
 
 With `make test KEEP=DIR`, where DIR is an absolute path, each test also
 leaves its program in `DIR/X.bin`, and its console input, if any, in
@@ -320,7 +352,10 @@ are checked in, so no C compiler is needed; `make -C libc wasm` rebuilds
 them and `libc.a`. Each is translated, joined with `start_wasm.nasm`,
 `lib.nasm`, and `muldiv_mpu.nasm`, and run. Its console output, `main`'s result in R1, and the
 exit status are compared with `libc/test/X.expected`, which was written
-by hand from the source. The exception is `mchess.expected`, 600 lines of
+by hand from the source. `exit.c` also runs as `libc/exit_mon`, joined
+after `test/monitor.nasm` with `start_wasm_mon.nasm`, and its
+`exit_mon.expected` shows R2 too, the bytes that went through the
+stand-in's putc routine. The exception is `mchess.expected`, 600 lines of
 board output. It was checked against a native build of `mchess.c` on the
 same input, and the perft counts 20, 400, and 8902 are the known ones for
 the start position. The test runs perft only, so the search of `mchess`,

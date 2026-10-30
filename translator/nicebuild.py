@@ -9,8 +9,8 @@ take one source file, the root of the program.
 
 Usage: nicebuild.py [-o output.bin] [-O LEVEL] [-I DIR] [-D MACRO[=VALUE]]
                     [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-bounds-checks]
-                    [--memory-pages N] [--asm FILE]... [--keep]
-                    input.c... | input.zig | input.rs
+                    [--memory-pages N] [--asm FILE]... [--no-trap-report] [--monitor]
+                    [--symbols] [--keep] input.c... | input.zig | input.rs
 """
 
 from __future__ import annotations
@@ -156,6 +156,10 @@ def main() -> None:
     ap.add_argument("--no-trap-report", action="store_true",
                     help="halt silently at a wasm trap, as the default handler does, "
                     "without the message of runtime/trapmsg.nasm")
+    ap.add_argument("--monitor", action="store_true",
+                    help="build a program that a monitor in ROM loads at 0x8000 and calls, "
+                    "and that returns to it (runtime/ABI.md): start with "
+                    "runtime/start_wasm_trap_mon.nasm, or start_wasm_mon.nasm with --no-trap-report")
     ap.add_argument("--symbols", action="store_true",
                     help="write the labels to a .sym file next to the output, with the "
                     "functions of the program by name, for niceemu --symbols")
@@ -204,7 +208,7 @@ def main() -> None:
         # The order of ABI.md: start-up, program, runtime, muldiv, and float
         # if the program calls it.
         program = read(prog)
-        start = "start_wasm.nasm" if args.no_trap_report else "start_wasm_trap.nasm"
+        start = "start_wasm" + ("" if args.no_trap_report else "_trap") + ("_mon" if args.monitor else "") + ".nasm"
         parts = [read(os.path.join(RUNTIME, start)), program, *[read(f) for f in args.asm],
                  read(os.path.join(RUNTIME, "lib.nasm")),
                  read(os.path.join(RUNTIME, "muldiv_soft.nasm" if args.no_mpu else "muldiv_mpu.nasm"))]

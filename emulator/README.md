@@ -195,7 +195,7 @@ address twice and a file with no words are errors.
 
 | Address | Words | Contents |
 |---|---|---|
-| `0x00000000`–`0xFFFEFFFF` | 4294901760 | Ordinary memory. Programs load at 0. |
+| `0x00000000`–`0xFFFEFFFF` | 4294901760 | Ordinary memory. Programs load at 0, or at `0x8000` under a monitor in ROM, as a stand-in for one at 0 shows (runtime/ABI.md, "Programs under a monitor"). |
 | `0xFFFF0000`–`0xFFFF07CF` | 2000 | Character screen, 80×25. Ordinary memory. With `-2004` it is at `0x00000400`–`0x00000BCF` instead. |
 | `0xFFFF07D0`–`0xFFFFFEFF` | 63280 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |
 | `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns the next input byte plus `0x100`, or `0x200` after the end of the input. |

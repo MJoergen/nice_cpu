@@ -9,9 +9,22 @@ EMU = ../emulator/zig-out/bin/niceemu
 # assembled and run, and the output and exit status are compared with
 # test/X.expected. The tests in SOFT_TESTS run a second time as X_soft,
 # with muldiv_soft.nasm instead, and are compared with test/X_soft.expected.
-TESTS = start start_wasm mul trap div div64 mul64 bits device edge trapvec trapreport trapreport_big
+# A test of a start-up file for a program under a monitor is joined after
+# PRE_X, test/monitor.nasm, the stand-in for the monitor, which sits at 0
+# and calls the program at 0x8000.
+TESTS = start start_wasm start_mon start_wasm_mon start_wasm_trap_mon exit exit_mon \
+  mul trap div div64 mul64 bits device edge trapvec trapreport trapreport_big
 SOFT_TESTS = mul div mul64 div64 edge
 START_start_wasm = start_wasm.nasm
+START_start_mon  = start_mon.nasm
+START_start_wasm_mon = start_wasm_mon.nasm
+START_start_wasm_trap_mon = start_wasm_trap_mon.nasm
+AFTER_start_wasm_trap_mon = trapmsg.nasm
+START_exit_mon   = start_mon.nasm
+PRE_start_mon    = test/monitor.nasm
+PRE_start_wasm_mon = test/monitor.nasm
+PRE_start_wasm_trap_mon = test/monitor.nasm
+PRE_exit_mon     = test/monitor.nasm
 START_trap       = start_wasm.nasm
 START_trapreport = start_wasm_trap.nasm
 AFTER_trapreport = trapmsg.nasm
@@ -19,6 +32,11 @@ START_trapreport_big = start_wasm_trap.nasm
 AFTER_trapreport_big = trapmsg.nasm
 OPTS_start      = -d 0xfffffeff:1
 OPTS_start_wasm = -d 0x1b:1 -d 0xfffffeff:1
+OPTS_start_mon  = -d 0x800f:1 -d 0x8017:2 -d 0xfffffefe:2
+OPTS_start_wasm_mon = -d 0x8015:1 -d 0x8025:2 -d 0xfffffefc:4
+OPTS_start_wasm_trap_mon = -d 0x18:1 -d 0xfffffefe:2
+OPTS_exit       = -d 0xfffffefc:4
+OPTS_exit_mon   = -d 0xfffffefb:5
 OPTS_mul        = -d 0x34:10
 OPTS_div        = -d 0x4b:32
 OPTS_div64      = -d 0x6f:64
@@ -39,7 +57,7 @@ endef
 
 # $(1) is the name of the run, $(2) the test, and $(3) the muldiv file.
 define check
-	@cat $(or $(START_$(2)),start.nasm) test/$(2).nasm lib.nasm $(3) $(AFTER_$(2)) > test/$(1).out.nasm
+	@cat $(PRE_$(2)) $(or $(START_$(2)),start.nasm) test/$(2).nasm lib.nasm $(3) $(AFTER_$(2)) > test/$(1).out.nasm
 	@$(ASM) -o test/$(1).out.bin test/$(1).out.nasm
 	@$(EMU) $(OPTS_$(2)) $(if $(INPUT_$(2)),--input $(INPUT_$(2))) test/$(1).out.bin > test/$(1).out; \
 	  echo "exit $$?" >> test/$(1).out

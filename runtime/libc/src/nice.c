@@ -1,15 +1,11 @@
 // The device routines of ABI.md, the only part of the library that
-// touches hardware.
+// touches hardware. nice_putc is not here: it is an import from env, the
+// routine _nice_putc of lib.nasm (nice.h), so that the output follows
+// ___putc_vector.
 #include <nice.h>
 
-void nice_putc(int c)
-{
-    nice_poke(NICE_CONSOLE, (unsigned char)c);
-}
-
 // A console read returns the byte with NICE_CONSOLE_BYTE set, 0 while no
-// byte is there yet, or NICE_CONSOLE_END once the emulator's input has
-// ended.
+// byte is there yet, or NICE_CONSOLE_END once the line's input has ended.
 int nice_pollc(void)
 {
     unsigned v = nice_peek(NICE_CONSOLE);

@@ -4,9 +4,9 @@
 ; halts as there, with exit status 2 (as after any halt but HALT), R1 = 12,
 ; R2 = 0x1abc, R10 = 12, and R11 = 0x1abc.
 ;
-; The steps are those of trapreport.nasm, 247, less the 27 characters of
+; The steps are those of trapreport.nasm, 380, less the 27 characters of
 ; "memory access out of bounds" and plus the 12 of "unknown trap", each
-; character costing 4 steps: 247 - 4 * 15 = 187. The conditional moves that
+; character costing 6 steps: 380 - 6 * 15 = 290. The conditional moves that
 ; are skipped count as steps, so the digit and the name take as many for
 ; code 12 as for code 2.
 

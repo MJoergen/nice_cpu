@@ -29,10 +29,29 @@ The others pin the tagged commit.
 ## V1.2 (2026-10-30)
 
 The emulator shows the screen in a window while the program runs, with a
-keyboard, a cursor, and the pace of a board (#83).
+keyboard, a cursor, and the pace of a board (#83). Programs that a monitor
+in ROM runs, at `0x8000`, print on the monitor's screen (#87, #88), and
+the end of a host's input no longer silences the keyboard (#89).
 
 **Upgrade notes.**
 
+- `_exit` moves from `lib.nasm` into the start-up files, so a program
+  that joins `lib.nasm` without a start-up file of the runtime's, and
+  calls `exit`, must define `_exit` itself. New global labels:
+  `___putc_vector` and `___console_putc` in `lib.nasm`, and `___exit.sp`
+  in the `_mon` start-up files (#87, #88).
+- `nice_putc` and `nice_print` write through `___putc_vector`, and may
+  change R1–R6 and the flags when another routine is behind it. With the
+  console, `_nice_putc` still changes nothing, and `_nice_print` changes
+  R1 and the flags, no longer R2. The trap report uses R9, not R3. Each
+  character costs a step or two more.
+- The C library's `nice_putc` is an import from `env`, so every `.wasm`
+  file that links `libc.a` was rebuilt, and `make -C runtime/libc wasm`
+  rebuilds a program's own.
+- The end of the input is the line's. After a break on a board's UART, or
+  a half-close or disconnect on the emulator's link, a keyboard's bytes
+  still reach the program, and over TCP a new connection starts the input
+  anew (#89). A board's FIFO should do the same (SYSTEM.md §5).
 - The window is optional. `zig build -Dwindow`, or `make window` in
   `emulator/`, builds niceemu with it, and fetches SDL 3 and compiles it
   from source, with no system packages. A build without `-Dwindow`
@@ -61,6 +80,16 @@ keyboard, a cursor, and the pace of a board (#83).
   current R0–R15, as the emulator always did (#85). §3: a system may have
   a client of its own for the debug registers and the memory, with no
   lock between it and the host (#86).
+- ABI.md, "Programs under a monitor": a program that a monitor in ROM
+  loads at `0x8000` and calls on its stack, with R1 = its putc routine
+  or 0, R2 = `argc`, and R3 = `argv`, returns to it with `main`'s result
+  in R1, and may use the memory from `0x8000` up to the SP it was called
+  with. At the return the monitor may rely on SP and R1 only (#87).
+  Device routines: `___putc_vector`, which `nice_putc` and `nice_print`
+  write through (#88).
+- SYSTEM.md §1 and §5, and DEBUG.md §1 and §7: a break, a half-close, or
+  a disconnect ends the line's input, not the keyboard's, and over TCP
+  the connection is the line (#89).
 
 **Emulator (`niceemu`)**
 
@@ -83,6 +112,34 @@ keyboard, a cursor, and the pace of a board (#83).
 - `--link ADDR:PORT` serves the debug link on ADDR, so that with
   `0.0.0.0` a host on another computer can connect (#84). `--link PORT`
   still serves it on `127.0.0.1` only. The link has no authentication.
+- With `--window --link`, keys typed after the host's input has ended
+  reach the program, and a read returns `0x200` only while no byte
+  waits. A new connection clears the end of the input, so a second host
+  can type to a program that read the end (#89).
+
+**Runtime and C library**
+
+- `start_mon.nasm`, `start_wasm_mon.nasm`, and `start_wasm_trap_mon.nasm`:
+  the start-up code for a program under a monitor (#87). `exit` is the
+  `_exit` of the start-up file: the `HALT` after `main` in the plain
+  files, and a return to the monitor in these. `test/monitor.nasm` stands
+  in for a monitor in the tests, which `make programs` in `hdl/` runs on
+  the cores too.
+- `___putc_vector`: `nice_putc`, `nice_print`, and the C library's
+  output, `printf` included, go through it, so that the start-up code
+  under a monitor sends them to its screen (#88). The trap report follows
+  it too. `nice.h` declares `nice_putc` as an import from `env`, as it
+  does `exit`.
+- `nice_getc`, `getchar`, and the `getc` of `nice.zig` and `nice.rs`
+  return the end once the line's input has ended; a keyboard's bytes may
+  still come after it (#89).
+
+**Translator (`nicewasm`, `nicebuild.py`)**
+
+- `nicebuild.py --monitor` builds a program for a monitor, with
+  `start_wasm_trap_mon.nasm`, or `start_wasm_mon.nasm` with
+  `--no-trap-report` (#87). `test/build.py` runs one after the runtime's
+  stand-in for a monitor.
 
 **FPGA cores**
 
@@ -101,7 +158,10 @@ keyboard, a cursor, and the pace of a board (#83).
 **Benchmarks**
 
 - The cycle counts do not change: 2356816 estimated cycles in the phases
-  of the translated benchmark on the pipelined core, as at V1.1.
+  of the translated benchmark on the pipelined core, as at V1.1. The
+  output between the phases costs a call per byte now, outside them. The
+  benchmark's module is 8531 words, from 8537, with `nice_putc` an
+  import (#88).
 
 ## V1.1 (2026-10-28)
 

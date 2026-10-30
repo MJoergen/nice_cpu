@@ -115,7 +115,8 @@ whole program is assembled at once.
     prog.nasm
         |
         |  cat, in this order: runtime/start_wasm.nasm (or start.nasm for a
-        |  program with no wasm module), hand-written .nasm files, prog.nasm,
+        |  program with no wasm module, or their _mon versions for a program
+        |  that a monitor in ROM runs), hand-written .nasm files, prog.nasm,
         |  runtime/lib.nasm, runtime/muldiv_mpu.nasm (or muldiv_soft.nasm
         |  without the math unit), and runtime/float.nasm if prog uses floats
         v

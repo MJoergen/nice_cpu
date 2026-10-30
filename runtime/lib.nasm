@@ -96,7 +96,8 @@ __popcnt64
 
 ; The device routines of ABI.md: the console (SYSTEM §1), the performance counters
 ; (SYSTEM §3), and the emulator's character screen. Unlike the routines above,
-; programs call them by their C names.
+; programs call them by their C names. The console output goes through
+; ___putc_vector, so that a monitor can direct it to its screen.
 __nice.console  .EQU    0xFFFFFF00
 __nice.cycle_lo .EQU    0xFFFFFF40
 __nice.cycle_hi .EQU    0xFFFFFF41
@@ -104,17 +105,27 @@ __nice.instr_lo .EQU    0xFFFFFF42
 __nice.instr_hi .EQU    0xFFFFFF43
 __nice.screen   .EQU    0xFFFF0000      ; 80 columns, 25 rows
 
-; exit: halts with the status in R1, as after main returns (ABI.md). 1 step.
-_exit
-                HALT
+; ___putc_vector: nice_putc and nice_print jump through this word. It holds
+; ___console_putc, which writes the console, until the start-up code of a
+; program under a monitor, or the program itself, stores another routine
+; (ABI.md, "Programs under a monitor"). The routine follows the C ABI: it
+; writes bits 7..0 of R1, and may change R1-R6 and the flags.
+___putc_vector
+                .DAT    ___console_putc
 
-; nice_putc: writes bits 7..0 of R1 to the console. 2 steps.
+; nice_putc: writes bits 7..0 of R1 through ___putc_vector. 1 step and the
+; routine's: 3 with ___console_putc, which changes nothing.
 _nice_putc
+                MOVE    R15, @___putc_vector
+
+; ___console_putc: writes bits 7..0 of R1 to the console. 2 steps.
+___console_putc
                 MOVE    @__nice.console, R1
                 MOVE    R15, @R13++
 
 ; nice_getc: R1 = the next input byte, waiting until there is one, or -1
-; once the input has ended. A console read returns the byte with bit 8 set,
+; once the line's input has ended (SYSTEM §1); a keyboard's bytes may still
+; come after that. A console read returns the byte with bit 8 set,
 ; 0 if none is waiting, or 0x200 at the end. Steps: 4 for a byte, 8 at the
 ; end, and 6 more for each read that finds no byte. Skipped instructions
 ; count as steps.
@@ -141,12 +152,23 @@ _nice_pollc
                 MOVE    R15, @R13++
 
 ; nice_print: writes the string at R1, one character per word, up to its
-; first 0 word, to the console. Steps: 2 + 4n for n characters. Uses R2.
+; first 0 word, with one call through ___putc_vector per character. The
+; pointer is kept in R7, which the routine behind the vector preserves,
+; and which is saved and restored here. Steps: 6 + 6n for n characters
+; with ___console_putc. Uses R1, and R7 across the calls.
 _nice_print
-                MOVE[M] R2, @R1++
-        ?Z      MOVE    R15, @R13++
-                MOVE    @__nice.console, R2
-                MOVE    R15, _nice_print
+                MOVE    @--R13, R7
+                MOVE    R7, R1
+                MOVE[M] R1, @R7++
+        ?Z      MOVE    R15, _nice_print.end
+_nice_print.loop
+                ADD     @--R13, 2, R15
+                MOVE    R15, @___putc_vector
+                MOVE[M] R1, @R7++
+        ?!Z     MOVE    R15, _nice_print.loop
+_nice_print.end
+                MOVE    R7, @R13++
+                MOVE    R15, @R13++
 
 ; nice_cycles, nice_instructions: R1:R2 = the counter, low word first.
 ; The read of the low word takes the snapshot that the read of the high

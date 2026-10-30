@@ -42,8 +42,8 @@ joins, and assembles. The extension of the inputs picks the language: `.c`,
 
     ./nicebuild.py [-o output.bin] [-O LEVEL] [-I DIR] [-D MACRO[=VALUE]]
                    [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-bounds-checks]
-                   [--memory-pages N] [--asm FILE]... [--no-trap-report] [--symbols]
-                   [--keep] input.c... | input.zig | input.rs
+                   [--memory-pages N] [--asm FILE]... [--no-trap-report] [--monitor]
+                   [--symbols] [--keep] input.c... | input.zig | input.rs
 
 Without `-o`, the output is the first input with the extension `.bin`.
 The defaults are the options of the recipes below, but for `-Wl,--allow-undefined`,
@@ -66,7 +66,13 @@ itself (runtime README). The float library
 is joined if the program calls it. A wasm trap writes a line with its code and
 address to the console before the processor halts, as `trapmsg.nasm` of the
 runtime README does; `--no-trap-report` leaves it out, so that a trap halts
-silently. `--symbols` also writes the labels to `output.sym`, with the
+silently. `--monitor` builds a program for a monitor in ROM, which loads
+it at `0x8000` and calls it, and to which it returns (ABI.md, "Programs
+under a monitor"): the start-up code is `runtime/start_wasm_trap_mon.nasm`,
+or `start_wasm_mon.nasm` with `--no-trap-report`, and the `.bin` file
+starts at `0x8000`. The monitor's own routines, if the program calls
+them, come as stubs in a file of the monitor's, joined with `--asm`.
+`--symbols` also writes the labels to `output.sym`, with the
 functions of the program by their names, for `niceemu --symbols`, which then
 names the function of a trap. A Zig program is then built with `-fno-strip`,
 because ReleaseSmall leaves the names out of the wasm; the `.bin` is the
@@ -198,7 +204,7 @@ pointers. nicewasm supports all of them. A Rust program uses a table and
 The optimizations change nothing in WASM.md. The size of translated code
 is measured in words (`make words` in `bench/`): `test/safe.zig` is 5932
 words and the float library 6895. The benchmark of [bench/](../bench/)
-runs 1652811 instructions in its phases, from a module of 8537 words.
+runs 1652811 instructions in its phases, from a module of 8531 words.
 [doc/review/code-size-plan.md](../doc/review/code-size-plan.md) has the
 measurements of the plan, and [doc/HISTORY.md](../doc/HISTORY.md) lists
 the steps that got the code here.
@@ -837,7 +843,12 @@ mistakes in its options, and then a program in each language whose
 compiler is installed. `abort.c` of the C library's tests is built with
 `--symbols` and `--keep`, and its run must print the trap report and the
 emulator's name of the trap, `abort`; built with `--no-trap-report`, it
-must halt without the report. `hello.zig` is built with and without
+must halt without the report. `exit.c` is built with `--monitor`, with
+and without the trap report, and run after the runtime's stand-in for a
+monitor, `runtime/test/monitor.nasm`, assembled on its own and put before
+it in one `.bin` file: its output must come through the stand-in's putc
+routine, and `exit` must return to the stand-in, which halts with the
+status in R1. `hello.zig` is built with and without
 `--symbols`, which must give the same `.bin`, and `hellors.rs` with it.
 Every `.sym` file must name every function. A language whose compiler is
 missing is skipped, and the PASS line says which; CI has Zig and clang, not Rust.

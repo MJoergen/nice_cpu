@@ -83,7 +83,9 @@ pub const Link = struct {
     input: [input_size]u8 = undefined,
     input_head: usize = 0,
     input_len: usize = 0,
-    /// The end of the input (DEBUG.md §7).
+    /// The end of the line's input (DEBUG.md §7): the host's bytes are
+    /// dropped, and a read of an empty buffer returns 0x200. The keys of
+    /// the window still go in (SYSTEM.md §1).
     input_end: bool = false,
     /// An `o` was sent, and the buffer has had no room since.
     overflow_sent: bool = false,
@@ -202,7 +204,7 @@ pub const Link = struct {
             var vec = [1][]u8{&buf};
             const n = (self.conn.?.readWithControl(self.io, &vec, &.{}) catch return self.disconnect()).data_len;
             if (n == 0) {
-                // A half-close or a disconnect: both end the input.
+                // A half-close or a disconnect: both end the line's input.
                 self.conn_eof = true;
                 self.input_end = true;
                 return;
@@ -225,6 +227,9 @@ pub const Link = struct {
         self.conn = stream;
         const fd = stream.socket.handle;
         self.conn_eof = false;
+        // The connection is the line (DEBUG.md §7): a new host starts its
+        // input anew, so a program that read the end may read bytes again.
+        self.input_end = false;
         posix.setsockopt(fd, posix.IPPROTO.TCP, posix.TCP.NODELAY, &std.mem.toBytes(@as(c_int, 1))) catch {};
         self.state = .idle;
         // Every `b` means that no breakpoint is left (DEBUG.md §6, §7).
@@ -481,11 +486,13 @@ pub const Link = struct {
     }
 
     /// Move the keys typed into the window to the input buffer (doc/SYSTEM.md
-    /// §1). Keys are dropped while the processor is held or has halted, and
-    /// after the end of the input. A byte waits until the buffer has room for
-    /// two, so that a byte from the host still finds room.
+    /// §1). Keys are dropped while the processor is held or has halted, but
+    /// not after the end of the line's input, which ends the host's bytes
+    /// only: a program that reads on, as a monitor does, gets the keys. A
+    /// byte waits until the buffer has room for two, so that a byte from
+    /// the host still finds room.
     pub fn takeKeys(self: *Link, q: *keys.Queue) void {
-        if (self.held or self.halted() or self.input_end) return q.clear();
+        if (self.held or self.halted()) return q.clear();
         while (input_size - self.input_len >= 2) {
             const b = q.pop() orelse return;
             self.input[(self.input_head + self.input_len) % input_size] = b;
@@ -690,14 +697,19 @@ test "with the window, keys go to the buffer, wait for room, or are dropped" {
     link.takeKeys(&q);
     try t.expectEqual(2, link.input_len);
     link.paused = false;
-    // After the end of the input, the buffer is read, then the end, and
-    // the keys are dropped.
+    // After the end of the line's input, the keys still go in: the buffer
+    // is read, then the end, and a key typed after that, then the end again.
     link.input_end = true;
     q.push("e");
     link.takeKeys(&q);
     try t.expectEqual(0, q.len);
-    try t.expectEqual(2, link.input_len);
+    try t.expectEqual(3, link.input_len);
     _ = in.next();
     _ = in.next();
+    try t.expectEqual(cpu_zig.Input.Next{ .byte = 'e' }, in.next());
+    try t.expectEqual(cpu_zig.Input.Next.end, in.next());
+    q.push("f");
+    link.takeKeys(&q);
+    try t.expectEqual(cpu_zig.Input.Next{ .byte = 'f' }, in.next());
     try t.expectEqual(cpu_zig.Input.Next.end, in.next());
 }

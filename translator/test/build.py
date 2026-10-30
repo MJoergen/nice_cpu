@@ -18,6 +18,8 @@ from typing import List, Optional, Tuple
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 NICEBUILD = os.path.join(HERE, "..", "nicebuild.py")
+NICEASM = os.path.join(ROOT, "assembler", "niceasm.py")
+MONITOR = os.path.join(ROOT, "runtime", "test", "monitor.nasm")
 NICEEMU = os.path.join(ROOT, "emulator", "zig-out", "bin", "niceemu")
 LIBC_TEST = os.path.join(ROOT, "runtime", "libc", "test")
 
@@ -169,6 +171,33 @@ def test_c_options(tmp: str) -> None:
         fail("a .bin file of a C file that does not compile")
 
 
+def test_c_monitor(tmp: str) -> None:
+    """exit.c built with --monitor is a program for a monitor in ROM, at
+    0x8000 (ABI.md, "Programs under a monitor"). It runs after the runtime's
+    stand-in for a monitor, assembled on its own and put before it in one
+    .bin file, as a monitor's image and a program's concatenate. It prints
+    through the stand-in's putc routine, and exit returns to the stand-in,
+    which halts with the status in R1 and the 11 bytes written in R2. With
+    --no-trap-report the other start-up file is used, and the program runs
+    the same."""
+    source = os.path.join(LIBC_TEST, "exit.c")
+    monitor = os.path.join(tmp, "standin.bin")
+    subprocess.run([sys.executable, NICEASM, "-o", monitor, MONITOR], check=True)
+    for name, extra in (("under a monitor", []), ("under a monitor without the trap report", ["--no-trap-report"])):
+        out = os.path.join(tmp, name.replace(" ", "_") + ".bin")
+        if not check_build("C " + name, ["--monitor", "-o", out] + extra + [source], out):
+            continue
+        with open(out) as f:
+            first = f.readline().split()[0]
+        if first != "00008000":
+            fail("C " + name, f"the program starts at {first}, not 00008000")
+        full = out[:-4] + ".full.bin"
+        with open(full, "w") as f, open(monitor) as m, open(out) as p:
+            f.write(m.read() + p.read())
+        check_run("C " + name, run(full), 0,
+                  ["before", "0 1", "~R0  00000000 R1  00000003 R2  0000000b R3  [0-9a-f]{8}"])
+
+
 def test_unwritable(tmp: str) -> None:
     """An output directory without write permission is found before the build.
     Root writes anywhere, so the test is skipped for root."""
@@ -248,6 +277,7 @@ def main() -> None:
         if clang and clang_for_wasm32(clang):
             test_c(tmp)
             test_c_options(tmp)
+            test_c_monitor(tmp)
             ran.append("C")
         else:
             skipped.append("C (no clang, wasm-ld, or llvm-ar for wasm32)")

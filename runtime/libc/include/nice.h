@@ -6,11 +6,16 @@
 // in the runtime library, but for nice_print, which takes the bytes of a
 // C string, not one character per word. Programs use these, not the addresses below.
 
-// Writes bits 7..0 of c to the console.
+// Writes bits 7..0 of c to the console. Not defined in C: the translator
+// turns this import into the assembly routine _nice_putc of lib.nasm
+// (WASM.md), which goes through ___putc_vector, so that a program under a
+// monitor prints on the monitor's output (ABI.md).
+__attribute__((import_module("env"), import_name("nice_putc")))
 void nice_putc(int c);
 
 // Waits for the next input byte from the console and returns it, 0 to
-// 255, or -1 once the input has ended.
+// 255, or -1 once the line's input has ended. A keyboard's bytes may still
+// come after that (SYSTEM.md §1).
 int nice_getc(void);
 
 // Like nice_getc, but returns -2 at once if no byte is waiting.
@@ -39,7 +44,8 @@ void nice_screen_clear(void);
 #define NICE_SCREEN_COLS 80
 #define NICE_SCREEN_ROWS 25
 
-// The devices' addresses and bits (SYSTEM.md §1, §3), for nice.c.
+// The devices' addresses and bits (SYSTEM.md §1, §3), for nice.c. The
+// console is read here; it is written through nice_putc.
 #define NICE_CONSOLE 0xFFFFFF00u
 #define NICE_CONSOLE_BYTE 0x100u
 #define NICE_CONSOLE_END 0x200u

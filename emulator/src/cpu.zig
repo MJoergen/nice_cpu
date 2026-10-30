@@ -110,6 +110,30 @@ pub const console_addr: u32 = io_base;
 pub const console_byte: u32 = 0x100;
 pub const console_end: u32 = 0x200;
 
+/// The console's input. A read of a reader waits for the next byte or the
+/// end, and the window's input can have no byte now (SYSTEM §1).
+pub const Input = struct {
+    ctx: *anyopaque,
+    next_fn: *const fn (ctx: *anyopaque) Next,
+
+    pub const Next = union(enum) { byte: u8, none, end };
+
+    pub fn next(self: Input) Next {
+        return self.next_fn(self.ctx);
+    }
+
+    /// The bytes of `r`, then the end. An error of `r` ends the input too.
+    pub fn fromReader(r: *std.Io.Reader) Input {
+        return .{ .ctx = r, .next_fn = nextOfReader };
+    }
+
+    fn nextOfReader(ctx: *anyopaque) Next {
+        const r: *std.Io.Reader = @ptrCast(@alignCast(ctx));
+        const b = r.takeByte() catch return .end;
+        return .{ .byte = b };
+    }
+};
+
 /// The emulator's read counter (SYSTEM §1): a data read returns the number of
 /// data reads of it since the last write, and then counts itself. A write
 /// sets the count. It lets tests see the data reads of §8.2.
@@ -338,10 +362,11 @@ pub const Cpu = struct {
     /// at once and a Ctrl-C does not lose it.
     console_flush: bool,
     /// When set, a data read of `console_addr` takes the next byte from
-    /// here and returns it with `console_byte`, or returns `console_end`
-    /// once it is empty. Unset, as in most unit tests, the read falls
-    /// through to memory, like any other word.
-    input: ?*std.Io.Reader,
+    /// here and returns it with `console_byte`, returns 0 while no byte is
+    /// waiting, or returns `console_end` once the input has ended. Unset, as
+    /// in most unit tests, the read falls through to memory, like any other
+    /// word.
+    input: ?Input,
     /// The math unit at `mpu_base`.
     mpu: Mpu,
     /// The performance counters at `perf_base`.
@@ -444,11 +469,14 @@ pub const Cpu = struct {
     /// A data read by the processor (§8.2).
     pub fn read(self: *Cpu, addr: u32) u32 {
         if (addr == console_addr) {
-            if (self.input) |r| {
+            if (self.input) |in| {
                 // Show a prompt before waiting for the input that answers it.
                 if (self.console) |w| w.flush() catch {};
-                const b = r.takeByte() catch return console_end;
-                return console_byte | b;
+                return switch (in.next()) {
+                    .byte => |b| console_byte | b,
+                    .none => 0,
+                    .end => console_end,
+                };
             }
         }
         if (addr == counter_addr) {
@@ -1498,13 +1526,44 @@ test "with input, a console read returns the next byte, then the end" {
         HALT,
     });
     var r: std.Io.Reader = .fixed("A\xff");
-    cpu.input = &r;
+    cpu.input = .fromReader(&r);
     try runToHalt(&cpu);
     try testing.expectEqual(0x141, cpu.regs[1]);
     try testing.expectEqual(0x1ff, cpu.regs[2]);
     try testing.expectEqual(0x200, cpu.regs[3]);
     // A look from outside takes no byte.
     try testing.expectEqual(0, cpu.peek(console_addr));
+}
+
+test "with input that can have no byte, a console read returns 0 then" {
+    // MOVE R1, @0xFFFFFF00 four times, into R1 to R4, then HALT.
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{
+        alu_iw(.always, MOVE, .none, reg(1), ind_imm(0), reg(0)), console_addr,
+        alu_iw(.always, MOVE, .none, reg(2), ind_imm(0), reg(0)), console_addr,
+        alu_iw(.always, MOVE, .none, reg(3), ind_imm(0), reg(0)), console_addr,
+        alu_iw(.always, MOVE, .none, reg(4), ind_imm(0), reg(0)), console_addr,
+        HALT,
+    });
+    const Script = struct {
+        answers: []const Input.Next,
+        fn next(ctx: *anyopaque) Input.Next {
+            const self: *@This() = @ptrCast(@alignCast(ctx));
+            const a = self.answers[0];
+            self.answers = self.answers[1..];
+            return a;
+        }
+    };
+    var script: Script = .{ .answers = &.{ .none, .{ .byte = 'A' }, .none, .end } };
+    cpu.input = .{ .ctx = &script, .next_fn = Script.next };
+    for (1..5) |r| cpu.regs[r] = 7;
+    try runToHalt(&cpu);
+    try testing.expectEqual(0, cpu.regs[1]);
+    try testing.expectEqual(0x141, cpu.regs[2]);
+    try testing.expectEqual(0, cpu.regs[3]);
+    try testing.expectEqual(0x200, cpu.regs[4]);
+    try testing.expectEqual(0, script.answers.len);
 }
 
 test "the read counter counts data reads, and a write sets it" {

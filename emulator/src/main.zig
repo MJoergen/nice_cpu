@@ -468,7 +468,7 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, out: *s
     // Streaming, so that stdin may be a terminal or a pipe. Nothing is read
     // until the program reads the console.
     in_r = InterruptibleReader.init(in_file.handle, &in_buf);
-    cpu.input = &in_r.interface;
+    cpu.input = .fromReader(&in_r.interface);
     // A step is one instruction, or the entry into an interrupt.
     var steps: u64 = 0;
     var next: usize = 0;
@@ -546,7 +546,7 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
     if (port == 0) std.debug.print("link: port {d}\n", .{actual});
     if (opts.trace) cpu.trace = out;
     cpu.console = &link.console_w;
-    cpu.input = &link.reader;
+    cpu.input = .fromReader(&link.reader);
     cpu.cycle_counter = opts.cycle_counter;
     cpu.timer_irq = opts.timer_irq;
 

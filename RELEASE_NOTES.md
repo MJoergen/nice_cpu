@@ -26,6 +26,56 @@ pins each is:
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
 
+## V1.2 (2026-10-30)
+
+The emulator shows the screen in a window while the program runs, with a
+keyboard, a cursor, and the pace of a board (#83).
+
+**Upgrade notes.**
+
+- The window is optional. `zig build -Dwindow`, or `make window` in
+  `emulator/`, builds niceemu with it, and fetches SDL 3 and compiles it
+  from source, with no system packages. A build without `-Dwindow`
+  fetches nothing and needs only Zig, as before.
+- SYSTEM.md §1 now defines the bytes of the keys, which NiceMonMEGA65's
+  keyboards already send, and the cursor at `0xFFFFFF80`–`0xFFFFFF82`,
+  numbered as the board's screen registers. In the emulator these words
+  stay ordinary memory. No other interface change: the ports of both
+  cores, `wb_dmux`, the devices, and the debug link are as in V1.1, and
+  `hdl/src` does not change.
+- Zig 0.17.0, as in V1.1.
+
+**Specification and documents**
+
+- SYSTEM.md §1 specifies the window: the screen in 16×32 characters, the
+  cursor, the keys, and the pace of one step per microsecond. With the
+  window, a console read returns 0 while no byte waits, as a board's
+  does. With `--link`, the keys and the host's bytes share the input
+  buffer, as a board's keyboard and UART share its FIFO. DEBUG.md §7 says
+  that a read does not wait then.
+
+**Emulator (`niceemu`)**
+
+- `--window` shows the screen in a window of 1280×800 pixels, which
+  scales when resized, with the font Spleen 16×32, as on NiceMonMEGA65.
+  The console reads the file of `--input`, if given, then the keys typed
+  into the window, and not stdin. A read returns 0 while no byte waits.
+- The run is paced at one step per microsecond, so that the microsecond
+  counter and the timer keep the host's time. `--speed N` sets another
+  rate, and `--speed 0` runs as fast as the host can.
+- At the halt or the step limit, the report is printed, and the window
+  stays until it is closed. Closing it before ends the run with the new
+  exit status 4.
+- `--window` works with `--link`: the window shows the screen over every
+  run, also while the processor is held, and closing it ends niceemu.
+- `make window-test` runs `test/window.py` on SDL's dummy video driver,
+  with no display, and CI runs it in a job of its own.
+
+**Benchmarks**
+
+- The cycle counts do not change: 2356816 estimated cycles in the phases
+  of the translated benchmark on the pipelined core, as at V1.1.
+
 ## V1.1 (2026-10-28)
 
 A disassembler, `errno` in the C library, and debug link version 5, in

@@ -5,11 +5,22 @@ An emulator for the NICE processor, written in [Zig](https://ziglang.org). It im
 [niceasm](../assembler/README.md) writes.
 
 It needs Zig 0.17 (tested with 0.17.0), and Python 3 for `make test`.
+The window of `--window` needs a build with `-Dwindow`, below.
 
 ## Build and test
 
     make          # unit tests, example and probe programs, test/errors.py
     make build    # just build zig-out/bin/niceemu
+    make window   # build it with the window of --window
+
+`make window` builds niceemu with `zig build -Dwindow`. The window uses
+[SDL 3](https://libsdl.org), which the build fetches from
+[castholm/SDL](https://github.com/castholm/SDL), pinned by its hash in
+`build.zig.zon`, and compiles from source, with no system packages. The
+first build takes a few minutes of CPU time; later ones take SDL from the Zig
+cache. Zig unpacks the source into `zig-pkg/`, which `make clean`
+removes. Without `-Dwindow`, the build fetches nothing and needs only Zig.
+`make test` and `make build` build without the window.
 
 `make test` runs the unit tests in `src/cpu.zig`, then the example programs
 in `../assembler/test/` (the three 2004 programs and `wrap`) and the probe

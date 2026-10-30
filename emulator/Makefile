@@ -84,6 +84,11 @@ test: build bincheck
 build:
 	$(ZIG) build -Doptimize=ReleaseSafe
 
+# The same with the window of --window. The first build fetches SDL and
+# compiles it from source; later ones take it from the Zig cache.
+window:
+	$(ZIG) build -Doptimize=ReleaseSafe -Dwindow
+
 # Reassemble the probes with niceasm.
 bins:
 	@for t in $(PROBES); do $(PYTHON) ../assembler/niceasm.py test/$$t.nasm || exit 1; done
@@ -101,6 +106,6 @@ typecheck:
 	$(PYTHON) -m mypy --strict test/errors.py test/link.py
 
 clean:
-	rm -rf zig-out .zig-cache test/*.out
+	rm -rf zig-out .zig-cache zig-pkg test/*.out
 
-.PHONY: test build bins bincheck typecheck clean
+.PHONY: test build window bins bincheck typecheck clean

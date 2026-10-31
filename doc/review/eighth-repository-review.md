@@ -84,9 +84,13 @@ The tables of §2 to §4 head a column "A data read returns". The term is ISA.md
 
 [TOOLCHAIN.md](../TOOLCHAIN.md), lines 28–31 of the build diagram: "or their `_mon` versions for a program that a monitor in ROM runs"; lines 52–54: "With `--monitor` it picks the `_mon` start-up file:" followed by `translator/nicebuild.py -o prog.bin prog.c`, without `--monitor`. Nothing in the file says what a monitor is; ABI.md's "Programs under a monitor" does, 150 lines into another file. The same gap is in translator/README.md (line 69) and emulator/README.md (line 205), which point at ABI.md. **Fix:** one sentence at the first use: "A monitor is a program in a ROM at address 0 that loads a program at `0x8000` and calls it, as NiceMonMEGA65's will; `--monitor` builds a program for one (ABI.md, Programs under a monitor)." And the example as it is, followed by "With `--monitor` it picks the `_mon` start-up file instead."
 
+**Resolved**: TOOLCHAIN.md says what a monitor is, with the pointer to ABI.md, right after the `nicebuild.py` example, which stands without `--monitor`.
+
 ### 3.7 TOOLCHAIN.md: the labels of the runtime
 
 "How the tools use each other" names `_main`, `___wasm_start`, `___wasm_trap_vector`, and `__mul` with no word on the underscores. ABI.md has the rule. **Fix:** one clause at `_main`: "(a C name `f` is the label `_f`, ABI.md)".
+
+**Resolved**: The rule for the underscore is given at `_main`.
 
 ## 4. The slides
 

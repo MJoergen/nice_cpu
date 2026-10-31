@@ -49,17 +49,22 @@ command lines for the first step, and the [runtime README](../runtime/README.md)
 the join.
 
 `translator/nicebuild.py` runs all of these steps for a C, Zig, or Rust
-source file, and writes the `.bin` file. With `--monitor` it picks the
-`_mon` start-up file:
+source file, and writes the `.bin` file:
 
     translator/nicebuild.py -o prog.bin prog.c
+
+A monitor is a program in a ROM at address 0 that loads a program at
+`0x8000` and calls it, as NiceMonMEGA65's will. `nicebuild.py --monitor`
+builds a program for one: it picks the `_mon` start-up file
+([ABI.md](../runtime/ABI.md), Programs under a monitor).
 
 **How the tools use each other.**
 
 - `niceemu` runs the `.bin` files that `niceasm` writes. Its probe programs
   are assembled with `niceasm` (`make bins`), and its tests also run the
   assembler's example programs.
-- The runtime library's start-up code calls `_main`, and `start_wasm.nasm`
+- The runtime library's start-up code calls `_main` (a C name `f` is the
+  label `_f`, ABI.md), and `start_wasm.nasm`
   first calls the `___wasm_start` that `nicewasm` emits. Translated code
   uses the math unit through the labels in `muldiv_mpu.nasm` for `i32.mul`
   and the divisions, or calls `__mul`, `__div`, and the like with

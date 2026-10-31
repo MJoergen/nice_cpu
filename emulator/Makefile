@@ -89,8 +89,11 @@ build:
 window:
 	$(ZIG) build -Doptimize=ReleaseSafe -Dwindow
 
-# The window's tests, on SDL's dummy video driver, so with no display.
+# The window's tests: the unit tests of window.zig, in ReleaseSafe, which
+# shares the SDL of the window build, and test/window.py on SDL's dummy
+# video driver, so with no display.
 window-test: window
+	$(ZIG) build test -Doptimize=ReleaseSafe -Dwindow --summary all
 	@$(PYTHON) test/window.py
 
 # Reassemble the probes with niceasm.

@@ -897,11 +897,9 @@ test {
     _ = @import("link.zig");
     _ = @import("frame.zig");
     _ = @import("keys.zig");
-    // The window is compiled, not run: its tests need a display.
+    // Its tests, of the key mapping, need no display; the window itself
+    // is compiled, not opened.
     if (@import("build_options").window) {
-        const W = @import("window.zig").Window;
-        _ = &W.open;
-        _ = &W.pump;
-        _ = &W.close;
+        _ = @import("window.zig");
     }
 }

@@ -183,8 +183,10 @@ window, before the halt, after it, and with `--link`, it checks through a
 hook of niceemu for the test, as the dummy driver cannot close one. With
 `--link`, as a host, it checks that a read returns 0 until a byte comes,
 the pace, and the end of the input. The key table and the drawing of the
-screen are unit tests in `src/keys.zig` and `src/frame.zig`, and the
-keys' way into the link's buffer one in `src/link.zig`.
+screen are unit tests in `src/keys.zig` and `src/frame.zig`, the keys'
+way into the link's buffer one in `src/link.zig`, and the mapping of
+SDL's key events to the keys one in `src/window.zig`, which `make
+window-test` runs.
 
 ## Program files
 

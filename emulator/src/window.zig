@@ -84,14 +84,9 @@ pub const Window = struct {
         switch (ev.type) {
             c.SDL_EVENT_QUIT, c.SDL_EVENT_WINDOW_CLOSE_REQUESTED => return false,
             c.SDL_EVENT_KEY_DOWN => {
-                const mod = ev.key.mod;
-                if (mod & c.SDL_KMOD_CTRL != 0 and mod & c.SDL_KMOD_ALT == 0) {
-                    if (ev.key.key < 0x80) if (keys.ctrl(@intCast(ev.key.key))) |b| {
-                        self.queue.push(&.{b});
-                        return true;
-                    };
-                }
-                if (key(ev.key.key)) |k| self.queue.push(keys.bytes(k));
+                if (control(ev.key.key, ev.key.mod)) |b| {
+                    self.queue.push(&.{b});
+                } else if (key(ev.key.key)) |k| self.queue.push(keys.bytes(k));
             },
             c.SDL_EVENT_TEXT_INPUT => {
                 // Ctrl with a letter is the key event's, above.
@@ -124,6 +119,14 @@ pub const Window = struct {
     }
 };
 
+/// The control code of a key event: Ctrl with a letter, but not with Alt
+/// too, as AltGr is Ctrl and Alt on some layouts, and types a character.
+fn control(code: c.SDL_Keycode, mod: c.SDL_Keymod) ?u8 {
+    if (mod & c.SDL_KMOD_CTRL == 0 or mod & c.SDL_KMOD_ALT != 0) return null;
+    if (code >= 0x80) return null;
+    return keys.ctrl(@intCast(code));
+}
+
 /// The key of an SDL keycode, if it is one that does not type a character.
 fn key(code: c.SDL_Keycode) ?keys.Key {
     return switch (code) {
@@ -155,4 +158,31 @@ fn key(code: c.SDL_Keycode) ?keys.Key {
 fn sdlError(what: []const u8) error{Sdl} {
     std.debug.print("niceemu: {s}: {s}\n", .{ what, c.SDL_GetError() });
     return error.Sdl;
+}
+
+const testing = std.testing;
+
+test "the keys that type no character, from SDL's keycodes" {
+    try testing.expectEqual(.enter, key(c.SDLK_RETURN));
+    try testing.expectEqual(.enter, key(c.SDLK_KP_ENTER));
+    try testing.expectEqual(.backspace, key(c.SDLK_BACKSPACE));
+    try testing.expectEqual(.delete, key(c.SDLK_DELETE));
+    try testing.expectEqual(.escape, key(c.SDLK_ESCAPE));
+    try testing.expectEqual(.left, key(c.SDLK_LEFT));
+    try testing.expectEqual(.f1, key(c.SDLK_F1));
+    try testing.expectEqual(.f12, key(c.SDLK_F12));
+    // Characters come as text input.
+    try testing.expectEqual(null, key(c.SDLK_C));
+    try testing.expectEqual(null, key(c.SDLK_SPACE));
+    try testing.expectEqual(null, key(c.SDLK_LSHIFT));
+}
+
+test "Ctrl with a letter gives its control code, but not with Alt" {
+    try testing.expectEqual(0x03, control(c.SDLK_C, c.SDL_KMOD_LCTRL));
+    try testing.expectEqual(0x1A, control(c.SDLK_Z, c.SDL_KMOD_RCTRL | c.SDL_KMOD_LSHIFT));
+    try testing.expectEqual(null, control(c.SDLK_C, c.SDL_KMOD_NONE));
+    try testing.expectEqual(null, control(c.SDLK_C, c.SDL_KMOD_LSHIFT));
+    try testing.expectEqual(null, control(c.SDLK_C, c.SDL_KMOD_LCTRL | c.SDL_KMOD_RALT));
+    try testing.expectEqual(null, control(c.SDLK_RETURN, c.SDL_KMOD_LCTRL));
+    try testing.expectEqual(null, control(c.SDLK_F1, c.SDL_KMOD_LCTRL));
 }

@@ -198,7 +198,9 @@ it lasts, `p` when no enabled breakpoint is at R15, and a reset that clears
 them; the registers while the core runs; and the side client: the memory
 while held, reads all the time beside the host's packets, a clear between
 two words of a host's `W`, a start, its errors and the registers while
-running, and a pause and a step that send the host `p`.
+running, a pause and a step that send the host `p`, a go on between two
+words of a host's `W` and under its `R`, whose later words are lost or
+read 0, and a hold.
 
 `tb_link` runs on each core of `CORES`. It is the debug link as a board
 uses it: the link is a second master of the data bus, and owns it while

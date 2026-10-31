@@ -1295,6 +1295,41 @@ begin
       expect(C_ESC & "rFFFFFFF0000100000018#D6", "control after a side step");
       quiet("side step");
 
+      -- A go on of the side client between two words of a host's W: the
+      -- word after it is lost, and the answer is still k (DEBUG.md §3).
+      send(C_ESC & "W0000020000020000CCCC");
+      side('1', X"FFFFFFF0", X"00000008", '0', X"00000000", "side go on");
+      send("0000DDDD#37");
+      expect(C_ESC & "k000002000002#AF", "host W across a side go on");
+      check_mem(512, X"0000CCCC", "the word before the side go on");
+      check_mem(513, X"0000BBBB", "the word after the side go on");
+      quiet("side go on");
+
+      -- A go on of the side client while a host's R is answered: the first
+      -- word was read while paused, the word after it reads 0, and the
+      -- answer is still r. The go on is asked for while the first word's
+      -- digits go out, when p_acc is idle, as p_tx fetches the next word
+      -- after them.
+      side('1', X"FFFFFFF0", X"00000018", '0', X"00000000", "side pause again");
+      expect(C_ESC & "p#70", "p of the second side pause");
+      send(C_ESC & "R000002000002#96");
+      while got_len < used_v + 16 loop
+         wait until rising_edge(clk);
+      end loop;
+      side('1', X"FFFFFFF0", X"00000008", '0', X"00000000", "side go on under an R");
+      expect(C_ESC & "r0000020000020000CCCC00000000#02", "host R across a side go on");
+      quiet("side go on under an R");
+
+      -- A hold of the side client: the memory is in reach again, for the
+      -- host too, and the host gets no notice.
+      side('1', X"FFFFFFF0", X"00000009", '0', X"00000000", "side hold");
+      side('0', X"00000200", X"00000000", '0', X"0000CCCC", "side read while held by the side");
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000009#D6", "control after a side hold");
+      send(C_ESC & "R000002010001#96");
+      expect(C_ESC & "r0000020100010000BBBB#7E", "host read after a side hold");
+      quiet("side hold");
+
       report "tb_debug_link: pass";
       stop(0);
    end process p_test;

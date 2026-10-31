@@ -813,6 +813,36 @@ begin
       expect_in("", "after the second end");
       free <= X"0008";
 
+      -- Both take effect from the next cycle: a byte taken in the cycle of
+      -- a resume is still dropped, and one taken in the cycle of a break
+      -- still reaches the program.
+      rx_valid <= '1';
+      rx_data  <= X"4D";
+      resume   <= '1';
+      wait until rising_edge(clk);
+      assert rx_ready = '1'
+         report "tb_debug_link: the byte with the resume was not taken"
+         severity failure;
+      rx_valid <= '0';
+      resume   <= '0';
+      send("N");
+      expect_in("N", "a byte with the resume");
+      rx_valid <= '1';
+      rx_data  <= X"4F";
+      rx_break <= '1';
+      wait until rising_edge(clk);
+      assert rx_ready = '1'
+         report "tb_debug_link: the byte with the break was not taken"
+         severity failure;
+      rx_valid <= '0';
+      rx_break <= '0';
+      cycles(3);
+      assert eoi = '1'
+         report "tb_debug_link: no end of input after the byte with the break"
+         severity failure;
+      send("P");
+      expect_in("O", "a byte with the break");
+
       -- A halt: the last console byte, then h.
       con_put(character'pos('q'));
       core_halt <= '1';

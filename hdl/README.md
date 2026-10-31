@@ -195,7 +195,10 @@ step, a write with bit 5 that does not step, and a step into a halt; and
 the breakpoints: their registers and ports, `x` with the lowest number at a
 start, a step, and a stop of the core's own, the stop register and how long
 it lasts, `p` when no enabled breakpoint is at R15, and a reset that clears
-them; the registers while the core runs; and the side client: the memory
+them; the end of the line's input and its resume: a break, a resume, one
+without an end, one with a break in the same cycle, a break after it, and
+the bytes taken in the cycles of a resume and of a break; the registers
+while the core runs; and the side client: the memory
 while held, reads all the time beside the host's packets, a clear between
 two words of a host's `W`, a start, its errors and the registers while
 running, a pause and a step that send the host `p`, a go on between two

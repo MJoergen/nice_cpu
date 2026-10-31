@@ -176,6 +176,8 @@ later builds take SDL from the Zig cache.
     $ assembler/niceasm.py -o keys.bin doc/intro/examples/keys.nasm
     $ emulator/zig-out/bin/niceemu --window keys.bin
 
+![The window after typing Hello, NICE!](doc/window.png)
+
 The window shows the title in yellow on blue, and the cursor on row 2.
 After Enter, the cursor goes away and the window stays, with the last
 screen, until it is closed.

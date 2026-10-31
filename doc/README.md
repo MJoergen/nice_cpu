@@ -22,6 +22,12 @@ timing diagram of one instruction, and `interrupt.tex` its interrupt
 timing diagram. `make diagrams` in the top directory renders
 them to PNGs. Edit the `.tex`, and commit both it and the `.png`.
 
+`window.png` is the screenshot in the top
+[README](../README.md#worked-example-with-the-window): niceemu's window,
+with `--window`, running `intro/examples/keys.nasm` on an Xvfb display,
+after `Hello, NICE!` was typed into it with xdotool, captured with
+ImageMagick's `import`.
+
 ## Test
 
     make test

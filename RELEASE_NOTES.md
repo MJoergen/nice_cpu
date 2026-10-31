@@ -15,6 +15,7 @@ pins each is:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|
+| `V1.1` | `V1.1` |
 | `V1.0` | `V1.0` |
 | `RC06` | `RC06` |
 | `RC05` | `RC05` |
@@ -92,6 +93,13 @@ the end of a host's input no longer silences the keyboard (#89).
 - SYSTEM.md §1 and §5, and DEBUG.md §1 and §7: a break, a half-close, or
   a disconnect ends the line's input, not the keyboard's, and over TCP
   the connection is the line (#89).
+- Two documents are new. doc/TOOLCHAIN.md has the tools, what each reads
+  and writes, the steps that build a program, and the host tools they
+  need; it was the README's Toolchain section. CONTRIBUTING.md has the
+  tests and the rules for a change, for human contributors. The README is
+  for users: it sums up the emulator, says how to build it, and runs a
+  worked example. `hdl/src/`, `sim/`, `test/`, and `formal/` each have a
+  README that lists their files.
 
 **Emulator (`niceemu`)**
 
@@ -111,9 +119,10 @@ the end of a host's input no longer silences the keyboard (#89).
   run, also while the processor is held, and closing it ends niceemu.
 - `make window-test` runs `test/window.py` on SDL's dummy video driver,
   with no display, and CI runs it in a job of its own.
-- `--link ADDR:PORT` serves the debug link on ADDR, so that with
-  `0.0.0.0` a host on another computer can connect (#84). `--link PORT`
-  still serves it on `127.0.0.1` only. The link has no authentication.
+- `--link ADDR:PORT` serves the debug link on ADDR, an IPv4 address or an
+  IPv6 one in brackets, so that with `0.0.0.0` a host on another computer
+  can connect (#84). `--link PORT` still serves it on `127.0.0.1` only.
+  The link has no authentication.
 - With `--window --link`, keys typed after the host's input has ended
   reach the program, and a read returns `0x200` only while no byte
   waits. A new connection clears the end of the input, so a second host
@@ -165,6 +174,9 @@ the end of a host's input no longer silences the keyboard (#89).
 - `make formal` proves the link with a free side client, and the covers
   run with and without one. It proves that `eoi_o` is low in the cycle
   after `rx_resume_i`.
+- `hdl/Makefile` keeps `/opt/Xilinx/2025.1/Vivado/bin/vivado` as the
+  default of `VIVADO`, so that `make timing` works as is on the machine
+  that has it; another machine sets `VIVADO` (#61).
 
 **Benchmarks**
 

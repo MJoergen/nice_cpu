@@ -163,11 +163,15 @@ The sections are Files (7), Routines (46), Device routines (113), Floating point
 
 runtime/README.md, line 33: "a monitor in ROM, such as the one of NiceMonMEGA65, loads at `0x8000`". [ABI.md](../../runtime/ABI.md), line 146: "as the monitor of NiceMonMEGA65 will (MJoergen/NiceMonMEGA65#24)". The board's README says the monitor is not written yet. **Fix:** "will" in runtime/README.md too.
 
+**Resolved**: runtime/README.md says "will have", as ABI.md does.
+
 ### 6.6 Smaller
 
 - ABI.md's register table (31–41) lists R14 twice, "the flags X, C, Z, N, and V: No" and "I, E, and VBASE: Yes". It is right, and reads as a typo. One row: "R14 | SR | The flags no; I, E, and VBASE yes".
 - The order of the joined files is stated three ways: TOOLCHAIN.md's diagram, runtime/README.md (25–28), and ABI.md. They agree. One numbered list in runtime/README.md, and links to it from the other two.
 - WASM.md is the contract for a translator, and says so only by its tone; a user who follows a README's link finds normative rules. One sentence at the top: "This is the mapping that `nicewasm` implements. To build programs, read the translator README."
+
+**Resolved**: in part: ABI.md's table has one row for R14, and WASM.md says at the top what it is and where a user should read instead (§6.1). The join order stated once is part of the restructuring of the runtime README (§6.4).
 
 ## 7. The benchmark
 

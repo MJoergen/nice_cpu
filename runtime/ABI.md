@@ -36,8 +36,7 @@ These rules let separately written C and assembly code call each other. Compiler
 | R7–R11 | Variables | Yes |
 | R12 | Frame pointer, FP, when a function uses one; otherwise a variable | Yes |
 | R13 | Stack pointer, SP (ISA §9.1) | Yes |
-| R14 | SR: the flags X, C, Z, N, and V | No |
-| R14 | SR: I, E, and VBASE | Yes |
+| R14 | SR | The flags X, C, Z, N, and V no; I, E, and VBASE yes |
 | R15 | PC | — |
 
 A function may change a preserved register only if it restores it before it returns. Only code whose purpose is to change I, E, or VBASE, such as a routine that enables interrupts, may leave them changed.

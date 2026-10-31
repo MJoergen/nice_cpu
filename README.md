@@ -207,4 +207,7 @@ R. P. Weicker's, and its files state no terms (bench/README.md, Dhrystone). The 
 2004 example programs (`count`, `replicate`, and `print`), their sources and
 their `.bin` files in `assembler/test/`, are by B. Ulmann and T. Kratz and
 are not covered by it; see
-[doc/REFERENCES.md](doc/REFERENCES.md).
+[doc/REFERENCES.md](doc/REFERENCES.md). The font of the emulator's window,
+`emulator/src/font.zig`, is generated from Spleen 16×32, which is under
+the BSD 2-Clause license in `emulator/font/LICENSE.spleen`, and a build
+with `-Dwindow` compiles SDL 3 in, which is under the zlib license.

@@ -39,27 +39,6 @@ a new tag it shows the one before until NiceMonMEGA65 follows.
 [release/RELEASE.md](release/RELEASE.md) (step 7) says how NiceMonMEGA65
 follows a tag.
 
-## Quick start
-
-You need Python 3.10 or later and GNU make 4 or later, with coreutils, as on Linux. Zig 0.17 is needed only to build the emulator
-([download](https://ziglang.org/download/), or see
-[installing Zig](https://ziglang.org/learn/getting-started/)).
-
-**Use Zig 0.17 exactly (tested with 0.17.0).** It is the only supported
-version. Zig changes its language and standard library between releases, so
-the emulator is unlikely to build with a newer or older version. On the
-download page, pick 0.17.0 rather than the latest release or master.
-
-To assemble and run a program:
-
-    make -C emulator build
-    assembler/niceasm.py -o count.bin assembler/test/count.nasm
-    emulator/zig-out/bin/niceemu count.bin
-
-The emulator's `--trace` option prints one line per instruction, in a format
-meant for comparing the FPGA core with the emulator.
-[CONTRIBUTING.md](CONTRIBUTING.md) says how to run the tests.
-
 ## The emulator
 
 `niceemu` runs NICE programs on the host. It implements the whole
@@ -85,6 +64,27 @@ It can:
 
 [emulator/README.md](emulator/README.md) describes its options, memory
 map, debug link, and trace format.
+
+### Quick start
+
+You need Python 3.10 or later and GNU make 4 or later, with coreutils, as on Linux. Zig 0.17 is needed only to build the emulator
+([download](https://ziglang.org/download/), or see
+[installing Zig](https://ziglang.org/learn/getting-started/)).
+
+**Use Zig 0.17 exactly (tested with 0.17.0).** It is the only supported
+version. Zig changes its language and standard library between releases, so
+the emulator is unlikely to build with a newer or older version. On the
+download page, pick 0.17.0 rather than the latest release or master.
+
+To assemble and run a program:
+
+    make -C emulator build
+    assembler/niceasm.py -o count.bin assembler/test/count.nasm
+    emulator/zig-out/bin/niceemu count.bin
+
+The emulator's `--trace` option prints one line per instruction, in a format
+meant for comparing the FPGA core with the emulator.
+[CONTRIBUTING.md](CONTRIBUTING.md) says how to run the tests.
 
 ## Toolchain
 

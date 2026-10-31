@@ -39,22 +39,6 @@ a new tag it shows the one before until NiceMonMEGA65 follows.
 [release/RELEASE.md](release/RELEASE.md) (step 7) says how NiceMonMEGA65
 follows a tag.
 
-## Contents
-
-| Path | What it is |
-|---|---|
-| [doc/](doc/README.md) | The specification, [ISA.md](doc/ISA.md), and the other documents: the I/O devices ([SYSTEM.md](doc/SYSTEM.md)), the design note for the pipelined core, the sources, the history, the reviews, and a beginner's introduction in slides. |
-| [assembler/](assembler/README.md) | `niceasm`, the assembler, and `nicedis`, the disassembler: Python 3 scripts with no dependencies. |
-| [emulator/](emulator/README.md) | `niceemu`, the emulator, written in Zig. |
-| [runtime/](runtime/README.md) | The start-up code and runtime library for C and wasm programs, and a small C library. [ABI.md](runtime/ABI.md) gives the C ABI: registers, calls, the stack, and the runtime library's conventions. |
-| [translator/](translator/README.md) | `nicewasm`, which translates WebAssembly into NICE assembly. [WASM.md](translator/WASM.md) says how WebAssembly maps to NICE. |
-| [bench/](bench/README.md) | A benchmark of translated code: six kernels with known results, timed with the performance counters, and the same benchmark written by hand. |
-| [hdl/](hdl/README.md) | The FPGA implementation in VHDL: a multi-cycle core and a pipelined core, the memory model and trace writer they are tested with, and the formal checks. |
-| [release/](release/README.md) | `release.py`, which scripts the mechanical parts of [RELEASE.md](release/RELEASE.md). |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | How to run the tests, what they cover, and the rules a change follows. |
-| [TODO.md](TODO.md) | Where the open items are: the [issues](https://github.com/MJoergen/nice_cpu/issues), and [doc/review/decisions.md](doc/review/decisions.md) for what was decided against. |
-| [RELEASE_NOTES.md](RELEASE_NOTES.md) | The changes in each release, newest first. |
-
 ## Quick start
 
 You need Python 3.10 or later and GNU make 4 or later, with coreutils, as on Linux. Zig 0.17 is needed only to build the emulator
@@ -133,6 +117,22 @@ order:
 
 Appendix B of ISA.md lists every place where the specification departs from
 a source.
+
+## Contents
+
+| Path | What it is |
+|---|---|
+| [doc/](doc/README.md) | The specification, [ISA.md](doc/ISA.md), and the other documents: the I/O devices ([SYSTEM.md](doc/SYSTEM.md)), the design note for the pipelined core, the sources, the history, the reviews, and a beginner's introduction in slides. |
+| [assembler/](assembler/README.md) | `niceasm`, the assembler, and `nicedis`, the disassembler: Python 3 scripts with no dependencies. |
+| [emulator/](emulator/README.md) | `niceemu`, the emulator, written in Zig. |
+| [runtime/](runtime/README.md) | The start-up code and runtime library for C and wasm programs, and a small C library. [ABI.md](runtime/ABI.md) gives the C ABI: registers, calls, the stack, and the runtime library's conventions. |
+| [translator/](translator/README.md) | `nicewasm`, which translates WebAssembly into NICE assembly. [WASM.md](translator/WASM.md) says how WebAssembly maps to NICE. |
+| [bench/](bench/README.md) | A benchmark of translated code: six kernels with known results, timed with the performance counters, and the same benchmark written by hand. |
+| [hdl/](hdl/README.md) | The FPGA implementation in VHDL: a multi-cycle core and a pipelined core, the memory model and trace writer they are tested with, and the formal checks. |
+| [release/](release/README.md) | `release.py`, which scripts the mechanical parts of [RELEASE.md](release/RELEASE.md). |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to run the tests, what they cover, and the rules a change follows. |
+| [TODO.md](TODO.md) | Where the open items are: the [issues](https://github.com/MJoergen/nice_cpu/issues), and [doc/review/decisions.md](doc/review/decisions.md) for what was decided against. |
+| [RELEASE_NOTES.md](RELEASE_NOTES.md) | The changes in each release, newest first. |
 
 ## License
 

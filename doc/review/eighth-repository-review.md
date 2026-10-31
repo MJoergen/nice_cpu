@@ -125,6 +125,8 @@ Usage (69) opens with the synopsis, the meaning of a step, and a run of `count.b
 
 Lines 124–132: the statuses 0, 2, 3, 4, 1, and 141 in one sentence, with the remarks on stderr, `--`, and the empty argument between them; the status after a signal with `--link`, 0, is at line 316. **Fix:** a table of the statuses, and the remarks after it.
 
+**Resolved**: A table of the six statuses, the signal with `--link` among them, and the three remarks after it.
+
 ### 5.4 emulator/README.md: smaller
 
 - The `--symbols` cell of the option table (98) is 115 words: the file's format, the trap handler, and the tie-break. One sentence in the cell, and the rest in a "Symbols file" paragraph under the table.

@@ -121,15 +121,20 @@ and wherever the colors change, and `ESC[0m` at its end. The foreground is
 not inverted, as it is in the 2004 IDE, unless `--invert-fg` asks for it. Then
 each foreground component `n` becomes `0xF − n`, and the background stays.
 
-The exit status is 0 after `HALT`, 2 after any other halt (a reserved control
-word, a nested `INT`, or `RTI` outside an interrupt routine), 3 at the step
-limit, 4 when the window of `--window` was closed before either, and 1 for a usage, file, or memory error, an out-of-memory
-condition, or an output that cannot be written. Diagnostics go to stderr,
-and only `-h` prints on stdout. `--` is not an option, so a program path
-that starts with `-` cannot be given, and an empty argument counts as no
-program. If stdout is a pipe that
-closes early, as in `niceemu -t x.bin | head`, niceemu stops quietly with
-status 141, as a filter killed by SIGPIPE would.
+The exit status says how the run ended:
+
+| Status | When |
+|---|---|
+| 0 | `HALT`; or, with `--link`, a signal (see Debug link below). |
+| 1 | A usage, file, or memory error, an out-of-memory condition, or an output that cannot be written. |
+| 2 | Any other halt: a reserved control word, a nested `INT`, or `RTI` outside an interrupt routine. |
+| 3 | The step limit. |
+| 4 | The window of `--window` was closed before the halt or the step limit. |
+| 141 | stdout is a pipe that closed early, as in `niceemu -t x.bin \| head`. niceemu stops quietly, as a filter killed by SIGPIPE would. |
+
+Diagnostics go to stderr, and only `-h` prints on stdout. `--` is not an
+option, so a program path that starts with `-` cannot be given, and an
+empty argument counts as no program.
 
 ## Window
 

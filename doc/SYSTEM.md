@@ -18,6 +18,13 @@ data read returns.
 
 - [Memory map](#memory-map)
 - [1. Console, screen, and read counter](#1-console-screen-and-read-counter)
+  - [1.1 Screen](#11-screen)
+  - [1.2 Console](#12-console)
+  - [1.3 Window](#13-window)
+  - [1.4 Cursor](#14-cursor)
+  - [1.5 Keyboard](#15-keyboard)
+  - [1.6 Pacing](#16-pacing)
+  - [1.7 Read counter](#17-read-counter)
 - [2. Math unit](#2-math-unit)
 - [3. Performance counters](#3-performance-counters)
 - [4. Timer](#4-timer)
@@ -30,36 +37,44 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 
 | Address | Words | What |
 |---|---|---|
-| `0xFFFF0000`–`0xFFFF07CF` | 2000 | The emulator's character screen, 80×25 (§1). |
-| `0xFFFFFF00` | 1 | Console (§1). |
-| `0xFFFFFF01` | 1 | Read counter (§1). |
+| `0xFFFF0000`–`0xFFFF07CF` | 2000 | The emulator's character screen, 80×25 (§1.1). |
+| `0xFFFFFF00` | 1 | Console (§1.2). |
+| `0xFFFFFF01` | 1 | Read counter (§1.7). |
 | `0xFFFFFF02`–`0xFFFFFF0F` | 14 | Reserved for I/O. |
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (§4). |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (§2). |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (§3). |
-| `0xFFFFFF80`–`0xFFFFFF82` | 3 | Reserved for I/O. The emulator's window draws its cursor from them (§1). |
+| `0xFFFFFF80`–`0xFFFFFF82` | 3 | Reserved for I/O. The emulator's window draws its cursor from them (§1.4). |
 | `0xFFFFFF83`–`0xFFFFFFDF` | 93 | Reserved for I/O. |
 | `0xFFFFFFE0`–`0xFFFFFFFF` | 32 | Reserved for I/O. The debug link's registers are here, for the link only ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)). |
 
 ## 1. Console, screen, and read counter
 
-**Screen.** The emulator maps a character screen of 25 rows of 80 words at `0xFFFF0000`, row by row: row r, column c is the word at `0xFFFF0000` + 80·r + c, row 0 is the top, column 0 is the left edge, and the last word is at `0xFFFF07CF`. The original emulator of 2004, `NICE.pm` ([REFERENCES.md](REFERENCES.md)), maps the screen at `0x400`. Here it is at `0xFFFF0000`, so that it does not overlap the code of programs longer than 1024 words, and the emulator's option `-2004` puts it back at `0x400` for the 2004 example programs.
+### 1.1 Screen
+
+The emulator maps a character screen of 25 rows of 80 words at `0xFFFF0000`, row by row: row r, column c is the word at `0xFFFF0000` + 80·r + c, row 0 is the top, column 0 is the left edge, and the last word is at `0xFFFF07CF`. The original emulator of 2004, `NICE.pm` ([REFERENCES.md](REFERENCES.md)), maps the screen at `0x400`. Here it is at `0xFFFF0000`, so that it does not overlap the code of programs longer than 1024 words, and the emulator's option `-2004` puts it back at `0x400` for the 2004 example programs.
 
 The screen word has the character in bits 7..0, the background color in bits 31..20, and the foreground color in bits 19..8. Each color is three 4-bit components, red, green, and blue, from the high bits to the low. A component `n` gives the byte `n × 0x11`, so `0x0` is no intensity and `0xF` is full. The emulator's option `--color` prints the screen with these colors as ANSI escapes. Programs that write the 2004 layout should note one difference: the 2004 IDE (`nice_ide.pl`) inverts the three foreground components, so that `0x0` is full intensity and `0xF` is none, and here it is not inverted. The emulator's option `--invert-fg` inverts it, for the 2004 programs. A word with only a character, such as `0x41`, is black on black here, but white on black in the 2004 IDE. The background is the same in both.
 
-**Console.** The emulator maps a console at `0xFFFFFF00`, and programs use it for input and output. Each write prints bits 7..0 of the word. Each data read takes the next input byte, if one waits, and returns:
+### 1.2 Console
+
+The emulator maps a console at `0xFFFFFF00`, and programs use it for input and output. Each write prints bits 7..0 of the word. Each data read takes the next input byte, if one waits, and returns:
 
 | The input | A read returns |
 |---|---|
 | A byte waits | The byte in bits 7..0, with bit 8 set. |
-| No byte waits | 0, from a UART or from the emulator's window (below). From stdin, a file, or the simulation memory of the FPGA core, the read waits for the next byte or the end of the input instead, and never returns 0. |
-| The input has ended | `0x200` (bit 9). A UART's input ends only if the system provides a break (§5), and a keyboard's never ends (below). |
+| No byte waits | 0, from a UART or from the emulator's window (§1.3). From stdin, a file, or the simulation memory of the FPGA core, the read waits for the next byte or the end of the input instead, and never returns 0. |
+| The input has ended | `0x200` (bit 9). A UART's input ends only if the system provides a break (§5), and a keyboard's never ends (§1.5). |
 
 The emulator reads its input from stdin, or from the file of its option `--input`, so stdin from `/dev/null` gives a console with no input. The simulation memory of the FPGA core reads a file too, and returns `0x200` without one. This repository has no UART. A system built on the FPGA core, such as the example design in [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), maps one at the same address, with the same bits (MICROARCH.md §8).
 
-**Window.** The emulator built with a window (its README says how) shows the screen in a window with its option `--window`, 1280×800 pixels, while the program runs. Each character is 16×32 pixels, from the Spleen font, with the colors above. The window shows the 2000 words of the screen and nothing else; the console still writes to stdout, or to the host with `--link`. When the program halts, the window stays, with the last screen, until it is closed. Closing the window before then ends the run. With `--link` ([DEBUG.md §7](DEBUG.md#7-transports)), the window opens when the emulator starts and stays open over every run. It shows the screen also while the processor is held, halted, or paused, so the host's writes to the screen show at once. Closing the window ends the emulator, as a signal does.
+### 1.3 Window
 
-**Cursor.** The window draws a cursor from three words, numbered as the screen registers of NiceMonMEGA65 (§5). In the emulator they are ordinary memory, which the window only reads:
+The emulator built with a window (its README says how) shows the screen in a window with its option `--window`, 1280×800 pixels, while the program runs. Each character is 16×32 pixels, from the Spleen font, with the colors of §1.1. The window shows the 2000 words of the screen and nothing else; the console still writes to stdout, or to the host with `--link`. When the program halts, the window stays, with the last screen, until it is closed. Closing the window before then ends the run. With `--link` ([DEBUG.md §7](DEBUG.md#7-transports)), the window opens when the emulator starts and stays open over every run. It shows the screen also while the processor is held, halted, or paused, so the host's writes to the screen show at once. Closing the window ends the emulator, as a signal does.
+
+### 1.4 Cursor
+
+The window draws a cursor from three words, numbered as the screen registers of NiceMonMEGA65 (§5). In the emulator they are ordinary memory, which the window only reads:
 
 | Address | What |
 |---|---|
@@ -69,7 +84,9 @@ The emulator reads its input from stdin, or from the file of its option `--input
 
 The cursor swaps the foreground and background colors of its character. With a column or row out of range, no cursor is shown. The words are 0 at the start of a run, so the cursor is off.
 
-**Keyboard.** With `--window`, the console reads the input of `--input`, if given, and then the keys typed into the window. It does not read stdin. A read returns 0 when no byte is waiting, as from a UART. Without `--link` it never returns `0x200`, as a keyboard has no end. A key gives these bytes, as xterm sends them:
+### 1.5 Keyboard
+
+With `--window`, the console reads the input of `--input`, if given, and then the keys typed into the window. It does not read stdin. A read returns 0 when no byte is waiting, as from a UART. Without `--link` it never returns `0x200`, as a keyboard has no end. A key gives these bytes, as xterm sends them:
 
 | Key | Bytes |
 |---|---|
@@ -87,9 +104,13 @@ A character outside ASCII and the other keys give nothing. A held key repeats as
 
 With `--link`, the keys and the bytes from the host go into the one input buffer, in the order they arrive, as a board's keyboard and UART share one FIFO (§5). Keys typed while the processor is held or has halted are dropped, and keys typed while it is paused wait in the buffer, as the host's bytes do. A byte of a key waits until the buffer has room for two bytes, so that a byte from the host still finds room. When the host's input ends ([DEBUG.md §7](DEBUG.md#7-transports)), the host's bytes are dropped until the next start or the next connection, but the keys still go into the buffer, as after a break on a board's UART (§5). A read then returns a byte if one waits, and `0x200` otherwise. So a program that reads until the end still ends with the host's input, and one that reads on, as a monitor does, gets the keys.
 
-**Pacing.** With `--window`, the emulator runs one step per microsecond, so the microsecond counter (§3) keeps the time of the host's clock, and a program that waits on it runs at the speed it would on a board. The counters and the timer still count one per step, so the cycle counter counts at 1 MHz, and a timer period of P cycles (§4) lasts P microseconds, where on a board of 100 MHz it lasts P/100. A program that sets the timer from the clock frequency of a board runs its interrupts slower in the window. The option `--speed` sets another rate in steps per second, and `--speed 0` runs as fast as the host can.
+### 1.6 Pacing
 
-**Read counter.** At `0xFFFFFF01` the emulator and the simulation memory of the FPGA core map a read counter for tests. A data read of it returns the number of data reads of it since the last write to it, and a write sets that number. It is 0 at the start of a run, and a reset of the processor does not clear it. Tests use it to count the data accesses of ISA §8.2.
+With `--window`, the emulator runs one step per microsecond, so the microsecond counter (§3) keeps the time of the host's clock, and a program that waits on it runs at the speed it would on a board. The counters and the timer still count one per step, so the cycle counter counts at 1 MHz, and a timer period of P cycles (§4) lasts P microseconds, where on a board of 100 MHz it lasts P/100. A program that sets the timer from the clock frequency of a board runs its interrupts slower in the window. The option `--speed` sets another rate in steps per second, and `--speed 0` runs as fast as the host can.
+
+### 1.7 Read counter
+
+At `0xFFFFFF01` the emulator and the simulation memory of the FPGA core map a read counter for tests. A data read of it returns the number of data reads of it since the last write to it, and a write sets that number. It is 0 at the start of a run, and a reset of the processor does not clear it. Tests use it to count the data accesses of ISA §8.2.
 
 ## 2. Math unit
 
@@ -189,8 +210,8 @@ To get an IRQ through vector table entry `0x41` every 100000 cycles, that is, ev
 A board that wraps the FPGA core, such as [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), may differ from the emulator in the points below. Its own README has the details.
 
 - **Reserved words.** `0xFFFFFF02`–`0xFFFFFF0F` and `0xFFFFFF80`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. The emulator treats them as ordinary memory for data accesses, and only instruction fetches read 0 ([ISA.md §8.3](ISA.md)). NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF8F` for its screen registers, `0xFFFFFF90`–`0xFFFFFF9F` for its board's devices, and `0xFFFFFFE0`–`0xFFFFFFFF` for the debug registers of the link (**Debug link** below).
-- **Screen.** A board's screen may be larger than the emulator's 80×25. NiceMonMEGA65's has up to 32K words. The color format of §1 applies unchanged. The display offset belongs to the board. The emulator's window draws the cursor from the board's cursor registers (§1), but has no offset.
-- **Console input.** A UART or a keyboard feeds the same console at `0xFFFFFF00`, with the same bits (§1). A break on the UART may end the line's input: the UART's bytes are then dropped until the next start, and a read returns `0x200` once the FIFO is empty, but the keyboard's bytes still go into the FIFO, and a read returns them. So a monitor that a host leaves keeps running on the keyboard, and a program that reads until the end still ends with the host's input. A keyboard sends no break. A board's keyboard gives the bytes of the window's keys (§1), and may have more keys.
+- **Screen.** A board's screen may be larger than the emulator's 80×25. NiceMonMEGA65's has up to 32K words. The color format of §1.1 applies unchanged. The display offset belongs to the board. The emulator's window draws the cursor from the board's cursor registers (§1.4), but has no offset.
+- **Console input.** A UART or a keyboard feeds the same console at `0xFFFFFF00`, with the same bits (§1.2). A break on the UART may end the line's input: the UART's bytes are then dropped until the next start, and a read returns `0x200` once the FIFO is empty, but the keyboard's bytes still go into the FIFO, and a read returns them. So a monitor that a host leaves keeps running on the keyboard, and a program that reads until the end still ends with the host's input. A keyboard sends no break. A board's keyboard gives the bytes of the window's keys (§1.5), and may have more keys.
 - **Input FIFO.** A system's input FIFO may lose bytes. NiceMonMEGA65 drops a UART byte that arrives when the FIFO is full, with the link's `o` notice ([DEBUG.md §4](DEBUG.md#4-notices)), or after a break. Input that arrives while the processor is held or has halted is dropped, as by `niceemu --link`, and input that arrives while it is paused waits in the FIFO ([DEBUG.md §1](DEBUG.md#1-the-byte-stream)). A keyboard byte waits until the FIFO has room for two, so that a UART byte still finds room.
 - **ROM.** A system may map a ROM at 0 that it can hide, so that a program loads at 0 as in the emulator.
 - **Debug link.** A board may serve the debug link of [DEBUG.md](DEBUG.md) on its UART, or over TCP as the emulator does. Its debug registers at `0xFFFFFFE0`–`0xFFFFFFFF` are for the link only, so a program's data accesses there go to whatever the board has there otherwise.

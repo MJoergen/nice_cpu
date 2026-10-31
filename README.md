@@ -71,6 +71,12 @@ map, debug link, and trace format.
 
 ### Building the emulator
 
+Each [release](https://github.com/MJoergen/nice_cpu/releases) from V1.2
+on has niceemu built for x86_64 Linux, with and without the window, so
+you need no Zig to run programs
+([emulator/README.md](emulator/README.md#download)). Building it yourself
+takes the steps below.
+
 You need Python 3.10 or later and GNU make 4 or later, with coreutils, as on Linux. Zig 0.17 is needed only to build the emulator
 ([download](https://ziglang.org/download/), or see
 [installing Zig](https://ziglang.org/learn/getting-started/)).

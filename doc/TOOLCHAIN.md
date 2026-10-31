@@ -122,4 +122,6 @@ Zig fetches, so it needs no system package
 diagrams of `doc/` need pdflatex, and the diagrams pdftoppm. GitHub
 Actions runs every `make test` and `make typecheck`, `make window-test`,
 the document checks, `make programs` on both cores, `make lint`,
-`make formal`, and `make pdfcheck` on each push.
+`make formal`, and `make pdfcheck` on each push. On a tag, it runs
+`make -C emulator dist` and attaches the two builds of niceemu to the
+release ([emulator/README.md](../emulator/README.md#download)).

@@ -73,13 +73,18 @@ endef
 # built ReleaseSafe, which keeps the checks but runs much faster.
 test: build bincheck
 	$(ZIG) build test --summary all
+	@$(MAKE) --no-print-directory programs
+	@NICEEMU=$(abspath $(EMU)) $(PYTHON) test/errors.py
+
+# The example and probe programs, and the debug link, on the niceemu of
+# EMU. errors.py is apart, as it expects a build without the window.
+programs:
 	$(foreach t,$(EXAMPLES),$(call check,$(t),$(ASM)/$(t).bin))
 	$(foreach t,$(PROBES),$(call check,$(t),test/$(t).bin))
 	$(call check,timer_noirq,test/timer.bin,timer)
 	$(call check,scrbound2004,test/scrbound.bin)
 	@rm -f test/*.out
-	@$(PYTHON) test/errors.py
-	@$(PYTHON) test/link.py
+	@NICEEMU=$(abspath $(EMU)) $(PYTHON) test/link.py
 
 build:
 	$(ZIG) build -Doptimize=ReleaseSafe
@@ -95,6 +100,41 @@ window:
 window-test: window
 	$(ZIG) build test -Doptimize=ReleaseSafe -Dwindow --summary all
 	@$(PYTHON) test/window.py
+
+# The release files of README.md, Download: niceemu for x86_64 Linux,
+# without the window (static, musl) and with it (glibc 2.31 or later, as
+# SDL loads X11 or Wayland at run time), each packed with the README, the
+# license, and, with the window, the licenses of SDL. A named target
+# builds for the baseline x86_64 CPU, not the CPU of this machine. Each
+# build runs the tests of make test, the window one those of window-test
+# instead of errors.py. TAG is V and the first two numbers of the version
+# in build.zig.zon.
+VERSION := $(shell sed -n 's/^ *\.version = "\(.*\)",$$/\1/p' build.zig.zon)
+TAG ?= V$(word 1,$(subst ., ,$(VERSION))).$(word 2,$(subst ., ,$(VERSION)))
+DIST = dist
+PLAIN = niceemu-$(TAG)-x86_64-linux
+WINDOW = niceemu-window-$(TAG)-x86_64-linux
+
+dist: bincheck
+	rm -rf $(DIST)
+	$(ZIG) build -Doptimize=ReleaseSafe -Dtarget=x86_64-linux-musl -p $(DIST)/$(PLAIN)
+	$(ZIG) build -Doptimize=ReleaseSafe -Dtarget=x86_64-linux-gnu.2.31 -Dwindow -p $(DIST)/$(WINDOW)
+	@$(MAKE) --no-print-directory programs EMU=$(DIST)/$(PLAIN)/bin/niceemu
+	@NICEEMU=$(abspath $(DIST)/$(PLAIN)/bin/niceemu) $(PYTHON) test/errors.py
+	@$(MAKE) --no-print-directory programs EMU=$(DIST)/$(WINDOW)/bin/niceemu
+	@NICEEMU=$(abspath $(DIST)/$(WINDOW)/bin/niceemu) $(PYTHON) test/window.py
+	for d in $(PLAIN) $(WINDOW); do \
+	  mv $(DIST)/$$d/bin/niceemu $(DIST)/$$d/ && rmdir $(DIST)/$$d/bin && \
+	  cp README.md ../LICENSE $(DIST)/$$d/ || exit 1; \
+	done
+	for p in zig-pkg/sdl-* zig-pkg/sdl_linux_deps-*; do \
+	  n=$$(basename $$p | cut -d- -f1); mkdir -p $(DIST)/$(WINDOW)/licenses/$$n && \
+	  cp -r $$p/LICENSE.txt $$p/LICENSES $$p/REUSE.toml $(DIST)/$(WINDOW)/licenses/$$n/ || exit 1; \
+	done
+	cd $(DIST) && for d in $(PLAIN) $(WINDOW); do \
+	  tar --owner=0 --group=0 -czf $$d.tar.gz $$d || exit 1; done && \
+	  sha256sum $(PLAIN).tar.gz $(WINDOW).tar.gz > SHA256SUMS
+	@cat $(DIST)/SHA256SUMS
 
 # Reassemble the probes with niceasm.
 bins:
@@ -113,6 +153,6 @@ typecheck:
 	$(PYTHON) -m mypy --strict test/errors.py test/link.py test/window.py font/gen_font.py
 
 clean:
-	rm -rf zig-out .zig-cache zig-pkg test/*.out
+	rm -rf zig-out .zig-cache zig-pkg dist test/*.out
 
-.PHONY: test build window window-test bins bincheck typecheck clean
+.PHONY: test programs dist build window window-test bins bincheck typecheck clean

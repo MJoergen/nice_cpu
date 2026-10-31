@@ -7,12 +7,35 @@ An emulator for the NICE processor, written in [Zig](https://ziglang.org). It im
 It needs Zig 0.17 (tested with 0.17.0), and Python 3 for `make test`.
 The window of `--window` needs a build with `-Dwindow`, below.
 
+## Download
+
+Each [release](https://github.com/MJoergen/nice_cpu/releases) from V1.2
+on has niceemu built for x86_64 Linux, so it can run without Zig. The
+files of V1.2 are:
+
+| File | What it is |
+|---|---|
+| `niceemu-V1.2-x86_64-linux.tar.gz` | Without the window. Static, so it runs on any distribution. |
+| `niceemu-window-V1.2-x86_64-linux.tar.gz` | With the window of `--window`. Needs glibc 2.31 or later, and X11 or Wayland for the window. Has the licenses of SDL in `licenses/`. |
+| `SHA256SUMS` | The SHA-256 of both. |
+
+Each archive holds one directory, with `niceemu`, this README, and the
+license:
+
+    $ sha256sum -c --ignore-missing SHA256SUMS
+    $ tar xzf niceemu-V1.2-x86_64-linux.tar.gz
+    $ niceemu-V1.2-x86_64-linux/niceemu --help
+
+Both are built for the baseline x86_64 CPU, with ReleaseSafe, as
+`make build` builds. `make dist` builds them, below.
+
 ## Build and test
 
     make          # unit tests, example and probe programs, test/errors.py
     make build    # just build zig-out/bin/niceemu
     make window   # build it with the window of --window
     make window-test  # build it so, and run test/window.py
+    make dist     # the files of Download, in dist/
 
 `make window` builds niceemu with `zig build -Dwindow`. The window uses
 [SDL 3](https://libsdl.org), which the build fetches from
@@ -25,6 +48,17 @@ removes. Without `-Dwindow`, the build fetches nothing and needs only Zig.
 `make window-test` runs `test/window.py` on that build, with SDL's dummy
 video driver, so it needs no display (see Window below). What `make test`
 runs is under [Tests](#tests), at the end.
+
+`make dist` builds the two files of Download in `dist/`, and the
+release workflow, `.github/workflows/release.yml`, runs it on each tag.
+It builds niceemu for `x86_64-linux-musl` without the window, and for
+`x86_64-linux-gnu.2.31` with it, as SDL loads the libraries of X11 or
+Wayland at run time, which a static build cannot. It runs the programs of
+`make test` and `test/link.py` on both, `test/errors.py` on the first, and
+`test/window.py` on the second. Their names take the tag from the version
+in `build.zig.zon`, or from `TAG`. `make programs EMU=PATH` runs the
+programs and `test/link.py` on any build, and the test scripts run the
+niceemu that `NICEEMU` in the environment names, if set.
 
 ## Usage
 

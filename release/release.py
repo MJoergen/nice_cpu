@@ -8,6 +8,8 @@
     release.py ci [--wait]      step 6: every CI job passed on HEAD
     release.py notes            a draft of the section of RELEASE_NOTES.md
     release.py tag [NAME]       step 8: tag HEAD, if the stamp and CI allow it
+    release.py section NAME     the section of RELEASE_NOTES.md of a tag, for
+                                the GitHub release (.github/workflows/release.yml)
 
 Python 3 standard library only. The commands stop at the first failure and
 exit with status 1.
@@ -36,6 +38,7 @@ OLD_TAG_PATTERN = re.compile(r"^RC(\d+)$")
 
 CI_YML = ROOT / ".github" / "workflows" / "ci.yml"
 NOTES_FILE = ROOT / "RELEASE_NOTES.md"
+ZON_FILE = ROOT / "emulator" / "build.zig.zon"
 
 # The cores that make slow must have run on.
 CORES = ["pipeline", "multicycle"]
@@ -409,6 +412,34 @@ def cmd_notes(_: argparse.Namespace) -> int:
     return 0
 
 
+def zon_version(text: str) -> Optional[str]:
+    """The .version of a build.zig.zon, or None."""
+    m = re.search(r'^\s*\.version\s*=\s*"([^"]*)"', text, re.M)
+    return m.group(1) if m else None
+
+
+def version_is_tags(version: Optional[str], name: str) -> bool:
+    """Whether the version of build.zig.zon is that of the tag name:
+    1.2.0 for V1.2 (RELEASE.md step 2.9)."""
+    m = TAG_PATTERN.match(name)
+    return m is not None and version == f"{int(m.group(1))}.{int(m.group(2))}.0"
+
+
+def check_version(name: str) -> None:
+    version = zon_version(ZON_FILE.read_text())
+    if not version_is_tags(version, name):
+        raise Failure(f"emulator/build.zig.zon has version {version}, not that of {name} (RELEASE.md step 2.9)")
+
+
+def cmd_section(a: argparse.Namespace) -> int:
+    check_version(a.name)
+    section = notes_section(NOTES_FILE.read_text(), a.name)
+    if section is None:
+        raise Failure(f"RELEASE_NOTES.md has no section for {a.name}")
+    print(section, end="")
+    return 0
+
+
 def notes_section(text: str, name: str) -> Optional[str]:
     """The section of RELEASE_NOTES.md of the tag name, from its heading to
     the next, without the leading ##, or None."""
@@ -443,6 +474,7 @@ def cmd_tag(a: argparse.Namespace) -> int:
         raise Failure(f"{name} does not come after the last tag, {tags[-1]}")
     if name in git("tag", "--list").split():
         raise Failure(f"tag {name} exists")
+    check_version(name)
     if not tree_is_clean():
         raise Failure("the working tree is not clean")
     sha = head()
@@ -500,6 +532,9 @@ def main() -> int:
     c.add_argument("--allow-partial", action="store_true", help="accept a stamp that skipped steps")
     c.add_argument("--repo", metavar="OWNER/NAME", help="the GitHub repository, if origin is not it")
     c.set_defaults(fn=cmd_tag)
+    c = sub.add_parser("section")
+    c.add_argument("name", help="the tag, such as V1.2")
+    c.set_defaults(fn=cmd_section)
     a = ap.parse_args()
     try:
         return int(a.fn(a))

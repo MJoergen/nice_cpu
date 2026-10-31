@@ -12,6 +12,7 @@ which follows the tag and gates nothing.
     python3 release/release.py ci [--wait] [--repo OWNER/NAME]    # step 6
     python3 release/release.py notes          # a draft of the section of RELEASE_NOTES.md
     python3 release/release.py tag [NAME] [--allow-partial] [--repo OWNER/NAME]    # step 8
+    python3 release/release.py section NAME   # the section of a tag, for release.yml
 
 Each command stops at the first failure and exits with status 1.
 
@@ -22,7 +23,8 @@ Each command stops at the first failure and exits with status 1.
 | `figures` | Runs `make -C bench cycles`, and checks that [bench/README.md](../bench/README.md) quotes the summary line and the total of `bench.bin`. The other programs are not checked. |
 | `ci` | Finds the push runs of `ci.yml` on `HEAD`, and checks that every job of the file, each `programs` job among them, succeeded in one of them. A failed job fails the check at once. `--wait` polls until the jobs finish. `--repo` names the GitHub repository if `origin` is not it. |
 | `notes` | Prints a draft of the section of [RELEASE_NOTES.md](../RELEASE_NOTES.md) for the next tag: the Zig version, the benchmark cycles against the last tag, the changes to `hdl/src` and `doc/SYSTEM.md`, and the commit subjects since the last tag. |
-| `tag` | Refuses unless the tree is clean, the stamp is for `HEAD` and not partial (`--allow-partial` accepts a partial one), RELEASE_NOTES.md has a section for the tag, and CI passed. Shows the section, asks, creates an annotated tag with the section as its message. The name is the next minor version, `V1.0` after the release candidates, unless given; a given name must be `Vmajor.minor` and come after the last tag ([RELEASE.md](RELEASE.md#version-names)), and asks again before pushing it. |
+| `tag` | Refuses unless the version in `emulator/build.zig.zon` is the tag's (`1.2.0` for `V1.2`), the tree is clean, the stamp is for `HEAD` and not partial (`--allow-partial` accepts a partial one), RELEASE_NOTES.md has a section for the tag, and CI passed. Shows the section, asks, creates an annotated tag with the section as its message. The name is the next minor version, `V1.0` after the release candidates, unless given; a given name must be `Vmajor.minor` and come after the last tag ([RELEASE.md](RELEASE.md#version-names)), and asks again before pushing it. |
+| `section` | Prints the section of [RELEASE_NOTES.md](../RELEASE_NOTES.md) of the tag NAME, its heading without `##` on the first line. Refuses unless the version in `emulator/build.zig.zon` is the tag's, and the section exists. [release.yml](../.github/workflows/release.yml) makes the release's title and text of it. |
 
 The stamp is what makes "do not go on while one fails" hold: a new commit
 makes it stale, and `tag` will not use it, unless the commits since the stamp changed

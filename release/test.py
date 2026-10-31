@@ -122,6 +122,19 @@ def test_notes_section() -> None:
     check(release.notes_section(NOTES, "RC5") is None, "RC5 is not RC05")
 
 
+def test_version() -> None:
+    zon = '.{\n    .name = .niceemu,\n    .version = "1.2.0",\n    .fingerprint = 0x1,\n}\n'
+    check(release.zon_version(zon) == "1.2.0", "the version of a build.zig.zon")
+    check(release.zon_version(".{ .name = .x }") is None, "no version")
+    check(release.version_is_tags("1.2.0", "V1.2"), "1.2.0 is V1.2's")
+    check(release.version_is_tags("1.10.0", "V1.10"), "1.10.0 is V1.10's")
+    check(not release.version_is_tags("1.1.0", "V1.2"), "1.1.0 is not V1.2's")
+    check(not release.version_is_tags("1.2.1", "V1.2"), "1.2.1 is not V1.2's")
+    check(not release.version_is_tags(None, "V1.2"), "no version")
+    check(not release.version_is_tags("0.0.6", "RC06"), "a release candidate has no version")
+    check(release.zon_version(release.ZON_FILE.read_text()) is not None, "the real build.zig.zon has a version")
+
+
 def test_stamp_covers() -> None:
     def git(*args: str, check: bool = True) -> str:
         if args[0] == "merge-base":
@@ -168,6 +181,6 @@ def test_timing_budget() -> None:
             check(release.timing_budget()["status"] == "error", "a stale budget.json is not read")
 
 
-for t in (test_timing_budget, test_figure_lines, test_bench_totals, test_next_tag, test_ci_status, test_notes_section, test_stamp_covers):
+for t in (test_timing_budget, test_figure_lines, test_bench_totals, test_next_tag, test_ci_status, test_notes_section, test_version, test_stamp_covers):
     t()
 print("release tests passed")

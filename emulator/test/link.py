@@ -20,7 +20,8 @@ from typing import Callable, List, Optional, Tuple
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NICEASM = os.path.join(HERE, "..", "..", "assembler", "niceasm.py")
-NICEEMU = os.path.join(HERE, "..", "zig-out", "bin", "niceemu")
+# NICEEMU in the environment names another build, such as one of make dist.
+NICEEMU = os.environ.get("NICEEMU") or os.path.join(HERE, "..", "zig-out", "bin", "niceemu")
 
 ESC = b"\xff"
 

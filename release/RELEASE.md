@@ -85,9 +85,10 @@ tools. Item 2 is by hand.
    board tags at the top of RELEASE_NOTES.md gets a row for the new tag,
    `none yet` until NiceMonMEGA65 follows (step 7).
 9. The version in `emulator/build.zig.zon` is the new tag's: `1.2.0` for
-   `V1.2`. Nothing reads it, but it names the release the build is from.
-   Set it before `release.py check`, as a change to it after the stamp
-   makes the stamp stale.
+   `V1.2`. It names the release the build is from, and the files of the
+   release. `release.py tag` and the release workflow refuse a tag it does
+   not match. Set it before `release.py check`, as a change to it after
+   the stamp makes the stamp stale.
 
 ## 3. Quick checks
 
@@ -255,6 +256,22 @@ record it in the release notes:
        git tag -a --cleanup=whitespace V1.0 -m "<the section>"
        git push origin V1.0
 
-4. Then step 7, whenever you like. Reference this tag in the tag message
+4. The push of the tag starts
+   [release.yml](../.github/workflows/release.yml). It builds niceemu for
+   x86_64 Linux, with and without the window, with `make -C emulator
+   dist`, runs the emulator's tests on each, and creates the GitHub
+   release, with the section of the tag as its text and three files:
+   the two archives and `SHA256SUMS`
+   ([emulator/README.md](../emulator/README.md#download)). Wait for it,
+   and check that the release has the three files:
+
+       gh run watch $(gh run list --workflow release.yml --limit 1 --json databaseId -q '.[0].databaseId')
+       gh release view <tag>
+
+   If it failed on a passing cause, such as the network, rerun it with
+   `gh run rerun`. Otherwise run `make -C emulator dist` on a checkout of
+   the tag, with the fix it needs, and create the release by hand with
+   `gh release create`, as release.yml does. A tag is never moved.
+5. Then step 7, whenever you like. Reference this tag in the tag message
    of NiceMonMEGA65, and put its tag in the row of the table at the top of
    RELEASE_NOTES.md.

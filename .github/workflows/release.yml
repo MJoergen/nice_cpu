@@ -1,0 +1,38 @@
+name: Release
+
+# The GitHub release of a tag Vmajor.minor, with the builds of niceemu of
+# emulator/README.md, Download, as its files. The tag comes from
+# release.py tag (release/RELEASE.md step 8), after CI passed on its
+# commit, so this workflow runs only what the release needs.
+on:
+  push:
+    tags: ["V[0-9]+.[0-9]+"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0
+      # Fails unless the version in emulator/build.zig.zon is the tag's
+      # and RELEASE_NOTES.md has a section for it. Its first line is the
+      # title of the release, and the rest the text.
+      - run: python3 release/release.py section "$GITHUB_REF_NAME" > "$RUNNER_TEMP/section.md"
+      # Both builds, each with its tests, packed, and SHA256SUMS.
+      - run: make -C emulator dist TAG="$GITHUB_REF_NAME"
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tail -n +2 "$RUNNER_TEMP/section.md" > "$RUNNER_TEMP/notes.md"
+          gh release create "$GITHUB_REF_NAME" --verify-tag \
+            --title "$(head -n 1 "$RUNNER_TEMP/section.md")" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            emulator/dist/*.tar.gz emulator/dist/SHA256SUMS

@@ -198,6 +198,17 @@ rebuild. In the order of who must act:
   benchmark's module is 8531 words, from 8537, with `nice_putc` an
   import (#88).
 
+**Release**
+
+- Each release has niceemu for x86_64 Linux as files to download: a
+  static build without the window, and a build with it for glibc 2.31
+  or later (#101). `.github/workflows/release.yml` builds them with
+  `make -C emulator dist`, runs the tests on each, and creates the
+  release from the tag's section of these notes.
+- `release.py tag` refuses a tag whose version differs from that in
+  `emulator/build.zig.zon`, and `release.py section` prints the section
+  of a tag.
+
 ## V1.1 (2026-10-28)
 
 A disassembler, `errno` in the C library, and debug link version 5, in

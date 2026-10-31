@@ -18,7 +18,8 @@ import time
 from typing import List, Optional, Tuple
 
 NICEASM = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "assembler", "niceasm.py")
-NICEEMU = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "zig-out", "bin", "niceemu")
+# NICEEMU in the environment names another build, such as one of make dist.
+NICEEMU = os.environ.get("NICEEMU") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "zig-out", "bin", "niceemu")
 
 # (arguments, contents of the .bin file or None, expected stderr line). In
 # the arguments and the message, BIN stands for the .bin file's path.

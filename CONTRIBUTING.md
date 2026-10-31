@@ -30,6 +30,9 @@ needs them.
 compiled from source, and tests it on SDL's dummy video driver. It is not
 in `make test`, as its build replaces the emulator that the other tests
 run ([emulator/README.md](emulator/README.md#window)).
+`make -C emulator dist` builds the two emulators of a release, with and
+without the window, and runs the tests on each
+([emulator/README.md](emulator/README.md#download)).
 
 Each directory with Python in it also has `make typecheck`, which runs
 `mypy --strict`. The README of each directory lists its other targets,
@@ -37,7 +40,7 @@ such as the long simulations and the formal checks of `hdl/`. Run the
 relevant `make test` after every change. GitHub Actions runs every
 `make test` and `make typecheck`, `make window-test`, the document
 checks, `make programs` on both cores, `make lint`, `make formal`, and
-`make pdfcheck` on each push.
+`make pdfcheck` on each push, and `make -C emulator dist` on each tag.
 
 ## What the tests cover
 

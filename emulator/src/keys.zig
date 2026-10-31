@@ -110,9 +110,14 @@ test "the bytes of the keys, as in SYSTEM.md" {
     try testing.expectEqualStrings("\x1b\x5b\x43", bytes(.right));
     try testing.expectEqualStrings("\x1b\x5b\x44", bytes(.left));
     try testing.expectEqualStrings("\x1b\x4f\x50", bytes(.f1));
+    try testing.expectEqualStrings("\x1b\x4f\x51", bytes(.f2));
+    try testing.expectEqualStrings("\x1b\x4f\x52", bytes(.f3));
     try testing.expectEqualStrings("\x1b\x4f\x53", bytes(.f4));
     try testing.expectEqualStrings("\x1b\x5b\x31\x35\x7e", bytes(.f5));
     try testing.expectEqualStrings("\x1b\x5b\x31\x37\x7e", bytes(.f6));
+    try testing.expectEqualStrings("\x1b\x5b\x31\x38\x7e", bytes(.f7));
+    try testing.expectEqualStrings("\x1b\x5b\x31\x39\x7e", bytes(.f8));
+    try testing.expectEqualStrings("\x1b\x5b\x32\x30\x7e", bytes(.f9));
     try testing.expectEqualStrings("\x1b\x5b\x32\x31\x7e", bytes(.f10));
     try testing.expectEqualStrings("\x1b\x5b\x32\x33\x7e", bytes(.f11));
     try testing.expectEqualStrings("\x1b\x5b\x32\x34\x7e", bytes(.f12));

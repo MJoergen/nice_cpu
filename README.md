@@ -171,7 +171,7 @@ and host tools they need.
 
 [doc/ISA.md](doc/ISA.md) covers the programmer's model, the instruction
 format, conditional execution, addressing modes, execution, flags,
-interrupts, reset, memory, the I/O range, software conventions, the assembler syntax, and the `.bin` object format. Where the sources disagree, it follows this
+interrupts, reset, memory, the I/O range, software conventions, the assembler syntax, and the `.bin` object format. Where the [sources](doc/REFERENCES.md) disagree, it follows this
 order:
 
 1. The intended behavior of the 2004 emulator `NICE.pm` and web page (not

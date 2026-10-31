@@ -81,7 +81,9 @@ tools. Item 2 is by hand.
    says whether it is a new minor or a new major, and a change in a new
    minor follows the rules of DEBUG.md §9. Its row in the table of
    versions of DEBUG.md §9 names the new tag before `release.py check`,
-   as a change to DEBUG.md after the stamp makes it stale.
+   as a change to DEBUG.md after the stamp makes it stale. The table of
+   board tags at the top of RELEASE_NOTES.md gets a row for the new tag,
+   `none yet` until NiceMonMEGA65 follows (step 7).
 9. The version in `emulator/build.zig.zon` is the new tag's: `1.2.0` for
    `V1.2`. Nothing reads it, but it names the release the build is from.
    Set it before `release.py check`, as a change to it after the stamp
@@ -254,4 +256,5 @@ record it in the release notes:
        git push origin V1.0
 
 4. Then step 7, whenever you like. Reference this tag in the tag message
-   of NiceMonMEGA65.
+   of NiceMonMEGA65, and put its tag in the row of the table at the top of
+   RELEASE_NOTES.md.

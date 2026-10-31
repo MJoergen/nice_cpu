@@ -15,6 +15,7 @@ pins each is:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|
+| `V1.2` | none yet |
 | `V1.1` | `V1.1` |
 | `V1.0` | `V1.0` |
 | `RC06` | `RC06` |

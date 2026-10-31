@@ -12,6 +12,16 @@ and is the working reference for it. [ASSUMPTIONS.md](ASSUMPTIONS.md) lists wher
 pipelined core settles a question that MICROARCH.md leaves open, or
 departs from it.
 
+**Terms.** The pipelined core's stages are FETCH, DECODE, PREPARE, WRITE,
+and DBUS; the table under [The pipelined core](#the-pipelined-core) says
+what each does. `wb_dmux` is [the data bus decoder](#the-data-bus-decoder),
+which puts the memory and the devices on the core's data bus. The debug
+link's side port is for a client inside the system, such as a debugger on
+the board ([The debug link](#the-debug-link)). `make slow` in the top
+directory runs the benchmark, Dhrystone, and the stride sweeps on both
+cores at once, and `release.py check` records what it and `make timing`
+found in the release stamp ([release/RELEASE.md](../release/RELEASE.md)).
+
 - [Folder contents](#folder-contents)
 - [Running the tests](#running-the-tests)
 - [The formal checks](#the-formal-checks)
@@ -296,7 +306,7 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   the bus accepts in the same cycle (MICROARCH.md §5.5): three of its
   forty stores do with no stalls, and two with 30%. It checks itself:
   R12 is 0 at the end only if every `HALT` was passed. The programs
-  `test/latecount.nasm` to `test/shiftjump.nasm` in the table above test
+  `test/latecount.nasm` to `test/shiftjump.nasm`, listed in test/README.md, test
   the operand rules of MICROARCH.md §7.4: the shift counts WRITE reduces
   in a cycle of its own, the destinations adjusted by one, R14 and R15 in
   every field, R0, stores into fetched code from late instructions, the
@@ -846,9 +856,8 @@ is 0 on both buses, so every ACK owed has come. Only reset restarts it.
 The multi-cycle core has no bus cycle open once it has halted. The
 pipelined core may still have requests in flight, and may make one more
 in the cycle it halts, so it waits. A system may then take the buses
-over, and no late ACK of the core reaches its other master. Until
-2026-10-24 the pipelined core's `halted_o` waited only for its last
-request, not for the ACKs (doc/HISTORY.md). `tb_core` runs a few cycles
+over, and no late ACK of the core reaches its other master.
+doc/HISTORY.md says what `halted_o` waited for before. `tb_core` runs a few cycles
 past the end of the trace, so that `p_check` in `src/pipeline.vhd` sees
 the core halted.
 
@@ -1002,15 +1011,9 @@ reaches every stage at once. Its stores and vector reads go out from a
 register in DBUS, a cycle later. In the best case one micro-operation retires each cycle.
 `cputest` takes about 1.2 cycles per instruction on memory that never
 stalls, and `hazard.nasm`, which is all hazards, 1.9. The benchmark of
-[bench/](../bench/README.md) runs like this at commit 98d2bed
-(bench/README.md has the multi-cycle core's numbers):
-
-| Program | Instructions | Cycles | Cycles per instruction |
-|---|---|---|---|
-| `bench.c` through nicewasm | 1652811 | 2357155 | 1.43 |
-| `hand.nasm` | 491309 | 1252613 | 2.55 |
-
-The instruction counts equal the emulator's, counted in the phases. In `hand.nasm`, `vm` (5.4
+[bench/](../bench/README.md) takes about 1.4 cycles per instruction
+through nicewasm and 2.5 by hand; bench/README.md has the figures of
+both cores, by phase. In `hand.nasm`, `vm` (5.4
 cycles per instruction) ends each handler of three or four instructions
 with a jump through a table, whose address PREPARE must wait for, since
 the instruction before loads its index, and which flushes the pipeline;

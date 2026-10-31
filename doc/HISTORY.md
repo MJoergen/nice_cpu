@@ -299,6 +299,14 @@ benchmark's module became 8560, not 8623.
   `vm`, and `strings`, and the re-timing's new waits cost `hand.nasm` 0.2%.
 - `rng64` in `hand.nasm` ran at 1.5 cycles per instruction on the pipelined
   core when the multiplier still took longer than two cycles.
+- Before DECODE predicted backward conditional jumps taken (MICROARCH.md
+  §5.4), at commit 1a41b0c, the pipelined core took 2384635 cycles for the
+  1681080 instructions that `bench.c` then had, 1.42 per instruction, and
+  1384879 for the 491617 of `hand.nasm`, 2.82, which was 8.0 and 4.0 times
+  faster than the multi-cycle core. With the prediction, and both programs
+  closing their loops with such jumps, `hand.nasm` took 1252613 cycles at
+  98d2bed, 9.6% fewer, and `bench.c` 2357155 for 1652811 instructions,
+  1.2% fewer.
 - With a bubble of 5 after a jump taken in WRITE, as the model of
   `bench/pipecycles.py` had before, its totals were 7.5% and 15.7% below
   the pipelined core's.

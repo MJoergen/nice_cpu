@@ -169,19 +169,19 @@ Lines 124–132: the statuses 0, 2, 3, 4, 1, and 141 in one sentence, with the r
 
 The file opens with the synopsis of `nicewasm.py` (lines 15–37) and then one paragraph of about forty lines on the options of `nicebuild.py` (43–86). The two-line recipe a newcomer wants, `nicebuild.py -o prog.bin prog.c` and then `niceemu prog.bin`, is in TOOLCHAIN.md and README.md and not here; how a program prints, reads, and exits is one sentence at line 123 and the runtime README. The manual clang, Zig, and Rust recipes (88–178) come next, and only line 49 says, obliquely, that `nicebuild.py` runs them ("The defaults are the options of the recipes below"). Nothing in this README or the runtime's says that C built this way has 8-bit `char` and wasm's byte memory, while ABI.md's one-word `char` is for assembly and a future native compiler; TOOLCHAIN.md says it in one clause. **Fix:** a "Quick start" after the introduction: build and run a C program with `printf`, the Zig and Rust variants, and what you get (the console for `printf` and `getchar`, exit by returning from `main` or calling `exit`, status 2 on a trap, 8-bit `char`); the options as a table; the recipes headed "What `nicebuild.py` runs", for reference.
 
-**Resolved**: filed as [#97](https://github.com/MJoergen/nice_cpu/issues/97), labeled `documentation`.
+**Resolved**: A "Quick start" after the introduction builds and runs a C program with `printf`, shows the Zig and Rust programs, and lists what you get: the console, the exit, the trap, and the 8-bit `char`; the options of both scripts are tables; and the recipes are "What nicebuild runs" (#97).
 
 ### 6.3 translator/README.md is two documents
 
 Usage, Target, Supported features, and Library modules (lines 1–366) are for users. "How functions are translated" and "Register allocation" (367–822, 455 lines) are for whoever changes `nicewasm.py`, and "Test" (823) comes after them. The "Supported features" list also carries design notes, such as how a multiplication by a constant is split (251–266) and the internal labels of the memory instructions (272–279). **Fix:** move the two internal sections to `translator/DESIGN.md`, or after Test under a heading that says whom they are for, with a contents list at the top; move the design notes out of the feature list.
 
-**Resolved**: filed as [#97](https://github.com/MJoergen/nice_cpu/issues/97), labeled `documentation`.
+**Resolved**: The two internal sections are `translator/DESIGN.md`, with a contents list and a line at the top saying whom it is for, and the README's introduction points at it; the details of the multiplication by a constant and the labels of the bounds checks went with them (#97).
 
 ### 6.4 runtime/README.md: the order, and two dense paragraphs
 
 The sections are Files (7), Routines (46), Device routines (113), Floating point (158), C library (193), Zig and Rust (289), and Test (327). A C user's section is the fifth, and the Routines tables list `__mul64` and `__clz` before the reader knows who calls them. "The trap report" (111) is one paragraph of 1274 characters: what it prints, who installs it, the join order, the registers it uses, and the symbols options. The bullet on what the C library lacks (232) is 96 words. **Fix:** a "which section" paragraph at the top (C: C library; Zig or Rust: Zig and Rust; assembly: Files, Routines, Device routines); the trap report as three bullets, the first "`nicebuild.py` installs it unless given `--no-trap-report`"; the C library's limits as a list.
 
-**Resolved**: filed as [#97](https://github.com/MJoergen/nice_cpu/issues/97), labeled `documentation`.
+**Resolved**: A "which section" paragraph at the top; the trap report as three bullets, the first on `nicebuild.py`; and the C library's missing functions as a list (#97).
 
 ### 6.5 runtime/README.md and ABI.md disagree on whether NiceMonMEGA65's monitor exists
 
@@ -195,7 +195,7 @@ runtime/README.md, line 33: "a monitor in ROM, such as the one of NiceMonMEGA65,
 - The order of the joined files is stated three ways: TOOLCHAIN.md's diagram, runtime/README.md (25–28), and ABI.md. They agree. One numbered list in runtime/README.md, and links to it from the other two.
 - WASM.md is the contract for a translator, and says so only by its tone; a user who follows a README's link finds normative rules. One sentence at the top: "This is the mapping that `nicewasm` implements. To build programs, read the translator README."
 
-**Resolved**: in part: ABI.md's table has one row for R14, and WASM.md says at the top what it is and where a user should read instead (§6.1). The join order stated once is part of the restructuring of the runtime README (§6.4, #97).
+**Resolved**: in part: ABI.md's table has one row for R14, and WASM.md says at the top what it is and where a user should read instead (§6.1). The join order is one numbered list, "Joining a program" in runtime/README.md, which TOOLCHAIN.md and ABI.md link (#97).
 
 ## 7. The benchmark
 
@@ -203,7 +203,7 @@ runtime/README.md, line 33: "a monitor in ROM, such as the one of NiceMonMEGA65,
 
 The tables of [bench/README.md](../../bench/README.md) name commits 3064119 (line 136), 1a41b0c (149), and 98d2bed (160, 202, 232, 387, 475). A reader cannot tell which figures are current without the dates. "The cycle estimate" (267) states the model's rules in one sentence of about ten lines (275–285), which uses FETCH, DECODE, SEQUENCER, PREPARE, WRITE, "skid register", and "micro-operation" with MICROARCH.md linked only at line 21. `make compare` prints, by line 23, "the estimate beside the pipelined core's cycles" and, by line 372, "the percentages of the table's last column, not the cycles". **Fix:** one current table per program, with the commit named once and the older figures in HISTORY.md; the rules as a list, with a pointer to MICROARCH.md's stages at the first stage name; the same sentence on what `make compare` prints in both places.
 
-**Resolved**: filed as [#98](https://github.com/MJoergen/nice_cpu/issues/98), labeled `documentation`.
+**Resolved**: One table of both cores, measured again at commit 8070a07, which gave the figures of 3064119 and 98d2bed, with the older table in HISTORY.md; the model's rules as a list, with a link to MICROARCH.md §3 at the stage names; and the same sentence on `make compare` in the target list, the paragraph, CLAUDE.md, and the Makefile (#98).
 
 ### 7.2 Dhrystone: 1757 and the Arm figure
 

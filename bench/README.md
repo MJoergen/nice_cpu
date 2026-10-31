@@ -20,7 +20,7 @@ NICE with other processors.
     make hazards    # count the pipeline hazards of MICROARCH.md §5 in both
     make cycles     # estimate the cycles of the three on the pipelined core of MICROARCH.md
     make profile    # the same, charged to the source lines, in build/*.cyc.txt
-    make compare    # the estimate beside the pipelined core's cycles, after make core
+    make compare    # the model's cycles beside the pipelined core's, phase by phase, with the difference in percent, after make core
     make words      # the size in words of the benchmark, safe.zig, and float modules
     make native     # build and run bench.c on the host, as a check
     make wasm       # rebuild bench.wasm and dhrystone/dhry.wasm (needs clang)
@@ -169,7 +169,7 @@ speculative reads would remove ([hdl/README.md](../hdl/README.md), The
 pipelined core). The cycles count from reset, so they include the start-up
 and the output:
 
-    bench: Read waits: 2439238 cycles; went on: 146 for the condition, 0 for an older micro-operation; dropped: 0, 0
+    bench: Read waits: 2443048 cycles; went on: 146 for the condition, 0 for an older micro-operation; dropped: 0, 0
     hand:  Read waits: 1260303 cycles; went on: 269 for the condition, 2002 for an older micro-operation; dropped: 0, 52002
 
 So such waits cost 0.006% and 0.18% of the cycles (MICROARCH.md §5.3).
@@ -272,20 +272,32 @@ runs it on both programs. Like `hazards.py`, it
 takes `.bin` files, which it runs on the emulator with `--trace`, or
 traces. It is a model built from MICROARCH.md, not the core. Each
 instruction of the trace is decoded as `hazards.py` decodes it, split
-into its micro-operations, and sent through FETCH, DECODE, SEQUENCER,
-PREPARE, and WRITE under the rules of §3 to §5: two words fetched per
-cycle, a bubble of 3 cycles for a jump that DECODE resolves (2 behind a read, which holds the stream up a cycle) and of 7 for
-one resolved in WRITE, DECODE's skid register, a data read that waits for an older write of SR,
-an address register written by the previous micro-operation, one data
-access per cycle on the bus, a read that is on the bus a cycle after
-PREPARE loads it, a store that is on the bus from DBUS's store register
-a cycle after WRITE and that FETCH waits for, a cycle more for an access to another slave of the bus
-than the one before, read data that reaches WRITE a cycle after its ACK
-unless it only goes into a register,
-and the math unit of `hdl/src/mpu.vhd`: a product two cycles after the write of an operand,
-and a quotient after one cycle per bit, less the runs of eight zero bits
-that the divider skips, which the model works out from the operands in
-the trace. Every cycle above one per instruction is
+into its micro-operations, and sent through the stages of the pipelined
+core, FETCH, DECODE, SEQUENCER, PREPARE, and WRITE
+([MICROARCH.md §3](../doc/MICROARCH.md#3-pipeline)), under these rules of
+MICROARCH.md §3 to §5:
+
+- two words fetched per cycle;
+- a bubble of 3 cycles for a jump that DECODE resolves, 2 behind a read,
+  which holds the stream up a cycle, and of 7 for one resolved in WRITE;
+- DECODE's skid register, which holds a micro-operation that PREPARE does
+  not take;
+- a data read that waits for an older write of SR, or for an address
+  register written by the previous micro-operation;
+- one data access per cycle on the bus, and a read that is on the bus a
+  cycle after PREPARE loads it;
+- a store that is on the bus from DBUS's store register a cycle after
+  WRITE, and that FETCH waits for;
+- a cycle more for an access to another slave of the bus than the one
+  before;
+- read data that reaches WRITE a cycle after its ACK, unless it only goes
+  into a register;
+- the math unit of `hdl/src/mpu.vhd`: a product two cycles after the
+  write of an operand, and a quotient after one cycle per bit, less the
+  runs of eight zero bits that the divider skips, which the model works
+  out from the operands in the trace.
+
+Every cycle above one per instruction is
 charged to the rule that caused it, so the output says where the time
 goes, and a program that reads the instruction counter around each phase,
 as both programs do, gets a row per phase:
@@ -351,9 +363,9 @@ small programs whose cycles are worked out by hand in the script, and
 6`, which fails unless each reads the instruction counter around its six
 phases.
 
-`make compare` puts the estimate beside the cycles the pipelined core
-took, phase by phase, from the output of `make core`,
-which must have run first, on the same `.bin`. With the core that
+`make compare` prints the model's cycles beside the pipelined core's,
+phase by phase, with the difference in percent, from the output of `make
+core`, which must have run first, on the same `.bin`. With the core that
 predicts backward jumps (MICROARCH.md §5.4), and both programs closing
 their loops with them:
 
@@ -369,7 +381,7 @@ their loops with them:
 
 The difference is all but the same in every phase of a program, so it
 lies at the reads of the instruction counter around the phases, whose
-timing the model does not follow exactly, and not in the phases. `make compare` prints the percentages of the table's last column, not the cycles.
+timing the model does not follow exactly, and not in the phases.
 
 `make core` also has the testbench write a retire log,
 `hdl/build/bench_pipeline.retires` and `hand_pipeline.retires`

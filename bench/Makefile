@@ -153,8 +153,8 @@ hazards: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 cycles: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin emulator
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin
 
-# The estimate beside the cycles the pipelined core took, phase by phase,
-# from the output of make core, which must have run first
+# The model's cycles beside the pipelined core's, phase by phase, with the
+# difference in percent, from the output of make core, which must have run first
 # (README.md, The cycle estimate).
 compare: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --against ../hdl/build/bench_pipeline.out $(BUILD)/bench.bin

@@ -454,7 +454,8 @@ one `#ifndef` in `dhry.h` that would otherwise choose `TIMES`. The timer
 is `nice_cycles`. The original prints its results with `%f`, which the C
 library cannot print, and needs a run of two seconds. The port prints
 the cycles of all the runs and of one run, and the Dhrystone MIPS per
-MHz, 10⁶ / (1757 × cycles per run), with three decimals in integer
+MHz, 10⁶ / (1757 × cycles per run), where 1757 Dhrystones per second is
+the VAX 11/780 that defines 1 DMIPS, with three decimals in integer
 arithmetic, for any number of runs from 1. Given 0, or no number, it says
 that the number must be at least 1, and `main` returns 1.
 
@@ -481,6 +482,7 @@ emulator's output and `make core-dhry` on the core's.
 | pipelined core | 2302 | 0.247 |
 
 The emulator's row counts instructions. The program prints DMIPS/MHz truncated to three decimals. For comparison, Arm gives 0.87
-DMIPS/MHz for the Cortex-M0 under the ground rules. The translation
+DMIPS/MHz for the Cortex-M0 under the ground rules, on its Cortex-M0
+product page. The translation
 through wasm accounts for much of the gap, judging by the ratios of
 `hand.nasm` above.

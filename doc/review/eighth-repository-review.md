@@ -183,6 +183,8 @@ The tables of [bench/README.md](../../bench/README.md) name commits 3064119 (lin
 
 Line 457: "10⁶ / (1757 × cycles per run)" with no word that 1757 Dhrystones per second is the VAX 11/780, which defines 1 DMIPS; line 484: "Arm gives 0.87 DMIPS/MHz for the Cortex-M0" without a source. **Fix:** one clause each.
 
+**Resolved**: The formula says what 1757 is, and the Arm figure names its source.
+
 ## 8. The cores and the debug link
 
 ### 8.1 hdl/README.md: 750 lines of tests and proofs before the cores

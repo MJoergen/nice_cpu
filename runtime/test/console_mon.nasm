@@ -7,12 +7,12 @@
 ; it. Z is set, and the other flags are clear: the last instruction with
 ; the M bit is nice_print's read of the 0 after "Hi".
 ;
-; The stand-in's call pushes 0xC at 0xFFFFFEFF, and the start-up code's
-; call of main 0x800B at 0xFFFFFEFE. Steps: 6 in the stand-in, 7 in the
-; start-up code, with the skipped store of the vector, 1 to load R1, 2 for
-; the call of nice_print and 6 + 6 * 2 in it with ___console_putc, 1 to
-; load R1, 2 for the call of nice_putc and 3 in it, 1 for the result,
-; main's return, the start-up code's return, and 2 in the stand-in = 45.
+; The stand-in's call pushes 0xC at 0xFFFFFEFF, and the start-up code
+; jumps to main, so main returns to the stand-in. Steps: 6 in the
+; stand-in, 6 in the start-up code, with the skipped store of the vector,
+; 1 to load R1, 2 for the call of nice_print and 6 + 6 * 2 in it with
+; ___console_putc, 1 to load R1, 2 for the call of nice_putc and 3 in it,
+; 1 for the result, main's return, and 2 in the stand-in = 43.
 
 _main           MOVE    R1, text
                 CALL    _nice_print

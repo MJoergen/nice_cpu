@@ -14,8 +14,7 @@
                 CALL    ___wasm_start
                 MOVE    R2, @R13++      ; argv
                 MOVE    R1, @R13++      ; argc
-                CALL    _main
-                RET                     ; return to the monitor; R1 holds main's result
+                MOVE    R15, _main      ; a tail call: main returns to the monitor
 
 ; exit: returns to the monitor from anywhere, with the status in R1 and SP
 ; as it was at entry (ABI.md). 2 steps.

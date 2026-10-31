@@ -11,8 +11,9 @@ EMU = ../emulator/zig-out/bin/niceemu
 # with muldiv_soft.nasm instead, and are compared with test/X_soft.expected.
 # A test of a start-up file for a program under a monitor is joined after
 # PRE_X, test/monitor.nasm, the stand-in for the monitor, which sits at 0
-# and calls the program at 0x8000.
-TESTS = start start_wasm start_mon start_wasm_mon start_wasm_trap_mon exit exit_mon \
+# and calls the program at 0x8000, or test/monitor_console.nasm, the same
+# with R1 = 0, which leaves the output on the console.
+TESTS = start start_wasm start_mon start_wasm_mon start_wasm_trap_mon exit exit_mon console_mon \
   mul trap div div64 mul64 bits device edge trapvec trapreport trapreport_big
 SOFT_TESTS = mul div mul64 div64 edge
 START_start_wasm = start_wasm.nasm
@@ -21,10 +22,12 @@ START_start_wasm_mon = start_wasm_mon.nasm
 START_start_wasm_trap_mon = start_wasm_trap_mon.nasm
 AFTER_start_wasm_trap_mon = trapmsg.nasm
 START_exit_mon   = start_mon.nasm
+START_console_mon = start_mon.nasm
 PRE_start_mon    = test/monitor.nasm
 PRE_start_wasm_mon = test/monitor.nasm
 PRE_start_wasm_trap_mon = test/monitor.nasm
 PRE_exit_mon     = test/monitor.nasm
+PRE_console_mon  = test/monitor_console.nasm
 START_trap       = start_wasm.nasm
 START_trapreport = start_wasm_trap.nasm
 AFTER_trapreport = trapmsg.nasm
@@ -33,10 +36,11 @@ AFTER_trapreport_big = trapmsg.nasm
 OPTS_start      = -d 0xfffffeff:1
 OPTS_start_wasm = -d 0x1b:1 -d 0xfffffeff:1
 OPTS_start_mon  = -d 0x800f:1 -d 0x8017:2 -d 0xfffffefe:2
-OPTS_start_wasm_mon = -d 0x8015:1 -d 0x8025:2 -d 0xfffffefc:4
+OPTS_start_wasm_mon = -d 0x8015:1 -d 0x802b:2 -d 0xfffffefb:5
 OPTS_start_wasm_trap_mon = -d 0x18:1 -d 0xfffffefe:2
 OPTS_exit       = -d 0xfffffefc:4
 OPTS_exit_mon   = -d 0xfffffefb:5
+OPTS_console_mon = -d 0x18:1
 OPTS_mul        = -d 0x34:10
 OPTS_div        = -d 0x4b:32
 OPTS_div64      = -d 0x6f:64

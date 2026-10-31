@@ -338,8 +338,10 @@ as its console input. The tests of the `_mon` start-up files, and
 a monitor at address 0, which calls the program at `0x8000` with a putc
 routine of its own, `argc` = 1, and an `argv`, and halts when the program
 returns, with the number of bytes its routine wrote in R2. `test/exit.nasm`
-and `test/exit_mon.nasm` call `exit` from inside a nested call. The
-expected values were checked by hand. The comments in each test show how.
+and `test/exit_mon.nasm` call `exit` from inside a nested call.
+`test/console_mon.nasm` runs after `test/monitor_console.nasm`, the
+stand-in with R1 = 0, so its output stays on the console. The expected
+values were checked by hand. The comments in each test show how.
 
 With `make test KEEP=DIR`, where DIR is an absolute path, each test also
 leaves its program in `DIR/X.bin`, and its console input, if any, in

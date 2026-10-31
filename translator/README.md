@@ -850,6 +850,8 @@ it in one `.bin` file: its output must come through the stand-in's putc
 routine, and `exit` must return to the stand-in, which halts with the
 status in R1. `hello.zig` is built with and without
 `--symbols`, which must give the same `.bin`, and `hellors.rs` with it.
+A Zig program that prints through `nice.zig` is built with `--monitor`
+too, and its output must come through the stand-in's putc routine.
 Every `.sym` file must name every function. A language whose compiler is
 missing is skipped, and the PASS line says which; CI has Zig and clang, not Rust.
 `test/run.py --keep DIR` also leaves each

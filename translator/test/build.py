@@ -171,31 +171,59 @@ def test_c_options(tmp: str) -> None:
         fail("a .bin file of a C file that does not compile")
 
 
+def after_standin(tmp: str, program: str) -> str:
+    """The program of --monitor after the runtime's stand-in for a monitor,
+    in one .bin file, as a monitor's image and a program's concatenate. The
+    stand-in is assembled on its own, once."""
+    monitor = os.path.join(tmp, "standin.bin")
+    if not os.path.exists(monitor):
+        subprocess.run([sys.executable, NICEASM, "-o", monitor, MONITOR], check=True)
+    with open(program) as f:
+        first = f.readline().split()[0]
+    if first != "00008000":
+        fail(os.path.basename(program), f"the program starts at {first}, not 00008000")
+    full = program[:-4] + ".full.bin"
+    with open(full, "w") as f, open(monitor) as m, open(program) as p:
+        f.write(m.read() + p.read())
+    return full
+
+
 def test_c_monitor(tmp: str) -> None:
     """exit.c built with --monitor is a program for a monitor in ROM, at
     0x8000 (ABI.md, "Programs under a monitor"). It runs after the runtime's
-    stand-in for a monitor, assembled on its own and put before it in one
-    .bin file, as a monitor's image and a program's concatenate. It prints
-    through the stand-in's putc routine, and exit returns to the stand-in,
-    which halts with the status in R1 and the 11 bytes written in R2. With
-    --no-trap-report the other start-up file is used, and the program runs
-    the same."""
+    stand-in for a monitor. It prints through the stand-in's putc routine,
+    and exit returns to the stand-in, which halts with the status in R1 and
+    the 11 bytes written in R2. With --no-trap-report the other start-up
+    file is used, and the program runs the same."""
     source = os.path.join(LIBC_TEST, "exit.c")
-    monitor = os.path.join(tmp, "standin.bin")
-    subprocess.run([sys.executable, NICEASM, "-o", monitor, MONITOR], check=True)
     for name, extra in (("under a monitor", []), ("under a monitor without the trap report", ["--no-trap-report"])):
         out = os.path.join(tmp, name.replace(" ", "_") + ".bin")
-        if not check_build("C " + name, ["--monitor", "-o", out] + extra + [source], out):
-            continue
-        with open(out) as f:
-            first = f.readline().split()[0]
-        if first != "00008000":
-            fail("C " + name, f"the program starts at {first}, not 00008000")
-        full = out[:-4] + ".full.bin"
-        with open(full, "w") as f, open(monitor) as m, open(out) as p:
-            f.write(m.read() + p.read())
-        check_run("C " + name, run(full), 0,
-                  ["before", "0 1", "~R0  00000000 R1  00000003 R2  0000000b R3  [0-9a-f]{8}"])
+        if check_build("C " + name, ["--monitor", "-o", out] + extra + [source], out):
+            check_run("C " + name, run(after_standin(tmp, out)), 0,
+                      ["before", "0 1", "~R0  00000000 R1  00000003 R2  0000000b R3  [0-9a-f]{8}"])
+
+
+# A Zig program that prints through nice.zig, so through nice_putc and the
+# putc vector, for the build with --monitor.
+HI_ZIG = """const nice = @import("nice");
+export fn main() i32 {
+    nice.write("Hi\\n");
+    return 5;
+}
+"""
+
+
+def test_zig_monitor(tmp: str) -> None:
+    """A Zig program built with --monitor prints through the stand-in's putc
+    routine, as nice.zig's output goes through nice_putc, and returns to the
+    stand-in with main's result: R1 = 5, and the 3 bytes written in R2."""
+    source = os.path.join(tmp, "hi.zig")
+    with open(source, "w") as f:
+        f.write(HI_ZIG)
+    out = os.path.join(tmp, "hi_mon.bin")
+    if check_build("Zig under a monitor", ["--monitor", "-o", out, source], out):
+        check_run("Zig under a monitor", run(after_standin(tmp, out)), 0,
+                  ["Hi", "~R0  00000000 R1  00000005 R2  00000003 R3  [0-9a-f]{8}"])
 
 
 def test_unwritable(tmp: str) -> None:
@@ -283,6 +311,7 @@ def main() -> None:
             skipped.append("C (no clang, wasm-ld, or llvm-ar for wasm32)")
         if compiler("ZIG", "zig"):
             test_zig(tmp)
+            test_zig_monitor(tmp)
             ran.append("Zig")
         else:
             skipped.append("Zig (no zig)")

@@ -211,6 +211,8 @@ The ports are named piecemeal through the file (`dbus_ack_i`, `retire_o`, `stats
 
 [DEBUG.md](../DEBUG.md) §7, "Transports" (410–549), has the UART and TCP transports, then the emulator's differences in about 18 bullets, then the rules for a board, from "A board that carries the link has to do more than follow this file" (513), with no heading of their own. A newcomer learns how to try the link only there, from `--link`; the introduction says "one host tool works with either" and names none. The R0 to R15 cell of the register table (228) is one line of about 150 words with five states. "ISA §" is used three times and declared nowhere (the notation sentence at 19–20 declares "SYSTEM.md §1" alone), and "a system of version 4" (294) comes before §9 explains the versions. **Fix:** §7 for the transports, §8 "The emulator", §9 "A board that carries the link", then the example and the versions, with `make -C doc test` for the references from hdl/README.md and the testbenches; three lines in the introduction on how to try it, with `niceemu --link` and the example; the R0 to R15 cell as a list below the table; "ISA §" in the notation sentence; the version asides left to §9.
 
+**Resolved**: in part: the introduction says how to try the link and that no host tool ships, and the notation sentence declares "ISA §". The split of §7, the R0 to R15 cell, and the version asides are an issue.
+
 ## 9. What is correct
 
 - **README.md.** The opening paragraph says what NICE is in four lines. The feature list of the emulator, the build instructions with the one Zig version, the two worked examples with their traces explained line by line, the Contents table, and the License paragraph are what a first-time reader needs, in that order.

@@ -15,8 +15,13 @@ SYSTEM.md win over this file. This is version `05` of the protocol,
 major 0 and minor 5 (§9). Its run control is the pause, the single step,
 and the breakpoints (§6).
 
-"SYSTEM.md §1" refers to a section of SYSTEM.md, and a plain "§2" to a
-section of this file.
+To try the link, run `niceemu --link PORT prog.bin` (emulator/README.md,
+Debug link), connect a TCP client to the port, and send the packets of
+the example in §8. The repository ships no host tool; the protocol takes
+a few lines of Python, as `emulator/test/link.py` shows.
+
+"SYSTEM.md §1" refers to a section of SYSTEM.md, "ISA §5.3" to one of
+ISA.md, and a plain "§2" to a section of this file.
 
 ## Contents
 

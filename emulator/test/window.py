@@ -3,8 +3,11 @@
 
 SDL's dummy video driver runs the window without a display, so no key can
 be typed and the window cannot be closed. Each test reads the report,
-which comes at the halt, and then ends niceemu with SIGTERM. test_link
-runs --window with --link, with the host of link.py."""
+which comes at the halt, and then ends niceemu with SIGTERM. The close of
+the window is tested through NICEEMU_CLOSE_AFTER=N in the environment, a
+hook of niceemu for this file: the window counts as closed once a run has
+made N steps. test_link and test_close_link run --window with --link, with
+the host of link.py."""
 
 from __future__ import annotations
 
@@ -62,9 +65,13 @@ def assemble(tmp: str, name: str, text: str) -> str:
     return os.path.join(tmp, name + ".bin")
 
 
-def start(args: List[str], stdin: Optional[int] = subprocess.DEVNULL) -> subprocess.Popen[bytes]:
+def start(args: List[str], stdin: Optional[int] = subprocess.DEVNULL,
+          close_after: Optional[int] = None) -> subprocess.Popen[bytes]:
+    """niceemu --window with the arguments, and with the window counting as
+    closed after `close_after` steps if that is given."""
+    env = dict(ENV, NICEEMU_CLOSE_AFTER=str(close_after)) if close_after is not None else ENV
     return subprocess.Popen([NICEEMU, "--window"] + args, stdin=stdin, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, env=ENV)
+                            stderr=subprocess.PIPE, env=env)
 
 
 def read_lines(p: subprocess.Popen[bytes], n: int, timeout: float = 10.0) -> List[str]:
@@ -84,11 +91,11 @@ def read_lines(p: subprocess.Popen[bytes], n: int, timeout: float = 10.0) -> Lis
     return data.decode().split("\n")[:n]
 
 
-def stop(p: subprocess.Popen[bytes]) -> None:
-    """End niceemu with SIGTERM, which it dies of, as without the window."""
-    p.send_signal(signal.SIGTERM)
-    if p.wait(timeout=10) != -signal.SIGTERM:
-        fail(f"exit status {p.returncode} after SIGTERM")
+def stop(p: subprocess.Popen[bytes], sig: signal.Signals = signal.SIGTERM) -> None:
+    """End niceemu with the signal, which it dies of, as without the window."""
+    p.send_signal(sig)
+    if p.wait(timeout=10) != -sig:
+        fail(f"exit status {p.returncode} after {sig.name}")
 
 
 def fail(msg: str) -> None:
@@ -145,13 +152,65 @@ def test_speed(tmp: str) -> None:
 
 
 def test_signal(tmp: str) -> None:
-    """A signal ends a run that has not halted, with no report."""
+    """SIGINT, SIGTERM, and SIGHUP each end a run that has not halted, with
+    no report."""
     count = assemble(tmp, "count", COUNT)
-    p = start([count])
-    time.sleep(0.3)
-    stop(p)
-    assert p.stdout is not None
-    expect("output", p.stdout.read(), b"")
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        p = start([count])
+        time.sleep(0.3)
+        stop(p, sig)
+        assert p.stdout is not None
+        expect(f"output after {sig.name}", p.stdout.read(), b"")
+
+
+def test_close(tmp: str) -> None:
+    """Closing the window before the halt ends the run: the report says so,
+    and the exit status is 4. Closing it after the halt ends niceemu with
+    the halt's status. The chunk between two looks at the window is 1000
+    steps at the default speed, so the first run is closed at step 1000."""
+    count = assemble(tmp, "count", COUNT)
+    p = start([count], close_after=1000)
+    expect("closed while running", read_lines(p, 1)[0],
+           "Stopped when the window was closed after 1000 steps, PC=00000000")
+    expect("exit status when closed", p.wait(timeout=10), 4)
+    poll = assemble(tmp, "poll", POLL)
+    p = start([poll], close_after=4)
+    expect("closed after the halt", read_lines(p, 1)[0], "Halted (HALT) after 4 steps, PC=00000007")
+    expect("exit status after the halt", p.wait(timeout=10), 0)
+
+
+def test_no_display(tmp: str) -> None:
+    """When no window can be opened, niceemu prints SDL's error and exits
+    with status 1 before the run."""
+    poll = assemble(tmp, "poll", POLL)
+    p = subprocess.run([NICEEMU, "--window", poll], stdin=subprocess.DEVNULL, capture_output=True,
+                       env=dict(ENV, SDL_VIDEODRIVER="nonexistent"), timeout=10)
+    expect("exit status without a display", p.returncode, 1)
+    expect("output without a display", p.stdout, b"")
+    if not p.stderr.startswith(b"niceemu: SDL_Init: "):
+        fail(f"stderr without a display: {p.stderr!r}")
+
+
+def test_close_link(tmp: str) -> None:
+    """With --link, closing the window ends niceemu with status 0, as a
+    signal does, also while a program runs."""
+    count = link.assemble(tmp, "count", COUNT)
+    os.environ["NICEEMU_CLOSE_AFTER"] = "50000"
+    try:
+        e = link.Emu(["--window"])
+    finally:
+        del os.environ["NICEEMU_CLOSE_AFTER"]
+    e.expect("hello", link.HELLO)
+    e.send(link.write(0, count))
+    e.expect("load", link.ok(0, len(count)))
+    e.send(link.write(link.CONTROL, [0x8]))
+    e.expect("start", link.ok(link.CONTROL, 1))
+    out, err = e.proc.communicate(timeout=10)
+    expect("exit status when closed with --link", e.proc.returncode, 0)
+    expect("stdout when closed with --link", out, b"")
+    expect("stderr when closed with --link", err, b"")
+    if link.failures:
+        fail("; ".join(link.failures))
 
 
 def test_link(tmp: str) -> None:
@@ -200,8 +259,11 @@ def main() -> None:
         test_poll(tmp)
         test_speed(tmp)
         test_signal(tmp)
+        test_close(tmp)
+        test_no_display(tmp)
         test_link(tmp)
-    print("PASS window (5 tests)")
+        test_close_link(tmp)
+    print("PASS window (8 tests)")
 
 
 if __name__ == "__main__":

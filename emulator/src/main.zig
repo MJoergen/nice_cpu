@@ -102,6 +102,10 @@ const Options = struct {
     window: bool = false,
     /// Steps a second with the window, or 0 for as fast as possible.
     speed: u64 = 1_000_000,
+    /// NICEEMU_CLOSE_AFTER in the environment, a hook for test/window.py,
+    /// which cannot close a window on SDL's dummy video driver: the window
+    /// counts as closed once a run has made this many steps.
+    close_after: ?u64 = null,
     help: bool = false,
 };
 
@@ -272,7 +276,8 @@ pub fn main(init: std.process.Init) !void {
     var out_w = std.Io.File.stdout().writerStreaming(io, &out_buf);
     const out = &out_w.interface;
 
-    const status = run(arena, io, args, out) catch |err| switch (err) {
+    const close_after = init.environ_map.get("NICEEMU_CLOSE_AFTER");
+    const status = run(arena, io, args, close_after, out) catch |err| switch (err) {
         error.Usage, error.Load => 1,
         error.OutOfMemory => blk: {
             out.flush() catch {};
@@ -460,8 +465,11 @@ fn loadError(path: []const u8, line_no: usize, comptime fmt: []const u8, args: a
     return error.Load;
 }
 
-fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, out: *std.Io.Writer) !u8 {
-    const opts = try parseArgs(arena, args);
+/// Run with the arguments `args`, and `close_after` the value of
+/// NICEEMU_CLOSE_AFTER if it is set (Options).
+fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_after: ?[]const u8, out: *std.Io.Writer) !u8 {
+    var opts = try parseArgs(arena, args);
+    if (close_after) |s| opts.close_after = try parseNumber(u64, "NICEEMU_CLOSE_AFTER", s);
     if (opts.help) {
         // Through `out`, so that a closed pipe is handled as for any output.
         try out.writeAll(usage);
@@ -582,6 +590,16 @@ fn chunkSteps(speed: u64) u64 {
     return if (speed == 0) 65536 else @max(1, speed / 1000);
 }
 
+/// Pump the window, waiting up to `wait_ms` for an event, and say whether
+/// it is still open. With NICEEMU_CLOSE_AFTER (Options), it counts as
+/// closed once the run has made `steps` steps and that is the number or
+/// more.
+fn windowOpen(win: *Window, cpu: *const Cpu, opts: Options, wait_ms: u32, steps: u64) bool {
+    const open = win.pump(cpu, opts.screen_base, @intCast(wait_ms));
+    if (opts.close_after) |n| if (steps >= n) return false;
+    return open;
+}
+
 /// Run the program with the window (doc/SYSTEM.md §1): the console reads
 /// `file`, if given, then the keys. After the halt or the step limit, the
 /// report is printed, and the window stays until it is closed. Closing it
@@ -606,14 +624,16 @@ fn runWindow(arena: std.mem.Allocator, io: std.Io, out: *std.Io.Writer, opts: Op
         }
         // Show the console output with the screen.
         out.flush() catch {};
-        if (!win.pump(cpu, opts.screen_base, @intCast(pacer.wait(steps, nowNs(io))))) {
-            closed = true;
+        if (!windowOpen(&win, cpu, opts, pacer.wait(steps, nowNs(io)), steps)) {
+            // A close in the look that follows the halt or the step limit
+            // comes after the run: the report is theirs.
+            closed = !cpu.halted() and steps < opts.max_steps;
             break;
         }
     }
     const status = try report(out, opts, syms, cpu, steps, closed);
     try out.flush();
-    while (!closed and win.pump(cpu, opts.screen_base, 100)) {
+    while (!closed and windowOpen(&win, cpu, opts, 100, steps)) {
         const sig = stop_signal.load(.acquire);
         if (sig != 0) dieOfSignal(out, sig);
     }
@@ -712,7 +732,7 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
             try out.flush();
             if (windowed) {
                 try link.service(0);
-                lookAtWindow(arena, &win, &link, cpu, opts, 10);
+                lookAtWindow(arena, &win, &link, cpu, opts, 10, steps);
                 pacer.restart(steps, nowNs(io));
             } else {
                 try link.service(100);
@@ -756,15 +776,16 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
         }
         link.console_w.flush() catch {};
         try link.service(0);
-        if (windowed) lookAtWindow(arena, &win, &link, cpu, opts, pacer.wait(steps, nowNs(io)));
+        if (windowed) lookAtWindow(arena, &win, &link, cpu, opts, pacer.wait(steps, nowNs(io)), steps);
     }
 }
 
 /// Pump the window of `serve`, waiting up to `wait_ms` for an event, and
 /// move the keys typed to the link's input. Closing the window ends the
-/// emulator with status 0, as a signal does.
-fn lookAtWindow(gpa: std.mem.Allocator, win: *Window, link: *Link, cpu: *Cpu, opts: Options, wait_ms: u32) void {
-    if (!win.pump(cpu, opts.screen_base, @intCast(wait_ms))) {
+/// emulator with status 0, as a signal does. `steps` are the run's, for
+/// `windowOpen`.
+fn lookAtWindow(gpa: std.mem.Allocator, win: *Window, link: *Link, cpu: *Cpu, opts: Options, wait_ms: u32, steps: u64) void {
+    if (!windowOpen(win, cpu, opts, wait_ms, steps)) {
         win.close(gpa);
         if (serve_out) |w| w.flush() catch {};
         std.process.exit(0);

@@ -161,7 +161,9 @@ closed. Then niceemu exits with the status of the halt. Closing the window
 before ends the run: the first line of the report is `Stopped when the
 window was closed after N steps, PC=...`, and the exit status is 4. SIGINT,
 SIGTERM, and SIGHUP end niceemu as without the window, also while the
-window stays after the halt. Ctrl-C in the window is a key, `0x03`.
+window stays after the halt. Ctrl-C in the window is a key, `0x03`. If no
+window can be opened, as without a display, niceemu prints SDL's error
+and exits with status 1 before the run.
 
 With `--link`, the window opens when niceemu starts and stays open over
 every run, and shows the screen also while the processor is held, halted,
@@ -175,11 +177,14 @@ signal does.
 (`SDL_VIDEODRIVER=dummy`), which needs no display, but can type no key and
 close no window. It checks the report at the halt with `--color`, the
 reads of `--input` and then 0, that stdin is not read, the pace of the
-default speed and of `--speed 0`, and that a signal ends a run with no
-report. With `--link`, as a host, it checks that a read returns 0 until a
-byte comes, the pace, and the end of the input. The key table and the
-drawing of the screen are unit tests in `src/keys.zig` and `src/frame.zig`,
-and the keys' way into the link's buffer one in `src/link.zig`.
+default speed and of `--speed 0`, that each of the three signals ends a
+run with no report, and what happens without a display. The close of the
+window, before the halt, after it, and with `--link`, it checks through a
+hook of niceemu for the test, as the dummy driver cannot close one. With
+`--link`, as a host, it checks that a read returns 0 until a byte comes,
+the pace, and the end of the input. The key table and the drawing of the
+screen are unit tests in `src/keys.zig` and `src/frame.zig`, and the
+keys' way into the link's buffer one in `src/link.zig`.
 
 ## Program files
 

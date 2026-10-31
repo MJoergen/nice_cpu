@@ -7,6 +7,7 @@ specification, and it wins over every other document here.
 |---|---|
 | [ISA.md](ISA.md) | The instruction set: the specification for everything else here. |
 | [SYSTEM.md](SYSTEM.md) | The devices that the emulator maps into the I/O range: console, math unit, performance counters, and timer. |
+| [TOOLCHAIN.md](TOOLCHAIN.md) | The tools: what each reads and writes, the steps that build a program, and how the tools use each other. |
 | [DEBUG.md](DEBUG.md) | The debug link: how a host reads and writes the memory of the emulator or a board, and loads and starts a program. |
 | [MICROARCH.md](MICROARCH.md) | The design note for the pipelined FPGA core. |
 | [REFERENCES.md](REFERENCES.md) | The NICE and QNICE sources the specification is based on. |

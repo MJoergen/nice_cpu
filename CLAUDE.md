@@ -11,6 +11,8 @@ translator, and two FPGA cores. See README.md.
   milestone of the next release when planned. File new ones there, not in
   files or code comments. `TODO.md` only points there.
   `doc/review/decisions.md` lists what was decided against.
+- `CONTRIBUTING.md`: the tests and the rules of Conventions below, for
+  human contributors. Keep the two in sync.
 - `RELEASE_NOTES.md`: the user-visible changes of each release tag
   (`Vmajor.minor`, the `RC*` tags before `V1.0`), newest first, by component. Add a section for every new tag when it is created.
 - `doc/ISA.md`: the specification. It is authoritative for all code here.
@@ -18,6 +20,9 @@ translator, and two FPGA cores. See README.md.
 - `doc/SYSTEM.md`: the devices that the emulator maps into the I/O range
   (console, math unit, counters, timer). ISA.md reserves the range and
   defines no device. ISA.md wins over it.
+- `doc/TOOLCHAIN.md`: the tools, what each reads and writes, the steps
+  that build a program, how the tools use each other, and the compilers
+  and host tools they need. ISA.md wins over it.
 - `doc/HISTORY.md`: what used to be true, and how the code got here. Keep it
   out of the other docs, which say only what is true now.
 - `doc/DEBUG.md`: the debug link, which a host uses to read and write the

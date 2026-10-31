@@ -878,6 +878,30 @@ Stopped at the step limit after 8 steps, PC=00000004
    \end{itemize}
   \end{frame}
 %
+  \begin{frame}[fragile]
+   \frametitle{Watching the screen}
+   The emulator can show the screen in a window, with a keyboard. Build it
+   with SDL once, then run \code{doc/intro/examples/keys.nasm}, which
+   echoes the keys typed on the screen:
+   {\footnotesize
+   \begin{verbatim}
+$ make -C emulator window
+$ assembler/niceasm.py -o keys.bin doc/intro/examples/keys.nasm
+$ emulator/zig-out/bin/niceemu --window keys.bin
+   \end{verbatim}
+   }
+   \begin{itemize}
+    \item The screen is 25 rows of 80 words at \code{0xFFFF0000}. A word
+     holds the character in bits 7..0 and its colors above: the background
+     in bits 31..20 and the foreground in bits 19..8, 4 bits each of red,
+     green, and blue.
+    \item With the window, a read of the console returns 0 while no key
+     waits, and otherwise the key's byte with bit 8 set.
+    \item \code{doc/SYSTEM.md} describes the screen, the cursor, and the
+     keys, and the README walks through the example.
+   \end{itemize}
+  \end{frame}
+%
   \begin{frame}
    \frametitle{Things to remember}
    \begin{itemize}

@@ -110,6 +110,8 @@ Line 914: "The pipelined core meets a 10 ns clock out of context." That is Vivad
 
 `doc/intro/examples/keys.nasm` lives in the slides' examples directory, `make -C doc/intro test` runs it, and README.md's second worked example is built on it, but no slide mentions the window, the screen, or the keys. The "Input/Output" slide (line 116) knows the console alone, and "Soft- and hardware" (803) lists the emulator without it. For a beginner, the window is the most visible feature of `V1.2`. **Fix:** one slide after "Watching a program run": `make -C emulator window`, `niceemu --window keys.bin`, the screen at `0xFFFF0000` with the character in bits 7..0 and the colors above, and that a console read returns 0 while no key waits. If the slides are to stay with the ISA, a line on "Soft- and hardware" and a pointer to the README's example.
 
+**Resolved**: A slide "Watching the screen" after "Watching a program run": the build with SDL, the run of `keys.nasm` in the window, the screen's layout and word, the console read that returns 0, and the pointers to SYSTEM.md and the README.
+
 ### 4.4 Smaller
 
 - "Some unusual operations" (line 282): "There is no multiply or divide. The runtime library has routines for that, such as `__mul`." The math unit of SYSTEM.md §2, which the emulator and both cores have, goes unmentioned. One clause.

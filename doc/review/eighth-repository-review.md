@@ -56,6 +56,8 @@ The order is The emulator (its features, Building the emulator, Worked example, 
 
 [ISA.md](../ISA.md) §1.3, line 95: "Instructions with the M bit set update only X, C, Z, N, and V (§6)." The bit is defined in §2.1 and the term is fixed in §3 ("the M bit always means instruction bit 25"). **Fix:** "Instructions with the M bit (instruction bit 25, §2.1) set update only X, C, Z, N, and V (§6)." Nothing else: ISA.md is the best-organized document in the repository, with a contents list, a forward reference at nearly every term, and a worked example.
 
+**Resolved**: §1.3 says what the M bit is, with a pointer to §2.1, at its first use.
+
 ### 3.2 SYSTEM.md §1: the console's read rules contradict each other on first reading
 
 [SYSTEM.md](../SYSTEM.md) §1, "Console", line 46, four sentences apart: "With no byte waiting, a read returns 0." and "The emulator and the simulation memory of the FPGA core never return 0: a read waits for the next byte or the end of the input." Both are true, as the emulator without a window has no state in which no byte waits, but the reader has to work that out, and the sentence that says what the console is for, "Programs use the console for input and output", is the paragraph's last. The console is the one device every program uses. **Fix:** lead with what it is for; then the write; then the read as three cases in a table: a byte waits (the byte in bits 7..0 with bit 8 set), none waits (0 from a UART or the window; stdin, a file, and the simulation memory wait instead), the input has ended (`0x200`); then where each system's input comes from.

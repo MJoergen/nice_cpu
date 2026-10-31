@@ -92,7 +92,7 @@ There are sixteen 32-bit registers, R0 to R15. Every register can be used with e
 | 1 (bit 24) | Always 1, at every point within an instruction. No write clears it (§4.3). It makes condition select 0 mean "always" (§3). |
 | VBASE (bits 23..0) | The upper 24 bits of the interrupt vector table address (§7.3). |
 
-Software can read and write every bit except bit 24. Instructions with the M bit set update only X, C, Z, N, and V (§6). I, E, and VBASE change only when software writes R14, on interrupt entry (I), and on `RTI`.
+Software can read and write every bit except bit 24. Instructions with the M bit (instruction bit 25, §2.1) set update only X, C, Z, N, and V (§6). I, E, and VBASE change only when software writes R14, on interrupt entry (I), and on `RTI`.
 
 ### 1.4 Hidden state
 

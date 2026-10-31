@@ -41,7 +41,7 @@ whole program is assembled at once.
 
 A hand-written program that does not use the runtime library needs only
 the last two steps, as in the
-[quick start](../README.md#quick-start). The
+[worked example](../README.md#worked-example). The
 [translator README](../translator/README.md) gives the exact clang, Zig, and Rust
 command lines for the first step, and the [runtime README](../runtime/README.md)
 the join.

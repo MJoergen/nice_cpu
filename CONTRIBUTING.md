@@ -5,7 +5,7 @@ tests, what they cover, and the rules a change follows.
 
 ## Running the tests
 
-The tests need what the [quick start](README.md#quick-start) needs:
+The tests need what [building the emulator](README.md#building-the-emulator) needs:
 Python 3.10 or later, GNU make 4 or later with coreutils, and Zig 0.17
 exactly. All the tests but those of the assembler and the documents run
 programs on the emulator, so they build it first. The `.wasm` files the

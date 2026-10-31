@@ -921,8 +921,7 @@ pcA             HALT                    ; never runs: jumped over
 
                 MOVE    R12, 103        ; call and return through the stack (§9.1)
                 MOVE    SP, stack
-                ADD     @--SP, 2, PC
-                MOVE    PC, subr
+                CALL    subr
                 SUB[M]  R0, R1, 0x5B
         ?!Z     HALT
                 SUB[M]  R0, SP, stack
@@ -1115,7 +1114,7 @@ pass            MOVE    R1, 0
 
 ; ---- Routines and data --------------------------------------------------
 subr            MOVE    R1, 0x5B        ; called by check 103
-                MOVE    PC, @SP++
+                RET
 
 isr             MOVE    R4, R14         ; vectors 3 and 255, for checks 111-115
                 MOVE[M] R6, 0           ; Z

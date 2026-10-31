@@ -61,6 +61,7 @@ It can:
 - serve the debug link of [doc/DEBUG.md](doc/DEBUG.md) over TCP, so that
   a host can load, start, pause, and single-step programs, set
   breakpoints, and read and write the memory, as it does with a board.
+  NiceMonMEGA65 also has a debugger on the board that uses the link.
 
 [emulator/README.md](emulator/README.md) describes its options, memory
 map, debug link, and trace format.

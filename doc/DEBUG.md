@@ -7,6 +7,8 @@ the program halts. The link shares one byte stream with the console
 ([emulator/](../emulator/README.md)) serves the link over TCP, and
 [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) over its debug
 UART. Both follow this file, so one host tool works with either.
+NiceMonMEGA65 also has a debugger on the board, which is a client of the
+link inside the system (§3).
 
 The link is a property of the system, not of the ISA. ISA.md and
 SYSTEM.md win over this file. This is version `05` of the protocol,

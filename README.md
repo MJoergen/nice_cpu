@@ -76,6 +76,32 @@ The emulator's `--trace` option prints one line per instruction, in a format
 meant for comparing the FPGA core with the emulator.
 [CONTRIBUTING.md](CONTRIBUTING.md) says how to run the tests.
 
+## The emulator
+
+`niceemu` runs NICE programs on the host. It implements the whole
+instruction set of [doc/ISA.md](doc/ISA.md), the interrupts included,
+and the devices of [doc/SYSTEM.md](doc/SYSTEM.md): the console, the
+80×25 character screen, the math unit, the performance counters, and
+the timer. It is the reference that the FPGA cores are compared with.
+It can:
+
+- run a program until it halts, and print why it stopped, the number of
+  steps, and the registers, with memory dumps and the screen if asked;
+- print a trace of one line per instruction, in the format that the
+  tests of the cores compare;
+- show the screen in a window while the program runs, with the keys
+  typed into it going to the console, at a set speed or as fast as the
+  host can (a build with `-Dwindow`);
+- raise IRQ and NMI requests at chosen steps, and stop at a step limit;
+- name the label where a program halted or trapped, from the symbols
+  file of the assembler;
+- serve the debug link of [doc/DEBUG.md](doc/DEBUG.md) over TCP, so that
+  a host can load, start, pause, and single-step programs, set
+  breakpoints, and read and write the memory, as it does with a board.
+
+[emulator/README.md](emulator/README.md) describes its options, memory
+map, debug link, and trace format.
+
 ## Toolchain
 
 The host tools are `niceasm`, the assembler, `nicedis`, the

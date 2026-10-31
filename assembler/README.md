@@ -6,21 +6,6 @@ dependencies beyond the standard library. It implements the assembler syntax in
 `nicefmt`, which checks the layout of the sources, and `nicedis`, the
 [disassembler](#disassembler).
 
-## Test
-
-    make test
-
-This assembles every program in `test/` and compares the result with
-the expected `.bin` file. It then runs `test/errors.py`, which assembles a
-list of short faulty programs and checks the error message, the exit
-status, and that no output file is written. It also checks short good
-programs, the format of several errors, and the command line. Then it
-runs the tests of `nicefmt` and `nicedis`, and checks the layout of every
-`.nasm` file.
-
-The scripts are fully type-annotated. `make typecheck` checks them with
-`mypy --strict` (install mypy first).
-
 ## Usage
 
     ./niceasm.py [-o output.bin] [--symbols output.sym] input.nasm
@@ -112,9 +97,10 @@ skipped:
   address, the first one in the file that `niceasm` accepts is shown.
 - A name that `niceasm` does not accept as a label, such as the `::` or `$`
   names of Rust and Zig functions that `nicebuild.py` writes, a mnemonic,
-  a register name, or a name that occurs twice, is only a comment: on a
-  line of its own at its address if a word is there, and in the comment of a constant, which
-  stays a number.
+  a register name, or a name that occurs twice, is shown only in
+  comments. At its address, if a word is there, it is a comment line of
+  its own. A constant that is its address stays a number, with the name
+  in the comment.
 - A label that the output uses but does not define, because no word is at
   its address or it is outside the range, is defined with `.EQU` at the
   top.
@@ -133,6 +119,11 @@ filetype=nice` to `~/.vimrc`, because Vim takes `*.nasm` for another
 assembler.
 
 ## Details beyond ISA.md
+
+The syntax is the one of [ISA.md §10](../doc/ISA.md#10-assembler-syntax).
+This section lists what the assembler does beyond it.
+
+**Syntax.**
 
 - Operands are separated by whitespace or by one comma. A comma anywhere
   else, such as after the mnemonic or two in a row, is an error.
@@ -155,6 +146,9 @@ assembler.
 - Numbers are digits only: no `_` separators.
 - Strings have no escape sequences. The source is read byte by byte, as
   Latin-1, so each byte of a string is one character: a UTF-8 `é` gives two.
+
+**Directives.**
+
 - `.ORG`, `.BLK`, and `.RES` arguments must not refer to labels defined later.
 - A `.BLK` or `.RES` count must not be negative, and the block must end at or
   before address `0xFFFFFFFF`. Other statements wrap from `0xFFFFFFFF` to 0.
@@ -165,6 +159,9 @@ assembler.
   writes about 38 GB. Use `.RES` for a large reservation, which writes
   nothing.
 - `.ASCII_B ''` emits nothing, and `.ASCII_L ''` emits one 0 word.
+
+**Edge cases.**
+
 - The output is sorted by address, not by source order. With a wrap, the
   words at 0 come before those at `0xFFFFFFFE` (`test/wrap.nasm`).
 - Whitespace is what Python's `str.isspace()` says, so a form feed and
@@ -175,6 +172,16 @@ assembler.
 
 ## Tests
 
+    make test
+
+This assembles every program in `test/` and compares the result with
+the expected `.bin` file. It then runs `test/errors.py`, which assembles a
+list of short faulty programs and checks the error message, the exit
+status, and that no output file is written. It also checks short good
+programs, the format of several errors, and the command line. Then it
+runs the tests of `nicefmt` and `nicedis`, and checks the layout of every
+`.nasm` file.
+
 | File | What it checks |
 |---|---|
 | `count`, `replicate`, `print` | The 2004 example programs by B. Ulmann ([examples.zip](http://www.vaxman.de/projects/nice/examples.zip)). The `.bin` files are the original `NICE.pm` output and match byte for byte. |
@@ -183,3 +190,6 @@ assembler.
 | `crlf` | CRLF line endings and a program with no `.ORG`. |
 | `dis.py` | `nicedis`: every `.bin` file of the repository disassembled and reassembled to the same words, without symbols and with them where its `.nasm` file or `.sym` file gives them, and each listing in the layout; the hand-checked listings `count.lst` and `disedge.lst`; `disassemble()`; `--start` and `--end`; and the errors. `disedge.bin` and `disedge.sym` hold the cases no assembled program has: the `.DAT` words, cut-off instructions, a gap, a label inside an instruction, and the names that are not labels. |
 | `errors.py` | One case per error message, including every bug fixed after [the review](../doc/review/assembler-review.md); generated programs such as `.EQU` chains of 1200 names; an empty file and one with no final newline; the exact output for two errors, and for warnings; and the command line: `-o`, a missing file, a directory in place of a file, and bad arguments. |
+
+The scripts are fully type-annotated. `make typecheck` checks them with
+`mypy --strict` (install mypy first).

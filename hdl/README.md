@@ -34,105 +34,12 @@ departs from it.
 | [CODING_STYLE.md](CODING_STYLE.md) | The style of the VHDL. |
 | [vsg.yml](vsg.yml) | The rules of CODING_STYLE.md for vsg, which `make lint` runs. |
 | [sim.mk](sim.mk) | The commands of the simulators, GHDL and nvc, for the Makefile and `bench/Makefile`. |
-| [src/multicycle.vhd](src/multicycle.vhd) | The multi-cycle core. |
-| [src/pipeline.vhd](src/pipeline.vhd) | The pipelined core: its stages connected, and the invariants they keep. |
-| [src/pipe_fetch.vhd](src/pipe_fetch.vhd) | FETCH of the pipelined core. |
-| [src/pipe_decode.vhd](src/pipe_decode.vhd) | DECODE of the pipelined core. |
-| [src/pipe_prepare.vhd](src/pipe_prepare.vhd) | PREPARE of the pipelined core, with its data read request. |
-| [src/pipe_dbus.vhd](src/pipe_dbus.vhd) | DBUS, the data bus port of the pipelined core, with the tags and the read data of the requests in flight. |
-| [src/pipe_write.vhd](src/pipe_write.vhd) | WRITE of the pipelined core, with the architectural state. |
-| [src/pipe_pkg.vhd](src/pipe_pkg.vhd) | The micro-operations of the pipelined core, what each reads and writes, and WRITE's state record. |
-| [src/nice_pkg.vhd](src/nice_pkg.vhd) | The parts of the ISA that the cores share: the operand fields, the register value rule, the condition, the ALU, the shifter, and the flags. |
-| [src/mpu.vhd](src/mpu.vhd) | The math unit of SYSTEM.md §2, a Wishbone slave. |
-| [src/perf.vhd](src/perf.vhd) | The performance counters of SYSTEM.md §3, a Wishbone slave. |
-| [src/timer.vhd](src/timer.vhd) | The timer of SYSTEM.md §4, a Wishbone slave with an interrupt request port. |
-| [src/fetch_stats.vhd](src/fetch_stats.vhd) | The fetch statistics of MICROARCH.md §8.1, counters of FETCH and DECODE of the pipelined core, a Wishbone slave. |
-| [src/wb_dmux.vhd](src/wb_dmux.vhd) | The data bus decoder, which keeps the ACKs of several slaves in order. |
-| [src/debug_link.vhd](src/debug_link.vhd) | The byte-stream part of the debug link of DEBUG.md: packets, the debug registers, notices, and a Wishbone master. |
-| [src/trace_pkg.vhd](src/trace_pkg.vhd) | `t_retire`, the record in which the core reports each step to the trace writer, and `t_halt`, the type of the cores' `halt_reason_o`. |
-| [sim/trace.vhd](sim/trace.vhd) | The trace writer. Simulation only. |
-| [sim/wb_mem.vhd](sim/wb_mem.vhd) | The memory model, with the console and the read counter. Simulation only. |
-| [test/tb_mem.vhd](test/tb_mem.vhd) | A self-checking test of the memory model, which loads [test/mem.bin](test/mem.bin) and reads [test/mem.input](test/mem.input) as its console input. |
-| [test/tb_shift.vhd](test/tb_shift.vhd) | A self-checking test of the ALU and the shifter of `src/nice_pkg.vhd`: the shifter the pipelined core uses, from a prepared count, against the one the multi-cycle core uses, and the ALU against the operations written out. |
-| [test/tb_mpu.vhd](test/tb_mpu.vhd) | A self-checking test of the math unit. |
-| [test/tb_perf.vhd](test/tb_perf.vhd) | A self-checking test of the performance counters. |
-| [test/tb_perf_hz.vhd](test/tb_perf_hz.vhd) | A self-checking test of the microsecond counter at 33333333, 83333333, and 100000000 Hz, against the integer part of N·10⁶/`G_CLK_HZ`. |
-| [test/tb_timer.vhd](test/tb_timer.vhd) | A self-checking test of the timer. |
-| [test/tb_fetch_stats.vhd](test/tb_fetch_stats.vhd) | A self-checking test of the fetch statistics. |
-| [test/fstats.nasm](test/fstats.nasm) | A program that reads the fetch statistics on the pipelined core, and checks itself. |
-| [test/tb_wb_dmux.vhd](test/tb_wb_dmux.vhd) | A self-checking test of the data bus decoder. |
-| [test/tb_debug_link.vhd](test/tb_debug_link.vhd) | A self-checking test of the debug link, with the byte streams of DEBUG.md §8 and its errors, notices, timeout, and console. |
-| [test/tb_link.vhd](test/tb_link.vhd) | The debug link connected to a core, the data bus decoder, the memory model, and the math unit, as a board connects them. It loads and runs `test/linkecho.nasm` over the link, from `test/link_init.bin`. |
-| [test/tb_trace.vhd](test/tb_trace.vhd) | A test of the trace writer, which stands in for the core and runs [test/trace.nasm](test/trace.nasm). |
-| [test/tb_core.vhd](test/tb_core.vhd) | Runs a program on a core, which its generic `G_CORE` names, with an interrupt source, and writes its trace. |
-| [test/shift.nasm](test/shift.nasm) | Every shift, with the counts that are hard to get right. |
-| [test/irqwave.nasm](test/irqwave.nasm) | The program of the interrupt timing diagram, doc/interrupt.tex. |
-| [test/addwave.nasm](test/addwave.nasm) | The program of the timing diagram of one instruction, doc/flow.tex. |
-| [test/instret.nasm](test/instret.nasm) | Reads of the instruction counter right after a store, after a read, and twice in one instruction. |
-| [test/hazard.nasm](test/hazard.nasm) | The hazards of MICROARCH.md §5, each with no padding. It checks itself. |
-| [test/programs.py](test/programs.py) | Runs the programs in some directories on the core and on the emulator, for `make programs`. |
-| [test/core_runs.py](test/core_runs.py) | Runs a program on the core, or on the emulator, for `irq_sweep.py` and `programs.py`, in GHDL or nvc. |
-| [test/irq_compare.py](test/irq_compare.py) | Compares a run with interrupt requests against the emulator, from the steps where the core took them. |
-| [test/irq_sweep.py](test/irq_sweep.py) | Runs a program with an NMI before each of its steps, and with an IRQ before each. |
-| [test/sidefx_prog.py](test/sidefx_prog.py) | Writes a program with every pair of side effects on one register. |
-| [test/pcfx_prog.py](test/pcfx_prog.py) | Writes a program with every pair of side effects on R15. |
-| [test/smc_prog.py](test/smc_prog.py) | Writes a program that stores into its own code 1 to 40 words ahead. |
-| [test/samereg_prog.py](test/samereg_prog.py) | Writes a program with one register in all three fields of a shift, for every pair of source modes. |
-| [test/latecount.nasm](test/latecount.nasm) | Every shift count that WRITE reduces in a cycle of its own, and every reader of such a shift's result. |
-| [test/twocycle.nasm](test/twocycle.nasm) | Register destinations adjusted by one, their readers, and two-cycle jumps. |
-| [test/r15mix.nasm](test/r15mix.nasm) | R15 in several fields of one instruction, as a shift count, and as a store's base. |
-| [test/r14cond.nasm](test/r14cond.nasm) | SR written by side effects and adjusted destinations, then conditional instructions and reads; `INT` and `RTI` with conditions. |
-| [test/r0odd.nasm](test/r0odd.nasm) | R0 in every mode as count, source, and destination. |
-| [test/smclate.nasm](test/smclate.nasm) | Stores into fetched code from late shifts and two-cycle instructions, and into the constants of early jumps. |
-| [test/smcskid.nasm](test/smcskid.nasm) | Stores into the target of an early jump while it waits in DECODE, in `dec_r` and in `skid_r`. |
-| [test/predict.nasm](test/predict.nasm) | Predicted jumps in the shapes of loops: two back to back, flags from the instruction before, stores into the target, into the jump's offset, and into the word after it, and a nested loop. |
-| [test/readorder.nasm](test/readorder.nasm) | The number and order of the data reads of late shifts, adjusted destinations, and skipped instructions, through the read counter. |
-| [test/instret_late.nasm](test/instret_late.nasm) | The instruction counter read right after late shifts, adjusted destinations, stores, skipped instructions, and `INT`. |
-| [test/jumpwords.nasm](test/jumpwords.nasm) | Jumps into constant words and to the instruction itself, with conditions on I, and backward conditional jumps, which DECODE predicts taken. It ends at a reserved word. |
-| [test/condlate.nasm](test/condlate.nasm) | Conditional late shifts, adjusted destinations in R14, `HALT` and `INT` right after two-cycle flag writes, and more forms of R15. |
-| [test/irqhazard.nasm](test/irqhazard.nasm) | Late shifts, adjusted destinations, and side effects on R14 and R15, for a request before each step. |
-| [test/shiftjump.nasm](test/shiftjump.nasm) | Every shift with R15 as its destination, `0<0` among them, whose opcode is `MOVE`'s. |
-| [test/rtiread.nasm](test/rtiread.nasm) | `RTI` that returns to instructions with data reads, run one step at a time. |
-| [test/pausepatch.nasm](test/pausepatch.nasm) | A word of code that `tb_core` writes while the core is paused, with its hand-checked trace in [test/pausepatch.expected](test/pausepatch.expected). |
-| [test/breaks.nasm](test/breaks.nasm) | Stops at breakpoints in a loop, at a data read, at a false condition, in an interrupt routine, after `RTI`, and with an IRQ pending at a jump target and at an instruction that the pipelined core holds already. |
-| [test/break_stops.py](test/break_stops.py) | Lists the stops of a program at its breakpoints on the emulator, over the debug link, as `tb_core` lists the core's. |
-| [test/bubble.nasm](test/bubble.nasm) | Measures the bubbles of the pipelined core with the cycle counter, and checks itself. |
-| [test/readwait.nasm](test/readwait.nasm) | Data reads that wait for their condition and for an older micro-operation, which `tb_core` counts on the pipelined core. |
-| [test/random_prog.py](test/random_prog.py) | Writes random programs, and random interrupt requests for them. |
-| [test/random_stats.py](test/random_stats.py) | Shows how the random programs spend their steps, and how often they make each hazard. |
-| [test/trace_reads.py](test/trace_reads.py) | Finds the first line where two traces differ, and shows the data reads of that instruction. |
-| [formal/wb_master_check.vhd](formal/wb_master_check.vhd) | Formal properties of a Wishbone master port. |
-| [formal/wb_slave_check.vhd](formal/wb_slave_check.vhd) | Formal properties of a Wishbone slave port that never stalls and answers in the next cycle. |
-| [formal/handshake_check.vhd](formal/handshake_check.vhd) | Formal properties of a valid/ready port that takes requests. |
-| [formal/core_check.vhd](formal/core_check.vhd) | Formal properties of the ports of a core: a checker on each of its four ports, and the rules of a stopped core. |
-| [formal/formal_multicycle.vhd](formal/formal_multicycle.vhd) | The multi-cycle core with `core_check`. |
-| [formal/multicycle.sby](formal/multicycle.sby) | The SymbiYosys job for it. |
-| [formal/formal_timer.vhd](formal/formal_timer.vhd) | The timer with checks of its bus and interrupt ports. |
-| [formal/timer.sby](formal/timer.sby) | The SymbiYosys job for it. |
-| [formal/formal_wb_dmux.vhd](formal/formal_wb_dmux.vhd) | The data bus decoder with checks of its master and slave ports. |
-| [formal/wb_dmux.sby](formal/wb_dmux.sby) | The SymbiYosys job for it. |
-| [formal/formal_nice_pkg.vhd](formal/formal_nice_pkg.vhd) | The functions of `src/nice_pkg.vhd` and the block compares of `src/pipe_pkg.vhd`, against ISA.md and MICROARCH.md for every input. |
-| [formal/nice_pkg.sby](formal/nice_pkg.sby) | The SymbiYosys job for it. |
-| [formal/formal_pipe_fetch.vhd](formal/formal_pipe_fetch.vhd) | FETCH of the pipelined core, whose properties are in `src/pipe_fetch.vhd`. |
-| [formal/pipe_fetch.sby](formal/pipe_fetch.sby) | The SymbiYosys job for it. |
-| [formal/formal_pipe_decode.vhd](formal/formal_pipe_decode.vhd) | DECODE of the pipelined core, whose properties are in `src/pipe_decode.vhd`. |
-| [formal/pipe_decode.sby](formal/pipe_decode.sby) | The SymbiYosys job for it. |
-| [formal/formal_pipe_prepare.vhd](formal/formal_pipe_prepare.vhd) | PREPARE of the pipelined core, whose properties are in `src/pipe_prepare.vhd`. |
-| [formal/pipe_prepare.sby](formal/pipe_prepare.sby) | The SymbiYosys job for it. |
-| [formal/formal_pipe_dbus.vhd](formal/formal_pipe_dbus.vhd) | DBUS of the pipelined core, whose properties are in `src/pipe_dbus.vhd`. |
-| [formal/pipe_dbus.sby](formal/pipe_dbus.sby) | The SymbiYosys job for it. |
-| [formal/formal_pipe_write.vhd](formal/formal_pipe_write.vhd) | WRITE of the pipelined core, with the properties of its halt, its pause, and its breakpoints, and PREPARE's assumptions about it. |
-| [formal/pipe_write.sby](formal/pipe_write.sby) | The SymbiYosys job for it. |
-| [formal/formal_pipeline.vhd](formal/formal_pipeline.vhd) | The pipelined core with `core_check`. |
-| [formal/pipeline.sby](formal/pipeline.sby) | The SymbiYosys job for it. |
-| [formal/formal_perf.vhd](formal/formal_perf.vhd) | The performance counters with checks of their bus port against a model of the counters. |
-| [formal/perf.sby](formal/perf.sby) | The SymbiYosys job for it. |
-| [formal/formal_fetch_stats.vhd](formal/formal_fetch_stats.vhd) | The fetch statistics, with and without counters, whose properties are in `src/fetch_stats.vhd`. |
-| [formal/fetch_stats.sby](formal/fetch_stats.sby) | The SymbiYosys job for it. |
-| [formal/formal_mpu.vhd](formal/formal_mpu.vhd) | The math unit with checks of its bus port, whose other properties are in `src/mpu.vhd`. |
-| [formal/mpu.sby](formal/mpu.sby) | The SymbiYosys job for it. |
-| [formal/formal_debug_link.vhd](formal/formal_debug_link.vhd) | The debug link with checks of its ports, whose other properties are in `src/debug_link.vhd`. |
-| [formal/debug_link.sby](formal/debug_link.sby) | The SymbiYosys job for it. |
+| [ASSUMPTIONS.md](ASSUMPTIONS.md) | Where the pipelined core settles a question that MICROARCH.md leaves open, or departs from it. |
+| [timing.tcl](timing.tcl) | The Vivado script of `make timing`: the pipelined core alone, placed and routed, and its worst paths. |
+| [src/](src/README.md) | The synthesizable VHDL: the two cores, their shared packages, and the devices. |
+| [sim/](sim/README.md) | The trace writer and the memory model, for simulation only. |
+| [test/](test/README.md) | The testbenches, the test programs, and the scripts that run them. |
+| [formal/](formal/README.md) | The formal checks: the checkers of the ports, and a wrapper and a SymbiYosys job for each unit. |
 
 ## Running the tests
 

@@ -28,7 +28,7 @@ pins each is:
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
 
-## V1.2 (2026-10-30)
+## V1.2 (2026-10-31)
 
 The emulator shows the screen in a window while the program runs, with a
 keyboard, a cursor, and the pace of a board (#83). Programs that a monitor

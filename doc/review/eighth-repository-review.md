@@ -18,6 +18,8 @@ Reviewed on 2026-10-31: the user documentation on `dev-V1.2` at commit 8d30320 (
 
 **Every small finding is closed** on `dev-V1.2`, with a commit for each finding or pair of findings and a **Resolved** paragraph under each: the row and the checklist step (§1.1), the upgrade notes in the order of who must act (§1.2), the README's second paragraph and a "Getting started" heading (§2), the M bit (§3.1), the console as three cases, the screen's layout, and what a data read is (§3.2, §3.3, §3.5), the monitor and the underscore in TOOLCHAIN.md (§3.6, §3.7), four slide fixes and a slide on the window (§4), the emulator's exit statuses and symbols file (§5.3, §5.4), WASM.md's rule on several results (§6.1), the board's monitor and the R14 row (§6.5, §6.6), the Dhrystone figures (§7.2), hdl/README.md's terms and stale sentences (§8.3), and how to try the debug link (§8.4). The restructurings are the issues [#94](https://github.com/MJoergen/nice_cpu/issues/94) to [#100](https://github.com/MJoergen/nice_cpu/issues/100), one per document, with no milestone, as none exists past `V1.2`.
 
+**Every restructuring is done too**, at the user's word, on `dev-V1.2`, with the issues on the `V1.2` milestone and one commit per issue: SYSTEM.md §1 in seven sub-sections (§3.4, #94), the emulator README with the tests last and a recipe (§5.1, §5.2, §5.4, #95), the assembler README with usage first (§5.5, #96), the translator README with a quick start and tables, its internals in `translator/DESIGN.md`, and the runtime README with the one list of the join order (§6.2, §6.3, §6.4, §6.6, #97), the benchmark's one table of the cores, measured again (§7.1, #98), hdl/README.md with the core before the tests and tables of the ports and the formal jobs (§8.1, §8.2, #99), and DEBUG.md §7 in three parts (§8.4, #100). The figures that moved were measured again, not copied: the benchmark on both cores, and the time of each formal job.
+
 ## 1. The release
 
 ### 1.1 The table of board tags has no row for `V1.2`, and no step adds one
@@ -76,7 +78,7 @@ The order is The emulator (its features, Building the emulator, Worked example, 
 
 §1 is "Console, screen, and read counter", and its paragraphs are Screen, Console, Window, Cursor, Keyboard, Pacing, and Read counter. The contents list shows none of the last five, and the table of the keys' bytes is what a program under the window needs most. **Fix:** sub-headings §1.1 to §1.7 in that order, and the contents list. The anchor of §1, which README.md and the release notes link, stays.
 
-**Resolved**: filed as [#94](https://github.com/MJoergen/nice_cpu/issues/94), labeled `documentation`.
+**Resolved**: §1 has the sub-sections §1.1 Screen to §1.7 Read counter, in the contents list, and the references inside the file name them (#94).
 
 ### 3.5 SYSTEM.md: "a data read" in every device table, with no word on why
 
@@ -155,7 +157,7 @@ Lines 124–132: the statuses 0, 2, 3, 4, 1, and 141 in one sentence, with the r
 
 "Test" (line 9) is the first section, before Usage (24), and "Tests" (176) at the end is a second one. "Details beyond ISA.md" (135–174) is 17 bullets in no order, with the separators and the comments beside `.BLK 0xFFFFFFFF` and the byte order mark. The disassembler section's sentence at 113–117 ("is only a comment: on a line of its own at its address if a word is there, and in the comment of a constant, which stays a number") takes several readings. **Fix:** Usage first and one Tests section at the end; the details grouped into syntax, directives, and edge cases; the sentence split in two, with an example line of output.
 
-**Resolved**: filed as [#96](https://github.com/MJoergen/nice_cpu/issues/96), labeled `documentation`.
+**Resolved**: Usage is the first section and one "Tests" section the last; the details are grouped under Syntax, Directives, and Edge cases; and the disassembler's sentence is three (#96).
 
 ## 6. The translator and the runtime
 
@@ -241,7 +243,7 @@ The ports are named piecemeal through the file (`dbus_ack_i`, `retire_o`, `stats
 
 [DEBUG.md](../DEBUG.md) §7, "Transports" (410–549), has the UART and TCP transports, then the emulator's differences in about 18 bullets, then the rules for a board, from "A board that carries the link has to do more than follow this file" (513), with no heading of their own. A newcomer learns how to try the link only there, from `--link`; the introduction says "one host tool works with either" and names none. The R0 to R15 cell of the register table (228) is one line of about 150 words with five states. "ISA §" is used three times and declared nowhere (the notation sentence at 19–20 declares "SYSTEM.md §1" alone), and "a system of version 4" (294) comes before §9 explains the versions. **Fix:** §7 for the transports, §8 "The emulator", §9 "A board that carries the link", then the example and the versions, with `make -C doc test` for the references from hdl/README.md and the testbenches; three lines in the introduction on how to try it, with `niceemu --link` and the example; the R0 to R15 cell as a list below the table; "ISA §" in the notation sentence; the version asides left to §9.
 
-**Resolved**: in part: the introduction says how to try the link and that no host tool ships, and the notation sentence declares "ISA §". The split of §7, the R0 to R15 cell, and the version asides are [#100](https://github.com/MJoergen/nice_cpu/issues/100).
+**Resolved**: in part: the introduction says how to try the link and that no host tool ships, and the notation sentence declares "ISA §". The split is done as the sub-sections §7.1 UART and TCP, §7.2 The emulator, and §7.3 A board that carries the link, which keeps every "DEBUG.md §7" reference and anchor valid; the R0 to R15 cell is a list of four states below the table; and the three asides on older versions are gone from §4 and §6, which §9 covers (#100).
 
 ## 9. What is correct
 

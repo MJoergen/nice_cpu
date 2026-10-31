@@ -1,5 +1,7 @@
 ; Echo the keys typed into the window on the screen, with a blinking
-; cursor. Backspace deletes, and Enter ends the program. Build niceemu
+; cursor. Backspace deletes, and Enter ends the program. The cursor swaps
+; the colors of its cell, so the program keeps a white space under it; on
+; a cell never written, black on black, it would not show. Build niceemu
 ; with make window, and run it with
 ;     niceemu --window keys.bin
 PC              .EQU    R15
@@ -11,6 +13,7 @@ CUR_COL         .EQU    0xFFFFFF81
 CUR_ROW         .EQU    0xFFFFFF82
 TITLE_COLOR     .EQU    0x00FFF000      ; yellow (0xFF0) on blue (0x00F)
 TEXT_COLOR      .EQU    0x000FFF00      ; white (0xFFF) on black (0x000)
+SPACE           .EQU    TEXT_COLOR+0x20  ; a space, white on black
 
 ; Write the title on row 0. Each screen word is a character and its colors.
                 MOVE    R1, TITLE
@@ -24,7 +27,8 @@ START           MOVE    R3, LINE        ; R3: the address of the next key
                 MOVE    R4, 0           ; R4: its column
                 MOVE    @CUR_ROW, 2
                 MOVE    @CUR_STATE, 0x60  ; show the cursor, blinking
-CURSOR          MOVE    @CUR_COL, R4    ; move the cursor to the next key
+CURSOR          MOVE    @CUR_COL, R4    ; move the cursor to the next key,
+                MOVE    @R3, SPACE      ; with a space under it, so it shows
 KEY             MOVE[M] R2, @CONSOLE    ; read: 0 if no byte waits, else the
         ?Z      MOVE    PC, KEY         ; byte with bit 8 set; none: again
                 SUB[M]  R0, R2, 0x200   ; the end of the input, without --window
@@ -44,7 +48,8 @@ KEY             MOVE[M] R2, @CONSOLE    ; read: 0 if no byte waits, else the
 
 BACK            MOVE[M] R0, R4          ; at column 0,
         ?Z      MOVE    PC, KEY         ; there is nothing to delete
-                MOVE    @--R3, 0        ; clear the last character
+                MOVE    @R3, 0          ; clear the space under the cursor
+                MOVE    @--R3, 0        ; and the last character
                 DEC     R4, R4
                 MOVE    PC, CURSOR
 

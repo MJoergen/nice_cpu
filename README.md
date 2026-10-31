@@ -192,7 +192,9 @@ each character before it writes the word:
 The screen starts at `0xFFFF0000`, 80 words per row, so row 2 starts at
 `0xFFFF00A0`. The window draws the cursor from three words: its state
 at `0xFFFFFF80`, where `0x60` shows it blinking, its column, and its
-row.
+row. The cursor swaps the colors of its cell, so the program keeps a
+white space under it. On a cell never written, black on black, it would
+not show.
 
 With the window, a read of the console returns 0 while no key waits,
 and otherwise the key's byte with bit 8 set. So the program reads in a

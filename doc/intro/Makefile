@@ -36,11 +36,12 @@ pdfcheck:
 #        first DEL, at column 0, and the ESC change nothing, and the
 #        second DEL deletes the "x", so row 2 is "Hello, NICE!" in white
 #        on black, under the title in yellow on blue. The cursor ends
-#        hidden, at column 12 of row 2, R3 = 0xFFFF00A0 + 12, and R2 the
-#        CR. TITLE is at 0x43 and has 30 characters and the 0, so R1 =
-#        0x62. Steps: 124 for the title, 5 to set up, 17 for each of the
-#        13 keys written, 11 for each of the first DEL and the ESC, 15
-#        for the second DEL, and 9 for the CR: 396.
+#        hidden, at column 12 of row 2, on the white space the program
+#        keeps under it, which the screen's print trims: R3 = 0xFFFF00A0
+#        + 12, and R2 the CR. TITLE is at 0x47 and has 30 characters and
+#        the 0, so R1 = 0x66. Steps: 124 for the title, 6 to set up, 18
+#        for each of the 13 keys written, 11 for each of the first DEL
+#        and the ESC, 17 for the second DEL, and 9 for the CR: 412.
 EXAMPLES = sum hello copy irq keys
 OPTS_copy = -d 0x10:5
 OPTS_irq  = --irq 5:5 --irq 12:5

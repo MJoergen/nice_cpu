@@ -18,7 +18,7 @@ holds the [specification](doc/ISA.md), an [assembler](assembler),
 an [emulator](emulator), a [runtime library](runtime)
 with integer and floating-point routines, and a [WebAssembly
 translator](translator)
-that runs C, Zig, and Rust programs. The `hdl/` directory holds two
+that runs C, Zig, and Rust programs. The [hdl](hdl) directory holds two
 different FPGA implementations, the pipelined one of MICROARCH.md, which
 is the default, and a simple multi-cycle one. They both pass every comparison with the
 emulator, the test setup for them, and formal checks of their ports, of

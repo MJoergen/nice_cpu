@@ -62,6 +62,8 @@ The order is The emulator (its features, Building the emulator, Worked example, 
 
 [SYSTEM.md](../SYSTEM.md) §1, "Console", line 46, four sentences apart: "With no byte waiting, a read returns 0." and "The emulator and the simulation memory of the FPGA core never return 0: a read waits for the next byte or the end of the input." Both are true, as the emulator without a window has no state in which no byte waits, but the reader has to work that out, and the sentence that says what the console is for, "Programs use the console for input and output", is the paragraph's last. The console is the one device every program uses. **Fix:** lead with what it is for; then the write; then the read as three cases in a table: a byte waits (the byte in bits 7..0 with bit 8 set), none waits (0 from a UART or the window; stdin, a file, and the simulation memory wait instead), the input has ended (`0x200`); then where each system's input comes from.
 
+**Resolved**: The paragraph leads with what the console is for, and a table gives what a read returns in the three cases, with where each system's input comes from after it.
+
 ### 3.3 SYSTEM.md §1: the screen's layout is not stated
 
 "Screen", line 42, says where the screen is, the word's format, and the `-2004` option, but not that it is 25 rows of 80 words, row by row, 2000 words in all. The memory map says 80×25, and README.md says "80 words per row" in passing in the window example. A program that writes row 2 has to guess. The paragraph also opens with the 2004 history before saying what the screen is. **Fix:** first "The screen is 25 rows of 80 words at `0xFFFF0000`, row by row, so row r, column c is the word at `0xFFFF0000` + 80·r + c", then the word's format, then the 2004 option.

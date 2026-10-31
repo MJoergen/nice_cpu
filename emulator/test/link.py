@@ -37,14 +37,15 @@ loop            MOVE    R1, @CONSOLE
 """
 
 # Echoes each input byte, and reads on at the end of the input, as a
-# monitor does, so it never halts. R2 counts the bytes echoed.
+# monitor does, so it never halts. R2 counts the bytes, before each echo,
+# so that a host that has the echo reads the count of it.
 ECHO_ON = """
 CONSOLE         .EQU    0xFFFFFF00
 loop            MOVE    R1, @CONSOLE
                 AND[M]  R0, R1, 0x100
         ?Z      MOVE    R15, loop       ; the end, 0x200: read again
-                MOVE    @CONSOLE, R1
                 ADD     R2, R2, 1
+                MOVE    @CONSOLE, R1
                 MOVE    R15, loop
 """
 
@@ -161,10 +162,11 @@ def assemble(tmp: str, name: str, text: str) -> List[int]:
 
 
 class Emu:
-    """A niceemu --link 0, or on `addr`, and a host connected to it."""
+    """A niceemu --link 0, or on `addr`, and a host connected to it, at
+    `host` if that is not the address to connect to."""
 
-    def __init__(self, args: List[str] = [], addr: str = "127.0.0.1") -> None:
-        self.addr = addr
+    def __init__(self, args: List[str] = [], addr: str = "127.0.0.1", host: Optional[str] = None) -> None:
+        self.addr = host or addr
         link = "0" if addr == "127.0.0.1" else f"{addr}:0"
         self.proc = subprocess.Popen([NICEEMU, "--link", link] + args, stdin=subprocess.DEVNULL,
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -996,7 +998,8 @@ def test_old_host(stop: List[int], echo: List[int]) -> None:
 def test_address() -> None:
     """--link ADDR:PORT serves on ADDR only. All of 127.0.0.0/8 is
     loopback on Linux, so 127.0.0.2 is an address other than the
-    default."""
+    default. An IPv6 address goes in brackets, and 0.0.0.0 serves every
+    address of the computer, 127.0.0.1 among them."""
     e = Emu(addr="127.0.0.2")
     expect("b on connect", e.take(len(HELLO)), HELLO)
     e.send(read(CONTROL, 1))
@@ -1008,6 +1011,13 @@ def test_address() -> None:
         pass
     status, out, _ = e.stop()
     expect("exit status", bytes([status]), b"\x00")
+    for addr, host in (("[::1]", "::1"), ("0.0.0.0", "127.0.0.1")):
+        e = Emu(addr=addr, host=host)
+        expect(f"b on connect to {addr}", e.take(len(HELLO)), HELLO)
+        e.send(read(CONTROL, 1))
+        e.expect(f"control held on {addr}", answer(CONTROL, [0x9]))
+        status, out, _ = e.stop()
+        expect(f"exit status of {addr}", bytes([status]), b"\x00")
 
 
 def test_usage() -> None:

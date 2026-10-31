@@ -48,6 +48,7 @@ CASES: List[Tuple[List[str], Optional[str], str]] = [
     (["--link", "x"], None, "niceemu: --link: bad number 'x'"),
     (["--link", "1.2.3:0"], None, "niceemu: --link: bad address '1.2.3'"),
     (["--link", "[::1:0"], None, "niceemu: --link: bad address '[::1'"),
+    (["--link", "::1:0"], None, "niceemu: --link: bad address '::1'"),
     (["--link", "127.0.0.1:"], None, "niceemu: --link: bad number ''"),
     (["--link", ":0"], None, "niceemu: --link: bad address ''"),
     (["--link", "127.0.0.1:65536"], None, "niceemu: --link: '65536' is larger than 65535"),
@@ -59,7 +60,9 @@ CASES: List[Tuple[List[str], Optional[str], str]] = [
     (["-d", "0xg:1", "BIN"], "00000000 0c000000", "niceemu: -d: bad number '0xg'"),
     (["does-not-exist.bin"], None, "niceemu: cannot read does-not-exist.bin: FileNotFound"),
     (["--speed", "5", "BIN"], "00000000 0c000000", "niceemu: --speed needs --window"),
+    (["BIN", "--speed"], "00000000 0c000000", "niceemu: --speed needs a value"),
     (["--window", "--speed", "x", "BIN"], "00000000 0c000000", "niceemu: --speed: bad number 'x'"),
+    (["--window", "--speed", "-1", "BIN"], "00000000 0c000000", "niceemu: --speed: bad number '-1'"),
     # make test builds without -Dwindow; test/window.py tests the window.
     (["--window", "BIN"], "00000000 0c000000",
      "niceemu: --window needs a build with -Dwindow (emulator/README.md)"),

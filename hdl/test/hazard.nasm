@@ -402,8 +402,7 @@ j5              ADD[M]  R0, R0, 1       ; Z = 0
 j6              MOVE    PC, j7
                 HALT
 j7              MOVE    PC, j8
-j8              ADD     @--SP, 2, PC    ; call
-                MOVE    PC, subr
+j8              CALL    subr
                 MOVE    R0, R15++       ; jumps over the HALT
                 HALT
                 MOVE    R7, 0
@@ -436,7 +435,7 @@ irq             ADD[M]  @irqs, @irqs, 1
                 RTI
 
 ; A subroutine that returns at once: the jump reads its target from memory.
-subr            MOVE    PC, @SP++
+subr            RET
 
 fail            .DAT    0x0FE00000      ; a reserved word: halts with status 2
 

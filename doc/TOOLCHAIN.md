@@ -25,11 +25,13 @@ whole program is assembled at once.
         v
     prog.nasm
         |
-        |  cat, in this order: runtime/start_wasm.nasm (or start.nasm for a
+        |  cat, in this order: runtime/start_wasm_trap.nasm (or
+        |  start_wasm.nasm without the trap report, start.nasm for a
         |  program with no wasm module, or their _mon versions for a program
         |  that a monitor in ROM runs), hand-written .nasm files, prog.nasm,
         |  runtime/lib.nasm, runtime/muldiv_mpu.nasm (or muldiv_soft.nasm
-        |  without the math unit), and runtime/float.nasm if prog uses floats
+        |  without the math unit), runtime/float.nasm if prog uses floats,
+        |  and runtime/trapmsg.nasm with start_wasm_trap.nasm
         v
     full.nasm
         |  assembler/niceasm.py
@@ -47,7 +49,8 @@ command lines for the first step, and the [runtime README](../runtime/README.md)
 the join.
 
 `translator/nicebuild.py` runs all of these steps for a C, Zig, or Rust
-source file, and writes the `.bin` file:
+source file, and writes the `.bin` file. With `--monitor` it picks the
+`_mon` start-up file:
 
     translator/nicebuild.py -o prog.bin prog.c
 
@@ -105,6 +108,16 @@ test modules. Their `.wasm` files are checked in, so `make test` needs no
 C or Rust compiler. The same holds for the C library's tests in
 `runtime/libc/`, which `make -C runtime/libc wasm` rebuilds. If `llvm-ar` has
 another name, set `AR`. The tests use
-`make`, `cat`, `cmp`, `diff`, `sed`, `grep`, `cut`, and `nproc`. GitHub Actions runs every `make test` and
-`make typecheck`, the document checks, `make programs` on both cores, `make lint`,
+`make`, `cat`, `cmp`, `diff`, `sed`, `grep`, `cut`, and `nproc`.
+
+The cores need more. GHDL runs their tests, and nvc the long simulations;
+vsg checks the VHDL style, SymbiYosys with Yosys and its solvers runs the
+formal checks, and Vivado 2025.1 the timing run
+([hdl/README.md](../hdl/README.md#running-the-tests) gives the versions).
+A build of `niceemu` with `-Dwindow` compiles SDL 3 from source, which
+Zig fetches, so it needs no system package
+([emulator/README.md](../emulator/README.md#window)). The slides and the
+diagrams of `doc/` need pdflatex, and the diagrams pdftoppm. GitHub
+Actions runs every `make test` and `make typecheck`, `make window-test`,
+the document checks, `make programs` on both cores, `make lint`,
 `make formal`, and `make pdfcheck` on each push.

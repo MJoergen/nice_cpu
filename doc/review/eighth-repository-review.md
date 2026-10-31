@@ -48,6 +48,8 @@ Lines 23–27: "They both pass every comparison with the emulator, the test setu
 
 The order is The emulator (its features, Building the emulator, Worked example, Worked example with the window), Toolchain, The specification, Contents, License. Read from the top, it works, and the two worked examples are the best part of the file. Scanned by its headings, how to begin is a subsection of a feature list, and the examples use the assembler (line 111) before Toolchain introduces it (207). The order is deliberate (9cda48d, "Quick start under The emulator"). **Fix:** a small one: head the three subsections "Getting started" and keep "The emulator" for the feature list, or leave the order and add "with the assembler, `niceasm`," at line 111. Not more.
 
+**Resolved**: A heading "Getting started" holds Building the emulator and the two worked examples, and the first example names the assembler.
+
 ## 3. ISA.md, SYSTEM.md, and TOOLCHAIN.md
 
 ### 3.1 ISA.md: "the M bit" a section before its definition

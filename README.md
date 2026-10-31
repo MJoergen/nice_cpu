@@ -67,6 +67,8 @@ It can:
 [emulator/README.md](emulator/README.md) describes its options, memory
 map, debug link, and trace format.
 
+## Getting started
+
 ### Building the emulator
 
 You need Python 3.10 or later and GNU make 4 or later, with coreutils, as on Linux. Zig 0.17 is needed only to build the emulator
@@ -109,7 +111,8 @@ string on the console with a subroutine:
 
     TEXT            .ASCII_L 'Hello, NICE!'
 
-Assemble it into `hello.bin`, and run it:
+Assemble it into `hello.bin` with `niceasm`, the assembler, and run it on
+the emulator:
 
     $ assembler/niceasm.py -o hello.bin doc/intro/examples/hello.nasm
     $ emulator/zig-out/bin/niceemu hello.bin

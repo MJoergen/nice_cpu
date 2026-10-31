@@ -32,7 +32,7 @@ alone adds a third number:
 | `V1.0.1` | `V1.0` | a change in NiceMonMEGA65 only |
 | `V1.0.2` | `V1.0` | another one |
 | `V1.1` | `V1.1` | the submodule moved to `V1.1` |
-| none | `V1.2` | `V1.2` missed timing on the MEGA65 |
+| none | `Vx.y` | a `Vx.y` that missed timing on the MEGA65 |
 
 So the first two numbers of a NiceMonMEGA65 tag always name the
 `nice_cpu` tag it pins. NiceMonMEGA65 pins only tags of this repository,
@@ -82,6 +82,10 @@ tools. Item 2 is by hand.
    minor follows the rules of DEBUG.md §9. Its row in the table of
    versions of DEBUG.md §9 names the new tag before `release.py check`,
    as a change to DEBUG.md after the stamp makes it stale.
+9. The version in `emulator/build.zig.zon` is the new tag's: `1.2.0` for
+   `V1.2`. Nothing reads it, but it names the release the build is from.
+   Set it before `release.py check`, as a change to it after the stamp
+   makes the stamp stale.
 
 ## 3. Quick checks
 
@@ -225,7 +229,8 @@ record it in the release notes:
 - the I/O address map of [doc/SYSTEM.md](../doc/SYSTEM.md);
 - `regs_o`, `retire_o`, `stats_o`, or the reset and interrupt behavior;
 - the clock assumptions of the timer and the performance counters;
-- the version and the rules of the debug link (DEBUG.md §9).
+- the version and the rules of the debug link (DEBUG.md §9), and the
+  ports of `hdl/src/debug_link.vhd`.
 
 ## 8. Release
 

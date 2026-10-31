@@ -68,6 +68,8 @@ The order is The emulator (its features, Building the emulator, Worked example, 
 
 "Screen", line 42, says where the screen is, the word's format, and the `-2004` option, but not that it is 25 rows of 80 words, row by row, 2000 words in all. The memory map says 80×25, and README.md says "80 words per row" in passing in the window example. A program that writes row 2 has to guess. The paragraph also opens with the 2004 history before saying what the screen is. **Fix:** first "The screen is 25 rows of 80 words at `0xFFFF0000`, row by row, so row r, column c is the word at `0xFFFF0000` + 80·r + c", then the word's format, then the 2004 option.
 
+**Resolved**: The paragraph opens with the layout, 25 rows of 80 words, row by row, with the formula for a word's address, and the 2004 history follows.
+
 ### 3.4 SYSTEM.md §1 holds seven topics under one heading
 
 §1 is "Console, screen, and read counter", and its paragraphs are Screen, Console, Window, Cursor, Keyboard, Pacing, and Read counter. The contents list shows none of the last five, and the table of the keys' bytes is what a program under the window needs most. **Fix:** sub-headings §1.1 to §1.7 in that order, and the contents list. The anchor of §1, which README.md and the release notes link, stays.

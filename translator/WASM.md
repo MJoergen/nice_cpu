@@ -2,7 +2,9 @@
 
 How nicewasm, the translator, maps WebAssembly to NICE. It builds on the C
 ABI of [ABI.md](../runtime/ABI.md). The instruction set is
-[ISA.md](../doc/ISA.md), and "ISA §8.2" refers to a section of it.
+[ISA.md](../doc/ISA.md), and "ISA §8.2" refers to a section of it. This
+file is the contract that `nicewasm` implements. To build and run
+programs, read the [translator README](README.md).
 
 Rust and Zig assume 8-bit bytes, so they cannot use the C ABI's one-word `char` ([ABI.md](../runtime/ABI.md)). Instead, their compilers emit a wasm32 WebAssembly module, and a translator turns the module into NICE assembly. Clang can do the same for C code that needs 8-bit bytes. These rules say how a module maps onto NICE, so that translated code, C code, and assembly code can work together.
 
@@ -55,7 +57,7 @@ In Rust, they are declared in an `extern "C"` block with `#[link(wasm_import_mod
 **Functions and calls.** A wasm function is a [ABI.md](../runtime/ABI.md) function whose parameter and result types are the C types in the table above:
 
 - Parameters go in R1–R4 and on the stack, by the [ABI.md](../runtime/ABI.md) rules for a function that is not variadic.
-- Results go in registers by the same rules that would apply if they were arguments. A function with no result returns nothing. The translator rejects a function type whose results do not all fit in R1–R4.
+- Results go in registers by the same rules that would apply if they were arguments. A function with no result returns nothing. The translator rejects a function type with more than one result; a block type may have several (translator README, Not supported yet).
 - R7–R13 and SR's I, E, and VBASE are preserved, as in [ABI.md](../runtime/ABI.md).
 - Wasm locals and the wasm operand stack live in registers and in the function's frame on the NICE stack (R13).
 

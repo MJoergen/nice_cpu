@@ -98,9 +98,13 @@ The tables of §2 to §4 head a column "A data read returns". The term is ISA.md
 
 `nice_intro.tex` line 798: "`niceemu --irq 5:5 --irq 12:5 irq.bin` raises two IRQs with vector 5, and prints `**`." The reader cannot tell which number is the step, and the slides have not said what a step is. **Fix:** "raises an IRQ with vector 5 before steps 5 and 12 (`--irq STEP:VECTOR`; a step is one instruction), and prints `**`."
 
+**Resolved**: The slide says that the IRQ comes before steps 5 and 12, names the option's format, and says what a step is.
+
 ### 4.2 "Out of context" on the last slide
 
 Line 914: "The pipelined core meets a 10 ns clock out of context." That is Vivado's term, and the first slide promises to assume "nothing more" than a register and a memory address. **Fix:** "runs at 100 MHz when synthesized on its own, and in the NiceMonMEGA65 system."
+
+**Resolved**: The slide says 100 MHz, on its own and on the MEGA65.
 
 ### 4.3 The window has no slide, though its example program is theirs
 
@@ -110,6 +114,8 @@ Line 914: "The pipelined core meets a 10 ns clock out of context." That is Vivad
 
 - "Some unusual operations" (line 282): "There is no multiply or divide. The runtime library has routines for that, such as `__mul`." The math unit of SYSTEM.md §2, which the emulator and both cores have, goes unmentioned. One clause.
 - "Using the assembler and the emulator" (822) runs `emulator/zig-out/bin/niceemu` without saying that it must be built first (`make -C emulator build`, README.md).
+
+**Resolved**: The math unit is named beside `__mul`, and the slide that runs the emulator says to build it first.
 
 ## 5. The emulator and the assembler
 

@@ -281,7 +281,9 @@
         which keeps only the flags (see ``Comparisons'').
        \item There is no \code{JMP}. Write to \code{PC} instead.
        \item There is no multiply or divide. The runtime library has
-        routines for that, such as \code{\_\_mul}.
+        routines for that, such as \code{\_\_mul}, and the emulator and
+        the FPGA cores have a math unit at \code{0xFFFFFF20} that does
+        both (\code{doc/SYSTEM.md}).
       \end{itemize}
     \end{itemize}
    \end{frame}
@@ -795,8 +797,9 @@ ISR             MOVE    @CONSOLE, 0x2A  ; print '*'
                 .DAT    ISR
    \end{verbatim}
    }
-   \code{niceemu --irq 5:5 --irq 12:5 irq.bin} raises two IRQs with vector
-   5, and prints \code{**}.
+   \code{niceemu --irq 5:5 --irq 12:5 irq.bin} raises an IRQ with vector 5
+   before steps 5 and 12 (\code{--irq STEP:VECTOR}; a step is one
+   instruction), and prints \code{**}.
   \end{frame}
 %
   \begin{frame}
@@ -820,7 +823,8 @@ ISR             MOVE    @CONSOLE, 0x2A  ; print '*'
 %
   \begin{frame}[fragile]
    \frametitle{Using the assembler and the emulator}
-   Assemble the summation program and look at the result:
+   Build the emulator once with \code{make -C emulator build} (see the
+   README). Then assemble the summation program and look at the result:
    {\footnotesize
    \begin{verbatim}
 $ assembler/niceasm.py -o sum.bin doc/intro/examples/sum.nasm
@@ -911,9 +915,9 @@ Stopped at the step limit after 8 steps, PC=00000004
        one, which write the same trace as the emulator for every test
        program.
      \end{itemize}
-    \item The \textbf{pipelined core} meets a 10 ns clock out of context.
-     The system around it, with RAM and a UART, is built in the separate
-     NiceMonMEGA65 repository.
+    \item The \textbf{pipelined core} runs at 100 MHz, on its own and on
+     the MEGA65. The system around it, with RAM and a UART, is built in
+     the separate NiceMonMEGA65 repository.
     \item A C compiler that targets NICE directly would be great, too.
      The calling convention for one is already in \code{runtime/ABI.md}.
    \end{itemize}

@@ -32,9 +32,19 @@ pdfcheck:
 # copy:  DST is at 0x10 and holds 1 to 5. R1 and R2 end at SRC+5 and DST+5.
 # irq:   one '*' for each of the two IRQs, then the newline. R14 keeps
 #        E = 1 and VBASE = 1, and the countdown leaves Z = 1.
-EXAMPLES = sum hello copy irq
+# keys:  keys.txt is DEL, "Hello, N", ESC, "ICEx", DEL, "!", and CR. The
+#        first DEL, at column 0, and the ESC change nothing, and the
+#        second DEL deletes the "x", so row 2 is "Hello, NICE!" in white
+#        on black, under the title in yellow on blue. The cursor ends
+#        hidden, at column 12 of row 2, R3 = 0xFFFF00A0 + 12, and R2 the
+#        CR. TITLE is at 0x43 and has 30 characters and the 0, so R1 =
+#        0x62. Steps: 124 for the title, 5 to set up, 17 for each of the
+#        13 keys written, 11 for each of the first DEL and the ESC, 15
+#        for the second DEL, and 9 for the CR: 396.
+EXAMPLES = sum hello copy irq keys
 OPTS_copy = -d 0x10:5
 OPTS_irq  = --irq 5:5 --irq 12:5
+OPTS_keys = --color -d 0xFFFFFF80:3 -i examples/keys.txt
 
 define check
 	@$(ASM) -o examples/$(1).bin examples/$(1).nasm

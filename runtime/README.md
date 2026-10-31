@@ -4,6 +4,13 @@ The start-up code and the runtime routines that compiled C code and
 translated wasm code call. They follow the C ABI of
 [ABI.md](ABI.md).
 
+Which section to read: for a C program, [C library](#c-library); for a
+Zig or Rust program, [Zig and Rust](#zig-and-rust); and for a program in
+assembly, [Files](#files), [Joining a program](#joining-a-program), and
+the routines it can call under [Routines](#routines) and [Device
+routines](#device-routines). `nicebuild.py` of the translator joins a C,
+Zig, or Rust program by itself ([translator README](../translator/README.md)).
+
 ## Files
 
 | File | What it is |
@@ -22,9 +29,25 @@ translated wasm code call. They follow the C ABI of
 | `libc/` | A small C library (see below). |
 | `nice.zig`, `nice.rs` | The device routines and console output for Zig and Rust (see below). |
 
-There is no linker. A program is one assembly file, joined in this order:
-one of the start-up files, the program's own files, `lib.nasm`, one of the
-two muldiv files, and `float.nasm` if the program uses floats. For example:
+## Joining a program
+
+There is no linker. A program is one assembly file, made by joining these
+files with `cat`, in this order:
+
+1. One start-up file: `start.nasm`, `start_wasm.nasm`, or
+   `start_wasm_trap.nasm`, or its `_mon` version for a program under a
+   monitor.
+2. The program's own files, in any order: hand-written assembly files,
+   compiled units (ABI.md), and the translated wasm module, if there is
+   one.
+3. `lib.nasm`.
+4. `muldiv_mpu.nasm`, or `muldiv_soft.nasm` for a system without the math
+   unit and for a program translated with `--no-mpu`.
+5. `float.nasm`, if the program uses floats.
+6. `trapmsg.nasm`, with `start_wasm_trap.nasm` or
+   `start_wasm_trap_mon.nasm`.
+
+For example:
 
     cat runtime/start.nasm prog.nasm runtime/lib.nasm runtime/muldiv_mpu.nasm > full.nasm
     assembler/niceasm.py full.nasm
@@ -108,7 +131,27 @@ routines take 4 steps each, `__mul64` 10, and the other `long long` ones 7.
 | `___wasm_trap_vector` | The word that wasm traps jump through. It starts as `___wasm_trap`. |
 | `___wasm_trap` | The default handler: the reserved control word `0x0FE00000`. It halts with the trap's code in R1 and address in R2. The emulator exits with status 2, not 0 as after `HALT`. |
 
-**The trap report.** The default handler halts without a word. `trapmsg.nasm` has `___trap_report`, a handler that first writes a line to the console, such as `trap 2: memory access out of bounds at 00003dc9`, with the code of R1 and the address of R2, naming the trap as `niceemu --symbols` does (a code above 7 is `trap ?: unknown trap`), and then jumps to `___wasm_trap`. So the processor still halts there, with R1 and R2 as the trap left them, and the emulator still exits with status 2. `start_wasm_trap.nasm` is `start_wasm.nasm` with one more instruction, which stores `___trap_report` in `___wasm_trap_vector`, and `start_wasm_trap_mon.nasm` is the same for a program under a monitor. A program that uses either joins `trapmsg.nasm` after the other files, and `nicebuild.py` does both unless it is given `--no-trap-report`. The report prints with `nice_print` and `nice_putc`, so through `___putc_vector` (below), and under a monitor on the monitor's output. It uses R9, R10, and R11, the routine behind the vector may change R3–R6 and the flags, and it uses the stack at SP, so after a stack overflow it may fail itself. The address is a NICE address. With `niceasm.py --symbols`, `nicebuild.py --symbols`, and `niceemu --symbols`, the emulator names the function.
+**The trap report.** The default handler halts without a word.
+`trapmsg.nasm` has `___trap_report`, a handler that first writes a line
+to the console and then jumps to `___wasm_trap`:
+
+- `nicebuild.py` installs it unless given `--no-trap-report`. By hand, a
+  program joins `trapmsg.nasm` after the other files and starts with
+  `start_wasm_trap.nasm`, which is `start_wasm.nasm` with one more
+  instruction, which stores `___trap_report` in `___wasm_trap_vector`, or
+  with `start_wasm_trap_mon.nasm` under a monitor.
+- The line is such as `trap 2: memory access out of bounds at 00003dc9`,
+  with the code of R1 and the address of R2, a NICE address, naming the
+  trap as `niceemu --symbols` does (a code above 7 is `trap ?: unknown
+  trap`). It prints with `nice_print` and `nice_putc`, so through
+  `___putc_vector` (below), and under a monitor on the monitor's output.
+  With `niceasm.py --symbols` or `nicebuild.py --symbols`, and `niceemu
+  --symbols`, the emulator also names the function.
+- The processor still halts at `___wasm_trap`, with R1 and R2 as the trap
+  left them, and the emulator still exits with status 2. The report uses
+  R9, R10, and R11, the routine behind the vector may change R3–R6 and the
+  flags, and it uses the stack at SP, so after a stack overflow it may
+  fail itself.
 
 ## Device routines
 
@@ -229,7 +272,18 @@ that `--input` names. Clang's own `stddef.h`,
 
 The library is small on purpose:
 
-- The only streams are `stdin`, `stdout`, and `stderr`, all on the console. `stdout` and `stderr` are two `FILE` objects that write to the same console, and the output functions ignore which stream they get. There is no `fopen`, `fclose`, `fread`, `fwrite`, `fseek`, `feof`, or `ferror`. `ungetc` holds one byte per stream. In `stdio.h`, no `perror`, `setvbuf`, `rewind`, or `clearerr`. In `stdlib.h`, no `strtoll`, `strtoull`, `strtod`, `atof`, `atoll`, `qsort`, `bsearch`, `div`, `ldiv`, `getenv`, or `system`. In `string.h`, no `strcoll`, `strspn`, `strpbrk`, `strtok`, `strdup`, or `strerror`. In `ctype.h`, no `isblank`. In `time.h`, no `difftime`, `mktime`, or `strftime`.
+- The only streams are `stdin`, `stdout`, and `stderr`, all on the
+  console. `stdout` and `stderr` are two `FILE` objects that write to the
+  same console, and the output functions ignore which stream they get.
+  `ungetc` holds one byte per stream. These functions are missing:
+  - in `stdio.h`, `fopen`, `fclose`, `fread`, `fwrite`, `fseek`, `feof`,
+    `ferror`, `perror`, `setvbuf`, `rewind`, and `clearerr`;
+  - in `stdlib.h`, `strtoll`, `strtoull`, `strtod`, `atof`, `atoll`,
+    `qsort`, `bsearch`, `div`, `ldiv`, `getenv`, and `system`;
+  - in `string.h`, `strcoll`, `strspn`, `strpbrk`, `strtok`, `strdup`, and
+    `strerror`;
+  - in `ctype.h`, `isblank`;
+  - in `time.h`, `difftime`, `mktime`, and `strftime`.
 - `scanf` and `sscanf` support white space and ordinary characters in the
   format, `*` to read without storing, a width, the length modifiers
   `hh h l ll z t j`, and the conversions `d i u o x X p c s [ n %`. A set

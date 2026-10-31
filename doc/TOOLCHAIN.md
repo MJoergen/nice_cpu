@@ -14,7 +14,8 @@ is joined into every program. Each follows one part of
 | `nicebuild`, the build script | [translator/nicebuild.py](../translator/nicebuild.py) | Python 3, standard library only | `.c`, `.zig`, or `.rs` | `.bin` | translator README |
 
 A program is built in these steps. There is no linker. The pieces are
-assembly files, joined with `cat` in the order ABI.md gives, and the
+assembly files, joined with `cat` in the order the runtime README gives
+([Joining a program](../runtime/README.md#joining-a-program)), and the
 whole program is assembled at once.
 
     prog.c, prog.zig, or prog.rs
@@ -25,13 +26,9 @@ whole program is assembled at once.
         v
     prog.nasm
         |
-        |  cat, in this order: runtime/start_wasm_trap.nasm (or
-        |  start_wasm.nasm without the trap report, start.nasm for a
-        |  program with no wasm module, or their _mon versions for a program
-        |  that a monitor in ROM runs), hand-written .nasm files, prog.nasm,
-        |  runtime/lib.nasm, runtime/muldiv_mpu.nasm (or muldiv_soft.nasm
-        |  without the math unit), runtime/float.nasm if prog uses floats,
-        |  and runtime/trapmsg.nasm with start_wasm_trap.nasm
+        |  cat, in the order of the runtime README (Joining a program):
+        |  a start-up file, hand-written .nasm files, prog.nasm, and
+        |  the runtime library
         v
     full.nasm
         |  assembler/niceasm.py
@@ -45,7 +42,7 @@ A hand-written program that does not use the runtime library needs only
 the last two steps, as in the
 [worked example](../README.md#worked-example). The
 [translator README](../translator/README.md) gives the exact clang, Zig, and Rust
-command lines for the first step, and the [runtime README](../runtime/README.md)
+command lines for the first step, and the [runtime README](../runtime/README.md#joining-a-program)
 the join.
 
 `translator/nicebuild.py` runs all of these steps for a C, Zig, or Rust

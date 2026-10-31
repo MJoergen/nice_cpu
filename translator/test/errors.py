@@ -223,7 +223,7 @@ CASES: List[Tuple[bytes, str]] = [
     (module(MAIN, funcs(0), section(6, vec([bytes([I64, 1]) + i64_const(0) + b"\x0b"])),
             code((0, i32_const(1) + global_set(0) + i32_const(0)))),
      "function 0: global.set expects i64, found i32"),
-    # An i32.add whose result would go straight to the local (README.md,
+    # An i32.add whose result would go straight to the local (DESIGN.md,
     # How functions are translated), when the local has another type or
     # does not exist.
     (module(MAIN, funcs(0), code(([I64], i32_const(1) + i32_const(2) + ADD + local_set(0)

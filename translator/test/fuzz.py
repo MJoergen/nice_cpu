@@ -41,7 +41,7 @@ its parameters on, a loop's br_if carries new parameters each time
 around, and the first two arguments of a call may come from one block.
 That covers the rules for
 deferred values, fused comparisons, forwarded results, and register
-allocation in README.md. main returns a fold of every local, of 18 memory
+allocation in DESIGN.md. main returns a fold of every local, of 18 memory
 words, and of the globals, so a wrong value anywhere shows. Two locals of each function are
 loop counters that nothing else touches, so every loop ends.
 
@@ -594,7 +594,7 @@ def gen_end(ctx: Ctx, depth: int, room: int, s: int) -> Expr:
 def gen_masked(ctx: Ctx, depth: int, room: int) -> Expr:
     """The address of an array element, (i << s) + c, with a masked index
     i = x & m, whose bound m may let a word access go without its compare
-    (README.md). Often c puts the bound's last element just at the end of
+    (DESIGN.md). Often c puts the bound's last element just at the end of
     the memory, or a little before or past it. The value of i keeps the
     access in bounds: x is first ANDed with the largest index that fits.
     Half the time that value then goes through a subtraction of 0, so that
@@ -1450,7 +1450,7 @@ def build(seed: int, bounds: bool = True) -> Tuple[List[Func], bytes]:
         ctx = Ctx(rng, fn, idx, fns, risky, bounds)
         count = rng.randrange(8, 20) if idx == 0 else rng.randrange(3, 10)
         # Half of the other functions start with a br_if out of the
-        # function, an early exit before the prologue (README.md).
+        # function, an early exit before the prologue (DESIGN.md).
         fn.stmts = [gen_br(ctx, 0, out=True)] if idx and rng.random() < 0.5 else []
         fn.stmts += [gen_stmt(ctx, 3) for _ in range(count)]
         fn.value = checksum(fn) if idx == 0 else gen_expr(ctx, fn.result, 3)

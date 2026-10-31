@@ -4,7 +4,7 @@
 Usage: passes.py
 
 Each case gives a pass a list of instructions and labels, as the
-translator holds a function's code between its passes (README.md, How
+translator holds a function's code between its passes (DESIGN.md, How
 functions are translated), and checks what comes out. The cases are the
 rules that no wasm module reaches today, so that run.py and fuzz.py
 cannot test them, and that a change to the code the translator emits
@@ -123,7 +123,7 @@ def early_exit_flags() -> None:
     test SUB[M] R8, R7, 5 writes a saved register, so it stays after the
     prologue, without the M bit, and a copy that writes R0 sets the flags
     before it. R7 is not written yet there, so the copy reads R1, which
-    MOVE R7, R1 copied (README.md, The frame). If R7 is not a copy, as
+    MOVE R7, R1 copied (DESIGN.md, The frame). If R7 is not a copy, as
     after ADD R7, R1, 1, the copy cannot read it, and the jump stays."""
     test = Ins("SUB[M]", ["R8", "R7", "5"])
     got = early_exit(early_function([Ins("MOVE", ["R7", "R1"]), test],

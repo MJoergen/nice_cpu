@@ -223,7 +223,7 @@ LIB_MODULE = module(
          (0, i32_const(100) + mem(I32_LOAD))))
 
 # A library module whose elem(i) loads the word at (i << 2) + 32, which
-# nicewasm folds into the word operand (README.md).
+# nicewasm folds into the word operand (DESIGN.md).
 LIB_FOLD = module(
     types(([I32], [I32])),
     funcs(0),
@@ -241,7 +241,7 @@ LIB_ASM = "___wasm_start MOVE R15, @R13++\n_main {}\n ADD @--R13, 2, R15\n MOVE 
 # Cases that must trap rather than return, and the first NICE instruction
 # of the code for the wasm instruction that traps, which R2 points at.
 # The operands of these instructions are constants, which take no
-# registers until they must (README.md). {R2} stands for R2's value: code
+# registers until they must (DESIGN.md). {R2} stands for R2's value: code
 # that only traps starts with MOVE R2 of its own address. A label of the
 # program, such as ___wasm_memory, has its value in the program.
 TRAPS = {"growtrap": "MOVE R1, 65536",
@@ -531,7 +531,7 @@ def addrform_checks() -> List[bytes]:
 
 def fold_checks() -> List[bytes]:
     """Word accesses at (i << s) + c with a constant c of up to 65536,
-    which nicewasm folds into the word operand (README.md), unless c / 4
+    which nicewasm folds into the word operand (DESIGN.md), unless c / 4
     is at or past the limit of the compare. Each check is one bit, and the
     last one fails."""
     return [
@@ -552,7 +552,7 @@ def fold_loop(i0: int, end: int) -> bytes:
     """The module of the fold cases. main calls setup, then, for i from i0
     up to end - 1, signed, loads x from a = (i << 2) + 8480, adds x to s,
     stores s at 0, and stores x + 1 at a + 4. The two accesses share one
-    compare of i, with 8480 / 4 = 2120 in their word operands (README.md).
+    compare of i, with 8480 / 4 = 2120 in their word operands (DESIGN.md).
     main returns s XOR the word at (end << 2) + 8480, shifted left by 8.
     The word at 8468 is 0x10."""
     a = local_get(0) + i32_const(2) + SHL + i32_const(8480) + ADD
@@ -579,7 +579,7 @@ def fold_tee(i: int) -> bytes:
     global, so that nicewasm does not know a bound on it, then to a
     = (i << 2) + 8480 with local.tee, loads x from a, stores x + 1 at a +
     4, and returns the word at a + 4 plus a. The add writes the local
-    that holds i, so a copy of i keeps it for the accesses (README.md).
+    that holds i, so a copy of i keeps it for the accesses (DESIGN.md).
     The word at 8492 is 0x20."""
     return module(
         types(MAIN_TYPE),
@@ -602,7 +602,7 @@ def bound_case(index: bytes, c: int, at: int, value: int, i64: bool = False) -> 
     the low word XOR the high word of the i64. The code may use the i32
     locals 0 and 1. nicewasm knows a bound on i from the code, and if
     every address it allows is in the memory, the load has no compare
-    (README.md)."""
+    (DESIGN.md)."""
     if i64:
         load = (index + i32_const(3) + SHL + i32_const(c) + ADD + mem(I64_LOAD) + local_tee(2)
                 + WRAP + local_get(2) + i64_const(32) + SHR_U64 + WRAP + XOR)
@@ -811,7 +811,7 @@ def share_trap(p: int, step: int) -> bytes:
     """The module of the sharetrap cases. main calls setup, then, from p
     on in steps, stores 7 at p, loads x from p + 8, and stores x + 1 at
     p + 12, until an access traps. The three accesses share one compare
-    (README.md). With step 0, there is no loop, and they run once."""
+    (DESIGN.md). With step 0, there is no loop, and they run once."""
     accesses = (local_get(0) + i32_const(7) + mem(I32_STORE)
                 + local_get(0) + mem(I32_LOAD, 8) + local_set(1)
                 + local_get(0) + local_get(1) + i32_const(1) + ADD + mem(I32_STORE, 12))
@@ -832,7 +832,7 @@ def hoist_slot(p: int, end: int) -> bytes:
     in steps of 1, until p = end, loads x from p and adds 7 to k, adds x
     to s, and stores s at 0. It returns s XOR k. The data at p are the
     bytes 1 to 8. The ADD of k moves to between the compare of the load
-    and the load (README.md), and its stub gets a copy."""
+    and the load (DESIGN.md), and its stub gets a copy."""
     return module(
         types(MAIN_TYPE, ([], [])),
         imports(("env", "setup", 1)),
@@ -853,7 +853,7 @@ def hoist_slot(p: int, end: int) -> bytes:
 def hoist_group(p: int, end: int) -> bytes:
     """The module of the hoistgroup cases: as hoist_slot, but each round
     also loads y from p + 4, and adds x + y to s. The two loads share a
-    compare (README.md), and the ADD of k moves to between it and the
+    compare (DESIGN.md), and the ADD of k moves to between it and the
     first load. Their stub goes on in a copy of the code, which has its
     own ADD of k. The data at p are the bytes 1 to 12."""
     return module(
@@ -879,7 +879,7 @@ def hoist_store(q: int) -> bytes:
     three words, from 17, 21, and 25 to q, q + 4, and q + 8, and returns
     the sum of the words at 32, 36, and 40. The data at 16 are the bytes
     1 to 16. The ROR that starts each store moves, with the store's
-    start, to between the compare of the load and the load (README.md),
+    start, to between the compare of the load and the load (DESIGN.md),
     and the load's stub gets a copy of it."""
     return module(
         types(MAIN_TYPE, ([], [])),
@@ -902,7 +902,7 @@ def hoist_store(q: int) -> bytes:
 # word 64 + (i & 255) of the memory, which needs no compare, adds 7 to k,
 # and adds x to s. It returns s XOR k = (1 + 2 + 3 + 4) XOR 28 = 0x16.
 # The ADD of k moves to between the AND that computes the load's word
-# index and the load (README.md).
+# index and the load (DESIGN.md).
 HOIST_AGEN = module(
     types(MAIN_TYPE),
     funcs(0),
@@ -921,7 +921,7 @@ HOIST_AGEN = module(
 
 # The module of the share cases. In a loop that runs once, it stores at
 # base 1, loads from base 1 + 4, and stores at base 1 + 8. These share one
-# compare (README.md), which fails, since 1 is not a multiple of 4. Then
+# compare (DESIGN.md), which fails, since 1 is not a multiple of 4. Then
 # main returns the loaded value XOR the words at 0, 4, 8, and 12.
 SHARE_UNALIGNED = module(
     types(MAIN_TYPE),
@@ -1068,7 +1068,7 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         exports(("main", 0, 0)),
         code((1, i32_const(5) + local_tee(0) + local_get(0) + ADD + i32_const(3) + local_set(0)
               + local_get(0) + ADD + i32_const(99) + DROP + NOP))), "", 13),
-    # Deferred values (README.md): a local.get leaves its local on the stack
+    # Deferred values (DESIGN.md): a local.get leaves its local on the stack
     # until it must be written to its frame word. x = 5, then x is set to 7
     # with the old 5 still on the stack, then teed to 100 with the 7 still
     # there: 5 - (7 - 100) + 100 = 198. Then x = 3 and y = 4 are swapped
@@ -1544,7 +1544,7 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # 16 + pc. Byte 0 adds 1 to acc and byte 1 multiplies it by 3, and
     # both set pc = next. Byte 2 adds 0x10000 to pc. Any other byte
     # returns acc. Each case ends with a br to the loop, which becomes a
-    # copy of the code from the loop to the br_table (README.md). In the
+    # copy of the code from the loop to the br_table (DESIGN.md). In the
     # copies, the ADD of next moves to just before the jump through the
     # table, since neither the trap nor the return uses next. The program
     # 0 0 1 0 1 3 gives ((1 + 1) * 3 + 1) * 3 = 21. In dispatchtrap, the
@@ -1589,7 +1589,7 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
                       i64_const(0x1_00000007) + i64_const(0x2_00000007) + EQ64)))), "", 0x1E),
     # A select, br_if, if, or eqz on the result of an operation, whose
     # MOVE[M] R0, x the back end removes by giving the operation the M bit
-    # (README.md), so that its flags must say whether x is 0. One bit each:
+    # (DESIGN.md), so that its flags must say whether x is 0. One bit each:
     # 0: -1 + 1 = 0, though the ADD[M] also sets C.
     # 1: 0x7FFFFFFF + 1 = 0x80000000, though it sets N and V.
     # 0: 5 - 5 = 0, by br_if.
@@ -1617,7 +1617,7 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
      "", 0x27),
     # The flags still say whether a comparison's result is 0 after the
     # code that writes it, and whether a loaded i32 is 0 after the load,
-    # so a select, br_if, or eqz on it uses them (README.md). One bit each:
+    # so a select, br_if, or eqz on it uses them (DESIGN.md). One bit each:
     # 1: select(1, 0, c), with c = MIN < 1 signed, set by local.tee: MIN -
     #    1 overflows, N = 0 and V = 1, so c = 1.
     # 0: select(0, 1, c), c by local.get, with the flags left as they were.
@@ -1693,7 +1693,7 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
                      + EQ)))),
      "", 0x7FFFE),
     # An if whose code is short becomes conditional instructions, with no
-    # jump over it (README.md). Local 1 is 0 and local 2 is 7, so that the
+    # jump over it (DESIGN.md). Local 1 is 0 and local 2 is 7, so that the
     # conditions are not constants. One bit each:
     # 1: y = 3, then y = 9 if local 1, leaves y = 3.
     # 1: the same if local 2 sets y = 9.
@@ -1868,7 +1868,7 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # f(n, a) = a if n = 0, else f(n - 1, a + n) + n, so f(4, 10) = 20 +
     # 1 + 2 + 3 + 4 = 30. n lives across the call in a saved register, but
     # the test of n and the return of a come before the prologue
-    # (README.md), so f(0, 20) saves nothing.
+    # (DESIGN.md), so f(0, 20) saves nothing.
     ("earlyexit", module(
         types(MAIN_TYPE, ([I32, I32], [I32])),
         funcs(0, 1),
@@ -1922,7 +1922,7 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
      "_g MOVE R15, @R13++\n", 4209),
     # f(p) loops for ever if p = 0, as C's if (!p) for (;;); does, and
     # else calls g and returns p. The search for an early return
-    # (README.md) follows the jump of the loop only once. f(5) = 5.
+    # (DESIGN.md) follows the jump of the loop only once. f(5) = 5.
     ("earlyexitloop", module(
         types(MAIN_TYPE, ([I32], [I32]), ([], [])),
         imports(("env", "g", 2)),
@@ -1934,7 +1934,7 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
      "_g MOVE R15, @R13++\n", 5),
     # g(x) = h(x + h(x)), with h(v) = 2v + 1, so g(5) = h(5 + 11) = 33. x
     # lives across the first call in a saved register, which g restores
-    # before it jumps to h for the second call, a tail call (README.md).
+    # before it jumps to h for the second call, a tail call (DESIGN.md).
     # h then returns to main.
     ("tailcall", module(
         types(MAIN_TYPE, ([I32], [I32])),
@@ -1945,7 +1945,7 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
              (0, local_get(0) + i32_const(2) + MUL + i32_const(1) + ADD))),
      "", 33),
     # f(x) is ((x + 7) XOR 9) - 2 if x != 0, the short arm, which moves to
-    # the end of f (README.md), and (x + 3) * 5 + (x XOR 6) + 1 if x = 0,
+    # the end of f (DESIGN.md), and (x + 3) * 5 + (x XOR 6) + 1 if x = 0,
     # the long one. f(0) = 15 + 6 + 1 = 22 and f(4) = (11 XOR 9) - 2 = 0.
     # main returns 100 f(0) + f(4) + 1 = 2201.
     ("swaparms", module(
@@ -3201,7 +3201,7 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # give the same results.
     ("library_unchecked", LIB_MODULE, LIB_ASM.format("MOVE R1, 21", "___twice", "MOVE R0, R0"), 42),
     # The flags say what a comparison's result in a local is, until the
-    # local is written (README.md). x = 5, and local 1 = x < 7 = 1, one
+    # local is written (DESIGN.md). x = 5, and local 1 = x < 7 = 1, one
     # bit each, by an if:
     # 0: local 1 is then set to 0.
     # 1: local 3 is a copy of local 1, which is then set to 0.

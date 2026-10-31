@@ -49,6 +49,8 @@ A function may change a preserved register only if it restores it before it retu
 | Through a register | `ADD @--SP, 1, PC` then `MOVE PC, Rx` |
 | Return | `MOVE PC, @SP++` |
 
+The assembler writes these sequences for `CALL target` and `RET` (ISA.md §10.1), and the runtime's sources use them.
+
 On entry to a function, mem[SP] is the return address. The return pops it, so after the call SP is the same as it was just before the call sequence.
 
 **Arguments.**

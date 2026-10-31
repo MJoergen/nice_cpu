@@ -14,5 +14,5 @@
 _main           MOVE    @args, R1
                 MOVE    @args+1, R2
                 MOVE    R1, 42
-                MOVE    R15, @R13++
+                RET
 args            .BLK    2

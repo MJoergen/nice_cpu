@@ -15,11 +15,9 @@
 ; main's return, the start-up code's return, and 2 in the stand-in = 45.
 
 _main           MOVE    R1, text
-                ADD     @--R13, 2, R15
-                MOVE    R15, _nice_print
+                CALL    _nice_print
                 MOVE    R1, 10
-                ADD     @--R13, 2, R15
-                MOVE    R15, _nice_putc
+                CALL    _nice_putc
                 MOVE    R1, 5
-                MOVE    R15, @R13++
+                RET
 text            .ASCII_L 'Hi'

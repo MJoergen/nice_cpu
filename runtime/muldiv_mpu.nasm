@@ -26,32 +26,32 @@ __mpu.udiv64_r  .EQU    0xFFFFFF3A
 __mul           MOVE    @__mpu.a, R1
                 MOVE    @__mpu.b, R2
                 MOVE    R1, @__mpu.umul_lo
-                MOVE    R15, @R13++
+                RET
 
 ; __udiv: R1 = R1 / R2, unsigned. 4 steps.
 __udiv          MOVE    @__mpu.a, R1
                 MOVE    @__mpu.b, R2
                 MOVE    R1, @__mpu.udiv_q
-                MOVE    R15, @R13++
+                RET
 
 ; __umod: R1 = R1 % R2, unsigned. 4 steps.
 __umod          MOVE    @__mpu.a, R1
                 MOVE    @__mpu.b, R2
                 MOVE    R1, @__mpu.udiv_r
-                MOVE    R15, @R13++
+                RET
 
 ; __div: R1 = R1 / R2, signed, rounding toward zero. 4 steps. The most
 ; negative number divided by -1 gives the most negative number (SYSTEM §2).
 __div           MOVE    @__mpu.a, R1
                 MOVE    @__mpu.b, R2
                 MOVE    R1, @__mpu.sdiv_q
-                MOVE    R15, @R13++
+                RET
 
 ; __mod: R1 = R1 % R2, signed, with the dividend's sign. 4 steps.
 __mod           MOVE    @__mpu.a, R1
                 MOVE    @__mpu.b, R2
                 MOVE    R1, @__mpu.sdiv_r
-                MOVE    R15, @R13++
+                RET
 
 ; __mul64: R1:R2 = R1:R2 * R3:R4, the low 64 bits, for signed and unsigned
 ; operands. Each pair is low word first (ABI.md). With a = R2:R1 and
@@ -66,7 +66,7 @@ __mul64         MOVE    @__mpu.a, R1
                 MOVE    @__mpu.a, R2
                 MOVE    @__mpu.b, R3
                 ADD     R2, R5, @__mpu.umul_lo
-                MOVE    R15, @R13++
+                RET
 
 ; __udiv64: R1:R2 = R1:R2 / R3:R4, unsigned. 7 steps.
 __udiv64
@@ -76,7 +76,7 @@ __udiv64
                 MOVE    @__mpu.d_hi, R4
                 MOVE    R1, @__mpu.udiv64_q
                 MOVE    R2, @__mpu.udiv64_q+1
-                MOVE    R15, @R13++
+                RET
 
 ; __umod64: R1:R2 = R1:R2 % R3:R4, unsigned. 7 steps.
 __umod64
@@ -86,7 +86,7 @@ __umod64
                 MOVE    @__mpu.d_hi, R4
                 MOVE    R1, @__mpu.udiv64_r
                 MOVE    R2, @__mpu.udiv64_r+1
-                MOVE    R15, @R13++
+                RET
 
 ; __div64: R1:R2 = R1:R2 / R3:R4, signed, rounding toward zero. 7 steps.
 ; The most negative number divided by -1 gives the most negative number.
@@ -96,7 +96,7 @@ __div64         MOVE    @__mpu.c_lo, R1
                 MOVE    @__mpu.d_hi, R4
                 MOVE    R1, @__mpu.sdiv64_q
                 MOVE    R2, @__mpu.sdiv64_q+1
-                MOVE    R15, @R13++
+                RET
 
 ; __mod64: R1:R2 = R1:R2 % R3:R4, signed, with the dividend's sign. 7 steps.
 __mod64         MOVE    @__mpu.c_lo, R1
@@ -105,4 +105,4 @@ __mod64         MOVE    @__mpu.c_lo, R1
                 MOVE    @__mpu.d_hi, R4
                 MOVE    R1, @__mpu.sdiv64_r
                 MOVE    R2, @__mpu.sdiv64_r+1
-                MOVE    R15, @R13++
+                RET

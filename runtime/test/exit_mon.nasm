@@ -16,17 +16,13 @@
 ; and 2 in the stand-in = 59.
 
 _main           MOVE    R1, text
-                ADD     @--R13, 2, R15
-                MOVE    R15, _nice_print
+                CALL    _nice_print
                 MOVE    R1, 10
-                ADD     @--R13, 2, R15
-                MOVE    R15, _nice_putc
-                ADD     @--R13, 2, R15
-                MOVE    R15, f
+                CALL    _nice_putc
+                CALL    f
                 HALT                    ; not reached
 f               MOVE    @--R13, R7
                 MOVE    R1, 7
-                ADD     @--R13, 2, R15
-                MOVE    R15, _exit
+                CALL    _exit
                 HALT                    ; not reached
 text            .ASCII_L 'Hi'

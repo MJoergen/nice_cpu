@@ -11,7 +11,7 @@
 ; return address.
 
 ___wasm_start
-                MOVE    R15, @R13++
+                RET
 _main           MOVE    R1, 3           ; words 14,15
                 MOVE    R2, _main       ; words 16,17
                 MOVE    R15, @___wasm_trap_vector  ; words 18,19

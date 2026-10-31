@@ -12,9 +12,9 @@ ___wasm_start
                 MOVE    @flag, 41
                 MOVE    R1, 5
                 MOVE    R2, 7
-                MOVE    R15, @R13++
+                RET
 _main           ADD     R1, R1, R2
                 ADD     R1, R1, @flag
                 ADD     R1, R1, 1
-                MOVE    R15, @R13++
+                RET
 flag            .DAT    0

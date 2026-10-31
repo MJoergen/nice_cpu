@@ -19,22 +19,22 @@ ___wasm_trap
 ; where k is the number of bits in R1. Uses R2.
 __clz           MOVE[M] R2, R1
                 MOVE    R1, 32
-        ?Z      MOVE    R15, @R13++
+        ?Z      RET
 __clz.loop
                 DEC     R1, R1
                 SHR[M]  R2, R2, 1
         ?!Z     MOVE    R15, __clz.loop
-                MOVE    R15, @R13++
+                RET
 
 ; __ctz: R1 = the number of trailing 0 bits in R1, 32 for 0. Steps: 3 for
 ; 0, else 6 + 4t, where t is the result. Uses R2.
 __ctz           MOVE[M] R2, R1
                 MOVE    R1, 32
-        ?Z      MOVE    R15, @R13++
+        ?Z      RET
                 MOVE    R1, 0
 __ctz.loop
                 0>C[M]  R2, R2, 1       ; C = the bit shifted out
-        ?C      MOVE    R15, @R13++
+        ?C      RET
                 ADD     R1, R1, 1
                 MOVE    R15, __ctz.loop
 
@@ -47,7 +47,7 @@ __popcnt.loop
                 0>C[M]  R2, R2, 1       ; C = the bit shifted out, Z = none left
                 ADD[C]  R1, R1, 0       ; add C
         ?!Z     MOVE    R15, __popcnt.loop
-                MOVE    R15, @R13++
+                RET
 
 ; __clz64, __ctz64, __popcnt64: R1:R2 = the same counts for the 64-bit
 ; number in R1:R2. The result is at most 64, so R2 = 0.
@@ -55,44 +55,38 @@ __popcnt.loop
 __clz64         MOVE[M] R0, R2
         ?Z      MOVE    R15, __clz64.lo
                 MOVE    R1, R2
-                ADD     @--R13, 2, R15
-                MOVE    R15, __clz
+                CALL    __clz
                 MOVE    R2, 0
-                MOVE    R15, @R13++
+                RET
 __clz64.lo
-                ADD     @--R13, 2, R15
-                MOVE    R15, __clz
+                CALL    __clz
                 ADD     R1, R1, 32
                 MOVE    R2, 0
-                MOVE    R15, @R13++
+                RET
 
 ; __ctz64 steps: 6 + __ctz(R1) if R1 is not 0, else 8 + __ctz(R2).
 __ctz64         MOVE[M] R0, R1
         ?Z      MOVE    R15, __ctz64.hi
-                ADD     @--R13, 2, R15
-                MOVE    R15, __ctz
+                CALL    __ctz
                 MOVE    R2, 0
-                MOVE    R15, @R13++
+                RET
 __ctz64.hi
                 MOVE    R1, R2
-                ADD     @--R13, 2, R15
-                MOVE    R15, __ctz
+                CALL    __ctz
                 ADD     R1, R1, 32
                 MOVE    R2, 0
-                MOVE    R15, @R13++
+                RET
 
 ; __popcnt64 steps: 10 + __popcnt(R1) + __popcnt(R2). Uses R3 and R4.
 __popcnt64
                 MOVE    R4, R2
-                ADD     @--R13, 2, R15
-                MOVE    R15, __popcnt
+                CALL    __popcnt
                 MOVE    R3, R1
                 MOVE    R1, R4
-                ADD     @--R13, 2, R15
-                MOVE    R15, __popcnt
+                CALL    __popcnt
                 ADD     R1, R1, R3
                 MOVE    R2, 0
-                MOVE    R15, @R13++
+                RET
 
 ; The device routines of ABI.md: the console (SYSTEM §1), the performance counters
 ; (SYSTEM §3), and the emulator's character screen. Unlike the routines above,
@@ -121,7 +115,7 @@ _nice_putc
 ; ___console_putc: writes bits 7..0 of R1 to the console. 2 steps.
 ___console_putc
                 MOVE    @__nice.console, R1
-                MOVE    R15, @R13++
+                RET
 
 ; nice_getc: R1 = the next input byte, waiting until there is one, or -1
 ; once the line's input has ended (SYSTEM §1); a keyboard's bytes may still
@@ -133,11 +127,11 @@ _nice_getc
                 MOVE    R1, @__nice.console
                 AND[M]  R0, R1, 0x100
         ?!Z     AND     R1, R1, 0xFF
-        ?!Z     MOVE    R15, @R13++
+        ?!Z     RET
                 AND[M]  R0, R1, 0x200
         ?Z      MOVE    R15, _nice_getc
                 MOVE    R1, -1
-                MOVE    R15, @R13++
+                RET
 
 ; nice_pollc: as nice_getc, but with one read: R1 = -2 if no byte is
 ; waiting. Steps: 4 for a byte, 8 otherwise.
@@ -145,11 +139,11 @@ _nice_pollc
                 MOVE    R1, @__nice.console
                 AND[M]  R0, R1, 0x100
         ?!Z     AND     R1, R1, 0xFF
-        ?!Z     MOVE    R15, @R13++
+        ?!Z     RET
                 AND[M]  R0, R1, 0x200
                 MOVE    R1, -2
         ?!Z     MOVE    R1, -1
-                MOVE    R15, @R13++
+                RET
 
 ; nice_print: writes the string at R1, one character per word, up to its
 ; first 0 word, with one call through ___putc_vector per character. The
@@ -162,13 +156,12 @@ _nice_print
                 MOVE[M] R1, @R7++
         ?Z      MOVE    R15, _nice_print.end
 _nice_print.loop
-                ADD     @--R13, 2, R15
-                MOVE    R15, @___putc_vector
+                CALL    @___putc_vector
                 MOVE[M] R1, @R7++
         ?!Z     MOVE    R15, _nice_print.loop
 _nice_print.end
                 MOVE    R7, @R13++
-                MOVE    R15, @R13++
+                RET
 
 ; nice_cycles, nice_instructions: R1:R2 = the counter, low word first.
 ; The read of the low word takes the snapshot that the read of the high
@@ -176,12 +169,12 @@ _nice_print.end
 _nice_cycles
                 MOVE    R1, @__nice.cycle_lo
                 MOVE    R2, @__nice.cycle_hi
-                MOVE    R15, @R13++
+                RET
 
 _nice_instructions
                 MOVE    R1, @__nice.instr_lo
                 MOVE    R2, @__nice.instr_hi
-                MOVE    R15, @R13++
+                RET
 
 ; nice_screen_put: writes R3 to the screen at column R1 and row R2, the
 ; word 80 * R2 + R1. 80 * R2 = 64 * R2 + 16 * R2. 6 steps. Uses R2 and R4.
@@ -191,7 +184,7 @@ _nice_screen_put
                 ADD     R2, R2, R4
                 ADD     R2, R2, R1
                 MOVE    @__nice.screen[R2], R3
-                MOVE    R15, @R13++
+                RET
 
 ; nice_screen_clear: writes 0x20 to the 2000 words of the screen, from the
 ; last down to the first. 6002 steps. Uses R1.
@@ -201,4 +194,4 @@ _nice_screen_clear.loop
                 DEC[M]  R1, R1
                 MOVE    @__nice.screen[R1], 0x20
         ?!Z     MOVE    R15, _nice_screen_clear.loop
-                MOVE    R15, @R13++
+                RET

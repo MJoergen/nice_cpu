@@ -47,38 +47,34 @@ loop            MOVE    R1, @R7
                 MOVE    R2, @1[R7]
                 MOVE    R3, @2[R7]
                 MOVE    R4, @3[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __udiv64
+                CALL    __udiv64
                 MOVE    @R8++, R1
                 MOVE    @R8++, R2
                 MOVE    R1, @R7
                 MOVE    R2, @1[R7]
                 MOVE    R3, @2[R7]
                 MOVE    R4, @3[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __umod64
+                CALL    __umod64
                 MOVE    @R8++, R1
                 MOVE    @R8++, R2
                 MOVE    R1, @R7
                 MOVE    R2, @1[R7]
                 MOVE    R3, @2[R7]
                 MOVE    R4, @3[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __div64
+                CALL    __div64
                 MOVE    @R8++, R1
                 MOVE    @R8++, R2
                 MOVE    R1, @R7
                 MOVE    R2, @1[R7]
                 MOVE    R3, @2[R7]
                 MOVE    R4, @3[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __mod64
+                CALL    __mod64
                 MOVE    @R8++, R1
                 MOVE    @R8++, R2
                 ADD     R7, R7, 4
                 DEC[M]  R9, R9
         ?!Z     MOVE    R15, loop
-                MOVE    R15, @R13++
+                RET
 
 ; Each pair is a then b, each low word first.
 pairs           .DAT    100, 0, 7, 0

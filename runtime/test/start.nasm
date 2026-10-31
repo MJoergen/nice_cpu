@@ -6,4 +6,4 @@
 ; return, HALT = 8.
 
 _main           MOVE    R1, 42
-                MOVE    R15, @R13++
+                RET

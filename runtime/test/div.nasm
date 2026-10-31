@@ -42,28 +42,24 @@ _main           MOVE    R7, pairs
                 MOVE    R12, 0xC
 loop            MOVE    R1, @R7
                 MOVE    R2, @1[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __udiv
+                CALL    __udiv
                 MOVE    @R8++, R1
                 MOVE    R1, @R7
                 MOVE    R2, @1[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __umod
+                CALL    __umod
                 MOVE    @R8++, R1
                 MOVE    R1, @R7
                 MOVE    R2, @1[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __div
+                CALL    __div
                 MOVE    @R8++, R1
                 MOVE    R1, @R7
                 MOVE    R2, @1[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __mod
+                CALL    __mod
                 MOVE    @R8++, R1
                 ADD     R7, R7, 2
                 DEC[M]  R9, R9
         ?!Z     MOVE    R15, loop
-                MOVE    R15, @R13++
+                RET
 
 pairs           .DAT    100, 7
                 .DAT    0xFFFFFFF9, 2

@@ -21,14 +21,13 @@
 ___wasm_start
                 MOVE    @flag, 41
                 MOVE    R1, 10          ; a newline through the vector
-                ADD     @--R13, 2, R15
-                MOVE    R15, _nice_putc
+                CALL    _nice_putc
                 MOVE    R1, 5
                 MOVE    R2, 7
                 MOVE    R3, 9
-                MOVE    R15, @R13++
+                RET
 _main           MOVE    @args, R2
                 ADD     R1, R1, @flag
-                MOVE    R15, @R13++
+                RET
 flag            .DAT    0
 args            .BLK    1

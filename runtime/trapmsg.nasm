@@ -14,37 +14,30 @@ ___trap_report
                 MOVE    R10, R1         ; the code
                 MOVE    R11, R2         ; the address
                 MOVE    R1, ___trap.head
-                ADD     @--R13, 2, R15
-                MOVE    R15, _nice_print
+                CALL    _nice_print
                 AND[M]  R1, R10, 0xFFFFFFF8  ; Z if the code is below 8
         ?Z      ADD     R1, R10, 0x30   ; the digit
         ?!Z     MOVE    R1, 0x3F        ; "?" for a code above 7
-                ADD     @--R13, 2, R15
-                MOVE    R15, _nice_putc
+                CALL    _nice_putc
                 MOVE    R1, ___trap.colon
-                ADD     @--R13, 2, R15
-                MOVE    R15, _nice_print
+                CALL    _nice_print
                 AND[M]  R1, R10, 0xFFFFFFF8
         ?Z      MOVE    R1, R10
         ?!Z     MOVE    R1, 0           ; a code above 7 is unknown
                 MOVE    R1, @___trap.names[R1]
-                ADD     @--R13, 2, R15
-                MOVE    R15, _nice_print
+                CALL    _nice_print
                 MOVE    R1, ___trap.at
-                ADD     @--R13, 2, R15
-                MOVE    R15, _nice_print
+                CALL    _nice_print
                 MOVE    R9, 8           ; eight hex digits, high one first
 ___trap.digit
                 ROL     R11, R11, 4     ; 8 times 4 bits: R11 is the address again
                 AND     R1, R11, 15
                 MOVE    R1, @___trap.hex[R1]
-                ADD     @--R13, 2, R15
-                MOVE    R15, _nice_putc
+                CALL    _nice_putc
                 DEC[M]  R9, R9
         ?!Z     MOVE    R15, ___trap.digit
                 MOVE    R1, 10
-                ADD     @--R13, 2, R15
-                MOVE    R15, _nice_putc
+                CALL    _nice_putc
                 MOVE    R1, R10
                 MOVE    R2, R11
                 MOVE    R15, ___wasm_trap

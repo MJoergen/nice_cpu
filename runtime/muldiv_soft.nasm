@@ -13,7 +13,7 @@ __mul.loop
         ?C      ADD     R1, R1, R3
                 SHL     R3, R3, 1       ; no M, so C and Z stay
         ?!Z     MOVE    R15, __mul.loop
-                MOVE    R15, @R13++
+                RET
 
 ; __udivmod: R1 = R1 / R2 and R3 = R1 % R2, unsigned. Not a C routine:
 ; __udiv, __umod, __div, and __mod share it. Restoring division: 32 times,
@@ -35,16 +35,15 @@ __udivmod.loop
         ?!C     OR      R1, R1, 1
                 DEC[M]  R4, R4
         ?!Z     MOVE    R15, __udivmod.loop
-                MOVE    R15, @R13++
+                RET
 
 ; __udiv: R1 = R1 / R2, unsigned. 1 + 291 = 292 steps.
 __udiv          MOVE    R15, __udivmod  ; which returns to our caller
 
 ; __umod: R1 = R1 % R2, unsigned. 4 + 291 = 295 steps.
-__umod          ADD     @--R13, 2, R15
-                MOVE    R15, __udivmod
+__umod          CALL    __udivmod
                 MOVE    R1, R3
-                MOVE    R15, @R13++
+                RET
 
 ; __div: R1 = R1 / R2, signed, rounding toward zero. Divides the absolute
 ; values, then negates the quotient if the signs differ. 10 + 291 = 301
@@ -55,11 +54,10 @@ __div           XOR     @--R13, R1, R2  ; bit 31: the signs differ
         ?N      SUB     R1, 0, R1
                 MOVE[M] R2, R2
         ?N      SUB     R2, 0, R2
-                ADD     @--R13, 2, R15
-                MOVE    R15, __udivmod
+                CALL    __udivmod
                 MOVE[M] R0, @R13++
         ?N      SUB     R1, 0, R1
-                MOVE    R15, @R13++
+                RET
 
 ; __mod: R1 = R1 % R2, signed. The remainder has the dividend's sign, as C
 ; requires. 11 + 291 = 302 steps.
@@ -68,12 +66,11 @@ __mod           MOVE    @--R13, R1      ; bit 31: the dividend's sign
         ?N      SUB     R1, 0, R1
                 MOVE[M] R2, R2
         ?N      SUB     R2, 0, R2
-                ADD     @--R13, 2, R15
-                MOVE    R15, __udivmod
+                CALL    __udivmod
                 MOVE    R1, R3
                 MOVE[M] R0, @R13++
         ?N      SUB     R1, 0, R1
-                MOVE    R15, @R13++
+                RET
 
 ; __mul64: R1:R2 = R1:R2 * R3:R4, the low 64 bits, for signed and unsigned
 ; operands. Each pair is low word first (ABI.md). Shift and add, as __mul:
@@ -96,7 +93,7 @@ __mul64.next
         ?!Z     MOVE    R15, __mul64.loop
                 MOVE    R1, R5
                 MOVE    R2, R6
-                MOVE    R15, @R13++
+                RET
 
 ; __udivmod64: R1:R2 = R1:R2 / R3:R4 and R5:R6 = R1:R2 % R3:R4, unsigned.
 ; Not a C routine: __udiv64, __umod64, __div64, and __mod64 share it. The
@@ -124,7 +121,7 @@ __udivmod64.loop
                 DEC[M]  @R13, @R13
         ?!Z     MOVE    R15, __udivmod64.loop
                 ADD     R13, R13, 4
-                MOVE    R15, @R13++
+                RET
 
 ; __udiv64: R1:R2 = R1:R2 / R3:R4, unsigned. 1 + 838 = 839 steps.
 __udiv64
@@ -132,11 +129,10 @@ __udiv64
 
 ; __umod64: R1:R2 = R1:R2 % R3:R4, unsigned. 5 + 838 = 843 steps.
 __umod64
-                ADD     @--R13, 2, R15
-                MOVE    R15, __udivmod64
+                CALL    __udivmod64
                 MOVE    R1, R5
                 MOVE    R2, R6
-                MOVE    R15, @R13++
+                RET
 
 ; __div64: R1:R2 = R1:R2 / R3:R4, signed, rounding toward zero. Like __div.
 ; Negating a pair takes two instructions, so the signs are tested with
@@ -154,13 +150,12 @@ __div64.a
                 SUB[M]  R3, 0, R3
                 SUB[C]  R4, 0, R4
 __div64.b
-                ADD     @--R13, 2, R15
-                MOVE    R15, __udivmod64
+                CALL    __udivmod64
                 MOVE[M] R0, @R13++
-        ?!N     MOVE    R15, @R13++
+        ?!N     RET
                 SUB[M]  R1, 0, R1
                 SUB[C]  R2, 0, R2
-                MOVE    R15, @R13++
+                RET
 
 ; __mod64: R1:R2 = R1:R2 % R3:R4, signed, with the dividend's sign. Steps:
 ; 1 + a + b + 2 + 838 + 2 + q, with a, b, and q as for __div64.
@@ -175,12 +170,11 @@ __mod64.a
                 SUB[M]  R3, 0, R3
                 SUB[C]  R4, 0, R4
 __mod64.b
-                ADD     @--R13, 2, R15
-                MOVE    R15, __udivmod64
+                CALL    __udivmod64
                 MOVE    R1, R5
                 MOVE    R2, R6
                 MOVE[M] R0, @R13++
-        ?!N     MOVE    R15, @R13++
+        ?!N     RET
                 SUB[M]  R1, 0, R1
                 SUB[C]  R2, 0, R2
-                MOVE    R15, @R13++
+                RET

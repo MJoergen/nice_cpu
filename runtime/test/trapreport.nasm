@@ -19,7 +19,7 @@
 ; reserved word = 380.
 
 ___wasm_start
-                MOVE    R15, @R13++
+                RET
                 .ORG    0x1abc
 _main           MOVE    R1, 2
                 MOVE    R2, _main

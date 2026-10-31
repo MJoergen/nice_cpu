@@ -24,7 +24,7 @@
 ; newline, 3 to restore and jump, and the reserved word = 512. In all 534.
 
 ___wasm_start
-                MOVE    R15, @R13++
+                RET
 _main           MOVE    R1, 2
                 MOVE    R2, _main
                 MOVE    R15, @___wasm_trap_vector

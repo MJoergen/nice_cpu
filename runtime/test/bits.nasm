@@ -36,39 +36,33 @@ _main           MOVE    R7, values
                 MOVE    R11, 0xB
                 MOVE    R12, 0xC
 loop            MOVE    R1, @R7
-                ADD     @--R13, 2, R15
-                MOVE    R15, __clz
+                CALL    __clz
                 MOVE    @R8++, R1
                 MOVE    R1, @R7
-                ADD     @--R13, 2, R15
-                MOVE    R15, __ctz
+                CALL    __ctz
                 MOVE    @R8++, R1
                 MOVE    R1, @R7
-                ADD     @--R13, 2, R15
-                MOVE    R15, __popcnt
+                CALL    __popcnt
                 MOVE    @R8++, R1
                 MOVE    R1, @R7
                 MOVE    R2, @1[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __clz64
+                CALL    __clz64
                 MOVE    @R8++, R1
                 MOVE    @R8++, R2
                 MOVE    R1, @R7
                 MOVE    R2, @1[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __ctz64
+                CALL    __ctz64
                 MOVE    @R8++, R1
                 MOVE    @R8++, R2
                 MOVE    R1, @R7
                 MOVE    R2, @1[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __popcnt64
+                CALL    __popcnt64
                 MOVE    @R8++, R1
                 MOVE    @R8++, R2
                 ADD     R7, R7, 2
                 DEC[M]  R9, R9
         ?!Z     MOVE    R15, loop
-                MOVE    R15, @R13++
+                RET
 
 ; Low word first.
 values          .DAT    0, 0

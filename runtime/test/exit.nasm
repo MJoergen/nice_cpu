@@ -9,11 +9,9 @@
 ; 0xFFFFFEFC. Steps: 5 in the start-up code, 2 in main, 4 in f, and the
 ; HALT = 12.
 
-_main           ADD     @--R13, 2, R15
-                MOVE    R15, f
+_main           CALL    f
                 HALT                    ; not reached
 f               MOVE    @--R13, R7
                 MOVE    R1, 7
-                ADD     @--R13, 2, R15
-                MOVE    R15, _exit
+                CALL    _exit
                 HALT                    ; not reached

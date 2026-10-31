@@ -10,8 +10,7 @@ mon.console     .EQU    0xFFFFFF00
                 MOVE    R1, 0           ; the output stays on the console
                 MOVE    R2, 1           ; argc
                 MOVE    R3, mon.argv    ; argv
-                ADD     @--R13, 2, R15  ; call the program
-                MOVE    R15, 0x8000
+                CALL    0x8000          ; call the program
                 MOVE    R2, @mon.count  ; the bytes written
                 HALT
 
@@ -20,7 +19,7 @@ mon.putc
                 MOVE    R1, @mon.count
                 ADD[M]  R1, R1, 1
                 MOVE    @mon.count, R1
-                MOVE    R15, @R13++
+                RET
 mon.count
                 .BLK    1
 mon.argv

@@ -33,12 +33,11 @@ _main           MOVE    R7, pairs
                 MOVE    R12, 0xC
 loop            MOVE    R1, @R7++
                 MOVE    R2, @R7++
-                ADD     @--R13, 2, R15
-                MOVE    R15, __mul
+                CALL    __mul
                 MOVE    @R8++, R1
                 DEC[M]  R9, R9
         ?!Z     MOVE    R15, loop
-                MOVE    R15, @R13++
+                RET
 
 pairs           .DAT    6, 7
                 .DAT    0, 5

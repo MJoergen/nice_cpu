@@ -12,13 +12,12 @@
         ?!Z     MOVE    @___putc_vector, R1
                 MOVE    R1, R2          ; argc
                 MOVE    R2, R3          ; argv
-                ADD     @--R13, 2, R15  ; call main
-                MOVE    R15, _main
-                MOVE    R15, @R13++     ; return to the monitor; R1 holds main's result
+                CALL    _main
+                RET                     ; return to the monitor; R1 holds main's result
 
 ; exit: returns to the monitor from anywhere, with the status in R1 and SP
 ; as it was at entry (ABI.md). 2 steps.
 _exit           MOVE    R13, @___exit.sp
-                MOVE    R15, @R13++
+                RET
 ___exit.sp
                 .BLK    1

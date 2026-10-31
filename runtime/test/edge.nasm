@@ -130,23 +130,19 @@ _main           MOVE    R7, pairs32
                 MOVE    R12, 0xC
 loop32          MOVE    R1, @R7
                 MOVE    R2, @1[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __udiv
+                CALL    __udiv
                 MOVE    @R8++, R1
                 MOVE    R1, @R7
                 MOVE    R2, @1[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __umod
+                CALL    __umod
                 MOVE    @R8++, R1
                 MOVE    R1, @R7
                 MOVE    R2, @1[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __div
+                CALL    __div
                 MOVE    @R8++, R1
                 MOVE    R1, @R7
                 MOVE    R2, @1[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __mod
+                CALL    __mod
                 MOVE    @R8++, R1
                 ADD     R7, R7, 2
                 DEC[M]  R9, R9
@@ -158,32 +154,28 @@ loop64          MOVE    R1, @R7
                 MOVE    R2, @1[R7]
                 MOVE    R3, @2[R7]
                 MOVE    R4, @3[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __udiv64
+                CALL    __udiv64
                 MOVE    @R8++, R1
                 MOVE    @R8++, R2
                 MOVE    R1, @R7
                 MOVE    R2, @1[R7]
                 MOVE    R3, @2[R7]
                 MOVE    R4, @3[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __umod64
+                CALL    __umod64
                 MOVE    @R8++, R1
                 MOVE    @R8++, R2
                 MOVE    R1, @R7
                 MOVE    R2, @1[R7]
                 MOVE    R3, @2[R7]
                 MOVE    R4, @3[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __div64
+                CALL    __div64
                 MOVE    @R8++, R1
                 MOVE    @R8++, R2
                 MOVE    R1, @R7
                 MOVE    R2, @1[R7]
                 MOVE    R3, @2[R7]
                 MOVE    R4, @3[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __mod64
+                CALL    __mod64
                 MOVE    @R8++, R1
                 MOVE    @R8++, R2
                 ADD     R7, R7, 4
@@ -196,14 +188,13 @@ loopmul         MOVE    R1, @R7
                 MOVE    R2, @1[R7]
                 MOVE    R3, @2[R7]
                 MOVE    R4, @3[R7]
-                ADD     @--R13, 2, R15
-                MOVE    R15, __mul64
+                CALL    __mul64
                 MOVE    @R8++, R1
                 MOVE    @R8++, R2
                 ADD     R7, R7, 4
                 DEC[M]  R9, R9
         ?!Z     MOVE    R15, loopmul
-                MOVE    R15, @R13++
+                RET
 
 pairs32         .DAT    7, 0
                 .DAT    0xFFFFFFF9, 0

@@ -152,6 +152,56 @@ character in each word and a 0 word at the end:
 `niceemu --help` lists the other options, and
 [emulator/README.md](emulator/README.md) describes them.
 
+### Worked example with the window
+
+[doc/intro/examples/keys.nasm](doc/intro/examples/keys.nasm) writes a
+title on the screen, and then echoes the keys typed into the window on
+row 2, with a blinking cursor. Backspace deletes, and Enter ends the
+program. The window needs a build of niceemu with SDL, which `make
+window` fetches and builds:
+
+    $ make -C emulator window
+    $ assembler/niceasm.py -o keys.bin doc/intro/examples/keys.nasm
+    $ emulator/zig-out/bin/niceemu --window keys.bin
+
+The window shows the title in yellow on blue, and the cursor on row 2.
+After Enter, the cursor goes away and the window stays, with the last
+screen, until it is closed.
+
+Each screen word holds a character in bits 7..0 and its colors above
+them, the background in bits 31..20 and the foreground in bits 19..8,
+4 bits each of red, green, and blue. So the program adds the color to
+each character before it writes the word:
+
+    TITLE_COLOR     .EQU    0x00FFF000      ; yellow (0xFF0) on blue (0x00F)
+    ...
+                    ADD     @R3++, R2, TITLE_COLOR  ; add the colors, and write
+
+The screen starts at `0xFFFF0000`, 80 words per row, so row 2 starts at
+`0xFFFF00A0`. The window draws the cursor from three words: its state
+at `0xFFFFFF80`, where `0x60` shows it blinking, its column, and its
+row.
+
+With the window, a read of the console returns 0 while no key waits,
+and otherwise the key's byte with bit 8 set. So the program reads in a
+loop, and masks the byte:
+
+    KEY             MOVE[M] R2, @CONSOLE    ; read: 0 if no byte waits, else the
+            ?Z      MOVE    PC, KEY         ; byte with bit 8 set; none: again
+    ...
+                    AND     R2, R2, 0xFF    ; the byte alone
+                    SUB[M]  R0, R2, 13      ; Enter gives CR
+            ?Z      MOVE    PC, DONE
+
+The program runs without the window too, with its input from a file.
+`--color` then prints the screen with its colors after the halt, as the
+test of `doc/intro` does:
+
+    $ emulator/zig-out/bin/niceemu --color -i doc/intro/examples/keys.txt keys.bin
+
+[doc/SYSTEM.md §1](doc/SYSTEM.md#1-console-screen-and-read-counter)
+describes the screen, the cursor, and the keys.
+
 ## Toolchain
 
 The host tools are `niceasm`, the assembler, `nicedis`, the

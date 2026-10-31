@@ -100,6 +100,10 @@ the end of a host's input no longer silences the keyboard (#89).
   for users: it sums up the emulator, says how to build it, and runs a
   worked example. `hdl/src/`, `sim/`, `test/`, and `formal/` each have a
   README that lists their files.
+- A second worked example in the README runs
+  `doc/intro/examples/keys.nasm` in the window. It writes a title in
+  color, and echoes the keys typed on the screen with a blinking cursor.
+  `make -C doc/intro test` runs it from a file of keys.
 
 **Emulator (`niceemu`)**
 

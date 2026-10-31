@@ -32,6 +32,9 @@ ISA.md, and a plain "§2" to a section of this file.
 - [5. Errors and timeouts](#5-errors-and-timeouts)
 - [6. The debug registers](#6-the-debug-registers)
 - [7. Transports](#7-transports)
+  - [7.1 UART and TCP](#71-uart-and-tcp)
+  - [7.2 The emulator](#72-the-emulator)
+  - [7.3 A board that carries the link](#73-a-board-that-carries-the-link)
 - [8. An example](#8-an-example)
 - [9. Versions](#9-versions)
 
@@ -50,7 +53,7 @@ link shows the program's output almost unchanged.
 
 Console bytes from the host reach the program while it runs or is paused.
 While the processor is held or halted (§6), and after the end of the
-line's input (§7), they are dropped; a keyboard's bytes are not
+line's input (§7.1), they are dropped; a keyboard's bytes are not
 (SYSTEM.md §1, §5). A paused processor keeps them in the input buffer,
 and the program reads them when it goes on. A console byte that
 arrives while the program's input buffer is full is lost, and the system
@@ -179,7 +182,7 @@ the control register causes may come before the `k` of that write.
 
 | Notice | Payload | Meaning |
 |---|---|---|
-| `b` | version | The system has powered up or been reset, or a host has connected to the emulator over TCP (§7). The version is `05` (§9). |
+| `b` | version | The system has powered up or been reset, or a host has connected to the emulator over TCP (§7.1). The version is `05` (§9). |
 | `h` | reason | The processor has halted. The reason is the halt reason of §6, `01`–`05`. The last console byte that the program wrote comes before the notice. |
 | `x` | breakpoint | The processor has paused, and R15 is the address of an enabled breakpoint (§6). The payload is its number, `00`–`07`, the lowest if more than one has that address. Bit 4 of the control register reads 1. The last console byte that the program wrote comes before the notice. |
 | `p` | none | The processor has paused: a pause request or a step (§6) has taken effect, and bit 4 of the control register reads 1. R15 is not the address of an enabled breakpoint. The last console byte that the program wrote comes before the notice. |
@@ -192,8 +195,7 @@ sends no `o`. Every stop of the processor sends exactly one of `h`, `x`, and
 breakpoint, and otherwise `p`. The notice depends only on the state at the
 stop, not on what caused it. So a host that waits for any of the three
 knows which came. A breakpoint can stop a running program at any time, so
-a host takes an `x` that it did not ask for, as it takes an `h`. A host of
-version 3 enables no breakpoint, so it never sees `x`.
+a host takes an `x` that it did not ask for, as it takes an `h`.
 
 ## 5. Errors and timeouts
 
@@ -230,9 +232,9 @@ system has there otherwise.
 
 | Address | Register |
 |---|---|
-| `0xFFFFFFE0`–`0xFFFFFFEF` | R0 to R15, read only. After a halt, until the next start or clear, they are the values the program left, with R15 the address after the halting instruction, as the emulator prints them, also while the processor is held after the halt. While the processor is paused, they are the values after the last step, with R15 the address of the next instruction, and a hold of the paused processor keeps them until the next start or clear. While the processor runs, from a start, a go on, or a step until the next halt or pause, a system should return the current values, as the emulator and the cores' link do: they change under the read, so the words of one answer may come from different moments, and a live R15 shows where a program spins. A system without them returns values that are not defined. After a clear, and while the processor is held after a hold of a running one, their values are not defined. |
+| `0xFFFFFFE0`–`0xFFFFFFEF` | R0 to R15, read only. What they hold depends on the state (below). |
 | `0xFFFFFFF0` | Control (below). |
-| `0xFFFFFFF1` | The halt reason, read only: 0 while the processor has not halted, and after a clear, 1 for `HALT`, 2 for a reserved control word, 3 for `INT` inside an interrupt routine, 4 for `RTI` outside one (ISA §5.3, §7.2, §7.4), and 5 when the emulator's step limit stopped the program (§7). |
+| `0xFFFFFFF1` | The halt reason, read only: 0 while the processor has not halted, and after a clear, 1 for `HALT`, 2 for a reserved control word, 3 for `INT` inside an interrupt routine, 4 for `RTI` outside one (ISA §5.3, §7.2, §7.4), and 5 when the emulator's step limit stopped the program (§7.2). |
 | `0xFFFFFFF2` | The protocol version, read only: 5 (§9). Bits 31–8 read 0. A host checks it before it uses the pause, the step, or a breakpoint. |
 | `0xFFFFFFF3` | The free space, read only: the number of console bytes that the program's input buffer can take now. It reads so while the processor is held or halted too, although the bytes sent then are dropped (§1), and a start empties the buffer. |
 | `0xFFFFFFF4` | The enable bits of the breakpoints. Bit i enables breakpoint i. The bits from N up read 0 and take no write. |
@@ -242,6 +244,23 @@ system has there otherwise.
 | `0xFFFFFFF8`–`0xFFFFFFFF` | The addresses of breakpoints 0 to 7. The words from `0xFFFFFFF8` + N up read 0 and take no write. |
 
 A write to a read-only register is ignored.
+
+R0 to R15 read, by the state of the processor:
+
+- **After a halt**, until the next start or clear: the values the program
+  left, with R15 the address after the halting instruction, as the
+  emulator prints them. A hold after the halt keeps them.
+- **While paused**: the values after the last step, with R15 the address
+  of the next instruction. A hold of the paused processor keeps them
+  until the next start or clear.
+- **While running**, from a start, a go on, or a step until the next halt
+  or pause: a system should return the current values, as the emulator
+  and the cores' link do. They change under the read, so the words of
+  one answer may come from different moments, and a live R15 shows where
+  a program spins. A system without them returns values that are not
+  defined.
+- **After a clear**, and while the processor is held after a hold of a
+  running one: values that are not defined.
 
 The bits of the control register:
 
@@ -260,14 +279,13 @@ step boundary where it takes effect, and the time of a step. Every write to
 the control register writes bits 0, 2, 3, 4, and 5 at once, so a host keeps
 bit 3 as it is in each write, for example by reading the register first,
 and bit 4 as it reads to stay paused, or at 0 to go on. Bit 5 reads 0, so a
-host that writes back what it read never steps by accident, and a host of
-version 2 writes it as 0.
+host that writes back what it read never steps by accident.
 
 - **Start.** When bit 0 goes from 1 to 0, the processor starts at address
   0, as the emulator starts a run. The math unit, the performance counters,
   and the timer start from their reset values. The read counter keeps its
   value (SYSTEM.md §1). The input buffer is emptied, and an earlier end of
-  the input (§7) is cleared. Bit 1 and the halt reason are cleared, and
+  the input (§7.1) is cleared. Bit 1 and the halt reason are cleared, and
   R0–R15 are not defined until the next halt.
 - **Restart.** A halt leaves bit 0 at 0, so a restart after a halt takes
   two writes: bit 0 to 1, then to 0 (§8). A resent write of 0 cannot start a
@@ -296,8 +314,7 @@ version 2 writes it as 0.
   register read 0, and R0–R15 are not defined until the next halt or
   pause. So after a load, the control register reads held, not halted.
   The `h` of a halt before the clear still comes, with its reason, also
-  if it comes after the `k` of the clear. A system of version 4 keeps
-  bit 1, the reason, and the stop register over a clear.
+  if it comes after the `k` of the clear.
 - **ROM.** A system without a ROM, such as the emulator, reads bit 3 as 1
   and ignores writes to it.
 - **Pause.** A write of 1 to bit 4 of a running processor asks for a pause.
@@ -348,7 +365,7 @@ version 2 writes it as 0.
     clock, and by a snapshot that a host's read replaced (§3).
   - The console works as while the program runs: its output comes before
     the notice. In the emulator, a step at a console read that would wait
-    for input does not run (§7).
+    for input does not run (§7.2).
   - A hold during the step acts as a hold of a running program: R0–R15
     are not defined after it.
   - A step has a side effect, so a host does not resend it blindly (§3).
@@ -406,13 +423,15 @@ condition is false, is a step (ISA §3), so a breakpoint at it fires.
 - **Lifetime.** The enable bits and the addresses are kept across a hold, a
   start, and a clear, so a host sets them while the processor is held and
   then starts it. A reset of the system clears them, to 0, and so does a
-  host's connection to the emulator over TCP (§7). So after every `b`,
+  host's connection to the emulator over TCP (§7.1). So after every `b`,
   they are 0, and a host finds none left by an earlier one.
 
 After a reset of the system, a system that boots a ROM runs with bit 0 at 0
 and bit 3 at 0. A system without one waits, held, with bit 0 at 1.
 
 ## 7. Transports
+
+### 7.1 UART and TCP
 
 - **UART.** NiceMonMEGA65 carries the link on its debug UART, 8-N-1, at
   2 Mbaud unless it was built for another rate. A UART break, a frame
@@ -450,6 +469,8 @@ On either transport, the host's console bytes that arrive after the end of
 the line's input are dropped, with no `o` notice, while a keyboard's bytes
 go into the buffer (SYSTEM.md §1, §5). A start clears the end of the input
 (§6), and over TCP so does a new connection.
+
+### 7.2 The emulator
 
 The emulator, serving the link, works as when it runs a program from the
 command line, with these differences:
@@ -514,6 +535,8 @@ command line, with these differences:
 - It measures the 100 ms of §5 when it serves the link, not when a byte
   arrives. A byte can wait for the next service, so a gap that it measures
   may be longer than the host's by up to the service interval.
+
+### 7.3 A board that carries the link
 
 A board that carries the link has to do more than follow this file. These
 are the rules that `hdl/src/debug_link.vhd` asks of its board:
@@ -631,7 +654,7 @@ major. A system of a new minor follows these rules:
 
 - A new feature does nothing until a host turns it on, and it is off
   after every `b`: a reset of the system turns it off, and so does a
-  host's connection to the emulator over TCP (§7).
+  host's connection to the emulator over TCP (§7.1).
 - A new notice comes only from a feature that the host turned on.
 - A new bit of the control register changes nothing when it is written as
   0, or as the value it reads. A host that writes back what it reads, and

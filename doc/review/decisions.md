@@ -81,3 +81,11 @@ proposed again. The open items are the
   synthesis, size, and clock speed, lives in the
   [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65)
   repository (MICROARCH.md §10).
+- **A macro facility in the assembler** (#93), `.MACRO` and `.ENDM`, so
+  that a program could define `CALL` and `RET`. A text macro cannot pick
+  the constant of a call, which is the size of the jump: 2 for a label
+  and 1 for a register (ABI.md), so `CALL R2` would push the wrong return
+  address. The two are pseudo-instructions of the assembler instead
+  (ISA.md §10.1), which also settles the facility's open questions:
+  names, conditions, labels in a body, nesting, and where an error is
+  reported.

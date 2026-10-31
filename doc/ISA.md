@@ -467,6 +467,8 @@ R13 is the stack pointer, SP. The stack grows down, and SP points at the last it
 
 The call works because PC reads as the address after `ADD`'s constant word, which is the start of the 2-word `MOVE PC, sub`. Adding 2 gives the address after the `MOVE`.
 
+The constant is the size of the `MOVE` in words. A call through a register, `MOVE PC, Rx`, is one word, so it pushes with `ADD @--SP, 1, PC`. The assembler writes these sequences for the pseudo-instructions `CALL target` and `RET` (§10.1).
+
 ### 9.2 Jumps and comparisons
 
 | Operation | Code |
@@ -508,6 +510,7 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
   - `MOVE`, `DBL`, `DEC`, and `NOT` take dest and s0.
   - The other ALU and SHIFT instructions take dest, s0, and s1.
   - `HALT` and `RTI` take none, and `INT` takes the vector number.
+- **Pseudo-instructions.** `CALL target` assembles as `ADD @--R13, n, R15` followed by `MOVE R15, target`, where n is the size of the `MOVE` in words: 2 when target has a constant word, else 1. `RET` assembles as `MOVE R15, @R13++`. These are the call and return of §9.1, so R13 is the stack pointer. A condition applies to every instruction of the expansion: `?Z CALL sub` calls only when Z is set, since `ADD` without `[M]` leaves the flags for the `MOVE`. Neither takes a modifier. Both are mnemonics, so neither can be a label or an `.EQU` name.
 - **Unused fields** are encoded as R0 (`000 0000`).
 
 ### 10.2 Operands
@@ -606,5 +609,6 @@ It executes as follows:
 | Assembler numbers | `0x`, `0b`, decimal | The emulator reads a leading 0 as octal; the articles use `#` and `$` |
 | Assembler directives and constants | `.DAT` takes several values, a constant may be an expression, and a string may use `"..."` (§10) | `NICE.pm` takes one value per directive, a number or a symbol only, and `'...'` only |
 | `.RES` directive | Reserves words that are not in the program image (§10.3) | The 2004 assembler has no such directive. Every word it reserves, with `.BLK`, is in the image. |
+| `CALL` and `RET` | Pseudo-instructions of the assembler for the call and return of §9.1 (§10.1) | `NICE.pm` has no such names. The 2004 programs write the two instructions. |
 
 The emulator also has bugs that this specification does not copy. Its carry input comes from the wrong SR bit, its 5-bit count mask is wrong, it modifies source registers, it never sets X, `ONE` crashes, `1>0` and `C>0` fill the wrong end, and `DEC` reports a borrow in V. See [review/emulator-and-webpage-review.md](review/emulator-and-webpage-review.md) §4.

@@ -28,6 +28,36 @@ pins each is:
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
 
+## V1.3 (2026-10-31)
+
+The assembler has `CALL` and `RET` (#93).
+
+**Upgrade notes.**
+
+- `CALL` and `RET` are mnemonics, so a program that uses either as a
+  label or an `.EQU` name does not assemble. No file of the repository
+  did. Nothing else changes: the ports of both cores, `wb_dmux`, the
+  devices, the address map of SYSTEM.md, and the debug link are as in
+  V1.2.
+- Zig 0.17.0, as in V1.2.
+
+**Specification and documents**
+
+- ISA.md §10.1 defines the pseudo-instructions `CALL target` and `RET`:
+  `ADD @--R13, n, R15` then `MOVE R15, target`, where n is the size of
+  the `MOVE` in words, and `MOVE R15, @R13++`. A condition applies to
+  both words of a call. §9.1 says the constant is the size of the jump,
+  and Appendix B lists them (#93).
+- `doc/review/decisions.md`: a macro facility was decided against, since
+  a text macro cannot pick the constant of a call.
+
+**Assembler (`niceasm`)**
+
+- `CALL target` and `RET` assemble as ISA.md §10.1 says, with 1 or 2 for
+  the constant from the target's mode, so `CALL R2` is right where the
+  written idiom needs `ADD @--SP, 1, PC` (#93). `nicedis` writes the two
+  instructions, never `CALL` or `RET`. `nice.vim` highlights them.
+
 ## V1.2 (2026-10-31)
 
 The emulator shows the screen in a window while the program runs, with a

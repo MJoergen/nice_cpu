@@ -191,6 +191,16 @@ CASES: List[Tuple[str, str]] = [
     (" .ASCII_L x'ab'", "1: error: .ASCII_L takes one quoted string"),
     (' .ASCII_L "ab"x', "1: error: text after the string \"ab\": to put \" in a string, quote the string with '"),
     (" .ORG 0xFFFFFFFF\n MOVE R1, 5\n .ORG 0\n HALT", "4: error: address 0x00000000 is already used by line 2"),
+    # CALL and RET (ISA.md section 10.1)
+    (" CALL", "1: error: CALL takes 1 operand, got 0"),
+    (" CALL a, b", "1: error: CALL takes 1 operand, got 2"),
+    (" RET R1", "1: error: RET takes 0 operands, got 1"),
+    (" CALL[M] x\nx HALT", "1: error: CALL takes no modifiers"),
+    (" RET[C]", "1: error: RET takes no modifiers"),
+    (" CALL R2--", "1: error: 'R2--': post-decrement is only a direct destination mode"),
+    (" CALL nowhere", "1: error: undefined symbol 'nowhere'"),
+    ("CALL: HALT", "1: error: 'CALL' is a mnemonic and cannot be a symbol"),
+    ("RET .EQU 1", "1: error: 'RET' is a mnemonic and cannot be a symbol"),
 ]
 
 
@@ -269,6 +279,9 @@ WARN: List[Tuple[str, str, str]] = [
      "write 'RIT:' if one is meant\n"),
     # No warning for a label at the start of a line, or with ':'
     ("loop\n  done:\n HALT", "00000000 0c000000\n", ""),
+    # RET alone on an indented line is an instruction, not a label.
+    (" RET\n\tCALL 0", "00000000 0003f680\n00000001 0077580f\n00000002 00000002\n"
+     "00000003 0003d800\n00000004 00000000\n", ""),
 ]
 
 

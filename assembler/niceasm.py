@@ -23,9 +23,10 @@ from typing import Dict, Iterator, List, Optional, Set, Tuple
 
 MASK = 0xFFFFFFFF
 
-ALU, SHIFT, CTRL = range(3)
+ALU, SHIFT, CTRL, PSEUDO = range(4)
 
-# name: (class, opcode or control command, number of operands)
+# name: (class, opcode or control command, number of operands). A PSEUDO
+# instruction has no opcode: instruction() expands it (ISA.md section 10.1).
 MNEMONICS: Dict[str, Tuple[int, int, int]] = {
     "MOVE": (ALU, 0x0, 2), "SUB": (ALU, 0x1, 3), "MDBL": (ALU, 0x2, 3),
     "ADD": (ALU, 0x3, 3), "DBL": (ALU, 0x4, 2), "DEC": (ALU, 0x5, 2),
@@ -44,6 +45,8 @@ MNEMONICS: Dict[str, Tuple[int, int, int]] = {
     "SHR": (SHIFT, 0x8, 3), "ROR": (SHIFT, 0xE, 3), "BPR": (SHIFT, 0xF, 3),
 
     "HALT": (CTRL, 0x00, 0), "RTI": (CTRL, 0x01, 0), "INT": (CTRL, 0x02, 1),
+
+    "CALL": (PSEUDO, 0, 1), "RET": (PSEUDO, 0, 0),
 }
 
 DIRECTIVES = {".EQU", ".ORG", ".DAT", ".BLK", ".RES", ".ASCII_L", ".ASCII_B"}
@@ -436,13 +439,23 @@ class Assembler:
         if m.group(2) is not None and (not mods or len(set(mods)) != len(mods)
                                        or set(mods) - set("MC")):
             raise AsmError(f"'{mtok}': bad modifier")
-        if mods and cls == CTRL:
+        if mods and cls in (CTRL, PSEUDO):
             raise AsmError(f"{name} takes no modifiers")
         if "C" in mods and cls != ALU:
             raise AsmError("[C] is only allowed on ALU instructions")
         if len(args) != nops:
             raise AsmError(f"{name} takes {nops} operand{'' if nops == 1 else 's'}, "
                            f"got {len(args)}")
+
+        if cls == PSEUDO:  # the call and return of ISA.md section 9.1
+            if name == "CALL":
+                _, c = self.operand(args[0], False)
+                n = 1 if c is None else 2  # the size of the MOVE in words
+                self.instruction(cond, "ADD", ["@--R13", str(n), "R15"], line_no)
+                self.instruction(cond, "MOVE", ["R15", args[0]], line_no)
+            else:
+                self.instruction(cond, "MOVE", ["R15", "@R13++"], line_no)
+            return
 
         iw = cond << 28
         if cls == CTRL:

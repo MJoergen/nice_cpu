@@ -18,6 +18,7 @@ syn match niceLabel     "^[A-Za-z_][A-Za-z0-9_.]*:\="
 syn keyword niceAlu     MOVE SUB MDBL ADD DBL DEC NOT NOR IAND NAND XOR IOR XNOR AND ONE OR
 syn keyword niceShift   SHL SHR ROL ROR BPL BPR
 syn keyword niceControl HALT RTI INT
+syn keyword nicePseudo  CALL RET
 
 " Modifiers: [M], [C], [CM], [MC]
 syn match niceModifier  "\[[CM]\+\]"
@@ -46,6 +47,7 @@ hi def link niceLabel     Label
 hi def link niceAlu       Statement
 hi def link niceShift     Statement
 hi def link niceControl   Statement
+hi def link nicePseudo    Statement
 hi def link niceModifier  Special
 hi def link niceCond      PreProc
 hi def link niceDirective Macro

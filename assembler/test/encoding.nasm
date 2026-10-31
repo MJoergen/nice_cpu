@@ -185,3 +185,14 @@ alone:
 clab    ?Z      HALT                    ; 438: 3c000000
                 .DAT    clab            ; 439: 438
                 MOVE    R1 ,R2 * comment  ; 43a: 00004100
+; CALL and RET (ISA.md 10.1): the constant is the size of the MOVE, a label
+; is the ADD's address, and a condition is on both words
+cl              CALL    flab            ; 43b: 0077580f, 43c: 2, 43d: 0003d800, 43e: 436
+                CALL    R2              ; 43f: 0077580f, 440: 1, 441: 0003c100
+                CALL    @R2             ; 442: 0077580f, 443: 1, 444: 0003e100
+                CALL    5[R2]           ; 445: 0077580f, 446: 2, 447: 0003d900, 448: 5
+                CALL    @flab           ; 449: 0077580f, 44a: 2, 44b: 0003f800, 44c: 436
+        ?Z      CALL    RG              ; 44d: 3077580f, 44e: 1, 44f: 3003c280
+        ?!Z     RET                     ; 450: b003f680
+                ret                     ; 451: 0003f680
+                .DAT    cl              ; 452: 43b

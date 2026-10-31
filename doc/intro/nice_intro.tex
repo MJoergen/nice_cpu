@@ -587,6 +587,9 @@
       \begin{center}
        \code{MOVE PC, @SP++}
       \end{center}
+     \item The assembler accepts \code{CALL ROUTINE} and \code{RET} for
+      these sequences, and picks the constant: \code{CALL R1} pushes with
+      \code{ADD @--SP, 1, PC}, since \code{MOVE PC, R1} is one word.
      \item The stack grows down, and \code{SP} points at the last word
       pushed.
      \item By convention, arguments are passed in \code{R1}\dots\code{R4},

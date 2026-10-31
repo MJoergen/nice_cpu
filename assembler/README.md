@@ -66,6 +66,8 @@ The rules of the output:
   instruction where one exists (`SHL`, `ROL`, `BPL`, `SHR`, `ROR`, `BPR`).
   "Always" is no condition, and "never" is `?!1`. Registers are `R0` to
   `R15`, never `SP` or `PC`, which are names that programs define.
+- `CALL` and `RET` are never written, since their words are those of the
+  two instructions written by hand (ISA.md §10.1).
 - Words that no instruction of the syntax gives are `.DAT`, with what they
   would do as a comment. These are the reserved control words (ISA.md
   §5.3), and `MOVE`, `DBL`, `DEC`, `NOT`, and `ONE` with an unused field
@@ -136,6 +138,8 @@ This section lists what the assembler does beyond it.
   `file:line: warning: message` and assembles the program.
 - A label or `.EQU` name cannot be a mnemonic or look like a register (`R`
   followed by digits, so `R16` is rejected too).
+- The target of `CALL` is checked as the source operand of a `MOVE`, so
+  `CALL R2--` is an error, and so is a modifier on `CALL` or `RET`.
 - An `.EQU` value is a number, an expression, a register, or a complete
   operand such as `@R2`, `R3++`, or `5[R4]`. The name is replaced by its value
   when it is a whole operand, the part after `@`, the register in `--Rx`,
@@ -185,7 +189,7 @@ runs the tests of `nicefmt` and `nicedis`, and checks the layout of every
 | File | What it checks |
 |---|---|
 | `count`, `replicate`, `print` | The 2004 example programs by B. Ulmann ([examples.zip](http://www.vaxman.de/projects/nice/examples.zip)). The `.bin` files are the original `NICE.pm` output and match byte for byte. |
-| `encoding` | Every addressing mode in every field, opcode, alias, condition, control instruction, and directive; three constant words; number spellings and expressions; register spellings; and `.EQU` chains and operands. The expected output was checked by hand against ISA.md, including the worked example in §11. The comments of the later lines give the derivation. |
+| `encoding` | Every addressing mode in every field, opcode, alias, condition, control instruction, pseudo-instruction, and directive; three constant words; number spellings and expressions; register spellings; and `.EQU` chains and operands. The expected output was checked by hand against ISA.md, including the worked example in §11. The comments of the later lines give the derivation. |
 | `wrap` | Address wrap from `0xFFFFFFFF` to 0. |
 | `crlf` | CRLF line endings and a program with no `.ORG`. |
 | `dis.py` | `nicedis`: every `.bin` file of the repository disassembled and reassembled to the same words, without symbols and with them where its `.nasm` file or `.sym` file gives them, and each listing in the layout; the hand-checked listings `count.lst` and `disedge.lst`; `disassemble()`; `--start` and `--end`; and the errors. `disedge.bin` and `disedge.sym` hold the cases no assembled program has: the `.DAT` words, cut-off instructions, a gap, a label inside an instruction, and the names that are not labels. |

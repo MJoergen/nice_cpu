@@ -524,3 +524,25 @@ nothing else could be busy then. A word of the host now waits until p_acc
 takes it, and p_acc checks at every word that it may reach the memory,
 since the side client may start the program between two words of a
 host's packet.
+
+## The emulator's window
+
+Until 2026-10-30, the emulator showed the character screen only at the
+end of a run, with `--screen` or `--color`, and its console input was a
+`std.Io.Reader`: a read had a byte, or the end of the input, and waited
+for one of them. The window of `--window` came with
+[#83](https://github.com/MJoergen/nice_cpu/issues/83), and with it a read
+that can have no byte, as a board's: `cpu.input` became an `Input`, whose
+`next()` gives a byte, none, or the end, and in the window a console read
+returns 0 while no byte waits. The bytes of the keys and the cursor words
+of SYSTEM.md §1 were NiceMonMEGA65's own before; the specification took
+them over so that a program runs the same in the window and on the board.
+
+## The link's address
+
+Until 2026-10-30, `niceemu --link` served the debug link on 127.0.0.1
+only, so a host on another computer could not connect, and the way around
+was a port forwarded over SSH
+([#84](https://github.com/MJoergen/nice_cpu/issues/84)). `--link
+ADDR:PORT` serves it on another address since. `--link PORT` still serves
+it on 127.0.0.1.

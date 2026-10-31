@@ -158,7 +158,9 @@ character in each word and a 0 word at the end:
 title on the screen, and then echoes the keys typed into the window on
 row 2, with a blinking cursor. Backspace deletes, and Enter ends the
 program. The window needs a build of niceemu with SDL, which `make
-window` fetches and builds:
+window` fetches and builds. The first such build takes a couple of
+minutes more, to download and compile SDL. This happens only once;
+later builds take SDL from the Zig cache.
 
     $ make -C emulator window
     $ assembler/niceasm.py -o keys.bin doc/intro/examples/keys.nasm

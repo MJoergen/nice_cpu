@@ -133,6 +133,8 @@ Lines 124–132: the statuses 0, 2, 3, 4, 1, and 141 in one sentence, with the r
 - The memory map's prose (223–291) is one dense paragraph per device. Sub-headings (Console, Math unit, Counters, Timer) would let a reader find the timer.
 - "The pace" (150–156) is never defined. "The rate, in steps per second" at the first use.
 
+**Resolved**: in part: the `--symbols` cell is one sentence and a "Symbols file" paragraph under the table has the format and the rules, and the Window section names the rate instead of "the pace". The sub-headings of the memory map's prose go with the restructuring of the file (§5.1).
+
 ### 5.5 assembler/README.md: the tests come first, and the details are unordered
 
 "Test" (line 9) is the first section, before Usage (24), and "Tests" (176) at the end is a second one. "Details beyond ISA.md" (135–174) is 17 bullets in no order, with the separators and the comments beside `.BLK 0xFFFFFFFF` and the byte order mark. The disassembler section's sentence at 113–117 ("is only a comment: on a line of its own at its address if a word is there, and in the comment of a constant, which stays a number") takes several readings. **Fix:** Usage first and one Tests section at the end; the details grouped into syntax, directives, and edge cases; the sentence split in two, with an example line of output.

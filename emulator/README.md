@@ -95,7 +95,7 @@ line such as `Pending: IRQ 05` follows the first line.
 | `-d`, `--dump ADDR:N` | After halting, print N memory words from ADDR. May be repeated. |
 | `-n`, `--max-steps N` | Stop after N steps. There is no limit by default, so a program that never halts runs until it is killed. |
 | `-i`, `--input FILE` | Read the console's input from FILE instead of stdin; `-` is stdin. A directory is an error. |
-| `--symbols FILE` | Read the labels of `niceasm.py --symbols` from FILE. After a halt other than `HALT`, or at the step limit, print `At label+0x1f`, the location of the halt. After a halt at the default wasm trap handler, `___wasm_trap`, also print `Trap CODE (cause) at label+0x1f`, from R1 and R2 ([WASM.md](../translator/WASM.md)). Each line of the file is an 8-digit hex address, a space, and a label; `.EQU` names are not in it, only the labels of instructions and data. Each label is the nearest one at or before the address, the first in the file if several are at one address, so a second label at the same address is never named. |
+| `--symbols FILE` | Read the labels of `niceasm.py --symbols` from FILE, and name the location of a halt other than `HALT`, of the step limit, and of a wasm trap (see Symbols file below). |
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
 | `--no-cycle-counter` | Make the cycle counter and the microsecond counter, `0xFFFFFF40`, `0xFFFFFF41`, `0xFFFFFF44`, and `0xFFFFFF45`, ordinary memory (see Memory map). |
@@ -104,6 +104,8 @@ line such as `Pending: IRQ 05` follows the first line.
 | `--speed N` | With `--window`, run N steps a second, 1000000 by default, or as fast as the host can for 0. |
 | `--link [ADDR:]PORT` | Serve the debug link on PORT of ADDR, `127.0.0.1` if no ADDR is given, instead of running the program once (see Debug link below). ADDR is an IPv4 address, or an IPv6 one in brackets, such as `[::1]`. With PORT 0, pick a free port and print `link: port N` on stderr. The program file is optional. `--input` is an error with it. |
 | `-h`, `--help` | Print the usage on stdout. |
+
+**Symbols file.** `niceasm.py --symbols` and `nicebuild.py --symbols` write one: one line per label, with an 8-digit hex address, a space, and the label. Only the labels of instructions and data are in it, not `.EQU` names. With `--symbols FILE`, niceemu prints `At label+0x1f`, the location of the halt, after a halt other than `HALT` or at the step limit. The label is the nearest one at or before the address, the first in the file if several are at one address, so a second label at the same address is never named. After a halt at the default wasm trap handler, `___wasm_trap`, it also prints `Trap CODE (cause) at label+0x1f`, from R1 and R2 ([WASM.md](../translator/WASM.md)). `nicedis` reads the same file.
 
 Numbers in options are decimal, or hex after `0x` or `0X`, with no sign or
 `_`.
@@ -155,10 +157,10 @@ bytes, and a key whose bytes do not all fit is dropped.
 The emulator runs one step per microsecond, so that the microsecond counter
 keeps the time of the host's clock. The cycle counter and the timer still
 count one cycle per step, so a timer period of P lasts P microseconds,
-where on a board of 100 MHz it lasts P/100 (SYSTEM.md §1). `--speed` sets another
-rate, and `--speed 0` runs as fast as the host can. A run that falls more
-than 100 ms behind the rate starts the pace again from there, rather than
-catch up in a burst.
+where on a board of 100 MHz it lasts P/100 (SYSTEM.md §1). `--speed N` sets another
+rate, N steps per second, and `--speed 0` runs as fast as the host can. A
+run that falls more than 100 ms behind its rate goes on from there, rather
+than catch up in a burst.
 
 At the halt, or at the step limit, niceemu prints the report as without
 the window, and the window stays, with the last screen, until it is

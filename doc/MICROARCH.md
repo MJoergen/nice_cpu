@@ -494,14 +494,14 @@ the condition is known. These are the shares of all instructions:
 
 | | `bench.c` through nicewasm | `hand.nasm` |
 |---|---|---|
-| Instructions | 1697422 | 493964 |
+| Instructions | 1697041 | 493964 |
 | Skipped | 19.1% | 18.4% |
 | Words per instruction, mean | 1.86 | 1.66 |
 | Micro-ops per instruction, mean | 1.00 | 1.14 |
 | Conditional | 22.7% | 27.7% |
 | Data read | 12.1% | 38.3% |
 | Store | 5.9% | 15.5% |
-| Jump: writes R15, or a control instruction | 18.7% | 21.0% |
+| Jump: writes R15, or a control instruction | 18.8% | 21.0% |
 | Reads a register the previous instruction writes | 30.4% | 30.2% |
 | Reads a register written two back, not one | 8.3% | 13.9% |
 | Conditional, SR written by the previous instruction | 20.4% | 20.3% |

@@ -302,14 +302,14 @@ charged to the rule that caused it, so the output says where the time
 goes, and a program that reads the instruction counter around each phase,
 as both programs do, gets a row per phase:
 
-    bench.bin: 1697422 instructions, 2438761 cycles (estimate), CPI 1.437
-      cycles above 1/instruction: 741339
+    bench.bin: 1697041 instructions, 2442571 cycles (estimate), CPI 1.439
+      cycles above 1/instruction: 745530
       ...
-      taken jumps resolved in WRITE (flush)                        267540  0.158/instr  36.1%
+      taken jumps resolved in WRITE (flush)                        270207  0.159/instr  36.2%
       jumps DECODE resolves (early-redirect bubble)                 60047  0.035/instr   8.1%
       ...
-      read data a cycle after the bus (registered request)         103494  0.061/instr  14.0%
-      read data used by more than a register write                 179438  0.106/instr  24.2%
+      read data a cycle after the bus (registered request)         103494  0.061/instr  13.9%
+      read data used by more than a register write                 180200  0.106/instr  24.2%
 
       phase         instr    cycles    CPI   main extra cycles per instruction
       rng64         51746     82515  1.595   mpu 0.35, bus 0.15, early 0.06, adjust 0.02

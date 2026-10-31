@@ -97,4 +97,4 @@ Use American spelling everywhere, in documents, comments, and identifiers
 is at most 50 characters, a blank line follows it, and the body is
 wrapped at 70 characters per line. The subject starts with the part it
 changes: `niceasm:`, `niceemu:`, `runtime:`, `nicewasm:`, `nicecc:`,
-`nicehdl:`, `bench:`, `release:`, `intro:`, `ISA:`, or `Review:`.
+`nicehdl:`, `bench:`, `release:`, `intro:`, `doc:`, `ISA:`, or `Review:`.

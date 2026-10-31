@@ -19,11 +19,12 @@ an [emulator](emulator), a [runtime library](runtime)
 with integer and floating-point routines, and a [WebAssembly
 translator](translator)
 that runs C, Zig, and Rust programs. The [hdl](hdl) directory holds two
-different FPGA implementations, the pipelined one of MICROARCH.md, which
-is the default, and a simple multi-cycle one. They both pass every comparison with the
-emulator, the test setup for them, and formal checks of their ports, of
-five stages of the pipeline, of the devices, and of the shifter and the
-ALU for every input.
+different FPGA implementations: the pipelined one, whose design note is
+[doc/MICROARCH.md](doc/MICROARCH.md), which is the default, and a simple
+multi-cycle one. Both are tested by comparing their traces with the
+emulator's, instruction by instruction, and both pass. Formal checks
+cover their ports, five stages of the pipeline, the devices, and the
+shifter and the ALU for every input.
 
 The core is FPGA-agnostic. This repository has no board top level and no
 synthesis for a particular board. An example design for the MEGA65 lives in

@@ -36,9 +36,13 @@ The "Upgrade notes" of `V1.2` hold, in this order: `_exit` and the new labels (a
 
 Line 22: "the pipelined one of MICROARCH.md, which is the default". The reader meets the file name with no word on what it is, and learns it from the Contents table at line 241, "the design note for the pipelined core". **Fix:** "the pipelined one, whose design note is doc/MICROARCH.md, which is the default".
 
+**Resolved**: The README says what MICROARCH.md is, with a link, at its first mention.
+
 ### 2.2 One sentence lists what the cores pass, and reads as a list of four things
 
 Lines 23–27: "They both pass every comparison with the emulator, the test setup for them, and formal checks of their ports, of five stages of the pipeline, of the devices, and of the shifter and the ALU for every input." The aside "the test setup for them" reads as the second item of the list. **Fix:** two sentences: "Both are tested by comparing their traces with the emulator's, instruction by instruction, and both pass. Formal checks cover their ports, five stages of the pipeline, the devices, and the shifter and the ALU for every input."
+
+**Resolved**: Two sentences: the comparison with the emulator, then the formal checks.
 
 ### 2.3 Where to start is a subsection of "The emulator"
 

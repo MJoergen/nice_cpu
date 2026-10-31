@@ -10,6 +10,10 @@ runtime library ([runtime/](../runtime/README.md)) has routines for them.
 "ISA §8.2" refers to a section of ISA.md, and a plain "§2" to a section of
 this file.
 
+A data read is an operand read. An instruction fetch from the I/O range
+reads 0 and reaches no device (ISA §8.3), so the tables below say what a
+data read returns.
+
 ## Contents
 
 - [Memory map](#memory-map)
@@ -21,7 +25,7 @@ this file.
 
 ## Memory map
 
-The I/O range, and what the systems put in it. The emulator's own map, with
+The I/O range, the screen, and what the systems put in them. The emulator's own map, with
 its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 
 | Address | Words | What |

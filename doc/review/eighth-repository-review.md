@@ -217,13 +217,13 @@ Line 457: "10⁶ / (1757 × cycles per run)" with no word that 1757 Dhrystones p
 
 The order of [hdl/README.md](../../hdl/README.md) is Folder contents (30), Running the tests (44–422), The formal checks (423–797), The multi-cycle core (798), The pipelined core (982) with "Integrating the core" inside it (1089–1112), then the data bus decoder, the debug link, and the devices. An integrator reads about 750 lines on tests and proofs before the core and its interface. "Running the tests" mixes the quick start, `make lint`, `make timing` with its slack table (91–155), and a catalog of every testbench and test program (157–421), in which the `tb_debug_link` paragraph (189–218) is one sentence of about 25 clauses. "The formal checks" has no summary of its jobs. **Fix:** Folder contents; a short "Running the tests" with a table of the targets and their costs; Integrating the core, with the table of §8.2; the cores; the devices; the debug link; then "What the tests check" and "The formal checks", the latter with a table of the jobs (unit, what it proves, solver, time) before the paragraphs.
 
-**Resolved**: filed as [#99](https://github.com/MJoergen/nice_cpu/issues/99), labeled `documentation`.
+**Resolved**: The order is Folder contents, a short Running the tests with a table of the targets and their costs, Integrating the core with its Timing, the cores, the devices, What the tests check, and The formal checks with a table of the jobs; the paragraphs on the ports that both cores share, and `make timing`, moved from the cores and the tests to Integrating the core, and `tb_core`'s generics to the tests (#99).
 
 ### 8.2 hdl/README.md: no table of the core's ports and generics, and the clock is not named
 
 The ports are named piecemeal through the file (`dbus_ack_i`, `retire_o`, `stats_o`, `pause_i`, `paused_o`, `halted_o`, `brk_addr_i`, `nmi_valid_i`, and the rest); `clk_i` is not in the file, and `rst_i` appears only in the timing text (106) and the link (702). The generics `G_FORMAL` and `G_BREAKS` are named in passing, `G_FORMAL` at 478 before its explanation at 491, and `prove`, `cover`, and `bmc` before any word on what a task is. An integrator opens `src/pipeline.vhd` for the entity. **Fix:** under Integrating the core, a table of the ports (the clock and the synchronous reset, the two buses with their cyc, stb, stall, and ack, the interrupt handshake, pause and halt, the breakpoints, retire and stats) and the two generics, the same for both cores; and four lines at the top of the formal section (a job's tasks are `prove`, `cover`, and `bmc`; `G_FORMAL` turns on a unit's own assertions).
 
-**Resolved**: filed as [#99](https://github.com/MJoergen/nice_cpu/issues/99), labeled `documentation`.
+**Resolved**: Integrating the core has a table of the generics and one of the ports, the clock and the synchronous reset first, and the formal section a primer on the jobs, their tasks, and `G_FORMAL` before its table (#99).
 
 ### 8.3 hdl/README.md: terms before their definition, and two stale sentences
 

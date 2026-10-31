@@ -28,6 +28,8 @@ Reviewed on 2026-10-31: the user documentation on `dev-V1.2` at commit 8d30320 (
 
 The "Upgrade notes" of `V1.2` hold, in this order: `_exit` and the new labels (a hand-joined program must change), `nice_putc` and the rebuilt `.wasm` files (a C program must rebuild), the end of the input (a behavior change), the window (optional), the keys and the cursor (a specification), the link's side port (board authors), and "Zig 0.17.0, as in V1.1" (nothing to do). The opening paragraph does not say that a user who runs programs on the emulator with the runtime's start-up files needs to change nothing, and the pace of one step per microsecond, which changes how fast a program runs, is under "Emulator" only. **Fix:** order the list by who must act: what breaks, then what behaves differently (the input's end, R1–R6 and the flags, the trap report's R9, the pace with `--window`), then what is new and optional (the window, `--link ADDR:PORT`), then the board authors' items; and one sentence at the top for the user who needs to do nothing. The grouping by component below the notes is right.
 
+**Resolved**: The upgrade notes open with the user who needs to do nothing, and run in the order of who must act: what breaks, what behaves differently, with the pace of `--window` among it, what is new and optional, and the two items for a board.
+
 ## 2. README.md
 
 ### 2.1 MICROARCH.md is named before it is introduced

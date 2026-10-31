@@ -35,40 +35,47 @@ keyboard, a cursor, and the pace of a board (#83). Programs that a monitor
 in ROM runs, at `0x8000`, print on the monitor's screen (#87, #88), and
 the end of a host's input no longer silences the keyboard (#89).
 
-**Upgrade notes.**
+**Upgrade notes.** A program that runs on the emulator with the
+runtime's start-up files needs no change, and a C program only a
+rebuild. In the order of who must act:
 
 - `_exit` moves from `lib.nasm` into the start-up files, so a program
   that joins `lib.nasm` without a start-up file of the runtime's, and
   calls `exit`, must define `_exit` itself. New global labels:
   `___putc_vector` and `___console_putc` in `lib.nasm`, and `___exit.sp`
   in the `_mon` start-up files (#87, #88).
+- The C library's `nice_putc` is an import from `env`, so every `.wasm`
+  file that links `libc.a` was rebuilt, and `make -C runtime/libc wasm`
+  rebuilds a program's own.
 - `nice_putc` and `nice_print` write through `___putc_vector`, and may
   change R1–R6 and the flags when another routine is behind it. With the
   console, `_nice_putc` still changes nothing, and `_nice_print` changes
   R1 and the flags, no longer R2. The trap report uses R9, not R3. Each
   character costs a step or two more.
-- The C library's `nice_putc` is an import from `env`, so every `.wasm`
-  file that links `libc.a` was rebuilt, and `make -C runtime/libc wasm`
-  rebuilds a program's own.
 - The end of the input is the line's. After a break on a board's UART, or
   a half-close or disconnect on the emulator's link, a keyboard's bytes
   still reach the program, and over TCP a new connection starts the input
   anew (#89). A board's FIFO should do the same (SYSTEM.md §5).
+- With `--window`, the emulator runs one step per microsecond, so a
+  timer period of P cycles lasts P microseconds, not P/100 as at 100 MHz,
+  and `--speed` sets another rate. Without `--window` it runs as fast as
+  the host can, as before.
 - The window is optional. `zig build -Dwindow`, or `make window` in
   `emulator/`, builds niceemu with it, and fetches SDL 3 and compiles it
   from source, with no system packages. A build without `-Dwindow`
-  fetches nothing and needs only Zig, as before.
-- SYSTEM.md §1 now defines the bytes of the keys, which NiceMonMEGA65's
+  fetches nothing and needs only Zig, as before. Zig 0.17.0, as in V1.1.
+- `--link ADDR:PORT` serves the debug link on another address than
+  `127.0.0.1`, so that a host on another computer can connect (#84).
+- For a board: SYSTEM.md §1 now defines the bytes of the keys, which NiceMonMEGA65's
   keyboards already send, and the cursor at `0xFFFFFF80`–`0xFFFFFF82`,
   numbered as the board's screen registers. In the emulator these words
   stay ordinary memory. The ports of both cores, `wb_dmux`, and the
   devices are as in V1.1.
-- The debug link (`hdl/src/debug_link.vhd`) has a side port for a client
+- For a board: the debug link (`hdl/src/debug_link.vhd`) has a side port for a client
   inside the system (#86), and `rx_resume_i`, a pulse that starts the
   line's input anew after a break, for a board that serves the link over
   TCP (#90). The new inputs have defaults, so a board that does not
   connect them builds as before. The protocol is still version 5.
-- Zig 0.17.0, as in V1.1.
 
 **Specification and documents**
 

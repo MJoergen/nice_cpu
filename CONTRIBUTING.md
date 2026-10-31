@@ -26,13 +26,18 @@ needs them.
     cd doc/intro && make test         # run the example programs of the introduction
     cd doc && make test               # check the section references and links of the documents
 
+`make -C emulator window-test` builds the emulator with its window, SDL
+compiled from source, and tests it on SDL's dummy video driver. It is not
+in `make test`, as its build replaces the emulator that the other tests
+run ([emulator/README.md](emulator/README.md#window)).
+
 Each directory with Python in it also has `make typecheck`, which runs
 `mypy --strict`. The README of each directory lists its other targets,
 such as the long simulations and the formal checks of `hdl/`. Run the
 relevant `make test` after every change. GitHub Actions runs every
-`make test` and `make typecheck`, the document checks, `make programs`
-on both cores, `make lint`, `make formal`, and `make pdfcheck` on each
-push.
+`make test` and `make typecheck`, `make window-test`, the document
+checks, `make programs` on both cores, `make lint`, `make formal`, and
+`make pdfcheck` on each push.
 
 ## What the tests cover
 
@@ -71,8 +76,8 @@ a goal to keep: a change under `hdl/src/pipe_*` that touches the paths of
 both figures in the commit message. `hdl/test/timing_budget.py` holds the
 budget; a miss warns and never fails. A change to the interrupt path of a
 core (WRITE's interrupt entry, RTI, or the request ports) needs
-`make -C hdl sweep CORE=...` on that core, which takes hours. No release
-runs it. VHDL follows [hdl/CODING_STYLE.md](hdl/CODING_STYLE.md), which
+`make -C hdl sweep CORE=...` on that core, with one interrupt per run,
+which takes hours. No release runs it. VHDL follows [hdl/CODING_STYLE.md](hdl/CODING_STYLE.md), which
 `make -C hdl lint` checks.
 
 **Python** uses the standard library only and is `mypy --strict` clean.
@@ -89,7 +94,8 @@ documents and strings in Python are not checked.
 and error behavior. Write plain, short sentences, with the Oxford comma
 ("a, b, and c"). The documents say only what is true now;
 [doc/HISTORY.md](doc/HISTORY.md) says what used to be true.
-[RELEASE_NOTES.md](RELEASE_NOTES.md) gets a section for every new tag.
+[RELEASE_NOTES.md](RELEASE_NOTES.md) gets a section for every new tag,
+with the user-visible changes by component.
 Use American spelling everywhere, in documents, comments, and identifiers
 ("behavior", "color", "analyze", "labeled", "gray").
 

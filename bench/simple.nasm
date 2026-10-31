@@ -76,55 +76,44 @@ _main           MOVE    @--SP, R7
                 MOVE    @--SP, R11
                 MOVE    @--SP, R12
                 MOVE    R1, header
-                ADD     @--SP, 2, PC
-                MOVE    PC, puts
+                CALL    puts
                 MOVE    @CONSOLE, 10
 
                 MOVE    R1, name.rng64
                 MOVE    R2, rng64
                 MOVE    R3, EXPECT_RNG64
-                ADD     @--SP, 2, PC
-                MOVE    PC, run
+                CALL    run
                 MOVE    R1, name.crc32
                 MOVE    R2, crc32
                 MOVE    R3, EXPECT_CRC32
-                ADD     @--SP, 2, PC
-                MOVE    PC, run
+                CALL    run
                 MOVE    R1, name.bst
                 MOVE    R2, bst
                 MOVE    R3, EXPECT_BST
-                ADD     @--SP, 2, PC
-                MOVE    PC, run
+                CALL    run
                 MOVE    R1, name.heapsort
                 MOVE    R2, heapsort
                 MOVE    R3, EXPECT_HEAPSORT
-                ADD     @--SP, 2, PC
-                MOVE    PC, run
+                CALL    run
                 MOVE    R1, name.vm
                 MOVE    R2, vm
                 MOVE    R3, EXPECT_VM
-                ADD     @--SP, 2, PC
-                MOVE    PC, run
-                ADD     @--SP, 2, PC
-                MOVE    PC, unpack      ; outside the timing
+                CALL    run
+                CALL    unpack          ; outside the timing
                 MOVE    R1, name.strings
                 MOVE    R2, strings
                 MOVE    R3, EXPECT_STRINGS
-                ADD     @--SP, 2, PC
-                MOVE    PC, run
+                CALL    run
 
                 MOVE    R1, name.total
-                ADD     @--SP, 2, PC
-                MOVE    PC, puts
+                CALL    puts
                 MOVE    R1, @total.ins_lo
                 MOVE    R2, @total.ins_hi
-                ADD     @--SP, 2, PC
-                MOVE    PC, print_u64
+                CALL    print_u64
                 MOVE    @CONSOLE, 32
                 MOVE    R1, @total.cyc_lo
                 MOVE    R2, @total.cyc_hi
-                ADD     @--SP, 2, PC
-                MOVE    PC, print_u64
+                CALL    print_u64
                 MOVE    @CONSOLE, 10
 
                 MOVE    R1, @failures
@@ -134,7 +123,7 @@ _main           MOVE    @--SP, R7
                 MOVE    R9, @SP++
                 MOVE    R8, @SP++
                 MOVE    R7, @SP++
-                MOVE    PC, @SP++
+                RET
 
 ; run: R1 = the name, R2 = the phase, R3 = the expected result. Reads the
 ; counters, calls the phase, and prints the row. The instructions counted
@@ -147,8 +136,7 @@ run             MOVE    @run.name, R1
                 MOVE    @run.cyc_hi, @CYC_HI
                 MOVE    @run.ins_lo, @INS_LO
                 MOVE    @run.ins_hi, @INS_HI
-                ADD     @--SP, 1, PC
-                MOVE    PC, R2
+                CALL    R2
                 MOVE    R10, @INS_LO
                 MOVE    R11, @INS_HI
                 MOVE    R8, @CYC_LO
@@ -163,36 +151,31 @@ run             MOVE    @run.name, R1
                 ADD[M]  @total.cyc_lo, @total.cyc_lo, R8
                 ADD[C]  @total.cyc_hi, @total.cyc_hi, R9
                 MOVE    R1, @run.name
-                ADD     @--SP, 2, PC
-                MOVE    PC, puts
+                CALL    puts
                 MOVE    R1, R10
                 MOVE    R2, R11
-                ADD     @--SP, 2, PC
-                MOVE    PC, print_u64
+                CALL    print_u64
                 MOVE    @CONSOLE, 32
                 MOVE    R1, R8
                 MOVE    R2, R9
-                ADD     @--SP, 2, PC
-                MOVE    PC, print_u64
+                CALL    print_u64
                 MOVE    @CONSOLE, 32
                 MOVE    @CONSOLE, 32
                 MOVE    R1, R7
-                ADD     @--SP, 2, PC
-                MOVE    PC, print_hex
+                CALL    print_hex
                 MOVE    R1, str.ok
                 SUB[M]  R0, R7, @run.expect
         ?!Z     MOVE    R1, str.fail
         ?!Z     ADD     @failures, @failures, 1
-                ADD     @--SP, 2, PC
-                MOVE    PC, puts
+                CALL    puts
                 MOVE    @CONSOLE, 10
-                MOVE    PC, @SP++
+                RET
 
 ; puts: prints the string at R1, one character per word, up to its 0.
 ; Uses R1 and R2.
 
 puts            MOVE[M] R2, @R1++
-        ?Z      MOVE    PC, @SP++
+        ?Z      RET
                 MOVE    @CONSOLE, R2
                 MOVE    PC, puts
 
@@ -233,7 +216,7 @@ ph.loop         ROL     R1, R1, 4
                 MOVE    @CONSOLE, R2
                 DEC[M]  R3, R3
         ?!Z     ADD     PC, PC, ph.loop-ph.b1
-ph.b1           MOVE    PC, @SP++
+ph.b1           RET
 
 ; ---------------------------------------------------------------------------
 ; rng64: xorshift64*, with the state in R2:R1. Each value takes three
@@ -366,7 +349,7 @@ rng.arr
                 DEC[M]  R8, R8
         ?!Z     ADD     PC, PC, rng.arr-rng.b2
 rng.b2          XOR     R1, R1, R2      ; the two words of the state
-                MOVE    PC, @SP++
+                RET
 
 ; ---------------------------------------------------------------------------
 ; crc32: the table first, with the bit shifted out going to C and the
@@ -421,7 +404,7 @@ crc.sum         MOVE    R2, @R3++
                 DEC[M]  R5, R5
         ?!Z     ADD     PC, PC, crc.sum-crc.b2
 crc.b2          NOT     R1, R1
-                MOVE    PC, @SP++
+                RET
 
 ; ---------------------------------------------------------------------------
 ; bst: a node is four words: key, count, left, right. A null pointer is 0.
@@ -458,10 +441,9 @@ bst.b1
                 MOVE    R2, 1           ; the depth
                 MOVE    R3, FNV_BASIS   ; the hash
                 MOVE[M] R1, @root
-        ?!Z     ADD     @--SP, 2, PC
-        ?!Z     MOVE    PC, bst.walkf
+        ?!Z     CALL    bst.walkf
                 MOVE    R1, R3
-                MOVE    PC, @SP++
+                RET
 
 bst.dup         ADD     @1[R3], @1[R3], 1  ; the key is there: count it
                 MOVE    PC, bst.next
@@ -475,8 +457,7 @@ bst.walkf
                 MOVE    @--SP, R2
                 ADD     R2, R2, 1
                 MOVE[M] R1, @2[R1]      ; left
-        ?!Z     ADD     @--SP, 2, PC
-        ?!Z     MOVE    PC, bst.walkf
+        ?!Z     CALL    bst.walkf
                 MOVE    R2, @SP++
                 MOVE    R1, @SP++
                 XOR     @MPU_A, R3, @R1  ; h ^ key
@@ -488,7 +469,7 @@ bst.walkf
                 ADD     R2, R2, 1
                 MOVE[M] R1, @3[R1]      ; right
         ?!Z     MOVE    PC, bst.walkf
-                MOVE    PC, @SP++
+                RET
 
 ; ---------------------------------------------------------------------------
 ; heapsort: the array is addressed as @arr[Rx] with the index in Rx. The
@@ -500,8 +481,7 @@ heapsort
                 MOVE    R8, 511         ; i = n / 2 - 1
 hs.build
                 MOVE    R1, R8
-                ADD     @--SP, 2, PC
-                MOVE    PC, hs.sift
+                CALL    hs.sift
                 DEC[M]  R8, R8
         ?!C     ADD     PC, PC, hs.build-hs.b1  ; until i was 0
 
@@ -511,8 +491,7 @@ hs.ext          MOVE    R3, @arr
                 MOVE    @arr, @arr[R2]
                 MOVE    @arr[R2], R3
                 MOVE    R1, 0
-                ADD     @--SP, 2, PC
-                MOVE    PC, hs.sift     ; sift(0, end)
+                CALL    hs.sift         ; sift(0, end)
                 DEC[M]  R2, R2
         ?!Z     ADD     PC, PC, hs.ext-hs.b2
 
@@ -532,9 +511,9 @@ hs.chk          MOVE    R3, @R2++
                 DEC[M]  R6, R6
         ?!Z     ADD     PC, PC, hs.chk-hs.b3
 hs.b3           MOVE    R1, R5
-hs.ret          MOVE    PC, @SP++
+hs.ret          RET
 hs.bad          MOVE    R1, 0
-                MOVE    PC, @SP++
+                RET
 
 ; hs.sift: R1 = i, R2 = n. Uses R1 and R3-R7, and keeps R2. The value
 ; a[i] is loaded once, in R6: after a swap it is the value at the new i.
@@ -593,11 +572,11 @@ vm.top          MOVE    R1, @vm.prog[R3]
                 MOVE    PC, @vm.disp[R1]
 vm.halt         MOVE    R1, @1[SP]
                 ADD     SP, SP, 20
-                MOVE    PC, @SP++
+                RET
 vm.default
                 MOVE    R1, 0
                 ADD     SP, SP, 20
-                MOVE    PC, @SP++
+                RET
 vm.push         ADD     R5, SP, R2
                 MOVE    @4[R5], @vm.prog[R3]
                 ADD     R3, R3, 1
@@ -676,7 +655,7 @@ up.l            MOVE    R4, @R1++
                 MOVE    @R2++, R4
                 DEC[M]  R3, R3
         ?!Z     ADD     PC, PC, up.l-up.b1
-up.b1           MOVE    PC, @SP++
+up.b1           RET
 
 ; phase_strings.
 strings         MOVE    @--SP, R7
@@ -727,8 +706,7 @@ so.k            SUB[M]  R0, R10, 0
         ?Z      MOVE    PC, so.kd
                 MOVE    R1, @strs-1[R10]
                 MOVE    R2, R9
-                ADD     @--SP, 2, PC
-                MOVE    PC, _strcmp
+                CALL    _strcmp
                 SUB[M]  R0, R1, 0
         ?V      XOR     R14, R14, SIGN_N
         ?N      MOVE    PC, so.kd
@@ -749,11 +727,9 @@ sj.j            SUB[M]  R0, R8, STR_COUNT
         ?!N     MOVE    PC, sj.done
                 MOVE    R1, R7
                 MOVE    R2, @strs[R8]
-                ADD     @--SP, 2, PC
-                MOVE    PC, _strcpy
+                CALL    _strcpy
                 MOVE    R1, R7
-                ADD     @--SP, 2, PC
-                MOVE    PC, _strlen
+                CALL    _strlen
                 ADD     R11, R11, R1
                 ADD     R7, R7, R1
                 ADD     R8, R8, 1
@@ -764,8 +740,7 @@ sj.done
                 MOVE    R7, joined
 ss.l            MOVE    R1, R7
                 MOVE    R2, str.ab
-                ADD     @--SP, 2, PC
-                MOVE    PC, _strstr
+                CALL    _strstr
                 MOVE    R7, R1
                 SUB[M]  R0, R7, 0
         ?Z      MOVE    PC, ss.done
@@ -794,7 +769,7 @@ sh.done         MOVE    @MPU_A, R11
                 MOVE    R9, @SP++
                 MOVE    R8, @SP++
                 MOVE    R7, @SP++
-                MOVE    PC, @SP++
+                RET
 
 str.ab          .DAT    97, 98, 0
 
@@ -806,7 +781,7 @@ sl.l            SUB[M]  R0, @R2, 0
                 ADD     R2, R2, 1
                 MOVE    PC, sl.l
 sl.d            SUB     R1, R2, R1
-                MOVE    PC, @SP++
+                RET
 
 _strcmp         MOVE    R3, @R1
                 SUB[M]  R0, R3, 0
@@ -817,7 +792,7 @@ _strcmp         MOVE    R3, @R1
                 ADD     R2, R2, 1
                 MOVE    PC, _strcmp
 sc.d            SUB     R1, @R1, @R2
-                MOVE    PC, @SP++
+                RET
 
 _strcpy         MOVE    R3, R1
 scp.l           MOVE    R4, @R2
@@ -826,7 +801,7 @@ scp.l           MOVE    R4, @R2
                 ADD     R2, R2, 1
                 SUB[M]  R0, R4, 0
         ?!Z     ADD     PC, PC, scp.l-scp.b1
-scp.b1          MOVE    PC, @SP++
+scp.b1          RET
 
 _strncmp
                 SUB[M]  R0, R3, 0
@@ -841,9 +816,9 @@ _strncmp
                 ADD     R2, R2, 1
                 MOVE    PC, _strncmp
 sn.d            SUB     R1, @R1, @R2
-                MOVE    PC, @SP++
+                RET
 sn.z            MOVE    R1, 0
-                MOVE    PC, @SP++
+                RET
 
 _strstr         MOVE    @--SP, R7
                 MOVE    @--SP, R8
@@ -851,16 +826,14 @@ _strstr         MOVE    @--SP, R7
                 MOVE    R7, R1
                 MOVE    R8, R2
                 MOVE    R1, R8
-                ADD     @--SP, 2, PC
-                MOVE    PC, _strlen
+                CALL    _strlen
                 MOVE    R9, R1
 st.l            SUB[M]  R0, @R7, 0
         ?Z      MOVE    PC, st.e
                 MOVE    R1, R7
                 MOVE    R2, R8
                 MOVE    R3, R9
-                ADD     @--SP, 2, PC
-                MOVE    PC, _strncmp
+                CALL    _strncmp
                 SUB[M]  R0, R1, 0
         ?Z      MOVE    PC, st.f
                 ADD     R7, R7, 1
@@ -873,7 +846,7 @@ st.f            MOVE    R1, R7
 st.r            MOVE    R9, @SP++
                 MOVE    R8, @SP++
                 MOVE    R7, @SP++
-                MOVE    PC, @SP++
+                RET
 
 
 ; ---------------------------------------------------------------------------

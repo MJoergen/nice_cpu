@@ -15,9 +15,9 @@
 ;   skipped stays a MOVE PC, label, which costs nothing when skipped. A
 ;   loop is laid out so that its hot jump goes back: a block that is
 ;   mostly reached by a jump is placed before the jump (str.diff).
-; - A conditional return is a MOVE PC, label to a MOVE PC, @SP++ that
-;   others share (hs.ret). Skipped, it costs nothing, where a conditional
-;   MOVE PC, @SP++ costs the two cycles of its read and its jump.
+; - A conditional return is a MOVE PC, label to a RET that others share
+;   (hs.ret). Skipped, it costs nothing, where a conditional RET costs
+;   the two cycles of its read and its jump.
 ; - The data layout is the natural one for a word-addressed machine. The
 ;   byte buffer stays packed, four bytes to a word, as in linear memory.
 ;   The strings have one character per word, as a C char does in ISA.md
@@ -80,53 +80,43 @@ _main           MOVE    @--SP, R7
                 MOVE    @--SP, R11
                 MOVE    @--SP, R12
                 MOVE    R1, header
-                ADD     @--SP, 2, PC
-                MOVE    PC, puts
+                CALL    puts
                 MOVE    @CONSOLE, 10
 
                 MOVE    R1, name.rng64
                 MOVE    R2, rng64
                 MOVE    R3, EXPECT_RNG64
-                ADD     @--SP, 2, PC
-                MOVE    PC, run
+                CALL    run
                 MOVE    R1, name.crc32
                 MOVE    R2, crc32
                 MOVE    R3, EXPECT_CRC32
-                ADD     @--SP, 2, PC
-                MOVE    PC, run
+                CALL    run
                 MOVE    R1, name.bst
                 MOVE    R2, bst
                 MOVE    R3, EXPECT_BST
-                ADD     @--SP, 2, PC
-                MOVE    PC, run
+                CALL    run
                 MOVE    R1, name.heapsort
                 MOVE    R2, heapsort
                 MOVE    R3, EXPECT_HEAPSORT
-                ADD     @--SP, 2, PC
-                MOVE    PC, run
+                CALL    run
                 MOVE    R1, name.vm
                 MOVE    R2, vm
                 MOVE    R3, EXPECT_VM
-                ADD     @--SP, 2, PC
-                MOVE    PC, run
+                CALL    run
                 MOVE    R1, name.strings
                 MOVE    R2, strings
                 MOVE    R3, EXPECT_STRINGS
-                ADD     @--SP, 2, PC
-                MOVE    PC, run
+                CALL    run
 
                 MOVE    R1, name.total
-                ADD     @--SP, 2, PC
-                MOVE    PC, puts
+                CALL    puts
                 MOVE    R1, @total.ins_lo
                 MOVE    R2, @total.ins_hi
-                ADD     @--SP, 2, PC
-                MOVE    PC, print_u64
+                CALL    print_u64
                 MOVE    @CONSOLE, 32
                 MOVE    R1, @total.cyc_lo
                 MOVE    R2, @total.cyc_hi
-                ADD     @--SP, 2, PC
-                MOVE    PC, print_u64
+                CALL    print_u64
                 MOVE    @CONSOLE, 10
 
                 MOVE    R1, @failures
@@ -136,7 +126,7 @@ _main           MOVE    @--SP, R7
                 MOVE    R9, @SP++
                 MOVE    R8, @SP++
                 MOVE    R7, @SP++
-                MOVE    PC, @SP++
+                RET
 
 ; run: R1 = the name, R2 = the phase, R3 = the expected result. Reads the
 ; counters, calls the phase, and prints the row. The instructions counted
@@ -149,8 +139,7 @@ run             MOVE    @run.name, R1
                 MOVE    @run.cyc_hi, @CYC_HI
                 MOVE    @run.ins_lo, @INS_LO
                 MOVE    @run.ins_hi, @INS_HI
-                ADD     @--SP, 1, PC
-                MOVE    PC, R2
+                CALL    R2
                 MOVE    R10, @INS_LO
                 MOVE    R11, @INS_HI
                 MOVE    R8, @CYC_LO
@@ -165,36 +154,31 @@ run             MOVE    @run.name, R1
                 ADD[M]  @total.cyc_lo, @total.cyc_lo, R8
                 ADD[C]  @total.cyc_hi, @total.cyc_hi, R9
                 MOVE    R1, @run.name
-                ADD     @--SP, 2, PC
-                MOVE    PC, puts
+                CALL    puts
                 MOVE    R1, R10
                 MOVE    R2, R11
-                ADD     @--SP, 2, PC
-                MOVE    PC, print_u64
+                CALL    print_u64
                 MOVE    @CONSOLE, 32
                 MOVE    R1, R8
                 MOVE    R2, R9
-                ADD     @--SP, 2, PC
-                MOVE    PC, print_u64
+                CALL    print_u64
                 MOVE    @CONSOLE, 32
                 MOVE    @CONSOLE, 32
                 MOVE    R1, R7
-                ADD     @--SP, 2, PC
-                MOVE    PC, print_hex
+                CALL    print_hex
                 MOVE    R1, str.ok
                 SUB[M]  R0, R7, @run.expect
         ?!Z     MOVE    R1, str.fail
         ?!Z     ADD     @failures, @failures, 1
-                ADD     @--SP, 2, PC
-                MOVE    PC, puts
+                CALL    puts
                 MOVE    @CONSOLE, 10
-                MOVE    PC, @SP++
+                RET
 
 ; puts: prints the string at R1, one character per word, up to its 0.
 ; Uses R1 and R2.
 
 puts            MOVE[M] R2, @R1++
-        ?Z      MOVE    PC, @SP++
+        ?Z      RET
                 MOVE    @CONSOLE, R2
                 MOVE    PC, puts
 
@@ -235,7 +219,7 @@ ph.loop         ROL     R1, R1, 4
                 MOVE    @CONSOLE, R2
                 DEC[M]  R3, R3
         ?!Z     ADD     PC, PC, ph.loop-ph.b1
-ph.b1           MOVE    PC, @SP++
+ph.b1           RET
 
 ; ---------------------------------------------------------------------------
 ; rng64: xorshift64*, with the state in R2:R1. Each value takes three
@@ -368,7 +352,7 @@ rng.arr
                 DEC[M]  R8, R8
         ?!Z     ADD     PC, PC, rng.arr-rng.b2
 rng.b2          XOR     R1, R1, R2      ; the two words of the state
-                MOVE    PC, @SP++
+                RET
 
 ; ---------------------------------------------------------------------------
 ; crc32: the table first, with the bit shifted out going to C and the
@@ -423,7 +407,7 @@ crc.sum         MOVE    R2, @R3++
                 DEC[M]  R5, R5
         ?!Z     ADD     PC, PC, crc.sum-crc.b2
 crc.b2          NOT     R1, R1
-                MOVE    PC, @SP++
+                RET
 
 ; ---------------------------------------------------------------------------
 ; bst: a node is four words: key, count, left, right. A null pointer is 0.
@@ -460,10 +444,9 @@ bst.b1
                 MOVE    R2, 1           ; the depth
                 MOVE    R3, FNV_BASIS   ; the hash
                 MOVE[M] R1, @root
-        ?!Z     ADD     @--SP, 2, PC
-        ?!Z     MOVE    PC, bst.walkf
+        ?!Z     CALL    bst.walkf
                 MOVE    R1, R3
-                MOVE    PC, @SP++
+                RET
 
 bst.dup         ADD     @1[R3], @1[R3], 1  ; the key is there: count it
                 MOVE    PC, bst.next
@@ -477,8 +460,7 @@ bst.walkf
                 MOVE    @--SP, R2
                 ADD     R2, R2, 1
                 MOVE[M] R1, @2[R1]      ; left
-        ?!Z     ADD     @--SP, 2, PC
-        ?!Z     MOVE    PC, bst.walkf
+        ?!Z     CALL    bst.walkf
                 MOVE    R2, @SP++
                 MOVE    R1, @SP++
                 XOR     @MPU_A, R3, @R1  ; h ^ key
@@ -490,7 +472,7 @@ bst.walkf
                 ADD     R2, R2, 1
                 MOVE[M] R1, @3[R1]      ; right
         ?!Z     MOVE    PC, bst.walkf
-                MOVE    PC, @SP++
+                RET
 
 ; ---------------------------------------------------------------------------
 ; heapsort: the array is addressed as @arr[Rx] with the index in Rx. The
@@ -502,8 +484,7 @@ heapsort
                 MOVE    R8, 511         ; i = n / 2 - 1
 hs.build
                 MOVE    R1, R8
-                ADD     @--SP, 2, PC
-                MOVE    PC, hs.sift
+                CALL    hs.sift
                 DEC[M]  R8, R8
         ?!C     ADD     PC, PC, hs.build-hs.b1  ; until i was 0
 
@@ -513,8 +494,7 @@ hs.ext          MOVE    R3, @arr
                 MOVE    @arr, @arr[R2]
                 MOVE    @arr[R2], R3
                 MOVE    R1, 0
-                ADD     @--SP, 2, PC
-                MOVE    PC, hs.sift     ; sift(0, end)
+                CALL    hs.sift         ; sift(0, end)
                 DEC[M]  R2, R2
         ?!Z     ADD     PC, PC, hs.ext-hs.b2
 
@@ -534,9 +514,9 @@ hs.chk          MOVE    R3, @R2++
                 DEC[M]  R6, R6
         ?!Z     ADD     PC, PC, hs.chk-hs.b3
 hs.b3           MOVE    R1, R5
-hs.ret          MOVE    PC, @SP++
+hs.ret          RET
 hs.bad          MOVE    R1, 0
-                MOVE    PC, @SP++
+                RET
 
 ; hs.sift: R1 = i, R2 = n. Uses R1 and R3-R7, and keeps R2. The value
 ; a[i] is loaded once, in R6: after a swap it is the value at the new i.
@@ -594,7 +574,7 @@ vm              MOVE    R2, vm.prog
                 MOVE    R1, @R2++
                 MOVE    PC, @vm.disp[R1]
 vm.halt         MOVE    R1, @vm.cells+1
-                MOVE    PC, @SP++
+                RET
 vm.push         MOVE    @--R3, @R2++
                 MOVE    R1, @R2++
                 MOVE    PC, @vm.disp[R1]
@@ -745,7 +725,7 @@ str.b8          MOVE    @MPU_A, R7
                 MOVE    @MPU_B, 65599
                 ADD     R1, R5, @UMUL_LO  ; h + total * 65599
                 ADD     R1, R1, R6      ; + matches
-                MOVE    PC, @SP++
+                RET
 
 ; ---------------------------------------------------------------------------
 ; Data.

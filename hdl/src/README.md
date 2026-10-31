@@ -18,5 +18,5 @@ The synthesizable VHDL: the two cores, their shared packages, and the devices. [
 | [timer.vhd](timer.vhd) | The timer of SYSTEM.md §4, a Wishbone slave with an interrupt request port. |
 | [fetch_stats.vhd](fetch_stats.vhd) | The fetch statistics of MICROARCH.md §8.1, counters of FETCH and DECODE of the pipelined core, a Wishbone slave. |
 | [wb_dmux.vhd](wb_dmux.vhd) | The data bus decoder, which keeps the ACKs of several slaves in order. |
-| [debug_link.vhd](debug_link.vhd) | The byte-stream part of the debug link of DEBUG.md: packets, the debug registers, notices, and a Wishbone master. |
+| [debug_link.vhd](debug_link.vhd) | The byte-stream part of the debug link of DEBUG.md: packets, the debug registers, notices, and a Wishbone master. It returns the core's registers live while the core runs, has a side port for a client inside the system, and `rx_resume_i`, which starts the line's input anew after a break. |
 | [trace_pkg.vhd](trace_pkg.vhd) | `t_retire`, the record in which the core reports each step to the trace writer, and `t_halt`, the type of the cores' `halt_reason_o`. |

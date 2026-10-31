@@ -35,4 +35,4 @@ The formal checks: the checkers of the ports, and a wrapper and a SymbiYosys job
 | [formal_mpu.vhd](formal_mpu.vhd) | The math unit with checks of its bus port, whose other properties are in `src/mpu.vhd`. |
 | [mpu.sby](mpu.sby) | The SymbiYosys job for it. |
 | [formal_debug_link.vhd](formal_debug_link.vhd) | The debug link with checks of its ports, whose other properties are in `src/debug_link.vhd`. |
-| [debug_link.sby](debug_link.sby) | The SymbiYosys job for it. |
+| [debug_link.sby](debug_link.sby) | The SymbiYosys job for it: the proofs with a free side client, and the covers without one (`cover`) and with one (`cover_side`). |

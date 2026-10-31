@@ -16,6 +16,8 @@ Reviewed on 2026-10-31: the user documentation on `dev-V1.2` at commit 8d30320 (
 
 **Twelve small fixes are worth making before the tag**, each a sentence or a few lines: §1.1, §2.1, §2.2, §3.1, §3.3, §3.5, §3.6, §4.1, §4.2, §5.3, §6.1, §6.5, and the two stale sentences of §8.3. The restructurings (§3.4, §5.1, §5.5, §6.2, §6.3, §6.4, §7.1, §8.1, §8.2, §8.4) are issues for after the tag, labeled `documentation`, unless the release waits for them. §9 lists what is good in each document, so that a restructuring keeps it.
 
+**Every small finding is closed** on `dev-V1.2`, with a commit for each finding or pair of findings and a **Resolved** paragraph under each: the row and the checklist step (§1.1), the upgrade notes in the order of who must act (§1.2), the README's second paragraph and a "Getting started" heading (§2), the M bit (§3.1), the console as three cases, the screen's layout, and what a data read is (§3.2, §3.3, §3.5), the monitor and the underscore in TOOLCHAIN.md (§3.6, §3.7), four slide fixes and a slide on the window (§4), the emulator's exit statuses and symbols file (§5.3, §5.4), WASM.md's rule on several results (§6.1), the board's monitor and the R14 row (§6.5, §6.6), the Dhrystone figures (§7.2), hdl/README.md's terms and stale sentences (§8.3), and how to try the debug link (§8.4). The restructurings are the issues [#94](https://github.com/MJoergen/nice_cpu/issues/94) to [#100](https://github.com/MJoergen/nice_cpu/issues/100), one per document, with no milestone, as none exists past `V1.2`.
+
 ## 1. The release
 
 ### 1.1 The table of board tags has no row for `V1.2`, and no step adds one
@@ -74,6 +76,8 @@ The order is The emulator (its features, Building the emulator, Worked example, 
 
 §1 is "Console, screen, and read counter", and its paragraphs are Screen, Console, Window, Cursor, Keyboard, Pacing, and Read counter. The contents list shows none of the last five, and the table of the keys' bytes is what a program under the window needs most. **Fix:** sub-headings §1.1 to §1.7 in that order, and the contents list. The anchor of §1, which README.md and the release notes link, stays.
 
+**Resolved**: filed as [#94](https://github.com/MJoergen/nice_cpu/issues/94), labeled `documentation`.
+
 ### 3.5 SYSTEM.md: "a data read" in every device table, with no word on why
 
 The tables of §2 to §4 head a column "A data read returns". The term is ISA.md §8.2's, and the reason for it is ISA.md §8.3: an instruction fetch from the I/O range reads 0 and reaches no device. SYSTEM.md's introduction says that "ISA §8.2" refers to ISA.md, and nothing more; the first word on data reads is the Read counter paragraph at the end of §1. The memory map's lead, "The I/O range, and what the systems put in it", also heads a table whose first row, the screen, is outside the I/O range. **Fix:** one sentence in the introduction: "A data read is an operand read. An instruction fetch from this range reads 0 and reaches no device (ISA.md §8.3), so the tables say what a data read returns." And "The I/O range, the screen, and what the systems put in them."
@@ -125,9 +129,13 @@ Line 914: "The pipelined core meets a 10 ns clock out of context." That is Vivad
 
 "Build and test" (lines 10–67) describes `make test` in detail before "Usage" (69). Lines 37–47 are one sentence of eleven lines on `test/link.py`, which uses "the debug link", "bit 5", "the stop register", and "the breakpoints" with DEBUG.md's section numbers alone, 250 lines before the Debug link section (302). "Probe" (29) and "cputest" (52) are used before they are explained (61). **Fix:** keep the three build lines at the top, move the test narrative to a "Tests" section at the end, and define "probe" at its first use.
 
+**Resolved**: filed as [#95](https://github.com/MJoergen/nice_cpu/issues/95), labeled `documentation`.
+
 ### 5.2 emulator/README.md: Usage has no recipe and no link to the README's worked examples
 
 Usage (69) opens with the synopsis, the meaning of a step, and a run of `count.bin`. Nothing shows assemble, run, give input, trace, and open the window in sequence, and the file never links README.md's two worked examples, which do exactly that. **Fix:** a four-line recipe before the option table, or one sentence that links the worked examples.
+
+**Resolved**: filed as [#95](https://github.com/MJoergen/nice_cpu/issues/95), labeled `documentation`.
 
 ### 5.3 emulator/README.md: the exit statuses are one paragraph with three other remarks
 
@@ -141,11 +149,13 @@ Lines 124–132: the statuses 0, 2, 3, 4, 1, and 141 in one sentence, with the r
 - The memory map's prose (223–291) is one dense paragraph per device. Sub-headings (Console, Math unit, Counters, Timer) would let a reader find the timer.
 - "The pace" (150–156) is never defined. "The rate, in steps per second" at the first use.
 
-**Resolved**: in part: the `--symbols` cell is one sentence and a "Symbols file" paragraph under the table has the format and the rules, and the Window section names the rate instead of "the pace". The sub-headings of the memory map's prose go with the restructuring of the file (§5.1).
+**Resolved**: in part: the `--symbols` cell is one sentence and a "Symbols file" paragraph under the table has the format and the rules, and the Window section names the rate instead of "the pace". The sub-headings of the memory map's prose go with the restructuring of the file (§5.1, #95).
 
 ### 5.5 assembler/README.md: the tests come first, and the details are unordered
 
 "Test" (line 9) is the first section, before Usage (24), and "Tests" (176) at the end is a second one. "Details beyond ISA.md" (135–174) is 17 bullets in no order, with the separators and the comments beside `.BLK 0xFFFFFFFF` and the byte order mark. The disassembler section's sentence at 113–117 ("is only a comment: on a line of its own at its address if a word is there, and in the comment of a constant, which stays a number") takes several readings. **Fix:** Usage first and one Tests section at the end; the details grouped into syntax, directives, and edge cases; the sentence split in two, with an example line of output.
+
+**Resolved**: filed as [#96](https://github.com/MJoergen/nice_cpu/issues/96), labeled `documentation`.
 
 ## 6. The translator and the runtime
 
@@ -159,13 +169,19 @@ Lines 124–132: the statuses 0, 2, 3, 4, 1, and 141 in one sentence, with the r
 
 The file opens with the synopsis of `nicewasm.py` (lines 15–37) and then one paragraph of about forty lines on the options of `nicebuild.py` (43–86). The two-line recipe a newcomer wants, `nicebuild.py -o prog.bin prog.c` and then `niceemu prog.bin`, is in TOOLCHAIN.md and README.md and not here; how a program prints, reads, and exits is one sentence at line 123 and the runtime README. The manual clang, Zig, and Rust recipes (88–178) come next, and only line 49 says, obliquely, that `nicebuild.py` runs them ("The defaults are the options of the recipes below"). Nothing in this README or the runtime's says that C built this way has 8-bit `char` and wasm's byte memory, while ABI.md's one-word `char` is for assembly and a future native compiler; TOOLCHAIN.md says it in one clause. **Fix:** a "Quick start" after the introduction: build and run a C program with `printf`, the Zig and Rust variants, and what you get (the console for `printf` and `getchar`, exit by returning from `main` or calling `exit`, status 2 on a trap, 8-bit `char`); the options as a table; the recipes headed "What `nicebuild.py` runs", for reference.
 
+**Resolved**: filed as [#97](https://github.com/MJoergen/nice_cpu/issues/97), labeled `documentation`.
+
 ### 6.3 translator/README.md is two documents
 
 Usage, Target, Supported features, and Library modules (lines 1–366) are for users. "How functions are translated" and "Register allocation" (367–822, 455 lines) are for whoever changes `nicewasm.py`, and "Test" (823) comes after them. The "Supported features" list also carries design notes, such as how a multiplication by a constant is split (251–266) and the internal labels of the memory instructions (272–279). **Fix:** move the two internal sections to `translator/DESIGN.md`, or after Test under a heading that says whom they are for, with a contents list at the top; move the design notes out of the feature list.
 
+**Resolved**: filed as [#97](https://github.com/MJoergen/nice_cpu/issues/97), labeled `documentation`.
+
 ### 6.4 runtime/README.md: the order, and two dense paragraphs
 
 The sections are Files (7), Routines (46), Device routines (113), Floating point (158), C library (193), Zig and Rust (289), and Test (327). A C user's section is the fifth, and the Routines tables list `__mul64` and `__clz` before the reader knows who calls them. "The trap report" (111) is one paragraph of 1274 characters: what it prints, who installs it, the join order, the registers it uses, and the symbols options. The bullet on what the C library lacks (232) is 96 words. **Fix:** a "which section" paragraph at the top (C: C library; Zig or Rust: Zig and Rust; assembly: Files, Routines, Device routines); the trap report as three bullets, the first "`nicebuild.py` installs it unless given `--no-trap-report`"; the C library's limits as a list.
+
+**Resolved**: filed as [#97](https://github.com/MJoergen/nice_cpu/issues/97), labeled `documentation`.
 
 ### 6.5 runtime/README.md and ABI.md disagree on whether NiceMonMEGA65's monitor exists
 
@@ -179,13 +195,15 @@ runtime/README.md, line 33: "a monitor in ROM, such as the one of NiceMonMEGA65,
 - The order of the joined files is stated three ways: TOOLCHAIN.md's diagram, runtime/README.md (25–28), and ABI.md. They agree. One numbered list in runtime/README.md, and links to it from the other two.
 - WASM.md is the contract for a translator, and says so only by its tone; a user who follows a README's link finds normative rules. One sentence at the top: "This is the mapping that `nicewasm` implements. To build programs, read the translator README."
 
-**Resolved**: in part: ABI.md's table has one row for R14, and WASM.md says at the top what it is and where a user should read instead (§6.1). The join order stated once is part of the restructuring of the runtime README (§6.4).
+**Resolved**: in part: ABI.md's table has one row for R14, and WASM.md says at the top what it is and where a user should read instead (§6.1). The join order stated once is part of the restructuring of the runtime README (§6.4, #97).
 
 ## 7. The benchmark
 
 ### 7.1 bench/README.md: results pinned to three commits, and the model's rules in one sentence
 
 The tables of [bench/README.md](../../bench/README.md) name commits 3064119 (line 136), 1a41b0c (149), and 98d2bed (160, 202, 232, 387, 475). A reader cannot tell which figures are current without the dates. "The cycle estimate" (267) states the model's rules in one sentence of about ten lines (275–285), which uses FETCH, DECODE, SEQUENCER, PREPARE, WRITE, "skid register", and "micro-operation" with MICROARCH.md linked only at line 21. `make compare` prints, by line 23, "the estimate beside the pipelined core's cycles" and, by line 372, "the percentages of the table's last column, not the cycles". **Fix:** one current table per program, with the commit named once and the older figures in HISTORY.md; the rules as a list, with a pointer to MICROARCH.md's stages at the first stage name; the same sentence on what `make compare` prints in both places.
+
+**Resolved**: filed as [#98](https://github.com/MJoergen/nice_cpu/issues/98), labeled `documentation`.
 
 ### 7.2 Dhrystone: 1757 and the Arm figure
 
@@ -199,9 +217,13 @@ Line 457: "10⁶ / (1757 × cycles per run)" with no word that 1757 Dhrystones p
 
 The order of [hdl/README.md](../../hdl/README.md) is Folder contents (30), Running the tests (44–422), The formal checks (423–797), The multi-cycle core (798), The pipelined core (982) with "Integrating the core" inside it (1089–1112), then the data bus decoder, the debug link, and the devices. An integrator reads about 750 lines on tests and proofs before the core and its interface. "Running the tests" mixes the quick start, `make lint`, `make timing` with its slack table (91–155), and a catalog of every testbench and test program (157–421), in which the `tb_debug_link` paragraph (189–218) is one sentence of about 25 clauses. "The formal checks" has no summary of its jobs. **Fix:** Folder contents; a short "Running the tests" with a table of the targets and their costs; Integrating the core, with the table of §8.2; the cores; the devices; the debug link; then "What the tests check" and "The formal checks", the latter with a table of the jobs (unit, what it proves, solver, time) before the paragraphs.
 
+**Resolved**: filed as [#99](https://github.com/MJoergen/nice_cpu/issues/99), labeled `documentation`.
+
 ### 8.2 hdl/README.md: no table of the core's ports and generics, and the clock is not named
 
 The ports are named piecemeal through the file (`dbus_ack_i`, `retire_o`, `stats_o`, `pause_i`, `paused_o`, `halted_o`, `brk_addr_i`, `nmi_valid_i`, and the rest); `clk_i` is not in the file, and `rst_i` appears only in the timing text (106) and the link (702). The generics `G_FORMAL` and `G_BREAKS` are named in passing, `G_FORMAL` at 478 before its explanation at 491, and `prove`, `cover`, and `bmc` before any word on what a task is. An integrator opens `src/pipeline.vhd` for the entity. **Fix:** under Integrating the core, a table of the ports (the clock and the synchronous reset, the two buses with their cyc, stb, stall, and ack, the interrupt handshake, pause and halt, the breakpoints, retire and stats) and the two generics, the same for both cores; and four lines at the top of the formal section (a job's tasks are `prove`, `cover`, and `bmc`; `G_FORMAL` turns on a unit's own assertions).
+
+**Resolved**: filed as [#99](https://github.com/MJoergen/nice_cpu/issues/99), labeled `documentation`.
 
 ### 8.3 hdl/README.md: terms before their definition, and two stale sentences
 
@@ -219,7 +241,7 @@ The ports are named piecemeal through the file (`dbus_ack_i`, `retire_o`, `stats
 
 [DEBUG.md](../DEBUG.md) §7, "Transports" (410–549), has the UART and TCP transports, then the emulator's differences in about 18 bullets, then the rules for a board, from "A board that carries the link has to do more than follow this file" (513), with no heading of their own. A newcomer learns how to try the link only there, from `--link`; the introduction says "one host tool works with either" and names none. The R0 to R15 cell of the register table (228) is one line of about 150 words with five states. "ISA §" is used three times and declared nowhere (the notation sentence at 19–20 declares "SYSTEM.md §1" alone), and "a system of version 4" (294) comes before §9 explains the versions. **Fix:** §7 for the transports, §8 "The emulator", §9 "A board that carries the link", then the example and the versions, with `make -C doc test` for the references from hdl/README.md and the testbenches; three lines in the introduction on how to try it, with `niceemu --link` and the example; the R0 to R15 cell as a list below the table; "ISA §" in the notation sentence; the version asides left to §9.
 
-**Resolved**: in part: the introduction says how to try the link and that no host tool ships, and the notation sentence declares "ISA §". The split of §7, the R0 to R15 cell, and the version asides are an issue.
+**Resolved**: in part: the introduction says how to try the link and that no host tool ships, and the notation sentence declares "ISA §". The split of §7, the R0 to R15 cell, and the version asides are [#100](https://github.com/MJoergen/nice_cpu/issues/100).
 
 ## 9. What is correct
 

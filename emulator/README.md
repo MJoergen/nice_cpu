@@ -23,48 +23,8 @@ cache. Zig unpacks the source into `zig-pkg/`, which `make clean`
 removes. Without `-Dwindow`, the build fetches nothing and needs only Zig.
 `make test` and `make build` build without the window.
 `make window-test` runs `test/window.py` on that build, with SDL's dummy
-video driver, so it needs no display (see Window below).
-
-`make test` runs the unit tests in `src/cpu.zig`, then the example programs
-in `../assembler/test/` (the three 2004 programs and `wrap`) and the probe
-programs `test/*.nasm`, comparing the output and exit status of each with
-`test/X.expected`.
-Finally `test/errors.py` checks the error messages and exit statuses of the
-command line and the loader, and the exit status and some output lines of
-runs that stop in each way: `HALT`, the other halts, and the step limit,
-`-n 0` included. The probes are assembled with niceasm, and
-`make bins` reassembles them after a change.
-Then `test/link.py` runs niceemu with `--link 0` and checks the debug link
-over TCP (see Debug link below): the packets of DEBUG.md §8 byte for byte,
-the errors and drops, a program loaded, run, halted, and restarted, the
-overflow notice, the step limit, the halt reasons 2 to 4, a clear of a running
-program, the single step: its example of DEBUG.md §8,
-the cases where bit 5 does nothing, a step into `HALT` and to the step limit,
-a step at a console read, and R13–R15 after each step across interrupt entries,
-compared with `--trace`, and the breakpoints: their example of DEBUG.md §8,
-the stop register, a step and a start that end at one, two at one address,
-a skipped instruction and a `HALT` at one, what keeps and clears them, and
-an interrupt entry that goes first.
-
-`test/reserved.nasm` runs a reserved control word, which halts the
-processor with exit status 2.
-
-Some probes check corners that cputest leaves out: `r0dest` and
-`r15modes` the remaining addressing modes of R0 and R15, `r14mem` R14 as
-an address, `skipconst` the constant words of skipped and control
-instructions, `carryin` and `shiftc` the carry input and the shift counts
-at their edges, `wrapmem` the wrap of addresses at `0xFFFFFFFF`, and
-`smcown` an instruction that overwrites its own constant word.
-`scrbound` runs twice, with `-s` and with `-2004 -s`, to check the bounds
-of the screen.
-
-`test/cputest.nasm` is a self-checking test of the whole instruction set:
-every opcode, shift, addressing mode, and condition, the flags, R0, R14, and
-R15, skipped instructions, `INT`, and `RTI`. It halts at the first check
-that fails, with the check's number in R12 and R11 = 0. If every check
-passes, it halts with R11 = `0x600D`. It needs no emulator options or I/O, so
-the FPGA core can run it too. No IRQ may be raised while it runs, because
-some checks set E with no vector table in place.
+video driver, so it needs no display (see Window below). What `make test`
+runs is under [Tests](#tests), at the end.
 
 ## Usage
 
@@ -85,6 +45,19 @@ line such as `Pending: IRQ 05` follows the first line.
     R0  00000000 R1  00800800 R2  00000000 R3  00000000
     ...
 
+To assemble a program and run it, with its console input from a file,
+with a trace of every instruction, or with the screen in a window:
+
+    ../assembler/niceasm.py hello.nasm            # writes hello.bin
+    zig-out/bin/niceemu hello.bin
+    zig-out/bin/niceemu --input keys.txt hello.bin
+    zig-out/bin/niceemu --trace hello.bin
+    zig-out/bin/niceemu --window hello.bin
+
+The [worked example](../README.md#worked-example) of the top-level README
+goes through these steps on a small program, and a
+[second one](../README.md#worked-example-with-the-window) opens the window.
+
 | Option | Effect |
 |---|---|
 | `-t`, `--trace` | Print one line per instruction (see below). |
@@ -98,8 +71,8 @@ line such as `Pending: IRQ 05` follows the first line.
 | `--symbols FILE` | Read the labels of `niceasm.py --symbols` from FILE, and name the location of a halt other than `HALT`, of the step limit, and of a wasm trap (see Symbols file below). |
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
-| `--no-cycle-counter` | Make the cycle counter and the microsecond counter, `0xFFFFFF40`, `0xFFFFFF41`, `0xFFFFFF44`, and `0xFFFFFF45`, ordinary memory (see Memory map). |
-| `--no-timer-irq` | The timer counts, but raises no requests, so that `--irq` can raise them instead (see Memory map). |
+| `--no-cycle-counter` | Make the cycle counter and the microsecond counter, `0xFFFFFF40`, `0xFFFFFF41`, `0xFFFFFF44`, and `0xFFFFFF45`, ordinary memory (see Performance counters below). |
+| `--no-timer-irq` | The timer counts, but raises no requests, so that `--irq` can raise them instead (see Timer below). |
 | `--window` | Show the screen in a window while the program runs, and keep it after the halt until it is closed (see Window below). Needs a build with `-Dwindow`. |
 | `--speed N` | With `--window`, run N steps a second, 1000000 by default, or as fast as the host can for 0. |
 | `--link [ADDR:]PORT` | Serve the debug link on PORT of ADDR, `127.0.0.1` if no ADDR is given, instead of running the program once (see Debug link below). ADDR is an IPv4 address, or an IPv6 one in brackets, such as `[::1]`. With PORT 0, pick a free port and print `link: port N` on stderr. The program file is optional. `--input` is an error with it. |
@@ -220,12 +193,16 @@ address twice and a file with no words are errors.
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (SYSTEM.md §3). Cycles, instructions, and microseconds, 64 bits each. The fetch statistics of the FPGA core, at `0xFFFFFF50`–`0xFFFFFF7F`, read 0. |
 | `0xFFFFFF80`–`0xFFFFFFFF` | 128 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (SYSTEM.md §1). |
 
+### Screen
+
 The screen has one word per character, with the character in bits 7..0 and
 its colors above. It is ordinary memory, and `--screen` prints the
 characters when the program has halted. `test/screen.nasm` writes to it. The
 2004 emulator has the screen at `0x400`, where it overlaps the code of any
 program longer than 1024 words. `-2004` puts it there for the 2004
 programs, such as `print.nasm`.
+
+### Console
 
 The console stores nothing. Its output comes before the `Halted` line, and
 with `--trace` it is mixed in with the trace lines. `test/console.nasm`
@@ -248,15 +225,21 @@ SIGKILL loses what is still in the buffer. The signals are noticed every
 the signal ends. `test/input.nasm` reads `test/input.txt`. Reads by `--dump`
 take no input. `make test` runs every program with stdin from `/dev/null`.
 
+### Read counter
+
 The read counter makes the data reads of ISA.md §8.2 visible: how many
 there are, and in which order. It stores nothing else, and `--dump` shows
 its count without counting. `test/reads.nasm` uses it.
+
+### Math unit
 
 The math unit holds only its operands, A, B, C, and D. It computes each
 result when it is read, so a read never waits, and `--dump` shows the
 results for the current operands. Its words store nothing else.
 `test/mpu.nasm` and `test/mpu64.nasm` check every result, with division by
 zero and the signed overflow.
+
+### Performance counters
 
 The performance counters count the instructions, the steps, and the
 microseconds since reset. The emulator has no clock, so its cycle counter
@@ -278,6 +261,8 @@ cannot be predicted, so their traces can be compared. The random programs
 of the HDL tests run this way ([hdl/README.md](../hdl/README.md)). The
 instruction counter stays.
 
+### Timer
+
 The timer counts steps as well, so its requests come every P steps. A
 request raised by the last step of a run is not listed as pending at the
 end, as on the FPGA core, where it only reaches the core after that step.
@@ -295,6 +280,8 @@ raises each one with `--irq` at the step where the core took it, as it
 does for its own requests ([hdl/README.md](../hdl/README.md)). `make test`
 runs `timer.nasm` so, with its ten requests given by `--irq`, and the
 output must equal that of the plain run.
+
+### Instruction fetches and the memory
 
 Instruction fetches from `0xFFFFFF00`–`0xFFFFFFFF` read 0, as ISA.md §8.3
 requires, whatever the memory there holds. So a program that runs into the
@@ -384,3 +371,47 @@ word, and then what it changed. These are the last lines for `count.bin`:
 
 The format is meant for comparing the FPGA core with the emulator line by
 line.
+
+## Tests
+
+`make test` runs the unit tests in `src/cpu.zig`, then the example programs
+in `../assembler/test/` (the three 2004 programs and `wrap`) and the
+probes: the programs `test/*.nasm`, each of which exercises one feature
+and has a hand-checked `test/X.expected`. The output and exit status of
+each run must be those of its `.expected` file.
+Finally `test/errors.py` checks the error messages and exit statuses of the
+command line and the loader, and the exit status and some output lines of
+runs that stop in each way: `HALT`, the other halts, and the step limit,
+`-n 0` included. The probes are assembled with niceasm, and
+`make bins` reassembles them after a change.
+Then `test/link.py` runs niceemu with `--link 0` and checks the debug link
+over TCP (Debug link above). It checks the packets of DEBUG.md §8 byte for
+byte, the errors and drops, a program loaded, run, halted, and restarted,
+the overflow notice, the step limit, the halt reasons 2 to 4, and a clear
+of a running program. It checks the single step: its example of DEBUG.md
+§8, the cases where bit 5 does nothing, a step into `HALT` and to the step
+limit, a step at a console read, and R13–R15 after each step across
+interrupt entries, compared with `--trace`. And it checks the breakpoints:
+their example of DEBUG.md §8, the stop register, a step and a start that
+end at one, two at one address, a skipped instruction and a `HALT` at one,
+what keeps and clears them, and an interrupt entry that goes first.
+
+`test/cputest.nasm` is a self-checking test of the whole instruction set:
+every opcode, shift, addressing mode, and condition, the flags, R0, R14, and
+R15, skipped instructions, `INT`, and `RTI`. It halts at the first check
+that fails, with the check's number in R12 and R11 = 0. If every check
+passes, it halts with R11 = `0x600D`. It needs no emulator options or I/O, so
+the FPGA core can run it too. No IRQ may be raised while it runs, because
+some checks set E with no vector table in place.
+
+Some probes check corners that cputest leaves out: `r0dest` and
+`r15modes` the remaining addressing modes of R0 and R15, `r14mem` R14 as
+an address, `skipconst` the constant words of skipped and control
+instructions, `carryin` and `shiftc` the carry input and the shift counts
+at their edges, `wrapmem` the wrap of addresses at `0xFFFFFFFF`, and
+`smcown` an instruction that overwrites its own constant word.
+`scrbound` runs twice, with `-s` and with `-2004 -s`, to check the bounds
+of the screen.
+
+`test/reserved.nasm` runs a reserved control word, which halts the
+processor with exit status 2.

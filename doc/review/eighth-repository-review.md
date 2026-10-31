@@ -129,13 +129,13 @@ Line 914: "The pipelined core meets a 10 ns clock out of context." That is Vivad
 
 "Build and test" (lines 10–67) describes `make test` in detail before "Usage" (69). Lines 37–47 are one sentence of eleven lines on `test/link.py`, which uses "the debug link", "bit 5", "the stop register", and "the breakpoints" with DEBUG.md's section numbers alone, 250 lines before the Debug link section (302). "Probe" (29) and "cputest" (52) are used before they are explained (61). **Fix:** keep the three build lines at the top, move the test narrative to a "Tests" section at the end, and define "probe" at its first use.
 
-**Resolved**: filed as [#95](https://github.com/MJoergen/nice_cpu/issues/95), labeled `documentation`.
+**Resolved**: The build lines stay at the top, the test narrative is a "Tests" section at the end, where "probe" is defined at its first use, and the sentence on `test/link.py` is three (#95).
 
 ### 5.2 emulator/README.md: Usage has no recipe and no link to the README's worked examples
 
 Usage (69) opens with the synopsis, the meaning of a step, and a run of `count.bin`. Nothing shows assemble, run, give input, trace, and open the window in sequence, and the file never links README.md's two worked examples, which do exactly that. **Fix:** a four-line recipe before the option table, or one sentence that links the worked examples.
 
-**Resolved**: filed as [#95](https://github.com/MJoergen/nice_cpu/issues/95), labeled `documentation`.
+**Resolved**: A five-line recipe before the option table, with links to the two worked examples of the top-level README (#95).
 
 ### 5.3 emulator/README.md: the exit statuses are one paragraph with three other remarks
 
@@ -149,7 +149,7 @@ Lines 124–132: the statuses 0, 2, 3, 4, 1, and 141 in one sentence, with the r
 - The memory map's prose (223–291) is one dense paragraph per device. Sub-headings (Console, Math unit, Counters, Timer) would let a reader find the timer.
 - "The pace" (150–156) is never defined. "The rate, in steps per second" at the first use.
 
-**Resolved**: in part: the `--symbols` cell is one sentence and a "Symbols file" paragraph under the table has the format and the rules, and the Window section names the rate instead of "the pace". The sub-headings of the memory map's prose go with the restructuring of the file (§5.1, #95).
+**Resolved**: in part: the `--symbols` cell is one sentence and a "Symbols file" paragraph under the table has the format and the rules, and the Window section names the rate instead of "the pace". The memory map's prose has the sub-headings Screen, Console, Read counter, Math unit, Performance counters, Timer, and Instruction fetches and the memory (#95).
 
 ### 5.5 assembler/README.md: the tests come first, and the details are unordered
 

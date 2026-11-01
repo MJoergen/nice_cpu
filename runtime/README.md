@@ -27,7 +27,7 @@ Zig, or Rust program by itself ([translator README](../translator/README.md)).
 | `float.wasm` | `float.zig` and parts of Zig's compiler_rt, compiled to wasm. |
 | `float.nasm` | `float.wasm` translated as a library module. It is not checked in: `make float.nasm` makes it, with Python only. |
 | `libc/` | A small C library (see below). |
-| `nice.zig`, `nice.rs` | The device routines and console output for Zig and Rust (see below). |
+| `nice.zig`, `nice.rs` | The device routines, console output, and a heap for Zig and Rust (see below). |
 
 ## Joining a program
 
@@ -356,7 +356,7 @@ prints a byte slice instead.
 | Input | `getc()`, a `?u8`, and `pollc()`, a `Poll`: `.byte`, `.empty`, or `.end` | `getc()`, an `Option<u8>`, and `pollc()`, a `Poll`: `Byte`, `Empty`, or `End` |
 | Counters | `cycles()`, `instructions()` | `cycles()`, `instructions()` |
 | Screen | `screenPut(col, row, c)`, `screenClear()`, `screen_cols`, `screen_rows` | `screen_put(col, row, c)`, `screen_clear()`, `SCREEN_COLS`, `SCREEN_ROWS` |
-| Heap | none in `nice.zig` | `Heap`, a `GlobalAlloc` for the `alloc` crate |
+| Heap | `heap`, a `std.mem.Allocator` | `Heap`, a `GlobalAlloc` for the `alloc` crate |
 
 `getc` waits until a byte is there, and returns null or `None` once the
 line's input has ended, as `nice_getc` returns −1. There is no
@@ -378,24 +378,38 @@ For Rust, mount the file at the crate root as the module `nice`, so that
 and compile as the [translator README](../translator/README.md) shows.
 `test/nicezig.zig` and `test/nicers.rs` are examples.
 
-To use `Vec`, `String`, `Box`, and the rest of the `alloc` crate, name
-`nice::Heap` as the allocator:
+### The heap
+
+Zig code passes `nice.heap` where the standard library asks for an
+`Allocator`, as in `list.append(nice.heap, x)`. Rust code names
+`nice::Heap` as the allocator, for `Vec`, `String`, `Box`, and the rest
+of the `alloc` crate:
 
     extern crate alloc;
 
     #[global_allocator]
     static HEAP: nice::Heap = nice::Heap;
 
-`Heap` works as the C library's `malloc`, above: first fit, with an
-8-byte header on each block, and neighboring free blocks merged. A
-smaller size in `realloc` keeps the block. Blocks are 8-aligned; a larger
-alignment costs that many bytes more. The heap starts at wasm-ld's
-`__heap_base` and grows with `memory.grow`, so a heap larger than the
-initial memory needs `--memory-pages` (translator README). When the
-memory cannot grow, an allocation fails, and the `alloc` crate panics,
-except in calls such as `Vec::try_reserve`, which return an error. An
-interrupt routine must not use the heap. `test/rustheap.rs` is an
-example.
+Both work as the C library's `malloc`, above: first fit, with an 8-byte
+header on each block, and neighboring free blocks merged. A smaller
+size, or a larger one that still fits the block, keeps the block, as
+Zig's `resize` and Rust's `realloc` ask. Blocks are 8-aligned; a larger
+alignment costs that many bytes more. The heap starts at the linker's
+`__heap_base`, using the rest of the initial memory first, and grows
+with `memory.grow` by the pages a block needs, so a heap larger than the
+initial memory needs `--memory-pages` (translator README). When the memory cannot grow, an allocation fails: Zig returns
+`error.OutOfMemory`, and Rust's `alloc` crate panics, except in calls
+such as `Vec::try_reserve`, which return an error. An interrupt routine
+must not use the heap. `test/zigheap.zig` and `test/rustheap.rs` are
+examples.
+
+Zig's own `std.heap.wasm_allocator`, which `std.heap.page_allocator` is
+on wasm, also works, but costs much more memory. It leaves the free part
+of the initial memory unused, and takes a whole page, 16384 words, for
+each size class of small blocks. An `ArrayList` of 1000 `u32` needs
+`--memory-pages 8` with it, 131072 words. `std.heap.FixedBufferAllocator`
+over a static buffer needs no `memory.grow`, but frees only the last
+block.
 
 ## Test
 
@@ -439,11 +453,12 @@ which needs the 128 KB stack, is not exercised. The core's runs (`make test KEEP
 GHDL hours.
 
 Then it runs the tests of `nice.zig` and `nice.rs`, `test/nicezig.zig`,
-`test/zigpoll.zig`, `test/nicers.rs`, `test/rustpoll.rs`, and
-`test/rustheap.rs`, the same way, with `test/X.input` as the console
-input and `test/X.expected`, written by hand from the source.
-`test/rustheap.rs` is translated with `--memory-pages 2`, so that its heap
-can grow by one page, and no more. Their `.wasm`
+`test/zigpoll.zig`, `test/zigheap.zig`, `test/nicers.rs`,
+`test/rustpoll.rs`, and `test/rustheap.rs`, the same way, with
+`test/X.input` as the console input and `test/X.expected`, written by
+hand from the source. `test/zigheap.zig` and `test/rustheap.rs` are
+translated with `--memory-pages 2`, so that their heap can grow by one
+page, and no more. Their `.wasm`
 files are checked in; `make wasm` rebuilds them, with Zig 0.17 and rustc
 with the `wasm32-unknown-unknown` target.
 

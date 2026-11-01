@@ -2,7 +2,8 @@
 //! of ABI.md, which are imports from env and so the routines of
 //! lib.nasm, and the `nice` imports of WASM.md. It is the Zig
 //! counterpart of the C library's nice.h, with a console writer for
-//! std.fmt. Build with `--dep nice -Mroot=prog.zig -Mnice=nice.zig` and
+//! std.fmt, and a heap, `nice.heap`, a std.mem.Allocator. Build with
+//! `--dep nice -Mroot=prog.zig -Mnice=nice.zig` and
 //! `const nice = @import("nice");`.
 const std = @import("std");
 
@@ -96,3 +97,133 @@ pub var writer: std.Io.Writer = .{ .vtable = &.{ .drain = drain }, .buffer = &.{
 pub fn print(comptime fmt: []const u8, args: anytype) void {
     writer.print(fmt, args) catch {};
 }
+
+// The heap: first fit, as the C library's malloc.c. It starts at
+// __heap_base, which the linker puts after the stack and the data, and
+// grows with memory.grow, up to nicewasm's --memory-pages. Each block has
+// an 8-byte header, and its address and size are multiples of 8. Free
+// blocks are kept in a list sorted by address, and neighbors are merged
+// when a block is freed. NICE has no threads, and an interrupt routine
+// must not use the heap.
+const Block = extern struct {
+    size: usize, // of the whole block, a multiple of 8
+    next: ?*Block, // the next free block; unused when allocated
+};
+
+const header = @sizeOf(Block);
+const page = 65536;
+
+extern var __heap_base: u8;
+
+var free_list: ?*Block = null;
+var brk: usize = 0;
+var heap_end: usize = 0;
+
+// size bytes of new heap, or null if memory.grow fails.
+fn more(size: usize) ?*Block {
+    if (brk == 0) {
+        brk = std.mem.alignForward(usize, @intFromPtr(&__heap_base), 8);
+        heap_end = @wasmMemorySize(0) * page;
+    }
+    if (size > heap_end - brk) {
+        const need = size - (heap_end - brk);
+        // The page count would wrap: more than all of memory
+        if (need > std.math.maxInt(usize) - (page - 1)) return null;
+        const pages = (need + page - 1) / page;
+        if (@wasmMemoryGrow(0, pages) == -1) return null;
+        heap_end += pages * page;
+    }
+    const b: *Block = @ptrFromInt(brk);
+    brk += size;
+    b.size = size;
+    return b;
+}
+
+// The block of n bytes, or null.
+fn heapAlloc(n: usize) ?*Block {
+    if (n > std.math.maxInt(usize) - header - 7) return null;
+    const size = (n + header + 7) & ~@as(usize, 7);
+    var pp: *?*Block = &free_list;
+    while (pp.*) |b| : (pp = &b.next) {
+        if (b.size < size) continue;
+        if (b.size - size >= 2 * header) {
+            const rest: *Block = @ptrFromInt(@intFromPtr(b) + size);
+            rest.size = b.size - size;
+            rest.next = b.next;
+            pp.* = rest;
+            b.size = size;
+        } else {
+            pp.* = b.next;
+        }
+        return b;
+    }
+    return more(size);
+}
+
+fn heapFree(b: *Block) void {
+    var prev: ?*Block = null;
+    var next = free_list;
+    while (next) |n| {
+        if (@intFromPtr(n) > @intFromPtr(b)) break;
+        prev = n;
+        next = n.next;
+    }
+    if (next) |n| {
+        if (@intFromPtr(b) + b.size == @intFromPtr(n)) {
+            b.size += n.size;
+            b.next = n.next;
+        } else b.next = n;
+    } else b.next = null;
+    if (prev) |p| {
+        if (@intFromPtr(p) + p.size == @intFromPtr(b)) {
+            p.size += b.size;
+            p.next = b.next;
+        } else p.next = b;
+    } else free_list = b;
+}
+
+// The block of the bytes at p that the heap gave out with alignment a.
+// Above 8, the word before p holds the address of the block.
+fn blockOf(p: [*]u8, a: std.mem.Alignment) *Block {
+    if (a.toByteUnits() <= 8) return @ptrFromInt(@intFromPtr(p) - header);
+    return @ptrFromInt(@as(*const usize, @ptrFromInt(@intFromPtr(p) - @sizeOf(usize))).*);
+}
+
+fn alloc(_: *anyopaque, len: usize, a: std.mem.Alignment, _: usize) ?[*]u8 {
+    const align_ = a.toByteUnits();
+    if (align_ <= 8) {
+        const b = heapAlloc(len) orelse return null;
+        return @ptrFromInt(@intFromPtr(b) + header);
+    }
+    if (len > std.math.maxInt(usize) - align_) return null;
+    const b = heapAlloc(len + align_) orelse return null;
+    // The bytes start 8-aligned and align_ is at least 16, so p is at
+    // least 8 bytes past them and at most align_, and the block holds
+    // len bytes from p.
+    const q = @intFromPtr(b) + header;
+    const p = std.mem.alignForward(usize, q + @sizeOf(usize), align_);
+    @as(*usize, @ptrFromInt(p - @sizeOf(usize))).* = @intFromPtr(b);
+    return @ptrFromInt(p);
+}
+
+// A new length that fits the block keeps it, a smaller one included, as
+// the C library's realloc does.
+fn resize(_: *anyopaque, memory: []u8, a: std.mem.Alignment, new_len: usize, _: usize) bool {
+    const b = blockOf(memory.ptr, a);
+    return new_len <= @intFromPtr(b) + b.size - @intFromPtr(memory.ptr);
+}
+
+fn remap(ctx: *anyopaque, memory: []u8, a: std.mem.Alignment, new_len: usize, ra: usize) ?[*]u8 {
+    return if (resize(ctx, memory, a, new_len, ra)) memory.ptr else null;
+}
+
+fn free(_: *anyopaque, memory: []u8, a: std.mem.Alignment, _: usize) void {
+    heapFree(blockOf(memory.ptr, a));
+}
+
+/// The heap. Blocks are 8-aligned. A larger alignment costs the alignment
+/// in extra bytes.
+pub const heap: std.mem.Allocator = .{
+    .ptr = undefined,
+    .vtable = &.{ .alloc = alloc, .resize = resize, .remap = remap, .free = free },
+};

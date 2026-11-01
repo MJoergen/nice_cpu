@@ -59,6 +59,25 @@ proposed again. The open items are the
   unit's two divide start blocks (a procedure would take six
   parameters), and reading the `_o` ports instead of their `_r` copies
   (it breaks the convention of every entity).
+- **Further optimizations of nicewasm** (#73). Each needs more than
+  the translator has, or gains too little:
+  - Branch probabilities from a profile, to lay out diamonds and to
+    decide which accesses share a compare. Nothing in the repository
+    collects a profile or feeds one back.
+  - Options for the two guesses that a profile would replace: the
+    shorter arm of a diamond taken for the rarer one, and `SHARE_COST`
+    and `SHARE_CHECKS` in `nicewasm.py`. An option that no one sets
+    changes nothing, so one constant stays.
+  - `@Rx++` for a pointer walk, as `hand.nasm` does, and range analysis
+    to drop the bounds checks of counted loops. Both need loop analysis
+    on an intermediate form, which nicewasm does not have. They belong
+    in a compiler (#66).
+  - Overlapping the partial products of `__mul64` in
+    `runtime/muldiv_mpu.nasm`. The math unit has one multiplier, and the
+    routine is nine instructions, so it would save a cycle or two.
+
+  The cost of taken jumps and loop back edges is a matter of jump
+  prediction in the core (#60).
 - **Speculative reads.** The waits they could remove are 0.006% and
   0.18% of the cycles (MICROARCH.md §5.3, HISTORY.md).
 - **A store into the math unit that retires when it goes into the

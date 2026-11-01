@@ -83,6 +83,8 @@ The module's own stack is separate. Compilers for wasm keep the variables whose 
 | 6 | `call_indirect`: index past the end of the table, or an empty entry |
 | 7 | `call_indirect`: type mismatch |
 
+nicewasm may copy or move the code of an instruction. R2 then points at the first instruction of the original code, not of the copy. The code of a neighboring access may lie between that instruction and the rest of the code of the instruction that trapped.
+
 The runtime library defines `___wasm_trap_vector` and starts it with the address of its default handler, `___wasm_trap`. The handler is the reserved control word `0x0FE00000` (ISA §5.3), so the processor halts with R1 and R2 as the trap left them. Unlike a `HALT`, this halt cannot be mistaken for the normal end of the program. The emulator reports it as an abnormal halt. A program built with `nicebuild.py` installs a handler that first writes the code and address to the console ([runtime README](../runtime/README.md)). A label may be defined only once ([ABI.md](../runtime/ABI.md)), so a program cannot replace `___wasm_trap`. Instead, it installs its own handler at run time by storing the handler's address in the vector:
 
                     MOVE    @___wasm_trap_vector, handler

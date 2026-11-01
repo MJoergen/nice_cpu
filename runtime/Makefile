@@ -78,10 +78,13 @@ endef
 # exit status are compared with test/X.expected. The .wasm files are
 # checked in, so make test needs no Zig or Rust; make wasm rebuilds them.
 ZIG_TESTS = nicezig zigpoll
-RUST_TESTS = nicers rustpoll
+RUST_TESTS = nicers rustpoll rustheap
+
+# The options for nicewasm.py of a test, if any.
+WASM_OPTS_rustheap = --memory-pages 2
 
 define check_wasm
-	@$(PYTHON) ../translator/nicewasm.py -o test/$(1).out.nasm test/$(1).wasm
+	@$(PYTHON) ../translator/nicewasm.py $(WASM_OPTS_$(1)) -o test/$(1).out.nasm test/$(1).wasm
 	@cat start_wasm.nasm test/$(1).out.nasm lib.nasm muldiv_mpu.nasm > test/$(1).full.nasm
 	@$(ASM) -o test/$(1).out.bin test/$(1).full.nasm
 	@$(EMU) --input test/$(1).input test/$(1).out.bin < /dev/null > test/$(1).raw; echo "exit $$?" > test/$(1).status

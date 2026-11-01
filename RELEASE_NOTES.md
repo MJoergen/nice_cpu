@@ -31,8 +31,9 @@ The others pin the tagged commit.
 ## V1.3 (2026-10-31)
 
 The assembler has `CALL` and `RET` (#93). Debug link version 6 lets a
-host write R1–R15 while the processor is paused (#102). Rust programs
-have a heap for the `alloc` crate (#69).
+host write R1–R15 while the processor is paused (#102). Rust and Zig
+programs have a heap (#69, #105) and read console input a line at a time
+(#106). The translator handles tail calls (#103).
 
 **Upgrade notes.**
 
@@ -85,6 +86,29 @@ have a heap for the `alloc` crate (#69).
   can use `Vec`, `String`, `Box`, and the rest of the `alloc` crate: first
   fit, as the C library's `malloc`, with alignments above 8, and growth
   with `memory.grow` up to `--memory-pages` (#69).
+- `nice.zig` has `nice.heap`, a `std.mem.Allocator` that works as
+  `nice::Heap` does, for `ArrayList` and the rest of the standard
+  library. Zig's own `wasm_allocator` takes a 64 KB page per size class,
+  too much for a board with 64K words (#105).
+- `nice.zig` has `readLine(buf)` and `nice.rs` has `read_line(buf)`. They
+  read a line of console input into a buffer, without the `"\n"` and a
+  `"\r"` just before it. A longer line is cut off and its rest dropped, and
+  a last line with no `"\n"` is returned, then `null` or `None`. In Rust,
+  bytes that are not UTF-8 end the string at the last whole character
+  (#106).
+
+**Translator (`nicewasm`, `nicebuild.py`)**
+
+- `return_call` and `return_call_indirect` translate to a jump, after
+  the stack arguments go into the function's own and the frame and the
+  saved registers go, with the checks of `call_indirect` (traps 6 and 7).
+  A callee with more words of stack arguments than the function is
+  called instead. A callee whose results differ from the function's is
+  an error (#103).
+- `nicebuild.py` turns on the tail-call feature of clang, Zig, and rustc,
+  so `[[clang::musttail]]` and `@call(.always_tail, ...)` compile. The
+  compilers then also emit `return_call` for a call just before a
+  return (#103).
 
 **FPGA cores (`hdl/`)**
 

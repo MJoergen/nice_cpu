@@ -472,6 +472,12 @@ paused, and not during a step. While the processor runs, a read of R0 to
 R15 returns `regs_i` of that cycle, and otherwise the copy of the last halt
 or pause.
 
+While the processor is paused, a write of R1 to R15 pulses `reg_we_o` for
+one cycle, with `reg_idx_o` and `reg_data_o`, which connect to the core's
+`reg_we_i`, `reg_idx_i`, and `reg_data_i`. A read that follows returns the
+new value at once. A `W` that reaches R0 to R15 while bit 4 reads 0 gets
+`e04`, and writes none of its words (DEBUG.md §6).
+
 The host's line ends with `rx_break_i`, a pulse for a UART break: `eoi_o`
 rises, the link drops the host's console bytes, and the board's console
 reads `0x200` once its buffer is empty, until the next start or a pulse of
@@ -484,7 +490,8 @@ The side port, `side_valid_i` to `side_data_o`, is a second client of the
 debug registers and the memory, word by word, for a debugger inside the
 system (DEBUG.md §3). Its request is held until `side_done_o`, with
 `side_err_o` for a word that is not a debug register while the processor
-runs (contract g of the header). The host's words go first. A board without
+runs, or a write of R0 to R15 while it is not paused (contract g of the
+header). The host's words go first. A board without
 a side client leaves the port open: its inputs default to 0.
 
 The generic `G_BREAKS`, from 0 to 8, gives the link the breakpoints of
@@ -703,7 +710,7 @@ other slave owes an ACK, and that a request that may pass is not stalled.
 
 `tb_debug_link` plays a host and a board against the debug link, and
 compares every byte that the link sends with a string whose checksum was
-worked out by hand: the examples of DEBUG.md §8, the errors `e01` to `e03`,
+worked out by hand: the examples of DEBUG.md §8, the errors `e01` to `e04`,
 the dropped packets, the timeout, console bytes both ways with ESC ESC, the
 notices `b`, `h`, `o`, `p`, and `x`, the clear, one that a dropped packet started,
 a `W` that wraps past `0xFFFFFFFF`, the hold and restart, and the pause: its
@@ -723,7 +730,11 @@ while held, reads all the time beside the host's packets, a clear between
 two words of a host's `W`, a start, its errors and the registers while
 running, a pause and a step that send the host `p`, a go on between two
 words of a host's `W` and under its `R`, whose later words are lost or
-read 0, and a hold.
+read 0, and a hold; and the writes of R0 to R15: `e04` while held,
+running, and halted, the side client's refusals then, in a step, and on
+the way to a pause, R3, R0, and R14 while paused with their read-back, a
+read by the side client in the cycle after its write, and one pulse of
+`reg_we_o` for each write of R1 to R15.
 
 `tb_link` runs on each core of `CORES`. It is the debug link as a board
 uses it: the link is a second master of the data bus, and owns it while
@@ -736,7 +747,10 @@ while it runs, the halt reasons 2 to 4, and the single step: R15 after each step
 a step into `HALT`, the writes with bit 5 that do not step, and an `INT` with
 the registers of each step as `niceemu --trace` shows them, and the
 breakpoints, 4 on the link and the core: a stop before the echo, a step and
-a go on from a breakpoint, and a breakpoint disabled while paused. The testbench shows three things a board must
+a go on from a breakpoint, and a breakpoint disabled while paused, and the
+writes of R0 to R15: R3, R0, R14, and R15 at a start paused, a step and a
+go on from the written R15, also at an enabled breakpoint, and `e04` while
+held, halted, and running. The testbench shows three things a board must
 do: each master sees only its own STALL and ACK; the devices are reset at
 a start, when `hold_o` falls, and not while the processor is held, so that
 the link can reach them; and an instruction ACK that comes after a hold

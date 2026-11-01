@@ -40,6 +40,22 @@
 -- register until the core leaves the pause, or the next start. p_tx then
 -- sends `x` with the number, or `p` if none matches.
 --
+-- REGISTER WRITES
+-- R1 to R15 take a write while the processor is paused (DEBUG.md §6).
+-- p_rx answers a W that reaches R0 to R15 while bit 4 reads 0 with `e04`,
+-- decided where `02` is, and writes none of its words. p_acc carries out a
+-- write of R1 to R15 while pause_own and paused_i are '1', the pause term
+-- of mem_ok, and hold_o is '0': it pulses reg_we_o for one cycle, from flip-flops, with the
+-- index on reg_idx_o and the word on reg_data_o, and the core takes it in
+-- the next cycle. That term never holds in the cycle pause_o falls, which
+-- is a write of the control register in a p_acc cycle of its own, nor
+-- during a step. p_acc writes regs_r too, with the rules of ISA.md §4.3,
+-- and does not copy regs_i in the cycle of the pulse, so that a read that
+-- follows returns the new value at once. A write of R0, or of R1 to R15
+-- while the term is '0', changes nothing: for the host, a word that came
+-- after a side client went on, which is lost; for the side client, a
+-- refusal on side_err_o, unless the processor is paused, for R0.
+--
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) Every access on the Wishbone master is a link access (§3). The
 --    board's bus must give such an access to the console (0xFFFFFF00) and
@@ -91,7 +107,8 @@
 -- g) The side client raises side_valid_i with side_we_i, side_addr_i, and
 --    side_data_i, and holds them until side_done_o, which is high for one
 --    cycle. side_err_o then says the request was refused: a word that is
---    not a debug register while the processor runs. side_data_o is the
+--    not a debug register while the processor runs, or a write of R0 to
+--    R15 while bit 4 of the control register reads 0. side_data_o is the
 --    word read, valid from side_done_o until the next request is done. A
 --    new request may start the cycle after side_done_o.
 --
@@ -129,6 +146,8 @@
 --   board stops the counters and the timer while paused_i is high.
 --   A step (DEBUG.md §6) drops pause_o for exactly one cycle while the core
 --   is paused, and raises it again.
+-- * reg_we_o, reg_idx_o, and reg_data_o: a write of a register, for the
+--   core, from flip-flops, only while paused_i and pause_o are '1' (above).
 -- * brk_addr_o and brk_en_o: the breakpoints, for the core. The entries from
 --   G_BREAKS up are 0.
 --
@@ -144,13 +163,14 @@
 -- breakpoints change only on a write of their registers or at reset; a
 -- read of R0 to R15 while the processor runs returns regs_i of its cycle;
 -- and the side client gets one done for each request, refused only for a
--- word that is not a debug register while the program runs. The
+-- word that is not a debug register while the program runs, or a write
+-- of R0 to R15 while bit 4 reads 0. The
 -- invariants i_* tie p_rx, p_acc, p_tx, and the parser
 -- together, so that k-induction proves it all. The properties of the ports
 -- are in formal/formal_debug_link.vhd.
 --
 -- RESET
--- Synchronous. It sends `b05`, empties everything, clears the breakpoints,
+-- Synchronous. It sends `b06`, empties everything, clears the breakpoints,
 -- and leaves the
 -- processor held with G_BOOT_HELD, or running with the ROM shown otherwise.
 -- G_HAS_ROM is false on a system without a ROM: bit 3 then reads 1 and
@@ -209,6 +229,9 @@ entity debug_link is
       regs_i         : in  std_logic_vector(511 downto 0);
       brk_addr_o     : out t_brk_addrs;
       brk_en_o       : out std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+      reg_we_o       : out std_logic;
+      reg_idx_o      : out std_logic_vector(3 downto 0);
+      reg_data_o     : out std_logic_vector(31 downto 0);
 
       -- A second client of the debug registers and the memory, inside the
       -- system (contract g). A board without one leaves the inputs open.
@@ -258,8 +281,8 @@ architecture synthesis of debug_link is
    constant C_TAG_W : t_byte := X"57";   -- 'W', a write
    constant C_HASH  : t_byte := X"23";   -- '#', before the checksum
 
-   -- Major 0, minor 5 (DEBUG.md §9)
-   constant C_VERSION : t_word := X"00000005";
+   -- Major 0, minor 6 (DEBUG.md §9)
+   constant C_VERSION : t_word := X"00000006";
 
    function is_hex(b : t_byte) return boolean is
    begin
@@ -320,6 +343,15 @@ architecture synthesis of debug_link is
       return to_integer(a(4 downto 0)) + to_integer(n) > 32;
    end function non_dbg;
 
+   -- True if the n words from a reach R0 to R15, 0xFFFFFFE0 to 0xFFFFFFEF
+   function regs_hit(a : t_word; n : std_logic_vector(15 downto 0)) return boolean is
+   begin
+      if n = X"0000" or a >= X"FFFFFFF0" then
+         return false;
+      end if;
+      return ('0' & a) + n > '0' & X"FFFFFFE0";
+   end function regs_hit;
+
    -- True if the n words from a run past 0xFFFFFFFF, which a W may not
    function wraps(a : t_word; n : std_logic_vector(15 downto 0)) return boolean is
    begin
@@ -341,6 +373,7 @@ architecture synthesis of debug_link is
    signal wcnt_r     : natural range 0 to 2 ** 17   := 0;
    signal bad_r      : std_logic                    := '0';
    signal err02_r    : std_logic                    := '0';
+   signal err04_r    : std_logic                    := '0';
    signal req_addr_r : t_word                       := (others => '0');
    signal req_n_r    : std_logic_vector(15 downto 0) := (others => '0');
    signal cur_addr_r : t_word                       := (others => '0');
@@ -400,6 +433,9 @@ architecture synthesis of debug_link is
    signal clearing_r  : std_logic                    := '0';
    signal clr_hold_r  : std_logic                    := '0';
    signal regs_r      : std_logic_vector(511 downto 0) := (others => '0');
+   signal reg_we_r    : std_logic                    := '0';
+   signal reg_idx_r   : std_logic_vector(3 downto 0) := (others => '0');
+   signal reg_data_r  : t_word                       := (others => '0');
    signal wb_cyc_r    : std_logic                    := '0';
    signal wb_stb_r    : std_logic                    := '0';
    signal wb_we_r     : std_logic                    := '0';
@@ -541,6 +577,7 @@ begin
                      wcnt_r <= 0;
                      bad_r  <= '0';
                      err02_r <= '0';
+                     err04_r <= '0';
                      if busy_v then
                         rx_st <= RX_HOLD_ST;
                      else
@@ -584,6 +621,11 @@ begin
                                      (tag_r = C_TAG_W and wraps(req_addr_r, n_v))) then
                                     err02_r <= '1';
                                  end if;
+                                 -- And 04, from what bit 4 reads (DEBUG.md §6)
+                                 if tag_r = C_TAG_W and pause_own = '0' and
+                                    regs_hit(req_addr_r, n_v) then
+                                    err04_r <= '1';
+                                 end if;
                               end if;
                            elsif tag_r = C_TAG_W then
                               word_r <= word_r(27 downto 0) & h_v;
@@ -593,7 +635,7 @@ begin
                                     wcnt_r <= wcnt_r + 1;
                                  end if;
                                  -- Only the first N words are written.
-                                 if bad_r = '0' and err02_r = '0' and
+                                 if bad_r = '0' and err02_r = '0' and err04_r = '0' and
                                     wcnt_r < to_integer(req_n_r) then
                                     rx_go_r <= '1';
                                     rx_st   <= RX_CALL_ST;
@@ -642,6 +684,8 @@ begin
                      elsif tag_r = C_TAG_W and
                            not (dig_r >= 12 and nib_r = 0 and wcnt_r = to_integer(req_n_r)) then
                         code_v := X"03";
+                     elsif err04_r = '1' then
+                        code_v := X"04";
                      end if;
                      ans_tag_r  <= tag_r;
                      ans_code_r <= code_v;
@@ -718,6 +762,9 @@ begin
    own_stop   <= paused_i and not paused_r and not pause_d_r and not hold_r;
    brk_addr_o <= brk_addr_r;
    brk_en_o   <= brk_en_r;
+   reg_we_o   <= reg_we_r;
+   reg_idx_o  <= reg_idx_r;
+   reg_data_o <= reg_data_r;
    mem_own    <= hold_r or halted_r or pause_own;
    mem_ok     <= hold_r or halted_r or (pause_own and paused_i);
    clear_o    <= clearing_r;
@@ -741,6 +788,7 @@ begin
          nh_v        := hold_r;
          pause_d_r   <= pause_r;
          side_done_r <= '0';
+         reg_we_r    <= '0';
 
          -- At a stop, the lowest enabled breakpoint at R15, until the core
          -- leaves the pause or the next start. A hold keeps it.
@@ -765,10 +813,13 @@ begin
 
          -- The registers at a pause stay through a hold, as those of a halt.
          -- The flag follows the core a cycle later, so that regs_r is valid
-         -- when it rises.
+         -- when it rises. In the cycle of a register write, the core has
+         -- not taken it yet, and regs_r keeps the new value.
          if paused_i = '1' and hold_r = '0' then
             paused_r <= '1';
-            regs_r   <= regs_i;
+            if reg_we_r = '0' then
+               regs_r <= regs_i;
+            end if;
          else
             paused_r <= '0';
          end if;
@@ -824,7 +875,19 @@ begin
                         side_done_r <= '1';
                         side_err_r  <= '0';
                      end if;
-                     if acc_we = '1' then
+                     if acc_we = '1' and idx_v < 16 then
+                        -- R1 to R15 take a write while paused, R0 none. The
+                        -- side client is refused while bit 4 reads 0.
+                        if pause_own = '1' and paused_i = '1' and hold_r = '0' and idx_v /= 0 then
+                           reg_we_r   <= '1';
+                           reg_idx_r  <= acc_addr(3 downto 0);
+                           reg_data_r <= acc_wdata;
+                           regs_r(32 * idx_v + 31 downto 32 * idx_v) <= regval(idx_v, acc_wdata);
+                        end if;
+                        if host_go = '0' and pause_own = '0' then
+                           side_err_r <= '1';
+                        end if;
+                     elsif acc_we = '1' then
                         -- The breakpoints take a write, and the control register,
                         -- but not during a clear.
                         if idx_v = 20 then
@@ -983,6 +1046,7 @@ begin
             brk_addr_r <= (others => (others => '0'));
             brk_en_r   <= (others => '0');
             pause_d_r  <= '0';
+            reg_we_r   <= '0';
             stop_r     <= (others => '0');
          end if;
       end if;
@@ -1227,12 +1291,20 @@ begin
       signal f_live_d : std_logic := '0';
       signal f_side_d : std_logic := '0';
       signal f_reg_d  : t_word    := (others => '0');
+      -- p_acc carried out a write of R1 to R15 in the cycle before, while
+      -- the link owned the pause and the core was paused, with this index
+      -- and word
+      signal f_rw_d    : std_logic := '0';
+      signal f_rw_idx  : std_logic_vector(3 downto 0) := (others => '0');
+      signal f_rw_data : t_word    := (others => '0');
 
       -- The side client: a request taken and not yet done, and whether its
       -- done is to say refused
       signal f_side_take : std_logic;
       signal f_side_pend : std_logic := '0';
       signal f_side_ref  : std_logic := '0';
+      -- A write of R0 to R15 while not paused, which the side client is refused.
+      signal f_side_regw : std_logic;
       -- The side client started the clear that runs
       signal f_side_clr : std_logic := '0';
 
@@ -1244,6 +1316,10 @@ begin
    begin
 
       f_take <= out_valid_r and tx_ready_i;
+
+      f_side_regw <= '1' when acc_we = '1' and pause_own = '0' and
+                              acc_addr(31 downto 4) = X"FFFFFFE" else
+                     '0';
 
       p_f_step : process (clk_i)
       begin
@@ -1266,6 +1342,14 @@ begin
                f_live_d <= '1';
             end if;
             f_side_d <= not host_go;
+            f_rw_d    <= '0';
+            f_rw_idx  <= acc_addr(3 downto 0);
+            f_rw_data <= acc_wdata;
+            if acc_take = '1' and acc_we = '1' and acc_addr(31 downto 4) = X"FFFFFFE" and
+               acc_addr(3 downto 0) /= "0000" and pause_own = '1' and paused_i = '1' and
+               hold_r = '0' and rst_i = '0' then
+               f_rw_d <= '1';
+            end if;
             f_reg_d  <= regs_i(32 * to_integer(acc_addr(3 downto 0)) + 31 downto
                                32 * to_integer(acc_addr(3 downto 0)));
 
@@ -1275,7 +1359,7 @@ begin
             if f_side_take = '1' then
                f_side_pend <= '1';
                f_side_ref  <= '1' when not is_dbg(acc_addr) and mem_ok = '0' else
-                              '0';
+                              f_side_regw;
             end if;
             if f_ctrl = '1' and clearing_r = '0' and acc_wdata(2) = '1' then
                f_side_clr <= not host_go;
@@ -1313,7 +1397,8 @@ begin
       f_ans    <= ans_req_tgl /= ans_ack_tgl;
       f_past   <= rx_st = RX_PAY_ST or rx_st = RX_CC1_ST or rx_st = RX_CC2_ST or
                   rx_st = RX_CALL_ST or rx_st = RX_WAIT_ST;
-      f_data   <= tag_r = C_TAG_W and dig_r >= 12 and bad_r = '0' and err02_r = '0' and f_past;
+      f_data   <= tag_r = C_TAG_W and dig_r >= 12 and bad_r = '0' and err02_r = '0' and
+                  err04_r = '0' and f_past;
       f_mem    <= mem_own = '1' and clearing_r = '0';
       f_end    <= ('0' & req_addr_r) + req_n_r;
       f_tx_end <= ('0' & tx_addr_r) + tx_cnt_r;
@@ -1428,9 +1513,15 @@ begin
       --    ((f_side_d = '0' and acc_rdata_r = f_reg_d) or
       --     (f_side_d = '1' and side_data_r = f_reg_d));
 
+      -- A register write goes to the core exactly in the cycle after p_acc
+      -- carries it out, with its index and word, while pause_o is high.
+      -- psl f_reg_write : assert always reg_we_r = f_rw_d;
+      -- psl f_reg_word : assert always
+      --    reg_we_r = '1' -> (reg_idx_r = f_rw_idx and reg_data_r = f_rw_data and pause_r = '1');
+
       -- The side client (contract g): one done for each request taken, and
       -- the error only for a word that is not a debug register while the
-      -- processor runs. No request is taken while one is open, and the
+      -- processor runs, or a write of R0 to R15 while bit 4 reads 0. No request is taken while one is open, and the
       -- host's go first.
       -- psl f_side_done : assert always side_done_r = '1' -> f_side_pend = '1';
       -- psl f_side_once : assert always (f_side_take = '1' and rst_i = '0') -> f_side_pend = '0';
@@ -1540,7 +1631,8 @@ begin
       -- psl i_rx_ans : assert always f_past -> not f_ans;
       -- psl i_rx_hold : assert always
       --    rx_st = RX_HOLD_ST ->
-      --    (dig_r = 0 and nib_r = 0 and wcnt_r = 0 and bad_r = '0' and err02_r = '0');
+      --    (dig_r = 0 and nib_r = 0 and wcnt_r = 0 and bad_r = '0' and err02_r = '0' and
+      --     err04_r = '0');
       -- psl i_rx_head : assert always dig_r <= 12 -> (wcnt_r = 0 and nib_r = 0);
       -- psl i_rx_call : assert always
       --    (rx_st = RX_CALL_ST or rx_st = RX_WAIT_ST) ->

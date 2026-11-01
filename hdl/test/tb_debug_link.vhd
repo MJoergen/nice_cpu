@@ -14,9 +14,11 @@
 -- is at a breakpoint, and then waits until pause_o has been high, and loses
 -- its registers, its halt, and its pause while it is held, as the real core
 -- does. R15 is 0x1234560F while it runs, and R14 0x7777777E while it
--- runs and 0x1234560E when it stops.
+-- runs and 0x1234560E when it stops. A register write on reg_we_o, which
+-- may come only while the core is paused and pause_o is high, replaces
+-- that value with ISA.md §4.3 applied, until the next hold.
 -- The checks, in the order of the run:
--- * the notice `b05` after reset, and the examples of DEBUG.md §8;
+-- * the notice `b06` after reset, and the examples of DEBUG.md §8;
 -- * lowercase digits, a bad checksum, an unknown tag, a payload with a bad
 --   length or a bad digit, and a W with too many words;
 -- * the debug registers, a clear of the memory, one that a dropped packet
@@ -46,7 +48,12 @@
 -- * the side client: the memory while held, reads all the time beside the
 --   host's packets, a clear between two words of a host's W, a start, the
 --   errors and the registers while running, and a pause and a step that
---   send the host p.
+--   send the host p;
+-- * the writes of R0 to R15 (DEBUG.md §6): `e04` while held, running, and
+--   halted, also with e02 first, the side client's refusals then and on
+--   the way to a pause and in a step, R3, R0, and R14 while paused, and
+--   their read-back, at once for the side client, and one pulse of
+--   reg_we_o for each write of R1 to R15.
 -- The run stops with status 0 when every check passes, and 1 at the first
 -- that fails.
 
@@ -56,6 +63,7 @@ library ieee;
 
    use std.env.all;
 
+   use work.nice_pkg.all;
    use work.trace_pkg.all;
 
 entity tb_debug_link is
@@ -109,6 +117,10 @@ architecture simulation of tb_debug_link is
    signal brk_hit    : std_logic                      := '0';
    signal brk_addr   : t_brk_addrs;
    signal brk_en     : std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+   signal reg_we     : std_logic;
+   signal reg_idx    : std_logic_vector(3 downto 0);
+   signal reg_data   : std_logic_vector(31 downto 0);
+   signal reg_writes : natural                        := 0;
 
    signal wb_cyc   : std_logic;
    signal wb_stb   : std_logic;
@@ -125,8 +137,11 @@ architecture simulation of tb_debug_link is
    -- The side client, which p_side drives: one request of p_test for each
    -- toggle of side_req, answered by a toggle of side_ack with the result,
    -- or, while side_loop is high, reads of 0x100 and the control register,
-   -- which must return side_word and side_ctrl.
+   -- which must return side_word and side_ctrl. With side_pair, a request
+   -- is followed at once by a read of the same word, whose data is the
+   -- result.
    signal side_valid : std_logic                     := '0';
+   signal side_pair  : std_logic                     := '0';
    signal side_we    : std_logic                     := '0';
    signal side_addr  : std_logic_vector(31 downto 0) := (others => '0');
    signal side_wdata : std_logic_vector(31 downto 0) := (others => '0');
@@ -196,6 +211,9 @@ begin
          regs_i         => regs,
          brk_addr_o     => brk_addr,
          brk_en_o       => brk_en,
+         reg_we_o       => reg_we,
+         reg_idx_o      => reg_idx,
+         reg_data_o     => reg_data,
          side_valid_i   => side_valid,
          side_we_i      => side_we,
          side_addr_i    => side_addr,
@@ -283,13 +301,25 @@ begin
    -- The core: it halts when asked, and loses everything while it is held.
    -- R(n) is 0x1234560n while it runs or is halted.
    p_core : process (clk)
+      type t_words is array (0 to 15) of std_logic_vector(31 downto 0);
+
       variable wait_v : natural := 0;
       variable go_v   : boolean := false;
       variable step_v : natural := 0;
       variable bw_v   : boolean := false;
+      variable ovr_v  : std_logic_vector(0 to 15) := (others => '0');
+      variable val_v  : t_words;
+      variable idx_v  : natural range 0 to 15;
    begin
       if rising_edge(clk) then
+         assert reg_we = '0' or (paused = '1' and pause = '1' and hold = '0')
+            report "tb_debug_link: a register write while the core is not paused"
+            severity failure;
+         if reg_we = '1' then
+            reg_writes <= reg_writes + 1;
+         end if;
          if hold = '1' then
+            ovr_v  := (others => '0');
             halted <= '0';
             reason <= "000";
             regs   <= (others => '0');
@@ -358,6 +388,17 @@ begin
                halted <= '1';
                reason <= "001";
             end if;
+            -- A register write, as the cores take it
+            if reg_we = '1' and paused = '1' and pause = '1' then
+               idx_v        := to_integer(unsigned(reg_idx));
+               ovr_v(idx_v) := '1';
+               val_v(idx_v) := regval(idx_v, reg_data);
+            end if;
+            for n in 0 to 15 loop
+               if ovr_v(n) = '1' then
+                  regs(32 * n + 31 downto 32 * n) <= val_v(n);
+               end if;
+            end loop;
          end if;
       end if;
    end process p_core;
@@ -410,6 +451,9 @@ begin
       wait until rising_edge(clk);
       if side_req /= side_ack then
          one(req_we, req_addr, req_wdata);
+         if side_pair = '1' then
+            one('0', req_addr, X"00000000");
+         end if;
          res_err  <= side_err;
          res_data <= side_rdata;
          side_ack <= side_req;
@@ -561,7 +605,7 @@ begin
       rst <= '0';
 
       -- Reset: a notice, and the processor held with the ROM shown.
-      expect(C_ESC & "b05#C7", "b05");
+      expect(C_ESC & "b06#C8", "b06");
       assert hold = '1' and rom_hide = '0' and eoi = '0'
          report "tb_debug_link: state after reset"
          severity failure;
@@ -618,7 +662,7 @@ begin
 
       -- The registers while held: version, free space, the breakpoints, and control.
       send(C_ESC & "RFFFFFFF20001#2F");
-      expect(C_ESC & "rFFFFFFF2000100000005#D4", "version");
+      expect(C_ESC & "rFFFFFFF2000100000006#D5", "version");
       send(C_ESC & "RFFFFFFF30001#30");
       expect(C_ESC & "rFFFFFFF3000100000008#D8", "free space");
       send(C_ESC & "RFFFFFFF40002#32");
@@ -1233,7 +1277,7 @@ begin
       rst <= '1';
       cycles(3);
       rst <= '0';
-      expect(C_ESC & "b05#C7", "b05 after reset");
+      expect(C_ESC & "b06#C8", "b06 after reset");
       send(C_ESC & "RFFFFFFF80001#35");
       expect(C_ESC & "rFFFFFFF8000100000000#D5", "address after reset");
       send(C_ESC & "RFFFFFFF40001#31");
@@ -1359,6 +1403,79 @@ begin
       send(C_ESC & "R000002010001#96");
       expect(C_ESC & "r0000020100010000BBBB#7E", "host read after a side hold");
       quiet("side hold");
+
+      -- The writes of R0 to R15 (DEBUG.md §6). Held: e04, also for the
+      -- side client, and no pulse.
+      send(C_ESC & "WFFFFFFE3000100000005#B9");
+      expect(C_ESC & "e5704#35", "e04 while held");
+      side('1', X"FFFFFFE3", X"00000005", '1', X"00000000", "side register write while held");
+      -- Paused at a start: R3 and R14 take the value, R0 none, and the
+      -- read-back shows them at once. Each write of R1 to R15 is one pulse.
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", "start paused for the writes");
+      send(C_ESC & "WFFFFFFE30001AAAA0003#FB");
+      expect(C_ESC & "kFFFFFFE30001#48", "write R3");
+      send(C_ESC & "RFFFFFFE30001#2F");
+      expect(C_ESC & "rFFFFFFE30001AAAA0003#16", "R3 after its write");
+      send(C_ESC & "WFFFFFFE0000100000007#B8");
+      expect(C_ESC & "kFFFFFFE00001#45", "write R0");
+      send(C_ESC & "RFFFFFFE00001#2C");
+      expect(C_ESC & "rFFFFFFE0000112345600#E1", "R0 after its write");
+      send(C_ESC & "WFFFFFFEE000100000000#C6");
+      expect(C_ESC & "kFFFFFFEE0001#5A", "write R14");
+      send(C_ESC & "RFFFFFFEE0001#41");
+      expect(C_ESC & "rFFFFFFEE000101000000#E2", "R14 after its write");
+      -- The side client: a write and a read at once after it, and R0.
+      side_pair <= '1';
+      side('1', X"FFFFFFE5", X"00000055", '0', X"00000000", "side write of R5");
+      side_pair <= '0';
+      if res_data /= X"00000055" then
+         fail("side read of R5 the cycle after its write: " & to_hstring(res_data));
+      end if;
+      side('1', X"FFFFFFE0", X"00000055", '0', X"00000000", "side write of R0");
+      side('0', X"FFFFFFE0", X"00000000", '0', X"12345600", "side read of R0");
+      cycles(5);
+      if reg_writes /= 3 then
+         fail("register writes: " & integer'image(reg_writes) & " pulses, not 3");
+      end if;
+      side('0', X"FFFFFFE5", X"00000000", '0', X"00000055", "side read of R5 from the core");
+      -- In a step and on the way to a pause, the side client is refused.
+      pause_wait <= 200;
+      step_wait  <= 200;
+      side('1', X"FFFFFFF0", X"00000038", '0', X"00000000", "side step for the writes");
+      side('1', X"FFFFFFE3", X"00000005", '1', X"00000000", "side register write in a step");
+      expect(C_ESC & "p#70", "p of the step for the writes");
+      side('1', X"FFFFFFF0", X"00000008", '0', X"00000000", "side go on for the writes");
+      -- Running: e04 for R0 to R15, and e02 first.
+      send(C_ESC & "WFFFFFFE3000100000005#B9");
+      expect(C_ESC & "e5704#35", "e04 while running");
+      send(C_ESC & "WFFFFFFE0000100000005#B6");
+      expect(C_ESC & "e5704#35", "e04 for R0 while running");
+      send(C_ESC & "WFFFFFFDF00020000000500000005#51");
+      expect(C_ESC & "e5702#33", "e02 before e04");
+      side('1', X"FFFFFFE3", X"00000005", '1', X"00000000", "side register write while running");
+      side('1', X"FFFFFFF0", X"00000018", '0', X"00000000", "side pause request for the writes");
+      side('1', X"FFFFFFE3", X"00000005", '1', X"00000000",
+           "side register write before the pause");
+      expect(C_ESC & "p#70", "p after the writes on the way");
+      pause_wait <= 40;
+      step_wait  <= 20;
+      side('1', X"FFFFFFF0", X"00000008", '0', X"00000000", "side go on before the halt");
+      -- Halted: e04, and the registers stay as the halt left them.
+      core_halt <= '1';
+      expect(C_ESC & "h01#C9", "halt for the writes");
+      send(C_ESC & "WFFFFFFE3000100000005#B9");
+      expect(C_ESC & "e5704#35", "e04 while halted");
+      side('1', X"FFFFFFE3", X"00000005", '1', X"00000000", "side register write while halted");
+      send(C_ESC & "RFFFFFFE30001#2F");
+      expect(C_ESC & "rFFFFFFE30001AAAA0003#16", "R3 after a halt");
+      if reg_writes /= 3 then
+         fail("register writes after the refusals: " & integer'image(reg_writes));
+      end if;
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold after the writes");
+      core_halt <= '0';
+      quiet("register writes");
 
       report "tb_debug_link: pass";
       stop(0);

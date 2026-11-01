@@ -25,7 +25,7 @@
 -- sends against the exact string. The checksums of the fixed strings are
 -- the sum of the bytes from the tag to the end of the payload, mod 256,
 -- worked out with a script, not taken from a simulation. The checks:
--- * `b05`, and the W and R of DEBUG.md §8, through the decoder to memory;
+-- * `b06`, and the W and R of DEBUG.md §8, through the decoder to memory;
 -- * a word that G_INIT_FILE loaded, and the math unit through the decoder;
 -- * the link's reads of the console and the read counter, and its writes
 --   to the console, which the program must not see;
@@ -42,6 +42,10 @@
 -- * the breakpoints: a stop of the core's own before the echo, `x`, the stop
 --   register, a step and a go on from a breakpoint, which run its
 --   instruction, and a breakpoint disabled while paused;
+-- * the writes of R0 to R15 (DEBUG.md §6): R3, R0, R14, and R15 at a start
+--   paused, a step and a go on from the written R15, also at an enabled
+--   breakpoint, which runs its instruction, and `e04` while held, halted,
+--   and running;
 -- * the halt reasons 2, 3, and 4, with their notices.
 -- The run stops with status 0 when every check passes, and 1 at the first
 -- that fails.
@@ -69,6 +73,11 @@ architecture simulation of tb_link is
 
    constant C_TIMEOUT : positive  := 2000;
    constant C_ESC     : character := character'val(255);
+
+   -- The words of the program of the register writes, from niceasm: at 0,
+   -- MOVE R2, R3 and a loop, MOVE R15, 1; at 0x20, MOVE R4, R3 and HALT
+   constant C_REGS_LOW  : string := "00008180" & "0003D800" & "00000001";
+   constant C_REGS_HIGH : string := "00010180" & "0C000000";
 
    -- The words of the INT program of the step test, from niceasm
    constant C_INT_PROG : string := "00039800" & "00000001" & "0C400000" & "0060C1B0" & "00000001" &
@@ -118,6 +127,9 @@ architecture simulation of tb_link is
    signal regs_flat     : std_logic_vector(511 downto 0);
    signal brk_addr      : t_brk_addrs;
    signal brk_en        : std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+   signal reg_we        : std_logic;
+   signal reg_idx       : std_logic_vector(3 downto 0);
+   signal reg_data      : std_logic_vector(31 downto 0);
    signal retire        : t_retire;
    signal link_owns_bus : std_logic;
 
@@ -227,6 +239,9 @@ begin
             paused_o      => paused,
             brk_addr_i    => brk_addr,
             brk_en_i      => brk_en,
+            reg_we_i      => reg_we,
+            reg_idx_i     => reg_idx,
+            reg_data_i    => reg_data,
             halted_o      => halted,
             halt_reason_o => halt,
             instret_o     => open,
@@ -267,6 +282,9 @@ begin
             paused_o      => paused,
             brk_addr_i    => brk_addr,
             brk_en_i      => brk_en,
+            reg_we_i      => reg_we,
+            reg_idx_i     => reg_idx,
+            reg_data_i    => reg_data,
             halted_o      => halted,
             halt_reason_o => halt,
             instret_o     => open,
@@ -478,6 +496,9 @@ begin
          regs_i         => regs_flat,
          brk_addr_o     => brk_addr,
          brk_en_o       => brk_en,
+         reg_we_o       => reg_we,
+         reg_idx_o      => reg_idx,
+         reg_data_o     => reg_data,
          wb_cyc_o       => link_cyc,
          wb_stb_o       => link_stb,
          wb_stall_i     => link_stall,
@@ -681,7 +702,7 @@ begin
       cycles(3);
       rst <= '0';
 
-      expect(C_ESC & "b05#C7", "b05");
+      expect(C_ESC & "b06#C8", "b06");
 
       -- DEBUG.md §8, through the decoder to the memory model
       send(C_ESC & "W0000010000021122334455667788#E2");
@@ -977,6 +998,71 @@ begin
       send("w");
       expect("w", "echo with none");
       quiet("no stop with none");
+
+      -- The writes of R0 to R15 (DEBUG.md §6). Held, a write gets e04.
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold before the register writes");
+      send(C_ESC & "W000000000003" & C_REGS_LOW & "#" & cc("W000000000003" & C_REGS_LOW));
+      expect(C_ESC & "k000000000003#" & cc("k000000000003"), "load the register program");
+      send(C_ESC & "W000000200002" & C_REGS_HIGH & "#" & cc("W000000200002" & C_REGS_HIGH));
+      expect(C_ESC & "k000000200002#" & cc("k000000200002"), "load its words at 0x20");
+      send(C_ESC & "WFFFFFFE3000100000005#B9");
+      expect(C_ESC & "e5704#35", "e04 while held");
+      send(C_ESC & "WFFFFFFE300010000000#" & cc("WFFFFFFE300010000000"));
+      expect(C_ESC & "e5703#34", "e03 goes before e04");
+      -- Paused at the start: R3 and R15 take the value, R0 none, and R14
+      -- gets bit 24.
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70",
+                    "start the register program paused");
+      send(C_ESC & "WFFFFFFE3000100000005#B9");
+      expect(C_ESC & "kFFFFFFE30001#48", "write R3");
+      send(C_ESC & "WFFFFFFEF000100000020#C9");
+      expect(C_ESC & "kFFFFFFEF0001#5B", "write R15");
+      send(C_ESC & "WFFFFFFE00001" & "00000007#" & cc("WFFFFFFE00001" & "00000007"));
+      expect(C_ESC & "kFFFFFFE00001#" & cc("kFFFFFFE00001"), "write R0");
+      send(C_ESC & "WFFFFFFEE0001" & "00000000#" & cc("WFFFFFFEE0001" & "00000000"));
+      expect(C_ESC & "kFFFFFFEE0001#" & cc("kFFFFFFEE0001"), "write R14");
+      reg_is(0, X"00000000", "R0 after its write");
+      reg_is(3, X"00000005", "R3 after its write");
+      reg_is(14, X"01000000", "R14 after its write");
+      reg_is(15, X"00000020", "R15 after its write");
+      -- A step runs the instruction at the new R15.
+      step("", "step from the written R15");
+      reg_is(4, X"00000005", "R4 after the step");
+      reg_is(15, X"00000021", "R15 after the step");
+      -- A written R15 at an enabled breakpoint, and a go on: its instruction
+      -- runs first, and then the HALT.
+      send(C_ESC & "WFFFFFFF80001" & "00000020#" & cc("WFFFFFFF80001" & "00000020"));
+      expect(C_ESC & "kFFFFFFF80001#4E", "breakpoint 0 at 0x20");
+      send(C_ESC & "WFFFFFFF4000100000001#B7");
+      expect(C_ESC & "kFFFFFFF40001#4A", "enable it");
+      send(C_ESC & "WFFFFFFE40002" & "00000000" & "00000006#" &
+           cc("WFFFFFFE40002" & "00000000" & "00000006"));
+      expect(C_ESC & "kFFFFFFE40002#" & cc("kFFFFFFE40002"), "write R4 and R5");
+      send(C_ESC & "WFFFFFFEF000100000020#C9");
+      expect(C_ESC & "kFFFFFFEF0001#5B", "write R15 at the breakpoint");
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "h01#C9", "go on from the breakpoint");
+      reg_is(4, X"00000005", "R4 after the go on");
+      reg_is(5, X"00000006", "R5 after the go on");
+      reg_is(15, X"00000022", "R15 after the go on");
+      send(C_ESC & "WFFFFFFF4000100000000#B6");
+      expect(C_ESC & "kFFFFFFF40001#4A", "disable it");
+      -- Halted, then running: e04, and the registers stay.
+      send(C_ESC & "WFFFFFFE3000100000009#BD");
+      expect(C_ESC & "e5704#35", "e04 while halted");
+      reg_is(3, X"00000005", "R3 after e04");
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold before running");
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "start the loop");
+      send(C_ESC & "WFFFFFFE3000100000005#B9");
+      expect(C_ESC & "e5704#35", "e04 while running");
+      send(C_ESC & "WFFFFFFE0000100000005#B6");
+      expect(C_ESC & "e5704#35", "e04 for R0 while running");
+      send(C_ESC & "WFFFFFFDF00020000000500000005#" & cc("WFFFFFFDF00020000000500000005"));
+      expect(C_ESC & "e5702#33", "e02 goes first");
 
       -- The other halt reasons (DEBUG.md §6), each as niceemu halts with it:
       -- a reserved control word, INT inside a routine, and RTI outside one.

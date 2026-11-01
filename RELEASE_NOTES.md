@@ -43,6 +43,11 @@ host write R1–R15 while the processor is paused (#102).
   from the devices into R0–R15 while held or halted writes nothing. A host
   of version 5 never wrote these words, which were read only, so it works
   as before.
+- Both cores have the inputs `reg_we_i`, `reg_idx_i`, and `reg_data_i`,
+  and `debug_link` the outputs `reg_we_o`, `reg_idx_o`, and `reg_data_o`
+  (#102). The inputs default to 0, so a system that does not connect them
+  works as before, but a host's write of R1–R15 does not reach the
+  core. A board connects the link's outputs to the core's inputs.
 - `wb_dmux`, the devices, and the address map of SYSTEM.md are as in V1.2.
 - Zig 0.17.0, as in V1.2.
 
@@ -72,6 +77,18 @@ host write R1–R15 while the processor is paused (#102).
 - `--link` serves debug link version 6: R1–R15 take a write while the
   processor is paused, and a write of R0–R15 while it is not gets `e04`
   (#102).
+
+**FPGA cores (`hdl/`)**
+
+- Both cores take a register write while paused, with R0 unchanged and
+  bit 24 of R14 set, and go on from a written R15 (#102). The pipelined
+  core takes it in WRITE's `PAUSED_ST`.
+- `debug_link` is version 6: a write of R1–R15 while paused drives the
+  core's register write and the copy that a read returns, and a write of
+  R0–R15 while not paused gets `e04`. The side client gets `side_err_o`
+  for it (#102).
+- The proofs of both cores, of WRITE, and of the link cover the writes,
+  and `tb_link` and `tb_debug_link` test them (#102).
 
 ## V1.2 (2026-10-31)
 

@@ -115,6 +115,9 @@ architecture synthesis of formal_debug_link is
    signal side_done    : std_logic;
    signal side_err     : std_logic;
    signal side_data    : std_logic_vector(31 downto 0);
+   signal reg_we       : std_logic;
+   signal reg_idx      : std_logic_vector(3 downto 0);
+   signal reg_data     : std_logic_vector(31 downto 0);
 
    -- A console byte taken, which is the next byte out
    signal pending  : natural range 0 to 2;          -- The ACKs owed to the master
@@ -193,6 +196,11 @@ begin
    -- (contract e).
    -- psl f_paused_halt : assume always not (paused_i and halted_i);
    -- psl f_paused : assume always pause_keep_d = '1' -> paused_i = '1';
+
+   -- A register write reaches the core only while it is paused, and pause_o
+   -- is high, as the contracts of the cores ask, and not in a hold.
+   -- psl f_reg_paused : assert always
+   --    reg_we = '1' -> (paused_i = '1' and pause = '1' and hold = '0');
 
    -- The Wishbone master
    -- psl f_wb_hold : assert always wb_cyc -> (hold = '1' or halted_i = '1' or paused_i = '1');
@@ -288,6 +296,9 @@ begin
          regs_i         => regs_i,
          brk_addr_o     => brk_addr,
          brk_en_o       => brk_en,
+         reg_we_o       => reg_we,
+         reg_idx_o      => reg_idx,
+         reg_data_o     => reg_data,
          side_valid_i   => side_valid_i,
          side_we_i      => side_we_i,
          side_addr_i    => side_addr_i,

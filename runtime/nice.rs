@@ -86,6 +86,42 @@ pub fn pollc() -> Poll {
     }
 }
 
+/// Reads a line of console input into buf and returns it, without the
+/// "\n", and without a "\r" just before it. A line longer than buf is cut
+/// off: its first buf.len() bytes are kept, and the rest is read and
+/// dropped. Bytes that are not UTF-8, as a character cut in two, end the
+/// string at the last whole character. A last line with no "\n" before the
+/// end of the input is returned too. Returns None once the input has ended
+/// with no byte read.
+pub fn read_line(buf: &mut [u8]) -> Option<&str> {
+    let mut n = 0;
+    let mut cut = false;
+    loop {
+        match getc() {
+            Some(b'\n') => break,
+            Some(c) => {
+                if n < buf.len() {
+                    buf[n] = c;
+                    n += 1;
+                } else {
+                    cut = true;
+                }
+            }
+            None if n == 0 && !cut => return None,
+            None => break,
+        }
+    }
+    if !cut && n > 0 && buf[n - 1] == b'\r' {
+        n -= 1;
+    }
+    let line = &buf[..n];
+    Some(match core::str::from_utf8(line) {
+        Ok(s) => s,
+        // The prefix is valid UTF-8, so the second call cannot fail.
+        Err(e) => core::str::from_utf8(&line[..e.valid_up_to()]).unwrap_or(""),
+    })
+}
+
 /// The performance counters of SYSTEM.md §3: the clock cycles and the
 /// instructions since reset. An interrupt routine must not read them while
 /// the code it interrupted is reading one.

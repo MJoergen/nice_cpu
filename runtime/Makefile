@@ -77,8 +77,8 @@ endef
 # as the console input. The console output, main's result in R1, and the
 # exit status are compared with test/X.expected. The .wasm files are
 # checked in, so make test needs no Zig or Rust; make wasm rebuilds them.
-ZIG_TESTS = nicezig zigpoll zigheap
-RUST_TESTS = nicers rustpoll rustheap
+ZIG_TESTS = nicezig zigpoll zigheap zigline
+RUST_TESTS = nicers rustpoll rustheap rustline
 
 # The options for nicewasm.py of a test, if any.
 WASM_OPTS_rustheap = --memory-pages 2

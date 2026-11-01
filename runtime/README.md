@@ -353,14 +353,31 @@ prints a byte slice instead.
 |---|---|---|
 | The `nice` imports | `peek`, `poke` | `peek`, `poke`, safe wrappers |
 | Output | `putc(c)`, `write(bytes)`, `print(fmt, args)` with `std.fmt`, and `writer`, a `std.Io.Writer` | `putc(c)`, `write(bytes)`, `print!` and `println!` with `core::fmt`, and `Console`, a `core::fmt::Write` |
-| Input | `getc()`, a `?u8`, and `pollc()`, a `Poll`: `.byte`, `.empty`, or `.end` | `getc()`, an `Option<u8>`, and `pollc()`, a `Poll`: `Byte`, `Empty`, or `End` |
+| Input | `getc()`, a `?u8`, `pollc()`, a `Poll`: `.byte`, `.empty`, or `.end`, and `readLine(buf)`, a `?[]u8` | `getc()`, an `Option<u8>`, `pollc()`, a `Poll`: `Byte`, `Empty`, or `End`, and `read_line(buf)`, an `Option<&str>` |
 | Counters | `cycles()`, `instructions()` | `cycles()`, `instructions()` |
 | Screen | `screenPut(col, row, c)`, `screenClear()`, `screen_cols`, `screen_rows` | `screen_put(col, row, c)`, `screen_clear()`, `SCREEN_COLS`, `SCREEN_ROWS` |
 | Heap | `heap`, a `std.mem.Allocator` | `Heap`, a `GlobalAlloc` for the `alloc` crate |
 
 `getc` waits until a byte is there, and returns null or `None` once the
-line's input has ended, as `nice_getc` returns −1. There is no
-formatted input, as `scanf` gives C.
+line's input has ended, as `nice_getc` returns −1.
+
+`readLine` and `read_line` read a line into a buffer and return it,
+without the `\n`, and without a `\r` just before it. A line longer than
+the buffer is cut off: the bytes that fit are returned, and the rest of
+the line is read and dropped. A last line with no `\n` before the end of
+the input is returned too, and after it null or `None`. In Rust, bytes
+that are not UTF-8, such as a character cut in two by the buffer's end,
+end the string at the last whole character. There is no `scanf`; a
+program parses the line with the language's own functions:
+
+    // Zig
+    var it = std.mem.tokenizeAny(u8, line, " ");
+    while (it.next()) |w| sum += try std.fmt.parseInt(i32, w, 10);
+
+    // Rust
+    let sum: i32 = line.split_whitespace().filter_map(|w| w.parse::<i32>().ok()).sum();
+
+`test/zigline.zig` and `test/rustline.rs` are examples.
 
 For Zig, add the file as the module `nice`, and import it with
 `const nice = @import("nice");`:
@@ -453,8 +470,9 @@ which needs the 128 KB stack, is not exercised. The core's runs (`make test KEEP
 GHDL hours.
 
 Then it runs the tests of `nice.zig` and `nice.rs`, `test/nicezig.zig`,
-`test/zigpoll.zig`, `test/zigheap.zig`, `test/nicers.rs`,
-`test/rustpoll.rs`, and `test/rustheap.rs`, the same way, with
+`test/zigpoll.zig`, `test/zigheap.zig`, `test/zigline.zig`,
+`test/nicers.rs`, `test/rustpoll.rs`, `test/rustheap.rs`, and
+`test/rustline.rs`, the same way, with
 `test/X.input` as the console input and `test/X.expected`, written by
 hand from the source. `test/zigheap.zig` and `test/rustheap.rs` are
 translated with `--memory-pages 2`, so that their heap can grow by one

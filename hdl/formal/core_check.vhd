@@ -8,12 +8,15 @@
 -- A wb_master_check watches each bus, and a handshake_check each interrupt
 -- port. Besides their assertions: the core goes quiet when it halts or
 -- pauses, and stays quiet until reset or until it goes on; regs_i does not
--- change while paused; and once the core goes on, it reports a step on
+-- change while paused, but for a write on reg_we_i, reg_idx_i, and
+-- reg_data_i in a cycle with pause_i at '1', which is in regs_i the next
+-- cycle with the rules of ISA.md §4.3; and once the core goes on, it reports a step on
 -- retire_i before it pauses again. G_BREAKS breakpoints, with free
 -- addresses and enable bits: the core pauses without pause_i only when R15
 -- was an enabled breakpoint, and then stays paused until pause_i has been
 -- '1'. The covers show a step reported, a store, a halt, a pause, a step
--- after a pause, and a pause at a breakpoint.
+-- after a pause, a pause at a breakpoint, and a step after a register
+-- write.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) The first cycle is a reset, so the registers here start from it.
@@ -21,6 +24,9 @@
 library ieee;
    use ieee.std_logic_1164.all;
 
+   use ieee.numeric_std_unsigned.all;
+
+   use work.nice_pkg.all;
    use work.trace_pkg.all;
 
 entity core_check is
@@ -60,6 +66,9 @@ entity core_check is
       regs_i       : in  t_regs;
       brk_addr_i   : in  t_brk_addrs;
       brk_en_i     : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+      reg_we_i     : in  std_logic;
+      reg_idx_i    : in  std_logic_vector(3 downto 0);
+      reg_data_i   : in  std_logic_vector(31 downto 0);
 
       -- The requests that wait for their ACK on each bus, for the
       -- invariants of a particular core
@@ -81,6 +90,11 @@ architecture synthesis of core_check is
    signal halted_d : std_logic := '0';
    signal pause_d  : std_logic := '0';
    signal regs_d   : t_regs;
+   -- regs_d with the register write of the cycle before, if the core takes
+   -- it: one while paused with pause_i at '1'
+   signal regs_w   : t_regs;
+   -- A register write was taken, and no step has been reported since
+   signal wrote_r  : std_logic := '0';
 
    -- paused_i has fallen, and no step has been reported since
    signal owed_r : std_logic := '0';
@@ -113,7 +127,7 @@ begin
    --    (paused_i = '1' and ibus_cyc_i = '0' and ibus_stb_i = '0' and dbus_cyc_i = '0' and
    --     dbus_stb_i = '0');
    -- psl f_pause_regs : assert always (rst_i = '0' and paused_d = '1' and paused_i = '1') ->
-   --    regs_i = regs_d;
+   --    regs_i = regs_w;
    -- psl f_pause_halt : assert always rst_i = '0' -> not (paused_i = '1' and halted_i = '1');
 
    -- Once paused_i falls, a step is reported before it rises again.
@@ -132,6 +146,7 @@ begin
    -- psl c_pause : cover {paused_i = '1' and rst_i = '0'};
    -- psl c_go_step : cover {owed_r = '1' and retire_i.valid = '1' and rst_i = '0'};
    -- psl c_brk : cover {own};
+   -- psl c_reg_step : cover {wrote_r = '1' and retire_i.valid = '1' and rst_i = '0'};
 
 
    i_ibus_check : entity work.wb_master_check
@@ -209,6 +224,13 @@ begin
          halted_d <= halted_i and not rst_i;
          pause_d  <= pause_i and not rst_i;
          regs_d   <= regs_i;
+         regs_w   <= regs_i;
+         if reg_we_i = '1' and paused_i = '1' and pause_i = '1' then
+            regs_w(to_integer(reg_idx_i)) <= regval(to_integer(reg_idx_i), reg_data_i);
+            wrote_r                       <= '1';
+         elsif retire_i.valid = '1' then
+            wrote_r <= '0';
+         end if;
          hit_d    <= '0';
          for i in 0 to G_BREAKS - 1 loop
             if brk_en_i(i) = '1' and brk_addr_i(i) = regs_i(15) then
@@ -229,6 +251,7 @@ begin
             retire_d.valid <= '0';
             owed_r         <= '0';
             wait_r         <= '0';
+            wrote_r        <= '0';
          end if;
       end if;
    end process p_retire_d;

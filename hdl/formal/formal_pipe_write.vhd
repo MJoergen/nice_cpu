@@ -24,11 +24,16 @@
 -- here for every cycle. The record inputs are free signals here (anyseq),
 -- since the top level has only plain ports.
 --
+-- A taken register write, in PAUSED_ST with pause_i at '1' (doc/DEBUG.md
+-- §6), is in w.regs the next cycle with the rules of ISA.md §4.3, and
+-- nothing else changes the registers while paused.
+--
 -- It also proves the assumptions about WRITE that PREPARE's proof makes
 -- with its model registers, with the same model: while WRITE runs, it
 -- holds what PREPARE moved on, until it retires it or flushes; SR changes
 -- only while WRITE holds a micro-operation that may change it, or with a
--- flush, an interrupt entry, or a reset; WRITE's condition likewise, while
+-- flush, an interrupt entry, or a reset, or in PAUSED_ST, where a register
+-- write may set R14; WRITE's condition likewise, while
 -- it holds an instruction's first, or else to the condition of the one it
 -- holds, as PREPARE found it; and WRITE leaves RUN_ST only with a flush,
 -- an interrupt entry, or a reset. Each change can come in a cycle before
@@ -42,6 +47,7 @@
 
 library ieee;
    use ieee.std_logic_1164.all;
+   use ieee.numeric_std_unsigned.all;
 
    use work.nice_pkg.all;
    use work.pipe_pkg.all;
@@ -65,7 +71,10 @@ entity formal_pipe_write is
       irq_vector_i : in  std_logic_vector(7 downto 0);
       f_addr_i     : in  std_logic_vector(31 downto 0);
       f_blk_i      : in  std_logic_vector(31 downto 5);
-      pause_i      : in  std_logic
+      pause_i      : in  std_logic;
+      reg_we_i     : in  std_logic;
+      reg_idx_i    : in  std_logic_vector(3 downto 0);
+      reg_data_i   : in  std_logic_vector(31 downto 0)
    );
 end entity formal_pipe_write;
 
@@ -110,6 +119,11 @@ architecture synthesis of formal_pipe_write is
    signal flag_d   : std_logic := '0';
    -- WRITE enters PAUSED_ST now
    signal enters   : std_logic;
+
+   -- WRITE takes a register write now, and the registers of the cycle
+   -- before with its write applied
+   signal taken    : std_logic;
+   signal regs_w   : t_regs;
 
    -- PREPARE's model of WRITE (src/pipe_prepare.vhd, p_model): the
    -- micro-operation WRITE holds, and from the cycle before, SR, the
@@ -178,6 +192,10 @@ begin
    --    w.mode = PAUSED_ST;
    -- psl f_brk_wait : assert always (rst_i = '0' and w.brk_wait = '1') -> w.mode = PAUSED_ST;
 
+   -- A register write changes WRITE only when it is taken, and then the
+   -- register, with ISA.md §4.3 applied.
+   -- psl f_reg_write : assert always (rst_d = '0' and paused_d = '1') -> w.regs = regs_w;
+
    -- PREPARE's assumptions about WRITE (src/pipe_prepare.vhd)
    -- psl f_takes : assert always (f_first = '0' and w.mode = RUN_ST) ->
    --    (w.uop.valid = f_uop.valid and (f_uop.valid = '0' or w.uop = f_uop));
@@ -209,6 +227,8 @@ begin
    -- psl c_int_keep : cover {w.mode = VEC_ST and w.uop.valid = '1' and rst_i = '0'};
    -- psl c_brk_go : cover {enters = '1' and pause_d = '0' and rst_i = '0';
    --    (w.mode = PAUSED_ST)[*]; w.mode = RUN_ST and rst_i = '0'};
+   -- psl c_reg_go : cover {taken = '1'; (w.mode = PAUSED_ST)[*];
+   --    w.mode = RUN_ST and rst_i = '0'};
 
 
    i_pipe_write : entity work.pipe_write
@@ -244,6 +264,9 @@ begin
          take_nmi_o   => take_nmi,
          take_irq_o   => take_irq,
          pause_i      => pause_i,
+         reg_we_i     => reg_we_i,
+         reg_idx_i    => reg_idx_i,
+         reg_data_i   => reg_data_i,
          state_o      => w,
          done_o       => done,
          flush_o      => flush,
@@ -252,6 +275,8 @@ begin
          retire_o     => retire
       ); -- i_pipe_write
 
+
+   taken <= to_sl(w.mode = PAUSED_ST) and pause_i and reg_we_i and not rst_i;
 
    left <= paused_d and to_sl(w.mode /= PAUSED_ST);
    enters <= not paused_d and to_sl(w.mode = PAUSED_ST);
@@ -267,6 +292,10 @@ begin
          pause_d  <= pause_i;
          wait_d   <= w.brk_wait;
          flag_d   <= flag;
+         regs_w   <= w.regs;
+         if taken = '1' then
+            regs_w(to_integer(reg_idx_i)) <= regval(to_integer(reg_idx_i), reg_data_i);
+         end if;
          if retire.valid = '1' then
             owed_r <= '0';
          elsif left = '1' then
@@ -286,7 +315,7 @@ begin
          end if;
          f_sr        <= w.regs(14);
          f_sr_free   <= rst_i or flush or take_nmi or take_irq or
-                        (w.uop.valid and w.uop.may_sr);
+                        (w.uop.valid and w.uop.may_sr) or to_sl(w.mode = PAUSED_ST);
          f_cond      <= w.cond;
          f_cond_free <= rst_i or flush or take_nmi or take_irq or
                         (w.uop.valid and w.uop.first);

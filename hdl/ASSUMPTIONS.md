@@ -216,3 +216,17 @@ change outside `hdl/` are marked **Outside hdl/**, and are also
     the next instruction yet. The IRQ before step 18 of `test/breaks.nasm`
     comes with the flagged instruction already in the pipeline, and a
     core that stops first fails `breaks`.
+
+## The register writes
+
+23. **A register write goes in only while paused**, in WRITE's arm of
+    `PAUSED_ST` with `pause_i` = 1 (DEBUG.md §6). The pipeline is empty
+    there, FETCH waits at R15 with no request, and the go on flushes to
+    `w_r.regs(15)`, so the write needs no path to FETCH, DECODE, PREPARE,
+    or DBUS. A pulse in the cycle that `pause_i` falls is dropped, since
+    the go on would fetch from the old R15 while the register took the
+    new one. The debug link never sends one then. `formal_pipe_write`
+    proves the write while paused, but not that a write elsewhere changes
+    nothing: a second copy of WRITE to compare with was too slow to
+    prove. PREPARE's model lets SR change in `PAUSED_ST`, where a write
+    may set R14.

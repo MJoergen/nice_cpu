@@ -633,6 +633,16 @@ link sees `paused_o` rise while `pause_i` is 0, and has time to raise
 `pause_i`. Then go on and step work as after any pause. The link finds
 the breakpoint by R15 on `regs_o`; the cores have no output for it.
 
+A debugger writes a register while the core is paused (DEBUG.md §6), on
+the inputs `reg_we_i`, `reg_idx_i`, and `reg_data_i`, from flip-flops of
+the debug link. The core takes the write in a cycle of `PAUSED_ST` with
+`pause_i` = 1, through `regval`, so R0 stays 0 and R14 gets bit 24, and
+in no other cycle. No flags are computed, and `in_service`, `after_rti`,
+and the saved PC and SR stay. The pipeline is empty there, and the go on
+flushes to R15, so the core goes on from a written R15 with no path from
+the port to FETCH. The port adds a source to the D inputs of WRITE's
+registers, a mux whose select comes from flip-flops.
+
 `halt_reason_o` is the reason of the step that halted the core, a
 `t_halt`, while `halted_o` is 1, and `HALT_NONE` before. So a system need
 not catch it from `retire_o`, which is for simulation.

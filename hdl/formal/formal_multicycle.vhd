@@ -6,7 +6,8 @@
 -- THEORY OF OPERATION
 -- core_check holds the checkers and the rules of a stopped core: the core
 -- goes quiet when it halts or pauses, and stays quiet until reset or until
--- it goes on; regs_o does not change while paused; and once the core goes
+-- it goes on; regs_o does not change while paused, but for a register
+-- write on its free port, with ISA.md §4.3 applied; and once the core goes
 -- on, it reports a step on retire_o before it pauses again (MICROARCH.md
 -- §6.1). The last holds as the core does not pause while after_go is '1',
 -- and only a report clears that. Two breakpoints, with free addresses and
@@ -40,7 +41,10 @@ entity formal_multicycle is
       irq_vector_i : in  std_logic_vector(7 downto 0);
       pause_i      : in  std_logic;
       brk_addr_i   : in  t_brk_addrs;
-      brk_en_i     : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0)
+      brk_en_i     : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+      reg_we_i     : in  std_logic;
+      reg_idx_i    : in  std_logic_vector(3 downto 0);
+      reg_data_i   : in  std_logic_vector(31 downto 0)
    );
 end entity formal_multicycle;
 
@@ -115,6 +119,9 @@ begin
          paused_o      => paused,
          brk_addr_i    => brk_addr_i,
          brk_en_i      => brk_en_i,
+         reg_we_i      => reg_we_i,
+         reg_idx_i     => reg_idx_i,
+         reg_data_i    => reg_data_i,
          halted_o      => halted,
          halt_reason_o => reason,
          instret_o     => instret,
@@ -158,6 +165,9 @@ begin
          regs_i       => regs,
          brk_addr_i   => brk_addr_i,
          brk_en_i     => brk_en_i,
+         reg_we_i     => reg_we_i,
+         reg_idx_i    => reg_idx_i,
+         reg_data_i   => reg_data_i,
          ibus_wait_o  => ibus_wait,
          dbus_wait_o  => dbus_wait,
          own_o        => own

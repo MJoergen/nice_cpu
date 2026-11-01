@@ -14,7 +14,8 @@
 -- under G_FORMAL, and the properties of the halt and the pause that
 -- formal_multicycle proves of the multi-cycle core: the core goes quiet
 -- when it halts or pauses and stays quiet until reset or until it goes
--- on, regs_o does not change while paused, and once the core goes on it
+-- on, regs_o does not change while paused but for a register write on its
+-- free port, and once the core goes on it
 -- reports a step before it pauses again. Two breakpoints, with free
 -- addresses and enable bits that change only in a reset, as a change
 -- while the core runs may miss an instruction (src/pipeline.vhd): the
@@ -53,7 +54,10 @@ entity formal_pipeline is
       irq_vector_i : in  std_logic_vector(7 downto 0);
       pause_i      : in  std_logic;
       brk_addr_i   : in  t_brk_addrs;
-      brk_en_i     : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0)
+      brk_en_i     : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+      reg_we_i     : in  std_logic;
+      reg_idx_i    : in  std_logic_vector(3 downto 0);
+      reg_data_i   : in  std_logic_vector(31 downto 0)
    );
 end entity formal_pipeline;
 
@@ -146,6 +150,9 @@ begin
          paused_o      => paused,
          brk_addr_i    => brk_addr_i,
          brk_en_i      => brk_en_i,
+         reg_we_i      => reg_we_i,
+         reg_idx_i     => reg_idx_i,
+         reg_data_i    => reg_data_i,
          halted_o      => halted,
          halt_reason_o => reason,
          instret_o     => instret,
@@ -190,6 +197,9 @@ begin
          regs_i       => regs,
          brk_addr_i   => brk_addr_i,
          brk_en_i     => brk_en_i,
+         reg_we_i     => reg_we_i,
+         reg_idx_i    => reg_idx_i,
+         reg_data_i   => reg_data_i,
          ibus_wait_o  => open,
          dbus_wait_o  => open,
          own_o        => open

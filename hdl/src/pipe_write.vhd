@@ -30,6 +30,8 @@
 --    register, and st_acc_i when the bus accepts it.
 -- e) pause_i comes from a flip-flop, and does not depend combinationally on
 --    WRITE's outputs.
+-- f) reg_we_i, reg_idx_i, and reg_data_i come from flip-flops. WRITE takes
+--    a write only in PAUSED_ST with pause_i at '1'.
 --
 -- RESET
 -- Synchronous. It sets the state of ISA.md §8.1.
@@ -88,6 +90,11 @@ entity pipe_write is
 
       -- A pause before the next step (MICROARCH.md §6.1)
       pause_i      : in  std_logic;
+
+      -- A write of a register while paused (doc/DEBUG.md §6)
+      reg_we_i     : in  std_logic;
+      reg_idx_i    : in  std_logic_vector(3 downto 0);
+      reg_data_i   : in  std_logic_vector(31 downto 0);
 
       -- WRITE's state, and its decisions in this cycle
       state_o      : out t_write;
@@ -296,9 +303,14 @@ begin
       elsif w_r.mode = PAUSED_ST then
          -- The pipeline is empty. When pause_i falls, FETCH starts again at
          -- R15, so that it sees what a system wrote to memory meanwhile, and
-         -- the core runs one step, whatever pause_i is then.
+         -- the core runs one step, whatever pause_i is then. A register
+         -- write of the system goes in while pause_i is '1', with the rules
+         -- of ISA.md §4.3, so the go on fetches from the new R15.
          if pause_i = '1' then
             n_v.brk_wait := '0';
+            if reg_we_i = '1' then
+               n_v.regs(to_integer(reg_idx_i)) := regval(to_integer(reg_idx_i), reg_data_i);
+            end if;
          elsif w_r.brk_wait = '0' then
             n_v.mode     := RUN_ST;
             n_v.after_go := '1';

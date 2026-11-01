@@ -112,6 +112,14 @@
 -- has time to raise it. A breakpoint written while the core runs may
 -- miss an instruction that DECODE has taken already.
 --
+-- REGISTER WRITES (doc/DEBUG.md §6). In PAUSED_ST, in a cycle with pause_i
+-- and reg_we_i at '1', WRITE writes reg_data_i into the register
+-- reg_idx_i through regval, as a register-direct write of an instruction
+-- does: R0 is unchanged, and R14 gets bit 24. No flags are computed, and
+-- the hidden state stays. The pipeline is empty then, and the go on
+-- flushes to w_r.regs(15), so FETCH starts at the new R15. In every other
+-- cycle reg_we_i changes nothing.
+--
 -- QUIET. halted_o and paused_o rise only once no bus cycle is open, so
 -- that a system may take the buses over while the core is stopped. No
 -- request comes in either mode, and the ACKs that are still owed have come.
@@ -140,6 +148,8 @@
 -- f) brk_addr_i and brk_en_i come from flip-flops. A system that enables
 --    breakpoints raises pause_i once paused_o rises without it, and lowers
 --    it to go on.
+-- g) reg_we_i, reg_idx_i, and reg_data_i come from flip-flops, and
+--    reg_we_i is '1' only while paused_o and pause_i are '1'.
 --
 -- RESET
 -- Synchronous. It sets the state of ISA.md §8.1, empties the pipeline, and
@@ -197,6 +207,11 @@ entity pipeline is
       -- The breakpoints: addresses, and one enable bit each (above)
       brk_addr_i    : in  t_brk_addrs;
       brk_en_i      : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+
+      -- A write of a register while paused (above)
+      reg_we_i      : in  std_logic                     := '0';
+      reg_idx_i     : in  std_logic_vector(3 downto 0)  := (others => '0');
+      reg_data_i    : in  std_logic_vector(31 downto 0) := (others => '0');
 
       -- '1' once the core has halted, and no bus cycle is open (ISA.md §1.4)
       halted_o      : out std_logic;
@@ -490,6 +505,9 @@ begin
          take_nmi_o   => take_nmi,
          take_irq_o   => take_irq,
          pause_i      => pause_i,
+         reg_we_i     => reg_we_i,
+         reg_idx_i    => reg_idx_i,
+         reg_data_i   => reg_data_i,
          state_o      => w_r,
          done_o       => w_done,
          flush_o      => w_flush,

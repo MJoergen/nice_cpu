@@ -64,6 +64,13 @@
 -- pause_i is '0', and has time to raise pause_i. Then go on and step work
 -- as after any pause. The system finds the breakpoint by R15 on regs_o.
 --
+-- REGISTER WRITES (doc/DEBUG.md §6). In PAUSED_ST, in a cycle with pause_i
+-- and reg_we_i at '1', the core writes reg_data_i into the register
+-- reg_idx_i through set_reg, as a register-direct write of an instruction
+-- does: R0 is unchanged, and R14 gets bit 24. No flags are computed, and
+-- the hidden state stays. BOUNDARY fetches from the new R15 at the go on.
+-- In every other cycle reg_we_i changes nothing.
+--
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) The bus slaves acknowledge every request.
 -- b) A device holds nmi_valid_i or irq_valid_i, and the vector, stable until
@@ -78,6 +85,8 @@
 -- f) brk_addr_i and brk_en_i come from flip-flops. A system that enables
 --    breakpoints raises pause_i once paused_o rises without it, and lowers
 --    it to go on.
+-- g) reg_we_i, reg_idx_i, and reg_data_i come from flip-flops, and
+--    reg_we_i is '1' only while paused_o and pause_i are '1'.
 --
 -- RESET
 -- Synchronous. It sets the state of ISA.md §8.1 and drops any bus request.
@@ -134,6 +143,11 @@ entity multicycle is
       -- The breakpoints: addresses, and one enable bit each (above)
       brk_addr_i    : in  t_brk_addrs;
       brk_en_i      : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+
+      -- A write of a register while paused (above)
+      reg_we_i      : in  std_logic                     := '0';
+      reg_idx_i     : in  std_logic_vector(3 downto 0)  := (others => '0');
+      reg_data_i    : in  std_logic_vector(31 downto 0) := (others => '0');
 
       -- '1' once the core has halted, and no bus cycle is open (ISA.md §1.4)
       halted_o      : out std_logic;
@@ -550,6 +564,9 @@ begin
             when PAUSED_ST =>
                if pause_i = '1' then
                   brk_wait <= '0';
+                  if reg_we_i = '1' then
+                     set_reg(regs_v, to_integer(reg_idx_i), reg_data_i);
+                  end if;
                elsif brk_wait = '0' then
                   after_go <= '1';
                   state    <= BOUNDARY_ST;

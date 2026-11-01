@@ -431,7 +431,8 @@ begin
    --   and the fields it decodes agree with the instruction word.
    -- - While WRITE runs, it holds what PREPARE moved on, until it retires
    --   it or flushes. SR changes only while WRITE holds a micro-operation
-   --   that may change it, and WRITE's condition of the instruction only
+   --   that may change it, or in PAUSED_ST, where a system may write R14,
+   --   and WRITE's condition of the instruction only
    --   while it holds an instruction's first, or else to the condition
    --   of the micro-operation it holds, if PREPARE knew it. WRITE leaves
    --   RUN_ST only with a flush or an interrupt.
@@ -489,7 +490,7 @@ begin
 
             f_sr        <= w_i.regs(14);
             f_sr_free   <= rst_i or flush_i or take_nmi_i or take_irq_i or
-                           (w_i.uop.valid and w_i.uop.may_sr);
+                           (w_i.uop.valid and w_i.uop.may_sr) or to_sl(w_i.mode = PAUSED_ST);
             f_cond      <= w_i.cond;
             f_cond_free <= rst_i or flush_i or take_nmi_i or take_irq_i or
                            (w_i.uop.valid and w_i.uop.first);

@@ -129,6 +129,7 @@ and the same two generics: a system instantiates `pipeline` of
 | `nmi_valid_i`, `nmi_ready_o`, `nmi_vector_i`, `irq_valid_i`, `irq_ready_o`, `irq_vector_i` | The interrupt requests of ISA.md §7, NMI and IRQ: a valid/ready handshake and an 8-bit vector each (below). |
 | `pause_i`, `paused_o` | A debugger's pause (below). |
 | `brk_addr_i`, `brk_en_i` | The breakpoints of DEBUG.md §6: `G_BREAKS` addresses, a `t_brk_addrs` of `src/trace_pkg.vhd`, and one enable bit each (below). |
+| `reg_we_i`, `reg_idx_i`, `reg_data_i` | A write of a register while the core is paused, for a debugger (below). They default to 0. |
 | `halted_o`, `halt_reason_o` | 1 once the core has halted and no bus cycle is open, and why, a `t_halt` of `src/trace_pkg.vhd` (below). |
 | `instret_o` | 1 for one cycle for each completed instruction, but not for an interrupt entry, for the instruction counter (SYSTEM.md §3). |
 | `regs_o` | R0 to R15 from the core's registers, a `t_regs`, for a monitor that shows them (below). |
@@ -188,6 +189,17 @@ system sees `paused_o` rise while `pause_i` is 0, raises `pause_i`, and
 then goes on or steps as after any pause. It finds the breakpoint by R15
 on `regs_o`. With `G_BREAKS` = 0, the core is the one without
 breakpoints.
+
+`reg_we_i`, `reg_idx_i`, and `reg_data_i` write a register for a debugger
+(DEBUG.md §6, MICROARCH.md §6.1). In a cycle where the core is paused,
+`pause_i` is 1, and `reg_we_i` is 1, the core writes `reg_data_i` into
+the register `reg_idx_i`, as a register-direct write of an instruction
+does: R0 stays 0, and R14 gets bit 24. No flags are computed, and the
+hidden state stays. In every other cycle, the cycle in which `pause_i`
+falls included, `reg_we_i` changes nothing. The write is on `regs_o` in
+the next cycle, and the core goes on from a written R15. The ports come
+from flip-flops, and default to 0, so a system without a debugger leaves
+them open.
 
 `regs_o` gives R0 to R15 from the core's registers, for a monitor that
 shows them. In the cycle after a step is reported on `retire_o`, they are
@@ -1044,7 +1056,7 @@ formal/UNIT/TASK` runs one task, for example `make formal/pipe_fetch/prove`.
 | `pipe_decode` | DECODE: what PREPARE's proof assumes of it, and its redirects of FETCH. | k-induction, Yices | 15 seconds |
 | `pipe_prepare` | PREPARE: its data reads go out only when the core is certain to run the instruction. | k-induction, Yices | seconds |
 | `pipe_dbus` | DBUS: read data in the order of the ACKs, none lost. | k-induction, Yices | seconds |
-| `pipe_write` | WRITE: a halt stays, a paused WRITE does nothing, a step is reported after a pause, the breakpoints, the interrupts, and PREPARE's assumptions about WRITE. | k-induction, Yices | seconds |
+| `pipe_write` | WRITE: a halt stays, a paused WRITE does nothing, a step is reported after a pause, the breakpoints, the interrupts, a register write, and PREPARE's assumptions about WRITE. | k-induction, Yices | seconds |
 | `pipeline` | The ports of the pipelined core and its own assertions, for 12 cycles after reset. | `bmc` of 12 cycles, ABC | 4 minutes |
 | `wb_dmux` | The data bus decoder: the ACKs come back in order, from one slave at a time. | PDR | seconds |
 | `timer` | The timer's ports. | k-induction of depth 10, Yices | seconds |
@@ -1237,13 +1249,16 @@ holds none, in PREPARE's, and then stays paused until `pause_i` has been
 1. And it takes an interrupt only when one is requested, never in reset,
 and never two at once. WRITE's takes are the core's `nmi_ready_o` and
 `irq_ready_o`, so these are the assertions of `handshake_check`, for
-every cycle and not only in `formal_pipeline`.
+every cycle and not only in `formal_pipeline`. A register write taken in
+`PAUSED_ST` with `pause_i` at 1 is in the registers the next cycle, with
+ISA.md §4.3 applied, and nothing else changes them while paused.
 
 `formal_pipe_write` also proves PREPARE's assumptions about WRITE, with
 the model registers of PREPARE's proof: while WRITE runs, it holds the
 micro-operation PREPARE moved on until it retires it or flushes; SR
 changes only while WRITE holds a micro-operation that may change it, or
-with a flush, an interrupt entry, or a reset; WRITE's condition likewise,
+with a flush, an interrupt entry, or a reset, or in `PAUSED_ST`, where a
+register write may set R14; WRITE's condition likewise,
 while it holds an instruction's first micro-operation, or else to the
 condition PREPARE found for the one it holds; and WRITE leaves `RUN_ST`
 only with a flush, an interrupt entry, or a reset. These are weaker than

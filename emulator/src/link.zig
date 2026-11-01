@@ -12,8 +12,8 @@ const keys = @import("keys.zig");
 
 /// The escape byte, which starts a packet (DEBUG.md §1).
 pub const esc: u8 = 0xFF;
-/// The protocol version, major 0 and minor 5 (DEBUG.md §9).
-const version: u8 = 5;
+/// The protocol version, major 0 and minor 6 (DEBUG.md §9).
+const version: u8 = 6;
 /// The program's input buffer, in bytes (DEBUG.md §7).
 pub const input_size = 2048;
 /// The packet timeout of DEBUG.md §5.
@@ -344,6 +344,9 @@ pub const Link = struct {
         // Decided from A and N alone, before any data word.
         if (self.running() and reachesMemory(a, n)) return self.sendError(self.tag, 2);
         if (self.tag == 'W' and wraps(a, n)) return self.sendError(self.tag, 2);
+        // R0 to R15 take a write only while the processor is paused. The
+        // error 04 is decided here, before any data word, but 03 goes first.
+        const refused = self.tag == 'W' and !self.paused and reachesRegs(a, n);
         var head: [12]u8 = undefined;
         _ = hex(head[0..8], a);
         _ = hex(head[8..12], n);
@@ -363,9 +366,10 @@ pub const Link = struct {
         var i: u32 = 0;
         while (i < n) : (i += 1) {
             const w = parseHex(p, 12 + 8 * i, 8) orelse break;
-            self.writeWord(a +% i, w);
+            if (!refused) self.writeWord(a +% i, w);
         }
         if (self.too_long or p.len != 12 + 8 * @as(usize, n) or i < n) return self.sendError(self.tag, 3);
+        if (refused) return self.sendError(self.tag, 4);
         self.sendPacket('k', &head);
     }
 
@@ -395,6 +399,12 @@ pub const Link = struct {
     /// A link write (DEBUG.md §3).
     fn writeWord(self: *Link, addr: u32, value: u32) void {
         if (addr == control_addr) return self.writeControl(value);
+        // A register-direct write of ISA §4.3, which setReg follows: R0
+        // is unchanged, and R14 gets bit 24. The hidden state stays.
+        if (addr >= debug_base and addr < control_addr) {
+            if (self.paused) self.cpu.setReg(@truncate(addr), value);
+            return;
+        }
         if (addr == break_en_addr) {
             self.break_en = value & ((1 << breaks) - 1);
             return;
@@ -571,6 +581,12 @@ fn reachesMemory(a: u32, n: u32) bool {
     return n != 0 and (a < debug_base or n > 0 -% a);
 }
 
+/// Whether N words from A reach R0 to R15, which a W reaches only while the
+/// processor is paused (DEBUG.md §3, §6). A W that wraps is refused before.
+fn reachesRegs(a: u32, n: u32) bool {
+    return n != 0 and a < control_addr and @as(u64, a) + n > debug_base;
+}
+
 /// Whether N words from A run past 0xFFFFFFFF, which a W may not (DEBUG.md §3).
 fn wraps(a: u32, n: u32) bool {
     return a != 0 and n > 0 -% a;
@@ -619,6 +635,24 @@ test "the checksums of DEBUG.md §8" {
     try t.expectEqual(0xC4, checksum('b', "02"));
     try t.expectEqual(0x70, checksum('p', ""));
     try t.expectEqual(0xBB, checksum('W', "FFFFFFF0000100000018"));
+    try t.expectEqual(0xC8, checksum('b', "06"));
+    try t.expectEqual(0xB9, checksum('W', "FFFFFFE3000100000005"));
+    try t.expectEqual(0x48, checksum('k', "FFFFFFE30001"));
+    try t.expectEqual(0xC9, checksum('W', "FFFFFFEF000100000020"));
+    try t.expectEqual(0x5B, checksum('k', "FFFFFFEF0001"));
+    try t.expectEqual(0x35, checksum('e', "5704"));
+}
+
+test "the words of R0 to R15" {
+    const t = std.testing;
+    try t.expect(!reachesRegs(0xFFFFFFE0, 0));
+    try t.expect(reachesRegs(0xFFFFFFE0, 1));
+    try t.expect(reachesRegs(0xFFFFFFEF, 1));
+    try t.expect(!reachesRegs(0xFFFFFFF0, 16));
+    try t.expect(!reachesRegs(0xFFFFFFDF, 1));
+    try t.expect(reachesRegs(0xFFFFFFDF, 2));
+    try t.expect(reachesRegs(0, 0xFFFF) == false);
+    try t.expect(reachesRegs(0xFFFF0000, 0xFFFF));
 }
 
 test "the debug registers are the only words a running program allows" {

@@ -360,6 +360,10 @@ breakpoint at R15, unless the step is an interrupt entry or the first after
 a go on or a step. A stop does not count as a step, so the requests and
 `--max-steps` count as without breakpoints. A write to their registers
 takes effect before the next step, and a host's connection clears them.
+While the processor is paused, a write of R1 to R15 sets the register as
+a register-direct write of an instruction does (ISA.md §4.3), and leaves
+the hidden state alone. A write of R0 to R15 while it is not paused gets
+`e04` (DEBUG.md §6).
 A `W` writes its words when its checksum has been checked, so a `W`
 with a bad checksum writes nothing. One with a bad payload writes the whole
 words before the bad byte, at most N.
@@ -428,7 +432,10 @@ limit, a step at a console read, and R13–R15 after each step across
 interrupt entries, compared with `--trace`. And it checks the breakpoints:
 their example of DEBUG.md §8, the stop register, a step and a start that
 end at one, two at one address, a skipped instruction and a `HALT` at one,
-what keeps and clears them, and an interrupt entry that goes first.
+what keeps and clears them, and an interrupt entry that goes first. It
+checks the writes of R0 to R15: their example of DEBUG.md §8, R0, R14,
+a step and a go on from a written R15, also at a breakpoint, and `e04`
+while halted, held, and running.
 
 `test/cputest.nasm` is a self-checking test of the whole instruction set:
 every opcode, shift, addressing mode, and condition, the flags, R0, R14, and

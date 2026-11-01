@@ -67,6 +67,12 @@ host write R1–R15 while the processor is paused (#102).
   written idiom needs `ADD @--SP, 1, PC` (#93). `nicedis` writes the two
   instructions, never `CALL` or `RET`. `nice.vim` highlights them.
 
+**Emulator (`niceemu`)**
+
+- `--link` serves debug link version 6: R1–R15 take a write while the
+  processor is paused, and a write of R0–R15 while it is not gets `e04`
+  (#102).
+
 ## V1.2 (2026-10-31)
 
 The emulator shows the screen in a window while the program runs, with a

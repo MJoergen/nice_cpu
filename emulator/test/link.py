@@ -120,6 +120,25 @@ loop            ADD     R2, R2, 1
 """
 
 
+# Copies R3 to R4 at 0x20, and halts, for the writes of R0-R15 (DEBUG.md §6).
+REGS = """
+                MOVE    R2, R3
+loop            MOVE    R15, loop
+                .ORG    0x20
+                MOVE    R4, R3
+                HALT
+"""
+
+# Spins at 0, and copies R3 to R4 at 0x20 and spins there, for the example
+# of DEBUG.md §8.
+AT20 = """
+loop            MOVE    R15, loop
+                .ORG    0x20
+                MOVE    R4, R3
+there           MOVE    R15, there
+"""
+
+
 def pkt(tag: str, payload: str) -> bytes:
     """ESC, the tag, the payload, '#', and the checksum (DEBUG.md §2)."""
     body = (tag + payload).encode()
@@ -143,7 +162,7 @@ def answer(addr: int, words: List[int]) -> bytes:
 
 
 CONTROL = 0xFFFFFFF0
-HELLO = b"\xffb05#C7"
+HELLO = b"\xffb06#C8"
 PAUSED = b"\xffp#70"
 CYCLE_LO = 0xFFFFFF40
 
@@ -236,7 +255,7 @@ def test_example() -> None:
     e.expect("control held", answer(CONTROL, [0x9]))
     # The halt reason, the version, the free space, and a reserved word.
     e.send(read(0xFFFFFFF1, 4))
-    e.expect("F1-F4", answer(0xFFFFFFF1, [0, 5, 2048, 0]))
+    e.expect("F1-F4", answer(0xFFFFFFF1, [0, 6, 2048, 0]))
     # The breakpoints: four, none enabled, no stop, and the addresses 0.
     e.send(read(0xFFFFFFF5, 11))
     e.expect("F5-FF", answer(0xFFFFFFF5, [4] + [0] * 10))
@@ -296,7 +315,7 @@ def test_errors() -> None:
     e.send(write(0xFFFFFF01, [5]) + write(0xFFFFFFF2, [7]))
     e.expect("ignored writes", ok(0xFFFFFF01, 1) + ok(0xFFFFFFF2, 1))
     e.send(read(0xFFFFFF01, 1) + read(0xFFFFFFF2, 1))
-    e.expect("read counter", answer(0xFFFFFF01, [0]) + answer(0xFFFFFFF2, [5]))
+    e.expect("read counter", answer(0xFFFFFF01, [0]) + answer(0xFFFFFFF2, [6]))
     # A clear: 0x5 clears and stays held.
     e.send(write(CONTROL, [0x5]))
     e.expect("clear", ok(CONTROL, 1))
@@ -954,6 +973,76 @@ def test_break(at10: List[int], load: List[int], count: List[int], skip: List[in
     e.stop()
 
 
+def test_write_regs(regs: List[int], at20: List[int], count: List[int]) -> None:
+    """The writes of R0-R15 of §6: what they mean, a written R15 and the
+    breakpoints, e04 while not paused, and the example of §8."""
+    e = Emu()
+    e.take(len(HELLO))
+    # Start paused at a breakpoint at 0: x00, and the stop register.
+    e.send(write(0, regs) + write(0xFFFFFFF8, [0]) + write(BREAK_EN, [1]) + write(CONTROL, [0x18]))
+    e.expect("load and start paused", ok(0, len(regs)) + ok(0xFFFFFFF8, 1) + ok(BREAK_EN, 1)
+             + ok(CONTROL, 1) + hit(0))
+    # R3 and R15 take the value, R0 none, and R14 gets bit 24. The stop
+    # register keeps its value.
+    e.send(write(0xFFFFFFE3, [5]) + write(0xFFFFFFEF, [0x20]) + write(0xFFFFFFE0, [7])
+           + write(0xFFFFFFEE, [0]))
+    e.expect("writes while paused", ok(0xFFFFFFE3, 1) + ok(0xFFFFFFEF, 1) + ok(0xFFFFFFE0, 1)
+             + ok(0xFFFFFFEE, 1))
+    e.send(read(0xFFFFFFE0, 16) + read(STOP_REG, 1))
+    e.expect("read back", answer(0xFFFFFFE0, [0, 0, 0, 5] + [0] * 10 + [0x01000000, 0x20])
+             + answer(STOP_REG, [0x100]))
+    # A step runs the instruction at the new R15.
+    e.send(write(CONTROL, [0x38]))
+    e.expect("step at 0x20", ok(CONTROL, 1) + PAUSED)
+    e.send(read(0xFFFFFFE4, 1) + read(0xFFFFFFEF, 1) + read(STOP_REG, 1))
+    e.expect("after the step", answer(0xFFFFFFE4, [5]) + answer(0xFFFFFFEF, [0x21])
+             + answer(STOP_REG, [0]))
+    # A write of R15 to an enabled breakpoint, and a go on: its instruction
+    # runs, and the program halts after it, with no stop first.
+    e.send(write(0xFFFFFFF8, [0x20]) + write(0xFFFFFFE4, [0]) + write(0xFFFFFFEF, [0x20]))
+    e.expect("breakpoint at the new R15", ok(0xFFFFFFF8, 1) + ok(0xFFFFFFE4, 1) + ok(0xFFFFFFEF, 1))
+    e.send(write(CONTROL, [0x8]))
+    e.expect("go on from it", ok(CONTROL, 1) + b"\xffh01#C9")
+    e.send(read(0xFFFFFFE4, 1) + read(0xFFFFFFEF, 1))
+    e.expect("halted", answer(0xFFFFFFE4, [5]) + answer(0xFFFFFFEF, [0x22]))
+    # Halted, and then held: e04 by the range, R0 and from the devices
+    # included, and nothing is written. N = 0 reaches nothing.
+    for state in ("halted", "held"):
+        e.send(write(0xFFFFFFDF, [0x77]))
+        e.expect(f"{state}: memory", ok(0xFFFFFFDF, 1))
+        e.send(write(0xFFFFFFE3, [9]) + write(0xFFFFFFE0, [9]) + write(0xFFFFFFDF, [0x99, 9])
+               + write(0xFFFFFFE0, []))
+        e.expect(f"{state}: e04", pkt("e", "5704") * 3 + ok(0xFFFFFFE0, 0))
+        e.send(read(0xFFFFFFDF, 5))
+        e.expect(f"{state}: unchanged", answer(0xFFFFFFDF, [0x77, 0, 0, 0, 5]))
+        e.send(write(CONTROL, [0x9]))
+        e.expect(f"{state}: hold", ok(CONTROL, 1))
+    # A W with a bad payload gets e03, which goes first.
+    e.send(pkt("W", "FFFFFFE3" "0001" "0000000G"))
+    e.expect("e03 before e04", pkt("e", "5703"))
+    # Running: e02 goes first where it applies, and e04 otherwise.
+    e.send(write(0, count) + write(CONTROL, [0x8]))
+    e.expect("start count", ok(0, len(count)) + ok(CONTROL, 1))
+    e.send(write(0xFFFFFFE3, [9]) + write(0xFFFFFFE0, [9]) + write(0xFFFFFFDF, [0, 0]))
+    e.expect("running", pkt("e", "5704") * 2 + pkt("e", "5702"))
+    # DEBUG.md §8, byte for byte, from a pause of a program spinning at 0.
+    e.send(write(CONTROL, [0x9]) + write(0, at20) + write(CONTROL, [0x18]))
+    e.expect("start at20 paused", ok(CONTROL, 1) + ok(0, len(at20)) + ok(CONTROL, 1) + PAUSED)
+    e.send(b"\xffWFFFFFFE3000100000005#B9")
+    e.expect("set R3", b"\xffkFFFFFFE30001#48")
+    e.send(b"\xffWFFFFFFEF000100000020#C9")
+    e.expect("set R15", b"\xffkFFFFFFEF0001#5B")
+    e.send(b"\xffWFFFFFFF0000100000008#BA")
+    e.expect("go on", b"\xffkFFFFFFF00001#46")
+    e.send(b"\xffWFFFFFFE3000100000005#B9")
+    e.expect("too late", b"\xffe5704#35")
+    e.send(write(CONTROL, [0x18]))
+    e.expect("pause at20", ok(CONTROL, 1) + PAUSED)
+    e.send(read(0xFFFFFFE3, 2) + read(0xFFFFFFEF, 1))
+    e.expect("ran from 0x20", answer(0xFFFFFFE3, [5, 5]) + answer(0xFFFFFFEF, [0x21]))
+    e.stop()
+
+
 def test_old_host(stop: List[int], echo: List[int]) -> None:
     """A host of version 1 works with this system (§9). It checks the
     major and the minor, knows bits 0 to 3 of the control register, writes
@@ -979,9 +1068,9 @@ def test_old_host(stop: List[int], echo: List[int]) -> None:
         e.send(read(CONTROL, 2))
         e.expect("halted", answer(CONTROL, [0xA, 1]))
     # The registers it does not know read 0 but for the version, which reads
-    # 5 with its high bits 0.
+    # 6 with its high bits 0.
     e.send(read(0xFFFFFFF2, 1) + read(0xFFFFFFF7, 1))
-    e.expect("version and 0xFFFFFFF7", answer(0xFFFFFFF2, [5]) + answer(0xFFFFFFF7, [0]))
+    e.expect("version and 0xFFFFFFF7", answer(0xFFFFFFF2, [6]) + answer(0xFFFFFFF7, [0]))
     # A program that runs until the host holds it.
     control(0x5, 0)
     e.send(write(0, echo))
@@ -989,6 +1078,10 @@ def test_old_host(stop: List[int], echo: List[int]) -> None:
     control(0, 0x5)
     e.send(b"Hi")
     e.expect("echo", b"Hi")
+    # Version 6 changes one thing it could see: a write of R0-R15 while
+    # the program runs gets e04, where version 5 answered k.
+    e.send(write(0xFFFFFFE3, [5]))
+    e.expect("register write while running", pkt("e", "5704"))
     control(0x1, 0)
     e.send(read(CONTROL, 2))
     e.expect("held", answer(CONTROL, [0x9, 0]))
@@ -1040,6 +1133,8 @@ def main() -> None:
         at10 = assemble(tmp, "at10", AT10)
         load = assemble(tmp, "load", LOAD)
         skip = assemble(tmp, "skip", SKIP)
+        regs = assemble(tmp, "regs", REGS)
+        at20 = assemble(tmp, "at20", AT20)
         reserved = assemble(tmp, "reserved", RESERVED)
         int_in_isr = assemble(tmp, "int_in_isr", INT_IN_ISR)
         rti = assemble(tmp, "rti", RTI_OUTSIDE)
@@ -1053,6 +1148,7 @@ def main() -> None:
             lambda: test_pause(count, echo),
             lambda: test_step(count, one, stop, echo, twice, irq, irq_bin),
             lambda: test_break(at10, load, count, skip, stop, irq),
+            lambda: test_write_regs(regs, at20, count),
             lambda: test_old_host(stop, echo), test_address, test_usage,
         ]
         for t in tests:

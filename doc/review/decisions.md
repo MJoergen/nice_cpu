@@ -89,3 +89,9 @@ proposed again. The open items are the
   (ISA.md §10.1), which also settles the facility's open questions:
   names, conditions, labels in a body, nesting, and where an error is
   reported.
+- **SIMD and exceptions in nicewasm** (#71). A `v128` would take four
+  words and about 230 instructions, with nothing gained on a scalar
+  32-bit CPU, and compilers emit SIMD only when asked (`-msimd128`).
+  Exceptions come from C++ and from Rust with `panic=unwind`, which need a
+  C++ library and Rust's std, neither of which the repository has.
+  nicewasm rejects both.

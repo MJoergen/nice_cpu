@@ -390,11 +390,14 @@ the steps that got the code here.
   not printable ASCII is left out, and so is any such character in the
   input file's name, so that a comment cannot become code.
 
-Not supported yet: function types with more than one result (a block
-type may have several), passive data and element segments, `memory.init`,
-`data.drop`, the table instructions such as `table.get` and `table.grow`,
-`ref.func` outside element segments, `ref.null` and `ref.is_null`, the tail calls `return_call` and
-`return_call_indirect`, SIMD, and exceptions.
+Not supported yet: the tail calls `return_call` and
+`return_call_indirect` (#103), and, until a program needs them (#104),
+function types with more than one result (a block type may have
+several), passive data and element segments, `memory.init`, `data.drop`,
+the table instructions such as `table.get` and `table.grow`, `ref.func`
+outside element segments, `ref.null`, and `ref.is_null`. SIMD and
+exceptions are not supported, and are not planned
+([decisions](../doc/review/decisions.md)).
 
 nicewasm checks the types on the operand stack as wasm validation does,
 so an invalid module is an error, not wrong code. Code that cannot be

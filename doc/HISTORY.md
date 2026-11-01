@@ -554,3 +554,14 @@ was a port forwarded over SSH
 ([#84](https://github.com/MJoergen/nice_cpu/issues/84)). `--link
 ADDR:PORT` serves it on another address since. `--link PORT` still serves
 it on 127.0.0.1.
+
+## The registers from the host
+
+Until 2026-11-01, debug link version 5, R0–R15 were read only, and the
+only way to change the processor's state from the host was the memory. A
+host could fake a register write by patching the words at the PC with a
+`MOVE`, stepping, and restoring them, which took two steps, counted in
+the counters, let the timer raise a request between them, cleared the
+state after an `RTI`, and failed where the code is in a ROM. Version 6
+writes R1–R15 while the processor is paused (#102), in the core, with
+the rules of a register-direct write (DEBUG.md §6).

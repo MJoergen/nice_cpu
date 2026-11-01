@@ -30,15 +30,20 @@ The others pin the tagged commit.
 
 ## V1.3 (2026-10-31)
 
-The assembler has `CALL` and `RET` (#93).
+The assembler has `CALL` and `RET` (#93). Debug link version 6 lets a
+host write R1–R15 while the processor is paused (#102).
 
 **Upgrade notes.**
 
 - `CALL` and `RET` are mnemonics, so a program that uses either as a
   label or an `.EQU` name does not assemble. No file of the repository
-  did. Nothing else changes: the ports of both cores, `wb_dmux`, the
-  devices, the address map of SYSTEM.md, and the debug link are as in
-  V1.2.
+  did.
+- The debug link is version 6 (#102). A write of R0–R15 while the
+  processor is not paused gets `e04`, where it got `k`, and a `W` that runs
+  from the devices into R0–R15 while held or halted writes nothing. A host
+  of version 5 never wrote these words, which were read only, so it works
+  as before.
+- `wb_dmux`, the devices, and the address map of SYSTEM.md are as in V1.2.
 - Zig 0.17.0, as in V1.2.
 
 **Specification and documents**
@@ -50,6 +55,10 @@ The assembler has `CALL` and `RET` (#93).
   and Appendix B lists them (#93).
 - `doc/review/decisions.md`: a macro facility was decided against, since
   a text macro cannot pick the constant of a call.
+- DEBUG.md: debug link version 6. R1–R15 take a write while the
+  processor is paused, with the rules of a register-direct write of ISA
+  §4.3, and leave the hidden state of ISA §1.4 alone. A write of R0–R15
+  while not paused is answered with the new error `04` (#102).
 
 **Assembler (`niceasm`)**
 

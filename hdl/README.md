@@ -1302,10 +1302,13 @@ also asserts,
 through `core_check`, what it asserts of the multi-cycle core about a
 halted and a paused core, with `pause_i` free, and about two breakpoints.
 Their addresses and enable bits are free, but change only in a reset,
-since a change while the core runs may miss an instruction. It also
-asserts that no instruction at an enabled breakpoint retires without a
-stop first, but as the first step after `pause_i` was 1. The pipeline is too
-deep for k-induction without many more invariants, so its `bmc` task
+since a change while the core runs may miss an instruction. A register
+write comes only while the core is paused and `pause_i` is 1, as its
+contract asks, and the `bmc` task ties `reg_we_i` to 0, since the free
+write took it from 3 minutes to 29. The `cover` task keeps the write,
+and reaches a step after one at step 10. It also asserts that no
+instruction at an enabled breakpoint retires without a stop first, but
+as the first step after `pause_i` was 1. The pipeline is too deep for k-induction without many more invariants, so its `bmc` task
 checks only the first 12 cycles after reset. They hold an interrupt
 entry, a first store, and a pause, which its cover reaches at step 4, and
 a halt and the first step after a pause, which it reaches at step 9. The

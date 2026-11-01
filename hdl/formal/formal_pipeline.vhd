@@ -29,6 +29,12 @@
 -- access holds for every cycle too, by the proofs of WRITE's halt,
 -- PREPARE's f_rd_run, and the definition of halted_o.
 --
+-- REGISTER WRITES
+-- A register write comes only while the core is paused and pause_i is
+-- '1', contract g) of src/pipeline.vhd. G_REG_WRITES false ties reg_we_i
+-- to '0', for the bmc task of pipeline.sby, which is many times slower
+-- with the write.
+--
 -- RESET
 -- The first cycle is a reset, so the core starts from the state of
 -- ISA.md §8.1.
@@ -39,6 +45,10 @@ library ieee;
    use work.trace_pkg.all;
 
 entity formal_pipeline is
+   generic (
+      -- false ties reg_we_i to '0'
+      G_REG_WRITES : boolean := true
+   );
    port (
       clk_i        : in  std_logic;
       rst_i        : in  std_logic;
@@ -79,6 +89,7 @@ architecture synthesis of formal_pipeline is
    signal instret   : std_logic;
    signal retire    : t_retire;
    signal regs      : t_regs;
+   signal reg_we    : std_logic;
 
    constant C_BREAKS : natural := 2;
 
@@ -103,6 +114,8 @@ architecture synthesis of formal_pipeline is
 
 begin
 
+   reg_we <= reg_we_i when G_REG_WRITES else '0';
+
    -- psl default clock is rising_edge(clk_i);
    -- psl f_initial_reset : assume rst_i;
 
@@ -110,6 +123,10 @@ begin
    -- psl f_brk_stable : assume always rst_i = '0' ->
    --    (brk_addr_i(0 to C_BREAKS - 1) = brk_addr_d(0 to C_BREAKS - 1) and
    --     brk_en_i(C_BREAKS - 1 downto 0) = brk_en_d(C_BREAKS - 1 downto 0));
+
+   -- A register write comes only while the core is paused and pause_i is
+   -- '1', as contract g) of src/pipeline.vhd asks.
+   -- psl f_reg_paused : assume always reg_we_i = '1' -> (paused = '1' and pause_i = '1');
 
    -- No instruction at a breakpoint runs without a stop first, but the
    -- first after pause_i was '1'.
@@ -150,7 +167,7 @@ begin
          paused_o      => paused,
          brk_addr_i    => brk_addr_i,
          brk_en_i      => brk_en_i,
-         reg_we_i      => reg_we_i,
+         reg_we_i      => reg_we,
          reg_idx_i     => reg_idx_i,
          reg_data_i    => reg_data_i,
          halted_o      => halted,
@@ -197,7 +214,7 @@ begin
          regs_i       => regs,
          brk_addr_i   => brk_addr_i,
          brk_en_i     => brk_en_i,
-         reg_we_i     => reg_we_i,
+         reg_we_i     => reg_we,
          reg_idx_i    => reg_idx_i,
          reg_data_i   => reg_data_i,
          ibus_wait_o  => open,

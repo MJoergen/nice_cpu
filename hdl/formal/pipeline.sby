@@ -8,6 +8,14 @@
 # ABC refuses the undefined bits that a read out of an index's range
 # gives, a case the simulation never reaches, so the bmc task makes them
 # free in every cycle.
+#
+# The bmc task ties reg_we_i to 0 (G_REG_WRITES), since a free register
+# write took it from 3 minutes to 29, even with the write allowed only
+# while paused. So the bmc task checks that the registers of a paused
+# core do not change at all.
+# The cover task keeps the write, while paused and with pause_i at 1, and
+# reaches a step after it. formal_pipe_write proves the write itself for
+# every cycle.
 
 [tasks]
 bmc
@@ -25,7 +33,8 @@ cover: smtbmc yices
 
 [script]
 plugin -i ghdl
-ghdl --std=08 -fpsl nice_pkg.vhd trace_pkg.vhd pipe_pkg.vhd pipe_fetch.vhd pipe_decode.vhd pipe_prepare.vhd pipe_dbus.vhd pipe_write.vhd pipeline.vhd wb_master_check.vhd handshake_check.vhd core_check.vhd formal_pipeline.vhd -e formal_pipeline
+bmc: ghdl --std=08 -fpsl -gG_REG_WRITES=false nice_pkg.vhd trace_pkg.vhd pipe_pkg.vhd pipe_fetch.vhd pipe_decode.vhd pipe_prepare.vhd pipe_dbus.vhd pipe_write.vhd pipeline.vhd wb_master_check.vhd handshake_check.vhd core_check.vhd formal_pipeline.vhd -e formal_pipeline
+cover: ghdl --std=08 -fpsl nice_pkg.vhd trace_pkg.vhd pipe_pkg.vhd pipe_fetch.vhd pipe_decode.vhd pipe_prepare.vhd pipe_dbus.vhd pipe_write.vhd pipeline.vhd wb_master_check.vhd handshake_check.vhd core_check.vhd formal_pipeline.vhd -e formal_pipeline
 prep -top formal_pipeline
 bmc: techmap
 bmc: setundef -anyseq

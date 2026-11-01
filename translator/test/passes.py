@@ -81,7 +81,7 @@ def tail_call_plain() -> None:
     for between in ([], ["        ; a comment"]):
         items: List[Item] = call("_f") + between + [ret()]
         got = text(tail_calls(items))
-        assert got == ["TAIL    _f"] + [t.strip() for t in between], got
+        assert got == ["TAIL    R15, _f"] + [t.strip() for t in between], got
 
 
 def tail_call_data() -> None:

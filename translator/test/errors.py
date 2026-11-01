@@ -12,7 +12,7 @@ import tempfile
 import time
 from typing import List, Optional, Tuple
 
-from wasm import call_indirect, table
+from wasm import call_indirect, return_call, return_call_indirect, table
 V128 = 0x7B  # a type nicewasm does not support
 from wasm import (ADD, ADD64, DROP, ELSE, END, F32, I32, I64, SELECT, block, br,
                   br_table, call, code, exports, funcs, global_get, global_set, globals_,
@@ -233,7 +233,25 @@ CASES: List[Tuple[bytes, str]] = [
      "function 0: local 5 does not exist"),
     (module(types(([], [I32]), ([I64], [])), funcs(0, 1), code((0, i32_const(1) + call(1) + i32_const(0)), (0, b""))),
      "function 0: call expects i64, found i32"),
-    (one(i32_const(0) + b"\x12\x00"), "function 0: return_call is not supported yet"),
+    # return_call and return_call_indirect: the callee must have the
+    # caller's results, and the arguments its parameters.
+    (module(types(([], [I32]), ([], [I64])), funcs(0, 1),
+            code((0, return_call(1)), (0, i64_const(0)))),
+     "function 0: return_call of a function whose results differ from this function's"),
+    (module(types(([], [I32]), ([], [])), funcs(0, 1), code((0, return_call(1)), (0, b""))),
+     "function 0: return_call of a function whose results differ from this function's"),
+    (module(types(([], [I32]), ([I64], [I32])), funcs(0, 1),
+            code((0, i32_const(1) + return_call(1)), (0, i32_const(0)))),
+     "function 0: return_call expects i64, found i32"),
+    (one(return_call(1)), "function 0: function 1 does not exist"),
+    (module(types(([], [I32]), ([], [I64])), funcs(0), table(1),
+            code((0, i32_const(0) + return_call_indirect(1)))),
+     "function 0: return_call_indirect of a function whose results differ from this function's"),
+    (module(types(([], [I32]), ([I32], [I32])), funcs(0), table(1),
+            code((0, i64_const(0) + i32_const(0) + return_call_indirect(1)))),
+     "function 0: return_call_indirect expects i32, found i64"),
+    (one(i32_const(0) + return_call_indirect(0)[:-1] + b"\x01"), "function 0: table 1 does not exist"),
+    (one(i32_const(0) + return_call_indirect(5)), "type index 5 is out of range"),
     # call_indirect
     (one(i32_const(0) + b"\x11\x00\x00"), "function 0: table 0 does not exist"),
     (module(MAIN, funcs(0), table(1), code((0, i32_const(0) + b"\x11\x05\x00"))),

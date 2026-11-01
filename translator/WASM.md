@@ -60,6 +60,7 @@ In Rust, they are declared in an `extern "C"` block with `#[link(wasm_import_mod
 - Results go in registers by the same rules that would apply if they were arguments. A function with no result returns nothing. The translator rejects a function type with more than one result; a block type may have several (translator README, Not supported yet).
 - R7–R13 and SR's I, E, and VBASE are preserved, as in [ABI.md](../runtime/ABI.md).
 - Wasm locals and the wasm operand stack live in registers and in the function's frame on the NICE stack (R13).
+- A tail call, `return_call` or `return_call_indirect`, ends the function and calls the callee in its place. The callee's results must have the types of the function's. The function drops its frame and restores R7–R12 first, and then jumps to the callee without pushing a return address, so the callee returns to the function's caller, and the NICE stack does not grow. The callee's stack arguments go into the words of the function's own, which the caller drops after the return ([ABI.md](../runtime/ABI.md)). So a callee with more words of stack arguments than the function has cannot be reached this way. The translator then calls it and returns its results, and the stack grows by a frame.
 
 The module's own stack is separate. Compilers for wasm keep the variables whose address is taken in linear memory, below the global `__stack_pointer`. That stack is ordinary module data, and the translator gives it no special treatment.
 
@@ -68,7 +69,7 @@ The module's own stack is separate. Compilers for wasm keep the variables whose 
 **Tables and indirect calls.**
 
 - Each entry of table 0 is two words: the address of a function, and a number for the function's type. Two types with the same parameters and results get the same number. An empty entry has address 0.
-- `call_indirect` traps if the index is past the end of the table, if the entry is empty, or if its type number differs from the type of the call. Otherwise it calls the address with the "through a register" sequence of [ABI.md](../runtime/ABI.md).
+- `call_indirect` traps if the index is past the end of the table, if the entry is empty, or if its type number differs from the type of the call. Otherwise it calls the address with the "through a register" sequence of [ABI.md](../runtime/ABI.md). `return_call_indirect` makes the same checks, with the same traps, and then makes a tail call of the address (Functions and calls).
 - A wasm function pointer is an index into this table, not a NICE address.
 
 **Traps.** A trap jumps through the word `___wasm_trap_vector`, with `MOVE PC, @___wasm_trap_vector`. R1 holds a code, and R2 holds the address of the first NICE instruction of the code for the wasm instruction that trapped:
@@ -80,8 +81,8 @@ The module's own stack is separate. Compilers for wasm keep the variables whose 
 | 3 | Integer division or remainder by zero |
 | 4 | Integer overflow: `div_s` of the most negative value by −1 |
 | 5 | Conversion of a float to an integer that cannot represent it |
-| 6 | `call_indirect`: index past the end of the table, or an empty entry |
-| 7 | `call_indirect`: type mismatch |
+| 6 | `call_indirect` or `return_call_indirect`: index past the end of the table, or an empty entry |
+| 7 | `call_indirect` or `return_call_indirect`: type mismatch |
 
 nicewasm may copy or move the code of an instruction. R2 then points at the first instruction of the original code, not of the copy. The code of a neighboring access may lie between that instruction and the rest of the code of the instruction that trapped.
 

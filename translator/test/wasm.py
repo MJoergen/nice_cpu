@@ -242,6 +242,14 @@ def elems(*segs: Tuple[int, Sequence[int]], exprs: Sequence[Tuple[int, Sequence[
 def call_indirect(type_idx: int) -> bytes:
     return b"\x11" + u(type_idx) + b"\x00"
 
+
+def return_call(i: int) -> bytes:
+    return b"\x12" + u(i)
+
+
+def return_call_indirect(type_idx: int) -> bytes:
+    return b"\x13" + u(type_idx) + b"\x00"
+
 I32_REINTERPRET_F32, I64_REINTERPRET_F64, F32_REINTERPRET_I32, F64_REINTERPRET_I64 = (
     bytes([op]) for op in range(0xBC, 0xC0))
 F32_ABS, F32_NEG, F32_COPYSIGN = b"\x8b", b"\x8c", b"\x98"

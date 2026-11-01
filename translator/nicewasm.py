@@ -2146,7 +2146,7 @@ def duplicate_tails(items: List[Item], ret_size: int) -> List[Item]:
     interpreter's dispatch by br_table thus gets a copy at the end of each
     case. The code may have labels in it, which a jump in it, or a trap's
     R2, may name: the copy then goes on in the original, which does the
-    same. It may not call. The epilogue, RET, counts as ret_size
+    same. It may not call. The epilogue, RET or TAIL, counts as ret_size
     instructions. Two rounds, so that a copy that ends in a jump may get
     a copy too. The code after the epilogue, the stubs, runs rarely, so
     its jumps stay. Then the code that no jump reaches any more goes."""
@@ -2175,7 +2175,7 @@ def duplicate_tails(items: List[Item], ret_size: int) -> List[Item]:
                     break
             else:
                 code = []
-            size = sum(ret_size if x.op == "RET" else 1 for x in code)
+            size = sum(ret_size if x.op in ("RET", "TAIL") else 1 for x in code)
             table = bool(code) and len(code[-1].targets) > 1
             if not code or size > (TAIL_COPY_TABLE if table else TAIL_COPY):
                 out.append(it)
@@ -2559,7 +2559,7 @@ def frame_words(items: List[Item], n_slots: int, n_saved: int) -> None:
                 assert operand_reg(o)[0] in ("mem", ""), it.text()
         if it.kind == "call":
             depth -= 1  # the return pops the return address
-        elif it.op == "RET":
+        elif it.op in ("RET", "TAIL"):
             assert depth == 0
         assert depth >= 0, it.text()
 
@@ -2700,7 +2700,7 @@ def tail_calls(items: List[Item]) -> List[Item]:
                 push = next(x for x in reversed(out) if not isinstance(x, str))
                 assert isinstance(push, Ins) and push.ops[0] == "@--R13"
                 out.remove(push)
-                out.append(Ins("TAIL", [it.ops[1]], kind="exit"))
+                out.append(Ins("TAIL", ["R15", it.ops[1]], kind="exit"))
                 if not any(isinstance(x, Label) and refs.get(x.name) for x in items[k + 1:j]):
                     drop = j
                 continue
@@ -3292,6 +3292,44 @@ class FunctionTranslator:
             self.move(v, [f"R{k + 1}" for k in range(SIZES[rt])])
             self.push(rt, words=v)
 
+    def check_tail(self, ft: FuncType, at: int, what: str) -> None:
+        """A tail call's callee must have the results of this function."""
+        if ft.results != self.ftype.results:
+            raise WasmError(f"function {self.idx}: {what} of a function whose results differ"
+                            " from this function's", at)
+
+    def tail_call(self, target: str, ft: FuncType, at: int, what: str) -> None:
+        """Tail-calls target, a label or a register, with the arguments on
+        top of the operand stack (WASM.md): the stack arguments go into
+        this function's own, the others into their registers, and a TAIL
+        drops the frame, restores the saved registers, and jumps (finish).
+        A register target goes through R5 first, which the epilogue does
+        not restore. A callee with more words of stack arguments than this
+        function has is called, and its result returned, instead."""
+        locs, stack_words = assign_args(ft.params)
+        if stack_words > assign_args(self.ftype.params)[1]:
+            self.call(target, ft, at, what)
+            self.ret(at, what)
+            self.emit("MOVE", "R15", self.ret_label)
+            return
+        args = self.pop(list(ft.params), at, what)
+        regs = []
+        for i, (in_reg, first) in enumerate(locs):
+            for k, w in enumerate(args[i]):
+                if not in_reg:
+                    self.emit("MOVE", f"@%a{first + k}", w)
+        for i, (in_reg, first) in enumerate(locs):
+            if in_reg:
+                for k, w in enumerate(args[i]):
+                    regs.append(f"R{first + k}")
+                    self.emit("MOVE", regs[-1], w)
+        if operand_reg(target)[0]:
+            self.emit("MOVE", "R5", target)
+            target = "R5"
+            regs.append(target)
+        j = self.emit("TAIL", "R15", target)
+        j.kind, j.uses = "exit", frozenset(regs)
+
     def call_helper(self, name: str, args: List[str], results: int, stub: bool = False) -> None:
         """Calls one of the HELPERS, which is then emitted once, with
         the given arguments in R1 and up. Its results are in R1 and up."""
@@ -3872,16 +3910,18 @@ class FunctionTranslator:
             self.emit("SUB[CM]", "R0", mag, lim)           # C = mag:v[0] < lim:lim_lo
         self.emit("?!C MOVE", "R15", self.trap_stub(5, start))
 
-    def call_indirect(self, type_idx: int, at: int, what: str) -> None:
+    def call_indirect(self, type_idx: int, at: int, what: str, tail: bool = False) -> None:
         """Calls the function in the table entry whose index is on top of
-        the operand stack (WASM.md). An index past the end of the table and an
-        empty entry trap with code 6, and an entry of another type with
-        code 7."""
+        the operand stack (WASM.md), or with tail, tail-calls it. An index
+        past the end of the table and an empty entry trap with code 6, and
+        an entry of another type with code 7."""
         ft = self.t.m.types[type_idx]
         check_types(ft.params + ft.results, f"function {self.idx}: {what}", at)
         if len(ft.results) > 1:
             raise WasmError(f"function {self.idx}: {what}: more than one result is not supported"
                             " yet", at)
+        if tail:
+            self.check_tail(ft, at, what)
         (index,) = self.pop([I32], at, what)
         assert self.t.m.table_size is not None
         start = self.new_label()
@@ -3895,7 +3935,10 @@ class FunctionTranslator:
         self.emit("?Z MOVE", "R15", self.trap_stub(6, start))     # empty
         self.emit("SUB[M]", "R0", f"@{table}+1[{entry}]", str(self.t.type_number(type_idx)))
         self.emit("?!Z MOVE", "R15", self.trap_stub(7, start))
-        self.call(func, ft, at, what)
+        if tail:
+            self.tail_call(func, ft, at, what)
+        else:
+            self.call(func, ft, at, what)
 
     def range_check(self, addr: str, n: str, trap: str) -> None:
         """Jumps to trap unless the n bytes from byte address addr are all
@@ -4321,9 +4364,9 @@ class FunctionTranslator:
             targets: List[int] = []
             sel_type: Optional[int] = None
             align = 0
-            if op in (0x0C, 0x0D, 0x10, 0x20, 0x21, 0x22, 0x23, 0x24):
+            if op in (0x0C, 0x0D, 0x10, 0x12, 0x20, 0x21, 0x22, 0x23, 0x24):
                 imm = r.u32()
-            elif op == 0x11:  # call_indirect: a type index, then a table index
+            elif op in (0x11, 0x13):  # call_indirect: a type index, then a table index
                 type_at = r.pos
                 imm = r.u32()
                 if imm >= len(self.t.m.types):
@@ -4357,7 +4400,7 @@ class FunctionTranslator:
                 check_types(types, f"function {self.idx}: select", at)
                 sel_type = types[0]
             elif not (op in (0x00, 0x01, 0x05, 0x0B, 0x0F, 0x1A, 0x1B, 0x45, 0x50, 0xA7,
-                             0xAC, 0xAD, 0x10A, 0x10B, 0x11)
+                             0xAC, 0xAD, 0x10A, 0x10B, 0x11, 0x13)
                       or op in REINTERPRET_OPS or op in SIGN_OPS or op in FLOAT_OPS
                       or op in TRUNC_OPS or op in TRUNC_SAT_OPS or op in FLOAT_CMP_OPS
                       or op in DIV_OPS or op in LIB_OPS or op in EXTEND_OPS
@@ -4545,10 +4588,14 @@ class FunctionTranslator:
                 self.ret(at, name)
                 self.emit("MOVE", "R15", self.ret_label)
                 reachable = False
-            elif op == 0x10:  # call
+            elif op in (0x10, 0x12):  # call, return_call
                 assert imm is not None
                 if imm >= len(self.t.m.imports) + len(self.t.m.funcs):
                     raise WasmError(f"function {self.idx}: function {imm} does not exist", at)
+                ft = self.t.func_type(imm)
+                if op == 0x12:
+                    self.check_tail(ft, at, name)
+                    reachable = False
                 if imm < len(self.t.m.imports) and self.t.m.imports[imm].module == "nice":
                     # One access, even if a peek's result is not used (WASM.md).
                     p = self.new_vreg()
@@ -4560,14 +4607,19 @@ class FunctionTranslator:
                         addr, value = self.pop([I32, I32], at, "nice.poke")
                         self.emit("MOVE", p, addr[0])
                         self.emit("MOVE", f"@{p}", value[0])
+                    if op == 0x12:
+                        self.ret(at, name)
+                        self.emit("MOVE", "R15", self.ret_label)
+                elif op == 0x12:
+                    self.tail_call(self.t.func_label(imm), ft, at, name)
                 else:
-                    ft = self.t.func_type(imm)
                     fwd = (self.forward(r, at, ft.results[0], len(ft.params))
                            if len(ft.results) == 1 else None)
                     self.call(self.t.func_label(imm), ft, at, name, fwd)
-            elif op == 0x11:  # call_indirect
+            elif op in (0x11, 0x13):  # call_indirect, return_call_indirect
                 assert imm is not None
-                self.call_indirect(imm, at, name)
+                self.call_indirect(imm, at, name, tail=op == 0x13)
+                reachable = op == 0x11
             elif op == 0x20:  # local.get
                 assert imm is not None
                 t, src = self.local_operand(imm, at)
@@ -5067,7 +5119,7 @@ class FunctionTranslator:
                 out.append(instr("ADD", "R13", "R13", str(n_slots)))
             for r in reversed(saved):
                 out.append(instr("MOVE", r, "@R13++"))  # last saved first
-            out.append(instr("MOVE", "R15", it.ops[0] if it.op == "TAIL" else "@R13++"))
+            out.append(instr("MOVE", "R15", it.ops[1] if it.op == "TAIL" else "@R13++"))
         if exit_code:
             out += render(exit_code)
             out.append(instr("MOVE", "R15", "@R13++"))  # nothing to restore

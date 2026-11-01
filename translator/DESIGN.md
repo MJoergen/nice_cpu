@@ -486,6 +486,19 @@ caller, with its results in R1 and up, which are this function's. A
 call with stack arguments drops them after it, so it is never a tail
 call.
 
+`return_call` and `return_call_indirect` are tail calls of their own,
+which need no call just before the return. They end in a TAIL, an exit
+that the register allocator sees as it sees the return, reading the
+argument registers. Before it, the callee's stack arguments are written
+to the words of this function's own, `@%aN`, which nothing reads after
+the copies of the parameters at the start. Then the register arguments
+go to R1 and up. A register target, the function of a
+`return_call_indirect`, goes to R5, which the epilogue does not restore.
+The back end gives the TAIL the same epilogue as the return, with
+`MOVE R15, target` in place of `MOVE R15, @R13++`. A callee with more
+words of stack arguments than this function gets a call, then the
+return.
+
 The translated functions may use every register. The helpers and
 `___wasm_start` use only R1–R6, R13, R14, and R15, so a value in R7–R12
 survives a call of a helper, as it does any ABI.md call.

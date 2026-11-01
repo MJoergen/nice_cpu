@@ -44,6 +44,7 @@ from wasm import (I32_LOAD, I32_LOAD8_S, I32_LOAD8_U, I32_LOAD16_S, I32_LOAD16_U
                   I64_LOAD32_S, I64_LOAD32_U, I64_STORE, I64_STORE8, I64_STORE16,
                   I64_STORE32, MEMORY_GROW, MEMORY_SIZE, data, mem)
 from wasm import MEMORY_COPY, MEMORY_FILL, call_indirect, elems, table
+from wasm import return_call, return_call_indirect
 from wasm import (F32, F32_ABS, F32_COPYSIGN, F32_LOAD, F32_NEG, F32_REINTERPRET_I32, F32_STORE,
                   F64, F64_ABS, F64_COPYSIGN, F64_LOAD, F64_NEG, F64_REINTERPRET_I64, F64_STORE,
                   I32_REINTERPRET_F32, I64_REINTERPRET_F64, const)
@@ -255,6 +256,8 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "indirectoob": "SUB[M] R0, 4, 4",
          "indirectnull": "SUB[M] R0, 0, 4",
          "indirecttype": "SUB[M] R0, 1, 4",
+         "returnoob": "SUB[M] R0, 4, 4",
+         "returntype": "SUB[M] R0, 1, 4",
          "filloob": "ADD[M] R1, 65533, 4",
          "copyoob": "ADD[M] R1, 0, 2",
          "divzero": "MOVE[M] R0, 0",
@@ -2465,6 +2468,92 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         elems((1, [0])),
         code((0, local_get(0)),
              (0, i32_const(1) + i32_const(2) + i32_const(1) + call_indirect(2)))), "", 7),
+    # Tail calls. sp() returns the SP of its caller less 1, where the
+    # return address is. Function 3 is id(x) = x. deep(n) and deepi(n)
+    # return sp() if n = 0, else they tail-call deep(n - 1) or, through
+    # table entry 0, deepi(n - 1). So with tail calls their result is the
+    # same as sp() from main, also after 10000 rounds. deep keeps n in a
+    # saved register across the call of id, which the TAIL restores.
+    # count(n, x) = x if n = 0, else count(n - 1, x + n), so count(1000,
+    # 0) = 500500. rp(a) tail-calls nice.peek(a), which reads what main
+    # poked below its SP. 5 bits, then a check that fails.
+    ("returncall", module(
+        types(MAIN_TYPE, ([I32], [I32]), ([I32, I32], [I32]), ([I32, I32], [])),
+        imports(("env", "sp", 0), ("nice", "peek", 1), ("nice", "poke", 3)),
+        funcs(1, 1, 1, 2, 1, 0),
+        table(1),
+        exports(("main", 0, 8)),
+        elems((0, [5])),
+        code((0, local_get(0)),
+             (0, local_get(0) + EQZ + if_() + return_call(0) + END + local_get(0) + local_get(0)
+              + call(3) + SUB + local_get(0) + ADD + i32_const(1) + SUB + return_call(4)),
+             (0, local_get(0) + EQZ + if_() + return_call(0) + END + local_get(0) + i32_const(1)
+              + SUB + i32_const(0) + return_call_indirect(1)),
+             (0, local_get(0) + EQZ + if_() + local_get(1) + RETURN + END + local_get(0)
+              + i32_const(1) + SUB + local_get(1) + local_get(0) + ADD + return_call(6)),
+             (0, local_get(0) + return_call(1)),
+             (2, bits(0,
+                call(0) + i32_const(0) + call(4) + EQ,
+                call(0) + i32_const(10000) + call(4) + EQ,
+                call(0) + i32_const(10000) + call(5) + EQ,
+                i32_const(1000) + i32_const(0) + call(6) + c32(500500) + EQ,
+                call(0) + i32_const(100) + SUB + local_tee(1) + i32_const(77) + call(2)
+                + local_get(1) + call(7) + i32_const(77) + EQ,
+                i32_const(3) + i32_const(0) + call(6) + i32_const(7) + EQ)))),
+     "_sp MOVE R1, R13\n MOVE R15, @R13++\n", 0x3E),
+    # Tail calls with stack arguments (ABI.md). s6(n, b, c, d, e, f) = e -
+    # f if n = 0, else s6(n - 1, b, c, d, f, e), which swaps the two stack
+    # arguments. t6(a, b, c, d, e, f) tail-calls s5(a + b, c, d, e, f) =
+    # a + b + c + d + e - f, which has one stack argument fewer. u4(a, b,
+    # c, d) tail-calls s6(0, a, b, c, d, a) = d - a, which has two more,
+    # so it calls it instead. m64(x, y, z) = y - z of i64s if x = 0, else
+    # m64(x - 1, z, y), with z on the stack. 6 bits, then a check that
+    # fails.
+    ("returnstack", module(
+        types(MAIN_TYPE, ([I32] * 6, [I32]), ([I32] * 5, [I32]), ([I32] * 4, [I32]),
+              ([I64] * 3, [I64])),
+        funcs(1, 2, 1, 3, 4, 0),
+        exports(("main", 0, 5)),
+        code((0, local_get(0) + EQZ + if_() + local_get(4) + local_get(5) + SUB + RETURN + END
+              + local_get(0) + i32_const(1) + SUB + local_get(1) + local_get(2) + local_get(3)
+              + local_get(5) + local_get(4) + return_call(0)),
+             (0, local_get(0) + local_get(1) + ADD + local_get(2) + ADD + local_get(3) + ADD
+              + local_get(4) + SUB),
+             (0, local_get(0) + local_get(1) + ADD + local_get(2) + local_get(3) + local_get(4)
+              + local_get(5) + return_call(1)),
+             (0, i32_const(0) + local_get(0) + local_get(1) + local_get(2) + local_get(3)
+              + local_get(0) + return_call(0)),
+             (0, local_get(0) + EQZ64 + if_() + local_get(1) + local_get(2) + SUB64 + RETURN + END
+              + local_get(0) + c64(1) + SUB64 + local_get(2) + local_get(1) + return_call(4)),
+             (1, bits(0,
+                b"".join(i32_const(v) for v in (3, 0, 0, 0, 10, 1)) + call(0) + i32_const(-9) + EQ,
+                b"".join(i32_const(v) for v in (1000, 0, 0, 0, 10, 1)) + call(0) + i32_const(9)
+                + EQ,
+                b"".join(i32_const(v) for v in (1, 2, 3, 4, 50, 600)) + call(2) + c32(-540) + EQ,
+                b"".join(i32_const(v) for v in (1, 2, 3, 40)) + call(3) + i32_const(39) + EQ,
+                c64(3) + c64(10) + c64(1) + call(4) + c64(-9) + EQ64,
+                c64(2) + c64(10) + c64(0x1_00000001) + call(4) + c64(10 - 0x1_00000001) + EQ64,
+                b"".join(i32_const(v) for v in (1, 2, 3, 40)) + call(3) + i32_const(40) + EQ)))),
+     "", 0x7E),
+    # return_call_indirect traps as call_indirect does: index 4 is past
+    # the end of a table of 4, and entry 1 holds a function of type 1, not
+    # type 2.
+    ("returnoob", module(
+        types(MAIN_TYPE, ([I32], [I32])),
+        funcs(1, 0),
+        table(4),
+        exports(("main", 0, 1)),
+        elems((1, [0])),
+        code((0, local_get(0)),
+             (0, i32_const(1) + i32_const(4) + return_call_indirect(1)))), "", 6),
+    ("returntype", module(
+        types(MAIN_TYPE, ([I32], [I32]), ([I32, I32], [I32])),
+        funcs(1, 0),
+        table(4),
+        exports(("main", 0, 1)),
+        elems((1, [0])),
+        code((0, local_get(0)),
+             (0, i32_const(1) + i32_const(2) + i32_const(1) + return_call_indirect(2)))), "", 7),
     # nice.peek and nice.poke. cell() returns the address of a word that
     # starts as 7. main pokes 41 into it, then prints H, i, and a newline
     # on the console at 0xFFFFFF00, which prints bits 7..0 of each word, so

@@ -103,7 +103,7 @@ def write_symbols(sym: str, program: str, output: str) -> None:
 def compile_wasm(lang: str, args: argparse.Namespace, wasm: str) -> None:
     """Compiles the inputs to the wasm module in the file wasm."""
     if lang == "c":
-        run([os.environ.get("CLANG", "clang"), "--target=wasm32", "-mbulk-memory",
+        run([os.environ.get("CLANG", "clang"), "--target=wasm32", "-mbulk-memory", "-mtail-call",
              f"-O{args.opt or '2'}", "-ffreestanding",
              "-nostdlibinc", "-isystem", os.path.join(LIBC, "include"),
              *[f"-I{d}" for d in args.includes], *[f"-D{d}" for d in args.defines],
@@ -119,13 +119,14 @@ def compile_wasm(lang: str, args: argparse.Namespace, wasm: str) -> None:
         # -fno-strip keeps, so the .bin is the same either way.
         strip = "-fno-strip" if args.symbols else "-fstrip"
         run([os.environ.get("ZIG", "zig"), "build-exe", "-target", "wasm32-freestanding",
-             "-fno-entry", "-rdynamic", "-O", mode, strip, "--stack", str(stack),
+             "-mcpu=generic+tail_call", "-fno-entry", "-rdynamic", "-O", mode, strip, "--stack", str(stack),
              f"--initial-memory={args.memory}", "--dep", "nice",
              f"-Mroot={args.inputs[0]}", f"-Mnice={os.path.join(RUNTIME, 'nice.zig')}",
              f"-femit-bin={wasm}"])
     else:
         run([os.environ.get("RUSTC", "rustc"), "--target", "wasm32-unknown-unknown",
              "--crate-type", "cdylib", "-C", f"opt-level={args.opt or 's'}", "-C", "panic=abort",
+             "-C", "target-feature=+tail-call",
              "-C", "strip=debuginfo", "-C", f"link-arg=-zstack-size={args.stack or 4096}",
              "-C", f"link-arg=--initial-memory={args.memory}", "-o", wasm, args.inputs[0]])
 

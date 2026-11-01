@@ -12,7 +12,8 @@ between versions, so it is not compared. REV is a git revision whose
 nicewasm.py is the older version, main by default, or the path of a
 nicewasm.py. Seeds FIRST to FIRST + COUNT - 1 are tried.
 
-Without --trap, the modules are those of fuzz.py, and the new
+The modules are those of fuzz.py without its tail calls, which a
+version before them rejects. Without --trap, the new
 translation's R1, or its trap code, is also checked against fuzz.py's
 model. With --trap, each module gets a few more statements that may trap,
 which the model does not know: loads and stores out of bounds, at constant addresses,
@@ -209,7 +210,7 @@ def trap_stmt(ctx: fuzz.Ctx, rng: random.Random, grow: bool) -> fuzz.Stmt:
 def trap_module(seed: int, grow: bool) -> bytes:
     """fuzz.py's module for the seed, with statements that may trap put
     into its functions."""
-    fns, segment = fuzz.build(seed)
+    fns, segment = fuzz.build(seed, tails=False)
     rng = random.Random(seed * 7919 + 1)
     for idx, fn in enumerate(fns):
         ctx = fuzz.Ctx(rng, fn, idx, fns)
@@ -385,7 +386,7 @@ def main() -> None:
             if trap:
                 mod, expected = trap_module(seed, grow), None
             else:
-                fns, segment = fuzz.build(seed, "--unchecked" not in args)
+                fns, segment = fuzz.build(seed, "--unchecked" not in args, tails=False)
                 mod, expected = fuzz.finish(fns, segment)
             problem, run = compare(seed, mod, tool, tmp, nompu, opts, pages, expected)
             if problem is not None:

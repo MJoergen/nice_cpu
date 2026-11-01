@@ -171,6 +171,60 @@ def test_c_options(tmp: str) -> None:
         fail("a .bin file of a C file that does not compile")
 
 
+# Deep recursion by tail calls: down(n) returns sp(), the SP less 1 in
+# the hand-written routine, after n tail calls. With tail calls, the
+# frames do not pile up, so down(0) and down(100000) see the same SP, and
+# main returns 0. In C, down and its twin call each other, so that clang
+# cannot make a loop of them.
+SP_NASM = "_sp             MOVE    R1, R13\n                MOVE    R15, @R13++\n"
+TAIL_C = """unsigned sp(void);
+unsigned twin(unsigned n);
+
+__attribute__((noinline)) unsigned down(unsigned n) {
+    if (n == 0)
+        return sp();
+    [[clang::musttail]] return twin(n - 1);
+}
+
+__attribute__((noinline)) unsigned twin(unsigned n) {
+    if (n == 0)
+        return sp();
+    [[clang::musttail]] return down(n - 1);
+}
+
+int main(void) { return down(0) != down(100000); }
+"""
+TAIL_ZIG = """extern fn sp() u32;
+
+fn down(n: u32) u32 {
+    if (n == 0) return sp();
+    return @call(.always_tail, down, .{n - 1});
+}
+
+export fn main() i32 {
+    return @intFromBool(down(0) != down(100000));
+}
+"""
+
+
+def test_tail(tmp: str, lang: str) -> None:
+    """A tail call that the language guarantees, clang's musttail or Zig's
+    always_tail, needs nicebuild's tail-call option, and nicewasm turns
+    it into a jump."""
+    src = os.path.join(tmp, "tail")
+    os.makedirs(src, exist_ok=True)
+    source = os.path.join(src, "tail." + lang)
+    with open(source, "w") as f:
+        f.write(TAIL_C if lang == "c" else TAIL_ZIG)
+    asm = os.path.join(src, "sp.nasm")
+    with open(asm, "w") as f:
+        f.write(SP_NASM)
+    out = os.path.join(tmp, f"tail_{lang}.bin")
+    what = f"{'C' if lang == 'c' else 'Zig'} tail calls"
+    if check_build(what, ["--asm", asm, "-o", out, source], out):
+        check_run(what, run(out), 0, [])
+
+
 def after_standin(tmp: str, program: str) -> str:
     """The program of --monitor after the runtime's stand-in for a monitor,
     in one .bin file, as a monitor's image and a program's concatenate. The
@@ -306,12 +360,14 @@ def main() -> None:
             test_c(tmp)
             test_c_options(tmp)
             test_c_monitor(tmp)
+            test_tail(tmp, "c")
             ran.append("C")
         else:
             skipped.append("C (no clang, wasm-ld, or llvm-ar for wasm32)")
         if compiler("ZIG", "zig"):
             test_zig(tmp)
             test_zig_monitor(tmp)
+            test_tail(tmp, "zig")
             ran.append("Zig")
         else:
             skipped.append("Zig (no zig)")

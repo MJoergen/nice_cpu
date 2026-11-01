@@ -18,7 +18,8 @@ i32. Each has 8 to 13 locals, i32 and i64, so that with the values on
 the operand stack some live in registers and some are spilled to the
 frame. The bodies use blocks,
 loops, if and else, br, br_if, and br_table with and without values,
-return, nop, both forms of select, calls and call_indirect, every
+return, nop, both forms of select, calls and call_indirect, half of f's
+results by return_call or return_call_indirect of h, every
 integer operation and comparison, global.get and global.set of mutable
 i32 and i64 globals and global.get of an immutable one,
 memory.fill and memory.copy, whose ranges may overlap,
@@ -88,7 +89,8 @@ from wasm import (ADD, AND, DROP, ELSE, END, EXTEND_S, EXTEND_U, I32, I64, LT_U,
                   MEMORY_FILL, NOP, OR, RETURN, SELECT, SHR_U64, UNREACHABLE, WRAP, block, br, br_if,
                   br_table, call, call_indirect, code, data, elems, exports, funcs, global_get,
                   global_set, i32_const, i64_const, if_, local_get, local_set, local_tee, loop, mem,
-                  memory, module, select_t, table, typed_globals, typeidx, types)
+                  memory, module, return_call, return_call_indirect, select_t, table,
+                  typed_globals, typeidx, types)
 
 sys.setrecursionlimit(5000)
 
@@ -711,9 +713,10 @@ def gen_group(ctx: Ctx, depth: int) -> Stmt:
     return Stmt(b"".join(step.code for step in steps), run)
 
 
-def gen_call(ctx: Ctx, t: int, depth: int) -> Expr:
+def gen_call(ctx: Ctx, t: int, depth: int, tail: bool = False) -> Expr:
     """A call of a later function, so that there is no recursion; a quarter
-    of them through the table."""
+    of them through the table. With tail, a tail call, which must end the
+    function."""
     cands = [i for i, fn in enumerate(ctx.fns) if fn.result == t and i > ctx.fidx]
     if not cands:
         return gen_const(ctx, t, depth)
@@ -725,9 +728,10 @@ def gen_call(ctx: Ctx, t: int, depth: int) -> Expr:
     rest = fn.params[2:] if first is not None else fn.params
     args = [gen_expr(ctx, pt, depth) for pt in rest]
     if ctx.rng.random() < 0.25:
-        target = i32_const(idx - 1) + call_indirect(ctx.rng.choice(same_types(fn.type_idx)))
+        k = ctx.rng.choice(same_types(fn.type_idx))
+        target = i32_const(idx - 1) + (return_call_indirect(k) if tail else call_indirect(k))
     else:
-        target = call(idx)
+        target = return_call(idx) if tail else call(idx)
 
     def ev(st: State) -> int:
         values = first.ev(st) if first is not None else []
@@ -1436,10 +1440,11 @@ def checksum(fn: Func) -> Expr:
     return Expr(I32, code, ev)
 
 
-def build(seed: int, bounds: bool = True) -> Tuple[List[Func], bytes]:
+def build(seed: int, bounds: bool = True, tails: bool = True) -> Tuple[List[Func], bytes]:
     """The four functions, with random bodies, and the data segment. In 40%
     of the modules, the bodies have statements and divisions that may trap,
-    and with bounds, among them accesses out of bounds."""
+    and with bounds, among them accesses out of bounds. With tails, a
+    function may end in a tail call."""
     rng = random.Random(seed)
     risky = rng.random() < 0.4
     fns = [Func(0, [], I32, [I32] * 7 + [I64] * 3 + [I32, I32]),
@@ -1453,7 +1458,11 @@ def build(seed: int, bounds: bool = True) -> Tuple[List[Func], bytes]:
         # function, an early exit before the prologue (DESIGN.md).
         fn.stmts = [gen_br(ctx, 0, out=True)] if idx and rng.random() < 0.5 else []
         fn.stmts += [gen_stmt(ctx, 3) for _ in range(count)]
-        fn.value = checksum(fn) if idx == 0 else gen_expr(ctx, fn.result, 3)
+        # Half of those that can, f, end in a tail call of h, which gives
+        # the same value as a call and a return.
+        tail = tails and any(g.result == fn.result for g in fns[idx + 1:]) and rng.random() < 0.5
+        fn.value = (checksum(fn) if idx == 0 else gen_call(ctx, fn.result, 3, tail=True) if tail
+                    else gen_expr(ctx, fn.result, 3))
     return fns, bytes(rng.getrandbits(8) for _ in range(DATA_SIZE))
 
 

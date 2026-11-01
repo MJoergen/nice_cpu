@@ -159,7 +159,7 @@ library, in the order of the [runtime README](../runtime/README.md#joining-a-pro
 These are the steps, and the compiler options that `nicebuild.py` uses.
 For C code compiled with clang:
 
-    clang --target=wasm32 -mbulk-memory -O2 -nostdlib -Wl,--no-entry -Wl,--export=main \
+    clang --target=wasm32 -mbulk-memory -mtail-call -O2 -nostdlib -Wl,--no-entry -Wl,--export=main \
         -Wl,--allow-undefined -Wl,--stack-first -Wl,-z,stack-size=4096 \
         -Wl,--initial-memory=65536 -o prog.wasm prog.c
     translator/nicewasm.py prog.wasm
@@ -174,6 +174,13 @@ imports from `env`, and the assembler stops with `undefined symbol
 '_memcpy'`. A C routine could not serve them anyway, since they take byte
 addresses in linear memory. With `-mbulk-memory`, clang emits
 `memory.copy` and `memory.fill` instead.
+
+`-mtail-call` lets clang emit `return_call`. Without it, clang rejects
+a `[[clang::musttail]]` call that it cannot turn into a loop, and Zig
+rejects `@call(.always_tail, ...)`, so nicebuild turns the feature on
+for all three compilers. They then also emit `return_call` for an
+ordinary call just before a return, which nicewasm would turn into a
+tail call anyway ([DESIGN.md](DESIGN.md)).
 
 `-Wl,--stack-first` matters too. The program's own stack, which clang
 keeps in linear memory for the variables whose address is taken and for
@@ -204,8 +211,8 @@ exported function.
 
 And for Zig:
 
-    zig build-exe -target wasm32-freestanding -fno-entry -rdynamic -O ReleaseSmall \
-        -fstrip --stack 4096 --initial-memory=65536 prog.zig
+    zig build-exe -target wasm32-freestanding -mcpu=generic+tail_call -fno-entry -rdynamic \
+        -O ReleaseSmall -fstrip --stack 4096 --initial-memory=65536 prog.zig
 
 ReleaseSafe and Debug work too. They need `--stack 16384`, or at least
 more than 4096, if the program can panic: Zig's panic handler puts a
@@ -233,8 +240,8 @@ And for Rust, with the wasm32 target installed (`rustup target add
 wasm32-unknown-unknown`):
 
     rustc --target wasm32-unknown-unknown --crate-type cdylib -C opt-level=s \
-        -C panic=abort -C strip=debuginfo -C link-arg=-zstack-size=4096 \
-        -C link-arg=--initial-memory=65536 prog.rs
+        -C panic=abort -C target-feature=+tail-call -C strip=debuginfo \
+        -C link-arg=-zstack-size=4096 -C link-arg=--initial-memory=65536 prog.rs
 
 Use `#![no_std]`, which keeps the module small. It needs a panic
 handler, such as one that calls `core::arch::wasm32::unreachable()`.
@@ -258,7 +265,8 @@ and so is the set with `-mbulk-memory`. Rust's default set adds all of
 `memory.copy`, `memory.fill`, and the `call_indirect` encoding, unless
 the program uses threads or `externref`. nicewasm rejects the rest, such
 as `memory.init` and `table.get`, with an error. A module built with
-`-mcpu=mvp` needs none of them. Of the `0xFC` instructions, nicewasm
+`-mcpu=mvp` needs none of them. nicewasm also supports `tail-call`,
+which no default set has, and which nicebuild turns on. Of the `0xFC` instructions, nicewasm
 supports `memory.copy` and `memory.fill` of `bulk-memory-opt`, and the
 `trunc_sat` conversions of `nontrapping-fptoint`. It decodes the others,
 such as the table instructions, only to name them in an error. It accepts
@@ -385,13 +393,19 @@ the steps that got the code here.
 - **Indirect calls:** `call_indirect`. An index past the end of the table
   and an empty entry trap with code 6, and an entry of another type with
   code 7.
+- **Tail calls:** `return_call` and `return_call_indirect`, with the
+  checks of `call_indirect`. The stack arguments go into the function's
+  own, the frame goes, and the saved registers are restored, and then a
+  jump goes to the callee, as WASM.md says. A callee with more words of
+  stack arguments than the function is called instead, and its results
+  returned, so the stack then grows by a frame. A callee whose results
+  differ from the function's is an error.
 - **Ignored:** custom sections. The
   name section only supplies function names for comments. A name that is
   not printable ASCII is left out, and so is any such character in the
   input file's name, so that a comment cannot become code.
 
-Not supported yet: the tail calls `return_call` and
-`return_call_indirect` (#103), and, until a program needs them (#104),
+Not supported yet, until a program needs them (#104):
 function types with more than one result (a block type may have
 several), passive data and element segments, `memory.init`, `data.drop`,
 the table instructions such as `table.get` and `table.grow`, `ref.func`
@@ -475,7 +489,7 @@ with the trap code in R1. The modules have four functions with `i32` and
 `i64` parameters, 8 to 13 locals, loops, blocks, and ifs whose block
 types may have parameters and several results, branches that carry no
 value, one, or several, `br_table` among them, `return`, `nop`, both
-forms of `select`, calls through the table, every integer
+forms of `select`, calls through the table, tail calls, every integer
 operation and comparison, the results of comparisons kept in locals for
 later conditions, mutable and immutable globals, loads and stores of
 every width at constant and dynamic addresses, the addresses of array
@@ -507,7 +521,8 @@ cannot test them.
 `OLD`, a git revision, `main` by default: `test/diff_fuzz.py` translates
 random modules with both, runs both programs, and compares the console
 output, the halt reason, the exit status, R1, R7 to R13, and every word
-of the linear memory. The modules are `fuzz.py`'s, and, with `--trap`,
+of the linear memory. The modules are `fuzz.py`'s, without the tail calls,
+which a version before them rejects, and, with `--trap`,
 the same with statements that may trap: accesses out of bounds,
 divisions by zero and of the most negative value by −1, bad
 `call_indirect`s, `memory.fill` and `memory.copy` past the end,

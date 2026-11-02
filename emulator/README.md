@@ -106,6 +106,7 @@ goes through these steps on a small program, and a
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
 | `--no-cycle-counter` | Make the cycle counter and the microsecond counter, `0xFFFFFF40`, `0xFFFFFF41`, `0xFFFFFF44`, and `0xFFFFFF45`, ordinary memory (see Performance counters below). |
+| `--step-time` | Count one microsecond per step in the microsecond counter, rather than the host's time, so that a run counts the same each time (see Performance counters below). |
 | `--no-timer-irq` | The timer counts, but raises no requests, so that `--irq` can raise them instead (see Timer below). |
 | `--window` | Show the screen in a window while the program runs, and keep it after the halt until it is closed (see Window below). Needs a build with `-Dwindow`. |
 | `--speed N` | With `--window`, run N steps a second, 1000000 by default, or as fast as the host can for 0. |
@@ -161,8 +162,9 @@ bytes of SYSTEM.md §1, and not stdin. A read with no byte waiting returns
 0, and a read never returns `0x200`. The keys wait in a buffer of 2048
 bytes, and a key whose bytes do not all fit is dropped.
 
-The emulator runs one step per microsecond, so that the microsecond counter
-keeps the time of the host's clock. The cycle counter and the timer still
+The emulator runs one step per microsecond, so that the screen changes at
+about the speed it would on a board. The microsecond counter keeps the
+host's time with or without the window. The cycle counter and the timer
 count one cycle per step, so a timer period of P lasts P microseconds,
 where on a board of 100 MHz it lasts P/100 (SYSTEM.md §1). `--speed N` sets another
 rate, N steps per second, and `--speed 0` runs as fast as the host can. A
@@ -278,12 +280,24 @@ zero and the signed overflow.
 The performance counters count the instructions, the steps, and the
 microseconds since reset. The emulator has no clock, so its cycle counter
 counts one cycle per step, that is, per instruction and per interrupt entry,
-and its microsecond counter counts one microsecond per step. They differ
-from the FPGA core's, which counts clock cycles and real microseconds. A read of a low word takes a snapshot of
+and differs from the FPGA core's, which counts clock cycles.
+
+The microsecond counter counts the host's monotonic time, without the time
+the host sleeps, less the time the processor was held, paused, or halted
+(SYSTEM.md §3). Each read of `TIME_LO` reads the host's clock. A console
+read that waits for input counts as running. After `-n` stops a run, the
+counter runs on until the report, so only after a halt does `--dump` show
+the same count each time. The cycle counter and the microsecond counter
+have no fixed ratio: a program that divides one by the other gets the
+host's rate of steps, which varies. `--step-time` makes the counter count
+one microsecond per step instead, for tests whose output is worked out by
+hand.
+
+A read of a low word takes a snapshot of
 its counter, and a read of the high word returns the snapshot's high word.
 `--dump` shows the low words and the snapshots without taking a snapshot.
 Writes are ignored. `test/perf.nasm` checks the instruction counter, and
-`test/time.nasm` the microsecond counter.
+`test/time.nasm` the microsecond counter, both with `--step-time`.
 The emulator has none of the FPGA core's fetch statistics, at
 `0xFFFFFF50`–`0xFFFFFF7F`: their words read 0 and ignore writes.
 
@@ -433,7 +447,9 @@ byte, the errors and drops, a program loaded, run, halted, and restarted,
 the overflow notice, floods of console bytes: to a program that reads,
 with none lost, to one that never reads, with one `o` and a request
 behind them answered after 50 ms, and to a paused one, the step limit, the halt reasons 2 to 4, and a clear
-of a running program. It checks the single step: its example of DEBUG.md
+of a running program. It checks that the microsecond counter counts the
+time while the processor runs, stops while it is paused or held, starts
+from 0 at a start, and counts the steps with `--step-time`. It checks the single step: its example of DEBUG.md
 §8, the cases where bit 5 does nothing, a step into `HALT` and to the step
 limit, a step at a console read, and R13–R15 after each step across
 interrupt entries, compared with `--trace`. And it checks the breakpoints:

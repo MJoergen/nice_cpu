@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const Cpu = @import("cpu.zig").Cpu;
+const Clock = @import("cpu.zig").Clock;
 const Link = @import("link.zig").Link;
 const frame = @import("frame.zig");
 const build_options = @import("build_options");
@@ -36,6 +37,8 @@ const usage =
     \\      --no-cycle-counter  Make 0xFFFFFF40, 0xFFFFFF41, 0xFFFFFF44, and
     \\                       0xFFFFFF45 ordinary memory, for comparing traces
     \\                       with an FPGA core.
+    \\      --step-time      Count one microsecond per step in 0xFFFFFF44 and
+    \\                       0xFFFFFF45, rather than the host's time.
     \\      --no-timer-irq   The timer counts, but raises no requests, so that
     \\                       --irq can raise them where an FPGA core took them.
     \\      --link [ADDR:]PORT  Serve the debug link of doc/DEBUG.md on PORT of
@@ -89,6 +92,8 @@ const Options = struct {
     requests: []const Request = &.{},
     max_steps: u64 = std.math.maxInt(u64),
     cycle_counter: bool = true,
+    /// Count one microsecond per step rather than the host's time.
+    step_time: bool = false,
     timer_irq: bool = true,
     /// The console input file, or "-" for stdin.
     input: []const u8 = "-",
@@ -399,6 +404,8 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
             speed_given = true;
         } else if (std.mem.eql(u8, arg, "--no-cycle-counter")) {
             opts.cycle_counter = false;
+        } else if (std.mem.eql(u8, arg, "--step-time")) {
+            opts.step_time = true;
         } else if (std.mem.eql(u8, arg, "--no-timer-irq")) {
             opts.timer_irq = false;
         } else if (arg.len > 1 and arg[0] == '-') {
@@ -491,6 +498,13 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
     cpu.console = out;
     cpu.console_flush = std.Io.File.stdout().isTty(io) catch false;
     cpu.cycle_counter = opts.cycle_counter;
+    // The clock counts from here, as a board's from its reset. A halt
+    // stops it, the step limit does not (doc/SYSTEM.md §3).
+    var clock: Clock = .{ .io = io };
+    if (!opts.step_time) {
+        cpu.clock = &clock;
+        clock.start();
+    }
     cpu.timer_irq = opts.timer_irq;
     var in_buf: [4096]u8 = undefined;
     var in_r: InterruptibleReader = undefined;
@@ -695,6 +709,10 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
     if (opts.trace) cpu.trace = out;
     cpu.console = &link.console_w;
     cpu.cycle_counter = opts.cycle_counter;
+    // Stopped while the processor is held, halted, or paused, and set to
+    // 0 by the reset of a start (doc/SYSTEM.md §3).
+    var clock: Clock = .{ .io = io };
+    if (!opts.step_time) cpu.clock = &clock;
     cpu.timer_irq = opts.timer_irq;
     // With the window, the console reads do not wait, and the run is paced
     // (doc/SYSTEM.md §1).
@@ -724,6 +742,7 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
         }
         if (link.pauseDue(steps == opts.max_steps)) link.pause();
         if (!link.running()) {
+            clock.stop();
             if (link.halted() and !reported) {
                 _ = try report(out, opts, syms, cpu, steps, false);
                 link.notifyHalt();
@@ -740,6 +759,8 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
             continue;
         }
         // A chunk of steps, then the link is served. A step is as in `run`.
+        // The waits of the window's pace between chunks count as running.
+        clock.start();
         var n: u64 = 0;
         while (n < chunk and link.running() and !link.started and !link.pauseDue(steps == opts.max_steps)) : (n += 1) {
             if (steps == opts.max_steps) {

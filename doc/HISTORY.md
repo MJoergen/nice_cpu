@@ -578,3 +578,16 @@ room. The wait is per stall, not per byte: after the `o`, the bytes are
 lost at once until the buffer has room, so a stuck program delays a host's
 packets by 50 ms once, not by 50 ms for every byte queued ahead of them.
 Version 6 was not tagged yet, so the change rode on it.
+
+## The emulator's microsecond counter
+
+Until 2026-11-02, the emulator's microsecond counter counted one
+microsecond per step, as its cycle counter counts one cycle, and only
+`--window`, which paces the run to one step per microsecond, made it keep
+real time. Without the window, a program that waited 150000 microseconds
+on it, as the game tick of the demo of #91 does, waited 3 ms. Since then
+it counts the host's monotonic time while the processor runs (#114), and
+`--step-time` keeps the old count for tests worked out by hand. It came
+out of asking whether niceemu could count the pipelined core's cycles:
+`bench/pipecycles.py` models them to 0.02% offline, and moving the model
+into the emulator was judged not worth it.

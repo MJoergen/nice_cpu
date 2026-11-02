@@ -16,9 +16,11 @@ console input if it exists, and with no input otherwise. The trace, the
 output, and the exit status of the two must be the same, as in the
 makefile's other runs.
 
-The runtime's clock reads the cycle counter, where the core counts cycles
-and the emulator steps (SYSTEM.md §3), so its two words are memory on both
-sides: G_CYCLE_COUNTER=false and --no-cycle-counter.
+The runtime's clock reads the microsecond counter, where the core counts
+its own time and the emulator the host's, and the benchmarks read the
+cycle counter, where the core counts cycles and the emulator steps
+(SYSTEM.md §3). So their words are memory on both sides:
+G_CYCLE_COUNTER=false and --no-cycle-counter.
 
 The runs go in parallel, the longest first, as test/core_runs.py
 describes. The VHDL must be analyzed in BUILD already.

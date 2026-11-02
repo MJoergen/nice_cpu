@@ -35,7 +35,8 @@ host write R1–R15 while the processor is paused (#102), and over TCP
 holds a host back instead of losing its console bytes (#110). Rust and Zig
 programs have a heap (#69, #105) and read console input a line at a time
 (#106). The translator handles tail calls (#103) and can trust the
-alignment hints (#113).
+alignment hints (#113). The emulator's microsecond counter keeps the
+host's time (#114).
 
 **Upgrade notes.**
 
@@ -61,6 +62,11 @@ alignment hints (#113).
   (#102). The inputs default to 0, so a system that does not connect them
   works as before, but a host's write of R1–R15 does not reach the
   core. A board connects the link's outputs to the core's inputs.
+- The emulator's microsecond counter counts the host's time, not one
+  microsecond per step (#114). A test whose expected output has a count
+  of it worked out by hand needs `--step-time`. A program that divides
+  the cycle counter by the microsecond counter gets the host's rate of
+  steps, which varies.
 - `wb_dmux`, the devices, and the address map of SYSTEM.md are as in V1.2.
 - Zig 0.17.0, as in V1.2.
 
@@ -86,6 +92,9 @@ alignment hints (#113).
   and 128K words as the examples, and says how a program learns the
   size. ABI.md says what "up to the SP" means under a monitor on such
   a system (#111).
+- SYSTEM.md §3: the emulator's microsecond counter counts the host's
+  monotonic time while the processor runs, and with `--step-time` one
+  microsecond per step. §1.6 paces the window for the screen only (#114).
 
 **Assembler (`niceasm`)**
 
@@ -102,6 +111,10 @@ alignment hints (#113).
 - A console byte that finds the input buffer full waits up to 50 ms for
   room, and niceemu reads nothing more from the connection meanwhile, so
   a flood of console bytes to a program that reads loses nothing (#110).
+- The microsecond counter counts the host's time, less the time the
+  processor is held, paused, or halted, so a program that waits on it
+  waits real time with or without `--window`. `--step-time` counts one
+  microsecond per step, as before (#114).
 
 **Runtime and C library**
 

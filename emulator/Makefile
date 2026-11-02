@@ -39,9 +39,9 @@ OPTS_iofetch = -d 0xffffff80:1 -d 0xffffffff:1
 OPTS_reads   = -d 0xffffff01:1
 OPTS_mpu     = -d 0x200:72 -d 0xffffff20:16
 OPTS_mpu64   = -d 0x200:72 -d 0xffffff20:32
-OPTS_perf    = --nmi 3:0x41 -d 0xffffff40:6
+OPTS_perf    = --step-time --nmi 3:0x41 -d 0xffffff40:6
 OPTS_timer   = -d 0xffffff10:4
-OPTS_time    = -d 0xffffff44:2
+OPTS_time    = --step-time -d 0xffffff44:2
 OPTS_trapsym = --symbols test/trapsym.sym
 # timer again, with the timer's requests raised by --irq instead, before
 # the steps after those that raise them in timer.nasm's table: 6, 16, 19,

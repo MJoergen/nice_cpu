@@ -235,8 +235,8 @@ pub const Perf = struct {
     /// has no clock, so this stands in for the clock cycles.
     cycles: u64 = 0,
     cycles_snap: u64 = 0,
-    /// One microsecond per step. The emulator has no clock, so this stands
-    /// in for the microseconds that an FPGA core counts.
+    /// One microsecond per step, when the Cpu has no `clock`. With one,
+    /// a read of `TIME_LO` sets it from the clock.
     micros: u64 = 0,
     micros_snap: u64 = 0,
     instrs: u64 = 0,
@@ -264,6 +264,50 @@ pub const Perf = struct {
             5 => @truncate(self.micros_snap >> 32),
             else => 0,
         };
+    }
+};
+
+/// The host's clock for the microsecond counter (SYSTEM §3): the host's
+/// monotonic time, without its sleep, while the processor runs. The run
+/// loop starts it and stops it, `Cpu.step` stops it at a halt, and
+/// `Cpu.reset` sets it to 0 and stops it.
+pub const Clock = struct {
+    io: std.Io,
+    /// The nanoseconds counted before `since`.
+    ns: u64 = 0,
+    /// The host's time from which the clock counts on, or null while it
+    /// is stopped.
+    since: ?i96 = null,
+
+    fn hostNs(self: *const Clock) i96 {
+        return std.Io.Timestamp.now(self.io, .awake).toNanoseconds();
+    }
+
+    /// Count on from now, if stopped.
+    pub fn start(self: *Clock) void {
+        if (self.since == null) self.since = self.hostNs();
+    }
+
+    /// Stop counting, if counting.
+    pub fn stop(self: *Clock) void {
+        if (self.since) |t| self.ns +%= elapsed(t, self.hostNs());
+        self.since = null;
+    }
+
+    pub fn reset(self: *Clock) void {
+        self.ns = 0;
+        self.since = null;
+    }
+
+    /// The microseconds counted until now.
+    pub fn micros(self: *const Clock) u64 {
+        const ns = if (self.since) |t| self.ns +% elapsed(t, self.hostNs()) else self.ns;
+        return ns / std.time.ns_per_us;
+    }
+
+    /// The nanoseconds from `t` to `now`, 0 if the host's clock went back.
+    fn elapsed(t: i96, now: i96) u64 {
+        return if (now > t) @truncate(@as(u96, @intCast(now - t))) else 0;
     }
 };
 
@@ -373,6 +417,9 @@ pub const Cpu = struct {
     perf: Perf,
     /// The timer at `timer_base`.
     timer: Timer,
+    /// The host's clock for the microsecond counter, or null to count one
+    /// microsecond per step (`--step-time`, and the unit tests).
+    clock: ?*Clock,
     /// When false, `CYCLE_LO` and `CYCLE_HI` are ordinary memory
     /// (`--no-cycle-counter`). The emulator counts steps where an FPGA core
     /// counts clock cycles, so a comparison of their traces must leave the
@@ -409,6 +456,7 @@ pub const Cpu = struct {
             .mpu = .{},
             .perf = .{},
             .timer = .{},
+            .clock = null,
             .cycle_counter = true,
             .timer_irq = true,
             .stopped = false,
@@ -432,6 +480,7 @@ pub const Cpu = struct {
         self.mpu = .{};
         self.perf = .{};
         self.timer = .{};
+        if (self.clock) |c| c.reset();
     }
 
     pub fn halted(self: *const Cpu) bool {
@@ -485,7 +534,12 @@ pub const Cpu = struct {
             return n;
         }
         if (mpuWord(addr)) |i| return self.mpu.read(i);
-        if (self.perfDevice(addr)) |i| return self.perf.read(i);
+        if (self.perfDevice(addr)) |i| {
+            if (i == 4) if (self.clock) |c| {
+                self.perf.micros = c.micros();
+            };
+            return self.perf.read(i);
+        }
         if (timerWord(addr)) |i| return self.timer.read(i);
         return self.mem.read(addr);
     }
@@ -504,7 +558,11 @@ pub const Cpu = struct {
     pub fn peek(self: *const Cpu, addr: u32) u32 {
         if (addr == counter_addr) return self.read_count;
         if (mpuWord(addr)) |i| return self.mpu.read(i);
-        if (self.perfDevice(addr)) |i| return self.perf.peek(i);
+        if (self.perfDevice(addr)) |i| {
+            var p = self.perf;
+            if (self.clock) |c| p.micros = c.micros();
+            return p.peek(i);
+        }
         if (timerWord(addr)) |i| return self.timer.read(i);
         return self.mem.peek(addr);
     }
@@ -538,12 +596,17 @@ pub const Cpu = struct {
 
     /// Take a pending interrupt if one may be taken, or else run one
     /// instruction. Does nothing once the processor has halted. Each step
-    /// counts as one cycle (SYSTEM §3, §4).
+    /// counts as one cycle, and as one microsecond without a clock (SYSTEM
+    /// §3, §4). A halt stops the clock.
     pub fn step(self: *Cpu) Error!void {
         if (self.halted()) return;
         defer {
             self.perf.cycles +%= 1;
-            self.perf.micros +%= 1;
+            if (self.clock) |c| {
+                if (self.halted()) c.stop();
+            } else {
+                self.perf.micros +%= 1;
+            }
             self.timer.tick();
         }
         const before = self.regs;
@@ -1754,6 +1817,46 @@ test "the counters wrap from 2^64 - 1 to 0 (SYSTEM §3)" {
     try testing.expectEqual(0, cpu.perf.instrs);
     try testing.expectEqual(0, cpu.perf.cycles);
     try testing.expectEqual(0, cpu.perf.micros);
+}
+
+test "with a clock, the microsecond counter counts the host's time while running (SYSTEM §3)" {
+    // 0: MOVE R1, @TIME_LO
+    // 2: HALT
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{ alu_iw(.always, MOVE, .none, reg(1), ind_imm(0), reg(0)), perf_base + 4, HALT });
+    var clock: Clock = .{ .io = testing.io };
+    cpu.clock = &clock;
+    // Stopped, it counts nothing.
+    try testing.expectEqual(0, cpu.peek(perf_base + 4));
+    clock.ns = 5_000_999;
+    try cpu.step();
+    try testing.expectEqual(5000, cpu.regs[1]);
+    try testing.expectEqual(5000, cpu.perf.micros_snap);
+    // Running, it counts on, and the steps add nothing of their own.
+    clock.start();
+    clock.since.? -= 3 * std.time.ns_per_ms;
+    try testing.expect(cpu.peek(perf_base + 4) >= 8000);
+    // The halt stops it.
+    try cpu.step();
+    try testing.expectEqual(.halt, cpu.halt_reason);
+    try testing.expectEqual(null, clock.since);
+    const at_halt = cpu.peek(perf_base + 4);
+    try testing.expect(at_halt >= 8000);
+    try testing.expectEqual(at_halt, clock.micros());
+    try testing.expectEqual(5000, cpu.perf.micros);
+    // A reset sets it to 0.
+    cpu.reset();
+    try testing.expectEqual(0, clock.ns);
+    try testing.expectEqual(0, cpu.peek(perf_base + 4));
+}
+
+test "the clock counts nothing for a host's clock that goes back" {
+    var clock: Clock = .{ .io = testing.io, .ns = 7000 };
+    clock.since = std.math.maxInt(i96);
+    try testing.expectEqual(7, clock.micros());
+    clock.stop();
+    try testing.expectEqual(7000, clock.ns);
 }
 
 test "without the cycle counter, its words and the microsecond counter's are memory (--no-cycle-counter)" {

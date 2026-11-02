@@ -166,6 +166,7 @@ CONTROL = 0xFFFFFFF0
 HELLO = b"\xffb06#C8"
 PAUSED = b"\xffp#70"
 CYCLE_LO = 0xFFFFFF40
+TIME_LO = 0xFFFFFF44
 
 
 def assemble(tmp: str, name: str, text: str) -> List[int]:
@@ -680,6 +681,56 @@ def test_pause(count: List[int], echo: List[int]) -> None:
     e.expect("request when halted", ok(CONTROL, 1))
     expect("still halted", bytes([word(e, CONTROL)]), bytes([0xA]))
     expect("no p when halted", e.take(1, timeout=0.5), b"")
+    e.stop()
+
+
+def test_clock(spin: List[int]) -> None:
+    """The microsecond counter counts the host's time while the processor
+    runs, and stops while it is paused or held. A start sets it to 0
+    (SYSTEM.md §3). With --step-time it counts the steps."""
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, spin) + write(CONTROL, [0x8]))
+    e.expect("clock start", ok(0, len(spin)) + ok(CONTROL, 1))
+    time.sleep(0.2)
+    e.send(write(CONTROL, [0x18]))
+    e.expect("clock pause", ok(CONTROL, 1) + PAUSED)
+    t1 = word(e, TIME_LO)
+    if not 150_000 <= t1 < 2_000_000:
+        failures.append(f"clock after 0.2 s of running: {t1} us")
+    time.sleep(0.5)
+    expect("clock stopped while paused", bytes([word(e, TIME_LO) == t1]), b"\x01")
+    # 0.1 s more of running. Had the pause counted, it would be 0.6 s.
+    e.send(write(CONTROL, [0x8]))
+    e.expect("clock go on", ok(CONTROL, 1))
+    time.sleep(0.1)
+    e.send(write(CONTROL, [0x18]))
+    e.expect("clock second pause", ok(CONTROL, 1) + PAUSED)
+    t2 = word(e, TIME_LO)
+    if not 50_000 <= t2 - t1 < 400_000:
+        failures.append(f"clock after 0.1 s more of running: {t1} us, then {t2} us")
+    e.send(write(CONTROL, [0x9]))
+    e.expect("clock hold", ok(CONTROL, 1))
+    time.sleep(0.3)
+    expect("clock stopped while held", bytes([word(e, TIME_LO) == t2]), b"\x01")
+    # A start sets it to 0: at once paused, it is below the 0.3 s before.
+    e.send(write(CONTROL, [0x8]) + write(CONTROL, [0x18]))
+    e.expect("clock restart", ok(CONTROL, 1) + ok(CONTROL, 1) + PAUSED)
+    t3 = word(e, TIME_LO)
+    if not t3 < t1:
+        failures.append(f"clock after a start: {t3} us, before it {t2} us")
+    e.stop()
+
+    e = Emu(["--step-time"])
+    e.take(len(HELLO))
+    e.send(write(0, spin) + write(CONTROL, [0x8]))
+    e.expect("step-time start", ok(0, len(spin)) + ok(CONTROL, 1))
+    time.sleep(0.05)
+    e.send(write(CONTROL, [0x18]))
+    e.expect("step-time pause", ok(CONTROL, 1) + PAUSED)
+    t, c = word(e, TIME_LO), word(e, CYCLE_LO)
+    if t != c or t == 0:
+        failures.append(f"--step-time: {t} us after {c} steps")
     e.stop()
 
 
@@ -1208,7 +1259,7 @@ def main() -> None:
             test_example, test_errors, lambda: test_run(echo), lambda: test_reconnect(echo_on),
             lambda: test_overflow(spin), lambda: test_flood(echo, spin),
             lambda: test_step_limit(spin), lambda: test_halts(reserved, int_in_isr, rti, spin),
-            lambda: test_pause(count, echo),
+            lambda: test_pause(count, echo), lambda: test_clock(spin),
             lambda: test_step(count, one, stop, echo, twice, irq, irq_bin),
             lambda: test_break(at10, load, count, skip, stop, irq),
             lambda: test_write_regs(regs, at20, count),

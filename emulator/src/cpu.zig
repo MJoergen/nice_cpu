@@ -434,6 +434,15 @@ pub const Cpu = struct {
     /// then writes no memory and no trace line. The run loop clears it
     /// after the step.
     stopped: bool,
+    /// The idle reads so far: console reads that found no byte, and reads
+    /// of `TIME_LO`. A program that makes them in a loop waits for a key
+    /// or for a time, and the run loop of the window sleeps in such a
+    /// loop (SYSTEM §1.6). Only the differences of the counts matter, so
+    /// a reset leaves them.
+    idle_reads: u64,
+    /// The reads of `TIME_LO` among the idle reads: a loop that makes
+    /// them waits for a time, which a long sleep would miss.
+    time_reads: u64,
 
     /// A processor after reset (§8.1), with empty memory allocated from `gpa`.
     pub fn init(gpa: std.mem.Allocator) Cpu {
@@ -460,6 +469,8 @@ pub const Cpu = struct {
             .cycle_counter = true,
             .timer_irq = true,
             .stopped = false,
+            .idle_reads = 0,
+            .time_reads = 0,
         };
         cpu.reset();
         return cpu;
@@ -521,11 +532,14 @@ pub const Cpu = struct {
             if (self.input) |in| {
                 // Show a prompt before waiting for the input that answers it.
                 if (self.console) |w| w.flush() catch {};
-                return switch (in.next()) {
-                    .byte => |b| console_byte | b,
-                    .none => 0,
-                    .end => console_end,
-                };
+                switch (in.next()) {
+                    .byte => |b| return console_byte | b,
+                    .none => {
+                        self.idle_reads +%= 1;
+                        return 0;
+                    },
+                    .end => return console_end,
+                }
             }
         }
         if (addr == counter_addr) {
@@ -535,9 +549,11 @@ pub const Cpu = struct {
         }
         if (mpuWord(addr)) |i| return self.mpu.read(i);
         if (self.perfDevice(addr)) |i| {
-            if (i == 4) if (self.clock) |c| {
-                self.perf.micros = c.micros();
-            };
+            if (i == 4) {
+                self.idle_reads +%= 1;
+                self.time_reads +%= 1;
+                if (self.clock) |c| self.perf.micros = c.micros();
+            }
             return self.perf.read(i);
         }
         if (timerWord(addr)) |i| return self.timer.read(i);
@@ -1629,12 +1645,60 @@ test "with input that can have no byte, a console read returns 0 then" {
     try testing.expectEqual(0, script.answers.len);
 }
 
+test "idle reads are the console reads that find no byte and the reads of TIME_LO (SYSTEM §1.6)" {
+    // MOVE R1, @CONSOLE twice, then MOVE R2, @TIME_LO, MOVE R3, @TIME_HI,
+    // MOVE R4, @CYCLE_LO, and HALT. The first console read finds no byte
+    // and the second a byte; of the counters, only TIME_LO is idle.
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{
+        alu_iw(.always, MOVE, .none, reg(1), ind_imm(0), reg(0)), console_addr,
+        alu_iw(.always, MOVE, .none, reg(1), ind_imm(0), reg(0)), console_addr,
+        alu_iw(.always, MOVE, .none, reg(2), ind_imm(0), reg(0)), perf_base + 4,
+        alu_iw(.always, MOVE, .none, reg(3), ind_imm(0), reg(0)), perf_base + 5,
+        alu_iw(.always, MOVE, .none, reg(4), ind_imm(0), reg(0)), perf_base,
+        HALT,
+    });
+    const Script = struct {
+        answers: []const Input.Next,
+        fn next(ctx: *anyopaque) Input.Next {
+            const self: *@This() = @ptrCast(@alignCast(ctx));
+            const a = self.answers[0];
+            self.answers = self.answers[1..];
+            return a;
+        }
+    };
+    var script: Script = .{ .answers = &.{ .none, .{ .byte = 'A' } } };
+    cpu.input = .{ .ctx = &script, .next_fn = Script.next };
+    try cpu.step();
+    try testing.expectEqual(1, cpu.idle_reads);
+    try testing.expectEqual(0, cpu.time_reads);
+    try cpu.step();
+    try testing.expectEqual(1, cpu.idle_reads);
+    try cpu.step();
+    try testing.expectEqual(2, cpu.idle_reads);
+    try testing.expectEqual(1, cpu.time_reads);
+    try runToHalt(&cpu);
+    try testing.expectEqual(2, cpu.idle_reads);
+    try testing.expectEqual(1, cpu.time_reads);
+    // A peek is no read, and with --no-cycle-counter TIME_LO is memory.
+    _ = cpu.peek(perf_base + 4);
+    cpu.cycle_counter = false;
+    _ = cpu.read(perf_base + 4);
+    try testing.expectEqual(2, cpu.idle_reads);
+    try testing.expectEqual(1, cpu.time_reads);
+    // A reset leaves the counts.
+    cpu.reset();
+    try testing.expectEqual(2, cpu.idle_reads);
+    try testing.expectEqual(1, cpu.time_reads);
+}
+
 test "the read counter counts data reads, and a write sets it" {
     // MOVE @0xFFFFFF01, 5;  ADD R1, @0xFFFFFF01, @0xFFFFFF01;  HALT
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
     try load(&cpu, 0, &.{
-        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), counter_addr, 5,
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)),        counter_addr, 5,
         alu_iw(.always, ADD, .none, reg(1), ind_imm(0), ind_imm(0)), counter_addr, counter_addr,
         HALT,
     });
@@ -1696,11 +1760,10 @@ test "the math unit takes writes to A and B only, and memory keeps nothing" {
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
     try load(&cpu, 0, &.{
-        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), mpu_base, 6,
-        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), mpu_base + 1, 7,
-        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), mpu_base + 4, 5,
-        alu_iw(.always, MOVE, .none, reg(1), ind_imm(0), reg(0)), mpu_base + 4,
-        HALT,
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)),     mpu_base,     6,
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)),     mpu_base + 1, 7,
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)),     mpu_base + 4, 5,
+        alu_iw(.always, MOVE, .none, reg(1), ind_imm(0), reg(0)), mpu_base + 4, HALT,
     });
     try runToHalt(&cpu);
     try testing.expectEqual(42, cpu.regs[1]);
@@ -1778,7 +1841,7 @@ test "the counters count instructions and steps, and ignore writes (SYSTEM §3)"
     defer cpu.deinit();
     try load(&cpu, 0, &.{
         alu_iw(.always, MOVE, .none, reg(1), ind_imm(0), reg(0)), perf_base + 2,
-        alu_iw(.z, MOVE, .none, reg(2), imm(0), reg(0)), 7,
+        alu_iw(.z, MOVE, .none, reg(2), imm(0), reg(0)),          7,
         alu_iw(.always, MOVE, .none, reg(2), ind_imm(0), reg(0)), perf_base + 2,
         alu_iw(.always, MOVE, .none, reg(3), ind_imm(0), reg(0)), perf_base,
         alu_iw(.always, MOVE, .none, reg(4), ind_imm(0), reg(0)), perf_base + 2,

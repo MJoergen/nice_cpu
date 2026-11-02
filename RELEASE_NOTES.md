@@ -37,7 +37,7 @@ holds a host back instead of losing its console bytes (#110). Rust and Zig
 programs have a heap (#69, #105) and read console input a line at a time
 (#106). The translator handles tail calls (#103) and can trust the
 alignment hints (#113). The emulator's microsecond counter keeps the
-host's time (#114).
+host's time (#114), and its window runs as fast as the host can (#116).
 
 **Upgrade notes.**
 
@@ -68,6 +68,12 @@ host's time (#114).
   of it worked out by hand needs `--step-time`. A program that divides
   the cycle counter by the microsecond counter gets the host's rate of
   steps, which varies.
+- With `--window`, the emulator runs as fast as the host can, where it
+  ran one step per microsecond (#116). A program that keeps time by the
+  timer or by counting steps runs tens of times faster; `--speed 1000000`
+  gives it the old pace. A program that waits on the microsecond counter
+  runs as before. While a program polls the console or `TIME_LO` in a
+  loop, niceemu sleeps, so a wait on the counter may end up to 1 ms late.
 - `wb_dmux`, the devices, and the address map of SYSTEM.md are as in V1.2.
 - Zig 0.17.0, as in V1.2.
 
@@ -95,7 +101,8 @@ host's time (#114).
   a system (#111).
 - SYSTEM.md §3: the emulator's microsecond counter counts the host's
   monotonic time while the processor runs, and with `--step-time` one
-  microsecond per step. §1.6 paces the window for the screen only (#114).
+  microsecond per step (#114). §1.6: the window runs as fast as the host
+  can and sleeps in a wait loop, and `--speed` paces it (#116).
 
 **Assembler (`niceasm`)**
 
@@ -116,6 +123,11 @@ host's time (#114).
   processor is held, paused, or halted, so a program that waits on it
   waits real time with or without `--window`. `--step-time` counts one
   microsecond per step, as before (#114).
+- `--window` runs as fast as the host can by default, as without the
+  window, and sleeps while the program polls the console or `TIME_LO` in
+  a loop, so a program that waits for a key leaves the host's cores idle.
+  `--speed N` paces the run, for a program that keeps time by the timer
+  or by counting steps (#116).
 
 **Runtime and C library**
 

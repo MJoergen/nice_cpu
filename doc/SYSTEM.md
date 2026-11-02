@@ -106,7 +106,9 @@ With `--link`, the keys and the bytes from the host go into the one input buffer
 
 ### 1.6 Pacing
 
-With `--window`, the emulator runs one step per microsecond, so that the screen changes at about the speed it would on a board. The microsecond counter (§3) keeps the host's time with or without the window. The cycle counter and the timer count one per step, so the cycle counter counts at 1 MHz, and a timer period of P cycles (§4) lasts P microseconds, where on a board of 100 MHz it lasts P/100. A program that sets the timer from the clock frequency of a board runs its interrupts slower in the window. The option `--speed` sets another rate in steps per second, and `--speed 0` runs as fast as the host can.
+With `--window`, the emulator runs as fast as the host can, as without the window. The microsecond counter (§3) keeps the host's time, so a program that waits on it waits real time, and the screen changes as the program writes it. The cycle counter and the timer count one per step (§3, §4), at the host's rate of steps, tens of megahertz, which varies, so a program that keeps time by the timer or by counting steps runs at a rate of its own. The option `--speed N` runs N steps a second for such a program: at `--speed 1000000`, one step per microsecond, the cycle counter counts at 1 MHz, and a timer period of P cycles lasts P microseconds, where on a board of 100 MHz it lasts P/100.
+
+While a program waits, the emulator sleeps. A console read that finds no byte and a read of `TIME_LO` are idle reads, and two idle reads within 1000 steps of each other mean a wait loop. At each step of one, the emulator waits for a key or another event of the window, so a key still reaches the program at once: for up to a millisecond when the loop has read `TIME_LO` within the last 1000 steps, so that a wait on the counter ends at most a millisecond late, and for up to 10 milliseconds when it waits for a key alone. A program that polls less often than once in 1000 steps never sleeps, and runs at full speed. With `--speed`, the pace sleeps instead, and the rule does not apply.
 
 ### 1.7 Read counter
 

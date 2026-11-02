@@ -109,7 +109,7 @@ goes through these steps on a small program, and a
 | `--step-time` | Count one microsecond per step in the microsecond counter, rather than the host's time, so that a run counts the same each time (see Performance counters below). |
 | `--no-timer-irq` | The timer counts, but raises no requests, so that `--irq` can raise them instead (see Timer below). |
 | `--window` | Show the screen in a window while the program runs, and keep it after the halt until it is closed (see Window below). Needs a build with `-Dwindow`. |
-| `--speed N` | With `--window`, run N steps a second, 1000000 by default, or as fast as the host can for 0. |
+| `--speed N` | With `--window`, run N steps a second, for a program that keeps time by the timer or by counting steps; 1000000 is one step per microsecond. 0, the default, runs as fast as the host can, and sleeps while the program waits for a key or a time (see Window below). |
 | `--link [ADDR:]PORT` | Serve the debug link on PORT of ADDR, `127.0.0.1` if no ADDR is given, instead of running the program once (see Debug link below). ADDR is an IPv4 address, or an IPv6 one in brackets, such as `[::1]`. With PORT 0, pick a free port and print `link: port N` on stderr. The program file is optional. `--input` is an error with it. |
 | `-h`, `--help` | Print the usage on stdout. |
 
@@ -162,14 +162,20 @@ bytes of SYSTEM.md §1, and not stdin. A read with no byte waiting returns
 0, and a read never returns `0x200`. The keys wait in a buffer of 2048
 bytes, and a key whose bytes do not all fit is dropped.
 
-The emulator runs one step per microsecond, so that the screen changes at
-about the speed it would on a board. The microsecond counter keeps the
-host's time with or without the window. The cycle counter and the timer
-count one cycle per step, so a timer period of P lasts P microseconds,
-where on a board of 100 MHz it lasts P/100 (SYSTEM.md §1). `--speed N` sets another
-rate, N steps per second, and `--speed 0` runs as fast as the host can. A
-run that falls more than 100 ms behind its rate goes on from there, rather
-than catch up in a burst.
+The emulator runs as fast as the host can, as without the window, and the
+microsecond counter keeps the host's time (SYSTEM.md §1.6). While the
+program waits for a key or for a time, niceemu sleeps: a console read that
+finds no byte and a read of `TIME_LO` are idle reads, two of them within
+1000 steps of each other mean a wait loop, and at each step of one the
+window waits for an event, up to 1 ms when the loop has read `TIME_LO`
+within the last 1000 steps and up to 10 ms when it waits for a key alone.
+A key still reaches the program at once, a wait on `TIME_LO` may end up to
+1 ms late, and a program that polls less often than once in 1000 steps
+never sleeps. `--speed N` runs N steps a second instead, for a program
+that keeps time by the timer or by counting steps: at `--speed 1000000`,
+one step per microsecond, a timer period of P lasts P microseconds, where
+on a board of 100 MHz it lasts P/100. A run that falls more than 100 ms
+behind its rate goes on from there, rather than catch up in a burst.
 
 At the halt, or at the step limit, niceemu prints the report as without
 the window, and the window stays, with the last screen, until it is
@@ -185,20 +191,21 @@ With `--link`, the window opens when niceemu starts and stays open over
 every run, and shows the screen also while the processor is held, halted,
 or paused. The console reads the link's input buffer, into which the keys
 go too, as SYSTEM.md §1 says, and a read does not wait. So a pause or a
-step at a console read is never undone (DEBUG.md §7). The runs are paced
-as without the link. Closing the window ends niceemu with status 0, as a
-signal does.
+step at a console read is never undone (DEBUG.md §7). The runs sleep in a
+wait loop, or keep the pace of `--speed`, as without the link. Closing the
+window ends niceemu with status 0, as a signal does.
 
 `test/window.py` runs niceemu with SDL's dummy video driver
 (`SDL_VIDEODRIVER=dummy`), which needs no display, but can type no key and
 close no window. It checks the report at the halt with `--color`, the
-reads of `--input` and then 0, that stdin is not read, the pace of the
-default speed and of `--speed 0`, that each of the three signals ends a
-run with no report, and what happens without a display. The close of the
-window, before the halt, after it, and with `--link`, it checks through a
-hook of niceemu for the test, as the dummy driver cannot close one. With
-`--link`, as a host, it checks that a read returns 0 until a byte comes,
-the pace, and the end of the input. The key table and the drawing of the
+reads of `--input` and then 0, that stdin is not read, that the default
+is faster than `--speed 1000000`, that a program that polls the console
+sleeps, that each of the three signals ends a run with no report, and
+what happens without a display. The close of the window, before the halt,
+after it, and with `--link`, it checks through a hook of niceemu for the
+test, as the dummy driver cannot close one. With `--link`, as a host, it
+checks that a read returns 0 until a byte comes, the sleep in the wait
+loop, and the end of the input. The key table and the drawing of the
 screen are unit tests in `src/keys.zig` and `src/frame.zig`, the keys'
 way into the link's buffer one in `src/link.zig`, and the mapping of
 SDL's key events to the keys one in `src/window.zig`, which `make
@@ -361,8 +368,9 @@ With `--window`, closing the window ends it too (see Window above).
 It serves the link every 4096 steps while a program runs, and at least
 every 100 ms while the processor is held, halted, or paused, or a console
 read waits. With `--window`, it serves the link and the window after each
-millisecond of steps at the pace of `--speed` (65536 steps for `--speed 0`),
-and about every 10 ms while the processor is held, halted, or paused.
+65536 steps, or each millisecond of steps at the pace of `--speed`, and
+at each step of a wait loop (see Window above), and about every 10 ms
+while the processor is held, halted, or paused.
 A console byte that finds the input buffer full waits up to 50 ms
 for room, measured at these services, and niceemu reads nothing more
 from the connection meanwhile, so that TCP holds the host back

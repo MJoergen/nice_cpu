@@ -50,8 +50,10 @@ const usage =
     \\                       reads --input, if given, then the keys typed into the
     \\                       window, and a read returns 0 while no byte waits.
     \\                       Needs a build with -Dwindow.
-    \\      --speed N        With --window, run N steps a second (default 1000000,
-    \\                       one per microsecond), or as fast as possible for 0.
+    \\      --speed N        With --window, run N steps a second: 1000000 is one
+    \\                       per microsecond. 0, the default, runs as fast as the
+    \\                       host can, and sleeps while the program polls the
+    \\                       console or TIME_LO.
     \\  -h, --help           Print this help.
     \\
     \\Numbers may be decimal or 0x hex. Exit status: 0 after HALT, 1 on a
@@ -105,8 +107,9 @@ const Options = struct {
     link: ?std.Io.net.IpAddress = null,
     /// Show the screen in a window (doc/SYSTEM.md §1).
     window: bool = false,
-    /// Steps a second with the window, or 0 for as fast as possible.
-    speed: u64 = 1_000_000,
+    /// Steps a second with the window, or 0 for as fast as the host can,
+    /// sleeping in the wait loops that `Idle` finds.
+    speed: u64 = 0,
     /// NICEEMU_CLOSE_AFTER in the environment, a hook for test/window.py,
     /// which cannot close a window on SDL's dummy video driver: the window
     /// counts as closed once a run has made this many steps.
@@ -598,6 +601,54 @@ fn nowNs(io: std.Io) i96 {
     return std.Io.Timestamp.now(io, .awake).toNanoseconds();
 }
 
+/// Finds the wait loops of a program under the window without a pace, so
+/// that the run loop sleeps in them rather than keep a host core busy
+/// (doc/SYSTEM.md §1.6): two idle reads of the Cpu within `span` steps of
+/// each other mean one. The chunk then ends, and the window waits for an
+/// event, so a key still comes at once: up to `time_wait_ms` when the
+/// loop has read `TIME_LO` within `span` steps, as a wait on the counter
+/// must end on time, and up to `key_wait_ms` when it waits for a key
+/// alone. A program that polls seldom never sleeps.
+const Idle = struct {
+    /// Whether the rule applies: with the window, without a pace.
+    on: bool,
+    /// The idle reads and the reads of `TIME_LO` counted at the last
+    /// step seen.
+    idle_reads: u64 = 0,
+    time_reads: u64 = 0,
+    /// The step count at the last idle read, and at the last read of
+    /// `TIME_LO`, if any.
+    at: ?u64 = null,
+    time_at: ?u64 = null,
+
+    const span = 1000;
+    const time_wait_ms = 1;
+    const key_wait_ms = 10;
+
+    /// The ms to wait after the step just made, or 0 when it is not one
+    /// of a wait loop, with `steps` the steps made so far and the counts
+    /// the Cpu's.
+    fn wait(self: *Idle, steps: u64, idle_reads: u64, time_reads: u64) u32 {
+        if (!self.on or idle_reads == self.idle_reads) return 0;
+        self.idle_reads = idle_reads;
+        if (time_reads != self.time_reads) {
+            self.time_reads = time_reads;
+            self.time_at = steps;
+        }
+        defer self.at = steps;
+        const last = self.at orelse return 0;
+        if (steps - last > span) return 0;
+        const timed = if (self.time_at) |t| steps - t <= span else false;
+        return if (timed) time_wait_ms else key_wait_ms;
+    }
+
+    /// Forget the last idle reads, when the step count starts again.
+    fn restart(self: *Idle) void {
+        self.at = null;
+        self.time_at = null;
+    }
+};
+
 /// The steps of a chunk, between two looks at the window: a millisecond at
 /// `speed`, or 65536 without a pace.
 fn chunkSteps(speed: u64) u64 {
@@ -625,20 +676,27 @@ fn runWindow(arena: std.mem.Allocator, io: std.Io, out: *std.Io.Writer, opts: Op
     cpu.input = win.queue.input();
     var pacer: Pacer = .{ .speed = opts.speed, .start_ns = nowNs(io) };
     const chunk = chunkSteps(opts.speed);
+    var idle: Idle = .{ .on = opts.speed == 0 };
     var steps: u64 = 0;
     var next: usize = 0;
     var closed = false;
     while (!cpu.halted() and steps < opts.max_steps) {
         const sig = stop_signal.load(.acquire);
         if (sig != 0) dieOfSignal(out, sig);
+        // A chunk of steps, which a wait loop cuts short.
         const end = @min(opts.max_steps, steps +| chunk);
-        while (!cpu.halted() and steps < end) : (steps += 1) {
+        var wait_ms: u32 = 0;
+        while (!cpu.halted() and steps < end) {
             raiseRequests(cpu, opts, steps, &next);
             try cpu.step();
+            steps += 1;
+            wait_ms = idle.wait(steps, cpu.idle_reads, cpu.time_reads);
+            if (wait_ms != 0) break;
         }
         // Show the console output with the screen.
         out.flush() catch {};
-        if (!windowOpen(&win, cpu, opts, pacer.wait(steps, nowNs(io)), steps)) {
+        if (wait_ms == 0) wait_ms = pacer.wait(steps, nowNs(io));
+        if (!windowOpen(&win, cpu, opts, wait_ms, steps)) {
             // A close in the look that follows the halt or the step limit
             // comes after the run: the report is theirs.
             closed = !cpu.halted() and steps < opts.max_steps;
@@ -726,6 +784,7 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
     }
     var pacer: Pacer = .{ .speed = if (windowed) opts.speed else 0, .start_ns = nowNs(io) };
     const chunk: u64 = if (windowed) chunkSteps(opts.speed) else 4096;
+    var idle: Idle = .{ .on = windowed and opts.speed == 0 };
 
     var steps: u64 = 0;
     var next: usize = 0;
@@ -739,6 +798,7 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
             next = 0;
             reported = false;
             pacer.restart(0, nowNs(io));
+            idle.restart();
         }
         if (link.pauseDue(steps == opts.max_steps)) link.pause();
         if (!link.running()) {
@@ -758,10 +818,12 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
             }
             continue;
         }
-        // A chunk of steps, then the link is served. A step is as in `run`.
-        // The waits of the window's pace between chunks count as running.
+        // A chunk of steps, which a wait loop cuts short, then the link is
+        // served. A step is as in `run`. The waits of the window's pace
+        // between chunks, and its sleeps in a wait loop, count as running.
         clock.start();
         var n: u64 = 0;
+        var wait_ms: u32 = 0;
         while (n < chunk and link.running() and !link.started and !link.pauseDue(steps == opts.max_steps)) : (n += 1) {
             if (steps == opts.max_steps) {
                 link.limit_hit = true;
@@ -794,10 +856,15 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
                 break;
             }
             steps += 1;
+            wait_ms = idle.wait(steps, cpu.idle_reads, cpu.time_reads);
+            if (wait_ms != 0) break;
         }
         link.console_w.flush() catch {};
         try link.service(0);
-        if (windowed) lookAtWindow(arena, &win, &link, cpu, opts, pacer.wait(steps, nowNs(io)), steps);
+        if (windowed) {
+            if (wait_ms == 0) wait_ms = pacer.wait(steps, nowNs(io));
+            lookAtWindow(arena, &win, &link, cpu, opts, wait_ms, steps);
+        }
     }
 }
 
@@ -911,6 +978,45 @@ test "a chunk is a millisecond of steps, or 65536 without a pace" {
     try std.testing.expectEqual(1000, chunkSteps(1_000_000));
     try std.testing.expectEqual(1, chunkSteps(500));
     try std.testing.expectEqual(65536, chunkSteps(0));
+}
+
+test "two idle reads within 1000 steps of each other are a wait loop" {
+    const expectEqual = std.testing.expectEqual;
+    var idle: Idle = .{ .on = true };
+    // Steps without an idle read are no wait, nor is the first idle read.
+    try expectEqual(0, idle.wait(1, 0, 0));
+    try expectEqual(0, idle.wait(2, 1, 0));
+    // One 4 steps later is, as in a loop that polls the console, which
+    // waits for a key alone.
+    try expectEqual(10, idle.wait(6, 2, 0));
+    try expectEqual(0, idle.wait(7, 2, 0));
+    // A program that polls every 100000 steps never waits, and the
+    // span counts from the last idle read, inclusive.
+    try expectEqual(0, idle.wait(100_006, 3, 0));
+    try expectEqual(0, idle.wait(201_007, 4, 0));
+    try expectEqual(10, idle.wait(202_007, 5, 0));
+    try expectEqual(0, idle.wait(400_000, 6, 0));
+    // A step with several idle reads counts once.
+    try expectEqual(10, idle.wait(400_002, 8, 0));
+    // A loop that reads TIME_LO waits 1 ms, also at its console reads,
+    // until the last read of TIME_LO is over 1000 steps back.
+    try expectEqual(1, idle.wait(400_005, 9, 1));
+    try expectEqual(1, idle.wait(400_009, 10, 1));
+    try expectEqual(1, idle.wait(401_005, 11, 1));
+    try expectEqual(10, idle.wait(401_006, 12, 1));
+    // The first idle read after a gap is no wait, but a read of TIME_LO
+    // then still times the next one.
+    try expectEqual(0, idle.wait(600_000, 13, 2));
+    try expectEqual(1, idle.wait(600_004, 14, 2));
+    // After a restart, the first idle read is no wait again, and the
+    // read of TIME_LO before it is forgotten.
+    idle.restart();
+    try expectEqual(0, idle.wait(3, 15, 2));
+    try expectEqual(10, idle.wait(4, 16, 2));
+    // With a pace, the rule is off.
+    var paced: Idle = .{ .on = false };
+    try expectEqual(0, paced.wait(1, 1, 1));
+    try expectEqual(0, paced.wait(2, 2, 2));
 }
 
 test {

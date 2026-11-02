@@ -12,6 +12,7 @@ the host of link.py."""
 from __future__ import annotations
 
 import os
+import resource
 import select
 import signal
 import socket
@@ -54,6 +55,14 @@ loop            MOVE    R1, @CONSOLE
 # Counts in R2, and never halts.
 COUNT = """
 loop            ADD     R2, R2, 1
+                MOVE    R15, loop
+"""
+
+# Reads TIME_LO forever, and counts the reads in R2.
+TIMED = """
+TIME_LO         .EQU    0xFFFFFF44
+loop            MOVE    R1, @TIME_LO
+                ADD     R2, R2, 1
                 MOVE    R15, loop
 """
 
@@ -138,11 +147,12 @@ def test_poll(tmp: str) -> None:
 
 
 def test_speed(tmp: str) -> None:
-    """300000 steps take at least 0.3 s at the default speed, one step per
-    microsecond, and --speed 0 is faster than that."""
+    """300000 steps take at least 0.3 s at --speed 1000000, one step per
+    microsecond, and the default, as fast as the host can, is faster than
+    that."""
     count = assemble(tmp, "count", COUNT)
     times = []
-    for extra in ([], ["--speed", "0"]):
+    for extra in (["--speed", "1000000"], []):
         t = time.monotonic()
         p = start(["-n", "300000"] + extra + [count])
         expect("first line", read_lines(p, 1)[0], "Stopped at the step limit after 300000 steps, PC=00000000")
@@ -167,17 +177,52 @@ def test_signal(tmp: str) -> None:
 def test_close(tmp: str) -> None:
     """Closing the window before the halt ends the run: the report says so,
     and the exit status is 4. Closing it after the halt ends niceemu with
-    the halt's status. The chunk between two looks at the window is 1000
-    steps at the default speed, so the first run is closed at step 1000."""
+    the halt's status. The chunk between two looks at the window is 65536
+    steps without a pace and 1000 steps at --speed 1000000, so the first
+    run is closed at step 65536 and the second at step 1000."""
     count = assemble(tmp, "count", COUNT)
     p = start([count], close_after=1000)
     expect("closed while running", read_lines(p, 1)[0],
-           "Stopped when the window was closed after 1000 steps, PC=00000000")
+           "Stopped when the window was closed after 65536 steps, PC=00000000")
     expect("exit status when closed", p.wait(timeout=10), 4)
+    p = start(["--speed", "1000000", count], close_after=1000)
+    expect("closed while running at a pace", read_lines(p, 1)[0],
+           "Stopped when the window was closed after 1000 steps, PC=00000000")
+    expect("exit status when closed at a pace", p.wait(timeout=10), 4)
     poll = assemble(tmp, "poll", POLL)
     p = start([poll], close_after=4)
     expect("closed after the halt", read_lines(p, 1)[0], "Halted (HALT) after 4 steps, PC=00000007")
     expect("exit status after the halt", p.wait(timeout=10), 0)
+
+
+def test_idle(tmp: str) -> None:
+    """A program that polls the console or TIME_LO in a loop sleeps: two
+    idle reads within 1000 steps of each other end the chunk, and the
+    window waits for an event, up to 10 ms in a loop that waits for a key
+    alone and up to 1 ms in one that reads TIME_LO. The close hook looks
+    at every chunk end. The 4-step console loop reads at steps 0, 4, 8,
+    and so on, so its chunks end after 5, 9, 13, ... steps, and a close
+    after 400 steps comes after 401, with 100 waits of 10 ms behind it;
+    the 3-step TIME_LO loop ends its chunks after 4, 7, 10, ... steps, and
+    a close after 3000 steps comes after 3001, with 1000 waits of 1 ms.
+    Each run takes at least 0.5 s of wall time, where the host could run
+    the steps in microseconds, and at most 5 s, which tells the two waits
+    apart, and little of a host core: that bound is loose, as the redraws
+    of the window cost too."""
+    for name, text, close, want in (
+            ("wait", WAIT, 400, "Stopped when the window was closed after 401 steps, PC=00000002"),
+            ("timed", TIMED, 3000, "Stopped when the window was closed after 3001 steps, PC=00000002")):
+        prog = assemble(tmp, name, text)
+        before = resource.getrusage(resource.RUSAGE_CHILDREN)
+        t = time.monotonic()
+        p = start([prog], close_after=close)
+        expect(f"closed in the {name} loop", read_lines(p, 1)[0], want)
+        expect(f"exit status when closed in the {name} loop", p.wait(timeout=10), 4)
+        elapsed = time.monotonic() - t
+        after = resource.getrusage(resource.RUSAGE_CHILDREN)
+        used = (after.ru_utime + after.ru_stime) - (before.ru_utime + before.ru_stime)
+        if not 0.5 <= elapsed <= 5.0 or used > elapsed * 0.75:
+            fail(f"{name} loop: {elapsed:.3f} s for a second of waits, {used:.3f} s of it host CPU")
 
 
 def test_no_display(tmp: str) -> None:
@@ -216,7 +261,7 @@ def test_close_link(tmp: str) -> None:
 
 def test_link(tmp: str) -> None:
     """With --link, a console read returns 0 while no byte waits, and the
-    run is paced. The end of the input still reads 0x200."""
+    run sleeps in the wait loop. The end of the input still reads 0x200."""
     words = link.assemble(tmp, "wait", WAIT)
     halt = b"\xffh01#C9"
     e = link.Emu(["--window"])
@@ -225,14 +270,15 @@ def test_link(tmp: str) -> None:
     e.expect("load", link.ok(0, len(words)))
     e.send(link.write(link.CONTROL, [0x8]))
     e.expect("start", link.ok(link.CONTROL, 1))
-    time.sleep(0.2)
+    time.sleep(0.5)
     e.send(b"A")
     e.expect("halt at a byte", halt)
     expect("R1 at a byte", link.word(e, 0xFFFFFFE1), 0x141)
-    # About 50000 reads in 0.2 s at one step per microsecond, 4 steps each.
+    # About 50 reads in 0.5 s, one per wait of 10 ms, where the host could
+    # make millions.
     reads = link.word(e, 0xFFFFFFE2)
-    if not 1000 < reads < 200000:
-        fail(f"{reads} reads in 0.2 s")
+    if not 5 < reads < 5000:
+        fail(f"{reads} reads in 0.5 s")
     # Hold, start again, and end the input with a half-close.
     e.send(link.write(link.CONTROL, [0x9]))
     e.expect("hold", link.ok(link.CONTROL, 1))
@@ -261,10 +307,11 @@ def main() -> None:
         test_speed(tmp)
         test_signal(tmp)
         test_close(tmp)
+        test_idle(tmp)
         test_no_display(tmp)
         test_link(tmp)
         test_close_link(tmp)
-    print("PASS window (8 tests)")
+    print("PASS window (9 tests)")
 
 
 if __name__ == "__main__":

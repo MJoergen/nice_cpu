@@ -591,3 +591,15 @@ it counts the host's monotonic time while the processor runs (#114), and
 out of asking whether niceemu could count the pipelined core's cycles:
 `bench/pipecycles.py` models them to 0.02% offline, and moving the model
 into the emulator was judged not worth it.
+
+## The window's pace
+
+Until 2026-11-02, `--window` paced the run to one step per microsecond,
+so that the microsecond counter, which then counted steps, kept real
+time, and the screen changed at about the speed of a board. Once the
+counter kept the host's time (#114), the pace only slowed every program
+in the window to 1 MHz, and a program that polled the keyboard kept a
+host core busy at any pace. Since #116 the window runs as fast as the
+host can, as without the window, and sleeps while a program polls the
+console or `TIME_LO` in a loop. `--speed N` keeps the pace for a program
+that keeps time by the timer or by counting steps.

@@ -565,3 +565,16 @@ the counters, let the timer raise a request between them, cleared the
 state after an `RTI`, and failed where the code is in a ROM. Version 6
 writes R1–R15 while the processor is paused (#102), in the core, with
 the rules of a register-direct write (DEBUG.md §6).
+
+## Flow control on the link
+
+Until 2026-11-02, a console byte that found the program's input buffer
+full was lost at once, with `o`, on every transport. The tools paced
+their bytes by the free-space register, but a plain client over TCP could
+not. A paste of 371 KB into NiceMonMEGA65's monitor over Ethernet sent
+1584 `o` notices, while the same paste over the UART lost nothing (#110).
+Since then, a byte on a transport with flow control waits up to 50 ms for
+room. The wait is per stall, not per byte: after the `o`, the bytes are
+lost at once until the buffer has room, so a stuck program delays a host's
+packets by 50 ms once, not by 50 ms for every byte queued ahead of them.
+Version 6 was not tagged yet, so the change rode on it.

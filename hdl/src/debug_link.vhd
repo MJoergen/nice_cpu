@@ -15,6 +15,13 @@
 -- or `x`. So the notices of a stop come after the last console byte that
 -- the program wrote.
 --
+-- A console byte that finds the program's input buffer full waits in
+-- RX_FULL_ST, with rx_flow_i high, until free_i has room, or for G_WAIT
+-- cycles, and is then lost with `o` (DEBUG.md §1). The receiver takes
+-- nothing meanwhile. The wait needs no state of its own after the `o`:
+-- while o_armed_r is low, a console byte that finds the buffer full is
+-- lost at once, as with rx_flow_i low.
+--
 -- The link reaches no word but the debug registers while the program runs
 -- (§3), so the Wishbone master is used only while the processor is held,
 -- halted, or paused. p_acc checks this at every word, as a side client may
@@ -80,10 +87,14 @@
 --    its answers (DEBUG.md §3) sends no such tag, but for one after a
 --    dropped packet, before the clear ends. A side client (g) adds the
 --    time of its own access, and of a clear that it starts during a W.
+--    With rx_flow_i high, it also goes low for up to G_WAIT cycles after
+--    a console byte that finds the input buffer full (DEBUG.md §1).
 -- d) free_i is the number of console bytes that the program's input buffer
 --    can take, and shows a byte of con_in_valid_o 2 cycles after the
 --    strobe. A strobe is always accepted: it comes only while free_i was
---    not 0 two cycles earlier.
+--    not 0 two cycles earlier. A byte that found free_i at 0 goes out with
+--    a strobe as soon as free_i is not 0, if that is within G_WAIT cycles
+--    and rx_flow_i is high.
 -- e) halted_i, paused_i, and regs_i come from a core that rst_i = hold_o
 --    resets, so they may change to 0 once hold_o is high. This unit keeps
 --    the last values of a halt or a pause itself (§6). regs_i is R0 to R15,
@@ -125,6 +136,10 @@
 --   the cycle of a break still goes to the program, and one taken in the
 --   cycle of a resume is still dropped. A resume changes nothing else:
 --   not the breakpoints, the hold, the pause, or the program's state.
+--   rx_flow_i is '1' while the transport has flow control (DEBUG.md §7):
+--   it can wait for rx_ready_o for G_WAIT cycles without losing a byte,
+--   and holds the host back meanwhile, as TCP does. A UART leaves it
+--   '0'. When it falls during a wait, the byte is lost with `o` at once.
 -- * tx_*: a byte to the host.
 -- The program side:
 -- * con_*: a byte that the program wrote to 0xFFFFFF00, with valid and
@@ -157,7 +172,9 @@
 -- takes, as DEBUG.md §1 and §2 frame them, and every packet is whole, with
 -- a known tag, upper-case hex digits, `#`, and its checksum, and a console
 -- byte goes out only between packets; no answer starts during a clear;
--- rx_ready_o is low only as contract c says; and hold_o and rom_hide_o
+-- rx_ready_o is low only as contract c says, and a console byte waits
+-- for room only with rx_flow_i high and for at most G_WAIT cycles; and
+-- hold_o and rom_hide_o
 -- change only on a write to the control register, at the end of a clear,
 -- or at reset, or, for pause_o, at a stop of the core's own; and the
 -- breakpoints change only on a write of their registers or at reset; a
@@ -187,6 +204,8 @@ entity debug_link is
    generic (
       -- The most clock cycles between two bytes of a packet, 100 ms
       G_TIMEOUT   : positive := 10_000_000;
+      -- The most clock cycles a console byte waits for room, 50 ms
+      G_WAIT      : positive := 5_000_000;
       G_HAS_ROM   : boolean  := true;
       G_BOOT_HELD : boolean  := false;
       G_BREAKS    : natural range 0 to C_BREAKS_MAX := 0;
@@ -204,6 +223,7 @@ entity debug_link is
       rx_data_i      : in  std_logic_vector(7 downto 0);
       rx_break_i     : in  std_logic;
       rx_resume_i    : in  std_logic                     := '0';
+      rx_flow_i      : in  std_logic                     := '0';
       tx_valid_o     : out std_logic;
       tx_ready_i     : in  std_logic;
       tx_data_o      : out std_logic_vector(7 downto 0);
@@ -262,7 +282,8 @@ architecture synthesis of debug_link is
    subtype t_word is std_logic_vector(31 downto 0);
 
    type t_rx_st is (
-      RX_IDLE_ST, RX_ESC_ST, RX_HOLD_ST, RX_PAY_ST, RX_CC1_ST, RX_CC2_ST, RX_CALL_ST, RX_WAIT_ST
+      RX_IDLE_ST, RX_ESC_ST, RX_HOLD_ST, RX_PAY_ST, RX_CC1_ST, RX_CC2_ST, RX_CALL_ST, RX_WAIT_ST,
+      RX_FULL_ST
    );
 
    type t_tx_st is (
@@ -380,6 +401,8 @@ architecture synthesis of debug_link is
    signal word_r     : t_word                       := (others => '0');
    signal rx_go_r    : std_logic                    := '0';
    signal o_armed_r  : std_logic                    := '1';
+   -- The cycles a console byte has waited for room in RX_FULL_ST
+   signal full_cnt_r : natural range 0 to G_WAIT - 1 := 0;
 
    -- The answer, from p_rx to p_tx. A request is pending as long as the two
    -- toggles differ, until p_tx has sent the whole answer.
@@ -487,7 +510,7 @@ begin
    ---------------------------------------------------------------------------
 
    rx_rdy     <= '1' when gap_r = 0 and rx_st /= RX_HOLD_ST and rx_st /= RX_CALL_ST and
-                      rx_st /= RX_WAIT_ST else
+                      rx_st /= RX_WAIT_ST and rx_st /= RX_FULL_ST else
              '0';
    rx_ready_o <= rx_rdy;
 
@@ -506,11 +529,17 @@ begin
       variable code_v : t_byte;
 
       -- A console byte from the host goes to the program only while it runs
-      -- and has room. Without room, the byte is lost, and `o` is due once.
+      -- and has room. Without room, it waits for room with rx_flow_i, until
+      -- the `o` of a byte before it. Otherwise the byte is lost, and `o` is
+      -- due once.
       procedure forward(b : t_byte) is
       begin
          if hold_r = '0' and halted_r = '0' and eoi_r = '0' then
-            if free_i = X"0000" then
+            if free_i = X"0000" and o_armed_r = '1' and rx_flow_i = '1' then
+               con_in_data_o <= b;
+               full_cnt_r    <= 0;
+               rx_st         <= RX_FULL_ST;
+            elsif free_i = X"0000" then
                if o_armed_r = '1' then
                   o_req_tgl <= not o_req_tgl;
                end if;
@@ -713,6 +742,24 @@ begin
                   rx_st      <= RX_PAY_ST;
                end if;
 
+            -- A console byte waits for room (DEBUG.md §1). A hold, a halt, or
+            -- the end of the input drops it, as it drops a byte that comes
+            -- then.
+            when RX_FULL_ST =>
+               if hold_r = '1' or halted_r = '1' or eoi_r = '1' then
+                  rx_st <= RX_IDLE_ST;
+               elsif free_i /= X"0000" then
+                  con_in_valid_o <= '1';
+                  gap_r          <= 2;
+                  rx_st          <= RX_IDLE_ST;
+               elsif rx_flow_i = '0' or full_cnt_r = G_WAIT - 1 then
+                  o_req_tgl <= not o_req_tgl;
+                  o_armed_r <= '0';
+                  rx_st     <= RX_IDLE_ST;
+               else
+                  full_cnt_r <= full_cnt_r + 1;
+               end if;
+
          end case;
 
          if rst_i = '1' then
@@ -721,6 +768,7 @@ begin
             tmo_r       <= 0;
             rx_go_r     <= '0';
             o_armed_r   <= '1';
+            full_cnt_r  <= 0;
             ans_req_tgl <= '0';
             o_req_tgl   <= '0';
             con_in_valid_o <= '0';
@@ -1285,6 +1333,11 @@ begin
       signal f_en_d : std_logic_vector(C_BREAKS_MAX - 1 downto 0);
       signal f_kept : boolean;                     -- The breakpoints are as a cycle ago
       signal f_top  : boolean;                     -- The entries from G_BREAKS up are 0
+      -- A console byte waited for room a cycle ago, for so many cycles, and
+      -- rx_flow_i then
+      signal f_full_d : std_logic := '0';
+      signal f_cnt_d  : natural range 0 to G_WAIT - 1 := 0;
+      signal f_flow_d : std_logic := '0';
 
       -- A read of R0 to R15 while the processor runs, taken a cycle ago, for
       -- the host or the side client, and the register in that cycle
@@ -1328,6 +1381,9 @@ begin
             f_ctrl_d <= f_ctrl;
             f_brk_d  <= brk_addr_r;
             f_en_d   <= brk_en_r;
+            f_full_d <= '1' when rx_st = RX_FULL_ST and rst_i = '0' else '0';
+            f_cnt_d  <= full_cnt_r;
+            f_flow_d <= rx_flow_i;
          end if;
       end process p_f_step;
 
@@ -1494,7 +1550,20 @@ begin
       -- for the answer to the last request or for a clear.
       -- psl f_ready : assert always
       --    rx_rdy = '0' -> (gap_r /= 0 or rx_st = RX_HOLD_ST or rx_st = RX_CALL_ST or
+      --                     rx_st = RX_FULL_ST or
       --                     (rx_st = RX_WAIT_ST and (acc_done_r = '1' or wb_cyc_r = '1')));
+
+      -- A console byte waits for room only with rx_flow_i high, and for at
+      -- most G_WAIT cycles: the count rises by one in each cycle of the wait,
+      -- and the wait ends when it reaches G_WAIT - 1 (DEBUG.md §1).
+      -- psl f_full_flow : assert always
+      --    (rx_st = RX_FULL_ST and f_full_d = '0') -> (f_flow_d = '1' and full_cnt_r = 0);
+      -- psl f_full_count : assert always
+      --    (rx_st = RX_FULL_ST and f_full_d = '1') -> full_cnt_r = f_cnt_d + 1;
+      -- psl f_full_end : assert always
+      --    (f_full_d = '1' and f_cnt_d = G_WAIT - 1) -> rx_st /= RX_FULL_ST;
+      -- psl i_full : assert always
+      --    rx_st = RX_FULL_ST -> (con_in_valid_o = '0' and o_armed_r = '1');
       -- psl f_ready_clear : assert always
       --    clearing_r = '1' -> not (rx_st = RX_WAIT_ST and acc_done_r = '0');
       -- psl f_call : assert always
@@ -1570,6 +1639,10 @@ begin
       -- The invariants of the proof. Each state is one of its values.
       -- psl i_acc_st : assert always
       --    acc_st = ACC_IDLE_ST or acc_st = ACC_REQ_ST or acc_st = ACC_WAIT_ST;
+      -- psl i_rx_st : assert always
+      --    rx_st = RX_IDLE_ST or rx_st = RX_ESC_ST or rx_st = RX_HOLD_ST or rx_st = RX_PAY_ST or
+      --    rx_st = RX_CC1_ST or rx_st = RX_CC2_ST or rx_st = RX_CALL_ST or rx_st = RX_WAIT_ST or
+      --    rx_st = RX_FULL_ST;
       -- psl i_tx_st : assert always
       --    tx_st = TX_IDLE_ST or tx_st = TX_CON2_ST or tx_st = TX_TAG_ST or tx_st = TX_FIELD_ST or
       --    tx_st = TX_CALL_ST or tx_st = TX_WAIT_ST or tx_st = TX_DIG_ST or tx_st = TX_HASH_ST or
@@ -1687,6 +1760,12 @@ begin
 
       -- psl c_halt : cover {f_tag = '1' and out_data_r = X"68"};
       -- psl c_overflow : cover {f_tag = '1' and out_data_r = X"6F"};
+      -- A console byte that waited for room goes to the program, and one
+      -- that waited G_WAIT cycles is lost with `o`.
+      -- psl c_full_forward : cover {rx_st = RX_FULL_ST; con_in_valid_o = '1'};
+      -- psl c_full_lost : cover
+      --    {rx_st = RX_FULL_ST and full_cnt_r = G_WAIT - 1 and rx_flow_i = '1' and rst_i = '0';
+      --     o_armed_r = '0'};
       -- A stop of the core's own needs no W, so a `p` comes soon after.
       -- psl c_own : cover {f_tag = '1' and out_data_r = X"70"};
 

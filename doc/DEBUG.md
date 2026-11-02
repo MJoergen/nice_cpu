@@ -56,10 +56,23 @@ Console bytes from the host reach the program while it runs or is paused.
 While the processor is held or halted (§6), and after the end of the
 line's input (§7.1), they are dropped; a keyboard's bytes are not
 (SYSTEM.md §1, §5). A paused processor keeps them in the input buffer,
-and the program reads them when it goes on. A console byte that
-arrives while the program's input buffer is full is lost, and the system
-sends an overflow notice (§4). A host avoids the loss by sending no more
-bytes than the free-space register (§6) allows.
+and the program reads them when it goes on.
+
+A console byte that arrives while the program's input buffer is full
+waits, on a transport with flow control (§7.1), until the buffer has room
+or 50 ms have passed. If the buffer has room in time, the byte goes in.
+Otherwise it is lost, and the system sends an overflow notice (§4). On a
+transport without flow control, the byte is lost at once. After the
+notice, every console byte that finds the buffer full is lost at once, as
+on a transport without flow control, until the buffer has room again.
+
+While a byte waits, the system takes no byte behind it, so a packet behind
+it waits too. A packet that arrives while the buffer is full, with no
+console byte ahead of it, is taken at once. So a program that reads at
+least one byte every 50 ms loses no byte, and one that has stopped reading
+delays the bytes behind its input by 50 ms once. A host avoids both the
+wait and the loss by sending no more console bytes than the free-space
+register (§6) allows.
 
 The checksum of §2 covers only packets. Console bytes have no check.
 
@@ -191,7 +204,8 @@ the control register causes may come before the `k` of that write.
 | `o` | none | A console byte from the host was lost, because the program's input buffer was full. |
 
 The system sends `o` once, and no other until its input buffer has room
-again. A console byte dropped while the processor is held or halted (§1)
+again. On a transport with flow control, it sends `o` when the byte has
+waited 50 ms (§1). A console byte dropped while the processor is held or halted (§1)
 sends no `o`. Every stop of the processor sends exactly one of `h`, `x`, and
 `p`: `h` if it halted, otherwise `x` if R15 is the address of an enabled
 breakpoint, and otherwise `p`. The notice depends only on the state at the
@@ -225,6 +239,12 @@ as the control register, to learn whether it took effect. A system
 sends the first byte of every answer within 100 ms of the last byte of the
 request, a clear of the memory included (§6). The whole answer may take
 longer: a 65535-word `r` takes about 2.6 s at 2 Mbaud.
+
+A request behind console bytes that the free-space register (§6) did not
+allow may wait longer. On a transport with flow control, such a byte holds
+it for up to 50 ms (§1), and a program that reads slowly holds it until
+it has read the bytes ahead. A host that sends requests behind unpaced
+console bytes waits longer than 100 ms for the answer, or paces its bytes.
 
 ## 6. The debug registers
 
@@ -496,6 +516,13 @@ and bit 3 at 0. A system without one waits, held, with bit 0 at 1.
   serves the link over TCP, as NiceMonMEGA65 does on its Ethernet port,
   need not: without a `b`, the breakpoints and all else stay as the last
   host left them.
+- **Flow control.** TCP has flow control, and the UART does not: a UART
+  receiver overwrites a byte that the system does not take. So over TCP a
+  console byte that finds the input buffer full waits (§1), and the
+  system reads nothing more from the connection meanwhile, so that its
+  receive window fills and holds the host back. Over the UART the byte is
+  lost at once. A host that wants the waiting byte and the bytes behind
+  it gone disconnects. That ends the line's input, which drops them.
 
 When a host disconnects, the program keeps running, and the memory keeps
 its contents for the next host. A system cannot tell a disconnect from a
@@ -573,6 +600,12 @@ command line, with these differences:
 - It measures the 100 ms of §5 when it serves the link, not when a byte
   arrives. A byte can wait for the next service, so a gap that it measures
   may be longer than the host's by up to the service interval.
+- A console byte that finds the input buffer full waits, as over any TCP
+  link (§1, §7.1). The emulator measures the 50 ms when it serves the
+  link, as it measures the 100 ms of §5, so the byte may wait longer by
+  up to the service interval. While it waits, the emulator reads nothing
+  from the connection, and a disconnect drops the bytes that it read but
+  did not take.
 
 ### 7.3 A board that carries the link
 
@@ -592,6 +625,11 @@ are the rules that `hdl/src/debug_link.vhd` asks of its board:
   cannot wait has to hold a byte for that long. It holds it for longer
   after the tag of a request that waits for its answer, and while the memory
   is cleared.
+- **Flow control.** The board drives `rx_hold_i` high while its transport
+  has flow control, as TCP has, and low for a UART. Then a console byte
+  that finds the input buffer full holds the receiver for up to `G_HOLD`
+  cycles, 50 ms (§1). The transport must wait that long without losing a
+  byte, and hold the host back.
 - **Console input.** The board's input buffer takes a byte from the link
   at any time, and tells the link how many more bytes it can take. A start
   empties it (§6).
@@ -720,6 +758,10 @@ major. A system of a new minor follows these rules:
   old program's halt reason. Version 6 is another: a write of R0–R15
   while the processor is not paused gets `e04`, where it got `k`, and no
   host of version 5 had a reason to write a register that was read only.
+  Version 6 also holds a console byte that finds the input buffer full,
+  on a transport with flow control (§1). A host of version 5 that sends
+  no more console bytes than the free-space register allows never meets
+  the wait.
   The table lists each change, and HISTORY.md tells why.
 
 A new major may change anything else, and the next one is `0x10`. It keeps
@@ -748,4 +790,4 @@ system of version 6. The versions:
 | 3 | The single step: bit 5 of the control register. | | RC05 |
 | 4 | The breakpoints: the notice `x`, and the registers `0xFFFFFFF4` to `0xFFFFFFFF`. | | RC06 |
 | 5 | | A clear ends the halt and the stop: bit 1, the halt reason, and the stop register read 0 after it. Since V1.2, R0–R15 read the current values while the processor runs, where they were not defined. The side port and `rx_resume_i` of `hdl/src/debug_link.vhd`, also since V1.2, change no byte on the wire. | V1.1 |
-| 6 | Writable registers: R1–R15 take a write while the processor is paused, and the error `04`. | A write of R0–R15 while the processor is not paused is answered `e04`, where it was ignored with `k`, and a `W` that runs from the devices into R0–R15 while the processor is held or halted writes nothing, where it wrote its words before `0xFFFFFFE0`. | Not yet tagged. |
+| 6 | Writable registers: R1–R15 take a write while the processor is paused, and the error `04`. | A write of R0–R15 while the processor is not paused is answered `e04`, where it was ignored with `k`, and a `W` that runs from the devices into R0–R15 while the processor is held or halted writes nothing, where it wrote its words before `0xFFFFFFE0`. On a transport with flow control, a console byte that finds the input buffer full waits up to 50 ms before it is lost with `o`, where it was lost at once. | Not yet tagged. |

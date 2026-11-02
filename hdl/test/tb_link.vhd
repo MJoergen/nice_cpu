@@ -18,7 +18,8 @@
 -- The model has no keyboard, whose bytes a board still takes after the
 -- end (SYSTEM.md §5). For the link, 0xFFFFFF00 and
 -- 0xFFFFFF01 read 0 and ignore writes, as DEBUG.md §3 says. The input
--- buffer holds 2048 bytes and is emptied at a start, when hold_o falls.
+-- buffer holds C_IN_SIZE bytes, 16, so that a flood of the host fills it
+-- soon, and is emptied at a start, when hold_o falls.
 --
 -- The test plays the host. It loads G_PROG_FILE, test/linkecho.nasm,
 -- with a W built from the file, starts it, and checks every byte the link
@@ -46,6 +47,9 @@
 --   paused, a step and a go on from the written R15, also at an enabled
 --   breakpoint, which runs its instruction, and `e04` while held, halted,
 --   and running;
+-- * with rx_flow_i, a flood of console bytes to the echo program, with
+--   none lost, and a byte for a paused program with a full buffer, which
+--   is lost with `o` after C_WAIT cycles, with the go on behind it;
 -- * the halt reasons 2, 3, and 4, with their notices.
 -- The run stops with status 0 when every check passes, and 1 at the first
 -- that fails.
@@ -72,6 +76,8 @@ end entity tb_link;
 architecture simulation of tb_link is
 
    constant C_TIMEOUT : positive  := 2000;
+   constant C_WAIT    : positive  := 300;
+   constant C_IN_SIZE : positive  := 16;
    constant C_ESC     : character := character'val(255);
 
    -- The words of the program of the register writes, from niceasm: at 0,
@@ -103,6 +109,7 @@ architecture simulation of tb_link is
    signal rx_data  : std_logic_vector(7 downto 0) := (others => '0');
    signal rx_break : std_logic                    := '0';
    signal resume   : std_logic                    := '0';
+   signal flow     : std_logic                    := '0';
    signal tx_valid : std_logic;
    signal tx_data  : std_logic_vector(7 downto 0);
 
@@ -395,13 +402,13 @@ begin
       ); -- i_mpu
 
 
-   -- The console: an input buffer of 2048 bytes for the core, and the
+   -- The console: an input buffer of C_IN_SIZE bytes for the core, and the
    -- bytes the core writes, on their way to the link.
    p_con : process (clk)
-      type     t_buffer is array (0 to 2047) of std_logic_vector(7 downto 0);
+      type     t_buffer is array (0 to C_IN_SIZE - 1) of std_logic_vector(7 downto 0);
       variable in_q_v     : t_buffer;
-      variable in_head_v  : natural range 0 to 2047 := 0;
-      variable in_count_v : natural range 0 to 2048 := 0;
+      variable in_head_v  : natural range 0 to C_IN_SIZE - 1 := 0;
+      variable in_count_v : natural range 0 to C_IN_SIZE := 0;
       variable push_v     : boolean;
    begin
       if rising_edge(clk) then
@@ -415,7 +422,7 @@ begin
                   push_v := true;
                elsif in_count_v /= 0 then
                   slave_data(32 * C_CON + 8 downto 32 * C_CON) <= '1' & in_q_v(in_head_v);
-                  in_head_v                                    := (in_head_v + 1) mod 2048;
+                  in_head_v                                    := (in_head_v + 1) mod C_IN_SIZE;
                   in_count_v                                   := in_count_v - 1;
                elsif eoi = '1' then
                   slave_data(32 * C_CON + 9) <= '1';
@@ -423,8 +430,8 @@ begin
             end if;
          end if;
 
-         if con_in_valid = '1' and in_count_v < 2048 then
-            in_q_v((in_head_v + in_count_v) mod 2048) := con_in_data;
+         if con_in_valid = '1' and in_count_v < C_IN_SIZE then
+            in_q_v((in_head_v + in_count_v) mod C_IN_SIZE) := con_in_data;
             in_count_v                                := in_count_v + 1;
          end if;
 
@@ -433,7 +440,7 @@ begin
          if hold_d = '1' and hold = '0' then
             in_count_v := 0;
          end if;
-         free <= std_logic_vector(to_unsigned(2048 - in_count_v, 16));
+         free <= std_logic_vector(to_unsigned(C_IN_SIZE - in_count_v, 16));
 
          if con_valid = '1' and con_ready = '1' then
             out_head  <= (out_head + 1) mod 256;
@@ -463,6 +470,7 @@ begin
    i_debug_link : entity work.debug_link
       generic map (
          G_TIMEOUT   => C_TIMEOUT,
+         G_WAIT      => C_WAIT,
          G_HAS_ROM   => false,
          G_BOOT_HELD => true,
          G_BREAKS    => 4
@@ -475,6 +483,7 @@ begin
          rx_data_i      => rx_data,
          rx_break_i     => rx_break,
          rx_resume_i    => resume,
+         rx_flow_i      => flow,
          tx_valid_o     => tx_valid,
          tx_ready_i     => '1',
          tx_data_o      => tx_data,
@@ -998,6 +1007,25 @@ begin
       send("w");
       expect("w", "echo with none");
       quiet("no stop with none");
+
+      -- With flow control (DEBUG.md §1), a flood of console bytes fills the
+      -- buffer, as the link takes a byte every 3 cycles and the program
+      -- echoes one in more. Every byte waits for room, and none is lost.
+      flow <= '1';
+      send("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+-");
+      expect("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+-", "flood");
+      quiet("no o after the flood");
+      -- Paused, the program reads nothing. A byte that finds the buffer
+      -- full waits C_WAIT cycles, and is lost with `o`. The go on behind it
+      -- waits for that, and the program then echoes the buffer.
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", "pause for the full buffer");
+      send("ABCDEFGHIJKLMNOP");
+      send("Q" & C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "o#6F" & C_ESC & "kFFFFFFF00001#46", "o, then the go on");
+      expect("ABCDEFGHIJKLMNOP", "the buffer after the go on");
+      quiet("the byte lost");
+      flow <= '0';
 
       -- The writes of R0 to R15 (DEBUG.md §6). Held, a write gets e04.
       send(C_ESC & "WFFFFFFF0000100000009#BB");

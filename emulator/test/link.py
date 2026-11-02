@@ -15,6 +15,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from typing import Callable, List, Optional, Tuple
 
@@ -434,6 +435,68 @@ def test_overflow(spin: List[int]) -> None:
     # A hold while it runs, as the spin program never reads.
     e.send(write(CONTROL, [0x9]))
     e.expect("hold", ok(CONTROL, 1))
+    e.stop()
+
+
+def send_behind(e: Emu, data: bytes) -> threading.Thread:
+    """Send `data` from another thread, as the link may hold it back while
+    the test reads the answers (DEBUG.md §1)."""
+    t = threading.Thread(target=e.send, args=(data,))
+    t.start()
+    return t
+
+
+def test_flood(echo: List[int], spin: List[int]) -> None:
+    """Flow control over TCP (DEBUG.md §1, §7): a console byte that finds the
+    input buffer full waits up to 50 ms for room, and the bytes behind it
+    wait too."""
+    # A program that reads gets every byte of a flood far larger than its
+    # buffer, with no `o`.
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, echo) + write(CONTROL, [0x8]))
+    e.expect("echo start", ok(0, len(echo)) + ok(CONTROL, 1))
+    flood = bytes(i % 255 for i in range(100000))
+    t = send_behind(e, flood)
+    got = e.take(len(flood), timeout=30)
+    t.join()
+    if got != flood:
+        failures.append(f"flood to the echo program: {len(got)} of {len(flood)} bytes, "
+                        f"{'equal' if flood.startswith(got) else 'different'}")
+    expect("no o after the flood", e.take(1, timeout=0.3), b"")
+    e.stop()
+
+    # A program that never reads: the first byte past the buffer waits
+    # 50 ms and is lost with one `o`. The rest are lost at once, and the
+    # request behind them is answered then.
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, spin) + write(CONTROL, [0x8]))
+    e.expect("spin start", ok(0, len(spin)) + ok(CONTROL, 1))
+    start = time.monotonic()
+    t = send_behind(e, b"z" * 20000 + read(0xFFFFFFF3, 1))
+    e.expect("o, then the answer", b"\xffo#6F" + answer(0xFFFFFFF3, [0]))
+    took = time.monotonic() - start
+    t.join()
+    # The emulator counts whole milliseconds, so the 50 ms may be 49.x.
+    if not 0.045 <= took < 2:
+        failures.append(f"flood to the spin program: answered after {took:.3f} s")
+    expect("o once", e.take(1, timeout=0.3), b"")
+    e.stop()
+
+    # Paused, the program reads nothing: the buffer fills, the next byte
+    # is lost with `o` after 50 ms, the rest at once, and the go on behind
+    # them is carried out. The program then echoes the buffer.
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, echo) + write(CONTROL, [0x18]))
+    e.expect("echo start paused", ok(0, len(echo)) + ok(CONTROL, 1) + PAUSED)
+    first = bytes(ord("a") + i % 26 for i in range(2048))
+    t = send_behind(e, first + b"Z" * 500 + write(CONTROL, [0x8]))
+    e.expect("o, then the go on", b"\xffo#6F" + ok(CONTROL, 1))
+    t.join()
+    e.expect("the buffer after the go on", first)
+    expect("the lost bytes", e.take(1, timeout=0.3), b"")
     e.stop()
 
 
@@ -1143,7 +1206,7 @@ def main() -> None:
         irq_bin = os.path.join(tmp, "irq.bin")
         tests: List[Callable[[], None]] = [
             test_example, test_errors, lambda: test_run(echo), lambda: test_reconnect(echo_on),
-            lambda: test_overflow(spin),
+            lambda: test_overflow(spin), lambda: test_flood(echo, spin),
             lambda: test_step_limit(spin), lambda: test_halts(reserved, int_in_isr, rti, spin),
             lambda: test_pause(count, echo),
             lambda: test_step(count, one, stop, echo, twice, irq, irq_bin),

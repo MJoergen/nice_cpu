@@ -27,7 +27,7 @@
 -- The properties that name the registers of debug_link are there, under
 -- G_FORMAL: the framing of the output, so that nothing comes between the
 -- bytes of a packet, no answer during a clear, why rx_ready_o is low
--- (contract c), when hold_o and rom_hide_o change (DEBUG.md §6), and the
+-- (contract c), how long a console byte waits for room, when hold_o and rom_hide_o change (DEBUG.md §6), and the
 -- invariants that make the proof inductive, and the breakpoints: their
 -- registers, and the stop of the core's own, which raises pause_o. The invariant f_wb_owed here
 -- ties the count of wb_master_check to the master.
@@ -36,8 +36,10 @@
 -- the host's way, and the side client's covers run apart.
 -- The covers show a write to the memory, a console byte for the program,
 -- and the end of a clear; those of wb_master_check a stalled write, and
--- those of debug_link an `h`, an `o`, and the `p` of a stop of the core's
--- own. A `p` of a request needs a whole `W` of the control register first,
+-- those of debug_link an `h`, an `o`, the `p` of a stop of the core's
+-- own, and a console byte that waited for room, which then goes to the
+-- program or is lost. rx_flow_i is free, so it may change at any time.
+-- A `p` of a request needs a whole `W` of the control register first,
 -- about 80 cycles, and a read of the memory needs a whole `R` and the start
 -- of its answer, about 90 cycles, deeper than the cover task looks, so
 -- tb_debug_link shows them instead.
@@ -73,6 +75,7 @@ entity formal_debug_link is
       rx_data_i     : in  std_logic_vector(7 downto 0);
       rx_break_i    : in  std_logic;
       rx_resume_i   : in  std_logic;
+      rx_flow_i     : in  std_logic;
       tx_ready_i    : in  std_logic;
       con_valid_i   : in  std_logic;
       con_data_i    : in  std_logic_vector(7 downto 0);
@@ -262,6 +265,7 @@ begin
    i_debug_link : entity work.debug_link
       generic map (
          G_TIMEOUT   => 3,
+         G_WAIT      => 2,
          G_HAS_ROM   => G_HAS_ROM,
          G_BOOT_HELD => G_BOOT_HELD,
          G_BREAKS    => 2,
@@ -275,6 +279,7 @@ begin
          rx_data_i      => rx_data_i,
          rx_break_i     => rx_break_i,
          rx_resume_i    => rx_resume_i,
+         rx_flow_i      => rx_flow_i,
          tx_valid_o     => tx_valid,
          tx_ready_i     => tx_ready_i,
          tx_data_o      => tx_data,

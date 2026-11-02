@@ -348,7 +348,12 @@ It serves the link every 4096 steps while a program runs, and at least
 every 100 ms while the processor is held, halted, or paused, or a console
 read waits. With `--window`, it serves the link and the window after each
 millisecond of steps at the pace of `--speed` (65536 steps for `--speed 0`),
-and about every 10 ms while the processor is held, halted, or paused. A pause takes effect between two steps. A pause while a
+and about every 10 ms while the processor is held, halted, or paused.
+A console byte that finds the input buffer full waits up to 50 ms
+for room, measured at these services, and niceemu reads nothing more
+from the connection meanwhile, so that TCP holds the host back
+(DEBUG.md §1).
+A pause takes effect between two steps. A pause while a
 console read waits undoes the step of the read, and pauses before it
 (DEBUG.md §7). The bytes that the step took go back to the input buffer. A step of a paused processor (bit 5, DEBUG.md §6) runs one
 step of `--max-steps` and `--trace`, an instruction or an interrupt entry,
@@ -425,7 +430,9 @@ runs that stop in each way: `HALT`, the other halts, and the step limit,
 Then `test/link.py` runs niceemu with `--link 0` and checks the debug link
 over TCP (Debug link above). It checks the packets of DEBUG.md §8 byte for
 byte, the errors and drops, a program loaded, run, halted, and restarted,
-the overflow notice, the step limit, the halt reasons 2 to 4, and a clear
+the overflow notice, floods of console bytes: to a program that reads,
+with none lost, to one that never reads, with one `o` and a request
+behind them answered after 50 ms, and to a paused one, the step limit, the halt reasons 2 to 4, and a clear
 of a running program. It checks the single step: its example of DEBUG.md
 §8, the cases where bit 5 does nothing, a step into `HALT` and to the step
 limit, a step at a console read, and R13–R15 after each step across

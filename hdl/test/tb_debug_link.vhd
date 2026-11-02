@@ -26,6 +26,11 @@
 -- * the errors while the program runs, and that no word is written then;
 -- * console bytes both ways, ESC ESC, the overflow notice `o`, and the
 --   order of console bytes and packets;
+-- * with rx_flow_i, a console byte that waits for room: one that gets it,
+--   one that is lost with `o` after C_WAIT cycles, with a packet behind it
+--   that waits, the bytes after that `o`, which are lost at once, a packet
+--   with no console byte ahead, which is taken at once, a fall of
+--   rx_flow_i and a break during the wait;
 -- * the timeout, an ESC with no letter, the end of the input, and the
 --   resume that starts it anew, also with a break in the same cycle;
 -- * the halt notice `h`, the registers and the halt kept while held, and
@@ -72,6 +77,7 @@ end entity tb_debug_link;
 architecture simulation of tb_debug_link is
 
    constant C_TIMEOUT : positive    := 300;
+   constant C_WAIT    : positive    := 500;
    constant C_ESC     : character := character'val(255);
 
    type t_mem is array (0 to 4095) of std_logic_vector(31 downto 0);
@@ -84,6 +90,7 @@ architecture simulation of tb_debug_link is
    signal rx_data  : std_logic_vector(7 downto 0) := (others => '0');
    signal rx_break : std_logic                    := '0';
    signal resume   : std_logic                    := '0';
+   signal flow     : std_logic                    := '0';
    signal tx_valid : std_logic;
    signal tx_ready : std_logic;
    signal tx_data  : std_logic_vector(7 downto 0);
@@ -178,6 +185,7 @@ begin
    i_debug_link : entity work.debug_link
       generic map (
          G_TIMEOUT   => C_TIMEOUT,
+         G_WAIT      => C_WAIT,
          G_HAS_ROM   => true,
          G_BOOT_HELD => true,
          G_BREAKS    => 4
@@ -190,6 +198,7 @@ begin
          rx_data_i      => rx_data,
          rx_break_i     => rx_break,
          rx_resume_i    => resume,
+         rx_flow_i      => flow,
          tx_valid_o     => tx_valid,
          tx_ready_i     => tx_ready,
          tx_data_o      => tx_data,
@@ -476,6 +485,7 @@ begin
       variable used_v  : natural := 0;
       variable cused_v : natural := 0;
       variable wr_v    : natural := 0;
+      variable t_v     : time;
 
       procedure fail(msg : string) is
       begin
@@ -764,6 +774,87 @@ begin
       free <= X"0008";
       quiet("o again");
       expect_in("", "after o again");
+
+      -- With flow control, a console byte that finds the buffer full waits
+      -- for room, and the receiver takes nothing meanwhile (DEBUG.md §1).
+      flow <= '1';
+      free <= X"0000";
+      cycles(5);
+      send("J");
+      cycles(C_WAIT / 2);
+      assert rx_ready = '0'
+         report "tb_debug_link: the receiver takes a byte while one waits"
+         severity failure;
+      free <= X"0001";
+      expect_in("J", "a byte that waited");
+      quiet("a byte that waited");
+
+      -- No room for C_WAIT cycles: the byte is lost with `o`, and the
+      -- packet behind it waits until then, and is answered after the `o`.
+      free <= X"0000";
+      cycles(5);
+      t_v := now;
+      send("K" & C_ESC & "RFFFFFFF30001#30");
+      if now - t_v < C_WAIT * 10 ns then
+         fail("the packet behind a waiting byte did not wait");
+      end if;
+      expect(C_ESC & "o#6F" & C_ESC & "rFFFFFFF3000100000000#D0", "o after the wait");
+      expect_in("", "a byte that waited too long");
+      -- After that `o`, the bytes are lost at once, with no notice, until
+      -- the buffer has room.
+      t_v := now;
+      send("LM" & C_ESC & "RFFFFFFF30001#30");
+      if now - t_v > 100 * 10 ns then
+         fail("a byte after the o waited");
+      end if;
+      expect(C_ESC & "rFFFFFFF3000100000000#D0", "bytes after the o");
+      quiet("bytes after the o");
+      expect_in("", "bytes after the o");
+
+      -- With the buffer full and room since, a packet with no console byte
+      -- ahead of it is taken at once.
+      free <= X"0001";
+      cycles(5);
+      free <= X"0000";
+      cycles(5);
+      t_v := now;
+      send(C_ESC & "RFFFFFFF30001#30");
+      if now - t_v > 100 * 10 ns then
+         fail("a packet with no console byte ahead waited");
+      end if;
+      expect(C_ESC & "rFFFFFFF3000100000000#D0", "a packet while full");
+      quiet("a packet while full");
+
+      -- rx_flow_i falls during the wait: the byte is lost with `o` at once.
+      send("N");
+      cycles(20);
+      flow <= '0';
+      cycles(40);
+      if got_len /= used_v + 5 then
+         fail("no o when rx_flow_i fell: " & integer'image(got_len - used_v));
+      end if;
+      expect(C_ESC & "o#6F", "o when rx_flow_i fell");
+      flow <= '1';
+      free <= X"0008";
+      cycles(5);
+      expect_in("", "a byte lost when rx_flow_i fell");
+
+      -- A break during the wait drops the byte, with no `o`.
+      free <= X"0000";
+      cycles(5);
+      send("O");
+      cycles(20);
+      rx_break <= '1';
+      cycles(1);
+      rx_break <= '0';
+      quiet("a break during the wait");
+      free <= X"0008";
+      resume <= '1';
+      cycles(1);
+      resume <= '0';
+      cycles(3);
+      expect_in("", "a break during the wait");
+      flow <= '0';
 
       -- Console bytes from the program, with 0xFF sent as ESC ESC.
       con_put(character'pos('x'));

@@ -486,6 +486,14 @@ on a board that serves the link over TCP (DEBUG.md §7). A resume wins over
 a break in the same cycle, and changes nothing else. A board without
 connections leaves the port open.
 
+`rx_flow_i` says that the transport has flow control, as TCP has. While it
+is high, a console byte that finds `free_i` at 0 waits for room, for up to
+`G_WAIT` cycles, 50 ms by default, and the link holds `rx_ready_o` low
+meanwhile. A byte that gets no room is lost with `o`, and after that `o`
+the bytes that find the buffer full are lost at once, until it has room
+(DEBUG.md §1). A UART leaves the port open, at 0, and its bytes are lost
+at once, as before.
+
 The side port, `side_valid_i` to `side_data_o`, is a second client of the
 debug registers and the memory, word by word, for a debugger inside the
 system (DEBUG.md §3). Its request is held until `side_done_o`, with
@@ -724,8 +732,12 @@ start, a step, and a stop of the core's own, the stop register and how long
 it lasts, `p` when no enabled breakpoint is at R15, and a reset that clears
 them; the end of the line's input and its resume: a break, a resume, one
 without an end, one with a break in the same cycle, a break after it, and
-the bytes taken in the cycles of a resume and of a break; the registers
-while the core runs; and the side client: the memory
+the bytes taken in the cycles of a resume and of a break; with
+`rx_flow_i`, a console byte that waits for room and gets it, one lost with
+`o` after `G_WAIT` cycles with a packet behind it, the bytes after that
+`o`, a packet with no console byte ahead, and a fall of `rx_flow_i` and a
+break during the wait; the registers while the core runs; and the side
+client: the memory
 while held, reads all the time beside the host's packets, a clear between
 two words of a host's `W`, a start, its errors and the registers while
 running, a pause and a step that send the host `p`, a go on between two
@@ -750,7 +762,10 @@ breakpoints, 4 on the link and the core: a stop before the echo, a step and
 a go on from a breakpoint, and a breakpoint disabled while paused, and the
 writes of R0 to R15: R3, R0, R14, and R15 at a start paused, a step and a
 go on from the written R15, also at an enabled breakpoint, and `e04` while
-held, halted, and running. The testbench shows three things a board must
+held, halted, and running, and with `rx_flow_i`, a flood of console bytes
+to the echo program with none lost, and a byte that a paused program's
+full buffer loses with `o`, with the go on behind it. Its input buffer
+holds 16 bytes, so that a flood fills it soon. The testbench shows three things a board must
 do: each master sees only its own STALL and ACK; the devices are reset at
 a start, when `hold_o` falls, and not while the processor is held, so that
 the link can reach them; and an instruction ACK that comes after a hold
@@ -1376,8 +1391,9 @@ checksum, that a console byte goes out only between packets, and that no
 answer starts during a clear that the host started. `rx_ready_o` is low only for 2 cycles after
 a byte, for the write of a data word, which waits for the Wishbone
 access, and for the side client's access or a clear that it started
-only, and for a tag that waits for an answer or a
-clear. A read of R0 to R15 while the processor runs returns the core's
+only, for a tag that waits for an answer or a
+clear, and for a console byte that waits for room. That wait comes only
+with `rx_flow_i` high, and ends after `G_WAIT` cycles at most. A read of R0 to R15 while the processor runs returns the core's
 register of that cycle. The side client gets one `side_done_o` for each
 request taken, `side_err_o` only for a word that is not a debug register
 while the processor runs, and no request is taken while one is open or
@@ -1388,12 +1404,14 @@ two breakpoints, their registers change only on a write and at reset, the
 entries from `G_BREAKS` up stay 0, and the stop register names one of the
 two. Invariants tie the
 receiver, the accesses, the sender, and the parser together, so that
-k-induction of depth 4 proves it all in a few seconds. `G_TIMEOUT` is 3, so the timeout is reached.
+k-induction of depth 4 proves it all in a few seconds. `G_TIMEOUT` is 3
+and `G_WAIT` 2, so both are reached.
 `prove_held` repeats the proof for a system without a ROM that boots
 held, where `rom_hide_o` is always 1. The `cover` task, with the side
 client tied off by `G_SIDE`, shows a write to
 the memory, a stalled request, an `h`, an `o`, the `p` of a stop of the
-core's own, a console byte for the program, and the end of a clear, within
+core's own, a console byte for the program, one that waited for room and
+then went to the program or was lost, and the end of a clear, within
 70 cycles. `cover_side` shows a side access of the memory and a refusal. A read of the memory
 needs a whole `R` and the start of its answer, about 90 cycles, so
 `wb_master_check` leaves its read cover out with `G_COVER_READ`, and the

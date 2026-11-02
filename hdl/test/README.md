@@ -13,7 +13,7 @@ The testbenches, the test programs, and the scripts that run them. [hdl/README.m
 | [tb_fetch_stats.vhd](tb_fetch_stats.vhd) | A self-checking test of the fetch statistics. |
 | [fstats.nasm](fstats.nasm) | A program that reads the fetch statistics on the pipelined core, and checks itself. |
 | [tb_wb_dmux.vhd](tb_wb_dmux.vhd) | A self-checking test of the data bus decoder. |
-| [tb_debug_link.vhd](tb_debug_link.vhd) | A self-checking test of the debug link, with the byte streams of DEBUG.md §8 and its errors, notices, timeout, and console; the registers while the core runs; the side client beside the host; and the resume of the line's input after a break. |
+| [tb_debug_link.vhd](tb_debug_link.vhd) | A self-checking test of the debug link, with the byte streams of DEBUG.md §8 and its errors, notices, timeout, and console; the registers while the core runs; the side client beside the host; the resume of the line's input after a break; and a console byte that waits for room with `rx_flow_i`. |
 | [tb_link.vhd](tb_link.vhd) | The debug link connected to a core, the data bus decoder, the memory model, and the math unit, as a board connects them. It loads and runs `test/linkecho.nasm` over the link, from `test/link_init.bin`, and steps it through a break, a resume, and a byte from the new host. |
 | [linkecho.nasm](linkecho.nasm) | The program of `tb_link`, loaded over the link. It echoes each console byte, and halts at the end of the input with the number of bytes echoed in R2. |
 | [link_init.bin](link_init.bin) | The memory image that `tb_link` starts with, its `G_INIT_FILE`, before the link loads `linkecho.nasm`. |

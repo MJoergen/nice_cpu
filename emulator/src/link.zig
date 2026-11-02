@@ -18,6 +18,8 @@ const version: u8 = 6;
 pub const input_size = 2048;
 /// The packet timeout of DEBUG.md §5.
 const timeout_ms = 100;
+/// The longest a console byte waits for room in the input buffer (DEBUG.md §1).
+const wait_ms = 50;
 /// The debug registers, for the link only (DEBUG.md §6).
 const debug_base: u32 = 0xFFFF_FFE0;
 const control_addr: u32 = debug_base + 0x10;
@@ -91,6 +93,15 @@ pub const Link = struct {
     overflow_sent: bool = false,
     /// The bytes the current step has taken, which an undo puts back.
     taken: usize = 0,
+    /// The bytes read from the connection and not yet taken: from `rx_pos`
+    /// to `rx_len`. While a console byte waits for room, the rest wait
+    /// behind it, and nothing more is read, so that the kernel's receive
+    /// window fills and holds the host back (DEBUG.md §1, §7).
+    rx_buf: [4096]u8 = undefined,
+    rx_pos: usize = 0,
+    rx_len: usize = 0,
+    /// When the console byte at `rx_pos` began to wait for room, in ms.
+    wait_since: ?i64 = null,
 
     // The packet being received (DEBUG.md §2, §5).
     state: enum { idle, escape, payload, cc_high, cc_low } = .idle,
@@ -191,17 +202,26 @@ pub const Link = struct {
 
     /// Accept a host, read what it sent, and act on it. Waits up to
     /// `timeout` ms for something to happen, or not at all for 0.
+    /// While a console byte waits for room, the connection is not read, and
+    /// the wait is at most until the byte is due to be lost.
     pub fn service(self: *Link, timeout: i32) !void {
+        self.drain(self.nowMs());
+        var wait = timeout;
+        if (self.wait_since) |since| {
+            const left: i32 = @intCast(std.math.clamp(wait_ms - (self.nowMs() - since), 0, wait_ms));
+            if (wait < 0 or wait > left) wait = left;
+        }
+        const waiting = self.rx_pos < self.rx_len;
         var fds = [2]posix.pollfd{
             .{ .fd = self.listener.socket.handle, .events = posix.POLL.IN, .revents = 0 },
-            .{ .fd = if (self.conn) |c| c.socket.handle else -1, .events = if (self.conn_eof) 0 else posix.POLL.IN, .revents = 0 },
+            .{ .fd = if (self.conn) |c| c.socket.handle else -1, .events = if (self.conn_eof or waiting) 0 else posix.POLL.IN, .revents = 0 },
         };
-        if (try posix.poll(&fds, timeout) == 0) return;
+        if (try posix.poll(&fds, wait) == 0) return self.drain(self.nowMs());
         if (fds[0].revents & posix.POLL.IN != 0) self.accept();
         if (fds[1].revents != 0 and self.conn_eof) return self.disconnect();
+        if (waiting) return self.drain(self.nowMs());
         if (fds[1].revents != 0 and self.conn != null) {
-            var buf: [4096]u8 = undefined;
-            var vec = [1][]u8{&buf};
+            var vec = [1][]u8{&self.rx_buf};
             const n = (self.conn.?.readWithControl(self.io, &vec, &.{}) catch return self.disconnect()).data_len;
             if (n == 0) {
                 // A half-close or a disconnect: both end the line's input.
@@ -209,9 +229,23 @@ pub const Link = struct {
                 self.input_end = true;
                 return;
             }
-            const now = std.Io.Timestamp.now(self.io, .awake).toMilliseconds();
-            for (buf[0..n]) |b| self.receive(b, now);
+            self.rx_pos = 0;
+            self.rx_len = n;
+            self.drain(self.nowMs());
         }
+    }
+
+    fn nowMs(self: *const Link) i64 {
+        return std.Io.Timestamp.now(self.io, .awake).toMilliseconds();
+    }
+
+    /// Take the bytes read and not yet taken, up to one that waits for room.
+    fn drain(self: *Link, now: i64) void {
+        while (self.rx_pos < self.rx_len) : (self.rx_pos += 1) {
+            if (!self.receive(self.rx_buf[self.rx_pos], now)) return;
+        }
+        self.rx_pos = 0;
+        self.rx_len = 0;
     }
 
     /// Accept a host. While one is connected, another is closed at once,
@@ -224,6 +258,7 @@ pub const Link = struct {
             return;
         }
         if (self.conn) |old| old.close(self.io);
+        self.dropReceived();
         self.conn = stream;
         const fd = stream.socket.handle;
         self.conn_eof = false;
@@ -244,6 +279,14 @@ pub const Link = struct {
         self.conn = null;
         self.conn_eof = false;
         self.input_end = true;
+        self.dropReceived();
+    }
+
+    /// Drop the bytes of a connection that ended, and a byte that waits.
+    fn dropReceived(self: *Link) void {
+        self.rx_pos = 0;
+        self.rx_len = 0;
+        self.wait_since = null;
     }
 
     /// Send `bytes` to the host, if one is connected.
@@ -271,17 +314,21 @@ pub const Link = struct {
         self.sendPacket('e', &buf);
     }
 
-    /// One byte from the host (DEBUG.md §1, §5).
-    fn receive(self: *Link, b: u8, now: i64) void {
-        if (self.state != .idle and now - self.last_byte_ms > timeout_ms) self.state = .idle;
-        self.last_byte_ms = now;
+    /// One byte from the host (DEBUG.md §1, §5). False if it is a console
+    /// byte that waits for room, and the state is as before it; it is then
+    /// given again, and its gap of §5 is not measured again.
+    fn receive(self: *Link, b: u8, now: i64) bool {
+        if (self.wait_since == null) {
+            if (self.state != .idle and now - self.last_byte_ms > timeout_ms) self.state = .idle;
+            self.last_byte_ms = now;
+        }
         switch (self.state) {
             .idle => if (b == esc) {
                 self.state = .escape;
-            } else self.consoleByte(b),
+            } else return self.consoleByte(b, now),
             .escape => if (b == esc) {
+                if (!self.consoleByte(esc, now)) return false;
                 self.state = .idle;
-                self.consoleByte(esc);
             } else if (std.ascii.isAlphabetic(b)) {
                 self.state = .payload;
                 self.tag = b;
@@ -315,24 +362,41 @@ pub const Link = struct {
                 self.state = .escape;
             } else {
                 self.state = .idle;
-                const hi = std.fmt.charToDigit(self.cc_high, 16) catch return;
-                const lo = std.fmt.charToDigit(b, 16) catch return;
+                const hi = std.fmt.charToDigit(self.cc_high, 16) catch return true;
+                const lo = std.fmt.charToDigit(b, 16) catch return true;
                 if (hi * 16 + lo == self.sum) self.request();
             },
         }
+        return true;
     }
 
     /// A console byte from the host. It reaches the program while it runs
-    /// or is paused, before the end of the input.
-    fn consoleByte(self: *Link, b: u8) void {
-        if (self.held or self.halted() or self.input_end) return;
+    /// or is paused, before the end of the input. One that finds the buffer
+    /// full waits up to `wait_ms` for room, unless an `o` was sent and the
+    /// buffer has had no room since, and is then lost with `o` (DEBUG.md
+    /// §1). False while it waits.
+    fn consoleByte(self: *Link, b: u8, now: i64) bool {
+        if (self.held or self.halted() or self.input_end) {
+            self.wait_since = null;
+            return true;
+        }
         if (self.input_len == input_size) {
-            if (!self.overflow_sent) self.sendPacket('o', "");
+            if (!self.overflow_sent) {
+                const since = self.wait_since orelse now;
+                if (now - since < wait_ms) {
+                    self.wait_since = since;
+                    return false;
+                }
+                self.sendPacket('o', "");
+            }
             self.overflow_sent = true;
-            return;
+            self.wait_since = null;
+            return true;
         }
         self.input[(self.input_head + self.input_len) % input_size] = b;
         self.input_len += 1;
+        self.wait_since = null;
+        return true;
     }
 
     /// A packet with a good checksum (DEBUG.md §3).

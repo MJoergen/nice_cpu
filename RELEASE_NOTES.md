@@ -31,7 +31,8 @@ The others pin the tagged commit.
 ## V1.3 (2026-10-31)
 
 The assembler has `CALL` and `RET` (#93). Debug link version 6 lets a
-host write R1–R15 while the processor is paused (#102). Rust and Zig
+host write R1–R15 while the processor is paused (#102), and over TCP
+holds a host back instead of losing its console bytes (#110). Rust and Zig
 programs have a heap (#69, #105) and read console input a line at a time
 (#106). The translator handles tail calls (#103).
 
@@ -45,6 +46,15 @@ programs have a heap (#69, #105) and read console input a line at a time
   from the devices into R0–R15 while held or halted writes nothing. A host
   of version 5 never wrote these words, which were read only, so it works
   as before.
+- Over TCP, a console byte that finds the input buffer full waits up to
+  50 ms for room, and the bytes behind it wait too, before it is lost with
+  `o` (#110). A host that sends no more than the free-space register
+  allows never sees the wait. One that sends requests behind unpaced
+  console bytes may wait longer than 100 ms for the answer.
+- `debug_link` has the input `rx_flow_i` and the generic `G_WAIT`
+  (#110). The input defaults to 0, so a board that does not connect it
+  loses a byte at once, as before. A board ties it high while it serves
+  the link over TCP.
 - Both cores have the inputs `reg_we_i`, `reg_idx_i`, and `reg_data_i`,
   and `debug_link` the outputs `reg_we_o`, `reg_idx_o`, and `reg_data_o`
   (#102). The inputs default to 0, so a system that does not connect them
@@ -66,6 +76,11 @@ programs have a heap (#69, #105) and read console input a line at a time
   processor is paused, with the rules of a register-direct write of ISA
   §4.3, and leave the hidden state of ISA §1.4 alone. A write of R0–R15
   while not paused is answered with the new error `04` (#102).
+- DEBUG.md §1, §4, §5, §7, and §9: on a transport with flow control, a
+  console byte that finds the input buffer full waits up to 50 ms for
+  room before it is lost with `o`, and after that `o` the bytes are lost
+  at once until the buffer has room. A packet with no console byte ahead
+  of it is never held. SYSTEM.md §5 says so for a board's FIFO (#110).
 
 **Assembler (`niceasm`)**
 
@@ -79,6 +94,9 @@ programs have a heap (#69, #105) and read console input a line at a time
 - `--link` serves debug link version 6: R1–R15 take a write while the
   processor is paused, and a write of R0–R15 while it is not gets `e04`
   (#102).
+- A console byte that finds the input buffer full waits up to 50 ms for
+  room, and niceemu reads nothing more from the connection meanwhile, so
+  a flood of console bytes to a program that reads loses nothing (#110).
 
 **Runtime and C library**
 
@@ -121,6 +139,10 @@ programs have a heap (#69, #105) and read console input a line at a time
   for it (#102).
 - The proofs of both cores, of WRITE, and of the link cover the writes,
   and `tb_link` and `tb_debug_link` test them (#102).
+- `debug_link` holds a console byte that finds `free_i` at 0 for up to
+  `G_WAIT` cycles, 50 ms, while `rx_flow_i` is high, with `rx_ready_o`
+  low. Its proof bounds the wait, and `tb_debug_link` and `tb_link` test
+  it (#110).
 
 ## V1.2 (2026-10-31)
 

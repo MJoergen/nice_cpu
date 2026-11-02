@@ -39,7 +39,7 @@ A program may contain any number of library modules. They go with the runtime li
 
 Memory accesses must give the results wasm defines:
 
-- An access may be at any byte address. The alignment hint in the instruction is not a promise, so an access that crosses a word boundary must still work. A translator may use a faster path when the address turns out to be a multiple of 4.
+- An access may be at any byte address. The alignment hint in the instruction is not a promise, so an access that crosses a word boundary must still work. A translator may use a faster path when the address turns out to be a multiple of 4. A translator may also offer an option that takes the hint of an access of 4 or 8 bytes as a promise: an access whose hint is 4 bytes or more is then taken to be at a multiple of 4, and if it is not, it reads or writes the word that holds its first byte.
 - A store that changes only part of a word reads the word, changes the bytes, and writes it back. Narrow stores do this, and so do `i32` and `i64` stores that are not at a multiple of 4. The read and the write are two accesses, so an interrupt routine that writes the same word between them loses its write.
 - An access that goes past the end of the current memory size traps. A translator may offer an option to leave out these checks. Then the byte address *b* is (base + offset) mod 2³², and the word address `MEMBASE` + ⌊*b* / 4⌋ also wraps modulo 2³².
 

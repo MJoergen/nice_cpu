@@ -157,7 +157,8 @@ def test_c_options(tmp: str) -> None:
     base = ["-I", os.path.join(src, "inc"), "-D", 'NAME="hi"', "--asm", os.path.join(src, "twice.nasm"),
             os.path.join(src, "main.c"), os.path.join(src, "helper.c")]
     for name, extra in (("default", []), ("big stack", ["--stack", "8192", "--memory", "131072"]),
-                        ("no mpu", ["--no-mpu"])):
+                        ("no mpu", ["--no-mpu"]),
+                        ("trusted alignment", ["--no-bounds-checks", "--trust-alignment"])):
         out = os.path.join(tmp, name.replace(" ", "_") + ".bin")
         if check_build("C options, " + name, ["-o", out] + extra + base, out):
             check_run("C options, " + name, run(out), 0, ["42 6 hi 4"])

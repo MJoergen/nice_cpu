@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """A random test of nicewasm against a model of wasm written in Python.
 
-Usage: fuzz.py [--no-mpu] [--unchecked] [--grow] [--keep DIR] [--reduce] FIRST COUNT
+Usage: fuzz.py [--no-mpu] [--unchecked] [--grow] [--trust] [--keep DIR] [--reduce]
+               FIRST COUNT
 
 Each case is a module built from a random syntax tree. Every node of the
 tree emits its wasm bytes and evaluates itself in Python with the
@@ -59,8 +60,12 @@ with muldiv_soft.nasm instead of muldiv_mpu.nasm. With --unchecked,
 nicewasm is run with --no-bounds-checks, and with --grow with
 --memory-pages 2, so that the bounds checks compare with the words that
 memory.grow keeps. With --unchecked, no access is out of bounds; the other
-traps stay. With --keep DIR, each program is copied to DIR/fuzzSEED.bin, with
-_nompu, _unchecked, or _grow added for the mode, for hdl/test/programs.py.
+traps stay. With --trust, nicewasm is run with --trust-alignment and
+--no-bounds-checks, and the generator gives each access of 4 or 8 bytes
+whose address it knows to be a multiple of 4 the alignment hint 4; the
+other accesses keep the hint 0. With --keep DIR, each program is copied
+to DIR/fuzzSEED.bin, with _nompu, _unchecked, _grow, or _unchecked_trust
+added for the mode, for hdl/test/programs.py.
 With --reduce, FIRST is
 a failing seed: statements are removed from the functions while the
 mismatch persists, and the reduced module and its translation, if
@@ -70,8 +75,8 @@ the current directory.
 This test does not replace run.py, whose cases are checked by hand, and
 which also checks a trap's R2. It is cheap to run on many seeds, and it
 found three bugs while it was written, all three in the model. make test
-runs 40 seeds with the math unit and 40 with --no-mpu, and 20 with
---unchecked and 20 with --grow. Each run prints how many of its modules
+runs 40 seeds with the math unit and 40 with --no-mpu, and 20 each with
+--unchecked, --grow, and --trust. Each run prints how many of its modules
 trap."""
 
 from __future__ import annotations
@@ -265,10 +270,12 @@ class State:
 
 
 class Expr:
-    """A value of type t: its wasm code, and its value in the model."""
+    """A value of type t: its wasm code, and its value in the model. An
+    address may be known to be a multiple of 4 (aligned), for the
+    alignment hint of an access (Ctx.hint)."""
 
-    def __init__(self, t: int, code: bytes, ev: Callable[[State], int]) -> None:
-        self.t, self.code, self.ev = t, code, ev
+    def __init__(self, t: int, code: bytes, ev: Callable[[State], int], aligned: bool = False) -> None:
+        self.t, self.code, self.ev, self.aligned = t, code, ev, aligned
 
 
 class Stmt:
@@ -309,12 +316,13 @@ class Ctx:
     scope, from the function outward, with the types of the values that a
     branch to each carries, and the locals it may use. With risky, it makes
     statements that may trap, and with bounds, among them accesses out of
-    bounds."""
+    bounds. With trust, an access of 4 or 8 bytes at an address known to
+    be a multiple of 4 gets the alignment hint 4 (hint)."""
 
     def __init__(self, rng: random.Random, fn: Func, fidx: int, fns: List[Func], risky: bool = False,
-                 bounds: bool = True) -> None:
+                 bounds: bool = True, trust: bool = False) -> None:
         self.rng, self.fn, self.fidx, self.fns = rng, fn, fidx, fns
-        self.risky, self.bounds = risky, bounds
+        self.risky, self.bounds, self.trust = risky, bounds, trust
         self.labels: List[Tuple[str, List[int]]] = [("func", [fn.result])]
         self.loop_depth = 0
         # The last two locals are loop counters, which nothing else touches.
@@ -323,6 +331,12 @@ class Ctx:
 
     def locals_of(self, t: int) -> List[int]:
         return [i for i in self.usable if self.fn.local_types[i] == t]
+
+    def hint(self, a: Expr, offset: int, n: int) -> int:
+        """The alignment hint, log2 of the bytes, of an access of n bytes at
+        the address a plus offset: 2 with trust if the address is known to
+        be a multiple of 4, else 0, which every access allows."""
+        return 2 if self.trust and n >= 4 and a.aligned and offset % 4 == 0 else 0
 
 
 def konst(t: int, v: int) -> Expr:
@@ -340,13 +354,15 @@ def opcode(table: Dict[str, Tuple[int, int, Callable[..., int]]], name: str, t: 
     return bytes([op64 if t == I64 else op32])
 
 
-def binop(name: str, t: int, a: Expr, b: Expr) -> Expr:
+def binop(name: str, t: int, a: Expr, b: Expr, aligned: bool = False) -> Expr:
+    """a name b, with aligned if the result is known to be a multiple of
+    4 (Expr)."""
 
     def ev(st: State) -> int:
         x = a.ev(st)
         y = b.ev(st)
         return apply(name, t, x, y)
-    return Expr(t, a.code + b.code + opcode(BIN, name, t), ev)
+    return Expr(t, a.code + b.code + opcode(BIN, name, t), ev, aligned)
 
 
 def apply(name: str, t: int, x: int, y: int) -> int:
@@ -526,17 +542,22 @@ def gen_condition(ctx: Ctx, depth: int) -> Expr:
 def gen_address(ctx: Ctx, depth: int, room: int = 21) -> Expr:
     """A byte address, constant or dynamic, with room bytes from it in
     bounds: by default 8 bytes at an offset of up to 13. Dynamic addresses
-    are often unaligned."""
+    are often unaligned. Each says whether it is known to be a multiple
+    of 4."""
     if ctx.rng.random() < 0.4:
         a = ctx.rng.randrange(0x400) if ctx.rng.random() < 0.7 else ctx.rng.randrange(ADDR_MASK)
-        return konst(I32, a)
+        c = konst(I32, a)
+        c.aligned = a % 4 == 0
+        return c
     if ctx.rng.random() < 0.3:
         return gen_element(ctx, depth, room)
     if ctx.rng.random() < 0.2:
         return gen_masked(ctx, depth, room)
     k = ctx.rng.randrange(8) if ctx.rng.random() < 0.6 else 0
     e = binop("and", I32, gen_expr(ctx, I32, depth), konst(I32, ADDR_MASK))
-    return binop("or", I32, e, konst(I32, k)) if k else e
+    e = binop("or", I32, e, konst(I32, k)) if k else e
+    e.aligned = k % 4 == 0  # ADDR_MASK is a multiple of 8
+    return e
 
 
 def gen_element(ctx: Ctx, depth: int, room: int) -> Expr:
@@ -564,6 +585,7 @@ def gen_element(ctx: Ctx, depth: int, room: int) -> Expr:
         cs[-1] += ctx.rng.randrange(1, 4)
     for c in cs:
         a = binop("add", I32, a, konst(I32, c))
+    a.aligned = all(c % 4 == 0 for c in cs)  # i << s is a multiple of 4
     return a
 
 
@@ -590,7 +612,7 @@ def gen_end(ctx: Ctx, depth: int, room: int, s: int) -> Expr:
     else:
         i = binop("or", I32, binop("and", I32, x, konst(I32, 7)), konst(I32, 0xFFFFFFF0))
         c = 0x10000 + 4 * ctx.rng.randrange(-1, 2)
-    return binop("add", I32, binop("shl", I32, i, konst(I32, s)), konst(I32, c))
+    return binop("add", I32, binop("shl", I32, i, konst(I32, s)), konst(I32, c), aligned=True)
 
 
 def gen_masked(ctx: Ctx, depth: int, room: int) -> Expr:
@@ -614,7 +636,7 @@ def gen_masked(ctx: Ctx, depth: int, room: int) -> Expr:
         x = binop("sub", I32, x, konst(I32, 0))
     i = (binop("and", I32, x, konst(I32, m)) if ctx.rng.random() < 0.7
          else binop("and", I32, konst(I32, m), x))
-    return binop("add", I32, binop("shl", I32, i, konst(I32, s)), konst(I32, c))
+    return binop("add", I32, binop("shl", I32, i, konst(I32, s)), konst(I32, c), aligned=True)
 
 
 def in_bounds(addr: int, n: int) -> int:
@@ -629,11 +651,13 @@ def gen_load(ctx: Ctx, t: int, depth: int) -> Expr:
     op = ctx.rng.choice([o for o, (rt, n, s) in LOADS.items() if rt == t])
     n = LOADS[op][1]
     offset = ctx.rng.choice([0, 0, 1, 4, 8, 13])
-    return load(op, offset, gen_address(ctx, depth, offset + n))
+    a = gen_address(ctx, depth, offset + n)
+    return load(op, offset, a, ctx.hint(a, offset, n))
 
 
-def load(op: int, offset: int, a: Expr) -> Expr:
-    """The load op at the address a plus offset."""
+def load(op: int, offset: int, a: Expr, align: int = 0) -> Expr:
+    """The load op at the address a plus offset, with the alignment hint
+    align."""
     t, n, signed = LOADS[op]
 
     def ev(st: State) -> int:
@@ -642,18 +666,20 @@ def load(op: int, offset: int, a: Expr) -> Expr:
         if signed and v >> (8 * n - 1):
             v -= 1 << (8 * n)
         return v & mask(t)
-    return Expr(t, a.code + mem(op, offset), ev)
+    return Expr(t, a.code + mem(op, offset, align), ev)
 
 
 def gen_store(ctx: Ctx, depth: int) -> Stmt:
     op = ctx.rng.choice(list(STORES))
     t, n = STORES[op]
     offset = ctx.rng.choice([0, 0, 2, 4, 9])
-    return store(op, offset, gen_address(ctx, depth, offset + n), gen_expr(ctx, t, depth))
+    a = gen_address(ctx, depth, offset + n)
+    return store(op, offset, a, gen_expr(ctx, t, depth), ctx.hint(a, offset, n))
 
 
-def store(op: int, offset: int, a: Expr, v: Expr) -> Stmt:
-    """The store op of the value v at the address a plus offset."""
+def store(op: int, offset: int, a: Expr, v: Expr, align: int = 0) -> Stmt:
+    """The store op of the value v at the address a plus offset, with the
+    alignment hint align."""
     n = STORES[op][1]
 
     def run(st: State) -> None:
@@ -661,7 +687,7 @@ def store(op: int, offset: int, a: Expr, v: Expr) -> Stmt:
         x = v.ev(st)
         in_bounds(addr, n)
         st.mem[addr:addr + n] = (x & ((1 << (8 * n)) - 1)).to_bytes(n, "little")
-    return Stmt(a.code + v.code + mem(op, offset), run)
+    return Stmt(a.code + v.code + mem(op, offset, align), run)
 
 
 def gen_group(ctx: Ctx, depth: int) -> Stmt:
@@ -693,7 +719,8 @@ def gen_group(ctx: Ctx, depth: int) -> Stmt:
                 if signed and v >> (8 * n - 1):
                     v -= 1 << (8 * n)
                 st.locals[j] = v & mask(t)
-            steps.append(Stmt(local_get(base) + mem(op, offset) + local_set(j), load))
+            steps.append(Stmt(local_get(base) + mem(op, offset, ctx.hint(a, offset, n)) + local_set(j),
+                              load))
         else:
             op = ctx.rng.choice([0x36, 0x37, 0x3E])
             t, n = STORES[op]
@@ -704,7 +731,7 @@ def gen_group(ctx: Ctx, depth: int) -> Stmt:
                 x = v.ev(st)
                 in_bounds(addr, n)
                 st.mem[addr:addr + n] = (x & ((1 << (8 * n)) - 1)).to_bytes(n, "little")
-            steps.append(Stmt(local_get(base) + v.code + mem(op, offset), store))
+            steps.append(Stmt(local_get(base) + v.code + mem(op, offset, ctx.hint(a, offset, n)), store))
     ctx.usable.insert(k, base)
 
     def run(st: State) -> None:
@@ -1440,11 +1467,12 @@ def checksum(fn: Func) -> Expr:
     return Expr(I32, code, ev)
 
 
-def build(seed: int, bounds: bool = True, tails: bool = True) -> Tuple[List[Func], bytes]:
+def build(seed: int, bounds: bool = True, tails: bool = True, trust: bool = False) -> Tuple[List[Func], bytes]:
     """The four functions, with random bodies, and the data segment. In 40%
     of the modules, the bodies have statements and divisions that may trap,
     and with bounds, among them accesses out of bounds. With tails, a
-    function may end in a tail call."""
+    function may end in a tail call. With trust, the accesses have
+    alignment hints (Ctx)."""
     rng = random.Random(seed)
     risky = rng.random() < 0.4
     fns = [Func(0, [], I32, [I32] * 7 + [I64] * 3 + [I32, I32]),
@@ -1452,7 +1480,7 @@ def build(seed: int, bounds: bool = True, tails: bool = True) -> Tuple[List[Func
            Func(2, [I64, I32], I64, [I64, I32] + [I32] * 2 + [I64] * 2 + [I32, I32]),
            Func(3, [I32, I32], I32, [I32, I32] + [I32] * 6 + [I64] + [I32, I32])]
     for idx, fn in enumerate(fns):
-        ctx = Ctx(rng, fn, idx, fns, risky, bounds)
+        ctx = Ctx(rng, fn, idx, fns, risky, bounds, trust)
         count = rng.randrange(8, 20) if idx == 0 else rng.randrange(3, 10)
         # Half of the other functions start with a br_if out of the
         # function, an early exit before the prologue (DESIGN.md).
@@ -1539,7 +1567,7 @@ def check(seed: int, tmp: str, opts: List[str], keep: Optional[str] = None) -> T
     """Runs one seed. Returns a description of the failure, or None, and
     the outcome the model expected. With keep, the program is copied to
     keep/fuzzSEED.bin, with the mode in the name."""
-    fns, segment = build(seed, "--no-bounds-checks" not in opts)
+    fns, segment = build(seed, "--no-bounds-checks" not in opts, trust="--trust-alignment" in opts)
     mod, expected = finish(fns, segment)
     try:
         got, output = pipeline(mod, tmp, opts, f"fuzz{seed}")
@@ -1557,7 +1585,7 @@ def check(seed: int, tmp: str, opts: List[str], keep: Optional[str] = None) -> T
 def reduce(seed: int, tmp: str, opts: List[str]) -> None:
     """Removes statements while the mismatch persists, and writes the
     reduced module and its translation to the current directory."""
-    fns, segment = build(seed, "--no-bounds-checks" not in opts)
+    fns, segment = build(seed, "--no-bounds-checks" not in opts, trust="--trust-alignment" in opts)
 
     def mismatch() -> bool:
         mod, expected = finish(fns, segment)
@@ -1595,7 +1623,7 @@ def reduce(seed: int, tmp: str, opts: List[str]) -> None:
 
 # The modes: fuzz.py's option -> nicewasm's options.
 MODES = {"--no-mpu": ["--no-mpu"], "--unchecked": ["--no-bounds-checks"],
-         "--grow": ["--memory-pages", "2"]}
+         "--grow": ["--memory-pages", "2"], "--trust": ["--trust-alignment", "--no-bounds-checks"]}
 
 
 def main() -> None:

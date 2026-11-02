@@ -145,6 +145,22 @@ def st_self(op: int, addr: int, k: int) -> bytes:
     return i32_const(addr) + local_tee(1) + local_get(1) + i32_const(k) + ADD + mem(op)
 
 
+def ld_al(op: int, addr: int, want: int, align: int, offset: int = 0) -> bytes:
+    """ld, with the alignment hint align, log2 of the bytes, and the
+    address computed as addr - 0, so that nicewasm knows neither it nor
+    its alignment."""
+    i64 = op in (I64_LOAD, I64_LOAD32_S, I64_LOAD32_U)
+    return (i32_const(addr) + i32_const(0) + SUB + mem(op, offset, align)
+            + (i64_const(want) + EQ64 if i64 else i32_const(want) + EQ))
+
+
+def st_al(op: int, addr: int, value: int, align: int, offset: int = 0) -> bytes:
+    """st, with the alignment hint align and the address as in ld_al."""
+    i64 = op in (I64_STORE, I64_STORE32)
+    return (i32_const(addr) + i32_const(0) + SUB + (i64_const(value) if i64 else i32_const(value))
+            + mem(op, offset, align))
+
+
 def op32(a: int, op: bytes, b: int, want: int) -> bytes:
     """A check that a op b gives want, all as unsigned i32 numbers."""
     def c(x: int) -> bytes:
@@ -336,7 +352,13 @@ SHAPES = {"bound": (r"SUB\[M\]", False),
                       r" +SUB\[M\] +R0, \2, 65536\n +\?!C +MOVE +R15, \S+\n"
                       r" +ROR +R\d+, @___wasm_memory\[\1\], \3$", True),
           # A byte store: the mask comes from a rotation, not a table.
-          "oobbytecarry": (r"^ +ROL +(R\d+), -256, R\d+\n +AND +R\d+, \1, @___wasm_memory", True)}
+          "oobbytecarry": (r"^ +ROL +(R\d+), -256, R\d+\n +AND +R\d+, \1, @___wasm_memory", True),
+          # With --trust-alignment, no access tests its alignment or calls
+          # a helper (trust_checks): the word index comes from a shift,
+          # with up to two instructions moved between it and the access.
+          "trust": (r"AND\[M\] +R0, R\d+, 3$|W\.(load|store)[48]", False),
+          "trust_misaligned": (r"^ +SHR +(R\d+), R\d+, 2\n(?:.*\n){0,2} +MOVE +R\d+, @___wasm_memory\[\1\]$",
+                               True)}
 
 # Options for nicewasm.
 OPTIONS = {"unchecked": ["--no-bounds-checks"],
@@ -369,7 +391,12 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "library_unchecked": ["--library", "lib", "--no-bounds-checks"],
            "growzero": ["--memory-pages", "1"],
            "growzerotrap": ["--memory-pages", "1"],
-           "growzerotrap8": ["--memory-pages", "1"]}
+           "growzerotrap8": ["--memory-pages", "1"],
+           "trust": ["--no-bounds-checks", "--trust-alignment"],
+           "trust_checked": ["--trust-alignment"],
+           "trust_misaligned": ["--no-bounds-checks", "--trust-alignment"],
+           "memory_dyn_trust": ["--no-bounds-checks", "--trust-alignment"],
+           "narrow_trust": ["--no-bounds-checks", "--trust-alignment"]}
 
 # What a case must print on the console (SYSTEM.md §1). Every other case
 # must print nothing.
@@ -483,6 +510,30 @@ def narrow_checks() -> List[bytes]:
         st_dyn(I32_STORE8, 22, 0x100) + ld_dyn(I32_LOAD, 20, 0x1500),
         st(I32_STORE8, 21, 0) + ld_dyn(I32_LOAD, 20, 0),
         ld_dyn(I32_LOAD8_U, 0, 0)]
+
+
+def trust_checks() -> List[bytes]:
+    """Accesses of 4 and 8 bytes with the alignment hints 4 and 8, at
+    multiples of 4 that nicewasm cannot see (ld_al). With
+    --trust-alignment, each takes the word path without the alignment
+    test. Each check is one bit, and the last one fails."""
+    return [
+        st_al(I32_STORE, 0, 0x11223344, 2) + st_al(I64_STORE, 8, 0x8877665544332211 - 2**64, 3)
+        + ld_al(I32_LOAD, 0, 0x11223344, 2),
+        ld_al(I64_LOAD, 8, 0x8877665544332211 - 2**64, 3),
+        ld_al(I64_LOAD, 8, 0x8877665544332211 - 2**64, 2),       # the hint 4 on an i64
+        ld_al(I32_LOAD, 12, 0x88776655 - 2**32, 2),
+        ld_al(I32_LOAD, 4, 0x44332211, 2, offset=4),
+        ld_al(I32_LOAD, 2, 0x44332211, 2, offset=6),             # an offset that is not a multiple of 4
+        ld_al(I64_LOAD32_U, 12, 0x88776655, 2),
+        ld_al(I64_LOAD32_S, 12, 0x88776655 - 2**32, 2),
+        st_al(I64_STORE32, 16, 0x1_000000AB, 2) + ld_al(I32_LOAD, 16, 0xAB, 2),
+        # A value that is not a constant, 0x55 - 0.
+        i32_const(20) + i32_const(0) + SUB + i32_const(0x55) + i32_const(0) + SUB + mem(I32_STORE, 0, 2)
+        + ld_al(I32_LOAD, 20, 0x55, 2),
+        # An i64 at 28, a multiple of 4 but not of 8.
+        st_al(I64_STORE, 28, 0x0102030405060708, 2) + ld_al(I32_LOAD, 32, 0x01020304, 2),
+        ld_al(I32_LOAD, 0, 0, 2)]
 
 
 def idx(i: int, sh: int, c: Optional[int], want: int, op: int = I32_LOAD,
@@ -3342,6 +3393,33 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
 # bulk and grow again without bounds checks, which give the same results.
 CASES += [(name + "_unchecked", wasm, extra, expected) for name, wasm, extra, expected in CASES
           if name in ("bulk", "grow")]
+# Accesses with the alignment hints 4 and 8 (trust_checks), which
+# --trust-alignment takes as promises, without and with bounds checks; a
+# misaligned access whose hint says 4, which then reaches the word that
+# holds its first byte; and memory_dyn and narrow, whose accesses have the
+# hint 0 and keep the test, again with the option.
+CASES += [
+    ("trust", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, bits(0, *trust_checks())))), "", 0xFFE),
+    ("trust_checked", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, bits(0, *trust_checks())))), "", 0xFFE),
+    ("trust_misaligned", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((0, st_al(I32_STORE, 4, 0x11223344, 2) + ld_al(I32_LOAD, 6, 0x11223344, 2)))), "", 1),
+]
+CASES += [(name + "_trust", wasm, extra, expected) for name, wasm, extra, expected in CASES
+          if name in ("memory_dyn", "narrow")]
 
 
 def run(cmd: List[str]) -> str:

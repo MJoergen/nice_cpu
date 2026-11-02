@@ -123,6 +123,18 @@ registers but its own. A helper takes the byte address in R1. It returns
 a loaded value in R1, or R1 and R2, and takes a value to store in R2, or
 R2 and R3. nicewasm emits each helper once, if a function uses it.
 
+With `--trust-alignment`, an access of 4 or 8 bytes whose alignment
+hint is 4 bytes or more skips the test and the stub: `SHR` gives the
+word index, and the `MOVE`s do the access. A misaligned access then
+reaches the word that holds its first byte. The hint is exact in the
+code of clang, Zig, and rustc, which give an access of unknown
+alignment, such as the words of an inlined `memcpy`, a smaller hint, so
+those keep the test. Without bounds checks, the test, its jump, and the
+stub are most of the code of a word access. With them, the compare of
+the next paragraph covers the alignment of an access whose offset is a
+multiple of 4 already, so the option changes only the accesses with
+other offsets.
+
 With bounds checks, an access of 4 or 8 bytes whose offset is a
 multiple of 4 takes a shorter path. `ROR t, base, 2` gives base / 4 if
 base is a multiple of 4, and 2^30 or more if it is not, which is past

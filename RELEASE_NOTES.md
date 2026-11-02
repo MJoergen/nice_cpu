@@ -34,7 +34,8 @@ The assembler has `CALL` and `RET` (#93). Debug link version 6 lets a
 host write R1–R15 while the processor is paused (#102), and over TCP
 holds a host back instead of losing its console bytes (#110). Rust and Zig
 programs have a heap (#69, #105) and read console input a line at a time
-(#106). The translator handles tail calls (#103).
+(#106). The translator handles tail calls (#103) and can trust the
+alignment hints (#113).
 
 **Upgrade notes.**
 
@@ -127,6 +128,12 @@ programs have a heap (#69, #105) and read console input a line at a time
   so `[[clang::musttail]]` and `@call(.always_tail, ...)` compile. The
   compilers then also emit `return_call` for a call just before a
   return (#103).
+- `--trust-alignment`, for `nicewasm` and `nicebuild.py`: an access of 4
+  or 8 bytes whose alignment hint is 4 bytes or more is taken to be at a
+  multiple of 4, without the test of DESIGN.md. A misaligned access then
+  reads or writes the word that holds its first byte. With
+  `--no-bounds-checks`, the benchmark takes 13% fewer steps and 10% fewer
+  cycles in 28% fewer words, and Dhrystone 11%, 8%, and 34% (#113).
 
 **FPGA cores (`hdl/`)**
 

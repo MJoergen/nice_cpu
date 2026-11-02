@@ -88,13 +88,15 @@ What you get:
 
 ### nicewasm
 
-    ./nicewasm.py [-o output.nasm] [--no-bounds-checks] [--memory-pages N]
-                  [--library NAME [--library-memory BYTES]] [--no-mpu] input.wasm
+    ./nicewasm.py [-o output.nasm] [--no-bounds-checks] [--trust-alignment]
+                  [--memory-pages N] [--library NAME [--library-memory BYTES]]
+                  [--no-mpu] input.wasm
 
 | Option | Effect |
 |---|---|
 | `-o FILE` | Write the assembly to FILE. Without it, the output goes to `input.nasm`. |
 | `--no-bounds-checks` | Leave out the bounds checks on memory accesses, as WASM.md allows. The code is then smaller and faster, but an access out of bounds reads or writes whatever NICE memory the address reaches. |
+| `--trust-alignment` | Take an access of 4 or 8 bytes whose alignment hint is 4 bytes or more to be at a multiple of 4, without the test of DESIGN.md, as WASM.md allows. The code is then smaller and faster, mostly without bounds checks, but a misaligned access reads or writes the word that holds its first byte. The hint is exact in the code of clang, Zig, and rustc. |
 | `--memory-pages N` | Let `memory.grow` grow the memory up to N pages, the cap of WASM.md. N may not be below the memory's initial size or above its maximum, if it declares one, and it must be below 65536. Without the option, the cap is the initial size. |
 | `--library NAME` | Translate a library module instead (see [Library modules](#library-modules)). |
 | `--library-memory BYTES` | With `--library`, the size of the library's memory (see Library modules). |
@@ -118,8 +120,9 @@ of the inputs picks the language: `.c`, `.zig`, or `.rs`.
 
     ./nicebuild.py [-o output.bin] [-O LEVEL] [-I DIR] [-D MACRO[=VALUE]]
                    [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-bounds-checks]
-                   [--memory-pages N] [--asm FILE]... [--no-trap-report] [--monitor]
-                   [--symbols] [--keep] input.c... | input.zig | input.rs
+                   [--trust-alignment] [--memory-pages N] [--asm FILE]...
+                   [--no-trap-report] [--monitor] [--symbols] [--keep]
+                   input.c... | input.zig | input.rs
 
 | Option | Effect |
 |---|---|
@@ -128,7 +131,7 @@ of the inputs picks the language: `.c`, `.zig`, or `.rs`.
 | `-I DIR`, `-D MACRO[=VALUE]` | For C: an include directory, and a macro. |
 | `--stack BYTES` | The stack size, 4096 by default, or 16384 for Zig in Debug or ReleaseSafe. It must be positive. |
 | `--memory BYTES` | The initial memory, 65536 by default. It must be positive. The stack is in the memory, so a larger `--stack` needs a larger `--memory` too: `--stack 131072` alone fails with wasm-ld's "initial memory too small", and `--memory 262144` fixes it. |
-| `--no-mpu`, `--no-bounds-checks`, `--memory-pages N` | Passed on to `nicewasm.py` (above). With `--no-mpu`, the program is joined with `muldiv_soft.nasm`. |
+| `--no-mpu`, `--no-bounds-checks`, `--trust-alignment`, `--memory-pages N` | Passed on to `nicewasm.py` (above). With `--no-mpu`, the program is joined with `muldiv_soft.nasm`. |
 | `--asm FILE` | Join a NICE assembly file after the program, so that the program can call a function that the file defines, as the label `_name` of ABI.md; for C it also lets the link leave the function undefined. The option can repeat. |
 | `--no-trap-report` | Leave out the trap report, so that a trap halts silently (see below). |
 | `--monitor` | Build a program for a monitor in ROM, which loads it at `0x8000` and calls it, and to which it returns (ABI.md, "Programs under a monitor"): the start-up code is `runtime/start_wasm_trap_mon.nasm`, or `start_wasm_mon.nasm` with `--no-trap-report`, and the `.bin` file starts at `0x8000`. The monitor's own routines, if the program calls them, come as stubs in a file of the monitor's, joined with `--asm`. |
@@ -502,9 +505,12 @@ register allocation of DESIGN.md. In 40% of the modules, statements may trap:
 `memory.fill`, and `memory.copy` past the end of the memory. About a
 fifth of the modules trap. The modes of nicewasm are `--no-mpu`,
 `--unchecked` for `--no-bounds-checks`, whose modules make no access out
-of bounds, and `--grow` for `--memory-pages 2`. `make test` runs 40
-seeds with the math unit, 40 with `--no-mpu`, and 20 each with
-`--unchecked` and `--grow`, and says how many of them trap;
+of bounds, `--grow` for `--memory-pages 2`, and `--trust` for
+`--trust-alignment` with `--no-bounds-checks`, whose modules give the
+alignment hint 4 to each access of 4 or 8 bytes at an address known to
+be a multiple of 4. `make test` runs 40 seeds with the math unit, 40
+with `--no-mpu`, and 20 each with `--unchecked`, `--grow`, and
+`--trust`, and says how many of them trap;
 `test/fuzz.py 1 1000` runs more, and `test/fuzz.py --reduce SEED 1`
 shrinks a failing module and writes it with its translation. With `--keep DIR`, `fuzz.py` copies each program to
 `DIR/fuzzSEED.bin`, with the mode added to the name, for `make programs` in `hdl/`.

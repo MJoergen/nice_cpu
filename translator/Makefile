@@ -28,6 +28,7 @@ test: emulator
 	@$(PYTHON) test/fuzz.py --no-mpu 1 40
 	@$(PYTHON) test/fuzz.py --unchecked 1 20
 	@$(PYTHON) test/fuzz.py --grow 1 20
+	@$(PYTHON) test/fuzz.py --trust 1 20
 	@$(PYTHON) test/passes.py
 	@$(PYTHON) test/errors.py
 	@$(PYTHON) test/build.py

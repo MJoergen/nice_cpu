@@ -5,7 +5,8 @@ Implements the WebAssembly mapping of translator/WASM.md. The output is
 one assembly file, to be joined with the start-up code, the program's other
 files, and the runtime library as runtime/ABI.md describes.
 
-Usage: nicewasm.py [-o output.nasm] [--no-bounds-checks] [--memory-pages N]
+Usage: nicewasm.py [-o output.nasm] [--no-bounds-checks] [--trust-alignment]
+                   [--memory-pages N]
                    [--library NAME [--library-memory BYTES]] [--no-mpu] input.wasm
 
 README.md lists the wasm features it supports. Anything else is rejected
@@ -2710,10 +2711,13 @@ def tail_calls(items: List[Item]) -> List[Item]:
 class Translator:
     def __init__(self, m: Module, data: bytes, checks: bool = True,
                  library: Optional[str] = None, library_memory: Optional[int] = None,
-                 memory_pages: Optional[int] = None, mpu: bool = True) -> None:
+                 memory_pages: Optional[int] = None, mpu: bool = True,
+                 trust_alignment: bool = False) -> None:
         self.m = m
         self.data = data
         self.checks = checks  # bounds checks on memory accesses
+        # Trust the alignment hint of an access of 4 or 8 bytes (fast_path)
+        self.trust_alignment = trust_alignment
         self.mpu = mpu  # use the math unit of SYSTEM §2 for i32 mul, and div and rem
         self.library = library  # the name of a library module (WASM.md), or None
         self.prefix = f"WL.{library}." if library else "W."  # of the labels made here
@@ -3642,13 +3646,26 @@ class FunctionTranslator:
         return [tuple(o.replace("%0", word(0)).replace("%1", word(1)) for o in ins)
                 for ins in aligned]
 
+    def trusted(self, align: int) -> bool:
+        """Whether an access with the alignment hint align (log2 of the
+        bytes) is taken to be at a multiple of 4, with --trust-alignment."""
+        return self.t.trust_alignment and align >= 2
+
     def fast_path(self, helper: str, a: str, args: List[str], results: List[str],
-                  aligned: List[Tuple[str, ...]]) -> None:
+                  aligned: List[Tuple[str, ...]], trusted: bool = False) -> None:
         """The access of 4 or 8 bytes at the byte address a. If a is at a
         multiple of 4, the aligned instructions do it, with %0 and %1 in
         their operands for its words. Else a stub after the epilogue calls
         the helper with a in R1 and args from R2 up, moves its results from
-        R1 up, and jumps back."""
+        R1 up, and jumps back. If trusted, a is taken to be at a multiple
+        of 4, with no test and no stub: a misaligned access then reaches
+        the word that holds its first byte, which wasm does not allow."""
+        if trusted:
+            w = self.new_vreg()
+            self.emit("SHR", w, a, "2")                   # word index
+            for mnemonic, *ops in self.expand(aligned, lambda k: self.mem_word(k, w)):
+                self.emit(mnemonic, *ops)
+            return
         stub, back = self.new_label(), self.new_label()
         self.emit("AND[M]", "R0", a, "3")
         self.emit("?!Z MOVE", "R15", stub)
@@ -4192,7 +4209,8 @@ class FunctionTranslator:
             raise WasmError(f"function {self.idx}: {what}: the alignment is larger than"
                             " natural", at)
 
-    def load(self, t: int, n: int, signed: bool, offset: int, at: int, what: str) -> None:
+    def load(self, t: int, n: int, signed: bool, offset: int, at: int, what: str,
+             align: int = 0) -> None:
         """Loads n bytes into a value of type t. An access of 4 or 8 bytes
         at a multiple of 4 reads whole words inline. Others call a helper
         (load_helper), which leaves the value in R1, and R2 for n = 8."""
@@ -4235,7 +4253,7 @@ class FunctionTranslator:
             if addr is not None:
                 a = str(addr)
             if addr is None and n >= 4:
-                self.fast_path(helper, a, [], res, aligned)
+                self.fast_path(helper, a, [], res, aligned, self.trusted(align))
             else:
                 self.call_helper(helper, [a], len(res))
                 self.move(res, [f"R{k + 1}" for k in range(len(res))])
@@ -4255,7 +4273,7 @@ class FunctionTranslator:
         if signed:
             self.emit("?N MOVE", dest[1], "-1")
 
-    def store(self, t: int, n: int, offset: int, at: int, what: str) -> None:
+    def store(self, t: int, n: int, offset: int, at: int, what: str, align: int = 0) -> None:
         """Stores the low n bytes of a value of type t. An access of 4 or 8
         bytes at a multiple of 4 writes whole words inline. Others call a
         helper (store_helper) with the value in R2, and R3 for n = 8."""
@@ -4278,7 +4296,7 @@ class FunctionTranslator:
                 self.emit("MOVE", f"{mem}+{addr // 4 + k}", value[k])
             return
         if addr is None and n >= 4:
-            self.fast_path(f"W.store{n}", a, value[:words_n], [], aligned)
+            self.fast_path(f"W.store{n}", a, value[:words_n], [], aligned, self.trusted(align))
             return
         if addr is not None:
             a = str(addr)
@@ -4672,12 +4690,12 @@ class FunctionTranslator:
                 assert imm is not None
                 t, n, signed = LOADS[op]
                 self.memarg(n, align, at, name)
-                self.load(t, n, signed, imm, at, name)
+                self.load(t, n, signed, imm, at, name, align)
             elif op in STORES:
                 assert imm is not None
                 t, n = STORES[op]
                 self.memarg(n, align, at, name)
-                self.store(t, n, imm, at, name)
+                self.store(t, n, imm, at, name, align)
             elif op == 0x3F:  # memory.size
                 assert self.t.m.memory_pages is not None
                 size = "@W.pages" if self.t.growable else str(self.t.m.memory_pages)
@@ -5128,9 +5146,10 @@ class FunctionTranslator:
 
 def translate(data: bytes, source: str, checks: bool = True, library: Optional[str] = None,
               library_memory: Optional[int] = None,
-              memory_pages: Optional[int] = None, mpu: bool = True) -> List[str]:
+              memory_pages: Optional[int] = None, mpu: bool = True,
+              trust_alignment: bool = False) -> List[str]:
     return Translator(parse(data), data, checks, library, library_memory,
-                      memory_pages, mpu).run(source)
+                      memory_pages, mpu, trust_alignment).run(source)
 
 
 def main() -> None:
@@ -5140,6 +5159,10 @@ def main() -> None:
                     help="output file (default: input with .nasm extension)")
     ap.add_argument("--no-bounds-checks", action="store_true",
                     help="do not check that memory accesses are in bounds")
+    ap.add_argument("--trust-alignment", action="store_true",
+                    help="take an access of 4 or 8 bytes whose alignment hint is 4 or more to be"
+                         " at a multiple of 4, without a test; a misaligned one then gives a"
+                         " wrong result (not wasm-conforming)")
     ap.add_argument("--memory-pages", metavar="N", type=int,
                     help="pages up to which memory.grow may grow the memory"
                          " (default: its initial size)")
@@ -5173,7 +5196,7 @@ def main() -> None:
             sys.exit("--memory-pages: a library module (--library) cannot grow its memory")
         lines = translate(data, os.path.basename(args.input), not args.no_bounds_checks,
                           args.library, args.library_memory, args.memory_pages,
-                          not args.no_mpu)
+                          not args.no_mpu, args.trust_alignment)
     except WasmError as e:
         where = "" if e.offset is None else f":0x{e.offset:x}"
         print(f"{args.input}{where}: error: {e}", file=sys.stderr)

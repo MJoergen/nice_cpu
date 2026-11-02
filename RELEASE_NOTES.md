@@ -82,6 +82,10 @@ alignment hints (#113).
   room before it is lost with `o`, and after that `o` the bytes are lost
   at once until the buffer has room. A packet with no console byte ahead
   of it is never held. SYSTEM.md §5 says so for a board's FIFO (#110).
+- SYSTEM.md §5 describes the aliasing of a RAM of 2^N words, with 64K
+  and 128K words as the examples, and says how a program learns the
+  size. ABI.md says what "up to the SP" means under a monitor on such
+  a system (#111).
 
 **Assembler (`niceasm`)**
 

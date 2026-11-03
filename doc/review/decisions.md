@@ -123,3 +123,14 @@ proposed again. The open items are the
   `ADD PC, PC, offset`, is two words, the same as `JMP label`, so it
   saves nothing. The assembler has `JMP`, `CMP`, `TST`, `PUSH`, `POP`,
   `CLR`, and `NOP` instead (ISA.md §10.1).
+- **Dropping the `AND` of a word index without bounds checks** (#119).
+  The `AND u, t, 0x3FFFFFFF` after t = i + c / 4 keeps an access right
+  when the `i32.add` of `(i << s) + c` wraps modulo 2^32 and still gives
+  an address in the memory, as with a negative c, or an i with high bits
+  that the shift drops. Without it, bench.c would run about 6% fewer
+  steps without checks, but WASM.md would have to let the translator
+  assume that the arithmetic of an address does not wrap, which code with
+  defined behavior in C, Rust, or Zig meets and wasm in general does not.
+  The unchecked code stays exact for every access in the memory. What
+  #119 took instead is the fold of an offset into the word operand
+  (translator/DESIGN.md).

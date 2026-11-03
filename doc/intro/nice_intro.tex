@@ -401,15 +401,17 @@
      \item The shifts that shift in \code{C} read it, with or without
       \code{[M]}.
      \item \code{MOVE[M] R0, R5} is a handy test: \code{Z}, \code{N},
-      and \code{X} then describe \code{R5}.
+      and \code{X} then describe \code{R5}. The assembler accepts
+      \code{TST R5} for it.
     \end{itemize}
    \end{frame}
 %
    \begin{frame}
     \frametitle{Comparisons}
-    There is no \code{CMP}, but \code{SUB[M]} into \code{R0} does the
-    same job. \code{SUB[M] R0, a, b} computes $a - b$, throws the result
-    away, and sets the flags:
+    There is no compare instruction, but \code{SUB[M]} into \code{R0} does
+    the same job. \code{SUB[M] R0, a, b} computes $a - b$, throws the
+    result away, and sets the flags. The assembler accepts \code{CMP a, b}
+    for it:
     \begin{center}
      \begin{tabular}{|l|c|c|l|}
       \hline
@@ -559,6 +561,8 @@
         \code{ADD PC, PC, 10}&Jump forward by 10 words\\
        \end{tabular}
       \end{center}
+     \item The assembler accepts \code{JMP LOOP} for \code{MOVE PC, LOOP},
+      and \code{?!Z JMP LOOP} too.
      \item When an instruction reads \code{R15}, it gets the address of the
       \textbf{next} instruction, after all constant words.
      \item So \code{ADD PC, PC, 10} jumps to 10 words after the end of the
@@ -591,7 +595,8 @@
       these sequences, and picks the constant: \code{CALL R1} pushes with
       \code{ADD @--SP, 1, PC}, since \code{MOVE PC, R1} is one word.
      \item The stack grows down, and \code{SP} points at the last word
-      pushed.
+      pushed. \code{PUSH x} and \code{POP x} stand for
+      \code{MOVE @--SP, x} and \code{MOVE x, @SP++}.
      \item By convention, arguments are passed in \code{R1}\dots\code{R4},
       and the result comes back in \code{R1}. \code{R7}\dots\code{R13} must
       be the same after the call as before.
@@ -657,13 +662,12 @@
    of each instruction:
    {\scriptsize
    \begin{verbatim}
-                            PC              .EQU    R15
                                             .ORG    0
 00000000 00005800 00000000                  MOVE    R1, 0
 00000002 00009800 00001000                  MOVE    R2, 0x1000
 00000004 00604082           LOOP            ADD     R1, R1, R2
 00000005 02a08100                           DEC[M]  R2, R2
-00000006 b003d800 00000004          ?!Z     MOVE    PC, LOOP
+00000006 b003d800 00000004          ?!Z     JMP     LOOP
 00000008 0c000000                           HALT
    \end{verbatim}
    }
@@ -671,7 +675,7 @@
     \item \code{R1} collects the sum, and \code{R2} counts down from
      \code{0x1000}.
     \item \code{DEC[M]} sets \code{Z} when \code{R2} reaches 0. Until
-     then, \code{?!Z MOVE PC, LOOP} jumps back.
+     then, \code{?!Z JMP LOOP} jumps back.
     \item At the end, \code{R1} = \code{0x800800} = 4096 $\cdot$ 4097 / 2.
    \end{itemize}
   \end{frame}
@@ -680,13 +684,12 @@
    \frametitle{Code example: copy a block of memory}
    {\scriptsize
    \begin{verbatim}
-PC              .EQU    R15
                 MOVE    R1, SRC         ; source pointer
                 MOVE    R2, DST         ; destination pointer
                 MOVE    R3, 5           ; word count
 LOOP            MOVE    @R2++, @R1++    ; copy a word, advance both pointers
                 DEC[M]  R3, R3
-        ?!Z     MOVE    PC, LOOP
+        ?!Z     JMP     LOOP
                 HALT
 
 SRC             .DAT    1, 2, 3, 4, 5
@@ -721,7 +724,7 @@ CONSOLE         .EQU    0xFFFFFF00
 PUTS            MOVE[M] R2, @R1++       ; next character, and set Z if it is 0
         ?Z      MOVE    PC, @SP++       ; at the end: return
                 MOVE    @CONSOLE, R2    ; print the character
-                MOVE    PC, PUTS        ; and loop
+                JMP     PUTS            ; and loop
 
 TEXT            .ASCII_L 'Hello, NICE!'
    \end{verbatim}
@@ -780,7 +783,6 @@ TEXT            .ASCII_L 'Hello, NICE!'
    \begin{verbatim}
 SP              .EQU    R13
 SR              .EQU    R14
-PC              .EQU    R15
 CONSOLE         .EQU    0xFFFFFF00
 
                 .ORG    0
@@ -789,7 +791,7 @@ CONSOLE         .EQU    0xFFFFFF00
                 OR      SR, SR, 0x40000000  ; E = 1: accept IRQs
                 MOVE    R1, 20
 WAIT            DEC[M]  R1, R1          ; count down from 20 ...
-        ?!Z     MOVE    PC, WAIT        ; ... while the IRQs come in
+        ?!Z     JMP     WAIT            ; ... while the IRQs come in
                 MOVE    @CONSOLE, 10    ; a newline
                 HALT
 
@@ -916,7 +918,8 @@ $ emulator/zig-out/bin/niceemu --window keys.bin
      next instruction.
     \item A comparison is \code{SUB[M] R0, a, b}, a jump is a write to
      \code{PC}, and a call is \code{ADD @--SP, 2, PC} followed by
-     \code{MOVE PC, label}.
+     \code{MOVE PC, label}. The assembler writes them for \code{CMP},
+     \code{JMP}, and \code{CALL}.
     \item Every instruction can be conditional, so short \code{if}s need
      no jumps:
      \begin{center}

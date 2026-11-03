@@ -14,6 +14,6 @@ CONSOLE         .EQU    0xFFFFFF00
 PUTS            MOVE[M] R2, @R1++       ; next character, and set Z if it is 0
         ?Z      MOVE    PC, @SP++       ; at the end: return
                 MOVE    @CONSOLE, R2    ; print the character
-                MOVE    PC, PUTS        ; and loop
+                JMP     PUTS            ; and loop
 
 TEXT            .ASCII_L 'Hello, NICE!'

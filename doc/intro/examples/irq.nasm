@@ -2,7 +2,6 @@
 ;     niceemu --irq 5:5 --irq 12:5 irq.bin
 SP              .EQU    R13
 SR              .EQU    R14
-PC              .EQU    R15
 CONSOLE         .EQU    0xFFFFFF00
 
                 .ORG    0
@@ -11,7 +10,7 @@ CONSOLE         .EQU    0xFFFFFF00
                 OR      SR, SR, 0x40000000  ; E = 1: accept IRQs
                 MOVE    R1, 20
 WAIT            DEC[M]  R1, R1          ; count down from 20 ...
-        ?!Z     MOVE    PC, WAIT        ; ... while the IRQs come in
+        ?!Z     JMP     WAIT            ; ... while the IRQs come in
                 MOVE    @CONSOLE, 10    ; a newline
                 HALT
 

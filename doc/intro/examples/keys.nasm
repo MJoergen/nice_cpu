@@ -4,7 +4,6 @@
 ; a cell never written, black on black, it would not show. Build niceemu
 ; with make window, and run it with
 ;     niceemu --window keys.bin
-PC              .EQU    R15
 CONSOLE         .EQU    0xFFFFFF00
 SCREEN          .EQU    0xFFFF0000      ; row 0, column 0
 LINE            .EQU    0xFFFF00A0      ; row 2, column 0: SCREEN + 2*80
@@ -19,9 +18,9 @@ SPACE           .EQU    TEXT_COLOR+0x20  ; a space, white on black
                 MOVE    R1, TITLE
                 MOVE    R3, SCREEN
 NEXT            MOVE[M] R2, @R1++       ; next character, and set Z if it is 0
-        ?Z      MOVE    PC, START
+        ?Z      JMP     START
                 ADD     @R3++, R2, TITLE_COLOR  ; add the colors, and write
-                MOVE    PC, NEXT
+                JMP     NEXT
 
 START           MOVE    R3, LINE        ; R3: the address of the next key
                 MOVE    R4, 0           ; R4: its column
@@ -30,28 +29,28 @@ START           MOVE    R3, LINE        ; R3: the address of the next key
 CURSOR          MOVE    @CUR_COL, R4    ; move the cursor to the next key,
                 MOVE    @R3, SPACE      ; with a space under it, so it shows
 KEY             MOVE[M] R2, @CONSOLE    ; read: 0 if no byte waits, else the
-        ?Z      MOVE    PC, KEY         ; byte with bit 8 set; none: again
-                SUB[M]  R0, R2, 0x200   ; the end of the input, without --window
-        ?Z      MOVE    PC, DONE
+        ?Z      JMP     KEY             ; byte with bit 8 set; none: again
+                CMP     R2, 0x200       ; the end of the input, without --window
+        ?Z      JMP     DONE
                 AND     R2, R2, 0xFF    ; the byte alone
-                SUB[M]  R0, R2, 13      ; Enter gives CR
-        ?Z      MOVE    PC, DONE
-                SUB[M]  R0, R2, 0x7F    ; Backspace gives DEL
-        ?Z      MOVE    PC, BACK
-                SUB[M]  R0, R2, 0x20    ; ignore the other control characters
-        ?C      MOVE    PC, KEY
-                SUB[M]  R0, R4, 79      ; the line is full at 79 characters,
-        ?Z      MOVE    PC, KEY         ; so the cursor stays on the screen
+                CMP     R2, 13          ; Enter gives CR
+        ?Z      JMP     DONE
+                CMP     R2, 0x7F        ; Backspace gives DEL
+        ?Z      JMP     BACK
+                CMP     R2, 0x20        ; ignore the other control characters
+        ?C      JMP     KEY
+                CMP     R4, 79          ; the line is full at 79 characters,
+        ?Z      JMP     KEY             ; so the cursor stays on the screen
                 ADD     @R3++, R2, TEXT_COLOR
                 ADD     R4, R4, 1
-                MOVE    PC, CURSOR
+                JMP     CURSOR
 
-BACK            MOVE[M] R0, R4          ; at column 0,
-        ?Z      MOVE    PC, KEY         ; there is nothing to delete
+BACK            TST     R4              ; at column 0,
+        ?Z      JMP     KEY             ; there is nothing to delete
                 MOVE    @R3, 0          ; clear the space under the cursor
                 MOVE    @--R3, 0        ; and the last character
                 DEC     R4, R4
-                MOVE    PC, CURSOR
+                JMP     CURSOR
 
 DONE            MOVE    @CUR_STATE, 0   ; hide the cursor
                 HALT

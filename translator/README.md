@@ -488,7 +488,10 @@ in order.
 whose nodes also evaluate themselves in Python, so each module comes
 with the result that wasm defines for it, and `main`'s result in R1 must
 match, or if the module traps, the program must halt at `___wasm_trap`
-with the trap code in R1. The modules have four functions with `i32` and
+with the trap code in R1. The linear memory at the halt must match the
+model's too, word for word. It starts with a pattern in which no two
+words are alike, so an access at the wrong word gets a value of its own.
+The modules have four functions with `i32` and
 `i64` parameters, 8 to 13 locals, loops, blocks, and ifs whose block
 types may have parameters and several results, branches that carry no
 value, one, or several, `br_table` among them, `return`, `nop`, both
@@ -496,7 +499,9 @@ forms of `select`, calls through the table, tail calls, every integer
 operation and comparison, the results of comparisons kept in locals for
 later conditions, mutable and immutable globals, loads and stores of
 every width at constant and dynamic addresses, the addresses of array
-elements as `(i << s) + c`, groups of word accesses at offsets from one
+elements as `(i << s) + c`, among them, at the start of `main`, loads
+and stores whose index has high bits that the shift drops, so that the
+address wraps modulo 2^32, groups of word accesses at offsets from one
 address, and `memory.fill` and `memory.copy`. That covers the rules for
 deferred values, fused comparisons, the flags, forwarded results, and
 register allocation of DESIGN.md. In 40% of the modules, statements may trap:

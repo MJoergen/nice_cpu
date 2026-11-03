@@ -226,7 +226,7 @@ def trap_module(seed: int, grow: bool) -> bytes:
                 ctx.labels.pop()
                 st = fuzz.Stmt(cond.code + if_() + st.code + END, st.run)
             fn.stmts.insert(rng.randrange(0, len(fn.stmts) + 1), st)
-    mod, _ = fuzz.finish(fns, segment)
+    mod, _, _ = fuzz.finish(fns, segment)
     return mod
 
 
@@ -387,7 +387,7 @@ def main() -> None:
                 mod, expected = trap_module(seed, grow), None
             else:
                 fns, segment = fuzz.build(seed, "--unchecked" not in args, tails=False)
-                mod, expected = fuzz.finish(fns, segment)
+                mod, expected, _ = fuzz.finish(fns, segment)
             problem, run = compare(seed, mod, tool, tmp, nompu, opts, pages, expected)
             if problem is not None:
                 failures += 1

@@ -10,7 +10,11 @@ semantics of the WebAssembly specification, so the model and the module
 always describe the same program. The module is translated, joined with
 the runtime as run.py does, assembled, and run, and main's result in R1
 must equal the model's, or if the model traps, the program must halt at
-___wasm_trap with the model's trap code in R1. Seeds FIRST to FIRST +
+___wasm_trap with the model's trap code in R1. Either way, the linear
+memory at the halt must equal the model's, word for word. It starts with
+a data segment of the whole page: random bytes at DATA, and around them
+a pattern in which no word is 0 and no two are alike, so that an access
+at the wrong word gets a value of its own. Seeds FIRST to FIRST +
 COUNT - 1 are tried; the same seed always gives the same module.
 
 A module has four functions: main, f(i32, i64, i32, i32) -> i32, whose
@@ -32,7 +36,8 @@ multiplications by constants, divisions with nonzero divisors, some of
 them constants, loads and stores of every width at
 constant and at dynamic addresses, among them the addresses of array
 elements, (i << s) + c, with an index i whose high bits the shift drops
-and constants that may be negative, or with a masked index i = x & m,
+and constants that may be negative, among them main's first statements,
+which always run, or with a masked index i = x & m,
 some near the end of the memory, and local.set and local.tee of locals
 whose old value is still on the operand stack. Blocks, ifs, and loops
 also have block types that name a function type, with parameters and
@@ -107,7 +112,7 @@ NICEASM = os.path.join(REPO, "assembler", "niceasm.py")
 NICEEMU = os.path.join(REPO, "emulator", "zig-out", "bin", "niceemu")
 
 M32, M64 = 0xFFFFFFFF, 0xFFFFFFFFFFFFFFFF
-I32_LOAD = 0x28
+I32_LOAD, I64_LOAD = 0x28, 0x29
 
 
 def s32(x: int) -> int:
@@ -208,6 +213,21 @@ STORES: Dict[int, Tuple[int, int]] = {
 
 # Addresses: the memory is one page, and the data segment is at DATA.
 ADDR_MASK, DATA, DATA_SIZE, PAGE = 0x7FF8, 0x100, 256, 0x10000
+WRAPPED = 0xF000  # where gen_wrapped stores what it loads
+
+
+def initial_memory(segment: bytes) -> bytearray:
+    """The memory at the start: the random segment at DATA, and around it
+    a word pattern with no 0 word and no two words alike, so that an
+    access at the wrong word reads a value of its own (#120). The pattern
+    takes nothing from the seed's random numbers, so it changes no
+    module."""
+    out = bytearray(PAGE)
+    for n in range(PAGE // 4):
+        out[4 * n:4 * n + 4] = ((n * 0x9E3779B1 + 0x7F4A7C15) & M32 | 1).to_bytes(4, "little")
+    out[DATA:DATA + DATA_SIZE] = segment
+    return out
+
 
 # The globals: (type, mutable, initial value). The last one is immutable.
 GLOBALS: List[Tuple[int, bool, int]] = [(I32, True, 0x12345678), (I32, True, 0xFFFFFFFB),
@@ -560,19 +580,20 @@ def gen_address(ctx: Ctx, depth: int, room: int = 21) -> Expr:
     return e
 
 
-def gen_element(ctx: Ctx, depth: int, room: int) -> Expr:
+def gen_element(ctx: Ctx, depth: int, room: int, wrap: bool = False) -> Expr:
     """The address of an array element, (i << s) + c, as clang computes
     it, sometimes with a second constant added. The index i is in 0x400
     to 0x7FF, and often has high bits set that the shift drops, so that
     the address wraps modulo 2^32 to one in bounds. The constants are
     mostly multiples of 4, and may be negative. Sometimes c / 4 is near
-    the end of the memory instead (gen_end)."""
+    the end of the memory instead (gen_end). With wrap, the index always
+    has high bits, and the address is a multiple of 4."""
     s = ctx.rng.choice([2, 2, 3])
-    if ctx.rng.random() < 0.3:
+    if not wrap and ctx.rng.random() < 0.3:
         return gen_end(ctx, depth, room, s)
     e = binop("and", I32, gen_expr(ctx, I32, depth), konst(I32, 0x3FF))
     e = binop("or", I32, e, konst(I32, 0x400))
-    if ctx.rng.random() < 0.5:
+    if wrap or ctx.rng.random() < 0.5:
         hi = ctx.rng.choice([0x40000000, 0x80000000, 0xC0000000]) >> (s - 2)
         e = binop("or", I32, e, konst(I32, hi))
     a = binop("shl", I32, e, konst(I32, s))
@@ -581,7 +602,7 @@ def gen_element(ctx: Ctx, depth: int, room: int) -> Expr:
     cs = [ctx.rng.randrange(-0xC00, 0x2000) // 4 * 4]
     if ctx.rng.random() < 0.3:
         cs.append(ctx.rng.randrange(-0x400, 0x400) // 4 * 4)
-    if ctx.rng.random() < 0.1:
+    if not wrap and ctx.rng.random() < 0.1:
         cs[-1] += ctx.rng.randrange(1, 4)
     for c in cs:
         a = binop("add", I32, a, konst(I32, c))
@@ -613,6 +634,27 @@ def gen_end(ctx: Ctx, depth: int, room: int, s: int) -> Expr:
         i = binop("or", I32, binop("and", I32, x, konst(I32, 7)), konst(I32, 0xFFFFFFF0))
         c = 0x10000 + 4 * ctx.rng.randrange(-1, 2)
     return binop("add", I32, binop("shl", I32, i, konst(I32, s)), konst(I32, c), aligned=True)
+
+
+def gen_wrapped(ctx: Ctx) -> List[Stmt]:
+    """main's first statements, which always run: an i32 and an i64 load,
+    each stored at a fixed address that the memory check at the end
+    covers (check), and an i32 and an i64 store. Each access is at the
+    address of an array element whose index has high bits that the shift
+    drops, so that the address wraps modulo 2^32 to one in the memory,
+    and is a word access whose word index i + c / 4 is 2^30 or more,
+    which nicewasm must take modulo 2^30 (#120)."""
+    out: List[Stmt] = []
+    for k, (load_op, store_op) in enumerate([(I32_LOAD, 0x36), (I64_LOAD, 0x37)]):
+        t, n = STORES[store_op]
+        offset = ctx.rng.choice([0, 4, 8])
+        a = gen_element(ctx, 1, offset + n, wrap=True)
+        v = load(load_op, offset, a, ctx.hint(a, offset, n))
+        out.append(store(store_op, 0, konst(I32, WRAPPED + 8 * k), v))
+        offset = ctx.rng.choice([0, 4, 8])
+        a = gen_element(ctx, 1, offset + n, wrap=True)
+        out.append(store(store_op, offset, a, gen_expr(ctx, t, 1), ctx.hint(a, offset, n)))
+    return out
 
 
 def gen_masked(ctx: Ctx, depth: int, room: int) -> Expr:
@@ -1485,6 +1527,8 @@ def build(seed: int, bounds: bool = True, tails: bool = True, trust: bool = Fals
         # Half of the other functions start with a br_if out of the
         # function, an early exit before the prologue (DESIGN.md).
         fn.stmts = [gen_br(ctx, 0, out=True)] if idx and rng.random() < 0.5 else []
+        if idx == 0:
+            fn.stmts += gen_wrapped(ctx)
         fn.stmts += [gen_stmt(ctx, 3) for _ in range(count)]
         # Half of those that can, f, end in a tail call of h, which gives
         # the same value as a call and a return.
@@ -1504,8 +1548,9 @@ def show(o: Optional[Outcome]) -> str:
     return f"{o[1]:#010x}" if o[0] == "value" else f"trap {o[1]}"
 
 
-def finish(fns: List[Func], segment: bytes) -> Tuple[bytes, Outcome]:
-    """The module, and the outcome the model gives for it."""
+def finish(fns: List[Func], segment: bytes) -> Tuple[bytes, Outcome, bytes]:
+    """The module, the outcome the model gives for it, and the memory at
+    the end, or when it traps."""
     mod = module(
         types(*TYPES),
         funcs(*[fn.type_idx for fn in fns]),
@@ -1515,13 +1560,12 @@ def finish(fns: List[Func], segment: bytes) -> Tuple[bytes, Outcome]:
         exports(("main", 0, 0)),
         elems((0, [1, 2, 3])),
         code(*[(fn.local_types[len(fn.params):], fn.body().code) for fn in fns]),
-        data((DATA, segment)))
-    memory_ = bytearray(65536)
-    memory_[DATA:DATA + DATA_SIZE] = segment
+        data((0, bytes(initial_memory(segment)))))
+    memory_ = initial_memory(segment)
     try:
-        return mod, ("value", State(fns, memory_).call(0, []))
+        return mod, ("value", State(fns, memory_).call(0, [])), bytes(memory_)
     except Trap as t:
-        return mod, ("trap", t.code)
+        return mod, ("trap", t.code), bytes(memory_)
 
 
 def run(cmd: List[str]) -> None:
@@ -1530,11 +1574,13 @@ def run(cmd: List[str]) -> None:
         raise RuntimeError(" ".join(cmd) + "\n" + p.stdout + p.stderr)
 
 
-def pipeline(mod: bytes, tmp: str, opts: List[str], name: str) -> Tuple[Optional[Outcome], str]:
+def pipeline(mod: bytes, tmp: str, opts: List[str], name: str
+             ) -> Tuple[Optional[Outcome], str, Optional[bytes]]:
     """Translates the module with the options opts of nicewasm, joins,
     assembles, and runs it. Returns the outcome, R1 after a HALT, or the
     code in R1 after a halt at ___wasm_trap, or None after any other halt,
-    and the emulator's output."""
+    the emulator's output, and the linear memory at the halt, or None
+    after a halt with no outcome."""
     wasm_file = os.path.join(tmp, name + ".wasm")
     with open(wasm_file, "wb") as f:
         f.write(mod)
@@ -1549,18 +1595,37 @@ def pipeline(mod: bytes, tmp: str, opts: List[str], name: str) -> Tuple[Optional
             with open(part) as f:
                 out.write(f.read() + "\n")
     binary = os.path.join(tmp, name + ".bin")
-    run([sys.executable, NICEASM, "-o", binary, full])
-    p = subprocess.run([NICEEMU, "-n", "20000000", binary], capture_output=True, text=True)
+    symbols = os.path.join(tmp, name + ".sym")
+    run([sys.executable, NICEASM, "-o", binary, "--symbols", symbols, full])
+    with open(symbols) as f:
+        base = next(int(line.split()[0], 16) for line in f if line.split()[1:] == ["___wasm_memory"])
+    p = subprocess.run([NICEEMU, "-n", "20000000", "-d", f"{base}:{PAGE // 4}", binary],
+                       capture_output=True, text=True)
     r1 = None
+    words: List[int] = []
     for line in p.stdout.splitlines():
         if line.startswith("R0 "):
             tokens = line.split()
             r1 = int(tokens[tokens.index("R1") + 1], 16)
+        elif r1 is not None and line[8:9] == ":":
+            words += [int(w, 16) for w in line[9:].split()]
+    memory_ = b"".join(w.to_bytes(4, "little") for w in words)
     if r1 is not None and p.returncode == 0 and p.stdout.startswith("Halted (HALT)"):
-        return ("value", r1), p.stdout
+        return ("value", r1), p.stdout, memory_
     if r1 is not None and p.returncode == 2 and p.stdout.startswith("Halted (reserved control instruction)"):
-        return ("trap", r1), p.stdout
-    return None, p.stdout
+        return ("trap", r1), p.stdout, memory_
+    return None, p.stdout, None
+
+
+def first_difference(want: bytes, got: Optional[bytes]) -> Optional[str]:
+    """Where the linear memory at the end differs from the model's, or None."""
+    if got is None:
+        return None
+    for a in range(0, PAGE, 4):
+        if want[a:a + 4] != got[a:a + 4]:
+            w, g = (int.from_bytes(m[a:a + 4], "little") for m in (want, got))
+            return f"memory at byte {a:#06x}: expected {w:#010x}, got {g:#010x}"
+    return None
 
 
 def check(seed: int, tmp: str, opts: List[str], keep: Optional[str] = None) -> Tuple[Optional[str], Outcome]:
@@ -1568,17 +1633,20 @@ def check(seed: int, tmp: str, opts: List[str], keep: Optional[str] = None) -> T
     the outcome the model expected. With keep, the program is copied to
     keep/fuzzSEED.bin, with the mode in the name."""
     fns, segment = build(seed, "--no-bounds-checks" not in opts, trust="--trust-alignment" in opts)
-    mod, expected = finish(fns, segment)
+    mod, expected, want = finish(fns, segment)
     try:
-        got, output = pipeline(mod, tmp, opts, f"fuzz{seed}")
+        got, output, memory_ = pipeline(mod, tmp, opts, f"fuzz{seed}")
     except RuntimeError as e:
         return f"seed {seed}: " + str(e).replace("\n", "\n  "), expected
     if keep is not None:
         suffix = "".join(a.replace("--", "_").replace("-", "") for a in MODES if MODES[a][0] in opts)
         shutil.copy(os.path.join(tmp, f"fuzz{seed}.bin"), os.path.join(keep, f"fuzz{seed}{suffix}.bin"))
-    if got == expected:
+    diff = first_difference(want, memory_)
+    if got == expected and diff is None:
         return None, expected
     first = output.splitlines()[0] if output else ""
+    if got == expected:
+        return f"seed {seed}: {diff}\n  {first}", expected
     return f"seed {seed}: expected {show(expected)}, got {show(got)}\n  {first}", expected
 
 
@@ -1588,12 +1656,12 @@ def reduce(seed: int, tmp: str, opts: List[str]) -> None:
     fns, segment = build(seed, "--no-bounds-checks" not in opts, trust="--trust-alignment" in opts)
 
     def mismatch() -> bool:
-        mod, expected = finish(fns, segment)
+        mod, expected, want = finish(fns, segment)
         try:
-            got, _ = pipeline(mod, tmp, opts, "reduce")
+            got, _, memory_ = pipeline(mod, tmp, opts, "reduce")
         except RuntimeError:
             return True
-        return got != expected
+        return got != expected or first_difference(want, memory_) is not None
     if not mismatch():
         sys.exit(f"seed {seed} does not fail")
     changed = True
@@ -1606,11 +1674,11 @@ def reduce(seed: int, tmp: str, opts: List[str]) -> None:
                     changed = True
                 else:
                     fn.stmts.insert(i, saved)
-    mod, expected = finish(fns, segment)
+    mod, expected, _ = finish(fns, segment)
     with open(f"fuzz_{seed}.wasm", "wb") as f:
         f.write(mod)
     try:
-        got, _ = pipeline(mod, tmp, opts, "reduce")
+        got, _, _ = pipeline(mod, tmp, opts, "reduce")
     except RuntimeError as e:
         # The translator rejected the module, or the assembler the translation.
         print(f"reduced to {[len(fn.stmts) for fn in fns]} statements: {str(e).strip().splitlines()[-1]}; "

@@ -12,7 +12,7 @@ __mul.loop
                 0>C[M]  R2, R2, 1       ; C = next bit, Z = no bits left
         ?C      ADD     R1, R1, R3
                 SHL     R3, R3, 1       ; no M, so C and Z stay
-        ?!Z     MOVE    R15, __mul.loop
+        ?!Z     JMP     __mul.loop
                 RET
 
 ; __udivmod: R1 = R1 / R2 and R3 = R1 % R2, unsigned. Not a C routine:
@@ -34,11 +34,11 @@ __udivmod.loop
         ?!C     MOVE    R3, R5
         ?!C     OR      R1, R1, 1
                 DEC[M]  R4, R4
-        ?!Z     MOVE    R15, __udivmod.loop
+        ?!Z     JMP     __udivmod.loop
                 RET
 
 ; __udiv: R1 = R1 / R2, unsigned. 1 + 291 = 292 steps.
-__udiv          MOVE    R15, __udivmod  ; which returns to our caller
+__udiv          JMP     __udivmod       ; which returns to our caller
 
 ; __umod: R1 = R1 % R2, unsigned. 4 + 291 = 295 steps.
 __umod          CALL    __udivmod
@@ -55,20 +55,20 @@ __div           XOR     @--R13, R1, R2  ; bit 31: the signs differ
                 MOVE[M] R2, R2
         ?N      SUB     R2, 0, R2
                 CALL    __udivmod
-                MOVE[M] R0, @R13++
+                TST     @R13++
         ?N      SUB     R1, 0, R1
                 RET
 
 ; __mod: R1 = R1 % R2, signed. The remainder has the dividend's sign, as C
 ; requires. 11 + 291 = 302 steps.
-__mod           MOVE    @--R13, R1      ; bit 31: the dividend's sign
+__mod           PUSH    R1              ; bit 31: the dividend's sign
                 MOVE[M] R1, R1
         ?N      SUB     R1, 0, R1
                 MOVE[M] R2, R2
         ?N      SUB     R2, 0, R2
                 CALL    __udivmod
                 MOVE    R1, R3
-                MOVE[M] R0, @R13++
+                TST     @R13++
         ?N      SUB     R1, 0, R1
                 RET
 
@@ -83,14 +83,14 @@ __mul64         MOVE    R5, 0
 __mul64.loop
                 0>C[M]  R4, R4, 1       ; shift R3:R4 right; C = its bit 0
                 C>C[M]  R3, R3, 1
-        ?!C     MOVE    R15, __mul64.next
+        ?!C     JMP     __mul64.next
                 ADD[M]  R5, R5, R1
                 ADD[C]  R6, R6, R2
 __mul64.next
                 C<0[M]  R1, R1, 1       ; shift R1:R2 left
                 0<C     R2, R2, 1
                 OR[M]   R0, R3, R4      ; Z = no bits left
-        ?!Z     MOVE    R15, __mul64.loop
+        ?!Z     JMP     __mul64.loop
                 MOVE    R1, R5
                 MOVE    R2, R6
                 RET
@@ -105,7 +105,7 @@ __udivmod64
                 MOVE    R5, 0           ; remainder
                 MOVE    R6, 0
                 SUB     R13, R13, 3     ; @1[R13]: bit 64, @2 and @3: the difference
-                MOVE    @--R13, 64      ; @R13: passes to go
+                PUSH    64              ; @R13: passes to go
 __udivmod64.loop
                 C<0[M]  R1, R1, 1       ; C = next dividend bit
                 C<C[M]  R2, R2, 1
@@ -119,13 +119,13 @@ __udivmod64.loop
         ?!C     MOVE    R6, @3[R13]
         ?!C     OR      R1, R1, 1
                 DEC[M]  @R13, @R13
-        ?!Z     MOVE    R15, __udivmod64.loop
+        ?!Z     JMP     __udivmod64.loop
                 ADD     R13, R13, 4
                 RET
 
 ; __udiv64: R1:R2 = R1:R2 / R3:R4, unsigned. 1 + 838 = 839 steps.
 __udiv64
-                MOVE    R15, __udivmod64  ; which returns to our caller
+                JMP     __udivmod64     ; which returns to our caller
 
 ; __umod64: R1:R2 = R1:R2 % R3:R4, unsigned. 5 + 838 = 843 steps.
 __umod64
@@ -141,17 +141,17 @@ __umod64
 ; quotient that is not negated and 5 for one that is.
 __div64         XOR     @--R13, R2, R4  ; bit 31: the signs differ
                 MOVE[M] R2, R2
-        ?!N     MOVE    R15, __div64.a
+        ?!N     JMP     __div64.a
                 SUB[M]  R1, 0, R1
                 SUB[C]  R2, 0, R2
 __div64.a
                 MOVE[M] R4, R4
-        ?!N     MOVE    R15, __div64.b
+        ?!N     JMP     __div64.b
                 SUB[M]  R3, 0, R3
                 SUB[C]  R4, 0, R4
 __div64.b
                 CALL    __udivmod64
-                MOVE[M] R0, @R13++
+                TST     @R13++
         ?!N     RET
                 SUB[M]  R1, 0, R1
                 SUB[C]  R2, 0, R2
@@ -159,21 +159,21 @@ __div64.b
 
 ; __mod64: R1:R2 = R1:R2 % R3:R4, signed, with the dividend's sign. Steps:
 ; 1 + a + b + 2 + 838 + 2 + q, with a, b, and q as for __div64.
-__mod64         MOVE    @--R13, R2      ; bit 31: the dividend's sign
+__mod64         PUSH    R2              ; bit 31: the dividend's sign
                 MOVE[M] R2, R2
-        ?!N     MOVE    R15, __mod64.a
+        ?!N     JMP     __mod64.a
                 SUB[M]  R1, 0, R1
                 SUB[C]  R2, 0, R2
 __mod64.a
                 MOVE[M] R4, R4
-        ?!N     MOVE    R15, __mod64.b
+        ?!N     JMP     __mod64.b
                 SUB[M]  R3, 0, R3
                 SUB[C]  R4, 0, R4
 __mod64.b
                 CALL    __udivmod64
                 MOVE    R1, R5
                 MOVE    R2, R6
-                MOVE[M] R0, @R13++
+                TST     @R13++
         ?!N     RET
                 SUB[M]  R1, 0, R1
                 SUB[C]  R2, 0, R2

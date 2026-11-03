@@ -20,7 +20,7 @@ _main           MOVE    @saved, @___wasm_trap_vector
                 MOVE    @___wasm_trap_vector, handler
                 MOVE    R1, 4
                 MOVE    R2, _main
-                MOVE    R15, @___wasm_trap_vector
+                JMP     @___wasm_trap_vector
                 HALT                    ; not reached
 handler         MOVE    @got, R1
                 MOVE    @got+1, R2

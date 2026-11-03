@@ -29,5 +29,5 @@ ___wasm_start
                 RET
 _main           MOVE    R1, 2
                 MOVE    R2, _main
-                MOVE    R15, @___wasm_trap_vector
+                JMP     @___wasm_trap_vector
                 HALT                    ; not reached

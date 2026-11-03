@@ -36,7 +36,7 @@ loop            MOVE    R1, @R7++
                 CALL    __mul
                 MOVE    @R8++, R1
                 DEC[M]  R9, R9
-        ?!Z     MOVE    R15, loop
+        ?!Z     JMP     loop
                 RET
 
 pairs           .DAT    6, 7

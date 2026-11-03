@@ -23,7 +23,7 @@ __clz           MOVE[M] R2, R1
 __clz.loop
                 DEC     R1, R1
                 SHR[M]  R2, R2, 1
-        ?!Z     MOVE    R15, __clz.loop
+        ?!Z     JMP     __clz.loop
                 RET
 
 ; __ctz: R1 = the number of trailing 0 bits in R1, 32 for 0. Steps: 3 for
@@ -36,7 +36,7 @@ __ctz.loop
                 0>C[M]  R2, R2, 1       ; C = the bit shifted out
         ?C      RET
                 ADD     R1, R1, 1
-                MOVE    R15, __ctz.loop
+                JMP     __ctz.loop
 
 ; __popcnt: R1 = the number of 1 bits in R1. Steps: 3 + 3k, where k is
 ; the number of bits in R1 (1 if it is 0). Uses R2.
@@ -46,14 +46,14 @@ __popcnt
 __popcnt.loop
                 0>C[M]  R2, R2, 1       ; C = the bit shifted out, Z = none left
                 ADD[C]  R1, R1, 0       ; add C
-        ?!Z     MOVE    R15, __popcnt.loop
+        ?!Z     JMP     __popcnt.loop
                 RET
 
 ; __clz64, __ctz64, __popcnt64: R1:R2 = the same counts for the 64-bit
 ; number in R1:R2. The result is at most 64, so R2 = 0.
 ; __clz64 steps: 7 + __clz(R2) if R2 is not 0, else 7 + __clz(R1).
-__clz64         MOVE[M] R0, R2
-        ?Z      MOVE    R15, __clz64.lo
+__clz64         TST     R2
+        ?Z      JMP     __clz64.lo
                 MOVE    R1, R2
                 CALL    __clz
                 MOVE    R2, 0
@@ -65,8 +65,8 @@ __clz64.lo
                 RET
 
 ; __ctz64 steps: 6 + __ctz(R1) if R1 is not 0, else 8 + __ctz(R2).
-__ctz64         MOVE[M] R0, R1
-        ?Z      MOVE    R15, __ctz64.hi
+__ctz64         TST     R1
+        ?Z      JMP     __ctz64.hi
                 CALL    __ctz
                 MOVE    R2, 0
                 RET
@@ -110,7 +110,7 @@ ___putc_vector
 ; nice_putc: writes bits 7..0 of R1 through ___putc_vector. 1 step and the
 ; routine's: 3 with ___console_putc, which changes nothing.
 _nice_putc
-                MOVE    R15, @___putc_vector
+                JMP     @___putc_vector
 
 ; ___console_putc: writes bits 7..0 of R1 to the console. 2 steps.
 ___console_putc
@@ -129,7 +129,7 @@ _nice_getc
         ?!Z     AND     R1, R1, 0xFF
         ?!Z     RET
                 AND[M]  R0, R1, 0x200
-        ?Z      MOVE    R15, _nice_getc
+        ?Z      JMP     _nice_getc
                 MOVE    R1, -1
                 RET
 
@@ -151,16 +151,16 @@ _nice_pollc
 ; and which is saved and restored here. Steps: 6 + 6n for n characters
 ; with ___console_putc. Uses R1, and R7 across the calls.
 _nice_print
-                MOVE    @--R13, R7
+                PUSH    R7
                 MOVE    R7, R1
                 MOVE[M] R1, @R7++
-        ?Z      MOVE    R15, _nice_print.end
+        ?Z      JMP     _nice_print.end
 _nice_print.loop
                 CALL    @___putc_vector
                 MOVE[M] R1, @R7++
-        ?!Z     MOVE    R15, _nice_print.loop
+        ?!Z     JMP     _nice_print.loop
 _nice_print.end
-                MOVE    R7, @R13++
+                POP     R7
                 RET
 
 ; nice_cycles, nice_instructions: R1:R2 = the counter, low word first.
@@ -193,5 +193,5 @@ _nice_screen_clear
 _nice_screen_clear.loop
                 DEC[M]  R1, R1
                 MOVE    @__nice.screen[R1], 0x20
-        ?!Z     MOVE    R15, _nice_screen_clear.loop
+        ?!Z     JMP     _nice_screen_clear.loop
                 RET

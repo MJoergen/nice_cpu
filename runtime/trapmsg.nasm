@@ -35,12 +35,12 @@ ___trap.digit
                 MOVE    R1, @___trap.hex[R1]
                 CALL    _nice_putc
                 DEC[M]  R9, R9
-        ?!Z     MOVE    R15, ___trap.digit
+        ?!Z     JMP     ___trap.digit
                 MOVE    R1, 10
                 CALL    _nice_putc
                 MOVE    R1, R10
                 MOVE    R2, R11
-                MOVE    R15, ___wasm_trap
+                JMP     ___wasm_trap
 
 ___trap.head
                 .ASCII_L 'trap '

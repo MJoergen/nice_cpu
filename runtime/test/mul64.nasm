@@ -43,7 +43,7 @@ loop            MOVE    R1, @R7
                 MOVE    @R8++, R2
                 ADD     R7, R7, 4
                 DEC[M]  R9, R9
-        ?!Z     MOVE    R15, loop
+        ?!Z     JMP     loop
                 RET
 
 ; Each pair is a then b, each low word first.

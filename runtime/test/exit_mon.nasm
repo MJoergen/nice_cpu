@@ -21,7 +21,7 @@ _main           MOVE    R1, text
                 CALL    _nice_putc
                 CALL    f
                 HALT                    ; not reached
-f               MOVE    @--R13, R7
+f               PUSH    R7
                 MOVE    R1, 7
                 CALL    _exit
                 HALT                    ; not reached

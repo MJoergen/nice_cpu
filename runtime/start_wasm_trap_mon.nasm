@@ -8,15 +8,15 @@
 
                 .ORG    0x8000
                 MOVE    @___exit.sp, R13  ; SP at entry, for exit
-                MOVE[M] R0, R1          ; Z if the output stays on the console
+                TST     R1              ; Z if the output stays on the console
         ?!Z     MOVE    @___putc_vector, R1
                 MOVE    @___wasm_trap_vector, ___trap_report
-                MOVE    @--R13, R2      ; argc and argv, across ___wasm_start
-                MOVE    @--R13, R3
+                PUSH    R2              ; argc and argv, across ___wasm_start
+                PUSH    R3
                 CALL    ___wasm_start
-                MOVE    R2, @R13++      ; argv
-                MOVE    R1, @R13++      ; argc
-                MOVE    R15, _main      ; a tail call: main returns to the monitor
+                POP     R2              ; argv
+                POP     R1              ; argc
+                JMP     _main           ; a tail call: main returns to the monitor
 
 ; exit: returns to the monitor from anywhere, with the status in R1 and SP
 ; as it was at entry (ABI.md). 2 steps.

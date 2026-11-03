@@ -58,7 +58,7 @@ loop            MOVE    R1, @R7
                 MOVE    @R8++, R1
                 ADD     R7, R7, 2
                 DEC[M]  R9, R9
-        ?!Z     MOVE    R15, loop
+        ?!Z     JMP     loop
                 RET
 
 pairs           .DAT    100, 7

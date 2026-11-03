@@ -146,7 +146,7 @@ loop32          MOVE    R1, @R7
                 MOVE    @R8++, R1
                 ADD     R7, R7, 2
                 DEC[M]  R9, R9
-        ?!Z     MOVE    R15, loop32
+        ?!Z     JMP     loop32
 
                 MOVE    R7, pairs64
                 MOVE    R9, 9
@@ -180,7 +180,7 @@ loop64          MOVE    R1, @R7
                 MOVE    @R8++, R2
                 ADD     R7, R7, 4
                 DEC[M]  R9, R9
-        ?!Z     MOVE    R15, loop64
+        ?!Z     JMP     loop64
 
                 MOVE    R7, pairs_mul
                 MOVE    R9, 4
@@ -193,7 +193,7 @@ loopmul         MOVE    R1, @R7
                 MOVE    @R8++, R2
                 ADD     R7, R7, 4
                 DEC[M]  R9, R9
-        ?!Z     MOVE    R15, loopmul
+        ?!Z     JMP     loopmul
                 RET
 
 pairs32         .DAT    7, 0

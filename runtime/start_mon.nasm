@@ -8,11 +8,11 @@
 
                 .ORG    0x8000
                 MOVE    @___exit.sp, R13  ; SP at entry, for exit
-                MOVE[M] R0, R1          ; Z if the output stays on the console
+                TST     R1              ; Z if the output stays on the console
         ?!Z     MOVE    @___putc_vector, R1
                 MOVE    R1, R2          ; argc
                 MOVE    R2, R3          ; argv
-                MOVE    R15, _main      ; a tail call: main returns to the monitor
+                JMP     _main           ; a tail call: main returns to the monitor
 
 ; exit: returns to the monitor from anywhere, with the status in R1 and SP
 ; as it was at entry (ABI.md). 2 steps.

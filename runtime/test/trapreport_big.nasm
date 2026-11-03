@@ -15,5 +15,5 @@ ___wasm_start
                 .ORG    0x1abc
 _main           MOVE    R1, 12
                 MOVE    R2, _main
-                MOVE    R15, @___wasm_trap_vector
+                JMP     @___wasm_trap_vector
                 HALT                    ; not reached

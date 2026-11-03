@@ -375,6 +375,162 @@ fn timerWord(addr: u32) ?u4 {
     return if (addr -% timer_base < 16) @truncate(addr -% timer_base) else null;
 }
 
+/// The first of the 16 words of the SD card controller (SYSTEM §5).
+pub const sd_base: u32 = io_base + 0xA0;
+
+/// The bytes of a sector.
+pub const sector_bytes = 512;
+
+/// A card's image: its sectors, which the host reads and writes. A read or
+/// write returns false if the host failed.
+pub const Image = struct {
+    ctx: *anyopaque,
+    /// The number of the last sector, as `SD_LAST` reads it, so that 2^32
+    /// sectors fit.
+    last: u32,
+    write_protected: bool,
+    read_fn: *const fn (ctx: *anyopaque, lba: u32, bytes: *[sector_bytes]u8) bool,
+    write_fn: *const fn (ctx: *anyopaque, lba: u32, bytes: *const [sector_bytes]u8) bool,
+};
+
+/// The SD card controller (SYSTEM §5), with 2 slots, as the MEGA65 has. A
+/// command ends in the write that starts it, so busy never reads 1.
+pub const Sd = struct {
+    pub const slots = 2;
+
+    images: [slots]?Image = @splat(null),
+    lba: u32 = 0,
+    chunk: u4 = 0,
+    err: u32 = 0,
+    select: u4 = 0,
+    /// Whether the selected slot's card has been started up by Init. One
+    /// for the controller: a change of slot clears it.
+    ready: bool = false,
+    /// `SD_LAST` of the card that Init started up.
+    last: u32 = 0,
+    changed: [slots]bool = @splat(false),
+    /// The buffer, 4 bytes of the sector in each word, little-endian.
+    buf: [128]u32 = @splat(0),
+
+    const err_no_card = 1;
+    const err_not_ready = 2;
+    const err_card = 5;
+    const err_protected = 6;
+    const err_range = 7;
+
+    /// Put the card `image` into `slot`, which sets "changed".
+    pub fn insert(self: *Sd, slot: u1, image: Image) void {
+        self.images[slot] = image;
+        self.changed[slot] = true;
+    }
+
+    /// Reset (SYSTEM §5). The cards stay, and the buffer keeps what it had,
+    /// one of the values that "not defined" allows.
+    pub fn reset(self: *Sd) void {
+        self.lba = 0;
+        self.chunk = 0;
+        self.err = 0;
+        self.select = 0;
+        self.ready = false;
+        self.last = 0;
+        for (&self.changed, self.images) |*c, im| c.* = im != null;
+    }
+
+    /// The card in the selected slot, if any.
+    fn card(self: Sd) ?Image {
+        return if (self.select < slots) self.images[self.select] else null;
+    }
+
+    fn status(self: Sd) u32 {
+        const c = self.card() orelse return @as(u32, @intFromBool(self.err != 0)) << 1;
+        var st: u32 = 1 << 2;
+        if (self.err != 0) st |= 1 << 1;
+        if (self.ready) st |= 1 << 3 | 2 << 8;
+        if (self.changed[self.select]) st |= 1 << 4;
+        if (c.write_protected) st |= 1 << 5;
+        return st;
+    }
+
+    /// The value a data read of word `i` returns. Reads have no side effect.
+    pub fn read(self: Sd, i: u4) u32 {
+        return switch (i) {
+            0 => self.status(),
+            1 => self.lba,
+            2 => self.chunk,
+            3 => self.err,
+            4 => self.select,
+            5 => if (self.ready) self.last else 0,
+            6 => slots,
+            7 => 0,
+            else => self.buf[@as(u7, self.chunk) * 8 + (i - 8)],
+        };
+    }
+
+    /// A write of `value` to word `i`.
+    pub fn write(self: *Sd, i: u4, value: u32) void {
+        switch (i) {
+            0 => self.command(@truncate(value)),
+            1 => self.lba = value,
+            2 => self.chunk = @truncate(value),
+            4 => {
+                const s: u4 = @truncate(value);
+                if (s != self.select) self.ready = false;
+                self.select = s;
+            },
+            3, 5, 6, 7 => {},
+            else => self.buf[@as(u7, self.chunk) * 8 + (i - 8)] = value,
+        }
+    }
+
+    /// Run command `cmd` to its end, with the checks in the order of SYSTEM §5.
+    fn command(self: *Sd, cmd: u4) void {
+        if (cmd > 2) return;
+        const c = self.card() orelse {
+            self.err = err_no_card;
+            return;
+        };
+        if (cmd == 0) {
+            self.changed[self.select] = false;
+            self.ready = true;
+            self.last = c.last;
+            self.err = 0;
+            return;
+        }
+        if (!self.ready) {
+            self.err = err_not_ready;
+            return;
+        }
+        if (self.lba > self.last) {
+            self.err = err_range;
+            return;
+        }
+        var bytes: [sector_bytes]u8 = undefined;
+        if (cmd == 1) {
+            if (!c.read_fn(c.ctx, self.lba, &bytes)) {
+                self.err = err_card;
+                return;
+            }
+            for (&self.buf, 0..) |*w, n| w.* = std.mem.readInt(u32, bytes[4 * n ..][0..4], .little);
+        } else {
+            if (c.write_protected) {
+                self.err = err_protected;
+                return;
+            }
+            for (self.buf, 0..) |w, n| std.mem.writeInt(u32, bytes[4 * n ..][0..4], w, .little);
+            if (!c.write_fn(c.ctx, self.lba, &bytes)) {
+                self.err = err_card;
+                return;
+            }
+        }
+        self.err = 0;
+    }
+};
+
+/// The word of the SD card controller that `addr` names, if it names one.
+fn sdWord(addr: u32) ?u4 {
+    return if (addr -% sd_base < 16) @truncate(addr -% sd_base) else null;
+}
+
 pub const Cpu = struct {
     /// R0..R15. Read and write them through `getReg` and `setReg`, which
     /// apply the rules for R0 and R14 (§4.3).
@@ -417,6 +573,8 @@ pub const Cpu = struct {
     perf: Perf,
     /// The timer at `timer_base`.
     timer: Timer,
+    /// The SD card controller at `sd_base`.
+    sd: Sd,
     /// The host's clock for the microsecond counter, or null to count one
     /// microsecond per step (`--step-time`, and the unit tests).
     clock: ?*Clock,
@@ -465,6 +623,7 @@ pub const Cpu = struct {
             .mpu = .{},
             .perf = .{},
             .timer = .{},
+            .sd = .{},
             .clock = null,
             .cycle_counter = true,
             .timer_irq = true,
@@ -491,6 +650,7 @@ pub const Cpu = struct {
         self.mpu = .{};
         self.perf = .{};
         self.timer = .{};
+        self.sd.reset();
         if (self.clock) |c| c.reset();
     }
 
@@ -557,6 +717,7 @@ pub const Cpu = struct {
             return self.perf.read(i);
         }
         if (timerWord(addr)) |i| return self.timer.read(i);
+        if (sdWord(addr)) |i| return self.sd.read(i);
         return self.mem.read(addr);
     }
 
@@ -580,6 +741,7 @@ pub const Cpu = struct {
             return p.peek(i);
         }
         if (timerWord(addr)) |i| return self.timer.read(i);
+        if (sdWord(addr)) |i| return self.sd.read(i);
         return self.mem.peek(addr);
     }
 
@@ -600,6 +762,8 @@ pub const Cpu = struct {
             // The counters cannot be written (SYSTEM §3).
         } else if (timerWord(addr)) |i| {
             self.timer.write(i, value);
+        } else if (sdWord(addr)) |i| {
+            self.sd.write(i, value);
         } else if (addr != console_addr or self.console == null) {
             try self.mem.write(addr, value);
         }
@@ -2174,4 +2338,110 @@ test "trace: console output comes before the line of the instruction that wrote 
     );
     try testing.expectEqual(0, cpu.peek(console_addr));
     try testing.expectEqual(1, cpu.mem.pages.count()); // only the program's page
+}
+
+/// An image in memory for the tests of the SD card controller, whose
+/// reads and writes fail while `fail` is set.
+const TestImage = struct {
+    bytes: [2 * sector_bytes]u8 = @splat(0),
+    fail: bool = false,
+
+    fn image(self: *TestImage, write_protected: bool) Image {
+        return .{ .ctx = self, .last = 1, .write_protected = write_protected, .read_fn = read, .write_fn = write };
+    }
+
+    fn read(ctx: *anyopaque, lba: u32, bytes: *[sector_bytes]u8) bool {
+        const self: *TestImage = @ptrCast(@alignCast(ctx));
+        if (self.fail) return false;
+        bytes.* = self.bytes[lba * sector_bytes ..][0..sector_bytes].*;
+        return true;
+    }
+
+    fn write(ctx: *anyopaque, lba: u32, bytes: *const [sector_bytes]u8) bool {
+        const self: *TestImage = @ptrCast(@alignCast(ctx));
+        if (self.fail) return false;
+        self.bytes[lba * sector_bytes ..][0..sector_bytes].* = bytes.*;
+        return true;
+    }
+};
+
+test "SD card: write protection, and the order of the checks (SYSTEM §5)" {
+    var img: TestImage = .{};
+    var sd: Sd = .{};
+    sd.insert(1, img.image(true));
+    sd.reset();
+    sd.write(4, 1);
+    try testing.expectEqual(0x34, sd.read(0)); // present, changed, write-protected
+    sd.write(0, 2);
+    try testing.expectEqual(2, sd.read(3)); // not ready before write-protected
+    sd.write(0, 0);
+    try testing.expectEqual(0x22C, sd.read(0)); // ready, type 2, write-protected
+    sd.write(1, 2);
+    sd.write(0, 2);
+    try testing.expectEqual(7, sd.read(3)); // out of range before write-protected
+    sd.write(1, 1);
+    sd.write(8, 0x12345678);
+    sd.write(0, 2);
+    try testing.expectEqual(6, sd.read(3));
+    try testing.expectEqual(0x22E, sd.read(0)); // and the error bit
+    try testing.expectEqual(0, img.bytes[512]); // the card is unchanged
+    sd.write(0, 1);
+    try testing.expectEqual(0, sd.read(3)); // a Read succeeds
+    try testing.expectEqual(0, sd.read(8)); // and fills the buffer from the card
+}
+
+test "SD card: a failure of the host is error 5 (SYSTEM §5)" {
+    var img: TestImage = .{};
+    var sd: Sd = .{};
+    sd.insert(0, img.image(false));
+    sd.write(0, 0);
+    img.fail = true;
+    sd.write(0, 1);
+    try testing.expectEqual(5, sd.read(3));
+    sd.write(0, 2);
+    try testing.expectEqual(5, sd.read(3));
+    img.fail = false;
+    sd.write(0, 2);
+    try testing.expectEqual(0, sd.read(3));
+    try testing.expectEqual(0x20C, sd.read(0)); // still ready, no error bit
+}
+
+test "SD card: SD_SELECT, and reset (SYSTEM §5)" {
+    var img: TestImage = .{};
+    var sd: Sd = .{};
+    sd.insert(0, img.image(false));
+    sd.write(0, 0);
+    sd.write(4, 0); // the same slot: no change, so still ready
+    try testing.expectEqual(0x20C, sd.read(0));
+    sd.write(2, 5);
+    sd.write(1, 1);
+    sd.write(8, 0xABCD);
+    sd.write(4, 3);
+    sd.write(0, 0);
+    try testing.expectEqual(1, sd.read(3));
+    try testing.expectEqual(2, sd.read(0)); // no card, the error bit
+    sd.reset();
+    for ([_]u32{ 0x14, 0, 0, 0, 0, 0, 2, 0 }, 0..) |want, i| {
+        try testing.expectEqual(want, sd.read(@intCast(i)));
+    }
+    try testing.expectEqual(0xABCD, sd.buf[40]); // the buffer keeps what it had
+}
+
+test "SD card: the processor's accesses, and a write while stopped" {
+    var img: TestImage = .{};
+    img.bytes[0] = 0x5A;
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    cpu.sd.insert(0, img.image(false));
+    try cpu.write(sd_base, 0);
+    try cpu.write(sd_base, 1);
+    try testing.expectEqual(0x5A, cpu.read(sd_base + 8));
+    try testing.expectEqual(0x5A, cpu.peek(sd_base + 8));
+    try testing.expectEqual(0, cpu.mem.pages.count());
+    cpu.stopped = true;
+    try cpu.write(sd_base + 1, 1);
+    try testing.expectEqual(0, cpu.read(sd_base + 1));
+    cpu.stopped = false;
+    cpu.reset();
+    try testing.expectEqual(0x14, cpu.read(sd_base));
 }

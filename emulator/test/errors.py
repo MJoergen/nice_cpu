@@ -71,6 +71,15 @@ CASES: List[Tuple[List[str], Optional[str], str]] = [
     (["-i", "does-not-exist.txt", "BIN"], "00000000 0c000000",
      "niceemu: cannot read does-not-exist.txt: FileNotFound"),
     (["-i", ".", "BIN"], "00000000 0c000000", "niceemu: cannot read .: IsDir"),
+    (["BIN", "--sd0"], "00000000 0c000000", "niceemu: --sd0 needs a value"),
+    (["--sd1", "does-not-exist.img", "BIN"], "00000000 0c000000",
+     "niceemu: cannot read does-not-exist.img: FileNotFound"),
+    (["--sd0", ".", "BIN"], "00000000 0c000000", "niceemu: cannot read .: IsDir"),
+    # main() makes empty.img, of 0 bytes, and odd.img, of 700.
+    (["--sd0", "empty.img", "BIN"], "00000000 0c000000",
+     "niceemu: empty.img: an SD card image must be a positive multiple of 512 bytes, not 0"),
+    (["--sd1", "odd.img", "BIN"], "00000000 0c000000",
+     "niceemu: odd.img: an SD card image must be a positive multiple of 512 bytes, not 700"),
     (["BIN", "--symbols"], "00000000 0c000000", "niceemu: --symbols needs a value"),
     (["--symbols", "does-not-exist.sym", "BIN"], "00000000 0c000000",
      "niceemu: cannot read does-not-exist.sym: FileNotFound"),
@@ -158,6 +167,9 @@ def main() -> None:
     failed = 0
     with tempfile.TemporaryDirectory() as tmp:
         path = os.path.join(tmp, "t.bin")
+        for name, size in (("empty.img", 0), ("odd.img", 700)):
+            with open(os.path.join(tmp, name), "wb") as f:
+                f.write(bytes(size))
         for args, text, expected in CASES:
             expected = expected.replace("BIN", path)
             p = run(tmp, args, text)

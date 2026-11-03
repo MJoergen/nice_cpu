@@ -3,6 +3,8 @@
 const std = @import("std");
 const Cpu = @import("cpu.zig").Cpu;
 const Clock = @import("cpu.zig").Clock;
+const Image = @import("cpu.zig").Image;
+const sector_bytes = @import("cpu.zig").sector_bytes;
 const Link = @import("link.zig").Link;
 const frame = @import("frame.zig");
 const build_options = @import("build_options");
@@ -17,7 +19,8 @@ const usage =
     \\of 0xFFFFFF00 returns the next byte of stdin plus 0x100, or 0x200 after
     \\the end of the input.
     \\The timer is at 0xFFFFFF10-0xFFFFFF1F, the math unit at 0xFFFFFF20-
-    \\0xFFFFFF3F, and the performance counters at 0xFFFFFF40-0xFFFFFF7F.
+    \\0xFFFFFF3F, the performance counters at 0xFFFFFF40-0xFFFFFF7F, and the
+    \\SD card controller at 0xFFFFFFA0-0xFFFFFFAF.
     \\
     \\Options:
     \\  -t, --trace          Print one line per instruction.
@@ -31,6 +34,9 @@ const usage =
     \\      --irq STEP:VEC   Raise IRQ with vector VEC before step STEP.
     \\      --nmi STEP:VEC   Raise NMI with vector VEC before step STEP.
     \\                       Both may be repeated. Steps count from 0.
+    \\      --sd0 FILE       Put a card into SD slot 0, with FILE as its image of
+    \\                       512-byte sectors. Write-protected if FILE cannot be written.
+    \\      --sd1 FILE       The same for slot 1.
     \\      --symbols FILE   Read labels from FILE, as niceasm --symbols writes it, and
     \\                       name the location of a halt other than HALT, and of a
     \\                       wasm trap (translator/WASM.md), after the halt message.
@@ -101,6 +107,8 @@ const Options = struct {
     input: []const u8 = "-",
     /// Whether --input was given, as the window reads stdin only then.
     input_given: bool = false,
+    /// The image files of the SD card slots, or "" for an empty slot.
+    sd: [2][]const u8 = .{ "", "" },
     /// The label file of niceasm --symbols, or "" for none.
     symbols: []const u8 = "",
     /// The address of --link, or null to run the program once.
@@ -351,7 +359,7 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "-i", "--input", "--irq", "--nmi", "--symbols", "--link", "--speed" }) |o| {
+        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "-i", "--input", "--irq", "--nmi", "--sd0", "--sd1", "--symbols", "--link", "--speed" }) |o| {
             if (std.mem.eql(u8, arg, o)) break true;
         } else false;
         const value = if (takes_value) blk: {
@@ -396,6 +404,8 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
                 .kind = if (std.mem.eql(u8, arg, "--irq")) .irq else .nmi,
                 .vector = try parseNumber(u8, arg, value[colon + 1 ..]),
             });
+        } else if (std.mem.eql(u8, arg, "--sd0") or std.mem.eql(u8, arg, "--sd1")) {
+            opts.sd[arg[4] - '0'] = value;
         } else if (std.mem.eql(u8, arg, "--symbols")) {
             opts.symbols = value;
         } else if (std.mem.eql(u8, arg, "--link")) {
@@ -429,6 +439,62 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
     std.sort.insertion(Request, requests.items, {}, Request.before);
     opts.requests = requests.items;
     return opts;
+}
+
+/// An image file of an SD card (doc/SYSTEM.md §5), read and written in place.
+const ImageFile = struct {
+    io: std.Io,
+    file: std.Io.File,
+
+    fn read(ctx: *anyopaque, lba: u32, bytes: *[sector_bytes]u8) bool {
+        const self: *ImageFile = @ptrCast(@alignCast(ctx));
+        const n = self.file.readPositionalAll(self.io, bytes, @as(u64, lba) * sector_bytes) catch return false;
+        return n == sector_bytes;
+    }
+
+    fn write(ctx: *anyopaque, lba: u32, bytes: *const [sector_bytes]u8) bool {
+        const self: *ImageFile = @ptrCast(@alignCast(ctx));
+        self.file.writePositionalAll(self.io, bytes, @as(u64, lba) * sector_bytes) catch return false;
+        return true;
+    }
+};
+
+/// Open the image `path` for writing, or for reading only as a
+/// write-protected card. Its size must be a positive multiple of 512
+/// bytes, and at most 2^32 sectors.
+fn openImage(arena: std.mem.Allocator, io: std.Io, path: []const u8) error{ Load, OutOfMemory }!Image {
+    const cwd = std.Io.Dir.cwd();
+    var protected = false;
+    const file = cwd.openFile(io, path, .{ .mode = .read_write, .allow_directory = false }) catch |err| switch (err) {
+        error.AccessDenied, error.PermissionDenied, error.ReadOnlyFileSystem => blk: {
+            protected = true;
+            break :blk cwd.openFile(io, path, .{ .allow_directory = false }) catch |e| {
+                std.debug.print("niceemu: cannot read {s}: {s}\n", .{ path, @errorName(e) });
+                return error.Load;
+            };
+        },
+        else => {
+            std.debug.print("niceemu: cannot read {s}: {s}\n", .{ path, @errorName(err) });
+            return error.Load;
+        },
+    };
+    const size = file.length(io) catch |err| {
+        std.debug.print("niceemu: cannot read {s}: {s}\n", .{ path, @errorName(err) });
+        return error.Load;
+    };
+    if (size == 0 or size % sector_bytes != 0 or size / sector_bytes > 1 << 32) {
+        std.debug.print("niceemu: {s}: an SD card image must be a positive multiple of 512 bytes, not {d}\n", .{ path, size });
+        return error.Load;
+    }
+    const f = try arena.create(ImageFile);
+    f.* = .{ .io = io, .file = file };
+    return .{
+        .ctx = f,
+        .last = @intCast(size / sector_bytes - 1),
+        .write_protected = protected,
+        .read_fn = ImageFile.read,
+        .write_fn = ImageFile.write,
+    };
 }
 
 /// Load a `.bin` file (doc/ISA.md §10.4): one "address word" line per word,
@@ -493,6 +559,9 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
             return error.Load;
         };
         try load(arena, &cpu, opts.path, text);
+    }
+    for (opts.sd, 0..) |path, slot| {
+        if (path.len != 0) cpu.sd.insert(@intCast(slot), try openImage(arena, io, path));
     }
     const syms: []const Symbol = if (opts.symbols.len != 0) try loadSymbols(arena, io, opts.symbols) else &.{};
     if (opts.link) |addr| return serve(arena, io, opts, syms, &cpu, addr);

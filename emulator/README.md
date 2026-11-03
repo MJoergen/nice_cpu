@@ -102,6 +102,8 @@ goes through these steps on a small program, and a
 | `-d`, `--dump ADDR:N` | After halting, print N memory words from ADDR. May be repeated. |
 | `-n`, `--max-steps N` | Stop after N steps. There is no limit by default, so a program that never halts runs until it is killed. |
 | `-i`, `--input FILE` | Read the console's input from FILE instead of stdin; `-` is stdin. A directory is an error. |
+| `--sd0 FILE` | Put a card into SD card slot 0, with FILE as its image: the card's 512-byte sectors in order. A FILE that cannot be written gives a write-protected card. An empty FILE, or one whose size is not a multiple of 512 bytes, is an error (see SD card below). |
+| `--sd1 FILE` | The same for slot 1. |
 | `--symbols FILE` | Read the labels of `niceasm.py --symbols` from FILE, and name the location of a halt other than `HALT`, of the step limit, and of a wasm trap (see Symbols file below). |
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
@@ -234,7 +236,9 @@ address twice and a file with no words are errors.
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (SYSTEM.md §4). Raises IRQ once every P steps. |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (SYSTEM.md §2). Multiplies and divides A and B, and divides C and D. |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (SYSTEM.md §3). Cycles, instructions, and microseconds, 64 bits each. The fetch statistics of the FPGA core, at `0xFFFFFF50`–`0xFFFFFF7F`, read 0. |
-| `0xFFFFFF80`–`0xFFFFFFFF` | 128 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (SYSTEM.md §1). SYSTEM.md's memory map reserves `0xFFFFFFA0`–`0xFFFFFFCF` for devices still to come. |
+| `0xFFFFFF80`–`0xFFFFFF9F` | 32 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (SYSTEM.md §1). |
+| `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | SD card controller (SYSTEM.md §5). Two slots, with the images of `--sd0` and `--sd1`. |
+| `0xFFFFFFB0`–`0xFFFFFFFF` | 80 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. SYSTEM.md's memory map reserves `0xFFFFFFB0`–`0xFFFFFFCF` for devices still to come. |
 
 ### Screen
 
@@ -335,6 +339,22 @@ raises each one with `--irq` at the step where the core took it, as it
 does for its own requests ([hdl/README.md](../hdl/README.md)). `make test`
 runs `timer.nasm` so, with its ten requests given by `--irq`, and the
 output must equal that of the plain run.
+
+### SD card
+
+The controller has 2 slots, with or without images. A command ends in the
+write that starts it, so busy never reads 1, and a Read or Write goes to
+the image file at once, at byte 512 · `SD_LBA`. A card's type is 2, SDHC,
+and Init always succeeds. A failure of the host to read or write the file
+gives error 5. "Changed" is set at the start, and a card cannot be taken
+out. `SD_LAST` is the image's size in sectors minus 1. Reset, at a start of
+the debug link, keeps the buffer.
+
+`test/sd.nasm` checks the registers, the commands and their errors, a
+Write read back from the file, and the slots, on a fresh image of 2
+sectors that `make test` makes for each run. The unit tests in
+`src/cpu.zig` check write protection, the order of the checks, a failure
+of the host, and reset.
 
 ### Instruction fetches and the memory
 

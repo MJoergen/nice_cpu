@@ -23,7 +23,7 @@ OPTS_wrap      = -d 0xffffffff:1
 # are in the comments of each program. Run make bins after changing one.
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge irqtimer after start cputest console screen screencolor screeninvert iofetch \
   reads reserved mpu mpu64 perf timer input r15modes r0dest r14mem skipconst carryin shiftc \
-  wrapmem smcown scrbound time trapsym
+  wrapmem smcown scrbound time trapsym sd
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
@@ -61,6 +61,8 @@ OPTS_smcown  = -d 5:1
 OPTS_scrbound = -s
 # scrbound again, with the screen at 0x400.
 OPTS_scrbound2004 = -2004 -s
+# A fresh image for each run, as the probe writes it: byte o is o mod 251.
+OPTS_sd      = --sd0 test/sd.img.out -d 0x200:32 -d 0xffffffa0:16
 
 define check
 	@$(EMU) $(OPTS_$(1)) $(2) < /dev/null > test/$(1).out; echo "exit $$?" >> test/$(1).out
@@ -80,6 +82,7 @@ test: build bincheck
 # EMU. errors.py is apart, as it expects a build without the window.
 programs:
 	$(foreach t,$(EXAMPLES),$(call check,$(t),$(ASM)/$(t).bin))
+	@$(PYTHON) -c 'import sys; sys.stdout.buffer.write(bytes(o % 251 for o in range(1024)))' > test/sd.img.out
 	$(foreach t,$(PROBES),$(call check,$(t),test/$(t).bin))
 	$(call check,timer_noirq,test/timer.bin,timer)
 	$(call check,scrbound2004,test/scrbound.bin)

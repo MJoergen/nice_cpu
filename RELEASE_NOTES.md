@@ -180,6 +180,18 @@ host's time (#114), and its window runs as fast as the host can (#116).
   `G_WAIT` cycles, 50 ms, while `rx_flow_i` is high, with `rx_ready_o`
   low. Its proof bounds the wait, and `tb_debug_link` and `tb_link` test
   it (#110).
+- `make timing` on the MEGA65 meets the budget: the core alone has
+  +0.503 ns of slack, and its inputs and outputs leave 3.056 and 2.836 ns
+  to the system around it, where V1.2's release check had 0.314, 2.254,
+  and 2.456 ns.
+
+**Benchmarks**
+
+- The cycle counts do not change: 2356816 estimated cycles in the phases
+  of the translated benchmark on the pipelined core, as at V1.2, and the
+  model agrees with the core. The benchmark's module is 8531 words, as at
+  V1.2. `hand.nasm` and `simple.nasm` use `CALL` and `RET`, which
+  assemble to the same words as before (#93).
 
 ## V1.2 (2026-10-31)
 

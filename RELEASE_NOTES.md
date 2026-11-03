@@ -101,6 +101,13 @@ word operand (#119), and its random test checks the memory at the end
   wrap. A translator that drops the `AND` of #119 now fails every seed
   that `make test` runs, where it passed all of them (#120).
 
+**FPGA cores (`hdl/`)**
+
+- `hdl/src` does not change. `make timing` on the MEGA65 meets the
+  budget with V1.3's figures: the core alone has +0.503 ns of slack, and
+  its inputs and outputs leave 3.056 and 2.836 ns to the system around
+  it.
+
 **Benchmarks**
 
 - The cycle counts do not change: 2356816 estimated cycles in the phases

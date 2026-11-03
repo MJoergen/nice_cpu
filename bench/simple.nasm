@@ -69,12 +69,12 @@ SIGN_N          .EQU    0x10000000      ; the N flag in R14 (ISA.md §9.2)
 ; main: prints the header, runs each phase through run, prints the total,
 ; and returns the number of phases with a wrong result.
 
-_main           MOVE    @--SP, R7
-                MOVE    @--SP, R8
-                MOVE    @--SP, R9
-                MOVE    @--SP, R10
-                MOVE    @--SP, R11
-                MOVE    @--SP, R12
+_main           PUSH    R7
+                PUSH    R8
+                PUSH    R9
+                PUSH    R10
+                PUSH    R11
+                PUSH    R12
                 MOVE    R1, header
                 CALL    puts
                 MOVE    @CONSOLE, 10
@@ -117,12 +117,12 @@ _main           MOVE    @--SP, R7
                 MOVE    @CONSOLE, 10
 
                 MOVE    R1, @failures
-                MOVE    R12, @SP++
-                MOVE    R11, @SP++
-                MOVE    R10, @SP++
-                MOVE    R9, @SP++
-                MOVE    R8, @SP++
-                MOVE    R7, @SP++
+                POP     R12
+                POP     R11
+                POP     R10
+                POP     R9
+                POP     R8
+                POP     R7
                 RET
 
 ; run: R1 = the name, R2 = the phase, R3 = the expected result. Reads the
@@ -164,7 +164,7 @@ run             MOVE    @run.name, R1
                 MOVE    R1, R7
                 CALL    print_hex
                 MOVE    R1, str.ok
-                SUB[M]  R0, R7, @run.expect
+                CMP     R7, @run.expect
         ?!Z     MOVE    R1, str.fail
         ?!Z     ADD     @failures, @failures, 1
                 CALL    puts
@@ -177,7 +177,7 @@ run             MOVE    @run.name, R1
 puts            MOVE[M] R2, @R1++
         ?Z      RET
                 MOVE    @CONSOLE, R2
-                MOVE    PC, puts
+                JMP     puts
 
 ; print_u64: prints R2:R1 in decimal, right-aligned in 12 characters. Uses
 ; the 64-bit division of the math unit, and R1-R4.
@@ -191,18 +191,18 @@ pu.loop         MOVE    @MPU_C_LO, R1
                 ADD     @--R3, @UDIV64_R_LO, 48
                 MOVE    R1, @UDIV64_Q_LO
                 MOVE[M] R2, @UDIV64_Q_HI
-        ?!Z     MOVE    PC, pu.loop
-                MOVE[M] R0, R1
+        ?!Z     JMP     pu.loop
+                TST     R1
         ?!Z     ADD     PC, PC, pu.loop-pu.b1
 pu.b1           SUB     R4, digits.end, R3  ; the digits
                 SUB[M]  R4, 12, R4      ; the spaces before them
-        ?C      MOVE    PC, pu.out      ; more than 12 digits
-        ?Z      MOVE    PC, pu.out
+        ?C      JMP     pu.out          ; more than 12 digits
+        ?Z      JMP     pu.out
 pu.pad          MOVE    @CONSOLE, 32
                 DEC[M]  R4, R4
         ?!Z     ADD     PC, PC, pu.pad-pu.out
 pu.out          MOVE    R1, R3
-                MOVE    PC, puts
+                JMP     puts
 
 ; print_hex: prints R1 as 8 hex digits. Uses R1-R3.
 
@@ -211,7 +211,7 @@ print_hex
 ph.loop         ROL     R1, R1, 4
                 AND     R2, R1, 15
                 ADD     R2, R2, 48
-                SUB[M]  R0, R2, 58
+                CMP     R2, 58
         ?!C     ADD     R2, R2, 39      ; 58 + 39 = 97 = 'a'
                 MOVE    @CONSOLE, R2
                 DEC[M]  R3, R3
@@ -374,7 +374,7 @@ crc.tab         SUB     R2, R3, table   ; the index
                 0>C[M]  R2, R2, 1
         ?C      XOR     R2, R2, 0xEDB88320
                 MOVE    @R3++, R2
-                SUB[M]  R0, R3, table+256
+                CMP     R3, table+256
         ?!Z     ADD     PC, PC, crc.tab-crc.b1
 
 crc.b1
@@ -419,10 +419,10 @@ bst             MOVE    R9, arr
 bst.ins         MOVE    R1, @R9++       ; the key
                 MOVE    R2, root        ; the link
                 MOVE[M] R3, @R2         ; the node it points to
-        ?Z      MOVE    PC, bst.new
+        ?Z      JMP     bst.new
 bst.walk
-                SUB[M]  R0, R1, @R3     ; key - node's key
-        ?Z      MOVE    PC, bst.dup
+                CMP     R1, @R3         ; key - node's key
+        ?Z      JMP     bst.dup
         ?V      XOR     R14, R14, SIGN_N
                 ADD     R2, R3, 3       ; the right link
         ?N      SUB     R2, R2, 1       ; or the left one if key is less
@@ -434,7 +434,7 @@ bst.new         MOVE    @R2, R11
                 MOVE    @R11++, 0
                 MOVE    @R11++, 0
 bst.next
-                SUB[M]  R0, R9, R10
+                CMP     R9, R10
         ?!Z     ADD     PC, PC, bst.ins-bst.b1
 
 bst.b1
@@ -446,20 +446,20 @@ bst.b1
                 RET
 
 bst.dup         ADD     @1[R3], @1[R3], 1  ; the key is there: count it
-                MOVE    PC, bst.next
+                JMP     bst.next
 
 ; bst.walkf: R1 = a node that is not null, R2 = its depth, R3 = the hash,
 ; which it returns in R3. Uses R1 and R2. The call for a child is two
 ; conditional instructions, skipped for a null child, and the one for the
 ; right child is a tail call.
 bst.walkf
-                MOVE    @--SP, R1
-                MOVE    @--SP, R2
+                PUSH    R1
+                PUSH    R2
                 ADD     R2, R2, 1
                 MOVE[M] R1, @2[R1]      ; left
         ?!Z     CALL    bst.walkf
-                MOVE    R2, @SP++
-                MOVE    R1, @SP++
+                POP     R2
+                POP     R1
                 XOR     @MPU_A, R3, @R1  ; h ^ key
                 MOVE    @MPU_B, FNV_PRIME
                 MOVE    R3, @UMUL_LO
@@ -468,7 +468,7 @@ bst.walkf
                 ADD     R3, R3, @UMUL_LO
                 ADD     R2, R2, 1
                 MOVE[M] R1, @3[R1]      ; right
-        ?!Z     MOVE    PC, bst.walkf
+        ?!Z     JMP     bst.walkf
                 RET
 
 ; ---------------------------------------------------------------------------
@@ -502,9 +502,9 @@ hs.b2
                 MOVE    R4, @arr        ; the previous element
                 MOVE    R6, ARR_WORDS
 hs.chk          MOVE    R3, @R2++
-                SUB[M]  R0, R3, R4
+                CMP     R3, R4
         ?V      XOR     R14, R14, SIGN_N
-        ?N      MOVE    PC, hs.bad      ; smaller than the one before
+        ?N      JMP     hs.bad          ; smaller than the one before
                 MOVE    R4, R3
                 XOR     @MPU_A, R5, R3
                 MOVE    R5, @UMUL_LO
@@ -521,40 +521,40 @@ hs.bad          MOVE    R1, 0
 ; new i needs no move. l = 2i + 1 is one instruction, with 1[R1] = i + 1.
 hs.sift         MOVE    R6, @arr[R1]    ; a[i]
 hs.loop         ADD     R3, R1, 1[R1]   ; l
-                SUB[M]  R0, R3, R2
-        ?!C     MOVE    PC, hs.ret      ; l >= n
+                CMP     R3, R2
+        ?!C     JMP     hs.ret          ; l >= n
                 MOVE    R4, @arr[R3]    ; a[m], with m = l
                 MOVE    R5, R3
                 ADD     R7, R3, 1
-                SUB[M]  R0, R7, R2
-        ?!C     MOVE    PC, hs.cmp      ; l + 1 >= n
-                SUB[M]  R0, R4, @arr[R7]  ; a[l] - a[l + 1]
+                CMP     R7, R2
+        ?!C     JMP     hs.cmp          ; l + 1 >= n
+                CMP     R4, @arr[R7]    ; a[l] - a[l + 1]
         ?V      XOR     R14, R14, SIGN_N
         ?N      MOVE    R5, R7          ; a[l + 1] is larger: m = l + 1
         ?N      MOVE    R4, @arr[R7]
-hs.cmp          SUB[M]  R0, R6, R4      ; a[i] - a[m]
+hs.cmp          CMP     R6, R4          ; a[i] - a[m]
         ?V      XOR     R14, R14, SIGN_N
-        ?!N     MOVE    PC, hs.ret      ; a[m] <= a[i]
+        ?!N     JMP     hs.ret          ; a[m] <= a[i]
                 MOVE    @arr[R1], R4
                 MOVE    @arr[R5], R6    ; now i = m, in R5
                 ADD     R3, R5, 1[R5]   ; l
-                SUB[M]  R0, R3, R2
-        ?!C     MOVE    PC, hs.ret
+                CMP     R3, R2
+        ?!C     JMP     hs.ret
                 MOVE    R4, @arr[R3]
                 MOVE    R1, R3
                 ADD     R7, R3, 1
-                SUB[M]  R0, R7, R2
-        ?!C     MOVE    PC, hs.cmp2
-                SUB[M]  R0, R4, @arr[R7]
+                CMP     R7, R2
+        ?!C     JMP     hs.cmp2
+                CMP     R4, @arr[R7]
         ?V      XOR     R14, R14, SIGN_N
         ?N      MOVE    R1, R7
         ?N      MOVE    R4, @arr[R7]
-hs.cmp2         SUB[M]  R0, R6, R4
+hs.cmp2         CMP     R6, R4
         ?V      XOR     R14, R14, SIGN_N
-        ?!N     MOVE    PC, hs.ret
+        ?!N     JMP     hs.ret
                 MOVE    @arr[R5], R4
                 MOVE    @arr[R1], R6    ; now i = m, in R1
-                MOVE    PC, hs.loop
+                JMP     hs.loop
 
 ; ---------------------------------------------------------------------------
 ; phase_vm: cells[4] at @0[SP], stack[16] at @4[SP]. R2 = sp, R3 = pc.
@@ -567,9 +567,9 @@ vm              SUB     SP, SP, 20
                 MOVE    R3, 0
 vm.top          MOVE    R1, @vm.prog[R3]
                 ADD     R3, R3, 1
-                SUB[M]  R0, R1, 10
-        ?!C     MOVE    PC, vm.default
-                MOVE    PC, @vm.disp[R1]
+                CMP     R1, 10
+        ?!C     JMP     vm.default
+                JMP     @vm.disp[R1]
 vm.halt         MOVE    R1, @1[SP]
                 ADD     SP, SP, 20
                 RET
@@ -581,14 +581,14 @@ vm.push         ADD     R5, SP, R2
                 MOVE    @4[R5], @vm.prog[R3]
                 ADD     R3, R3, 1
                 ADD     R2, R2, 1
-                MOVE    PC, vm.top
+                JMP     vm.top
 vm.load         MOVE    R4, @vm.prog[R3]
                 ADD     R3, R3, 1
                 ADD     R4, SP, R4
                 ADD     R5, SP, R2
                 MOVE    @4[R5], @R4
                 ADD     R2, R2, 1
-                MOVE    PC, vm.top
+                JMP     vm.top
 vm.store
                 MOVE    R4, @vm.prog[R3]
                 ADD     R3, R3, 1
@@ -596,42 +596,42 @@ vm.store
                 SUB     R2, R2, 1
                 ADD     R5, SP, R2
                 MOVE    @R4, @4[R5]
-                MOVE    PC, vm.top
+                JMP     vm.top
 vm.add          SUB     R2, R2, 1
                 ADD     R5, SP, R2
                 ADD     @3[R5], @3[R5], @4[R5]
-                MOVE    PC, vm.top
+                JMP     vm.top
 vm.mul          SUB     R2, R2, 1
                 ADD     R5, SP, R2
                 MOVE    @MPU_A, @3[R5]
                 MOVE    @MPU_B, @4[R5]
                 MOVE    @3[R5], @UMUL_LO
-                MOVE    PC, vm.top
+                JMP     vm.top
 vm.xor          SUB     R2, R2, 1
                 ADD     R5, SP, R2
                 XOR     @3[R5], @3[R5], @4[R5]
-                MOVE    PC, vm.top
+                JMP     vm.top
 vm.dup          ADD     R5, SP, R2
                 MOVE    @4[R5], @3[R5]
                 ADD     R2, R2, 1
-                MOVE    PC, vm.top
+                JMP     vm.top
 vm.jnz          MOVE    R4, @vm.prog[R3]
                 ADD     R3, R3, 1
                 SUB     R2, R2, 1
                 ADD     R5, SP, R2
-                MOVE[M] R0, @4[R5]
-        ?Z      MOVE    PC, vm.top
+                TST     @4[R5]
+        ?Z      JMP     vm.top
                 MOVE    R3, R4
-                MOVE    PC, vm.top
+                JMP     vm.top
 vm.lt           SUB     R2, R2, 1
                 ADD     R5, SP, R2
                 MOVE    R4, 0
-                SUB[M]  R0, @3[R5], @4[R5]
+                CMP     @3[R5], @4[R5]
         ?V      XOR     R14, R14, SIGN_N
-        ?!N     MOVE    PC, vm.lt1
+        ?!N     JMP     vm.lt1
                 MOVE    R4, 1
 vm.lt1          MOVE    @3[R5], R4
-                MOVE    PC, vm.top
+                JMP     vm.top
 
 vm.disp         .DAT    vm.halt, vm.push, vm.load, vm.store, vm.add
                 .DAT    vm.mul, vm.xor, vm.dup, vm.jnz, vm.lt
@@ -658,73 +658,73 @@ up.l            MOVE    R4, @R1++
 up.b1           RET
 
 ; phase_strings.
-strings         MOVE    @--SP, R7
-                MOVE    @--SP, R8
-                MOVE    @--SP, R9
-                MOVE    @--SP, R10
-                MOVE    @--SP, R11
-                MOVE    @--SP, R12
+strings         PUSH    R7
+                PUSH    R8
+                PUSH    R9
+                PUSH    R10
+                PUSH    R11
+                PUSH    R12
                 ; make: R7 = p, R8 = j, R9 = b, R10 = len, R11 = k
                 MOVE    R7, pool
                 MOVE    R8, 0
-sm.j            SUB[M]  R0, R8, STR_COUNT
+sm.j            CMP     R8, STR_COUNT
         ?V      XOR     R14, R14, SIGN_N
-        ?!N     MOVE    PC, sm.done
+        ?!N     JMP     sm.done
                 SHL     R9, R8, 4
                 MOVE    @MPU_A, @bufw[R9]
                 MOVE    @MPU_B, STR_MAXLEN-3
                 ADD     R10, @SDIV_R, 4
                 MOVE    @strs[R8], R7
                 MOVE    R11, 0
-sm.k            SUB[M]  R0, R11, R10
+sm.k            CMP     R11, R10
         ?V      XOR     R14, R14, SIGN_N
-        ?!N     MOVE    PC, sm.kd
+        ?!N     JMP     sm.kd
                 ADD     R1, R9, R11
                 MOVE    @MPU_A, @bufw+1[R1]
                 MOVE    @MPU_B, 26
                 ADD     R2, R7, R11
                 ADD     @R2, @SDIV_R, 97
                 ADD     R11, R11, 1
-                MOVE    PC, sm.k
+                JMP     sm.k
 sm.kd           ADD     R2, R7, R10
                 MOVE    @R2, 0
                 ADD     R1, R10, 1
                 ADD     R7, R7, R1
                 ADD     R8, R8, 1
-                MOVE    PC, sm.j
+                JMP     sm.j
 sm.done
                 ; sort: R8 = j, R9 = s, R10 = k
                 MOVE    R8, 1
-so.j            SUB[M]  R0, R8, STR_COUNT
+so.j            CMP     R8, STR_COUNT
         ?V      XOR     R14, R14, SIGN_N
-        ?!N     MOVE    PC, so.done
+        ?!N     JMP     so.done
                 MOVE    R9, @strs[R8]
                 MOVE    R10, R8
-so.k            SUB[M]  R0, R10, 0
+so.k            CMP     R10, 0
         ?V      XOR     R14, R14, SIGN_N
-        ?N      MOVE    PC, so.kd
-        ?Z      MOVE    PC, so.kd
+        ?N      JMP     so.kd
+        ?Z      JMP     so.kd
                 MOVE    R1, @strs-1[R10]
                 MOVE    R2, R9
                 CALL    _strcmp
-                SUB[M]  R0, R1, 0
+                CMP     R1, 0
         ?V      XOR     R14, R14, SIGN_N
-        ?N      MOVE    PC, so.kd
-        ?Z      MOVE    PC, so.kd
+        ?N      JMP     so.kd
+        ?Z      JMP     so.kd
                 MOVE    @strs[R10], @strs-1[R10]
                 SUB     R10, R10, 1
-                MOVE    PC, so.k
+                JMP     so.k
 so.kd           MOVE    @strs[R10], R9
                 ADD     R8, R8, 1
-                MOVE    PC, so.j
+                JMP     so.j
 so.done
                 ; join: R7 = q, R8 = j, R11 = total
                 MOVE    R7, joined
                 MOVE    R11, 0
                 MOVE    R8, 0
-sj.j            SUB[M]  R0, R8, STR_COUNT
+sj.j            CMP     R8, STR_COUNT
         ?V      XOR     R14, R14, SIGN_N
-        ?!N     MOVE    PC, sj.done
+        ?!N     JMP     sj.done
                 MOVE    R1, R7
                 MOVE    R2, @strs[R8]
                 CALL    _strcpy
@@ -733,7 +733,7 @@ sj.j            SUB[M]  R0, R8, STR_COUNT
                 ADD     R11, R11, R1
                 ADD     R7, R7, R1
                 ADD     R8, R8, 1
-                MOVE    PC, sj.j
+                JMP     sj.j
 sj.done
                 ; search: R7 = m, R12 = matches
                 MOVE    R12, 0
@@ -742,33 +742,33 @@ ss.l            MOVE    R1, R7
                 MOVE    R2, str.ab
                 CALL    _strstr
                 MOVE    R7, R1
-                SUB[M]  R0, R7, 0
-        ?Z      MOVE    PC, ss.done
+                CMP     R7, 0
+        ?Z      JMP     ss.done
                 ADD     R12, R12, 1
                 ADD     R7, R7, 1
-                MOVE    PC, ss.l
+                JMP     ss.l
 ss.done
                 ; hash: R7 = c, R9 = h
                 MOVE    R9, FNV_BASIS
                 MOVE    R7, joined
-sh.l            SUB[M]  R0, @R7, 0
-        ?Z      MOVE    PC, sh.done
+sh.l            CMP     @R7, 0
+        ?Z      JMP     sh.done
                 XOR     R1, R9, @R7
                 MOVE    @MPU_A, R1
                 MOVE    @MPU_B, FNV_PRIME
                 MOVE    R9, @UMUL_LO
                 ADD     R7, R7, 1
-                MOVE    PC, sh.l
+                JMP     sh.l
 sh.done         MOVE    @MPU_A, R11
                 MOVE    @MPU_B, 65599
                 ADD     R1, R9, @UMUL_LO
                 ADD     R1, R1, R12
-                MOVE    R12, @SP++
-                MOVE    R11, @SP++
-                MOVE    R10, @SP++
-                MOVE    R9, @SP++
-                MOVE    R8, @SP++
-                MOVE    R7, @SP++
+                POP     R12
+                POP     R11
+                POP     R10
+                POP     R9
+                POP     R8
+                POP     R7
                 RET
 
 str.ab          .DAT    97, 98, 0
@@ -776,21 +776,21 @@ str.ab          .DAT    97, 98, 0
 ; The C library of runtime/libc/src/string.c, compiled the same way.
 
 _strlen         MOVE    R2, R1
-sl.l            SUB[M]  R0, @R2, 0
-        ?Z      MOVE    PC, sl.d
+sl.l            CMP     @R2, 0
+        ?Z      JMP     sl.d
                 ADD     R2, R2, 1
-                MOVE    PC, sl.l
+                JMP     sl.l
 sl.d            SUB     R1, R2, R1
                 RET
 
 _strcmp         MOVE    R3, @R1
-                SUB[M]  R0, R3, 0
-        ?Z      MOVE    PC, sc.d
-                SUB[M]  R0, R3, @R2
-        ?!Z     MOVE    PC, sc.d
+                CMP     R3, 0
+        ?Z      JMP     sc.d
+                CMP     R3, @R2
+        ?!Z     JMP     sc.d
                 ADD     R1, R1, 1
                 ADD     R2, R2, 1
-                MOVE    PC, _strcmp
+                JMP     _strcmp
 sc.d            SUB     R1, @R1, @R2
                 RET
 
@@ -799,53 +799,53 @@ scp.l           MOVE    R4, @R2
                 MOVE    @R3, R4
                 ADD     R3, R3, 1
                 ADD     R2, R2, 1
-                SUB[M]  R0, R4, 0
+                CMP     R4, 0
         ?!Z     ADD     PC, PC, scp.l-scp.b1
 scp.b1          RET
 
 _strncmp
-                SUB[M]  R0, R3, 0
-        ?Z      MOVE    PC, sn.z
+                CMP     R3, 0
+        ?Z      JMP     sn.z
                 MOVE    R4, @R1
-                SUB[M]  R0, R4, @R2
-        ?!Z     MOVE    PC, sn.d
-                SUB[M]  R0, R4, 0
-        ?Z      MOVE    PC, sn.d
+                CMP     R4, @R2
+        ?!Z     JMP     sn.d
+                CMP     R4, 0
+        ?Z      JMP     sn.d
                 SUB     R3, R3, 1
                 ADD     R1, R1, 1
                 ADD     R2, R2, 1
-                MOVE    PC, _strncmp
+                JMP     _strncmp
 sn.d            SUB     R1, @R1, @R2
                 RET
 sn.z            MOVE    R1, 0
                 RET
 
-_strstr         MOVE    @--SP, R7
-                MOVE    @--SP, R8
-                MOVE    @--SP, R9
+_strstr         PUSH    R7
+                PUSH    R8
+                PUSH    R9
                 MOVE    R7, R1
                 MOVE    R8, R2
                 MOVE    R1, R8
                 CALL    _strlen
                 MOVE    R9, R1
-st.l            SUB[M]  R0, @R7, 0
-        ?Z      MOVE    PC, st.e
+st.l            CMP     @R7, 0
+        ?Z      JMP     st.e
                 MOVE    R1, R7
                 MOVE    R2, R8
                 MOVE    R3, R9
                 CALL    _strncmp
-                SUB[M]  R0, R1, 0
-        ?Z      MOVE    PC, st.f
+                CMP     R1, 0
+        ?Z      JMP     st.f
                 ADD     R7, R7, 1
-                MOVE    PC, st.l
-st.e            SUB[M]  R0, R9, 0
-        ?Z      MOVE    PC, st.f
+                JMP     st.l
+st.e            CMP     R9, 0
+        ?Z      JMP     st.f
                 MOVE    R1, 0
-                MOVE    PC, st.r
+                JMP     st.r
 st.f            MOVE    R1, R7
-st.r            MOVE    R9, @SP++
-                MOVE    R8, @SP++
-                MOVE    R7, @SP++
+st.r            POP     R9
+                POP     R8
+                POP     R7
                 RET
 
 

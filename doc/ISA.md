@@ -131,7 +131,7 @@ Control instructions divide the bits below the class differently:
 - **dest, s0, s1**: the three operand fields (§4).
 - **command, vector**: the control instruction and, for `INT`, its vector number (§5.3).
 
-The all-zero word is `MOVE R0, R0` with condition "always", so it does nothing. It is the canonical NOP.
+The all-zero word is `MOVE R0, R0` with condition "always", so it does nothing. It is the canonical NOP, and the assembler writes it for `NOP` (§10.1).
 
 ### 2.2 Operand field
 
@@ -467,7 +467,7 @@ R13 is the stack pointer, SP. The stack grows down, and SP points at the last it
 
 The call works because PC reads as the address after `ADD`'s constant word, which is the start of the 2-word `MOVE PC, sub`. Adding 2 gives the address after the `MOVE`.
 
-The constant is the size of the `MOVE` in words. A call through a register, `MOVE PC, Rx`, is one word, so it pushes with `ADD @--SP, 1, PC`. The assembler writes these sequences for the pseudo-instructions `CALL target` and `RET` (§10.1).
+The constant is the size of the `MOVE` in words. A call through a register, `MOVE PC, Rx`, is one word, so it pushes with `ADD @--SP, 1, PC`. The assembler writes these sequences for the pseudo-instructions `CALL target` and `RET`, and the push and pop for `PUSH x` and `POP x` (§10.1).
 
 ### 9.2 Jumps and comparisons
 
@@ -478,6 +478,8 @@ The constant is the size of the `MOVE` in words. A call through a register, `MOV
 | Relative jump | `ADD PC, PC, offset`. The offset is relative to the next instruction. |
 | Compare a with b | `SUB[M] R0, a, b`. Then Z = 1 if a = b, and C = 1 if a < b unsigned. |
 | Test a | `MOVE[M] R0, a`. Then Z, N, and X describe a. |
+
+The assembler writes these for the pseudo-instructions `JMP target`, `CMP a, b`, and `TST a` (§10.1). A conditional jump is `?Z JMP label`.
 
 There is no condition or instruction for a signed comparison. A signed a < b is N XOR V after `SUB[M]`, and it is tested with two instructions:
 
@@ -511,6 +513,19 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
   - The other ALU and SHIFT instructions take dest, s0, and s1.
   - `HALT` and `RTI` take none, and `INT` takes the vector number.
 - **Pseudo-instructions.** `CALL target` assembles as `ADD @--R13, n, R15` followed by `MOVE R15, target`, where n is the size of the `MOVE` in words: 2 when target has a constant word, else 1. `RET` assembles as `MOVE R15, @R13++`. These are the call and return of §9.1, so R13 is the stack pointer. A condition applies to every instruction of the expansion: `?Z CALL sub` calls only when Z is set, since `ADD` without `[M]` leaves the flags for the `MOVE`. Neither takes a modifier. Both are mnemonics, so neither can be a label or an `.EQU` name.
+- **One-instruction pseudo-instructions.** These are the other idioms of §9 and two common moves, each one instruction:
+
+  | Pseudo | Assembles as |
+  |---|---|
+  | `JMP target` | `MOVE R15, target` |
+  | `CMP a, b` | `SUB[M] R0, a, b` |
+  | `TST a` | `MOVE[M] R0, a` |
+  | `PUSH x` | `MOVE @--R13, x` |
+  | `POP x` | `MOVE x, @R13++` |
+  | `CLR x` | `MOVE x, R0` |
+  | `NOP` | `MOVE R0, R0` |
+
+  `CLR x` is one word, where `MOVE x, 0` takes a constant word for the 0. The operands are checked as those of the instruction, so `JMP R2--` is an error. A condition applies as usual. None takes a modifier: `CMP` and `TST` set the flags because `[M]` is part of what they mean. All are mnemonics, so none can be a label or an `.EQU` name.
 - **Unused fields** are encoded as R0 (`000 0000`).
 
 ### 10.2 Operands
@@ -610,5 +625,6 @@ It executes as follows:
 | Assembler directives and constants | `.DAT` takes several values, a constant may be an expression, and a string may use `"..."` (§10) | `NICE.pm` takes one value per directive, a number or a symbol only, and `'...'` only |
 | `.RES` directive | Reserves words that are not in the program image (§10.3) | The 2004 assembler has no such directive. Every word it reserves, with `.BLK`, is in the image. |
 | `CALL` and `RET` | Pseudo-instructions of the assembler for the call and return of §9.1 (§10.1) | `NICE.pm` has no such names. The 2004 programs write the two instructions. |
+| `JMP`, `CMP`, `TST`, `PUSH`, `POP`, `CLR`, and `NOP` | Pseudo-instructions of the assembler for the idioms of §9 (§10.1) | `NICE.pm` has no such names. The 2004 programs write the instructions. |
 
 The emulator also has bugs that this specification does not copy. Its carry input comes from the wrong SR bit, its 5-bit count mask is wrong, it modifies source registers, it never sets X, `ONE` crashes, `1>0` and `C>0` fill the wrong end, and `DEC` reports a borrow in V. See [review/emulator-and-webpage-review.md](review/emulator-and-webpage-review.md) §4.

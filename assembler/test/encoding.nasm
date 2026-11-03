@@ -196,3 +196,20 @@ cl              CALL    flab            ; 43b: 0077580f, 43c: 2, 43d: 0003d800, 
         ?!Z     RET                     ; 450: b003f680
                 ret                     ; 451: 0003f680
                 .DAT    cl              ; 452: 43b
+; JMP, CMP, TST, PUSH, POP, CLR, and NOP (ISA.md 10.1): each is the one
+; instruction of its idiom, with the condition on it
+jl              JMP     flab            ; 453: 0003d800, 454: 436
+        ?!C     JMP     @R2++           ; 455: a003f100
+                CMP     R1, 5           ; 456: 022000b0, 457: 5
+                CMP     @R2, R3         ; 458: 02202103
+                TST     @R2             ; 459: 02002100
+        ?N      TST     3[R4]           ; 45a: 42001a00, 45b: 3
+                PUSH    R3              ; 45c: 00174180
+                PUSH    flab            ; 45d: 00175800, 45e: 436
+                POP     R4              ; 45f: 00013680
+                POP     @R5++           ; 460: 00197680
+                CLR     R6              ; 461: 00018000
+                CLR     @flab           ; 462: 001c0000, 463: 436
+        ?Z      NOP                     ; 464: 30000000
+                nop                     ; 465: 00000000
+                .DAT    jl              ; 466: 453

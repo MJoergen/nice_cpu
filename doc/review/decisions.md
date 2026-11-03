@@ -114,3 +114,12 @@ proposed again. The open items are the
   Exceptions come from C++ and from Rust with `panic=unwind`, which need a
   C++ library and Rust's std, neither of which the repository has.
   nicewasm rejects both.
+- **More pseudo-instructions** (#117): `INC`, a signed compare or
+  branch, and a relative branch. `INC x` would have to be `MOVE x++, x`
+  to be one word, and with `[M]` its flags would describe the old value;
+  `ADD x, x, 1` is right, and `DEC` is an instruction. A signed compare
+  is three instructions and changes R14 through the `XOR` of ISA.md
+  §9.2, too much to hide in one name. A relative branch,
+  `ADD PC, PC, offset`, is two words, the same as `JMP label`, so it
+  saves nothing. The assembler has `JMP`, `CMP`, `TST`, `PUSH`, `POP`,
+  `CLR`, and `NOP` instead (ISA.md §10.1).

@@ -201,6 +201,24 @@ CASES: List[Tuple[str, str]] = [
     (" CALL nowhere", "1: error: undefined symbol 'nowhere'"),
     ("CALL: HALT", "1: error: 'CALL' is a mnemonic and cannot be a symbol"),
     ("RET .EQU 1", "1: error: 'RET' is a mnemonic and cannot be a symbol"),
+    # JMP, CMP, TST, PUSH, POP, CLR, and NOP (ISA.md section 10.1)
+    (" JMP", "1: error: JMP takes 1 operand, got 0"),
+    (" CMP R1", "1: error: CMP takes 2 operands, got 1"),
+    (" TST R1, R2", "1: error: TST takes 1 operand, got 2"),
+    (" PUSH", "1: error: PUSH takes 1 operand, got 0"),
+    (" POP R1, R2", "1: error: POP takes 1 operand, got 2"),
+    (" CLR", "1: error: CLR takes 1 operand, got 0"),
+    (" NOP R1", "1: error: NOP takes 0 operands, got 1"),
+    (" CMP[C] R1, R2", "1: error: CMP takes no modifiers"),
+    (" TST[M] R1", "1: error: TST takes no modifiers"),
+    (" JMP[M] x\nx HALT", "1: error: JMP takes no modifiers"),
+    (" NOP[M]", "1: error: NOP takes no modifiers"),
+    (" JMP R2--", "1: error: 'R2--': post-decrement is only a direct destination mode"),
+    (" PUSH --R2++", "1: error: bad expression '--R2++'"),
+    (" CLR nowhere", "1: error: undefined symbol 'nowhere'"),
+    ("JMP: HALT", "1: error: 'JMP' is a mnemonic and cannot be a symbol"),
+    ("cmp .EQU 1", "1: error: 'cmp' is a mnemonic and cannot be a symbol"),
+    ("Push: HALT", "1: error: 'Push' is a mnemonic and cannot be a symbol"),
 ]
 
 
@@ -280,6 +298,8 @@ WARN: List[Tuple[str, str, str]] = [
     # No warning for a label at the start of a line, or with ':'
     ("loop\n  done:\n HALT", "00000000 0c000000\n", ""),
     # RET alone on an indented line is an instruction, not a label.
+    # NOP alone on an indented line is an instruction, not a label.
+    (" NOP\n\tHALT", "00000000 00000000\n00000001 0c000000\n", ""),
     (" RET\n\tCALL 0", "00000000 0003f680\n00000001 0077580f\n00000002 00000002\n"
      "00000003 0003d800\n00000004 00000000\n", ""),
 ]

@@ -18,7 +18,7 @@ syn match niceLabel     "^[A-Za-z_][A-Za-z0-9_.]*:\="
 syn keyword niceAlu     MOVE SUB MDBL ADD DBL DEC NOT NOR IAND NAND XOR IOR XNOR AND ONE OR
 syn keyword niceShift   SHL SHR ROL ROR BPL BPR
 syn keyword niceControl HALT RTI INT
-syn keyword nicePseudo  CALL RET
+syn keyword nicePseudo  CALL RET JMP CMP TST PUSH POP CLR NOP
 
 " Modifiers: [M], [C], [CM], [MC]
 syn match niceModifier  "\[[CM]\+\]"

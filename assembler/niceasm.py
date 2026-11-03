@@ -46,7 +46,21 @@ MNEMONICS: Dict[str, Tuple[int, int, int]] = {
 
     "HALT": (CTRL, 0x00, 0), "RTI": (CTRL, 0x01, 0), "INT": (CTRL, 0x02, 1),
 
-    "CALL": (PSEUDO, 0, 1), "RET": (PSEUDO, 0, 0),
+    "CALL": (PSEUDO, 0, 1), "RET": (PSEUDO, 0, 0), "JMP": (PSEUDO, 0, 1),
+    "CMP": (PSEUDO, 0, 2), "TST": (PSEUDO, 0, 1), "PUSH": (PSEUDO, 0, 1),
+    "POP": (PSEUDO, 0, 1), "CLR": (PSEUDO, 0, 1), "NOP": (PSEUDO, 0, 0),
+}
+
+# The pseudo-instructions that are one instruction (ISA.md section 10.1):
+# the mnemonic and its operands, where {0} and {1} are those of the line.
+PSEUDO_ONE: Dict[str, Tuple[str, List[str]]] = {
+    "JMP": ("MOVE", ["R15", "{0}"]),
+    "CMP": ("SUB[M]", ["R0", "{0}", "{1}"]),
+    "TST": ("MOVE[M]", ["R0", "{0}"]),
+    "PUSH": ("MOVE", ["@--R13", "{0}"]),
+    "POP": ("MOVE", ["{0}", "@R13++"]),
+    "CLR": ("MOVE", ["{0}", "R0"]),
+    "NOP": ("MOVE", ["R0", "R0"]),
 }
 
 DIRECTIVES = {".EQU", ".ORG", ".DAT", ".BLK", ".RES", ".ASCII_L", ".ASCII_B"}
@@ -447,13 +461,16 @@ class Assembler:
             raise AsmError(f"{name} takes {nops} operand{'' if nops == 1 else 's'}, "
                            f"got {len(args)}")
 
-        if cls == PSEUDO:  # the call and return of ISA.md section 9.1
-            if name == "CALL":
+        if cls == PSEUDO:  # the idioms of ISA.md section 9
+            if name in PSEUDO_ONE:
+                mnemonic, pattern = PSEUDO_ONE[name]
+                self.instruction(cond, mnemonic, [p.format(*args) for p in pattern], line_no)
+            elif name == "CALL":
                 _, c = self.operand(args[0], False)
                 n = 1 if c is None else 2  # the size of the MOVE in words
                 self.instruction(cond, "ADD", ["@--R13", str(n), "R15"], line_no)
                 self.instruction(cond, "MOVE", ["R15", args[0]], line_no)
-            else:
+            else:  # RET
                 self.instruction(cond, "MOVE", ["R15", "@R13++"], line_no)
             return
 

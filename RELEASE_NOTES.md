@@ -28,6 +28,36 @@ pin each are:
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
 
+## V1.4 (2026-11-03)
+
+The assembler has the pseudo-instructions `JMP`, `CMP`, `TST`, `PUSH`,
+`POP`, `CLR`, and `NOP` (#117).
+
+**Upgrade notes.**
+
+- `JMP`, `CMP`, `TST`, `PUSH`, `POP`, `CLR`, and `NOP` are mnemonics, in
+  any case, so a program that uses one as a label or an `.EQU` name does
+  not assemble. No file of the repository did. Nothing else changes: the
+  ports of both cores, `wb_dmux`, the devices, the address map of
+  SYSTEM.md, and the debug link are as in V1.3.
+- Zig 0.17.0, as in V1.3.
+
+**Specification and documents**
+
+- ISA.md §10.1 defines the seven, each one instruction: `JMP target` is
+  `MOVE R15, target`, `CMP a, b` is `SUB[M] R0, a, b`, `TST a` is
+  `MOVE[M] R0, a`, `PUSH x` is `MOVE @--R13, x`, `POP x` is
+  `MOVE x, @R13++`, `CLR x` is `MOVE x, R0`, and `NOP` is `MOVE R0, R0`.
+  None takes a modifier. §9.1, §9.2, and Appendix B name them (#117).
+- `doc/review/decisions.md`: `INC`, a signed compare, and a relative
+  branch were decided against.
+
+**Assembler (`niceasm`)**
+
+- The seven assemble as ISA.md §10.1 says, with their operands checked
+  as those of the instruction (#117). `nicedis` writes the instructions,
+  never the pseudo-instructions. `nice.vim` highlights them.
+
 ## V1.3 (2026-11-03)
 
 The assembler has `CALL` and `RET` (#93). Debug link version 6 lets a

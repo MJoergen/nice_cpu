@@ -132,7 +132,9 @@ This section lists what the assembler does beyond it.
   else, such as after the mnemonic or two in a row, is an error.
 - `;` starts a comment anywhere outside a string. `*` starts one only at
   the start of a word, so `R2 *note` is `R2` and a comment, but `R2*note`
-  is an error.
+  is a product, and an error, as a register is not a number. A `*`
+  comment after a constant, as in `4 * x`, gives a warning, since a
+  product has no spaces: `4*x`.
 - A line with one word that is not a mnemonic or a directive is a label,
   even when it is indented. When it is indented and has no `:`, as a
   misspelled `HALT` or `RTI` alone on a line would be, the assembler prints

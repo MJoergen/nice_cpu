@@ -502,7 +502,7 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
     [label]  [?cond]  MNEMONIC[mods]  dest, s0, s1    ; comment
 
 - **Case.** Labels and `.EQU` names are case-sensitive. Mnemonics, register names, conditions, modifiers, and directives are not.
-- **Comments.** A comment starts with `;` anywhere outside a string, or with `*` at the start of a word, and runs to the end of the line.
+- **Comments.** A comment starts with `;` anywhere outside a string, or with `*` at the start of a word, and runs to the end of the line. So `4 *x` is `4` and a comment, and `4*x` is a product (§10.2).
 - **Separators.** Operands are separated by whitespace or by one comma.
 - **Labels.** A label is the first word on a line that is not a mnemonic or a directive. It may end with `:`, and so may an `.EQU` name. Its value is the address of what follows on that line; on a `.ORG` line, that is the new address. A label or `.EQU` name is an ASCII letter or `_` followed by ASCII letters, digits, `_`, and `.`. It cannot be a mnemonic, a register name, or look like one: `R` followed by digits, so `R16` is rejected too.
 - **Conditions.** `?cond` is one of the condition codes in §3, such as `?Z` or `?!C`. Without one, the instruction is unconditional. `?M`/`?!M` are accepted as aliases for `?E`/`?!E`.
@@ -539,7 +539,7 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
 | `c`, `c[Rx]` | A constant, mode 011. As a source its value is Rx + c. As a destination it writes mem[Rx + c]. |
 | `@c`, `@c[Rx]` | Memory at Rx + c, mode 111. |
 
-- **Numbers and expressions.** `0x` hex, `0b` binary, and plain decimal. The prefix and the digits may be in either case. There is no `#` prefix and no `$`. A label or an `.EQU` name may appear wherever a number may. A constant may also be an expression: numbers and symbols joined with `+` and `-`, with an optional leading sign and no spaces, such as `end-data` or `-1`. Each number must be below 2³², so `4294967296` and `0x100000000` are errors. The value of an expression wraps modulo 2³², except for `INT`, `.BLK`, and `.RES`, which take it before it wraps and reject it out of range, so `INT 0xFFFFFFFF+1` is an error, not vector 0.
+- **Numbers and expressions.** `0x` hex, `0b` binary, and plain decimal. The prefix and the digits may be in either case. There is no `#` prefix and no `$`. A label or an `.EQU` name may appear wherever a number may. A constant may also be an expression: numbers and symbols joined with `+`, `-`, and `*`, with an optional leading sign and no spaces, such as `end-data`, `-1`, or `4*label`. `*` binds tighter than `+` and `-`, a leading sign is on the first product, and there are no parentheses. An `.EQU` name in an expression stands for its value as a whole, so with `N .EQU 2+3`, `4*N` is 20. Each number must be below 2³², so `4294967296` and `0x100000000` are errors. The value of an expression wraps modulo 2³², except for `INT`, `.BLK`, and `.RES`, which take it before it wraps and reject it out of range, so `INT 0xFFFFFFFF+1` is an error, not vector 0.
 - **Register aliases.** Programs define them with `.EQU`, for example `SP .EQU R13` and `PC .EQU R15`.
 
 ### 10.3 Directives
@@ -622,7 +622,7 @@ It executes as follows:
 | Instruction fetches from the I/O range | Read 0 and never reach a device (§8.3) | Not specified anywhere |
 | Carry input timing | The C flag as step 5 of §5 left it (§5.1, §5.2) | Not specified anywhere. The emulator also reads C after the source operands. |
 | Assembler numbers | `0x`, `0b`, decimal | The emulator reads a leading 0 as octal; the articles use `#` and `$` |
-| Assembler directives and constants | `.DAT` takes several values, a constant may be an expression, and a string may use `"..."` (§10) | `NICE.pm` takes one value per directive, a number or a symbol only, and `'...'` only |
+| Assembler directives and constants | `.DAT` takes several values, a constant may be an expression of `+`, `-`, and `*`, and a string may use `"..."` (§10) | `NICE.pm` takes one value per directive, a number or a symbol only, and `'...'` only |
 | `.RES` directive | Reserves words that are not in the program image (§10.3) | The 2004 assembler has no such directive. Every word it reserves, with `.BLK`, is in the image. |
 | `CALL` and `RET` | Pseudo-instructions of the assembler for the call and return of §9.1 (§10.1) | `NICE.pm` has no such names. The 2004 programs write the two instructions. |
 | `JMP`, `CMP`, `TST`, `PUSH`, `POP`, `CLR`, and `NOP` | Pseudo-instructions of the assembler for the idioms of §9 (§10.1) | `NICE.pm` has no such names. The 2004 programs write the instructions. |

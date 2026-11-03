@@ -213,3 +213,12 @@ jl              JMP     flab            ; 453: 0003d800, 454: 436
         ?Z      NOP                     ; 464: 30000000
                 nop                     ; 465: 00000000
                 .DAT    jl              ; 466: 453
+; products (ISA.md 10.2): '*' binds tighter than '+' and '-', a leading sign
+; is on the first product, and an .EQU name is its value as a whole
+PR              .EQU    2+3
+pl              .DAT    4*pl, 2+3*4, 2*3-1, -2*3, 3*PR, PR*PR-1, 0xFFFFFFFF*2
+                ; 467-46d: 4*0x467 = 119c, e, 5, -6 = fffffffa, 3*5 = f,
+                ; 5*5-1 = 18, 1fffffffe wraps to fffffffe
+                MOVE    R1, 4*pl[R2]    ; 46e: 0x01<<14 | 0x32<<7: 00005900, 46f: 119c
+                INT     3*0x55          ; 470: 255: 0c4000ff
+                .DAT    pl*0+2*2*2      ; 471: 8

@@ -195,7 +195,8 @@ class Assembler:
         return done[name]
 
     def value(self, text: str, done: Optional[Dict[str, int]] = None) -> int:
-        """expr := ['-'|'+'] term {('+'|'-') term}, not yet wrapped modulo 2^32.
+        """expr := ['-'|'+'] product {('+'|'-') product},
+        product := term {'*' term}, not yet wrapped modulo 2^32.
         done holds .EQU values that are already known."""
         parts = re.split(r"([+-])", text)
         if parts[0] == "":       # leading sign
@@ -205,8 +206,13 @@ class Assembler:
         if len(parts) % 2 or "" in parts:
             raise AsmError(f"bad expression '{text}'")
         acc = 0
-        for op, t in zip(parts[0::2], parts[1::2]):
-            v = self.term(t, done or {})
+        for op, product in zip(parts[0::2], parts[1::2]):
+            terms = product.split("*")
+            if "" in terms:
+                raise AsmError(f"bad expression '{text}'")
+            v = 1
+            for t in terms:
+                v *= self.term(t, done or {})
             acc = acc + v if op == "+" else acc - v
         return acc
 
@@ -338,6 +344,15 @@ class Assembler:
         if not p:
             raise AsmError(f"{shown}: missing constant")
         return hi | 0x30 | reg, self.expr(p)
+
+    def is_constant(self, tok: str) -> bool:
+        """True if tok, after .EQU, can be a constant that a product could
+        continue: not a keyword, a string, a register, or another mode."""
+        if self.is_keyword(tok):
+            return False
+        t = self.resolve(tok)
+        return not (t[:1] in QUOTES or t.startswith(("@", "--")) or t.endswith(("++", "--"))
+                    or "[" in t or self.register(t) is not None)
 
     def looks_like_operand(self, tok: str) -> bool:
         """True if tok can only be an operand, not a mnemonic."""
@@ -497,10 +512,11 @@ class Assembler:
                 self.emit(c, line_no)
 
     @staticmethod
-    def tokenize(text: str) -> Tuple[List[str], List[bool]]:
+    def tokenize(text: str) -> Tuple[List[str], List[bool], bool]:
         """Splits at whitespace and single commas. A comment starts with ';'
-        or '*'. A quoted string is one token, quotes kept. Returns the tokens
-        and, for each, whether a comma comes before it."""
+        or '*'. A quoted string is one token, quotes kept. Returns the tokens,
+        for each whether a comma comes before it, and whether a comment that
+        starts with '*' ends the line."""
         tokens: List[str] = []
         commas: List[bool] = []
         text = text.rstrip("\r\n")
@@ -530,7 +546,7 @@ class Assembler:
             comma = False
         if comma:
             raise AsmError("',' at the end of the line has no operand after it")
-        return tokens, commas
+        return tokens, commas, text[pos:pos + 1] == "*"
 
     @staticmethod
     def check_commas(tokens: List[str], commas: List[bool], first_arg: int) -> None:
@@ -557,13 +573,16 @@ class Assembler:
     def line(self, text: str, line_no: int) -> None:
         self.line_no = line_no
         try:
-            tok, commas = self.tokenize(text)
+            tok, commas, star = self.tokenize(text)
         except AsmError:
             if self.pass_no == 0:
                 return  # reported in pass 1
             raise
         if not tok:
             return
+        if self.pass_no == 1 and star and len(tok) >= 2 and self.is_constant(tok[-1]):
+            self.warnings.append((line_no, f"'*' after '{tok[-1]}' starts a comment; "
+                                           f"a product has no spaces, as in '4*x'"))
 
         if len(tok) >= 2 and tok[1].upper() == ".EQU":  # handled before pass 1
             if self.pass_no == 0:

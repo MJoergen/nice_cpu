@@ -165,8 +165,17 @@ CASES: List[Tuple[str, str]] = [
     (" MOVE R1, 5[R2]x", "1: error: '5[R2]x': bad index, expected c[Rx]"),
     (" MOVE R1, [R2]", "1: error: '[R2]': missing constant"),
     (" MOVE R1, R015", "1: error: 'R015' is not a register (the registers are R0 to R15)"),
-    # Coverage audit: a '*' inside a word does not start a comment
-    (" MOVE R1, R2*c", "1: error: expected a number or a symbol at 'R2*c'"),
+    # A '*' inside a word does not start a comment: it is a product, and a
+    # register cannot be a factor (#118)
+    (" MOVE R1, R2*c", "1: error: 'R2' is a register where a number is expected"),
+    # Products: a missing factor, a factor after a sign, and the range of
+    # INT and .BLK, taken before the value wraps (#118)
+    (" .DAT 4*", "1: error: bad expression '4*'"),
+    (" .DAT 4**2", "1: error: bad expression '4**2'"),
+    (" .DAT 1+*2", "1: error: bad expression '1+*2'"),
+    (" INT 128*2", "1: error: interrupt vector 256 is out of range 0..255"),
+    (" .ORG 1\n .BLK 0x10000*0x10000",
+     "2: error: .BLK of 4294967296 words at 0x00000001 runs past address 0xffffffff"),
     # Coverage audit: operand counts, conditions, and modifiers
     (" RTI 1", "1: error: RTI takes 0 operands, got 1"),
     (" INT 1, 2", "1: error: INT takes 1 operand, got 2"),
@@ -295,6 +304,19 @@ WARN: List[Tuple[str, str, str]] = [
      "00000000 0c000000\n",
      "{src}:1: warning: 'RIT' alone on an indented line is read as a label; "
      "write 'RIT:' if one is meant\n"),
+    # A '*' after a constant starts a comment, which the spaces of a product
+    # meant as '4*x' would give silently: a warning, also on an .EQU (#118)
+    (" .DAT 4 *x",
+     "00000000 00000004\n",
+     "{src}:1: warning: '*' after '4' starts a comment; a product has no spaces, "
+     "as in '4*x'\n"),
+    ("N .EQU 2\n .DAT N * 3",
+     "00000000 00000002\n",
+     "{src}:2: warning: '*' after 'N' starts a comment; a product has no spaces, "
+     "as in '4*x'\n"),
+    # No warning after a register, a mode, a string, or a mnemonic
+    (" MOVE R1, R2 * c\n MOVE R1, @R2 *c\n .ASCII_B 'a' * c\nl HALT * c",
+     "00000000 00004100\n00000001 00006100\n00000002 00000061\n00000003 0c000000\n", ""),
     # No warning for a label at the start of a line, or with ':'
     ("loop\n  done:\n HALT", "00000000 0c000000\n", ""),
     # RET alone on an indented line is an instruction, not a label.

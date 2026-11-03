@@ -14,6 +14,7 @@ pin each are:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|
+| `V1.4` | none yet |
 | `V1.3` | none yet |
 | `V1.2` | `V1.2`, `V1.2.1` |
 | `V1.1` | `V1.1` |
@@ -31,7 +32,10 @@ The others pin the tagged commit.
 ## V1.4 (2026-11-03)
 
 The assembler has the pseudo-instructions `JMP`, `CMP`, `TST`, `PUSH`,
-`POP`, `CLR`, and `NOP` (#117).
+`POP`, `CLR`, and `NOP` (#117), and products in expressions (#118).
+Without bounds checks, the translator folds an access's offset into the
+word operand (#119), and its random test checks the memory at the end
+(#120). The emulator's README names a host tool for the debug link (#92).
 
 **Upgrade notes.**
 
@@ -40,6 +44,12 @@ The assembler has the pseudo-instructions `JMP`, `CMP`, `TST`, `PUSH`,
   not assemble. No file of the repository did. Nothing else changes: the
   ports of both cores, `wb_dmux`, the devices, the address map of
   SYSTEM.md, and the debug link are as in V1.3.
+- `*` in an operand that follows a space still starts a comment, so
+  `4 * x` assembles as `4`. The assembler now warns about it (#118).
+- Without bounds checks, WASM.md no longer defines an access past the
+  end of the memory, also when base + offset passes 2^32, which used to
+  wrap to the bottom of the memory (#119). An access in the memory is as
+  before.
 - Zig 0.17.0, as in V1.3.
 
 **Specification and documents**
@@ -51,12 +61,52 @@ The assembler has the pseudo-instructions `JMP`, `CMP`, `TST`, `PUSH`,
   None takes a modifier. §9.1, §9.2, and Appendix B name them (#117).
 - `doc/review/decisions.md`: `INC`, a signed compare, and a relative
   branch were decided against.
+- ISA.md §10.2: a constant may be an expression of `+`, `-`, and `*`.
+  `*` binds tighter, a leading sign is on the first product, and an
+  `.EQU` name is its value as a whole, so with `N .EQU 2+3`, `4*N` is
+  20. §10.1 says that `4 *x` is `4` and a comment (#118).
+- WASM.md: without bounds checks, an access whose bytes are all in the
+  memory is as with them, and one past the end reads or writes NICE
+  words that it does not define (#119).
+- `doc/review/decisions.md`: dropping the `AND` that takes a word index
+  modulo 2^30 without bounds checks was decided against. It would save
+  about 6% of the benchmark's steps, but it is needed when the `i32.add`
+  of an address wraps and still gives one in the memory (#119).
+- DEBUG.md and `emulator/README.md`, Debug link: NiceMonMEGA65's
+  `tools/mon.py --tcp` is a host tool for the link that works with
+  `niceemu --link`: it loads, runs, pauses, steps, sets breakpoints, and
+  disassembles, with labels from `--symbols` (#92).
 
 **Assembler (`niceasm`)**
 
 - The seven assemble as ISA.md §10.1 says, with their operands checked
   as those of the instruction (#117). `nicedis` writes the instructions,
   never the pseudo-instructions. `nice.vim` highlights them.
+- Expressions take `*`, as in `4*label` or `.BLK 2*N`. `INT`, `.BLK`,
+  and `.RES` check the value before it wraps, as before. A `*` comment
+  after a constant operand gives a warning, since a product has no
+  spaces (#118).
+
+**Translator (`nicewasm`, `nicebuild.py`)**
+
+- With `--no-bounds-checks`, an offset that is a multiple of 4 goes into
+  the word operand, and the word index and the byte in the word come
+  from the base, with no `ADD`: for byte and halfword accesses, and for
+  word accesses on the fast path. The benchmark takes 0.3% fewer steps
+  in 0.9% fewer words, and with `--trust-alignment` too, 0.4% fewer steps
+  in 3.4% fewer words (#119).
+- `test/fuzz.py` compares the linear memory at the halt with the model's,
+  word for word. The memory starts with a pattern in which no two words
+  are alike, and `main` starts with accesses at array addresses that
+  wrap. A translator that drops the `AND` of #119 now fails every seed
+  that `make test` runs, where it passed all of them (#120).
+
+**Benchmarks**
+
+- The cycle counts do not change: 2356816 estimated cycles in the phases
+  of the translated benchmark on the pipelined core, as at V1.3, and the
+  benchmark's module is 8531 words. The sources use the new
+  pseudo-instructions, which assemble to the same words (#117).
 
 ## V1.3 (2026-11-03)
 

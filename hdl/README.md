@@ -49,7 +49,7 @@ found in the release stamp ([release/RELEASE.md](../release/RELEASE.md)).
 | [ASSUMPTIONS.md](ASSUMPTIONS.md) | Where the pipelined core settles a question that MICROARCH.md leaves open, or departs from it. |
 | [timing.tcl](timing.tcl) | The Vivado script of `make timing`: the pipelined core alone, placed and routed, and its worst paths. |
 | [src/](src/README.md) | The synthesizable VHDL: the two cores, their shared packages, and the devices. |
-| [sim/](sim/README.md) | The trace writer and the memory model, for simulation only. |
+| [sim/](sim/README.md) | The trace writer, the memory model, and the SD card engine, for simulation only. |
 | [test/](test/README.md) | The testbenches, the test programs, and the scripts that run them. |
 | [formal/](formal/README.md) | The formal checks: the checkers of the ports, and a wrapper and a SymbiYosys job for each unit. |
 
@@ -648,6 +648,27 @@ reads 0. `tb_core` passes its generic `G_FETCH_STATS` on to it.
 `formal/fetch_stats.sby` proves the port, what each cycle does to the
 counters, and the invariants that tie them, with and without `G_ENABLE`.
 
+## The SD card controller
+
+`sd_regs` holds the registers and the 512-byte buffer of the SD card
+controller of SYSTEM.md §5. Its bus port is a pipelined Wishbone slave with
+a 4-bit address. The bus decoder selects it for `0xFFFFFFA0`–`0xFFFFFFAF`.
+It makes the checks of a command that need no card, and passes the rest
+to a protocol engine: `start_o` for one cycle, with the command, the slot,
+and the sector, and the engine's `done_i` and error at the end, with the
+card's size and type after Init. While a command runs, the buffer belongs
+to the engine, a byte at a time, and `busy_o` is high. `present_i` and
+`wp_i` give each slot's card detect and write protect switch, and the
+generic `G_SLOTS` the number of slots. Reset lets a Write that runs finish,
+and abandons any other command with `abort_o`.
+
+With the generic `G_HOLD_ACK`, the ACK of a write to `SD_CSR` that starts
+the engine waits until the command ends, with STALL high, so no access
+sees busy 1, as in the emulator. `tb_core` sets it, with the engine
+`sim/sd_sim.vhd`, which holds the images of its generics `G_SD0_FILE` and
+`G_SD1_FILE` in memory and writes nothing back. A board leaves it false,
+as an Init may take hundreds of milliseconds, and adds its own engine.
+
 ## The trace writer
 
 The core reports each step in a `t_retire`: one instruction, skipped or not,
@@ -699,6 +720,14 @@ of the P-th cycle counting the write's, and that the count stops while
 when the vector is written and more requests merge with it, and a check
 in every cycle makes sure of that. It also checks a stop with a request
 pending, P = 1 with `ready` high in every cycle, the spare words, and reset.
+
+`tb_sd_regs` plays the engine and the cards of the SD card controller,
+without the held ACK, so that busy shows. It checks the start of each
+command and the writes ignored while busy, the bytes of a Read and a
+Write, the checks that refuse a command, an engine error and a failed
+Init, a card taken out and put in, and the two kinds of reset: one that
+abandons a Read, and one that lets a Write on slot 1 run on and report
+nothing.
 
 `tb_fetch_stats` drives the events of a few cycles by hand. It checks
 that each counter counts its events from the cycle after a write that
@@ -885,8 +914,10 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   as the one for VBASE = 0, and says how many steps it left out: about
   280 of 7444 for NMI, and 75 for IRQ. `make sweep` sweeps the two with
   one request per run instead.
-- `cputest`, `reads`, `mpu`, `mpu64`, `perf`, and `timer` again, on a memory that
-  stalls in 30% of the cycles.
+- `cputest`, `reads`, `mpu`, `mpu64`, `perf`, `timer`, and `sd` again, on a memory that
+  stalls in 30% of the cycles, and `sd` with pauses held for a random time.
+  `sd` runs with an image in slot 0 that `make test` makes in the run's
+  directory, and the emulator with a copy of it, which it writes.
 - On the pipelined core only, `test/fstats.nasm`, also on a memory that
   stalls in 30% of the cycles. It reads the fetch statistics around a
   loop of jumps, and checks what any run must give: the histogram adds up
@@ -1089,6 +1120,7 @@ formal/UNIT/TASK` runs one task, for example `make formal/pipe_fetch/prove`.
 | `pipeline` | The ports of the pipelined core and its own assertions, for 12 cycles after reset. | `bmc` of 12 cycles, ABC | 4 minutes |
 | `wb_dmux` | The data bus decoder: the ACKs come back in order, from one slave at a time. | PDR | seconds |
 | `timer` | The timer's ports. | k-induction of depth 10, Yices | seconds |
+| `sd_regs` | The SD card controller's bus and engine ports, with and without the held ACK. | k-induction of depth 10, Yices | seconds |
 | `perf` | The performance counters, against a model. | PDR | 20 seconds |
 | `fetch_stats` | The fetch statistics: what each cycle does to the counters. | k-induction, Boolector | half a minute |
 | `mpu` | The math unit's port, its waits, and its quotients and remainders for every pair of operands. | k-induction, Boolector | about 2 minutes |
@@ -1161,6 +1193,15 @@ states. The core asserts them itself when its generic `G_FORMAL` is true;
 read, a write, a stalled request, and each kind of interrupt taken. For
 the timer, it shows a request taken, and one that waits while the timer
 counts on.
+
+`formal_sd_regs` checks the SD card controller's registers with every
+input free, and an engine that answers only while a command runs. It
+asserts that no command starts while one runs, that a command's slot and
+sector hold until it ends, and that `busy_o` follows it. With the held
+ACK, it asserts what `formal_mpu` asserts of a port that may wait; the
+task `prove_nohold`, without it, adds `wb_slave_check`. The `cover` task
+shows a held command that ends with its ACK, a Write that runs on through
+a reset, and a Read that reset abandons.
 
 `formal_nice_pkg` proves the functions that both cores share, for every
 input. They are combinational, so a bounded check of depth 1 covers every

@@ -1,0 +1,32 @@
+# The ports of the SD card controller's registers (formal_sd_regs.vhd).
+# "prove" proves the assertions for every cycle by k-induction, with the
+# held ACK of the simulation, and "prove_nohold" without it, as on a
+# board. "cover" reaches each cover statement.
+
+[tasks]
+prove
+prove_nohold
+cover
+
+[options]
+prove: mode prove
+prove: depth 10
+prove_nohold: mode prove
+prove_nohold: depth 10
+cover: mode cover
+cover: depth 20
+
+[engines]
+smtbmc yices
+
+[script]
+plugin -i ghdl
+prove: ghdl --std=08 -fpsl sd_regs.vhd wb_slave_check.vhd formal_sd_regs.vhd -e formal_sd_regs
+prove_nohold: ghdl --std=08 -fpsl -gG_HOLD_ACK=false sd_regs.vhd wb_slave_check.vhd formal_sd_regs.vhd -e formal_sd_regs
+cover: ghdl --std=08 -fpsl sd_regs.vhd wb_slave_check.vhd formal_sd_regs.vhd -e formal_sd_regs
+prep -top formal_sd_regs
+
+[files]
+../src/sd_regs.vhd
+wb_slave_check.vhd
+formal_sd_regs.vhd

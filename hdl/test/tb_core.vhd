@@ -13,8 +13,12 @@
 -- the timer, src/timer.vhd (SYSTEM.md §4), 0xFFFFFF20-0xFFFFFF3F to the
 -- math unit, src/mpu.vhd (SYSTEM.md §2), 0xFFFFFF40-0xFFFFFF4F to the
 -- performance counters, src/perf.vhd (SYSTEM.md §3), 0xFFFFFF50-0xFFFFFF7F
--- to the fetch statistics, src/fetch_stats.vhd (MICROARCH.md §8.1), and
--- the rest to the memory model. It keeps the ACKs in order for a core with several
+-- to the fetch statistics, src/fetch_stats.vhd (MICROARCH.md §8.1),
+-- 0xFFFFFFA0-0xFFFFFFAF to the SD card controller, src/sd_regs.vhd
+-- (SYSTEM.md §5), and the rest to the memory model. The controller's
+-- engine is sim/sd_sim.vhd, with the images G_SD0_FILE and G_SD1_FILE, as
+-- the emulator's --sd0 and --sd1, or none for "". It holds the ACK of a
+-- command until the command ends, so the core never sees busy. It keeps the ACKs in order for a core with several
 -- requests in flight (MICROARCH.md §8). It holds no address map: the
 -- address compare that names the slave, dbus_sel, is here.
 -- The trace writer, sim/trace.vhd, prints each step the core reports.
@@ -148,6 +152,8 @@ entity tb_core is
       G_BIN_FILE      : string;
       G_TRACE_FILE    : string;
       G_INPUT_FILE    : string   := "";
+      G_SD0_FILE      : string   := "";
+      G_SD1_FILE      : string   := "";
       G_TRACE         : boolean  := true;
       G_MAX_STEPS     : positive := 100_000_000;
       G_INTERRUPTS    : string   := "";
@@ -348,7 +354,8 @@ architecture simulation of tb_core is
    constant C_PERF   : natural := 2;
    constant C_TIMER  : natural := 3;
    constant C_STATS  : natural := 4;
-   constant C_SLAVES : natural := 5;
+   constant C_SD     : natural := 5;
+   constant C_SLAVES : natural := 6;
 
    signal dbus_sel    : natural range 0 to C_SLAVES - 1;
    signal slave_stb   : std_logic_vector(C_SLAVES - 1 downto 0);
@@ -360,6 +367,23 @@ architecture simulation of tb_core is
    signal timer_vector : std_logic_vector(7 downto 0);
    signal instret      : std_logic;
    signal fetch_events : t_fetch_events := C_FETCH_EVENTS_NONE;
+
+   -- The SD card controller and its engine
+   signal sd_present   : std_logic_vector(1 downto 0);
+   signal sd_wp        : std_logic_vector(1 downto 0);
+   signal sd_start     : std_logic;
+   signal sd_abort     : std_logic;
+   signal sd_cmd       : std_logic_vector(1 downto 0);
+   signal sd_slot      : std_logic_vector(3 downto 0);
+   signal sd_lba       : std_logic_vector(31 downto 0);
+   signal sd_done      : std_logic;
+   signal sd_error     : std_logic_vector(3 downto 0);
+   signal sd_last      : std_logic_vector(31 downto 0);
+   signal sd_type      : std_logic_vector(1 downto 0);
+   signal sd_buf_addr  : std_logic_vector(8 downto 0);
+   signal sd_buf_we    : std_logic;
+   signal sd_buf_wdata : std_logic_vector(7 downto 0);
+   signal sd_buf_rdata : std_logic_vector(7 downto 0);
 
    signal nmi_valid  : std_logic                    := '0';
    signal nmi_ready  : std_logic;
@@ -519,6 +543,7 @@ begin
                            (G_CYCLE_COUNTER or (dbus_addr(3 downto 1) /= "000" and
                                                 dbus_addr(3 downto 1) /= "010")) else
                C_TIMER when dbus_addr(31 downto 4) = X"FFFFFF1" else
+               C_SD when dbus_addr(31 downto 4) = X"FFFFFFA" else
                C_STATS when dbus_addr(31 downto 6) = X"FFFFFF" & "01" and
                             dbus_addr(5 downto 4) /= "00" else
                C_MEM;
@@ -651,6 +676,66 @@ begin
          wb_data_i  => dbus_data_out,
          wb_data_o  => slave_data(32 * C_STATS + 31 downto 32 * C_STATS)
       ); -- i_fetch_stats
+
+
+   i_sd_regs : entity work.sd_regs
+      generic map (
+         G_SLOTS    => 2,
+         G_HOLD_ACK => true
+      )
+      port map (
+         clk_i      => clk,
+         rst_i      => rst,
+         wb_cyc_i   => dbus_cyc,
+         wb_stb_i   => slave_stb(C_SD),
+         wb_stall_o => slave_stall(C_SD),
+         wb_ack_o   => slave_ack(C_SD),
+         wb_we_i    => dbus_we,
+         wb_addr_i  => dbus_addr(3 downto 0),
+         wb_data_i  => dbus_data_out,
+         wb_data_o  => slave_data(32 * C_SD + 31 downto 32 * C_SD),
+         present_i  => sd_present,
+         wp_i       => sd_wp,
+         busy_o     => open,
+         start_o    => sd_start,
+         abort_o    => sd_abort,
+         cmd_o      => sd_cmd,
+         slot_o     => sd_slot,
+         lba_o      => sd_lba,
+         done_i     => sd_done,
+         error_i    => sd_error,
+         last_i     => sd_last,
+         type_i     => sd_type,
+         buf_addr_i => sd_buf_addr,
+         buf_we_i   => sd_buf_we,
+         buf_data_i => sd_buf_wdata,
+         buf_data_o => sd_buf_rdata
+      ); -- i_sd_regs
+
+
+   i_sd_sim : entity work.sd_sim
+      generic map (
+         G_SD0_FILE => G_SD0_FILE,
+         G_SD1_FILE => G_SD1_FILE
+      )
+      port map (
+         clk_i      => clk,
+         present_o  => sd_present,
+         wp_o       => sd_wp,
+         start_i    => sd_start,
+         abort_i    => sd_abort,
+         cmd_i      => sd_cmd,
+         slot_i     => sd_slot,
+         lba_i      => sd_lba,
+         done_o     => sd_done,
+         error_o    => sd_error,
+         last_o     => sd_last,
+         type_o     => sd_type,
+         buf_addr_o => sd_buf_addr,
+         buf_we_o   => sd_buf_we,
+         buf_data_o => sd_buf_wdata,
+         buf_data_i => sd_buf_rdata
+      ); -- i_sd_sim
 
 
    i_trace : entity work.trace

@@ -16,6 +16,7 @@ The synthesizable VHDL: the two cores, their shared packages, and the devices. [
 | [mpu.vhd](mpu.vhd) | The math unit of SYSTEM.md §2, a Wishbone slave. |
 | [perf.vhd](perf.vhd) | The performance counters of SYSTEM.md §3, a Wishbone slave. |
 | [timer.vhd](timer.vhd) | The timer of SYSTEM.md §4, a Wishbone slave with an interrupt request port. |
+| [sd_regs.vhd](sd_regs.vhd) | The registers and the buffer of the SD card controller of SYSTEM.md §5, a Wishbone slave with a port to a protocol engine. |
 | [fetch_stats.vhd](fetch_stats.vhd) | The fetch statistics of MICROARCH.md §8.1, counters of FETCH and DECODE of the pipelined core, a Wishbone slave. |
 | [wb_dmux.vhd](wb_dmux.vhd) | The data bus decoder, which keeps the ACKs of several slaves in order. |
 | [debug_link.vhd](debug_link.vhd) | The byte-stream part of the debug link of DEBUG.md: packets, the debug registers, notices, and a Wishbone master. It returns the core's registers live while the core runs, has a side port for a client inside the system, `rx_resume_i`, which starts the line's input anew after a break, and `rx_flow_i`, with which a console byte waits for room on a transport with flow control. |

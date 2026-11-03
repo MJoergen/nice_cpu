@@ -3,9 +3,9 @@ ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
 BUILD = build
 
-SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/perf.vhd src/timer.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd
-SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd
-TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_perf_hz.vhd test/tb_timer.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd test/tb_debug_link.vhd test/tb_link.vhd \
+SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/perf.vhd src/timer.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd src/sd_regs.vhd
+SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd sim/sd_sim.vhd
+TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_perf_hz.vhd test/tb_timer.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd test/tb_debug_link.vhd test/tb_sd_regs.vhd test/tb_link.vhd \
   test/tb_trace.vhd test/tb_core.vhd
 
 # The runs of make test and make random go in parallel: each
@@ -41,9 +41,9 @@ $(BUILD)/%.nasm: test/%_prog.py
 
 # tb_mem checks the memory model itself, tb_shift the ALU and the shifter of
 # src/nice_pkg.vhd, tb_mpu the math unit, tb_perf the performance counters,
-# tb_timer the timer, tb_fetch_stats the fetch statistics, and tb_wb_dmux
-# the data bus decoder.
-UNITS = tb_mem tb_shift tb_mpu tb_perf tb_perf_hz tb_timer tb_fetch_stats tb_wb_dmux tb_debug_link
+# tb_timer the timer, tb_fetch_stats the fetch statistics, tb_wb_dmux
+# the data bus decoder, and tb_sd_regs the SD card controller.
+UNITS = tb_mem tb_shift tb_mpu tb_perf tb_perf_hz tb_timer tb_fetch_stats tb_wb_dmux tb_debug_link tb_sd_regs
 GENERICS_tb_mem = -gG_BIN_FILE=$(abspath test/mem.bin) -gG_INPUT_FILE=$(abspath test/mem.input)
 
 $(UNITS:%=run/unit/%): run/unit/%:
@@ -116,10 +116,12 @@ $(LINK_RUNS): run/link/%: $(BUILD)/linkecho.bin
 # interrupt to instructions with data reads, which a step over RTI must not
 # run. These are G_PAUSE, G_PAUSE_HOLD, and G_SINGLE_STEP of
 # test/tb_core.vhd, and must not change the trace (MICROARCH.md §6.1).
+# sd uses the SD card controller, src/sd_regs.vhd, with the engine
+# sim/sd_sim.vhd, and runs again on a stalling memory and with held pauses.
 EXAMPLES = count replicate print wrap
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest \
   console screen iofetch reads reserved mpu mpu64 perf timer input \
-  r15modes r0dest r14mem skipconst carryin shiftc wrapmem smcown
+  r15modes r0dest r14mem skipconst carryin shiftc wrapmem smcown sd
 INTR_irq   = --nmi 2:1 --irq 2:2 --nmi 9:1 --irq 17:2 --nmi 17:1 --irq 100:2
 INTR_merge = --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
 INTR_after = --nmi 3:1 --nmi 10:1
@@ -140,6 +142,13 @@ TIMER_timer_stall = yes
 requests = $(INTR_$(1))$(TIMER_$(1))
 # The console input of a run, a file, as the emulator's --input takes it.
 INPUT_input = ../emulator/test/input.txt
+# The runs with an SD card in slot 0: sd.img in the run's directory, the
+# image of emulator/test/sd.nasm, for the core, and a copy of it for the
+# emulator, which writes it. sim/sd_sim.vhd writes nothing back.
+SD_sd = yes
+SD_sd_stall = yes
+SD_sd_hold = yes
+SD_IMAGE = $(PYTHON) -c 'import sys; sys.stdout.buffer.write(bytes(o % 251 for o in range(1024)))'
 
 # test/breaks.nasm stops at the breakpoints of BREAKS_breaks, in hex, with
 # the requests of INTR_breaks: in a loop, at an instruction with a data
@@ -184,12 +193,15 @@ endef
 
 # $(1) is the name of the run, $(2) the program, and $(3) any more generics.
 define check_core
-	@($(in_rundir) && $(call sim_run,tb_core,-gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(2)) \
+	@($(in_rundir) && $(if $(SD_$(1)),$(SD_IMAGE) > sd.img && cp sd.img sd_emu.img &&) \
+	  $(call sim_run,tb_core,-gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(2)) \
 	  -gG_TRACE_FILE=core.out $(if $(INTR_$(1)),"-gG_INTERRUPTS=$(INTR_$(1))") \
 	  $(if $(call requests,$(1)),-gG_INTR_LOG=core.intr) \
 	  $(if $(INPUT_$(1)),-gG_INPUT_FILE=$(abspath $(INPUT_$(1)))) \
+	  $(if $(SD_$(1)),-gG_SD0_FILE=sd.img) \
 	  $(3)) > core.log 2>&1); echo "exit $$?" >> $(RUNDIR)/core.out
-	@$(EMU) -t $(INTR_$(1)) $(if $(INPUT_$(1)),--input $(INPUT_$(1))) $(2) < /dev/null \
+	@$(EMU) -t $(INTR_$(1)) $(if $(INPUT_$(1)),--input $(INPUT_$(1))) \
+	  $(if $(SD_$(1)),--sd0 $(RUNDIR)/sd_emu.img) $(2) < /dev/null \
 	  > $(RUNDIR)/core.expected; \
 	  echo "exit $$?" >> $(RUNDIR)/core.expected
 	$(if $(and $(call requests,$(1)),$(IRQ_LATE)),,@if cmp -s $(RUNDIR)/core.expected $(RUNDIR)/core.out; \
@@ -383,6 +395,8 @@ $(eval $(call core_run,$(1),mpu_stall,../emulator/test/mpu.bin,-gG_STALL=30 -gG_
 $(eval $(call core_run,$(1),mpu64_stall,../emulator/test/mpu64.bin,-gG_STALL=30 -gG_SEED=5))
 $(eval $(call core_run,$(1),perf_stall,../emulator/test/perf.bin,-gG_STALL=30 -gG_SEED=9))
 $(eval $(call core_run,$(1),timer_stall,../emulator/test/timer.bin,-gG_STALL=30 -gG_SEED=11))
+$(eval $(call core_run,$(1),sd_stall,../emulator/test/sd.bin,-gG_STALL=30 -gG_SEED=41))
+$(eval $(call core_run,$(1),sd_hold,../emulator/test/sd.bin,-gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=43))
 $(eval $(call core_run,$(1),cputest_pause,../emulator/test/cputest.bin,-gG_PAUSE=60 -gG_STALL=30 -gG_SEED=23))
 $(eval $(call core_run,$(1),cputest_hold,../emulator/test/cputest.bin,-gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=31))
 $(eval $(call core_run,$(1),cputest_step,../emulator/test/cputest.bin,-gG_SINGLE_STEP=true))
@@ -506,9 +520,9 @@ analyze-nvc:
 	$(if $(PREBUILT),,$(NVC) $(NVCOPTS) -a $(SOURCES) $(SIM_SOURCES) $(TEST_SOURCES))
 
 # Checks that GHDL can synthesize the core, the math unit, the performance
-# counters, the timer, and the data bus decoder, with the generics in
-# SYNTH_GENERICS_unit.
-SYNTH = multicycle pipeline mpu perf timer fetch_stats wb_dmux debug_link
+# counters, the timer, the data bus decoder, the debug link, and the SD
+# card controller, with the generics in SYNTH_GENERICS_unit.
+SYNTH = multicycle pipeline mpu perf timer fetch_stats wb_dmux debug_link sd_regs
 SYNTH_GENERICS_wb_dmux = -gG_SLAVES=4
 
 define check_synth
@@ -524,12 +538,13 @@ synth: analyze-ghdl
 # is a target formal/FILE/TASK, and they run in parallel, as the runs of
 # make test do. The work directories go in $(BUILD).
 SBY ?= sby
-FORMAL = nice_pkg multicycle timer wb_dmux pipe_fetch pipe_decode pipe_prepare pipe_dbus pipe_write pipeline perf fetch_stats mpu debug_link
+FORMAL = nice_pkg multicycle timer wb_dmux pipe_fetch pipe_decode pipe_prepare pipe_dbus pipe_write pipeline perf fetch_stats mpu debug_link sd_regs
 FORMAL_TASKS = prove cover
 # The pipelined core is checked for a bounded number of cycles only.
 FORMAL_TASKS_pipeline = bmc cover
 # The debug link is proven twice, with and without a ROM.
 FORMAL_TASKS_debug_link = prove prove_held cover cover_side
+FORMAL_TASKS_sd_regs = prove prove_nohold cover
 
 define check_formal
 	@mkdir -p $(BUILD)

@@ -3539,7 +3539,9 @@ class FunctionTranslator:
         if const is not None:
             addr = const + offset
             if not self.t.checks:
-                return addr & 0xFFFFFFFF, "", 0  # the address wraps modulo 2^32 (WASM.md)
+                # Past the end of the memory, WASM.md defines no result, so
+                # the address may wrap modulo 2^32.
+                return addr & 0xFFFFFFFF, "", 0
             assert self.t.mem_bytes is not None
             if addr + n <= self.t.mem_bytes:
                 return addr, "", 0
@@ -3557,7 +3559,12 @@ class FunctionTranslator:
             return None, a, k
 
         if not self.t.checks:
-            # The address wraps modulo 2^32 (WASM.md).
+            # Past the end of the memory, WASM.md defines no result. Below
+            # it, base + offset does not pass 2^32, so with an offset that
+            # is a multiple of 4, the word of base + offset is that of base
+            # plus offset / 4, and the byte in it that of base.
+            if fold and offset % 4 == 0:
+                return done(base, offset // 4)
             if offset:
                 a = self.new_vreg()
                 self.emit("ADD", a, base, words(offset, I32)[0])
@@ -3652,29 +3659,33 @@ class FunctionTranslator:
         return self.t.trust_alignment and align >= 2
 
     def fast_path(self, helper: str, a: str, args: List[str], results: List[str],
-                  aligned: List[Tuple[str, ...]], trusted: bool = False) -> None:
-        """The access of 4 or 8 bytes at the byte address a. If a is at a
-        multiple of 4, the aligned instructions do it, with %0 and %1 in
+                  aligned: List[Tuple[str, ...]], trusted: bool = False, k: int = 0) -> None:
+        """The access of 4 or 8 bytes at the byte address a + 4k. If a is at
+        a multiple of 4, the aligned instructions do it, with %0 and %1 in
         their operands for its words. Else a stub after the epilogue calls
-        the helper with a in R1 and args from R2 up, moves its results from
-        R1 up, and jumps back. If trusted, a is taken to be at a multiple
-        of 4, with no test and no stub: a misaligned access then reaches
-        the word that holds its first byte, which wasm does not allow."""
+        the helper with a + 4k in R1 and args from R2 up, moves its results
+        from R1 up, and jumps back. If trusted, a is taken to be at a
+        multiple of 4, with no test and no stub: a misaligned access then
+        reaches the word that holds its first byte, which wasm does not
+        allow."""
+        w = self.new_vreg()
         if trusted:
-            w = self.new_vreg()
             self.emit("SHR", w, a, "2")                   # word index
-            for mnemonic, *ops in self.expand(aligned, lambda k: self.mem_word(k, w)):
+            for mnemonic, *ops in self.expand(aligned, lambda j: self.mem_word(k + j, w)):
                 self.emit(mnemonic, *ops)
             return
         stub, back = self.new_label(), self.new_label()
         self.emit("AND[M]", "R0", a, "3")
         self.emit("?!Z MOVE", "R15", stub)
-        w = self.new_vreg()
         self.emit("SHR", w, a, "2")                       # word index
-        for mnemonic, *ops in self.expand(aligned, lambda k: self.mem_word(k, w)):
+        for mnemonic, *ops in self.expand(aligned, lambda j: self.mem_word(k + j, w)):
             self.emit(mnemonic, *ops)
         self.label(back, keep=True)
         self.label(stub, stub=True)
+        if k:
+            b = self.new_vreg()
+            self.emit("ADD", b, a, words(4 * k, I32)[0], stub=True)
+            a = b
         self.call_helper(helper, [a] + args, len(results), stub=True)
         self.move(results, [f"R{j + 1}" for j in range(len(results))], stub=True)
         self.emit("MOVE", "R15", back, stub=True)
@@ -3701,8 +3712,9 @@ class FunctionTranslator:
         does the rest. If bound knows that every value of the compared
         register passes the compare, there is no compare and no stub.
         Without bounds checks, an aligned base needs no check, but its t
-        must be taken modulo 2^30, since the address wraps modulo 2^32
-        (WASM.md), unless bound knows that t plus the offset is below 2^30.
+        must be taken modulo 2^30, since the i32.add that computed the
+        address wraps modulo 2^32, and the address may then still be in the
+        memory, unless bound knows that t plus the offset is below 2^30.
         Returns the instructions that write the last result on each path,
         if there are results."""
         assert self.t.mem_bytes is not None
@@ -3794,7 +3806,7 @@ class FunctionTranslator:
         bytes unless p = 3, when they straddle two words. The code checks
         that from the address, and access runs again in a stub after the
         epilogue for p = 3."""
-        fold = const is None and self.t.checks and not self.t.growable
+        fold = const is None and (not self.t.checks or not self.t.growable)
         w, c = self.new_vreg(), self.new_vreg()
 
         def prep(a: str) -> None:
@@ -4239,7 +4251,7 @@ class FunctionTranslator:
             if len(dest) == 2:
                 self.extend(dest, res[0], signed)
             return
-        addr, a, _ = self.address(base[0], offset, n, const)
+        addr, a, k = self.address(base[0], offset, n, const, not self.t.checks)
         mem = f"@{self.t.mem}"
         if addr is not None and n >= 4 and addr % 4 == 0:
             # A known address in the memory, at a multiple of 4.
@@ -4253,7 +4265,7 @@ class FunctionTranslator:
             if addr is not None:
                 a = str(addr)
             if addr is None and n >= 4:
-                self.fast_path(helper, a, [], res, aligned, self.trusted(align))
+                self.fast_path(helper, a, [], res, aligned, self.trusted(align), k)
             else:
                 self.call_helper(helper, [a], len(res))
                 self.move(res, [f"R{k + 1}" for k in range(len(res))])
@@ -4289,14 +4301,14 @@ class FunctionTranslator:
             self.narrow(base[0], offset, n, const,
                         lambda word, p, stub: self.store_narrow(n, value[0], word, p, stub))
             return
-        addr, a, _ = self.address(base[0], offset, n, const)
+        addr, a, k = self.address(base[0], offset, n, const, not self.t.checks)
         mem = f"@{self.t.mem}"
         if addr is not None and n >= 4 and addr % 4 == 0:
-            for k in range(words_n):
-                self.emit("MOVE", f"{mem}+{addr // 4 + k}", value[k])
+            for j in range(words_n):
+                self.emit("MOVE", f"{mem}+{addr // 4 + j}", value[j])
             return
         if addr is None and n >= 4:
-            self.fast_path(f"W.store{n}", a, value[:words_n], [], aligned, self.trusted(align))
+            self.fast_path(f"W.store{n}", a, value[:words_n], [], aligned, self.trusted(align), k)
             return
         if addr is not None:
             a = str(addr)

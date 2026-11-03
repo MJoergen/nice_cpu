@@ -135,6 +135,14 @@ the next paragraph covers the alignment of an access whose offset is a
 multiple of 4 already, so the option changes only the accesses with
 other offsets.
 
+Without bounds checks, an offset that is a multiple of 4 goes into the
+word operand, as offset / 4, and the word index and the byte in the
+word come from the base alone, with no `ADD` before them. That is exact
+for an access in the memory, where base + offset does not pass 2^32,
+and WASM.md defines no result for one past its end. So a byte load at
+offset 8 is `SHR` and `SHL` of the base, then
+`ROR d, @___wasm_memory+2[w], c` and an `AND`.
+
 With bounds checks, an access of 4 or 8 bytes whose offset is a
 multiple of 4 takes a shorter path. `ROR t, base, 2` gives base / 4 if
 base is a multiple of 4, and 2^30 or more if it is not, which is past

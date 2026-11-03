@@ -384,7 +384,7 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "library": ["--library", "lib"],
            "libtrap": ["--library", "lib"],
            "libmem": ["--library", "lib", "--library-memory", "128"],
-           "bigoff_unchecked": ["--no-bounds-checks"],
+           "offfold_unchecked": ["--no-bounds-checks"],
            "growneg": ["--memory-pages", "2"],
            "bulk_unchecked": ["--no-bounds-checks"],
            "grow_unchecked": ["--no-bounds-checks", "--memory-pages", "3"],
@@ -3072,24 +3072,26 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
                            True), "", 2),
     ("bigoffword", main_of(i32_const(0) + local_set(1) + local_get(1) + mem(I32_LOAD, 65536),
                            True), "", 2),
-    # Without bounds checks, base + offset wraps modulo 2^32 (WASM.md).
-    # Bytes 4 to 15 are 11 22 ... CC, from three stores. The bases are in
-    # local 1, so they are not constants. One bit each:
-    ("bigoff_unchecked", main_of(
+    # Without bounds checks, an offset that is a multiple of 4 goes into
+    # the word operand (#119), and an access in the memory is as with the
+    # checks: the same case runs with them. Bytes 4 to 15 are 11 22 ... CC,
+    # from three stores. The bases are in local 1, so they are not
+    # constants, and most are not multiples of 4. One bit each:
+    *[(f"offfold_{mode}", main_of(
         st(I32_STORE, 4, 0x44332211) + st(I32_STORE, 8, 0x88776655 - 2**32)
         + st(I32_STORE, 12, 0xCCBBAA99 - 2**32) + bits(0,
-            i32_const(8) + local_tee(1) + mem(I32_LOAD, 0xFFFFFFFC) + c32(0x44332211) + EQ,  # 4
-            local_get(1) + mem(I32_LOAD8_U, 0xFFFFFFFD) + i32_const(0x22) + EQ,              # 5
-            local_get(1) + mem(I32_LOAD16_U, 0xFFFFFFFE) + i32_const(0x4433) + EQ,           # 6
-            local_get(1) + mem(I32_LOAD, 0xFFFFFFFD) + c32(0x55443322) + EQ,                 # 5
-            i32_const(16) + local_tee(1) + mem(I64_LOAD, 0xFFFFFFF8)
-            + c64(0xCCBBAA99_88776655) + EQ64,                                               # 8
-            i32_const(20) + local_tee(1) + c32(0x12345678) + mem(I32_STORE, 0xFFFFFFFC)      # 16
-            + ld(I32_LOAD, 16, 0x12345678),
-            i32_const(30) + local_tee(1) + i32_const(0xAB) + mem(I32_STORE8, 0xFFFFFFFF)     # 29
-            + ld(I32_LOAD8_U, 29, 0xAB),
+            i32_const(1) + local_tee(1) + mem(I32_LOAD, 4) + c32(0x55443322) + EQ,   # 5, misaligned
+            local_get(1) + mem(I32_LOAD8_U, 8) + i32_const(0x66) + EQ,                # 9
+            i32_const(2) + local_tee(1) + mem(I32_LOAD16_U, 8) + i32_const(0x8877) + EQ,  # 10
+            i32_const(3) + local_tee(1) + mem(I32_LOAD16_U, 8) + i32_const(0x9988) + EQ,  # 11, straddles
+            i32_const(4) + local_tee(1) + mem(I64_LOAD, 4)
+            + c64(0xCCBBAA99_88776655) + EQ64,                                        # 8
+            i32_const(17) + local_tee(1) + c32(0x12345678) + mem(I32_STORE, 4)        # 21, misaligned
+            + ld(I32_LOAD, 21, 0x12345678),
+            i32_const(29) + local_tee(1) + i32_const(0xAB) + mem(I32_STORE8, 4)       # 33
+            + ld(I32_LOAD8_U, 33, 0xAB),
             # A check that fails. 7 ones, then 0.
-            i32_const(0)), True), "", 0xFE),
+            i32_const(0)), True), "", 0xFE) for mode in ("unchecked", "checked")],
     # i32 shifts and rotates by counts in a local, which nicewasm masks
     # with an AND, one bit each. The count is taken modulo 32. 11 ones,
     # then a check that fails.

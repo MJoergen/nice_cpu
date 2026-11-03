@@ -17,7 +17,7 @@
 ;
 ; Steps: 12. PC = 0x17 after the HALT at 0x16. No flags change. The dump
 ; shows 0x44 and 2.
-                MOVE    R15, start      ; words 0,1
+                JMP     start           ; words 0,1
 start           MOVE    R0--, 5         ; words 2,3
                 ADD     R1, R0, 7       ; words 4,5
                 MOVE    @--R0, 0x22     ; words 6,7

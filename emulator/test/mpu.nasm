@@ -49,7 +49,7 @@ LOOP            MOVE    @MPU, @R8++
                 MOVE    @R6++, @R9++
                 MOVE    @R6++, @R9++
                 DEC[M]  R7, R7
-        ?!Z     MOVE    R15, LOOP
+        ?!Z     JMP     LOOP
                 MOVE    @MPU+4, 5
                 MOVE    R1, @MPU+4
                 MOVE    R2, @MPU+10

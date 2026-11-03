@@ -47,7 +47,7 @@ LOOP            MOVE    @MPU+0x10, @R8++
                 MOVE    @R6++, @R9++
                 MOVE    @R6++, @R9++
                 DEC[M]  R7, R7
-        ?!Z     MOVE    R15, LOOP
+        ?!Z     JMP     LOOP
                 HALT
 CASES           .DAT    100, 0, 7, 0
                 .DAT    0xFFFFFFF9, 0xFFFFFFFF, 2, 0

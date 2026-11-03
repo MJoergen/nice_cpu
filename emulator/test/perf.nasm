@@ -42,9 +42,9 @@ INSTR_HI        .EQU    0xFFFFFF43
         ?Z      MOVE    R4, 1           ; words 6,7
                 MOVE    @INSTR_LO, 0x55  ; words 8-10
                 MOVE    R4, @INSTR_LO   ; words 11,12
-                MOVE[M] R0, @CYCLE_LO   ; words 13,14
-                MOVE[M] R0, @CYCLE_HI   ; words 15,16
-                MOVE[M] R0, @CYCLE_LO   ; words 17,18
+                TST     @CYCLE_LO       ; words 13,14
+                TST     @CYCLE_HI       ; words 15,16
+                TST     @CYCLE_LO       ; words 17,18
                 INT     0x40            ; word 19
                 MOVE    R6, @INSTR_LO   ; words 20,21
                 MOVE    R8, @INSTR_HI   ; words 22,23

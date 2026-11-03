@@ -82,8 +82,8 @@ TIMER_VECTOR    .EQU    0xFFFFFF12
                 OR      R14, R14, 0x40000000
                 MOVE    @TIMER_PERIOD, 3
 loop            ADD     R9, R9, 1
-                SUB[M]  R0, R6, 4
-        ?!Z     MOVE    R15, loop
+                CMP     R6, 4
+        ?!Z     JMP     loop
                 MOVE    @TIMER_PERIOD, 0
                 AND     R14, R14, 0xBFFFFFFF
                 MOVE    @TIMER_PERIOD, 1

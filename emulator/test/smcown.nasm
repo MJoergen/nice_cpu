@@ -14,6 +14,6 @@
                 MOVE    R7, 3           ; words 0,1
 loop            ADD     @5, @5, 1       ; words 2-5
                 DEC[M]  R7, R7          ; word 6
-        ?!Z     MOVE    R15, loop       ; words 7,8
+        ?!Z     JMP     loop            ; words 7,8
                 MOVE    R1, @5          ; words 9,10
                 HALT                    ; word 11

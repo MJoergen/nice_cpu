@@ -6,7 +6,7 @@
 ; halt. The output names ___wasm_trap, and then trap 2 at body+0x3.
 start           MOVE    R1, 2
                 MOVE    R2, 0x13
-                MOVE    R15, ___wasm_trap
+                JMP     ___wasm_trap
 ___wasm_trap
                 .DAT    0x0FE00000
                 .ORG    0x10

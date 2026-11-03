@@ -12,7 +12,7 @@
 CONSOLE         .EQU    0xFFFFFF00
                 MOVE    @0x50, 7        ; words 0-2
                 MOVE    @CONSOLE, 0x48  ; words 3-5: "H"
-                MOVE    R15, skip       ; words 6,7
+                JMP     skip            ; words 6,7
                 HALT                    ; word 8: jumped over
 skip    ?Z      MOVE    R1, 1           ; words 9,10
                 DEC[M]  R2, R2          ; word 11: R2 = 0xFFFFFFFF, C = 1, N = 1

@@ -2,7 +2,7 @@
 ; conditional reads, for runs with an NMI (vector 8) or an IRQ (vector 9)
 ; before each step. The routines count and change the flags; RTI restores
 ; them. VBASE stays 0.
-                MOVE    R15, start
+                JMP     start
                 .ORG    8
                 .DAT    nmi, irq
                 .ORG    0x108
@@ -28,14 +28,14 @@ j1              HALT
                 MOVE    R14, 0x40000000
                 MOVE    R8, R14++       ; E = 1, R14 = 0x41000001: VBASE = 1
                 MOVE    R14, 0x40000000
-                SUB[M]  R0, R0, R0
+                CMP     R0, R0
         ?Z      ADD     R15, R15, 2
                 HALT
                 HALT
                 MOVE    R2, 34
                 C>C[M]  R9--, R1, R2    ; late shift with a two-cycle destination
                 ADD[M]  @--R13, R9, R2
-                MOVE    R11, @R13++
+                POP     R11
                 0<0     @R15, R0, @cnt  ; a store into the next word
                 HALT
                 MOVE    @h1, 0

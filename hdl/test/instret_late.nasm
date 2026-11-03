@@ -1,7 +1,7 @@
 ; The instruction counter (SYSTEM.md §3) read right after two-cycle
 ; destinations, late shifts, stores, skipped instructions, and INT.
 INSTR           .EQU    0xFFFFFF42
-                MOVE    R15, start
+                JMP     start
                 .ORG    4
                 .DAT    isr
                 .ORG    0x100
@@ -18,13 +18,13 @@ start           MOVE    R4, INSTR
                 MOVE    R2, @R4         ; 10
                 MOVE    @scratch, 1
                 MOVE    R2, @R4         ; 12
-                SUB[M]  R0, R0, R0
+                CMP     R0, R0
         ?!Z     MOVE    R2, @R4         ; skipped
                 MOVE    R2, @R4         ; 15
         ?Z      MOVE    R2, @R4         ; 16
                 INT     4
                 MOVE    R2, @R4         ; 20: INT, isr's MOVE, RTI count
-                MOVE    R15, j1
+                JMP     j1
 j1              MOVE    R2, @R4         ; 22
                 ADD     R15, R15, R0
                 MOVE    R2, @R4         ; 24

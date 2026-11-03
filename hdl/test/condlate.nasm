@@ -2,7 +2,7 @@
 ; destinations in R14 with late counts, HALT and INT right after two-cycle
 ; flag writes, never-executed instructions with every hazard, and a few
 ; more R15 forms.
-                MOVE    R15, start
+                JMP     start
                 .ORG    4
                 .DAT    isr
                 .ORG    0x100
@@ -59,7 +59,7 @@ start           MOVE    R1, 0x9ABCDEF1
                 HALT
                 .ORG    0x10
                 MOVE    R8, 0x10
-                MOVE    R15, next
+                JMP     next
 next            MOVE    R2, 0x100
                 0<0     R15++, R2, 1    ; R15 = 0x200, then 0x201
                 HALT
@@ -70,7 +70,7 @@ next            MOVE    R2, 0x100
                 HALT
                 .ORG    0x300
                 MOVE    R1--, j9+1
-                MOVE    R15, R1         ; the target is the adjusted value written last
+                JMP     R1              ; the target is the adjusted value written last
                 HALT
 j9              MOVE    R1++, 1
                 ADD     R15, R15, R1    ; two-cycle jump by the adjusted value: over two words

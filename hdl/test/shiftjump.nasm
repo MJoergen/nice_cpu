@@ -39,7 +39,7 @@
                 .ORG    0xC00
                 MOVE    R7, 0xC00
                 MOVE    R1, 0x700
-                SUB[M]  R0, R0, R0      ; Z = 1
+                CMP     R0, R0          ; Z = 1
         ?Z      0<0     R15, R1, 1      ; conditional: R15 = 0xE00
                 HALT
                 .ORG    0xE00

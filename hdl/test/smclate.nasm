@@ -10,7 +10,7 @@
                 MOVE    R3, 1
                 HALT
                 MOVE    @e1+1, good1    ; the constant of an early jump already in DECODE
-e1              MOVE    R15, bad
+e1              JMP     bad
                 HALT
 good1           MOVE    @e2+1, 4        ; the offset of an early relative jump
 e2              ADD     R15, R15, 1
@@ -51,7 +51,7 @@ h3              HALT
 h4              HALT
                 MOVE    R9, 0x0C000000
                 MOVE    @h5, R1         ; a store followed by a jump over a HALT
-                MOVE    R15, h6
+                JMP     h6
 h5              HALT
 h6              HALT
 cnt             .DAT    5

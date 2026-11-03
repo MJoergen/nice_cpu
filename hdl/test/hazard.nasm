@@ -28,7 +28,7 @@ PC              .EQU    R15
 NMI             .EQU    8               ; the vectors of test/irq_sweep.py
 IRQ             .EQU    9
 
-                MOVE    PC, start       ; words 0,1
+                JMP     start           ; words 0,1
                 .ORG    4
                 .DAT    isr             ; vector 4, for INT 4 (VBASE = 0)
                 .ORG    NMI
@@ -54,20 +54,20 @@ start           MOVE    SP, stack
                 MOVE    R14, 0x49000000  ; Z = 1
                 ADD[M]  R0, R0, 1       ; Z = 0
         ?Z      ADD     R1, R1, 0x100
-                SUB[M]  R0, R2, R2      ; Z = 1
+                CMP     R2, R2          ; Z = 1
         ?Z      ADD     R1, R1, 1       ; 1
                 MOVE    R14, 0x45000000  ; C = 1
                 ADD[M]  R0, R0, R0      ; C = 0
         ?C      ADD     R1, R1, 0x100
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
         ?C      ADD     R1, R1, 1       ; 2
                 MOVE    R14, 0x43000000  ; X = 1
-                MOVE[M] R0, R2          ; X = 0
+                TST     R2              ; X = 0
         ?X      ADD     R1, R1, 0x100
                 NOT[M]  R0, R0          ; X = 1
         ?X      ADD     R1, R1, 1       ; 3
                 MOVE    R14, 0x51000000  ; N = 1
-                MOVE[M] R0, R2          ; N = 0
+                TST     R2              ; N = 0
         ?N      ADD     R1, R1, 0x100
                 ADD[M]  R0, R2, 1       ; N = 1, V = 1
         ?N      ADD     R1, R1, 1       ; 4
@@ -111,7 +111,7 @@ start           MOVE    SP, stack
         ?Z      ADD     R1, R1, 0x100
                 OR      R14, R14, 0x40000000
 ; An instruction without M keeps the flags.
-                SUB[M]  R0, R0, R0      ; Z = 1
+                CMP     R0, R0          ; Z = 1
                 ADD     R3, R0, 1
         ?Z      ADD     R1, R1, 1       ; 13
 ; C as the carry input and as the fill bit of a shift, from the instruction
@@ -120,18 +120,18 @@ start           MOVE    SP, stack
                 ADD[M]  R5, R4, 1       ; R5 = 0, C = 1
                 ADD[CM] R6, R0, 0       ; R6 = 1, C = 0
                 ADD[CM] R7, R0, 0       ; R7 = 0
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 0<C     R8, R0, 1       ; R8 = 1
-                SUB[M]  R0, R1, 13
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R5, 0
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R6, 1
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R7, 0
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R8, 1
-        ?!Z     MOVE    PC, fail
+                CMP     R1, 13
+        ?!Z     JMP     fail
+                CMP     R5, 0
+        ?!Z     JMP     fail
+                CMP     R6, 1
+        ?!Z     JMP     fail
+                CMP     R7, 0
+        ?!Z     JMP     fail
+                CMP     R8, 1
+        ?!Z     JMP     fail
 
 ; 2. Conditional reads and stores right after the instruction that decides
 ; their condition. The read counter shows the reads that happen.
@@ -144,13 +144,13 @@ start           MOVE    SP, stack
                 ADD[M]  R0, R0, 1       ; Z = 0
         ?Z      MOVE    R5, @R4         ; skipped: no read
         ?!Z     MOVE    R6, @R4         ; R6 = 0, count 1
-                SUB[M]  R0, R0, R0      ; Z = 1
+                CMP     R0, R0          ; Z = 1
         ?!Z     MOVE    R7, @R3++       ; skipped: no read and no increment
         ?Z      MOVE    R8, @R4         ; R8 = 1, count 2
                 ADD[M]  R0, R0, 1       ; Z = 0
         ?Z      MOVE    @R4, 50         ; skipped: no write
         ?!Z     MOVE    R9, @R4         ; R9 = 2, count 3
-                SUB[M]  R0, R0, R0      ; Z = 1
+                CMP     R0, R0          ; Z = 1
         ?Z      MOVE    @R3++, 0x77     ; data = 0x77, R3 = data + 1
                 ADD[M]  R0, R0, 1       ; Z = 0
         ?Z      MOVE    @R3++, 0x88     ; skipped
@@ -160,26 +160,26 @@ start           MOVE    SP, stack
         ?!X     MOVE    R7, @R4         ; skipped: no read
         ?X      MOVE    R2, @R4         ; R2 = 4, count 5
                 MOVE    R11, @R4        ; R11 = 5
-                SUB[M]  R0, R5, 0x55
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R6, 0
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R7, 0x55
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R8, 1
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R9, 2
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R10, 0x7A
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R11, 5
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R2, 4
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R3, data
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, @data+1, 0  ; the skipped store left data + 1 alone
-        ?!Z     MOVE    PC, fail
+                CMP     R5, 0x55
+        ?!Z     JMP     fail
+                CMP     R6, 0
+        ?!Z     JMP     fail
+                CMP     R7, 0x55
+        ?!Z     JMP     fail
+                CMP     R8, 1
+        ?!Z     JMP     fail
+                CMP     R9, 2
+        ?!Z     JMP     fail
+                CMP     R10, 0x7A
+        ?!Z     JMP     fail
+                CMP     R11, 5
+        ?!Z     JMP     fail
+                CMP     R2, 4
+        ?!Z     JMP     fail
+                CMP     R3, data
+        ?!Z     JMP     fail
+                CMP     @data+1, 0      ; the skipped store left data + 1 alone
+        ?!Z     JMP     fail
 
 ; 3. A register written by one instruction and read by the next: as s0 and
 ; s1, as a pointer in each field, as the base of a constant, and after a
@@ -200,14 +200,14 @@ start           MOVE    SP, stack
                 MOVE    R10, @R5        ; R10 = -10
                 MOVE    @--R5, R10      ; data = -10, R5 = data
                 MOVE    R11, @R5        ; R11 = -10
-                SUB[M]  R0, R6, 0x6D
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R8, 0x7A
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R9, 0x77
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R11, -10
-        ?!Z     MOVE    PC, fail
+                CMP     R6, 0x6D
+        ?!Z     JMP     fail
+                CMP     R8, 0x7A
+        ?!Z     JMP     fail
+                CMP     R9, 0x77
+        ?!Z     JMP     fail
+                CMP     R11, -10
+        ?!Z     JMP     fail
 ; A chain through four instructions, and the two writes of a register
 ; destination with a side effect, merged.
                 MOVE    R1, 7
@@ -217,8 +217,8 @@ start           MOVE    SP, stack
                 MOVE    R1++, R4        ; R1 = 8
                 ADD     R2, R1, R1      ; R2 = 16
                 MOVE    R2--, R2        ; R2 = 15
-                SUB[M]  R0, R2, 15
-        ?!Z     MOVE    PC, fail
+                CMP     R2, 15
+        ?!Z     JMP     fail
 ; A skipped instruction writes nothing, and its side effects do not happen.
                 MOVE    R1, 7
         ?!1     MOVE    R1, 9
@@ -227,28 +227,28 @@ start           MOVE    SP, stack
                 MOVE    R3, R1          ; R3 = 7
         ?!1     MOVE    R1++, 9
                 ADD     R3, R3, R1      ; R3 = 14
-                SUB[M]  R0, R2, 7
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R3, 14
-        ?!Z     MOVE    PC, fail
+                CMP     R2, 7
+        ?!Z     JMP     fail
+                CMP     R3, 14
+        ?!Z     JMP     fail
 ; A pop, which takes two micro-operations, then a read of both registers it
 ; writes. Then s1 reads the register that s0 changes.
-                MOVE    @--SP, 0x30     ; push
-                MOVE    R4, @SP++       ; pop: R4 = 0x30
+                PUSH    0x30            ; push
+                POP     R4              ; pop: R4 = 0x30
                 ADD     R5, SP, R4      ; R5 = stack + 0x30
-                SUB[M]  R0, R5, stack+0x30
-        ?!Z     MOVE    PC, fail
+                CMP     R5, stack+0x30
+        ?!Z     JMP     fail
                 MOVE    R2, data+4
                 MOVE    @R2, 0x100
                 MOVE    @1[R2], 0x200   ; data + 5 = 0x200
                 ADD     R1, R2++, R2    ; R1 = (data + 4) + (data + 5)
                 ADD     R3, @R2, @--R2  ; R3 = 0x200 + 0x100, R2 = data + 4
-                SUB[M]  R0, R1, data+data+9
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R3, 0x300
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R2, data+4
-        ?!Z     MOVE    PC, fail
+                CMP     R1, data+data+9
+        ?!Z     JMP     fail
+                CMP     R3, 0x300
+        ?!Z     JMP     fail
+                CMP     R2, data+4
+        ?!Z     JMP     fail
 
 ; 4. R14 and R15 as pointers. R14 = 0x41000000 points to the words at
 ; r14data. When an instruction with M set changes the flags, R14 points
@@ -261,38 +261,38 @@ start           MOVE    SP, stack
                 MOVE    @R14++, 0x16    ; R14 = 0x41000002
                 MOVE    R4, @--R14      ; R4 = 0x16, R14 = 0x41000001
                 MOVE    R14, 0x41000000
-                SUB[M]  R0, R0, R0      ; Z = 1: R14 = 0x49000000
+                CMP     R0, R0          ; Z = 1: R14 = 0x49000000
                 MOVE    R5, @R14        ; R5 = 0x94
                 ADD     R6, R1, R2
                 ADD     R6, R6, R3
                 ADD     R6, R6, R4      ; R6 = 0x14 + 0x14 + 0x15 + 0x16 = 0x53
-                SUB[M]  R0, R6, 0x53
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R5, 0x94
-        ?!Z     MOVE    PC, fail
+                CMP     R6, 0x53
+        ?!Z     JMP     fail
+                CMP     R5, 0x94
+        ?!Z     JMP     fail
 ; R15 reads as the address of the next instruction, also as a pointer.
                 MOVE    R1, @R15        ; the word at x1
-x1              SUB[M]  R0, R1, @x1
-        ?!Z     MOVE    PC, fail
+x1              CMP     R1, @x1
+        ?!Z     JMP     fail
                 MOVE    R1, @R15++      ; reads the HALT and jumps over it
                 HALT
-                SUB[M]  R0, R1, 0x0C000000
-        ?!Z     MOVE    PC, fail
+                CMP     R1, 0x0C000000
+        ?!Z     JMP     fail
                 MOVE    R1, @2[R15]     ; the word after the jump: 0x1234
-                MOVE    PC, x2
+                JMP     x2
                 .DAT    0x1234
-x2              SUB[M]  R0, R1, 0x1234
-        ?!Z     MOVE    PC, fail
+x2              CMP     R1, 0x1234
+        ?!Z     JMP     fail
                 MOVE    R1, R15++       ; jumps over the HALT, R1 = x3
 x3              HALT
-                SUB[M]  R0, R1, x3
-        ?!Z     MOVE    PC, fail
+                CMP     R1, x3
+        ?!Z     JMP     fail
 ; s0 moves R15 back onto the constant word of s1, which s1 then reads as
 ; its base: R1 = x4 + 1. The next instruction is that constant word, 0,
 ; a NOP.
 x4              ADD     R1, @--R15, 0[R15]
-                SUB[M]  R0, R1, x4+1
-        ?!Z     MOVE    PC, fail
+                CMP     R1, x4+1
+        ?!Z     JMP     fail
                 MOVE    R15++, x5       ; R15 = x5 + 1
 x5              HALT
                 MOVE    R15--, x6+1     ; R15 = x6
@@ -308,16 +308,16 @@ x6              MOVE    R14, 0x41000000  ; VBASE = 0 again, for INT 4 in section
                 MOVE    @n1, 0          ; 3 words
 n1              HALT
                 MOVE    @n2, 0
-                MOVE    R0, R0
+                NOP
 n2              HALT
                 MOVE    @n3, 0
-                MOVE    R0, R0
-                MOVE    R0, R0
+                NOP
+                NOP
 n3              HALT
                 MOVE    @n4, 0
-                MOVE    R0, R0
-                MOVE    R0, R0
-                MOVE    R0, R0
+                NOP
+                NOP
+                NOP
 n4              HALT
                 MOVE    @n7, 0
                 MOVE    R1, 1           ; 2 words
@@ -330,21 +330,21 @@ n8              HALT
                 MOVE    R2, n9
                 MOVE    @R2++, 0        ; R2 = n9 + 1
 n9              HALT
-                SUB[M]  R0, R2, n9+1
-        ?!Z     MOVE    PC, fail
+                CMP     R2, n9+1
+        ?!Z     JMP     fail
                 MOVE    @R15, 0         ; the next word
                 HALT
                 MOVE    @R15++, 0       ; the next word, and jump over it
                 HALT
                 MOVE    1[R15], 0       ; the word after the next
-                MOVE    R0, R0
+                NOP
                 HALT
                 MOVE    @k1+1, 0x55     ; the constant word of the next instruction
 k1              MOVE    R1, 0x11        ; R1 = 0x55
-                SUB[M]  R0, R1, 0x55
-        ?!Z     MOVE    PC, fail
+                CMP     R1, 0x55
+        ?!Z     JMP     fail
                 MOVE    @t1, 0
-                MOVE    PC, t1          ; DECODE can resolve this jump
+                JMP     t1              ; DECODE can resolve this jump
                 HALT
 t1              HALT
 ; The destination moves R15 back onto the instruction's constant word and
@@ -353,10 +353,10 @@ t1              HALT
                 MOVE    R6, 6
                 MOVE    R7, 0x4000
                 ADD     @--R15, R7, 0x01C18000
-                SUB[M]  R0, R6, 6
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, R7, 1
-        ?!Z     MOVE    PC, fail
+                CMP     R6, 6
+        ?!Z     JMP     fail
+                CMP     R7, 1
+        ?!Z     JMP     fail
 ; A loop of two passes changes its own code. The first ADD adds 1 in the
 ; first pass and 10 in the second. The ADD at s1 stores into its own
 ; constant word, which it reads in the next pass: 1 + 5 = 6, then 11 + 6.
@@ -366,61 +366,61 @@ loop1           ADD     R1, R1, 1
                 MOVE    @loop1+1, 10
 s1              ADD     @s1+2, R1, 5    ; s1 + 2 holds the constant 5
                 SUB[M]  R3, R3, 1
-        ?!Z     MOVE    PC, loop1
-                SUB[M]  R0, R1, 11
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, @s1+2, 17
-        ?!Z     MOVE    PC, fail
+        ?!Z     JMP     loop1
+                CMP     R1, 11
+        ?!Z     JMP     fail
+                CMP     @s1+2, 17
+        ?!Z     JMP     fail
 
 ; 6. Jumps over HALT: unconditional and conditional, through a register,
 ; through memory, by a side effect, to a jump, to the next instruction,
 ; into the constant word of an instruction, and with INT and RTI.
                 MOVE    R12, 6
-                MOVE    PC, j1
+                JMP     j1
                 HALT
                 HALT
 j1              ADD     PC, PC, 2
                 HALT
                 HALT
-                SUB[M]  R0, R0, R0      ; Z = 1
-        ?Z      MOVE    PC, j2
+                CMP     R0, R0          ; Z = 1
+        ?Z      JMP     j2
                 HALT
-j2      ?!Z     MOVE    PC, fail        ; not taken
+j2      ?!Z     JMP     fail            ; not taken
         ?!Z     HALT                    ; skipped
                 .DAT    0x8FE00000      ; a reserved word, never run: skipped
                 MOVE    R2, j3
-                MOVE    PC, R2
+                JMP     R2
                 HALT
-j3              MOVE    PC, @jt3
+j3              JMP     @jt3
                 HALT
 j4              ADD[M]  R0, R0, R0      ; Z = 1
-        ?Z      MOVE    PC, @jt4
+        ?Z      JMP     @jt4
                 HALT
 j5              ADD[M]  R0, R0, 1       ; Z = 0
-        ?Z      MOVE    PC, @jtf        ; skipped, with no read
-                MOVE    PC, j6
-j6              MOVE    PC, j7
+        ?Z      JMP     @jtf            ; skipped, with no read
+                JMP     j6
+j6              JMP     j7
                 HALT
-j7              MOVE    PC, j8
+j7              JMP     j8
 j8              CALL    subr
                 MOVE    R0, R15++       ; jumps over the HALT
                 HALT
                 MOVE    R7, 0
-                MOVE    PC, j9+1        ; to the constant word: ONE R7
+                JMP     j9+1            ; to the constant word: ONE R7
                 HALT
 j9              MOVE    R1, 0x01C1C000
-                SUB[M]  R0, R7, 1
-        ?!Z     MOVE    PC, fail
+                CMP     R7, 1
+        ?!Z     JMP     fail
 ; INT right after the instruction that decides its condition. The routine
 ; clears Z, and the instruction after RTI tests Z as it was before INT.
                 MOVE    R7, 0
                 ADD[M]  R0, R0, 1       ; Z = 0
         ?Z      INT     4               ; skipped
-                SUB[M]  R0, R0, R0      ; Z = 1
+                CMP     R0, R0          ; Z = 1
         ?Z      INT     4               ; R7 = 1
         ?Z      ADD     R7, R7, 0x10    ; R7 = 0x11
-                SUB[M]  R0, R7, 0x11
-        ?!Z     MOVE    PC, fail
+                CMP     R7, 0x11
+        ?!Z     JMP     fail
                 MOVE    R12, 0          ; passed
                 HALT
 

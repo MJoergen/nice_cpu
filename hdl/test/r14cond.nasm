@@ -2,7 +2,7 @@
 ; instructions and conditional reads; RTI and INT with conditions; R14 as
 ; the source and the destination of shifts.
 COUNT           .EQU    0xFFFFFF01
-                MOVE    R15, start
+                JMP     start
                 .ORG    4
                 .DAT    isr
                 .ORG    0x100
@@ -43,7 +43,7 @@ start           MOVE    R10, scratch
         ?!N     MOVE    R2, 0xBAD
                 MOVE    R14, 0x41000000  ; E = 1
 ; INT and RTI with conditions
-                SUB[M]  R0, R0, R0      ; Z = 1
+                CMP     R0, R0          ; Z = 1
         ?Z      INT     4               ; the routine clears Z, RTI restores it
         ?Z      MOVE    R3, @R10        ; a conditional read right after RTI
         ?!Z     MOVE    R2, 0xBAD
@@ -56,24 +56,24 @@ start           MOVE    R10, scratch
 ; signed comparison with a read after it
                 MOVE    R1, 0x80000000
                 MOVE    R2, 1
-                SUB[M]  R0, R1, R2      ; V = 1, N = 0
+                CMP     R1, R2          ; V = 1, N = 0
         ?V      XOR     R14, R14, 0x10000000
         ?N      MOVE    R3, @R10        ; signed less: runs
         ?!N     MOVE    R3, 0xBAD
-                SUB[M]  R0, R2, R1      ; V = 1, N = 1
+                CMP     R2, R1          ; V = 1, N = 1
         ?V      XOR     R14, R14, 0x10000000
         ?N      MOVE    R3, 0xBAD
         ?!N     MOVE    R3, @1[R10]
 ; R14 as the source and the destination of shifts
                 MOVE    R14, 0x41000000
-                SUB[M]  R0, R0, 1       ; C = 1: 0x45000000
+                CMP     R0, 1           ; C = 1: 0x45000000
                 0>0     R3, R14, 4      ; s0 = SR right after the flag write
                 0>0[M]  R3, R14, 4
                 0>0     R14, R14, 4     ; R14 = 0x04500000 | bit 24: C = 1, E = 0
         ?C      MOVE    R2, 7
         ?E      MOVE    R2, 0xBAD
                 MOVE    R14, 0x41000000
-                SUB[M]  R0, R0, R0      ; Z = 1
+                CMP     R0, R0          ; Z = 1
         ?Z      0<0     R3, R1, @cnt    ; a conditional late shift with a read
         ?!Z     0<0     R3, R1, @cnt    ; skipped: no read
                 MOVE    R2, 3
@@ -84,7 +84,7 @@ start           MOVE    R10, scratch
                 ADD[M]  R0, R0, 1       ; Z = 0
         ?Z      C>C     R3, @R10, @R10  ; skipped: no reads
                 MOVE    R4, @R11        ; the read counter: counts the reads so far
-                SUB[M]  R0, R0, R0      ; Z = 1
+                CMP     R0, R0          ; Z = 1
         ?Z      HALT                    ; stops here
                 HALT
 isr     ?Z      ADD[M]  R7, R7, 1       ; Z = 0 if it was 1

@@ -9,71 +9,71 @@
 loop            MOVE    R4, @R2++
                 ADD[M]  R0, R0, R0      ; C = 0
                 0<0[M]  R3, R1, R4
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 0<0[M]  R3, R1, R4
                 ADD[M]  R0, R0, R0      ; C = 0
                 0<1[M]  R3, R1, R4
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 0<1[M]  R3, R1, R4
                 ADD[M]  R0, R0, R0      ; C = 0
                 0<C[M]  R3, R1, R4
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 0<C[M]  R3, R1, R4
                 ADD[M]  R0, R0, R0      ; C = 0
                 C<0[M]  R3, R1, R4
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 C<0[M]  R3, R1, R4
                 ADD[M]  R0, R0, R0      ; C = 0
                 C<1[M]  R3, R1, R4
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 C<1[M]  R3, R1, R4
                 ADD[M]  R0, R0, R0      ; C = 0
                 C<C[M]  R3, R1, R4
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 C<C[M]  R3, R1, R4
                 ADD[M]  R0, R0, R0      ; C = 0
                 <<<[M]  R3, R1, R4
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 <<<[M]  R3, R1, R4
                 ADD[M]  R0, R0, R0      ; C = 0
                 C<<[M]  R3, R1, R4
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 C<<[M]  R3, R1, R4
                 ADD[M]  R0, R0, R0      ; C = 0
                 0>0[M]  R3, R1, R4
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 0>0[M]  R3, R1, R4
                 ADD[M]  R0, R0, R0      ; C = 0
                 1>0[M]  R3, R1, R4
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 1>0[M]  R3, R1, R4
                 ADD[M]  R0, R0, R0      ; C = 0
                 C>0[M]  R3, R1, R4
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 C>0[M]  R3, R1, R4
                 ADD[M]  R0, R0, R0      ; C = 0
                 0>C[M]  R3, R1, R4
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 0>C[M]  R3, R1, R4
                 ADD[M]  R0, R0, R0      ; C = 0
                 1>C[M]  R3, R1, R4
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 1>C[M]  R3, R1, R4
                 ADD[M]  R0, R0, R0      ; C = 0
                 C>C[M]  R3, R1, R4
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 C>C[M]  R3, R1, R4
                 ADD[M]  R0, R0, R0      ; C = 0
                 >>>[M]  R3, R1, R4
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 >>>[M]  R3, R1, R4
                 ADD[M]  R0, R0, R0      ; C = 0
                 >>C[M]  R3, R1, R4
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 >>C[M]  R3, R1, R4
                 SUB     R6, R6, 1
-                MOVE[M] R0, R6
-        ?!Z     MOVE    R15, loop
+                TST     R6
+        ?!Z     JMP     loop
                 HALT
 counts
                 .DAT    0x00000000

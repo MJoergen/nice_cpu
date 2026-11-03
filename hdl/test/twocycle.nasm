@@ -77,7 +77,7 @@
         ?!X     MOVE    R2, 0xBAD
                 MOVE    R14, 0x40000000
 ; conditional two-cycle destinations right after the flag setters
-                SUB[M]  R0, R0, R0      ; Z = 1
+                CMP     R0, R0          ; Z = 1
         ?Z      MOVE    R5++, 9         ; R5 = 10
         ?!Z     MOVE    R5++, 11        ; skipped
                 ADD[M]  R0, R0, 1       ; Z = 0
@@ -98,7 +98,7 @@ t1              MOVE    R1, t2
                 SUB     R15, R1, R0
                 HALT
 t2              MOVE    R1, t3
-                MOVE    R15, R1         ; one cycle, target = value written last
+                JMP     R1              ; one cycle, target = value written last
                 HALT
 t3              MOVE    R1, t4
                 OR      R15, R1, R1
@@ -107,7 +107,7 @@ t4              MOVE    R1, t5-1
                 ADD     R15, R1, 1[R0]
                 HALT
 t5              MOVE    R1, t6
-                MOVE    R15, @R1        ; through memory: scratch+4 holds t6? no: R1 = t6, read mem[t6]
+                JMP     @R1             ; through memory: scratch+4 holds t6? no: R1 = t6, read mem[t6]
 t6              .DAT    t7              ; the word at t6 is the target itself
 t7              ADD[M]  R15, R15, 2     ; early with M: flags of the target
                 HALT
@@ -118,7 +118,7 @@ t7              ADD[M]  R15, R15, 2     ; early with M: flags of the target
                 HALT
 t8      ?Z      MOVE    R2, 0xBAD
         ?!N     MOVE    R2, 0x22
-                SUB[M]  R0, R0, R0      ; Z = 1
+                CMP     R0, R0          ; Z = 1
         ?Z      ADD     R15, R15, 2     ; conditional two-cycle jump
                 HALT
                 HALT
@@ -127,28 +127,28 @@ t8      ?Z      MOVE    R2, 0xBAD
                 MOVE    R2, 0x33
         ?!Z     ADD     R15, R15, 1
                 HALT
-        ?!1     MOVE    R15, 0          ; never
+        ?!1     JMP     0               ; never
         ?!1     ADD     R15, R15, 0
 ; jumps through SR: the code at far has bit 24 set in its address
                 MOVE    R14, far
                 ADD     R15, R14, 0     ; two cycles, s0 is SR
                 HALT
 back1           MOVE    R14, far2
-                MOVE    R15, R14        ; one cycle, s0 is SR
+                JMP     R14             ; one cycle, s0 is SR
                 HALT
 back2           MOVE    R14, far3
-                MOVE    R15, 0[R14]     ; adder on SR
+                JMP     0[R14]          ; adder on SR
                 HALT
 back3           MOVE    R14, tbl
-                MOVE    R15, @R14       ; read through SR
+                JMP     @R14            ; read through SR
                 HALT
 back4           MOVE    R14, tbl
-                SUB[M]  R0, R0, 1       ; C, N, X = 1: SR changes before the read, to 0x17000106
-                MOVE    R15, @1[R14]    ; reads 0x17000107
+                CMP     R0, 1           ; C, N, X = 1: SR changes before the read, to 0x17000106
+                JMP     @1[R14]         ; reads 0x17000107
                 HALT
 back5           MOVE    R14, tbl+2
                 ADD[M]  R0, R0, R0      ; Z = 1: the read must wait for this SR, 0x09000108
-                MOVE    R15, @R14++     ; R14 incremented, then the jump
+                JMP     @R14++          ; R14 incremented, then the jump
                 HALT
 back6           MOVE    R2, R14
                 MOVE    R14, 0x01000000
@@ -165,9 +165,9 @@ j2              ADD     R15++, R15, 1   ; r = next + 1, R15 = next + 2
                 MOVE    R2, 0x44
                 HALT
                 .ORG    0x01000100
-far             MOVE    R15, back1
-far2            MOVE    R15, back2
-far3            MOVE    R15, back3
+far             JMP     back1
+far2            JMP     back2
+far3            JMP     back3
 tbl             .DAT    back4, back5, back6
                 .ORG    0x17000107
                 .DAT    back5

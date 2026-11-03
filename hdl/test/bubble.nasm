@@ -30,63 +30,63 @@ CYCLES          .EQU    0xFFFFFF40
                 MOVE    R0, 0
                 MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
-                SUB[M]  R0, R4, 3
+                CMP     R4, 3
         ?!Z     ADD     R12, R12, 1
 ; a skipped conditional jump: 3, the same as the fall-through
                 .ORG    0x80
                 ADD[M]  R0, R0, 1       ; Z = 0
                 MOVE    R1, @CYCLES
-        ?Z      MOVE    R15, a1
+        ?Z      JMP     a1
 a1              MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
-                SUB[M]  R0, R4, 3
+                CMP     R4, 3
         ?!Z     ADD     R12, R12, 1
 ; a taken conditional jump, resolved in WRITE: 3 + 7
                 .ORG    0xC0
                 ADD[M]  R0, R0, 1
                 MOVE    R1, @CYCLES
-        ?!Z     MOVE    R15, a2
+        ?!Z     JMP     a2
 a2              MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
-                SUB[M]  R0, R4, 10
+                CMP     R4, 10
         ?!Z     ADD     R12, R12, 1
 ; the same to a target on an odd address, whose instruction spans two
 ; pairs: a cycle more in the fall-through, and the same 7 for the jump
                 .ORG    0x100
                 ADD[M]  R0, R0, 1
                 MOVE    R1, @CYCLES
-        ?Z      MOVE    R15, a3
-                MOVE    R0, R0
+        ?Z      JMP     a3
+                NOP
 a3              MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
-                SUB[M]  R0, R4, 4
+                CMP     R4, 4
         ?!Z     ADD     R12, R12, 1
                 .ORG    0x140
                 ADD[M]  R0, R0, 1
                 MOVE    R1, @CYCLES
-        ?!Z     MOVE    R15, a4
-                MOVE    R0, R0
+        ?!Z     JMP     a4
+                NOP
 a4              MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
-                SUB[M]  R0, R4, 11
+                CMP     R4, 11
         ?!Z     ADD     R12, R12, 1
 ; a jump that DECODE resolves: 3 + 2
                 .ORG    0x180
                 MOVE    R1, @CYCLES
-                MOVE    R15, a5
+                JMP     a5
 a5              MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
-                SUB[M]  R0, R4, 5
+                CMP     R4, 5
         ?!Z     ADD     R12, R12, 1
 ; MOVE R15, R3: the target is the source, ready in WRITE's first cycle: 3 + 7
                 .ORG    0x1C0
                 MOVE    R3, a6
                 MOVE    R1, @CYCLES
-                MOVE    R15, R3
+                JMP     R3
                 .DAT    0
 a6              MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
-                SUB[M]  R0, R4, 10
+                CMP     R4, 10
         ?!Z     ADD     R12, R12, 1
 ; ADD R15, R3, 0: a second cycle in WRITE: 3 + 8
                 .ORG    0x200
@@ -95,7 +95,7 @@ a6              MOVE    R2, @CYCLES
                 ADD     R15, R3, 0
 a7              MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
-                SUB[M]  R0, R4, 11
+                CMP     R4, 11
         ?!Z     ADD     R12, R12, 1
 ; four MOVEs from memory into a register, each in the cycle of its ACK: 8
                 .ORG    0x240
@@ -107,7 +107,7 @@ a7              MOVE    R2, @CYCLES
                 MOVE    R5, @R3
                 MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
-                SUB[M]  R0, R4, 8
+                CMP     R4, 8
         ?!Z     ADD     R12, R12, 1
 ; four ADDs from memory, each a cycle after its ACK, two of them hidden: 10
                 .ORG    0x280
@@ -118,7 +118,7 @@ a7              MOVE    R2, @CYCLES
                 ADD     R5, R5, @R3
                 MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
-                SUB[M]  R0, R4, 10
+                CMP     R4, 10
         ?!Z     ADD     R12, R12, 1
 ; four MOVEs from memory into memory, each store a cycle after its ACK,
 ; and each read after the store before: 19
@@ -130,9 +130,9 @@ a7              MOVE    R2, @CYCLES
                 MOVE    @R3, @R3
                 MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
-                SUB[M]  R0, R4, 19
+                CMP     R4, 19
         ?!Z     ADD     R12, R12, 1
-                MOVE    R15, s12
+                JMP     s12
 ; a conditional ADD R15, R15, offset with a negative offset, a backward
 ; jump that DECODE predicts taken: taken, 3 + 2, the same as a jump that
 ; DECODE resolves. A NOP keeps the ADD[M] from holding the read before the
@@ -140,11 +140,11 @@ a7              MOVE    R2, @CYCLES
                 .ORG    0x300
 a12             MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
-                SUB[M]  R0, R4, 5
+                CMP     R4, 5
         ?!Z     ADD     R12, R12, 1
-                MOVE    R15, s13
+                JMP     s13
 s12             ADD[M]  R0, R0, 1       ; Z = 0
-                MOVE    R0, R0
+                NOP
                 MOVE    R1, @CYCLES
         ?!Z     ADD     R15, R15, a12-t12
 t12             HALT
@@ -157,6 +157,6 @@ b13             MOVE    R1, @CYCLES
         ?Z      ADD     R15, R15, b13-a13
 a13             MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
-                SUB[M]  R0, R4, 10
+                CMP     R4, 10
         ?!Z     ADD     R12, R12, 1
                 HALT

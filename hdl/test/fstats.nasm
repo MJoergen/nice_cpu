@@ -34,18 +34,18 @@ DEPTH           .EQU    16
 
 ; 1. The counters run after reset.
                 MOVE    R12, 1
-                SUB[M]  R0, @FS_CTRL, 1
-        ?!Z     MOVE    PC, fail
+                CMP     @FS_CTRL, 1
+        ?!Z     JMP     fail
 
 ; 2. The loop, between a clear and a stop. Each round runs 3 instructions
 ; of 2 words each.
                 MOVE    R12, 2
                 MOVE    R1, LOOPS
                 MOVE    @FS_CTRL, 3
-loop            MOVE    PC, next
+loop            JMP     next
                 HALT
 next            SUB[M]  R1, R1, 1
-        ?!Z     MOVE    PC, loop
+        ?!Z     JMP     loop
                 MOVE    @FS_CTRL, 0
 
 ; 3. The histogram adds up to FS_CYCLES, which is not 0.
@@ -55,52 +55,52 @@ next            SUB[M]  R1, R1, 1
                 MOVE    R4, 0
 hist            ADD     R4, R4, @R2++
                 SUB[M]  R3, R3, 1
-        ?!Z     MOVE    PC, hist
-                SUB[M]  R0, R4, @FS_CYCLES
-        ?!Z     MOVE    PC, fail
-                MOVE[M] R0, R4
-        ?Z      MOVE    PC, fail
+        ?!Z     JMP     hist
+                CMP     R4, @FS_CYCLES
+        ?!Z     JMP     fail
+                TST     R4
+        ?Z      JMP     fail
 
 ; 4. FS_MIN <= FS_MAX <= FS_HELD_MAX <= DEPTH. C = 1 after SUB[M] if a < b.
                 MOVE    R12, 4
-                SUB[M]  R0, @FS_MAX, @FS_MIN
-        ?C      MOVE    PC, fail
-                SUB[M]  R0, @FS_HELD_MAX, @FS_MAX
-        ?C      MOVE    PC, fail
-                SUB[M]  R0, DEPTH, @FS_HELD_MAX
-        ?C      MOVE    PC, fail
+                CMP     @FS_MAX, @FS_MIN
+        ?C      JMP     fail
+                CMP     @FS_HELD_MAX, @FS_MAX
+        ?C      JMP     fail
+                CMP     DEPTH, @FS_HELD_MAX
+        ?C      JMP     fail
 
 ; 5. At least LOOPS - 1 jumps and flushes, and 6 * (LOOPS - 1) words. Some
 ; cycles waited for words, and some pairs arrived.
                 MOVE    R12, 5
-                SUB[M]  R0, @FS_JUMPS, LOOPS_1
-        ?C      MOVE    PC, fail
-                SUB[M]  R0, @FS_FLUSHES, LOOPS_1
-        ?C      MOVE    PC, fail
-                SUB[M]  R0, @FS_WORDS, WORDS
-        ?C      MOVE    PC, fail
-                MOVE[M] R0, @FS_STARVE
-        ?Z      MOVE    PC, fail
-                MOVE[M] R0, @FS_PAIRS
-        ?Z      MOVE    PC, fail
+                CMP     @FS_JUMPS, LOOPS_1
+        ?C      JMP     fail
+                CMP     @FS_FLUSHES, LOOPS_1
+        ?C      JMP     fail
+                CMP     @FS_WORDS, WORDS
+        ?C      JMP     fail
+                TST     @FS_STARVE
+        ?Z      JMP     fail
+                TST     @FS_PAIRS
+        ?Z      JMP     fail
 
 ; 6. Stopped counters keep their values.
                 MOVE    R12, 6
                 MOVE    R5, @FS_CYCLES
-                SUB[M]  R0, R5, @FS_CYCLES
-        ?!Z     MOVE    PC, fail
-                MOVE[M] R0, @FS_CTRL
-        ?!Z     MOVE    PC, fail
+                CMP     R5, @FS_CYCLES
+        ?!Z     JMP     fail
+                TST     @FS_CTRL
+        ?!Z     JMP     fail
 
 ; 7. A clear without a run: FS_CYCLES and FS_MAX read 0, FS_MIN 31.
                 MOVE    R12, 7
                 MOVE    @FS_CTRL, 2
-                MOVE[M] R0, @FS_CYCLES
-        ?!Z     MOVE    PC, fail
-                MOVE[M] R0, @FS_MAX
-        ?!Z     MOVE    PC, fail
-                SUB[M]  R0, @FS_MIN, 31
-        ?!Z     MOVE    PC, fail
+                TST     @FS_CYCLES
+        ?!Z     JMP     fail
+                TST     @FS_MAX
+        ?!Z     JMP     fail
+                CMP     @FS_MIN, 31
+        ?!Z     JMP     fail
 
                 MOVE    R12, 0
                 HALT

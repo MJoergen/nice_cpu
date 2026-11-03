@@ -4,7 +4,7 @@
                 MOVE    R14, 0x81000000  ; I = 1
                 ADD     R15, R15, -1    ; to the constant word, 0xFFFFFFFF: ?!I reserved, skipped
                 MOVE    R1, 1
-                MOVE    R15, k1+1       ; to a constant word that is a MOVE R2, 7
+                JMP     k1+1            ; to a constant word that is a MOVE R2, 7
 k1              MOVE    R3, 0x8080      ; the constant word is MOVE R2, R1
                 MOVE    R4, R15
                 ADD     R15, R15, R0    ; two cycles to the next instruction

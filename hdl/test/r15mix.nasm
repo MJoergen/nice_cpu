@@ -1,6 +1,6 @@
 ; R15 in several fields of one instruction, with side effects, as a
 ; shift count, and as the base of a store (ISA.md §4.3).
-                MOVE    R15, 0x200
+                JMP     0x200
                 .ORG    0x200
                 MOVE    R1, 0x9ABCDEF1
                 MOVE    R10, scratch
@@ -50,14 +50,14 @@ b1              ADD     R15, R15++, R0  ; s0 = b1 + 1, R15 = b1 + 2, then R15 = 
                 MOVE    R5, R15
                 ADD     R6, R15, 3[R15]
                 MOVE    R7, @R15        ; the word of the next instruction
-                MOVE    R0, R0
-                MOVE    R15, c1         ; a resolved jump, then R15 read at the target
+                NOP
+                JMP     c1              ; a resolved jump, then R15 read at the target
 c1              MOVE    R5, R15
                 ADD     R15, R15, 0     ; an early jump to the next instruction
                 MOVE    R6, R15
                 ADD     R15, R15, R0    ; two cycles, to the next instruction
                 MOVE    R7, 1[R15]
-                MOVE    R15, 0x300
+                JMP     0x300
                 .ORG    0x300
                 ADD     R15++, R15++, R15  ; r = 2 * 0x300 + 3, R15 = 0x604
                 HALT
@@ -65,7 +65,7 @@ c1              MOVE    R5, R15
                 ADD     R15, R15, 0[R15]  ; r = 2 * (0x310 + 2) = 0x624
                 HALT
                 .ORG    0x604
-                MOVE    R15, 0x310
+                JMP     0x310
                 .ORG    0x624
                 MOVE    R4, 0x99
                 HALT

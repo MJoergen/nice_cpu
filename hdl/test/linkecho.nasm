@@ -7,7 +7,7 @@ loop            MOVE    R1, @CONSOLE
                 AND[M]  R0, R1, 0x200
         ?!Z     HALT
                 AND[M]  R0, R1, 0x100   ; no byte waiting: read again
-        ?Z      MOVE    R15, loop
+        ?Z      JMP     loop
                 MOVE    @CONSOLE, R1
                 ADD     R2, R2, 1
-                MOVE    R15, loop
+                JMP     loop

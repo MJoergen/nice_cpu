@@ -28,8 +28,8 @@
                 MOVE    R1, 3           ; words 2,3
 loop            MOVE    R2, @data       ; words 4,5
                 SUB[M]  R1, R1, 1       ; words 6,7
-        ?Z      MOVE    R15, done       ; words 8,9
-                MOVE    R15, loop       ; words 10,11
+        ?Z      JMP     done            ; words 8,9
+                JMP     loop            ; words 10,11
 done            HALT                    ; word 12
 intr            ADD     R4, R4, 1       ; words 13,14
                 RTI                     ; word 15

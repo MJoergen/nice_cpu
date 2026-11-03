@@ -7,7 +7,7 @@
 ; instructions in R1, so the trace shows where each request was taken.
 IRQ             .EQU    9
 
-                MOVE    R15, start      ; words 0,1
+                JMP     start           ; words 0,1
                 .ORG    IRQ
                 .DAT    isr
 

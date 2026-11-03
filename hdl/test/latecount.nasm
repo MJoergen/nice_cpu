@@ -2,7 +2,7 @@
 ; 8) or an IRQ (vector 9) before each step, which test/irq_sweep.py makes;
 ; E = 1 at every step but those of the R14 section, so every request is
 ; taken.
-                MOVE    R15, start
+                JMP     start
                 .ORG    8
                 .DAT    nmi, irq
                 .ORG    0x108
@@ -112,7 +112,7 @@ start           MOVE    R14, 0x40000000
 ; counts in R14 and R15
                 MOVE    R14, 0x01000003
                 0<0[M]  R3, R1, R14     ; count = SR, huge
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 0<C[M]  R3, R1, R14
                 C<C[M]  R3, R1, R14     ; SR mod 33
                 C>C     R3, R1, --R14   ; count SR - 1, R14 decremented
@@ -125,14 +125,14 @@ start           MOVE    R14, 0x40000000
                 >>>[M]  R3, R15, R15    ; s0 and count both R15
                 C>C[M]  R3, R15++, R15
                 HALT
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 C<C[M]  R3, R14, R14    ; s0 = SR, count = SR
                 C<C[M]  R14, R0, 1      ; dest R14 register-direct: no flags; VBASE = 0 or 1
         ?C      MOVE    R4, 0xC1
         ?!C     MOVE    R4, 0xC0
                 MOVE    R14, 0x41000000  ; E = 1 again, so that a request before any step is taken
 ; the C of one late shift feeds the next
-                SUB[M]  R0, R0, 1       ; C = 1
+                CMP     R0, 1           ; C = 1
                 MOVE    R2, 1
                 C<C[M]  R3, R1, R2      ; C = bit 31 of R1
                 C>C[M]  R3, R3, R2

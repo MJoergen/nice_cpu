@@ -11,7 +11,7 @@
                 MOVE    R1, x1
                 MOVE    R2, t1
                 MOVE    @R1, @R2        ; MOVE R4, R9 over MOVE R3, R9
-                MOVE    R15, x1
+                JMP     x1
                 HALT
 
                 .ORG    0x3F
@@ -21,7 +21,7 @@ x1              MOVE    R3, R9
                 MOVE    R2, t2
                 MOVE    R6, R9
                 MOVE    @R1, @R2        ; the same, with one instruction in between
-                MOVE    R15, x2
+                JMP     x2
                 HALT
 
                 .ORG    0x7F
@@ -30,14 +30,14 @@ x2              MOVE    R7, R9
                 MOVE    R1, x3
                 MOVE    R12, @t3
                 0<0     @R1, R12, @zero  ; a late shift by 0: a store two cycles in WRITE
-                MOVE    R15, x3
+                JMP     x3
                 HALT
 
                 .ORG    0xBF
 x3              MOVE    R11, R9
                 MOVE    R1, x4
                 C>C     @R1, @t4, @zero  ; a rotation through C by 0 from memory: three cycles
-                MOVE    R15, x4
+                JMP     x4
                 HALT
 
                 .ORG    0xFF

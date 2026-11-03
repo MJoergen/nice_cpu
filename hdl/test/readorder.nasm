@@ -2,7 +2,7 @@
 ; with late shifts, two-cycle destinations, skipped instructions, and
 ; interrupt vectors. Every read of COUNT returns the reads of it so far.
 COUNT           .EQU    0xFFFFFF01
-                MOVE    R15, start
+                JMP     start
                 .ORG    4
                 .DAT    isr
                 .ORG    0x100
@@ -18,7 +18,7 @@ start           MOVE    R4, COUNT
                 MOVE    R3, R4
                 MOVE    R2++, @R4       ; 10, two cycles
                 ADD     R3--, @R4, @R4  ; 11, 12
-                SUB[M]  R0, R0, R0      ; Z = 1
+                CMP     R0, R0          ; Z = 1
         ?!Z     0<0     R2, @R4, @R4    ; no reads
         ?!Z     MOVE    R2++, @R4
         ?Z      0<0     R2, @R4, R2     ; 13

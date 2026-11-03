@@ -9,11 +9,11 @@ PC              .EQU    R15
                 MOVE    R1, 1
 ; 1. A conditional read after a write of SR: its condition is known only
 ; once the SUB has left WRITE, a cycle later.
-                SUB[M]  R0, R1, 1       ; Z = 1
+                CMP     R1, 1           ; Z = 1
         ?Z      MOVE    R3, @R4
 ; 2. A read after a skipped jump: the read goes in the cycle the jump
 ; retires, so it does not wait.
-        ?!Z     MOVE    PC, data
+        ?!Z     JMP     data
                 MOVE    R3, @R4
 ; 3. A read after a shift by the register that the instruction before
 ; writes, which takes WRITE a second cycle (MICROARCH.md §7.3): the
@@ -27,7 +27,7 @@ PC              .EQU    R15
 ; the target from DBUS's FIFO in t + 3 (MICROARCH.md §5.3) and flushes.
 ; The younger read waits in t + 1 and t + 2, and is then dropped.
                 MOVE    R8, target
-                MOVE    PC, @R8
+                JMP     @R8
                 MOVE    R3, @R4
                 HALT
 back            HALT

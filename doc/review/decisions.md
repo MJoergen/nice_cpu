@@ -4,6 +4,17 @@ Ideas that were weighed and dropped, with the reason, so that they are not
 proposed again. The open items are the
 [issues](https://github.com/MJoergen/nice_cpu/issues) of the repository.
 
+- **Other register designs for the SD card** (#107). A data port whose
+  cursor moves on every access, as QNICE-FPGA has: a read with a side
+  effect needs a rule of its own for the debug link, and a memory page of
+  the on-board debugger shown over it would eat the program's buffer. The
+  buffer mapped as 128 words: a board has only 64 words of I/O left. A DMA
+  engine that copies the sector to memory: it would be a third master on
+  the data bus, which the core and the link share.
+- **SD card commands that take time in the emulator** (#107), so that a
+  program that does not wait for busy fails there as on a board. The
+  simulation of the cores could not match the emulator's steps, and the
+  trace diff of `make -C hdl test` would break at the first command.
 - **Taking the Vivado path from the environment only** (#61). `hdl/Makefile`
   keeps `/opt/Xilinx/2025.1/Vivado/bin/vivado` as the default of `VIVADO`,
   so `make timing` works as is where Vivado is installed there, and

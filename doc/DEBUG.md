@@ -57,7 +57,7 @@ link shows the program's output almost unchanged.
 Console bytes from the host reach the program while it runs or is paused.
 While the processor is held or halted (§6), and after the end of the
 line's input (§7.1), they are dropped; a keyboard's bytes are not
-(SYSTEM.md §1, §5). A paused processor keeps them in the input buffer,
+(SYSTEM.md §1, §6). A paused processor keeps them in the input buffer,
 and the program reads them when it goes on.
 
 A console byte that arrives while the program's input buffer is full
@@ -336,9 +336,10 @@ host that writes back what it read never steps by accident.
 
 - **Start.** When bit 0 goes from 1 to 0, the processor starts at address
   0, as the emulator starts a run. The math unit, the performance counters,
-  and the timer start from their reset values. The read counter keeps its
-  value (SYSTEM.md §1). The input buffer is emptied, and an earlier end of
-  the input (§7.1) is cleared. Bit 1 and the halt reason are cleared, and
+  the timer, and the SD card controller start from their reset values, but
+  a Write of the SD card that has begun finishes first (SYSTEM.md §5). The
+  read counter keeps its value (SYSTEM.md §1). The input buffer is emptied,
+  and an earlier end of the input (§7.1) is cleared. Bit 1 and the halt reason are cleared, and
   R0–R15 are not defined until the next halt.
 - **Restart.** A halt leaves bit 0 at 0, so a restart after a halt takes
   two writes: bit 0 to 1, then to 0 (§8). A resent write of 0 cannot start a
@@ -388,7 +389,8 @@ host that writes back what it read never steps by accident.
   The counters and the timer stop, so the program cannot tell that it was
   paused, but by the wall clock, and by a snapshot that a host's read
   replaced (§3). A pause fires no timer interrupt when the processor goes
-  on. Console bytes from the host go into the input buffer (§1).
+  on. The SD card controller runs on, so a host can use the card
+  (SYSTEM.md §5). Console bytes from the host go into the input buffer (§1).
 - **Go on.** A write of 0 to bit 4 of a paused processor, with bit 0 at 0,
   makes it go on from R15.
 - **Step.** A write with bits 4 and 5 set, and bit 0 at 0, to a paused
@@ -495,7 +497,7 @@ and bit 3 at 0. A system without one waits, held, with bit 0 at 1.
 
 - **UART.** NiceMonMEGA65 carries the link on its debug UART, 8-N-1, at
   2 Mbaud unless it was built for another rate. A UART break, a frame
-  of ten 0 bits, ends the line's input (SYSTEM.md §5): the host's
+  of ten 0 bits, ends the line's input (SYSTEM.md §6): the host's
   console bytes are dropped until the next start, and the console reads
   `0x200` (SYSTEM.md §1) once its buffer is empty. A keyboard's bytes
   still reach the program, so a monitor that a host leaves keeps running
@@ -534,7 +536,7 @@ notices sent while no host is connected are lost.
 
 On either transport, the host's console bytes that arrive after the end of
 the line's input are dropped, with no `o` notice, while a keyboard's bytes
-go into the buffer (SYSTEM.md §1, §5). A start clears the end of the input
+go into the buffer (SYSTEM.md §1, §6). A start clears the end of the input
 (§6), and over TCP so does a new connection.
 
 ### 7.2 The emulator
@@ -651,7 +653,8 @@ are the rules that `hdl/src/debug_link.vhd` asks of its board:
   connects `reg_we_o`, `reg_idx_o`, and `reg_data_o` of the link to the
   core, which writes a register from them while it is paused.
 - **Counters.** The counters and the timer stop while the processor is
-  paused, and run during a step (MICROARCH.md §8).
+  paused, and run during a step (MICROARCH.md §8). The SD card controller
+  does not stop (SYSTEM.md §5).
 - **Clear.** When the link asks for a clear, the board sets every word of
   the memory to 0 and then says so. The link makes no access meanwhile.
 

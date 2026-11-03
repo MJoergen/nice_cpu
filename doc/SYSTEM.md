@@ -28,7 +28,8 @@ data read returns.
 - [2. Math unit](#2-math-unit)
 - [3. Performance counters](#3-performance-counters)
 - [4. Timer](#4-timer)
-- [5. Systems built on the FPGA core](#5-systems-built-on-the-fpga-core)
+- [5. SD card](#5-sd-card)
+- [6. Systems built on the FPGA core](#6-systems-built-on-the-fpga-core)
 
 ## Memory map
 
@@ -46,7 +47,7 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (§3). `0xFFFFFF46`–`0xFFFFFF49` are reserved for the clock of the time of day (#122). |
 | `0xFFFFFF80`–`0xFFFFFF82` | 3 | Reserved for I/O. The emulator's window draws its cursor from them (§1.4). |
 | `0xFFFFFF83`–`0xFFFFFF9F` | 29 | Reserved for I/O. |
-| `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | Reserved for the SD card (#107). |
+| `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | SD card (§5). |
 | `0xFFFFFFB0`–`0xFFFFFFBF` | 16 | Reserved for the network station's addresses and counts (#124). |
 | `0xFFFFFFC0`–`0xFFFFFFCF` | 16 | Reserved for Ethernet frames (#121). |
 | `0xFFFFFFD0`–`0xFFFFFFDF` | 16 | Reserved for I/O. |
@@ -68,7 +69,7 @@ The emulator maps a console at `0xFFFFFF00`, and programs use it for input and o
 |---|---|
 | A byte waits | The byte in bits 7..0, with bit 8 set. |
 | No byte waits | 0, from a UART or from the emulator's window (§1.3). From stdin, a file, or the simulation memory of the FPGA core, the read waits for the next byte or the end of the input instead, and never returns 0. |
-| The input has ended | `0x200` (bit 9). A UART's input ends only if the system provides a break (§5), and a keyboard's never ends (§1.5). |
+| The input has ended | `0x200` (bit 9). A UART's input ends only if the system provides a break (§6), and a keyboard's never ends (§1.5). |
 
 The emulator reads its input from stdin, or from the file of its option `--input`, so stdin from `/dev/null` gives a console with no input. The simulation memory of the FPGA core reads a file too, and returns `0x200` without one. This repository has no UART. A system built on the FPGA core, such as the example design in [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), maps one at the same address, with the same bits (MICROARCH.md §8).
 
@@ -78,7 +79,7 @@ The emulator built with a window (its README says how) shows the screen in a win
 
 ### 1.4 Cursor
 
-The window draws a cursor from three words, numbered as the screen registers of NiceMonMEGA65 (§5). In the emulator they are ordinary memory, which the window only reads:
+The window draws a cursor from three words, numbered as the screen registers of NiceMonMEGA65 (§6). In the emulator they are ordinary memory, which the window only reads:
 
 | Address | What |
 |---|---|
@@ -106,7 +107,7 @@ With `--window`, the console reads the input of `--input`, if given, and then th
 
 A character outside ASCII and the other keys give nothing. A held key repeats as the host repeats it.
 
-With `--link`, the keys and the bytes from the host go into the one input buffer, in the order they arrive, as a board's keyboard and UART share one FIFO (§5). Keys typed while the processor is held or has halted are dropped, and keys typed while it is paused wait in the buffer, as the host's bytes do. A byte of a key waits until the buffer has room for two bytes, so that a byte from the host still finds room. When the host's input ends ([DEBUG.md §7](DEBUG.md#7-transports)), the host's bytes are dropped until the next start or the next connection, but the keys still go into the buffer, as after a break on a board's UART (§5). A read then returns a byte if one waits, and `0x200` otherwise. So a program that reads until the end still ends with the host's input, and one that reads on, as a monitor does, gets the keys.
+With `--link`, the keys and the bytes from the host go into the one input buffer, in the order they arrive, as a board's keyboard and UART share one FIFO (§6). Keys typed while the processor is held or has halted are dropped, and keys typed while it is paused wait in the buffer, as the host's bytes do. A byte of a key waits until the buffer has room for two bytes, so that a byte from the host still finds room. When the host's input ends ([DEBUG.md §7](DEBUG.md#7-transports)), the host's bytes are dropped until the next start or the next connection, but the keys still go into the buffer, as after a break on a board's UART (§6). A read then returns a byte if one waits, and `0x200` otherwise. So a program that reads until the end still ends with the host's input, and one that reads on, as a monitor does, gets the keys.
 
 ### 1.6 Pacing
 
@@ -213,14 +214,109 @@ To get an IRQ through vector table entry `0x41` every 100000 cycles, that is, ev
                     MOVE    @TIMER_PERIOD, 100000
                     OR      R14, R14, 0x40000000  ; E = 1
 
-## 5. Systems built on the FPGA core
+## 5. SD card
+
+The emulator and the FPGA implementation map an SD card controller at `0xFFFFFFA0`–`0xFFFFFFAF`. The controller does the whole protocol of the card. A program sees a buffer of one sector, 512 bytes, and the commands "read sector N into the buffer" and "write the buffer to sector N". A system has one or more slots for cards, and the controller serves the one that is selected.
+
+| Address | Name | A data read returns | A write |
+|---|---|---|---|
+| `0xFFFFFFA0` | `SD_CSR` | the status below | starts the command in bits 3..0 |
+| `0xFFFFFFA1` | `SD_LBA` | the sector number | sets the sector number |
+| `0xFFFFFFA2` | `SD_CHUNK` | the chunk, 0 to 15 | sets the chunk to bits 3..0 |
+| `0xFFFFFFA3` | `SD_ERROR` | the error of the last command, 0 for none | is ignored |
+| `0xFFFFFFA4` | `SD_SELECT` | the selected slot, 0 to 15 | selects the slot in bits 3..0 |
+| `0xFFFFFFA5` | `SD_LAST` | the number of the card's last sector while "ready" is 1, and 0 otherwise | is ignored |
+| `0xFFFFFFA6` | `SD_SLOTS` | the number of slots of the system | is ignored |
+| `0xFFFFFFA7` | | 0 | is ignored |
+| `0xFFFFFFA8`–`0xFFFFFFAF` | `SD_BUF0`–`SD_BUF7` | word 8·c + k of the buffer, where c is `SD_CHUNK` and k is 0 to 7 | writes that word |
+
+The commands, in bits 3..0 of a write to `SD_CSR`:
+
+| Command | Name | What it does |
+|---|---|---|
+| 0 | Init | Starts the card in the selected slot up, reads its size, and clears "changed" |
+| 1 | Read | Reads the sector `SD_LBA` into the buffer |
+| 2 | Write | Writes the buffer to the sector `SD_LBA` |
+| 3–15 | | Nothing. The write is ignored. |
+
+The status, from a read of `SD_CSR`:
+
+| Bit | Meaning |
+|---|---|
+| 0 | Busy: a command runs |
+| 1 | Error: the last command failed, and `SD_ERROR` says why |
+| 2 | Present: a card is in the selected slot |
+| 3 | Ready: the card in the selected slot has been started up by Init |
+| 4 | Changed: a card has been put into the selected slot since the last Init of it |
+| 5 | Write-protected: the card's switch is set |
+| 9..8 | The card's type while "ready" is 1: 1 SDSC, 2 SDHC or SDXC. 0 while "ready" is 0 |
+| others | 0 |
+
+The errors in `SD_ERROR`:
+
+| Error | Meaning |
+|---|---|
+| 0 | None: the last command succeeded, or none has run since reset |
+| 1 | No card is in the selected slot |
+| 2 | The card is not ready: Read or Write before a successful Init |
+| 3 | Timeout: the card did not answer |
+| 4 | CRC: the data from the card was corrupted |
+| 5 | The card reported an error |
+| 6 | Write-protected: Write to a card whose switch is set |
+| 7 | Out of range: Read or Write of a sector after `SD_LAST` |
+| 8 | Init failed |
+
+**The buffer.** It is 128 words, and each word holds 4 bytes, little-endian: byte 4n of the sector is bits 7..0 of word n, and byte 4n + 3 is bits 31..24. A program sees the buffer 8 words at a time, through `SD_BUF0`–`SD_BUF7`, and `SD_CHUNK` chooses which 8. FAT is little-endian, so a 32-byte directory entry is one chunk, with the file's size in `SD_BUF7`, and entry i of a sector of the FAT is word i mod 8 of chunk i / 8. For code from the wasm translator, a word of the buffer is one `i32` ([translator/WASM.md](../translator/WASM.md)).
+
+**No side effects on a read.** A read of any of the 16 words changes nothing, and a write does only what the table says. So the debug link reads and writes them as the processor does, with no rule of its own ([DEBUG.md §3](DEBUG.md#3-requests-and-answers)). A host reads a sector with 16 writes of `SD_CHUNK`, each followed by a read of the 8 words at `SD_BUF0`, and writes one likewise.
+
+**Busy.**
+
+- A program waits for busy to be 0 before it starts a command, and after one.
+- A read of `SD_CSR` after the write that starts a command returns busy 1 until the command has ended. When busy reads 0, the buffer, `SD_ERROR`, and the status are those of the finished command.
+- In the emulator, and in the simulation of the FPGA core, a command ends in the write that starts it, so busy never reads 1. On a board a Read takes about a millisecond, and an Init up to hundreds. A program that waits for busy runs the same on both.
+- While busy is 1, the buffer is not defined, and a write to `SD_CSR`, `SD_LBA`, `SD_SELECT`, or `SD_BUF0`–`SD_BUF7` is ignored. `SD_CHUNK` can be written at any time, and no command changes it.
+- Every command ends: the controller has a timeout for each step of the protocol, so busy does not stay 1.
+
+**Commands.**
+
+- Each command sets `SD_ERROR`, and the error bit is 1 when `SD_ERROR` is not 0.
+- A command checks, in this order, that a card is in the selected slot (error 1); for Read and Write, that the card is ready (2) and that `SD_LBA` is at most `SD_LAST` (7); and for Write, that the card is not write-protected (6). A command that fails a check changes nothing else.
+- An Init that finds a card clears "changed". If it succeeds, it sets "ready" to 1, the type, and `SD_LAST`; if it fails, "ready" stays 0.
+- Read and Write leave "ready" as it is. A failed Read leaves the buffer not defined. A failed Write leaves the sector on the card not defined.
+- `SD_LBA` is always a sector number, also for an SDSC card, whose byte addresses the controller computes. `SD_LAST` is the last sector's number, not the count, so that a card of 2 TB, 2³² sectors, fits.
+
+**Slots.**
+
+- `SD_SLOTS` is the number of slots that the system has, fixed when it is built, whether or not a card is in them. An empty slot counts.
+- A change of `SD_SELECT` takes effect at once. The status then shows the other slot, and "ready" is 0 until an Init of it, as the slots may share one controller. A slot at or above `SD_SLOTS` shows no card, and every command on it fails with error 1.
+- When a card is taken out, "ready" falls to 0. When one is put in, "changed" is set. Both stay so until the next Init of the slot.
+- A slot whose card detect does not work shows "present" as 1 at all times, "write-protected" as 0, and "changed" only after reset. A command on it with no card fails with error 3 or 8. §6 says which systems have such a slot.
+
+**Reset.** Reset, which a start of the processor gives the devices ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)), lets a Write that has begun finish, so that no sector on the card is torn, and abandons any other command. The Write finishes on its own slot, and reports nothing. Then the controller is idle, with slot 0 selected, `SD_CHUNK`, `SD_LBA`, and `SD_ERROR` 0, the error bit and "ready" 0, and "changed" set if a card is present. The buffer is not defined. Busy may read 1 after reset for as long as the Write takes, so a program waits for busy before its first command, as before any other.
+
+**The debug link.** Nothing but reset affects the controller. It runs while the processor is held, paused, or halted, so a host can read and write the card then. A host that does so while a program is paused can restore `SD_CHUNK`, `SD_LBA`, `SD_SELECT`, and the buffer, which it can read first, as reads have no side effects. It cannot restore `SD_ERROR` and the error bit, which its own commands overwrite, nor "ready" and "changed", which an Init or a change of slot changes. So a host that uses the card of a paused program uses only the program's slot, does no Init, waits for the program's command to end before it starts, and lets its own end before the program goes on. While the processor is held or has halted, a host may do anything, since the program starts again from reset.
+
+**Interrupts.** An interrupt or NMI service routine does not use the card. `SD_CHUNK`, `SD_LBA`, `SD_SELECT`, the buffer, and a running command are shared with the program it interrupts.
+
+**The emulator.** `niceemu --sd0 FILE --sd1 FILE` gives a slot an image file, which holds the card's sectors in order. The emulator refuses to start with an image that is empty, or whose size is not a multiple of 512 bytes.
+
+- The emulator always has 2 slots, as the MEGA65 does, so `SD_SLOTS` is 2 with any images or none, and `--sd1` alone puts a card in slot 1 and leaves slot 0 empty.
+- A card is present when its image is given. Its type is 2, SDHC, `SD_LAST` is the image's size in sectors minus 1, and it is write-protected when the file cannot be written.
+- "Changed" is set at the start, so a program does the Init that it does on a board. There is no way to take a card out.
+- A Write goes to the file at once.
+
+Without an image, a program sees what it sees on a MEGA65 with both slots empty: `SD_SLOTS` is 2, "present" is 0, and every command fails with error 1.
+
+## 6. Systems built on the FPGA core
 
 A board that wraps the FPGA core, such as [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), may differ from the emulator in the points below. Its own README has the details.
 
-- **Reserved words.** `0xFFFFFF02`–`0xFFFFFF0F`, `0xFFFFFF80`–`0xFFFFFF9F`, and `0xFFFFFFD0`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. The blocks that the memory map reserves for a device, `0xFFFFFFA0`–`0xFFFFFFCF` and `0xFFFFFF46`–`0xFFFFFF49`, hold that device or nothing. The emulator treats all these words as ordinary memory for data accesses, and only instruction fetches read 0 ([ISA.md §8.3](ISA.md)). NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF8F` for its screen registers, `0xFFFFFF90`–`0xFFFFFF9F` for its board's devices, and `0xFFFFFFE0`–`0xFFFFFFFF` for the debug registers of the link (**Debug link** below).
+- **Reserved words.** `0xFFFFFF02`–`0xFFFFFF0F`, `0xFFFFFF80`–`0xFFFFFF9F`, and `0xFFFFFFD0`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. The blocks that the memory map reserves for a device, `0xFFFFFFB0`–`0xFFFFFFCF` and `0xFFFFFF46`–`0xFFFFFF49`, hold that device or nothing. The emulator treats all these words as ordinary memory for data accesses, and only instruction fetches read 0 ([ISA.md §8.3](ISA.md)). NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF8F` for its screen registers, `0xFFFFFF90`–`0xFFFFFF9F` for its board's devices, and `0xFFFFFFE0`–`0xFFFFFFFF` for the debug registers of the link (**Debug link** below).
 - **Screen.** A board's screen may be larger than the emulator's 80×25. NiceMonMEGA65's has up to 32K words. The color format of §1.1 applies unchanged. The display offset belongs to the board. The emulator's window draws the cursor from the board's cursor registers (§1.4), but has no offset.
 - **Console input.** A UART or a keyboard feeds the same console at `0xFFFFFF00`, with the same bits (§1.2). A break on the UART may end the line's input: the UART's bytes are then dropped until the next start, and a read returns `0x200` once the FIFO is empty, but the keyboard's bytes still go into the FIFO, and a read returns them. So a monitor that a host leaves keeps running on the keyboard, and a program that reads until the end still ends with the host's input. A keyboard sends no break. A board's keyboard gives the bytes of the window's keys (§1.5), and may have more keys.
 - **Input FIFO.** A system's input FIFO may lose bytes. NiceMonMEGA65 drops a UART byte that arrives when the FIFO is full, with the link's `o` notice ([DEBUG.md §4](DEBUG.md#4-notices)), or after a break. Over a transport with flow control, such as TCP, the byte waits up to 50 ms for room first ([DEBUG.md §1](DEBUG.md#1-the-byte-stream)). Input that arrives while the processor is held or has halted is dropped, as by `niceemu --link`, and input that arrives while it is paused waits in the FIFO ([DEBUG.md §1](DEBUG.md#1-the-byte-stream)). A keyboard byte waits until the FIFO has room for two, so that a UART byte still finds room.
+- **SD card slots.** A system without an SD card controller has nothing at `0xFFFFFFA0`–`0xFFFFFFAF`, or one with `SD_SLOTS` 0. NiceMonMEGA65 has 2 slots on the MEGA65: slot 0 is the microSD slot at the back, and slot 1 the full-size slot underneath, the only one with write protect. On the R3, slot 1 has no working card detect (§5). The Nexys4DDR has 1, its microSD slot.
 - **ROM.** A system may map a ROM at 0 that it can hide, so that a program loads at 0 as in the emulator.
 - **Debug link.** A board may serve the debug link of [DEBUG.md](DEBUG.md) on its UART, or over TCP as the emulator does. Its debug registers at `0xFFFFFFE0`–`0xFFFFFFFF` are for the link only, so a program's data accesses there go to whatever the board has there otherwise.
 - **Aliasing.** A system with 2^N words of RAM may decode only the low N address bits, so that the RAM repeats through the address space. Then the words of `0xFFFFFF02`–`0xFFFFFFFF` where it has no device or register alias the top words of the RAM, and the stack below `0xFFFFFF00` lands in them too. With 64K words they alias the RAM words `0xFF02`–`0xFFFF`, and `0xFFFF8000`–`0xFFFFFEFF` alias `0x8000`–`0xFEFF`; with 128K words, `0x1FF02`–`0x1FFFF` and `0x18000`–`0x1FEFF`. That is a property of the system, not a bug. A program learns the size from the system's documentation, or from a register in the system's own range (**Reserved words** above) if it has one. NiceMonMEGA65 has 64K words on the Nexys4DDR and 128K on the MEGA65, and a read-only word at `0xFFFFFF9E` that returns the RAM's words, which reads 0 in the emulator, where there is no limit (MJoergen/NiceMonMEGA65#68).

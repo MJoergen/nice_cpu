@@ -148,7 +148,7 @@ Division by zero is undefined in C, so these routines may return any value for i
 
 | Register | At entry |
 |---|---|
-| SP | The monitor's stack. The program may use the words from `0x8000` up to, but not including, this SP, and must leave room below it for the stack, which it shares with the monitor. The monitor says how much. On a system whose RAM repeats through the address space ([SYSTEM.md §5](../doc/SYSTEM.md#5-systems-built-on-the-fpga-core)), the SP is an alias of the top of the RAM, so "up to the SP" means up to its low N bits: with 64K words an SP of `0xFFFFEFxx` is the word `0xEFxx`, and with 128K words `0x1EFxx`. |
+| SP | The monitor's stack. The program may use the words from `0x8000` up to, but not including, this SP, and must leave room below it for the stack, which it shares with the monitor. The monitor says how much. On a system whose RAM repeats through the address space ([SYSTEM.md §6](../doc/SYSTEM.md#6-systems-built-on-the-fpga-core)), the SP is an alias of the top of the RAM, so "up to the SP" means up to its low N bits: with 64K words an SP of `0xFFFFEFxx` is the word `0xEFxx`, and with 128K words `0x1EFxx`. |
 | R1 | The monitor's putc routine, or 0 to leave the output on the console. The start-up code stores a nonzero R1 in `___putc_vector` (Device routines), so that `nice_putc`, `nice_print`, and the C library's output, `printf` included, reach the monitor's screen. |
 | R2, R3 | `argc` and `argv`, which the start-up code passes to `main` in R1 and R2, where the start-up code at 0 passes 0 and 0. |
 

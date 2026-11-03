@@ -18,8 +18,10 @@ processor is paused (§6).
 
 To try the link, run `niceemu --link PORT prog.bin` (emulator/README.md,
 Debug link), connect a TCP client to the port, and send the packets of
-the example in §8. The repository ships no host tool; the protocol takes
-a few lines of Python, as `emulator/test/link.py` shows.
+the example in §8. The protocol takes a few lines of Python, as
+`emulator/test/link.py` shows. This repository ships no host tool, but
+NiceMonMEGA65 has one, `tools/mon.py`, an interactive shell on the link
+(emulator/README.md, Debug link).
 
 "SYSTEM.md §1" refers to a section of SYSTEM.md, "ISA §5.3" to one of
 ISA.md, and a plain "§2" to a section of this file.

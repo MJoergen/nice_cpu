@@ -359,6 +359,21 @@ keep the default and forward the port over SSH instead:
 
     ssh -L 4510:127.0.0.1:4510 emuhost 'niceemu --link 4510 prog.bin'
 
+For a host tool, NiceMonMEGA65's
+[`tools/mon.py`](https://github.com/MJoergen/NiceMonMEGA65/blob/main/tools/mon.py)
+is an interactive shell on the link. It loads a program, runs, pauses,
+steps, and goes on, sets the breakpoints, reads and writes the registers
+and the memory, and disassembles with `nicedis.py`, with labels from
+`niceasm.py --symbols`. It connects to niceemu with `--tcp PORT`:
+
+    niceemu --link 4510 &
+    mon.py --tcp 4510 --symbols prog.sym prog.bin
+
+It loads only what a MEGA65 can hold, the RAM at `0x0`–`0x1FFFF` and the
+screen, and refuses a program with words elsewhere. It needs a checkout of
+NiceMonMEGA65 with its `nice_cpu` submodule, for `nicedis.py`. Nothing here
+depends on it.
+
 niceemu starts held, with the program file in memory if one was given,
 and runs a program each time the host starts one. The console's input and output go over the
 link, and what a run prints after it halts, and the trace, go to stderr.

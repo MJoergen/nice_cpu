@@ -43,9 +43,13 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 | `0xFFFFFF02`–`0xFFFFFF0F` | 14 | Reserved for I/O. |
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (§4). |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (§2). |
-| `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (§3). |
+| `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (§3). `0xFFFFFF46`–`0xFFFFFF49` are reserved for the clock of the time of day (#122). |
 | `0xFFFFFF80`–`0xFFFFFF82` | 3 | Reserved for I/O. The emulator's window draws its cursor from them (§1.4). |
-| `0xFFFFFF83`–`0xFFFFFFDF` | 93 | Reserved for I/O. |
+| `0xFFFFFF83`–`0xFFFFFF9F` | 29 | Reserved for I/O. |
+| `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | Reserved for the SD card (#107). |
+| `0xFFFFFFB0`–`0xFFFFFFBF` | 16 | Reserved for the network station's addresses and counts (#124). |
+| `0xFFFFFFC0`–`0xFFFFFFCF` | 16 | Reserved for Ethernet frames (#121). |
+| `0xFFFFFFD0`–`0xFFFFFFDF` | 16 | Reserved for I/O. |
 | `0xFFFFFFE0`–`0xFFFFFFFF` | 32 | Reserved for I/O. The debug link's registers are here, for the link only ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)). |
 
 ## 1. Console, screen, and read counter
@@ -169,7 +173,8 @@ The emulator and the FPGA implementation map performance counters at `0xFFFFFF40
 | `0xFFFFFF43` | `INSTR_HI` | bits 63..32 of the instruction counter's snapshot | is ignored |
 | `0xFFFFFF44` | `TIME_LO` | bits 31..0 of the microsecond counter, and takes a snapshot of it | is ignored |
 | `0xFFFFFF45` | `TIME_HI` | bits 63..32 of the microsecond counter's snapshot | is ignored |
-| `0xFFFFFF46`–`0xFFFFFF4F` | | 0 | is ignored |
+| `0xFFFFFF46`–`0xFFFFFF49` | | 0, reserved for the clock of the time of day (#122) | is ignored |
+| `0xFFFFFF4A`–`0xFFFFFF4F` | | 0 | is ignored |
 | `0xFFFFFF50`–`0xFFFFFF7F` | | the fetch statistics (MICROARCH.md §8.1), or 0 in the emulator | as MICROARCH.md §8.1 says, or is ignored in the emulator |
 
 - The **instruction counter** counts the instructions that have completed since reset. Every instruction counts, including one whose condition is false, a control instruction, and `INT`. An interrupt entry for IRQ or NMI does not count, because it is not an instruction. An instruction that reads `INSTR_LO` reads the number of instructions that completed before it.
@@ -212,7 +217,7 @@ To get an IRQ through vector table entry `0x41` every 100000 cycles, that is, ev
 
 A board that wraps the FPGA core, such as [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), may differ from the emulator in the points below. Its own README has the details.
 
-- **Reserved words.** `0xFFFFFF02`–`0xFFFFFF0F` and `0xFFFFFF80`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. The emulator treats them as ordinary memory for data accesses, and only instruction fetches read 0 ([ISA.md §8.3](ISA.md)). NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF8F` for its screen registers, `0xFFFFFF90`–`0xFFFFFF9F` for its board's devices, and `0xFFFFFFE0`–`0xFFFFFFFF` for the debug registers of the link (**Debug link** below).
+- **Reserved words.** `0xFFFFFF02`–`0xFFFFFF0F`, `0xFFFFFF80`–`0xFFFFFF9F`, and `0xFFFFFFD0`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. The blocks that the memory map reserves for a device, `0xFFFFFFA0`–`0xFFFFFFCF` and `0xFFFFFF46`–`0xFFFFFF49`, hold that device or nothing. The emulator treats all these words as ordinary memory for data accesses, and only instruction fetches read 0 ([ISA.md §8.3](ISA.md)). NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF8F` for its screen registers, `0xFFFFFF90`–`0xFFFFFF9F` for its board's devices, and `0xFFFFFFE0`–`0xFFFFFFFF` for the debug registers of the link (**Debug link** below).
 - **Screen.** A board's screen may be larger than the emulator's 80×25. NiceMonMEGA65's has up to 32K words. The color format of §1.1 applies unchanged. The display offset belongs to the board. The emulator's window draws the cursor from the board's cursor registers (§1.4), but has no offset.
 - **Console input.** A UART or a keyboard feeds the same console at `0xFFFFFF00`, with the same bits (§1.2). A break on the UART may end the line's input: the UART's bytes are then dropped until the next start, and a read returns `0x200` once the FIFO is empty, but the keyboard's bytes still go into the FIFO, and a read returns them. So a monitor that a host leaves keeps running on the keyboard, and a program that reads until the end still ends with the host's input. A keyboard sends no break. A board's keyboard gives the bytes of the window's keys (§1.5), and may have more keys.
 - **Input FIFO.** A system's input FIFO may lose bytes. NiceMonMEGA65 drops a UART byte that arrives when the FIFO is full, with the link's `o` notice ([DEBUG.md §4](DEBUG.md#4-notices)), or after a break. Over a transport with flow control, such as TCP, the byte waits up to 50 ms for room first ([DEBUG.md §1](DEBUG.md#1-the-byte-stream)). Input that arrives while the processor is held or has halted is dropped, as by `niceemu --link`, and input that arrives while it is paused waits in the FIFO ([DEBUG.md §1](DEBUG.md#1-the-byte-stream)). A keyboard byte waits until the FIFO has room for two, so that a UART byte still finds room.

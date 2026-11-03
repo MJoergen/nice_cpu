@@ -234,7 +234,7 @@ address twice and a file with no words are errors.
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (SYSTEM.md §4). Raises IRQ once every P steps. |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (SYSTEM.md §2). Multiplies and divides A and B, and divides C and D. |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (SYSTEM.md §3). Cycles, instructions, and microseconds, 64 bits each. The fetch statistics of the FPGA core, at `0xFFFFFF50`–`0xFFFFFF7F`, read 0. |
-| `0xFFFFFF80`–`0xFFFFFFFF` | 128 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (SYSTEM.md §1). |
+| `0xFFFFFF80`–`0xFFFFFFFF` | 128 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (SYSTEM.md §1). SYSTEM.md's memory map reserves `0xFFFFFFA0`–`0xFFFFFFCF` for devices still to come. |
 
 ### Screen
 

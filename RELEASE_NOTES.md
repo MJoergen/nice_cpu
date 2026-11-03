@@ -29,7 +29,7 @@ pins each is:
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
 
-## V1.3 (2026-11-02)
+## V1.3 (2026-11-03)
 
 The assembler has `CALL` and `RET` (#93). Debug link version 6 lets a
 host write R1–R15 while the processor is paused (#102), and over TCP

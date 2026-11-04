@@ -1,6 +1,6 @@
-; The SD card controller (SYSTEM.md §5). Slot 0 holds test/sd.img, a copy
-; that the Makefile makes for each run, of 2 sectors in which byte o of the
-; image is o mod 251. Slot 1 is empty. A command ends in the write that
+; The SD card controller (SYSTEM.md §5). Slot 0 holds test/sd.img.out, an
+; image that the Makefile makes for each run, of 2 sectors in which byte o
+; is o mod 251. Slot 1 is empty. A command ends in the write that
 ; starts it, so busy never reads 1. Each result goes to the next word from
 ; 0x200:
 ;

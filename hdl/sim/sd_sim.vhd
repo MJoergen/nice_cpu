@@ -20,8 +20,8 @@
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) start_i comes only while no command runs, with the command, the slot,
 --    and the sector of sd_regs, which hold until done_o.
--- b) An image file is empty or a multiple of 512 bytes long. Otherwise
---    the simulation fails at time 0.
+-- b) An image file whose name is given is a multiple of 512 bytes long,
+--    and not empty. Otherwise the simulation fails at time 0.
 --
 -- RESET
 -- None. abort_i abandons the command that runs.

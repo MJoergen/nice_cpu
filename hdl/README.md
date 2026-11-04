@@ -437,8 +437,9 @@ asserts, in simulation, the invariants that its design relies on.
 `G_SLAVES` slaves. The instantiator decodes the address into `sel_i`, the
 index of the slave, so the decoder holds no address map. In `tb_core`,
 slave 0 is the memory model, the default slave, then come the math unit,
-the performance counters, and the timer. CYC, WE, ADDR, and the write
-data go to every slave directly.
+the performance counters, the timer, the fetch statistics, and the SD
+card controller. CYC, WE, ADDR, and the write data go to every slave
+directly.
 
 The slaves answer at their own pace: the math unit holds the ACK of a read
 for up to 65 cycles. So a request to one slave passes only while no other

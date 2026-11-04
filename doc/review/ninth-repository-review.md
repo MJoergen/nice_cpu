@@ -58,6 +58,8 @@ Lines 45–49: "the devices of doc/SYSTEM.md: the console, the 80×25 character 
 
 Line 439: "In `tb_core`, slave 0 is the memory model, the default slave, then come the math unit, the performance counters, and the timer." The fetch statistics have been slave 4 since they were split out, and the SD card controller is slave 5 (`C_SD` in `tb_core.vhd`). **Fix:** ", the timer, the fetch statistics, and the SD card controller".
 
+**Resolved**: The list names the fetch statistics and the SD card controller.
+
 ### 3.3 CLAUDE.md names the devices of SYSTEM.md without the SD card
 
 Line 21: "the devices that the emulator maps into the I/O range (console, math unit, counters, timer)". **Fix:** add "SD card".
@@ -70,6 +72,8 @@ Line 21: "the devices that the emulator maps into the I/O range (console, math u
 - `hdl/sim/sd_sim.vhd` line 23, contract b): "An image file is empty or a multiple of 512 bytes long. Otherwise the simulation fails at time 0." The assertion at line 87 refuses an empty file, as the emulator does. **Fix:** "An image file is a multiple of 512 bytes long, and not empty."
 
 Not worth changing: the `V1.2` and `V1.3` sections of RELEASE_NOTES.md cite "SYSTEM.md §5" for the systems built on the FPGA core, which is §6 now. They are the messages of those tags.
+
+**Resolved**: The probe's header names `test/sd.img.out`, and `sd_sim`'s contract b) says that an image file is not empty.
 
 ## 4. What is correct
 

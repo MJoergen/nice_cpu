@@ -14,6 +14,7 @@ pin each are:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|
+| `V1.6` | none yet |
 | `V1.5` | none yet |
 | `V1.4` | none yet |
 | `V1.3` | none yet |
@@ -29,6 +30,59 @@ pin each are:
 
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
+
+## V1.6 (2026-11-04)
+
+The emulator's window draws from a font in the address space: a font
+RAM of 256 glyphs that a program writes, Spleen as a character ROM
+beside it, and a font base that selects which the window shows (#115).
+
+**Upgrade notes.**
+
+- In the emulator, `0xFFFE0000`–`0xFFFE1FFF` is the font RAM, which keeps
+  only bits 15..0 of a write, and `0xFFFE2000`–`0xFFFE3FFF` is the
+  character ROM, which reads Spleen and drops a write. Both were
+  ordinary memory. A program that kept data there loses it. No program
+  of the repository did.
+- `0xFFFFFF86` is the font base, among the words reserved for I/O. In
+  the emulator it is ordinary memory that the window reads, as the
+  cursor's words are. It is 0 at the start, so the window shows Spleen,
+  as before, until a program writes it.
+- The ports of both cores, `wb_dmux`, the devices, and the debug link are
+  as in V1.5.
+- Zig 0.17.0, as in V1.5.
+
+**Specification and documents**
+
+- SYSTEM.md §1.8 is the font: the layout of a glyph, 32 words of 16
+  pixels with the leftmost in bit 15, the font RAM, the character ROM,
+  and the base, whose value 0 shows the ROM and `0xFFFE0000` the RAM.
+  The other values are reserved, and show the ROM. The font RAM and the
+  base are 0 at the start and after the link's clear (#115).
+- SYSTEM.md's memory map has the two ranges and the base, and §6 says
+  that a board draws from the same font, and that until
+  MJoergen/NiceMonMEGA65#71 the ranges alias NiceMonMEGA65's RAM.
+
+**Emulator (`niceemu`)**
+
+- `--window` draws each cell from the font that the base selects, and
+  redraws a cell when its word, its cursor, or its glyph changes. A
+  write to a glyph shows at the next redraw, and a write to the base
+  changes the whole screen (#115).
+- Instruction fetches, `--dump`, and the debug link see the font RAM and
+  the ROM as a data access does. `--screen` and `--color` still print
+  the screen's codes as text.
+- The probe `test/font.nasm` reads the ROM, copies a glyph into the font
+  RAM, and selects it.
+
+**FPGA cores (`hdl/`)**
+
+- The cores do not change. `make timing` on the MEGA65 meets the budget
+  with the figures of V1.5.
+
+**Benchmarks**
+
+- The cycle counts do not change.
 
 ## V1.5 (2026-11-04)
 

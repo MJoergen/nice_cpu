@@ -100,7 +100,9 @@ range to each device that is planned (#123).
 - `make formal` proves the bus and engine ports of `sd_regs`, with the
   held ACK and without it, and `tb_sd_regs` tests a reset during a
   command and a card taken out.
-- The cores do not change.
+- The cores do not change. `make timing` on the MEGA65 meets the budget
+  with V1.4's figures: the core alone has +0.503 ns of slack, and its
+  inputs and outputs leave 3.056 and 2.836 ns to the system around it.
 
 **Benchmarks**
 

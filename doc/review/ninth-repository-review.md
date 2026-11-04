@@ -52,6 +52,8 @@ Line 319: "NiceMonMEGA65 has 2 slots on the MEGA65: slot 0 is the microSD slot a
 
 Lines 45–49: "the devices of doc/SYSTEM.md: the console, the 80×25 character screen, the math unit, the performance counters, and the timer." **Fix:** ", the timer, and the SD card controller".
 
+**Resolved**: The list ends with the SD card controller.
+
 ### 3.2 hdl/README.md's list of `tb_core`'s slaves ends at the timer
 
 Line 439: "In `tb_core`, slave 0 is the memory model, the default slave, then come the math unit, the performance counters, and the timer." The fetch statistics have been slave 4 since they were split out, and the SD card controller is slave 5 (`C_SD` in `tb_core.vhd`). **Fix:** ", the timer, the fetch statistics, and the SD card controller".
@@ -59,6 +61,8 @@ Line 439: "In `tb_core`, slave 0 is the memory model, the default slave, then co
 ### 3.3 CLAUDE.md names the devices of SYSTEM.md without the SD card
 
 Line 21: "the devices that the emulator maps into the I/O range (console, math unit, counters, timer)". **Fix:** add "SD card".
+
+**Resolved**: CLAUDE.md names the SD card among the devices.
 
 ### 3.4 Two headers name what the code does not do
 

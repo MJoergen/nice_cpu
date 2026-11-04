@@ -18,8 +18,8 @@ translator, and two FPGA cores. See README.md.
 - `doc/ISA.md`: the specification. It is authoritative for all code here.
   `doc/review/` records how decisions were reached; ISA.md supersedes it.
 - `doc/SYSTEM.md`: the devices that the emulator maps into the I/O range
-  (console, math unit, counters, timer). ISA.md reserves the range and
-  defines no device. ISA.md wins over it.
+  (console, math unit, counters, timer, SD card). ISA.md reserves the
+  range and defines no device. ISA.md wins over it.
 - `doc/TOOLCHAIN.md`: the tools, what each reads and writes, the steps
   that build a program, how the tools use each other, and the compilers
   and host tools they need. ISA.md wins over it.

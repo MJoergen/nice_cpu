@@ -45,8 +45,9 @@ follows a tag.
 `niceemu` runs NICE programs on the host. It implements the whole
 instruction set of [doc/ISA.md](doc/ISA.md), the interrupts included,
 and the devices of [doc/SYSTEM.md](doc/SYSTEM.md): the console, the
-80×25 character screen, the math unit, the performance counters, and
-the timer. It is the reference that the FPGA cores are compared with.
+80×25 character screen, the math unit, the performance counters, the
+timer, and the SD card controller. It is the reference that the FPGA
+cores are compared with.
 It can:
 
 - run a program until it halts, and print why it stopped, the number of

@@ -10,6 +10,8 @@ Reviewed on 2026-11-04: the five commits between `V1.4` and the head of `dev-V1.
 
 **Two statements in SYSTEM.md are wrong or will be read as wrong**, and should change before the tag: §5 says a system has one or more slots while §6 allows `SD_SLOTS` 0, which `sd_regs` cannot provide (§2.1); and §6 says NiceMonMEGA65 has two SD card slots, where the board has no controller yet (§2.2). **Four lists of the devices are stale**: README.md's, hdl/README.md's, CLAUDE.md's, and the header of the probe names an image file that does not exist (§3). Each is a sentence. **Two release steps are still to do** (§1): the version in `emulator/build.zig.zon`, and the date of the section at the tag.
 
+**Every finding is closed** on `dev-V1.5`, with a commit for each finding or pair and a **Resolved** paragraph under each: the version (§1.1), the slots bullet of SYSTEM.md §6 (§2.1, §2.2), its reset and Init sentences (§2.3), the device lists of README.md and CLAUDE.md (§3.1, §3.3), hdl/README.md's slaves and `sd_sim`'s contract (§3.2, §3.4), and the probe's header (§3.4). The date of the section is set at the tag.
+
 ## 1. The release
 
 ### 1.1 `emulator/build.zig.zon` still says `1.4.0`

@@ -16,6 +16,8 @@ Reviewed on 2026-11-04: the five commits between `V1.4` and the head of `dev-V1.
 
 RELEASE.md step 2.9 asks for the new tag's version there before `release.py check`, as a change after the stamp makes the stamp stale, and `release.py tag` refuses a tag it does not match. **Fix:** `1.5.0`, in a commit before `release.py check`.
 
+**Resolved**: `emulator/build.zig.zon` says `1.5.0`.
+
 ### 1.2 The rest of the checklist
 
 - The date of the `V1.5` section is set at the tag, as the commit says.

@@ -31,9 +31,13 @@ RELEASE.md step 2.9 asks for the new tag's version there before `release.py chec
 
 Line 219: "A system has one or more slots for cards." Line 319: "A system without an SD card controller has nothing at `0xFFFFFFA0`–`0xFFFFFFAF`, or one with `SD_SLOTS` 0." `hdl/src/sd_regs.vhd` line 61 has `G_SLOTS : positive range 1 to 16`, so a board cannot build the second kind from the repository's sources. A program that reads `SD_SLOTS` to decide is fine either way, but the two sentences contradict each other. **Fix:** one rule. The simplest is to drop "or one with `SD_SLOTS` 0" from §6, so that a system either has the controller with at least one slot or has nothing there. If the 0 case is wanted, say in §5 that a system has zero or more slots, and in hdl/README.md that `sd_regs` needs at least one.
 
+**Resolved**: §6 no longer allows a controller with `SD_SLOTS` 0: a system has the controller, with at least one slot, or nothing at its addresses.
+
 ### 2.2 §6 says NiceMonMEGA65 has two slots
 
 Line 319: "NiceMonMEGA65 has 2 slots on the MEGA65: slot 0 is the microSD slot at the back, and slot 1 the full-size slot underneath, the only one with write protect. On the R3, slot 1 has no working card detect (§5). The Nexys4DDR has 1, its microSD slot." The facts match the board's design note (`doc/SDCARD.md` on its branch `sdcard-design`), but the board has no SD card controller yet: its engine is MJoergen/NiceMonMEGA65#55 and MJoergen/NiceMonMEGA65#63, and the table at the top of RELEASE_NOTES.md says `none yet` for `V1.5`. The documents say only what is true now (CLAUDE.md), and the eighth review's §6.5 removed a sentence of the same shape about the board's monitor. **Fix:** state the hardware, and the numbering as a plan: "The MEGA65 has 2 slots: the microSD slot at the back, and the full-size slot underneath, the only one with write protect, whose card detect does not work on the R3. NiceMonMEGA65 plans to number them 0 and 1 (MJoergen/NiceMonMEGA65#55). The Nexys4DDR has 1, its microSD slot."
+
+**Resolved**: §6 says what the MEGA65 and the Nexys4DDR have, and that NiceMonMEGA65 plans to number the MEGA65's slots 0 and 1, with its issue.
 
 ### 2.3 Two sentences of §5 that read oddly
 

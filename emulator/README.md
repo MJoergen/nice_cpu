@@ -153,10 +153,13 @@ empty argument counts as no program.
 With `--window`, niceemu shows the 80×25 screen in a window of 1280×800
 pixels while the program runs, as SYSTEM.md §1 specifies. A resized window
 scales the screen and keeps its aspect. The characters are from the font
-Spleen 16×32, as on NiceMonMEGA65, in `src/font.zig`, which
+that the font base at `0xFFFFFF86` selects (SYSTEM.md §1.8): the
+character ROM, Spleen 16×32 as on NiceMonMEGA65, or the font RAM at
+`0xFFFE0000`, which a program writes. Spleen is in `src/font.zig`, which
 `font/gen_font.py` generates (`font/LICENSE.spleen` has its license). The
 window draws a cursor from `0xFFFFFF80`–`0xFFFFFF82`, and redraws about 60
-times a second. `-2004` and `--invert-fg` work with it as with `--screen`.
+times a second. A cell is redrawn when its word, the cursor on it, or its
+glyph changes. `-2004` and `--invert-fg` work with it as with `--screen`.
 
 The console writes to stdout, as without the window. It reads the file of
 `--input`, if given, and then the keys typed into the window, with the
@@ -227,7 +230,10 @@ address twice and a file with no words are errors.
 
 | Address | Words | Contents |
 |---|---|---|
-| `0x00000000`–`0xFFFEFFFF` | 4294901760 | Ordinary memory. Programs load at 0, or at `0x8000` under a monitor in ROM, as a stand-in for one at 0 shows (runtime/ABI.md, "Programs under a monitor"). |
+| `0x00000000`–`0xFFFDFFFF` | 4294836224 | Ordinary memory. Programs load at 0, or at `0x8000` under a monitor in ROM, as a stand-in for one at 0 shows (runtime/ABI.md, "Programs under a monitor"). |
+| `0xFFFE0000`–`0xFFFE1FFF` | 8192 | Font RAM (SYSTEM.md §1.8). Ordinary memory, but a write keeps only bits 15..0. |
+| `0xFFFE2000`–`0xFFFE3FFF` | 8192 | Character ROM (SYSTEM.md §1.8): Spleen 16×32, 32 words per glyph. A write is dropped. |
+| `0xFFFE4000`–`0xFFFEFFFF` | 49152 | Ordinary memory. |
 | `0xFFFF0000`–`0xFFFF07CF` | 2000 | Character screen, 80×25. Ordinary memory. With `-2004` it is at `0x00000400`–`0x00000BCF` instead. |
 | `0xFFFF07D0`–`0xFFFFFEFF` | 63280 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |
 | `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns the next input byte plus `0x100`, or `0x200` after the end of the input. |
@@ -236,7 +242,7 @@ address twice and a file with no words are errors.
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (SYSTEM.md §4). Raises IRQ once every P steps. |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (SYSTEM.md §2). Multiplies and divides A and B, and divides C and D. |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (SYSTEM.md §3). Cycles, instructions, and microseconds, 64 bits each. The fetch statistics of the FPGA core, at `0xFFFFFF50`–`0xFFFFFF7F`, read 0. |
-| `0xFFFFFF80`–`0xFFFFFF9F` | 32 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (SYSTEM.md §1). |
+| `0xFFFFFF80`–`0xFFFFFF9F` | 32 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (SYSTEM.md §1.4), and takes its font base from `0xFFFFFF86` (SYSTEM.md §1.8). |
 | `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | SD card controller (SYSTEM.md §5). Two slots, with the images of `--sd0` and `--sd1`. |
 | `0xFFFFFFB0`–`0xFFFFFFFF` | 80 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. SYSTEM.md's memory map reserves `0xFFFFFFB0`–`0xFFFFFFCF` for devices still to come. |
 

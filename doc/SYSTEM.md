@@ -3,7 +3,7 @@
 The ISA ([ISA.md](ISA.md)) reserves the I/O range `0xFFFFFF00`–`0xFFFFFFFF`
 and defines no device (ISA §8.3). This file describes the devices that the
 emulator ([emulator/](../emulator/README.md)) and the FPGA implementation
-([hdl/](../hdl/README.md)) map into it, and the character screen, window, and
+([hdl/](../hdl/README.md)) map into it, and the character screen, window, font, and
 keyboard that only the emulator has. They are properties of those systems, not of the ISA. The
 runtime library ([runtime/](../runtime/README.md)) has routines for them.
 
@@ -25,6 +25,7 @@ data read returns.
   - [1.5 Keyboard](#15-keyboard)
   - [1.6 Pacing](#16-pacing)
   - [1.7 Read counter](#17-read-counter)
+  - [1.8 Font](#18-font)
 - [2. Math unit](#2-math-unit)
 - [3. Performance counters](#3-performance-counters)
 - [4. Timer](#4-timer)
@@ -33,11 +34,13 @@ data read returns.
 
 ## Memory map
 
-The I/O range, the screen, and what the systems put in them. The emulator's own map, with
+The I/O range, the screen, the font, and what the systems put in them. The emulator's own map, with
 its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 
 | Address | Words | What |
 |---|---|---|
+| `0xFFFE0000`–`0xFFFE1FFF` | 8192 | The font RAM (§1.8). |
+| `0xFFFE2000`–`0xFFFE3FFF` | 8192 | The character ROM (§1.8). |
 | `0xFFFF0000`–`0xFFFF07CF` | 2000 | The emulator's character screen, 80×25 (§1.1). |
 | `0xFFFFFF00` | 1 | Console (§1.2). |
 | `0xFFFFFF01` | 1 | Read counter (§1.7). |
@@ -46,7 +49,9 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (§2). |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (§3). `0xFFFFFF46`–`0xFFFFFF49` are reserved for the clock of the time of day (#122). |
 | `0xFFFFFF80`–`0xFFFFFF82` | 3 | Reserved for I/O. The emulator's window draws its cursor from them (§1.4). |
-| `0xFFFFFF83`–`0xFFFFFF9F` | 29 | Reserved for I/O. |
+| `0xFFFFFF83`–`0xFFFFFF85` | 3 | Reserved for I/O. |
+| `0xFFFFFF86` | 1 | Reserved for I/O. The emulator's window takes its font base from it (§1.8). |
+| `0xFFFFFF87`–`0xFFFFFF9F` | 25 | Reserved for I/O. |
 | `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | SD card (§5). |
 | `0xFFFFFFB0`–`0xFFFFFFBF` | 16 | Reserved for the network station's addresses and counts (#124). |
 | `0xFFFFFFC0`–`0xFFFFFFCF` | 16 | Reserved for Ethernet frames (#121). |
@@ -75,7 +80,7 @@ The emulator reads its input from stdin, or from the file of its option `--input
 
 ### 1.3 Window
 
-The emulator built with a window (its README says how) shows the screen in a window with its option `--window`, 1280×800 pixels, while the program runs. Each character is 16×32 pixels, from the Spleen font, with the colors of §1.1. The window shows the 2000 words of the screen and nothing else; the console still writes to stdout, or to the host with `--link`. When the program halts, the window stays, with the last screen, until it is closed. Closing the window before then ends the run. With `--link` ([DEBUG.md §7](DEBUG.md#7-transports)), the window opens when the emulator starts and stays open over every run. It shows the screen also while the processor is held, halted, or paused, so the host's writes to the screen show at once. Closing the window ends the emulator, as a signal does.
+The emulator built with a window (its README says how) shows the screen in a window with its option `--window`, 1280×800 pixels, while the program runs. Each character is 16×32 pixels, from the font of §1.8, which is Spleen until the program selects a font of its own, with the colors of §1.1. The window shows the 2000 words of the screen and nothing else; the console still writes to stdout, or to the host with `--link`. When the program halts, the window stays, with the last screen, until it is closed. Closing the window before then ends the run. With `--link` ([DEBUG.md §7](DEBUG.md#7-transports)), the window opens when the emulator starts and stays open over every run. It shows the screen also while the processor is held, halted, or paused, so the host's writes to the screen show at once. Closing the window ends the emulator, as a signal does.
 
 ### 1.4 Cursor
 
@@ -118,6 +123,24 @@ While a program waits, the emulator sleeps. A console read that finds no byte an
 ### 1.7 Read counter
 
 At `0xFFFFFF01` the emulator and the simulation memory of the FPGA core map a read counter for tests. A data read of it returns the number of data reads of it since the last write to it, and a write sets that number. It is 0 at the start of a run, and a reset of the processor does not clear it. Tests use it to count the data accesses of ISA §8.2.
+
+### 1.8 Font
+
+The window draws each character from a font of 256 glyphs, one for each code, of 16×32 pixels. The emulator maps two fonts below the screen, and a word that selects the one the window shows:
+
+| Address | What |
+|---|---|
+| `0xFFFE0000`–`0xFFFE1FFF` | The font RAM, read and write. A write keeps bits 15..0 of the word, so bits 31..16 read 0. |
+| `0xFFFE2000`–`0xFFFE3FFF` | The character ROM, Spleen 16×32. A read returns the row, and a write is dropped. Its glyphs are those of ISO 8859-1, and the codes `0x00`–`0x1F` and `0x7F`–`0x9F` are blank. |
+| `0xFFFFFF86` | The font base. 0 shows the ROM, and `0xFFFE0000` the font RAM. The other values are reserved, and show the ROM. |
+
+Both fonts have the same layout. The word at the font's address + 32·c + r is row r of the glyph of code c, row 0 at the top. Bits 15..0 are the 16 pixels of the row, the leftmost in bit 15. A set bit is drawn in the foreground color of §1.1, and a clear bit in the background color.
+
+The font RAM and the base are 0 at the start of a run, and the debug link's clear makes them 0 again ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)), so the window shows Spleen until a program writes the base. A program that wants Spleen's letters and a few symbols of its own copies the ROM into the font RAM, changes the glyphs it wants, and writes `0xFFFE0000` to the base. The base is an address, so that a later system can show a font from elsewhere in memory without changing what programs see.
+
+The window draws every cell from the font that the base selects. While the font RAM is selected, a write to a glyph shows at the next redraw in every cell with its code, and a write to the base changes the whole screen at once. In the emulator, the base is ordinary memory that the window only reads, as the cursor's words are (§1.4), and is one of the words of NiceMonMEGA65's screen registers (§6).
+
+The fonts are memory to every access. An instruction fetch reads them as a data read does, `--dump` and the debug link read and write them, and a write to the ROM is dropped from each. `--screen` and `--color` print the codes of the screen as text, whatever the font.
 
 ## 2. Math unit
 
@@ -318,5 +341,6 @@ A board that wraps the FPGA core, such as [NiceMonMEGA65](https://github.com/MJo
 - **Input FIFO.** A system's input FIFO may lose bytes. NiceMonMEGA65 drops a UART byte that arrives when the FIFO is full, with the link's `o` notice ([DEBUG.md §4](DEBUG.md#4-notices)), or after a break. Over a transport with flow control, such as TCP, the byte waits up to 50 ms for room first ([DEBUG.md §1](DEBUG.md#1-the-byte-stream)). Input that arrives while the processor is held or has halted is dropped, as by `niceemu --link`, and input that arrives while it is paused waits in the FIFO ([DEBUG.md §1](DEBUG.md#1-the-byte-stream)). A keyboard byte waits until the FIFO has room for two, so that a UART byte still finds room.
 - **SD card slots.** A system without an SD card controller has nothing at `0xFFFFFFA0`–`0xFFFFFFAF`. The MEGA65 has 2 slots: the microSD slot at the back, and the full-size slot underneath, the only one with write protect, whose card detect does not work on the R3 (§5). NiceMonMEGA65 plans to number them 0 and 1 (MJoergen/NiceMonMEGA65#55). The Nexys4DDR has 1, its microSD slot.
 - **ROM.** A system may map a ROM at 0 that it can hide, so that a program loads at 0 as in the emulator.
+- **Font.** A board that shows the screen on a display draws it from the font of §1.8, with the same font RAM, character ROM, and base, and its clear makes the font RAM and the base 0. An instruction fetch from `0xFFFE0000`–`0xFFFE3FFF` may reach the board's RAM there instead, as an alias (**Aliasing** below). NiceMonMEGA65 draws from Spleen alone today, and has the font RAM and the base planned (MJoergen/NiceMonMEGA65#71). Until then, the range aliases its RAM, so a program that writes the font RAM there writes the RAM it aliases.
 - **Debug link.** A board may serve the debug link of [DEBUG.md](DEBUG.md) on its UART, or over TCP as the emulator does. Its debug registers at `0xFFFFFFE0`–`0xFFFFFFFF` are for the link only, so a program's data accesses there go to whatever the board has there otherwise.
 - **Aliasing.** A system with 2^N words of RAM may decode only the low N address bits, so that the RAM repeats through the address space. Then the words of `0xFFFFFF02`–`0xFFFFFFFF` where it has no device or register alias the top words of the RAM, and the stack below `0xFFFFFF00` lands in them too. With 64K words they alias the RAM words `0xFF02`–`0xFFFF`, and `0xFFFF8000`–`0xFFFFFEFF` alias `0x8000`–`0xFEFF`; with 128K words, `0x1FF02`–`0x1FFFF` and `0x18000`–`0x1FEFF`. That is a property of the system, not a bug. A program learns the size from the system's documentation, or from a register in the system's own range (**Reserved words** above) if it has one. NiceMonMEGA65 has 64K words on the Nexys4DDR and 128K on the MEGA65, and a read-only word at `0xFFFFFF9E` that returns the RAM's words, which reads 0 in the emulator, where there is no limit (MJoergen/NiceMonMEGA65#68).

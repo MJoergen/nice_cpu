@@ -1,9 +1,11 @@
 //! The frame of the window (doc/SYSTEM.md §1): the character screen drawn
-//! with the font, in the colors of its words, with the cursor. It needs no
-//! SDL, so its tests run in every build.
+//! with the font that the font base selects, in the colors of its words,
+//! with the cursor. It needs no SDL, so its tests run in every build.
 
 const std = @import("std");
 const font = @import("font.zig");
+const cpu_ = @import("cpu.zig");
+const Cpu = cpu_.Cpu;
 
 /// The character screen (doc/SYSTEM.md §1), in characters and in pixels.
 pub const cols = 80;
@@ -45,6 +47,23 @@ pub const cursor_show: u32 = 1 << 6;
 pub const cursor_blink: u32 = 1 << 5;
 pub const cursor_small: u32 = 1 << 4;
 
+/// A font: 256 glyphs of `font.height` rows, the top row first, with the
+/// leftmost pixel of a row in bit 15.
+pub const Glyphs = [256][font.height]u16;
+
+/// The font that the font base selects (doc/SYSTEM.md §1.8): the font RAM
+/// when the base is `font_ram`, read into `buf`, and the character ROM,
+/// Spleen, for any other value.
+pub fn fontOf(cpu: *const Cpu, buf: *Glyphs) *const Glyphs {
+    if (cpu.peek(cpu_.font_base) != cpu_.font_ram) return &font.glyphs;
+    var words: [cpu_.font_words]u32 = undefined;
+    cpu.mem.peekWords(cpu_.font_ram, &words);
+    for (buf, 0..) |*glyph, c| {
+        for (glyph, words[c * font.height ..][0..font.height]) |*row, w| row.* = @truncate(w);
+    }
+    return buf;
+}
+
 /// The lines of the character that a small cursor covers, at its bottom.
 const small_lines = 4;
 
@@ -77,12 +96,15 @@ pub const Frame = struct {
     /// What each cell shows: its word, and the look of the cursor in bits
     /// 33..32. All ones before the first draw, which no cell can show.
     shown: [cells]u64,
+    /// The font of the last draw.
+    glyphs: Glyphs,
 
     pub fn init(gpa: std.mem.Allocator, invert: bool) !Frame {
         return .{
             .pixels = try gpa.alloc(u32, width * height),
             .invert = invert,
             .shown = @splat(std.math.maxInt(u64)),
+            .glyphs = font.glyphs,
         };
     }
 
@@ -90,15 +112,20 @@ pub const Frame = struct {
         gpa.free(self.pixels);
     }
 
-    /// Draw the cells whose word or cursor has changed since the last draw,
-    /// and return whether any had.
-    pub fn draw(self: *Frame, words: *const [cells]u32, cursor: Cursor, blink_on: bool) bool {
+    /// Draw the cells whose word, cursor, or glyph in `glyphs` has changed
+    /// since the last draw, and return whether any had.
+    pub fn draw(self: *Frame, words: *const [cells]u32, glyphs: *const Glyphs, cursor: Cursor, blink_on: bool) bool {
+        var new_glyph: [256]bool = undefined;
+        for (&new_glyph, glyphs, &self.glyphs) |*new, *g, *old| {
+            new.* = !std.mem.eql(u16, g, old);
+            if (new.*) old.* = g.*;
+        }
         const cur = cursor.at(blink_on);
         var changed = false;
         for (words, &self.shown, 0..) |w, *shown, i| {
             const look: Look = if (cur != null and cur.?.cell == i) cur.?.look else .none;
             const now = @as(u64, @backingInt(look)) << 32 | w;
-            if (now == shown.*) continue;
+            if (now == shown.* and !new_glyph[@as(u8, @truncate(w))]) continue;
             shown.* = now;
             self.drawCell(i, w, look);
             changed = true;
@@ -110,7 +137,7 @@ pub const Frame = struct {
     fn drawCell(self: *Frame, i: usize, w: u32, look: Look) void {
         const bg = pixel(background(w));
         const fg = pixel(foreground(w, self.invert));
-        const glyph = &font.glyphs[@as(u8, @truncate(w))];
+        const glyph = &self.glyphs[@as(u8, @truncate(w))];
         const x0 = i % cols * font.width;
         const y0 = i / cols * font.height;
         for (glyph, 0..) |bits, y| {
@@ -160,7 +187,7 @@ test "a character is drawn in its colors" {
     // column 2, as in NiceMonMEGA65's SYSTEM.md.
     words[0] = 0xF00FFF41;
     words[cols + 2] = 0x000FFF42;
-    try testing.expect(f.draw(&words, .{}, true));
+    try testing.expect(f.draw(&words, &font.glyphs, .{}, true));
     // Line 6 of Spleen's A is 0x0FF0: pixels 4 to 11 are set.
     try testing.expectEqual(red, at(&f, 0, 0));
     try testing.expectEqual(red, at(&f, 3, 6));
@@ -182,7 +209,7 @@ test "the foreground is inverted with invert" {
     var words: [cells]u32 = @splat(0);
     // In the 2004 layout, 0x41 alone is white on black.
     words[0] = 0x41;
-    _ = f.draw(&words, .{}, true);
+    _ = f.draw(&words, &font.glyphs, .{}, true);
     try testing.expectEqual(black, at(&f, 3, 6));
     try testing.expectEqual(white, at(&f, 4, 6));
 }
@@ -192,13 +219,13 @@ test "the cursor swaps the colors, all lines or the bottom 4" {
     defer f.deinit(testing.allocator);
     // Spaces, white on black: with the cursor, a white cell.
     var words: [cells]u32 = @splat(0x000FFF20);
-    _ = f.draw(&words, .{ .state = cursor_show, .col = 1, .row = 2 }, true);
+    _ = f.draw(&words, &font.glyphs, .{ .state = cursor_show, .col = 1, .row = 2 }, true);
     try testing.expectEqual(black, at(&f, 15, 64));
     try testing.expectEqual(white, at(&f, 16, 64));
     try testing.expectEqual(white, at(&f, 31, 95));
     try testing.expectEqual(black, at(&f, 32, 95));
     // Small: lines 28 to 31 of the cell, y = 92 to 95.
-    _ = f.draw(&words, .{ .state = cursor_show | cursor_small, .col = 1, .row = 2 }, true);
+    _ = f.draw(&words, &font.glyphs, .{ .state = cursor_show | cursor_small, .col = 1, .row = 2 }, true);
     try testing.expectEqual(black, at(&f, 16, 64));
     try testing.expectEqual(black, at(&f, 16, 91));
     try testing.expectEqual(white, at(&f, 16, 92));
@@ -220,18 +247,71 @@ test "a draw redraws only the cells that changed" {
     var f = try Frame.init(testing.allocator, false);
     defer f.deinit(testing.allocator);
     var words: [cells]u32 = @splat(0);
-    try testing.expect(f.draw(&words, .{}, true));
-    try testing.expect(!f.draw(&words, .{}, true));
+    try testing.expect(f.draw(&words, &font.glyphs, .{}, true));
+    try testing.expect(!f.draw(&words, &font.glyphs, .{}, true));
     // Mark a pixel of cell 0, then change cell 1: cell 0 is not redrawn.
     f.pixels[0] = 0x1234_5678;
     words[1] = 0xF00FFF41;
-    try testing.expect(f.draw(&words, .{}, true));
+    try testing.expect(f.draw(&words, &font.glyphs, .{}, true));
     try testing.expectEqual(0x1234_5678, f.pixels[0]);
     try testing.expectEqual(white, at(&f, 20, 6));
     // A cursor that moves onto a cell redraws it.
-    try testing.expect(f.draw(&words, .{ .state = cursor_show }, true));
+    try testing.expect(f.draw(&words, &font.glyphs, .{ .state = cursor_show }, true));
     try testing.expectEqual(black, f.pixels[0]);
     // The blink turns it off again.
-    try testing.expect(f.draw(&words, .{ .state = cursor_show | cursor_blink }, false));
-    try testing.expect(!f.draw(&words, .{ .state = cursor_show | cursor_blink }, false));
+    try testing.expect(f.draw(&words, &font.glyphs, .{ .state = cursor_show | cursor_blink }, false));
+    try testing.expect(!f.draw(&words, &font.glyphs, .{ .state = cursor_show | cursor_blink }, false));
+}
+
+test "a cell is drawn from the font it is given, and redrawn when its glyph changes" {
+    var f = try Frame.init(testing.allocator, false);
+    defer f.deinit(testing.allocator);
+    var words: [cells]u32 = @splat(0);
+    // White on black: an A in cell 0, a B in cell 1.
+    words[0] = 0x000FFF41;
+    words[1] = 0x000FFF42;
+    var g = font.glyphs;
+    g[0x41][0] = 0x8001;
+    try testing.expect(f.draw(&words, &g, .{}, true));
+    try testing.expectEqual(white, at(&f, 0, 0));
+    try testing.expectEqual(black, at(&f, 1, 0));
+    try testing.expectEqual(white, at(&f, 15, 0));
+    try testing.expectEqual(white, at(&f, 4, 6));
+    try testing.expect(!f.draw(&words, &g, .{}, true));
+    // A changed glyph redraws the cells that show it, and only those.
+    f.pixels[16] = 0x1234_5678;
+    g[0x41][0] = 0;
+    try testing.expect(f.draw(&words, &g, .{}, true));
+    try testing.expectEqual(black, at(&f, 0, 0));
+    try testing.expectEqual(0x1234_5678, f.pixels[16]);
+    // A glyph that no cell shows draws nothing.
+    g[0x43][0] = 0xFFFF;
+    try testing.expect(!f.draw(&words, &g, .{}, true));
+    // A C in cell 2, drawn from the changed glyph, then from Spleen's.
+    words[2] = 0x000FFF43;
+    try testing.expect(f.draw(&words, &g, .{}, true));
+    try testing.expectEqual(white, at(&f, 32, 0));
+    try testing.expect(f.draw(&words, &font.glyphs, .{}, true));
+    try testing.expectEqual(black, at(&f, 32, 0));
+}
+
+test "the font base selects the font RAM or the ROM (SYSTEM §1.8)" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    var buf: Glyphs = undefined;
+    // Row 0 of A in the font RAM; the base is 0 at the start.
+    try cpu.write(cpu_.font_ram + 32 * 0x41, 0xFFFF_8001);
+    try cpu.write(cpu_.font_ram + cpu_.font_words - 1, 0x00FF);
+    try testing.expectEqual(&font.glyphs, fontOf(&cpu, &buf));
+    try cpu.write(cpu_.font_base, cpu_.font_ram);
+    const g = fontOf(&cpu, &buf);
+    try testing.expectEqual(&buf, g);
+    try testing.expectEqual(0x8001, g[0x41][0]);
+    try testing.expectEqual(0, g[0x41][6]);
+    try testing.expectEqual(0x00FF, g[0xFF][31]);
+    // Every other value, the ROM's address included, shows the ROM.
+    for ([_]u32{ cpu_.font_rom, cpu_.font_ram + 1, 1, 0xFFFF_FFFF }) |v| {
+        try cpu.write(cpu_.font_base, v);
+        try testing.expectEqual(&font.glyphs, fontOf(&cpu, &buf));
+    }
 }

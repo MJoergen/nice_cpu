@@ -103,6 +103,7 @@ pub const Window = struct {
 
     /// Draw the cells that changed, and show the frame.
     fn redraw(self: *Window, cpu: *const Cpu, base: u32, blink_on: bool) void {
+        var glyphs: frame.Glyphs = undefined;
         var words: [frame.cells]u32 = undefined;
         for (&words, 0..) |*w, i| w.* = cpu.peek(base +% @as(u32, @intCast(i)));
         const cursor: frame.Cursor = .{
@@ -110,7 +111,7 @@ pub const Window = struct {
             .col = cpu.peek(frame.cursor_base + 1),
             .row = cpu.peek(frame.cursor_base + 2),
         };
-        if (self.frame.draw(&words, cursor, blink_on)) {
+        if (self.frame.draw(&words, frame.fontOf(cpu, &glyphs), cursor, blink_on)) {
             _ = c.SDL_UpdateTexture(self.texture, null, self.frame.pixels.ptr, frame.width * 4);
         }
         _ = c.SDL_RenderClear(self.renderer);

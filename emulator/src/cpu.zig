@@ -2,6 +2,7 @@
 //! to that document.
 
 const std = @import("std");
+const font = @import("font.zig");
 
 /// SR bit numbers (§1.3).
 pub const sr_i: u5 = 31;
@@ -40,8 +41,23 @@ pub const HaltReason = enum {
     }
 };
 
+/// The font of the window (doc/SYSTEM.md §1.8): the font RAM, which keeps
+/// bits 15..0 of a write, the character ROM, which holds Spleen and drops a
+/// write, and the font base, which selects the font shown.
+pub const font_ram: u32 = 0xFFFE_0000;
+pub const font_rom: u32 = 0xFFFE_2000;
+pub const font_words: u32 = font.glyphs.len * font.height;
+pub const font_base: u32 = 0xFFFF_FF86;
+
+/// Row `i % 32` of glyph `i / 32` of the character ROM.
+fn romRow(i: u32) u32 {
+    return font.glyphs[i / font.height][i % font.height];
+}
+
 /// The full 2³² words of memory (§1.1), held sparsely: a page is allocated
 /// on its first write of a nonzero word, and a word never written reads 0.
+/// The character ROM is part of it: a write there is dropped, so its pages
+/// are never allocated, and a read of an unallocated page looks there.
 pub const Memory = struct {
     const page_bits = 12;
     const Page = [1 << page_bits]u32;
@@ -62,17 +78,47 @@ pub const Memory = struct {
     }
 
     pub fn read(self: *Memory, addr: u32) u32 {
-        const page = self.lookup(@truncate(addr >> page_bits)) orelse return 0;
+        const page = self.lookup(@truncate(addr >> page_bits)) orelse return unallocated(addr);
         return page[addr & offset_mask];
     }
 
     /// `read` without updating the cache, for a `*const Memory`.
     pub fn peek(self: *const Memory, addr: u32) u32 {
-        const page = self.pages.get(@truncate(addr >> page_bits)) orelse return 0;
+        const page = self.pages.get(@truncate(addr >> page_bits)) orelse return unallocated(addr);
         return page[addr & offset_mask];
     }
 
-    pub fn write(self: *Memory, addr: u32, value: u32) error{OutOfMemory}!void {
+    /// `out.len` words from `addr` on, as `peek` reads them, a page at a
+    /// time.
+    pub fn peekWords(self: *const Memory, addr: u32, out: []u32) void {
+        var i: usize = 0;
+        while (i < out.len) {
+            const a = addr +% @as(u32, @intCast(i));
+            const off = a & offset_mask;
+            const n = @min(out.len - i, (1 << page_bits) - off);
+            if (self.pages.get(@truncate(a >> page_bits))) |page| {
+                @memcpy(out[i..][0..n], page[off..][0..n]);
+            } else {
+                for (out[i..][0..n], 0..) |*w, j| w.* = unallocated(a +% @as(u32, @intCast(j)));
+            }
+            i += n;
+        }
+    }
+
+    /// The word at `addr` while its page is not allocated: a row of the
+    /// character ROM, or 0.
+    fn unallocated(addr: u32) u32 {
+        const i = addr -% font_rom;
+        return if (i < font_words) romRow(i) else 0;
+    }
+
+    pub fn write(self: *Memory, addr: u32, word: u32) error{OutOfMemory}!void {
+        var value = word;
+        const f = addr -% font_ram;
+        if (f < 2 * font_words) {
+            if (f >= font_words) return;
+            value &= 0xFFFF;
+        }
         const n: u20 = @truncate(addr >> page_bits);
         if (self.lookup(n)) |page| {
             page[addr & offset_mask] = value;
@@ -2444,4 +2490,57 @@ test "SD card: the processor's accesses, and a write while stopped" {
     cpu.stopped = false;
     cpu.reset();
     try testing.expectEqual(0x14, cpu.read(sd_base));
+}
+
+test "the character ROM reads Spleen's rows and drops a write (SYSTEM §1.8)" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    // Row 6 of A is 0x0FF0, and row 15 is 0x3FFC.
+    const a = font_rom + 32 * 0x41;
+    try testing.expectEqual(0x0FF0, cpu.read(a + 6));
+    try testing.expectEqual(0x3FFC, cpu.peek(a + 15));
+    try testing.expectEqual(0, cpu.read(a));
+    try cpu.write(a + 6, 0x1234);
+    try cpu.write(a, 0xFFFF);
+    // The last row of ÿ, the bottom of its descender, is 0x3FF0.
+    try cpu.mem.write(font_rom + font_words - 1, 7);
+    try testing.expectEqual(0x0FF0, cpu.read(a + 6));
+    try testing.expectEqual(0, cpu.peek(a));
+    try testing.expectEqual(0x3FF0, cpu.mem.read(font_rom + font_words - 1));
+    try testing.expectEqual(0, cpu.mem.pages.count());
+    // The words on either side are memory.
+    try cpu.write(font_rom + font_words, 0xABCD_0123);
+    try testing.expectEqual(0xABCD_0123, cpu.read(font_rom + font_words));
+}
+
+test "the font RAM keeps bits 15..0 of a write (SYSTEM §1.8)" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try cpu.write(font_ram, 0xFFFF_8001);
+    try cpu.write(font_ram + font_words - 1, 0x0001_0000);
+    try testing.expectEqual(0x8001, cpu.read(font_ram));
+    try testing.expectEqual(0, cpu.read(font_ram + font_words - 1));
+    // The word below is memory.
+    try cpu.write(font_ram - 1, 0xFFFF_8001);
+    try testing.expectEqual(0xFFFF_8001, cpu.read(font_ram - 1));
+}
+
+test "peekWords reads across pages, and the ROM where no page is" {
+    var mem: Memory = .init(testing.allocator);
+    defer mem.deinit();
+    try mem.write(font_ram + 0xFFF, 0x11);
+    try mem.write(font_ram + 0x1000, 0x22);
+    var out: [3]u32 = undefined;
+    mem.peekWords(font_ram + 0xFFF, &out);
+    try testing.expectEqualSlices(u32, &.{ 0x11, 0x22, 0 }, &out);
+    // The last word of the RAM and the first two rows of the ROM's
+    // glyph 0, which is blank; then row 6 of A.
+    mem.peekWords(font_rom - 1, &out);
+    try testing.expectEqualSlices(u32, &.{ 0, 0, 0 }, &out);
+    mem.peekWords(font_rom + 32 * 0x41 + 5, &out);
+    try testing.expectEqualSlices(u32, &.{ 0, 0x0FF0, 0x1FF8 }, &out);
+    // A read that wraps the address space.
+    try mem.write(0, 0x33);
+    mem.peekWords(0xFFFF_FFFF, out[0..2]);
+    try testing.expectEqualSlices(u32, &.{ 0, 0x33 }, out[0..2]);
 }

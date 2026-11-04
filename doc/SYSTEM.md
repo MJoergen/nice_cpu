@@ -282,7 +282,7 @@ The errors in `SD_ERROR`:
 
 - Each command sets `SD_ERROR`, and the error bit is 1 when `SD_ERROR` is not 0.
 - A command checks, in this order, that a card is in the selected slot (error 1); for Read and Write, that the card is ready (2) and that `SD_LBA` is at most `SD_LAST` (7); and for Write, that the card is not write-protected (6). A command that fails a check changes nothing else.
-- An Init that finds a card clears "changed". If it succeeds, it sets "ready" to 1, the type, and `SD_LAST`; if it fails, "ready" stays 0.
+- An Init that finds a card clears "changed". If it succeeds, it sets "ready" to 1, the type, and `SD_LAST`; if it fails, "ready" is 0.
 - Read and Write leave "ready" as it is. A failed Read leaves the buffer not defined. A failed Write leaves the sector on the card not defined.
 - `SD_LBA` is always a sector number, also for an SDSC card, whose byte addresses the controller computes. `SD_LAST` is the last sector's number, not the count, so that a card of 2 TB, 2³² sectors, fits.
 
@@ -293,7 +293,7 @@ The errors in `SD_ERROR`:
 - When a card is taken out, "ready" falls to 0. When one is put in, "changed" is set. Both stay so until the next Init of the slot.
 - A slot whose card detect does not work shows "present" as 1 at all times, "write-protected" as 0, and "changed" only after reset. A command on it with no card fails with error 3 or 8. §6 says which systems have such a slot.
 
-**Reset.** Reset, which a start of the processor gives the devices ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)), lets a Write that has begun finish, so that no sector on the card is torn, and abandons any other command. The Write finishes on its own slot, and reports nothing. Then the controller is idle, with slot 0 selected, `SD_CHUNK`, `SD_LBA`, and `SD_ERROR` 0, the error bit and "ready" 0, and "changed" set if a card is present. The buffer is not defined. Busy may read 1 after reset for as long as the Write takes, so a program waits for busy before its first command, as before any other.
+**Reset.** Reset, which a start of the processor gives the devices ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)), lets a Write that has begun finish, so that no sector on the card is torn, and abandons any other command. The Write finishes on its own slot, and reports nothing. Then, or when that Write ends, the controller is idle, with slot 0 selected, `SD_CHUNK`, `SD_LBA`, and `SD_ERROR` 0, the error bit and "ready" 0, and "changed" set if a card is present. The buffer is not defined. Busy may read 1 after reset for as long as the Write takes, so a program waits for busy before its first command, as before any other.
 
 **The debug link.** Nothing but reset affects the controller. It runs while the processor is held, paused, or halted, so a host can read and write the card then. A host that does so while a program is paused can restore `SD_CHUNK`, `SD_LBA`, `SD_SELECT`, and the buffer, which it can read first, as reads have no side effects. It cannot restore `SD_ERROR` and the error bit, which its own commands overwrite, nor "ready" and "changed", which an Init or a change of slot changes. So a host that uses the card of a paused program uses only the program's slot, does no Init, waits for the program's command to end before it starts, and lets its own end before the program goes on. While the processor is held or has halted, a host may do anything, since the program starts again from reset.
 

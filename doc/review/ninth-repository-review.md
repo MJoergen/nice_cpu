@@ -44,6 +44,8 @@ Line 319: "NiceMonMEGA65 has 2 slots on the MEGA65: slot 0 is the microSD slot a
 - Line 296, Reset: "Then the controller is idle, with slot 0 selected, ..." and three sentences later "Busy may read 1 after reset for as long as the Write takes". Both are true, but the first reads as if the second could not happen. **Fix:** "Then, or when that Write ends, the controller is idle, ..."
 - Line 285: "If it succeeds, it sets "ready" to 1, the type, and `SD_LAST`; if it fails, "ready" stays 0." For an Init of a card that was ready, `sd_regs` clears "ready" when the command starts (line 276 of `sd_regs.vhd`), so a failed Init leaves it 0 whatever it was. "Stays" hides that. **Fix:** "if it fails, "ready" is 0."
 
+**Resolved**: The reset paragraph says the controller is idle then, or when that Write ends, and a failed Init leaves "ready" 0.
+
 ## 3. The other documents
 
 ### 3.1 README.md's list of the emulator's devices ends at the timer

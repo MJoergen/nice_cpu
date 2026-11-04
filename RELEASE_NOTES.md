@@ -14,6 +14,7 @@ pin each are:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|
+| `V1.5` | none yet |
 | `V1.4` | none yet |
 | `V1.3` | none yet |
 | `V1.2` | `V1.2`, `V1.2.1` |
@@ -28,6 +29,82 @@ pin each are:
 
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
+
+## V1.5 (2026-11-04)
+
+The emulator and the FPGA have an SD card controller at
+`0xFFFFFFA0`–`0xFFFFFFAF` (#107). A program reads and writes the
+sectors of a card through a buffer of one sector, and `niceemu` gives a
+slot an image file. SYSTEM.md's memory map assigns a block of the I/O
+range to each device that is planned (#123).
+
+**Upgrade notes.**
+
+- In the emulator, the 16 words at `0xFFFFFFA0`–`0xFFFFFFAF` are the SD
+  card's registers, where they were memory. A program that kept data
+  there loses it. No program of the repository did.
+- `0xFFFFFFB0`–`0xFFFFFFCF` and `0xFFFFFF46`–`0xFFFFFF49` are reserved
+  for the network station (#124), Ethernet frames (#121), and the clock
+  of the time of day (#122). The emulator keeps them as memory until
+  each device lands.
+- The ports of both cores, `wb_dmux`, and the debug link are as in V1.4.
+  A start of the processor resets the SD card controller with the other
+  devices, but lets a Write that has begun finish.
+- Zig 0.17.0, as in V1.4.
+
+**Specification and documents**
+
+- SYSTEM.md §5 is the SD card controller: the registers `SD_CSR`,
+  `SD_LBA`, `SD_CHUNK`, `SD_ERROR`, `SD_SELECT`, `SD_LAST`, and
+  `SD_SLOTS`, and the buffer of 128 words, read and written 8 at a time
+  through `SD_BUF0`–`SD_BUF7`. The commands are Init, Read, and Write.
+  No read has a side effect, so the debug link needs no rule for it. It
+  says what busy, the slots, reset, the debug link, and interrupts do to
+  the controller (#107).
+- SYSTEM.md: the former §5, the systems built on the FPGA core, is §6,
+  and lists the SD card slots of the MEGA65 and the Nexys4DDR.
+- SYSTEM.md's memory map: `0xFFFFFFA0`–`AF` for the SD card,
+  `0xFFFFFFB0`–`BF` for the network station, `0xFFFFFFC0`–`CF` for
+  Ethernet frames, and `0xFFFFFF46`–`49` for the clock. `0xFFFFFFD0`–`DF`
+  stays free (#123).
+- DEBUG.md §6 and §7.3: a start resets the controller, but a Write that
+  has begun finishes first, and the controller runs on while the
+  processor is paused.
+- `doc/review/decisions.md`: a data port with a cursor, a buffer mapped
+  as 128 words, a DMA engine, and commands that take time in the
+  emulator were decided against.
+
+**Emulator (`niceemu`)**
+
+- `--sd0 FILE` and `--sd1 FILE` put a card in slot 0 or 1, whose
+  sectors are the file's. The emulator has 2 slots, with images or
+  without. A card is SDHC, write-protected when the file cannot be
+  written, and "changed" at the start. A command ends in the write that
+  starts it, and a Write goes to the file at once (#107).
+- niceemu refuses to start with an image that is empty or whose size is
+  not a multiple of 512 bytes. A failed read or write of the file is
+  error 5.
+
+**FPGA cores (`hdl/`)**
+
+- `src/sd_regs.vhd` is the controller's registers and buffer, for
+  `G_SLOTS` slots. It passes a command to a protocol engine of the
+  board: a start with the command, the slot, and the sector, a byte port
+  into the buffer, and done with the error. `busy_o` is high while a
+  command runs. With `G_HOLD_ACK`, the ACK of the write that starts a
+  command waits for its end (#107).
+- `sim/sd_sim.vhd` is an engine over image files, held in memory and
+  never written back. `tb_core` maps the controller with it, and the
+  probe `emulator/test/sd.nasm` runs on both cores against niceemu, also
+  on a stalling memory and with held pauses.
+- `make formal` proves the bus and engine ports of `sd_regs`, with the
+  held ACK and without it, and `tb_sd_regs` tests a reset during a
+  command and a card taken out.
+- The cores do not change.
+
+**Benchmarks**
+
+- The cycle counts do not change.
 
 ## V1.4 (2026-11-03)
 

@@ -20,6 +20,7 @@ These rules let separately written C and assembly code call each other. Compiler
 | `float` | 1 | IEEE 754 single precision. |
 | `double`, `long double` | 2 | IEEE 754 double precision. |
 
+- C translated from wasm ([WASM.md](../translator/WASM.md)) has wasm32's types instead, where `long double` has 128 bits. nicewasm rejects it, and `__int128` too ([translator/README.md](../translator/README.md)).
 - No type has exactly 8 or 16 bits, so `<stdint.h>` has no `int8_t`, `int16_t`, `uint8_t`, or `uint16_t`. `int32_t` is `int`, and `int64_t` is `long long`.
 - A value of two words has its low word at the lower address. In a register pair, the lower-numbered register holds the low word.
 - Every type has an alignment of one word. Structure members follow each other in declaration order. The only padding is the unused part of a word that holds bit-fields. A union's size is the size of its largest member.

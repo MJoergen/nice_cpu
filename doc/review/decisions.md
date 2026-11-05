@@ -125,6 +125,14 @@ proposed again. The open items are the
   Exceptions come from C++ and from Rust with `panic=unwind`, which need a
   C++ library and Rust's std, neither of which the repository has.
   nicewasm rejects both.
+- **C's `long double` and `__int128` in the runtime library** (#70). In
+  wasm32 they are 128 bits, and clang calls routines such as `__addtf3`
+  and `__multi3` for them. No program here uses them, Zig's `f128` and
+  `u128` work because Zig puts its compiler_rt in the module, and the
+  float routines alone would add much code to the library. nicewasm
+  rejects the imports with a message that names the types
+  (translator/README.md). The integer routines would be cheap to add from
+  compiler_rt, as `float.zig` does, if a program ever needs `__int128`.
 - **More pseudo-instructions** (#117): `INC`, a signed compare or
   branch, and a relative branch. `INC x` would have to be `MOVE x++, x`
   to be one word, and with `[M]` its flags would describe the old value;

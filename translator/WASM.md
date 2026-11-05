@@ -57,7 +57,7 @@ In Rust, they are declared in an `extern "C"` block with `#[link(wasm_import_mod
 **Functions and calls.** A wasm function is a [ABI.md](../runtime/ABI.md) function whose parameter and result types are the C types in the table above:
 
 - Parameters go in R1–R4 and on the stack, by the [ABI.md](../runtime/ABI.md) rules for a function that is not variadic.
-- Results go in registers by the same rules that would apply if they were arguments. A function with no result returns nothing. The translator rejects a function type with more than one result; a block type may have several (translator README, Not supported yet).
+- Results go in registers by the same rules that would apply if they were arguments. A function with no result returns nothing. The translator rejects a function type with more than one result; a block type may have several (translator README, Not supported).
 - R7–R13 and SR's I, E, and VBASE are preserved, as in [ABI.md](../runtime/ABI.md).
 - Wasm locals and the wasm operand stack live in registers and in the function's frame on the NICE stack (R13).
 - A tail call, `return_call` or `return_call_indirect`, ends the function and calls the callee in its place. The callee's results must have the types of the function's. The function drops its frame and restores R7–R12 first, and then jumps to the callee without pushing a return address, so the callee returns to the function's caller, and the NICE stack does not grow. The callee's stack arguments go into the words of the function's own, which the caller drops after the return ([ABI.md](../runtime/ABI.md)). So a callee with more words of stack arguments than the function has cannot be reached this way. The translator then calls it and returns its results, and the stack grows by a frame.

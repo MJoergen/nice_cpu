@@ -602,7 +602,7 @@ def parse_section(m: Module, sec_id: int, s: Reader, sec_start: int) -> None:
             ft = m.types[type_idx]
             check_types(ft.params + ft.results, what, at)
             if len(ft.results) > 1:
-                raise WasmError(f"{what}: more than one result is not supported yet", at)
+                raise WasmError(f"{what}: more than one result is not supported", at)
             for other in m.imports:
                 if other.module == module and other.name == name and other.type_idx != type_idx:
                     raise WasmError(f"{what}: it is imported twice with different types", at)
@@ -680,8 +680,7 @@ def parse_section(m: Module, sec_id: int, s: Reader, sec_start: int) -> None:
             at = s.pos
             flags = s.u32()
             if flags == 1:
-                raise WasmError(f"data segment {i} is passive; memory.init is not supported yet",
-                                at)
+                raise WasmError(f"data segment {i} is passive; memory.init is not supported", at)
             if flags == 2:
                 mem_at = s.pos
                 mem = s.u32()
@@ -716,7 +715,7 @@ def parse_elem(m: Module, s: Reader, i: int) -> None:
         raise WasmError(f"element segment {i} has unknown flags {flags}", at)
     active = not flags & 1
     if flags in (1, 5):
-        raise WasmError(f"element segment {i} is passive; table.init is not supported yet", at)
+        raise WasmError(f"element segment {i} is passive; table.init is not supported", at)
     offset = 0
     if active:
         if flags & 2:
@@ -3102,7 +3101,7 @@ class FunctionTranslator:
         check_types(self.ftype.params + self.ftype.results, what, code.start)
         check_types(code.locals, f"{what}: a local", code.start)
         if len(self.ftype.results) > 1:
-            raise WasmError(f"{what}: more than one result is not supported yet", code.start)
+            raise WasmError(f"{what}: more than one result is not supported", code.start)
         self.local_types = self.ftype.params + code.locals
         self.args, _ = assign_args(self.ftype.params)
         self.n_vregs = 0
@@ -4014,8 +4013,8 @@ class FunctionTranslator:
         ft = self.t.m.types[type_idx]
         check_types(ft.params + ft.results, f"function {self.idx}: {what}", at)
         if len(ft.results) > 1:
-            raise WasmError(f"function {self.idx}: {what}: more than one result is not supported"
-                            " yet", at)
+            raise WasmError(f"function {self.idx}: {what}: more than one result is not supported",
+                            at)
         if tail:
             self.check_tail(ft, at, what)
         (index,) = self.pop([I32], at, what)
@@ -4448,7 +4447,7 @@ class FunctionTranslator:
                 sub = r.u32()
                 name = FC_OPCODES.get(sub, f"opcode 0xfc {sub}")
                 if sub not in (10, 11) and 0x100 + sub not in TRUNC_SAT_OPS:
-                    raise WasmError(f"function {self.idx}: {name} is not supported yet", at)
+                    raise WasmError(f"function {self.idx}: {name} is not supported", at)
                 for _ in range(2 if sub == 10 else 1 if sub == 11 else 0):
                     mem_at = r.pos
                     mem = r.u32()
@@ -4503,7 +4502,7 @@ class FunctionTranslator:
                       or op in DIV_OPS or op in LIB_OPS or op in EXTEND_OPS
                       or op in ALU_OPS or op in ALU64_OPS or op in CMP_OPS or op in CMP64_OPS
                       or op in SHIFT_OPS or op in SHIFT64_OPS):
-                raise WasmError(f"function {self.idx}: {name} is not supported yet", at)
+                raise WasmError(f"function {self.idx}: {name} is not supported", at)
             if self.t.library and (op in FLOAT_OPS or op in TRUNC_OPS or op in TRUNC_SAT_OPS
                                    or op in FLOAT_CMP_OPS):
                 # These call the float library, which would then call itself.

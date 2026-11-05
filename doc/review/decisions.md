@@ -162,3 +162,14 @@ proposed again. The open items are the
   overflow there wraps below 0 and traps as out of bounds while the
   bounds checks are on. Detecting a NICE stack overflow in the emulator,
   at no cost on the target, is #132.
+- **Multi-result functions, passive segments, and reference types in
+  nicewasm** (#104): function types with more than one result, passive
+  data and element segments with `memory.init` and `data.drop`, the
+  table instructions, and `ref.func`, `ref.null`, and `ref.is_null` in
+  code. None of the toolchains of nicebuild.py emit them with its flags.
+  Multi-result functions come only from LLVM's experimental multivalue
+  ABI or hand-written wasm, passive segments from wasm-ld with threads,
+  which NICE does not have, and the rest from Rust or Zig code that uses
+  `externref` or tables directly. nicewasm rejects them with an error.
+  Should a toolchain's wasm C ABI start to return several results, the
+  issue holds the estimates and the design questions.

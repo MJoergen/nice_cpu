@@ -31,7 +31,7 @@ pin each are:
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
 
-## V1.6 (2026-11-04)
+## V1.6 (2026-11-05)
 
 The emulator's window draws from a font in the address space: a font
 RAM of 256 glyphs that a program writes, Spleen as a character ROM

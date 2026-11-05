@@ -32,7 +32,7 @@ TEXT    ?= text.nasm
 all: $(BUILD)/demo.bin $(BUILD)/emu.bin
 
 $(EMU):
-	$(MAKE) -C ../emulator
+	$(MAKE) -C ../emulator build
 
 $(BUILD)/demo.bin: demo.nasm $(TEXT) $(BUILD)/version.nasm $(ASM_PY)
 	@cat demo.nasm $(TEXT) $(BUILD)/version.nasm > $(BUILD)/demo_all.nasm

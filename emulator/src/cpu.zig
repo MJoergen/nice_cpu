@@ -577,6 +577,52 @@ fn sdWord(addr: u32) ?u4 {
     return if (addr -% sd_base < 16) @truncate(addr -% sd_base) else null;
 }
 
+/// The first of the 16 words of the network station (SYSTEM §6).
+pub const net_base: u32 = io_base + 0xB0;
+
+/// The network station (SYSTEM §6). The emulator has no Ethernet: the
+/// addresses are registers that keep what a program writes, the counts
+/// read 0, and the debug link sets the status word. Only a reset of the
+/// system sets the addresses, and the emulator's is its launch, so a
+/// start of the processor leaves the station as it is.
+pub const Net = struct {
+    ip: u32 = 0,
+    /// The MAC address 02:4E:49:43:45:00, the first two bytes here.
+    mac_hi: u16 = 0x024E,
+    mac_lo: u32 = 0x4943_4500,
+    /// `NET_STATUS`: bit 31 while a host is connected to the link, and
+    /// the link's TCP port in bits 15..0. 0 without --link.
+    status: u32 = 0,
+
+    pub const connected: u32 = 1 << 31;
+
+    /// The value a data read of word `i` returns. Reads have no side effect.
+    pub fn read(self: Net, i: u4) u32 {
+        return switch (i) {
+            0 => self.ip,
+            1 => self.mac_hi,
+            2 => self.mac_lo,
+            6 => self.status,
+            else => 0, // the counts, and the unused words
+        };
+    }
+
+    /// A write of `value` to word `i`. The other words ignore it.
+    pub fn write(self: *Net, i: u4, value: u32) void {
+        switch (i) {
+            0 => self.ip = value,
+            1 => self.mac_hi = @truncate(value),
+            2 => self.mac_lo = value,
+            else => {},
+        }
+    }
+};
+
+/// The word of the network station that `addr` names, if it names one.
+fn netWord(addr: u32) ?u4 {
+    return if (addr -% net_base < 16) @truncate(addr -% net_base) else null;
+}
+
 pub const Cpu = struct {
     /// R0..R15. Read and write them through `getReg` and `setReg`, which
     /// apply the rules for R0 and R14 (§4.3).
@@ -621,6 +667,8 @@ pub const Cpu = struct {
     timer: Timer,
     /// The SD card controller at `sd_base`.
     sd: Sd,
+    /// The network station at `net_base`, which `reset` leaves alone.
+    net: Net,
     /// The host's clock for the microsecond counter, or null to count one
     /// microsecond per step (`--step-time`, and the unit tests).
     clock: ?*Clock,
@@ -670,6 +718,7 @@ pub const Cpu = struct {
             .perf = .{},
             .timer = .{},
             .sd = .{},
+            .net = .{},
             .clock = null,
             .cycle_counter = true,
             .timer_irq = true,
@@ -764,6 +813,7 @@ pub const Cpu = struct {
         }
         if (timerWord(addr)) |i| return self.timer.read(i);
         if (sdWord(addr)) |i| return self.sd.read(i);
+        if (netWord(addr)) |i| return self.net.read(i);
         return self.mem.read(addr);
     }
 
@@ -788,6 +838,7 @@ pub const Cpu = struct {
         }
         if (timerWord(addr)) |i| return self.timer.read(i);
         if (sdWord(addr)) |i| return self.sd.read(i);
+        if (netWord(addr)) |i| return self.net.read(i);
         return self.mem.peek(addr);
     }
 
@@ -810,6 +861,8 @@ pub const Cpu = struct {
             self.timer.write(i, value);
         } else if (sdWord(addr)) |i| {
             self.sd.write(i, value);
+        } else if (netWord(addr)) |i| {
+            self.net.write(i, value);
         } else if (addr != console_addr or self.console == null) {
             try self.mem.write(addr, value);
         }
@@ -2543,4 +2596,22 @@ test "peekWords reads across pages, and the ROM where no page is" {
     try mem.write(0, 0x33);
     mem.peekWords(0xFFFF_FFFF, out[0..2]);
     try testing.expectEqualSlices(u32, &.{ 0, 0x33 }, out[0..2]);
+}
+
+test "network station: the registers, their reset values, and a start (SYSTEM §6)" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    const want = [_]u32{ 0, 0x024E, 0x4943_4500, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    for (want, 0..) |w, i| try testing.expectEqual(w, cpu.read(net_base + @as(u32, @intCast(i))));
+    for (0..16) |i| try cpu.write(net_base + @as(u32, @intCast(i)), 0xFFFF_FFFF);
+    try testing.expectEqual(0xFFFF_FFFF, cpu.read(net_base));
+    try testing.expectEqual(0xFFFF, cpu.read(net_base + 1)); // bits 31..16 are dropped
+    try testing.expectEqual(0xFFFF_FFFF, cpu.peek(net_base + 2));
+    for (3..16) |i| try testing.expectEqual(0, cpu.read(net_base + @as(u32, @intCast(i))));
+    try testing.expectEqual(0, cpu.mem.pages.count()); // no word is memory
+    cpu.net.status = Net.connected | 4510;
+    try testing.expectEqual(0x8000_119E, cpu.read(net_base + 6));
+    cpu.reset(); // a start keeps the station
+    try testing.expectEqual(0xFFFF_FFFF, cpu.read(net_base));
+    try testing.expectEqual(0x8000_119E, cpu.read(net_base + 6));
 }

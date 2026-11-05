@@ -784,7 +784,9 @@ that this repository defines is the emulator, with the memory map of
 SYSTEM.md. The RTL modules in `hdl/` implement the same devices as the
 emulator, as a convenience for building a system. Of the SD card
 controller of SYSTEM.md §5, `hdl/src/sd_regs.vhd` has the registers and
-the buffer, and a board adds the engine that talks to its cards. Here they are tested in
+the buffer, and a board adds the engine that talks to its cards. Of the
+network station of SYSTEM.md §6, `hdl/src/net_regs.vhd` has the
+registers, and a board connects its station to them. Here they are tested in
 simulation only, where `hdl/sim/wb_mem.vhd` stands in for the memory and
 the console, and each core runs beside the emulator, with their traces
 compared (§9). NiceMonMEGA65 uses them and tests them on hardware. A
@@ -865,6 +867,10 @@ system built from them must follow these rules:
   (SYSTEM §5): the registers and the buffer, with a port to a protocol
   engine that the board adds. With `G_HOLD_ACK`, as in simulation, the ACK
   of a write that starts a command waits for the command's end.
+- **Network station.** `hdl/src/net_regs.vhd` at `0xFFFFFFB0`–`0xFFFFFFBF`
+  (SYSTEM §6): the IP and MAC addresses as outputs, and the counts and the
+  link's status as inputs from the board's station. It takes the reset of
+  the system, not that of a start of the processor.
 - **Timing.** `instret_o` and `dbus_ack_i` have the least time left to the
   system: about 1 to 3 ns of a 10 ns clock, from WRITE's retire. See
   [hdl/README.md](../hdl/README.md), `make timing`, for the figures.

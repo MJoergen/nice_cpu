@@ -19,8 +19,9 @@ const usage =
     \\of 0xFFFFFF00 returns the next byte of stdin plus 0x100, or 0x200 after
     \\the end of the input.
     \\The timer is at 0xFFFFFF10-0xFFFFFF1F, the math unit at 0xFFFFFF20-
-    \\0xFFFFFF3F, the performance counters at 0xFFFFFF40-0xFFFFFF7F, and the
-    \\SD card controller at 0xFFFFFFA0-0xFFFFFFAF.
+    \\0xFFFFFF3F, the performance counters at 0xFFFFFF40-0xFFFFFF7F, the SD
+    \\card controller at 0xFFFFFFA0-0xFFFFFFAF, and the network station's
+    \\registers at 0xFFFFFFB0-0xFFFFFFBF.
     \\
     \\Options:
     \\  -t, --trace          Print one line per instruction.

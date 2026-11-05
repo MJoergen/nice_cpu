@@ -3,9 +3,9 @@ ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
 BUILD = build
 
-SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/perf.vhd src/timer.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd src/sd_regs.vhd
+SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/perf.vhd src/timer.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd src/sd_regs.vhd src/net_regs.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd sim/sd_sim.vhd
-TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_perf_hz.vhd test/tb_timer.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd test/tb_debug_link.vhd test/tb_sd_regs.vhd test/tb_link.vhd \
+TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_perf_hz.vhd test/tb_timer.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd test/tb_debug_link.vhd test/tb_sd_regs.vhd test/tb_net_regs.vhd test/tb_link.vhd \
   test/tb_trace.vhd test/tb_core.vhd
 
 # The runs of make test and make random go in parallel: each
@@ -42,8 +42,9 @@ $(BUILD)/%.nasm: test/%_prog.py
 # tb_mem checks the memory model itself, tb_shift the ALU and the shifter of
 # src/nice_pkg.vhd, tb_mpu the math unit, tb_perf the performance counters,
 # tb_timer the timer, tb_fetch_stats the fetch statistics, tb_wb_dmux
-# the data bus decoder, and tb_sd_regs the SD card controller.
-UNITS = tb_mem tb_shift tb_mpu tb_perf tb_perf_hz tb_timer tb_fetch_stats tb_wb_dmux tb_debug_link tb_sd_regs
+# the data bus decoder, tb_sd_regs the SD card controller, and
+# tb_net_regs the network station.
+UNITS = tb_mem tb_shift tb_mpu tb_perf tb_perf_hz tb_timer tb_fetch_stats tb_wb_dmux tb_debug_link tb_sd_regs tb_net_regs
 GENERICS_tb_mem = -gG_BIN_FILE=$(abspath test/mem.bin) -gG_INPUT_FILE=$(abspath test/mem.input)
 
 $(UNITS:%=run/unit/%): run/unit/%:
@@ -118,10 +119,11 @@ $(LINK_RUNS): run/link/%: $(BUILD)/linkecho.bin
 # test/tb_core.vhd, and must not change the trace (MICROARCH.md §6.1).
 # sd uses the SD card controller, src/sd_regs.vhd, with the engine
 # sim/sd_sim.vhd, and runs again on a stalling memory and with held pauses.
+# net reads and writes the network station, src/net_regs.vhd.
 EXAMPLES = count replicate print wrap
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest \
   console screen iofetch reads reserved mpu mpu64 perf timer input \
-  r15modes r0dest r14mem skipconst carryin shiftc wrapmem smcown sd
+  r15modes r0dest r14mem skipconst carryin shiftc wrapmem smcown sd net
 INTR_irq   = --nmi 2:1 --irq 2:2 --nmi 9:1 --irq 17:2 --nmi 17:1 --irq 100:2
 INTR_merge = --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
 INTR_after = --nmi 3:1 --nmi 10:1
@@ -520,9 +522,10 @@ analyze-nvc:
 	$(if $(PREBUILT),,$(NVC) $(NVCOPTS) -a $(SOURCES) $(SIM_SOURCES) $(TEST_SOURCES))
 
 # Checks that GHDL can synthesize the core, the math unit, the performance
-# counters, the timer, the data bus decoder, the debug link, and the SD
-# card controller, with the generics in SYNTH_GENERICS_unit.
-SYNTH = multicycle pipeline mpu perf timer fetch_stats wb_dmux debug_link sd_regs
+# counters, the timer, the data bus decoder, the debug link, the SD
+# card controller, and the network station, with the generics in
+# SYNTH_GENERICS_unit.
+SYNTH = multicycle pipeline mpu perf timer fetch_stats wb_dmux debug_link sd_regs net_regs
 SYNTH_GENERICS_wb_dmux = -gG_SLAVES=4
 
 define check_synth
@@ -538,7 +541,7 @@ synth: analyze-ghdl
 # is a target formal/FILE/TASK, and they run in parallel, as the runs of
 # make test do. The work directories go in $(BUILD).
 SBY ?= sby
-FORMAL = nice_pkg multicycle timer wb_dmux pipe_fetch pipe_decode pipe_prepare pipe_dbus pipe_write pipeline perf fetch_stats mpu debug_link sd_regs
+FORMAL = nice_pkg multicycle timer wb_dmux pipe_fetch pipe_decode pipe_prepare pipe_dbus pipe_write pipeline perf fetch_stats mpu debug_link sd_regs net_regs
 FORMAL_TASKS = prove cover
 # The pipelined core is checked for a bounded number of cycles only.
 FORMAL_TASKS_pipeline = bmc cover

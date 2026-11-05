@@ -15,7 +15,10 @@
 -- performance counters, src/perf.vhd (SYSTEM.md §3), 0xFFFFFF50-0xFFFFFF7F
 -- to the fetch statistics, src/fetch_stats.vhd (MICROARCH.md §8.1),
 -- 0xFFFFFFA0-0xFFFFFFAF to the SD card controller, src/sd_regs.vhd
--- (SYSTEM.md §5), and the rest to the memory model. The controller's
+-- (SYSTEM.md §5), 0xFFFFFFB0-0xFFFFFFBF to the network station,
+-- src/net_regs.vhd (SYSTEM.md §6), and the rest to the memory model. The
+-- station has no frames and no link over TCP, so its counts and status
+-- read 0, as in the emulator without --link. The controller's
 -- engine is sim/sd_sim.vhd, with the images G_SD0_FILE and G_SD1_FILE, as
 -- the emulator's --sd0 and --sd1, or none for "". It holds the ACK of a
 -- command until the command ends, so the core never sees busy. It keeps the ACKs in order for a core with several
@@ -355,7 +358,8 @@ architecture simulation of tb_core is
    constant C_TIMER  : natural := 3;
    constant C_STATS  : natural := 4;
    constant C_SD     : natural := 5;
-   constant C_SLAVES : natural := 6;
+   constant C_NET    : natural := 6;
+   constant C_SLAVES : natural := 7;
 
    signal dbus_sel    : natural range 0 to C_SLAVES - 1;
    signal slave_stb   : std_logic_vector(C_SLAVES - 1 downto 0);
@@ -544,6 +548,7 @@ begin
                                                 dbus_addr(3 downto 1) /= "010")) else
                C_TIMER when dbus_addr(31 downto 4) = X"FFFFFF1" else
                C_SD when dbus_addr(31 downto 4) = X"FFFFFFA" else
+               C_NET when dbus_addr(31 downto 4) = X"FFFFFFB" else
                C_STATS when dbus_addr(31 downto 6) = X"FFFFFF" & "01" and
                             dbus_addr(5 downto 4) /= "00" else
                C_MEM;
@@ -711,6 +716,29 @@ begin
          buf_data_i => sd_buf_wdata,
          buf_data_o => sd_buf_rdata
       ); -- i_sd_regs
+
+
+   i_net_regs : entity work.net_regs
+      port map (
+         clk_i       => clk,
+         rst_i       => rst,
+         wb_cyc_i    => dbus_cyc,
+         wb_stb_i    => slave_stb(C_NET),
+         wb_stall_o  => slave_stall(C_NET),
+         wb_ack_o    => slave_ack(C_NET),
+         wb_we_i     => dbus_we,
+         wb_addr_i   => dbus_addr(3 downto 0),
+         wb_data_i   => dbus_data_out,
+         wb_data_o   => slave_data(32 * C_NET + 31 downto 32 * C_NET),
+         rx_good_i   => (others => '0'),
+         rx_bad_i    => (others => '0'),
+         tx_i        => (others => '0'),
+         connected_i => '0',
+         port_i      => (others => '0'),
+         ip_o        => open,
+         mac_o       => open,
+         wr_o        => open
+      ); -- i_net_regs
 
 
    i_sd_sim : entity work.sd_sim

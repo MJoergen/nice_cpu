@@ -244,7 +244,8 @@ address twice and a file with no words are errors.
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (SYSTEM.md §3). Cycles, instructions, and microseconds, 64 bits each. The fetch statistics of the FPGA core, at `0xFFFFFF50`–`0xFFFFFF7F`, read 0. |
 | `0xFFFFFF80`–`0xFFFFFF9F` | 32 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (SYSTEM.md §1.4), and takes its font base from `0xFFFFFF86` (SYSTEM.md §1.8). |
 | `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | SD card controller (SYSTEM.md §5). Two slots, with the images of `--sd0` and `--sd1`. |
-| `0xFFFFFFB0`–`0xFFFFFFFF` | 80 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. SYSTEM.md's memory map reserves `0xFFFFFFB0`–`0xFFFFFFCF` for devices still to come. |
+| `0xFFFFFFB0`–`0xFFFFFFBF` | 16 | Network station (SYSTEM.md §6). The IP and MAC addresses, counts of frames that read 0, and the state of `--link`. |
+| `0xFFFFFFC0`–`0xFFFFFFFF` | 64 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. SYSTEM.md's memory map reserves `0xFFFFFFC0`–`0xFFFFFFCF` for a device still to come. |
 
 ### Screen
 
@@ -361,6 +362,21 @@ Write read back from the file, and the slots, on a fresh image of 2
 sectors that `make test` makes for each run. The unit tests in
 `src/cpu.zig` check write protection, the order of the checks, a failure
 of the host, and reset.
+
+### Network station
+
+The emulator has no Ethernet. `NET_IP`, `NET_MAC_HI`, and `NET_MAC_LO`
+are registers that keep what a program or the link writes, from their
+reset values 0 and 02:4E:49:43:45:00. They are set only when niceemu
+starts: a start of the debug link and a clear keep them. The emulator
+serves the link where `--link` says, whatever `NET_IP` holds, and a write
+closes no connection. The counts of frames read 0. `NET_STATUS` gives the
+port of `--link`, and bit 31 while a host is connected. Without `--link`
+it reads 0. Writes to all but the addresses are ignored.
+
+`test/net.nasm` checks the reset values, the ignored writes, and
+`NET_MAC_HI`'s 16 bits. A unit test in `src/cpu.zig` checks that a start
+keeps the station.
 
 ### Instruction fetches and the memory
 
@@ -507,7 +523,9 @@ end at one, two at one address, a skipped instruction and a `HALT` at one,
 what keeps and clears them, and an interrupt entry that goes first. It
 checks the writes of R0 to R15: their example of DEBUG.md §8, R0, R14,
 a step and a go on from a written R15, also at a breakpoint, and `e04`
-while halted, held, and running.
+while halted, held, and running. And it checks the network station's
+`NET_STATUS`, with the port and a host connected, and that a start, a
+clear, and a new connection keep `NET_IP`.
 
 `test/cputest.nasm` is a self-checking test of the whole instruction set:
 every opcode, shift, addressing mode, and condition, the flags, R0, R14, and

@@ -16,6 +16,8 @@ The formal checks: the checkers of the ports, and a wrapper and a SymbiYosys job
 | [wb_dmux.sby](wb_dmux.sby) | The SymbiYosys job for it. |
 | [formal_sd_regs.vhd](formal_sd_regs.vhd) | The SD card controller's registers with checks of their bus and engine ports. |
 | [sd_regs.sby](sd_regs.sby) | The SymbiYosys job for it, with and without the held ACK. |
+| [formal_net_regs.vhd](formal_net_regs.vhd) | The network station's registers with checks of their bus port and addresses. |
+| [net_regs.sby](net_regs.sby) | The SymbiYosys job for it. |
 | [formal_nice_pkg.vhd](formal_nice_pkg.vhd) | The functions of `src/nice_pkg.vhd` and the block compares of `src/pipe_pkg.vhd`, against ISA.md and MICROARCH.md for every input. |
 | [nice_pkg.sby](nice_pkg.sby) | The SymbiYosys job for it. |
 | [formal_pipe_fetch.vhd](formal_pipe_fetch.vhd) | FETCH of the pipelined core, whose properties are in `src/pipe_fetch.vhd`. |

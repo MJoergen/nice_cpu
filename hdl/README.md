@@ -92,7 +92,8 @@ for `SIM`.
 
 `make test` builds the emulator, analyzes the VHDL, checks that GHDL can
 synthesize both cores, the math unit, the performance counters, the timer,
-the fetch statistics, and the data bus decoder (`ghdl --synth`), and runs the tests, those of
+the fetch statistics, the data bus decoder, the debug link, the SD card
+controller, and the network station (`ghdl --synth`), and runs the tests, those of
 the cores once for each core. Everything it makes goes in `build/`.
 `make clean` removes it.
 
@@ -437,8 +438,8 @@ asserts, in simulation, the invariants that its design relies on.
 `G_SLAVES` slaves. The instantiator decodes the address into `sel_i`, the
 index of the slave, so the decoder holds no address map. In `tb_core`,
 slave 0 is the memory model, the default slave, then come the math unit,
-the performance counters, the timer, the fetch statistics, and the SD
-card controller. CYC, WE, ADDR, and the write data go to every slave
+the performance counters, the timer, the fetch statistics, the SD card
+controller, and the network station. CYC, WE, ADDR, and the write data go to every slave
 directly.
 
 The slaves answer at their own pace: the math unit holds the ACK of a read
@@ -670,6 +671,19 @@ sees busy 1, as in the emulator. `tb_core` sets it, with the engine
 `G_SD1_FILE` in memory and writes nothing back. A board leaves it false,
 as an Init may take hundreds of milliseconds, and adds its own engine.
 
+## The network station
+
+`net_regs` holds the registers of the network station of SYSTEM.md §6.
+Its bus port is a pipelined Wishbone slave with a 4-bit address, which
+never stalls. The bus decoder selects it for `0xFFFFFFB0`–`0xFFFFFFBF`.
+The IP and MAC addresses are registers, with their reset values, on
+`ip_o` and `mac_o`, and `wr_o` is high for one cycle after a write to
+one of them, so that a board's station can break a connection then. The
+counts of frames and the status of the debug link over TCP are inputs,
+which a board connects to its station. `tb_core` ties them to 0, as the
+emulator without `--link` reads them. Its `rst_i` is the reset of the
+system: a start of the processor leaves the station as it is.
+
 ## The trace writer
 
 The core reports each step in a `t_retire`: one instruction, skipped or not,
@@ -729,6 +743,10 @@ Write, the checks that refuse a command, an engine error and a failed
 Init, a card taken out and put in, and the two kinds of reset: one that
 abandons a Read, and one that lets a Write on slot 1 run on and report
 nothing.
+
+`tb_net_regs` checks the network station's reset values, the counts and
+the status that follow their inputs, the writes of the addresses with
+`wr_o` after each, the writes that the other words ignore, and reset.
 
 `tb_fetch_stats` drives the events of a few cycles by hand. It checks
 that each counter counts its events from the cycle after a write that
@@ -1122,6 +1140,7 @@ formal/UNIT/TASK` runs one task, for example `make formal/pipe_fetch/prove`.
 | `wb_dmux` | The data bus decoder: the ACKs come back in order, from one slave at a time. | PDR | seconds |
 | `timer` | The timer's ports. | k-induction of depth 10, Yices | seconds |
 | `sd_regs` | The SD card controller's bus and engine ports, with and without the held ACK. | k-induction of depth 10, Yices | seconds |
+| `net_regs` | The network station's bus port, and what sets its addresses and `wr_o`. | k-induction of depth 10, Yices | seconds |
 | `perf` | The performance counters, against a model. | PDR | 20 seconds |
 | `fetch_stats` | The fetch statistics: what each cycle does to the counters. | k-induction, Boolector | half a minute |
 | `mpu` | The math unit's port, its waits, and its quotients and remainders for every pair of operands. | k-induction, Boolector | about 2 minutes |
@@ -1203,6 +1222,11 @@ ACK, it asserts what `formal_mpu` asserts of a port that may wait; the
 task `prove_nohold`, without it, adds `wb_slave_check`. The `cover` task
 shows a held command that ends with its ACK, a Write that runs on through
 a reset, and a Read that reset abandons.
+
+`formal_net_regs` checks the network station's registers with every
+input free. It asserts that a write of an address sets it, with `wr_o`
+in the next cycle, that the addresses change at no other time but reset,
+and their reset values. The `cover` task shows a write of each address.
 
 `formal_nice_pkg` proves the functions that both cores share, for every
 input. They are combinational, so a bounded check of depth 1 covers every

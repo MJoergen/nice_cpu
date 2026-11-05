@@ -134,7 +134,11 @@ pub const Link = struct {
         };
         self.console_w.buffer = &self.console_buf;
         self.reader.buffer = &self.reader_buf;
-        return server.socket.address.getPort();
+        const port = server.socket.address.getPort();
+        // NET_STATUS gives the port, and bit 31 while a host is connected
+        // (SYSTEM.md §6).
+        cpu.net.status = port;
+        return port;
     }
 
     /// Whether the processor has halted, or the step limit stopped it.
@@ -260,6 +264,7 @@ pub const Link = struct {
         if (self.conn) |old| old.close(self.io);
         self.dropReceived();
         self.conn = stream;
+        self.cpu.net.status |= cpu_zig.Net.connected;
         const fd = stream.socket.handle;
         self.conn_eof = false;
         // The connection is the line (DEBUG.md §7): a new host starts its
@@ -277,6 +282,7 @@ pub const Link = struct {
     fn disconnect(self: *Link) void {
         if (self.conn) |c| c.close(self.io);
         self.conn = null;
+        self.cpu.net.status &= ~cpu_zig.Net.connected;
         self.conn_eof = false;
         self.input_end = true;
         self.dropReceived();

@@ -1203,6 +1203,35 @@ def test_old_host(stop: List[int], echo: List[int]) -> None:
     e.stop()
 
 
+def test_net(spin: List[int]) -> None:
+    """The network station (SYSTEM.md §6): NET_STATUS gives the port, and
+    bit 31 while a host is connected. A start and a clear keep the
+    addresses, and so does a new connection."""
+    net_ip, net_status = 0xFFFFFFB0, 0xFFFFFFB6
+    e = Emu()
+    e.take(len(HELLO))
+    expect("NET_STATUS", bytes([word(e, net_status) == 0x80000000 | e.port]), b"\x01")
+    e.send(write(net_ip, [0xC0A80141]))
+    e.expect("NET_IP written", ok(net_ip, 1))
+    e.send(write(0, spin) + write(CONTROL, [0x8]))
+    e.expect("load and start", ok(0, len(spin)) + ok(CONTROL, 1))
+    e.send(write(CONTROL, [0xD]) + write(CONTROL, [0x8]) + write(CONTROL, [0x9]))
+    e.expect("clear, start, and hold", ok(CONTROL, 1) * 3)
+    e.send(read(net_ip, 3))
+    e.expect("kept by a start and a clear", answer(net_ip, [0xC0A80141, 0x024E, 0x49434500]))
+    # A half-close first, so that the emulator accepts the next host.
+    e.sock.shutdown(socket.SHUT_WR)
+    expect("quiet after the half-close", e.take(1, timeout=0.3), b"")
+    e.sock.close()
+    e.sock = e.connect()
+    e.buf = b""
+    e.take(len(HELLO))
+    expect("NET_STATUS again", bytes([word(e, net_status) == 0x80000000 | e.port]), b"\x01")
+    e.send(read(net_ip, 1))
+    e.expect("kept by a new connection", answer(net_ip, [0xC0A80141]))
+    e.stop()
+
+
 def test_address() -> None:
     """--link ADDR:PORT serves on ADDR only. All of 127.0.0.0/8 is
     loopback on Linux, so 127.0.0.2 is an address other than the
@@ -1263,7 +1292,7 @@ def main() -> None:
             lambda: test_step(count, one, stop, echo, twice, irq, irq_bin),
             lambda: test_break(at10, load, count, skip, stop, irq),
             lambda: test_write_regs(regs, at20, count),
-            lambda: test_old_host(stop, echo), test_address, test_usage,
+            lambda: test_old_host(stop, echo), lambda: test_net(spin), test_address, test_usage,
         ]
         for t in tests:
             t()

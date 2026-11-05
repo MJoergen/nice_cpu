@@ -23,7 +23,7 @@ OPTS_wrap      = -d 0xffffffff:1
 # are in the comments of each program. Run make bins after changing one.
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge irqtimer after start cputest console screen screencolor screeninvert iofetch \
   reads reserved mpu mpu64 perf timer input r15modes r0dest r14mem skipconst carryin shiftc \
-  wrapmem smcown scrbound time trapsym sd font
+  wrapmem smcown scrbound time trapsym sd font net
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
@@ -63,6 +63,7 @@ OPTS_scrbound = -s
 OPTS_scrbound2004 = -2004 -s
 # A fresh image for each run, as the probe writes it: byte o is o mod 251.
 OPTS_sd      = --sd0 test/sd.img.out -d 0x200:32 -d 0xffffffa0:16
+OPTS_net     = -d 0x200:17 -d 0xffffffb0:16
 OPTS_font    = -d 0xfffe0820:32 -d 0xfffe0020:1 -d 0xfffe2826:1 -d 0xffffff86:1
 
 define check

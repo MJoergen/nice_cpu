@@ -57,7 +57,7 @@ link shows the program's output almost unchanged.
 Console bytes from the host reach the program while it runs or is paused.
 While the processor is held or halted (§6), and after the end of the
 line's input (§7.1), they are dropped; a keyboard's bytes are not
-(SYSTEM.md §1, §6). A paused processor keeps them in the input buffer,
+(SYSTEM.md §1, §7). A paused processor keeps them in the input buffer,
 and the program reads them when it goes on.
 
 A console byte that arrives while the program's input buffer is full
@@ -338,7 +338,8 @@ host that writes back what it read never steps by accident.
   0, as the emulator starts a run. The math unit, the performance counters,
   the timer, and the SD card controller start from their reset values, but
   a Write of the SD card that has begun finishes first (SYSTEM.md §5). The
-  read counter keeps its value (SYSTEM.md §1). The input buffer is emptied,
+  read counter keeps its value (SYSTEM.md §1), and the network station its
+  addresses and counts (SYSTEM.md §6). The input buffer is emptied,
   and an earlier end of the input (§7.1) is cleared. Bit 1 and the halt reason are cleared, and
   R0–R15 are not defined until the next halt.
 - **Restart.** A halt leaves bit 0 at 0, so a restart after a halt takes
@@ -497,7 +498,7 @@ and bit 3 at 0. A system without one waits, held, with bit 0 at 1.
 
 - **UART.** NiceMonMEGA65 carries the link on its debug UART, 8-N-1, at
   2 Mbaud unless it was built for another rate. A UART break, a frame
-  of ten 0 bits, ends the line's input (SYSTEM.md §6): the host's
+  of ten 0 bits, ends the line's input (SYSTEM.md §7): the host's
   console bytes are dropped until the next start, and the console reads
   `0x200` (SYSTEM.md §1) once its buffer is empty. A keyboard's bytes
   still reach the program, so a monitor that a host leaves keeps running
@@ -536,7 +537,7 @@ notices sent while no host is connected are lost.
 
 On either transport, the host's console bytes that arrive after the end of
 the line's input are dropped, with no `o` notice, while a keyboard's bytes
-go into the buffer (SYSTEM.md §1, §6). A start clears the end of the input
+go into the buffer (SYSTEM.md §1, §7). A start clears the end of the input
 (§6), and over TCP so does a new connection.
 
 ### 7.2 The emulator

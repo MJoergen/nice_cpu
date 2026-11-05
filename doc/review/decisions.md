@@ -15,6 +15,10 @@ proposed again. The open items are the
   program that does not wait for busy fails there as on a board. The
   simulation of the cores could not match the emulator's steps, and the
   trace diff of `make -C hdl test` would break at the first command.
+- **The emulator's `NET_IP` as the address of `--link`** (#124). The
+  emulator listens on `127.0.0.1` unless told otherwise, so the word would
+  mean little, and a program that wrote it could not move the listener.
+  `NET_IP` is a register that keeps what a program writes (SYSTEM.md §6).
 - **Taking the Vivado path from the environment only** (#61). `hdl/Makefile`
   keeps `/opt/Xilinx/2025.1/Vivado/bin/vivado` as the default of `VIVADO`,
   so `make timing` works as is where Vivado is installed there, and

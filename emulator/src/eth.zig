@@ -308,6 +308,7 @@ pub fn parseLines(arena: std.mem.Allocator, path: []const u8, text: []const u8) 
             }
         }
         if (have == 1) return parseError(path, line_no, "a byte has one hex digit", .{});
+        if (bytes.items.len == 0) continue; // a count and no bytes: a line with no bytes
         if (bytes.items.len < min_len or bytes.items.len > max_len)
             return parseError(path, line_no, "a frame has 14 to 1514 bytes, not {d}", .{bytes.items.len});
         try lines.append(arena, .{ .after = after, .frame = bytes.items });
@@ -532,6 +533,7 @@ test "parseLines: counts, comments, and errors" {
         \\# a comment
         \\ffffffffffff 020000000001 88b5   # 14 bytes
         \\
+        \\7:   # a count and no bytes: skipped
         \\3: ff ff ff ff ff ff 02 00 00 00 00 01 88 b5 00
     ;
     const lines = try parseLines(a, "t", text);

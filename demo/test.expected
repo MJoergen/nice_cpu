@@ -1,0 +1,350 @@
+Screen:
+| nice_cpu      V9.9                            the 32-bit NICE CPU of B. Ulmann
+| F1 typewriter   F3 key codes   F5 charset   F7 counters   F9 comet   F11 board
+|
+|  This is the demo of the NICE CPU. What you type on the keyboard, or send to
+|  the console, appears below the blue bar. The function keys start the demos.
+|
+|  It runs in niceemu --window, and on a board that keeps it in its ROM. The
+|  assembler, the emulator, the C library, and the FPGA cores are at
+|  https://github.com/MJoergen/nice_cpu
+| RETURN new line   DEL delete   cursor keys move   CTRL-L clear   F12 return
+|Hello, world!
+|aX      Y
+|Q1234567890123456789012345678901234567890123456789012345678901234567890123456789
+|abRde
+|x y z
+Screen:
+| nice_cpu      V9.9                            the 32-bit NICE CPU of B. Ulmann
+| F1 typewriter   F3 key codes   F5 charset   F7 counters   F9 comet   F11 board
+|
+|  This is the demo of the NICE CPU. What you type on the keyboard, or send to
+|  the console, appears below the blue bar. The function keys start the demos.
+|
+|  It runs in niceemu --window, and on a board that keeps it in its ROM. The
+|  assembler, the emulator, the C library, and the FPGA cores are at
+|  https://github.com/MJoergen/nice_cpu
+| RETURN new line   DEL delete   cursor keys move   CTRL-L clear   F12 return
+|line 4
+|line 5
+|line 6
+|line 7
+|line 8
+|line 9
+|line 10
+|line 11
+|line 12
+|line 13
+|line 14
+|line 15
+|line 16
+|first   A
+|        B
+Screen:
+| nice_cpu      V9.9                            the 32-bit NICE CPU of B. Ulmann
+| F1 typewriter   F3 key codes   F5 charset   F7 counters   F9 comet   F11 board
+|
+|  This is the demo of the NICE CPU. What you type on the keyboard, or send to
+|  the console, appears below the blue bar. The function keys start the demos.
+|
+|  It runs in niceemu --window, and on a board that keeps it in its ROM. The
+|  assembler, the emulator, the C library, and the FPGA cores are at
+|  https://github.com/MJoergen/nice_cpu
+| RETURN new line   DEL delete   cursor keys move   CTRL-L clear   F12 return
+|xQree F
+Screen:
+| nice_cpu      V9.9                            the 32-bit NICE CPU of B. Ulmann
+| F1 typewriter   F3 key codes   F5 charset   F7 counters   F9 comet   F11 board
+|
+|  Each key that you type, or byte sequence sent to the console, shows
+|  its bytes in hex and as characters. A control code shows as ^ and a
+|  character, so ^[ is ESC and ^? is DEL. A function key with a demo starts it.
+|
+|  Bytes in hex                            As characters
+|  1B 5B 41                                ^[ [  A
+|  1B 5B 32 31 7E                          ^[ [  2  1  ~
+|  1B 5B 31 3B 35 43                       ^[ [  1  ;  5  C
+|  E9
+|  80
+|  1B 78                                   ^[ x
+|  1B 5B 31 3B 32 3B 33 3B 34 3B 35 3B     ^[ [  1  ;  2  ;  3  ;  4  ;  5  ;
+|  62                                      b
+|  63                                      c
+|  64                                      d
+|  65                                      e
+|  66                                      f
+|  67                                      g
+|  68                                      h
+|  69                                      i
+|  6A                                      j
+Screen:
+| nice_cpu      V9.9                            the 32-bit NICE CPU of B. Ulmann
+| F1 typewriter   F3 key codes   F5 charset   F7 counters   F9 comet   F11 board
+|
+|  This is the demo of the NICE CPU. What you type on the keyboard, or send to
+|  the console, appears below the blue bar. The function keys start the demos.
+|
+|  It runs in niceemu --window, and on a board that keeps it in its ROM. The
+|  assembler, the emulator, the C library, and the FPGA cores are at
+|  https://github.com/MJoergen/nice_cpu
+| RETURN new line   DEL delete   cursor keys move   CTRL-L clear   F12 return
+|back
+ffff01bc: 000ccc52 000ccc20 000ccc20 00000020 00000020 10000020 10000020 20000020
+ffff01c4: 20000020 30000020 30000020 40000020 40000020 50000020 50000020 60000020
+ffff01cc: 60000020 70000020 70000020 80000020 80000020 90000020 90000020 a0000020
+ffff01d4: a0000020 b0000020 b0000020 c0000020 c0000020 d0000020 d0000020 e0000020
+ffff01dc: e0000020 f0000020 f0000020 000ccc20
+ffff066c: 000ccc57 000ccc20 000ccc20 00000030 000ccc20 00011131 000ccc20 00022232
+ffff0674: 000ccc20 00033333 000ccc20 00044434 000ccc20 00055535 000ccc20 00066636
+ffff067c: 000ccc20 00077737 000ccc20 00088838 000ccc20 00099939 000ccc20 000aaa41
+ffff0684: 000ccc20 000bbb42 000ccc20 000ccc43 000ccc20 000ddd44 000ccc20 000eee45
+ffff068c: 000ccc20 000fff46 000ccc20 000ccc20
+Screen:
+| nice_cpu      V9.9                            the 32-bit NICE CPU of B. Ulmann
+| F1 typewriter   F3 key codes   F5 charset   F7 counters   F9 comet   F11 board
+|
+|  Characters, ISO 8859-1                    Colors, 4 bits of red, green, blue
+|     0 1 2 3 4 5 6 7 8 9 A B C D E F        Backgrounds, 0 to F
+|  00                                        R
+|  10                                        G
+|  20   ! " # $ % & ' ( ) * + , - . /        B
+|  30 0 1 2 3 4 5 6 7 8 9 : ; < = > ?        Y
+|  40 @ A B C D E F G H I J K L M N O        C
+|  50 P Q R S T U V W X Y Z [ \ ] ^ _        M
+|  60 ` a b c d e f g h i j k l m n o        W
+|  70 p q r s t u v w x y z { | } ~
+|  80                                        Foregrounds, 0 to F
+|  90                                        R  0 1 2 3 4 5 6 7 8 9 A B C D E F
+|  A0                                        G  0 1 2 3 4 5 6 7 8 9 A B C D E F
+|  B0                                        B  0 1 2 3 4 5 6 7 8 9 A B C D E F
+|  C0                                        Y  0 1 2 3 4 5 6 7 8 9 A B C D E F
+|  D0                                        C  0 1 2 3 4 5 6 7 8 9 A B C D E F
+|  E0                                        M  0 1 2 3 4 5 6 7 8 9 A B C D E F
+|  F0                                        W  0 1 2 3 4 5 6 7 8 9 A B C D E F
+|
+|  R red   G green   B blue   Y yellow   C cyan   M magenta   W gray
+Screen:
+| nice_cpu      V9.9                            the 32-bit NICE CPU of B. Ulmann
+| F1 typewriter   F3 key codes   F5 charset   F7 counters   F9 comet   F11 board
+|
+|  Since reset, while the core runs
+|
+|    Time, h:mm:ss.hh                              0:00:00.08
+|    Microseconds                                       80053
+|    Cycles                                             80055
+|    Instructions                                       80057
+|    Clock in MHz, cycles per microsecond                   1
+|
+|  A prime sieve to 2048, run before each update
+|    Runs                                                   2
+|    Primes found                                         309
+|    Instructions                                       30058
+|    Cycles                                             30058
+|    Microseconds                                       30058
+|    Cycles per instruction                              1.00
+|    Instructions per microsecond                        1.00
+|
+|  On a board, the time is real, and the clock is that of the core.
+|  In niceemu, each step counts as a cycle and as a microsecond.
+Screen:
+| nice_cpu      V9.9                            the 32-bit NICE CPU of B. Ulmann
+| F1 typewriter   F3 key codes   F5 charset   F7 counters   F9 comet   F11 board
+|  Score     0   Best      1     Game over. A key starts a new game.
+|
+|
+|
+|
+|
+|
+|
+|
+|
+|
+| @oo                                              *
+ffff0050: 00afff20 00afff46 00afff31 00afff20 00afff74 00afff79 00afff70 00afff65
+ffff0058: 00afff77 00afff72 00afff69 00afff74 00afff65 00afff72 00afff20 00afff20
+ffff0060: 00afff20 00afff46 00afff33 00afff20 00afff6b 00afff65 00afff79 00afff20
+ffff0068: 00afff63 00afff6f 00afff64 00afff65 00afff73 00afff20 00afff20 00afff20
+ffff0070: 00afff46 00afff35 00afff20 00afff63 00afff68 00afff61 00afff72 00afff73
+ffff0078: 00afff65 00afff74 00afff20 00afff20 00afff20 00afff46 00afff37 00afff20
+ffff0080: 00afff63 00afff6f 00afff75 00afff6e 00afff74 00afff65 00afff72 00afff73
+ffff0088: 00afff20 00afff20 00afff20 00afff46 00afff39 00afff20 00afff63 00afff6f
+ffff0090: 00afff6d 00afff65 00afff74 00afff20 00afff20 fff00020 fff00046 fff00031
+ffff0098: fff00031 fff00020 fff00062 fff0006f fff00061 fff00072 fff00064 fff00020
+ffff01c2: 0000f050 0000f041 0000f053 0000f053
+ffff0212: 0000f050 0000f041 0000f053 0000f053
+ffff0262: 0000f050 0000f041 0000f053 0000f053
+ffff02b2: 0000f050 0000f041 0000f053 0000f053
+ffff0322: 0000f041 0000f06c 0000f06c 0000f020 0000f074 0000f065 0000f073 0000f074
+ffff032a: 0000f073 0000f020 0000f070 0000f061 0000f073 0000f073 0000f065 0000f064
+ffff0332: 0000f02e
+Screen:
+| nice_cpu      V9.9                            the 32-bit NICE CPU of B. Ulmann
+| F1 typewriter   F3 key codes   F5 charset   F7 counters   F9 comet   F11 board
+|
+|  A self-test, which runs each time that F11 starts it
+|
+|    RAM, 0000B000 to 0000DFFF                     PASS
+|    Math unit, multiply and divide                PASS
+|    Timer, 10 interrupts every 1000 cycles        PASS
+|    Performance counters                          PASS
+|
+|  All tests passed.
+|
+|  A failure shows where it failed and what was read: an address and its word,
+|  or for the timer, the interrupts that came and the cycles that they took.
+|
+|  The network station, 0xFFFFFFB0 to 0xFFFFFFBF
+|  IP address            0.0.0.0
+|  MAC address           02:4E:49:43:45:00
+|  Good frames received           0
+|  Bad or dropped frames          0
+|  Frames sent                    0
+|  Debug link, TCP port           0
+|  I types a new IP address, and M a new MAC address.
+Screen:
+| nice_cpu      V9.9                            the 32-bit NICE CPU of B. Ulmann
+| F1 typewriter   F3 key codes   F5 charset   F7 counters   F9 comet   F11 board
+|
+|  A self-test, which runs each time that F11 starts it
+|
+|    RAM, 0000B000 to 0000DFFF                     PASS
+|    Math unit, multiply and divide                PASS
+|    Timer, 10 interrupts every 1000 cycles        PASS
+|    Performance counters                          PASS
+|
+|  All tests passed.
+|
+|  A failure shows where it failed and what was read: an address and its word,
+|  or for the timer, the interrupts that came and the cycles that they took.
+|
+|  The network station, 0xFFFFFFB0 to 0xFFFFFFBF
+|  IP address            0.0.0.0
+|  MAC address           02:4E:49:43:45:00
+|  Good frames received           0
+|  Bad or dropped frames          0
+|  Frames sent                    0
+|  Debug link, TCP port           0
+|  New IP address:   10.0.0.256
+|  Digits and dots. RETURN writes it; ESC, CTRL-C, or RUN/STOP cancels.
+|  Not an IP address: four numbers from 0 to 255, with dots between them.
+Screen:
+| nice_cpu      V9.9                            the 32-bit NICE CPU of B. Ulmann
+| F1 typewriter   F3 key codes   F5 charset   F7 counters   F9 comet   F11 board
+|
+|  A self-test, which runs each time that F11 starts it
+|
+|    RAM, 0000B000 to 0000DFFF                     PASS
+|    Math unit, multiply and divide                PASS
+|    Timer, 10 interrupts every 1000 cycles        PASS
+|    Performance counters                          PASS
+|
+|  All tests passed.
+|
+|  A failure shows where it failed and what was read: an address and its word,
+|  or for the timer, the interrupts that came and the cycles that they took.
+|
+|  The network station, 0xFFFFFFB0 to 0xFFFFFFBF
+|  IP address            192.168.1.65
+|  MAC address           02:AB:0C:0D:0E:0F
+|  Good frames received           0
+|  Bad or dropped frames          0
+|  Frames sent                    0
+|  Debug link, TCP port           0
+|  I types a new IP address, and M a new MAC address.
+Screen:
+| nice_cpu      V9.9                            the 32-bit NICE CPU of B. Ulmann
+| F1 typewriter   F3 key codes   F5 charset   F7 counters   F9 comet   F11 board
+|
+|  A self-test, which runs each time that F11 starts it
+|
+|    RAM, 0000B000 to 0000DFFF                     PASS
+|    Math unit, multiply and divide                PASS
+|    Timer, 10 interrupts every 1000 cycles        PASS
+|    Performance counters                          PASS
+|
+|  All tests passed.
+|
+|  A failure shows where it failed and what was read: an address and its word,
+|  or for the timer, the interrupts that came and the cycles that they took.
+|
+|  The network station, 0xFFFFFFB0 to 0xFFFFFFBF
+|  IP address            0.0.0.0
+|  MAC address           02:4E:49:43:45:00
+|  Good frames received           0
+|  Bad or dropped frames          0
+|  Frames sent                    0
+|  Debug link, TCP port           0
+|  New MAC address:  03:00:00:00:00:01
+|  Hex digits and colons. RETURN writes it; ESC, CTRL-C, or RUN/STOP cancels.
+|  Not a MAC address: six bytes in hex with colons, the first one even.
+Screen:
+| nice_cpu      V9.9                            the 32-bit NICE CPU of B. Ulmann
+| F1 typewriter   F3 key codes   F5 charset   F7 counters   F9 comet   F11 board
+|
+|  A self-test, which runs each time that F11 starts it
+|
+|    RAM, 0000B000 to 0000DFFF                     PASS
+|    Math unit, multiply and divide                PASS
+|    Timer, 10 interrupts every 1000 cycles        PASS
+|    Performance counters                          PASS
+|
+|  All tests passed.
+|
+|  A failure shows where it failed and what was read: an address and its word,
+|  or for the timer, the interrupts that came and the cycles that they took.
+|
+|  The network station, 0xFFFFFFB0 to 0xFFFFFFBF
+|  IP address            0.0.0.0
+|  MAC address           02:4E:49:43:45:00
+|  Good frames received           0
+|  Bad or dropped frames          0
+|  Frames sent                    0
+|  Debug link, TCP port           0
+|  New MAC address:  0FF:2:3:4:5:6
+|  Hex digits and colons. RETURN writes it; ESC, CTRL-C, or RUN/STOP cancels.
+|  Not a MAC address: six bytes in hex with colons, the first one even.
+ffff0212: 000f0046 000f0041 000f0049 000f004c 000ccc20 000fff46 000fff46 000fff46
+ffff021a: 000fff46 000fff46 000fff46 000fff32 000fff33 000ccc20 000fff46 000fff46
+ffff0222: 000fff46 000fff46 000fff46 000fff46 000fff46 000fff46
+ffff0322: 000f0041 000f0020 000f0074 000f0065 000f0073 000f0074 000f0020 000f0066
+ffff032a: 000f0061 000f0069 000f006c 000f0065 000f0064 000f002e
+Screen:
+| nice_cpu      V9.9                            the 32-bit NICE CPU of B. Ulmann
+| F1 typewriter   F3 key codes   F5 charset   F7 counters   F9 comet   F11 board
+|
+|  A self-test, which runs each time that F11 starts it
+|
+|    RAM, 0000B000 to 0000DFFF                     PASS
+|    Math unit, multiply and divide                FAIL FFFFFF23 FFFFFFFF
+|    Timer, 10 interrupts every 1000 cycles        PASS
+|    Performance counters                          PASS
+|
+|  A test failed.
+|
+|  A failure shows where it failed and what was read: an address and its word,
+|  or for the timer, the interrupts that came and the cycles that they took.
+|
+|  The network station, 0xFFFFFFB0 to 0xFFFFFFBF
+|  IP address            0.0.0.0
+|  MAC address           02:4E:49:43:45:00
+|  Good frames received           0
+|  Bad or dropped frames          0
+|  Frames sent                    0
+|  Debug link, TCP port           0
+|  I types a new IP address, and M a new MAC address.
+Screen:
+| nice_cpu      V9.9                            the 32-bit NICE CPU of B. Ulmann
+| F1 typewriter   F3 key codes   F5 charset   F7 counters   F9 comet   F11 board
+|
+|  This is the demo of the NICE CPU. What you type on the keyboard, or send to
+|  the console, appears below the blue bar. The function keys start the demos.
+|
+|  It runs in niceemu --window, and on a board that keeps it in its ROM. The
+|  assembler, the emulator, the C library, and the FPGA cores are at
+|  https://github.com/MJoergen/nice_cpu
+| RETURN new line   DEL delete   cursor keys move   CTRL-L clear   F12 return
+|ac1
+|wxyz2!?
+R0  00000000 R1  00000000
+Screen:

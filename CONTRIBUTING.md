@@ -22,6 +22,7 @@ needs them.
     cd runtime && make test           # test the start-up code and runtime library
     cd translator && make test        # test the wasm translator
     cd bench && make test             # run the benchmark on the emulator and check its results
+    cd demo && make test              # run the demo on the emulator and compare its screens
     cd hdl && make test               # test both cores (needs GHDL)
     cd doc/intro && make test         # run the example programs of the introduction
     cd doc && make test               # check the section references and links of the documents
@@ -106,4 +107,4 @@ Use American spelling everywhere, in documents, comments, and identifiers
 is at most 50 characters, a blank line follows it, and the body is
 wrapped at 70 characters per line. The subject starts with the part it
 changes: `niceasm:`, `niceemu:`, `runtime:`, `nicewasm:`, `nicecc:`,
-`nicehdl:`, `bench:`, `release:`, `intro:`, `doc:`, `ISA:`, or `Review:`.
+`nicehdl:`, `bench:`, `demo:`, `release:`, `intro:`, `doc:`, `ISA:`, or `Review:`.

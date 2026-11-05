@@ -51,6 +51,11 @@ translator, and two FPGA cores. See README.md.
   them. `expected.py` computes the results in Python, and `make test`
   checks all three against them.
   `dhrystone/` is Dhrystone 2.1 on the C library, checked by `dhrycheck.py`.
+- `demo/demo.nasm`: the demo, a program under a monitor at `0x8000`, which
+  runs in `niceemu --window` behind the runtime's stand-in for a monitor,
+  and which a board keeps in its ROM (NiceMonMEGA65 joins its own text
+  for `text.nasm`). `make test` compares its screens with the hand-checked
+  `test.expected`.
 - `release/`: `RELEASE.md` is the checklist for a release, and `release.py` scripts its mechanical
   parts (preflight, the gates and their stamp, CI, the tag). `test.py` tests it. Same rules as niceasm.py.
 - `hdl/`: VHDL-2008, GHDL, and nvc for the long runs (`hdl/sim.mk`). Two cores with the same ports, but for the
@@ -88,6 +93,8 @@ translator, and two FPGA cores. See README.md.
     cd bench     && make compare     # the model's cycles beside the pipelined core's, with the difference in percent, after make core
     cd bench     && make words       # the size in words of the benchmark, safe.zig, and float modules
     cd bench     && make typecheck   # mypy --strict
+    cd demo      && make test        # the demo on the emulator, its screens compared with test.expected
+    cd demo      && make window      # the demo in niceemu --window (make -C emulator window first)
     cd hdl && make test              # synth check, unit tests, tb_trace, then both cores diffed against niceemu
     cd hdl && make typecheck         # mypy --strict
     cd hdl && make lint              # vsg style check (pip install vsg)
@@ -142,7 +149,7 @@ Vivado 2025.1 is installed at `/opt/Xilinx/2025.1/Vivado/bin/vivado`, not on PAT
   docs and strings in Python are not checked.
 - American spelling everywhere, in docs, comments, and identifiers
   ("behavior", "color", "analyze", "labeled", "gray").
-- Commit subjects: `niceasm: ...`, `niceemu: ...`, `runtime: ...`, `nicewasm: ...`, `nicecc: ...`, `nicehdl: ...`, `bench: ...`, `release: ...`, `intro: ...`, `doc: ...`, `ISA: ...`, `Review: ...`.
+- Commit subjects: `niceasm: ...`, `niceemu: ...`, `runtime: ...`, `nicewasm: ...`, `nicecc: ...`, `nicehdl: ...`, `bench: ...`, `demo: ...`, `release: ...`, `intro: ...`, `doc: ...`, `ISA: ...`, `Review: ...`.
 - Commit messages follow the 50/72 style: the subject, prefix included, is at
   most 50 characters. A blank line follows it. The body is wrapped at 70
   characters per line.

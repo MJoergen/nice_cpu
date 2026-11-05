@@ -125,6 +125,21 @@ jobs:
       - run: make test
       - run: make typecheck
 
+  demo:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: demo
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0
+      - run: make test
+
   hdl:
     runs-on: ubuntu-24.04
     defaults:

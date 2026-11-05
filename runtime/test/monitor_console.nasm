@@ -2,7 +2,8 @@
 ; output on the console (ABI.md, "Programs under a monitor"). mon.putc
 ; stays, unused, so that the addresses are those of monitor.nasm, and
 ; mon.count stays 0, which shows that nothing went through it. The steps
-; are the same: 4 to set up, 2 for the call, and 2 after the return.
+; are the same: 4 to set up, 2 for the call, and 2 after the return. The
+; demo (demo/Makefile) runs behind it in niceemu too.
 
 mon.console     .EQU    0xFFFFFF00
 

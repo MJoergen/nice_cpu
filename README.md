@@ -264,6 +264,7 @@ a source.
 | [runtime/](runtime/README.md) | The start-up code and runtime library for C and wasm programs, and a small C library. [ABI.md](runtime/ABI.md) gives the C ABI: registers, calls, the stack, and the runtime library's conventions. |
 | [translator/](translator/README.md) | `nicewasm`, which translates WebAssembly into NICE assembly. [WASM.md](translator/WASM.md) says how WebAssembly maps to NICE, and [DESIGN.md](translator/DESIGN.md) how `nicewasm` does it. |
 | [bench/](bench/README.md) | A benchmark of translated code: six kernels with known results, timed with the performance counters, and the same benchmark written by hand. |
+| [demo/](demo/README.md) | The demo: a typewriter, the key codes, the font and colors, the performance counters, a game, and a self-test, which runs in `niceemu --window` and which a board keeps in its ROM. |
 | [hdl/](hdl/README.md) | The FPGA implementation in VHDL: a multi-cycle core and a pipelined core, the memory model and trace writer they are tested with, and the formal checks. |
 | [release/](release/README.md) | `release.py`, which scripts the mechanical parts of [RELEASE.md](release/RELEASE.md). |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to run the tests, what they cover, and the rules a change follows. |

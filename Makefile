@@ -2,9 +2,9 @@
 # Each subdirectory can also be used on its own; see CLAUDE.md and README.md.
 
 # The quick tests. The hdl tests need GHDL.
-TEST_DIRS      = assembler emulator runtime translator bench hdl doc/intro doc release
+TEST_DIRS      = assembler emulator runtime translator bench demo hdl doc/intro doc release
 TYPECHECK_DIRS = assembler emulator runtime translator bench hdl doc release
-CLEAN_DIRS     = assembler emulator runtime bench hdl doc/intro
+CLEAN_DIRS     = assembler emulator runtime bench demo hdl doc/intro
 
 PYTHON ?= python3
 

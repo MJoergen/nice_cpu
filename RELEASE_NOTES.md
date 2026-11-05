@@ -36,6 +36,8 @@ The others pin the tagged commit.
 The emulator's window draws from a font in the address space: a font
 RAM of 256 glyphs that a program writes, Spleen as a character ROM
 beside it, and a font base that selects which the window shows (#115).
+The translator writes a source operand 0 as R0, which saves its
+constant word (#127).
 
 **Upgrade notes.**
 
@@ -75,6 +77,14 @@ beside it, and a font base that selects which the window shows (#115).
 - The probe `test/font.nasm` reads the ROM, copies a glyph into the font
   RAM, and selects it.
 
+**Translator (`nicewasm`, `nicebuild.py`)**
+
+- A source operand 0 is written as R0, which reads 0 without a constant
+  word: `MOVE x, 0` is `MOVE x, R0`, the `CLR x` of #117, in one word.
+  The benchmark's module is 8438 words, from 8531, Dhrystone's 12360,
+  from 12517, `test/safe.zig` 5903, from 5932, and the float library
+  6583, from 6895. The steps do not change (#127).
+
 **FPGA cores (`hdl/`)**
 
 - The cores do not change. `make timing` on the MEGA65 meets the budget
@@ -82,7 +92,9 @@ beside it, and a font base that selects which the window shows (#115).
 
 **Benchmarks**
 
-- The cycle counts do not change.
+- The phases of the translated benchmark take 2339271 estimated cycles
+  on the pipelined core, from 2356816, 0.7% fewer, since fewer
+  constant words leave fetch behind. The steps do not change (#127).
 
 ## V1.5 (2026-11-04)
 

@@ -17,7 +17,9 @@ pointing at the first instruction of the code for the wasm instruction
 that trapped, which TRAPS gives. The first page of its memory, reserved
 with .RES, must not be in the program image. Unless it trapped, R7-R12
 must be 0 and SP must be 0xFFFFFF00 again, as the start-up code left them,
-because every translated function must preserve them (ABI.md). The expected
+because every translated function must preserve them (ABI.md). No source
+operand of the translated code may be the constant 0, which R0 reads
+without a constant word (DESIGN.md, Register allocation). The expected
 results were worked out by hand from the sources."""
 
 from __future__ import annotations
@@ -270,14 +272,14 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "safetrap": "MOVE R2, {R2}",
          "rusttrap": "MOVE R2, {R2}",
          "indirectoob": "SUB[M] R0, 4, 4",
-         "indirectnull": "SUB[M] R0, 0, 4",
+         "indirectnull": "SUB[M] R0, R0, 4",
          "indirecttype": "SUB[M] R0, 1, 4",
          "returnoob": "SUB[M] R0, 4, 4",
          "returntype": "SUB[M] R0, 1, 4",
          "filloob": "ADD[M] R1, 65533, 4",
-         "copyoob": "ADD[M] R1, 0, 2",
-         "divzero": "MOVE[M] R0, 0",
-         "divzero64": "OR[M] R0, 0, 0",
+         "copyoob": "ADD[M] R1, R0, 2",
+         "divzero": "MOVE[M] R0, R0",
+         "divzero64": "OR[M] R0, R0, R0",
          "overflow": "MOVE[M] R0, -1",
          "overflow64": "OR[M] R0, -1, -1",
          "unreachable": "MOVE R2, {R2}",
@@ -317,9 +319,9 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
          "trunc_u64_neg": "MOVE R2, 0x43F00000",
          "trunc_u32_neg": "MOVE R1, 0x4F800000",
          "trunc_s64_big": "MOVE R2, 0x43E00000",
-         "fillzerooob": "ADD[M] R1, 65537, 0",
-         "copyzerooob": "ADD[M] R1, 0, 0",
-         "copydestzerooob": "ADD[M] R1, 65537, 0",
+         "fillzerooob": "ADD[M] R1, 65537, R0",
+         "copyzerooob": "ADD[M] R1, R0, R0",
+         "copydestzerooob": "ADD[M] R1, 65537, R0",
          "fillwrap": "ADD[M] R1, 16, -16",
          "bigoffbyte": "MOVE R2, {R2}",
          "bigoffword": "MOVE R2, {R2}",
@@ -400,6 +402,11 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
 
 # What a case must print on the console (SYSTEM.md §1). Every other case
 # must print nothing.
+# A source operand that is the constant 0 (check): an operand after the
+# first, in an instruction, not a directive such as .DAT.
+ZERO_SOURCE = re.compile(r"^\S*[ ]+(?:\?\S+[ ]+)?[A-Z]\S*[ ]+[^,;\n]+(?:,[^,;\n]*)*?,[ ]*0[ ]*(?:,|;|$)",
+                         re.M)
+
 CONSOLE = {"peekpoke": "Hi\n", "hello": "Hello, NICE!\n", "hello_rs": "Hello, Rust!\n"}
 
 # Cases whose module is written to a file of another name. The newline
@@ -3509,6 +3516,9 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
         bare = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith(";"))
         if bool(re.search(pattern, bare, re.M)) != must:
             problems.append(f"the code {'does not match' if must else 'matches'} {pattern}")
+    zero = ZERO_SOURCE.search(text)
+    if zero:
+        problems.append(f"a source operand is 0, not R0: {zero.group().strip()}")
     if console != CONSOLE.get(name, ""):
         problems.append(f"printed {console!r}, expected {CONSOLE.get(name, '')!r}")
     mem = assembler.labels.get("___wasm_memory")

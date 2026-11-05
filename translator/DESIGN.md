@@ -341,7 +341,7 @@ that computed y gets the M bit, if it can.
 Then the back end finds which registers are live at each instruction. It
 removes the instructions whose only effect is to write a register that
 is not read afterwards. So of the declared locals, which wasm sets to 0,
-only those that may be read before they are set get a `MOVE x, 0`. An
+only those that may be read before they are set get a `MOVE x, R0`. An
 instruction with the M bit stays for its flags, but if its result is not
 read, it writes R0 instead, as in `AND[M] R0, x, 1`. Then it splits
 each virtual register into webs: each web is the definitions that reach
@@ -369,6 +369,11 @@ or is changed by a side effect, does it go to a temporary register for
 that one instruction, and the coloring runs again. Values in frame
 words that are never live at the same time share a word.
 
+Then each source operand 0 becomes R0, which reads 0 too (ISA.md §4.3)
+and takes no constant word. So `MOVE x, 0` becomes `MOVE x, R0`, the
+`CLR x` of ISA.md §10.1, in one word, and the compare `SUB[M] R0, 0,
+y` becomes `SUB[M] R0, R0, y`. The passes before this one see the
+constant. The helpers and the start code write R0 the same way.
 Then nicewasm removes each `MOVE` of a register to itself and each jump
 to the label that follows it.
 

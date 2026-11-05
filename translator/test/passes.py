@@ -131,8 +131,8 @@ def early_exit_flags() -> None:
     assert got is not None
     want = [["SUB[M]  R0, R1, 5", "?Z      MOVE    R15, W.f0.E"],
             ["MOVE    R7, R1", "SUB     R8, R7, 5", "ADD     R1, R7, R8", "RET", "W.f0.L1:",
-             "MOVE    R1, 0", "RET"],
-            ["W.f0.E:", "MOVE    R1, 0"]]
+             "MOVE    R1, R0", "RET"],
+            ["W.f0.E:", "MOVE    R1, R0"]]
     assert [text(part) for part in got] == want, [text(part) for part in got]
     got = early_exit(early_function([Ins("ADD", ["R7", "R1", "1"]), test],
                                     [Ins("MOVE", ["R1", "0"]), ret()]), ["R7", "R8"], "W.f0.E")

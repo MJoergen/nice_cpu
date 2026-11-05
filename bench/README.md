@@ -159,8 +159,8 @@ Since DECODE predicts backward conditional jumps taken
 loops with them, `hand.nasm` takes 1252613 cycles on the pipelined
 core at commit 98d2bed, 2.55 per instruction and 9.6% fewer than the 1384879 of the
 program at that commit. `bench.c` closes its loops the same way
-(translator/README.md), and takes 2357155 cycles for 1652811
-instructions, 1.43 per instruction and 1.2% fewer than the 2384635
+(translator/README.md), and takes 2339610 cycles for 1652811
+instructions, 1.42 per instruction and 1.9% fewer than the 2384635
 above.
 
 On the pipelined core, `make core` also prints how long data reads waited
@@ -302,19 +302,19 @@ charged to the rule that caused it, so the output says where the time
 goes, and a program that reads the instruction counter around each phase,
 as both programs do, gets a row per phase:
 
-    bench.bin: 1697041 instructions, 2442571 cycles (estimate), CPI 1.439
-      cycles above 1/instruction: 745530
+    bench.bin: 1697041 instructions, 2423823 cycles (estimate), CPI 1.428
+      cycles above 1/instruction: 726782
       ...
-      taken jumps resolved in WRITE (flush)                        270207  0.159/instr  36.2%
-      jumps DECODE resolves (early-redirect bubble)                 60047  0.035/instr   8.1%
+      taken jumps resolved in WRITE (flush)                        270207  0.159/instr  37.2%
+      jumps DECODE resolves (early-redirect bubble)                 60211  0.035/instr   8.3%
       ...
-      read data a cycle after the bus (registered request)         103494  0.061/instr  13.9%
-      read data used by more than a register write                 180200  0.106/instr  24.2%
+      read data a cycle after the bus (registered request)         103494  0.061/instr  14.2%
+      read data used by more than a register write                 180200  0.106/instr  24.8%
 
       phase         instr    cycles    CPI   main extra cycles per instruction
-      rng64         51746     82515  1.595   mpu 0.35, bus 0.15, early 0.06, adjust 0.02
+      rng64         51746     82003  1.585   mpu 0.35, bus 0.15, early 0.06, adjust 0.02
       ...
-      total       1652811   2356816  1.426
+      total       1652811   2339271  1.415
 
 The bubbles are the core's. A jump that WRITE resolves leaves WRITE in
 cycle c − 2 and flushes in the same cycle, and the redirect reaches
@@ -334,7 +334,7 @@ the flush. Each case of `pipecycles.py --test` gives the core's cycles,
 step by step, with `--retires` below.
 
 The phases of the translated program take an estimated
-2356816 cycles, 1.43 per instruction, and those of `hand.nasm` 1252534,
+2339271 cycles, 1.42 per instruction, and those of `hand.nasm` 1252534,
 2.6 per instruction: the hand-written code has more instructions with
 side effects, memory operands, and reads of the math unit, and fewer
 instructions in all. Options such as `--flush`, `--early`, `--agen`,
@@ -352,12 +352,12 @@ PREPARE forms; and `--dest-adjust N` gives a register destination in
 mode 001 or 010, and a jump to a computed target, N cycles more in
 WRITE. A store through `@R` or `@R++` never waits, since WRITE takes
 the value it wrote last. With the four rules, the translated program's
-phases take 2356816 cycles, against 2354763 without, and those of
+phases take 2339271 cycles, against 2337218 without, and those of
 `hand.nasm` 1252534 against 1248275. A fifth, `--read-late N`, also 1 by
 default, has WRITE take read data N cycles after its ACK, but for a
 micro-op whose data only goes into a register: s0 or s1 with a side
 effect, and a `MOVE` into a register other than R15 (MICROARCH.md §5.3).
-Without it, the phases take 2266828 cycles and 1172037. `pipecycles.py --test` checks the model on
+Without it, the phases take 2249283 cycles and 1172037. `pipecycles.py --test` checks the model on
 small programs whose cycles are worked out by hand in the script, and
 `make test` runs it, and then the model on both programs with `--phases
 6`, which fails unless each reads the instruction counter around its six
@@ -371,13 +371,13 @@ their loops with them:
 
 | Phase | `bench.c`, model | Core | Model − core | `hand.nasm`, model | Core | Model − core |
 |---|---|---|---|---|---|---|
-| `rng64` | 82515 | 82571 | −56 | 62257 | 62270 | −13 |
-| `crc32` | 80708 | 80765 | −57 | 40233 | 40246 | −13 |
-| `bst` | 403351 | 403408 | −57 | 225654 | 225667 | −13 |
-| `heapsort` | 378602 | 378658 | −56 | 273617 | 273630 | −13 |
-| `vm` | 1248112 | 1248168 | −56 | 602050 | 602064 | −14 |
-| `strings` | 163528 | 163585 | −57 | 48723 | 48736 | −13 |
-| total | 2356816 | 2357155 | −339 | 1252534 | 1252613 | −79 |
+| `rng64` | 82003 | 82060 | −57 | 62257 | 62270 | −13 |
+| `crc32` | 80706 | 80762 | −56 | 40233 | 40246 | −13 |
+| `bst` | 402829 | 402885 | −56 | 225654 | 225667 | −13 |
+| `heapsort` | 378589 | 378646 | −57 | 273617 | 273630 | −13 |
+| `vm` | 1232110 | 1232167 | −57 | 602050 | 602064 | −14 |
+| `strings` | 163034 | 163090 | −56 | 48723 | 48736 | −13 |
+| total | 2339271 | 2339610 | −339 | 1252534 | 1252613 | −79 |
 
 The difference is all but the same in every phase of a program, so it
 lies at the reads of the instruction counter around the phases, whose
@@ -424,7 +424,7 @@ are worked out by hand in the script, and `make test` runs it.
 nicewasm, the measure that [translator/README.md](../translator/README.md)
 quotes for `test/safe.zig` and the float library. `make words` prints it
 for `bench.wasm`, `translator/test/safe.wasm`, and `runtime/float.wasm`:
-8531, 5932, and 6895 words. Each module is translated and
+8438, 5903, and 6583 words. Each module is translated and
 assembled on its own, with the labels it uses but does not define, such
 as the runtime's routines, defined as 0 first; a constant takes a whole
 word whatever its value (ISA.md §3), so that changes no size. The count

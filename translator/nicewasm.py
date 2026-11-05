@@ -792,8 +792,12 @@ def negate(cond: str) -> str:
 
 def instr(mnemonic: str, *operands: str) -> str:
     """One line of output: the condition, if the mnemonic starts with one,
-    in column 8, the mnemonic in column 16, and the operands in column 24."""
+    in column 8, the mnemonic in column 16, and the operands in column 24.
+    A source operand 0 of an instruction is written R0 (zero_reg), so the
+    helpers and the start code save its word too."""
     cond, _, mnemonic = mnemonic.rpartition(" ")
+    if not mnemonic.startswith("."):
+        operands = operands[:1] + tuple("R0" if o == "0" else o for o in operands[1:])
     return f"{'':8}{cond:<8}{mnemonic + ' ':<8}{', '.join(operands)}".rstrip()
 
 
@@ -2004,6 +2008,18 @@ class Allocator:
                 for o in it.ops:
                     self.used.update(re.findall(r"\bR1[0-2]\b|\bR[1-9]\b", o))
         return self.items
+
+
+def zero_reg(items: List[Item]) -> List[Item]:
+    """Writes each source operand 0 as R0, which reads 0 too (ISA.md
+    §4.3) and takes no constant word, so MOVE x, 0 is MOVE x, R0 (CLR x).
+    It runs after the allocation, so the passes before it see the
+    constant, and those after it count the words right. instr does the
+    same for the lines it writes."""
+    for it in items:
+        if isinstance(it, Ins):
+            it.ops[1:] = ["R0" if o == "0" else o for o in it.ops[1:]]
+    return items
 
 
 FRAME_WORD = re.compile(r"@%([sa])(\d+)")  # a spill slot or a stack argument, before the frame
@@ -5120,7 +5136,7 @@ class FunctionTranslator:
                         ALLOC_REGS, CALLEE_SAVED, self.n_vregs)
         pre.prepare()
         alloc = Allocator(hoist_into_slots(pre.items), ALLOC_REGS, CALLEE_SAVED, self.n_vregs)
-        items = if_convert(tidy(alloc.run()))
+        items = if_convert(tidy(zero_reg(alloc.run())))
         saved = [r for r in CALLEE_SAVED if r in alloc.used]
         n_slots = alloc.n_slots
         items = swap_arms(items, f"{self.t.prefix}f{self.idx}.A")

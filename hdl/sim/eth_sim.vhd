@@ -105,6 +105,12 @@ architecture simulation of eth_sim is
       return C_DIGITS(b / 16 + 1) & C_DIGITS(b mod 16 + 1);
    end function hex2;
 
+   -- The start of a message about line no of G_IN_FILE.
+   function at_line(no : natural) return string is
+   begin
+      return "eth_sim: " & G_IN_FILE & ":" & integer'image(no) & ": ";
+   end function at_line;
+
    -- The Internet checksum of f(first to last) (RFC 1071).
    function checksum(f : t_bytes; first : natural; last : natural) return natural is
       variable sum_v : natural := 0;
@@ -182,7 +188,7 @@ begin
                   for j in 1 to i - 1 loop
                      if l_v(j) /= ' ' and l_v(j) /= HT then
                         assert l_v(j) >= '0' and l_v(j) <= '9'
-                           report "eth_sim: " & G_IN_FILE & ":" & integer'image(no_v) & ": bad count"
+                           report at_line(no_v) & "bad count"
                            severity failure;
                         after_v := after_v * 10 + hex_value(l_v(j));
                      end if;
@@ -191,12 +197,12 @@ begin
                   have_v := -1;
                elsif l_v(i) = ' ' or l_v(i) = HT or l_v(i) = CR then
                   assert have_v = -1
-                     report "eth_sim: " & G_IN_FILE & ":" & integer'image(no_v) & ": a byte has one hex digit"
+                     report at_line(no_v) & "a byte has one hex digit"
                      severity failure;
                else
                   d_v := hex_value(l_v(i));
                   assert d_v >= 0
-                     report "eth_sim: " & G_IN_FILE & ":" & integer'image(no_v) & ": not a hex digit"
+                     report at_line(no_v) & "not a hex digit"
                      severity failure;
                   if have_v = -1 then
                      have_v := d_v;
@@ -209,7 +215,7 @@ begin
             end loop;
             if n_v /= 0 then
                assert n_v >= 14 and have_v = -1
-                  report "eth_sim: " & G_IN_FILE & ":" & integer'image(no_v) & ": not a frame of 14 to 1514 bytes"
+                  report at_line(no_v) & "not a frame of 14 to 1514 bytes"
                   severity failure;
                assert nlines_v < C_MAX_LINES
                   report "eth_sim: more than " & integer'image(C_MAX_LINES) & " lines"
@@ -279,7 +285,8 @@ begin
             return;
          end if;
          if field(f, 12, 2) = X"0806" then
-            if f'length < 42 or field(f, 14, 8) /= X"0001080006040001" or field(f, 38, 4) /= ip_i then
+            if f'length < 42 or field(f, 14, 8) /= X"0001080006040001" or
+               field(f, 38, 4) /= ip_i then
                return;
             end if;
             r_v(0 to 5) := f(22 to 27);

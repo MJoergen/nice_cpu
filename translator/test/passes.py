@@ -8,7 +8,8 @@ translator holds a function's code between its passes (DESIGN.md, How
 functions are translated), and checks what comes out. The cases are the
 rules that no wasm module reaches today, so that run.py and fuzz.py
 cannot test them, and that a change to the code the translator emits
-could reach tomorrow."""
+could reach tomorrow. One case gives pseudo the lines of the output,
+which it rewrites after the passes."""
 
 from __future__ import annotations
 
@@ -18,8 +19,10 @@ from typing import Callable, List
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
+sys.path.insert(0, os.path.join(HERE, "..", "..", "assembler"))
+import niceasm  # noqa: E402
 from nicewasm import (Ins, Item, Label, duplicate_tails, early_exit, hoist_into_slots,  # noqa: E402
-                      predict_back_edges, tail_calls)
+                      instr, predict_back_edges, pseudo, tail_calls)
 
 
 def text(items: List[Item]) -> List[str]:
@@ -170,7 +173,41 @@ def predicted_back_edge() -> None:
     assert isinstance(jump, Ins) and jump.kind == "jump" and jump.targets == ["W.f0.L1", "W.f0.B0"]
 
 
-CASES: List[Callable[[], None]] = [predicted_back_edge, hoist_after_write, hoist_after_jump, tail_call_plain,
+def assembled(lines: List[str]) -> List[int]:
+    a = niceasm.Assembler()
+    errors = a.run([line + "\n" for line in lines + ["x", "f"]], "t.nasm")
+    assert not errors, errors
+    return [w for _, w in sorted(a.output())]
+
+
+def pseudo_instructions() -> None:
+    """The output's idioms become the pseudo-instructions of ISA.md §10.1,
+    which assemble to the same words. A CALL needs its two instructions
+    together, with one condition, and the size of the jump as the ADD's
+    constant. A line with a comment, or that is no idiom, stays."""
+    lines = [instr("ADD", "@--R13", "2", "R15"), instr("MOVE", "R15", "f"),
+             instr("?Z ADD", "@--R13", "1", "R15"), instr("?Z MOVE", "R15", "R3"),
+             instr("ADD", "@--R13", "2", "R15"), instr("?Z MOVE", "R15", "f"),
+             instr("ADD", "@--R13", "1", "R15"), instr("MOVE", "R15", "f"),
+             instr("?!C MOVE", "R15", "x"), instr("MOVE", "R15", "@R13++"),
+             instr("SUB[M]", "R0", "R1", "7"), instr("MOVE[M]", "R0", "R2"),
+             instr("MOVE", "@--R13", "R7"), instr("MOVE", "R7", "@R13++"),
+             instr("MOVE", "R4", "0"), instr("MOVE", "R0", "R0"),
+             instr("SUB[CM]", "R0", "R1", "7"), instr("MOVE", "R5", "R6"),
+             instr("MOVE", "R15", "x") + "  ; jump", "; MOVE R15, x"]
+    out = pseudo(lines)
+    assert [line.strip() for line in out] == [
+        "CALL    f", "?Z      CALL    R3",
+        "ADD     @--R13, 2, R15", "?Z      JMP     f",
+        "ADD     @--R13, 1, R15", "JMP     f",
+        "?!C     JMP     x", "RET", "CMP     R1, 7", "TST     R2",
+        "PUSH    R7", "POP     R7", "CLR     R4", "NOP",
+        "SUB[CM] R0, R1, 7", "MOVE    R5, R6",
+        "MOVE    R15, x  ; jump", "; MOVE R15, x"], out
+    assert assembled(out) == assembled(lines)
+
+
+CASES: List[Callable[[], None]] = [pseudo_instructions, predicted_back_edge, hoist_after_write, hoist_after_jump, tail_call_plain,
                                    tail_call_data, no_tail_copies_in_stubs, early_exit_flags,
                                    early_exit_call]
 

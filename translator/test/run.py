@@ -332,26 +332,26 @@ TRAPS = {"growtrap": "MOVE R1, 65536",
 
 # Cases whose translation, without its comment lines, must match a
 # pattern, or must not: name -> (pattern, whether it must match). A word access that needs no compare
-# has no SUB[M] (bound_case).
-SHAPES = {"bound": (r"SUB\[M\]", False),
-          "bound_over": (r"SUB\[M\] +R0, R\d+, 255$", True),
-          "bound_load8": (r"SUB\[M\]", False),
-          "bound_remu": (r"SUB\[M\]", False),
-          "boundtrap": (r"SUB\[M\] +R0, R\d+, 256$", True),
-          "bound64": (r"SUB\[M\]", False),
-          "bound64_over": (r"SUB\[M\] +R0, R\d+, 510$", True),
-          "bound_grow": (r"SUB\[M\] +R0, R\d+, @W.wlimit4$", True),
+# has no CMP (bound_case).
+SHAPES = {"bound": (r"CMP", False),
+          "bound_over": (r"CMP +R\d+, 255$", True),
+          "bound_load8": (r"CMP", False),
+          "bound_remu": (r"CMP", False),
+          "boundtrap": (r"CMP +R\d+, 256$", True),
+          "bound64": (r"CMP", False),
+          "bound64_over": (r"CMP +R\d+, 510$", True),
+          "bound_grow": (r"CMP +R\d+, @W.wlimit4$", True),
           "bound_unchecked": (r"0x3FFFFFFF|^ +ADD", False),
           "hoistagen": (r"^ +AND +(R\d+), R\d+, 255\n +ADD +R\d+, R\d+, 7\n"
                         r"(W\.f0\.L\d+\n)? +MOVE +R\d+, @___wasm_memory\+64\[\1\]$", True),
-          "byte_bound": (r"SUB\[M\]", False),
-          "byte_bound_over": (r"SUB\[M\] +R0, R\d+, 65536$", True),
-          "half_bound": (r"SUB\[M\] +R0, R\d+, 65535$", False),
-          "half_bound_over": (r"SUB\[M\] +R0, R\d+, 65535$", True),
+          "byte_bound": (r"CMP", False),
+          "byte_bound_over": (r"CMP +R\d+, 65536$", True),
+          "half_bound": (r"CMP +R\d+, 65535$", False),
+          "half_bound_over": (r"CMP +R\d+, 65535$", True),
           # A byte load: the word index and the rotation count come before
           # the compare, and fill_jump_slots moves neither to after the jump.
           "oobbyte": (r"^ +SHR +(R\d+), (R\d+), 2\n +SHL +(R\d+), \2, 3\n"
-                      r" +SUB\[M\] +R0, \2, 65536\n +\?!C +MOVE +R15, \S+\n"
+                      r" +CMP +\2, 65536\n +\?!C +JMP +\S+\n"
                       r" +ROR +R\d+, @___wasm_memory\[\1\], \3$", True),
           # A byte store: the mask comes from a rotation, not a table.
           "oobbytecarry": (r"^ +ROL +(R\d+), -256, R\d+\n +AND +R\d+, \1, @___wasm_memory", True),

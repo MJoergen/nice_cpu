@@ -151,8 +151,8 @@ bounds and the alignment at once, and the offset goes into the word
 operand. An `i32.load` at offset 4 in a memory of one page is:
 
                     ROR     R2, R1, 2
-                    SUB[M]  R0, R2, 16383
-            ?!C     MOVE    R15, W.f0.L1
+                    CMP     R2, 16383
+            ?!C     JMP     W.f0.L1
                     MOVE    R1, @___wasm_memory+1[R2]
 
 If the compare fails, a stub after the epilogue gets the base back with
@@ -187,8 +187,8 @@ If d is below the limit L of the compare, the compare is of i with L -
 d, and d goes into the word operand. So for `(i << 2) + 8480`, an
 `i32.load` is:
 
-                    SUB[M]  R0, R7, 14264
-            ?!C     MOVE    R15, W.f6.L8
+                    CMP     R7, 14264
+            ?!C     JMP     W.f6.L8
                     MOVE    R5, @___wasm_memory+2120[R7]
 
 If i passes the compare, i + d is below L, so the access is in bounds,
@@ -268,8 +268,8 @@ vm's fetch of an opcode, an `i32.load8_u`, is:
 
                     SHR     R2, R3, 2
                     SHL     R1, R3, 3
-                    SUB[M]  R0, R3, 65536
-            ?!C     MOVE    R15, W.f7.L20
+                    CMP     R3, 65536
+            ?!C     JMP     W.f7.L20
                     ROR     R1, @___wasm_memory[R2], R1
                     AND     R1, R1, 0xFF
 
@@ -527,3 +527,19 @@ return.
 The translated functions may use every register. The helpers and
 `___wasm_start` use only R1–R6, R13, R14, and R15, so a value in R7–R12
 survives a call of a helper, as it does any ABI.md call.
+
+## The output
+
+The passes see each idiom written out: a jump is `MOVE R15, x`, a
+compare `SUB[M] R0, a, b`, and a call `ADD @--R13, n, R15` then `MOVE
+R15, f`. Once a function's code and the helpers are lines, nicewasm
+writes the idioms as the pseudo-instructions of ISA.md §10.1, so that
+the output reads like hand-written NICE assembly: `JMP`, `CMP`, `TST`,
+`PUSH`, `POP`, `CLR`, `NOP`, `RET`, and `CALL`. Each assembles to the
+same words. A `CALL` stands for the two instructions only where they
+follow each other with one condition, and the `ADD` pushes the size of
+the jump in words. A line with a comment stays as it is. So a call and
+the return are:
+
+                    CALL    W.f12
+                    RET

@@ -801,6 +801,57 @@ def instr(mnemonic: str, *operands: str) -> str:
     return f"{'':8}{cond:<8}{mnemonic + ' ':<8}{', '.join(operands)}".rstrip()
 
 
+INSTR_LINE = re.compile(r" {8}(\?\S+)? *([A-Z][\w\[\]]*) +([^;]*?)\Z")
+
+
+def pseudo(lines: List[str]) -> List[str]:
+    """The output with the idioms written as the pseudo-instructions of
+    ISA.md §10.1, which assemble to the same words. The passes see the
+    idioms written out, and this runs on the lines once they are done.
+    CALL stands for ADD @--R13, n, R15 then MOVE R15, target with the
+    same condition, where n is the size of the MOVE in words."""
+    def parse(line: str) -> Optional[Tuple[str, str, List[str]]]:
+        m = INSTR_LINE.match(line)
+        return None if m is None else (m.group(1) or "", m.group(2), m.group(3).split(", "))
+
+    out: List[str] = []
+    k = 0
+    while k < len(lines):
+        p = parse(lines[k])
+        k += 1
+        if p is None:
+            out.append(lines[k - 1])
+            continue
+        cond, op, ops = p
+        q = parse(lines[k]) if k < len(lines) else None
+        if (op == "ADD" and ops[0] == "@--R13" and ops[2] == "R15" and q is not None
+                and q[:2] == (cond, "MOVE") and q[2][0] == "R15"
+                and ops[1] == str(1 + has_word(q[2][1]))):
+            op, ops = "CALL", [q[2][1]]
+            k += 1
+        elif op == "MOVE" and ops == ["R15", "@R13++"]:
+            op, ops = "RET", []
+        elif op == "MOVE" and ops == ["R0", "R0"]:
+            op, ops = "NOP", []
+        elif op == "MOVE" and ops[0] == "R15":
+            op, ops = "JMP", ops[1:]
+        elif op == "MOVE" and ops[0] == "@--R13":
+            op, ops = "PUSH", ops[1:]
+        elif op == "MOVE" and ops[1] == "@R13++":
+            op, ops = "POP", ops[:1]
+        elif op == "MOVE" and ops[1] == "R0":
+            op, ops = "CLR", ops[:1]
+        elif op == "MOVE[M]" and ops[0] == "R0":
+            op, ops = "TST", ops[1:]
+        elif op == "SUB[M]" and ops[0] == "R0":
+            op, ops = "CMP", ops[1:]
+        else:
+            out.append(lines[k - 1])
+            continue
+        out.append(f"{'':8}{cond:<8}{op + ' ':<8}{', '.join(ops)}".rstrip())
+    return out
+
+
 def byte_copy() -> List[str]:
     """Copies the byte at byte address R2 to byte address R1. Uses R4-R6."""
     mem = "@___wasm_memory"
@@ -2893,7 +2944,7 @@ class Translator:
                 assert self.cap is not None
                 out.append(f"                ; pages {pages} to {self.cap - 1}, for memory.grow")
                 out.append(instr(".RES", str((self.cap - pages) * WORDS_PER_PAGE)))
-        return out
+        return pseudo(out)
 
     @staticmethod
     def limits(pages: int) -> List[Tuple[str, int]]:

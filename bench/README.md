@@ -412,11 +412,13 @@ taken jump's on the instruction at its target, and a math unit wait's on
 the read of the result. In heapsort's inner loop, for example:
 
         7722   26800         ADD     R7, R1, 2                  early20100 fetch6700
-        7722                 SUB[M]  R0, R7, R8
+        7722                 CMP     R7, R8
         7722                 ?V XOR  R14, R14, 0x10000000
 
-`cycprof.py --test` checks the charging on a counted loop whose cycles
-are worked out by hand in the script, and `make test` runs it.
+A `CALL` line is two instructions, and its run count is that of one of
+them. `cycprof.py --test` checks the charging on a counted loop whose
+cycles are worked out by hand in the script, and the runs of a `CALL`,
+and `make test` runs it.
 
 ## The size of a module
 

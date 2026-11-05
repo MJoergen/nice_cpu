@@ -73,9 +73,10 @@ def profile(lines: List[str], binpath: str, name: str
     pipecycles.run_model(m, hazards.trace_lines(binpath))
     runs: "collections.Counter[int]" = collections.Counter()
     costs: Costs = collections.defaultdict(collections.Counter)
+    # A line of two instructions, CALL, runs as often as each of them.
     for pc, n in m.runs.items():
         if pc in line_of:
-            runs[line_of[pc]] += n
+            runs[line_of[pc]] = max(runs[line_of[pc]], n)
             costs[line_of[pc]].update(m.costs[pc])
     return m, runs, costs
 
@@ -102,17 +103,33 @@ loop            SUB[M]  R1, R1, 1
 """
 TEST_LINES = [(1, 6, {"startup": 6}), (10, 63, {"flush": 63}), (10, 0, {}), (1, 0, {})]
 
+# And the runs of a CALL, a line of two instructions, which runs once for
+# each call, and of the RET it reaches twice.
+CALL_TEST = """                MOVE    R13, 0x1000
+                CALL    f
+                CALL    f
+                HALT
+f               RET
+"""
+CALL_RUNS = [1, 1, 1, 1, 2]
 
-def test() -> None:
+
+def run_snippet(text: str) -> Tuple["collections.Counter[int]", Costs]:
+    """The runs and the costs of each line of a snippet."""
     import subprocess
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
         nasm, binp = os.path.join(tmp, "t.nasm"), os.path.join(tmp, "t.bin")
         with open(nasm, "w") as f:
-            f.write(TEST)
+            f.write(text)
         subprocess.run([sys.executable, os.path.join(HERE, "..", "assembler", "niceasm.py"),
                         "-o", binp, nasm], check=True, stdout=subprocess.DEVNULL)
-        _, runs, costs = profile(TEST.splitlines(keepends=True), binp, nasm)
+        _, runs, costs = profile(text.splitlines(keepends=True), binp, nasm)
+    return runs, costs
+
+
+def test() -> None:
+    runs, costs = run_snippet(TEST)
     bad = 0
     for i, (n, extra, causes) in enumerate(TEST_LINES, 1):
         have = (runs.get(i, 0), sum(costs[i].values()) if i in costs else 0,
@@ -121,8 +138,14 @@ def test() -> None:
         bad += not ok
         print(f"{'PASS' if ok else 'FAIL'} line {i}: {have[0]} runs, {have[1]} extra cycles"
               + ("" if ok else f" {have[2]}, expected {n}, {extra}, {causes}"))
+    runs, _ = run_snippet(CALL_TEST)
+    for i, n in enumerate(CALL_RUNS, 1):
+        ok = runs.get(i, 0) == n
+        bad += not ok
+        print(f"{'PASS' if ok else 'FAIL'} call line {i}: {runs.get(i, 0)} runs"
+              + ("" if ok else f", expected {n}"))
     if bad:
-        sys.exit(f"FAIL cycprof.py --test: {bad} of {len(TEST_LINES)} lines")
+        sys.exit(f"FAIL cycprof.py --test: {bad} of {len(TEST_LINES) + len(CALL_RUNS)} lines")
     print("PASS cycprof.py --test")
 
 

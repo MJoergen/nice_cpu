@@ -37,7 +37,8 @@ The emulator's window draws from a font in the address space: a font
 RAM of 256 glyphs that a program writes, Spleen as a character ROM
 beside it, and a font base that selects which the window shows (#115).
 The translator writes a source operand 0 as R0, which saves its
-constant word (#127).
+constant word (#127), and its output uses the pseudo-instructions of
+ISA.md §10.1 (#128).
 
 **Upgrade notes.**
 
@@ -84,6 +85,10 @@ constant word (#127).
   The benchmark's module is 8438 words, from 8531, Dhrystone's 12360,
   from 12517, `test/safe.zig` 5903, from 5932, and the float library
   6583, from 6895. The steps do not change (#127).
+- The output writes the idioms as the pseudo-instructions of ISA.md
+  §10.1: `JMP`, `CMP`, `TST`, `PUSH`, `POP`, `CLR`, `NOP`, `RET`, and
+  `CALL`, in the functions, the helpers, and the start code. Each
+  assembles to the same words, so the `.bin` files do not change (#128).
 
 **FPGA cores (`hdl/`)**
 
@@ -95,6 +100,8 @@ constant word (#127).
 - The phases of the translated benchmark take 2339271 estimated cycles
   on the pipelined core, from 2356816, 0.7% fewer, since fewer
   constant words leave fetch behind. The steps do not change (#127).
+- `cycprof.py` counts the runs of a `CALL` line, two instructions, once
+  for each call (#128).
 
 ## V1.5 (2026-11-04)
 

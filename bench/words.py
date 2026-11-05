@@ -54,12 +54,11 @@ def translate(wasm: str, library: str, tmp: str) -> List[str]:
 
 
 # --test: a snippet whose words are counted by hand. An instruction is one
-# word, and each constant one more (ISA.md §3): MOVE R1, 0x1234 is 2, the
-# call's ADD with its constant 2 is 2, and the jump to the undefined label
-# is 2. .RES emits nothing, and .DAT one word. So 7 words.
+# word, and each constant one more (ISA.md §3): MOVE R1, 0x1234 is 2, and
+# the CALL of the undefined label is 4, its ADD with the constant 2 and its
+# jump with the label. .RES emits nothing, and .DAT one word. So 7 words.
 TEST = """                MOVE    R1, 0x1234
-                ADD     @--R13, 2, R15
-                MOVE    R15, __helper
+                CALL    __helper
                 .RES    10
 x               .DAT    7
 """

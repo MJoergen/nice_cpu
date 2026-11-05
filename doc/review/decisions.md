@@ -153,3 +153,12 @@ proposed again. The open items are the
   The unchecked code stays exact for every access in the memory. What
   #119 took instead is the fold of an offset into the word operand
   (translator/DESIGN.md).
+- **A stack check in each function's prologue** (#72), so that running
+  out of NICE stack traps as in wasm. It costs code size and time in
+  every call, and the stack has no fixed limit to check against: it runs
+  from the start SP down to the end of the program image, which neither
+  the core nor the tools know. The compiler's stack in linear memory has
+  a size set at build time and lies below the module's data, so an
+  overflow there wraps below 0 and traps as out of bounds while the
+  bounds checks are on. Detecting a NICE stack overflow in the emulator,
+  at no cost on the target, is #132.

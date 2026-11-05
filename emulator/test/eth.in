@@ -1,0 +1,17 @@
+# The frames of test/eth.nasm (SYSTEM.md §7), all at the write that
+# enables the port, but the last, which waits for the first frame sent.
+#
+# A: 60 bytes to the station, payload bytes 00 to 2d.
+024e49434500 020000000001 88b5 000102030405060708090a0b0c0d0e0f 101112131415161718191a1b1c1d1e1f 202122232425262728292a2b2c2d
+# An ARP request from 192.168.1.10 for 192.168.1.65, which the station
+# answers, as the program has set NET_IP.
+ffffffffffff 020000000001 0806 0001 0800 06 04 0001 020000000001 c0a8010a 000000000000 c0a80141
+# To another MAC address: dropped, and not counted.
+024e49434599 020000000001 88b5
+# B, C, and D fill the queue, and E is dropped and counted.
+024e49434500 020000000002 88b5
+024e49434500 020000000003 88b5
+024e49434500 020000000004 88b5
+024e49434500 020000000005 88b5
+# F, to everyone, after the first frame sent.
+1: ffffffffffff 020000000006 88b5 a1a2a3a4a5a6

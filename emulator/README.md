@@ -104,6 +104,10 @@ goes through these steps on a small program, and a
 | `-i`, `--input FILE` | Read the console's input from FILE instead of stdin; `-` is stdin. A directory is an error. |
 | `--sd0 FILE` | Put a card into SD card slot 0, with FILE as its image: the card's 512-byte sectors in order. A FILE that cannot be written gives a write-protected card. An empty FILE, or one whose size is not a multiple of 512 bytes, is an error (see SD card below). |
 | `--sd1 FILE` | The same for slot 1. |
+| `--eth-in FILE` | Receive the Ethernet frames of FILE, one per line in hex, at the write that enables the port and at each frame sent (see Ethernet frames below). A line that is not hex, or whose frame is not 14 to 1514 bytes, is an error. |
+| `--eth-out FILE` | Write the frames sent, the program's and the station's, to FILE, one per line in hex, without the padding to 60 bytes. A line of it is a valid line of `--eth-in`. |
+| `--eth-udp [ADDR:]PORT` | Receive frames as UDP datagrams on PORT of ADDR, `127.0.0.1` if no ADDR is given, written as for `--link`. It needs `--eth-peer`. |
+| `--eth-peer [ADDR:]PORT` | Send the frames sent to this address, one UDP datagram each, padded to 60 bytes. It needs `--eth-udp`. |
 | `--symbols FILE` | Read the labels of `niceasm.py --symbols` from FILE, and name the location of a halt other than `HALT`, of the step limit, and of a wasm trap (see Symbols file below). |
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
@@ -245,7 +249,8 @@ address twice and a file with no words are errors.
 | `0xFFFFFF80`–`0xFFFFFF9F` | 32 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (SYSTEM.md §1.4), and takes its font base from `0xFFFFFF86` (SYSTEM.md §1.8). |
 | `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | SD card controller (SYSTEM.md §5). Two slots, with the images of `--sd0` and `--sd1`. |
 | `0xFFFFFFB0`–`0xFFFFFFBF` | 16 | Network station (SYSTEM.md §6). The IP and MAC addresses, counts of frames that read 0, and the state of `--link`. |
-| `0xFFFFFFC0`–`0xFFFFFFFF` | 64 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. SYSTEM.md's memory map reserves `0xFFFFFFC0`–`0xFFFFFFCF` for a device still to come. |
+| `0xFFFFFFC0`–`0xFFFFFFCF` | 16 | Ethernet frames (SYSTEM.md §7). A queue of 4 frames and a send buffer, with the frames of `--eth-in` and `--eth-udp`. |
+| `0xFFFFFFD0`–`0xFFFFFFFF` | 48 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. |
 
 ### Screen
 
@@ -377,6 +382,31 @@ it reads 0. Writes to all but the addresses are ignored.
 `test/net.nasm` checks the reset values, the ignored writes, and
 `NET_MAC_HI`'s 16 bits. A unit test in `src/cpu.zig` checks that a start
 keeps the station.
+
+### Ethernet frames
+
+The emulator has no Ethernet: the frames come from `--eth-in` and
+`--eth-udp`, and go to `--eth-out` and `--eth-peer`. A frame is sent in
+the write of `ETH_TX_LEN`, so busy never reads 1. The lines of `--eth-in`
+arrive in order, at the write of `ETH_CSR` that enables the port and at
+each frame sent, a line `N:` once the program has sent N frames since
+niceemu started, so a run is the same each time. A datagram arrives when
+niceemu next looks, every 1024 steps, and between the chunks of steps of
+`--window` and `--link`. Before the queue, the station answers an ARP
+request for `NET_IP` and a ping to it, while `NET_IP` is not 0, and keeps
+TCP to the port of `--link`. It drops frames to other MAC addresses
+without counting them. Its counts in `0xFFFFFFB3`–`B5` stay 0. Reset, at
+a start of the debug link, keeps the send buffer and the lines that have
+not arrived.
+
+`test/eth.nasm` checks the registers, the queue filled and emptied, the
+window and its chunks, a frame sent, an ARP reply, and a line that waits
+for a frame sent, with `test/eth.in`; the frames sent must be those of
+`test/eth.frames.expected`. The unit tests in `src/eth.zig` check the
+layout of a frame in the buffer, the lengths, the ping reply and its
+checksums, TCP to the link's port, an IP address of 0, and the lines of
+`--eth-in`. `test/udp.py` checks the socket, with a peer that sends an ARP
+request and a frame that the program sends back.
 
 ### Instruction fetches and the memory
 
@@ -526,6 +556,8 @@ a step and a go on from a written R15, also at a breakpoint, and `e04`
 while halted, held, and running. And it checks the network station's
 `NET_STATUS`, with the port and a host connected, and that a start, a
 clear, and a new connection keep `NET_IP`.
+Last, `test/udp.py` checks the frames over the socket of `--eth-udp`
+(Ethernet frames above).
 
 `test/cputest.nasm` is a self-checking test of the whole instruction set:
 every opcode, shift, addressing mode, and condition, the flags, R0, R14, and

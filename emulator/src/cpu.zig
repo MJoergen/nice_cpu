@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const font = @import("font.zig");
+const eth_zig = @import("eth.zig");
 
 /// SR bit numbers (§1.3).
 pub const sr_i: u5 = 31;
@@ -623,6 +624,12 @@ fn netWord(addr: u32) ?u4 {
     return if (addr -% net_base < 16) @truncate(addr -% net_base) else null;
 }
 
+/// The word of the port for Ethernet frames (SYSTEM §7) that `addr`
+/// names, if it names one.
+fn ethWord(addr: u32) ?u4 {
+    return if (addr -% eth_zig.base < 16) @truncate(addr -% eth_zig.base) else null;
+}
+
 pub const Cpu = struct {
     /// R0..R15. Read and write them through `getReg` and `setReg`, which
     /// apply the rules for R0 and R14 (§4.3).
@@ -669,6 +676,8 @@ pub const Cpu = struct {
     sd: Sd,
     /// The network station at `net_base`, which `reset` leaves alone.
     net: Net,
+    /// The port for Ethernet frames at `eth_zig.base`.
+    eth: eth_zig.Eth,
     /// The host's clock for the microsecond counter, or null to count one
     /// microsecond per step (`--step-time`, and the unit tests).
     clock: ?*Clock,
@@ -719,6 +728,7 @@ pub const Cpu = struct {
             .timer = .{},
             .sd = .{},
             .net = .{},
+            .eth = .{},
             .clock = null,
             .cycle_counter = true,
             .timer_irq = true,
@@ -734,6 +744,21 @@ pub const Cpu = struct {
         self.mem.deinit();
     }
 
+    /// What the station of the Ethernet frames needs of its registers
+    /// (SYSTEM §6, §7).
+    pub fn station(self: *const Cpu) eth_zig.Station {
+        return .{
+            .ip = self.net.ip,
+            .mac = @as(u48, self.net.mac_hi) << 32 | self.net.mac_lo,
+            .tcp_port = @truncate(self.net.status),
+        };
+    }
+
+    /// A frame from the host, from a UDP socket, arrives at the station.
+    pub fn receiveFrame(self: *Cpu, frame: []const u8) void {
+        self.eth.receive(frame, self.station());
+    }
+
     pub fn reset(self: *Cpu) void {
         self.regs = @splat(0);
         self.regs[14] = one_bit;
@@ -746,6 +771,7 @@ pub const Cpu = struct {
         self.perf = .{};
         self.timer = .{};
         self.sd.reset();
+        self.eth.reset();
         if (self.clock) |c| c.reset();
     }
 
@@ -814,6 +840,7 @@ pub const Cpu = struct {
         if (timerWord(addr)) |i| return self.timer.read(i);
         if (sdWord(addr)) |i| return self.sd.read(i);
         if (netWord(addr)) |i| return self.net.read(i);
+        if (ethWord(addr)) |i| return self.eth.read(i);
         return self.mem.read(addr);
     }
 
@@ -839,6 +866,7 @@ pub const Cpu = struct {
         if (timerWord(addr)) |i| return self.timer.read(i);
         if (sdWord(addr)) |i| return self.sd.read(i);
         if (netWord(addr)) |i| return self.net.read(i);
+        if (ethWord(addr)) |i| return self.eth.read(i);
         return self.mem.peek(addr);
     }
 
@@ -863,6 +891,8 @@ pub const Cpu = struct {
             self.sd.write(i, value);
         } else if (netWord(addr)) |i| {
             self.net.write(i, value);
+        } else if (ethWord(addr)) |i| {
+            self.eth.write(i, value, self.station());
         } else if (addr != console_addr or self.console == null) {
             try self.mem.write(addr, value);
         }
@@ -2614,4 +2644,30 @@ test "network station: the registers, their reset values, and a start (SYSTEM §
     cpu.reset(); // a start keeps the station
     try testing.expectEqual(0xFFFF_FFFF, cpu.read(net_base));
     try testing.expectEqual(0x8000_119E, cpu.read(net_base + 6));
+}
+
+test "Ethernet frames: the port's words, a start, and the station's registers (SYSTEM §7)" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    const base = eth_zig.base;
+    for (0..16) |i| try testing.expectEqual(0, cpu.read(base + @as(u32, @intCast(i))));
+    try cpu.write(base, 1);
+    try cpu.write(base + 3, 0x100);
+    try cpu.write(base + 8, 0x1234);
+    try testing.expectEqual(1, cpu.read(base));
+    try testing.expectEqual(0x1234, cpu.peek(base + 8));
+    try testing.expectEqual(0, cpu.mem.pages.count()); // no word is memory
+    // A frame to the station's MAC address, which a write of NET_MAC_LO changes.
+    var f = [_]u8{ 0x02, 0x4E, 0x49, 0x43, 0x45, 0x00, 2, 0, 0, 0, 0, 1, 0x88, 0xB5 };
+    cpu.receiveFrame(&f);
+    try testing.expectEqual(14, cpu.read(base + 1));
+    try cpu.write(net_base + 2, 0x4943_4501);
+    cpu.receiveFrame(&f);
+    try testing.expectEqual(0, cpu.read(base + 4)); // not to this station: not counted
+    f[5] = 1;
+    cpu.receiveFrame(&f);
+    try testing.expectEqual(0b11, cpu.read(base));
+    cpu.reset();
+    for (0..8) |i| try testing.expectEqual(0, cpu.read(base + @as(u32, @intCast(i))));
+    try testing.expectEqual(0x1234, cpu.eth.tx[0]); // a start keeps the send buffer
 }

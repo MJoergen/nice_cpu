@@ -46,8 +46,9 @@ follows a tag.
 instruction set of [doc/ISA.md](doc/ISA.md), the interrupts included,
 and the devices of [doc/SYSTEM.md](doc/SYSTEM.md): the console, the
 80×25 character screen, the math unit, the performance counters, the
-timer, the SD card controller, and the network station's registers. It is the reference that the FPGA
-cores are compared with.
+timer, the SD card controller, the network station's registers, and the
+port for Ethernet frames. It is the reference that the FPGA cores are
+compared with.
 It can:
 
 - run a program until it halts, and print why it stopped, the number of
@@ -58,6 +59,8 @@ It can:
   typed into it going to the console, at a set speed or as fast as the
   host can (a build with `-Dwindow`);
 - raise IRQ and NMI requests at chosen steps, and stop at a step limit;
+- give a program Ethernet frames from a file or a UDP socket, and send
+  its frames to a file or a peer;
 - name the label where a program halted or trapped, from the symbols
   file of the assembler;
 - serve the debug link of [doc/DEBUG.md](doc/DEBUG.md) over TCP, so that

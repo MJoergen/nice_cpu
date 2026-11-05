@@ -80,6 +80,25 @@ CASES: List[Tuple[List[str], Optional[str], str]] = [
      "niceemu: empty.img: an SD card image must be a positive multiple of 512 bytes, not 0"),
     (["--sd1", "odd.img", "BIN"], "00000000 0c000000",
      "niceemu: odd.img: an SD card image must be a positive multiple of 512 bytes, not 700"),
+    (["BIN", "--eth-in"], "00000000 0c000000", "niceemu: --eth-in needs a value"),
+    (["--eth-in", "does-not-exist.eth", "BIN"], "00000000 0c000000",
+     "niceemu: cannot read does-not-exist.eth: FileNotFound"),
+    (["--eth-out", "no/such/dir.eth", "BIN"], "00000000 0c000000",
+     "niceemu: cannot write no/such/dir.eth: FileNotFound"),
+    # main() makes the .eth files of ETH_FILES.
+    (["--eth-in", "short.eth", "BIN"], "00000000 0c000000", "short.eth:2: error: a frame has 14 to 1514 bytes, not 13"),
+    (["--eth-in", "long.eth", "BIN"], "00000000 0c000000", "long.eth:1: error: a frame has 14 to 1514 bytes, not 1515"),
+    (["--eth-in", "digit.eth", "BIN"], "00000000 0c000000", "digit.eth:1: error: a byte has one hex digit"),
+    (["--eth-in", "hex.eth", "BIN"], "00000000 0c000000", "hex.eth:1: error: 'z' is not a hex digit"),
+    (["--eth-in", "count.eth", "BIN"], "00000000 0c000000", "count.eth:1: error: '-1' is not a decimal count of frames"),
+    (["--eth-in", "big.eth", "BIN"], "00000000 0c000000",
+     "big.eth:1: error: '18446744073709551616' is larger than 18446744073709551615"),
+    (["--eth-udp", "0", "BIN"], "00000000 0c000000", "niceemu: --eth-udp and --eth-peer go together"),
+    (["--eth-peer", "0", "BIN"], "00000000 0c000000", "niceemu: --eth-udp and --eth-peer go together"),
+    (["--eth-udp", "x", "BIN"], "00000000 0c000000", "niceemu: --eth-udp: bad number 'x'"),
+    (["--eth-peer", "1.2.3:5", "BIN"], "00000000 0c000000", "niceemu: --eth-peer: bad address '1.2.3'"),
+    (["--eth-udp", "192.0.2.1:0", "--eth-peer", "9", "BIN"], "00000000 0c000000",
+     "niceemu: cannot receive frames on 192.0.2.1:0: AddressUnavailable"),
     (["BIN", "--symbols"], "00000000 0c000000", "niceemu: --symbols needs a value"),
     (["--symbols", "does-not-exist.sym", "BIN"], "00000000 0c000000",
      "niceemu: cannot read does-not-exist.sym: FileNotFound"),
@@ -96,6 +115,17 @@ CASES: List[Tuple[List[str], Optional[str], str]] = [
     (["BIN"], "00000000 0c000000\n\n00000000 0c000000",
      "BIN:3: error: address 00000000 is already loaded by line 1"),
 ]
+
+# The --eth-in files of CASES, by name.
+FRAME = "ffffffffffff 020000000001 88b5"
+ETH_FILES = {
+    "short.eth": FRAME + "\n" + FRAME[:-2] + "\n",
+    "long.eth": FRAME + " 00" * 1501 + "\n",
+    "digit.eth": FRAME[:-1] + " 5\n",
+    "hex.eth": "z" + FRAME[1:] + "\n",
+    "count.eth": "-1: " + FRAME + "\n",
+    "big.eth": "18446744073709551616: " + FRAME + "\n",
+}
 
 # Runs that succeed: (contents of the .bin file, arguments before it, exit
 # status, lines that stdout must have, or must not have if they start with
@@ -170,6 +200,9 @@ def main() -> None:
         for name, size in (("empty.img", 0), ("odd.img", 700)):
             with open(os.path.join(tmp, name), "wb") as f:
                 f.write(bytes(size))
+        for name, text in ETH_FILES.items():
+            with open(os.path.join(tmp, name), "w") as f:
+                f.write(text)
         for args, text, expected in CASES:
             expected = expected.replace("BIN", path)
             p = run(tmp, args, text)

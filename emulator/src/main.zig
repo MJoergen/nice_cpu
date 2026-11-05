@@ -7,6 +7,7 @@ const Image = @import("cpu.zig").Image;
 const sector_bytes = @import("cpu.zig").sector_bytes;
 const Link = @import("link.zig").Link;
 const frame = @import("frame.zig");
+const eth = @import("eth.zig");
 const build_options = @import("build_options");
 const Window = if (build_options.window) @import("window.zig").Window else void;
 
@@ -20,8 +21,9 @@ const usage =
     \\the end of the input.
     \\The timer is at 0xFFFFFF10-0xFFFFFF1F, the math unit at 0xFFFFFF20-
     \\0xFFFFFF3F, the performance counters at 0xFFFFFF40-0xFFFFFF7F, the SD
-    \\card controller at 0xFFFFFFA0-0xFFFFFFAF, and the network station's
-    \\registers at 0xFFFFFFB0-0xFFFFFFBF.
+    \\card controller at 0xFFFFFFA0-0xFFFFFFAF, the network station's
+    \\registers at 0xFFFFFFB0-0xFFFFFFBF, and the port for Ethernet frames
+    \\at 0xFFFFFFC0-0xFFFFFFCF.
     \\
     \\Options:
     \\  -t, --trace          Print one line per instruction.
@@ -38,6 +40,13 @@ const usage =
     \\      --sd0 FILE       Put a card into SD slot 0, with FILE as its image of
     \\                       512-byte sectors. Write-protected if FILE cannot be written.
     \\      --sd1 FILE       The same for slot 1.
+    \\      --eth-in FILE    Receive the Ethernet frames of FILE, one per line in
+    \\                       hex, as doc/SYSTEM.md §7 says: at the write that
+    \\                       enables the port, and at each frame sent.
+    \\      --eth-out FILE   Write the frames sent to FILE, one per line in hex.
+    \\      --eth-udp [ADDR:]PORT  Receive frames as UDP datagrams on PORT of ADDR
+    \\                       (default 127.0.0.1), and send them to --eth-peer.
+    \\      --eth-peer [ADDR:]PORT  The address the frames of --eth-udp go to.
     \\      --symbols FILE   Read labels from FILE, as niceasm --symbols writes it, and
     \\                       name the location of a halt other than HALT, and of a
     \\                       wasm trap (translator/WASM.md), after the halt message.
@@ -110,6 +119,12 @@ const Options = struct {
     input_given: bool = false,
     /// The image files of the SD card slots, or "" for an empty slot.
     sd: [2][]const u8 = .{ "", "" },
+    /// The files of the Ethernet frames received and sent, or "" for none,
+    /// and the UDP socket's address and its peer (doc/SYSTEM.md §7).
+    eth_in: []const u8 = "",
+    eth_out: []const u8 = "",
+    eth_udp: ?std.Io.net.IpAddress = null,
+    eth_peer: ?std.Io.net.IpAddress = null,
     /// The label file of niceasm --symbols, or "" for none.
     symbols: []const u8 = "",
     /// The address of --link, or null to run the program once.
@@ -221,6 +236,8 @@ var stop_signal: std.atomic.Value(u8) = .init(0);
 
 /// How often, in steps, the run loop looks at `stop_signal`.
 const signal_check_mask: u64 = 0xFFFF;
+/// How often the run loop looks for frames on the socket of --eth-udp.
+const eth_check_mask: u64 = 0x3FF;
 
 fn onSignal(sig: std.posix.SIG) callconv(.c) void {
     stop_signal.store(@intCast(@backingInt(sig)), .release);
@@ -360,7 +377,7 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "-i", "--input", "--irq", "--nmi", "--sd0", "--sd1", "--symbols", "--link", "--speed" }) |o| {
+        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "-i", "--input", "--irq", "--nmi", "--sd0", "--sd1", "--eth-in", "--eth-out", "--eth-udp", "--eth-peer", "--symbols", "--link", "--speed" }) |o| {
             if (std.mem.eql(u8, arg, o)) break true;
         } else false;
         const value = if (takes_value) blk: {
@@ -407,6 +424,14 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
             });
         } else if (std.mem.eql(u8, arg, "--sd0") or std.mem.eql(u8, arg, "--sd1")) {
             opts.sd[arg[4] - '0'] = value;
+        } else if (std.mem.eql(u8, arg, "--eth-in")) {
+            opts.eth_in = value;
+        } else if (std.mem.eql(u8, arg, "--eth-out")) {
+            opts.eth_out = value;
+        } else if (std.mem.eql(u8, arg, "--eth-udp")) {
+            opts.eth_udp = try parseLink(arg, value);
+        } else if (std.mem.eql(u8, arg, "--eth-peer")) {
+            opts.eth_peer = try parseLink(arg, value);
         } else if (std.mem.eql(u8, arg, "--symbols")) {
             opts.symbols = value;
         } else if (std.mem.eql(u8, arg, "--link")) {
@@ -432,6 +457,7 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
     }
     if (opts.link != null and opts.input_given) return fail("--input cannot be given with --link", .{});
     if (speed_given and !opts.window) return fail("--speed needs --window", .{});
+    if ((opts.eth_udp == null) != (opts.eth_peer == null)) return fail("--eth-udp and --eth-peer go together", .{});
     if (opts.window and !build_options.window) return fail("--window needs a build with -Dwindow (emulator/README.md)", .{});
     if (opts.path.len == 0 and opts.link == null) return fail("no program given\n\n{s}", .{usage});
     opts.dumps = dumps.items;
@@ -496,6 +522,80 @@ fn openImage(arena: std.mem.Allocator, io: std.Io, path: []const u8) error{ Load
         .read_fn = ImageFile.read,
         .write_fn = ImageFile.write,
     };
+}
+
+/// The host's side of the Ethernet frames (doc/SYSTEM.md §7): the file of
+/// --eth-out, and the UDP socket of --eth-udp with its peer.
+const EthHost = struct {
+    io: std.Io,
+    out: ?*std.Io.Writer = null,
+    sock: ?std.Io.net.Socket = null,
+    peer: std.Io.net.IpAddress = undefined,
+    out_w: std.Io.File.Writer = undefined,
+    out_buf: [4096]u8 = undefined,
+
+    fn send(ctx: *anyopaque, f: []const u8) void {
+        const self: *EthHost = @ptrCast(@alignCast(ctx));
+        if (self.out) |w| {
+            eth.writeLine(w, f) catch {};
+            w.flush() catch {};
+        }
+        if (self.sock) |*sock| {
+            // Padded, as on the wire.
+            var padded: [eth.wire_min_len]u8 = @splat(0);
+            const data = if (f.len < eth.wire_min_len) blk: {
+                @memcpy(padded[0..f.len], f);
+                break :blk &padded;
+            } else f;
+            sock.send(self.io, &self.peer, data) catch {};
+        }
+    }
+
+    /// Pass the datagrams that wait on the socket to the station, without
+    /// waiting for one.
+    fn poll(self: *EthHost, cpu: *Cpu) void {
+        const sock = self.sock orelse return;
+        var buf: [2048]u8 = undefined;
+        while (true) {
+            var fds = [1]std.posix.pollfd{.{ .fd = sock.handle, .events = std.posix.POLL.IN, .revents = 0 }};
+            const n = std.posix.poll(&fds, 0) catch return;
+            if (n == 0 or fds[0].revents & std.posix.POLL.IN == 0) return;
+            const msg = sock.receive(self.io, &buf) catch return;
+            if (msg.data.len >= eth.min_len and msg.data.len <= eth.max_len) cpu.receiveFrame(msg.data);
+        }
+    }
+};
+
+/// Set up the Ethernet frames of `opts` on `cpu`, with `host` the host's
+/// side.
+fn openEth(arena: std.mem.Allocator, io: std.Io, opts: Options, cpu: *Cpu, host: *EthHost) error{ Load, OutOfMemory }!void {
+    host.* = .{ .io = io };
+    if (opts.eth_in.len != 0) {
+        const text = std.Io.Dir.cwd().readFileAlloc(io, opts.eth_in, arena, .limited(1 << 30)) catch |err| {
+            std.debug.print("niceemu: cannot read {s}: {s}\n", .{ opts.eth_in, @errorName(err) });
+            return error.Load;
+        };
+        cpu.eth.lines = eth.parseLines(arena, opts.eth_in, text) catch |err| switch (err) {
+            error.Parse => return error.Load,
+            error.OutOfMemory => return error.OutOfMemory,
+        };
+    }
+    if (opts.eth_out.len != 0) {
+        const file = std.Io.Dir.cwd().createFile(io, opts.eth_out, .{}) catch |err| {
+            std.debug.print("niceemu: cannot write {s}: {s}\n", .{ opts.eth_out, @errorName(err) });
+            return error.Load;
+        };
+        host.out_w = file.writerStreaming(io, &host.out_buf);
+        host.out = &host.out_w.interface;
+    }
+    if (opts.eth_udp) |addr| {
+        host.sock = addr.bind(io, .{ .mode = .dgram }) catch |err| {
+            std.debug.print("niceemu: cannot receive frames on {f}: {s}\n", .{ addr, @errorName(err) });
+            return error.Load;
+        };
+        host.peer = opts.eth_peer.?;
+    }
+    if (host.out != null or host.sock != null) cpu.eth.wire = .{ .ctx = host, .send_fn = EthHost.send };
 }
 
 /// Load a `.bin` file (doc/ISA.md §10.4): one "address word" line per word,
@@ -564,8 +664,10 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
     for (opts.sd, 0..) |path, slot| {
         if (path.len != 0) cpu.sd.insert(@intCast(slot), try openImage(arena, io, path));
     }
+    const eth_host = try arena.create(EthHost);
+    try openEth(arena, io, opts, &cpu, eth_host);
     const syms: []const Symbol = if (opts.symbols.len != 0) try loadSymbols(arena, io, opts.symbols) else &.{};
-    if (opts.link) |addr| return serve(arena, io, opts, syms, &cpu, addr);
+    if (opts.link) |addr| return serve(arena, io, opts, syms, &cpu, addr, eth_host);
 
     if (opts.trace) cpu.trace = out;
     cpu.console = out;
@@ -602,13 +704,14 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
     in_r = InterruptibleReader.init(in_file.handle, &in_buf);
     catchSignals();
     if (comptime build_options.window) {
-        if (opts.window) return runWindow(arena, io, out, opts, syms, &cpu, if (opts.input_given) &in_r.interface else null);
+        if (opts.window) return runWindow(arena, io, out, opts, syms, &cpu, if (opts.input_given) &in_r.interface else null, eth_host);
     }
     cpu.input = .fromReader(&in_r.interface);
     // A step is one instruction, or the entry into an interrupt.
     var steps: u64 = 0;
     var next: usize = 0;
     while (!cpu.halted() and steps < opts.max_steps) : (steps += 1) {
+        if (steps & eth_check_mask == 0) eth_host.poll(&cpu);
         if (steps & signal_check_mask == 0) {
             const sig = stop_signal.load(.acquire);
             if (sig != 0) dieOfSignal(out, sig);
@@ -739,7 +842,7 @@ fn windowOpen(win: *Window, cpu: *const Cpu, opts: Options, wait_ms: u32, steps:
 /// `file`, if given, then the keys. After the halt or the step limit, the
 /// report is printed, and the window stays until it is closed. Closing it
 /// before ends the run.
-fn runWindow(arena: std.mem.Allocator, io: std.Io, out: *std.Io.Writer, opts: Options, syms: []const Symbol, cpu: *Cpu, file: ?*std.Io.Reader) !u8 {
+fn runWindow(arena: std.mem.Allocator, io: std.Io, out: *std.Io.Writer, opts: Options, syms: []const Symbol, cpu: *Cpu, file: ?*std.Io.Reader, eth_host: *EthHost) !u8 {
     var win: Window = undefined;
     win.open(arena, opts.invert_fg, file) catch return error.Load;
     defer win.close(arena);
@@ -753,6 +856,7 @@ fn runWindow(arena: std.mem.Allocator, io: std.Io, out: *std.Io.Writer, opts: Op
     while (!cpu.halted() and steps < opts.max_steps) {
         const sig = stop_signal.load(.acquire);
         if (sig != 0) dieOfSignal(out, sig);
+        eth_host.poll(cpu);
         // A chunk of steps, which a wait loop cuts short.
         const end = @min(opts.max_steps, steps +| chunk);
         var wait_ms: u32 = 0;
@@ -821,7 +925,7 @@ fn exitOnSignal() void {
 /// Serve the debug link (doc/DEBUG.md) on `addr`, and run each program
 /// that the host starts. What a run prints goes to stderr. Runs until a
 /// signal, or with --window until the window is closed.
-fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symbol, cpu: *Cpu, addr: std.Io.net.IpAddress) !u8 {
+fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symbol, cpu: *Cpu, addr: std.Io.net.IpAddress, eth_host: *EthHost) !u8 {
     var err_buf: [64 * 1024]u8 = undefined;
     var err_w = std.Io.File.stderr().writerStreaming(io, &err_buf);
     const out = &err_w.interface;
@@ -861,6 +965,7 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
     var reported = false;
     while (true) {
         exitOnSignal();
+        eth_host.poll(cpu);
         if (link.started) {
             link.started = false;
             cpu.reset();
@@ -1091,6 +1196,7 @@ test "two idle reads within 1000 steps of each other are a wait loop" {
 
 test {
     _ = @import("cpu.zig");
+    _ = @import("eth.zig");
     _ = @import("link.zig");
     _ = @import("frame.zig");
     _ = @import("keys.zig");

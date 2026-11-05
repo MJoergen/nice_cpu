@@ -93,7 +93,8 @@ for `SIM`.
 `make test` builds the emulator, analyzes the VHDL, checks that GHDL can
 synthesize both cores, the math unit, the performance counters, the timer,
 the fetch statistics, the data bus decoder, the debug link, the SD card
-controller, and the network station (`ghdl --synth`), and runs the tests, those of
+controller, the network station, and the port for Ethernet frames
+(`ghdl --synth`), and runs the tests, those of
 the cores once for each core. Everything it makes goes in `build/`.
 `make clean` removes it.
 
@@ -439,7 +440,7 @@ asserts, in simulation, the invariants that its design relies on.
 index of the slave, so the decoder holds no address map. In `tb_core`,
 slave 0 is the memory model, the default slave, then come the math unit,
 the performance counters, the timer, the fetch statistics, the SD card
-controller, and the network station. CYC, WE, ADDR, and the write data go to every slave
+controller, the network station, and the port for Ethernet frames. CYC, WE, ADDR, and the write data go to every slave
 directly.
 
 The slaves answer at their own pace: the math unit holds the ACK of a read
@@ -684,6 +685,27 @@ which a board connects to its station. `tb_core` ties them to 0, as the
 emulator without `--link` reads them. Its `rst_i` is the reset of the
 system: a start of the processor leaves the station as it is.
 
+## Ethernet frames
+
+`eth_regs` holds the port for Ethernet frames of SYSTEM.md §7: the 16
+words, the queue of 4 frames, a RAM of 4 slots of 512 words, and the
+send buffer, a RAM of 512 words. The bus decoder selects it for
+`0xFFFFFFC0`–`0xFFFFFFCF`. A station writes a frame received with
+`rx_start_i`, one `rx_we_i` per word, and `rx_done_i` with the length;
+the port decides at `rx_start_i` whether it takes the frame, or drops and
+counts it, so the station need not know what the program wants. A frame
+enters the queue only when whole. A send raises `tx_start_o` with the
+length, the station reads the buffer through `tx_addr_i` and `tx_data_o`,
+and `tx_done_i` ends it; `busy_o` is high meanwhile. With `G_HOLD_ACK`,
+the ACK of the write that enables the port waits for `enable_done_i`,
+and that of a write that sends for `tx_done_i`. The simulation sets it, so
+the frames of a file arrive at those writes, as in the emulator. Its
+station is `sim/eth_sim.vhd`, which reads the frames of `G_IN_FILE`,
+answers ARP and ping for the station's IP address as the emulator does,
+and writes the frames sent to `G_OUT_FILE`, which `make test` compares
+with the emulator's `--eth-out`. A board leaves `G_HOLD_ACK` false and
+connects its station, which takes ARP, ping, and the link's TCP first.
+
 ## The trace writer
 
 The core reports each step in a `t_retire`: one instruction, skipped or not,
@@ -747,6 +769,14 @@ nothing.
 `tb_net_regs` checks the network station's reset values, the counts and
 the status that follow their inputs, the writes of the addresses with
 `wr_o` after each, the writes that the other words ignore, and reset.
+
+`tb_eth_regs` checks the port for Ethernet frames without the held ACK,
+as on a board: no frame taken or sent while not enabled, a frame that
+enters the queue only when whole, the queue filled and a frame dropped and
+counted, the window's chunks, a frame written during a release, a disable
+during a frame, a send with busy and the buffer on `tx_data_o`, the writes
+ignored while busy, and a reset during a send, which lets it finish and
+keeps the buffer.
 
 `tb_fetch_stats` drives the events of a few cycles by hand. It checks
 that each counter counts its events from the cycle after a write that
@@ -1141,6 +1171,7 @@ formal/UNIT/TASK` runs one task, for example `make formal/pipe_fetch/prove`.
 | `timer` | The timer's ports. | k-induction of depth 10, Yices | seconds |
 | `sd_regs` | The SD card controller's bus and engine ports, with and without the held ACK. | k-induction of depth 10, Yices | seconds |
 | `net_regs` | The network station's bus port, and what sets its addresses and `wr_o`. | k-induction of depth 10, Yices | seconds |
+| `eth_regs` | The port for Ethernet frames: its bus and station ports, with and without the held ACK. | k-induction of depth 10, Yices | seconds |
 | `perf` | The performance counters, against a model. | PDR | 20 seconds |
 | `fetch_stats` | The fetch statistics: what each cycle does to the counters. | k-induction, Boolector | half a minute |
 | `mpu` | The math unit's port, its waits, and its quotients and remainders for every pair of operands. | k-induction, Boolector | about 2 minutes |
@@ -1227,6 +1258,15 @@ a reset, and a Read that reset abandons.
 input free. It asserts that a write of an address sets it, with `wr_o`
 in the next cycle, that the addresses change at no other time but reset,
 and their reset values. The `cover` task shows a write of each address.
+
+`formal_eth_regs` checks the port for Ethernet frames with every input
+free, and a station that ends a send only while one runs. It asserts that
+`busy_o` follows a send, that no send starts while one runs, that its
+length is 14 to 1514 and holds, and what sets and clears "enabled". With
+the held ACK, it asserts what `formal_sd_regs` does of a port that may
+wait, and `eth_regs`'s `G_FORMAL` proves the invariants of its two held
+ACKs and the queue; `prove_nohold` adds `wb_slave_check`. The `cover`
+task shows a held send and a held enable that end with their ACK.
 
 `formal_nice_pkg` proves the functions that both cores share, for every
 input. They are combinational, so a bounded check of depth 1 covers every

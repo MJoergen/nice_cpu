@@ -786,7 +786,9 @@ emulator, as a convenience for building a system. Of the SD card
 controller of SYSTEM.md §5, `hdl/src/sd_regs.vhd` has the registers and
 the buffer, and a board adds the engine that talks to its cards. Of the
 network station of SYSTEM.md §6, `hdl/src/net_regs.vhd` has the
-registers, and a board connects its station to them. Here they are tested in
+registers, and a board connects its station to them. Of the Ethernet
+frames of SYSTEM.md §7, `hdl/src/eth_regs.vhd` has the registers and the
+buffers, and the board's station writes and reads the frames. Here they are tested in
 simulation only, where `hdl/sim/wb_mem.vhd` stands in for the memory and
 the console, and each core runs beside the emulator, with their traces
 compared (§9). NiceMonMEGA65 uses them and tests them on hardware. A
@@ -871,6 +873,11 @@ system built from them must follow these rules:
   (SYSTEM §6): the IP and MAC addresses as outputs, and the counts and the
   link's status as inputs from the board's station. It takes the reset of
   the system, not that of a start of the processor.
+- **Ethernet frames.** `hdl/src/eth_regs.vhd` at `0xFFFFFFC0`–`0xFFFFFFCF`
+  (SYSTEM §7): the registers, the queue, and the send buffer, with a port
+  to the board's station, which passes it the frames it does not serve
+  itself. With `G_HOLD_ACK`, as in simulation, the ACKs of the write that
+  enables it and of a send wait until the station has served them.
 - **Timing.** `instret_o` and `dbus_ack_i` have the least time left to the
   system: about 1 to 3 ns of a 10 ns clock, from WRITE's retire. See
   [hdl/README.md](../hdl/README.md), `make timing`, for the figures.

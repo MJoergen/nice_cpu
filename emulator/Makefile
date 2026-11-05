@@ -23,7 +23,7 @@ OPTS_wrap      = -d 0xffffffff:1
 # are in the comments of each program. Run make bins after changing one.
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge irqtimer after start cputest console screen screencolor screeninvert iofetch \
   reads reserved mpu mpu64 perf timer input r15modes r0dest r14mem skipconst carryin shiftc \
-  wrapmem smcown scrbound time trapsym sd font net
+  wrapmem smcown scrbound time trapsym sd font net eth
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
@@ -64,6 +64,8 @@ OPTS_scrbound2004 = -2004 -s
 # A fresh image for each run, as the probe writes it: byte o is o mod 251.
 OPTS_sd      = --sd0 test/sd.img.out -d 0x200:32 -d 0xffffffa0:16
 OPTS_net     = -d 0x200:17 -d 0xffffffb0:16
+# The frames sent go to test/eth.frames.out, checked after the probes.
+OPTS_eth     = --eth-in test/eth.in --eth-out test/eth.frames.out -d 0x200:33 -d 0xffffffc0:16
 OPTS_font    = -d 0xfffe0820:32 -d 0xfffe0020:1 -d 0xfffe2826:1 -d 0xffffff86:1
 
 define check
@@ -88,8 +90,11 @@ programs:
 	$(foreach t,$(PROBES),$(call check,$(t),test/$(t).bin))
 	$(call check,timer_noirq,test/timer.bin,timer)
 	$(call check,scrbound2004,test/scrbound.bin)
+	@if cmp -s test/eth.frames.out test/eth.frames.expected; then echo "PASS eth frames"; \
+	else echo "FAIL eth frames"; diff test/eth.frames.expected test/eth.frames.out; exit 1; fi
 	@rm -f test/*.out
 	@NICEEMU=$(abspath $(EMU)) $(PYTHON) test/link.py
+	@NICEEMU=$(abspath $(EMU)) $(PYTHON) test/udp.py
 
 build:
 	$(ZIG) build -Doptimize=ReleaseSafe
@@ -155,7 +160,7 @@ bincheck:
 
 # Needs mypy (pip install mypy).
 typecheck:
-	$(PYTHON) -m mypy --strict test/errors.py test/link.py test/window.py font/gen_font.py
+	$(PYTHON) -m mypy --strict test/errors.py test/link.py test/udp.py test/window.py font/gen_font.py
 
 clean:
 	rm -rf zig-out .zig-cache zig-pkg dist test/*.out

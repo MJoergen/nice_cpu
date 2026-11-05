@@ -14,6 +14,7 @@ pin each are:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|
+| `V1.7` | none yet |
 | `V1.6` | none yet |
 | `V1.5` | none yet |
 | `V1.4` | none yet |
@@ -30,6 +31,92 @@ pin each are:
 
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
+
+## V1.7 (2026-11-05)
+
+The network station and a port for Ethernet frames join the I/O
+range, in SYSTEM.md, the emulator, and as devices of the cores (#124,
+#121). The demo of NiceMonMEGA65's ROM moves here, to `demo/`, and
+runs in `niceemu --window` (#91).
+
+**Upgrade notes.**
+
+- `0xFFFFFFB0`–`0xFFFFFFBF` is the network station, and
+  `0xFFFFFFC0`–`0xFFFFFFCF` the port for Ethernet frames. Both were
+  reserved words, ordinary memory in the emulator. A program that kept
+  data there loses it. No program of the repository did.
+- SYSTEM.md's "Systems built on the FPGA core" is §8, from §6. The
+  ninth review keeps its references to §6, with a note that says so.
+- The I/O address map changes, and there are two new devices,
+  `hdl/src/net_regs.vhd` and `hdl/src/eth_regs.vhd`, for a board to
+  connect. The ports of both cores, `wb_dmux`, the other devices, and
+  the debug link are as in V1.6. NiceMonMEGA65 has the station at
+  `0xFFFFFF98`–`9D` and moves it with MJoergen/NiceMonMEGA65#78.
+- Zig 0.17.0, as in V1.6.
+
+**Specification and documents**
+
+- SYSTEM.md §6 is the network station: the IP and MAC addresses, the
+  counts of frames received and sent, and `NET_STATUS`, with the TCP
+  port of the debug link and a bit for a connected host. Only a system
+  reset sets the addresses, not a start or the link's clear (#124).
+- SYSTEM.md §7 is the port for Ethernet frames: a queue of 4 frames
+  received, one send buffer, and one window of 8 words into them, which
+  `ETH_CHUNK` moves. A frame starts at byte 2 of its buffer, so that the
+  fields of IPv4 and UDP fall on words. The station keeps ARP for its
+  address, the pings to it, and the TCP of the link, and the program
+  gets the other frames for it (#121).
+- DEBUG.md's start names the station, which keeps its addresses and
+  counts, and the port, whose frame being sent finishes first.
+- decisions.md records why `NET_IP` does not give the address of
+  `--link`, why the port has one window and not two, the features of
+  wasm that the translator will not support (#104), no stack check in
+  each prologue (#72), and no `long double` or `__int128` from C (#70).
+
+**Emulator (`niceemu`)**
+
+- The station's addresses are registers with their reset values. The
+  counts read 0, and `NET_STATUS` follows `--link`. The probe
+  `test/net.nasm` and `test/link.py` check them.
+- The port takes frames from `--eth-in FILE`, at the write that enables
+  it and at each send, so a run is the same each time, and from a UDP
+  socket with `--eth-udp` and `--eth-peer`. `--eth-out FILE` writes the
+  frames sent. The station answers ARP and ping before the queue. The
+  probe `test/eth.nasm` and `test/udp.py` check it.
+- The version is 1.7.0.
+
+**Translator (`nicewasm`, `nicebuild.py`)**
+
+- Function types with more than one result, passive segments, the
+  table instructions, and the reference instructions in code are not
+  planned. Their error messages, and those of any other unsupported
+  opcode, drop "yet" (#104).
+
+**FPGA cores (`hdl/`)**
+
+- `net_regs` holds the station's addresses for the board, and takes
+  the counts and the status from it. `eth_regs` has the port's
+  registers and buffers, with a port to the board's station. The net
+  and eth probes run on both cores against `niceemu`, with
+  `sim/eth_sim.vhd` as the station, and `make formal` proves both.
+- The cores do not change. `make timing` on the MEGA65 meets the budget
+  with V1.6's figures: the core alone has +0.503 ns of slack, and its
+  inputs and outputs leave 3.056 and 2.836 ns to the system around it.
+
+**Demo (`demo/`)**
+
+- The demo moves here from NiceMonMEGA65: the typewriter, the key
+  codes, the font and colors, the counters, the comet, and F11's
+  self-test, which shows the station's addresses and `NET_STATUS`. It
+  runs in `niceemu` behind the runtime's stand-in for a monitor, and
+  `build/demo.bin` is the program alone, for a board to join behind
+  its own. A board gives its own text with `TEXT=`. `make test`
+  compares its screens with the hand-checked `test.expected` (#91).
+
+**Benchmarks**
+
+- No change: 2339271 estimated cycles on the pipelined core, as in
+  V1.6.
 
 ## V1.6 (2026-11-05)
 

@@ -336,8 +336,9 @@ host that writes back what it read never steps by accident.
 
 - **Start.** When bit 0 goes from 1 to 0, the processor starts at address
   0, as the emulator starts a run. The math unit, the performance counters,
-  the timer, and the SD card controller start from their reset values, but
-  a Write of the SD card that has begun finishes first (SYSTEM.md §5). The
+  the timer, the SD card controller, and the port for Ethernet frames
+  start from their reset values, but a Write of the SD card that has begun,
+  and a frame being sent, finish first (SYSTEM.md §5, §7). The
   read counter keeps its value (SYSTEM.md §1), and the network station its
   addresses and counts (SYSTEM.md §6). The input buffer is emptied,
   and an earlier end of the input (§7.1) is cleared. Bit 1 and the halt reason are cleared, and
@@ -498,7 +499,7 @@ and bit 3 at 0. A system without one waits, held, with bit 0 at 1.
 
 - **UART.** NiceMonMEGA65 carries the link on its debug UART, 8-N-1, at
   2 Mbaud unless it was built for another rate. A UART break, a frame
-  of ten 0 bits, ends the line's input (SYSTEM.md §7): the host's
+  of ten 0 bits, ends the line's input (SYSTEM.md §8): the host's
   console bytes are dropped until the next start, and the console reads
   `0x200` (SYSTEM.md §1) once its buffer is empty. A keyboard's bytes
   still reach the program, so a monitor that a host leaves keeps running

@@ -31,7 +31,8 @@ data read returns.
 - [4. Timer](#4-timer)
 - [5. SD card](#5-sd-card)
 - [6. Network station](#6-network-station)
-- [7. Systems built on the FPGA core](#7-systems-built-on-the-fpga-core)
+- [7. Ethernet frames](#7-ethernet-frames)
+- [8. Systems built on the FPGA core](#8-systems-built-on-the-fpga-core)
 
 ## Memory map
 
@@ -55,7 +56,7 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 | `0xFFFFFF87`–`0xFFFFFF9F` | 25 | Reserved for I/O. |
 | `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | SD card (§5). |
 | `0xFFFFFFB0`–`0xFFFFFFBF` | 16 | Network station (§6). |
-| `0xFFFFFFC0`–`0xFFFFFFCF` | 16 | Reserved for Ethernet frames (#121). |
+| `0xFFFFFFC0`–`0xFFFFFFCF` | 16 | Ethernet frames (§7). |
 | `0xFFFFFFD0`–`0xFFFFFFDF` | 16 | Reserved for I/O. |
 | `0xFFFFFFE0`–`0xFFFFFFFF` | 32 | Reserved for I/O. The debug link's registers are here, for the link only ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)). |
 
@@ -75,7 +76,7 @@ The emulator maps a console at `0xFFFFFF00`, and programs use it for input and o
 |---|---|
 | A byte waits | The byte in bits 7..0, with bit 8 set. |
 | No byte waits | 0, from a UART or from the emulator's window (§1.3). From stdin, a file, or the simulation memory of the FPGA core, the read waits for the next byte or the end of the input instead, and never returns 0. |
-| The input has ended | `0x200` (bit 9). A UART's input ends only if the system provides a break (§7), and a keyboard's never ends (§1.5). |
+| The input has ended | `0x200` (bit 9). A UART's input ends only if the system provides a break (§8), and a keyboard's never ends (§1.5). |
 
 The emulator reads its input from stdin, or from the file of its option `--input`, so stdin from `/dev/null` gives a console with no input. The simulation memory of the FPGA core reads a file too, and returns `0x200` without one. This repository has no UART. A system built on the FPGA core, such as the example design in [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), maps one at the same address, with the same bits (MICROARCH.md §8).
 
@@ -85,7 +86,7 @@ The emulator built with a window (its README says how) shows the screen in a win
 
 ### 1.4 Cursor
 
-The window draws a cursor from three words, numbered as the screen registers of NiceMonMEGA65 (§7). In the emulator they are ordinary memory, which the window only reads:
+The window draws a cursor from three words, numbered as the screen registers of NiceMonMEGA65 (§8). In the emulator they are ordinary memory, which the window only reads:
 
 | Address | What |
 |---|---|
@@ -113,7 +114,7 @@ With `--window`, the console reads the input of `--input`, if given, and then th
 
 A character outside ASCII and the other keys give nothing. A held key repeats as the host repeats it.
 
-With `--link`, the keys and the bytes from the host go into the one input buffer, in the order they arrive, as a board's keyboard and UART share one FIFO (§7). Keys typed while the processor is held or has halted are dropped, and keys typed while it is paused wait in the buffer, as the host's bytes do. A byte of a key waits until the buffer has room for two bytes, so that a byte from the host still finds room. When the host's input ends ([DEBUG.md §7](DEBUG.md#7-transports)), the host's bytes are dropped until the next start or the next connection, but the keys still go into the buffer, as after a break on a board's UART (§7). A read then returns a byte if one waits, and `0x200` otherwise. So a program that reads until the end still ends with the host's input, and one that reads on, as a monitor does, gets the keys.
+With `--link`, the keys and the bytes from the host go into the one input buffer, in the order they arrive, as a board's keyboard and UART share one FIFO (§8). Keys typed while the processor is held or has halted are dropped, and keys typed while it is paused wait in the buffer, as the host's bytes do. A byte of a key waits until the buffer has room for two bytes, so that a byte from the host still finds room. When the host's input ends ([DEBUG.md §7](DEBUG.md#7-transports)), the host's bytes are dropped until the next start or the next connection, but the keys still go into the buffer, as after a break on a board's UART (§8). A read then returns a byte if one waits, and `0x200` otherwise. So a program that reads until the end still ends with the host's input, and one that reads on, as a monitor does, gets the keys.
 
 ### 1.6 Pacing
 
@@ -139,7 +140,7 @@ Both fonts have the same layout. The word at the font's address + 32·c + r is r
 
 The font RAM and the base are 0 at the start of a run, and the debug link's clear makes them 0 again ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)), so the window shows Spleen until a program writes the base. A program that wants Spleen's letters and a few symbols of its own copies the ROM into the font RAM, changes the glyphs it wants, and writes `0xFFFE0000` to the base. The base is an address, so that a later system can show a font from elsewhere in memory without changing what programs see.
 
-The window draws every cell from the font that the base selects. While the font RAM is selected, a write to a glyph shows at the next redraw in every cell with its code, and a write to the base changes the whole screen at once. In the emulator, the base is ordinary memory that the window only reads, as the cursor's words are (§1.4), and is one of the words of NiceMonMEGA65's screen registers (§7).
+The window draws every cell from the font that the base selects. While the font RAM is selected, a write to a glyph shows at the next redraw in every cell with its code, and a write to the base changes the whole screen at once. In the emulator, the base is ordinary memory that the window only reads, as the cursor's words are (§1.4), and is one of the words of NiceMonMEGA65's screen registers (§8).
 
 The fonts are memory to every access. An instruction fetch reads them as a data read does, `--dump` and the debug link read and write them, and a write to the ROM is dropped from each. `--screen` and `--color` print the codes of the screen as text, whatever the font.
 
@@ -315,7 +316,7 @@ The errors in `SD_ERROR`:
 - `SD_SLOTS` is the number of slots that the system has, fixed when it is built, whether or not a card is in them. An empty slot counts.
 - A change of `SD_SELECT` takes effect at once. The status then shows the other slot, and "ready" is 0 until an Init of it, as the slots may share one controller. A slot at or above `SD_SLOTS` shows no card, and every command on it fails with error 1.
 - When a card is taken out, "ready" falls to 0. When one is put in, "changed" is set. Both stay so until the next Init of the slot.
-- A slot whose card detect does not work shows "present" as 1 at all times, "write-protected" as 0, and "changed" only after reset. A command on it with no card fails with error 3 or 8. §7 says which systems have such a slot.
+- A slot whose card detect does not work shows "present" as 1 at all times, "write-protected" as 0, and "changed" only after reset. A command on it with no card fails with error 3 or 8. §8 says which systems have such a slot.
 
 **Reset.** Reset, which a start of the processor gives the devices ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)), lets a Write that has begun finish, so that no sector on the card is torn, and abandons any other command. The Write finishes on its own slot, and reports nothing. Then, or when that Write ends, the controller is idle, with slot 0 selected, `SD_CHUNK`, `SD_LBA`, and `SD_ERROR` 0, the error bit and "ready" 0, and "changed" set if a card is present. The buffer is not defined. Busy may read 1 after reset for as long as the Write takes, so a program waits for busy before its first command, as before any other.
 
@@ -355,7 +356,7 @@ A system that serves the debug link over TCP ([DEBUG.md §7](DEBUG.md#7-transpor
 | 30..16 | 0 |
 | 15..0 | the TCP port on which the system serves the link |
 
-**On a board.** The station answers ARP requests for its IP address and pings to it, and serves the link on the port of `NET_STATUS`. With the IP address at 0 it answers nothing, so a board on a network stays silent until a program or the link gives it an address. The counts wrap at 2^32. The board's documentation says what makes a frame good or bad.
+**On a board.** The station answers ARP requests for its IP address and pings to it, and serves the link on the port of `NET_STATUS`. With the IP address at 0 it answers nothing, so a board on a network stays silent until a program or the link gives it an address. The counts wrap at 2^32. The board's documentation says what makes a frame good or bad. The frames that the station does not serve go to the port of §7, if the system has one, and are dropped otherwise.
 
 **A write of an address.** On a board, a write to `NET_IP`, `NET_MAC_HI`, or `NET_MAC_LO` breaks the connection of a host, and a reply that is going out.
 
@@ -366,22 +367,86 @@ A system that serves the debug link over TCP ([DEBUG.md §7](DEBUG.md#7-transpor
 **The emulator.**
 
 - `NET_IP`, `NET_MAC_HI`, and `NET_MAC_LO` are registers with the reset values above, which keep what a program writes. The emulator serves the link where `--link` says, whatever `NET_IP` holds, and a write closes no connection.
-- The counts read 0, as the emulator has no frames.
+- The counts read 0, also for the frames of §7.
 - `NET_STATUS` gives the port of `--link`, and bit 31 while a host is connected to it. Without `--link` it reads 0.
 - The emulator's reset is its launch: the registers keep their values for as long as it runs.
 
 Bit 31 of `NET_STATUS` changes when a host connects, which depends on the host, so a program whose result depends on it does not run the same each time.
 
-## 7. Systems built on the FPGA core
+## 7. Ethernet frames
+
+A system with a network station (§6) may map a port for Ethernet frames at `0xFFFFFFC0`–`0xFFFFFFCF`, through which a program sends and receives frames of its own. A program that does DHCP, DNS, NTP, or TFTP builds and parses the frames itself. The station keeps the frames it serves: the ARP requests for its IP address, the pings to it, and the TCP of the debug link. Every other frame that the station receives for its MAC address, or for everyone, goes to the program.
+
+| Address | Name | A data read returns | A write |
+|---|---|---|---|
+| `0xFFFFFFC0` | `ETH_CSR` | the status below | sets "enabled" to bit 0 |
+| `0xFFFFFFC1` | `ETH_RX_LEN` | the length in bytes of the frame at the head of the queue, and 0 when the queue is empty | releases that frame |
+| `0xFFFFFFC2` | `ETH_TX_LEN` | 0 | sends the first N bytes of the frame in the send buffer, where N is the value written |
+| `0xFFFFFFC3` | `ETH_CHUNK` | the chunk in bits 5..0, and the buffer in bit 8 | sets them to bits 5..0 and bit 8 |
+| `0xFFFFFFC4` | `ETH_DROPPED` | the frames dropped because the queue was full | is ignored |
+| `0xFFFFFFC5`–`0xFFFFFFC7` | | 0 | is ignored |
+| `0xFFFFFFC8`–`0xFFFFFFCF` | `ETH_BUF0`–`ETH_BUF7` | word 8·c + k of the buffer that bit 8 of `ETH_CHUNK` selects, where c is the chunk and k is 0 to 7 | writes that word of the send buffer |
+
+The status, from a read of `ETH_CSR`:
+
+| Bit | What |
+|---|---|
+| 0 | Enabled |
+| 1 | A frame waits: `ETH_RX_LEN` is not 0 |
+| 2 | Busy: a frame is being sent |
+| 31..3 | 0 |
+
+A program writes 0 to bits 31..1 of `ETH_CSR`. Bit 1 is reserved for a receive interrupt.
+
+**Enabled.** While "enabled" is 0, the queue is empty, no frame enters it, and a write of `ETH_TX_LEN` sends nothing, so a program that does not use the network sees no frame and sends none. The station answers as it does without the port. A write of `ETH_CSR` with bit 0 at 0 empties the queue and sets `ETH_DROPPED` to 0. So a program that sets "enabled" gets no frame from before.
+
+**The queue.** It holds 4 frames, on every system. A frame enters it at its tail when the station has received the whole frame. When the queue is full, the frame is dropped, and `ETH_DROPPED` counts it. `ETH_RX_LEN` gives the length of the frame at the head, and a write of `ETH_RX_LEN`, of any value, releases it, so the next one takes its place. A write of `ETH_RX_LEN` while the queue is empty is ignored. A frame is 14 to 1514 bytes long, without the FCS. The station drops longer frames, and frames with a bad FCS, before the queue. `ETH_DROPPED` wraps at 2^32.
+
+**Sending.** A write of N to `ETH_TX_LEN`, with N from 14 to 1514, sends the first N bytes of the frame in the send buffer, and busy reads 1 until the frame is sent. The station adds the FCS, and pads a frame of fewer than 60 bytes with zeros to 60. A write of any other N sends nothing. While busy is 1, a write of `ETH_TX_LEN` or of the send buffer is ignored. A program waits for busy to be 0 before it writes the next frame. In the emulator, and in the simulation of the FPGA core, a frame is sent in the write of `ETH_TX_LEN`, so busy never reads 1.
+
+**The buffers.** There are two: the frame at the head of the queue, and the send buffer, which bit 8 of `ETH_CHUNK` selects, 0 for the queue and 1 for the send buffer. A program sees the selected one 8 words at a time, through `ETH_BUF0`–`ETH_BUF7`, and bits 5..0 of `ETH_CHUNK` choose which 8. A frame with its offset is at most 379 words, so it fits in chunks 0 to 47. A chunk of 48 to 63 reads 0 and ignores writes, as does the queue's buffer while the queue is empty. A write to the queue's buffer is ignored. A copy of a received frame into the send buffer changes bit 8 for each chunk.
+
+Each word holds 4 bytes, big-endian, in network order as `NET_IP` has them: byte 4n of the buffer is bits 31..24 of word n, and byte 4n + 3 is bits 7..0. A frame starts at byte 2 of its buffer. Bytes 0 and 1 are not part of it: they read 0 in the queue's buffer, and the station does not send them from the send buffer. The lengths do not count them. With the offset, the fields of a frame fall on words:
+
+| Word | What |
+|---|---|
+| 0 | The destination MAC address's first two bytes in bits 15..0, as `NET_MAC_HI` has them |
+| 1 | Its last four bytes, as `NET_MAC_LO` has them |
+| 2, 3 | The source MAC address, and the EtherType in bits 15..0 of word 3 |
+| 4 | The first word of an IPv4 header |
+| 7, 8 | The IPv4 source and destination addresses, as `NET_IP` has them |
+| 9 | The UDP source port in bits 31..16 and the destination port in bits 15..0 |
+| 11 | The first word of a UDP payload |
+
+In the queue's buffer, the bytes after the frame's last byte are not defined. The send buffer keeps what a program writes to it, also through a start of the processor. It is 0 after a reset of the system.
+
+**No side effects on a read.** A read of any of the 16 words changes nothing. So the debug link reads and writes them as the processor does ([DEBUG.md §3](DEBUG.md#3-requests-and-answers)). A host that reads the frames of a paused program restores `ETH_CHUNK` before the program goes on. A write of `ETH_CSR`, `ETH_RX_LEN`, or `ETH_TX_LEN` changes what the program sees.
+
+**Reset.** Reset, which a start of the processor gives the devices ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)), sets "enabled" to 0, empties the queue, and sets `ETH_DROPPED` and `ETH_CHUNK` to 0. A frame being sent finishes first, so busy may read 1 after reset. The station is not reset (§6), and goes on answering on its own.
+
+**Interrupts.** The port raises no interrupt. An interrupt or NMI service routine does not use it, as `ETH_CHUNK` and the queue are shared with the program it interrupts.
+
+**The emulator.** The emulator has no Ethernet. Its frames come from a file or a UDP socket, and go to a file or the socket, with these options:
+
+- `--eth-in FILE`: the frames that the station receives, one per line, each byte as two hex digits. Spaces between bytes are allowed, a `#` starts a comment that runs to the end of the line, and a line with no bytes is skipped. A line may start with `N:`, a decimal number and a colon: the frame then waits until the program has sent N frames since the emulator started. The lines are taken in order. At each write of `ETH_CSR` that sets "enabled" from 0 to 1, and each write of `ETH_TX_LEN` that sends a frame, every next line whose N has been reached arrives at the station, which serves it or passes it to the queue, where it is dropped and counted if the queue is full. So a run is the same each time, and a test fills the queue on purpose with lines that enter at once.
+- `--eth-out FILE`: the frames sent, one per line, each byte as two hex digits with a space between bytes, without the padding to 60 bytes. A line of `--eth-out` is a valid line of `--eth-in`.
+- `--eth-udp [ADDR:]PORT` and `--eth-peer ADDR:PORT`, which go together: each frame travels as one UDP datagram, as QEMU's `-netdev socket,udp=` does. The emulator receives on PORT of ADDR, 127.0.0.1 by default, and sends to the peer. ADDR is written as for `--link` ([DEBUG.md §7](DEBUG.md#7-transports)). A datagram from any address enters the queue when the emulator next looks, so a run over the socket is not the same each time. A datagram of fewer than 14 or more than 1514 bytes is dropped. Frames sent go to the peer padded to 60 bytes, as on the wire. Two emulators, each the other's peer, are two systems on one network.
+
+The emulator refuses to start with a line of `--eth-in` that is not hex, or that has fewer than 14 or more than 1514 bytes. Without `--eth-in` and `--eth-udp`, no frame enters the queue. Without `--eth-out` and `--eth-udp`, the frames sent go nowhere.
+
+The emulator's station serves the frames that a board's does, by the same rules, before the queue. While `NET_IP` is not 0, it answers an ARP request for `NET_IP` with an ARP reply, and a ping to it with an echo reply, which go out as frames the program sends do, but do not count toward N. It keeps TCP to `NET_IP` and the port of `NET_STATUS`, while that is not 0. It passes a frame to the queue only if its destination is `NET_MAC_HI` and `NET_MAC_LO`, or `FF:FF:FF:FF:FF:FF`, and drops the others without counting them.
+
+## 8. Systems built on the FPGA core
 
 A board that wraps the FPGA core, such as [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), may differ from the emulator in the points below. Its own README has the details.
 
-- **Reserved words.** `0xFFFFFF02`–`0xFFFFFF0F`, `0xFFFFFF80`–`0xFFFFFF9F`, and `0xFFFFFFD0`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. The blocks that the memory map reserves for a device, `0xFFFFFFC0`–`0xFFFFFFCF` and `0xFFFFFF46`–`0xFFFFFF49`, hold that device or nothing. The emulator treats all these words as ordinary memory for data accesses, and only instruction fetches read 0 ([ISA.md §8.3](ISA.md)). NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF8F` for its screen registers, `0xFFFFFF90`–`0xFFFFFF9F` for its board's devices, and `0xFFFFFFE0`–`0xFFFFFFFF` for the debug registers of the link (**Debug link** below).
+- **Reserved words.** `0xFFFFFF02`–`0xFFFFFF0F`, `0xFFFFFF80`–`0xFFFFFF9F`, and `0xFFFFFFD0`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. The block that the memory map reserves for a device, `0xFFFFFF46`–`0xFFFFFF49`, holds that device or nothing. The emulator treats all these words as ordinary memory for data accesses, and only instruction fetches read 0 ([ISA.md §8.3](ISA.md)). NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF8F` for its screen registers, `0xFFFFFF90`–`0xFFFFFF9F` for its board's devices, and `0xFFFFFFE0`–`0xFFFFFFFF` for the debug registers of the link (**Debug link** below).
 - **Screen.** A board's screen may be larger than the emulator's 80×25. NiceMonMEGA65's has up to 32K words. The color format of §1.1 applies unchanged. The display offset belongs to the board. The emulator's window draws the cursor from the board's cursor registers (§1.4), but has no offset.
 - **Console input.** A UART or a keyboard feeds the same console at `0xFFFFFF00`, with the same bits (§1.2). A break on the UART may end the line's input: the UART's bytes are then dropped until the next start, and a read returns `0x200` once the FIFO is empty, but the keyboard's bytes still go into the FIFO, and a read returns them. So a monitor that a host leaves keeps running on the keyboard, and a program that reads until the end still ends with the host's input. A keyboard sends no break. A board's keyboard gives the bytes of the window's keys (§1.5), and may have more keys.
 - **Input FIFO.** A system's input FIFO may lose bytes. NiceMonMEGA65 drops a UART byte that arrives when the FIFO is full, with the link's `o` notice ([DEBUG.md §4](DEBUG.md#4-notices)), or after a break. Over a transport with flow control, such as TCP, the byte waits up to 50 ms for room first ([DEBUG.md §1](DEBUG.md#1-the-byte-stream)). Input that arrives while the processor is held or has halted is dropped, as by `niceemu --link`, and input that arrives while it is paused waits in the FIFO ([DEBUG.md §1](DEBUG.md#1-the-byte-stream)). A keyboard byte waits until the FIFO has room for two, so that a UART byte still finds room.
 - **SD card slots.** A system without an SD card controller has nothing at `0xFFFFFFA0`–`0xFFFFFFAF`. The MEGA65 has 2 slots: the microSD slot at the back, and the full-size slot underneath, the only one with write protect, whose card detect does not work on the R3 (§5). NiceMonMEGA65 plans to number them 0 and 1 (MJoergen/NiceMonMEGA65#55). The Nexys4DDR has 1, its microSD slot.
 - **Network station.** A system that serves the debug link only on a UART, or not at all, has nothing at `0xFFFFFFB0`–`0xFFFFFFBF`. NiceMonMEGA65 has its station at `0xFFFFFF98`–`0xFFFFFF9D` today, with the same registers in another order and no status word, until it follows §6.
+- **Ethernet frames.** A system without a network station, or without the port, has nothing at `0xFFFFFFC0`–`0xFFFFFFCF`. NiceMonMEGA65 plans the port (#121), with the network stack in its ROM.
 - **ROM.** A system may map a ROM at 0 that it can hide, so that a program loads at 0 as in the emulator.
 - **Font.** A board that shows the screen on a display draws it from the font of §1.8, with the same font RAM, character ROM, and base, and its clear makes the font RAM and the base 0. An instruction fetch from `0xFFFE0000`–`0xFFFE3FFF` may reach the board's RAM there instead, as an alias (**Aliasing** below). NiceMonMEGA65 draws from Spleen alone today, and has the font RAM and the base planned (MJoergen/NiceMonMEGA65#71). Until then, the range aliases its RAM, so a program that writes the font RAM there writes the RAM it aliases.
 - **Debug link.** A board may serve the debug link of [DEBUG.md](DEBUG.md) on its UART, or over TCP as the emulator does. Its debug registers at `0xFFFFFFE0`–`0xFFFFFFFF` are for the link only, so a program's data accesses there go to whatever the board has there otherwise.

@@ -177,3 +177,9 @@ proposed again. The open items are the
   `externref` or tables directly. nicewasm rejects them with an error.
   Should a toolchain's wasm C ABI start to return several results, the
   issue holds the estimates and the design questions.
+- **Two windows for the Ethernet frames** (#121), one on the frame at
+  the head of the queue and one on the send buffer. Two windows of 8
+  words fill the block of 16 and leave no word for the status, the
+  lengths, and the chunk. One window with a select bit in `ETH_CHUNK`
+  costs a program one write per 8 words when it copies a received frame
+  into a reply (SYSTEM.md §7).

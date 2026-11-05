@@ -200,9 +200,9 @@ def main() -> None:
         for name, size in (("empty.img", 0), ("odd.img", 700)):
             with open(os.path.join(tmp, name), "wb") as f:
                 f.write(bytes(size))
-        for name, text in ETH_FILES.items():
+        for name, contents in ETH_FILES.items():
             with open(os.path.join(tmp, name), "w") as f:
-                f.write(text)
+                f.write(contents)
         for args, text, expected in CASES:
             expected = expected.replace("BIN", path)
             p = run(tmp, args, text)

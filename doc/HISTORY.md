@@ -620,3 +620,15 @@ with an instruction of their own. For a module whose code runs from a
 ROM (#138), the runtime library may hold no word that is written, so the
 two vectors moved to the start-up files, and the trap report's start-up
 files start the vector with `___trap_report` instead.
+
+## The debugger
+
+Until 2026-11-06, the one full client of the debug link was
+NiceMonMEGA65's `tools/mon.py`, with its `nicelink.py`, which found
+`nicedis.py` in its `nice_cpu` submodule. A change to DEBUG.md or to
+`niceemu --link` here could break it unseen, until the board moved its
+submodule. With #134 the generic part moved here, to `debugger/`:
+`mon.py` became `nicedbg.py`, and `nicelink.py` and `nicebin.py` keep the
+link, the files, and the loader. The board keeps its Ethernet and
+simulation transports and the checks of its memory, and passes them to
+these as hooks.

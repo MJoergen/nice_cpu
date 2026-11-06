@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 NICE is a 32-bit CPU by B. Ulmann; this repo implements it on an FPGA.
-The repo holds the spec, an assembler, an emulator, a runtime library, a wasm
-translator, and two FPGA cores. See README.md.
+The repo holds the spec, an assembler, an emulator, a debugger, a runtime
+library, a wasm translator, and two FPGA cores. See README.md.
 
 ## Layout
 
@@ -40,6 +40,11 @@ translator, and two FPGA cores. See README.md.
   `assembler/nicefmt.py` checks the column layout of `.nasm` files, or fixes it with `--write`.
   `assembler/nicedis.py` disassembles a `.bin` file back to `.nasm`. Same rules as niceasm.py.
 - `emulator/`: Zig 0.17.
+- `debugger/nicedbg.py`: the interactive debugger on the debug link of DEBUG.md,
+  over TCP to `niceemu --link` or a UART. `nicelink.py` is the link, and
+  `nicebin.py` reads the `.bin` and `.sym` files and loads a program; a
+  board's tools import them, with hooks for their own transports and memory.
+  Same rules as niceasm.py.
 - `runtime/`: start-up code and runtime routines in NICE assembly (`runtime/ABI.md`).
   `runtime/libc/` is the C library for translated programs.
 - `translator/nicewasm.py`: wasm -> NICE assembly (`translator/WASM.md`; how it does it is `translator/DESIGN.md`). Same rules as niceasm.py.
@@ -79,6 +84,8 @@ translator, and two FPGA cores. See README.md.
     cd emulator  && make bincheck    # fail if a probe .bin is stale
     cd emulator  && make bins        # reassemble test/*.bin after editing a probe .nasm
     cd emulator  && make window-test # build with -Dwindow (SDL from source), run test/window.py headless
+    cd debugger  && make test        # test/errors.py, then test/link.py: the link, the loader, and nicedbg's commands on niceemu --link
+    cd debugger  && make typecheck   # mypy --strict
     cd runtime   && make test        # join, assemble, and run each test/*.nasm, then the C library tests
     cd runtime   && make typecheck   # mypy --strict
     cd translator && make test       # test/run.py, errors.py, fuzz.py in four modes, passes.py, and build.py
@@ -149,7 +156,7 @@ Vivado 2025.1 is installed at `/opt/Xilinx/2025.1/Vivado/bin/vivado`, not on PAT
   docs and strings in Python are not checked.
 - American spelling everywhere, in docs, comments, and identifiers
   ("behavior", "color", "analyze", "labeled", "gray").
-- Commit subjects: `niceasm: ...`, `niceemu: ...`, `runtime: ...`, `nicewasm: ...`, `nicecc: ...`, `nicehdl: ...`, `bench: ...`, `demo: ...`, `release: ...`, `intro: ...`, `doc: ...`, `ISA: ...`, `Review: ...`.
+- Commit subjects: `niceasm: ...`, `niceemu: ...`, `nicedbg: ...`, `runtime: ...`, `nicewasm: ...`, `nicecc: ...`, `nicehdl: ...`, `bench: ...`, `demo: ...`, `release: ...`, `intro: ...`, `doc: ...`, `ISA: ...`, `Review: ...`.
 - Commit messages follow the 50/72 style: the subject, prefix included, is at
   most 50 characters. A blank line follows it. The body is wrapped at 70
   characters per line.

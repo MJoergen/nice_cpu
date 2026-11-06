@@ -1,6 +1,6 @@
 # Toolchain
 
-There are six tools. Five run on the host, and one is NICE assembly that
+There are seven tools. Six run on the host, and one is NICE assembly that
 is joined into every program. Each follows one part of
 [ISA.md](ISA.md).
 
@@ -9,6 +9,7 @@ is joined into every program. Each follows one part of
 | `niceasm`, the assembler | [assembler/niceasm.py](../assembler/niceasm.py) | Python 3, standard library only | `.nasm` | `.bin` | ISA.md §10 |
 | `nicedis`, the disassembler | [assembler/nicedis.py](../assembler/nicedis.py) | Python 3, standard library only | `.bin` and `.sym` | `.nasm` | ISA.md §10 |
 | `niceemu`, the emulator | [emulator/](../emulator/) | Zig 0.17 | `.bin` | Console output, the registers, memory dumps, and a trace | ISA.md §1–8, SYSTEM.md, DEBUG.md |
+| `nicedbg`, the debugger | [debugger/nicedbg.py](../debugger/nicedbg.py) | Python 3, standard library only | `.bin` and `.sym` | Commands to a system on the debug link | DEBUG.md |
 | The runtime library | [runtime/](../runtime/) | NICE assembly | | | ABI.md and WASM.md |
 | `nicewasm`, the wasm translator | [translator/nicewasm.py](../translator/nicewasm.py) | Python 3, standard library only | `.wasm` | `.nasm` | WASM.md |
 | `nicebuild`, the build script | [translator/nicebuild.py](../translator/nicebuild.py) | Python 3, standard library only | `.c`, `.zig`, or `.rs` | `.bin` | translator README |
@@ -78,6 +79,9 @@ builds a program for one: it picks the `_mon` start-up file
   `niceasm --symbols` and `nicebuild.py --symbols`. `niceasm` assembles
   its output back to the same words. Host tools import its
   `disassemble()`.
+- `nicedbg` loads the `.bin` files of `niceasm` into `niceemu --link`, or
+  a board, over the debug link, and disassembles with `nicedis`, with the
+  labels of the symbols files. Its tests use `niceasm` and `niceemu`.
 - The `.bin` format is the text format of the 2004 `NICE.pm` assembler, so
   its example binaries can be compared directly.
 - The FPGA cores take the place of `niceemu` at the end of the pipeline.
@@ -100,7 +104,7 @@ programs can use the small C library in
 functions, `malloc`, and a few more. It is compiled to wasm with the
 program, so it is not one of the joined files.
 
-**Host tools.** Python 3 runs `niceasm`, `nicedis`, `nicewasm`, and the test scripts.
+**Host tools.** Python 3 runs `niceasm`, `nicedis`, `nicedbg`, `nicewasm`, and the test scripts.
 Nothing beyond the standard library is needed, and `make typecheck` checks
 the Python with `mypy --strict` if mypy is installed. Zig 0.17 builds
 `niceemu` and compiles the Zig test modules. clang with the wasm32 target,

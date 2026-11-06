@@ -58,6 +58,25 @@ jobs:
           version: 0.17.0
       - run: make window-test
 
+  # The debugger's tests run it on niceemu --link, so the job builds
+  # niceemu first.
+  debugger:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: debugger
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+      - run: pip install mypy
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0
+      - run: make test
+      - run: make typecheck
+
   runtime:
     runs-on: ubuntu-24.04
     defaults:

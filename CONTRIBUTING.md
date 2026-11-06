@@ -19,6 +19,7 @@ needs them.
 
     cd assembler && make test         # test the assembler
     cd emulator && make test          # build and test the emulator
+    cd debugger && make test          # test the debugger and the link on the emulator
     cd runtime && make test           # test the start-up code and runtime library
     cd translator && make test        # test the wasm translator
     cd bench && make test             # run the benchmark on the emulator and check its results
@@ -106,5 +107,5 @@ Use American spelling everywhere, in documents, comments, and identifiers
 **Commit messages** follow the 50/72 style: the subject, prefix included,
 is at most 50 characters, a blank line follows it, and the body is
 wrapped at 70 characters per line. The subject starts with the part it
-changes: `niceasm:`, `niceemu:`, `runtime:`, `nicewasm:`, `nicecc:`,
+changes: `niceasm:`, `niceemu:`, `nicedbg:`, `runtime:`, `nicewasm:`, `nicecc:`,
 `nicehdl:`, `bench:`, `demo:`, `release:`, `intro:`, `doc:`, `ISA:`, or `Review:`.

@@ -66,7 +66,9 @@ It can:
 - serve the debug link of [doc/DEBUG.md](doc/DEBUG.md) over TCP, so that
   a host can load, start, pause, and single-step programs, set
   breakpoints, and read and write the memory, as it does with a board.
-  NiceMonMEGA65 also has a debugger on the board that uses the link.
+  `debugger/nicedbg.py` is the host's debugger on the link
+  ([debugger/](debugger/README.md)), and NiceMonMEGA65 also has a
+  debugger on the board that uses it.
 
 [emulator/README.md](emulator/README.md) describes its options, memory
 map, debug link, and trace format.
@@ -225,9 +227,9 @@ describes the screen, the cursor, and the keys.
 ## Toolchain
 
 The host tools are `niceasm`, the assembler, `nicedis`, the
-disassembler, `niceemu`, the emulator, `nicewasm`, the wasm translator,
-and `nicebuild`, which builds a C, Zig, or Rust file into a `.bin` file
-in one step:
+disassembler, `niceemu`, the emulator, `nicedbg`, the debugger on the
+debug link, `nicewasm`, the wasm translator, and `nicebuild`, which
+builds a C, Zig, or Rust file into a `.bin` file in one step:
 
     translator/nicebuild.py -o prog.bin prog.c
 
@@ -261,6 +263,7 @@ a source.
 | [doc/](doc/README.md) | The specification, [ISA.md](doc/ISA.md), and the other documents: the I/O devices ([SYSTEM.md](doc/SYSTEM.md)), the toolchain ([TOOLCHAIN.md](doc/TOOLCHAIN.md)), the design note for the pipelined core, the sources, the history, the reviews, and a beginner's introduction in slides. |
 | [assembler/](assembler/README.md) | `niceasm`, the assembler, and `nicedis`, the disassembler: Python 3 scripts with no dependencies. |
 | [emulator/](emulator/README.md) | `niceemu`, the emulator, written in Zig. |
+| [debugger/](debugger/README.md) | `nicedbg`, an interactive debugger on the debug link of the emulator or a board, and `nicelink`, the link for other host tools. |
 | [runtime/](runtime/README.md) | The start-up code and runtime library for C and wasm programs, and a small C library. [ABI.md](runtime/ABI.md) gives the C ABI: registers, calls, the stack, and the runtime library's conventions. |
 | [translator/](translator/README.md) | `nicewasm`, which translates WebAssembly into NICE assembly. [WASM.md](translator/WASM.md) says how WebAssembly maps to NICE, and [DESIGN.md](translator/DESIGN.md) how `nicewasm` does it. |
 | [bench/](bench/README.md) | A benchmark of translated code: six kernels with known results, timed with the performance counters, and the same benchmark written by hand. |

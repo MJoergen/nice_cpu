@@ -1,6 +1,6 @@
 ; Run after start.nasm. Calls __udiv64, __umod64, __div64, and __mod64 on
 ; each pair of 64-bit numbers in the table, and stores the four results,
-; low word first, in results (0x6F-0xAE):
+; low word first, in results (0x71-0xB0):
 ;
 ;   a / b                     __udiv64  __umod64  __div64  __mod64
 ;   100 / 7                   14        2         14       2
@@ -19,7 +19,8 @@
 ; The divisors 0xC000000000000000 and 2^63 + 1 are above 2^63, so the
 ; remainder needs its bit 64 there.
 ;
-; Code: start.nasm is words 0-8, main 9-78, pairs 0x4F-0x6E, results 0x6F.
+; Code: start.nasm is words 0-10, with its vectors at 9-10, main 11-80,
+; pairs 0x51-0x70, and results 0x71.
 ; Each call takes 8 steps besides the routine, and the loop 3 more. The
 ; routines take 839 (__udiv64), 843 (__umod64), and for __div64 and
 ; __mod64 1 + a + b + 2 + 838 + q and 1 + a + b + 2 + 838 + 2 + q (see

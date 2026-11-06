@@ -131,11 +131,11 @@ $(BUILD)/dhry.full.nasm: ../runtime/start_wasm.nasm $(BUILD)/dhry.nasm ../runtim
   ../runtime/muldiv_mpu.nasm
 	cat $^ > $@
 
-$(BUILD)/hand.full.nasm: ../runtime/start.nasm hand.nasm
+$(BUILD)/hand.full.nasm: ../runtime/start.nasm hand.nasm ../runtime/lib.nasm
 	@mkdir -p $(BUILD)
 	cat $^ > $@
 
-$(BUILD)/simple.full.nasm: ../runtime/start.nasm simple.nasm
+$(BUILD)/simple.full.nasm: ../runtime/start.nasm simple.nasm ../runtime/lib.nasm
 	@mkdir -p $(BUILD)
 	cat $^ > $@
 

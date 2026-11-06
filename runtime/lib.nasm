@@ -1,11 +1,9 @@
 ; The NICE runtime library (ABI.md). It goes after the program's
 ; own files, followed by muldiv_mpu.nasm or muldiv_soft.nasm, which hold the
 ; multiply and divide routines. Every routine follows the C ABI of ABI.md.
-
-; ___wasm_trap_vector: wasm traps jump through this word (WASM.md). It holds
-; the default handler until a program stores its own.
-___wasm_trap_vector
-                .DAT    ___wasm_trap
+; It holds no word that it writes: the two vectors it jumps through,
+; ___wasm_trap_vector and ___putc_vector, are in the start-up code, so that
+; a system whose code runs from a ROM can put them in its RAM (ABI.md).
 
 ; ___wasm_trap: the default trap handler. It is the reserved control word
 ; 0x0FE00000 (§5.3), which halts with R1 and R2 as the trap left them. The
@@ -99,15 +97,10 @@ __nice.instr_lo .EQU    0xFFFFFF42
 __nice.instr_hi .EQU    0xFFFFFF43
 __nice.screen   .EQU    0xFFFF0000      ; 80 columns, 25 rows
 
-; ___putc_vector: nice_putc and nice_print jump through this word. It holds
-; ___console_putc, which writes the console, until the start-up code of a
-; program under a monitor, or the program itself, stores another routine
-; (ABI.md, "Programs under a monitor"). The routine follows the C ABI: it
-; writes bits 7..0 of R1, and may change R1-R6 and the flags.
-___putc_vector
-                .DAT    ___console_putc
-
-; nice_putc: writes bits 7..0 of R1 through ___putc_vector. 1 step and the
+; nice_putc: writes bits 7..0 of R1 through ___putc_vector, the word of the
+; start-up code that holds the routine that writes one character. The
+; routine follows the C ABI: it writes bits 7..0 of R1, and may change
+; R1-R6 and the flags (ABI.md, Device routines). 1 step and the
 ; routine's: 3 with ___console_putc, which changes nothing.
 _nice_putc
                 JMP     @___putc_vector

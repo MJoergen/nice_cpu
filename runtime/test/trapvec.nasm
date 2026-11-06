@@ -4,15 +4,16 @@
 ; and a jump through the vector. The handler stores R1 and R2 and halts
 ; with HALT, so the exit status is 0, not the 2 of the default handler.
 ;
-; Code: start.nasm is words 0-8. main is 9-21: the two three-word MOVEs
-; at 9 and 12, then 15, 17, and 19, and the HALT at 21 that the jump
-; skips. handler is 22-26 (0x16-0x1A), with its HALT at 26, so PC = 27
-; (0x1B) after it. saved is 27, got 28-29, and lib.nasm follows at 30
-; (0x1E): the vector at 30 and ___wasm_trap at 31 (0x1F).
+; Code: start.nasm is words 0-10, with ___wasm_trap_vector at 9 and
+; ___putc_vector at 10. main is 11-23: the two three-word MOVEs at 11 and
+; 14, then 17, 19, and 21, and the HALT at 23 that the jump skips. handler
+; is 24-28 (0x18-0x1C), with its HALT at 28, so PC = 29 (0x1D) after it.
+; saved is 29, got 30-31, and lib.nasm follows at 32 (0x20) with
+; ___wasm_trap.
 ;
-; The dump of 0x1B-0x1E shows saved = 0x1F, the vector's first value,
-; ___wasm_trap; got = 4 and 9, the code and main's address; and the vector
-; = 0x16, handler. Steps: 5 in the start-up code, 5 in main, and 3 in
+; The dumps show the vector = 0x18, handler, and at 0x1D-0x1F saved =
+; 0x20, the vector's first value, ___wasm_trap, and got = 4 and 0xB, the
+; code and main's address. Steps: 5 in the start-up code, 5 in main, and 3 in
 ; handler = 13. SP = 0xFFFFFEFF, as main left it: the handler is entered
 ; by a jump.
 

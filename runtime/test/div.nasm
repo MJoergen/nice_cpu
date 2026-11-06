@@ -1,5 +1,5 @@
 ; Run after start.nasm. Calls __udiv, __umod, __div, and __mod on each pair
-; in the table and stores the four results in results (0x4B-0x6A):
+; in the table and stores the four results in results (0x4D-0x6C):
 ;
 ;                            __udiv      __umod      __div       __mod
 ;   100 / 7                  0x0000000E  0x00000002  0x0000000E  0x00000002
@@ -19,7 +19,8 @@
 ; The divisors 0xC0000000 and 0x80000001 are above 2^31, so the remainder
 ; needs its bit 32 there.
 ;
-; Code: start.nasm is words 0-8, main 9-58, pairs 0x3B-0x4A, results 0x4B.
+; Code: start.nasm is words 0-10, with its vectors at 9-10, main 11-60,
+; pairs 0x3D-0x4C, and results 0x4D.
 ; Each call takes 5 steps besides the routine, which takes 292, 295, 301,
 ; and 302 steps, and the loop 3 more, so a pass takes 20 + 1190 + 3 = 1213.
 ; The total is 5 (start up) + 6 (set up) + 8 * 1213 + 1 (return) + 1 (HALT)

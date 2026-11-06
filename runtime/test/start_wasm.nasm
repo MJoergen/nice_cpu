@@ -3,8 +3,8 @@
 ; ___wasm_start ran first, and that the start-up code then set R1 and R2 to
 ; 0 for main.
 ;
-; Addresses 0-12 are the start-up code, with HALT at 12. ___wasm_start is
-; 13-20, main is 21-26, and flag is 27 (0x1B). The second call pushes 12
+; Addresses 0-12 are the start-up code, with HALT at 12, and 13-14 its
+; vectors. ___wasm_start is 15-22, main is 23-28, and flag is 29 (0x1D). The second call pushes 12
 ; (0xC) at 0xFFFFFEFF. Steps: MOVE SP, 2 per call, 4 in ___wasm_start,
 ; R1 = 0, R2 = 0, 4 in main, and HALT = 1 + 4 + 4 + 2 + 4 + 1 = 16.
 

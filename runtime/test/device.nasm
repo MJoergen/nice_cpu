@@ -23,8 +23,9 @@
 ; just "|". The dumps show the words, with the blank at 0xFFFF07CE that
 ; the clear wrote.
 ;
-; Code: start.nasm is words 0-8. main is 115 words, 9-0x7B: 57 instructions
-; of 2 words and the return. text is 0x7C-0x7E, and results 0x7F-0x86.
+; Code: start.nasm is words 0-10, with its vectors at 9-10. main is 115
+; words, 11-0x7D: 57 instructions of 2 words and the return. text is
+; 0x7E-0x80, and results 0x81-0x88.
 ; Steps, from the comments in lib.nasm: main itself runs 58 instructions,
 ; and the 16 calls 3 (nice_instructions) + 3 (nice_cycles) + 6 + 6 * 2
 ; (nice_print, through ___putc_vector) + 4 + 4 + 8 + 8 (nice_getc,

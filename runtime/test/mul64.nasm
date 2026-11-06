@@ -1,5 +1,5 @@
 ; Run after start.nasm. Calls __mul64 on each pair of 64-bit numbers in the
-; table and stores the products, low word first, in results (0x48-0x57):
+; table and stores the products, low word first, in results (0x4A-0x59):
 ;
 ;   6 * 7                                   = 42
 ;   0 * 5                                   = 0
@@ -11,7 +11,8 @@
 ;   -3 * 5                                  = -15 = 0xFFFFFFFF_FFFFFFF1
 ;   0x123456789ABCDEF0 * 0x0FEDCBA987654321 = 0x2236D88F_E5618CF0 (mod 2^64)
 ;
-; Code: start.nasm is words 0-8, main 9-39, pairs 0x28-0x47, results 0x48.
+; Code: start.nasm is words 0-10, with its vectors at 9-10, main 11-41,
+; pairs 0x2A-0x49, and results 0x4A.
 ; __mul64 takes 5 + 7k + 2j steps, where k is the number of bits in the
 ; second operand (1 if it is 0) and j its number of 1 bits: k = 3, 3, 1,
 ; 64, 33, 32, 3, 60 and j = 3, 2, 0, 64, 1, 32, 2, 32. So the calls take

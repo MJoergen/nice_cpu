@@ -26,7 +26,8 @@
 ;   the wasm version.
 ; - The C library routines of the strings phase are written inline.
 ;
-; Joined with runtime/start.nasm, which calls _main (ABI.md). The
+; Joined with runtime/start.nasm, which calls _main (ABI.md), and
+; runtime/lib.nasm, which holds the routines that its vectors name. The
 ; phases may use R1-R12; main keeps nothing in registers across them.
 
 PC              .EQU    R15

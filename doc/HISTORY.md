@@ -610,3 +610,13 @@ host core busy at any pace. Since #116 the window runs as fast as the
 host can, as without the window, and sleeps while a program polls the
 console or `TIME_LO` in a loop. `--speed N` keeps the pace for a program
 that keeps time by the timer or by counting steps.
+
+## The runtime's vectors
+
+Until 2026-11-06, `lib.nasm` held `___wasm_trap_vector` and
+`___putc_vector`, and `start_wasm_trap.nasm` and
+`start_wasm_trap_mon.nasm` stored `___trap_report` in the trap vector
+with an instruction of their own. For a module whose code runs from a
+ROM (#138), the runtime library may hold no word that is written, so the
+two vectors moved to the start-up files, and the trap report's start-up
+files start the vector with `___trap_report` instead.

@@ -1,5 +1,6 @@
-; The trap report (WASM.md). start_wasm_trap.nasm stores ___trap_report in
-; ___wasm_trap_vector. It goes after lib.nasm, which it uses.
+; The trap report (WASM.md). start_wasm_trap.nasm starts its
+; ___wasm_trap_vector with ___trap_report. It goes after lib.nasm, which
+; it uses.
 ;
 ; ___trap_report: a wasm trap handler. It writes one line, such as
 ; "trap 2: memory access out of bounds at 00003dc9", with the trap's code

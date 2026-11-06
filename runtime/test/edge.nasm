@@ -4,7 +4,7 @@
 ; negative operands. Calls __udiv, __umod, __div, and __mod on each pair of
 ; pairs32, then __udiv64, __umod64, __div64, and __mod64 on each pair of
 ; pairs64, then __mul64 on each pair of pairs_mul, and stores the results
-; in that order in results (0xD8-0x153).
+; in that order in results (0xDA-0x155).
 ;
 ; One word, M = 0x80000000, the most negative number:
 ;
@@ -117,10 +117,10 @@
 ; 1071 + 1 + 1 = 45226. At the end R1:R2 and R5:R6 hold the last product,
 ; and R3:R4 = 0, shifted out (edge_soft.expected).
 ;
-; Code: start.nasm is words 0-8, main 9-0x8D, pairs32 0x8E, pairs64 0xA4,
-; pairs_mul 0xC8, and results 0xD8. Both: R7 = 0xD8, the end of pairs_mul,
-; R8 = 0x154, the end of results, R9 = 0, and
-; R10-R12 survive the calls. R14 = 0x09000000: Z from the last DEC[M].
+; Code: start.nasm is words 0-10, with its vectors at 9-10, main 11-0x8F,
+; pairs32 0x90, pairs64 0xA6, pairs_mul 0xCA, and results 0xDA. Both:
+; R7 = 0xDA, the end of pairs_mul, R8 = 0x156, the end of results, R9 = 0,
+; and R10-R12 survive the calls. R14 = 0x09000000: Z from the last DEC[M].
 
 _main           MOVE    R7, pairs32
                 MOVE    R8, results

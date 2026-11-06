@@ -21,7 +21,8 @@
 ; - The byte buffer is unpacked to one byte per word before the strings
 ;   phase, outside its timing, as unsigned char buf[] is with CHAR_BIT = 32.
 ;
-; Joined with runtime/start.nasm, which calls _main (ABI.md). The
+; Joined with runtime/start.nasm, which calls _main (ABI.md), and
+; runtime/lib.nasm, which holds the routines that its vectors name. The
 ; phases may use R1-R12; main keeps nothing in registers across them.
 
 PC              .EQU    R15

@@ -7,7 +7,8 @@
 ; The stand-in's call pushes 0xC at 0xFFFFFEFF. Addresses 0x8000-0x800C are
 ; the start-up code: it jumps to main, so main's return pops the 0xC, and
 ; 0xFFFFFEFE stays 0. ___exit.sp at 0x800C holds 0xFFFFFEFF, the SP at
-; entry. main is 0x800D-0x8013 and args 0x8014-0x8015. Steps: 6 in the
+; entry, and the vectors are 0x800D-0x800E. main is 0x800F-0x8015 and args
+; 0x8016-0x8017. Steps: 6 in the
 ; stand-in, 6 in the start-up code, 4 in main, and 2 in the stand-in = 18.
 ; Z is clear, from the test of R1 in the start-up code.
 

@@ -11,10 +11,10 @@
 ; The stand-in's call pushes 0xC at 0xFFFFFEFF. Addresses 0x8000-0x8012 are
 ; the start-up code: it pushes argc at 0xFFFFFEFE and argv at 0xFFFFFEFD,
 ; and its call of ___wasm_start pushes 0x800B at 0xFFFFFEFC, whose call of
-; nice_putc pushes 0x801C at 0xFFFFFEFB. After the pops, it jumps to main,
-; so argc stays at 0xFFFFFEFE. ___exit.sp at 0x8012 holds 0xFFFFFEFF.
-; ___wasm_start is 0x8013-0x8022, main 0x8023-0x8027, flag 0x8028, and
-; args 0x8029. Steps: 6 in the stand-in, 7 to the call of ___wasm_start,
+; nice_putc pushes 0x801E at 0xFFFFFEFB. After the pops, it jumps to main,
+; so argc stays at 0xFFFFFEFE. ___exit.sp at 0x8012 holds 0xFFFFFEFF, and
+; the vectors are 0x8013-0x8014. ___wasm_start is 0x8015-0x8024, main
+; 0x8025-0x8029, flag 0x802A, and args 0x802B. Steps: 6 in the stand-in, 7 to the call of ___wasm_start,
 ; 14 in it, with 1 in nice_putc and 5 in mon.putc, 2 pops, the jump to
 ; main, 3 in main, and 2 in the stand-in = 35.
 

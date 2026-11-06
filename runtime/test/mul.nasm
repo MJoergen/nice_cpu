@@ -1,5 +1,5 @@
 ; Run after start.nasm. Calls __mul on each pair in the table and stores the
-; products in results (0x34-0x3D):
+; products in results (0x36-0x3F):
 ;
 ;   6 * 7                   = 0x0000002A
 ;   0 * 5                   = 0

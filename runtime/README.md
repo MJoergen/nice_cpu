@@ -19,7 +19,7 @@ Zig, or Rust program by itself ([translator README](../translator/README.md)).
 | `start_wasm.nasm` | Start-up code for a program with a wasm module. It calls `___wasm_start` before `main`. |
 | `start_wasm_trap.nasm` | `start_wasm.nasm` with the trap report below installed first. |
 | `start_mon.nasm`, `start_wasm_mon.nasm`, `start_wasm_trap_mon.nasm` | The same three for a program that a monitor in ROM runs (ABI.md, "Programs under a monitor"): at `0x8000`, above the ROM, on the monitor's stack, with the monitor's putc routine in `___putc_vector`, and returning to the monitor instead of halting. |
-| `lib.nasm` | The runtime routines in assembly, except those below. |
+| `lib.nasm` | The runtime routines in assembly, except those below. It holds no word that is written: the vectors it jumps through are in the start-up files. |
 | `trapmsg.nasm` | The trap report below. It goes after `lib.nasm`, and only with `start_wasm_trap.nasm` or `start_wasm_trap_mon.nasm`. |
 | `muldiv_mpu.nasm` | The multiply and divide routines: `__mul`, `__div`, `__mod`, `__udiv`, `__umod`, and their `64` versions, with the math unit of SYSTEM.md §2. |
 | `muldiv_soft.nasm` | The same routines in software, for a system without the math unit. |
@@ -64,7 +64,10 @@ R3 = `argv`: they leave SP as the monitor set it, store a nonzero R1 in
 `___putc_vector`, pass `argc` and `argv` to `main`, and return to the
 monitor with `main`'s result in R1 instead of halting, and their `_exit`
 restores SP and returns the same way. The start-up files are the only ones
-that use `.ORG`.
+that use `.ORG`. Each also defines the two vectors that `lib.nasm` jumps
+through, `___wasm_trap_vector` and `___putc_vector` (below), so that a
+system whose code runs from a ROM, with start-up code of its own, can put
+them in its RAM (ABI.md, Start-up).
 
 ## Routines
 
@@ -105,8 +108,9 @@ names in `lib.nasm` that give the devices' addresses (`__nice.console`,
 `__nice.cycle_lo`, `__nice.cycle_hi`, `__nice.instr_lo`, `__nice.instr_hi`,
 and `__nice.screen`), `__udivmod` and `__udivmod64` in
 `muldiv_soft.nasm`, the unsigned divisions that the division routines
-share, `___putc_vector` and `___console_putc` in `lib.nasm`, `_exit` in
-the start-up files and `___exit.sp` in the `_mon` ones, and
+share, `___console_putc` in `lib.nasm`, `_exit`, `___putc_vector`, and
+`___wasm_trap_vector` in the start-up files and `___exit.sp` in the `_mon`
+ones, and
 `___trap_report` and the `___trap.` names in `trapmsg.nasm`. Every label is global in the joined
 program (ABI.md), so no other file may define these names either.
 
@@ -124,11 +128,12 @@ for example 292 steps for `__udiv` in `muldiv_soft.nasm` and 839 for
 longer the more bits their operand has. In `muldiv_mpu.nasm`, the one-word
 routines take 4 steps each, `__mul64` 10, and the other `long long` ones 7.
 
-`lib.nasm` also holds the wasm trap vector of WASM.md:
+The wasm traps of WASM.md jump through the start-up code's vector to
+`lib.nasm`'s default handler:
 
 | Label | What it is |
 |---|---|
-| `___wasm_trap_vector` | The word that wasm traps jump through. It starts as `___wasm_trap`. |
+| `___wasm_trap_vector` | The word of the start-up code that wasm traps jump through. It starts as `___wasm_trap`, or as `___trap_report` in `start_wasm_trap.nasm` and `start_wasm_trap_mon.nasm`. |
 | `___wasm_trap` | The default handler: the reserved control word `0x0FE00000`. It halts with the trap's code in R1 and address in R2. The emulator exits with status 2, not 0 as after `HALT`. |
 
 **The trap report.** The default handler halts without a word.
@@ -137,9 +142,9 @@ to the console and then jumps to `___wasm_trap`:
 
 - `nicebuild.py` installs it unless given `--no-trap-report`. By hand, a
   program joins `trapmsg.nasm` after the other files and starts with
-  `start_wasm_trap.nasm`, which is `start_wasm.nasm` with one more
-  instruction, which stores `___trap_report` in `___wasm_trap_vector`, or
-  with `start_wasm_trap_mon.nasm` under a monitor.
+  `start_wasm_trap.nasm`, which is `start_wasm.nasm` with
+  `___wasm_trap_vector` starting as `___trap_report`, or with
+  `start_wasm_trap_mon.nasm` under a monitor.
 - The line is such as `trap 2: memory access out of bounds at 00003dc9`,
   with the code of R1 and the address of R2, a NICE address, naming the
   trap as `niceemu --symbols` does (a code above 7 is `trap ?: unknown
@@ -178,8 +183,8 @@ From assembly, for example:
                     ...
 text    .ASCII_L 'Hello'
 
-`___putc_vector` is the word that `_nice_putc` jumps through, and that
-`_nice_print` calls through for each character, with its pointer in R7
+`___putc_vector` is the word of the start-up code that `_nice_putc` jumps
+through, and that `_nice_print` calls through for each character, with its pointer in R7
 across the calls. It starts as `___console_putc`, which writes bits 7..0
 of R1 to the console and changes nothing. The start-up code of a program
 under a monitor stores the monitor's putc routine in it (ABI.md), and an

@@ -19,7 +19,10 @@ with .RES, must not be in the program image. Unless it trapped, R7-R12
 must be 0 and SP must be 0xFFFFFF00 again, as the start-up code left them,
 because every translated function must preserve them (ABI.md). No source
 operand of the translated code may be the constant 0, which R0 reads
-without a constant word (DESIGN.md, Register allocation). The expected
+without a constant word (DESIGN.md, Register allocation). A case in
+RAM_END is translated with --ram, for code that runs from a ROM: after
+the run, every word of the program image must be as it was, and
+___wasm_ram_end must be the word that RAM_END gives. The expected
 results were worked out by hand from the sources."""
 
 from __future__ import annotations
@@ -363,6 +366,10 @@ SHAPES = {"bound": (r"CMP", False),
                                True)}
 
 # Options for nicewasm.
+# The RAM of the cases for code in a ROM, below the stack, as a monitor
+# has it (WASM.md, Code in a ROM).
+ROM_RAM = "0xFFFFF000"
+
 OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "grow": ["--memory-pages", "3"],
            "growtrap": ["--memory-pages", "2"],
@@ -398,7 +405,19 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "trust_checked": ["--trust-alignment"],
            "trust_misaligned": ["--no-bounds-checks", "--trust-alignment"],
            "memory_dyn_trust": ["--no-bounds-checks", "--trust-alignment"],
-           "narrow_trust": ["--no-bounds-checks", "--trust-alignment"]}
+           "narrow_trust": ["--no-bounds-checks", "--trust-alignment"],
+           "rom": ["--ram", ROM_RAM],
+           "romfresh": ["--ram", ROM_RAM, "--ram-bytes", "32"],
+           "data_c_rom": ["--ram", ROM_RAM, "--ram-bytes", "8192"],
+           "memory_c_rom": ["--ram", ROM_RAM, "--ram-bytes", "8192"]}
+
+# The cases for code that runs from a ROM (WASM.md, Code in a ROM), and
+# the word after their words in RAM, ___wasm_ram_end: ROM_RAM plus the
+# words of the mutable globals and of the reserved memory.
+RAM_END = {"rom": 0xFFFFF000 + 1 + 4400 // 4,       # __stack_pointer, to __heap_base
+           "romfresh": 0xFFFFF000 + 2 + 1 + 32 // 4,  # an i64 and an i32 global
+           "data_c_rom": 0xFFFFF000 + 1 + 8192 // 4,
+           "memory_c_rom": 0xFFFFF000 + 1 + 8192 // 4}
 
 # What a case must print on the console (SYSTEM.md §1). Every other case
 # must print nothing.
@@ -3429,6 +3448,40 @@ CASES += [
 ]
 CASES += [(name + "_trust", wasm, extra, expected) for name, wasm, extra, expected in CASES
           if name in ("memory_dyn", "narrow")]
+# Code that runs from a ROM (RAM_END). rom.c is linked with
+# --export=__heap_base, so its memory in RAM ends there. get(i) = i + 100.
+# local = get(0) = 100, which bump(&local, 5), on the module's stack,
+# makes 105. counts, 0 at the start, gets 0 to 63, which sum to 2016.
+# table gets get(10) - 100 = 10 added to table[1]: 1 + 12 + 3 + 4 = 20.
+# text[0] is 'R' = 82, and calls is 1. 105 + 2016 + 20 + 82 + 1 = 2224 =
+# 0x8B0. data.c and memory.c do not export __heap_base, so they get 8192
+# bytes, and give the same results as without --ram.
+CASES += [("rom", "rom", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 0x8B0)]
+CASES += [(name + "_rom", wasm, extra, expected) for name, wasm, extra, expected in CASES
+          if name in ("data_c", "memory_c")]
+# ___wasm_start sets the words in RAM to their initial values, so a
+# second call starts the module fresh. Global 0 is an i64, 0x1_00000002,
+# global 1 the immutable seven = 7, in the image, and global 2 count = 5,
+# and the data segment puts 42 in word 2 of the memory. main, by hand,
+# writes 99 to count, to word 2, and to word 5, which is 0 at the start,
+# calls ___wasm_start, and returns count + word 2 + word 5 + seven + both
+# words of global 0: 5 + 42 + 0 + 7 + 2 + 1 = 57.
+CASES += [
+    ("romfresh", module(
+        types(MAIN_TYPE),
+        memory(1),
+        typed_globals((I64, True, 0x1_00000002), (I32, False, 7), (I32, True, 5)),
+        exports(("seven", 3, 1), ("count", 3, 2)),
+        data((8, bytes([42, 0, 0, 0])))),
+     "_main MOVE @_count, 99\n"
+     " MOVE @___wasm_memory+2, 99\n"
+     " MOVE @___wasm_memory+5, 99\n"
+     " ADD @--R13, 2, R15\n MOVE R15, ___wasm_start\n"
+     " MOVE R1, @_count\n ADD R1, R1, @___wasm_memory+2\n"
+     " ADD R1, R1, @___wasm_memory+5\n ADD R1, R1, @_seven\n"
+     " ADD R1, R1, @W.g0\n ADD R1, R1, @W.g0+1\n"
+     " MOVE R15, @R13++\n", 57),
+]
 
 
 def run(cmd: List[str]) -> str:
@@ -3524,6 +3577,23 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
     mem = assembler.labels.get("___wasm_memory")
     if mem is not None and all(a in image for a in range(mem, mem + 16384)):
         problems.append("the memory is in the program image")
+    if name in RAM_END:
+        end = int(assembler.equs.get("___wasm_ram_end", "0"), 0)
+        if end != RAM_END[name]:
+            problems.append(f"___wasm_ram_end is {end:08x}, expected {RAM_END[name]:08x}")
+        # The image after the run, eight words to a line of the dump.
+        top = max(image) + 1
+        dump = run([NICEEMU, "-d", f"0:{top}", binary])
+        after: Dict[int, int] = {}
+        for line in dump.splitlines():
+            m = re.match(r"([0-9a-f]{8}):((?: [0-9a-f]{8})+)\Z", line)
+            if m:
+                for i, w in enumerate(m.group(2).split()):
+                    after[int(m.group(1), 16) + i] = int(w, 16)
+        changed = [a for a in sorted(image) if after.get(a) != image[a]]
+        if changed:
+            problems.append(f"{len(changed)} words of the image changed, the first at"
+                            f" {changed[0]:08x}")
     if trap:
         if (not output.startswith("Halted (reserved control instruction)")
                 or not output.endswith("exit 2\n")):

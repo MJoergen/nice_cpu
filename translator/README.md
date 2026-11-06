@@ -89,8 +89,8 @@ What you get:
 ### nicewasm
 
     ./nicewasm.py [-o output.nasm] [--no-bounds-checks] [--trust-alignment]
-                  [--memory-pages N] [--library NAME [--library-memory BYTES]]
-                  [--no-mpu] input.wasm
+                  [--memory-pages N] [--ram ADDR [--ram-bytes BYTES]]
+                  [--library NAME [--library-memory BYTES]] [--no-mpu] input.wasm
 
 | Option | Effect |
 |---|---|
@@ -98,6 +98,8 @@ What you get:
 | `--no-bounds-checks` | Leave out the bounds checks on memory accesses, as WASM.md allows. The code is then smaller and faster, but an access out of bounds reads or writes whatever NICE memory the address reaches. |
 | `--trust-alignment` | Take an access of 4 or 8 bytes whose alignment hint is 4 bytes or more to be at a multiple of 4, without the test of DESIGN.md, as WASM.md allows. The code is then smaller and faster, mostly without bounds checks, but a misaligned access reads or writes the word that holds its first byte. The hint is exact in the code of clang, Zig, and rustc. |
 | `--memory-pages N` | Let `memory.grow` grow the memory up to N pages, the cap of WASM.md. N may not be below the memory's initial size or above its maximum, if it declares one, and it must be below 65536. Without the option, the cap is the initial size. |
+| `--ram ADDR` | For code that runs from a ROM: put the words that the module writes in RAM from ADDR, a NICE address in decimal or with `0x` (see [Code in a ROM](#code-in-a-rom)). Not with `--library` or `--memory-pages`. |
+| `--ram-bytes BYTES` | With `--ram`, the size of the memory in RAM (see Code in a ROM). |
 | `--library NAME` | Translate a library module instead (see [Library modules](#library-modules)). |
 | `--library-memory BYTES` | With `--library`, the size of the library's memory (see Library modules). |
 | `--no-mpu` | For a system without the math unit of SYSTEM.md §2: `i32.mul`, and `div` and `rem` of both widths, then call the runtime library instead of using the math unit, and the program must be joined with `runtime/muldiv_soft.nasm`, not `muldiv_mpu.nasm`. |
@@ -442,6 +444,41 @@ module in these ways:
   `--library-memory BYTES`, it is BYTES, which may not be negative, rounded up to a word. An access
   past it traps with code 2.
 
+## Code in a ROM
+
+`--ram ADDR` translates a program's module whose code runs from a ROM,
+as WASM.md describes under Code in a ROM. The words that the module
+writes go in RAM, and the rest stays in the image:
+
+- The mutable globals are at ADDR and up, and the memory follows them.
+  `W.gN`, the labels of exported globals, and `___wasm_memory` are `.EQU`
+  names of their addresses, and `___wasm_ram_end` is the word after the
+  last. The immutable globals stay in the image.
+- `W.init` in the image holds the initial values: those of the mutable
+  globals, and the words that data segments set. `___wasm_start` copies
+  them to RAM and sets the rest of the memory to 0, in one pass from
+  ADDR up, before it calls the start function and `__wasm_call_ctors`.
+  The system calls it at every start.
+- Only the start of the memory is reserved. By default, that is up to
+  the end of the last data segment, the highest initial value of a
+  mutable `i32` global, or the value of the global `__heap_base`,
+  whichever is highest. wasm-ld puts the static data that is 0 at the
+  start, such as C's `.bss`, in no data segment, and ends it at
+  `__heap_base`, so the module must export that global: link with
+  `--export=__heap_base`, as `nicebuild.py --ram` does. Without it, give
+  `--ram-bytes BYTES`, which may not be negative, rounded up to a word.
+  An access past the reserved part traps with code 2, unless the bounds
+  checks are left out.
+- `memory.size` and `memory.grow` are errors, so the C library's
+  `malloc` is not available.
+- The words must fit below 2³²: ADDR plus their number may not pass it.
+  Whether they fit in the system's RAM is for the system to check, with
+  `___wasm_ram_end`.
+
+The runtime library's start-up files hold the vectors that it jumps
+through (ABI.md, Start-up), so a system that runs the code from a ROM
+has start-up code of its own, which puts them in its RAM.
+
 ## Test
 
     make test        # run the test modules, then test/fuzz.py, test/passes.py, test/errors.py, and test/build.py
@@ -452,7 +489,10 @@ module in these ways:
 `test/run.py` translates each test module and joins it with the runtime.
 It then assembles and runs the program. It checks main's result in R1,
 that R7–R13 are unchanged unless it trapped, what it printed on the
-console, and that the memory is not in the `.bin` file. A case that
+console, and that the memory is not in the `.bin` file. A case for
+code in a ROM, translated with `--ram`, must also leave every word of
+the image as it was, and its `___wasm_ram_end` must be as worked out by
+hand. A case that
 traps must instead halt at `___wasm_trap` with the trap code in R1, and
 R2 at the start of the code that trapped. Most modules are built byte by
 byte with `test/wasm.py`. The others are compiled from `test/*.c`,

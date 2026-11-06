@@ -6,7 +6,7 @@ one assembly file, to be joined with the start-up code, the program's other
 files, and the runtime library as runtime/ABI.md describes.
 
 Usage: nicewasm.py [-o output.nasm] [--no-bounds-checks] [--trust-alignment]
-                   [--memory-pages N]
+                   [--memory-pages N] [--ram ADDR [--ram-bytes BYTES]]
                    [--library NAME [--library-memory BYTES]] [--no-mpu] input.wasm
 
 README.md lists the wasm features it supports. Anything else is rejected
@@ -2778,7 +2778,8 @@ class Translator:
     def __init__(self, m: Module, data: bytes, checks: bool = True,
                  library: Optional[str] = None, library_memory: Optional[int] = None,
                  memory_pages: Optional[int] = None, mpu: bool = True,
-                 trust_alignment: bool = False) -> None:
+                 trust_alignment: bool = False, ram: Optional[int] = None,
+                 ram_bytes: Optional[int] = None) -> None:
         self.m = m
         self.data = data
         self.checks = checks  # bounds checks on memory accesses
@@ -2808,6 +2809,36 @@ class Translator:
                 self.mem_bytes = library_memory
         elif library_memory is not None:
             raise WasmError("--library-memory: the module has no memory")
+        # The address in RAM of the words that the module writes, for code
+        # that runs from a ROM (WASM.md, Code in a ROM), or None.
+        self.ram = ram
+        if ram is not None and m.memory_pages is not None:
+            assert self.mem_bytes is not None
+            if ram_bytes is None:
+                # As much as the data, the stack, and the static data that
+                # is 0 at the start need. That data is in no segment, but
+                # it ends at __heap_base, which the linker defines.
+                heap = [m.globals[idx].init & 0xFFFFFFFF for exp, kind, idx in m.exports
+                        if exp == "__heap_base" and kind == 3 and idx < len(m.globals)
+                        and m.globals[idx].type == I32]
+                if not heap:
+                    raise WasmError("--ram: the module does not export __heap_base, so give"
+                                    " the bytes of its memory with --ram-bytes")
+                ends = [d.offset + len(d.data) for d in m.data]
+                ends += [g.init & 0xFFFFFFFF for g in m.globals if g.type == I32 and g.mutable]
+                ram_bytes = max(ends + heap)
+            ram_bytes = (ram_bytes + 3) // 4 * 4
+            if ram_bytes > self.mem_bytes:
+                raise WasmError(f"the memory of {ram_bytes} bytes in RAM is larger than the"
+                                f" module's memory of {self.mem_bytes}")
+            self.mem_bytes = ram_bytes
+        elif ram_bytes is not None:
+            raise WasmError("--ram-bytes: the module has no memory")
+        if ram is not None:
+            end = ram + self.ram_globals() + (self.mem_bytes or 0) // 4
+            if end > 1 << 32:
+                raise WasmError(f"--ram: the {end - ram} words from 0x{ram:08X} pass the end of"
+                                " the address space")
         # The cap: memory.grow may grow the memory up to it (WASM.md). Unless
         # it is above the initial size, the size is a constant.
         self.cap = m.memory_pages
@@ -2907,6 +2938,8 @@ class Translator:
                            .replace("W.CAP", str(self.cap)).replace("W.", self.prefix)
                            .replace("___wasm_memory", self.mem) for line in HELPERS[name]]
         out += self.table()
+        if self.ram is not None:
+            return pseudo(out + self.ram_layout(runs))
         if self.m.globals:
             out += ["", "; Globals"]
             for i, g in enumerate(self.m.globals):
@@ -2945,6 +2978,47 @@ class Translator:
                 out.append(instr(".RES", str((self.cap - pages) * WORDS_PER_PAGE)))
         return pseudo(out)
 
+    def ram_globals(self) -> int:
+        """The words of the mutable globals, which go in RAM with --ram."""
+        return sum(SIZES[g.type] for g in self.m.globals if g.mutable)
+
+    def ram_layout(self, runs: List[Tuple[int, Union[int, List[int]]]]) -> List[str]:
+        """For code that runs from a ROM (WASM.md, Code in a ROM): the
+        labels of the words that the module writes, as .EQU names of their
+        addresses in RAM, and their initial values in the image."""
+        assert self.ram is not None
+        def equ(label: str, addr: int) -> str:
+            return f"{label:<15} .EQU    0x{addr:08X}"
+        out = []
+        if any(not g.mutable for g in self.m.globals):
+            out += ["", "; The immutable globals, which are only read"]
+            for i, g in enumerate(self.m.globals):
+                if not g.mutable:
+                    out += self.global_labels.get(i, []) + [f"W.g{i}"]
+                    out += [instr(".DAT", w) for w in words(g.init, g.type)]
+        addr = self.ram
+        out += ["", f"; The words that the module writes, in RAM from 0x{addr:08X}: the mutable",
+                "; globals, and then the linear memory. ___wasm_start copies their initial",
+                "; values from W.init. ___wasm_ram_end is the word after them."]
+        for i, g in enumerate(self.m.globals):
+            if g.mutable:
+                out += [equ(label, addr) for label in self.global_labels.get(i, []) + [f"W.g{i}"]]
+                addr += SIZES[g.type]
+        if self.m.memory_pages is not None:
+            assert self.mem_bytes is not None
+            pages = self.m.memory_pages
+            out.append(f"                ; linear memory: the first {self.mem_bytes} bytes of"
+                       f" {pages} page{'' if pages == 1 else 's'}")
+            out.append(equ(self.mem, addr))
+            addr += self.mem_bytes // 4
+        out.append(equ("___wasm_ram_end", addr))
+        values = [w for g in self.m.globals if g.mutable for w in words(g.init, g.type)]
+        values += [f"0x{w:08X}" for _, run in runs if isinstance(run, list) for w in run]
+        out += ["", "; The initial values: the globals', and the words that data segments set",
+                "W.init"]
+        out += [instr(".DAT", *values[i:i + 8]) for i in range(0, len(values), 8)]
+        return out
+
     @staticmethod
     def limits(pages: int) -> List[Tuple[str, int]]:
         """The words that the bounds checks compare with when the memory
@@ -2959,6 +3033,8 @@ class Translator:
 
     def start(self, runs: List[Tuple[int, Union[int, List[int]]]]) -> List[str]:
         """___wasm_start, which a program's module always has (WASM.md)."""
+        if self.ram is not None:
+            return self.ram_start(runs)
         out = ["", "; Sets the memory to 0, then calls the start function and",
                "; __wasm_call_ctors, if the module has them.", "___wasm_start"]
         # The words that data segments set are in the program image. The
@@ -2983,12 +3059,52 @@ class Translator:
             out.append(instr("MOVE", "@W.pages", str(self.m.memory_pages)))
             out += [instr("MOVE", f"@W.{name}", str(v))
                     for name, v in self.limits(self.m.memory_pages)]
+        return out + self.start_calls()
+
+    def start_calls(self) -> List[str]:
+        """The end of ___wasm_start: the calls of the start function and of
+        __wasm_call_ctors, if the module has them, and the return."""
+        out = []
         for idx in (self.m.start, self.ctors):
             if idx is not None:
                 out.append(instr("ADD", "@--R13", "2", "R15"))
                 out.append(instr("MOVE", "R15", self.func_label(idx)))
         out.append(instr("MOVE", "R15", "@R13++"))
         return out
+
+    def ram_start(self, runs: List[Tuple[int, Union[int, List[int]]]]) -> List[str]:
+        """___wasm_start for code that runs from a ROM (WASM.md, Code in a
+        ROM). The globals and the memory are one area in RAM, so it goes
+        through the area once: R6 points at the next word of it, and R5 at
+        the next initial value in W.init. A run of words with initial
+        values is copied, and a run of words that are 0 is set to 0. Each
+        pass of a loop does ZERO_UNROLL words, with R4 counting."""
+        assert self.ram is not None
+        out = ["", "; Copies the initial values of the globals and the memory to RAM, sets",
+               "; the rest of the memory to 0, then calls the start function and",
+               "; __wasm_call_ctors, if the module has them.", "___wasm_start"]
+        seq: List[Tuple[bool, int]] = []  # (copied, words) in RAM order
+        for copy, n in ([(True, self.ram_globals())]
+                        + [(isinstance(v, list), len(v) if isinstance(v, list) else v)
+                           for _, v in runs]):
+            if n and seq and seq[-1][0] == copy:
+                seq[-1] = (copy, seq[-1][1] + n)
+            elif n:
+                seq.append((copy, n))
+        if any(copy for copy, _ in seq):
+            out.append(instr("MOVE", "R5", "W.init"))
+        if seq:
+            out.append(instr("MOVE", "R6", f"0x{self.ram:08X}"))
+        for k, (copy, n) in enumerate(seq):
+            move = instr("MOVE", "@R6++", "@R5++" if copy else "R0")
+            if n >= ZERO_UNROLL:
+                out.append(instr("MOVE", "R4", str(n // ZERO_UNROLL)))
+                out.append(f"W.ram{k}")
+                out += [move] * ZERO_UNROLL
+                out.append(instr("DEC[M]", "R4", "R4"))
+                out.append(instr("?!Z MOVE", "R15", f"W.ram{k}"))
+            out += [move] * (n % ZERO_UNROLL)
+        return out + self.start_calls()
 
     def type_number(self, idx: int) -> int:
         """The number of a function type in the table: the index of the
@@ -4487,6 +4603,9 @@ class FunctionTranslator:
                 if self.t.library:
                     raise WasmError(f"function {self.idx}: a library module may not use {name}",
                                     at)
+                if self.t.ram is not None:
+                    raise WasmError(f"function {self.idx}: a module that runs from a ROM (--ram)"
+                                    f" may not use {name}", at)
             elif op == 0x0E:
                 targets = [r.u32() for _ in range(r.u32() + 1)]
             elif op == 0x1C:
@@ -5225,9 +5344,10 @@ class FunctionTranslator:
 def translate(data: bytes, source: str, checks: bool = True, library: Optional[str] = None,
               library_memory: Optional[int] = None,
               memory_pages: Optional[int] = None, mpu: bool = True,
-              trust_alignment: bool = False) -> List[str]:
+              trust_alignment: bool = False, ram: Optional[int] = None,
+              ram_bytes: Optional[int] = None) -> List[str]:
     return Translator(parse(data), data, checks, library, library_memory,
-                      memory_pages, mpu, trust_alignment).run(source)
+                      memory_pages, mpu, trust_alignment, ram, ram_bytes).run(source)
 
 
 def main() -> None:
@@ -5249,6 +5369,12 @@ def main() -> None:
     ap.add_argument("--library-memory", metavar="BYTES", type=int,
                     help="bytes of a library module's memory to reserve"
                          " (default: as much as its data and stack need)")
+    ap.add_argument("--ram", metavar="ADDR", type=lambda v: int(v, 0),
+                    help="for code that runs from a ROM: put the globals and the memory in RAM"
+                         " from ADDR, with their initial values copied by ___wasm_start")
+    ap.add_argument("--ram-bytes", metavar="BYTES", type=int,
+                    help="bytes of the memory to reserve in RAM with --ram"
+                         " (default: up to __heap_base, its data, and its stack)")
     ap.add_argument("--no-mpu", action="store_true",
                     help="call the runtime library for i32 mul, and for div and rem, instead of"
                          " using the math unit")
@@ -5272,9 +5398,19 @@ def main() -> None:
             sys.exit("--library-memory: the number of bytes must not be negative")
         if args.memory_pages is not None and args.library is not None:
             sys.exit("--memory-pages: a library module (--library) cannot grow its memory")
+        if args.ram is not None and not 0 <= args.ram < 1 << 32:
+            sys.exit(f"--ram: {args.ram} is not a NICE address")
+        if args.ram is not None and args.library is not None:
+            sys.exit("--ram: a library module (--library) cannot run from a ROM")
+        if args.ram is not None and args.memory_pages is not None:
+            sys.exit("--ram: the memory of code that runs from a ROM cannot grow (--memory-pages)")
+        if args.ram_bytes is not None and args.ram is None:
+            sys.exit("--ram-bytes: only code that runs from a ROM (--ram) takes it")
+        if args.ram_bytes is not None and args.ram_bytes < 0:
+            sys.exit("--ram-bytes: the number of bytes must not be negative")
         lines = translate(data, os.path.basename(args.input), not args.no_bounds_checks,
                           args.library, args.library_memory, args.memory_pages,
-                          not args.no_mpu, args.trust_alignment)
+                          not args.no_mpu, args.trust_alignment, args.ram, args.ram_bytes)
     except WasmError as e:
         where = "" if e.offset is None else f":0x{e.offset:x}"
         print(f"{args.input}{where}: error: {e}", file=sys.stderr)

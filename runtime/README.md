@@ -308,7 +308,9 @@ The library is small on purpose:
   neighboring free blocks. `realloc` to a smaller size, 0 included,
   keeps the block. The heap starts at wasm-ld's `__heap_base`
   and grows with `memory.grow`, so only up to nicewasm's
-  `--memory-pages`.
+  `--memory-pages`. Code that runs from a ROM, translated with `--ram`,
+  may use neither `memory.size` nor `memory.grow`, so it has no `malloc`
+  (translator README, Code in a ROM).
 
 Compile with the library's headers and link with `libc.a`, for example:
 

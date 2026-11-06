@@ -348,6 +348,30 @@ OPTION_CASES += [
      "import env.foo: it is imported twice with different types"),
 ]
 
+# Code that runs from a ROM (WASM.md, Code in a ROM).
+ROM = ["--ram", "0xFFFFF000"]
+OPTION_CASES += [
+    # Without __heap_base, the end of the static data that is 0 at the
+    # start is not known.
+    (ROM, module(memory(1)),
+     "--ram: the module does not export __heap_base, so give the bytes of its memory with"
+     " --ram-bytes"),
+    (ROM + ["--ram-bytes", "70000"], module(memory(1)),
+     "the memory of 70000 bytes in RAM is larger than the module's memory of 65536"),
+    (ROM + ["--ram-bytes", "16"], module(MAIN), "--ram-bytes: the module has no memory"),
+    (["--ram", "0xFFFFFFF0", "--ram-bytes", "128"], module(memory(1)),
+     "--ram: the 32 words from 0xFFFFFFF0 pass the end of the address space"),
+    (ROM + ["--ram-bytes", "16"], module(MAIN, funcs(0), memory(1), code((0, b"\x3f\x00"))),
+     "function 0: a module that runs from a ROM (--ram) may not use memory.size"),
+    (ROM + ["--ram-bytes", "16"],
+     module(MAIN, funcs(0), memory(1), code((0, i32_const(0) + b"\x40\x00"))),
+     "function 0: a module that runs from a ROM (--ram) may not use memory.grow"),
+    # Only the reserved part of the memory is there for data.
+    (ROM + ["--ram-bytes", "8"],
+     module(memory(1), section(11, vec([b"\0" + i32_const(8) + b"\x0b" + vec([b"x"])]))),
+     "data segment 0 does not fit in the memory"),
+]
+
 # Errors in the command line: (options, expected message). The module is
 # a valid one.
 COMMAND_CASES: List[Tuple[List[str], str]] = [
@@ -357,6 +381,13 @@ COMMAND_CASES: List[Tuple[List[str], str]] = [
      "--library-memory: the number of bytes must not be negative"),
     (["--library", "lib", "--memory-pages", "2"],
      "--memory-pages: a library module (--library) cannot grow its memory"),
+    (["--ram", "0x100000000"], "--ram: 4294967296 is not a NICE address"),
+    (["--ram", "-1"], "--ram: -1 is not a NICE address"),
+    (["--ram", "0", "--library", "lib"], "--ram: a library module (--library) cannot run from a ROM"),
+    (["--ram", "0", "--memory-pages", "2"],
+     "--ram: the memory of code that runs from a ROM cannot grow (--memory-pages)"),
+    (["--ram-bytes", "16"], "--ram-bytes: only code that runs from a ROM (--ram) takes it"),
+    (["--ram", "0", "--ram-bytes", "-4"], "--ram-bytes: the number of bytes must not be negative"),
 ]
 
 

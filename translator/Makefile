@@ -12,6 +12,10 @@ RUSTC ?= rustc
 # ReleaseSafe and a 16 KB stack, because Zig's panic handler puts a 4 KB
 # buffer on the stack.
 C_TESTS = sum5 control memory data shifts intops floats primes
+# The modules for code in a ROM, linked with --export=__heap_base as
+# nicebuild.py --ram links, so that nicewasm --ram finds the end of the
+# static data.
+ROM_C_TESTS = rom
 ZIG_TESTS = answer datazig bulk hello
 ZIG_SAFE_TESTS = safe safetrap
 RUST_TESTS = rust rusttrap hellors
@@ -55,9 +59,10 @@ typecheck:
 	  wasm.py fuzz.py passes.py diff_fuzz.py build.py
 
 wasm:
-	@for t in $(C_TESTS); do \
+	@for t in $(C_TESTS) $(ROM_C_TESTS); do \
 	  $(CLANG) --target=wasm32 -mbulk-memory -O2 -nostdlib -Wl,--no-entry -Wl,--export=main \
 	    -Wl,--allow-undefined -Wl,--stack-first -Wl,-z,stack-size=4096 -Wl,--initial-memory=65536 \
+	    $$(case " $(ROM_C_TESTS) " in *" $$t "*) echo -Wl,--export=__heap_base;; esac) \
 	    -o test/$$t.wasm test/$$t.c || exit 1; \
 	done
 	@for t in $(ZIG_TESTS); do \

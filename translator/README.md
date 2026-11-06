@@ -123,7 +123,8 @@ of the inputs picks the language: `.c`, `.zig`, or `.rs`.
     ./nicebuild.py [-o output.bin] [-O LEVEL] [-I DIR] [-D MACRO[=VALUE]]
                    [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-bounds-checks]
                    [--trust-alignment] [--memory-pages N] [--asm FILE]...
-                   [--no-trap-report] [--monitor] [--symbols] [--keep]
+                   [--no-trap-report] [--monitor] [--ram ADDR [--ram-bytes BYTES]]
+                   [--symbols] [--keep]
                    input.c... | input.zig | input.rs
 
 | Option | Effect |
@@ -137,6 +138,8 @@ of the inputs picks the language: `.c`, `.zig`, or `.rs`.
 | `--asm FILE` | Join a NICE assembly file after the program, so that the program can call a function that the file defines, as the label `_name` of ABI.md; for C it also lets the link leave the function undefined. The option can repeat. |
 | `--no-trap-report` | Leave out the trap report, so that a trap halts silently (see below). |
 | `--monitor` | Build a program for a monitor in ROM, which loads it at `0x8000` and calls it, and to which it returns (ABI.md, "Programs under a monitor"): the start-up code is `runtime/start_wasm_trap_mon.nasm`, or `start_wasm_mon.nasm` with `--no-trap-report`, and the `.bin` file starts at `0x8000`. The monitor's own routines, if the program calls them, come as stubs in a file of the monitor's, joined with `--asm`. |
+| `--ram ADDR` | Build a program whose code runs from a ROM, as nicewasm's `--ram ADDR` does (see [Code in a ROM](#code-in-a-rom)): the words that it writes are in RAM from ADDR, and `___wasm_start` gives them their initial values. The module is linked with `--export=__heap_base`, so that nicewasm reserves the memory up to the end of the static data. The start-up code is the same as without the option, and the `.bin` file starts at 0, for a ROM there. A program that uses floats is an error, since the float library keeps its words in the image. Not with `--monitor` or `--memory-pages`. |
+| `--ram-bytes BYTES` | With `--ram`, passed on to `nicewasm.py`. |
 | `--symbols` | Also write the labels to `output.sym`, with the functions of the program by their names, for `niceemu --symbols`, which then names the function of a trap. A Zig program is then built with `-fno-strip`, because ReleaseSmall leaves the names out of the wasm; the `.bin` is the same. |
 | `--keep` | Leave the `.wasm`, `.nasm`, and joined `.full.nasm` files next to the output. |
 

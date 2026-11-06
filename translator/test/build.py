@@ -35,6 +35,12 @@ ERRORS: List[Tuple[List[str], str]] = [
     (["--memory", "0", "a.c"], "nicebuild: --memory must be positive, not 0"),
     (["--asm", "missing.nasm", "a.c"], "nicebuild: missing.nasm: No such file or directory"),
     (["-o", "/nonexistent/x.bin", "a.c"], "nicebuild: /nonexistent/x.bin: No such file or directory"),
+    (["--ram-bytes", "16", "a.c"], "nicebuild: --ram-bytes is for --ram only"),
+    (["--ram", "0xFFFFF000", "--monitor", "a.c"],
+     "nicebuild: --ram and --monitor do not go together: a monitor loads a program into RAM"),
+    (["--ram", "0xFFFFF000", "--memory-pages", "2", "a.c"],
+     "nicebuild: --ram and --memory-pages do not go together: the memory of code in a ROM"
+     " cannot grow"),
 ]
 
 failed = 0
@@ -281,6 +287,71 @@ def test_zig_monitor(tmp: str) -> None:
                   ["Hi", "~R0  00000000 R1  00000005 R2  00000003 R3  [0-9a-f]{8}"])
 
 
+def image_changes(program: str) -> List[int]:
+    """Runs a .bin file and dumps its image after the halt. Returns the
+    addresses of the words of the image that the run changed."""
+    image = {}
+    with open(program) as f:
+        for line in f:
+            addr, word = line.split()
+            image[int(addr, 16)] = int(word, 16)
+    p = subprocess.run([NICEEMU, "-d", f"0:{max(image) + 1}", program], stdin=subprocess.DEVNULL,
+                       capture_output=True, text=True)
+    after = {}
+    for line in p.stdout.splitlines():
+        m = re.fullmatch(r"([0-9a-f]{8}):((?: [0-9a-f]{8})+)", line)
+        if m:
+            for i, w in enumerate(m.group(2).split()):
+                after[int(m.group(1), 16) + i] = int(w, 16)
+    return [a for a in sorted(image) if after.get(a) != image[a]]
+
+
+# A C program for code in a ROM, with a data segment, static data that is
+# 0 at the start, the C library's printf, and a stack, which printf's
+# buffer is on. counter is 0 plus table[2] = 3.
+ROM_C = """#include <stdio.h>
+static int counter;
+static int table[3] = {1, 2, 3};
+int main(void) {
+    counter += table[2];
+    printf("rom %d\\n", counter);
+    return counter;
+}
+"""
+FLOAT_C = "int main(void) { volatile float f = 3; return (int)(f * 1.5f); }\n"
+
+
+def test_rom(tmp: str, lang: str) -> None:
+    """A program built with --ram, for code that runs from a ROM, runs
+    from the image at 0 with its words in RAM at 0xFFFFF000, below the
+    stack, and leaves every word of the image as it was. In C, a program
+    that uses floats is an error."""
+    what = {"c": "C", "zig": "Zig", "rs": "Rust"}[lang] + " for a ROM"
+    if lang == "c":
+        source = os.path.join(tmp, "rom.c")
+        with open(source, "w") as f:
+            f.write(ROM_C)
+        lines = ["rom 3", "~R0  00000000 R1  00000003 .*"]
+    else:
+        source = os.path.join(HERE, "hello.zig" if lang == "zig" else "hellors.rs")
+        lines = ["Hello, " + ("NICE!" if lang == "zig" else "Rust!")]
+    out = os.path.join(tmp, f"rom_{lang}.bin")
+    if check_build(what, ["--ram", "0xFFFFF000", "-o", out, source], out):
+        check_run(what, run(out), 0, lines)
+        changed = image_changes(out)
+        if changed:
+            fail(what, f"{len(changed)} words of the image changed, the first at {changed[0]:08x}")
+    if lang == "c":
+        source = os.path.join(tmp, "float.c")
+        with open(source, "w") as f:
+            f.write(FLOAT_C)
+        p = build(["--ram", "0xFFFFF000", "-o", os.path.join(tmp, "float.bin"), source])
+        message = ("nicebuild: the program uses floats, and the float library keeps the words it"
+                   " writes in the image, so it cannot run from a ROM (--ram)")
+        if p.returncode != 1 or message not in p.stderr.splitlines():
+            fail("C with floats for a ROM", f"exit status {p.returncode}\n{p.stderr}")
+
+
 def test_unwritable(tmp: str) -> None:
     """An output directory without write permission is found before the build.
     Root writes anywhere, so the test is skipped for root."""
@@ -361,6 +432,7 @@ def main() -> None:
             test_c(tmp)
             test_c_options(tmp)
             test_c_monitor(tmp)
+            test_rom(tmp, "c")
             test_tail(tmp, "c")
             ran.append("C")
         else:
@@ -368,6 +440,7 @@ def main() -> None:
         if compiler("ZIG", "zig"):
             test_zig(tmp)
             test_zig_monitor(tmp)
+            test_rom(tmp, "zig")
             test_tail(tmp, "zig")
             ran.append("Zig")
         else:
@@ -375,6 +448,7 @@ def main() -> None:
         rustc = compiler("RUSTC", "rustc")
         if rustc and rustc_for_wasm32(rustc):
             test_rust(tmp)
+            test_rom(tmp, "rs")
             ran.append("Rust")
         else:
             skipped.append("Rust (no rustc for wasm32)")

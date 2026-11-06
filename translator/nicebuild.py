@@ -10,7 +10,8 @@ take one source file, the root of the program.
 Usage: nicebuild.py [-o output.bin] [-O LEVEL] [-I DIR] [-D MACRO[=VALUE]]
                     [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-bounds-checks]
                     [--trust-alignment] [--memory-pages N] [--asm FILE]...
-                    [--no-trap-report] [--monitor] [--symbols] [--keep]
+                    [--no-trap-report] [--monitor] [--ram ADDR [--ram-bytes BYTES]]
+                    [--symbols] [--keep]
                     input.c... | input.zig | input.rs
 """
 
@@ -102,7 +103,10 @@ def write_symbols(sym: str, program: str, output: str) -> None:
 
 
 def compile_wasm(lang: str, args: argparse.Namespace, wasm: str) -> None:
-    """Compiles the inputs to the wasm module in the file wasm."""
+    """Compiles the inputs to the wasm module in the file wasm. With --ram,
+    the module exports __heap_base, the end of its static data, so that
+    nicewasm --ram reserves the memory up to there (README.md)."""
+    heap = ["--export=__heap_base"] if args.ram is not None else []
     if lang == "c":
         run([os.environ.get("CLANG", "clang"), "--target=wasm32", "-mbulk-memory", "-mtail-call",
              f"-O{args.opt or '2'}", "-ffreestanding",
@@ -110,6 +114,7 @@ def compile_wasm(lang: str, args: argparse.Namespace, wasm: str) -> None:
              *[f"-I{d}" for d in args.includes], *[f"-D{d}" for d in args.defines],
              *(["-Wl,--allow-undefined"] if args.asm else []),
              "-nostdlib", "-Wl,--no-entry", "-Wl,--export=main", "-Wl,--stack-first",
+             *[f"-Wl,{h}" for h in heap],
              f"-Wl,-z,stack-size={args.stack or 4096}", f"-Wl,--initial-memory={args.memory}",
              "-o", wasm, *args.inputs, os.path.join(LIBC, "libc.a")])
     elif lang == "zig":
@@ -121,7 +126,7 @@ def compile_wasm(lang: str, args: argparse.Namespace, wasm: str) -> None:
         strip = "-fno-strip" if args.symbols else "-fstrip"
         run([os.environ.get("ZIG", "zig"), "build-exe", "-target", "wasm32-freestanding",
              "-mcpu=generic+tail_call", "-fno-entry", "-rdynamic", "-O", mode, strip, "--stack", str(stack),
-             f"--initial-memory={args.memory}", "--dep", "nice",
+             f"--initial-memory={args.memory}", *heap, "--dep", "nice",
              f"-Mroot={args.inputs[0]}", f"-Mnice={os.path.join(RUNTIME, 'nice.zig')}",
              f"-femit-bin={wasm}"])
     else:
@@ -129,7 +134,8 @@ def compile_wasm(lang: str, args: argparse.Namespace, wasm: str) -> None:
              "--crate-type", "cdylib", "-C", f"opt-level={args.opt or 's'}", "-C", "panic=abort",
              "-C", "target-feature=+tail-call",
              "-C", "strip=debuginfo", "-C", f"link-arg=-zstack-size={args.stack or 4096}",
-             "-C", f"link-arg=--initial-memory={args.memory}", "-o", wasm, args.inputs[0]])
+             "-C", f"link-arg=--initial-memory={args.memory}",
+             *[a for h in heap for a in ("-C", f"link-arg={h}")], "-o", wasm, args.inputs[0]])
 
 
 def main() -> None:
@@ -163,6 +169,12 @@ def main() -> None:
                     help="build a program that a monitor in ROM loads at 0x8000 and calls, "
                     "and that returns to it (runtime/ABI.md): start with "
                     "runtime/start_wasm_trap_mon.nasm, or start_wasm_mon.nasm with --no-trap-report")
+    ap.add_argument("--ram", type=lambda v: int(v, 0), metavar="ADDR",
+                    help="build a program whose code runs from a ROM: pass --ram ADDR to "
+                    "nicewasm, which puts the words the program writes in RAM from ADDR")
+    ap.add_argument("--ram-bytes", type=int, metavar="BYTES",
+                    help="with --ram, pass --ram-bytes to nicewasm (default: up to the end "
+                    "of the static data, __heap_base)")
     ap.add_argument("--symbols", action="store_true",
                     help="write the labels to a .sym file next to the output, with the "
                     "functions of the program by name, for niceemu --symbols")
@@ -176,6 +188,14 @@ def main() -> None:
             sys.exit(f"nicebuild: {name} must be positive, not {value}")
     if lang != "c" and (args.includes or args.defines):
         sys.exit("nicebuild: -I and -D are for C only")
+    if args.ram_bytes is not None and args.ram is None:
+        sys.exit("nicebuild: --ram-bytes is for --ram only")
+    if args.ram is not None and args.monitor:
+        sys.exit("nicebuild: --ram and --monitor do not go together: a monitor loads a"
+                 " program into RAM")
+    if args.ram is not None and args.memory_pages is not None:
+        sys.exit("nicebuild: --ram and --memory-pages do not go together: the memory of code"
+                 " in a ROM cannot grow")
     for path in args.asm:
         if not os.path.isfile(path):
             sys.exit(f"nicebuild: {path}: No such file or directory")
@@ -208,6 +228,10 @@ def main() -> None:
             cmd.append("--trust-alignment")
         if args.memory_pages is not None:
             cmd += ["--memory-pages", str(args.memory_pages)]
+        if args.ram is not None:
+            cmd += ["--ram", str(args.ram)]
+        if args.ram_bytes is not None:
+            cmd += ["--ram-bytes", str(args.ram_bytes)]
         run(cmd + [wasm])
 
         # The order of ABI.md: start-up, program, runtime, muldiv, and float
@@ -219,6 +243,11 @@ def main() -> None:
                  read(os.path.join(RUNTIME, "muldiv_soft.nasm" if args.no_mpu else "muldiv_mpu.nasm"))]
         float_nasm = read(os.path.join(RUNTIME, "float.nasm"))
         if float_labels(float_nasm) & set(re.findall(r"[A-Za-z0-9_.]+", program)):
+            if args.ram is not None:
+                # A library module keeps its memory and its globals in the
+                # image (WASM.md, Code in a ROM).
+                sys.exit("nicebuild: the program uses floats, and the float library keeps the"
+                         " words it writes in the image, so it cannot run from a ROM (--ram)")
             parts.append(float_nasm)
         if not args.no_trap_report:
             parts.append(read(os.path.join(RUNTIME, "trapmsg.nasm")))

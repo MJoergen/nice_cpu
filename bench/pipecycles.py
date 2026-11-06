@@ -142,7 +142,11 @@ The model gives the core's cycles for both benchmark programs to within
 0.02%. --retires FILE compares the model with the retire log of the core,
 which hdl/test/tb_core.vhd writes with G_RETIRE_LOG (make core in bench/):
 for each step, the core's cycles since the step before less the model's,
-summed by the cause the model charged and by address.
+summed by the cause the model charged and by address. --causes FILE sums
+the core's causes of each cycle (MICROARCH.md §8.1), which the same log
+gives, between the reads of INSTR_LO around each phase, and sets them
+beside the model's, in groups, since the model charges a cycle to what
+bound a micro-op and the core to what WRITE did in it.
 """
 
 import argparse
@@ -405,6 +409,7 @@ class Model:
         self.multi = 0
         self.gaps = {c: 0 for c in CAUSES}
         self.counter_reads: List[Tuple[int, int, int, Dict[str, int]]] = []
+        self.counter_pcs: List[int] = []  # the address of each read of INSTR_LO
         # Fetch stream.
         self.stream_base = 0          # pair number of the target's pair
         self.ftimes: List[Tuple[int, str]] = []
@@ -638,6 +643,7 @@ class Model:
         if counter_read_time is not None:
             self.counter_reads.append((self.instructions - 1, counter_read_time, self.total(),
                                        dict(self.gaps, multi=self.multi)))
+            self.counter_pcs.append(pc)
         # Shadow registers and memory, from the trace.
         for c in changes:
             if c[0] == "R" and "=" in c:
@@ -728,7 +734,7 @@ def retires(model: Model, lines: Iterable[str], core_log: str, top: int = 20) ->
     core: List[Tuple[int, str]] = []
     with open(core_log) as f:
         for line in f:
-            c, a = line.split()
+            c, a = line.split()[:2]
             core.append((int(c), a))
     mine: List[Tuple[int, str, str, int]] = []   # cycle, address, cause, iw
     for step in hazards.steps(lines):
@@ -817,6 +823,96 @@ def compare(m: Model, core_output: str) -> str:
     for nm, c in rows:
         if nm in core:
             lines.append(f"  {nm:9s} {c:9d} {core[nm]:9d}   {100 * (c - core[nm]) / core[nm]:+.1f}%")
+    return "\n".join(lines)
+
+
+# The causes of the core's cycles (MICROARCH.md §8.1), and of a flush,
+# by the letters of the retire log.
+CORE_CAUSES = ["RETIRE", "REFILL", "BUBBLE", "FETCH", "REG", "ORDER", "BUS", "STALL", "READ",
+               "LATE", "SHIFT", "ADJUST", "STORE", "INTR", "OTHER"]
+CORE_FLUSHES = ["JUMP", "SKIP", "STORE", "INTR", "OTHER"]
+# The groups in which the model's causes and the core's compare: a name,
+# the model's causes ("instr" for one cycle per instruction), and the
+# core's. The model charges a cycle to what bound a micro-op, the core to
+# what WRITE did in it, so only the groups compare, not each cause.
+CAUSE_GROUPS = [
+    ("retire", ["instr", "multi"], ["RETIRE"]),
+    ("refill", ["startup", "flush"], ["REFILL"]),
+    ("bubble", ["early"], ["BUBBLE"]),
+    ("fetch", ["fetch"], ["FETCH"]),
+    ("register", ["agen", "shiftreg", "sumwait"], ["REG"]),
+    ("order", ["sr", "jump"], ["ORDER"]),
+    ("bus", ["bus"], ["BUS", "STORE"]),
+    ("read", ["readbus", "readlate", "mpu"], ["STALL", "READ", "LATE"]),
+    ("shift", ["shiftlate"], ["SHIFT"]),
+    ("adjust", ["adjust"], ["ADJUST"]),
+    ("interrupt", ["interrupt"], ["INTR"]),
+    ("other", [], ["OTHER"]),
+]
+
+
+def core_causes(lines: Iterable[str], pcs: List[int]) -> List[Tuple[Dict[str, int], Dict[str, int]]]:
+    """The core's cycles by cause and its flushes by cause, between each two
+    reads of INSTR_LO, from the lines of the retire log of tb_core. The
+    reads are at the addresses pcs, in order: each is the next step at its
+    address after the read before, since the two runs part where the
+    program prints counts of its own. The letters of a step's line are the
+    cycles after the step before, so a phase has those of the steps after
+    its first read up to its second."""
+    steps = [line.split() for line in lines]
+    at: List[int] = []
+    j = 0
+    for pc in pcs:
+        want = f"{pc:08X}"
+        while j < len(steps) and steps[j][1] != want:
+            j += 1
+        if j == len(steps):
+            sys.exit(f"pipecycles.py: no read of INSTR_LO at {want} in the retire log")
+        at.append(j)
+        j += 1
+    out = []
+    for a, b in zip(at[0::2], at[1::2]):
+        cyc = {c: 0 for c in CORE_CAUSES}
+        fl = {c: 0 for c in CORE_FLUSHES}
+        for st in steps[a + 1:b + 1]:
+            for ch in st[2] if len(st) > 2 else "":
+                if "a" <= ch <= "o":
+                    cyc[CORE_CAUSES[ord(ch) - ord("a")]] += 1
+                elif "A" <= ch <= "E":
+                    fl[CORE_FLUSHES[ord(ch) - ord("A")]] += 1
+                else:
+                    sys.exit(f"pipecycles.py: {ch!r} in the retire log")
+        out.append((cyc, fl))
+    return out
+
+
+def compare_causes(m: Model, log_lines: Iterable[str]) -> str:
+    """The model's cycles of each phase by group of causes beside the
+    core's, from the retire log of the core."""
+    ph = phases(m)
+    core = core_causes(log_lines, m.counter_pcs[:2 * len(ph)])
+    model = []
+    for _, a, b in ph:
+        g = {k: b[3].get(k, 0) - a[3].get(k, 0) for k in ["multi"] + CAUSES}
+        g["instr"] = b[0] - a[0]
+        model.append(g)
+    names = [nm for nm, _, _ in ph]
+    lines = ["", "  cycles by cause, core - model, and the totals"
+                 " (the core's causes lag its steps by two cycles)",
+             f"  {'cause':10s}" + "".join(f" {nm:>9s}" for nm in names)
+             + f" {'model':>9s} {'core':>9s} {'diff':>7s}"]
+    tm = tc = 0
+    for group, mine, theirs in CAUSE_GROUPS:
+        mv = [sum(g.get(k, 0) for k in mine) for g in model]
+        cv = [sum(c[0][k] for k in theirs) for c in core]
+        tm += sum(mv)
+        tc += sum(cv)
+        lines.append(f"  {group:10s}" + "".join(f" {c - v:+9d}" for v, c in zip(mv, cv))
+                     + f" {sum(mv):9d} {sum(cv):9d} {100 * (sum(cv) - sum(mv)) / max(sum(mv), 1):+6.1f}%")
+    lines.append(f"  {'total':10s}" + " " * 10 * len(names) + f" {tm:9d} {tc:9d}"
+                 f" {100 * (tc - tm) / max(tm, 1):+6.1f}%")
+    lines.append(f"  {'flushes':10s}" + "".join(f" {sum(c[1].values()):9d}" for c in core) + "   "
+                 + ", ".join(f"{k} {sum(c[1][k] for c in core)}" for k in CORE_FLUSHES))
     return "\n".join(lines)
 
 
@@ -1190,8 +1286,19 @@ def test() -> None:
             bad += not ok
             print(f"{'PASS' if ok else 'FAIL'} {what}: {m.instructions} instructions, "
                   f"{m.total()} cycles" + ("" if ok else f" {have}, expected {n}, {cycles}, {gaps}"))
+    # The causes of a retire log: two phases, each between two reads at its
+    # address. The first has the letters of the two steps after its first
+    # read, the second those of the two after its own.
+    log = ["5 00000000 aaaaab", "6 00000010 a", "8 00000002 bA", "9 00000010 ac",
+           "10 00000020 a", "12 00000003 kk", "13 00000020 o", "14 00000004 a"]
+    got = [({k: v for k, v in c.items() if v}, {k: v for k, v in f.items() if v})
+           for c, f in core_causes(log, [0x10, 0x10, 0x20, 0x20])]
+    want = [({"RETIRE": 1, "REFILL": 1, "BUBBLE": 1}, {"JUMP": 1}), ({"SHIFT": 2, "OTHER": 1}, {})]
+    ok = got == want
+    bad += not ok
+    print(f"{'PASS' if ok else 'FAIL'} the causes of a retire log" + ("" if ok else f": {got}"))
     if bad:
-        sys.exit(f"FAIL pipecycles.py --test: {bad} of {len(tests + OPTION_TESTS)}")
+        sys.exit(f"FAIL pipecycles.py --test: {bad} of {len(tests + OPTION_TESTS) + 1}")
     print("PASS pipecycles.py --test")
 
 
@@ -1233,6 +1340,9 @@ def main() -> None:
     ap.add_argument("--against", metavar="FILE",
                     help="the core's output for the same program (make core in bench/), "
                          "to compare the phases with")
+    ap.add_argument("--causes", metavar="FILE",
+                    help="the core's retire log for the same program (G_RETIRE_LOG of "
+                         "hdl/test/tb_core.vhd): compare the causes of each phase")
     ap.add_argument("--retires", metavar="FILE",
                     help="the core's retire log for the same program (G_RETIRE_LOG of "
                          "hdl/test/tb_core.vhd), to compare step by step")
@@ -1261,6 +1371,9 @@ def main() -> None:
                      f"not {2 * a.phases}")
         if a.against:
             print(compare(m, a.against))
+        if a.causes:
+            with open(a.causes) as f:
+                print(compare_causes(m, f))
 
 
 if __name__ == "__main__":

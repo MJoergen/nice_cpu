@@ -84,8 +84,15 @@
 -- With G_RETIRE_LOG, p_retire_log writes a line to that file for each
 -- step the core reports: the cycle it is reported in, counting from the
 -- first cycle after reset, and the address of the instruction in hex, or
--- "intr" for an interrupt entry. bench/pipecycles.py --retires compares
--- the cycles with its model's, step by step.
+-- "intr" for an interrupt entry. A third field gives the cycles since the
+-- line before, one letter each, from the core's stats_o: the cause of the
+-- cycle (MICROARCH.md §8.1), "a" for cause 0 to "o" for cause 14, and after
+-- it an upper-case letter, "A" for cause 0 to "E" for cause 4, when the
+-- cycle flushes. stats_o reports a cycle two cycles late, so the letters
+-- of a line lag its cycles by two. The multi-cycle core reports cause 14,
+-- OTHER, in every cycle. bench/pipecycles.py --retires compares the cycles
+-- with its model's, step by step, and --against sums the causes of each
+-- phase of the benchmark.
 --
 -- The timer counts the steps, as the emulator's does: its tick is the
 -- core's instret_o, and the report of each interrupt entry. A data read of
@@ -1173,8 +1180,13 @@ begin
       variable log_open_v : boolean := false;
       variable cycle_v    : natural := 0;
       variable l          : line;
+      variable causes_v   : line;
    begin
       if rising_edge(clk) and rst = '0' and G_RETIRE_LOG /= "" then
+         write(causes_v, character'val(character'pos('a') + fetch_events.cause));
+         if fetch_events.flush = '1' then
+            write(causes_v, character'val(character'pos('A') + fetch_events.fwhy));
+         end if;
          if retire.valid = '1' then
             if not log_open_v then
                file_open(log_f, G_RETIRE_LOG, write_mode);
@@ -1186,6 +1198,8 @@ begin
             else
                write(l, to_hstring(retire.addr));
             end if;
+            write(l, string'(" ") & causes_v.all);
+            deallocate(causes_v);
             writeline(log_f, l);
             if retire.halt /= HALT_NONE then
                flush(log_f);

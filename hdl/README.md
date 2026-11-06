@@ -1132,9 +1132,14 @@ other. `make test` writes the log for the runs of `timer.nasm` too.
 With the generic `G_RETIRE_LOG`, `tb_core` writes a retire log: a line
 for each step the core reports, with the cycle it is reported in,
 counting from the first cycle after reset, and the address of the
-instruction in hex, or `intr` for an interrupt entry. `make -C bench
-core` writes it, and `bench/pipecycles.py --retires` compares it with
-the cycle model, step by step ([bench/README.md](../bench/README.md#the-cycle-estimate)).
+instruction in hex, or `intr` for an interrupt entry. A third field has
+a letter for each cycle since the line before: its cause from `stats_o`
+(MICROARCH.md §8.1), `a` for cause 0 to `o` for cause 14, followed by
+`A` to `E` for the cause of a flush in that cycle. The letters lag the
+cycles by two, as `stats_o` does, and the multi-cycle core reports `o`,
+OTHER, in every cycle. `make -C bench
+core` writes it, `bench/pipecycles.py --retires` compares it with
+the cycle model, step by step, and `--causes` by cause, phase by phase ([bench/README.md](../bench/README.md#the-cycle-estimate)).
 
 `test/irq_compare.py` reads the log, for a core that may take a request
 later than the step it was raised for, as the pipelined core may

@@ -154,11 +154,13 @@ cycles: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin emulator
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin
 
 # The model's cycles beside the pipelined core's, phase by phase, with the
-# difference in percent, from the output of make core, which must have run first
-# (README.md, The cycle estimate).
+# difference in percent, and by cause, from the output and the retire log
+# of make core, which must have run first (README.md, The cycle estimate).
 compare: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
-	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --against ../hdl/build/bench_pipeline.out $(BUILD)/bench.bin
-	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --against ../hdl/build/hand_pipeline.out $(BUILD)/hand.bin
+	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --against ../hdl/build/bench_pipeline.out \
+	  --causes ../hdl/build/bench_pipeline.retires $(BUILD)/bench.bin
+	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --against ../hdl/build/hand_pipeline.out \
+	  --causes ../hdl/build/hand_pipeline.retires $(BUILD)/hand.bin
 
 # The same, charged to the source lines of each program: the listings
 # build/bench.cyc.txt and build/hand.cyc.txt.

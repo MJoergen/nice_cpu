@@ -20,7 +20,7 @@ NICE with other processors.
     make hazards    # count the pipeline hazards of MICROARCH.md §5 in both
     make cycles     # estimate the cycles of the three on the pipelined core of MICROARCH.md
     make profile    # the same, charged to the source lines, in build/*.cyc.txt
-    make compare    # the model's cycles beside the pipelined core's, phase by phase, with the difference in percent, after make core
+    make compare    # the model's cycles beside the pipelined core's, phase by phase and by cause, with the difference in percent, after make core
     make words      # the size in words of the benchmark, safe.zig, and float modules
     make native     # build and run bench.c on the host, as a check
     make wasm       # rebuild bench.wasm and dhrystone/dhry.wasm (needs clang)
@@ -382,6 +382,39 @@ their loops with them:
 The difference is all but the same in every phase of a program, so it
 lies at the reads of the instruction counter around the phases, whose
 timing the model does not follow exactly, and not in the phases.
+
+`make compare` also sets the model's cycles beside the core's by cause,
+phase by phase, with `pipecycles.py --causes`, from the retire log of
+`make core` below, which gives the cause of each of the core's cycles
+(MICROARCH.md §8.1). The model charges a cycle to what bound a micro-op,
+the core to what WRITE did in it, so they compare in groups:
+
+| Group | The model's causes | The core's causes |
+|---|---|---|
+| retire | one per instruction, multi-micro-op | RETIRE |
+| refill | pipeline start, flush | REFILL |
+| bubble | early | BUBBLE |
+| fetch | fetch | FETCH |
+| register | agen, shiftreg, sumwait | REG |
+| order | sr, jump | ORDER |
+| bus | bus | BUS, STORE |
+| read | readbus, readlate, mpu | STALL, READ, LATE |
+| shift | shiftlate | SHIFT |
+| adjust | adjust | ADJUST |
+| interrupt | interrupt | INTR |
+| other | | OTHER |
+
+At commit 31f740e, both programs have the same cycles in each phase by
+both counts, and the same in every group but two pairs, where each
+counts a cycle in the other's group. The model's fetch cycles after a
+redirect, where the target is not yet fetched, are the core's refill or
+bubble, which last until the target reaches WRITE: 9035 of the
+translated program's 10155 and all but 3 of `hand.nasm`'s 9607. And the
+model's wait for a product of the math unit is the core's BUS, since
+PREPARE's read of it waits for the store to `MPU_A` while WRITE is
+empty: one cycle for each of rng64's 1536 values with three reads, 4608,
+in both programs, and 1023 to 2048 in each other phase but crc32, the
+same in both programs. Every other group agrees to the cycle.
 
 `make core` also has the testbench write a retire log,
 `hdl/build/bench_pipeline.retires` and `hand_pipeline.retires`

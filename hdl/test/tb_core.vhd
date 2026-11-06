@@ -655,18 +655,22 @@ begin
 
    i_perf : entity work.perf
       port map (
-         clk_i      => clk,
-         rst_i      => rst,
-         instret_i  => instret,
-         run_i      => run,
-         wb_cyc_i   => dbus_cyc,
-         wb_stb_i   => slave_stb(C_PERF),
-         wb_stall_o => slave_stall(C_PERF),
-         wb_ack_o   => slave_ack(C_PERF),
-         wb_we_i    => dbus_we,
-         wb_addr_i  => dbus_addr(4 downto 0),
-         wb_data_i  => dbus_data_out,
-         wb_data_o  => slave_data(32 * C_PERF + 31 downto 32 * C_PERF)
+         clk_i        => clk,
+         rst_i        => rst,
+         instret_i    => instret,
+         run_i        => run,
+         retire_i     => retire,
+         dbus_stb_i   => core_stb,
+         dbus_we_i    => core_we,
+         dbus_stall_i => core_stall,
+         wb_cyc_i     => dbus_cyc,
+         wb_stb_i     => slave_stb(C_PERF),
+         wb_stall_o   => slave_stall(C_PERF),
+         wb_ack_o     => slave_ack(C_PERF),
+         wb_we_i      => dbus_we,
+         wb_addr_i    => dbus_addr(4 downto 0),
+         wb_data_i    => dbus_data_out,
+         wb_data_o    => slave_data(32 * C_PERF + 31 downto 32 * C_PERF)
       ); -- i_perf
 
 

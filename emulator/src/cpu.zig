@@ -275,8 +275,9 @@ pub const perf_base: u32 = io_base + 0x40;
 
 /// The performance counters (SYSTEM §3). Each 64-bit counter has a snapshot,
 /// which a read of its low word fills and a read of its high word returns.
-/// The fetch statistics of the pipelined FPGA core, at words 0x20-0x3F, read
-/// 0 here.
+/// The event counters, at words 0x0A-0x13, count what the program does, as
+/// every FPGA core counts it. The fetch statistics of the pipelined FPGA
+/// core, at words 0x20-0x3F, read 0 here.
 pub const Perf = struct {
     /// One per step: per instruction and per interrupt entry. The emulator
     /// has no clock, so this stands in for the clock cycles.
@@ -288,6 +289,19 @@ pub const Perf = struct {
     micros_snap: u64 = 0,
     instrs: u64 = 0,
     instrs_snap: u64 = 0,
+    /// The events: data reads, stores, skipped instructions, jumps, and
+    /// interrupt entries and INT. A data read counts once it returns, so a
+    /// read of READ_LO counts the reads before it.
+    reads: u64 = 0,
+    reads_snap: u64 = 0,
+    stores: u64 = 0,
+    stores_snap: u64 = 0,
+    skips: u64 = 0,
+    skips_snap: u64 = 0,
+    jumps: u64 = 0,
+    jumps_snap: u64 = 0,
+    intrs: u64 = 0,
+    intrs_snap: u64 = 0,
 
     /// The value a data read of word `i` returns, with its side effect.
     pub fn read(self: *Perf, i: u6) u32 {
@@ -295,6 +309,11 @@ pub const Perf = struct {
             0 => self.cycles_snap = self.cycles,
             2 => self.instrs_snap = self.instrs,
             4 => self.micros_snap = self.micros,
+            0x0A => self.reads_snap = self.reads,
+            0x0C => self.stores_snap = self.stores,
+            0x0E => self.skips_snap = self.skips,
+            0x10 => self.jumps_snap = self.jumps,
+            0x12 => self.intrs_snap = self.intrs,
             else => {},
         }
         return self.peek(i);
@@ -309,10 +328,38 @@ pub const Perf = struct {
             3 => @truncate(self.instrs_snap >> 32),
             4 => @truncate(self.micros),
             5 => @truncate(self.micros_snap >> 32),
+            0x0A => @truncate(self.reads),
+            0x0B => @truncate(self.reads_snap >> 32),
+            0x0C => @truncate(self.stores),
+            0x0D => @truncate(self.stores_snap >> 32),
+            0x0E => @truncate(self.skips),
+            0x0F => @truncate(self.skips_snap >> 32),
+            0x10 => @truncate(self.jumps),
+            0x11 => @truncate(self.jumps_snap >> 32),
+            0x12 => @truncate(self.intrs),
+            0x13 => @truncate(self.intrs_snap >> 32),
             else => 0,
         };
     }
 };
+
+/// Whether the instruction `iw` writes R15 when it runs (SYSTEM §3, the jump
+/// counter): RTI, or a field of register 15 whose mode writes the register,
+/// the destination in mode 000, 001, 010, 101, or 110, a source in mode
+/// 001, 010, 101, or 110 (ISA §4).
+pub fn writesR15(iw: u32) bool {
+    if ((iw >> 26) & 0b11 == 0b11) return (iw >> 21) & 0x1F == 0b00001;
+    for ([3]u5{ 14, 7, 0 }, 0..) |shift_by, i| {
+        const f = (iw >> shift_by) & 0x7F;
+        if (f & 0xF != 15) continue;
+        switch (f >> 4) {
+            0b001, 0b010, 0b101, 0b110 => return true,
+            0b000 => if (i == 0) return true,
+            else => {},
+        }
+    }
+    return false;
+}
 
 /// The host's clock for the microsecond counter (SYSTEM §3): the host's
 /// monotonic time, without its sleep, while the processor runs. The run
@@ -933,12 +980,14 @@ pub const Cpu = struct {
             if (self.nmi_pending) |v| {
                 self.nmi_pending = null;
                 self.enterInterrupt(v);
+                self.perf.intrs +%= 1;
                 return self.traceInterrupt("NMI", v, before);
             }
             if (self.irq_pending) |v| {
                 if (self.flag(sr_e) == 1) {
                     self.irq_pending = null;
                     self.enterInterrupt(v);
+                    self.perf.intrs +%= 1;
                     return self.traceInterrupt("IRQ", v, before);
                 }
             }
@@ -951,6 +1000,11 @@ pub const Cpu = struct {
         const ex = try self.execute();
         if (self.stopped) return;
         self.perf.instrs +%= 1;
+        if (!ex.executed) {
+            self.perf.skips +%= 1;
+        } else if (writesR15(ex.iw) and !self.halted()) {
+            self.perf.jumps +%= 1;
+        }
         if (self.trace) |w| try self.traceInstruction(w, pc, ex.iw, ex.executed, before);
     }
 
@@ -1017,7 +1071,21 @@ pub const Cpu = struct {
         self.saved_sr = sr;
         self.in_service = true;
         self.setReg(14, sr | (1 << sr_i));
-        self.setReg(15, self.read(((sr & 0x00FF_FFFF) << 8) +% v));
+        self.setReg(15, self.dataRead(((sr & 0x00FF_FFFF) << 8) +% v));
+    }
+
+    /// A data read of an instruction or an interrupt entry, which the data
+    /// read counter counts once it has returned (SYSTEM §3).
+    fn dataRead(self: *Cpu, addr: u32) u32 {
+        const v = self.read(addr);
+        self.perf.reads +%= 1;
+        return v;
+    }
+
+    /// A destination write, which the store counter counts (SYSTEM §3).
+    fn dataWrite(self: *Cpu, addr: u32, value: u32) Error!void {
+        try self.write(addr, value);
+        self.perf.stores +%= 1;
     }
 
     /// Fetch and run one instruction (§5). Returns the instruction word, so
@@ -1103,17 +1171,17 @@ pub const Cpu = struct {
                 break :blk v;
             },
             0b011 => self.getReg(r) +% c,
-            0b100 => self.read(self.getReg(r)),
+            0b100 => self.dataRead(self.getReg(r)),
             0b101 => blk: {
                 self.setReg(r, self.getReg(r) -% 1);
-                break :blk self.read(self.getReg(r));
+                break :blk self.dataRead(self.getReg(r));
             },
             0b110 => blk: {
-                const v = self.read(self.getReg(r));
+                const v = self.dataRead(self.getReg(r));
                 self.setReg(r, self.getReg(r) +% 1);
                 break :blk v;
             },
-            0b111 => self.read(self.getReg(r) +% c),
+            0b111 => self.dataRead(self.getReg(r) +% c),
         };
     }
 
@@ -1130,14 +1198,14 @@ pub const Cpu = struct {
                 self.setReg(r, res);
                 self.setReg(r, self.getReg(r) +% 1);
             },
-            0b011, 0b111 => try self.write(self.getReg(r) +% c, res),
-            0b100 => try self.write(self.getReg(r), res),
+            0b011, 0b111 => try self.dataWrite(self.getReg(r) +% c, res),
+            0b100 => try self.dataWrite(self.getReg(r), res),
             0b101 => {
                 self.setReg(r, self.getReg(r) -% 1);
-                try self.write(self.getReg(r), res);
+                try self.dataWrite(self.getReg(r), res);
             },
             0b110 => {
-                try self.write(self.getReg(r), res);
+                try self.dataWrite(self.getReg(r), res);
                 self.setReg(r, self.getReg(r) +% 1);
             },
         }
@@ -1169,6 +1237,7 @@ pub const Cpu = struct {
                     return;
                 }
                 self.enterInterrupt(vector);
+                self.perf.intrs +%= 1;
             },
             else => self.halt_reason = .reserved,
         }
@@ -1392,6 +1461,22 @@ fn run(program: []const u32) !Cpu {
 
 fn flags(cpu: *const Cpu) u32 {
     return cpu.getReg(14) & flag_mask;
+}
+
+test "writesR15: the modes that write R15, and RTI (SYSTEM §3)" {
+    // The fields: dest at bits 20..14, s0 at 13..7, s1 at 6..0.
+    try testing.expect(writesR15(0x0F << 14 | 0x01 << 7)); // MOVE R15, R1
+    try testing.expect(writesR15(0x1F << 14 | 0x01 << 7)); // MOVE R15--, R1
+    try testing.expect(writesR15(0x5F << 14 | 0x01 << 7)); // MOVE @--R15, R1
+    try testing.expect(!writesR15(0x4F << 14 | 0x01 << 7)); // MOVE @R15, R1
+    try testing.expect(!writesR15(0x3F << 14 | 0x01 << 7)); // MOVE @(R15 + c), R1
+    try testing.expect(writesR15(0x01 << 14 | 0x6F << 7)); // MOVE R1, @R15++
+    try testing.expect(writesR15(0x01 << 14 | 0x01 << 7 | 0x2F)); // s1 R15++, unused by MOVE
+    try testing.expect(!writesR15(0x01 << 14 | 0x0F << 7)); // MOVE R1, R15
+    try testing.expect(!writesR15(0x01 << 14 | 0x4F << 7)); // MOVE R1, @R15
+    try testing.expect(writesR15(0x0C200000)); // RTI
+    try testing.expect(!writesR15(0x0C400040)); // INT 0x40
+    try testing.expect(!writesR15(0x0C000000)); // HALT
 }
 
 test "source order of §5: MOVE @R1, R1++" {

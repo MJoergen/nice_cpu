@@ -12,6 +12,10 @@
 --   counters have a snapshot each.
 -- * The microsecond counter, at G_CLK_HZ = 1500000, counts 2 microseconds
 --   in 3 cycles, exactly, and also stops while run_i is low.
+-- * The event counters count the data reads and stores that the core's
+--   bus accepts, and the skipped instructions, the jumps, and the
+--   interrupt entries and INTs of the steps on retire_i, but no step that
+--   halts. Each has its snapshot.
 -- * The spare words read 0, and writes change nothing.
 -- * Reset sets the counters and the snapshots to G_RESET.
 -- The run stops with status 0 when every check passes, and 1 at the first
@@ -22,6 +26,8 @@ library ieee;
    use ieee.numeric_std_unsigned.all;
 
    use std.env.all;
+
+   use work.trace_pkg.all;
 
 entity tb_perf is
 end entity tb_perf;
@@ -36,11 +42,27 @@ architecture simulation of tb_perf is
    constant C_INSTR_HI : natural := 3;
    constant C_TIME_LO  : natural := 4;
    constant C_TIME_HI  : natural := 5;
+   constant C_READ_LO  : natural := 16#0A#;
+   constant C_READ_HI  : natural := 16#0B#;
+   constant C_STORE_LO : natural := 16#0C#;
+   constant C_SKIP_LO  : natural := 16#0E#;
+   constant C_JUMP_LO  : natural := 16#10#;
+   constant C_INTR_LO  : natural := 16#12#;
+   constant C_INTR_HI  : natural := 16#13#;
+
+   -- Instruction words: MOVE R15, R2, a jump; MOVE R1, R2, none; INT 0x40
+   constant C_JUMP_IW : std_logic_vector(31 downto 0) := X"0003C100";
+   constant C_MOVE_IW : std_logic_vector(31 downto 0) := X"00004100";
+   constant C_INT_IW  : std_logic_vector(31 downto 0) := X"0C400040";
 
    signal clk : std_logic;
    signal rst : std_logic := '1';
 
    signal instret  : std_logic                     := '0';
+   signal retire   : t_retire                      := C_RETIRE_NONE;
+   signal d_stb    : std_logic                     := '0';
+   signal d_we     : std_logic                     := '0';
+   signal d_stall  : std_logic                     := '0';
    signal run      : std_logic                     := '1';
    signal cyc      : std_logic                     := '0';
    signal stb      : std_logic                     := '0';
@@ -66,18 +88,22 @@ begin
          G_CLK_HZ => 1500000
       )
       port map (
-         clk_i      => clk,
-         rst_i      => rst,
-         instret_i  => instret,
-         run_i      => run,
-         wb_cyc_i   => cyc,
-         wb_stb_i   => stb,
-         wb_stall_o => stall,
-         wb_ack_o   => ack,
-         wb_we_i    => we,
-         wb_addr_i  => addr,
-         wb_data_i  => data_out,
-         wb_data_o  => data_in
+         clk_i        => clk,
+         rst_i        => rst,
+         instret_i    => instret,
+         run_i        => run,
+         retire_i     => retire,
+         dbus_stb_i   => d_stb,
+         dbus_we_i    => d_we,
+         dbus_stall_i => d_stall,
+         wb_cyc_i     => cyc,
+         wb_stb_i     => stb,
+         wb_stall_o   => stall,
+         wb_ack_o     => ack,
+         wb_we_i      => we,
+         wb_addr_i    => addr,
+         wb_data_i    => data_out,
+         wb_data_o    => data_in
       ); -- i_perf
 
 
@@ -145,6 +171,33 @@ begin
          instret <= '0';
       end procedure instructions;
 
+      -- One cycle of the core's data bus
+      procedure bus_cycle(w : std_logic; held : std_logic) is
+      begin
+         d_stb   <= '1';
+         d_we    <= w;
+         d_stall <= held;
+         clocks(1);
+         d_stb   <= '0';
+         d_stall <= '0';
+      end procedure bus_cycle;
+
+      -- One step reported on retire_i
+      procedure step(iw      : std_logic_vector(31 downto 0);
+                     skipped : std_logic := '0';
+                     intr    : std_logic := '0';
+                     halt    : t_halt    := HALT_NONE) is
+      begin
+         retire         <= C_RETIRE_NONE;
+         retire.valid   <= '1';
+         retire.iw      <= iw;
+         retire.skipped <= skipped;
+         retire.intr    <= intr;
+         retire.halt    <= halt;
+         clocks(1);
+         retire <= C_RETIRE_NONE;
+      end procedure step;
+
    begin
       clocks(2);
       rst <= '0';
@@ -211,8 +264,42 @@ begin
          fail("the cycle counter did not resume with run_i high");
       end if;
 
+      -- The event counters: three reads and two stores accepted, one read
+      -- stalled; a skipped instruction, a skipped INT, a jump, a jump that
+      -- halts, an instruction that does not jump, an interrupt entry, and
+      -- an INT. The low words wrap from 0xFFFFFFFF.
+      check(C_READ_LO, X"FFFFFFF0", "no data read yet");
+      for i in 1 to 3 loop
+         bus_cycle('0', '0');
+      end loop;
+      bus_cycle('0', '1');
+      bus_cycle('1', '0');
+      bus_cycle('1', '0');
+      step(C_MOVE_IW, skipped => '1');
+      step(C_INT_IW, skipped => '1');
+      step(C_JUMP_IW);
+      step(C_JUMP_IW, halt => HALT_RESERVED);
+      step(C_MOVE_IW);
+      step(X"00000000", intr => '1');
+      step(C_INT_IW);
+      check(C_READ_LO, X"FFFFFFF3", "3 data reads");
+      check(C_STORE_LO, X"FFFFFFF2", "2 stores");
+      check(C_SKIP_LO, X"FFFFFFF2", "2 skips");
+      check(C_JUMP_LO, X"FFFFFFF1", "a jump");
+      check(C_INTR_LO, X"FFFFFFF2", "2 interrupts");
+      for i in 1 to 16 loop
+         bus_cycle('0', '0');
+      end loop;
+      check(C_READ_HI, X"00000000", "the read snapshot before the wrap");
+      check(C_READ_LO, X"00000003", "19 data reads");
+      check(C_READ_HI, X"00000001", "the read snapshot after the wrap");
+      check(C_INTR_HI, X"00000000", "the interrupt snapshot is its own");
+
       -- The spare words read 0, and writes change nothing.
-      for i in 6 to 31 loop
+      for i in 6 to 9 loop
+         check(i, X"00000000", "a spare word");
+      end loop;
+      for i in 16#14# to 31 loop
          check(i, X"00000000", "a spare word");
       end loop;
       for i in 0 to 31 loop

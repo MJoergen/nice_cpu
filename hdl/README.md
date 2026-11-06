@@ -598,7 +598,9 @@ correction is proven by hand, and `tb_mpu` checks the products' values
 
 `perf` holds the performance counters of SYSTEM.md §3: `CYCLE_LO` and
 `CYCLE_HI` at offsets 0 and 1, `INSTR_LO` and `INSTR_HI` at 2 and 3, and
-`TIME_LO` and `TIME_HI` at 4 and 5. It
+`TIME_LO` and `TIME_HI` at 4 and 5, and the event counters at `0x0A`–`0x13`:
+data reads, stores, skips, jumps, and interrupts, a low and a high word
+each. It
 is a pipelined Wishbone slave with a 5-bit address. It never stalls, and it
 acknowledges each request in the next cycle. The bus decoder selects it for
 `0xFFFFFF40`–`0xFFFFFF5F`.
@@ -611,6 +613,15 @@ entry. An instruction makes its data reads before its own `RETIRE`, so a
 read of `INSTR_LO` returns the number of instructions before it, as SYSTEM.md
 §3 requires. A read of a low word copies its 64-bit counter into a
 snapshot, and a read of the high word returns the snapshot's high word.
+
+The event counters take the core's `retire_o` on `retire_i`, and the
+core's own data bus on `dbus_stb_i`, `dbus_we_i`, and `dbus_stall_i`, not
+the debug link's. A data read or a store counts in the cycle that the bus
+accepts it. A step that does not halt counts as a skip if it was skipped,
+as a jump if it writes R15 (`writes_r15` of `nice_pkg`), and as an
+interrupt if it is an interrupt entry or `INT`. Both cores report a step no
+later than its `instret_o`, so a read of a counter counts what came before
+it, as in the emulator.
 
 The microsecond counter counts in the cycles that the cycle counter counts.
 An accumulator adds 1000000 in each of them. When the sum reaches the
@@ -753,7 +764,11 @@ checks that the cycle counter counts every cycle with `run_i` high and
 stands still with it low, that the instruction
 counter counts the cycles with `instret_i` high, and that a read of a high
 word returns the snapshot of the last read of the low word, across the
-wrap. It also checks the spare words, that writes change nothing, and reset.
+wrap. It checks that the event counters count the reads and stores that
+the bus accepts but not a stalled one, the skipped steps, a jump but not
+one that halts, and an interrupt entry and an `INT` but not a skipped one,
+and that each has its own snapshot. It also checks the spare words, that
+writes change nothing, and reset.
 
 `tb_timer` runs the timer on the clock, as a system does. It checks that a
 write of P sets the period and the count, that the request comes at the end
@@ -969,7 +984,7 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   as the one for VBASE = 0, and says how many steps it left out: about
   280 of 7444 for NMI, and 75 for IRQ. `make sweep` sweeps the two with
   one request per run instead.
-- `cputest`, `reads`, `mpu`, `mpu64`, `perf`, `timer`, and `sd` again, on a memory that
+- `cputest`, `reads`, `mpu`, `mpu64`, `perf`, `events`, `timer`, and `sd` again, on a memory that
   stalls in 30% of the cycles, and `sd` with pauses held for a random time.
   `sd` runs with an image in slot 0 that `make test` makes in the run's
   directory, and the emulator with a copy of it, which it writes.
@@ -1180,7 +1195,7 @@ formal/UNIT/TASK` runs one task, for example `make formal/pipe_fetch/prove`.
 | `sd_regs` | The SD card controller's bus and engine ports, with and without the held ACK. | k-induction of depth 10, Yices | seconds |
 | `net_regs` | The network station's bus port, and what sets its addresses and `wr_o`. | k-induction of depth 10, Yices | seconds |
 | `eth_regs` | The port for Ethernet frames: its bus and station ports, with and without the held ACK. | k-induction of depth 10, Yices | seconds |
-| `perf` | The performance counters, against a model. | PDR | 20 seconds |
+| `perf` | The performance counters, against a model. | PDR | a minute |
 | `fetch_stats` | The fetch statistics: what each cycle does to the counters. | k-induction, Boolector | a few seconds |
 | `mpu` | The math unit's port, its waits, and its quotients and remainders for every pair of operands. | k-induction, Boolector | about 2 minutes |
 | `debug_link` | The debug link's ports and the guarantees of its header, with and without a ROM. | k-induction of depth 4, Yices | seconds |
@@ -1453,7 +1468,9 @@ every run.
 wrapper: three 64-bit counters, one of every cycle with `run_i` high, one of the cycles
 with `instret_i` high, and one of microseconds at a clock of 1.5 MHz, which
 the model counts as two in every three cycles, without `perf`'s
-accumulator, so that the proof checks its arithmetic, and a snapshot of
+accumulator, so that the proof checks its arithmetic, the five event
+counters, from a free retire report and a free data bus, with the rule for
+a jump spelled out from the bits apart from `writes_r15`, and a snapshot of
 each, which a read of its low word takes. It asserts that the port never stalls, that it acknowledges
 each request in the next cycle (`wb_slave_check`), and that a read returns the low word of
 its counter, the high word of its snapshot, or 0 for a spare word. So a
@@ -1461,7 +1478,7 @@ read of `CYCLE_HI` returns the high word of the counter as it was at the
 last read of `CYCLE_LO`, also when the low word wrapped in between, and
 writes change nothing. Its `prove` task uses PDR, which finds the
 invariant that the counters equal the model, so `perf` needs no
-`G_FORMAL`. It takes about half a minute. The `cover` task starts the counters
+`G_FORMAL`. It takes about a minute. The `cover` task starts the counters
 near a wrap, with `G_RESET`, and shows a read of `CYCLE_HI` after one.
 
 `formal_fetch_stats` connects two fetch statistics to the same inputs,

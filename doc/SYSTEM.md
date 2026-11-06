@@ -189,7 +189,7 @@ A use of the MPU takes several instructions, and an interrupt may come between t
 
 ## 3. Performance counters
 
-The emulator and the FPGA implementation map performance counters at `0xFFFFFF40`–`0xFFFFFF7F`: three 64-bit counters, and the fetch statistics of the FPGA implementation.
+The emulator and the FPGA implementation map performance counters at `0xFFFFFF40`–`0xFFFFFF7F`: three 64-bit counters of cycles, instructions, and time, five 64-bit counters of the events of a program, and the fetch statistics of the FPGA implementation.
 
 | Address | Name | A data read returns | A write |
 |---|---|---|---|
@@ -200,14 +200,31 @@ The emulator and the FPGA implementation map performance counters at `0xFFFFFF40
 | `0xFFFFFF44` | `TIME_LO` | bits 31..0 of the microsecond counter, and takes a snapshot of it | is ignored |
 | `0xFFFFFF45` | `TIME_HI` | bits 63..32 of the microsecond counter's snapshot | is ignored |
 | `0xFFFFFF46`–`0xFFFFFF49` | | 0, reserved for the clock of the time of day (#122) | is ignored |
-| `0xFFFFFF4A`–`0xFFFFFF5F` | | 0 | is ignored |
+| `0xFFFFFF4A` | `READ_LO` | bits 31..0 of the data read counter, and takes a snapshot of it | is ignored |
+| `0xFFFFFF4B` | `READ_HI` | bits 63..32 of the data read counter's snapshot | is ignored |
+| `0xFFFFFF4C` | `STORE_LO` | bits 31..0 of the store counter, and takes a snapshot of it | is ignored |
+| `0xFFFFFF4D` | `STORE_HI` | bits 63..32 of the store counter's snapshot | is ignored |
+| `0xFFFFFF4E` | `SKIP_LO` | bits 31..0 of the skip counter, and takes a snapshot of it | is ignored |
+| `0xFFFFFF4F` | `SKIP_HI` | bits 63..32 of the skip counter's snapshot | is ignored |
+| `0xFFFFFF50` | `JUMP_LO` | bits 31..0 of the jump counter, and takes a snapshot of it | is ignored |
+| `0xFFFFFF51` | `JUMP_HI` | bits 63..32 of the jump counter's snapshot | is ignored |
+| `0xFFFFFF52` | `INTR_LO` | bits 31..0 of the interrupt counter, and takes a snapshot of it | is ignored |
+| `0xFFFFFF53` | `INTR_HI` | bits 63..32 of the interrupt counter's snapshot | is ignored |
+| `0xFFFFFF54`–`0xFFFFFF5F` | | 0 | is ignored |
 | `0xFFFFFF60`–`0xFFFFFF7F` | | the fetch statistics (MICROARCH.md §8.1), or 0 in the emulator | as MICROARCH.md §8.1 says, or is ignored in the emulator |
 
 - The **instruction counter** counts the instructions that have completed since reset. Every instruction counts, including one whose condition is false, a control instruction, and `INT`. An interrupt entry for IRQ or NMI does not count, because it is not an instruction. An instruction that reads `INSTR_LO` reads the number of instructions that completed before it.
 - The **cycle counter** counts the clock cycles since reset while the core runs, and stops when the core is held, paused, or has halted, so a reading after a halt does not change. The emulator has no clock, so it counts one cycle for each instruction and each interrupt entry, that is, for each step. Its cycle counter is an approximation and differs from the FPGA implementation's.
 - The **microsecond counter** counts microseconds since reset while the core runs, and stops when the core is held, paused, or has halted, like the cycle counter. The FPGA implementation derives it from its clock frequency, so for a clock of 1 MHz or more the count after N cycles is the integer part of N·10⁶ divided by the frequency, whether or not it is a multiple of 1 MHz: it adds 1000000 to an accumulator in each cycle, and counts a microsecond and subtracts the clock frequency in hertz each time the sum reaches it. The emulator counts the host's monotonic time, without the time the host sleeps, in microseconds since reset, less the time the processor was held, paused, or halted. A read of `TIME_LO` reads the host's clock. So a program that waits on the counter waits real time, as on a board, with or without the window and at any speed (§1.6). A console read that waits for input counts as running, as a board polls meanwhile. With the option `--step-time`, the emulator instead counts one microsecond for each step, as its cycle counter counts one cycle, so that a run counts the same each time. A program that needs a time in seconds divides by 1000000, whatever the board.
 - In the emulator, the cycle counter and the microsecond counter have no fixed ratio, unless with `--step-time`. A program that divides one by the other gets the rate at which the host runs steps, which varies from run to run.
-- Reset sets all three counters and their snapshots to 0. No counter can be written. A program measures an interval as the difference of two readings.
+- The **event counters** count what the program does, not what the processor that runs it does. So the emulator and every FPGA core count the same, and a program reads the same counts on each:
+  - The **data read counter** counts the data reads of ISA §8.2: the operand reads, and the vector table reads of interrupt entries and `INT`. A read of `READ_LO` returns the number of data reads before it, the earlier reads of its own instruction included.
+  - The **store counter** counts the destination writes of ISA §8.2, to a device too, and to a word that ignores them.
+  - The **skip counter** counts the instructions whose condition was false.
+  - The **jump counter** counts the instructions that are not skipped and write R15: as their register destination, in mode 000, 001, or 010, or by the side effect of a field, in mode 001, 010, 101, or 110 (ISA §4), and `RTI`. It counts a jump to the next instruction too. It does not count `INT`, an interrupt entry, or an instruction that halts.
+  - The **interrupt counter** counts the interrupt entries for IRQ and NMI, and `INT`. An `INT` that halts does not count.
+  - A read of a counter's low word returns the events of the steps before its instruction, and for the data read counter also the earlier reads of its own instruction. The accesses of the debug link (DEBUG.md) are not the program's, and do not count.
+- Reset sets all the counters and their snapshots to 0. No counter can be written. A program measures an interval as the difference of two readings.
 - A counter wraps from `0xFFFFFFFF_FFFFFFFF` to 0. At one count per cycle at 100 MHz that takes over 5000 years.
 - The **fetch statistics** count what the pipelined FPGA core does in each cycle: a cause for each cycle, and the flushes of its pipeline by cause, to show where the cycles of a program go. They depend on the core, so MICROARCH.md §8.1 describes them. The emulator has none: their words read 0 and ignore writes, and are not memory.
 

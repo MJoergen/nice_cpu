@@ -839,7 +839,7 @@ system built from them must follow these rules:
   A read of a result holds off its ACK until the result is ready, so the
   data bus must allow a slave to take many cycles.
 - **Performance counters.** At `0xFFFFFF40`–`0xFFFFFF7F` (SYSTEM §3), in
-  two devices. The cycle, instruction, and microsecond counters are
+  two devices. The cycle, instruction, microsecond, and event counters are
   `hdl/src/perf.vhd` at `0xFFFFFF40`–`0xFFFFFF5F`, 32 words, so the
   decoder compares address bits 31..5. Its generic `G_CLK_HZ`
   is the clock frequency, for the microsecond counter. The core raises `instret_o` for one cycle
@@ -849,7 +849,12 @@ system built from them must follow these rules:
   read, and one without in the cycle it retires. The counters return a
   count from before that cycle's, and PREPARE issues a younger read only
   then. `hdl/test/instret.nasm` checks this, also behind a read that
-  waits on the bus.
+  waits on the bus. The event counters take the core's `retire_o` and its
+  own data bus, before the debug link joins it. A read or a store counts
+  when the bus accepts it, and a skip, a jump, or an interrupt in the
+  cycle of its retire report, which is no later than its `instret_o`, so a
+  read of a counter counts the same events as in the emulator.
+  `emulator/test/events.nasm` checks this on both cores.
 - **Counter run input.** A system drives `run_i` of `perf.vhd` and
   `fetch_stats.vhd` with "the core is running": 0 while it holds the core,
   and while `paused_o` or `halted_o` is 1, and 1 otherwise. A device that

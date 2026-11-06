@@ -45,6 +45,12 @@ package nice_pkg is
    -- Whether the instruction is a control instruction (ISA.md §5.3).
    function is_ctrl(iw : std_logic_vector(31 downto 0)) return boolean;
 
+   -- Whether the instruction writes R15 when it runs, for the jump counter
+   -- of SYSTEM.md §3: RTI, or a field of register 15 in a mode that writes
+   -- the register, the destination in mode 000, 001, 010, 101, or 110, and
+   -- a source in mode 001, 010, 101, or 110 (ISA.md §4).
+   function writes_r15(iw : std_logic_vector(31 downto 0)) return boolean;
+
    -- The value of register x after a write of v (ISA.md §4.3).
    function regval(x : natural range 0 to 15;
                    v : std_logic_vector(31 downto 0)) return std_logic_vector;
@@ -168,6 +174,32 @@ package body nice_pkg is
    begin
       return iw(27 downto 26) = "11";
    end function is_ctrl;
+
+   function writes_r15(iw : std_logic_vector(31 downto 0)) return boolean is
+      variable f_v   : std_logic_vector(6 downto 0);
+      variable res_v : boolean := false;
+   begin
+      if is_ctrl(iw) then
+         res_v := iw(25 downto 21) = "00001";
+      else
+         for i in 0 to 2 loop
+            f_v := field(iw, i);
+            if f_v(3 downto 0) = "1111" then
+               case f_v(6 downto 4) is
+                  when "001" | "010" | "101" | "110" =>
+                     res_v := true;
+                  when "000" =>
+                     if i = 0 then
+                        res_v := true;
+                     end if;
+                  when others =>
+                     null;
+               end case;
+            end if;
+         end loop;
+      end if;
+      return res_v;
+   end function writes_r15;
 
    function regval(x : natural range 0 to 15;
                    v : std_logic_vector(31 downto 0)) return std_logic_vector is

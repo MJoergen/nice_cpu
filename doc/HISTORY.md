@@ -81,6 +81,13 @@ two kinds of access. §9.4, the mapping of WebAssembly, is
   `0xFFFFFF50`–`0xFFFFFF7F`, and ordinary memory in the emulator. On
   2026-10-20 they became part of the performance counters of SYSTEM.md §3,
   at the same addresses, and the emulator reads them as 0.
+- Until 2026-11-06 (#125), the fetch statistics judged the size of FETCH's
+  buffer: 48 words at `0xFFFFFF50`–`0xFFFFFF7F`, with a histogram of the
+  words in the buffer, the fewest and the most, the cycles DECODE waited
+  for words or was busy, the cycles FETCH had no room, the pairs and words
+  fetched, the stalls of the instruction bus, the jumps, and the flushes.
+  The buffer was then settled at 16 words, so they became a cause for each
+  cycle and the flushes by cause, in 32 words at `0xFFFFFF60`–`0xFFFFFF7F`.
 - MICROARCH.md §3 and §5.1 once had DECODE read three registers, with
   bypasses from WRITE. The core now reads them in PREPARE, one stage
   before WRITE (hdl/ASSUMPTIONS.md item 1).

@@ -90,8 +90,7 @@ begin
          addr_o          => addr,
          words_o         => words,
          count_o         => count,
-         consume_i       => consume_i,
-         stats_o         => open
+         consume_i       => consume_i
       ); -- i_pipe_fetch
 
 end architecture synthesis;

@@ -47,7 +47,7 @@ architecture simulation of tb_perf is
    signal stall    : std_logic;
    signal ack      : std_logic;
    signal we       : std_logic                     := '0';
-   signal addr     : std_logic_vector(3 downto 0)  := (others => '0');
+   signal addr     : std_logic_vector(4 downto 0)  := (others => '0');
    signal data_out : std_logic_vector(31 downto 0) := (others => '0');
    signal data_in  : std_logic_vector(31 downto 0);
 
@@ -101,7 +101,7 @@ begin
          cyc      <= '1';
          stb      <= '1';
          we       <= w;
-         addr     <= to_slv(a, 4);
+         addr     <= to_slv(a, 5);
          data_out <= d;
          wait until rising_edge(clk);
          if stall /= '0' then
@@ -212,10 +212,10 @@ begin
       end if;
 
       -- The spare words read 0, and writes change nothing.
-      for i in 6 to 15 loop
+      for i in 6 to 31 loop
          check(i, X"00000000", "a spare word");
       end loop;
-      for i in 0 to 15 loop
+      for i in 0 to 31 loop
          access_word('1', i, X"DEADBEEF", first_v);
       end loop;
       check(C_INSTR_HI, X"00000001", "the snapshot after writes");

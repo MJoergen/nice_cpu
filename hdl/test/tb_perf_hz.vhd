@@ -35,7 +35,7 @@ architecture simulation of tb_perf_hz is
 
    signal cyc      : std_logic                    := '0';
    signal stb      : std_logic                    := '0';
-   signal addr     : std_logic_vector(3 downto 0) := (others => '0');
+   signal addr     : std_logic_vector(4 downto 0) := (others => '0');
    signal data_out : t_word;
 
 begin
@@ -89,7 +89,7 @@ begin
       begin
          cyc  <= '1';
          stb  <= '1';
-         addr <= to_slv(a, 4);
+         addr <= to_slv(a, 5);
          wait until rising_edge(clk);
          stb <= '0';
          cyc <= '0';

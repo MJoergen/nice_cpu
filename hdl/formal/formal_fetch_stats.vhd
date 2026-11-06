@@ -1,6 +1,6 @@
 -- The fetch statistics with checks of their port, for SymbiYosys. Every
 -- input is free, so the solver tries every bus master, every report of
--- FETCH and DECODE, and every run_i.
+-- the core, and every run_i.
 --
 -- THEORY OF OPERATION
 -- Two devices share the inputs: one with G_ENABLE true, whose properties
@@ -8,11 +8,11 @@
 -- name its counters, and one with G_ENABLE false. A wb_slave_check on each
 -- port says that it never stalls and acknowledges each request in the
 -- next cycle and nothing else, and f_off that every read of the device
--- without counters returns 0. The one assumption
--- is that the buffer holds no more words than FETCH holds room for, words
--- in flight included, which is what count and held of t_fetch_events mean.
--- The covers show a read of a histogram bin after a stop and a start, and
--- a read of FS_MIN after some cycles counted.
+-- without counters returns 0. The assumptions are the reset, and that
+-- the causes are in their ranges, which their types say but their bits
+-- do not.
+-- The covers show a read of a cause after a stop and a start, and a read
+-- of a flush cause after two flushes.
 --
 -- RESET
 -- The first cycle is a reset.
@@ -27,20 +27,16 @@ entity formal_fetch_stats is
       clk_i     : in  std_logic;
       rst_i     : in  std_logic;
       run_i     : in  std_logic;
-      count_i   : in  natural range 0 to 31;
-      held_i    : in  natural range 0 to 31;
-      starve_i  : in  std_logic;
-      blocked_i : in  std_logic;
-      full_i    : in  std_logic;
-      stall_i   : in  std_logic;
-      pair_i    : in  std_logic;
-      words_i   : in  natural range 0 to 4;
+      istall_i  : in  std_logic;
+      dstall_i  : in  std_logic;
       jump_i    : in  std_logic;
       flush_i   : in  std_logic;
+      fwhy_i    : in  natural range 0 to C_FLUSHES - 1;
+      cause_i   : in  natural range 0 to C_CAUSES - 1;
       wb_cyc_i  : in  std_logic;
       wb_stb_i  : in  std_logic;
       wb_we_i   : in  std_logic;
-      wb_addr_i : in  std_logic_vector(5 downto 0);
+      wb_addr_i : in  std_logic_vector(4 downto 0);
       wb_data_i : in  std_logic_vector(31 downto 0)
    );
 end entity formal_fetch_stats;
@@ -62,16 +58,12 @@ begin
 
    events <=
    (
-      count   => count_i,
-      held    => held_i,
-      starve  => starve_i,
-      blocked => blocked_i,
-      full    => full_i,
-      stall   => stall_i,
-      pair    => pair_i,
-      words   => words_i,
+      istall  => istall_i,
+      dstall  => dstall_i,
       jump    => jump_i,
       flush   => flush_i,
+      fwhy    => fwhy_i,
+      cause   => cause_i,
       wait_sr => '0',
       wait_wr => '0',
       moved   => '0'
@@ -84,7 +76,7 @@ begin
    p_run : process (clk_i)
    begin
       if rising_edge(clk_i) then
-         if accept = '1' and wb_we_i = '1' and wb_addr_i = "010000" then
+         if accept = '1' and wb_we_i = '1' and wb_addr_i = "00000" then
             f_run <= wb_data_i(0);
             if wb_data_i(1) = '0' and wb_data_i(0) /= f_run and f_stops < 2 then
                f_stops <= f_stops + 1;
@@ -100,13 +92,14 @@ begin
 
    -- psl default clock is rising_edge(clk_i);
    -- psl f_initial_reset : assume rst_i;
-   -- psl f_held : assume always count_i <= held_i;
+   -- psl f_cause_range : assume always cause_i < C_CAUSES;
+   -- psl f_fwhy_range : assume always fwhy_i < C_FLUSHES;
 
    -- psl f_off : assert always data_off = X"00000000";
 
-   -- psl c_restart : cover {accept = '1' and wb_we_i = '0' and wb_addr_i = "100011" and
+   -- psl c_restart : cover {accept = '1' and wb_we_i = '0' and wb_addr_i = "10011" and
    --    f_stops = 2 and rst_i = '0'; data_on /= X"00000000"};
-   -- psl c_min_max : cover {accept = '1' and wb_we_i = '0' and wb_addr_i = "011010" and
+   -- psl c_flush_bin : cover {accept = '1' and wb_we_i = '0' and wb_addr_i = "01010" and
    --    rst_i = '0'; data_on = X"00000002"};
 
 

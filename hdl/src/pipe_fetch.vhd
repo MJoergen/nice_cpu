@@ -29,10 +29,6 @@
 -- with them, to find stores into fetched code (MICROARCH.md §5.5). The
 -- range may hold words not in the buffer yet, which is safe.
 --
--- stats_o reports the buffer's words, and the room held for the requests
--- in flight, in each cycle, for the fetch statistics (MICROARCH.md §8.1).
--- It leaves the stall to the pipeline, which sees the bus stall alone.
---
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) The bus slave acknowledges every request, in order.
 -- b) consume_i is at most count_o.
@@ -77,11 +73,7 @@ entity pipe_fetch is
       blk_o           : out std_logic_vector(31 downto 5);
       words_o         : out t_words4;
       count_o         : out natural range 0 to 4;
-      consume_i       : in  natural range 0 to 4;
-      -- One past the last word fetched or being fetched
-
-      -- For the fetch statistics: the fields of FETCH, the rest 0
-      stats_o         : out t_fetch_events
+      consume_i       : in  natural range 0 to 4
    );
 end entity pipe_fetch;
 
@@ -140,18 +132,6 @@ begin
                     (stb_r = '0' or ibus_stall_i = '0') else
            '0';
    load <= want and room;
-
-
-   p_stats : process (all)
-      variable stats_v : t_fetch_events;
-   begin
-      stats_v       := C_FETCH_EVENTS_NONE;
-      stats_v.count := count_r;
-      stats_v.held  := count_r + 2 * pending_r;
-      stats_v.full  := want and not room;
-      stats_v.pair  := ibus_ack_i;
-      stats_o       <= stats_v;
-   end process p_stats;
 
 
    p_fetch : process (clk_i)

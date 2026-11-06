@@ -1,8 +1,8 @@
--- The performance counters of SYSTEM.md §3: 16 words of I/O with a 64-bit
+-- The performance counters of SYSTEM.md §3: 32 words of I/O with a 64-bit
 -- cycle counter, a 64-bit instruction counter, and a 64-bit counter of
 -- microseconds.
 --
---   0  CYCLE_LO   2  INSTR_LO   4  TIME_LO   6-15  read 0
+--   0  CYCLE_LO   2  INSTR_LO   4  TIME_LO   6-31  read 0
 --   1  CYCLE_HI   3  INSTR_HI   5  TIME_HI
 --
 -- THEORY OF OPERATION
@@ -32,7 +32,7 @@
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) STB is high only for requests to the counters: the bus decoder decodes
---    the address bits above bit 3.
+--    the address bits above bit 4.
 -- b) instret_i is high for one cycle per completed instruction.
 -- c) run_i is low while the core is held, paused, or halted: a system drives
 --    it with "not paused_o and not halted_o" of the core, and low too while
@@ -71,7 +71,7 @@ entity perf is
       wb_stall_o : out std_logic;
       wb_ack_o   : out std_logic := '0';
       wb_we_i    : in  std_logic;
-      wb_addr_i  : in  std_logic_vector(3 downto 0);
+      wb_addr_i  : in  std_logic_vector(4 downto 0);
       wb_data_i  : in  std_logic_vector(31 downto 0);
       wb_data_o  : out std_logic_vector(31 downto 0) := (others => '0')
    );
@@ -131,26 +131,26 @@ begin
          wb_ack_o <= accept;
 
          if accept = '1' and wb_we_i = '0' then
-            case wb_addr_i is
-               when X"0" =>
+            case to_integer(wb_addr_i) is
+               when 0 =>
                   wb_data_o     <= cycles_r(31 downto 0);
                   cycles_snap_r <= cycles_r(63 downto 32);
 
-               when X"1" =>
+               when 1 =>
                   wb_data_o <= cycles_snap_r;
 
-               when X"2" =>
+               when 2 =>
                   wb_data_o     <= instrs_r(31 downto 0);
                   instrs_snap_r <= instrs_r(63 downto 32);
 
-               when X"3" =>
+               when 3 =>
                   wb_data_o <= instrs_snap_r;
 
-               when X"4" =>
+               when 4 =>
                   wb_data_o     <= micros_r(31 downto 0);
                   micros_snap_r <= micros_r(63 downto 32);
 
-               when X"5" =>
+               when 5 =>
                   wb_data_o <= micros_snap_r;
 
                when others =>

@@ -19,7 +19,7 @@ The synthesizable VHDL: the two cores, their shared packages, and the devices. [
 | [sd_regs.vhd](sd_regs.vhd) | The registers and the buffer of the SD card controller of SYSTEM.md §5, a Wishbone slave with a port to a protocol engine. |
 | [net_regs.vhd](net_regs.vhd) | The registers of the network station of SYSTEM.md §6, a Wishbone slave with the addresses as outputs and the counts and status as inputs. |
 | [eth_regs.vhd](eth_regs.vhd) | The port for Ethernet frames of SYSTEM.md §7: the registers, the queue of 4 frames, and the send buffer, a Wishbone slave with a port to the station. |
-| [fetch_stats.vhd](fetch_stats.vhd) | The fetch statistics of MICROARCH.md §8.1, counters of FETCH and DECODE of the pipelined core, a Wishbone slave. |
+| [fetch_stats.vhd](fetch_stats.vhd) | The fetch statistics of MICROARCH.md §8.1, counters of the causes of the pipelined core's cycles and flushes, a Wishbone slave. |
 | [wb_dmux.vhd](wb_dmux.vhd) | The data bus decoder, which keeps the ACKs of several slaves in order. |
 | [debug_link.vhd](debug_link.vhd) | The byte-stream part of the debug link of DEBUG.md: packets, the debug registers, notices, and a Wishbone master. It returns the core's registers live while the core runs, has a side port for a client inside the system, `rx_resume_i`, which starts the line's input anew after a break, and `rx_flow_i`, with which a console byte waits for room on a transport with flow control. |
 | [trace_pkg.vhd](trace_pkg.vhd) | `t_retire`, the record in which the core reports each step to the trace writer, and `t_halt`, the type of the cores' `halt_reason_o`. |

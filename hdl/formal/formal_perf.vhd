@@ -41,7 +41,7 @@ entity formal_perf is
       wb_cyc_i  : in  std_logic;
       wb_stb_i  : in  std_logic;
       wb_we_i   : in  std_logic;
-      wb_addr_i : in  std_logic_vector(3 downto 0);
+      wb_addr_i : in  std_logic_vector(4 downto 0);
       wb_data_i : in  std_logic_vector(31 downto 0)
    );
 end entity formal_perf;
@@ -75,12 +75,12 @@ begin
    f_read <= wb_cyc_i and wb_stb_i and not wb_we_i;
 
    with wb_addr_i select f_expect <=
-      f_cycles(31 downto 0) when X"0",
-      f_cyc_snap(63 downto 32) when X"1",
-      f_instrs(31 downto 0) when X"2",
-      f_ins_snap(63 downto 32) when X"3",
-      f_micros(31 downto 0) when X"4",
-      f_mic_snap(63 downto 32) when X"5",
+      f_cycles(31 downto 0) when "00000",
+      f_cyc_snap(63 downto 32) when "00001",
+      f_instrs(31 downto 0) when "00010",
+      f_ins_snap(63 downto 32) when "00011",
+      f_micros(31 downto 0) when "00100",
+      f_mic_snap(63 downto 32) when "00101",
       X"00000000" when others;
 
 
@@ -105,14 +105,14 @@ begin
 
          if f_read = '1' then
             f_last_r <= f_expect;
-            if wb_addr_i = X"0" then
+            if wb_addr_i = "00000" then
                f_cyc_snap <= f_cycles;
                f_wrap_r   <= '0';
             end if;
-            if wb_addr_i = X"2" then
+            if wb_addr_i = "00010" then
                f_ins_snap <= f_instrs;
             end if;
-            if wb_addr_i = X"4" then
+            if wb_addr_i = "00100" then
                f_mic_snap <= f_micros;
             end if;
          end if;
@@ -137,10 +137,10 @@ begin
    -- psl f_data : assert always
    --    {f_read and not rst_i} |=> {wb_data = f_last_r};
 
-   -- psl c_cycle_hi : cover {f_read = '1' and wb_addr_i = X"1" and f_cyc_snap /= G_RESET};
-   -- psl c_instr_hi : cover {f_read = '1' and wb_addr_i = X"3" and f_ins_snap /= G_RESET};
-   -- psl c_time_hi : cover {f_read = '1' and wb_addr_i = X"5" and f_mic_snap /= G_RESET};
-   -- psl c_wrap : cover {f_read = '1' and wb_addr_i = X"1" and f_wrap_r = '1' and
+   -- psl c_cycle_hi : cover {f_read = '1' and wb_addr_i = "00001" and f_cyc_snap /= G_RESET};
+   -- psl c_instr_hi : cover {f_read = '1' and wb_addr_i = "00011" and f_ins_snap /= G_RESET};
+   -- psl c_time_hi : cover {f_read = '1' and wb_addr_i = "00101" and f_mic_snap /= G_RESET};
+   -- psl c_wrap : cover {f_read = '1' and wb_addr_i = "00001" and f_wrap_r = '1' and
    --    f_cyc_snap(31 downto 0) /= X"00000000"};
 
 

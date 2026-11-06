@@ -11,8 +11,8 @@
 -- does, or none if it is "".
 -- The data bus decoder, src/wb_dmux.vhd, sends 0xFFFFFF10-0xFFFFFF1F to
 -- the timer, src/timer.vhd (SYSTEM.md §4), 0xFFFFFF20-0xFFFFFF3F to the
--- math unit, src/mpu.vhd (SYSTEM.md §2), 0xFFFFFF40-0xFFFFFF4F to the
--- performance counters, src/perf.vhd (SYSTEM.md §3), 0xFFFFFF50-0xFFFFFF7F
+-- math unit, src/mpu.vhd (SYSTEM.md §2), 0xFFFFFF40-0xFFFFFF5F to the
+-- performance counters, src/perf.vhd (SYSTEM.md §3), 0xFFFFFF60-0xFFFFFF7F
 -- to the fetch statistics, src/fetch_stats.vhd (MICROARCH.md §8.1),
 -- 0xFFFFFFA0-0xFFFFFFAF to the SD card controller, src/sd_regs.vhd
 -- (SYSTEM.md §5), 0xFFFFFFB0-0xFFFFFFBF to the network station,
@@ -42,8 +42,8 @@
 --
 -- G_FETCH_STATS is the generic G_ENABLE of the fetch statistics. Only the
 -- pipelined core reports the events they count; with the multi-cycle core
--- they count only cycles. With G_FETCH_STATS false, their 48 words at
--- 0xFFFFFF50 read 0 and ignore writes, as in the emulator (SYSTEM.md §3).
+-- every cycle counts as OTHER. With G_FETCH_STATS false, their 32 words at
+-- 0xFFFFFF60 read 0 and ignore writes, as in the emulator (SYSTEM.md §3).
 --
 -- With G_CYCLE_COUNTER false, CYCLE_LO and CYCLE_HI at 0xFFFFFF40 and
 -- 0xFFFFFF41, and TIME_LO and TIME_HI at 0xFFFFFF44 and 0xFFFFFF45, are
@@ -569,15 +569,14 @@ begin
 
 
    dbus_sel <= C_MPU when dbus_addr(31 downto 5) = X"FFFFFF" & "001" else
-               C_PERF when dbus_addr(31 downto 4) = X"FFFFFF4" and
-                           (G_CYCLE_COUNTER or (dbus_addr(3 downto 1) /= "000" and
-                                                dbus_addr(3 downto 1) /= "010")) else
+               C_PERF when dbus_addr(31 downto 5) = X"FFFFFF" & "010" and
+                           (G_CYCLE_COUNTER or (dbus_addr(4 downto 1) /= "0000" and
+                                                dbus_addr(4 downto 1) /= "0010")) else
                C_TIMER when dbus_addr(31 downto 4) = X"FFFFFF1" else
                C_SD when dbus_addr(31 downto 4) = X"FFFFFFA" else
                C_NET when dbus_addr(31 downto 4) = X"FFFFFFB" else
                C_ETH when dbus_addr(31 downto 4) = X"FFFFFFC" else
-               C_STATS when dbus_addr(31 downto 6) = X"FFFFFF" & "01" and
-                            dbus_addr(5 downto 4) /= "00" else
+               C_STATS when dbus_addr(31 downto 5) = X"FFFFFF" & "011" else
                C_MEM;
 
 
@@ -665,7 +664,7 @@ begin
          wb_stall_o => slave_stall(C_PERF),
          wb_ack_o   => slave_ack(C_PERF),
          wb_we_i    => dbus_we,
-         wb_addr_i  => dbus_addr(3 downto 0),
+         wb_addr_i  => dbus_addr(4 downto 0),
          wb_data_i  => dbus_data_out,
          wb_data_o  => slave_data(32 * C_PERF + 31 downto 32 * C_PERF)
       ); -- i_perf
@@ -704,7 +703,7 @@ begin
          wb_stall_o => slave_stall(C_STATS),
          wb_ack_o   => slave_ack(C_STATS),
          wb_we_i    => dbus_we,
-         wb_addr_i  => dbus_addr(5 downto 0),
+         wb_addr_i  => dbus_addr(4 downto 0),
          wb_data_i  => dbus_data_out,
          wb_data_o  => slave_data(32 * C_STATS + 31 downto 32 * C_STATS)
       ); -- i_fetch_stats
@@ -1205,7 +1204,9 @@ begin
          if fetch_events.wait_wr = '1' then
             held_v(1) := held_v(1) + 1;
          end if;
-         if fetch_events.flush = '1' or nmi_ready = '1' or irq_ready = '1' then
+         -- The core reports the events two cycles late, and an interrupt
+         -- entry flushes in the cycle it takes the request.
+         if fetch_events.flush = '1' then
             n_drop <= (n_drop(0) + held_v(0), n_drop(1) + held_v(1));
             held_v := (0, 0);
          elsif fetch_events.moved = '1' then

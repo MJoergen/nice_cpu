@@ -39,8 +39,6 @@ architecture synthesis of formal_pipe_decode is
    signal inst     : t_inst;
    signal inst2    : t_inst;
    signal skid     : t_inst;
-   signal starve   : std_logic;
-   signal blocked  : std_logic;
 
    attribute anyseq : boolean;
    attribute anyseq of f_words : signal is true;
@@ -72,9 +70,7 @@ begin
          uop_o      => uop,
          inst_o     => inst,
          inst2_o    => inst2,
-         skid_o     => skid,
-         starve_o   => starve,
-         blocked_o  => blocked
+         skid_o     => skid
       ); -- i_pipe_decode
 
 end architecture synthesis;

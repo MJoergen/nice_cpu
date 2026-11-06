@@ -22,6 +22,9 @@
 -- for rule 1 or rule 2 of MICROARCH.md §5.3: for the condition, or for an
 -- older micro-operation in WRITE that is not a store. Speculative reads
 -- would save at most these cycles. Nothing in the core uses them.
+-- why_o says why the micro-operation in prep_r does not go on to WRITE,
+-- for the fetch statistics, src/fetch_stats.vhd. Nothing in the core uses
+-- it either.
 --
 -- An instruction with a data read is counted in the cycle the bus accepts
 -- its last read, count_o.
@@ -112,7 +115,11 @@ entity pipe_prepare is
       -- A data read waits only for the condition, or for an older
       -- micro-operation (MICROARCH.md §5.3, rules 1 and 2)
       wait_sr_o    : out std_logic;
-      wait_wr_o    : out std_logic
+      wait_wr_o    : out std_logic;
+
+      -- Why the micro-operation does not go on, for the fetch statistics
+      -- (MICROARCH.md §8.1)
+      why_o        : out t_pwhy
    );
 end entity pipe_prepare;
 
@@ -193,6 +200,7 @@ begin
       variable irq_v     : boolean;
       variable pause_ok  : boolean;
       variable held_v    : boolean;   -- Only rule 1 or 2 holds a read back
+      variable go_v      : boolean;   -- The micro-operation may go on
    begin
       u_v     := prep_r;
       wu_v    := w_i.uop;
@@ -346,12 +354,30 @@ begin
 
       -- The micro-operation may go on when its values are ready and its
       -- reads are loaded, or it has none, or its condition is false.
-      p_valid <= '0';
+      go_v := false;
       if u_v.valid = '1' then
-         if (ck_v = '1' and cv_v = '0') or
-            (not busy_v and (nr_v = 0 or (ck_v = '1' and p_loaded_r + to_nat(load_v) = nr_v))) then
-            p_valid <= '1';
-         end if;
+         go_v := (ck_v = '1' and cv_v = '0') or
+                 (not busy_v and (nr_v = 0 or (ck_v = '1' and p_loaded_r + to_nat(load_v) = nr_v)));
+      end if;
+      p_valid <= to_sl(go_v);
+
+      -- Why it does not go on: a register it needs, the first of its two
+      -- reads loaded now, its read stalled on the bus, the bus (rule 3, or
+      -- the room for requests), or else rules 1, 2, and 4 and a pause.
+      if u_v.valid = '0' then
+         why_o <= P_EMPTY;
+      elsif go_v then
+         why_o <= P_GO;
+      elsif busy_v then
+         why_o <= P_REG;
+      elsif load_v = '1' then
+         why_o <= P_BUS;
+      elsif rd_stb_r = '1' and dbus_stall_i = '1' then
+         why_o <= P_STALL;
+      elsif not bus_ok and p_loaded_r < nr_v then
+         why_o <= P_BUS;
+      else
+         why_o <= P_ORDER;
       end if;
 
       u_v.cond_known := ck_v;

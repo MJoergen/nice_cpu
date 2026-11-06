@@ -85,12 +85,7 @@ entity pipe_decode is
       -- stores into fetched code
       inst_o     : out t_inst;
       inst2_o    : out t_inst;
-      skid_o     : out t_inst;
-
-      -- For the fetch statistics: DECODE is free, but the words of the
-      -- next instruction are not all there; or they are, but DECODE is busy
-      starve_o   : out std_logic;
-      blocked_o  : out std_logic
+      skid_o     : out t_inst
    );
 end entity pipe_decode;
 
@@ -215,8 +210,6 @@ begin
    -- consume_o depends on nothing downstream of DECODE. A flush drops it
    -- again, below.
    d_load    <= d_ok and not dec_q.valid;
-   starve_o  <= not d_ok and not dec_q.valid and not flush_i and not rst_i;
-   blocked_o <= d_ok and dec_q.valid and not flush_i and not rst_i;
    consume_o <= inst_len(f_words_i(0)) when d_load = '1' else 0;
 
 

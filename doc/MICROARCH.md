@@ -840,7 +840,8 @@ system built from them must follow these rules:
   data bus must allow a slave to take many cycles.
 - **Performance counters.** At `0xFFFFFF40`–`0xFFFFFF7F` (SYSTEM §3), in
   two devices. The cycle, instruction, and microsecond counters are
-  `hdl/src/perf.vhd` at `0xFFFFFF40`–`0xFFFFFF4F`. Its generic `G_CLK_HZ`
+  `hdl/src/perf.vhd` at `0xFFFFFF40`–`0xFFFFFF5F`, 32 words, so the
+  decoder compares address bits 31..5. Its generic `G_CLK_HZ`
   is the clock frequency, for the microsecond counter. The core raises `instret_o` for one cycle
   per completed instruction. A read of `INSTR_LO` must count every older
   instruction, and not its own. So the pipelined core counts an
@@ -855,13 +856,12 @@ system built from them must follow these rules:
   counts cycles then stops with the core, as the emulator's does. `tb_core`
   does so and checks the cycle counter.
 - **Fetch statistics.** The rest of the performance counters,
-  `hdl/src/fetch_stats.vhd` at `0xFFFFFF50`–`0xFFFFFF7F` (§8.1), 48 words,
-  so the decoder compares address bits 31..6 and leaves out
-  `0xFFFFFF40`–`0xFFFFFF4F`. The pipelined core reports what FETCH and
-  DECODE do in each cycle on its port `stats_o`, and the device counts it:
-  the words in FETCH's buffer, the cycles DECODE waits for words, the
-  cycles FETCH has no room for a request, and more. They show how much of
-  the buffer is used, and so whether its 16 words are too many or too few.
+  `hdl/src/fetch_stats.vhd` at `0xFFFFFF60`–`0xFFFFFF7F` (§8.1), 32 words,
+  so the decoder compares address bits 31..5. The pipelined core reports
+  what it does in each cycle on its port `stats_o`, and the device counts
+  it: the cause of each cycle, the flushes by cause, the stalls of both
+  buses, and the jumps that DECODE resolves. They show where the cycles
+  of a program go.
 - **Timer.** `hdl/src/timer.vhd` at `0xFFFFFF10`–`0xFFFFFF1F` (SYSTEM §4),
   with its request on the core's IRQ port. It is the only device that
   raises IRQ so far, so it needs no interrupt controller.
@@ -886,45 +886,81 @@ system built from them must follow these rules:
 
 ### 8.1 Fetch statistics
 
-`hdl/src/fetch_stats.vhd` counts what FETCH and DECODE of the pipelined
-core (§3) do, in the last 48 words of the performance counters of SYSTEM
-§3, at `0xFFFFFF50`–`0xFFFFFF7F`. They help to judge the size of FETCH's
-buffer. They are a property of this core, so SYSTEM.md leaves them to this
-section. The emulator has none, and their words read 0 there. The generic
-`G_ENABLE` leaves them out of the core; every word then reads 0.
+`hdl/src/fetch_stats.vhd` counts what the pipelined core (§3) does in each
+cycle, in the last 32 words of the performance counters of SYSTEM §3, at
+`0xFFFFFF60`–`0xFFFFFF7F`. They show where the cycles of a program go: a
+cause for each cycle, and the flushes by cause. They are a property of
+this core, so SYSTEM.md leaves them to this section. The emulator has
+none, and their words read 0 there. The generic `G_ENABLE` leaves them out
+of the core; every word then reads 0.
 
 | Address | Name | A data read returns | A write |
 |---|---|---|---|
-| `0xFFFFFF50` | `FS_CTRL` | the run bit R in bit 0, and 0 in bits 31..1 | sets R to bit 0; if bit 1 is set, also clears the counters |
-| `0xFFFFFF51` | `FS_CYCLES` | the cycles counted | is ignored |
-| `0xFFFFFF52` | `FS_STARVE` | the cycles in which DECODE could take an instruction, but FETCH did not have all its words | is ignored |
-| `0xFFFFFF53` | `FS_BLOCKED` | the cycles in which FETCH had all the words of the next instruction, but DECODE was busy | is ignored |
-| `0xFFFFFF54` | `FS_FULL` | the cycles in which FETCH could have sent a request, but its buffer had no room | is ignored |
-| `0xFFFFFF55` | `FS_STALL` | the cycles in which the instruction bus stalled a request | is ignored |
-| `0xFFFFFF56` | `FS_PAIRS` | the pairs of words that arrived on the instruction bus, wasted ones included | is ignored |
-| `0xFFFFFF57` | `FS_WORDS` | the words that FETCH passed to DECODE, also in a cycle when a flush drops them | is ignored |
-| `0xFFFFFF58` | `FS_JUMPS` | the jumps that DECODE redirected FETCH for (§5.4), predicted ones that are skipped too, also in a cycle when a flush drops them | is ignored |
-| `0xFFFFFF59` | `FS_FLUSHES` | the flushes of the pipeline by WRITE | is ignored |
-| `0xFFFFFF5A` | `FS_MIN` | the fewest words in the buffer in a cycle counted, or 31 if none was | is ignored |
-| `0xFFFFFF5B` | `FS_MAX` | the most words in the buffer in a cycle counted | is ignored |
-| `0xFFFFFF5C` | `FS_HELD_MAX` | the most words in the buffer and in the requests in flight, in a cycle counted | is ignored |
-| `0xFFFFFF5D`–`0xFFFFFF5F` | | 0 | is ignored |
-| `0xFFFFFF60` + n | `FS_HIST` + n | the cycles counted with n words in the buffer, for n = 0 to 31 | is ignored |
+| `0xFFFFFF60` | `FS_CTRL` | the run bit R in bit 0, and 0 in bits 31..1 | sets R to bit 0; if bit 1 is set, also clears the counters |
+| `0xFFFFFF61` | `FS_CYCLES` | the cycles counted | is ignored |
+| `0xFFFFFF62` | `FS_ISTALL` | the cycles in which the instruction bus stalled a request | is ignored |
+| `0xFFFFFF63` | `FS_DSTALL` | the cycles in which the data bus stalled a request of the core: a read, a store, or the vector read of an interrupt entry | is ignored |
+| `0xFFFFFF64` | `FS_JUMPS` | the jumps that DECODE redirected FETCH for (§5.4), predicted ones that are skipped too, also in a cycle when a flush drops them | is ignored |
+| `0xFFFFFF65`–`0xFFFFFF67` | | 0 | is ignored |
+| `0xFFFFFF68` + n | `FS_FLUSH` + n | the flushes of the pipeline by WRITE of cause n, for n = 0 to 4 | is ignored |
+| `0xFFFFFF6D`–`0xFFFFFF6F` | | 0 | is ignored |
+| `0xFFFFFF70` + n | `FS_CAUSE` + n | the cycles counted of cause n, for n = 0 to 14 | is ignored |
+| `0xFFFFFF7F` | | 0 | is ignored |
+
+The causes of a flush (§5.4, §5.5, §6):
+
+| n | Name | The flush |
+|---|---|---|
+| 0 | JUMP | after an instruction that wrote R15, and that DECODE did not redirect FETCH for |
+| 1 | SKIP | after a jump that DECODE predicted taken, and that is skipped |
+| 2 | STORE | after a store that may hit fetched code (§5.5), unless the instruction also jumps |
+| 3 | INTR | after `INT` or `RTI`, and at the start and at the end of an interrupt entry, so an entry counts twice |
+| 4 | OTHER | at a halt, at a pause, and when the core goes on after a pause |
+
+The causes of a cycle. Each cycle counted has one, so the causes sum to
+`FS_CYCLES`. In a cycle in which WRITE holds a micro-operation, it is what
+WRITE does. In a cycle in which WRITE is empty, it is why PREPARE did not
+pass a micro-operation on in the cycle before. When PREPARE held none
+either, it is the last redirect whose target has not reached WRITE yet: a
+flush by WRITE, or a jump that DECODE resolved; or else FETCH.
+
+| n | Name | The cycle |
+|---|---|---|
+| 0 | RETIRE | WRITE retires a micro-operation, skipped ones included. So this counts the micro-operations retired. |
+| 1 | REFILL | the pipeline refills after a flush by WRITE, or after reset |
+| 2 | BUBBLE | the pipeline refills after a jump that DECODE resolved |
+| 3 | FETCH | FETCH did not have the words of the next instruction otherwise |
+| 4 | REG | PREPARE waited for a register that an older micro-operation writes, for an address or an operand |
+| 5 | ORDER | PREPARE's data read waited for rule 1, 2, or 4 of §5.3, or for a pause |
+| 6 | BUS | PREPARE's data read waited for an older store (rule 3), or for room among the requests in flight, or PREPARE loaded the first of two reads |
+| 7 | STALL | a data read of the core was stalled on the bus: a slow memory, or the math unit with a result not ready (SYSTEM §2) |
+| 8 | READ | WRITE waits for read data that has no ACK yet |
+| 9 | LATE | WRITE waits a cycle for read data that came, from DBUS's FIFO (§5.3) |
+| 10 | SHIFT | WRITE reduces a shift count in a cycle of its own (§7.3) |
+| 11 | ADJUST | WRITE writes a destination adjusted by 1, or a computed jump, in a second cycle |
+| 12 | STORE | WRITE waits with a store: for DBUS's register, or for the bus to accept a store into the I/O range (§5.3) |
+| 13 | INTR | WRITE runs an interrupt entry or `INT`, from its flush until the vector comes |
+| 14 | OTHER | any other cycle |
 
 - While R = 1, each clock cycle counts in which the core runs. The
   counters stop while the core is held, paused, or halted, as the cycle
   counter of SYSTEM.md §3 does, so a reading after a halt does not change. R stays
   as it is. Reset sets R to 1 and clears the counters, so they count from
   reset.
-- A clear sets `FS_MIN` to 31 and every other counter to 0. A write to
-  `FS_CTRL` takes effect from the next cycle, and the cycle of a write of 0
-  still counts.
+- The core reports each cycle two cycles later, from registers, so that
+  no path of the core runs on into the counters. So a count lags the
+  core by two cycles. Every cycle counted still has one cause.
+- A clear sets every counter to 0. A write to `FS_CTRL` takes effect from
+  the next cycle, and the cycle of a write of 0 still counts.
 - The counters are 32 bits wide and wrap, after about 43 seconds at 100 MHz.
 - A read returns the counter as it is in the cycle the read is accepted. To
   read a consistent set, stop the counters first.
-- The multi-cycle core has no FETCH or DECODE stages. With it, only
-  `FS_CYCLES` and `FS_HIST` count, and every cycle has 0 words in the
-  buffer.
+- The multi-cycle core has no pipeline. With it, only `FS_CYCLES` and
+  `FS_CAUSE` + 14, OTHER, count.
+- A flush of cause STORE finds what nothing else shows. The check of
+  §5.5 is coarse on purpose: a store into the 32-word block of FETCH's
+  oldest word, or into the block after it, flushes. So data or a stack
+  next to the code costs a refill per store.
 
 To measure a piece of code, and then read the counters at leisure:
 

@@ -136,7 +136,7 @@ and the same two generics: a system instantiates `pipeline` of
 | `instret_o` | 1 for one cycle for each completed instruction, but not for an interrupt entry, for the instruction counter (SYSTEM.md §3). |
 | `regs_o` | R0 to R15 from the core's registers, a `t_regs`, for a monitor that shows them (below). |
 | `retire_o` | One report per step, a `t_retire`, for the trace writer. Simulation only. |
-| `stats_o` | The pipelined core only: what FETCH and DECODE did in the cycle, a `t_fetch_events` of `src/pipe_pkg.vhd`, for the fetch statistics. |
+| `stats_o` | The pipelined core only: what the core did two cycles before, a `t_fetch_events` of `src/pipe_pkg.vhd`, for the fetch statistics. |
 
 Interrupt requests use valid/ready ports, with an 8-bit vector each. A device
 holds `valid` and the vector until the core raises `ready`. The core raises it
@@ -599,9 +599,9 @@ correction is proven by hand, and `tb_mpu` checks the products' values
 `perf` holds the performance counters of SYSTEM.md §3: `CYCLE_LO` and
 `CYCLE_HI` at offsets 0 and 1, `INSTR_LO` and `INSTR_HI` at 2 and 3, and
 `TIME_LO` and `TIME_HI` at 4 and 5. It
-is a pipelined Wishbone slave with a 4-bit address. It never stalls, and it
+is a pipelined Wishbone slave with a 5-bit address. It never stalls, and it
 acknowledges each request in the next cycle. The bus decoder selects it for
-`0xFFFFFF40`–`0xFFFFFF4F`.
+`0xFFFFFF40`–`0xFFFFFF5F`.
 
 The cycle counter counts every clock cycle after reset in which `run_i` is
 high. The instruction
@@ -628,18 +628,23 @@ counters for every cycle, and its cover task starts near a wrap too.
 ## The fetch statistics
 
 `fetch_stats` holds the fetch statistics of MICROARCH.md §8.1. Its bus
-port is a pipelined Wishbone slave with a 6-bit address, bits 5..0 of the
-address, so `FS_CTRL` is at offset `0x10` and `FS_HIST` at `0x20`. The bus decoder
-selects it for `0xFFFFFF50`–`0xFFFFFF7F`.
+port is a pipelined Wishbone slave with a 5-bit address, bits 4..0 of the
+address, so `FS_CTRL` is at offset `0x00`, `FS_FLUSH` at `0x08`, and
+`FS_CAUSE` at `0x10`. The bus decoder selects it for
+`0xFFFFFF60`–`0xFFFFFF7F`.
 
 It counts the events of a `t_fetch_events` (`src/pipe_pkg.vhd`), which the
-pipelined core reports for each cycle on its port `stats_o`. FETCH fills in
-the words in its buffer, the room held for the requests in flight, a
-request held back for lack of room, a stalled request, and an arriving
-pair. DECODE fills in the cycles it waits for words or holds them back,
-and the words it takes. `pipeline` adds the jumps that DECODE redirects FETCH for and
-the flushes of WRITE. The multi-cycle core has no such port, and `tb_core`
-gives the device `C_FETCH_EVENTS_NONE` with it.
+pipelined core reports for each cycle on its port `stats_o`, two cycles
+late, from registers: the stalls of both buses, a jump that DECODE redirects
+FETCH for, a flush of WRITE and its cause, and the cause of the cycle.
+`pipeline` finds the cause from what WRITE does (`why_o` of
+`pipe_write`), or, when WRITE is empty, from why PREPARE held its
+micro-operation in the cycle before (`why_o` of `pipe_prepare`), or else
+from the last redirect whose target's first micro-operation has not
+reached WRITE. `fwhy_o` of `pipe_write` is the cause of a flush. Nothing
+else in the core uses these outputs. The multi-cycle core has no such
+port, and `tb_core` gives the device `C_FETCH_EVENTS_NONE` with it, whose
+cause is OTHER.
 
 A cycle counts only while `run_i` is high, as in `perf`. A system drives it
 with "the core is running", so that the counters stop while the core is
@@ -781,9 +786,10 @@ keeps the buffer.
 `tb_fetch_stats` drives the events of a few cycles by hand. It checks
 that each counter counts its events from the cycle after a write that
 clears and starts the counters, up to the write that stops them, that
-`FS_MIN`, `FS_MAX`, and `FS_HELD_MAX` follow the words in the buffer,
-that stopped counters keep their values, that a write of 1 starts them
-again without a clear, the spare words, writes to other words, and reset.
+each cycle counts in the bin of its cause and each flush in the bin of
+its cause, that stopped counters keep their values, that a write of 1
+starts them again without a clear, the spare words, writes to other
+words, and reset.
 A second instance, with `G_ENABLE` false, must read 0.
 
 `tb_wb_dmux` sends 5000 random requests through the data bus decoder to
@@ -969,9 +975,11 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   directory, and the emulator with a copy of it, which it writes.
 - On the pipelined core only, `test/fstats.nasm`, also on a memory that
   stalls in 30% of the cycles. It reads the fetch statistics around a
-  loop of jumps, and checks what any run must give: the histogram adds up
-  to the cycles, `FS_MIN` ≤ `FS_MAX` ≤ `FS_HELD_MAX` ≤ 16, at least one
-  jump and flush per round, and cycles in which DECODE waited. The
+  loop of jumps, and checks what any run must give: the causes add up to
+  the cycles, at least the loop's micro-operations retired, at least one
+  jump and one flush for a jump per round and no flush for another cause,
+  and cycles of refill after both kinds of jump. Then a store into the
+  next word must flush once, for a store into fetched code. The
   emulator has no fetch statistics, so the run is not compared with it:
   it must end with R12 = 0 and exit status 0. `test/bubble.nasm` runs
   the same way: it reads the cycle counter before and after each kind of
@@ -1173,7 +1181,7 @@ formal/UNIT/TASK` runs one task, for example `make formal/pipe_fetch/prove`.
 | `net_regs` | The network station's bus port, and what sets its addresses and `wr_o`. | k-induction of depth 10, Yices | seconds |
 | `eth_regs` | The port for Ethernet frames: its bus and station ports, with and without the held ACK. | k-induction of depth 10, Yices | seconds |
 | `perf` | The performance counters, against a model. | PDR | 20 seconds |
-| `fetch_stats` | The fetch statistics: what each cycle does to the counters. | k-induction, Boolector | half a minute |
+| `fetch_stats` | The fetch statistics: what each cycle does to the counters. | k-induction, Boolector | a few seconds |
 | `mpu` | The math unit's port, its waits, and its quotients and remainders for every pair of operands. | k-induction, Boolector | about 2 minutes |
 | `debug_link` | The debug link's ports and the guarantees of its header, with and without a ROM. | k-induction of depth 4, Yices | seconds |
 
@@ -1462,18 +1470,16 @@ and acknowledge each request in the next cycle (`wb_slave_check`), and every rea
 one without counters returns 0. The other properties are in
 `src/fetch_stats.vhd` under `G_FORMAL`, because they name its counters. A
 read returns the word as it is in the cycle the read is accepted. A cycle
-counted adds one to `FS_CYCLES` and to the bin of its count. Stopped
-counters keep their values, a write of 1 to `FS_CTRL` starts them without
-a clear, and a clear or a reset clears them. The invariants are that the
-bins of `FS_HIST` sum to `FS_CYCLES`, that `FS_MIN` is at most `FS_MAX`
-once a cycle has counted, and that `FS_MAX` is at most `FS_HELD_MAX`.
-The last needs the one assumption, that the buffer holds no more words
-than are held. The sum of 32 counters is too much for the solver in one
-step, so ghost counters in a binary tree over the bins count the cycles
-of each subtree. The root is asserted to be `FS_CYCLES`, and each node
-the sum of its two children, which gives the sum of the bins without
-any one assertion adding 32 counters. Boolector proves it all by
-k-induction in under a minute; Yices does not finish in 15.
+counted adds one to `FS_CYCLES` and to the bin of its cause, a flush to
+the bin of its cause, and each event to its counter. Stopped counters
+keep their values, a write of 1 to `FS_CTRL` starts them without a clear,
+and a clear or a reset clears them. The invariant is that the causes sum
+to `FS_CYCLES`. Ghost counters in a binary tree over the 15 causes,
+padded to 16 bins, count the cycles of each subtree. The root is asserted
+to be `FS_CYCLES`, and each node the sum of its two children, which gives
+the sum of the causes without any one assertion adding 15 counters.
+There is no assumption but the reset. Boolector proves it all by
+k-induction.
 
 `formal_debug_link` checks the debug link from the host, the side client,
 the program, the core, and the board, with every input free. It assumes a Wishbone

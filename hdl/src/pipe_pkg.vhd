@@ -129,36 +129,71 @@ package pipe_pkg is
       cnt_late   => '0'
    );
 
-   -- What FETCH and DECODE did in one cycle, for the fetch statistics,
+   -- Why PREPARE does not pass its micro-operation on to WRITE in a
+   -- cycle, for the fetch statistics (MICROARCH.md §8.1): it holds none,
+   -- passes it on or would, waits for a register that an older
+   -- micro-operation writes, waits for rules 1, 2, or 4 of MICROARCH.md
+   -- §5.3 or a pause, waits for the bus (rule 3, the room for requests,
+   -- or its second read), or its read is stalled on the bus.
+   type t_pwhy is (P_EMPTY, P_GO, P_REG, P_ORDER, P_BUS, P_STALL);
+
+   -- What WRITE does in a cycle, for the same: it holds no micro-operation,
+   -- retires one, waits for read data that has no ACK yet, waits a cycle
+   -- for read data from DBUS's FIFO, reduces a shift count, writes an
+   -- adjusted register or a computed jump in a second cycle, waits with a
+   -- store, runs an interrupt entry or INT, or anything else.
+   type t_wwhy is (W_EMPTY, W_RETIRE, W_READ, W_LATE, W_SHIFT, W_ADJUST, W_STORE, W_INTR, W_OTHER);
+
+   -- The causes of a flush by WRITE (MICROARCH.md §8.1), FS_FLUSH + n
+   constant C_FLUSH_JUMP  : natural := 0;   -- A jump that DECODE did not redirect for
+   constant C_FLUSH_SKIP  : natural := 1;   -- A predicted jump that is skipped
+   constant C_FLUSH_STORE : natural := 2;   -- A store into fetched code
+   constant C_FLUSH_INTR  : natural := 3;   -- INT, RTI, or an interrupt entry
+   constant C_FLUSH_OTHER : natural := 4;   -- A halt, a pause, or the go on after one
+   constant C_FLUSHES     : natural := 5;
+
+   -- The cause of a cycle (MICROARCH.md §8.1), FS_CAUSE + n
+   constant C_CAUSE_RETIRE : natural := 0;
+   constant C_CAUSE_REFILL : natural := 1;
+   constant C_CAUSE_BUBBLE : natural := 2;
+   constant C_CAUSE_FETCH  : natural := 3;
+   constant C_CAUSE_REG    : natural := 4;
+   constant C_CAUSE_ORDER  : natural := 5;
+   constant C_CAUSE_BUS    : natural := 6;
+   constant C_CAUSE_STALL  : natural := 7;
+   constant C_CAUSE_READ   : natural := 8;
+   constant C_CAUSE_LATE   : natural := 9;
+   constant C_CAUSE_SHIFT  : natural := 10;
+   constant C_CAUSE_ADJUST : natural := 11;
+   constant C_CAUSE_STORE  : natural := 12;
+   constant C_CAUSE_INTR   : natural := 13;
+   constant C_CAUSE_OTHER  : natural := 14;
+   constant C_CAUSES       : natural := 15;
+
+   -- What the pipelined core did in one cycle, for the fetch statistics,
    -- src/fetch_stats.vhd (MICROARCH.md §8.1), and the waits and moves of
-   -- PREPARE, which only the testbench counts
+   -- PREPARE, which only the testbench counts. The core reports each
+   -- cycle two cycles later, from registers.
    type t_fetch_events is record
-      count   : natural range 0 to 31;           -- Words in FETCH's buffer
-      held    : natural range 0 to 31;           -- Those, and room held for the requests in flight
-      starve  : std_logic;                       -- DECODE is free, and waits for words
-      blocked : std_logic;                       -- An instruction is ready, and DECODE is busy
-      full    : std_logic;                       -- FETCH could request, but lacks room
-      stall   : std_logic;                       -- The instruction bus stalls a request
-      pair    : std_logic;                       -- A pair of words arrives
-      words   : natural range 0 to 4;            -- Words that DECODE takes
-      jump    : std_logic;                       -- DECODE redirects FETCH
-      flush   : std_logic;                       -- WRITE flushes and redirects FETCH
-      wait_sr : std_logic;                       -- A data read waits for the condition
-      wait_wr : std_logic;                       -- A data read waits for an older micro-op
-      moved   : std_logic;                       -- PREPARE passes a micro-op on to WRITE
+      istall  : std_logic;                         -- The instruction bus stalls a request
+      dstall  : std_logic;                         -- The data bus stalls a request of the core
+      jump    : std_logic;                         -- DECODE redirects FETCH
+      flush   : std_logic;                         -- WRITE flushes and redirects FETCH
+      fwhy    : natural range 0 to C_FLUSHES - 1;  -- The cause of the flush
+      cause   : natural range 0 to C_CAUSES - 1;   -- The cause of the cycle
+      wait_sr : std_logic;                         -- A data read waits for the condition
+      wait_wr : std_logic;                         -- A data read waits for an older micro-op
+      moved   : std_logic;                         -- PREPARE passes a micro-op on to WRITE
    end record t_fetch_events;
 
+   -- What a core without these stages reports: every cycle is OTHER.
    constant C_FETCH_EVENTS_NONE : t_fetch_events := (
-      count   => 0,
-      held    => 0,
-      starve  => '0',
-      blocked => '0',
-      full    => '0',
-      stall   => '0',
-      pair    => '0',
-      words   => 0,
+      istall  => '0',
+      dstall  => '0',
       jump    => '0',
       flush   => '0',
+      fwhy    => 0,
+      cause   => C_CAUSE_OTHER,
       wait_sr => '0',
       wait_wr => '0',
       moved   => '0'

@@ -275,7 +275,7 @@ pub const perf_base: u32 = io_base + 0x40;
 
 /// The performance counters (SYSTEM §3). Each 64-bit counter has a snapshot,
 /// which a read of its low word fills and a read of its high word returns.
-/// The fetch statistics of the pipelined FPGA core, at words 0x10-0x3F, read
+/// The fetch statistics of the pipelined FPGA core, at words 0x20-0x3F, read
 /// 0 here.
 pub const Perf = struct {
     /// One per step: per instruction and per interrupt entry. The emulator

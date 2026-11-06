@@ -1,8 +1,8 @@
 -- The pipelined NICE core of doc/MICROARCH.md. It has the ports of the
 -- multi-cycle core, src/multicycle.vhd, and reports the same steps. Its
--- one more port, stats_o, reports what FETCH and DECODE do in each cycle,
--- for the fetch statistics, src/fetch_stats.vhd, and when PREPARE waits
--- to issue a data read, for the testbench.
+-- one more port, stats_o, reports what the core does in each cycle, for
+-- the fetch statistics, src/fetch_stats.vhd, and when PREPARE waits to
+-- issue a data read, for the testbench.
 --
 -- THEORY OF OPERATION
 -- The pipeline (MICROARCH.md §3), one entity for each part:
@@ -231,9 +231,9 @@ entity pipeline is
       -- One report per step, for sim/trace.vhd
       retire_o      : out t_retire;
 
-      -- What FETCH and DECODE did in each cycle, for the fetch statistics,
-      -- src/fetch_stats.vhd (MICROARCH.md §8.1). The multi-cycle core has no
-      -- such port.
+      -- What the core did in each cycle, reported two cycles later, for
+      -- the fetch statistics, src/fetch_stats.vhd (MICROARCH.md §8.1). The
+      -- multi-cycle core has no such port.
       stats_o       : out t_fetch_events
    );
 end entity pipeline;
@@ -249,7 +249,6 @@ architecture synthesis of pipeline is
    signal f_redirect : std_logic;
    signal f_target   : std_logic_vector(31 downto 0);
    signal f_stop     : std_logic;
-   signal f_stats    : t_fetch_events;
    signal f_stb      : std_logic;   -- FETCH's request, before f_block
    signal f_stall    : std_logic;
    signal f_redir_r  : std_logic;   -- FETCH was redirected a cycle ago
@@ -269,8 +268,6 @@ architecture synthesis of pipeline is
    signal skid       : t_inst;      -- The instruction of DECODE's skid_r
    signal seq_uop    : t_uop;
    signal d_valid    : std_logic;
-   signal d_starve   : std_logic;
-   signal d_blocked  : std_logic;
 
    -- PREPARE
    signal p_ready      : std_logic;
@@ -284,6 +281,7 @@ architecture synthesis of pipeline is
    signal rd_count     : std_logic;   -- Counts an instruction on instret_o
    signal p_wait_sr    : std_logic;
    signal p_wait_wr    : std_logic;
+   signal p_why        : t_pwhy;
 
    -- DBUS
    signal rq_r       : t_words(0 to C_MAX_OUT - 1);
@@ -306,9 +304,42 @@ architecture synthesis of pipeline is
    signal w_st_addr : std_logic_vector(31 downto 0);
    signal w_st_data : std_logic_vector(31 downto 0);
    signal w_instret : std_logic;
+   signal w_why     : t_wwhy;
+   signal w_fwhy    : natural range 0 to C_FLUSHES - 1;
    signal take_nmi  : std_logic;
    signal take_irq  : std_logic;
    signal quiet     : std_logic;   -- No bus cycle is open
+
+   -- The fetch statistics: what the parts did, why PREPARE held its
+   -- micro-operation a cycle before, and the redirects whose first
+   -- micro-operation has not reached WRITE yet
+   type t_redirect is record
+      valid : std_logic;
+      addr  : std_logic_vector(31 downto 0);
+   end record t_redirect;
+
+   -- What the parts did in a cycle, a cycle later
+   type t_stats_in is record
+      wwhy    : t_wwhy;
+      pwhy    : t_pwhy;
+      flush   : std_logic;
+      fwhy    : natural range 0 to C_FLUSHES - 1;
+      jump    : std_logic;
+      dest    : std_logic_vector(31 downto 0);
+      rdstall : std_logic;                       -- PREPARE's read is stalled on the bus
+      istall  : std_logic;
+      dstall  : std_logic;
+      wait_sr : std_logic;
+      wait_wr : std_logic;
+      moved   : std_logic;
+      first   : std_logic;                       -- WRITE holds the first micro-operation of an instruction
+      addr    : std_logic_vector(31 downto 0);   -- at this address
+   end record t_stats_in;
+
+   signal s_ev_r     : t_stats_in;
+   signal s_pwhy_r   : t_pwhy;
+   signal s_refill_r : t_redirect;
+   signal s_bubble_r : t_redirect;
 
 begin
 
@@ -378,8 +409,7 @@ begin
          blk_o           => f_blk,
          words_o         => f_words,
          count_o         => f_count,
-         consume_i       => f_consume,
-         stats_o         => f_stats
+         consume_i       => f_consume
       ); -- i_pipe_fetch
 
 
@@ -404,9 +434,7 @@ begin
          uop_o      => seq_uop,
          inst_o     => dec_r,
          inst2_o    => dec_q,
-         skid_o     => skid,
-         starve_o   => d_starve,
-         blocked_o  => d_blocked
+         skid_o     => skid
       ); -- i_pipe_decode
 
 
@@ -439,7 +467,8 @@ begin
          load_o       => p_load,
          count_o      => rd_count,
          wait_sr_o    => p_wait_sr,
-         wait_wr_o    => p_wait_wr
+         wait_wr_o    => p_wait_wr,
+         why_o        => p_why
       ); -- i_pipe_prepare
 
 
@@ -513,7 +542,9 @@ begin
          flush_o      => w_flush,
          target_o     => w_target,
          instret_o    => w_instret,
-         retire_o     => retire_o
+         retire_o     => retire_o,
+         why_o        => w_why,
+         fwhy_o       => w_fwhy
       ); -- i_pipe_write
 
 
@@ -531,21 +562,108 @@ begin
    regs_o        <= w_r.regs;
 
 
-   p_stats : process (all)
+   -- The fetch statistics (MICROARCH.md §8.1), from registers, two cycles
+   -- late: the first stage, s_ev_r, takes a few bits of each part's
+   -- decisions, and the second classifies the cycle, so that no path of
+   -- the core runs on into the counters, and no wide register hangs on
+   -- WRITE's decisions. A cycle in which WRITE retires no micro-operation
+   -- is charged to what WRITE does, or, when WRITE is empty, to why
+   -- PREPARE did not pass one on in the cycle before. When neither held
+   -- one, it is charged to the last redirect whose first micro-operation
+   -- has not reached WRITE yet: a flush, or a jump that DECODE resolved;
+   -- or else to FETCH. The target of a flush is w_target_r, which lags
+   -- WRITE's decision by the same cycle as s_ev_r.
+   p_stats : process (clk_i)
       variable stats_v : t_fetch_events;
    begin
-      stats_v         := f_stats;
-      -- Only the bus's stalls, not FETCH's waits for a store in DBUS
-      stats_v.stall   := f_bstall;
-      stats_v.starve  := d_starve;
-      stats_v.blocked := d_blocked;
-      stats_v.words   := f_consume;
-      stats_v.jump    := d_redirect;
-      stats_v.flush   := w_flush;
-      stats_v.wait_sr := p_wait_sr;
-      stats_v.wait_wr := p_wait_wr;
-      stats_v.moved   := p_valid and w_ready;
-      stats_o         <= stats_v;
+      if rising_edge(clk_i) then
+         -- The first stage
+         s_ev_r.wwhy    <= w_why;
+         s_ev_r.pwhy    <= p_why;
+         s_ev_r.flush   <= w_flush;
+         s_ev_r.fwhy    <= w_fwhy;
+         s_ev_r.jump    <= d_redirect;
+         s_ev_r.dest    <= d_dest;
+         s_ev_r.rdstall <= rd_stb_r and dbus_stall_i;
+         s_ev_r.istall  <= f_bstall;
+         s_ev_r.dstall  <= dbus_stb_o and dbus_stall_i;
+         s_ev_r.wait_sr <= p_wait_sr;
+         s_ev_r.wait_wr <= p_wait_wr;
+         s_ev_r.moved   <= p_valid and w_ready;
+         s_ev_r.first   <= w_r.uop.valid and w_r.uop.first;
+         s_ev_r.addr    <= w_r.uop.inst.addr;
+
+         -- The second stage. A redirect is done when its target's first
+         -- micro-operation is in WRITE.
+         if s_ev_r.first = '1' then
+            if s_ev_r.addr = s_refill_r.addr then
+               s_refill_r.valid <= '0';
+            end if;
+            if s_ev_r.addr = s_bubble_r.addr then
+               s_bubble_r.valid <= '0';
+            end if;
+         end if;
+
+         stats_v         := C_FETCH_EVENTS_NONE;
+         stats_v.istall  := s_ev_r.istall;
+         stats_v.dstall  := s_ev_r.dstall;
+         stats_v.jump    := s_ev_r.jump;
+         stats_v.flush   := s_ev_r.flush;
+         stats_v.fwhy    := s_ev_r.fwhy;
+         stats_v.wait_sr := s_ev_r.wait_sr;
+         stats_v.wait_wr := s_ev_r.wait_wr;
+         stats_v.moved   := s_ev_r.moved;
+
+         case s_ev_r.wwhy is
+            when W_RETIRE => stats_v.cause := C_CAUSE_RETIRE;
+            when W_LATE   => stats_v.cause := C_CAUSE_LATE;
+            when W_SHIFT  => stats_v.cause := C_CAUSE_SHIFT;
+            when W_ADJUST => stats_v.cause := C_CAUSE_ADJUST;
+            when W_STORE  => stats_v.cause := C_CAUSE_STORE;
+            when W_INTR   => stats_v.cause := C_CAUSE_INTR;
+            when W_OTHER  => stats_v.cause := C_CAUSE_OTHER;
+            when W_READ =>
+               -- Its read may still wait on the bus.
+               stats_v.cause := C_CAUSE_STALL when s_ev_r.rdstall = '1' else C_CAUSE_READ;
+            when W_EMPTY =>
+               case s_pwhy_r is
+                  when P_REG   => stats_v.cause := C_CAUSE_REG;
+                  when P_ORDER => stats_v.cause := C_CAUSE_ORDER;
+                  when P_BUS   => stats_v.cause := C_CAUSE_BUS;
+                  when P_STALL => stats_v.cause := C_CAUSE_STALL;
+                  when others  =>
+                     if s_refill_r.valid = '1' then
+                        stats_v.cause := C_CAUSE_REFILL;
+                     elsif s_bubble_r.valid = '1' then
+                        stats_v.cause := C_CAUSE_BUBBLE;
+                     else
+                        stats_v.cause := C_CAUSE_FETCH;
+                     end if;
+               end case;
+         end case;
+         stats_o <= stats_v;
+
+         -- What PREPARE did, for the next cycle. A flush empties it.
+         s_pwhy_r <= P_EMPTY when s_ev_r.flush = '1' else s_ev_r.pwhy;
+         if s_ev_r.flush = '1' then
+            s_refill_r       <= (valid => '1', addr => w_target_r);
+            s_bubble_r.valid <= '0';
+         elsif s_ev_r.jump = '1' then
+            s_bubble_r <= (valid => '1', addr => s_ev_r.dest);
+         end if;
+
+         if rst_i = '1' then
+            s_ev_r.wwhy      <= W_OTHER;
+            s_ev_r.pwhy      <= P_EMPTY;
+            s_ev_r.flush     <= '0';
+            s_ev_r.jump      <= '0';
+            s_ev_r.first     <= '0';
+            stats_o          <= C_FETCH_EVENTS_NONE;
+            s_pwhy_r         <= P_EMPTY;
+            s_refill_r       <= (valid => '1', addr => (others => '0'));
+            s_bubble_r.valid <= '0';
+         end if;
+      end if;
    end process p_stats;
 
 

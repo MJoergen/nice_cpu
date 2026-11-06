@@ -1,27 +1,25 @@
--- The fetch statistics of MICROARCH.md §8.1: 48 words of I/O with counters
--- of what FETCH and DECODE of the pipelined core do in each cycle, so that
--- the size of FETCH's buffer can be judged.
+-- The fetch statistics of MICROARCH.md §8.1: 32 words of I/O with counters
+-- of what the pipelined core does in each cycle, so that a programmer can
+-- see where the cycles of a program go.
 --
---   0x10  FS_CTRL      0x15  FS_STALL     0x1A  FS_MIN       0x1D-0x1F  read 0
---   0x11  FS_CYCLES    0x16  FS_PAIRS     0x1B  FS_MAX       0x20-0x3F  FS_HIST + n
---   0x12  FS_STARVE    0x17  FS_WORDS     0x1C  FS_HELD_MAX
---   0x13  FS_BLOCKED   0x18  FS_JUMPS
---   0x14  FS_FULL      0x19  FS_FLUSHES
+--   0x00  FS_CTRL      0x03  FS_DSTALL    0x08-0x0C  FS_FLUSH + n   0x1F  reads 0
+--   0x01  FS_CYCLES    0x04  FS_JUMPS     0x10-0x1E  FS_CAUSE + n
+--   0x02  FS_ISTALL    0x05-0x07, 0x0D-0x0F  read 0
 --
 -- THEORY OF OPERATION
 -- The counters count in the cycles in which the run bit of FS_CTRL is 1
 -- and run_i is high. A system drives run_i with "the core is running", as
 -- it drives that of perf.vhd, so that the counters stop while the core is
--- held, paused, or halted. In each cycle counted, FS_CYCLES and FS_HIST + count
--- count one, and each other counter counts the events of events_i in that
--- cycle. FS_MIN and FS_MAX follow the smallest and largest count, and
--- FS_HELD_MAX the largest held. All counters are 32 bits wide and wrap.
+-- held, paused, or halted. In each cycle counted, FS_CYCLES and
+-- FS_CAUSE + cause count one, FS_ISTALL, FS_DSTALL, and FS_JUMPS count
+-- the events of events_i in that cycle, and FS_FLUSH + fwhy counts a
+-- flush. So the causes sum to FS_CYCLES. All counters are 32 bits wide
+-- and wrap.
 --
 -- A write to FS_CTRL sets the run bit to bit 0 of the value written. If
--- bit 1 is set, it also clears the counters: FS_MIN to 31, and every other
--- to 0. Either takes effect from the next cycle. A read of FS_CTRL returns
--- the run bit. A read of any other word returns it as it is in the cycle
--- the read is accepted.
+-- bit 1 is set, it also clears the counters to 0. Either takes effect from
+-- the next cycle. A read of FS_CTRL returns the run bit. A read of any
+-- other word returns it as it is in the cycle the read is accepted.
 --
 -- With G_ENABLE false, there are no counters, and every read returns 0.
 -- The address range then stays as it is, as MICROARCH.md §8.1 says.
@@ -32,10 +30,10 @@
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) STB is high only for requests to the statistics: the bus decoder
---    decodes 0xFFFFFF50-0xFFFFFF7F, and wb_addr_i is bits 5..0 of the
+--    decodes 0xFFFFFF60-0xFFFFFF7F, and wb_addr_i is bits 4..0 of the
 --    address.
 -- b) events_i describes one cycle of the core, and is C_FETCH_EVENTS_NONE
---    for a core without FETCH and DECODE.
+--    for a core without the pipeline's stages.
 -- c) run_i is low while the core is held, paused, or halted: a system drives
 --    it with "not paused_o and not halted_o" of the core, and low too while
 --    it holds the core. It defaults to '1'.
@@ -47,7 +45,6 @@
 library ieee;
    use ieee.std_logic_1164.all;
    use ieee.numeric_std_unsigned.all;
-   use ieee.numeric_std.to_unsigned;
 
    use work.pipe_pkg.all;
 
@@ -64,7 +61,7 @@ entity fetch_stats is
       -- The core is running
       run_i      : in  std_logic                     := '1';
 
-      -- What FETCH and DECODE did in this cycle
+      -- What the core did in a cycle
       events_i   : in  t_fetch_events;
 
       wb_cyc_i   : in  std_logic;
@@ -72,7 +69,7 @@ entity fetch_stats is
       wb_stall_o : out std_logic;
       wb_ack_o   : out std_logic                     := '0';
       wb_we_i    : in  std_logic;
-      wb_addr_i  : in  std_logic_vector(5 downto 0);
+      wb_addr_i  : in  std_logic_vector(4 downto 0);
       wb_data_i  : in  std_logic_vector(31 downto 0);
       wb_data_o  : out std_logic_vector(31 downto 0) := (others => '0')
    );
@@ -80,19 +77,16 @@ end entity fetch_stats;
 
 architecture synthesis of fetch_stats is
 
-   -- The control register, and the counters in the order of their
-   -- addresses from 0x11
-   constant C_CTRL    : natural := 16#10#;
-   constant C_CYCLES  : natural := 0;
-   constant C_STARVE  : natural := 1;
-   constant C_BLOCKED : natural := 2;
-   constant C_FULL    : natural := 3;
-   constant C_STALL   : natural := 4;
-   constant C_PAIRS   : natural := 5;
-   constant C_WORDS   : natural := 6;
-   constant C_JUMPS   : natural := 7;
-   constant C_FLUSHES : natural := 8;
-   constant C_COUNTS  : natural := 9;
+   -- The control register, the counters in the order of their addresses
+   -- from 0x01, and the first word of each group of bins
+   constant C_CTRL   : natural := 16#00#;
+   constant C_CYCLES : natural := 0;
+   constant C_ISTALL : natural := 1;
+   constant C_DSTALL : natural := 2;
+   constant C_JUMPS  : natural := 3;
+   constant C_COUNTS : natural := 4;
+   constant C_FLUSH  : natural := 16#08#;
+   constant C_CAUSE  : natural := 16#10#;
 
    type t_counts is array (natural range <>) of std_logic_vector(31 downto 0);
 
@@ -107,19 +101,11 @@ begin
    gen_enable : if G_ENABLE generate
       signal run_r   : std_logic := '1';
       signal count_r : t_counts(0 to C_COUNTS - 1);
-      signal hist_r  : t_counts(0 to 31);
-      signal min_r   : natural range 0 to 31;
-      signal max_r   : natural range 0 to 31;
-      signal held_r  : natural range 0 to 31;
+      signal flush_r : t_counts(0 to C_FLUSHES - 1);
+      signal cause_r : t_counts(0 to C_CAUSES - 1);
    begin
 
       p_count : process (clk_i)
-
-         procedure add(i : natural;
-                       n : natural) is
-         begin
-            count_r(i) <= count_r(i) + n;
-         end procedure add;
 
          procedure add(i : natural;
                        b : std_logic) is
@@ -132,28 +118,21 @@ begin
          procedure clear is
          begin
             count_r <= (others => (others => '0'));
-            hist_r  <= (others => (others => '0'));
-            min_r   <= 31;
-            max_r   <= 0;
-            held_r  <= 0;
+            flush_r <= (others => (others => '0'));
+            cause_r <= (others => (others => '0'));
          end procedure clear;
 
       begin
          if rising_edge(clk_i) then
             if run_r = '1' and run_i = '1' then
-               add(C_CYCLES, 1);
-               add(C_STARVE, events_i.starve);
-               add(C_BLOCKED, events_i.blocked);
-               add(C_FULL, events_i.full);
-               add(C_STALL, events_i.stall);
-               add(C_PAIRS, events_i.pair);
-               add(C_WORDS, events_i.words);
+               add(C_CYCLES, '1');
+               add(C_ISTALL, events_i.istall);
+               add(C_DSTALL, events_i.dstall);
                add(C_JUMPS, events_i.jump);
-               add(C_FLUSHES, events_i.flush);
-               hist_r(events_i.count) <= hist_r(events_i.count) + 1;
-               min_r                  <= minimum(min_r, events_i.count);
-               max_r                  <= maximum(max_r, events_i.count);
-               held_r                 <= maximum(held_r, events_i.held);
+               if events_i.flush = '1' then
+                  flush_r(events_i.fwhy) <= flush_r(events_i.fwhy) + 1;
+               end if;
+               cause_r(events_i.cause) <= cause_r(events_i.cause) + 1;
             end if;
 
             if accept = '1' and wb_we_i = '1' and to_integer(wb_addr_i) = C_CTRL then
@@ -172,7 +151,7 @@ begin
 
 
       p_bus : process (clk_i)
-         variable n_v : natural range 0 to 63;
+         variable n_v : natural range 0 to 31;
       begin
          if rising_edge(clk_i) then
             wb_ack_o <= accept;
@@ -182,16 +161,12 @@ begin
                wb_data_o <= (others => '0');
                if n_v = C_CTRL then
                   wb_data_o(0) <= run_r;
-               elsif n_v >= 16#11# and n_v < 16#11# + C_COUNTS then
-                  wb_data_o <= count_r(n_v - 16#11#);
-               elsif n_v = 16#1A# then
-                  wb_data_o <= std_logic_vector(to_unsigned(min_r, 32));
-               elsif n_v = 16#1B# then
-                  wb_data_o <= std_logic_vector(to_unsigned(max_r, 32));
-               elsif n_v = 16#1C# then
-                  wb_data_o <= std_logic_vector(to_unsigned(held_r, 32));
-               elsif n_v >= 16#20# then
-                  wb_data_o <= hist_r(n_v - 16#20#);
+               elsif n_v < 1 + C_COUNTS then
+                  wb_data_o <= count_r(n_v - 1);
+               elsif n_v >= C_FLUSH and n_v < C_FLUSH + C_FLUSHES then
+                  wb_data_o <= flush_r(n_v - C_FLUSH);
+               elsif n_v >= C_CAUSE and n_v < C_CAUSE + C_CAUSES then
+                  wb_data_o <= cause_r(n_v - C_CAUSE);
                end if;
             end if;
 
@@ -202,57 +177,66 @@ begin
       end process p_bus;
 
 
-      -- The proof of formal/fetch_stats.sby. The invariants tie the
-      -- counters to each other: the histogram sums to FS_CYCLES, FS_MIN is
-      -- at most FS_MAX once a cycle has counted, and FS_MAX is at most
-      -- FS_HELD_MAX, given that no more words are in the buffer than are
-      -- held. Each holds after reset and a clear, and each cycle counted
-      -- keeps it, so k-induction proves them in one step. The other
-      -- assertions say what each cycle does to the counters, and that a
-      -- read returns the word as it is in the cycle the read is accepted.
+      -- The proof of formal/fetch_stats.sby. The invariant ties the
+      -- counters to each other: the causes sum to FS_CYCLES. It holds
+      -- after reset and a clear, and each cycle counted keeps it, so
+      -- k-induction proves it in one step. The other assertions say what
+      -- each cycle does to the counters, and that a read returns the word
+      -- as it is in the cycle the read is accepted.
 
       gen_formal : if G_FORMAL generate
+         -- The causes, padded to 16 bins for the tree below
+         type t_bins is array (0 to 15) of std_logic_vector(31 downto 0);
+
          signal f_ctrl    : std_logic;                       -- A write to FS_CTRL
          signal f_expect  : std_logic_vector(31 downto 0);   -- What a read returns
          signal f_same    : std_logic;                       -- The counters did not change
          signal f_zero    : std_logic;                       -- The counters are clear
+         signal f_bins    : t_bins;
          signal f_last_r  : std_logic_vector(31 downto 0);
          signal f_count_r : t_counts(0 to C_COUNTS - 1);
-         signal f_hist_r  : t_counts(0 to 31);
-         signal f_min_r   : natural range 0 to 31;
-         signal f_max_r   : natural range 0 to 31;
-         signal f_held_r  : natural range 0 to 31;
-         signal f_bin_r   : natural range 0 to 31;
-         -- A binary tree over the histogram: node n has the children 2n
-         -- and 2n + 1, and nodes 16 to 31 have the bins as children. Each
-         -- node counts the cycles counted with the count in its subtree.
-         signal f_tree_r : t_counts(1 to 31);
+         signal f_flush_r : t_counts(0 to C_FLUSHES - 1);
+         signal f_cause_r : t_counts(0 to C_CAUSES - 1);
+         signal f_ev_r    : t_fetch_events;
+         -- A binary tree over the bins: node n has the children 2n and
+         -- 2n + 1, and nodes 8 to 15 have the bins as children. Each node
+         -- counts the cycles counted with a cause in its subtree.
+         signal f_tree_r : t_counts(1 to 15);
       begin
 
          f_ctrl <= '1' when accept = '1' and wb_we_i = '1' and to_integer(wb_addr_i) = C_CTRL else
                    '0';
-         f_same <= '1' when count_r = f_count_r and hist_r = f_hist_r and min_r = f_min_r and
-                            max_r = f_max_r and held_r = f_held_r else
+         f_same <= '1' when count_r = f_count_r and flush_r = f_flush_r and cause_r = f_cause_r else
                    '0';
          f_zero <= '1' when count_r = (count_r'range => X"00000000") and
-                             hist_r = (hist_r'range => X"00000000") and
-                             min_r = 31 and max_r = 0 and held_r = 0 else
-                    '0';
+                            flush_r = (flush_r'range => X"00000000") and
+                            cause_r = (cause_r'range => X"00000000") else
+                   '0';
+
+         gen_bins : for n in 0 to C_CAUSES - 1 generate
+            f_bins(n) <= cause_r(n);
+         end generate gen_bins;
+
+         gen_pad : for n in C_CAUSES to 15 generate
+            f_bins(n) <= X"00000000";
+         end generate gen_pad;
 
 
          p_expect : process (all)
-            variable n_v : natural range 0 to 63;
+            variable n_v : natural range 0 to 31;
          begin
             n_v := to_integer(wb_addr_i);
-            case n_v is
-               when C_CTRL            => f_expect <= (0 => run_r, others => '0');
-               when 16#11# to 16#19# => f_expect <= count_r(n_v - 16#11#);
-               when 16#1A#           => f_expect <= std_logic_vector(to_unsigned(min_r, 32));
-               when 16#1B#           => f_expect <= std_logic_vector(to_unsigned(max_r, 32));
-               when 16#1C#           => f_expect <= std_logic_vector(to_unsigned(held_r, 32));
-               when 16#20# to 16#3F# => f_expect <= hist_r(n_v - 16#20#);
-               when others           => f_expect <= (others => '0');
-            end case;
+            if n_v = C_CTRL then
+               f_expect <= (0 => run_r, others => '0');
+            elsif n_v < 1 + C_COUNTS then
+               f_expect <= count_r(n_v - 1);
+            elsif n_v >= C_FLUSH and n_v < C_FLUSH + C_FLUSHES then
+               f_expect <= flush_r(n_v - C_FLUSH);
+            elsif n_v >= C_CAUSE and n_v < C_CAUSE + C_CAUSES then
+               f_expect <= cause_r(n_v - C_CAUSE);
+            else
+               f_expect <= (others => '0');
+            end if;
          end process p_expect;
 
 
@@ -261,16 +245,14 @@ begin
             if rising_edge(clk_i) then
                f_last_r  <= f_expect;
                f_count_r <= count_r;
-               f_hist_r  <= hist_r;
-               f_min_r   <= min_r;
-               f_max_r   <= max_r;
-               f_held_r  <= held_r;
-               f_bin_r   <= events_i.count;
+               f_flush_r <= flush_r;
+               f_cause_r <= cause_r;
+               f_ev_r    <= events_i;
 
                if run_r = '1' and run_i = '1' then
-                  for n in 1 to 31 loop
-                     for d in 1 to 5 loop
-                        if (32 + events_i.count) / 2 ** d = n then
+                  for n in 1 to 15 loop
+                     for d in 1 to 4 loop
+                        if (16 + events_i.cause) / 2 ** d = n then
                            f_tree_r(n) <= f_tree_r(n) + 1;
                         end if;
                      end loop;
@@ -285,31 +267,32 @@ begin
          -- psl default clock is rising_edge(clk_i);
 
          -- The invariants. The root counts every cycle counted, and each node
-         -- is the sum of its children, so the bins sum to FS_CYCLES.
+         -- is the sum of its children, so the causes sum to FS_CYCLES.
          -- psl f_root : assert always rst_i = '0' -> f_tree_r(1) = count_r(C_CYCLES);
 
-         gen_tree : for n in 1 to 15 generate
+         gen_tree : for n in 1 to 7 generate
             -- psl f_node : assert always rst_i = '0' ->
             --    f_tree_r(n) = f_tree_r(2 * n) + f_tree_r(2 * n + 1);
          end generate gen_tree;
 
-         gen_leaves : for n in 16 to 31 generate
+         gen_leaves : for n in 8 to 15 generate
             -- psl f_leaf : assert always rst_i = '0' ->
-            --    f_tree_r(n) = hist_r(2 * n - 32) + hist_r(2 * n - 31);
+            --    f_tree_r(n) = f_bins(2 * n - 16) + f_bins(2 * n - 15);
          end generate gen_leaves;
 
-         -- psl f_min_max : assert always
-         --    rst_i = '0' -> (count_r(C_CYCLES) /= 0 -> min_r <= max_r);
-         -- psl f_max_held : assert always rst_i = '0' -> max_r <= held_r;
-
-         -- A cycle counted adds one to FS_CYCLES and to the histogram's
-         -- bin of its count. Stopped counters keep their values, whether
-         -- the run bit or run_i stops them, and a write of 1 to FS_CTRL
-         -- starts them without a clear.
+         -- A cycle counted adds one to FS_CYCLES and to the bin of its
+         -- cause, and a flush to the bin of its cause, and each event to
+         -- its counter. Stopped counters keep their values, whether the
+         -- run bit or run_i stops them, and a write of 1 to FS_CTRL starts
+         -- them without a clear.
          -- psl f_cycle : assert always
          --    {run_r and run_i and not (f_ctrl and wb_data_i(1)) and not rst_i} |=>
          --    {count_r(C_CYCLES) = f_count_r(C_CYCLES) + 1 and
-         --     hist_r(f_bin_r) = f_hist_r(f_bin_r) + 1};
+         --     cause_r(f_ev_r.cause) = f_cause_r(f_ev_r.cause) + 1 and
+         --     count_r(C_ISTALL) = f_count_r(C_ISTALL) + to_nat(f_ev_r.istall) and
+         --     count_r(C_DSTALL) = f_count_r(C_DSTALL) + to_nat(f_ev_r.dstall) and
+         --     count_r(C_JUMPS) = f_count_r(C_JUMPS) + to_nat(f_ev_r.jump) and
+         --     flush_r(f_ev_r.fwhy) = f_flush_r(f_ev_r.fwhy) + to_nat(f_ev_r.flush)};
          -- psl f_stopped : assert always
          --    {not run_r and not f_ctrl and not rst_i} |=> {f_same and not run_r};
          -- psl f_paused : assert always

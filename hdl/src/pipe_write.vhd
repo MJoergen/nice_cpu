@@ -16,7 +16,9 @@
 -- into DBUS's register, a flush reaches every stage at once, and the
 -- report of a step comes in the cycle it retires, with the
 -- registers it leaves (retire_o), as the trace writer's contract asks
--- (src/trace_pkg.vhd).
+-- (src/trace_pkg.vhd). why_o and fwhy_o say what WRITE does in the cycle,
+-- and why it flushes, for the fetch statistics, src/fetch_stats.vhd.
+-- Nothing in the core uses them.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) uop_i is PREPARE's micro-operation, which WRITE takes in a cycle
@@ -102,7 +104,12 @@ entity pipe_write is
       flush_o      : out std_logic;   -- Empties the pipeline
       target_o     : out std_logic_vector(31 downto 0);
       instret_o    : out std_logic;
-      retire_o     : out t_retire
+      retire_o     : out t_retire;
+
+      -- For the fetch statistics (MICROARCH.md §8.1): what WRITE does in
+      -- this cycle, and the cause of a flush
+      why_o        : out t_wwhy;
+      fwhy_o       : out natural range 0 to C_FLUSHES - 1
    );
 end entity pipe_write;
 
@@ -158,6 +165,8 @@ begin
       variable pause_v  : boolean;
       variable room_v   : boolean;
       variable accept_v : std_logic;
+      variable why_v    : t_wwhy;
+      variable fwhy_v   : natural range 0 to C_FLUSHES - 1;
    begin
       n_v         := w_r;
       n_v.rep     := C_RETIRE_NONE;
@@ -172,6 +181,8 @@ begin
       take_irq_o  <= '0';
       done_v      := false;
       flush_v     := false;
+      why_v       := W_OTHER;
+      fwhy_v      := C_FLUSH_OTHER;
       halt_v      := HALT_NONE;
       rti_v       := false;
       store_v     := false;
@@ -325,9 +336,12 @@ begin
          n_v.vec_issued := '0';
          n_v.uop.valid  := '0';
          flush_v        := true;
+         fwhy_v         := C_FLUSH_INTR;
+         why_v          := W_INTR;
       elsif w_r.mode = VEC_ST then
          -- The vector table entry is at VBASE * 256 + v. Its read goes into
          -- DBUS's register, which drives the bus from the next cycle on.
+         why_v := W_INTR;
          if w_r.vec_issued = '0' then
             if room_v then
                st_o           <= '1';
@@ -346,6 +360,7 @@ begin
             n_v.mode     := RUN_ST;
             n_v.uop.valid := '0';
             flush_v      := true;
+            fwhy_v       := C_FLUSH_INTR;
 
             n_v.rep.valid  := '1';
             n_v.rep.intr   := w_r.vec_intr;
@@ -395,6 +410,8 @@ begin
                         n_v.vec_nmi    := '0';
                         n_v.vec_issued := '0';
                         flush_v        := true;
+                        fwhy_v         := C_FLUSH_INTR;
+                        why_v          := W_INTR;
                         done_v         := false;
                      end if;
 
@@ -460,6 +477,7 @@ begin
                      n_v.cnt.k    := rot33_k(u_v.inst.op, mod33_of_sum(w_r.m33sum));
                      n_v.cnt_step := 2;
                   end if;
+                  why_v := W_SHIFT;
                else
                   done_v := true;
                   pop_o  <= nr_v;
@@ -572,11 +590,13 @@ begin
                      end if;
                      if not done_v then
                         pop_o <= 0;
+                        why_v := W_STORE;
                      end if;
 
                      -- A store into a word fetched but not retired
                      if done_v and hit_v then
                         flush_v := true;
+                        fwhy_v  := C_FLUSH_STORE;
                      end if;
                      n_v.rep.mem_we   := '1';
                      n_v.rep.mem_addr := a_v;
@@ -589,8 +609,13 @@ begin
                      done_v         := false;
                      n_v.exec_done  := '1';
                      n_v.cond       := cond_v;
+                     why_v          := W_ADJUST;
                   end if;
                end if;
+            else
+               -- The read data has not come, or comes now but goes
+               -- through DBUS's FIFO, a cycle later
+               why_v := W_LATE when rq_cnt_i + to_nat(ack_read_i) >= nr_v else W_READ;
             end if;
          end if;
 
@@ -622,14 +647,21 @@ begin
                -- A jump that DECODE did not redirect FETCH for, or one it
                -- predicted taken that is skipped (MICROARCH.md §5.4), whose
                -- target is the next instruction.
-               if rti_v or (n_v.jump = '1' and u_v.inst.early = '0') or
-                  (u_v.inst.early = '1' and cond_v = '0') then
+               if rti_v then
                   flush_v := true;
+                  fwhy_v  := C_FLUSH_INTR;
+               elsif n_v.jump = '1' and u_v.inst.early = '0' then
+                  flush_v := true;
+                  fwhy_v  := C_FLUSH_JUMP;
+               elsif u_v.inst.early = '1' and cond_v = '0' then
+                  flush_v := true;
+                  fwhy_v  := C_FLUSH_SKIP;
                end if;
                if halt_v /= HALT_NONE then
                   n_v.halt := halt_v;
                   n_v.mode := HALTED_ST;
                   flush_v  := true;
+                  fwhy_v   := C_FLUSH_OTHER;
                end if;
                n_v.after_rti := to_sl(rti_v);
                n_v.after_go  := '0';
@@ -673,6 +705,13 @@ begin
       st_addr_o <= a_v;
       st_data_o <= res_v.r;
 
+      if done_v then
+         why_v := W_RETIRE;
+      elsif w_r.mode = RUN_ST and w_r.uop.valid = '0' and not flush_v then
+         why_v := W_EMPTY;
+      end if;
+      why_o    <= why_v;
+      fwhy_o   <= fwhy_v;
       done_o   <= to_sl(done_v);
       flush_o  <= to_sl(flush_v);
       target_o <= target_v;

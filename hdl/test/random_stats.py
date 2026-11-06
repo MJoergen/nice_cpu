@@ -116,7 +116,10 @@ def main() -> None:
             taken += counts["interrupts"]
             covered += len(ran & starts)
             size += len(starts)
-            lines += trace
+            # The steps up to the end of the run, as hazards.profile stops
+            # at the first Halted or Stopped line.
+            stop = next((i for i, x in enumerate(trace) if x.startswith(("Halted", "Stopped"))), len(trace))
+            lines += trace[:stop]
             if args.verbose:
                 print(f"seed {seed}: {dict(counts)}, {len(ran & starts)} of {len(starts)} "
                       f"instructions ran, {n_req} requests, {ending}")

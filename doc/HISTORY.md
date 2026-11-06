@@ -175,6 +175,25 @@ rose from 207 to 316 of about 405. The RTI halts rose from 1 to 15, and the
 runs that halt before the step limit stayed at about 35 of 90. Seeds 1 to
 1000 then passed on both cores, with `make random-sweep`.
 
+By 2026-11-06, 20 of seeds 1 to 90 halted before the step limit: 10 at
+a reserved word, 7 at an RTI outside a routine, 2 at a HALT, and 1 at an
+INT. Six of the RTI halts were the `?I RTI` at CODE, reached by the jump
+back to the start after a write of SR had set I. Six of the reserved
+words and both HALTs were the generator's own, and the rest were words
+that stores had changed, in the program or in words 0 to 2, where an
+interrupt goes whose vector table entry holds 0. The program now clears
+I before the jump back, HALT is a fifth as common and the reserved
+words two fifths, and `@R0`, `@--R0`, and `@R0++`, which store to word 0, are no
+longer destinations. For seeds 1 to 90, the runs that halt before the
+step limit fell to 7, all at a reserved word that a store wrote. Until
+then `random_stats.py` showed the hazards of the first seed only,
+because `bench/hazards.py` stops at the first `Stopped` line.
+The new programs of `make test` then failed on the multi-cycle core in
+seed 27, where a register reached the emulator's character ROM at
+`0xFFFE2000`, which the core's memory model does not have. The random
+runs now pass `--no-font` to the emulator, which makes its font RAM and
+character ROM ordinary memory, as `--no-cycle-counter` does the counters.
+
 ## The size and speed of translated code
 
 The code that the translator writes is about half the size it was, after four steps with no change

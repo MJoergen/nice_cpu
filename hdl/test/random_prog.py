@@ -21,15 +21,20 @@ enough to be worth comparing:
   counter of sim/wb_mem.vhd and the emulator, so that the number and order
   of data reads are compared too. A store through a register can still
   reach the program by chance; both models then run the changed program.
-- Control instructions are rare. Most INTs have the condition ?!I. HALT
-  and the reserved control words always have a condition. INT inside an
-  interrupt routine and RTI outside one still halt the processor now and
-  then, and so do HALT and the reserved words.
+- Control instructions are rare, and HALT and the reserved control
+  words rarest. Most INTs have the condition ?!I. HALT and the reserved
+  control words always have a condition. INT inside an interrupt routine
+  and RTI outside one still halt the processor now and then, and so do
+  HALT and the reserved words.
+- A memory destination is never @R0, @--R0, or @R0++, which store to
+  word 0.
 - A source or base register is often one that the last three
   instructions wrote, so that a register is often read right after it is
   written (MICROARCH.md §5.1).
 - Most forward jumps skip only a few instructions, so that most of the
-  program runs before the jump back to its start.
+  program runs before the jump back to its start. Before that jump the
+  program clears I, which a write of SR may have set, so that the ?I RTI
+  at its start does not halt.
 - The program starts with ?I RTI, so that an interrupt whose vector table
   entry holds CODE returns (a write of VBASE puts the table among the low
   words, where such entries are common), by setting E, so that IRQs are
@@ -71,6 +76,8 @@ COUNTER = 0xFFFFFF01  # The read counter (SYSTEM.md §1)
 JUMP = 0x0003D800
 # OR R14, R14, 0x40000000: E = 1.
 SET_E = [0x01E38730, 0x40000000]
+# AND R14, R14, 0x7FFFFFFF: I = 0.
+CLEAR_I = [0x01A38730, 0x7FFFFFFF]
 MOVE_C = 0x00001800  # MOVE R0, c: add the destination register << 14
 RTI = 0x0C200000
 RTI_IF_I = 0x7C200000  # ?I RTI
@@ -104,7 +111,10 @@ def operand(rng: random.Random, dest: bool, recent: list[list[int]]) -> int:
         # A source, a base, or the register of a side effect.
         reg = rng.choice(written)
     else:
-        reg = rng.randrange(14)
+        # @R0, @--R0, and @R0++ as a destination store to word 0
+        # (ISA.md §4.3), which an interrupt runs whose vector table entry
+        # holds 0 (see main()).
+        reg = rng.randrange(1 if dest and mode in (0b100, 0b101, 0b110) else 0, 14)
     return mode << 4 | reg
 
 
@@ -208,17 +218,17 @@ def instruction(rng: random.Random, recent: list[list[int]]) -> list[int]:
     # routine, are rare, because most of the program runs on each pass. HALT
     # and the reserved words always have a condition, so that they halt now
     # and then.
-    if kind < 0.001:
+    if kind < 0.0003:
         cond = rng.randrange(1, 16)
-    if kind < 0.0005:
+    if kind < 0.0001:
         return [cond << 28 | 0b11 << 26]  # HALT
-    if kind < 0.001:
+    if kind < 0.0003:
         # A reserved command, or HALT, RTI, or INT with a bit set that must
         # be 0 (ISA.md §5.3).
         bad = rng.choice((rng.randrange(3, 32) << 21, 1 << rng.randrange(8, 21),
                           0b00001 << 21 | 1 << rng.randrange(8), 1 << rng.randrange(8)))
         return [cond << 28 | 0b11 << 26 | bad]
-    if kind < 0.0015:
+    if kind < 0.0008:
         # RTI mostly with ?I, so that it seldom halts outside a routine.
         cond = 0b0111 if rng.random() < 0.8 else cond
         return [cond << 28 | 0b11 << 26 | 0b00001 << 21]  # RTI
@@ -263,7 +273,9 @@ def main() -> None:
     for words in program:
         starts.append(addr)
         addr += len(words)
-    program.append([JUMP, CODE])  # Run the program again
+    # Run the program again, with I = 0 so that the ?I RTI at CODE does
+    # not halt.
+    program.append(CLEAR_I + [JUMP, CODE])
     starts.append(addr)
 
     # Words 0 to 0xFFF repeat ?I RTI and the jump to CODE, except for the

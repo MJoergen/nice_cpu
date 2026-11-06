@@ -494,8 +494,10 @@ pub const Link = struct {
     fn writeControl(self: *Link, value: u32) void {
         if (value & ctl_clear != 0) {
             self.hold();
+            const fonts = self.cpu.mem.fonts;
             self.cpu.mem.deinit();
             self.cpu.mem = .init(self.gpa);
+            self.cpu.mem.fonts = fonts;
             // The old program is gone, and so are its halt and its stop.
             self.cleared = true;
             self.stop_break = null;

@@ -327,12 +327,13 @@ endef
 # percent of the cycles, and compared in the same way. A random program
 # may read any address, so the cycle counter, which the core and the
 # emulator count differently, is memory in both: G_CYCLE_COUNTER=false and
-# --no-cycle-counter. The fetch statistics read 0 and ignore writes in
-# both: G_FETCH_STATS=false. random_prog.py writes the program, and
-# prints the requests, which go in random_N.opts. The seeds of PAUSE_SEEDS
-# run again with random pauses, as random_pause_N, and with pauses held for
-# a random time, as random_hold_N (G_PAUSE and G_PAUSE_HOLD of
-# test/tb_core.vhd), which must not change the trace. In check_random, $(2)
+# --no-cycle-counter. The emulator's fonts, which the core's memory does
+# not have, are memory too: --no-font. The fetch statistics read 0 and
+# ignore writes in both: G_FETCH_STATS=false. random_prog.py writes the
+# program, and prints the requests, which go in random_N.opts. The seeds
+# of PAUSE_SEEDS run again with random pauses, as random_pause_N, and with
+# pauses held for a random time, as random_hold_N (G_PAUSE and
+# G_PAUSE_HOLD of test/tb_core.vhd), which must not change the trace. In check_random, $(2)
 # is any more generics, and $(3) the suffix of the name.
 RANDOM_SEEDS = $(shell seq 1 30)
 PAUSE_SEEDS = $(shell seq 1 8)
@@ -350,13 +351,13 @@ define check_random
 	  -gG_CYCLE_COUNTER=false -gG_FETCH_STATS=false $(2) \
 	  $${o:+"-gG_INTERRUPTS=$$o"} -gG_INTR_LOG=core.intr) > core.log 2>&1); \
 	  echo "exit $$?" >> $(RUNDIR)/core.out
-	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter $$(cat $(BUILD)/random_$(1).opts) $(BUILD)/random_$(1).bin \
+	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter --no-font $$(cat $(BUILD)/random_$(1).opts) $(BUILD)/random_$(1).bin \
 	  < /dev/null > $(RUNDIR)/core.expected; echo "exit $$?" >> $(RUNDIR)/core.expected
 	$(if $(IRQ_LATE),,@if cmp -s $(RUNDIR)/core.expected $(RUNDIR)/core.out; then echo "PASS $(CORE) random$(3) $(1)"; \
 	else echo "FAIL $(CORE) random$(3) $(1)"; cat $(RUNDIR)/core.log; \
 	  diff $(RUNDIR)/core.expected $(RUNDIR)/core.out | head -20; exit 1; fi)
 	@$(IRQ_COMPARE) --name random$(3)_$(1) $(BUILD)/random_$(1).bin $(RUNDIR)/core.out \
-	  $(RUNDIR)/core.intr -- -n $(RANDOM_STEPS) --no-cycle-counter
+	  $(RUNDIR)/core.intr -- -n $(RANDOM_STEPS) --no-cycle-counter --no-font
 
 endef
 

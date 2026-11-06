@@ -59,6 +59,8 @@ fn romRow(i: u32) u32 {
 /// on its first write of a nonzero word, and a word never written reads 0.
 /// The character ROM is part of it: a write there is dropped, so its pages
 /// are never allocated, and a read of an unallocated page looks there.
+/// Without `fonts` (`--no-font`), the font RAM and the character ROM are
+/// ordinary memory.
 pub const Memory = struct {
     const page_bits = 12;
     const Page = [1 << page_bits]u32;
@@ -67,6 +69,7 @@ pub const Memory = struct {
     gpa: std.mem.Allocator,
     pages: std.AutoHashMapUnmanaged(u20, *Page) = .empty,
     last: ?struct { n: u20, page: *Page } = null,
+    fonts: bool = true,
 
     pub fn init(gpa: std.mem.Allocator) Memory {
         return .{ .gpa = gpa };
@@ -79,13 +82,13 @@ pub const Memory = struct {
     }
 
     pub fn read(self: *Memory, addr: u32) u32 {
-        const page = self.lookup(@truncate(addr >> page_bits)) orelse return unallocated(addr);
+        const page = self.lookup(@truncate(addr >> page_bits)) orelse return self.unallocated(addr);
         return page[addr & offset_mask];
     }
 
     /// `read` without updating the cache, for a `*const Memory`.
     pub fn peek(self: *const Memory, addr: u32) u32 {
-        const page = self.pages.get(@truncate(addr >> page_bits)) orelse return unallocated(addr);
+        const page = self.pages.get(@truncate(addr >> page_bits)) orelse return self.unallocated(addr);
         return page[addr & offset_mask];
     }
 
@@ -100,7 +103,7 @@ pub const Memory = struct {
             if (self.pages.get(@truncate(a >> page_bits))) |page| {
                 @memcpy(out[i..][0..n], page[off..][0..n]);
             } else {
-                for (out[i..][0..n], 0..) |*w, j| w.* = unallocated(a +% @as(u32, @intCast(j)));
+                for (out[i..][0..n], 0..) |*w, j| w.* = self.unallocated(a +% @as(u32, @intCast(j)));
             }
             i += n;
         }
@@ -108,15 +111,15 @@ pub const Memory = struct {
 
     /// The word at `addr` while its page is not allocated: a row of the
     /// character ROM, or 0.
-    fn unallocated(addr: u32) u32 {
+    fn unallocated(self: *const Memory, addr: u32) u32 {
         const i = addr -% font_rom;
-        return if (i < font_words) romRow(i) else 0;
+        return if (self.fonts and i < font_words) romRow(i) else 0;
     }
 
     pub fn write(self: *Memory, addr: u32, word: u32) error{OutOfMemory}!void {
         var value = word;
         const f = addr -% font_ram;
-        if (f < 2 * font_words) {
+        if (self.fonts and f < 2 * font_words) {
             if (f >= font_words) return;
             value &= 0xFFFF;
         }
@@ -2691,6 +2694,21 @@ test "the font RAM keeps bits 15..0 of a write (SYSTEM §1.8)" {
     // The word below is memory.
     try cpu.write(font_ram - 1, 0xFFFF_8001);
     try testing.expectEqual(0xFFFF_8001, cpu.read(font_ram - 1));
+}
+
+test "without the fonts, their words are memory (--no-font)" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    cpu.mem.fonts = false;
+    const a = font_rom + 32 * 0x41;
+    try testing.expectEqual(0, cpu.read(a + 6));
+    try cpu.write(a + 6, 0x1234_5678);
+    try testing.expectEqual(0x1234_5678, cpu.read(a + 6));
+    try cpu.write(font_ram, 0xFFFF_8001);
+    try testing.expectEqual(0xFFFF_8001, cpu.read(font_ram));
+    var words: [2]u32 = undefined;
+    cpu.mem.peekWords(font_rom + 32 * 0x41 + 5, &words);
+    try testing.expectEqual([2]u32{ 0, 0x1234_5678 }, words);
 }
 
 test "peekWords reads across pages, and the ROM where no page is" {

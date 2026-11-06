@@ -53,6 +53,9 @@ const usage =
     \\      --no-cycle-counter  Make 0xFFFFFF40, 0xFFFFFF41, 0xFFFFFF44, and
     \\                       0xFFFFFF45 ordinary memory, for comparing traces
     \\                       with an FPGA core.
+    \\      --no-font        Make the font RAM and the character ROM,
+    \\                       0xFFFE0000-0xFFFE3FFF, ordinary memory, for
+    \\                       comparing traces with an FPGA core.
     \\      --step-time      Count one microsecond per step in 0xFFFFFF44 and
     \\                       0xFFFFFF45, rather than the host's time.
     \\      --no-timer-irq   The timer counts, but raises no requests, so that
@@ -110,6 +113,7 @@ const Options = struct {
     requests: []const Request = &.{},
     max_steps: u64 = std.math.maxInt(u64),
     cycle_counter: bool = true,
+    fonts: bool = true,
     /// Count one microsecond per step rather than the host's time.
     step_time: bool = false,
     timer_irq: bool = true,
@@ -443,6 +447,8 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
             speed_given = true;
         } else if (std.mem.eql(u8, arg, "--no-cycle-counter")) {
             opts.cycle_counter = false;
+        } else if (std.mem.eql(u8, arg, "--no-font")) {
+            opts.fonts = false;
         } else if (std.mem.eql(u8, arg, "--step-time")) {
             opts.step_time = true;
         } else if (std.mem.eql(u8, arg, "--no-timer-irq")) {
@@ -673,6 +679,7 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
     cpu.console = out;
     cpu.console_flush = std.Io.File.stdout().isTty(io) catch false;
     cpu.cycle_counter = opts.cycle_counter;
+    cpu.mem.fonts = opts.fonts;
     // The clock counts from here, as a board's from its reset. A halt
     // stops it, the step limit does not (doc/SYSTEM.md §3).
     var clock: Clock = .{ .io = io };
@@ -941,6 +948,7 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
     if (opts.trace) cpu.trace = out;
     cpu.console = &link.console_w;
     cpu.cycle_counter = opts.cycle_counter;
+    cpu.mem.fonts = opts.fonts;
     // Stopped while the processor is held, halted, or paused, and set to
     // 0 by the reset of a start (doc/SYSTEM.md §3).
     var clock: Clock = .{ .io = io };

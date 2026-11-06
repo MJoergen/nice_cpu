@@ -86,7 +86,7 @@ def main() -> None:
                 starts.add(a)
                 a += hazards.decode(image.get(a, 0)).words
             trace = subprocess.run(
-                [EMU, "-t", "-n", str(args.steps), "--no-cycle-counter", *opts, binfile],
+                [EMU, "-t", "-n", str(args.steps), "--no-cycle-counter", "--no-font", *opts, binfile],
                 capture_output=True, stdin=subprocess.DEVNULL,
             ).stdout.decode(errors="replace").splitlines()
             ran: set[int] = set()

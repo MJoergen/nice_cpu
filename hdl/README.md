@@ -1012,7 +1012,10 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   (SYSTEM.md §3). The microsecond counter at `0xFFFFFF44` differs likewise.
   So these runs make the words of both counters ordinary memory on both
   sides, with the generic `G_CYCLE_COUNTER` and the emulator's
-  `--no-cycle-counter`. The generic `G_FETCH_STATS` false makes the
+  `--no-cycle-counter`. The emulator's font RAM and character ROM, at
+  `0xFFFE0000`–`0xFFFE3FFF` (SYSTEM.md §1.8), are not in the core's
+  memory model, so the emulator makes them ordinary memory with
+  `--no-font`. The generic `G_FETCH_STATS` false makes the
   fetch statistics read 0 and ignore writes, as in the emulator. The
   instruction counter and the math unit stay, because both sides agree
   on them.

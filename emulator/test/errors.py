@@ -141,6 +141,8 @@ RUNS: List[Tuple[str, List[str], int, List[str]]] = [
      ["Halted (INT inside an interrupt routine) after 2 steps, PC=00000003"]),
     ("00000000 00000000", ["-n", "5", "--no-cycle-counter"], 3,
      ["Stopped at the step limit after 5 steps, PC=00000005"]),
+    ("00000000 00000000", ["-n", "5", "--no-font"], 3,
+     ["Stopped at the step limit after 5 steps, PC=00000005"]),
     # -n 0 runs nothing. A HALT at the step limit still counts as a halt.
     ("00000000 0c000000", ["-n", "0"], 3, ["Stopped at the step limit after 0 steps, PC=00000000"]),
     ("00000000 0c000000", ["-n", "1"], 0, ["Halted (HALT) after 1 steps, PC=00000001"]),

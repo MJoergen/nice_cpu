@@ -112,6 +112,7 @@ goes through these steps on a small program, and a
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
 | `--no-cycle-counter` | Make the cycle counter and the microsecond counter, `0xFFFFFF40`, `0xFFFFFF41`, `0xFFFFFF44`, and `0xFFFFFF45`, ordinary memory (see Performance counters below). |
+| `--no-font` | Make the font RAM and the character ROM, `0xFFFE0000`–`0xFFFE3FFF`, ordinary memory, so that a program that reaches them runs as on an FPGA core with none (see Window below). |
 | `--step-time` | Count one microsecond per step in the microsecond counter, rather than the host's time, so that a run counts the same each time (see Performance counters below). |
 | `--no-timer-irq` | The timer counts, but raises no requests, so that `--irq` can raise them instead (see Timer below). |
 | `--window` | Show the screen in a window while the program runs, and keep it after the halt until it is closed (see Window below). Needs a build with `-Dwindow`. |
@@ -160,7 +161,11 @@ scales the screen and keeps its aspect. The characters are from the font
 that the font base at `0xFFFFFF86` selects (SYSTEM.md §1.8): the
 character ROM, Spleen 16×32 as on NiceMonMEGA65, or the font RAM at
 `0xFFFE0000`, which a program writes. Spleen is in `src/font.zig`, which
-`font/gen_font.py` generates (`font/LICENSE.spleen` has its license). The
+`font/gen_font.py` generates (`font/LICENSE.spleen` has its license).
+`--no-font` makes the words of both fonts ordinary memory, as on an FPGA
+core with no font, so that the traces of the random programs of the HDL
+tests can be compared ([hdl/README.md](../hdl/README.md)). The window
+still draws Spleen, and bits 15..0 of the font RAM's words. The
 window draws a cursor from `0xFFFFFF80`–`0xFFFFFF82`, and redraws about 60
 times a second. A cell is redrawn when its word, the cursor on it, or its
 glyph changes. `-2004` and `--invert-fg` work with it as with `--screen`.
@@ -235,8 +240,8 @@ address twice and a file with no words are errors.
 | Address | Words | Contents |
 |---|---|---|
 | `0x00000000`–`0xFFFDFFFF` | 4294836224 | Ordinary memory. Programs load at 0, or at `0x8000` under a monitor in ROM, as a stand-in for one at 0 shows (runtime/ABI.md, "Programs under a monitor"). |
-| `0xFFFE0000`–`0xFFFE1FFF` | 8192 | Font RAM (SYSTEM.md §1.8). Ordinary memory, but a write keeps only bits 15..0. |
-| `0xFFFE2000`–`0xFFFE3FFF` | 8192 | Character ROM (SYSTEM.md §1.8): Spleen 16×32, 32 words per glyph. A write is dropped. |
+| `0xFFFE0000`–`0xFFFE1FFF` | 8192 | Font RAM (SYSTEM.md §1.8). Ordinary memory, but a write keeps only bits 15..0. With `--no-font`, ordinary memory. |
+| `0xFFFE2000`–`0xFFFE3FFF` | 8192 | Character ROM (SYSTEM.md §1.8): Spleen 16×32, 32 words per glyph. A write is dropped. With `--no-font`, ordinary memory. |
 | `0xFFFE4000`–`0xFFFEFFFF` | 49152 | Ordinary memory. |
 | `0xFFFF0000`–`0xFFFF07CF` | 2000 | Character screen, 80×25. Ordinary memory. With `-2004` it is at `0x00000400`–`0x00000BCF` instead. |
 | `0xFFFF07D0`–`0xFFFFFEFF` | 63280 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |

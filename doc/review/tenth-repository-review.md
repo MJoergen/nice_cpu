@@ -27,6 +27,8 @@ It does not exist yet, as expected before the tag. Besides the five issues, its 
 - Every program that calls `printf` grows by 3085 words, and every program that calls `scanf`, even for integers alone, is joined with `float.nasm`, as `nicebuild.py` and the test Makefiles now do.
 - In the `timing` flow on the MEGA65, `dbus_ack_i` is back within the budget of 1.5 ns (#141), so the "misses the input budget" of the `V1.8` notes no longer holds.
 
+**Resolved**: RELEASE_NOTES.md has a `V1.9` section, with the four upgrade notes, and a row in the table of board tags, none yet. Its date is set at the tag.
+
 ### 1.3 The rest of the checklist
 
 - CI on 351a0cf was not complete when this was written: `formal`, `hdl`, and `programs (pipeline)` were running. Cut no tag before they pass (RELEASE.md §6).

@@ -14,6 +14,7 @@ pin each are:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|
+| `V1.9` | none yet |
 | `V1.8` | none yet |
 | `V1.7` | none yet |
 | `V1.6` | none yet |
@@ -32,6 +33,105 @@ pin each are:
 
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
+
+## V1.9 (2026-11-07)
+
+The math unit counts the bits of A and takes the square root of C
+(#129), and the float library uses it. The C library gets `math.h`
+from musl (#130) and the float conversions of `printf`, `scanf`, and
+`strtod` (#68). Zig and Rust programs can use floats and their math
+functions (#142). The pipelined core meets the input budget on the
+MEGA65 again (#141).
+
+**Upgrade notes.**
+
+- The math unit's words `0xFFFFFF2A`–`0xFFFFFF2C` and
+  `0xFFFFFF3C`–`0xFFFFFF3E`, which read 0, now hold `CLZ`, `CTZ`, and
+  `POPCNT` of A, and the square root of C with its remainder. The
+  ports of both cores, `wb_dmux`, the devices, and the debug link are
+  as in V1.8. A system that instantiates `mpu.vhd` gets the words by
+  rebuilding.
+- `lib.nasm` now needs `muldiv_mpu.nasm` or `muldiv_soft.nasm` after
+  it: `__clz`, `__ctz`, and `__popcnt` moved there, and `__clz64`,
+  `__ctz64`, and `__popcnt64` call them. A program joined with
+  `lib.nasm` alone no longer assembles. NiceMonMEGA65 follows with
+  MJoergen/NiceMonMEGA65#89.
+- Every program that calls `printf` grows by 3085 words. Every program
+  that calls `scanf`, even for integers alone, is joined with
+  `float.nasm`, as `nicebuild.py` and the test Makefiles now do.
+- In the `timing` flow on the MEGA65, `dbus_ack_i` is within the
+  budget of 1.5 ns again, so the miss in the V1.8 notes no longer
+  holds.
+- Zig 0.17.0, as in V1.8.
+
+**Specification and documents**
+
+- SYSTEM.md §2 has the new words of the math unit: the bit counts of
+  A, with 32 for `CLZ` and `CTZ` of 0, and `ISQRT64_Q`, `ISQRT64_R_LO`,
+  and `ISQRT64_R_HI`, the root of C and its 33-bit remainder (#129).
+- ABI.md and `nice.h` have `nice_isqrt64`, floor(√x) of a 64-bit
+  value, on the math unit or in software.
+- decisions.md records why there is no `long double`.
+
+**Emulator (`niceemu`)**
+
+- It computes the new words of the math unit. The probe
+  `test/mpubits.nasm` checks them against a hand table, and `mpu` and
+  `mpu64` read the words that were spare.
+- The version is 1.9.0.
+
+**Runtime (`runtime/`)**
+
+- `__clz` searches by halves, in 19 steps for any value but 0, from up
+  to 100. `__clz`, `__ctz`, and `__popcnt` are 3 steps on the math unit
+  in `muldiv_mpu.nasm`. `_nice_isqrt64` is 4 steps there, and 584 in
+  `muldiv_soft.nasm`.
+- The float library takes its f32 quotient from one 64-bit divide and
+  its f32 square root from `nice_isqrt64`. It is translated with
+  `--no-mpu`, so it joins with either muldiv file. It is 6578 words,
+  from 6583.
+- The C library has `math.h`: musl 1.2.5's functions, unchanged, in
+  double and float, within 1 ulp of the true value but `atan2f`'s 1.5,
+  and the classification macros. No function sets `errno`. All 56
+  functions are 23392 words (#130).
+- `printf` has `%e`, `%f`, `%g`, and `%a`, and their capitals, by
+  musl's `fmt_fp`, which needs no float library. `scanf` has the same
+  conversions, and `stdlib.h` has `strtod`, `strtof`, and `atof`, by
+  musl's `floatscan` in double, with five fixes listed in
+  `floatscan.c` (#68).
+- `nice.rs` has the trait `Float`, which gives a `no_std` program the
+  math methods of `std` for `f64` and `f32`. Zig needs nothing (#142).
+- `make -C runtime/libc fuzz` checks `printf`'s floats against Python,
+  `strtod` and `strtof` against exact arithmetic, and the math
+  functions against musl on the host and the true values.
+
+**FPGA cores (`hdl/`)**
+
+- `mpu.vhd` computes the new words in both cores. The bit counts are
+  registered from A each cycle, and a read of one waits as a product
+  does. The square root takes 2 bits of C a cycle, 33 cycles from a
+  write to C or D. `tb_mpu` checks them against a model written
+  another way, and `make formal` proves them for every A and every C.
+  The probe `mpubits` runs on both cores, also on a memory that
+  stalls.
+- WRITE reports its cause to the fetch statistics without the paths
+  from `dbus_ack_i`, and the pipeline derives it a cycle later, the
+  same cycle for cycle. `make timing` on the MEGA65, in the default
+  flow: the core alone has +0.219 ns of slack, from +0.343 ns, and its
+  inputs and outputs leave 2.503 and 2.674 ns, from 2.524 and 2.715 ns.
+  In the `timing` flow the inputs leave 1.683 ns, from 1.344 ns, which
+  meets the budget, and NiceMonMEGA65 V1.8 meets 100 MHz on the R6 by
+  +0.040 ns, from −0.135 ns (#141).
+
+**Benchmarks**
+
+- `float.c` is a benchmark of float code, in five phases with known
+  results, checked against `floatexpected.py`. Against the library of
+  V1.8 it takes 1058329 instructions, −15.3%, and 1917617 cycles on
+  the pipelined core, −16.7% (#129).
+- `make words` prints the size of the math module too.
+- No change for `bench.c`: 2339271 estimated cycles on the pipelined
+  core, as in V1.8.
 
 ## V1.8 (2026-11-07)
 

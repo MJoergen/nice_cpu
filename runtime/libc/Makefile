@@ -34,9 +34,8 @@ BIGSTACK = -Wl,-z,stack-size=131072 -Wl,--initial-memory=262144
 # The test programs, test/X.c. Their .wasm files are checked in, so make
 # test needs no C compiler; make wasm rebuilds them. A test/X.input file is
 # the console input of test X.
-TESTS = stdio stream string stdlib scanf nice printf strings numbers sscanf malloc abort exit limits assert time math mchess
-# The tests that use floats, which are joined with the float library too.
-FLOAT_TESTS = math
+TESTS = stdio stream string stdlib scanf nice printf strings numbers sscanf malloc abort exit limits assert time math floatio \
+  mchess
 # The tests that also run as a program under a monitor, as X_mon: joined
 # after ../test/monitor.nasm, the stand-in for a monitor at 0, with
 # ../start_wasm_mon.nasm, and compared with test/X_mon.expected, which also
@@ -51,6 +50,10 @@ build/%.o: src/%.c $(wildcard include/*.h)
 	@mkdir -p build
 	$(CLANG) $(CFLAGS) -c -o $@ $<
 
+# floatscan.c is musl's, which compares c-'0' with 10U on purpose. -Os
+# saves 6800 words and costs 3% of the steps of strtod.
+build/floatscan.o: CFLAGS := $(filter-out -O2,$(CFLAGS)) -Os -Wno-sign-compare
+
 build/math/%.o: src/math/%.c $(wildcard include/*.h src/math/*.h)
 	@mkdir -p build/math
 	$(CLANG) $(MATH_CFLAGS) -c -o $@ $<
@@ -62,8 +65,10 @@ wasm: libc.a
 	@chmod -x test/*.wasm
 
 # Each test/X.wasm is translated and joined with the start-up code,
-# lib.nasm, and muldiv_mpu.nasm, and float.nasm if it is in FLOAT_TESTS. It is assembled and run, and the console
-# output, main's result in R1, and the exit status are compared with
+# lib.nasm, and muldiv_mpu.nasm, and float.nasm if the program calls one
+# of its routines, as nicebuild joins it: math, and every test that links
+# scanf, whose float conversions use floats. It is assembled and run, and
+# the console output, main's result in R1, and the exit status are compared with
 # test/X.expected. With KEEP=DIR, an absolute path, each test also leaves
 # its program in DIR/libc_X.bin, and its console input in DIR/libc_X.input,
 # for the tests of the FPGA core in hdl/. If test/X.core.input exists, that is
@@ -74,8 +79,8 @@ wasm: libc.a
 # program, and $(4) the registers to show.
 define check
 	@$(NICEWASM) -o test/$(1).out.nasm test/$(2).wasm
-	@cat $(3) test/$(1).out.nasm ../lib.nasm ../muldiv_mpu.nasm \
-	  $(if $(filter $(2),$(FLOAT_TESTS)),../float.nasm) > test/$(1).full.nasm
+	@cat $(3) test/$(1).out.nasm ../lib.nasm ../muldiv_mpu.nasm > test/$(1).full.nasm
+	@if grep -qwFf build/float.labels test/$(1).out.nasm; then cat ../float.nasm >> test/$(1).full.nasm; fi
 	@$(ASM) -o test/$(1).out.bin test/$(1).full.nasm
 	@$(EMU) $(if $(wildcard test/$(2).input),--input test/$(2).input) test/$(1).out.bin < /dev/null > test/$(1).raw; echo "exit $$?" > test/$(1).status
 	$(if $(KEEP),@mkdir -p $(KEEP) && cp test/$(1).out.bin $(KEEP)/libc_$(1).bin)
@@ -89,16 +94,19 @@ endef
 
 test: emulator
 	@$(MAKE) -s --no-print-directory -C .. float.nasm
+	@mkdir -p build && grep -oE '^__[A-Za-z0-9_]+' ../float.nasm > build/float.labels
 	$(foreach t,$(TESTS),$(call check,$(t),$(t),../start_wasm.nasm,R1  [0-9a-f]*))
 	$(foreach t,$(MON_TESTS),$(call check,$(t)_mon,$(t),../test/monitor.nasm ../start_wasm_mon.nasm,R1  [0-9a-f]* R2  [0-9a-f]*))
 	@rm -f test/*.out test/*.raw test/*.status test/*.out.nasm test/*.full.nasm test/*.out.bin
 
 # A random test of the printf family against a model of C's printf,
-# test/fuzz_printf.py, and one of the math functions against the same
+# test/fuzz_printf.py, one of strtod and strtof against exact arithmetic,
+# test/fuzz_strtod.py, and one of the math functions against the same
 # code on the host and the host's libm, test/fuzz_math.py. They compile
 # programs with clang, so make test does not run them.
 fuzz: libc.a emulator
 	@$(PYTHON) test/fuzz_printf.py 1 300
+	@$(PYTHON) test/fuzz_strtod.py 1 1000
 	@$(PYTHON) test/fuzz_math.py 1 1000
 
 emulator:

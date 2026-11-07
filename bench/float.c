@@ -5,8 +5,8 @@
 // Five phases, each a small kernel with a known result. Each phase is timed
 // with the performance counters of SYSTEM.md §3, and main prints one line
 // per phase, as bench.c does: the instructions, the cycles, the result,
-// and whether it is the expected one. printf has no %f, so a result is the
-// bits of a float, or a hash of them. The expected values come from
+// and whether it is the expected one. A result is the bits of a float, or
+// a hash of them, which compare exactly. The expected values come from
 // floatexpected.py, which computes each phase in Python from the same
 // sizes, rounding each f32 operation to f32. The native build, "make
 // native-float", runs the same C on the host as a second check.

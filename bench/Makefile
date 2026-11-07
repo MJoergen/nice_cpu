@@ -138,8 +138,10 @@ $(BUILD)/dhry.nasm: $(DHRY)/dhry.wasm ../translator/nicewasm.py
 	@mkdir -p $(BUILD)
 	$(NICEWASM) -o $@ $(DHRY)/dhry.wasm
 
+# Dhrystone reads its number of runs with scanf, whose float conversions
+# use the float library, so it is joined with float.nasm.
 $(BUILD)/dhry.full.nasm: ../runtime/start_wasm.nasm $(BUILD)/dhry.nasm ../runtime/lib.nasm \
-  ../runtime/muldiv_mpu.nasm
+  ../runtime/muldiv_mpu.nasm $(FLOAT_LIB)
 	cat $^ > $@
 
 $(BUILD)/float.nasm: float.wasm ../translator/nicewasm.py

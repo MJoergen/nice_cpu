@@ -265,11 +265,11 @@ Zig keeps only the objects of `libc.a` that the program references.
 |---|---|
 | `stdio.h` | `FILE`, `stdin`, `stdout`, `stderr`, `putchar`, `puts`, `getchar`, `fputc`, `putc`, `fputs`, `fgetc`, `getc`, `ungetc`, `fgets`, `fflush`, `printf`, `fprintf`, `sprintf`, `snprintf`, `vprintf`, `vfprintf`, `vsprintf`, `vsnprintf`, `scanf`, `fscanf`, `sscanf`, `vscanf`, `vfscanf`, `vsscanf` |
 | `string.h` | `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`, `strnlen`, `strcmp`, `strncmp`, `strcpy`, `strncpy`, `strcat`, `strncat`, `strchr`, `strrchr`, `strstr`, `strcspn` |
-| `stdlib.h` | `malloc`, `calloc`, `realloc`, `free`, `abs`, `labs`, `llabs`, `atoi`, `atol`, `strtol`, `strtoul`, `rand`, `srand`, `abort`, `exit` |
+| `stdlib.h` | `malloc`, `calloc`, `realloc`, `free`, `abs`, `labs`, `llabs`, `atoi`, `atol`, `strtol`, `strtoul`, `atof`, `strtod`, `strtof`, `rand`, `srand`, `abort`, `exit` |
 | `math.h` | In double, and in float with an `f`, such as `sinf`: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `log`, `log10`, `log2`, `pow`, `sqrt`, `fmod`, `frexp`, `ldexp`, `scalbn`, `modf`, `floor`, `ceil`, `trunc`, `round`, `rint`, `nearbyint`, `fabs`, `copysign`, `fmin`, and `fmax`. The macros `fpclassify`, `isfinite`, `isinf`, `isnan`, `isnormal`, `signbit`, `HUGE_VAL`, `HUGE_VALF`, `INFINITY`, `NAN`, and `math_errhandling`, the types `float_t` and `double_t`, and POSIX's constants, such as `M_PI`. See Math functions below. |
 | `assert.h` | `assert` and `static_assert`. A failed `assert` prints `file:line: function: Assertion `expr' failed.` and calls `abort`. `-DNDEBUG` removes the checks. |
 | `time.h` | `clock`, with `CLOCKS_PER_SEC` 1000000 and `clock_t` unsigned, from the microsecond counter of SYSTEM.md §3, which counts the host's time in the emulator, and wraps after 71.6 minutes on a board; `time`, which returns −1 because no device has the date; and the types `clock_t` and `time_t`. |
-| `errno.h` | `errno`, one for the whole program, 0 at start, and the codes `EINVAL`, `EDOM`, `ERANGE`, and `EILSEQ`. Only `strtol` and `strtoul` set it, and so `atoi` and `atol`: to `ERANGE` on an overflow, and to `EINVAL` for a base other than 0 and 2 to 36. |
+| `errno.h` | `errno`, one for the whole program, 0 at start, and the codes `EINVAL`, `EDOM`, `ERANGE`, and `EILSEQ`. Only the conversions from text set it: `strtol` and `strtoul`, and so `atoi` and `atol`, to `ERANGE` on an overflow and to `EINVAL` for a base other than 0 and 2 to 36, and `strtod` and `strtof`, and so `atof` and `scanf`, to `ERANGE` when a float overflows or underflows, and to `EINVAL` when there is none. |
 | `ctype.h` | `isalnum`, `isalpha`, `iscntrl`, `isdigit`, `isgraph`, `islower`, `isprint`, `ispunct`, `isspace`, `isupper`, `isxdigit`, `tolower`, `toupper` |
 | `nice.h` | The device routines (see above): `nice_putc`, `nice_getc`, `nice_pollc`, `nice_print`, `nice_cycles`, `nice_instructions`, `nice_micros` (C only, with no assembly routine), `nice_screen_put`, and `nice_screen_clear`. Also `nice_peek` and `nice_poke`, the `nice` imports of WASM.md, and the devices' addresses, for devices that have no routine. |
 
@@ -297,8 +297,7 @@ The library is small on purpose:
   `ungetc` holds one byte per stream. These functions are missing:
   - in `stdio.h`, `fopen`, `fclose`, `fread`, `fwrite`, `fseek`, `feof`,
     `ferror`, `perror`, `setvbuf`, `rewind`, and `clearerr`;
-  - in `stdlib.h`, `strtoll`, `strtoull`, `strtod`, `atof`, `atoll`,
-    `qsort`, `bsearch`, `div`, `ldiv`, `getenv`, and `system`;
+  - in `stdlib.h`, `strtoll`, `strtoull`, `strtold`, `atoll`, `qsort`, `bsearch`, `div`, `ldiv`, `getenv`, and `system`;
   - in `string.h`, `strcoll`, `strspn`, `strpbrk`, `strtok`, `strdup`, and
     `strerror`;
   - in `ctype.h`, `isblank`;
@@ -309,17 +308,40 @@ The library is small on purpose:
     `isgreater`, and every `long double` function.
 - `scanf` and `sscanf` support white space and ordinary characters in the
   format, `*` to read without storing, a width, the length modifiers
-  `hh h l ll z t j`, and the conversions `d i u o x X p c s [ n %`. A set
-  in `[` may hold ranges such as `a-z`, and `^` first negates it. There
-  are no float conversions. `scanf` gives back the one byte it read too
-  far, for the next `getchar` or `scanf`, with `ungetc`.
+  `hh h l ll z t j`, and the conversions `d i u o x X p c s [ n %`, and
+  `e E f F g G a A`, which read a float as `strtod` does, into a `float`,
+  or into a `double` with `l`. A set in `[` may hold ranges such as
+  `a-z`, and `^` first negates it. `scanf` gives back the one byte it read
+  too far, for the next `getchar` or `scanf`, with `ungetc`. A float cut
+  off, such as `1e+` before a letter, is a matching failure, as C says,
+  and stays read.
+- `strtod`, `strtof`, `atof`, and the float conversions of `scanf` are
+  musl's `floatscan`, in `src/floatscan.c`, in `double` where musl has
+  `long double`, under musl's license. They read decimal and hex floats,
+  infinities, and NaNs, and round correctly, ties to even, subnormals
+  included. In `double`, as musl builds it where `long double` is
+  `double`, musl's code has five faults, which the file lists and fixes: three
+  roundings of hex floats and of the smallest subnormals, a lost sign, and
+  a missing `ERANGE`. `fuzz_strtod.py` (below) checks the result against
+  exact arithmetic. The float arithmetic is the float library's, so a
+  program that calls `scanf`, even only for integers, is joined with
+  `float.nasm`. `sscanf` with `%d` alone was 4166 words; it is now 9082,
+  and the float library's 6578 come with it.
 - `printf` supports the flags `- + space # 0`, with `+` and space for the
-  signed conversions only, as C defines them, a width and a precision
-  (either may be `*`), the length modifiers `hh h l ll z t j`, and the
-  conversions `d i u o x X c s p %`. The float conversions, such as `%f`,
-  take their argument and are printed as they stand, as is any other
-  unknown conversion. `%p` prints `0x` and the address in hex, `0x0` for a
-  null pointer.
+  signed and float conversions, as C defines them, a width and a
+  precision (either may be `*`), the length modifiers `hh h l ll z t j`,
+  and the conversions `d i u o x X c s p %`, and `e E f F g G a A` for a
+  `double`. Any other conversion, such as `%Lf` for a `long double`, is
+  printed as it stands. `%p` prints `0x` and the address in hex, `0x0` for
+  a null pointer.
+- The float conversions of `printf` are musl's `fmt_fp`, taken apart from
+  the bits of the `double` and rounded with integers, so that `printf`
+  needs no float library. They print the exact decimal value, rounded to
+  nearest, ties to even, as glibc does. `%a` prints a 1 before the point,
+  also for a subnormal, as musl does, or a 2 when the rounding carries
+  into it, such as `0x2p+0` for `%.0a` of 1.5. They cost every program
+  that calls `printf` 3085 words: `printf` with `%d` alone was 4124 words
+  and is now 7209. `%f` of 1e300 takes about 48000 steps.
 - `strtol` and `strtoul` saturate on overflow and set `errno` to `ERANGE`. A base other than 0 and 2 to 36 converts nothing, as no digits, and sets `errno` to `EINVAL`. No other function sets `errno`: `malloc` returns `NULL` with no code, and `scanf` keeps the low bits of a number too large for its type, as C leaves it undefined.
 - `exit` is the assembly routine `_exit` of the start-up code: with `start_wasm.nasm`, the `HALT` after `main`, with the status in R1, so the emulator exits with status 0, and under a monitor a return to it (ABI.md). `EXIT_SUCCESS` is 0 and `EXIT_FAILURE` 1. There is no `atexit`. `abort` and a failed `assert` trap (WASM.md), so the emulator exits with status 2.
 - `rand` is the linear congruential generator of the C standard's example, `srand(1)` at start.
@@ -488,7 +510,7 @@ float instructions, which nicewasm turns into calls of the float
 library, as for C, so a program that uses floats is joined with
 `float.nasm` (Joining a program). Both print floats with their own
 formatting code, `std.fmt` and `core::fmt`, which is part of the program,
-so `{d}`, `{e}`, `{}`, and `{:e}` work, though C's `printf` has no `%f`.
+so `{d}`, `{e}`, `{}`, and `{:e}` work.
 The math functions come with the compiler, ported from musl, and are
 compiled into the program as well:
 
@@ -616,9 +638,15 @@ with the `wasm32-unknown-unknown` target.
 
 `make -C libc fuzz` needs clang. It runs `libc/test/fuzz_printf.py`,
 which writes a C program with 300 random `printf` and `snprintf` calls,
-with every flag, width, precision, length modifier, and integer
-conversion, and compares the output with a model of C's `printf` in
-Python. `fuzz_printf.py SEED COUNT` runs other seeds and sizes.
+with every flag, width, precision, length modifier, and conversion, of
+integers and of doubles, and compares the output with a model of C's
+`printf` in Python. `fuzz_printf.py SEED COUNT` runs other seeds and
+sizes. Then it runs `libc/test/fuzz_strtod.py`, which calls `strtod` and
+`strtof` on 1000 random strings: long decimals, hex floats, exact
+halfway cases between two doubles, subnormals, overflows, and the forms
+that end a float early, such as `1e+`. It compares the bits, the bytes
+taken, and `errno` with the exact value rounded in Python.
+`fuzz_strtod.py SEED COUNT` runs other seeds and sizes.
 Then it runs `libc/test/fuzz_math.py`, which calls each of the 56
 functions of `math.h` on 1000 arguments: special values, random bits,
 and random numbers in the function's usual range. It compares the

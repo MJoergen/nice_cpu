@@ -30,9 +30,10 @@ int main(void)
     printf("[%hhd] [%hhu] [%hd] [%hu] [%hhx]\n", 128, 257, 32768, 65541, -1);
     printf("[%jd] [%zu] [%td] [%ld] [%lu]\n", (intmax_t)-1, (size_t)7, (ptrdiff_t)-3, LONG_MIN,
            ULONG_MAX);
-    // The float conversions take their argument and are printed as they
-    // stand, as is %y. The last % has \n as its conversion.
-    printf("%f|%e|%g|%y|%\n", 1.0, 2.0, 3.0);
+    // %y and %Lf, a long double, are printed as they stand; the float
+    // conversions are test/floatio.c's. The last % has \n as its
+    // conversion.
+    printf("%y|%Lf|%\n");
 #pragma clang diagnostic pop
 
     // snprintf writes at most size - 1 bytes and a 0, and returns the

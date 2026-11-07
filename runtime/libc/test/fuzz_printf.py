@@ -7,24 +7,34 @@ Usage: fuzz_printf.py SEED COUNT
 It writes a C program with COUNT random calls: a quarter of them
 snprintf into a buffer of a random size, whose return value and contents
 are then printed, the rest printf. Each format has one to three
-conversions from d i u o x X c s %, with random flags from - + space # 0,
-a width and a precision that may be numbers or *, and a length modifier
-from hh h l ll z t j. The arguments have the matching C types and are
-random, with the limits of each type among them. The flag combinations
-that C leaves undefined are not used: + and space with an unsigned
-conversion, # with d i u, and 0 or # with c and s. The program is compiled
-with clang and the library, with a 64 KB stack put first, translated,
-assembled, and run, and its console output is compared line by line with
-what the model gives. The model follows C17 7.21.6.1 for these
-conversions; it has no float conversions, as the library has none.
+conversions from d i u o x X c s % e E f F g G a A, with random flags from
+- + space # 0, a width and a precision that may be numbers or *, and a
+length modifier from hh h l ll z t j, or l for a float. The arguments have
+the matching C types and are random, with the limits of each type among
+them; the doubles include 0, -0, infinities, NaNs, ties, subnormals, and
+any bits, written in C as hex floats, which are exact. The flag
+combinations that C leaves undefined are not used: + and space with an
+unsigned conversion, # with d i u, and 0 or # with c and s. The program is
+compiled with clang and the library, with a 64 KB stack put first,
+translated, assembled, and run, and its console output is compared line by
+line with what the model gives. The model follows C17 7.21.6.1 for these
+conversions. It formats a finite double with e f g by Python's %, which
+is exact and rounds ties to even, as C's does in its default rounding
+mode. Python pads infinity and NaN with zeros and drops a NaN's sign, so
+the model writes them itself, as it does %a, which Python lacks. %a
+follows musl's choices where C leaves one: the digit before the point is
+1, also for a subnormal, or 2 when rounding carries into it, and 0 only
+for 0.
 
 Needs clang with the wasm32 target, and ../libc.a from make -C .. libc.a.
 The same seed always gives the same program."""
 
 from __future__ import annotations
 
+import math
 import os
 import random
+import struct
 import subprocess
 import sys
 import tempfile
@@ -51,7 +61,9 @@ SIGNED_TYPES = {"hh": "int", "h": "int", "": "int", "l": "long", "z": "int", "t"
 UNSIGNED_TYPES = {"hh": "unsigned", "h": "unsigned", "": "unsigned", "l": "unsigned long",
                   "z": "size_t", "t": "unsigned long", "ll": "unsigned long long", "j": "uintmax_t"}
 
-Arg = Union[int, str, None]
+Arg = Union[int, float, str, None]
+
+FLOATS = "eEfFgGaA"
 
 
 def trunc(v: int, nbits: int, signed: bool) -> int:
@@ -60,6 +72,48 @@ def trunc(v: int, nbits: int, signed: bool) -> int:
     if signed and v >> (nbits - 1):
         v -= 1 << nbits
     return v
+
+
+def hex_body(v: float, prec: Optional[int], alt: bool) -> str:
+    """|v| in %a's form after the 0x: the digits and the exponent of 2."""
+    bits = struct.unpack("<Q", struct.pack("<d", v))[0]
+    ex, m = (bits >> 52) & 0x7FF, bits & ((1 << 52) - 1)
+    e2 = ex - 1075 if ex else -1074
+    if ex:
+        m |= 1 << 52
+    if m:
+        while m < 1 << 52:
+            m <<= 1
+            e2 -= 1
+        e2 += 52
+    else:
+        e2 = 0
+    if prec is not None and prec < 13:
+        drop = 52 - 4 * prec
+        q, rem = divmod(m, 1 << drop)
+        half = 1 << (drop - 1)
+        if rem > half or (rem == half and q & 1):
+            q += 1
+        m = q << drop
+    digits = format(m & ((1 << 52) - 1), "013x")
+    digits = digits.rstrip("0") if prec is None else digits[:prec].ljust(prec, "0")
+    point = "." if digits or alt else ""
+    return f"{m >> 52:x}{point}{digits}p{'+' if e2 >= 0 else '-'}{abs(e2)}"
+
+
+def float_parts(conv: str, plus: bool, space: bool, alt: bool, prec: Optional[int],
+                v: float) -> Tuple[str, str, bool]:
+    """A float conversion: the sign and any 0x, the rest, and whether the
+    0 flag may pad between them."""
+    sign = "-" if math.copysign(1.0, v) < 0 else "+" if plus else " " if space else ""
+    if math.isinf(v) or math.isnan(v):
+        body = "nan" if math.isnan(v) else "inf"
+        return sign, body.upper() if conv.isupper() else body, False
+    if conv in "aA":
+        body = hex_body(v, prec, alt)
+        return sign + "0" + conv.replace("a", "x").replace("A", "X"), body.upper() if conv == "A" else body, True
+    spec = "%" + ("#" if alt else "") + ("" if prec is None else "." + str(prec)) + conv
+    return sign, spec % abs(v), True
 
 
 def cfmt(conv: str, flags: str, width: Optional[int], prec: Optional[int], length: str, arg: Arg) -> str:
@@ -74,7 +128,11 @@ def cfmt(conv: str, flags: str, width: Optional[int], prec: Optional[int], lengt
         prec = None
     if conv == "%":
         return "%"
-    if conv in "di":
+    if conv in FLOATS:
+        assert isinstance(arg, float)
+        head, body, can_zero = float_parts(conv, plus, space, alt, prec, arg)
+        zero = zero and can_zero
+    elif conv in "di":
         assert isinstance(arg, int)
         v = trunc(arg, BITS[length], True)
         digits = "" if prec == 0 and v == 0 else str(abs(v))
@@ -116,6 +174,33 @@ def c_string(s: str) -> str:
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+def rand_double(rng: random.Random) -> float:
+    r = rng.random()
+    if r < 0.06:
+        return rng.choice([0.0, -0.0, math.inf, -math.inf, math.nan, -math.nan])
+    if r < 0.3:
+        return math.ldexp(rng.randrange(-10 ** 6, 10 ** 6), -rng.randrange(0, 12))
+    if r < 0.45:
+        return math.ldexp(2 * rng.randrange(-5000, 5000) + 1, -rng.randrange(1, 6))  # ties
+    if r < 0.55:
+        bits = rng.getrandbits(52) | rng.getrandbits(1) << 63  # subnormal
+    else:
+        bits = rng.getrandbits(64)
+        if (bits >> 52) & 0x7FF == 0x7FF:
+            bits ^= 1 << 62
+    return float(struct.unpack("<d", struct.pack("<Q", bits))[0])
+
+
+def c_double(v: float) -> str:
+    """v as C text that gives exactly v."""
+    sign = "-" if math.copysign(1.0, v) < 0 else ""
+    if math.isnan(v):
+        return sign + '__builtin_nan("")'
+    if math.isinf(v):
+        return sign + "__builtin_inf()"
+    return sign + abs(v).hex()
+
+
 def gen_case(rng: random.Random) -> Tuple[str, List[str], str]:
     """A format, its arguments as C text, and the output C defines."""
     fmt, args, out = "", [], ""
@@ -123,7 +208,7 @@ def gen_case(rng: random.Random) -> Tuple[str, List[str], str]:
         literal = "".join(rng.choice("abcXYZ,:=()[]_") for _ in range(rng.randrange(0, 4)))
         fmt += literal
         out += literal
-        conv = rng.choice("ddiuuooxxXXcs%")
+        conv = rng.choice("ddiuuooxxXXcs%" + FLOATS + "efg")
         flags = "".join(rng.sample("-+ #0", rng.randrange(0, 3)))
         if conv in "cs":
             flags = flags.replace("#", "").replace("0", "")
@@ -132,6 +217,8 @@ def gen_case(rng: random.Random) -> Tuple[str, List[str], str]:
         if conv in "diu":
             flags = flags.replace("#", "")
         length = rng.choice(["", "", "", "hh", "h", "l", "ll", "z", "t", "j"]) if conv in "diuoxX" else ""
+        if conv in FLOATS and rng.random() < 0.2:
+            length = "l"  # no effect on a float
         spec = "%" + flags
         width: Optional[int] = None
         prec: Optional[int] = None
@@ -152,6 +239,9 @@ def gen_case(rng: random.Random) -> Tuple[str, List[str], str]:
             elif r < 0.45:
                 prec = rng.randrange(0, 9)
                 spec += "." + str(prec)
+            elif r < 0.5 and conv in FLOATS:
+                prec = rng.randrange(9, 40)
+                spec += "." + str(prec)
         spec += length + conv
         fmt += spec
         arg: Arg = None
@@ -168,6 +258,9 @@ def gen_case(rng: random.Random) -> Tuple[str, List[str], str]:
             n = BITS[length]
             arg = rng.choice([0, 1, rng.randrange(0, 1000), rng.getrandbits(n), (1 << n) - 1])
             args.append(f"({UNSIGNED_TYPES[length]}){arg}{'ULL' if n == 64 else 'u'}")
+        elif conv in FLOATS:
+            arg = rand_double(rng)
+            args.append(c_double(arg))
         elif conv == "c":
             arg = rng.randrange(0x21, 0x7F)
             args.append(str(arg))

@@ -2,11 +2,14 @@
 // space in the input, ordinary characters, which must match, and
 // conversions. A conversion may have * to read without storing, a width,
 // and the length modifiers hh h l ll z t j. The conversions are d i u o x X
-// p c s [ n and %. A set in [ may hold ranges such as a-z, and ^ first
-// negates it.
+// p c s [ n and %, and e E f F g G a A, which read a float as strtod does,
+// into a float, or into a double with l. A set in [ may hold ranges such
+// as a-z, and ^ first negates it.
 #include <ctype.h>
 #include <limits.h>
 #include <stdio.h>
+
+#include "floatscan.h"
 
 // Where the input comes from: the string s, or the stream f if s is NULL.
 // count is the number of bytes taken, for %n.
@@ -146,7 +149,8 @@ static int scan(struct in *in, const char *fmt, va_list ap)
         int width = 0;
         while (*fmt >= '0' && *fmt <= '9')
             width = width * 10 + (*fmt++ - '0');
-        // 0: int and long (both 32 bits), 2: long long, -1: short, -2: char.
+        // 0: int, 1: long (also 32 bits) or double, 2: long long, -1: short,
+        // -2: char.
         int size = 0;
         if (*fmt == 'h') {
             size = -1;
@@ -155,6 +159,7 @@ static int scan(struct in *in, const char *fmt, va_list ap)
                 fmt++;
             }
         } else if (*fmt == 'l') {
+            size = 1;
             if (*++fmt == 'l') {
                 size = 2;
                 fmt++;
@@ -249,6 +254,27 @@ static int scan(struct in *in, const char *fmt, va_list ap)
                     *(long long *)p = (long long)v;
                 else
                     *(int *)p = (int)v;
+                n++;
+            }
+            break;
+        }
+        case 'e': case 'E': case 'f': case 'F': case 'g': case 'G': case 'a': case 'A': {
+            // Within the width. A float cut off, such as "1e+" before a
+            // letter, is a matching failure, as C says.
+            struct fscan f = {in->s, in->f, width, 0, 0, 0};
+            double y = __floatscan(&f, size == 1, 0);
+            if (in->s)
+                in->s += f.n;
+            in->count += f.n;
+            if (f.fail || !f.n) {
+                c = 0;
+                goto done;
+            }
+            if (store) {
+                if (size == 1)
+                    *va_arg(ap, double *) = y;
+                else
+                    *va_arg(ap, float *) = (float)y;
                 n++;
             }
             break;

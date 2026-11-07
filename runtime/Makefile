@@ -162,7 +162,7 @@ emulator:
 
 # Needs mypy (pip install mypy).
 typecheck:
-	cd libc/test && $(PYTHON) -m mypy --strict fuzz_printf.py fuzz_math.py
+	cd libc/test && $(PYTHON) -m mypy --strict fuzz_printf.py fuzz_strtod.py fuzz_math.py
 
 clean:
 	rm -f test/*.out test/*.out.nasm test/*.out.bin test/*.full.nasm test/*.raw test/*.status float.nasm

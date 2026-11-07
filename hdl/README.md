@@ -1051,7 +1051,7 @@ programs, at GHDL's 3300 steps a second. In nvc, `SIM=nvc`, it took 5
 and 3 minutes on 2026-10-28. CI runs it in nvc on
 both cores, a job for each. `SHARD=I/N` runs the Ith of N shares of the
 programs, of nearly equal steps, longest first. That run is the release's: the
-top-level `make slow` leaves `make programs` out ([RELEASE.md](../release/RELEASE.md)). It does not run `runtime/libc/test/fuzz_printf.py` or `fuzz_math.py`, which
+top-level `make slow` leaves `make programs` out ([RELEASE.md](../release/RELEASE.md)). It does not run `runtime/libc/test/fuzz_printf.py`, `fuzz_strtod.py`, or `fuzz_math.py`, which
 need clang, or the benchmark, which `make core` in `bench/` runs. `make test KEEP=DIR`
 in `runtime/` and `test/run.py --keep DIR` and `test/fuzz.py --keep DIR` in `translator/` run their
 tests and leave the programs in `build/programs`, with the console input

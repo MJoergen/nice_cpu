@@ -288,4 +288,5 @@ the BSD 2-Clause license in `emulator/font/LICENSE.spleen`, and a build
 with `-Dwindow` compiles SDL 3 in, which is under the zlib license.
 The math functions of the C library, in `runtime/libc/src/math/`, are
 musl's, under musl's MIT license and the notices in their files,
-collected in `COPYRIGHT` there.
+collected in `COPYRIGHT` there. So are the C library's `floatscan.c`
+and the float conversions of its `printf.c`, both changed.

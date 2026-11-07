@@ -249,7 +249,7 @@ address twice and a file with no words are errors.
 | `0xFFFFFF01` | 1 | Read counter. A data read returns the number of data reads of it since the last write, and a write sets that number. |
 | `0xFFFFFF02`–`0xFFFFFF0F` | 14 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (SYSTEM.md §4). Raises IRQ once every P steps. |
-| `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (SYSTEM.md §2). Multiplies and divides A and B, and divides C and D. |
+| `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (SYSTEM.md §2). Multiplies and divides A and B and counts the bits of A, and divides C and D and takes the square root of C. |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (SYSTEM.md §3). Cycles, instructions, microseconds, data reads, stores, skips, jumps, and interrupts, 64 bits each. The fetch statistics of the FPGA core, at `0xFFFFFF60`–`0xFFFFFF7F`, read 0. |
 | `0xFFFFFF80`–`0xFFFFFF9F` | 32 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (SYSTEM.md §1.4), and takes its font base from `0xFFFFFF86` (SYSTEM.md §1.8). |
 | `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | SD card controller (SYSTEM.md §5). Two slots, with the images of `--sd0` and `--sd1`. |
@@ -301,7 +301,8 @@ The math unit holds only its operands, A, B, C, and D. It computes each
 result when it is read, so a read never waits, and `--dump` shows the
 results for the current operands. Its words store nothing else.
 `test/mpu.nasm` and `test/mpu64.nasm` check every result, with division by
-zero and the signed overflow.
+zero and the signed overflow, and `test/mpubits.nasm` the bit counts and
+the square root.
 
 ### Performance counters
 

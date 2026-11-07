@@ -146,7 +146,7 @@ The fonts are memory to every access. An instruction fetch reads them as a data 
 
 ## 2. Math unit
 
-The emulator and the FPGA implementation map a math unit, the MPU, at `0xFFFFFF20`–`0xFFFFFF3F`. It multiplies and divides 32-bit integers, and divides 64-bit integers.
+The emulator and the FPGA implementation map a math unit, the MPU, at `0xFFFFFF20`–`0xFFFFFF3F`. It multiplies and divides 32-bit integers, counts the bits of a 32-bit integer, and divides 64-bit integers and takes their square root.
 
 The first 16 words work on the 32-bit operands A and B:
 
@@ -162,7 +162,10 @@ The first 16 words work on the 32-bit operands A and B:
 | `0xFFFFFF27` | `SDIV_R` | the remainder of A / B, signed | is ignored |
 | `0xFFFFFF28` | `UDIV_Q` | the quotient of A / B, unsigned | is ignored |
 | `0xFFFFFF29` | `UDIV_R` | the remainder of A / B, unsigned | is ignored |
-| `0xFFFFFF2A`–`0xFFFFFF2F` | | 0 | is ignored |
+| `0xFFFFFF2A` | `CLZ` | the number of leading 0 bits in A, 32 for 0 | is ignored |
+| `0xFFFFFF2B` | `CTZ` | the number of trailing 0 bits in A, 32 for 0 | is ignored |
+| `0xFFFFFF2C` | `POPCNT` | the number of 1 bits in A | is ignored |
+| `0xFFFFFF2D`–`0xFFFFFF2F` | | 0 | is ignored |
 
 The next 16 words work on the 64-bit operands C and D. Each 64-bit value takes two words, low word first, as in [ABI.md](../runtime/ABI.md):
 
@@ -174,13 +177,16 @@ The next 16 words work on the 64-bit operands C and D. Each 64-bit value takes t
 | `0xFFFFFF36`, `0xFFFFFF37` | `SDIV64_R_LO`, `SDIV64_R_HI` | the remainder of C / D, signed | is ignored |
 | `0xFFFFFF38`, `0xFFFFFF39` | `UDIV64_Q_LO`, `UDIV64_Q_HI` | the quotient of C / D, unsigned | is ignored |
 | `0xFFFFFF3A`, `0xFFFFFF3B` | `UDIV64_R_LO`, `UDIV64_R_HI` | the remainder of C / D, unsigned | is ignored |
-| `0xFFFFFF3C`–`0xFFFFFF3F` | | 0 | is ignored |
+| `0xFFFFFF3C` | `ISQRT64_Q` | Q = floor(√C), C unsigned, which fits in 32 bits | is ignored |
+| `0xFFFFFF3D`, `0xFFFFFF3E` | `ISQRT64_R_LO`, `ISQRT64_R_HI` | the remainder C − Q², which is at most 2Q and needs 33 bits | is ignored |
+| `0xFFFFFF3F` | | 0 | is ignored |
 
-- Each result depends only on the operands of its half, A and B or C and D, as they are when it is read. A read has no side effect, so the results can be read in any order and any number of times.
+- Each result depends only on the operands of its half, A and B or C and D, as they are when it is read. `CLZ`, `CTZ`, and `POPCNT` depend on A alone, and `ISQRT64` on C alone. A read has no side effect, so the results can be read in any order and any number of times.
 - Signed operations treat the operands as two's complement. A signed product is exact in 64 bits.
 - A signed quotient is rounded toward zero, and a signed remainder has the sign of the dividend, so A = Q · B + R and C = Q · D + R. This is C's `/` and `%`, and wasm's `div_s` and `rem_s`.
 - Division by zero gives a quotient of all ones and a remainder equal to the dividend, signed and unsigned: Q = `0xFFFFFFFF` and R = A, or Q = `0xFFFFFFFF_FFFFFFFF` and R = C.
 - The signed division of the most negative number by −1 gives Q = the most negative number and R = 0. That is `0x80000000 / 0xFFFFFFFF` = `0x80000000` for A and B, and −2⁶³ / −1 = −2⁶³ for C and D.
+- floor(log2 A) is 31 − `CLZ`, for A other than 0.
 - Reset sets A, B, C, and D to 0.
 
 These are RISC-V's results for the two special cases. Software never needs to wait for a result. The FPGA implementation starts a new computation at each write to an operand, which may take many cycles, and holds off the acknowledge of a read of a result until the result is ready.

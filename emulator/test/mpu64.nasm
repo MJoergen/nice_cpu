@@ -23,9 +23,13 @@
 ; 0xFFF_FFEFFFFF. 3 * 0x2AAAAAAA_AAAAAAAA = 2^63 - 2.
 ;
 ; The dump of the MPU's 32 words then shows A = B = 0 and their results,
-; which the 64-bit operands do not change: products 0, and 0 / 0 gives
-; Q = 0xFFFFFFFF and R = 0. Then C and D of the last case and its results,
-; and 0 in the four spare words.
+; which the 64-bit operands do not change: products 0, 0 / 0 gives
+; Q = 0xFFFFFFFF and R = 0, and A = 0 has CLZ = CTZ = 32 and POPCNT = 0.
+; Then C and D of the last case and its results, and the square root of
+; C = 2^63 - 1: Q = 0xB504F333, as sqrt(2^63) = 2^31 * sqrt(2) and
+; sqrt(2) = 1.6A09E667F... in hex, and 0xB504F333^2 = 9223372030926249001,
+; which leaves R = 2^63 - 1 - that = 5928526806 = 0x1_615E23D6, less than
+; 2Q. The last word is spare and reads 0.
 ;
 ; Steps: 3 + 9 * 15 + 1 = 139. R6 = 0x200 + 72 = 0x248, R7 = 0 with Z set
 ; (R14 = 0x09000000), R8 = CASES + 36, and R9 = MPU + 0x1C.

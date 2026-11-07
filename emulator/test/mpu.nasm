@@ -25,11 +25,12 @@
 ; Division by zero gives Q = 0xFFFFFFFF and R = A.
 ;
 ; After the loop: a write to UMUL_LO is ignored, so it still reads
-; -5 * 0 = 0 (R1 = 0). The spare word 0xFFFFFF2A reads 0 (R2 = 0). Then
+; -5 * 0 = 0 (R1 = 0). The spare word 0xFFFFFF2D reads 0 (R2 = 0). Then
 ; A = 6 and B = 7 give UMUL_LO = 42 = 0x2a (R3), and A and B read back
 ; (R4 = 6, R5 = 7). The MPU stores nothing in memory. The dump of its
 ; words shows A, B, and the results for 6 and 7: 0x2a, 0, 0x2a, 0, 0, 6,
-; 0, 6, then 0 in the six spare words.
+; 0, 6, then CLZ, CTZ, and POPCNT of 6 = 0b110: 29 = 0x1d, 1, and 2, and
+; 0 in the three spare words. test/mpubits.nasm checks the bit counts.
 ;
 ; Steps: 3 + 9 * 13 + 9 = 129. R6 = 0x200 + 72 = 0x248, R7 = 0 with Z set
 ; (R14 = 0x09000000), R8 = CASES + 18 = 0x3d, and R9 = MPU + 10.
@@ -52,7 +53,7 @@ LOOP            MOVE    @MPU, @R8++
         ?!Z     JMP     LOOP
                 MOVE    @MPU+4, 5
                 MOVE    R1, @MPU+4
-                MOVE    R2, @MPU+10
+                MOVE    R2, @MPU+13
                 MOVE    @MPU, 6
                 MOVE    @MPU+1, 7
                 MOVE    R3, @MPU+4

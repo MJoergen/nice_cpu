@@ -227,13 +227,23 @@ pub const Mpu = struct {
             },
             8 => if (self.b == 0) 0xFFFF_FFFF else self.a / self.b,
             9 => if (self.b == 0) self.a else self.a % self.b,
+            10 => @clz(self.a),
+            11 => @ctz(self.a),
+            12 => @popCount(self.a),
             else => 0,
         };
     }
 
+    /// floor(sqrt(C)) and the remainder C - Q^2, which is at most 2Q.
+    fn isqrt64(self: Mpu) struct { q: u32, r: u64 } {
+        const q: u32 = std.math.sqrt(self.c);
+        return .{ .q = q, .r = self.c - @as(u64, q) * q };
+    }
+
     /// The 64-bit value of the word pair 16 + 2k, 17 + 2k: C, D, the
-    /// signed quotient and remainder, the unsigned ones, and 0 for the
-    /// spare pairs.
+    /// signed quotient and remainder, the unsigned ones, and the square
+    /// root, which is 32 bits, with the low word of its remainder in the
+    /// high word. Word 30 is the remainder's high word, and 31 is spare.
     fn read64(self: Mpu, k: u3) u64 {
         return switch (k) {
             0 => self.c,
@@ -248,7 +258,11 @@ pub const Mpu = struct {
             },
             4 => if (self.d == 0) ~@as(u64, 0) else self.c / self.d,
             5 => if (self.d == 0) self.c else self.c % self.d,
-            else => 0,
+            6 => {
+                const s = self.isqrt64();
+                return @as(u64, @as(u32, @truncate(s.r))) << 32 | s.q;
+            },
+            7 => self.isqrt64().r >> 32,
         };
     }
 
@@ -2103,7 +2117,55 @@ test "the math unit's results, with division by zero and overflow (SYSTEM §2)" 
     for (cases) |c| {
         const mpu: Mpu = .{ .a = c[0], .b = c[1] };
         for (0..10) |i| try testing.expectEqual(c[i], mpu.read(@intCast(i)));
-        for (10..16) |i| try testing.expectEqual(0, mpu.read(@intCast(i)));
+        for (13..16) |i| try testing.expectEqual(0, mpu.read(@intCast(i)));
+    }
+}
+
+test "the math unit's bit counts of A (SYSTEM §2)" {
+    // A, then CLZ, CTZ, and POPCNT.
+    const cases = [_][4]u32{
+        .{ 0, 32, 32, 0 },
+        .{ 1, 31, 0, 1 },
+        .{ 0x8000_0000, 0, 31, 1 },
+        .{ 0xFFFF_FFFF, 0, 0, 32 },
+        .{ 0x0001_0000, 15, 16, 1 },
+        .{ 0x00F0_0F00, 8, 8, 8 },
+        .{ 0x7FFF_FFFE, 1, 1, 30 },
+    };
+    for (cases) |c| {
+        var mpu: Mpu = .{ .a = c[0], .b = 0x1234_5678 };
+        for (0..3) |k| try testing.expectEqual(c[k + 1], mpu.read(@intCast(10 + k)));
+        // They depend on A only.
+        mpu.write(1, 0);
+        for (0..3) |k| try testing.expectEqual(c[k + 1], mpu.read(@intCast(10 + k)));
+    }
+}
+
+test "the math unit's square root of C (SYSTEM §2)" {
+    // C, then Q and the remainder C - Q^2.
+    const cases = [_][3]u64{
+        .{ 0, 0, 0 },
+        .{ 1, 1, 0 },
+        .{ 2, 1, 1 },
+        .{ 3, 1, 2 },
+        .{ 4, 2, 0 },
+        .{ 99, 9, 18 },
+        // 2^32 * 2^32 - 1 = (2^32 - 1)^2 + 2 * (2^32 - 1), the widest remainder.
+        .{ 0xFFFF_FFFF_FFFF_FFFF, 0xFFFF_FFFF, 0x1_FFFF_FFFE },
+        // (2^32 - 1)^2 = 0xFFFFFFFE_00000001.
+        .{ 0xFFFF_FFFE_0000_0001, 0xFFFF_FFFF, 0 },
+        .{ 0xFFFF_FFFE_0000_0000, 0xFFFF_FFFE, 0x1_FFFF_FFFC },
+        // 2^62 = (2^31)^2.
+        .{ 1 << 62, 1 << 31, 0 },
+    };
+    for (cases) |c| {
+        var mpu: Mpu = .{ .d = 7 };
+        mpu.write(16, @truncate(c[0]));
+        mpu.write(17, @truncate(c[0] >> 32));
+        try testing.expectEqual(@as(u32, @truncate(c[1])), mpu.read(28));
+        try testing.expectEqual(@as(u32, @truncate(c[2])), mpu.read(29));
+        try testing.expectEqual(@as(u32, @truncate(c[2] >> 32)), mpu.read(30));
+        try testing.expectEqual(0, mpu.read(31));
     }
 }
 
@@ -2130,7 +2192,7 @@ test "the math unit's 64-bit division, with division by zero and overflow (SYSTE
             try testing.expectEqual(@as(u32, @truncate(c[k])), mpu.read(@intCast(16 + 2 * k)));
             try testing.expectEqual(@as(u32, @truncate(c[k] >> 32)), mpu.read(@intCast(17 + 2 * k)));
         }
-        for (28..32) |i| try testing.expectEqual(0, mpu.read(@intCast(i)));
+        try testing.expectEqual(0, mpu.read(31));
     }
 }
 

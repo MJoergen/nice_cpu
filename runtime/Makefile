@@ -14,7 +14,7 @@ EMU = ../emulator/zig-out/bin/niceemu
 # and calls the program at 0x8000, or test/monitor_console.nasm, the same
 # with R1 = 0, which leaves the output on the console.
 TESTS = start start_wasm start_mon start_wasm_mon start_wasm_trap_mon exit exit_mon console_mon \
-  mul trap div div64 mul64 bits device edge trapvec trapreport trapreport_big
+  mul trap div div64 mul64 bits clz device edge trapvec trapreport trapreport_big
 SOFT_TESTS = mul div mul64 div64 edge
 START_start_wasm = start_wasm.nasm
 START_start_mon  = start_mon.nasm
@@ -46,6 +46,7 @@ OPTS_div        = -d 0x4d:32
 OPTS_div64      = -d 0x71:64
 OPTS_mul64      = -d 0x4a:16
 OPTS_bits       = -d 0x56:54
+OPTS_clz        = -d 0x24:64
 OPTS_edge       = -d 0xda:124
 OPTS_trapvec    = -d 0x9:1 -d 0x1d:3
 OPTS_device     = -s -d 0x81:8 -d 0xffff0000:3 -d 0xffff0052:1 -d 0xffff07ce:2

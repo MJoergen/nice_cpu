@@ -12,16 +12,29 @@
 ___wasm_trap
                 .DAT    0x0FE00000
 
-; __clz: R1 = the number of leading 0 bits in R1, 32 for 0. Shifts R1
-; right until it is 0, counting down from 32. Steps: 3 for 0, else 4 + 3k,
-; where k is the number of bits in R1. Uses R2.
+; __clz: R1 = the number of leading 0 bits in R1, 32 for 0. Searches by
+; halves: while R2 is below 2^16, 2^24, 2^28, and 2^30 in turn, it shifts
+; R2 left by 16, 8, 4, or 2 and adds that to the count, which leaves R2
+; at 2^30 or more. Then bit 31 says whether one more 0 bit leads. Steps: 3
+; for 0, else 19. Uses R2.
 __clz           MOVE[M] R2, R1
                 MOVE    R1, 32
         ?Z      RET
-__clz.loop
-                DEC     R1, R1
-                SHR[M]  R2, R2, 1
-        ?!Z     JMP     __clz.loop
+                MOVE    R1, 1           ; 1 - bit 31, added at the end
+                CMP     R2, 0x00010000
+        ?C      SHL     R2, R2, 16
+        ?C      ADD     R1, R1, 16
+                CMP     R2, 0x01000000
+        ?C      SHL     R2, R2, 8
+        ?C      ADD     R1, R1, 8
+                CMP     R2, 0x10000000
+        ?C      SHL     R2, R2, 4
+        ?C      ADD     R1, R1, 4
+                CMP     R2, 0x40000000
+        ?C      SHL     R2, R2, 2
+        ?C      ADD     R1, R1, 2
+                SHR     R2, R2, 31
+                SUB     R1, R1, R2
                 RET
 
 ; __ctz: R1 = the number of trailing 0 bits in R1, 32 for 0. Steps: 3 for

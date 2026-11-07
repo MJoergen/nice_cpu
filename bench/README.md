@@ -545,6 +545,14 @@ The rest are the f64 multiply and add, the conversions, `__mul64`,
 the start-up code, and the phases' own loops. `make core
 CORE_PROGRAMS=float` runs the program on a core.
 
+The changes of issue [#129](https://github.com/MJoergen/nice_cpu/issues/129)
+since then, each with the figures of the whole program after it:
+
+| Change | Instructions | Cycles by `make cycles` |
+|---|---|---|
+| none, V1.8 | 1249833 | 2301198 |
+| `__clz` searches by halves, in 19 steps rather than up to 100 | 1175454 (−6.0%) | 2017960 (−12.3%) |
+
 ## Dhrystone
 
 `dhrystone/` holds Dhrystone 2.1 by Reinhold P. Weicker: `dhry.h`,

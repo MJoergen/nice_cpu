@@ -15,7 +15,7 @@
 ; the handler is entered by a jump too. ___wasm_start is 0x8015, main
 ; 0x8016-0x801C, and lib.nasm follows, with ___wasm_trap at 0x801D, so
 ; PC = 0x801E. The report's calls push at 0xFFFFFEFE, and the last one, of
-; nice_putc for the newline, leaves 0x8169 there, the address after it.
+; nice_putc for the newline, leaves 0x8181 there, the address after it.
 ;
 ; Steps: 6 in the stand-in, 7 to the call of ___wasm_start, 1 in it, 2 for
 ; the pops, the jump to main, and 3 in main = 20 up to the jump to the

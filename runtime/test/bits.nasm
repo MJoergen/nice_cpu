@@ -18,13 +18,13 @@
 ; __popcnt64 includes __popcnt on both words, for example 10 + 6 + 6 = 22
 ; for 0.
 ;   0:          3 + 3 + 6 + 10 + 11 + 22                  = 55
-;   1:          7 + 6 + 6 + 14 + 12 + 22                  = 67
-;   0x80000000: 100 + 130 + 99 + 107 + 136 + 115          = 687
-;   2^48:       3 + 3 + 6 + 62 + 78 + 70                  = 222
-;   all ones:   100 + 6 + 99 + 107 + 12 + 208             = 532
-;   0x0F0F...:  28 + 22 + 27 + 95 + 28 + 124              = 324
-; which sum to 1887. A pass takes 33 steps besides them. The total is 5
-; (start up) + 6 (set up) + 6 * 33 + 1887 + 1 (return) + 1 (HALT) = 2098.
+;   1:          19 + 6 + 6 + 26 + 12 + 22                 = 91
+;   0x80000000: 19 + 130 + 99 + 26 + 136 + 115            = 525
+;   2^48:       3 + 3 + 6 + 26 + 78 + 70                  = 186
+;   all ones:   19 + 6 + 99 + 26 + 12 + 208               = 370
+;   0x0F0F...:  19 + 22 + 27 + 26 + 28 + 124              = 246
+; which sum to 1473. A pass takes 33 steps besides them. The total is 5
+; (start up) + 6 (set up) + 6 * 33 + 1473 + 1 (return) + 1 (HALT) = 1684.
 ;
 ; At the end R1 = 12 and R2 = 0 from the last __popcnt64, which leaves the
 ; low word's count, 4, in R3, and the high word in R4. R10-R12 survive the

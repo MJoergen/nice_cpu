@@ -508,9 +508,9 @@ hand.
 | `mandel` | Up to 16 iterations of the Mandelbrot set at each point of a 12 by 8 grid, in f32. | f32 multiply, add, subtract, and compare. |
 | `norm` | Normalizes 40 vectors of three f32 components from the array. | f32 square root and divide. |
 
-printf has no `%f` (issue [#68](https://github.com/MJoergen/nice_cpu/issues/68)),
-so a result is the bits of a float, or an FNV-1a hash of them, or of the
-iteration counts in `mandel`. `floatexpected.py` computes each phase in
+A result is the bits of a float, or an FNV-1a hash of them, or of the
+iteration counts in `mandel`, so that the check is exact and the
+program needs no float conversions. `floatexpected.py` computes each phase in
 Python from the sizes in `float.c`. Python's floats are f64, and it
 rounds the result of each f32 operation to f32 with `struct`, which
 gives the correctly rounded f32 result for +, −, ×, ÷, and the square

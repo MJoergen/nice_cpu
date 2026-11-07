@@ -85,6 +85,8 @@ Line 345: "No other function sets `errno`: `malloc` returns `NULL` with no code,
 
 Line 511: "printf has no `%f` (issue #68), so a result is the bits of a float, or an FNV-1a hash of them". #68 is closed by 31c11ac, and `printf` has it. The reason to print bits stands. **Fix:** "A result is the bits of a float, or an FNV-1a hash of them, or of the iteration counts in `mandel`, so that the check is exact and the program needs no float conversions."
 
+**Resolved**: The paragraph gives the reason that stands, and no longer names #68.
+
 ### 3.3 bench/README.md quotes the float benchmark's cycles on the core from `V1.8`
 
 Line 533: "`make core CORE_PROGRAMS=float` measures 2301987 there, 1.84 per instruction". That is the figure before the changes of #129; the message of 8dd4513 measured 1917617 cycles for 1058329 instructions on the pipelined core after them. RELEASE.md step 2.4 asks for the figures of the release. **Fix:** add the measured figure to the last row of the table of changes, or a sentence after it: "On the pipelined core the program then takes 1917617 cycles, 1.81 per instruction." The run table above it is labeled as `V1.8`'s, which is clear enough.

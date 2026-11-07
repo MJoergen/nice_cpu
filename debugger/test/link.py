@@ -240,6 +240,21 @@ def test_run_control(port: str, prog: str, at: dict[str, int]) -> None:
         r4 = link.read_word(REGS + 4)
         check("paused at LOOP before its first pass",
               pc == at["LOOP"] and r4 == 3, f"PC {pc:x} R4 {r4:x}")
+        # While paused, the bytes wait in the input buffer, 2048 bytes in
+        # niceemu, and the program does not read them: a send with timeout
+        # 0 returns what has no room, and one with a timeout gives up
+        rest = link.send_console(b"x" * 2100, timeout=0)
+        check("a send to a full input buffer returns the rest",
+              0 < len(rest) < 2100, f"{len(rest)} bytes")
+        try:
+            link.send_console(rest, timeout=0.2)
+            check("a send that the program does not read is an error",
+                  False)
+        except LinkError as e:
+            check("a send that the program does not read is an error",
+                  str(e).startswith("the program's input buffer is full")
+                  and str(e).endswith(f"{len(rest)} bytes not sent"),
+                  str(e))
         why = link.step()
         pc = link.read_word(REGS + 15)
         check("a step", why is None and pc == at["LOOP"] + 2,

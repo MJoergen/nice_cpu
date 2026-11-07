@@ -54,7 +54,8 @@ import nicedis  # noqa: E402
 
 from nicebin import Symbols, load_words, read_bin  # noqa: E402
 from nicelink import (BRK_ADDR, BRK_COUNT, BRK_EN, CONTROL, FREE,  # noqa: E402
-                      HALT_REASON, HALTED, HOLD, MAX_WORDS, PAUSE, RAM,
+                      FULL_WAIT, HALT_REASON, HALTED, HOLD, MAX_WORDS,
+                      PAUSE, RAM,
                       REASONS, REGS, STOP, VERSION, Link, LinkError,
                       add_arguments, open_link)
 
@@ -629,7 +630,8 @@ class Debugger(cmd.Cmd):
 
     def do_send(self, arg: str) -> None:
         r"""send TEXT: sends the text to the program, with escapes such as
-        \n, \r, and \x1b."""
+        \n, \r, and \x1b. It waits up to 2 s for room in the program's
+        input buffer."""
         text = codecs.decode(arg, "unicode_escape")
         self.link.send_console(text.encode("latin-1"))
 
@@ -639,7 +641,8 @@ class Debugger(cmd.Cmd):
 
     def do_console(self, arg: str) -> None:
         """console (c): passes the terminal through to the program, the keys
-        to its input and its output to the screen, until Ctrl-]."""
+        to its input and its output to the screen, until Ctrl-]. Keys that
+        its input buffer has no room for wait until the program reads."""
         fd = sys.stdin.fileno()
         if not os.isatty(fd):
             raise ValueError("the console needs a terminal; 'send' sends "
@@ -654,6 +657,7 @@ class Debugger(cmd.Cmd):
         print("console; Ctrl-] returns to the prompt")
         link = self.link
         line_open = False
+        queue = b""     # the keys that the input buffer had no room for
         try:
             termios.tcsetattr(fd, termios.TCSANOW, new)
             while True:
@@ -662,20 +666,29 @@ class Debugger(cmd.Cmd):
                     sys.stdout.buffer.write(data)
                     sys.stdout.buffer.flush()
                     line_open = not data.endswith(b"\n")
-                ready, _, _ = select.select([fd, link.fileno()], [], [], 0.1)
+                if queue:
+                    # What has room now; the rest waits for the program to
+                    # read, and Ctrl-] still returns meanwhile
+                    queue = link.send_console(queue, timeout=0)
+                ready, _, _ = select.select([fd, link.fileno()], [], [],
+                                            FULL_WAIT if queue else 0.1)
                 if link.fileno() in ready:
                     link.poll(0)
                 if fd in ready:
                     keys = os.read(fd, 1024)
                     end = keys.find(bytes([CONSOLE_END]))
                     if end >= 0:
-                        link.send_console(keys[:end])
+                        queue += keys[:end]
                         break
-                    link.send_console(keys)
+                    queue += keys
         finally:
             termios.tcsetattr(fd, termios.TCSANOW, old)
             if line_open:
                 print()
+        if queue:
+            # The keys typed before Ctrl-] that still wait get the time of
+            # a send, and then an error that counts those not sent
+            link.send_console(queue)
 
     def do_quit(self, arg: str) -> bool:
         """quit (q): leaves the processor as it is, and quits."""

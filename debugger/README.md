@@ -76,9 +76,9 @@ one. `help` lists the commands, and `help CMD` describes one.
 | `d [ADDR [N]]` | Disassembles N instructions, 16 by default, with the labels before them. Without ADDR, it goes on after the last `d`, or at the PC of the last stop. |
 | `ctl [VALUE]` | Reads the control register, or writes it. |
 | `symbols [FILE]` | Reads the labels of a `.sym` file, or counts them. |
-| `send TEXT` | Sends text to the program, with escapes such as `\n` and `\x1b`. |
+| `send TEXT` | Sends text to the program, with escapes such as `\n` and `\x1b`. It waits up to 2 s for room in the program's input buffer, and a program that has not read it by then is an error. |
 | `eof` | Ends the program's input. |
-| `console` (`c`) | Passes the terminal through to the program until Ctrl-]. It needs a terminal. |
+| `console` (`c`) | Passes the terminal through to the program until Ctrl-]. It needs a terminal. Keys that the program's input buffer has no room for wait until it reads them. |
 | `quit` (`q`) | Leaves the processor as it is, and quits. Ctrl-D quits too. |
 
 The program's console output and the link's notices are shown as they

@@ -24,8 +24,10 @@ of a held processor changes nothing. The words of a read or a write go
 in packets of at most MAX_WORDS.
 
 Console bytes to the program are paced by the free-space register, so
-that none is lost in its input buffer. The end of the input is a break
-on the UART, and a half-close of the TCP connection (DEBUG.md §7).
+that none is lost in its input buffer, and a buffer that the program
+does not read for SEND_WAIT is an error, so a send cannot hang. The end
+of the input is a break on the UART, and a half-close of the TCP
+connection (DEBUG.md §7).
 
 Only the Python standard library is used, so this runs on Linux and
 macOS. nicedbg.py is the debugger on the link, and nicebin.py reads the
@@ -90,6 +92,9 @@ ANSWER_WAIT = 0.3
 # takes an ESC with no byte after it as a key of its own (demo/demo.nasm,
 # T_ESC), so that a gap here does not cut an escape sequence in two.
 FULL_WAIT = 0.001
+# How long a paced send waits for room in the program's input buffer
+# before it gives up: a program that reads at all reads sooner
+SEND_WAIT = 2.0
 # How long a break holds the UART's line low. A board takes a frame of
 # zeros for one, 43 us at 230400 baud; this leaves room for the USB serial
 # chip. TIOCSBRK and TIOCCBRK set and clear it: Linux's asm-generic/ioctls.h
@@ -620,19 +625,33 @@ class Link:
 
     # The console
 
-    def send_console(self, data: bytes, paced: bool = True) -> None:
+    def send_console(self, data: bytes, paced: bool = True,
+                     timeout: float = SEND_WAIT) -> bytes:
         """Sends console bytes to the program, with 0xFF as ESC ESC. Paced,
         each part waits for room in the program's input buffer, and the
-        console bytes that arrive meanwhile are kept."""
+        console bytes that arrive meanwhile are kept. A buffer that stays
+        full for timeout seconds, because the program does not read it,
+        is an error; with a timeout of 0, the bytes that have no room are
+        returned at once instead. Returns the bytes not sent."""
+        room = time.monotonic()
         while data:
             n = len(data)
             if paced:
                 n = min(n, self.free())
                 if n == 0:
+                    if timeout == 0:
+                        return data
+                    if time.monotonic() - room >= timeout:
+                        raise LinkError(
+                            f"the program's input buffer is full, and the "
+                            f"program did not read it for {timeout:g} s; "
+                            f"{len(data)} bytes not sent")
                     self.poll(FULL_WAIT)
                     continue
+                room = time.monotonic()
             part, data = data[:n], data[n:]
             self.transport.write(part.replace(bytes([ESC]), bytes([ESC, ESC])))
+        return b""
 
     def end_input(self) -> None:
         """Ends the program's input: a break on the UART, or a half-close."""

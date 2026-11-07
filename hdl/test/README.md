@@ -48,6 +48,7 @@ The testbenches, the test programs, and the scripts that run them. [hdl/README.m
 | [jumpwords.nasm](jumpwords.nasm) | Jumps into constant words and to the instruction itself, with conditions on I, and backward conditional jumps, which DECODE predicts taken. It ends at a reserved word. |
 | [condlate.nasm](condlate.nasm) | Conditional late shifts, adjusted destinations in R14, `HALT` and `INT` right after two-cycle flag writes, and more forms of R15. |
 | [irqhazard.nasm](irqhazard.nasm) | Late shifts, adjusted destinations, and side effects on R14 and R15, for a request before each step. |
+| [timerwrite.nasm](timerwrite.nasm) | Writes to `TIMER_PERIOD` by instructions with a data read, which the pipelined core counts before their store, and reads of `TIMER_COUNT` after them. |
 | [shiftjump.nasm](shiftjump.nasm) | Every shift with R15 as its destination, `0<0` among them, whose opcode is `MOVE`'s. |
 | [rtiread.nasm](rtiread.nasm) | `RTI` that returns to instructions with data reads, run one step at a time. |
 | [pausepatch.nasm](pausepatch.nasm) | A word of code that `tb_core` writes while the core is paused, with its hand-checked trace in [pausepatch.expected](pausepatch.expected). |

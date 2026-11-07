@@ -2,6 +2,7 @@
 """Compares a core's run with interrupt requests against the emulator.
 
 Usage: irq_compare.py [options] PROGRAM.bin CORE.out INTR.log [-- EMULATOR_OPTIONS...]
+       irq_compare.py --test [--emu EMU]   the self-test of make test
 
 CORE.out is the core's trace and output, with "exit N" appended, as the
 makefile writes it. INTR.log is the interrupt log of tb_core's
@@ -32,19 +33,29 @@ instead:
    before step S - D either. The multi-cycle core takes a request at the
    first step it may, so D is 0 for it.
 
-With --read-delay, D is worked out for each request instead: the number of
-steps right before the interrupt entry that are instructions with a data
-read. The pipelined core takes a request at the first instruction
-boundary it reaches after the request, unless the next instruction has
-already issued a data read, and then the one after, and so on
-(MICROARCH.md §6). So it may be late by those instructions, and by no
-others.
+With --read-delay, the check follows the core instead. The pipelined core
+takes a request at the first instruction boundary it reaches after the
+request, unless the next instruction has already issued a data read, and
+then the one after, and so on (MICROARCH.md §6). So it may pass, without
+taking the request, a run of instructions with a data read that starts at
+the first boundary where ISA.md §7.1 allows the request, and from the end
+of that run on, it must take the request as ISA.md §7.1 says. That may be
+later still: an NMI goes first, and is followed by its RTI and the
+instruction after it. For each request it took at step S, the emulator
+runs with the request raised for the step it was raised for, and with the
+other requests as the core took them. If the emulator takes it before
+step S, at a step that is an instruction with a data read in the core's
+trace, the emulator runs again with the request raised for the step after
+that one, and so on, while the steps follow each other. The emulator must
+then take the request at step S, as the core did.
 """
 
 import argparse
 import os
 import re
+import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 
 from core_runs import DEFAULT_EMU, difference, run_emulator
@@ -105,15 +116,20 @@ def infer(log: str) -> tuple[list[str], list[Take], list[str]]:
 STEP = re.compile(r"(?:(NMI|IRQ) [0-9a-f]{2} )|([0-9a-f]{8}) ([0-9a-f]{8})( skipped)?")
 
 
+def step_lines(trace: str) -> list[str]:
+    """The lines of a trace that are steps."""
+    return [line for line in trace.splitlines()
+            if STEP.search(line) is not None and not line.startswith(("Halted", "Stopped", "Pending"))]
+
+
 def reads(trace: str) -> list[bool]:
     """For each step of a trace, whether it is an instruction that made a
     data read: an ALU or shift instruction, not skipped, with s0 or s1 in
     memory (ISA.md §8.2)."""
     steps: list[bool] = []
-    for line in trace.splitlines():
+    for line in step_lines(trace):
         m = STEP.search(line)
-        if m is None or line.startswith(("Halted", "Stopped", "Pending")):
-            continue
+        assert m is not None
         if m.group(1):
             steps.append(False)
             continue
@@ -133,32 +149,116 @@ def check(emu: str, binfile: str, core_output: str, log: str, emu_options: list[
     if diff is not None:
         problems.append(f"with {' '.join(options)}: {diff}")
     steps = reads(expected)
+    lines = step_lines(expected)
     for i, t in enumerate(takes):
-        delay = max_delay
-        if read_delay:
-            delay = 0
-            while t.step - delay - 1 >= 0 and t.step - delay - 1 < len(steps) and \
-                    steps[t.step - delay - 1]:
-                delay += 1
-        limit = t.step - delay
-        if limit <= t.raised:
-            continue
         # The other requests as the core took them, and this one as it was
         # raised.
         others = [o for j, u in enumerate(takes) if j != i
                   for o in (f"--{u.kind}", f"{u.step}:{u.vector}")]
-        early = [*emu_options, "--no-timer-irq", *others, f"--{t.kind}", f"{t.raised}:{t.vector_raised}",
-                 "-n", str(limit)]
-        out = run_emulator(emu, binfile, early)
-        pend = re.search(r"^Pending:(.*)$", out, re.M)
-        if pend is None or t.kind.upper() not in pend.group(1):
+        raised = t.raised
+        chained = False
+        while t.step - max_delay > raised:
+            early = [*emu_options, "--no-timer-irq", *others, f"--{t.kind}",
+                     f"{raised}:{t.vector_raised}", "-n", str(t.step - max_delay)]
+            out = run_emulator(emu, binfile, early)
+            pend = re.search(r"^Pending:(.*)$", out, re.M)
+            if pend is not None and t.kind.upper() in pend.group(1):
+                break
+            # The step where the emulator took it: the first one that is
+            # not the core's.
+            got = step_lines(out)
+            k = next((k for k, line in enumerate(got) if k >= len(lines) or line != lines[k]),
+                     len(got))
+            if read_delay and k < t.step and (not chained or k == raised) and steps[k]:
+                raised, chained = k + 1, True
+                continue
             problems.append(f"{t.kind} raised for step {t.raised} was taken at step {t.step}, "
-                            f"but the emulator takes it before step {limit}")
+                            f"but the emulator takes it at step {k}")
+            break
     return problems
+
+
+# The program of the self-test, with its steps. The core's run of each
+# case is the emulator's with the requests at the steps of the log's
+# "taken" lines, which is what check 2 requires.
+TEST_PROGRAM = """\
+                JMP     start           ; 0
+                .ORG    8
+                .DAT    nmi, irq
+                .ORG    0x100
+start           MOVE    R14, 0x40000000 ; 1: E = 1
+                MOVE    R1, data        ; 2
+                ADD     R2, @R1, 1      ; 3: a data read
+                ADD     R2, @R1, 2      ; 4: a data read
+                ADD     R3, R3, 1       ; 5
+                ADD     R3, R3, 1       ; 6
+                ADD     R3, R3, 1       ; 7
+                ADD     R3, R3, 1       ; 8
+                HALT
+nmi             RTI
+irq             RTI
+data            .DAT    5
+"""
+
+# Each case: the log, whether it uses --read-delay, and whether check 3
+# must pass.
+TEST_CASES = [
+    # Taken at the first step it may be.
+    ("raised 2 irq 09\naccepted irq\ntaken 2 irq 09\n", False, True),
+    # Late by one step without a data read.
+    ("raised 2 irq 09\naccepted irq\ntaken 3 irq 09\n", True, False),
+    # Late by the reads of steps 3 and 4, right before the entry.
+    ("raised 3 irq 09\naccepted irq\ntaken 5 irq 09\n", True, True),
+    # The same without --read-delay.
+    ("raised 3 irq 09\naccepted irq\ntaken 5 irq 09\n", False, False),
+    # Late by the reads, and then by step 5, which has none.
+    ("raised 3 irq 09\naccepted irq\ntaken 6 irq 09\n", True, False),
+    # Late by the read of step 4, and then by an NMI at step 5, its RTI,
+    # and the instruction after the RTI, which comes first.
+    ("raised 4 irq 09\nraised 5 nmi 08\naccepted nmi\ntaken 5 nmi 08\n"
+     "accepted irq\ntaken 8 irq 09\n", True, True),
+    # The same with the NMI one step later: the IRQ could be taken at step 5.
+    ("raised 4 irq 09\nraised 6 nmi 08\naccepted nmi\ntaken 6 nmi 08\n"
+     "accepted irq\ntaken 9 irq 09\n", True, False),
+    # The NMI before the read: no read to excuse the IRQ at step 2.
+    ("raised 2 irq 09\nraised 2 nmi 08\naccepted nmi\ntaken 2 nmi 08\n"
+     "accepted irq\ntaken 5 irq 09\n", True, True),
+    ("raised 2 irq 09\nraised 3 nmi 08\naccepted nmi\ntaken 3 nmi 08\n"
+     "accepted irq\ntaken 6 irq 09\n", True, False),
+]
+
+
+def self_test(emu: str) -> int:
+    """The self-test: check 3 on the cases of TEST_CASES."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    asm = os.path.join(here, "..", "..", "assembler", "niceasm.py")
+    failures = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        src, binfile = os.path.join(tmp, "t.nasm"), os.path.join(tmp, "t.bin")
+        with open(src, "w") as f:
+            f.write(TEST_PROGRAM)
+        subprocess.run([sys.executable, asm, src, "-o", binfile], check=True)
+        for n, (log, read_delay, ok) in enumerate(TEST_CASES, 1):
+            options, _, problems = infer(log)
+            assert not problems, problems
+            core = run_emulator(emu, binfile, ["--no-timer-irq", *options])
+            problems = check(emu, binfile, core, log, [], read_delay=read_delay)
+            if (not problems) != ok:
+                failures += 1
+                print(f"FAIL irq_compare self-test case {n}: expected "
+                      f"{'a pass' if ok else 'a failure'}, got {problems or 'a pass'}")
+    if not failures:
+        print(f"PASS irq_compare self-test, {len(TEST_CASES)} cases")
+    return 1 if failures else 0
 
 
 def main() -> None:
     args, emu_options = sys.argv[1:], []
+    if args[:1] == ["--test"]:
+        t = argparse.ArgumentParser()
+        t.add_argument("--test", action="store_true")
+        t.add_argument("--emu", default=DEFAULT_EMU)
+        sys.exit(self_test(t.parse_args(args).emu))
     if "--" in args:
         i = args.index("--")
         args, emu_options = args[:i], args[i + 1:]

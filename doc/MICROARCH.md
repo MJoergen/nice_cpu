@@ -1004,8 +1004,10 @@ the matching `--irq STEP:VEC` or `--nmi STEP:VEC` options, and with
 `--no-timer-irq`, so that the log's requests stand in for the timer's,
 and the diff is then exact. It also checks that no request was taken
 later than the emulator would take it: not at all on the multi-cycle
-core, and on the pipelined core by no more than the instructions with a
-data read right before the entry.
+core, and on the pipelined core by no more than a run of instructions
+with a data read, from the first step where the emulator would take it.
+From there on, the core must take it where the emulator does, after an
+NMI that goes first, for example.
 
 **Test order:**
 

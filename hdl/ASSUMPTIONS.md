@@ -121,15 +121,22 @@ change outside `hdl/` are marked **Outside hdl/**, and are also
     core at the boundary before step S. The core is then late only when
     step S had already issued a data read, as MICROARCH.md §6 allows.
 12. **`irq_compare.py --read-delay`** checks exactly that: a request may be
-    taken late by the run of steps right before its entry that are
-    instructions with a data read, and by nothing else. `make test` on the pipelined core, `make sweep`, and
+    taken late by a run of steps that are instructions with a data read,
+    from the first step where the emulator would take it, and from the
+    end of that run on, as the emulator takes it. That may be later
+    still, after an NMI, its `RTI`, and the instruction after the `RTI`. `make test` on the pipelined core, `make sweep`, and
     `irq_sweep.py` use it, and skip the exact diff
     against the emulator for runs with requests, which cannot hold
     (MICROARCH.md §9).
 13. **The timer in `tb_core` ticks with `instret_o`** and the report of
     each interrupt entry, not with the report of each step. A read of
     `TIMER_COUNT` then sees the ticks of every older instruction, as in
-    the emulator, whose timer counts steps.
+    the emulator, whose timer counts steps. The pipelined core counts an
+    instruction with a data read before its store. When that store
+    writes `TIMER_PERIOD`, `tb_core` gives the timer the instruction's
+    tick again, so that the new count sees it, as in the emulator. The
+    tick on the old count before the store can raise a request that the
+    emulator would not. `irq_compare.py` takes it as any other request.
 14. **A timer request may be taken late too**, like any other. `tb_core`
     logs the timer's requests as IRQs, and `irq_compare.py` runs the
     emulator with its option `--no-timer-irq`, which keeps the timer

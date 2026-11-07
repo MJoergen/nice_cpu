@@ -904,7 +904,11 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   steps, not cycles. `timer` runs the timer, which counts steps here: its
   `tick_i` is the core's `instret_o` and its report of each interrupt
   entry, so that a read of `TIMER_COUNT` sees the ticks of every older
-  instruction on any core. Its request and those of the
+  instruction on any core. The pipelined core counts an instruction with
+  a data read before its store, so when that store writes `TIMER_PERIOD`,
+  the timer gets the instruction's tick again with the write, and the
+  new count sees it, as in the emulator. A read of the old count cannot
+  come between the two. Its request and those of the
   interrupt source share the core's IRQ port, with the vector of the one raised first when both are pending, as the emulator merges them.
 - `test/shift.nasm`.
 - `test/irqwave.nasm`, with two IRQs: one that comes before an instruction
@@ -1157,12 +1161,19 @@ runs it after each run with requests, the random programs included, and
 agrees with the comparison that uses the steps the requests were raised
 for.
 
-With `--read-delay`, the number of steps a request may be late is worked
-out for each request taken: the steps right before its interrupt entry
-that are instructions with a data read, not skipped. A core that takes a
+With `--read-delay`, the check follows the core. A core that takes a
 request at the first instruction boundary after it arrives, unless the
-next instruction has already issued a data read (MICROARCH.md §6), passes
-this. `test/irq_sweep.py` takes the same option, and then compares the
+next instruction has already issued a data read (MICROARCH.md §6), may
+pass a run of instructions with a data read, not skipped, that starts at
+the first step where the emulator would take the request. After that run
+it must take the request where the emulator does, which may be later
+still, after an NMI that goes first. So the emulator runs with the
+request raised as it was. If it takes it at a step that is such an
+instruction in the core's run, it runs again with the request raised for
+the next step, and so on, while the steps follow each other. The emulator
+must then take the request at the step where the core took it.
+`irq_compare.py --test` checks this on a small program with made-up logs,
+in `make test`. `test/irq_sweep.py` takes the same option, and then compares the
 core's runs only through `irq_compare.py`, and checks the self-check of
 `hazard.nasm` on the core's run.
 

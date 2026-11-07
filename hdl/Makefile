@@ -289,9 +289,11 @@ endef
 # irqhazard also with a request before each step, through
 # test/irq_sweep.py, without delays. test/samereg_prog.py writes one more,
 # with one register in all three fields of a shift. smcskid came later:
-# stores into an instruction in DECODE's skid register.
+# stores into an instruction in DECODE's skid register. So did timerwrite:
+# writes to TIMER_PERIOD by instructions with a data read, and reads of
+# TIMER_COUNT after them.
 HAZARD_PROGS = latecount twocycle r15mix r14cond r0odd smclate readorder instret_late \
-  jumpwords condlate irqhazard shiftjump smcskid predict
+  jumpwords condlate irqhazard shiftjump smcskid predict timerwrite
 
 # test/fstats.nasm reads the fetch statistics (MICROARCH.md §8.1), which
 # only the pipelined core has, and checks itself. The emulator has none, so the run
@@ -472,9 +474,13 @@ run/split:
 run/budget:
 	@$(PYTHON) test/timing_budget.py --test
 
+# The check of test/irq_compare.py against made-up interrupt logs.
+run/irqcompare: emulator
+	@$(PYTHON) test/irq_compare.py --test --emu $(EMU)
+
 # The runs of make test: the unit tests, tb_link and tb_trace, and those of
 # each core in CORES.
-runs: run/split run/budget $(UNITS:%=run/unit/%) $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
+runs: run/split run/budget run/irqcompare $(UNITS:%=run/unit/%) $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
 
 # More random programs than make test runs, for example
 #     make random RANDOM_SEEDS="$$(seq 31 90)" RANDOM_STALL=60 RANDOM_STEPS=5000

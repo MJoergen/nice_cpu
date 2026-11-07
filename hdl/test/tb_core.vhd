@@ -98,11 +98,13 @@
 -- core's instret_o, and the report of each interrupt entry. A data read of
 -- TIMER_COUNT must see the ticks of every older instruction, and the
 -- pipelined core raises instret_o in time for that, but may report a step
--- later (src/pipeline.vhd). Its request and the IRQ of p_intr reach the core
--- as one request, with the vector of the one raised first (p_intr's, when
--- both are raised in the same cycle), and the core's ready takes both.
--- That is how the emulator merges a request of the timer with one from
--- --irq.
+-- later (src/pipeline.vhd). It counts an instruction with a data read
+-- before its store, so a write of that store to TIMER_PERIOD gets the
+-- instruction's tick again, below. Its request and the IRQ of p_intr
+-- reach the core as one request, with the vector of the one raised first
+-- (p_intr's, when both are raised in the same cycle), and the core's
+-- ready takes both. That is how the emulator merges a request of the
+-- timer with one from --irq.
 --
 -- With G_PAUSE = P, p_pause raises pause_i (MICROARCH.md §6.1) in a random
 -- P percent of the cycles, from G_SEED, so that the core pauses and goes
@@ -443,6 +445,9 @@ architecture simulation of tb_core is
    signal retire      : t_retire;
    signal regs        : t_regs;
    signal tick        : std_logic;
+   signal early       : natural;     -- Instructions counted, not yet reported
+   signal period_we   : std_logic;   -- A write to TIMER_PERIOD is accepted now
+   signal timer_tick  : std_logic;
    signal done        : std_logic;
    signal status      : natural;
 
@@ -611,6 +616,47 @@ begin
 
    tick <= instret or (retire.valid and retire.intr);
 
+   -- The tick of an instruction that wrote TIMER_PERIOD comes after the
+   -- write, as in the emulator. The pipelined core counts an instruction
+   -- with a data read on instret_o when the bus accepts its last read, which
+   -- is before its store (src/pipeline.vhd), and reports it when the store
+   -- is accepted. early counts such instructions, and when the store of one
+   -- is a write to TIMER_PERIOD, the timer gets its tick again in that
+   -- cycle, so that the new count sees it. Older instructions are reported
+   -- before it, and no younger one issues a read before its store, so early
+   -- is not 0 then only if it counted that instruction.
+   period_we <= dbus_cyc and slave_stb(C_TIMER) and not slave_stall(C_TIMER) and
+                dbus_we and not patch_cyc when dbus_addr(3 downto 0) = X"0" else
+                '0';
+
+   timer_tick <= '1' when tick = '1' or (period_we = '1' and early > 0) else
+                 '0';
+
+   p_early : process (clk)
+      variable early_v : integer;
+   begin
+      if rising_edge(clk) then
+         early_v := early;
+         if instret = '1' then
+            early_v := early_v + 1;
+         end if;
+         if retire.valid = '1' and retire.intr = '0' then
+            early_v := early_v - 1;
+         end if;
+         assert early_v >= 0
+            report "an instruction is reported that was not counted"
+            severity failure;
+         assert period_we = '0' or early = 0 or
+                (retire.valid = '1' and retire.intr = '0' and instret = '0')
+            report "a write to TIMER_PERIOD by an instruction counted early, not reported with it"
+            severity failure;
+         early <= early_v;
+         if rst = '1' then
+            early <= 0;
+         end if;
+      end if;
+   end process p_early;
+
    core_irq_valid  <= irq_valid or timer_valid;
    core_irq_vector <= irq_vector when irq_valid = '1' else
                       timer_vector;
@@ -685,7 +731,7 @@ begin
       port map (
          clk_i        => clk,
          rst_i        => rst,
-         tick_i       => tick,
+         tick_i       => timer_tick,
          wb_cyc_i     => dbus_cyc,
          wb_stb_i     => slave_stb(C_TIMER),
          wb_stall_o   => slave_stall(C_TIMER),

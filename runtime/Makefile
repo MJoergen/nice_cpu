@@ -106,9 +106,11 @@ test: emulator
 	@$(MAKE) --no-print-directory -C libc test
 
 # The float library, translated from float.wasm as the library module float
-# (WASM.md). Only float.wasm is checked in.
+# (WASM.md). Only float.wasm is checked in. It is translated with --no-mpu,
+# so that it calls __udiv64 rather than using the math unit, and so joins
+# with muldiv_mpu.nasm and muldiv_soft.nasm alike.
 float.nasm: float.wasm ../translator/nicewasm.py
-	$(PYTHON) ../translator/nicewasm.py --library float -o float.nasm float.wasm
+	$(PYTHON) ../translator/nicewasm.py --library float --no-mpu -o float.nasm float.wasm
 
 # Rebuilds float.wasm from float.zig and parts of Zig's compiler_rt. This
 # needs Zig 0.17. Each compiler_rt file imports compiler_rt.zig, whose

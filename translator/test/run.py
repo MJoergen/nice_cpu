@@ -2739,6 +2739,24 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
             bits32(f32(0x00800000) + f32(0x40000000) + fop(0x95), 0x00400000),
             # A check that fails.
             bits32(f32(0x3F800000) + f32(0x40000000) + fop(0x92), 0x40000000))))), "", 0xFFFFFFFE),
+    # More f32 quotients, for the remainder of the u64 divide in float.zig.
+    ("float32div", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        exports(("main", 0, 0)),
+        code((1, bits(0,
+            # The widest significands: (2 - 2^-23) / (1 + 2^-23) is
+            # 2 - 3 * 2^-23 and a little more, which rounds down to it.
+            bits32(f32(0x3FFFFFFF) + f32(0x3F800001) + fop(0x95), 0x3FFFFFFD),
+            # 3 / (1 + 2^-23) is 2^-46 above the tie between 3 - 2^-22 and
+            # 3 - 2^-21, so only the remainder rounds it up to 3 - 2^-22.
+            bits32(f32(0x40400000) + f32(0x3F800001) + fop(0x95), 0x403FFFFF),
+            # 1 / the largest f32 is subnormal, 2^-128 and a little more.
+            bits32(f32(0x3F800000) + f32(0x7F7FFFFF) + fop(0x95), 0x00200000),
+            # The largest f32 / 0.5 overflows to infinity.
+            bits32(f32(0x7F7FFFFF) + f32(0x3F000000) + fop(0x95), 0x7F800000),
+            # A check that fails.
+            bits32(f32(0x3F800000) + f32(0x40000000) + fop(0x92), 0x40000000))))), "", 0x1E),
     # The same for f64. 0.1 = 0x3FB999999999999A, 0.2 = 0x3FC999999999999A,
     # 1e10 = 0x4202A05F20000000, 1/3 = 0x3FD5555555555555.
     ("float64", module(

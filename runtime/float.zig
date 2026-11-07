@@ -339,19 +339,29 @@ fn div(comptime T: type, a: Layout(T).Bits, b: Layout(T).Bits) Layout(T).Bits {
         ma <<= 1;
         e -= 1;
     }
-    // q = floor(ma / mb * 2^(mant + 2)), bit by bit, so it has mant + 3
-    // bits: the significand and two more. The remainder r is the sticky
-    // part. r < 2 * mb, so it never overflows.
+    // q = floor(ma / mb * 2^(mant + 2)), so it has mant + 3 bits: the
+    // significand and two more. A remainder r other than 0 is the sticky
+    // part.
     var q: L.Bits = 0;
-    var r = ma;
-    var i: u32 = 0;
-    while (i < L.mant + 3) : (i += 1) {
-        q <<= 1;
-        if (r >= mb) {
-            r -= mb;
-            q |= 1;
+    var r: L.Bits = 0;
+    if (T == f32) {
+        // ma * 2^25 < 2^50 fits in a u64, so this is one u64 divide and
+        // one remainder, which nicewasm sends to the math unit.
+        const n = @as(u64, ma) << (L.mant + 2);
+        q = @intCast(n / mb);
+        r = @intCast(n % mb);
+    } else {
+        // Bit by bit. r < 2 * mb, so it never overflows.
+        r = ma;
+        var i: u32 = 0;
+        while (i < L.mant + 3) : (i += 1) {
+            q <<= 1;
+            if (r >= mb) {
+                r -= mb;
+                q |= 1;
+            }
+            r <<= 1;
         }
-        r <<= 1;
     }
     var field = e + L.bias; // the biased exponent of the result
     if (field >= 2 * L.bias + 1) return sign | L.inf;

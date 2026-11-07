@@ -461,7 +461,7 @@ and `make test` runs it.
 nicewasm, the measure that [translator/README.md](../translator/README.md)
 quotes for `test/safe.zig` and the float library. `make words` prints it
 for `bench.wasm`, `translator/test/safe.wasm`, and `runtime/float.wasm`:
-8438, 5903, and 6583 words. Each module is translated and
+8438, 5903, and 6616 words. Each module is translated and
 assembled on its own, with the labels it uses but does not define, such
 as the runtime's routines, defined as 0 first; a constant takes a whole
 word whatever its value (ISA.md §3), so that changes no size. The count
@@ -552,6 +552,7 @@ since then, each with the figures of the whole program after it:
 |---|---|---|
 | none, V1.8 | 1249833 | 2301198 |
 | `__clz` searches by halves, in 19 steps rather than up to 100 | 1175454 (−6.0%) | 2017960 (−12.3%) |
+| and the f32 quotient is one u64 divide, not 26 steps of a loop | 1116682 (−10.7%) | 1957917 (−14.9%) |
 
 ## Dhrystone
 

@@ -206,12 +206,15 @@ The C library below has the same routines, in `nice.h`.
 
 NICE has no float instructions, so `float.nasm` does float arithmetic in
 software. It is the library module `float` of WASM.md: wasm code,
-translated by `nicewasm --library float`. Its routines take and return the
+translated by `nicewasm --library float --no-mpu`. With `--no-mpu` its
+one u64 divide calls `__udiv64`, so the library joins with either
+`muldiv_mpu.nasm` or `muldiv_soft.nasm`. Its routines take and return the
 bits of the numbers, an `f32` in one word and an `f64` in two, low word
 first, by the rules of ABI.md. Most come unchanged from Zig's compiler_rt.
 `float.zig` adds those whose meaning differs from C's, or that compiler_rt
 has only with float instructions inside. It also has its own division,
-because compiler_rt's gives 0 when the quotient is subnormal.
+because compiler_rt's gives 0 when the quotient is subnormal. The f32
+quotient is one u64 divide, and the f64 one is found bit by bit.
 
 | Labels | Result |
 |---|---|

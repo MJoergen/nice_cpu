@@ -183,3 +183,12 @@ proposed again. The open items are the
   lengths, and the chunk. One window with a select bit in `ETH_CHUNK`
   costs a program one write per 8 words when it copies a received frame
   into a reply (SYSTEM.md §7).
+- **`long double` as wasm32's binary128** (#130). Clang has no
+  `-mlong-double-64` for wasm32, so the type is IEEE binary128, and each
+  operation is a call such as `__multf3`. A prototype with Zig's
+  compiler_rt routines linked into the program worked with no change to
+  nicewasm, but all of them take 8210 words, and a divide 5100 steps.
+  musl has true binary128 versions of the trigonometric functions only;
+  its `expl`, `logl`, and `powl` call the double ones. Out of scope for a
+  32-bit hobby CPU: `math.h` has no `long double` functions, and float
+  formatting and parsing (#68) work in double.

@@ -1,6 +1,6 @@
 .{
     .name = .niceemu,
-    .version = "1.7.0",
+    .version = "1.8.0",
     .fingerprint = 0x554256ad346e936,
     .minimum_zig_version = "0.17.0",
     .dependencies = .{

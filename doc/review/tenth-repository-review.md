@@ -16,6 +16,8 @@ Reviewed on 2026-11-07: the eleven commits between `V1.8` and the head of `dev-V
 
 RELEASE.md step 2.9 asks for the new tag's version there before `release.py check`, as a change after the stamp makes the stamp stale. **Fix:** `1.9.0`, in a commit before `release.py check`.
 
+**Resolved**: `emulator/build.zig.zon` says `1.9.0`.
+
 ### 1.2 The `V1.9` section of RELEASE_NOTES.md
 
 It does not exist yet, as expected before the tag. Besides the five issues, its upgrade notes should say:

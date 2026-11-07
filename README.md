@@ -286,3 +286,6 @@ are not covered by it; see
 `emulator/src/font.zig`, is generated from Spleen 16×32, which is under
 the BSD 2-Clause license in `emulator/font/LICENSE.spleen`, and a build
 with `-Dwindow` compiles SDL 3 in, which is under the zlib license.
+The math functions of the C library, in `runtime/libc/src/math/`, are
+musl's, under musl's MIT license and the notices in their files,
+collected in `COPYRIGHT` there.

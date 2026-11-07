@@ -195,10 +195,20 @@ profile: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/float.bin $(BUILD)/bench.
 	@NICEEMU=$(EMU) $(PYTHON) cycprof.py $(BUILD)/float.full.nasm $(BUILD)/float.bin
 
 # The size in words of the translated modules the READMEs quote: the
-# benchmark's, translator/test/safe.zig's, and the float library's.
+# benchmark's, translator/test/safe.zig's, the float library's, and that
+# of a module of all the math functions of the C library, in double and
+# float, which needs clang.
+MATH_FUNCS = acos asin atan atan2 ceil copysign cos exp fabs floor fmax fmin fmod frexp \
+  ldexp log log10 log2 modf nearbyint pow rint round scalbn sin sqrt tan trunc
 words:
 	@$(PYTHON) words.py bench.wasm ../translator/test/safe.wasm
 	@$(PYTHON) words.py --library float ../runtime/float.wasm
+	@$(MAKE) -s --no-print-directory -C $(LIBC) libc.a
+	@mkdir -p $(BUILD)
+	@$(CLANG) --target=wasm32 -mbulk-memory -nostdlib -Wl,--no-entry \
+	  $(foreach f,$(MATH_FUNCS),-Wl,--export=$(f) -Wl,--export=$(f)f) \
+	  -o $(BUILD)/math.wasm $(LIBC)/libc.a
+	@$(PYTHON) words.py $(BUILD)/math.wasm
 
 # Needs mypy (pip install mypy).
 typecheck:

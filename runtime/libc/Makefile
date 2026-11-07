@@ -13,6 +13,15 @@ LDFLAGS = -nostdlib -Wl,--no-entry -Wl,--export=main -Wl,--stack-first -Wl,-z,st
 SRCS = $(wildcard src/*.c)
 OBJS = $(SRCS:src/%.c=build/%.o)
 
+# The math functions of math.h, musl's but for libm.h, features.h, and
+# builtin.c (src/math/COPYRIGHT). They include their own headers with
+# angle brackets, as in musl. -Os keeps clang from unrolling the loops of
+# __rem_pio2_large, the reduction of a huge argument of sin, cos, and tan,
+# which saves 2200 words and no step on other arguments.
+MATH_CFLAGS = $(filter-out -O2,$(CFLAGS)) -Os -I src/math
+MATH_SRCS = $(wildcard src/math/*.c)
+MATH_OBJS = $(MATH_SRCS:src/math/%.c=build/math/%.o)
+
 # mchess keeps a move list of 2.5 KB on the stack in each level of its
 # search: five levels, and then one per capture in the quiescence search,
 # at most 30, since no king is taken. With main and the root, that is about
@@ -25,20 +34,26 @@ BIGSTACK = -Wl,-z,stack-size=131072 -Wl,--initial-memory=262144
 # The test programs, test/X.c. Their .wasm files are checked in, so make
 # test needs no C compiler; make wasm rebuilds them. A test/X.input file is
 # the console input of test X.
-TESTS = stdio stream string stdlib scanf nice printf strings numbers sscanf malloc abort exit limits assert time mchess
+TESTS = stdio stream string stdlib scanf nice printf strings numbers sscanf malloc abort exit limits assert time math mchess
+# The tests that use floats, which are joined with the float library too.
+FLOAT_TESTS = math
 # The tests that also run as a program under a monitor, as X_mon: joined
 # after ../test/monitor.nasm, the stand-in for a monitor at 0, with
 # ../start_wasm_mon.nasm, and compared with test/X_mon.expected, which also
 # shows R2, the number of bytes the stand-in's putc routine wrote.
 MON_TESTS = exit
 
-libc.a: $(OBJS)
+libc.a: $(OBJS) $(MATH_OBJS)
 	rm -f $@
-	$(AR) rcs $@ $(OBJS)
+	$(AR) rcs $@ $(OBJS) $(MATH_OBJS)
 
 build/%.o: src/%.c $(wildcard include/*.h)
 	@mkdir -p build
 	$(CLANG) $(CFLAGS) -c -o $@ $<
+
+build/math/%.o: src/math/%.c $(wildcard include/*.h src/math/*.h)
+	@mkdir -p build/math
+	$(CLANG) $(MATH_CFLAGS) -c -o $@ $<
 
 wasm: libc.a
 	@for t in $(TESTS); do \
@@ -47,7 +62,7 @@ wasm: libc.a
 	@chmod -x test/*.wasm
 
 # Each test/X.wasm is translated and joined with the start-up code,
-# lib.nasm, and muldiv_mpu.nasm. It is assembled and run, and the console
+# lib.nasm, and muldiv_mpu.nasm, and float.nasm if it is in FLOAT_TESTS. It is assembled and run, and the console
 # output, main's result in R1, and the exit status are compared with
 # test/X.expected. With KEEP=DIR, an absolute path, each test also leaves
 # its program in DIR/libc_X.bin, and its console input in DIR/libc_X.input,
@@ -59,7 +74,8 @@ wasm: libc.a
 # program, and $(4) the registers to show.
 define check
 	@$(NICEWASM) -o test/$(1).out.nasm test/$(2).wasm
-	@cat $(3) test/$(1).out.nasm ../lib.nasm ../muldiv_mpu.nasm > test/$(1).full.nasm
+	@cat $(3) test/$(1).out.nasm ../lib.nasm ../muldiv_mpu.nasm \
+	  $(if $(filter $(2),$(FLOAT_TESTS)),../float.nasm) > test/$(1).full.nasm
 	@$(ASM) -o test/$(1).out.bin test/$(1).full.nasm
 	@$(EMU) $(if $(wildcard test/$(2).input),--input test/$(2).input) test/$(1).out.bin < /dev/null > test/$(1).raw; echo "exit $$?" > test/$(1).status
 	$(if $(KEEP),@mkdir -p $(KEEP) && cp test/$(1).out.bin $(KEEP)/libc_$(1).bin)
@@ -72,15 +88,18 @@ define check
 endef
 
 test: emulator
+	@$(MAKE) -s --no-print-directory -C .. float.nasm
 	$(foreach t,$(TESTS),$(call check,$(t),$(t),../start_wasm.nasm,R1  [0-9a-f]*))
 	$(foreach t,$(MON_TESTS),$(call check,$(t)_mon,$(t),../test/monitor.nasm ../start_wasm_mon.nasm,R1  [0-9a-f]* R2  [0-9a-f]*))
 	@rm -f test/*.out test/*.raw test/*.status test/*.out.nasm test/*.full.nasm test/*.out.bin
 
 # A random test of the printf family against a model of C's printf,
-# test/fuzz_printf.py. It compiles a program with clang, so make test
-# does not run it.
+# test/fuzz_printf.py, and one of the math functions against the same
+# code on the host and the host's libm, test/fuzz_math.py. They compile
+# programs with clang, so make test does not run them.
 fuzz: libc.a emulator
 	@$(PYTHON) test/fuzz_printf.py 1 300
+	@$(PYTHON) test/fuzz_math.py 1 1000
 
 emulator:
 	$(MAKE) -C ../../emulator build

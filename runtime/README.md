@@ -266,6 +266,7 @@ Zig keeps only the objects of `libc.a` that the program references.
 | `stdio.h` | `FILE`, `stdin`, `stdout`, `stderr`, `putchar`, `puts`, `getchar`, `fputc`, `putc`, `fputs`, `fgetc`, `getc`, `ungetc`, `fgets`, `fflush`, `printf`, `fprintf`, `sprintf`, `snprintf`, `vprintf`, `vfprintf`, `vsprintf`, `vsnprintf`, `scanf`, `fscanf`, `sscanf`, `vscanf`, `vfscanf`, `vsscanf` |
 | `string.h` | `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`, `strnlen`, `strcmp`, `strncmp`, `strcpy`, `strncpy`, `strcat`, `strncat`, `strchr`, `strrchr`, `strstr`, `strcspn` |
 | `stdlib.h` | `malloc`, `calloc`, `realloc`, `free`, `abs`, `labs`, `llabs`, `atoi`, `atol`, `strtol`, `strtoul`, `rand`, `srand`, `abort`, `exit` |
+| `math.h` | In double, and in float with an `f`, such as `sinf`: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `log`, `log10`, `log2`, `pow`, `sqrt`, `fmod`, `frexp`, `ldexp`, `scalbn`, `modf`, `floor`, `ceil`, `trunc`, `round`, `rint`, `nearbyint`, `fabs`, `copysign`, `fmin`, and `fmax`. The macros `fpclassify`, `isfinite`, `isinf`, `isnan`, `isnormal`, `signbit`, `HUGE_VAL`, `HUGE_VALF`, `INFINITY`, `NAN`, and `math_errhandling`, the types `float_t` and `double_t`, and POSIX's constants, such as `M_PI`. See Math functions below. |
 | `assert.h` | `assert` and `static_assert`. A failed `assert` prints `file:line: function: Assertion `expr' failed.` and calls `abort`. `-DNDEBUG` removes the checks. |
 | `time.h` | `clock`, with `CLOCKS_PER_SEC` 1000000 and `clock_t` unsigned, from the microsecond counter of SYSTEM.md §3, which counts the host's time in the emulator, and wraps after 71.6 minutes on a board; `time`, which returns −1 because no device has the date; and the types `clock_t` and `time_t`. |
 | `errno.h` | `errno`, one for the whole program, 0 at start, and the codes `EINVAL`, `EDOM`, `ERANGE`, and `EILSEQ`. Only `strtol` and `strtoul` set it, and so `atoi` and `atol`: to `ERANGE` on an overflow, and to `EINVAL` for a base other than 0 and 2 to 36. |
@@ -301,7 +302,11 @@ The library is small on purpose:
   - in `string.h`, `strcoll`, `strspn`, `strpbrk`, `strtok`, `strdup`, and
     `strerror`;
   - in `ctype.h`, `isblank`;
-  - in `time.h`, `difftime`, `mktime`, and `strftime`.
+  - in `time.h`, `difftime`, `mktime`, and `strftime`;
+  - in `math.h`, the hyperbolic functions, `hypot`, `cbrt`, `exp2`,
+    `expm1`, `log1p`, `fma`, `remainder`, `lround` and the other
+    conversions to integers, `nextafter`, the comparison macros such as
+    `isgreater`, and every `long double` function.
 - `scanf` and `sscanf` support white space and ordinary characters in the
   format, `*` to read without storing, a width, the length modifiers
   `hh h l ll z t j`, and the conversions `d i u o x X p c s [ n %`. A set
@@ -359,6 +364,83 @@ the functions and link `libc.a`:
     rustc ... -C link-arg=runtime/libc/libc.a prog.rs
 
 The preferred way is `nice.zig` or `nice.rs`, below.
+
+### Math functions
+
+The functions of `math.h` are musl's, from musl 1.2.5, unchanged, in
+`libc/src/math/`. They are under musl's MIT license and the notices in
+their files, which `libc/src/math/COPYRIGHT` collects. Three files there
+are this library's own: `libm.h` and `features.h` stand in for musl's
+internal headers, and `builtin.c` holds the functions that `math.h` maps
+to clang's built-ins. Their float arithmetic is wasm float instructions,
+which nicewasm turns into calls of the float library above, so a program
+that uses them is joined with `float.nasm`, as `nicebuild.py` does when
+the program needs it. The float library could not hold them: a library
+module may not use float instructions. The library compiles them with
+`-Os`, which keeps clang from unrolling the loops of `__rem_pio2_large`,
+the reduction of a huge argument of `sin`, `cos`, and `tan`. That saves
+2200 words and costs no step on other arguments.
+
+- **Accuracy.** Each result is within 1 ulp of the true value, but that
+  of `atan2f`, within 1.5: its error reaches 1.23 ulp, where glibc's
+  `atan2f` gives the same result. `sqrt`, `fmod`, `frexp`, `ldexp`,
+  `scalbn`, `modf`, `fmin`, `fmax`, the roundings, `fabs`, and `copysign`
+  are exact. The float library rounds each operation correctly and has
+  no fused multiply-add, so the results are bit for bit those of musl on
+  a host with IEEE 754 doubles. `acosf(-1)`, `acosf(0)`, and `atanf` of
+  an infinity give the float below π or π/2, 0.63 ulp from the true
+  value, as musl does.
+- **No error reports.** No function sets `errno`, and NICE has no
+  floating-point exceptions, so `math_errhandling` is 0. A domain error
+  gives a NaN, a pole or an overflow an infinity, and an underflow 0 or a
+  subnormal. C17 7.12 asks for `MATH_ERRNO` or `MATH_ERREXCEPT`, so this
+  departs from it. Clang assumes the same for wasm32: unless told
+  otherwise, it takes math functions to leave `errno` alone.
+- **Round to nearest only.** The float library has no other rounding
+  mode, and there is no `fenv.h`, so `nearbyint` is `rint`.
+- **Built-ins.** `math.h` defines `sqrt`, `fabs`, `copysign`, `floor`,
+  `ceil`, `trunc`, `rint`, `nearbyint`, and their float versions as
+  macros for clang's built-ins. Each is one wasm instruction: a call of
+  the float library, or a bit operation for `fabs` and `copysign`. The
+  functions exist too, for a pointer to one. The classification macros
+  test the bits, with no call.
+- **No `long double`.** wasm32's `long double` is a binary128, which the
+  float library does not support.
+
+A call costs, on the emulator with the math unit, the steps below,
+averaged over 32 arguments in the range each function is most used in,
+such as −10 to 10 for `sin`. Each also brings the words below into the
+program: its own and those of the routines it calls, the float library
+not counted. A program that uses all of them gets 23392 words, as
+`make words` in `bench/` prints. The reduction of a huge argument, past
+2²⁰·π/2, costs `sin` up to 43000 steps and `sinf` up to 26000. `frexp`,
+`ldexp`, and `modf` are 199, 82, and 261 words, and their float versions
+189, 77, and 187.
+
+| Function | Steps, double | Steps, float | Words, double | Words, float |
+|---|---|---|---|---|
+| `sin`, `cos` | 6700 | 3900, 3700 | 5630 | 4190 |
+| `tan` | 10600 | 6500 | 5670 | 4050 |
+| `asin` | 12700 | 5300 | 668 | 264 |
+| `acos` | 10200 | 1500 | 799 | 372 |
+| `atan` | 8100 | 1600 | 621 | 400 |
+| `atan2` | 9700 | 1900 | 893 | 594 |
+| `exp` | 4700 | 2900 | 1340 | 475 |
+| `log` | 5400 | 3000 | 2011 | 524 |
+| `log10` | 10400 | 2800 | 548 | 311 |
+| `log2` | 6400 | 3000 | 1506 | 530 |
+| `pow` | 15500 | 6500 | 3485 | 1039 |
+| `sqrt` | 6200 | 130 | 2 | 2 |
+| `fmod` | 320 | 180 | 361 | 196 |
+| `round` | 1000 | 540 | 163 | 125 |
+| `fmin`, `fmax` | 110 | 80 | 72 | 46 |
+| `floor` | 70 | 30 | 2 | 2 |
+| `fabs` | 5 | 4 | 2 | 2 |
+
+`libc/test/math.c` checks each function and macro on the cases whose
+results C17 Annex F gives, on exact results, and on a few known values,
+256 checks in all. `libc/test/fuzz_math.py` (Test, below) checks them on
+random arguments.
 
 ## Zig and Rust
 
@@ -477,7 +559,7 @@ Then it runs the C library's tests, `libc/test/X.c`, with
 `libc/test/X.input` as the console input if there is one. Their `.wasm` files
 are checked in, so no C compiler is needed; `make -C libc wasm` rebuilds
 them and `libc.a`. Each is translated, joined with `start_wasm.nasm`,
-`lib.nasm`, and `muldiv_mpu.nasm`, and run. Its console output, `main`'s result in R1, and the
+`lib.nasm`, and `muldiv_mpu.nasm`, and `float.nasm` for `math.c`, and run. Its console output, `main`'s result in R1, and the
 exit status are compared with `libc/test/X.expected`, which was written
 by hand from the source. `exit.c` also runs as `libc/exit_mon`, joined
 after `test/monitor.nasm` with `start_wasm_mon.nasm`, and its
@@ -506,3 +588,11 @@ which writes a C program with 300 random `printf` and `snprintf` calls,
 with every flag, width, precision, length modifier, and integer
 conversion, and compares the output with a model of C's `printf` in
 Python. `fuzz_printf.py SEED COUNT` runs other seeds and sizes.
+Then it runs `libc/test/fuzz_math.py`, which calls each of the 56
+functions of `math.h` on 1000 arguments: special values, random bits,
+and random numbers in the function's usual range. It compares the
+results with those of the same sources compiled for the host, which
+must match bit for bit, and with the true values, which it takes from
+Python's `decimal` module or the host's libm. `fuzz_math.py SEED COUNT
+[NAME...]` runs other seeds, sizes, and functions, and `--errors` prints
+the largest error of each function.

@@ -21,7 +21,7 @@ NICE with other processors.
     make cycles     # estimate the cycles of the three on the pipelined core of MICROARCH.md
     make profile    # the same, charged to the source lines, in build/*.cyc.txt
     make compare    # the model's cycles beside the pipelined core's, phase by phase and by cause, with the difference in percent, after make core
-    make words      # the size in words of the benchmark, safe.zig, and float modules
+    make words      # the size in words of the benchmark, safe.zig, float, and math modules
     make native     # build and run bench.c and float.c on the host, as a check
     make wasm       # rebuild bench.wasm, float.wasm, and dhrystone/dhry.wasm (needs clang)
 
@@ -461,7 +461,10 @@ and `make test` runs it.
 nicewasm, the measure that [translator/README.md](../translator/README.md)
 quotes for `test/safe.zig` and the float library. `make words` prints it
 for `bench.wasm`, `translator/test/safe.wasm`, and `runtime/float.wasm`:
-8438, 5903, and 6578 words. Each module is translated and
+8438, 5903, and 6578 words. It also builds `build/math.wasm`, with
+clang, a module of all the math functions of the C library in double
+and float, and prints its size, 23392 words, which runtime/README.md
+quotes. Each module is translated and
 assembled on its own, with the labels it uses but does not define, such
 as the runtime's routines, defined as 0 first; a constant takes a whole
 word whatever its value (ISA.md §3), so that changes no size. The count

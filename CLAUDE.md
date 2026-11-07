@@ -101,7 +101,7 @@ library, a wasm translator, and two FPGA cores. See README.md.
     cd bench     && make cycles      # the estimated cycles on the pipelined core, per phase
     cd bench     && make profile     # the same, per source line, in bench/build/*.cyc.txt
     cd bench     && make compare     # the model's cycles beside the pipelined core's, by phase and by cause, after make core
-    cd bench     && make words       # the size in words of the benchmark, safe.zig, and float modules
+    cd bench     && make words       # the size in words of the benchmark, safe.zig, float, and math modules
     cd bench     && make typecheck   # mypy --strict
     cd demo      && make test        # the demo on the emulator, its screens compared with test.expected
     cd demo      && make window      # the demo in niceemu --window (make -C emulator window first)

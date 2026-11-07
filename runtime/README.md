@@ -17,7 +17,7 @@ Zig, or Rust program by itself ([translator README](../translator/README.md)).
 |---|---|
 | `start.nasm` | Start-up code for a program without a wasm module. |
 | `start_wasm.nasm` | Start-up code for a program with a wasm module. It calls `___wasm_start` before `main`. |
-| `start_wasm_trap.nasm` | `start_wasm.nasm` with the trap report below installed first. |
+| `start_wasm_trap.nasm` | `start_wasm.nasm` with its trap vector holding the trap report below. |
 | `start_mon.nasm`, `start_wasm_mon.nasm`, `start_wasm_trap_mon.nasm` | The same three for a program that a monitor in ROM runs (ABI.md, "Programs under a monitor"): at `0x8000`, above the ROM, on the monitor's stack, with the monitor's putc routine in `___putc_vector`, and returning to the monitor instead of halting. |
 | `lib.nasm` | The runtime routines in assembly, except those below. It holds no word that is written: the vectors it jumps through are in the start-up files. |
 | `trapmsg.nasm` | The trap report below. It goes after `lib.nasm`, and only with `start_wasm_trap.nasm` or `start_wasm_trap_mon.nasm`. |

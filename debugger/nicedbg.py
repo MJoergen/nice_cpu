@@ -598,13 +598,21 @@ class Debugger(cmd.Cmd):
 
     def do_bd(self, arg: str) -> None:
         """bd N|all: disables breakpoint N, or all of them."""
+        link = self.link
         if arg.strip() == "all":
-            self.link.write(BRK_EN, [0])
+            link.write(BRK_EN, [0])
             return
         if not arg.strip():
             raise ValueError("give the breakpoint's number, or all")
-        en = self.link.read_word(BRK_EN)
-        self.link.write(BRK_EN, [en & ~(1 << number(arg.strip()))])
+        n = number(arg.strip())
+        count = link.read_word(BRK_COUNT)
+        if count == 0:
+            raise ValueError("this system has no breakpoints")
+        if n >= count:
+            raise ValueError(f"no breakpoint {arg.strip()}; they are 0 to "
+                             f"{count - 1:x}")
+        en = link.read_word(BRK_EN)
+        link.write(BRK_EN, [en & ~(1 << n)])
 
     def do_send(self, arg: str) -> None:
         r"""send TEXT: sends the text to the program, with escapes such as

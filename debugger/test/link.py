@@ -305,6 +305,12 @@ def test_commands(port: str, prog: str, at: dict[str, int]) -> None:
         out = command(dbg, "b")
         # niceemu has four breakpoints (DEBUG.md §7.2)
         check("dbg: bd all", out == "no breakpoints; 4 free\n", repr(out))
+        out = command(dbg, "bd 4")
+        check("dbg: bd of a number that is no breakpoint", out ==
+              "error: no breakpoint 4; they are 0 to 3\n", repr(out))
+        out = command(dbg, "bd ffffffff")
+        check("dbg: bd of a huge number", out ==
+              "error: no breakpoint ffffffff; they are 0 to 3\n", repr(out))
         out = command(dbg, "s")
         check("dbg: a step", out == f"PC={loop + 2:08x} LOOP+0x2  ?!Z MOVE "
               f"R15, 0x{loop:x}\n", repr(out))

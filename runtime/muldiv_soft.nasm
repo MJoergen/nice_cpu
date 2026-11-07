@@ -1,6 +1,7 @@
 ; The multiply and divide routines of the NICE runtime library
 ; (ABI.md), for one word and for long long, in software, for a system without the math
-; unit of SYSTEM §2. It goes after lib.nasm, instead of muldiv_mpu.nasm.
+; unit of SYSTEM §2, with the bit counts and the square root that the math
+; unit also has. It goes after lib.nasm, instead of muldiv_mpu.nasm.
 
 ; __mul: R1 = R1 * R2, the low 32 bits. The same result serves signed and
 ; unsigned operands. Shift and add: each 1 bit of R2, from bit 0 up, adds
@@ -177,4 +178,89 @@ __mod64.b
         ?!N     RET
                 SUB[M]  R1, 0, R1
                 SUB[C]  R2, 0, R2
+                RET
+
+; __clz: R1 = the number of leading 0 bits in R1, 32 for 0. Searches by
+; halves: while R2 is below 2^16, 2^24, 2^28, and 2^30 in turn, it shifts
+; R2 left by 16, 8, 4, or 2 and adds that to the count, which leaves R2
+; at 2^30 or more. Then bit 31 says whether one more 0 bit leads. Steps: 3
+; for 0, else 19. Uses R2.
+__clz           MOVE[M] R2, R1
+                MOVE    R1, 32
+        ?Z      RET
+                MOVE    R1, 1           ; 1 - bit 31, added at the end
+                CMP     R2, 0x00010000
+        ?C      SHL     R2, R2, 16
+        ?C      ADD     R1, R1, 16
+                CMP     R2, 0x01000000
+        ?C      SHL     R2, R2, 8
+        ?C      ADD     R1, R1, 8
+                CMP     R2, 0x10000000
+        ?C      SHL     R2, R2, 4
+        ?C      ADD     R1, R1, 4
+                CMP     R2, 0x40000000
+        ?C      SHL     R2, R2, 2
+        ?C      ADD     R1, R1, 2
+                SHR     R2, R2, 31
+                SUB     R1, R1, R2
+                RET
+
+; __ctz: R1 = the number of trailing 0 bits in R1, 32 for 0. Steps: 3 for
+; 0, else 6 + 4t, where t is the result. Uses R2.
+__ctz           MOVE[M] R2, R1
+                MOVE    R1, 32
+        ?Z      RET
+                MOVE    R1, 0
+__ctz.loop
+                0>C[M]  R2, R2, 1       ; C = the bit shifted out
+        ?C      RET
+                ADD     R1, R1, 1
+                JMP     __ctz.loop
+
+; __popcnt: R1 = the number of 1 bits in R1. Steps: 3 + 3k, where k is
+; the number of bits in R1 (1 if it is 0). Uses R2.
+__popcnt
+                MOVE    R2, R1
+                MOVE    R1, 0
+__popcnt.loop
+                0>C[M]  R2, R2, 1       ; C = the bit shifted out, Z = none left
+                ADD[C]  R1, R1, 0       ; add C
+        ?!Z     JMP     __popcnt.loop
+                RET
+
+; _nice_isqrt64: R1 = floor(sqrt(R1:R2)), unsigned, as ISQRT64_Q of the
+; math unit (SYSTEM §2). It takes the radicand 2 bits a pass, from the top,
+; in 32 passes, as src/mpu.vhd does: the remainder R4:R5, shifted left by
+; 2 with the next 2 bits shifted in, is compared with 4Q + 1, and if it is
+; not less, 4Q + 1 is subtracted and the next bit of Q, R3, is 1. The
+; remainder is at most 2Q, so 34 bits. 4Q + 1 is R6 and the word @1[R13],
+; and @R13 holds the passes to go. Every pass takes 18 steps, so the
+; routine takes 5 + 32 * 18 + 3 = 584. Uses R2-R6.
+_nice_isqrt64
+                MOVE    R3, 0           ; Q
+                MOVE    R4, 0           ; the remainder
+                MOVE    R5, 0
+                SUB     R13, R13, 1     ; @1[R13]: the high word of 4Q + 1
+                PUSH    32              ; @R13: passes to go
+_nice_isqrt64.loop
+                C<0[M]  R1, R1, 1       ; the radicand's top bit
+                C<C[M]  R2, R2, 1
+                C<C[M]  R4, R4, 1       ; into the remainder
+                C<C     R5, R5, 1
+                C<0[M]  R1, R1, 1       ; and the next
+                C<C[M]  R2, R2, 1
+                C<C[M]  R4, R4, 1
+                C<C     R5, R5, 1
+                DBL     R3, R3          ; 2Q, below 2^32
+                0<1     R6, R3, 1       ; 4Q + 1
+                SHR     @1[R13], R3, 31
+                SUB[M]  R6, R4, R6
+                SUB[CM] @1[R13], R5, @1[R13]
+        ?!C     MOVE    R4, R6          ; not less: subtract
+        ?!C     MOVE    R5, @1[R13]
+        ?!C     OR      R3, R3, 1       ; and the bit is 1
+                DEC[M]  @R13, @R13
+        ?!Z     JMP     _nice_isqrt64.loop
+                MOVE    R1, R3
+                ADD     R13, R13, 2
                 RET

@@ -30,6 +30,13 @@ void nice_print(const char *s);
 unsigned long long nice_cycles(void);
 unsigned long long nice_instructions(void);
 
+// floor(sqrt(x)), with the math unit's ISQRT64 (SYSTEM.md §2), or in
+// software on a system without it. Not defined in C: the translator turns
+// this import into the routine _nice_isqrt64 of muldiv_mpu.nasm or
+// muldiv_soft.nasm.
+__attribute__((import_module("env"), import_name("nice_isqrt64")))
+unsigned nice_isqrt64(unsigned long long x);
+
 // The microseconds since reset, from the counter of SYSTEM.md §3 that is
 // exact on every board. The same rule about interrupt routines applies.
 // There is no assembly routine for it: it is C only.

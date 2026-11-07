@@ -154,11 +154,11 @@ $(BUILD)/float.full.nasm: ../runtime/start_wasm.nasm $(BUILD)/float.nasm ../runt
 $(FLOAT_LIB): ../runtime/float.wasm ../translator/nicewasm.py
 	$(MAKE) -C ../runtime float.nasm
 
-$(BUILD)/hand.full.nasm: ../runtime/start.nasm hand.nasm ../runtime/lib.nasm
+$(BUILD)/hand.full.nasm: ../runtime/start.nasm hand.nasm ../runtime/lib.nasm ../runtime/muldiv_mpu.nasm
 	@mkdir -p $(BUILD)
 	cat $^ > $@
 
-$(BUILD)/simple.full.nasm: ../runtime/start.nasm simple.nasm ../runtime/lib.nasm
+$(BUILD)/simple.full.nasm: ../runtime/start.nasm simple.nasm ../runtime/lib.nasm ../runtime/muldiv_mpu.nasm
 	@mkdir -p $(BUILD)
 	cat $^ > $@
 

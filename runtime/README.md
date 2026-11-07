@@ -21,7 +21,7 @@ Zig, or Rust program by itself ([translator README](../translator/README.md)).
 | `start_mon.nasm`, `start_wasm_mon.nasm`, `start_wasm_trap_mon.nasm` | The same three for a program that a monitor in ROM runs (ABI.md, "Programs under a monitor"): at `0x8000`, above the ROM, on the monitor's stack, with the monitor's putc routine in `___putc_vector`, and returning to the monitor instead of halting. |
 | `lib.nasm` | The runtime routines in assembly, except those below. It holds no word that is written: the vectors it jumps through are in the start-up files. |
 | `trapmsg.nasm` | The trap report below. It goes after `lib.nasm`, and only with `start_wasm_trap.nasm` or `start_wasm_trap_mon.nasm`. |
-| `muldiv_mpu.nasm` | The multiply and divide routines: `__mul`, `__div`, `__mod`, `__udiv`, `__umod`, and their `64` versions, with the math unit of SYSTEM.md §2. |
+| `muldiv_mpu.nasm` | The routines that the math unit of SYSTEM.md §2 does: `__mul`, `__div`, `__mod`, `__udiv`, `__umod`, and their `64` versions, the bit counts `__clz`, `__ctz`, and `__popcnt`, and `_nice_isqrt64`, with the math unit. |
 | `muldiv_soft.nasm` | The same routines in software, for a system without the math unit. |
 | `float.zig` | The source of the float routines (see below). |
 | `float.wasm` | `float.zig` and parts of Zig's compiler_rt, compiled to wasm. |
@@ -78,6 +78,12 @@ them in its RAM (ABI.md, Start-up).
 | `__udiv`, `__umod` | Unsigned R1 / R2 and R1 % R2. | R3–R6 |
 | `__clz`, `__ctz` | The number of leading or trailing 0 bits in R1, 32 for 0. | R2 |
 | `__popcnt` | The number of 1 bits in R1. | R2 |
+| `_nice_isqrt64` | floor(√(R1:R2)), unsigned, as `ISQRT64_Q` of SYSTEM.md §2. | R2–R6 |
+
+`_nice_isqrt64` has a C name, `nice_isqrt64`, so that the float library,
+a wasm module, can import it from `env` (WASM.md): its f32 square root
+calls it. The other routines of the first table are in the muldiv files,
+since the math unit computes them too.
 
 The `long long` routines take their operands in R1:R2 and R3:R4, and
 return the result in R1:R2, each pair low word first (ABI.md):
@@ -91,7 +97,10 @@ return the result in R1:R2, each pair low word first (ABI.md):
 | `__popcnt64` | The number of 1 bits in R1:R2. | R3, R4 |
 
 A routine may change R1–R6 and the flags, as ABI.md allows. The tables list
-what each one actually changes in `lib.nasm` and `muldiv_soft.nasm`. The
+what each one actually changes in `lib.nasm` and `muldiv_soft.nasm`.
+`__clz64`, `__ctz64`, and `__popcnt64` are in `lib.nasm`, and call
+`__clz`, `__ctz`, and `__popcnt`, so `lib.nasm` needs one of the muldiv
+files. The
 versions in `muldiv_mpu.nasm` change less: R5 for `__mul64`, nothing
 besides the result for the others, and not the flags. They change the
 operands of the math unit.
@@ -214,7 +223,9 @@ first, by the rules of ABI.md. Most come unchanged from Zig's compiler_rt.
 `float.zig` adds those whose meaning differs from C's, or that compiler_rt
 has only with float instructions inside. It also has its own division,
 because compiler_rt's gives 0 when the quotient is subnormal. The f32
-quotient is one u64 divide, and the f64 one is found bit by bit.
+quotient is one u64 divide, and the f64 one is found bit by bit. The f32
+square root takes its root with `_nice_isqrt64`, and the f64 one bit by
+bit, as its radicand needs 128 bits.
 
 | Labels | Result |
 |---|---|

@@ -1,7 +1,8 @@
 ; The multiply and divide routines of the NICE runtime library
-; (ABI.md), for one word and for long long, with the math unit of
-; SYSTEM §2. It goes after lib.nasm, instead of muldiv_soft.nasm. Each routine
-; writes its operands to A and B, or C and D, and reads the results.
+; (ABI.md), for one word and for long long, and the bit counts and the
+; square root, with the math unit of SYSTEM §2. It goes after lib.nasm,
+; instead of muldiv_soft.nasm. Each routine writes its operands to A and
+; B, or C and D, and reads the results.
 
 __mpu.a         .EQU    0xFFFFFF20
 __mpu.b         .EQU    0xFFFFFF21
@@ -12,6 +13,9 @@ __mpu.sdiv_q    .EQU    0xFFFFFF26
 __mpu.sdiv_r    .EQU    0xFFFFFF27
 __mpu.udiv_q    .EQU    0xFFFFFF28
 __mpu.udiv_r    .EQU    0xFFFFFF29
+__mpu.clz       .EQU    0xFFFFFF2A
+__mpu.ctz       .EQU    0xFFFFFF2B
+__mpu.popcnt    .EQU    0xFFFFFF2C
 __mpu.c_lo      .EQU    0xFFFFFF30
 __mpu.c_hi      .EQU    0xFFFFFF31
 __mpu.d_lo      .EQU    0xFFFFFF32
@@ -20,6 +24,7 @@ __mpu.sdiv64_q  .EQU    0xFFFFFF34      ; and +1 for the high word
 __mpu.sdiv64_r  .EQU    0xFFFFFF36
 __mpu.udiv64_q  .EQU    0xFFFFFF38
 __mpu.udiv64_r  .EQU    0xFFFFFF3A
+__mpu.isqrt64_q .EQU    0xFFFFFF3C
 
 ; __mul: R1 = R1 * R2, the low 32 bits, for signed and unsigned operands.
 ; 4 steps.
@@ -105,4 +110,26 @@ __mod64         MOVE    @__mpu.c_lo, R1
                 MOVE    @__mpu.d_hi, R4
                 MOVE    R1, @__mpu.sdiv64_r
                 MOVE    R2, @__mpu.sdiv64_r+1
+                RET
+
+; __clz, __ctz, __popcnt: R1 = the number of leading or trailing 0 bits in
+; R1, 32 for 0, or of 1 bits. 3 steps each.
+__clz           MOVE    @__mpu.a, R1
+                MOVE    R1, @__mpu.clz
+                RET
+
+__ctz           MOVE    @__mpu.a, R1
+                MOVE    R1, @__mpu.ctz
+                RET
+
+__popcnt
+                MOVE    @__mpu.a, R1
+                MOVE    R1, @__mpu.popcnt
+                RET
+
+; _nice_isqrt64: R1 = floor(sqrt(R1:R2)), unsigned. 4 steps.
+_nice_isqrt64
+                MOVE    @__mpu.c_lo, R1
+                MOVE    @__mpu.c_hi, R2
+                MOVE    R1, @__mpu.isqrt64_q
                 RET

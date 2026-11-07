@@ -1,5 +1,6 @@
 // The device routines of nice.h, with "ab" as the console input. main
-// returns the number of checks of the counters and the screen that fail, 0.
+// returns the number of checks of the counters, the screen, and the
+// square root that fail, 0.
 #include <nice.h>
 #include <stdio.h>
 
@@ -37,6 +38,12 @@ int main(void)
     fails += nice_peek(NICE_SCREEN + 82) != 0xC80FF021;
     fails += nice_peek(NICE_SCREEN + 1998) != 0x20;
     fails += nice_peek(NICE_SCREEN + 1999) != 'Z';
+
+    // The square root, with the math unit: 99 = 9^2 + 18, the largest
+    // radicand, and 10^18 - 1, just below (10^9)^2.
+    fails += nice_isqrt64(99) != 9;
+    fails += nice_isqrt64(0xFFFFFFFFFFFFFFFFull) != 0xFFFFFFFFu;
+    fails += nice_isqrt64(999999999999999999ull) != 999999999u;
     nice_print("done\n");
     return fails;
 }

@@ -24,7 +24,12 @@
 ;   all ones:   19 + 6 + 99 + 26 + 12 + 208               = 370
 ;   0x0F0F...:  19 + 22 + 27 + 26 + 28 + 124              = 246
 ; which sum to 1473. A pass takes 33 steps besides them. The total is 5
-; (start up) + 6 (set up) + 6 * 33 + 1473 + 1 (return) + 1 (HALT) = 1684.
+; (start up) + 6 (set up) + 6 * 33 + 1473 + 1 (return) + 1 (HALT) = 1684,
+; with muldiv_soft.nasm (bits_soft.expected). With muldiv_mpu.nasm,
+; __clz, __ctz, and __popcnt take 3 steps each, so the values take
+; 3 + 3 + 3 + 10 + 11 + 16 = 46 when the low word is 0 (0 and 2^48), and
+; 3 + 3 + 3 + 10 + 9 + 16 = 44 for the other four, 268 in all, and the
+; total is 5 + 6 + 6 * 33 + 268 + 1 + 1 = 479 (bits.expected).
 ;
 ; At the end R1 = 12 and R2 = 0 from the last __popcnt64, which leaves the
 ; low word's count, 4, in R3, and the high word in R4. R10-R12 survive the

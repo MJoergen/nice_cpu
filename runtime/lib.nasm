@@ -1,6 +1,7 @@
 ; The NICE runtime library (ABI.md). It goes after the program's
 ; own files, followed by muldiv_mpu.nasm or muldiv_soft.nasm, which hold the
-; multiply and divide routines. Every routine follows the C ABI of ABI.md.
+; multiply and divide routines, the bit counts __clz, __ctz, and __popcnt,
+; and _nice_isqrt64. Every routine follows the C ABI of ABI.md.
 ; It holds no word that it writes: the two vectors it jumps through,
 ; ___wasm_trap_vector and ___putc_vector, are in the start-up code, so that
 ; a system whose code runs from a ROM can put them in its RAM (ABI.md).
@@ -11,54 +12,6 @@
 ; so a trap does not look like the normal end of the program.
 ___wasm_trap
                 .DAT    0x0FE00000
-
-; __clz: R1 = the number of leading 0 bits in R1, 32 for 0. Searches by
-; halves: while R2 is below 2^16, 2^24, 2^28, and 2^30 in turn, it shifts
-; R2 left by 16, 8, 4, or 2 and adds that to the count, which leaves R2
-; at 2^30 or more. Then bit 31 says whether one more 0 bit leads. Steps: 3
-; for 0, else 19. Uses R2.
-__clz           MOVE[M] R2, R1
-                MOVE    R1, 32
-        ?Z      RET
-                MOVE    R1, 1           ; 1 - bit 31, added at the end
-                CMP     R2, 0x00010000
-        ?C      SHL     R2, R2, 16
-        ?C      ADD     R1, R1, 16
-                CMP     R2, 0x01000000
-        ?C      SHL     R2, R2, 8
-        ?C      ADD     R1, R1, 8
-                CMP     R2, 0x10000000
-        ?C      SHL     R2, R2, 4
-        ?C      ADD     R1, R1, 4
-                CMP     R2, 0x40000000
-        ?C      SHL     R2, R2, 2
-        ?C      ADD     R1, R1, 2
-                SHR     R2, R2, 31
-                SUB     R1, R1, R2
-                RET
-
-; __ctz: R1 = the number of trailing 0 bits in R1, 32 for 0. Steps: 3 for
-; 0, else 6 + 4t, where t is the result. Uses R2.
-__ctz           MOVE[M] R2, R1
-                MOVE    R1, 32
-        ?Z      RET
-                MOVE    R1, 0
-__ctz.loop
-                0>C[M]  R2, R2, 1       ; C = the bit shifted out
-        ?C      RET
-                ADD     R1, R1, 1
-                JMP     __ctz.loop
-
-; __popcnt: R1 = the number of 1 bits in R1. Steps: 3 + 3k, where k is
-; the number of bits in R1 (1 if it is 0). Uses R2.
-__popcnt
-                MOVE    R2, R1
-                MOVE    R1, 0
-__popcnt.loop
-                0>C[M]  R2, R2, 1       ; C = the bit shifted out, Z = none left
-                ADD[C]  R1, R1, 0       ; add C
-        ?!Z     JMP     __popcnt.loop
-                RET
 
 ; __clz64, __ctz64, __popcnt64: R1:R2 = the same counts for the 64-bit
 ; number in R1:R2. The result is at most 64, so R2 = 0.

@@ -18,6 +18,8 @@
 //!   that is subnormal. These round it correctly.
 //! - __sqrtsf, __ceilsf, __floorsf, __truncsf, __nearestsf, __minsf, and
 //!   __maxsf, and the same with df for f64, as wasm defines them.
+//!   __sqrtsf takes its root with nice_isqrt64 of the runtime, the one
+//!   import of the library.
 //!
 //! The library must not use the wasm float instructions, because nicewasm
 //! translates those into calls to this library. nicewasm rejects a library
@@ -247,6 +249,11 @@ export fn __maxdf(a: u64, b: u64) u64 {
 // The square root, rounded to nearest. A negative number other than -0
 // gives a NaN.
 
+/// floor(sqrt(x)), the runtime's _nice_isqrt64 of muldiv_mpu.nasm or
+/// muldiv_soft.nasm. nicewasm calls it as an ABI function, as it does
+/// the C library's imports.
+extern "env" fn nice_isqrt64(x: u64) u32;
+
 fn sqrt(comptime T: type, x: Layout(T).Bits) Layout(T).Bits {
     const L = Layout(T);
     // Wide enough for the significand shifted left by s, an even number.
@@ -274,18 +281,26 @@ fn sqrt(comptime T: type, x: Layout(T).Bits) Layout(T).Bits {
         m <<= 1;
         E -= 1;
     }
-    // q = floor(sqrt(m << s)), bit by bit, with r the remainder.
+    // q = floor(sqrt(m << s)), with r the remainder.
     var r: W = m << s;
     E -= s;
     var q: W = 0;
-    var bit: W = @as(W, 1) << (@bitSizeOf(W) - 2);
-    while (bit > r) bit >>= 2;
-    while (bit != 0) : (bit >>= 2) {
-        if (r >= q + bit) {
-            r -= q + bit;
-            q = (q >> 1) + bit;
-        } else {
-            q >>= 1;
+    if (T == f32) {
+        // m << s < 2^63 is a u64, whose root the runtime takes: with the
+        // math unit's ISQRT64, or in software (ABI.md).
+        q = nice_isqrt64(r);
+        r -= q * q;
+    } else {
+        // Bit by bit, as m << s needs 128 bits.
+        var bit: W = @as(W, 1) << (@bitSizeOf(W) - 2);
+        while (bit > r) bit >>= 2;
+        while (bit != 0) : (bit >>= 2) {
+            if (r >= q + bit) {
+                r -= q + bit;
+                q = (q >> 1) + bit;
+            } else {
+                q >>= 1;
+            }
         }
     }
     // sqrt(x) = q * 2^(E/2), plus a part that is not 0 if r is not 0.

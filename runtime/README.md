@@ -460,6 +460,7 @@ prints a byte slice instead.
 | Counters | `cycles()`, `instructions()` | `cycles()`, `instructions()` |
 | Screen | `screenPut(col, row, c)`, `screenClear()`, `screen_cols`, `screen_rows` | `screen_put(col, row, c)`, `screen_clear()`, `SCREEN_COLS`, `SCREEN_ROWS` |
 | Heap | `heap`, a `std.mem.Allocator` | `Heap`, a `GlobalAlloc` for the `alloc` crate |
+| Math | none needed: `@sqrt`, `@sin`, and `std.math` | `Float`, std's math methods for `f64` and `f32` |
 
 `getc` waits until a byte is there, and returns null or `None` once the
 line's input has ended, as `nice_getc` returns −1.
@@ -481,6 +482,34 @@ program parses the line with the language's own functions:
     let sum: i32 = line.split_whitespace().filter_map(|w| w.parse::<i32>().ok()).sum();
 
 `test/zigline.zig` and `test/rustline.rs` are examples.
+
+**Floats.** Both languages compile `f32` and `f64` arithmetic into wasm
+float instructions, which nicewasm turns into calls of the float
+library, as for C, so a program that uses floats is joined with
+`float.nasm` (Joining a program). Both print floats with their own
+formatting code, `std.fmt` and `core::fmt`, which is part of the program,
+so `{d}`, `{e}`, `{}`, and `{:e}` work, though C's `printf` has no `%f`.
+The math functions come with the compiler, ported from musl, and are
+compiled into the program as well:
+
+- Zig's math builtins, such as `@sqrt`, `@sin`, `@exp`, and `@log`, and
+  `std.math`, such as `std.math.pow` and `std.math.atan2`, need nothing
+  from `nice.zig`. Zig's compiler_rt, which Zig puts in the module, does
+  `f128` too.
+- In a `#![no_std]` Rust program, `f64` and `f32` lack std's math
+  methods, such as `sqrt`, `sin`, and `ln`. The trait `nice::Float`
+  supplies them, with std's names: `abs`, `floor`, `ceil`, `trunc`,
+  `round`, `round_ties_even`, `sqrt`, `cbrt`, `sin`, `cos`, `tan`, `asin`,
+  `acos`, `atan`, `sinh`, `cosh`, `tanh`, `exp`, `exp2`, `ln`, `log10`,
+  `log2`, `atan2`, `powf`, `hypot`, and `copysign`. Each calls the C
+  function of compiler_builtins, which rustc links into the module:
+  `use nice::Float;` and then `x.sqrt()`. `sqrt`, `abs`, the roundings
+  but `round`, and `copysign` are wasm instructions there.
+
+Both compilers' `exp` is the older fdlibm one, whose `exp(1)` is the
+double above e, 0.67 ulp off, where the C library's gives the nearest.
+`test/zigfloat.zig` and `test/rustfloat.rs` print the results of each
+kind of operation.
 
 For Zig, add the file as the module `nice`, and import it with
 `const nice = @import("nice");`:
@@ -574,10 +603,12 @@ GHDL hours.
 
 Then it runs the tests of `nice.zig` and `nice.rs`, `test/nicezig.zig`,
 `test/zigpoll.zig`, `test/zigheap.zig`, `test/zigline.zig`,
-`test/nicers.rs`, `test/rustpoll.rs`, `test/rustheap.rs`, and
-`test/rustline.rs`, the same way, with
-`test/X.input` as the console input and `test/X.expected`, written by
-hand from the source. `test/zigheap.zig` and `test/rustheap.rs` are
+`test/zigfloat.zig`, `test/nicers.rs`, `test/rustpoll.rs`,
+`test/rustheap.rs`, `test/rustline.rs`, and `test/rustfloat.rs`, the same
+way, with `test/X.input`, if there is one, as the console input and
+`test/X.expected`, written by hand from the source. `zigfloat` and
+`rustfloat` are joined with `float.nasm`, and their expected values were
+checked with Python's `math` and `fractions` modules. `test/zigheap.zig` and `test/rustheap.rs` are
 translated with `--memory-pages 2`, so that their heap can grow by one
 page, and no more. Their `.wasm`
 files are checked in; `make wasm` rebuilds them, with Zig 0.17 and rustc

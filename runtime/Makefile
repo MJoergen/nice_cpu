@@ -75,12 +75,14 @@ endef
 
 # The tests of nice.zig and nice.rs, test/X.zig and test/X.rs, as in
 # libc/Makefile: each test/X.wasm is translated, joined with
-# start_wasm.nasm, lib.nasm, and muldiv_mpu.nasm, and run with test/X.input
-# as the console input. The console output, main's result in R1, and the
+# start_wasm.nasm, lib.nasm, and muldiv_mpu.nasm, and float.nasm if it is
+# in FLOAT_WASM_TESTS, and run with test/X.input, if there is one, as the
+# console input. The console output, main's result in R1, and the
 # exit status are compared with test/X.expected. The .wasm files are
 # checked in, so make test needs no Zig or Rust; make wasm rebuilds them.
-ZIG_TESTS = nicezig zigpoll zigheap zigline
-RUST_TESTS = nicers rustpoll rustheap rustline
+ZIG_TESTS = nicezig zigpoll zigheap zigline zigfloat
+RUST_TESTS = nicers rustpoll rustheap rustline rustfloat
+FLOAT_WASM_TESTS = zigfloat rustfloat
 
 # The options for nicewasm.py of a test, if any.
 WASM_OPTS_rustheap = --memory-pages 2
@@ -88,10 +90,11 @@ WASM_OPTS_zigheap = --memory-pages 2
 
 define check_wasm
 	@$(PYTHON) ../translator/nicewasm.py $(WASM_OPTS_$(1)) -o test/$(1).out.nasm test/$(1).wasm
-	@cat start_wasm.nasm test/$(1).out.nasm lib.nasm muldiv_mpu.nasm > test/$(1).full.nasm
+	@cat start_wasm.nasm test/$(1).out.nasm lib.nasm muldiv_mpu.nasm \
+	  $(if $(filter $(1),$(FLOAT_WASM_TESTS)),float.nasm) > test/$(1).full.nasm
 	@$(ASM) -o test/$(1).out.bin test/$(1).full.nasm
-	@$(EMU) --input test/$(1).input test/$(1).out.bin < /dev/null > test/$(1).raw; echo "exit $$?" > test/$(1).status
-	$(call keep,test/$(1).out.bin,test/$(1).input,$(1))
+	@$(EMU) $(if $(wildcard test/$(1).input),--input test/$(1).input) test/$(1).out.bin < /dev/null > test/$(1).raw; echo "exit $$?" > test/$(1).status
+	$(call keep,test/$(1).out.bin,$(wildcard test/$(1).input),$(1))
 	@sed '/^\(Halted\|Stopped\)/,$$d' test/$(1).raw > test/$(1).out
 	@grep -o ' R1  [0-9a-f]*' test/$(1).raw | cut -c2- >> test/$(1).out; cat test/$(1).status >> test/$(1).out
 	@if cmp -s test/$(1).out test/$(1).expected; then echo "PASS $(1)"; \
@@ -99,7 +102,7 @@ define check_wasm
 
 endef
 
-test: emulator
+test: emulator float.nasm
 	$(foreach t,$(TESTS),$(call check,$(t),$(t),muldiv_mpu.nasm))
 	$(foreach t,$(SOFT_TESTS),$(call check,$(t)_soft,$(t),muldiv_soft.nasm))
 	$(foreach t,$(ZIG_TESTS) $(RUST_TESTS),$(call check_wasm,$(t)))

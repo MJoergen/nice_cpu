@@ -14,6 +14,12 @@
 //!     extern crate alloc;
 //!     #[global_allocator]
 //!     static HEAP: nice::Heap = nice::Heap;
+//!
+//! A program that takes square roots, sines, and the like brings in the
+//! `Float` trait, whose methods have the names of std's:
+//!
+//!     use nice::Float;
+//!     let r = (x * x + y * y).sqrt();
 
 // A program uses only some of these.
 #![allow(dead_code)]
@@ -323,3 +329,121 @@ macro_rules! println {
         $crate::print!("\n");
     }};
 }
+
+// The math functions of C. rustc links its compiler_builtins into every
+// wasm32 module, and that has musl's, ported to Rust, so these are no
+// imports. sqrt, fabs, floor, ceil, trunc, rint, and copysign are wasm
+// instructions in it, which nicewasm turns into calls of the float
+// library or bit operations, as it does for + and *.
+extern "C" {
+    fn fabs(x: f64) -> f64;
+    fn floor(x: f64) -> f64;
+    fn ceil(x: f64) -> f64;
+    fn trunc(x: f64) -> f64;
+    fn round(x: f64) -> f64;
+    fn rint(x: f64) -> f64;
+    fn sqrt(x: f64) -> f64;
+    fn cbrt(x: f64) -> f64;
+    fn sin(x: f64) -> f64;
+    fn cos(x: f64) -> f64;
+    fn tan(x: f64) -> f64;
+    fn asin(x: f64) -> f64;
+    fn acos(x: f64) -> f64;
+    fn atan(x: f64) -> f64;
+    fn sinh(x: f64) -> f64;
+    fn cosh(x: f64) -> f64;
+    fn tanh(x: f64) -> f64;
+    fn exp(x: f64) -> f64;
+    fn exp2(x: f64) -> f64;
+    fn log(x: f64) -> f64;
+    fn log10(x: f64) -> f64;
+    fn log2(x: f64) -> f64;
+    fn atan2(y: f64, x: f64) -> f64;
+    fn pow(x: f64, y: f64) -> f64;
+    fn hypot(x: f64, y: f64) -> f64;
+    fn copysign(x: f64, y: f64) -> f64;
+    fn fabsf(x: f32) -> f32;
+    fn floorf(x: f32) -> f32;
+    fn ceilf(x: f32) -> f32;
+    fn truncf(x: f32) -> f32;
+    fn roundf(x: f32) -> f32;
+    fn rintf(x: f32) -> f32;
+    fn sqrtf(x: f32) -> f32;
+    fn cbrtf(x: f32) -> f32;
+    fn sinf(x: f32) -> f32;
+    fn cosf(x: f32) -> f32;
+    fn tanf(x: f32) -> f32;
+    fn asinf(x: f32) -> f32;
+    fn acosf(x: f32) -> f32;
+    fn atanf(x: f32) -> f32;
+    fn sinhf(x: f32) -> f32;
+    fn coshf(x: f32) -> f32;
+    fn tanhf(x: f32) -> f32;
+    fn expf(x: f32) -> f32;
+    fn exp2f(x: f32) -> f32;
+    fn logf(x: f32) -> f32;
+    fn log10f(x: f32) -> f32;
+    fn log2f(x: f32) -> f32;
+    fn atan2f(y: f32, x: f32) -> f32;
+    fn powf(x: f32, y: f32) -> f32;
+    fn hypotf(x: f32, y: f32) -> f32;
+    fn copysignf(x: f32, y: f32) -> f32;
+}
+
+/// The math methods of std's f64 and f32, which a `#![no_std]` program
+/// lacks, by the C functions of the same meaning. `round` rounds half away
+/// from 0, and `round_ties_even` to even, as in std.
+pub trait Float: Sized {
+    fn abs(self) -> Self;
+    fn floor(self) -> Self;
+    fn ceil(self) -> Self;
+    fn trunc(self) -> Self;
+    fn round(self) -> Self;
+    fn round_ties_even(self) -> Self;
+    fn sqrt(self) -> Self;
+    fn cbrt(self) -> Self;
+    fn sin(self) -> Self;
+    fn cos(self) -> Self;
+    fn tan(self) -> Self;
+    fn asin(self) -> Self;
+    fn acos(self) -> Self;
+    fn atan(self) -> Self;
+    fn sinh(self) -> Self;
+    fn cosh(self) -> Self;
+    fn tanh(self) -> Self;
+    fn exp(self) -> Self;
+    fn exp2(self) -> Self;
+    fn ln(self) -> Self;
+    fn log10(self) -> Self;
+    fn log2(self) -> Self;
+    fn atan2(self, other: Self) -> Self;
+    fn powf(self, n: Self) -> Self;
+    fn hypot(self, other: Self) -> Self;
+    fn copysign(self, sign: Self) -> Self;
+}
+
+macro_rules! float_impl {
+    ($t:ty; $($m:ident => $c:ident),*; $($m2:ident => $c2:ident),*) => {
+        impl Float for $t {
+            $(fn $m(self) -> $t {
+                unsafe { $c(self) }
+            })*
+            $(fn $m2(self, y: $t) -> $t {
+                unsafe { $c2(self, y) }
+            })*
+        }
+    };
+}
+
+float_impl!(f64;
+    abs => fabs, floor => floor, ceil => ceil, trunc => trunc, round => round,
+    round_ties_even => rint, sqrt => sqrt, cbrt => cbrt, sin => sin, cos => cos, tan => tan,
+    asin => asin, acos => acos, atan => atan, sinh => sinh, cosh => cosh, tanh => tanh,
+    exp => exp, exp2 => exp2, ln => log, log10 => log10, log2 => log2;
+    atan2 => atan2, powf => pow, hypot => hypot, copysign => copysign);
+float_impl!(f32;
+    abs => fabsf, floor => floorf, ceil => ceilf, trunc => truncf, round => roundf,
+    round_ties_even => rintf, sqrt => sqrtf, cbrt => cbrtf, sin => sinf, cos => cosf,
+    tan => tanf, asin => asinf, acos => acosf, atan => atanf, sinh => sinhf, cosh => coshf,
+    tanh => tanhf, exp => expf, exp2 => exp2f, ln => logf, log10 => log10f, log2 => log2f;
+    atan2 => atan2f, powf => powf, hypot => hypotf, copysign => copysignf);

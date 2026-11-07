@@ -102,3 +102,5 @@ Line 912: "`mpu` and `mpu64` read every word of the math unit." Line 1002: "`cpu
 ### 3.5 A sentence for WASM.md, optional
 
 The float library is the first library module with an import, `nice_isqrt64` from `env`. WASM.md's list of how a library module differs from a program's module does not mention imports, so by its wording they are the same, and the translator's README says imports from `env` are supported. The runtime README and ABI.md say what the import is. A clause in WASM.md's list, "it may import from `env` as a program's module does", would make it explicit. Not needed for the tag.
+
+**Resolved**: A sentence after WASM.md's list says that a library module's imports follow the rules of a program's module, with the float library's import as the example.

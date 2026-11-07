@@ -909,7 +909,7 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   are left out, because the trace lists every memory write. The trace does
   not list data reads, but `reads` counts them with the read counter, so
   its registers show whether the core made each read exactly once and in
-  order (ISA.md §8.2). `mpu` and `mpu64` read every word of the math unit.
+  order (ISA.md §8.2). `mpu`, `mpu64`, and `mpubits` read every word of the math unit.
   `perf` reads the instruction counter, with an NMI and an `INT`, and
   checks the cycle counter only through flags, because the emulator counts
   steps, not cycles. `timer` runs the timer, which counts steps here: its
@@ -999,7 +999,7 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   as the one for VBASE = 0, and says how many steps it left out: about
   280 of 7444 for NMI, and 75 for IRQ. `make sweep` sweeps the two with
   one request per run instead.
-- `cputest`, `reads`, `mpu`, `mpu64`, `perf`, `events`, `timer`, and `sd` again, on a memory that
+- `cputest`, `reads`, `mpu`, `mpu64`, `mpubits`, `perf`, `events`, `timer`, and `sd` again, on a memory that
   stalls in 30% of the cycles, and `sd` with pauses held for a random time.
   `sd` runs with an image in slot 0 that `make test` makes in the run's
   directory, and the emulator with a copy of it, which it writes.

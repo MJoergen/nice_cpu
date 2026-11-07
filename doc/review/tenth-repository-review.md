@@ -97,6 +97,8 @@ Line 533: "`make core CORE_PROGRAMS=float` measures 2301987 there, 1.84 per inst
 
 Line 912: "`mpu` and `mpu64` read every word of the math unit." Line 1002: "`cputest`, `reads`, `mpu`, `mpu64`, `perf`, `events`, `timer`, and `sd` again, on a memory that stalls in 30% of the cycles". `hdl/Makefile` runs `mpubits` in both lists, and its own comment says so. **Fix:** add `mpubits` to both.
 
+**Resolved**: Both lists name `mpubits`.
+
 ### 3.5 A sentence for WASM.md, optional
 
 The float library is the first library module with an import, `nice_isqrt64` from `env`. WASM.md's list of how a library module differs from a program's module does not mention imports, so by its wording they are the same, and the translator's README says imports from `env` are supported. The runtime README and ABI.md say what the import is. A clause in WASM.md's list, "it may import from `env` as a program's module does", would make it explicit. Not needed for the tag.

@@ -101,7 +101,9 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   which the model works out from the operands in the trace: a read of a
   quotient or remainder is accepted in cycle t + 2 + n at the earliest,
   with n the divider's cycles. The signed dividers divide the absolute
-  values. The bus is held until then ("MPU wait").
+  values. A read of a bit count of A waits as a product does, and a read
+  of the square root of C is accepted in cycle t + 2 + 32 at the earliest.
+  The bus is held until then ("MPU wait").
 - A core that forms every operand value, address, and shift count in
   PREPARE, one stage before WRITE, as the re-timed core does, has four
   more rules, each 1 by default; 0 turns one off. --shift-late N: a
@@ -190,12 +192,17 @@ SIDE = (1, 2, 5, 6)
 # The units of the math unit (SYSTEM.md §2), and the result words that wait
 # for each: the products, the signed and the unsigned quotient and
 # remainder, and the 64-bit ones.
-MPU_UNITS = ["mul", "sdiv", "udiv", "sdiv64", "udiv64"]
+MPU_UNITS = ["mul", "sdiv", "udiv", "sdiv64", "udiv64", "sqrt"]
 MPU_RESULTS = {0xFFFFFF22: "mul", 0xFFFFFF23: "mul", 0xFFFFFF24: "mul", 0xFFFFFF25: "mul",
                0xFFFFFF26: "sdiv", 0xFFFFFF27: "sdiv", 0xFFFFFF28: "udiv", 0xFFFFFF29: "udiv",
+               0xFFFFFF2A: "mul", 0xFFFFFF2B: "mul", 0xFFFFFF2C: "mul",
                0xFFFFFF34: "sdiv64", 0xFFFFFF35: "sdiv64", 0xFFFFFF36: "sdiv64",
                0xFFFFFF37: "sdiv64", 0xFFFFFF38: "udiv64", 0xFFFFFF39: "udiv64",
-               0xFFFFFF3A: "udiv64", 0xFFFFFF3B: "udiv64"}
+               0xFFFFFF3A: "udiv64", 0xFFFFFF3B: "udiv64",
+               0xFFFFFF3C: "sqrt", 0xFFFFFF3D: "sqrt", 0xFFFFFF3E: "sqrt"}
+
+# The steps of the square root of hdl/src/mpu.vhd, 2 bits of C in each.
+SQRT_STEPS = 32
 
 
 def slave(addr: int) -> str:
@@ -701,6 +708,7 @@ class Model:
             self.mpu_ready["udiv64"] = t + 2 + div_cycles(c, d, 64, self.div_skip)
             self.mpu_ready["sdiv64"] = t + 2 + div_cycles(absolute(c, 64), absolute(d, 64), 64,
                                                          self.div_skip)
+            self.mpu_ready["sqrt"] = t + 2 + SQRT_STEPS
 
     def restart_after(self, t: int, tag: str) -> None:
         self.ftimes = []
@@ -1107,6 +1115,23 @@ next            HALT
      # The unsigned divider sees a dividend whose top bits are 1, so no
      # cycle skips: n = 32. The read is accepted at 10 + 2 + 32 = 44,
      # data at 45: a gap of 34. HALT done at 46, so 47 cycles.
+     4, 47, {"startup": 7, "bus": 2, "mpu": 34}),
+    ("math unit: a bit count of A waits as a product does",
+     """                MOVE    @0xFFFFFF20, 7
+                MOVE    @0xFFFFFF21, 6
+                MOVE    R1, @0xFFFFFF2A
+                HALT
+""",
+     # The same as the product above: CLZ can be read at 10 + 3 = 13.
+     4, 16, {"startup": 7, "bus": 2, "mpu": 3}),
+    ("math unit: the square root of C takes 32 steps",
+     """                MOVE    @0xFFFFFF30, 0xFFFFFFF9
+                MOVE    @0xFFFFFF31, 2
+                MOVE    R1, @0xFFFFFF3C
+                HALT
+""",
+     # The writes go to C, at the same times as above. The root is read
+     # at 10 + 2 + 32 = 44, data at 45: a gap of 34, so 47 cycles.
      4, 47, {"startup": 7, "bus": 2, "mpu": 34}),
     ("the data bus between two slaves: the math unit, then RAM, and back",
      """                MOVE    R2, 0x100

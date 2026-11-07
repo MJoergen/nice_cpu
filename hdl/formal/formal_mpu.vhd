@@ -48,8 +48,8 @@ architecture synthesis of formal_mpu is
 begin
 
    accept <= wb_cyc_i and wb_stb_i and not wb_stall;
-   fast   <= '1' when wb_we_i = '1' or wb_addr_i <= 1 or (wb_addr_i >= 10 and wb_addr_i <= 19) or
-                      wb_addr_i >= 28 else
+   fast   <= '1' when wb_we_i = '1' or wb_addr_i <= 1 or (wb_addr_i >= 13 and wb_addr_i <= 19) or
+                      wb_addr_i = 31 else
              '0';
 
 
@@ -94,6 +94,8 @@ begin
    -- psl c_mul : cover {f_waits = 2 and wb_addr_i = 3; wb_ack};
    -- psl c_div : cover {f_waits = 2 and wb_addr_i = 6; wb_ack};
    -- psl c_div64 : cover {f_waits = 2 and wb_addr_i = 25; wb_ack};
+   -- psl c_bits : cover {f_waits = 2 and wb_addr_i = 11; wb_ack};
+   -- psl c_sqrt : cover {f_waits = 2 and wb_addr_i = 29; wb_ack};
 
 
    i_mpu : entity work.mpu

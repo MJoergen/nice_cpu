@@ -572,10 +572,11 @@ request raised while one waits merges with it. While no request is raised,
 
 ## The math unit
 
-`mpu` is the math unit of SYSTEM.md §2. Offsets 0 to 15 hold A, B, and the
-signed and unsigned products, quotients, and remainders of A and B.
-Offsets 16 to 31 hold the 64-bit C and D, and the signed and unsigned
-quotients and remainders of C and D. It is a pipelined Wishbone slave with
+`mpu` is the math unit of SYSTEM.md §2. Offsets 0 to 15 hold A, B, the
+signed and unsigned products, quotients, and remainders of A and B, and
+the bit counts of A. Offsets 16 to 31 hold the 64-bit C and D, the signed
+and unsigned quotients and remainders of C and D, and the square root of
+C and its remainder. It is a pipelined Wishbone slave with
 a 5-bit address. The bus decoder selects it for `0xFFFFFF20`–`0xFFFFFF3F`
 and passes address bits 4..0 as the offset.
 
@@ -585,16 +586,20 @@ A / B, and one for |A| / |B|. Synthesis can map the multiplier to DSP
 blocks. A divider computes one quotient bit per cycle, but skips 8 at once
 when it can tell that they are all 0, so it takes 33 cycles at most, and
 fewer for a small dividend or a large divisor. The signed
-results are formed from those, as the header of `src/mpu.vhd` explains. A
-write to C or D starts the same computation with two 64-bit dividers,
-which takes 65 cycles at most. The two halves run independently.
+results are formed from those, as the header of `src/mpu.vhd` explains.
+The bit counts are registered from A in every cycle, and a read of one
+waits as a product does. A write to C or D starts the same computation
+with two 64-bit dividers, which takes 65 cycles at most, and the square
+root of C, which takes 2 bits of C in each step and so 33 cycles. The
+two halves run independently.
 
 A read of a result while the unit that computes it runs is accepted, then
 STALL stays high and ACK waits until the result is ready. Reads of A, B, and the spare
 words, and all writes, are acknowledged in the next cycle. Writes to the
 result words and the spare words are ignored. `formal/mpu.sby` proves
-the port, the waits, and the quotients and remainders for every pair of
-operands, and that a product is never stale; the signed product's
+the port, the waits, the quotients and remainders for every pair of
+operands, the bit counts for every A, the square root for every C, and
+that a product is never stale; the signed product's
 correction is proven by hand, and `tb_mpu` checks the products' values
 (The formal checks below).
 
@@ -756,9 +761,10 @@ requests its interrupt source still holds.
 
 ## What the tests check
 
-`tb_mpu` checks every word of the math unit against `numeric_std`: for 20
-corner cases and 2000 random pairs of A and B, and for 16 corner cases and
-4000 random pairs of C and D. It also checks that a read of a result waits
+`tb_mpu` checks every word of the math unit against `numeric_std`: for 23
+corner cases and 2000 random pairs of A and B, and for 20 corner cases and
+4000 random pairs of C and D. It counts the bits one at a time, and finds
+the square root by a binary search that squares with `numeric_std`. It also checks that a read of a result waits
 for the computation, exactly as long as it should, that a write restarts
 it, that the two halves and the units in each do not wait for each other, that a write and a read in back-to-back cycles see
 each other in order, and that reset clears the operands.
@@ -1220,7 +1226,7 @@ formal/UNIT/TASK` runs one task, for example `make formal/pipe_fetch/prove`.
 | `eth_regs` | The port for Ethernet frames: its bus and station ports, with and without the held ACK. | k-induction of depth 10, Yices | seconds |
 | `perf` | The performance counters, against a model. | PDR | a minute |
 | `fetch_stats` | The fetch statistics: what each cycle does to the counters. | k-induction, Boolector | a few seconds |
-| `mpu` | The math unit's port, its waits, and its quotients and remainders for every pair of operands. | k-induction, Boolector | about 2 minutes |
+| `mpu` | The math unit's port, its waits, its quotients and remainders for every pair of operands, its bit counts, and its square root. | k-induction, Boolector | about 2 minutes |
 | `debug_link` | The debug link's ports and the guarantees of its header, with and without a ROM. | k-induction of depth 4, Yices | seconds |
 
 Each job also has a `cover` task, with Yices, or Boolector for
@@ -1598,10 +1604,17 @@ for every pair of operands that A = M + R with R < B, where M is Q times
 B by shift and add, and Q and R of SYSTEM.md §2 for B = 0; for the
 signed results, the same on the magnitudes, the signs of SYSTEM.md §2,
 and the special case of the most negative number divided by −1; and the
-same for C and D. Boolector proves it all by k-induction in about 2
-minutes; Yices takes minutes for one divider alone. The covers show a
-read that waits for each kind of unit, and reads that wait the longest a
-division takes.
+same for C and D. The bit counts are checked against their meaning: CLZ
+names a 1 bit with only 0 bits above it, CTZ one with only 0 bits below
+it, both 32 for 0, and POPCNT is the sum of the bits one at a time. The
+square root has the loop invariant of a root that takes 2 bits a step,
+with ghosts of the radicand bits shifted in, p, and of Q², m, which the
+ghost forms by shift and add: p = m + R with R ≤ 2Q. So at the end
+C = Q² + R with R ≤ 2Q, which is Q² ≤ C < (Q + 1)²: Q = floor(√C).
+Boolector proves it all by k-induction in about 2 minutes; Yices takes
+minutes for one divider alone. The covers show a read that waits for
+each kind of unit, and reads that wait the longest a division or a
+square root takes.
 
 The two lemmas, proven by hand:
 
@@ -1614,6 +1627,12 @@ The two lemmas, proven by hand:
   m = 2⁸q·d. So m = q·d modulo 2²ᴺ, the width of the ghosts, from the
   start on. After k steps q has k bits, so q < 2ᴺ and q·d < 2²ᴺ, and m
   = q·d exactly. At the end, A = M + R is A = Q·B + R.
+- **Shift and add squares: m = Q².** A start clears the ghost m and Q.
+  A step that finds the bit t of the root sets Q to 2Q + t, and m to 4m
+  if t = 0, or to 4m + 4Q + 1 if t = 1. If m = Q² before the step, then
+  after it m = 4Q² = (2Q)², or 4Q² + 4Q + 1 = (2Q + 1)². So m = Q²
+  modulo 2⁶⁶, the width of the ghost, from the start on. Q has 32 bits,
+  so Q² < 2⁶⁴ and m = Q² exactly. At the end, C = m + R is C = Q² + R.
 - **The signed correction.** For 32-bit words A and B with sign bits a
   and b, the signed values are A − 2³²a and B − 2³²b, and their product
   is A·B − 2³²(a·B + b·A) + 2⁶⁴a·b. Modulo 2⁶⁴ the last term goes, and

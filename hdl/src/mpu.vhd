@@ -1,13 +1,14 @@
 -- The math unit, MPU, of SYSTEM.md §2: 32 words of I/O that multiply and
--- divide 32-bit integers, and divide 64-bit integers, signed and unsigned.
+-- divide 32-bit integers, signed and unsigned, and count their bits, and
+-- divide 64-bit integers and take their square root.
 --
---   0  A        3  SMUL_HI  6  SDIV_Q   9  UDIV_R
---   1  B        4  UMUL_LO  7  SDIV_R   10-15  read 0
---   2  SMUL_LO  5  UMUL_HI  8  UDIV_Q
+--   0  A        3  SMUL_HI  6  SDIV_Q   9  UDIV_R   12  POPCNT
+--   1  B        4  UMUL_LO  7  SDIV_R   10  CLZ     13-15  read 0
+--   2  SMUL_LO  5  UMUL_HI  8  UDIV_Q   11  CTZ
 --
---   16, 17  C            22, 23  SDIV64_R     28-31  read 0
---   18, 19  D            24, 25  UDIV64_Q
---   20, 21  SDIV64_Q     26, 27  UDIV64_R
+--   16, 17  C            22, 23  SDIV64_R     28  ISQRT64_Q
+--   18, 19  D            24, 25  UDIV64_Q     29, 30  ISQRT64_R
+--   20, 21  SDIV64_Q     26, 27  UDIV64_R     31  reads 0
 --
 -- THEORY OF OPERATION
 -- A write to A or B starts a new computation. Three units run side by side:
@@ -32,9 +33,19 @@
 -- which is set to 0xFFFFFFFF on its own. -2^31 / -1 needs no special case:
 -- |A| / |B| = 0x80000000, and negating it gives 0x80000000 again.
 --
+-- The bit counts of A, CLZ, CTZ, and POPCNT, are registered from A in each
+-- cycle, and a read of one waits for the multiplier's count, which covers
+-- the cycle after A changes. CLZ and CTZ are priority encoders, and POPCNT
+-- a tree of five adds, so that none of them is a long chain.
+--
 -- A write to C or D starts a computation of C / D in the same way, with two
--- 64-bit dividers, which takes 65 cycles at most. The two halves of the MPU are
--- independent: a write to one half does not restart the other.
+-- 64-bit dividers, which takes 65 cycles at most. It also starts the square
+-- root of C, which takes 2 bits of C in each of 32 steps, so 33 cycles: the
+-- remainder, shifted left by 2 with the next 2 bits shifted in, is
+-- compared with 4Q + 1, and if it is not less, 4Q + 1 is subtracted and the
+-- next bit of Q is 1. Q has 32 bits, and the remainder, at most 2Q, 33. The
+-- two halves of the MPU are independent: a write to one half does not
+-- restart the other.
 --
 -- The port is a pipelined Wishbone slave. It acknowledges each request in
 -- the cycle after it accepts it, except a read of a result while the unit
@@ -80,6 +91,7 @@ architecture synthesis of mpu is
 
    constant C_STEPS   : natural := 32;
    constant C_STEPS64 : natural := 64;
+   constant C_SQSTEPS : natural := 32;
 
    -- The steps a divider skips at once.
    constant C_SKIP : natural := 8;
@@ -99,6 +111,11 @@ architecture synthesis of mpu is
    signal mul_r       : std_logic_vector(63 downto 0) := (others => '0');
    signal prod_r      : std_logic_vector(63 downto 0) := (others => '0');
    signal smul_hi_r   : std_logic_vector(31 downto 0) := (others => '0');
+
+   -- The bit counts of A, as it was in the cycle before.
+   signal clz_r : std_logic_vector(5 downto 0) := "100000";
+   signal ctz_r : std_logic_vector(5 downto 0) := "100000";
+   signal pop_r : std_logic_vector(5 downto 0) := (others => '0');
 
    -- The two dividers. The quotient register starts as the dividend, which
    -- shifts out to the left as the quotient shifts in. The count is the
@@ -123,6 +140,13 @@ architecture synthesis of mpu is
    signal scount64_r : t_count                       := 0;
    signal sdiv64_r   : std_logic_vector(63 downto 0) := (others => '0');
 
+   -- The square root of C: the bits of C still to come, shifting out to
+   -- the left, the root so far, the remainder, and the steps to go.
+   signal sqx_r     : std_logic_vector(63 downto 0) := (others => '0');
+   signal sqq_r     : std_logic_vector(31 downto 0) := (others => '0');
+   signal sqrem_r   : std_logic_vector(33 downto 0) := (others => '0');
+   signal sqcount_r : natural range 0 to C_SQSTEPS  := 0;
+
    -- A read of a result waits for the computation.
    signal wait_r      : std_logic                    := '0';
    signal wait_addr_r : std_logic_vector(4 downto 0) := (others => '0');
@@ -132,9 +156,58 @@ architecture synthesis of mpu is
    signal sdiv_busy   : std_logic;
    signal udiv64_busy : std_logic;
    signal sdiv64_busy : std_logic;
+   signal sqrt_busy   : std_logic;
    signal accept      : std_logic;
 
    -- The functions below take vectors of any width N, indexed N-1 downto 0.
+
+   -- The number of leading and trailing 0 bits of x, 32 for 0.
+   pure function count_lz(x : std_logic_vector(31 downto 0)) return std_logic_vector is
+   begin
+      for i in 31 downto 0 loop
+         if x(i) = '1' then
+            return to_stdlogicvector(31 - i, 6);
+         end if;
+      end loop;
+      return to_stdlogicvector(32, 6);
+   end function count_lz;
+
+   pure function count_tz(x : std_logic_vector(31 downto 0)) return std_logic_vector is
+   begin
+      for i in 0 to 31 loop
+         if x(i) = '1' then
+            return to_stdlogicvector(i, 6);
+         end if;
+      end loop;
+      return to_stdlogicvector(32, 6);
+   end function count_tz;
+
+   -- The number of 1 bits of x, in fields of 2, 4, 8, 16, and 32 bits.
+   pure function count_ones(x : std_logic_vector(31 downto 0)) return std_logic_vector is
+      variable v_v : std_logic_vector(31 downto 0);
+   begin
+      v_v := x - ((x srl 1) and X"55555555");
+      v_v := (v_v and X"33333333") + ((v_v srl 2) and X"33333333");
+      v_v := (v_v + (v_v srl 4)) and X"0F0F0F0F";
+      v_v := v_v + (v_v srl 8);
+      v_v := v_v + (v_v srl 16);
+      return v_v(5 downto 0);
+   end function count_ones;
+
+   -- One step of the square root, on the remainder, the root, and the next
+   -- 2 bits of the radicand. It returns the new remainder & root.
+   pure function sqrt_step(rem_in : std_logic_vector(33 downto 0);
+                           q      : std_logic_vector(31 downto 0);
+                           bits   : std_logic_vector(1 downto 0)) return std_logic_vector is
+      variable shifted_v : std_logic_vector(35 downto 0) := rem_in & bits;
+      variable trial_v   : std_logic_vector(35 downto 0) := "00" & q & "01";
+   begin
+      if shifted_v >= trial_v then
+         shifted_v := shifted_v - trial_v;
+         return shifted_v(33 downto 0) & q(30 downto 0) & '1';
+      end if;
+      return shifted_v(33 downto 0) & q(30 downto 0) & '0';
+   end function sqrt_step;
 
    pure function absolute(x : std_logic_vector) return std_logic_vector is
    begin
@@ -201,7 +274,8 @@ architecture synthesis of mpu is
          when "011"  => return signed_rem(srem64_r, c_r);
          when "100"  => return uquo64_r;
          when "101"  => return urem64_r;
-         when others => return X"0000000000000000";
+         when "110"  => return sqrem_r(31 downto 0) & sqq_r;
+         when others => return (63 downto 2 => '0') & sqrem_r(33 downto 32);
       end case;
    end function result64;
 
@@ -212,8 +286,10 @@ architecture synthesis of mpu is
          when 2 to 5   => return mul_busy = '1';
          when 6 | 7    => return sdiv_busy = '1';
          when 8 | 9    => return udiv_busy = '1';
+         when 10 to 12 => return mul_busy = '1';
          when 20 to 23 => return sdiv64_busy = '1';
          when 24 to 27 => return udiv64_busy = '1';
+         when 28 to 30 => return sqrt_busy = '1';
          when others   => return false;
       end case;
    end function must_wait;
@@ -258,6 +334,15 @@ architecture synthesis of mpu is
          when X"9" =>
             return urem_r;
 
+         when X"A" =>
+            return X"000000" & "00" & clz_r;
+
+         when X"B" =>
+            return X"000000" & "00" & ctz_r;
+
+         when X"C" =>
+            return X"000000" & "00" & pop_r;
+
          when others =>
             return X"00000000";
       end case;
@@ -270,6 +355,7 @@ begin
    sdiv_busy   <= '1' when start_r = '1' or scount_r /= 0 else '0';
    udiv64_busy <= '1' when start64_r = '1' or ucount64_r /= 0 else '0';
    sdiv64_busy <= '1' when start64_r = '1' or scount64_r /= 0 else '0';
+   sqrt_busy   <= '1' when start64_r = '1' or sqcount_r /= 0 else '0';
    accept      <= wb_cyc_i and wb_stb_i and not wait_r;
    wb_stall_o  <= wait_r;
 
@@ -289,6 +375,10 @@ begin
             hi_v := hi_v - a_r;
          end if;
          smul_hi_r <= hi_v;
+
+         clz_r <= count_lz(a_r);
+         ctz_r <= count_tz(a_r);
+         pop_r <= count_ones(a_r);
 
          if mul_count_r /= 0 then
             mul_count_r <= mul_count_r - 1;
@@ -329,6 +419,8 @@ begin
          end if;
       end procedure divide;
 
+      variable sq_v : std_logic_vector(65 downto 0);
+
    begin
       if rising_edge(clk_i) then
          if start_r = '1' then
@@ -353,10 +445,21 @@ begin
             srem64_r   <= (others => '0');
             scount64_r <= C_STEPS64;
             sdiv64_r   <= absolute(d_r);
+            sqx_r      <= c_r;
+            sqq_r      <= (others => '0');
+            sqrem_r    <= (others => '0');
+            sqcount_r  <= C_SQSTEPS;
             start64_r  <= '0';
          else
             divide(urem64_r, uquo64_r, ucount64_r, d_r);
             divide(srem64_r, squo64_r, scount64_r, sdiv64_r);
+            if sqcount_r /= 0 then
+               sq_v      := sqrt_step(sqrem_r, sqq_r, sqx_r(63 downto 62));
+               sqrem_r   <= sq_v(65 downto 32);
+               sqq_r     <= sq_v(31 downto 0);
+               sqx_r     <= sqx_r(61 downto 0) & "00";
+               sqcount_r <= sqcount_r - 1;
+            end if;
          end if;
 
          if accept = '1' and wb_we_i = '1' then
@@ -385,6 +488,7 @@ begin
             start64_r  <= '1';
             ucount64_r <= 0;
             scount64_r <= 0;
+            sqcount_r  <= 0;
          end if;
       end if;
    end process p_compute;
@@ -446,6 +550,21 @@ begin
    -- quotient bit of 0 would. When the divider ends, k = N, so A = Q * B + R with R < B, and
    -- the signed results follow from those of |A| / |B|.
    --
+   -- The bit counts: clz_r, ctz_r, and pop_r are those of f_ma, which is A
+   -- delayed by a cycle, so once the multiplier's count is 0 they are
+   -- those of A. A read of CLZ or CTZ must give a count n with a 1 at the
+   -- bit it names and only 0 bits beyond it, and POPCNT the sum of the bits
+   -- of A, one at a time, not in the fields of count_ones.
+   --
+   -- The square root: after k of its 32 steps, sqx_r holds the bits of C
+   -- still to come, and the 2k bits shifted out, p, equal m + rem, with
+   -- rem <= 2Q and Q < 2^k. The ghosts f_sqp and f_sqm hold p and m. m is
+   -- Q squared, which the ghost forms as the root finds the bits of Q:
+   -- 4m, plus 4Q + 1 if the new bit is 1, since (2Q + 1)^2 = 4Q^2 + 4Q + 1.
+   -- That shift and add squares is proven by hand in hdl/README.md, as for
+   -- the dividers. When the root ends, p = C, so C = Q^2 + R with
+   -- R <= 2Q, which is C < (Q + 1)^2: Q = floor(sqrt(C)).
+   --
    -- A read waits until its unit ends, and f_age_r counts the cycles it
    -- has waited.
 
@@ -472,6 +591,8 @@ begin
       signal f_sq64 : std_logic_vector(127 downto 0) := (others => '0');
       signal f_sp64 : std_logic_vector(127 downto 0) := (others => '0');
       signal f_sm64 : std_logic_vector(127 downto 0) := (others => '0');
+      signal f_sqp  : std_logic_vector(63 downto 0)  := (others => '0');
+      signal f_sqm  : std_logic_vector(65 downto 0)  := (others => '0');
 
       signal f_latch  : std_logic;                       -- The data of a read is set
       signal f_word   : std_logic_vector(4 downto 0);    -- The word it reads
@@ -490,6 +611,10 @@ begin
       signal f_sinv      : boolean;
       signal f_uinv64    : boolean;
       signal f_sinv64    : boolean;
+      signal f_bits_ok   : boolean;
+      signal f_bits_held : boolean;
+      signal f_sqrt_ok   : boolean;
+      signal f_sqinv     : boolean;
 
       pure function zext(x : std_logic_vector;
                          n : natural) return std_logic_vector is
@@ -539,6 +664,63 @@ begin
          end if;
          return rem_in < d and gq + gq <= gm;
       end function div_inv;
+
+      -- SYSTEM.md §2 on the bit counts of a: n leading 0 bits, then a 1,
+      -- or n = 32 for a = 0; the same from the other end; and the 1 bits.
+      pure function clz_ok(a : std_logic_vector(31 downto 0); n : std_logic_vector) return boolean is
+      begin
+         if n > 32 then
+            return false;
+         elsif n = 32 then
+            return a = 0;
+         end if;
+         return a(31 - to_integer(n)) = '1' and (a srl (32 - to_integer(n))) = 0;
+      end function clz_ok;
+
+      pure function ctz_ok(a : std_logic_vector(31 downto 0); n : std_logic_vector) return boolean is
+      begin
+         if n > 32 then
+            return false;
+         elsif n = 32 then
+            return a = 0;
+         end if;
+         return a(to_integer(n)) = '1' and (a sll (32 - to_integer(n))) = 0;
+      end function ctz_ok;
+
+      pure function ones(a : std_logic_vector(31 downto 0)) return std_logic_vector is
+         variable n_v : std_logic_vector(5 downto 0) := (others => '0');
+      begin
+         for i in 0 to 31 loop
+            n_v := n_v + a(i);
+         end loop;
+         return n_v;
+      end function ones;
+
+      -- The loop invariant of the square root of c, with count steps to go,
+      -- and its ghosts gp and gm.
+      pure function sqrt_inv(c      : std_logic_vector(63 downto 0);
+                             x      : std_logic_vector(63 downto 0);
+                             q      : std_logic_vector(31 downto 0);
+                             rem_in : std_logic_vector(33 downto 0);
+                             gp     : std_logic_vector(63 downto 0);
+                             gm     : std_logic_vector(65 downto 0);
+                             count  : natural) return boolean is
+         variable k_v : natural range 0 to C_SQSTEPS;
+      begin
+         if count > C_SQSTEPS then
+            return false;
+         end if;
+         k_v := C_SQSTEPS - count;
+         -- The registers hold what the ghost says, and Q < 2^k.
+         if x /= (c sll (2 * k_v)) or gp /= (c srl (2 * count)) or (q srl k_v) /= 0 then
+            return false;
+         end if;
+         -- p = m + rem, without a wrap, and rem <= 2Q
+         if zext(gp, 66) /= gm + zext(rem_in, 66) or gm > zext(gp, 66) then
+            return false;
+         end if;
+         return rem_in <= ("0" & q & "0");
+      end function sqrt_inv;
 
       -- SYSTEM.md §2 on the unsigned quotient q and remainder r of a / b,
       -- given m, q times b.
@@ -614,6 +796,8 @@ begin
             end if;
          end procedure ghost;
 
+         variable sq_v : std_logic_vector(65 downto 0);
+
       begin
          if rising_edge(clk_i) then
             f_ma <= a_r;
@@ -643,6 +827,19 @@ begin
             else
                ghost(f_uq64, f_up64, f_um64, urem64_r, uquo64_r, ucount64_r, d_r);
                ghost(f_sq64, f_sp64, f_sm64, srem64_r, squo64_r, scount64_r, sdiv64_r);
+            end if;
+
+            if start64_r = '1' then
+               f_sqp <= (others => '0');
+               f_sqm <= (others => '0');
+            elsif sqcount_r /= 0 then
+               sq_v  := sqrt_step(sqrem_r, sqq_r, sqx_r(63 downto 62));
+               f_sqp <= f_sqp(61 downto 0) & sqx_r(63 downto 62);
+               if sq_v(0) = '1' then
+                  f_sqm <= (f_sqm(63 downto 0) & "00") + zext(sqq_r & "01", 66);
+               else
+                  f_sqm <= f_sqm(63 downto 0) & "00";
+               end if;
             end if;
 
             if accept = '1' and wb_we_i = '1' then
@@ -690,18 +887,18 @@ begin
          case to_integer(f_word) is
             when 0        => f_expect <= f_a;
             when 1        => f_expect <= f_b;
-            when 2 to 9   => f_expect <= result(f_word);
+            when 2 to 12  => f_expect <= result(f_word);
             when 16       => f_expect <= f_c(31 downto 0);
             when 17       => f_expect <= f_c(63 downto 32);
             when 18       => f_expect <= f_d(31 downto 0);
             when 19       => f_expect <= f_d(63 downto 32);
-            when 20 to 27 => f_expect <= result(f_word);
+            when 20 to 30 => f_expect <= result(f_word);
             when others   => f_expect <= (others => '0');
          end case;
 
          -- The cycles until the unit of a waiting read ends, at most
          case to_integer(wait_addr_r) is
-            when 2 to 5 =>
+            when 2 to 5 | 10 to 12 =>
                f_left  <= mul_count_r;
                f_bound <= 2;
 
@@ -717,6 +914,10 @@ begin
                f_left  <= scount64_r + C_STEPS64 + 1 when start64_r = '1' else scount64_r;
                f_bound <= C_STEPS64;
 
+            when 28 to 30 =>
+               f_left  <= sqcount_r + C_SQSTEPS + 1 when start64_r = '1' else sqcount_r;
+               f_bound <= C_SQSTEPS;
+
             when others =>
                f_left  <= ucount64_r + C_STEPS64 + 1 when start64_r = '1' else ucount64_r;
                f_bound <= C_STEPS64;
@@ -731,6 +932,10 @@ begin
       f_udiv64_ok <= udiv_ok(f_c, f_d, uquo64_r, urem64_r, f_um64);
       f_sdiv64_ok <= sdiv_ok(f_c, f_d, result64("010"), result64("011"), f_sm64) and
                      (f_d = 0 or zext(absolute(result64("010")), 128) = f_sq64);
+      f_bits_ok   <= clz_ok(f_a, clz_r) and ctz_ok(f_a, ctz_r) and pop_r = ones(f_a);
+      f_bits_held <= clz_r = count_lz(f_ma) and ctz_r = count_tz(f_ma) and pop_r = count_ones(f_ma);
+      f_sqrt_ok   <= zext(f_c, 66) = f_sqm + zext(sqrem_r, 66) and sqrem_r <= ("0" & sqq_r & "0");
+      f_sqinv     <= start64_r = '1' or sqrt_inv(c_r, sqx_r, sqq_r, sqrem_r, f_sqp, f_sqm, sqcount_r);
       f_uinv      <= start_r = '1' or div_inv(a_r, b_r, uquo_r, urem_r, f_uq, f_up, f_um, ucount_r);
       f_sinv      <= start_r = '1' or
                      (sdiv_r = absolute(b_r) and
@@ -759,11 +964,16 @@ begin
       --    (f_udiv64_ok and zext(uquo64_r, 128) = f_uq64);
       -- psl f_sdiv64 : assert always
       --    (f_latch = '1' and f_word >= 20 and f_word <= 23) -> f_sdiv64_ok;
+      -- psl f_bits : assert always
+      --    (f_latch = '1' and f_word >= 10 and f_word <= 12) -> f_bits_ok;
+      -- psl f_sqrt : assert always
+      --    (f_latch = '1' and f_word >= 28 and f_word <= 30) -> f_sqrt_ok;
 
       -- A read waits no longer than its unit takes
       -- psl f_age : assert always wait_r = '1' -> f_age_r + f_left <= f_bound;
       -- psl c_long : cover {wait_r = '1' and wait_addr_r = 9 and f_age_r = C_STEPS - 1};
       -- psl c_long64 : cover {wait_r = '1' and wait_addr_r = 20 and f_age_r = C_STEPS64 - 1};
+      -- psl c_sqrt : cover {wait_r = '1' and wait_addr_r = 28 and f_age_r = C_SQSTEPS - 1};
 
       -- The invariants
       -- psl f_operands : assert always
@@ -773,10 +983,12 @@ begin
       -- psl f_sdiv_inv : assert always rst_i = '0' -> f_sinv;
       -- psl f_udiv64_inv : assert always rst_i = '0' -> f_uinv64;
       -- psl f_sdiv64_inv : assert always rst_i = '0' -> f_sinv64;
+      -- psl f_bits_inv : assert always f_bits_held;
+      -- psl f_sqrt_inv : assert always rst_i = '0' -> f_sqinv;
       -- psl f_wait : assert always
       --    wait_r = '1' -> (start_r = '0' and start64_r = '0' and
-      --                     ((wait_addr_r >= 2 and wait_addr_r <= 9) or
-      --                      (wait_addr_r >= 20 and wait_addr_r <= 27)));
+      --                     ((wait_addr_r >= 2 and wait_addr_r <= 12) or
+      --                      (wait_addr_r >= 20 and wait_addr_r <= 30)));
    end generate gen_formal;
 
 end architecture synthesis;

@@ -103,15 +103,15 @@ $(LINK_RUNS): run/link/%: $(BUILD)/linkecho.bin
 # with the counts that are hard to get right. The memory dumps of the probes
 # are left out, because the trace lists every memory write. The data reads
 # are not in the trace, but the probe reads.nasm counts them with the read
-# counter, and its registers show the counts. mpu and mpu64 read every word
-# of the math unit, src/mpu.vhd, and their registers and the trace's memory
-# writes show the results. perf reads the performance counters,
+# counter, and its registers show the counts. mpu, mpu64, and mpubits read
+# every word of the math unit, src/mpu.vhd, and their registers and the
+# trace's memory writes show the results. perf reads the performance counters,
 # src/perf.vhd. Its registers hold only instruction counts and flags, which
 # do not depend on the cycles an instruction takes. events reads the event
 # counters of src/perf.vhd, which count the same on every core and in the
 # emulator. timer runs the timer,
 # src/timer.vhd, which counts steps here, as the emulator's does. cputest,
-# reads, mpu, mpu64, perf, events, and timer run a second time with a memory that
+# reads, mpu, mpu64, mpubits, perf, events, and timer run a second time with a memory that
 # stalls in 30% of the cycles. cputest and after run again with random
 # pauses, and cputest and irq with pauses held for a random time, so that
 # requests come while the core is paused. cputest, reads, irq, and
@@ -128,7 +128,7 @@ $(LINK_RUNS): run/link/%: $(BUILD)/linkecho.bin
 # the emulator's.
 EXAMPLES = count replicate print wrap
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest \
-  console screen iofetch reads reserved mpu mpu64 perf events timer input \
+  console screen iofetch reads reserved mpu mpu64 mpubits perf events timer input \
   r15modes r0dest r14mem skipconst carryin shiftc wrapmem smcown sd net eth
 INTR_irq   = --nmi 2:1 --irq 2:2 --nmi 9:1 --irq 17:2 --nmi 17:1 --irq 100:2
 INTR_merge = --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
@@ -416,6 +416,7 @@ $(eval $(call core_run,$(1),cputest_stall,../emulator/test/cputest.bin,-gG_STALL
 $(eval $(call core_run,$(1),reads_stall,../emulator/test/reads.bin,-gG_STALL=30 -gG_SEED=7))
 $(eval $(call core_run,$(1),mpu_stall,../emulator/test/mpu.bin,-gG_STALL=30 -gG_SEED=3))
 $(eval $(call core_run,$(1),mpu64_stall,../emulator/test/mpu64.bin,-gG_STALL=30 -gG_SEED=5))
+$(eval $(call core_run,$(1),mpubits_stall,../emulator/test/mpubits.bin,-gG_STALL=30 -gG_SEED=39))
 $(eval $(call core_run,$(1),perf_stall,../emulator/test/perf.bin,-gG_STALL=30 -gG_SEED=9))
 $(eval $(call core_run,$(1),events_stall,../emulator/test/events.bin,-gG_STALL=30 -gG_SEED=13))
 $(eval $(call core_run,$(1),timer_stall,../emulator/test/timer.bin,-gG_STALL=30 -gG_SEED=11))

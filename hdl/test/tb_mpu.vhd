@@ -3,7 +3,9 @@
 -- THEORY OF OPERATION
 -- For each pair A, B it writes A and B, then reads all 32 words and checks
 -- them against results that numeric_std computes, with the special cases
--- of SYSTEM.md §2. The pairs are the corner cases first, then G_RANDOM
+-- of SYSTEM.md §2. The bit counts are counted one bit at a time, and the
+-- square root is found by a binary search that squares with numeric_std,
+-- not as src/mpu.vhd finds them. The pairs are the corner cases first, then G_RANDOM
 -- random ones. Then the same for pairs C, D. Further checks:
 -- * A read of a result right after a write waits for the computation, and
 --   a read of an operand or a spare word does not. A division takes as many
@@ -49,6 +51,49 @@ architecture simulation of tb_mpu is
 
    type t_words is array (0 to 31) of std_logic_vector(31 downto 0);
 
+   -- CLZ, CTZ, and POPCNT of a, one bit at a time.
+   function bit_counts(a : std_logic_vector(31 downto 0)) return t_words is
+      variable res_v : t_words := (others => (others => '0'));
+      variable n_v   : natural;
+   begin
+      n_v := 0;
+      while n_v < 32 and a(31 - n_v) = '0' loop
+         n_v := n_v + 1;
+      end loop;
+      res_v(0) := std_logic_vector(to_unsigned(n_v, 32));
+      n_v      := 0;
+      while n_v < 32 and a(n_v) = '0' loop
+         n_v := n_v + 1;
+      end loop;
+      res_v(1) := std_logic_vector(to_unsigned(n_v, 32));
+      n_v      := 0;
+      for i in 0 to 31 loop
+         if a(i) = '1' then
+            n_v := n_v + 1;
+         end if;
+      end loop;
+      res_v(2) := std_logic_vector(to_unsigned(n_v, 32));
+      return res_v;
+   end function bit_counts;
+
+   -- floor(sqrt(c)), the largest q with q * q <= c, bit by bit from the top,
+   -- and the remainder c - q * q.
+   function square_root(c : std_logic_vector(63 downto 0)) return std_logic_vector is
+      variable q_v : unsigned(31 downto 0) := (others => '0');
+      variable t_v : unsigned(31 downto 0);
+      variable r_v : unsigned(63 downto 0);
+   begin
+      for i in 31 downto 0 loop
+         t_v    := q_v;
+         t_v(i) := '1';
+         if t_v * t_v <= unsigned(c) then
+            q_v := t_v;
+         end if;
+      end loop;
+      r_v := unsigned(c) - q_v * q_v;
+      return std_logic_vector(r_v) & std_logic_vector(q_v);
+   end function square_root;
+
    -- The 32 words of SYSTEM.md §2 for A, B, C, and D.
    function expected(a : std_logic_vector(31 downto 0);
                      b : std_logic_vector(31 downto 0);
@@ -58,6 +103,8 @@ architecture simulation of tb_mpu is
       variable r64_v : std_logic_vector(64 * 6 - 1 downto 0);
       variable sp_v  : signed(63 downto 0);
       variable up_v  : unsigned(63 downto 0);
+      variable bc_v  : t_words;
+      variable sq_v  : std_logic_vector(95 downto 0);
    begin
       sp_v     := signed(a) * signed(b);
       up_v     := unsigned(a) * unsigned(b);
@@ -85,6 +132,10 @@ architecture simulation of tb_mpu is
          res_v(8) := std_logic_vector(unsigned(a) / unsigned(b));
          res_v(9) := std_logic_vector(unsigned(a) rem unsigned(b));
       end if;
+      bc_v      := bit_counts(a);
+      res_v(10) := bc_v(0);
+      res_v(11) := bc_v(1);
+      res_v(12) := bc_v(2);
 
       -- The six 64-bit values, C first, from bit 0 up.
       r64_v(63 downto 0)   := c;
@@ -108,6 +159,11 @@ architecture simulation of tb_mpu is
       for i in 0 to 11 loop
          res_v(16 + i) := r64_v(32 * i + 31 downto 32 * i);
       end loop;
+      -- Q, then the remainder, low word first.
+      sq_v      := square_root(c);
+      res_v(28) := sq_v(31 downto 0);
+      res_v(29) := sq_v(63 downto 32);
+      res_v(30) := sq_v(95 downto 64);
       return res_v;
    end function expected;
 
@@ -141,7 +197,12 @@ architecture simulation of tb_mpu is
       (X"0000000500000000", X"0000000000000000"),
       (X"123456789ABCDEF0", X"0000000100000000"),
       (X"123456789ABCDEF0", X"00000000FFFFFFFF"),
-      (X"FEDCBA9876543210", X"0000000080000001")
+      (X"FEDCBA9876543210", X"0000000080000001"),
+      -- Square roots: (2^32 - 1)^2, one less, and 2^62 = (2^31)^2.
+      (X"FFFFFFFE00000001", X"0000000000000003"),
+      (X"FFFFFFFE00000000", X"0000000000000003"),
+      (X"4000000000000000", X"0000000000000005"),
+      (X"0000000000000002", X"0000000000000001")
    );
 
    constant C_CORNERS : t_pairs := (
@@ -164,7 +225,11 @@ architecture simulation of tb_mpu is
       (X"FFFFFFFF", X"00000001"),
       (X"FFFFFFFF", X"80000000"),
       (X"12345678", X"9ABCDEF0"),
-      (X"9ABCDEF0", X"00012345")
+      (X"9ABCDEF0", X"00012345"),
+      -- Bit counts.
+      (X"00010000", X"00000001"),
+      (X"00F00F00", X"00000001"),
+      (X"7FFFFFFE", X"00000001")
    );
 
 begin
@@ -385,13 +450,27 @@ begin
               integer'image(cycles_v) & " cycles");
       end if;
 
+      -- The square root takes 32 steps, n = 32, and k = 2.
+      set_cd(X"FFFFFFFFFFFFFFFF", X"0000000000000001");
+      read_word(28, data_v, cycles_v);
+      if cycles_v /= 33 or data_v /= X"FFFFFFFF" then
+         fail("ISQRT64_Q = " & to_hstring(data_v) & " after " &
+              integer'image(cycles_v) & " cycles");
+      end if;
+      -- It has ended, so the remainder does not wait.
+      read_word(29, data_v, cycles_v);
+      if cycles_v /= 1 or data_v /= X"FFFFFFFE" then
+         fail("ISQRT64_R_LO = " & to_hstring(data_v) & " after " &
+              integer'image(cycles_v) & " cycles");
+      end if;
+
       -- A read of a result waits; a read of A, B, or a spare word does not.
       write_word(0, X"00000006");
       read_word(1, data_v, cycles_v);
       if cycles_v /= 1 then
          fail("a read of B waited " & integer'image(cycles_v) & " cycles");
       end if;
-      read_word(12, data_v, cycles_v);
+      read_word(13, data_v, cycles_v);
       if cycles_v /= 1 or data_v /= X"00000000" then
          fail("a read of a spare word waited or was not 0");
       end if;
@@ -401,6 +480,14 @@ begin
       -- second cycle of the multiplier.
       if cycles_v /= 2 or data_v /= X"0000002A" then
          fail("UMUL_LO = " & to_hstring(data_v) & " after " & integer'image(cycles_v) & " cycles");
+      end if;
+
+      -- A read of a bit count right after a write to A waits as long as a
+      -- product does. CLZ of 6 = 0b110 is 29.
+      write_word(0, X"00000006");
+      read_word(10, data_v, cycles_v);
+      if cycles_v /= 2 or data_v /= X"0000001D" then
+         fail("CLZ = " & to_hstring(data_v) & " after " & integer'image(cycles_v) & " cycles");
       end if;
 
       -- A write to A while a computation runs restarts it.

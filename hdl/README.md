@@ -266,16 +266,20 @@ ports inside NiceMonMEGA65 at `V1.0`, and keep about 0.2 ns of it. It prints the
 reports, and says `MISSED` on a miss, but exits 0. `release.py check` puts
 the result in its stamp, and no release waits for it.
 
-What a system may add to the core's ports, from `make timing` at 2026-10-23
+What a system may add to the core's ports, from `make timing` at 2026-11-07
 (`timing` and `default` flows, one run each; a run varies by a few tenths of
 a nanosecond with placement). The slack is the time left to the system at
 the clock of the first column:
 
 | Clock and part | `dbus_ack_i` | `instret_o` |
 |---|---|---|
-| 100 MHz, MEGA65 (-2) | 3.1 to 3.4 ns | 2.6 to 3.0 ns |
-| 100 MHz, Nexys4DDR (-1) | 2.0 to 2.2 ns | 1.1 to 1.8 ns |
-| 90 MHz, Nexys4DDR (-1) | 3.1 to 3.2 ns | 2.1 to 2.4 ns |
+| 100 MHz, MEGA65 (-2) | 1.3 to 2.5 ns | 2.3 to 2.7 ns |
+| 100 MHz, Nexys4DDR (-1) | 0.5 to 1.7 ns | 0.8 to 1.2 ns |
+| 90 MHz, Nexys4DDR (-1) | 1.3 to 2.2 ns | 2.4 to 2.6 ns |
+
+On the MEGA65, the `timing` flow leaves `dbus_ack_i` less than the 1.5 ns
+of the budget. The fetch statistics of #125 took the difference, and #141
+is to win it back.
 
 - `instret_o` has the least. It comes from WRITE's retire, and the counters
   of SYSTEM.md §3 must see it in that cycle (MICROARCH.md §8), so a system
@@ -287,9 +291,9 @@ the clock of the first column:
   `dbus_data_o` have 2.6 ns or more in every run (the least is
   `dbus_data_o` on the MEGA65), and most have 4 ns or more. Read data goes
   into WRITE only for a register write.
-- At 90 MHz on the Nexys4DDR the core alone still fails by 0.3 ns, on paths
-  inside it (WRITE into PREPARE's enables), but NiceMonMEGA65 meets 90 MHz
-  in the system ([pipeline-timing.md](../doc/review/pipeline-timing.md),
+- At 90 MHz on the Nexys4DDR the core alone still fails by 0.5 to 0.6 ns,
+  on paths inside it (WRITE into PREPARE's and its own enables), but
+  NiceMonMEGA65 meets 90 MHz in the system ([pipeline-timing.md](../doc/review/pipeline-timing.md),
   In the system).
 
 ## The multi-cycle core

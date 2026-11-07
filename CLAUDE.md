@@ -40,6 +40,8 @@ library, a wasm translator, and two FPGA cores. See README.md.
   `assembler/nicefmt.py` checks the column layout of `.nasm` files, or fixes it with `--write`.
   `assembler/nicedis.py` disassembles a `.bin` file back to `.nasm`. Same rules as niceasm.py.
 - `emulator/`: Zig 0.17, laid out by `zig fmt`, which `make test` checks.
+  `emulator/tools/nicetap.py` joins niceemu's UDP socket for Ethernet frames
+  to a TAP device on Linux. Same rules as niceasm.py.
 - `debugger/nicedbg.py`: the interactive debugger on the debug link of DEBUG.md,
   over TCP to `niceemu --link` or a UART. `nicelink.py` is the link, and
   `nicebin.py` reads the `.bin` and `.sym` files and loads a program; a

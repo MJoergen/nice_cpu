@@ -418,6 +418,47 @@ checksums, TCP to the link's port, an IP address of 0, and the lines of
 `--eth-in`. `test/udp.py` checks the socket, with a peer that sends an ARP
 request and a frame that the program sends back.
 
+### A real network
+
+`tools/nicetap.py` joins the socket of `--eth-udp` to a TAP device on
+Linux, so that a program in the emulator is a host on a real network and
+can get DHCP, DNS, NTP, and TFTP from it. Each frame read from the device
+goes to niceemu as one datagram, and each datagram from niceemu of 14 to
+1514 bytes goes to the device. It is Python 3 with the standard library
+only, and its options mirror niceemu's:
+
+    nicetap.py --tap NAME --udp [ADDR:]PORT --peer [ADDR:]PORT
+
+`--udp` is where it receives niceemu's frames, and `--peer` is niceemu's
+`--eth-udp`, written as for niceemu, with `127.0.0.1` if no ADDR is
+given. It opens the device NAME, and makes it if the process may. It
+prints one line on stderr once it is ready, and runs until it is killed.
+A bad option, or a device or a port it cannot open, is an error, with the
+exit status 1, or 2 for a missing option.
+
+The device needs root or `CAP_NET_ADMIN`. Without them, make one
+beforehand that you may open, and bring it up:
+
+    sudo ip tuntap add mode tap user $USER name nice0
+    sudo ip link set nice0 up
+    emulator/tools/nicetap.py --tap nice0 --udp 5556 --peer 5555 &
+    emulator/zig-out/bin/niceemu --eth-udp 5555 --eth-peer 5556 program.bin
+
+The host then joins `nice0` to the network as for QEMU: it puts it in a
+bridge with its Ethernet port, or gives it an address and routes and NATs
+it. A bridge to a wired port lets the network's DHCP server answer the
+program. A Wi-Fi port cannot be bridged, so route there, and run a DHCP
+server such as dnsmasq on `nice0`. niceemu itself needs no root and has
+no code for one operating system.
+
+`test/tap.py` checks the errors of nicetap's options. Then, in a user and
+network namespace of `unshare -rn`, which needs no root, it runs nicetap
+on a device of its own, niceemu with `ECHO` of `test/udp.py`, and a host
+on the device with a packet socket, which sees the program's hello, gets
+an ARP reply from the station, and sends a frame that the program sends
+back. A host that refuses the namespace, or has no `/dev/net/tun` or
+`ip`, skips that part with a message.
+
 ### Instruction fetches and the memory
 
 Instruction fetches from `0xFFFFFF00`–`0xFFFFFFFF` read 0, as ISA.md §8.3
@@ -563,7 +604,8 @@ while halted, held, and running. And it checks the network station's
 `NET_STATUS`, with the port and a host connected, and that a start, a
 clear, and a new connection keep `NET_IP`.
 Last, `test/udp.py` checks the frames over the socket of `--eth-udp`
-(Ethernet frames above).
+(Ethernet frames above), and `test/tap.py` the same through
+`tools/nicetap.py` and a TAP device (A real network above).
 
 `test/cputest.nasm` is a self-checking test of the whole instruction set:
 every opcode, shift, addressing mode, and condition, the flags, R0, R14, and

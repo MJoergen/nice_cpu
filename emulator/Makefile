@@ -96,6 +96,7 @@ programs:
 	@rm -f test/*.out
 	@NICEEMU=$(abspath $(EMU)) $(PYTHON) test/link.py
 	@NICEEMU=$(abspath $(EMU)) $(PYTHON) test/udp.py
+	@NICEEMU=$(abspath $(EMU)) $(PYTHON) test/tap.py
 
 build:
 	$(ZIG) build -Doptimize=ReleaseSafe
@@ -165,7 +166,7 @@ bincheck:
 
 # Needs mypy (pip install mypy).
 typecheck:
-	$(PYTHON) -m mypy --strict test/errors.py test/link.py test/udp.py test/window.py font/gen_font.py
+	$(PYTHON) -m mypy --strict test/errors.py test/link.py test/udp.py test/tap.py test/window.py tools/nicetap.py font/gen_font.py
 
 clean:
 	rm -rf zig-out .zig-cache zig-pkg dist test/*.out

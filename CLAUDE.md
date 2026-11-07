@@ -56,7 +56,8 @@ library, a wasm translator, and two FPGA cores. See README.md.
   benchmark written by hand, the ceiling to compare with. `simple.nasm` is
   `hand.nasm` with `vm` and `strings` as a simple C compiler would emit
   them. `expected.py` computes the results in Python, and `make test`
-  checks all three against them.
+  checks all three against them. `float.c` is a benchmark of float code,
+  and so of the float library, checked against `floatexpected.py`.
   `dhrystone/` is Dhrystone 2.1 on the C library, checked by `dhrycheck.py`.
 - `demo/demo.nasm`: the demo, a program under a monitor at `0x8000`, which
   runs in `niceemu --window` behind the runtime's stand-in for a monitor,

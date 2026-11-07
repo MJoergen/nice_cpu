@@ -10,7 +10,7 @@ them (see A simple compiler below). They are for measuring
 the translator's output and the core, phase by phase, not for comparing
 NICE with other processors.
 
-    make            # run the three on the emulator and print their tables
+    make            # run the three, and float.c, on the emulator and print their tables
     make dhry       # run Dhrystone 2.1 on the emulator
     make test       # the same, and check every result
     make core       # run both on the pipelined core in GHDL (about 21 minutes)
@@ -22,13 +22,15 @@ NICE with other processors.
     make profile    # the same, charged to the source lines, in build/*.cyc.txt
     make compare    # the model's cycles beside the pipelined core's, phase by phase and by cause, with the difference in percent, after make core
     make words      # the size in words of the benchmark, safe.zig, and float modules
-    make native     # build and run bench.c on the host, as a check
-    make wasm       # rebuild bench.wasm and dhrystone/dhry.wasm (needs clang)
+    make native     # build and run bench.c and float.c on the host, as a check
+    make wasm       # rebuild bench.wasm, float.wasm, and dhrystone/dhry.wasm (needs clang)
 
 `dhrystone/` is Dhrystone 2.1, the classic benchmark for comparing
 small processors, ported to the C library (see Dhrystone below).
+`float.c` is a benchmark of floating-point code, and so of the float
+library (see The float benchmark below).
 
-`bench.wasm` and `dhrystone/dhry.wasm` are checked in, so `make` and
+`bench.wasm`, `float.wasm`, and `dhrystone/dhry.wasm` are checked in, so `make` and
 `make test` need only Python 3 and the emulator, as the translator's
 tests do. `make wasm` needs clang with the wasm32 target and wasm-ld, and
 it builds `runtime/libc/libc.a` first.
@@ -48,7 +50,7 @@ isolates a few of the costs that translated code pays.
 | `strings` | 64 strings made from the buffer are sorted with `strcmp`, joined with `strcpy`, and searched with `strstr`. | Byte accesses through the C library. |
 
 There is no float phase, because it would measure the float library
-rather than the translator. There are no function pointers and no
+rather than the translator. `float.c` does that. There are no function pointers and no
 `malloc`.
 
 The sizes are the defines at the top of `bench.c`. All of the data is
@@ -482,6 +484,66 @@ To change a size, edit its define in `bench.c` and its equate in
 `hand.nasm`, run `python3 expected.py` and put its values in both files,
 then `make wasm`. A smaller `VM_LOOPS` or `ARR_WORDS` is the quickest way
 to a shorter run on the core.
+
+## The float benchmark
+
+`float.c` measures floating-point code, which the float library
+(`runtime/float.zig`) does in software, as nicewasm turns each float
+instruction of wasm into a call to it (WASM.md). It keeps to the rules
+of `bench.c`: phases with known results, timed with the counters, and
+the same table. It is a program of its own, not more phases of
+`bench.c`, so that the figures of `bench.c` stay comparable across
+releases, and so that `hand.nasm` needs no float library written by
+hand.
+
+| Phase | What it does | What it exercises |
+|---|---|---|
+| `convert` | 128 xorshift32 values go to f32 and f64, are multiplied by 0.75 or divided by 3, and go back to integers. They fill an f32 and an f64 array, scaled to [-1, 1]. | Conversions between integers and floats and between f32 and f64, and an f64 divide. |
+| `dot32` | The dot product of the f32 array with itself reversed. | f32 multiply and add. |
+| `dot64` | The same with the f64 array. | f64 multiply and add. |
+| `mandel` | Up to 16 iterations of the Mandelbrot set at each point of a 12 by 8 grid, in f32. | f32 multiply, add, subtract, and compare. |
+| `norm` | Normalizes 40 vectors of three f32 components from the array. | f32 square root and divide. |
+
+printf has no `%f` (issue [#68](https://github.com/MJoergen/nice_cpu/issues/68)),
+so a result is the bits of a float, or an FNV-1a hash of them, or of the
+iteration counts in `mandel`. `floatexpected.py` computes each phase in
+Python from the sizes in `float.c`. Python's floats are f64, and it
+rounds the result of each f32 operation to f32 with `struct`, which
+gives the correctly rounded f32 result for +, −, ×, ÷, and the square
+root. `make test` checks that the `EXPECT` defines in `float.c` are its
+values, and runs the program; `make native` runs it on the host. To
+change a size, edit its define, run `python3 floatexpected.py`, put its
+values in `float.c`, and run `make wasm`.
+
+The table from the emulator, with the translator and float library of V1.8:
+
+    phase      instructions       cycles  result
+    convert         361670       361698  97943df8  ok
+    dot32            24866        24894  c0c723f7  ok
+    dot64            62211        62239  ba3319ea  ok
+    mandel          677081       677109  4c25faf9  ok
+    norm            124005       124033  7703cd00  ok
+    total          1249833      1249973
+
+`make cycles` estimates 2301198 cycles on the pipelined core, and
+`make core CORE_PROGRAMS=float` measures 2301987 there, 1.84 per
+instruction, more than the 1.42 of `bench.c`, because the float
+routines branch often. `make profile` charges the instructions of the
+whole run to the routines of the float library:
+
+| Routine | Share |
+|---|---|
+| `___subsf3`, which `___addsf3` calls | 25% |
+| `___divdf3` | 16% |
+| `___mulsf3` | 15% |
+| `__clz` | 8% |
+| `___divsf3` | 7% |
+| the comparisons `___gesf2` and `___lesf2` | 6% |
+| `___sqrtsf` | 3% |
+
+The rest are the f64 multiply and add, the conversions, `__mul64`,
+the start-up code, and the phases' own loops. `make core
+CORE_PROGRAMS=float` runs the program on a core.
 
 ## Dhrystone
 

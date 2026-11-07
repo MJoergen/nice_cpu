@@ -18,6 +18,11 @@ LDFLAGS = -nostdlib -Wl,--no-entry -Wl,--export=main -Wl,--stack-first -Wl,-z,st
 PROGRAMS = bench hand simple
 CORE_PROGRAMS = bench hand
 
+# float.c, the float benchmark (README.md, The float benchmark), translated
+# from float.wasm and joined with the float library. make core runs it with
+# CORE_PROGRAMS=float.
+FLOAT_LIB = ../runtime/float.nasm
+
 # Dhrystone 2.1, ported in dhrystone/ (README.md, Dhrystone), and its
 # console input, the number of runs. The 1988 C of its sources is compiled
 # as C89, as it stands, so without the warnings of CFLAGS, and with no
@@ -29,13 +34,15 @@ DHRY_RUNS = $(DHRY)/dhry.input
 
 # Runs both on the emulator and prints their tables. bench.wasm is checked
 # in, so this needs no C compiler.
-run: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin emulator
+run: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/float.bin emulator
 	@echo "bench.c through nicewasm:"
 	@$(EMU) $(BUILD)/bench.bin < /dev/null | sed '/^Halted/,$$d'
 	@echo "hand.nasm:"
 	@$(EMU) $(BUILD)/hand.bin < /dev/null | sed '/^Halted/,$$d'
 	@echo "simple.nasm:"
 	@$(EMU) $(BUILD)/simple.bin < /dev/null | sed '/^Halted/,$$d'
+	@echo "float.c through nicewasm:"
+	@$(EMU) $(BUILD)/float.bin < /dev/null | sed '/^Halted/,$$d'
 
 # Runs Dhrystone on the emulator and prints its output.
 dhry: $(BUILD)/dhry.bin emulator
@@ -43,7 +50,8 @@ dhry: $(BUILD)/dhry.bin emulator
 
 # The same, and checks that every phase has its expected result, that main
 # returns 0 in R1, and that the expected values in bench.c, hand.nasm, and
-# simple.nasm are those of expected.py.
+# simple.nasm are those of expected.py, and those in float.c are those of
+# floatexpected.py.
 define check
 	@$(EMU) $(BUILD)/$(1).bin < /dev/null > $(BUILD)/$(1).out; sed '/^Halted/,$$d' $(BUILD)/$(1).out
 	@if grep -q ' R1  00000000 ' $(BUILD)/$(1).out && ! grep -q FAIL $(BUILD)/$(1).out; \
@@ -51,16 +59,19 @@ define check
 
 endef
 
-test: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/dhry.bin emulator
+test: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/float.bin $(BUILD)/dhry.bin emulator
 	@$(PYTHON) expected.py --check bench.c hand.nasm simple.nasm
+	@$(PYTHON) floatexpected.py --check float.c
 	@$(PYTHON) hazards.py --test
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --test
 	@NICEEMU=$(EMU) $(PYTHON) cycprof.py --test
 	@$(PYTHON) words.py --test
-	$(foreach p,$(PROGRAMS),$(call check,$(p)))
+	$(foreach p,$(PROGRAMS) float,$(call check,$(p)))
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --phases 6 $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin \
 	  > /dev/null \
 	  && echo "PASS pipecycles.py --phases 6"
+	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --phases 5 $(BUILD)/float.bin > /dev/null \
+	  && echo "PASS pipecycles.py --phases 5"
 	@$(PYTHON) dhrycheck.py --test
 	@$(EMU) --input $(DHRY_RUNS) $(BUILD)/dhry.bin < /dev/null > $(BUILD)/dhry.out
 	@$(PYTHON) dhrycheck.py --runs $$(cat $(DHRY_RUNS)) $(BUILD)/dhry.out
@@ -104,7 +115,7 @@ define core_run
 
 endef
 
-core: $(BUILD)/bench.bin $(BUILD)/hand.bin
+core: $(CORE_PROGRAMS:%=$(BUILD)/%.bin)
 	$(ANALYZE)
 	$(foreach p,$(CORE_PROGRAMS),$(call core_run,$(p)))
 
@@ -131,6 +142,18 @@ $(BUILD)/dhry.full.nasm: ../runtime/start_wasm.nasm $(BUILD)/dhry.nasm ../runtim
   ../runtime/muldiv_mpu.nasm
 	cat $^ > $@
 
+$(BUILD)/float.nasm: float.wasm ../translator/nicewasm.py
+	@mkdir -p $(BUILD)
+	$(NICEWASM) -o $@ float.wasm
+
+$(BUILD)/float.full.nasm: ../runtime/start_wasm.nasm $(BUILD)/float.nasm ../runtime/lib.nasm \
+  ../runtime/muldiv_mpu.nasm $(FLOAT_LIB)
+	cat $^ > $@
+
+# float.nasm is not checked in; the runtime translates it from float.wasm.
+$(FLOAT_LIB): ../runtime/float.wasm ../translator/nicewasm.py
+	$(MAKE) -C ../runtime float.nasm
+
 $(BUILD)/hand.full.nasm: ../runtime/start.nasm hand.nasm ../runtime/lib.nasm
 	@mkdir -p $(BUILD)
 	cat $^ > $@
@@ -150,8 +173,9 @@ hazards: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 # Estimates the cycles of the three programs on the pipelined core of
 # doc/MICROARCH.md, from the emulator's traces (README.md, The cycle
 # estimate).
-cycles: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin emulator
+cycles: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/float.bin emulator
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin
+	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py $(BUILD)/float.bin
 
 # The model's cycles beside the pipelined core's, phase by phase, with the
 # difference in percent, and by cause, from the output and the retire log
@@ -163,10 +187,12 @@ compare: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 	  --causes ../hdl/build/hand_pipeline.retires $(BUILD)/hand.bin
 
 # The same, charged to the source lines of each program: the listings
-# build/bench.cyc.txt and build/hand.cyc.txt.
-profile: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/bench.full.nasm $(BUILD)/hand.full.nasm emulator
+# build/bench.cyc.txt, build/hand.cyc.txt, and build/float.cyc.txt.
+profile: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/float.bin $(BUILD)/bench.full.nasm \
+  $(BUILD)/hand.full.nasm $(BUILD)/float.full.nasm emulator
 	@NICEEMU=$(EMU) $(PYTHON) cycprof.py $(BUILD)/bench.full.nasm $(BUILD)/bench.bin
 	@NICEEMU=$(EMU) $(PYTHON) cycprof.py $(BUILD)/hand.full.nasm $(BUILD)/hand.bin
+	@NICEEMU=$(EMU) $(PYTHON) cycprof.py $(BUILD)/float.full.nasm $(BUILD)/float.bin
 
 # The size in words of the translated modules the READMEs quote: the
 # benchmark's, translator/test/safe.zig's, and the float library's.
@@ -176,24 +202,27 @@ words:
 
 # Needs mypy (pip install mypy).
 typecheck:
-	MYPYPATH=../assembler $(PYTHON) -m mypy --strict expected.py hazards.py pipecycles.py cycprof.py words.py dhrycheck.py
+	MYPYPATH=../assembler $(PYTHON) -m mypy --strict expected.py floatexpected.py hazards.py pipecycles.py cycprof.py words.py dhrycheck.py
 
-# Rebuilds bench.wasm from bench.c, and dhrystone/dhry.wasm from its
-# sources. Needs clang with the wasm32 target and wasm-ld, and builds the C
-# library first.
+# Rebuilds bench.wasm from bench.c, float.wasm from float.c, and
+# dhrystone/dhry.wasm from its sources. Needs clang with the wasm32 target
+# and wasm-ld, and builds the C library first.
 wasm:
 	$(MAKE) -C $(LIBC) libc.a
 	$(CLANG) $(CFLAGS) $(LDFLAGS) -o bench.wasm bench.c $(LIBC)/libc.a
+	$(CLANG) $(CFLAGS) $(LDFLAGS) -o float.wasm float.c $(LIBC)/libc.a
 	$(CLANG) $(DHRY_CFLAGS) $(LDFLAGS) -o $(DHRY)/dhry.wasm $(DHRY)/dhry_1.c $(DHRY)/dhry_2.c \
 	  $(LIBC)/libc.a
-	@chmod -x bench.wasm $(DHRY)/dhry.wasm
+	@chmod -x bench.wasm float.wasm $(DHRY)/dhry.wasm
 
-# Builds and runs bench.c on the host, as a second check of its results.
-# The counters read 0 there.
+# Builds and runs bench.c and float.c on the host, as a second check of
+# their results. The counters read 0 there.
 native:
 	@mkdir -p $(BUILD)
 	$(CLANG) -O2 -Wall -Wextra -o $(BUILD)/bench.native bench.c
 	@./$(BUILD)/bench.native
+	$(CLANG) -O2 -Wall -Wextra -o $(BUILD)/float.native float.c
+	@./$(BUILD)/float.native
 
 emulator:
 	$(MAKE) -C ../emulator build

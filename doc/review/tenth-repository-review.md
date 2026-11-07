@@ -79,6 +79,8 @@ The old WRITE said W_LATE in its read-wait branch when `rq_cnt_i + ack >= nr`, e
 
 Line 345: "No other function sets `errno`: `malloc` returns `NULL` with no code, and `scanf` keeps the low bits of a number too large for its type". Line 272, the `errno.h` row, now says that `strtod`, `strtof`, `atof`, and `scanf` set it too. **Fix:** "No other function sets `errno`: the math functions report no error (Math functions below), `malloc` returns `NULL` with no code, and `scanf` keeps the low bits ...", with the float conversions named before it, as the row does.
 
+**Resolved**: The sentence names the float conversions first, as the `errno.h` row does, and the math functions among those that set no `errno`.
+
 ### 3.2 bench/README.md says `printf` has no `%f`
 
 Line 511: "printf has no `%f` (issue #68), so a result is the bits of a float, or an FNV-1a hash of them". #68 is closed by 31c11ac, and `printf` has it. The reason to print bits stands. **Fix:** "A result is the bits of a float, or an FNV-1a hash of them, or of the iteration counts in `mandel`, so that the check is exact and the program needs no float conversions."

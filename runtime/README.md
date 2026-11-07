@@ -342,7 +342,7 @@ The library is small on purpose:
   into it, such as `0x2p+0` for `%.0a` of 1.5. They cost every program
   that calls `printf` 3085 words: `printf` with `%d` alone was 4124 words
   and is now 7209. `%f` of 1e300 takes about 48000 steps.
-- `strtol` and `strtoul` saturate on overflow and set `errno` to `ERANGE`. A base other than 0 and 2 to 36 converts nothing, as no digits, and sets `errno` to `EINVAL`. No other function sets `errno`: `malloc` returns `NULL` with no code, and `scanf` keeps the low bits of a number too large for its type, as C leaves it undefined.
+- `strtol` and `strtoul` saturate on overflow and set `errno` to `ERANGE`. A base other than 0 and 2 to 36 converts nothing, as no digits, and sets `errno` to `EINVAL`. `strtod` and `strtof`, and so `atof` and `scanf`, set it for a float, as the `errno.h` row above says. No other function sets `errno`: the math functions report no error (Math functions below), `malloc` returns `NULL` with no code, and `scanf` keeps the low bits of a number too large for its type, as C leaves it undefined.
 - `exit` is the assembly routine `_exit` of the start-up code: with `start_wasm.nasm`, the `HALT` after `main`, with the status in R1, so the emulator exits with status 0, and under a monitor a return to it (ABI.md). `EXIT_SUCCESS` is 0 and `EXIT_FAILURE` 1. There is no `atexit`. `abort` and a failed `assert` trap (WASM.md), so the emulator exits with status 2.
 - `rand` is the linear congruential generator of the C standard's example, `srand(1)` at start.
 - `malloc` is first fit, with an 8-byte header on each block, and merges

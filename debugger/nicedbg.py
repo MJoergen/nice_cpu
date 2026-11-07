@@ -36,7 +36,7 @@ import select
 import sys
 import termios
 import threading
-from typing import Callable
+from typing import Callable, NamedTuple
 
 try:
     import readline
@@ -57,6 +57,17 @@ from nicelink import (BRK_ADDR, BRK_COUNT, BRK_EN, CONTROL, FREE,  # noqa: E402
                       HALT_REASON, HALTED, HOLD, MAX_WORDS, PAUSE, RAM,
                       REASONS, REGS, STOP, VERSION, Link, LinkError,
                       add_arguments, open_link)
+
+
+class Counts(NamedTuple):
+    """The link's counts of the notices, for those shown so far."""
+    pauses: int
+    breaks: int
+    halts: int
+    boots: int
+    overflows: int
+    bad: int
+
 
 # The commands' short names
 ALIASES = {
@@ -153,10 +164,10 @@ class Debugger(cmd.Cmd):
 
     # What arrives
 
-    def _counts(self) -> tuple[int, int, int, int, int, int]:
+    def _counts(self) -> Counts:
         link = self.link
-        return (link.pauses, len(link.breaks), len(link.halts), link.boots,
-                link.overflows, link.bad)
+        return Counts(link.pauses, len(link.breaks), len(link.halts),
+                      link.boots, link.overflows, link.bad)
 
     def _pc(self, instr: bool = False) -> str:
         """The PC, its label, and with instr the instruction there, for a
@@ -180,20 +191,22 @@ class Debugger(cmd.Cmd):
         """The console bytes that have arrived, and a line for each notice
         that has, on a line of its own. line_open is whether the output
         shown last ended inside a line. The lock is held."""
-        data = self.link.take_console()
-        pauses, breaks, halts, boots, overflows, bad = self.seen
         link = self.link
+        data = link.take_console()
+        # The counts before the reads of _pc() below, which poll the link:
+        # a notice that arrives during them is shown the next time
+        old, new = self.seen, self._counts()
+        self.seen = new
         lines = []
-        lines += ["boot"] * (link.boots - boots)
-        lines += ["input overflow"] * (link.overflows - overflows)
-        lines += ["bad packet dropped"] * (link.bad - bad)
-        for why in link.halts[halts:]:
+        lines += ["boot"] * (new.boots - old.boots)
+        lines += ["input overflow"] * (new.overflows - old.overflows)
+        lines += ["bad packet dropped"] * (new.bad - old.bad)
+        for why in link.halts[old.halts:new.halts]:
             lines.append(f"halted: {REASONS.get(why, why)}, {self._pc()}")
-        for n in link.breaks[breaks:]:
+        for n in link.breaks[old.breaks:new.breaks]:
             lines.append(f"breakpoint {n}, {self._pc(True)}")
-        if link.pauses - pauses > len(link.breaks) - breaks:
+        if new.pauses - old.pauses > new.breaks - old.breaks:
             lines.append(f"paused, {self._pc(True)}")
-        self.seen = self._counts()
         for line in lines:
             if data[-1:] not in (b"", b"\n") or (not data and line_open):
                 data += b"\n"

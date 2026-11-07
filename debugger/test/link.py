@@ -5,6 +5,7 @@ Each group starts "niceemu --link 0", which picks a free port, and
 connects to it as the host. The groups check:
 
 - parse_tcp(), on the forms of --tcp [HOST:]PORT and on bad ones;
+- nicedbg.py's pending(), with a notice that arrives during its reads;
 - the Link: the version, reads and writes longer than one packet, an
   error answer, the console of test/echo.nasm with a byte 0xFF, the end
   of its input, and the connection that follows it;
@@ -137,6 +138,32 @@ def test_parse_tcp() -> None:
             check(f"parse_tcp({text!r}) fails", False, repr(got))
         except SystemExit:
             check(f"parse_tcp({text!r}) fails", True)
+
+
+class Arrival(Link):
+    """A Link on no transport, on which a boot notice arrives in the first
+    read, as one may while pending() reads the PC for another notice."""
+
+    def __init__(self) -> None:
+        super().__init__(nicelink.Transport())
+
+    def read_word(self, addr: int) -> int:
+        if not self.boots:
+            self.boots += 1
+        return 0x42
+
+
+def test_pending() -> None:
+    """A notice that arrives while pending() reads the PC for another is
+    shown the next time, not lost."""
+    link = Arrival()
+    dbg = nicedbg.Debugger(link)
+    link.halts.append(1)
+    first = dbg.pending()
+    second = dbg.pending()
+    check("a notice during pending()'s reads is shown next",
+          first == b"[halted: HALT, PC=00000042]\n" and
+          second == b"[boot]\n", repr((first, second)))
 
 
 def test_link(port: str, echo: str) -> None:
@@ -399,6 +426,7 @@ def main() -> None:
         sys.exit(f"link.py: {NICEEMU} is missing; run "
                  "'make -C ../emulator build'")
     test_parse_tcp()
+    test_pending()
     with tempfile.TemporaryDirectory() as tmp:
         echo, _ = assemble("echo", tmp)
         prog, at = assemble("break", tmp)

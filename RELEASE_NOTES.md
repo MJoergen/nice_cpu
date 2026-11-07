@@ -14,6 +14,7 @@ pin each are:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|
+| `V1.8` | none yet |
 | `V1.7` | none yet |
 | `V1.6` | none yet |
 | `V1.5` | none yet |
@@ -31,6 +32,119 @@ pin each are:
 
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
+
+## V1.8 (2026-11-07)
+
+The performance counters count five events of a program, the same on
+the emulator and both cores (#126), and the pipelined core's fetch
+statistics say where its cycles go, by cause (#125, #137). The
+debugger on the link moves here from NiceMonMEGA65, to `debugger/`
+(#134). A program's code can run from a ROM (#138).
+
+**Upgrade notes.**
+
+- The fetch statistics move from `0xFFFFFF50`–`0xFFFFFF7F` to
+  `0xFFFFFF60`–`0xFFFFFF7F`, 32 words with new meanings. The event
+  counters take `0xFFFFFF4A`–`0xFFFFFF53`, which read 0 before.
+- `stats_o` of the pipelined core has new fields: the cause of each
+  cycle and of each flush, and the stalls of both buses. Its old
+  fields for FETCH's buffer are gone. `perf.vhd` has 32 words, from
+  16, and new inputs for the core's `retire_o` and data bus, which
+  default to no events. `fetch_stats.vhd` has 32 words, from 48. The
+  ports of both cores but `stats_o`, `wb_dmux`, the other devices, and
+  the debug link are as in V1.7. NiceMonMEGA65 follows the new map
+  with MJoergen/NiceMonMEGA65#85.
+- The pipelined core leaves a system less time on `dbus_ack_i` and
+  `instret_o`. In the `timing` flow on the MEGA65 it misses the input
+  budget (FPGA cores below, #141).
+- `nicedbg.py --port` runs at 230400 baud by default, as macOS has no
+  higher rate. NiceMonMEGA65 runs its UART at 2000000 until
+  MJoergen/NiceMonMEGA65#88, so it needs `--baud 2000000` until then.
+- The start-up files of the runtime define `___wasm_trap_vector` and
+  `___putc_vector`, which left `lib.nasm`. A program that joins
+  `lib.nasm` with start-up code of its own defines them.
+- Zig 0.17.0, as in V1.7.
+
+**Specification and documents**
+
+- SYSTEM.md §3 has the event counters: the data reads, the stores, the
+  skipped instructions, the jumps, and the interrupt entries and
+  `INT`, each a 64-bit counter with a snapshot. They count what the
+  program does, not what the processor does (#126).
+- MICROARCH.md §8.1 describes the new fetch statistics: 15 causes
+  that sum to the cycles, the flushes by cause, and the stalls of both
+  buses (#125).
+- WASM.md has the rules for a module whose code runs from a ROM: its
+  mutable globals and memory go in RAM, and `___wasm_start` copies
+  their initial values there at every start (#138).
+- SYSTEM.md §5 says that NiceMonMEGA65 has the font RAM, the character
+  ROM, and the base from its V1.6 (#136).
+
+**Emulator (`niceemu`)**
+
+- It counts the five events of SYSTEM.md §3. The probe
+  `test/events.nasm` checks them against hand-worked counts.
+- `--no-font` makes the font RAM and the character ROM ordinary
+  memory, to compare a run with a core, whose test memory has
+  neither.
+- `tools/nicetap.py` joins the UDP socket of `--eth-udp` to a TAP
+  device on Linux, so that a program in the emulator is on a real
+  network (#135).
+- `make test` runs `zig fmt --check` (#139).
+- The version is 1.8.0.
+
+**Debugger (`debugger/`)**
+
+- `nicedbg.py` is the generic part of NiceMonMEGA65's `tools/mon.py`:
+  the shell, with `--tcp` and `--port`. `nicelink.py` is the link and
+  its transports, and `nicebin.py` loads a `.bin` and its `.sym`. A
+  board imports them, with hooks for its own transports and memory
+  (#134). `make test` runs them on `niceemu --link`.
+- Fixed since the move: a second eof no longer kills it, `bd` refuses
+  a number that is no breakpoint, a notice that arrives while
+  `pending()` reads the PC is no longer lost, and a send to a full
+  input buffer gives up after 2 s instead of hanging.
+
+**Translator (`nicewasm`, `nicebuild.py`)**
+
+- `nicewasm --ram ADDR` translates a program's module whose code runs
+  from a ROM, with `--ram-bytes` for the size of its memory.
+  `nicebuild.py --ram ADDR` builds such a program from C, Zig, or Rust.
+  A program that uses floats, `--monitor`, and `--memory-pages` are
+  errors with it (#138).
+
+**Runtime (`runtime/`)**
+
+- The trap and putc vectors are in the start-up code, so that the
+  library holds no word that is written. The start-up code grows by
+  two words.
+
+**FPGA cores (`hdl/`)**
+
+- `perf.vhd` has the event counters, from the core's `retire_o` and
+  its own data bus, and `make formal` proves them.
+- The pipelined core reports a cause for each cycle on `stats_o`,
+  through two stages of registers, and `fetch_stats.vhd` counts them.
+  On cputest the causes match the cycle model of `bench/pipecycles.py`.
+- `make random-sweep` passes on both cores, seeds 1 to 1000: the
+  random programs halt less often, and the testbench's timer and
+  `irq_compare.py` were wrong, not the cores (#58, #140).
+- `make timing` on the MEGA65 meets the budget in the default flow:
+  the core alone has +0.343 ns of slack, from +0.503 ns in V1.7, and
+  its inputs and outputs leave 2.524 and 2.715 ns, from 3.056 and
+  2.836 ns. The `timing` flow, which NiceMonMEGA65 builds with, leaves
+  the inputs 1.344 ns, from 2.204 ns, which misses the budget of 1.5
+  ns. The fetch statistics by cause (179d19e, #125) took the
+  difference. #141 is to win it back. `hdl/README.md` has the new
+  slacks of the ports on both boards.
+
+**Benchmarks**
+
+- `make compare` sets the model's cycles beside the pipelined core's
+  by cause, in 12 groups, which agree to the cycle but for two pairs
+  counted on the other side of a boundary (#137).
+- No change: 2339271 estimated cycles on the pipelined core, as in
+  V1.7.
 
 ## V1.7 (2026-11-05)
 

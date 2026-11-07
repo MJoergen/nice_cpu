@@ -560,6 +560,9 @@ since then, each with the figures of the whole program after it:
 | and `__clz`, `__ctz`, and `__popcnt` read the math unit, in 3 steps | 1095649 (−12.3%) | 1957336 (−14.9%) |
 | and the f32 square root reads `ISQRT64` of the math unit | 1058329 (−15.3%) | 1916828 (−16.7%) |
 
+On the pipelined core the program then takes 1917617 cycles, 1.81 per
+instruction, from 2301987 in V1.8 (−16.7%).
+
 A read of a bit count waits for the math unit's multiplier count, two
 cycles, and the bus passes to the math unit and back to RAM a cycle
 late (see The cycle estimate above), so on the pipelined core the bit

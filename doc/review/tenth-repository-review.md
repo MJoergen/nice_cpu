@@ -91,6 +91,8 @@ Line 511: "printf has no `%f` (issue #68), so a result is the bits of a float, o
 
 Line 533: "`make core CORE_PROGRAMS=float` measures 2301987 there, 1.84 per instruction". That is the figure before the changes of #129; the message of 8dd4513 measured 1917617 cycles for 1058329 instructions on the pipelined core after them. RELEASE.md step 2.4 asks for the figures of the release. **Fix:** add the measured figure to the last row of the table of changes, or a sentence after it: "On the pipelined core the program then takes 1917617 cycles, 1.81 per instruction." The run table above it is labeled as `V1.8`'s, which is clear enough.
 
+**Resolved**: A sentence after the table of changes gives the pipelined core's 1917617 cycles, measured in 8dd4513.
+
 ### 3.4 hdl/README.md's lists of the probes leave out `mpubits`
 
 Line 912: "`mpu` and `mpu64` read every word of the math unit." Line 1002: "`cputest`, `reads`, `mpu`, `mpu64`, `perf`, `events`, `timer`, and `sd` again, on a memory that stalls in 30% of the cycles". `hdl/Makefile` runs `mpubits` in both lists, and its own comment says so. **Fix:** add `mpubits` to both.

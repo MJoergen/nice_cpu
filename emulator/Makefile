@@ -78,7 +78,7 @@ endef
 
 # The unit tests run in Debug, for its safety checks; niceemu itself is
 # built ReleaseSafe, which keeps the checks but runs much faster.
-test: build bincheck
+test: build bincheck fmtcheck
 	$(ZIG) build test --summary all
 	@$(MAKE) --no-print-directory programs
 	@NICEEMU=$(abspath $(EMU)) $(PYTHON) test/errors.py
@@ -99,6 +99,10 @@ programs:
 
 build:
 	$(ZIG) build -Doptimize=ReleaseSafe
+
+# Fail if a Zig source is not as zig fmt lays it out; zig fmt fixes it.
+fmtcheck:
+	$(ZIG) fmt --check build.zig src
 
 # The same with the window of --window. The first build fetches SDL and
 # compiles it from source; later ones take it from the Zig cache.
@@ -166,4 +170,4 @@ typecheck:
 clean:
 	rm -rf zig-out .zig-cache zig-pkg dist test/*.out
 
-.PHONY: test programs dist build window window-test bins bincheck typecheck clean
+.PHONY: test programs dist build window window-test bins bincheck fmtcheck typecheck clean

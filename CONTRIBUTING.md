@@ -87,6 +87,9 @@ which takes hours. No release runs it. VHDL follows [hdl/CODING_STYLE.md](hdl/CO
 
 **Python** uses the standard library only and is `mypy --strict` clean.
 
+**Zig** is laid out by `zig fmt`. `make -C emulator test` checks it, and
+`zig fmt emulator/src` fixes it.
+
 **NICE assembly** (`.nasm` files, listings in documents, and the output
 of generators) is laid out in columns, with spaces only and no tabs: the
 label in column 0, the condition in column 8, the mnemonic in column 16,

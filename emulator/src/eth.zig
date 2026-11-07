@@ -470,16 +470,16 @@ test "the station: ARP, ping, the link's TCP, and an IP address of 0 (SYSTEM §6
     eth.write(0, 1, test_st);
     // An ARP request from 192.168.1.10 at 02:00:00:00:00:01.
     const arp = [_]u8{
-        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x02, 0, 0, 0, 0, 1, 0x08, 0x06,
-        0,    1,    0x08, 0x00, 6,    4,    0,    1, 0x02, 0, 0, 0, 0, 1,
-        192,  168,  1,    10,   0,    0,    0,    0, 0,    0, 192, 168, 1, 65,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x02, 0, 0,    0, 0,   1,   0x08, 0x06,
+        0,    1,    0x08, 0x00, 6,    4,    0,    1, 0x02, 0, 0,   0,   0,    1,
+        192,  168,  1,    10,   0,    0,    0,    0, 0,    0, 192, 168, 1,    65,
     };
     eth.receive(&arp, test_st);
     try testing.expectEqual(0, eth.read(1));
     try testing.expectEqualSlices(u8, &.{
-        0x02, 0,    0,    0,    0,    1,    0x02, 0x4E, 0x49, 0x43, 0x45, 0, 0x08, 0x06,
-        0,    1,    0x08, 0x00, 6,    4,    0,    2,    0x02, 0x4E, 0x49, 0x43, 0x45, 0,
-        192,  168,  1,    65,   0x02, 0,    0,    0,    0,    1,    192,  168, 1,    10,
+        0x02, 0,   0,    0,    0,    1, 0x02, 0x4E, 0x49, 0x43, 0x45, 0,    0x08, 0x06,
+        0,    1,   0x08, 0x00, 6,    4, 0,    2,    0x02, 0x4E, 0x49, 0x43, 0x45, 0,
+        192,  168, 1,    65,   0x02, 0, 0,    0,    0,    1,    192,  168,  1,    10,
     }, sink.frames.items[0]);
     // The same request for another address goes to the program.
     var other = arp;
@@ -489,9 +489,9 @@ test "the station: ARP, ping, the link's TCP, and an IP address of 0 (SYSTEM §6
     eth.write(1, 0, test_st);
     // A ping from 192.168.1.10, with 4 bytes of data.
     var ping = [_]u8{
-        0x02, 0x4E, 0x49, 0x43, 0x45, 0,    0x02, 0, 0, 0, 0, 1, 0x08, 0x00,
-        0x45, 0,    0,    32,   0,    1,    0,    0, 64, 1, 0, 0, 192, 168,
-        1,    10,   192,  168,  1,    65,   8,    0, 0, 0, 0x12, 0x34, 0, 1,
+        0x02, 0x4E, 0x49, 0x43, 0x45, 0,  0x02, 0, 0,  0, 0,    1,    0x08, 0x00,
+        0x45, 0,    0,    32,   0,    1,  0,    0, 64, 1, 0,    0,    192,  168,
+        1,    10,   192,  168,  1,    65, 8,    0, 0,  0, 0x12, 0x34, 0,    1,
         0xDE, 0xAD, 0xBE, 0xEF,
     };
     std.mem.writeInt(u16, ping[24..26], checksum(ping[14..34]), .big);

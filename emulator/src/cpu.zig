@@ -1955,14 +1955,12 @@ test "the whole address space exists and wraps (§1.1)" {
 }
 
 test "the console takes the low byte of a write, and memory keeps nothing" {
-    // MOVE @0xFFFFFF00, 0x1234_5648 ("H"), MOVE @0xFFFFFF00, 0x69 ("i"),
-    // MOVE R1, @0xFFFFFF00, HALT.
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
     try load(&cpu, 0, &.{
-        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), console_addr, 0x1234_5648,
-        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), console_addr, 0x69,
-        alu_iw(.always, MOVE, .none, reg(1), ind_imm(0), reg(0)), console_addr,
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), console_addr, 0x1234_5648, // MOVE @0xFFFFFF00, 0x12345648 ("H")
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), console_addr, 0x69, // MOVE @0xFFFFFF00, 0x69 ("i")
+        alu_iw(.always, MOVE, .none, reg(1), ind_imm(0), reg(0)), console_addr, // MOVE R1, @0xFFFFFF00
         HALT,
     });
     var buf: [8]u8 = undefined;

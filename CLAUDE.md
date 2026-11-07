@@ -39,7 +39,7 @@ library, a wasm translator, and two FPGA cores. See README.md.
 - `assembler/niceasm.py`: Python 3, standard library only, `mypy --strict` clean.
   `assembler/nicefmt.py` checks the column layout of `.nasm` files, or fixes it with `--write`.
   `assembler/nicedis.py` disassembles a `.bin` file back to `.nasm`. Same rules as niceasm.py.
-- `emulator/`: Zig 0.17.
+- `emulator/`: Zig 0.17, laid out by `zig fmt`, which `make test` checks.
 - `debugger/nicedbg.py`: the interactive debugger on the debug link of DEBUG.md,
   over TCP to `niceemu --link` or a UART. `nicelink.py` is the link, and
   `nicebin.py` reads the `.bin` and `.sym` files and loads a program; a
@@ -79,7 +79,7 @@ library, a wasm translator, and two FPGA cores. See README.md.
     make test                        # every quick make test below, in parallel
     cd assembler && make test        # .nasm -> .bin comparisons, test/errors.py, fmt.py, and dis.py, and the layout of every .nasm
     cd assembler && make typecheck   # mypy --strict
-    cd emulator  && make test        # zig unit tests, example and probe programs, test/errors.py and link.py
+    cd emulator  && make test        # zig fmt --check, zig unit tests, example and probe programs, test/errors.py and link.py
     cd emulator  && make typecheck   # mypy --strict
     cd emulator  && make bincheck    # fail if a probe .bin is stale
     cd emulator  && make bins        # reassemble test/*.bin after editing a probe .nasm

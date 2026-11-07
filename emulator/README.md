@@ -530,7 +530,9 @@ line.
 
 ## Tests
 
-`make test` runs the unit tests in `src/cpu.zig`, then the example programs
+`make test` first checks with `zig fmt --check` that the Zig sources are
+laid out as `zig fmt` lays them out. It then runs the unit tests in
+`src/cpu.zig`, then the example programs
 in `../assembler/test/` (the three 2004 programs and `wrap`) and the
 probes: the programs `test/*.nasm`, each of which exercises one feature
 and has a hand-checked `test/X.expected`. The output and exit status of

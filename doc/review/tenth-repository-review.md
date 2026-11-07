@@ -10,6 +10,8 @@ Reviewed on 2026-11-07: the eleven commits between `V1.8` and the head of `dev-V
 
 **Two release steps are still to do** (§1): the version in `emulator/build.zig.zon`, and the `V1.9` section of RELEASE_NOTES.md, whose upgrade notes have four things to say. **Four statements in the documents are stale or contradict another** (§3): the runtime README still says that only `strtol` and `strtoul` set `errno`; the bench README says `printf` has no `%f` and quotes the float benchmark's cycles on the core from before the changes; and the HDL README's two lists of the probes leave out `mpubits`. Each is a sentence.
 
+**Every finding is closed** on `dev-V1.9`, with a commit for each and a **Resolved** paragraph under each: the version (§1.1), the `V1.9` notes (§1.2), `errno` in the runtime README (§3.1), the bench README's `%f` and cycles on the core (§3.2, §3.3), `mpubits` in the HDL README (§3.4), and WASM.md's sentence on a library module's imports (§3.5). CI passed every job on 351a0cf after this was written. What is left is the date of the `V1.9` section, set at the tag, the milestone's count of one open item (§1.3), and the release steps of RELEASE.md.
+
 ## 1. The release
 
 ### 1.1 `emulator/build.zig.zon` still says `1.8.0`

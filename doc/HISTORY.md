@@ -454,9 +454,15 @@ uses `srl` and `sll`.
 
 NiceMonMEGA65's debug UART ran at 115200 baud until it moved to 2 Mbaud
 (MJoergen/NiceMonMEGA65@a922a42). A 65535-word `r` took about 45 s then,
-and `primes.bin` took 6.9 s to load, against 2.6 s and 0.7 s now. Bitstreams
-built before the change still run at 115200 baud, so the tools' `--baud`
-default of 2000000 does not fit them.
+and `primes.bin` took 6.9 s to load, against 2.6 s and 0.7 s at 2 Mbaud.
+On 2026-11-07 the tools' `--baud` default went from 2000000 to 230400,
+the highest rate that the termios of both Linux and macOS have a constant
+for: macOS has none above `B230400`, so `nicedbg.py` could not open a
+board at 2 Mbaud there. The UART's bandwidth matters less since the board
+has Ethernet. A 65535-word `r` takes about 23 s at 230400 baud, and the
+demo, 4947 words, 1.8 s to load. The board follows in
+MJoergen/NiceMonMEGA65#88. Bitstreams built before either change still
+run at their rate, so `--baud 115200` or `--baud 2000000` fits them.
 
 ## When `halted_o` rises
 

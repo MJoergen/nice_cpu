@@ -91,15 +91,17 @@ ANSWER_WAIT = 0.3
 # T_ESC), so that a gap here does not cut an escape sequence in two.
 FULL_WAIT = 0.001
 # How long a break holds the UART's line low. A board takes a frame of
-# zeros for one, 5 us at 2 Mbaud; this leaves room for the USB serial
+# zeros for one, 43 us at 230400 baud; this leaves room for the USB serial
 # chip. TIOCSBRK and TIOCCBRK set and clear it: Linux's asm-generic/ioctls.h
 # has 0x5427 and 0x5428, and macOS's sys/ttycom.h, as the BSDs, 0x2000747B
 # and 0x2000747A; Python's termios does not have them.
 BREAK_TIME = 0.02
 TIOCSBRK = 0x5427 if sys.platform.startswith("linux") else 0x2000747B
 TIOCCBRK = 0x5428 if sys.platform.startswith("linux") else 0x2000747A
-# The UART's baud rate unless --baud gives another
-DEFAULT_BAUD = 2000000
+# The UART's baud rate unless --baud gives another: the highest that the
+# termios of both Linux and macOS have a constant for, as macOS has none
+# above B230400
+DEFAULT_BAUD = 230400
 # How many times a request without an answer is sent, the first time
 # included, before the link gives up
 TRIES = 3
@@ -179,8 +181,8 @@ class Serial(Transport):
     for it.
 
     A board sends at the full rate with no flow control, and the kernel's
-    buffer of a tty holds about 4 KB, 20 ms at 2 Mbaud. So every wait of
-    end_input() reads on, and the break is set and cleared with ioctls
+    buffer of a tty holds about 4 KB, 180 ms at 230400 baud. So every wait
+    of end_input() reads on, and the break is set and cleared with ioctls
     around such a wait: tcsendbreak() blocks for 0.25 s or more, and the
     output of that time was lost, an h notice too."""
 

@@ -240,7 +240,8 @@ has a side effect (§3). Then the host reads what the request changes, such
 as the control register, to learn whether it took effect. A system
 sends the first byte of every answer within 100 ms of the last byte of the
 request, a clear of the memory included (§6). The whole answer may take
-longer: a 65535-word `r` takes about 2.6 s at 2 Mbaud.
+longer: a 65535-word `r` takes about 23 s at 230400 baud, and 2.6 s at
+2 Mbaud.
 
 A request behind console bytes that the free-space register (§6) did not
 allow may wait longer. On a transport with flow control, such a byte holds
@@ -498,12 +499,13 @@ and bit 3 at 0. A system without one waits, held, with bit 0 at 1.
 ### 7.1 UART and TCP
 
 - **UART.** NiceMonMEGA65 carries the link on its debug UART, 8-N-1, at
-  2 Mbaud unless it was built for another rate. A UART break, a frame
-  of ten 0 bits, ends the line's input (SYSTEM.md §8): the host's
-  console bytes are dropped until the next start, and the console reads
-  `0x200` (SYSTEM.md §1) once its buffer is empty. A keyboard's bytes
-  still reach the program, so a monitor that a host leaves keeps running
-  on the keyboard. A break is the host's deliberate act, and a host that
+  230400 baud, the tools' default, unless it was built for another
+  rate. A UART break, a frame of ten 0 bits, ends the line's input
+  (SYSTEM.md §8): the host's console bytes are dropped until the next
+  start, and the console reads `0x200` (SYSTEM.md §1) once its buffer is
+  empty. A keyboard's bytes still reach the program, so a monitor that a
+  host leaves keeps running on the keyboard. A break is the host's
+  deliberate act, and a host that
   only leaves sends none, so the end lasts until the next start.
 - **TCP.** Over TCP the connection is the line. A host ends the line's
   input by closing its half of the connection for writing (a TCP

@@ -30,7 +30,7 @@ The options:
 |---|---|
 | `--tcp [HOST:]PORT` | Talk to `niceemu --link` on `PORT` of `HOST`, `127.0.0.1` by default. An IPv6 `HOST` goes in brackets, `[::1]:4510`. |
 | `--port DEVICE` | Talk to a system on its UART, the serial device `DEVICE`, such as `/dev/ttyUSB1`. On macOS, use the `/dev/cu.*` device. |
-| `--baud RATE` | The UART's baud rate, 2000000 by default. |
+| `--baud RATE` | The UART's baud rate, 230400 by default: the highest rate that the termios of both Linux and macOS have a constant for. |
 | `--symbols FILE` | Read the labels of a `.sym` file. |
 | `FILE.bin` | A program to load at the start, with the processor held. |
 

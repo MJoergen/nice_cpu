@@ -16,7 +16,7 @@ arrive, above the prompt. "send TEXT" sends console bytes to the program,
 and "console" passes the terminal through to it, until Ctrl-] returns to
 the prompt.
 
-Usage: nicedbg.py (--tcp [HOST:]PORT | --port DEVICE [--baud 2000000])
+Usage: nicedbg.py (--tcp [HOST:]PORT | --port DEVICE [--baud 230400])
                   [--symbols FILE] [FILE.bin]
 
 --tcp talks to niceemu --link, and --port to a system on its UART. A

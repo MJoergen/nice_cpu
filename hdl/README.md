@@ -273,13 +273,14 @@ the clock of the first column:
 
 | Clock and part | `dbus_ack_i` | `instret_o` |
 |---|---|---|
-| 100 MHz, MEGA65 (-2) | 1.3 to 2.5 ns | 2.3 to 2.7 ns |
-| 100 MHz, Nexys4DDR (-1) | 0.5 to 1.7 ns | 0.8 to 1.2 ns |
-| 90 MHz, Nexys4DDR (-1) | 1.3 to 2.2 ns | 2.4 to 2.6 ns |
+| 100 MHz, MEGA65 (-2) | 1.7 to 2.5 ns | 2.4 to 2.7 ns |
+| 100 MHz, Nexys4DDR (-1) | 0.6 to 0.9 ns | 0.3 to 1.1 ns |
+| 90 MHz, Nexys4DDR (-1) | 2.0 to 2.4 ns | 2.2 to 2.3 ns |
 
-On the MEGA65, the `timing` flow leaves `dbus_ack_i` less than the 1.5 ns
-of the budget. The fetch statistics of #125 took the difference, and #141
-is to win it back.
+The fetch statistics of #125 took 0.9 ns from `dbus_ack_i` in the
+`timing` flow on the MEGA65, below the 1.5 ns of the budget. Since #141,
+WRITE reports what it does without the ACK of the cycle, and the
+pipeline classifies the cycle a cycle later, which wins back most of it.
 
 - `instret_o` has the least. It comes from WRITE's retire, and the counters
   of SYSTEM.md §3 must see it in that cycle (MICROARCH.md §8), so a system
@@ -291,7 +292,7 @@ is to win it back.
   `dbus_data_o` have 2.6 ns or more in every run (the least is
   `dbus_data_o` on the MEGA65), and most have 4 ns or more. Read data goes
   into WRITE only for a register write.
-- At 90 MHz on the Nexys4DDR the core alone still fails by 0.5 to 0.6 ns,
+- At 90 MHz on the Nexys4DDR the core alone still fails by 0.4 to 0.5 ns,
   on paths inside it (WRITE into PREPARE's and its own enables), but
   NiceMonMEGA65 meets 90 MHz in the system ([pipeline-timing.md](../doc/review/pipeline-timing.md),
   In the system).

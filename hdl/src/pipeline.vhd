@@ -306,6 +306,7 @@ architecture synthesis of pipeline is
    signal w_instret : std_logic;
    signal w_why     : t_wwhy;
    signal w_fwhy    : natural range 0 to C_FLUSHES - 1;
+   signal w_rd_late : std_logic;
    signal take_nmi  : std_logic;
    signal take_irq  : std_logic;
    signal quiet     : std_logic;   -- No bus cycle is open
@@ -320,7 +321,11 @@ architecture synthesis of pipeline is
 
    -- What the parts did in a cycle, a cycle later
    type t_stats_in is record
-      wwhy    : t_wwhy;
+      wwhy    : t_wwhy;                          -- Without the ACK of the cycle
+      done    : std_logic;                       -- WRITE retires a micro-operation
+      empty   : std_logic;                       -- WRITE runs and holds none
+      ack     : std_logic;                       -- A read's ACK
+      late    : std_logic;                       -- which completes WRITE's read data
       pwhy    : t_pwhy;
       flush   : std_logic;
       fwhy    : natural range 0 to C_FLUSHES - 1;
@@ -544,7 +549,8 @@ begin
          instret_o    => w_instret,
          retire_o     => retire_o,
          why_o        => w_why,
-         fwhy_o       => w_fwhy
+         fwhy_o       => w_fwhy,
+         late_o       => w_rd_late
       ); -- i_pipe_write
 
 
@@ -575,10 +581,17 @@ begin
    -- WRITE's decision by the same cycle as s_ev_r.
    p_stats : process (clk_i)
       variable stats_v : t_fetch_events;
+      variable wwhy_v  : t_wwhy;
    begin
       if rising_edge(clk_i) then
-         -- The first stage
+         -- The first stage. What depends on a read's ACK in the cycle is
+         -- registered as it comes, and classified in the second stage, so
+         -- that the paths from dbus_ack_i gain no load (#141).
          s_ev_r.wwhy    <= w_why;
+         s_ev_r.done    <= w_done;
+         s_ev_r.empty   <= to_sl(w_r.mode = RUN_ST and w_r.uop.valid = '0');
+         s_ev_r.ack     <= ack_read;
+         s_ev_r.late    <= w_rd_late;
          s_ev_r.pwhy    <= p_why;
          s_ev_r.flush   <= w_flush;
          s_ev_r.fwhy    <= w_fwhy;
@@ -614,7 +627,18 @@ begin
          stats_v.wait_wr := s_ev_r.wait_wr;
          stats_v.moved   := s_ev_r.moved;
 
-         case s_ev_r.wwhy is
+         -- What WRITE did: it retired a micro-operation, or held none and
+         -- did not flush, or its read data came through DBUS's FIFO
+         wwhy_v := s_ev_r.wwhy;
+         if s_ev_r.done = '1' then
+            wwhy_v := W_RETIRE;
+         elsif s_ev_r.empty = '1' and s_ev_r.flush = '0' then
+            wwhy_v := W_EMPTY;
+         elsif wwhy_v = W_READ and s_ev_r.ack = '1' and s_ev_r.late = '1' then
+            wwhy_v := W_LATE;
+         end if;
+
+         case wwhy_v is
             when W_RETIRE => stats_v.cause := C_CAUSE_RETIRE;
             when W_LATE   => stats_v.cause := C_CAUSE_LATE;
             when W_SHIFT  => stats_v.cause := C_CAUSE_SHIFT;
@@ -654,6 +678,8 @@ begin
 
          if rst_i = '1' then
             s_ev_r.wwhy      <= W_OTHER;
+            s_ev_r.done      <= '0';
+            s_ev_r.empty     <= '0';
             s_ev_r.pwhy      <= P_EMPTY;
             s_ev_r.flush     <= '0';
             s_ev_r.jump      <= '0';

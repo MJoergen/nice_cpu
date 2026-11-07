@@ -18,7 +18,13 @@
 -- registers it leaves (retire_o), as the trace writer's contract asks
 -- (src/trace_pkg.vhd). why_o and fwhy_o say what WRITE does in the cycle,
 -- and why it flushes, for the fetch statistics, src/fetch_stats.vhd.
--- Nothing in the core uses them.
+-- Nothing in the core uses them. why_o leaves out what depends on the ACK
+-- of a read in the same cycle, so that the statistics add no load to the
+-- paths from dbus_ack_i (#141): it is W_READ while the read data is not
+-- in DBUS's FIFO, and it does not say W_RETIRE or W_EMPTY. late_o says
+-- that an ACK now completes the read data through the FIFO. The pipeline
+-- derives W_RETIRE, W_EMPTY, and W_LATE from these, done_o, flush_o,
+-- and the ACK, a cycle later.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) uop_i is PREPARE's micro-operation, which WRITE takes in a cycle
@@ -109,7 +115,10 @@ entity pipe_write is
       -- For the fetch statistics (MICROARCH.md §8.1): what WRITE does in
       -- this cycle, and the cause of a flush
       why_o        : out t_wwhy;
-      fwhy_o       : out natural range 0 to C_FLUSHES - 1
+      fwhy_o       : out natural range 0 to C_FLUSHES - 1;
+      -- An ACK of a read in this cycle completes the read data, through
+      -- DBUS's FIFO, of a micro-operation that waits for it in W_READ
+      late_o       : out std_logic
    );
 end entity pipe_write;
 
@@ -614,8 +623,9 @@ begin
                end if;
             else
                -- The read data has not come, or comes now but goes
-               -- through DBUS's FIFO, a cycle later
-               why_v := W_LATE when rq_cnt_i + to_nat(ack_read_i) >= nr_v else W_READ;
+               -- through DBUS's FIFO, a cycle later: W_LATE, which the
+               -- pipeline tells from late_o and the ACK
+               why_v := W_READ;
             end if;
          end if;
 
@@ -705,13 +715,11 @@ begin
       st_addr_o <= a_v;
       st_data_o <= res_v.r;
 
-      if done_v then
-         why_v := W_RETIRE;
-      elsif w_r.mode = RUN_ST and w_r.uop.valid = '0' and not flush_v then
-         why_v := W_EMPTY;
-      end if;
+      -- Without the ACK of this cycle: the pipeline adds W_RETIRE, W_EMPTY,
+      -- and W_LATE a cycle later
       why_o    <= why_v;
       fwhy_o   <= fwhy_v;
+      late_o   <= to_sl(not byp_v and rq_cnt_i + 1 >= popcount(u_v.reads));
       done_o   <= to_sl(done_v);
       flush_o  <= to_sl(flush_v);
       target_o <= target_v;

@@ -88,6 +88,13 @@ two kinds of access. §9.4, the mapping of WebAssembly, is
   fetched, the stalls of the instruction bus, the jumps, and the flushes.
   The buffer was then settled at 16 words, so they became a cause for each
   cycle and the flushes by cause, in 32 words at `0xFFFFFF60`–`0xFFFFFF7F`.
+- Until 2026-11-07 (#141), WRITE told the cause of a cycle in the cycle
+  itself: W_RETIRE from its retire, and W_LATE from the ACK of a read.
+  That loaded the paths from `dbus_ack_i`, and in the `timing` flow on
+  the MEGA65 it left the system 1.344 ns there, from 2.204 ns in V1.7,
+  so NiceMonMEGA65 missed 100 MHz by 0.135 ns. WRITE now reports what it
+  does without the ACK, and the pipeline adds W_RETIRE, W_EMPTY, and
+  W_LATE from registers, a cycle later. Every cause stays as it was.
 - MICROARCH.md §3 and §5.1 once had DECODE read three registers, with
   bypasses from WRITE. The core now reads them in PREPARE, one stage
   before WRITE (hdl/ASSUMPTIONS.md item 1).

@@ -348,7 +348,11 @@ class Tcp(Transport):
         return data
 
     def end_input(self, wait: Callable[[float], None]) -> None:
-        assert self.sock is not None
+        if self.sock is None:
+            # The input has ended, and no request has connected again
+            # since, so there is nothing to half-close: a second end
+            # changes nothing, as a second break on a UART does.
+            return
         self.sock.shutdown(socket.SHUT_WR)
         self.old = self.sock
         self.sock = None

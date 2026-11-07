@@ -175,8 +175,10 @@ def test_link(port: str, echo: str) -> None:
         text = b"abc\xff\x1bdef\n"
         link.send_console(text)
         link.end_input()
+        # A second end before the next request has nothing to half-close
+        link.end_input()
         ok = wait_for(link, lambda: bool(link.halts))
-        check("the halt after the end of the input", ok and
+        check("the halt after the end of the input, ended twice", ok and
               link.halts == [1], repr(link.halts))
         console = link.take_console()
         check("the echo of the input, with 0xFF", console == text,

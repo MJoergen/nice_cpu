@@ -34,6 +34,7 @@ data read returns.
 - [7. Ethernet frames](#7-ethernet-frames)
 - [8. Systems built on the FPGA core](#8-systems-built-on-the-fpga-core)
 - [9. Byte windows](#9-byte-windows)
+- [10. Clock](#10-clock)
 
 ## Memory map
 
@@ -51,7 +52,7 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 | `0xFFFFFF02`–`0xFFFFFF0F` | 14 | Reserved for I/O. |
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (§4). |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (§2). |
-| `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (§3). `0xFFFFFF46`–`0xFFFFFF49` are reserved for the clock of the time of day (#122). |
+| `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (§3), but for `0xFFFFFF46`–`0xFFFFFF49`, the clock of the time of day (§10). |
 | `0xFFFFFF80`–`0xFFFFFF82` | 3 | Reserved for I/O. The emulator's window draws its cursor from them (§1.4). |
 | `0xFFFFFF83`–`0xFFFFFF85` | 3 | Reserved for I/O. |
 | `0xFFFFFF86` | 1 | Reserved for I/O. The emulator's window takes its font base from it (§1.8). |
@@ -209,7 +210,7 @@ The emulator and the FPGA implementation map performance counters at `0xFFFFFF40
 | `0xFFFFFF43` | `INSTR_HI` | bits 63..32 of the instruction counter's snapshot | is ignored |
 | `0xFFFFFF44` | `TIME_LO` | bits 31..0 of the microsecond counter, and takes a snapshot of it | is ignored |
 | `0xFFFFFF45` | `TIME_HI` | bits 63..32 of the microsecond counter's snapshot | is ignored |
-| `0xFFFFFF46`–`0xFFFFFF49` | | 0, reserved for the clock of the time of day (#122) | is ignored |
+| `0xFFFFFF46`–`0xFFFFFF49` | | the clock of the time of day (§10) | as §10 says |
 | `0xFFFFFF4A` | `READ_LO` | bits 31..0 of the data read counter, and takes a snapshot of it | is ignored |
 | `0xFFFFFF4B` | `READ_HI` | bits 63..32 of the data read counter's snapshot | is ignored |
 | `0xFFFFFF4C` | `STORE_LO` | bits 31..0 of the store counter, and takes a snapshot of it | is ignored |
@@ -469,13 +470,14 @@ The emulator's station serves the frames that a board's does, by the same rules,
 
 A board that wraps the FPGA core, such as [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), may differ from the emulator in the points below. Its own README has the details.
 
-- **Reserved words.** `0xFFFFFF02`–`0xFFFFFF0F`, `0xFFFFFF80`–`0xFFFFFF9F`, and `0xFFFFFFD0`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. The block that the memory map reserves for a device, `0xFFFFFF46`–`0xFFFFFF49`, holds that device or nothing. The emulator treats all these words as ordinary memory for data accesses, and only instruction fetches read 0 ([ISA.md §8.3](ISA.md)). NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF8F` for its screen registers, `0xFFFFFF90`–`0xFFFFFF9F` for its board's devices, and `0xFFFFFFE0`–`0xFFFFFFFF` for the debug registers of the link (**Debug link** below).
+- **Reserved words.** `0xFFFFFF02`–`0xFFFFFF0F`, `0xFFFFFF80`–`0xFFFFFF9F`, and `0xFFFFFFD0`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. A system without the clock of §10 has nothing at `0xFFFFFF46`–`0xFFFFFF49`. The emulator treats all these words as ordinary memory for data accesses, and only instruction fetches read 0 ([ISA.md §8.3](ISA.md)). NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF8F` for its screen registers, `0xFFFFFF90`–`0xFFFFFF9F` for its board's devices, and `0xFFFFFFE0`–`0xFFFFFFFF` for the debug registers of the link (**Debug link** below).
 - **Screen.** A board's screen may be larger than the emulator's 80×25. NiceMonMEGA65's has up to 32K words. The color format of §1.1 applies unchanged. The display offset belongs to the board. The emulator's window draws the cursor from the board's cursor registers (§1.4), but has no offset.
 - **Console input.** A UART or a keyboard feeds the same console at `0xFFFFFF00`, with the same bits (§1.2). A break on the UART may end the line's input: the UART's bytes are then dropped until the next start, and a read returns `0x200` once the FIFO is empty, but the keyboard's bytes still go into the FIFO, and a read returns them. So a monitor that a host leaves keeps running on the keyboard, and a program that reads until the end still ends with the host's input. A keyboard sends no break. A board's keyboard gives the bytes of the window's keys (§1.5), and may have more keys.
 - **Input FIFO.** A system's input FIFO may lose bytes. NiceMonMEGA65 drops a UART byte that arrives when the FIFO is full, with the link's `o` notice ([DEBUG.md §4](DEBUG.md#4-notices)), or after a break. Over a transport with flow control, such as TCP, the byte waits up to 50 ms for room first ([DEBUG.md §1](DEBUG.md#1-the-byte-stream)). Input that arrives while the processor is held or has halted is dropped, as by `niceemu --link`, and input that arrives while it is paused waits in the FIFO ([DEBUG.md §1](DEBUG.md#1-the-byte-stream)). A keyboard byte waits until the FIFO has room for two, so that a UART byte still finds room.
 - **SD card slots.** A system without an SD card controller has nothing at `0xFFFFFFA0`–`0xFFFFFFAF`. The MEGA65 has 2 slots: the microSD slot at the back, and the full-size slot underneath, the only one with write protect, whose card detect does not work on the R3 (§5). NiceMonMEGA65 plans to number them 0 and 1 (MJoergen/NiceMonMEGA65#55). The Nexys4DDR has 1, its microSD slot.
 - **Network station.** A system that serves the debug link only on a UART, or not at all, has nothing at `0xFFFFFFB0`–`0xFFFFFFBF`. NiceMonMEGA65 has its station at `0xFFFFFF98`–`0xFFFFFF9D` today, with the same registers in another order and no status word, until it follows §6.
 - **Ethernet frames.** A system without a network station, or without the port, has nothing at `0xFFFFFFC0`–`0xFFFFFFCF`. NiceMonMEGA65 plans the port (#121), with the network stack in its ROM.
+- **Clock.** A system may leave out the clock of §10, or set it at a reset of the system from a source of its own (§10). The MEGA65 has a real-time clock with a battery, on I2C, from which NiceMonMEGA65 can set it. The Nexys4DDR has none, so there "set" stays 0 until a program sets the clock. NiceMonMEGA65 does not have the clock yet.
 - **Byte windows.** A system may leave out the windows of §9. Then a program translated to use them does not run there. NiceMonMEGA65 does not have them yet.
 - **ROM.** A system may map a ROM at 0 that it can hide, so that a program loads at 0 as in the emulator.
 - **Font.** A board that shows the screen on a display draws it from the font of §1.8, with the same font RAM, character ROM, and base, and its clear makes the font RAM and the base 0. An instruction fetch from `0xFFFE0000`–`0xFFFE3FFF` may reach the board's RAM there instead, as an alias (**Aliasing** below). NiceMonMEGA65 has the font RAM, the character ROM, and the base from its V1.6 (MJoergen/NiceMonMEGA65#71), on the MEGA65 and the Nexys4DDR; there an instruction fetch from the range reads the RAM it aliases.
@@ -529,3 +531,28 @@ so a word or a halfword through a window never straddles two words.
 
 The emulator and the simulated memory of `hdl/sim` have the windows. A
 board has them if it says so (§8).
+
+## 10. Clock
+
+The emulator and the FPGA implementation map a clock of the time of day at `0xFFFFFF46`–`0xFFFFFF49`, inside the block of the performance counters (§3). It keeps the time in UTC since the Unix epoch, 1970-01-01 00:00:00, as seconds and the microseconds within the second. Time zones are for software.
+
+| Address | Name | A data read returns | A write |
+|---|---|---|---|
+| `0xFFFFFF46` | `CLOCK_USEC` | the microseconds within the second, 0 to 999999, and takes a snapshot of the seconds | sets the clock to the staged seconds and this many microseconds, and sets "set" |
+| `0xFFFFFF47` | `CLOCK_SEC_LO` | bits 31..0 of the seconds' snapshot | stages bits 31..0 of the seconds |
+| `0xFFFFFF48` | `CLOCK_SEC_HI` | bits 63..32 of the seconds' snapshot | stages bits 63..32 of the seconds |
+| `0xFFFFFF49` | `CLOCK_STATUS` | "set" in bit 0, and 0 in bits 31..1 | clears "set", whatever the value |
+
+- **Reading.** Read `CLOCK_USEC` first, then `CLOCK_SEC_LO` and `CLOCK_SEC_HI`. The read of `CLOCK_USEC` copies the seconds into the snapshot in the same instant, so the three give one time, even when a second ends between the reads. The rule of §3 for interrupt service routines applies to this snapshot too.
+- **Setting.** Write `CLOCK_SEC_LO` and `CLOCK_SEC_HI`, in either order, then `CLOCK_USEC`. The writes of the seconds only stage them, so the clock never shows a half-set time. The write of `CLOCK_USEC` sets the clock to the staged seconds and the microseconds written, at once, and sets "set" to 1. A value of 1000000 or more sets 999999. The staged seconds keep their value, so a second write of `CLOCK_USEC` sets the same second again.
+- **"Set"** says that the clock holds a time: 0 after a reset of the system, and 1 once a program has set the clock, or the system has set it from a source of its own. A program that finds it 0 does not know the time. `time()` of the C library then returns -1.
+- **It always runs.** The clock counts on while the processor is held, paused, halted, or waiting, and a start over the debug link (DEBUG.md §6) leaves it, its snapshot, the staged seconds, and "set" as they are. Only a reset of the system, when the FPGA is loaded or the emulator starts, sets them all to 0. So the time survives a start of a program, unlike the microsecond counter of §3. The seconds wrap from `0xFFFFFFFF_FFFFFFFF` to 0.
+- The FPGA implementation counts the microseconds from its clock frequency, as the microsecond counter does (§3), but in every cycle.
+- The emulator reads the host's clock of the time of day, plus an offset that a write sets, so a program that sets the clock sees the time it set run on. "Set" is 1 from the start, as the host knows the time. With `--step-time`, the clock instead counts one microsecond for each step, a wait step included, from 0 with "set" 0, so that a run reads the same each time. With `--no-cycle-counter`, the four words are memory, as are those of the cycle counter and the microsecond counter.
+- A system may set the clock at a reset of the system from a source of its own, such as a real-time clock with a battery, and then set "set" too (§8).
+
+To read the time into R3:R2 seconds and R1 microseconds:
+
+                    MOVE    R1, @CLOCK_USEC
+                    MOVE    R2, @CLOCK_SEC_LO
+                    MOVE    R3, @CLOCK_SEC_HI

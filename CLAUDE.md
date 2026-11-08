@@ -19,7 +19,7 @@ library, a wasm translator, and two FPGA cores. See README.md.
   `doc/review/` records how decisions were reached; ISA.md supersedes it.
 - `doc/SYSTEM.md`: the devices that the emulator maps into the I/O range
   (console, math unit, counters, timer, SD card, network station,
-  Ethernet frames). ISA.md reserves the range and defines no device.
+  Ethernet frames, clock). ISA.md reserves the range and defines no device.
   ISA.md wins over it.
 - `doc/TOOLCHAIN.md`: the tools, what each reads and writes, the steps
   that build a program, how the tools use each other, and the compilers

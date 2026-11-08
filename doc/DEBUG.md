@@ -145,7 +145,8 @@ program's data accesses, with these differences:
 - No link read has a side effect that a program can see. A link read of
   the console or the read counter (SYSTEM.md §1) returns 0, takes no input
   byte, and is not counted. A link read of `CYCLE_LO`, `INSTR_LO`, or
-  `TIME_LO` (SYSTEM.md §3) returns the counter's low word. The emulator
+  `TIME_LO` (SYSTEM.md §3) returns the counter's low word, and one of
+  `CLOCK_USEC` (SYSTEM.md §10) the clock's microseconds. The emulator
   takes no snapshot then, but a board may, as a property of the system.
   A start resets the counters and their snapshots (§6), and the counters
   stop while the processor is paused (MICROARCH.md §8). A host can tell: on such a board,
@@ -341,8 +342,9 @@ host that writes back what it read never steps by accident.
   the timer, the SD card controller, and the port for Ethernet frames
   start from their reset values, but a Write of the SD card that has begun,
   and a frame being sent, finish first (SYSTEM.md §5, §7). The
-  read counter keeps its value (SYSTEM.md §1), and the network station its
-  addresses and counts (SYSTEM.md §6). The input buffer is emptied,
+  read counter keeps its value (SYSTEM.md §1), the network station its
+  addresses and counts (SYSTEM.md §6), and the clock of the time of day
+  its time and runs on (SYSTEM.md §10). The input buffer is emptied,
   and an earlier end of the input (§7.1) is cleared. Bit 1 and the halt reason are cleared, and
   R0–R15 are not defined until the next halt.
 - **Restart.** A halt leaves bit 0 at 0, so a restart after a halt takes
@@ -391,7 +393,8 @@ host that writes back what it read never steps by accident.
   write memory, code included, because the processor fetches from R15
   again when it goes on.
   The counters and the timer stop, so the program cannot tell that it was
-  paused, but by the wall clock, and by a snapshot that a host's read
+  paused, but by the wall clock, by the clock of the time of day, which
+  runs on (SYSTEM.md §10), and by a snapshot that a host's read
   replaced (§3). A pause fires no timer interrupt when the processor goes
   on. The SD card controller runs on, so a host can use the card
   (SYSTEM.md §5). Console bytes from the host go into the input buffer (§1).
@@ -678,7 +681,7 @@ are the rules that `hdl/src/debug_link.vhd` asks of its board:
   core, which writes a register from them while it is paused.
 - **Counters.** The counters and the timer stop while the processor is
   paused, and run during a step (MICROARCH.md §8). The SD card controller
-  does not stop (SYSTEM.md §5).
+  and the clock of the time of day do not stop (SYSTEM.md §5, §10).
 - **Clear.** When the link asks for a clear, the board sets every word of
   the memory to 0 and then says so. The link makes no access meanwhile.
 

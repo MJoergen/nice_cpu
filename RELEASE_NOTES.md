@@ -34,6 +34,15 @@ pin each are:
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
 
+## V2.0 (unreleased)
+
+**Upgrade notes.**
+
+- `WAIT` is a mnemonic (ISA §7.5), so a program with a label or an
+  `.EQU` name `WAIT`, in any case of letters, no longer assembles until
+  it is renamed. The slides' `irq.nasm`, the demo, and the emulator's
+  tests renamed theirs.
+
 ## V1.9 (2026-11-07)
 
 The math unit counts the bits of A and takes the square root of C

@@ -737,9 +737,8 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
             if (sig != 0) dieOfSignal(out, sig);
         }
         raiseRequests(&cpu, opts, steps, &next);
-        const k = waitJump(&cpu, opts, steps, next) orelse break .waited;
+        const k = skipWaits(&cpu, opts, steps, next, std.math.maxInt(u64)) orelse break .waited;
         if (k != 0) {
-            cpu.skipWait(k);
             steps += k;
             continue;
         }
@@ -777,6 +776,18 @@ fn waitJump(cpu: *const Cpu, opts: Options, steps: u64, next: usize) ?u64 {
     const request: ?u64 = if (next < opts.requests.len) opts.requests[next].step - steps else null;
     if (timer == null and request == null) return null;
     return @min(timer orelse std.math.maxInt(u64), request orelse std.math.maxInt(u64), opts.max_steps - steps);
+}
+
+/// Jump over the wait steps that `waitJump` counts at step `steps`, but no
+/// more than `budget` of them, so that a loop paced by --speed looks at the
+/// window and serves the link as often in a long wait as otherwise.
+/// Returns the steps jumped over, 0 when the next step is not a wait step,
+/// or null when no request can end the wait.
+fn skipWaits(cpu: *Cpu, opts: Options, steps: u64, next: usize, budget: u64) ?u64 {
+    const k = waitJump(cpu, opts, steps, next) orelse return null;
+    const m = @min(k, budget);
+    if (m != 0) cpu.skipWait(m);
+    return m;
 }
 
 /// Why a run without the link stopped: the processor halted, or the step
@@ -909,16 +920,14 @@ fn runWindow(arena: std.mem.Allocator, io: std.Io, out: *std.Io.Writer, opts: Op
         var wait_ms: u32 = 0;
         while (!cpu.halted() and steps < end) {
             raiseRequests(cpu, opts, steps, &next);
-            const k = waitJump(cpu, opts, steps, next) orelse {
+            // With the pace of --speed, no further than the chunk's end.
+            const budget = if (opts.speed != 0) end - steps else std.math.maxInt(u64);
+            const k = skipWaits(cpu, opts, steps, next, budget) orelse {
                 wait_ms = 10;
                 break;
             };
             if (k != 0) {
-                // With the pace of --speed, no further than the chunk's end,
-                // so that the window is pumped as often in a long wait.
-                const m = if (opts.speed != 0) @min(k, end - steps) else k;
-                cpu.skipWait(m);
-                steps += m;
+                steps += k;
                 continue;
             }
             try cpu.step();
@@ -1089,16 +1098,15 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
             }
             // The wait steps at once, but a single step of the link is one.
             if (!link.step_due) {
-                const k = waitJump(cpu, opts, steps, next) orelse {
+                // With the pace of --speed, no more than a chunk at once,
+                // so that the window is pumped as often in a long wait.
+                const budget = if (pacer.speed != 0) chunk else std.math.maxInt(u64);
+                const k = skipWaits(cpu, opts, steps, next, budget) orelse {
                     waits = true;
                     break;
                 };
                 if (k != 0) {
-                    // With the pace of --speed, no more than a chunk at once,
-                    // so that the window is pumped as often in a long wait.
-                    const m = if (pacer.speed != 0) @min(k, chunk) else k;
-                    cpu.skipWait(m);
-                    steps += m;
+                    steps += k;
                     link.after_go = false;
                     continue;
                 }

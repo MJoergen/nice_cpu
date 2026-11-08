@@ -127,6 +127,20 @@ WAITER = """
                 MOVE    R1, 1
                 HALT
 """
+# An INT, its RTI, and an NMI routine that halts, for the hidden state
+# (DEBUG.md §6). back is at 3, isr at 5, and nmi at 7.
+HIDDEN = """
+                MOVE    R14, 0x00000001
+                INT     2
+back            NOP
+                HALT
+isr             NOP
+                RTI
+nmi             HALT
+                .ORG    0x102
+                .DAT    isr
+                .DAT    nmi
+"""
 REGS = """
                 MOVE    R2, R3
 loop            MOVE    R15, loop
@@ -168,6 +182,7 @@ def answer(addr: int, words: List[int]) -> bytes:
 
 
 CONTROL = 0xFFFFFFF0
+SAVED_PC = 0xFFFFFFD0
 HELLO = b"\xffb07#C9"
 PAUSED = b"\xffp#70"
 CYCLE_LO = 0xFFFFFF40
@@ -527,11 +542,13 @@ def test_step_limit(spin: List[int]) -> None:
 def test_halts(reserved: List[int], int_in_isr: List[int], rti: List[int], spin: List[int]) -> None:
     """The halt reasons 2 to 4 reach the host as `h` and in the register
     (§4, §6), a clear ends the halt state, and a clear of the memory stops
-    a running program (§6)."""
-    for name, prog, reason, note in (
-        ("reserved", reserved, 2, b"\xffh02#CA"),
-        ("INT in a routine", int_in_isr, 3, b"\xffh03#CB"),
-        ("RTI outside", rti, 4, b"\xffh04#CC"),
+    a running program (§6). INT in a routine halts with in_service, bit 7,
+    at 1, which is not defined after the clear, so bits 7 and 8 are left
+    out there."""
+    for name, prog, reason, note, control in (
+        ("reserved", reserved, 2, b"\xffh02#CA", 0xA),
+        ("INT in a routine", int_in_isr, 3, b"\xffh03#CB", 0x8A),
+        ("RTI outside", rti, 4, b"\xffh04#CC", 0xA),
     ):
         e = Emu()
         e.take(len(HELLO))
@@ -539,9 +556,10 @@ def test_halts(reserved: List[int], int_in_isr: List[int], rti: List[int], spin:
         e.expect(name + " start", ok(0, len(prog)) + ok(CONTROL, 1))
         e.expect(name + " notice", note)
         e.send(read(CONTROL, 2))
-        e.expect(name + " reason", answer(CONTROL, [0xA, reason]))
-        e.send(write(CONTROL, [0x5]) + read(CONTROL, 2))
-        e.expect(name + " cleared", ok(CONTROL, 1) + answer(CONTROL, [0x9, 0]))
+        e.expect(name + " reason", answer(CONTROL, [control, reason]))
+        e.send(write(CONTROL, [0x5]))
+        e.expect(name + " clear", ok(CONTROL, 1))
+        expect(name + " cleared", bytes([word(e, CONTROL) & ~0x180, word(e, CONTROL + 1)]), bytes([0x9, 0]))
         e.stop()
     # A clear while the program runs holds it first. Bit 2 with bit 0 set
     # clears and stays held, with no notice.
@@ -1126,15 +1144,74 @@ def test_wait(waiter: List[int]) -> None:
     expect("R15 in the wait", bytes([word(e, 0xFFFFFFEF)]), b"\x01")
     expect("CYCLE_LO after two steps", bytes([word(e, 0xFFFFFF40)]), b"\x02")
     # A breakpoint at R15 does not stop the wait, and fires when the request
-    # at step 1000 ends it, before the MOVE. Bit 6 reads 0 then.
+    # at step 1000 ends it, before the MOVE. Bit 6 reads 0 then, and bit
+    # 10 reads 1, as E = 0 keeps the IRQ pending.
     set_breaks(e, [1], 1)
     e.send(write(CONTROL, [0x8]))
     e.expect("go on to the end of the wait", ok(CONTROL, 1) + hit(0))
-    expect("control at the end of the wait", bytes([word(e, CONTROL)]), bytes([0x18]))
+    expect("control at the end of the wait", word(e, CONTROL).to_bytes(2, "big"), (0x418).to_bytes(2, "big"))
     expect("CYCLE_LO at the end of the wait", word(e, 0xFFFFFF40).to_bytes(2, "big"), (1000).to_bytes(2, "big"))
     e.send(write(BREAK_EN, [0]) + write(CONTROL, [0x8]))
     e.expect("go on to the halt", ok(BREAK_EN, 1) + ok(CONTROL, 1) + b"\xffh01#C9")
     expect("R1 after the wait", bytes([word(e, 0xFFFFFFE1)]), b"\x01")
+    e.stop()
+
+
+def test_hidden(hidden: List[int], count: List[int]) -> None:
+    """The hidden state and the pending requests (§6), stepped through an
+    INT, its RTI, and an NMI that waits for the RTI: bits 7 to 10 of the
+    control register, saved_pc and saved_sr. The NMI and an IRQ, which
+    E = 0 holds, come before step 4 (README, --nmi), so they are pending
+    after it. Then the reserved words, and the range while running."""
+    e = Emu(["--nmi", "3:3", "--irq", "3:4"])
+    e.take(len(HELLO))
+    e.send(write(0, hidden) + write(CONTROL, [0x18]))
+    e.expect("start paused", ok(0, len(hidden)) + ok(CONTROL, 1) + PAUSED)
+
+    def state(name: str, control: int, pc: int, sr: int, r15: int) -> None:
+        e.send(read(CONTROL, 1) + read(SAVED_PC, 2) + read(0xFFFFFFEF, 1))
+        e.expect(name, answer(CONTROL, [control]) + answer(SAVED_PC, [pc, sr]) + answer(0xFFFFFFEF, [r15]))
+
+    def step(name: str) -> None:
+        e.send(write(CONTROL, [0x38]))
+        e.expect(name, ok(CONTROL, 1) + PAUSED)
+
+    state("after reset", 0x18, 0, 0, 0)
+    step("MOVE R14")
+    state("after MOVE R14", 0x18, 0, 0, 2)
+    # INT 2: in_service, and the PC after the INT and the SR saved.
+    step("INT 2")
+    state("in the routine", 0x98, 3, 0x01000001, 5)
+    step("NOP in the routine")
+    state("after the NOP", 0x98, 3, 0x01000001, 6)
+    # RTI: after_rti, and the NMI and the IRQ pending since this step.
+    step("RTI")
+    state("after RTI", 0x718, 3, 0x01000001, 3)
+    # The instruction after RTI runs first, and clears after_rti.
+    step("NOP after RTI")
+    state("after the NOP after RTI", 0x618, 3, 0x01000001, 4)
+    # The NMI is taken before the HALT at 4. The IRQ stays, as E = 0.
+    step("NMI entry")
+    state("in the NMI routine", 0x498, 4, 0x01000001, 7)
+    # The routine halts: the state stays as the program left it, and the
+    # requests read 0. A hold keeps it.
+    e.send(write(CONTROL, [0x38]))
+    e.expect("HALT", ok(CONTROL, 1) + b"\xffh01#C9")
+    state("halted", 0x8A, 4, 0x01000001, 8)
+    e.send(write(CONTROL, [0x9]))
+    e.expect("hold", ok(CONTROL, 1))
+    state("held", 0x8B, 4, 0x01000001, 8)
+    # Read only: saved_pc, saved_sr, and the reserved words take no write,
+    # nor do bits 7 to 10.
+    e.send(write(SAVED_PC, [0x55] * 16) + write(CONTROL, [0x789]))
+    e.expect("writes", ok(SAVED_PC, 16) + ok(CONTROL, 1))
+    e.send(read(SAVED_PC, 16) + read(CONTROL, 1))
+    e.expect("unchanged", answer(SAVED_PC, [4, 0x01000001] + [0] * 14) + answer(CONTROL, [0x8B]))
+    # While the program runs, the whole range answers: r and k, not e02.
+    e.send(write(0, count) + write(CONTROL, [0x8]))
+    e.expect("start count", ok(0, len(count)) + ok(CONTROL, 1))
+    e.send(read(0xFFFFFFD2, 14) + write(0xFFFFFFD2, [1]) + read(0xFFFFFFCF, 1))
+    e.expect("running", answer(0xFFFFFFD2, [0] * 14) + ok(0xFFFFFFD2, 1) + pkt("e", "5202"))
     e.stop()
 
 
@@ -1171,15 +1248,17 @@ def test_write_regs(regs: List[int], at20: List[int], count: List[int]) -> None:
     e.send(read(0xFFFFFFE4, 1) + read(0xFFFFFFEF, 1))
     e.expect("halted", answer(0xFFFFFFE4, [5]) + answer(0xFFFFFFEF, [0x22]))
     # Halted, and then held: e04 by the range, R0 and from the devices
-    # included, and nothing is written. N = 0 reaches nothing.
+    # included, and nothing is written. N = 0 reaches nothing. 0xFFFFFFDF
+    # is a reserved register of the link, which takes no write, and
+    # 0xFFFFFEFF the last word of the memory, 0xE1 words below R0.
     for state in ("halted", "held"):
-        e.send(write(0xFFFFFFDF, [0x77]))
-        e.expect(f"{state}: memory", ok(0xFFFFFFDF, 1))
+        e.send(write(0xFFFFFFDF, [0x77]) + write(0xFFFFFEFF, [0x77]))
+        e.expect(f"{state}: reserved", ok(0xFFFFFFDF, 1) + ok(0xFFFFFEFF, 1))
         e.send(write(0xFFFFFFE3, [9]) + write(0xFFFFFFE0, [9]) + write(0xFFFFFFDF, [0x99, 9])
-               + write(0xFFFFFFE0, []))
-        e.expect(f"{state}: e04", pkt("e", "5704") * 3 + ok(0xFFFFFFE0, 0))
-        e.send(read(0xFFFFFFDF, 5))
-        e.expect(f"{state}: unchanged", answer(0xFFFFFFDF, [0x77, 0, 0, 0, 5]))
+               + write(0xFFFFFEFF, [0x99] + [0] * 0xE1) + write(0xFFFFFFE0, []))
+        e.expect(f"{state}: e04", pkt("e", "5704") * 4 + ok(0xFFFFFFE0, 0))
+        e.send(read(0xFFFFFFDF, 5) + read(0xFFFFFEFF, 1))
+        e.expect(f"{state}: unchanged", answer(0xFFFFFFDF, [0, 0, 0, 0, 5]) + answer(0xFFFFFEFF, [0x77]))
         e.send(write(CONTROL, [0x9]))
         e.expect(f"{state}: hold", ok(CONTROL, 1))
     # A W with a bad payload gets e03, which goes first.
@@ -1188,8 +1267,9 @@ def test_write_regs(regs: List[int], at20: List[int], count: List[int]) -> None:
     # Running: e02 goes first where it applies, and e04 otherwise.
     e.send(write(0, count) + write(CONTROL, [0x8]))
     e.expect("start count", ok(0, len(count)) + ok(CONTROL, 1))
-    e.send(write(0xFFFFFFE3, [9]) + write(0xFFFFFFE0, [9]) + write(0xFFFFFFDF, [0, 0]))
-    e.expect("running", pkt("e", "5704") * 2 + pkt("e", "5702"))
+    e.send(write(0xFFFFFFE3, [9]) + write(0xFFFFFFE0, [9]) + write(0xFFFFFFDF, [0, 0])
+           + write(0xFFFFFFCF, [0] * 18))
+    e.expect("running", pkt("e", "5704") * 3 + pkt("e", "5702"))
     # DEBUG.md §8, byte for byte, from a pause of a program spinning at 0.
     e.send(write(CONTROL, [0x9]) + write(0, at20) + write(CONTROL, [0x18]))
     e.expect("start at20 paused", ok(CONTROL, 1) + ok(0, len(at20)) + ok(CONTROL, 1) + PAUSED)
@@ -1328,6 +1408,7 @@ def main() -> None:
         load = assemble(tmp, "load", LOAD)
         skip = assemble(tmp, "skip", SKIP)
         regs = assemble(tmp, "regs", REGS)
+        hidden = assemble(tmp, "hidden", HIDDEN)
         waiter = assemble(tmp, "waiter", WAITER)
         at20 = assemble(tmp, "at20", AT20)
         reserved = assemble(tmp, "reserved", RESERVED)
@@ -1344,6 +1425,7 @@ def main() -> None:
             lambda: test_step(count, one, stop, echo, twice, irq, irq_bin),
             lambda: test_break(at10, load, count, skip, stop, irq),
             lambda: test_write_regs(regs, at20, count), lambda: test_wait(waiter),
+            lambda: test_hidden(hidden, count),
             lambda: test_old_host(stop, echo), lambda: test_net(spin), test_address, test_usage,
         ]
         for t in tests:

@@ -1239,15 +1239,19 @@ pub const Cpu = struct {
     pub fn entryDue(self: *const Cpu) bool {
         if (self.halted() or self.after_rti or self.in_service) return false;
         if (self.nmi_pending != null) return true;
-        const irq = self.irq_pending != null or (self.timer_irq and self.timer.raised != null);
-        return irq and self.flag(sr_e) == 1;
+        return self.irqPending() and self.flag(sr_e) == 1;
+    }
+
+    /// Whether an IRQ is pending (§7.1), the timer's included, whether or
+    /// not it can be taken.
+    pub fn irqPending(self: *const Cpu) bool {
+        return self.irq_pending != null or (self.timer_irq and self.timer.raised != null);
     }
 
     /// Whether the next step is a wait step (§7.5, SYSTEM §3): the
     /// processor waits, and no request, the timer's included, ends the wait.
     pub fn waitStepDue(self: *const Cpu) bool {
-        return !self.halted() and self.waiting and self.nmi_pending == null and
-            self.irq_pending == null and !(self.timer_irq and self.timer.raised != null);
+        return !self.halted() and self.waiting and self.nmi_pending == null and !self.irqPending();
     }
 
     /// While `waitStepDue`, the wait steps until the timer raises a request,

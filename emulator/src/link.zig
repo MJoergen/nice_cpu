@@ -20,7 +20,11 @@ pub const input_size = 2048;
 const timeout_ms = 100;
 /// The longest a console byte waits for room in the input buffer (DEBUG.md §1).
 const wait_ms = 50;
-/// The debug registers, for the link only (DEBUG.md §6).
+/// The debug registers, for the link only (DEBUG.md §6): from `link_base`,
+/// with R0 to R15 at `debug_base`.
+const link_base: u32 = 0xFFFF_FFD0;
+const saved_pc_addr: u32 = link_base;
+const saved_sr_addr: u32 = link_base + 1;
 const debug_base: u32 = 0xFFFF_FFE0;
 const control_addr: u32 = debug_base + 0x10;
 /// The number of breakpoints (DEBUG.md §6, §7).
@@ -37,6 +41,11 @@ const ctl_clear: u32 = 1 << 2;
 const ctl_rom_hidden: u32 = 1 << 3;
 const ctl_pause: u32 = 1 << 4;
 const ctl_step: u32 = 1 << 5;
+const ctl_waiting: u32 = 1 << 6;
+const ctl_in_service: u32 = 1 << 7;
+const ctl_after_rti: u32 = 1 << 8;
+const ctl_nmi: u32 = 1 << 9;
+const ctl_irq: u32 = 1 << 10;
 
 pub const Link = struct {
     cpu: *Cpu,
@@ -446,17 +455,18 @@ pub const Link = struct {
 
     /// A link read (DEBUG.md §3): no read has a side effect.
     fn readWord(self: *Link, addr: u32) u32 {
-        if (addr >= debug_base) return self.readDebug(addr);
+        if (addr >= link_base) return self.readDebug(addr);
         if (addr == cpu_zig.console_addr or addr == cpu_zig.counter_addr) return 0;
         return self.cpu.peek(addr);
     }
 
     fn readDebug(self: *Link, addr: u32) u32 {
+        if (addr == saved_pc_addr) return self.cpu.saved_pc;
+        if (addr == saved_sr_addr) return self.cpu.saved_sr;
+        if (addr < debug_base) return 0;
         return switch (addr - debug_base) {
             0x00...0x0F => self.cpu.getReg(@truncate(addr)),
-            0x10 => @as(u32, @intFromBool(self.held)) | @as(u32, @intFromBool(self.halted() and !self.cleared)) << 1 |
-                ctl_rom_hidden | @as(u32, @intFromBool(self.paused)) << 4 |
-                @as(u32, @intFromBool(!self.held and self.cpu.waitStepDue())) << 6,
+            0x10 => self.readControl(),
             0x11 => if (self.cleared) 0 else self.haltReason(),
             0x12 => version,
             0x13 => @intCast(input_size - self.input_len),
@@ -466,6 +476,22 @@ pub const Link = struct {
             0x18...0x18 + breaks - 1 => self.break_addr[addr - break_addr0],
             else => 0,
         };
+    }
+
+    /// The control register (DEBUG.md §6). The hidden state reads as R0 to
+    /// R15 do, and the pending requests read 0 while held or halted.
+    fn readControl(self: *const Link) u32 {
+        const live = !self.held and !self.halted();
+        var v: u32 = ctl_rom_hidden;
+        if (self.held) v |= ctl_hold;
+        if (self.halted() and !self.cleared) v |= ctl_halted;
+        if (self.paused) v |= ctl_pause;
+        if (!self.held and self.cpu.waitStepDue()) v |= ctl_waiting;
+        if (self.cpu.in_service) v |= ctl_in_service;
+        if (self.cpu.after_rti) v |= ctl_after_rti;
+        if (live and self.cpu.nmi_pending != null) v |= ctl_nmi;
+        if (live and self.cpu.irqPending()) v |= ctl_irq;
+        return v;
     }
 
     /// A link write (DEBUG.md §3).
@@ -485,7 +511,7 @@ pub const Link = struct {
             self.break_addr[addr - break_addr0] = value;
             return;
         }
-        if (addr >= debug_base) return;
+        if (addr >= link_base) return;
         if (addr == cpu_zig.console_addr or addr == cpu_zig.counter_addr) return;
         // Out of memory leaves the word unwritten.
         self.cpu.write(addr, value) catch {};
@@ -652,7 +678,7 @@ pub const Link = struct {
 
 /// Whether N words from A reach a word that is not a debug register.
 fn reachesMemory(a: u32, n: u32) bool {
-    return n != 0 and (a < debug_base or n > 0 -% a);
+    return n != 0 and (a < link_base or n > 0 -% a);
 }
 
 /// Whether N words from A reach R0 to R15, which a W reaches only while the
@@ -734,8 +760,11 @@ test "the debug registers are the only words a running program allows" {
     try t.expect(!reachesMemory(0, 0));
     try t.expect(reachesMemory(0x100, 1));
     try t.expect(!reachesMemory(0xFFFFFFE0, 32));
-    try t.expect(reachesMemory(0xFFFFFFE0, 33));
-    try t.expect(reachesMemory(0xFFFFFFDF, 1));
+    try t.expect(!reachesMemory(0xFFFFFFD0, 48));
+    try t.expect(reachesMemory(0xFFFFFFD0, 49));
+    try t.expect(!reachesMemory(0xFFFFFFDF, 1));
+    try t.expect(reachesMemory(0xFFFFFFCF, 1));
+    try t.expect(reachesMemory(0xFFFFFFCF, 2));
     try t.expect(!reachesMemory(0xFFFFFFFF, 1));
     try t.expect(reachesMemory(0xFFFFFFFF, 2));
 }

@@ -545,7 +545,11 @@ takes effect before the next step, and a host's connection clears them.
 While the processor is paused, a write of R1 to R15 sets the register as
 a register-direct write of an instruction does (ISA.md §4.3), and leaves
 the hidden state alone. A write of R0 to R15 while it is not paused gets
-`e04` (DEBUG.md §6).
+`e04` (DEBUG.md §6). The link reads the hidden state of the core as it is:
+`saved_pc` and `saved_sr` at `0xFFFFFFD0` and `0xFFFFFFD1`, and
+`in_service` and `after_rti` in bits 7 and 8 of the control register.
+Bits 9 and 10 read the pending NMI and IRQ, the timer's included, while
+the processor is neither held nor halted.
 A `W` writes its words when its checksum has been checked, so a `W`
 with a bad checksum writes nothing. One with a bad payload writes the whole
 words before the bad byte, at most N.
@@ -641,7 +645,11 @@ while halted, held, and running. And it checks the network station's
 clear, and a new connection keep `NET_IP`. And it checks a wait: bit 6 of
 the control register, a pause and a step in it, a breakpoint at R15 that
 fires only at its end, and a wait that no request can end, which does not
-stop the run.
+stop the run. And it checks the hidden state: bits 7 to 10, `saved_pc`,
+and `saved_sr`, step by step through an `INT`, its `RTI`, and an NMI
+that waits for the `RTI`, at a halt and a hold, and that the words
+`0xFFFFFFD0`–`0xFFFFFFDF` take no write and answer while the program
+runs.
 Last, `test/udp.py` checks the frames over the socket of `--eth-udp`
 (Ethernet frames above), and `test/tap.py` the same through
 `tools/nicetap.py` and a TAP device (A real network above).

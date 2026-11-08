@@ -58,7 +58,8 @@ TIME_LO         .EQU    0xFFFFFF44
                 HALT
                 .ORG    0x41
                 .DAT    on_timer, on_irq, on_nmi
-on_timer        ADD     R5, R5, 1
+on_timer
+                ADD     R5, R5, 1
                 RTI
 on_irq          ADD     R6, R6, 1
                 RTI

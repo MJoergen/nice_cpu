@@ -3501,6 +3501,29 @@ CASES += [
      " MOVE R15, @R13++\n", 57),
 ]
 
+# The memory cases again through the byte windows of SYSTEM.md §9
+# (--byte-windows), each with its own options: bytes always go through a
+# window, halfwords with --trust-alignment, and words when trusted or
+# known to be at a multiple of 4. Then without bounds checks too. The
+# results are those without the windows.
+WINDOW_CASES = ("memory", "memory_dyn", "memend", "narrow", "narrow_trust", "trust",
+                "trust_checked", "trust_misaligned", "memory_dyn_trust", "bulk", "data_c",
+                "memory_c", "hoistagen")
+for _name in WINDOW_CASES:
+    OPTIONS[_name + "_win"] = OPTIONS.get(_name, []) + ["--byte-windows"]
+    if "--no-bounds-checks" not in OPTIONS[_name + "_win"]:
+        OPTIONS[_name + "_win_unchecked"] = OPTIONS[_name + "_win"] + ["--no-bounds-checks"]
+CASES += [(name + suffix, wasm, extra, expected) for name, wasm, extra, expected in CASES
+          if name in WINDOW_CASES for suffix in ("_win", "_win_unchecked")
+          if name + suffix in OPTIONS]
+# With bounds checks, a word access whose address word_index knows as
+# 4 * (i + c) keeps the operand of word c with i as its index, as
+# without the windows (hoistagen_win).
+SHAPES["hoistagen_win"] = SHAPES["hoistagen"]
+# A trusted word access through the window needs no word index, no test
+# of the alignment, and no helper (trust_win).
+SHAPES["trust_win"] = (r"^ +SHR +R\d+, R\d+, 2$|AND\[M\] +R0, R\d+, 3$|@___wasm_memory\["
+                       r"|W\.(load|store)[48]", False)
 
 def run(cmd: List[str]) -> str:
     p = subprocess.run(cmd, capture_output=True, text=True)

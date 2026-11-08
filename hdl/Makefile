@@ -536,7 +536,7 @@ programs: emulator analyze
 	  > $(BUILD)/programs_runtime.log 2>&1 || { cat $(BUILD)/programs_runtime.log; exit 1; }
 	@$(PYTHON) ../translator/test/run.py --keep $(PROGRAMS)/translator \
 	  > $(BUILD)/programs_translator.log 2>&1 || { cat $(BUILD)/programs_translator.log; exit 1; }
-	@for m in "" --no-mpu --unchecked --grow; do \
+	@for m in "" --no-mpu --unchecked --grow --windows; do \
 	  $(PYTHON) ../translator/test/fuzz.py $$m --keep $(PROGRAMS)/fuzz 1 $(FUZZ_PROGRAMS) \
 	    || exit 1; done > $(BUILD)/programs_fuzz.log 2>&1 || { cat $(BUILD)/programs_fuzz.log; exit 1; }
 	@$(PYTHON) test/programs.py --core $(CORE) $(SIM_ARGS) --build $(BUILD) --emu $(EMU) --shard $(SHARD) $(PROGRAMS)/runtime $(PROGRAMS)/translator $(PROGRAMS)/fuzz

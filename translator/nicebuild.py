@@ -9,7 +9,7 @@ take one source file, the root of the program.
 
 Usage: nicebuild.py [-o output.bin] [-O LEVEL] [-I DIR] [-D MACRO[=VALUE]]
                     [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-bounds-checks]
-                    [--trust-alignment] [--memory-pages N] [--asm FILE]...
+                    [--trust-alignment] [--byte-windows] [--memory-pages N] [--asm FILE]...
                     [--no-trap-report] [--monitor] [--ram ADDR [--ram-bytes BYTES]]
                     [--symbols] [--keep]
                     input.c... | input.zig | input.rs
@@ -158,6 +158,7 @@ def main() -> None:
     ap.add_argument("--no-mpu", action="store_true", help="translate for a system without the math unit")
     ap.add_argument("--no-bounds-checks", action="store_true", help="pass --no-bounds-checks to nicewasm")
     ap.add_argument("--trust-alignment", action="store_true", help="pass --trust-alignment to nicewasm")
+    ap.add_argument("--byte-windows", action="store_true", help="pass --byte-windows to nicewasm")
     ap.add_argument("--memory-pages", type=int, metavar="N", help="pass --memory-pages to nicewasm")
     ap.add_argument("--asm", action="append", default=[], metavar="FILE",
                     help="join the NICE assembly FILE after the program, so that it can define "
@@ -226,6 +227,8 @@ def main() -> None:
             cmd.append("--no-bounds-checks")
         if args.trust_alignment:
             cmd.append("--trust-alignment")
+        if args.byte_windows:
+            cmd.append("--byte-windows")
         if args.memory_pages is not None:
             cmd += ["--memory-pages", str(args.memory_pages)]
         if args.ram is not None:

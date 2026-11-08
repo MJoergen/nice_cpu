@@ -88,7 +88,7 @@ What you get:
 
 ### nicewasm
 
-    ./nicewasm.py [-o output.nasm] [--no-bounds-checks] [--trust-alignment]
+    ./nicewasm.py [-o output.nasm] [--no-bounds-checks] [--trust-alignment] [--byte-windows]
                   [--memory-pages N] [--ram ADDR [--ram-bytes BYTES]]
                   [--library NAME [--library-memory BYTES]] [--no-mpu] input.wasm
 
@@ -96,7 +96,8 @@ What you get:
 |---|---|
 | `-o FILE` | Write the assembly to FILE. Without it, the output goes to `input.nasm`. |
 | `--no-bounds-checks` | Leave out the bounds checks on memory accesses, as WASM.md allows. The code is then smaller and faster, but an access out of bounds reads or writes whatever NICE memory the address reaches. |
-| `--trust-alignment` | Take an access of 4 or 8 bytes whose alignment hint is 4 bytes or more to be at a multiple of 4, without the test of DESIGN.md, as WASM.md allows. The code is then smaller and faster, mostly without bounds checks, but a misaligned access reads or writes the word that holds its first byte. The hint is exact in the code of clang, Zig, and rustc. |
+| `--trust-alignment` | Take an access of 4 or 8 bytes whose alignment hint is 4 bytes or more to be at a multiple of 4, without the test of DESIGN.md, as WASM.md allows. The code is then smaller and faster, mostly without bounds checks, but a misaligned access reads or writes the word that holds its first byte. With `--byte-windows`, it also takes an access of 2 bytes whose hint is 2 to be at a multiple of 2. The hint is exact in the code of clang, Zig, and rustc. |
+| `--byte-windows` | Access the memory through the byte windows of [SYSTEM.md §9](../doc/SYSTEM.md#9-byte-windows), so that a byte load or store is one `MOVE` (see DESIGN.md). Halfwords take a window with `--trust-alignment` and the hint 2, and words with the hint 4 or when the address is known to be at a multiple of 4. The program then runs only on a system that has the windows, such as the emulator, and the memory must lie in words below `0x04000000`; with `--ram`, nicewasm checks that it does. |
 | `--memory-pages N` | Let `memory.grow` grow the memory up to N pages, the cap of WASM.md. N may not be below the memory's initial size or above its maximum, if it declares one, and it must be below 65536. Without the option, the cap is the initial size. |
 | `--ram ADDR` | For code that runs from a ROM: put the words that the module writes in RAM from ADDR, a NICE address in decimal or with `0x` (see [Code in a ROM](#code-in-a-rom)). Not with `--library` or `--memory-pages`. |
 | `--ram-bytes BYTES` | With `--ram`, the size of the memory in RAM (see Code in a ROM). |
@@ -122,7 +123,7 @@ of the inputs picks the language: `.c`, `.zig`, or `.rs`.
 
     ./nicebuild.py [-o output.bin] [-O LEVEL] [-I DIR] [-D MACRO[=VALUE]]
                    [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-bounds-checks]
-                   [--trust-alignment] [--memory-pages N] [--asm FILE]...
+                   [--trust-alignment] [--byte-windows] [--memory-pages N] [--asm FILE]...
                    [--no-trap-report] [--monitor] [--ram ADDR [--ram-bytes BYTES]]
                    [--symbols] [--keep]
                    input.c... | input.zig | input.rs
@@ -134,7 +135,7 @@ of the inputs picks the language: `.c`, `.zig`, or `.rs`.
 | `-I DIR`, `-D MACRO[=VALUE]` | For C: an include directory, and a macro. |
 | `--stack BYTES` | The stack size, 4096 by default, or 16384 for Zig in Debug or ReleaseSafe. It must be positive. |
 | `--memory BYTES` | The initial memory, 65536 by default. It must be positive. The stack is in the memory, so a larger `--stack` needs a larger `--memory` too: `--stack 131072` alone fails with wasm-ld's "initial memory too small", and `--memory 262144` fixes it. |
-| `--no-mpu`, `--no-bounds-checks`, `--trust-alignment`, `--memory-pages N` | Passed on to `nicewasm.py` (above). With `--no-mpu`, the program is joined with `muldiv_soft.nasm`. |
+| `--no-mpu`, `--no-bounds-checks`, `--trust-alignment`, `--byte-windows`, `--memory-pages N` | Passed on to `nicewasm.py` (above). With `--no-mpu`, the program is joined with `muldiv_soft.nasm`. |
 | `--asm FILE` | Join a NICE assembly file after the program, so that the program can call a function that the file defines, as the label `_name` of ABI.md; for C it also lets the link leave the function undefined. The option can repeat. |
 | `--no-trap-report` | Leave out the trap report, so that a trap halts silently (see below). |
 | `--monitor` | Build a program for a monitor in ROM, which loads it at `0x8000` and calls it, and to which it returns (ABI.md, "Programs under a monitor"): the start-up code is `runtime/start_wasm_trap_mon.nasm`, or `start_wasm_mon.nasm` with `--no-trap-report`, and the `.bin` file starts at `0x8000`. The monitor's own routines, if the program calls them, come as stubs in a file of the monitor's, joined with `--asm`. |
@@ -556,9 +557,11 @@ fifth of the modules trap. The modes of nicewasm are `--no-mpu`,
 of bounds, `--grow` for `--memory-pages 2`, and `--trust` for
 `--trust-alignment` with `--no-bounds-checks`, whose modules give the
 alignment hint 4 to each access of 4 or 8 bytes at an address known to
-be a multiple of 4. `make test` runs 40 seeds with the math unit, 40
-with `--no-mpu`, and 20 each with `--unchecked`, `--grow`, and
-`--trust`, and says how many of them trap;
+be a multiple of 4, and `--windows` for `--byte-windows` with
+`--trust-alignment` and the bounds checks, with the hints of `--trust`.
+`make test` runs 40 seeds with the math unit, 40
+with `--no-mpu`, and 20 each with `--unchecked`, `--grow`, `--trust`,
+and `--windows`, and says how many of them trap;
 `test/fuzz.py 1 1000` runs more, and `test/fuzz.py --reduce SEED 1`
 shrinks a failing module and writes it with its translation. With `--keep DIR`, `fuzz.py` copies each program to
 `DIR/fuzzSEED.bin`, with the mode added to the name, for `make programs` in `hdl/`.

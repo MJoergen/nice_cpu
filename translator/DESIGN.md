@@ -135,6 +135,26 @@ the next paragraph covers the alignment of an access whose offset is a
 multiple of 4 already, so the option changes only the accesses with
 other offsets.
 
+With `--byte-windows`, an access goes through a byte window of
+[SYSTEM.md §9](../doc/SYSTEM.md#9-byte-windows), which takes the byte
+address itself. The window, the memory's start, and the offset fold into
+one constant, so a byte load is `MOVE R1, @0x20000000+4*___wasm_memory+5[R2]`,
+with no word index, no rotation, and no read and write back for a store.
+The signed windows sign-extend a byte or a halfword. The bounds check
+compares the base with the first base at which the access does not
+fit, as above, and the offset needs no `ADD`. A window never straddles
+two words, so a halfword takes one only if `--trust-alignment` trusts
+its hint of 2, and a word only if the option trusts its hint of 4, or
+word_index knows the address to be at a multiple of 4. The other
+accesses, and those at a constant address of 4 or 8 bytes, keep the
+code above. Window accesses do not join the groups of accesses that
+share a compare. So with bounds checks, a word access whose address
+word_index knows as 4 · (i + c) keeps the code above too: it takes
+word c with i as the index, needs neither the shift nor the add that
+compute the address, and shares its compare. In bench.c that saves
+105K steps, most in its heapsort. Without bounds checks there is no
+compare to share, and the window is one instruction as well.
+
 Without bounds checks, an offset that is a multiple of 4 goes into the
 word operand, as offset / 4, and the word index and the byte in the
 word come from the base alone, with no `ADD` before them. That is exact

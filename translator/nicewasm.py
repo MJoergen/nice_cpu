@@ -5,7 +5,7 @@ Implements the WebAssembly mapping of translator/WASM.md. The output is
 one assembly file, to be joined with the start-up code, the program's other
 files, and the runtime library as runtime/ABI.md describes.
 
-Usage: nicewasm.py [-o output.nasm] [--no-bounds-checks] [--trust-alignment]
+Usage: nicewasm.py [-o output.nasm] [--no-bounds-checks] [--trust-alignment] [--byte-windows]
                    [--memory-pages N] [--ram ADDR [--ram-bytes BYTES]]
                    [--library NAME [--library-memory BYTES]] [--no-mpu] input.wasm
 
@@ -50,6 +50,10 @@ CALLEE_SAVED = [f"R{k}" for k in range(7, 13)]
 
 WORDS_PER_PAGE = 16384  # 65536 bytes, four to a word
 ZERO_UNROLL = 16        # words cleared per pass of ___wasm_start's loops
+
+# The byte windows of SYSTEM.md §9: a data access at one of these plus a
+# byte address b reaches word b / 4, or its byte or halfword.
+WIN_WORD, WIN_BYTE, WIN_SBYTE, WIN_HALF, WIN_SHALF = (k << 28 for k in range(1, 6))
 
 # Section ids in the order a module must give them. Custom sections (0) may
 # come anywhere.
@@ -2779,12 +2783,14 @@ class Translator:
                  library: Optional[str] = None, library_memory: Optional[int] = None,
                  memory_pages: Optional[int] = None, mpu: bool = True,
                  trust_alignment: bool = False, ram: Optional[int] = None,
-                 ram_bytes: Optional[int] = None) -> None:
+                 ram_bytes: Optional[int] = None, windows: bool = False) -> None:
         self.m = m
         self.data = data
         self.checks = checks  # bounds checks on memory accesses
         # Trust the alignment hint of an access of 4 or 8 bytes (fast_path)
         self.trust_alignment = trust_alignment
+        # Access linear memory through the byte windows of SYSTEM.md §9
+        self.windows = windows
         self.mpu = mpu  # use the math unit of SYSTEM §2 for i32 mul, and div and rem
         self.library = library  # the name of a library module (WASM.md), or None
         self.prefix = f"WL.{library}." if library else "W."  # of the labels made here
@@ -2839,6 +2845,9 @@ class Translator:
             if end > 1 << 32:
                 raise WasmError(f"--ram: the {end - ram} words from 0x{ram:08X} pass the end of"
                                 " the address space")
+            if windows and m.memory_pages is not None and end > 1 << 26:
+                raise WasmError(f"--byte-windows: the memory in RAM from 0x{ram:08X} passes word"
+                                " 0x03FFFFFF, the last that the windows reach")
         # The cap: memory.grow may grow the memory up to it (WASM.md). Unless
         # it is above the initial size, the size is a constant.
         self.cap = m.memory_pages
@@ -3704,8 +3713,8 @@ class FunctionTranslator:
         return sum((int(w) & 0xFFFFFFFF) << (32 * k) for k, w in enumerate(d.words))
 
     def address(self, base: str, offset: int, n: int, const: Optional[int],
-                fold: bool = False, prep: Optional[Callable[[str], None]] = None
-                ) -> Tuple[Optional[int], str, int]:
+                fold: bool = False, prep: Optional[Callable[[str], None]] = None,
+                fold_bytes: bool = False) -> Tuple[Optional[int], str, int]:
         """The byte address base + offset, as an operand a and a number of
         words k: the address is a + 4 * k. With bounds checks, traps with
         code 2 unless all n bytes there are in the memory. A trap's R2 is
@@ -3717,7 +3726,9 @@ class FunctionTranslator:
         come back in k, which is otherwise 0. If the address is not
         returned, prep(a) emits code that needs only a, after the start and
         before the compare if a is known by then, so that its registers are
-        not written just before the access."""
+        not written just before the access. With fold_bytes, for an access
+        through a byte window (SYSTEM.md §9), any offset may come back in
+        k, and the address is then a + k."""
         if const is not None:
             addr = const + offset
             if not self.t.checks:
@@ -3745,6 +3756,8 @@ class FunctionTranslator:
             # it, base + offset does not pass 2^32, so with an offset that
             # is a multiple of 4, the word of base + offset is that of base
             # plus offset / 4, and the byte in it that of base.
+            if fold_bytes:
+                return done(base, offset)
             if fold and offset % 4 == 0:
                 return done(base, offset // 4)
             if offset:
@@ -3759,6 +3772,8 @@ class FunctionTranslator:
             return done(a)
         if not self.t.growable and const is None and self.bound_of(base) < limit - offset:
             # Every value of base passes the compare below, so there is none.
+            if fold_bytes:
+                return done(base, offset)
             if fold and offset % 4 == 0:
                 return done(base, offset // 4)
             if offset:
@@ -3784,7 +3799,7 @@ class FunctionTranslator:
         if limit <= offset:
             self.emit("MOVE", "R15", trap)
             return done(a)
-        k = offset // 4 if fold and offset % 4 == 0 else 0
+        k = offset if fold_bytes else offset // 4 if fold and offset % 4 == 0 else 0
         if prep:
             if offset and not k:
                 a = self.new_vreg()
@@ -3839,6 +3854,51 @@ class FunctionTranslator:
         """Whether an access with the alignment hint align (log2 of the
         bytes) is taken to be at a multiple of 4, with --trust-alignment."""
         return self.t.trust_alignment and align >= 2
+
+    def window(self, kind: int, k: int, index: Optional[str] = None) -> str:
+        """The operand of the byte address index + k, or k without index,
+        through the byte window at kind (SYSTEM.md §9): WIN_WORD and the
+        like."""
+        k &= 0xFFFFFFFF
+        return (f"@0x{kind:08X}+4*{self.t.mem}" + (f"+{k}" if k else "")
+                + (f"[{index}]" if index else ""))
+
+    def window_kind(self, n: int, signed: bool, base: str, offset: int, const: Optional[int],
+                    align: int) -> Optional[int]:
+        """The byte window of an access of n bytes at base + offset, with
+        --byte-windows, or None if it takes none. A byte always may. A
+        halfword, a word, or two words must be at a multiple of their size,
+        since a window never straddles words: by the hint, with
+        --trust-alignment, or for words, by what word_index knows of base.
+        An access of 4 or 8 bytes at a constant address keeps its direct
+        word operand, and with bounds checks, so does one whose base
+        word_index knows as 4 * (i + c)."""
+        if not self.t.windows:
+            return None
+        if n == 1:
+            return WIN_SBYTE if signed else WIN_BYTE
+        if n == 2:
+            if self.t.trust_alignment and align >= 1:
+                return WIN_SHALF if signed else WIN_HALF
+            return None
+        w = self.word_index.get(base)
+        if self.t.checks and w is not None and w.i:
+            # word_access needs neither the shift nor the add that compute
+            # base from i, and shares its compare with other accesses.
+            return None
+        if const is None and (self.trusted(align) or offset % 4 == 0 and self.aligned(base)):
+            return WIN_WORD
+        return None
+
+    def window_access(self, base: str, offset: int, n: int, const: Optional[int],
+                      kind: int) -> Callable[[int], str]:
+        """The bounds check of an access of n bytes at base + offset
+        (address), and the operands of its words through the window at
+        kind: word(j) is the word at byte j * 4 past the address."""
+        addr, a, k = self.address(base, offset, n, const, fold_bytes=True)
+        if addr is not None:
+            return lambda j: self.window(kind, addr + 4 * j)
+        return lambda j: self.window(kind, k + 4 * j, a)
 
     def fast_path(self, helper: str, a: str, args: List[str], results: List[str],
                   aligned: List[Tuple[str, ...]], trusted: bool = False, k: int = 0) -> None:
@@ -4414,6 +4474,16 @@ class FunctionTranslator:
         helper = f"W.load{n}" + ("" if n >= 4 else "s" if signed else "u")
         res = dest if n == 8 else [dest[0] if len(dest) == 1 else self.new_vreg()]
         aligned: List[Tuple[str, ...]] = [("MOVE", w, f"%{k}") for k, w in enumerate(res)]
+        kind = self.window_kind(n, signed, base[0], offset, const, align)
+        if kind is not None:
+            operand = self.window_access(base[0], offset, n, const, kind)
+            for j, r in enumerate(res):
+                self.emit("MOVE", r, operand(j))
+            if n < 4 and not signed:
+                self.set_bound(res[0], (1 << (8 * n)) - 1)
+            if len(dest) == 2 and n <= 4:
+                self.extend(dest, res[0], signed)
+            return
         if n >= 4 and const is None and offset % 4 == 0 and (
                 self.t.checks or self.aligned(base[0])):
             last = self.word_access(base[0], offset, n, helper, [], res, aligned)
@@ -4475,6 +4545,12 @@ class FunctionTranslator:
         base, value = self.pop([I32, t], at, what)
         words_n = 2 if n == 8 else 1
         aligned: List[Tuple[str, ...]] = [("MOVE", f"%{k}", value[k]) for k in range(words_n)]
+        kind = self.window_kind(n, False, base[0], offset, const, align)
+        if kind is not None:
+            operand = self.window_access(base[0], offset, n, const, kind)
+            for j in range(words_n):
+                self.emit("MOVE", operand(j), value[j])
+            return
         if n >= 4 and const is None and offset % 4 == 0 and (
                 self.t.checks or self.aligned(base[0])):
             self.word_access(base[0], offset, n, f"W.store{n}", value[:words_n], [], aligned)
@@ -5345,9 +5421,9 @@ def translate(data: bytes, source: str, checks: bool = True, library: Optional[s
               library_memory: Optional[int] = None,
               memory_pages: Optional[int] = None, mpu: bool = True,
               trust_alignment: bool = False, ram: Optional[int] = None,
-              ram_bytes: Optional[int] = None) -> List[str]:
+              ram_bytes: Optional[int] = None, windows: bool = False) -> List[str]:
     return Translator(parse(data), data, checks, library, library_memory,
-                      memory_pages, mpu, trust_alignment, ram, ram_bytes).run(source)
+                      memory_pages, mpu, trust_alignment, ram, ram_bytes, windows).run(source)
 
 
 def main() -> None:
@@ -5359,8 +5435,12 @@ def main() -> None:
                     help="do not check that memory accesses are in bounds")
     ap.add_argument("--trust-alignment", action="store_true",
                     help="take an access of 4 or 8 bytes whose alignment hint is 4 or more to be"
-                         " at a multiple of 4, without a test; a misaligned one then gives a"
-                         " wrong result (not wasm-conforming)")
+                         " at a multiple of 4, without a test, and with --byte-windows one of 2"
+                         " bytes whose hint is 2 at a multiple of 2; a misaligned one then gives"
+                         " a wrong result (not wasm-conforming)")
+    ap.add_argument("--byte-windows", action="store_true",
+                    help="access the memory through the byte windows of SYSTEM.md §9, which the"
+                         " system must have")
     ap.add_argument("--memory-pages", metavar="N", type=int,
                     help="pages up to which memory.grow may grow the memory"
                          " (default: its initial size)")
@@ -5410,7 +5490,8 @@ def main() -> None:
             sys.exit("--ram-bytes: the number of bytes must not be negative")
         lines = translate(data, os.path.basename(args.input), not args.no_bounds_checks,
                           args.library, args.library_memory, args.memory_pages,
-                          not args.no_mpu, args.trust_alignment, args.ram, args.ram_bytes)
+                          not args.no_mpu, args.trust_alignment, args.ram, args.ram_bytes,
+                          args.byte_windows)
     except WasmError as e:
         where = "" if e.offset is None else f":0x{e.offset:x}"
         print(f"{args.input}{where}: error: {e}", file=sys.stderr)

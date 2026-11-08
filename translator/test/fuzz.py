@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A random test of nicewasm against a model of wasm written in Python.
 
-Usage: fuzz.py [--no-mpu] [--unchecked] [--grow] [--trust] [--keep DIR] [--reduce]
+Usage: fuzz.py [--no-mpu] [--unchecked] [--grow] [--trust] [--windows] [--keep DIR] [--reduce]
                FIRST COUNT
 
 Each case is a module built from a random syntax tree. Every node of the
@@ -68,9 +68,11 @@ memory.grow keeps. With --unchecked, no access is out of bounds; the other
 traps stay. With --trust, nicewasm is run with --trust-alignment and
 --no-bounds-checks, and the generator gives each access of 4 or 8 bytes
 whose address it knows to be a multiple of 4 the alignment hint 4; the
-other accesses keep the hint 0. With --keep DIR, each program is copied
-to DIR/fuzzSEED.bin, with _nompu, _unchecked, _grow, or _unchecked_trust
-added for the mode, for hdl/test/programs.py.
+other accesses keep the hint 0. With --windows, nicewasm is run with
+--byte-windows and --trust-alignment, with the bounds checks, and the
+hints are as with --trust. With --keep DIR, each program is copied to
+DIR/fuzzSEED.bin, with _nompu, _unchecked, _grow, _unchecked_trust, or
+_trust_windows added for the mode, for hdl/test/programs.py.
 With --reduce, FIRST is
 a failing seed: statements are removed from the functions while the
 mismatch persists, and the reduced module and its translation, if
@@ -81,7 +83,7 @@ This test does not replace run.py, whose cases are checked by hand, and
 which also checks a trap's R2. It is cheap to run on many seeds, and it
 found three bugs while it was written, all three in the model. make test
 runs 40 seeds with the math unit and 40 with --no-mpu, and 20 each with
---unchecked, --grow, and --trust. Each run prints how many of its modules
+--unchecked, --grow, --trust, and --windows. Each run prints how many of its modules
 trap."""
 
 from __future__ import annotations
@@ -1691,7 +1693,8 @@ def reduce(seed: int, tmp: str, opts: List[str]) -> None:
 
 # The modes: fuzz.py's option -> nicewasm's options.
 MODES = {"--no-mpu": ["--no-mpu"], "--unchecked": ["--no-bounds-checks"],
-         "--grow": ["--memory-pages", "2"], "--trust": ["--trust-alignment", "--no-bounds-checks"]}
+         "--grow": ["--memory-pages", "2"], "--trust": ["--trust-alignment", "--no-bounds-checks"],
+         "--windows": ["--byte-windows", "--trust-alignment"]}
 
 
 def main() -> None:

@@ -22,7 +22,8 @@ RUST_TESTS = rust rusttrap hellors
 
 # Translate, assemble, and run each module in test/run.py, then random
 # modules with test/fuzz.py: 40 with the math unit, 40 without, and 20 each
-# without bounds checks and with a memory that can grow. Then the passes on
+# without bounds checks, with a memory that can grow, with the alignment
+# trusted, and through the byte windows. Then the passes on
 # code built by hand in test/passes.py, then check the error messages in
 # test/errors.py, and run nicebuild.py in test/build.py, for each language
 # whose compiler is installed.
@@ -33,6 +34,7 @@ test: emulator
 	@$(PYTHON) test/fuzz.py --unchecked 1 20
 	@$(PYTHON) test/fuzz.py --grow 1 20
 	@$(PYTHON) test/fuzz.py --trust 1 20
+	@$(PYTHON) test/fuzz.py --windows 1 20
 	@$(PYTHON) test/passes.py
 	@$(PYTHON) test/errors.py
 	@$(PYTHON) test/build.py

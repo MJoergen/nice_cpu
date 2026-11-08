@@ -129,20 +129,28 @@ ETH_FILES = {
 
 # Runs that succeed: (contents of the .bin file, arguments before it, exit
 # status, lines that stdout must have, or must not have if they start with
-# "!"). 0c000000 is HALT, 0c200000 RTI, 0c400001 INT 1, and 0c600000 a
+# "!"). 0c000000 is HALT, 0c200000 RTI, 0c400001 INT 1, and 0c800000 a
 # reserved control word.
 RUNS: List[Tuple[str, List[str], int, List[str]]] = [
     ("00000000 0c000000", [], 0, ["Halted (HALT) after 1 steps, PC=00000001"]),
     # RTI outside an interrupt routine, a reserved word, and INT inside the
     # routine of INT 1, which starts at word 2.
     ("00000000 0c200000", [], 2, ["Halted (RTI outside an interrupt routine) after 1 steps, PC=00000001"]),
-    ("00000000 0c600000", [], 2, ["Halted (reserved control instruction) after 1 steps, PC=00000001"]),
+    ("00000000 0c800000", [], 2, ["Halted (reserved control instruction) after 1 steps, PC=00000001"]),
     ("00000000 0c400001\n00000001 00000002\n00000002 0c400001", [], 2,
      ["Halted (INT inside an interrupt routine) after 2 steps, PC=00000003"]),
     ("00000000 00000000", ["-n", "5", "--no-cycle-counter"], 3,
      ["Stopped at the step limit after 5 steps, PC=00000005"]),
     ("00000000 00000000", ["-n", "5", "--no-font"], 3,
      ["Stopped at the step limit after 5 steps, PC=00000005"]),
+    # A WAIT that no request can end stops the run, also under a step limit
+    # (SYSTEM.md §1.6). A timer that raises requests can end it, so the step
+    # limit stops that one: MOVE @TIMER_PERIOD, 100 and WAIT are steps 0 and
+    # 1, and the run counts 48 wait steps at once, to the limit of 50.
+    ("00000000 0c600000", [], 2, ["Stopped: waiting with no request to come, after 1 steps, PC=00000001"]),
+    ("00000000 0c600000", ["-n", "5"], 2, ["Stopped: waiting with no request to come, after 1 steps, PC=00000001"]),
+    ("00000000 000c1800\n00000001 ffffff10\n00000002 00000064\n00000003 0c600000", ["-n", "50"], 3,
+     ["Stopped at the step limit after 50 steps, PC=00000004"]),
     # -n 0 runs nothing. A HALT at the step limit still counts as a halt.
     ("00000000 0c000000", ["-n", "0"], 3, ["Stopped at the step limit after 0 steps, PC=00000000"]),
     ("00000000 0c000000", ["-n", "1"], 0, ["Halted (HALT) after 1 steps, PC=00000001"]),
@@ -226,7 +234,7 @@ def main() -> None:
         for text, message in SYMBOL_FILES:
             with open(sym, "w", newline="") as f:
                 f.write(text)
-            p = run(tmp, ["--symbols", sym, "BIN"], "00000000 0c600000")
+            p = run(tmp, ["--symbols", sym, "BIN"], "00000000 0c800000")
             problems = []
             if message is None:
                 if p.returncode != 2:
@@ -248,6 +256,14 @@ def main() -> None:
                 print(f"FAIL --symbols {text!r}")
                 for msg in problems:
                     print("    " + msg.replace("\n", "\n    "))
+
+        # A wait is named at the WAIT, the word before PC, as a halt is.
+        with open(sym, "w") as f:
+            f.write("00000000 here\n00000001 after\n")
+        p = run(tmp, ["--symbols", sym, "BIN"], "00000000 0c600000")
+        if p.returncode != 2 or "At here" not in p.stdout.splitlines():
+            failed += 1
+            print(f"FAIL --symbols in a wait: exit status {p.returncode}, output:\n{p.stdout}")
 
         # Help goes to stdout, with exit status 0.
         p = run(tmp, ["-h"], None)

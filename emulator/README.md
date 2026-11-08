@@ -67,11 +67,14 @@ niceemu that `NICEEMU` in the environment names, if set.
 
 The program is loaded, the processor is reset (PC = 0) and it runs until it
 halts. Then the emulator prints why it stopped, the number of steps, and the
-registers. A step is one instruction, or the entry into an interrupt, so an
+registers. A step is one instruction, the entry into an interrupt, or a
+wait step of `WAIT` (Interrupts below), so an
 NMI followed by `RTI` and `HALT` is 3 steps. The PC printed after a halt is
 the address after the halting instruction. If the step limit stops the
 program first, the first line is `Stopped at the step limit after N steps,
-PC=...` instead. If an interrupt request is still pending at the end, a
+PC=...` instead. If the program waits for an interrupt that no request can
+end, the first line is `Stopped: waiting with no request to come, after N
+steps, PC=...`, with PC the address after the `WAIT`. If an interrupt request is still pending at the end, a
 line such as `Pending: IRQ 05` follows the first line.
 
     $ zig-out/bin/niceemu ../assembler/test/count.bin
@@ -120,7 +123,7 @@ goes through these steps on a small program, and a
 | `--link [ADDR:]PORT` | Serve the debug link on PORT of ADDR, `127.0.0.1` if no ADDR is given, instead of running the program once (see Debug link below). ADDR is an IPv4 address, or an IPv6 one in brackets, such as `[::1]`. With PORT 0, pick a free port and print `link: port N` on stderr. The program file is optional. `--input` is an error with it. |
 | `-h`, `--help` | Print the usage on stdout. |
 
-**Symbols file.** `niceasm.py --symbols` and `nicebuild.py --symbols` write one: one line per label, with an 8-digit hex address, a space, and the label. Only the labels of instructions and data are in it, not `.EQU` names. With `--symbols FILE`, niceemu prints `At label+0x1f`, the location of the halt, after a halt other than `HALT` or at the step limit. The label is the nearest one at or before the address, the first in the file if several are at one address, so a second label at the same address is never named. After a halt at the default wasm trap handler, `___wasm_trap`, it also prints `Trap CODE (cause) at label+0x1f`, from R1 and R2 ([WASM.md](../translator/WASM.md)). `nicedis` reads the same file.
+**Symbols file.** `niceasm.py --symbols` and `nicebuild.py --symbols` write one: one line per label, with an 8-digit hex address, a space, and the label. Only the labels of instructions and data are in it, not `.EQU` names. With `--symbols FILE`, niceemu prints `At label+0x1f`, the location of the halt, after a halt other than `HALT`, at the step limit, or at the `WAIT` of a wait that no request can end. The label is the nearest one at or before the address, the first in the file if several are at one address, so a second label at the same address is never named. After a halt at the default wasm trap handler, `___wasm_trap`, it also prints `Trap CODE (cause) at label+0x1f`, from R1 and R2 ([WASM.md](../translator/WASM.md)). `nicedis` reads the same file.
 
 Numbers in options are decimal, or hex after `0x` or `0X`, with no sign or
 `_`.
@@ -144,7 +147,7 @@ The exit status says how the run ended:
 |---|---|
 | 0 | `HALT`; or, with `--link`, a signal (see Debug link below). |
 | 1 | A usage, file, or memory error, an out-of-memory condition, or an output that cannot be written. |
-| 2 | Any other halt: a reserved control word, a nested `INT`, or `RTI` outside an interrupt routine. |
+| 2 | Any other halt: a reserved control word, a nested `INT`, or `RTI` outside an interrupt routine; or a wait that no request can end. |
 | 3 | The step limit. |
 | 4 | The window of `--window` was closed before the halt or the step limit. |
 | 141 | stdout is a pipe that closed early, as in `niceemu -t x.bin \| head`. niceemu stops quietly, as a filter killed by SIGPIPE would. |
@@ -189,7 +192,11 @@ never sleeps. `--speed N` runs N steps a second instead, for a program
 that keeps time by the timer or by counting steps: at `--speed 1000000`,
 one step per microsecond, a timer period of P lasts P microseconds, where
 on a board of 100 MHz it lasts P/100. A run that falls more than 100 ms
-behind its rate goes on from there, rather than catch up in a burst.
+behind its rate goes on from there, rather than catch up in a burst. A
+`WAIT` takes no host time, as niceemu counts its wait steps at once, and
+`--speed` runs them at its rate as any steps. A wait that no request can
+end does not stop a run in the window: niceemu sleeps until the window is
+closed.
 
 At the halt, or at the step limit, niceemu prints the report as without
 the window, and the window stays, with the last screen, until it is
@@ -212,18 +219,18 @@ window ends niceemu with status 0, as a signal does.
 `test/window.py` runs niceemu with SDL's dummy video driver
 (`SDL_VIDEODRIVER=dummy`), which needs no display, but can type no key and
 close no window. It checks the report at the halt with `--color`, the
-reads of `--input` and then 0, that stdin is not read, that the default
-is faster than `--speed 1000000`, that a program that polls the console
-sleeps, that each of the three signals ends a run with no report, and
-what happens without a display. The close of the window, before the halt,
-after it, and with `--link`, it checks through a hook of niceemu for the
-test, as the dummy driver cannot close one. With `--link`, as a host, it
-checks that a read returns 0 until a byte comes, the sleep in the wait
-loop, and the end of the input. The key table and the drawing of the
-screen are unit tests in `src/keys.zig` and `src/frame.zig`, the keys'
-way into the link's buffer one in `src/link.zig`, and the mapping of
-SDL's key events to the keys one in `src/window.zig`, which `make
-window-test` runs.
+reads of `--input` and then 0, that stdin is not read, that the default is
+faster than `--speed 1000000`, that a program that polls the console
+sleeps, that a wait that no request can end sleeps until the close, that
+each of the three signals ends a run with no report, and what happens
+without a display. The close of the window, before the halt, after it, and
+with `--link`, it checks through a hook of niceemu for the test, as the
+dummy driver cannot close one. With `--link`, as a host, it checks that a
+read returns 0 until a byte comes, the sleep in the wait loop, and the end
+of the input. The key table and the drawing of the screen are unit tests
+in `src/keys.zig` and `src/frame.zig`, the keys' way into the link's
+buffer one in `src/link.zig`, and the mapping of SDL's key events to the
+keys one in `src/window.zig`, which `make window-test` runs.
 
 ## Program files
 
@@ -545,6 +552,19 @@ never reached, because the processor halts or `-n` stops it, are never
 raised. The probes `test/irq.nasm`, `test/merge.nasm`, `test/after.nasm`, and
 `test/start.nasm` show these rules.
 
+`WAIT` (ISA.md §7.5) waits for a request. Each step of the wait is a wait
+step: the cycle counter and the timer count it, and with `--step-time` the
+microsecond counter, but the instruction counter does not, and `-n`,
+`--irq`, and `--nmi` count it as a step. niceemu counts the wait steps at
+once, up to the timer's next request, the next `--irq` or `--nmi`, or the
+step limit, with the same result as one by one (SYSTEM.md §3). So a wait
+takes no host time, and without `--step-time` the microsecond counter moves
+on little during it. `--trace` prints no line for a wait step. A wait that
+no request can end, with no timer request and no `--irq` or `--nmi` to
+come, stops the run with exit status 2, also under `-n`, but not with
+the window or the link. The probes `test/wait.nasm` and
+`test/waitnone.nasm` show these rules.
+
 ## Trace format
 
 With `--trace`, each instruction prints one line: its address, its instruction
@@ -583,9 +603,9 @@ and has a hand-checked `test/X.expected`. The output and exit status of
 each run must be those of its `.expected` file.
 Finally `test/errors.py` checks the error messages and exit statuses of the
 command line and the loader, and the exit status and some output lines of
-runs that stop in each way: `HALT`, the other halts, and the step limit,
-`-n 0` included. The probes are assembled with niceasm, and
-`make bins` reassembles them after a change.
+runs that stop in each way: `HALT`, the other halts, the step limit,
+`-n 0` included, and a wait that no request can end. The probes are
+assembled with niceasm, and `make bins` reassembles them after a change.
 Then `test/link.py` runs niceemu with `--link 0` and checks the debug link
 over TCP (Debug link above). It checks the packets of DEBUG.md §8 byte for
 byte, the errors and drops, a program loaded, run, halted, and restarted,
@@ -605,7 +625,10 @@ checks the writes of R0 to R15: their example of DEBUG.md §8, R0, R14,
 a step and a go on from a written R15, also at a breakpoint, and `e04`
 while halted, held, and running. And it checks the network station's
 `NET_STATUS`, with the port and a host connected, and that a start, a
-clear, and a new connection keep `NET_IP`.
+clear, and a new connection keep `NET_IP`. And it checks a wait: bit 6 of
+the control register, a pause and a step in it, a breakpoint at R15 that
+fires only at its end, and a wait that no request can end, which does not
+stop the run.
 Last, `test/udp.py` checks the frames over the socket of `--eth-udp`
 (Ethernet frames above), and `test/tap.py` the same through
 `tools/nicetap.py` and a TAP device (A real network above).

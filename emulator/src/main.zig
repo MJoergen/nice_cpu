@@ -222,8 +222,9 @@ fn trapName(code: u32) []const u8 {
 /// was, and for a halt at the default trap handler, `___wasm_trap`, where
 /// the wasm instruction trapped, from R2.
 fn printWhere(out: *std.Io.Writer, cpu: *const Cpu, syms: []const Symbol) !void {
-    // After a halt, PC is the address after the halting instruction.
-    const pc = if (cpu.halted()) cpu.getReg(15) -% 1 else cpu.getReg(15);
+    // After a halt, PC is the address after the halting instruction, and
+    // in a wait the address after the WAIT, a word of its own.
+    const pc = if (cpu.halted() or cpu.waiting) cpu.getReg(15) -% 1 else cpu.getReg(15);
     try out.writeAll("At ");
     try printLocation(out, syms, pc);
     try out.writeByte('\n');
@@ -714,23 +715,33 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
         if (opts.window) return runWindow(arena, io, out, opts, syms, &cpu, if (opts.input_given) &in_r.interface else null, eth_host);
     }
     cpu.input = .fromReader(&in_r.interface);
-    // A step is one instruction, or the entry into an interrupt.
+    // A step is one instruction, the entry into an interrupt, or a wait
+    // step (doc/SYSTEM.md §3).
     var steps: u64 = 0;
     var next: usize = 0;
-    while (!cpu.halted() and steps < opts.max_steps) : (steps += 1) {
-        if (steps & eth_check_mask == 0) eth_host.poll(&cpu);
-        if (steps & signal_check_mask == 0) {
+    // The turns of the loop, each a step or a jump over wait steps.
+    var turns: u64 = 0;
+    const stop: Stop = while (!cpu.halted() and steps < opts.max_steps) : (turns += 1) {
+        if (turns & eth_check_mask == 0) eth_host.poll(&cpu);
+        if (turns & signal_check_mask == 0) {
             const sig = stop_signal.load(.acquire);
             if (sig != 0) dieOfSignal(out, sig);
         }
         raiseRequests(&cpu, opts, steps, &next);
+        const k = waitJump(&cpu, opts, steps, next) orelse break .waited;
+        if (k != 0) {
+            cpu.skipWait(k);
+            steps += k;
+            continue;
+        }
         try cpu.step();
-    }
+        steps += 1;
+    } else .ran;
     // A signal that interrupted a console read ended the input, and the
     // program may have halted before the next check above.
     const sig = stop_signal.load(.acquire);
     if (sig != 0) dieOfSignal(out, sig);
-    return report(out, opts, syms, &cpu, steps, false);
+    return report(out, opts, syms, &cpu, steps, stop);
 }
 
 /// Raise the requests of --irq and --nmi for step `steps`. `next` is the
@@ -744,6 +755,25 @@ fn raiseRequests(cpu: *Cpu, opts: Options, steps: u64, next: *usize) void {
         }
     }
 }
+
+/// The wait steps (doc/SYSTEM.md §3) that a run counts at once at step
+/// `steps`, after the requests of the step: up to the step at which the
+/// timer or the next of --irq and --nmi raises a request, or up to the step
+/// limit. 0 when the next step is not a wait step, and null when no request
+/// can end the wait, which stops a run without the link or the window
+/// (doc/SYSTEM.md §1.6). `next` is the first request not raised yet.
+fn waitJump(cpu: *const Cpu, opts: Options, steps: u64, next: usize) ?u64 {
+    if (!cpu.waitStepDue()) return 0;
+    const timer = cpu.timerWaitSteps();
+    const request: ?u64 = if (next < opts.requests.len) opts.requests[next].step - steps else null;
+    if (timer == null and request == null) return null;
+    return @min(timer orelse std.math.maxInt(u64), request orelse std.math.maxInt(u64), opts.max_steps - steps);
+}
+
+/// Why a run without the link stopped: the processor halted, or the step
+/// limit stopped it, or the window was closed, or the processor waits for a
+/// request that cannot come.
+const Stop = enum { ran, closed, waited };
 
 /// Keeps the speed of --speed: how long to wait after a number of steps,
 /// so that they take as long as they would at `speed` steps a second.
@@ -864,11 +894,24 @@ fn runWindow(arena: std.mem.Allocator, io: std.Io, out: *std.Io.Writer, opts: Op
         const sig = stop_signal.load(.acquire);
         if (sig != 0) dieOfSignal(out, sig);
         eth_host.poll(cpu);
-        // A chunk of steps, which a wait loop cuts short.
+        // A chunk of steps, which a wait loop cuts short. A wait that no
+        // request can end sleeps until the window closes.
         const end = @min(opts.max_steps, steps +| chunk);
         var wait_ms: u32 = 0;
         while (!cpu.halted() and steps < end) {
             raiseRequests(cpu, opts, steps, &next);
+            const k = waitJump(cpu, opts, steps, next) orelse {
+                wait_ms = 10;
+                break;
+            };
+            if (k != 0) {
+                // With the pace of --speed, no further than the chunk's end,
+                // so that the window is pumped as often in a long wait.
+                const m = if (opts.speed != 0) @min(k, end - steps) else k;
+                cpu.skipWait(m);
+                steps += m;
+                continue;
+            }
             try cpu.step();
             steps += 1;
             wait_ms = idle.wait(steps, cpu.idle_reads, cpu.time_reads);
@@ -884,7 +927,7 @@ fn runWindow(arena: std.mem.Allocator, io: std.Io, out: *std.Io.Writer, opts: Op
             break;
         }
     }
-    const status = try report(out, opts, syms, cpu, steps, closed);
+    const status = try report(out, opts, syms, cpu, steps, if (closed) .closed else .ran);
     try out.flush();
     while (!closed and windowOpen(&win, cpu, opts, 100, steps)) {
         const sig = stop_signal.load(.acquire);
@@ -895,10 +938,12 @@ fn runWindow(arena: std.mem.Allocator, io: std.Io, out: *std.Io.Writer, opts: Op
 
 /// Print why the run stopped, the registers, the dumps, and the screen, and
 /// return the exit status.
-fn report(out: *std.Io.Writer, opts: Options, syms: []const Symbol, cpu: *Cpu, steps: u64, closed: bool) !u8 {
+fn report(out: *std.Io.Writer, opts: Options, syms: []const Symbol, cpu: *Cpu, steps: u64, stop: Stop) !u8 {
     // After a halt, PC is the address after the halting instruction.
-    if (closed) {
+    if (stop == .closed) {
         try out.print("Stopped when the window was closed after {d} steps, PC={x:0>8}\n", .{ steps, cpu.regs[15] });
+    } else if (stop == .waited) {
+        try out.print("Stopped: waiting with no request to come, after {d} steps, PC={x:0>8}\n", .{ steps, cpu.regs[15] });
     } else if (cpu.halted()) {
         try out.print("Halted ({s}) after {d} steps, PC={x:0>8}\n", .{ cpu.halt_reason.describe(), steps, cpu.regs[15] });
     } else {
@@ -916,7 +961,11 @@ fn report(out: *std.Io.Writer, opts: Options, syms: []const Symbol, cpu: *Cpu, s
     for (opts.dumps) |d| try printMemory(out, cpu, d);
     if (opts.screen) try printScreen(out, cpu, opts.screen_base, opts.color, opts.invert_fg);
 
-    return if (closed) 4 else if (!cpu.halted()) 3 else if (cpu.halt_reason == .halt) 0 else 2;
+    return switch (stop) {
+        .closed => 4,
+        .waited => 2,
+        .ran => if (!cpu.halted()) 3 else if (cpu.halt_reason == .halt) 0 else 2,
+    };
 }
 
 /// Where `serve` prints, so that a signal can flush it before the exit.
@@ -987,7 +1036,7 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
         if (!link.running()) {
             clock.stop();
             if (link.halted() and !reported) {
-                _ = try report(out, opts, syms, cpu, steps, false);
+                _ = try report(out, opts, syms, cpu, steps, .ran);
                 link.notifyHalt();
                 reported = true;
             }
@@ -1007,6 +1056,8 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
         clock.start();
         var n: u64 = 0;
         var wait_ms: u32 = 0;
+        // A wait that no request can end: the link and the window wait.
+        var waits = false;
         while (n < chunk and link.running() and !link.started and !link.pauseDue(steps == opts.max_steps)) : (n += 1) {
             if (steps == opts.max_steps) {
                 link.limit_hit = true;
@@ -1023,6 +1074,22 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
             if (link.breakDue()) {
                 link.pause();
                 break;
+            }
+            // The wait steps at once, but a single step of the link is one.
+            if (!link.step_due) {
+                const k = waitJump(cpu, opts, steps, next) orelse {
+                    waits = true;
+                    break;
+                };
+                if (k != 0) {
+                    // With the pace of --speed, no more than a chunk at once,
+                    // so that the window is pumped as often in a long wait.
+                    const m = if (pacer.speed != 0) @min(k, chunk) else k;
+                    cpu.skipWait(m);
+                    steps += m;
+                    link.after_go = false;
+                    continue;
+                }
             }
             const saved = cpu.save();
             link.taken = 0;
@@ -1043,8 +1110,9 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
             if (wait_ms != 0) break;
         }
         link.console_w.flush() catch {};
-        try link.service(0);
+        try link.service(if (waits and !windowed) 100 else 0);
         if (windowed) {
+            if (waits) wait_ms = 10;
             if (wait_ms == 0) wait_ms = pacer.wait(steps, nowNs(io));
             lookAtWindow(arena, &win, &link, cpu, opts, wait_ms, steps);
         }

@@ -52,6 +52,19 @@ loop            MOVE    R1, @CONSOLE
                 HALT
 """
 
+# A WAIT that no request can end (SYSTEM.md §1.6).
+WAITS = """
+                WAIT
+                HALT
+"""
+
+# A WAIT for the timer's first request, 10^9 steps from its write.
+WAITS_LONG = """
+                MOVE    @0xFFFFFF10, 1000000000
+                WAIT
+                HALT
+"""
+
 # Counts in R2, and never halts.
 COUNT = """
 loop            ADD     R2, R2, 1
@@ -225,6 +238,35 @@ def test_idle(tmp: str) -> None:
             fail(f"{name} loop: {elapsed:.3f} s for a second of waits, {used:.3f} s of it host CPU")
 
 
+def test_wait(tmp: str) -> None:
+    """A WAIT that no request can end does not stop a run in the window,
+    which sleeps until it is closed, after the one step of the WAIT, and
+    uses little of a host core meanwhile."""
+    prog = assemble(tmp, "waits", WAITS)
+    before = resource.getrusage(resource.RUSAGE_CHILDREN)
+    t = time.monotonic()
+    p = start([prog], close_after=1)
+    expect("closed in the wait", read_lines(p, 1)[0], "Stopped when the window was closed after 1 steps, PC=00000001")
+    expect("exit status when closed in the wait", p.wait(timeout=10), 4)
+    elapsed = time.monotonic() - t
+    after = resource.getrusage(resource.RUSAGE_CHILDREN)
+    used = (after.ru_utime + after.ru_stime) - (before.ru_utime + before.ru_stime)
+    if used > max(elapsed, 0.2) * 0.75:
+        fail(f"wait: {elapsed:.3f} s, {used:.3f} s of it host CPU")
+    # With --speed, a long wait goes no further than a chunk at once, 1000
+    # steps at 1000000 a second, so the pace sleeps a millisecond for each
+    # and the window is pumped. The steps are the MOVE, the WAIT at word 3,
+    # and wait steps to the close after 5000.
+    prog = assemble(tmp, "waits_long", WAITS_LONG)
+    t = time.monotonic()
+    p = start(["--speed", "1000000", prog], close_after=5000)
+    expect("closed in a long wait", read_lines(p, 1)[0],
+           "Stopped when the window was closed after 5000 steps, PC=00000004")
+    expect("exit status when closed in a long wait", p.wait(timeout=10), 4)
+    if time.monotonic() - t > 5.0:
+        fail(f"long wait: {time.monotonic() - t:.3f} s for 5000 steps at 1 MHz")
+
+
 def test_no_display(tmp: str) -> None:
     """When no window can be opened, niceemu prints SDL's error and exits
     with status 1 before the run."""
@@ -308,6 +350,7 @@ def main() -> None:
         test_signal(tmp)
         test_close(tmp)
         test_idle(tmp)
+        test_wait(tmp)
         test_no_display(tmp)
         test_link(tmp)
         test_close_link(tmp)

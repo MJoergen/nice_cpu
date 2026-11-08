@@ -12,8 +12,8 @@ const keys = @import("keys.zig");
 
 /// The escape byte, which starts a packet (DEBUG.md §1).
 pub const esc: u8 = 0xFF;
-/// The protocol version, major 0 and minor 6 (DEBUG.md §9).
-const version: u8 = 6;
+/// The protocol version, major 0 and minor 7 (DEBUG.md §9).
+const version: u8 = 7;
 /// The program's input buffer, in bytes (DEBUG.md §7).
 pub const input_size = 2048;
 /// The packet timeout of DEBUG.md §5.
@@ -168,9 +168,10 @@ pub const Link = struct {
 
     /// Whether a breakpoint stops the processor now, before the next step:
     /// R15 is an enabled breakpoint, and the step is not the first after a go
-    /// on or a step, nor an interrupt entry, which goes first (DEBUG.md §6).
+    /// on or a step, nor an interrupt entry, which goes first, nor a wait
+    /// step, as the wait has not ended (DEBUG.md §6).
     pub fn breakDue(self: *const Link) bool {
-        return self.running() and !self.after_go and !self.cpu.entryDue() and
+        return self.running() and !self.after_go and !self.cpu.entryDue() and !self.cpu.waitStepDue() and
             self.breakAt(self.cpu.getReg(15)) != null;
     }
 
@@ -454,7 +455,8 @@ pub const Link = struct {
         return switch (addr - debug_base) {
             0x00...0x0F => self.cpu.getReg(@truncate(addr)),
             0x10 => @as(u32, @intFromBool(self.held)) | @as(u32, @intFromBool(self.halted() and !self.cleared)) << 1 |
-                ctl_rom_hidden | @as(u32, @intFromBool(self.paused)) << 4,
+                ctl_rom_hidden | @as(u32, @intFromBool(self.paused)) << 4 |
+                @as(u32, @intFromBool(!self.held and self.cpu.waitStepDue())) << 6,
             0x11 => if (self.cleared) 0 else self.haltReason(),
             0x12 => version,
             0x13 => @intCast(input_size - self.input_len),

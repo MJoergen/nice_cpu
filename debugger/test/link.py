@@ -175,7 +175,7 @@ def test_link(port: str, echo: str) -> None:
     link = connect(port)
     try:
         version = link.read_word(nicelink.VERSION)
-        check("the link's version is 0.6", version == 0x06, f"{version:02x}")
+        check("the link's version is 0.7", version == 0x07, f"{version:02x}")
         link.control(HOLD | RAM)
         words = [0x1000 * i + 7 for i in range(nicelink.MAX_WORDS + 44)]
         link.write(0x4000, words)
@@ -329,7 +329,7 @@ def test_commands(port: str, prog: str, at: dict[str, int]) -> None:
               "in reset\n", repr(out))
         out = command(dbg, "status")
         check("dbg: status while held", out.startswith(
-            "held, ROM hidden, control 00000009, link version 0.6, "),
+            "held, ROM hidden, control 00000009, link version 0.7, "),
             repr(out))
         out = command(dbg, "b LOOP")
         check("dbg: a breakpoint at a label", out == f"0: {loop:08x} LOOP\n",

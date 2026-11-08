@@ -225,7 +225,7 @@ def instruction(rng: random.Random, recent: list[list[int]]) -> list[int]:
     if kind < 0.0003:
         # A reserved command, or HALT, RTI, or INT with a bit set that must
         # be 0 (ISA.md §5.3).
-        bad = rng.choice((rng.randrange(3, 32) << 21, 1 << rng.randrange(8, 21),
+        bad = rng.choice((rng.randrange(4, 32) << 21, 1 << rng.randrange(8, 21),
                           0b00001 << 21 | 1 << rng.randrange(8), 1 << rng.randrange(8)))
         return [cond << 28 | 0b11 << 26 | bad]
     if kind < 0.0008:

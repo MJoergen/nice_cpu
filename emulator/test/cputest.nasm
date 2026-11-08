@@ -1036,7 +1036,7 @@ pcA             HALT                    ; never runs: jumped over
         ?!1     HALT
         ?!1     RTI
         ?!1     INT     3               ; would set R4 in isr
-                .DAT    0x8C600000      ; ?!1 reserved command 00011
+                .DAT    0x8C800000      ; ?!1 reserved command 00100
                 .DAT    0x8C000100      ; ?!1 HALT with bit 8 set: reserved
                 CMP     R4, 0
         ?!Z     HALT

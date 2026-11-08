@@ -122,6 +122,11 @@ loop            ADD     R2, R2, 1
 
 
 # Copies R3 to R4 at 0x20, and halts, for the writes of R0-R15 (DEBUG.md §6).
+WAITER = """
+                WAIT
+                MOVE    R1, 1
+                HALT
+"""
 REGS = """
                 MOVE    R2, R3
 loop            MOVE    R15, loop
@@ -163,7 +168,7 @@ def answer(addr: int, words: List[int]) -> bytes:
 
 
 CONTROL = 0xFFFFFFF0
-HELLO = b"\xffb06#C8"
+HELLO = b"\xffb07#C9"
 PAUSED = b"\xffp#70"
 CYCLE_LO = 0xFFFFFF40
 TIME_LO = 0xFFFFFF44
@@ -257,7 +262,7 @@ def test_example() -> None:
     e.expect("control held", answer(CONTROL, [0x9]))
     # The halt reason, the version, the free space, and a reserved word.
     e.send(read(0xFFFFFFF1, 4))
-    e.expect("F1-F4", answer(0xFFFFFFF1, [0, 6, 2048, 0]))
+    e.expect("F1-F4", answer(0xFFFFFFF1, [0, 7, 2048, 0]))
     # The breakpoints: four, none enabled, no stop, and the addresses 0.
     e.send(read(0xFFFFFFF5, 11))
     e.expect("F5-FF", answer(0xFFFFFFF5, [4] + [0] * 10))
@@ -317,7 +322,7 @@ def test_errors() -> None:
     e.send(write(0xFFFFFF01, [5]) + write(0xFFFFFFF2, [7]))
     e.expect("ignored writes", ok(0xFFFFFF01, 1) + ok(0xFFFFFFF2, 1))
     e.send(read(0xFFFFFF01, 1) + read(0xFFFFFFF2, 1))
-    e.expect("read counter", answer(0xFFFFFF01, [0]) + answer(0xFFFFFFF2, [6]))
+    e.expect("read counter", answer(0xFFFFFF01, [0]) + answer(0xFFFFFFF2, [7]))
     # A clear: 0x5 clears and stays held.
     e.send(write(CONTROL, [0x5]))
     e.expect("clear", ok(CONTROL, 1))
@@ -1087,6 +1092,52 @@ def test_break(at10: List[int], load: List[int], count: List[int], skip: List[in
     e.stop()
 
 
+def test_wait(waiter: List[int]) -> None:
+    """A processor that waits (§6, ISA §7.5): bit 6, a pause and a step in
+    the wait, a breakpoint at R15 that fires only when the wait ends, and a
+    wait that no request can end, which does not stop the run (§7.2)."""
+    # No request can come: the run goes on, and bit 6 reads 1.
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, waiter) + write(CONTROL, [0x8]))
+    e.expect("start the wait", ok(0, len(waiter)) + ok(CONTROL, 1))
+    time.sleep(0.3)
+    expect("no notice in the wait", e.take(1, 0.1), b"")
+    expect("control in the wait", bytes([word(e, CONTROL)]), bytes([0x48]))
+    e.send(write(CONTROL, [0x18]))
+    e.expect("pause in the wait", ok(CONTROL, 1) + PAUSED)
+    expect("control paused in the wait", bytes([word(e, CONTROL)]), bytes([0x58]))
+    expect("R15 after the WAIT", bytes([word(e, 0xFFFFFFEF)]), b"\x01")
+    _, _, err = e.stop()
+    if b"Stopped" in err or b"Halted" in err:
+        failures.append(f"a wait with the link stopped the run: {err!r}")
+
+    # --irq at step 1000, with E = 0: the wait ends there, and the MOVE runs.
+    e = Emu(["--irq", "1000:5"])
+    e.take(len(HELLO))
+    e.send(write(0, waiter) + write(CONTROL, [0x18]))
+    e.expect("start paused", ok(0, len(waiter)) + ok(CONTROL, 1) + PAUSED)
+    e.send(write(CONTROL, [0x38]))
+    e.expect("step the WAIT", ok(CONTROL, 1) + PAUSED)
+    expect("control after the WAIT", bytes([word(e, CONTROL)]), bytes([0x58]))
+    # A step in the wait is one wait step: R15 stays, and a cycle passes.
+    e.send(write(CONTROL, [0x38]))
+    e.expect("a wait step", ok(CONTROL, 1) + PAUSED)
+    expect("R15 in the wait", bytes([word(e, 0xFFFFFFEF)]), b"\x01")
+    expect("CYCLE_LO after two steps", bytes([word(e, 0xFFFFFF40)]), b"\x02")
+    # A breakpoint at R15 does not stop the wait, and fires when the request
+    # at step 1000 ends it, before the MOVE. Bit 6 reads 0 then.
+    set_breaks(e, [1], 1)
+    e.send(write(CONTROL, [0x8]))
+    e.expect("go on to the end of the wait", ok(CONTROL, 1) + hit(0))
+    expect("control at the end of the wait", bytes([word(e, CONTROL)]), bytes([0x18]))
+    expect("CYCLE_LO at the end of the wait", word(e, 0xFFFFFF40).to_bytes(2, "big"), (1000).to_bytes(2, "big"))
+    e.send(write(BREAK_EN, [0]) + write(CONTROL, [0x8]))
+    e.expect("go on to the halt", ok(BREAK_EN, 1) + ok(CONTROL, 1) + b"\xffh01#C9")
+    expect("R1 after the wait", bytes([word(e, 0xFFFFFFE1)]), b"\x01")
+    e.stop()
+
+
 def test_write_regs(regs: List[int], at20: List[int], count: List[int]) -> None:
     """The writes of R0-R15 of §6: what they mean, a written R15 and the
     breakpoints, e04 while not paused, and the example of §8."""
@@ -1184,7 +1235,7 @@ def test_old_host(stop: List[int], echo: List[int]) -> None:
     # The registers it does not know read 0 but for the version, which reads
     # 6 with its high bits 0.
     e.send(read(0xFFFFFFF2, 1) + read(0xFFFFFFF7, 1))
-    e.expect("version and 0xFFFFFFF7", answer(0xFFFFFFF2, [6]) + answer(0xFFFFFFF7, [0]))
+    e.expect("version and 0xFFFFFFF7", answer(0xFFFFFFF2, [7]) + answer(0xFFFFFFF7, [0]))
     # A program that runs until the host holds it.
     control(0x5, 0)
     e.send(write(0, echo))
@@ -1277,6 +1328,7 @@ def main() -> None:
         load = assemble(tmp, "load", LOAD)
         skip = assemble(tmp, "skip", SKIP)
         regs = assemble(tmp, "regs", REGS)
+        waiter = assemble(tmp, "waiter", WAITER)
         at20 = assemble(tmp, "at20", AT20)
         reserved = assemble(tmp, "reserved", RESERVED)
         int_in_isr = assemble(tmp, "int_in_isr", INT_IN_ISR)
@@ -1291,7 +1343,7 @@ def main() -> None:
             lambda: test_pause(count, echo), lambda: test_clock(spin),
             lambda: test_step(count, one, stop, echo, twice, irq, irq_bin),
             lambda: test_break(at10, load, count, skip, stop, irq),
-            lambda: test_write_regs(regs, at20, count),
+            lambda: test_write_regs(regs, at20, count), lambda: test_wait(waiter),
             lambda: test_old_host(stop, echo), lambda: test_net(spin), test_address, test_usage,
         ]
         for t in tests:

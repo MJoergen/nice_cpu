@@ -15,7 +15,7 @@
 ;   19         ?!1 INT 0xFF               bits 6..0 = 111 1111
 ;   20         ?!1 0x8C0FFFFF             a reserved HALT with bits 20..8 set:
 ;                                         dest 011 1111, s0 and s1 111 1111
-;   21         ?Z 0x3C600000              reserved command 3, Z = 0: skipped
+;   21         ?Z 0x3C800000              reserved command 4, Z = 0: skipped
 ;   22         INT 0x33                   runs; bits 6..0 = 011 0011, mode 011.
 ;                                         It takes no constant, so it saves
 ;                                         PC = 23 and goes to isr.
@@ -40,7 +40,7 @@ H               .EQU    0x0C000000
         ?!1     MOVE    R1, @H[R2]      ; words 17,18
         ?!1     INT     0xFF            ; word 19
                 .DAT    0x8C0FFFFF      ; word 20
-                .DAT    0x3C600000      ; word 21
+                .DAT    0x3C800000      ; word 21
                 INT     0x33            ; word 22
                 MOVE    R3, 1           ; words 23,24
                 HALT                    ; word 25

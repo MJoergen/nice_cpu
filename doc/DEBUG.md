@@ -326,7 +326,7 @@ The bits of the control register:
 | 3 | 1 while the ROM is hidden | 1 hides the ROM, so the RAM is at 0, and 0 shows it |
 | 4 | 1 while the processor is paused | 1 asks for a pause, and 0 cancels the request or goes on |
 | 5 | 0 | 1 with bit 4 set and bit 0 clear runs one step of a paused processor (below) |
-| 6 | 1 while the processor waits for an interrupt (ISA §7.5), paused or not | ignored |
+| 6 | 1 while the processor waits for an interrupt (ISA §7.5), paused or not, and 0 once a request is pending, which ends the wait | ignored |
 
 The other bits read 0 and take no write. The processor runs while bits 0,
 1, and 4 all read 0, whatever bit 6 reads. That includes the time between a pause request and the
@@ -405,7 +405,10 @@ host that writes back what it read never steps by accident.
   request ends the wait. A step of a waiting processor is one wait step,
   or, with a request pending, the end of the wait and what follows it:
   the entry, or the instruction at R15. So a step never hangs, and a
-  host that steps through a wait steps until bit 6 reads 0.
+  host that steps through a wait steps until bit 6 reads 0. A breakpoint
+  at R15 does not stop a wait. It stops the processor at the step
+  boundary where a request ends the wait, before the instruction at R15,
+  unless the request's entry goes first, as at any breakpoint.
 - **Go on.** A write of 0 to bit 4 of a paused processor, with bit 0 at 0,
   makes it go on from R15.
 - **Step.** A write with bits 4 and 5 set, and bit 0 at 0, to a paused

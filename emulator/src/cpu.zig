@@ -516,6 +516,18 @@ pub const Timer = struct {
             self.count = self.period;
         }
     }
+
+    /// The end of `n` cycles at once, the same as `n` ticks: the requests
+    /// they raise merge into one.
+    pub fn tickMany(self: *Timer, n: u64) void {
+        if (self.period == 0 or n == 0) return;
+        if (n < self.count) {
+            self.count -= @intCast(n);
+            return;
+        }
+        self.raised = self.vector;
+        self.count = self.period - @as(u32, @intCast((n - self.count) % self.period));
+    }
 };
 
 /// The word of the timer that `addr` names, if it names one.
@@ -740,6 +752,8 @@ pub const Cpu = struct {
     // Hidden state (§1.4).
     in_service: bool,
     after_rti: bool,
+    /// Set by `WAIT`, and cleared by a pending request (§7.5).
+    waiting: bool,
     saved_pc: u32,
     saved_sr: u32,
     halt_reason: HaltReason,
@@ -813,6 +827,7 @@ pub const Cpu = struct {
             .mem = .init(gpa),
             .in_service = false,
             .after_rti = false,
+            .waiting = false,
             .saved_pc = 0,
             .saved_sr = 0,
             .halt_reason = .none,
@@ -865,6 +880,7 @@ pub const Cpu = struct {
         self.regs[14] = one_bit;
         self.in_service = false;
         self.after_rti = false;
+        self.waiting = false;
         self.halt_reason = .none;
         self.nmi_pending = null;
         self.irq_pending = null;
@@ -1034,6 +1050,13 @@ pub const Cpu = struct {
             self.timer.raised = null;
         }
 
+        // §7.5: a pending request ends a wait. Without one, the step is a
+        // wait step, a cycle in which nothing else happens (SYSTEM §3).
+        if (self.waiting) {
+            if (self.nmi_pending == null and self.irq_pending == null) return;
+            self.waiting = false;
+        }
+
         // §7.1: interrupts are checked before each instruction.
         if (!self.after_rti and !self.in_service) {
             if (self.nmi_pending) |v| {
@@ -1077,6 +1100,7 @@ pub const Cpu = struct {
         regs: [16]u32,
         in_service: bool,
         after_rti: bool,
+        waiting: bool,
         saved_pc: u32,
         saved_sr: u32,
         nmi_pending: ?u8,
@@ -1091,6 +1115,7 @@ pub const Cpu = struct {
             .regs = self.regs,
             .in_service = self.in_service,
             .after_rti = self.after_rti,
+            .waiting = self.waiting,
             .saved_pc = self.saved_pc,
             .saved_sr = self.saved_sr,
             .nmi_pending = self.nmi_pending,
@@ -1105,6 +1130,7 @@ pub const Cpu = struct {
         self.regs = s.regs;
         self.in_service = s.in_service;
         self.after_rti = s.after_rti;
+        self.waiting = s.waiting;
         self.saved_pc = s.saved_pc;
         self.saved_sr = s.saved_sr;
         self.nmi_pending = s.nmi_pending;
@@ -1121,6 +1147,29 @@ pub const Cpu = struct {
         if (self.nmi_pending != null) return true;
         const irq = self.irq_pending != null or (self.timer_irq and self.timer.raised != null);
         return irq and self.flag(sr_e) == 1;
+    }
+
+    /// Whether the next step is a wait step (§7.5, SYSTEM §3): the
+    /// processor waits, and no request, the timer's included, ends the wait.
+    pub fn waitStepDue(self: *const Cpu) bool {
+        return !self.halted() and self.waiting and self.nmi_pending == null and
+            self.irq_pending == null and !(self.timer_irq and self.timer.raised != null);
+    }
+
+    /// While `waitStepDue`, the wait steps until the timer raises a request,
+    /// or null if it raises none. The timer's request is raised at the end
+    /// of the last of them, and ends the wait in the step after.
+    pub fn timerWaitSteps(self: *const Cpu) ?u64 {
+        if (!self.timer_irq or self.timer.period == 0) return null;
+        return self.timer.count;
+    }
+
+    /// Run `n` wait steps at once, with the same result as `n` calls of
+    /// `step` while `waitStepDue` (SYSTEM §3).
+    pub fn skipWait(self: *Cpu, n: u64) void {
+        self.perf.cycles +%= n;
+        if (self.clock == null) self.perf.micros +%= n;
+        self.timer.tickMany(n);
     }
 
     /// §7.2: interrupt entry, for IRQ, NMI and INT.
@@ -1271,7 +1320,7 @@ pub const Cpu = struct {
         }
     }
 
-    /// §5.3: HALT, RTI, INT and the reserved commands.
+    /// §5.3: HALT, RTI, INT, WAIT, and the reserved commands.
     fn control(self: *Cpu, iw: u32) void {
         const cmd: u5 = @truncate(iw >> 21);
         const vector: u8 = @truncate(iw);
@@ -1299,6 +1348,7 @@ pub const Cpu = struct {
                 self.enterInterrupt(vector);
                 self.perf.intrs +%= 1;
             },
+            0b00011 => self.waiting = true,
             else => self.halt_reason = .reserved,
         }
     }
@@ -1495,6 +1545,7 @@ const OR = 0b1111;
 const HALT = 0x0C00_0000;
 const RTI = 0x0C20_0000;
 const INT = 0x0C40_0000;
+const WAIT = 0x0C60_0000;
 
 /// A processor with `words` loaded at `addr`.
 fn load(cpu: *Cpu, addr: u32, words: []const u32) !void {
@@ -1985,13 +2036,152 @@ test "reserved control words halt, unless skipped (§5.3)" {
     var cpu = try run(&.{ 0x0C00_0001, HALT });
     try testing.expectEqual(.reserved, cpu.halt_reason);
     cpu.deinit();
-    cpu = try run(&.{ 0x8C60_0000, HALT }); // never-executed command 3
+    cpu = try run(&.{ 0x8C80_0000, HALT }); // never-executed command 4
     try testing.expectEqual(.halt, cpu.halt_reason);
     try testing.expectEqual(2, cpu.regs[15]);
     cpu.deinit();
     cpu = try run(&.{RTI});
     defer cpu.deinit();
     try testing.expectEqual(.rti_outside_isr, cpu.halt_reason);
+}
+
+test "WAIT: wait steps count cycles, and a request with E = 0 ends the wait (§7.5)" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{ WAIT, HALT });
+    try cpu.step(); // WAIT completes
+    try testing.expect(cpu.waiting);
+    try testing.expectEqual(1, cpu.regs[15]);
+    try testing.expectEqual(1, cpu.perf.instrs);
+    try testing.expect(cpu.waitStepDue());
+    try testing.expectEqual(null, cpu.timerWaitSteps());
+    for (0..3) |_| try cpu.step(); // three wait steps
+    try testing.expectEqual(4, cpu.perf.cycles);
+    try testing.expectEqual(1, cpu.perf.instrs);
+    try testing.expectEqual(1, cpu.regs[15]);
+    cpu.requestIrq(5); // E = 0: not taken, but it ends the wait
+    try testing.expect(!cpu.waitStepDue());
+    try cpu.step(); // the HALT, in the same step
+    try testing.expectEqual(.halt, cpu.halt_reason);
+    try testing.expect(!cpu.waiting);
+    try testing.expectEqual(5, cpu.perf.cycles);
+    try testing.expectEqual(2, cpu.perf.instrs);
+    try testing.expectEqual(5, cpu.irq_pending.?);
+}
+
+test "WAIT: a request with E = 1 is taken, and returns after the WAIT (§7.5)" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    // 0: WAIT;  1: HALT;  5: .DAT 0x10 (vector 5);  0x10: RTI
+    try load(&cpu, 0, &.{ WAIT, HALT, 0, 0, 0, 0x10 });
+    try load(&cpu, 0x10, &.{RTI});
+    cpu.setReg(14, 1 << sr_e);
+    try cpu.step(); // WAIT
+    try cpu.step(); // a wait step
+    cpu.requestIrq(5);
+    try cpu.step(); // the entry ends the wait
+    try testing.expect(!cpu.waiting);
+    try testing.expectEqual(0x10, cpu.regs[15]);
+    try testing.expectEqual(1, cpu.saved_pc);
+    try runToHalt(&cpu);
+    try testing.expectEqual(2, cpu.regs[15]);
+    try testing.expectEqual(1, cpu.perf.intrs);
+}
+
+test "WAIT: a pending request it cannot take ends it at once (§7.5)" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{ WAIT, HALT });
+    cpu.requestIrq(5); // E = 0, pending before the WAIT
+    try cpu.step(); // WAIT
+    try testing.expect(cpu.waiting);
+    try testing.expect(!cpu.waitStepDue());
+    try cpu.step(); // HALT, with no wait step
+    try testing.expectEqual(.halt, cpu.halt_reason);
+    try testing.expectEqual(2, cpu.perf.cycles);
+}
+
+test "WAIT: inside an interrupt routine, the request waits for RTI (§7.5)" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    // 0: INT 2;  1: HALT;  2: .DAT 0x10 (vector 2);  5: .DAT 0x20 (vector 5)
+    // 0x10: WAIT;  0x11: RTI;  0x20: HALT
+    try load(&cpu, 0, &.{ INT + 2, HALT, 0x10, 0, 0, 0x20 });
+    try load(&cpu, 0x10, &.{ WAIT, RTI });
+    try load(&cpu, 0x20, &.{HALT});
+    cpu.setReg(14, 1 << sr_e);
+    try cpu.step(); // INT 2
+    try cpu.step(); // WAIT
+    try cpu.step(); // a wait step
+    try testing.expect(cpu.waiting);
+    cpu.requestIrq(5);
+    try cpu.step(); // the RTI, as in_service = 1
+    try testing.expect(!cpu.waiting);
+    try testing.expectEqual(1, cpu.regs[15]);
+    try cpu.step(); // the instruction after RTI: HALT at 1
+    try testing.expectEqual(.halt, cpu.halt_reason);
+    try testing.expectEqual(5, cpu.irq_pending.?);
+}
+
+test "WAIT: a false condition skips it, and reset clears the wait (§7.5, §8.1)" {
+    var cpu = try run(&.{ 0x3C60_0000, HALT }); // ?Z WAIT, Z = 0
+    try testing.expect(!cpu.waiting);
+    try testing.expectEqual(2, cpu.regs[15]);
+    try load(&cpu, 0, &.{WAIT});
+    cpu.reset();
+    try cpu.step();
+    try testing.expect(cpu.waiting);
+    cpu.reset();
+    try testing.expect(!cpu.waiting);
+    cpu.deinit();
+}
+
+test "WAIT: the timer ends the wait after its COUNT wait steps (SYSTEM §3, §4)" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{ WAIT, HALT });
+    cpu.timer.write(0, 10); // P = COUNT = 10
+    try cpu.step(); // WAIT: COUNT 9
+    try testing.expectEqual(9, cpu.timerWaitSteps().?);
+    for (0..9) |_| {
+        try testing.expect(cpu.waitStepDue());
+        try cpu.step();
+    }
+    try testing.expect(!cpu.waitStepDue()); // the 9th wait step raised it
+    try cpu.step(); // the HALT, E = 0
+    try testing.expectEqual(.halt, cpu.halt_reason);
+    try testing.expectEqual(11, cpu.perf.cycles);
+    cpu.timer_irq = false;
+    try testing.expectEqual(null, cpu.timerWaitSteps());
+}
+
+test "skipWait is the same as single wait steps (SYSTEM §3)" {
+    // Periods and steps on both sides of COUNT and of several periods, and
+    // a timer that raises no requests, so that it wraps.
+    for ([_]u32{ 0, 1, 3, 10 }) |period| {
+        for ([_]u64{ 0, 1, 2, 9, 10, 11, 25, 31 }) |n| {
+            var a = Cpu.init(testing.allocator);
+            defer a.deinit();
+            var b = Cpu.init(testing.allocator);
+            defer b.deinit();
+            for ([_]*Cpu{ &a, &b }) |c| {
+                try load(c, 0, &.{WAIT});
+                c.timer_irq = false;
+                c.timer.write(0, period);
+                try c.step();
+            }
+            const count = b.timer.count;
+            for (0..n) |_| try a.step();
+            b.skipWait(n);
+            try testing.expectEqual(a.perf.cycles, b.perf.cycles);
+            try testing.expectEqual(a.perf.micros, b.perf.micros);
+            try testing.expectEqual(a.timer.count, b.timer.count);
+            // With the timer's requests on, a run skips no further than
+            // COUNT, where both have raised the request of the last tick.
+            // Past COUNT, the steps drop the requests, which raise none.
+            if (n <= count) try testing.expectEqual(a.timer.raised, b.timer.raised);
+        }
+    }
 }
 
 test "the whole address space exists and wraps (§1.1)" {
@@ -2604,13 +2794,13 @@ test "trace: control instructions and the halts other than HALT (§5.3, §7)" {
         \\
     , try traceSteps(&cpu, &buf, 3));
 
-    // A skipped control word, then a reserved one: command 3.
+    // A skipped control word, then a reserved one: command 4.
     var cpu2 = Cpu.init(testing.allocator);
     defer cpu2.deinit();
-    try load(&cpu2, 0, &.{ 0x8C60_0000, 0x0C60_0000 });
+    try load(&cpu2, 0, &.{ 0x8C80_0000, 0x0C80_0000 });
     try testing.expectEqualStrings(
-        \\00000000 8c600000 skipped
-        \\00000001 0c600000 reserved control instruction
+        \\00000000 8c800000 skipped
+        \\00000001 0c800000 reserved control instruction
         \\
     , try traceSteps(&cpu2, &buf, 2));
 

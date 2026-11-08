@@ -694,3 +694,15 @@ is for watchpoints (#146) and a step counter (#147). A bank select at
 `0xFFFFFFF7`, which would have kept to the letter of DEBUG.md §9, was
 decided against: there is no lock between the host and a client in the
 system, and on a UART no connection resets the bank for a new host.
+
+## Watchpoints
+
+Until 2026-11-08, a host could stop a program only before an
+instruction, at a breakpoint. #146 added watchpoints, a stop at a data
+access to an address. They went into version 7 of the link, which had
+not been tagged, in the words that #109 had left free. A stop before the
+access was weighed and dropped: in the pipelined core it would have put
+the compare on PREPARE's address path, which sets the core's clock. A
+stop after the step needs no exemption after a go on, and the host sees
+the value written. The address of the hit, `0xFFFFFFD6`, makes up for R15,
+which has moved on by then.

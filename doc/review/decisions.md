@@ -27,6 +27,13 @@ proposed again. The open items are the
   system to act as an older version. The rules of DEBUG.md §9 keep older
   hosts working without it, and it would add state to `debug_link.vhd` and
   its proofs.
+- **A watchpoint that stops before the access** (#146). In the pipelined
+  core the compare would sit on PREPARE's address path, which sets the
+  clock, and PREPARE and WRITE would have to hold the access back, as
+  for a breakpoint. A stop after the step is exact without them, and a
+  host that wants the old value reads it before it enables the
+  watchpoint. Only a device read with a side effect, such as the
+  console's, cannot be caught before it.
 - **A bank select at `0xFFFFFFF7` on the debug link** (#109), to make room
   for the hidden state and watchpoints in major 0. There is no lock
   between the host and a client in the system, so one could switch the

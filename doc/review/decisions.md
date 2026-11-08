@@ -27,6 +27,13 @@ proposed again. The open items are the
   system to act as an older version. The rules of DEBUG.md §9 keep older
   hosts working without it, and it would add state to `debug_link.vhd` and
   its proofs.
+- **A bank select at `0xFFFFFFF7` on the debug link** (#109), to make room
+  for the hidden state and watchpoints in major 0. There is no lock
+  between the host and a client in the system, so one could switch the
+  bank under the other, and on a UART no connection resets it for a new
+  host. The link's registers grew down to `0xFFFFFFD0` instead. A new
+  major for the same room was dropped too: every host would have had to
+  move at once.
 - **A timing budget for the Nexys4DDR** (#57). The core alone misses 90
   MHz there by about 0.3 ns out of context (hdl/README.md), so only the
   in-system result counts. Add a guard only if a change meets the MEGA65

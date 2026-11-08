@@ -14,7 +14,8 @@ The link is a property of the system, not of the ISA. ISA.md and
 SYSTEM.md win over this file. This is version `07` of the protocol,
 major 0 and minor 7 (§9). Its run control is the pause, the single step,
 the breakpoints, and the registers, which a host writes while the
-processor is paused, and it shows a wait for an interrupt (§6).
+processor is paused. It shows a wait for an interrupt, the hidden state
+of ISA §1.4, and the pending interrupt requests (§6).
 
 To try the link, run `niceemu --link PORT prog.bin` (emulator/README.md,
 Debug link), connect a TCP client to the port, and send the packets of
@@ -252,12 +253,15 @@ console bytes waits longer than 100 ms for the answer, or paces its bytes.
 
 ## 6. The debug registers
 
-The words `0xFFFFFFE0`–`0xFFFFFFFF` are registers for the link only. A
+The words `0xFFFFFFD0`–`0xFFFFFFFF` are registers for the link only. A
 program cannot reach them: its data accesses there go to whatever the
 system has there otherwise.
 
 | Address | Register |
 |---|---|
+| `0xFFFFFFD0` | `saved_pc` of ISA §1.4, read only. What it holds depends on the state, as for R0 to R15 (below). |
+| `0xFFFFFFD1` | `saved_sr` of ISA §1.4, read only, as `saved_pc`. |
+| `0xFFFFFFD2`–`0xFFFFFFDF` | Reserved for a later minor (§9). They read 0 and take no write. |
 | `0xFFFFFFE0`–`0xFFFFFFEF` | R0 to R15. What they hold depends on the state (below). R1 to R15 take a write while the processor is paused (below). |
 | `0xFFFFFFF0` | Control (below). |
 | `0xFFFFFFF1` | The halt reason, read only: 0 while the processor has not halted, and after a clear, 1 for `HALT`, 2 for a reserved control word, 3 for `INT` inside an interrupt routine, 4 for `RTI` outside one (ISA §5.3, §7.2, §7.4), and 5 when the emulator's step limit stopped the program (§7.2). |
@@ -271,7 +275,9 @@ system has there otherwise.
 
 A write to a read-only register is ignored.
 
-R0 to R15 read, by the state of the processor:
+R0 to R15 read, by the state of the processor, and so do `saved_pc`,
+`saved_sr`, and bits 7 and 8 of the control register, the rest of the
+hidden state:
 
 - **After a halt**, until the next start or clear: the values the program
   left, with R15 the address after the halting instruction, as the
@@ -298,7 +304,8 @@ no write and reads 0, as ISA §4.3 says.
   go on or step. So a start paused, a write of R15, and a go on start a
   program at another address. No flags are computed, as no instruction
   ran.
-- **The hidden state.** The hidden state of ISA §1.4 is unchanged: the
+- **The hidden state.** The hidden state of ISA §1.4 is read only, and
+  the write leaves it unchanged: the
   in-service state, the saved PC and SR, the state after an `RTI`, and
   the wait (ISA §7.5) stay as they were. So a write that clears the I bit of R14 does not end
   an interrupt routine, and after a pause right after an `RTI`, the first
@@ -328,6 +335,10 @@ The bits of the control register:
 | 4 | 1 while the processor is paused | 1 asks for a pause, and 0 cancels the request or goes on |
 | 5 | 0 | 1 with bit 4 set and bit 0 clear runs one step of a paused processor (below) |
 | 6 | 1 while the processor waits for an interrupt (ISA §7.5), paused or not, and 0 once a request is pending, which ends the wait | ignored |
+| 7 | `in_service` of ISA §1.4: 1 while an interrupt routine runs, from the entry until its `RTI`. It reads by the state, as R0 to R15 do (above). | ignored |
+| 8 | `after_rti` of ISA §1.4: 1 from an `RTI` until the next instruction completes. It reads as bit 7. | ignored |
+| 9 | 1 while an NMI is pending (ISA §7.1), paused or not, and 0 while the processor is held or has halted | ignored |
+| 10 | 1 while an IRQ is pending, as bit 9 for an NMI, also while E = 0 or `in_service` = 1 keeps it from being taken | ignored |
 
 The other bits read 0 and take no write. The processor runs while bits 0,
 1, and 4 all read 0, whatever bit 6 reads. That includes the time between a pause request and the
@@ -793,7 +804,10 @@ major. A system of a new minor follows these rules:
   Version 6 also holds a console byte that finds the input buffer full,
   on a transport with flow control (§1). A host of version 5 that sends
   no more console bytes than the free-space register allows never meets
-  the wait.
+  the wait. Version 7 takes `0xFFFFFFD0`–`0xFFFFFFDF` for the link's
+  registers, where a link request reached the system's words, which
+  SYSTEM.md reserves for I/O and no system uses. A host of version 6 had
+  no reason to reach them.
   The table lists each change, and HISTORY.md tells why.
 
 A new major may change anything else, and the next one is `0x10`. It keeps
@@ -823,4 +837,4 @@ system of version 7. The versions:
 | 4 | The breakpoints: the notice `x`, and the registers `0xFFFFFFF4` to `0xFFFFFFFF`. | | RC06 |
 | 5 | | A clear ends the halt and the stop: bit 1, the halt reason, and the stop register read 0 after it. Since V1.2, R0–R15 read the current values while the processor runs, where they were not defined. The side port and `rx_resume_i` of `hdl/src/debug_link.vhd`, also since V1.2, change no byte on the wire. | V1.1 |
 | 6 | Writable registers: R1–R15 take a write while the processor is paused, and the error `04`. | A write of R0–R15 while the processor is not paused is answered `e04`, where it was ignored with `k`, and a `W` that runs from the devices into R0–R15 while the processor is held or halted writes nothing, where it wrote its words before `0xFFFFFFE0`. On a transport with flow control, a console byte that finds the input buffer full waits up to 50 ms before it is lost with `o`, where it was lost at once. | V1.3 |
-| 7 | The wait: bit 6 of the control register reads 1 while the processor waits for an interrupt (ISA §7.5). | | V2.0 |
+| 7 | The wait: bit 6 of the control register reads 1 while the processor waits for an interrupt (ISA §7.5). The hidden state of ISA §1.4: bits 7 and 8, and the registers `0xFFFFFFD0` and `0xFFFFFFD1`. The pending requests: bits 9 and 10. | The link's registers start at `0xFFFFFFD0`, where they started at `0xFFFFFFE0`: a request there reaches the new registers and the reserved words, where it reached the system's words, and while the program runs it gets `r` or `k`, where it got `e02`. | V2.0 |

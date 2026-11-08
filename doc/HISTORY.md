@@ -676,3 +676,21 @@ register. The tests that used `0x0C600000` as a reserved word use
 `0x0C800000`, command 4, instead. `WAIT` became a mnemonic, so the labels
 `WAIT` of the slides' `irq.nasm` and of the demo, and `wait` of the
 emulator's `test/udp.py`, were renamed.
+
+## The hidden state on the link
+
+Until 2026-11-08, the hidden state of ISA §1.4 could not be read over
+the debug link, but for the wait in bit 6 and the halt in bit 1. A host
+that stopped inside an interrupt routine could not tell that it was in
+one, nor where its `RTI` would return. #65 asked for it, and #102 and
+NiceMonMEGA65#22 left it for a new major, as the link's 32 words had
+one left. With #109, the link's registers grew down to `0xFFFFFFD0`
+instead, into words that SYSTEM.md reserved for I/O and no system used,
+so no host had to move. The version is still 7, which had not been
+tagged: `saved_pc` and `saved_sr` at `0xFFFFFFD0` and `0xFFFFFFD1`,
+`in_service` and `after_rti` in bits 7 and 8, and the pending NMI and
+IRQ in bits 9 and 10 of the control register. The rest of the 16 words
+is for watchpoints (#146) and a step counter (#147). A bank select at
+`0xFFFFFFF7`, which would have kept to the letter of DEBUG.md §9, was
+decided against: there is no lock between the host and a client in the
+system, and on a UART no connection resets the bank for a new host.

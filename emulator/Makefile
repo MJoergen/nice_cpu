@@ -23,7 +23,7 @@ OPTS_wrap      = -d 0xffffffff:1
 # are in the comments of each program. Run make bins after changing one.
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge irqtimer after start cputest console screen screencolor screeninvert iofetch \
   reads reserved mpu mpu64 mpubits perf events timer input r15modes r0dest r14mem skipconst carryin shiftc \
-  wrapmem smcown scrbound time trapsym sd font net eth bytewin wait waitnone clock clockhost
+  wrapmem smcown scrbound time trapsym sd font net eth bytewin wait waitnone clock clockhost stack
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
@@ -51,6 +51,10 @@ OPTS_clock_mem = --step-time --no-cycle-counter -d 0x100:17 -d 0xffffff46:4
 OPTS_wait    = --step-time --irq 25:0x42 --nmi 40:0x43 -d 0x200:7
 OPTS_waitnone = --no-timer-irq
 OPTS_trapsym = --symbols test/trapsym.sym
+OPTS_stack   = --stack --nmi 5:1
+# The count example with --stack: it never changes R13, and its output is
+# count.expected with the line that says so.
+OPTS_stack_none = --stack
 # timer again, with the timer's requests raised by --irq instead, before
 # the steps after those that raise them in timer.nasm's table: 6, 16, 19,
 # 22, 25, 28, 31, 34, 41, and 49, the last with vector 0x42. The output
@@ -100,6 +104,7 @@ programs:
 	$(call check,timer_noirq,test/timer.bin,timer)
 	$(call check,scrbound2004,test/scrbound.bin)
 	$(call check,clock_mem,test/clock.bin)
+	$(call check,stack_none,$(ASM)/count.bin)
 	@if cmp -s test/eth.frames.out test/eth.frames.expected; then echo "PASS eth frames"; \
 	else echo "FAIL eth frames"; diff test/eth.frames.expected test/eth.frames.out; exit 1; fi
 	@rm -f test/*.out

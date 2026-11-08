@@ -112,6 +112,7 @@ goes through these steps on a small program, and a
 | `--eth-udp [ADDR:]PORT` | Receive frames as UDP datagrams on PORT of ADDR, `127.0.0.1` if no ADDR is given, written as for `--link`. It needs `--eth-peer`. |
 | `--eth-peer [ADDR:]PORT` | Send the frames sent to this address, one UDP datagram each, padded to 60 bytes. It needs `--eth-udp`. |
 | `--symbols FILE` | Read the labels of `niceasm.py --symbols` from FILE, and name the location of a halt other than `HALT`, of the step limit, and of a wasm trap (see Symbols file below). |
+| `--stack` | After the halt or the step limit, print the first value of R13, the lowest since, and the words between them (see Stack below). |
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
 | `--no-cycle-counter` | Make the cycle counter, the microsecond counter, and the clock of the time of day, `0xFFFFFF40`, `0xFFFFFF41`, and `0xFFFFFF44`–`0xFFFFFF49`, ordinary memory (see Performance counters below). |
@@ -124,6 +125,8 @@ goes through these steps on a small program, and a
 | `-h`, `--help` | Print the usage on stdout. |
 
 **Symbols file.** `niceasm.py --symbols` and `nicebuild.py --symbols` write one: one line per label, with an 8-digit hex address, a space, and the label. Only the labels of instructions and data are in it, not `.EQU` names. With `--symbols FILE`, niceemu prints `At label+0x1f`, the location of the halt, after a halt other than `HALT`, at the step limit, or at the `WAIT` of a wait that no request can end. The label is the nearest one at or before the address, the first in the file if several are at one address, so a second label at the same address is never named. After a halt at the default wasm trap handler, `___wasm_trap`, it also prints `Trap CODE (cause) at label+0x1f`, from R1 and R2 ([WASM.md](../translator/WASM.md)). `nicedis` reads the same file.
+
+**Stack.** niceemu tracks R13, the stack pointer of software (ISA.md §9.1), on every run: its value after the first step that changes it, as it is 0 after reset, and the lowest since. A push, a `SUB`, and the push of a `CALL` count alike, and an interrupt entry changes no R13. With `--stack`, niceemu prints them after the registers, as `Stack: first SP=ffffff00, lowest SP=fffffef9, 7 words below`, or `Stack: R13 never changed`. The words below are how much stack the run needed. Only the printing is an option, as R13 is SP only by convention. niceemu stops on no overflow: its memory has all 2³² words, so a stack from `0xFFFFFF00` runs into the screen, and then into the character ROM, which drops its writes, long before it could reach a program at 0. On a board whose RAM repeats through the address space, it reaches the program much sooner, and a watchpoint of the debugger can guard it ([debugger/README.md](../debugger/README.md)). `test/stack.nasm` is the probe.
 
 Numbers in options are decimal, or hex after `0x` or `0X`, with no sign or
 `_`.

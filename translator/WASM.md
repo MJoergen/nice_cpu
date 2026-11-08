@@ -109,7 +109,7 @@ The handler and this store are NICE assembly, joined with the program, as in `ru
 
 A handler is entered by a jump, not a call, so mem[SP] is not a return address, and SP is wherever the trapping function left it. A handler must therefore not return.
 
-Running out of NICE stack is not detected, unlike in wasm. What happens then is undefined.
+Running out of NICE stack is not detected, unlike in wasm. What happens then is undefined. `niceemu --stack` reports how deep the stack went ([emulator/README.md](../emulator/README.md)), and a watchpoint of the debugger can guard the end of the program ([debugger/README.md](../debugger/README.md)).
 
 **Imports and exports.**
 

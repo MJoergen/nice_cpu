@@ -103,6 +103,15 @@ can drive it:
 
     printf 'b DONE\ng\nregs\nq\n' | debugger/nicedbg.py --tcp 4510 --symbols prog.sym prog.bin
 
+A watchpoint guards the stack, which nothing else checks
+([runtime/ABI.md](../runtime/ABI.md)): `wp ADDR` on the word just above
+the program's end, its last word reserved with `.RES` included, stops
+the program after the push that writes it, on a system whose link has
+watchpoints. On a board whose RAM repeats
+through the address space, the stack runs into the program long before
+SP wraps. `niceemu --stack` reports how deep the stack went
+([emulator/README.md](../emulator/README.md)).
+
 ## On a board
 
 A board's link may run over transports of its own, such as Ethernet,

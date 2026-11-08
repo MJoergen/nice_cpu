@@ -50,6 +50,9 @@ const usage =
     \\      --symbols FILE   Read labels from FILE, as niceasm --symbols writes it, and
     \\                       name the location of a halt other than HALT, and of a
     \\                       wasm trap (translator/WASM.md), after the halt message.
+    \\      --stack          After the halt, print the first value of R13, the
+    \\                       stack pointer, the lowest since, and the words
+    \\                       between them.
     \\      --no-cycle-counter  Make 0xFFFFFF40, 0xFFFFFF41, and 0xFFFFFF44-
     \\                       0xFFFFFF49 ordinary memory, for comparing traces
     \\                       with an FPGA core.
@@ -132,6 +135,8 @@ const Options = struct {
     eth_peer: ?std.Io.net.IpAddress = null,
     /// The label file of niceasm --symbols, or "" for none.
     symbols: []const u8 = "",
+    /// Print the lowest SP after the halt.
+    stack: bool = false,
     /// The address of --link, or null to run the program once.
     link: ?std.Io.net.IpAddress = null,
     /// Show the screen in a window (doc/SYSTEM.md §1).
@@ -447,6 +452,8 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
         } else if (std.mem.eql(u8, arg, "--speed")) {
             opts.speed = try parseNumber(u64, arg, value);
             speed_given = true;
+        } else if (std.mem.eql(u8, arg, "--stack")) {
+            opts.stack = true;
         } else if (std.mem.eql(u8, arg, "--no-cycle-counter")) {
             opts.cycle_counter = false;
         } else if (std.mem.eql(u8, arg, "--no-font")) {
@@ -960,6 +967,7 @@ fn report(out: *std.Io.Writer, opts: Options, syms: []const Symbol, cpu: *Cpu, s
         try out.writeByte('\n');
     }
     try printRegisters(out, cpu);
+    if (opts.stack) try printStack(out, cpu);
     for (opts.dumps) |d| try printMemory(out, cpu, d);
     if (opts.screen) try printScreen(out, cpu, opts.screen_base, opts.color, opts.invert_fg);
 
@@ -1149,6 +1157,15 @@ fn printRegisters(out: *std.Io.Writer, cpu: *const Cpu) !void {
     for (0..16) |i| {
         try out.print("R{d:<2} {x:0>8}", .{ i, cpu.getReg(@intCast(i)) });
         try out.writeByte(if (i % 4 == 3) '\n' else ' ');
+    }
+}
+
+/// The first value of R13, the lowest since, and the words between them.
+fn printStack(out: *std.Io.Writer, cpu: *const Cpu) !void {
+    if (cpu.sp_first) |first| {
+        try out.print("Stack: first SP={x:0>8}, lowest SP={x:0>8}, {d} words below\n", .{ first, cpu.sp_low, first - cpu.sp_low });
+    } else {
+        try out.writeAll("Stack: R13 never changed\n");
     }
 }
 

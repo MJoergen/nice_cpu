@@ -930,6 +930,13 @@ pub const Cpu = struct {
     /// The reads of `TIME_LO` among the idle reads: a loop that makes
     /// them waits for a time, which a long sleep would miss.
     time_reads: u64,
+    /// The stack (`--stack`): R13 after the first step that changed it,
+    /// or null before one, and the lowest value it has had since. R13 is
+    /// SP by software convention only (§9.1), and 0 after reset, so the
+    /// count starts at its first change. Tracking costs a compare per
+    /// step, about what a test of the option would, so it is always on.
+    sp_first: ?u32,
+    sp_low: u32,
 
     /// A processor after reset (§8.1), with empty memory allocated from `gpa`.
     pub fn init(gpa: std.mem.Allocator) Cpu {
@@ -964,6 +971,8 @@ pub const Cpu = struct {
             .watch = .{},
             .idle_reads = 0,
             .time_reads = 0,
+            .sp_first = null,
+            .sp_low = 0,
         };
         cpu.reset();
         return cpu;
@@ -1000,6 +1009,8 @@ pub const Cpu = struct {
         self.mpu = .{};
         self.perf = .{};
         self.timer = .{};
+        self.sp_first = null;
+        self.sp_low = 0;
         self.sd.reset();
         self.eth.reset();
         if (self.clock) |c| c.reset();
@@ -1207,6 +1218,7 @@ pub const Cpu = struct {
         const pc = self.regs[15];
         const ex = try self.execute();
         if (self.stopped) return;
+        if (self.regs[13] != before[13]) self.noteSp(self.regs[13]);
         self.perf.instrs +%= 1;
         if (!ex.executed) {
             self.perf.skips +%= 1;
@@ -1214,6 +1226,16 @@ pub const Cpu = struct {
             self.perf.jumps +%= 1;
         }
         if (self.trace) |w| try self.traceInstruction(w, pc, ex.iw, ex.executed, before);
+    }
+
+    /// Note a new value of R13 for the lowest SP.
+    fn noteSp(self: *Cpu, sp: u32) void {
+        if (self.sp_first == null) {
+            self.sp_first = sp;
+            self.sp_low = sp;
+        } else if (sp < self.sp_low) {
+            self.sp_low = sp;
+        }
     }
 
     /// What a step may change before a console read that waits, with the

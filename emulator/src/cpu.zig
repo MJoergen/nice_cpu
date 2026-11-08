@@ -500,10 +500,14 @@ pub const Tod = struct {
         if (self.io == null) self.us = @mod(self.us + n, wrap);
     }
 
-    /// The value a data read of word `i` returns, with its side effect.
+    /// The value a data read of word `i` returns, with its side effect: a
+    /// read of word 0 takes the time once, so the microseconds it returns
+    /// and the seconds it snapshots are of one instant (SYSTEM §10).
     pub fn read(self: *Tod, i: u2) u32 {
-        if (i == 0) self.snap = @truncate(self.now() / std.time.us_per_s);
-        return self.peek(i);
+        if (i != 0) return self.peek(i);
+        const t = self.now();
+        self.snap = @truncate(t / std.time.us_per_s);
+        return @intCast(t % std.time.us_per_s);
     }
 
     /// The value of word `i`, without the side effect of a read.
@@ -2809,6 +2813,29 @@ test "on the host's clock, the clock of the time of day reads the time plus what
     try testing.expect(tod.snap == 100 or tod.snap == 101);
     tod.write(3, 1); // clears "set", whatever the value
     try testing.expectEqual(0, tod.peek(3));
+}
+
+test "a read of CLOCK_USEC takes the microseconds and the seconds at one instant (SYSTEM §10)" {
+    // The clock is set to 10 microseconds before the end of a second, and
+    // read until the second has turned: the times read never go
+    // backwards, as they would if the seconds were taken at another
+    // instant than the microseconds. Twenty turns, as the two instants
+    // would be apart by far less than a second.
+    var tod: Tod = .{};
+    tod.useHost(testing.io);
+    for (0..20) |_| {
+        tod.write(1, 100);
+        tod.write(2, 0);
+        tod.write(0, 999_990);
+        var last: u128 = 0;
+        while (true) {
+            const us = tod.read(0);
+            const t = @as(u128, tod.snap) * std.time.us_per_s + us;
+            try testing.expect(t >= last);
+            last = t;
+            if (tod.snap > 100) break;
+        }
+    }
 }
 
 test "the timer counts down from the write and raises a request every P steps (SYSTEM §4)" {

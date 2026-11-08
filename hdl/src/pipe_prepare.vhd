@@ -94,6 +94,9 @@ entity pipe_prepare is
       irq_valid_i  : in  std_logic;
       pause_i      : in  std_logic;
 
+      -- A watchpoint is enabled (doc/DEBUG.md §6), from a flip-flop
+      wch_on_i     : in  std_logic;
+
       -- To WRITE
       valid_o      : out std_logic;
       uop_o        : out t_uop;
@@ -199,6 +202,7 @@ begin
       variable last_v    : boolean;
       variable irq_v     : boolean;
       variable pause_ok  : boolean;
+      variable watch_ok  : boolean;
       variable held_v    : boolean;   -- Only rule 1 or 2 holds a read back
       variable go_v      : boolean;   -- The micro-operation may go on
    begin
@@ -322,6 +326,13 @@ begin
       -- it finds the flag here or in its own micro-operation.
       pause_ok  := started_v or p_committed_r = '1' or (not older_v and w_i.after_go = '1') or
                    (pause_i = '0' and u_v.inst.brk = '0');
+      -- Nor, while a watchpoint is enabled, before an older instruction has
+      -- left WRITE, nor after a step that hit one: WRITE checks the data
+      -- accesses of an instruction as it retires it, and pauses at the
+      -- boundary after a hit, which no read of the next may pass
+      -- (MICROARCH.md §6.1).
+      watch_ok  := started_v or p_committed_r = '1' or
+                   (w_i.wch_any = '0' and (wch_on_i = '0' or not older_v));
 
       -- The bus takes the read when C_MAX_OUT will not be in flight, and no
       -- store waits in DBUS in the next cycle: none waits that the bus does
@@ -333,7 +344,7 @@ begin
 
       load_v := '0';
       if u_v.valid = '1' and ck_v = '1' and cv_v = '1' and p_loaded_r < nr_v and
-         older_ok and intr_ok and pause_ok and not busy_v and bus_ok and
+         older_ok and intr_ok and pause_ok and watch_ok and not busy_v and bus_ok and
          w_i.mode = RUN_ST and flush_i = '0' and take_nmi_i = '0' and take_irq_i = '0' then
          load_v := '1';
       end if;
@@ -347,7 +358,7 @@ begin
       -- a store holds it back. Rule 3 still holds a read after a store.
       held_v := u_v.valid = '1' and load_v = '0' and (ck_v = '0' or cv_v = '1') and
                 p_loaded_r < nr_v and (not older_v or done_i = '1' or wu_v.store = '0') and
-                intr_ok and pause_ok and not busy_v and bus_ok and
+                intr_ok and pause_ok and watch_ok and not busy_v and bus_ok and
                 w_i.mode = RUN_ST and flush_i = '0' and take_nmi_i = '0' and take_irq_i = '0';
       p_wait_sr <= '1' when held_v and ck_v = '0' else '0';
       p_wait_wr <= '1' when held_v and ck_v = '1' else '0';

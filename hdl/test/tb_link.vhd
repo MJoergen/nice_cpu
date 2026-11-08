@@ -43,6 +43,9 @@
 -- * the breakpoints: a stop of the core's own before the echo, `x`, the stop
 --   register, a step and a go on from a breakpoint, which run its
 --   instruction, and a breakpoint disabled while paused;
+-- * the watchpoints: a stop after the echo's write of the console, with
+--   `w` behind the byte, the stop register, and the address of the hit,
+--   then after a read of the console in the loop, and none once disabled;
 -- * the writes of R0 to R15 (DEBUG.md §6): R3, R0, R14, and R15 at a start
 --   paused, a step and a go on from the written R15, also at an enabled
 --   breakpoint, which runs its instruction, and `e04` while held, halted,
@@ -162,6 +165,10 @@ architecture simulation of tb_link is
    signal regs_flat     : std_logic_vector(511 downto 0);
    signal brk_addr      : t_brk_addrs;
    signal brk_en        : std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+   signal wch_addr      : t_wch_addrs;
+   signal wch_en        : std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0);
+   signal wch_hit       : std_logic_vector(C_WATCHES_MAX - 1 downto 0);
+   signal wch_pc        : std_logic_vector(31 downto 0);
    signal reg_we        : std_logic;
    signal reg_idx       : std_logic_vector(3 downto 0);
    signal reg_data      : std_logic_vector(31 downto 0);
@@ -245,7 +252,8 @@ begin
 
       i_multicycle : entity work.multicycle
          generic map (
-            G_BREAKS => 4
+            G_BREAKS  => 4,
+            G_WATCHES => 4
          )
          port map (
             clk_i         => clk,
@@ -275,6 +283,10 @@ begin
             waiting_o     => waiting,
             brk_addr_i    => brk_addr,
             brk_en_i      => brk_en,
+            wch_addr_i    => wch_addr,
+            wch_en_i      => wch_en,
+            wch_hit_o     => wch_hit,
+            wch_pc_o      => wch_pc,
             reg_we_i      => reg_we,
             reg_idx_i     => reg_idx,
             reg_data_i    => reg_data,
@@ -293,7 +305,8 @@ begin
 
       i_pipeline : entity work.pipeline
          generic map (
-            G_BREAKS => 4
+            G_BREAKS  => 4,
+            G_WATCHES => 4
          )
          port map (
             clk_i         => clk,
@@ -323,6 +336,10 @@ begin
             waiting_o     => waiting,
             brk_addr_i    => brk_addr,
             brk_en_i      => brk_en,
+            wch_addr_i    => wch_addr,
+            wch_en_i      => wch_en,
+            wch_hit_o     => wch_hit,
+            wch_pc_o      => wch_pc,
             reg_we_i      => reg_we,
             reg_idx_i     => reg_idx,
             reg_data_i    => reg_data,
@@ -536,7 +553,8 @@ begin
          G_WAIT      => C_WAIT,
          G_HAS_ROM   => false,
          G_BOOT_HELD => true,
-         G_BREAKS    => 4
+         G_BREAKS    => 4,
+         G_WATCHES   => 4
       )
       port map (
          clk_i          => clk,
@@ -568,6 +586,10 @@ begin
          regs_i         => regs_flat,
          brk_addr_o     => brk_addr,
          brk_en_o       => brk_en,
+         wch_addr_o     => wch_addr,
+         wch_en_o       => wch_en,
+         wch_hit_i      => wch_hit,
+         wch_pc_i       => wch_pc,
          reg_we_o       => reg_we,
          reg_idx_o      => reg_idx,
          reg_data_o     => reg_data,
@@ -1095,6 +1117,38 @@ begin
       send("w");
       expect("w", "echo with none");
       quiet("no stop with none");
+
+      -- The watchpoints (DEBUG.md §6), set while the program runs: 0 at
+      -- the console. With its writes enabled, the echo at word 9 writes
+      -- the byte, and the core stops after it, at the ADD, word 11. With
+      -- its reads, a go on stops after the read of the console at word 0,
+      -- which finds no byte. Disabled, they stop nothing.
+      send(C_ESC & "WFFFFFFD80001FFFFFF00#" & cc("WFFFFFFD80001FFFFFF00"));
+      expect(C_ESC & "kFFFFFFD80001#" & cc("kFFFFFFD80001"), "watch the console");
+      send(C_ESC & "WFFFFFFD4000100000002#" & cc("WFFFFFFD4000100000002"));
+      expect(C_ESC & "kFFFFFFD40001#" & cc("kFFFFFFD40001"), "watch its writes");
+      send("a");
+      expect_either("a", C_ESC & "w00#D7", "w after the echo");
+      quiet("w once");
+      reg_is(15, X"0000000B", "R15 after the echo's hit");
+      send(C_ESC & "RFFFFFFF60001#33");
+      expect(C_ESC & "rFFFFFFF6000100000200#D5", "stop register after the echo's hit");
+      send(C_ESC & "RFFFFFFD60001#" & cc("RFFFFFFD60001"));
+      expect(C_ESC & "rFFFFFFD6000100000009#" & cc("rFFFFFFD6000100000009"), "the echo's address");
+      send(C_ESC & "WFFFFFFD4000100000001#" & cc("WFFFFFFD4000100000001"));
+      expect(C_ESC & "kFFFFFFD40001#" & cc("kFFFFFFD40001"), "watch its reads");
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "w00#D7", "go on to the read");
+      reg_is(15, X"00000002", "R15 after the read's hit");
+      send(C_ESC & "RFFFFFFF60001#33");
+      expect(C_ESC & "rFFFFFFF6000100000200#D5", "stop register after the read's hit");
+      send(C_ESC & "WFFFFFFD4000100000000#" & cc("WFFFFFFD4000100000000"));
+      expect(C_ESC & "kFFFFFFD40001#" & cc("kFFFFFFD40001"), "disable the watchpoints");
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "go on with no watchpoint");
+      send("v");
+      expect("v", "echo with no watchpoint");
+      quiet("no stop with no watchpoint");
 
       -- With flow control (DEBUG.md §1), a flood of console bytes fills the
       -- buffer, as the link takes a byte every 3 cycles and the program

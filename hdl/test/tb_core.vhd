@@ -145,6 +145,14 @@
 -- G_PAUSE or G_SINGLE_STEP, the pauses that those raise go on from the
 -- stops too, and a pause at a breakpoint is not logged.
 --
+-- G_WATCH_AT lists watchpoints, at most 4, each an address in hex and the
+-- kinds it watches, r, w, or rw, such as "1Fw 20rw" (doc/DEBUG.md §6). The
+-- core gets them all enabled, and G_WATCHES = their number. The core
+-- stops after a step that hits one as at a breakpoint, and p_pause goes on
+-- from it the same way. The log line of a stop after a hit adds "w", the
+-- lowest number that hit, and the address of the hit, as
+-- test/break_stops.py writes them for a `w`.
+--
 -- p_stopped checks that the core is quiet while paused_o or halted_o is
 -- '1', that its registers do not change while it is paused, and that
 -- halt_reason_o is the reason of the step that halted it, and HALT_NONE
@@ -201,7 +209,9 @@ entity tb_core is
       G_PATCH_DATA    : string   := "00000000";
       -- The breakpoints, and the log of the stops at them (above)
       G_BREAK_AT      : string   := "";
-      G_BREAK_LOG     : string   := ""
+      G_BREAK_LOG     : string   := "";
+      -- The watchpoints (above)
+      G_WATCH_AT      : string   := ""
    );
 end entity tb_core;
 
@@ -342,6 +352,55 @@ architecture simulation of tb_core is
    end function parse_breaks;
 
    constant C_BREAKS : t_breaks := parse_breaks(G_BREAK_AT);
+
+   type t_watches is record
+      count : natural range 0 to C_WATCHES_MAX;
+      addrs : t_wch_addrs;
+      en    : std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0);
+   end record t_watches;
+
+   -- The addresses and the kinds of G_WATCH_AT, and their number
+   function parse_watches(s : string) return t_watches is
+      variable res_v   : t_watches := (count => 0, addrs => (others => (others => '0')),
+                                       en => (others => '0'));
+      variable pos_v   : positive  := s'low;
+      variable start_v : positive;
+      variable end_v   : positive;
+   begin
+      while pos_v <= s'high loop
+         if s(pos_v) = ' ' then
+            pos_v := pos_v + 1;
+         else
+            start_v := pos_v;
+            while pos_v <= s'high and s(pos_v) /= ' ' and s(pos_v) /= 'r' and s(pos_v) /= 'w' loop
+               pos_v := pos_v + 1;
+            end loop;
+            end_v := pos_v;
+            assert res_v.count < C_WATCHES_MAX
+               report "tb_core: more than 4 watchpoints in G_WATCH_AT"
+               severity failure;
+            res_v.addrs(res_v.count) := hex_word(s(start_v to end_v - 1));
+            while pos_v <= s'high and s(pos_v) /= ' ' loop
+               if s(pos_v) = 'r' then
+                  res_v.en(2 * res_v.count) := '1';
+               elsif s(pos_v) = 'w' then
+                  res_v.en(2 * res_v.count + 1) := '1';
+               end if;
+               pos_v := pos_v + 1;
+            end loop;
+            assert pos_v > end_v
+               report "tb_core: a watchpoint without r or w in G_WATCH_AT"
+               severity failure;
+            res_v.count := res_v.count + 1;
+         end if;
+      end loop;
+      return res_v;
+   end function parse_watches;
+
+   constant C_WATCHES : t_watches := parse_watches(G_WATCH_AT);
+
+   signal wch_hit : std_logic_vector(C_WATCHES_MAX - 1 downto 0);
+   signal wch_pc  : std_logic_vector(31 downto 0);
 
    signal clk : std_logic;
    signal rst : std_logic;
@@ -494,7 +553,8 @@ begin
 
       i_multicycle : entity work.multicycle
          generic map (
-            G_BREAKS => C_BREAKS.count
+            G_BREAKS  => C_BREAKS.count,
+            G_WATCHES => C_WATCHES.count
          )
          port map (
             clk_i         => clk,
@@ -524,6 +584,10 @@ begin
             waiting_o     => waiting,
             brk_addr_i    => C_BREAKS.addrs,
             brk_en_i      => (others => '1'),
+            wch_addr_i    => C_WATCHES.addrs,
+            wch_en_i      => C_WATCHES.en,
+            wch_hit_o     => wch_hit,
+            wch_pc_o      => wch_pc,
             halted_o      => halted,
             halt_reason_o => halt_reason,
             instret_o     => instret,
@@ -536,7 +600,8 @@ begin
 
       i_pipeline : entity work.pipeline
          generic map (
-            G_BREAKS => C_BREAKS.count
+            G_BREAKS  => C_BREAKS.count,
+            G_WATCHES => C_WATCHES.count
          )
          port map (
             clk_i         => clk,
@@ -566,6 +631,10 @@ begin
             waiting_o     => waiting,
             brk_addr_i    => C_BREAKS.addrs,
             brk_en_i      => (others => '1'),
+            wch_addr_i    => C_WATCHES.addrs,
+            wch_en_i      => C_WATCHES.en,
+            wch_hit_o     => wch_hit,
+            wch_pc_o      => wch_pc,
             halted_o      => halted,
             halt_reason_o => halt_reason,
             instret_o     => instret,
@@ -1111,6 +1180,7 @@ begin
       variable hold_v    : natural  := 0;
       variable patched_v : boolean  := false;
       variable going_v   : boolean  := false;   -- Going on from a stop
+      variable hit_v     : natural  := 0;       -- The lowest watchpoint hit
       file     log_f     : text;
       variable log_v     : boolean  := false;   -- log_f is open
       variable l         : line;
@@ -1162,9 +1232,9 @@ begin
                   hold_v := hold_v - 1;
                end if;
             end if;
-         elsif C_BREAKS.count > 0 then
-            -- A stop at a breakpoint: pause_i '1' for a cycle, and then '0'
-            -- until the core has gone on
+         elsif C_BREAKS.count > 0 or C_WATCHES.count > 0 then
+            -- A stop at a breakpoint or after a watchpoint's hit: pause_i
+            -- '1' for a cycle, and then '0' until the core has gone on
             if pause = '1' then
                pause   <= '0';
                going_v := true;
@@ -1181,6 +1251,14 @@ begin
                   for i in regs'range loop
                      write(l, " " & to_hstring(regs(i)));
                   end loop;
+                  for i in C_WATCHES_MAX - 1 downto 0 loop
+                     if wch_hit(i) = '1' then
+                        hit_v := i;
+                     end if;
+                  end loop;
+                  if wch_hit /= (wch_hit'range => '0') then
+                     write(l, " w " & integer'image(hit_v) & " " & to_hstring(wch_pc));
+                  end if;
                   writeline(log_f, l);
                   flush(log_f);
                end if;

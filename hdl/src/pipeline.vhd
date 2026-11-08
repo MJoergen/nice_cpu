@@ -112,6 +112,22 @@
 -- has time to raise it. A breakpoint written while the core runs may
 -- miss an instruction that DECODE has taken already.
 --
+-- WATCHPOINTS (doc/DEBUG.md §6). The core keeps a copy of their addresses
+-- and enable bits, a cycle late, so that no path runs from its inputs to
+-- the compares. WRITE checks the data accesses of each micro-operation as
+-- it runs it: its reads, at the addresses that PREPARE formed and passed
+-- on, its store, and the vector read of an entry. A hit sets a bit of
+-- w_r.wch and the address of the step, w_r.wch_pc. At the next step
+-- boundary, WRITE pauses on its own, ahead of an interrupt, with brk_wait
+-- as at a breakpoint, and the go on clears w_r.wch. While a watchpoint is
+-- enabled, PREPARE issues no first data read of an instruction while an
+-- older one is in WRITE, nor while w_r.wch has a bit set, so that no read
+-- of the next instruction can begin before the boundary after a hit
+-- (MICROARCH.md §6.1). That costs a cycle or more for each instruction
+-- with a data read, but only while a watchpoint is enabled. wch_hit_o and
+-- wch_pc_o are w_r.wch and w_r.wch_pc, which hold while the core is
+-- paused.
+--
 -- REGISTER WRITES (doc/DEBUG.md §6). In PAUSED_ST, in a cycle with pause_i
 -- and reg_we_i at '1', WRITE writes reg_data_i into the register
 -- reg_idx_i through regval, as a register-direct write of an instruction
@@ -166,9 +182,11 @@ library ieee;
 entity pipeline is
    generic (
       -- Adds the invariants that a formal proof needs.
-      G_FORMAL : boolean := false;
+      G_FORMAL  : boolean := false;
       -- The number of breakpoints, 0 to C_BREAKS_MAX (doc/DEBUG.md §6)
-      G_BREAKS : natural range 0 to C_BREAKS_MAX := 0
+      G_BREAKS  : natural range 0 to C_BREAKS_MAX := 0;
+      -- The number of watchpoints, 0 to C_WATCHES_MAX (doc/DEBUG.md §6)
+      G_WATCHES : natural range 0 to C_WATCHES_MAX := 0
    );
    port (
       clk_i         : in  std_logic;
@@ -207,6 +225,14 @@ entity pipeline is
       -- The breakpoints: addresses, and one enable bit each (above)
       brk_addr_i    : in  t_brk_addrs;
       brk_en_i      : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+
+      -- The watchpoints: addresses, and two enable bits each, of the reads
+      -- and the writes; and while paused, those that the step before the
+      -- pause hit, and the address of its instruction (above)
+      wch_addr_i    : in  t_wch_addrs := (others => (others => '0'));
+      wch_en_i      : in  std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0) := (others => '0');
+      wch_hit_o     : out std_logic_vector(C_WATCHES_MAX - 1 downto 0);
+      wch_pc_o      : out std_logic_vector(31 downto 0);
 
       -- A write of a register while paused (above)
       reg_we_i      : in  std_logic                     := '0';
@@ -285,6 +311,11 @@ architecture synthesis of pipeline is
    signal skid       : t_inst;      -- The instruction of DECODE's skid_r
    signal seq_uop    : t_uop;
    signal d_valid    : std_logic;
+
+   -- The watchpoints, a cycle late, those from G_WATCHES up at 0
+   signal wch_addr_r : t_wch_addrs                                       := (others => (others => '0'));
+   signal wch_en_r   : std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0) := (others => '0');
+   signal wch_on_r   : std_logic                                         := '0';
 
    -- PREPARE
    signal p_ready      : std_logic;
@@ -477,6 +508,7 @@ begin
          nmi_valid_i  => nmi_valid_i,
          irq_valid_i  => irq_valid_i,
          pause_i      => pause_i,
+         wch_on_i     => wch_on_r,
          valid_o      => p_valid,
          uop_o        => p_out,
          first_read_o => p_first_read,
@@ -560,6 +592,8 @@ begin
          reg_we_i     => reg_we_i,
          reg_idx_i    => reg_idx_i,
          reg_data_i   => reg_data_i,
+         wch_addr_i   => wch_addr_r,
+         wch_en_i     => wch_en_r,
          state_o      => w_r,
          done_o       => w_done,
          flush_o      => w_flush,
@@ -591,6 +625,24 @@ begin
    after_rti_o   <= w_r.after_rti;
    saved_pc_o    <= w_r.saved_pc;
    saved_sr_o    <= w_r.saved_sr;
+   wch_hit_o     <= w_r.wch;
+   wch_pc_o      <= w_r.wch_pc;
+
+
+   p_watch : process (clk_i)
+      variable en_v : std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0);
+   begin
+      if rising_edge(clk_i) then
+         wch_addr_r <= (others => (others => '0'));
+         en_v       := (others => '0');
+         for i in 0 to G_WATCHES - 1 loop
+            wch_addr_r(i)                 <= wch_addr_i(i);
+            en_v(2 * i + 1 downto 2 * i) := wch_en_i(2 * i + 1 downto 2 * i);
+         end loop;
+         wch_en_r <= en_v;
+         wch_on_r <= or en_v;
+      end if;
+   end process p_watch;
 
 
    -- The fetch statistics (MICROARCH.md §8.1), from registers, two cycles

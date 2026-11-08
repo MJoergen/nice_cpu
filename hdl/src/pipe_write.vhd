@@ -7,8 +7,8 @@
 -- puts a store into DBUS's register, and updates the flags. A store
 -- into the I/O range waits in WRITE, w_r.busy, until the bus accepts it
 -- (MICROARCH.md §5.3). It takes interrupts before an instruction, pauses
--- there (MICROARCH.md §6.1), also at a breakpoint, runs the control
--- instructions, waits for a request after WAIT in WAIT_ST, and flushes the
+-- there (MICROARCH.md §6.1), also at a breakpoint and after a step that
+-- hit a watchpoint, runs the control instructions, waits for a request after WAIT in WAIT_ST, and flushes the
 -- pipeline (see src/pipeline.vhd). Its
 -- state is the record w_r (t_write), which PREPARE reads too.
 --
@@ -41,6 +41,10 @@
 --    WRITE's outputs.
 -- f) reg_we_i, reg_idx_i, and reg_data_i come from flip-flops. WRITE takes
 --    a write only in PAUSED_ST with pause_i at '1'.
+-- g) wch_addr_i and wch_en_i come from flip-flops. While a bit of wch_en_i
+--    is set, PREPARE issues no first data read of an instruction while an
+--    older one is in WRITE, nor while w_r.wch_any is set, so that WRITE
+--    reaches the step boundary after a hit (MICROARCH.md §6.1).
 --
 -- RESET
 -- Synchronous. It sets the state of ISA.md §8.1.
@@ -105,6 +109,11 @@ entity pipe_write is
       reg_idx_i    : in  std_logic_vector(3 downto 0);
       reg_data_i   : in  std_logic_vector(31 downto 0);
 
+      -- The watchpoints (doc/DEBUG.md §6): addresses, and two enable bits
+      -- each, of the reads and the writes
+      wch_addr_i   : in  t_wch_addrs;
+      wch_en_i     : in  std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0);
+
       -- WRITE's state, and its decisions in this cycle
       state_o      : out t_write;
       done_o       : out std_logic;   -- The micro-operation in WRITE retires
@@ -128,6 +137,24 @@ architecture synthesis of pipe_write is
 
    signal w_r : t_write;
    signal w_n : t_write;
+
+   -- The watchpoints that a data access to a hits: of the reads for k = 0,
+   -- and of the writes for k = 1
+   function watch_hits(a     : std_logic_vector(31 downto 0);
+                       k     : natural range 0 to 1;
+                       addrs : t_wch_addrs;
+                       en    : std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0))
+   return std_logic_vector is
+      variable res_v : std_logic_vector(C_WATCHES_MAX - 1 downto 0);
+   begin
+      res_v := (others => '0');
+      for i in 0 to C_WATCHES_MAX - 1 loop
+         if en(2 * i + k) = '1' and addrs(i) = a then
+            res_v(i) := '1';
+         end if;
+      end loop;
+      return res_v;
+   end function watch_hits;
 
 begin
 
@@ -170,9 +197,11 @@ begin
       variable bound_v  : boolean;
       variable intr_v   : boolean;   -- An interrupt is taken now
       variable pbound_v : boolean;   -- A step boundary, where the core may pause
-      variable rpause_v : boolean;   -- A pause on pause_i
+      variable rpause_v : boolean;   -- A pause on pause_i, or after a hit
       variable brk_v    : boolean;   -- The next instruction is at a breakpoint
       variable bpause_v : boolean;   -- A pause at a breakpoint
+      variable hpause_v : boolean;   -- A pause after a step that hit a watchpoint
+      variable whit_v   : std_logic_vector(C_WATCHES_MAX - 1 downto 0);
       variable pause_v  : boolean;
       variable wbound_v : boolean;   -- A cycle of WAIT_ST, a step boundary of its own
       variable wpause_v : boolean;   -- A pause on pause_i in WAIT_ST
@@ -286,7 +315,13 @@ begin
       pbound_v := w_r.mode = RUN_ST and rst_i = '0' and w_r.commits = 0 and w_r.mid = '0' and
                   w_r.busy = '0' and w_r.cnt_step = 0 and w_r.exec_done = '0' and
                   (u_v.valid = '0' or u_v.first = '1');
-      rpause_v := pbound_v and w_r.after_go = '0' and pause_i = '1';
+      -- A step that hit a watchpoint (doc/DEBUG.md §6) is followed by a
+      -- pause of the core's own, ahead of an interrupt, as if pause_i were
+      -- '1', so that it adds no term to the paths through the pause. The
+      -- first step after a go on is not exempt: after_go is '1' only until
+      -- that step is reported, before the boundary after it.
+      rpause_v := pbound_v and w_r.after_go = '0' and (pause_i = '1' or w_r.wch_any = '1');
+      hpause_v := rpause_v and w_r.wch_any = '1';
       bound_v  := pbound_v and not rpause_v and w_r.in_service = '0' and w_r.after_rti = '0';
 
       -- Each cycle of WAIT_ST is a step boundary with an empty pipeline,
@@ -328,10 +363,11 @@ begin
       if pause_v then
          -- The micro-operation in WRITE has not begun, so it goes with the
          -- rest of the pipeline, and FETCH stops at R15.
-         -- At a breakpoint, brk_wait holds the core paused until pause_i
-         -- has been '1', so that the system has time to see it.
+         -- At a breakpoint or after a watchpoint's hit, brk_wait holds
+         -- the core paused until pause_i has been '1', so that the system
+         -- has time to see it.
          n_v.mode      := PAUSED_ST;
-         n_v.brk_wait  := to_sl(bpause_v);
+         n_v.brk_wait  := to_sl(bpause_v or hpause_v);
          n_v.uop.valid := '0';
          target_v      := w_r.regs(15);
          flush_v       := true;
@@ -347,9 +383,12 @@ begin
                n_v.regs(to_integer(reg_idx_i)) := regval(to_integer(reg_idx_i), reg_data_i);
             end if;
          elsif w_r.brk_wait = '0' then
-            -- A pause in a wait goes back to the wait.
+            -- A pause in a wait goes back to the wait. The go on forgets
+            -- the hits of the step before the pause.
             n_v.mode     := WAIT_ST when w_r.waiting = '1' else RUN_ST;
             n_v.after_go := '1';
+            n_v.wch      := (others => '0');
+            n_v.wch_any  := '0';
             target_v     := w_r.regs(15);
             flush_v      := true;
          end if;
@@ -389,6 +428,16 @@ begin
                st_we_o        <= '0';
                a_v            := w_r.regs(14)(23 downto 0) & w_r.vec;
                n_v.vec_issued := '1';
+               -- The vector read is the entry's data access. Its hit is
+               -- at the instruction that the entry goes before, or at INT.
+               -- wch_pc follows the steps until the first hit, so that
+               -- the compares feed no enable.
+               whit_v      := watch_hits(a_v, 0, wch_addr_i, wch_en_i);
+               n_v.wch     := w_r.wch or whit_v;
+               n_v.wch_any := w_r.wch_any or (or whit_v);
+               if w_r.wch_any = '0' then
+                  n_v.wch_pc := w_r.regs(15) when w_r.vec_intr = '1' else u_v.inst.addr;
+               end if;
             end if;
          elsif rq_cnt_i >= 1 then
             pop_o        <= 1;
@@ -530,6 +579,26 @@ begin
                   done_v := true;
                   pop_o  <= nr_v;
                   cnt_v  := w_r.cnt when u_v.cnt_late = '1' else u_v.cnt;
+
+                  -- The data accesses of the micro-operation, against the
+                  -- watchpoints: its reads, at the addresses that PREPARE
+                  -- formed, and its store. A store that waits for the bus
+                  -- comes here again, and hits the same.
+                  whit_v := (others => '0');
+                  if rd_v(1) = '1' then
+                     whit_v := whit_v or watch_hits(base_v(1), 0, wch_addr_i, wch_en_i);
+                  end if;
+                  if rd_v(2) = '1' then
+                     whit_v := whit_v or watch_hits(base_v(2), 0, wch_addr_i, wch_en_i);
+                  end if;
+                  if u_v.store = '1' then
+                     whit_v := whit_v or watch_hits(a_v, 1, wch_addr_i, wch_en_i);
+                  end if;
+                  n_v.wch     := w_r.wch or whit_v;
+                  n_v.wch_any := w_r.wch_any or (or whit_v);
+                  if w_r.wch_any = '0' then
+                     n_v.wch_pc := u_v.inst.addr;
+                  end if;
 
                   case u_v.kind is
                      when UOP_S0 =>
@@ -789,6 +858,9 @@ begin
             w_r.exec_done  <= '0';
             w_r.vec_issued <= '0';
             w_r.commits    <= 0;
+            w_r.wch        <= (others => '0');
+            w_r.wch_any    <= '0';
+            w_r.wch_pc     <= (others => '0');
             w_r.rep        <= C_RETIRE_NONE;
          end if;
       end if;

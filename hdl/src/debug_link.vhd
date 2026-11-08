@@ -47,6 +47,16 @@
 -- register until the core leaves the pause, or the next start. p_tx then
 -- sends `x` with the number, or `p` if none matches.
 --
+-- WATCHPOINTS
+-- G_WATCHES watchpoints, 0 to C_WATCHES_MAX (DEBUG.md §6). p_acc holds
+-- their enable bits, two each, and their addresses, which go to the core
+-- on wch_en_o and wch_addr_o. The core checks its data accesses against
+-- them, and pauses on its own after a step that hit one, as at a
+-- breakpoint. Its wch_hit_i says which it hit, and wch_pc_i where. At the
+-- stop, a hit goes before a breakpoint: p_acc keeps bit 9 and the lowest
+-- number that hit in the stop register, and wch_pc_i for the word
+-- 0xFFFFFFD6, and p_tx sends `w` with the number.
+--
 -- REGISTER WRITES
 -- R1 to R15 take a write while the processor is paused (DEBUG.md §6).
 -- p_rx answers a W that reaches R0 to R15 while bit 4 reads 0 with `e04`,
@@ -103,11 +113,15 @@
 --    while halted_i or paused_i is high. A board without the registers ties
 --    it to 0. A core
 --    pauses never together with a halt, and never while hold_o is high. It
---    pauses only after pause_o was high (MICROARCH.md §6.1), or at an
---    enabled breakpoint of brk_addr_o and brk_en_o, and the latter while
+--    pauses only after pause_o was high (MICROARCH.md §6.1), at an
+--    enabled breakpoint of brk_addr_o and brk_en_o, or after a step that
+--    hit a watchpoint of wch_addr_o and wch_en_o, and the latter two while
 --    pause_o was low the cycle before paused_i rose. It leaves that pause
---    only after pause_o has been high. A board without breakpoints sets
---    G_BREAKS to 0, and the link reads it so (DEBUG.md §6).
+--    only after pause_o has been high. While it is paused, wch_hit_i has
+--    a bit set for each watchpoint that the step before the pause hit,
+--    and no bit if none did, and wch_pc_i is the address of the hit. A
+--    board without breakpoints sets G_BREAKS to 0, and one without
+--    watchpoints G_WATCHES, and the link reads them so (DEBUG.md §6).
 -- f) A clear: clear_o goes high when the link asks for it, and stays high
 --    until the board has set every word of the memory to 0 and answers
 --    with one cycle of clear_done_i, which is not before the cycle after
@@ -165,6 +179,9 @@
 --   core, from flip-flops, only while paused_i and pause_o are '1' (above).
 -- * brk_addr_o and brk_en_o: the breakpoints, for the core. The entries from
 --   G_BREAKS up are 0.
+-- * wch_addr_o and wch_en_o: the watchpoints, for the core, and wch_hit_i
+--   and wch_pc_i: the core's hits, as contract e says. The entries from
+--   G_WATCHES up are 0. A board without them leaves the inputs open.
 -- * waiting_i: the core's waiting_o, '1' while it waits for an interrupt
 --   (ISA.md §7.5), which bit 6 reads while the core is not held or halted.
 --   A board without it leaves it open, and bit 6 reads 0.
@@ -188,7 +205,8 @@
 -- hold_o and rom_hide_o
 -- change only on a write to the control register, at the end of a clear,
 -- or at reset, or, for pause_o, at a stop of the core's own; and the
--- breakpoints change only on a write of their registers or at reset; a
+-- breakpoints and the watchpoints change only on a write of their
+-- registers or at reset; a
 -- read of R0 to R15 while the processor runs returns regs_i of its cycle;
 -- and the side client gets one done for each request, refused only for a
 -- word that is not a debug register while the program runs, or a write
@@ -198,8 +216,8 @@
 -- are in formal/formal_debug_link.vhd.
 --
 -- RESET
--- Synchronous. It sends `b07`, empties everything, clears the breakpoints,
--- and leaves the
+-- Synchronous. It sends `b07`, empties everything, clears the breakpoints
+-- and the watchpoints, and leaves the
 -- processor held with G_BOOT_HELD, or running with the ROM shown otherwise.
 -- G_HAS_ROM is false on a system without a ROM: bit 3 then reads 1 and
 -- ignores writes, and rom_hide_o is 1.
@@ -220,6 +238,7 @@ entity debug_link is
       G_HAS_ROM   : boolean  := true;
       G_BOOT_HELD : boolean  := false;
       G_BREAKS    : natural range 0 to C_BREAKS_MAX := 0;
+      G_WATCHES   : natural range 0 to C_WATCHES_MAX := 0;
       -- The properties of formal/formal_debug_link.vhd that name the
       -- registers here
       G_FORMAL    : boolean  := false
@@ -260,6 +279,10 @@ entity debug_link is
       regs_i         : in  std_logic_vector(511 downto 0);
       brk_addr_o     : out t_brk_addrs;
       brk_en_o       : out std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+      wch_addr_o     : out t_wch_addrs;
+      wch_en_o       : out std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0);
+      wch_hit_i      : in  std_logic_vector(C_WATCHES_MAX - 1 downto 0) := (others => '0');
+      wch_pc_i       : in  std_logic_vector(31 downto 0) := (others => '0');
       reg_we_o       : out std_logic;
       reg_idx_o      : out std_logic_vector(3 downto 0);
       reg_data_o     : out std_logic_vector(31 downto 0);
@@ -311,7 +334,7 @@ architecture synthesis of debug_link is
 
    type t_acc_st is (ACC_IDLE_ST, ACC_REQ_ST, ACC_WAIT_ST);
 
-   type t_pkt is (PKT_B, PKT_H, PKT_O, PKT_K, PKT_E, PKT_R, PKT_P, PKT_X);
+   type t_pkt is (PKT_B, PKT_H, PKT_O, PKT_K, PKT_E, PKT_R, PKT_P, PKT_X, PKT_W);
 
    constant C_ESC : t_byte := X"FF";
 
@@ -361,6 +384,7 @@ architecture synthesis of debug_link is
          when PKT_R => return X"72";
          when PKT_P => return X"70";
          when PKT_X => return X"78";
+         when PKT_W => return X"77";
       end case;
    end function kind_char;
 
@@ -489,12 +513,17 @@ architecture synthesis of debug_link is
    signal wb_data_r  : t_word                       := (others => '0');
    signal brk_addr_r : t_brk_addrs                  := (others => (others => '0'));
    signal brk_en_r   : std_logic_vector(C_BREAKS_MAX - 1 downto 0) := (others => '0');
-   signal pause_d_r  : std_logic                    := '0';
+   signal wch_addr_r : t_wch_addrs                  := (others => (others => '0'));
+   signal wch_en_r   : std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0) := (others => '0');
+   -- The address of the hit, at a stop after one: 0xFFFFFFD6
+   signal wch_pc_r  : t_word                       := (others => '0');
+   signal pause_d_r : std_logic                    := '0';
    -- A clear since the last start: bit 1 and the halt reason read 0, but
    -- the `h` of a halt before the clear still goes out with its reason.
    signal cleared_r : std_logic := '0';
-   -- The stop register: bit 8 and the number of the breakpoint at R15
-   signal stop_r : std_logic_vector(8 downto 0) := (others => '0');
+   -- The stop register: bit 9 and the number of the watchpoint hit, or
+   -- bit 8 and the number of the breakpoint at R15
+   signal stop_r : std_logic_vector(9 downto 0) := (others => '0');
 
    -- p_acc takes the request of acc_go: at once for a debug register, and
    -- for another word only after a clear. The request is the side
@@ -508,7 +537,8 @@ architecture synthesis of debug_link is
    signal side_err_r  : std_logic := '0';
    signal side_data_r : t_word    := (others => '0');
 
-   -- The core has paused on its own, at a breakpoint: pause_o was low.
+   -- The core has paused on its own, at a breakpoint or after a watchpoint's
+   -- hit: pause_o was low.
    signal own_stop : std_logic;
 
    -- The link owns the memory while the core is paused and the request of
@@ -833,6 +863,8 @@ begin
    own_stop   <= paused_i and not paused_r and not pause_d_r and not hold_r;
    brk_addr_o <= brk_addr_r;
    brk_en_o   <= brk_en_r;
+   wch_addr_o <= wch_addr_r;
+   wch_en_o   <= wch_en_r;
    reg_we_o   <= reg_we_r;
    reg_idx_o  <= reg_idx_r;
    reg_data_o <= reg_data_r;
@@ -856,7 +888,7 @@ begin
       variable rd_v   : t_word;
       variable hid_v  : std_logic_vector(65 downto 0);
       variable idx_v  : natural range 0 to 31;
-      variable stop_v : std_logic_vector(8 downto 0);
+      variable stop_v : std_logic_vector(9 downto 0);
    begin
       if rising_edge(clk_i) then
          nh_v        := hold_r;
@@ -864,16 +896,23 @@ begin
          side_done_r <= '0';
          reg_we_r    <= '0';
 
-         -- At a stop, the lowest enabled breakpoint at R15, until the core
-         -- leaves the pause or the next start. A hold keeps it.
+         -- At a stop, the lowest watchpoint that the step before hit, or else
+         -- the lowest enabled breakpoint at R15, until the core leaves the
+         -- pause or the next start. A hold keeps it.
          if paused_i = '1' and paused_r = '0' and hold_r = '0' then
             stop_v := (others => '0');
             for i in G_BREAKS - 1 downto 0 loop
                if brk_en_r(i) = '1' and brk_addr_r(i) = regs_i(511 downto 480) then
-                  stop_v := '1' & to_slv(i, 8);
+                  stop_v := "01" & to_slv(i, 8);
                end if;
             end loop;
-            stop_r <= stop_v;
+            for i in G_WATCHES - 1 downto 0 loop
+               if wch_hit_i(i) = '1' then
+                  stop_v := "10" & to_slv(i, 8);
+               end if;
+            end loop;
+            stop_r   <= stop_v;
+            wch_pc_r <= wch_pc_i;
          elsif paused_i = '0' and paused_r = '1' and hold_r = '0' then
             stop_r <= (others => '0');
          end if;
@@ -952,8 +991,14 @@ begin
                         side_err_r  <= '0';
                      end if;
                      if acc_we = '1' and acc_addr(5) = '0' then
-                        -- 0xFFFFFFD0 to 0xFFFFFFDF take no write.
-                        null;
+                        -- 0xFFFFFFD0 to 0xFFFFFFDF, idx_v 16 to 31, take no
+                        -- write, but the watchpoints.
+                        if idx_v = 20 then
+                           wch_en_r(2 * G_WATCHES - 1 downto 0) <= acc_wdata(2 * G_WATCHES - 1 downto 0);
+                        end if;
+                        if idx_v >= 24 and idx_v - 24 < G_WATCHES then
+                           wch_addr_r(idx_v - 24) <= acc_wdata;
+                        end if;
                      elsif acc_we = '1' and idx_v < 16 then
                         -- R1 to R15 take a write while paused, R0 none. The
                         -- side client is refused while bit 4 reads 0.
@@ -1008,11 +1053,21 @@ begin
                            hid_v := hid_r;
                         end if;
                         if acc_addr(5) = '0' then
-                           -- saved_pc and saved_sr, and the reserved words
-                           if acc_addr(3 downto 0) = "0000" then
+                           -- saved_pc and saved_sr, the watchpoints, and the
+                           -- reserved words, 0xFFFFFFD0 to 0xFFFFFFDF at
+                           -- idx_v 16 to 31
+                           if idx_v = 16 then
                               rd_v := hid_v(63 downto 32);
-                           elsif acc_addr(3 downto 0) = "0001" then
+                           elsif idx_v = 17 then
                               rd_v := hid_v(31 downto 0);
+                           elsif idx_v = 20 then
+                              rd_v(2 * C_WATCHES_MAX - 1 downto 0) := wch_en_r;
+                           elsif idx_v = 21 then
+                              rd_v := to_slv(G_WATCHES, 32);
+                           elsif idx_v = 22 and stop_r(9) = '1' then
+                              rd_v := wch_pc_r;
+                           elsif idx_v >= 24 and idx_v - 24 < G_WATCHES then
+                              rd_v := wch_addr_r(idx_v - 24);
                            end if;
                         elsif idx_v < 16 and hold_r = '0' and halted_r = '0' and
                               paused_r = '0' then
@@ -1043,7 +1098,7 @@ begin
                         elsif idx_v = 21 then
                            rd_v := to_slv(G_BREAKS, 32);
                         elsif idx_v = 22 then
-                           rd_v(8 downto 0) := stop_r;
+                           rd_v(9 downto 0) := stop_r;
                         elsif idx_v >= 24 and idx_v - 24 < G_BREAKS then
                            rd_v := brk_addr_r(idx_v - 24);
                         end if;
@@ -1142,6 +1197,8 @@ begin
             wb_stb_r   <= '0';
             brk_addr_r <= (others => (others => '0'));
             brk_en_r   <= (others => '0');
+            wch_addr_r <= (others => (others => '0'));
+            wch_en_r   <= (others => '0');
             pause_d_r  <= '0';
             reg_we_r   <= '0';
             stop_r     <= (others => '0');
@@ -1235,10 +1292,13 @@ begin
                      put(C_ESC, false);
                      tx_st <= TX_TAG_ST;
                   elsif pause_own = '1' and p_sent_r = '0' then
-                     -- `x` with the stop's number, which is kept for its payload
+                     -- `w` or `x` with the stop's number, which is kept for
+                     -- its payload
                      kind_r    <= PKT_P;
                      tx_stop_r <= stop_r(7 downto 0);
-                     if stop_r(8) = '1' then
+                     if stop_r(9) = '1' then
+                        kind_r <= PKT_W;
+                     elsif stop_r(8) = '1' then
                         kind_r <= PKT_X;
                      end if;
                      p_sent_r <= '1';
@@ -1271,7 +1331,7 @@ begin
                         end if;
                      when PKT_O | PKT_P =>
                         null;
-                     when PKT_X =>
+                     when PKT_X | PKT_W =>
                         if fld_r = 0 then
                            val_v(7 downto 0) := tx_stop_r;
                            nd_v := 2;
@@ -1379,9 +1439,14 @@ begin
       signal f_brk_w  : std_logic;                     -- A write of the breakpoints
       signal f_brk_d  : t_brk_addrs;                   -- The addresses a cycle ago
       -- The enable bits a cycle ago
-      signal f_en_d : std_logic_vector(C_BREAKS_MAX - 1 downto 0);
-      signal f_kept : boolean;                     -- The breakpoints are as a cycle ago
-      signal f_top  : boolean;                     -- The entries from G_BREAKS up are 0
+      signal f_en_d  : std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+      signal f_kept  : boolean;                     -- The breakpoints are as a cycle ago
+      signal f_top   : boolean;                     -- The entries from G_BREAKS up are 0
+      signal f_wch_w : std_logic;                 -- A write of the watchpoints
+      signal f_wch_d : t_wch_addrs;               -- The addresses a cycle ago
+      signal f_wen_d : std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0);
+      signal f_wkept : boolean;                   -- The watchpoints are as a cycle ago
+      signal f_wtop  : boolean;                   -- The entries from G_WATCHES up are 0
       -- A console byte waited for room a cycle ago, for so many cycles, and
       -- rx_flow_i then
       signal f_full_d : std_logic := '0';
@@ -1430,6 +1495,8 @@ begin
             f_ctrl_d <= f_ctrl;
             f_brk_d  <= brk_addr_r;
             f_en_d   <= brk_en_r;
+            f_wch_d  <= wch_addr_r;
+            f_wen_d  <= wch_en_r;
             f_full_d <= '1' when rx_st = RX_FULL_ST and rst_i = '0' else '0';
             f_cnt_d  <= full_cnt_r;
             f_flow_d <= rx_flow_i;
@@ -1487,6 +1554,22 @@ begin
                  '0';
       f_kept  <= brk_addr_r = f_brk_d and brk_en_r = f_en_d;
 
+      f_wch_w <= '1' when acc_st = ACC_IDLE_ST and acc_go = '1' and acc_we = '1' and
+                          is_dbg(acc_addr) and acc_addr(5 downto 4) = "01" and
+                          (acc_addr(3 downto 0) = "0100" or acc_addr(3 downto 2) = "10") else
+                 '0';
+      f_wkept <= wch_addr_r = f_wch_d and wch_en_r = f_wen_d;
+
+      p_f_wtop : process (all)
+      begin
+         f_wtop <= true;
+         for i in G_WATCHES to C_WATCHES_MAX - 1 loop
+            if wch_en_r(2 * i + 1 downto 2 * i) /= "00" or wch_addr_r(i) /= X"00000000" then
+               f_wtop <= false;
+            end if;
+         end loop;
+      end process p_f_wtop;
+
       p_f_top : process (all)
       begin
          f_top <= true;
@@ -1531,7 +1614,7 @@ begin
                         f_out_st <= OUT_IDLE_ST;
                      elsif out_data_r = X"62" or out_data_r = X"68" or out_data_r = X"6F" or
                            out_data_r = X"6B" or out_data_r = X"65" or out_data_r = X"72" or
-                           out_data_r = X"70" or out_data_r = X"78" then
+                           out_data_r = X"70" or out_data_r = X"78" or out_data_r = X"77" then
                         f_out_sum <= out_data_r;
                         f_out_st  <= OUT_PAY_ST;
                      else
@@ -1658,18 +1741,25 @@ begin
       --     not (clearing_r = '1' and clear_done_i = '1')} |=>
       --    {stable(pause_r)};
 
-      -- The breakpoints (DEBUG.md §6): they change only on a write of their
-      -- registers, and the entries from G_BREAKS up stay 0. A stop of the
-      -- core's own raises pause_o, unless the processor is held then, so the
-      -- core does not wait for it forever. The stop register names a
-      -- breakpoint that the link has.
+      -- The breakpoints and the watchpoints (DEBUG.md §6): they change only on
+      -- a write of their registers, and the entries from G_BREAKS and
+      -- G_WATCHES up stay 0. A stop of the core's own raises pause_o, unless
+      -- the processor is held then, so the core does not wait for it
+      -- forever. The stop register names one breakpoint or one watchpoint
+      -- that the link has.
       -- psl f_brk_write : assert always {rst_i = '0' and f_brk_w = '0'} |=> {f_kept};
       -- psl f_brk_zero : assert always f_top;
+      -- psl f_wch_write : assert always {rst_i = '0' and f_wch_w = '0'} |=> {f_wkept};
+      -- psl f_wch_zero : assert always f_wtop;
       -- psl f_brk_own : assert always
       --    {own_stop = '1' and rst_i = '0'} |=> {rst_i = '1' or pause_r = '1' or hold_r = '1'};
       -- psl f_brk_stop : assert always
       --    stop_r(8) = '1' -> to_integer(stop_r(7 downto 0)) < G_BREAKS;
-      -- psl i_stop_zero : assert always stop_r(8) = '0' -> stop_r(7 downto 0) = X"00";
+      -- psl f_wch_stop : assert always
+      --    stop_r(9) = '1' -> to_integer(stop_r(7 downto 0)) < G_WATCHES;
+      -- psl i_stop_one : assert always not (stop_r(9) = '1' and stop_r(8) = '1');
+      -- psl i_stop_zero : assert always
+      --    (stop_r(9) = '0' and stop_r(8) = '0') -> stop_r(7 downto 0) = X"00";
 
       -- A step (DEBUG.md §6) lowers pause_r for exactly one cycle, only after
       -- a cycle in which the link owned the paused core, and the link does
@@ -1698,7 +1788,8 @@ begin
       --    tx_st = TX_CC1_ST or tx_st = TX_CC2_ST;
       -- psl i_kind : assert always
       --    (kind_r = PKT_B or kind_r = PKT_H or kind_r = PKT_O or kind_r = PKT_K or
-      --     kind_r = PKT_E or kind_r = PKT_R or kind_r = PKT_P or kind_r = PKT_X) and
+      --     kind_r = PKT_E or kind_r = PKT_R or kind_r = PKT_P or kind_r = PKT_X or
+      --     kind_r = PKT_W) and
       --    (ans_kind_r = PKT_K or ans_kind_r = PKT_E or ans_kind_r = PKT_R);
       -- psl i_out_st : assert always
       --    f_out_st = OUT_IDLE_ST or f_out_st = OUT_ESC_ST or f_out_st = OUT_PAY_ST or
@@ -1712,7 +1803,7 @@ begin
       -- psl i_cleared : assert always cleared_r = '1' -> hold_r = '1';
       -- After a clear the stop register reads 0 until the next start, and
       -- bit 1 and the reason are masked where they are read (DEBUG.md §6).
-      -- psl f_cleared_stop : assert always cleared_r = '1' -> stop_r = '0' & X"00";
+      -- psl f_cleared_stop : assert always cleared_r = '1' -> stop_r = "00" & X"00";
 
       -- p_acc: one access at a time, for p_rx's write, p_tx's read, or the
       -- side client's. The memory is reached only while the link may.

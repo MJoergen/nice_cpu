@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
-"""The stops of a program at its breakpoints on the emulator, for tb_core.
+"""The stops of a program at its breakpoints and watchpoints on the
+emulator, for tb_core.
 
-Usage: break_stops.py [--emu NICEEMU] PROGRAM.bin "ADDR ..." [-- EMULATOR_OPTIONS...]
+Usage: break_stops.py [--emu NICEEMU] [--watch "ADDRKIND ..."] PROGRAM.bin "ADDR ..."
+                      [-- EMULATOR_OPTIONS...]
 
 ADDR are the addresses of the breakpoints in hex, as tb_core's G_BREAK_AT
-takes them, at most four, as the emulator has (doc/DEBUG.md §6).
+takes them, at most four, as the emulator has (doc/DEBUG.md §6), or none.
+--watch gives the watchpoints as tb_core's G_WATCH_AT takes them, at most
+four: an address in hex and its kinds, r, w, or rw, such as "1Fw 20rw".
 EMULATOR_OPTIONS go to the emulator as they are, for example "--irq 6:2".
 
 The script runs "niceemu --link 0" with the program, connects as the
-host, sets the breakpoints, enables them all, and starts the program. At
-each `x` notice it reads R0-R15 and goes on, until the processor halts.
-It prints a line for each stop, "stop" and R0-R15 in hex, as tb_core
-writes them to G_BREAK_LOG. So the two can be compared with diff. It
-fails if a notice other than `x` and `h` comes, or none in 10 s.
+host, sets the breakpoints and the watchpoints, enables them all, and
+starts the program. At each `x` or `w` notice it reads R0-R15 and goes
+on, until the processor halts. It prints a line for each stop, "stop"
+and R0-R15 in hex, and after a `w` "w", its number, and the address of
+the hit, as tb_core writes them to G_BREAK_LOG. So the two can be
+compared with diff. It fails if a notice other than `x`, `w`, and `h`
+comes, or none in 10 s.
 """
 
 from __future__ import annotations
@@ -30,6 +36,9 @@ ESC = 0xFF
 CONTROL = 0xFFFFFFF0
 BREAK_EN = 0xFFFFFFF4
 BREAK0 = 0xFFFFFFF8
+WATCH_EN = 0xFFFFFFD4
+WATCH_PC = 0xFFFFFFD6
+WATCH0 = 0xFFFFFFD8
 REGS = 0xFFFFFFE0
 GO = 0x8
 MAX_STOPS = 10000
@@ -90,13 +99,23 @@ class Host:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--emu", default=DEFAULT_EMU)
+    ap.add_argument("--watch", default="")
     ap.add_argument("program")
     ap.add_argument("breaks")
     ap.add_argument("emu_opts", nargs="*")
     args = ap.parse_args()
     addrs = [int(a, 16) for a in args.breaks.split()]
-    if not 1 <= len(addrs) <= 4:
-        sys.exit("break_stops.py: from 1 to 4 breakpoints")
+    watches: list[int] = []
+    watch_en = 0
+    for i, w in enumerate(args.watch.split()):
+        addr = w.rstrip("rw")
+        kinds = w[len(addr):]
+        if not addr or not kinds or kinds not in ("r", "w", "rw"):
+            sys.exit(f"break_stops.py: {w!r} is not an address and r, w, or rw")
+        watches.append(int(addr, 16))
+        watch_en |= (("r" in kinds) | ("w" in kinds) << 1) << 2 * i
+    if len(addrs) > 4 or len(watches) > 4 or not addrs + watches:
+        sys.exit("break_stops.py: up to 4 breakpoints and 4 watchpoints, and at least one")
 
     proc = subprocess.Popen([args.emu, "--link", "0", *args.emu_opts, args.program],
                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -108,16 +127,23 @@ def main() -> int:
             raise RuntimeError(f"no port line, got {line!r}")
         host = Host(int(line.split()[2]))
         host.answer("b")
-        host.write(BREAK0, addrs)
-        host.write(BREAK_EN, [(1 << len(addrs)) - 1])
+        if addrs:
+            host.write(BREAK0, addrs)
+            host.write(BREAK_EN, [(1 << len(addrs)) - 1])
+        if watches:
+            host.write(WATCH0, watches)
+            host.write(WATCH_EN, [watch_en])
         host.write(CONTROL, [GO])
         for _ in range(MAX_STOPS):
             tag, payload = host.packet()
             if tag == "h":
                 return 0
-            if tag != "x":
-                raise RuntimeError(f"expected x or h, got {tag!r} {payload!r}")
-            print("stop " + " ".join(f"{r:08X}" for r in host.read(REGS, 16)))
+            if tag not in "xw":
+                raise RuntimeError(f"expected x, w, or h, got {tag!r} {payload!r}")
+            line = "stop " + " ".join(f"{r:08X}" for r in host.read(REGS, 16))
+            if tag == "w":
+                line += f" w {int(payload, 16)} {host.read(WATCH_PC, 1)[0]:08X}"
+            print(line)
             host.write(CONTROL, [GO])
         raise RuntimeError(f"more than {MAX_STOPS} stops")
     except (RuntimeError, OSError) as e:

@@ -296,7 +296,11 @@ package pipe_pkg is
       vec_nmi    : std_logic;
       vec_issued : std_logic;                       -- The vector read is on its way
       commits    : natural range 0 to 3;            -- Committed instructions in flight
-      rep        : t_retire;                        -- The report, but its registers
+      -- The watchpoints that the step hit, and the address of its instruction
+      wch     : std_logic_vector(C_WATCHES_MAX - 1 downto 0);
+      wch_any : std_logic;                       -- wch has a bit set, a register of its own for speed
+      wch_pc  : std_logic_vector(31 downto 0);
+      rep     : t_retire;                        -- The report, but its registers
    end record t_write;
 
    -- a lies in the aligned block of 2^bits words that holds lo, or in the

@@ -11,7 +11,7 @@
 -- test says so, and a core model that halts when the test says so, pauses
 -- some cycles after a request, goes on for a step_wait cycles when
 -- pause_o falls while it is paused, pauses on its own when brk_hit says it
--- is at a breakpoint, and then waits until pause_o has been high, and loses
+-- is at a breakpoint or wch_hit that a watchpoint was hit, and then waits until pause_o has been high, and loses
 -- its registers, its halt, and its pause while it is held, as the real core
 -- does. R15 is 0x1234560F while it runs, and R14 0x7777777E while it
 -- runs and 0x1234560E when it stops. A register write on reg_we_o, which
@@ -54,6 +54,11 @@
 --   register and how long it lasts, a stop of the core's own that raises
 --   pause_o, a `p` when R15 matches no enabled breakpoint, and a reset that
 --   clears them;
+-- * the watchpoints: their registers and ports, the entries and the hits
+--   past G_WATCHES, the read-only count and address of the hit, `w` with
+--   the lowest number ahead of a breakpoint at a stop of the core's own
+--   and after a step, the stop register and the address of the hit until
+--   the go on, and a reset that clears them;
 -- * a host of version 1, which loads, starts, and restarts (DEBUG.md §9);
 -- * the side client: the memory while held, reads all the time beside the
 --   host's packets, a clear between two words of a host's W, a start, the
@@ -137,6 +142,10 @@ architecture simulation of tb_debug_link is
    signal brk_hit    : std_logic                      := '0';
    signal brk_addr   : t_brk_addrs;
    signal brk_en     : std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+   signal wch_hit    : std_logic_vector(C_WATCHES_MAX - 1 downto 0) := (others => '0');
+   signal wch_pc     : std_logic_vector(31 downto 0)                := (others => '0');
+   signal wch_addr   : t_wch_addrs;
+   signal wch_en     : std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0);
    signal reg_we     : std_logic;
    signal reg_idx    : std_logic_vector(3 downto 0);
    signal reg_data   : std_logic_vector(31 downto 0);
@@ -181,7 +190,7 @@ architecture simulation of tb_debug_link is
    signal side_reads : natural                       := 0;
 
    -- Every byte sent to the host, and every console byte for the program
-   signal got     : string(1 to 4096);
+   signal got     : string(1 to 8192);
    signal got_len : natural := 0;
    signal cin     : string(1 to 256);
    signal cin_len : natural := 0;
@@ -201,7 +210,8 @@ begin
          G_WAIT      => C_WAIT,
          G_HAS_ROM   => true,
          G_BOOT_HELD => true,
-         G_BREAKS    => 4
+         G_BREAKS    => 4,
+         G_WATCHES   => 2
       )
       port map (
          clk_i          => clk,
@@ -240,6 +250,10 @@ begin
          regs_i         => regs,
          brk_addr_o     => brk_addr,
          brk_en_o       => brk_en,
+         wch_addr_o     => wch_addr,
+         wch_en_o       => wch_en,
+         wch_hit_i      => wch_hit,
+         wch_pc_i       => wch_pc,
          reg_we_o       => reg_we,
          reg_idx_o      => reg_idx,
          reg_data_o     => reg_data,
@@ -368,7 +382,7 @@ begin
             end if;
             if bw_v then
                null;
-            elsif brk_hit = '1' and pause = '0' and paused = '0' and not go_v and
+            elsif (brk_hit = '1' or wch_hit /= "0000") and pause = '0' and paused = '0' and not go_v and
                   halted = '0' and core_halt = '0' then
                paused <= '1';
                bw_v   := true;
@@ -1434,6 +1448,81 @@ begin
       send(C_ESC & "RFFFFFFF00001#2D");
       expect(C_ESC & "rFFFFFFF0000100000018#D6", "control after p of the core's own");
 
+      -- The watchpoints (DEBUG.md §6), set while paused: 2 of them, so the
+      -- words and bits past them read 0 and take no write, and D5 to D7
+      -- are read only. Watchpoint 0 watches the reads of 0x100, and 1 the
+      -- writes of 0x200.
+      send(C_ESC & "RFFFFFFD40008#36");
+      expect(C_ESC & "rFFFFFFD40008000000000000000200000000000000000000000000000000" &
+             "0000000000000000#58", "D4 to DB");
+      send(C_ESC & "WFFFFFFD80003000001000000020011111111#C5");
+      expect(C_ESC & "kFFFFFFD80003#4E", "write the watched addresses");
+      send(C_ESC & "RFFFFFFD80004#36");
+      expect(C_ESC & "rFFFFFFD8000400000100000002000000000000000000#59", "read the watched addresses");
+      send(C_ESC & "WFFFFFFD40001FFFFFFFF#64");
+      expect(C_ESC & "kFFFFFFD40001#48", "enable all watchpoints");
+      send(C_ESC & "RFFFFFFD40001#2F");
+      expect(C_ESC & "rFFFFFFD400010000000F#E5", "four watchpoint enable bits");
+      send(C_ESC & "WFFFFFFD4000100000009#BD");
+      expect(C_ESC & "kFFFFFFD40001#48", "enable the reads of 0 and the writes of 1");
+      send(C_ESC & "RFFFFFFD40001#2F");
+      expect(C_ESC & "rFFFFFFD4000100000009#D8", "the enable bits read back");
+      send(C_ESC & "WFFFFFFD5000300000007000000070000000A#D6");
+      expect(C_ESC & "kFFFFFFD50003#4B", "W of D5 to D7");
+      send(C_ESC & "RFFFFFFD50003#32");
+      expect(C_ESC & "rFFFFFFD50003000000020000000000000000#D4", "D5 to D7 read only");
+      assert wch_en = X"09" and wch_addr(0) = X"00000100" and wch_addr(1) = X"00000200" and
+             wch_addr(2) = X"00000000" and wch_addr(3) = X"00000000"
+         report "tb_debug_link: the watchpoint ports"
+         severity failure;
+
+      -- A stop of the core's own that hits watchpoints 1 and 2, at an
+      -- enabled breakpoint: watchpoint 2 is past G_WATCHES, and the hit
+      -- goes ahead of the breakpoint, so w01 comes, and the stop register
+      -- reads 0x201, and the address of the hit 0xABC.
+      send(C_ESC & "WFFFFFFF4000100000002#B8");
+      expect(C_ESC & "kFFFFFFF40001#4A", "enable breakpoint 1 at R15");
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "go on before the hit");
+      cycles(50);
+      wch_pc  <= X"00000ABC";
+      wch_hit <= "0110";
+      brk_hit <= '1';
+      expect(C_ESC & "w01#D8", "w of the core's own");
+      brk_hit <= '0';
+      quiet("w once");
+      assert pause = '1' and paused = '1'
+         report "tb_debug_link: a stop after a hit"
+         severity failure;
+      send(C_ESC & "RFFFFFFF60001#33");
+      expect(C_ESC & "rFFFFFFF6000100000201#D6", "stop register after a hit");
+      send(C_ESC & "RFFFFFFD60001#31");
+      expect(C_ESC & "rFFFFFFD6000100000ABC#07", "address of the hit");
+
+      -- A step that hits watchpoint 0: the core clears its hits at the go
+      -- on and sets them in the step. The breakpoint at R15 loses again.
+      wch_pc  <= X"00000DEF";
+      wch_hit <= "0001";
+      send(C_ESC & "WFFFFFFF0000100000038#BD");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "w00#D7", "step to a hit");
+      quiet("step to a hit");
+      send(C_ESC & "RFFFFFFF60001#33");
+      expect(C_ESC & "rFFFFFFF6000100000200#D5", "stop register after the step");
+      send(C_ESC & "RFFFFFFD60001#31");
+      expect(C_ESC & "rFFFFFFD6000100000DEF#10", "address of the hit after the step");
+
+      -- A go on clears the stop register and the address of the hit.
+      wch_hit <= "0000";
+      send(C_ESC & "WFFFFFFF4000100000000#B6");
+      expect(C_ESC & "kFFFFFFF40001#4A", "disable the breakpoints");
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "go on from a hit");
+      send(C_ESC & "RFFFFFFF60001#33");
+      expect(C_ESC & "rFFFFFFF6000100000000#D3", "stop register after a go on from a hit");
+      send(C_ESC & "RFFFFFFD60001#31");
+      expect(C_ESC & "rFFFFFFD6000100000000#D1", "address of the hit after a go on");
+      quiet("go on from a hit");
+
       -- A reset clears the breakpoints.
       rst <= '1';
       cycles(3);
@@ -1445,6 +1534,13 @@ begin
       expect(C_ESC & "rFFFFFFF4000100000000#D1", "enable bits after reset");
       assert brk_en = X"00" and brk_addr(1) = X"00000000"
          report "tb_debug_link: the breakpoint ports after reset"
+         severity failure;
+      send(C_ESC & "RFFFFFFD40001#2F");
+      expect(C_ESC & "rFFFFFFD4000100000000#CF", "watchpoint enable bits after reset");
+      send(C_ESC & "RFFFFFFD80001#33");
+      expect(C_ESC & "rFFFFFFD8000100000000#D3", "watched address after reset");
+      assert wch_en = X"00" and wch_addr(0) = X"00000000"
+         report "tb_debug_link: the watchpoint ports after reset"
          severity failure;
       quiet("reset");
 

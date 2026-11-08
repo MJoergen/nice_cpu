@@ -18,9 +18,11 @@
 -- free port, and once the core goes on it
 -- reports a step before it pauses again. Two breakpoints, with free
 -- addresses and enable bits that change only in a reset, as a change
--- while the core runs may miss an instruction (src/pipeline.vhd): the
--- core pauses without pause_i only when R15 was an enabled breakpoint,
--- and then stays paused until pause_i has been '1'; and it never runs an
+-- while the core runs may miss an instruction (src/pipeline.vhd), and two
+-- watchpoints with free addresses and enable bits: the core pauses
+-- without pause_i only when R15 was an enabled breakpoint or after a step
+-- that hit a watchpoint, and then stays paused until pause_i has been
+-- '1'; the hits hold while it is paused and are gone once it goes on; and it never runs an
 -- instruction at an enabled breakpoint without a stop first, but as the
 -- first step after pause_i was '1'. The pipeline is too deep for
 -- k-induction without many invariants, so pipeline.sby checks a bounded
@@ -65,6 +67,8 @@ entity formal_pipeline is
       pause_i      : in  std_logic;
       brk_addr_i   : in  t_brk_addrs;
       brk_en_i     : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+      wch_addr_i   : in  t_wch_addrs;
+      wch_en_i     : in  std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0);
       reg_we_i     : in  std_logic;
       reg_idx_i    : in  std_logic_vector(3 downto 0);
       reg_data_i   : in  std_logic_vector(31 downto 0)
@@ -93,7 +97,11 @@ architecture synthesis of formal_pipeline is
    signal regs      : t_regs;
    signal reg_we    : std_logic;
 
-   constant C_BREAKS : natural := 2;
+   constant C_BREAKS  : natural := 2;
+   constant C_WATCHES : natural := 2;
+
+   signal wch_hit : std_logic_vector(C_WATCHES_MAX - 1 downto 0);
+   signal wch_pc  : std_logic_vector(31 downto 0);
 
    -- The breakpoints of the cycle before
    signal brk_addr_d : t_brk_addrs;
@@ -139,8 +147,9 @@ begin
 
    i_pipeline : entity work.pipeline
       generic map (
-         G_FORMAL => true,
-         G_BREAKS => C_BREAKS
+         G_FORMAL  => true,
+         G_BREAKS  => C_BREAKS,
+         G_WATCHES => C_WATCHES
       )
       port map (
          clk_i         => clk_i,
@@ -170,6 +179,10 @@ begin
          waiting_o     => waiting,
          brk_addr_i    => brk_addr_i,
          brk_en_i      => brk_en_i,
+         wch_addr_i    => wch_addr_i,
+         wch_en_i      => wch_en_i,
+         wch_hit_o     => wch_hit,
+         wch_pc_o      => wch_pc,
          reg_we_i      => reg_we,
          reg_idx_i     => reg_idx_i,
          reg_data_i    => reg_data_i,
@@ -220,6 +233,7 @@ begin
          regs_i       => regs,
          brk_addr_i   => brk_addr_i,
          brk_en_i     => brk_en_i,
+         wch_hit_i    => wch_hit,
          reg_we_i     => reg_we,
          reg_idx_i    => reg_idx_i,
          reg_data_i   => reg_data_i,

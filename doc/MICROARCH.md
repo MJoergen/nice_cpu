@@ -301,7 +301,10 @@ issues a data read only when the instruction is certain to run:
    core goes on is not taken late. The instruction after an `RTI` is not
    exempt from it, since the core pauses after `RTI` too (§6.1). An
    instruction at a breakpoint (§6.1) counts as a pause of its own: it
-   issues no first data read, with the same exemptions.
+   issues no first data read, with the same exemptions. While a
+   watchpoint is enabled (§6.1), an instruction issues no first data read
+   while an older one is in WRITE, nor while WRITE holds a hit, with the
+   exemptions of the instruction itself, but not of the first step.
 
 When PREPARE issues an instruction's first data read, the core commits to
 that instruction. No interrupt is taken before it (§6).
@@ -634,6 +637,39 @@ At a breakpoint, the core stays paused until `pause_i` has been 1 and is
 link sees `paused_o` rise while `pause_i` is 0, and has time to raise
 `pause_i`. Then go on and step work as after any pause. The link finds
 the breakpoint by R15 on `regs_o`; the cores have no output for it.
+
+Watchpoints (DEBUG.md §6) are pauses of the core's own too, after the
+step that hits one. Each core has a generic `G_WATCHES`, from 0 to 4,
+and inputs for the addresses and two enable bits each, of the reads and
+of the writes, from flip-flops of the debug link. The core checks each
+data access against them: the operand reads, the store, and the vector
+read of an interrupt entry or of `INT`. Fetches and constant words are
+not data accesses, and a skipped instruction makes none. A hit sets a
+bit of `wch`, one for each watchpoint, and `wch_pc` takes the address of
+the step: R15 at its start, which is the address of the instruction, or
+of the instruction that an entry goes before. At the next step boundary
+the core pauses before anything else, ahead of a pause request and an
+interrupt, and with no exemption for the first step after a go on. It
+stays paused as at a breakpoint, with `brk_wait`, and the go on clears
+`wch`. The outputs `wch_hit_o` and `wch_pc_o` show `wch` and `wch_pc`,
+and the link reads them when `paused_o` rises.
+
+The multi-cycle core checks each access as it starts it, and pauses in
+`BOUNDARY`. The pipelined core registers the inputs a cycle late, so no
+path runs from the link to the compares. WRITE checks the accesses of
+each micro-op as it runs it: the reads at the addresses that PREPARE
+formed and passed on, the store, and the vector read in `VEC_ST`. But
+PREPARE issues reads ahead of WRITE, so the reads of the next
+instruction could be on the bus before WRITE has seen a hit of the one
+before. So while a watchpoint is enabled, PREPARE issues no first data
+read of an instruction while an older one is in WRITE, or while `wch`
+has a bit set (§5.3). That costs a cycle or more for each instruction
+with a data read, but only while a watchpoint is enabled. The compares
+feed only the D inputs of `wch` and of a bit for its OR, and `wch_pc`
+follows the address of each step until the first hit, so no compare
+drives an enable. WRITE treats a pending hit as a pause request, in the
+same term as `pause_i`, so it adds nothing to the paths through the
+pause (hdl/ASSUMPTIONS.md, items 27 to 29).
 
 A debugger writes a register while the core is paused (DEBUG.md §6), on
 the inputs `reg_we_i`, `reg_idx_i`, and `reg_data_i`, from flip-flops of
@@ -1066,7 +1102,8 @@ NMI that goes first, for example.
 6. Pauses (§6.1): probes and random programs with random pauses, short and
    held, and one step at a time, which must not change the trace, and a
    word of code written while the core is paused (hdl/README.md). The
-   stops at breakpoints, compared with niceemu's.
+   stops at breakpoints and after the hits of watchpoints, compared with
+   niceemu's.
 7. The runtime and translator test programs, which `make programs` in
    `hdl/` runs.
 8. Random instruction streams, run on both and diffed:

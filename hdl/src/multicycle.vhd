@@ -24,7 +24,7 @@
 --   RETIRE    Report the step on retire_o, and an instruction on
 --             instret_o.
 --   PAUSED    Wait before the next step, while pause_i is '1', or after a
---             breakpoint.
+--             breakpoint or a watchpoint's hit.
 --
 -- The instruction bus is 64 bits wide, as MICROARCH.md §1 requires of both
 -- cores. A read returns the aligned pair of words 2a and 2a + 1 for the pair
@@ -74,6 +74,15 @@
 -- pause_i is '0', and has time to raise pause_i. Then go on and step work
 -- as after any pause. The system finds the breakpoint by R15 on regs_o.
 --
+-- WATCHPOINTS (doc/DEBUG.md §6). Watchpoint i, for i below G_WATCHES,
+-- watches the reads at the address wch_addr_i(i) when wch_en_i(2i) is
+-- '1', and the writes there when wch_en_i(2i + 1) is. Each data access
+-- that the core starts is checked against them: a hit sets a bit of wch,
+-- and wch_pc takes the address of the step, R15 at its BOUNDARY. At the
+-- next BOUNDARY the core pauses before anything else, with brk_wait as at
+-- a breakpoint, and the go on clears wch. wch_hit_o and wch_pc_o show
+-- them.
+--
 -- REGISTER WRITES (doc/DEBUG.md §6). In PAUSED_ST, in a cycle with pause_i
 -- and reg_we_i at '1', the core writes reg_data_i into the register
 -- reg_idx_i through set_reg, as a register-direct write of an instruction
@@ -92,9 +101,9 @@
 --    the core's outputs: it feeds nmi_ready_o and irq_ready_o.
 -- e) A system that raises pause_i waits for paused_o or halted_o, as the
 --    core may halt before it pauses.
--- f) brk_addr_i and brk_en_i come from flip-flops. A system that enables
---    breakpoints raises pause_i once paused_o rises without it, and lowers
---    it to go on.
+-- f) brk_addr_i, brk_en_i, wch_addr_i, and wch_en_i come from flip-flops.
+--    A system that enables breakpoints or watchpoints raises pause_i once
+--    paused_o rises without it, and lowers it to go on.
 -- g) reg_we_i, reg_idx_i, and reg_data_i come from flip-flops, and
 --    reg_we_i is '1' only while paused_o and pause_i are '1'.
 --
@@ -112,9 +121,11 @@ library ieee;
 entity multicycle is
    generic (
       -- Adds the invariants that formal/multicycle.sby needs.
-      G_FORMAL : boolean                       := false;
+      G_FORMAL  : boolean                       := false;
       -- The number of breakpoints, from 0 to 8 (doc/DEBUG.md §6)
-      G_BREAKS : natural range 0 to C_BREAKS_MAX := 0
+      G_BREAKS  : natural range 0 to C_BREAKS_MAX := 0;
+      -- The number of watchpoints, from 0 to 4 (doc/DEBUG.md §6)
+      G_WATCHES : natural range 0 to C_WATCHES_MAX := 0
    );
    port (
       clk_i         : in  std_logic;
@@ -153,6 +164,14 @@ entity multicycle is
       -- The breakpoints: addresses, and one enable bit each (above)
       brk_addr_i    : in  t_brk_addrs;
       brk_en_i      : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+
+      -- The watchpoints: addresses, and two enable bits each, of the reads
+      -- and the writes; and while paused, those that the step before the
+      -- pause hit, and the address of its instruction (above)
+      wch_addr_i    : in  t_wch_addrs := (others => (others => '0'));
+      wch_en_i      : in  std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0) := (others => '0');
+      wch_hit_o     : out std_logic_vector(C_WATCHES_MAX - 1 downto 0);
+      wch_pc_o      : out std_logic_vector(31 downto 0);
 
       -- A write of a register while paused (above)
       reg_we_i      : in  std_logic                     := '0';
@@ -234,9 +253,12 @@ architecture synthesis of multicycle is
    signal after_go   : std_logic;                       -- The first step after a pause
    signal waiting    : std_logic;                       -- After WAIT, until a request (ISA.md §7.5)
    signal brk_wait   : std_logic;                       -- Stopped at a breakpoint, before pause_i
-   signal saved_pc   : std_logic_vector(31 downto 0);
-   signal saved_sr   : std_logic_vector(31 downto 0);
-   signal halt       : t_halt;
+   -- The watchpoints that the step hit, and the address of the step
+   signal wch      : std_logic_vector(C_WATCHES_MAX - 1 downto 0);
+   signal wch_pc   : std_logic_vector(31 downto 0);
+   signal saved_pc : std_logic_vector(31 downto 0);
+   signal saved_sr : std_logic_vector(31 downto 0);
+   signal halt     : t_halt;
 
    -- The current instruction
    signal iw         : std_logic_vector(31 downto 0);
@@ -260,17 +282,21 @@ architecture synthesis of multicycle is
    signal take_irq : boolean;
    signal brk_hit  : boolean;
    signal brk_stop : boolean;
+   signal wch_stop : boolean;
    signal wait_now : boolean;
 
 begin
 
-   -- A pause goes first, then ISA.md §7.1, where NMI goes first.
-   pause    <= state = BOUNDARY_ST and rst_i = '0' and pause_i = '1' and after_go = '0';
+   -- A stop after a watchpoint's hit goes first, then a pause, then ISA.md
+   -- §7.1, where NMI goes first.
+   wch_stop <= state = BOUNDARY_ST and rst_i = '0' and wch /= (wch'range => '0');
+   pause    <= state = BOUNDARY_ST and rst_i = '0' and pause_i = '1' and after_go = '0' and
+               not wch_stop;
    take_nmi <= state = BOUNDARY_ST and rst_i = '0' and nmi_valid_i = '1' and
-               in_service = '0' and after_rti = '0' and not pause;
+               in_service = '0' and after_rti = '0' and not pause and not wch_stop;
    take_irq <= state = BOUNDARY_ST and rst_i = '0' and irq_valid_i = '1' and
                in_service = '0' and after_rti = '0' and regs(14)(C_SR_E) = '1' and not take_nmi and
-               not pause;
+               not pause and not wch_stop;
 
    -- R15 is the address of an enabled breakpoint.
    p_brk_hit : process (all)
@@ -285,11 +311,11 @@ begin
 
    -- A wait step: the core waits, and no request ends the wait.
    wait_now <= state = BOUNDARY_ST and rst_i = '0' and waiting = '1' and nmi_valid_i = '0' and
-               irq_valid_i = '0' and not pause;
+               irq_valid_i = '0' and not pause and not wch_stop;
 
    -- A breakpoint goes after a pause, an interrupt entry, and a wait step.
    brk_stop <= state = BOUNDARY_ST and rst_i = '0' and after_go = '0' and brk_hit and
-               not pause and not take_nmi and not take_irq and not wait_now;
+               not pause and not wch_stop and not take_nmi and not take_irq and not wait_now;
 
    nmi_ready_o <= '1' when take_nmi else '0';
    irq_ready_o <= '1' when take_irq else '0';
@@ -305,6 +331,8 @@ begin
    after_rti_o   <= after_rti;
    saved_pc_o    <= saved_pc;
    saved_sr_o    <= saved_sr;
+   wch_hit_o     <= wch;
+   wch_pc_o      <= wch_pc;
 
 
    p_fsm : process (clk_i)
@@ -316,17 +344,25 @@ begin
       variable need_v : std_logic_vector(0 to 2);
       variable word_v : std_logic_vector(31 downto 0);
       variable res_v  : t_result;
+      variable whit_v : std_logic_vector(C_WATCHES_MAX - 1 downto 0);
 
-      -- Start a data bus access.
+      -- Start a data bus access, and check it against the watchpoints.
       procedure dbus_start(we   : std_logic;
                            addr : std_logic_vector(31 downto 0);
                            data : std_logic_vector(31 downto 0)) is
+         variable k_v : natural range 0 to 1;
       begin
          dbus_cyc_o  <= '1';
          dbus_stb_o  <= '1';
          dbus_we_o   <= we;
          dbus_addr_o <= addr;
          dbus_data_o <= data;
+         k_v         := 1 when we = '1' else 0;
+         for i in 0 to G_WATCHES - 1 loop
+            if wch_en_i(2 * i + k_v) = '1' and wch_addr_i(i) = addr then
+               whit_v(i) := '1';
+            end if;
+         end loop;
       end procedure dbus_start;
 
       -- Read the constant word of the first field in need, or go on to the
@@ -363,6 +399,7 @@ begin
    begin
       if rising_edge(clk_i) then
          regs_v := regs;
+         whit_v := (others => '0');
 
          -- Wishbone: a request is accepted when STALL is low.
          if ibus_stall_i = '0' then
@@ -379,10 +416,13 @@ begin
                rep_mem_we  <= '0';
                rep_addr    <= regs(15);
                -- A valid request ends a wait, now or after the pause.
-               if not pause and (nmi_valid_i = '1' or irq_valid_i = '1') then
+               if not pause and not wch_stop and (nmi_valid_i = '1' or irq_valid_i = '1') then
                   waiting <= '0';
                end if;
-               if pause then
+               if wch_stop then
+                  brk_wait <= '1';
+                  state    <= PAUSED_ST;
+               elsif pause then
                   state <= PAUSED_ST;
                elsif take_nmi then
                   rep_intr   <= '1';
@@ -619,6 +659,7 @@ begin
                   end if;
                elsif brk_wait = '0' then
                   after_go <= '1';
+                  wch      <= (others => '0');
                   state    <= BOUNDARY_ST;
                end if;
 
@@ -628,6 +669,12 @@ begin
 
          regs <= regs_v;
 
+         -- A hit of the access started now, at the address of the step
+         if whit_v /= (whit_v'range => '0') then
+            wch    <= wch or whit_v;
+            wch_pc <= rep_addr;
+         end if;
+
          if rst_i = '1' then
             state      <= BOUNDARY_ST;
             regs       <= C_REGS_RESET;
@@ -636,6 +683,8 @@ begin
             after_go   <= '0';
             waiting    <= '0';
             brk_wait   <= '0';
+            wch        <= (others => '0');
+            wch_pc     <= (others => '0');
             halt       <= HALT_NONE;
             fetch_iw   <= '0';
             ibus_cyc_o <= '0';

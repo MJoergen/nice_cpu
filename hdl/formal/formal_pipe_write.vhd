@@ -19,8 +19,10 @@
 -- While it waits after WAIT, in WAIT_ST, it holds no micro-operation and
 -- makes no data access, and a wait step comes only with no request. WRITE pauses without pause_i only on the breakpoint flag
 -- of the next instruction, in its own micro-operation or, while it holds
--- none, in PREPARE's; and it then stays paused until pause_i has been
--- '1' (doc/DEBUG.md §6). It takes an interrupt only when one is
+-- none, in PREPARE's, or after a step that hit a watchpoint, with free
+-- addresses and enable bits; and it then stays paused until pause_i has
+-- been '1' (doc/DEBUG.md §6). The hits hold while it is paused, and the
+-- go on clears them. It takes an interrupt only when one is
 -- requested, never in a reset, and never two at once, which is what
 -- handshake_check asserts of the core's ready outputs in formal_pipeline,
 -- here for every cycle. The record inputs are free signals here (anyseq),
@@ -76,7 +78,9 @@ entity formal_pipe_write is
       pause_i      : in  std_logic;
       reg_we_i     : in  std_logic;
       reg_idx_i    : in  std_logic_vector(3 downto 0);
-      reg_data_i   : in  std_logic_vector(31 downto 0)
+      reg_data_i   : in  std_logic_vector(31 downto 0);
+      wch_addr_i   : in  t_wch_addrs;
+      wch_en_i     : in  std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0)
    );
 end entity formal_pipe_write;
 
@@ -120,6 +124,8 @@ architecture synthesis of formal_pipe_write is
    signal wait_d   : std_logic := '0';
    signal flag     : std_logic;
    signal flag_d   : std_logic := '0';
+   -- w.wch, the watchpoints hit, in the cycle before
+   signal wch_d    : std_logic_vector(C_WATCHES_MAX - 1 downto 0) := (others => '0');
    -- WRITE enters PAUSED_ST now
    signal enters   : std_logic;
 
@@ -199,10 +205,14 @@ begin
    -- psl f_go_owed : assert always (rst_i = '0' and owed_r = '1') -> w.after_go = '1';
    -- psl f_go_paused : assert always (rst_i = '0' and w.mode = PAUSED_ST) -> w.after_go = '0';
 
-   -- A pause without pause_i is at a breakpoint, and lasts until pause_i
-   -- has been '1'.
+   -- A pause without pause_i is at a breakpoint or after a hit, and lasts
+   -- until pause_i has been '1'. The hits hold while paused, and the go on
+   -- clears them.
    -- psl f_brk_own : assert always (rst_d = '0' and enters = '1' and pause_d = '0') ->
-   --    (flag_d = '1' and w.brk_wait = '1');
+   --    ((flag_d = '1' or wch_d /= "0000") and w.brk_wait = '1');
+   -- psl f_wch_kept : assert always (paused_d = '1' and w.mode = PAUSED_ST) -> w.wch = wch_d;
+   -- psl f_wch_go : assert always left = '1' -> w.wch = "0000";
+   -- psl f_wch_any : assert always rst_i = '0' -> ((w.wch_any = '1') = (w.wch /= "0000"));
    -- psl f_brk_hold : assert always (rst_i = '0' and rst_d = '0' and wait_d = '1' and pause_d = '0') ->
    --    w.mode = PAUSED_ST;
    -- psl f_brk_wait : assert always (rst_i = '0' and w.brk_wait = '1') -> w.mode = PAUSED_ST;
@@ -243,6 +253,7 @@ begin
    -- psl c_wait_go : cover {w.mode = PAUSED_ST and w.waiting = '1' and rst_i = '0'; w.mode = WAIT_ST};
    -- psl c_go_step : cover {owed_r = '1' and retire.valid = '1' and rst_i = '0'};
    -- psl c_brk : cover {enters = '1' and pause_d = '0' and rst_i = '0'};
+   -- psl c_wch : cover {enters = '1' and pause_d = '0' and wch_d /= "0000" and rst_i = '0'};
    -- psl c_int_keep : cover {w.mode = VEC_ST and w.uop.valid = '1' and rst_i = '0'};
    -- psl c_brk_go : cover {enters = '1' and pause_d = '0' and rst_i = '0';
    --    (w.mode = PAUSED_ST)[*]; w.mode = RUN_ST and rst_i = '0'};
@@ -286,6 +297,8 @@ begin
          reg_we_i     => reg_we_i,
          reg_idx_i    => reg_idx_i,
          reg_data_i   => reg_data_i,
+         wch_addr_i   => wch_addr_i,
+         wch_en_i     => wch_en_i,
          state_o      => w,
          done_o       => done,
          flush_o      => flush,
@@ -312,6 +325,7 @@ begin
          pause_d  <= pause_i;
          wait_d   <= w.brk_wait;
          flag_d   <= flag;
+         wch_d    <= w.wch;
          regs_w   <= w.regs;
          if taken = '1' then
             regs_w(to_integer(reg_idx_i)) <= regval(to_integer(reg_idx_i), reg_data_i);

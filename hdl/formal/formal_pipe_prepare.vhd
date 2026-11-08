@@ -29,6 +29,7 @@ entity formal_pipe_prepare is
       nmi_valid_i  : in  std_logic;
       irq_valid_i  : in  std_logic;
       pause_i      : in  std_logic;
+      wch_on_i     : in  std_logic;
       dbus_stall_i : in  std_logic;
       tag_cnt_i    : in  natural range 0 to C_MAX_OUT;
       st_valid_i   : in  std_logic;
@@ -79,6 +80,7 @@ begin
          nmi_valid_i  => nmi_valid_i,
          irq_valid_i  => irq_valid_i,
          pause_i      => pause_i,
+         wch_on_i     => wch_on_i,
          valid_o      => valid,
          uop_o        => uop_out,
          first_read_o => first_read,

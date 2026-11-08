@@ -223,9 +223,23 @@ TIMER_wait_breaks = yes
 NOCYCLES_wait_breaks = yes
 EXACT_wait_breaks = yes
 
+# test/watches.nasm stops after the steps that hit the watchpoints of
+# WATCH_watches, with the requests of INTR_watches: reads and writes in
+# each addressing mode, two reads in one step, a skipped read, a read
+# that must not pass a hit before it, an I/O store, a jump through memory, the vector reads of INT and of IRQ
+# entries, and an IRQ raised right after a hit (doc/DEBUG.md §6). tb_core's
+# G_WATCH_AT sets them, and check_breaks compares the stops, with the
+# watchpoint and the address of each hit, with the emulator's. The run
+# watches_stall does the same on a stalling memory.
+WATCH_watches = 20rw 102r FFFFFF20w 1Fr
+WATCH_watches_stall = $(WATCH_watches)
+INTR_watches = --irq 4:2 --irq 8:2
+INTR_watches_stall = $(INTR_watches)
+WATCH_GENERICS = "-gG_WATCH_AT=$(WATCH_watches)" -gG_BREAK_LOG=stops.out
+
 # $(1) is the name of the run, and $(2) the program.
 define check_breaks
-	@$(PYTHON) test/break_stops.py --emu $(EMU) $(2) "$(BREAKS_$(1))" -- $(INTR_$(1)) \
+	@$(PYTHON) test/break_stops.py --emu $(EMU) --watch "$(WATCH_$(1))" $(2) "$(BREAKS_$(1))" -- $(INTR_$(1)) \
 	  > $(RUNDIR)/stops.expected
 	@if cmp -s $(RUNDIR)/stops.expected $(RUNDIR)/stops.out; then echo "PASS $(CORE) $(1) stops"; \
 	else echo "FAIL $(CORE) $(1) stops"; diff $(RUNDIR)/stops.expected $(RUNDIR)/stops.out; exit 1; fi
@@ -492,6 +506,8 @@ $(eval $(call core_run,$(1),breaks_stall,$(BUILD)/breaks.bin,$(BREAK_GENERICS) -
 $(eval $(call core_run,$(1),breaks_hold,$(BUILD)/breaks.bin,$(BREAK_GENERICS) -gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=37))
 $(eval $(call core_run,$(1),wait_breaks,../emulator/test/wait.bin,"-gG_BREAK_AT=$(BREAKS_wait_breaks)" \
   -gG_BREAK_LOG=stops.out,check_core check_breaks))
+$(eval $(call core_run,$(1),watches,$(BUILD)/watches.bin,$(WATCH_GENERICS),check_core check_breaks))
+$(eval $(call core_run,$(1),watches_stall,$(BUILD)/watches.bin,$(WATCH_GENERICS) -gG_STALL=30 -gG_SEED=59,check_core check_breaks))
 $(eval $(call core_run,$(1),instret,$(BUILD)/instret.bin))
 $(eval $(call core_run,$(1),todbus,$(BUILD)/todbus.bin))
 $(eval $(call core_run,$(1),todbus_stall,$(BUILD)/todbus.bin,-gG_STALL=30 -gG_SEED=57))
@@ -661,7 +677,8 @@ emulator:
 # The out-of-context timing of the pipelined core in Vivado, which timing.tcl
 # describes, for the part of BOARD (mega65 or nexys4ddr) with the directives
 # of FLOW (default, or timing as NiceMonMEGA65 builds), a clock of PERIOD
-# ns, and BREAKS breakpoints. The reports go to build/timing/BOARD-FLOW-BREAKS/: the worst
+# ns, BREAKS breakpoints, and WATCHES watchpoints. The reports go to
+# build/timing/BOARD-FLOW-BREAKS-WATCHES/: the worst
 # register-to-register paths to timing.rpt, the worst from an input to
 # timing_in.rpt, the worst to an output to timing_out.rpt, and the endpoints
 # with less than 1 ns of slack, by group, to timing_groups.rpt. The worst of
@@ -674,15 +691,16 @@ BOARD  ?= mega65
 FLOW   ?= default
 PERIOD ?= 10.0
 BREAKS ?= 4
+WATCHES ?= 4
 PART_mega65    = xc7a200tfbg484-2
 PART_nexys4ddr = xc7a100tcsg324-1
-TIMING_DIR = $(BUILD)/timing/$(BOARD)-$(FLOW)-$(BREAKS)
+TIMING_DIR = $(BUILD)/timing/$(BOARD)-$(FLOW)-$(BREAKS)-$(WATCHES)
 
 timing:
 	@test -n "$(PART_$(BOARD))" || { echo "unknown BOARD $(BOARD)"; exit 1; }
 	@mkdir -p $(TIMING_DIR)
 	@cd $(TIMING_DIR) && $(VIVADO) -mode batch -nolog -nojournal -source $(CURDIR)/timing.tcl \
-	  -tclargs $(PART_$(BOARD)) $(FLOW) $(PERIOD) $(BREAKS) > timing.log 2>&1 || \
+	  -tclargs $(PART_$(BOARD)) $(FLOW) $(PERIOD) $(BREAKS) $(WATCHES) > timing.log 2>&1 || \
 	  { tail -20 timing.log; exit 1; }
 	@for r in timing timing_in timing_out; do \
 	  echo "$$r.rpt:"; grep -m1 -E "^Slack" $(TIMING_DIR)/$$r.rpt; \

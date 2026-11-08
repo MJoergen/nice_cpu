@@ -10,11 +10,13 @@
 -- write on its free port, with ISA.md §4.3 applied; and once the core goes
 -- on, it reports a step on retire_o before it pauses again (MICROARCH.md
 -- §6.1). The last holds as the core does not pause while after_go is '1',
--- and only a report clears that. Two breakpoints, with free addresses and
--- enable bits: the core pauses without pause_i only when R15 was an
--- enabled breakpoint, and then stays paused until pause_i has been '1'.
--- The two assertions here tie the checkers' counts to the core's buses,
--- for the k-induction, and the cover shows a go on from a breakpoint.
+-- and only a report clears that. Two breakpoints and two watchpoints,
+-- with free addresses and enable bits: the core pauses without pause_i
+-- only when R15 was an enabled breakpoint or after a step that hit a
+-- watchpoint, and then stays paused until pause_i has been '1'. The two
+-- assertions here tie the checkers' counts to the core's buses, for the
+-- k-induction, and the covers show a go on from a breakpoint, and a stop
+-- after a hit.
 --
 -- RESET
 -- The first cycle is a reset, so the core starts from the state of
@@ -42,6 +44,8 @@ entity formal_multicycle is
       pause_i      : in  std_logic;
       brk_addr_i   : in  t_brk_addrs;
       brk_en_i     : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+      wch_addr_i   : in  t_wch_addrs;
+      wch_en_i     : in  std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0);
       reg_we_i     : in  std_logic;
       reg_idx_i    : in  std_logic_vector(3 downto 0);
       reg_data_i   : in  std_logic_vector(31 downto 0)
@@ -72,7 +76,11 @@ architecture synthesis of formal_multicycle is
    signal dbus_wait : natural range 0 to 2;
    signal own       : boolean;
 
-   constant C_BREAKS : natural := 2;
+   constant C_BREAKS  : natural := 2;
+   constant C_WATCHES : natural := 2;
+
+   signal wch_hit : std_logic_vector(C_WATCHES_MAX - 1 downto 0);
+   signal wch_pc  : std_logic_vector(31 downto 0);
 
 begin
 
@@ -87,12 +95,14 @@ begin
    --    (dbus_wait = 1) = (dbus_cyc = '1' and dbus_stb = '0');
 
    -- psl c_brk_go : cover {own; (paused = '1')[*]; paused = '0' and rst_i = '0'};
+   -- psl c_wch : cover {own and wch_hit /= "0000"};
 
 
    i_multicycle : entity work.multicycle
       generic map (
-         G_FORMAL => true,
-         G_BREAKS => C_BREAKS
+         G_FORMAL  => true,
+         G_BREAKS  => C_BREAKS,
+         G_WATCHES => C_WATCHES
       )
       port map (
          clk_i         => clk_i,
@@ -122,6 +132,10 @@ begin
          waiting_o     => waiting,
          brk_addr_i    => brk_addr_i,
          brk_en_i      => brk_en_i,
+         wch_addr_i    => wch_addr_i,
+         wch_en_i      => wch_en_i,
+         wch_hit_o     => wch_hit,
+         wch_pc_o      => wch_pc,
          reg_we_i      => reg_we_i,
          reg_idx_i     => reg_idx_i,
          reg_data_i    => reg_data_i,
@@ -171,6 +185,7 @@ begin
          regs_i       => regs,
          brk_addr_i   => brk_addr_i,
          brk_en_i     => brk_en_i,
+         wch_hit_i    => wch_hit,
          reg_we_i     => reg_we_i,
          reg_idx_i    => reg_idx_i,
          reg_data_i   => reg_data_i,

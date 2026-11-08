@@ -124,6 +124,7 @@ and the same two generics: a system instantiates `pipeline` of
 |---|---|---|
 | `G_FORMAL` | `false` | Adds the invariants that a formal proof needs ([The formal checks](#the-formal-checks)). A system leaves it false. |
 | `G_BREAKS` | 0 | The number of breakpoints, 0 to 8 (DEBUG.md §6). |
+| `G_WATCHES` | 0 | The number of watchpoints, 0 to 4 (DEBUG.md §6). |
 
 | Port | What it is |
 |---|---|
@@ -134,6 +135,7 @@ and the same two generics: a system instantiates `pipeline` of
 | `pause_i`, `paused_o` | A debugger's pause (below). |
 | `waiting_o` | 1 while the core waits after `WAIT` with no request valid, also while paused (ISA.md §7.5), for bit 6 of the debug link's control register. |
 | `brk_addr_i`, `brk_en_i` | The breakpoints of DEBUG.md §6: `G_BREAKS` addresses, a `t_brk_addrs` of `src/trace_pkg.vhd`, and one enable bit each (below). |
+| `wch_addr_i`, `wch_en_i`, `wch_hit_o`, `wch_pc_o` | The watchpoints of DEBUG.md §6: `G_WATCHES` addresses, a `t_wch_addrs` of `src/trace_pkg.vhd`, and two enable bits each, of the reads and of the writes; and while paused, those that the step before the pause hit, and the address of that step (below). The inputs default to 0. |
 | `reg_we_i`, `reg_idx_i`, `reg_data_i` | A write of a register while the core is paused, for a debugger (below). They default to 0. |
 | `halted_o`, `halt_reason_o` | 1 once the core has halted and no bus cycle is open, and why, a `t_halt` of `src/trace_pkg.vhd` (below). |
 | `instret_o` | 1 for one cycle for each completed instruction, but not for an interrupt entry, for the instruction counter (SYSTEM.md §3). |
@@ -197,6 +199,22 @@ then goes on or steps as after any pause. It finds the breakpoint by R15
 on `regs_o`. With `G_BREAKS` = 0, the core is the one without
 breakpoints.
 
+Both cores have the watchpoints of DEBUG.md §6 (MICROARCH.md §6.1) too:
+the generic `G_WATCHES`, from 0 to 4, and the ports `wch_addr_i`, a
+`t_wch_addrs`, and `wch_en_i`, two bits each, bit 2i for the reads of
+watchpoint i and bit 2i + 1 for its writes, from flip-flops. Watchpoints
+from `G_WATCHES` up are ignored. The core checks each data access
+against them: the operand reads, the store, and the vector read of an
+entry or of `INT`. After a step that hits one, the core pauses at the
+step boundary, before a pause request and an interrupt, and stays paused
+as at a breakpoint. `wch_hit_o` has a bit set for each watchpoint that
+the step hit, and `wch_pc_o` is the address of the step: R15 at its
+start. Both hold while the core is paused, and the go on clears
+`wch_hit_o`. While a watchpoint is enabled, the pipelined core holds
+back the first data read of each instruction until the one before has
+left WRITE, so it runs slower then. With `G_WATCHES` = 0, the core is the
+one without watchpoints.
+
 `reg_we_i`, `reg_idx_i`, and `reg_data_i` write a register for a debugger
 (DEBUG.md §6, MICROARCH.md §6.1). In a cycle where the core is paused,
 `pause_i` is 1, and `reg_we_i` is 1, the core writes `reg_data_i` into
@@ -245,9 +263,10 @@ measures it ([timing.tcl](timing.tcl)): synthesis, placement, and routing
 with a 10 ns clock. `BOARD` selects the part: `mega65` (the default,
 `xc7a200tfbg484-2`) or `nexys4ddr` (`xc7a100tcsg324-1`). `FLOW` selects the
 directives: `default`, or `timing`, those NiceMonMEGA65's Nexys4DDR build uses.
-`PERIOD` sets the clock in ns, and `BREAKS` the number of breakpoints,
-`G_BREAKS`, 4 by default as on the boards. The reports go to
-`build/timing/BOARD-FLOW-BREAKS/`, so that runs for several boards can go at once.
+`PERIOD` sets the clock in ns, `BREAKS` the number of breakpoints,
+`G_BREAKS`, 4 by default as on the boards, and `WATCHES` the number of
+watchpoints, `G_WATCHES`, 4 by default. The reports go to
+`build/timing/BOARD-FLOW-BREAKS-WATCHES/`, so that runs for several boards can go at once.
 It prints the worst register-to-register path and leaves the 50 worst in
 `timing.rpt`. It does the same for the paths from an input, in
 `timing_in.rpt`, and to an output, in `timing_out.rpt`, but for `retire_o`
@@ -540,6 +559,17 @@ enabled breakpoints, sends `x` with the lowest number that matches, or `p`,
 and keeps the number in the stop register until the core goes on, steps, or
 starts. A reset clears the breakpoints. A hold, a start, and a clear keep
 them.
+
+The generic `G_WATCHES`, from 0 to 4, gives the link the watchpoints of
+DEBUG.md §6 in the same way: their enable bits and addresses go to the
+core on `wch_en_o` and `wch_addr_o`, and the core's `wch_hit_o` and
+`wch_pc_o` come back on `wch_hit_i` and `wch_pc_i`, with the same
+`G_WATCHES` on both. When the core pauses with a bit of `wch_hit_i` set,
+the link sends `w` with the lowest number that hit, ahead of a
+breakpoint, keeps it in the stop register with bit 9, and keeps
+`wch_pc_i` for the word `0xFFFFFFD6`, until the core goes on, steps, or
+starts. A reset clears the watchpoints. A board without them leaves
+`wch_hit_i` and `wch_pc_i` open.
 `formal/debug_link.sby` proves its ports and the guarantees of its
 header (The formal checks).
 
@@ -897,7 +927,11 @@ step, a write with bit 5 that does not step, and a step into a halt; and
 the breakpoints: their registers and ports, `x` with the lowest number at a
 start, a step, and a stop of the core's own, the stop register and how long
 it lasts, `p` when no enabled breakpoint is at R15, and a reset that clears
-them; the end of the line's input and its resume: a break, a resume, one
+them; the watchpoints: their registers and ports, the entries and the hits
+past `G_WATCHES`, the read-only count and address of the hit, `w` with the
+lowest number ahead of a breakpoint at a stop of the core's own and after
+a step, the stop register and the address of the hit until the go on,
+and a reset that clears them; the end of the line's input and its resume: a break, a resume, one
 without an end, one with a break in the same cycle, a break after it, and
 the bytes taken in the cycles of a resume and of a break; with
 `rx_flow_i`, a console byte that waits for room and gets it, one lost with
@@ -926,7 +960,10 @@ while it runs, the halt reasons 2 to 4, and the single step: R15 after each step
 a step into `HALT`, the writes with bit 5 that do not step, and an `INT` with
 the registers of each step as `niceemu --trace` shows them, and the
 breakpoints, 4 on the link and the core: a stop before the echo, a step and
-a go on from a breakpoint, and a breakpoint disabled while paused, and the
+a go on from a breakpoint, and a breakpoint disabled while paused, the
+watchpoints, 4 on the link and the core: a stop after the echo's write of
+the console, with `w` behind the byte, the stop register, and the address
+of the hit, then after a read of the console, and none once disabled, and the
 writes of R0 to R15: R3, R0, R14, and R15 at a start paused, a step and a
 go on from the written R15, also at an enabled breakpoint, and `e04` while
 held, halted, and running, and with `rx_flow_i`, a flood of console bytes
@@ -1209,6 +1246,19 @@ the `x` notices of its debug link, and `make test` compares the two for
 `test/breaks.nasm`. A stop is not a step, so the trace stays the
 emulator's.
 
+The generic `G_WATCH_AT` lists watchpoints, at most 4, each an address in
+hex and its kinds, `r`, `w`, or `rw`, such as `1Erw 102r`. `tb_core`
+gives the core them all enabled, and goes on from each stop after a hit
+as from a breakpoint. Its log line adds `w`, the lowest number that hit,
+and the address of the hit, and `test/break_stops.py --watch` writes the
+same from the `w` notices. `make test` compares the two for
+`test/watches.nasm`, `watches`, and on a stalling memory,
+`watches_stall`: reads and writes in each addressing mode, two reads in
+one step, a skipped read, a read that must not pass a hit before it, an
+I/O store, a jump through memory, the
+vector reads of `INT` and of IRQ entries, and an IRQ raised right after a
+hit.
+
 With the generic `G_INTR_DELAY` = N, each request is raised N cycles
 after its step would raise it, and none after the end of the run. The
 core may have begun the step already, so the log gives such a request the
@@ -1297,7 +1347,7 @@ formal/UNIT/TASK` runs one task, for example `make formal/pipe_fetch/prove`.
 | `pipe_decode` | DECODE: what PREPARE's proof assumes of it, and its redirects of FETCH. | k-induction, Yices | 15 seconds |
 | `pipe_prepare` | PREPARE: its data reads go out only when the core is certain to run the instruction. | k-induction, Yices | seconds |
 | `pipe_dbus` | DBUS: read data in the order of the ACKs, none lost. | k-induction, Yices | seconds |
-| `pipe_write` | WRITE: a halt stays, a paused or waiting WRITE does nothing, a step or a wait step comes after a pause, the breakpoints, the interrupts, a register write, and PREPARE's assumptions about WRITE. | k-induction, Yices | seconds |
+| `pipe_write` | WRITE: a halt stays, a paused or waiting WRITE does nothing, a step or a wait step comes after a pause, the breakpoints and the watchpoints, the interrupts, a register write, and PREPARE's assumptions about WRITE. | k-induction, Yices | seconds |
 | `pipeline` | The ports of the pipelined core and its own assertions, for 12 cycles after reset. | `bmc` of 12 cycles, ABC | 4 minutes |
 | `wb_dmux` | The data bus decoder: the ACKs come back in order, from one slave at a time. | PDR | seconds |
 | `timer` | The timer's ports. | k-induction of depth 10, Yices | seconds |
@@ -1346,10 +1396,12 @@ halted at once; and once `paused_o` falls, it reports a step on
 `retire_o`, or makes a wait step on `wstep_o`, before `paused_o` rises
 again. A wait step comes only while `waiting_o` is 1, and reports
 nothing, takes no request, and does not pause; and `waiting_o` is 1 only
-with no request valid, and never while halted (ISA.md §7.5). With two breakpoints, whose
-addresses and enable bits are free, it asserts that the core pauses
-without `pause_i` only when R15 was an enabled breakpoint, and then stays
-paused until `pause_i` has been 1.
+with no request valid, and never while halted (ISA.md §7.5). With two
+breakpoints and two watchpoints, whose addresses and enable bits are
+free, it asserts that the core pauses without `pause_i` only when R15 was
+an enabled breakpoint or `wch_hit_o` has a bit set, and then stays paused
+until `pause_i` has been 1, and that `wch_hit_o` holds while the core is
+paused and is 0 once it goes on.
 
 `formal_wb_dmux` checks the data bus decoder with three slaves and up to
 three ACKs owed. Every input is free. It assumes that the master raises

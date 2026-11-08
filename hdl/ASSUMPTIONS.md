@@ -257,3 +257,37 @@ change outside `hdl/` are marked **Outside hdl/**, and are also
     does, so `tb_core`'s timer, its requests, and the trace writer count
     `wstep_o` too, or a run with a wait could not be compared with the
     emulator's.
+
+## The watchpoints
+
+27. **WRITE checks the watchpoints, as it runs each micro-op**, against
+    the addresses of its reads that PREPARE formed, its store, and the
+    vector read in `VEC_ST` (MICROARCH.md §6.1). Only there is it known
+    that the access belongs to a step that runs: PREPARE's reads are
+    committed, but a skipped instruction makes none. The inputs are
+    registered in `pipeline.vhd`, so the compares start at flip-flops,
+    and their result feeds only the D inputs of `w_r.wch` and of
+    `w_r.wch_any`, its OR. `w_r.wch_pc` follows the address of each step
+    until the first hit, so that no compare drives the enable of its 32
+    flip-flops. With the compares on an enable, the worst slack of
+    `make timing` fell from 0.42 ns to 0.21 ns.
+28. **PREPARE holds back the next instruction's reads while a watchpoint
+    is enabled.** A hit stops the core after its step, so no read of the
+    next instruction may be on the bus by then, as a read of the I/O
+    range has side effects. While any enable bit is set, PREPARE issues
+    no first data read while an older instruction is in WRITE, nor
+    while `w_r.wch` has a bit set. The cost is a cycle or more for each
+    instruction with a data read, and only while a watchpoint is
+    enabled. Dropping the term fails `watches`.
+29. **A hit goes before a pause request and an interrupt**, and the first
+    step after a go on is not exempt (DEBUG.md §6). The hit is of the
+    step just ended, and its stop is what niceemu reports, whatever else
+    is pending. The IRQ before step 8 of `test/watches.nasm` comes right
+    after a hit, and a core that takes it first fails `watches`. WRITE
+    treats `w_r.wch_any` as if `pause_i` were 1, in the one term
+    `rpause_v`, so the hit adds no term to the paths from the pause to
+    `done_o` and `instret_o`. A term of its own cost `instret_o` 0.9 ns
+    in `make timing`. The term keeps the exemption of `after_go`, but a
+    hit cannot be pending while `after_go` is 1: the go on clears it,
+    and the step that hits is reported before the next boundary. The
+    exemption makes that inductive for `formal_pipe_write`.

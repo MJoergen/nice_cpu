@@ -6,8 +6,10 @@
 -- The assumptions are the contracts: the slave of wb_master_check, and a
 -- core whose halt ends only by a reset, by hold_o or by rst_i, and whose
 -- pause lasts as long as pause_o and hold_o allow (contract e). The core
--- may pause at any time, also with pause_o low, as at a breakpoint. Such a
--- pause lasts until pause_o has been high. The link has two breakpoints.
+-- may pause at any time, also with pause_o low, as at a breakpoint or
+-- after a watchpoint's hit, which wch_hit_i, free, may report at any
+-- time. Such a pause lasts until pause_o has been high. The link has two
+-- breakpoints and two watchpoints.
 -- The assertions:
 -- - The Wishbone master keeps to the pipelined rules of wb_master_check,
 --   with one access at a time. It works only while hold_o, halted_i, or
@@ -28,8 +30,9 @@
 -- G_FORMAL: the framing of the output, so that nothing comes between the
 -- bytes of a packet, no answer during a clear, why rx_ready_o is low
 -- (contract c), how long a console byte waits for room, when hold_o and rom_hide_o change (DEBUG.md §6), and the
--- invariants that make the proof inductive, and the breakpoints: their
--- registers, and the stop of the core's own, which raises pause_o. The invariant f_wb_owed here
+-- invariants that make the proof inductive, and the breakpoints and the
+-- watchpoints: their registers, the stop register, and the stop of the
+-- core's own, which raises pause_o. The invariant f_wb_owed here
 -- ties the count of wb_master_check to the master.
 -- The side client is free with G_SIDE, so the proofs hold for every side
 -- client, and for none. The covers run without one, so that they show
@@ -85,6 +88,8 @@ entity formal_debug_link is
       halt_reason_i : in  std_logic_vector(2 downto 0);
       paused_i      : in  std_logic;
       regs_i        : in  std_logic_vector(511 downto 0);
+      wch_hit_i     : in  std_logic_vector(C_WATCHES_MAX - 1 downto 0);
+      wch_pc_i      : in  std_logic_vector(31 downto 0);
       side_valid_i  : in  std_logic;
       side_we_i     : in  std_logic;
       side_addr_i   : in  std_logic_vector(31 downto 0);
@@ -115,6 +120,8 @@ architecture synthesis of formal_debug_link is
    signal wb_data      : std_logic_vector(31 downto 0);
    signal brk_addr     : t_brk_addrs;
    signal brk_en       : std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+   signal wch_addr     : t_wch_addrs;
+   signal wch_en       : std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0);
    signal side_done    : std_logic;
    signal side_err     : std_logic;
    signal side_data    : std_logic_vector(31 downto 0);
@@ -269,6 +276,7 @@ begin
          G_HAS_ROM   => G_HAS_ROM,
          G_BOOT_HELD => G_BOOT_HELD,
          G_BREAKS    => 2,
+         G_WATCHES   => 2,
          G_FORMAL    => true
       )
       port map (
@@ -301,6 +309,10 @@ begin
          regs_i         => regs_i,
          brk_addr_o     => brk_addr,
          brk_en_o       => brk_en,
+         wch_addr_o     => wch_addr,
+         wch_en_o       => wch_en,
+         wch_hit_i      => wch_hit_i,
+         wch_pc_i       => wch_pc_i,
          reg_we_o       => reg_we,
          reg_idx_o      => reg_idx,
          reg_data_o     => reg_data,

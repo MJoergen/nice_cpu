@@ -16,8 +16,10 @@
 -- no request valid, and reports nothing, takes nothing, and neither pauses
 -- nor halts. G_BREAKS breakpoints, with free
 -- addresses and enable bits: the core pauses without pause_i only when R15
--- was an enabled breakpoint, and then stays paused until pause_i has been
--- '1'. The covers show a step reported, a store, a halt, a pause, a step
+-- was an enabled breakpoint, or after a step that hit a watchpoint, which
+-- wch_hit_i shows, and then stays paused until pause_i has been '1'. The
+-- hits hold while the core is paused, and are gone once it goes on
+-- (doc/DEBUG.md §6). The covers show a step reported, a store, a halt, a pause, a step
 -- after a pause, a pause at a breakpoint, a step after a register write,
 -- two wait steps, and a wait step after a pause.
 --
@@ -74,6 +76,8 @@ entity core_check is
       reg_we_i     : in  std_logic;
       reg_idx_i    : in  std_logic_vector(3 downto 0);
       reg_data_i   : in  std_logic_vector(31 downto 0);
+      -- The watchpoints that the step before a pause hit
+      wch_hit_i    : in  std_logic_vector(C_WATCHES_MAX - 1 downto 0) := (others => '0');
 
       -- The requests that wait for their ACK on each bus, for the
       -- invariants of a particular core
@@ -109,6 +113,8 @@ architecture synthesis of core_check is
    -- The core paused without pause_i, and pause_i has been '0' since
    signal wait_r : std_logic := '0';
    signal own    : boolean;
+   -- wch_hit_i in the cycle before
+   signal hits_d : std_logic_vector(C_WATCHES_MAX - 1 downto 0) := (others => '0');
 
 begin
 
@@ -149,11 +155,16 @@ begin
    -- psl c_wstep : cover {wstep_i = '1' and rst_i = '0'; wstep_i = '1' and rst_i = '0'};
    -- psl c_go_wait : cover {paused_i = '1' and rst_i = '0'; wstep_i = '1' and rst_i = '0'};
 
-   -- A pause of the core's own is at a breakpoint, and lasts until pause_i
-   -- has been '1'.
+   -- A pause of the core's own is at a breakpoint or after a hit, and
+   -- lasts until pause_i has been '1'. The hits hold while paused, and the
+   -- go on clears them.
    own   <= rst_i = '0' and paused_i = '1' and paused_d = '0' and pause_d = '0';
    own_o <= own;
-   -- psl f_brk_hit : assert always own -> hit_d = '1';
+   -- psl f_brk_hit : assert always own -> (hit_d = '1' or wch_hit_i /= (wch_hit_i'range => '0'));
+   -- psl f_wch_kept : assert always (rst_i = '0' and paused_d = '1' and paused_i = '1') ->
+   --    wch_hit_i = hits_d;
+   -- psl f_wch_go : assert always (rst_i = '0' and paused_d = '1' and paused_i = '0') ->
+   --    wch_hit_i = (wch_hit_i'range => '0');
    -- psl f_brk_wait : assert always (rst_i = '0' and wait_r = '1') -> paused_i = '1';
 
    -- psl c_retire : cover {retire_i.valid = '1' and rst_i = '0'};
@@ -247,6 +258,7 @@ begin
          elsif retire_i.valid = '1' then
             wrote_r <= '0';
          end if;
+         hits_d   <= wch_hit_i;
          hit_d    <= '0';
          for i in 0 to G_BREAKS - 1 loop
             if brk_en_i(i) = '1' and brk_addr_i(i) = regs_i(15) then

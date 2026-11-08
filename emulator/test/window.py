@@ -342,6 +342,29 @@ def test_link(tmp: str) -> None:
         fail("; ".join(link.failures))
 
 
+def test_link_wait(tmp: str) -> None:
+    """With --link and --speed, a long wait goes a chunk at a time, 1000
+    steps at 1000000 a second, and the link is served between chunks: a
+    request in the wait is answered within the 100 ms of DEBUG.md §5, not
+    after the pace of all the wait steps jumped over at once."""
+    words = link.assemble(tmp, "waits_long", WAITS_LONG)
+    e = link.Emu(["--window", "--speed", "1000000"])
+    e.expect("hello", link.HELLO)
+    e.send(link.write(0, words) + link.write(link.CONTROL, [0x8]))
+    e.expect("start the long wait", link.ok(0, len(words)) + link.ok(link.CONTROL, 1))
+    for i in range(3):
+        time.sleep(0.05)
+        t = time.monotonic()
+        expect(f"control in the long wait, read {i}", link.word(e, link.CONTROL), 0x48)
+        took = time.monotonic() - t
+        if took > 0.1:
+            fail(f"read {i} in the long wait was answered after {took:.3f} s")
+    status, _, _ = e.stop()
+    expect("exit status after the long wait", status, 0)
+    if link.failures:
+        fail("; ".join(link.failures))
+
+
 def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         test_screen()
@@ -353,8 +376,9 @@ def main() -> None:
         test_wait(tmp)
         test_no_display(tmp)
         test_link(tmp)
+        test_link_wait(tmp)
         test_close_link(tmp)
-    print("PASS window (9 tests)")
+    print("PASS window (10 tests)")
 
 
 if __name__ == "__main__":

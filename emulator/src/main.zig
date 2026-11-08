@@ -1075,11 +1075,11 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
         // served. A step is as in `run`. The waits of the window's pace
         // between chunks, and its sleeps in a wait loop, count as running.
         clock.start();
-        var n: u64 = 0;
+        var n: u64 = 0; // the steps of the chunk so far
         var wait_ms: u32 = 0;
         // A wait that no request can end: the link and the window wait.
         var waits = false;
-        while (n < chunk and link.running() and !link.started and !link.pauseDue(steps == opts.max_steps)) : (n += 1) {
+        while (n < chunk and link.running() and !link.started and !link.pauseDue(steps == opts.max_steps)) {
             if (steps == opts.max_steps) {
                 link.limit_hit = true;
                 break;
@@ -1098,15 +1098,15 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
             }
             // The wait steps at once, but a single step of the link is one.
             if (!link.step_due) {
-                // With the pace of --speed, no more than a chunk at once,
-                // so that the window is pumped as often in a long wait.
-                const budget = if (pacer.speed != 0) chunk else std.math.maxInt(u64);
+                // With the pace of --speed, no further than the chunk's end.
+                const budget = if (pacer.speed != 0) chunk - n else std.math.maxInt(u64);
                 const k = skipWaits(cpu, opts, steps, next, budget) orelse {
                     waits = true;
                     break;
                 };
                 if (k != 0) {
                     steps += k;
+                    n +|= k;
                     link.after_go = false;
                     continue;
                 }
@@ -1128,6 +1128,7 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
                 break;
             }
             steps += 1;
+            n += 1;
             // A step that hit a watchpoint stops the processor before
             // anything else, unless it halted, or the step limit, a halt,
             // comes now (DEBUG.md §6).

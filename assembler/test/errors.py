@@ -201,7 +201,13 @@ CASES: List[Tuple[str, str]] = [
      "so write an offset before it, as in '2+:++'"),
     (" .DAT :", "1: error: bad anonymous label reference in ':', expected ':-' or ':+'"),
     (" .DAT :*2", "1: error: bad anonymous label reference in ':*2', expected ':-' or ':+'"),
-    ("x HALT\n .DAT x:+1", "2: error: bad expression 'x:+1'"),
+    ("x HALT\n .DAT x:+1", "2: error: expected a number or a symbol at 'x:'"),
+    ("X .EQU a:b\n HALT", "1: error: expected a number or a symbol at 'a:b'"),
+    # A ':' in a string is not an anonymous label reference: the string is
+    # reported, whole
+    (" .DAT ':'", "1: error: a string (':') is only allowed after .ASCII_L and .ASCII_B"),
+    (" .DAT 'a:-b'", "1: error: a string ('a:-b') is only allowed after .ASCII_L and .ASCII_B"),
+    (' MOVE R1, 1+"+:+"', '1: error: a string ("+:+") is only allowed after .ASCII_L and .ASCII_B'),
     (":: HALT", "1: error: bad symbol name '::'"),
     (":- HALT", "1: error: bad symbol name ':-'"),
     (":+: HALT", "1: error: bad symbol name ':+'"),

@@ -75,6 +75,7 @@ REGISTER_LIKE = re.compile(r"R\d+$", re.IGNORECASE)  # reserved, never a symbol
 NUMBER = re.compile(r"0x[0-9a-f]+$|0b[01]+$|[0-9]+$", re.IGNORECASE)
 TOKEN = re.compile(r"""'[^']*'|"[^"]*"|[^\s,;'"][^\s,;]*""")
 QUOTES = ("'", '"')
+QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")  # a string, which no expression may hold
 # An anonymous label reference: ':' and a run of '-' or of '+' (ISA.md 10.2).
 ANON_REF = re.compile(r":(-+|\++)")
 
@@ -233,11 +234,18 @@ class Assembler:
     def value(self, text: str, done: Optional[Dict[str, int]] = None) -> int:
         """expr := ['-'|'+'] product {('+'|'-') product},
         product := term {'*' term}, not yet wrapped modulo 2^32.
-        done holds .EQU values that are already known. An anonymous label
-        reference is a term, taken out first, as its signs are not operators."""
+        done holds .EQU values that are already known. A string is reported
+        first, whole, so that a ':' in it is not taken for an anonymous
+        label reference. Such a reference is a term, taken out next, as its
+        signs are not operators. A ':' inside a term, as in 'a:b', is left
+        to term(), which reports the term."""
+        q = QUOTED.search(text)
+        if q:
+            raise AsmError(f"a string ({q.group()}) is only allowed after .ASCII_L and .ASCII_B")
+        refs: List["re.Match[str]"] = []
         for m in re.finditer(":", text):
             if m.start() and text[m.start() - 1] not in "+-*":
-                raise AsmError(f"bad expression '{text}'")
+                continue
             ref = ANON_REF.match(text, m.start())
             if not ref:
                 raise AsmError(f"bad anonymous label reference in '{text}', expected "
@@ -246,8 +254,10 @@ class Assembler:
                 raise AsmError(f"'{ref.group()}' is followed by '{text[ref.end():]}': its "
                                f"signs are all part of it, so write an offset before it, "
                                f"as in '{text[ref.end():]}+{ref.group()}'")
-        text = ANON_REF.sub(lambda m: (":<" if m.group(1)[0] == "-" else ":>")
-                            + str(len(m.group(1))) + ":", text)
+            refs.append(ref)
+        for ref in reversed(refs):
+            text = (text[:ref.start()] + (":<" if ref.group(1)[0] == "-" else ":>")
+                    + str(len(ref.group(1))) + ":" + text[ref.end():])
         parts = re.split(r"([+-])", text)
         if parts[0] == "":       # leading sign
             parts = parts[1:]

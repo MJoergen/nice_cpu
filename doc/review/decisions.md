@@ -215,3 +215,9 @@ proposed again. The open items are the
   the 1997 article, and a mux in PREPARE's address path. A mode bit in SR
   has no free bit, and a global mode would change `@R13++` too. The
   windows need no ISA change and leave `hdl/src` as it is.
+- **Embench-IoT in `bench/`** (#74). Its harness and the benchmarks
+  named in #74, such as `crc32` and `matmult-int`, are
+  GPL-3.0-or-later, which the MIT license of this repository cannot take
+  in. A port would live in a repository of its own. CoreMark (#143,
+  Apache-2.0) gives the figure that small cores publish, and
+  `bench/float.c` measures the float library.

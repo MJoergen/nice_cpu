@@ -282,10 +282,10 @@ main ()
 
 #ifdef NICE
   /* The cycle counter has no granularity to speak of, so any number   */
-  /* of runs gives a result. No floats, which printf cannot print:     */
-  /* the Dhrystone MIPS per MHz, 10^6 / (1757 * cycles per run), has   */
-  /* three decimals in integer arithmetic. 1757 is the Dhrystones per  */
-  /* second of the VAX 11/780, the 1 MIPS machine.                     */
+  /* of runs gives a result. The Dhrystone MIPS per MHz,               */
+  /* 10^6 / (1757 * cycles per run), has three decimals in integer     */
+  /* arithmetic. 1757 is the Dhrystones per second of the VAX 11/780,  */
+  /* the 1 MIPS machine.                                               */
   {
     unsigned long long Cycles = End_Cycles - Begin_Cycles;
     unsigned long long Milli =

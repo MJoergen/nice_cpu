@@ -583,8 +583,8 @@ the C library, and reads the number of runs from the console,
 The port is a system of its own, `NICE`, beside the original's `TIMES`,
 `TIME`, and `MSC_CLOCK`, and changes only lines under `#ifdef NICE`, and
 one `#ifndef` in `dhry.h` that would otherwise choose `TIMES`. The timer
-is `nice_cycles`. The original prints its results with `%f`, which the C
-library cannot print, and needs a run of two seconds. The port prints
+is `nice_cycles`. The original times the runs in seconds, and needs a run
+of two seconds. The port prints
 the cycles of all the runs and of one run, and the Dhrystone MIPS per
 MHz, 10⁶ / (1757 × cycles per run), where 1757 Dhrystones per second is
 the VAX 11/780 that defines 1 DMIPS, with three decimals in integer

@@ -438,6 +438,38 @@ def test_wait(port: str, prog: str) -> None:
         link.close()
 
 
+def test_hidden(port: str, prog: str) -> None:
+    """nicedbg.py on test/hidden.nasm: the interrupt state in status, in
+    the routine of an INT, after its RTI, and with a request of the timer
+    that E = 0 holds (link version 7)."""
+    link = connect(port)
+    dbg = nicedbg.Debugger(link, nicebin.Symbols(prog.replace(".bin",
+                                                              ".sym")))
+    try:
+        command(dbg, f"load {prog}")
+        command(dbg, "b ISR")
+        go(dbg, lambda l: len(l.breaks))
+        out = command(dbg, "status")
+        check("dbg: status in a routine", out.endswith(
+            "\ninterrupts: in a routine, return to 00000003 BACK, "
+            "SR 01000001\n"), repr(out))
+        command(dbg, "bd all")
+        command(dbg, "step")
+        out = command(dbg, "status")
+        check("dbg: status after RTI", out.endswith(
+            "\ninterrupts: after RTI\n"), repr(out))
+        command(dbg, "step")
+        out = command(dbg, "status")
+        check("dbg: status with an IRQ pending", out.endswith(
+            "\ninterrupts: IRQ pending\n"), repr(out))
+        command(dbg, "hold")
+        out = command(dbg, "status")
+        check("dbg: no interrupt state while held",
+              "interrupts" not in out, repr(out))
+    finally:
+        link.close()
+
+
 def test_program(port: str, prog: str) -> None:
     """nicedbg.py as a program, with --symbols, a file to load, and its
     commands on stdin, which ends with q."""
@@ -470,11 +502,13 @@ def main() -> None:
         echo, _ = assemble("echo", tmp)
         prog, at = assemble("break", tmp)
         wait, _ = assemble("wait", tmp)
+        hidden, _ = assemble("hidden", tmp)
         with emulator() as port:
             test_link(port, echo)
             test_run_control(port, prog, at)
             test_commands(port, prog, at)
             test_wait(port, wait)
+            test_hidden(port, hidden)
             test_program(port, prog)
     passed = sum(results)
     print(f"{passed}/{len(results)} passed")

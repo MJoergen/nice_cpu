@@ -53,11 +53,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 import nicedis  # noqa: E402
 
 from nicebin import Symbols, load_words, read_bin  # noqa: E402
-from nicelink import (BRK_ADDR, BRK_COUNT, BRK_EN, CONTROL, FREE,  # noqa: E402
-                      FULL_WAIT, HALT_REASON, HALTED, HOLD, MAX_WORDS,
-                      PAUSE, RAM,
-                      REASONS, WAITING, REGS, STOP, VERSION, Link, LinkError,
-                      add_arguments, open_link)
+from nicelink import (AFTER_RTI, BRK_ADDR, BRK_COUNT, BRK_EN,  # noqa: E402
+                      CONTROL, FREE, FULL_WAIT, HALT_REASON, HALTED, HOLD,
+                      IN_SERVICE, IRQ_PENDING, MAX_WORDS, NMI_PENDING,
+                      PAUSE, RAM, REASONS, WAITING, REGS, SAVED_PC, STOP,
+                      VERSION, Link, LinkError, add_arguments, open_link)
 
 
 class Counts(NamedTuple):
@@ -418,6 +418,25 @@ class Debugger(cmd.Cmd):
             print(self._pc())
         elif ctl & PAUSE:
             print(self._pc(not ctl & HOLD))
+        # The hidden state and the requests, of link version 7. They are
+        # not defined while held, and the requests read 0 after a halt.
+        if (version & 0xF) >= 7 and not ctl & HOLD:
+            print(self._interrupts(ctl))
+
+    def _interrupts(self, ctl: int) -> str:
+        """The interrupt state of DEBUG.md §6, from the control word."""
+        parts = []
+        if ctl & IN_SERVICE:
+            pc, sr = self.link.read(SAVED_PC, 2)
+            parts.append(f"in a routine, return to {self._where(pc)}, "
+                         f"SR {sr:08x}")
+        if ctl & AFTER_RTI:
+            parts.append("after RTI")
+        if ctl & NMI_PENDING:
+            parts.append("NMI pending")
+        if ctl & IRQ_PENDING:
+            parts.append("IRQ pending")
+        return "interrupts: " + (", ".join(parts) if parts else "none")
 
     def do_regs(self, arg: str) -> None:
         """regs: R0 to R15: live while the processor runs, and the stop's

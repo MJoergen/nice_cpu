@@ -87,7 +87,12 @@ arrive, above the prompt: `[breakpoint 0, PC=... LOOP  SUB[M] ...]`,
 overflow]`. The PC after a halt is the word after the instruction that
 halted. A pause in a wait for an interrupt (ISA.md §7.5) shows as
 `[paused, waiting, PC=...]`, the PC the word after the `WAIT`, and
-`status` adds `waiting for an interrupt` to the state.
+`status` adds `waiting for an interrupt` to the state. With link
+version 7, `status` also shows the interrupt state of DEBUG.md §6,
+while the processor is not held: `interrupts: in a routine, return to
+00000003 BACK, SR 01000001` inside an interrupt routine, with where its
+`RTI` returns to, then `after RTI` and `NMI pending` or `IRQ pending`
+where they apply, or `interrupts: none`.
 
 The commands also come from stdin when it is no terminal, so a script
 can drive it:
@@ -120,5 +125,6 @@ the MEGA65's RAM.
 `make test` runs `test/errors.py`, the error cases of the options and
 the files, with exact messages, and `test/link.py`, which runs the link,
 the loader, and the debugger's commands on `niceemu --link` with the
-programs `test/echo.nasm` and `test/break.nasm`. It builds niceemu
+programs `test/echo.nasm`, `test/break.nasm`, `test/wait.nasm`, and
+`test/hidden.nasm`. It builds niceemu
 first if needed. `make typecheck` runs `mypy --strict`.

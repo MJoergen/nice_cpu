@@ -49,7 +49,10 @@ from typing import Callable, NoReturn
 
 ESC = 0xFF
 
-# The debug registers of DEBUG.md §6
+# The debug registers of DEBUG.md §6: the hidden state (version 7),
+# R0-R15, and the rest
+SAVED_PC = 0xFFFFFFD0
+SAVED_SR = 0xFFFFFFD1
 REGS = 0xFFFFFFE0
 CONTROL = 0xFFFFFFF0
 HALT_REASON = 0xFFFFFFF1
@@ -67,8 +70,9 @@ BRK_ADDR = 0xFFFFFFF8
 
 # Control bits: hold the processor in reset, halted (read only), clear the
 # memory first, hide the ROM, so that the RAM is at 0, pause (version 2),
-# step a paused processor (version 3), and waits for an interrupt (read
-# only, version 7)
+# step a paused processor (version 3), and, read only and of version 7,
+# waits for an interrupt, in an interrupt routine, after an RTI, an NMI
+# pending, and an IRQ pending
 HOLD = 1
 HALTED = 2
 CLEAR = 4
@@ -76,6 +80,10 @@ RAM = 8
 PAUSE = 16
 STEP = 32
 WAITING = 64
+IN_SERVICE = 0x80
+AFTER_RTI = 0x100
+NMI_PENDING = 0x200
+IRQ_PENDING = 0x400
 
 # The halt reasons of DEBUG.md §6
 REASONS = {

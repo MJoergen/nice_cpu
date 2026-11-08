@@ -31,7 +31,7 @@ ALU_NAMES = ["MOVE", "SUB", "MDBL", "ADD", "DBL", "DEC", "NOT", "NOR",
 # The alias where one exists, the canonical mnemonic otherwise.
 SHIFT_NAMES = ["SHL", "0<1", "0<C", "C<0", "C<1", "C<C", "ROL", "BPL",
                "SHR", "1>0", "C>0", "0>C", "1>C", "C>C", "ROR", "BPR"]
-CTRL_NAMES = ["HALT", "RTI", "INT"]
+CTRL_NAMES = ["HALT", "RTI", "INT", "WAIT"]
 FIELD_NAMES = ["dest", "s0", "s1"]
 
 # The constant of a label is only shown as one from this value on, so that
@@ -91,7 +91,7 @@ def decode(addr: int, read: Reader) -> Insn:
     cond = condition(word)
     if word >> 26 & 3 == 3:
         cmd, vector = word >> 21 & 0x1F, word & 0xFF
-        if cmd > 2 or word >> 8 & 0x1FFF or (cmd != 2 and vector):
+        if cmd > 3 or word >> 8 & 0x1FFF or (cmd != 2 and vector):
             return Insn([word], cond, "", [], [], None, True, False)
         return Insn([word], cond, CTRL_NAMES[cmd], [], [], vector if cmd == 2 else None,
                     False, False)

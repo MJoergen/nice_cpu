@@ -7,7 +7,7 @@ low             MOVE    R1, 0x2
                 .DAT    0x00004124      ; MOVE R1, R2 (s1: R4++)
                 .DAT    0x00004130, 0x00000005  ; MOVE R1, R2 (s1: 0x5)
                 .DAT    0x01c04103      ; ONE R1 (s0: R2, s1: R3)
-                .DAT    0x0c600000      ; reserved control word
+                .DAT    0x0c800000      ; reserved control word
                 .DAT    0x3c000100      ; reserved control word
 entry_point
 start           INT     33

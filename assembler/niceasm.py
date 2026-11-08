@@ -45,6 +45,7 @@ MNEMONICS: Dict[str, Tuple[int, int, int]] = {
     "SHR": (SHIFT, 0x8, 3), "ROR": (SHIFT, 0xE, 3), "BPR": (SHIFT, 0xF, 3),
 
     "HALT": (CTRL, 0x00, 0), "RTI": (CTRL, 0x01, 0), "INT": (CTRL, 0x02, 1),
+    "WAIT": (CTRL, 0x03, 0),
 
     "CALL": (PSEUDO, 0, 1), "RET": (PSEUDO, 0, 0), "JMP": (PSEUDO, 0, 1),
     "CMP": (PSEUDO, 0, 2), "TST": (PSEUDO, 0, 1), "PUSH": (PSEUDO, 0, 1),

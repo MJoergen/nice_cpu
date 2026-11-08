@@ -222,9 +222,9 @@ TYPEW           MOVE    SP, @D_SP
                 MOVE    @SCR_CTL, 0x60  ; a blinking cursor, and no display offset
 KEY             MOVE    @SCR_X, COL     ; the cursor where the next character goes
                 MOVE    @SCR_Y, ROW
-WAIT            CALL    POLL
+IDLE            CALL    POLL
                 TST     R1
-        ?Z      JMP     WAIT
+        ?Z      JMP     IDLE
                 MOVE    R7, CR          ; whether this key follows a CR
                 MOVE    CR, 0
                 CMP     R1, 0x100

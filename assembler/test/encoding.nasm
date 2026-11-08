@@ -222,3 +222,6 @@ pl              .DAT    4*pl, 2+3*4, 2*3-1, -2*3, 3*PR, PR*PR-1, 0xFFFFFFFF*2
                 MOVE    R1, 4*pl[R2]    ; 46e: 0x01<<14 | 0x32<<7: 00005900, 46f: 119c
                 INT     3*0x55          ; 470: 255: 0c4000ff
                 .DAT    pl*0+2*2*2      ; 471: 8
+; WAIT (ISA.md 5.3), alone and with a condition: ?!Z is NEG 1, SEL 011
+                WAIT                    ; 472: 0c600000
+        ?!Z     wait                    ; 473: b0000000 | 0c600000 = bc600000

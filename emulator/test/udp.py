@@ -43,8 +43,8 @@ ETH_BUF3        .EQU    0xFFFFFFCB
                 MOVE    @ETH_BUF2, 0x024E4943
                 MOVE    @ETH_BUF3, 0x450088B5
                 MOVE    @ETH_TX_LEN, 14
-wait            TST     @ETH_RX_LEN
-        ?Z      JMP     wait
+rxwait          TST     @ETH_RX_LEN
+        ?Z      JMP     rxwait
                 MOVE    R2, 0
 chunk           MOVE    R4, ETH_BUF0
                 MOVE    R5, 8

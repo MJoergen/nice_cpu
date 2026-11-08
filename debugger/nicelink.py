@@ -67,13 +67,15 @@ BRK_ADDR = 0xFFFFFFF8
 
 # Control bits: hold the processor in reset, halted (read only), clear the
 # memory first, hide the ROM, so that the RAM is at 0, pause (version 2),
-# and step a paused processor (version 3)
+# step a paused processor (version 3), and waits for an interrupt (read
+# only, version 7)
 HOLD = 1
 HALTED = 2
 CLEAR = 4
 RAM = 8
 PAUSE = 16
 STEP = 32
+WAITING = 64
 
 # The halt reasons of DEBUG.md §6
 REASONS = {

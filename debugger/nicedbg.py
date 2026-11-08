@@ -56,7 +56,7 @@ from nicebin import Symbols, load_words, read_bin  # noqa: E402
 from nicelink import (BRK_ADDR, BRK_COUNT, BRK_EN, CONTROL, FREE,  # noqa: E402
                       FULL_WAIT, HALT_REASON, HALTED, HOLD, MAX_WORDS,
                       PAUSE, RAM,
-                      REASONS, REGS, STOP, VERSION, Link, LinkError,
+                      REASONS, WAITING, REGS, STOP, VERSION, Link, LinkError,
                       add_arguments, open_link)
 
 
@@ -207,7 +207,9 @@ class Debugger(cmd.Cmd):
         for n in link.breaks[old.breaks:new.breaks]:
             lines.append(f"breakpoint {n}, {self._pc(True)}")
         if new.pauses - old.pauses > new.breaks - old.breaks:
-            lines.append(f"paused, {self._pc(True)}")
+            # Bit 6 reads 0 before link version 7.
+            wait = ", waiting" if link.read_word(CONTROL) & WAITING else ""
+            lines.append(f"paused{wait}, {self._pc(True)}")
         for line in lines:
             if data[-1:] not in (b"", b"\n") or (not data and line_open):
                 data += b"\n"
@@ -404,6 +406,10 @@ class Debugger(cmd.Cmd):
                 else "paused"
         else:
             state = "running"
+        # A wait for an interrupt, paused or not: bit 6, which reads 0
+        # before link version 7.
+        if ctl & WAITING and not ctl & (HOLD | HALTED):
+            state += ", waiting for an interrupt"
         rom = "hidden" if ctl & RAM else "shown"
         print(f"{state}, ROM {rom}, control {ctl:08x}, link version "
               f"{version >> 4}.{version & 0xF}, input free "

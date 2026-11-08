@@ -664,3 +664,15 @@ submodule. With #134 the generic part moved here, to `debugger/`:
 link, the files, and the loader. The board keeps its Ethernet and
 simulation transports and the checks of its memory, and passes them to
 these as hooks.
+
+## The wait for an interrupt
+
+Until 2026-11-08, control command 3, `0x0C600000`, was reserved, and a
+program that executed it halted with reason 2. `HALT` stopped for good,
+so a program that waited for an interrupt spun in a loop, and kept a
+host core busy in the emulator. With #133 the command is `WAIT` (ISA
+§7.5), and the debug link is version 7, with bit 6 of the control
+register. The tests that used `0x0C600000` as a reserved word use
+`0x0C800000`, command 4, instead. `WAIT` became a mnemonic, so the labels
+`WAIT` of the slides' `irq.nasm` and of the demo, and `wait` of the
+emulator's `test/udp.py`, were renamed.

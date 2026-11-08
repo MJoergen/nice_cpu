@@ -85,7 +85,9 @@ The program's console output and the link's notices are shown as they
 arrive, above the prompt: `[breakpoint 0, PC=... LOOP  SUB[M] ...]`,
 `[paused, PC=...]`, `[halted: HALT, PC=...]`, `[boot]`, and `[input
 overflow]`. The PC after a halt is the word after the instruction that
-halted.
+halted. A pause in a wait for an interrupt (ISA.md §7.5) shows as
+`[paused, waiting, PC=...]`, the PC the word after the `WAIT`, and
+`status` adds `waiting for an interrupt` to the state.
 
 The commands also come from stdin when it is no terminal, so a script
 can drive it:

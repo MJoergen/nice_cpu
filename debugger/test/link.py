@@ -414,6 +414,30 @@ def test_commands(port: str, prog: str, at: dict[str, int]) -> None:
         link.close()
 
 
+def test_wait(port: str, prog: str) -> None:
+    """nicedbg.py on test/wait.nasm: the status of a processor that waits
+    for an interrupt, and the notice of a pause in the wait (link version
+    7)."""
+    link = connect(port)
+    dbg = nicedbg.Debugger(link, nicebin.Symbols(prog.replace(".bin",
+                                                              ".sym")))
+    try:
+        command(dbg, f"load {prog}")
+        command(dbg, "go")
+        wait_for(link, lambda: link.read_word(nicelink.CONTROL) & nicelink.WAITING != 0)
+        out = command(dbg, "status")
+        check("dbg: status in a wait", out.startswith(
+            "running, waiting for an interrupt, ROM hidden, control 00000048, "), repr(out))
+        out = command(dbg, "pause")
+        check("dbg: a pause in a wait", "paused, waiting, PC=00000001" in out,
+              repr(out))
+        out = command(dbg, "status")
+        check("dbg: status paused in a wait", out.startswith(
+            "paused, waiting for an interrupt, ROM hidden, control 00000058, "), repr(out))
+    finally:
+        link.close()
+
+
 def test_program(port: str, prog: str) -> None:
     """nicedbg.py as a program, with --symbols, a file to load, and its
     commands on stdin, which ends with q."""
@@ -445,10 +469,12 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         echo, _ = assemble("echo", tmp)
         prog, at = assemble("break", tmp)
+        wait, _ = assemble("wait", tmp)
         with emulator() as port:
             test_link(port, echo)
             test_run_control(port, prog, at)
             test_commands(port, prog, at)
+            test_wait(port, wait)
             test_program(port, prog)
     passed = sum(results)
     print(f"{passed}/{len(results)} passed")

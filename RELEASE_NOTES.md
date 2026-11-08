@@ -43,6 +43,16 @@ The others pin the tagged commit.
   it is renamed. The slides' `irq.nasm`, the demo, and the emulator's
   tests renamed theirs.
 
+**Runtime (`runtime/`)**
+
+- `nice_screen_clear`, and `screenClear` and `screen_clear` of the Zig
+  and Rust wrappers, write a blank in white on black, `0x000FFF20`,
+  where they wrote `0x20`, black on black, on which the cursor of
+  SYSTEM.md §1.4 could not show (#148). `NICE_SCREEN_BLANK`,
+  `screen_blank`, and `SCREEN_BLANK` name the word. A blank looks the
+  same either way; a program that reads a cleared word back sees the
+  difference.
+
 ## V1.9 (2026-11-07)
 
 The math unit counts the bits of A and takes the square root of C

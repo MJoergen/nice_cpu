@@ -183,7 +183,7 @@ so their labels are their C names with `_` in front.
 | `_nice_cycles` | `unsigned long long nice_cycles(void)` | R1:R2 = the cycle counter. | none |
 | `_nice_instructions` | `unsigned long long nice_instructions(void)` | R1:R2 = the instruction counter. | none |
 | `_nice_screen_put` | `void nice_screen_put(int col, int row, int c)` | Writes R3 to column R1, 0 to 79, of row R2, 0 to 24. | R2, R4 |
-| `_nice_screen_clear` | `void nice_screen_clear(void)` | Writes `0x20` to each of the screen's 2000 words. | R1, flags |
+| `_nice_screen_clear` | `void nice_screen_clear(void)` | Writes `0x000FFF20`, a blank in white on black, to each of the screen's 2000 words, so that a cursor shows on it. | R1, flags |
 
 From assembly, for example:
 
@@ -271,7 +271,7 @@ Zig keeps only the objects of `libc.a` that the program references.
 | `time.h` | `clock`, with `CLOCKS_PER_SEC` 1000000 and `clock_t` unsigned, from the microsecond counter of SYSTEM.md §3, which counts the host's time in the emulator, and wraps after 71.6 minutes on a board; `time`, from the clock of the time of day of SYSTEM.md §10, which returns −1 while the clock holds no time; and the types `clock_t` and `time_t`. |
 | `errno.h` | `errno`, one for the whole program, 0 at start, and the codes `EINVAL`, `EDOM`, `ERANGE`, and `EILSEQ`. Only the conversions from text set it: `strtol` and `strtoul`, and so `atoi` and `atol`, to `ERANGE` on an overflow and to `EINVAL` for a base other than 0 and 2 to 36, and `strtod` and `strtof`, and so `atof` and `scanf`, to `ERANGE` when a float overflows or underflows, and to `EINVAL` when there is none. |
 | `ctype.h` | `isalnum`, `isalpha`, `iscntrl`, `isdigit`, `isgraph`, `islower`, `isprint`, `ispunct`, `isspace`, `isupper`, `isxdigit`, `tolower`, `toupper` |
-| `nice.h` | The device routines (see above): `nice_putc`, `nice_getc`, `nice_pollc`, `nice_print`, `nice_cycles`, `nice_instructions`, `nice_micros`, `nice_clock`, `nice_clock_isset`, and `nice_clock_set` (C only, with no assembly routine), `nice_screen_put`, and `nice_screen_clear`. Also `nice_peek` and `nice_poke`, the `nice` imports of WASM.md, and the devices' addresses, for devices that have no routine. |
+| `nice.h` | The device routines (see above): `nice_putc`, `nice_getc`, `nice_pollc`, `nice_print`, `nice_cycles`, `nice_instructions`, `nice_micros`, `nice_clock`, `nice_clock_isset`, and `nice_clock_set` (C only, with no assembly routine), `nice_screen_put`, and `nice_screen_clear`, with `NICE_SCREEN_COLS`, `NICE_SCREEN_ROWS`, and `NICE_SCREEN_BLANK`, the blank it writes. Also `nice_peek` and `nice_poke`, the `nice` imports of WASM.md, and the devices' addresses, for devices that have no routine. |
 
 The device routines, in `src/nice.c`, are the only functions that touch
 hardware. They use `nice_peek` and `nice_poke`. `nice_putc` is not among
@@ -480,7 +480,7 @@ prints a byte slice instead.
 | Output | `putc(c)`, `write(bytes)`, `print(fmt, args)` with `std.fmt`, and `writer`, a `std.Io.Writer` | `putc(c)`, `write(bytes)`, `print!` and `println!` with `core::fmt`, and `Console`, a `core::fmt::Write` |
 | Input | `getc()`, a `?u8`, `pollc()`, a `Poll`: `.byte`, `.empty`, or `.end`, and `readLine(buf)`, a `?[]u8` | `getc()`, an `Option<u8>`, `pollc()`, a `Poll`: `Byte`, `Empty`, or `End`, and `read_line(buf)`, an `Option<&str>` |
 | Counters | `cycles()`, `instructions()` | `cycles()`, `instructions()` |
-| Screen | `screenPut(col, row, c)`, `screenClear()`, `screen_cols`, `screen_rows` | `screen_put(col, row, c)`, `screen_clear()`, `SCREEN_COLS`, `SCREEN_ROWS` |
+| Screen | `screenPut(col, row, c)`, `screenClear()`, `screen_cols`, `screen_rows`, `screen_blank` | `screen_put(col, row, c)`, `screen_clear()`, `SCREEN_COLS`, `SCREEN_ROWS`, `SCREEN_BLANK` |
 | Heap | `heap`, a `std.mem.Allocator` | `Heap`, a `GlobalAlloc` for the `alloc` crate |
 | Math | none needed: `@sqrt`, `@sin`, and `std.math` | `Float`, std's math methods for `f64` and `f32` |
 

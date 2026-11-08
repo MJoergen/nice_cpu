@@ -142,6 +142,10 @@ pub fn instructions() -> u64 {
 /// The emulator's character screen.
 pub const SCREEN_COLS: u32 = 80;
 pub const SCREEN_ROWS: u32 = 25;
+/// The blank that screen_clear writes: a space in white on black, the
+/// colors a board's monitor writes in, so that a cursor, which swaps the
+/// colors of its cell, shows on it (doc/SYSTEM.md §1.4).
+pub const SCREEN_BLANK: u32 = 0x000F_FF20;
 
 /// Writes c, the character in bits 7..0 and its color above, to a column,
 /// 0 to 79, of a row, 0 to 24.
@@ -149,7 +153,8 @@ pub fn screen_put(col: u32, row: u32, c: u32) {
     unsafe { nice_screen_put(col as i32, row as i32, c as i32) }
 }
 
-/// Writes a blank, 0x20, to every word of the screen.
+/// Writes SCREEN_BLANK, a blank in white on black, to every word of the
+/// screen.
 pub fn screen_clear() {
     unsafe { nice_screen_clear() }
 }

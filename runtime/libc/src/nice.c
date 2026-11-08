@@ -86,5 +86,5 @@ void nice_screen_put(int col, int row, int c)
 void nice_screen_clear(void)
 {
     for (unsigned i = 0; i < NICE_SCREEN_COLS * NICE_SCREEN_ROWS; i++)
-        nice_poke(NICE_SCREEN + i, 0x20);
+        nice_poke(NICE_SCREEN + i, NICE_SCREEN_BLANK);
 }

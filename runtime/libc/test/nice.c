@@ -34,9 +34,9 @@ int main(void)
     nice_screen_put(2, 1, 0xC80FF021);
     nice_screen_put(79, 24, 'Z');
     fails += nice_peek(NICE_SCREEN) != 'O';
-    fails += nice_peek(NICE_SCREEN + 1) != 0x20;
+    fails += nice_peek(NICE_SCREEN + 1) != NICE_SCREEN_BLANK;
     fails += nice_peek(NICE_SCREEN + 82) != 0xC80FF021;
-    fails += nice_peek(NICE_SCREEN + 1998) != 0x20;
+    fails += nice_peek(NICE_SCREEN + 1998) != NICE_SCREEN_BLANK;
     fails += nice_peek(NICE_SCREEN + 1999) != 'Z';
 
     // The square root, with the math unit: 99 = 9^2 + 18, the largest

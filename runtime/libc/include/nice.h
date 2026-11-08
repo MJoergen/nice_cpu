@@ -55,12 +55,18 @@ void nice_clock_set(unsigned long long sec, unsigned usec);
 
 // The emulator's 80x25 character screen. nice_screen_put writes c, the
 // character in bits 7..0 and its color above, to a column, 0 to 79, of a
-// row, 0 to 24. nice_screen_clear writes a blank, 0x20, to every word.
+// row, 0 to 24. nice_screen_clear writes NICE_SCREEN_BLANK, a blank in
+// white on black, to every word.
 void nice_screen_put(int col, int row, int c);
 void nice_screen_clear(void);
 
 #define NICE_SCREEN_COLS 80
 #define NICE_SCREEN_ROWS 25
+// The blank that nice_screen_clear writes: a space in white on black, the
+// colors a board's monitor writes in, so that the cursor of SYSTEM.md §1.4,
+// which swaps the colors of its cell, shows on it. A blank of color 0 is
+// black on black, and so is the cursor on it.
+#define NICE_SCREEN_BLANK 0x000FFF20u
 
 // The devices' addresses and bits (SYSTEM.md §1, §3, §10), for nice.c. The
 // console is read here; it is written through nice_putc.

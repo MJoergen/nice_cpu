@@ -114,9 +114,9 @@ goes through these steps on a small program, and a
 | `--symbols FILE` | Read the labels of `niceasm.py --symbols` from FILE, and name the location of a halt other than `HALT`, of the step limit, and of a wasm trap (see Symbols file below). |
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
-| `--no-cycle-counter` | Make the cycle counter and the microsecond counter, `0xFFFFFF40`, `0xFFFFFF41`, `0xFFFFFF44`, and `0xFFFFFF45`, ordinary memory (see Performance counters below). |
+| `--no-cycle-counter` | Make the cycle counter, the microsecond counter, and the clock of the time of day, `0xFFFFFF40`, `0xFFFFFF41`, and `0xFFFFFF44`–`0xFFFFFF49`, ordinary memory (see Performance counters below). |
 | `--no-font` | Make the font RAM and the character ROM, `0xFFFE0000`–`0xFFFE3FFF`, ordinary memory, so that a program that reaches them runs as on an FPGA core with none (see Window below). |
-| `--step-time` | Count one microsecond per step in the microsecond counter, rather than the host's time, so that a run counts the same each time (see Performance counters below). |
+| `--step-time` | Count one microsecond per step in the microsecond counter, and in the clock of the time of day from 0 with "set" 0, rather than the host's time, so that a run counts the same each time (see Performance counters below). |
 | `--no-timer-irq` | The timer counts, but raises no requests, so that `--irq` can raise them instead (see Timer below). |
 | `--window` | Show the screen in a window while the program runs, and keep it after the halt until it is closed (see Window below). Needs a build with `-Dwindow`. |
 | `--speed N` | With `--window`, run N steps a second, for a program that keeps time by the timer or by counting steps; 1000000 is one step per microsecond. 0, the default, runs as fast as the host can, and sleeps while the program waits for a key or a time (see Window below). |
@@ -259,7 +259,7 @@ address twice and a file with no words are errors.
 | `0xFFFFFF02`–`0xFFFFFF0F` | 14 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (SYSTEM.md §4). Raises IRQ once every P steps. |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (SYSTEM.md §2). Multiplies and divides A and B and counts the bits of A, and divides C and D and takes the square root of C. |
-| `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (SYSTEM.md §3). Cycles, instructions, microseconds, data reads, stores, skips, jumps, and interrupts, 64 bits each. The fetch statistics of the FPGA core, at `0xFFFFFF60`–`0xFFFFFF7F`, read 0. |
+| `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (SYSTEM.md §3). Cycles, instructions, microseconds, data reads, stores, skips, jumps, and interrupts, 64 bits each. The clock of the time of day, at `0xFFFFFF46`–`0xFFFFFF49` (SYSTEM.md §10). The fetch statistics of the FPGA core, at `0xFFFFFF60`–`0xFFFFFF7F`, read 0. |
 | `0xFFFFFF80`–`0xFFFFFF9F` | 32 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (SYSTEM.md §1.4), and takes its font base from `0xFFFFFF86` (SYSTEM.md §1.8). |
 | `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | SD card controller (SYSTEM.md §5). Two slots, with the images of `--sd0` and `--sd1`. |
 | `0xFFFFFFB0`–`0xFFFFFFBF` | 16 | Network station (SYSTEM.md §6). The IP and MAC addresses, counts of frames that read 0, and the state of `--link`. |
@@ -344,13 +344,26 @@ each, with an NMI, and the FPGA cores run it too.
 The emulator has none of the FPGA core's fetch statistics, at
 `0xFFFFFF60`–`0xFFFFFF7F`: their words read 0 and ignore writes.
 
-`--no-cycle-counter` makes the words of the cycle counter and the
-microsecond counter, `0xFFFFFF40`, `0xFFFFFF41`, `0xFFFFFF44`, and
-`0xFFFFFF45`, ordinary memory, like the rest of the I/O range. A program that reads them then
+`--no-cycle-counter` makes the words of the cycle counter, the
+microsecond counter, and the clock of the time of day, `0xFFFFFF40`,
+`0xFFFFFF41`, and `0xFFFFFF44`–`0xFFFFFF49`, ordinary memory, like the rest of the I/O range. A program that reads them then
 runs the same on the emulator and on an FPGA core whose cycle count
 cannot be predicted, so their traces can be compared. The random programs
 of the HDL tests run this way ([hdl/README.md](../hdl/README.md)). The
 instruction counter stays.
+
+### Clock
+
+The clock of the time of day, at `0xFFFFFF46`–`0xFFFFFF49`, reads the
+host's clock of the time of day plus an offset, which a write of
+`CLOCK_USEC` sets so that the clock reads the time written (SYSTEM.md
+§10). "Set" is 1 from the start. The clock runs on while the processor
+is held, paused, or halted, and a start over the link leaves it. With
+`--step-time` it counts one microsecond per step instead, a wait step
+included, from 0 with "set" 0. `test/clock.nasm` checks its reads, its
+writes, and its wrap with `--step-time`, and again with
+`--no-cycle-counter`, where its words are memory. `test/clockhost.nasm`
+checks it on the host's clock.
 
 ### Timer
 

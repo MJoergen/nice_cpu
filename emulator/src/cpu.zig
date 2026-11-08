@@ -459,16 +459,93 @@ pub const Clock = struct {
     }
 };
 
+/// The clock of the time of day (SYSTEM §10), at words 6-9 of the
+/// performance counters. `Cpu.reset`, the reset of a start, leaves it:
+/// only the start of the emulator, the reset of the system, sets it.
+pub const Tod = struct {
+    /// The host's clock of the time of day, or null to count one
+    /// microsecond per step (`--step-time`, and the unit tests).
+    io: ?std.Io = null,
+    /// Without the host's clock, the microseconds since the epoch. With
+    /// it, what to add to the host's time to get them.
+    us: i128 = 0,
+    set: bool = false,
+    /// The seconds at the last read of `CLOCK_USEC`.
+    snap: u64 = 0,
+    /// The seconds that the next write of `CLOCK_USEC` sets.
+    stage: u64 = 0,
+
+    /// The microseconds in 2^64 seconds, at which the clock wraps.
+    const wrap: i128 = (@as(i128, 1) << 64) * std.time.us_per_s;
+
+    /// Read the host's clock, which knows the time, so "set" is 1.
+    pub fn useHost(self: *Tod, io: std.Io) void {
+        self.io = io;
+        self.us = 0;
+        self.set = true;
+    }
+
+    fn hostUs(io: std.Io) i128 {
+        return @divFloor(@as(i128, std.Io.Timestamp.now(io, .real).toNanoseconds()), std.time.ns_per_us);
+    }
+
+    /// The microseconds since the epoch, modulo 2^64 seconds.
+    fn now(self: Tod) u128 {
+        const t = if (self.io) |io| hostUs(io) + self.us else self.us;
+        return @intCast(@mod(t, wrap));
+    }
+
+    /// Count `n` steps, as microseconds, without the host's clock.
+    pub fn tick(self: *Tod, n: u64) void {
+        if (self.io == null) self.us = @mod(self.us + n, wrap);
+    }
+
+    /// The value a data read of word `i` returns, with its side effect.
+    pub fn read(self: *Tod, i: u2) u32 {
+        if (i == 0) self.snap = @truncate(self.now() / std.time.us_per_s);
+        return self.peek(i);
+    }
+
+    /// The value of word `i`, without the side effect of a read.
+    pub fn peek(self: Tod, i: u2) u32 {
+        return switch (i) {
+            0 => @intCast(self.now() % std.time.us_per_s),
+            1 => @truncate(self.snap),
+            2 => @truncate(self.snap >> 32),
+            3 => @intFromBool(self.set),
+        };
+    }
+
+    pub fn write(self: *Tod, i: u2, value: u32) void {
+        switch (i) {
+            0 => {
+                const t = @as(i128, self.stage) * std.time.us_per_s + @min(value, 999_999);
+                self.us = if (self.io) |io| t - hostUs(io) else t;
+                self.set = true;
+            },
+            1 => self.stage = (self.stage & 0xFFFFFFFF_00000000) | value,
+            2 => self.stage = (@as(u64, value) << 32) | (self.stage & 0xFFFFFFFF),
+            3 => self.set = false,
+        }
+    }
+};
+
+/// The word of the clock of the time of day that `addr` names, if it
+/// names one.
+fn todWord(addr: u32) ?u2 {
+    return if (addr -% perf_base -% 6 < 4) @truncate(addr -% perf_base -% 6) else null;
+}
+
 /// The word of the performance counters that `addr` names, if it names one.
 fn perfWord(addr: u32) ?u6 {
     return if (addr -% perf_base < 64) @truncate(addr -% perf_base) else null;
 }
 
 /// Whether word `i` of the performance counters belongs to a clock-driven
-/// counter, the cycle counter or the microsecond counter, which
-/// `--no-cycle-counter` turns into memory.
+/// counter, the cycle counter, the microsecond counter, or the clock of
+/// the time of day, which `--no-cycle-counter` turns into memory.
 fn clockWord(i: u6) bool {
-    return i < 2 or i == 4 or i == 5;
+    return i < 2 or (i >= 4 and i <= 9);
 }
 
 /// The first of the 16 words of the timer (SYSTEM §4).
@@ -785,6 +862,8 @@ pub const Cpu = struct {
     mpu: Mpu,
     /// The performance counters at `perf_base`.
     perf: Perf,
+    /// The clock of the time of day, inside them, which `reset` leaves alone.
+    tod: Tod,
     /// The timer at `timer_base`.
     timer: Timer,
     /// The SD card controller at `sd_base`.
@@ -841,6 +920,7 @@ pub const Cpu = struct {
             .input = null,
             .mpu = .{},
             .perf = .{},
+            .tod = .{},
             .timer = .{},
             .sd = .{},
             .net = .{},
@@ -946,6 +1026,7 @@ pub const Cpu = struct {
             return n;
         }
         if (mpuWord(addr)) |i| return self.mpu.read(i);
+        if (self.todDevice(addr)) |i| return self.tod.read(i);
         if (self.perfDevice(addr)) |i| {
             if (i == 4) {
                 self.idle_reads +%= 1;
@@ -962,6 +1043,12 @@ pub const Cpu = struct {
         return self.mem.read(addr);
     }
 
+    /// The word of the clock of the time of day that `addr` names, if it
+    /// names one and it is a device, not memory (`--no-cycle-counter`).
+    fn todDevice(self: *const Cpu, addr: u32) ?u2 {
+        return if (self.cycle_counter) todWord(addr) else null;
+    }
+
     /// The word of the performance counters that `addr` names, if it names
     /// one that is a device: not a word of the cycle counter or the
     /// microsecond counter when those are switched off.
@@ -976,6 +1063,7 @@ pub const Cpu = struct {
     pub fn peek(self: *const Cpu, addr: u32) u32 {
         if (addr == counter_addr) return self.read_count;
         if (mpuWord(addr)) |i| return self.mpu.read(i);
+        if (self.todDevice(addr)) |i| return self.tod.peek(i);
         if (self.perfDevice(addr)) |i| {
             var p = self.perf;
             if (self.clock) |c| p.micros = c.micros();
@@ -1002,6 +1090,8 @@ pub const Cpu = struct {
             self.read_count = value;
         } else if (mpuWord(addr)) |i| {
             self.mpu.write(i, value);
+        } else if (self.todDevice(addr)) |i| {
+            self.tod.write(i, value);
         } else if (self.perfDevice(addr) != null) {
             // The counters cannot be written (SYSTEM §3).
         } else if (timerWord(addr)) |i| {
@@ -1038,6 +1128,7 @@ pub const Cpu = struct {
             } else {
                 self.perf.micros +%= 1;
             }
+            self.tod.tick(1);
             self.timer.tick();
         }
         const before = self.regs;
@@ -1107,6 +1198,7 @@ pub const Cpu = struct {
         irq_pending: ?u8,
         read_count: u32,
         perf: Perf,
+        tod: Tod,
         timer: Timer,
     };
 
@@ -1122,6 +1214,7 @@ pub const Cpu = struct {
             .irq_pending = self.irq_pending,
             .read_count = self.read_count,
             .perf = self.perf,
+            .tod = self.tod,
             .timer = self.timer,
         };
     }
@@ -1137,6 +1230,7 @@ pub const Cpu = struct {
         self.irq_pending = s.irq_pending;
         self.read_count = s.read_count;
         self.perf = s.perf;
+        self.tod = s.tod;
         self.timer = s.timer;
     }
 
@@ -1169,6 +1263,7 @@ pub const Cpu = struct {
     pub fn skipWait(self: *Cpu, n: u64) void {
         self.perf.cycles +%= n;
         if (self.clock == null) self.perf.micros +%= n;
+        self.tod.tick(n);
         self.timer.tickMany(n);
     }
 
@@ -2614,6 +2709,43 @@ test "without the cycle counter, its words and the microsecond counter's are mem
     try testing.expectEqual(0, cpu.perf.micros_snap);
     cpu.cycle_counter = true;
     try testing.expectEqual(0, cpu.read(perf_base)); // the counter again, not the memory
+}
+
+test "a reset of the processor leaves the clock of the time of day (SYSTEM §10)" {
+    // 0: MOVE R1, R1, then the clock is set and the processor reset, as
+    // by a start over the debug link.
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{ alu_iw(.always, MOVE, .none, reg(1), reg(1), reg(0)), HALT });
+    try cpu.step();
+    try testing.expectEqual(1, cpu.peek(perf_base + 6)); // one step, one microsecond
+    try cpu.write(perf_base + 7, 3);
+    try cpu.write(perf_base + 8, 4);
+    try cpu.write(perf_base + 6, 5);
+    try testing.expectEqual(5, cpu.read(perf_base + 6));
+    cpu.reset();
+    try testing.expectEqual(5, cpu.peek(perf_base + 6));
+    try testing.expectEqual(3, cpu.peek(perf_base + 7)); // the snapshot
+    try testing.expectEqual(4, cpu.peek(perf_base + 8));
+    try testing.expectEqual(1, cpu.peek(perf_base + 9)); // still set
+    try testing.expectEqual(4 << 32 | 3, cpu.tod.stage);
+    try cpu.step(); // the clock counts on from where it was
+    try testing.expectEqual(6, cpu.peek(perf_base + 6));
+}
+
+test "on the host's clock, the clock of the time of day reads the time plus what a write set (SYSTEM §10)" {
+    var tod: Tod = .{};
+    tod.useHost(testing.io);
+    try testing.expectEqual(1, tod.peek(3));
+    _ = tod.read(0);
+    try testing.expect(tod.snap > 1_700_000_000); // after 2023
+    tod.write(1, 100);
+    tod.write(2, 0);
+    tod.write(0, 0);
+    _ = tod.read(0);
+    try testing.expect(tod.snap == 100 or tod.snap == 101);
+    tod.write(3, 1); // clears "set", whatever the value
+    try testing.expectEqual(0, tod.peek(3));
 }
 
 test "the timer counts down from the write and raises a request every P steps (SYSTEM §4)" {

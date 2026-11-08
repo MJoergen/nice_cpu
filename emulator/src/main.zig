@@ -50,14 +50,15 @@ const usage =
     \\      --symbols FILE   Read labels from FILE, as niceasm --symbols writes it, and
     \\                       name the location of a halt other than HALT, and of a
     \\                       wasm trap (translator/WASM.md), after the halt message.
-    \\      --no-cycle-counter  Make 0xFFFFFF40, 0xFFFFFF41, 0xFFFFFF44, and
-    \\                       0xFFFFFF45 ordinary memory, for comparing traces
+    \\      --no-cycle-counter  Make 0xFFFFFF40, 0xFFFFFF41, and 0xFFFFFF44-
+    \\                       0xFFFFFF49 ordinary memory, for comparing traces
     \\                       with an FPGA core.
     \\      --no-font        Make the font RAM and the character ROM,
     \\                       0xFFFE0000-0xFFFE3FFF, ordinary memory, for
     \\                       comparing traces with an FPGA core.
     \\      --step-time      Count one microsecond per step in 0xFFFFFF44 and
-    \\                       0xFFFFFF45, rather than the host's time.
+    \\                       0xFFFFFF45, and in the clock at 0xFFFFFF46-
+    \\                       0xFFFFFF49 from 0, rather than the host's time.
     \\      --no-timer-irq   The timer counts, but raises no requests, so that
     \\                       --irq can raise them where an FPGA core took them.
     \\      --link [ADDR:]PORT  Serve the debug link of doc/DEBUG.md on PORT of
@@ -687,6 +688,7 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
     if (!opts.step_time) {
         cpu.clock = &clock;
         clock.start();
+        cpu.tod.useHost(io); // the host's time of day (doc/SYSTEM.md §10)
     }
     cpu.timer_irq = opts.timer_irq;
     var in_buf: [4096]u8 = undefined;
@@ -1002,6 +1004,8 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
     // 0 by the reset of a start (doc/SYSTEM.md §3).
     var clock: Clock = .{ .io = io };
     if (!opts.step_time) cpu.clock = &clock;
+    // The clock of the time of day runs on through a start (doc/SYSTEM.md §10).
+    if (!opts.step_time) cpu.tod.useHost(io);
     cpu.timer_irq = opts.timer_irq;
     // With the window, the console reads do not wait, and the run is paced
     // (doc/SYSTEM.md §1).

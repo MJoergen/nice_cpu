@@ -12,7 +12,7 @@ dependencies beyond the standard library. It implements the assembler syntax in
 
 Without `-o`, the output goes to `input.bin`. If that is the input file
 itself, the assembler refuses with a message, as it does if `--symbols`
-names the input or the output. With `--symbols`, it also writes every label to the given file, one line per label: the 8-digit
+names the input or the output. With `--symbols`, it also writes every label but the anonymous ones to the given file, one line per label: the 8-digit
 hex address, a space, and the name, sorted by address and then by name. The
 emulator reads this file (`niceemu --symbols`). Errors in the program are
 printed as `file:line: error: message`, followed by a count of them, and
@@ -141,6 +141,13 @@ This section lists what the assembler does beyond it.
   `file:line: warning: message` and assembles the program.
 - A label or `.EQU` name cannot be a mnemonic or look like a register (`R`
   followed by digits, so `R16` is rejected too).
+- An anonymous label is `:` alone as the label. `::` and `:-` are not
+  labels, and `:` cannot be an `.EQU` name. A reference with more signs
+  than there are anonymous labels above or below it is an error, which
+  says how many there are. An anonymous label reference in an `.EQU`
+  value is an error, since the values are checked before any label is
+  known. A reference followed by a term, as in `:++2`, is an error too:
+  its signs are all part of it, so the offset goes first, `2+:++`.
 - The operands of a pseudo-instruction are checked as those of the
   instruction it assembles as: the target of `CALL` or `JMP` as the
   source of a `MOVE`, so `CALL R2--` is an error, and the operand of `POP`
@@ -159,7 +166,8 @@ This section lists what the assembler does beyond it.
 
 **Directives.**
 
-- `.ORG`, `.BLK`, and `.RES` arguments must not refer to labels defined later.
+- `.ORG`, `.BLK`, and `.RES` arguments must not refer to labels defined
+  later, nor to an anonymous label below with `:+`.
 - A `.BLK` or `.RES` count must not be negative, and the block must end at or
   before address `0xFFFFFFFF`. Other statements wrap from `0xFFFFFFFF` to 0.
 - Writing two words to the same address is an error. So is any overlap of
@@ -195,7 +203,7 @@ runs the tests of `nicefmt` and `nicedis`, and checks the layout of every
 | File | What it checks |
 |---|---|
 | `count`, `replicate`, `print` | The 2004 example programs by B. Ulmann ([examples.zip](http://www.vaxman.de/projects/nice/examples.zip)). The `.bin` files are the original `NICE.pm` output and match byte for byte. |
-| `encoding` | Every addressing mode in every field, opcode, alias, condition, control instruction, pseudo-instruction, and directive; three constant words; number spellings and expressions; register spellings; and `.EQU` chains and operands. The expected output was checked by hand against ISA.md, including the worked example in §11. The comments of the later lines give the derivation. |
+| `encoding` | Every addressing mode in every field, opcode, alias, condition, control instruction, pseudo-instruction, and directive; three constant words; number spellings and expressions; anonymous labels; register spellings; and `.EQU` chains and operands. The expected output was checked by hand against ISA.md, including the worked example in §11. The comments of the later lines give the derivation. |
 | `wrap` | Address wrap from `0xFFFFFFFF` to 0. |
 | `crlf` | CRLF line endings and a program with no `.ORG`. |
 | `dis.py` | `nicedis`: every `.bin` file of the repository disassembled and reassembled to the same words, without symbols and with them where its `.nasm` file or `.sym` file gives them, and each listing in the layout; the hand-checked listings `count.lst` and `disedge.lst`; `disassemble()`; `--start` and `--end`; and the errors. `disedge.bin` and `disedge.sym` hold the cases no assembled program has: the `.DAT` words, cut-off instructions, a gap, a label inside an instruction, and the names that are not labels. |

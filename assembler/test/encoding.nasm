@@ -225,3 +225,19 @@ pl              .DAT    4*pl, 2+3*4, 2*3-1, -2*3, 3*PR, PR*PR-1, 0xFFFFFFFF*2
 ; WAIT (ISA.md 5.3), alone and with a condition: ?!Z is NEG 1, SEL 011
                 WAIT                    ; 472: 0c600000
         ?!Z     wait                    ; 473: b0000000 | 0c600000 = bc600000
+; anonymous labels (ISA.md 10.1): ':-' is the nearest above, a label on the
+; line of the reference included, and ':+' the nearest below, each more sign
+; one more. They count in source order, so a .ORG does not change them. The
+; six here are A1 to A6, at 474, 476, 47a, 490, 488, and 489.
+:               MOVE    R1, 3           ; A1, 474: 00005800, 475: 3
+:               SUB[M]  R1, R1, 1       ; A2, 476: 022040b0, 477: 1
+        ?!Z     JMP     :-              ; 478: b003d800, 479: A2 = 476
+:               JMP     :-              ; A3, 47a: 0003d800, 47b: A3 = 47a, its own line
+                .DAT    :--, :---, 2+:-, 4*:+, :-+1, :+-1, -:-
+                ; 47c-482: A2 = 476, A1 = 474, 2+A3 = 47c, 4*A4 = 1240,
+                ; A3+1 = 47b, A4-1 = 48f, -A3 = fffffb86
+:               .ORG    0x490           ; A4 = 490, the new address
+                .DAT    :-, :+, :++     ; 490-492: A4 = 490, A5 = 488, A6 = 489
+                .ORG    0x488
+:               .DAT    :--             ; A5, 488: A4 = 490, above in source order
+:               MOVE    R1, @:-[R2]     ; A6, 489: 1<<14 | 0x72<<7 = 00007900, 48a: A6 = 489

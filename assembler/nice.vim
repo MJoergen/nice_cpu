@@ -13,11 +13,14 @@ syn case ignore
 
 " Labels and .EQU names: the first word in column 0.
 syn match niceLabel     "^[A-Za-z_][A-Za-z0-9_.]*:\="
+" Anonymous labels: a lone : in column 0, and the references :- and :++.
+syn match niceLabel     "^:\(\s\|$\)\@="
+syn match niceLabel     ":\(-\+\|+\+\)"
 
 " Instructions
 syn keyword niceAlu     MOVE SUB MDBL ADD DBL DEC NOT NOR IAND NAND XOR IOR XNOR AND ONE OR
 syn keyword niceShift   SHL SHR ROL ROR BPL BPR
-syn keyword niceControl HALT RTI INT
+syn keyword niceControl HALT RTI INT WAIT
 syn keyword nicePseudo  CALL RET JMP CMP TST PUSH POP CLR NOP
 
 " Modifiers: [M], [C], [CM], [MC]
@@ -35,7 +38,7 @@ syn match niceNumber    "\<\(0x\x\+\|0b[01]\+\|[0-9]\+\)\>"
 " Symbolic shifts come after the numbers, so 0>C is not a number.
 syn match   niceShift   "\(\s\)\@<=\(0<[01C]\|C<[01C0]\|<<<\|C<<\|[01C]>[0C]\|0>C\|>>>\|>>C\)\(\s\|$\)\@="
 " An indirect operand as a whole: @R3, @--R3, @R3++, @0x12, @c[R1].
-syn match niceIndirect  "@\(--\)\=[A-Za-z0-9_.+-]*\(\[[^]]*\]\)\=\(++\|--\)\="
+syn match niceIndirect  "@\(--\)\=[A-Za-z0-9_.:+-]*\(\[[^]]*\]\)\=\(++\|--\)\="
 syn region niceString   start=+'+ end=+'+ oneline
 syn region niceString   start=+"+ end=+"+ oneline
 

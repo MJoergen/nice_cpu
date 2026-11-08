@@ -185,6 +185,26 @@ CASES: List[Tuple[str, str]] = [
     (" RTI[M]", "1: error: RTI takes no modifiers"),
     (" WAIT 1", "1: error: WAIT takes 0 operands, got 1"),
     (" WAIT[M]", "1: error: WAIT takes no modifiers"),
+    # Anonymous labels (ISA.md 10.1)
+    (" JMP :+", "1: error: ':+': no anonymous label below"),
+    (" JMP :-", "1: error: ':-': no anonymous label above"),
+    (": HALT\n JMP :--", "2: error: ':--': only 1 anonymous label above"),
+    (": HALT\n:\n JMP :---", "3: error: ':---': only 2 anonymous labels above"),
+    (" JMP :++\n: HALT", "1: error: ':++': only 1 anonymous label below"),
+    (": .EQU 5", "1: error: an anonymous label cannot be an .EQU name"),
+    ("X .EQU :-\n: HALT", "1: error: ':-': an anonymous label cannot be used in an .EQU value"),
+    ("X .EQU @:+[R1]\n: HALT", "1: error: ':+': an anonymous label cannot be used in an .EQU value"),
+    (" .ORG :+\n: HALT", "1: error: ':+' must be defined before the .ORG"),
+    (" .RES 1+:+\n: HALT", "1: error: ':+' must be defined before the .RES"),
+    (": HALT\n JMP :++2",
+     "2: error: ':++' is followed by '2': its signs are all part of it, "
+     "so write an offset before it, as in '2+:++'"),
+    (" .DAT :", "1: error: bad anonymous label reference in ':', expected ':-' or ':+'"),
+    (" .DAT :*2", "1: error: bad anonymous label reference in ':*2', expected ':-' or ':+'"),
+    ("x HALT\n .DAT x:+1", "2: error: bad expression 'x:+1'"),
+    (":: HALT", "1: error: bad symbol name '::'"),
+    (":- HALT", "1: error: bad symbol name ':-'"),
+    (":+: HALT", "1: error: bad symbol name ':+'"),
     ("wait .EQU 5", "1: error: 'wait' is a mnemonic and cannot be a symbol"),
     (" INT[C] 1", "1: error: INT takes no modifiers"),
     (" SHL[CM] R1, R2, R3", "1: error: [C] is only allowed on ALU instructions"),
@@ -490,9 +510,10 @@ def main() -> None:
                 or os.path.exists(os.path.join(cli, "ok.bin"))):
             failed += 1
             print("FAIL -o out.txt")
-        # --symbols writes the labels, sorted by address and then by name.
+        # --symbols writes the labels, sorted by address and then by name,
+        # but not the anonymous label at 3.
         with open(os.path.join(cli, "sym.nasm"), "w") as f:
-            f.write("a MOVE R1, 1\nb\nc HALT\n.ORG 0x10\nd HALT\n")
+            f.write("a MOVE R1, 1\nb\nc HALT\n: HALT\n.ORG 0x10\nd HALT\n")
         p = subprocess.run([sys.executable, NICEASM, "--symbols", "sym.txt", "sym.nasm"], cwd=cli,
                            capture_output=True, text=True)
         with open(os.path.join(cli, "sym.txt")) as f:

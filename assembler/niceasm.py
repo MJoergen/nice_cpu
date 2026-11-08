@@ -75,6 +75,8 @@ REGISTER_LIKE = re.compile(r"R\d+$", re.IGNORECASE)  # reserved, never a symbol
 NUMBER = re.compile(r"0x[0-9a-f]+$|0b[01]+$|[0-9]+$", re.IGNORECASE)
 TOKEN = re.compile(r"""'[^']*'|"[^"]*"|[^\s,;'"][^\s,;]*""")
 QUOTES = ("'", '"')
+# An anonymous label reference: ':' and a run of '-' or of '+' (ISA.md 10.2).
+ANON_REF = re.compile(r":(-+|\++)")
 
 
 class AsmError(Exception):
@@ -95,6 +97,8 @@ class Assembler:
         self.line_no = 0
         self.equ_cache: Dict[str, int] = {}            # .EQU values in pass 0
         self.early_labels: Dict[str, int] = {}         # label name -> first line, from pass 0
+        self.anon_lines: List[int] = []                # lines with an anonymous label, from pass 0
+        self.anon_addr: Dict[int, int] = {}            # line number -> address, from pass 1
         self.must_know: Optional[str] = None  # set while evaluating a .ORG, .BLK, or .RES argument
         self.warnings: List[Tuple[int, str]] = []      # (line number, message), from pass 1
 
@@ -133,7 +137,38 @@ class Assembler:
         if name.upper() in MNEMONICS:
             raise AsmError(f"'{name}' is a mnemonic and cannot be a symbol")
 
+    def anon(self, t: str) -> int:
+        """The address of an anonymous label reference, which value() has
+        rewritten from ':-' or ':++' to ':<1:' or ':>2:'. A label on the line
+        of the reference counts as above it."""
+        n = int(t[2:-1])
+        shown = ":" + ("-" if t[1] == "<" else "+") * n
+        if self.pass_no == 0:
+            raise AsmError(f"'{shown}': an anonymous label cannot be used in an .EQU value")
+        i = bisect.bisect_right(self.anon_lines, self.line_no)
+        if t[1] == "<":
+            if n > i:
+                if i == 0:
+                    raise AsmError(f"'{shown}': no anonymous label above")
+                raise AsmError(f"'{shown}': only {i} anonymous label{'' if i == 1 else 's'} above")
+            line = self.anon_lines[i - n]
+        else:
+            below = len(self.anon_lines) - i
+            if n > below:
+                if below == 0:
+                    raise AsmError(f"'{shown}': no anonymous label below")
+                raise AsmError(f"'{shown}': only {below} anonymous "
+                               f"label{'' if below == 1 else 's'} below")
+            line = self.anon_lines[i + n - 1]
+        if line in self.anon_addr:
+            return self.anon_addr[line]
+        if self.must_know:
+            raise AsmError(f"'{shown}' must be defined before the {self.must_know}")
+        return 0  # pass 1: a label further down, not needed yet
+
     def term(self, t: str, done: Dict[str, int]) -> int:
+        if t[:1] == ":":
+            return self.anon(t)
         if t[:1] in QUOTES:
             raise AsmError(f"a string ({t}) is only allowed after .ASCII_L and .ASCII_B")
         if t[:1].isdigit():
@@ -198,7 +233,21 @@ class Assembler:
     def value(self, text: str, done: Optional[Dict[str, int]] = None) -> int:
         """expr := ['-'|'+'] product {('+'|'-') product},
         product := term {'*' term}, not yet wrapped modulo 2^32.
-        done holds .EQU values that are already known."""
+        done holds .EQU values that are already known. An anonymous label
+        reference is a term, taken out first, as its signs are not operators."""
+        for m in re.finditer(":", text):
+            if m.start() and text[m.start() - 1] not in "+-*":
+                raise AsmError(f"bad expression '{text}'")
+            ref = ANON_REF.match(text, m.start())
+            if not ref:
+                raise AsmError(f"bad anonymous label reference in '{text}', expected "
+                               f"':-' or ':+'")
+            if text[ref.end():ref.end() + 1] not in ("", "+", "-", "*"):
+                raise AsmError(f"'{ref.group()}' is followed by '{text[ref.end():]}': its "
+                               f"signs are all part of it, so write an offset before it, "
+                               f"as in '{text[ref.end():]}+{ref.group()}'")
+        text = ANON_REF.sub(lambda m: (":<" if m.group(1)[0] == "-" else ":>")
+                            + str(len(m.group(1))) + ":", text)
         parts = re.split(r"([+-])", text)
         if parts[0] == "":       # leading sign
             parts = parts[1:]
@@ -558,7 +607,9 @@ class Assembler:
 
     @staticmethod
     def strip_colon(name: str) -> str:
-        return name[:-1] if len(name) > 1 and name.endswith(":") else name
+        """Drops the ':' that may end a label. '::' keeps it, so that it is
+        an error, not the anonymous label ':'."""
+        return name[:-1] if len(name) > 1 and name.endswith(":") and name != "::" else name
 
     @staticmethod
     def is_keyword(tok: str) -> bool:
@@ -566,7 +617,9 @@ class Assembler:
                 or tok.split("[")[0].upper() in MNEMONICS)
 
     def define_label(self, name: str) -> None:
-        if self.pass_no == 1:
+        if self.pass_no == 1 and name == ":":
+            self.anon_addr[self.line_no] = self.pc
+        elif self.pass_no == 1:
             self.check_name(name)
             self.labels[name] = self.pc
             self.defined_on[name] = self.line_no
@@ -590,6 +643,8 @@ class Assembler:
                 self.check_commas(tok, commas, 2)
                 if len(tok) != 3:
                     raise AsmError(".EQU takes one value")
+                if tok[0] == ":":
+                    raise AsmError("an anonymous label cannot be an .EQU name")
                 name = self.strip_colon(tok[0])
                 if name in self.early_labels:
                     raise AsmError(f"symbol '{name}' is already defined on line "
@@ -603,7 +658,10 @@ class Assembler:
             # reported on the .EQU line. Pass 1 checks and defines them.
             if (not self.is_keyword(tok[0]) and not tok[0].startswith(".")
                     and (len(tok) == 1 or self.is_keyword(tok[1]))):
-                self.early_labels.setdefault(self.strip_colon(tok[0]), line_no)
+                if tok[0] == ":":
+                    self.anon_lines.append(line_no)
+                else:
+                    self.early_labels.setdefault(self.strip_colon(tok[0]), line_no)
             return
         all_tok = list(tok)
 

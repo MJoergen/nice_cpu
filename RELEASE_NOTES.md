@@ -14,6 +14,7 @@ pin each are:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|
+| `V2.0` | none yet |
 | `V1.9` | none yet |
 | `V1.8` | none yet |
 | `V1.7` | none yet |
@@ -34,35 +35,172 @@ pin each are:
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
 
-## V2.0 (unreleased)
+## V2.0 (2026-11-08)
+
+`WAIT` waits for an interrupt (#133). Five byte windows let a data
+access take a byte address, and nicewasm uses them with
+`--byte-windows` (#112). The assembler has anonymous labels (#145), and
+the system has a clock of the time of day (#122). The debug link,
+version 7, shows the wait and the hidden state of ISA §1.4 (#109), and
+has watchpoints (#146). niceemu reports the lowest SP with `--stack`
+(#132).
 
 **Upgrade notes.**
 
 - `WAIT` is a mnemonic (ISA §7.5), so a program with a label or an
   `.EQU` name `WAIT`, in any case of letters, no longer assembles until
   it is renamed. The slides' `irq.nasm`, the demo, and the emulator's
-  tests renamed theirs.
+  tests renamed theirs. NiceMonMEGA65 follows with
+  MJoergen/NiceMonMEGA65#92.
+- The word `0x0C600000`, a reserved control command, is `WAIT` now,
+  where it was reserved.
+- Both cores have new ports, all with defaults that keep a system of
+  V1.9 working: `waiting_o` and `wstep_o` for the wait; `in_service_o`,
+  `after_rti_o`, `saved_pc_o`, and `saved_sr_o` for the hidden state;
+  and the generic `G_WATCHES`, 0 to 4, default 0, with the inputs
+  `wch_addr_i` and `wch_en_i` and the outputs `wch_hit_o` and
+  `wch_pc_o` for the watchpoints. `debug_link.vhd` takes them on
+  inputs that default to 0. NiceMonMEGA65 follows with
+  MJoergen/NiceMonMEGA65#93, #98, and #99.
+- The debug link is version 7, a new minor of major 0 (DEBUG.md §9).
+  Its registers start at `0xFFFFFFD0`, where they started at
+  `0xFFFFFFE0`, so a link request to `0xFFFFFFD0`–`0xFFFFFFDF` reaches
+  the link, where it reached the system's words, which SYSTEM.md
+  reserved for I/O and no system used. A host of version 6 works
+  unchanged.
+- SYSTEM.md has two new parts of the address map: the clock at
+  `0xFFFFFF46`–`0xFFFFFF49` (§10), `hdl/src/tod.vhd` on the cores, and
+  the byte windows of §9, data addresses with top nibble 1 to 5. The
+  windows are a property of the memory, in `hdl/sim/wb_mem.vhd`, and
+  leave `hdl/src` as it is. A program whose data is at an address of
+  top nibble 1 to 5, as R14 with E = 1 or with N set as a pointer, or a
+  VBASE of `0x100000`–`0x5FFFFF`, reaches the windows there.
+  NiceMonMEGA65 follows with MJoergen/NiceMonMEGA65#90 and #97.
+- `nice_screen_clear` writes `0x000FFF20`, white on black, where it
+  wrote `0x20` (#148). A program that reads a cleared word back sees
+  the difference.
+- Zig 0.17.0, as in V1.9.
+
+**Specification and documents**
+
+- ISA §7.5: `WAIT`, control command 3. It completes, and the processor
+  runs no instruction until an NMI or IRQ is pending, also while E = 0
+  or `in_service` = 1. Then the request is taken if it can be, and
+  otherwise the instruction after the `WAIT` runs, so a test of a flag
+  with E = 0 followed by `?Z WAIT` loses no wakeup (#133).
+- ISA §10: anonymous labels. A lone `:` is a label, `:-` refers to the
+  nearest one above, `:+` to the nearest one below, and each more sign
+  to one further (#145). Appendix B has a row for them.
+- ISA §8.2: a store through another address to a word that is fetched,
+  as aliasing and the windows allow, leaves undefined which value runs.
+- SYSTEM.md §9: the byte windows. A data access at A with top nibble 1
+  to 5 reaches word (A >> 2) AND `0x03FFFFFF`, whole, as a byte, or as
+  a halfword, zero- or sign-extended, and a write through a byte or
+  halfword window changes only that part (#112).
+- SYSTEM.md §10: the clock of the time of day, the seconds since the
+  Unix epoch in 64 bits and the microseconds within the second, with a
+  snapshot on a read of `CLOCK_USEC` and a set of all three at once. It
+  runs while the processor is held, paused, halted, or waiting, and
+  only a reset of the system sets it to 0 (#122).
+- SYSTEM.md §3: a waiting processor runs, so the cycle counter, the
+  microsecond counter, and the timer count on.
+- DEBUG.md, version 7: bit 6 of the control register reads the wait;
+  bits 7 and 8 `in_service` and `after_rti`; bits 9 and 10 the pending
+  NMI and IRQ; `0xFFFFFFD0` and `0xFFFFFFD1` `saved_pc` and `saved_sr`
+  (#109). Four watchpoints at `0xFFFFFFD4`–`0xFFFFFFDB`, each an address
+  with an enable for reads and one for writes, stop the processor after
+  the step that hit, with the notice `w` and bit 9 of the stop register
+  (#146).
+- decisions.md records the operand variants of #112, the bank select
+  weighed against #109, a watchpoint that stops before the access, and
+  Embench-IoT.
+
+**Assembler (`niceasm`, `nicedis`)**
+
+- `WAIT`, with no operands, and `nicedis` disassembles it (#133).
+- Anonymous labels, `:` with `:-` and `:+` (#145). They are not in
+  `--symbols`. `nice.vim` shows them, and `WAIT`.
+- A `:` in a string or inside a term keeps the message it had before.
+
+**Emulator (`niceemu`)**
+
+- `WAIT`. A wait step counts in the cycle counter and the timer, and
+  with `--step-time` in the microsecond counter. The emulator jumps
+  over wait steps at once, with the same result as one by one. A wait
+  that no request can end stops a run with "Stopped: waiting with no
+  request to come", exit status 2, unless the run has the window or the
+  link (#133).
+- The byte windows of SYSTEM.md §9 (#112), and the clock of §10, on the
+  host's time, or with `--step-time` one microsecond per step from 0
+  (#122).
+- `--link` serves version 7: the wait, the hidden state, and the
+  watchpoints (#109, #146).
+- `--stack` prints the lowest value of R13 since its first change, and
+  the words between it and the first value (#132).
+- The report names the trap code 8 of nicewasm.
+- The version is 2.0.0.
+
+**Debugger (`nicedbg`)**
+
+- `status` shows a wait for an interrupt, and a line for the interrupt
+  state: in a routine, with `saved_pc` and `saved_sr`, after `RTI`, and
+  the pending NMI and IRQ (#109, #133).
+- `wp` sets a watchpoint on writes, reads, or both, and lists them, and
+  `wpd` disables them. The `w` notice shows the instruction that hit
+  (#146).
 
 **Runtime (`runtime/`)**
 
+- `nice.h` has `nice_clock`, `nice_clock_isset`, and `nice_clock_set`,
+  and `time()` returns the clock's seconds, or −1 while it holds no
+  time (#122).
 - `nice_screen_clear`, and `screenClear` and `screen_clear` of the Zig
   and Rust wrappers, write a blank in white on black, `0x000FFF20`,
   where they wrote `0x20`, black on black, on which the cursor of
   SYSTEM.md §1.4 could not show (#148). `NICE_SCREEN_BLANK`,
-  `screen_blank`, and `SCREEN_BLANK` name the word. A blank looks the
-  same either way; a program that reads a cleared word back sees the
-  difference.
+  `screen_blank`, and `SCREEN_BLANK` name the word.
+
+**Translator (`nicewasm`)**
+
+- `--byte-windows` accesses the memory through the windows. A byte
+  load or store is one `MOVE`, and so is a halfword or a word whose
+  alignment `--trust-alignment` trusts or the translator knows (#112).
+  `nicebuild.py` passes the option on. In niceemu steps, with bounds
+  checks and `--trust-alignment`, `bench` takes 1451191, from 1697021,
+  and Dhrystone 199384, from 256400.
+- With `--byte-windows`, nicewasm refuses a memory of more than 4096
+  pages, and `___wasm_start` traps with code 8 if the memory ends past
+  the windows' reach.
 
 **FPGA cores (`hdl/`)**
 
-- Watchpoints on the debug link (#146) put a hit ahead of a pause
-  request and of an interrupt in WRITE, and check the vector read of
-  an entry. After that change, `make sweep` with one interrupt per run
-  passes on both cores at 5423a5b: pcfx in 4132 runs, with an NMI
-  before each of its 2066 steps and an IRQ before 2054 (12 have
-  E = 0); sidefx in 14537 runs, with an NMI before 7168 of 7444 steps
-  and an IRQ before 6701 (668 have E = 0; 276 and 75 steps have no
-  vector table and were left out).
+- Both cores run `WAIT`: the pipelined core in a new mode with FETCH
+  stopped, the multi-cycle core in BOUNDARY. A pause goes first and
+  returns to the wait, and a step of a waiting core is one wait step
+  (#133).
+- `tod.vhd` is the clock of SYSTEM.md §10, a Wishbone slave of four
+  words, proven by `formal/tod.sby` (#122).
+- `debug_link.vhd` is version 7, with the hidden state (#109) and the
+  watchpoints (#146). With `G_WATCHES` above 0, each data access is
+  checked, the vector read of an entry included, and a hit goes ahead
+  of a pause request and an interrupt in WRITE. While a watchpoint is
+  enabled, PREPARE holds the first read of an instruction until the one
+  before has left WRITE, which costs speed only then.
+- `make sweep` with one interrupt per run passes on both cores at
+  5423a5b: pcfx in 4132 runs, with an NMI before each of its 2066
+  steps and an IRQ before 2054 (12 have E = 0); sidefx in 14537 runs,
+  with an NMI before 7168 of 7444 steps and an IRQ before 6701 (668
+  have E = 0; 276 and 75 steps have no vector table and were left
+  out).
+- `make timing` on the MEGA65, in the default flow, with 4 breakpoints
+  and 4 watchpoints: the core alone has +0.396 ns of slack, from
+  +0.219 ns, and its inputs and outputs leave 2.251 and 2.539 ns, from
+  2.503 and 2.674 ns.
+
+**Benchmarks**
+
+- No change for `bench.c` as built by default: 2339271 estimated
+  cycles on the pipelined core, as in V1.9.
 
 ## V1.9 (2026-11-07)
 

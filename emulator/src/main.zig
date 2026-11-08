@@ -1106,10 +1106,19 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
                     link.undo = false;
                     cpu.putBack(saved);
                     link.putBackInput();
+                    // The step did not run, so it hit nothing.
+                    cpu.watch.hits = 0;
                 }
                 break;
             }
             steps += 1;
+            // A step that hit a watchpoint stops the processor before
+            // anything else, unless it halted, or the step limit, a halt,
+            // comes now (DEBUG.md §6).
+            if (link.watchDue() and steps != opts.max_steps) {
+                link.pause();
+                break;
+            }
             wait_ms = idle.wait(steps, cpu.idle_reads, cpu.time_reads);
             if (wait_ms != 0) break;
         }

@@ -507,8 +507,8 @@ keep the default and forward the port over SSH instead:
 
 The host tool is [`debugger/nicedbg.py`](../debugger/README.md), an
 interactive debugger on the link. It loads a program, runs, pauses,
-steps, and goes on, sets the breakpoints, reads and writes the registers
-and the memory, and disassembles with `nicedis.py`, with labels from
+steps, and goes on, sets the breakpoints and the watchpoints, reads and
+writes the registers and the memory, and disassembles with `nicedis.py`, with labels from
 `niceasm.py --symbols`. It connects to niceemu with `--tcp PORT`:
 
     niceemu --link 4510 &
@@ -542,6 +542,11 @@ breakpoint at R15, unless the step is an interrupt entry or the first after
 a go on or a step. A stop does not count as a step, so the requests and
 `--max-steps` count as without breakpoints. A write to their registers
 takes effect before the next step, and a host's connection clears them.
+It has four watchpoints too. It checks each data access of a step against
+them, and after a step that hit one, it stops before anything else,
+unless the step halted or reached `--max-steps`. A step that a pause
+undoes, at a console read, hit nothing. A write to their registers takes
+effect at the next step, and a host's connection clears them.
 While the processor is paused, a write of R1 to R15 sets the register as
 a register-direct write of an instruction does (ISA.md §4.3), and leaves
 the hidden state alone. A write of R0 to R15 while it is not paused gets
@@ -638,6 +643,10 @@ interrupt entries, compared with `--trace`. And it checks the breakpoints:
 their example of DEBUG.md §8, the stop register, a step and a start that
 end at one, two at one address, a skipped instruction and a `HALT` at one,
 what keeps and clears them, and an interrupt entry that goes first. It
+checks the watchpoints: their example of DEBUG.md §8, a write, a read,
+two reads in one step, a skipped read, the vector reads of `INT` and of
+an IRQ entry, two at one address, a stop before a breakpoint, a step and
+the step limit, what keeps and clears them, and their registers. It
 checks the writes of R0 to R15: their example of DEBUG.md §8, R0, R14,
 a step and a go on from a written R15, also at a breakpoint, and `e04`
 while halted, held, and running. And it checks the network station's
@@ -647,9 +656,9 @@ the control register, a pause and a step in it, a breakpoint at R15 that
 fires only at its end, and a wait that no request can end, which does not
 stop the run. And it checks the hidden state: bits 7 to 10, `saved_pc`,
 and `saved_sr`, step by step through an `INT`, its `RTI`, and an NMI
-that waits for the `RTI`, at a halt and a hold, and that the words
-`0xFFFFFFD0`–`0xFFFFFFDF` take no write and answer while the program
-runs.
+that waits for the `RTI`, at a halt and a hold, and that the read-only
+words of `0xFFFFFFD0`–`0xFFFFFFDF` take no write, and that the range
+answers while the program runs.
 Last, `test/udp.py` checks the frames over the socket of `--eth-udp`
 (Ethernet frames above), and `test/tap.py` the same through
 `tools/nicetap.py` and a TAP device (A real network above).

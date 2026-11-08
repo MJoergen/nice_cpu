@@ -121,6 +121,31 @@ loop            ADD     R2, R2, 1
 """
 
 
+# The data accesses of DEBUG.md §6 for the watchpoints: a write at 0, a read
+# at 3, a skipped read at 5, two reads in one step at 7, and the vector read
+# of the INT at 12, whose routine is at 14. data is at 15.
+WATCH = """
+                MOVE    @data, 5        ; a write
+                MOVE    R2, @data       ; a read
+        ?Z      MOVE    R3, @data       ; skipped: Z is 0
+                ADD     R4, @data, @data  ; two reads
+                MOVE    R14, 1          ; VBASE = 1: the table is at 0x100
+                INT     2
+back            HALT
+isr             RTI
+data            .DAT    7
+                .ORG    0x102
+                .DAT    isr
+"""
+
+# Writes the word at 0x200 at 0x10, for the watchpoint of DEBUG.md §8.
+WRITE200 = """
+                MOVE    R15, there
+                .ORG    0x10
+there           MOVE    @0x200, R1
+                HALT
+"""
+
 # Copies R3 to R4 at 0x20, and halts, for the writes of R0-R15 (DEBUG.md §6).
 WAITER = """
                 WAIT
@@ -1110,6 +1135,179 @@ def test_break(at10: List[int], load: List[int], count: List[int], skip: List[in
     e.stop()
 
 
+WATCH_EN = 0xFFFFFFD4
+WATCH_PC = 0xFFFFFFD6
+WATCH0 = 0xFFFFFFD8
+HALTED = b"\xffh01#C9"
+
+
+def whit(n: int) -> bytes:
+    """The `w` notice of watchpoint n (DEBUG.md §4)."""
+    return pkt("w", f"{n:02X}")
+
+
+def set_watches(e: Emu, addrs: List[int], en: int) -> None:
+    """Write the addresses of watchpoints 0 up, and then the enable bits."""
+    e.send(write(WATCH0, addrs) + write(WATCH_EN, [en]))
+    e.expect("set watchpoints", ok(WATCH0, len(addrs)) + ok(WATCH_EN, 1))
+
+
+def test_watch(watch: List[int], write200: List[int], irq: List[int]) -> None:
+    """The watchpoints of §6: the `w` notice, a stop after the step, the
+    address of the hit, the accesses that hit, and what keeps and clears
+    them. The addresses are those of WATCH."""
+    data = 15
+
+    def started(name: str, en: int, args: List[str] = [], addrs: List[int] = [data],
+                control: int = 0x8) -> Emu:
+        e = Emu(args)
+        e.take(len(HELLO))
+        e.send(write(0, watch))
+        e.expect("load watch", ok(0, len(watch)))
+        set_watches(e, addrs, en)
+        e.send(write(CONTROL, [control]))
+        e.expect(name, ok(CONTROL, 1))
+        return e
+
+    def at(name: str, e: Emu, r15: int, pc: int, stop: int) -> None:
+        got = (word(e, 0xFFFFFFEF), word(e, WATCH_PC), word(e, STOP_REG))
+        if got != (r15, pc, stop):
+            failures.append(f"{name}: R15, hit, stop = {got}, expected {(r15, pc, stop)}")
+
+    # The example of §8, with its checksums written out.
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, write200))
+    e.expect("load write200", ok(0, len(write200)))
+    e.send(ESC + b"WFFFFFFD8000100000200#BA")
+    e.expect("address", ESC + b"kFFFFFFD80001#4C")
+    e.send(ESC + b"WFFFFFFD4000100000002#B6")
+    e.expect("enable", ESC + b"kFFFFFFD40001#48")
+    e.send(ESC + b"WFFFFFFF0000100000008#BA")
+    e.expect("start to w", ESC + b"kFFFFFFF00001#46" + ESC + b"w00#D7")
+    e.send(ESC + b"RFFFFFFD60001#31")
+    e.expect("address of the hit", ESC + b"rFFFFFFD6000100000010#D2")
+    e.send(ESC + b"RFFFFFFF60001#33")
+    e.expect("stop register", ESC + b"rFFFFFFF6000100000200#D5")
+    expect("control at w", bytes([word(e, CONTROL)]), bytes([0x18]))
+    expect("R15 after the write", bytes([word(e, 0xFFFFFFEF)]), bytes([0x12]))
+    e.stop()
+
+    # A write: the stop comes after it, with the value in memory. The reads
+    # are not enabled, so the go on runs to the HALT.
+    e = started("start to the write", 0x2)
+    e.expect("w after the write", whit(0))
+    at("write", e, 3, 0, 0x200)
+    expect("the value written", bytes([word(e, data)]), bytes([5]))
+    e.send(write(CONTROL, [0x8]))
+    e.expect("go on to the halt", ok(CONTROL, 1) + HALTED)
+    e.stop()
+
+    # The reads: one, none for a skipped instruction, and two in one step,
+    # which stop once.
+    e = started("start to the read", 0x1)
+    e.expect("w after the read", whit(0))
+    at("read", e, 5, 3, 0x200)
+    expect("R2 read", bytes([word(e, 0xFFFFFFE2)]), bytes([5]))
+    e.send(write(CONTROL, [0x8]))
+    e.expect("go on past the skipped read", ok(CONTROL, 1) + whit(0))
+    at("two reads", e, 10, 7, 0x200)
+    expect("R4 of two reads", bytes([word(e, 0xFFFFFFE4)]), bytes([10]))
+    e.send(write(CONTROL, [0x8]))
+    e.expect("go on to the halt", ok(CONTROL, 1) + HALTED)
+    expect("stop register after a go on", word(e, STOP_REG).to_bytes(4, "big"), bytes(4))
+    expect("hit after a go on", word(e, WATCH_PC).to_bytes(4, "big"), bytes(4))
+    e.stop()
+
+    # The vector read of INT: the stop is at the routine's first
+    # instruction, inside the routine, and the hit at the INT.
+    e = started("start to the INT", 0x4, addrs=[data, 0x102])
+    e.expect("w after the INT", whit(1))
+    at("INT", e, 14, 12, 0x201)
+    expect("in_service", bytes([word(e, CONTROL) >> 7 & 1]), bytes([1]))
+    e.send(write(CONTROL, [0x8]))
+    e.expect("go on to the halt", ok(CONTROL, 1) + HALTED)
+    e.stop()
+
+    # The vector read of an IRQ entry, in irq.nasm with the IRQ raised
+    # before step 5: the hit is at A3, where the entry goes, its saved PC.
+    e = Emu(["--irq", "5:2"])
+    e.take(len(HELLO))
+    e.send(write(0, irq))
+    e.expect("load irq", ok(0, len(irq)))
+    set_watches(e, [0x102], 1)
+    e.send(write(CONTROL, [0x8]))
+    e.expect("w after the entry", ok(CONTROL, 1) + whit(0))
+    at("IRQ entry", e, 20, 10, 0x200)
+    expect("saved PC", bytes([word(e, SAVED_PC)]), bytes([10]))
+    e.stop()
+
+    # The lowest number of two that hit, a write that a read watchpoint
+    # does not see, and a watchpoint before a breakpoint at the new R15.
+    e = started("start to two", 0x14, addrs=[data, data, data])
+    e.expect("lowest of two", whit(1))
+    at("two at one address", e, 5, 3, 0x201)
+    e.stop()
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, watch))
+    e.expect("load watch", ok(0, len(watch)))
+    set_watches(e, [data], 0x2)
+    set_breaks(e, [3], 1)
+    e.send(write(CONTROL, [0x8]))
+    e.expect("w before x", ok(CONTROL, 1) + whit(0))
+    at("w before x", e, 3, 0, 0x200)
+    e.send(write(CONTROL, [0x8]))
+    e.expect("the breakpoint exempt", ok(CONTROL, 1) + HALTED)
+    e.stop()
+
+    # A step that hits ends in w, and one that does not in p. A start
+    # paused has run no step. A hold keeps the stop and the hit, and a
+    # clear clears them, but not the watchpoints.
+    e = started("start paused", 0x2, control=0x18)
+    e.expect("p at the start", PAUSED)
+    e.send(write(CONTROL, [0x38]))
+    e.expect("step to w", ok(CONTROL, 1) + whit(0))
+    at("step", e, 3, 0, 0x200)
+    e.send(write(CONTROL, [0x38]))
+    e.expect("step to p", ok(CONTROL, 1) + PAUSED)
+    at("step without a hit", e, 5, 0, 0)
+    e.send(write(0xFFFFFFEF, [0]) + write(CONTROL, [0x38]))
+    e.expect("step again to w", ok(0xFFFFFFEF, 1) + ok(CONTROL, 1) + whit(0))
+    e.send(write(CONTROL, [0x9]))
+    e.expect("hold at w", ok(CONTROL, 1))
+    at("hold keeps them", e, 3, 0, 0x200)
+    e.send(write(CONTROL, [0x5]))
+    e.expect("clear", ok(CONTROL, 1))
+    expect("clear clears the stop", word(e, STOP_REG).to_bytes(4, "big"), bytes(4))
+    e.send(read(WATCH_EN, 1) + read(WATCH0, 1))
+    e.expect("clear keeps them", answer(WATCH_EN, [2]) + answer(WATCH0, [data]))
+    e.stop()
+
+    # The step limit is a halt: a step that hits and reaches it ends in h.
+    e = started("start to the limit", 0x2, args=["--max-steps", "1"])
+    e.expect("h at the limit", b"\xffh05#CD")
+    e.stop()
+
+    # The registers: M = 4, the bits from 2M up and the words from M up
+    # take no write, and the reserved words read 0. A new connection clears
+    # the watchpoints.
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(WATCH_EN, [0xFFFFFFFF]) + write(WATCH0, [1, 2, 3, 4, 5, 6, 7, 8]))
+    e.expect("write all", ok(WATCH_EN, 1) + ok(WATCH0, 8))
+    e.send(read(0xFFFFFFD2, 14))
+    e.expect("D2-DF", answer(0xFFFFFFD2, [0, 0, 0xFF, 4, 0, 0, 1, 2, 3, 4, 0, 0, 0, 0]))
+    e.sock.close()
+    time.sleep(0.3)
+    e.sock = e.connect()
+    e.buf = b""
+    e.expect("b again", HELLO)
+    e.send(read(WATCH_EN, 1) + read(WATCH0, 4))
+    e.expect("connection clears them", answer(WATCH_EN, [0]) + answer(WATCH0, [0] * 4))
+    e.stop()
+
+
 def test_wait(waiter: List[int]) -> None:
     """A processor that waits (§6, ISA §7.5): bit 6, a pause and a step in
     the wait, a breakpoint at R15 that fires only when the wait ends, and a
@@ -1201,17 +1399,20 @@ def test_hidden(hidden: List[int], count: List[int]) -> None:
     e.send(write(CONTROL, [0x9]))
     e.expect("hold", ok(CONTROL, 1))
     state("held", 0x8B, 4, 0x01000001, 8)
-    # Read only: saved_pc, saved_sr, and the reserved words take no write,
-    # nor do bits 7 to 10.
+    # Read only: saved_pc, saved_sr, the reserved words, and the number of
+    # watchpoints and the address of a hit take no write, nor do bits 7 to
+    # 10. The enable bits and the addresses of the watchpoints do.
     e.send(write(SAVED_PC, [0x55] * 16) + write(CONTROL, [0x789]))
     e.expect("writes", ok(SAVED_PC, 16) + ok(CONTROL, 1))
     e.send(read(SAVED_PC, 16) + read(CONTROL, 1))
-    e.expect("unchanged", answer(SAVED_PC, [4, 0x01000001] + [0] * 14) + answer(CONTROL, [0x8B]))
+    e.expect("unchanged", answer(SAVED_PC, [4, 0x01000001, 0, 0, 0x55, 4, 0, 0] + [0x55] * 4 + [0] * 4)
+             + answer(CONTROL, [0x8B]))
     # While the program runs, the whole range answers: r and k, not e02.
     e.send(write(0, count) + write(CONTROL, [0x8]))
     e.expect("start count", ok(0, len(count)) + ok(CONTROL, 1))
     e.send(read(0xFFFFFFD2, 14) + write(0xFFFFFFD2, [1]) + read(0xFFFFFFCF, 1))
-    e.expect("running", answer(0xFFFFFFD2, [0] * 14) + ok(0xFFFFFFD2, 1) + pkt("e", "5202"))
+    e.expect("running", answer(0xFFFFFFD2, [0, 0, 0x55, 4, 0, 0] + [0x55] * 4 + [0] * 4) + ok(0xFFFFFFD2, 1)
+             + pkt("e", "5202"))
     e.stop()
 
 
@@ -1410,6 +1611,8 @@ def main() -> None:
         regs = assemble(tmp, "regs", REGS)
         hidden = assemble(tmp, "hidden", HIDDEN)
         waiter = assemble(tmp, "waiter", WAITER)
+        watch = assemble(tmp, "watch", WATCH)
+        write200 = assemble(tmp, "write200", WRITE200)
         at20 = assemble(tmp, "at20", AT20)
         reserved = assemble(tmp, "reserved", RESERVED)
         int_in_isr = assemble(tmp, "int_in_isr", INT_IN_ISR)
@@ -1424,6 +1627,7 @@ def main() -> None:
             lambda: test_pause(count, echo), lambda: test_clock(spin),
             lambda: test_step(count, one, stop, echo, twice, irq, irq_bin),
             lambda: test_break(at10, load, count, skip, stop, irq),
+            lambda: test_watch(watch, write200, irq),
             lambda: test_write_regs(regs, at20, count), lambda: test_wait(waiter),
             lambda: test_hidden(hidden, count),
             lambda: test_old_host(stop, echo), lambda: test_net(spin), test_address, test_usage,

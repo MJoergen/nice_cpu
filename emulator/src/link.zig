@@ -25,6 +25,10 @@ const wait_ms = 50;
 const link_base: u32 = 0xFFFF_FFD0;
 const saved_pc_addr: u32 = link_base;
 const saved_sr_addr: u32 = link_base + 1;
+/// The watchpoints (DEBUG.md §6, §7).
+const watches = cpu_zig.Watch.count;
+const watch_en_addr: u32 = link_base + 4;
+const watch_addr0: u32 = link_base + 8;
 const debug_base: u32 = 0xFFFF_FFE0;
 const control_addr: u32 = debug_base + 0x10;
 /// The number of breakpoints (DEBUG.md §6, §7).
@@ -74,6 +78,10 @@ pub const Link = struct {
     /// The breakpoint of the last `x`, until the next go on, step, or start:
     /// the stop register.
     stop_break: ?u8 = null,
+    /// The watchpoint of the last `w`, and the address of its hit, until
+    /// the next go on, step, or start.
+    stop_watch: ?u8 = null,
+    stop_watch_pc: u32 = 0,
     /// The step limit stopped the run: halt reason 5.
     limit_hit: bool = false,
     /// A clear since the last start: bit 1 and the halt reason read 0, but
@@ -184,13 +192,27 @@ pub const Link = struct {
             self.breakAt(self.cpu.getReg(15)) != null;
     }
 
+    /// Whether the step that has just run hit a watchpoint, so that the
+    /// processor stops before the next one (DEBUG.md §6).
+    pub fn watchDue(self: *const Link) bool {
+        return self.running() and self.cpu.watch.hits != 0;
+    }
+
     /// Pause the processor, and send the console output so far and the
-    /// notice: `x` if R15 is an enabled breakpoint, and `p` otherwise
-    /// (DEBUG.md §4). A stop at a breakpoint sets bit 4 as a request does.
+    /// notice: `w` if the step before hit a watchpoint, `x` if R15 is an
+    /// enabled breakpoint, and `p` otherwise (DEBUG.md §4). A stop at a
+    /// breakpoint or a watchpoint sets bit 4 as a request does.
     pub fn pause(self: *Link) void {
         self.paused = true;
         self.pause_req = true;
         self.console_w.flush() catch {};
+        self.stop_watch = self.cpu.watch.lowest();
+        self.stop_break = null;
+        if (self.stop_watch) |i| {
+            self.stop_watch_pc = self.cpu.watch.pc;
+            var buf: [2]u8 = undefined;
+            return self.sendPacket('w', hex(&buf, i));
+        }
         self.stop_break = self.breakAt(self.cpu.getReg(15));
         if (self.stop_break) |i| {
             var buf: [2]u8 = undefined;
@@ -285,6 +307,8 @@ pub const Link = struct {
         // Every `b` means that no breakpoint is left (DEBUG.md §6, §7).
         self.break_en = 0;
         self.break_addr = @splat(0);
+        self.cpu.watch.en = 0;
+        self.cpu.watch.addr = @splat(0);
         var buf: [2]u8 = undefined;
         self.sendPacket('b', hex(&buf, version));
     }
@@ -463,7 +487,13 @@ pub const Link = struct {
     fn readDebug(self: *Link, addr: u32) u32 {
         if (addr == saved_pc_addr) return self.cpu.saved_pc;
         if (addr == saved_sr_addr) return self.cpu.saved_sr;
-        if (addr < debug_base) return 0;
+        if (addr < debug_base) return switch (addr - link_base) {
+            0x4 => self.cpu.watch.en,
+            0x5 => watches,
+            0x6 => if (self.stop_watch != null) self.stop_watch_pc else 0,
+            0x8...0x8 + watches - 1 => self.cpu.watch.addr[addr - watch_addr0],
+            else => 0,
+        };
         return switch (addr - debug_base) {
             0x00...0x0F => self.cpu.getReg(@truncate(addr)),
             0x10 => self.readControl(),
@@ -472,7 +502,7 @@ pub const Link = struct {
             0x13 => @intCast(input_size - self.input_len),
             0x14 => self.break_en,
             0x15 => breaks,
-            0x16 => if (self.stop_break) |i| 0x100 | @as(u32, i) else 0,
+            0x16 => if (self.stop_watch) |i| 0x200 | @as(u32, i) else if (self.stop_break) |i| 0x100 | @as(u32, i) else 0,
             0x18...0x18 + breaks - 1 => self.break_addr[addr - break_addr0],
             else => 0,
         };
@@ -511,6 +541,14 @@ pub const Link = struct {
             self.break_addr[addr - break_addr0] = value;
             return;
         }
+        if (addr == watch_en_addr) {
+            self.cpu.watch.en = value & ((1 << 2 * watches) - 1);
+            return;
+        }
+        if (addr >= watch_addr0 and addr < watch_addr0 + watches) {
+            self.cpu.watch.addr[addr - watch_addr0] = value;
+            return;
+        }
         if (addr >= link_base) return;
         if (addr == cpu_zig.console_addr or addr == cpu_zig.counter_addr) return;
         // Out of memory leaves the word unwritten.
@@ -529,6 +567,7 @@ pub const Link = struct {
             // The old program is gone, and so are its halt and its stop.
             self.cleared = true;
             self.stop_break = null;
+            self.stop_watch = null;
         }
         self.pause_req = value & ctl_pause != 0;
         if (value & ctl_hold != 0) {
@@ -551,6 +590,8 @@ pub const Link = struct {
         self.paused = false;
         self.after_go = true;
         self.stop_break = null;
+        self.stop_watch = null;
+        self.cpu.watch.hits = 0;
     }
 
     /// A hold ends a pause, and R0 to R15 stay as they are.
@@ -569,6 +610,8 @@ pub const Link = struct {
         self.step_due = false;
         self.after_go = false;
         self.stop_break = null;
+        self.stop_watch = null;
+        self.cpu.watch.hits = 0;
         self.interrupted = true;
         self.limit_hit = false;
         self.cleared = false;

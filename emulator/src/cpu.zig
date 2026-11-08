@@ -820,6 +820,36 @@ fn ethWord(addr: u32) ?u4 {
     return if (addr -% eth_zig.base < 16) @truncate(addr -% eth_zig.base) else null;
 }
 
+/// The watchpoints of the debug link (doc/DEBUG.md §6). The link sets the
+/// enable bits and the addresses. Each data access of a step (§8.2) is
+/// checked against them, and the link stops the processor after a step
+/// that hit one.
+pub const Watch = struct {
+    pub const count = 4;
+    /// Bit 2i enables the reads of watchpoint i, and bit 2i + 1 its writes.
+    en: u32 = 0,
+    addr: [count]u32 = @splat(0),
+    /// The watchpoints that the current step hit, a bit each.
+    hits: u4 = 0,
+    /// R15 at the start of the current step: the address of its
+    /// instruction, or, for an interrupt entry, of the one it goes before.
+    pc: u32 = 0,
+
+    fn check(self: *Watch, addr: u32, write: bool) void {
+        if (self.en == 0) return;
+        for (self.addr, 0..) |a, i| {
+            const bit: u5 = @intCast(2 * i + @intFromBool(write));
+            if (self.en >> bit & 1 == 1 and a == addr) self.hits |= @as(u4, 1) << @intCast(i);
+        }
+    }
+
+    /// The lowest watchpoint that the step hit, if any.
+    pub fn lowest(self: Watch) ?u8 {
+        if (self.hits == 0) return null;
+        return @ctz(self.hits);
+    }
+};
+
 pub const Cpu = struct {
     /// R0..R15. Read and write them through `getReg` and `setReg`, which
     /// apply the rules for R0 and R14 (§4.3).
@@ -889,6 +919,8 @@ pub const Cpu = struct {
     /// then writes no memory and no trace line. The run loop clears it
     /// after the step.
     stopped: bool,
+    /// The watchpoints of the debug link, and what the current step hit.
+    watch: Watch,
     /// The idle reads so far: console reads that found no byte, and reads
     /// of `TIME_LO`. A program that makes them in a loop waits for a key
     /// or for a time, and the run loop of the window sleeps in such a
@@ -929,6 +961,7 @@ pub const Cpu = struct {
             .cycle_counter = true,
             .timer_irq = true,
             .stopped = false,
+            .watch = .{},
             .idle_reads = 0,
             .time_reads = 0,
         };
@@ -1133,6 +1166,8 @@ pub const Cpu = struct {
         }
         const before = self.regs;
         self.last_write = null;
+        self.watch.hits = 0;
+        self.watch.pc = self.regs[15];
 
         // The timer's request merges with one that is pending, and keeps
         // the vector of that one (SYSTEM §4).
@@ -1286,6 +1321,7 @@ pub const Cpu = struct {
     fn dataRead(self: *Cpu, addr: u32) u32 {
         const v = self.read(addr);
         self.perf.reads +%= 1;
+        if (!self.stopped) self.watch.check(addr, false);
         return v;
     }
 
@@ -1293,6 +1329,7 @@ pub const Cpu = struct {
     fn dataWrite(self: *Cpu, addr: u32, value: u32) Error!void {
         try self.write(addr, value);
         self.perf.stores +%= 1;
+        self.watch.check(addr, true);
     }
 
     /// Fetch and run one instruction (§5). Returns the instruction word, so

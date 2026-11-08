@@ -15,6 +15,7 @@ The synthesizable VHDL: the two cores, their shared packages, and the devices. [
 | [nice_pkg.vhd](nice_pkg.vhd) | The parts of the ISA that the cores share: the operand fields, the register value rule, the condition, the ALU, the shifter, and the flags. |
 | [mpu.vhd](mpu.vhd) | The math unit of SYSTEM.md §2, a Wishbone slave. |
 | [perf.vhd](perf.vhd) | The performance counters of SYSTEM.md §3, a Wishbone slave. |
+| [tod.vhd](tod.vhd) | The clock of the time of day of SYSTEM.md §10, a Wishbone slave that its own reset, the system's, alone sets to 0. |
 | [timer.vhd](timer.vhd) | The timer of SYSTEM.md §4, a Wishbone slave with an interrupt request port. |
 | [sd_regs.vhd](sd_regs.vhd) | The registers and the buffer of the SD card controller of SYSTEM.md §5, a Wishbone slave with a port to a protocol engine. |
 | [net_regs.vhd](net_regs.vhd) | The registers of the network station of SYSTEM.md §6, a Wishbone slave with the addresses as outputs and the counts and status as inputs. |

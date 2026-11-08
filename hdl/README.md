@@ -34,6 +34,7 @@ found in the release stamp ([release/RELEASE.md](../release/RELEASE.md)).
 - [The timer](#the-timer)
 - [The math unit](#the-math-unit)
 - [The performance counters](#the-performance-counters)
+- [The clock of the time of day](#the-clock-of-the-time-of-day)
 - [The fetch statistics](#the-fetch-statistics)
 - [The trace writer](#the-trace-writer)
 - [What the tests check](#what-the-tests-check)
@@ -91,7 +92,8 @@ the synthesis check of `make test` and for `make formal`. The top-level
 for `SIM`.
 
 `make test` builds the emulator, analyzes the VHDL, checks that GHDL can
-synthesize both cores, the math unit, the performance counters, the timer,
+synthesize both cores, the math unit, the performance counters, the clock
+of the time of day, the timer,
 the fetch statistics, the data bus decoder, the debug link, the SD card
 controller, the network station, and the port for Ethernet frames
 (`ghdl --synth`), and runs the tests, those of
@@ -447,7 +449,8 @@ asserts, in simulation, the invariants that its design relies on.
 index of the slave, so the decoder holds no address map. In `tb_core`,
 slave 0 is the memory model, the default slave, then come the math unit,
 the performance counters, the timer, the fetch statistics, the SD card
-controller, the network station, and the port for Ethernet frames. CYC, WE, ADDR, and the write data go to every slave
+controller, the network station, the port for Ethernet frames, and the
+clock of the time of day. CYC, WE, ADDR, and the write data go to every slave
 directly.
 
 The slaves answer at their own pace: the math unit holds the ACK of a read
@@ -478,7 +481,8 @@ clear the memory with `clear_o` and `clear_done_i`. A write with bits 4 and
 5 to a paused core is a step: `pause_o` drops for one cycle and rises
 again, and the link does not own the memory until the core has paused or
 halted again. The board stops the counters and the timer while the core is
-paused, and not during a step. While the processor runs, a read of R0 to
+paused, and not during a step. The clock of the time of day does not stop,
+and a start, which resets the core, leaves it. While the processor runs, a read of R0 to
 R15 returns `regs_i` of that cycle, and otherwise the copy of the last halt
 or pause.
 
@@ -655,6 +659,26 @@ SYSTEM.md §3 requires, except in `tb_perf`, which starts near a wrap.
 `formal/perf.sby` proves the port and the reads against a model of the
 counters for every cycle, and its cover task starts near a wrap too.
 
+## The clock of the time of day
+
+`tod` holds the clock of SYSTEM.md §10: `CLOCK_USEC`, `CLOCK_SEC_LO`,
+`CLOCK_SEC_HI`, and `CLOCK_STATUS` at offsets 0 to 3. Its bus port is a
+pipelined Wishbone slave with a 2-bit address. The clock's words,
+`0xFFFFFF46`–`0xFFFFFF49`, lie inside the performance counters' block and
+cross a boundary of four words, so the bus decoder compares bits 3..0 of
+the address with 6 to 9 before the counters', and gives the clock bits
+1..0 of the address xor `"10"`. With `G_CYCLE_COUNTER` false, `tb_core`
+makes the four words memory instead, as the emulator's `--no-cycle-counter`
+does.
+
+It counts in every cycle, with an accumulator for the microseconds as
+that of the microsecond counter, so it is exact for any `G_CLK_HZ` of 1 MHz
+or more. It has no input for "the core is running": it runs on while the
+core is held, paused, halted, or waiting. Its reset must be the reset of
+the system, at power-up or when the FPGA is loaded, not the reset that a
+start over the debug link gives the core, which must leave the clock.
+`tb_core` has one reset for both.
+
 ## The fetch statistics
 
 `fetch_stats` holds the fetch statistics of MICROARCH.md §8.1. Its bus
@@ -792,6 +816,15 @@ the bus accepts but not a stalled one, the skipped steps, a jump but not
 one that halts, and an interrupt entry and an `INT` but not a skipped one,
 and that each has its own snapshot. It also checks the spare words, that
 writes change nothing, and reset.
+
+`tb_tod` runs the clock of the time of day at 2 MHz, so that it counts a
+microsecond in every second cycle and each read can be told in advance.
+It checks that writes of the seconds only stage them, that a write of
+`CLOCK_USEC` sets the clock and "set" and clears the accumulator, that a
+read of `CLOCK_USEC` takes the snapshot of the seconds, the end of a
+second after 999999, the write of `CLOCK_STATUS`, a value of 1000000 or
+more taken as 999999, the wrap of the seconds, the rate over 2020
+cycles, and that reset sets everything to 0, the staged seconds too.
 
 `tb_timer` runs the timer on the clock, as a system does. It checks that a
 write of P sets the period and the count, that the request comes at the end
@@ -954,6 +987,12 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   instructions. Its values are those of the timing diagram
   [doc/flow.png](../doc/flow.png).
 - `test/instret.nasm`, also on a memory that stalls in 30% of the cycles.
+- `test/todbus.nasm` sets and reads the clock of the time of day through
+  `tb_core`'s bus decoder, and reads `READ_LO`, the word after it, which
+  stays the performance counters'. It reads only what the emulator, on the
+  host's clock, and the core, on its cycles, have in common, so its trace
+  is compared as the others are. It runs again on a memory that stalls in
+  30% of the cycles.
   It reads the instruction counter right after a store to RAM, which the
   data bus decoder makes the read wait for, after a read of RAM, as the
   source of a store, and twice in one instruction.
@@ -1047,8 +1086,9 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   last three instructions wrote, and each interrupt vector leads to a
   short routine that ends with `RTI`. A random program may read any address, and now and then one reaches the cycle counter at
   `0xFFFFFF40`, where the core counts cycles and the emulator counts steps
-  (SYSTEM.md §3). The microsecond counter at `0xFFFFFF44` differs likewise.
-  So these runs make the words of both counters ordinary memory on both
+  (SYSTEM.md §3). The microsecond counter at `0xFFFFFF44` and the clock of
+  the time of day at `0xFFFFFF46`–`0xFFFFFF49` differ likewise. So these
+  runs make the words of the counters and the clock ordinary memory on both
   sides, with the generic `G_CYCLE_COUNTER` and the emulator's
   `--no-cycle-counter`. The emulator's font RAM and character ROM, at
   `0xFFFE0000`–`0xFFFE3FFF` (SYSTEM.md §1.8), are not in the core's
@@ -1245,6 +1285,7 @@ formal/UNIT/TASK` runs one task, for example `make formal/pipe_fetch/prove`.
 | `pipeline` | The ports of the pipelined core and its own assertions, for 12 cycles after reset. | `bmc` of 12 cycles, ABC | 4 minutes |
 | `wb_dmux` | The data bus decoder: the ACKs come back in order, from one slave at a time. | PDR | seconds |
 | `timer` | The timer's ports. | k-induction of depth 10, Yices | seconds |
+| `tod` | The clock of the time of day: its bus port, and the microseconds below 1000000. | k-induction of depth 10, Yices | seconds |
 | `sd_regs` | The SD card controller's bus and engine ports, with and without the held ACK. | k-induction of depth 10, Yices | seconds |
 | `net_regs` | The network station's bus port, and what sets its addresses and `wr_o`. | k-induction of depth 10, Yices | seconds |
 | `eth_regs` | The port for Ethernet frames: its bus and station ports, with and without the held ACK. | k-induction of depth 10, Yices | seconds |
@@ -1323,6 +1364,15 @@ states. The core asserts them itself when its generic `G_FORMAL` is true;
 read, a write, a stalled request, and each kind of interrupt taken. For
 the timer, it shows a request taken, and one that waits while the timer
 counts on.
+
+`formal_tod` checks the clock of the time of day with every input free,
+at a `G_CLK_HZ` of 1 MHz, so that it counts in every cycle. It asserts,
+with `wb_slave_check`, that the bus port acknowledges each request in the
+next cycle and never stalls, that a read of `CLOCK_USEC` returns at most
+999999, and that a read of `CLOCK_STATUS` returns 0 or 1. `tod.vhd`
+asserts itself that the microseconds stay below 1000000, without which the
+induction starts from states that reset never leads to. The `cover` task
+shows a second that ends and the clock set.
 
 `formal_sd_regs` checks the SD card controller's registers with every
 input free, and an engine that answers only while a command runs. It

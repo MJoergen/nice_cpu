@@ -3,9 +3,9 @@ ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
 BUILD = build
 
-SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/perf.vhd src/timer.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd src/sd_regs.vhd src/net_regs.vhd src/eth_regs.vhd
+SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/perf.vhd src/tod.vhd src/timer.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd src/sd_regs.vhd src/net_regs.vhd src/eth_regs.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd sim/sd_sim.vhd sim/eth_sim.vhd
-TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_perf_hz.vhd test/tb_timer.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd test/tb_debug_link.vhd test/tb_sd_regs.vhd test/tb_net_regs.vhd test/tb_eth_regs.vhd test/tb_link.vhd \
+TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_perf_hz.vhd test/tb_tod.vhd test/tb_timer.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd test/tb_debug_link.vhd test/tb_sd_regs.vhd test/tb_net_regs.vhd test/tb_eth_regs.vhd test/tb_link.vhd \
   test/tb_trace.vhd test/tb_core.vhd
 
 # The runs of make test and make random go in parallel: each
@@ -41,10 +41,10 @@ $(BUILD)/%.nasm: test/%_prog.py
 
 # tb_mem checks the memory model itself, tb_shift the ALU and the shifter of
 # src/nice_pkg.vhd, tb_mpu the math unit, tb_perf the performance counters,
-# tb_timer the timer, tb_fetch_stats the fetch statistics, tb_wb_dmux
+# tb_tod the clock of the time of day, tb_timer the timer, tb_fetch_stats the fetch statistics, tb_wb_dmux
 # the data bus decoder, tb_sd_regs the SD card controller, tb_net_regs
 # the network station, and tb_eth_regs the port for Ethernet frames.
-UNITS = tb_mem tb_shift tb_mpu tb_perf tb_perf_hz tb_timer tb_fetch_stats tb_wb_dmux tb_debug_link tb_sd_regs tb_net_regs tb_eth_regs
+UNITS = tb_mem tb_shift tb_mpu tb_perf tb_perf_hz tb_tod tb_timer tb_fetch_stats tb_wb_dmux tb_debug_link tb_sd_regs tb_net_regs tb_eth_regs
 GENERICS_tb_mem = -gG_BIN_FILE=$(abspath test/mem.bin) -gG_INPUT_FILE=$(abspath test/mem.input)
 
 $(UNITS:%=run/unit/%): run/unit/%:
@@ -443,6 +443,12 @@ run/$(1)/random$(4)_$(2): $(BUILD)/random_$(2).bin $(BUILD)/random_$(2).opts
 
 endef
 
+# test/todbus.nasm sets and reads the clock of the time of day,
+# src/tod.vhd, through the bus decoder of tb_core, and reads the word
+# after it, which is src/perf.vhd's. It reads only what the emulator, on
+# the host's clock, and the core, on its cycles, have in common, so the
+# runs are compared as the others are. It runs again on a stalling memory.
+
 # The runs of the core $(1). The sweeps take longest, so they come first,
 # and make starts them first.
 define core_runs
@@ -487,6 +493,8 @@ $(eval $(call core_run,$(1),breaks_hold,$(BUILD)/breaks.bin,$(BREAK_GENERICS) -g
 $(eval $(call core_run,$(1),wait_breaks,../emulator/test/wait.bin,"-gG_BREAK_AT=$(BREAKS_wait_breaks)" \
   -gG_BREAK_LOG=stops.out,check_core check_breaks))
 $(eval $(call core_run,$(1),instret,$(BUILD)/instret.bin))
+$(eval $(call core_run,$(1),todbus,$(BUILD)/todbus.bin))
+$(eval $(call core_run,$(1),todbus_stall,$(BUILD)/todbus.bin,-gG_STALL=30 -gG_SEED=57))
 $(eval $(call core_run,$(1),instret_stall,$(BUILD)/instret.bin,-gG_STALL=30 -gG_SEED=17))
 $(eval $(call core_run,$(1),irqwave,$(BUILD)/irqwave.bin))
 $(eval $(call core_run,$(1),addwave,$(BUILD)/addwave.bin))
@@ -600,10 +608,10 @@ analyze-nvc:
 	$(if $(PREBUILT),,$(NVC) $(NVCOPTS) -a $(SOURCES) $(SIM_SOURCES) $(TEST_SOURCES))
 
 # Checks that GHDL can synthesize both cores, the math unit, the performance
-# counters, the timer, the data bus decoder, the debug link, the SD
+# counters, the clock of the time of day, the timer, the data bus decoder, the debug link, the SD
 # card controller, the network station, and the port for Ethernet frames,
 # with the generics in SYNTH_GENERICS_unit.
-SYNTH = multicycle pipeline mpu perf timer fetch_stats wb_dmux debug_link sd_regs net_regs eth_regs
+SYNTH = multicycle pipeline mpu perf tod timer fetch_stats wb_dmux debug_link sd_regs net_regs eth_regs
 SYNTH_GENERICS_wb_dmux = -gG_SLAVES=4
 
 define check_synth
@@ -619,7 +627,7 @@ synth: analyze-ghdl
 # is a target formal/FILE/TASK, and they run in parallel, as the runs of
 # make test do. The work directories go in $(BUILD).
 SBY ?= sby
-FORMAL = nice_pkg multicycle timer wb_dmux pipe_fetch pipe_decode pipe_prepare pipe_dbus pipe_write pipeline perf fetch_stats mpu debug_link sd_regs net_regs eth_regs
+FORMAL = nice_pkg multicycle timer tod wb_dmux pipe_fetch pipe_decode pipe_prepare pipe_dbus pipe_write pipeline perf fetch_stats mpu debug_link sd_regs net_regs eth_regs
 FORMAL_TASKS = prove cover
 # The pipelined core is checked for a bounded number of cycles only.
 FORMAL_TASKS_pipeline = bmc cover

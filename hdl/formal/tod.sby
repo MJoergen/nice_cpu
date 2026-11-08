@@ -1,0 +1,26 @@
+# The bus port of the clock of the time of day (formal_tod.vhd). "prove"
+# proves the assertions for every cycle by k-induction, and "cover" reaches
+# each cover statement.
+
+[tasks]
+prove
+cover
+
+[options]
+prove: mode prove
+prove: depth 10
+cover: mode cover
+cover: depth 20
+
+[engines]
+smtbmc yices
+
+[script]
+plugin -i ghdl
+ghdl --std=08 -fpsl tod.vhd wb_slave_check.vhd formal_tod.vhd -e formal_tod
+prep -top formal_tod
+
+[files]
+../src/tod.vhd
+wb_slave_check.vhd
+formal_tod.vhd

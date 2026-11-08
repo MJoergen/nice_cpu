@@ -12,7 +12,9 @@
 -- The data bus decoder, src/wb_dmux.vhd, sends 0xFFFFFF10-0xFFFFFF1F to
 -- the timer, src/timer.vhd (SYSTEM.md §4), 0xFFFFFF20-0xFFFFFF3F to the
 -- math unit, src/mpu.vhd (SYSTEM.md §2), 0xFFFFFF40-0xFFFFFF5F to the
--- performance counters, src/perf.vhd (SYSTEM.md §3), 0xFFFFFF60-0xFFFFFF7F
+-- performance counters, src/perf.vhd (SYSTEM.md §3), but for
+-- 0xFFFFFF46-0xFFFFFF49, the clock of the time of day, src/tod.vhd
+-- (SYSTEM.md §10), 0xFFFFFF60-0xFFFFFF7F
 -- to the fetch statistics, src/fetch_stats.vhd (MICROARCH.md §8.1),
 -- 0xFFFFFFA0-0xFFFFFFAF to the SD card controller, src/sd_regs.vhd
 -- (SYSTEM.md §5), 0xFFFFFFB0-0xFFFFFFBF to the network station,
@@ -46,8 +48,9 @@
 -- 0xFFFFFF60 read 0 and ignore writes, as in the emulator (SYSTEM.md §3).
 --
 -- With G_CYCLE_COUNTER false, CYCLE_LO and CYCLE_HI at 0xFFFFFF40 and
--- 0xFFFFFF41, and TIME_LO and TIME_HI at 0xFFFFFF44 and 0xFFFFFF45, are
--- memory, as with the emulator's --no-cycle-counter. The core's cycle count
+-- 0xFFFFFF41, TIME_LO and TIME_HI at 0xFFFFFF44 and 0xFFFFFF45, and the
+-- clock of the time of day at 0xFFFFFF46-0xFFFFFF49 are memory, as with
+-- the emulator's --no-cycle-counter. The core's cycle count
 -- depends on the memory's stalls, so a program that reads it or the time
 -- could not be compared with the emulator otherwise.
 --
@@ -380,7 +383,8 @@ architecture simulation of tb_core is
    constant C_SD     : natural := 5;
    constant C_NET    : natural := 6;
    constant C_ETH    : natural := 7;
-   constant C_SLAVES : natural := 8;
+   constant C_TOD    : natural := 8;
+   constant C_SLAVES : natural := 9;
 
    signal dbus_sel    : natural range 0 to C_SLAVES - 1;
    signal slave_stb   : std_logic_vector(C_SLAVES - 1 downto 0);
@@ -591,9 +595,13 @@ begin
 
 
    dbus_sel <= C_MPU when dbus_addr(31 downto 5) = X"FFFFFF" & "001" else
+               C_TOD when G_CYCLE_COUNTER and dbus_addr(31 downto 4) = X"FFFFFF4" and
+                          dbus_addr(3 downto 0) >= X"6" and dbus_addr(3 downto 0) <= X"9" else
                C_PERF when dbus_addr(31 downto 5) = X"FFFFFF" & "010" and
                            (G_CYCLE_COUNTER or (dbus_addr(4 downto 1) /= "0000" and
-                                                dbus_addr(4 downto 1) /= "0010")) else
+                                                dbus_addr(4 downto 1) /= "0010" and
+                                                dbus_addr(4 downto 1) /= "0011" and
+                                                dbus_addr(4 downto 1) /= "0100")) else
                C_TIMER when dbus_addr(31 downto 4) = X"FFFFFF1" else
                C_SD when dbus_addr(31 downto 4) = X"FFFFFFA" else
                C_NET when dbus_addr(31 downto 4) = X"FFFFFFB" else
@@ -735,6 +743,23 @@ begin
          wb_data_i    => dbus_data_out,
          wb_data_o    => slave_data(32 * C_PERF + 31 downto 32 * C_PERF)
       ); -- i_perf
+
+
+   -- The clock of the time of day. Its reset is the testbench's one reset,
+   -- which stands for the reset of the system.
+   i_tod : entity work.tod
+      port map (
+         clk_i      => clk,
+         rst_i      => rst,
+         wb_cyc_i   => dbus_cyc,
+         wb_stb_i   => slave_stb(C_TOD),
+         wb_stall_o => slave_stall(C_TOD),
+         wb_ack_o   => slave_ack(C_TOD),
+         wb_we_i    => dbus_we,
+         wb_addr_i  => dbus_addr(1 downto 0) xor "10",
+         wb_data_i  => dbus_data_out,
+         wb_data_o  => slave_data(32 * C_TOD + 31 downto 32 * C_TOD)
+      ); -- i_tod
 
 
    i_timer : entity work.timer

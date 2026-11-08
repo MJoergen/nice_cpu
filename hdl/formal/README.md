@@ -12,6 +12,8 @@ The formal checks: the checkers of the ports, and a wrapper and a SymbiYosys job
 | [multicycle.sby](multicycle.sby) | The SymbiYosys job for it. |
 | [formal_timer.vhd](formal_timer.vhd) | The timer with checks of its bus and interrupt ports. |
 | [timer.sby](timer.sby) | The SymbiYosys job for it. |
+| [formal_tod.vhd](formal_tod.vhd) | The clock of the time of day with checks of its bus port and of what its reads return. |
+| [tod.sby](tod.sby) | The SymbiYosys job for it. |
 | [formal_wb_dmux.vhd](formal_wb_dmux.vhd) | The data bus decoder with checks of its master and slave ports. |
 | [wb_dmux.sby](wb_dmux.sby) | The SymbiYosys job for it. |
 | [formal_sd_regs.vhd](formal_sd_regs.vhd) | The SD card controller's registers with checks of their bus and engine ports. |

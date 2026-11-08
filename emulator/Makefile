@@ -49,6 +49,12 @@ OPTS_clock   = --step-time -d 0x100:17 -d 0xffffff46:4
 # value written there, or 0.
 OPTS_clock_mem = --step-time --no-cycle-counter -d 0x100:17 -d 0xffffff46:4
 OPTS_wait    = --step-time --irq 25:0x42 --nmi 40:0x43 -d 0x200:7
+# wait again, stopped by the step limit in its first wait, after 11 steps,
+# and at the end of the wait, after 12, when the timer has raised its
+# request: the report then says "At wait1+0x1", the word after the WAIT,
+# and not "At wait1" (DEBUG.md §6, bit 6).
+OPTS_wait_in  = --step-time --max-steps 11 --symbols test/wait.sym
+OPTS_wait_end = --step-time --max-steps 12 --symbols test/wait.sym
 OPTS_waitnone = --no-timer-irq
 OPTS_trapsym = --symbols test/trapsym.sym
 OPTS_stack   = --stack --nmi 5:1
@@ -104,6 +110,8 @@ programs:
 	$(call check,timer_noirq,test/timer.bin,timer)
 	$(call check,scrbound2004,test/scrbound.bin)
 	$(call check,clock_mem,test/clock.bin)
+	$(call check,wait_in,test/wait.bin)
+	$(call check,wait_end,test/wait.bin)
 	$(call check,stack_none,$(ASM)/count.bin)
 	@if cmp -s test/eth.frames.out test/eth.frames.expected; then echo "PASS eth frames"; \
 	else echo "FAIL eth frames"; diff test/eth.frames.expected test/eth.frames.out; exit 1; fi

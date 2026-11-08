@@ -33,6 +33,12 @@
 ;   46    HALT
 ; At the end R5 = R6 = R7 = 1, and R14 = 0x41000000: E, and the 0x01000000
 ; of reset, as each RTI restores the SR before its entry. 47 steps.
+; Also run with --step-time --symbols test/wait.sym and --max-steps 11,
+; then 12 (wait_in and wait_end in the Makefile). After 11 steps the
+; processor is in the first wait, so the report says "At wait1", the WAIT
+; at word 8, with R15 = 9, the word after it. After 12 the timer has
+; raised its request, which ends the wait at the next step, so the
+; processor waits no more (DEBUG.md §6, bit 6): "At wait1+0x1".
 TIMER_PERIOD    .EQU    0xFFFFFF10
 TIMER_VECTOR    .EQU    0xFFFFFF12
 CYCLE_LO        .EQU    0xFFFFFF40
@@ -41,17 +47,17 @@ TIME_LO         .EQU    0xFFFFFF44
                 MOVE    @TIMER_VECTOR, 0x41
                 OR      R14, R14, 0x40000000
                 MOVE    @TIMER_PERIOD, 10
-                WAIT
+wait1           WAIT
                 MOVE    @0x200, @CYCLE_LO
                 MOVE    @0x201, @INSTR_LO
                 MOVE    @TIMER_PERIOD, 0
                 AND     R14, R14, 0xBFFFFFFF
-                WAIT
+wait2           WAIT
                 MOVE    @0x202, @CYCLE_LO
-                WAIT
+wait3           WAIT
                 MOVE    @0x203, @CYCLE_LO
                 OR      R14, R14, 0x40000000
-                WAIT
+wait4           WAIT
                 MOVE    @0x204, @CYCLE_LO
                 MOVE    @0x205, @INSTR_LO
                 MOVE    @0x206, @TIME_LO

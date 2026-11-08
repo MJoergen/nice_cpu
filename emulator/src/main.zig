@@ -229,8 +229,10 @@ fn trapName(code: u32) []const u8 {
 /// the wasm instruction trapped, from R2.
 fn printWhere(out: *std.Io.Writer, cpu: *const Cpu, syms: []const Symbol) !void {
     // After a halt, PC is the address after the halting instruction, and
-    // in a wait the address after the WAIT, a word of its own.
-    const pc = if (cpu.halted() or cpu.waiting) cpu.getReg(15) -% 1 else cpu.getReg(15);
+    // in a wait the address after the WAIT, a word of its own. A wait that
+    // a pending request ends at the next step is over (DEBUG.md §6, bit
+    // 6): the program is at the address after the WAIT then.
+    const pc = if (cpu.halted() or cpu.waitStepDue()) cpu.getReg(15) -% 1 else cpu.getReg(15);
     try out.writeAll("At ");
     try printLocation(out, syms, pc);
     try out.writeByte('\n');

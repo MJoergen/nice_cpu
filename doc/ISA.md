@@ -37,6 +37,7 @@ The sources are listed in [REFERENCES.md](REFERENCES.md). Where they disagree, t
   - [7.2 Interrupt entry](#72-interrupt-entry)
   - [7.3 Vector table](#73-vector-table)
   - [7.4 Return](#74-return)
+  - [7.5 Waiting](#75-waiting)
 - [8. Reset, memory, and I/O](#8-reset-memory-and-io)
   - [8.1 Reset](#81-reset)
   - [8.2 Memory](#82-memory)
@@ -96,13 +97,14 @@ Software can read and write every bit except bit 24. Instructions with the M bit
 
 ### 1.4 Hidden state
 
-These are not visible as registers. They exist for interrupts (§7) and halting:
+These are not visible as registers. They exist for interrupts (§7), waiting, and halting:
 
 | State | Meaning |
 |---|---|
 | `in_service` | 1 while an interrupt service routine runs, from interrupt entry until `RTI`. |
 | `saved_pc`, `saved_sr` | The PC and SR saved on interrupt entry and restored by `RTI`. |
 | `after_rti` | Set to 1 by `RTI`. Cleared to 0 when the next instruction completes, whether or not its condition is true. While it is 1, no IRQ or NMI is taken (§7.1). |
+| `waiting` | 1 after `WAIT`, until an NMI or IRQ is pending (§7.5). While it is 1, the processor runs no instruction. |
 | `halted` | 1 after `HALT` or any other halt (§5.3, §7.2, §7.4). Only reset clears it. |
 
 Pending interrupt requests (§7.1) are also state. How they are held is a hardware interface matter.
@@ -335,13 +337,14 @@ Arithmetic shift right is two instructions: `C<0[M] R0, Rx, 1` copies the sign b
 | 00000 | `HALT` | `0x0C000000` | halted ← 1. The processor stops. Only reset restarts it. |
 | 00001 | `RTI` | `0x0C200000` | Return from interrupt (§7.4). |
 | 00010 | `INT n` | `0x0C400000` + n | Software interrupt with vector n, 0–255 (§7.2). |
+| 00011 | `WAIT` | `0x0C600000` | waiting ← 1. The processor runs no instruction until an NMI or IRQ is pending (§7.5). |
 | others | | | Reserved. Executing one halts the processor. |
 
 Bits 20..8 must be 0, and bits 7..0 must be 0 except in `INT`. An instruction that breaks this is reserved and halts the processor.
 
 The condition field applies, so `?Z HALT` halts only when Z = 1. This includes reserved words: a reserved control word whose condition is false is skipped like any other instruction and does not halt the processor.
 
-Control instructions have no M bit and never update X, C, Z, N, or V. `HALT` leaves SR unchanged, `INT` changes only I (§7.2), and `RTI` replaces SR with the saved copy (§7.4).
+Control instructions have no M bit and never update X, C, Z, N, or V. `HALT` and `WAIT` leave SR unchanged, `INT` changes only I (§7.2), and `RTI` replaces SR with the saved copy (§7.4).
 
 ## 6. Flags
 
@@ -370,6 +373,7 @@ Before each instruction, the first one after reset included, the processor check
 - **IRQ** is taken if `in_service` = 0 and E = 1.
 - If both are pending, NMI goes first.
 - A halted processor takes no interrupts.
+- While `waiting` = 1, a pending request first ends the wait (§7.5).
 - No IRQ or NMI is taken while `after_rti` = 1, so the instruction directly after an `RTI` always runs first. That instruction may itself be an `INT`, which works normally. This guarantees that the interrupted program makes progress. A deferred request is taken before the second instruction after `RTI`, unless the first one is an `INT` (then the request waits for that routine's `RTI` as well), halts the processor, or, for an IRQ, leaves E = 0 (then the IRQ waits until software sets E).
 
 **Pending requests are deferred, never lost.** An NMI or IRQ that cannot be taken when it arrives stays pending until it is taken. That happens when `in_service` = 1, or for an IRQ when E = 0. Requests of the same kind that arrive while one is already pending merge into one, which keeps the vector of the first, so software must not rely on counting interrupts. A request still pending when the processor halts is never taken, because only reset restarts the processor.
@@ -410,6 +414,26 @@ To set the table address without touching the flags:
 
 Because SR is restored, an interrupt routine may change any flag freely, E and I included. An interrupt routine must save and restore any other registers it uses.
 
+### 7.5 Waiting
+
+`WAIT` completes as any other instruction does, and then sets `waiting` to 1. While `waiting` = 1, the processor runs no instruction.
+
+`waiting` clears as soon as an NMI or an IRQ is pending, whether or not it can be taken, so also while E = 0 or `in_service` = 1. The processor then goes on as before any instruction (§7.1): it takes the request if it can, and otherwise runs the instruction after the `WAIT`. A request taken there saves the address of that instruction, so its `RTI` returns there.
+
+So a `WAIT` ends at once when a request is already pending that could not be taken before it. With E = 0, a program can then test a flag that an interrupt routine sets, and wait for it, without losing a request that arrives between the test and the wait:
+
+                    AND     R14, R14, 0xBFFFFFFF  ; E = 0
+                    TST     @flag           ; set by the interrupt routine
+            ?Z      WAIT                    ; ends at once if a request is pending
+                    OR      R14, R14, 0x40000000  ; E = 1: the IRQ is taken here
+
+- `WAIT` changes no flags, and makes no data access.
+- `WAIT` inside an interrupt routine is allowed. A request ends the wait, and is taken after the `RTI` (§7.1).
+- `WAIT` right after `RTI` clears `after_rti` when it completes, as any instruction does (§1.4). A deferred request then ends the wait at once, and is taken.
+- A wait for a request that never comes lasts until reset.
+- Reset clears `waiting` (§8.1).
+- How long a wait takes, and what the devices of a system do meanwhile, is not part of the ISA. [SYSTEM.md](SYSTEM.md) says it for the emulator and the FPGA implementation.
+
 ## 8. Reset, memory, and I/O
 
 ### 8.1 Reset
@@ -418,7 +442,7 @@ Because SR is restored, an interrupt routine may change any flag freely, E and I
 |---|---|
 | R0–R13, R15 | 0, so execution starts at address 0 |
 | R14 | `0x01000000`: only bit 24 set, so E = 0 (maskable interrupts off) and VBASE = 0 |
-| in_service, after_rti, halted | 0 |
+| in_service, after_rti, waiting, halted | 0 |
 | Pending interrupt requests | none |
 | saved_pc, saved_sr | undefined |
 | Memory | not changed by reset |
@@ -512,7 +536,7 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
   - `ONE` takes dest only.
   - `MOVE`, `DBL`, `DEC`, and `NOT` take dest and s0.
   - The other ALU and SHIFT instructions take dest, s0, and s1.
-  - `HALT` and `RTI` take none, and `INT` takes the vector number.
+  - `HALT`, `RTI`, and `WAIT` take none, and `INT` takes the vector number.
 - **Pseudo-instructions.** `CALL target` assembles as `ADD @--R13, n, R15` followed by `MOVE R15, target`, where n is the size of the `MOVE` in words: 2 when target has a constant word, else 1. `RET` assembles as `MOVE R15, @R13++`. These are the call and return of §9.1, so R13 is the stack pointer. A condition applies to every instruction of the expansion: `?Z CALL sub` calls only when Z is set, since `ADD` without `[M]` leaves the flags for the `MOVE`. Neither takes a modifier. Both are mnemonics, so neither can be a label or an `.EQU` name.
 - **One-instruction pseudo-instructions.** These are the other idioms of §9 and two common moves, each one instruction:
 
@@ -591,7 +615,7 @@ It executes as follows:
 |---|---|---|---|
 | 0, C | M | 0000–1111 | `MOVE SUB MDBL ADD DBL DEC NOT NOR IAND NAND XOR IOR XNOR AND ONE OR` |
 | 10 | M | 0000–1111 | `0<0 0<1 0<C C<0 C<1 C<C <<< C<< 0>0 1>0 C>0 0>C 1>C C>C >>> >>C` |
-| 11 | command, bits 25..21 | | `HALT` (0), `RTI` (1), `INT` (2), reserved (3–31) |
+| 11 | command, bits 25..21 | | `HALT` (0), `RTI` (1), `INT` (2), `WAIT` (3), reserved (4–31) |
 
 ## Appendix B: Departures from the sources
 
@@ -603,7 +627,7 @@ It executes as follows:
 | Order of constant words | dest, s0, s1 (emulator and its binaries) | 1997 article: s1, s2, dest |
 | R15 as an operand | Address of the next instruction (1999 article, emulator, QNICE) | 1997 article: the current instruction |
 | Interrupt model | Hidden saved PC and SR, `RTI`, `INT`, no nesting (QNICE) | Articles and web page: R13 receives the return address and software nests interrupts |
-| HALT encoding space | Control group with `HALT`, `RTI`, `INT`; reserved commands halt | Web page: spare bits "have no meaning and should be zero" |
+| HALT encoding space | Control group with `HALT`, `RTI`, `INT`, `WAIT`; reserved commands halt | Web page: spare bits "have no meaning and should be zero" |
 | Carry input to `SUB` | Subtracts C (borrow) | 1997 article: every arithmetic op adds C. The emulator subtracts it, as here. |
 | `MOVE`, `DEC` with the C bit | C bit ignored (emulator) | 1997 article: adds C |
 | `ONE` | r = 1 (emulator and web page) | The 74181 background suggests all ones |
@@ -618,6 +642,7 @@ It executes as follows:
 | `R14--` and `R14++` as destinations | r is written, then decremented or incremented, and each write sets bit 24 (§4.2) | Not specified anywhere |
 | Interrupt entry details | Entry sets I; NMI is taken before IRQ; NMI does not nest either (§7.1, §7.2) | Not specified anywhere. The articles have NMI and IRQ serviced "the same way". |
 | Pending interrupt requests | Deferred, never lost; same-kind requests merge, keeping the first vector (§7.1) | Not specified anywhere |
+| `WAIT` | A wait for an NMI or IRQ that ends also while E = 0 or `in_service` = 1, as RISC-V's `WFI` (§7.5) | Not in the sources, which have only `HALT` |
 | Interrupts right after `RTI` | No IRQ or NMI until the instruction after `RTI` completes (`after_rti`, §7.1) | Not specified anywhere. QNICE guarantees the same progress. |
 | Memory access order | Each data access exactly once, unmerged, and in program order. Instruction fetches may run ahead, repeat, or be wasted (§8.2) | Not specified anywhere |
 | Instruction fetches from the I/O range | Read 0 and never reach a device (§8.3) | Not specified anywhere |

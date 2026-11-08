@@ -11,7 +11,8 @@ connects to it as the host. The groups check:
   of its input, and the connection that follows it;
 - the step and the breakpoints of the Link on test/break.nasm;
 - nicedbg.py's commands, as they are typed at its prompt, on
-  test/break.nasm with its labels;
+  test/break.nasm with its labels, and its watchpoints on
+  test/watch.nasm;
 - nicedbg.py as a program, with its commands on stdin.
 
 The expected values come from the programs and DEBUG.md, not from the
@@ -470,6 +471,70 @@ def test_hidden(port: str, prog: str) -> None:
         link.close()
 
 
+def test_watch(port: str, prog: str, at: dict[str, int]) -> None:
+    """nicedbg.py's watchpoints on test/watch.nasm (link version 7): wp
+    and its list, the notice of a write's hit, a step that reads, the
+    status, two reads in one step, the errors, and wpd."""
+    link = connect(port)
+    dbg = nicedbg.Debugger(link, nicebin.Symbols(prog.replace(".bin",
+                                                              ".sym")))
+    data, read, add2 = at["DATA"], at["READ"], at["ADD2"]
+    try:
+        command(dbg, f"load {prog}")
+        out = command(dbg, "wp DATA")
+        check("dbg: a watchpoint of the writes", out ==
+              f"0: {data:08x} DATA w\n", repr(out))
+        out = command(dbg, "wp")
+        check("dbg: the list of watchpoints", out ==
+              f"0: {data:08x} DATA w\n", repr(out))
+        out = go(dbg, lambda l: len(l.watches))
+        check("dbg: the notice of a write's hit", out ==
+              f"[watchpoint 0, hit at 00000000 START, PC={read:08x} READ  "
+              f"MOVE R2, @0x{data:x}]\n", repr(out))
+        out = command(dbg, "r DATA 1")
+        check("dbg: the word written", out == f"{data:08x}: 00000005\n",
+              repr(out))
+        command(dbg, "wpd 0")
+        out = command(dbg, "wp DATA r")
+        check("dbg: a watchpoint of the reads", out ==
+              f"0: {data:08x} DATA r\n", repr(out))
+        out = command(dbg, "s")
+        check("dbg: a step that reads", out ==
+              f"watchpoint 0, hit at {read:08x} READ, PC={add2:08x} ADD2  "
+              f"ADD R3, @0x{data:x}, @0x{data:x}\n", repr(out))
+        out = command(dbg, "status")
+        check("dbg: status at a watchpoint", out.startswith(
+            f"at watchpoint 0, hit at {read:08x} READ, ROM hidden, "),
+            repr(out))
+        out = command(dbg, "wp DATA rw")
+        check("dbg: a second watchpoint, of both", out ==
+              f"1: {data:08x} DATA rw\n", repr(out))
+        out = command(dbg, "s")
+        check("dbg: two hits in one step, the lowest number", out.startswith(
+            f"watchpoint 0, hit at {add2:08x} ADD2, PC="), repr(out))
+        out = command(dbg, "wp DATA x")
+        check("dbg: wp of a kind that is none", out ==
+              "error: give the address, and r, w, or rw\n", repr(out))
+        out = command(dbg, "wpd 4")
+        check("dbg: wpd of a number that is no watchpoint", out ==
+              "error: no watchpoint 4; they are 0 to 3\n", repr(out))
+        command(dbg, "wpd all")
+        out = command(dbg, "wp")
+        # niceemu has four watchpoints (DEBUG.md §7.2)
+        check("dbg: wpd all", out == "no watchpoints; 4 free\n", repr(out))
+        out = go(dbg, lambda l: len(l.halts))
+        check("dbg: the halt after them", out.startswith("[halted: HALT"),
+              repr(out))
+        command(dbg, "wp DATA")
+        command(dbg, f"load {prog}")
+        out = command(dbg, "wp")
+        check("dbg: load disables the watchpoints", out ==
+              "no watchpoints; 4 free\n", repr(out))
+    finally:
+        dbg.stop()
+        link.close()
+
+
 def test_program(port: str, prog: str) -> None:
     """nicedbg.py as a program, with --symbols, a file to load, and its
     commands on stdin, which ends with q."""
@@ -503,12 +568,14 @@ def main() -> None:
         prog, at = assemble("break", tmp)
         wait, _ = assemble("wait", tmp)
         hidden, _ = assemble("hidden", tmp)
+        watch, watch_at = assemble("watch", tmp)
         with emulator() as port:
             test_link(port, echo)
             test_run_control(port, prog, at)
             test_commands(port, prog, at)
             test_wait(port, wait)
             test_hidden(port, hidden)
+            test_watch(port, watch, watch_at)
             test_program(port, prog)
     passed = sum(results)
     print(f"{passed}/{len(results)} passed")

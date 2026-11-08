@@ -6,7 +6,7 @@ read_bin() reads a .bin file, of niceasm.py -o or nicebuild.py, and takes
 the lines that niceemu takes. Symbols reads a .sym file, of niceasm.py
 --symbols or nicebuild.py, and names an address as niceemu does.
 load_words() holds the processor, clears the memory, disables the
-breakpoints, and writes the words of a program; start() starts it. A
+breakpoints and the watchpoints, and writes the words of a program; start() starts it. A
 board whose memory does not reach every address passes a check of its
 own to load_words(), which refuses the words that it has no room for.
 
@@ -18,7 +18,7 @@ from __future__ import annotations
 import bisect
 from typing import Callable
 
-from nicelink import BRK_EN, CLEAR, HOLD, RAM, Link, fail
+from nicelink import BRK_EN, CLEAR, HOLD, RAM, WCH_EN, Link, fail
 
 # A word of a program: (address, word)
 Words = list[tuple[int, int]]
@@ -145,14 +145,15 @@ def write_words(link: Link, words: Words) -> None:
 def load_words(link: Link, words: Words,
                check: FitCheck | None = None) -> None:
     """Holds the processor, hides the ROM, clears the memory, checks the
-    words with check, if one is given, disables the breakpoints, and writes
-    the words. A system without a ROM ignores the hiding, and one without
-    breakpoints takes the write of their enable bits as one of a reserved
-    word (DEBUG.md §6)."""
+    words with check, if one is given, disables the breakpoints and the
+    watchpoints, and writes the words. A system without a ROM ignores the
+    hiding, and one without breakpoints or watchpoints takes the write of
+    their enable bits as one of a reserved word (DEBUG.md §6)."""
     link.control(HOLD | CLEAR | RAM)
     if check is not None:
         check(link, words)
     link.write(BRK_EN, [0])
+    link.write(WCH_EN, [0])
     write_words(link, words)
 
 

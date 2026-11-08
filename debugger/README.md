@@ -4,9 +4,10 @@
 [DEBUG.md](../doc/DEBUG.md). It talks to `niceemu --link` over TCP
 ([emulator/README.md](../emulator/README.md#debug-link)), or to a
 system on its UART. It loads a program, runs, pauses, steps, and goes
-on, sets the breakpoints, reads and writes the registers and the
-memory, and disassembles with [`nicedis.py`](../assembler/README.md),
-with labels from `niceasm.py --symbols` or `nicebuild.py`.
+on, sets the breakpoints and the watchpoints, reads and writes the
+registers and the memory, and disassembles with
+[`nicedis.py`](../assembler/README.md), with labels from `niceasm.py
+--symbols` or `nicebuild.py`.
 
 The tools use only the Python standard library, and run on Linux and
 macOS.
@@ -60,7 +61,7 @@ one. `help` lists the commands, and `help CMD` describes one.
 | Command | What it does |
 |---|---|
 | `status` | The state of the processor, the ROM, and the link. |
-| `load FILE` | Holds the processor, hides the ROM, clears the memory, disables the breakpoints, and loads the `.bin` file. |
+| `load FILE` | Holds the processor, hides the ROM, clears the memory, disables the breakpoints and the watchpoints, and loads the `.bin` file. |
 | `go` (`g`) | Goes on from a pause, or starts a held processor at 0. |
 | `run` | Starts the program at 0 again. The memory is not loaded again. |
 | `hold` | Holds the processor in reset. |
@@ -68,6 +69,8 @@ one. `help` lists the commands, and `help CMD` describes one.
 | `step` (`s`) `[N]` | Runs N steps of a paused processor, and shows the PC after each, up to 16. An empty line steps again. |
 | `b [ADDR]` | Sets a breakpoint at ADDR, or lists them. |
 | `bd N` or `bd all` | Disables breakpoint N, or all of them. |
+| `wp [ADDR [r\|w\|rw]]` | Sets a watchpoint at ADDR, or lists them. It stops after a step that writes the word, by default, reads it (`r`), or either (`rw`). It needs link version 7. |
+| `wpd N` or `wpd all` | Disables watchpoint N, or all of them. |
 | `regs` | Shows R0 to R15. |
 | `set Rn VALUE` | Writes a register of a paused processor. `SP`, `SR`, and `PC` name R13, R14, and R15. |
 | `pc [ADDR]` | Shows the PC of a paused processor and its instruction, or sets it. |
@@ -83,8 +86,9 @@ one. `help` lists the commands, and `help CMD` describes one.
 
 The program's console output and the link's notices are shown as they
 arrive, above the prompt: `[breakpoint 0, PC=... LOOP  SUB[M] ...]`,
-`[paused, PC=...]`, `[halted: HALT, PC=...]`, `[boot]`, and `[input
-overflow]`. The PC after a halt is the word after the instruction that
+`[watchpoint 0, hit at 00000000 START, PC=... READ  MOVE ...]`, with
+the address of the instruction that hit (DEBUG.md §6), `[paused,
+PC=...]`, `[halted: HALT, PC=...]`, `[boot]`, and `[input overflow]`. The PC after a halt is the word after the instruction that
 halted. A pause in a wait for an interrupt (ISA.md §7.5) shows as
 `[paused, waiting, PC=...]`, the PC the word after the `WAIT`, and
 `status` adds `waiting for an interrupt` to the state. With link
@@ -125,6 +129,6 @@ the MEGA65's RAM.
 `make test` runs `test/errors.py`, the error cases of the options and
 the files, with exact messages, and `test/link.py`, which runs the link,
 the loader, and the debugger's commands on `niceemu --link` with the
-programs `test/echo.nasm`, `test/break.nasm`, `test/wait.nasm`, and
-`test/hidden.nasm`. It builds niceemu
+programs `test/echo.nasm`, `test/break.nasm`, `test/wait.nasm`,
+`test/hidden.nasm`, and `test/watch.nasm`. It builds niceemu
 first if needed. `make typecheck` runs `mypy --strict`.

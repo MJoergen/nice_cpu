@@ -7,10 +7,11 @@ board adds transports of its own by subclassing Transport or Tcp. The
 Link splits what arrives into console bytes, with ESC ESC as 0xFF, and
 packets, which it checks. A packet is an answer to a request, or a
 notice, which the system sends on its own (DEBUG.md §4): b at reset, o
-when an input byte is lost, p at a pause, h at a halt, and x at a
-breakpoint. The answers go to the request that waits for them, and the
-notices are counted, b, o, and p, or kept, h with its reason and x with
-its breakpoint's number. An x is a pause too, so it counts as one. A
+when an input byte is lost, p at a pause, h at a halt, x at a
+breakpoint, and w after a watchpoint's hit. The answers go to the
+request that waits for them, and the notices are counted, b, o, and p,
+or kept, h with its reason, x with its breakpoint's number, and w with
+its watchpoint's. An x and a w are pauses too, so each counts as one. A
 packet with a bad checksum is dropped, as DEBUG.md §5 says.
 
 A request waits ANSWER_WAIT for the first byte of its answer, or what
@@ -53,6 +54,16 @@ ESC = 0xFF
 # R0-R15, and the rest
 SAVED_PC = 0xFFFFFFD0
 SAVED_SR = 0xFFFFFFD1
+# The watchpoints (version 7): the enable bits, two for each, of the
+# reads and the writes, their number, the address of a hit, and the
+# address of watchpoint 0, then 1 to 3
+WCH_EN = 0xFFFFFFD4
+WCH_COUNT = 0xFFFFFFD5
+WCH_PC = 0xFFFFFFD6
+WCH_ADDR = 0xFFFFFFD8
+# The kinds of access that a watchpoint stops at, its two enable bits
+WCH_READ = 1
+WCH_WRITE = 2
 REGS = 0xFFFFFFE0
 CONTROL = 0xFFFFFFF0
 HALT_REASON = 0xFFFFFFF1
@@ -390,6 +401,7 @@ class Link:
         self.overflows = 0
         self.pauses = 0
         self.breaks: list[int] = []
+        self.watches: list[int] = []
         self.bad = 0
         self._answers: deque[tuple[str, str]] = deque()
         # The state of the receiver: 0 console bytes, 1 after ESC, 2 in a
@@ -455,6 +467,9 @@ class Link:
             elif tag == "x":
                 self.breaks.append(int(payload, 16))
                 self.pauses += 1
+            elif tag == "w":
+                self.watches.append(int(payload, 16))
+                self.pauses += 1
         except ValueError:
             # A notice whose payload is not hex
             self.bad += 1
@@ -465,7 +480,7 @@ class Link:
             self.overflows += 1
         elif tag == "p":
             self.pauses += 1
-        elif tag not in "hx":
+        elif tag not in "hxw":
             # An answer, or a notice of a newer version, which _request
             # skips, as its tag matches no request (DEBUG.md §9).
             self._answers.append((tag, payload.upper()))
@@ -597,9 +612,10 @@ class Link:
              timeout: float | None = None) -> int | None:
         """Runs one step of a paused processor (DEBUG.md §6, version 3):
         writes value with STEP to the control register, and waits for the
-        p, x, or h that ends the step. Returns None when the processor
+        p, x, w, or h that ends the step. Returns None when the processor
         paused again, with the x's number in breaks if it stopped at a
-        breakpoint, and the halt reason when the step halted it. The write
+        breakpoint, or the w's in watches after a watchpoint's hit, and
+        the halt reason when the step halted it. The write
         is not sent again blindly, as control() says, and the notice tells
         that the step ran even when its k was lost. Raises LinkError when
         neither came within timeout seconds, by default twice the wait for
@@ -611,7 +627,7 @@ class Link:
         end = time.monotonic() + timeout
         while self.pauses == pauses and len(self.halts) == halts:
             if time.monotonic() >= end:
-                raise LinkError("no p, x, or h after a step")
+                raise LinkError("no p, x, w, or h after a step")
             self.poll(end - time.monotonic())
         if len(self.halts) > halts:
             return self.halts[-1]
@@ -628,6 +644,18 @@ class Link:
                 self.write(BRK_ADDR + i, [addr])
                 en |= 1 << i
         self.write(BRK_EN, [en])
+
+    def set_watches(self, watches: list[tuple[int, int] | None]) -> None:
+        """Sets the watchpoints (DEBUG.md §6, version 7): watchpoint i at
+        the address of watches[i], for its kinds, WCH_READ, WCH_WRITE, or
+        both, or disabled where it is None, and those past the list
+        disabled. The addresses are written before the enable bits."""
+        en = 0
+        for i, watch in enumerate(watches):
+            if watch is not None:
+                self.write(WCH_ADDR + i, [watch[0]])
+                en |= watch[1] << 2 * i
+        self.write(WCH_EN, [en])
 
     def free(self) -> int:
         """The free space of the program's input buffer."""

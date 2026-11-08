@@ -2,8 +2,8 @@
 """nicedbg: an interactive debugger on the debug link of doc/DEBUG.md.
 
 It reads and writes memory, loads a .bin file, starts, holds, pauses,
-steps, and goes on, sets the breakpoints, shows and sets the registers,
-and disassembles, with one short command each. "help" lists them. Numbers
+steps, and goes on, sets the breakpoints and the watchpoints, shows and
+sets the registers, and disassembles, with one short command each. "help" lists them. Numbers
 are hex, with or without 0x. An empty line repeats a step.
 
 The disassembler is assembler/nicedis.py. --symbols FILE, or the command
@@ -57,13 +57,16 @@ from nicelink import (AFTER_RTI, BRK_ADDR, BRK_COUNT, BRK_EN,  # noqa: E402
                       CONTROL, FREE, FULL_WAIT, HALT_REASON, HALTED, HOLD,
                       IN_SERVICE, IRQ_PENDING, MAX_WORDS, NMI_PENDING,
                       PAUSE, RAM, REASONS, WAITING, REGS, SAVED_PC, STOP,
-                      VERSION, Link, LinkError, add_arguments, open_link)
+                      VERSION, WCH_ADDR, WCH_COUNT, WCH_EN, WCH_PC,
+                      WCH_READ, WCH_WRITE, Link, LinkError, add_arguments,
+                      open_link)
 
 
 class Counts(NamedTuple):
     """The link's counts of the notices, for those shown so far."""
     pauses: int
     breaks: int
+    watches: int
     halts: int
     boots: int
     overflows: int
@@ -81,6 +84,9 @@ ALIASES = {
 
 # The registers with a name of their own (ISA §1.2)
 REG_NAMES = {"sp": 13, "sr": 14, "pc": 15}
+
+# The kinds of access of a watchpoint, as wp takes and shows them
+KINDS = {"r": WCH_READ, "w": WCH_WRITE, "rw": WCH_READ | WCH_WRITE}
 
 # Ctrl-], which ends the console
 CONSOLE_END = 0x1D
@@ -167,7 +173,8 @@ class Debugger(cmd.Cmd):
 
     def _counts(self) -> Counts:
         link = self.link
-        return Counts(link.pauses, len(link.breaks), len(link.halts),
+        return Counts(link.pauses, len(link.breaks), len(link.watches),
+                      len(link.halts),
                       link.boots, link.overflows, link.bad)
 
     def _pc(self, instr: bool = False) -> str:
@@ -206,7 +213,10 @@ class Debugger(cmd.Cmd):
             lines.append(f"halted: {REASONS.get(why, why)}, {self._pc()}")
         for n in link.breaks[old.breaks:new.breaks]:
             lines.append(f"breakpoint {n}, {self._pc(True)}")
-        if new.pauses - old.pauses > new.breaks - old.breaks:
+        for n in link.watches[old.watches:new.watches]:
+            lines.append(self._watch_hit(n))
+        if (new.pauses - old.pauses > new.breaks - old.breaks +
+                new.watches - old.watches):
             # Bit 6 reads 0 before link version 7.
             wait = ", waiting" if link.read_word(CONTROL) & WAITING else ""
             lines.append(f"paused{wait}, {self._pc(True)}")
@@ -361,8 +371,17 @@ class Debugger(cmd.Cmd):
         """Bit 3 of the control register, which every write keeps."""
         return self.link.read_word(CONTROL) & RAM
 
+    def _watch_hit(self, n: int) -> str:
+        """The line of a stop after a hit of watchpoint n: the address of
+        the instruction that hit, and the PC with its instruction."""
+        try:
+            hit = f"hit at {self._where(self.link.read_word(WCH_PC))}, "
+        except LinkError:
+            hit = ""
+        return f"watchpoint {n}, {hit}{self._pc(True)}"
+
     def _wait_notice(self, pauses: int, halts: int) -> None:
-        """Waits for the p, x, or h that a pause request brings, after
+        """Waits for the p, x, w, or h that a pause request brings, after
         pauses and halts of them."""
         wait = 2 * self.link.transport.answer_wait(0)
         while self.link.pauses == pauses and len(self.link.halts) == halts:
@@ -402,8 +421,13 @@ class Debugger(cmd.Cmd):
         elif ctl & PAUSE:
             # open_link has checked the major, so the minor tells.
             stop = link.read_word(STOP) if (version & 0xF) >= 4 else 0
-            state = f"at breakpoint {stop & 0xFF}" if stop & 0x100 \
-                else "paused"
+            if stop & 0x200:
+                hit = self._where(link.read_word(WCH_PC))
+                state = f"at watchpoint {stop & 0xFF}, hit at {hit}"
+            elif stop & 0x100:
+                state = f"at breakpoint {stop & 0xFF}"
+            else:
+                state = "paused"
         else:
             state = "running"
         # A wait for an interrupt, paused or not: bit 6, which reads 0
@@ -559,21 +583,25 @@ class Debugger(cmd.Cmd):
 
     def do_step(self, arg: str) -> None:
         """step (s) [N]: runs N steps of a paused processor, 1 by default,
-        and shows the PC after each, up to 16. It stops at a breakpoint and
-        at a halt. An empty line steps again."""
+        and shows the PC after each, up to 16. It stops at a breakpoint,
+        after a watchpoint's hit, and at a halt. An empty line steps
+        again."""
         link = self.link
         n = number(arg.strip()) if arg.strip() else 1
         ctl = link.read_word(CONTROL)
         if not ctl & PAUSE:
             raise ValueError("the processor is not paused; 'pause' first")
         for i in range(n):
-            breaks = len(link.breaks)
+            breaks, watches = len(link.breaks), len(link.watches)
             why = link.step(PAUSE | (ctl & RAM))
             # The step prints what it ends in, not the notice watcher.
             self.show(link.take_console())
             self.seen = self._counts()
             if why is not None:
                 print(f"halted: {REASONS.get(why, why)}, {self._pc()}")
+                return
+            if len(link.watches) > watches:
+                print(self._watch_hit(link.watches[-1]))
                 return
             if len(link.breaks) > breaks:
                 print(f"breakpoint {link.breaks[-1]}, {self._pc(True)}")
@@ -585,7 +613,7 @@ class Debugger(cmd.Cmd):
         """d [ADDR [N]]: disassembles N instructions from ADDR, 16 by
         default, with the labels before them. Without ADDR, it goes on
         after the last d, or at the PC of the last pause, step, or
-        breakpoint. The disassembler does not tell code from data."""
+        stop. The disassembler does not tell code from data."""
         args = arg.split()
         addr = self.address(args[0]) if args else self.next_dis
         n = number(args[1]) if len(args) > 1 else 16
@@ -652,6 +680,61 @@ class Debugger(cmd.Cmd):
                              f"{count - 1:x}")
         en = link.read_word(BRK_EN)
         link.write(BRK_EN, [en & ~(1 << n)])
+
+    def _watch_count(self) -> int:
+        """The number of watchpoints, of link version 7, which a system
+        of an older version has none of."""
+        link = self.link
+        count = link.read_word(WCH_COUNT) \
+            if link.read_word(VERSION) & 0xF >= 7 else 0
+        if count == 0:
+            raise ValueError("this system has no watchpoints")
+        return count
+
+    def do_wp(self, arg: str) -> None:
+        """wp [ADDR [r|w|rw]]: sets a watchpoint at ADDR in a free slot,
+        which stops after a step that writes the word (w, the default),
+        reads it (r), or either (rw), or, without ADDR, lists them."""
+        link = self.link
+        count = self._watch_count()
+        en = link.read_word(WCH_EN)
+        addrs = link.read(WCH_ADDR, count)
+        names = {v: k for k, v in KINDS.items()}
+        args = arg.split()
+        if not args:
+            for i in range(count):
+                if en >> 2 * i & 3:
+                    print(f"{i}: {self._where(addrs[i])} "
+                          f"{names[en >> 2 * i & 3]}")
+            if not en:
+                print(f"no watchpoints; {count} free")
+            return
+        if len(args) > 2 or (len(args) == 2 and args[1] not in KINDS):
+            raise ValueError("give the address, and r, w, or rw")
+        addr = self.address(args[0])
+        kind = KINDS[args[1] if len(args) == 2 else "w"]
+        free = [i for i in range(count) if not en >> 2 * i & 3]
+        if not free:
+            raise ValueError(f"all {count} watchpoints are set; 'wpd' one")
+        link.write(WCH_ADDR + free[0], [addr])
+        link.write(WCH_EN, [en | kind << 2 * free[0]])
+        print(f"{free[0]}: {self._where(addr)} {names[kind]}")
+
+    def do_wpd(self, arg: str) -> None:
+        """wpd N|all: disables watchpoint N, or all of them."""
+        link = self.link
+        if not arg.strip():
+            raise ValueError("give the watchpoint's number, or all")
+        count = self._watch_count()
+        if arg.strip() == "all":
+            link.write(WCH_EN, [0])
+            return
+        n = number(arg.strip())
+        if n >= count:
+            raise ValueError(f"no watchpoint {arg.strip()}; they are 0 to "
+                             f"{count - 1:x}")
+        en = link.read_word(WCH_EN)
+        link.write(WCH_EN, [en & ~(3 << 2 * n)])
 
     def do_send(self, arg: str) -> None:
         r"""send TEXT: sends the text to the program, with escapes such as

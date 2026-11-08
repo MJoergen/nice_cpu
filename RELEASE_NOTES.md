@@ -53,6 +53,17 @@ The others pin the tagged commit.
   same either way; a program that reads a cleared word back sees the
   difference.
 
+**FPGA cores (`hdl/`)**
+
+- Watchpoints on the debug link (#146) put a hit ahead of a pause
+  request and of an interrupt in WRITE, and check the vector read of
+  an entry. After that change, `make sweep` with one interrupt per run
+  passes on both cores at 5423a5b: pcfx in 4132 runs, with an NMI
+  before each of its 2066 steps and an IRQ before 2054 (12 have
+  E = 0); sidefx in 14537 runs, with an NMI before 7168 of 7444 steps
+  and an IRQ before 6701 (668 have E = 0; 276 and 75 steps have no
+  vector table and were left out).
+
 ## V1.9 (2026-11-07)
 
 The math unit counts the bits of A and takes the square root of C

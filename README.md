@@ -1,7 +1,8 @@
 # nice_cpu
 
 [![CI](https://github.com/MJoergen/nice_cpu/actions/workflows/ci.yml/badge.svg)](https://github.com/MJoergen/nice_cpu/actions/workflows/ci.yml)
-[![MEGA65 100 MHz](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/MJoergen/NiceMonMEGA65/main/badge-mega65.json)](https://github.com/MJoergen/NiceMonMEGA65#the-timing-badge)
+[![MEGA65 100 MHz](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/MJoergen/NiceMonMEGA65/main/badge-mega65.json)](https://github.com/MJoergen/NiceMonMEGA65/blob/main/CONTRIBUTING.md#the-timing-badges)
+[![Nexys4DDR 90 MHz](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/MJoergen/NiceMonMEGA65/main/badge-nexys4ddr.json)](https://github.com/MJoergen/NiceMonMEGA65/blob/main/CONTRIBUTING.md#the-timing-badges)
 
 An implementation of the NICE processor on an FPGA.
 
@@ -27,15 +28,17 @@ cover their ports, five stages of the pipeline, the devices, and the
 shifter and the ALU for every input.
 
 The core is FPGA-agnostic. This repository has no board top level and no
-synthesis for a particular board. An example design for the MEGA65 lives in
-the separate [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) repository.
+synthesis for a particular board. An example design for the MEGA65, which
+also builds for the Nexys4DDR, lives in the separate
+[NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) repository.
 
 That design is an example, not a dependency: nothing here refers to it in
 code or in a gate, and a release does not wait for it. It shows that the
 pipelined core meets 100 MHz on the MEGA65, and this repository avoids
-changes that would take that away. The MEGA65 badge at the top shows the
-result of the last tag that NiceMonMEGA65 built, not of `main` here: after
-a new tag it shows the one before until NiceMonMEGA65 follows.
+changes that would take that away. The Nexys4DDR has a slower part, speed
+grade -1, and is checked at 90 MHz. The badges at the top show the result
+of the last tag that NiceMonMEGA65 built, not of `main` here: after a new
+tag they show the one before until NiceMonMEGA65 follows.
 `make -C hdl timing` here checks the core alone against a budget, and
 [release/RELEASE.md](release/RELEASE.md) (step 7) says how NiceMonMEGA65
 follows a tag.

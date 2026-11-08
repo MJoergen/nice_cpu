@@ -12,7 +12,7 @@ depend on any board repository. It can be released at any time. NiceMonMEGA65
 carries the core to the boards as a git submodule, and it is the example
 design that shows the core meets 100 MHz on the MEGA65. That is an
 achievement to keep, not a gate: step 7 happens after the tag, and a miss
-only shows (the badge, and the release notes of the next tag).
+only shows (the badges, and the release notes of the next tag).
 
 ## Version names
 

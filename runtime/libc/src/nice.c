@@ -53,6 +53,31 @@ unsigned long long nice_micros(void)
     return (unsigned long long)hi << 32 | lo;
 }
 
+// The read of CLOCK_USEC takes the snapshot of the seconds, so it comes
+// first. The writes of the seconds stage them, and the write of CLOCK_USEC
+// sets the clock to all three at once.
+unsigned long long nice_clock(unsigned *usec)
+{
+    unsigned us = nice_peek(NICE_CLOCK_USEC);
+    unsigned lo = nice_peek(NICE_CLOCK_SEC_LO);
+    unsigned hi = nice_peek(NICE_CLOCK_SEC_HI);
+    if (usec)
+        *usec = us;
+    return (unsigned long long)hi << 32 | lo;
+}
+
+int nice_clock_isset(void)
+{
+    return nice_peek(NICE_CLOCK_STATUS) & 1;
+}
+
+void nice_clock_set(unsigned long long sec, unsigned usec)
+{
+    nice_poke(NICE_CLOCK_SEC_LO, (unsigned)sec);
+    nice_poke(NICE_CLOCK_SEC_HI, (unsigned)(sec >> 32));
+    nice_poke(NICE_CLOCK_USEC, usec);
+}
+
 void nice_screen_put(int col, int row, int c)
 {
     nice_poke(NICE_SCREEN + (unsigned)row * NICE_SCREEN_COLS + (unsigned)col, (unsigned)c);

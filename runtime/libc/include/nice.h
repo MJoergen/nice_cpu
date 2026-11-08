@@ -42,6 +42,17 @@ unsigned nice_isqrt64(unsigned long long x);
 // There is no assembly routine for it: it is C only.
 unsigned long long nice_micros(void);
 
+// The clock of the time of day (SYSTEM.md §10), C only as well.
+// nice_clock returns the seconds since the Unix epoch, and stores the
+// microseconds within the second in *usec if usec is not null. The rule
+// about interrupt routines applies to its snapshot. nice_clock_isset
+// returns 1 if the clock holds a time, set by a program or the system, and
+// 0 if not. nice_clock_set sets it to sec seconds and usec microseconds,
+// 999999 at most.
+unsigned long long nice_clock(unsigned *usec);
+int nice_clock_isset(void);
+void nice_clock_set(unsigned long long sec, unsigned usec);
+
 // The emulator's 80x25 character screen. nice_screen_put writes c, the
 // character in bits 7..0 and its color above, to a column, 0 to 79, of a
 // row, 0 to 24. nice_screen_clear writes a blank, 0x20, to every word.
@@ -51,7 +62,7 @@ void nice_screen_clear(void);
 #define NICE_SCREEN_COLS 80
 #define NICE_SCREEN_ROWS 25
 
-// The devices' addresses and bits (SYSTEM.md §1, §3), for nice.c. The
+// The devices' addresses and bits (SYSTEM.md §1, §3, §10), for nice.c. The
 // console is read here; it is written through nice_putc.
 #define NICE_CONSOLE 0xFFFFFF00u
 #define NICE_CONSOLE_BYTE 0x100u
@@ -62,6 +73,10 @@ void nice_screen_clear(void);
 #define NICE_INSTR_HI 0xFFFFFF43u
 #define NICE_TIME_LO 0xFFFFFF44u
 #define NICE_TIME_HI 0xFFFFFF45u
+#define NICE_CLOCK_USEC 0xFFFFFF46u
+#define NICE_CLOCK_SEC_LO 0xFFFFFF47u
+#define NICE_CLOCK_SEC_HI 0xFFFFFF48u
+#define NICE_CLOCK_STATUS 0xFFFFFF49u
 #define NICE_SCREEN 0xFFFF0000u
 
 // Reads the NICE word at a word address.

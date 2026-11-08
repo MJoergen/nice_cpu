@@ -3,8 +3,8 @@
 
 #include <stddef.h>
 
-// There is a clock but no calendar: no device tells the date. clock counts
-// microseconds of running time, from the counter of SYSTEM.md §3.
+// clock counts microseconds of running time, from the counter of
+// SYSTEM.md §3, and time reads the clock of the time of day of §10.
 typedef unsigned long clock_t;
 typedef long long time_t;
 
@@ -14,8 +14,9 @@ typedef long long time_t;
 // unsigned, so the difference of two readings is right across a wrap.
 clock_t clock(void);
 
-// The calendar time is not available: returns -1, and stores it in *t if
-// t is not null.
+// The seconds since the Unix epoch, or -1 if the clock of the time of day
+// holds no time ("set" is 0, SYSTEM.md §10). Stores the same in *t if t is
+// not null.
 time_t time(time_t *t);
 
 #endif

@@ -1,4 +1,5 @@
-// clock and time, on the microsecond counter of nice.c.
+// clock, on the microsecond counter of nice.c, and time, on its clock of
+// the time of day.
 #include <nice.h>
 #include <time.h>
 
@@ -9,7 +10,8 @@ clock_t clock(void)
 
 time_t time(time_t *t)
 {
+    time_t now = nice_clock_isset() ? (time_t)nice_clock(0) : (time_t)-1;
     if (t)
-        *t = -1;
-    return -1;
+        *t = now;
+    return now;
 }

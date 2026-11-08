@@ -495,9 +495,10 @@ pub const Tod = struct {
         return @intCast(@mod(t, wrap));
     }
 
-    /// Count `n` steps, as microseconds, without the host's clock.
+    /// Count `n` steps, as microseconds, without the host's clock. `now`
+    /// wraps the sum, so a step spends no division here.
     pub fn tick(self: *Tod, n: u64) void {
-        if (self.io == null) self.us = @mod(self.us + n, wrap);
+        if (self.io == null) self.us += n;
     }
 
     /// The value a data read of word `i` returns, with its side effect: a

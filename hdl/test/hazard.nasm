@@ -250,18 +250,18 @@ start           MOVE    SP, stack
                 CMP     R2, data+4
         ?!Z     JMP     fail
 
-; 4. R14 and R15 as pointers. R14 = 0x41000000 points to the words at
-; r14data. When an instruction with M set changes the flags, R14 points
-; elsewhere.
+; 4. R14 and R15 as pointers. R14 = 0xC1000000, with I and E set,
+; points to the words at r14data, above the byte windows of SYSTEM.md §9.
+; When an instruction with M set changes the flags, R14 points elsewhere.
                 MOVE    R12, 4
-                MOVE    R14, 0x41000000
+                MOVE    R14, 0xC1000000
                 MOVE    R1, @R14        ; R1 = 0x14
-                MOVE    R2, @R14++      ; R2 = 0x14, R14 = 0x41000001
+                MOVE    R2, @R14++      ; R2 = 0x14, R14 = 0xC1000001
                 MOVE    R3, @R14        ; R3 = 0x15
-                MOVE    @R14++, 0x16    ; R14 = 0x41000002
-                MOVE    R4, @--R14      ; R4 = 0x16, R14 = 0x41000001
-                MOVE    R14, 0x41000000
-                CMP     R0, R0          ; Z = 1: R14 = 0x49000000
+                MOVE    @R14++, 0x16    ; R14 = 0xC1000002
+                MOVE    R4, @--R14      ; R4 = 0x16, R14 = 0xC1000001
+                MOVE    R14, 0xC1000000
+                CMP     R0, R0          ; Z = 1: R14 = 0xC9000000
                 MOVE    R5, @R14        ; R5 = 0x94
                 ADD     R6, R1, R2
                 ADD     R6, R6, R3
@@ -451,7 +451,7 @@ data            .BLK    16
                 .BLK    16
 stack
 
-                .ORG    0x41000000
+                .ORG    0xC1000000
 r14data         .DAT    0x14, 0x15
-                .ORG    0x49000000
+                .ORG    0xC9000000
                 .DAT    0x94

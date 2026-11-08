@@ -125,11 +125,12 @@ $(LINK_RUNS): run/link/%: $(BUILD)/linkecho.bin
 # port for Ethernet frames, src/eth_regs.vhd, with the station
 # sim/eth_sim.vhd and the frames of emulator/test/eth.in, and runs again
 # on a stalling memory and with held pauses. The frames it sends must be
-# the emulator's.
+# the emulator's. bytewin reads and writes through the byte windows of
+# sim/wb_mem.vhd (SYSTEM.md §9), and runs again on a stalling memory.
 EXAMPLES = count replicate print wrap
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest \
   console screen iofetch reads reserved mpu mpu64 mpubits perf events timer input \
-  r15modes r0dest r14mem skipconst carryin shiftc wrapmem smcown sd net eth
+  r15modes r0dest r14mem skipconst carryin shiftc wrapmem smcown sd net eth bytewin
 INTR_irq   = --nmi 2:1 --irq 2:2 --nmi 9:1 --irq 17:2 --nmi 17:1 --irq 100:2
 INTR_merge = --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
 INTR_after = --nmi 3:1 --nmi 10:1
@@ -422,6 +423,7 @@ $(eval $(call core_run,$(1),events_stall,../emulator/test/events.bin,-gG_STALL=3
 $(eval $(call core_run,$(1),timer_stall,../emulator/test/timer.bin,-gG_STALL=30 -gG_SEED=11))
 $(eval $(call core_run,$(1),sd_stall,../emulator/test/sd.bin,-gG_STALL=30 -gG_SEED=41))
 $(eval $(call core_run,$(1),sd_hold,../emulator/test/sd.bin,-gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=43))
+$(eval $(call core_run,$(1),bytewin_stall,../emulator/test/bytewin.bin,-gG_STALL=30 -gG_SEED=49))
 $(eval $(call core_run,$(1),eth_stall,../emulator/test/eth.bin,-gG_STALL=30 -gG_SEED=45))
 $(eval $(call core_run,$(1),eth_hold,../emulator/test/eth.bin,-gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=47))
 $(eval $(call core_run,$(1),cputest_pause,../emulator/test/cputest.bin,-gG_PAUSE=60 -gG_STALL=30 -gG_SEED=23))

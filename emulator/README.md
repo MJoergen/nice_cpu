@@ -239,7 +239,9 @@ address twice and a file with no words are errors.
 
 | Address | Words | Contents |
 |---|---|---|
-| `0x00000000`–`0xFFFDFFFF` | 4294836224 | Ordinary memory. Programs load at 0, or at `0x8000` under a monitor in ROM, as a stand-in for one at 0 shows (runtime/ABI.md, "Programs under a monitor"). |
+| `0x00000000`–`0x0FFFFFFF` | 268435456 | Ordinary memory. Programs load at 0, or at `0x8000` under a monitor in ROM, as a stand-in for one at 0 shows (runtime/ABI.md, "Programs under a monitor"). |
+| `0x10000000`–`0x5FFFFFFF` | 1342177280 | Byte windows (SYSTEM.md §9). A data access reaches a word, a byte, or a halfword of words `0x00000000`–`0x03FFFFFF`. Instruction fetches read 0. |
+| `0x60000000`–`0xFFFDFFFF` | 2684223488 | Ordinary memory. |
 | `0xFFFE0000`–`0xFFFE1FFF` | 8192 | Font RAM (SYSTEM.md §1.8). Ordinary memory, but a write keeps only bits 15..0. With `--no-font`, ordinary memory. |
 | `0xFFFE2000`–`0xFFFE3FFF` | 8192 | Character ROM (SYSTEM.md §1.8): Spleen 16×32, 32 words per glyph. A write is dropped. With `--no-font`, ordinary memory. |
 | `0xFFFE4000`–`0xFFFEFFFF` | 49152 | Ordinary memory. |
@@ -622,6 +624,7 @@ an address, `skipconst` the constant words of skipped and control
 instructions, `carryin` and `shiftc` the carry input and the shift counts
 at their edges, `wrapmem` the wrap of addresses at `0xFFFFFFFF`, and
 `smcown` an instruction that overwrites its own constant word.
+`bytewin` reads and writes through the byte windows of SYSTEM.md §9.
 `scrbound` runs twice, with `-s` and with `-2004 -s`, to check the bounds
 of the screen.
 

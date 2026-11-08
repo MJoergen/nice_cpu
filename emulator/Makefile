@@ -23,7 +23,7 @@ OPTS_wrap      = -d 0xffffffff:1
 # are in the comments of each program. Run make bins after changing one.
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge irqtimer after start cputest console screen screencolor screeninvert iofetch \
   reads reserved mpu mpu64 mpubits perf events timer input r15modes r0dest r14mem skipconst carryin shiftc \
-  wrapmem smcown scrbound time trapsym sd font net eth
+  wrapmem smcown scrbound time trapsym sd font net eth bytewin
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
@@ -69,6 +69,7 @@ OPTS_net     = -d 0x200:17 -d 0xffffffb0:16
 # The frames sent go to test/eth.frames.out, checked after the probes.
 OPTS_eth     = --eth-in test/eth.in --eth-out test/eth.frames.out -d 0x200:33 -d 0xffffffc0:16
 OPTS_font    = -d 0xfffe0820:32 -d 0xfffe0020:1 -d 0xfffe2826:1 -d 0xffffff86:1
+OPTS_bytewin = -d 0x202:3 -d 0x03ffffff:1 -d 0x60000000:1 -d 0x20000809:1 -d 0x5000080e:1
 
 define check
 	@$(EMU) $(OPTS_$(1)) $(2) < /dev/null > test/$(1).out; echo "exit $$?" >> test/$(1).out

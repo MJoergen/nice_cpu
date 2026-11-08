@@ -33,14 +33,16 @@ data read returns.
 - [6. Network station](#6-network-station)
 - [7. Ethernet frames](#7-ethernet-frames)
 - [8. Systems built on the FPGA core](#8-systems-built-on-the-fpga-core)
+- [9. Byte windows](#9-byte-windows)
 
 ## Memory map
 
-The I/O range, the screen, the font, and what the systems put in them. The emulator's own map, with
+The byte windows, the I/O range, the screen, the font, and what the systems put in them. The emulator's own map, with
 its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 
 | Address | Words | What |
 |---|---|---|
+| `0x10000000`–`0x5FFFFFFF` | 5 × 2^28 | The byte windows onto words `0x00000000`–`0x03FFFFFF` (§9). |
 | `0xFFFE0000`–`0xFFFE1FFF` | 8192 | The font RAM (§1.8). |
 | `0xFFFE2000`–`0xFFFE3FFF` | 8192 | The character ROM (§1.8). |
 | `0xFFFF0000`–`0xFFFF07CF` | 2000 | The emulator's character screen, 80×25 (§1.1). |
@@ -470,7 +472,56 @@ A board that wraps the FPGA core, such as [NiceMonMEGA65](https://github.com/MJo
 - **SD card slots.** A system without an SD card controller has nothing at `0xFFFFFFA0`–`0xFFFFFFAF`. The MEGA65 has 2 slots: the microSD slot at the back, and the full-size slot underneath, the only one with write protect, whose card detect does not work on the R3 (§5). NiceMonMEGA65 plans to number them 0 and 1 (MJoergen/NiceMonMEGA65#55). The Nexys4DDR has 1, its microSD slot.
 - **Network station.** A system that serves the debug link only on a UART, or not at all, has nothing at `0xFFFFFFB0`–`0xFFFFFFBF`. NiceMonMEGA65 has its station at `0xFFFFFF98`–`0xFFFFFF9D` today, with the same registers in another order and no status word, until it follows §6.
 - **Ethernet frames.** A system without a network station, or without the port, has nothing at `0xFFFFFFC0`–`0xFFFFFFCF`. NiceMonMEGA65 plans the port (#121), with the network stack in its ROM.
+- **Byte windows.** A system may leave out the windows of §9. Then a program translated to use them does not run there. NiceMonMEGA65 does not have them yet.
 - **ROM.** A system may map a ROM at 0 that it can hide, so that a program loads at 0 as in the emulator.
 - **Font.** A board that shows the screen on a display draws it from the font of §1.8, with the same font RAM, character ROM, and base, and its clear makes the font RAM and the base 0. An instruction fetch from `0xFFFE0000`–`0xFFFE3FFF` may reach the board's RAM there instead, as an alias (**Aliasing** below). NiceMonMEGA65 has the font RAM, the character ROM, and the base from its V1.6 (MJoergen/NiceMonMEGA65#71), on the MEGA65 and the Nexys4DDR; there an instruction fetch from the range reads the RAM it aliases.
 - **Debug link.** A board may serve the debug link of [DEBUG.md](DEBUG.md) on its UART, or over TCP as the emulator does. Its debug registers at `0xFFFFFFE0`–`0xFFFFFFFF` are for the link only, so a program's data accesses there go to whatever the board has there otherwise.
-- **Aliasing.** A system with 2^N words of RAM may decode only the low N address bits, so that the RAM repeats through the address space. Then the words of `0xFFFFFF02`–`0xFFFFFFFF` where it has no device or register alias the top words of the RAM, and the stack below `0xFFFFFF00` lands in them too. With 64K words they alias the RAM words `0xFF02`–`0xFFFF`, and `0xFFFF8000`–`0xFFFFFEFF` alias `0x8000`–`0xFEFF`; with 128K words, `0x1FF02`–`0x1FFFF` and `0x18000`–`0x1FEFF`. That is a property of the system, not a bug. A program learns the size from the system's documentation, or from a register in the system's own range (**Reserved words** above) if it has one. NiceMonMEGA65 has 64K words on the Nexys4DDR and 128K on the MEGA65, and a read-only word at `0xFFFFFF9E` that returns the RAM's words, which reads 0 in the emulator, where there is no limit (MJoergen/NiceMonMEGA65#68).
+- **Aliasing.** A system with 2^N words of RAM may decode only the low N address bits, so that the RAM repeats through the address space. Then the words of `0xFFFFFF02`–`0xFFFFFFFF` where it has no device or register alias the top words of the RAM, and the stack below `0xFFFFFF00` lands in them too. With 64K words they alias the RAM words `0xFF02`–`0xFFFF`, and `0xFFFF8000`–`0xFFFFFEFF` alias `0x8000`–`0xFEFF`; with 128K words, `0x1FF02`–`0x1FFFF` and `0x18000`–`0x1FEFF`. That is a property of the system, not a bug. A system with the byte windows of §9 decodes the top four address bits for them first. A program learns the size from the system's documentation, or from a register in the system's own range (**Reserved words** above) if it has one. NiceMonMEGA65 has 64K words on the Nexys4DDR and 128K on the MEGA65, and a read-only word at `0xFFFFFF9E` that returns the RAM's words, which reads 0 in the emulator, where there is no limit (MJoergen/NiceMonMEGA65#68).
+
+## 9. Byte windows
+
+The memory is word-addressed (ISA §1.1), but code translated from wasm
+holds byte addresses ([translator/WASM.md](../translator/WASM.md)). Five
+windows let a data access take a byte address. A data access to an
+address A whose top four bits are 1 to 5 reaches the word
+W = (A >> 2) AND `0x03FFFFFF` of the memory. Byte b of a word is its
+bits 8b + 7 to 8b, as in WASM.md, and halfword h is its bits 16h + 15 to
+16h.
+
+| Addresses | Window | A read returns | A write changes |
+|---|---|---|---|
+| `0x10000000`–`0x1FFFFFFF` | Word | Word W. | Word W. |
+| `0x20000000`–`0x2FFFFFFF` | Byte | Byte A mod 4 of W, zero-extended. | Byte A mod 4 of W, to bits 7..0 of the value. |
+| `0x30000000`–`0x3FFFFFFF` | Signed byte | Byte A mod 4 of W, sign-extended. | As the byte window. |
+| `0x40000000`–`0x4FFFFFFF` | Halfword | Halfword bit 1 of A of W, zero-extended. | Halfword bit 1 of A of W, to bits 15..0 of the value. |
+| `0x50000000`–`0x5FFFFFFF` | Signed halfword | Halfword bit 1 of A of W, sign-extended. | As the halfword window. |
+
+So a program whose linear memory starts at word `MEMBASE` reads the byte
+at byte address b with `MOVE R1, @0x20000000+4*MEMBASE[R2]`, with b in R2.
+The word window ignores bits 1..0 of A, and the halfword windows bit 0,
+so a word or a halfword through a window never straddles two words.
+
+- **One access.** A read or a write through a window is one data access
+  in the sense of ISA §8.2, and the counters of §3 count it once. A
+  write changes only its byte or halfword, as one access: nothing,
+  an interrupt routine included, can write the word between a read and
+  a write of it.
+- **The first 64M words.** W is below `0x04000000`, so a window reaches
+  only words `0x00000000`–`0x03FFFFFF`, and never the I/O range, the
+  screen, or the font.
+- **No code.** An instruction fetch from `0x10000000`–`0x5FFFFFFF`
+  reads 0 in the emulator, and on a board may read the memory that the
+  address aliases (§8, **Aliasing**). A store through a window into
+  instructions that the processor may have fetched leaves undefined which
+  value runs (ISA §8.2): the pipelined core's check of
+  [MICROARCH.md §5.5](MICROARCH.md#55-self-modifying-code) compares the
+  address of the store, not the address of the word.
+- **Vector tables.** The read of a vector table entry is a data access
+  (ISA §7.3), so a VBASE of `0x100000`–`0x5FFFFF` puts the table in a
+  window, where an entry is read from another word.
+- **The debug link** reads and writes through the windows as the
+  processor's data accesses do. A program image has no words in
+  `0x10000000`–`0x5FFFFFFF`.
+
+The emulator and the simulated memory of `hdl/sim` have the windows. A
+board has them if it says so (§8).

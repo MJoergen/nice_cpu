@@ -36,9 +36,13 @@ leaves out a request that would find no vector table there.
 
 import sys
 
-DATA = 0x100000  # The data region, DATA to DATA + 15, above the program
+# The data region, DATA to DATA + 15, above the program. Its addresses,
+# and the vector tables at VBASE << 8 for the VBASEs near BASE, stay below
+# the byte windows of SYSTEM.md §9.
+DATA = 0x80000
 BASE = DATA + 8  # Each case starts with the register here
-R14_BASE = 0x41000000 | BASE  # The same for R14, with E = 1, and bit 24 always 1
+# The same for R14, with I and E = 1, above the windows, and bit 24 always 1
+R14_BASE = 0xC1000000 | BASE
 NMI, IRQ = 8, 9  # The vectors of test/irq_sweep.py
 REACH = 6  # How far R14 moves from R14_BASE through side effects alone
 

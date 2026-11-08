@@ -527,6 +527,9 @@ header (The formal checks).
 
 `wb_mem` holds all 2³² words sparsely, as the emulator does, and loads a
 `.bin` file (ISA.md §10.4) at time 0. A word never written reads 0.
+It has the byte windows of SYSTEM.md §9, as the emulator does, so a data
+access at `0x10000000`–`0x5FFFFFFF` reaches a word, a byte, or a
+halfword of the first 64M words, and an instruction fetch there reads 0.
 
 It has a read-only Wishbone port for the instruction bus and a read-write
 port for the data bus. The instruction port is 64 bits wide. Its address a

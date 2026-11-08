@@ -429,6 +429,7 @@ Because SR is restored, an interrupt routine may change any flag freely, E and I
 
 - A read from an address with no memory or device behind it returns 0. A write to such an address is ignored.
 - Each instruction runs with the words that memory held when the instructions before it had completed. So a store may change the next instruction or its constant words, and the change takes effect. An instruction that overwrites its own constant words does not see the change, because they were fetched in step 2.
+- A system may let more than one address reach the same word, as the aliasing and the byte windows of [SYSTEM.md](SYSTEM.md) do. The rule above then holds for a store to the address that the word is fetched from. A store through another address leaves undefined which value runs.
 
 Memory accesses are of two kinds. **Instruction fetches** read the instruction word and the constant words (steps 1 and 2 of §5). **Data accesses** are the operand reads, the destination writes, and the vector table reads.
 

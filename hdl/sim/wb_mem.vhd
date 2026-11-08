@@ -33,6 +33,12 @@
 --   lets tests see the number and order of data reads (ISA.md §8.2).
 -- * The rest of the range is plain memory, as in the emulator.
 --
+-- The byte windows of SYSTEM.md §9, 0x10000000-0x5FFFFFFF, are as in the
+-- emulator. A data access at A reaches word (A >> 2) and 0x03FFFFFF: the
+-- word, a byte, zero- or sign-extended, or a halfword, by the top four
+-- bits of A. A write through a byte or halfword window changes only that
+-- byte or halfword. The instruction port reads 0 there.
+--
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) The masters hold CYC high from a request until its ACK.
 -- b) A master holds STB and the request while STALL is high.
@@ -87,6 +93,71 @@ architecture simulation of wb_mem is
    constant C_IO_BASE : std_logic_vector(31 downto 0) := X"FFFFFF00";
    constant C_CONSOLE : std_logic_vector(31 downto 0) := X"FFFFFF00";
    constant C_COUNTER : std_logic_vector(31 downto 0) := X"FFFFFF01";
+
+   -- The byte window of a data address (SYSTEM.md §9), 1 to 5, or 0 if it
+   -- is in none.
+   pure function window_of (
+      addr : std_logic_vector(31 downto 0)
+   ) return natural is
+      constant C_N : natural := to_integer(addr(31 downto 28));
+   begin
+      if C_N >= 1 and C_N <= 5 then
+         return C_N;
+      end if;
+      return 0;
+   end function window_of;
+
+   -- The word that an address of a byte window reaches.
+   pure function window_word (
+      addr : std_logic_vector(31 downto 0)
+   ) return std_logic_vector is
+   begin
+      return "000000" & addr(27 downto 2);
+   end function window_word;
+
+   -- What a read through window n at addr returns of word.
+   pure function window_read (
+      n    : natural;
+      addr : std_logic_vector(31 downto 0);
+      word : std_logic_vector(31 downto 0)
+   ) return std_logic_vector is
+      constant C_B    : natural                       := 8 * to_integer(addr(1 downto 0));
+      constant C_H    : natural                       := 16 * to_integer(addr(1 downto 1));
+      constant C_BYTE : std_logic_vector(7 downto 0)  := word(C_B + 7 downto C_B);
+      constant C_HALF : std_logic_vector(15 downto 0) := word(C_H + 15 downto C_H);
+   begin
+      case n is
+         when 2      => return X"000000" & C_BYTE;
+         when 3      => return (31 downto 8 => C_BYTE(7)) & C_BYTE;
+         when 4      => return X"0000" & C_HALF;
+         when 5      => return (31 downto 16 => C_HALF(15)) & C_HALF;
+         when others => return word;
+      end case;
+   end function window_read;
+
+   -- word, which a write of value through window n at addr reaches, after
+   -- the write.
+   pure function window_write (
+      n     : natural;
+      addr  : std_logic_vector(31 downto 0);
+      word  : std_logic_vector(31 downto 0);
+      value : std_logic_vector(31 downto 0)
+   ) return std_logic_vector is
+      variable res_v : std_logic_vector(31 downto 0) := word;
+      variable b_v   : natural;
+   begin
+      case n is
+         when 2 | 3 =>
+            b_v                            := 8 * to_integer(addr(1 downto 0));
+            res_v(b_v + 7 downto b_v)      := value(7 downto 0);
+         when 4 | 5 =>
+            b_v                            := 16 * to_integer(addr(1 downto 1));
+            res_v(b_v + 15 downto b_v)     := value(15 downto 0);
+         when others =>
+            res_v := value;
+      end case;
+      return res_v;
+   end function window_write;
 
    signal ibus_stall : std_logic := '0';
    signal dbus_stall : std_logic := '0';
@@ -253,7 +324,7 @@ begin
 
          ibus_ack_o <= ibus_acc_v;
          if ibus_acc_v = '1' then
-            if ibus_addr_i & '0' >= C_IO_BASE then
+            if ibus_addr_i & '0' >= C_IO_BASE or window_of(ibus_addr_i & '0') /= 0 then
                ibus_data_o <= (others => '0');
             else
                ibus_data_o <= mem_read(ibus_addr_i & '1') & mem_read(ibus_addr_i & '0');
@@ -265,6 +336,10 @@ begin
             if dbus_we_i = '1' then
                if dbus_addr_i = C_COUNTER then
                   count_v := dbus_data_i;
+               elsif window_of(dbus_addr_i) /= 0 then
+                  mem_write(window_word(dbus_addr_i),
+                            window_write(window_of(dbus_addr_i), dbus_addr_i,
+                                         mem_read(window_word(dbus_addr_i)), dbus_data_i));
                elsif dbus_addr_i /= C_CONSOLE then
                   mem_write(dbus_addr_i, dbus_data_i);
                end if;
@@ -278,6 +353,9 @@ begin
             elsif dbus_addr_i = C_COUNTER then
                dbus_data_o <= count_v;
                count_v     := count_v + 1;
+            elsif window_of(dbus_addr_i) /= 0 then
+               dbus_data_o <= window_read(window_of(dbus_addr_i), dbus_addr_i,
+                                          mem_read(window_word(dbus_addr_i)));
             else
                dbus_data_o <= mem_read(dbus_addr_i);
             end if;

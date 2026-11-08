@@ -143,11 +143,11 @@ back3           MOVE    R14, tbl
                 JMP     @R14            ; read through SR
                 HALT
 back4           MOVE    R14, tbl
-                CMP     R0, 1           ; C, N, X = 1: SR changes before the read, to 0x17000106
-                JMP     @1[R14]         ; reads 0x17000107
+                CMP     R0, 1           ; C, N, X = 1: SR changes before the read, to 0x97000106
+                JMP     @1[R14]         ; reads 0x97000107
                 HALT
 back5           MOVE    R14, tbl+2
-                ADD[M]  R0, R0, R0      ; Z = 1: the read must wait for this SR, 0x09000108
+                ADD[M]  R0, R0, R0      ; Z = 1: the read must wait for this SR, 0x89000108
                 JMP     @R14++          ; R14 incremented, then the jump
                 HALT
 back6           MOVE    R2, R14
@@ -164,14 +164,14 @@ j2              ADD     R15++, R15, 1   ; r = next + 1, R15 = next + 2
                 ADD     R15--, R15, R1  ; r = next + 1, R15 = next
                 MOVE    R2, 0x44
                 HALT
-                .ORG    0x01000100
+                .ORG    0x81000100      ; I = 1: SR as a pointer stays above the byte windows
 far             JMP     back1
 far2            JMP     back2
 far3            JMP     back3
 tbl             .DAT    back4, back5, back6
-                .ORG    0x17000107
+                .ORG    0x97000107
                 .DAT    back5
-                .ORG    0x09000108
+                .ORG    0x89000108
                 .DAT    back6
                 .ORG    0x1000
 scratch         .BLK    8

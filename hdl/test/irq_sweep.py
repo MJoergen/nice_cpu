@@ -42,7 +42,9 @@ emulator's traces, and prints that for each kind. A program that writes
 R14 with any value may have no vector table at some steps. So each
 interrupt entry must find a vector word in the program's image that
 names the same routine as the entry for VBASE = 0, which every swept
-program has. If one does not, its request is dropped from the run, which is planned again,
+program has, at an address that is not in the I/O range or the byte
+windows of SYSTEM.md §9, where the image's words are not what a data
+read returns. If one does not, its request is dropped from the run, which is planned again,
 and the step it would have come before is left out, counted in the
 summary. A request
 raised before a step of an INT routine, or before the step after its RTI,
@@ -65,6 +67,7 @@ ENTRY = re.compile(r"(NMI|IRQ) ([0-9a-f]{2}) ")
 INSN = re.compile(r"[0-9a-f]{8} ([0-9a-f]{8})")
 R14 = re.compile(r"\bR14=([0-9a-f]{8})")
 IO = 0xFFFFFF00
+WINDOWS = (0x10000000, 0x60000000)  # The byte windows of SYSTEM.md §9
 CONTROL = 0x0FE00000
 RTI = 0x0C200000
 INT = 0x0C400000
@@ -89,7 +92,8 @@ def scan(trace: str, extra: int, words: dict[int, int]) -> tuple[set[int], list[
         if m:
             vec = int(m.group(2), 16)
             vaddr = ((r14 & 0xFFFFFF) << 8) + vec
-            if vaddr >= IO or vaddr not in words or words[vaddr] != words.get(vec):
+            if (vaddr >= IO or WINDOWS[0] <= vaddr < WINDOWS[1] or vaddr not in words
+                    or words[vaddr] != words.get(vec)):
                 bad.append(n)
             n += 1
             covered.add(plain)

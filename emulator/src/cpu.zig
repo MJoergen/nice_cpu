@@ -149,6 +149,43 @@ pub const Memory = struct {
 
 pub const Error = std.Io.Writer.Error || error{OutOfMemory};
 
+/// The byte windows of SYSTEM §9: the top four bits of a data address,
+/// 1 to 5, if it is in one.
+pub fn window(addr: u32) ?u3 {
+    const n = addr >> 28;
+    return if (n >= 1 and n <= 5) @intCast(n) else null;
+}
+
+/// The word that the address `addr` of a byte window reaches (SYSTEM §9).
+fn windowWord(addr: u32) u32 {
+    return (addr >> 2) & 0x03FF_FFFF;
+}
+
+/// What a read through window `n` at `addr` returns of `word`, the word it
+/// reaches (SYSTEM §9).
+pub fn windowRead(n: u3, addr: u32, word: u32) u32 {
+    const byte: u8 = @truncate(word >> @as(u5, @intCast(8 * (addr & 3))));
+    const half: u16 = @truncate(word >> @as(u5, @intCast(16 * ((addr >> 1) & 1))));
+    return switch (n) {
+        2 => byte,
+        3 => @bitCast(@as(i32, @as(i8, @bitCast(byte)))),
+        4 => half,
+        5 => @bitCast(@as(i32, @as(i16, @bitCast(half)))),
+        else => word,
+    };
+}
+
+/// `word`, the word that a write of `value` through window `n` at `addr`
+/// reaches, after the write (SYSTEM §9).
+pub fn windowWrite(n: u3, addr: u32, word: u32, value: u32) u32 {
+    const mask: u32, const at: u5 = switch (n) {
+        2, 3 => .{ 0xFF, @intCast(8 * (addr & 3)) },
+        4, 5 => .{ 0xFFFF, @intCast(16 * ((addr >> 1) & 1)) },
+        else => return value,
+    };
+    return (word & ~(mask << at)) | ((value & mask) << at);
+}
+
 /// The first address of the I/O range (§8.3).
 pub const io_base: u32 = 0xFFFF_FF00;
 
@@ -905,6 +942,7 @@ pub const Cpu = struct {
         if (sdWord(addr)) |i| return self.sd.read(i);
         if (netWord(addr)) |i| return self.net.read(i);
         if (ethWord(addr)) |i| return self.eth.read(i);
+        if (window(addr)) |n| return windowRead(n, addr, self.mem.read(windowWord(addr)));
         return self.mem.read(addr);
     }
 
@@ -931,6 +969,7 @@ pub const Cpu = struct {
         if (sdWord(addr)) |i| return self.sd.read(i);
         if (netWord(addr)) |i| return self.net.read(i);
         if (ethWord(addr)) |i| return self.eth.read(i);
+        if (window(addr)) |n| return windowRead(n, addr, self.mem.peek(windowWord(addr)));
         return self.mem.peek(addr);
     }
 
@@ -957,6 +996,9 @@ pub const Cpu = struct {
             self.net.write(i, value);
         } else if (ethWord(addr)) |i| {
             self.eth.write(i, value, self.station());
+        } else if (window(addr)) |n| {
+            const w = windowWord(addr);
+            try self.mem.write(w, windowWrite(n, addr, self.mem.read(w), value));
         } else if (addr != console_addr or self.console == null) {
             try self.mem.write(addr, value);
         }
@@ -1165,10 +1207,11 @@ pub const Cpu = struct {
     }
 
     /// An instruction fetch (§8.2). It never reaches the I/O range, where
-    /// it reads 0 (§8.3).
+    /// it reads 0 (§8.3), nor the byte windows, where it reads 0 too
+    /// (SYSTEM §9).
     fn fetch(self: *Cpu) u32 {
         const pc = self.regs[15];
-        const word = if (pc >= io_base) 0 else self.mem.read(pc);
+        const word = if (pc >= io_base or window(pc) != null) 0 else self.mem.read(pc);
         self.regs[15] +%= 1;
         return word;
     }
@@ -2833,4 +2876,32 @@ test "Ethernet frames: the port's words, a start, and the station's registers (S
     cpu.reset();
     for (0..8) |i| try testing.expectEqual(0, cpu.read(base + @as(u32, @intCast(i))));
     try testing.expectEqual(0x1234, cpu.eth.tx[0]); // a start keeps the send buffer
+}
+
+test "the byte windows: reads, writes, and fetches (SYSTEM §9)" {
+    var cpu: Cpu = .init(std.testing.allocator);
+    defer cpu.deinit();
+    try cpu.mem.write(0x100, 0x80FF_7F01);
+    try std.testing.expectEqual(@as(u32, 0x0000_0001), cpu.read(0x2000_0400));
+    try std.testing.expectEqual(@as(u32, 0xFFFF_FF80), cpu.read(0x3000_0403));
+    try std.testing.expectEqual(@as(u32, 0x0000_00FF), cpu.read(0x2000_0402));
+    try std.testing.expectEqual(@as(u32, 0x0000_7F01), cpu.read(0x4000_0401));
+    try std.testing.expectEqual(@as(u32, 0xFFFF_80FF), cpu.read(0x5000_0402));
+    try std.testing.expectEqual(@as(u32, 0x80FF_7F01), cpu.read(0x1000_0403));
+    try std.testing.expectEqual(@as(u32, 0xFFFF_80FF), cpu.peek(0x5000_0403));
+    try cpu.write(0x3000_0401, 0x1234_56AA);
+    try std.testing.expectEqual(@as(u32, 0x80FF_AA01), cpu.mem.peek(0x100));
+    try cpu.write(0x4000_0402, 0xBEEF);
+    try std.testing.expectEqual(@as(u32, 0xBEEF_AA01), cpu.mem.peek(0x100));
+    try cpu.write(0x1000_0400, 7);
+    try std.testing.expectEqual(@as(u32, 7), cpu.mem.peek(0x100));
+    // The last word a window reaches, and no window above 0x5FFFFFFF.
+    try cpu.write(0x1FFF_FFFF, 9);
+    try std.testing.expectEqual(@as(u32, 9), cpu.mem.peek(0x03FF_FFFF));
+    try std.testing.expectEqual(@as(?u3, null), window(0x6000_0000));
+    try std.testing.expectEqual(@as(?u3, null), window(0x0FFF_FFFF));
+    // A fetch from a window reads 0, whatever the memory holds there.
+    try cpu.mem.write(0x5FFF_FFFF, 0x0C00_0000);
+    cpu.regs[15] = 0x5FFF_FFFF;
+    try std.testing.expectEqual(@as(u32, 0), cpu.fetch());
 }

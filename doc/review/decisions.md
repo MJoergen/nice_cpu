@@ -192,3 +192,12 @@ proposed again. The open items are the
   its `expl`, `logl`, and `powl` call the double ones. Out of scope for a
   32-bit hobby CPU: `math.h` has no `long double` functions, and float
   formatting and parsing (#68) work in double.
+- **A memory operand that takes a byte address** (#112), such as
+  `@c[Rx>>2]` in the C bit of the ALU instructions that ignore it. It
+  reaches only the word-index shift of word accesses and byte stores,
+  about a third of the steps that the byte windows of SYSTEM.md §9 save,
+  and none of the cycles of byte loads, since a byte load is a SHIFT
+  instruction, which has no C bit. It would be a further departure from
+  the 1997 article, and a mux in PREPARE's address path. A mode bit in SR
+  has no free bit, and a global mode would change `@R13++` too. The
+  windows need no ISA change and leave `hdl/src` as it is.

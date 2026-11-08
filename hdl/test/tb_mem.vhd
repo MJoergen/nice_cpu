@@ -173,8 +173,29 @@ begin
       check_dbus(X"00000001", X"00000050");
 
       -- A word never written reads 0.
-      check_ibus(X"12345678", X"00000000" & X"00000000");
-      check_dbus(X"12345678", X"00000000");
+      check_ibus(X"62345678", X"00000000" & X"00000000");
+      check_dbus(X"62345678", X"00000000");
+
+      -- The byte windows (SYSTEM.md §9) reach word (A >> 2) and 0x03FFFFFF.
+      -- Word 0x300 gets 0x80FF7F01 through the word window, with bits 1..0
+      -- ignored, and then byte 1 = 0xAA and halfword 1 = 0xBEEF, each
+      -- dropping the rest of its value. The instruction port reads 0 in a
+      -- window, though the word it reaches is not 0.
+      write_dbus(X"10000C03", X"80FF7F01");
+      check_dbus(X"00000300", X"80FF7F01");
+      check_dbus(X"20000C00", X"00000001");
+      check_dbus(X"30000C03", X"FFFFFF80");
+      check_dbus(X"20000C02", X"000000FF");
+      check_dbus(X"40000C01", X"00007F01");
+      check_dbus(X"50000C02", X"FFFF80FF");
+      check_dbus(X"10000C0C", X"00000000");
+      write_dbus(X"30000C01", X"123456AA");
+      check_dbus(X"00000300", X"80FFAA01");
+      write_dbus(X"50000C03", X"1234BEEF");
+      check_dbus(X"00000300", X"BEEFAA01");
+      check_ibus(X"10000C00", X"00000000" & X"00000000");
+      write_dbus(X"1FFFFFFC", X"00000009");
+      check_dbus(X"03FFFFFF", X"00000009");
 
       -- The I/O range: the loaded word at 0xFFFFFFFF and a written word at
       -- 0xFFFFFF80 are memory to the data port, and read 0 on the

@@ -42,7 +42,7 @@ A program may contain any number of library modules. They go with the runtime li
 Memory accesses must give the results wasm defines:
 
 - An access may be at any byte address. The alignment hint in the instruction is not a promise, so an access that crosses a word boundary must still work. A translator may use a faster path when the address turns out to be a multiple of 4. A translator may also offer an option that takes the hint of an access of 2, 4, or 8 bytes as a promise: an access of 4 or 8 bytes whose hint is 4 bytes or more is then taken to be at a multiple of 4, and an access of 2 bytes whose hint is 2 at a multiple of 2. If it is not, it reads or writes the word or the halfword that holds its first byte.
-- A translator may offer an option to access the memory through the byte windows of [SYSTEM.md §9](../doc/SYSTEM.md#9-byte-windows). The program then runs only on a system that has them, and the memory must lie in the words that they reach, below `0x04000000`. An access that the windows cannot do whole, such as a word that is not at a multiple of 4, keeps the code it has without them.
+- A translator may offer an option to access the memory through the byte windows of [SYSTEM.md §9](../doc/SYSTEM.md#9-byte-windows). The program then runs only on a system that has them, and the memory must lie in the words that they reach, below `0x04000000`. The translator refuses a memory of more than 4096 pages, which cannot, and its start-up code, which does not know where the assembler puts the memory, traps with code 8 (Traps) if the memory lies beyond them. An access that the windows cannot do whole, such as a word that is not at a multiple of 4, keeps the code it has without them.
 - A store that changes only part of a word reads the word, changes the bytes, and writes it back. Narrow stores do this, and so do `i32` and `i64` stores that are not at a multiple of 4. The read and the write are two accesses, so an interrupt routine that writes the same word between them loses its write.
 - An access that goes past the end of the current memory size traps. A translator may offer an option to leave out these checks. Then an access whose bytes are all in the memory is as with the checks, and one that goes past the end, also when base + offset passes 2³², reads or writes NICE words that this file does not define, in or out of the memory.
 
@@ -98,6 +98,7 @@ The module's own stack is separate. Compilers for wasm keep the variables whose 
 | 5 | Conversion of a float to an integer that cannot represent it |
 | 6 | `call_indirect` or `return_call_indirect`: index past the end of the table, or an empty entry |
 | 7 | `call_indirect` or `return_call_indirect`: type mismatch |
+| 8 | The memory lies beyond the words that the byte windows reach, found by the start-up code of a program translated to use them (below). R2 is the address of the check. |
 
 nicewasm may copy or move the code of an instruction. R2 then points at the first instruction of the original code, not of the copy. The code of a neighboring access may lie between that instruction and the rest of the code of the instruction that trapped.
 

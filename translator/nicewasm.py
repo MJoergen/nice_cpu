@@ -1173,7 +1173,7 @@ for _n in (4, 8):
             instr("MOVE", "R15", f"W.{_op}{_n}")]
 HELPERS["W.ctrap"] = ["; W.ctrap: traps with code 2 and R2 = the word at R4.", "W.ctrap",
                       instr("MOVE", "R2", "@R4"), instr("MOVE", "R15", "W.trap2")]
-for _code in range(1, 8):
+for _code in range(1, 9):
     HELPERS[f"W.trap{_code}"] = [f"; W.trap{_code}: traps with code {_code}, and R2 as it is.",
                                  f"W.trap{_code}", instr("MOVE", "R1", str(_code)),
                                  instr("MOVE", "R15", "@___wasm_trap_vector")]
@@ -2864,6 +2864,13 @@ class Translator:
                 raise WasmError("--memory-pages: the memory must be below 65536 pages")
             self.cap = memory_pages
         self.growable = self.cap != m.memory_pages
+        # The windows reach 2^26 words, 4096 pages, so a larger memory lies
+        # beyond them wherever the assembler puts it. A smaller one is
+        # checked where it lies, by ___wasm_start (start).
+        if windows and ram is None and not library and self.cap is not None \
+                and self.cap * WORDS_PER_PAGE > 1 << 26:
+            raise WasmError(f"--byte-windows: a memory of {self.cap} pages passes word"
+                            " 0x03FFFFFF, the last that the windows reach, wherever it starts")
         self.helpers: set[str] = set()  # the HELPERS that functions call
         self.labels: Dict[int, List[str]] = {}         # function index -> export labels
         self.global_labels: Dict[int, List[str]] = {}  # global index -> export labels
@@ -2985,6 +2992,8 @@ class Translator:
                 assert self.cap is not None
                 out.append(f"                ; pages {pages} to {self.cap - 1}, for memory.grow")
                 out.append(instr(".RES", str((self.cap - pages) * WORDS_PER_PAGE)))
+            if self.windows:
+                out += ["; The word after the memory, for the check of ___wasm_start", "W.end"]
         return pseudo(out)
 
     def ram_globals(self) -> int:
@@ -3046,6 +3055,18 @@ class Translator:
             return self.ram_start(runs)
         out = ["", "; Sets the memory to 0, then calls the start function and",
                "; __wasm_call_ctors, if the module has them.", "___wasm_start"]
+        if self.windows and self.m.memory_pages is not None:
+            # The windows reach words 0 to 0x03FFFFFF only (SYSTEM.md §9), and
+            # where the memory lies is the assembler's to decide: so, before
+            # any access, a trap with code 8 if its last word has a bit above
+            # bit 25. R2 is the address of the check, as no wasm instruction
+            # trapped.
+            out += ["; With --byte-windows, a trap with code 8 if the memory passes word",
+                    "; 0x03FFFFFF, the last that the windows reach (WASM.md).",
+                    "W.reach", instr("AND[M]", "R0", "W.end-1", "0xFC000000"),
+                    instr("?!Z MOVE", "R2", "W.reach"),
+                    instr("?!Z MOVE", "R15", "W.trap8")]
+            self.helpers.add("W.trap8")
         # The words that data segments set are in the program image. The
         # rest of the memory is reserved with .RES, so it is not, and is
         # set to 0 here. Each pass of a loop clears ZERO_UNROLL words.

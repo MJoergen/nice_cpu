@@ -16,15 +16,15 @@ ___trap_report
                 MOVE    R11, R2         ; the address
                 MOVE    R1, ___trap.head
                 CALL    _nice_print
-                AND[M]  R1, R10, 0xFFFFFFF8  ; Z if the code is below 8
-        ?Z      ADD     R1, R10, 0x30   ; the digit
-        ?!Z     MOVE    R1, 0x3F        ; "?" for a code above 7
+                SUB[M]  R0, R10, 9      ; C, a borrow, if the code is below 9
+        ?C      ADD     R1, R10, 0x30   ; the digit
+        ?!C     MOVE    R1, 0x3F        ; "?" for a code above 8
                 CALL    _nice_putc
                 MOVE    R1, ___trap.colon
                 CALL    _nice_print
-                AND[M]  R1, R10, 0xFFFFFFF8
-        ?Z      MOVE    R1, R10
-        ?!Z     MOVE    R1, 0           ; a code above 7 is unknown
+                SUB[M]  R0, R10, 9
+        ?C      MOVE    R1, R10
+        ?!C     MOVE    R1, 0           ; a code above 8 is unknown
                 MOVE    R1, @___trap.names[R1]
                 CALL    _nice_print
                 MOVE    R1, ___trap.at
@@ -52,10 +52,11 @@ ___trap.at
 ___trap.hex
                 .ASCII_L '0123456789abcdef'
 
-; Indexed by the code, or by 0 above 7, so that any code has a name.
+; Indexed by the code, or by 0 above 8, so that any code has a name.
 ___trap.names
                 .DAT    ___trap.n0, ___trap.n1, ___trap.n2, ___trap.n3
                 .DAT    ___trap.n4, ___trap.n5, ___trap.n6, ___trap.n7
+                .DAT    ___trap.n8
 ___trap.n0
                 .ASCII_L 'unknown trap'
 ___trap.n1
@@ -72,3 +73,5 @@ ___trap.n6
                 .ASCII_L 'call_indirect: bad index'
 ___trap.n7
                 .ASCII_L 'call_indirect: type mismatch'
+___trap.n8
+                .ASCII_L 'memory beyond the byte windows'

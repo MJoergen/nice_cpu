@@ -339,6 +339,13 @@ OPTION_CASES += [
      "--memory-pages: 3 is above the memory's maximum size, 2"),
     (["--memory-pages", "2"], module(MAIN), "--memory-pages: the module has no memory"),
     (["--memory-pages", "65536"], module(memory(1)), "--memory-pages: the memory must be below 65536 pages"),
+    # The byte windows reach 4096 pages of words
+    (["--byte-windows", "--memory-pages", "4097"], module(memory(1)),
+     "--byte-windows: a memory of 4097 pages passes word 0x03FFFFFF, the last that the windows"
+     " reach, wherever it starts"),
+    (["--byte-windows"], module(memory(5000)),
+     "--byte-windows: a memory of 5000 pages passes word 0x03FFFFFF, the last that the windows"
+     " reach, wherever it starts"),
     ([], module(section(5, vec([b"\x01\x03\x02"]))),
      "the memory's minimum size 3 is above its maximum, 2"),
     ([], module(memory(65537)), "a memory may have at most 65536 pages"),

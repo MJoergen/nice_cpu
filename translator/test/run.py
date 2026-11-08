@@ -266,7 +266,8 @@ LIB_ASM = "___wasm_start MOVE R15, @R13++\n_main {}\n ADD @--R13, 2, R15\n MOVE 
 # registers until they must (DESIGN.md). {R2} stands for R2's value: code
 # that only traps starts with MOVE R2 of its own address. A label of the
 # program, such as ___wasm_memory, has its value in the program.
-TRAPS = {"growtrap": "MOVE R1, 65536",
+TRAPS = {"reachtrap": "AND[M] R0, W.end-1, 0xFC000000",
+         "growtrap": "MOVE R1, 65536",
          "trunc_big": "MOVE R1, 0x4F000000",
          "trunc_small": "MOVE R2, 0x41E00000",
          "trunc_neg": "MOVE R2, 0x41F00000",
@@ -373,6 +374,7 @@ ROM_RAM = "0xFFFFF000"
 OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "grow": ["--memory-pages", "3"],
            "growtrap": ["--memory-pages", "2"],
+           "reachtrap": ["--byte-windows", "--memory-pages", "4096"],
            "growdyn": ["--memory-pages", "2"],
            "growdyntrap": ["--memory-pages", "2"],
            "sharetrap2_grow": ["--memory-pages", "2"],
@@ -2895,6 +2897,17 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         exports(("main", 0, 0)),
         code((1, i32_const(65532) + local_set(0) + local_get(0) + mem(I32_LOAD, offset=4)))),
      "", 2),
+    # With --byte-windows, the memory must lie below word 0x04000000, the
+    # last that the windows reach (WASM.md). 4096 pages, the most that the
+    # translator accepts, are all of those words, so after the start-up
+    # code the memory passes them: ___wasm_start traps with code 8, before
+    # the load, with R2 at its check.
+    ("reachtrap", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((0, i32_const(4) + mem(I32_LOAD)))), "", 8),
     # Page 1 is reserved, but not part of the memory until it grows, so a
     # load from it traps.
     ("growtrap", module(

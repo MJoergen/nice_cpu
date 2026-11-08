@@ -155,6 +155,12 @@ compute the address, and shares its compare. In bench.c that saves
 105K steps, most in its heapsort. Without bounds checks there is no
 compare to share, and the window is one instruction as well.
 
+The windows reach words 0 to `0x03FFFFFF` only, and where the assembler
+puts the memory is not known here. So a memory of more than 4096 pages,
+which fits nowhere, is refused, and `___wasm_start` tests the memory's
+last word before any access and traps with code 8 if it lies beyond
+them ([WASM.md](WASM.md), Traps).
+
 Without bounds checks, an offset that is a multiple of 4 goes into the
 word operand, as offset / 4, and the word index and the byte in the
 word come from the base alone, with no `ADD` before them. That is exact

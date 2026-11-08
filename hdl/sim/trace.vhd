@@ -24,6 +24,9 @@
 -- comparison. The registers printed at the end of the run are therefore
 -- always the core's own.
 --
+-- A wait step on wstep_i (ISA.md §7.5) counts as a step, as in the
+-- emulator, but prints no line.
+--
 -- When a step halts the processor, or the step count reaches G_MAX_STEPS,
 -- the writer prints the "Halted" or "Stopped" line and the registers, as the
 -- emulator does at the end of a run. Then it closes the file, raises done_o,
@@ -40,6 +43,7 @@
 --    bus accepts the store (sim/wb_mem.vhd).
 -- c) nmi_pending_i and irq_pending_i are '1' while a request of that kind is
 --    held and not yet taken, with its vector on nmi_vector_i or irq_vector_i.
+-- d) wstep_i is '1' for one cycle per wait step, never with retire_i.valid.
 --
 -- RESET
 -- Nothing is written while rst_i is '1'. Reset does not clear the step count
@@ -71,6 +75,9 @@ entity trace is
       nmi_vector_i    : in  std_logic_vector(7 downto 0) := X"00";
       irq_pending_i   : in  std_logic                    := '0';
       irq_vector_i    : in  std_logic_vector(7 downto 0) := X"00";
+      -- A wait step of the core (ISA.md §7.5), which counts as a step,
+      -- but has no trace line
+      wstep_i         : in  std_logic                    := '0';
       done_o          : out std_logic := '0';
       status_o        : out natural   := 0
    );
@@ -214,6 +221,16 @@ begin
                status_v := 0 when halt_v = HALT_HALT else 2;
                exit main_loop;
             elsif steps_v = G_MAX_STEPS then
+               write(l, "Stopped at the step limit after " & integer'image(steps_v) &
+                        " steps, PC=" & hex(before_v(15)));
+               status_v := 3;
+               exit main_loop;
+            end if;
+         end if;
+
+         if rst_i = '0' and wstep_i = '1' then
+            steps_v := steps_v + 1;
+            if steps_v = G_MAX_STEPS then
                write(l, "Stopped at the step limit after " & integer'image(steps_v) &
                         " steps, PC=" & hex(before_v(15)));
                status_v := 3;

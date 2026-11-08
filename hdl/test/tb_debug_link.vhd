@@ -18,7 +18,7 @@
 -- may come only while the core is paused and pause_o is high, replaces
 -- that value with ISA.md §4.3 applied, until the next hold.
 -- The checks, in the order of the run:
--- * the notice `b06` after reset, and the examples of DEBUG.md §8;
+-- * the notice `b07` after reset, and the examples of DEBUG.md §8;
 -- * lowercase digits, a bad checksum, an unknown tag, a payload with a bad
 --   length or a bad digit, and a W with too many words;
 -- * the debug registers, a clear of the memory, one that a dropped packet
@@ -35,6 +35,8 @@
 --   resume that starts it anew, also with a break in the same cycle;
 -- * the halt notice `h`, the registers and the halt kept while held, and
 --   the restart;
+-- * bit 6, the core's wait, which reads 0 while halted or held, and 1
+--   while running or paused (DEBUG.md §6);
 -- * the pause: bit 4, the notice `p` after and before the answer, the memory,
 --   the registers, and the console while paused, the registers while the
 --   core runs, a hold and a start that
@@ -116,6 +118,7 @@ architecture simulation of tb_debug_link is
    signal core_halt  : std_logic                      := '0';
    signal pause      : std_logic;
    signal paused     : std_logic                      := '0';
+   signal core_wait  : std_logic                      := '0';
    signal pause_wait : natural                        := 40;
    signal step_wait  : natural                        := 20;
    signal step_halts : std_logic                      := '0';
@@ -217,6 +220,7 @@ begin
          halt_reason_i  => reason,
          pause_o        => pause,
          paused_i       => paused,
+         waiting_i      => core_wait,
          regs_i         => regs,
          brk_addr_o     => brk_addr,
          brk_en_o       => brk_en,
@@ -615,7 +619,7 @@ begin
       rst <= '0';
 
       -- Reset: a notice, and the processor held with the ROM shown.
-      expect(C_ESC & "b06#C8", "b06");
+      expect(C_ESC & "b07#C9", "b07");
       assert hold = '1' and rom_hide = '0' and eoi = '0'
          report "tb_debug_link: state after reset"
          severity failure;
@@ -672,7 +676,7 @@ begin
 
       -- The registers while held: version, free space, the breakpoints, and control.
       send(C_ESC & "RFFFFFFF20001#2F");
-      expect(C_ESC & "rFFFFFFF2000100000006#D5", "version");
+      expect(C_ESC & "rFFFFFFF2000100000007#D6", "version");
       send(C_ESC & "RFFFFFFF30001#30");
       expect(C_ESC & "rFFFFFFF3000100000008#D8", "free space");
       send(C_ESC & "RFFFFFFF40002#32");
@@ -981,6 +985,8 @@ begin
       -- A halt: the last console byte, then h.
       con_put(character'pos('q'));
       core_halt <= '1';
+      -- Bit 6 reads the core's wait only while it is neither halted nor held.
+      core_wait <= '1';
       expect("q" & C_ESC & "h01#C9", "halt");
       quiet("halt");
       send(C_ESC & "RFFFFFFF00001#2D");
@@ -1027,7 +1033,7 @@ begin
          report "tb_debug_link: restart"
          severity failure;
       send(C_ESC & "RFFFFFFF00001#2D");
-      expect(C_ESC & "rFFFFFFF0000100000008#D5", "control after the restart");
+      expect(C_ESC & "rFFFFFFF0000100000048#D9", "control after the restart, waiting");
       send(C_ESC & "RFFFFFFF10001#2E");
       expect(C_ESC & "rFFFFFFF1000100000000#CE", "reason after the restart");
       quiet("restart");
@@ -1041,6 +1047,9 @@ begin
       assert pause = '1' and paused = '1'
          report "tb_debug_link: pause"
          severity failure;
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000058#DA", "control while paused, waiting");
+      core_wait <= '0';
       send(C_ESC & "RFFFFFFF00001#2D");
       expect(C_ESC & "rFFFFFFF0000100000018#D6", "control while paused");
       send(C_ESC & "R000001000001#94");
@@ -1368,7 +1377,7 @@ begin
       rst <= '1';
       cycles(3);
       rst <= '0';
-      expect(C_ESC & "b06#C8", "b06 after reset");
+      expect(C_ESC & "b07#C9", "b07 after reset");
       send(C_ESC & "RFFFFFFF80001#35");
       expect(C_ESC & "rFFFFFFF8000100000000#D5", "address after reset");
       send(C_ESC & "RFFFFFFF40001#31");

@@ -128,8 +128,9 @@ change outside `hdl/` are marked **Outside hdl/**, and are also
     `irq_sweep.py` use it, and skip the exact diff
     against the emulator for runs with requests, which cannot hold
     (MICROARCH.md §9).
-13. **The timer in `tb_core` ticks with `instret_o`** and the report of
-    each interrupt entry, not with the report of each step. A read of
+13. **The timer in `tb_core` ticks with `instret_o`**, the report of
+    each interrupt entry, and each wait step on `wstep_o`, not with the
+    report of each step. A read of
     `TIMER_COUNT` then sees the ticks of every older instruction, as in
     the emulator, whose timer counts steps. The pipelined core counts an
     instruction with a data read before its store. When that store
@@ -237,3 +238,22 @@ change outside `hdl/` are marked **Outside hdl/**, and are also
     nothing: a second copy of WRITE to compare with was too slow to
     prove. PREPARE's model lets SR change in `PAUSED_ST`, where a write
     may set R14.
+
+## The wait
+
+24. **WRITE waits in a mode of its own, `WAIT_ST`**, with the pipeline
+    empty, as in `PAUSED_ST` (MICROARCH.md §6.2). `WAIT` retires and
+    flushes, and FETCH stops while the mode is not `RUN_ST`. So the wait
+    needs no new path into FETCH, DECODE, or PREPARE, and a request ends
+    it with a flush to `w_r.regs(15)`, as a go on after a pause does.
+    The flush costs a refill after each wait.
+25. **A wait step counts as the first step after a pause.** It clears
+    `after_go`, as a report does, so a step of a waiting core is one wait
+    step, and the debug link's step does not hang. The go on from a pause
+    in a wait returns to `WAIT_ST`, and `waiting` stays 1 through the
+    pause, as the link does not change it (DEBUG.md §6).
+26. **The cores report wait steps on `wstep_o`**, which no system needs:
+    its timer ticks every cycle. The tests count steps, as the emulator
+    does, so `tb_core`'s timer, its requests, and the trace writer count
+    `wstep_o` too, or a run with a wait could not be compared with the
+    emulator's.

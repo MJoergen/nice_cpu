@@ -6,7 +6,8 @@
 -- A state machine follows the steps of ISA.md §5 in order:
 --
 --   BOUNDARY  Take a pending NMI or IRQ (ISA.md §7.1), stop at a
---             breakpoint, or start an instruction.
+--             breakpoint, or start an instruction. After WAIT, stay a
+--             cycle, a wait step, until a request ends the wait.
 --   FETCH     Read the instruction word, then each constant word, through
 --             the instruction bus. Each read increments R15.
 --   COND      Test the condition. Run a control instruction.
@@ -51,6 +52,15 @@
 -- until it is reported. No bus cycle is open in BOUNDARY, PAUSED, or
 -- HALTED, so paused_o and halted_o rise only once the core is quiet, as in
 -- src/pipeline.vhd.
+--
+-- WAIT (ISA.md §7.5) sets waiting. In BOUNDARY, while waiting is '1' and
+-- no request is valid, the core stays a cycle, a wait step, and makes no
+-- request on either bus. A wait step is a step boundary of its own: the
+-- core pauses there, and the wait step counts as the first step after a
+-- pause, but no breakpoint stops it. A valid request ends the wait in the
+-- cycle it is seen, whether or not it can be taken, and BOUNDARY goes on
+-- in that cycle as usual: the entry, a breakpoint, or the instruction at
+-- R15. waiting_o is '1' while waiting is '1' and no request is valid.
 --
 -- BREAKPOINTS (doc/DEBUG.md §6). Breakpoint i, for i below G_BREAKS, is
 -- enabled when brk_en_i(i) is '1', at the address brk_addr_i(i). BOUNDARY
@@ -149,6 +159,11 @@ entity multicycle is
       reg_idx_i     : in  std_logic_vector(3 downto 0)  := (others => '0');
       reg_data_i    : in  std_logic_vector(31 downto 0) := (others => '0');
 
+      -- '1' while the core waits for an interrupt after WAIT, also while
+      -- paused, until a request is valid (ISA.md §7.5), for bit 6 of the
+      -- debug link's control register (doc/DEBUG.md §6)
+      waiting_o     : out std_logic;
+
       -- '1' once the core has halted, and no bus cycle is open (ISA.md §1.4)
       halted_o      : out std_logic;
 
@@ -158,6 +173,10 @@ entity multicycle is
       -- '1' for one cycle when an instruction completes, but not an
       -- interrupt entry, for the instruction counter (SYSTEM.md §3)
       instret_o     : out std_logic;
+
+      -- '1' for one cycle for each wait step (ISA.md §7.5), which a timer
+      -- that counts steps, as the tests' does, counts as a step
+      wstep_o       : out std_logic;
 
       -- R0-R15 as the core holds them, from registers, for a monitor that
       -- shows them. In the cycle after a step is reported on retire_o, they
@@ -205,6 +224,7 @@ architecture synthesis of multicycle is
    signal in_service : std_logic;
    signal after_rti  : std_logic;
    signal after_go   : std_logic;                       -- The first step after a pause
+   signal waiting    : std_logic;                       -- After WAIT, until a request (ISA.md §7.5)
    signal brk_wait   : std_logic;                       -- Stopped at a breakpoint, before pause_i
    signal saved_pc   : std_logic_vector(31 downto 0);
    signal saved_sr   : std_logic_vector(31 downto 0);
@@ -232,6 +252,7 @@ architecture synthesis of multicycle is
    signal take_irq : boolean;
    signal brk_hit  : boolean;
    signal brk_stop : boolean;
+   signal wait_now : boolean;
 
 begin
 
@@ -254,15 +275,21 @@ begin
       end loop;
    end process p_brk_hit;
 
-   -- A breakpoint goes after a pause and an interrupt entry.
+   -- A wait step: the core waits, and no request ends the wait.
+   wait_now <= state = BOUNDARY_ST and rst_i = '0' and waiting = '1' and nmi_valid_i = '0' and
+               irq_valid_i = '0' and not pause;
+
+   -- A breakpoint goes after a pause, an interrupt entry, and a wait step.
    brk_stop <= state = BOUNDARY_ST and rst_i = '0' and after_go = '0' and brk_hit and
-               not pause and not take_nmi and not take_irq;
+               not pause and not take_nmi and not take_irq and not wait_now;
 
    nmi_ready_o <= '1' when take_nmi else '0';
    irq_ready_o <= '1' when take_irq else '0';
 
    halted_o      <= '1' when state = HALTED_ST else '0';
    paused_o      <= '1' when state = PAUSED_ST else '0';
+   waiting_o     <= waiting and not nmi_valid_i and not irq_valid_i;
+   wstep_o       <= '1' when wait_now else '0';
    halt_reason_o <= halt when state = HALTED_ST else HALT_NONE;
    instret_o     <= '1' when state = RETIRE_ST and rep_intr = '0' else '0';
    regs_o        <= regs;
@@ -339,6 +366,10 @@ begin
                rep_skipped <= '0';
                rep_mem_we  <= '0';
                rep_addr    <= regs(15);
+               -- A valid request ends a wait, now or after the pause.
+               if not pause and (nmi_valid_i = '1' or irq_valid_i = '1') then
+                  waiting <= '0';
+               end if;
                if pause then
                   state <= PAUSED_ST;
                elsif take_nmi then
@@ -351,6 +382,9 @@ begin
                   rep_nmi    <= '0';
                   int_vector <= irq_vector_i;
                   state      <= VEC_ST;
+               elsif wait_now then
+                  -- A wait step, the first step after a pause too
+                  after_go <= '0';
                elsif brk_stop then
                   brk_wait <= '1';
                   state    <= PAUSED_ST;
@@ -421,6 +455,10 @@ begin
                               in_service <= '0';
                               after_rti  <= '1';
                            end if;
+
+                        when "00011" =>
+                           -- ISA.md §7.5
+                           waiting <= '1';
 
                         when "00010" =>
                            if in_service = '1' then
@@ -584,6 +622,7 @@ begin
             in_service <= '0';
             after_rti  <= '0';
             after_go   <= '0';
+            waiting    <= '0';
             brk_wait   <= '0';
             halt       <= HALT_NONE;
             fetch_iw   <= '0';
@@ -619,8 +658,8 @@ begin
    gen_formal : if G_FORMAL generate
       signal dbus_wait : boolean;
    begin
-      -- The state has one of its 15 values, and each bus is busy in its
-      -- wait states and only there. Without this the k-induction of
+      -- The state has one of its 15 values, each bus is busy in its wait
+      -- states and only there, and a wait is at a boundary. Without this the k-induction of
       -- formal/multicycle.sby starts from states that reset never leads
       -- to, such as a pending fetch in HALTED_ST.
       dbus_wait <= state = SRC_WAIT_ST or state = DEST_WAIT_ST or state = VEC_WAIT_ST;
@@ -634,6 +673,14 @@ begin
       --    rst_i = '0' -> (dbus_cyc_o = '1') = dbus_wait;
       -- psl f_brk_wait : assert always
       --    rst_i = '0' -> (brk_wait = '1' -> state = PAUSED_ST);
+      -- COND_ST sets a halt reason, which RETIRE_ST takes to HALTED_ST.
+      -- psl f_halt_state : assert always
+      --    rst_i = '0' -> (halt /= HALT_NONE -> (state = RETIRE_ST or state = HALTED_ST));
+      -- WAIT sets waiting in COND_ST, and no halt reason, so the core
+      -- waits after RETIRE_ST at the boundary, or paused there.
+      -- psl f_waiting : assert always
+      --    rst_i = '0' -> (waiting = '1' -> ((state = RETIRE_ST or state = BOUNDARY_ST or
+      --                                       state = PAUSED_ST) and halt = HALT_NONE));
    end generate gen_formal;
 
 end architecture synthesis;

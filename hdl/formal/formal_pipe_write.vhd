@@ -13,9 +13,11 @@
 -- a halted core makes no data access, for every cycle and not only for the
 -- first ones of pipeline.sby. A paused WRITE makes none of them either,
 -- for every pause, as pause_i is free. And once it leaves PAUSED_ST, it
--- reports a step on retire_o before it pauses again (MICROARCH.md §6.1),
--- since it does not pause while w_r.after_go is '1', and only a report
--- clears that. WRITE pauses without pause_i only on the breakpoint flag
+-- reports a step on retire_o, or makes a wait step on wstep_o, before it
+-- pauses again (MICROARCH.md §6.1), since it does not pause while
+-- w_r.after_go is '1', and only a report or a wait step clears that.
+-- While it waits after WAIT, in WAIT_ST, it holds no micro-operation and
+-- makes no data access, and a wait step comes only with no request. WRITE pauses without pause_i only on the breakpoint flag
 -- of the next instruction, in its own micro-operation or, while it holds
 -- none, in PREPARE's; and it then stays paused until pause_i has been
 -- '1' (doc/DEBUG.md §6). It takes an interrupt only when one is
@@ -99,6 +101,7 @@ architecture synthesis of formal_pipe_write is
    signal flush    : std_logic;
    signal target   : std_logic_vector(31 downto 0);
    signal instret  : std_logic;
+   signal wstep    : std_logic;
    signal retire   : t_retire;
 
    -- The cycle before: whether WRITE was halted, and whether it was reset
@@ -178,8 +181,20 @@ begin
    -- psl f_take_irq : assert always take_irq -> (irq_valid_i = '1' and rst_i = '0');
    -- psl f_take_one : assert always not (take_nmi and take_irq);
 
-   -- Once WRITE leaves PAUSED_ST, it reports a step before it pauses
-   -- again. f_go_owed and f_go_paused make it inductive.
+   -- A waiting WRITE makes no access to the data bus and accepts no
+   -- micro-operation. It waits in WAIT_ST, or paused, until a request
+   -- ends the wait, and a wait step is a cycle of WAIT_ST with none.
+   -- psl f_wait_quiet : assert always w.mode = WAIT_ST ->
+   --    (st = '0' and ready = '0' and done = '0');
+   -- psl f_wait_mode : assert always rst_i = '0' ->
+   --    ((w.mode = WAIT_ST) -> w.waiting = '1') and
+   --    ((w.waiting = '1') -> (w.mode = WAIT_ST or w.mode = PAUSED_ST));
+   -- psl f_wstep : assert always wstep = '1' ->
+   --    (rst_i = '0' and w.mode = WAIT_ST and nmi_valid_i = '0' and irq_valid_i = '0' and
+   --     retire.valid = '0');
+
+   -- Once WRITE leaves PAUSED_ST, it reports a step, or makes a wait
+   -- step, before it pauses again. f_go_owed and f_go_paused make it inductive.
    -- psl f_go_report : assert always (rst_i = '0' and owed_r = '1') -> w.mode /= PAUSED_ST;
    -- psl f_go_owed : assert always (rst_i = '0' and owed_r = '1') -> w.after_go = '1';
    -- psl f_go_paused : assert always (rst_i = '0' and w.mode = PAUSED_ST) -> w.after_go = '0';
@@ -212,16 +227,20 @@ begin
    -- psl f_exec : assert always (rst_i = '0' and w.exec_done = '1') ->
    --    (w.uop.valid = '1' and w.uop.kind = UOP_OP and w.mode = RUN_ST and
    --     (w.uop.inst.m(0) = "000" or w.uop.inst.m(0) = "001" or w.uop.inst.m(0) = "010"));
-   -- psl f_idle : assert always (rst_i = '0' and (w.mode = PAUSED_ST or w.mode = HALTED_ST)) ->
+   -- psl f_idle : assert always (rst_i = '0' and (w.mode = PAUSED_ST or w.mode = HALTED_ST or
+   --                                             w.mode = WAIT_ST)) ->
    --    w.uop.valid = '0';
 
    -- How deep the proof must see a halt, a store, a vector read, a pause,
-   -- and a step after a pause, and that INT's micro-operation stays
-   -- through VEC_ST.
+   -- and a step after a pause, two wait steps, the end of a wait, and a go
+   -- on into one, and that INT's micro-operation stays through VEC_ST.
    -- psl c_halt : cover {w.mode = HALTED_ST and rst_i = '0'};
    -- psl c_store : cover {st = '1' and st_we = '1' and rst_i = '0'};
    -- psl c_vector : cover {st = '1' and st_we = '0' and rst_i = '0'};
    -- psl c_pause : cover {w.mode = PAUSED_ST and rst_i = '0'};
+   -- psl c_wait : cover {wstep = '1'; wstep = '1'};
+   -- psl c_wake : cover {w.mode = WAIT_ST and rst_i = '0'; w.mode = RUN_ST and rst_i = '0'};
+   -- psl c_wait_go : cover {w.mode = PAUSED_ST and w.waiting = '1' and rst_i = '0'; w.mode = WAIT_ST};
    -- psl c_go_step : cover {owed_r = '1' and retire.valid = '1' and rst_i = '0'};
    -- psl c_brk : cover {enters = '1' and pause_d = '0' and rst_i = '0'};
    -- psl c_int_keep : cover {w.mode = VEC_ST and w.uop.valid = '1' and rst_i = '0'};
@@ -272,6 +291,7 @@ begin
          flush_o      => flush,
          target_o     => target,
          instret_o    => instret,
+         wstep_o      => wstep,
          retire_o     => retire
       ); -- i_pipe_write
 
@@ -296,7 +316,7 @@ begin
          if taken = '1' then
             regs_w(to_integer(reg_idx_i)) <= regval(to_integer(reg_idx_i), reg_data_i);
          end if;
-         if retire.valid = '1' then
+         if retire.valid = '1' or wstep = '1' then
             owed_r <= '0';
          elsif left = '1' then
             owed_r <= '1';

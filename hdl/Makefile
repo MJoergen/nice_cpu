@@ -127,10 +127,14 @@ $(LINK_RUNS): run/link/%: $(BUILD)/linkecho.bin
 # on a stalling memory and with held pauses. The frames it sends must be
 # the emulator's. bytewin reads and writes through the byte windows of
 # sim/wb_mem.vhd (SYSTEM.md §9), and runs again on a stalling memory.
+# wait waits for the timer, an IRQ with E = 0, and an NMI (ISA.md §7.5),
+# and runs again on a stalling memory, with random and held pauses, and
+# one step at a time, so that pauses and steps fall in the waits. Its
+# cycle and time counts are memory in both, as they count differently.
 EXAMPLES = count replicate print wrap
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest \
   console screen iofetch reads reserved mpu mpu64 mpubits perf events timer input \
-  r15modes r0dest r14mem skipconst carryin shiftc wrapmem smcown sd net eth bytewin
+  r15modes r0dest r14mem skipconst carryin shiftc wrapmem smcown sd net eth bytewin wait
 INTR_irq   = --nmi 2:1 --irq 2:2 --nmi 9:1 --irq 17:2 --nmi 17:1 --irq 100:2
 INTR_merge = --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
 INTR_after = --nmi 3:1 --nmi 10:1
@@ -146,9 +150,34 @@ INTR_rtiread_step = --nmi 2:1 --nmi 5:1
 # The program of the interrupt timing diagram, doc/interrupt.tex: a request
 # taken at once, and one that comes just after a data read was issued.
 INTR_irqwave = --irq 2:9 --irq 10:9
+INTR_wait  = --irq 25:0x42 --nmi 40:0x43
+INTR_wait_stall = $(INTR_wait)
+INTR_wait_pause = $(INTR_wait)
+INTR_wait_hold  = $(INTR_wait)
+INTR_wait_step  = $(INTR_wait)
 # The runs whose program starts the timer, which raises requests too.
 TIMER_timer       = yes
 TIMER_timer_stall = yes
+TIMER_wait        = yes
+TIMER_wait_stall  = yes
+TIMER_wait_pause  = yes
+TIMER_wait_hold   = yes
+TIMER_wait_step   = yes
+# The runs that read the cycle counter or the time: memory in both.
+NOCYCLES_wait       = yes
+NOCYCLES_wait_stall = yes
+NOCYCLES_wait_pause = yes
+NOCYCLES_wait_hold  = yes
+NOCYCLES_wait_step  = yes
+# The runs whose requests every core takes at the step the emulator
+# does, so that the comparison is exact, and irq_compare.py is not run.
+# It moves each request to the step of its entry, which would end a
+# wait at another step (ISA.md §7.5).
+EXACT_wait       = yes
+EXACT_wait_stall = yes
+EXACT_wait_pause = yes
+EXACT_wait_hold  = yes
+EXACT_wait_step  = yes
 # A run has interrupt requests from the options or from the timer.
 requests = $(INTR_$(1))$(TIMER_$(1))
 # The console input of a run, a file, as the emulator's --input takes it.
@@ -183,6 +212,16 @@ INTR_breaks = --irq 6:2 --nmi 8:2 --irq 18:2
 INTR_breaks_stall = $(INTR_breaks)
 INTR_breaks_hold = $(INTR_breaks)
 BREAK_GENERICS = "-gG_BREAK_AT=$(BREAKS_breaks)" -gG_BREAK_LOG=stops.out
+# wait_breaks has a breakpoint after each WAIT of the probe wait, which
+# stops not during the wait, but where a request ends it, unless the entry
+# goes first (doc/DEBUG.md §6): after the RTI of the timer's entry and of
+# the NMI's, where the IRQ ends a wait with E = 0, and after the WAIT that
+# finds that IRQ pending.
+BREAKS_wait_breaks = 9 15 19 1F
+INTR_wait_breaks = $(INTR_wait)
+TIMER_wait_breaks = yes
+NOCYCLES_wait_breaks = yes
+EXACT_wait_breaks = yes
 
 # $(1) is the name of the run, and $(2) the program.
 define check_breaks
@@ -214,10 +253,12 @@ define check_core
 	  -gG_TRACE_FILE=core.out $(if $(INTR_$(1)),"-gG_INTERRUPTS=$(INTR_$(1))") \
 	  $(if $(call requests,$(1)),-gG_INTR_LOG=core.intr) \
 	  $(if $(INPUT_$(1)),-gG_INPUT_FILE=$(abspath $(INPUT_$(1)))) \
+	  $(if $(NOCYCLES_$(1)),-gG_CYCLE_COUNTER=false) \
 	  $(if $(SD_$(1)),-gG_SD0_FILE=sd.img) \
 	  $(if $(ETH_$(1)),-gG_ETH_IN_FILE=$(abspath $(ETH_$(1))) -gG_ETH_OUT_FILE=eth.out) \
 	  $(3)) > core.log 2>&1); echo "exit $$?" >> $(RUNDIR)/core.out
 	@$(EMU) -t $(INTR_$(1)) $(if $(INPUT_$(1)),--input $(INPUT_$(1))) \
+	  $(if $(NOCYCLES_$(1)),--no-cycle-counter) \
 	  $(if $(SD_$(1)),--sd0 $(RUNDIR)/sd_emu.img) \
 	  $(if $(ETH_$(1)),--eth-in $(ETH_$(1)) --eth-out $(RUNDIR)/eth_emu.out) $(2) < /dev/null \
 	  > $(RUNDIR)/core.expected; \
@@ -225,11 +266,11 @@ define check_core
 	$(if $(ETH_$(1)),@if cmp -s $(RUNDIR)/eth_emu.out $(RUNDIR)/eth.out; \
 	then echo "PASS $(CORE) $(1) frames"; \
 	else echo "FAIL $(CORE) $(1) frames"; diff $(RUNDIR)/eth_emu.out $(RUNDIR)/eth.out; exit 1; fi)
-	$(if $(and $(call requests,$(1)),$(IRQ_LATE)),,@if cmp -s $(RUNDIR)/core.expected $(RUNDIR)/core.out; \
+	$(if $(and $(call requests,$(1)),$(IRQ_LATE),$(if $(EXACT_$(1)),,yes)),,@if cmp -s $(RUNDIR)/core.expected $(RUNDIR)/core.out; \
 	then echo "PASS $(CORE) $(1)"; \
 	else echo "FAIL $(CORE) $(1)"; cat $(RUNDIR)/core.log; \
 	  diff $(RUNDIR)/core.expected $(RUNDIR)/core.out | head -20; exit 1; fi)
-	$(if $(call requests,$(1)),@$(IRQ_COMPARE) --name $(1) $(2) $(RUNDIR)/core.out $(RUNDIR)/core.intr)
+	$(if $(and $(call requests,$(1)),$(if $(EXACT_$(1)),,yes)),@$(IRQ_COMPARE) --name $(1) $(2) $(RUNDIR)/core.out $(RUNDIR)/core.intr)
 
 endef
 
@@ -423,6 +464,10 @@ $(eval $(call core_run,$(1),events_stall,../emulator/test/events.bin,-gG_STALL=3
 $(eval $(call core_run,$(1),timer_stall,../emulator/test/timer.bin,-gG_STALL=30 -gG_SEED=11))
 $(eval $(call core_run,$(1),sd_stall,../emulator/test/sd.bin,-gG_STALL=30 -gG_SEED=41))
 $(eval $(call core_run,$(1),sd_hold,../emulator/test/sd.bin,-gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=43))
+$(eval $(call core_run,$(1),wait_stall,../emulator/test/wait.bin,-gG_STALL=30 -gG_SEED=51))
+$(eval $(call core_run,$(1),wait_pause,../emulator/test/wait.bin,-gG_PAUSE=40 -gG_SEED=53))
+$(eval $(call core_run,$(1),wait_hold,../emulator/test/wait.bin,-gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=55))
+$(eval $(call core_run,$(1),wait_step,../emulator/test/wait.bin,-gG_SINGLE_STEP=true))
 $(eval $(call core_run,$(1),bytewin_stall,../emulator/test/bytewin.bin,-gG_STALL=30 -gG_SEED=49))
 $(eval $(call core_run,$(1),eth_stall,../emulator/test/eth.bin,-gG_STALL=30 -gG_SEED=45))
 $(eval $(call core_run,$(1),eth_hold,../emulator/test/eth.bin,-gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=47))
@@ -439,6 +484,8 @@ $(eval $(call core_run,$(1),pausepatch,$(BUILD)/pausepatch.bin,-gG_SINGLE_STEP=t
 $(eval $(call core_run,$(1),breaks,$(BUILD)/breaks.bin,$(BREAK_GENERICS),check_core check_breaks))
 $(eval $(call core_run,$(1),breaks_stall,$(BUILD)/breaks.bin,$(BREAK_GENERICS) -gG_STALL=30 -gG_SEED=35,check_core check_breaks))
 $(eval $(call core_run,$(1),breaks_hold,$(BUILD)/breaks.bin,$(BREAK_GENERICS) -gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=37))
+$(eval $(call core_run,$(1),wait_breaks,../emulator/test/wait.bin,"-gG_BREAK_AT=$(BREAKS_wait_breaks)" \
+  -gG_BREAK_LOG=stops.out,check_core check_breaks))
 $(eval $(call core_run,$(1),instret,$(BUILD)/instret.bin))
 $(eval $(call core_run,$(1),instret_stall,$(BUILD)/instret.bin,-gG_STALL=30 -gG_SEED=17))
 $(eval $(call core_run,$(1),irqwave,$(BUILD)/irqwave.bin))

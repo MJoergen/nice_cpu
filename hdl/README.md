@@ -130,10 +130,12 @@ and the same two generics: a system instantiates `pipeline` of
 | `dbus_cyc_o`, `dbus_stb_o`, `dbus_stall_i`, `dbus_ack_i`, `dbus_we_o`, `dbus_addr_o`, `dbus_data_o`, `dbus_data_i` | The data bus: a pipelined Wishbone B4 master, 32 bits wide, read and write. |
 | `nmi_valid_i`, `nmi_ready_o`, `nmi_vector_i`, `irq_valid_i`, `irq_ready_o`, `irq_vector_i` | The interrupt requests of ISA.md §7, NMI and IRQ: a valid/ready handshake and an 8-bit vector each (below). |
 | `pause_i`, `paused_o` | A debugger's pause (below). |
+| `waiting_o` | 1 while the core waits after `WAIT` with no request valid, also while paused (ISA.md §7.5), for bit 6 of the debug link's control register. |
 | `brk_addr_i`, `brk_en_i` | The breakpoints of DEBUG.md §6: `G_BREAKS` addresses, a `t_brk_addrs` of `src/trace_pkg.vhd`, and one enable bit each (below). |
 | `reg_we_i`, `reg_idx_i`, `reg_data_i` | A write of a register while the core is paused, for a debugger (below). They default to 0. |
 | `halted_o`, `halt_reason_o` | 1 once the core has halted and no bus cycle is open, and why, a `t_halt` of `src/trace_pkg.vhd` (below). |
 | `instret_o` | 1 for one cycle for each completed instruction, but not for an interrupt entry, for the instruction counter (SYSTEM.md §3). |
+| `wstep_o` | 1 for one cycle for each wait step (ISA.md §7.5), for a timer that counts steps, as the tests' does. A system leaves it open. |
 | `regs_o` | R0 to R15 from the core's registers, a `t_regs`, for a monitor that shows them (below). |
 | `retire_o` | One report per step, a `t_retire`, for the trace writer. Simulation only. |
 | `stats_o` | The pipelined core only: what the core did two cycles before, a `t_fetch_events` of `src/pipe_pkg.vhd`, for the fetch statistics. |
@@ -305,7 +307,7 @@ right, not fast: an instruction takes about ten cycles.
 
 | State | What it does |
 |---|---|
-| `BOUNDARY` | Pauses while `pause_i` is 1, takes a pending NMI or IRQ (ISA.md §7.1), stops at a breakpoint, or starts an instruction. |
+| `BOUNDARY` | Pauses while `pause_i` is 1, takes a pending NMI or IRQ (ISA.md §7.1), stops at a breakpoint, or starts an instruction. After `WAIT`, it stays, one wait step per cycle, until a request is valid (MICROARCH.md §6.2). |
 | `FETCH` | Reads the instruction word, then each constant word, and increments R15 after each. |
 | `COND` | Tests the condition, and runs a control instruction. |
 | `SRC` | Evaluates s0, then s1, with their side effects. |
@@ -485,6 +487,10 @@ one cycle, with `reg_idx_o` and `reg_data_o`, which connect to the core's
 `reg_we_i`, `reg_idx_i`, and `reg_data_i`. A read that follows returns the
 new value at once. A `W` that reaches R0 to R15 while bit 4 reads 0 gets
 `e04`, and writes none of its words (DEBUG.md §6).
+
+`waiting_i` connects to the core's `waiting_o`. Bit 6 of the control
+register reads it while the processor is neither held nor halted
+(DEBUG.md §6). A board without it leaves it open, and bit 6 reads 0.
 
 The host's line ends with `rx_break_i`, a pulse for a UART break: `eoi_o`
 rises, the link drops the host's console bytes, and the board's console
@@ -756,6 +762,9 @@ the emulator's last lines: the `Halted` or `Stopped` line and the registers.
 Then it gives the emulator's exit status: 0 after `HALT`, 2 after the other
 halts, and 3 at the step limit.
 
+A wait step of the core, on `wstep_i`, counts as a step, as in the
+emulator, and prints no line.
+
 With `G_TRACE` false, it prints only the console output and the last lines,
 like `niceemu` without `--trace`.
 
@@ -916,14 +925,25 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   `perf` reads the instruction counter, with an NMI and an `INT`, and
   checks the cycle counter only through flags, because the emulator counts
   steps, not cycles. `timer` runs the timer, which counts steps here: its
-  `tick_i` is the core's `instret_o` and its report of each interrupt
-  entry, so that a read of `TIMER_COUNT` sees the ticks of every older
+  `tick_i` is the core's `instret_o`, its report of each interrupt
+  entry, and its `wstep_o`, so that a read of `TIMER_COUNT` sees the ticks of every older
   instruction on any core. The pipelined core counts an instruction with
   a data read before its store, so when that store writes `TIMER_PERIOD`,
   the timer gets the instruction's tick again with the write, and the
   new count sees it, as in the emulator. A read of the old count cannot
   come between the two. Its request and those of the
   interrupt source share the core's IRQ port, with the vector of the one raised first when both are pending, as the emulator merges them.
+  `wait` waits for the timer, for an IRQ with E = 0, and for an NMI
+  (ISA.md §7.5). Its timer ticks on `wstep_o` too, and its requests and
+  the trace count the wait steps, as the emulator does. It runs again on
+  a stalling memory, with random and held pauses, one step at a time,
+  and with a breakpoint after each `WAIT`, `wait_breaks`. Its cycle
+  counts and time are memory in both, with `G_CYCLE_COUNTER` false and
+  `--no-cycle-counter`. Every core takes its requests at the step the
+  emulator does, so its runs are compared exactly, and not by
+  `irq_compare.py`, which moves a request to the step of its entry and so
+  would end a wait at another step. `waitnone`, a wait that nothing ends,
+  does not run on a core, which would wait for ever.
 - `test/shift.nasm`.
 - `test/irqwave.nasm`, with two IRQs: one that comes before an instruction
   that has not begun, and one that comes just after the next instruction
@@ -1221,7 +1241,7 @@ formal/UNIT/TASK` runs one task, for example `make formal/pipe_fetch/prove`.
 | `pipe_decode` | DECODE: what PREPARE's proof assumes of it, and its redirects of FETCH. | k-induction, Yices | 15 seconds |
 | `pipe_prepare` | PREPARE: its data reads go out only when the core is certain to run the instruction. | k-induction, Yices | seconds |
 | `pipe_dbus` | DBUS: read data in the order of the ACKs, none lost. | k-induction, Yices | seconds |
-| `pipe_write` | WRITE: a halt stays, a paused WRITE does nothing, a step is reported after a pause, the breakpoints, the interrupts, a register write, and PREPARE's assumptions about WRITE. | k-induction, Yices | seconds |
+| `pipe_write` | WRITE: a halt stays, a paused or waiting WRITE does nothing, a step or a wait step comes after a pause, the breakpoints, the interrupts, a register write, and PREPARE's assumptions about WRITE. | k-induction, Yices | seconds |
 | `pipeline` | The ports of the pipelined core and its own assertions, for 12 cycles after reset. | `bmc` of 12 cycles, ABC | 4 minutes |
 | `wb_dmux` | The data bus decoder: the ACKs come back in order, from one slave at a time. | PDR | seconds |
 | `timer` | The timer's ports. | k-induction of depth 10, Yices | seconds |
@@ -1266,7 +1286,10 @@ stays halted until reset, with `halt_reason_o` other than `HALT_NONE`
 exactly then; a core that is paused, with `pause_i` still 1, stays paused
 with no bus cycle open and `regs_o` unchanged; it is never paused and
 halted at once; and once `paused_o` falls, it reports a step on
-`retire_o` before `paused_o` rises again. With two breakpoints, whose
+`retire_o`, or makes a wait step on `wstep_o`, before `paused_o` rises
+again. A wait step comes only while `waiting_o` is 1, and reports
+nothing, takes no request, and does not pause; and `waiting_o` is 1 only
+with no request valid, and never while halted (ISA.md §7.5). With two breakpoints, whose
 addresses and enable bits are free, it asserts that the core pauses
 without `pause_i` only when R15 was an enabled breakpoint, and then stays
 paused until `pause_i` has been 1.
@@ -1432,9 +1455,13 @@ bus does not stall.
 halted WRITE stays halted until reset, and that neither a halted nor a
 paused WRITE makes a store or a vector read, takes an interrupt, or
 accepts a micro-operation. It also proves that once WRITE leaves
-`PAUSED_ST`, it reports a step before it pauses again, whether or not
-`paused_o` had risen: it does not pause while `after_go` is 1, and only a
-report clears it. And it pauses without `pause_i` only on the breakpoint
+`PAUSED_ST`, it reports a step, or makes a wait step, before it pauses
+again, whether or not `paused_o` had risen: it does not pause while
+`after_go` is 1, and only a report or a wait step clears it. While it
+waits after `WAIT`, in `WAIT_ST`, it holds no micro-operation, makes no
+store, and accepts none, `waiting` is 1 exactly in `WAIT_ST` and in a
+pause during a wait, and a wait step comes only in `WAIT_ST` with no
+request. And it pauses without `pause_i` only on the breakpoint
 flag of the next instruction, in its own micro-operation or, while it
 holds none, in PREPARE's, and then stays paused until `pause_i` has been
 1. And it takes an interrupt only when one is requested, never in reset,

@@ -11,12 +11,15 @@
 -- change while paused, but for a write on reg_we_i, reg_idx_i, and
 -- reg_data_i in a cycle with pause_i at '1', which is in regs_i the next
 -- cycle with the rules of ISA.md §4.3; and once the core goes on, it reports a step on
--- retire_i before it pauses again. G_BREAKS breakpoints, with free
+-- retire_i, or makes a wait step on wstep_i, before it pauses again. A
+-- wait step (ISA.md §7.5) comes only while waiting_i is '1', and so with
+-- no request valid, and reports nothing, takes nothing, and neither pauses
+-- nor halts. G_BREAKS breakpoints, with free
 -- addresses and enable bits: the core pauses without pause_i only when R15
 -- was an enabled breakpoint, and then stays paused until pause_i has been
 -- '1'. The covers show a step reported, a store, a halt, a pause, a step
--- after a pause, a pause at a breakpoint, and a step after a register
--- write.
+-- after a pause, a pause at a breakpoint, a step after a register write,
+-- two wait steps, and a wait step after a pause.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) The first cycle is a reset, so the registers here start from it.
@@ -63,6 +66,8 @@ entity core_check is
       halted_i     : in  std_logic;
       reason_i     : in  t_halt;
       retire_i     : in  t_retire;
+      wstep_i      : in  std_logic;
+      waiting_i    : in  std_logic;
       regs_i       : in  t_regs;
       brk_addr_i   : in  t_brk_addrs;
       brk_en_i     : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0);
@@ -130,8 +135,19 @@ begin
    --    regs_i = regs_w;
    -- psl f_pause_halt : assert always rst_i = '0' -> not (paused_i = '1' and halted_i = '1');
 
-   -- Once paused_i falls, a step is reported before it rises again.
+   -- Once paused_i falls, a step is reported, or a wait step made, before
+   -- it rises again.
    -- psl f_go_report : assert always (rst_i = '0' and owed_r = '1') -> paused_i = '0';
+
+   -- A wait step is a cycle of a wait in which nothing else happens, and
+   -- the core waits only while no request is valid, and never halted.
+   -- psl f_wstep : assert always (rst_i = '0' and wstep_i = '1') ->
+   --    (waiting_i = '1' and retire_i.valid = '0' and paused_i = '0' and
+   --     nmi_ready_i = '0' and irq_ready_i = '0');
+   -- psl f_waiting : assert always (rst_i = '0' and waiting_i = '1') ->
+   --    (halted_i = '0' and nmi_valid_i = '0' and irq_valid_i = '0');
+   -- psl c_wstep : cover {wstep_i = '1' and rst_i = '0'; wstep_i = '1' and rst_i = '0'};
+   -- psl c_go_wait : cover {paused_i = '1' and rst_i = '0'; wstep_i = '1' and rst_i = '0'};
 
    -- A pause of the core's own is at a breakpoint, and lasts until pause_i
    -- has been '1'.
@@ -242,7 +258,7 @@ begin
          elsif own then
             wait_r <= '1';
          end if;
-         if retire_i.valid = '1' then
+         if retire_i.valid = '1' or wstep_i = '1' then
             owed_r <= '0';
          elsif paused_d = '1' and paused_i = '0' then
             owed_r <= '1';

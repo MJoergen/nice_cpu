@@ -165,6 +165,9 @@
 --   core, from flip-flops, only while paused_i and pause_o are '1' (above).
 -- * brk_addr_o and brk_en_o: the breakpoints, for the core. The entries from
 --   G_BREAKS up are 0.
+-- * waiting_i: the core's waiting_o, '1' while it waits for an interrupt
+--   (ISA.md §7.5), which bit 6 reads while the core is not held or halted.
+--   A board without it leaves it open, and bit 6 reads 0.
 --
 -- FORMAL
 -- With G_FORMAL, the properties that need the state of the processes, for
@@ -187,7 +190,7 @@
 -- are in formal/formal_debug_link.vhd.
 --
 -- RESET
--- Synchronous. It sends `b06`, empties everything, clears the breakpoints,
+-- Synchronous. It sends `b07`, empties everything, clears the breakpoints,
 -- and leaves the
 -- processor held with G_BOOT_HELD, or running with the ROM shown otherwise.
 -- G_HAS_ROM is false on a system without a ROM: bit 3 then reads 1 and
@@ -252,6 +255,7 @@ entity debug_link is
       reg_we_o       : out std_logic;
       reg_idx_o      : out std_logic_vector(3 downto 0);
       reg_data_o     : out std_logic_vector(31 downto 0);
+      waiting_i      : in  std_logic                     := '0';
 
       -- A second client of the debug registers and the memory, inside the
       -- system (contract g). A board without one leaves the inputs open.
@@ -302,8 +306,8 @@ architecture synthesis of debug_link is
    constant C_TAG_W : t_byte := X"57";   -- 'W', a write
    constant C_HASH  : t_byte := X"23";   -- '#', before the checksum
 
-   -- Major 0, minor 6 (DEBUG.md §9)
-   constant C_VERSION : t_word := X"00000006";
+   -- Major 0, minor 7 (DEBUG.md §9)
+   constant C_VERSION : t_word := X"00000007";
 
    function is_hex(b : t_byte) return boolean is
    begin
@@ -981,6 +985,7 @@ begin
                            rd_v(1) := halted_r and not cleared_r;
                            rd_v(3) := hide_r or not to_sl(G_HAS_ROM);
                            rd_v(4) := pause_own;
+                           rd_v(6) := waiting_i and not hold_r and not halted_r;
                         elsif idx_v = 17 then
                            if cleared_r = '0' then
                               rd_v(2 downto 0) := reason_r;

@@ -213,6 +213,11 @@ entity pipeline is
       reg_idx_i     : in  std_logic_vector(3 downto 0)  := (others => '0');
       reg_data_i    : in  std_logic_vector(31 downto 0) := (others => '0');
 
+      -- '1' while the core waits for an interrupt after WAIT, also while
+      -- paused, until a request is valid (ISA.md §7.5), for bit 6 of the
+      -- debug link's control register (doc/DEBUG.md §6)
+      waiting_o     : out std_logic;
+
       -- '1' once the core has halted, and no bus cycle is open (ISA.md §1.4)
       halted_o      : out std_logic;
 
@@ -222,6 +227,10 @@ entity pipeline is
       -- '1' for one cycle for each completed instruction, but not for an
       -- interrupt entry, for the instruction counter (SYSTEM.md §3)
       instret_o     : out std_logic;
+
+      -- '1' for one cycle for each wait step (ISA.md §7.5), which a timer
+      -- that counts steps, as the tests' does, counts as a step
+      wstep_o       : out std_logic;
 
       -- R0-R15 as the core holds them, from registers, for a monitor that
       -- shows them. In the cycle after a step is reported on retire_o, they
@@ -304,6 +313,7 @@ architecture synthesis of pipeline is
    signal w_st_addr : std_logic_vector(31 downto 0);
    signal w_st_data : std_logic_vector(31 downto 0);
    signal w_instret : std_logic;
+   signal w_wstep   : std_logic;
    signal w_why     : t_wwhy;
    signal w_fwhy    : natural range 0 to C_FLUSHES - 1;
    signal w_rd_late : std_logic;
@@ -547,6 +557,7 @@ begin
          flush_o      => w_flush,
          target_o     => w_target,
          instret_o    => w_instret,
+         wstep_o      => w_wstep,
          retire_o     => retire_o,
          why_o        => w_why,
          fwhy_o       => w_fwhy,
@@ -563,8 +574,10 @@ begin
    quiet         <= '1' when ibus_cyc_o = '0' and dbus_cyc_o = '0' else '0';
    halted_o      <= '1' when w_r.mode = HALTED_ST and quiet = '1' else '0';
    paused_o      <= '1' when w_r.mode = PAUSED_ST and quiet = '1' else '0';
+   waiting_o     <= w_r.waiting and not nmi_valid_i and not irq_valid_i;
    halt_reason_o <= w_r.halt when halted_o = '1' else HALT_NONE;
    instret_o     <= rd_count or w_instret;
+   wstep_o       <= w_wstep;
    regs_o        <= w_r.regs;
 
 

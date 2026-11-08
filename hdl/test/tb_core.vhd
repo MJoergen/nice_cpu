@@ -94,8 +94,12 @@
 -- with its model's, step by step, and --against sums the causes of each
 -- phase of the benchmark.
 --
+-- A wait step of the core, on wstep_o (ISA.md §7.5), is a step that is
+-- not reported. The emulator counts it, so p_intr, p_pause, the trace
+-- writer, the timer, and the watchdog count it as a step too.
+--
 -- The timer counts the steps, as the emulator's does: its tick is the
--- core's instret_o, and the report of each interrupt entry. A data read of
+-- core's instret_o, the report of each interrupt entry, and wstep_o. A data read of
 -- TIMER_COUNT must see the ticks of every older instruction, and the
 -- pipelined core raises instret_o in time for that, but may report a step
 -- later (src/pipeline.vhd). It counts an instruction with a data read
@@ -445,6 +449,8 @@ architecture simulation of tb_core is
    signal retire      : t_retire;
    signal regs        : t_regs;
    signal tick        : std_logic;
+   signal waiting     : std_logic;
+   signal wstep       : std_logic;   -- A wait step, a step not reported
    signal early       : natural;     -- Instructions counted, not yet reported
    signal period_we   : std_logic;   -- A write to TIMER_PERIOD is accepted now
    signal timer_tick  : std_logic;
@@ -511,11 +517,13 @@ begin
             irq_vector_i  => core_irq_vector,
             pause_i       => pause,
             paused_o      => paused,
+            waiting_o     => waiting,
             brk_addr_i    => C_BREAKS.addrs,
             brk_en_i      => (others => '1'),
             halted_o      => halted,
             halt_reason_o => halt_reason,
             instret_o     => instret,
+            wstep_o       => wstep,
             regs_o        => regs,
             retire_o      => retire
          ); -- i_multicycle
@@ -551,11 +559,13 @@ begin
             irq_vector_i  => core_irq_vector,
             pause_i       => pause,
             paused_o      => paused,
+            waiting_o     => waiting,
             brk_addr_i    => C_BREAKS.addrs,
             brk_en_i      => (others => '1'),
             halted_o      => halted,
             halt_reason_o => halt_reason,
             instret_o     => instret,
+            wstep_o       => wstep,
             regs_o        => regs,
             retire_o      => retire,
             stats_o       => fetch_events
@@ -614,7 +624,7 @@ begin
 
    run <= not paused and not halted;
 
-   tick <= instret or (retire.valid and retire.intr);
+   tick <= instret or (retire.valid and retire.intr) or wstep;
 
    -- The tick of an instruction that wrote TIMER_PERIOD comes after the
    -- write, as in the emulator. The pipelined core counts an instruction
@@ -923,6 +933,7 @@ begin
          nmi_pending_i   => nmi_valid,
          nmi_vector_i    => nmi_vector,
          irq_pending_i   => core_irq_valid,
+         wstep_i         => wstep,
          irq_vector_i    => core_irq_vector,
          done_o          => done,
          status_o        => status
@@ -1017,6 +1028,9 @@ begin
             end if;
             steps_v := steps_v + 1;
          end if;
+         if rst = '0' and wstep = '1' then
+            steps_v := steps_v + 1;
+         end if;
 
          nmi_set_v := false;
          irq_set_v := false;
@@ -1024,7 +1038,8 @@ begin
             if wait_v(i) > 0 then
                wait_v(i) := wait_v(i) - 1;
             end if;
-            if C_REQUESTS(i).step = steps_v and (rst = '1' or retire.valid = '1') then
+            if C_REQUESTS(i).step = steps_v and
+               (rst = '1' or retire.valid = '1' or wstep = '1') then
                wait_v(i) := G_INTR_DELAY;
             end if;
             -- No request after the end of the run, which the trace has
@@ -1076,7 +1091,7 @@ begin
       variable l         : line;
    begin
       if rising_edge(clk) then
-         if retire.valid = '1' then
+         if retire.valid = '1' or wstep = '1' then
             steps_v := steps_v + 1;
             since_v := since_v + 1;
          end if;
@@ -1304,7 +1319,7 @@ begin
       variable idle_v : natural := 0;
    begin
       wait until rising_edge(clk);
-      if rst = '1' or retire.valid = '1' or paused = '1' then
+      if rst = '1' or retire.valid = '1' or wstep = '1' or paused = '1' then
          idle_v := 0;
       else
          idle_v := idle_v + 1;

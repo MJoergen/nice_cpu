@@ -8,7 +8,8 @@
 -- into the I/O range waits in WRITE, w_r.busy, until the bus accepts it
 -- (MICROARCH.md §5.3). It takes interrupts before an instruction, pauses
 -- there (MICROARCH.md §6.1), also at a breakpoint, runs the control
--- instructions, and flushes the pipeline (see src/pipeline.vhd). Its
+-- instructions, waits for a request after WAIT in WAIT_ST, and flushes the
+-- pipeline (see src/pipeline.vhd). Its
 -- state is the record w_r (t_write), which PREPARE reads too.
 --
 -- The registers are w_r. The other outputs depend combinationally on w_r
@@ -110,6 +111,7 @@ entity pipe_write is
       flush_o      : out std_logic;   -- Empties the pipeline
       target_o     : out std_logic_vector(31 downto 0);
       instret_o    : out std_logic;
+      wstep_o      : out std_logic;   -- A wait step (ISA.md §7.5)
       retire_o     : out t_retire;
 
       -- For the fetch statistics (MICROARCH.md §8.1): what WRITE does in
@@ -172,6 +174,9 @@ begin
       variable brk_v    : boolean;   -- The next instruction is at a breakpoint
       variable bpause_v : boolean;   -- A pause at a breakpoint
       variable pause_v  : boolean;
+      variable wbound_v : boolean;   -- A cycle of WAIT_ST, a step boundary of its own
+      variable wpause_v : boolean;   -- A pause on pause_i in WAIT_ST
+      variable wake_v   : boolean;   -- A request ends the wait (ISA.md §7.5)
       variable room_v   : boolean;
       variable accept_v : std_logic;
       variable why_v    : t_wwhy;
@@ -185,6 +190,7 @@ begin
       st_o        <= '0';
       st_we_o     <= '1';
       instret_o   <= '0';
+      wstep_o     <= '0';
       flush_o     <= '0';
       take_nmi_o  <= '0';
       take_irq_o  <= '0';
@@ -282,8 +288,17 @@ begin
                   (u_v.valid = '0' or u_v.first = '1');
       rpause_v := pbound_v and w_r.after_go = '0' and pause_i = '1';
       bound_v  := pbound_v and not rpause_v and w_r.in_service = '0' and w_r.after_rti = '0';
-      intr_v   := bound_v and (nmi_valid_i = '1' or
-                               (irq_valid_i = '1' and w_r.regs(14)(C_SR_E) = '1'));
+
+      -- Each cycle of WAIT_ST is a step boundary with an empty pipeline,
+      -- where the core pauses as at any other. A request that is valid
+      -- ends the wait, whether or not it can be taken (ISA.md §7.5). If
+      -- it can, the entry goes at once. after_rti is '0' here, as WAIT
+      -- cleared it.
+      wbound_v := w_r.mode = WAIT_ST and rst_i = '0';
+      wpause_v := wbound_v and w_r.after_go = '0' and pause_i = '1';
+      wake_v   := wbound_v and not wpause_v and (nmi_valid_i = '1' or irq_valid_i = '1');
+      intr_v   := (bound_v or (wake_v and w_r.in_service = '0')) and
+                  (nmi_valid_i = '1' or (irq_valid_i = '1' and w_r.regs(14)(C_SR_E) = '1'));
 
       -- A breakpoint (doc/DEBUG.md §6) is a pause of the core's own, below
       -- an interrupt, and with the same exemption as the pause. Its flag
@@ -296,7 +311,7 @@ begin
          brk_v := prep_i.valid = '1' and prep_i.first = '1' and prep_i.inst.brk = '1';
       end if;
       bpause_v := pbound_v and not rpause_v and w_r.after_go = '0' and brk_v and not intr_v;
-      pause_v  := rpause_v or bpause_v;
+      pause_v  := rpause_v or bpause_v or wpause_v;
 
       if intr_v then
          if nmi_valid_i = '1' then
@@ -332,14 +347,17 @@ begin
                n_v.regs(to_integer(reg_idx_i)) := regval(to_integer(reg_idx_i), reg_data_i);
             end if;
          elsif w_r.brk_wait = '0' then
-            n_v.mode     := RUN_ST;
+            -- A pause in a wait goes back to the wait.
+            n_v.mode     := WAIT_ST when w_r.waiting = '1' else RUN_ST;
             n_v.after_go := '1';
             target_v     := w_r.regs(15);
             flush_v      := true;
          end if;
       elsif intr_v then
          -- ISA.md §7.2. The micro-operation in WRITE has not begun, so it
-         -- goes with the rest of the pipeline.
+         -- goes with the rest of the pipeline. A wait ends with the entry,
+         -- whose saved PC is R15, the address after the WAIT.
+         n_v.waiting    := '0';
          n_v.mode       := VEC_ST;
          n_v.vec_intr   := '1';
          n_v.vec_issued := '0';
@@ -347,6 +365,20 @@ begin
          flush_v        := true;
          fwhy_v         := C_FLUSH_INTR;
          why_v          := W_INTR;
+      elsif w_r.mode = WAIT_ST then
+         -- ISA.md §7.5. The pipeline is empty and FETCH stopped. A request
+         -- that cannot be taken ends the wait, and FETCH starts again at
+         -- R15. Else this cycle is a wait step, which counts as the first
+         -- step after a pause.
+         if wake_v then
+            n_v.waiting := '0';
+            n_v.mode    := RUN_ST;
+            target_v    := w_r.regs(15);
+            flush_v     := true;
+         elsif wbound_v then
+            n_v.after_go := '0';
+            wstep_o      <= '1';
+         end if;
       elsif w_r.mode = VEC_ST then
          -- The vector table entry is at VBASE * 256 + v. Its read goes into
          -- DBUS's register, which drives the bus from the next cycle on.
@@ -408,6 +440,13 @@ begin
                         n_v.in_service := '0';
                         rti_v          := true;
                      end if;
+
+                  when "00011" =>
+                     -- ISA.md §7.5. WAIT retires, and WRITE waits in
+                     -- WAIT_ST with the pipeline empty, as after a pause.
+                     n_v.waiting := '1';
+                     n_v.mode    := WAIT_ST;
+                     flush_v     := true;
 
                   when "00010" =>
                      if w_r.in_service = '1' then
@@ -739,6 +778,7 @@ begin
             w_r.in_service <= '0';
             w_r.after_rti  <= '0';
             w_r.after_go   <= '0';
+            w_r.waiting    <= '0';
             w_r.brk_wait   <= '0';
             w_r.halt       <= HALT_NONE;
             w_r.cond       <= '0';

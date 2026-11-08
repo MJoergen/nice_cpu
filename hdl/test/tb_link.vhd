@@ -26,7 +26,7 @@
 -- sends against the exact string. The checksums of the fixed strings are
 -- the sum of the bytes from the tag to the end of the payload, mod 256,
 -- worked out with a script, not taken from a simulation. The checks:
--- * `b06`, and the W and R of DEBUG.md §8, through the decoder to memory;
+-- * `b07`, and the W and R of DEBUG.md §8, through the decoder to memory;
 -- * a word that G_INIT_FILE loaded, and the math unit through the decoder;
 -- * the link's reads of the console and the read counter, and its writes
 --   to the console, which the program must not see;
@@ -50,6 +50,8 @@
 -- * with rx_flow_i, a flood of console bytes to the echo program, with
 --   none lost, and a byte for a paused program with a full buffer, which
 --   is lost with `o` after C_WAIT cycles, with the go on behind it;
+-- * a wait that nothing ends: bit 6 while running, paused, and held, and
+--   steps in the wait, which leave R15 at the address after the WAIT;
 -- * the halt reasons 2, 3, and 4, with their notices.
 -- The run stops with status 0 when every check passes, and 1 at the first
 -- that fails.
@@ -128,6 +130,7 @@ architecture simulation of tb_link is
    signal halted        : std_logic;
    signal pause         : std_logic;
    signal paused        : std_logic;
+   signal waiting       : std_logic;
    signal halt          : t_halt;
    signal halt_reason   : std_logic_vector(2 downto 0);
    signal regs          : t_regs;
@@ -244,6 +247,7 @@ begin
             irq_vector_i  => X"00",
             pause_i       => pause,
             paused_o      => paused,
+            waiting_o     => waiting,
             brk_addr_i    => brk_addr,
             brk_en_i      => brk_en,
             reg_we_i      => reg_we,
@@ -287,6 +291,7 @@ begin
             irq_vector_i  => X"00",
             pause_i       => pause,
             paused_o      => paused,
+            waiting_o     => waiting,
             brk_addr_i    => brk_addr,
             brk_en_i      => brk_en,
             reg_we_i      => reg_we,
@@ -508,6 +513,7 @@ begin
          reg_we_o       => reg_we,
          reg_idx_o      => reg_idx,
          reg_data_o     => reg_data,
+         waiting_i      => waiting,
          wb_cyc_o       => link_cyc,
          wb_stb_o       => link_stb,
          wb_stall_i     => link_stall,
@@ -711,7 +717,7 @@ begin
       cycles(3);
       rst <= '0';
 
-      expect(C_ESC & "b06#C8", "b06");
+      expect(C_ESC & "b07#C9", "b07");
 
       -- DEBUG.md §8, through the decoder to the memory model
       send(C_ESC & "W0000010000021122334455667788#E2");
@@ -1091,6 +1097,41 @@ begin
       expect(C_ESC & "e5704#35", "e04 for R0 while running");
       send(C_ESC & "WFFFFFFDF00020000000500000005#" & cc("WFFFFFFDF00020000000500000005"));
       expect(C_ESC & "e5702#33", "e02 goes first");
+
+      -- A wait that nothing ends (ISA.md §7.5): WAIT, then HALT. Bit 6
+      -- reads 1 while the core waits, running and paused, and 0 while it
+      -- is held. A step in the wait is one wait step, and R15 stays the
+      -- address after the WAIT.
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold before the wait");
+      send(C_ESC & "W000000000002" & "0C600000" & "0C000000#" &
+           cc("W000000000002" & "0C600000" & "0C000000"));
+      expect(C_ESC & "k000000000002#" & cc("k000000000002"), "load the wait");
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "start the wait");
+      cycles(20);
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000048#" & cc("rFFFFFFF0000100000048"), "bit 6 in the wait");
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", "pause in the wait");
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000058#" & cc("rFFFFFFF0000100000058"),
+             "bit 6 paused in the wait");
+      reg_is(15, X"00000001", "R15 paused in the wait");
+      step("", "a step in the wait");
+      step("", "a second step in the wait");
+      reg_is(15, X"00000001", "R15 after the steps in the wait");
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "go on in the wait");
+      cycles(20);
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000048#" & cc("rFFFFFFF0000100000048"),
+             "bit 6 after the go on");
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold in the wait");
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000009#D6", "bit 6 while held");
+      quiet("the wait");
 
       -- The other halt reasons (DEBUG.md §6), each as niceemu halts with it:
       -- a reserved control word, INT inside a routine, and RTI outside one.

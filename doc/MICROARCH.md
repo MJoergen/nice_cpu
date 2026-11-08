@@ -35,6 +35,7 @@ question that this note left open, `hdl/ASSUMPTIONS.md` says how.
   - [5.6 How often the hazards occur](#56-how-often-the-hazards-occur)
 - [6. Interrupts](#6-interrupts)
   - [6.1 Pause](#61-pause)
+  - [6.2 Wait](#62-wait)
 - [7. Datapath details](#7-datapath-details)
   - [7.1 Register values](#71-register-values)
   - [7.2 ALU](#72-alu)
@@ -183,7 +184,7 @@ one write port. DECODE emits:
 | `S0` | s0 has a side effect on a register other than R0 (modes 001, 010, 101, and 110) | Reads s0 if it is in memory. Writes Rx ± 1. |
 | `S1` | the same for s1 | Reads s0 first, if it is a memory operand not yet read. Then reads s1 if it is in memory, and writes Ry ± 1. |
 | `OP` | always, for ALU and SHIFT instructions | Reads the memory sources not yet read. Computes r. Writes the destination and applies its side effect. Updates the flags. |
-| `CTRL` | control instructions | `HALT`, `RTI`, `INT`, or a reserved word. |
+| `CTRL` | control instructions | `HALT`, `RTI`, `INT`, `WAIT`, or a reserved word. |
 
 Reads happen in field order, s0 then s1, as ISA §8.2 requires. That is why `S1`
 also reads an s0 that has no micro-op of its own.
@@ -371,6 +372,7 @@ WRITE flushes the stages above it and redirects FETCH when:
   operation on R15, such as `ADD R15, R15, R1`, writes R15 in one cycle
   and redirects in the next (§7.4). Neither benchmark has one (§5.6).
 - An `INT`, an `RTI`, or an interrupt (§6) is taken.
+- A `WAIT` retires, or a request ends a wait without an entry (§6.2).
 - A store may hit a word already fetched (§5.5).
 - A jump that DECODE predicted taken is skipped. Its target is the next
   instruction.
@@ -545,7 +547,7 @@ read is taken after that instruction. Software cannot tell this from a
 request that arrived one instruction later, and ISA §7.1 leaves the timing of
 the request signals to the hardware interface.
 
-`INT` and `RTI` run in WRITE as `CTRL` micro-ops, and flush.
+`INT`, `RTI`, and `WAIT` run in WRITE as `CTRL` micro-ops, and flush.
 
 ![Interrupt timing](interrupt.png)
 
@@ -646,6 +648,39 @@ registers, a mux whose select comes from flip-flops.
 `halt_reason_o` is the reason of the step that halted the core, a
 `t_halt`, while `halted_o` is 1, and `HALT_NONE` before. So a system need
 not catch it from `retire_o`, which is for simulation.
+
+### 6.2 Wait
+
+`WAIT` (ISA §7.5) retires in WRITE as a `CTRL` micro-op and flushes.
+Rule 2 of §5.3 holds the data reads of younger instructions back behind
+it, as behind `INT`, so none has begun. WRITE sets `waiting` and goes to
+its mode `WAIT_ST`, where FETCH stops at R15, the address after the
+`WAIT`, as in `PAUSED_ST`. The multi-cycle core sets `waiting` and waits
+in `BOUNDARY`.
+
+Each cycle of a wait is a step boundary. With no request valid, the
+cycle is a wait step: nothing else happens, and the core raises
+`wstep_o`. A valid request ends the wait in the cycle it is seen, whether
+or not it can be taken. If ISA §7.1 allows it, the entry goes at once,
+and saves R15. Otherwise the pipelined core flushes and redirects FETCH
+to R15, and the multi-cycle core goes on from `BOUNDARY` as usual. No
+instruction is in flight in a wait, so a request is never taken late
+there.
+
+A pause goes ahead of a request at a wait's boundary, as at any other
+(§6.1). WRITE goes to `PAUSED_ST` and keeps `waiting`, and the go on
+returns to `WAIT_ST`. A wait step counts as the first step after a pause.
+So a step of a waiting core is one wait step, or the end of the wait and
+what follows it. No breakpoint stops a wait step. The check comes at the
+boundary where a request ends the wait, after the entry, as DEBUG.md §6
+says.
+
+`waiting_o` is 1 while `waiting` is 1 and no request is valid, paused or
+not, for bit 6 of the debug link's control register. A system's counters
+and timer count the cycles of a wait as any cycle the core runs. The
+tests count steps instead, as the emulator does, so their timer, their
+requests, and the trace writer count each `wstep_o` as a step. In the
+fetch statistics (§8.1), a cycle of a wait has cause OTHER.
 
 ## 7. Datapath details
 
@@ -920,7 +955,7 @@ The causes of a flush (§5.4, §5.5, §6):
 | 1 | SKIP | after a jump that DECODE predicted taken, and that is skipped |
 | 2 | STORE | after a store that may hit fetched code (§5.5), unless the instruction also jumps |
 | 3 | INTR | after `INT` or `RTI`, and at the start and at the end of an interrupt entry, so an entry counts twice |
-| 4 | OTHER | at a halt, at a pause, and when the core goes on after a pause |
+| 4 | OTHER | at a halt, at a pause, when the core goes on after a pause, at `WAIT`, and where a request ends a wait without an entry |
 
 The causes of a cycle. Each cycle counted has one, so the causes sum to
 `FS_CYCLES`. In a cycle in which WRITE holds a micro-operation, it is what

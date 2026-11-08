@@ -64,6 +64,8 @@ architecture synthesis of formal_multicycle is
    signal halted    : std_logic;
    signal reason    : t_halt;
    signal instret   : std_logic;
+   signal wstep     : std_logic;
+   signal waiting   : std_logic;
    signal retire    : t_retire;
    signal regs      : t_regs;
    signal ibus_wait : natural range 0 to 2;
@@ -117,6 +119,7 @@ begin
          irq_vector_i  => irq_vector_i,
          pause_i       => pause_i,
          paused_o      => paused,
+         waiting_o     => waiting,
          brk_addr_i    => brk_addr_i,
          brk_en_i      => brk_en_i,
          reg_we_i      => reg_we_i,
@@ -125,6 +128,7 @@ begin
          halted_o      => halted,
          halt_reason_o => reason,
          instret_o     => instret,
+         wstep_o       => wstep,
          regs_o        => regs,
          retire_o      => retire
       ); -- i_multicycle
@@ -162,6 +166,8 @@ begin
          halted_i     => halted,
          reason_i     => reason,
          retire_i     => retire,
+         wstep_i      => wstep,
+         waiting_i    => waiting,
          regs_i       => regs,
          brk_addr_i   => brk_addr_i,
          brk_en_i     => brk_en_i,

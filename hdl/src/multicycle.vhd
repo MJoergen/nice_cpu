@@ -183,6 +183,14 @@ entity multicycle is
       -- are the registers of that report.
       regs_o        : out t_regs;
 
+      -- The hidden state of ISA.md §1.4, from registers, as regs_o, for
+      -- bits 7 and 8 and the words 0xFFFFFFD0 and 0xFFFFFFD1 of the debug
+      -- link (doc/DEBUG.md §6)
+      in_service_o  : out std_logic;
+      after_rti_o   : out std_logic;
+      saved_pc_o    : out std_logic_vector(31 downto 0);
+      saved_sr_o    : out std_logic_vector(31 downto 0);
+
       -- One report per step, for sim/trace.vhd
       retire_o      : out t_retire
    );
@@ -293,6 +301,10 @@ begin
    halt_reason_o <= halt when state = HALTED_ST else HALT_NONE;
    instret_o     <= '1' when state = RETIRE_ST and rep_intr = '0' else '0';
    regs_o        <= regs;
+   in_service_o  <= in_service;
+   after_rti_o   <= after_rti;
+   saved_pc_o    <= saved_pc;
+   saved_sr_o    <= saved_sr;
 
 
    p_fsm : process (clk_i)

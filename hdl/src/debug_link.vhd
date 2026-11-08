@@ -168,6 +168,14 @@
 -- * waiting_i: the core's waiting_o, '1' while it waits for an interrupt
 --   (ISA.md §7.5), which bit 6 reads while the core is not held or halted.
 --   A board without it leaves it open, and bit 6 reads 0.
+-- * in_service_i, after_rti_i, saved_pc_i, and saved_sr_i: the core's
+--   hidden state (ISA.md §1.4), for bits 7 and 8 and the words 0xFFFFFFD0
+--   and 0xFFFFFFD1 (DEBUG.md §6). They are kept and read as regs_i is
+--   (contract e). A board without them leaves them open, and they read 0.
+-- * nmi_pending_i and irq_pending_i: the requests that the core sees on
+--   nmi_valid_i and irq_valid_i, for bits 9 and 10, which read them while
+--   the core is not held or halted. A board without them leaves them
+--   open, and the bits read 0.
 --
 -- FORMAL
 -- With G_FORMAL, the properties that need the state of the processes, for
@@ -256,6 +264,12 @@ entity debug_link is
       reg_idx_o      : out std_logic_vector(3 downto 0);
       reg_data_o     : out std_logic_vector(31 downto 0);
       waiting_i      : in  std_logic                     := '0';
+      in_service_i   : in  std_logic                     := '0';
+      after_rti_i    : in  std_logic                     := '0';
+      saved_pc_i     : in  std_logic_vector(31 downto 0) := (others => '0');
+      saved_sr_i     : in  std_logic_vector(31 downto 0) := (others => '0');
+      nmi_pending_i  : in  std_logic                     := '0';
+      irq_pending_i  : in  std_logic                     := '0';
 
       -- A second client of the debug registers and the memory, inside the
       -- system (contract g). A board without one leaves the inputs open.
@@ -350,10 +364,11 @@ architecture synthesis of debug_link is
       end case;
    end function kind_char;
 
-   -- True if a is in the window of the debug registers, the last 32 words
+   -- True if a is in the window of the debug registers, the last 48 words,
+   -- 0xFFFFFFD0 to 0xFFFFFFFF
    function is_dbg(a : t_word) return boolean is
    begin
-      return a(31 downto 5) = (31 downto 5 => '1');
+      return a(31 downto 6) = (31 downto 6 => '1') and a(5 downto 4) /= "00";
    end function is_dbg;
 
    -- True if the n words from a reach a word that is not a debug register
@@ -365,7 +380,7 @@ architecture synthesis of debug_link is
       if not is_dbg(a) then
          return true;
       end if;
-      return to_integer(a(4 downto 0)) + to_integer(n) > 32;
+      return to_integer(a(5 downto 0)) + to_integer(n) > 64;
    end function non_dbg;
 
    -- True if the n words from a reach R0 to R15, 0xFFFFFFE0 to 0xFFFFFFEF
@@ -460,17 +475,21 @@ architecture synthesis of debug_link is
    signal clearing_r  : std_logic                    := '0';
    signal clr_hold_r  : std_logic                    := '0';
    signal regs_r      : std_logic_vector(511 downto 0) := (others => '0');
-   signal reg_we_r    : std_logic                    := '0';
-   signal reg_idx_r   : std_logic_vector(3 downto 0) := (others => '0');
-   signal reg_data_r  : t_word                       := (others => '0');
-   signal wb_cyc_r    : std_logic                    := '0';
-   signal wb_stb_r    : std_logic                    := '0';
-   signal wb_we_r     : std_logic                    := '0';
-   signal wb_addr_r   : t_word                       := (others => '0');
-   signal wb_data_r   : t_word                       := (others => '0');
-   signal brk_addr_r  : t_brk_addrs                  := (others => (others => '0'));
-   signal brk_en_r    : std_logic_vector(C_BREAKS_MAX - 1 downto 0) := (others => '0');
-   signal pause_d_r   : std_logic                    := '0';
+   -- The hidden state, kept as regs_r: in_service, after_rti, saved_pc,
+   -- and saved_sr, from bit 65 down
+   signal hid_r      : std_logic_vector(65 downto 0)  := (others => '0');
+   signal hid_i      : std_logic_vector(65 downto 0);
+   signal reg_we_r   : std_logic                    := '0';
+   signal reg_idx_r  : std_logic_vector(3 downto 0) := (others => '0');
+   signal reg_data_r : t_word                       := (others => '0');
+   signal wb_cyc_r   : std_logic                    := '0';
+   signal wb_stb_r   : std_logic                    := '0';
+   signal wb_we_r    : std_logic                    := '0';
+   signal wb_addr_r  : t_word                       := (others => '0');
+   signal wb_data_r  : t_word                       := (others => '0');
+   signal brk_addr_r : t_brk_addrs                  := (others => (others => '0'));
+   signal brk_en_r   : std_logic_vector(C_BREAKS_MAX - 1 downto 0) := (others => '0');
+   signal pause_d_r  : std_logic                    := '0';
    -- A clear since the last start: bit 1 and the halt reason read 0, but
    -- the `h` of a halt before the clear still goes out with its reason.
    signal cleared_r : std_logic := '0';
@@ -829,10 +848,13 @@ begin
    wb_addr_o <= wb_addr_r;
    wb_data_o <= wb_data_r;
 
+   hid_i <= in_service_i & after_rti_i & saved_pc_i & saved_sr_i;
+
 
    p_acc : process (clk_i)
       variable nh_v   : std_logic;
       variable rd_v   : t_word;
+      variable hid_v  : std_logic_vector(65 downto 0);
       variable idx_v  : natural range 0 to 31;
       variable stop_v : std_logic_vector(8 downto 0);
    begin
@@ -861,6 +883,7 @@ begin
             halted_r <= '1';
             reason_r <= halt_reason_i;
             regs_r   <= regs_i;
+            hid_r    <= hid_i;
          end if;
 
          -- The registers at a pause stay through a hold, as those of a halt.
@@ -872,6 +895,7 @@ begin
             if reg_we_r = '0' then
                regs_r <= regs_i;
             end if;
+            hid_r <= hid_i;
          else
             paused_r <= '0';
          end if;
@@ -927,7 +951,10 @@ begin
                         side_done_r <= '1';
                         side_err_r  <= '0';
                      end if;
-                     if acc_we = '1' and idx_v < 16 then
+                     if acc_we = '1' and acc_addr(5) = '0' then
+                        -- 0xFFFFFFD0 to 0xFFFFFFDF take no write.
+                        null;
+                     elsif acc_we = '1' and idx_v < 16 then
                         -- R1 to R15 take a write while paused, R0 none. The
                         -- side client is refused while bit 4 reads 0.
                         if pause_own = '1' and paused_i = '1' and hold_r = '0' and idx_v /= 0 then
@@ -974,8 +1001,21 @@ begin
                         end if;
                      else
                         rd_v := (others => '0');
-                        if idx_v < 16 and hold_r = '0' and halted_r = '0' and
-                           paused_r = '0' then
+                        -- The hidden state reads as R0 to R15 do.
+                        if hold_r = '0' and halted_r = '0' and paused_r = '0' then
+                           hid_v := hid_i;
+                        else
+                           hid_v := hid_r;
+                        end if;
+                        if acc_addr(5) = '0' then
+                           -- saved_pc and saved_sr, and the reserved words
+                           if acc_addr(3 downto 0) = "0000" then
+                              rd_v := hid_v(63 downto 32);
+                           elsif acc_addr(3 downto 0) = "0001" then
+                              rd_v := hid_v(31 downto 0);
+                           end if;
+                        elsif idx_v < 16 and hold_r = '0' and halted_r = '0' and
+                              paused_r = '0' then
                            -- The running core's registers, from this cycle
                            rd_v := regs_i(32 * idx_v + 31 downto 32 * idx_v);
                         elsif idx_v < 16 then
@@ -986,6 +1026,10 @@ begin
                            rd_v(3) := hide_r or not to_sl(G_HAS_ROM);
                            rd_v(4) := pause_own;
                            rd_v(6) := waiting_i and not hold_r and not halted_r;
+                           rd_v(7) := hid_v(65);
+                           rd_v(8) := hid_v(64);
+                           rd_v(9) := nmi_pending_i and not hold_r and not halted_r;
+                           rd_v(10) := irq_pending_i and not hold_r and not halted_r;
                         elsif idx_v = 17 then
                            if cleared_r = '0' then
                               rd_v(2 downto 0) := reason_r;
@@ -1438,8 +1482,8 @@ begin
                 '0';
 
       f_brk_w <= '1' when acc_st = ACC_IDLE_ST and acc_go = '1' and acc_we = '1' and
-                          is_dbg(acc_addr) and (acc_addr(4 downto 0) = "10100" or
-                                               acc_addr(4 downto 3) = "11") else
+                          is_dbg(acc_addr) and acc_addr(5) = '1' and
+                          (acc_addr(4 downto 0) = "10100" or acc_addr(4 downto 3) = "11") else
                  '0';
       f_kept  <= brk_addr_r = f_brk_d and brk_en_r = f_en_d;
 

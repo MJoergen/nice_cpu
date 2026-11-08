@@ -139,6 +139,7 @@ and the same two generics: a system instantiates `pipeline` of
 | `instret_o` | 1 for one cycle for each completed instruction, but not for an interrupt entry, for the instruction counter (SYSTEM.md §3). |
 | `wstep_o` | 1 for one cycle for each wait step (ISA.md §7.5), for a timer that counts steps, as the tests' does. A system leaves it open. |
 | `regs_o` | R0 to R15 from the core's registers, a `t_regs`, for a monitor that shows them (below). |
+| `in_service_o`, `after_rti_o`, `saved_pc_o`, `saved_sr_o` | The hidden state of ISA.md §1.4 from the core's registers, as `regs_o`, for bits 7 and 8 and the words `0xFFFFFFD0` and `0xFFFFFFD1` of the debug link (DEBUG.md §6). A system without a debugger leaves them open. |
 | `retire_o` | One report per step, a `t_retire`, for the trace writer. Simulation only. |
 | `stats_o` | The pipelined core only: what the core did two cycles before, a `t_fetch_events` of `src/pipe_pkg.vhd`, for the fetch statistics. |
 
@@ -495,6 +496,15 @@ new value at once. A `W` that reaches R0 to R15 while bit 4 reads 0 gets
 `waiting_i` connects to the core's `waiting_o`. Bit 6 of the control
 register reads it while the processor is neither held nor halted
 (DEBUG.md §6). A board without it leaves it open, and bit 6 reads 0.
+`in_service_i`, `after_rti_i`, `saved_pc_i`, and `saved_sr_i` connect to
+the core's `in_service_o`, `after_rti_o`, `saved_pc_o`, and `saved_sr_o`.
+The link keeps and reads them as it does `regs_i`, for bits 7 and 8 and
+the words `0xFFFFFFD0` and `0xFFFFFFD1`, which take no write. The words
+`0xFFFFFFD2`–`0xFFFFFFDF` read 0 and take no write.
+`nmi_pending_i` and `irq_pending_i` connect to the core's `nmi_valid_i`
+and `irq_valid_i`, for bits 9 and 10, which read them while the processor
+is neither held nor halted. A board without these inputs leaves them
+open, and they read 0.
 
 The host's line ends with `rx_break_i`, a pulse for a UART break: `eoi_o`
 rises, the link drops the host's console bytes, and the board's console
@@ -879,7 +889,9 @@ notices `b`, `h`, `o`, `p`, and `x`, the clear, one that a dropped packet starte
 a `W` that wraps past `0xFFFFFFFF`, the hold and restart, and the pause: its
 notice after and before the answer, the memory and registers while paused,
 a hold and a start that keep or begin a pause, a go on, and a halt that
-goes first; and the step: `pause_o` low for exactly one cycle, bit 4 and the
+goes first; the hidden state and the requests, bits 7 to 10, `saved_pc`,
+`saved_sr`, and the reserved words below R0: live while the program runs,
+kept by a hold, read only, and the requests at 0 while held; and the step: `pause_o` low for exactly one cycle, bit 4 and the
 memory during the step, one `p` after it, a quick step, a hold during the
 step, a write with bit 5 that does not step, and a step into a halt; and
 the breakpoints: their registers and ports, `x` with the lowest number at a
@@ -919,7 +931,11 @@ writes of R0 to R15: R3, R0, R14, and R15 at a start paused, a step and a
 go on from the written R15, also at an enabled breakpoint, and `e04` while
 held, halted, and running, and with `rx_flow_i`, a flood of console bytes
 to the echo program with none lost, and a byte that a paused program's
-full buffer loses with `o`, with the go on behind it. Its input buffer
+full buffer loses with `o`, with the go on behind it, and the hidden
+state and the requests: bits 7 to 10, `saved_pc`, and `saved_sr`, step
+by step through an `INT`, its `RTI`, and an NMI that its request source
+raises inside the routine with an IRQ that E = 0 holds, at the halt and
+the hold after it. Its input buffer
 holds 16 bytes, so that a flood fills it soon. The testbench shows three things a board must
 do: each master sees only its own STALL and ACK; the devices are reset at
 a start, when `hold_o` falls, and not while the processor is held, so that

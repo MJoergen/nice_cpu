@@ -248,7 +248,7 @@ begin
    -- the covers above show the host's way to each.
    gen_side : if G_SIDE generate
       -- psl c_side_mem : cover
-      --    {side_valid_i = '1' and side_addr_i(31 downto 5) /= (31 downto 5 => '1') and
+      --    {side_valid_i = '1' and side_addr_i(31 downto 6) /= (31 downto 6 => '1') and
       --     side_done = '1' and side_err = '0'};
       -- psl c_side_err : cover {side_done = '1' and side_err = '1'};
    end generate gen_side;

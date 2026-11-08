@@ -676,7 +676,10 @@ boundary where a request ends the wait, after the entry, as DEBUG.md §6
 says.
 
 `waiting_o` is 1 while `waiting` is 1 and no request is valid, paused or
-not, for bit 6 of the debug link's control register. A system's counters
+not, for bit 6 of the debug link's control register. `in_service_o`,
+`after_rti_o`, `saved_pc_o`, and `saved_sr_o` are the rest of the hidden
+state, straight from WRITE's registers, for the link's bits 7 and 8 and
+its words `0xFFFFFFD0` and `0xFFFFFFD1`. A system's counters
 and timer count the cycles of a wait as any cycle the core runs. The
 tests count steps instead, as the emulator does, so their timer, their
 requests, and the trace writer count each `wstep_o` as a step. In the

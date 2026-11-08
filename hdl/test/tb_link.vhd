@@ -52,6 +52,10 @@
 --   is lost with `o` after C_WAIT cycles, with the go on behind it;
 -- * a wait that nothing ends: bit 6 while running, paused, and held, and
 --   steps in the wait, which leave R15 at the address after the WAIT;
+-- * the hidden state and the requests: bits 7 to 10, saved_pc, and
+--   saved_sr, step by step through an INT, its RTI, and an NMI that p_req
+--   raises inside the routine with an IRQ that E = 0 holds, at the halt and
+--   the hold after it, and the link's words below R0, which take no write;
 -- * the halt reasons 2, 3, and 4, with their notices.
 -- The run stops with status 0 when every check passes, and 1 at the first
 -- that fails.
@@ -83,6 +87,14 @@ architecture simulation of tb_link is
    constant C_ESC     : character := character'val(255);
 
    -- The words of the program of the register writes, from niceasm: at 0,
+   -- 18 words for a W from 0xFFFFFFCF to R0
+   constant C_W18 : string := "00000005" & "00000005" & "00000005" & "00000005" & "00000005" &
+                              "00000005" & "00000005" & "00000005" & "00000005" & "00000005" &
+                              "00000005" & "00000005" & "00000005" & "00000005" & "00000005" &
+                              "00000005" & "00000005" & "00000005";
+   -- The program of the hidden state, at 0 (p_test)
+   constant C_HIDDEN : string := "00039800" & "00000001" & "0C400002" & "00000000" &
+                                 "0C000000" & "00000000" & "0C200000" & "0C000000";
    -- MOVE R2, R3 and a loop, MOVE R15, 1; at 0x20, MOVE R4, R3 and HALT
    constant C_REGS_LOW  : string := "00008180" & "0003D800" & "00000001";
    constant C_REGS_HIGH : string := "00010180" & "0C000000";
@@ -125,12 +137,25 @@ architecture simulation of tb_link is
    signal eoi          : std_logic;
 
    -- The processor
-   signal hold          : std_logic;
-   signal hold_d        : std_logic := '1';
-   signal halted        : std_logic;
-   signal pause         : std_logic;
-   signal paused        : std_logic;
-   signal waiting       : std_logic;
+   signal hold       : std_logic;
+   signal hold_d     : std_logic := '1';
+   signal halted     : std_logic;
+   signal pause      : std_logic;
+   signal paused     : std_logic;
+   signal waiting    : std_logic;
+   signal in_service : std_logic;
+   signal after_rti  : std_logic;
+   signal saved_pc   : std_logic_vector(31 downto 0);
+   signal saved_sr   : std_logic_vector(31 downto 0);
+   -- The requests, which p_req raises at a rise of nmi_raise or irq_raise,
+   -- with the vectors 3 and 4, until the core's ready or a hold
+   signal nmi_raise     : std_logic := '0';
+   signal irq_raise     : std_logic := '0';
+   signal raise_d       : std_logic_vector(1 downto 0) := "00";
+   signal nmi_valid     : std_logic := '0';
+   signal irq_valid     : std_logic := '0';
+   signal nmi_ready     : std_logic;
+   signal irq_ready     : std_logic;
    signal halt          : t_halt;
    signal halt_reason   : std_logic_vector(2 downto 0);
    signal regs          : t_regs;
@@ -187,7 +212,7 @@ architecture simulation of tb_link is
    signal slave_data  : std_logic_vector(32 * C_SLAVES - 1 downto 0);
 
    -- What the link sent, for the checks
-   signal got     : string(1 to 4096);
+   signal got     : string(1 to 8192);
    signal got_len : natural := 0;
 
    -- The console bytes that the program wrote, waiting for the link
@@ -239,12 +264,12 @@ begin
             dbus_addr_o   => core_addr,
             dbus_data_o   => core_data_out,
             dbus_data_i   => dbus_data_in,
-            nmi_valid_i   => '0',
-            nmi_ready_o   => open,
-            nmi_vector_i  => X"00",
-            irq_valid_i   => '0',
-            irq_ready_o   => open,
-            irq_vector_i  => X"00",
+            nmi_valid_i   => nmi_valid,
+            nmi_ready_o   => nmi_ready,
+            nmi_vector_i  => X"03",
+            irq_valid_i   => irq_valid,
+            irq_ready_o   => irq_ready,
+            irq_vector_i  => X"04",
             pause_i       => pause,
             paused_o      => paused,
             waiting_o     => waiting,
@@ -257,6 +282,10 @@ begin
             halt_reason_o => halt,
             instret_o     => open,
             regs_o        => regs,
+            in_service_o  => in_service,
+            after_rti_o   => after_rti,
+            saved_pc_o    => saved_pc,
+            saved_sr_o    => saved_sr,
             retire_o      => retire
          ); -- i_multicycle
 
@@ -283,12 +312,12 @@ begin
             dbus_addr_o   => core_addr,
             dbus_data_o   => core_data_out,
             dbus_data_i   => dbus_data_in,
-            nmi_valid_i   => '0',
-            nmi_ready_o   => open,
-            nmi_vector_i  => X"00",
-            irq_valid_i   => '0',
-            irq_ready_o   => open,
-            irq_vector_i  => X"00",
+            nmi_valid_i   => nmi_valid,
+            nmi_ready_o   => nmi_ready,
+            nmi_vector_i  => X"03",
+            irq_valid_i   => irq_valid,
+            irq_ready_o   => irq_ready,
+            irq_vector_i  => X"04",
             pause_i       => pause,
             paused_o      => paused,
             waiting_o     => waiting,
@@ -301,6 +330,10 @@ begin
             halt_reason_o => halt,
             instret_o     => open,
             regs_o        => regs,
+            in_service_o  => in_service,
+            after_rti_o   => after_rti,
+            saved_pc_o    => saved_pc,
+            saved_sr_o    => saved_sr,
             retire_o      => retire,
             stats_o       => unused_fetch_events
          ); -- i_pipeline
@@ -317,6 +350,31 @@ begin
 
    -- The halt reason of DEBUG.md §6
    halt_reason <= halt_code(halt);
+
+   -- A device that holds its request until the core takes it (contract b
+   -- of the cores), and that a hold resets
+   p_req : process (clk)
+   begin
+      if rising_edge(clk) then
+         raise_d <= nmi_raise & irq_raise;
+         if nmi_raise = '1' and raise_d(1) = '0' then
+            nmi_valid <= '1';
+         end if;
+         if irq_raise = '1' and raise_d(0) = '0' then
+            irq_valid <= '1';
+         end if;
+         if nmi_ready = '1' then
+            nmi_valid <= '0';
+         end if;
+         if irq_ready = '1' then
+            irq_valid <= '0';
+         end if;
+         if core_rst = '1' then
+            nmi_valid <= '0';
+            irq_valid <= '0';
+         end if;
+      end if;
+   end process p_req;
 
    gen_regs : for n in 0 to 15 generate
       regs_flat(32 * n + 31 downto 32 * n) <= regs(n);
@@ -514,6 +572,12 @@ begin
          reg_idx_o      => reg_idx,
          reg_data_o     => reg_data,
          waiting_i      => waiting,
+         in_service_i   => in_service,
+         after_rti_i    => after_rti,
+         saved_pc_i     => saved_pc,
+         saved_sr_i     => saved_sr,
+         nmi_pending_i  => nmi_valid,
+         irq_pending_i  => irq_valid,
          wb_cyc_o       => link_cyc,
          wb_stb_o       => link_stb,
          wb_stall_i     => link_stall,
@@ -670,14 +734,32 @@ begin
 
       -- The value of register n, read over the link while the core is paused
       -- or halted.
-      procedure reg_is(n : natural; v : std_logic_vector(31 downto 0); what : string) is
-         variable a_v : string(1 to 8) := to_hstring(unsigned'(X"FFFFFFE0") + n);
+      -- The word at a, read over the link
+      procedure word_is(a : std_logic_vector(31 downto 0); v : std_logic_vector(31 downto 0);
+                        what : string) is
+         variable a_v : string(1 to 8) := to_hstring(a);
          variable r_v : string(1 to 20);
       begin
          r_v := a_v & "0001" & to_hstring(v);
          send(C_ESC & "R" & a_v & "0001#" & cc("R" & a_v & "0001"));
          expect(C_ESC & "r" & r_v & "#" & cc("r" & r_v), what);
+      end procedure word_is;
+
+      procedure reg_is(n : natural; v : std_logic_vector(31 downto 0); what : string) is
+      begin
+         word_is(std_logic_vector(unsigned'(X"FFFFFFE0") + n), v, what);
       end procedure reg_is;
+
+      -- The control register, saved_pc, saved_sr, and R15 of a paused core
+      procedure hidden_is(ctl : std_logic_vector(31 downto 0); pc : std_logic_vector(31 downto 0);
+                          sr : std_logic_vector(31 downto 0); r15 : std_logic_vector(31 downto 0);
+                          what : string) is
+      begin
+         word_is(X"FFFFFFF0", ctl, what & ": control");
+         word_is(X"FFFFFFD0", pc, what & ": saved_pc");
+         word_is(X"FFFFFFD1", sr, what & ": saved_sr");
+         reg_is(15, r15, what & ": R15");
+      end procedure hidden_is;
 
       -- One step of a paused core: bits 4 and 5. The `k` and the `p` come in
       -- either order, and a console byte that the step wrote comes before the
@@ -1095,8 +1177,15 @@ begin
       expect(C_ESC & "e5704#35", "e04 while running");
       send(C_ESC & "WFFFFFFE0000100000005#B6");
       expect(C_ESC & "e5704#35", "e04 for R0 while running");
-      send(C_ESC & "WFFFFFFDF00020000000500000005#" & cc("WFFFFFFDF00020000000500000005"));
+      -- 0xFFFFFFCF, of the Ethernet frames, is the last word below the
+      -- link's registers.
+      send(C_ESC & "WFFFFFFCF0012" & C_W18 & "#" & cc("WFFFFFFCF0012" & C_W18));
       expect(C_ESC & "e5702#33", "e02 goes first");
+      -- The link's registers below R0 answer while running: the hidden
+      -- state, and the reserved words, which read 0 and take no write.
+      send(C_ESC & "WFFFFFFD2000100000005#" & cc("WFFFFFFD2000100000005"));
+      expect(C_ESC & "kFFFFFFD20001#" & cc("kFFFFFFD20001"), "W of a reserved word while running");
+      word_is(X"FFFFFFD2", X"00000000", "a reserved word while running");
 
       -- A wait that nothing ends (ISA.md §7.5): WAIT, then HALT. Bit 6
       -- reads 1 while the core waits, running and paused, and 0 while it
@@ -1132,6 +1221,54 @@ begin
       send(C_ESC & "RFFFFFFF00001#2D");
       expect(C_ESC & "rFFFFFFF0000100000009#D6", "bit 6 while held");
       quiet("the wait");
+
+      -- The hidden state and the requests (DEBUG.md §6), stepped through
+      -- an INT, its RTI, and an NMI that comes inside the routine, as
+      -- emulator/test/link.py does. MOVE R14, 1 at 0, INT 2 at 2, NOP and
+      -- HALT at 3, the routine of the INT at 5, NOP and RTI, and the NMI's
+      -- at 7, a HALT. VBASE is 1, so the vectors 2 and 3 are at 0x102.
+      -- An NMI and an IRQ, which E = 0 holds, come after the NOP of the
+      -- routine.
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold before the hidden state");
+      send(C_ESC & "W000000000008" & C_HIDDEN & "#" & cc("W000000000008" & C_HIDDEN));
+      expect(C_ESC & "k000000000008#" & cc("k000000000008"), "load the hidden state");
+      send(C_ESC & "W000001020002" & "00000005" & "00000007#" &
+           cc("W000001020002" & "00000005" & "00000007"));
+      expect(C_ESC & "k000001020002#" & cc("k000001020002"), "load its vectors");
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", "start the hidden state paused");
+      word_is(X"FFFFFFF0", X"00000018", "control at the start");
+      step("", "MOVE R14");
+      word_is(X"FFFFFFF0", X"00000018", "control after MOVE R14");
+      step("", "INT 2");
+      hidden_is(X"00000098", X"00000003", X"01000001", X"00000005", "in the routine");
+      step("", "the NOP of the routine");
+      hidden_is(X"00000098", X"00000003", X"01000001", X"00000006", "after the NOP");
+      nmi_raise <= '1';
+      irq_raise <= '1';
+      cycles(5);
+      word_is(X"FFFFFFF0", X"00000698", "control with the requests");
+      step("", "RTI");
+      hidden_is(X"00000718", X"00000003", X"01000001", X"00000003", "after RTI");
+      step("", "the NOP after RTI");
+      hidden_is(X"00000618", X"00000003", X"01000001", X"00000004", "after the NOP after RTI");
+      step("", "the NMI's entry");
+      hidden_is(X"00000498", X"00000004", X"01000001", X"00000007", "in the NMI's routine");
+      send(C_ESC & "WFFFFFFF0000100000038#BD");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "h01#C9", "the NMI's HALT");
+      hidden_is(X"0000008A", X"00000004", X"01000001", X"00000008", "halted");
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold after the hidden state");
+      -- Read only, and kept by the hold
+      send(C_ESC & "WFFFFFFD0000200000055" & "00000055#" & cc("WFFFFFFD0000200000055" & "00000055"));
+      expect(C_ESC & "kFFFFFFD00002#" & cc("kFFFFFFD00002"), "W of saved_pc and saved_sr");
+      send(C_ESC & "WFFFFFFF0000100000789#" & cc("WFFFFFFF0000100000789"));
+      expect(C_ESC & "kFFFFFFF00001#46", "W of bits 7 to 10");
+      hidden_is(X"0000008B", X"00000004", X"01000001", X"00000008", "held");
+      nmi_raise <= '0';
+      irq_raise <= '0';
+      quiet("the hidden state");
 
       -- The other halt reasons (DEBUG.md §6), each as niceemu halts with it:
       -- a reserved control word, INT inside a routine, and RTI outside one.

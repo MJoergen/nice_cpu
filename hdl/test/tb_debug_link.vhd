@@ -37,6 +37,9 @@
 --   the restart;
 -- * bit 6, the core's wait, which reads 0 while halted or held, and 1
 --   while running or paused (DEBUG.md §6);
+-- * the hidden state and the requests: bits 7 to 10, saved_pc, saved_sr,
+--   and the reserved words below R0, live while running, kept while held,
+--   read only, and the requests at 0 while held;
 -- * the pause: bit 4, the notice `p` after and before the answer, the memory,
 --   the registers, and the console while paused, the registers while the
 --   core runs, a hold and a start that
@@ -119,6 +122,13 @@ architecture simulation of tb_debug_link is
    signal pause      : std_logic;
    signal paused     : std_logic                      := '0';
    signal core_wait  : std_logic                      := '0';
+   -- The core's hidden state and the requests (DEBUG.md §6), set by p_test
+   signal core_isr   : std_logic                      := '0';
+   signal core_arti  : std_logic                      := '0';
+   signal core_spc   : std_logic_vector(31 downto 0)  := (others => '0');
+   signal core_ssr   : std_logic_vector(31 downto 0)  := (others => '0');
+   signal core_nmi   : std_logic                      := '0';
+   signal core_irq   : std_logic                      := '0';
    signal pause_wait : natural                        := 40;
    signal step_wait  : natural                        := 20;
    signal step_halts : std_logic                      := '0';
@@ -221,6 +231,12 @@ begin
          pause_o        => pause,
          paused_i       => paused,
          waiting_i      => core_wait,
+         in_service_i   => core_isr,
+         after_rti_i    => core_arti,
+         saved_pc_i     => core_spc,
+         saved_sr_i     => core_ssr,
+         nmi_pending_i  => core_nmi,
+         irq_pending_i  => core_irq,
          regs_i         => regs,
          brk_addr_o     => brk_addr,
          brk_en_o       => brk_en,
@@ -1059,6 +1075,32 @@ begin
       check_mem(257, X"66666666", "write while paused");
       send(C_ESC & "RFFFFFFEF0001#42");
       expect(C_ESC & "rFFFFFFEF00011234560F#0D", "R15 while paused");
+      -- The hidden state and the requests while paused: bits 7 to 10, and
+      -- saved_pc and saved_sr. The reserved words read 0, and none of them
+      -- takes a write.
+      core_isr  <= '1';
+      core_arti <= '1';
+      core_spc  <= X"00000123";
+      core_ssr  <= X"81000004";
+      core_nmi  <= '1';
+      core_irq  <= '1';
+      cycles(2);
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000798#E5", "control with the hidden state");
+      send(C_ESC & "RFFFFFFD00003#2D");
+      expect(C_ESC & "rFFFFFFD00003000001238100000400000000#E0", "saved_pc and saved_sr");
+      send(C_ESC & "WFFFFFFD00003000000550000005500000055#D0");
+      expect(C_ESC & "kFFFFFFD00003#46", "W of saved_pc to a reserved word");
+      send(C_ESC & "WFFFFFFF0000100000798#CA");
+      expect(C_ESC & "kFFFFFFF00001#46", "W of bits 7 to 10");
+      send(C_ESC & "RFFFFFFD00003#2D");
+      expect(C_ESC & "rFFFFFFD00003000001238100000400000000#E0", "read only");
+      -- Only bit 7 and NMI
+      core_arti <= '0';
+      core_irq  <= '0';
+      cycles(2);
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000298#E0", "control with in_service and an NMI");
       -- A console byte waits for the program.
       send("K");
       expect_in("K", "console byte while paused");
@@ -1072,8 +1114,15 @@ begin
          severity failure;
       send(C_ESC & "RFFFFFFEF0001#42");
       expect(C_ESC & "rFFFFFFEF00011234560F#0D", "R15 kept by a hold");
+      -- The hidden state is kept, as R15, and the requests read 0.
+      core_isr <= '0';
+      core_spc <= X"00000000";
+      core_ssr <= X"00000000";
+      send(C_ESC & "RFFFFFFD00002#2C");
+      expect(C_ESC & "rFFFFFFD000020000012381000004#5F", "saved_pc kept by a hold");
       send(C_ESC & "RFFFFFFF00001#2D");
-      expect(C_ESC & "rFFFFFFF0000100000009#D6", "control held after a pause");
+      expect(C_ESC & "rFFFFFFF0000100000089#DE", "control held after a pause");
+      core_nmi <= '0';
       quiet("hold paused");
 
       -- A request while held does not read 1, and the start pauses before
@@ -1081,7 +1130,7 @@ begin
       send(C_ESC & "WFFFFFFF0000100000019#BC");
       expect(C_ESC & "kFFFFFFF00001#46", "request while held");
       send(C_ESC & "RFFFFFFF00001#2D");
-      expect(C_ESC & "rFFFFFFF0000100000009#D6", "request reads 0 while held");
+      expect(C_ESC & "rFFFFFFF0000100000089#DE", "request reads 0 while held");
       quiet("request while held");
       send(C_ESC & "WFFFFFFF0000100000018#BB");
       expect(C_ESC & "kFFFFFFF00001#46", "start paused");
@@ -1098,6 +1147,18 @@ begin
       expect(C_ESC & "e5202#2E", "e02 after go on");
       send(C_ESC & "RFFFFFFF00001#2D");
       expect(C_ESC & "rFFFFFFF0000100000008#D5", "control after go on");
+      -- While the core runs, the hidden state and the requests are live.
+      core_isr <= '1';
+      core_spc <= X"00000456";
+      core_irq <= '1';
+      cycles(2);
+      send(C_ESC & "RFFFFFFF00001#2D");
+      expect(C_ESC & "rFFFFFFF0000100000488#E1", "control with the live hidden state");
+      send(C_ESC & "RFFFFFFD00001#2B");
+      expect(C_ESC & "rFFFFFFD0000100000456#DA", "the live saved_pc");
+      core_isr <= '0';
+      core_spc <= X"00000000";
+      core_irq <= '0';
       -- The registers are the running core's (DEBUG.md §6).
       send(C_ESC & "RFFFFFFEE0001#41");
       expect(C_ESC & "rFFFFFFEE00017777777E#27", "R14 while running");
@@ -1551,7 +1612,9 @@ begin
       expect(C_ESC & "e5704#35", "e04 while running");
       send(C_ESC & "WFFFFFFE0000100000005#B6");
       expect(C_ESC & "e5704#35", "e04 for R0 while running");
-      send(C_ESC & "WFFFFFFDF00020000000500000005#51");
+      send(C_ESC & "WFFFFFFCF0012" & "00000005000000050000000500000005000000050000000500000005" &
+           "00000005000000050000000500000005000000050000000500000005" &
+           "00000005000000050000000500000005#A1");
       expect(C_ESC & "e5702#33", "e02 before e04");
       side('1', X"FFFFFFE3", X"00000005", '1', X"00000000", "side register write while running");
       side('1', X"FFFFFFF0", X"00000018", '0', X"00000000", "side pause request for the writes");

@@ -61,7 +61,8 @@ has watchpoints (#146). niceemu reports the lowest SP with `--stack`
   `wch_addr_i` and `wch_en_i` and the outputs `wch_hit_o` and
   `wch_pc_o` for the watchpoints. `debug_link.vhd` takes them on
   inputs that default to 0. NiceMonMEGA65 follows with
-  MJoergen/NiceMonMEGA65#93, #98, and #99.
+  MJoergen/NiceMonMEGA65#93, MJoergen/NiceMonMEGA65#98, and
+  MJoergen/NiceMonMEGA65#99.
 - The debug link is version 7, a new minor of major 0 (DEBUG.md §9).
   Its registers start at `0xFFFFFFD0`, where they started at
   `0xFFFFFFE0`, so a link request to `0xFFFFFFD0`–`0xFFFFFFDF` reaches
@@ -75,7 +76,8 @@ has watchpoints (#146). niceemu reports the lowest SP with `--stack`
   leave `hdl/src` as it is. A program whose data is at an address of
   top nibble 1 to 5, as R14 with E = 1 or with N set as a pointer, or a
   VBASE of `0x100000`–`0x5FFFFF`, reaches the windows there.
-  NiceMonMEGA65 follows with MJoergen/NiceMonMEGA65#90 and #97.
+  NiceMonMEGA65 follows with MJoergen/NiceMonMEGA65#90 and
+  MJoergen/NiceMonMEGA65#97.
 - `nice_screen_clear` writes `0x000FFF20`, white on black, where it
   wrote `0x20` (#148). A program that reads a cleared word back sees
   the difference.

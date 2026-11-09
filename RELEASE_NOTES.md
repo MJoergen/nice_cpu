@@ -35,7 +35,7 @@ pin each are:
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
 
-## V2.0 (2026-11-08)
+## V2.0 (2026-11-09)
 
 `WAIT` waits for an interrupt (#133). Five byte windows let a data
 access take a byte address, and nicewasm uses them with
@@ -79,6 +79,11 @@ has watchpoints (#146). niceemu reports the lowest SP with `--stack`
 - `nice_screen_clear` writes `0x000FFF20`, white on black, where it
   wrote `0x20` (#148). A program that reads a cleared word back sees
   the difference.
+- With 4 watchpoints, the pipelined core misses the budget of its
+  inputs and outputs in the `timing` flow on the MEGA65 (#149). With
+  none, the default of `G_WATCHES`, it meets it in both flows. So
+  NiceMonMEGA65, which does not wire the watchpoints yet, keeps the
+  slack of its ports until it turns them on.
 - Zig 0.17.0, as in V1.9.
 
 **Specification and documents**
@@ -195,7 +200,12 @@ has watchpoints (#146). niceemu reports the lowest SP with `--stack`
 - `make timing` on the MEGA65, in the default flow, with 4 breakpoints
   and 4 watchpoints: the core alone has +0.396 ns of slack, from
   +0.219 ns, and its inputs and outputs leave 2.251 and 2.539 ns, from
-  2.503 and 2.674 ns.
+  2.503 and 2.674 ns. In the `timing` flow they leave 1.174 and 2.035
+  ns, which misses the budget of 1.5 and 2.2 ns, with the core at
+  +0.102 ns. The worst paths run from `pause_i` and from the
+  watchpoints' `w_r.wch_any`, which fa8b2fa added (#149). With no
+  watchpoints the `timing` flow leaves 2.176 and 2.422 ns, with the
+  core at +0.077 ns, which meets it.
 
 **Benchmarks**
 

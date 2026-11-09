@@ -224,15 +224,31 @@ def make_step(name: str, args: list[str], log: Path) -> dict[str, object]:
     return {"name": name, "seconds": round(secs)}
 
 
+# The arguments of make -C hdl timing, all named, so that timing_dir does
+# not depend on the Makefile's defaults. test.py checks timing_dir against
+# the directory make -n names.
+TIMING_BREAKS = 4
+TIMING_WATCHES = 4
+
+
+def timing_args(board: str) -> list[str]:
+    return [f"BOARD={board}", "FLOW=default", f"BREAKS={TIMING_BREAKS}", f"WATCHES={TIMING_WATCHES}"]
+
+
+def timing_dir(board: str) -> Path:
+    """The directory make -C hdl timing writes to, its TIMING_DIR."""
+    return ROOT / "hdl" / "build" / "timing" / f"{board}-default-{TIMING_BREAKS}-{TIMING_WATCHES}"
+
+
 def timing_budget(board: str = "mega65") -> dict[str, object]:
     """Runs make -C hdl timing and reads the budget it judged. Never fails
     the release: a miss, a Vivado error, or a skip is recorded. It prints
     nothing, as it runs beside make formal; show_timing shows the result."""
-    out_dir = ROOT / "hdl" / "build" / "timing" / f"{board}-default-4"
+    out_dir = timing_dir(board)
     (out_dir / "budget.json").unlink(missing_ok=True)
     log = BUILD / "timing.log"
     with open(log, "w") as f:
-        p = subprocess.run(["make", "-C", "hdl", "timing", f"BOARD={board}", "FLOW=default"],
+        p = subprocess.run(["make", "-C", "hdl", "timing", *timing_args(board)],
                            cwd=ROOT, stdout=f, stderr=subprocess.STDOUT)
     try:
         result = json.loads((out_dir / "budget.json").read_text())

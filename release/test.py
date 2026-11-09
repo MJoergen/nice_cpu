@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Tests of the parts of release.py that need no repository, tools, or network."""
+"""Tests of the parts of release.py that need no tools or network, but
+for make -n on hdl/Makefile."""
 
 import subprocess
 import sys
@@ -156,7 +157,8 @@ def test_timing_budget() -> None:
     """A miss, an error, and a met budget are recorded, and none raises."""
     with tempfile.TemporaryDirectory() as t:
         root = Path(t)
-        out = root / "hdl" / "build" / "timing" / "mega65-default-4"
+        with mock.patch.object(release, "ROOT", root):
+            out = release.timing_dir("mega65")
         out.mkdir(parents=True)
         (root / "release" / "build").mkdir(parents=True)
         code = 0
@@ -181,6 +183,17 @@ def test_timing_budget() -> None:
             check(release.timing_budget()["status"] == "error", "a stale budget.json is not read")
 
 
-for t in (test_timing_budget, test_figure_lines, test_bench_totals, test_next_tag, test_ci_status, test_notes_section, test_version, test_stamp_covers):
+def test_timing_dir() -> None:
+    """timing_dir is the directory that make -C hdl timing writes to, as
+    make -n prints it from the Makefile's TIMING_DIR."""
+    hdl = release.ROOT / "hdl"
+    p = subprocess.run(["make", "-s", "-n", "-C", str(hdl), "timing", *release.timing_args("mega65")],
+                       capture_output=True, text=True, check=True)
+    made = {hdl / w for line in p.stdout.splitlines() if line.startswith("mkdir -p ")
+            for w in line.split()[2:]}
+    check(made == {release.timing_dir("mega65")}, f"make timing writes to {made}")
+
+
+for t in (test_timing_dir, test_timing_budget, test_figure_lines, test_bench_totals, test_next_tag, test_ci_status, test_notes_section, test_version, test_stamp_covers):
     t()
 print("release tests passed")

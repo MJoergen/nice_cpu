@@ -432,7 +432,8 @@ PC, offset` taken when the offset is negative, and a predicted jump costs
 what an unconditional jump to a label does when taken, a bubble of 3
 cycles in a stream without reads and 2 behind a read, which holds the
 stream up a cycle (`hdl/test/bubble.nasm`, MICROARCH.md §5.4). So the `br_if` becomes `?cc ADD R15,
-R15, top-next`, where `next` is a new label right after it. Each round of
+R15, top-next`, where `next` is a new label right after it, written as
+`?cc JMPR top` at the end (ISA.md §10.1). Each round of
 the loop then costs two cycles and one instruction less than a skipped
 conditional jump out and an unconditional one back, and leaving it, a
 mispredict, costs six cycles more, as a taken conditional jump did. If an
@@ -560,11 +561,13 @@ The passes see each idiom written out: a jump is `MOVE R15, x`, a
 compare `SUB[M] R0, a, b`, and a call `ADD @--R13, n, R15` then `MOVE
 R15, f`. Once a function's code and the helpers are lines, nicewasm
 writes the idioms as the pseudo-instructions of ISA.md §10.1, so that
-the output reads like hand-written NICE assembly: `JMP`, `CMP`, `TST`,
-`PUSH`, `POP`, `CLR`, `NOP`, `RET`, and `CALL`. Each assembles to the
-same words. A `CALL` stands for the two instructions only where they
+the output reads like hand-written NICE assembly: `JMP`, `JMPR`, `CMP`,
+`TST`, `PUSH`, `POP`, `CLR`, `NOP`, `RET`, and `CALL`. Each assembles to
+the same words. A `CALL` stands for the two instructions only where they
 follow each other with one condition, and the `ADD` pushes the size of
-the jump in words. A line with a comment stays as it is. So a call and
+the jump in words. A `JMPR top` stands for `ADD R15, R15, top-next` only
+where the label `next` comes right after it and nothing else names it,
+and that label goes. A line with a comment stays as it is. So a call and
 the return are:
 
                     CALL    W.f12
@@ -578,11 +581,14 @@ one follows, and the jumps name it `:-`. So does a label in the loop,
 or right after its jump back, that only jumps in the loop name, as `:+`
 from above it.
 A reference with more than two signs, such as `:---`, keeps the name.
-An expression holds one anonymous reference only, so a predicted jump
-back keeps the name of the loop's top, and its `next` becomes `:`:
+A `JMPR` names its target as a `JMP` does, so a short loop that the
+predicted jump closes is:
 
-            ?!Z     ADD     R15, R15, W.f3.L0-:+
-    :
+    :               SUB[M]  R3, R3, 1
+            ?!Z     JMPR    :-
+
+A relative jump that is still an `ADD` keeps the name of the loop's
+top, since an expression holds one anonymous reference only.
 
 A function's label, a label that starts with `_`, and a label that a
 `.DAT` or an operand other than a jump's target names keep their

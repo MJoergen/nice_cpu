@@ -185,7 +185,9 @@ def pseudo_instructions() -> None:
     """The output's idioms become the pseudo-instructions of ISA.md §10.1,
     which assemble to the same words. A CALL needs its two instructions
     together, with one condition, and the size of the jump as the ADD's
-    constant. A line with a comment, or that is no idiom, stays."""
+    constant. A relative jump becomes JMPR when the label of its next
+    comes right after it, comments aside, and nothing else names it; that
+    label goes. A line with a comment, or that is no idiom, stays."""
     lines = [instr("ADD", "@--R13", "2", "R15"), instr("MOVE", "R15", "f"),
              instr("?Z ADD", "@--R13", "1", "R15"), instr("?Z MOVE", "R15", "R3"),
              instr("ADD", "@--R13", "2", "R15"), instr("?Z MOVE", "R15", "f"),
@@ -195,7 +197,10 @@ def pseudo_instructions() -> None:
              instr("MOVE", "@--R13", "R7"), instr("MOVE", "R7", "@R13++"),
              instr("MOVE", "R4", "0"), instr("MOVE", "R0", "R0"),
              instr("SUB[CM]", "R0", "R1", "7"), instr("MOVE", "R5", "R6"),
-             instr("MOVE", "R15", "x") + "  ; jump", "; MOVE R15, x"]
+             instr("MOVE", "R15", "x") + "  ; jump", "; MOVE R15, x",
+             "W.f0.T", instr("?!Z ADD", "R15", "R15", "W.f0.T-W.f0.N"), "; the next", "W.f0.N",
+             instr("ADD", "R15", "R15", "W.f0.T-W.f0.M"), "W.f0.M", instr("MOVE", "R2", "W.f0.M"),
+             instr("?C ADD", "R15", "R15", "W.f0.T-W.f0.P"), instr("MOVE", "R1", "R2"), "W.f0.P"]
     out = pseudo(lines)
     assert [line.strip() for line in out] == [
         "CALL    f", "?Z      CALL    R3",
@@ -204,7 +209,10 @@ def pseudo_instructions() -> None:
         "?!C     JMP     x", "RET", "CMP     R1, 7", "TST     R2",
         "PUSH    R7", "POP     R7", "CLR     R4", "NOP",
         "SUB[CM] R0, R1, 7", "MOVE    R5, R6",
-        "MOVE    R15, x  ; jump", "; MOVE R15, x"], out
+        "MOVE    R15, x  ; jump", "; MOVE R15, x",
+        "W.f0.T", "?!Z     JMPR    W.f0.T", "; the next",
+        "ADD     R15, R15, W.f0.T-W.f0.M", "W.f0.M", "MOVE    R2, W.f0.M",
+        "?C      ADD     R15, R15, W.f0.T-W.f0.P", "MOVE    R1, R2", "W.f0.P"], out
     assert assembled(out) == assembled(lines)
 
 
@@ -212,7 +220,8 @@ def anonymous_short_loops() -> None:
     """The labels of a short loop become anonymous (ISA.md §10.1), which
     assembles to the same words: its top, and its exit, that only jumps
     in it name, on the line of the next instruction. A relative jump back
-    keeps its top, and its next label becomes ':'. A jump back over more
+    keeps its top, and its next label becomes ':'. A JMPR is a jump as a
+    JMP is. A jump back over more
     than SHORT_LOOP instructions, a label that an operand other than a
     jump's target names, and a function's label keep their names."""
     lines = ["W.f0", "W.f0.L0",
@@ -224,6 +233,7 @@ def anonymous_short_loops() -> None:
              "W.f0.L3"] + [instr("ADD", "R4", "R4", "1")] * (SHORT_LOOP + 1) + [
              instr("JMP", "W.f0.L3"),
              "W.f0.L4", instr("MOVE", "R2", "W.f0.L4"), instr("JMP", "W.f0.L4"),
+             "W.f0.L5", instr("SUB[M]", "R3", "R3", "1"), instr("?!Z JMPR", "W.f0.L5"),
              instr("JMP", "W.f0")]
     out = anonymous_labels(lines)
     assert [line.strip() for line in out] == [
@@ -232,6 +242,7 @@ def anonymous_short_loops() -> None:
         "W.f0.L2", "SUB[M]  R3, R3, 1", "?!Z     ADD     R15, R15, W.f0.L2-:+", ":",
         "W.f0.L3"] + ["ADD     R4, R4, 1"] * (SHORT_LOOP + 1) + [
         "JMP     W.f0.L3", "W.f0.L4", "MOVE    R2, W.f0.L4", "JMP     W.f0.L4",
+        ":               SUB[M]  R3, R3, 1", "?!Z     JMPR    :-",
         "JMP     W.f0"], out
     assert assembled(out) == assembled(lines)
 

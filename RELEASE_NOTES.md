@@ -62,6 +62,12 @@ The assembler has the pseudo-instruction `JMPR`, a relative jump
   `disassemble()`, and with it nicedbg's listing. Any other `ADD` to R15
   stays an `ADD`.
 
+**Translator (`nicewasm`)**
+
+- The predicted jump back at the end of a loop is `JMPR top`, where it
+  was `ADD R15, R15, top-next` with a label after it, and a short loop
+  names its top `:-` (#154). The words are the same.
+
 ## V2.0 (2026-11-09)
 
 `WAIT` waits for an interrupt (#133). Five byte windows let a data

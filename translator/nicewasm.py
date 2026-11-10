@@ -805,6 +805,7 @@ def instr(mnemonic: str, *operands: str) -> str:
 
 
 INSTR_LINE = re.compile(r" {8}(\?\S+)? *([A-Z][\w\[\]]*) +([^;]*?)\Z")
+RELATIVE = re.compile(r"([A-Za-z_.][\w.]*)-([A-Za-z_.][\w.]*)")  # top-next of a jump back
 
 
 def pseudo(lines: List[str]) -> List[str]:
@@ -812,14 +813,25 @@ def pseudo(lines: List[str]) -> List[str]:
     ISA.md §10.1, which assemble to the same words. The passes see the
     idioms written out, and this runs on the lines once they are done.
     CALL stands for ADD @--R13, n, R15 then MOVE R15, target with the
-    same condition, where n is the size of the MOVE in words."""
+    same condition, where n is the size of the MOVE in words. JMPR top
+    stands for ADD R15, R15, top-next, where the label next comes right
+    after it, blank lines and comments aside, and nothing else names it:
+    that label goes."""
     def parse(line: str) -> Optional[Tuple[str, str, List[str]]]:
         m = INSTR_LINE.match(line)
         return None if m is None else (m.group(1) or "", m.group(2), m.group(3).split(", "))
 
+    uses: Dict[str, int] = {}  # how many lines name each word, labels included
+    for line in lines:
+        for name in set(LABEL_NAME.findall(line.split(";")[0])):
+            uses[name] = uses.get(name, 0) + 1
+    gone: Set[int] = set()  # the lines of the labels that go
     out: List[str] = []
     k = 0
     while k < len(lines):
+        if k in gone:
+            k += 1
+            continue
         p = parse(lines[k])
         k += 1
         if p is None:
@@ -832,6 +844,13 @@ def pseudo(lines: List[str]) -> List[str]:
                 and ops[1] == str(1 + has_word(q[2][1]))):
             op, ops = "CALL", [q[2][1]]
             k += 1
+        elif (op == "ADD" and ops[:2] == ["R15", "R15"] and len(ops) == 3
+              and (m := RELATIVE.fullmatch(ops[2])) is not None
+              and (nxt := next((j for j in range(k, len(lines)) if lines[j].strip()
+                                and not lines[j].lstrip().startswith(";")), None)) is not None
+              and lines[nxt] == m.group(2) and uses.get(m.group(2)) == 2):
+            op, ops = "JMPR", [m.group(1)]
+            gone.add(nxt)
         elif op == "MOVE" and ops == ["R15", "@R13++"]:
             op, ops = "RET", []
         elif op == "MOVE" and ops == ["R0", "R0"]:
@@ -869,9 +888,10 @@ def anonymous_labels(lines: List[str]) -> List[str]:
     is a jump back to a label over at most SHORT_LOOP instructions. Its
     label becomes ':' if every reference to it is a jump in the loop, and
     so does a label in the loop or just after it that only jumps in the
-    loop go to. A jump back that is relative, ADD R15, R15, top-next,
-    keeps top, as an expression may hold one anonymous reference only, and
-    next becomes ':' if nothing else names it. A function's label, and a
+    loop go to. A JMPR names its target as a JMP does. A relative jump
+    back that pseudo() left as ADD R15, R15, top-next keeps top, as an
+    expression may hold one anonymous reference only, and next becomes ':'
+    if nothing else names it. A function's label, and a
     name that starts with '_', stay. A reference names the nearest
     anonymous label above, :-, or below, :+, and one more sign for each
     one in between, up to two."""
@@ -902,7 +922,7 @@ def anonymous_labels(lines: List[str]) -> List[str]:
             for j, o in enumerate(ops):
                 names = [x for x in LABEL_NAME.findall(o) if x in refs]
                 for name in names:
-                    jump = (mn == "JMP" or mn in ("MOVE", "ADD", "SUB") and j >= 1
+                    jump = (mn in ("JMP", "JMPR") or mn in ("MOVE", "ADD", "SUB") and j >= 1
                             and ops[0] == pc) and "@" not in o
                     form = "whole" if o == name else "bad"
                     if (jump and op == "ADD" and j == 2 and ops[1] == pc

@@ -37,12 +37,24 @@ The others pin the tagged commit.
 
 ## V2.1 (2026-11-10)
 
-The assembler has the pseudo-instruction `JMPR`, a relative jump
-(#154). A host can raise an NMI over the debug link, which is version 8
-(#131).
+The console raises an interrupt when input comes, so that a program can
+wait for a key with `WAIT` (#153). The assembler has the
+pseudo-instruction `JMPR`, a relative jump (#154). A host can raise an
+NMI over the debug link, which is version 8 (#131). CoreMark runs beside
+Dhrystone (#143).
 
 **Upgrade notes.**
 
+- `0xFFFFFF02` is `CONSOLE_IRQ`, where it was a word reserved for I/O
+  that the emulator kept as memory. A program that stored a word there
+  with bit 8 set now enables the console's interrupt.
+- A request merges only with a pending one of its own source (ISA.md
+  §7.1), where every IRQ merged with any pending one. With the timer the
+  only source before, nothing that ran changes.
+- The cores' contract b lets the IRQ vector change while `irq_valid_i`
+  is high, as `irq_merge.vhd` changes it; the cores take the vector of
+  the cycle of `irq_ready_o`. A device that kept it stable still meets
+  the contract. The NMI vector stays stable until ready.
 - `JMPR` is a mnemonic, in any case, so a program that uses it as a
   label or an `.EQU` name does not assemble. No file of the repository
   did.
@@ -54,6 +66,17 @@ The assembler has the pseudo-instruction `JMPR`, a relative jump
 
 **Specification and documents**
 
+- ISA.md §7.1: requests of different sources do not merge. Each stays
+  pending, and they are taken in turn, in an order that the system
+  sets (#153).
+- SYSTEM.md §1.9: `CONSOLE_IRQ` at `0xFFFFFF02`, a vector in bits 7–0
+  and an enable in bit 8, with which the console raises IRQ on an edge:
+  when a byte enters an input where none waits, when the input ends, or
+  when the enable is set while input waits. It gives the loop that waits
+  for a byte with `WAIT`, and how to drain a stale request before a
+  hand-over. §4: the timer and the console are the sources of IRQ, the
+  timer's first. §8: a system may leave the receive interrupt out, and
+  NiceMonMEGA65 does not have it yet (#153, MJoergen/NiceMonMEGA65#104).
 - ISA.md §10.1: `JMPR target` is `ADD R15, R15, target-next`, where next
   is the address after it, so a loop's back edge that DECODE predicts
   needs no label after the jump. It takes an address, a condition, and
@@ -78,6 +101,11 @@ The assembler has the pseudo-instruction `JMPR`, a relative jump
 
 **Emulator (`niceemu`)**
 
+- The console's receive interrupt of SYSTEM.md §1.9 (#153). IRQ has a
+  pending request for each source: the timer's, which `--irq` raises
+  too, and the console's, taken after it. A `WAIT` with the enable set
+  sleeps under `--window` until a key or a byte of the host comes. The
+  probe `test/conirq.nasm` shows the rules and the order.
 - `--link` serves link version 8, with the NMI request, a source after
   that of `--nmi` (#131). The `Pending:` line after a run names a
   request of either.
@@ -88,12 +116,6 @@ The assembler has the pseudo-instruction `JMPR`, a relative jump
   `raise_nmi()`, which does not resend a write that was not answered,
   as the processor may have taken it.
 
-**Translator (`nicewasm`)**
-
-- The predicted jump back at the end of a loop is `JMPR top`, where it
-  was `ADD R15, R15, top-next` with a label after it, and a short loop
-  names its top `:-` (#154). The words are the same.
-
 **Runtime (`runtime/`)**
 
 - The ten loops of `lib.nasm`, `muldiv_soft.nasm`, and `trapmsg.nasm`
@@ -101,8 +123,21 @@ The assembler has the pseudo-instruction `JMPR`, a relative jump
   closed with `JMP` (#60, #154). The words change, the addresses and the
   steps do not.
 
+**Translator (`nicewasm`)**
+
+- The predicted jump back at the end of a loop is `JMPR top`, where it
+  was `ADD R15, R15, top-next` with a label after it, and a short loop
+  names its top `:-` (#154). The words are the same.
+
 **FPGA cores (`hdl/`)**
 
+- `src/console_irq.vhd` holds `CONSOLE_IRQ` and raises the console's
+  request, and `src/irq_merge.vhd` joins the timer's and the console's
+  into the core's IRQ port, the timer's first, so that the two never
+  merge (#153). `tb_core` runs the probe `conirq` on both cores, plain,
+  on a stalling memory, and with held pauses, compared with niceemu.
+  Formal proofs cover both units, and the cores' contract b now lets the
+  IRQ vector change before ready.
 - `debug_link.vhd` is version 8, with the NMI request on
   `nmi_valid_o`, `nmi_ready_i`, and `nmi_vector_o`, held with its
   vector until the core takes it, and dropped by a hold (#131).
@@ -121,6 +156,20 @@ The assembler has the pseudo-instruction `JMPR`, a relative jump
   watchpoints is placement: with 2 breakpoints and no watchpoints it
   misses too, and with 2 breakpoints and 4 it has the best core slack
   of all (#149).
+
+**Benchmarks**
+
+- CoreMark by EEMBC, in `bench/coremark/`, its upstream files unchanged
+  but for the port in `core_portme.c` and `core_portme.h` (#143). The
+  port reads the seeds and the iterations from the console, so one
+  `coremark.wasm` serves every run, and times with the cycle counter.
+  `coremarkcheck.py` checks the CRCs. `make test` runs both sets of seeds
+  on the emulator, and `make core-coremark` one iteration on a core.
+  Cycles per iteration: 675095 on the emulator, 7898812 on the
+  multi-cycle core, and 1065384 on the pipelined core, 0.938
+  CoreMark/MHz. These are not CoreMark scores, which need a board and a
+  run of 10 seconds or more. Arm gives 2.33 CoreMark/MHz for the
+  Cortex-M0.
 
 ## V2.0 (2026-11-09)
 

@@ -156,7 +156,11 @@ Vivado 2025.1 is installed at `/opt/Xilinx/2025.1/Vivado/bin/vivado`, not on PAT
   the operands in column 24, and the comment in column 40. A label of 8 or
   more characters goes on a line of its own. `assembler/nicefmt.py --write`
   fixes a file, and `make test` checks every `.nasm` file. Listings in
-  docs and strings in Python are not checked.
+  docs and strings in Python are not checked. The labels of a short
+  loop, up to some 10 instructions, are anonymous (`:`, `:-`, and `:+`,
+  ISA.md §10.1), unless something else names them, such as a test by its
+  symbol. Names are for the places reached from afar. The beginner's
+  slides in `doc/intro/` keep their names, and so do the 2004 examples.
 - American spelling everywhere, in docs, comments, and identifiers
   ("behavior", "color", "analyze", "labeled", "gray").
 - Commit subjects: `niceasm: ...`, `niceemu: ...`, `nicedbg: ...`, `runtime: ...`, `nicewasm: ...`, `nicecc: ...`, `nicehdl: ...`, `bench: ...`, `demo: ...`, `release: ...`, `intro: ...`, `doc: ...`, `ISA: ...`, `Review: ...`.

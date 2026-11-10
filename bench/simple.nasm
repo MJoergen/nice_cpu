@@ -16,7 +16,7 @@
 ;   its range and jumps through a table, and each case jumps back to the
 ;   top of the loop.
 ; - A loop tested at the bottom, in the library routines, closes with
-;   ADD PC, PC, label-next, as in hand.nasm, which DECODE predicts taken
+;   JMPR label, as in hand.nasm, which DECODE predicts taken
 ;   (MICROARCH.md §5.4). The other jumps back are MOVE PC, label.
 ; - The byte buffer is unpacked to one byte per word before the strings
 ;   phase, outside its timing, as unsigned char buf[] is with CHAR_BIT = 32.
@@ -194,14 +194,14 @@ pu.loop         MOVE    @MPU_C_LO, R1
                 MOVE[M] R2, @UDIV64_Q_HI
         ?!Z     JMP     pu.loop
                 TST     R1
-        ?!Z     ADD     PC, PC, pu.loop-:+
-:               SUB     R4, digits.end, R3  ; the digits
+        ?!Z     JMPR    pu.loop
+                SUB     R4, digits.end, R3  ; the digits
                 SUB[M]  R4, 12, R4      ; the spaces before them
         ?C      JMP     pu.out          ; more than 12 digits
         ?Z      JMP     pu.out
 pu.pad          MOVE    @CONSOLE, 32
                 DEC[M]  R4, R4
-        ?!Z     ADD     PC, PC, pu.pad-pu.out
+        ?!Z     JMPR    pu.pad
 pu.out          MOVE    R1, R3
                 JMP     puts
 
@@ -216,8 +216,8 @@ ph.loop         ROL     R1, R1, 4
         ?!C     ADD     R2, R2, 39      ; 58 + 39 = 97 = 'a'
                 MOVE    @CONSOLE, R2
                 DEC[M]  R3, R3
-        ?!Z     ADD     PC, PC, ph.loop-:+
-:               RET
+        ?!Z     JMPR    ph.loop
+                RET
 
 ; ---------------------------------------------------------------------------
 ; rng64: xorshift64*, with the state in R2:R1. Each value takes three
@@ -293,9 +293,9 @@ rng.buf
                 MOVE    @R7++, R5
                 MOVE    @R7++, R6
                 DEC[M]  R8, R8
-        ?!Z     ADD     PC, PC, rng.buf-:+
+        ?!Z     JMPR    rng.buf
 
-:               MOVE    R7, arr
+                MOVE    R7, arr
                 MOVE    R8, 512
 rng.arr
                 SHR     R3, R1, 12
@@ -347,8 +347,8 @@ rng.arr
                 MOVE    @MPU_A, R2
                 ADD     @R7++, R6, @UMUL_LO
                 DEC[M]  R8, R8
-        ?!Z     ADD     PC, PC, rng.arr-:+
-:               XOR     R1, R1, R2      ; the two words of the state
+        ?!Z     JMPR    rng.arr
+                XOR     R1, R1, R2      ; the two words of the state
                 RET
 
 ; ---------------------------------------------------------------------------
@@ -375,9 +375,9 @@ crc.tab         SUB     R2, R3, table   ; the index
         ?C      XOR     R2, R2, 0xEDB88320
                 MOVE    @R3++, R2
                 CMP     R3, table+256
-        ?!Z     ADD     PC, PC, crc.tab-:+
+        ?!Z     JMPR    crc.tab
 
-:               MOVE    R1, 0xFFFFFFFF  ; the crc
+                MOVE    R1, 0xFFFFFFFF  ; the crc
                 MOVE    R3, buf
                 MOVE    R5, BUF_WORDS
 crc.sum         MOVE    R2, @R3++
@@ -401,8 +401,8 @@ crc.sum         MOVE    R2, @R3++
                 SHR     R1, R1, 8
                 XOR     R1, R1, @table[R4]
                 DEC[M]  R5, R5
-        ?!Z     ADD     PC, PC, crc.sum-:+
-:               NOT     R1, R1
+        ?!Z     JMPR    crc.sum
+                NOT     R1, R1
                 RET
 
 ; ---------------------------------------------------------------------------
@@ -426,7 +426,7 @@ bst.walk
                 ADD     R2, R3, 3       ; the right link
         ?N      SUB     R2, R2, 1       ; or the left one if key is less
                 MOVE[M] R3, @R2
-        ?!Z     ADD     PC, PC, bst.walk-bst.new
+        ?!Z     JMPR    bst.walk
 bst.new         MOVE    @R2, R11
                 MOVE    @R11++, R1
                 MOVE    @R11++, 1
@@ -434,9 +434,9 @@ bst.new         MOVE    @R2, R11
                 MOVE    @R11++, 0
 bst.next
                 CMP     R9, R10
-        ?!Z     ADD     PC, PC, bst.ins-:+
+        ?!Z     JMPR    bst.ins
 
-:               MOVE    R2, 1           ; the depth
+                MOVE    R2, 1           ; the depth
                 MOVE    R3, FNV_BASIS   ; the hash
                 MOVE[M] R1, @root
         ?!Z     CALL    bst.walkf
@@ -481,18 +481,18 @@ hs.build
                 MOVE    R1, R8
                 CALL    hs.sift
                 DEC[M]  R8, R8
-        ?!C     ADD     PC, PC, hs.build-:+  ; until i was 0
+        ?!C     JMPR    hs.build        ; until i was 0
 
-:               MOVE    R2, ARR_WORDS-1  ; end
+                MOVE    R2, ARR_WORDS-1  ; end
 hs.ext          MOVE    R3, @arr
                 MOVE    @arr, @arr[R2]
                 MOVE    @arr[R2], R3
                 MOVE    R1, 0
                 CALL    hs.sift         ; sift(0, end)
                 DEC[M]  R2, R2
-        ?!Z     ADD     PC, PC, hs.ext-:+
+        ?!Z     JMPR    hs.ext
 
-:               MOVE    @MPU_B, FNV_PRIME
+                MOVE    @MPU_B, FNV_PRIME
                 MOVE    R5, FNV_BASIS
                 MOVE    R2, arr
                 MOVE    R4, @arr        ; the previous element
@@ -505,8 +505,8 @@ hs.chk          MOVE    R3, @R2++
                 XOR     @MPU_A, R5, R3
                 MOVE    R5, @UMUL_LO
                 DEC[M]  R6, R6
-        ?!Z     ADD     PC, PC, hs.chk-:+
-:               MOVE    R1, R5
+        ?!Z     JMPR    hs.chk
+                MOVE    R1, R5
 hs.ret          RET
 hs.bad          MOVE    R1, 0
                 RET
@@ -650,8 +650,8 @@ up.l            MOVE    R4, @R1++
                 SHR     R4, R4, 8
                 MOVE    @R2++, R4
                 DEC[M]  R3, R3
-        ?!Z     ADD     PC, PC, up.l-:+
-:               RET
+        ?!Z     JMPR    up.l
+                RET
 
 ; phase_strings.
 strings         PUSH    R7
@@ -796,8 +796,8 @@ scp.l           MOVE    R4, @R2
                 ADD     R3, R3, 1
                 ADD     R2, R2, 1
                 CMP     R4, 0
-        ?!Z     ADD     PC, PC, scp.l-:+
-:               RET
+        ?!Z     JMPR    scp.l
+                RET
 
 _strncmp
                 CMP     R3, 0

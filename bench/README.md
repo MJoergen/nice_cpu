@@ -108,8 +108,8 @@ same work:
   change. The interpreter dispatches through a jump table, as the
   translated `switch` does, not through addresses in the program. A
   conditional jump back that is mostly taken, such as a loop's back
-  edge, is `ADD PC, PC, label-next`, where `next` labels the
-  instruction after the jump, which DECODE predicts taken
+  edge, is `JMPR label`, which assembles as `ADD PC, PC, label-next`
+  ([ISA.md](../doc/ISA.md) §10.1), and which DECODE predicts taken
   ([MICROARCH.md](../doc/MICROARCH.md) §5.4).
 - The data layout is the natural one for a word-addressed machine. The
   byte buffer stays packed, four bytes to a word, as in linear memory.
@@ -195,7 +195,7 @@ unit inline, and the C library routines of `strings` as separate
 functions, called by the ABI. It uses no `@R++` or `--R`, no conditional
 instruction but a jump, and no flags from an earlier operation, and each
 case of the `switch` jumps back to the top of the loop. A loop tested at
-the bottom closes with `ADD PC, PC, label-next`, as in `hand.nasm`. Before the
+the bottom closes with `JMPR label`, as in `hand.nasm`. Before the
 strings phase, outside its timing, the byte buffer is unpacked to one
 byte per word, as `unsigned char buf[]` is with `CHAR_BIT` = 32. The
 other four phases are those of `hand.nasm`.

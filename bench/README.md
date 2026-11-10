@@ -17,20 +17,24 @@ NICE with other processors.
     make core CORE=multicycle  # the same on the multi-cycle core (about 57 minutes)
     make core SIM=nvc          # the same in nvc (3 minutes, and 2 on the multi-cycle core)
     make core-dhry  # run Dhrystone on a core in GHDL, CORE as above, and check it (about 2.5 minutes, 139 seconds on the pipelined core and 164 on the multi-cycle one; 21 and 12 in nvc)
+    make coremark   # run CoreMark on the emulator with both sets of seeds
+    make core-coremark         # run CoreMark on a core, CORE and SIM as above, and check it (14 minutes on the pipelined core in GHDL; 97 seconds in nvc, 69 on the multi-cycle core)
     make hazards    # count the pipeline hazards of MICROARCH.md §5 in both
     make cycles     # estimate the cycles of the three on the pipelined core of MICROARCH.md
     make profile    # the same, charged to the source lines, in build/*.cyc.txt
     make compare    # the model's cycles beside the pipelined core's, phase by phase and by cause, with the difference in percent, after make core
-    make words      # the size in words of the benchmark, safe.zig, float, and math modules
-    make native     # build and run bench.c and float.c on the host, as a check
-    make wasm       # rebuild bench.wasm, float.wasm, and dhrystone/dhry.wasm (needs clang)
+    make words      # the size in words of the benchmark, safe.zig, CoreMark, float, and math modules
+    make native     # build and run bench.c, float.c, and CoreMark on the host, as a check
+    make wasm       # rebuild bench.wasm, float.wasm, dhrystone/dhry.wasm, and coremark/coremark.wasm (needs clang)
 
 `dhrystone/` is Dhrystone 2.1, the classic benchmark for comparing
-small processors, ported to the C library (see Dhrystone below).
+small processors, ported to the C library (see Dhrystone below), and
+`coremark/` is CoreMark, its successor, ported the same way (see CoreMark
+below).
 `float.c` is a benchmark of floating-point code, and so of the float
 library (see The float benchmark below).
 
-`bench.wasm`, `float.wasm`, and `dhrystone/dhry.wasm` are checked in, so `make` and
+`bench.wasm`, `float.wasm`, `dhrystone/dhry.wasm`, and `coremark/coremark.wasm` are checked in, so `make` and
 `make test` need only Python 3 and the emulator, as the translator's
 tests do. `make wasm` needs clang with the wasm32 target and wasm-ld, and
 it builds `runtime/libc/libc.a` first.
@@ -460,8 +464,8 @@ and `make test` runs it.
 `words.py` gives the size in words of a wasm module translated by
 nicewasm, the measure that [translator/README.md](../translator/README.md)
 quotes for `test/safe.zig` and the float library. `make words` prints it
-for `bench.wasm`, `translator/test/safe.wasm`, and `runtime/float.wasm`:
-11523, 5903, and 6578 words. 3085 of the benchmark's words are the
+for `bench.wasm`, `translator/test/safe.wasm`, `coremark/coremark.wasm`,
+and `runtime/float.wasm`: 11523, 5903, 30073, and 6578 words. 3085 of the benchmark's words are the
 float conversions of `printf`, which every program that calls it gets. It also builds `build/math.wasm`, with
 clang, a module of all the math functions of the C library in double
 and float, and prints its size, 23392 words, which runtime/README.md
@@ -618,3 +622,79 @@ DMIPS/MHz for the Cortex-M0 under the ground rules, on its Cortex-M0
 product page. The translation
 through wasm accounts for much of the gap, judging by the ratios of
 `hand.nasm` above.
+
+## CoreMark
+
+`coremark/` holds CoreMark by EEMBC, the benchmark that small cores
+now publish numbers for, as CoreMark per MHz. It comes from
+[eembc/coremark](https://github.com/eembc/coremark) at commit 1f483d5
+(2025-05-01). It is under the Apache License 2.0, and EEMBC's trademark
+agreement allows the name CoreMark only for the results of an unmodified
+copy. Both are in `coremark/LICENSE.md`. So `core_list_join.c`,
+`core_main.c`, `core_matrix.c`, `core_state.c`, `core_util.c`, and
+`coremark.h` are upstream's files, unchanged. Upstream's `coremark.md5`
+is not copied: its sum of `coremark.h` predates a fix of a typo in a
+comment there. The port is `core_portme.c` and `core_portme.h`, which
+the run rules let a port change, made from upstream's `barebones/`.
+
+The port:
+
+- reads seeds 1 to 3 and the iterations from the console with `scanf`,
+  as C integers, so one `coremark.wasm` serves every run. `0 0 0x66` are
+  the performance seeds, `0x3415 0x3415 0x66` the validation seeds, and
+  0 iterations has CoreMark time itself for 10 seconds or more. Without
+  four numbers, or with fewer than 0 iterations, it says so and exits
+  with 1.
+- keeps the 2000 bytes of data in a static array, without `malloc`.
+- times with the cycle counter of SYSTEM.md §3, with `EE_TICKS_PER_SEC`
+  the clock of a board, 100 MHz unless `NICE_CLOCK_HZ` says otherwise
+  at build time. So the seconds and the iterations per second that it
+  prints are those of a board at 100 MHz. On the emulator a cycle is an
+  instruction.
+- has `HAS_FLOAT` 1, for the seconds, the iterations per second, and
+  the `CoreMark 1.0` line, which CoreMark prints only with it, after the
+  timer stops. Its `printf` and `scanf` join the float library, as
+  Dhrystone's do.
+- keeps the ticks in 32 bits, as `CORE_TICKS`, which hold 42.9 seconds
+  at 100 MHz. The run that CoreMark times itself takes 11 to 22 seconds.
+  A longer one makes the port print an `ERROR!` line.
+- prints two lines of its own after CoreMark's, from all 64 bits of the
+  cycles: the cycles of one iteration, and the iterations per million
+  cycles, CoreMark/MHz, with three decimals in integer arithmetic.
+
+`make wasm` builds it with `--target=wasm32 -mbulk-memory -O2`, which
+it prints as its compiler flags, and with the version of clang, which
+belong in a reported result.
+
+`coremarkcheck.py` checks the output. CoreMark checks the CRCs of its
+list, matrix, and state for both sets of seeds itself, and the script
+checks them again against the known values of `core_main.c`. The final
+CRC depends on the iterations, so the script holds its values for 1, 10,
+and 2000 iterations, taken from builds of `coremark/` for the host with
+gcc and clang, which agree, and not from niceemu. After one iteration it
+is the list's CRC, which `core_main.c` gives.
+It also checks that the run is of the given seeds and iterations, that
+there is no `ERROR!` line but the one for a run shorter than 10 seconds,
+that that one is there exactly when the run is shorter, and that the
+port's two lines agree with the ticks. `make test` runs both sets of
+seeds for 10 iterations on the emulator, and `make native` the same on
+the host. `make core-coremark` runs one iteration on a core, of the
+performance seeds, or of `CM_SEEDS=valid`.
+
+The run rules ask for at least 10 seconds for a result that is
+reported, and for a simulator a fixed number of iterations instead. So
+the figures here count cycles and are not CoreMark scores; that needs a
+board and the run of 0 iterations. Measured with the cores of commit
+5022cfe:
+
+| Where | Iterations | Cycles per iteration | CoreMark/MHz |
+|---|---|---|---|
+| emulator (one cycle per instruction) | 10 | 675095 | 1.481 |
+| multi-cycle core | 1 | 7898812 | 0.126 |
+| pipelined core | 1 | 1065384 | 0.938 |
+
+The pipelined core takes 1.58 cycles per instruction, against 1.53 in
+Dhrystone. On the emulator the run of 0 iterations makes 2000, which
+take 1350217511 instructions. For comparison, Arm gives 2.33
+CoreMark/MHz for the Cortex-M0. As with Dhrystone, the translation
+through wasm accounts for much of the gap.

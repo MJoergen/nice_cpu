@@ -269,7 +269,7 @@ a source.
 | [debugger/](debugger/README.md) | `nicedbg`, an interactive debugger on the debug link of the emulator or a board, and `nicelink`, the link for other host tools. |
 | [runtime/](runtime/README.md) | The start-up code and runtime library for C and wasm programs, and a small C library. [ABI.md](runtime/ABI.md) gives the C ABI: registers, calls, the stack, and the runtime library's conventions. |
 | [translator/](translator/README.md) | `nicewasm`, which translates WebAssembly into NICE assembly. [WASM.md](translator/WASM.md) says how WebAssembly maps to NICE, and [DESIGN.md](translator/DESIGN.md) how `nicewasm` does it. |
-| [bench/](bench/README.md) | A benchmark of translated code: six kernels with known results, timed with the performance counters, and the same benchmark written by hand. |
+| [bench/](bench/README.md) | A benchmark of translated code: six kernels with known results, timed with the performance counters, the same benchmark written by hand, Dhrystone, and CoreMark. |
 | [demo/](demo/README.md) | The demo: a typewriter, the key codes, the font and colors, the performance counters, a game, and a self-test, which runs in `niceemu --window` and which a board keeps in its ROM. |
 | [hdl/](hdl/README.md) | The FPGA implementation in VHDL: a multi-cycle core and a pipelined core, the memory model and trace writer they are tested with, and the formal checks. |
 | [release/](release/README.md) | `release.py`, which scripts the mechanical parts of [RELEASE.md](release/RELEASE.md). |
@@ -281,7 +281,9 @@ a source.
 
 The code and the documents are under the [MIT license](LICENSE), `mchess.c`
 included. Dhrystone 2.1 in `bench/dhrystone/` is not covered by it; it is
-R. P. Weicker's, and its files state no terms (bench/README.md, Dhrystone). The three
+R. P. Weicker's, and its files state no terms (bench/README.md, Dhrystone).
+CoreMark in `bench/coremark/` is EEMBC's, under the Apache License 2.0 and
+the trademark agreement of its `LICENSE.md` (bench/README.md, CoreMark). The three
 2004 example programs (`count`, `replicate`, and `print`), their sources and
 their `.bin` files in `assembler/test/`, are by B. Ulmann and T. Kratz and
 are not covered by it; see

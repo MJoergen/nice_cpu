@@ -32,6 +32,24 @@ DHRY_CFLAGS = --target=wasm32 -mbulk-memory -O2 -ffreestanding -nostdlibinc -isy
   -std=gnu89 -fno-inline -DNICE -Wno-deprecated-non-prototype -Wno-return-type
 DHRY_RUNS = $(DHRY)/dhry.input
 
+# CoreMark, ported in coremark/ (README.md, CoreMark). CM_CODEGEN are the
+# flags that shape its code, which it prints as its compiler flags. The
+# console gives it three seeds and the iterations: CM_perf or CM_valid,
+# the performance or validation seeds, and CM_ITERATIONS on the emulator
+# or CM_CORE_ITERATIONS on a core. CM_SEEDS picks the seeds of a core's
+# run, perf or valid.
+CM = coremark
+CM_CODEGEN = --target=wasm32 -mbulk-memory -O2
+CM_CFLAGS = $(CM_CODEGEN) -ffreestanding -nostdlibinc -isystem $(LIBC)/include -Wall -Wextra \
+  -DFLAGS_STR='"$(CM_CODEGEN)"'
+CM_SRCS = $(addprefix $(CM)/,core_list_join.c core_main.c core_matrix.c core_state.c core_util.c \
+  core_portme.c)
+CM_perf = 0 0 0x66
+CM_valid = 0x3415 0x3415 0x66
+CM_ITERATIONS = 10
+CM_CORE_ITERATIONS = 1
+CM_SEEDS = perf
+
 # Runs both on the emulator and prints their tables. bench.wasm is checked
 # in, so this needs no C compiler.
 run: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/float.bin emulator
@@ -48,6 +66,11 @@ run: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/float.bin
 dhry: $(BUILD)/dhry.bin emulator
 	@$(EMU) --input $(DHRY_RUNS) $(BUILD)/dhry.bin < /dev/null | sed '/^Halted/,$$d'
 
+# Runs CoreMark on the emulator with both sets of seeds and prints its output.
+coremark: $(BUILD)/coremark.bin emulator
+	@$(foreach s,perf valid,echo "$(CM_$(s)) $(CM_ITERATIONS)" | $(EMU) $(BUILD)/coremark.bin \
+	  | sed '/^Halted/,$$d';)
+
 # The same, and checks that every phase has its expected result, that main
 # returns 0 in R1, and that the expected values in bench.c, hand.nasm, and
 # simple.nasm are those of expected.py, and those in float.c are those of
@@ -59,7 +82,8 @@ define check
 
 endef
 
-test: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/float.bin $(BUILD)/dhry.bin emulator
+test: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/float.bin $(BUILD)/dhry.bin \
+  $(BUILD)/coremark.bin emulator
 	@$(PYTHON) expected.py --check bench.c hand.nasm simple.nasm
 	@$(PYTHON) floatexpected.py --check float.c
 	@$(PYTHON) hazards.py --test
@@ -77,6 +101,14 @@ test: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/float.bi
 	@$(PYTHON) dhrycheck.py --runs $$(cat $(DHRY_RUNS)) $(BUILD)/dhry.out
 	@echo 0 | $(EMU) $(BUILD)/dhry.bin | grep -q 'must be at least 1' && echo "PASS dhrystone with 0 runs"
 	@echo x | $(EMU) $(BUILD)/dhry.bin | grep -q 'must be at least 1' && echo "PASS dhrystone with no number"
+	@$(PYTHON) coremarkcheck.py --test
+	@$(foreach s,perf valid,echo "$(CM_$(s)) $(CM_ITERATIONS)" | $(EMU) $(BUILD)/coremark.bin \
+	  > $(BUILD)/coremark_$(s).out && \
+	  $(PYTHON) coremarkcheck.py --seeds $(s) --iterations $(CM_ITERATIONS) $(BUILD)/coremark_$(s).out &&) true
+	@echo 0 0 0x66 | $(EMU) $(BUILD)/coremark.bin | grep -q 'ERROR! Give seeds' \
+	  && echo "PASS coremark with three numbers"
+	@echo 0 0 0x66 -1 | $(EMU) $(BUILD)/coremark.bin | grep -q 'ERROR! Give seeds' \
+	  && echo "PASS coremark with -1 iterations"
 
 # Runs both on a core in the simulator, SIM of ../hdl/sim.mk, so that the
 # cycles are the core's: CORE,
@@ -126,6 +158,17 @@ core-dhry: $(BUILD)/dhry.bin
 	  if [ $$status -ne 0 ]; then cat $(HDL_BUILD)/dhry_$(CORE).log; exit 1; fi
 	@$(PYTHON) dhrycheck.py --runs $$(cat $(DHRY_RUNS)) ../hdl/build/dhry_$(CORE).out
 
+# CoreMark on a core in the simulator, CORE and SIM as above, with
+# CM_CORE_ITERATIONS and the seeds of CM_SEEDS, and its output checked.
+core-coremark: $(BUILD)/coremark.bin
+	$(ANALYZE)
+	@mkdir -p $(HDL_BUILD)
+	@echo "$(CM_$(CM_SEEDS)) $(CM_CORE_ITERATIONS)" > $(HDL_BUILD)/coremark_$(CORE).input
+	@$(call sim_core,coremark,$(BUILD)/coremark.bin,-gG_INPUT_FILE=$(HDL_BUILD)/coremark_$(CORE).input); \
+	  if [ $$status -ne 0 ]; then cat $(HDL_BUILD)/coremark_$(CORE).log; exit 1; fi
+	@$(PYTHON) coremarkcheck.py --seeds $(CM_SEEDS) --iterations $(CM_CORE_ITERATIONS) \
+	  ../hdl/build/coremark_$(CORE).out
+
 $(BUILD)/bench.nasm: bench.wasm ../translator/nicewasm.py
 	@mkdir -p $(BUILD)
 	$(NICEWASM) -o $@ bench.wasm
@@ -141,6 +184,16 @@ $(BUILD)/dhry.nasm: $(DHRY)/dhry.wasm ../translator/nicewasm.py
 # Dhrystone reads its number of runs with scanf, whose float conversions
 # use the float library, so it is joined with float.nasm.
 $(BUILD)/dhry.full.nasm: ../runtime/start_wasm.nasm $(BUILD)/dhry.nasm ../runtime/lib.nasm \
+  ../runtime/muldiv_mpu.nasm $(FLOAT_LIB)
+	cat $^ > $@
+
+$(BUILD)/coremark.nasm: $(CM)/coremark.wasm ../translator/nicewasm.py
+	@mkdir -p $(BUILD)
+	$(NICEWASM) -o $@ $(CM)/coremark.wasm
+
+# CoreMark prints its seconds with %f, and reads its seeds with scanf,
+# so it is joined with float.nasm too.
+$(BUILD)/coremark.full.nasm: ../runtime/start_wasm.nasm $(BUILD)/coremark.nasm ../runtime/lib.nasm \
   ../runtime/muldiv_mpu.nasm $(FLOAT_LIB)
 	cat $^ > $@
 
@@ -197,13 +250,13 @@ profile: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/float.bin $(BUILD)/bench.
 	@NICEEMU=$(EMU) $(PYTHON) cycprof.py $(BUILD)/float.full.nasm $(BUILD)/float.bin
 
 # The size in words of the translated modules the READMEs quote: the
-# benchmark's, translator/test/safe.zig's, the float library's, and that
+# benchmark's, translator/test/safe.zig's, CoreMark's, the float library's, and that
 # of a module of all the math functions of the C library, in double and
 # float, which needs clang.
 MATH_FUNCS = acos asin atan atan2 ceil copysign cos exp fabs floor fmax fmin fmod frexp \
   ldexp log log10 log2 modf nearbyint pow rint round scalbn sin sqrt tan trunc
 words:
-	@$(PYTHON) words.py bench.wasm ../translator/test/safe.wasm
+	@$(PYTHON) words.py bench.wasm ../translator/test/safe.wasm $(CM)/coremark.wasm
 	@$(PYTHON) words.py --library float ../runtime/float.wasm
 	@$(MAKE) -s --no-print-directory -C $(LIBC) libc.a
 	@mkdir -p $(BUILD)
@@ -214,27 +267,36 @@ words:
 
 # Needs mypy (pip install mypy).
 typecheck:
-	MYPYPATH=../assembler $(PYTHON) -m mypy --strict expected.py floatexpected.py hazards.py pipecycles.py cycprof.py words.py dhrycheck.py
+	MYPYPATH=../assembler $(PYTHON) -m mypy --strict expected.py floatexpected.py hazards.py pipecycles.py \
+	  cycprof.py words.py dhrycheck.py coremarkcheck.py
 
-# Rebuilds bench.wasm from bench.c, float.wasm from float.c, and
-# dhrystone/dhry.wasm from its sources. Needs clang with the wasm32 target
-# and wasm-ld, and builds the C library first.
+# Rebuilds bench.wasm from bench.c, float.wasm from float.c,
+# dhrystone/dhry.wasm from its sources, and coremark/coremark.wasm from
+# its. Needs clang with the wasm32 target and wasm-ld, and builds the C
+# library first.
 wasm:
 	$(MAKE) -C $(LIBC) libc.a
 	$(CLANG) $(CFLAGS) $(LDFLAGS) -o bench.wasm bench.c $(LIBC)/libc.a
 	$(CLANG) $(CFLAGS) $(LDFLAGS) -o float.wasm float.c $(LIBC)/libc.a
 	$(CLANG) $(DHRY_CFLAGS) $(LDFLAGS) -o $(DHRY)/dhry.wasm $(DHRY)/dhry_1.c $(DHRY)/dhry_2.c \
 	  $(LIBC)/libc.a
-	@chmod -x bench.wasm float.wasm $(DHRY)/dhry.wasm
+	$(CLANG) $(CM_CFLAGS) $(LDFLAGS) -o $(CM)/coremark.wasm $(CM_SRCS) $(LIBC)/libc.a
+	@chmod -x bench.wasm float.wasm $(DHRY)/dhry.wasm $(CM)/coremark.wasm
 
 # Builds and runs bench.c and float.c on the host, as a second check of
-# their results. The counters read 0 there.
+# their results. The counters read 0 there. Then CoreMark, with both sets
+# of seeds and CM_ITERATIONS, its CRCs checked.
 native:
 	@mkdir -p $(BUILD)
 	$(CLANG) -O2 -Wall -Wextra -o $(BUILD)/bench.native bench.c
 	@./$(BUILD)/bench.native
 	$(CLANG) -O2 -Wall -Wextra -o $(BUILD)/float.native float.c
 	@./$(BUILD)/float.native
+	$(CLANG) -O2 -Wall -Wextra -DFLAGS_STR='"-O2"' -o $(BUILD)/coremark.native $(CM_SRCS)
+	@$(foreach s,perf valid,echo "$(CM_$(s)) $(CM_ITERATIONS)" | ./$(BUILD)/coremark.native \
+	  > $(BUILD)/coremark_$(s).native.out && \
+	  $(PYTHON) coremarkcheck.py --host --seeds $(s) --iterations $(CM_ITERATIONS) \
+	  $(BUILD)/coremark_$(s).native.out &&) true
 
 emulator:
 	$(MAKE) -C ../emulator build
@@ -242,4 +304,4 @@ emulator:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: run dhry test core core-dhry hazards cycles compare profile words typecheck wasm native emulator clean
+.PHONY: run dhry coremark test core core-dhry core-coremark hazards cycles compare profile words typecheck wasm native emulator clean

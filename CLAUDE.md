@@ -59,6 +59,8 @@ library, a wasm translator, and two FPGA cores. See README.md.
   checks all three against them. `float.c` is a benchmark of float code,
   and so of the float library, checked against `floatexpected.py`.
   `dhrystone/` is Dhrystone 2.1 on the C library, checked by `dhrycheck.py`.
+  `coremark/` is CoreMark on the C library, its upstream files unchanged
+  but for `core_portme.c` and `core_portme.h`, checked by `coremarkcheck.py`.
 - `demo/demo.nasm`: the demo, a program under a monitor at `0x8000`, which
   runs in `niceemu --window` behind the runtime's stand-in for a monitor,
   and which a board keeps in its ROM (NiceMonMEGA65 joins its own text
@@ -97,11 +99,13 @@ library, a wasm translator, and two FPGA cores. See README.md.
     cd bench     && make core        # the benchmark on a core in simulation, CORE=pipeline or multicycle, SIM=ghdl or nvc (minutes)
     cd bench     && make dhry        # Dhrystone on the emulator, checked by dhrycheck.py
     cd bench     && make core-dhry   # Dhrystone on a core in simulation, CORE and SIM as above, with its output checked (minutes)
+    cd bench     && make coremark    # CoreMark on the emulator with both sets of seeds, which make test checks
+    cd bench     && make core-coremark # CoreMark on a core in simulation, CORE and SIM as above, with its output checked (minutes)
     cd bench     && make hazards     # how often the pipeline hazards of MICROARCH.md §5 occur
     cd bench     && make cycles      # the estimated cycles on the pipelined core, per phase
     cd bench     && make profile     # the same, per source line, in bench/build/*.cyc.txt
     cd bench     && make compare     # the model's cycles beside the pipelined core's, by phase and by cause, after make core
-    cd bench     && make words       # the size in words of the benchmark, safe.zig, float, and math modules
+    cd bench     && make words       # the size in words of the benchmark, safe.zig, CoreMark, float, and math modules
     cd bench     && make typecheck   # mypy --strict
     cd demo      && make test        # the demo on the emulator, its screens compared with test.expected
     cd demo      && make window      # the demo in niceemu --window (make -C emulator window first)

@@ -174,12 +174,17 @@ commit to blame. The out-of-context figures are a proxy: the memory and
 the devices of a real system take some of the time left, so the budget
 for the ports is a margin, not a promise. The two figures keep about 0.2
 ns of the slack that NiceMonMEGA65 measured inside its system at `V1.0`.
+One run varies with placement by more than that margin, and a miss by
+less than one run varies says so: then `make -C hdl timing-spread`, the
+median of seven runs, tells noise from a real loss
+([hdl/README.md](../hdl/README.md#timing)).
 Skip the run with `--skip-timing`.
 
 A change to `hdl/src` that touches the paths of the groups in
 `timing_groups.rpt` needs a `make timing` before and after it, with both
 figures in the commit message, so that a feature does not quietly take the
-100 MHz.
+100 MHz. For a small change, compare the medians of
+`make timing-spread` instead, since one run varies by more.
 
 ## 6. CI
 

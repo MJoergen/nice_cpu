@@ -722,7 +722,25 @@ timing:
 	  echo "$$r.rpt:"; grep -m1 -E "^Slack" $(TIMING_DIR)/$$r.rpt; \
 	  grep -m2 -E "^  (Source|Destination):" $(TIMING_DIR)/$$r.rpt; done
 	@cat $(TIMING_DIR)/timing_groups.rpt
-	@$(PYTHON) test/timing_budget.py $(TIMING_DIR) $(BOARD) $(PERIOD)
+	@$(PYTHON) test/timing_budget.py $(TIMING_DIR) $(BOARD) $(PERIOD) $(FLOW)
+
+# One run of make timing cannot show a change of a few tenths of a ns: a
+# change elsewhere moves the placement, and the slacks with it (#151). This
+# runs make timing for BOARD and FLOW with the seven counts of breakpoints
+# and watchpoints of SPREAD_VARIANTS, all at once, and prints the least,
+# median, and most of each slack. About 11 minutes with the default flow
+# and 40 with the timing flow, on 20 CPUs.
+SPREAD_VARIANTS = 4-0 4-1 4-2 4-3 4-4 2-0 2-4
+SPREAD_DIRS = $(foreach v,$(SPREAD_VARIANTS),$(BUILD)/timing/$(BOARD)-$(FLOW)-$(v))
+
+timing-spread:
+	@$(MAKE) --no-print-directory -j $(words $(SPREAD_VARIANTS)) \
+	  $(addprefix timing-spread/,$(SPREAD_VARIANTS))
+	@$(PYTHON) test/timing_budget.py --spread $(SPREAD_DIRS)
+
+timing-spread/%:
+	@$(MAKE) --no-print-directory timing BREAKS=$(word 1,$(subst -, ,$*)) \
+	  WATCHES=$(word 2,$(subst -, ,$*)) > /dev/null
 
 # Checks the style of every VHDL file against CODING_STYLE.md. Long lines are
 # only warnings.
@@ -738,4 +756,4 @@ lint:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: test runs programs random sweep strides analyze analyze-ghdl analyze-nvc synth formal emulator timing typecheck lint clean
+.PHONY: test runs programs random sweep strides analyze analyze-ghdl analyze-nvc synth formal emulator timing timing-spread typecheck lint clean

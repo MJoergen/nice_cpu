@@ -77,6 +77,22 @@ The assembler has the pseudo-instruction `JMPR`, a relative jump
   closed with `JMP` (#60, #154). The words change, the addresses and the
   steps do not.
 
+**FPGA cores (`hdl/`)**
+
+- `make timing-spread` runs `make timing` with seven counts of
+  breakpoints and watchpoints at once, and prints the least, the median,
+  and the most of each slack (#151). A change elsewhere in the design
+  moves the placement, and on the MEGA65 one run of the outputs varies
+  from 1.554 to 2.963 ns in the default flow, and from 1.246 to 2.495 ns
+  in the `timing` flow. So a single run cannot show a change of a few
+  tenths, and `make timing` now says when a miss is by less than one
+  run varies. The medians in the default flow are 0.396, 2.251, and
+  2.357 ns, which meet the budget.
+- The miss of the `timing` flow that the V2.0 notes put on the
+  watchpoints is placement: with 2 breakpoints and no watchpoints it
+  misses too, and with 2 breakpoints and 4 it has the best core slack
+  of all (#149).
+
 ## V2.0 (2026-11-09)
 
 `WAIT` waits for an interrupt (#133). Five byte windows let a data

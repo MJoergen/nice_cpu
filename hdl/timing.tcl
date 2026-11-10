@@ -23,9 +23,10 @@
 #
 # timing_groups.rpt counts the endpoints with less than 1 ns of slack, by
 # the register or port they start from and the register or port they end
-# at, with the worst slack of each group. A run takes about 10 minutes
-# with the default flow, and runs differ by a few tenths of a nanosecond
-# from placement alone.
+# at, with the worst slack of each group. A run takes about 3 minutes
+# with the default flow. A change elsewhere in the design moves the
+# placement, and with it the slacks, by up to 1.4 ns on the MEGA65, so
+# "make timing-spread" runs seven variants (test/timing_budget.py, SPREAD).
 set part   [expr {$argc > 0 ? [lindex $argv 0] : "xc7a200tfbg484-2"}]
 set flow   [expr {$argc > 1 ? [lindex $argv 1] : "default"}]
 set period [expr {$argc > 2 ? [lindex $argv 2] : 10.0}]

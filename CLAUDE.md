@@ -114,6 +114,7 @@ library, a wasm translator, and two FPGA cores. See README.md.
     cd hdl && make lint              # vsg style check (pip install vsg)
     cd hdl && make formal            # SymbiYosys: the ports of both cores and wb_dmux; proofs of FETCH, DECODE, PREPARE, DBUS, WRITE's halt and pause, the shared functions, the devices, and the debug link
     cd hdl && make timing            # the pipelined core's worst paths out of context in Vivado, BOARD=mega65 or nexys4ddr, FLOW=default or timing (3 minutes)
+    cd hdl && make timing-spread     # make timing with seven counts of breakpoints and watchpoints at once, and the median of each slack (11 minutes, 40 with FLOW=timing)
     cd hdl && make programs          # the runtime and translator programs on CORE, or its share SHARD=I/N, SIM=ghdl or nvc (minutes)
     cd hdl && make random-sweep      # random programs, seeds 1 to RANDOM_LAST (1000), on each core of CORES (an hour or more)
     cd hdl && make strides           # pcfx and sidefx swept with strides 17, 31, and 64 on CORE (minutes)
@@ -140,8 +141,11 @@ Vivado 2025.1 is installed at `/opt/Xilinx/2025.1/Vivado/bin/vivado`, not on PAT
   for it. The pipelined core meeting 100 MHz on the MEGA65 is a goal to keep:
   a change under `hdl/src/pipe_*` that touches the paths of `timing_groups.rpt`
   needs `make -C hdl timing` before and after, with both figures in the commit
-  message. `hdl/test/timing_budget.py` holds the budget; a miss warns and never
-  fails (release/RELEASE.md, Timing).
+  message. One run varies with placement by more than a small change: a
+  difference smaller than the range of `SPREAD` in `hdl/test/timing_budget.py`
+  is noise, so for a small change run `make -C hdl timing-spread` before and
+  after, and compare the medians. `timing_budget.py` holds the budget; a miss
+  warns and never fails (release/RELEASE.md, Timing).
 - A change to the interrupt path of a core (WRITE's interrupt entry, RTI,
   or the request ports) needs `make -C hdl sweep CORE=...` on that core,
   with one interrupt per run, which takes hours. No release runs it.

@@ -70,6 +70,7 @@ GHDL 6.0.0-dev and GHDL 4.1.0 (mcode backend). CI installs 4.1.0, the
 | `make lint` | vsg on every VHDL file, with the rules of CODING_STYLE.md. | seconds |
 | `make formal` | The SymbiYosys jobs of `formal/` ([The formal checks](#the-formal-checks)). | 20 minutes on 20 CPUs, most of it the debug link's covers |
 | `make timing` | Vivado on the pipelined core alone, out of context ([Timing](#timing)). | 3 minutes |
+| `make timing-spread` | `make timing` with seven counts of breakpoints and watchpoints at once, and the least, median, and most of each slack ([Timing](#timing)). | 11 minutes on 20 CPUs, 40 with `FLOW=timing` |
 | `make programs` | The runtime's and the translator's test programs, and random modules of `translator/test/fuzz.py`, on `CORE`; `SHARD=I/N` runs the Ith of N shares. | 25 minutes on the pipelined core and 51 on the multi-cycle one in GHDL; 5 and 3 in nvc |
 | `make strides` | `pcfx` and `sidefx` swept with strides 17, 31, and 64 on `CORE`. | 6 minutes on the pipelined core |
 | `make random` | More random programs, with `RANDOM_SEEDS`, `RANDOM_STEPS`, and `RANDOM_STALL`. | |
@@ -292,9 +293,27 @@ ports inside NiceMonMEGA65 at `V1.0`, and keep about 0.2 ns of it. It prints the
 reports, and says `MISSED` on a miss, but exits 0. `release.py check` puts
 the result in its stamp, and no release waits for it.
 
+One run cannot show a small change. Vivado gives the same result for the
+same input, but a change elsewhere in the design moves the placement, and
+the slacks with it. `make timing-spread` runs `make timing` for `BOARD` and
+`FLOW` with seven counts of breakpoints and watchpoints, `4-0` to `4-4`,
+`2-0`, and `2-4`, all at once, and prints the least, the median, and the
+most of each slack, and how many runs met the budget. On the MEGA65 at
+565b976 (#151):
+
+| MEGA65, 10 ns | core | inputs | outputs | budget met |
+|---|---|---|---|---|
+| `default` flow | 0.111, 0.396, 0.708 ns | 1.869, 2.251, 2.559 ns | 1.554, 2.357, 2.963 ns | 4 of 7 |
+| `timing` flow | −0.075, 0.058, 0.342 ns | 1.052, 1.620, 2.176 ns | 1.246, 2.007, 2.495 ns | 1 of 7 |
+
+So the budget of the outputs lies inside the range of both flows, and
+a change that moves a median by less than the range is noise. `SPREAD`
+in `timing_budget.py` holds the ranges, and `make timing` says when a
+miss is by less than one of them.
+
 What a system may add to the core's ports, from `make timing` at 2026-11-07
-(`timing` and `default` flows, one run each; a run varies by a few tenths of
-a nanosecond with placement). The slack is the time left to the system at
+(`timing` and `default` flows, one run each, so each figure may be off by a
+nanosecond, as above). The slack is the time left to the system at
 the clock of the first column:
 
 | Clock and part | `dbus_ack_i` | `instret_o` |

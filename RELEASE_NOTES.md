@@ -53,6 +53,8 @@ The assembler has the pseudo-instruction `JMPR`, a relative jump
   needs no label after the jump. It takes an address, a condition, and
   no modifier. §9.2 and Appendix B name it, and `doc/review/decisions.md`
   no longer lists a relative branch as decided against (#154).
+- SYSTEM.md §8: NiceMonMEGA65 has the byte windows of §9, where a read
+  of a byte or a halfword takes a cycle more than one of a word (#152).
 
 **Assembler (`niceasm`, `nicedis`)**
 

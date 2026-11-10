@@ -152,8 +152,10 @@
 -- a) The bus slaves acknowledge every request, in order. On the data bus, a
 --    write accepted in one cycle is seen by an instruction fetch accepted
 --    in a later cycle.
--- b) A device holds nmi_valid_i or irq_valid_i, and the vector, stable until
---    the core raises the matching ready.
+-- b) A device holds nmi_valid_i or irq_valid_i until the core raises the
+--    matching ready, and the NMI vector stable with it. The IRQ vector may
+--    change meanwhile, as the merge of src/irq_merge.vhd changes it; the
+--    core takes the vector of the cycle in which it raises ready.
 -- c) nmi_ready_o and irq_ready_o depend combinationally on nmi_valid_i and
 --    irq_valid_i, so a device must not make valid depend combinationally on
 --    ready.

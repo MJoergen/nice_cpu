@@ -228,9 +228,11 @@ begin
       ); -- i_nmi_check
 
 
+   -- The IRQ vector may change before ready (src/irq_merge.vhd).
    i_irq_check : entity work.handshake_check
       generic map (
-         G_DATA_SIZE => 8
+         G_DATA_SIZE   => 8,
+         G_STABLE_DATA => false
       )
       port map (
          clk_i   => clk_i,

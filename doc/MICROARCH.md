@@ -524,9 +524,12 @@ alone is under 1% in both programs.
 
 ## 6. Interrupts
 
-Interrupt requests use valid/ready ports. The device holds `valid` and
-the vector until the core raises `ready`. So the device holds the pending
-state of ISA §7.1, and requests are never lost.
+Interrupt requests use valid/ready ports. The device holds `valid` until
+the core raises `ready`. So the device holds the pending state of ISA
+§7.1, and requests are never lost. The NMI vector stays stable with
+`valid`. The IRQ vector may change while `valid` stays high, as the merge
+of two sources changes it when the one first in order comes (§8); the
+core takes the vector of the cycle in which it raises `ready`.
 
 WRITE takes a request before an instruction, the first one after reset
 included, when ISA §7.1 allows it: not halted, `in_service` = 0,
@@ -889,10 +892,11 @@ system built from them must follow these rules:
 - **Requests in flight.** FETCH has up to 8 requests in flight on the
   instruction bus, and DBUS up to 4 on the data bus. A slave that cannot
   take more must raise STALL.
-- **Interrupt ports.** A device holds `valid` and the vector stable until
-  the core raises `ready`. `nmi_ready_o` and `irq_ready_o` depend
-  combinationally on `valid`, so a device must not make `valid` depend
-  combinationally on `ready`.
+- **Interrupt ports.** A device holds `valid` until the core raises
+  `ready`, and the NMI vector stable with it. The IRQ vector may change
+  meanwhile, and the core takes the one of the cycle of `ready`.
+  `nmi_ready_o` and `irq_ready_o` depend combinationally on `valid`, so a
+  device must not make `valid` depend combinationally on `ready`.
 - **Unmapped addresses.** Both buses need a default slave that acknowledges a
   read with 0 and drops a write (ISA §8.2). Without one, the core would wait
   forever.

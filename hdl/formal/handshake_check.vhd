@@ -5,7 +5,9 @@
 -- THEORY OF OPERATION
 -- A request is taken in a cycle with VALID and READY both high. The checker
 -- assumes the source side of the handshake: once VALID is high, it stays
--- high, with DATA unchanged, until the request is taken. It asserts that the
+-- high until the request is taken, and with G_STABLE_DATA, DATA unchanged
+-- too. Without it, DATA may change, as the IRQ vector of a merge of two
+-- sources does (src/irq_merge.vhd). It asserts that the
 -- port raises READY only for a request, and only outside reset. The cover
 -- shows that a request can be taken.
 --
@@ -17,7 +19,8 @@ library ieee;
 
 entity handshake_check is
    generic (
-      G_DATA_SIZE : positive
+      G_DATA_SIZE   : positive;
+      G_STABLE_DATA : boolean := true
    );
    port (
       clk_i   : in  std_logic;
@@ -30,14 +33,19 @@ end entity handshake_check;
 
 architecture synthesis of handshake_check is
 
+   signal f_stable : std_logic;
+
 begin
+
+   f_stable <= '1' when G_STABLE_DATA else
+               '0';
 
    -- psl default clock is rising_edge(clk_i);
 
    -- The source
    -- psl f_valid_hold : assume always
    --    {valid_i and not ready_i and not rst_i} |=>
-   --    {rst_i = '1' or (valid_i = '1' and stable(data_i))};
+   --    {rst_i = '1' or (valid_i = '1' and (f_stable = '0' or stable(data_i)))};
 
    -- The port
    -- psl f_ready_valid : assert always ready_i -> valid_i;

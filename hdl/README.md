@@ -146,7 +146,9 @@ and the same two generics: a system instantiates `pipeline` of
 | `stats_o` | The pipelined core only: what the core did two cycles before, a `t_fetch_events` of `src/pipe_pkg.vhd`, for the fetch statistics. |
 
 Interrupt requests use valid/ready ports, with an 8-bit vector each. A device
-holds `valid` and the vector until the core raises `ready`. The core raises it
+holds `valid` until the core raises `ready`, and the NMI vector with it. The
+IRQ vector may change meanwhile, as the merge of two sources changes it, and
+the core takes the one of the cycle of `ready`. The core raises it
 for one cycle when it takes the request, the multi-cycle core in
 `BOUNDARY` and the pipelined core in WRITE. `ready` depends
 combinationally on `valid`, so a device must not make `valid` depend
@@ -247,9 +249,9 @@ of `src/pipeline.vhd` rely on them:
   a store back past a later fetch.
 - Up to 8 instruction requests and 4 data requests are in flight. A slave
   that cannot take more raises STALL.
-- A device holds `valid` and the vector until `ready`, and `valid` may not
-  depend combinationally on `nmi_ready_o` or `irq_ready_o`, which
-  depend combinationally on `valid`.
+- A device holds `valid` until `ready`, and the NMI vector with it, and
+  `valid` may not depend combinationally on `nmi_ready_o` or
+  `irq_ready_o`, which depend combinationally on `valid`.
 - `pause_i` comes from a flip-flop, and does not depend combinationally on
   the core's outputs. It feeds the flush, `nmi_ready_o`, and
   `irq_ready_o`, and the core's timing at 100 MHz is tight. A system that
@@ -1382,7 +1384,8 @@ assumes the rules of the other side of its port and asserts the core's:
   a registered ACK relies on CYC in that first cycle, so dropping CYC then
   would be no clean way to abandon a request.
 - The NMI and IRQ ports (`handshake_check`), with the AXI handshake. The
-  checker assumes that a device holds `valid` and the vector until `ready`.
+  checker assumes that a device holds `valid` until `ready`, and for NMI
+  the vector too; the IRQ vector is free to change.
   It asserts that the core raises `ready` only for a request, and never in
   reset.
 

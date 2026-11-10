@@ -33,8 +33,9 @@
 --    ready_o.
 -- b) rq_i, rq_cnt_i, and ack_read_i give the read data that has come, in
 --    order.
--- c) A device holds nmi_valid_i or irq_valid_i, and the vector, stable
---    until WRITE raises the matching take.
+-- c) A device holds nmi_valid_i or irq_valid_i until WRITE raises the
+--    matching take, and the NMI vector stable with it. The IRQ vector may
+--    change meanwhile; WRITE takes the vector of the cycle of the take.
 -- d) st_valid_i is '1' while a store or a vector read waits in DBUS's
 --    register, and st_acc_i when the bus accepts it.
 -- e) pause_i comes from a flip-flop, and does not depend combinationally on

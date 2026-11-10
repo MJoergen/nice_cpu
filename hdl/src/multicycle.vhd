@@ -40,9 +40,9 @@
 -- every write goes through set_reg, which applies the rules of ISA.md §4.3.
 -- So every read sees the register as getReg in the emulator would.
 --
--- Interrupt requests use valid/ready ports. A device holds valid and the
--- vector until the core raises ready, which it does for one cycle in the
--- BOUNDARY state when it takes the request.
+-- Interrupt requests use valid/ready ports. A device holds valid until the
+-- core raises ready, which it does for one cycle in the BOUNDARY state when
+-- it takes the request, with the vector of that cycle.
 --
 -- PAUSE (MICROARCH.md §6.1). While pause_i is '1', the core goes from
 -- BOUNDARY to PAUSED instead of starting a step, whatever in_service and
@@ -92,8 +92,10 @@
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) The bus slaves acknowledge every request.
--- b) A device holds nmi_valid_i or irq_valid_i, and the vector, stable until
---    the core raises the matching ready.
+-- b) A device holds nmi_valid_i or irq_valid_i until the core raises the
+--    matching ready, and the NMI vector stable with it. The IRQ vector may
+--    change meanwhile, as the merge of src/irq_merge.vhd changes it; the
+--    core takes the vector of the cycle in which it raises ready.
 -- c) nmi_ready_o and irq_ready_o depend combinationally on nmi_valid_i and
 --    irq_valid_i, so a device must not make valid depend combinationally on
 --    ready.

@@ -33,7 +33,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, FrozenSet, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Set, Tuple, Union
 
 I32, I64, F32, F64 = 0x7F, 0x7E, 0x7D, 0x7C
 TYPE_NAMES = {I32: "i32", I64: "i64", F32: "f32", F64: "f64", 0x7B: "v128",
@@ -853,6 +853,123 @@ def pseudo(lines: List[str]) -> List[str]:
             continue
         out.append(f"{'':8}{cond:<8}{op + ' ':<8}{', '.join(ops)}".rstrip())
     return out
+
+
+# Short loops (anonymous_labels): a jump back over at most this many
+# instructions.
+SHORT_LOOP = 10
+
+LABEL_LINE = re.compile(r"[A-Za-z_.][\w.]*\Z")
+LABEL_NAME = re.compile(r"[A-Za-z_.][\w.]*")
+
+
+def anonymous_labels(lines: List[str]) -> List[str]:
+    """The output with the labels of short loops written as the anonymous
+    labels of ISA.md §10.1, which assemble to the same words. A short loop
+    is a jump back to a label over at most SHORT_LOOP instructions. Its
+    label becomes ':' if every reference to it is a jump in the loop, and
+    so does a label in the loop or just after it that only jumps in the
+    loop go to. A jump back that is relative, ADD R15, R15, top-next,
+    keeps top, as an expression may hold one anonymous reference only, and
+    next becomes ':' if nothing else names it. A function's label, and a
+    name that starts with '_', stay. A reference names the nearest
+    anonymous label above, :-, or below, :+, and one more sign for each
+    one in between, up to two."""
+    pc = "R15"
+    index: List[int] = []                      # instructions before each line
+    labels: Dict[str, int] = {}                # name -> line
+    insns: Dict[int, Tuple[str, List[str]]] = {}  # line -> mnemonic, operands
+    code: Set[int] = set()                     # the lines of instructions and data
+    n = 0
+    for k, line in enumerate(lines):
+        index.append(n)
+        if LABEL_LINE.match(line):
+            labels[line] = k
+        elif line.startswith(" ") and not line.lstrip().startswith(";"):
+            m = INSTR_LINE.match(line)
+            if m is not None and '"' not in line and "'" not in line:
+                insns[k] = (m.group(2), m.group(3).split(", "))
+            code.add(k)
+            n += 1
+    # The references to each label: (line, operand, whether a jump, form).
+    # A name in any other line, such as a .DAT or an .EQU, keeps its label.
+    refs: Dict[str, List[Tuple[int, str, bool, str]]] = {name: [] for name in labels}
+    named: Set[str] = set()
+    for k, line in enumerate(lines):
+        if k in insns:
+            op, ops = insns[k]
+            mn = op.split("[")[0]
+            for j, o in enumerate(ops):
+                names = [x for x in LABEL_NAME.findall(o) if x in refs]
+                for name in names:
+                    jump = (mn == "JMP" or mn in ("MOVE", "ADD", "SUB") and j >= 1
+                            and ops[0] == pc) and "@" not in o
+                    form = "whole" if o == name else "bad"
+                    if (jump and op == "ADD" and j == 2 and ops[1] == pc
+                            and re.fullmatch(r"[A-Za-z_.][\w.]*-" + re.escape(name), o)):
+                        form = "next"
+                    elif (jump and op == "ADD" and j == 2 and ops[1] == pc
+                          and re.fullmatch(re.escape(name) + r"-[A-Za-z_.][\w.]*", o)):
+                        form = "top"
+                    refs[name].append((k, o, jump, form))
+        elif not LABEL_LINE.match(line):
+            named.update(LABEL_NAME.findall(line.split(";")[0]))
+
+    def kept(name: str) -> bool:
+        return (name.startswith("_") or name in named
+                or re.fullmatch(r"(WL\.\w+\.|W\.)f\d+", name) is not None)
+
+    anon: Dict[str, int] = {}
+    for name, top in labels.items():
+        for k, o, jump, form in refs[name]:
+            if not jump or k < top:
+                continue
+            if form == "top":
+                nxt = LABEL_NAME.findall(o)[1]
+                at = labels.get(nxt)
+                if (at is not None and at > k and not kept(nxt) and len(refs[nxt]) == 1
+                        and all(not lines[x].strip() or lines[x].lstrip().startswith(";")
+                                for x in range(k + 1, at))):
+                    anon[nxt] = at
+                continue
+            if form != "whole" or index[k] - index[top] > SHORT_LOOP:
+                continue
+            for other, at in labels.items():
+                rs = refs[other]
+                if (rs and not kept(other) and top <= at and (at <= k or index[at] == index[k] + 1)
+                        and all(r[2] and r[3] == "whole" and top <= r[0] <= k for r in rs)):
+                    anon[other] = at
+
+    def signs() -> Dict[str, List[Tuple[int, str]]]:
+        at = sorted(anon.values())
+        out: Dict[str, List[Tuple[int, str]]] = {}
+        for name, li in anon.items():
+            out[name] = []
+            for k, _, _, _ in refs[name]:
+                if k >= li:
+                    out[name].append((k, ":" + "-" * sum(1 for x in at if li <= x <= k)))
+                else:
+                    out[name].append((k, ":" + "+" * sum(1 for x in at if k < x <= li)))
+        return out
+    while True:
+        ref_signs = signs()
+        far = [name for name, ss in ref_signs.items() if any(len(s) > 3 for _, s in ss)]
+        if not far:
+            break
+        del anon[far[0]]
+    out = list(lines)
+    for name, ss in ref_signs.items():
+        for k, s in ss:
+            out[k] = re.sub(r"(?<![\w.])" + re.escape(name) + r"(?![\w.])", s, out[k])
+    gone: Set[int] = set()
+    for name, li in anon.items():
+        nxt = li + 1
+        if nxt in code:
+            out[nxt] = ":" + out[nxt][1:]          # on the line of the instruction
+            gone.add(li)
+        else:
+            out[li] = ":"
+    return [line for k, line in enumerate(out) if k not in gone]
 
 
 def byte_copy() -> List[str]:
@@ -2955,7 +3072,7 @@ class Translator:
                            .replace("___wasm_memory", self.mem) for line in HELPERS[name]]
         out += self.table()
         if self.ram is not None:
-            return pseudo(out + self.ram_layout(runs))
+            return anonymous_labels(pseudo(out + self.ram_layout(runs)))
         if self.m.globals:
             out += ["", "; Globals"]
             for i, g in enumerate(self.m.globals):
@@ -2994,7 +3111,7 @@ class Translator:
                 out.append(instr(".RES", str((self.cap - pages) * WORDS_PER_PAGE)))
             if self.windows:
                 out += ["; The word after the memory, for the check of ___wasm_start", "W.end"]
-        return pseudo(out)
+        return anonymous_labels(pseudo(out))
 
     def ram_globals(self) -> int:
         """The words of the mutable globals, which go in RAM with --ram."""

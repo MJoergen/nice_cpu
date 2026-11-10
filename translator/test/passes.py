@@ -21,8 +21,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "assembler"))
 import niceasm  # noqa: E402
-from nicewasm import (Ins, Item, Label, duplicate_tails, early_exit, hoist_into_slots,  # noqa: E402
-                      instr, predict_back_edges, pseudo, tail_calls)
+from nicewasm import (SHORT_LOOP, Ins, Item, Label, anonymous_labels, duplicate_tails,  # noqa: E402
+                      early_exit, hoist_into_slots, instr, predict_back_edges, pseudo,
+                      tail_calls)
 
 
 def text(items: List[Item]) -> List[str]:
@@ -207,7 +208,35 @@ def pseudo_instructions() -> None:
     assert assembled(out) == assembled(lines)
 
 
-CASES: List[Callable[[], None]] = [pseudo_instructions, predicted_back_edge, hoist_after_write, hoist_after_jump, tail_call_plain,
+def anonymous_short_loops() -> None:
+    """The labels of a short loop become anonymous (ISA.md §10.1), which
+    assembles to the same words: its top, and its exit, that only jumps
+    in it name, on the line of the next instruction. A relative jump back
+    keeps its top, and its next label becomes ':'. A jump back over more
+    than SHORT_LOOP instructions, a label that an operand other than a
+    jump's target names, and a function's label keep their names."""
+    lines = ["W.f0", "W.f0.L0",
+             instr("SUB[M]", "R1", "R1", "1"), instr("?Z JMP", "W.f0.L1"),
+             instr("ADD", "R2", "R2", "1"), instr("JMP", "W.f0.L0"),
+             "W.f0.L1", instr("MOVE", "R3", "1"),
+             "W.f0.L2", instr("SUB[M]", "R3", "R3", "1"),
+             instr("?!Z ADD", "R15", "R15", "W.f0.L2-W.f0.B0"), "W.f0.B0",
+             "W.f0.L3"] + [instr("ADD", "R4", "R4", "1")] * (SHORT_LOOP + 1) + [
+             instr("JMP", "W.f0.L3"),
+             "W.f0.L4", instr("MOVE", "R2", "W.f0.L4"), instr("JMP", "W.f0.L4"),
+             instr("JMP", "W.f0")]
+    out = anonymous_labels(lines)
+    assert [line.strip() for line in out] == [
+        "W.f0", ":               SUB[M]  R1, R1, 1", "?Z      JMP     :+",
+        "ADD     R2, R2, 1", "JMP     :-", ":               MOVE    R3, 1",
+        "W.f0.L2", "SUB[M]  R3, R3, 1", "?!Z     ADD     R15, R15, W.f0.L2-:+", ":",
+        "W.f0.L3"] + ["ADD     R4, R4, 1"] * (SHORT_LOOP + 1) + [
+        "JMP     W.f0.L3", "W.f0.L4", "MOVE    R2, W.f0.L4", "JMP     W.f0.L4",
+        "JMP     W.f0"], out
+    assert assembled(out) == assembled(lines)
+
+
+CASES: List[Callable[[], None]] = [anonymous_short_loops, pseudo_instructions, predicted_back_edge, hoist_after_write, hoist_after_jump, tail_call_plain,
                                    tail_call_data, no_tail_copies_in_stubs, early_exit_flags,
                                    early_exit_call]
 

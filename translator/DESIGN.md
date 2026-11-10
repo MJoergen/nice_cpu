@@ -569,3 +569,23 @@ the return are:
 
                     CALL    W.f12
                     RET
+
+Then the labels of short loops become the anonymous labels of ISA.md
+§10.1, as hand-written code has them. A short loop is a jump back to a
+label over at most 10 instructions. If only jumps in the loop name its
+label, the label becomes `:`, on the line of the next instruction if
+one follows, and the jumps name it `:-`. So does a label in the loop,
+or right after its jump back, that only jumps in the loop name, as `:+`
+from above it.
+A reference with more than two signs, such as `:---`, keeps the name.
+An expression holds one anonymous reference only, so a predicted jump
+back keeps the name of the loop's top, and its `next` becomes `:`:
+
+            ?!Z     ADD     R15, R15, W.f3.L0-:+
+    :
+
+A function's label, a label that starts with `_`, and a label that a
+`.DAT` or an operand other than a jump's target names keep their
+names. A stub after the epilogue names the start of its access, with a
+`.DAT` or in `R2`, and jumps back from afar, so a loop with a checked
+access keeps those labels.

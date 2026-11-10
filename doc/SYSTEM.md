@@ -258,6 +258,7 @@ The emulator and the FPGA implementation map a timer at `0xFFFFFF10`–`0xFFFFFF
 - While P ≠ 0, COUNT decreases by one at the end of each cycle, the cycle of the write to `TIMER_PERIOD` included. When COUNT reaches 0, the timer raises IRQ with vector v, and COUNT is set to P again. So the first request comes at the end of the P-th cycle, counting from the write, and then one comes every P cycles.
 - P = 0 stops the timer, and COUNT stays 0. A request that is already pending stays pending.
 - The emulator counts one cycle for each step, a wait step included, as its cycle counter does (§3). The FPGA implementation counts clock cycles while the core runs. Like the cycle counter, COUNT stops when the core is held or has halted, and counts on while it waits for an interrupt (§3).
+- The timer is the only source of IRQ (ISA §7.1).
 - A request keeps the vector it was raised with. If the timer's last request is still pending when it raises the next one, the two merge (ISA §7.1), and the pending one keeps its vector. So a timer whose period is shorter than its interrupt routine, or than a stretch of code with E = 0, loses requests. To keep time, read the cycle counter rather than count interrupts.
 - The interrupt routine need not acknowledge the request. Taking it is enough.
 - Reset sets P, COUNT, and v to 0, with no request pending.

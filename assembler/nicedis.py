@@ -66,6 +66,7 @@ class Insn(NamedTuple):
     vector: Optional[int]   # the vector of INT
     reserved: bool          # a reserved control word
     cut: bool               # constant words are missing
+    target: Optional[int] = None  # the target of ADD R15, R15, c, written as JMPR
 
     def dat(self) -> bool:
         return self.reserved or self.cut or bool(self.unused)
@@ -124,7 +125,10 @@ def decode(addr: int, read: Reader) -> Insn:
     ops = [Operand(f, c, i == 0, bool(shift) and i == 2 and f >> 4 == 3)
            for i, (f, c) in enumerate(zip(fields, consts))]
     unused = [(FIELD_NAMES[i], ops[i]) for i in range(nops, 3) if fields[i]]
-    return Insn(words, cond, name, ops[:nops], unused, None, False, cut)
+    target = None
+    if name == "ADD" and fields == [0x0F, 0x0F, 0x30] and consts[2] is not None:
+        target = (addr + 2 + consts[2]) & MASK  # the relative jump JMPR (ISA.md 10.1)
+    return Insn(words, cond, name, ops[:nops], unused, None, False, cut, target)
 
 
 def operand_text(op: Operand, name: Namer) -> str:
@@ -147,6 +151,9 @@ def operand_text(op: Operand, name: Namer) -> str:
 
 def statement(insn: Insn, name: Namer) -> str:
     """The condition, mnemonic, and operands of an instruction that is not a .DAT."""
+    if insn.target is not None:
+        return " ".join(t for t in (insn.cond, "JMPR", name(insn.target) or f"0x{insn.target:x}")
+                        if t)
     if insn.vector is not None:
         args = str(insn.vector)
     else:

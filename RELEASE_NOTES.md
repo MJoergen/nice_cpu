@@ -54,6 +54,14 @@ The assembler has the pseudo-instruction `JMPR`, a relative jump
   no modifier. §9.2 and Appendix B name it, and `doc/review/decisions.md`
   no longer lists a relative branch as decided against (#154).
 
+**Assembler (`niceasm`, `nicedis`)**
+
+- `JMPR target` (#154). `nice.vim` shows it.
+- `nicedis` writes `ADD R15, R15, c`, with no modifier, as `JMPR` to its
+  target, which is a label where the symbols name one. So does
+  `disassemble()`, and with it nicedbg's listing. Any other `ADD` to R15
+  stays an `ADD`.
+
 ## V2.0 (2026-11-09)
 
 `WAIT` waits for an interrupt (#133). Five byte windows let a data

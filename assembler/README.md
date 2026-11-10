@@ -66,9 +66,11 @@ The rules of the output:
   instruction where one exists (`SHL`, `ROL`, `BPL`, `SHR`, `ROR`, `BPR`).
   "Always" is no condition, and "never" is `?!1`. Registers are `R0` to
   `R15`, never `SP` or `PC`, which are names that programs define.
-- The pseudo-instructions, such as `CALL`, `JMP`, and `JMPR`, are never
-  written, since their words are those of the instructions written by
-  hand (ISA.md §10.1).
+- The pseudo-instructions, such as `CALL` and `JMP`, are not written,
+  since their words are those of the instructions written by hand
+  (ISA.md §10.1). `JMPR` is the exception: `ADD R15, R15, c`, with no
+  modifier, is `JMPR` to its target, the address after it plus c, so
+  that the target can be a label. Any other `ADD` to R15 stays an `ADD`.
 - Words that no instruction of the syntax gives are `.DAT`, with what they
   would do as a comment. These are the reserved control words (ISA.md
   §5.3), and `MOVE`, `DBL`, `DEC`, `NOT`, and `ONE` with an unused field
@@ -95,8 +97,9 @@ skipped:
   right when it has a label.
 - A constant of 16 or more that is the address of a label is shown as the
   label, with the value in the comment: `MOVE R15, loop ; loop =
-  0x00000123`. Smaller constants, such as the 2 of a call, stay numbers,
-  and so does the count of a SHIFT instruction. Of several labels at one
+  0x00000123`. So is the target of a `JMPR`. Smaller constants, such as
+  the 2 of a call, stay numbers, and so does the count of a SHIFT
+  instruction. Of several labels at one
   address, the first one in the file that `niceasm` accepts is shown.
 - A name that `niceasm` does not accept as a label, such as the `::` or `$`
   names of Rust and Zig functions that `nicebuild.py` writes, a mnemonic,

@@ -35,7 +35,7 @@ _main           MOVE    R7, pairs
                 MOVE    R10, 0xA
                 MOVE    R11, 0xB
                 MOVE    R12, 0xC
-loop            MOVE    R1, @R7
+:               MOVE    R1, @R7
                 MOVE    R2, @1[R7]
                 MOVE    R3, @2[R7]
                 MOVE    R4, @3[R7]
@@ -44,7 +44,7 @@ loop            MOVE    R1, @R7
                 MOVE    @R8++, R2
                 ADD     R7, R7, 4
                 DEC[M]  R9, R9
-        ?!Z     JMP     loop
+        ?!Z     JMP     :-
                 RET
 
 ; Each pair is a then b, each low word first.

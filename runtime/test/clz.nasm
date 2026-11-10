@@ -23,7 +23,7 @@
 _main           MOVE    R7, 1           ; 2^k
                 MOVE    R8, results
                 MOVE    R9, 32          ; number of passes
-loop            MOVE    R1, R7
+:               MOVE    R1, R7
                 CALL    __clz
                 MOVE    @R8++, R1
                 DBL     R1, R7
@@ -32,7 +32,7 @@ loop            MOVE    R1, R7
                 MOVE    @R8++, R1
                 SHL     R7, R7, 1
                 DEC[M]  R9, R9
-        ?!Z     JMP     loop
+        ?!Z     JMP     :-
                 RET
 
 results         .BLK    64

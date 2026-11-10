@@ -9,11 +9,10 @@
 ; Takes 3 + 4k steps, where k is the number of bits in R2 (1 if R2 = 0).
 __mul           MOVE    R3, R1
                 MOVE    R1, 0
-__mul.loop
-                0>C[M]  R2, R2, 1       ; C = next bit, Z = no bits left
+:               0>C[M]  R2, R2, 1       ; C = next bit, Z = no bits left
         ?C      ADD     R1, R1, R3
                 SHL     R3, R3, 1       ; no M, so C and Z stay
-        ?!Z     JMP     __mul.loop
+        ?!Z     JMP     :-
                 RET
 
 ; __udivmod: R1 = R1 / R2 and R3 = R1 % R2, unsigned. Not a C routine:
@@ -26,8 +25,7 @@ __mul.loop
 __udivmod
                 MOVE    R3, 0           ; remainder
                 MOVE    R4, 32          ; passes to go
-__udivmod.loop
-                C<0[M]  R1, R1, 1       ; C = next dividend bit; quotient bit = 0
+:               C<0[M]  R1, R1, 1       ; C = next dividend bit; quotient bit = 0
                 C<C[M]  R3, R3, 1       ; into the remainder; C = its bit 32
                 ADD[C]  R6, R0, R0      ; R6 = that bit
                 SUB[M]  R5, R3, R2
@@ -35,7 +33,7 @@ __udivmod.loop
         ?!C     MOVE    R3, R5
         ?!C     OR      R1, R1, 1
                 DEC[M]  R4, R4
-        ?!Z     JMP     __udivmod.loop
+        ?!Z     JMP     :-
                 RET
 
 ; __udiv: R1 = R1 / R2, unsigned. 1 + 291 = 292 steps.
@@ -81,17 +79,15 @@ __mod           PUSH    R1              ; bit 31: the dividend's sign
 ; R3:R4 (1 if it is 0) and j the number of 1 bits. Uses R3-R6.
 __mul64         MOVE    R5, 0
                 MOVE    R6, 0
-__mul64.loop
-                0>C[M]  R4, R4, 1       ; shift R3:R4 right; C = its bit 0
+:               0>C[M]  R4, R4, 1       ; shift R3:R4 right; C = its bit 0
                 C>C[M]  R3, R3, 1
-        ?!C     JMP     __mul64.next
+        ?!C     JMP     :+
                 ADD[M]  R5, R5, R1
                 ADD[C]  R6, R6, R2
-__mul64.next
-                C<0[M]  R1, R1, 1       ; shift R1:R2 left
+:               C<0[M]  R1, R1, 1       ; shift R1:R2 left
                 0<C     R2, R2, 1
                 OR[M]   R0, R3, R4      ; Z = no bits left
-        ?!Z     JMP     __mul64.loop
+        ?!Z     JMP     :--
                 MOVE    R1, R5
                 MOVE    R2, R6
                 RET
@@ -211,21 +207,19 @@ __ctz           MOVE[M] R2, R1
                 MOVE    R1, 32
         ?Z      RET
                 MOVE    R1, 0
-__ctz.loop
-                0>C[M]  R2, R2, 1       ; C = the bit shifted out
+:               0>C[M]  R2, R2, 1       ; C = the bit shifted out
         ?C      RET
                 ADD     R1, R1, 1
-                JMP     __ctz.loop
+                JMP     :-
 
 ; __popcnt: R1 = the number of 1 bits in R1. Steps: 3 + 3k, where k is
 ; the number of bits in R1 (1 if it is 0). Uses R2.
 __popcnt
                 MOVE    R2, R1
                 MOVE    R1, 0
-__popcnt.loop
-                0>C[M]  R2, R2, 1       ; C = the bit shifted out, Z = none left
+:               0>C[M]  R2, R2, 1       ; C = the bit shifted out, Z = none left
                 ADD[C]  R1, R1, 0       ; add C
-        ?!Z     JMP     __popcnt.loop
+        ?!Z     JMP     :-
                 RET
 
 ; _nice_isqrt64: R1 = floor(sqrt(R1:R2)), unsigned, as ISQRT64_Q of the

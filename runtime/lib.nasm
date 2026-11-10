@@ -115,10 +115,9 @@ _nice_print
                 MOVE    R7, R1
                 MOVE[M] R1, @R7++
         ?Z      JMP     _nice_print.end
-_nice_print.loop
-                CALL    @___putc_vector
+:               CALL    @___putc_vector
                 MOVE[M] R1, @R7++
-        ?!Z     JMP     _nice_print.loop
+        ?!Z     JMP     :-
 _nice_print.end
                 POP     R7
                 RET
@@ -153,8 +152,7 @@ _nice_screen_put
 ; (SYSTEM.md §1.4). 6002 steps. Uses R1.
 _nice_screen_clear
                 MOVE    R1, 2000
-_nice_screen_clear.loop
-                DEC[M]  R1, R1
+:               DEC[M]  R1, R1
                 MOVE    @__nice.screen[R1], __nice.blank
-        ?!Z     JMP     _nice_screen_clear.loop
+        ?!Z     JMP     :-
                 RET

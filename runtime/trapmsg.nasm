@@ -30,13 +30,12 @@ ___trap_report
                 MOVE    R1, ___trap.at
                 CALL    _nice_print
                 MOVE    R9, 8           ; eight hex digits, high one first
-___trap.digit
-                ROL     R11, R11, 4     ; 8 times 4 bits: R11 is the address again
+:               ROL     R11, R11, 4     ; 8 times 4 bits: R11 is the address again
                 AND     R1, R11, 15
                 MOVE    R1, @___trap.hex[R1]
                 CALL    _nice_putc
                 DEC[M]  R9, R9
-        ?!Z     JMP     ___trap.digit
+        ?!Z     JMP     :-
                 MOVE    R1, 10
                 CALL    _nice_putc
                 MOVE    R1, R10

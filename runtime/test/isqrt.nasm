@@ -31,13 +31,13 @@
 _main           MOVE    R7, values
                 MOVE    R8, results
                 MOVE    R9, 12          ; number of values
-loop            MOVE    R1, @R7
+:               MOVE    R1, @R7
                 MOVE    R2, @1[R7]
                 CALL    _nice_isqrt64
                 MOVE    @R8++, R1
                 ADD     R7, R7, 2
                 DEC[M]  R9, R9
-        ?!Z     JMP     loop
+        ?!Z     JMP     :-
                 MOVE    R1, 0
                 MOVE    R2, 0
                 MOVE    R3, 0

@@ -12,7 +12,7 @@ __mul           MOVE    R3, R1
 :               0>C[M]  R2, R2, 1       ; C = next bit, Z = no bits left
         ?C      ADD     R1, R1, R3
                 SHL     R3, R3, 1       ; no M, so C and Z stay
-        ?!Z     JMP     :-
+        ?!Z     JMPR    :-
                 RET
 
 ; __udivmod: R1 = R1 / R2 and R3 = R1 % R2, unsigned. Not a C routine:
@@ -33,7 +33,7 @@ __udivmod
         ?!C     MOVE    R3, R5
         ?!C     OR      R1, R1, 1
                 DEC[M]  R4, R4
-        ?!Z     JMP     :-
+        ?!Z     JMPR    :-
                 RET
 
 ; __udiv: R1 = R1 / R2, unsigned. 1 + 291 = 292 steps.
@@ -87,7 +87,7 @@ __mul64         MOVE    R5, 0
 :               C<0[M]  R1, R1, 1       ; shift R1:R2 left
                 0<C     R2, R2, 1
                 OR[M]   R0, R3, R4      ; Z = no bits left
-        ?!Z     JMP     :--
+        ?!Z     JMPR    :--
                 MOVE    R1, R5
                 MOVE    R2, R6
                 RET
@@ -116,7 +116,7 @@ __udivmod64.loop
         ?!C     MOVE    R6, @3[R13]
         ?!C     OR      R1, R1, 1
                 DEC[M]  @R13, @R13
-        ?!Z     JMP     __udivmod64.loop
+        ?!Z     JMPR    __udivmod64.loop
                 ADD     R13, R13, 4
                 RET
 
@@ -219,7 +219,7 @@ __popcnt
                 MOVE    R1, 0
 :               0>C[M]  R2, R2, 1       ; C = the bit shifted out, Z = none left
                 ADD[C]  R1, R1, 0       ; add C
-        ?!Z     JMP     :-
+        ?!Z     JMPR    :-
                 RET
 
 ; _nice_isqrt64: R1 = floor(sqrt(R1:R2)), unsigned, as ISQRT64_Q of the
@@ -254,7 +254,7 @@ _nice_isqrt64.loop
         ?!C     MOVE    R5, @1[R13]
         ?!C     OR      R3, R3, 1       ; and the bit is 1
                 DEC[M]  @R13, @R13
-        ?!Z     JMP     _nice_isqrt64.loop
+        ?!Z     JMPR    _nice_isqrt64.loop
                 MOVE    R1, R3
                 ADD     R13, R13, 2
                 RET

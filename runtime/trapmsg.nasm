@@ -35,7 +35,7 @@ ___trap_report
                 MOVE    R1, @___trap.hex[R1]
                 CALL    _nice_putc
                 DEC[M]  R9, R9
-        ?!Z     JMP     :-
+        ?!Z     JMPR    :-
                 MOVE    R1, 10
                 CALL    _nice_putc
                 MOVE    R1, R10

@@ -89,7 +89,7 @@ _nice_getc
         ?!Z     AND     R1, R1, 0xFF
         ?!Z     RET
                 AND[M]  R0, R1, 0x200
-        ?Z      JMP     _nice_getc
+        ?Z      JMPR    _nice_getc
                 MOVE    R1, -1
                 RET
 
@@ -117,7 +117,7 @@ _nice_print
         ?Z      JMP     _nice_print.end
 :               CALL    @___putc_vector
                 MOVE[M] R1, @R7++
-        ?!Z     JMP     :-
+        ?!Z     JMPR    :-
 _nice_print.end
                 POP     R7
                 RET
@@ -154,5 +154,5 @@ _nice_screen_clear
                 MOVE    R1, 2000
 :               DEC[M]  R1, R1
                 MOVE    @__nice.screen[R1], __nice.blank
-        ?!Z     JMP     :-
+        ?!Z     JMPR    :-
                 RET

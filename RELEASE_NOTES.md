@@ -68,6 +68,13 @@ The assembler has the pseudo-instruction `JMPR`, a relative jump
   was `ADD R15, R15, top-next` with a label after it, and a short loop
   names its top `:-` (#154). The words are the same.
 
+**Runtime (`runtime/`)**
+
+- The ten loops of `lib.nasm`, `muldiv_soft.nasm`, and `trapmsg.nasm`
+  close with `JMPR`, which the pipelined core predicts taken, where they
+  closed with `JMP` (#60, #154). The words change, the addresses and the
+  steps do not.
+
 ## V2.0 (2026-11-09)
 
 `WAIT` waits for an interrupt (#133). Five byte windows let a data

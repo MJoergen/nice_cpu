@@ -24,7 +24,7 @@
 ;   17  IRQ                                3     2
 ;   18  ADD R6, R6, 1            R6 = 2    2     1
 ;   19  RTI                                1     3   raise
-;   20  ?!Z MOVE R15, loop       taken     3     2   first after RTI
+;   20  ?!Z MOVE R15, :-         taken     3     2   first after RTI
 ;   21  IRQ                                2     1
 ;   22  ADD R6, R6, 1            R6 = 3    1     3   raise, pending in the routine
 ;   23  RTI                                3     2
@@ -36,7 +36,7 @@
 ;   29  IRQ                                3     2
 ;   30  ADD R6, R6, 1            R6 = 5    2     1
 ;   31  RTI                                1     3   raise
-;   32  ?!Z MOVE R15, loop       skipped   3     2   first after RTI
+;   32  ?!Z MOVE R15, :-         skipped   3     2   first after RTI
 ;   33  IRQ                                2     1
 ;   34  ADD R6, R6, 1            R6 = 6    1     3   raise
 ;   35  RTI                                3     2
@@ -81,9 +81,9 @@ TIMER_VECTOR    .EQU    0xFFFFFF12
                 MOVE    R8, @TIMER_COUNT
                 OR      R14, R14, 0x40000000
                 MOVE    @TIMER_PERIOD, 3
-loop            ADD     R9, R9, 1
+:               ADD     R9, R9, 1
                 CMP     R6, 4
-        ?!Z     JMP     loop
+        ?!Z     JMP     :-
                 MOVE    @TIMER_PERIOD, 0
                 AND     R14, R14, 0xBFFFFFFF
                 MOVE    @TIMER_PERIOD, 1

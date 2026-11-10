@@ -45,9 +45,9 @@ NET_STATUS      .EQU    0xFFFFFFB6
                 MOVE    @R1++, @0xFFFFFFBF
                 MOVE    R2, NET_IP
                 MOVE    R3, 16
-loop            MOVE    @R2++, 0xFFFFFFFF
+:               MOVE    @R2++, 0xFFFFFFFF
                 SUB[M]  R3, R3, 1
-        ?!Z     MOVE    R15, loop
+        ?!Z     MOVE    R15, :-
                 MOVE    @R1++, @NET_IP
                 MOVE    @R1++, @NET_MAC_HI
                 MOVE    @R1++, @NET_MAC_LO

@@ -12,8 +12,8 @@
 ; R1 = mem[5] = 8. Steps: 1 + 3 * 3 + 2 = 12. R7 = 0 with Z set, R14 =
 ; 0x09000000. HALT is word 11, so PC = 0xC.
                 MOVE    R7, 3           ; words 0,1
-loop            ADD     @5, @5, 1       ; words 2-5
+:               ADD     @5, @5, 1       ; words 2-5
                 DEC[M]  R7, R7          ; word 6
-        ?!Z     JMP     loop            ; words 7,8
+        ?!Z     JMP     :-              ; words 7,8
                 MOVE    R1, @5          ; words 9,10
                 HALT                    ; word 11

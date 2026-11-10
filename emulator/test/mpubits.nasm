@@ -42,22 +42,22 @@ MPU             .EQU    0xFFFFFF20
                 MOVE    R8, AS
                 MOVE    R6, 0x200
                 MOVE    R7, 8
-ALOOP           MOVE    @MPU, @R8++
+:               MOVE    @MPU, @R8++
                 MOVE    @R6++, @MPU
                 MOVE    @R6++, @MPU+10
                 MOVE    @R6++, @MPU+11
                 MOVE    @R6++, @MPU+12
                 DEC[M]  R7, R7
-        ?!Z     JMP     ALOOP
+        ?!Z     JMP     :-
                 MOVE    R7, 8
-CLOOP           MOVE    @MPU+0x10, @R8++
+:               MOVE    @MPU+0x10, @R8++
                 MOVE    @MPU+0x11, @R8++
                 MOVE    @R6++, @MPU+0x1C
                 MOVE    @R6++, @MPU+0x1D
                 MOVE    @R6++, @MPU+0x1E
                 MOVE    @R6++, @MPU+0x1F
                 DEC[M]  R7, R7
-        ?!Z     JMP     CLOOP
+        ?!Z     JMP     :-
                 MOVE    @MPU+1, 5
                 MOVE    R1, @MPU+10
                 MOVE    @MPU+0x12, 5

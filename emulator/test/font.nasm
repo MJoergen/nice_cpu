@@ -23,9 +23,9 @@ GLYPH_A         .EQU    0x820           ; 32 * 0x41
                 MOVE    R3, FROM+GLYPH_A
                 MOVE    R4, FRAM+GLYPH_A
                 MOVE    R5, 32
-copy            MOVE    @R4++, @R3++
+:               MOVE    @R4++, @R3++
                 SUB[M]  R5, R5, 1
-        ?!Z     JMP     copy
+        ?!Z     JMP     :-
                 MOVE    @FRAM+32, 0xFFFF8001
                 MOVE    R6, @FRAM+32
                 MOVE    @FBASE, FRAM

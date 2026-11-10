@@ -77,9 +77,9 @@ ETH_BUF4        .EQU    0xFFFFFFCC
                 MOVE    @R1++, @ETH_DROPPED
                 MOVE    R2, ETH_BUF0
                 MOVE    R3, 8
-copy            MOVE    @R1++, @R2++
+:               MOVE    @R1++, @R2++
                 SUB[M]  R3, R3, 1
-        ?!Z     MOVE    R15, copy
+        ?!Z     MOVE    R15, :-
                 MOVE    @ETH_CHUNK, 1
                 MOVE    @R1++, @ETH_BUF0
                 MOVE    @ETH_CHUNK, 48

@@ -26,6 +26,7 @@ data read returns.
   - [1.6 Pacing](#16-pacing)
   - [1.7 Read counter](#17-read-counter)
   - [1.8 Font](#18-font)
+  - [1.9 Receive interrupt](#19-receive-interrupt)
 - [2. Math unit](#2-math-unit)
 - [3. Performance counters](#3-performance-counters)
 - [4. Timer](#4-timer)
@@ -49,7 +50,8 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 | `0xFFFF0000`–`0xFFFF07CF` | 2000 | The emulator's character screen, 80×25 (§1.1). |
 | `0xFFFFFF00` | 1 | Console (§1.2). |
 | `0xFFFFFF01` | 1 | Read counter (§1.7). |
-| `0xFFFFFF02`–`0xFFFFFF0F` | 14 | Reserved for I/O. |
+| `0xFFFFFF02` | 1 | The console's receive interrupt (§1.9). |
+| `0xFFFFFF03`–`0xFFFFFF0F` | 13 | Reserved for I/O. |
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (§4). |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (§2). |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (§3), but for `0xFFFFFF46`–`0xFFFFFF49`, the clock of the time of day (§10). |
@@ -124,7 +126,7 @@ With `--window`, the emulator runs as fast as the host can, as without the windo
 
 While a program waits, the emulator sleeps. A console read that finds no byte and a read of `TIME_LO` are idle reads, and two idle reads within 1000 steps of each other mean a wait loop. At each step of one, the emulator waits for a key or another event of the window, so a key still reaches the program at once: for up to a millisecond when the loop has read `TIME_LO` within the last 1000 steps, so that a wait on the counter ends at most a millisecond late, and for up to 10 milliseconds when it waits for a key alone. A program that polls less often than once in 1000 steps never sleeps, and runs at full speed. With `--speed`, the pace sleeps instead, and the rule does not apply.
 
-A wait for an interrupt ([ISA.md §7.5](ISA.md#75-waiting)) takes no time on the host, as the emulator counts its steps at once (§3). With `--speed`, the pace runs them at N a second, as any steps. A wait that no request can end, with no timer running and no `--irq` or `--nmi` to come, stops a run with an error, unless the run has the window or the link. Then the emulator sleeps until the window closes or the host ends the run.
+A wait for an interrupt ([ISA.md §7.5](ISA.md#75-waiting)) takes no time on the host, as the emulator counts its steps at once (§3). With `--speed`, the pace runs them at N a second, as any steps. A wait that no request can end, with no timer running, no `--irq` or `--nmi` to come, and no request of the console to come (§1.9), stops a run with an error, unless the run has the window or the link. Then the emulator sleeps until the window closes or the host ends the run. A wait with the console's enable set, under the window or the link, sleeps until a key or a byte from the host comes, and its request ends the wait. So a program that waits for input with `WAIT` sleeps without the rule of the idle reads above. While the timer runs too, the timer's next request ends the wait at once, as above, and the host does not sleep.
 
 ### 1.7 Read counter
 
@@ -147,6 +149,44 @@ The font RAM and the base are 0 at the start of a run, and the debug link's clea
 The window draws every cell from the font that the base selects. While the font RAM is selected, a write to a glyph shows at the next redraw in every cell with its code, and a write to the base changes the whole screen at once. In the emulator, the base is ordinary memory that the window only reads, as the cursor's words are (§1.4), and is one of the words of NiceMonMEGA65's screen registers (§8).
 
 The fonts are memory to every access. An instruction fetch reads them as a data read does, `--dump` and the debug link read and write them, and a write to the ROM is dropped from each. `--screen` and `--color` print the codes of the screen as text, whatever the font.
+
+### 1.9 Receive interrupt
+
+At `0xFFFFFF02` the emulator and the FPGA implementation map `CONSOLE_IRQ`, with which the console raises IRQ when input comes, so that a program can wait for input with `WAIT` (ISA §7.5) instead of polling.
+
+| Bits | A data read returns | A write |
+|---|---|---|
+| 7..0 | the vector v | sets v |
+| 8 | the enable | sets the enable |
+| 31..9 | 0 | is ignored |
+
+While the enable is 1, the console raises IRQ with vector v when:
+
+1. a byte enters the input while no byte waits,
+2. the input ends, so that a read returns `0x200` (§1.2), or
+3. a write sets the enable from 0 to 1 while a byte waits or the input has ended.
+
+- The request is an edge, not a level. A byte that enters while others wait raises none, so a program reads the input until no byte waits before it waits again. A level would be taken again after each `RTI`, for as long as the byte waits, and the wait loop below would never get back to read it.
+- A request may come for a byte that the program has read already. It only ends a wait once more, for a read that finds no byte.
+- A write of the enable to 0 withdraws no request that is pending, as a stop of the timer does not (§4).
+- The interrupt routine need not acknowledge the request. Taking it is enough.
+- The console is a source of IRQ beside the timer, which goes first (§4).
+- Reset sets v and the enable to 0, with no request pending.
+
+When a byte enters depends on the input. From the window and from `--link`, it enters when a key is typed or the host sends it (§1.5), and from a UART when it arrives. From stdin, a file, or the simulation memory of the FPGA core, where a read waits for its byte, the first byte enters at the start of the run, and each one after it when the read before has taken one. So there a program that waits for each byte with `WAIT` runs as one that polls. Input that is dropped while the processor is held or has halted (§1.5, §8) enters nothing, and a halted processor takes no request (ISA §7.1).
+
+A program waits for a byte with E = 0, so that a byte that comes between its read and its `WAIT` leaves a request pending, and the `WAIT` ends at once. With the enable set, and a vector whose routine is only `RTI`:
+
+    :               AND     R14, R14, 0xBFFFFFFF  ; E = 0
+                    MOVE    R1, @0xFFFFFF00
+                    AND[M]  R0, R1, 0x100   ; bit 8: a byte waits
+            ?!Z     JMP     :+
+                    WAIT                    ; ends when a request is pending
+                    OR      R14, R14, 0x40000000  ; E = 1: the request is taken
+                    JMP     :-
+    :               ...                     ; the byte is in R1
+
+The loop can leave a request pending: a byte that enters after E is cleared is read at once, and its request stays. A program that then sets another vector table and E = 1 takes it through that table. So before such a hand-over, a program clears the enable and takes the request: it sets E = 1 and then clears it again, with VBASE still on the table whose routine for v is only `RTI`. A request that a stopped timer leaves pending needs the same.
 
 ## 2. Math unit
 
@@ -258,7 +298,7 @@ The emulator and the FPGA implementation map a timer at `0xFFFFFF10`–`0xFFFFFF
 - While P ≠ 0, COUNT decreases by one at the end of each cycle, the cycle of the write to `TIMER_PERIOD` included. When COUNT reaches 0, the timer raises IRQ with vector v, and COUNT is set to P again. So the first request comes at the end of the P-th cycle, counting from the write, and then one comes every P cycles.
 - P = 0 stops the timer, and COUNT stays 0. A request that is already pending stays pending.
 - The emulator counts one cycle for each step, a wait step included, as its cycle counter does (§3). The FPGA implementation counts clock cycles while the core runs. Like the cycle counter, COUNT stops when the core is held or has halted, and counts on while it waits for an interrupt (§3).
-- The timer is the only source of IRQ (ISA §7.1).
+- The timer and the console's receive interrupt (§1.9) are the sources of IRQ (ISA §7.1). Each one's requests merge only with its own. When both are pending, the timer's is taken first, so that a timer routine's latency stays steady; the console's input waits in its buffer meanwhile. The emulator's `--irq` raises requests of the timer's source, as it stands in for the timer in the tests of the FPGA core.
 - A request keeps the vector it was raised with. If the timer's last request is still pending when it raises the next one, the two merge (ISA §7.1), and the pending one keeps its vector. So a timer whose period is shorter than its interrupt routine, or than a stretch of code with E = 0, loses requests. To keep time, read the cycle counter rather than count interrupts.
 - The interrupt routine need not acknowledge the request. Taking it is enough.
 - Reset sets P, COUNT, and v to 0, with no request pending.
@@ -470,9 +510,10 @@ The emulator's station serves the frames that a board's does, by the same rules,
 
 A board that wraps the FPGA core, such as [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), may differ from the emulator in the points below. Its own README has the details.
 
-- **Reserved words.** `0xFFFFFF02`–`0xFFFFFF0F`, `0xFFFFFF80`–`0xFFFFFF9F`, and `0xFFFFFFD0`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. A system without the clock of §10 has nothing at `0xFFFFFF46`–`0xFFFFFF49`. The emulator treats all these words as ordinary memory for data accesses, and only instruction fetches read 0 ([ISA.md §8.3](ISA.md)). NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF8F` for its screen registers, `0xFFFFFF90`–`0xFFFFFF9F` for its board's devices, and `0xFFFFFFE0`–`0xFFFFFFFF` for the debug registers of the link (**Debug link** below). The link's registers of version 7 start at `0xFFFFFFD0`.
+- **Reserved words.** `0xFFFFFF03`–`0xFFFFFF0F`, `0xFFFFFF80`–`0xFFFFFF9F`, and `0xFFFFFFD0`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. A system without the clock of §10 has nothing at `0xFFFFFF46`–`0xFFFFFF49`. The emulator treats all these words as ordinary memory for data accesses, and only instruction fetches read 0 ([ISA.md §8.3](ISA.md)). NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF8F` for its screen registers, `0xFFFFFF90`–`0xFFFFFF9F` for its board's devices, and `0xFFFFFFE0`–`0xFFFFFFFF` for the debug registers of the link (**Debug link** below). The link's registers of version 7 start at `0xFFFFFFD0`.
 - **Screen.** A board's screen may be larger than the emulator's 80×25. NiceMonMEGA65's has up to 32K words. The color format of §1.1 applies unchanged. The display offset belongs to the board. The emulator's window draws the cursor from the board's cursor registers (§1.4), but has no offset.
 - **Console input.** A UART or a keyboard feeds the same console at `0xFFFFFF00`, with the same bits (§1.2). A break on the UART may end the line's input: the UART's bytes are then dropped until the next start, and a read returns `0x200` once the FIFO is empty, but the keyboard's bytes still go into the FIFO, and a read returns them. So a monitor that a host leaves keeps running on the keyboard, and a program that reads until the end still ends with the host's input. A keyboard sends no break. A board's keyboard gives the bytes of the window's keys (§1.5), and may have more keys.
+- **Receive interrupt.** A system may leave out the receive interrupt of §1.9. Then it has nothing at `0xFFFFFF02`, and the timer is its only source of IRQ. A board raises the request from its input FIFO, so one request covers its keyboard and its UART. NiceMonMEGA65 does not have it yet (MJoergen/NiceMonMEGA65#104).
 - **Input FIFO.** A system's input FIFO may lose bytes. NiceMonMEGA65 drops a UART byte that arrives when the FIFO is full, with the link's `o` notice ([DEBUG.md §4](DEBUG.md#4-notices)), or after a break. Over a transport with flow control, such as TCP, the byte waits up to 50 ms for room first ([DEBUG.md §1](DEBUG.md#1-the-byte-stream)). Input that arrives while the processor is held or has halted is dropped, as by `niceemu --link`, and input that arrives while it is paused waits in the FIFO ([DEBUG.md §1](DEBUG.md#1-the-byte-stream)). A keyboard byte waits until the FIFO has room for two, so that a UART byte still finds room.
 - **SD card slots.** A system without an SD card controller has nothing at `0xFFFFFFA0`–`0xFFFFFFAF`. The MEGA65 has 2 slots: the microSD slot at the back, and the full-size slot underneath, the only one with write protect, whose card detect does not work on the R3 (§5). NiceMonMEGA65 plans to number them 0 and 1 (MJoergen/NiceMonMEGA65#55). The Nexys4DDR has 1, its microSD slot.
 - **Network station.** A system that serves the debug link only on a UART, or not at all, has nothing at `0xFFFFFFB0`–`0xFFFFFFBF`. NiceMonMEGA65 has its station at `0xFFFFFF98`–`0xFFFFFF9D` today, with the same registers in another order and no status word, until it follows §6.

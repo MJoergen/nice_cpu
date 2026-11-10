@@ -625,7 +625,13 @@ pub const Link = struct {
     /// the next byte of the buffer, and returns 0 rather than wait for one.
     /// So no read stops a step, and none is undone.
     pub fn pollInput(self: *Link) cpu_zig.Input {
-        return .{ .ctx = self, .next_fn = nextNoWait };
+        return .{ .ctx = self, .next_fn = nextNoWait, .peek_fn = peekNoWait };
+    }
+
+    fn peekNoWait(ctx: *anyopaque) cpu_zig.Input.State {
+        const self: *Link = @ptrCast(@alignCast(ctx));
+        if (self.input_len != 0) return .byte;
+        return if (self.input_end) .end else .none;
     }
 
     fn nextNoWait(ctx: *anyopaque) cpu_zig.Input.Next {

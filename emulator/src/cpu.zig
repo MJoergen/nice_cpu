@@ -202,8 +202,13 @@ pub const console_end: u32 = 0x200;
 pub const Input = struct {
     ctx: *anyopaque,
     next_fn: *const fn (ctx: *anyopaque) Next,
+    /// What the input holds now, without taking it, for an input that can
+    /// have no byte. Null for one whose read waits for its byte: there a
+    /// byte enters when the read before has taken one (SYSTEM §1.9).
+    peek_fn: ?*const fn (ctx: *anyopaque) State = null,
 
     pub const Next = union(enum) { byte: u8, none, end };
+    pub const State = enum { byte, none, end };
 
     pub fn next(self: Input) Next {
         return self.next_fn(self.ctx);
@@ -225,6 +230,22 @@ pub const Input = struct {
 /// data reads of it since the last write, and then counts itself. A write
 /// sets the count. It lets tests see the data reads of §8.2.
 pub const counter_addr: u32 = io_base + 1;
+
+/// The console's receive interrupt (SYSTEM §1.9).
+pub const console_irq_addr: u32 = io_base + 2;
+
+/// The register of the console's receive interrupt (SYSTEM §1.9).
+pub const ConsoleIrq = struct {
+    vector: u8 = 0,
+    enable: bool = false,
+    /// What an input that can have no byte held at the last look, so that
+    /// a change to a waiting byte or to the end raises a request.
+    last: Input.State = .none,
+
+    pub fn read(self: ConsoleIrq) u32 {
+        return @as(u32, self.vector) | @as(u32, @intFromBool(self.enable)) << 8;
+    }
+};
 
 /// The first of the 32 words of the math unit (SYSTEM §2).
 pub const mpu_base: u32 = io_base + 0x20;
@@ -870,9 +891,13 @@ pub const Cpu = struct {
     saved_sr: u32,
     halt_reason: HaltReason,
 
-    // Pending interrupt requests, holding the vector the device supplies (§7.1).
+    // Pending interrupt requests, holding the vector the device supplies
+    // (§7.1). An IRQ is pending for each of its sources, which merge only
+    // with their own: the timer's, which `--irq` raises too, and the
+    // console's, which is taken after it (SYSTEM §4).
     nmi_pending: ?u8,
     irq_pending: ?u8,
+    console_pending: ?u8,
 
     /// When set, `step` writes one line per instruction or interrupt here.
     trace: ?*std.Io.Writer,
@@ -893,6 +918,8 @@ pub const Cpu = struct {
     /// in most unit tests, the read falls through to memory, like any other
     /// word.
     input: ?Input,
+    /// The console's receive interrupt at `console_irq_addr`.
+    console_irq: ConsoleIrq,
     /// The math unit at `mpu_base`.
     mpu: Mpu,
     /// The performance counters at `perf_base`.
@@ -956,12 +983,14 @@ pub const Cpu = struct {
             .halt_reason = .none,
             .nmi_pending = null,
             .irq_pending = null,
+            .console_pending = null,
             .trace = null,
             .last_write = null,
             .read_count = 0,
             .console = null,
             .console_flush = false,
             .input = null,
+            .console_irq = .{},
             .mpu = .{},
             .perf = .{},
             .tod = .{},
@@ -1011,6 +1040,8 @@ pub const Cpu = struct {
         self.halt_reason = .none;
         self.nmi_pending = null;
         self.irq_pending = null;
+        self.console_pending = null;
+        self.console_irq = .{};
         self.mpu = .{};
         self.perf = .{};
         self.timer = .{};
@@ -1029,6 +1060,25 @@ pub const Cpu = struct {
     /// arrive while one is pending merge into it, which keeps its vector (§7.1).
     pub fn requestIrq(self: *Cpu, v: u8) void {
         if (self.irq_pending == null) self.irq_pending = v;
+    }
+
+    /// Raise the console's request, if its enable is set. It merges with
+    /// a request of the console that is pending (SYSTEM §1.9).
+    fn raiseConsole(self: *Cpu) void {
+        if (self.console_irq.enable and self.console_pending == null) self.console_pending = self.console_irq.vector;
+    }
+
+    /// Look at an input that can have no byte: a byte that has entered
+    /// while none waited, or the end, raises the console's request
+    /// (SYSTEM §1.9). The run loops look before each step, and before
+    /// they jump over wait steps.
+    pub fn pollConsole(self: *Cpu) void {
+        const in = self.input orelse return;
+        const look = in.peek_fn orelse return;
+        const s = look(in.ctx);
+        const last = self.console_irq.last;
+        self.console_irq.last = s;
+        if (s != .none and s != last) self.raiseConsole();
     }
 
     /// Raise the non-maskable interrupt request with vector `v`. Requests
@@ -1059,7 +1109,15 @@ pub const Cpu = struct {
             if (self.input) |in| {
                 // Show a prompt before waiting for the input that answers it.
                 if (self.console) |w| w.flush() catch {};
-                switch (in.next()) {
+                const n = in.next();
+                // The next byte, or the end, enters: at once where a read
+                // waits for its byte, and else when the host has sent it.
+                if (in.peek_fn == null) {
+                    if (n == .byte) self.raiseConsole();
+                } else {
+                    self.pollConsole();
+                }
+                switch (n) {
                     .byte => |b| return console_byte | b,
                     .none => {
                         self.idle_reads +%= 1;
@@ -1074,6 +1132,7 @@ pub const Cpu = struct {
             self.read_count +%= 1;
             return n;
         }
+        if (addr == console_irq_addr) return self.console_irq.read();
         if (mpuWord(addr)) |i| return self.mpu.read(i);
         if (self.todDevice(addr)) |i| return self.tod.read(i);
         if (self.perfDevice(addr)) |i| {
@@ -1111,6 +1170,7 @@ pub const Cpu = struct {
     /// devices are mapped it must not trigger their side effects.
     pub fn peek(self: *const Cpu, addr: u32) u32 {
         if (addr == counter_addr) return self.read_count;
+        if (addr == console_irq_addr) return self.console_irq.read();
         if (mpuWord(addr)) |i| return self.mpu.read(i);
         if (self.todDevice(addr)) |i| return self.tod.peek(i);
         if (self.perfDevice(addr)) |i| {
@@ -1137,6 +1197,8 @@ pub const Cpu = struct {
         }
         if (addr == counter_addr) {
             self.read_count = value;
+        } else if (addr == console_irq_addr) {
+            self.writeConsoleIrq(value);
         } else if (mpuWord(addr)) |i| {
             self.mpu.write(i, value);
         } else if (self.todDevice(addr)) |i| {
@@ -1158,6 +1220,24 @@ pub const Cpu = struct {
             try self.mem.write(addr, value);
         }
         self.last_write = .{ .addr = addr, .value = value };
+    }
+
+    /// A write of `CONSOLE_IRQ`. Setting the enable from 0 to 1 while a
+    /// byte waits or the input has ended raises a request; clearing it
+    /// withdraws none (SYSTEM §1.9). Where a read waits for its byte, one
+    /// always waits, or the input has ended.
+    fn writeConsoleIrq(self: *Cpu, value: u32) void {
+        const was = self.console_irq.enable;
+        self.console_irq.vector = @truncate(value);
+        self.console_irq.enable = value & 0x100 != 0;
+        if (was or !self.console_irq.enable) return;
+        const in = self.input orelse return;
+        if (in.peek_fn) |look| {
+            const s = look(in.ctx);
+            self.console_irq.last = s;
+            if (s == .none) return;
+        }
+        self.raiseConsole();
     }
 
     fn flag(self: *const Cpu, bit: u5) u1 {
@@ -1191,11 +1271,12 @@ pub const Cpu = struct {
             if (self.timer_irq) self.requestIrq(v);
             self.timer.raised = null;
         }
+        self.pollConsole();
 
         // §7.5: a pending request ends a wait. Without one, the step is a
         // wait step, a cycle in which nothing else happens (SYSTEM §3).
         if (self.waiting) {
-            if (self.nmi_pending == null and self.irq_pending == null) return;
+            if (self.nmi_pending == null and self.irq_pending == null and self.console_pending == null) return;
             self.waiting = false;
         }
 
@@ -1207,9 +1288,11 @@ pub const Cpu = struct {
                 self.perf.intrs +%= 1;
                 return self.traceInterrupt("NMI", v, before);
             }
-            if (self.irq_pending) |v| {
-                if (self.flag(sr_e) == 1) {
-                    self.irq_pending = null;
+            // The timer's request goes before the console's (SYSTEM §4).
+            if (self.flag(sr_e) == 1) {
+                const slot = if (self.irq_pending != null) &self.irq_pending else &self.console_pending;
+                if (slot.*) |v| {
+                    slot.* = null;
                     self.enterInterrupt(v);
                     self.perf.intrs +%= 1;
                     return self.traceInterrupt("IRQ", v, before);
@@ -1258,6 +1341,8 @@ pub const Cpu = struct {
         saved_sr: u32,
         nmi_pending: ?u8,
         irq_pending: ?u8,
+        console_pending: ?u8,
+        console_irq: ConsoleIrq,
         read_count: u32,
         perf: Perf,
         tod: Tod,
@@ -1274,6 +1359,8 @@ pub const Cpu = struct {
             .saved_sr = self.saved_sr,
             .nmi_pending = self.nmi_pending,
             .irq_pending = self.irq_pending,
+            .console_pending = self.console_pending,
+            .console_irq = self.console_irq,
             .read_count = self.read_count,
             .perf = self.perf,
             .tod = self.tod,
@@ -1290,6 +1377,8 @@ pub const Cpu = struct {
         self.saved_sr = s.saved_sr;
         self.nmi_pending = s.nmi_pending;
         self.irq_pending = s.irq_pending;
+        self.console_pending = s.console_pending;
+        self.console_irq = s.console_irq;
         self.read_count = s.read_count;
         self.perf = s.perf;
         self.tod = s.tod;
@@ -1304,10 +1393,11 @@ pub const Cpu = struct {
         return self.irqPending() and self.flag(sr_e) == 1;
     }
 
-    /// Whether an IRQ is pending (§7.1), the timer's included, whether or
-    /// not it can be taken.
+    /// Whether an IRQ is pending (§7.1), of either source, the timer's
+    /// raised at the end of the last step included, whether or not it can
+    /// be taken.
     pub fn irqPending(self: *const Cpu) bool {
-        return self.irq_pending != null or (self.timer_irq and self.timer.raised != null);
+        return self.irq_pending != null or self.console_pending != null or (self.timer_irq and self.timer.raised != null);
     }
 
     /// Whether the next step is a wait step (§7.5, SYSTEM §3): the
@@ -2434,6 +2524,98 @@ test "with input that can have no byte, a console read returns 0 then" {
     try testing.expectEqual(0, script.answers.len);
 }
 
+test "a console input that can have no byte raises a request when a byte enters it empty, or it ends (SYSTEM §1.9)" {
+    const Fifo = struct {
+        bytes: [4]u8 = undefined,
+        len: usize = 0,
+        ended: bool = false,
+        fn push(self: *@This(), b: u8) void {
+            self.bytes[self.len] = b;
+            self.len += 1;
+        }
+        fn next(ctx: *anyopaque) Input.Next {
+            const self: *@This() = @ptrCast(@alignCast(ctx));
+            if (self.len == 0) return if (self.ended) .end else .none;
+            const b = self.bytes[0];
+            std.mem.copyForwards(u8, self.bytes[0 .. self.len - 1], self.bytes[1..self.len]);
+            self.len -= 1;
+            return .{ .byte = b };
+        }
+        fn peek(ctx: *anyopaque) Input.State {
+            const self: *@This() = @ptrCast(@alignCast(ctx));
+            if (self.len != 0) return .byte;
+            return if (self.ended) .end else .none;
+        }
+    };
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    var fifo: Fifo = .{};
+    cpu.input = .{ .ctx = &fifo, .next_fn = Fifo.next, .peek_fn = Fifo.peek };
+    // A byte that enters while the enable is 0 raises nothing, but the
+    // enable set while it waits does.
+    fifo.push('a');
+    cpu.pollConsole();
+    try cpu.write(console_irq_addr, 0x150);
+    try testing.expectEqual(0x150, cpu.peek(console_irq_addr));
+    try testing.expectEqual(0x50, cpu.console_pending);
+    cpu.console_pending = null;
+    // A byte that enters while one waits raises nothing, nor does a read
+    // that leaves one waiting, or one that leaves none.
+    fifo.push('b');
+    cpu.pollConsole();
+    try testing.expectEqual(0x161, cpu.read(console_addr));
+    try testing.expectEqual(0x162, cpu.read(console_addr));
+    try testing.expectEqual(null, cpu.console_pending);
+    try testing.expectEqual(0, cpu.read(console_addr));
+    // A byte that enters the empty input raises one, which keeps its
+    // vector when the vector changes.
+    fifo.push('c');
+    cpu.pollConsole();
+    try testing.expectEqual(0x50, cpu.console_pending);
+    try cpu.write(console_irq_addr, 0x151); // the enable stays 1: no request
+    try testing.expectEqual(0x50, cpu.console_pending);
+    cpu.console_pending = null;
+    // The read of the last byte, once the input has ended, raises one for
+    // the end, and only once.
+    fifo.ended = true;
+    try testing.expectEqual(0x163, cpu.read(console_addr));
+    try testing.expectEqual(0x51, cpu.console_pending);
+    cpu.console_pending = null;
+    cpu.pollConsole();
+    try testing.expectEqual(0x200, cpu.read(console_addr));
+    try testing.expectEqual(null, cpu.console_pending);
+    // The enable to 0 withdraws nothing, and to 1 again after the end
+    // raises one.
+    cpu.console_pending = 0x51;
+    try cpu.write(console_irq_addr, 0x52);
+    try testing.expectEqual(0x51, cpu.console_pending);
+    cpu.console_pending = null;
+    try cpu.write(console_irq_addr, 0x152);
+    try testing.expectEqual(0x52, cpu.console_pending);
+    // A reset clears the register and the request.
+    cpu.reset();
+    try testing.expectEqual(0, cpu.peek(console_irq_addr));
+    try testing.expectEqual(null, cpu.console_pending);
+}
+
+test "with an input whose read waits, the console raises a request after each byte read (SYSTEM §1.9)" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    var r: std.Io.Reader = .fixed("A");
+    cpu.input = .fromReader(&r);
+    // A byte or the end always waits, so the enable set raises one.
+    try cpu.write(console_irq_addr, 0x160);
+    try testing.expectEqual(0x60, cpu.console_pending);
+    cpu.console_pending = null;
+    // The read of "A" lets the end enter, and the read of the end raises
+    // nothing.
+    try testing.expectEqual(0x141, cpu.read(console_addr));
+    try testing.expectEqual(0x60, cpu.console_pending);
+    cpu.console_pending = null;
+    try testing.expectEqual(0x200, cpu.read(console_addr));
+    try testing.expectEqual(null, cpu.console_pending);
+}
+
 test "idle reads are the console reads that find no byte and the reads of TIME_LO (SYSTEM §1.6)" {
     // MOVE R1, @CONSOLE twice, then MOVE R2, @TIME_LO, MOVE R3, @TIME_HI,
     // MOVE R4, @CYCLE_LO, and HALT. The first console read finds no byte
@@ -2938,11 +3120,12 @@ test "without timer requests, the timer counts and reloads, and raises none (--n
 test "instruction fetches from the I/O range read 0 (§8.3)" {
     // 0xFFFFFEFF: MOVE R1, c, with c at 0xFFFFFF00 holding 7. The constant
     // is fetched from the I/O range, so R1 = 0. Then the words at
-    // 0xFFFFFF01 (the read counter) and the HALT at 0xFFFFFF02 are fetched
-    // as 0, NOPs, but a data read still sees the HALT.
+    // 0xFFFFFF01 (the read counter), 0xFFFFFF02 (CONSOLE_IRQ), and the
+    // HALT at 0xFFFFFF03 are fetched as 0, NOPs, but a data read still
+    // sees the HALT.
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
-    try load(&cpu, 0xFFFF_FEFF, &.{ alu_iw(.always, MOVE, .none, reg(1), imm(0), reg(0)), 7, 0, HALT });
+    try load(&cpu, 0xFFFF_FEFF, &.{ alu_iw(.always, MOVE, .none, reg(1), imm(0), reg(0)), 7, 0, 0, HALT });
     cpu.regs[15] = 0xFFFF_FEFF;
     cpu.regs[1] = 9;
     try cpu.step();
@@ -2950,10 +3133,11 @@ test "instruction fetches from the I/O range read 0 (§8.3)" {
     try testing.expectEqual(0xFFFF_FF01, cpu.regs[15]);
     try cpu.step();
     try cpu.step();
+    try cpu.step();
     try testing.expect(!cpu.halted());
-    try testing.expectEqual(0xFFFF_FF03, cpu.regs[15]);
+    try testing.expectEqual(0xFFFF_FF04, cpu.regs[15]);
     try testing.expectEqual(0, cpu.read_count);
-    try testing.expectEqual(HALT, cpu.read(0xFFFF_FF02));
+    try testing.expectEqual(HALT, cpu.read(0xFFFF_FF03));
 }
 
 /// Run `cpu` for `n` steps, tracing into a buffer, and return the trace.

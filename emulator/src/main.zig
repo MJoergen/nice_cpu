@@ -755,9 +755,11 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
     return report(out, opts, syms, &cpu, steps, stop);
 }
 
-/// Raise the requests of --irq and --nmi for step `steps`. `next` is the
-/// first request not raised yet.
+/// Raise the requests of --irq and --nmi for step `steps`, and the
+/// console's of a byte that has come (doc/SYSTEM.md §1.9). `next` is the
+/// first request of --irq and --nmi not raised yet.
 fn raiseRequests(cpu: *Cpu, opts: Options, steps: u64, next: *usize) void {
+    cpu.pollConsole();
     while (next.* < opts.requests.len and opts.requests[next.*].step == steps) : (next.* += 1) {
         const r = opts.requests[next.*];
         switch (r.kind) {
@@ -972,10 +974,11 @@ fn report(out: *std.Io.Writer, opts: Options, syms: []const Symbol, cpu: *Cpu, s
     }
     if (syms.len != 0 and !(cpu.halted() and cpu.halt_reason == .halt)) try printWhere(out, cpu, syms);
     // A request still pending now was never taken (ISA.md §7.1).
-    if (cpu.nmi_pending != null or cpu.irq_pending != null) {
+    if (cpu.nmi_pending != null or cpu.irq_pending != null or cpu.console_pending != null) {
         try out.writeAll("Pending:");
         if (cpu.nmi_pending) |v| try out.print(" NMI {x:0>2}", .{v});
         if (cpu.irq_pending) |v| try out.print(" IRQ {x:0>2}", .{v});
+        if (cpu.console_pending) |v| try out.print(" IRQ {x:0>2}", .{v});
         try out.writeByte('\n');
     }
     try printRegisters(out, cpu);
@@ -1087,13 +1090,7 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
                 link.limit_hit = true;
                 break;
             }
-            while (next < opts.requests.len and opts.requests[next].step == steps) : (next += 1) {
-                const r = opts.requests[next];
-                switch (r.kind) {
-                    .irq => cpu.requestIrq(r.vector),
-                    .nmi => cpu.requestNmi(r.vector),
-                }
-            }
+            raiseRequests(cpu, opts, steps, &next);
             // After the requests of this step, as an entry goes first.
             if (link.breakDue()) {
                 link.pause();

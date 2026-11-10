@@ -75,7 +75,8 @@ program first, the first line is `Stopped at the step limit after N steps,
 PC=...` instead. If the program waits for an interrupt that no request can
 end, the first line is `Stopped: waiting with no request to come, after N
 steps, PC=...`, with PC the address after the `WAIT`. If an interrupt request is still pending at the end, a
-line such as `Pending: IRQ 05` follows the first line.
+line such as `Pending: IRQ 05` follows the first line. With requests of both
+sources of IRQ pending, it lists the timer's first, as in `Pending: IRQ 41 IRQ 42`.
 
     $ zig-out/bin/niceemu ../assembler/test/count.bin
     Halted (HALT) after 12292 steps, PC=00000009
@@ -230,7 +231,8 @@ without a display. The close of the window, before the halt, after it, and
 with `--link`, it checks through a hook of niceemu for the test, as the
 dummy driver cannot close one. With `--link`, as a host, it checks that a
 read returns 0 until a byte comes, the sleep in the wait loop, and the end
-of the input. The key table and the drawing of the screen are unit tests
+of the input, and that a `WAIT` with the console's receive interrupt
+sleeps until a byte or the end comes. The key table and the drawing of the screen are unit tests
 in `src/keys.zig` and `src/frame.zig`, the keys' way into the link's
 buffer one in `src/link.zig`, and the mapping of SDL's key events to the
 keys one in `src/window.zig`, which `make window-test` runs.
@@ -259,15 +261,16 @@ address twice and a file with no words are errors.
 | `0xFFFF07D0`–`0xFFFFFEFF` | 63280 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |
 | `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns the next input byte plus `0x100`, or `0x200` after the end of the input. |
 | `0xFFFFFF01` | 1 | Read counter. A data read returns the number of data reads of it since the last write, and a write sets that number. |
-| `0xFFFFFF02`–`0xFFFFFF0F` | 14 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
+| `0xFFFFFF02` | 1 | `CONSOLE_IRQ`, the console's receive interrupt (SYSTEM.md §1.9): the vector in bits 7..0 and the enable in bit 8. |
+| `0xFFFFFF03`–`0xFFFFFF0F` | 13 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (SYSTEM.md §4). Raises IRQ once every P steps. |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (SYSTEM.md §2). Multiplies and divides A and B and counts the bits of A, and divides C and D and takes the square root of C. |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (SYSTEM.md §3). Cycles, instructions, microseconds, data reads, stores, skips, jumps, and interrupts, 64 bits each. The clock of the time of day, at `0xFFFFFF46`–`0xFFFFFF49` (SYSTEM.md §10). The fetch statistics of the FPGA core, at `0xFFFFFF60`–`0xFFFFFF7F`, read 0. |
-| `0xFFFFFF80`–`0xFFFFFF9F` | 32 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (SYSTEM.md §1.4), and takes its font base from `0xFFFFFF86` (SYSTEM.md §1.8). |
+| `0xFFFFFF80`–`0xFFFFFF9F` | 32 | Reserved for I/O, like `0xFFFFFF03`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (SYSTEM.md §1.4), and takes its font base from `0xFFFFFF86` (SYSTEM.md §1.8). |
 | `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | SD card controller (SYSTEM.md §5). Two slots, with the images of `--sd0` and `--sd1`. |
 | `0xFFFFFFB0`–`0xFFFFFFBF` | 16 | Network station (SYSTEM.md §6). The IP and MAC addresses, counts of frames that read 0, and the state of `--link`. |
 | `0xFFFFFFC0`–`0xFFFFFFCF` | 16 | Ethernet frames (SYSTEM.md §7). A queue of 4 frames and a send buffer, with the frames of `--eth-in` and `--eth-udp`. |
-| `0xFFFFFFD0`–`0xFFFFFFFF` | 48 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF0F`. |
+| `0xFFFFFFD0`–`0xFFFFFFFF` | 48 | Reserved for I/O, like `0xFFFFFF03`–`0xFFFFFF0F`. |
 
 ### Screen
 
@@ -373,8 +376,9 @@ checks it on the host's clock.
 The timer counts steps as well, so its requests come every P steps. A
 request raised by the last step of a run is not listed as pending at the
 end, as on the FPGA core, where it only reaches the core after that step.
-The timer's requests are IRQs, like those of `--irq`. A request merges
-with one that is pending, and the pending one keeps its vector. So when `--irq` and the timer raise a request before the same step, the vector
+The timer's requests are IRQs, like those of `--irq`, which raises
+requests of the timer's source (SYSTEM.md §4). A request merges
+with one of its source that is pending, and the pending one keeps its vector. So when `--irq` and the timer raise a request before the same step, the vector
 of `--irq` is kept: it is pending before the step begins, and the timer's
 request merges with it (`test/irqtimer.nasm`). `test/timer.nasm` checks the counting, the stop, the
 merging, and that a request keeps the vector it was raised with when
@@ -565,14 +569,17 @@ words before the bad byte, at most N.
 ## Interrupts
 
 The core (`src/cpu.zig`) implements IRQ, NMI, `INT`, and `RTI` (ISA.md §7).
-The timer (Memory map) is the only device that raises IRQ, and no device
-raises NMI. `--irq` and `--nmi` raise a request at a chosen step. A request for step N is raised after N steps have run, so
+The timer and the console's receive interrupt (Memory map) raise IRQ, and
+no device raises NMI. `--irq` and `--nmi` raise a request at a chosen step,
+that of `--irq` of the timer's source. A request for step N is raised after N steps have run, so
 with `--trace` it comes before line N + 1, and `--nmi 0:5` raises an NMI
 before the first instruction. A request is raised whether or not it can be
 taken. If it cannot, it stays pending, as ISA.md §7.1 says, and a request
-still pending at a halt is never taken. A request of a kind that is already
+still pending at a halt is never taken. A request of a kind and a source that is already
 pending merges with it, so the vector given first wins, whether the two were
-given for the same step or for different steps. Requests for steps that are
+given for the same step or for different steps. The requests of the timer
+and of the console do not merge: each stays pending, and the timer's is
+taken first (SYSTEM.md §4). Requests for steps that are
 never reached, because the processor halts or `-n` stops it, are never
 raised. The probes `test/irq.nasm`, `test/merge.nasm`, `test/after.nasm`, and
 `test/start.nasm` show these rules.
@@ -587,8 +594,17 @@ takes no host time, and without `--step-time` the microsecond counter moves
 on little during it. `--trace` prints no line for a wait step. A wait that
 no request can end, with no timer request and no `--irq` or `--nmi` to
 come, stops the run with exit status 2, also under `-n`, but not with
-the window or the link. The probes `test/wait.nasm` and
+the window or the link. There a key or a byte from the host can raise the
+console's request, and the run sleeps until one comes (SYSTEM.md §1.6). The probes `test/wait.nasm` and
 `test/waitnone.nasm` show these rules.
+
+The console raises its request on an edge (SYSTEM.md §1.9). Where a read
+waits for its byte, from stdin, a file, or the link without the window,
+each read that takes a byte raises one, for the byte or the end that
+enters after it, and so does the enable set from 0 to 1. With the window,
+niceemu looks at the input before each step, and before it counts wait
+steps at once: a byte that has entered the empty input, or the end, raises
+one. `test/conirq.nasm` shows these rules, and the order of the two sources.
 
 ## Trace format
 

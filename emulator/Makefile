@@ -23,7 +23,7 @@ OPTS_wrap      = -d 0xffffffff:1
 # are in the comments of each program. Run make bins after changing one.
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge irqtimer after start cputest console screen screencolor screeninvert iofetch \
   reads reserved mpu mpu64 mpubits perf events timer input r15modes r0dest r14mem skipconst carryin shiftc \
-  wrapmem smcown scrbound time trapsym sd font net eth bytewin wait waitnone clock clockhost stack
+  wrapmem smcown scrbound time trapsym sd font net eth bytewin wait waitnone clock clockhost stack conirq
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
@@ -69,6 +69,7 @@ OPTS_timer_noirq = --no-timer-irq --irq 7:0x41 --irq 17:0x41 --irq 20:0x41 --irq
   --irq 26:0x41 --irq 29:0x41 --irq 32:0x41 --irq 35:0x41 --irq 42:0x41 --irq 50:0x42 \
   -d 0xffffff10:4
 OPTS_input   = --input test/input.txt
+OPTS_conirq  = --input test/input.txt --irq 4:0x41 -d 0x200:8
 OPTS_r15modes = -d 6:1 -d 0xa:1
 OPTS_r0dest  = -d 0:2
 OPTS_r14mem  = -d 0x01000010:2 -d 0x01ffffff:1

@@ -70,7 +70,7 @@ pub const Queue = struct {
     }
 
     pub fn input(self: *Queue) Input {
-        return .{ .ctx = self, .next_fn = next };
+        return .{ .ctx = self, .next_fn = next, .peek_fn = peek };
     }
 
     /// The next byte of the keys, if any.
@@ -85,6 +85,15 @@ pub const Queue = struct {
     /// Drop the keys.
     pub fn clear(self: *Queue) void {
         self.len = 0;
+    }
+
+    /// Whether a byte waits, without taking it. The keys have no end.
+    fn peek(ctx: *anyopaque) Input.State {
+        const self: *Queue = @ptrCast(@alignCast(ctx));
+        if (self.file) |r| {
+            if (r.peekByte()) |_| return .byte else |_| self.file = null;
+        }
+        return if (self.len == 0) .none else .byte;
     }
 
     fn next(ctx: *anyopaque) Input.Next {

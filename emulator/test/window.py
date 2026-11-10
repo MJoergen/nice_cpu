@@ -52,6 +52,27 @@ loop            MOVE    R1, @CONSOLE
                 HALT
 """
 
+# Waits for a byte or the end with WAIT and the console's receive
+# interrupt (SYSTEM.md §1.9), whose routine is only RTI, and counts the
+# waits in R2.
+WAIT_IRQ = """
+CONSOLE         .EQU    0xFFFFFF00
+CONSOLE_IRQ     .EQU    0xFFFFFF02
+                MOVE    @CONSOLE_IRQ, 0x142
+:               AND     R14, R14, 0xBFFFFFFF
+                MOVE    R1, @CONSOLE
+                AND[M]  R0, R1, 0x300
+        ?!Z     MOVE    R15, :+
+                ADD     R2, R2, 1
+                WAIT
+                OR      R14, R14, 0x40000000
+                MOVE    R15, :-
+:               HALT
+                .ORG    0x42
+                .DAT    on_irq
+on_irq          RTI
+"""
+
 # A WAIT that no request can end (SYSTEM.md §1.6).
 WAITS = """
                 WAIT
@@ -342,6 +363,46 @@ def test_link(tmp: str) -> None:
         fail("; ".join(link.failures))
 
 
+def test_link_irq(tmp: str) -> None:
+    """With --link, a WAIT with the console's enable set sleeps until a
+    byte comes from the host, whose request ends it (SYSTEM.md §1.6,
+    §1.9): the program waits once, and reads the byte after it. The end of
+    the input ends a wait too."""
+    words = link.assemble(tmp, "wait_irq", WAIT_IRQ)
+    halt = b"\xffh01#C9"
+    e = link.Emu(["--window"])
+    e.expect("hello", link.HELLO)
+    e.send(link.write(0, words))
+    e.expect("load", link.ok(0, len(words)))
+    e.send(link.write(link.CONTROL, [0x8]))
+    e.expect("start", link.ok(link.CONTROL, 1))
+    time.sleep(0.5)
+    # Bit 6: the processor waits (DEBUG.md §6).
+    expect("control in the wait", link.word(e, link.CONTROL), 0x48)
+    e.send(b"A")
+    e.expect("halt at a byte", halt)
+    expect("R1 at a byte", link.word(e, 0xFFFFFFE1), 0x141)
+    expect("waits for a byte", link.word(e, 0xFFFFFFE2), 1)
+    # Hold, start again, and end the input with a half-close.
+    e.send(link.write(link.CONTROL, [0x9]))
+    e.expect("hold", link.ok(link.CONTROL, 1))
+    e.send(link.write(link.CONTROL, [0x8]))
+    e.expect("start again", link.ok(link.CONTROL, 1))
+    time.sleep(0.2)
+    e.sock.shutdown(socket.SHUT_WR)
+    e.expect("halt at the end", halt)
+    e.sock.close()
+    e.sock = e.connect()
+    e.buf = b""
+    e.expect("hello again", link.HELLO)
+    expect("R1 at the end", link.word(e, 0xFFFFFFE1), 0x200)
+    expect("waits for the end", link.word(e, 0xFFFFFFE2), 1)
+    status, _, _ = e.stop()
+    expect("exit status", status, 0)
+    if link.failures:
+        fail("; ".join(link.failures))
+
+
 def test_link_wait(tmp: str) -> None:
     """With --link and --speed, a long wait goes a chunk at a time, 1000
     steps at 1000000 a second, and the link is served between chunks: a
@@ -376,9 +437,10 @@ def main() -> None:
         test_wait(tmp)
         test_no_display(tmp)
         test_link(tmp)
+        test_link_irq(tmp)
         test_link_wait(tmp)
         test_close_link(tmp)
-    print("PASS window (10 tests)")
+    print("PASS window (11 tests)")
 
 
 if __name__ == "__main__":

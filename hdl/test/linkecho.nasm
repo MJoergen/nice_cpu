@@ -3,11 +3,11 @@
 ; bytes echoed in R2. A console read returns 0 while no byte waits
 ; (SYSTEM.md §1), so then it reads again.
 CONSOLE         .EQU    0xFFFFFF00
-loop            MOVE    R1, @CONSOLE
+:               MOVE    R1, @CONSOLE
                 AND[M]  R0, R1, 0x200
         ?!Z     HALT
                 AND[M]  R0, R1, 0x100   ; no byte waiting: read again
-        ?Z      JMP     loop
+        ?Z      JMP     :-
                 MOVE    @CONSOLE, R1
                 ADD     R2, R2, 1
-                JMP     loop
+                JMP     :-

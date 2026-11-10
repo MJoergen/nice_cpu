@@ -19,8 +19,8 @@ k1              MOVE    R3, 0x8080      ; the constant word is MOVE R2, R1
                 MOVE    R8, 3
                 MOVE    R11, 0x200
 l1              SUB[M]  R8, R8, 1
-        ?!Z     ADD     R15, R15, l1-n1  ; a counted loop: taken twice, then skipped
-n1              MOVE    R9, @R11        ; a read after the skipped jump
+        ?!Z     ADD     R15, R15, l1-:+  ; a counted loop: taken twice, then skipped
+:               MOVE    R9, @R11        ; a read after the skipped jump
         ?I      ADD     R15, R15, -1    ; taken, to its constant word: ?!I reserved, skipped
         ?!I     ADD     R15, R15, -2    ; skipped, to itself
                 MOVE    @R11, R15       ; a store after it

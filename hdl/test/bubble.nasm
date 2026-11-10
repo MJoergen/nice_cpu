@@ -146,16 +146,16 @@ a12             MOVE    R2, @CYCLES
 s12             ADD[M]  R0, R0, 1       ; Z = 0
                 NOP
                 MOVE    R1, @CYCLES
-        ?!Z     ADD     R15, R15, a12-t12
-t12             HALT
+        ?!Z     ADD     R15, R15, a12-:+
+:               HALT
 ; the same, skipped: WRITE flushes and refetches the next instruction,
 ; 3 + 7, the same as the taken jump at 0xC0, which has the layout of this
 ; one, without the NOP
                 .ORG    0x340
 s13             ADD[M]  R0, R0, 1       ; Z = 0
 b13             MOVE    R1, @CYCLES
-        ?Z      ADD     R15, R15, b13-a13
-a13             MOVE    R2, @CYCLES
+        ?Z      ADD     R15, R15, b13-:+
+:               MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
                 CMP     R4, 10
         ?!Z     ADD     R12, R12, 1

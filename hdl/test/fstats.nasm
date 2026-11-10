@@ -45,10 +45,10 @@ UOPS            .EQU    57              ; 3 * (LOOPS - 1)
                 MOVE    R12, 2
                 MOVE    R1, LOOPS
                 MOVE    @FS_CTRL, 3
-loop            JMP     next
+:               JMP     :+
                 HALT
-next            SUB[M]  R1, R1, 1
-        ?!Z     JMP     loop
+:               SUB[M]  R1, R1, 1
+        ?!Z     JMP     :--
                 MOVE    @FS_CTRL, 0
 
 ; 3. The causes add up to FS_CYCLES, which is not 0.
@@ -56,9 +56,9 @@ next            SUB[M]  R1, R1, 1
                 MOVE    R2, FS_CAUSE
                 MOVE    R3, CAUSES
                 MOVE    R4, 0
-causes          ADD     R4, R4, @R2++
+:               ADD     R4, R4, @R2++
                 SUB[M]  R3, R3, 1
-        ?!Z     JMP     causes
+        ?!Z     JMP     :-
                 CMP     R4, @FS_CYCLES
         ?!Z     JMP     fail
                 TST     R4

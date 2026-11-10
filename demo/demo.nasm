@@ -222,9 +222,9 @@ TYPEW           MOVE    SP, @D_SP
                 MOVE    @SCR_CTL, 0x60  ; a blinking cursor, and no display offset
 KEY             MOVE    @SCR_X, COL     ; the cursor where the next character goes
                 MOVE    @SCR_Y, ROW
-IDLE            CALL    POLL
+:               CALL    POLL
                 TST     R1
-        ?Z      JMP     IDLE
+        ?Z      JMP     :-
                 MOVE    R7, CR          ; whether this key follows a CR
                 MOVE    CR, 0
                 CMP     R1, 0x100
@@ -355,17 +355,17 @@ KCODES          MOVE    SP, @D_SP
                 MOVE    COL, 0
                 MOVE    ROW, KTOP
                 MOVE    ECHO, SHOWB
-KPOLL           CALL    POLL
+:               CALL    POLL
                 TST     COL
-        ?Z      JMP     KPOLL           ; no byte yet
+        ?Z      JMP     :-              ; no byte yet
                 MOVE    COL, 0          ; the key has ended: the next row
                 CMP     ROW, LAST
         ?!Z     ADD     ROW, ROW, 1
-        ?!Z     JMP     KPOLL
+        ?!Z     JMP     :-
                 MOVE    R2, SCR_KEY     ; or a scroll after the last
                 MOVE    R4, 1280        ; the rows KTOP+1 to LAST, 16 of 80 words
                 CALL    SCROLL
-                JMP     KPOLL
+                JMP     :-
 
 ; SHOWB, the ECHO of F3, shows the byte R1 in the row ROW, as the byte COL of
 ; its key: in hex from column 2, and from column 42 as a character, or as ^
@@ -419,25 +419,25 @@ CHARS           MOVE    SP, @D_SP
                 CALL    PRINTS
                 MOVE    R1, 0           ; the code
                 MOVE    R2, SCREEN+405  ; row 5, column 5, where code 0 goes
-CROW            SHR     R3, R1, 4       ; the label of the row: its first code
+:               SHR     R3, R1, 4       ; the label of the row: its first code
                 OR      @-3[R2], @HEXDIG[R3], LINK
                 MOVE    @-2[R2], LINK+0x30
-CCELL           OR      @R2, R1, TYPED
+:               OR      @R2, R1, TYPED
                 ADD     R2, R2, 2
                 ADD     R1, R1, 1
                 AND[M]  R0, R1, 0xF
-        ?!Z     JMP     CCELL
+        ?!Z     JMP     :-
                 ADD     R2, R2, 48      ; the next row, 80 - 2 * 16 words on
                 CMP     R1, 256
-        ?!Z     JMP     CROW
+        ?!Z     JMP     :--
                 MOVE    R2, SCREEN+444  ; row 5, column 44
                 MOVE    R7, 20          ; the background
                 CALL    RAMPS
                 MOVE    R2, SCREEN+1164  ; row 14, column 44
                 MOVE    R7, 8           ; the foreground
                 CALL    RAMPS
-CPOLL           CALL    POLL
-                JMP     CPOLL
+:               CALL    POLL
+                JMP     :-
 
 ; RAMPS draws a row for each color of COLORS: its letter at R2, and from
 ; three columns on, 16 cells of two columns, with the intensities 0 to F of
@@ -452,7 +452,7 @@ RROW            MOVE[M] R1, @R5++       ; the letter, or 0 after the last
                 MOVE    R4, 0           ; the color of the cell
                 MOVE    R8, 0           ; the intensity of the cell
                 ADD     R9, R2, 3       ; the cell
-RCELL           SHL     R1, R4, R7
+:               SHL     R1, R4, R7
                 CMP     R7, 20
         ?Z      OR      @R9, R1, 0x20
         ?Z      OR      @1[R9], R1, 0x20
@@ -461,7 +461,7 @@ RCELL           SHL     R1, R4, R7
                 ADD     R4, R4, R3
                 ADD     R8, R8, 1
                 CMP     R8, 16
-        ?!Z     JMP     RCELL
+        ?!Z     JMP     :-
                 ADD     R2, R2, 80
                 JMP     RROW
 
@@ -589,20 +589,20 @@ PRIME           TST     @SIEVE[R5]
                 MOVE    @M_A, R5        ; from its square on
                 MOVE    @M_B, R5
                 MOVE    R6, @M_UMUL
-MULT            CMP     R6, SIEVE_N
+:               CMP     R6, SIEVE_N
         ?!C     JMP     PNEXT
                 MOVE    @SIEVE[R6], 0
                 ADD     R6, R6, R5
-                JMP     MULT
+                JMP     :-
 PNEXT           ADD     R5, R5, 1
                 CMP     R5, 46          ; up to 45, as 46 * 46 is above SIEVE_N
         ?!Z     JMP     PRIME
                 MOVE    R1, 0
                 MOVE    R5, 2
-PCOUNT          ADD     R1, R1, @SIEVE[R5]
+:               ADD     R1, R1, @SIEVE[R5]
                 ADD     R5, R5, 1
                 CMP     R5, SIEVE_N
-        ?!Z     JMP     PCOUNT
+        ?!Z     JMP     :-
                 RET
 
 ; DEC64 writes R7:R1 in decimal, in the color R3, right-aligned in the R4
@@ -612,19 +612,19 @@ PCOUNT          ADD     R1, R1, @SIEVE[R5]
 DEC64           SUB     @--SP, R2, R4   ; the start of the field
                 MOVE    @M_DLO, 10
                 MOVE    @M_DHI, 0
-DIGIT           MOVE    @M_CLO, R1
+:               MOVE    @M_CLO, R1
                 MOVE    @M_CHI, R7
                 ADD     R9, @M_RLO, 0x30
                 OR      @--R2, R9, R3
                 MOVE    R1, @M_QLO
                 MOVE    R7, @M_QHI
                 OR[M]   R0, R1, R7
-        ?!Z     JMP     DIGIT
+        ?!Z     JMP     :-
                 POP     R9
-DBLANK          CMP     R9, R2
+:               CMP     R9, R2
         ?Z      RET
                 OR      @R9++, R3, 0x20
-                JMP     DBLANK
+                JMP     :-
 
 ; TWO writes R1, which is below 100, as two digits at R2, in the color R3.
 ; It changes R9.
@@ -683,13 +683,13 @@ GNEW            MOVE    R2, SCREEN+240  ; a new game: the frame, and the field c
                 MOVE    R4, 80
                 CALL    FILL
                 MOVE    R5, 20          ; R2 is at row 4
-GROW            MOVE    @R2++, BAR+0x20
+:               MOVE    @R2++, BAR+0x20
                 MOVE    R3, TEXT+0x20
                 MOVE    R4, 78
                 CALL    FILL
                 MOVE    @R2++, BAR+0x20
                 SUB[M]  R5, R5, 1
-        ?!Z     JMP     GROW
+        ?!Z     JMP     :-
                 MOVE    R3, BAR+0x20
                 MOVE    R4, 80
                 CALL    FILL
@@ -873,17 +873,17 @@ BLOOP           CALL    SHOWNET
 TRAM            MOVE    R7, 0           ; 0, or -1 to invert
 RPASS           MOVE    R2, RAM_LO
                 MOVE    R4, RAM_N
-RWRITE          XOR     @R2++, R2, R7
+:               XOR     @R2++, R2, R7
                 SUB[M]  R4, R4, 1
-        ?!Z     JMP     RWRITE
+        ?!Z     JMP     :-
                 MOVE    R2, RAM_LO
                 MOVE    R4, RAM_N
-RREAD           XOR     R6, R2, R7
+:               XOR     R6, R2, R7
                 CMP     @R2, R6
         ?!Z     JMP     RBAD
                 ADD     R2, R2, 1
                 SUB[M]  R4, R4, 1
-        ?!Z     JMP     RREAD
+        ?!Z     JMP     :-
                 XOR[M]  R7, R7, -1
         ?!Z     JMP     RPASS
                 MOVE    R1, 0
@@ -896,16 +896,16 @@ RBAD            MOVE    R5, R2
 ; TMATH runs the script MATH, which writes operands of the math unit and
 ; checks its results.
 TMATH           MOVE    R2, MATH
-MSTEP           MOVE[M] R3, @R2++       ; 1 to write, 2 to check, 0 at the end
+:               MOVE[M] R3, @R2++       ; 1 to write, 2 to check, 0 at the end
         ?Z      JMP     MPASS
                 MOVE    R5, @R2++       ; the address
                 MOVE    R4, @R2++       ; and the word
                 CMP     R3, 1
         ?Z      MOVE    @R5, R4
-        ?Z      JMP     MSTEP
+        ?Z      JMP     :-
                 MOVE    R6, @R5
                 CMP     R6, R4
-        ?Z      JMP     MSTEP
+        ?Z      JMP     :-
                 MOVE    R1, 1
                 RET
 MPASS           MOVE    R1, 0
@@ -921,12 +921,12 @@ TTIMER          MOVE    @S_TICKS, 0
                 MOVE    R5, @P_CYC
                 MOVE    @TM_PER, 1000
                 OR      R14, R14, 0x40000000  ; E, which lets the interrupts in
-TWAIT           SUB     R6, @P_CYC, R5
+:               SUB     R6, @P_CYC, R5
                 CMP     @S_TICKS, 10
-        ?Z      JMP     TSTOP
+        ?Z      JMP     :+
                 CMP     R6, 100000
-        ?C      JMP     TWAIT
-TSTOP           MOVE    @TM_PER, 0
+        ?C      JMP     :-
+:               MOVE    @TM_PER, 0
                 NOP                     ; a request still pending is taken here
                 NOP
                 AND     R14, R14, 0xBFFFFFFF
@@ -966,8 +966,8 @@ TCOUNT          MOVE    R5, @P_INS
                 MOVE    R8, @P_CYC
                 MOVE    R9, @P_US
                 MOVE    R4, 1000
-CLOOP           SUB[M]  R4, R4, 1
-        ?!Z     JMP     CLOOP
+:               SUB[M]  R4, R4, 1
+        ?!Z     JMP     :-
                 SUB     R7, @P_INS, R7
                 SUB     R8, @P_CYC, R8
                 SUB     R9, @P_US, R9
@@ -997,21 +997,21 @@ SHOWNET         MOVE    R3, TYPED
                 MOVE    R2, SCREEN+1304
                 MOVE    R5, @E_IP
                 MOVE    R6, 24          ; the shift of the byte, 24 down to 0
-IPBYTE          SHR     R1, R5, R6
+:               SHR     R1, R5, R6
                 AND     R1, R1, 0xFF
                 CALL    DECB
                 SUB[M]  R6, R6, 8
-        ?N      JMP     IPEND
+        ?N      JMP     :+
                 OR      @R2++, R3, 0x2E
-                JMP     IPBYTE
-IPEND           MOVE    R4, SCREEN+1319  ; blanks after a shorter address
+                JMP     :-
+:               MOVE    R4, SCREEN+1319  ; blanks after a shorter address
                 SUB[M]  R4, R4, R2
         ?!Z     MOVE    R3, TEXT+0x20
         ?!Z     CALL    FILL
                 MOVE    R3, TYPED
                 MOVE    R2, SCREEN+1384
                 MOVE    R6, 0           ; the byte of the MAC address
-MBYTE           MOVE    R1, @E_MACH
+:               MOVE    R1, @E_MACH
                 CMP     R6, 2
         ?!C     MOVE    R1, @E_MACL
                 SHR     R1, R1, @MSHIFT[R6]
@@ -1019,10 +1019,10 @@ MBYTE           MOVE    R1, @E_MACH
                 CALL    HEX2
                 ADD     R6, R6, 1
                 CMP     R6, 6
-        ?Z      JMP     MEND
+        ?Z      JMP     :+
                 OR      @R2++, R3, 0x3A
-                JMP     MBYTE
-MEND            MOVE    R4, 10
+                JMP     :-
+:               MOVE    R4, 10
                 MOVE    R7, 0
                 MOVE    R1, @E_GOOD
                 MOVE    R2, SCREEN+1474
@@ -1050,17 +1050,17 @@ MEND            MOVE    R4, 10
 ; DECB writes R1, which is below 256, in decimal at R2, in the color R3, and
 ; leaves R2 after it. It changes R1 and R4.
 DECB            MOVE    R4, 0           ; the digits, pushed last first
-DDIV            MOVE    @M_A, R1
+:               MOVE    @M_A, R1
                 MOVE    @M_B, 10
                 ADD     @--SP, @M_UDIVR, 0x30
                 MOVE    R1, @M_UDIVQ
                 ADD     R4, R4, 1
                 TST     R1
-        ?!Z     JMP     DDIV
-DPUT            POP     R1
+        ?!Z     JMP     :-
+:               POP     R1
                 OR      @R2++, R1, R3
                 SUB[M]  R4, R4, 1
-        ?!Z     JMP     DPUT
+        ?!Z     JMP     :-
                 RET
 
 ; HEX2 writes R1, which is below 256, as 2 hex digits at R2, in the color R3,
@@ -1281,11 +1281,11 @@ RFAIL           ADD     R10, R10, 1
 ; HEX8 writes R1 in 8 hex digits from R2, in the color R3, and leaves R2
 ; after them. It changes R1, R2, R4, and R9.
 HEX8            MOVE    R4, 8
-HDIGIT          SHR     R9, R1, 28
+:               SHR     R9, R1, 28
                 OR      @R2++, @HEXDIG[R9], R3
                 SHL     R1, R1, 4
                 SUB[M]  R4, R4, 1
-        ?!Z     JMP     HDIGIT
+        ?!Z     JMP     :-
                 RET
 
 ; F12 returns to the monitor, or whatever called the demo, with the screen
@@ -1317,11 +1317,11 @@ POLL            CALL    READ
         ?Z      RET                     ; no byte, and R1 is 0
                 CMP     R1, 0x1B
         ?!Z     RET                     ; a byte other than ESC
-ESCAPE          CALL    NEXT
+:               CALL    NEXT
         ?Z      MOVE    R1, 0x1B        ; an ESC alone is a key of its own
         ?Z      RET
                 CMP     R1, 0x1B
-        ?Z      JMP     ESCAPE          ; ESC again starts again
+        ?Z      JMP     :-              ; ESC again starts again
                 CMP     R1, 0x5B        ; [
         ?Z      JMP     CSI
                 CMP     R1, 0x4F        ; O
@@ -1363,11 +1363,11 @@ FINAL           SUB     R2, R1, 0x41
                 CMP     R1, 0x7E        ; ~
         ?!Z     JMP     NONE
                 MOVE    R2, 0
-FIND            CMP     R3, @FNUMS[R2]
+:               CMP     R3, @FNUMS[R2]
         ?Z      JMP     FKEY
                 ADD     R2, R2, 1
                 CMP     R2, 12
-        ?!Z     JMP     FIND
+        ?!Z     JMP     :-
 NONE            MOVE    R1, 0
                 RET
 ARROW           ADD     R1, R2, KEY_UP  ; R2 is 0 to 3 for A to D
@@ -1395,10 +1395,10 @@ READ            MOVE    R1, @CONSOLE
 ; is on the stack, not in a register, as the demo can halt in READ here, and
 ; a time in a register would then differ from niceemu's.
 NEXT            ADD     @--SP, @P_US, T_ESC  ; the deadline
-NWAIT           CALL    READ
+:               CALL    READ
         ?!Z     JMP     NDONE           ; a byte
                 CMP     @P_US, @SP
-        ?N      JMP     NWAIT
+        ?N      JMP     :-
                 MOVE[M] R1, 0
 NDONE           ADD     SP, SP, 1       ; drop the deadline, and keep the flags
                 RET
@@ -1420,7 +1420,7 @@ FRAME           MOVE    @SCR_CTL, 0
                 MOVE    R5, TITLE
                 CALL    PRINTS
                 MOVE    R5, MENU
-ITEM            MOVE[M] R2, @R5++       ; the position, or -1 at the end
+:               MOVE[M] R2, @R5++       ; the position, or -1 at the end
         ?X      RET
                 ADD     R2, R2, SCREEN
                 MOVE    R3, BAR
@@ -1428,15 +1428,15 @@ ITEM            MOVE[M] R2, @R5++       ; the position, or -1 at the end
         ?Z      MOVE    R3, MENU_ON
                 MOVE    R1, @R5++       ; the string
                 CALL    PRINT
-                JMP     ITEM
+                JMP     :-
 
 ; SCROLL moves the R4 words from R2 + 80 to R2, which scrolls their rows up
 ; by one, and clears the row after them. R4 is at least 1. It changes R2 to
 ; R4.
 SCROLL          ADD     R3, R2, 80
-COPY            MOVE    @R2++, @R3++
+:               MOVE    @R2++, @R3++
                 SUB[M]  R4, R4, 1
-        ?!Z     JMP     COPY
+        ?!Z     JMP     :-
                 MOVE    R3, TYPED+0x20
                 MOVE    R4, 80
                 JMP     FILL            ; which returns to the caller

@@ -50,6 +50,7 @@ MNEMONICS: Dict[str, Tuple[int, int, int]] = {
     "CALL": (PSEUDO, 0, 1), "RET": (PSEUDO, 0, 0), "JMP": (PSEUDO, 0, 1),
     "CMP": (PSEUDO, 0, 2), "TST": (PSEUDO, 0, 1), "PUSH": (PSEUDO, 0, 1),
     "POP": (PSEUDO, 0, 1), "CLR": (PSEUDO, 0, 1), "NOP": (PSEUDO, 0, 0),
+    "JMPR": (PSEUDO, 0, 1),
 }
 
 # The pseudo-instructions that are one instruction (ISA.md section 10.1):
@@ -540,6 +541,12 @@ class Assembler:
             if name in PSEUDO_ONE:
                 mnemonic, pattern = PSEUDO_ONE[name]
                 self.instruction(cond, mnemonic, [p.format(*args) for p in pattern], line_no)
+            elif name == "JMPR":  # the offset is from the next instruction, 2 words on
+                code, _ = self.operand(args[0], False)
+                if code != 0x30:
+                    raise AsmError(f"JMPR takes an address, not '{args[0]}'")
+                offset = (self.expr(args[0]) - self.pc - 2) & MASK
+                self.instruction(cond, "ADD", ["R15", "R15", str(offset)], line_no)
             elif name == "CALL":
                 _, c = self.operand(args[0], False)
                 n = 1 if c is None else 2  # the size of the MOVE in words

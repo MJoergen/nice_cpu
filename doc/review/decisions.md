@@ -151,15 +151,16 @@ proposed again. The open items are the
   rejects the imports with a message that names the types
   (translator/README.md). The integer routines would be cheap to add from
   compiler_rt, as `float.zig` does, if a program ever needs `__int128`.
-- **More pseudo-instructions** (#117): `INC`, a signed compare or
-  branch, and a relative branch. `INC x` would have to be `MOVE x++, x`
-  to be one word, and with `[M]` its flags would describe the old value;
-  `ADD x, x, 1` is right, and `DEC` is an instruction. A signed compare
-  is three instructions and changes R14 through the `XOR` of ISA.md
-  §9.2, too much to hide in one name. A relative branch,
-  `ADD PC, PC, offset`, is two words, the same as `JMP label`, so it
-  saves nothing. The assembler has `JMP`, `CMP`, `TST`, `PUSH`, `POP`,
-  `CLR`, and `NOP` instead (ISA.md §10.1).
+- **More pseudo-instructions** (#117): `INC` and a signed compare or
+  branch. `INC x` would have to be `MOVE x++, x` to be one word, and
+  with `[M]` its flags would describe the old value; `ADD x, x, 1` is
+  right, and `DEC` is an instruction. A signed compare is three
+  instructions and changes R14 through the `XOR` of ISA.md §9.2, too
+  much to hide in one name. The assembler has `JMP`, `CMP`, `TST`,
+  `PUSH`, `POP`, `CLR`, and `NOP` instead (ISA.md §10.1). #117 also
+  left out a relative branch, which is two words as `JMP label` is;
+  #154 added it as `JMPR`, since DECODE predicts only the relative form
+  of a jump back (MICROARCH.md §5.4).
 - **Dropping the `AND` of a word index without bounds checks** (#119).
   The `AND u, t, 0x3FFFFFFF` after t = i + c / 4 keeps an access right
   when the `i32.add` of `(i << s) + c` wraps modulo 2^32 and still gives

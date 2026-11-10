@@ -241,3 +241,13 @@ pl              .DAT    4*pl, 2+3*4, 2*3-1, -2*3, 3*PR, PR*PR-1, 0xFFFFFFFF*2
                 .ORG    0x488
 :               .DAT    :--             ; A5, 488: A4 = 490, above in source order
 :               MOVE    R1, @:-[R2]     ; A6, 489: 1<<14 | 0x72<<7 = 00007900, 48a: A6 = 489
+; JMPR (ISA.md 10.1): ADD R15, R15, target-next, where next is the address
+; 2 words on: 3<<21 | 0x0f<<14 | 0x0f<<7 | 0x30 = 0063c7b0. ?!Z is b, ?C is
+; 2 in the top nibble. A7 and A8 are anonymous labels at 4a0 and 4aa.
+                .ORG    0x4a0
+:               SUB[M]  R1, R1, 1       ; A7, 4a0: 022040b0, 4a1: 1
+        ?!Z     JMPR    :-              ; 4a2: b063c7b0, 4a3: 4a0-4a4 = fffffffc
+                JMPR    jr              ; 4a4: 0063c7b0, 4a5: 4a8-4a6 = 2
+        ?C      jmpr    :+              ; 4a6: 2063c7b0, 4a7: A8-4a8 = 2
+jr              JMPR    jr              ; 4a8: 0063c7b0, 4a9: 4a8-4aa = fffffffe
+:               JMPR    0               ; A8, 4aa: 0063c7b0, 4ab: 0-4ac = fffffb54

@@ -504,7 +504,7 @@ The constant is the size of the `MOVE` in words. A call through a register, `MOV
 | Compare a with b | `SUB[M] R0, a, b`. Then Z = 1 if a = b, and C = 1 if a < b unsigned. |
 | Test a | `MOVE[M] R0, a`. Then Z, N, and X describe a. |
 
-The assembler writes these for the pseudo-instructions `JMP target`, `CMP a, b`, and `TST a` (§10.1). A conditional jump is `?Z JMP label`.
+The assembler writes these for the pseudo-instructions `JMP target`, `JMPR target`, `CMP a, b`, and `TST a` (§10.1). A conditional jump is `?Z JMP label`, or `?Z JMPR label` for the relative one.
 
 There is no condition or instruction for a signed comparison. A signed a < b is N XOR V after `SUB[M]`, and it is tested with two instructions:
 
@@ -555,6 +555,10 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
   | `NOP` | `MOVE R0, R0` |
 
   `CLR x` is one word, where `MOVE x, 0` takes a constant word for the 0. The operands are checked as those of the instruction, so `JMP R2--` is an error. A condition applies as usual. None takes a modifier: `CMP` and `TST` set the flags because `[M]` is part of what they mean. All are mnemonics, so none can be a label or an `.EQU` name.
+- **Relative jump.** `JMPR target` assembles as `ADD R15, R15, target-next`, the relative jump of §9.2, where next is the address of the instruction after it. It is always two words, with the offset in the constant word. The target is an address expression, such as a label or `:-`; a register or memory operand, such as `JMPR R3` or `JMPR @x`, is an error. A condition applies as usual, and it takes no modifier. It is a mnemonic, so it cannot be a label or an `.EQU` name. `JMP` stays absolute: a pipelined core may predict a backward conditional `JMPR` taken, so it suits the back edge of a loop that is mostly taken.
+
+      :               SUB[M]  R1, R1, 1
+              ?!Z     JMPR    :-              ; back to the SUB
 - **Unused fields** are encoded as R0 (`000 0000`).
 
 ### 10.2 Operands
@@ -655,7 +659,7 @@ It executes as follows:
 | Assembler directives and constants | `.DAT` takes several values, a constant may be an expression of `+`, `-`, and `*`, and a string may use `"..."` (§10) | `NICE.pm` takes one value per directive, a number or a symbol only, and `'...'` only |
 | `.RES` directive | Reserves words that are not in the program image (§10.3) | The 2004 assembler has no such directive. Every word it reserves, with `.BLK`, is in the image. |
 | `CALL` and `RET` | Pseudo-instructions of the assembler for the call and return of §9.1 (§10.1) | `NICE.pm` has no such names. The 2004 programs write the two instructions. |
-| `JMP`, `CMP`, `TST`, `PUSH`, `POP`, `CLR`, and `NOP` | Pseudo-instructions of the assembler for the idioms of §9 (§10.1) | `NICE.pm` has no such names. The 2004 programs write the instructions. |
+| `JMP`, `JMPR`, `CMP`, `TST`, `PUSH`, `POP`, `CLR`, and `NOP` | Pseudo-instructions of the assembler for the idioms of §9 (§10.1) | `NICE.pm` has no such names. The 2004 programs write the instructions. |
 | Anonymous labels | `:` labels a line, and `:-` and `:+` refer to the nearest one above and below, as in ca65 (§10.1) | `NICE.pm` has named labels only |
 
 The emulator also has bugs that this specification does not copy. Its carry input comes from the wrong SR bit, its 5-bit count mask is wrong, it modifies source registers, it never sets X, `ONE` crashes, `1>0` and `C>0` fill the wrong end, and `DEC` reports a borrow in V. See [review/emulator-and-webpage-review.md](review/emulator-and-webpage-review.md) §4.

@@ -417,9 +417,9 @@ The prediction is static. It looks only at the sign bit of the constant
 word, and only in this form. For `MOVE PC, label` it would need a 32-bit
 compare of the constant with the instruction's address in DECODE, beside
 the adder of the target, which is a timing risk. A program gains from it
-when its loops end with a conditional backward jump, written as `ADD PC,
-PC, label-next`, where `next` labels the instruction after the jump. A
-jump back that is mostly skipped is better written as `MOVE PC, label`,
+when its loops end with a conditional backward jump, written as `JMPR
+label`, which assembles as `ADD PC, PC, label-next`, where next is the
+address after the jump (ISA.md §10.1). A jump back that is mostly skipped is better written as `MOVE PC, label`,
 which costs nothing when skipped. The hand-written benchmark does both,
 and saves 9.6% of its cycles. The
 translated benchmark closes its loops with the predicted form too, and

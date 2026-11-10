@@ -257,6 +257,18 @@ CASES: List[Tuple[str, str]] = [
     ("JMP: HALT", "1: error: 'JMP' is a mnemonic and cannot be a symbol"),
     ("cmp .EQU 1", "1: error: 'cmp' is a mnemonic and cannot be a symbol"),
     ("Push: HALT", "1: error: 'Push' is a mnemonic and cannot be a symbol"),
+    # JMPR (ISA.md section 10.1): the target is an address, no other operand
+    (" JMPR", "1: error: JMPR takes 1 operand, got 0"),
+    (" JMPR x, x\nx HALT", "1: error: JMPR takes 1 operand, got 2"),
+    (" JMPR[C] x\nx HALT", "1: error: JMPR takes no modifiers"),
+    (" JMPR R3", "1: error: JMPR takes an address, not 'R3'"),
+    (" JMPR @x\nx HALT", "1: error: JMPR takes an address, not '@x'"),
+    (" JMPR 5[R2]", "1: error: JMPR takes an address, not '5[R2]'"),
+    (" JMPR R2++", "1: error: JMPR takes an address, not 'R2++'"),
+    ("T .EQU R3\n JMPR T", "2: error: JMPR takes an address, not 'T'"),
+    (" JMPR nowhere", "1: error: undefined symbol 'nowhere'"),
+    ("JMPR: HALT", "1: error: 'JMPR' is a mnemonic and cannot be a symbol"),
+    ("jmpr .EQU 1", "1: error: 'jmpr' is a mnemonic and cannot be a symbol"),
 ]
 
 

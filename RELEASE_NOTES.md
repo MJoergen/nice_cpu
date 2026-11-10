@@ -35,6 +35,25 @@ pin each are:
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
 
+## V2.1 (2026-11-10)
+
+The assembler has the pseudo-instruction `JMPR`, a relative jump
+(#154).
+
+**Upgrade notes.**
+
+- `JMPR` is a mnemonic, in any case, so a program that uses it as a
+  label or an `.EQU` name does not assemble. No file of the repository
+  did.
+
+**Specification and documents**
+
+- ISA.md §10.1: `JMPR target` is `ADD R15, R15, target-next`, where next
+  is the address after it, so a loop's back edge that DECODE predicts
+  needs no label after the jump. It takes an address, a condition, and
+  no modifier. §9.2 and Appendix B name it, and `doc/review/decisions.md`
+  no longer lists a relative branch as decided against (#154).
+
 ## V2.0 (2026-11-09)
 
 `WAIT` waits for an interrupt (#133). Five byte windows let a data

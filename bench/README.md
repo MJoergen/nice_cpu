@@ -696,5 +696,6 @@ board and the run of 0 iterations. Measured with the cores of commit
 The pipelined core takes 1.58 cycles per instruction, against 1.53 in
 Dhrystone. On the emulator the run of 0 iterations makes 2000, which
 take 1350217511 instructions. For comparison, Arm gives 2.33
-CoreMark/MHz for the Cortex-M0. As with Dhrystone, the translation
+CoreMark/MHz for the Cortex-M0, in its Cortex-M Processor Comparison
+Table of 2023. As with Dhrystone, the translation
 through wasm accounts for much of the gap.

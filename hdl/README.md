@@ -608,7 +608,11 @@ emulator with stdin from `/dev/null`. `tb_core` passes its own
 with `emulator/test/input.txt`.
 The read counter is at `0xFFFFFF01`, as in the emulator. A data read returns
 the number of data reads of it since the last write, and a write sets that
-number. The rest of the I/O range is plain memory, as in the emulator.
+number. The rest of the I/O range is plain memory, as in the emulator,
+but for `0xFFFFFF02`, which `tb_core` sends to the console's receive
+interrupt (below). A read of the console that takes a byte raises
+`console_took_o` in the cycle it is accepted, as the next byte or the end
+enters then.
 
 ## The timer
 
@@ -625,6 +629,25 @@ Its request goes to the core's IRQ port, with the valid/ready handshake of
 `src/multicycle.vhd`. It holds `valid` and the vector until `ready`, and a
 request raised while one waits merges with it. While no request is raised,
 `ready` has no effect, so `ready` may go to more than one device.
+
+## The console's receive interrupt
+
+`console_irq` holds `CONSOLE_IRQ` of SYSTEM.md §1.9, the vector and the
+enable, as one word with no address. The system tells it about the
+console's input: `entered_i` for one cycle when a byte enters the empty
+input, or the input ends, and `waits_i` while a byte waits or the input has
+ended. While the enable is 1, `entered_i` raises a request, and so does a
+write that sets the enable from 0 to 1 while `waits_i` is high. The request
+is held as the timer's is. `tb_core` raises `entered_i` with the memory
+model's `console_took_o`, and holds `waits_i` high, as a read of the file
+waits for its byte.
+
+`irq_merge` joins the timer's source, the timer's request and that of
+`--irq` in `tb_core`, and the console's into the core's IRQ port. The
+timer's goes first, and the core's `ready` goes to the source whose vector
+it sees, so the two sources never merge (SYSTEM.md §4). `make test` runs
+the emulator's `conirq` probe, on a stalling memory too and with held
+pauses.
 
 ## The math unit
 
@@ -1425,6 +1448,16 @@ is free. It asserts that a raised request stays raised, with its vector,
 until `ready` takes it, which is what `handshake_check` assumes of a
 device, and, with `wb_slave_check`, that the bus port acknowledges each
 request in the next cycle and never stalls.
+
+`formal_console_irq` checks the console's receive interrupt the same way,
+and with a shadow of the enable, that a request comes exactly when SYSTEM.md
+§1.9 says, with the vector written, and that a read returns the enable and
+the vector. The enable shows only in a read, so the shadow cannot be tied
+to it for k-induction: the `prove` task proves the checks of the ports, and
+the `bmc` task all of them for 16 cycles from reset. `formal_irq_merge`
+proves that the core's `valid` holds until `ready`, that `ready` goes to one
+source, the timer's whenever it raises a request, and that the core sees
+the vector of the source that gets it.
 
 The `prove` task proves the assertions for every cycle by k-induction of
 depth 2, in a few seconds. The induction needs invariants that tie the ports to the core's state: the state

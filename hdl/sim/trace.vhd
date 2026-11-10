@@ -43,6 +43,9 @@
 --    bus accepts the store (sim/wb_mem.vhd).
 -- c) nmi_pending_i and irq_pending_i are '1' while a request of that kind is
 --    held and not yet taken, with its vector on nmi_vector_i or irq_vector_i.
+--    irq_pending_i is the IRQ of the timer's source, and con_pending_i,
+--    with con_vector_i, that of the console's, which the line lists after
+--    it (SYSTEM.md §4).
 -- d) wstep_i is '1' for one cycle per wait step, never with retire_i.valid.
 --
 -- RESET
@@ -75,6 +78,8 @@ entity trace is
       nmi_vector_i    : in  std_logic_vector(7 downto 0) := X"00";
       irq_pending_i   : in  std_logic                    := '0';
       irq_vector_i    : in  std_logic_vector(7 downto 0) := X"00";
+      con_pending_i   : in  std_logic                    := '0';
+      con_vector_i    : in  std_logic_vector(7 downto 0) := X"00";
       -- A wait step of the core (ISA.md §7.5), which counts as a step,
       -- but has no trace line
       wstep_i         : in  std_logic                    := '0';
@@ -241,13 +246,16 @@ begin
 
       writeline(tf, l);
 
-      if nmi_pending_i = '1' or irq_pending_i = '1' then
+      if nmi_pending_i = '1' or irq_pending_i = '1' or con_pending_i = '1' then
          write(l, string'("Pending:"));
          if nmi_pending_i = '1' then
             write(l, " NMI " & hex(nmi_vector_i));
          end if;
          if irq_pending_i = '1' then
             write(l, " IRQ " & hex(irq_vector_i));
+         end if;
+         if con_pending_i = '1' then
+            write(l, " IRQ " & hex(con_vector_i));
          end if;
          writeline(tf, l);
       end if;

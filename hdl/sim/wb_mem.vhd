@@ -27,6 +27,10 @@
 --   G_INPUT_FILE, and 0x200 after its end, as the emulator's --input does
 --   (SYSTEM.md §1). With G_INPUT_FILE = "", there is no input, and every
 --   read returns 0x200, as for the emulator with stdin from /dev/null.
+--   console_took_o is high in the cycle the port accepts a read that takes
+--   a byte. A read waits for its byte here, so the next byte, or the end,
+--   enters then, which raises the request of the console's receive
+--   interrupt (SYSTEM.md §1.9, src/console_irq.vhd).
 -- * The read counter is at 0xFFFFFF01, as in the emulator (SYSTEM.md §1).
 --   A data read returns the number of data reads of it since the last write,
 --   and then counts itself. A write sets the count and stores nothing. It
@@ -82,9 +86,10 @@ entity wb_mem is
       dbus_data_i     : in  std_logic_vector(31 downto 0);
       dbus_data_o     : out std_logic_vector(31 downto 0);
 
-      -- Console output
+      -- Console output, and a read that takes a byte of the input
       console_valid_o : out std_logic;
-      console_data_o  : out std_logic_vector(7 downto 0)
+      console_data_o  : out std_logic_vector(7 downto 0);
+      console_took_o  : out std_logic
    );
 end entity wb_mem;
 
@@ -93,6 +98,9 @@ architecture simulation of wb_mem is
    constant C_IO_BASE : std_logic_vector(31 downto 0) := X"FFFFFF00";
    constant C_CONSOLE : std_logic_vector(31 downto 0) := X"FFFFFF00";
    constant C_COUNTER : std_logic_vector(31 downto 0) := X"FFFFFF01";
+
+   -- A byte of the input waits for the next read of the console.
+   signal console_more : std_logic := '0';
 
    -- The byte window of a data address (SYSTEM.md §9), 1 to 5, or 0 if it
    -- is in none.
@@ -173,6 +181,11 @@ begin
                          when dbus_addr_i = C_CONSOLE else
                       '0';
    console_data_o  <= dbus_data_i(7 downto 0);
+
+   -- The cycle in which the data port accepts a read that takes a byte.
+   console_took_o <= dbus_cyc_i and dbus_stb_i and not dbus_we_i and not dbus_stall and
+                     console_more when dbus_addr_i = C_CONSOLE else
+                     '0';
 
 
    p_mem : process
@@ -313,6 +326,9 @@ begin
             report "wb_mem: cannot open " & G_INPUT_FILE
             severity failure;
          input_v := true;
+         if not endfile(input_f) then
+            console_more <= '1';
+         end if;
       end if;
 
       main_loop : loop
@@ -347,6 +363,9 @@ begin
                if input_v and not endfile(input_f) then
                   read(input_f, in_char_v);
                   dbus_data_o <= X"00000100" or to_slv(character'pos(in_char_v), 32);
+                  if endfile(input_f) then
+                     console_more <= '0';
+                  end if;
                else
                   dbus_data_o <= X"00000200";
                end if;

@@ -946,8 +946,16 @@ system built from them must follow these rules:
   buses, and the jumps that DECODE resolves. They show where the cycles
   of a program go.
 - **Timer.** `hdl/src/timer.vhd` at `0xFFFFFF10`–`0xFFFFFF1F` (SYSTEM §4),
-  with its request on the core's IRQ port. It is the only device that
-  raises IRQ so far, so it needs no interrupt controller.
+  with its request on the core's IRQ port, through the merge below.
+- **Console's receive interrupt.** `hdl/src/console_irq.vhd` at
+  `0xFFFFFF02` (SYSTEM §1.9). The system tells it when a byte or the end
+  enters the console's input, and whether one waits.
+- **IRQ merge.** `hdl/src/irq_merge.vhd` joins the timer's request and the
+  console's into the core's IRQ port, the timer's first (SYSTEM §4). Each
+  source holds its own request until the core takes that one, so the two
+  never merge. It is combinational, so a request reaches the core in the
+  cycle it is raised, and the IRQ vector may change while `valid` stays
+  high (§6).
 - **SD card controller.** `hdl/src/sd_regs.vhd` at `0xFFFFFFA0`–`0xFFFFFFAF`
   (SYSTEM §5): the registers and the buffer, with a port to a protocol
   engine that the board adds. With `G_HOLD_ACK`, as in simulation, the ACK

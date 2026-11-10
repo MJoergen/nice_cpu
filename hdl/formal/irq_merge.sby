@@ -1,0 +1,25 @@
+# The merge of two sources of IRQ (formal_irq_merge.vhd). "prove" proves
+# the assertions for every cycle by k-induction, and "cover" reaches each
+# cover statement.
+
+[tasks]
+prove
+cover
+
+[options]
+prove: mode prove
+prove: depth 4
+cover: mode cover
+cover: depth 8
+
+[engines]
+smtbmc yices
+
+[script]
+plugin -i ghdl
+ghdl --std=08 -fpsl irq_merge.vhd formal_irq_merge.vhd -e formal_irq_merge
+prep -top formal_irq_merge
+
+[files]
+../src/irq_merge.vhd
+formal_irq_merge.vhd

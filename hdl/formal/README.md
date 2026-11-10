@@ -12,6 +12,10 @@ The formal checks: the checkers of the ports, and a wrapper and a SymbiYosys job
 | [multicycle.sby](multicycle.sby) | The SymbiYosys job for it. |
 | [formal_timer.vhd](formal_timer.vhd) | The timer with checks of its bus and interrupt ports. |
 | [timer.sby](timer.sby) | The SymbiYosys job for it. |
+| [formal_console_irq.vhd](formal_console_irq.vhd) | The console's receive interrupt with checks of its ports and of when it raises a request. |
+| [console_irq.sby](console_irq.sby) | The SymbiYosys job for it: the ports by induction, and the rest from reset. |
+| [formal_irq_merge.vhd](formal_irq_merge.vhd) | The merge of two sources of IRQ with checks of the order and the handshake. |
+| [irq_merge.sby](irq_merge.sby) | The SymbiYosys job for it. |
 | [formal_tod.vhd](formal_tod.vhd) | The clock of the time of day with checks of its bus port and of what its reads return. |
 | [tod.sby](tod.sby) | The SymbiYosys job for it. |
 | [formal_wb_dmux.vhd](formal_wb_dmux.vhd) | The data bus decoder with checks of its master and slave ports. |

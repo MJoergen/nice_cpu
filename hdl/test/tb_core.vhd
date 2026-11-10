@@ -19,8 +19,11 @@
 -- 0xFFFFFFA0-0xFFFFFFAF to the SD card controller, src/sd_regs.vhd
 -- (SYSTEM.md §5), 0xFFFFFFB0-0xFFFFFFBF to the network station,
 -- src/net_regs.vhd (SYSTEM.md §6), 0xFFFFFFC0-0xFFFFFFCF to the port for
--- Ethernet frames, src/eth_regs.vhd (SYSTEM.md §7), and the rest to the
--- memory model. The station has no link over TCP, so its counts and status
+-- Ethernet frames, src/eth_regs.vhd (SYSTEM.md §7), 0xFFFFFF02 to the
+-- console's receive interrupt, src/console_irq.vhd (SYSTEM.md §1.9), and
+-- the rest to the memory model. The memory model's console tells the
+-- interrupt when a read takes a byte, and a byte or the end always waits
+-- there. The station has no link over TCP, so its counts and status
 -- read 0, as in the emulator without --link. The port's station is
 -- sim/eth_sim.vhd, with the frames of G_ETH_IN_FILE, and the frames sent
 -- written to G_ETH_OUT_FILE, as the emulator's --eth-in and --eth-out, or
@@ -111,7 +114,10 @@
 -- reach the core as one request, with the vector of the one raised first
 -- (p_intr's, when both are raised in the same cycle), and the core's
 -- ready takes both. That is how the emulator merges a request of the
--- timer with one from --irq.
+-- timer with one from --irq. That request, the timer's source, and the
+-- console's go to the core through src/irq_merge.vhd, the timer's first
+-- (SYSTEM.md §4). The console's requests are not in the log of
+-- G_INTR_LOG, as the emulator raises them itself.
 --
 -- With G_PAUSE = P, p_pause raises pause_i (MICROARCH.md §6.1) in a random
 -- P percent of the cycles, from G_SEED, so that the core pauses and goes
@@ -443,7 +449,8 @@ architecture simulation of tb_core is
    constant C_NET    : natural := 6;
    constant C_ETH    : natural := 7;
    constant C_TOD    : natural := 8;
-   constant C_SLAVES : natural := 9;
+   constant C_CONIRQ : natural := 9;
+   constant C_SLAVES : natural := 10;
 
    signal dbus_sel    : natural range 0 to C_SLAVES - 1;
    signal slave_stb   : std_logic_vector(C_SLAVES - 1 downto 0);
@@ -495,11 +502,20 @@ architecture simulation of tb_core is
    signal nmi_ready  : std_logic;
    signal nmi_vector : std_logic_vector(7 downto 0) := X"00";
    signal irq_valid  : std_logic                    := '0';
-   signal irq_ready  : std_logic;
+   signal irq_ready  : std_logic;   -- The ready of the timer's source
    signal irq_vector : std_logic_vector(7 downto 0) := X"00";
 
-   signal core_irq_valid  : std_logic;
-   signal core_irq_vector : std_logic_vector(7 downto 0);
+   -- The timer's source, the timer's request and p_intr's IRQ, the
+   -- console's, and the core's port after the merge
+   signal timer_src_valid  : std_logic;
+   signal timer_src_vector : std_logic_vector(7 downto 0);
+   signal con_valid        : std_logic;
+   signal con_ready        : std_logic;
+   signal con_vector       : std_logic_vector(7 downto 0);
+   signal console_took     : std_logic;
+   signal core_irq_valid   : std_logic;
+   signal core_irq_ready   : std_logic;
+   signal core_irq_vector  : std_logic_vector(7 downto 0);
 
    signal console_valid : std_logic;
    signal console_data  : std_logic_vector(7 downto 0);
@@ -577,7 +593,7 @@ begin
             nmi_ready_o   => nmi_ready,
             nmi_vector_i  => nmi_vector,
             irq_valid_i   => core_irq_valid,
-            irq_ready_o   => irq_ready,
+            irq_ready_o   => core_irq_ready,
             irq_vector_i  => core_irq_vector,
             pause_i       => pause,
             paused_o      => paused,
@@ -624,7 +640,7 @@ begin
             nmi_ready_o   => nmi_ready,
             nmi_vector_i  => nmi_vector,
             irq_valid_i   => core_irq_valid,
-            irq_ready_o   => irq_ready,
+            irq_ready_o   => core_irq_ready,
             irq_vector_i  => core_irq_vector,
             pause_i       => pause,
             paused_o      => paused,
@@ -676,6 +692,7 @@ begin
                C_NET when dbus_addr(31 downto 4) = X"FFFFFFB" else
                C_ETH when dbus_addr(31 downto 4) = X"FFFFFFC" else
                C_STATS when dbus_addr(31 downto 5) = X"FFFFFF" & "011" else
+               C_CONIRQ when dbus_addr = X"FFFFFF02" else
                C_MEM;
 
 
@@ -744,9 +761,42 @@ begin
       end if;
    end process p_early;
 
-   core_irq_valid  <= irq_valid or timer_valid;
-   core_irq_vector <= irq_vector when irq_valid = '1' else
-                      timer_vector;
+   timer_src_valid  <= irq_valid or timer_valid;
+   timer_src_vector <= irq_vector when irq_valid = '1' else
+                       timer_vector;
+
+
+   i_irq_merge : entity work.irq_merge
+      port map (
+         first_valid_i   => timer_src_valid,
+         first_ready_o   => irq_ready,
+         first_vector_i  => timer_src_vector,
+         second_valid_i  => con_valid,
+         second_ready_o  => con_ready,
+         second_vector_i => con_vector,
+         irq_valid_o     => core_irq_valid,
+         irq_ready_i     => core_irq_ready,
+         irq_vector_o    => core_irq_vector
+      ); -- i_irq_merge
+
+
+   i_console_irq : entity work.console_irq
+      port map (
+         clk_i        => clk,
+         rst_i        => rst,
+         entered_i    => console_took,
+         waits_i      => '1',
+         wb_cyc_i     => dbus_cyc,
+         wb_stb_i     => slave_stb(C_CONIRQ),
+         wb_stall_o   => slave_stall(C_CONIRQ),
+         wb_ack_o     => slave_ack(C_CONIRQ),
+         wb_we_i      => dbus_we,
+         wb_data_i    => dbus_data_out,
+         wb_data_o    => slave_data(32 * C_CONIRQ + 31 downto 32 * C_CONIRQ),
+         irq_valid_o  => con_valid,
+         irq_ready_i  => con_ready,
+         irq_vector_o => con_vector
+      ); -- i_console_irq
 
 
    i_wb_mem : entity work.wb_mem
@@ -774,7 +824,8 @@ begin
          dbus_data_i     => dbus_data_out,
          dbus_data_o     => slave_data(32 * C_MEM + 31 downto 32 * C_MEM),
          console_valid_o => console_valid,
-         console_data_o  => console_data
+         console_data_o  => console_data,
+         console_took_o  => console_took
       ); -- i_wb_mem
 
 
@@ -1026,9 +1077,11 @@ begin
          console_data_i  => console_data,
          nmi_pending_i   => nmi_valid,
          nmi_vector_i    => nmi_vector,
-         irq_pending_i   => core_irq_valid,
+         irq_pending_i   => timer_src_valid,
          wstep_i         => wstep,
-         irq_vector_i    => core_irq_vector,
+         irq_vector_i    => timer_src_vector,
+         con_pending_i   => con_valid,
+         con_vector_i    => con_vector,
          done_o          => done,
          status_o        => status
       ); -- i_trace

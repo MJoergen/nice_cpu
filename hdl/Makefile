@@ -3,7 +3,7 @@ ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
 BUILD = build
 
-SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/perf.vhd src/tod.vhd src/timer.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd src/sd_regs.vhd src/net_regs.vhd src/eth_regs.vhd
+SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/perf.vhd src/tod.vhd src/timer.vhd src/console_irq.vhd src/irq_merge.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd src/sd_regs.vhd src/net_regs.vhd src/eth_regs.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd sim/sd_sim.vhd sim/eth_sim.vhd
 TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_perf.vhd test/tb_perf_hz.vhd test/tb_tod.vhd test/tb_timer.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd test/tb_debug_link.vhd test/tb_sd_regs.vhd test/tb_net_regs.vhd test/tb_eth_regs.vhd test/tb_link.vhd \
   test/tb_trace.vhd test/tb_core.vhd
@@ -134,7 +134,7 @@ $(LINK_RUNS): run/link/%: $(BUILD)/linkecho.bin
 EXAMPLES = count replicate print wrap
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest \
   console screen iofetch reads reserved mpu mpu64 mpubits perf events timer input \
-  r15modes r0dest r14mem skipconst carryin shiftc wrapmem smcown sd net eth bytewin wait
+  r15modes r0dest r14mem skipconst carryin shiftc wrapmem smcown sd net eth bytewin wait conirq
 INTR_irq   = --nmi 2:1 --irq 2:2 --nmi 9:1 --irq 17:2 --nmi 17:1 --irq 100:2
 INTR_merge = --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
 INTR_after = --nmi 3:1 --nmi 10:1
@@ -151,6 +151,11 @@ INTR_rtiread_step = --nmi 2:1 --nmi 5:1
 # taken at once, and one that comes just after a data read was issued.
 INTR_irqwave = --irq 2:9 --irq 10:9
 INTR_wait  = --irq 25:0x42 --nmi 40:0x43
+# conirq: the timer's source, raised while the console's request waits,
+# goes first (SYSTEM.md §4).
+INTR_conirq = --irq 4:0x41
+INTR_conirq_stall = $(INTR_conirq)
+INTR_conirq_hold  = $(INTR_conirq)
 INTR_wait_stall = $(INTR_wait)
 INTR_wait_pause = $(INTR_wait)
 INTR_wait_hold  = $(INTR_wait)
@@ -178,10 +183,18 @@ EXACT_wait_stall = yes
 EXACT_wait_pause = yes
 EXACT_wait_hold  = yes
 EXACT_wait_step  = yes
+# conirq takes each request right after the instruction that sets E, which
+# no core can take later.
+EXACT_conirq     = yes
+EXACT_conirq_stall = yes
+EXACT_conirq_hold  = yes
 # A run has interrupt requests from the options or from the timer.
 requests = $(INTR_$(1))$(TIMER_$(1))
 # The console input of a run, a file, as the emulator's --input takes it.
 INPUT_input = ../emulator/test/input.txt
+INPUT_conirq = ../emulator/test/input.txt
+INPUT_conirq_stall = $(INPUT_conirq)
+INPUT_conirq_hold  = $(INPUT_conirq)
 # The runs with an SD card in slot 0: sd.img in the run's directory, the
 # image of emulator/test/sd.nasm, for the core, and a copy of it for the
 # emulator, which writes it. sim/sd_sim.vhd writes nothing back.
@@ -488,6 +501,8 @@ $(eval $(call core_run,$(1),wait_stall,../emulator/test/wait.bin,-gG_STALL=30 -g
 $(eval $(call core_run,$(1),wait_pause,../emulator/test/wait.bin,-gG_PAUSE=40 -gG_SEED=53))
 $(eval $(call core_run,$(1),wait_hold,../emulator/test/wait.bin,-gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=55))
 $(eval $(call core_run,$(1),wait_step,../emulator/test/wait.bin,-gG_SINGLE_STEP=true))
+$(eval $(call core_run,$(1),conirq_stall,../emulator/test/conirq.bin,-gG_STALL=30 -gG_SEED=61))
+$(eval $(call core_run,$(1),conirq_hold,../emulator/test/conirq.bin,-gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=63))
 $(eval $(call core_run,$(1),bytewin_stall,../emulator/test/bytewin.bin,-gG_STALL=30 -gG_SEED=49))
 $(eval $(call core_run,$(1),eth_stall,../emulator/test/eth.bin,-gG_STALL=30 -gG_SEED=45))
 $(eval $(call core_run,$(1),eth_hold,../emulator/test/eth.bin,-gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=47))
@@ -627,7 +642,7 @@ analyze-nvc:
 # counters, the clock of the time of day, the timer, the data bus decoder, the debug link, the SD
 # card controller, the network station, and the port for Ethernet frames,
 # with the generics in SYNTH_GENERICS_unit.
-SYNTH = multicycle pipeline mpu perf tod timer fetch_stats wb_dmux debug_link sd_regs net_regs eth_regs
+SYNTH = multicycle pipeline mpu perf tod timer console_irq irq_merge fetch_stats wb_dmux debug_link sd_regs net_regs eth_regs
 SYNTH_GENERICS_wb_dmux = -gG_SLAVES=4
 
 define check_synth
@@ -643,10 +658,11 @@ synth: analyze-ghdl
 # is a target formal/FILE/TASK, and they run in parallel, as the runs of
 # make test do. The work directories go in $(BUILD).
 SBY ?= sby
-FORMAL = nice_pkg multicycle timer tod wb_dmux pipe_fetch pipe_decode pipe_prepare pipe_dbus pipe_write pipeline perf fetch_stats mpu debug_link sd_regs net_regs eth_regs
+FORMAL = nice_pkg multicycle timer console_irq irq_merge tod wb_dmux pipe_fetch pipe_decode pipe_prepare pipe_dbus pipe_write pipeline perf fetch_stats mpu debug_link sd_regs net_regs eth_regs
 FORMAL_TASKS = prove cover
 # The pipelined core is checked for a bounded number of cycles only.
 FORMAL_TASKS_pipeline = bmc cover
+FORMAL_TASKS_console_irq = prove bmc cover
 # The debug link is proven twice, with and without a ROM.
 FORMAL_TASKS_debug_link = prove prove_held cover cover_side
 FORMAL_TASKS_sd_regs = prove prove_nohold cover

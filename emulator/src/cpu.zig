@@ -894,8 +894,11 @@ pub const Cpu = struct {
     // Pending interrupt requests, holding the vector the device supplies
     // (§7.1). An IRQ is pending for each of its sources, which merge only
     // with their own: the timer's, which `--irq` raises too, and the
-    // console's, which is taken after it (SYSTEM §4).
+    // console's, which is taken after it (SYSTEM §4). So is an NMI: the
+    // one of `--nmi`, and the debug link's, which is taken after it
+    // (SYSTEM §8, DEBUG.md §6).
     nmi_pending: ?u8,
+    link_nmi_pending: ?u8,
     irq_pending: ?u8,
     console_pending: ?u8,
 
@@ -982,6 +985,7 @@ pub const Cpu = struct {
             .saved_sr = 0,
             .halt_reason = .none,
             .nmi_pending = null,
+            .link_nmi_pending = null,
             .irq_pending = null,
             .console_pending = null,
             .trace = null,
@@ -1039,6 +1043,7 @@ pub const Cpu = struct {
         self.waiting = false;
         self.halt_reason = .none;
         self.nmi_pending = null;
+        self.link_nmi_pending = null;
         self.irq_pending = null;
         self.console_pending = null;
         self.console_irq = .{};
@@ -1085,6 +1090,17 @@ pub const Cpu = struct {
     /// that arrive while one is pending merge into it, which keeps its vector (§7.1).
     pub fn requestNmi(self: *Cpu, v: u8) void {
         if (self.nmi_pending == null) self.nmi_pending = v;
+    }
+
+    /// Raise the debug link's NMI request with vector `v`, a source of its
+    /// own, which merges only with its own requests (DEBUG.md §6).
+    pub fn requestLinkNmi(self: *Cpu, v: u8) void {
+        if (self.link_nmi_pending == null) self.link_nmi_pending = v;
+    }
+
+    /// Whether an NMI is pending (§7.1), of either source.
+    pub fn nmiPending(self: *const Cpu) bool {
+        return self.nmi_pending != null or self.link_nmi_pending != null;
     }
 
     pub fn getReg(self: *const Cpu, r: u4) u32 {
@@ -1276,14 +1292,16 @@ pub const Cpu = struct {
         // §7.5: a pending request ends a wait. Without one, the step is a
         // wait step, a cycle in which nothing else happens (SYSTEM §3).
         if (self.waiting) {
-            if (self.nmi_pending == null and self.irq_pending == null and self.console_pending == null) return;
+            if (!self.nmiPending() and self.irq_pending == null and self.console_pending == null) return;
             self.waiting = false;
         }
 
         // §7.1: interrupts are checked before each instruction.
         if (!self.after_rti and !self.in_service) {
-            if (self.nmi_pending) |v| {
-                self.nmi_pending = null;
+            // The NMI of `--nmi` goes before the link's (SYSTEM §8).
+            const nmi_slot = if (self.nmi_pending != null) &self.nmi_pending else &self.link_nmi_pending;
+            if (nmi_slot.*) |v| {
+                nmi_slot.* = null;
                 self.enterInterrupt(v);
                 self.perf.intrs +%= 1;
                 return self.traceInterrupt("NMI", v, before);
@@ -1340,6 +1358,7 @@ pub const Cpu = struct {
         saved_pc: u32,
         saved_sr: u32,
         nmi_pending: ?u8,
+        link_nmi_pending: ?u8,
         irq_pending: ?u8,
         console_pending: ?u8,
         console_irq: ConsoleIrq,
@@ -1358,6 +1377,7 @@ pub const Cpu = struct {
             .saved_pc = self.saved_pc,
             .saved_sr = self.saved_sr,
             .nmi_pending = self.nmi_pending,
+            .link_nmi_pending = self.link_nmi_pending,
             .irq_pending = self.irq_pending,
             .console_pending = self.console_pending,
             .console_irq = self.console_irq,
@@ -1376,6 +1396,7 @@ pub const Cpu = struct {
         self.saved_pc = s.saved_pc;
         self.saved_sr = s.saved_sr;
         self.nmi_pending = s.nmi_pending;
+        self.link_nmi_pending = s.link_nmi_pending;
         self.irq_pending = s.irq_pending;
         self.console_pending = s.console_pending;
         self.console_irq = s.console_irq;
@@ -1389,7 +1410,7 @@ pub const Cpu = struct {
     /// decides it, the timer's request included.
     pub fn entryDue(self: *const Cpu) bool {
         if (self.halted() or self.after_rti or self.in_service) return false;
-        if (self.nmi_pending != null) return true;
+        if (self.nmiPending()) return true;
         return self.irqPending() and self.flag(sr_e) == 1;
     }
 
@@ -1403,7 +1424,7 @@ pub const Cpu = struct {
     /// Whether the next step is a wait step (§7.5, SYSTEM §3): the
     /// processor waits, and no request, the timer's included, ends the wait.
     pub fn waitStepDue(self: *const Cpu) bool {
-        return !self.halted() and self.waiting and self.nmi_pending == null and !self.irqPending();
+        return !self.halted() and self.waiting and !self.nmiPending() and !self.irqPending();
     }
 
     /// While `waitStepDue`, the wait steps until the timer raises a request,
@@ -2243,6 +2264,29 @@ test "NMI before IRQ; the IRQ waits through the routine (§7.1)" {
     try cpu.step(); // the IRQ
     try testing.expectEqual(0x40, cpu.regs[15]);
     try testing.expectEqual(1, cpu.saved_pc);
+}
+
+test "the link's NMI: after the one of --nmi, merges only with its own (SYSTEM §8)" {
+    var cpu = try interruptTestCpu();
+    defer cpu.deinit();
+
+    cpu.requestLinkNmi(5);
+    cpu.requestLinkNmi(6); // merges, and the pending one keeps vector 5
+    cpu.requestNmi(6);
+    try testing.expect(cpu.nmiPending());
+    try cpu.step(); // the NMI of --nmi goes first
+    try testing.expectEqual(0x50, cpu.regs[15]);
+    try testing.expectEqual(5, cpu.link_nmi_pending);
+    try cpu.step(); // RTI, although the link's NMI is pending
+    try cpu.step(); // the NOP at 0
+    try cpu.step(); // the link's NMI, with its first vector
+    try testing.expectEqual(0x40, cpu.regs[15]);
+    try testing.expectEqual(1, cpu.saved_pc);
+    try testing.expect(!cpu.nmiPending());
+
+    cpu.requestLinkNmi(6);
+    cpu.reset(); // a start drops it
+    try testing.expect(!cpu.nmiPending());
 }
 
 test "HALT inside an interrupt routine, and INT inside one (§7.2)" {

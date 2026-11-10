@@ -539,12 +539,19 @@ register reads it while the processor is neither held nor halted
 `in_service_i`, `after_rti_i`, `saved_pc_i`, and `saved_sr_i` connect to
 the core's `in_service_o`, `after_rti_o`, `saved_pc_o`, and `saved_sr_o`.
 The link keeps and reads them as it does `regs_i`, for bits 7 and 8 and
-the words `0xFFFFFFD0` and `0xFFFFFFD1`, which take no write. The words
-`0xFFFFFFD2`–`0xFFFFFFDF` read 0 and take no write.
+the words `0xFFFFFFD0` and `0xFFFFFFD1`, which take no write. The
+reserved words of `0xFFFFFFD2`–`0xFFFFFFDF` read 0 and take no write.
 `nmi_pending_i` and `irq_pending_i` connect to the core's `nmi_valid_i`
 and `irq_valid_i`, for bits 9 and 10, which read them while the processor
 is neither held nor halted. A board without these inputs leaves them
 open, and they read 0.
+`nmi_valid_o`, `nmi_ready_i`, and `nmi_vector_o` are the NMI request of
+`0xFFFFFFD7` (DEBUG.md §6), for the core's NMI port. A write with bit 8
+set, while the processor is neither held nor halted, raises
+`nmi_valid_o` with the vector of bits 7 to 0, which stays, with the
+vector stable, until `nmi_ready_i`, or a hold, which resets the core in
+the same cycle. A board with another source of NMI merges them, and
+keeps the vector stable until the core's ready, as the cores ask.
 
 The host's line ends with `rx_break_i`, a pulse for a UART break: `eoi_o`
 rises, the link drops the host's console bytes, and the board's console
@@ -1016,7 +1023,8 @@ full buffer loses with `o`, with the go on behind it, and the hidden
 state and the requests: bits 7 to 10, `saved_pc`, and `saved_sr`, step
 by step through an `INT`, its `RTI`, and an NMI that its request source
 raises inside the routine with an IRQ that E = 0 holds, at the halt and
-the hold after it. Its input buffer
+the hold after it, and the link's NMI request, raised while paused,
+taken by a step, refused while halted, and dropped by a hold. Its input buffer
 holds 16 bytes, so that a flood fills it soon. The testbench shows three things a board must
 do: each master sees only its own STALL and ACK; the devices are reset at
 a start, when `hold_o` falls, and not while the processor is held, so that

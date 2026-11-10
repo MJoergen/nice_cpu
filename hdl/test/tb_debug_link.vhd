@@ -18,7 +18,7 @@
 -- may come only while the core is paused and pause_o is high, replaces
 -- that value with ISA.md §4.3 applied, until the next hold.
 -- The checks, in the order of the run:
--- * the notice `b07` after reset, and the examples of DEBUG.md §8;
+-- * the notice `b08` after reset, and the examples of DEBUG.md §8;
 -- * lowercase digits, a bad checksum, an unknown tag, a payload with a bad
 --   length or a bad digit, and a W with too many words;
 -- * the debug registers, a clear of the memory, one that a dropped packet
@@ -68,7 +68,12 @@
 --   halted, also with e02 first, the side client's refusals then and on
 --   the way to a pause and in a step, R3, R0, and R14 while paused, and
 --   their read-back, at once for the side client, and one pulse of
---   reg_we_o for each write of R1 to R15.
+--   reg_we_o for each write of R1 to R15;
+-- * the NMI request of 0xFFFFFFD7: nmi_valid_o and nmi_vector_o after a
+--   write while running, held with a stable vector until nmi_ready_i,
+--   through a second write, and the read-back; a write with bit 8 clear,
+--   and one while halted, which raise nothing; and the drop by a hold and
+--   by a reset.
 -- The run stops with status 0 when every check passes, and 1 at the first
 -- that fails.
 
@@ -128,12 +133,16 @@ architecture simulation of tb_debug_link is
    signal paused     : std_logic                      := '0';
    signal core_wait  : std_logic                      := '0';
    -- The core's hidden state and the requests (DEBUG.md §6), set by p_test
-   signal core_isr   : std_logic                      := '0';
-   signal core_arti  : std_logic                      := '0';
-   signal core_spc   : std_logic_vector(31 downto 0)  := (others => '0');
-   signal core_ssr   : std_logic_vector(31 downto 0)  := (others => '0');
-   signal core_nmi   : std_logic                      := '0';
-   signal core_irq   : std_logic                      := '0';
+   signal core_isr  : std_logic                      := '0';
+   signal core_arti : std_logic                      := '0';
+   signal core_spc  : std_logic_vector(31 downto 0)  := (others => '0');
+   signal core_ssr  : std_logic_vector(31 downto 0)  := (others => '0');
+   signal core_nmi  : std_logic                      := '0';
+   signal core_irq  : std_logic                      := '0';
+   -- The link's NMI request, and the core's ready for it, set by p_test
+   signal nmi_valid  : std_logic;
+   signal nmi_ready  : std_logic                      := '0';
+   signal nmi_vector : std_logic_vector(7 downto 0);
    signal pause_wait : natural                        := 40;
    signal step_wait  : natural                        := 20;
    signal step_halts : std_logic                      := '0';
@@ -247,6 +256,9 @@ begin
          saved_sr_i     => core_ssr,
          nmi_pending_i  => core_nmi,
          irq_pending_i  => core_irq,
+         nmi_valid_o    => nmi_valid,
+         nmi_ready_i    => nmi_ready,
+         nmi_vector_o   => nmi_vector,
          regs_i         => regs,
          brk_addr_o     => brk_addr,
          brk_en_o       => brk_en,
@@ -649,7 +661,7 @@ begin
       rst <= '0';
 
       -- Reset: a notice, and the processor held with the ROM shown.
-      expect(C_ESC & "b07#C9", "b07");
+      expect(C_ESC & "b08#CA", "b08");
       assert hold = '1' and rom_hide = '0' and eoi = '0'
          report "tb_debug_link: state after reset"
          severity failure;
@@ -706,7 +718,7 @@ begin
 
       -- The registers while held: version, free space, the breakpoints, and control.
       send(C_ESC & "RFFFFFFF20001#2F");
-      expect(C_ESC & "rFFFFFFF2000100000007#D6", "version");
+      expect(C_ESC & "rFFFFFFF2000100000008#D7", "version");
       send(C_ESC & "RFFFFFFF30001#30");
       expect(C_ESC & "rFFFFFFF3000100000008#D8", "free space");
       send(C_ESC & "RFFFFFFF40002#32");
@@ -1523,11 +1535,73 @@ begin
       expect(C_ESC & "rFFFFFFD6000100000000#D1", "address of the hit after a go on");
       quiet("go on from a hit");
 
+      -- The NMI request (DEBUG.md §6), while the core runs: it stands, with
+      -- its vector, until nmi_ready_i, and a second write does not change
+      -- it.
+      send(C_ESC & "RFFFFFFD70001#32");
+      expect(C_ESC & "rFFFFFFD7000100000000#D2", "no NMI request");
+      send(C_ESC & "WFFFFFFD7000100000142#BE");
+      expect(C_ESC & "kFFFFFFD70001#4B", "W of the NMI request");
+      assert nmi_valid = '1' and nmi_vector = X"42"
+         report "tb_debug_link: the NMI request"
+         severity failure;
+      send(C_ESC & "WFFFFFFD70001000001FF#E4");
+      expect(C_ESC & "kFFFFFFD70001#4B", "W of a second NMI request");
+      send(C_ESC & "RFFFFFFD70001#32");
+      expect(C_ESC & "rFFFFFFD7000100000142#D9", "the first NMI request stands");
+      assert nmi_valid = '1' and nmi_vector = X"42"
+         report "tb_debug_link: the NMI request after a second write"
+         severity failure;
+      nmi_ready <= '1';
+      cycles(1);
+      nmi_ready <= '0';
+      cycles(1);
+      assert nmi_valid = '0'
+         report "tb_debug_link: the NMI request taken"
+         severity failure;
+      send(C_ESC & "RFFFFFFD70001#32");
+      expect(C_ESC & "rFFFFFFD7000100000000#D2", "the NMI request taken");
+      -- Bit 8 clear raises nothing.
+      send(C_ESC & "WFFFFFFD7000100000042#BD");
+      expect(C_ESC & "kFFFFFFD70001#4B", "W with bit 8 clear");
+      assert nmi_valid = '0'
+         report "tb_debug_link: bit 8 clear raised an NMI"
+         severity failure;
+      -- A hold drops a request.
+      send(C_ESC & "WFFFFFFD7000100000142#BE");
+      expect(C_ESC & "kFFFFFFD70001#4B", "W of the NMI request to drop");
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold drops the NMI request");
+      assert nmi_valid = '0'
+         report "tb_debug_link: a hold kept the NMI request"
+         severity failure;
+      send(C_ESC & "RFFFFFFD70001#32");
+      expect(C_ESC & "rFFFFFFD7000100000000#D2", "the NMI request dropped");
+      -- Halted: a write raises nothing.
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "start before the halt");
+      core_halt <= '1';
+      expect(C_ESC & "h01#C9", "halt before the NMI request");
+      send(C_ESC & "WFFFFFFD7000100000142#BE");
+      expect(C_ESC & "kFFFFFFD70001#4B", "W of the NMI request while halted");
+      assert nmi_valid = '0'
+         report "tb_debug_link: an NMI request while halted"
+         severity failure;
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold after the halt");
+      core_halt <= '0';
+      send(C_ESC & "WFFFFFFF0000100000008#BA");
+      expect(C_ESC & "kFFFFFFF00001#46", "start after the halt");
+      -- A request for the reset below to drop
+      send(C_ESC & "WFFFFFFD7000100000142#BE");
+      expect(C_ESC & "kFFFFFFD70001#4B", "W of the NMI request before the reset");
+      quiet("the NMI request");
+
       -- A reset clears the breakpoints.
       rst <= '1';
       cycles(3);
       rst <= '0';
-      expect(C_ESC & "b07#C9", "b07 after reset");
+      expect(C_ESC & "b08#CA", "b08 after reset");
       send(C_ESC & "RFFFFFFF80001#35");
       expect(C_ESC & "rFFFFFFF8000100000000#D5", "address after reset");
       send(C_ESC & "RFFFFFFF40001#31");
@@ -1541,6 +1615,9 @@ begin
       expect(C_ESC & "rFFFFFFD8000100000000#D3", "watched address after reset");
       assert wch_en = X"00" and wch_addr(0) = X"00000000"
          report "tb_debug_link: the watchpoint ports after reset"
+         severity failure;
+      assert nmi_valid = '0'
+         report "tb_debug_link: the NMI request after reset"
          severity failure;
       quiet("reset");
 

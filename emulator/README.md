@@ -562,6 +562,11 @@ the hidden state alone. A write of R0 to R15 while it is not paused gets
 `in_service` and `after_rti` in bits 7 and 8 of the control register.
 Bits 9 and 10 read the pending NMI and IRQ, the timer's included, while
 the processor is neither held nor halted.
+A write of `0xFFFFFFD7` with bit 8 set raises an NMI with the vector of
+bits 7 to 0, unless the processor is held or halted (DEBUG.md §6). The
+link is a source of its own, after `--nmi`: its request merges only with
+its own, and reads back at `0xFFFFFFD7` until the processor takes it. A
+hold, and a host's connection, drop it.
 A `W` writes its words when its checksum has been checked, so a `W`
 with a bad checksum writes nothing. One with a bad payload writes the whole
 words before the bad byte, at most N.
@@ -570,7 +575,8 @@ words before the bad byte, at most N.
 
 The core (`src/cpu.zig`) implements IRQ, NMI, `INT`, and `RTI` (ISA.md §7).
 The timer and the console's receive interrupt (Memory map) raise IRQ, and
-no device raises NMI. `--irq` and `--nmi` raise a request at a chosen step,
+no device raises NMI; the debug link can (Debug link). `--irq` and
+`--nmi` raise a request at a chosen step,
 that of `--irq` of the timer's source. A request for step N is raised after N steps have run, so
 with `--trace` it comes before line N + 1, and `--nmi 0:5` raises an NMI
 before the first instruction. A request is raised whether or not it can be

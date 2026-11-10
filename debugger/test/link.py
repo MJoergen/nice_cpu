@@ -176,7 +176,7 @@ def test_link(port: str, echo: str) -> None:
     link = connect(port)
     try:
         version = link.read_word(nicelink.VERSION)
-        check("the link's version is 0.7", version == 0x07, f"{version:02x}")
+        check("the link's version is 0.8", version == 0x08, f"{version:02x}")
         link.control(HOLD | RAM)
         words = [0x1000 * i + 7 for i in range(nicelink.MAX_WORDS + 44)]
         link.write(0x4000, words)
@@ -330,7 +330,7 @@ def test_commands(port: str, prog: str, at: dict[str, int]) -> None:
               "in reset\n", repr(out))
         out = command(dbg, "status")
         check("dbg: status while held", out.startswith(
-            "held, ROM hidden, control 00000009, link version 0.7, "),
+            "held, ROM hidden, control 00000009, link version 0.8, "),
             repr(out))
         out = command(dbg, "b LOOP")
         check("dbg: a breakpoint at a label", out == f"0: {loop:08x} LOOP\n",
@@ -442,7 +442,8 @@ def test_wait(port: str, prog: str) -> None:
 def test_hidden(port: str, prog: str) -> None:
     """nicedbg.py on test/hidden.nasm: the interrupt state in status, in
     the routine of an INT, after its RTI, and with a request of the timer
-    that E = 0 holds (link version 7)."""
+    that E = 0 holds (link version 7); then an NMI that nmi raises, which
+    a step takes, and its errors (link version 8)."""
     link = connect(port)
     dbg = nicedbg.Debugger(link, nicebin.Symbols(prog.replace(".bin",
                                                               ".sym")))
@@ -463,10 +464,27 @@ def test_hidden(port: str, prog: str) -> None:
         out = command(dbg, "status")
         check("dbg: status with an IRQ pending", out.endswith(
             "\ninterrupts: IRQ pending\n"), repr(out))
+        out = command(dbg, "nmi 2")
+        check("dbg: nmi while paused", out ==
+              "NMI 02 pending; 'go' or 'step' takes it\n", repr(out))
+        out = command(dbg, "status")
+        check("dbg: status with an NMI pending", out.endswith(
+            "\ninterrupts: NMI pending, IRQ pending\n"), repr(out))
+        out = command(dbg, "step")
+        check("dbg: a step takes the NMI", " ISR  RTI" in out, repr(out))
+        out = command(dbg, "nmi 100")
+        check("dbg: nmi of a vector past ff", out ==
+              "error: the vector is 0 to ff, not 100\n", repr(out))
+        out = command(dbg, "nmi")
+        check("dbg: nmi without a vector", out ==
+              "error: give the vector, 0 to ff\n", repr(out))
         command(dbg, "hold")
         out = command(dbg, "status")
         check("dbg: no interrupt state while held",
               "interrupts" not in out, repr(out))
+        out = command(dbg, "nmi 2")
+        check("dbg: nmi while held", out ==
+              "error: the processor is held; 'go' first\n", repr(out))
     finally:
         link.close()
 

@@ -71,6 +71,7 @@ one. `help` lists the commands, and `help CMD` describes one.
 | `bd N` or `bd all` | Disables breakpoint N, or all of them. |
 | `wp [ADDR [r\|w\|rw]]` | Sets a watchpoint at ADDR, or lists them. It stops after a step that writes the word, by default, reads it (`r`), or either (`rw`). It needs link version 7. |
 | `wpd N` or `wpd all` | Disables watchpoint N, or all of them. |
+| `nmi VEC` | Raises an NMI with vector VEC, 0 to ff. A running processor takes it at once, unless it is in an interrupt routine, and a paused one at the next `go` or `step`. It needs link version 8, and is an error while the processor is held or has halted. |
 | `regs` | Shows R0 to R15. |
 | `set Rn VALUE` | Writes a register of a paused processor. `SP`, `SR`, and `PC` name R13, R14, and R15. |
 | `pc [ADDR]` | Shows the PC of a paused processor and its instruction, or sets it. |

@@ -12,8 +12,8 @@ const keys = @import("keys.zig");
 
 /// The escape byte, which starts a packet (DEBUG.md §1).
 pub const esc: u8 = 0xFF;
-/// The protocol version, major 0 and minor 7 (DEBUG.md §9).
-const version: u8 = 7;
+/// The protocol version, major 0 and minor 8 (DEBUG.md §9).
+const version: u8 = 8;
 /// The program's input buffer, in bytes (DEBUG.md §7).
 pub const input_size = 2048;
 /// The packet timeout of DEBUG.md §5.
@@ -29,6 +29,10 @@ const saved_sr_addr: u32 = link_base + 1;
 const watches = cpu_zig.Watch.count;
 const watch_en_addr: u32 = link_base + 4;
 const watch_addr0: u32 = link_base + 8;
+/// The NMI request (DEBUG.md §6): bit 8 raises an NMI with the vector of
+/// bits 7-0.
+const nmi_addr: u32 = link_base + 7;
+const nmi_raise: u32 = 1 << 8;
 const debug_base: u32 = 0xFFFF_FFE0;
 const control_addr: u32 = debug_base + 0x10;
 /// The number of breakpoints (DEBUG.md §6, §7).
@@ -309,6 +313,8 @@ pub const Link = struct {
         self.break_addr = @splat(0);
         self.cpu.watch.en = 0;
         self.cpu.watch.addr = @splat(0);
+        // Nor an NMI request of an earlier host.
+        self.cpu.link_nmi_pending = null;
         var buf: [2]u8 = undefined;
         self.sendPacket('b', hex(&buf, version));
     }
@@ -491,6 +497,7 @@ pub const Link = struct {
             0x4 => self.cpu.watch.en,
             0x5 => watches,
             0x6 => if (self.stop_watch != null) self.stop_watch_pc else 0,
+            0x7 => if (self.cpu.link_nmi_pending) |v| nmi_raise | @as(u32, v) else 0,
             0x8...0x8 + watches - 1 => self.cpu.watch.addr[addr - watch_addr0],
             else => 0,
         };
@@ -519,7 +526,7 @@ pub const Link = struct {
         if (!self.held and self.cpu.waitStepDue()) v |= ctl_waiting;
         if (self.cpu.in_service) v |= ctl_in_service;
         if (self.cpu.after_rti) v |= ctl_after_rti;
-        if (live and self.cpu.nmi_pending != null) v |= ctl_nmi;
+        if (live and self.cpu.nmiPending()) v |= ctl_nmi;
         if (live and self.cpu.irqPending()) v |= ctl_irq;
         return v;
     }
@@ -547,6 +554,11 @@ pub const Link = struct {
         }
         if (addr >= watch_addr0 and addr < watch_addr0 + watches) {
             self.cpu.watch.addr[addr - watch_addr0] = value;
+            return;
+        }
+        // A held or halted processor takes no request (DEBUG.md §6).
+        if (addr == nmi_addr) {
+            if (value & nmi_raise != 0 and !self.held and !self.halted()) self.cpu.requestLinkNmi(@truncate(value));
             return;
         }
         if (addr >= link_base) return;
@@ -597,6 +609,8 @@ pub const Link = struct {
     /// A hold ends a pause, and R0 to R15 stay as they are.
     fn hold(self: *Link) void {
         if (!self.held) self.interrupted = true;
+        // A hold drops the NMI request of the link (DEBUG.md §6).
+        self.cpu.link_nmi_pending = null;
         self.held = true;
         self.paused = false;
         self.step_due = false;

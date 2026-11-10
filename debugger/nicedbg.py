@@ -736,6 +736,28 @@ class Debugger(cmd.Cmd):
         en = link.read_word(WCH_EN)
         link.write(WCH_EN, [en & ~(3 << 2 * n)])
 
+    def do_nmi(self, arg: str) -> None:
+        """nmi VEC: raises an NMI with the vector VEC, 0 to ff (link
+        version 8). A running processor takes it at once, unless it is in
+        an interrupt routine, and a paused one at the next go or step."""
+        link = self.link
+        if not arg.strip():
+            raise ValueError("give the vector, 0 to ff")
+        vector = number(arg.strip())
+        if vector > 0xFF:
+            raise ValueError(f"the vector is 0 to ff, not {arg.strip()}")
+        if link.read_word(VERSION) & 0xF < 8:
+            raise ValueError("this system has no NMI request; it needs "
+                             "link version 8")
+        ctl = link.read_word(CONTROL)
+        if ctl & HOLD:
+            raise ValueError("the processor is held; 'go' first")
+        if ctl & HALTED:
+            raise ValueError("the processor has halted, and takes no NMI")
+        link.raise_nmi(vector)
+        if ctl & PAUSE:
+            print(f"NMI {vector:02x} pending; 'go' or 'step' takes it")
+
     def do_send(self, arg: str) -> None:
         r"""send TEXT: sends the text to the program, with escapes such as
         \n, \r, and \x1b. It waits up to 2 s for room in the program's

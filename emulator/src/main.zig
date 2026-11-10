@@ -974,9 +974,10 @@ fn report(out: *std.Io.Writer, opts: Options, syms: []const Symbol, cpu: *Cpu, s
     }
     if (syms.len != 0 and !(cpu.halted() and cpu.halt_reason == .halt)) try printWhere(out, cpu, syms);
     // A request still pending now was never taken (ISA.md §7.1).
-    if (cpu.nmi_pending != null or cpu.irq_pending != null or cpu.console_pending != null) {
+    if (cpu.nmiPending() or cpu.irq_pending != null or cpu.console_pending != null) {
         try out.writeAll("Pending:");
         if (cpu.nmi_pending) |v| try out.print(" NMI {x:0>2}", .{v});
+        if (cpu.link_nmi_pending) |v| try out.print(" NMI {x:0>2}", .{v});
         if (cpu.irq_pending) |v| try out.print(" IRQ {x:0>2}", .{v});
         if (cpu.console_pending) |v| try out.print(" IRQ {x:0>2}", .{v});
         try out.writeByte('\n');

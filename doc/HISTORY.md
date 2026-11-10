@@ -706,3 +706,16 @@ the compare on PREPARE's address path, which sets the core's clock. A
 stop after the step needs no exemption after a go on, and the host sees
 the value written. The address of the hit, `0xFFFFFFD6`, makes up for R15,
 which has moved on by then.
+
+## An NMI from the link
+
+Until 2026-11-10, nothing raised an NMI but the test options, `--nmi`
+of the emulator and the injected requests of `tb_core`. Both cores had
+the NMI port, and NiceMonMEGA65 tied it off. #131 weighed three
+sources: a request from the debug link, a button, and a watchdog. The
+link's came first, in version 8, as the register `0xFFFFFFD7`. A new
+request tag was decided against: the link has only `R` and `W`, and does
+its run control through registers, which an older system ignores. The
+button and the watchdog stay open in #131. A second source needs a merge
+that keeps the NMI vector stable until the core takes it, as the cores
+ask of NMI, though a4da0a9 relaxed this for IRQ.

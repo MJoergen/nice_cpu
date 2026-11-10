@@ -152,6 +152,26 @@ WAITER = """
                 MOVE    R1, 1
                 HALT
 """
+# Counts in R2 with E = 0, so no IRQ is taken. Vector 2 leads to a routine
+# at 7 that sets R3 and halts, for the NMI of the link (DEBUG.md §6). The
+# loop's two instructions are at 3 and 5.
+NMI_PROG = """
+                MOVE    R15, loop
+                .DAT    nmi
+loop            ADD     R2, R2, 1
+                MOVE    R15, loop
+nmi             MOVE    R3, 0x77
+                HALT
+"""
+# Waits with no request to come. Vector 2 leads to a routine at 3 that sets
+# R3 and halts.
+WAIT_NMI = """
+                WAIT
+                HALT
+                .DAT    nmi
+nmi             MOVE    R3, 0x77
+                HALT
+"""
 # An INT, its RTI, and an NMI routine that halts, for the hidden state
 # (DEBUG.md §6). back is at 3, isr at 5, and nmi at 7.
 HIDDEN = """
@@ -208,7 +228,7 @@ def answer(addr: int, words: List[int]) -> bytes:
 
 CONTROL = 0xFFFFFFF0
 SAVED_PC = 0xFFFFFFD0
-HELLO = b"\xffb07#C9"
+HELLO = b"\xffb08#CA"
 PAUSED = b"\xffp#70"
 CYCLE_LO = 0xFFFFFF40
 TIME_LO = 0xFFFFFF44
@@ -302,7 +322,7 @@ def test_example() -> None:
     e.expect("control held", answer(CONTROL, [0x9]))
     # The halt reason, the version, the free space, and a reserved word.
     e.send(read(0xFFFFFFF1, 4))
-    e.expect("F1-F4", answer(0xFFFFFFF1, [0, 7, 2048, 0]))
+    e.expect("F1-F4", answer(0xFFFFFFF1, [0, 8, 2048, 0]))
     # The breakpoints: four, none enabled, no stop, and the addresses 0.
     e.send(read(0xFFFFFFF5, 11))
     e.expect("F5-FF", answer(0xFFFFFFF5, [4] + [0] * 10))
@@ -362,7 +382,7 @@ def test_errors() -> None:
     e.send(write(0xFFFFFF01, [5]) + write(0xFFFFFFF2, [7]))
     e.expect("ignored writes", ok(0xFFFFFF01, 1) + ok(0xFFFFFFF2, 1))
     e.send(read(0xFFFFFF01, 1) + read(0xFFFFFFF2, 1))
-    e.expect("read counter", answer(0xFFFFFF01, [0]) + answer(0xFFFFFFF2, [7]))
+    e.expect("read counter", answer(0xFFFFFF01, [0]) + answer(0xFFFFFFF2, [8]))
     # A clear: 0x5 clears and stays held.
     e.send(write(CONTROL, [0x5]))
     e.expect("clear", ok(CONTROL, 1))
@@ -1416,6 +1436,80 @@ def test_hidden(hidden: List[int], count: List[int]) -> None:
     e.stop()
 
 
+NMI_REQ = 0xFFFFFFD7
+
+
+def test_nmi(nmi: List[int], wait_nmi: List[int]) -> None:
+    """The NMI request of §6: one raised while running, paused, waiting,
+    held, and halted, the merge, a write with bit 8 clear, and the drop by
+    a hold and by a new host."""
+    e = Emu()
+    e.take(len(HELLO))
+    # Running: the routine runs, and halts. The request reads 0 once taken.
+    e.send(write(0, nmi) + write(CONTROL, [0x8]))
+    e.expect("start", ok(0, len(nmi)) + ok(CONTROL, 1))
+    expect("no NMI pending", bytes([word(e, NMI_REQ)]), b"\x00")
+    e.send(write(NMI_REQ, [0x102]))
+    e.expect("NMI while running", ok(NMI_REQ, 1) + b"\xffh01#C9")
+    e.send(read(0xFFFFFFE3, 1) + read(NMI_REQ, 1))
+    e.expect("in the routine", answer(0xFFFFFFE3, [0x77]) + answer(NMI_REQ, [0]))
+    expect("saved_pc in the loop", bytes([word(e, SAVED_PC) in (3, 5)]), b"\x01")
+    # Halted, then held: a write raises nothing. Bit 7 reads 1, as the
+    # routine halted.
+    for name, ctl in (("halted", 0x8A), ("held", 0x8B)):
+        if name == "held":
+            e.send(write(CONTROL, [0x9]))
+            e.expect("hold", ok(CONTROL, 1))
+        e.send(write(NMI_REQ, [0x102]) + read(NMI_REQ, 1) + read(CONTROL, 1))
+        e.expect(f"NMI while {name}", ok(NMI_REQ, 1) + answer(NMI_REQ, [0]) + answer(CONTROL, [ctl]))
+    # Paused: it waits, reads with its vector, and bit 9 reads 1. A second
+    # write merges, and bit 8 clear raises nothing. A step takes it.
+    e.send(write(CONTROL, [0x18]))
+    e.expect("start paused", ok(CONTROL, 1) + PAUSED)
+    e.send(write(NMI_REQ, [0x02]) + read(NMI_REQ, 1))
+    e.expect("bit 8 clear", ok(NMI_REQ, 1) + answer(NMI_REQ, [0]))
+    e.send(write(NMI_REQ, [0x102]) + write(NMI_REQ, [0x1FF]) + read(NMI_REQ, 1) + read(CONTROL, 1))
+    e.expect("pending while paused", ok(NMI_REQ, 1) + ok(NMI_REQ, 1) + answer(NMI_REQ, [0x102])
+             + answer(CONTROL, [0x218]))
+    e.send(write(CONTROL, [0x38]))
+    e.expect("step into the routine", ok(CONTROL, 1) + PAUSED)
+    e.send(read(0xFFFFFFEF, 1) + read(NMI_REQ, 1) + read(CONTROL, 1) + read(SAVED_PC, 1))
+    e.expect("at the routine", answer(0xFFFFFFEF, [7]) + answer(NMI_REQ, [0]) + answer(CONTROL, [0x98])
+             + answer(SAVED_PC, [0]))
+    # A hold drops a pending request: the next start paused steps the MOVE.
+    e.send(write(CONTROL, [0x11]) + write(CONTROL, [0x18]))
+    e.expect("restart paused", ok(CONTROL, 1) + ok(CONTROL, 1) + PAUSED)
+    e.send(write(NMI_REQ, [0x102]) + write(CONTROL, [0x11]) + write(CONTROL, [0x18]))
+    e.expect("raise, hold, start", ok(NMI_REQ, 1) + ok(CONTROL, 1) + ok(CONTROL, 1) + PAUSED)
+    e.send(read(NMI_REQ, 1) + write(CONTROL, [0x38]))
+    e.expect("dropped", answer(NMI_REQ, [0]) + ok(CONTROL, 1) + PAUSED)
+    expect("R15 after the MOVE", bytes([word(e, 0xFFFFFFEF)]), b"\x03")
+    # A new host drops it too: every b leaves none.
+    e.send(write(NMI_REQ, [0x102]))
+    e.expect("raise before the new host", ok(NMI_REQ, 1))
+    e.sock.close()
+    e.sock = e.connect()
+    e.buf = b""
+    e.expect("b of the new host", HELLO)
+    e.send(read(NMI_REQ, 1) + read(CONTROL, 1))
+    e.expect("none after b", answer(NMI_REQ, [0]) + answer(CONTROL, [0x18]))
+    e.stop()
+
+    # Waiting with no request to come: the NMI ends the wait, and the
+    # routine runs with the PC after the WAIT saved.
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(0, wait_nmi) + write(CONTROL, [0x8]))
+    e.expect("start the wait", ok(0, len(wait_nmi)) + ok(CONTROL, 1))
+    time.sleep(0.2)
+    expect("control in the wait", bytes([word(e, CONTROL)]), bytes([0x48]))
+    e.send(write(NMI_REQ, [0x102]))
+    e.expect("NMI in the wait", ok(NMI_REQ, 1) + b"\xffh01#C9")
+    e.send(read(0xFFFFFFE3, 1) + read(SAVED_PC, 1))
+    e.expect("the routine after the wait", answer(0xFFFFFFE3, [0x77]) + answer(SAVED_PC, [1]))
+    e.stop()
+
+
 def test_write_regs(regs: List[int], at20: List[int], count: List[int]) -> None:
     """The writes of R0-R15 of §6: what they mean, a written R15 and the
     breakpoints, e04 while not paused, and the example of §8."""
@@ -1514,9 +1608,9 @@ def test_old_host(stop: List[int], echo: List[int]) -> None:
         e.send(read(CONTROL, 2))
         e.expect("halted", answer(CONTROL, [0xA, 1]))
     # The registers it does not know read 0 but for the version, which reads
-    # 6 with its high bits 0.
+    # 8 with its high bits 0.
     e.send(read(0xFFFFFFF2, 1) + read(0xFFFFFFF7, 1))
-    e.expect("version and 0xFFFFFFF7", answer(0xFFFFFFF2, [7]) + answer(0xFFFFFFF7, [0]))
+    e.expect("version and 0xFFFFFFF7", answer(0xFFFFFFF2, [8]) + answer(0xFFFFFFF7, [0]))
     # A program that runs until the host holds it.
     control(0x5, 0)
     e.send(write(0, echo))
@@ -1611,6 +1705,8 @@ def main() -> None:
         regs = assemble(tmp, "regs", REGS)
         hidden = assemble(tmp, "hidden", HIDDEN)
         waiter = assemble(tmp, "waiter", WAITER)
+        nmi = assemble(tmp, "nmi", NMI_PROG)
+        wait_nmi = assemble(tmp, "wait_nmi", WAIT_NMI)
         watch = assemble(tmp, "watch", WATCH)
         write200 = assemble(tmp, "write200", WRITE200)
         at20 = assemble(tmp, "at20", AT20)
@@ -1629,7 +1725,7 @@ def main() -> None:
             lambda: test_break(at10, load, count, skip, stop, irq),
             lambda: test_watch(watch, write200, irq),
             lambda: test_write_regs(regs, at20, count), lambda: test_wait(waiter),
-            lambda: test_hidden(hidden, count),
+            lambda: test_hidden(hidden, count), lambda: test_nmi(nmi, wait_nmi),
             lambda: test_old_host(stop, echo), lambda: test_net(spin), test_address, test_usage,
         ]
         for t in tests:

@@ -11,10 +11,10 @@ NiceMonMEGA65 also has a debugger on the board, which is a client of the
 link inside the system (§3).
 
 The link is a property of the system, not of the ISA. ISA.md and
-SYSTEM.md win over this file. This is version `07` of the protocol,
-major 0 and minor 7 (§9). Its run control is the pause, the single step,
+SYSTEM.md win over this file. This is version `08` of the protocol,
+major 0 and minor 8 (§9). Its run control is the pause, the single step,
 the breakpoints, the watchpoints, and the registers, which a host writes
-while the processor is paused. It shows a wait for an interrupt, the hidden state
+while the processor is paused. A host can also raise an NMI. It shows a wait for an interrupt, the hidden state
 of ISA §1.4, and the pending interrupt requests (§6).
 
 To try the link, run `niceemu --link PORT prog.bin` (emulator/README.md,
@@ -201,7 +201,7 @@ the control register causes may come before the `k` of that write.
 
 | Notice | Payload | Meaning |
 |---|---|---|
-| `b` | version | The system has powered up or been reset, or a host has connected to the emulator over TCP (§7.1). The version is `07` (§9). |
+| `b` | version | The system has powered up or been reset, or a host has connected to the emulator over TCP (§7.1). The version is `08` (§9). |
 | `h` | reason | The processor has halted. The reason is the halt reason of §6, `01`–`05`. The last console byte that the program wrote comes before the notice. |
 | `x` | breakpoint | The processor has paused, and R15 is the address of an enabled breakpoint (§6). The payload is its number, `00`–`07`, the lowest if more than one has that address. Bit 4 of the control register reads 1. The last console byte that the program wrote comes before the notice. |
 | `w` | watchpoint | The processor has paused after a step that hit a watchpoint (§6). The payload is its number, `00`–`03`, the lowest if the step hit more than one. Bit 4 of the control register reads 1. The last console byte that the program wrote comes before the notice. |
@@ -268,13 +268,13 @@ system has there otherwise.
 | `0xFFFFFFD4` | The enable bits of the watchpoints. Bit 2i enables the reads of watchpoint i, and bit 2i + 1 its writes. The bits from 2M up read 0 and take no write. |
 | `0xFFFFFFD5` | The number of watchpoints M, read only: 0 to 4. A system without watchpoints reads 0. |
 | `0xFFFFFFD6` | The address of the hit, read only. From a `w` until the next go on, step, start, or clear, the address of the instruction whose step hit the watchpoint (below). Otherwise 0. |
-| `0xFFFFFFD7` | Reserved for a later minor (§9). It reads 0 and takes no write. |
+| `0xFFFFFFD7` | The NMI request. A write with bit 8 set raises an NMI with the vector in bits 7–0, and a write with bit 8 clear does nothing. It reads bit 8 = 1 and the vector while that request is pending, and 0 otherwise (below). |
 | `0xFFFFFFD8`–`0xFFFFFFDB` | The addresses of watchpoints 0 to 3. The words from `0xFFFFFFD8` + M up read 0 and take no write. |
 | `0xFFFFFFDC`–`0xFFFFFFDF` | Reserved for a later minor (§9). They read 0 and take no write. |
 | `0xFFFFFFE0`–`0xFFFFFFEF` | R0 to R15. What they hold depends on the state (below). R1 to R15 take a write while the processor is paused (below). |
 | `0xFFFFFFF0` | Control (below). |
 | `0xFFFFFFF1` | The halt reason, read only: 0 while the processor has not halted, and after a clear, 1 for `HALT`, 2 for a reserved control word, 3 for `INT` inside an interrupt routine, 4 for `RTI` outside one (ISA §5.3, §7.2, §7.4), and 5 when the emulator's step limit stopped the program (§7.2). |
-| `0xFFFFFFF2` | The protocol version, read only: 7 (§9). Bits 31–8 read 0. A host checks it before it uses the pause, the step, a breakpoint, or a write of a register. |
+| `0xFFFFFFF2` | The protocol version, read only: 8 (§9). Bits 31–8 read 0. A host checks it before it uses the pause, the step, a breakpoint, or a write of a register. |
 | `0xFFFFFFF3` | The free space, read only: the number of console bytes that the program's input buffer can take now. It reads so while the processor is held or halted too, although the bytes sent then are dropped (§1), and a start empties the buffer. |
 | `0xFFFFFFF4` | The enable bits of the breakpoints. Bit i enables breakpoint i. The bits from N up read 0 and take no write. |
 | `0xFFFFFFF5` | The number of breakpoints N, read only: 0 to 8. A system without breakpoints reads 0. |
@@ -578,6 +578,34 @@ exact address matches, and there are no ranges, masks, or hit counts.
   bits and the addresses are kept across a hold, a start, and a clear,
   and are 0 after every `b`.
 
+**The NMI request.** A host raises an NMI (ISA §7.1) with a write of
+`0xFFFFFFD7`, with bit 8 set and the vector in bits 7–0. So a host can
+hand control to software in the system, such as a monitor's NMI routine,
+where a pause hands it to the host.
+
+- **A source of its own.** The link is a source of NMI of its own (ISA
+  §7.1, SYSTEM.md §8). Its request merges only with its own: a write while
+  it is pending changes nothing, and the pending one keeps its vector.
+- **Pending.** The request is pending from the write until the processor
+  takes it, and bit 9 of the control register reads 1 meanwhile. A read
+  of `0xFFFFFFD7` returns bit 8 = 1 and the vector then, and 0 once the
+  processor has taken it. So a host can tell that the routine has
+  started, even if the `k` was lost. A host does not resend the write
+  blindly (§3): it reads the register first.
+- **When it is taken.** As any NMI (ISA §7.1): at the next step boundary,
+  unless an interrupt routine runs, which defers it until the `RTI`. It
+  ends a wait for an interrupt (ISA §7.5). A pause comes before it at a
+  step boundary (above), so a request raised while the processor is
+  paused waits, and the next go on or step takes it first: one step is
+  the entry, and R15 then reads the address of the routine's first
+  instruction.
+- **Held or halted.** A write while the processor is held or has halted
+  raises nothing. A hold drops a pending request, so a start, and a
+  clear, which holds first, begin without one, and so does every `b`. So
+  no request of the link reaches a program before its boot code has set
+  VBASE (ISA §8.1). A request still pending when the processor halts is
+  never taken (ISA §7.1), and reads as pending until the next hold.
+
 After a reset of the system, a system that boots a ROM runs with bit 0 at 0
 and bit 3 at 0. A system without one waits, held, with bit 0 at 1.
 
@@ -684,7 +712,8 @@ command line, with these differences:
   and the emulator sleeps and serves the link, until a pause, a hold, or
   a clear.
 - Its step limit (`--max-steps`), `--irq`, and `--nmi` count the steps of
-  each run that the link starts. When the step limit stops the program, the
+  each run that the link starts. The NMI of `--nmi` and the link's are two
+  sources, and `--nmi`'s goes first when both are pending (SYSTEM.md §8). When the step limit stops the program, the
   halt reason is 5, and the emulator sends `h` with it.
 - What it prints after a halt (the `Halted` line, the registers, `--dump`,
   and `--screen`) and `--trace` go to stderr, for each run, and stdout
@@ -755,6 +784,12 @@ are the rules that `hdl/src/debug_link.vhd` asks of its board:
   pauses on its own at one. The board connects the link's `brk_*` and
   `wch_*` outputs to the core's inputs, and the core's `wch_hit_o` and
   `wch_pc_o` back to the link, which reads them when the core pauses.
+- **NMI.** The board connects the link's `nmi_valid_o`, `nmi_ready_i`,
+  and `nmi_vector_o` to the core's NMI port. The link holds the request,
+  with its vector, until the core's ready, and drops it when it holds the
+  core. A board with another source of NMI merges the two, and keeps the
+  vector of the request that the core sees until the core takes it, as
+  the cores ask of NMI.
 - **Counters.** The counters and the timer stop while the processor is
   paused, and run during a step (MICROARCH.md §8). The SD card controller
   and the clock of the time of day do not stop (SYSTEM.md §5, §10).
@@ -772,7 +807,7 @@ to the last `8`, mod 256. FF is the byte `0xFF`, and the rest is ASCII.
     host:    FF "R000001000001#94"
     system:  FF "r00000100000111223344#48"
 
-A system reset sends `FF "b07#C9"`, and a `HALT` sends `FF "h01#C9"`. The
+A system reset sends `FF "b08#CA"`, and a `HALT` sends `FF "h01#C9"`. The
 same `R` sent while the program runs gets `FF "e5202#2E"`.
 
 After a halt, the host restarts the program with two writes to the
@@ -864,7 +899,7 @@ then. A write of R3 after the go on comes too late, and gets `e04`:
 
 The version is one byte, the payload of `b` and the value of
 `0xFFFFFFF2`. Bits 7–4 are the major, and bits 3–0 the minor. This is
-version `07`: major 0, minor 7.
+version `08`: major 0, minor 8.
 
 A new minor keeps working with every host of an older minor of the same
 major. A system of a new minor follows these rules:
@@ -909,8 +944,8 @@ A host:
   leaves out the writes of the registers;
 - drops a notice whose tag it does not know (§5).
 
-Versions 1 to 7 follow these rules, so a host of any of them works with a
-system of version 7. The versions:
+Versions 1 to 8 follow these rules, so a host of any of them works with a
+system of version 8. The versions:
 
 | Version | Adds | Changes | Released |
 |---|---|---|---|
@@ -921,3 +956,4 @@ system of version 7. The versions:
 | 5 | | A clear ends the halt and the stop: bit 1, the halt reason, and the stop register read 0 after it. Since V1.2, R0–R15 read the current values while the processor runs, where they were not defined. The side port and `rx_resume_i` of `hdl/src/debug_link.vhd`, also since V1.2, change no byte on the wire. | V1.1 |
 | 6 | Writable registers: R1–R15 take a write while the processor is paused, and the error `04`. | A write of R0–R15 while the processor is not paused is answered `e04`, where it was ignored with `k`, and a `W` that runs from the devices into R0–R15 while the processor is held or halted writes nothing, where it wrote its words before `0xFFFFFFE0`. On a transport with flow control, a console byte that finds the input buffer full waits up to 50 ms before it is lost with `o`, where it was lost at once. | V1.3 |
 | 7 | The wait: bit 6 of the control register reads 1 while the processor waits for an interrupt (ISA §7.5). The hidden state of ISA §1.4: bits 7 and 8, and the registers `0xFFFFFFD0` and `0xFFFFFFD1`. The pending requests: bits 9 and 10. The watchpoints: the notice `w`, bit 9 of the stop register, and the registers `0xFFFFFFD4` to `0xFFFFFFDB`. | The link's registers start at `0xFFFFFFD0`, where they started at `0xFFFFFFE0`: a request there reaches the new registers and the reserved words, where it reached the system's words, and while the program runs it gets `r` or `k`, where it got `e02`. | V2.0 |
+| 8 | The NMI request: the register `0xFFFFFFD7`. | | V2.1 |

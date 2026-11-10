@@ -26,7 +26,7 @@
 -- sends against the exact string. The checksums of the fixed strings are
 -- the sum of the bytes from the tag to the end of the payload, mod 256,
 -- worked out with a script, not taken from a simulation. The checks:
--- * `b07`, and the W and R of DEBUG.md §8, through the decoder to memory;
+-- * `b08`, and the W and R of DEBUG.md §8, through the decoder to memory;
 -- * a word that G_INIT_FILE loaded, and the math unit through the decoder;
 -- * the link's reads of the console and the read counter, and its writes
 --   to the console, which the program must not see;
@@ -59,6 +59,9 @@
 --   saved_sr, step by step through an INT, its RTI, and an NMI that p_req
 --   raises inside the routine with an IRQ that E = 0 holds, at the halt and
 --   the hold after it, and the link's words below R0, which take no write;
+-- * the NMI request of 0xFFFFFFD7: raised while paused, with its vector and
+--   bit 9, merged with a second write, taken by a step into the routine,
+--   refused while halted, and dropped by a hold;
 -- * the halt reasons 2, 3, and 4, with their notices.
 -- The run stops with status 0 when every check passes, and 1 at the first
 -- that fails.
@@ -152,28 +155,37 @@ architecture simulation of tb_link is
    signal saved_sr   : std_logic_vector(31 downto 0);
    -- The requests, which p_req raises at a rise of nmi_raise or irq_raise,
    -- with the vectors 3 and 4, until the core's ready or a hold
-   signal nmi_raise     : std_logic := '0';
-   signal irq_raise     : std_logic := '0';
-   signal raise_d       : std_logic_vector(1 downto 0) := "00";
-   signal nmi_valid     : std_logic := '0';
-   signal irq_valid     : std_logic := '0';
-   signal nmi_ready     : std_logic;
-   signal irq_ready     : std_logic;
-   signal halt          : t_halt;
-   signal halt_reason   : std_logic_vector(2 downto 0);
-   signal regs          : t_regs;
-   signal regs_flat     : std_logic_vector(511 downto 0);
-   signal brk_addr      : t_brk_addrs;
-   signal brk_en        : std_logic_vector(C_BREAKS_MAX - 1 downto 0);
-   signal wch_addr      : t_wch_addrs;
-   signal wch_en        : std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0);
-   signal wch_hit       : std_logic_vector(C_WATCHES_MAX - 1 downto 0);
-   signal wch_pc        : std_logic_vector(31 downto 0);
-   signal reg_we        : std_logic;
-   signal reg_idx       : std_logic_vector(3 downto 0);
-   signal reg_data      : std_logic_vector(31 downto 0);
-   signal retire        : t_retire;
-   signal link_owns_bus : std_logic;
+   signal nmi_raise : std_logic := '0';
+   signal irq_raise : std_logic := '0';
+   signal raise_d   : std_logic_vector(1 downto 0) := "00";
+   signal nmi_valid : std_logic := '0';
+   signal irq_valid : std_logic := '0';
+   signal nmi_ready : std_logic;
+   signal irq_ready : std_logic;
+   -- The link's NMI request, and the core's NMI port. p_req's request goes
+   -- first. The test never raises both at once, so the vector does not
+   -- change while the core's valid is high.
+   signal link_nmi_valid  : std_logic;
+   signal link_nmi_ready  : std_logic;
+   signal link_nmi_vector : std_logic_vector(7 downto 0);
+   signal core_nmi_valid  : std_logic;
+   signal core_nmi_ready  : std_logic;
+   signal core_nmi_vector : std_logic_vector(7 downto 0);
+   signal halt            : t_halt;
+   signal halt_reason     : std_logic_vector(2 downto 0);
+   signal regs            : t_regs;
+   signal regs_flat       : std_logic_vector(511 downto 0);
+   signal brk_addr        : t_brk_addrs;
+   signal brk_en          : std_logic_vector(C_BREAKS_MAX - 1 downto 0);
+   signal wch_addr        : t_wch_addrs;
+   signal wch_en          : std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0);
+   signal wch_hit         : std_logic_vector(C_WATCHES_MAX - 1 downto 0);
+   signal wch_pc          : std_logic_vector(31 downto 0);
+   signal reg_we          : std_logic;
+   signal reg_idx         : std_logic_vector(3 downto 0);
+   signal reg_data        : std_logic_vector(31 downto 0);
+   signal retire          : t_retire;
+   signal link_owns_bus   : std_logic;
 
    -- The instruction bus
    signal ibus_cyc   : std_logic;
@@ -272,9 +284,9 @@ begin
             dbus_addr_o   => core_addr,
             dbus_data_o   => core_data_out,
             dbus_data_i   => dbus_data_in,
-            nmi_valid_i   => nmi_valid,
-            nmi_ready_o   => nmi_ready,
-            nmi_vector_i  => X"03",
+            nmi_valid_i   => core_nmi_valid,
+            nmi_ready_o   => core_nmi_ready,
+            nmi_vector_i  => core_nmi_vector,
             irq_valid_i   => irq_valid,
             irq_ready_o   => irq_ready,
             irq_vector_i  => X"04",
@@ -325,9 +337,9 @@ begin
             dbus_addr_o   => core_addr,
             dbus_data_o   => core_data_out,
             dbus_data_i   => dbus_data_in,
-            nmi_valid_i   => nmi_valid,
-            nmi_ready_o   => nmi_ready,
-            nmi_vector_i  => X"03",
+            nmi_valid_i   => core_nmi_valid,
+            nmi_ready_o   => core_nmi_ready,
+            nmi_vector_i  => core_nmi_vector,
             irq_valid_i   => irq_valid,
             irq_ready_o   => irq_ready,
             irq_vector_i  => X"04",
@@ -367,6 +379,12 @@ begin
 
    -- The halt reason of DEBUG.md §6
    halt_reason <= halt_code(halt);
+
+   core_nmi_valid  <= nmi_valid or link_nmi_valid;
+   core_nmi_vector <= X"03" when nmi_valid = '1' else
+                      link_nmi_vector;
+   nmi_ready       <= core_nmi_ready and nmi_valid;
+   link_nmi_ready  <= core_nmi_ready and link_nmi_valid and not nmi_valid;
 
    -- A device that holds its request until the core takes it (contract b
    -- of the cores), and that a hold resets
@@ -598,8 +616,11 @@ begin
          after_rti_i    => after_rti,
          saved_pc_i     => saved_pc,
          saved_sr_i     => saved_sr,
-         nmi_pending_i  => nmi_valid,
+         nmi_pending_i  => core_nmi_valid,
          irq_pending_i  => irq_valid,
+         nmi_valid_o    => link_nmi_valid,
+         nmi_ready_i    => link_nmi_ready,
+         nmi_vector_o   => link_nmi_vector,
          wb_cyc_o       => link_cyc,
          wb_stb_o       => link_stb,
          wb_stall_i     => link_stall,
@@ -821,7 +842,7 @@ begin
       cycles(3);
       rst <= '0';
 
-      expect(C_ESC & "b07#C9", "b07");
+      expect(C_ESC & "b08#CA", "b08");
 
       -- DEBUG.md §8, through the decoder to the memory model
       send(C_ESC & "W0000010000021122334455667788#E2");
@@ -1323,6 +1344,47 @@ begin
       nmi_raise <= '0';
       irq_raise <= '0';
       quiet("the hidden state");
+
+      -- The NMI request of the link (DEBUG.md §6), on the same program: a
+      -- start paused, MOVE R14, 1, then a request with vector 3, at 0x103,
+      -- which a second write does not change. The step after it is the
+      -- entry, to the HALT at 7, with the PC after the MOVE saved.
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", "start paused for the NMI");
+      step("", "MOVE R14 before the NMI");
+      word_is(X"FFFFFFD7", X"00000000", "no NMI request");
+      send(C_ESC & "WFFFFFFD7000100000103#" & cc("WFFFFFFD7000100000103"));
+      expect(C_ESC & "kFFFFFFD70001#" & cc("kFFFFFFD70001"), "W of the NMI request");
+      send(C_ESC & "WFFFFFFD70001000001FF#" & cc("WFFFFFFD70001000001FF"));
+      expect(C_ESC & "kFFFFFFD70001#" & cc("kFFFFFFD70001"), "W of a second NMI request");
+      word_is(X"FFFFFFD7", X"00000103", "the NMI request pending");
+      word_is(X"FFFFFFF0", X"00000218", "control with the NMI request");
+      step("", "the entry of the link's NMI");
+      hidden_is(X"00000098", X"00000002", X"01000001", X"00000007", "in the link's NMI routine");
+      word_is(X"FFFFFFD7", X"00000000", "the NMI request taken");
+      send(C_ESC & "WFFFFFFF0000100000038#BD");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "h01#C9", "the HALT of the link's NMI");
+      -- Halted: a request is refused.
+      send(C_ESC & "WFFFFFFD7000100000103#" & cc("WFFFFFFD7000100000103"));
+      expect(C_ESC & "kFFFFFFD70001#" & cc("kFFFFFFD70001"), "W of the NMI request while halted");
+      word_is(X"FFFFFFD7", X"00000000", "no NMI request while halted");
+      -- A hold drops a pending request, and the start after it steps the MOVE.
+      send(C_ESC & "WFFFFFFF0000100000011#" & cc("WFFFFFFF0000100000011"));
+      expect(C_ESC & "kFFFFFFF00001#46", "hold before the dropped NMI");
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", "start paused for the dropped NMI");
+      send(C_ESC & "WFFFFFFD7000100000103#" & cc("WFFFFFFD7000100000103"));
+      expect(C_ESC & "kFFFFFFD70001#" & cc("kFFFFFFD70001"), "W of the NMI request to drop");
+      send(C_ESC & "WFFFFFFF0000100000011#" & cc("WFFFFFFF0000100000011"));
+      expect(C_ESC & "kFFFFFFF00001#46", "hold drops the NMI");
+      word_is(X"FFFFFFD7", X"00000000", "the NMI request dropped");
+      send(C_ESC & "WFFFFFFF0000100000018#BB");
+      expect_either(C_ESC & "kFFFFFFF00001#46", C_ESC & "p#70", "start paused after the drop");
+      step("", "MOVE R14 after the drop");
+      reg_is(15, X"00000002", "R15 after the drop");
+      send(C_ESC & "WFFFFFFF0000100000009#BB");
+      expect(C_ESC & "kFFFFFFF00001#46", "hold after the link's NMI");
+      quiet("the link's NMI");
 
       -- The other halt reasons (DEBUG.md §6), each as niceemu halts with it:
       -- a reserved control word, INT inside a routine, and RTI outside one.

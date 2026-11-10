@@ -38,13 +38,19 @@ The others pin the tagged commit.
 ## V2.1 (2026-11-10)
 
 The assembler has the pseudo-instruction `JMPR`, a relative jump
-(#154).
+(#154). A host can raise an NMI over the debug link, which is version 8
+(#131).
 
 **Upgrade notes.**
 
 - `JMPR` is a mnemonic, in any case, so a program that uses it as a
   label or an `.EQU` name does not assemble. No file of the repository
   did.
+- The debug link is version 8. A host of version 7 works with it
+  unchanged (DEBUG.md §9). `hdl/src/debug_link.vhd` has the outputs
+  `nmi_valid_o` and `nmi_vector_o` and the input `nmi_ready_i`, which a
+  board leaves open until it wires them to the core
+  (MJoergen/NiceMonMEGA65#106).
 
 **Specification and documents**
 
@@ -55,6 +61,12 @@ The assembler has the pseudo-instruction `JMPR`, a relative jump
   no longer lists a relative branch as decided against (#154).
 - SYSTEM.md §8: NiceMonMEGA65 has the byte windows of §9, where a read
   of a byte or a halfword takes a cycle more than one of a word (#152).
+- DEBUG.md §6 and §9: link version 8 adds the NMI request at
+  `0xFFFFFFD7`. A write with bit 8 set raises an NMI with the vector of
+  bits 7–0, and the register reads it back until the processor takes it.
+  The link is a source of NMI of its own. A write while the processor is
+  held or halted raises nothing, and a hold drops a pending request
+  (#131). SYSTEM.md §8 names the sources of NMI.
 
 **Assembler (`niceasm`, `nicedis`)**
 
@@ -63,6 +75,18 @@ The assembler has the pseudo-instruction `JMPR`, a relative jump
   target, which is a label where the symbols name one. So does
   `disassemble()`, and with it nicedbg's listing. Any other `ADD` to R15
   stays an `ADD`.
+
+**Emulator (`niceemu`)**
+
+- `--link` serves link version 8, with the NMI request, a source after
+  that of `--nmi` (#131). The `Pending:` line after a run names a
+  request of either.
+
+**Debugger (`nicedbg`)**
+
+- `nmi VEC` raises an NMI with vector VEC (#131). `nicelink.Link` has
+  `raise_nmi()`, which does not resend a write that was not answered,
+  as the processor may have taken it.
 
 **Translator (`nicewasm`)**
 
@@ -79,6 +103,11 @@ The assembler has the pseudo-instruction `JMPR`, a relative jump
 
 **FPGA cores (`hdl/`)**
 
+- `debug_link.vhd` is version 8, with the NMI request on
+  `nmi_valid_o`, `nmi_ready_i`, and `nmi_vector_o`, held with its
+  vector until the core takes it, and dropped by a hold (#131).
+  `tb_debug_link` and `tb_link`, on both cores, test it, and the formal
+  check of the link proves the handshake. The cores do not change.
 - `make timing-spread` runs `make timing` with seven counts of
   breakpoints and watchpoints at once, and prints the least, the median,
   and the most of each slack (#151). A change elsewhere in the design

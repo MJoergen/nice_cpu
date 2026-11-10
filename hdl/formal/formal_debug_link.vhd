@@ -24,6 +24,11 @@
 --   hold_o falls, at reset, or after rx_resume_i, after which it is
 --   always low, also with rx_break_i in the same cycle (DEBUG.md §7).
 -- - With G_HAS_ROM false, rom_hide_o is always 1.
+-- - nmi_valid_o stays high, with nmi_vector_o unchanged, until
+--   nmi_ready_i, or until hold_o rises with it low, and it is never high
+--   while hold_o is (contract h). nmi_ready_i, free but for contract h,
+--   ends it. A request needs a whole `W`, deeper than the cover task
+--   looks, so tb_debug_link shows one.
 -- The side client is free: it may ask for any word at any time, and drop
 -- or change its request before side_done_o (contract g asks it not to).
 -- The properties that name the registers of debug_link are there, under
@@ -94,6 +99,7 @@ entity formal_debug_link is
       side_we_i     : in  std_logic;
       side_addr_i   : in  std_logic_vector(31 downto 0);
       side_data_i   : in  std_logic_vector(31 downto 0);
+      nmi_ready_i   : in  std_logic;
       wb_stall_i    : in  std_logic;
       wb_ack_i      : in  std_logic;
       wb_data_i     : in  std_logic_vector(31 downto 0)
@@ -128,6 +134,8 @@ architecture synthesis of formal_debug_link is
    signal reg_we       : std_logic;
    signal reg_idx      : std_logic_vector(3 downto 0);
    signal reg_data     : std_logic_vector(31 downto 0);
+   signal nmi_valid    : std_logic;
+   signal nmi_vector   : std_logic_vector(7 downto 0);
 
    -- A console byte taken, which is the next byte out
    signal pending  : natural range 0 to 2;          -- The ACKs owed to the master
@@ -136,11 +144,11 @@ architecture synthesis of formal_debug_link is
 
    -- The input state of the cycles before, for f_strobe. GHDL 4.1, which
    -- the formal job used to run, fails on prev with a count.
-   signal free_nz_d        : std_logic := '0';
-   signal con_in_valid_d   : std_logic := '0';
-   signal con_in_valid_dd  : std_logic := '0';
-   signal hold_d           : std_logic := '0';
-   signal eoi_d            : std_logic := '0';
+   signal free_nz_d       : std_logic := '0';
+   signal con_in_valid_d  : std_logic := '0';
+   signal con_in_valid_dd : std_logic := '0';
+   signal hold_d          : std_logic := '0';
+   signal eoi_d           : std_logic := '0';
 
    -- The conditions of the halt and pause assumptions, one cycle before. The
    -- assumptions are plain Booleans on them: the formal job's toolchain does
@@ -212,6 +220,17 @@ begin
    -- psl f_reg_paused : assert always
    --    reg_we = '1' -> (paused_i = '1' and pause = '1' and hold = '0');
 
+   -- The NMI request (contract h): the core raises its ready only for a
+   -- request it sees. The request stands, with its vector, until the
+   -- ready, or a hold, and a hold drops it.
+   -- psl f_nmi_ready : assume always nmi_ready_i = '1' -> nmi_valid = '1';
+   -- psl f_nmi_keep : assert always
+   --    {nmi_valid and not nmi_ready_i and not rst_i} |=>
+   --    {rst_i = '1' or hold = '1' or (nmi_valid = '1' and stable(nmi_vector))};
+   -- psl f_nmi_taken : assert always
+   --    {nmi_ready_i and not rst_i} |=> {not nmi_valid};
+   -- psl f_nmi_held : assert always hold = '1' -> nmi_valid = '0';
+
    -- The Wishbone master
    -- psl f_wb_hold : assert always wb_cyc -> (hold = '1' or halted_i = '1' or paused_i = '1');
    -- psl f_wb_clear : assert always clear -> not wb_cyc;
@@ -253,6 +272,7 @@ begin
 
    -- The side client: a word of the memory, and a refusal. Without one,
    -- the covers above show the host's way to each.
+
    gen_side : if G_SIDE generate
       -- psl c_side_mem : cover
       --    {side_valid_i = '1' and side_addr_i(31 downto 6) /= (31 downto 6 => '1') and
@@ -316,6 +336,9 @@ begin
          reg_we_o       => reg_we,
          reg_idx_o      => reg_idx,
          reg_data_o     => reg_data,
+         nmi_valid_o    => nmi_valid,
+         nmi_ready_i    => nmi_ready_i,
+         nmi_vector_o   => nmi_vector,
          side_valid_i   => side_valid_i,
          side_we_i      => side_we_i,
          side_addr_i    => side_addr_i,

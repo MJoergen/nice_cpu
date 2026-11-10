@@ -61,6 +61,10 @@ WCH_EN = 0xFFFFFFD4
 WCH_COUNT = 0xFFFFFFD5
 WCH_PC = 0xFFFFFFD6
 WCH_ADDR = 0xFFFFFFD8
+# The NMI request (version 8): a write with NMI_RAISE raises an NMI with the
+# vector of bits 7 to 0, and a read has NMI_RAISE while it is pending
+NMI_REQ = 0xFFFFFFD7
+NMI_RAISE = 0x100
 # The kinds of access that a watchpoint stops at, its two enable bits
 WCH_READ = 1
 WCH_WRITE = 2
@@ -607,6 +611,20 @@ class Link:
                 return
         raise LinkError(f"no answer to the write of {value:08X} to the "
                         f"control register")
+
+    def raise_nmi(self, vector: int) -> None:
+        """Raises an NMI with the vector (DEBUG.md §6, version 8). A write
+        that is not answered is not sent again, as the processor may have
+        taken it: it is read back, and a request still pending is the one
+        sent, as a second one would merge with it."""
+        an = f"{NMI_REQ:08X}0001"
+        if self._request("W", f"{an}{NMI_RAISE | vector:08X}", "k" + an):
+            return
+        got = self._read_once(NMI_REQ, 1)
+        if got is not None and got[0] == NMI_RAISE | vector:
+            return
+        raise LinkError("no answer to the NMI request; the processor may "
+                        "have taken it or not")
 
     def step(self, value: int = PAUSE | RAM,
              timeout: float | None = None) -> int | None:

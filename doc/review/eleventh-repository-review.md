@@ -158,6 +158,8 @@ Line 542: "The reserved words of `0xFFFFFFD2`–`0xFFFFFFDF` read 0 and take no 
 
 `tb_tod.vhd`, `todbus.nasm` (both from `V2.0`), and `watches.nasm` have no row. Every other tracked file of `hdl/test`, `hdl/src`, `hdl/formal`, and `hdl/sim` is named in the README beside it. The row of `timing_budget.py` says that it compares the reports of `make timing`, and not that `--spread` gives the least, the median, and the most of several runs for `make timing-spread`. **Fix:** three rows and half a sentence.
 
+**Resolved**: The three files have rows, and the row of `timing_budget.py` names `--spread`. The row of `break_stops.py` now names the watchpoints too, which it lists since `V2.0`.
+
 ### 3.2 The list of the synthesis check leaves out the two new units
 
 `hdl/README.md:95` lists what `ghdl --synth` checks, from "both cores" to "the port for Ethernet frames". `SYNTH` in `hdl/Makefile:645` also has `console_irq` and `irq_merge`, as the message of 5022cfe says. The comment above `SYNTH` (line 641) leaves out those two and the fetch statistics. **Fix:** "the console's receive interrupt, the merge of the IRQ sources" in both, and "the fetch statistics" in the comment.

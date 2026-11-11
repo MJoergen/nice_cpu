@@ -9,6 +9,7 @@ The testbenches, the test programs, and the scripts that run them. [hdl/README.m
 | [tb_mpu.vhd](tb_mpu.vhd) | A self-checking test of the math unit. |
 | [tb_perf.vhd](tb_perf.vhd) | A self-checking test of the performance counters. |
 | [tb_perf_hz.vhd](tb_perf_hz.vhd) | A self-checking test of the microsecond counter at 33333333, 83333333, and 100000000 Hz, against the integer part of N·10⁶/`G_CLK_HZ`. |
+| [tb_tod.vhd](tb_tod.vhd) | A self-checking test of the clock of the time of day, at 2 MHz, so that it counts a microsecond in two cycles. |
 | [tb_timer.vhd](tb_timer.vhd) | A self-checking test of the timer. |
 | [tb_fetch_stats.vhd](tb_fetch_stats.vhd) | A self-checking test of the fetch statistics. |
 | [fstats.nasm](fstats.nasm) | A program that reads the fetch statistics on the pipelined core, and checks itself. |
@@ -45,6 +46,7 @@ The testbenches, the test programs, and the scripts that run them. [hdl/README.m
 | [predict.nasm](predict.nasm) | Predicted jumps in the shapes of loops: two back to back, flags from the instruction before, stores into the target, into the jump's offset, and into the word after it, and a nested loop. |
 | [readorder.nasm](readorder.nasm) | The number and order of the data reads of late shifts, adjusted destinations, and skipped instructions, through the read counter. |
 | [instret_late.nasm](instret_late.nasm) | The instruction counter read right after late shifts, adjusted destinations, stores, skipped instructions, and `INT`. |
+| [todbus.nasm](todbus.nasm) | Sets and reads the clock of the time of day through `tb_core`'s bus decoder, and reads `READ_LO`, the word after it. It reads only what the emulator and a core have in common. |
 | [jumpwords.nasm](jumpwords.nasm) | Jumps into constant words and to the instruction itself, with conditions on I, and backward conditional jumps, which DECODE predicts taken. It ends at a reserved word. |
 | [condlate.nasm](condlate.nasm) | Conditional late shifts, adjusted destinations in R14, `HALT` and `INT` right after two-cycle flag writes, and more forms of R15. |
 | [irqhazard.nasm](irqhazard.nasm) | Late shifts, adjusted destinations, and side effects on R14 and R15, for a request before each step. |
@@ -53,10 +55,11 @@ The testbenches, the test programs, and the scripts that run them. [hdl/README.m
 | [rtiread.nasm](rtiread.nasm) | `RTI` that returns to instructions with data reads, run one step at a time. |
 | [pausepatch.nasm](pausepatch.nasm) | A word of code that `tb_core` writes while the core is paused, with its hand-checked trace in [pausepatch.expected](pausepatch.expected). |
 | [breaks.nasm](breaks.nasm) | Stops at breakpoints in a loop, at a data read, at a false condition, in an interrupt routine, after `RTI`, and with an IRQ pending at a jump target and at an instruction that the pipelined core holds already. |
-| [break_stops.py](break_stops.py) | Lists the stops of a program at its breakpoints on the emulator, over the debug link, as `tb_core` lists the core's. |
+| [watches.nasm](watches.nasm) | Stops at watchpoints: at a read and a write of one word, two reads in one step, a store into the math unit, a jump through a table, and the read of a vector by `INT` and by an IRQ entry. |
+| [break_stops.py](break_stops.py) | Lists the stops of a program at its breakpoints and watchpoints on the emulator, over the debug link, as `tb_core` lists the core's. |
 | [bubble.nasm](bubble.nasm) | Measures the bubbles of the pipelined core with the cycle counter, and checks itself. |
 | [readwait.nasm](readwait.nasm) | Data reads that wait for their condition and for an older micro-operation, which `tb_core` counts on the pipelined core. |
 | [random_prog.py](random_prog.py) | Writes random programs, and random interrupt requests for them. |
 | [random_stats.py](random_stats.py) | Shows how the random programs spend their steps, and how often they make each hazard. |
 | [trace_reads.py](trace_reads.py) | Finds the first line where two traces differ, and shows the data reads of that instruction. |
-| [timing_budget.py](timing_budget.py) | Compares the reports of `make timing` with the budget of the board, and warns at a miss. |
+| [timing_budget.py](timing_budget.py) | Compares the reports of `make timing` with the budget of the board, and warns at a miss. With `--spread` it gives the least, the median, and the most of each slack over the runs of `make timing-spread`. |

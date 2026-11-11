@@ -84,6 +84,11 @@ Dhrystone (#143).
   no longer lists a relative branch as decided against (#154).
 - SYSTEM.md §8: NiceMonMEGA65 has the byte windows of §9, where a read
   of a byte or a halfword takes a cycle more than one of a word (#152).
+- SYSTEM.md §8: NiceMonMEGA65 has the clock of §10, on both boards,
+  and "set" stays 0 there until a program sets it. It also wires the 4
+  watchpoints of link version 7, where V2.0 said it did not. The R6
+  meets 100 MHz by 0.001 ns in the `timing` flow, and the Nexys4DDR
+  90 MHz by 0.140 ns (#155).
 - DEBUG.md §6 and §9: link version 8 adds the NMI request at
   `0xFFFFFFD7`. A write with bit 8 set raises an NMI with the vector of
   bits 7–0, and the register reads it back until the processor takes it.

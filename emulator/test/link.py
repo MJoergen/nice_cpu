@@ -1488,6 +1488,7 @@ def test_nmi(nmi: List[int], wait_nmi: List[int]) -> None:
     e.send(write(NMI_REQ, [0x102]))
     e.expect("raise before the new host", ok(NMI_REQ, 1))
     e.sock.close()
+    time.sleep(0.3)
     e.sock = e.connect()
     e.buf = b""
     e.expect("b of the new host", HELLO)

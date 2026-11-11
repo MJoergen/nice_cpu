@@ -634,7 +634,10 @@ and bit 3 at 0. A system without one waits, held, with bit 0 at 1.
   It serves one host at a time: while a host is connected, it accepts
   another and closes that connection at once, with nothing sent. A host
   that has half-closed does not keep another out: it counts as
-  disconnected when another connects. The emulator sends `b` to each
+  disconnected when another connects. A host that connects in the
+  instant after another closed may be closed too, as the emulator may
+  not have read the end of the first connection yet. It connects again.
+  The emulator sends `b` to each
   host that connects, and clears the breakpoints (§6). A board that
   serves the link over TCP, as NiceMonMEGA65 does on its Ethernet port,
   need not: without a `b`, the breakpoints and all else stay as the last

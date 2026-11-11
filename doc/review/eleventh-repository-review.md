@@ -32,6 +32,8 @@ It is a race of some 100 µs. In a loop of 20 on this machine, a host that conne
 
 **Fix:** `time.sleep(0.3)` before the connect at line 1491, as in the other two, so that `make test` and `release.py check` pass on any machine. The emulator's side is a question of its own, for an issue: `accept()` could look for the end of the old connection before it refuses the new one, so that a host that has left never keeps the next one out. Until then, one sentence in DEBUG.md §7 would say that a host which connects in the instant after another left may be closed, and connects again.
 
+**Resolved**: The test sleeps 0.3 s before its new host, and passed in 5 runs of 5 here. DEBUG.md §7 says that a host which connects in the instant after another closed may be closed, and connects again. The emulator's side is #159.
+
 ### 1.2 `emulator/build.zig.zon` still says `2.0.0`
 
 RELEASE.md step 2.9 asks for the new tag's version there before `release.py check`. **Fix:** `2.1.0`, and the line "The version is 2.1.0." under the emulator's heading of the notes, which every section since `V1.7` has.

@@ -678,7 +678,11 @@ waits for its byte.
 timer's goes first, and the core's `ready` goes to the source whose vector
 it sees, so the two sources never merge (SYSTEM.md §4). `make test` runs
 the emulator's `conirq` probe, on a stalling memory too and with held
-pauses.
+pauses. The probe takes each request right after the instruction that
+sets E, which no core can take later, so its runs are compared exactly,
+as those of `wait` are, and not by `irq_compare.py`. The console's
+requests are not in the interrupt log of `G_INTR_LOG`, as the emulator
+raises them itself.
 
 ## The math unit
 

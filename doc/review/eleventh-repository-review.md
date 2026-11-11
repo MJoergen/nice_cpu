@@ -170,6 +170,8 @@ Line 542: "The reserved words of `0xFFFFFFD2`–`0xFFFFFFDF` read 0 and take no 
 
 The README says of `wait` that "its runs are compared exactly, and not by `irq_compare.py`", and why. `hdl/Makefile:186` sets `EXACT_conirq`, `EXACT_conirq_stall`, and `EXACT_conirq_hold` with the reason in a comment: the probe takes each request right after the instruction that sets E, which no core can take later. The README's section on the console's receive interrupt (line 675) names the three runs and not the comparison. It also does not say that the console's requests are not in the log of `G_INTR_LOG`, which the header of `tb_core.vhd` says. **Fix:** two sentences there.
 
+**Resolved**: The section says both.
+
 ### 3.4 niceemu's usage text has no `0xFFFFFF02`
 
 `emulator/src/main.zig:19` describes the console at `0xFFFFFF00` and gives the range of each device. It names neither the receive interrupt at `0xFFFFFF02` nor the read counter at `0xFFFFFF01`. The table of emulator/README.md has both. **Fix, if wanted:** half a sentence, or leave the usage text to the options and point at SYSTEM.md.

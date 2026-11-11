@@ -2,9 +2,10 @@
 """nicedbg: an interactive debugger on the debug link of doc/DEBUG.md.
 
 It reads and writes memory, loads a .bin file, starts, holds, pauses,
-steps, and goes on, sets the breakpoints and the watchpoints, shows and
-sets the registers, and disassembles, with one short command each. "help" lists them. Numbers
-are hex, with or without 0x. An empty line repeats a step.
+steps, and goes on, sets the breakpoints and the watchpoints, raises an
+NMI, shows and sets the registers, and disassembles, with one short
+command each. "help" lists them. Numbers are hex, with or without 0x.
+An empty line repeats a step.
 
 The disassembler is assembler/nicedis.py. --symbols FILE, or the command
 "symbols FILE", reads the labels of niceasm.py --symbols or nicebuild.py:

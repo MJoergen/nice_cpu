@@ -4,8 +4,8 @@
 [DEBUG.md](../doc/DEBUG.md). It talks to `niceemu --link` over TCP
 ([emulator/README.md](../emulator/README.md#debug-link)), or to a
 system on its UART. It loads a program, runs, pauses, steps, and goes
-on, sets the breakpoints and the watchpoints, reads and writes the
-registers and the memory, and disassembles with
+on, sets the breakpoints and the watchpoints, raises an NMI, reads and
+writes the registers and the memory, and disassembles with
 [`nicedis.py`](../assembler/README.md), with labels from `niceasm.py
 --symbols` or `nicebuild.py`.
 

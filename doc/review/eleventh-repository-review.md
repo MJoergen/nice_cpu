@@ -182,6 +182,8 @@ The README says of `wait` that "its runs are compared exactly, and not by `irq_c
 
 `debugger/README.md:6` and the docstring of `nicedbg.py` (line 4) list what the debugger does: load, run, pause, step, breakpoints, watchpoints, registers, memory, and disassembly. The table of commands has `nmi VEC`, and `help` lists it. **Fix:** "raises an NMI" in both lists.
 
+**Resolved**: The README and the docstring say "raises an NMI".
+
 ### 3.6 HISTORY.md has no entry for the merge per source
 
 "Merged interrupt requests" (line 153) ends on 2026-10-22 with the rule that the first vector is kept. Until 73ba521 every IRQ merged with any pending one, and until a4da0a9 the cores asked for a stable IRQ vector. The notes say both under their upgrade notes, and "An NMI from the link" cites a4da0a9 in passing. HISTORY.md is where the other documents send what used to be true. **Fix:** three sentences at the end of that section.

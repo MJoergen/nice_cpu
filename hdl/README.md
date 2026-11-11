@@ -540,7 +540,8 @@ register reads it while the processor is neither held nor halted
 the core's `in_service_o`, `after_rti_o`, `saved_pc_o`, and `saved_sr_o`.
 The link keeps and reads them as it does `regs_i`, for bits 7 and 8 and
 the words `0xFFFFFFD0` and `0xFFFFFFD1`, which take no write. The
-reserved words of `0xFFFFFFD2`–`0xFFFFFFDF` read 0 and take no write.
+reserved words, `0xFFFFFFD2`, `0xFFFFFFD3`, and
+`0xFFFFFFDC`–`0xFFFFFFDF`, read 0 and take no write.
 `nmi_pending_i` and `irq_pending_i` connect to the core's `nmi_valid_i`
 and `irq_valid_i`, for bits 9 and 10, which read them while the processor
 is neither held nor halted. A board without these inputs leaves them

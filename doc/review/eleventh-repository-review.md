@@ -150,6 +150,8 @@ Both were written when every IRQ merged with any pending one. Now requests merge
 
 Line 542: "The reserved words of `0xFFFFFFD2`–`0xFFFFFFDF` read 0 and take no write." The range now holds the registers of the watchpoints at `0xFFFFFFD4`–`0xFFFFFFD6` and `0xFFFFFFD8`–`0xFFFFFFDB`, and the NMI request at `0xFFFFFFD7`, which the next paragraph describes. The reserved words are `0xFFFFFFD2`, `0xFFFFFFD3`, and `0xFFFFFFDC`–`0xFFFFFFDF` (DEBUG.md §6). **Fix:** name those.
 
+**Resolved**: The README names the six reserved words.
+
 ## 3. Gaps
 
 ### 3.1 hdl/test/README.md leaves out three files

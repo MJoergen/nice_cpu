@@ -14,14 +14,15 @@ pin each are:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|
-| `V2.0` | none yet |
-| `V1.9` | none yet |
-| `V1.8` | none yet |
-| `V1.7` | none yet |
-| `V1.6` | none yet |
-| `V1.5` | none yet |
-| `V1.4` | none yet |
-| `V1.3` | none yet |
+| `V2.1` | none yet |
+| `V2.0` | `V2.0` |
+| `V1.9` | `V1.9`, `V1.9.1` |
+| `V1.8` | none |
+| `V1.7` | `V1.7`, `V1.7.1`, `V1.7.2` |
+| `V1.6` | `V1.6` |
+| `V1.5` | `V1.5` |
+| `V1.4` | `V1.4` |
+| `V1.3` | `V1.3` |
 | `V1.2` | `V1.2`, `V1.2.1` |
 | `V1.1` | `V1.1` |
 | `V1.0` | `V1.0` |

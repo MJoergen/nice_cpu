@@ -58,6 +58,8 @@ Lines 17 to 24 say "none yet" for `V2.0` down to `V1.3`. NiceMonMEGA65 has tagge
 
 The row for `V2.1` is the one that RELEASE.md step 2.8 asks for. RELEASE.md step 8.5 asks for the board's tag in its row after each board release, and that step was left out seven times. **Fix:** the rows above. `V1.8` gets "none", as the board went from `V1.7.2` to `V1.9`.
 
+**Resolved**: The table has the rows above.
+
 ### 1.4 The `V2.1` section of the notes
 
 - Its heading says 2026-11-10, and three of its commits are of 2026-11-11. The date is set at the tag.

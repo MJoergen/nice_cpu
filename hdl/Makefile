@@ -639,9 +639,10 @@ analyze-nvc:
 	$(if $(PREBUILT),,$(NVC) $(NVCOPTS) -a $(SOURCES) $(SIM_SOURCES) $(TEST_SOURCES))
 
 # Checks that GHDL can synthesize both cores, the math unit, the performance
-# counters, the clock of the time of day, the timer, the data bus decoder, the debug link, the SD
-# card controller, the network station, and the port for Ethernet frames,
-# with the generics in SYNTH_GENERICS_unit.
+# counters, the clock of the time of day, the timer, the console's receive
+# interrupt, the merge of the IRQ sources, the fetch statistics, the data bus
+# decoder, the debug link, the SD card controller, the network station, and
+# the port for Ethernet frames, with the generics in SYNTH_GENERICS_unit.
 SYNTH = multicycle pipeline mpu perf tod timer console_irq irq_merge fetch_stats wb_dmux debug_link sd_regs net_regs eth_regs
 SYNTH_GENERICS_wb_dmux = -gG_SLAVES=4
 

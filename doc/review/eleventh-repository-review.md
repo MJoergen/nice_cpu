@@ -164,6 +164,8 @@ Line 542: "The reserved words of `0xFFFFFFD2`–`0xFFFFFFDF` read 0 and take no 
 
 `hdl/README.md:95` lists what `ghdl --synth` checks, from "both cores" to "the port for Ethernet frames". `SYNTH` in `hdl/Makefile:645` also has `console_irq` and `irq_merge`, as the message of 5022cfe says. The comment above `SYNTH` (line 641) leaves out those two and the fetch statistics. **Fix:** "the console's receive interrupt, the merge of the IRQ sources" in both, and "the fetch statistics" in the comment.
 
+**Resolved**: The README and the comment of the Makefile name every unit of `SYNTH`.
+
 ### 3.3 hdl/README.md does not say that `conirq` is compared exactly
 
 The README says of `wait` that "its runs are compared exactly, and not by `irq_compare.py`", and why. `hdl/Makefile:186` sets `EXACT_conirq`, `EXACT_conirq_stall`, and `EXACT_conirq_hold` with the reason in a comment: the probe takes each request right after the instruction that sets E, which no core can take later. The README's section on the console's receive interrupt (line 675) names the three runs and not the comparison. It also does not say that the console's requests are not in the log of `G_INTR_LOG`, which the header of `tb_core.vhd` says. **Fix:** two sentences there.

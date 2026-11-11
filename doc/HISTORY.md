@@ -716,6 +716,6 @@ sources: a request from the debug link, a button, and a watchdog. The
 link's came first, in version 8, as the register `0xFFFFFFD7`. A new
 request tag was decided against: the link has only `R` and `W`, and does
 its run control through registers, which an older system ignores. The
-button and the watchdog stay open in #131. A second source needs a merge
-that keeps the NMI vector stable until the core takes it, as the cores
-ask of NMI, though a4da0a9 relaxed this for IRQ.
+button and the watchdog are #157. A second source needs a merge that
+keeps the NMI vector stable until the core takes it, as the cores ask
+of NMI, though a4da0a9 relaxed this for IRQ.

@@ -110,6 +110,8 @@ That issue closed on 2026-11-02, and the board's monitor loads programs at `0x80
 
 `doc/HISTORY.md:719`: "The button and the watchdog stay open in #131." #131 closed on 2026-11-11, and the two moved to #157, which is open with no milestone. **Fix:** "are #157".
 
+**Resolved**: HISTORY.md names #157.
+
 ### 2.4 hdl/README.md: the bullet of `todbus` cuts the bullet of `instret` in two
 
 Lines 1094 to 1103:

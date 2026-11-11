@@ -94,6 +94,8 @@ Four bullets of §8 describe NiceMonMEGA65 as it was. The commits of this releas
 
 What §8 says the board does not have is still so: the link's NMI request (MJoergen/NiceMonMEGA65#106), the receive interrupt (#104), and the clock set from the RTC (#105) are open.
 
+**Resolved**: The four bullets say what the board has: the link's registers at `0xFFFFFFD0`–`0xFFFFFFFF` in version 7, the slots numbered 0 and 1, the station of §6, and the port, with a network stack in its ROM. `0xFFFFFF90`–`0xFFFFFF9F` are still its board's devices: the Nexys4DDR's LEDs, display, buttons, and switches, and the size of the RAM. The notes have a line.
+
 ### 2.2 Three documents say what the board's monitor "will" do
 
 - `doc/TOOLCHAIN.md:56`: "loads a program at `0x8000` and calls it, as NiceMonMEGA65's will."

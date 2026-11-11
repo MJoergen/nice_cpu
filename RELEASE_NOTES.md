@@ -92,6 +92,10 @@ Dhrystone (#143).
 - SYSTEM.md §8: NiceMonMEGA65 has the clock of §10, on both boards,
   and "set" stays 0 there until a program sets it. It also wires the 4
   watchpoints of link version 7, where V2.0 said it did not (#155).
+- SYSTEM.md §8 also says what NiceMonMEGA65 has had for some releases,
+  where it said the board planned them: the link's registers from
+  `0xFFFFFFD0`, the SD card slots 0 and 1, the network station of §6
+  at `0xFFFFFFB0`, and the port for Ethernet frames.
 - DEBUG.md §6 and §9: link version 8 adds the NMI request at
   `0xFFFFFFD7`. A write with bit 8 set raises an NMI with the vector of
   bits 7–0, and the register reads it back until the processor takes it.

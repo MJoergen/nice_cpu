@@ -135,6 +135,8 @@ The last sentence is `instret.nasm`'s (`hdl/test/README.md:28` says the same of 
 
 Both were written when every IRQ merged with any pending one. Now requests merge per source (ISA.md §7.1). A system that gave the core's `ready` to the timer and to `console_irq` would take both requests with one entry, and lose the console's. `tb_core` shares a `ready` only between the timer and `--irq`, which are one source, and gives the two sources theirs through `irq_merge`. The sentences are true of the timer alone, and read as leave to do what the next section of the README forbids. **Fix:** "so its `ready` may be shared with another device of its source, as `tb_core` shares it with `--irq`; two sources go through `irq_merge`", and "goes to the core's IRQ port, through `irq_merge` where the system has the console's too".
 
+**Resolved**: The comment of `timer.vhd` and the README say that the timer may share its `ready` with another device of its source, as `tb_core` does, and that another source gets its own from `irq_merge`. The README names `irq_merge` on the way to the core.
+
 ### 2.6 The lists of the devices in README.md and doc/README.md
 
 - `doc/README.md:9` says of SYSTEM.md: "The devices that the emulator maps into the I/O range: console, math unit, performance counters, and timer." SYSTEM.md has had the SD card since `V1.5`, the network station and the Ethernet frames since `V1.7`, and the clock since `V2.0`.

@@ -14,7 +14,10 @@
 -- irq_ready_i. A new request raised before then merges with it, as ISA.md
 -- §7.1 says, and the raised request keeps its vector. Stopping the timer
 -- leaves a raised request as it is. While no request is raised, irq_ready_i
--- has no effect, so the core's ready may go to more than one device.
+-- has no effect, so the timer may share its ready with another device of
+-- its source, as tb_core shares it with its injected requests. Another
+-- source of IRQ gets a ready of its own from src/irq_merge.vhd, as the
+-- requests of two sources do not merge.
 --
 -- The port is a pipelined Wishbone slave. It never stalls, and it
 -- acknowledges each request in the cycle after it accepts it. A read

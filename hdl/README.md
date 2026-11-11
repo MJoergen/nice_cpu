@@ -652,9 +652,13 @@ with "the core is running", so that the timer counts clock cycles and
 stops at a halt. `tb_core` connects it to
 the core's report of each step, so that it counts as the emulator does.
 Its request goes to the core's IRQ port, with the valid/ready handshake of
-`src/multicycle.vhd`. It holds `valid` and the vector until `ready`, and a
-request raised while one waits merges with it. While no request is raised,
-`ready` has no effect, so `ready` may go to more than one device.
+`src/multicycle.vhd`, through `irq_merge` (below) in a system that has the
+console's receive interrupt too. It holds `valid` and the vector until
+`ready`, and a request raised while one waits merges with it. While no
+request is raised, `ready` has no effect, so the timer may share its `ready`
+with another device of its source, as `tb_core` shares it with `--irq`.
+Another source of IRQ gets a `ready` of its own from `irq_merge`, as the
+requests of two sources do not merge (ISA.md §7.1).
 
 ## The console's receive interrupt
 

@@ -222,3 +222,9 @@ proposed again. The open items are the
   in. A port would live in a repository of its own. CoreMark (#143,
   Apache-2.0) gives the figure that small cores publish, and
   `bench/float.c` measures the float library.
+- **A flag or an offset for local time in the clock** (#158). A bit of
+  `CLOCK_STATUS` that says the clock keeps local time, or a register of
+  the time zone's offset, would change `tod.vhd`, the emulator, and the
+  boards, and NiceMonMEGA65 has no place to keep an offset across a
+  reset. The system's documentation says which time it keeps (SYSTEM.md
+  §8 and §10). To revisit when a board gets NTP, which needs UTC.

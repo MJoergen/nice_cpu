@@ -14,8 +14,9 @@ typedef long long time_t;
 // unsigned, so the difference of two readings is right across a wrap.
 clock_t clock(void);
 
-// The seconds since the Unix epoch, or -1 if the clock of the time of day
-// holds no time ("set" is 0, SYSTEM.md §10). Stores the same in *t if t is
+// The seconds since the Unix epoch, in the clock's time, UTC or local
+// (SYSTEM.md §10), or -1 if the clock of the time of day holds no time
+// ("set" is 0). Stores the same in *t if t is
 // not null.
 time_t time(time_t *t);
 

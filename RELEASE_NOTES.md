@@ -84,6 +84,10 @@ Dhrystone (#143).
   no longer lists a relative branch as decided against (#154).
 - SYSTEM.md §8: NiceMonMEGA65 has the byte windows of §9, where a read
   of a byte or a halfword takes a cycle more than one of a word (#152).
+- SYSTEM.md §10: the clock keeps UTC, or local time on a system that
+  sets it from a source that keeps local time, such as the MEGA65's
+  real-time clock. A system's ROM may set it at its start. `time()`
+  then returns local time (#158).
 - SYSTEM.md §8: NiceMonMEGA65 has the clock of §10, on both boards,
   and "set" stays 0 there until a program sets it. It also wires the 4
   watchpoints of link version 7, where V2.0 said it did not. The R6

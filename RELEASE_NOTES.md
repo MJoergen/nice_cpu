@@ -116,6 +116,7 @@ Dhrystone (#143).
 - `--link` serves link version 8, with the NMI request, a source after
   that of `--nmi` (#131). The `Pending:` line after a run names a
   request of either.
+- The version is 2.1.0.
 
 **Debugger (`nicedbg`)**
 

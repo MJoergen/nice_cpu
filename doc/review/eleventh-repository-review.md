@@ -38,6 +38,8 @@ It is a race of some 100 µs. In a loop of 20 on this machine, a host that conne
 
 RELEASE.md step 2.9 asks for the new tag's version there before `release.py check`. **Fix:** `2.1.0`, and the line "The version is 2.1.0." under the emulator's heading of the notes, which every section since `V1.7` has.
 
+**Resolved**: `emulator/build.zig.zon` says `2.1.0`, and the notes have the line.
+
 ### 1.3 The table of board tags in RELEASE_NOTES.md
 
 Lines 17 to 24 say "none yet" for `V2.0` down to `V1.3`. NiceMonMEGA65 has tagged all of them but `V1.8`, and every tag is on its origin. The submodule of each tag gives:

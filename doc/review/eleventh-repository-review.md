@@ -16,7 +16,7 @@ Reviewed on 2026-11-11: the 29 commits between `V2.0` and the head of `dev-V2.1`
 
 **Three release steps are still to do** (§1.2 to §1.4): the version in `emulator/build.zig.zon`, the row for `V2.1` in the table, and the date of the notes.
 
-Nothing is fixed yet, and no issue is filed. The numbers below are for the commits.
+**Every finding is closed** on `dev-V2.1`, with a commit for each and a **Resolved** paragraph under each: the test's wait (§1.1), the version (§1.2), the table of board tags (§1.3), the line for #150 (§1.4), SYSTEM.md §8 (§2.1), the board's monitor (§2.2), #157 in HISTORY.md (§2.3), the HDL README's bullet, its timer, and its reserved words (§2.4, §2.5, §2.7), the lists of the devices (§2.6), the rows and the lists of `hdl/` (§3.1 to §3.3), the usage text (§3.4), the debugger's summaries (§3.5), the merge per source in HISTORY.md (§3.6), and the slide (§3.7). Two things became issues: the emulator's side of the race is #159, and CoreMark in `make slow` is #160 (§1.5). `make all` passes here on the result, and CI passed every job on fdd337b after this was written, `formal` included. What is left is the date of the `V2.1` section, set at the tag, and the release steps of RELEASE.md.
 
 ## 1. The release
 
@@ -70,6 +70,8 @@ The row for `V2.1` is the one that RELEASE.md step 2.8 asks for. RELEASE.md step
 ### 1.5 CoreMark on the cores is in no gate
 
 `make -C bench core-coremark` checks the CRCs of one iteration on a core, in 97 seconds on the pipelined core in nvc. Nothing runs it: not `make slow`, which runs the benchmark, `hand`, Dhrystone, and the strides, not `release.py check`, and not CI. So the cycles that bench/README.md and the notes quote, 7898812 and 1065384, are from a run by hand on 5022cfe, and a change that breaks CoreMark on a core alone would not be found. This is not a fault of the documents, which say what runs where. **Fix, if wanted:** an issue for a `slow/%/coremark` beside `slow/%/dhry`, with RELEASE.md §5 naming it.
+
+**Resolved**: Filed as #160.
 
 ### 1.6 The rest of the checklist
 

@@ -140,10 +140,11 @@ They run on both cores at once, in parallel:
     make slow CORES=pipeline  # one core
 
 That is, for each core, `bench make core` (the benchmark's two programs,
-each a run of its own), `bench make core-dhry` (Dhrystone), and `hdl make
-strides` (the interrupt sweeps with strides 17, 31, and 64). Each
-benchmark run and Dhrystone takes one CPU, and the sweeps share the rest.
-On 20 CPUs, `make slow` took 4 minutes on 2026-10-28. `SIM=ghdl` runs
+each a run of its own), `bench make core-dhry` (Dhrystone), `bench make
+core-coremark` (one iteration of CoreMark), and `hdl make strides` (the
+interrupt sweeps with strides 17, 31, and 64). Each benchmark run,
+Dhrystone, and CoreMark takes one CPU, and the sweeps share the rest.
+On 20 CPUs, `make slow` took 5 minutes on 2026-11-11. `SIM=ghdl` runs
 them in GHDL instead, which took 33 minutes on 2026-10-27, bound by the
 benchmark on the multi-cycle core.
 Every line must say `PASS`, and both cores must agree with

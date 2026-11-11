@@ -17,9 +17,9 @@ help:
 	@echo "  make typecheck   mypy --strict on the Python tools"
 	@echo "  make lint        vsg style check of the VHDL (pip install vsg)"
 	@echo "  make formal      SymbiYosys checks of the cores, their stages, the devices, and the shared functions"
-	@echo "  make slow        the benchmark, Dhrystone, and the interrupt sweeps with more"
-	@echo "                   strides, on each core of CORES (default both), in parallel,"
-	@echo "                   in nvc (4 minutes on 20 CPUs), or SIM=ghdl (33 minutes)"
+	@echo "  make slow        the benchmark, Dhrystone, CoreMark, and the interrupt sweeps"
+	@echo "                   with more strides, on each core of CORES (default both), in"
+	@echo "                   parallel, in nvc (5 minutes on 20 CPUs), or SIM=ghdl (33 minutes)"
 	@echo "  make release-check  the gates of RELEASE.md, then a stamp for release.py tag (about an hour)"
 	@echo "  make hazards     count the pipeline hazards in the benchmark"
 	@echo "  make wasmcheck   rebuild the checked-in .wasm files and compare them (clang, zig, rustc)"
@@ -62,22 +62,22 @@ lint:
 formal:
 	$(MAKE) -C hdl formal
 
-# make slow: on each core of CORES, the benchmark's two programs, Dhrystone,
-# and the interrupt sweeps with more strides, all at once. The emulator,
-# the VHDL, and the programs are built first, and the runs are told so
-# with PREBUILT=1, as two builds at once would race. Each single
+# make slow: on each core of CORES, the benchmark's two programs,
+# Dhrystone, CoreMark, and the interrupt sweeps with more strides, all at
+# once. The emulator, the VHDL, and the programs are built first, and the
+# runs are told so with PREBUILT=1, as two builds at once would race. Each single
 # simulation takes a CPU, and the sweeps of each core share the rest. SIM
 # is the simulator (hdl/sim.mk): nvc, which takes minutes where GHDL takes
 # more than half an hour, or ghdl.
 CORES ?= pipeline multicycle
 SIM ?= nvc
-SLOW_RUNS = $(foreach c,$(CORES),$(foreach r,bench hand dhry strides,slow/$(c)/$(r)))
-SWEEP_JOBS = $(shell n=$$(( ($(JOBS) - 3 * $(words $(CORES))) / $(words $(CORES)) )); echo $$(( n > 0 ? n : 1 )))
+SLOW_RUNS = $(foreach c,$(CORES),$(foreach r,bench hand dhry coremark strides,slow/$(c)/$(r)))
+SWEEP_JOBS = $(shell n=$$(( ($(JOBS) - 4 * $(words $(CORES))) / $(words $(CORES)) )); echo $$(( n > 0 ? n : 1 )))
 
 slow:
 	$(MAKE) -C emulator build
 	$(MAKE) -C hdl analyze build/pcfx.bin build/sidefx.bin SIM=$(SIM)
-	$(MAKE) -C bench build/bench.bin build/hand.bin build/dhry.bin
+	$(MAKE) -C bench build/bench.bin build/hand.bin build/dhry.bin build/coremark.bin
 	@$(MAKE) --no-print-directory -j$(words $(SLOW_RUNS)) -O $(SLOW_RUNS)
 
 slow/%/bench:
@@ -86,6 +86,8 @@ slow/%/hand:
 	@$(MAKE) --no-print-directory -C bench core CORE=$* CORE_PROGRAMS=hand PREBUILT=1 SIM=$(SIM)
 slow/%/dhry:
 	@$(MAKE) --no-print-directory -C bench core-dhry CORE=$* PREBUILT=1 SIM=$(SIM)
+slow/%/coremark:
+	@$(MAKE) --no-print-directory -C bench core-coremark CORE=$* PREBUILT=1 SIM=$(SIM)
 slow/%/strides:
 	@$(MAKE) --no-print-directory -C hdl strides CORE=$* PREBUILT=1 SWEEP_JOBS=$(SWEEP_JOBS) SIM=$(SIM)
 

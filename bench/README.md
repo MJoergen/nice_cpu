@@ -679,7 +679,8 @@ that that one is there exactly when the run is shorter, and that the
 port's two lines agree with the ticks. `make test` runs both sets of
 seeds for 10 iterations on the emulator, and `make native` the same on
 the host. `make core-coremark` runs one iteration on a core, of the
-performance seeds, or of `CM_SEEDS=valid`.
+performance seeds, or of `CM_SEEDS=valid`. The top-level `make slow`
+runs it on both cores ([release/RELEASE.md](../release/RELEASE.md)).
 
 The run rules ask for at least 10 seconds for a result that is
 reported, and for a simulator a fixed number of iterations instead. So

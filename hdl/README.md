@@ -18,9 +18,9 @@ what each does. `wb_dmux` is [the data bus decoder](#the-data-bus-decoder),
 which puts the memory and the devices on the core's data bus. The debug
 link's side port is for a client inside the system, such as a debugger on
 the board ([The debug link](#the-debug-link)). `make slow` in the top
-directory runs the benchmark, Dhrystone, and the stride sweeps on both
-cores at once, and `release.py check` records what it and `make timing`
-found in the release stamp ([release/RELEASE.md](../release/RELEASE.md)).
+directory runs the benchmark, Dhrystone, CoreMark, and the stride sweeps
+on both cores at once, and `release.py check` records what it and `make
+timing` found in the release stamp ([release/RELEASE.md](../release/RELEASE.md)).
 
 - [Folder contents](#folder-contents)
 - [Running the tests](#running-the-tests)

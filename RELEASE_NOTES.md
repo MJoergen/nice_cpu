@@ -201,6 +201,9 @@ Dhrystone (#143).
   directory that make writes, which names the breakpoints and the
   watchpoints since `V2.0`. In `V2.0` it read the old name, and its
   stamp recorded an error for the timing though the run met (#150).
+- `make slow`, and so `release.py check`, runs `make core-coremark` on
+  both cores, one iteration of CoreMark with its CRCs checked (#160).
+  It takes 5 minutes on 20 CPUs, where it took 4.
 
 ## V2.0 (2026-11-09)
 

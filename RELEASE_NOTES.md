@@ -90,9 +90,7 @@ Dhrystone (#143).
   then returns local time (#158).
 - SYSTEM.md §8: NiceMonMEGA65 has the clock of §10, on both boards,
   and "set" stays 0 there until a program sets it. It also wires the 4
-  watchpoints of link version 7, where V2.0 said it did not. The R6
-  meets 100 MHz by 0.001 ns in the `timing` flow, and the Nexys4DDR
-  90 MHz by 0.140 ns (#155).
+  watchpoints of link version 7, where V2.0 said it did not (#155).
 - DEBUG.md §6 and §9: link version 8 adds the NMI request at
   `0xFFFFFFD7`. A write with bit 8 set raises an NMI with the vector of
   bits 7–0, and the register reads it back until the processor takes it.
@@ -165,6 +163,14 @@ Dhrystone (#143).
   watchpoints is placement: with 2 breakpoints and no watchpoints it
   misses too, and with 2 breakpoints and 4 it has the best core slack
   of all (#149).
+- The core does not change for the board's timing (#149, #156).
+  NiceMonMEGA65 wires the 4 watchpoints, and builds its RAM without the
+  block RAM cascade, which saves 0.8 ns on a read
+  (MJoergen/NiceMonMEGA65#107). Its builds with the ROM meet in the
+  `timing` flow: the R6 at 100 MHz by 0.057 ns, in 11 minutes, where it
+  took up to an hour, the R3 by 0.122 ns, and the Nexys4DDR at 90 MHz by
+  0.004 ns. Registers for `paused_o` and `halted_o` would only move the
+  worst path to the next one.
 
 **Benchmarks**
 

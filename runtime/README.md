@@ -58,7 +58,7 @@ R2 = 0 (no `argc` or `argv`), and halts with `main`'s result in R1. Each
 start-up file also defines `_exit`, the C library's `exit`: in these
 three, the `HALT` after `main`. The `_mon` versions are for a program that
 a monitor in ROM, such as the one that
-[NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) will have, loads at
+[NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) has, loads at
 `0x8000` and calls with R1 = its putc routine or 0, R2 = `argc`, and
 R3 = `argv`: they leave SP as the monitor set it, store a nonzero R1 in
 `___putc_vector`, pass `argc` and `argv` to `main`, and return to the

@@ -53,7 +53,7 @@ source file, and writes the `.bin` file:
     translator/nicebuild.py -o prog.bin prog.c
 
 A monitor is a program in a ROM at address 0 that loads a program at
-`0x8000` and calls it, as NiceMonMEGA65's will. `nicebuild.py --monitor`
+`0x8000` and calls it, as NiceMonMEGA65's does. `nicebuild.py --monitor`
 builds a program for one: it picks the `_mon` start-up file
 ([ABI.md](../runtime/ABI.md), Programs under a monitor).
 

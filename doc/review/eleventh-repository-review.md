@@ -104,6 +104,8 @@ What §8 says the board does not have is still so: the link's NMI request (MJoer
 
 That issue closed on 2026-11-02, and the board's monitor loads programs at `0x8000`. **Fix:** "does", "has", and "does".
 
+**Resolved**: The three say "does", "has", and "does".
+
 ### 2.3 HISTORY.md says the button and the watchdog stay open in #131
 
 `doc/HISTORY.md:719`: "The button and the watchdog stay open in #131." #131 closed on 2026-11-11, and the two moved to #157, which is open with no milestone. **Fix:** "are #157".

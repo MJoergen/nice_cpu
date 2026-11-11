@@ -194,6 +194,8 @@ The README says of `wait` that "its runs are compared exactly, and not by `irq_c
 
 The "Jumps" slide of `doc/intro/nice_intro.tex` (line 553) shows `MOVE PC, LOOP`, the relative `ADD PC, PC, 10`, and that the assembler accepts `JMP`. `JMPR` is the pseudo-instruction for its second line. The slides are right without it, and a beginner needs one jump. **Fix, if wanted:** "and `JMPR LOOP` for the relative jump" on that slide, and `make pdf`.
 
+**Resolved**: The "Jumps" slide says that the assembler accepts `JMPR LOOP` for such an `ADD`, and works out the distance. The slide still fits its page, and the PDF is rebuilt.
+
 ## 4. What was checked, and found right
 
 These are recorded so that the next review need not repeat them.

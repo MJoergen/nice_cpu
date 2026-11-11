@@ -566,7 +566,8 @@
      \item When an instruction reads \code{R15}, it gets the address of the
       \textbf{next} instruction, after all constant words.
      \item So \code{ADD PC, PC, 10} jumps to 10 words after the end of the
-      \code{ADD}.
+      \code{ADD}. The assembler accepts \code{JMPR LOOP} for such an
+      \code{ADD}, and works out the distance to \code{LOOP}.
      \item Any write to \code{R15} jumps, even with other addressing modes.
       For example, \code{MOVE PC, @R13++} pops an address off the stack
       and jumps there.

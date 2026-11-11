@@ -126,6 +126,8 @@ Lines 1094 to 1103:
 
 The last sentence is `instret.nasm`'s (`hdl/test/README.md:28` says the same of it). e71acae put the new bullet between its two sentences, in `V2.0`. **Fix:** move the sentence back under `instret.nasm`.
 
+**Resolved**: The sentence is under `instret.nasm` again.
+
 ### 2.5 The timer: "`ready` may go to more than one device"
 
 - `hdl/src/timer.vhd:16`: "While no request is raised, irq_ready_i has no effect, so the core's ready may go to more than one device."

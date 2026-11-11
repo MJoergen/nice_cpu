@@ -1092,15 +1092,15 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   instructions. Its values are those of the timing diagram
   [doc/flow.png](../doc/flow.png).
 - `test/instret.nasm`, also on a memory that stalls in 30% of the cycles.
+  It reads the instruction counter right after a store to RAM, which the
+  data bus decoder makes the read wait for, after a read of RAM, as the
+  source of a store, and twice in one instruction.
 - `test/todbus.nasm` sets and reads the clock of the time of day through
   `tb_core`'s bus decoder, and reads `READ_LO`, the word after it, which
   stays the performance counters'. It reads only what the emulator, on the
   host's clock, and the core, on its cycles, have in common, so its trace
   is compared as the others are. It runs again on a memory that stalls in
   30% of the cycles.
-  It reads the instruction counter right after a store to RAM, which the
-  data bus decoder makes the read wait for, after a read of RAM, as the
-  source of a store, and twice in one instruction.
 - The hazard programs of MICROARCH.md §9, step 4, each also on a memory
   that stalls in 30% of the cycles. `test/hazard.nasm` makes each hazard
   of MICROARCH.md §5 with no padding: flags tested by the next

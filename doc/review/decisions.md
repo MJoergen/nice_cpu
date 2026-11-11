@@ -228,3 +228,10 @@ proposed again. The open items are the
   boards, and NiceMonMEGA65 has no place to keep an offset across a
   reset. The system's documentation says which time it keeps (SYSTEM.md
   §8 and §10). To revisit when a board gets NTP, which needs UTC.
+- **A watchdog device that raises NMI** (#157). A system that runs
+  unattended needs one to recover alone, and a NICE system runs with a
+  person or a host on the debug link, which pauses a program that hangs
+  or raises an NMI in it (DEBUG.md §6). It would cost a block of the I/O
+  range, a device in the emulator and in `hdl/src` with its tests and
+  proofs, and a merge of a second NMI source. A button that raises NMI is
+  a board's (SYSTEM.md §8). To revisit when a system runs unattended.

@@ -65,6 +65,8 @@ The row for `V2.1` is the one that RELEASE.md step 2.8 asks for. RELEASE.md step
 - Its heading says 2026-11-10, and three of its commits are of 2026-11-11. The date is set at the tag.
 - It has no line for #150. `release.py check` of `V2.0` recorded an error for the timing in its stamp though the run met, as `make timing` had moved its directory in fa8b2fa, which is in `V2.0`. b014356 fixes it. The sections of `RC06` to `V1.2` have a **Release** heading for such changes. **Fix:** that heading, with one line.
 
+**Resolved**: The notes have a **Release** heading with the line for #150. The date is set at the tag.
+
 ### 1.5 CoreMark on the cores is in no gate
 
 `make -C bench core-coremark` checks the CRCs of one iteration on a core, in 97 seconds on the pipelined core in nvc. Nothing runs it: not `make slow`, which runs the benchmark, `hand`, Dhrystone, and the strides, not `release.py check`, and not CI. So the cycles that bench/README.md and the notes quote, 7898812 and 1065384, are from a run by hand on 5022cfe, and a change that breaks CoreMark on a core alone would not be found. This is not a fault of the documents, which say what runs where. **Fix, if wanted:** an issue for a `slow/%/coremark` beside `slow/%/dhry`, with RELEASE.md §5 naming it.

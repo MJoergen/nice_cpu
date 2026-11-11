@@ -188,6 +188,13 @@ Dhrystone (#143).
   run of 10 seconds or more. Arm gives 2.33 CoreMark/MHz for the
   Cortex-M0.
 
+**Release**
+
+- `release.py check` reads the result of `make timing` from the
+  directory that make writes, which names the breakpoints and the
+  watchpoints since `V2.0`. In `V2.0` it read the old name, and its
+  stamp recorded an error for the timing though the run met (#150).
+
 ## V2.0 (2026-11-09)
 
 `WAIT` waits for an interrupt (#133). Five byte windows let a data

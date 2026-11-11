@@ -176,6 +176,8 @@ The README says of `wait` that "its runs are compared exactly, and not by `irq_c
 
 `emulator/src/main.zig:19` describes the console at `0xFFFFFF00` and gives the range of each device. It names neither the receive interrupt at `0xFFFFFF02` nor the read counter at `0xFFFFFF01`. The table of emulator/README.md has both. **Fix, if wanted:** half a sentence, or leave the usage text to the options and point at SYSTEM.md.
 
+**Resolved**: The usage text names the read counter at `0xFFFFFF01` and the receive interrupt at `0xFFFFFF02`.
+
 ### 3.5 The debugger's summaries leave out the NMI
 
 `debugger/README.md:6` and the docstring of `nicedbg.py` (line 4) list what the debugger does: load, run, pause, step, breakpoints, watchpoints, registers, memory, and disassembly. The table of commands has `nmi VEC`, and `help` lists it. **Fix:** "raises an NMI" in both lists.

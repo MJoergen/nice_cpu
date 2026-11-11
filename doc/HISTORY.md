@@ -157,6 +157,16 @@ of its kind pending. The emulator kept the newer vector for `--irq` and
 `--nmi`, and the older for the timer. On 2026-10-22 the rule became that
 the first vector is kept, in the emulator (2b7a24e) and in both cores.
 
+Until 2026-11-10, a request merged with any pending one of its kind,
+whatever raised it. The timer was the only source of IRQ then, so nothing
+showed the difference. With the console's receive interrupt (#153), the
+rule became that a request merges only with one of its own source
+(73ba521). The cores had asked for an IRQ vector that stays stable until
+ready. They now let it change, as they take the vector of the cycle of
+ready, so that a merge can put the timer's request ahead of the
+console's that waits (a4da0a9). The word at `0xFFFFFF02`, now
+`CONSOLE_IRQ`, was reserved for I/O, and memory in the emulator.
+
 ## The random test programs
 
 `hdl/test/random_prog.py` was changed on 2026-10-15 to make jumps shorter,

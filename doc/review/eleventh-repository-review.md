@@ -188,6 +188,8 @@ The README says of `wait` that "its runs are compared exactly, and not by `irq_c
 
 "Merged interrupt requests" (line 153) ends on 2026-10-22 with the rule that the first vector is kept. Until 73ba521 every IRQ merged with any pending one, and until a4da0a9 the cores asked for a stable IRQ vector. The notes say both under their upgrade notes, and "An NMI from the link" cites a4da0a9 in passing. HISTORY.md is where the other documents send what used to be true. **Fix:** three sentences at the end of that section.
 
+**Resolved**: "Merged interrupt requests" has a paragraph for the merge per source, the IRQ vector that may change, and the word at `0xFFFFFF02`.
+
 ### 3.7 The slides do not have `JMPR`, optional
 
 The "Jumps" slide of `doc/intro/nice_intro.tex` (line 553) shows `MOVE PC, LOOP`, the relative `ADD PC, PC, 10`, and that the assembler accepts `JMP`. `JMPR` is the pseudo-instruction for its second line. The slides are right without it, and a beginner needs one jump. **Fix, if wanted:** "and `JMPR LOOP` for the relative jump" on that slide, and `make pdf`.

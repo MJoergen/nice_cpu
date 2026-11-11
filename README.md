@@ -49,9 +49,9 @@ follows a tag.
 instruction set of [doc/ISA.md](doc/ISA.md), the interrupts included,
 and the devices of [doc/SYSTEM.md](doc/SYSTEM.md): the console, the
 80×25 character screen, the math unit, the performance counters, the
-timer, the SD card controller, the network station's registers, and the
-port for Ethernet frames. It is the reference that the FPGA cores are
-compared with.
+timer, the SD card controller, the network station's registers, the
+port for Ethernet frames, and the clock of the time of day. It is the
+reference that the FPGA cores are compared with.
 It can:
 
 - run a program until it halts, and print why it stopped, the number of

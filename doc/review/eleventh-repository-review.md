@@ -144,6 +144,8 @@ Both were written when every IRQ merged with any pending one. Now requests merge
 
 **Fix:** the list of CLAUDE.md in the first, and "and the clock of the time of day" in the second.
 
+**Resolved**: doc/README.md lists the eight devices, and README.md names the clock.
+
 ### 2.7 hdl/README.md: "the reserved words of `0xFFFFFFD2`–`0xFFFFFFDF`"
 
 Line 542: "The reserved words of `0xFFFFFFD2`–`0xFFFFFFDF` read 0 and take no write." The range now holds the registers of the watchpoints at `0xFFFFFFD4`–`0xFFFFFFD6` and `0xFFFFFFD8`–`0xFFFFFFDB`, and the NMI request at `0xFFFFFFD7`, which the next paragraph describes. The reserved words are `0xFFFFFFD2`, `0xFFFFFFD3`, and `0xFFFFFFDC`–`0xFFFFFFDF` (DEBUG.md §6). **Fix:** name those.

@@ -36,7 +36,7 @@ pin each are:
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
 
-## V2.1 (2026-11-10)
+## V2.1 (2026-11-11)
 
 The console raises an interrupt when input comes, so that a program can
 wait for a key with `WAIT` (#153). The assembler has the
@@ -64,6 +64,7 @@ Dhrystone (#143).
   `nmi_valid_o` and `nmi_vector_o` and the input `nmi_ready_i`, which a
   board leaves open until it wires them to the core
   (MJoergen/NiceMonMEGA65#106).
+- Zig 0.17.0, as in V2.0.
 
 **Specification and documents**
 
@@ -183,6 +184,8 @@ Dhrystone (#143).
 
 **Benchmarks**
 
+- No change for `bench.c` as built by default: 2339271 estimated
+  cycles on the pipelined core, as in V2.0.
 - CoreMark by EEMBC, in `bench/coremark/`, its upstream files unchanged
   but for the port in `core_portme.c` and `core_portme.h` (#143). The
   port reads the seeds and the iterations from the console, so one

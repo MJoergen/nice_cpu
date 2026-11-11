@@ -485,6 +485,19 @@ def test_reconnect(echo_on: List[int]) -> None:
     expect("exit status", bytes([status]), b"\x00")
     expect("stdout", out, b"")
 
+    # A host that connects at once after the last one closed is served:
+    # one poll may return both, and the emulator reads the end first.
+    e = Emu()
+    e.take(len(HELLO))
+    for i in range(50):
+        e.send(read(CONTROL, 1))
+        e.expect(f"control {i}", answer(CONTROL, [0x9]))
+        e.sock.close()
+        e.sock = e.connect()
+        e.buf = b""
+        expect(f"b of host {i}", e.take(len(HELLO), timeout=0.5), HELLO)
+    e.stop()
+
 
 def test_overflow(spin: List[int]) -> None:
     """A full input buffer loses bytes, and sends one 'o' (§4)."""
@@ -1072,7 +1085,6 @@ def test_break(at10: List[int], load: List[int], count: List[int], skip: List[in
     e.expect("enable while running", ok(BREAK_EN, 1) + hit(0))
     # A new connection clears them, with its b.
     e.sock.close()
-    time.sleep(0.3)
     e.sock = e.connect()
     e.buf = b""
     e.expect("b again", HELLO)
@@ -1319,7 +1331,6 @@ def test_watch(watch: List[int], write200: List[int], irq: List[int]) -> None:
     e.send(read(0xFFFFFFD2, 14))
     e.expect("D2-DF", answer(0xFFFFFFD2, [0, 0, 0xFF, 4, 0, 0, 1, 2, 3, 4, 0, 0, 0, 0]))
     e.sock.close()
-    time.sleep(0.3)
     e.sock = e.connect()
     e.buf = b""
     e.expect("b again", HELLO)
@@ -1488,7 +1499,6 @@ def test_nmi(nmi: List[int], wait_nmi: List[int]) -> None:
     e.send(write(NMI_REQ, [0x102]))
     e.expect("raise before the new host", ok(NMI_REQ, 1))
     e.sock.close()
-    time.sleep(0.3)
     e.sock = e.connect()
     e.buf = b""
     e.expect("b of the new host", HELLO)

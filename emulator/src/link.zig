@@ -257,7 +257,11 @@ pub const Link = struct {
             .{ .fd = if (self.conn) |c| c.socket.handle else -1, .events = if (self.conn_eof or waiting) 0 else posix.POLL.IN, .revents = 0 },
         };
         if (try posix.poll(&fds, wait) == 0) return self.drain(self.nowMs());
-        if (fds[0].revents & posix.POLL.IN != 0) self.accept();
+        // When a host connects as the last one closes, one poll may return
+        // both: read the old connection first, as it may have ended. The new
+        // host waits in the listener's queue until the next poll.
+        const old_ready = fds[1].revents != 0 and self.conn != null and !self.conn_eof and !waiting;
+        if (fds[0].revents & posix.POLL.IN != 0 and !old_ready) self.accept();
         if (fds[1].revents != 0 and self.conn_eof) return self.disconnect();
         if (waiting) return self.drain(self.nowMs());
         if (fds[1].revents != 0 and self.conn != null) {

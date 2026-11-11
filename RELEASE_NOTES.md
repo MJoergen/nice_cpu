@@ -121,6 +121,9 @@ Dhrystone (#143).
 - `--link` serves link version 8, with the NMI request, a source after
   that of `--nmi` (#131). The `Pending:` line after a run names a
   request of either.
+- `--link` no longer closes a host that connects in the instant after
+  the last one closed: it reads the end of the old connection first
+  (#159).
 - The version is 2.1.0.
 
 **Debugger (`nicedbg`)**

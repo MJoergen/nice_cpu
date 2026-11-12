@@ -31,7 +31,7 @@ Both are built for the baseline x86_64 CPU, with ReleaseSafe, as
 
 ## Build and test
 
-    make          # unit tests, example and probe programs, test/errors.py
+    make          # unit tests, example and probe programs, test/errors.py, the FPU's model
     make build    # just build zig-out/bin/niceemu
     make window   # build it with the window of --window
     make window-test  # build it so, and run test/window.py
@@ -687,6 +687,20 @@ answers while the program runs.
 Last, `test/udp.py` checks the frames over the socket of `--eth-udp`
 (Ethernet frames above), and `test/tap.py` the same through
 `tools/nicetap.py` and a TAP device (A real network above).
+
+`test/fpu_model.py` is a reference model of the floating-point unit of
+SYSTEM.md §11, which niceemu does not have yet. It computes every result
+exactly, with Python's fractions, and rounds it itself, so it shares
+nothing with the host's doubles, which the emulator will use. Its widths
+are parameters. `make test` runs `test/fpu_model_test.py`, which checks
+the model four ways: a table of hand-checked accesses, each with its
+reason; the model at binary64 against the host's doubles, on special
+and random operands; every pair of values of a format of 8 bits against
+a rounding by brute force, and the rounding twice of the S forms through
+a wider format; and in exact arithmetic, the constants against
+`decimal`, `ISQRT` against `math.isqrt`, `SCALE10`, and constants of 15
+digits through `FROMBCD`, `SCALE10`, and `DIGITS 15`, which must come
+back.
 
 `test/cputest.nasm` is a self-checking test of the whole instruction set:
 every opcode, shift, addressing mode, and condition, the flags, R0, R14, and

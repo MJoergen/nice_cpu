@@ -84,7 +84,7 @@ library, a wasm translator, and two FPGA cores. See README.md.
     make test                        # every quick make test below, in parallel
     cd assembler && make test        # .nasm -> .bin comparisons, test/errors.py, fmt.py, and dis.py, and the layout of every .nasm
     cd assembler && make typecheck   # mypy --strict
-    cd emulator  && make test        # zig fmt --check, zig unit tests, example and probe programs, test/errors.py and link.py
+    cd emulator  && make test        # zig fmt --check, zig unit tests, example and probe programs, test/errors.py and link.py, the FPU's model
     cd emulator  && make typecheck   # mypy --strict
     cd emulator  && make bincheck    # fail if a probe .bin is stale
     cd emulator  && make bins        # reassemble test/*.bin after editing a probe .nasm

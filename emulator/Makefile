@@ -101,6 +101,7 @@ test: build bincheck fmtcheck
 	$(ZIG) build test --summary all
 	@$(MAKE) --no-print-directory programs
 	@NICEEMU=$(abspath $(EMU)) $(PYTHON) test/errors.py
+	@$(PYTHON) test/fpu_model_test.py
 
 # The example and probe programs, and the debug link, on the niceemu of
 # EMU. errors.py is apart, as it expects a build without the window.
@@ -189,7 +190,8 @@ bincheck:
 
 # Needs mypy (pip install mypy).
 typecheck:
-	$(PYTHON) -m mypy --strict test/errors.py test/link.py test/udp.py test/tap.py test/window.py tools/nicetap.py font/gen_font.py
+	$(PYTHON) -m mypy --strict test/errors.py test/link.py test/udp.py test/tap.py test/window.py test/fpu_model.py test/fpu_model_test.py \
+	  tools/nicetap.py font/gen_font.py
 
 clean:
 	rm -rf zig-out .zig-cache zig-pkg dist test/*.out

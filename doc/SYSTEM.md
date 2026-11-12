@@ -621,7 +621,7 @@ X is the value on the top of the stack, Y the value below it, and the depth the 
 | `0xFFFFFF89` | `FPU_X_HI` | bits 63..32 of X | sets bits 63..32 of X to this word, and keeps bits 31..0 |
 | `0xFFFFFF8A` | `FPU_X_S` | X rounded to binary32 | pushes this binary32 value, converted to binary64, which is exact |
 | `0xFFFFFF8B` | `FPU_X_W` | X as a signed 32-bit integer, rounded toward zero and saturated | pushes this signed 32-bit integer, converted to binary64, which is exact |
-| `0xFFFFFF8C` | `FPU_CMD` | `BUSY` in bit 31, and 0 in bits 30..0, without a wait | runs the command (§11.3) |
+| `0xFFFFFF8C` | `FPU_CMD` | 0 | runs the command (§11.3) |
 | `0xFFFFFF8D` | `FPU_STATUS` | the depth, the flags, and the class of X (§11.2) | sets the flags to bits 11..8 of the value written |
 | `0xFFFFFF8E` | `FPU_REL` | Y compared with X: `0xFFFFFFFF` (−1) if Y < X, 0 if Y = X, 1 if Y > X, and 2 if either is a NaN | is ignored |
 | `0xFFFFFF8F` | | 0 | is ignored |
@@ -633,7 +633,7 @@ X is the value on the top of the stack, Y the value below it, and the depth the 
 - **Through `FPU_X_W`.** A read gives X rounded toward zero, `0x7FFFFFFF` for a larger X, `0x80000000` for a smaller X, and 0 for a NaN. This is wasm's `i32.trunc_sat_f64_s`. The class of X (§11.2) says whether it fits.
 - **`FPU_REL`** compares as IEEE 754 does, so −0 = +0, and a NaN is unordered with every value. A missing Y or X is the canonical NaN (§11.4), so an empty stack reads 2.
 - **An empty stack** reads as the canonical NaN, `0x7FF80000_00000000`, through `FPU_X_LO` and `FPU_X_HI`.
-- **Waiting.** A command may take many cycles. While it runs, every access to the FPU waits until it ends, but for a read of `FPU_CMD`, which returns `BUSY` at once. So software never needs to wait for a result, and reads the same values in the emulator and on the FPGA. In the emulator a command takes no time, and `BUSY` reads 0. A program that polls `BUSY` therefore sees different values in the two, and the tests that compare the cores with the emulator do not read it.
+- **Waiting.** A command may take many cycles. While it runs, every access to the FPU waits until it ends. So software never needs to wait for a result, and no value read depends on time: a program reads the same values in the emulator, where a command takes no time, and on the FPGA.
 - Reset sets the depth to 0 and the flags to 0.
 
 ### 11.2 Status
@@ -680,7 +680,7 @@ A command on two values takes Y and X, pops both, and pushes the result. Y is th
 | Number | Name | What it does |
 |---|---|---|
 | `0x00` | `NOP` | Nothing. |
-| `0x01` | `CLEAR` | Sets the depth to 0. The flags stay. |
+| `0x01` | `CLEAR n` | Sets the depth to 0. With n = 0 the flags stay, and with n = 1 they are cleared too. |
 | `0x02` | `DUP` | Pushes a copy of X. |
 | `0x03` | `DROP n` | Pops n values, and 1 for n = 0. Popping more values than there are pops all, and sets the stack fault. |
 | `0x04` | `SWAP` | Exchanges X and Y. |
@@ -702,6 +702,8 @@ A command on two values takes Y and X, pops both, and pushes the result. Y is th
 | `0x18` | `MAX` | The larger of Y and X. |
 | `0x19` | `ROUND32` | X rounded to binary32, as a binary64 value. |
 | `0x1A` | `ISQRT` | ⌊√X⌋, exact. |
+| `0x1B` | `SIGN` | −1, 0, or 1, by the sign of X. A zero gives +0, and a NaN the canonical NaN. |
+| `0x1C` | `CMP n` | Pops Y and X, and pushes −1 if the relation of Y to X is in n, and 0 if not. n is a mask: bit 0 for Y < X, bit 1 for Y = X, and bit 2 for Y > X. A NaN makes every relation false, gives 0, and sets the invalid flag. |
 
 - **S.** With bit 16 set, `ADD`, `SUB`, `MUL`, `DIV`, and `SQRT` round their binary64 result to binary32, as `ROUND32` does, and push that. For binary32 operands that is the correctly rounded binary32 result, because 53 ≥ 2 · 24 + 2. So a binary32 computation keeps its intermediate results on the stack and gets wasm's results, with no excess precision. The overflow flag is set when the rounding to binary32 makes an infinity.
 - **`NEG` and `ABS`** change the sign bit only, of a NaN too, and set no flag. They, the stack commands, and the writes of `FPU_X_LO` and `FPU_X_HI` keep the bits of a NaN. Every other command that makes a NaN makes the canonical NaN, `0x7FF80000_00000000`, which is RISC-V's rule.
@@ -724,6 +726,23 @@ A command on two values takes Y and X, pops both, and pushes the result. Y is th
 - `FLOOR`, `CEIL`, `TRUNC`, and `NEAREST` keep the sign of a zero, and give a zero of the sign of X where the result is zero. A NaN gives the canonical NaN.
 - `FTOI` and `FTOU` saturate a value out of range to the largest or the smallest integer, and give 0 for a NaN, and set the invalid flag for both. That is wasm's `trunc_sat`, with the flag for its `trunc`.
 - A signed 32-bit integer converts both ways through `FPU_X_W`, with no command. An unsigned one is pushed by a write of `FPU_X_LO` and `UTOF`. A 64-bit one is pushed by writes of `FPU_X_LO` and `FPU_X_HI`, and `ITOF` or `UTOF`.
+
+**Words.** These are BASIC's operators on whole numbers. Each operand is rounded toward zero, and must then fit a signed 32-bit integer, as bit 21 of the class says (§11.2). An operand that does not fit, or a NaN, gives the canonical NaN and sets the invalid flag. The result is a signed 32-bit integer as a binary64 value, which is exact.
+
+| Number | Name | What it does |
+|---|---|---|
+| `0x60` | `AND` | Y AND X, bit by bit. |
+| `0x61` | `OR` | Y OR X, bit by bit. |
+| `0x62` | `XOR` | Y XOR X, bit by bit. |
+| `0x63` | `NOT` | The bits of X inverted, that is −X − 1. |
+| `0x64` | `SHL` | Y shifted left by X bits. |
+| `0x65` | `SHR` | Y shifted right by X bits, with 0 shifted in, as a 32-bit word. |
+| `0x66` | `IDIV` | Y / X, rounded toward zero. |
+| `0x67` | `MOD` | The remainder of `IDIV`, with the sign of Y, so Y = Q · X + R. |
+
+- For `SHL` and `SHR`, a shift by 32 or more gives 0, as the processor's shifts do (ISA.md §5.2). A negative count gives the canonical NaN and sets the invalid flag.
+- `IDIV` and `MOD` by 0 give the canonical NaN and set the invalid flag. `IDIV` of −2³¹ by −1 is 2³¹, which a binary64 value holds. The datapath does them as `DIV` and `TRUNC`, which is exact for 32-bit operands, as #161 shows.
+- With BASIC's tokens equal to the command numbers, every operator of BASIC is one write of `FPU_CMD`.
 
 **Constants.**
 
@@ -756,8 +775,9 @@ A multiplication by a reciprocal, such as `CONST 9` and `MUL`, is much faster th
 - For both, an X that is a NaN or not whole gives the canonical NaN and sets the invalid flag. An infinite X counts as ±650 for `SCALE10`, and as ±2100 for `SCALE2`, which give the same results as the infinity would, but for 0 · ∞, which is 0.
 - **`SCALE10`'s sequence.** Let k = |X|, at most 650. Beyond that every finite nonzero Y overflows or underflows anyway.
   - If k ≤ 22, the result is Y · 10^k for X ≥ 0 and Y / 10^k for X < 0, rounded once, since 10^k is exact in binary64.
-  - If k > 22, r starts as Y. For each bit i of k, from bit 0 to bit 8, if the bit is 1, r becomes r · T(i) for X > 0, or r / T(i) for X < 0, rounded, where T(i) is the binary64 value nearest 10^(2^i). Bit 9 of k applies T(8) twice. The result is r.
-  - Within k ≤ 22 the result is correctly rounded. Beyond, the error has a bound that this section will state once it is proven, for results that are normal. On samples it reached 3.3 ulp. Constants that BASIC reads keep their typed digits beside the value, so they do not rest on it (MJoergen/NiceMonMEGA65#54).
+  - If k > 22, the sequence computes in pairs of binary64 values, a high and a low part, whose sum carries about 106 bits. The table holds 10^(2^i) for X > 0, and 10^(−2^i) for X < 0, for i from 0 to 8, each as such a pair. r starts as the pair (Y, 0). For each bit i of k, from bit 0 to bit 8, if the bit is 1, r becomes r times the pair of bit i. Bit 9 of k applies the pair of bit 8 twice. The result is the high part plus the low part, rounded once.
+  - A product of two pairs is Dekker's: the high parts' product, rounded, and its exact error, which the datapath has as the low half of its multiplier's product, plus the cross products, and then a renormalization. The emulator gets the exact error from `fma`. The exact steps will be listed here with the Python reference.
+  - Within k ≤ 22 the result is correctly rounded. Beyond, the error has a bound that this section will state once it is proven, for results that are normal. On the samples of #161 it was 0.500 ulp, against 3.3 ulp with single binary64 values.
 
 **Decimal digits.**
 
@@ -766,7 +786,7 @@ A multiplication by a reciprocal, such as `CONST 9` and `MUL`, is much faster th
 | `0x3A` | `DIGITS n` | Pops X, and pushes the first n decimal digits of \|X\| in BCD, then their decimal exponent e. |
 | `0x3B` | `FROMBCD` | The 64 bits of X are 16 digits in BCD, and X becomes their value, rounded once. |
 
-- **`DIGITS n`**, for n from 1 to 15, is the step from a value to its printed form, as Forth's `REPRESENT`. After it, X is the exponent e, a whole number, and Y holds the digits d₁ to dₙ, with d₁ in bits 63..60 and each next digit in the next 4 bits, and 0 in the bits after dₙ. Then |X| ≈ d₁.d₂…dₙ · 10^e. D, the digits as a whole number, is `NEAREST` of `SCALE10` of |X| by n − 1 − e, and e is the largest whole number for which D ≥ 10^(n−1). The sign of X is not among the digits: the class of X has it before the command.
+- **`DIGITS n`**, for n from 1 to 15, is the step from a value to its printed form, as Forth's `REPRESENT`. After it, X is the exponent e, a whole number, and Y holds the digits d₁ to dₙ, with d₁ in bits 63..60 and each next digit in the next 4 bits, and 0 in the bits after dₙ. Then |X| ≈ d₁.d₂…dₙ · 10^e. Read as a 16-digit whole number by `FROMBCD`, Y is |X| · 10^(15 − e), and exactly so for n ≤ 15, since that number is D · 10^(16 − n) = 2^(16 − n) · D · 5^(16 − n), and D · 5^(16 − n) < 2^53. So `FROMBCD` and then `SCALE10` by e − 15 is the inverse of `DIGITS`, and only `SCALE10` rounds. BASIC keeps the typed digits of a constant in this format, so that `PRINT`, `STR$`, and `LIST` share one routine that writes digits. D, the digits as a whole number, is `NEAREST` of `SCALE10` of |X| by n − 1 − e, and e is the largest whole number for which D ≥ 10^(n−1). The sign of X is not among the digits: the class of X has it before the command.
 - An X of zero gives the digits 0 and e = 0. An infinite X or a NaN, and an n of 0 or above 15, give the canonical NaN for both and set the invalid flag.
 - **`FROMBCD`** reads d₁ in bits 63..60 as the most significant digit, so a whole number of up to 16 digits is its own BCD, right-aligned. A digit above 9 gives the canonical NaN and sets the invalid flag. With `SCALE10`, it reads a decimal number: the digits, then the exponent, then `SCALE10`.
 - 15 digits come back. A constant of up to 15 digits, read and printed with 15 digits, gives the same digits while each conversion is within 1.126 ulp. 17 digits would be needed to read back every binary64 value, and the datapath does not have the width for them.
@@ -811,8 +831,8 @@ The fault is a flag for a bug, and not a way to a deeper stack.
 ### 11.5 Rules for programs
 
 - **Calls.** A routine may use 8 values of the stack, and leaves the depth as it found it. So a caller may keep up to 8 values on the stack across a call. [ABI.md](../runtime/ABI.md) takes this rule with nicewasm's use of the FPU.
-- **Interrupts.** An interrupt service routine does not use the FPU. Its state is up to 16 values, the depth, and the flags, which is far more than the math unit's operands.
-- **Time.** In phase 1 the longest commands are the decimal ones. `SCALE10` beyond k = 22 takes up to 11 divides, and `DIGITS n` searches for e with it, so it may take some 2000 cycles, and an interrupt waits for it. The FPGA implementation states its figure. The bound is to be settled before phase 2 (#162). `ADD`, `SUB`, and `MUL` take a few cycles, and `DIV`, `SQRT`, and `ISQRT` some 60, so the sequences multiply by the constants of `CONST` where a correctly rounded quotient is not needed.
+- **Interrupts.** An interrupt service routine does not use the FPU. Its state is up to 16 values, the depth, and the flags, which is far more than the math unit's operands. This rule goes if #162 removes the interrupts.
+- **Time.** In phase 1 the longest commands are the decimal ones. `DIGITS n` runs `SCALE10` more than once, so it may take some thousands of cycles, some tens of microseconds at 100 MHz. An interrupt, and the pause and the step of the debug link, wait for it. The FPGA implementation states its figure. `ADD`, `SUB`, and `MUL` take a few cycles, and `DIV`, `SQRT`, and `ISQRT` some 60, so the sequences multiply by the constants of `CONST` where a correctly rounded quotient is not needed.
 - **The emulator** computes with the host's binary64 values, and gives the same bits as the FPGA implementation, since the operations are IEEE 754's and the sequences are part of this section. With `--no-fpu`, the eight words are ordinary memory, and a program translated with nicewasm's `--no-fpu` calls the float library instead.
 
 To add two binary32 values in R1 and R2, and leave the binary32 sum in R3 and the stack as it was:

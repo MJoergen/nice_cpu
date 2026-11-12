@@ -628,6 +628,7 @@ X is the value on the top of the stack, Y the value below it, and the depth the 
 
 - **A read has no side effect.** It changes neither the stack nor the flags, so a memory dump of the I/O range changes nothing. Only a command pops. The values read depend only on X and Y, as the math unit's results depend only on its operands.
 - **A push is two writes:** `FPU_X_LO` then `FPU_X_HI`. A write of `FPU_X_LO` alone pushes an unsigned 32-bit integer as raw bits, which the command `UTOF` (§11.3) then converts. A write of `FPU_X_HI` changes X in place, so no half of a value waits outside the stack, and an error between the two writes leaves a whole value behind.
+- **A write sets no flag** but the stack fault (§11.4): a push onto 16 values, or a write of `FPU_X_HI` on an empty stack. Invalid, division by zero, and overflow are never set by a write, so a signaling NaN pushed through any of the four views sets no flag.
 - **Through `FPU_X_S`.** A read rounds X to binary32 to nearest, ties to even, with subnormals. A NaN reads `0x7FC00000`. A value too large reads as an infinity of its sign. A write of a binary32 NaN pushes the canonical NaN.
 - **Through `FPU_X_W`.** A read gives X rounded toward zero, `0x7FFFFFFF` for a larger X, `0x80000000` for a smaller X, and 0 for a NaN. This is wasm's `i32.trunc_sat_f64_s`. The class of X (§11.2) says whether it fits.
 - **`FPU_REL`** compares as IEEE 754 does, so −0 = +0, and a NaN is unordered with every value. A missing Y or X is the canonical NaN (§11.4), so an empty stack reads 2.

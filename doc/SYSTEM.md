@@ -701,9 +701,11 @@ A command on two values takes Y and X, pops both, and pushes the result. Y is th
 | `0x17` | `MIN` | The smaller of Y and X. |
 | `0x18` | `MAX` | The larger of Y and X. |
 | `0x19` | `ROUND32` | X rounded to binary32, as a binary64 value. |
+| `0x1A` | `ISQRT` | ⌊√X⌋, exact. |
 
 - **S.** With bit 16 set, `ADD`, `SUB`, `MUL`, `DIV`, and `SQRT` round their binary64 result to binary32, as `ROUND32` does, and push that. For binary32 operands that is the correctly rounded binary32 result, because 53 ≥ 2 · 24 + 2. So a binary32 computation keeps its intermediate results on the stack and gets wasm's results, with no excess precision. The overflow flag is set when the rounding to binary32 makes an infinity.
 - **`NEG` and `ABS`** change the sign bit only, of a NaN too, and set no flag. They, the stack commands, and the writes of `FPU_X_LO` and `FPU_X_HI` keep the bits of a NaN. Every other command that makes a NaN makes the canonical NaN, `0x7FF80000_00000000`, which is RISC-V's rule.
+- **`ISQRT`** is the whole part of the exact square root, for any X ≥ 0, whole or not. `SQRT` and then `FLOOR` is not: for X = n² − 1 with n above about 2^26, `SQRT` rounds up to n. `ISQRT` takes the square root rounded toward zero, whose whole part is exact, so it takes the time of `SQRT` and saves the `FLOOR`. A negative X, but −0, gives the canonical NaN and sets the invalid flag, as `SQRT` does.
 - **`MIN` and `MAX`** are wasm's: a NaN operand gives the canonical NaN, and −0 is less than +0.
 
 **Whole numbers and integers.**
@@ -729,18 +731,20 @@ A command on two values takes Y and X, pops both, and pushes the result. Y is th
 |---|---|---|
 | `0x30` | `CONST n` | Pushes entry n of the constant table. |
 
-| n | Value |
-|---|---|
-| 0 | 0 |
-| 1 | 1 |
-| 2 | 10 |
-| 3 | π |
-| 4 | e |
-| 5 | ln 2 |
-| 6 | ln 10 |
-| 7 | log₁₀ 2 |
+| n | Value | n | Value |
+|---|---|---|---|
+| 0 | 0 | 8 | 1/π |
+| 1 | 1 | 9 | 1/10 |
+| 2 | 10 | 10 | π/2 |
+| 3 | π | 11 | 2π |
+| 4 | e | 12 | log₂ e = 1/ln 2 |
+| 5 | ln 2 | 13 | log₁₀ e = 1/ln 10 |
+| 6 | ln 10 | 14 | log₂ 10 |
+| 7 | log₁₀ 2 | 15 | √2 |
 
-Each entry is the binary64 value nearest the number. An n above 7 is reserved: it pushes the canonical NaN and sets the invalid flag.
+Each entry is the binary64 value nearest the number. An n above 15 is reserved for more constants: it pushes the canonical NaN and sets the invalid flag.
+
+A multiplication by a reciprocal, such as `CONST 9` and `MUL`, is much faster than `DIV` (§11.5), but it rounds twice, so it is not always the correctly rounded quotient: 3 · 0.1 is 0.30000000000000004, where 3 / 10 is the binary64 value nearest 0.3.
 
 **Exponents.**
 
@@ -767,7 +771,33 @@ Each entry is the binary64 value nearest the number. An n above 7 is reserved: i
 - **`FROMBCD`** reads d₁ in bits 63..60 as the most significant digit, so a whole number of up to 16 digits is its own BCD, right-aligned. A digit above 9 gives the canonical NaN and sets the invalid flag. With `SCALE10`, it reads a decimal number: the digits, then the exponent, then `SCALE10`.
 - 15 digits come back. A constant of up to 15 digits, read and printed with 15 digits, gives the same digits while each conversion is within 1.126 ulp. 17 digits would be needed to read back every binary64 value, and the datapath does not have the width for them.
 
-**Functions, phase 2.** The numbers `0x40` to `0x46` are reserved for `SIN`, `COS`, `TAN`, `ATAN`, `LN`, `EXP`, and `POW`. Until then they are undefined, and set the invalid flag. Their sequences, from fdlibm, and their bounds will be part of this section. `POW` will square and multiply for a whole X within a bound.
+**Functions, phase 2.** The numbers `0x40` to `0x5F` are reserved for the functions. Until phase 2 they are undefined, and set the invalid flag. Their sequences and their bounds will be part of this section, from fdlibm where it has the function. Each is a sequence of the commands above on the same datapath, with constants from the same ROM, and changes X and Y only as the table says.
+
+| Number | Name | What it gives |
+|---|---|---|
+| `0x40` | `SIN` | sin X |
+| `0x41` | `COS` | cos X |
+| `0x42` | `TAN` | tan X |
+| `0x43` | `ASIN` | arcsin X |
+| `0x44` | `ACOS` | arccos X |
+| `0x45` | `ATAN` | arctan X |
+| `0x46` | `ATAN2` | the angle of the point (X, Y), from −π to π, which is arctan(Y / X) in the right quadrant, as C's `atan2(Y, X)` |
+| `0x48` | `LN` | ln X |
+| `0x49` | `LOG2` | log₂ X |
+| `0x4C` | `EXP` | e^X |
+| `0x4D` | `POW2` | 2^X |
+| `0x4E` | `POW` | Y^X |
+| `0x4F` | `HYPOT` | √(Y² + X²), without an overflow or an underflow on the way |
+| `0x50` | `SINH` | sinh X |
+| `0x51` | `COSH` | cosh X |
+| `0x52` | `TANH` | tanh X |
+| `0x53` | `ASINH` | arsinh X |
+| `0x54` | `ACOSH` | arcosh X |
+| `0x55` | `ATANH` | artanh X |
+
+- `ATAN2`, `POW`, and `HYPOT` take Y and X, pop both, and push the result. The others replace X.
+- `POW` squares and multiplies for a whole X within a bound. `POW2` of a whole X is `SCALE2` of 1, and exact.
+- The numbers between are kept for more functions, such as `LOG10`.
 
 ### 11.4 Stack faults
 
@@ -782,7 +812,7 @@ The fault is a flag for a bug, and not a way to a deeper stack.
 
 - **Calls.** A routine may use 8 values of the stack, and leaves the depth as it found it. So a caller may keep up to 8 values on the stack across a call. [ABI.md](../runtime/ABI.md) takes this rule with nicewasm's use of the FPU.
 - **Interrupts.** An interrupt service routine does not use the FPU. Its state is up to 16 values, the depth, and the flags, which is far more than the math unit's operands.
-- **Time.** In phase 1 the longest commands are the decimal ones. `SCALE10` beyond k = 22 takes up to 11 divides, and `DIGITS n` searches for e with it, so it may take some 2000 cycles, and an interrupt waits for it. The FPGA implementation states its figure. The bound is to be settled before phase 2 (#162).
+- **Time.** In phase 1 the longest commands are the decimal ones. `SCALE10` beyond k = 22 takes up to 11 divides, and `DIGITS n` searches for e with it, so it may take some 2000 cycles, and an interrupt waits for it. The FPGA implementation states its figure. The bound is to be settled before phase 2 (#162). `ADD`, `SUB`, and `MUL` take a few cycles, and `DIV`, `SQRT`, and `ISQRT` some 60, so the sequences multiply by the constants of `CONST` where a correctly rounded quotient is not needed.
 - **The emulator** computes with the host's binary64 values, and gives the same bits as the FPGA implementation, since the operations are IEEE 754's and the sequences are part of this section. With `--no-fpu`, the eight words are ordinary memory, and a program translated with nicewasm's `--no-fpu` calls the float library instead.
 
 To add two binary32 values in R1 and R2, and leave the binary32 sum in R3 and the stack as it was:

@@ -789,9 +789,20 @@ A multiplication by a reciprocal, such as `CONST 9` and `MUL`, is much faster th
 - For both, an X that is a NaN or not whole gives the canonical NaN and sets the invalid flag. An infinite X counts as ±650 for `SCALE10`, and as ±2100 for `SCALE2`, which give the same results as the infinity would, but for 0 · ∞, which is 0.
 - **`SCALE10`'s sequence.** Let k = |X|, at most 650. Beyond that every finite nonzero Y overflows or underflows anyway.
   - If k ≤ 22, the result is Y · 10^k for X ≥ 0 and Y / 10^k for X < 0, rounded once, since 10^k is exact in binary64.
-  - If k > 22, the sequence computes in pairs of binary64 values, a high and a low part, whose sum carries about 106 bits. The table holds 10^(2^i) for X > 0, and 10^(−2^i) for X < 0, for i from 0 to 8, each as such a pair. r starts as the pair (Y, 0). For each bit i of k, from bit 0 to bit 8, if the bit is 1, r becomes r times the pair of bit i. Bit 9 of k applies the pair of bit 8 twice. The result is the high part plus the low part, rounded once.
-  - A product of two pairs is Dekker's: the high parts' product, rounded, and its exact error, which the datapath has as the low half of its multiplier's product, plus the cross products, and then a renormalization. The emulator gets the exact error from `fma`. The exact steps will be listed here with the Python reference.
-  - Within k ≤ 22 the result is correctly rounded. Beyond, the error has a bound that this section will state once it is proven, for results that are normal. On the samples of #161 it was 0.500 ulp, against 3.3 ulp with single binary64 values.
+  - If k > 22, the sequence computes in pairs of binary64 values, a high and a low part, whose sum carries about 106 bits. The table holds 10^(2^i) for X > 0, and 10^(−2^i) for X < 0, for i from 0 to 8, each as such a pair: the high part is the binary64 value nearest the power, and the low part the binary64 value nearest the power minus the high part. r starts as the pair (Y, 0). For each bit i of k, from bit 0 to bit 8, if the bit is 1, r becomes r times the pair of bit i. Then, if bit 9 of k is 1, r is multiplied by the pair of bit 8 twice. The result is the high part plus the low part, rounded once.
+  - A product of two pairs is Dekker's: the high parts' product, rounded, and its exact error, which the datapath has as the low half of its multiplier's product, plus the cross products, and then a renormalization. The emulator gets the exact error from `fma`. For the pairs (a_h, a_l) and (b_h, b_l), each step is one binary64 operation, rounded to nearest, ties to even:
+
+    | Step | |
+    |---|---|
+    | p = a_h · b_h | The high parts' product. If p is infinite, the product is (p, 0), and the result is that infinity. |
+    | e = fma(a_h, b_h, −p) | Its error, exact while p is normal. |
+    | e = e + a_h · b_l | |
+    | e = e + a_l · b_h | a_l · b_l is left out. |
+    | h = p + e | If h is infinite, the product is (h, 0). |
+    | l = e − (h − p) | |
+
+    The product is (h, l). `emulator/test/fpu_model.py` computes the same steps exactly, and is the reference.
+  - Within k ≤ 22 the result is correctly rounded. Beyond, the error has a bound that this section will state once it is proven, for results that are normal. On the samples of the model's test it was below 0.5 ulp, but for results near 10^−307, where the low parts are subnormal and the errors of the steps are no longer exact: up to 0.63 ulp there. With single binary64 values it was 3.3 ulp (#161).
 
 **Decimal digits.**
 

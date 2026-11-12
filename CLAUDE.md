@@ -88,6 +88,7 @@ library, a wasm translator, and two FPGA cores. See README.md.
     cd emulator  && make typecheck   # mypy --strict
     cd emulator  && make bincheck    # fail if a probe .bin is stale
     cd emulator  && make bins        # reassemble test/*.bin after editing a probe .nasm
+    cd emulator  && make fpu-long    # the FPU's vectors with a million random accesses, SEED=1
     cd emulator  && make window-test # build with -Dwindow (SDL from source), run test/window.py headless
     cd debugger  && make test        # test/errors.py, then test/link.py: the link, the loader, and nicedbg's commands on niceemu --link
     cd debugger  && make typecheck   # mypy --strict

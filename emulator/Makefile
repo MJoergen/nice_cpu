@@ -102,6 +102,13 @@ test: build bincheck fmtcheck
 	@$(MAKE) --no-print-directory programs
 	@NICEEMU=$(abspath $(EMU)) $(PYTHON) test/errors.py
 	@$(PYTHON) test/fpu_model_test.py
+	@$(PYTHON) test/fpu_vectors.py
+
+# The FPU's vectors with a long random sequence, from the seed SEED.
+SEED ?= 1
+COUNT ?= 1000000
+fpu-long:
+	$(PYTHON) test/fpu_vectors.py --seed $(SEED) --count $(COUNT)
 
 # The example and probe programs, and the debug link, on the niceemu of
 # EMU. errors.py is apart, as it expects a build without the window.
@@ -190,10 +197,10 @@ bincheck:
 
 # Needs mypy (pip install mypy).
 typecheck:
-	$(PYTHON) -m mypy --strict test/errors.py test/link.py test/udp.py test/tap.py test/window.py test/fpu_model.py test/fpu_model_test.py \
+	$(PYTHON) -m mypy --strict test/errors.py test/link.py test/udp.py test/tap.py test/window.py test/fpu_model.py test/fpu_model_test.py test/fpu_vectors.py \
 	  tools/nicetap.py font/gen_font.py
 
 clean:
 	rm -rf zig-out .zig-cache zig-pkg dist test/*.out
 
-.PHONY: test programs dist build window window-test bins bincheck fmtcheck typecheck clean
+.PHONY: test fpu-long programs dist build window window-test bins bincheck fmtcheck typecheck clean

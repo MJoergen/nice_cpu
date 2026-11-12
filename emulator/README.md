@@ -36,6 +36,7 @@ Both are built for the baseline x86_64 CPU, with ReleaseSafe, as
     make window   # build it with the window of --window
     make window-test  # build it so, and run test/window.py
     make dist     # the files of Download, in dist/
+    make fpu-long # the FPU's vectors with a random sequence of a million accesses
 
 `make window` builds niceemu with `zig build -Dwindow`. The window uses
 [SDL 3](https://libsdl.org), which the build fetches from
@@ -701,6 +702,24 @@ a wider format; and in exact arithmetic, the constants against
 `decimal`, `ISQRT` against `math.isqrt`, `SCALE10`, and constants of 15
 digits through `FROMBCD`, `SCALE10`, and `DIGITS 15`, which must come
 back.
+
+`test/fpu_vectors.py` writes the FPU's test vectors from the model, one
+line for each access: the state before it, the access, and the state
+after it, with the value a read returns. The state is the flags and the
+whole stack, so each line stands alone. Its docstring gives the format.
+Some 28000 lines are directed, by group: the registers, every command
+number and the words that are not valid, every command at the depths
+0, 1, 2, 15, and 16, the special values each with each, the rounding,
+the conversions, and the decimal commands. A random sequence from a seed
+adds 20000 more, in which the depth and the faults take part. The
+coverage counts bins: the class of each operand of each command, the
+rounding case, exact, down, up, or a tie, the class of the result, and
+the flags each command sets. `make test` runs it, and it fails if a bin
+that can occur is empty, if a command sets a flag that its row of
+`FLAGS` does not allow, or if a line does not parse back and replay on
+the model. With `-o FILE` it writes the vectors, which the emulator,
+`tb_fpu`, and the cores are to replay. `make fpu-long` runs a million
+random accesses, from `SEED`, 1 by default.
 
 `test/cputest.nasm` is a self-checking test of the whole instruction set:
 every opcode, shift, addressing mode, and condition, the flags, R0, R14, and

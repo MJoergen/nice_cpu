@@ -642,10 +642,10 @@ X is the value on the top of the stack, Y the value below it, and the depth the 
 |---|---|
 | 4..0 | The depth, 0 to 16. |
 | 7..5 | 0. |
-| 8 | Invalid: a NaN made from operands that are not NaNs, a signaling NaN as an operand, a conversion out of range, or an unknown command. |
+| 8 | Invalid: a NaN made from operands that are not NaNs, a signaling NaN as an operand, a conversion out of range, or a command word that is not valid (§11.3). |
 | 9 | Division by zero: an infinity made from finite operands by `DIV` of a nonzero value by zero, or by a function of phase 2 at a pole, such as `LN` of 0. |
 | 10 | Overflow: an infinity made from finite operands by rounding. |
-| 11 | Stack fault: a push onto 16 values, or a missing operand (§11.4). |
+| 11 | Stack fault: a push onto 16 values, or a pop or a copy of a value that is not there (§11.4). |
 | 15..12 | 0. |
 | 16 | X is negative: its sign bit, for a NaN too. |
 | 17 | X is zero. |
@@ -671,7 +671,14 @@ A command is a word written to `FPU_CMD`:
 | 16 | S: round the result to binary32, for `ADD`, `SUB`, `MUL`, `DIV`, and `SQRT`, and 0 for the others. |
 | 31..17 | 0. |
 
-A command with a number of the table below that is not defined, with bits 31..17 not 0, or with S set where it does not apply, sets the invalid flag and changes nothing else.
+A command word sets the invalid flag and changes nothing else in four cases:
+
+- Its number is not defined in the tables below.
+- Bits 31..17 are not 0.
+- S is set where it does not apply.
+- A bit of n is set that the command does not use. `PICK`, `DROP`, `CONST`, and `DIGITS` use all eight bits of n, `CMP` uses bits 2..0, `CLEAR` uses bit 0, and the other commands use none. So `ADD` with n = 5, `CMP 8`, and `CLEAR 2` set the invalid flag and do nothing more.
+
+The bits that a command does not use are kept for later use. An n within the bits of its command that names nothing, such as `CONST 16` or `DIGITS 0`, is not among these cases: it has the rule of its command.
 
 A command on two values takes Y and X, pops both, and pushes the result. Y is the left operand: `SUB` is Y − X, and `DIV` is Y / X. That is the order of an RPN calculator and of Forth. A command on one value replaces X with its result.
 
@@ -701,14 +708,18 @@ A command on two values takes Y and X, pops both, and pushes the result. Y is th
 | `0x17` | `MIN` | The smaller of Y and X. |
 | `0x18` | `MAX` | The larger of Y and X. |
 | `0x19` | `ROUND32` | X rounded to binary32, as a binary64 value. |
-| `0x1A` | `ISQRT` | ⌊√X⌋, exact. |
+| `0x1A` | `ISQRT` | √X rounded toward zero, and then `TRUNC` of it. That is ⌊√X⌋, exact, for X < 2^106. |
 | `0x1B` | `SIGN` | −1, 0, or 1, by the sign of X. A zero gives +0, and a NaN the canonical NaN. |
 | `0x1C` | `CMP n` | Pops Y and X, and pushes −1 if the relation of Y to X is in n, and 0 if not. n is a mask: bit 0 for Y < X, bit 1 for Y = X, and bit 2 for Y > X. A NaN makes every relation false, gives 0, and sets the invalid flag. |
 | `0x1D` | `FMOD` | The remainder of Y / X with the sign of Y, exact: Y − T · X, where T is the exact quotient Y / X rounded toward zero. It is C's `fmod`. An infinite Y or a zero X gives the canonical NaN and sets the invalid flag. |
 
 - **S.** With bit 16 set, `ADD`, `SUB`, `MUL`, `DIV`, and `SQRT` round their binary64 result to binary32, as `ROUND32` does, and push that. For binary32 operands that is the correctly rounded binary32 result, because 53 ≥ 2 · 24 + 2. So a binary32 computation keeps its intermediate results on the stack and gets wasm's results, with no excess precision. The overflow flag is set when the rounding to binary32 makes an infinity.
 - **`NEG` and `ABS`** change the sign bit only, of a NaN too, and set no flag. They, the stack commands, and the writes of `FPU_X_LO` and `FPU_X_HI` keep the bits of a NaN. Every other command that makes a NaN makes the canonical NaN, `0x7FF80000_00000000`, which is RISC-V's rule.
-- **`ISQRT`** is the whole part of the exact square root, for any X ≥ 0, whole or not. `SQRT` and then `FLOOR` is not: for X = n² − 1 with n above about 2^26, `SQRT` rounds up to n. `ISQRT` takes the square root rounded toward zero, whose whole part is exact, so it takes the time of `SQRT` and saves the `FLOOR`. A negative X, but −0, gives the canonical NaN and sets the invalid flag, as `SQRT` does.
+- **`ISQRT`** is the square root of X rounded toward zero, and then `TRUNC` of that.
+  - For X < 2^106 it is the whole part of the exact square root, ⌊√X⌋, for any X ≥ 0, whole or not, since ⌊√X⌋ then fits the 53 bits of a binary64 value.
+  - From 2^106 on it is ⌊√X⌋ rounded toward zero. For X = 2^106 + 2^55, ⌊√X⌋ is 2^53 + 1, and `ISQRT` gives 2^53.
+  - `SQRT` and then `FLOOR` is not ⌊√X⌋: for X = n² − 1 with n above about 2^26, `SQRT` rounds up to n. `ISQRT` takes the time of `SQRT` and saves the `FLOOR`.
+  - The special values follow from `SQRT` and `TRUNC`: −0 gives −0, +∞ gives +∞, a NaN gives the canonical NaN, and a negative X gives the canonical NaN and sets the invalid flag.
 - **`MIN` and `MAX`** are wasm's: a NaN operand gives the canonical NaN, and −0 is less than +0.
 
 **Whole numbers and integers.**
@@ -725,11 +736,12 @@ A command on two values takes Y and X, pops both, and pushes the result. Y is th
 | `0x2A` | `FTOI` | X rounded toward zero, as a signed 64-bit integer in the bits of X. |
 | `0x2B` | `FTOU` | X rounded toward zero, as an unsigned 64-bit integer in the bits of X. |
 
-- `FLOOR`, `CEIL`, `TRUNC`, and `NEAREST` keep the sign of a zero, and give a zero of the sign of X where the result is zero. A NaN gives the canonical NaN.
+- `FLOOR`, `CEIL`, `TRUNC`, `NEAREST`, and `ROUND` keep the sign of a zero, and give a zero of the sign of X where the result is zero, so `ROUND` of −0.4 is −0. A NaN gives the canonical NaN.
+- `ROUND` is not `FLOOR` of X + 0.5: for the largest value below 0.5, that sum rounds up to 1, and `ROUND` gives 0.
 - `FTOI` and `FTOU` saturate a value out of range to the largest or the smallest integer, and give 0 for a NaN, and set the invalid flag for both. That is wasm's `trunc_sat`, with the flag for its `trunc`.
 - A signed 32-bit integer converts both ways through `FPU_X_W`, with no command. An unsigned one is pushed by a write of `FPU_X_LO` and `UTOF`. A 64-bit one is pushed by writes of `FPU_X_LO` and `FPU_X_HI`, and `ITOF` or `UTOF`.
 
-**Words.** These are BASIC's operators on whole numbers. Each operand is rounded toward zero, and must then fit a signed 32-bit integer, as bit 21 of the class says (§11.2). An operand that does not fit, or a NaN, gives the canonical NaN and sets the invalid flag. The result is a signed 32-bit integer as a binary64 value, which is exact.
+**Words.** These are BASIC's operators on whole numbers. Each operand is rounded toward zero, and must then fit a signed 32-bit integer, as bit 21 of the class says (§11.2). An operand that does not fit, or a NaN, gives the canonical NaN and sets the invalid flag. The result is a signed 32-bit integer as a binary64 value, which is exact. A result of zero is +0, whatever the signs of the operands, as an integer has one zero only.
 
 | Number | Name | What it does |
 |---|---|---|
@@ -740,10 +752,10 @@ A command on two values takes Y and X, pops both, and pushes the result. Y is th
 | `0x64` | `SHL` | Y shifted left by X bits. |
 | `0x65` | `SHR` | Y shifted right by X bits, with 0 shifted in, as a 32-bit word. |
 | `0x66` | `IDIV` | Y / X, rounded toward zero. |
-| `0x67` | `MOD` | The remainder of `IDIV`, with the sign of Y, so Y = Q · X + R. |
+| `0x67` | `MOD` | The remainder of `IDIV`, so Y = Q · X + R. A remainder that is not zero has the sign of Y. |
 
 - For `SHL` and `SHR`, a shift by 32 or more gives 0, as the processor's shifts do (ISA.md §5.2). A negative count gives the canonical NaN and sets the invalid flag.
-- `IDIV` and `MOD` by 0 give the canonical NaN and set the invalid flag. `IDIV` of −2³¹ by −1 is 2³¹, which a binary64 value holds. The datapath does them as `DIV` and `TRUNC`, which is exact for 32-bit operands, as #161 shows.
+- `IDIV` and `MOD` by 0 give the canonical NaN and set the invalid flag. `IDIV` of −2³¹ by −1 is 2³¹, which a binary64 value holds. The datapath does them as `DIV` and `TRUNC`, which is exact for 32-bit operands, as #161 shows, but for the sign of a zero: `DIV` and `TRUNC` give −0 for `IDIV` of −1 by 2, where the result is +0.
 - With BASIC's tokens equal to the command numbers, every operator of BASIC is one write of `FPU_CMD`.
 
 **Constants.**
@@ -831,10 +843,30 @@ A multiplication by a reciprocal, such as `CONST 9` and `MUL`, is much faster th
 
 ### 11.4 Stack faults
 
-- A push onto 16 values drops the deepest value, and sets the stack fault.
-- A command whose operand is missing takes the canonical NaN for it, and sets the stack fault. The values that are there are popped. So `ADD` on one value leaves one value, the canonical NaN.
+A command pops its operands, then copies, then pushes its results. A command on one value pops X and pushes its result, which replaces X. `DUP`, `OVER`, and `PICK` copy a value and pop nothing.
+
+- **A pop** of a value that is not there gives the canonical NaN for it, and sets the stack fault. The values that are there are popped.
+- **A copy** of a value that is not there is the canonical NaN, and sets the stack fault.
+- **A push** onto 16 values drops the deepest value, and sets the stack fault. A copy is taken before the push, so `PICK 15` on 16 values pushes a copy of the deepest value, and the push then drops that value.
+- **The depth** after a command is therefore max(depth − pops, 0) + pushes, and at most 16.
+- **The missing value is a NaN like any other**, and the command does with it what it does with a NaN. So `NEG` on an empty stack leaves the canonical NaN with its sign bit set, `0xFFF80000_00000000`, and `FTOI` leaves 0 and sets the invalid flag beside the stack fault.
+
+Each of these sets the stack fault:
+
+| Command | On | Leaves |
+|---|---|---|
+| `ADD` | one value | one value, the canonical NaN |
+| `NEG` | an empty stack | one value, `0xFFF80000_00000000` |
+| `DUP` | an empty stack | one value, the canonical NaN |
+| `OVER` | one value | two values: the value as Y, and the canonical NaN as X |
+| `SWAP` | one value | two values: the value as Y, and the canonical NaN as X |
+| `SWAP` | an empty stack | two values, both the canonical NaN |
+| `DROP 3` | two values | an empty stack |
+| `DIGITS 15` | 16 values | 16 values: the digits as Y and the exponent as X, with the deepest value dropped |
+
 - A write of `FPU_X_HI` on an empty stack sets the stack fault and is ignored.
 - A read never sets a flag, so a read of an empty stack only returns the canonical NaN.
+- A command word that is not valid (§11.3) changes nothing but the invalid flag, so it sets no stack fault.
 
 The fault is a flag for a bug, and not a way to a deeper stack.
 

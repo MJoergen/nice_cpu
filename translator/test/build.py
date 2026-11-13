@@ -152,7 +152,7 @@ TWICE_NASM = "_twice          ADD     R1, R1, R1\n                MOVE    R15, @
 
 def test_c_options(tmp: str) -> None:
     """-D, -I, two C files, --asm, --stack, --memory, the float library, and
-    --no-mpu give the same program; a compiler that fails, and an output
+    --no-mpu and --no-fpu give the same program; a compiler that fails, and an output
     that cannot be written, are reported."""
     src = os.path.join(tmp, "opts")
     os.makedirs(os.path.join(src, "inc"))
@@ -163,7 +163,8 @@ def test_c_options(tmp: str) -> None:
     base = ["-I", os.path.join(src, "inc"), "-D", 'NAME="hi"', "--asm", os.path.join(src, "twice.nasm"),
             os.path.join(src, "main.c"), os.path.join(src, "helper.c")]
     for name, extra in (("default", []), ("big stack", ["--stack", "8192", "--memory", "131072"]),
-                        ("no mpu", ["--no-mpu"]),
+                        ("no mpu", ["--no-mpu"]), ("no fpu", ["--no-fpu"]),
+                        ("no mpu and no fpu", ["--no-mpu", "--no-fpu"]),
                         ("trusted alignment", ["--no-bounds-checks", "--trust-alignment"]),
                         ("byte windows", ["--trust-alignment", "--byte-windows"])):
         out = os.path.join(tmp, name.replace(" ", "_") + ".bin")
@@ -325,8 +326,9 @@ FLOAT_C = "int main(void) { volatile float f = 3; return (int)(f * 1.5f); }\n"
 def test_rom(tmp: str, lang: str) -> None:
     """A program built with --ram, for code that runs from a ROM, runs
     from the image at 0 with its words in RAM at 0xFFFFF000, below the
-    stack, and leaves every word of the image as it was. In C, a program
-    that uses floats is an error."""
+    stack, and leaves every word of the image as it was. In C, so does a
+    program that uses floats, whose library uses the FPU; with --no-fpu,
+    whose library keeps its words in the image, that is an error."""
     what = {"c": "C", "zig": "Zig", "rs": "Rust"}[lang] + " for a ROM"
     if lang == "c":
         source = os.path.join(tmp, "rom.c")
@@ -346,11 +348,17 @@ def test_rom(tmp: str, lang: str) -> None:
         source = os.path.join(tmp, "float.c")
         with open(source, "w") as f:
             f.write(FLOAT_C)
-        p = build(["--ram", "0xFFFFF000", "-o", os.path.join(tmp, "float.bin"), source])
-        message = ("nicebuild: the program uses floats, and the float library keeps the words it"
-                   " writes in the image, so it cannot run from a ROM (--ram)")
+        out = os.path.join(tmp, "float_rom.bin")
+        if check_build("C with floats for a ROM", ["--ram", "0xFFFFF000", "-o", out, source], out):
+            check_run("C with floats for a ROM", run(out), 0, ["~R0  00000000 R1  00000004 .*"])
+            changed = image_changes(out)
+            if changed:
+                fail("C with floats for a ROM", f"{len(changed)} words of the image changed")
+        p = build(["--ram", "0xFFFFF000", "--no-fpu", "-o", os.path.join(tmp, "float.bin"), source])
+        message = ("nicebuild: the program uses floats, and with --no-fpu the float library keeps the"
+                   " words it writes in the image, so it cannot run from a ROM (--ram)")
         if p.returncode != 1 or message not in p.stderr.splitlines():
-            fail("C with floats for a ROM", f"exit status {p.returncode}\n{p.stderr}")
+            fail("C with floats for a ROM, --no-fpu", f"exit status {p.returncode}\n{p.stderr}")
 
 
 def test_unwritable(tmp: str) -> None:

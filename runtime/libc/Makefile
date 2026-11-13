@@ -65,11 +65,13 @@ wasm: libc.a
 	@chmod -x test/*.wasm
 
 # Each test/X.wasm is translated and joined with the start-up code,
-# lib.nasm, and muldiv_mpu.nasm, and float.nasm if the program calls one
+# lib.nasm, and muldiv_mpu.nasm, and the float library if the program calls one
 # of its routines, as nicebuild joins it: math, and every test that links
-# scanf, whose float conversions use floats. It is assembled and run, and
+# scanf, whose float conversions use floats. The float library is
+# float_fpu.nasm, which uses the FPU, and with NO_FPU=1 float.nasm. It is assembled and run, and
 # the console output, main's result in R1, and the exit status are compared with
-# test/X.expected. With KEEP=DIR, an absolute path, each test also leaves
+# test/X.expected. A test that calls the float library runs again with
+# float.nasm, and must give the same output. With KEEP=DIR, an absolute path, each test also leaves
 # its program in DIR/libc_X.bin, and its console input in DIR/libc_X.input,
 # for the tests of the FPGA core in hdl/. If test/X.core.input exists, that is
 # the input it leaves. mchess.core.input has no "perft 3", which takes 11
@@ -80,7 +82,7 @@ wasm: libc.a
 define check
 	@$(NICEWASM) -o test/$(1).out.nasm test/$(2).wasm
 	@cat $(3) test/$(1).out.nasm ../lib.nasm ../muldiv_mpu.nasm > test/$(1).full.nasm
-	@if grep -qwFf build/float.labels test/$(1).out.nasm; then cat ../float.nasm >> test/$(1).full.nasm; fi
+	@if grep -qwFf build/float.labels test/$(1).out.nasm; then cat ../$(FLOAT_LIB) >> test/$(1).full.nasm; fi
 	@$(ASM) -o test/$(1).out.bin test/$(1).full.nasm
 	@$(EMU) $(if $(wildcard test/$(2).input),--input test/$(2).input) test/$(1).out.bin < /dev/null > test/$(1).raw; echo "exit $$?" > test/$(1).status
 	$(if $(KEEP),@mkdir -p $(KEEP) && cp test/$(1).out.bin $(KEEP)/libc_$(1).bin)
@@ -89,8 +91,21 @@ define check
 	@grep -o ' $(4)' test/$(1).raw | cut -c2- >> test/$(1).out; cat test/$(1).status >> test/$(1).out
 	@if cmp -s test/$(1).out test/$(1).expected; then echo "PASS libc/$(1)"; \
 	else echo "FAIL libc/$(1)"; diff test/$(1).expected test/$(1).out; exit 1; fi
+	$(if $(NO_FPU),,@if grep -qwFf build/float.labels test/$(1).out.nasm; then \
+	  cat $(3) test/$(1).out.nasm ../lib.nasm ../muldiv_mpu.nasm ../float.nasm > test/$(1).full.nasm && \
+	  $(ASM) -o test/$(1).out.bin test/$(1).full.nasm && \
+	  { $(EMU) $(if $(wildcard test/$(2).input),--input test/$(2).input) test/$(1).out.bin < /dev/null > test/$(1).raw; \
+	    echo "exit $$?" > test/$(1).status; } && \
+	  sed '/^\(Halted\|Stopped\)/,$$d' test/$(1).raw > test/$(1).out && \
+	  { grep -o ' $(4)' test/$(1).raw | cut -c2- >> test/$(1).out; cat test/$(1).status >> test/$(1).out; } && \
+	  if cmp -s test/$(1).out test/$(1).expected; then echo "PASS libc/$(1) with float.nasm"; \
+	  else echo "FAIL libc/$(1) with float.nasm"; diff test/$(1).expected test/$(1).out; exit 1; fi; fi)
 
 endef
+
+# The float library: float_fpu.nasm, or float.nasm with NO_FPU=1, for a
+# system without the FPU, such as the FPGA cores of hdl/ for now.
+FLOAT_LIB = $(if $(NO_FPU),float.nasm,float_fpu.nasm)
 
 test: emulator
 	@$(MAKE) -s --no-print-directory -C .. float.nasm

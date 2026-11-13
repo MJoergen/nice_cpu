@@ -20,8 +20,15 @@ CORE_PROGRAMS = bench hand
 
 # float.c, the float benchmark (README.md, The float benchmark), translated
 # from float.wasm and joined with the float library. make core runs it with
-# CORE_PROGRAMS=float.
-FLOAT_LIB = ../runtime/float.nasm
+# CORE_PROGRAMS=float. The float library is ../runtime/float_fpu.nasm,
+# which uses the FPU of SYSTEM.md §11, or with NO_FPU=1 float.nasm, in
+# software.
+FLOAT_LIB = ../runtime/$(if $(NO_FPU),float.nasm,float_fpu.nasm)
+
+# The FPGA cores of hdl/ have no FPU yet. So the runs on a core take
+# their programs from CORE_BUILD, built with NO_FPU=1 by a make of its
+# own, as the files of the two builds have the same names.
+CORE_BUILD = $(BUILD)/nofpu
 
 # Dhrystone 2.1, ported in dhrystone/ (README.md, Dhrystone), and its
 # console input, the number of runs. The 1988 C of its sources is compiled
@@ -74,7 +81,7 @@ coremark: $(BUILD)/coremark.bin emulator
 # The same, and checks that every phase has its expected result, that main
 # returns 0 in R1, and that the expected values in bench.c, hand.nasm, and
 # simple.nasm are those of expected.py, and those in float.c are those of
-# floatexpected.py.
+# floatexpected.py. float.c runs with both float libraries.
 define check
 	@$(EMU) $(BUILD)/$(1).bin < /dev/null > $(BUILD)/$(1).out; sed '/^Halted/,$$d' $(BUILD)/$(1).out
 	@if grep -q ' R1  00000000 ' $(BUILD)/$(1).out && ! grep -q FAIL $(BUILD)/$(1).out; \
@@ -83,7 +90,7 @@ define check
 endef
 
 test: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/float.bin $(BUILD)/dhry.bin \
-  $(BUILD)/coremark.bin emulator
+  $(BUILD)/coremark.bin $(CORE_BUILD)/float.bin emulator
 	@$(PYTHON) expected.py --check bench.c hand.nasm simple.nasm
 	@$(PYTHON) floatexpected.py --check float.c
 	@$(PYTHON) hazards.py --test
@@ -91,6 +98,9 @@ test: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/float.bi
 	@NICEEMU=$(EMU) $(PYTHON) cycprof.py --test
 	@$(PYTHON) words.py --test
 	$(foreach p,$(PROGRAMS) float,$(call check,$(p)))
+	@$(EMU) $(CORE_BUILD)/float.bin < /dev/null > $(CORE_BUILD)/float.out
+	@if grep -q ' R1  00000000 ' $(CORE_BUILD)/float.out && ! grep -q FAIL $(CORE_BUILD)/float.out; \
+	then echo "PASS float with float.nasm"; else echo "FAIL float with float.nasm"; exit 1; fi
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --phases 6 $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin \
 	  > /dev/null \
 	  && echo "PASS pipecycles.py --phases 6"
@@ -141,30 +151,35 @@ endef
 
 define core_run
 	@echo "$(1) on the $(CORE) core:"
-	@$(call sim_core,$(1),$(BUILD)/$(1).bin,-gG_RETIRE_LOG=$(HDL_BUILD)/$(1)_$(CORE).retires); \
+	@$(call sim_core,$(1),$(CORE_BUILD)/$(1).bin,-gG_RETIRE_LOG=$(HDL_BUILD)/$(1)_$(CORE).retires); \
 	  grep '^Read waits:' $(HDL_BUILD)/$(1)_$(CORE).log; \
 	  if [ $$status -ne 0 ]; then cat $(HDL_BUILD)/$(1)_$(CORE).log; exit 1; fi
 
 endef
 
-core: $(CORE_PROGRAMS:%=$(BUILD)/%.bin)
+$(CORE_BUILD)/%.bin: FORCE
+	@$(MAKE) --no-print-directory BUILD=$(CORE_BUILD) NO_FPU=1 $@
+
+FORCE:
+
+core: $(CORE_PROGRAMS:%=$(CORE_BUILD)/%.bin)
 	$(ANALYZE)
 	$(foreach p,$(CORE_PROGRAMS),$(call core_run,$(p)))
 
 # Dhrystone on a core in the simulator, CORE and SIM as above, with its output checked.
-core-dhry: $(BUILD)/dhry.bin
+core-dhry: $(CORE_BUILD)/dhry.bin
 	$(ANALYZE)
-	@$(call sim_core,dhry,$(BUILD)/dhry.bin,-gG_INPUT_FILE=$(abspath $(DHRY_RUNS))); \
+	@$(call sim_core,dhry,$(CORE_BUILD)/dhry.bin,-gG_INPUT_FILE=$(abspath $(DHRY_RUNS))); \
 	  if [ $$status -ne 0 ]; then cat $(HDL_BUILD)/dhry_$(CORE).log; exit 1; fi
 	@$(PYTHON) dhrycheck.py --runs $$(cat $(DHRY_RUNS)) ../hdl/build/dhry_$(CORE).out
 
 # CoreMark on a core in the simulator, CORE and SIM as above, with
 # CM_CORE_ITERATIONS and the seeds of CM_SEEDS, and its output checked.
-core-coremark: $(BUILD)/coremark.bin
+core-coremark: $(CORE_BUILD)/coremark.bin
 	$(ANALYZE)
 	@mkdir -p $(HDL_BUILD)
 	@echo "$(CM_$(CM_SEEDS)) $(CM_CORE_ITERATIONS)" > $(HDL_BUILD)/coremark_$(CORE).input
-	@$(call sim_core,coremark,$(BUILD)/coremark.bin,-gG_INPUT_FILE=$(HDL_BUILD)/coremark_$(CORE).input); \
+	@$(call sim_core,coremark,$(CORE_BUILD)/coremark.bin,-gG_INPUT_FILE=$(HDL_BUILD)/coremark_$(CORE).input); \
 	  if [ $$status -ne 0 ]; then cat $(HDL_BUILD)/coremark_$(CORE).log; exit 1; fi
 	@$(PYTHON) coremarkcheck.py --seeds $(CM_SEEDS) --iterations $(CM_CORE_ITERATIONS) \
 	  ../hdl/build/coremark_$(CORE).out
@@ -182,7 +197,7 @@ $(BUILD)/dhry.nasm: $(DHRY)/dhry.wasm ../translator/nicewasm.py
 	$(NICEWASM) -o $@ $(DHRY)/dhry.wasm
 
 # Dhrystone reads its number of runs with scanf, whose float conversions
-# use the float library, so it is joined with float.nasm.
+# use the float library, so it is joined with it.
 $(BUILD)/dhry.full.nasm: ../runtime/start_wasm.nasm $(BUILD)/dhry.nasm ../runtime/lib.nasm \
   ../runtime/muldiv_mpu.nasm $(FLOAT_LIB)
 	cat $^ > $@
@@ -192,7 +207,7 @@ $(BUILD)/coremark.nasm: $(CM)/coremark.wasm ../translator/nicewasm.py
 	$(NICEWASM) -o $@ $(CM)/coremark.wasm
 
 # CoreMark prints its seconds with %f, and reads its seeds with scanf,
-# so it is joined with float.nasm too.
+# so it is joined with the float library too.
 $(BUILD)/coremark.full.nasm: ../runtime/start_wasm.nasm $(BUILD)/coremark.nasm ../runtime/lib.nasm \
   ../runtime/muldiv_mpu.nasm $(FLOAT_LIB)
 	cat $^ > $@
@@ -206,7 +221,7 @@ $(BUILD)/float.full.nasm: ../runtime/start_wasm.nasm $(BUILD)/float.nasm ../runt
 	cat $^ > $@
 
 # float.nasm is not checked in; the runtime translates it from float.wasm.
-$(FLOAT_LIB): ../runtime/float.wasm ../translator/nicewasm.py
+../runtime/float.nasm: ../runtime/float.wasm ../translator/nicewasm.py
 	$(MAKE) -C ../runtime float.nasm
 
 $(BUILD)/hand.full.nasm: ../runtime/start.nasm hand.nasm ../runtime/lib.nasm ../runtime/muldiv_mpu.nasm
@@ -235,11 +250,11 @@ cycles: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/float.
 # The model's cycles beside the pipelined core's, phase by phase, with the
 # difference in percent, and by cause, from the output and the retire log
 # of make core, which must have run first (README.md, The cycle estimate).
-compare: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
+compare: $(CORE_BUILD)/bench.bin $(CORE_BUILD)/hand.bin emulator
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --against ../hdl/build/bench_pipeline.out \
-	  --causes ../hdl/build/bench_pipeline.retires $(BUILD)/bench.bin
+	  --causes ../hdl/build/bench_pipeline.retires $(CORE_BUILD)/bench.bin
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --against ../hdl/build/hand_pipeline.out \
-	  --causes ../hdl/build/hand_pipeline.retires $(BUILD)/hand.bin
+	  --causes ../hdl/build/hand_pipeline.retires $(CORE_BUILD)/hand.bin
 
 # The same, charged to the source lines of each program: the listings
 # build/bench.cyc.txt, build/hand.cyc.txt, and build/float.cyc.txt.

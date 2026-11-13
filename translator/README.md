@@ -136,10 +136,11 @@ of the inputs picks the language: `.c`, `.zig`, or `.rs`.
 | `--stack BYTES` | The stack size, 4096 by default, or 16384 for Zig in Debug or ReleaseSafe. It must be positive. |
 | `--memory BYTES` | The initial memory, 65536 by default. It must be positive. The stack is in the memory, so a larger `--stack` needs a larger `--memory` too: `--stack 131072` alone fails with wasm-ld's "initial memory too small", and `--memory 262144` fixes it. |
 | `--no-mpu`, `--no-bounds-checks`, `--trust-alignment`, `--byte-windows`, `--memory-pages N` | Passed on to `nicewasm.py` (above). With `--no-mpu`, the program is joined with `muldiv_soft.nasm`. |
+| `--no-fpu` | For a system without the FPU of SYSTEM.md §11: join the float library in software, `runtime/float.nasm`, instead of `runtime/float_fpu.nasm`. |
 | `--asm FILE` | Join a NICE assembly file after the program, so that the program can call a function that the file defines, as the label `_name` of ABI.md; for C it also lets the link leave the function undefined. The option can repeat. |
 | `--no-trap-report` | Leave out the trap report, so that a trap halts silently (see below). |
 | `--monitor` | Build a program for a monitor in ROM, which loads it at `0x8000` and calls it, and to which it returns (ABI.md, "Programs under a monitor"): the start-up code is `runtime/start_wasm_trap_mon.nasm`, or `start_wasm_mon.nasm` with `--no-trap-report`, and the `.bin` file starts at `0x8000`. The monitor's own routines, if the program calls them, come as stubs in a file of the monitor's, joined with `--asm`. |
-| `--ram ADDR` | Build a program whose code runs from a ROM, as nicewasm's `--ram ADDR` does (see [Code in a ROM](#code-in-a-rom)): the words that it writes are in RAM from ADDR, and `___wasm_start` gives them their initial values. The module is linked with `--export=__heap_base`, so that nicewasm reserves the memory up to the end of the static data. The start-up code is the same as without the option, and the `.bin` file starts at 0, for a ROM there. A program that uses floats is an error, since the float library keeps its words in the image. Not with `--monitor` or `--memory-pages`. |
+| `--ram ADDR` | Build a program whose code runs from a ROM, as nicewasm's `--ram ADDR` does (see [Code in a ROM](#code-in-a-rom)): the words that it writes are in RAM from ADDR, and `___wasm_start` gives them their initial values. The module is linked with `--export=__heap_base`, so that nicewasm reserves the memory up to the end of the static data. The start-up code is the same as without the option, and the `.bin` file starts at 0, for a ROM there. With `--no-fpu`, a program that uses floats is an error, since the float library in software keeps its words in the image. Not with `--monitor` or `--memory-pages`. |
 | `--ram-bytes BYTES` | With `--ram`, passed on to `nicewasm.py`. |
 | `--symbols` | Also write the labels to `output.sym`, with the functions of the program by their names, for `niceemu --symbols`, which then names the function of a trap. A Zig program is then built with `-fno-strip`, because ReleaseSmall leaves the names out of the wasm; the `.bin` is the same. |
 | `--keep` | Leave the `.wasm`, `.nasm`, and joined `.full.nasm` files next to the output. |
@@ -147,13 +148,15 @@ of the inputs picks the language: `.c`, `.zig`, or `.rs`.
 C files are linked with the C library, and Zig gets `runtime/nice.zig` as
 the module `nice`. Zig and Rust take one source file, the root of the
 program, and a Rust program that wants `nice.rs` mounts it itself (runtime
-README). The float library is joined if the program calls it. A wasm trap
+README). The float library is joined if the program calls it:
+`runtime/float_fpu.nasm`, which uses the FPU of SYSTEM.md §11, or with
+`--no-fpu` `runtime/float.nasm`, in software. A wasm trap
 writes a line with its code and address to the console before the
 processor halts, as `trapmsg.nasm` of the runtime README does, unless
 `--no-trap-report` leaves the report out. The defaults are the options of
 the recipes below, but for `-Wl,--allow-undefined`, which only `--asm`
-adds. The script builds `runtime/libc/libc.a` and `runtime/float.nasm`
-first if needed. `CLANG`, `ZIG`, and `RUSTC` in the environment name the
+adds. The script builds `runtime/libc/libc.a`, and `runtime/float.nasm`
+with `--no-fpu`, first if needed. `CLANG`, `ZIG`, and `RUSTC` in the environment name the
 compilers. If the compiler of the language is not installed, the script
 says so and exits with status 1. It also checks the output directory and
 the `--asm` files before it compiles. A step that fails ends the script
@@ -290,7 +293,7 @@ pointers. nicewasm supports all of them. A Rust program uses a table and
 
 The optimizations change nothing in WASM.md. The size of translated code
 is measured in words (`make words` in `bench/`): `test/safe.zig` is 5903
-words and the float library 6578. The benchmark of [bench/](../bench/)
+words and the float library in software 6578; with the FPU it is 289. The benchmark of [bench/](../bench/)
 runs 1652811 instructions in its phases, from a module of 11523 words,
 3085 of them the float conversions of the C library's `printf`.
 [doc/review/code-size-plan.md](../doc/review/code-size-plan.md) has the
@@ -306,8 +309,9 @@ the steps that got the code here.
 - **Floats:** every `f32` and `f64` instruction. `const`, `load`, `store`,
   and `reinterpret` move the bits, and `abs`, `neg`, and `copysign` change
   the sign bit inline. Everything else calls the float library,
+  `runtime/float_fpu.nasm` or, on a system without the FPU,
   `runtime/float.nasm`, so a program that uses floats must be joined with
-  it (runtime README, Joining a program). `float.nasm` is generated; `make -C runtime float.nasm` builds it. `trunc` traps with code 5 for a NaN or a
+  one (runtime README, Joining a program). `float.nasm` is generated; `make -C runtime float.nasm` builds it. `trunc` traps with code 5 for a NaN or a
   value whose integer part does not fit, and `trunc_sat` saturates
   instead.
 - **Control:** `block`, `loop`, `if`, `else`, `end`, `br`, `br_if`,
@@ -492,7 +496,10 @@ has start-up code of its own, which puts them in its RAM.
     make diff        # compare with an older translator, OLD=main, on random modules (minutes)
 
 `test/run.py` translates each test module and joins it with the runtime.
-It then assembles and runs the program. It checks main's result in R1,
+It then assembles and runs the program. Each case runs twice: with the
+math unit and the float library of the FPU, `float_fpu.nasm`, and with
+`--no-mpu`, `muldiv_soft.nasm`, and `float.nasm`, for a system with
+neither. It checks main's result in R1,
 that R7–R13 are unchanged unless it trapped, what it printed on the
 console, and that the memory is not in the `.bin` file. A case for
 code in a ROM, translated with `--ram`, must also leave every word of
@@ -523,7 +530,9 @@ Every `.sym` file must name every function. A language whose compiler is
 missing is skipped, and the PASS line says which; CI has Zig and clang, not Rust.
 `test/run.py --keep DIR` also leaves each
 program in `DIR/X.bin`, or `DIR/X_soft.bin` for the run with `--no-mpu`,
-for `make programs` in `hdl/`, which runs them on the FPGA core.
+for `make programs` in `hdl/`, which runs them on the FPGA core. The
+cores have no FPU yet, so `make programs` adds `--no-fpu`, with which
+both runs join `float.nasm`.
 `test/run.py`, `test/fuzz.py`, and `test/errors.py` run their cases in
 parallel, one per CPU, each with files of its own, and report them
 in order.

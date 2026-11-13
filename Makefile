@@ -77,7 +77,7 @@ SWEEP_JOBS = $(shell n=$$(( ($(JOBS) - 4 * $(words $(CORES))) / $(words $(CORES)
 slow:
 	$(MAKE) -C emulator build
 	$(MAKE) -C hdl analyze build/pcfx.bin build/sidefx.bin SIM=$(SIM)
-	$(MAKE) -C bench build/bench.bin build/hand.bin build/dhry.bin build/coremark.bin
+	$(MAKE) -C bench build/nofpu/bench.bin build/nofpu/hand.bin build/nofpu/dhry.bin build/nofpu/coremark.bin
 	@$(MAKE) --no-print-directory -j$(words $(SLOW_RUNS)) -O $(SLOW_RUNS)
 
 slow/%/bench:

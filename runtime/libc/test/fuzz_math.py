@@ -2,7 +2,7 @@
 """A random test of the C library's math functions, against the same code
 on the host and against the host's own libm.
 
-Usage: fuzz_math.py [--errors] SEED COUNT [NAME...]
+Usage: fuzz_math.py [--errors] [--no-fpu] SEED COUNT [NAME...]
 
 It writes a C program that calls each function of math.h, or each NAME,
 on COUNT inputs: the special values (zeros, infinities, NaNs, the limits,
@@ -53,6 +53,9 @@ RUNTIME = os.path.join(REPO, "runtime")
 NICEWASM = os.path.join(REPO, "translator", "nicewasm.py")
 NICEASM = os.path.join(REPO, "assembler", "niceasm.py")
 NICEEMU = os.path.join(REPO, "emulator", "zig-out", "bin", "niceemu")
+# The float library: float_fpu.nasm, with the FPU of SYSTEM.md §11, or
+# float.nasm, in software, with --no-fpu.
+FLOAT_LIB = "float_fpu.nasm"
 INCLUDE = os.path.join(LIBC, "include")
 MATH = os.path.join(LIBC, "src", "math")
 
@@ -280,10 +283,11 @@ def nice_lines(src: str, tmp: str, count: int) -> List[str]:
          os.path.join(LIBC, "libc.a")])
     asm = os.path.join(tmp, "fuzz.nasm")
     run([sys.executable, NICEWASM, "--memory-pages", str(pages), "-o", asm, wasm])
-    run(["make", "-s", "-C", RUNTIME, "float.nasm"])
+    if FLOAT_LIB == "float.nasm":
+        run(["make", "-s", "-C", RUNTIME, "float.nasm"])
     full = os.path.join(tmp, "fuzz.full.nasm")
     with open(full, "w") as out:
-        for part in ["start_wasm.nasm", asm, "lib.nasm", "muldiv_mpu.nasm", "float.nasm"]:
+        for part in ["start_wasm.nasm", asm, "lib.nasm", "muldiv_mpu.nasm", FLOAT_LIB]:
             with open(part if os.path.isabs(part) else os.path.join(RUNTIME, part)) as f:
                 out.write(f.read() + "\n")
     binary = os.path.join(tmp, "fuzz.bin")
@@ -476,10 +480,12 @@ def same(a: str, b: str, single: bool, ulps: int) -> bool:
 
 
 def main() -> None:
+    global FLOAT_LIB
     argv = sys.argv[1:]
-    errors = argv[:1] == ["--errors"]
-    if errors:
-        argv = argv[1:]
+    errors = "--errors" in argv[:2]
+    if "--no-fpu" in argv[:2]:
+        FLOAT_LIB = "float.nasm"
+    argv = [a for a in argv[:2] if a not in ("--errors", "--no-fpu")] + argv[2:]
     if len(argv) < 2:
         sys.exit(__doc__.split("\n\n")[1])
     seed, count = int(argv[0]), int(argv[1])

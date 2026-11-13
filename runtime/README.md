@@ -25,7 +25,8 @@ Zig, or Rust program by itself ([translator README](../translator/README.md)).
 | `muldiv_soft.nasm` | The same routines in software, for a system without the math unit. |
 | `float.zig` | The source of the float routines (see below). |
 | `float.wasm` | `float.zig` and parts of Zig's compiler_rt, compiled to wasm. |
-| `float.nasm` | `float.wasm` translated as a library module. It is not checked in: `make float.nasm` makes it, with Python only. |
+| `float.nasm` | `float.wasm` translated as a library module, for a system without the FPU. It is not checked in: `make float.nasm` makes it, with Python only. |
+| `float_fpu.nasm` | The same routines with the FPU of SYSTEM.md §11 (see below). |
 | `libc/` | A small C library (see below). |
 | `nice.zig`, `nice.rs` | The device routines, console output, and a heap for Zig and Rust (see below). |
 
@@ -43,7 +44,8 @@ files with `cat`, in this order:
 3. `lib.nasm`.
 4. `muldiv_mpu.nasm`, or `muldiv_soft.nasm` for a system without the math
    unit and for a program translated with `--no-mpu`.
-5. `float.nasm`, if the program uses floats.
+5. `float_fpu.nasm`, if the program uses floats, or `float.nasm` for a
+   system without the FPU.
 6. `trapmsg.nasm`, with `start_wasm_trap.nasm` or
    `start_wasm_trap_mon.nasm`.
 
@@ -213,8 +215,27 @@ The C library below has the same routines, in `nice.h`.
 
 ## Floating point
 
-NICE has no float instructions, so `float.nasm` does float arithmetic in
-software. It is the library module `float` of WASM.md: wasm code,
+NICE has no float instructions. The float library does the float
+arithmetic, and comes in two versions, as the multiply and divide
+routines do: `float_fpu.nasm`, with the FPU of SYSTEM.md §11, and
+`float.nasm`, in software, for a system without it. A program contains
+one of the two. Their routines are the same, with the same results, but
+for the bits of a NaN.
+
+`float_fpu.nasm` pushes the operands, writes a command, reads the result,
+and pops it, so a routine leaves the FPU's stack as it found it, and uses
+at most two of its values (SYSTEM.md §11.5). An entry sets the command
+in R5 and jumps to a part that the entries share, so the library is 289
+words. An `f32` goes in and out through the view `FPU_X_S`, and `+`,
+`−`, `×`, `÷`, and the square root set the command's S bit, which
+rounds the result to binary32 on the stack: that is the correctly
+rounded `f32` result. A `long long` to `f32` from 2⁵³ on is shifted
+right by 11 with a sticky bit first, as through binary64 it would be
+rounded twice. Every NaN it gives is the canonical one, `0x7FF80000_00000000`
+or `0x7FC00000`, which wasm allows. `test/float_fpu.py` checks it against
+`float.nasm` (Test, below).
+
+`float.nasm` is the library module `float` of WASM.md: wasm code,
 translated by `nicewasm --library float --no-mpu`. With `--no-mpu` its
 one u64 divide calls `__udiv64`, so the library joins with either
 `muldiv_mpu.nasm` or `muldiv_soft.nasm`. Its routines take and return the
@@ -325,8 +346,9 @@ The library is small on purpose:
   a missing `ERANGE`. `fuzz_strtod.py` (below) checks the result against
   exact arithmetic. The float arithmetic is the float library's, so a
   program that calls `scanf`, even only for integers, is joined with
-  `float.nasm`. `sscanf` with `%d` alone was 4166 words; it is now 9082,
-  and the float library's 6578 come with it.
+  the float library. `sscanf` with `%d` alone was 4166 words; it is now 9082,
+  and the float library comes with it: 289 words with the FPU, and 6578
+  without.
 - `printf` supports the flags `- + space # 0`, with `+` and space for the
   signed and float conversions, as C defines them, a width and a
   precision (either may be `*`), the length modifiers `hh h l ll z t j`,
@@ -396,8 +418,8 @@ are this library's own: `libm.h` and `features.h` stand in for musl's
 internal headers, and `builtin.c` holds the functions that `math.h` maps
 to clang's built-ins. Their float arithmetic is wasm float instructions,
 which nicewasm turns into calls of the float library above, so a program
-that uses them is joined with `float.nasm`, as `nicebuild.py` does when
-the program needs it. The float library could not hold them: a library
+that uses them is joined with the float library, as `nicebuild.py` does when
+the program needs it. `float.nasm` could not hold them: a library
 module may not use float instructions. The library compiles them with
 `-Os`, which keeps clang from unrolling the loops of `__rem_pio2_large`,
 the reduction of a huge argument of `sin`, `cos`, and `tan`. That saves
@@ -429,9 +451,11 @@ the reduction of a huge argument of `sin`, `cos`, and `tan`. That saves
 - **No `long double`.** wasm32's `long double` is a binary128, which the
   float library does not support.
 
-A call costs, on the emulator with the math unit, the steps below,
-averaged over 32 arguments in the range each function is most used in,
-such as −10 to 10 for `sin`. Each also brings the words below into the
+A call costs, on the emulator with the math unit, the steps below, with
+the FPU and without it, with `float.nasm`, averaged over 32 arguments in
+the range each function is most used in, such as −10 to 10 for `sin`,
+and with the few steps of the loop around the call. They were measured
+on 2026-11-13. Each also brings the words below into the
 program: its own and those of the routines it calls, the float library
 not counted. A program that uses all of them gets 23392 words, as
 `make words` in `bench/` prints. The reduction of a huge argument, past
@@ -439,25 +463,25 @@ not counted. A program that uses all of them gets 23392 words, as
 `ldexp`, and `modf` are 199, 82, and 261 words, and their float versions
 189, 77, and 187.
 
-| Function | Steps, double | Steps, float | Words, double | Words, float |
-|---|---|---|---|---|
-| `sin`, `cos` | 6700 | 3900, 3700 | 5630 | 4190 |
-| `tan` | 10600 | 6500 | 5670 | 4050 |
-| `asin` | 12700 | 5300 | 668 | 264 |
-| `acos` | 10200 | 1500 | 799 | 372 |
-| `atan` | 8100 | 1600 | 621 | 400 |
-| `atan2` | 9700 | 1900 | 893 | 594 |
-| `exp` | 4700 | 2900 | 1340 | 475 |
-| `log` | 5400 | 3000 | 2011 | 524 |
-| `log10` | 10400 | 2800 | 548 | 311 |
-| `log2` | 6400 | 3000 | 1506 | 530 |
-| `pow` | 15500 | 6500 | 3485 | 1039 |
-| `sqrt` | 6200 | 130 | 2 | 2 |
-| `fmod` | 320 | 180 | 361 | 196 |
-| `round` | 1000 | 540 | 163 | 125 |
-| `fmin`, `fmax` | 110 | 80 | 72 | 46 |
-| `floor` | 70 | 30 | 2 | 2 |
-| `fabs` | 5 | 4 | 2 | 2 |
+| Function | Steps, double | Steps, float | Without the FPU, double | Without the FPU, float | Words, double | Words, float |
+|---|---|---|---|---|---|---|
+| `sin`, `cos` | 670 | 390 | 6500 | 3700 | 5630 | 4190 |
+| `tan` | 840 | 410 | 9800 | 5700 | 5670 | 4050 |
+| `asin` | 580 | 230 | 12000 | 4600 | 668 | 264 |
+| `acos` | 540 | 240 | 11000 | 1500 | 799 | 372 |
+| `atan` | 590 | 280 | 8000 | 1600 | 621 | 400 |
+| `atan2` | 700 | 350 | 9800 | 1900 | 893 | 594 |
+| `exp` | 440 | 290 | 4700 | 2900 | 1340 | 475 |
+| `log` | 510 | 300 | 5300 | 3000 | 2011 | 524 |
+| `log10` | 820 | 480 | 10000 | 2800 | 548 | 311 |
+| `log2` | 610 | 310 | 6500 | 3000 | 1506 | 530 |
+| `pow` | 1500 | 640 | 15000 | 6500 | 3485 | 1039 |
+| `sqrt` | 19 | 16 | 6200 | 140 | 2 | 2 |
+| `fmod` | 110 | 68 | 150 | 87 | 361 | 196 |
+| `round` | 170 | 130 | 1000 | 550 | 163 | 125 |
+| `fmin`, `fmax` | 67 | 45 | 110 | 73 | 72 | 46 |
+| `floor` | 19 | 16 | 69 | 29 | 2 | 2 |
+| `fabs` | 9 | 7 | 9 | 7 | 2 | 2 |
 
 `libc/test/math.c` checks each function and macro on the cases whose
 results C17 Annex F gives, on exact results, and on a few known values,
@@ -508,7 +532,7 @@ program parses the line with the language's own functions:
 **Floats.** Both languages compile `f32` and `f64` arithmetic into wasm
 float instructions, which nicewasm turns into calls of the float
 library, as for C, so a program that uses floats is joined with
-`float.nasm` (Joining a program). Both print floats with their own
+the float library (Joining a program). Both print floats with their own
 formatting code, `std.fmt` and `core::fmt`, which is part of the program,
 so `{d}`, `{e}`, `{}`, and `{:e}` work.
 The math functions come with the compiler, ported from musl, and are
@@ -610,9 +634,12 @@ Then it runs the C library's tests, `libc/test/X.c`, with
 `libc/test/X.input` as the console input if there is one. Their `.wasm` files
 are checked in, so no C compiler is needed; `make -C libc wasm` rebuilds
 them and `libc.a`. Each is translated, joined with `start_wasm.nasm`,
-`lib.nasm`, and `muldiv_mpu.nasm`, and `float.nasm` for `math.c`, and run. Its console output, `main`'s result in R1, and the
+`lib.nasm`, and `muldiv_mpu.nasm`, and the float library if it calls it,
+and run. Its console output, `main`'s result in R1, and the
 exit status are compared with `libc/test/X.expected`, which was written
-by hand from the source. `exit.c` also runs as `libc/exit_mon`, joined
+by hand from the source. The float library is `float_fpu.nasm`, and a
+test that calls it runs again with `float.nasm`, with the same expected
+output. With `NO_FPU=1`, every test joins `float.nasm` and runs once. `exit.c` also runs as `libc/exit_mon`, joined
 after `test/monitor.nasm` with `start_wasm_mon.nasm`, and its
 `exit_mon.expected` shows R2 too, the bytes that went through the
 stand-in's putc routine. The exception is `mchess.expected`, 600 lines of
@@ -629,12 +656,23 @@ Then it runs the tests of `nice.zig` and `nice.rs`, `test/nicezig.zig`,
 `test/rustheap.rs`, `test/rustline.rs`, and `test/rustfloat.rs`, the same
 way, with `test/X.input`, if there is one, as the console input and
 `test/X.expected`, written by hand from the source. `zigfloat` and
-`rustfloat` are joined with `float.nasm`, and their expected values were
-checked with Python's `math` and `fractions` modules. `test/zigheap.zig` and `test/rustheap.rs` are
+`rustfloat` are joined with the float library, and run again with
+`float.nasm` as `zigfloat_soft_float` and `rustfloat_soft_float`, and
+their expected values were checked with Python's `math` and `fractions`
+modules. `test/zigheap.zig` and `test/rustheap.rs` are
 translated with `--memory-pages 2`, so that their heap can grow by one
 page, and no more. Their `.wasm`
 files are checked in; `make wasm` rebuilds them, with Zig 0.17 and rustc
 with the `wasm32-unknown-unknown` target.
+
+Last, `test/float_fpu.py` checks `float_fpu.nasm` against `float.nasm`.
+One program calls each of the 52 routines on special operands, each with
+each, and on 300 random ones: values near the integers and the limits of
+the conversions, ties of the rounding, cancellations, and long longs
+above 2⁵³ whose rounding to `f32` needs the sticky bit. It runs once with
+each library, and the results must be the same, but that any NaN equals
+any other. The FPU's depth must be 0 at the end. `float_fpu.py --seed N
+--count N` runs other seeds and sizes.
 
 `make -C libc fuzz` needs clang. It runs `libc/test/fuzz_printf.py`,
 which writes a C program with 300 random `printf` and `snprintf` calls,
@@ -654,4 +692,6 @@ results with those of the same sources compiled for the host, which
 must match bit for bit, and with the true values, which it takes from
 Python's `decimal` module or the host's libm. `fuzz_math.py SEED COUNT
 [NAME...]` runs other seeds, sizes, and functions, and `--errors` prints
-the largest error of each function.
+the largest error of each function. The three join `float_fpu.nasm`;
+`fuzz_strtod.py` and `fuzz_math.py` take `--no-fpu`, which joins
+`float.nasm` instead.

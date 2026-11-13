@@ -34,6 +34,14 @@ below).
 `float.c` is a benchmark of floating-point code, and so of the float
 library (see The float benchmark below).
 
+The programs that use floats, `float.c`, Dhrystone, and CoreMark, are
+joined with the float library of the FPU, `runtime/float_fpu.nasm`, and
+with `NO_FPU=1` with the one in software, `runtime/float.nasm`. The cores
+of `hdl/` have no FPU yet, so `make core`, `core-dhry`, and
+`core-coremark` run programs built with `float.nasm`, which a make of
+their own leaves in `build/nofpu/`.
+
+
 `bench.wasm`, `float.wasm`, `dhrystone/dhry.wasm`, and `coremark/coremark.wasm` are checked in, so `make` and
 `make test` need only Python 3 and the emulator, as the translator's
 tests do. `make wasm` needs clang with the wasm32 target and wasm-ld, and
@@ -495,9 +503,10 @@ to a shorter run on the core.
 
 ## The float benchmark
 
-`float.c` measures floating-point code, which the float library
-(`runtime/float.zig`) does in software, as nicewasm turns each float
-instruction of wasm into a call to it (WASM.md). It keeps to the rules
+`float.c` measures floating-point code, which the float library does,
+as nicewasm turns each float instruction of wasm into a call to it
+(WASM.md): with the FPU, `runtime/float_fpu.nasm`, or in software,
+`runtime/float.zig`. It keeps to the rules
 of `bench.c`: phases with known results, timed with the counters, and
 the same table. It is a program of its own, not more phases of
 `bench.c`, so that the figures of `bench.c` stay comparable across

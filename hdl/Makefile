@@ -609,7 +609,9 @@ strides: emulator analyze $(BUILD)/pcfx.bin $(BUILD)/sidefx.bin
 # §9, step 7). runtime/Makefile with KEEP and translator/test/run.py with
 # --keep run their tests and leave the programs in $(PROGRAMS), and
 # test/programs.py runs each on the core and on the emulator, in parallel,
-# and compares them. It takes minutes, so make test leaves it out.
+# and compares them. It takes minutes, so make test leaves it out. The
+# cores have no FPU yet (SYSTEM.md §11), so the programs that use floats
+# join the float library in software, float.nasm: NO_FPU=1 and --no-fpu.
 PROGRAMS = $(BUILD)/programs
 FUZZ_PROGRAMS = 10
 
@@ -618,9 +620,9 @@ SHARD = 1/1
 
 programs: emulator analyze
 	@rm -rf $(PROGRAMS)
-	@$(MAKE) --no-print-directory -C ../runtime test KEEP=$(abspath $(PROGRAMS)/runtime) \
+	@$(MAKE) --no-print-directory -C ../runtime test KEEP=$(abspath $(PROGRAMS)/runtime) NO_FPU=1 \
 	  > $(BUILD)/programs_runtime.log 2>&1 || { cat $(BUILD)/programs_runtime.log; exit 1; }
-	@$(PYTHON) ../translator/test/run.py --keep $(PROGRAMS)/translator \
+	@$(PYTHON) ../translator/test/run.py --no-fpu --keep $(PROGRAMS)/translator \
 	  > $(BUILD)/programs_translator.log 2>&1 || { cat $(BUILD)/programs_translator.log; exit 1; }
 	@for m in "" --no-mpu --unchecked --grow --windows; do \
 	  $(PYTHON) ../translator/test/fuzz.py $$m --keep $(PROGRAMS)/fuzz 1 $(FUZZ_PROGRAMS) \

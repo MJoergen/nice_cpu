@@ -115,6 +115,7 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 - A routine may be written in assembly, or translated from a library module ([WASM.md](../translator/WASM.md)).
 - The labels of its routines start with `__`. Their C names start with `_`, which C reserves for the implementation at file scope. The labels inside a translated library module start with `WL.` ([WASM.md](../translator/WASM.md)), which no C name can produce.
 - The multiply and divide routines, for one-word integers and for `long long`, the bit counts, and `nice_isqrt64` (below) come in two versions: one that uses the math unit of [SYSTEM.md §2](../doc/SYSTEM.md#2-math-unit), and one in software for systems without it. A program contains exactly one of the two.
+- So do the float routines: one version uses the FPU of [SYSTEM.md §11](../doc/SYSTEM.md#11-floating-point-unit), and one is in software. A program contains exactly one of the two.
 - The table lists the routines for one-word integers. The runtime library's README lists all routines, including those for `long long`, floating point, and conversions between them.
 
 | Label | Result in R1 |
@@ -124,6 +125,8 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 | `__udiv`, `__umod` | Unsigned R1 / R2 and R1 % R2. |
 
 Division by zero is undefined in C, so these routines may return any value for it.
+
+**The FPU.** A routine may use 8 values of the FPU's stack ([SYSTEM.md §11.5](../doc/SYSTEM.md#115-rules-for-programs)), and leaves the depth as it found it, so a caller may keep up to 8 values on the stack across a call. The FPU's flags are not preserved, and compiled and translated code never reads them. An interrupt service routine does not use the FPU.
 
 **Device routines.** The runtime library also has routines for the devices of the emulator and the FPGA implementation, so that programs need not use their addresses. They are the console ([SYSTEM.md §1](../doc/SYSTEM.md#1-console-screen-and-read-counter)), the performance counters ([SYSTEM.md §3](../doc/SYSTEM.md#3-performance-counters)), and the emulator's character screen at `0xFFFF0000` ([SYSTEM.md §1](../doc/SYSTEM.md#1-console-screen-and-read-counter)). Unlike the routines above, a program calls them by name, so they are ordinary C functions: `nice_putc` has the label `_nice_putc`. External C names that start with `nice_` are reserved for them.
 
@@ -135,7 +138,7 @@ Division by zero is undefined in C, so these routines may return any value for i
 | `void nice_print(const char *s)` | Writes the characters of `s` up to its first 0 to the console, with no newline, through `___putc_vector`. In assembly, one character per word. The C library's `nice_print` takes the bytes of a C string instead (runtime/README.md). |
 | `unsigned long long nice_cycles(void)` | The cycle counter. |
 | `unsigned long long nice_instructions(void)` | The instruction counter. |
-| `unsigned nice_isqrt64(unsigned long long x)` | floor(√x), with `ISQRT64_Q` of the math unit ([SYSTEM.md §2](../doc/SYSTEM.md#2-math-unit)), or in software without it. The float library's square root calls it. |
+| `unsigned nice_isqrt64(unsigned long long x)` | floor(√x), with `ISQRT64_Q` of the math unit ([SYSTEM.md §2](../doc/SYSTEM.md#2-math-unit)), or in software without it. The square root of the float library in software calls it. |
 | `void nice_screen_put(int col, int row, int c)` | Writes `c`, the character in bits 7..0 and its colors above ([SYSTEM.md](../doc/SYSTEM.md) §1), to column `col`, 0 to 79, of row `row`, 0 to 24. |
 | `void nice_screen_clear(void)` | Writes a blank in white on black, `0x000FFF20`, to each of the screen's 2000 words: the colors a board's monitor writes in, so that a cursor, which swaps the colors of its cell, shows on the blank ([SYSTEM.md §1.4](../doc/SYSTEM.md#14-cursor)). `nice.h` names the word `NICE_SCREEN_BLANK`. |
 

@@ -2,7 +2,7 @@
 """A random test of the C library's strtod and strtof against exact
 arithmetic.
 
-Usage: fuzz_strtod.py SEED COUNT
+Usage: fuzz_strtod.py [--no-fpu] SEED COUNT
 
 It writes a C program that calls strtod and strtof on COUNT random
 strings and prints, for each, the bits of both results, how many bytes
@@ -46,6 +46,9 @@ RUNTIME = os.path.join(REPO, "runtime")
 NICEWASM = os.path.join(REPO, "translator", "nicewasm.py")
 NICEASM = os.path.join(REPO, "assembler", "niceasm.py")
 NICEEMU = os.path.join(REPO, "emulator", "zig-out", "bin", "niceemu")
+# The float library: float_fpu.nasm, with the FPU of SYSTEM.md §11, or
+# float.nasm, in software, with --no-fpu.
+FLOAT_LIB = "float_fpu.nasm"
 
 CFLAGS = ["--target=wasm32", "-mbulk-memory", "-O2", "-ffreestanding", "-nostdlibinc",
           "-isystem", os.path.join(LIBC, "include"), "-Wall"]
@@ -265,9 +268,14 @@ def matches(got: str, want: str) -> bool:
 
 
 def main() -> None:
-    if len(sys.argv) != 3:
+    global FLOAT_LIB
+    argv = sys.argv[1:]
+    if argv[:1] == ["--no-fpu"]:
+        FLOAT_LIB = "float.nasm"
+        argv = argv[1:]
+    if len(argv) != 2:
         sys.exit(__doc__.split("\n\n")[1])
-    seed, count = int(sys.argv[1]), int(sys.argv[2])
+    seed, count = int(argv[0]), int(argv[1])
     getcontext().prec = 1200
     text, expected, strings = program(random.Random(seed), count)
     with tempfile.TemporaryDirectory() as tmp:
@@ -281,10 +289,11 @@ def main() -> None:
              os.path.join(LIBC, "libc.a")])
         asm = os.path.join(tmp, "fuzz.nasm")
         run([sys.executable, NICEWASM, "--memory-pages", str(pages), "-o", asm, wasm])
-        run(["make", "-s", "-C", RUNTIME, "float.nasm"])
+        if FLOAT_LIB == "float.nasm":
+            run(["make", "-s", "-C", RUNTIME, "float.nasm"])
         full = os.path.join(tmp, "fuzz.full.nasm")
         with open(full, "w") as out:
-            for part in ["start_wasm.nasm", asm, "lib.nasm", "muldiv_mpu.nasm", "float.nasm"]:
+            for part in ["start_wasm.nasm", asm, "lib.nasm", "muldiv_mpu.nasm", FLOAT_LIB]:
                 with open(part if os.path.isabs(part) else os.path.join(RUNTIME, part)) as f:
                     out.write(f.read() + "\n")
         binary = os.path.join(tmp, "fuzz.bin")

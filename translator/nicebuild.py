@@ -8,7 +8,7 @@ runtime/libc, and Zig gets runtime/nice.zig as the module nice. Zig and Rust
 take one source file, the root of the program.
 
 Usage: nicebuild.py [-o output.bin] [-O LEVEL] [-I DIR] [-D MACRO[=VALUE]]
-                    [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-bounds-checks]
+                    [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-fpu] [--no-bounds-checks]
                     [--trust-alignment] [--byte-windows] [--memory-pages N] [--asm FILE]...
                     [--no-trap-report] [--monitor] [--ram ADDR [--ram-bytes BYTES]]
                     [--symbols] [--keep]
@@ -83,7 +83,7 @@ def language(inputs: List[str]) -> str:
 
 
 def float_labels(float_nasm: str) -> Set[str]:
-    """The routines that float.nasm defines for a program to call."""
+    """The routines that the float library defines for a program to call."""
     return set(re.findall(r"^(__[A-Za-z0-9_]+)", float_nasm, re.M))
 
 
@@ -156,6 +156,9 @@ def main() -> None:
     ap.add_argument("--memory", type=int, default=65536, metavar="BYTES",
                     help="initial linear memory (default 65536, one page)")
     ap.add_argument("--no-mpu", action="store_true", help="translate for a system without the math unit")
+    ap.add_argument("--no-fpu", action="store_true",
+                    help="build for a system without the floating-point unit: join the float library"
+                    " in software, runtime/float.nasm, instead of runtime/float_fpu.nasm")
     ap.add_argument("--no-bounds-checks", action="store_true", help="pass --no-bounds-checks to nicewasm")
     ap.add_argument("--trust-alignment", action="store_true", help="pass --trust-alignment to nicewasm")
     ap.add_argument("--byte-windows", action="store_true", help="pass --byte-windows to nicewasm")
@@ -213,7 +216,8 @@ def main() -> None:
     need_compiler(lang)
     if lang == "c":
         run(["make", "-s", "-C", LIBC, "libc.a"])
-    run(["make", "-s", "-C", RUNTIME, "float.nasm"])
+    if args.no_fpu:
+        run(["make", "-s", "-C", RUNTIME, "float.nasm"])
 
     with tempfile.TemporaryDirectory() as tmp:
         wasm = os.path.join(tmp, "prog.wasm")
@@ -238,19 +242,20 @@ def main() -> None:
         run(cmd + [wasm])
 
         # The order of ABI.md: start-up, program, runtime, muldiv, and float
-        # if the program calls it.
+        # if the program calls it: float_fpu.nasm, which uses the FPU, or
+        # float.nasm with --no-fpu.
         program = read(prog)
         start = "start_wasm" + ("" if args.no_trap_report else "_trap") + ("_mon" if args.monitor else "") + ".nasm"
         parts = [read(os.path.join(RUNTIME, start)), program, *[read(f) for f in args.asm],
                  read(os.path.join(RUNTIME, "lib.nasm")),
                  read(os.path.join(RUNTIME, "muldiv_soft.nasm" if args.no_mpu else "muldiv_mpu.nasm"))]
-        float_nasm = read(os.path.join(RUNTIME, "float.nasm"))
+        float_nasm = read(os.path.join(RUNTIME, "float.nasm" if args.no_fpu else "float_fpu.nasm"))
         if float_labels(float_nasm) & set(re.findall(r"[A-Za-z0-9_.]+", program)):
-            if args.ram is not None:
+            if args.ram is not None and args.no_fpu:
                 # A library module keeps its memory and its globals in the
                 # image (WASM.md, Code in a ROM).
-                sys.exit("nicebuild: the program uses floats, and the float library keeps the"
-                         " words it writes in the image, so it cannot run from a ROM (--ram)")
+                sys.exit("nicebuild: the program uses floats, and with --no-fpu the float library"
+                         " keeps the words it writes in the image, so it cannot run from a ROM (--ram)")
             parts.append(float_nasm)
         if not args.no_trap_report:
             parts.append(read(os.path.join(RUNTIME, "trapmsg.nasm")))

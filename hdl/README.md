@@ -1235,7 +1235,9 @@ top-level `make slow` leaves `make programs` out ([RELEASE.md](../release/RELEAS
 need clang, or the benchmark, which `make core` in `bench/` runs. `make test KEEP=DIR`
 in `runtime/` and `test/run.py --keep DIR` and `test/fuzz.py --keep DIR` in `translator/` run their
 tests and leave the programs in `build/programs`, with the console input
-of those that read one. Then `test/programs.py` runs each on the core and
+of those that read one. The cores have no FPU yet (SYSTEM.md §11), so
+the programs that use floats join the float library in software,
+`float.nasm`, with `NO_FPU=1` in `runtime/` and `--no-fpu` for `run.py`. Then `test/programs.py` runs each on the core and
 on the emulator and compares them, as `make test` does, with the console
 input on both sides. The runtime's clock reads the cycle counter, so these
 runs make its two words memory, as the random programs do.

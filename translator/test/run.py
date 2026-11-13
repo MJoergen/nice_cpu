@@ -5,10 +5,14 @@ Each case is a module, either built here with wasm.py or compiled from a
 test/X.c, test/X.zig, or test/X.rs source into test/X.wasm. It is translated and joined
 with runtime/start_wasm.nasm, any hand-written assembly the case needs,
 runtime/lib.nasm, and runtime/muldiv_mpu.nasm, as ABI.md describes. If
-it calls the float library, runtime/float.wasm translated as the library
-module float follows. Then it is assembled and run. Each case runs twice:
-as translated by default, with the math unit (SYSTEM.md §2), and with
---no-mpu and runtime/muldiv_soft.nasm.
+it calls the float library, runtime/float_fpu.nasm follows, which uses
+the FPU (SYSTEM.md §11). Then it is assembled and run. Each case runs
+twice: as translated by default, with the math unit (SYSTEM.md §2) and
+the FPU, and with --no-mpu and runtime/muldiv_soft.nasm, and with
+runtime/float.wasm translated with --no-mpu as the library module float,
+for a system with neither. With --no-fpu, the first run takes the float
+library from float.wasm too, for a system without the FPU, such as the
+FPGA cores of hdl/ for now.
 
 The program must halt with HALT and main's result in R1, and print what
 CONSOLE gives on the console, or nothing. A case in TRAPS
@@ -3558,12 +3562,15 @@ def assemble(line: str, tmp: str, labels: Dict[str, int]) -> List[int]:
         return [int(line.split()[1], 16) for line in f]
 
 
-def float_library(tmp: str, mpu: bool) -> Tuple[str, Set[str]]:
-    """Translates the float library, and returns its file and the labels
-    of its routines."""
-    asm = os.path.join(tmp, "float.nasm" if mpu else "float_soft.nasm")
-    run([sys.executable, NICEWASM, "--library", "float", *([] if mpu else ["--no-mpu"]),
-         "-o", asm, os.path.join(RUNTIME, "float.wasm")])
+def float_library(tmp: str, mpu: bool, fpu: bool) -> Tuple[str, Set[str]]:
+    """Translates the float library, or takes float_fpu.nasm with the FPU,
+    and returns its file and the labels of its routines."""
+    if fpu:
+        asm = os.path.join(RUNTIME, "float_fpu.nasm")
+    else:
+        asm = os.path.join(tmp, "float.nasm" if mpu else "float_soft.nasm")
+        run([sys.executable, NICEWASM, "--library", "float", *([] if mpu else ["--no-mpu"]),
+             "-o", asm, os.path.join(RUNTIME, "float.wasm")])
     with open(asm) as f:
         labels = {line.strip() for line in f if line.startswith("__")}
     return asm, labels
@@ -3688,16 +3695,20 @@ def main() -> None:
     # --keep DIR copies each program to DIR/X.bin, or DIR/X_soft.bin with
     # --no-mpu, for the tests of the FPGA core in hdl/.
     keep = None
-    if sys.argv[1:2] == ["--keep"] and len(sys.argv) == 3:
-        keep = sys.argv[2]
+    args = sys.argv[1:]
+    fpu = "--no-fpu" not in args
+    if not fpu:
+        args.remove("--no-fpu")
+    if args[:1] == ["--keep"] and len(args) == 2:
+        keep = args[1]
         os.makedirs(keep, exist_ok=True)
-    elif len(sys.argv) != 1:
-        sys.exit("usage: run.py [--keep DIR]")
+    elif args:
+        sys.exit("usage: run.py [--no-fpu] [--keep DIR]")
     failed = 0
     with tempfile.TemporaryDirectory() as tmp:
         jobs: List[Tuple[int, str, Union[bytes, str], str, int, Tuple[str, Set[str]], bool]] = []
         for mpu in (True, False):
-            floats = float_library(tmp, mpu)
+            floats = float_library(tmp, mpu, fpu and mpu)
             for index, (name, wasm, extra, expected) in enumerate(CASES):
                 jobs.append((index, name, wasm, extra, expected, floats, mpu))
         # The cases run in parallel, and are reported in order.

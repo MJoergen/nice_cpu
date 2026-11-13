@@ -1669,6 +1669,31 @@ def test_net(spin: List[int]) -> None:
     e.stop()
 
 
+def test_fpu() -> None:
+    """The FPU's words over the link (SYSTEM.md §11): a write pushes, as
+    the processor's does, and a read of the eight words changes nothing,
+    so two dumps agree. With --no-fpu they are ordinary memory."""
+    fpu = 0xFFFFFF88
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(fpu + 3, [7]) + write(fpu + 3, [2]))
+    e.expect("pushes through X_W", ok(fpu + 3, 1) * 2)
+    # X = 2.0 over 7.0: X_LO, X_HI, X_S, and X_W of 2.0, CMD 0, STATUS
+    # with depth 2 and X whole and fitting, REL 1 as 7 > 2, and 0.
+    words = [0, 0x40000000, 0x40000000, 2, 0, 0x00300002, 1, 0]
+    for n in ("first", "second"):
+        e.send(read(fpu, 8))
+        e.expect(f"the FPU's words, {n} dump", answer(fpu, words))
+    e.stop()
+    e = Emu(["--no-fpu"])
+    e.take(len(HELLO))
+    e.send(write(fpu + 3, [7]))
+    e.expect("--no-fpu: a write", ok(fpu + 3, 1))
+    e.send(read(fpu, 8))
+    e.expect("--no-fpu: memory", answer(fpu, [0, 0, 0, 7, 0, 0, 0, 0]))
+    e.stop()
+
+
 def test_address() -> None:
     """--link ADDR:PORT serves on ADDR only. All of 127.0.0.0/8 is
     loopback on Linux, so 127.0.0.2 is an address other than the
@@ -1737,7 +1762,7 @@ def main() -> None:
             lambda: test_watch(watch, write200, irq),
             lambda: test_write_regs(regs, at20, count), lambda: test_wait(waiter),
             lambda: test_hidden(hidden, count), lambda: test_nmi(nmi, wait_nmi),
-            lambda: test_old_host(stop, echo), lambda: test_net(spin), test_address, test_usage,
+            lambda: test_old_host(stop, echo), lambda: test_net(spin), test_fpu, test_address, test_usage,
         ]
         for t in tests:
             t()

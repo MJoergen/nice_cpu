@@ -19,7 +19,7 @@ library, a wasm translator, and two FPGA cores. See README.md.
   `doc/review/` records how decisions were reached; ISA.md supersedes it.
 - `doc/SYSTEM.md`: the devices that the emulator maps into the I/O range
   (console, math unit, counters, timer, SD card, network station,
-  Ethernet frames, clock). ISA.md reserves the range and defines no device.
+  Ethernet frames, clock, FPU). ISA.md reserves the range and defines no device.
   ISA.md wins over it.
 - `doc/TOOLCHAIN.md`: the tools, what each reads and writes, the steps
   that build a program, how the tools use each other, and the compilers
@@ -84,7 +84,7 @@ library, a wasm translator, and two FPGA cores. See README.md.
     make test                        # every quick make test below, in parallel
     cd assembler && make test        # .nasm -> .bin comparisons, test/errors.py, fmt.py, and dis.py, and the layout of every .nasm
     cd assembler && make typecheck   # mypy --strict
-    cd emulator  && make test        # zig fmt --check, zig unit tests, example and probe programs, test/errors.py and link.py, the FPU's model
+    cd emulator  && make test        # zig fmt --check, zig unit tests, example and probe programs, test/errors.py and link.py, the FPU's model and vectors
     cd emulator  && make typecheck   # mypy --strict
     cd emulator  && make bincheck    # fail if a probe .bin is stale
     cd emulator  && make bins        # reassemble test/*.bin after editing a probe .nasm

@@ -13,6 +13,10 @@ pub fn build(b: *std.Build) void {
 
     const options = b.addOptions();
     options.addOption(bool, "window", window);
+    // The FPU's vectors for its unit test, which make test writes with
+    // test/fpu_vectors.py. Without them, that test is skipped.
+    const fpu_vectors = b.option([]const u8, "fpu-vectors", "The file of the FPU's test vectors");
+    options.addOption(?[]const u8, "fpu_vectors", fpu_vectors);
     mod.addOptions("build_options", options);
 
     // SDL is a lazy dependency: the default build fetches nothing. Zig has

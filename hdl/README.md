@@ -1207,7 +1207,9 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   `--no-cycle-counter`. The emulator's font RAM and character ROM, at
   `0xFFFE0000`–`0xFFFE3FFF` (SYSTEM.md §1.8), are not in the core's
   memory model, so the emulator makes them ordinary memory with
-  `--no-font`. The generic `G_FETCH_STATS` false makes the
+  `--no-font`, and so it does the floating-point unit's eight words,
+  `0xFFFFFF88`–`0xFFFFFF8F` (SYSTEM.md §11), which the cores do not
+  have yet, with `--no-fpu`. The generic `G_FETCH_STATS` false makes the
   fetch statistics read 0 and ignore writes, as in the emulator. The
   instruction counter and the math unit stay, because both sides agree
   on them.

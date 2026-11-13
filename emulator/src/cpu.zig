@@ -4,6 +4,7 @@
 const std = @import("std");
 const font = @import("font.zig");
 const eth_zig = @import("eth.zig");
+const fpu_zig = @import("fpu.zig");
 
 /// SR bit numbers (§1.3).
 pub const sr_i: u5 = 31;
@@ -344,6 +345,9 @@ pub const Mpu = struct {
 fn mpuWord(addr: u32) ?u5 {
     return if (addr -% mpu_base < 32) @truncate(addr -% mpu_base) else null;
 }
+
+/// The first of the eight words of the floating-point unit (SYSTEM §11).
+pub const fpu_base: u32 = io_base + 0x88;
 
 /// The first of the 64 words of the performance counters (SYSTEM §3).
 pub const perf_base: u32 = io_base + 0x40;
@@ -925,6 +929,11 @@ pub const Cpu = struct {
     console_irq: ConsoleIrq,
     /// The math unit at `mpu_base`.
     mpu: Mpu,
+    /// The floating-point unit at `fpu_base`.
+    fpu: fpu_zig.Fpu,
+    /// When false, the eight words of the FPU are ordinary memory
+    /// (`--no-fpu`).
+    fpu_enabled: bool,
     /// The performance counters at `perf_base`.
     perf: Perf,
     /// The clock of the time of day, inside them, which `reset` leaves alone.
@@ -996,6 +1005,8 @@ pub const Cpu = struct {
             .input = null,
             .console_irq = .{},
             .mpu = .{},
+            .fpu = .{},
+            .fpu_enabled = true,
             .perf = .{},
             .tod = .{},
             .timer = .{},
@@ -1048,6 +1059,7 @@ pub const Cpu = struct {
         self.console_pending = null;
         self.console_irq = .{};
         self.mpu = .{};
+        self.fpu = .{};
         self.perf = .{};
         self.timer = .{};
         self.sp_first = null;
@@ -1150,6 +1162,7 @@ pub const Cpu = struct {
         }
         if (addr == console_irq_addr) return self.console_irq.read();
         if (mpuWord(addr)) |i| return self.mpu.read(i);
+        if (self.fpuDevice(addr)) |i| return self.fpu.read(i);
         if (self.todDevice(addr)) |i| return self.tod.read(i);
         if (self.perfDevice(addr)) |i| {
             if (i == 4) {
@@ -1165,6 +1178,12 @@ pub const Cpu = struct {
         if (ethWord(addr)) |i| return self.eth.read(i);
         if (window(addr)) |n| return windowRead(n, addr, self.mem.read(windowWord(addr)));
         return self.mem.read(addr);
+    }
+
+    /// The word of the FPU that `addr` names, if it names one and the FPU
+    /// is a device, not memory (`--no-fpu`).
+    fn fpuDevice(self: *const Cpu, addr: u32) ?u3 {
+        return if (self.fpu_enabled and addr -% fpu_base < 8) @truncate(addr -% fpu_base) else null;
     }
 
     /// The word of the clock of the time of day that `addr` names, if it
@@ -1188,6 +1207,8 @@ pub const Cpu = struct {
         if (addr == counter_addr) return self.read_count;
         if (addr == console_irq_addr) return self.console_irq.read();
         if (mpuWord(addr)) |i| return self.mpu.read(i);
+        // A read of the FPU has no side effect, so it is its own peek.
+        if (self.fpuDevice(addr)) |i| return self.fpu.read(i);
         if (self.todDevice(addr)) |i| return self.tod.peek(i);
         if (self.perfDevice(addr)) |i| {
             var p = self.perf;
@@ -1217,6 +1238,8 @@ pub const Cpu = struct {
             self.writeConsoleIrq(value);
         } else if (mpuWord(addr)) |i| {
             self.mpu.write(i, value);
+        } else if (self.fpuDevice(addr)) |i| {
+            self.fpu.write(i, value);
         } else if (self.todDevice(addr)) |i| {
             self.tod.write(i, value);
         } else if (self.perfDevice(addr) != null) {
@@ -3545,4 +3568,58 @@ test "the byte windows: reads, writes, and fetches (SYSTEM §9)" {
     try cpu.mem.write(0x5FFF_FFFF, 0x0C00_0000);
     cpu.regs[15] = 0x5FFF_FFFF;
     try std.testing.expectEqual(@as(u32, 0), cpu.fetch());
+}
+
+test "the FPU: a program pushes, adds, and reads, and reset empties it" {
+    // MOVE @X_W, 2;  MOVE @X_W, 3;  MOVE @CMD, 0x10 (ADD);  MOVE R1, @X_W;  HALT
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)),     fpu_base + 3, 2,
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)),     fpu_base + 3, 3,
+        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)),     fpu_base + 4, 0x10,
+        alu_iw(.always, MOVE, .none, reg(1), ind_imm(0), reg(0)), fpu_base + 3, HALT,
+    });
+    try runToHalt(&cpu);
+    try testing.expectEqual(5, cpu.regs[1]);
+    try testing.expectEqual(0x4014_0000, cpu.peek(fpu_base + 1)); // 5.0
+    try testing.expectEqual(1, cpu.mem.pages.count()); // only the program's page
+    cpu.reset();
+    try testing.expectEqual(0x0008_0000, cpu.peek(fpu_base + 5)); // empty: depth 0, a NaN
+}
+
+test "a fetch from the FPU's words reads 0, a NOP, and pushes nothing" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    cpu.regs[15] = fpu_base;
+    for (0..8) |_| try cpu.step();
+    try testing.expectEqual(fpu_base + 8, cpu.regs[15]);
+    try testing.expectEqual(0, cpu.fpu.depth);
+    try testing.expectEqual(0, cpu.fpu.flags);
+}
+
+test "with --no-fpu, the FPU's words are ordinary memory" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    cpu.fpu_enabled = false;
+    for (0..8) |i| try cpu.write(fpu_base + @as(u32, @intCast(i)), 0x100 + @as(u32, @intCast(i)));
+    for (0..8) |i| try testing.expectEqual(0x100 + @as(u32, @intCast(i)), cpu.read(fpu_base + @as(u32, @intCast(i))));
+    try testing.expectEqual(0, cpu.fpu.depth);
+}
+
+test "a peek of each FPU word changes nothing, whatever X is" {
+    // A NaN, the infinities, 1e300, and -1e300, which a careless conversion
+    // to an integer would trap on in ReleaseSafe.
+    const values = [_]u64{ 0x7FF8_0000_0000_0123, 0x7FF0_0000_0000_0000, 0xFFF0_0000_0000_0000, 0x7E37_E43C_8800_759C, 0xFE37_E43C_8800_759C };
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    for (values) |v| {
+        cpu.fpu = .{};
+        cpu.fpu.write(0, @truncate(v));
+        cpu.fpu.write(1, @truncate(v >> 32));
+        const before = cpu.fpu;
+        for (0..8) |i| _ = cpu.peek(fpu_base + @as(u32, @intCast(i)));
+        for (0..8) |i| _ = cpu.read(fpu_base + @as(u32, @intCast(i)));
+        try testing.expectEqualDeep(before, cpu.fpu);
+    }
 }

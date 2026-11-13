@@ -23,7 +23,8 @@ OPTS_wrap      = -d 0xffffffff:1
 # are in the comments of each program. Run make bins after changing one.
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge irqtimer after start cputest console screen screencolor screeninvert iofetch \
   reads reserved mpu mpu64 mpubits perf events timer input r15modes r0dest r14mem skipconst carryin shiftc \
-  wrapmem smcown scrbound time trapsym sd font net eth bytewin wait waitnone clock clockhost stack conirq
+  wrapmem smcown scrbound time trapsym sd font net eth bytewin wait waitnone clock clockhost stack conirq \
+  fpu fpustack fpudec
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
@@ -86,6 +87,11 @@ OPTS_net     = -d 0x200:17 -d 0xffffffb0:16
 # The frames sent go to test/eth.frames.out, checked after the probes.
 OPTS_eth     = --eth-in test/eth.in --eth-out test/eth.frames.out -d 0x200:33 -d 0xffffffc0:16
 OPTS_font    = -d 0xfffe0820:32 -d 0xfffe0020:1 -d 0xfffe2826:1 -d 0xffffff86:1
+OPTS_fpu     = --step-time -d 0x200:24 -d 0xffffff88:8
+# fpu again, with the FPU's words ordinary memory: each read returns the
+# last value written there, or 0.
+OPTS_fpu_mem = --step-time --no-fpu -d 0x200:24 -d 0xffffff88:8
+OPTS_fpustack = -d 0x200:18 -d 0xffffff88:8
 OPTS_bytewin = -d 0x202:3 -d 0x03ffffff:1 -d 0x60000000:1 -d 0x20000809:1 -d 0x5000080e:1
 
 define check
@@ -96,19 +102,25 @@ define check
 endef
 
 # The unit tests run in Debug, for its safety checks; niceemu itself is
-# built ReleaseSafe, which keeps the checks but runs much faster.
+# built ReleaseSafe, which keeps the checks but runs much faster. The
+# FPU's unit test replays the vectors of its model, test/fpu_vectors.py,
+# which also checks their coverage.
 test: build bincheck fmtcheck
-	$(ZIG) build test --summary all
+	@$(PYTHON) test/fpu_vectors.py -o test/fpu.vectors.out
+	$(ZIG) build test -Dfpu-vectors=$(abspath test/fpu.vectors.out) --summary all
 	@$(MAKE) --no-print-directory programs
 	@NICEEMU=$(abspath $(EMU)) $(PYTHON) test/errors.py
 	@$(PYTHON) test/fpu_model_test.py
-	@$(PYTHON) test/fpu_vectors.py
 
-# The FPU's vectors with a long random sequence, from the seed SEED.
+# The FPU's vectors with a long random sequence, from the seed SEED,
+# replayed by the unit test in ReleaseSafe. A failing run leaves the
+# vectors in test/fpu.long.out.
 SEED ?= 1
 COUNT ?= 1000000
 fpu-long:
-	$(PYTHON) test/fpu_vectors.py --seed $(SEED) --count $(COUNT)
+	$(PYTHON) test/fpu_vectors.py --seed $(SEED) --count $(COUNT) -o test/fpu.long.out
+	$(ZIG) build test -Doptimize=ReleaseSafe -Dfpu-vectors=$(abspath test/fpu.long.out) --summary all
+	rm -f test/fpu.long.out
 
 # The example and probe programs, and the debug link, on the niceemu of
 # EMU. errors.py is apart, as it expects a build without the window.
@@ -119,6 +131,7 @@ programs:
 	$(call check,timer_noirq,test/timer.bin,timer)
 	$(call check,scrbound2004,test/scrbound.bin)
 	$(call check,clock_mem,test/clock.bin)
+	$(call check,fpu_mem,test/fpu.bin)
 	$(call check,wait_in,test/wait.bin)
 	$(call check,wait_end,test/wait.bin)
 	$(call check,stack_none,$(ASM)/count.bin)

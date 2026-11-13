@@ -65,7 +65,7 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 | `0xFFFFFF83`–`0xFFFFFF85` | 3 | Reserved for I/O. |
 | `0xFFFFFF86` | 1 | Reserved for I/O. The emulator's window takes its font base from it (§1.8). |
 | `0xFFFFFF87` | 1 | Reserved for I/O. |
-| `0xFFFFFF88`–`0xFFFFFF8F` | 8 | Floating-point unit (§11), not yet in the emulator. |
+| `0xFFFFFF88`–`0xFFFFFF8F` | 8 | Floating-point unit (§11). With `--no-fpu`, the emulator makes them ordinary memory. |
 | `0xFFFFFF90`–`0xFFFFFF9F` | 16 | Reserved for I/O. |
 | `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | SD card (§5). |
 | `0xFFFFFFB0`–`0xFFFFFFBF` | 16 | Network station (§6). |
@@ -609,7 +609,7 @@ To read the time into R3:R2 seconds and R1 microseconds:
 
 ## 11. Floating-point unit
 
-The emulator and the FPGA implementation are to map a floating-point unit, the FPU, at `0xFFFFFF88`–`0xFFFFFF8F`. Neither has it yet: this section is the specification that they will follow, in the order SYSTEM.md, the emulator, nicewasm, and the VHDL. It holds a stack of up to 16 IEEE 754 binary64 values. A program pushes values, writes a command, and reads the result from the top of the stack. This section is phase 1: the stack, the arithmetic, the conversions, and the decimal commands. The functions, such as `SIN` and `LN`, are phase 2, and their command numbers are reserved (§11.3).
+The emulator maps a floating-point unit, the FPU, at `0xFFFFFF88`–`0xFFFFFF8F`, and `--no-fpu` makes its words ordinary memory. The FPGA implementation does not have it yet: nicewasm and then the VHDL are to follow this section. It holds a stack of up to 16 IEEE 754 binary64 values. A program pushes values, writes a command, and reads the result from the top of the stack. This section is phase 1: the stack, the arithmetic, the conversions, and the decimal commands. The functions, such as `SIN` and `LN`, are phase 2, and their command numbers are reserved (§11.3).
 
 X is the value on the top of the stack, Y the value below it, and the depth the number of values, 0 to 16. A 64-bit value takes two words, low word first, as in [ABI.md](../runtime/ABI.md) and the math unit (§2).
 

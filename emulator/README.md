@@ -31,7 +31,7 @@ Both are built for the baseline x86_64 CPU, with ReleaseSafe, as
 
 ## Build and test
 
-    make          # unit tests, example and probe programs, test/errors.py, the FPU's model
+    make          # unit tests, example and probe programs, test/errors.py, the FPU's model and vectors
     make build    # just build zig-out/bin/niceemu
     make window   # build it with the window of --window
     make window-test  # build it so, and run test/window.py
@@ -118,6 +118,7 @@ goes through these steps on a small program, and a
 | `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
 | `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
 | `--no-cycle-counter` | Make the cycle counter, the microsecond counter, and the clock of the time of day, `0xFFFFFF40`, `0xFFFFFF41`, and `0xFFFFFF44`–`0xFFFFFF49`, ordinary memory (see Performance counters below). |
+| `--no-fpu` | Make the floating-point unit, `0xFFFFFF88`–`0xFFFFFF8F`, ordinary memory, as on a system without one (see Floating-point unit below). |
 | `--no-font` | Make the font RAM and the character ROM, `0xFFFE0000`–`0xFFFE3FFF`, ordinary memory, so that a program that reaches them runs as on an FPGA core with none (see Window below). |
 | `--step-time` | Count one microsecond per step in the microsecond counter, and in the clock of the time of day from 0 with "set" 0, rather than the host's time, so that a run counts the same each time (see Performance counters below). |
 | `--no-timer-irq` | The timer counts, but raises no requests, so that `--irq` can raise them instead (see Timer below). |
@@ -267,7 +268,9 @@ address twice and a file with no words are errors.
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (SYSTEM.md §4). Raises IRQ once every P steps. |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (SYSTEM.md §2). Multiplies and divides A and B and counts the bits of A, and divides C and D and takes the square root of C. |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (SYSTEM.md §3). Cycles, instructions, microseconds, data reads, stores, skips, jumps, and interrupts, 64 bits each. The clock of the time of day, at `0xFFFFFF46`–`0xFFFFFF49` (SYSTEM.md §10). The fetch statistics of the FPGA core, at `0xFFFFFF60`–`0xFFFFFF7F`, read 0. |
-| `0xFFFFFF80`–`0xFFFFFF9F` | 32 | Reserved for I/O, like `0xFFFFFF03`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (SYSTEM.md §1.4), and takes its font base from `0xFFFFFF86` (SYSTEM.md §1.8). |
+| `0xFFFFFF80`–`0xFFFFFF87` | 8 | Reserved for I/O, like `0xFFFFFF03`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (SYSTEM.md §1.4), and takes its font base from `0xFFFFFF86` (SYSTEM.md §1.8). |
+| `0xFFFFFF88`–`0xFFFFFF8F` | 8 | Floating-point unit (SYSTEM.md §11): a stack of 16 doubles, the views of X, and the commands. With `--no-fpu`, ordinary memory. |
+| `0xFFFFFF90`–`0xFFFFFF9F` | 16 | Reserved for I/O, like `0xFFFFFF03`–`0xFFFFFF0F`. |
 | `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | SD card controller (SYSTEM.md §5). Two slots, with the images of `--sd0` and `--sd1`. |
 | `0xFFFFFFB0`–`0xFFFFFFBF` | 16 | Network station (SYSTEM.md §6). The IP and MAC addresses, counts of frames that read 0, and the state of `--link`. |
 | `0xFFFFFFC0`–`0xFFFFFFCF` | 16 | Ethernet frames (SYSTEM.md §7). A queue of 4 frames and a send buffer, with the frames of `--eth-in` and `--eth-udp`. |
@@ -358,6 +361,29 @@ runs the same on the emulator and on an FPGA core whose cycle count
 cannot be predicted, so their traces can be compared. The random programs
 of the HDL tests run this way ([hdl/README.md](../hdl/README.md)). The
 instruction counter stays.
+
+### Floating-point unit
+
+The floating-point unit of SYSTEM.md §11, in `src/fpu.zig`, holds the
+stack of 16 doubles, its depth, and the four flags. It computes with the
+host's doubles, which round to nearest, even on a tie, as §11.1 asks,
+and computes the flags itself, so the host's own flags do not matter. It
+writes the canonical NaN for every NaN that it computes. A command runs
+when `CMD` is written, at once, so a read never waits. A read of a word
+changes nothing, so `--dump` and the debug link show the unit as it is,
+and a fetch from its words reads 0, a `NOP`. `--no-fpu` makes its eight
+words ordinary memory, as on a system without the unit.
+
+Its unit test replays the vectors of `test/fpu_vectors.py` (Tests
+below): it sets each line's state, makes the access, and compares the
+state after it and the value read. `test/fpu.nasm` uses the views and a
+few commands of each group, and the two examples of SYSTEM.md §11.5, and
+`fpu_mem` runs it again with `--no-fpu`. `test/fpustack.nasm` checks the
+depth, the stack faults, the sticky flags, a save and a restore of
+`STATUS`, an instruction that reads and writes one register of the unit,
+and a read of the eight words through `@R9++`. `test/fpudec.nasm` prints
+numbers through `DIGITS 15`, and reads one back through `FROMBCD` and
+`SCALE10`.
 
 ### Clock
 
@@ -643,8 +669,9 @@ line.
 ## Tests
 
 `make test` first checks with `zig fmt --check` that the Zig sources are
-laid out as `zig fmt` lays them out. It then runs the unit tests in
-`src/cpu.zig`, then the example programs
+laid out as `zig fmt` lays them out. It then writes the FPU's vectors
+with `test/fpu_vectors.py`, runs the unit tests in `src/cpu.zig` and the
+other sources, which replay the vectors, then the example programs
 in `../assembler/test/` (the three 2004 programs and `wrap`) and the
 probes: the programs `test/*.nasm`, each of which exercises one feature
 and has a hand-checked `test/X.expected`. The output and exit status of
@@ -690,9 +717,9 @@ Last, `test/udp.py` checks the frames over the socket of `--eth-udp`
 `tools/nicetap.py` and a TAP device (A real network above).
 
 `test/fpu_model.py` is a reference model of the floating-point unit of
-SYSTEM.md §11, which niceemu does not have yet. It computes every result
-exactly, with Python's fractions, and rounds it itself, so it shares
-nothing with the host's doubles, which the emulator will use. Its widths
+SYSTEM.md §11. It computes every result exactly, with Python's
+fractions, and rounds it itself, so it shares nothing with the host's
+doubles, which the emulator uses. Its widths
 are parameters. `make test` runs `test/fpu_model_test.py`, which checks
 the model four ways: a table of hand-checked accesses, each with its
 reason; the model at binary64 against the host's doubles, on special
@@ -717,9 +744,11 @@ rounding case, exact, down, up, or a tie, the class of the result, and
 the flags each command sets. `make test` runs it, and it fails if a bin
 that can occur is empty, if a command sets a flag that its row of
 `FLAGS` does not allow, or if a line does not parse back and replay on
-the model. With `-o FILE` it writes the vectors, which the emulator,
-`tb_fpu`, and the cores are to replay. `make fpu-long` runs a million
-random accesses, from `SEED`, 1 by default.
+the model. With `-o FILE` it writes the vectors. `make test` writes them
+to `test/fpu.vectors.out`, and the unit test of `src/fpu.zig` replays
+them on the emulator's unit (Floating-point unit above); `tb_fpu` and
+the cores are to replay them too. `make fpu-long` writes and replays a
+random sequence of a million accesses, from `SEED`, 1 by default.
 
 `test/cputest.nasm` is a self-checking test of the whole instruction set:
 every opcode, shift, addressing mode, and condition, the flags, R0, R14, and

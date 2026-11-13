@@ -104,12 +104,15 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   values. A read of a bit count of A waits as a product does, and a read
   of the square root of C is accepted in cycle t + 2 + 32 at the earliest.
   The bus is held until then ("MPU wait").
-- The FPU of SYSTEM.md §11, which no core has yet, as an estimate: a
-  command written to CMD, accepted in cycle t, keeps the unit busy until
-  cycle t + n, and a read or a write of any of its words but a read of
-  CMD is accepted then at the earliest ("fpu"). n is 1 for the stack
-  commands, --fpu-long (60) for DIV, SQRT, ISQRT, FMOD, SCALE10, and
-  DIGITS, and --fpu-op (4) for the others.
+- The FPU of SYSTEM.md §11, hdl/src/fpu.vhd: a command written to CMD,
+  accepted in cycle t, keeps the unit busy until cycle t + n, and a read
+  or a write of any of its words but a read of CMD is accepted then at
+  the earliest ("fpu"). n is 1 for the stack commands, --fpu-long (75)
+  for DIV, SQRT, ISQRT, FMOD, SCALE10, and DIGITS, and --fpu-op (18) for
+  the others. These are averages, which give the cycles of float.c on the
+  pipelined core within 1%. The FPU's real times depend on the operands,
+  and the reads of X_W, and of X_S for a value that is not binary32,
+  take cycles too, which the model leaves out.
 - A core that forms every operand value, address, and shift count in
   PREPARE, one stage before WRITE, as the re-timed core does, has four
   more rules, each 1 by default; 0 turns one off. --shift-late N: a
@@ -421,8 +424,8 @@ class Model:
                  agen: int = 1, sidefx_fast: bool = False, mul: int = 3,
                  div_skip: int = 8, shift_late: int = 1, shift_reg: int = 1,
                  sum_wait: int = 1, dest_adjust: int = 1, read_late: int = 1,
-                 read_bus: int = 1, slave_gap: int = 1, fpu_op: int = 4,
-                 fpu_long: int = 60) -> None:
+                 read_bus: int = 1, slave_gap: int = 1, fpu_op: int = 18,
+                 fpu_long: int = 75) -> None:
         self.mem = mem
         self.bp = max(2, ibuf // 2)
         self.flush, self.early, self.agen = flush, early, agen
@@ -1369,7 +1372,8 @@ def test() -> None:
                 f.write(src)
             subprocess.run([sys.executable, os.path.join(HERE, "..", "assembler", "niceasm.py"),
                             "-o", binp, nasm], check=True, stdout=subprocess.DEVNULL)
-            m = Model(load_bin(binp))
+            # The snippets of the FPU were worked out with its times 4 and 60.
+            m = Model(load_bin(binp), fpu_op=4, fpu_long=60)
             for option, value in opts.items():
                 setattr(m, option, value)
             run_model(m, hazards.trace_lines(binp))
@@ -1427,12 +1431,12 @@ def main() -> None:
     ap.add_argument("--slave-gap", type=int, default=1, metavar="N",
                     help="cycles more for an access to another slave of the data bus than "
                          "the one before (1)")
-    ap.add_argument("--fpu-op", type=int, default=4, metavar="N",
+    ap.add_argument("--fpu-op", type=int, default=18, metavar="N",
                     help="cycles the FPU is busy with a command other than a stack command or "
-                         "one of --fpu-long (4)")
-    ap.add_argument("--fpu-long", type=int, default=60, metavar="N",
+                         "one of --fpu-long (18)")
+    ap.add_argument("--fpu-long", type=int, default=75, metavar="N",
                     help="cycles the FPU is busy with DIV, SQRT, ISQRT, FMOD, SCALE10, or "
-                         "DIGITS (60)")
+                         "DIGITS (75)")
     ap.add_argument("--phases", type=int, metavar="N",
                     help="fail unless each program reads INSTR_LO around N phases")
     ap.add_argument("--against", metavar="FILE",

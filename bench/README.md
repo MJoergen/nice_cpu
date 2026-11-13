@@ -36,10 +36,10 @@ library (see The float benchmark below).
 
 The programs that use floats, `float.c`, Dhrystone, and CoreMark, are
 joined with the float library of the FPU, `runtime/float_fpu.nasm`, and
-with `NO_FPU=1` with the one in software, `runtime/float.nasm`. The cores
-of `hdl/` have no FPU yet, so `make core`, `core-dhry`, and
-`core-coremark` run programs built with `float.nasm`, which a make of
-their own leaves in `build/nofpu/`.
+with `NO_FPU=1` with the one in software, `runtime/float.nasm`. `make
+test` runs `float.c` with `float.nasm` too, built by a make of its own in
+`build/nofpu/`. `make core`, `core-dhry`, and `core-coremark` run the
+programs with the FPU, `hdl/src/fpu.vhd`.
 
 `bench.wasm`, `float.wasm`, `dhrystone/dhry.wasm`, and `coremark/coremark.wasm` are checked in, so `make` and
 `make test` need only Python 3 and the emulator, as the translator's
@@ -309,11 +309,15 @@ MICROARCH.md §3 to §5:
   write of an operand, and a quotient after one cycle per bit, less the
   runs of eight zero bits that the divider skips, which the model works
   out from the operands in the trace;
-- the FPU of SYSTEM.md §11, which no core has yet, as an estimate: a
-  command keeps it busy for a cycle if it is a stack command, `--fpu-long`
-  cycles (60) for `DIV`, `SQRT`, `ISQRT`, `FMOD`, `SCALE10`, and `DIGITS`,
-  and `--fpu-op` cycles (4) for the others, and every access to its words
-  but a read of `CMD` waits until then.
+- the FPU of SYSTEM.md §11, `hdl/src/fpu.vhd`, by averages: a command
+  keeps it busy for a cycle if it is a stack command, `--fpu-long`
+  cycles (75) for `DIV`, `SQRT`, `ISQRT`, `FMOD`, `SCALE10`, and `DIGITS`,
+  and `--fpu-op` cycles (18) for the others, and every access to its words
+  but a read of `CMD` waits until then. The FPU's times depend on the
+  operands, and the model leaves out the reads of `X_W`, and of `X_S` for
+  a value that is not binary32, which go through its unit too. The
+  averages give `float.c` and `float_inline` on the pipelined core within
+  1%.
 
 Every cycle above one per instruction is
 charged to the rule that caused it, so the output says where the time
@@ -600,13 +604,22 @@ from 16825 words to 10270. The table from the emulator:
     norm             11679        11707  7703cd00  ok
     total           180304       180444
 
-That is 5.9 times fewer instructions than with `float.nasm`. No core has
-the FPU yet, so its cycles are the model's estimate: `make cycles` gives
-463441, 4.1 times fewer than the 1916828 without the FPU, at 2.57 per
-instruction. 53644 of them, 17% of those above one per instruction, wait
-for the FPU. With the FPU's
-estimated times halved or doubled, `--fpu-op 2 --fpu-long 30` and
-`--fpu-op 8 --fpu-long 120`, it gives 436619 and 517085.
+That is 5.9 times fewer instructions than with `float.nasm`. On the
+pipelined core, `make core CORE_PROGRAMS=float` gives:
+
+    phase      instructions       cycles  result
+    convert          42793       115031  97943df8  ok
+    dot32             4946        15728  c0c723f7  ok
+    dot64             6569        17940  ba3319ea  ok
+    mandel          114317       393311  4c25faf9  ok
+    norm             11679        39532  7703cd00  ok
+    total           180304       581542
+
+That is 3.3 times fewer cycles than the 1916828 without the FPU, at 3.23
+per instruction. `make cycles` gives 576315. The FPU's unit takes 14
+cycles for an `ADD` and 16 for a `MUL`, and the FPU about 4 more for the
+command. Issue [#164](https://github.com/MJoergen/nice_cpu/issues/164)
+lists ways to make it faster.
 
 `make test` also runs `float.c` as `build/float_inline.bin`, translated
 with nicewasm's `--inline-fpu`, which writes the FPU's accesses in place
@@ -621,11 +634,9 @@ more, and the emulator gives:
     norm              8319         8347  7703cd00  ok
     total            85159        85299
 
-That is 53% fewer instructions than with the calls. `make cycles`
-estimates 212892 cycles, 54% fewer than 463441, and 183892 and 270892
-with the FPU's times halved and doubled. With fewer instructions between
-the FPU's commands, 59153 cycles, 36% of those above one per
-instruction, wait for it.
+That is 53% fewer instructions than with the calls. On the pipelined core
+it takes 343753 cycles, 41% fewer than 581542, at 4.04 per instruction,
+and `make cycles` gives 341012.
 
 ## Dhrystone
 

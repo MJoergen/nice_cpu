@@ -41,7 +41,6 @@ of `hdl/` have no FPU yet, so `make core`, `core-dhry`, and
 `core-coremark` run programs built with `float.nasm`, which a make of
 their own leaves in `build/nofpu/`.
 
-
 `bench.wasm`, `float.wasm`, `dhrystone/dhry.wasm`, and `coremark/coremark.wasm` are checked in, so `make` and
 `make test` need only Python 3 and the emulator, as the translator's
 tests do. `make wasm` needs clang with the wasm32 target and wasm-ld, and
@@ -309,7 +308,12 @@ MICROARCH.md §3 to §5:
 - the math unit of `hdl/src/mpu.vhd`: a product two cycles after the
   write of an operand, and a quotient after one cycle per bit, less the
   runs of eight zero bits that the divider skips, which the model works
-  out from the operands in the trace.
+  out from the operands in the trace;
+- the FPU of SYSTEM.md §11, which no core has yet, as an estimate: a
+  command keeps it busy for a cycle if it is a stack command, `--fpu-long`
+  cycles (60) for `DIV`, `SQRT`, `ISQRT`, `FMOD`, `SCALE10`, and `DIGITS`,
+  and `--fpu-op` cycles (4) for the others, and every access to its words
+  but a read of `CMD` waits until then.
 
 Every cycle above one per instruction is
 charged to the rule that caused it, so the output says where the time
@@ -352,7 +356,7 @@ The phases of the translated program take an estimated
 2.6 per instruction: the hand-written code has more instructions with
 side effects, memory operands, and reads of the math unit, and fewer
 instructions in all. Options such as `--flush`, `--early`, `--agen`,
-`--read-bus`, `--slave-gap`, `--mul`, and `--div-skip` set the model's parameters, to try a design
+`--read-bus`, `--slave-gap`, `--mul`, `--div-skip`, `--fpu-op`, and `--fpu-long` set the model's parameters, to try a design
 change before it is built. Four options, each 1 by default, are the rules of the core, which forms every operand value, address, and shift count in PREPARE (MICROARCH.md §7.3 and §7.4); 0 turns a rule off: `--shift-late N`
 gives a shift whose count WRITE reduces N cycles more in WRITE, and a
 rotation through C 2N: a count from memory, through an adder (`c[R]` or
@@ -579,7 +583,29 @@ instruction, from 2301987 in V1.8 (−16.7%).
 A read of a bit count waits for the math unit's multiplier count, two
 cycles, and the bus passes to the math unit and back to RAM a cycle
 late (see The cycle estimate above), so on the pipelined core the bit
-counts save most of their steps but few of their cycles.
+counts save most of their steps but few of their cycles. These figures
+are of the float library in software, which `make test` still runs, from
+`build/nofpu/float.bin`.
+
+With the FPU of SYSTEM.md §11 (issue
+[#161](https://github.com/MJoergen/nice_cpu/issues/161)), the float
+library is `runtime/float_fpu.nasm`, 289 words, and the program shrinks
+from 16825 words to 10270. The table from the emulator:
+
+    phase      instructions       cycles  result
+    convert          42793        42821  97943df8  ok
+    dot32             4946         4974  c0c723f7  ok
+    dot64             6569         6597  ba3319ea  ok
+    mandel          114317       114345  4c25faf9  ok
+    norm             11679        11707  7703cd00  ok
+    total           180304       180444
+
+That is 5.9 times fewer instructions than with `float.nasm`. No core has
+the FPU yet, so its cycles are the model's estimate: `make cycles` gives
+463441, 4.1 times fewer than the 1916828 without the FPU, at 2.57 per
+instruction. 53644 of them, 17%, wait for the FPU. With the FPU's
+estimated times halved or doubled, `--fpu-op 2 --fpu-long 30` and
+`--fpu-op 8 --fpu-long 120`, it gives 436619 and 517085.
 
 ## Dhrystone
 

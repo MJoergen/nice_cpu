@@ -104,6 +104,12 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   values. A read of a bit count of A waits as a product does, and a read
   of the square root of C is accepted in cycle t + 2 + 32 at the earliest.
   The bus is held until then ("MPU wait").
+- The FPU of SYSTEM.md §11, which no core has yet, as an estimate: a
+  command written to CMD, accepted in cycle t, keeps the unit busy until
+  cycle t + n, and a read or a write of any of its words but a read of
+  CMD is accepted then at the earliest ("fpu"). n is 1 for the stack
+  commands, --fpu-long (60) for DIV, SQRT, ISQRT, FMOD, SCALE10, and
+  DIGITS, and --fpu-op (4) for the others.
 - A core that forms every operand value, address, and shift count in
   PREPARE, one stage before WRITE, as the re-timed core does, has four
   more rules, each 1 by default; 0 turns one off. --shift-late N: a
@@ -164,7 +170,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 PHASES = ["rng64", "crc32", "bst", "heapsort", "vm", "strings"]
 CAUSES = ["startup", "fetch", "flush", "early", "sr", "jump", "agen", "shiftreg", "sumwait",
-          "bus", "mpu", "readbus", "readlate", "shiftlate", "adjust", "interrupt"]
+          "bus", "mpu", "fpu", "readbus", "readlate", "shiftlate", "adjust", "interrupt"]
 CAUSE_TEXT = {
     "multi": "multi-micro-op instructions",
     "startup": "pipeline start",
@@ -178,6 +184,7 @@ CAUSE_TEXT = {
     "sumwait": "sum operand or store address register just written",
     "bus": "data bus: read after store, two reads in a micro-op",
     "mpu": "math unit result not ready",
+    "fpu": "FPU busy with a command",
     "readbus": "read data a cycle after the bus (registered request)",
     "readlate": "read data used by more than a register write",
     "shiftlate": "shift count reduced in WRITE (memory, adder, R14, C<C)",
@@ -204,6 +211,21 @@ MPU_RESULTS = {0xFFFFFF22: "mul", 0xFFFFFF23: "mul", 0xFFFFFF24: "mul", 0xFFFFFF
 # The steps of the square root of hdl/src/mpu.vhd, 2 bits of C in each.
 SQRT_STEPS = 32
 
+# The FPU's words (SYSTEM.md §11), its CMD, and the commands that take
+# --fpu-long cycles: DIV, SQRT, ISQRT, FMOD, SCALE10, and DIGITS.
+FPU_BASE = 0xFFFFFF88
+FPU_CMD = 0xFFFFFF8C
+FPU_LONG = {0x13, 0x14, 0x1A, 0x1D, 0x39, 0x3A}
+
+
+def fpu_cycles(word: int, op: int, long: int) -> int:
+    """The cycles the FPU is busy with the command word, as the model
+    estimates them."""
+    number = word & 0xFF
+    if number <= 0x06:
+        return 1
+    return long if number in FPU_LONG else op
+
 
 def slave(addr: int) -> str:
     """The slave of the data bus that addr reaches, as in hdl/test/tb_core.vhd."""
@@ -211,6 +233,8 @@ def slave(addr: int) -> str:
         return "timer"
     if addr >> 5 == 0xFFFFFF20 >> 5:
         return "mpu"
+    if addr >> 3 == FPU_BASE >> 3:
+        return "fpu"
     if addr >> 4 == 0xFFFFFF40 >> 4:
         return "perf"
     if addr >> 6 == 0xFFFFFF40 >> 6 and (addr >> 4) & 3:
@@ -397,7 +421,8 @@ class Model:
                  agen: int = 1, sidefx_fast: bool = False, mul: int = 3,
                  div_skip: int = 8, shift_late: int = 1, shift_reg: int = 1,
                  sum_wait: int = 1, dest_adjust: int = 1, read_late: int = 1,
-                 read_bus: int = 1, slave_gap: int = 1) -> None:
+                 read_bus: int = 1, slave_gap: int = 1, fpu_op: int = 4,
+                 fpu_long: int = 60) -> None:
         self.mem = mem
         self.bp = max(2, ibuf // 2)
         self.flush, self.early, self.agen = flush, early, agen
@@ -408,6 +433,7 @@ class Model:
         self.read_late = read_late
         self.read_bus = read_bus
         self.slave_gap = slave_gap
+        self.fpu_op, self.fpu_long = fpu_op, fpu_long
         self.bubble = {"flush": flush, "early": early, "interrupt": flush + 1}
         self.cache: Dict[Tuple[int, int], Info] = {}
         self.regs = [0] * 16
@@ -447,6 +473,10 @@ class Model:
         self.mpu_ops = {0xFFFFFF20: 0, 0xFFFFFF21: 0, 0xFFFFFF30: 0, 0xFFFFFF31: 0,
                         0xFFFFFF32: 0, 0xFFFFFF33: 0}
         self.mpu_ready = {u: -10 for u in MPU_UNITS}
+        # The FPU: the cycle in which it takes the next access, and the
+        # cycle in which the bus took the last write of CMD.
+        self.fpu_ready = -10
+        self.fpu_cmd_at = -10
 
     # FETCH: the cycle pair k of the stream is fetched.
     def fetch_time(self, k: int) -> Tuple[int, str]:
@@ -560,11 +590,14 @@ class Model:
                     unit = MPU_RESULTS.get(a)
                     if unit is not None and self.mpu_ready[unit] > acc:
                         acc = self.mpu_ready[unit]
+                    fpu = slave(a) == "fpu" and a != FPU_CMD and self.fpu_ready > acc
+                    if fpu:
+                        acc = self.fpu_ready
                     late = 0 if u.bypass else self.read_late
                     if acc + 1 + late > data:
                         data = acc + 1 + late
-                        dtg = ("mpu" if acc > t + self.read_bus else "readlate" if late else
-                               "readbus" if self.read_bus else "flow")
+                        dtg = (("fpu" if fpu else "mpu") if acc > t + self.read_bus else
+                               "readlate" if late else "readbus" if self.read_bus else "flow")
                     self.last_bus = acc
                     if a == INSTR_LO:
                         counter_read_time = acc
@@ -617,6 +650,12 @@ class Model:
             # retires when the bus takes it.
             if u.store and not skipped:
                 acc = max(done + 1, self.bus_free(store_addr))
+                fpu_wait = 0
+                if slave(store_addr) == "fpu" and self.fpu_ready > acc:
+                    fpu_wait = self.fpu_ready - acc
+                    acc = self.fpu_ready
+                if store_addr == FPU_CMD:
+                    self.fpu_cmd_at = acc
                 self.last_bus = acc
                 # FETCH makes no request while the store waits in DBUS
                 # after its first cycle there (hdl/src/pipeline.vhd).
@@ -625,7 +664,8 @@ class Model:
                 if len(self.fblock) > 64:
                     self.fblock = {c for c in self.fblock if c > done - 16}
                 if store_addr >= IO_BASE:
-                    self.gaps["bus"] += acc - done
+                    self.gaps["bus"] += acc - done - fpu_wait
+                    self.gaps["fpu"] += fpu_wait
                     done = acc
             self.s_prev, self.w_prev, self.done_prev = s, w, done
             self.pin_prev = pin
@@ -663,6 +703,8 @@ class Model:
                 if addr in self.mpu_ops:
                     self.mpu_ops[addr] = val
                     self.mpu_write(addr, self.last_bus)
+                elif addr == FPU_CMD:
+                    self.fpu_ready = self.fpu_cmd_at + fpu_cycles(val, self.fpu_op, self.fpu_long)
         nxt = (pc + info.words) & 0xFFFFFFFF
         if info.early and skipped:
             # A backward jump that DECODE predicted taken, not taken: WRITE
@@ -851,7 +893,7 @@ CAUSE_GROUPS = [
     ("register", ["agen", "shiftreg", "sumwait"], ["REG"]),
     ("order", ["sr", "jump"], ["ORDER"]),
     ("bus", ["bus"], ["BUS", "STORE"]),
-    ("read", ["readbus", "readlate", "mpu"], ["STALL", "READ", "LATE"]),
+    ("read", ["readbus", "readlate", "mpu", "fpu"], ["STALL", "READ", "LATE"]),
     ("shift", ["shiftlate"], ["SHIFT"]),
     ("adjust", ["adjust"], ["ADJUST"]),
     ("interrupt", ["interrupt"], ["INTR"]),
@@ -1085,6 +1127,31 @@ next            HALT
      # can be read at 10 + 3 = 13, data in WRITE at 14: a gap of 14 - 10 -
      # 1 = 3. HALT done at 15, so 16 cycles.
      4, 16, {"startup": 7, "bus": 2, "mpu": 3}),
+    ("FPU: a read of X_LO waits for DIV",
+     """                MOVE    @0xFFFFFF8B, 7
+                MOVE    @0xFFFFFF8C, 0x13
+                MOVE    R1, @0xFFFFFF88
+                HALT
+""",
+     # As for the math unit: the push through X_W done at 8, the write of
+     # CMD done at 10, when the bus takes it, which starts DIV, busy for
+     # --fpu-long, 60 cycles, to 70. The read is loaded in PREPARE in 10,
+     # accepted at 70, data in WRITE at 71: a gap of 71 - 10 - 1 = 60.
+     # HALT done at 72, so 73 cycles.
+     4, 73, {"startup": 7, "bus": 2, "fpu": 60}),
+    ("FPU: a push waits for DIV too, and a read of CMD does not",
+     """                MOVE    @0xFFFFFF8B, 7
+                MOVE    @0xFFFFFF8C, 0x13
+                MOVE    R1, @0xFFFFFF8C
+                MOVE    @0xFFFFFF8B, 2
+                HALT
+""",
+     # DIV starts at 10 and ends at 70, as above. The read of CMD does not
+     # wait: loaded in 10, on the bus in 11, data in 12, done 12, a cycle
+     # of readbus. The push is in WRITE at 13, and the bus would take it
+     # at 14, but takes it at 70: 56 cycles of fpu, and 1 of bus. HALT
+     # done at 71, so 72 cycles.
+     5, 72, {"startup": 7, "bus": 3, "readbus": 1, "fpu": 56}),
     ("math unit: 9 / 7 unsigned skips 24 quotient bits in 3 cycles",
      """                MOVE    @0xFFFFFF20, 9
                 MOVE    @0xFFFFFF21, 7
@@ -1360,6 +1427,12 @@ def main() -> None:
     ap.add_argument("--slave-gap", type=int, default=1, metavar="N",
                     help="cycles more for an access to another slave of the data bus than "
                          "the one before (1)")
+    ap.add_argument("--fpu-op", type=int, default=4, metavar="N",
+                    help="cycles the FPU is busy with a command other than a stack command or "
+                         "one of --fpu-long (4)")
+    ap.add_argument("--fpu-long", type=int, default=60, metavar="N",
+                    help="cycles the FPU is busy with DIV, SQRT, ISQRT, FMOD, SCALE10, or "
+                         "DIGITS (60)")
     ap.add_argument("--phases", type=int, metavar="N",
                     help="fail unless each program reads INSTR_LO around N phases")
     ap.add_argument("--against", metavar="FILE",
@@ -1385,7 +1458,7 @@ def main() -> None:
             sys.exit("pipecycles.py: a trace needs --bin")
         m = Model(load_bin(binp), a.ibuf, a.flush, a.early, a.agen, a.sidefx_fast, a.mul,
                   a.div_skip, a.shift_late, a.shift_reg, a.sum_wait, a.dest_adjust, a.read_late,
-                  a.read_bus, a.slave_gap)
+                  a.read_bus, a.slave_gap, a.fpu_op, a.fpu_long)
         if a.retires:
             print(retires(m, hazards.trace_lines(path), a.retires, a.top))
             continue

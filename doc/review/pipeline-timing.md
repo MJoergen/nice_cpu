@@ -297,7 +297,7 @@ from the next cycle on (MICROARCH.md §5.3). Three things follow:
 - **A store into the I/O range retires only when the bus accepts it**,
   a cycle later. The timer counts steps, and its rule that the write's
   step counts needs the write in the cycle the step is counted on
-  `instret_o` (SYSTEM.md §4). Without this, the timer test ran for ever
+  `instret_o` (DEVICES.md §4). Without this, the timer test ran for ever
   and interrupts landed on other instructions than in the emulator.
 - **FETCH waits** while the store waits in the register after a redirect,
   or for more than a cycle, since WRITE's check of fetched code

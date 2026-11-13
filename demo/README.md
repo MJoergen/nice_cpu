@@ -52,7 +52,7 @@ the bytes `0x80` to `0x9F`. The bytes from `0xA0` on are the characters of
 ISO 8859-1.
 
 The key codes show the bytes that each key sends, as
-[SYSTEM.md §1.5](../doc/SYSTEM.md#15-keyboard) lists them, which helps when
+[DEVICES.md §1.5](../doc/DEVICES.md#15-keyboard) lists them, which helps when
 writing programs that read the keyboard. Each key gets a row, with its
 bytes in hex from column 2, and from column 42 as characters, a control
 code as `^` and a character: `^[` is ESC, `^C` is CTRL-C, and `^?` is
@@ -75,7 +75,7 @@ so its cell shows nothing. The keys do nothing here, except the function
 keys.
 
 The counters show the performance counters
-([SYSTEM.md §3](../doc/SYSTEM.md#3-performance-counters)). The top part
+([DEVICES.md §3](../doc/DEVICES.md#3-performance-counters)). The top part
 has those since reset: the time as `h:mm:ss.hh`, the microseconds, the
 cycles, and the instructions, all 64 bits in decimal, and the clock in
 MHz, the cycles divided by the microseconds: 100 on the MEGA65. The bottom
@@ -90,7 +90,7 @@ microsecond. That is usual for the pipelined core on code written by hand
 taken jump, which costs cycles, the count reads the sieve from memory, and
 each prime's square is read from the math unit. In `niceemu`, each step is
 a cycle, and the microseconds are the host's time, so the clock is the
-emulator's rate of steps ([SYSTEM.md §1.6](../doc/SYSTEM.md#16-pacing)).
+emulator's rate of steps ([DEVICES.md §1.6](../doc/DEVICES.md#16-pacing)).
 With `--step-time`, as in the test, each step is also a microsecond, so
 the clock is 1 MHz, and the sieve has one cycle per instruction. The keys
 do nothing here, except the function keys.
@@ -122,7 +122,7 @@ read there, or for the timer, the interrupts that came and the cycles
 that they took. The last line says whether all tests passed.
 
 Below the self-test is the network station
-([SYSTEM.md §6](../doc/SYSTEM.md#6-network-station)), shown again and
+([DEVICES.md §6](../doc/DEVICES.md#6-network-station)), shown again and
 again while the demo runs: its IP address in decimal with dots, its MAC
 address in hex with colons, its counts of the good frames received, the
 bad or dropped ones, and the frames sent, and the TCP port of the debug
@@ -189,7 +189,7 @@ itself. F11 tests the RAM from `0xB000` to `0xDFFF`. These are RAM words
 on every board, below a monitor's stack and variables: on NiceMonMEGA65
 those start at `0xFFFFF000`, and the RAM repeats through the address
 space, so `0xFFFFEFFF` is RAM word `0xEFFF` with 64K words and `0x1EFFF`
-with 128K ([SYSTEM.md §8](../doc/SYSTEM.md#8-systems-built-on-the-fpga-core)).
+with 128K ([DEVICES.md §8](../doc/DEVICES.md#8-systems-built-on-the-fpga-core)).
 The assembler checks that the image stays below `VARS`, as the variables
 and the tested RAM are `.RES` blocks. The demo writes only these words,
 the screen, the cursor's registers, the math unit, the timer, the
@@ -210,7 +210,7 @@ The demo halts at the end of the input: in `niceemu` without the window,
 after its input file, and on a board, after a break on the line, as when
 an Ethernet host half-closes its connection. That is on purpose: no key
 could come, and the tools and the tests end on the halt. In the window, a
-read never returns the end ([SYSTEM.md §1.5](../doc/SYSTEM.md#15-keyboard)),
+read never returns the end ([DEVICES.md §1.5](../doc/DEVICES.md#15-keyboard)),
 so the demo runs until F12 or until the window is closed.
 
 ## Building and testing

@@ -1,4 +1,4 @@
--- The port for Ethernet frames of SYSTEM.md §7: 16 words of I/O, a queue
+-- The port for Ethernet frames of DEVICES.md §7: 16 words of I/O, a queue
 -- of 4 frames received, a send buffer, and a port to the station, which
 -- writes the frames received and reads the frame to send.
 --
@@ -40,7 +40,7 @@
 -- enable_done_i, and a write of ETH_TX_LEN that sends a frame in the cycle
 -- after tx_done_i, and STALL is high until then. enable_o is high for a
 -- cycle after such a write of ETH_CSR. So the simulation's station, which
--- gives the frames of a file at those writes (SYSTEM.md §7, the
+-- gives the frames of a file at those writes (DEVICES.md §7, the
 -- emulator), has written them before the program reads again, and the
 -- program runs as in the emulator. A board does not set G_HOLD_ACK.
 --
@@ -57,7 +57,7 @@
 --    is high, as the simulation resets only at the start.
 --
 -- RESET
--- Synchronous, the reset that a start of the processor gives (SYSTEM.md
+-- Synchronous, the reset that a start of the processor gives (DEVICES.md
 -- §7): "enabled" is 0, the queue is empty, ETH_DROPPED and ETH_CHUNK are
 -- 0, a frame being written is not taken, and any ACK owed is dropped. A
 -- frame being sent goes on until tx_done_i, and a write of ETH_TX_LEN in

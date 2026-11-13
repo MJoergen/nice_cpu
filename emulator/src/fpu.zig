@@ -1,4 +1,4 @@
-//! The floating-point unit of doc/SYSTEM.md §11, phase 1: a stack of up
+//! The floating-point unit of doc/DEVICES.md §11, phase 1: a stack of up
 //! to 16 binary64 values, eight registers, and the commands.
 //!
 //! It computes with the host's binary64 values, which are IEEE 754's, so
@@ -429,7 +429,7 @@ const ten_down = [9][2]u64{
 
 const Pair = struct { h: f64, l: f64 };
 
-/// Dekker's product of two pairs, as SYSTEM.md §11.3 lists its steps.
+/// Dekker's product of two pairs, as DEVICES.md §11.3 lists its steps.
 fn mulPair(a: Pair, b: [2]u64) Pair {
     const bh = f(b[0]);
     const bl = f(b[1]);

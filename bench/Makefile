@@ -21,7 +21,7 @@ CORE_PROGRAMS = bench hand
 # float.c, the float benchmark (README.md, The float benchmark), translated
 # from float.wasm and joined with the float library. make core runs it with
 # CORE_PROGRAMS=float. The float library is ../runtime/float_fpu.nasm,
-# which uses the FPU of SYSTEM.md §11, or with NO_FPU=1 float.nasm, in
+# which uses the FPU of DEVICES.md §11, or with NO_FPU=1 float.nasm, in
 # software.
 FLOAT_LIB = ../runtime/$(if $(NO_FPU),float.nasm,float_fpu.nasm)
 

@@ -1,4 +1,4 @@
--- The clock of the time of day of SYSTEM.md §10: 4 words of I/O with the
+-- The clock of the time of day of DEVICES.md §10: 4 words of I/O with the
 -- seconds since the Unix epoch, 64 bits, and the microseconds within the
 -- second.
 --

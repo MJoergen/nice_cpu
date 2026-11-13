@@ -368,7 +368,7 @@ OPTION_CASES += [
     (ROM + ["--ram-bytes", "16"], module(MAIN), "--ram-bytes: the module has no memory"),
     (["--ram", "0xFFFFFFF0", "--ram-bytes", "128"], module(memory(1)),
      "--ram: the 32 words from 0xFFFFFFF0 pass the end of the address space"),
-    # The byte windows reach only words 0 to 0x03FFFFFF (SYSTEM.md §9).
+    # The byte windows reach only words 0 to 0x03FFFFFF (DEVICES.md §9).
     (["--ram", "0x03FFFFF0", "--ram-bytes", "128", "--byte-windows"], module(memory(1)),
      "--byte-windows: the memory in RAM from 0x03FFFFF0 passes word 0x03FFFFFF, the last that"
      " the windows reach"),

@@ -125,7 +125,7 @@ DEBUG.md §5: "Every byte up to the `#` and the two bytes of cc after it belongs
 
 ### 3.2 What a board must do is not in DEBUG.md
 
-The six contracts a system keeps for `debug_link.vhd`, (a) to (f), are in its header and in hdl/README.md:1077-1095. DEBUG.md §7 gives the differences of the emulator and of a board, but not these, and neither says that the input FIFO must not let a `p` or `h` overtake a program byte. **Fix:** a list in DEBUG.md §7, or in SYSTEM.md §5.
+The six contracts a system keeps for `debug_link.vhd`, (a) to (f), are in its header and in hdl/README.md:1077-1095. DEBUG.md §7 gives the differences of the emulator and of a board, but not these, and neither says that the input FIFO must not let a `p` or `h` overtake a program byte. **Fix:** a list in DEBUG.md §7, or in DEVICES.md §5.
 
 **Resolved**: DEBUG.md §7 has a list, "A board that carries the link has to do more than follow this file": the link accesses, the bus, the receiver, the console input and output (a buffer must not let a `p` or an `h` overtake a byte), the registers of the core, the counters, and the clear.
 
@@ -279,17 +279,17 @@ The reader extracted the sources at each of the 35 commits since 9d8f13d that to
 
 ### 7.3 The microsecond counter is proven at one frequency
 
-`formal_perf.vhd:52` sets `C_CLK_HZ` to 1500000 and proves `perf` equal to a model that counts two microseconds per three cycles; `tb_perf.vhd:66` uses 1500000 too. No other frequency is proven or tested, nor the range of `frac_r`. The reader simulated 33333333, 83333333, and 100000000 Hz: the count is the integer part of N·10⁶/`G_CLK_HZ`, exact, and `run_i` low freezes it. SYSTEM.md:109 says "exact for any frequency", without the rounding and without the lower bound of 1 MHz, which only perf.vhd:17-21 and the generic's range (1000000 to 500000000) state. **Fix:** "the integer part of N·10⁶/`G_CLK_HZ`, for 1 MHz and up" in SYSTEM.md §3; a `tb_perf` run at a frequency that 10⁶ does not divide, such as 33333333.
+`formal_perf.vhd:52` sets `C_CLK_HZ` to 1500000 and proves `perf` equal to a model that counts two microseconds per three cycles; `tb_perf.vhd:66` uses 1500000 too. No other frequency is proven or tested, nor the range of `frac_r`. The reader simulated 33333333, 83333333, and 100000000 Hz: the count is the integer part of N·10⁶/`G_CLK_HZ`, exact, and `run_i` low freezes it. DEVICES.md:109 says "exact for any frequency", without the rounding and without the lower bound of 1 MHz, which only perf.vhd:17-21 and the generic's range (1000000 to 500000000) state. **Fix:** "the integer part of N·10⁶/`G_CLK_HZ`, for 1 MHz and up" in DEVICES.md §3; a `tb_perf` run at a frequency that 10⁶ does not divide, such as 33333333.
 
-**Resolved**: SYSTEM.md §3 says it. `test/tb_perf_hz.vhd`, in `make test`, runs three `perf` instances at 33333333, 83333333, and 100000000 Hz and checks 400 reads of the microsecond counter against the integer part of N·10⁶/`G_CLK_HZ`, with N from the cycle counter. It fails if the model is off by one cycle. Not done: the formal proof stays at 1500000 Hz.
+**Resolved**: DEVICES.md §3 says it. `test/tb_perf_hz.vhd`, in `make test`, runs three `perf` instances at 33333333, 83333333, and 100000000 Hz and checks 400 reads of the microsecond counter against the integer part of N·10⁶/`G_CLK_HZ`, with N from the cycle counter. It fails if the model is off by one cycle. Not done: the formal proof stays at 1500000 Hz.
 
 ### 7.4 `run_i` is not a rule of the system
 
-MICROARCH.md §8's rules for a system do not say that it drives `run_i` of the counters and the fetch statistics, nor with what; the fetch statistics bullet says only that they stop "while the core is held or has halted". perf.vhd:37 and fetch_stats.vhd:39 say "held or halted", DEBUG.md:122 says the counters stop while paused, and SYSTEM.md:108-109 says "held or has halted". No test joins a core with the counters: `tb_core` leaves `run_i` at its default `'1'`, and `tb_link` wires no counters or timer. **Fix:** a bullet in §8, "`run_i` is 0 while the core is held, paused, or halted, from `paused_o` and `halted_o`", the same words in the two headers, and the counters in `tb_core`.
+MICROARCH.md §8's rules for a system do not say that it drives `run_i` of the counters and the fetch statistics, nor with what; the fetch statistics bullet says only that they stop "while the core is held or has halted". perf.vhd:37 and fetch_stats.vhd:39 say "held or halted", DEBUG.md:122 says the counters stop while paused, and DEVICES.md:108-109 says "held or has halted". No test joins a core with the counters: `tb_core` leaves `run_i` at its default `'1'`, and `tb_link` wires no counters or timer. **Fix:** a bullet in §8, "`run_i` is 0 while the core is held, paused, or halted, from `paused_o` and `halted_o`", the same words in the two headers, and the counters in `tb_core`.
 
 **Resolved**: All of it.
 - MICROARCH.md §8 has a bullet, "Counter run input": a system drives `run_i` with 0 while it holds the core and while `paused_o` or `halted_o` is 1.
-- The headers of perf.vhd and fetch_stats.vhd, their contract (c), the fetch statistics bullet, SYSTEM.md §3, and hdl/README.md say "held, paused, or halted".
+- The headers of perf.vhd and fetch_stats.vhd, their contract (c), the fetch statistics bullet, DEVICES.md §3, and hdl/README.md say "held, paused, or halted".
 - `tb_core` drives `run_i` of both devices with `not paused_o and not halted_o`. `p_counters` reads the cycle counter by an external name and compares it, in every cycle, with a count of the cycles after reset in which neither is 1. A mutant with `run_i` at `'1'` fails it in a run with `G_PAUSE`. The test passes on both cores.
 - Not done: the fetch statistics' counters are not read in the testbench, because their array type is private. The formal proof covers that they stop when `run_i` is low.
 
@@ -429,23 +429,23 @@ RELEASE_NOTES.md:136 has 0.241 under RC03, and c-compiler-plan.md:91 has 2348 an
 
 - README.md:22 says formal checks cover "four stages of the pipeline"; with WRITE's halt and pause it is five.
 - README.md:80 "There are four tools. Three run on the host"; the table at lines 85-89 has five rows, `nicebuild` the fifth.
-- The table says the emulator follows ISA.md and SYSTEM.md; DEBUG.md too, with `--link`.
+- The table says the emulator follows ISA.md and DEVICES.md; DEBUG.md too, with `--link`.
 - CLAUDE.md's Layout lacks doc/DEBUG.md and what wins over it, translator/nicebuild.py, runtime/libc, and hdl/CLAUDE.md; its command comments omit `link.py` and `bincheck` (emulator), `build.py` (translator), the C library tests (runtime), and Dhrystone (bench).
-- No sentence anywhere says that ISA.md and SYSTEM.md win over DEBUG.md.
+- No sentence anywhere says that ISA.md and DEVICES.md win over DEBUG.md.
 - REFERENCES.md's review list omits c-compiler-plan.md, whose "1.72 ceiling" (line 22) is 22eacce's figure, dated; it is about 1.88 now.
 
 **Resolved**:
 - README.md says five stages and five tools, four of them on the host, and that the emulator follows DEBUG.md too.
 - CLAUDE.md's Layout has doc/DEBUG.md, `nicebuild.py`, `runtime/libc/`, and `hdl/CLAUDE.md`. Its commands mention `link.py`, `bincheck`, `build.py`, the C library tests, and `dhrycheck.py`.
-- DEBUG.md says that ISA.md and SYSTEM.md win over it, and CLAUDE.md says so in the Layout.
+- DEBUG.md says that ISA.md and DEVICES.md win over it, and CLAUDE.md says so in the Layout.
 - REFERENCES.md's list of reviews has c-compiler-plan.md.
 - c-compiler-plan.md's table and ceiling are those of 98d2bed: 1652811 and 491309 instructions, 2357155 and 1252613 cycles, and 1.88.
 
 ### 9.5 `check_refs.py` does not know DEBUG.md
 
-`doc/check_refs.py:30`'s `DOCUMENTS` lacks DEBUG.md, so the sixty-odd citations of "DEBUG.md §n" in SYSTEM.md, the READMEs, TODO.md, and RELEASE_NOTES.md are not checked. The reader read them all: every section exists. **Fix:** one line.
+`doc/check_refs.py:30`'s `DOCUMENTS` lacks DEBUG.md, so the sixty-odd citations of "DEBUG.md §n" in DEVICES.md, the READMEs, TODO.md, and RELEASE_NOTES.md are not checked. The reader read them all: every section exists. **Fix:** one line.
 
-**Resolved**: `DOCUMENTS` has DEBUG.md. A citation of a section that does not exist, tried once by hand in SYSTEM.md, fails `make -C doc test`, and every real citation passes.
+**Resolved**: `DOCUMENTS` has DEBUG.md. A citation of a section that does not exist, tried once by hand in DEVICES.md, fails `make -C doc test`, and every real citation passes.
 
 ### 9.6 Nits
 

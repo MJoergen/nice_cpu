@@ -70,7 +70,7 @@ LOCAL = 0.4  # The chance that a register field takes a register written just be
 NEAR = 0.9  # The chance that a forward jump skips at most JUMP_SPAN - 1 instructions
 JUMP_SPAN = 5
 BACK_SPAN = 12  # How far back a predicted jump goes, in instructions
-COUNTER = 0xFFFFFF01  # The read counter (SYSTEM.md §1)
+COUNTER = 0xFFFFFF01  # The read counter (DEVICES.md §1)
 
 # MOVE R15, c: a jump to the constant word that follows.
 JUMP = 0x0003D800

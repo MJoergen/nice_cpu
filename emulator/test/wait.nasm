@@ -1,4 +1,4 @@
-; WAIT (ISA.md §7.5, SYSTEM.md §3): the timer, --irq, and --nmi end a
+; WAIT (ISA.md §7.5, DEVICES.md §3): the timer, --irq, and --nmi end a
 ; wait, wait steps count cycles and microseconds but no instructions, and
 ; a request pending with E = 0 ends a wait at once. Run with
 ;   --step-time --irq 25:0x42 --nmi 40:0x43 -d 0x200:7

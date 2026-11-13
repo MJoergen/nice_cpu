@@ -146,7 +146,7 @@ RUNS: List[Tuple[str, List[str], int, List[str]]] = [
     ("00000000 00000000", ["-n", "5", "--no-fpu"], 3,
      ["Stopped at the step limit after 5 steps, PC=00000005"]),
     # A WAIT that no request can end stops the run, also under a step limit
-    # (SYSTEM.md §1.6). A timer that raises requests can end it, so the step
+    # (DEVICES.md §1.6). A timer that raises requests can end it, so the step
     # limit stops that one: MOVE @TIMER_PERIOD, 100 and WAIT are steps 0 and
     # 1, and the run counts 48 wait steps at once, to the limit of 50.
     ("00000000 0c600000", [], 2, ["Stopped: waiting with no request to come, after 1 steps, PC=00000001"]),

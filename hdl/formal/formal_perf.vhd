@@ -4,7 +4,7 @@
 -- time.
 --
 -- THEORY OF OPERATION
--- The wrapper models the counters of SYSTEM.md §3: a 64-bit counter of
+-- The wrapper models the counters of DEVICES.md §3: a 64-bit counter of
 -- every cycle, a 64-bit counter of the cycles with instret_i high, a 64-bit
 -- counter of microseconds, and a snapshot of each, which a read of its low
 -- word takes. The clock is 1.5 MHz, C_CLK_HZ, so the microsecond counter
@@ -12,7 +12,7 @@
 -- model counts those cycles modulo 3 and has no accumulator, so the proof
 -- also checks the arithmetic of perf's, which subtracts 1500000 from
 -- 2000000 and from 1500000 in turn. The model counts the events of
--- SYSTEM.md §3 too: the data reads and stores that the core's bus accepts,
+-- DEVICES.md §3 too: the data reads and stores that the core's bus accepts,
 -- and of the steps reported that do not halt, the skipped ones, those that
 -- write R15, and the interrupt entries and INTs. Its rule for a jump is
 -- spelled out from the bits of the instruction word, apart from

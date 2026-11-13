@@ -1,4 +1,4 @@
-//! The window of `--window` (doc/SYSTEM.md §1), on SDL 3. It shows the
+//! The window of `--window` (doc/DEVICES.md §1), on SDL 3. It shows the
 //! frame of frame.zig and queues the keys of keys.zig. Only a build with
 //! `-Dwindow` has it.
 

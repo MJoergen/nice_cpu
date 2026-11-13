@@ -1,4 +1,4 @@
-//! The frame of the window (doc/SYSTEM.md §1): the character screen drawn
+//! The frame of the window (doc/DEVICES.md §1): the character screen drawn
 //! with the font that the font base selects, in the colors of its words,
 //! with the cursor. It needs no SDL, so its tests run in every build.
 
@@ -7,7 +7,7 @@ const font = @import("font.zig");
 const cpu_ = @import("cpu.zig");
 const Cpu = cpu_.Cpu;
 
-/// The character screen (doc/SYSTEM.md §1), in characters and in pixels.
+/// The character screen (doc/DEVICES.md §1), in characters and in pixels.
 pub const cols = 80;
 pub const rows = 25;
 pub const cells = cols * rows;
@@ -40,7 +40,7 @@ fn pixel(c: Rgb) u32 {
     return 0xFF00_0000 | @as(u32, c[0]) << 16 | @as(u32, c[1]) << 8 | c[2];
 }
 
-/// The cursor's registers (doc/SYSTEM.md §1): the state, the column, and
+/// The cursor's registers (doc/DEVICES.md §1): the state, the column, and
 /// the row, from `cursor_base`.
 pub const cursor_base: u32 = 0xFFFF_FF80;
 pub const cursor_show: u32 = 1 << 6;
@@ -51,7 +51,7 @@ pub const cursor_small: u32 = 1 << 4;
 /// leftmost pixel of a row in bit 15.
 pub const Glyphs = [256][font.height]u16;
 
-/// The font that the font base selects (doc/SYSTEM.md §1.8): the font RAM
+/// The font that the font base selects (doc/DEVICES.md §1.8): the font RAM
 /// when the base is `font_ram`, read into `buf`, and the character ROM,
 /// Spleen, for any other value.
 pub fn fontOf(cpu: *const Cpu, buf: *Glyphs) *const Glyphs {
@@ -295,7 +295,7 @@ test "a cell is drawn from the font it is given, and redrawn when its glyph chan
     try testing.expectEqual(black, at(&f, 32, 0));
 }
 
-test "the font base selects the font RAM or the ROM (SYSTEM §1.8)" {
+test "the font base selects the font RAM or the ROM (DEVICES §1.8)" {
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
     var buf: Glyphs = undefined;

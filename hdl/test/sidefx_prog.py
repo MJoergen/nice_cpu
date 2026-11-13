@@ -38,7 +38,7 @@ import sys
 
 # The data region, DATA to DATA + 15, above the program. Its addresses,
 # and the vector tables at VBASE << 8 for the VBASEs near BASE, stay below
-# the byte windows of SYSTEM.md §9.
+# the byte windows of DEVICES.md §9.
 DATA = 0x80000
 BASE = DATA + 8  # Each case starts with the register here
 # The same for R14, with I and E = 1, above the windows, and bit 24 always 1

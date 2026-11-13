@@ -1,10 +1,10 @@
-//! The port for Ethernet frames of doc/SYSTEM.md §7, at 0xFFFFFFC0-CF,
+//! The port for Ethernet frames of doc/DEVICES.md §7, at 0xFFFFFFC0-CF,
 //! with the part of the network station (§6) that serves frames before
 //! the queue: ARP and ping for NET_IP, and the TCP of the debug link.
 //!
 //! The emulator has no Ethernet. The host gives frames to `Eth.receive`,
 //! from a UDP socket whenever one arrives, and from the lines of --eth-in
-//! at the writes of SYSTEM.md §7, which `Eth` takes itself. The frames
+//! at the writes of DEVICES.md §7, which `Eth` takes itself. The frames
 //! that the program sends, and the station's replies, go to `Wire`.
 
 const std = @import("std");
@@ -25,7 +25,7 @@ pub const wire_min_len = 60;
 
 const broadcast: u48 = 0xFFFF_FFFF_FFFF;
 
-/// What the station needs of the registers of SYSTEM.md §6.
+/// What the station needs of the registers of DEVICES.md §6.
 pub const Station = struct {
     ip: u32,
     mac: u48,
@@ -72,7 +72,7 @@ pub const Eth = struct {
     sent: u64 = 0,
     wire: ?Wire = null,
 
-    /// Reset (SYSTEM §7). The send buffer, the lines, and the count of
+    /// Reset (DEVICES §7). The send buffer, the lines, and the count of
     /// frames sent stay.
     pub fn reset(self: *Eth) void {
         self.enabled = false;
@@ -139,7 +139,7 @@ pub const Eth = struct {
     }
 
     /// The lines of --eth-in whose count of frames sent has been reached
-    /// arrive, in order (SYSTEM §7, the emulator).
+    /// arrive, in order (DEVICES §7, the emulator).
     fn arrive(self: *Eth, st: Station) void {
         while (self.next_line < self.lines.len and self.lines[self.next_line].after <= self.sent) {
             self.receive(self.lines[self.next_line].frame, st);
@@ -148,7 +148,7 @@ pub const Eth = struct {
     }
 
     /// A frame of `min_len` to `max_len` bytes arrives at the station,
-    /// which serves it, passes it to the queue, or drops it (SYSTEM §6, §7).
+    /// which serves it, passes it to the queue, or drops it (DEVICES §6, §7).
     pub fn receive(self: *Eth, frame: []const u8, st: Station) void {
         std.debug.assert(frame.len >= min_len and frame.len <= max_len);
         const dest = std.mem.readInt(u48, frame[0..6], .big);
@@ -242,7 +242,7 @@ pub fn checksum(bytes: []const u8) u16 {
     return ~@as(u16, @truncate(sum));
 }
 
-/// Put `frame` into `words` as SYSTEM §7 has it: from byte 2, big-endian,
+/// Put `frame` into `words` as DEVICES §7 has it: from byte 2, big-endian,
 /// with 0 in the other bytes.
 pub fn toWords(frame: []const u8, words: *[buf_words]u32) void {
     @memset(words, 0);
@@ -267,7 +267,7 @@ pub fn writeLine(w: *std.Io.Writer, frame: []const u8) std.Io.Writer.Error!void 
 
 pub const ParseError = error{ Parse, OutOfMemory };
 
-/// Parse the text of an --eth-in file (SYSTEM §7). An error is printed with
+/// Parse the text of an --eth-in file (DEVICES §7). An error is printed with
 /// `path` and the line's number.
 pub fn parseLines(arena: std.mem.Allocator, path: []const u8, text: []const u8) ParseError![]const Line {
     var lines: std.ArrayList(Line) = .empty;
@@ -358,7 +358,7 @@ fn testFrame(buf: []u8, dest: u48, len: usize, fill: u8) []const u8 {
     return buf[0..len];
 }
 
-test "the layout of a frame in the buffer (SYSTEM §7)" {
+test "the layout of a frame in the buffer (DEVICES §7)" {
     var words: [buf_words]u32 = undefined;
     var buf: [max_len]u8 = undefined;
     const f = testFrame(&buf, test_st.mac, 60, 0x10);
@@ -373,7 +373,7 @@ test "the layout of a frame in the buffer (SYSTEM §7)" {
     try testing.expectEqualSlices(u8, f, fromWords(&words, f.len, &out));
 }
 
-test "the queue: enable, receive, release, drop, and disable (SYSTEM §7)" {
+test "the queue: enable, receive, release, drop, and disable (DEVICES §7)" {
     var eth: Eth = .{};
     var buf: [max_len]u8 = undefined;
     eth.receive(testFrame(&buf, test_st.mac, 60, 0), test_st);
@@ -406,7 +406,7 @@ test "the queue: enable, receive, release, drop, and disable (SYSTEM §7)" {
     try testing.expectEqual(0, eth.read(4));
 }
 
-test "the window: chunks, the select bit, and ignored writes (SYSTEM §7)" {
+test "the window: chunks, the select bit, and ignored writes (DEVICES §7)" {
     var eth: Eth = .{};
     eth.write(3, 0x1FF, test_st); // bits 5..0 and 8 only
     try testing.expectEqual(0x13F, eth.read(3));
@@ -425,7 +425,7 @@ test "the window: chunks, the select bit, and ignored writes (SYSTEM §7)" {
     try testing.expectEqual(0xDEAD_BEEF, eth.tx[383]); // a start keeps the send buffer
 }
 
-test "sending: the lengths, enabled, and the lines that wait for it (SYSTEM §7)" {
+test "sending: the lengths, enabled, and the lines that wait for it (DEVICES §7)" {
     var sink: Sink = .{};
     defer sink.deinit();
     var buf: [max_len]u8 = undefined;
@@ -463,7 +463,7 @@ test "sending: the lengths, enabled, and the lines that wait for it (SYSTEM §7)
     try testing.expectEqual(3, eth.sent);
 }
 
-test "the station: ARP, ping, the link's TCP, and an IP address of 0 (SYSTEM §6, §7)" {
+test "the station: ARP, ping, the link's TCP, and an IP address of 0 (DEVICES §6, §7)" {
     var sink: Sink = .{};
     defer sink.deinit();
     var eth: Eth = .{ .wire = sink.wire() };

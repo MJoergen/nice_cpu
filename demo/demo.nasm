@@ -145,7 +145,7 @@ TM_VEC          .EQU    0xFFFFFF12
 VBASE           .EQU    0x80
 VECTOR          .EQU    0x41
 
-; The network station (doc/SYSTEM.md §6)
+; The network station (doc/DEVICES.md §6)
 E_IP            .EQU    0xFFFFFFB0      ; the IP address, the first byte in bits 31..24
 E_MACH          .EQU    0xFFFFFFB1      ; MAC bytes 0 and 1, in bits 15..0
 E_MACL          .EQU    0xFFFFFFB2      ; MAC bytes 2 to 5

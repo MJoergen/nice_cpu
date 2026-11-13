@@ -2,8 +2,8 @@
 
 This is the design note for the FPGA implementation of NICE.
 [ISA.md](ISA.md) is the specification, and it wins wherever this note
-disagrees with it. "ISA §8.2" refers to a section of ISA.md, "SYSTEM §2" to a section of
-[SYSTEM.md](SYSTEM.md), and a plain "§5.3" to a section of this note.
+disagrees with it. "ISA §8.2" refers to a section of ISA.md, "DEVICES §2" to a section of
+[DEVICES.md](DEVICES.md), and a plain "§5.3" to a section of this note.
 
 The core is pipelined and has separate instruction and data buses. Its
 design borrows from [qnice_cpu](https://github.com/MJoergen/qnice_cpu), a
@@ -322,7 +322,7 @@ A store into memory retires when it goes into the register. A store into
 the I/O range retires only when the bus accepts it, a cycle later at the
 earliest. Then a device sees the store in the cycle its instruction is
 counted on `instret_o`, as the timer, which counts steps, needs
-(SYSTEM.md §4), and the trace writer prints a byte to the console before
+(DEVICES.md §4), and the trace writer prints a byte to the console before
 its instruction's line (§9). Stores into the I/O range are rare, but
 for the math unit. Letting a store into the math unit retire when it goes
 into the register, as a store into memory does, saves 0.4% of the cycles
@@ -858,13 +858,13 @@ waits for the last ([hdl/ASSUMPTIONS.md](../hdl/ASSUMPTIONS.md), item 6).
 This repository has no system and no FPGA design. Those belong in the
 example design, in the separate NiceMonMEGA65 repository (§10). The system
 that this repository defines is the emulator, with the memory map of
-SYSTEM.md. The RTL modules in `hdl/` implement the same devices as the
+DEVICES.md. The RTL modules in `hdl/` implement the same devices as the
 emulator, as a convenience for building a system. Of the SD card
-controller of SYSTEM.md §5, `hdl/src/sd_regs.vhd` has the registers and
+controller of DEVICES.md §5, `hdl/src/sd_regs.vhd` has the registers and
 the buffer, and a board adds the engine that talks to its cards. Of the
-network station of SYSTEM.md §6, `hdl/src/net_regs.vhd` has the
+network station of DEVICES.md §6, `hdl/src/net_regs.vhd` has the
 registers, and a board connects its station to them. Of the Ethernet
-frames of SYSTEM.md §7, `hdl/src/eth_regs.vhd` has the registers and the
+frames of DEVICES.md §7, `hdl/src/eth_regs.vhd` has the registers and the
 buffers, and the board's station writes and reads the frames. Here they are tested in
 simulation only, where `hdl/sim/wb_mem.vhd` stands in for the memory and
 the console, and each core runs beside the emulator, with their traces
@@ -908,15 +908,15 @@ system built from them must follow these rules:
 - **I/O.** Only the data bus reaches I/O. The instruction bus returns 0 for
   the I/O range (ISA §8.3).
 - **Console.** A UART at `0xFFFFFF00`, as in the emulator
-  (SYSTEM §1). A write sends bits 7..0. A read returns the next received
+  (DEVICES §1). A write sends bits 7..0. A read returns the next received
   byte with bit 8 set, or 0 if none has arrived. This repository has no
   UART; the memory model's console reads a file instead
   ([hdl/README.md](../hdl/README.md), The memory model).
-- **Math unit.** `hdl/src/mpu.vhd` at `0xFFFFFF20`–`0xFFFFFF3F` (SYSTEM §2), 32
+- **Math unit.** `hdl/src/mpu.vhd` at `0xFFFFFF20`–`0xFFFFFF3F` (DEVICES §2), 32
   aligned words, so the decoder compares address bits 31..5.
   A read of a result holds off its ACK until the result is ready, so the
   data bus must allow a slave to take many cycles.
-- **Performance counters.** At `0xFFFFFF40`–`0xFFFFFF7F` (SYSTEM §3), in
+- **Performance counters.** At `0xFFFFFF40`–`0xFFFFFF7F` (DEVICES §3), in
   two devices. The cycle, instruction, microsecond, and event counters are
   `hdl/src/perf.vhd` at `0xFFFFFF40`–`0xFFFFFF5F`, 32 words, so the
   decoder compares address bits 31..5. Its generic `G_CLK_HZ`
@@ -945,27 +945,27 @@ system built from them must follow these rules:
   it: the cause of each cycle, the flushes by cause, the stalls of both
   buses, and the jumps that DECODE resolves. They show where the cycles
   of a program go.
-- **Timer.** `hdl/src/timer.vhd` at `0xFFFFFF10`–`0xFFFFFF1F` (SYSTEM §4),
+- **Timer.** `hdl/src/timer.vhd` at `0xFFFFFF10`–`0xFFFFFF1F` (DEVICES §4),
   with its request on the core's IRQ port, through the merge below.
 - **Console's receive interrupt.** `hdl/src/console_irq.vhd` at
-  `0xFFFFFF02` (SYSTEM §1.9). The system tells it when a byte or the end
+  `0xFFFFFF02` (DEVICES §1.9). The system tells it when a byte or the end
   enters the console's input, and whether one waits.
 - **IRQ merge.** `hdl/src/irq_merge.vhd` joins the timer's request and the
-  console's into the core's IRQ port, the timer's first (SYSTEM §4). Each
+  console's into the core's IRQ port, the timer's first (DEVICES §4). Each
   source holds its own request until the core takes that one, so the two
   never merge. It is combinational, so a request reaches the core in the
   cycle it is raised, and the IRQ vector may change while `valid` stays
   high (§6).
 - **SD card controller.** `hdl/src/sd_regs.vhd` at `0xFFFFFFA0`–`0xFFFFFFAF`
-  (SYSTEM §5): the registers and the buffer, with a port to a protocol
+  (DEVICES §5): the registers and the buffer, with a port to a protocol
   engine that the board adds. With `G_HOLD_ACK`, as in simulation, the ACK
   of a write that starts a command waits for the command's end.
 - **Network station.** `hdl/src/net_regs.vhd` at `0xFFFFFFB0`–`0xFFFFFFBF`
-  (SYSTEM §6): the IP and MAC addresses as outputs, and the counts and the
+  (DEVICES §6): the IP and MAC addresses as outputs, and the counts and the
   link's status as inputs from the board's station. It takes the reset of
   the system, not that of a start of the processor.
 - **Ethernet frames.** `hdl/src/eth_regs.vhd` at `0xFFFFFFC0`–`0xFFFFFFCF`
-  (SYSTEM §7): the registers, the queue, and the send buffer, with a port
+  (DEVICES §7): the registers, the queue, and the send buffer, with a port
   to the board's station, which passes it the frames it does not serve
   itself. With `G_HOLD_ACK`, as in simulation, the ACKs of the write that
   enables it and of a send wait until the station has served them.
@@ -978,10 +978,10 @@ system built from them must follow these rules:
 ### 8.1 Fetch statistics
 
 `hdl/src/fetch_stats.vhd` counts what the pipelined core (§3) does in each
-cycle, in the last 32 words of the performance counters of SYSTEM §3, at
+cycle, in the last 32 words of the performance counters of DEVICES §3, at
 `0xFFFFFF60`–`0xFFFFFF7F`. They show where the cycles of a program go: a
 cause for each cycle, and the flushes by cause. They are a property of
-this core, so SYSTEM.md leaves them to this section. The emulator has
+this core, so DEVICES.md leaves them to this section. The emulator has
 none, and their words read 0 there. The generic `G_ENABLE` leaves them out
 of the core; every word then reads 0.
 
@@ -1024,7 +1024,7 @@ flush by WRITE, or a jump that DECODE resolved; or else FETCH.
 | 4 | REG | PREPARE waited for a register that an older micro-operation writes, for an address or an operand |
 | 5 | ORDER | PREPARE's data read waited for rule 1, 2, or 4 of §5.3, or for a pause |
 | 6 | BUS | PREPARE's data read waited for an older store (rule 3), or for room among the requests in flight, or PREPARE loaded the first of two reads |
-| 7 | STALL | a data read of the core was stalled on the bus: a slow memory, or the math unit with a result not ready (SYSTEM §2) |
+| 7 | STALL | a data read of the core was stalled on the bus: a slow memory, or the math unit with a result not ready (DEVICES §2) |
 | 8 | READ | WRITE waits for read data that has no ACK yet |
 | 9 | LATE | WRITE waits a cycle for read data that came, from DBUS's FIFO (§5.3) |
 | 10 | SHIFT | WRITE reduces a shift count in a cycle of its own (§7.3) |
@@ -1035,7 +1035,7 @@ flush by WRITE, or a jump that DECODE resolved; or else FETCH.
 
 - While R = 1, each clock cycle counts in which the core runs. The
   counters stop while the core is held, paused, or halted, as the cycle
-  counter of SYSTEM.md §3 does, so a reading after a halt does not change. R stays
+  counter of DEVICES.md §3 does, so a reading after a halt does not change. R stays
   as it is. Reset sets R to 1 and clears the counters, so they count from
   reset.
 - The core reports each cycle two cycles later, from registers, so that

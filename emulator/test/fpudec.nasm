@@ -1,4 +1,4 @@
-; Numbers printed through the FPU's DIGITS 15 (SYSTEM.md §11.3), and one
+; Numbers printed through the FPU's DIGITS 15 (DEVICES.md §11.3), and one
 ; read back through FROMBCD and SCALE10, so that the console's output can
 ; be checked by eye. PRINT writes X as d.ddddddddddddddE±eee and a line
 ; feed, and pops it: the sign from the class of X, the 15 digits from

@@ -1,4 +1,4 @@
-; --irq and the timer's request raised before the same step (SYSTEM.md §4,
+; --irq and the timer's request raised before the same step (DEVICES.md §4,
 ; ISA.md §7.1): the request that is pending first keeps its vector, and
 ; --irq raises its request before the step starts, so it is the one that
 ; was there first. Run with

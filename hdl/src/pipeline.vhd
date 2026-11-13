@@ -144,7 +144,7 @@
 -- micro-operation retires, or, if it reads memory, in the cycle the bus
 -- accepts its last data read, which may wait on the bus. The performance
 -- counters return a count from before that cycle's, and PREPARE loads a
--- younger read only then. So a read of INSTR_LO (SYSTEM.md §3) counts every
+-- younger read only then. So a read of INSTR_LO (DEVICES.md §3) counts every
 -- older instruction, and not its own. The two ways never fall in one
 -- cycle.
 --
@@ -253,7 +253,7 @@ entity pipeline is
       halt_reason_o : out t_halt;
 
       -- '1' for one cycle for each completed instruction, but not for an
-      -- interrupt entry, for the instruction counter (SYSTEM.md §3)
+      -- interrupt entry, for the instruction counter (DEVICES.md §3)
       instret_o     : out std_logic;
 
       -- '1' for one cycle for each wait step (ISA.md §7.5), which a timer

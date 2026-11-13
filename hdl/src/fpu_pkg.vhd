@@ -1,5 +1,5 @@
 -- The operations of src/fpu_unit.vhd, the arithmetic unit of the FPU of
--- SYSTEM.md §11, and the bits of its flags. src/fpu.vhd runs the commands
+-- DEVICES.md §11, and the bits of its flags. src/fpu.vhd runs the commands
 -- of §11.3 as sequences of these operations.
 --
 -- Each operation takes A, and B for those of two operands, and gives a

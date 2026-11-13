@@ -1,4 +1,4 @@
--- The math unit, MPU, of SYSTEM.md §2: 32 words of I/O that multiply and
+-- The math unit, MPU, of DEVICES.md §2: 32 words of I/O that multiply and
 -- divide 32-bit integers, signed and unsigned, and count their bits, and
 -- divide 64-bit integers and take their square root.
 --
@@ -29,7 +29,7 @@
 -- zeros after them. A division takes 1 cycle to start, then 32 cycles at
 -- most, and 4 at least.
 -- A restoring divider with B = 0 gives Q = 0xFFFFFFFF and R = A, which is
--- what SYSTEM.md §2 asks for, except for the signed quotient with A < 0,
+-- what DEVICES.md §2 asks for, except for the signed quotient with A < 0,
 -- which is set to 0xFFFFFFFF on its own. -2^31 / -1 needs no special case:
 -- |A| / |B| = 0x80000000, and negating it gives 0x80000000 again.
 --
@@ -60,7 +60,7 @@
 --    address bits 4..0.
 --
 -- RESET
--- Synchronous. It sets A, B, C, and D to 0, as SYSTEM.md §2 requires, and drops
+-- Synchronous. It sets A, B, C, and D to 0, as DEVICES.md §2 requires, and drops
 -- any ACK owed.
 
 library ieee;
@@ -665,7 +665,7 @@ begin
          return rem_in < d and gq + gq <= gm;
       end function div_inv;
 
-      -- SYSTEM.md §2 on the bit counts of a: n leading 0 bits, then a 1,
+      -- DEVICES.md §2 on the bit counts of a: n leading 0 bits, then a 1,
       -- or n = 32 for a = 0; the same from the other end; and the 1 bits.
       pure function clz_ok(a : std_logic_vector(31 downto 0); n : std_logic_vector) return boolean is
       begin
@@ -722,7 +722,7 @@ begin
          return rem_in <= ("0" & q & "0");
       end function sqrt_inv;
 
-      -- SYSTEM.md §2 on the unsigned quotient q and remainder r of a / b,
+      -- DEVICES.md §2 on the unsigned quotient q and remainder r of a / b,
       -- given m, q times b.
       pure function udiv_ok(a : std_logic_vector;
                             b : std_logic_vector;

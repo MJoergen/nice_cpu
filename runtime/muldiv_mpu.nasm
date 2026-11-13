@@ -1,6 +1,6 @@
 ; The multiply and divide routines of the NICE runtime library
 ; (ABI.md), for one word and for long long, and the bit counts and the
-; square root, with the math unit of SYSTEM §2. It goes after lib.nasm,
+; square root, with the math unit of DEVICES §2. It goes after lib.nasm,
 ; instead of muldiv_soft.nasm. Each routine writes its operands to A and
 ; B, or C and D, and reads the results.
 
@@ -46,7 +46,7 @@ __umod          MOVE    @__mpu.a, R1
                 RET
 
 ; __div: R1 = R1 / R2, signed, rounding toward zero. 4 steps. The most
-; negative number divided by -1 gives the most negative number (SYSTEM §2).
+; negative number divided by -1 gives the most negative number (DEVICES §2).
 __div           MOVE    @__mpu.a, R1
                 MOVE    @__mpu.b, R2
                 MOVE    R1, @__mpu.sdiv_q

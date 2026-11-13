@@ -1,4 +1,4 @@
-; The floating-point unit at 0xFFFFFF88 (SYSTEM.md §11): the views, a few
+; The floating-point unit at 0xFFFFFF88 (DEVICES.md §11): the views, a few
 ; commands of each group, and the two examples of §11.5. Run with
 ; --step-time. Each step is one instruction, as the program has no jump;
 ; the step of each is in its comment. The results go to 0x200 on:

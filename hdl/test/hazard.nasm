@@ -21,7 +21,7 @@
 ; So E = 1 almost everywhere, and VBASE is 0, 1, or 2 at every instruction
 ; boundary, each with a vector table entry for NMI (vector 8) and IRQ
 ; (vector 9). The routines change the flags, which RTI restores.
-COUNT           .EQU    0xFFFFFF01      ; the read counter (SYSTEM.md §1)
+COUNT           .EQU    0xFFFFFF01      ; the read counter (DEVICES.md §1)
 SP              .EQU    R13
 PC              .EQU    R15
 
@@ -251,7 +251,7 @@ start           MOVE    SP, stack
         ?!Z     JMP     fail
 
 ; 4. R14 and R15 as pointers. R14 = 0xC1000000, with I and E set,
-; points to the words at r14data, above the byte windows of SYSTEM.md §9.
+; points to the words at r14data, above the byte windows of DEVICES.md §9.
 ; When an instruction with M set changes the flags, R14 points elsewhere.
                 MOVE    R12, 4
                 MOVE    R14, 0xC1000000

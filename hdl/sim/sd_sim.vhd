@@ -1,6 +1,6 @@
 -- Simulation-only protocol engine for src/sd_regs.vhd: two slots, with a
 -- card in each slot whose image file is given, as niceemu's --sd0 and
--- --sd1 give them (SYSTEM.md §5).
+-- --sd1 give them (DEVICES.md §5).
 --
 -- THEORY OF OPERATION
 -- Each image is read into memory at time 0, and never written back, as

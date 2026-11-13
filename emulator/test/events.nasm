@@ -1,4 +1,4 @@
-; The event counters (SYSTEM.md §3), run with --nmi 12:0x41. A read of a
+; The event counters (DEVICES.md §3), run with --nmi 12:0x41. A read of a
 ; counter returns the events before it, but for the data reads of its own
 ; instruction before it. A store counts also when the device ignores it.
 ; Every core counts the same, so the trace is the same on all.

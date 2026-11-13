@@ -43,7 +43,7 @@ pub const HaltReason = enum {
     }
 };
 
-/// The font of the window (doc/SYSTEM.md §1.8): the font RAM, which keeps
+/// The font of the window (doc/DEVICES.md §1.8): the font RAM, which keeps
 /// bits 15..0 of a write, the character ROM, which holds Spleen and drops a
 /// write, and the font base, which selects the font shown.
 pub const font_ram: u32 = 0xFFFE_0000;
@@ -150,20 +150,20 @@ pub const Memory = struct {
 
 pub const Error = std.Io.Writer.Error || error{OutOfMemory};
 
-/// The byte windows of SYSTEM §9: the top four bits of a data address,
+/// The byte windows of DEVICES §9: the top four bits of a data address,
 /// 1 to 5, if it is in one.
 pub fn window(addr: u32) ?u3 {
     const n = addr >> 28;
     return if (n >= 1 and n <= 5) @intCast(n) else null;
 }
 
-/// The word that the address `addr` of a byte window reaches (SYSTEM §9).
+/// The word that the address `addr` of a byte window reaches (DEVICES §9).
 fn windowWord(addr: u32) u32 {
     return (addr >> 2) & 0x03FF_FFFF;
 }
 
 /// What a read through window `n` at `addr` returns of `word`, the word it
-/// reaches (SYSTEM §9).
+/// reaches (DEVICES §9).
 pub fn windowRead(n: u3, addr: u32, word: u32) u32 {
     const byte: u8 = @truncate(word >> @as(u5, @intCast(8 * (addr & 3))));
     const half: u16 = @truncate(word >> @as(u5, @intCast(16 * ((addr >> 1) & 1))));
@@ -177,7 +177,7 @@ pub fn windowRead(n: u3, addr: u32, word: u32) u32 {
 }
 
 /// `word`, the word that a write of `value` through window `n` at `addr`
-/// reaches, after the write (SYSTEM §9).
+/// reaches, after the write (DEVICES §9).
 pub fn windowWrite(n: u3, addr: u32, word: u32, value: u32) u32 {
     const mask: u32, const at: u5 = switch (n) {
         2, 3 => .{ 0xFF, @intCast(8 * (addr & 3)) },
@@ -190,22 +190,22 @@ pub fn windowWrite(n: u3, addr: u32, word: u32, value: u32) u32 {
 /// The first address of the I/O range (§8.3).
 pub const io_base: u32 = 0xFFFF_FF00;
 
-/// The emulator's console: the first I/O address (SYSTEM §1).
+/// The emulator's console: the first I/O address (DEVICES §1).
 pub const console_addr: u32 = io_base;
 
-/// Bits of a console read when there is input (SYSTEM §1): bit 8 says that bits
+/// Bits of a console read when there is input (DEVICES §1): bit 8 says that bits
 /// 7..0 hold the next input byte, and bit 9 that the input has ended.
 pub const console_byte: u32 = 0x100;
 pub const console_end: u32 = 0x200;
 
 /// The console's input. A read of a reader waits for the next byte or the
-/// end, and the window's input can have no byte now (SYSTEM §1).
+/// end, and the window's input can have no byte now (DEVICES §1).
 pub const Input = struct {
     ctx: *anyopaque,
     next_fn: *const fn (ctx: *anyopaque) Next,
     /// What the input holds now, without taking it, for an input that can
     /// have no byte. Null for one whose read waits for its byte: there a
-    /// byte enters when the read before has taken one (SYSTEM §1.9).
+    /// byte enters when the read before has taken one (DEVICES §1.9).
     peek_fn: ?*const fn (ctx: *anyopaque) State = null,
 
     pub const Next = union(enum) { byte: u8, none, end };
@@ -227,15 +227,15 @@ pub const Input = struct {
     }
 };
 
-/// The emulator's read counter (SYSTEM §1): a data read returns the number of
+/// The emulator's read counter (DEVICES §1): a data read returns the number of
 /// data reads of it since the last write, and then counts itself. A write
 /// sets the count. It lets tests see the data reads of §8.2.
 pub const counter_addr: u32 = io_base + 1;
 
-/// The console's receive interrupt (SYSTEM §1.9).
+/// The console's receive interrupt (DEVICES §1.9).
 pub const console_irq_addr: u32 = io_base + 2;
 
-/// The register of the console's receive interrupt (SYSTEM §1.9).
+/// The register of the console's receive interrupt (DEVICES §1.9).
 pub const ConsoleIrq = struct {
     vector: u8 = 0,
     enable: bool = false,
@@ -248,10 +248,10 @@ pub const ConsoleIrq = struct {
     }
 };
 
-/// The first of the 32 words of the math unit (SYSTEM §2).
+/// The first of the 32 words of the math unit (DEVICES §2).
 pub const mpu_base: u32 = io_base + 0x20;
 
-/// The math unit (SYSTEM §2). It computes each result when it is read, so a
+/// The math unit (DEVICES §2). It computes each result when it is read, so a
 /// read never waits.
 pub const Mpu = struct {
     a: u32 = 0,
@@ -346,13 +346,13 @@ fn mpuWord(addr: u32) ?u5 {
     return if (addr -% mpu_base < 32) @truncate(addr -% mpu_base) else null;
 }
 
-/// The first of the eight words of the floating-point unit (SYSTEM §11).
+/// The first of the eight words of the floating-point unit (DEVICES §11).
 pub const fpu_base: u32 = io_base + 0x88;
 
-/// The first of the 64 words of the performance counters (SYSTEM §3).
+/// The first of the 64 words of the performance counters (DEVICES §3).
 pub const perf_base: u32 = io_base + 0x40;
 
-/// The performance counters (SYSTEM §3). Each 64-bit counter has a snapshot,
+/// The performance counters (DEVICES §3). Each 64-bit counter has a snapshot,
 /// which a read of its low word fills and a read of its high word returns.
 /// The event counters, at words 0x0A-0x13, count what the program does, as
 /// every FPGA core counts it. The fetch statistics of the pipelined FPGA
@@ -422,7 +422,7 @@ pub const Perf = struct {
     }
 };
 
-/// Whether the instruction `iw` writes R15 when it runs (SYSTEM §3, the jump
+/// Whether the instruction `iw` writes R15 when it runs (DEVICES §3, the jump
 /// counter): RTI, or a field of register 15 whose mode writes the register,
 /// the destination in mode 000, 001, 010, 101, or 110, a source in mode
 /// 001, 010, 101, or 110 (ISA §4).
@@ -440,7 +440,7 @@ pub fn writesR15(iw: u32) bool {
     return false;
 }
 
-/// The host's clock for the microsecond counter (SYSTEM §3): the host's
+/// The host's clock for the microsecond counter (DEVICES §3): the host's
 /// monotonic time, without its sleep, while the processor runs. The run
 /// loop starts it and stops it, `Cpu.step` stops it at a halt, and
 /// `Cpu.reset` sets it to 0 and stops it.
@@ -484,7 +484,7 @@ pub const Clock = struct {
     }
 };
 
-/// The clock of the time of day (SYSTEM §10), at words 6-9 of the
+/// The clock of the time of day (DEVICES §10), at words 6-9 of the
 /// performance counters. `Cpu.reset`, the reset of a start, leaves it:
 /// only the start of the emulator, the reset of the system, sets it.
 pub const Tod = struct {
@@ -528,7 +528,7 @@ pub const Tod = struct {
 
     /// The value a data read of word `i` returns, with its side effect: a
     /// read of word 0 takes the time once, so the microseconds it returns
-    /// and the seconds it snapshots are of one instant (SYSTEM §10).
+    /// and the seconds it snapshots are of one instant (DEVICES §10).
     pub fn read(self: *Tod, i: u2) u32 {
         if (i != 0) return self.peek(i);
         const t = self.now();
@@ -578,10 +578,10 @@ fn clockWord(i: u6) bool {
     return i < 2 or (i >= 4 and i <= 9);
 }
 
-/// The first of the 16 words of the timer (SYSTEM §4).
+/// The first of the 16 words of the timer (DEVICES §4).
 pub const timer_base: u32 = io_base + 0x10;
 
-/// The timer (SYSTEM §4). It counts steps, as the cycle counter does.
+/// The timer (DEVICES §4). It counts steps, as the cycle counter does.
 pub const Timer = struct {
     period: u32 = 0,
     count: u32 = 0,
@@ -642,7 +642,7 @@ fn timerWord(addr: u32) ?u4 {
     return if (addr -% timer_base < 16) @truncate(addr -% timer_base) else null;
 }
 
-/// The first of the 16 words of the SD card controller (SYSTEM §5).
+/// The first of the 16 words of the SD card controller (DEVICES §5).
 pub const sd_base: u32 = io_base + 0xA0;
 
 /// The bytes of a sector.
@@ -660,7 +660,7 @@ pub const Image = struct {
     write_fn: *const fn (ctx: *anyopaque, lba: u32, bytes: *const [sector_bytes]u8) bool,
 };
 
-/// The SD card controller (SYSTEM §5), with 2 slots, as the MEGA65 has. A
+/// The SD card controller (DEVICES §5), with 2 slots, as the MEGA65 has. A
 /// command ends in the write that starts it, so busy never reads 1.
 pub const Sd = struct {
     pub const slots = 2;
@@ -691,7 +691,7 @@ pub const Sd = struct {
         self.changed[slot] = true;
     }
 
-    /// Reset (SYSTEM §5). The cards stay, and the buffer keeps what it had,
+    /// Reset (DEVICES §5). The cards stay, and the buffer keeps what it had,
     /// one of the values that "not defined" allows.
     pub fn reset(self: *Sd) void {
         self.lba = 0;
@@ -749,7 +749,7 @@ pub const Sd = struct {
         }
     }
 
-    /// Run command `cmd` to its end, with the checks in the order of SYSTEM §5.
+    /// Run command `cmd` to its end, with the checks in the order of DEVICES §5.
     fn command(self: *Sd, cmd: u4) void {
         if (cmd > 2) return;
         const c = self.card() orelse {
@@ -798,10 +798,10 @@ fn sdWord(addr: u32) ?u4 {
     return if (addr -% sd_base < 16) @truncate(addr -% sd_base) else null;
 }
 
-/// The first of the 16 words of the network station (SYSTEM §6).
+/// The first of the 16 words of the network station (DEVICES §6).
 pub const net_base: u32 = io_base + 0xB0;
 
-/// The network station (SYSTEM §6). The emulator has no Ethernet: the
+/// The network station (DEVICES §6). The emulator has no Ethernet: the
 /// addresses are registers that keep what a program writes, the counts
 /// read 0, and the debug link sets the status word. Only a reset of the
 /// system sets the addresses, and the emulator's is its launch, so a
@@ -844,7 +844,7 @@ fn netWord(addr: u32) ?u4 {
     return if (addr -% net_base < 16) @truncate(addr -% net_base) else null;
 }
 
-/// The word of the port for Ethernet frames (SYSTEM §7) that `addr`
+/// The word of the port for Ethernet frames (DEVICES §7) that `addr`
 /// names, if it names one.
 fn ethWord(addr: u32) ?u4 {
     return if (addr -% eth_zig.base < 16) @truncate(addr -% eth_zig.base) else null;
@@ -898,9 +898,9 @@ pub const Cpu = struct {
     // Pending interrupt requests, holding the vector the device supplies
     // (§7.1). An IRQ is pending for each of its sources, which merge only
     // with their own: the timer's, which `--irq` raises too, and the
-    // console's, which is taken after it (SYSTEM §4). So is an NMI: the
+    // console's, which is taken after it (DEVICES §4). So is an NMI: the
     // one of `--nmi`, and the debug link's, which is taken after it
-    // (SYSTEM §8, DEBUG.md §6).
+    // (DEVICES §8, DEBUG.md §6).
     nmi_pending: ?u8,
     link_nmi_pending: ?u8,
     irq_pending: ?u8,
@@ -968,7 +968,7 @@ pub const Cpu = struct {
     /// The idle reads so far: console reads that found no byte, and reads
     /// of `TIME_LO`. A program that makes them in a loop waits for a key
     /// or for a time, and the run loop of the window sleeps in such a
-    /// loop (SYSTEM §1.6). Only the differences of the counts matter, so
+    /// loop (DEVICES §1.6). Only the differences of the counts matter, so
     /// a reset leaves them.
     idle_reads: u64,
     /// The reads of `TIME_LO` among the idle reads: a loop that makes
@@ -1032,7 +1032,7 @@ pub const Cpu = struct {
     }
 
     /// What the station of the Ethernet frames needs of its registers
-    /// (SYSTEM §6, §7).
+    /// (DEVICES §6, §7).
     pub fn station(self: *const Cpu) eth_zig.Station {
         return .{
             .ip = self.net.ip,
@@ -1080,14 +1080,14 @@ pub const Cpu = struct {
     }
 
     /// Raise the console's request, if its enable is set. It merges with
-    /// a request of the console that is pending (SYSTEM §1.9).
+    /// a request of the console that is pending (DEVICES §1.9).
     fn raiseConsole(self: *Cpu) void {
         if (self.console_irq.enable and self.console_pending == null) self.console_pending = self.console_irq.vector;
     }
 
     /// Look at an input that can have no byte: a byte that has entered
     /// while none waited, or the end, raises the console's request
-    /// (SYSTEM §1.9). The run loops look before each step, and before
+    /// (DEVICES §1.9). The run loops look before each step, and before
     /// they jump over wait steps.
     pub fn pollConsole(self: *Cpu) void {
         const in = self.input orelse return;
@@ -1243,7 +1243,7 @@ pub const Cpu = struct {
         } else if (self.todDevice(addr)) |i| {
             self.tod.write(i, value);
         } else if (self.perfDevice(addr) != null) {
-            // The counters cannot be written (SYSTEM §3).
+            // The counters cannot be written (DEVICES §3).
         } else if (timerWord(addr)) |i| {
             self.timer.write(i, value);
         } else if (sdWord(addr)) |i| {
@@ -1263,7 +1263,7 @@ pub const Cpu = struct {
 
     /// A write of `CONSOLE_IRQ`. Setting the enable from 0 to 1 while a
     /// byte waits or the input has ended raises a request; clearing it
-    /// withdraws none (SYSTEM §1.9). Where a read waits for its byte, one
+    /// withdraws none (DEVICES §1.9). Where a read waits for its byte, one
     /// always waits, or the input has ended.
     fn writeConsoleIrq(self: *Cpu, value: u32) void {
         const was = self.console_irq.enable;
@@ -1285,7 +1285,7 @@ pub const Cpu = struct {
 
     /// Take a pending interrupt if one may be taken, or else run one
     /// instruction. Does nothing once the processor has halted. Each step
-    /// counts as one cycle, and as one microsecond without a clock (SYSTEM
+    /// counts as one cycle, and as one microsecond without a clock (DEVICES
     /// §3, §4). A halt stops the clock.
     pub fn step(self: *Cpu) Error!void {
         if (self.halted()) return;
@@ -1305,7 +1305,7 @@ pub const Cpu = struct {
         self.watch.pc = self.regs[15];
 
         // The timer's request merges with one that is pending, and keeps
-        // the vector of that one (SYSTEM §4).
+        // the vector of that one (DEVICES §4).
         if (self.timer.raised) |v| {
             if (self.timer_irq) self.requestIrq(v);
             self.timer.raised = null;
@@ -1313,7 +1313,7 @@ pub const Cpu = struct {
         self.pollConsole();
 
         // §7.5: a pending request ends a wait. Without one, the step is a
-        // wait step, a cycle in which nothing else happens (SYSTEM §3).
+        // wait step, a cycle in which nothing else happens (DEVICES §3).
         if (self.waiting) {
             if (!self.nmiPending() and self.irq_pending == null and self.console_pending == null) return;
             self.waiting = false;
@@ -1321,7 +1321,7 @@ pub const Cpu = struct {
 
         // §7.1: interrupts are checked before each instruction.
         if (!self.after_rti and !self.in_service) {
-            // The NMI of `--nmi` goes before the link's (SYSTEM §8).
+            // The NMI of `--nmi` goes before the link's (DEVICES §8).
             const nmi_slot = if (self.nmi_pending != null) &self.nmi_pending else &self.link_nmi_pending;
             if (nmi_slot.*) |v| {
                 nmi_slot.* = null;
@@ -1329,7 +1329,7 @@ pub const Cpu = struct {
                 self.perf.intrs +%= 1;
                 return self.traceInterrupt("NMI", v, before);
             }
-            // The timer's request goes before the console's (SYSTEM §4).
+            // The timer's request goes before the console's (DEVICES §4).
             if (self.flag(sr_e) == 1) {
                 const slot = if (self.irq_pending != null) &self.irq_pending else &self.console_pending;
                 if (slot.*) |v| {
@@ -1444,7 +1444,7 @@ pub const Cpu = struct {
         return self.irq_pending != null or self.console_pending != null or (self.timer_irq and self.timer.raised != null);
     }
 
-    /// Whether the next step is a wait step (§7.5, SYSTEM §3): the
+    /// Whether the next step is a wait step (§7.5, DEVICES §3): the
     /// processor waits, and no request, the timer's included, ends the wait.
     pub fn waitStepDue(self: *const Cpu) bool {
         return !self.halted() and self.waiting and !self.nmiPending() and !self.irqPending();
@@ -1459,7 +1459,7 @@ pub const Cpu = struct {
     }
 
     /// Run `n` wait steps at once, with the same result as `n` calls of
-    /// `step` while `waitStepDue` (SYSTEM §3).
+    /// `step` while `waitStepDue` (DEVICES §3).
     pub fn skipWait(self: *Cpu, n: u64) void {
         self.perf.cycles +%= n;
         if (self.clock == null) self.perf.micros +%= n;
@@ -1478,7 +1478,7 @@ pub const Cpu = struct {
     }
 
     /// A data read of an instruction or an interrupt entry, which the data
-    /// read counter counts once it has returned (SYSTEM §3).
+    /// read counter counts once it has returned (DEVICES §3).
     fn dataRead(self: *Cpu, addr: u32) u32 {
         const v = self.read(addr);
         self.perf.reads +%= 1;
@@ -1486,7 +1486,7 @@ pub const Cpu = struct {
         return v;
     }
 
-    /// A destination write, which the store counter counts (SYSTEM §3).
+    /// A destination write, which the store counter counts (DEVICES §3).
     fn dataWrite(self: *Cpu, addr: u32, value: u32) Error!void {
         try self.write(addr, value);
         self.perf.stores +%= 1;
@@ -1554,7 +1554,7 @@ pub const Cpu = struct {
 
     /// An instruction fetch (§8.2). It never reaches the I/O range, where
     /// it reads 0 (§8.3), nor the byte windows, where it reads 0 too
-    /// (SYSTEM §9).
+    /// (DEVICES §9).
     fn fetch(self: *Cpu) u32 {
         const pc = self.regs[15];
         const word = if (pc >= io_base or window(pc) != null) 0 else self.mem.read(pc);
@@ -1871,7 +1871,7 @@ fn flags(cpu: *const Cpu) u32 {
     return cpu.getReg(14) & flag_mask;
 }
 
-test "writesR15: the modes that write R15, and RTI (SYSTEM §3)" {
+test "writesR15: the modes that write R15, and RTI (DEVICES §3)" {
     // The fields: dest at bits 20..14, s0 at 13..7, s1 at 6..0.
     try testing.expect(writesR15(0x0F << 14 | 0x01 << 7)); // MOVE R15, R1
     try testing.expect(writesR15(0x1F << 14 | 0x01 << 7)); // MOVE R15--, R1
@@ -2289,7 +2289,7 @@ test "NMI before IRQ; the IRQ waits through the routine (§7.1)" {
     try testing.expectEqual(1, cpu.saved_pc);
 }
 
-test "the link's NMI: after the one of --nmi, merges only with its own (SYSTEM §8)" {
+test "the link's NMI: after the one of --nmi, merges only with its own (DEVICES §8)" {
     var cpu = try interruptTestCpu();
     defer cpu.deinit();
 
@@ -2456,7 +2456,7 @@ test "WAIT: a false condition skips it, and reset clears the wait (§7.5, §8.1)
     cpu.deinit();
 }
 
-test "WAIT: the timer ends the wait after its COUNT wait steps (SYSTEM §3, §4)" {
+test "WAIT: the timer ends the wait after its COUNT wait steps (DEVICES §3, §4)" {
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
     try load(&cpu, 0, &.{ WAIT, HALT });
@@ -2475,7 +2475,7 @@ test "WAIT: the timer ends the wait after its COUNT wait steps (SYSTEM §3, §4)
     try testing.expectEqual(null, cpu.timerWaitSteps());
 }
 
-test "skipWait is the same as single wait steps (SYSTEM §3)" {
+test "skipWait is the same as single wait steps (DEVICES §3)" {
     // Periods and steps on both sides of COUNT and of several periods, and
     // a timer that raises no requests, so that it wraps.
     for ([_]u32{ 0, 1, 3, 10 }) |period| {
@@ -2591,7 +2591,7 @@ test "with input that can have no byte, a console read returns 0 then" {
     try testing.expectEqual(0, script.answers.len);
 }
 
-test "a console input that can have no byte raises a request when a byte enters it empty, or it ends (SYSTEM §1.9)" {
+test "a console input that can have no byte raises a request when a byte enters it empty, or it ends (DEVICES §1.9)" {
     const Fifo = struct {
         bytes: [4]u8 = undefined,
         len: usize = 0,
@@ -2665,7 +2665,7 @@ test "a console input that can have no byte raises a request when a byte enters 
     try testing.expectEqual(null, cpu.console_pending);
 }
 
-test "with an input whose read waits, the console raises a request after each byte read (SYSTEM §1.9)" {
+test "with an input whose read waits, the console raises a request after each byte read (DEVICES §1.9)" {
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
     var r: std.Io.Reader = .fixed("A");
@@ -2683,7 +2683,7 @@ test "with an input whose read waits, the console raises a request after each by
     try testing.expectEqual(null, cpu.console_pending);
 }
 
-test "idle reads are the console reads that find no byte and the reads of TIME_LO (SYSTEM §1.6)" {
+test "idle reads are the console reads that find no byte and the reads of TIME_LO (DEVICES §1.6)" {
     // MOVE R1, @CONSOLE twice, then MOVE R2, @TIME_LO, MOVE R3, @TIME_HI,
     // MOVE R4, @CYCLE_LO, and HALT. The first console read finds no byte
     // and the second a byte; of the counters, only TIME_LO is idle.
@@ -2746,7 +2746,7 @@ test "the read counter counts data reads, and a write sets it" {
     try testing.expectEqual(7, cpu.read_count);
 }
 
-test "the math unit's results, with division by zero and overflow (SYSTEM §2)" {
+test "the math unit's results, with division by zero and overflow (DEVICES §2)" {
     // A, B, then SMUL_LO, SMUL_HI, UMUL_LO, UMUL_HI, SDIV_Q, SDIV_R, UDIV_Q, UDIV_R.
     const cases = [_][10]u32{
         .{ 7, 3, 21, 0, 21, 0, 2, 1, 2, 1 },
@@ -2766,7 +2766,7 @@ test "the math unit's results, with division by zero and overflow (SYSTEM §2)" 
     }
 }
 
-test "the math unit's bit counts of A (SYSTEM §2)" {
+test "the math unit's bit counts of A (DEVICES §2)" {
     // A, then CLZ, CTZ, and POPCNT.
     const cases = [_][4]u32{
         .{ 0, 32, 32, 0 },
@@ -2786,7 +2786,7 @@ test "the math unit's bit counts of A (SYSTEM §2)" {
     }
 }
 
-test "the math unit's square root of C (SYSTEM §2)" {
+test "the math unit's square root of C (DEVICES §2)" {
     // C, then Q and the remainder C - Q^2.
     const cases = [_][3]u64{
         .{ 0, 0, 0 },
@@ -2814,7 +2814,7 @@ test "the math unit's square root of C (SYSTEM §2)" {
     }
 }
 
-test "the math unit's 64-bit division, with division by zero and overflow (SYSTEM §2)" {
+test "the math unit's 64-bit division, with division by zero and overflow (DEVICES §2)" {
     // C, D, then the signed quotient and remainder, and the unsigned ones.
     const cases = [_][6]u64{
         .{ 100, 7, 14, 2, 14, 2 },
@@ -2859,7 +2859,7 @@ test "the math unit takes writes to A and B only, and memory keeps nothing" {
     try testing.expectEqual(0, cpu.peek(mpu_base));
 }
 
-test "a write to one half of C or D keeps the other half (SYSTEM §2)" {
+test "a write to one half of C or D keeps the other half (DEVICES §2)" {
     // mpu64.nasm writes all four words, low first, so a write of a low
     // word that cleared the high word would go unseen there.
     var mpu: Mpu = .{};
@@ -2878,7 +2878,7 @@ test "a write to one half of C or D keeps the other half (SYSTEM §2)" {
     try testing.expectEqual(0x1111_1111_0000_0005, mpu.c);
 }
 
-test "a read of a counter's low word keeps its high word for the next read (SYSTEM §3)" {
+test "a read of a counter's low word keeps its high word for the next read (DEVICES §3)" {
     var perf: Perf = .{ .instrs = 0xFFFF_FFFF, .cycles = 0x1_2345_6789 };
     try testing.expectEqual(0xFFFF_FFFF, perf.read(2));
     perf.instrs += 1; // the low word wraps between the two reads
@@ -2900,7 +2900,7 @@ test "a read of a counter's low word keeps its high word for the next read (SYST
     try testing.expectEqual(1, perf.peek(1));
 }
 
-test "the microsecond counter has a snapshot of its own (SYSTEM §3)" {
+test "the microsecond counter has a snapshot of its own (DEVICES §3)" {
     var perf: Perf = .{ .micros = 0x1_FFFF_FFFF, .instrs = 0x7_0000_0000 };
     try testing.expectEqual(0xFFFF_FFFF, perf.read(4));
     perf.micros += 1; // the low word wraps between the two reads
@@ -2914,7 +2914,7 @@ test "the microsecond counter has a snapshot of its own (SYSTEM §3)" {
     try testing.expectEqual(2, perf.peek(5));
 }
 
-test "the counters count instructions and steps, and ignore writes (SYSTEM §3)" {
+test "the counters count instructions and steps, and ignore writes (DEVICES §3)" {
     // 0:  MOVE R1, @INSTR_LO    0 instructions before it
     // 2:  ?Z MOVE R2, 7         skipped, but counts
     // 4:  MOVE R2, @INSTR_LO    2
@@ -2956,7 +2956,7 @@ test "the counters count instructions and steps, and ignore writes (SYSTEM §3)"
     try testing.expectEqual(Perf{}, cpu.perf);
 }
 
-test "the counters wrap from 2^64 - 1 to 0 (SYSTEM §3)" {
+test "the counters wrap from 2^64 - 1 to 0 (DEVICES §3)" {
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
     cpu.perf.instrs = std.math.maxInt(u64);
@@ -2968,7 +2968,7 @@ test "the counters wrap from 2^64 - 1 to 0 (SYSTEM §3)" {
     try testing.expectEqual(0, cpu.perf.micros);
 }
 
-test "with a clock, the microsecond counter counts the host's time while running (SYSTEM §3)" {
+test "with a clock, the microsecond counter counts the host's time while running (DEVICES §3)" {
     // 0: MOVE R1, @TIME_LO
     // 2: HALT
     var cpu = Cpu.init(testing.allocator);
@@ -3028,7 +3028,7 @@ test "without the cycle counter, its words and the microsecond counter's are mem
     try testing.expectEqual(0, cpu.read(perf_base)); // the counter again, not the memory
 }
 
-test "a reset of the processor leaves the clock of the time of day (SYSTEM §10)" {
+test "a reset of the processor leaves the clock of the time of day (DEVICES §10)" {
     // 0: MOVE R1, R1, then the clock is set and the processor reset, as
     // by a start over the debug link.
     var cpu = Cpu.init(testing.allocator);
@@ -3050,7 +3050,7 @@ test "a reset of the processor leaves the clock of the time of day (SYSTEM §10)
     try testing.expectEqual(6, cpu.peek(perf_base + 6));
 }
 
-test "on the host's clock, the clock of the time of day reads the time plus what a write set (SYSTEM §10)" {
+test "on the host's clock, the clock of the time of day reads the time plus what a write set (DEVICES §10)" {
     var tod: Tod = .{};
     tod.useHost(testing.io);
     try testing.expectEqual(1, tod.peek(3));
@@ -3065,7 +3065,7 @@ test "on the host's clock, the clock of the time of day reads the time plus what
     try testing.expectEqual(0, tod.peek(3));
 }
 
-test "a read of CLOCK_USEC takes the microseconds and the seconds at one instant (SYSTEM §10)" {
+test "a read of CLOCK_USEC takes the microseconds and the seconds at one instant (DEVICES §10)" {
     // The clock is set to 10 microseconds before the end of a second, and
     // read until the second has turned: the times read never go
     // backwards, as they would if the seconds were taken at another
@@ -3088,7 +3088,7 @@ test "a read of CLOCK_USEC takes the microseconds and the seconds at one instant
     }
 }
 
-test "the timer counts down from the write and raises a request every P steps (SYSTEM §4)" {
+test "the timer counts down from the write and raises a request every P steps (DEVICES §4)" {
     var timer: Timer = .{};
     timer.tick(); // stopped: nothing changes
     try testing.expectEqual(Timer{}, timer);
@@ -3114,7 +3114,7 @@ test "the timer counts down from the write and raises a request every P steps (S
     try testing.expectEqual(0, timer.read(1));
 }
 
-test "a new period written while the timer runs restarts the count (SYSTEM §4)" {
+test "a new period written while the timer runs restarts the count (DEVICES §4)" {
     // timer.nasm writes a nonzero period only while the timer is stopped.
     var timer: Timer = .{ .vector = 9 };
     timer.write(0, 5);
@@ -3136,7 +3136,7 @@ test "a new period written while the timer runs restarts the count (SYSTEM §4)"
     try testing.expectEqual(1, timer.read(1));
 }
 
-test "the timer's request is an IRQ, and merges with a pending one (SYSTEM §4)" {
+test "the timer's request is an IRQ, and merges with a pending one (DEVICES §4)" {
     // 0: MOVE @TIMER_PERIOD, 2, then NOPs. The vector table entries 0x10
     // and 0x11 hold 0x40 and 0x50, each an RTI.
     var cpu = Cpu.init(testing.allocator);
@@ -3349,7 +3349,7 @@ const TestImage = struct {
     }
 };
 
-test "SD card: write protection, and the order of the checks (SYSTEM §5)" {
+test "SD card: write protection, and the order of the checks (DEVICES §5)" {
     var img: TestImage = .{};
     var sd: Sd = .{};
     sd.insert(1, img.image(true));
@@ -3374,7 +3374,7 @@ test "SD card: write protection, and the order of the checks (SYSTEM §5)" {
     try testing.expectEqual(0, sd.read(8)); // and fills the buffer from the card
 }
 
-test "SD card: a failure of the host is error 5 (SYSTEM §5)" {
+test "SD card: a failure of the host is error 5 (DEVICES §5)" {
     var img: TestImage = .{};
     var sd: Sd = .{};
     sd.insert(0, img.image(false));
@@ -3390,7 +3390,7 @@ test "SD card: a failure of the host is error 5 (SYSTEM §5)" {
     try testing.expectEqual(0x20C, sd.read(0)); // still ready, no error bit
 }
 
-test "SD card: SD_SELECT, and reset (SYSTEM §5)" {
+test "SD card: SD_SELECT, and reset (DEVICES §5)" {
     var img: TestImage = .{};
     var sd: Sd = .{};
     sd.insert(0, img.image(false));
@@ -3430,7 +3430,7 @@ test "SD card: the processor's accesses, and a write while stopped" {
     try testing.expectEqual(0x14, cpu.read(sd_base));
 }
 
-test "the character ROM reads Spleen's rows and drops a write (SYSTEM §1.8)" {
+test "the character ROM reads Spleen's rows and drops a write (DEVICES §1.8)" {
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
     // Row 6 of A is 0x0FF0, and row 15 is 0x3FFC.
@@ -3451,7 +3451,7 @@ test "the character ROM reads Spleen's rows and drops a write (SYSTEM §1.8)" {
     try testing.expectEqual(0xABCD_0123, cpu.read(font_rom + font_words));
 }
 
-test "the font RAM keeps bits 15..0 of a write (SYSTEM §1.8)" {
+test "the font RAM keeps bits 15..0 of a write (DEVICES §1.8)" {
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
     try cpu.write(font_ram, 0xFFFF_8001);
@@ -3498,7 +3498,7 @@ test "peekWords reads across pages, and the ROM where no page is" {
     try testing.expectEqualSlices(u32, &.{ 0, 0x33 }, out[0..2]);
 }
 
-test "network station: the registers, their reset values, and a start (SYSTEM §6)" {
+test "network station: the registers, their reset values, and a start (DEVICES §6)" {
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
     const want = [_]u32{ 0, 0x024E, 0x4943_4500, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
@@ -3516,7 +3516,7 @@ test "network station: the registers, their reset values, and a start (SYSTEM §
     try testing.expectEqual(0x8000_119E, cpu.read(net_base + 6));
 }
 
-test "Ethernet frames: the port's words, a start, and the station's registers (SYSTEM §7)" {
+test "Ethernet frames: the port's words, a start, and the station's registers (DEVICES §7)" {
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
     const base = eth_zig.base;
@@ -3542,7 +3542,7 @@ test "Ethernet frames: the port's words, a start, and the station's registers (S
     try testing.expectEqual(0x1234, cpu.eth.tx[0]); // a start keeps the send buffer
 }
 
-test "the byte windows: reads, writes, and fetches (SYSTEM §9)" {
+test "the byte windows: reads, writes, and fetches (DEVICES §9)" {
     var cpu: Cpu = .init(std.testing.allocator);
     defer cpu.deinit();
     try cpu.mem.write(0x100, 0x80FF_7F01);

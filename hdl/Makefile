@@ -157,7 +157,7 @@ $(LINK_RUNS): run/link/%: $(BUILD)/linkecho.bin
 # sim/eth_sim.vhd and the frames of emulator/test/eth.in, and runs again
 # on a stalling memory and with held pauses. The frames it sends must be
 # the emulator's. bytewin reads and writes through the byte windows of
-# sim/wb_mem.vhd (SYSTEM.md §9), and runs again on a stalling memory.
+# sim/wb_mem.vhd (DEVICES.md §9), and runs again on a stalling memory.
 # wait waits for the timer, an IRQ with E = 0, and an NMI (ISA.md §7.5),
 # and runs again on a stalling memory, with random and held pauses, and
 # one step at a time, so that pauses and steps fall in the waits. Its
@@ -186,7 +186,7 @@ INTR_rtiread_step = --nmi 2:1 --nmi 5:1
 INTR_irqwave = --irq 2:9 --irq 10:9
 INTR_wait  = --irq 25:0x42 --nmi 40:0x43
 # conirq: the timer's source, raised while the console's request waits,
-# goes first (SYSTEM.md §4).
+# goes first (DEVICES.md §4).
 INTR_conirq = --irq 4:0x41
 INTR_conirq_stall = $(INTR_conirq)
 INTR_conirq_hold  = $(INTR_conirq)

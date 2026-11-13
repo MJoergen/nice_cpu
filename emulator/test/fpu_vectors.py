@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The test vectors of the FPU of doc/SYSTEM.md §11, from fpu_model.py.
+"""The test vectors of the FPU of doc/DEVICES.md §11, from fpu_model.py.
 
 A vector is one access: the state before it, the access, and the state
 after it. The state is all of the FPU's state, the flags and the stack,

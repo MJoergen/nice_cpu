@@ -15,7 +15,7 @@ void nice_putc(int c);
 
 // Waits for the next input byte from the console and returns it, 0 to
 // 255, or -1 once the line's input has ended. A keyboard's bytes may still
-// come after that (SYSTEM.md §1).
+// come after that (DEVICES.md §1).
 int nice_getc(void);
 
 // Like nice_getc, but returns -2 at once if no byte is waiting.
@@ -24,25 +24,25 @@ int nice_pollc(void);
 // Writes the bytes of s up to its first 0 to the console, with no newline.
 void nice_print(const char *s);
 
-// The performance counters (SYSTEM.md §3): the clock cycles and the
+// The performance counters (DEVICES.md §3): the clock cycles and the
 // instructions since reset. An interrupt routine must not read them
 // while the code it interrupted is reading one.
 unsigned long long nice_cycles(void);
 unsigned long long nice_instructions(void);
 
-// floor(sqrt(x)), with the math unit's ISQRT64 (SYSTEM.md §2), or in
+// floor(sqrt(x)), with the math unit's ISQRT64 (DEVICES.md §2), or in
 // software on a system without it. Not defined in C: the translator turns
 // this import into the routine _nice_isqrt64 of muldiv_mpu.nasm or
 // muldiv_soft.nasm.
 __attribute__((import_module("env"), import_name("nice_isqrt64")))
 unsigned nice_isqrt64(unsigned long long x);
 
-// The microseconds since reset, from the counter of SYSTEM.md §3 that is
+// The microseconds since reset, from the counter of DEVICES.md §3 that is
 // exact on every board. The same rule about interrupt routines applies.
 // There is no assembly routine for it: it is C only.
 unsigned long long nice_micros(void);
 
-// The clock of the time of day (SYSTEM.md §10), C only as well.
+// The clock of the time of day (DEVICES.md §10), C only as well.
 // nice_clock returns the seconds since the Unix epoch, and stores the
 // microseconds within the second in *usec if usec is not null. The rule
 // about interrupt routines applies to its snapshot. nice_clock_isset
@@ -63,12 +63,12 @@ void nice_screen_clear(void);
 #define NICE_SCREEN_COLS 80
 #define NICE_SCREEN_ROWS 25
 // The blank that nice_screen_clear writes: a space in white on black, the
-// colors a board's monitor writes in, so that the cursor of SYSTEM.md §1.4,
+// colors a board's monitor writes in, so that the cursor of DEVICES.md §1.4,
 // which swaps the colors of its cell, shows on it. A blank of color 0 is
 // black on black, and so is the cursor on it.
 #define NICE_SCREEN_BLANK 0x000FFF20u
 
-// The devices' addresses and bits (SYSTEM.md §1, §3, §10), for nice.c. The
+// The devices' addresses and bits (DEVICES.md §1, §3, §10), for nice.c. The
 // console is read here; it is written through nice_putc.
 #define NICE_CONSOLE 0xFFFFFF00u
 #define NICE_CONSOLE_BYTE 0x100u

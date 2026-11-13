@@ -6,8 +6,8 @@ test/X.c, test/X.zig, or test/X.rs source into test/X.wasm. It is translated and
 with runtime/start_wasm.nasm, any hand-written assembly the case needs,
 runtime/lib.nasm, and runtime/muldiv_mpu.nasm, as ABI.md describes. If
 it calls the float library, runtime/float_fpu.nasm follows, which uses
-the FPU (SYSTEM.md §11). Then it is assembled and run. Each case runs
-three times: as translated by default, with the math unit (SYSTEM.md §2)
+the FPU (DEVICES.md §11). Then it is assembled and run. Each case runs
+three times: as translated by default, with the math unit (DEVICES.md §2)
 and the FPU; with --no-mpu and runtime/muldiv_soft.nasm, and with
 runtime/float.wasm translated with --no-mpu as the library module float,
 for a system with neither; and with --inline-fpu. With --no-fpu, the
@@ -425,7 +425,7 @@ RAM_END = {"rom": 0xFFFFF000 + 1 + 4400 // 4,       # __stack_pointer, to __heap
            "data_c_rom": 0xFFFFF000 + 1 + 8192 // 4,
            "memory_c_rom": 0xFFFFF000 + 1 + 8192 // 4}
 
-# What a case must print on the console (SYSTEM.md §1). Every other case
+# What a case must print on the console (DEVICES.md §1). Every other case
 # must print nothing.
 # A source operand that is the constant 0 (check): an operand after the
 # first, in an instruction, not a directive such as .DAT.
@@ -3518,7 +3518,7 @@ CASES += [
      " MOVE R15, @R13++\n", 57),
 ]
 
-# The memory cases again through the byte windows of SYSTEM.md §9
+# The memory cases again through the byte windows of DEVICES.md §9
 # (--byte-windows), each with its own options: bytes always go through a
 # window, halfwords with --trust-alignment, and words when trusted or
 # known to be at a multiple of 4. Then without bounds checks too. The

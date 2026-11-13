@@ -3,7 +3,7 @@
 A system with a NICE processor can have a debug link. A host uses it to
 read and write the memory, to load and start a program, and to learn when
 the program halts. The link shares one byte stream with the console
-(SYSTEM.md §1), so one serial cable carries both. The emulator
+(DEVICES.md §1), so one serial cable carries both. The emulator
 ([emulator/](../emulator/README.md)) serves the link over TCP, and
 [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) over its debug
 UART. Both follow this file, so one host tool works with either.
@@ -11,7 +11,7 @@ NiceMonMEGA65 also has a debugger on the board, which is a client of the
 link inside the system (§3).
 
 The link is a property of the system, not of the ISA. ISA.md and
-SYSTEM.md win over this file. This is version `08` of the protocol,
+DEVICES.md win over this file. This is version `08` of the protocol,
 major 0 and minor 8 (§9). Its run control is the pause, the single step,
 the breakpoints, the watchpoints, and the registers, which a host writes
 while the processor is paused. A host can also raise an NMI. It shows a wait for an interrupt, the hidden state
@@ -24,7 +24,7 @@ the example in §8. The protocol takes a few lines of Python, as
 `debugger/nicedbg.py`, an interactive debugger on the link, over TCP or a
 UART ([debugger/](../debugger/README.md)).
 
-"SYSTEM.md §1" refers to a section of SYSTEM.md, "ISA §5.3" to one of
+"DEVICES.md §1" refers to a section of DEVICES.md, "ISA §5.3" to one of
 ISA.md, and a plain "§2" to a section of this file.
 
 ## Contents
@@ -58,7 +58,7 @@ link shows the program's output almost unchanged.
 Console bytes from the host reach the program while it runs or is paused.
 While the processor is held or halted (§6), and after the end of the
 line's input (§7.1), they are dropped; a keyboard's bytes are not
-(SYSTEM.md §1, §7). A paused processor keeps them in the input buffer,
+(DEVICES.md §1, §7). A paused processor keeps them in the input buffer,
 and the program reads them when it goes on.
 
 A console byte that arrives while the program's input buffer is full
@@ -144,10 +144,10 @@ program's data accesses, with these differences:
   error `02`, and reads or writes nothing. So a host holds the processor,
   or waits for it to halt or pause, before it reads or writes the memory.
 - No link read has a side effect that a program can see. A link read of
-  the console or the read counter (SYSTEM.md §1) returns 0, takes no input
+  the console or the read counter (DEVICES.md §1) returns 0, takes no input
   byte, and is not counted. A link read of `CYCLE_LO`, `INSTR_LO`, or
-  `TIME_LO` (SYSTEM.md §3) returns the counter's low word, and one of
-  `CLOCK_USEC` (SYSTEM.md §10) the clock's microseconds. The emulator
+  `TIME_LO` (DEVICES.md §3) returns the counter's low word, and one of
+  `CLOCK_USEC` (DEVICES.md §10) the clock's microseconds. The emulator
   takes no snapshot then, but a board may, as a property of the system.
   A start resets the counters and their snapshots (§6), and the counters
   stop while the processor is paused (MICROARCH.md §8). A host can tell: on such a board,
@@ -361,10 +361,10 @@ host that writes back what it read never steps by accident.
   0, as the emulator starts a run. The math unit, the performance counters,
   the timer, the SD card controller, and the port for Ethernet frames
   start from their reset values, but a Write of the SD card that has begun,
-  and a frame being sent, finish first (SYSTEM.md §5, §7). The
-  read counter keeps its value (SYSTEM.md §1), the network station its
-  addresses and counts (SYSTEM.md §6), and the clock of the time of day
-  its time and runs on (SYSTEM.md §10). The input buffer is emptied,
+  and a frame being sent, finish first (DEVICES.md §5, §7). The
+  read counter keeps its value (DEVICES.md §1), the network station its
+  addresses and counts (DEVICES.md §6), and the clock of the time of day
+  its time and runs on (DEVICES.md §10). The input buffer is emptied,
   and an earlier end of the input (§7.1) is cleared. Bit 1 and the halt reason are cleared, and
   R0–R15 are not defined until the next halt.
 - **Restart.** A halt leaves bit 0 at 0, so a restart after a halt takes
@@ -414,13 +414,13 @@ host that writes back what it read never steps by accident.
   again when it goes on.
   The counters and the timer stop, so the program cannot tell that it was
   paused, but by the wall clock, by the clock of the time of day, which
-  runs on (SYSTEM.md §10), and by a snapshot that a host's read
+  runs on (DEVICES.md §10), and by a snapshot that a host's read
   replaced (§3). A pause fires no timer interrupt when the processor goes
   on. The SD card controller runs on, so a host can use the card
-  (SYSTEM.md §5). Console bytes from the host go into the input buffer (§1).
+  (DEVICES.md §5). Console bytes from the host go into the input buffer (§1).
 - **Waiting.** A processor that waits for an interrupt (ISA §7.5) runs,
   and bit 6 reads 1. Each cycle of the wait, or each wait step of the
-  emulator (SYSTEM.md §3), ends at a step boundary. So a pause takes
+  emulator (DEVICES.md §3), ends at a step boundary. So a pause takes
   effect during a wait, with R15 the address after the `WAIT`, and bit 6
   still 1. The link leaves the wait as it is, as it leaves the rest of
   the hidden state (above): a go on waits again, and after a write of
@@ -570,7 +570,7 @@ exact address matches, and there are no ranges, masks, or hit counts.
   as after an `x`.
 - **The cost.** A system may run a program more slowly while a watchpoint
   is enabled, as the pipelined core does (MICROARCH.md §6.1). Its results
-  are the same, but a program that reads the counters (SYSTEM.md §3) can
+  are the same, but a program that reads the counters (DEVICES.md §3) can
   tell.
 - **When a write takes effect, and lifetime.** As for the breakpoints: a
   write while the program runs takes effect within a few cycles, and one
@@ -584,7 +584,7 @@ hand control to software in the system, such as a monitor's NMI routine,
 where a pause hands it to the host.
 
 - **A source of its own.** The link is a source of NMI of its own (ISA
-  §7.1, SYSTEM.md §8). Its request merges only with its own: a write while
+  §7.1, DEVICES.md §8). Its request merges only with its own: a write while
   it is pending changes nothing, and the pending one keeps its vector.
 - **Pending.** The request is pending from the write until the processor
   takes it, and bit 9 of the control register reads 1 meanwhile. A read
@@ -616,8 +616,8 @@ and bit 3 at 0. A system without one waits, held, with bit 0 at 1.
 - **UART.** NiceMonMEGA65 carries the link on its debug UART, 8-N-1, at
   230400 baud, the tools' default, unless it was built for another
   rate. A UART break, a frame of ten 0 bits, ends the line's input
-  (SYSTEM.md §8): the host's console bytes are dropped until the next
-  start, and the console reads `0x200` (SYSTEM.md §1) once its buffer is
+  (DEVICES.md §8): the host's console bytes are dropped until the next
+  start, and the console reads `0x200` (DEVICES.md §1) once its buffer is
   empty. A keyboard's bytes still reach the program, so a monitor that a
   host leaves keeps running on the keyboard. A break is the host's
   deliberate act, and a host that
@@ -655,7 +655,7 @@ notices sent while no host is connected are lost.
 
 On either transport, the host's console bytes that arrive after the end of
 the line's input are dropped, with no `o` notice, while a keyboard's bytes
-go into the buffer (SYSTEM.md §1, §7). A start clears the end of the input
+go into the buffer (DEVICES.md §1, §7). A start clears the end of the input
 (§6), and over TCP so does a new connection.
 
 ### 7.2 The emulator
@@ -682,7 +682,7 @@ command line, with these differences:
   often enough to answer within the 100 ms of §5. Its README says how often.
 - A pause takes effect between two steps, at once, and the emulator sends
   `p`, `w`, or `x` (§4). That includes a console read that waits for
-  input (SYSTEM.md §1): a pause request undoes the step of the read. The
+  input (DEVICES.md §1): a pause request undoes the step of the read. The
   processor pauses before it, with R15 the address of the read, and no
   byte taken, also none by an earlier read of the same instruction. The
   counters and the timer are as they were before the step.
@@ -692,14 +692,14 @@ command line, with these differences:
   a breakpoint. The step did not run, so it hit nothing. With a byte in the input buffer, or after the end of the
   input, the read does not wait, and the step runs. So a host sends a byte
   and steps again.
-- A board's console read does not wait (SYSTEM.md §1). A program that
+- A board's console read does not wait (DEVICES.md §1). A program that
   polls the console runs its loop there, and its breakpoints in the loop
   stop it. In the emulator the program sits at the read, so they do not.
 - With `--window`, the emulator's console read does not wait either, and
   returns 0 when no byte is waiting, as a board's does. Then the two
   points above about a read that waits do not apply. The keys typed into
   the window go into the same input buffer as the host's bytes
-  (SYSTEM.md §1).
+  (DEVICES.md §1).
 - It has four breakpoints. It checks them at each step boundary, in the
   order of §6, and a write to their registers takes effect at the next
   boundary.
@@ -708,12 +708,12 @@ command line, with these differences:
   boundary. A step that a pause request undoes, at a console read that
   waits, hit nothing, as it did not run.
 - A wait for an interrupt that no request can end does not stop the run,
-  as it does from the command line (SYSTEM.md §1.6). The processor waits,
+  as it does from the command line (DEVICES.md §1.6). The processor waits,
   and the emulator sleeps and serves the link, until a pause, a hold, or
   a clear.
 - Its step limit (`--max-steps`), `--irq`, and `--nmi` count the steps of
   each run that the link starts. The NMI of `--nmi` and the link's are two
-  sources, and `--nmi`'s goes first when both are pending (SYSTEM.md §8). When the step limit stops the program, the
+  sources, and `--nmi`'s goes first when both are pending (DEVICES.md §8). When the step limit stops the program, the
   halt reason is 5, and the emulator sends `h` with it.
 - What it prints after a halt (the `Halted` line, the registers, `--dump`,
   and `--screen`) and `--trace` go to stderr, for each run, and stdout
@@ -792,7 +792,7 @@ are the rules that `hdl/src/debug_link.vhd` asks of its board:
   the cores ask of NMI.
 - **Counters.** The counters and the timer stop while the processor is
   paused, and run during a step (MICROARCH.md §8). The SD card controller
-  and the clock of the time of day do not stop (SYSTEM.md §5, §10).
+  and the clock of the time of day do not stop (DEVICES.md §5, §10).
 - **Clear.** When the link asks for a clear, the board sets every word of
   the memory to 0 and then says so. The link makes no access meanwhile.
 
@@ -924,7 +924,7 @@ major. A system of a new minor follows these rules:
   no more console bytes than the free-space register allows never meets
   the wait. Version 7 takes `0xFFFFFFD0`–`0xFFFFFFDF` for the link's
   registers, where a link request reached the system's words, which
-  SYSTEM.md reserves for I/O and no system uses. A host of version 6 had
+  DEVICES.md reserves for I/O and no system uses. A host of version 6 had
   no reason to reach them.
   The table lists each change, and HISTORY.md tells why.
 

@@ -3,7 +3,7 @@
 // the arithmetic in software.
 //
 // Five phases, each a small kernel with a known result. Each phase is timed
-// with the performance counters of SYSTEM.md §3, and main prints one line
+// with the performance counters of DEVICES.md §3, and main prints one line
 // per phase, as bench.c does: the instructions, the cycles, the result,
 // and whether it is the expected one. A result is the bits of a float, or
 // a hash of them, which compare exactly. The expected values come from

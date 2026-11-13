@@ -1,5 +1,5 @@
 -- The merge of two sources of IRQ into the core's one IRQ port, in the
--- order of SYSTEM.md §4: the timer's source first, then the console's.
+-- order of DEVICES.md §4: the timer's source first, then the console's.
 --
 -- THEORY OF OPERATION
 -- The core sees a request while either source raises one. Its vector is

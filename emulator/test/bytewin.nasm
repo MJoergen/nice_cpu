@@ -1,4 +1,4 @@
-; The byte windows of SYSTEM.md §9. Word 0x200 holds the bytes 01, 7F, FF,
+; The byte windows of DEVICES.md §9. Word 0x200 holds the bytes 01, 7F, FF,
 ; and 80, byte 0 first, and word 0x201 the halfwords 7FFF and 8001. The
 ; windows reach word (A >> 2) AND 0x03FFFFFF of an address A.
 ;

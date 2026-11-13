@@ -1,4 +1,4 @@
--- The arithmetic unit of the FPU of SYSTEM.md §11: one operation of
+-- The arithmetic unit of the FPU of DEVICES.md §11: one operation of
 -- src/fpu_pkg.vhd at a time, on values of an IEEE 754 binary format with
 -- G_EBITS bits of exponent and G_FBITS of fraction, binary64 in the FPU.
 -- The widths are generics so that tb_fpu_unit can check every pair of

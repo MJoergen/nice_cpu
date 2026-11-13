@@ -104,7 +104,7 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   values. A read of a bit count of A waits as a product does, and a read
   of the square root of C is accepted in cycle t + 2 + 32 at the earliest.
   The bus is held until then ("MPU wait").
-- The FPU of SYSTEM.md §11, hdl/src/fpu.vhd: a command written to CMD,
+- The FPU of DEVICES.md §11, hdl/src/fpu.vhd: a command written to CMD,
   accepted in cycle t, keeps the unit busy until cycle t + n, and a read
   or a write of any of its words but a read of CMD is accepted then at
   the earliest ("fpu"). n is 1 for the stack commands, --fpu-long (75)
@@ -199,7 +199,7 @@ IO_BASE = 0xFFFFFF00
 MEMORY = (4, 5, 6, 7)
 SIDE = (1, 2, 5, 6)
 
-# The units of the math unit (SYSTEM.md §2), and the result words that wait
+# The units of the math unit (DEVICES.md §2), and the result words that wait
 # for each: the products, the signed and the unsigned quotient and
 # remainder, and the 64-bit ones.
 MPU_UNITS = ["mul", "sdiv", "udiv", "sdiv64", "udiv64", "sqrt"]
@@ -214,7 +214,7 @@ MPU_RESULTS = {0xFFFFFF22: "mul", 0xFFFFFF23: "mul", 0xFFFFFF24: "mul", 0xFFFFFF
 # The steps of the square root of hdl/src/mpu.vhd, 2 bits of C in each.
 SQRT_STEPS = 32
 
-# The FPU's words (SYSTEM.md §11), its CMD, and the commands that take
+# The FPU's words (DEVICES.md §11), its CMD, and the commands that take
 # --fpu-long cycles: DIV, SQRT, ISQRT, FMOD, SCALE10, and DIGITS.
 FPU_BASE = 0xFFFFFF88
 FPU_CMD = 0xFFFFFF8C

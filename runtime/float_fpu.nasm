@@ -1,9 +1,9 @@
 ; The float routines of the NICE runtime library (README.md, Floating
-; point), with the floating-point unit of SYSTEM §11. It goes after
+; point), with the floating-point unit of DEVICES §11. It goes after
 ; lib.nasm and the muldiv file, instead of float.nasm, and has the same
 ; labels. Each routine pushes its operands, writes a command, and reads the
 ; result, so it leaves the FPU's stack as it found it, and uses at most two
-; of its values (SYSTEM §11.5). An entry sets the command in R5 and jumps
+; of its values (DEVICES §11.5). An entry sets the command in R5 and jumps
 ; to a shared part.
 ;
 ; The FPU computes in binary64. An f32 operand is pushed through X_S,

@@ -2,7 +2,7 @@
 # with a free stand-in for its arithmetic unit. "prove" proves the
 # assertions of the bus for every cycle by k-induction, for every
 # command. "prove_stack" proves the bus and the stack against a model of
-# SYSTEM.md §11.4, for the commands of the stack. "cover" reaches each
+# DEVICES.md §11.4, for the commands of the stack. "cover" reaches each
 # cover statement.
 
 [tasks]

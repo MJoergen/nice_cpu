@@ -117,7 +117,7 @@ $(BUILD)/demo_fail.bin: $(BUILD)/demo_test.bin
 # nothing. The sixteenth leaves the demo with F12, which clears the
 # screen and returns 0 to the stand-in, which halts; the test keeps R1
 # for it. niceemu has no Ethernet, so the station's counts stay 0, and
-# without --link its status is 0, no port and no host (doc/SYSTEM.md §6).
+# without --link its status is 0, no port and no host (doc/DEVICES.md §6).
 # dash's printf, the shell of make on Ubuntu, has no \x.
 TEST1 = Hello, world!\nabc\177\177X\tY\r\n$(shell printf '0123456789%.0s' 1 2 3 4 5 6 7 8)abcde\n\
 \033[A\033[A\033[DQ\033[C\033[BR\n\033x\033[1;5Cy\200\351z\n

@@ -17,7 +17,7 @@ library, a wasm translator, and two FPGA cores. See README.md.
   (`Vmajor.minor`, the `RC*` tags before `V1.0`), newest first, by component. Add a section for every new tag when it is created.
 - `doc/ISA.md`: the specification. It is authoritative for all code here.
   `doc/review/` records how decisions were reached; ISA.md supersedes it.
-- `doc/SYSTEM.md`: the devices that the emulator maps into the I/O range
+- `doc/DEVICES.md`: the devices that the emulator maps into the I/O range
   (console, math unit, counters, timer, SD card, network station,
   Ethernet frames, clock, FPU). ISA.md reserves the range and defines no device.
   ISA.md wins over it.
@@ -29,7 +29,7 @@ library, a wasm translator, and two FPGA cores. See README.md.
 - `doc/DEBUG.md`: the debug link, which a host uses to read and write the
   memory and to load, start, pause, and step a program. The emulator serves
   it with `--link`, and the board repository over its UART. ISA.md and
-  SYSTEM.md win over it.
+  DEVICES.md win over it.
 - `doc/intro/`: beginner's slides (`nice_intro.tex`, built `nice_intro.pdf`)
   and their example programs. ISA.md wins over them.
 - `doc/MICROARCH.md`: design note for the FPGA core. ISA.md wins over it.

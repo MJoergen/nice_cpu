@@ -19,7 +19,7 @@ makefile's other runs.
 The runtime's clock reads the microsecond counter, where the core counts
 its own time and the emulator the host's, and the benchmarks read the
 cycle counter, where the core counts cycles and the emulator steps
-(SYSTEM.md §3). So their words are memory on both sides:
+(DEVICES.md §3). So their words are memory on both sides:
 G_CYCLE_COUNTER=false and --no-cycle-counter.
 
 The runs go in parallel, the longest first, as test/core_runs.py

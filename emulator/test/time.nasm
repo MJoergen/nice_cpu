@@ -1,4 +1,4 @@
-; The microsecond counter (SYSTEM.md §3), run with --step-time, so that it
+; The microsecond counter (DEVICES.md §3), run with --step-time, so that it
 ; counts one microsecond per step. A read of TIME_LO returns the number of
 ; steps before the reading one, and takes a snapshot; a read of TIME_HI
 ; returns the snapshot's high word, 0 here, since no run is 2^32 steps long.

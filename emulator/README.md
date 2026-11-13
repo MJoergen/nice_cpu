@@ -1,7 +1,7 @@
 # niceemu
 
 An emulator for the NICE processor, written in [Zig](https://ziglang.org). It implements
-[doc/ISA.md](../doc/ISA.md) and the devices of [doc/SYSTEM.md](../doc/SYSTEM.md), and runs the `.bin` files that
+[doc/ISA.md](../doc/ISA.md) and the devices of [doc/DEVICES.md](../doc/DEVICES.md), and runs the `.bin` files that
 [niceasm](../assembler/README.md) writes.
 
 It needs Zig 0.17 (tested with 0.17.0), and Python 3 for `make test`.
@@ -140,7 +140,7 @@ starting with `|`, with trailing blanks dropped from each row and blank rows
 dropped from the bottom. Characters outside printable ASCII show as blanks.
 Both come after the registers, the dumps first.
 
-With `--color`, each row also has the colors of its words (SYSTEM.md §1). The
+With `--color`, each row also has the colors of its words (DEVICES.md §1). The
 background is bits 31..20 and the foreground bits 19..8, as 4-bit red, green,
 and blue. The row has one escape, `ESC[48;2;R;G;B;38;2;R;G;Bm`, at its start
 and wherever the colors change, and `ESC[0m` at its end. The foreground is
@@ -165,9 +165,9 @@ empty argument counts as no program.
 ## Window
 
 With `--window`, niceemu shows the 80×25 screen in a window of 1280×800
-pixels while the program runs, as SYSTEM.md §1 specifies. A resized window
+pixels while the program runs, as DEVICES.md §1 specifies. A resized window
 scales the screen and keeps its aspect. The characters are from the font
-that the font base at `0xFFFFFF86` selects (SYSTEM.md §1.8): the
+that the font base at `0xFFFFFF86` selects (DEVICES.md §1.8): the
 character ROM, Spleen 16×32 as on NiceMonMEGA65, or the font RAM at
 `0xFFFE0000`, which a program writes. Spleen is in `src/font.zig`, which
 `font/gen_font.py` generates (`font/LICENSE.spleen` has its license).
@@ -181,12 +181,12 @@ glyph changes. `-2004` and `--invert-fg` work with it as with `--screen`.
 
 The console writes to stdout, as without the window. It reads the file of
 `--input`, if given, and then the keys typed into the window, with the
-bytes of SYSTEM.md §1, and not stdin. A read with no byte waiting returns
+bytes of DEVICES.md §1, and not stdin. A read with no byte waiting returns
 0, and a read never returns `0x200`. The keys wait in a buffer of 2048
 bytes, and a key whose bytes do not all fit is dropped.
 
 The emulator runs as fast as the host can, as without the window, and the
-microsecond counter keeps the host's time (SYSTEM.md §1.6). While the
+microsecond counter keeps the host's time (DEVICES.md §1.6). While the
 program waits for a key or for a time, niceemu sleeps: a console read that
 finds no byte and a read of `TIME_LO` are idle reads, two of them within
 1000 steps of each other mean a wait loop, and at each step of one the
@@ -217,7 +217,7 @@ and exits with status 1 before the run.
 With `--link`, the window opens when niceemu starts and stays open over
 every run, and shows the screen also while the processor is held, halted,
 or paused. The console reads the link's input buffer, into which the keys
-go too, as SYSTEM.md §1 says, and a read does not wait. So a pause or a
+go too, as DEVICES.md §1 says, and a read does not wait. So a pause or a
 step at a console read is never undone (DEBUG.md §7). The runs sleep in a
 wait loop, or keep the pace of `--speed`, as without the link. Closing the
 window ends niceemu with status 0, as a signal does.
@@ -254,26 +254,26 @@ address twice and a file with no words are errors.
 | Address | Words | Contents |
 |---|---|---|
 | `0x00000000`–`0x0FFFFFFF` | 268435456 | Ordinary memory. Programs load at 0, or at `0x8000` under a monitor in ROM, as a stand-in for one at 0 shows (runtime/ABI.md, "Programs under a monitor"). |
-| `0x10000000`–`0x5FFFFFFF` | 1342177280 | Byte windows (SYSTEM.md §9). A data access reaches a word, a byte, or a halfword of words `0x00000000`–`0x03FFFFFF`. Instruction fetches read 0. |
+| `0x10000000`–`0x5FFFFFFF` | 1342177280 | Byte windows (DEVICES.md §9). A data access reaches a word, a byte, or a halfword of words `0x00000000`–`0x03FFFFFF`. Instruction fetches read 0. |
 | `0x60000000`–`0xFFFDFFFF` | 2684223488 | Ordinary memory. |
-| `0xFFFE0000`–`0xFFFE1FFF` | 8192 | Font RAM (SYSTEM.md §1.8). Ordinary memory, but a write keeps only bits 15..0. With `--no-font`, ordinary memory. |
-| `0xFFFE2000`–`0xFFFE3FFF` | 8192 | Character ROM (SYSTEM.md §1.8): Spleen 16×32, 32 words per glyph. A write is dropped. With `--no-font`, ordinary memory. |
+| `0xFFFE0000`–`0xFFFE1FFF` | 8192 | Font RAM (DEVICES.md §1.8). Ordinary memory, but a write keeps only bits 15..0. With `--no-font`, ordinary memory. |
+| `0xFFFE2000`–`0xFFFE3FFF` | 8192 | Character ROM (DEVICES.md §1.8): Spleen 16×32, 32 words per glyph. A write is dropped. With `--no-font`, ordinary memory. |
 | `0xFFFE4000`–`0xFFFEFFFF` | 49152 | Ordinary memory. |
 | `0xFFFF0000`–`0xFFFF07CF` | 2000 | Character screen, 80×25. Ordinary memory. With `-2004` it is at `0x00000400`–`0x00000BCF` instead. |
 | `0xFFFF07D0`–`0xFFFFFEFF` | 63280 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |
 | `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns the next input byte plus `0x100`, or `0x200` after the end of the input. |
 | `0xFFFFFF01` | 1 | Read counter. A data read returns the number of data reads of it since the last write, and a write sets that number. |
-| `0xFFFFFF02` | 1 | `CONSOLE_IRQ`, the console's receive interrupt (SYSTEM.md §1.9): the vector in bits 7..0 and the enable in bit 8. |
+| `0xFFFFFF02` | 1 | `CONSOLE_IRQ`, the console's receive interrupt (DEVICES.md §1.9): the vector in bits 7..0 and the enable in bit 8. |
 | `0xFFFFFF03`–`0xFFFFFF0F` | 13 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
-| `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (SYSTEM.md §4). Raises IRQ once every P steps. |
-| `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (SYSTEM.md §2). Multiplies and divides A and B and counts the bits of A, and divides C and D and takes the square root of C. |
-| `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (SYSTEM.md §3). Cycles, instructions, microseconds, data reads, stores, skips, jumps, and interrupts, 64 bits each. The clock of the time of day, at `0xFFFFFF46`–`0xFFFFFF49` (SYSTEM.md §10). The fetch statistics of the FPGA core, at `0xFFFFFF60`–`0xFFFFFF7F`, read 0. |
-| `0xFFFFFF80`–`0xFFFFFF87` | 8 | Reserved for I/O, like `0xFFFFFF03`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (SYSTEM.md §1.4), and takes its font base from `0xFFFFFF86` (SYSTEM.md §1.8). |
-| `0xFFFFFF88`–`0xFFFFFF8F` | 8 | Floating-point unit (SYSTEM.md §11): a stack of 16 doubles, the views of X, and the commands. With `--no-fpu`, ordinary memory. |
+| `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (DEVICES.md §4). Raises IRQ once every P steps. |
+| `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (DEVICES.md §2). Multiplies and divides A and B and counts the bits of A, and divides C and D and takes the square root of C. |
+| `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (DEVICES.md §3). Cycles, instructions, microseconds, data reads, stores, skips, jumps, and interrupts, 64 bits each. The clock of the time of day, at `0xFFFFFF46`–`0xFFFFFF49` (DEVICES.md §10). The fetch statistics of the FPGA core, at `0xFFFFFF60`–`0xFFFFFF7F`, read 0. |
+| `0xFFFFFF80`–`0xFFFFFF87` | 8 | Reserved for I/O, like `0xFFFFFF03`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (DEVICES.md §1.4), and takes its font base from `0xFFFFFF86` (DEVICES.md §1.8). |
+| `0xFFFFFF88`–`0xFFFFFF8F` | 8 | Floating-point unit (DEVICES.md §11): a stack of 16 doubles, the views of X, and the commands. With `--no-fpu`, ordinary memory. |
 | `0xFFFFFF90`–`0xFFFFFF9F` | 16 | Reserved for I/O, like `0xFFFFFF03`–`0xFFFFFF0F`. |
-| `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | SD card controller (SYSTEM.md §5). Two slots, with the images of `--sd0` and `--sd1`. |
-| `0xFFFFFFB0`–`0xFFFFFFBF` | 16 | Network station (SYSTEM.md §6). The IP and MAC addresses, counts of frames that read 0, and the state of `--link`. |
-| `0xFFFFFFC0`–`0xFFFFFFCF` | 16 | Ethernet frames (SYSTEM.md §7). A queue of 4 frames and a send buffer, with the frames of `--eth-in` and `--eth-udp`. |
+| `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | SD card controller (DEVICES.md §5). Two slots, with the images of `--sd0` and `--sd1`. |
+| `0xFFFFFFB0`–`0xFFFFFFBF` | 16 | Network station (DEVICES.md §6). The IP and MAC addresses, counts of frames that read 0, and the state of `--link`. |
+| `0xFFFFFFC0`–`0xFFFFFFCF` | 16 | Ethernet frames (DEVICES.md §7). A queue of 4 frames and a send buffer, with the frames of `--eth-in` and `--eth-udp`. |
 | `0xFFFFFFD0`–`0xFFFFFFFF` | 48 | Reserved for I/O, like `0xFFFFFF03`–`0xFFFFFF0F`. |
 
 ### Screen
@@ -289,7 +289,7 @@ programs, such as `print.nasm`.
 
 The console stores nothing. Its output comes before the `Halted` line, and
 with `--trace` it is mixed in with the trace lines. `test/console.nasm`
-writes to it. This repository has no UART. A system built on the FPGA core maps one at the same address (SYSTEM.md §1).
+writes to it. This repository has no UART. A system built on the FPGA core maps one at the same address (DEVICES.md §1).
 
 Without `--window` (see Window above), each data read of the console takes
 the next byte of the input, which is
@@ -332,7 +332,7 @@ and differs from the FPGA core's, which counts clock cycles.
 
 The microsecond counter counts the host's monotonic time, without the time
 the host sleeps, less the time the processor was held, paused, or halted
-(SYSTEM.md §3). Each read of `TIME_LO` reads the host's clock. A console
+(DEVICES.md §3). Each read of `TIME_LO` reads the host's clock. A console
 read that waits for input counts as running. After `-n` stops a run, the
 counter runs on until the report, so only after a halt does `--dump` show
 the same count each time. The cycle counter and the microsecond counter
@@ -364,7 +364,7 @@ instruction counter stays.
 
 ### Floating-point unit
 
-The floating-point unit of SYSTEM.md §11, in `src/fpu.zig`, holds the
+The floating-point unit of DEVICES.md §11, in `src/fpu.zig`, holds the
 stack of 16 doubles, its depth, and the four flags. It computes with the
 host's doubles, which round to nearest, even on a tie, as §11.1 asks,
 and computes the flags itself, so the host's own flags do not matter.
@@ -381,7 +381,7 @@ words ordinary memory, as on a system without the unit.
 Its unit test replays the vectors of `test/fpu_vectors.py` (Tests
 below): it sets each line's state, makes the access, and compares the
 state after it and the value read. `test/fpu.nasm` uses the views and a
-few commands of each group, and the two examples of SYSTEM.md §11.5, and
+few commands of each group, and the two examples of DEVICES.md §11.5, and
 `fpu_mem` runs it again with `--no-fpu`. `test/fpustack.nasm` checks the
 depth, the stack faults, the sticky flags, a save and a restore of
 `STATUS`, an instruction that reads and writes one register of the unit,
@@ -393,7 +393,7 @@ numbers through `DIGITS 15`, and reads one back through `FROMBCD` and
 
 The clock of the time of day, at `0xFFFFFF46`–`0xFFFFFF49`, reads the
 host's clock of the time of day plus an offset, which a write of
-`CLOCK_USEC` sets so that the clock reads the time written (SYSTEM.md
+`CLOCK_USEC` sets so that the clock reads the time written (DEVICES.md
 §10). "Set" is 1 from the start. The clock runs on while the processor
 is held, paused, or halted, and a start over the link leaves it. With
 `--step-time` it counts one microsecond per step instead, a wait step
@@ -408,7 +408,7 @@ The timer counts steps as well, so its requests come every P steps. A
 request raised by the last step of a run is not listed as pending at the
 end, as on the FPGA core, where it only reaches the core after that step.
 The timer's requests are IRQs, like those of `--irq`, which raises
-requests of the timer's source (SYSTEM.md §4). A request merges
+requests of the timer's source (DEVICES.md §4). A request merges
 with one of its source that is pending, and the pending one keeps its vector. So when `--irq` and the timer raise a request before the same step, the vector
 of `--irq` is kept: it is pending before the step begins, and the timer's
 request merges with it (`test/irqtimer.nasm`). `test/timer.nasm` checks the counting, the stop, the
@@ -616,7 +616,7 @@ still pending at a halt is never taken. A request of a kind and a source that is
 pending merges with it, so the vector given first wins, whether the two were
 given for the same step or for different steps. The requests of the timer
 and of the console do not merge: each stays pending, and the timer's is
-taken first (SYSTEM.md §4). Requests for steps that are
+taken first (DEVICES.md §4). Requests for steps that are
 never reached, because the processor halts or `-n` stops it, are never
 raised. The probes `test/irq.nasm`, `test/merge.nasm`, `test/after.nasm`, and
 `test/start.nasm` show these rules.
@@ -626,16 +626,16 @@ step: the cycle counter and the timer count it, and with `--step-time` the
 microsecond counter, but the instruction counter does not, and `-n`,
 `--irq`, and `--nmi` count it as a step. niceemu counts the wait steps at
 once, up to the timer's next request, the next `--irq` or `--nmi`, or the
-step limit, with the same result as one by one (SYSTEM.md §3). So a wait
+step limit, with the same result as one by one (DEVICES.md §3). So a wait
 takes no host time, and without `--step-time` the microsecond counter moves
 on little during it. `--trace` prints no line for a wait step. A wait that
 no request can end, with no timer request and no `--irq` or `--nmi` to
 come, stops the run with exit status 2, also under `-n`, but not with
 the window or the link. There a key or a byte from the host can raise the
-console's request, and the run sleeps until one comes (SYSTEM.md §1.6). The probes `test/wait.nasm` and
+console's request, and the run sleeps until one comes (DEVICES.md §1.6). The probes `test/wait.nasm` and
 `test/waitnone.nasm` show these rules.
 
-The console raises its request on an edge (SYSTEM.md §1.9). Where a read
+The console raises its request on an edge (DEVICES.md §1.9). Where a read
 waits for its byte, from stdin, a file, or the link without the window,
 each read that takes a byte raises one, for the byte or the end that
 enters after it, and so does the enable set from 0 to 1. With the window,
@@ -721,7 +721,7 @@ Last, `test/udp.py` checks the frames over the socket of `--eth-udp`
 `tools/nicetap.py` and a TAP device (A real network above).
 
 `test/fpu_model.py` is a reference model of the floating-point unit of
-SYSTEM.md §11. It computes every result exactly, with Python's
+DEVICES.md §11. It computes every result exactly, with Python's
 fractions, and rounds it itself, so it shares nothing with the host's
 doubles, which the emulator uses. Its widths
 are parameters. `make test` runs `test/fpu_model_test.py`, which checks
@@ -770,7 +770,7 @@ an address, `skipconst` the constant words of skipped and control
 instructions, `carryin` and `shiftc` the carry input and the shift counts
 at their edges, `wrapmem` the wrap of addresses at `0xFFFFFFFF`, and
 `smcown` an instruction that overwrites its own constant word.
-`bytewin` reads and writes through the byte windows of SYSTEM.md §9.
+`bytewin` reads and writes through the byte windows of DEVICES.md §9.
 `scrbound` runs twice, with `-s` and with `-2004 -s`, to check the bounds
 of the screen.
 

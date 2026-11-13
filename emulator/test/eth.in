@@ -1,4 +1,4 @@
-# The frames of test/eth.nasm (SYSTEM.md §7), all at the write that
+# The frames of test/eth.nasm (DEVICES.md §7), all at the write that
 # enables the port, but the last, which waits for the first frame sent.
 #
 # A: 60 bytes to the station, payload bytes 00 to 2d.

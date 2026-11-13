@@ -1,4 +1,4 @@
-; The performance counters (SYSTEM.md §3), run with --nmi 3:0x41 and
+; The performance counters (DEVICES.md §3), run with --nmi 3:0x41 and
 ; --step-time, so that the microsecond counter in the dump counts steps. The
 ; instruction counter counts every instruction, a skipped one and INT
 ; included, but not the NMI entry. A read of it returns the number of

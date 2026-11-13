@@ -176,7 +176,7 @@ begin
       check_ibus(X"62345678", X"00000000" & X"00000000");
       check_dbus(X"62345678", X"00000000");
 
-      -- The byte windows (SYSTEM.md §9) reach word (A >> 2) and 0x03FFFFFF.
+      -- The byte windows (DEVICES.md §9) reach word (A >> 2) and 0x03FFFFFF.
       -- Word 0x300 gets 0x80FF7F01 through the word window, with bits 1..0
       -- ignored, and then byte 1 = 0xAA and halfword 1 = 0xBEEF, each
       -- dropping the rest of its value. The instruction port reads 0 in a
@@ -211,7 +211,7 @@ begin
       -- The console takes bits 7..0, in the cycle the write is accepted,
       -- and stores nothing. A read returns 0x100 plus the next byte of
       -- G_INPUT_FILE, test/mem.input, which holds "A", the byte 0xC3, and
-      -- a newline. After those, it returns 0x200 (SYSTEM.md §1).
+      -- a newline. After those, it returns 0x200 (DEVICES.md §1).
       dbus_cyc      <= '1';
       dbus_stb      <= '1';
       dbus_we       <= '1';

@@ -1,4 +1,4 @@
-; The console's receive interrupt (SYSTEM.md §1.9, §4) from a file, where a
+; The console's receive interrupt (DEVICES.md §1.9, §4) from a file, where a
 ; read waits for its byte, with test/input.txt, "Hi". Run with
 ;   --input test/input.txt --irq 4:0x41 -d 0x200:8
 ; Each routine logs its vector at R12, and the loop logs each read.

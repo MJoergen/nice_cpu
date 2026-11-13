@@ -8,8 +8,8 @@ is joined into every program. Each follows one part of
 |---|---|---|---|---|---|
 | `niceasm`, the assembler | [assembler/niceasm.py](../assembler/niceasm.py) | Python 3, standard library only | `.nasm` | `.bin` | ISA.md §10 |
 | `nicedis`, the disassembler | [assembler/nicedis.py](../assembler/nicedis.py) | Python 3, standard library only | `.bin` and `.sym` | `.nasm` | ISA.md §10 |
-| `niceemu`, the emulator | [emulator/](../emulator/) | Zig 0.17 | `.bin` | Console output, the registers, memory dumps, and a trace | ISA.md §1–8, SYSTEM.md, DEBUG.md |
-| `nicetap`, the TAP bridge | [emulator/tools/nicetap.py](../emulator/tools/nicetap.py) | Python 3, standard library only | Frames from a TAP device and niceemu's UDP socket | The same frames, the other way | SYSTEM.md §7 |
+| `niceemu`, the emulator | [emulator/](../emulator/) | Zig 0.17 | `.bin` | Console output, the registers, memory dumps, and a trace | ISA.md §1–8, DEVICES.md, DEBUG.md |
+| `nicetap`, the TAP bridge | [emulator/tools/nicetap.py](../emulator/tools/nicetap.py) | Python 3, standard library only | Frames from a TAP device and niceemu's UDP socket | The same frames, the other way | DEVICES.md §7 |
 | `nicedbg`, the debugger | [debugger/nicedbg.py](../debugger/nicedbg.py) | Python 3, standard library only | `.bin` and `.sym` | Commands to a system on the debug link | DEBUG.md |
 | The runtime library | [runtime/](../runtime/) | NICE assembly | | | ABI.md and WASM.md |
 | `nicewasm`, the wasm translator | [translator/nicewasm.py](../translator/nicewasm.py) | Python 3, standard library only | `.wasm` | `.nasm` | WASM.md |
@@ -71,7 +71,7 @@ builds a program for one: it picks the `_mon` start-up file
   NICE would call the same routines.
 - Translated code calls the float library for its float operations.
   There are two, with the same labels. `runtime/float_fpu.nasm`, written
-  by hand, uses the FPU (SYSTEM.md §11), and `nicebuild.py` joins it.
+  by hand, uses the FPU (DEVICES.md §11), and `nicebuild.py` joins it.
   `runtime/float.nasm` computes in software, for a system without the
   FPU, and `nicebuild.py --no-fpu` joins it instead. It is itself
   translated by `nicewasm`: `runtime/float.zig` and parts of Zig's

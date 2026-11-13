@@ -768,7 +768,7 @@ def test_pause(count: List[int], echo: List[int]) -> None:
 def test_clock(spin: List[int]) -> None:
     """The microsecond counter counts the host's time while the processor
     runs, and stops while it is paused or held. A start sets it to 0
-    (SYSTEM.md §3). With --step-time it counts the steps."""
+    (DEVICES.md §3). With --step-time it counts the steps."""
     e = Emu()
     e.take(len(HELLO))
     e.send(write(0, spin) + write(CONTROL, [0x8]))
@@ -943,7 +943,7 @@ def test_step(count: List[int], one: List[int], stop: List[int], echo: List[int]
     # An instruction that reads the console twice, with one byte waiting:
     # the first read takes it, and the second waits. The step does not run,
     # and the byte is back in the buffer. With a second byte, it runs, and
-    # R3 is 0x161 + 0x162 (SYSTEM.md §1).
+    # R3 is 0x161 + 0x162 (DEVICES.md §1).
     e = Emu()
     e.take(len(HELLO))
     e.send(write(0, twice) + write(CONTROL, [0x18]))
@@ -1641,7 +1641,7 @@ def test_old_host(stop: List[int], echo: List[int]) -> None:
 
 
 def test_net(spin: List[int]) -> None:
-    """The network station (SYSTEM.md §6): NET_STATUS gives the port, and
+    """The network station (DEVICES.md §6): NET_STATUS gives the port, and
     bit 31 while a host is connected. A start and a clear keep the
     addresses, and so does a new connection."""
     net_ip, net_status = 0xFFFFFFB0, 0xFFFFFFB6
@@ -1670,7 +1670,7 @@ def test_net(spin: List[int]) -> None:
 
 
 def test_fpu() -> None:
-    """The FPU's words over the link (SYSTEM.md §11): a write pushes, as
+    """The FPU's words over the link (DEVICES.md §11): a write pushes, as
     the processor's does, and a read of the eight words changes nothing,
     so two dumps agree. With --no-fpu they are ordinary memory."""
     fpu = 0xFFFFFF88

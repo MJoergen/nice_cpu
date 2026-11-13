@@ -1,4 +1,4 @@
-; The bit counts and the square root of the math unit (SYSTEM.md §2). For
+; The bit counts and the square root of the math unit (DEVICES.md §2). For
 ; each A in AS, the first loop writes A and copies A, CLZ, CTZ, and POPCNT
 ; to four words at 0x200 + 4k. In hex:
 ;

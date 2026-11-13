@@ -4,7 +4,7 @@
 #include <stddef.h>
 
 // clock counts microseconds of running time, from the counter of
-// SYSTEM.md §3, and time reads the clock of the time of day of §10.
+// DEVICES.md §3, and time reads the clock of the time of day of §10.
 typedef unsigned long clock_t;
 typedef long long time_t;
 
@@ -15,7 +15,7 @@ typedef long long time_t;
 clock_t clock(void);
 
 // The seconds since the Unix epoch, in the clock's time, UTC or local
-// (SYSTEM.md §10), or -1 if the clock of the time of day holds no time
+// (DEVICES.md §10), or -1 if the clock of the time of day holds no time
 // ("set" is 0). Stores the same in *t if t is
 // not null.
 time_t time(time_t *t);

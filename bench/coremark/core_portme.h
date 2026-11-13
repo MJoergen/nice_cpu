@@ -33,7 +33,7 @@ Original Author: Shay Gal-on
 #define HAS_STDIO  1
 #define HAS_PRINTF 1
 
-/* The ticks are the cycle counter of SYSTEM.md §3, so a second is the
+/* The ticks are the cycle counter of DEVICES.md §3, so a second is the
    clock of the board, 100 MHz unless NICE_CLOCK_HZ says otherwise. On
    the host they are those of clock(). */
 #ifdef __wasm__

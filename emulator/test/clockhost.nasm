@@ -1,4 +1,4 @@
-; The clock of the time of day (SYSTEM.md §10) on the host's clock, run
+; The clock of the time of day (DEVICES.md §10) on the host's clock, run
 ; without --step-time. "Set" is 1 from the start, as the host knows the
 ; time. The seconds are 0x40000000 or more from 2004 to 2106, so bit 31 or
 ; bit 30 is set: R2 = 1. SEC_HI is 0 until 2106: R3 = 0. The clock set to

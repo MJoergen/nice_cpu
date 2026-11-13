@@ -46,7 +46,7 @@ package nice_pkg is
    function is_ctrl(iw : std_logic_vector(31 downto 0)) return boolean;
 
    -- Whether the instruction writes R15 when it runs, for the jump counter
-   -- of SYSTEM.md §3: RTI, or a field of register 15 in a mode that writes
+   -- of DEVICES.md §3: RTI, or a field of register 15 in a mode that writes
    -- the register, the destination in mode 000, 001, 010, 101, or 110, and
    -- a source in mode 001, 010, 101, or 110 (ISA.md §4).
    function writes_r15(iw : std_logic_vector(31 downto 0)) return boolean;

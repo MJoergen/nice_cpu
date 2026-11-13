@@ -1,4 +1,4 @@
-; The port for Ethernet frames (SYSTEM.md §7), with --eth-in test/eth.in
+; The port for Ethernet frames (DEVICES.md §7), with --eth-in test/eth.in
 ; and --eth-out. Each result goes to the next word from 0x200:
 ;
 ;   0x200  ETH_CSR after reset          0

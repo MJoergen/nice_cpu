@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests of niceemu --window, doc/SYSTEM.md §1, on a build with -Dwindow.
+"""Tests of niceemu --window, doc/DEVICES.md §1, on a build with -Dwindow.
 
 SDL's dummy video driver runs the window without a display, so no key can
 be typed and the window cannot be closed. Each test reads the report,
@@ -53,7 +53,7 @@ loop            MOVE    R1, @CONSOLE
 """
 
 # Waits for a byte or the end with WAIT and the console's receive
-# interrupt (SYSTEM.md §1.9), whose routine is only RTI, and counts the
+# interrupt (DEVICES.md §1.9), whose routine is only RTI, and counts the
 # waits in R2.
 WAIT_IRQ = """
 CONSOLE         .EQU    0xFFFFFF00
@@ -73,7 +73,7 @@ CONSOLE_IRQ     .EQU    0xFFFFFF02
 on_irq          RTI
 """
 
-# A WAIT that no request can end (SYSTEM.md §1.6).
+# A WAIT that no request can end (DEVICES.md §1.6).
 WAITS = """
                 WAIT
                 HALT
@@ -365,7 +365,7 @@ def test_link(tmp: str) -> None:
 
 def test_link_irq(tmp: str) -> None:
     """With --link, a WAIT with the console's enable set sleeps until a
-    byte comes from the host, whose request ends it (SYSTEM.md §1.6,
+    byte comes from the host, whose request ends it (DEVICES.md §1.6,
     §1.9): the program waits once, and reads the byte after it. The end of
     the input ends a wait too."""
     words = link.assemble(tmp, "wait_irq", WAIT_IRQ)

@@ -27,7 +27,7 @@ Reviewed on 2026-10-28: the 18 commits since the tag `V1.0` (2026-10-27), at com
 `release.py notes` drafts the Zig version, the benchmark estimate (2356816 cycles, unchanged), the `hdl/src` files that changed, and the commit subjects. By hand it needs:
 
 - Debug link version 5 is a new minor (RELEASE.md step 2): a clear ends the halt and the stop, so bit 1 of the control register, the halt reason, and the stop register read 0 after it. A host of version 4 keeps working by the rules of DEBUG.md §9. NiceMonMEGA65's host sees the new `b05` notice.
-- No port of either core, of `wb_dmux`, or of a device changed, and the address map of SYSTEM.md is as at `V1.0`. The changes to `pipe_prepare.vhd` and `pipeline.vhd` are inside `G_FORMAL` and in comments. A system built for `V1.0` needs no change in its VHDL.
+- No port of either core, of `wb_dmux`, or of a device changed, and the address map of DEVICES.md is as at `V1.0`. The changes to `pipe_prepare.vhd` and `pipeline.vhd` are inside `G_FORMAL` and in comments. A system built for `V1.0` needs no change in its VHDL.
 - `niceemu --link`: a pause request now ends a console read that waits, and a step at such a read pauses again (#56), with the limit of §2.1 if it is not fixed first.
 - `nicedis`, the disassembler, under Assembler.
 - `errno`, set by `strtol` and `strtoul`, under Runtime and C library; the three test `.wasm` files that link them changed with it.

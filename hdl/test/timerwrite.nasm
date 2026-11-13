@@ -1,4 +1,4 @@
-; Writes to TIMER_PERIOD (SYSTEM.md §4) by instructions with a data read,
+; Writes to TIMER_PERIOD (DEVICES.md §4) by instructions with a data read,
 ; which the pipelined core counts on instret_o before their store, each
 ; followed by reads of TIMER_COUNT. The step of the write counts, on the
 ; new count, as in the emulator (test/tb_core.vhd). E = 0, so the request

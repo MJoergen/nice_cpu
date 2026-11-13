@@ -1,4 +1,4 @@
-; The network station (SYSTEM.md §6), without --link, so NET_STATUS reads
+; The network station (DEVICES.md §6), without --link, so NET_STATUS reads
 ; 0. The addresses are registers with reset values, the counts read 0, and
 ; writes to the read-only words are ignored. Each result goes to the next
 ; word from 0x200:

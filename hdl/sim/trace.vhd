@@ -45,7 +45,7 @@
 --    held and not yet taken, with its vector on nmi_vector_i or irq_vector_i.
 --    irq_pending_i is the IRQ of the timer's source, and con_pending_i,
 --    with con_vector_i, that of the console's, which the line lists after
---    it (SYSTEM.md §4).
+--    it (DEVICES.md §4).
 -- d) wstep_i is '1' for one cycle per wait step, never with retire_i.valid.
 --
 -- RESET

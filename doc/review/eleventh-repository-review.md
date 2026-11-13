@@ -1,6 +1,6 @@
 # Eleventh review of the repository, at commit fdd337b
 
-Reviewed on 2026-11-11: the 29 commits between `V2.0` and the head of `dev-V2.1`, commit fdd337b ("doc: V2.1 notes for #149 and #156"), before the release `V2.1`. They add the pseudo-instruction `JMPR` (#154), and close the loops of the runtime, the benchmarks, and the translator's output with it; make the labels of short loops anonymous in every `.nasm` file and in the translator's output; give the console a receive interrupt, `CONSOLE_IRQ` at `0xFFFFFF02`, in the emulator and in `hdl/src/console_irq.vhd`, with the rule of ISA.md §7.1 that requests merge per source, and `irq_merge.vhd` (#153); let a host raise an NMI over the debug link, which is version 8 (#131); add CoreMark (#143) and `make timing-spread` (#151); and bring SYSTEM.md §8 and §10 up to date with the board (#152, #155, #158). The tenth review looked at the code before `V1.9`. This one looks at the documents: what they leave out that the code or the board does, and what they and the comments of the code still say that is no longer true.
+Reviewed on 2026-11-11: the 29 commits between `V2.0` and the head of `dev-V2.1`, commit fdd337b ("doc: V2.1 notes for #149 and #156"), before the release `V2.1`. They add the pseudo-instruction `JMPR` (#154), and close the loops of the runtime, the benchmarks, and the translator's output with it; make the labels of short loops anonymous in every `.nasm` file and in the translator's output; give the console a receive interrupt, `CONSOLE_IRQ` at `0xFFFFFF02`, in the emulator and in `hdl/src/console_irq.vhd`, with the rule of ISA.md §7.1 that requests merge per source, and `irq_merge.vhd` (#153); let a host raise an NMI over the debug link, which is version 8 (#131); add CoreMark (#143) and `make timing-spread` (#151); and bring DEVICES.md §8 and §10 up to date with the board (#152, #155, #158). The tenth review looked at the code before `V1.9`. This one looks at the documents: what they leave out that the code or the board does, and what they and the comments of the code still say that is no longer true.
 
 **How it was checked.** I read the whole diff since `V2.0`: the documents, the code, and the `.nasm` files. For each change I looked for the other places that state the same fact: every README, the documents of `doc/`, the header comments of the VHDL units, the docstrings and the usage texts of the tools, the slides, CLAUDE.md, and CONTRIBUTING.md. I checked every statement about NiceMonMEGA65 against its checkout, four commits after its `V2.0`, and the state of every issue that the documents cite, here and there. One script compared the tracked files of each directory with the README beside it. Another looked in every document and comment for the 110 labels that became anonymous. I checked link version 8 in DEBUG.md against the emulator, `debug_link.vhd`, the tests, and the debugger; the figures of CoreMark on the emulator; the "ten loops" of the notes; and the words of `make -C bench words`. On the unchanged tree I ran `make all`. Its tests print 1301 lines of `PASS`, and one test fails (§1.1), so I ran what the failure skipped by hand: `test/udp.py`, `tap.py`, and `errors.py` of the emulator, and `make typecheck lint pdfcheck`, which all pass. `make -C doc test` and `release.py figures` pass. CI passed every job on fdd337b but `formal`, which was still running when this was written.
 
@@ -8,15 +8,15 @@ Reviewed on 2026-11-11: the 29 commits between `V2.0` and the head of `dev-V2.1`
 
 **One test fails on this machine, and `release.py check` cannot pass here until it is fixed** (§1.1). `test_nmi` of `emulator/test/link.py` closes its connection and connects again at once, and the emulator closes the new host when it sees both in one poll. The test failed in `make all` and in all 13 runs by hand here, and passes on CI. It is a race in the test, on a rule of the emulator that DEBUG.md §7 does not state.
 
-**The documents of the new features are right.** ISA.md §7.1 and §10.1, SYSTEM.md §1.9 and §4, DEBUG.md §6 and §9, the READMEs of the assembler, the emulator, the debugger, the translator, and the benchmarks, and the `V2.1` notes say what the code does, in every case I checked (§4). No document or comment names a label that became anonymous.
+**The documents of the new features are right.** ISA.md §7.1 and §10.1, DEVICES.md §1.9 and §4, DEBUG.md §6 and §9, the READMEs of the assembler, the emulator, the debugger, the translator, and the benchmarks, and the `V2.1` notes say what the code does, in every case I checked (§4). No document or comment names a label that became anonymous.
 
-**The stale statements are mostly about the board, and older than this release.** SYSTEM.md §8 still says that NiceMonMEGA65 plans four things it has had since its `V1.5`, `V1.7`, `V1.7.2`, and `V2.0` (§2.1). Three documents say that its monitor "will" load programs at `0x8000` (§2.2). The table of board tags in RELEASE_NOTES.md says "none yet" for eight releases, of which seven have a board tag (§1.3). HISTORY.md points at #131 for the button and the watchdog, which moved to #157 (§2.3). In `hdl/`, one bullet of the README was cut in two by another (§2.4), and the timer's text and comment still read as if a core's `ready` may go to any number of devices (§2.5).
+**The stale statements are mostly about the board, and older than this release.** DEVICES.md §8 still says that NiceMonMEGA65 plans four things it has had since its `V1.5`, `V1.7`, `V1.7.2`, and `V2.0` (§2.1). Three documents say that its monitor "will" load programs at `0x8000` (§2.2). The table of board tags in RELEASE_NOTES.md says "none yet" for eight releases, of which seven have a board tag (§1.3). HISTORY.md points at #131 for the button and the watchdog, which moved to #157 (§2.3). In `hdl/`, one bullet of the README was cut in two by another (§2.4), and the timer's text and comment still read as if a core's `ready` may go to any number of devices (§2.5).
 
 **The gaps are small.** `hdl/test/README.md` leaves out three files (§3.1), the HDL README's list of the synthesis check leaves out the two new units (§3.2), and four places that list what a tool or a device has leave out what `V2.1` added (§3.3 to §3.6). Each fix is a sentence or a row.
 
 **Three release steps are still to do** (§1.2 to §1.4): the version in `emulator/build.zig.zon`, the row for `V2.1` in the table, and the date of the notes.
 
-**Every finding is closed** on `dev-V2.1`, with a commit for each and a **Resolved** paragraph under each: the test's wait (§1.1), the version (§1.2), the table of board tags (§1.3), the line for #150 (§1.4), SYSTEM.md §8 (§2.1), the board's monitor (§2.2), #157 in HISTORY.md (§2.3), the HDL README's bullet, its timer, and its reserved words (§2.4, §2.5, §2.7), the lists of the devices (§2.6), the rows and the lists of `hdl/` (§3.1 to §3.3), the usage text (§3.4), the debugger's summaries (§3.5), the merge per source in HISTORY.md (§3.6), and the slide (§3.7). Two things became issues: the emulator's side of the race is #159, and CoreMark in `make slow` is #160 (§1.5). `make all` passes here on the result, and CI passed every job on fdd337b after this was written, `formal` included. What is left is the date of the `V2.1` section, set at the tag, and the release steps of RELEASE.md.
+**Every finding is closed** on `dev-V2.1`, with a commit for each and a **Resolved** paragraph under each: the test's wait (§1.1), the version (§1.2), the table of board tags (§1.3), the line for #150 (§1.4), DEVICES.md §8 (§2.1), the board's monitor (§2.2), #157 in HISTORY.md (§2.3), the HDL README's bullet, its timer, and its reserved words (§2.4, §2.5, §2.7), the lists of the devices (§2.6), the rows and the lists of `hdl/` (§3.1 to §3.3), the usage text (§3.4), the debugger's summaries (§3.5), the merge per source in HISTORY.md (§3.6), and the slide (§3.7). Two things became issues: the emulator's side of the race is #159, and CoreMark in `make slow` is #160 (§1.5). `make all` passes here on the result, and CI passed every job on fdd337b after this was written, `formal` included. What is left is the date of the `V2.1` section, set at the tag, and the release steps of RELEASE.md.
 
 ## 1. The release
 
@@ -83,7 +83,7 @@ The row for `V2.1` is the one that RELEASE.md step 2.8 asks for. RELEASE.md step
 
 ## 2. Stale statements
 
-### 2.1 SYSTEM.md §8 says the board plans what it has
+### 2.1 DEVICES.md §8 says the board plans what it has
 
 Four bullets of §8 describe NiceMonMEGA65 as it was. The commits of this release brought the bullets **Clock**, **Byte windows**, **NMI**, and **Receive interrupt** up to date, and these four were left:
 
@@ -141,8 +141,8 @@ Both were written when every IRQ merged with any pending one. Now requests merge
 
 ### 2.6 The lists of the devices in README.md and doc/README.md
 
-- `doc/README.md:9` says of SYSTEM.md: "The devices that the emulator maps into the I/O range: console, math unit, performance counters, and timer." SYSTEM.md has had the SD card since `V1.5`, the network station and the Ethernet frames since `V1.7`, and the clock since `V2.0`.
-- `README.md:50` lists the devices that niceemu implements, down to "the port for Ethernet frames", without the clock of SYSTEM.md §10.
+- `doc/README.md:9` says of DEVICES.md: "The devices that the emulator maps into the I/O range: console, math unit, performance counters, and timer." DEVICES.md has had the SD card since `V1.5`, the network station and the Ethernet frames since `V1.7`, and the clock since `V2.0`.
+- `README.md:50` lists the devices that niceemu implements, down to "the port for Ethernet frames", without the clock of DEVICES.md §10.
 
 **Fix:** the list of CLAUDE.md in the first, and "and the clock of the time of day" in the second.
 
@@ -176,7 +176,7 @@ The README says of `wait` that "its runs are compared exactly, and not by `irq_c
 
 ### 3.4 niceemu's usage text has no `0xFFFFFF02`
 
-`emulator/src/main.zig:19` describes the console at `0xFFFFFF00` and gives the range of each device. It names neither the receive interrupt at `0xFFFFFF02` nor the read counter at `0xFFFFFF01`. The table of emulator/README.md has both. **Fix, if wanted:** half a sentence, or leave the usage text to the options and point at SYSTEM.md.
+`emulator/src/main.zig:19` describes the console at `0xFFFFFF00` and gives the range of each device. It names neither the receive interrupt at `0xFFFFFF02` nor the read counter at `0xFFFFFF01`. The table of emulator/README.md has both. **Fix, if wanted:** half a sentence, or leave the usage text to the options and point at DEVICES.md.
 
 **Resolved**: The usage text names the read counter at `0xFFFFFF01` and the receive interrupt at `0xFFFFFF02`.
 
@@ -202,11 +202,11 @@ The "Jumps" slide of `doc/intro/nice_intro.tex` (line 553) shows `MOVE PC, LOOP`
 
 These are recorded so that the next review need not repeat them.
 
-- **Link version 8.** DEBUG.md §6 and §9, `emulator/src/link.zig`, `debug_link.vhd`, `tb_debug_link`, `tb_link`, `nicelink.py`, and `nicedbg.py` agree on the register at `0xFFFFFFD7`, bit 8, the read back until the request is taken, the write that raises nothing while the processor is held or halted, the drop by a hold, and bit 9 of the control register. The emulator README, the HDL README, and SYSTEM.md §8 say the same.
-- **The console's receive interrupt.** SYSTEM.md §1.9 and §4, the emulator README's table and its section on the timer, `console_irq.vhd`, `irq_merge.vhd`, and MICROARCH.md §6 and §8 agree on the three edges, the order of the two sources, and that a request keeps its vector. `hdl/ASSUMPTIONS.md` has no rule of a stable IRQ vector left.
+- **Link version 8.** DEBUG.md §6 and §9, `emulator/src/link.zig`, `debug_link.vhd`, `tb_debug_link`, `tb_link`, `nicelink.py`, and `nicedbg.py` agree on the register at `0xFFFFFFD7`, bit 8, the read back until the request is taken, the write that raises nothing while the processor is held or halted, the drop by a hold, and bit 9 of the control register. The emulator README, the HDL README, and DEVICES.md §8 say the same.
+- **The console's receive interrupt.** DEVICES.md §1.9 and §4, the emulator README's table and its section on the timer, `console_irq.vhd`, `irq_merge.vhd`, and MICROARCH.md §6 and §8 agree on the three edges, the order of the two sources, and that a request keeps its vector. `hdl/ASSUMPTIONS.md` has no rule of a stable IRQ vector left.
 - **`JMPR`.** ISA.md §10.1, §9.2, and Appendix B, the assembler's README, `nicedis`, `nice.vim`, DESIGN.md, and `decisions.md` agree. The notes' "ten loops" are 3 in `lib.nasm`, 6 in `muldiv_soft.nasm`, and 1 in `trapmsg.nasm`.
 - **Anonymous labels.** No document, comment, test script, or expected file names one of the 110 labels that went away. The `LOOP` of `debugger/README.md:89` is that of `test/break.nasm`, which keeps its name for the test. NiceMonMEGA65 uses none of the labels that `demo.nasm` and the runtime lost.
 - **The figures.** CoreMark on the emulator gives 675095 cycles per iteration and 1.481 CoreMark/MHz, and 675422 and 1.480 with the validation seeds, as bench/README.md says. `make -C bench words` gives 11523, 5903, 30073, 6578, and 23392. `release.py figures` passes.
 - **The references.** `make -C doc test` passes: every `FILE.md §n.m` and every link names what exists. `make -C doc/intro pdfcheck` passes.
 - **The notes.** Each of #131, #143, #149, #151 to #156, and #158 has its lines, and the upgrade notes name the five things a user must know. What the notes say NiceMonMEGA65 has, the watchpoints and the RAM without the cascade, it has.
-- **The board, where §8 is current.** The byte windows, the font, the clock, the size of the RAM with its word at `0xFFFFFF9E`, and the three things it does not have yet are as SYSTEM.md §8 says.
+- **The board, where §8 is current.** The byte windows, the font, the clock, the size of the RAM with its word at `0xFFFFFF9E`, and the three things it does not have yet are as DEVICES.md §8 says.

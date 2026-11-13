@@ -3,7 +3,7 @@
 -- THEORY OF OPERATION
 -- For each pair A, B it writes A and B, then reads all 32 words and checks
 -- them against results that numeric_std computes, with the special cases
--- of SYSTEM.md §2. The bit counts are counted one bit at a time, and the
+-- of DEVICES.md §2. The bit counts are counted one bit at a time, and the
 -- square root is found by a binary search that squares with numeric_std,
 -- not as src/mpu.vhd finds them. The pairs are the corner cases first, then G_RANDOM
 -- random ones. Then the same for pairs C, D. Further checks:
@@ -94,7 +94,7 @@ architecture simulation of tb_mpu is
       return std_logic_vector(r_v) & std_logic_vector(q_v);
    end function square_root;
 
-   -- The 32 words of SYSTEM.md §2 for A, B, C, and D.
+   -- The 32 words of DEVICES.md §2 for A, B, C, and D.
    function expected(a : std_logic_vector(31 downto 0);
                      b : std_logic_vector(31 downto 0);
                      c : std_logic_vector(63 downto 0);

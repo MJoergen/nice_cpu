@@ -53,7 +53,7 @@ RUNTIME = os.path.join(REPO, "runtime")
 NICEWASM = os.path.join(REPO, "translator", "nicewasm.py")
 NICEASM = os.path.join(REPO, "assembler", "niceasm.py")
 NICEEMU = os.path.join(REPO, "emulator", "zig-out", "bin", "niceemu")
-# The float library: float_fpu.nasm, with the FPU of SYSTEM.md §11, or
+# The float library: float_fpu.nasm, with the FPU of DEVICES.md §11, or
 # float.nasm, in software, with --no-fpu.
 FLOAT_LIB = "float_fpu.nasm"
 INCLUDE = os.path.join(LIBC, "include")

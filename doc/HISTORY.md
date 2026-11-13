@@ -79,7 +79,7 @@ two kinds of access. §9.4, the mapping of WebAssembly, is
   They now compute it in a register ahead of the bounds check.
 - The fetch statistics (MICROARCH.md §8.1) were a device of their own at
   `0xFFFFFF50`–`0xFFFFFF7F`, and ordinary memory in the emulator. On
-  2026-10-20 they became part of the performance counters of SYSTEM.md §3,
+  2026-10-20 they became part of the performance counters of DEVICES.md §3,
   at the same addresses, and the emulator reads them as 0.
 - Until 2026-11-06 (#125), the fetch statistics judged the size of FETCH's
   buffer: 48 words at `0xFFFFFF50`–`0xFFFFFF7F`, with a histogram of the
@@ -592,7 +592,7 @@ for one of them. The window of `--window` came with
 that can have no byte, as a board's: `cpu.input` became an `Input`, whose
 `next()` gives a byte, none, or the end, and in the window a console read
 returns 0 while no byte waits. The bytes of the keys and the cursor words
-of SYSTEM.md §1 were NiceMonMEGA65's own before; the specification took
+of DEVICES.md §1 were NiceMonMEGA65's own before; the specification took
 them over so that a program runs the same in the window and on the board.
 
 ## The link's address
@@ -695,7 +695,7 @@ that stopped inside an interrupt routine could not tell that it was in
 one, nor where its `RTI` would return. #65 asked for it, and #102 and
 NiceMonMEGA65#22 left it for a new major, as the link's 32 words had
 one left. With #109, the link's registers grew down to `0xFFFFFFD0`
-instead, into words that SYSTEM.md reserved for I/O and no system used,
+instead, into words that DEVICES.md reserved for I/O and no system used,
 so no host had to move. The version is still 7, which had not been
 tagged: `saved_pc` and `saved_sr` at `0xFFFFFFD0` and `0xFFFFFFD1`,
 `in_service` and `after_rti` in bits 7 and 8, and the pending NMI and
@@ -729,3 +729,12 @@ its run control through registers, which an older system ignores. The
 button and the watchdog are #157. A second source needs a merge that
 keeps the NMI vector stable until the core takes it, as the cores ask
 of NMI, though a4da0a9 relaxed this for IRQ.
+
+## DEVICES.md
+
+Until 2026-11-13, `doc/DEVICES.md` was `doc/SYSTEM.md`. NiceMonMEGA65
+has a `doc/SYSTEM.md` of its own, the board's address map and devices,
+and links to both, so it had to say "nice_cpu's SYSTEM.md" each time
+(#166, MJoergen/NiceMonMEGA65#130). The sections kept their numbers. The
+release notes, the reviews, and this file name it DEVICES.md for every
+date, also where the tags of that date have SYSTEM.md.

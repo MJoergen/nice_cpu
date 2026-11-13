@@ -11,12 +11,12 @@
 -- the core owns it otherwise. hold_o holds the core in reset, and its
 -- fall, a start, resets the math unit.
 --
--- p_con stands in for a board's UART console (SYSTEM.md §1). For the
+-- p_con stands in for a board's UART console (DEVICES.md §1). For the
 -- core, a read of 0xFFFFFF00 returns the next byte of its input buffer
 -- plus 0x100, 0x200 when the buffer is empty after the end of the line's
 -- input, and 0 while no byte waits; a write sends the byte to the link.
 -- The model has no keyboard, whose bytes a board still takes after the
--- end (SYSTEM.md §8). For the link, 0xFFFFFF00 and
+-- end (DEVICES.md §8). For the link, 0xFFFFFF00 and
 -- 0xFFFFFF01 read 0 and ignore writes, as DEBUG.md §3 says. The input
 -- buffer holds C_IN_SIZE bytes, 16, so that a flood of the host fills it
 -- soon, and is emptied at a start, when hold_o falls.

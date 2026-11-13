@@ -376,7 +376,7 @@ Before each instruction, the first one after reset included, the processor check
 - While `waiting` = 1, a pending request first ends the wait (§7.5).
 - No IRQ or NMI is taken while `after_rti` = 1, so the instruction directly after an `RTI` always runs first. That instruction may itself be an `INT`, which works normally. This guarantees that the interrupted program makes progress. A deferred request is taken before the second instruction after `RTI`, unless the first one is an `INT` (then the request waits for that routine's `RTI` as well), halts the processor, or, for an IRQ, leaves E = 0 (then the IRQ waits until software sets E).
 
-**Pending requests are deferred, never lost.** An NMI or IRQ that cannot be taken when it arrives stays pending until it is taken. That happens when `in_service` = 1, or for an IRQ when E = 0. A request merges with one of the same kind that is already pending from the same source, and the pending one keeps its vector, so software must not rely on counting interrupts. Requests of different sources do not merge: each stays pending, and they are taken one at a time, in an order of priority that the system sets. What the sources are, and their order, is not part of the ISA; [SYSTEM.md](SYSTEM.md) says it for the emulator and the FPGA implementation. A request still pending when the processor halts is never taken, because only reset restarts the processor.
+**Pending requests are deferred, never lost.** An NMI or IRQ that cannot be taken when it arrives stays pending until it is taken. That happens when `in_service` = 1, or for an IRQ when E = 0. A request merges with one of the same kind that is already pending from the same source, and the pending one keeps its vector, so software must not rely on counting interrupts. Requests of different sources do not merge: each stays pending, and they are taken one at a time, in an order of priority that the system sets. What the sources are, and their order, is not part of the ISA; [DEVICES.md](DEVICES.md) says it for the emulator and the FPGA implementation. A request still pending when the processor halts is never taken, because only reset restarts the processor.
 
 When the processor accepts a request, the device supplies an 8-bit vector number v. The ISA does not say how requests are signaled and acknowledged: edge or level, the handshake, and how a request is held pending are hardware interface matters. The rules above are what software sees.
 
@@ -432,7 +432,7 @@ So a `WAIT` ends at once when a request is already pending that could not be tak
 - `WAIT` right after `RTI` clears `after_rti` when it completes, as any instruction does (§1.4). A deferred request then ends the wait at once, and is taken.
 - A wait for a request that never comes lasts until reset.
 - Reset clears `waiting` (§8.1).
-- How long a wait takes, and what the devices of a system do meanwhile, is not part of the ISA. [SYSTEM.md](SYSTEM.md) says it for the emulator and the FPGA implementation.
+- How long a wait takes, and what the devices of a system do meanwhile, is not part of the ISA. [DEVICES.md](DEVICES.md) says it for the emulator and the FPGA implementation.
 
 ## 8. Reset, memory, and I/O
 
@@ -453,7 +453,7 @@ So a `WAIT` ends at once when a request is already pending that could not be tak
 
 - A read from an address with no memory or device behind it returns 0. A write to such an address is ignored.
 - Each instruction runs with the words that memory held when the instructions before it had completed. So a store may change the next instruction or its constant words, and the change takes effect. An instruction that overwrites its own constant words does not see the change, because they were fetched in step 2.
-- A system may let more than one address reach the same word, as the aliasing and the byte windows of [SYSTEM.md](SYSTEM.md) do. The rule above then holds for a store to the address that the word is fetched from. A store through another address leaves undefined which value runs.
+- A system may let more than one address reach the same word, as the aliasing and the byte windows of [DEVICES.md](DEVICES.md) do. The rule above then holds for a store to the address that the word is fetched from. A store through another address leaves undefined which value runs.
 
 Memory accesses are of two kinds. **Instruction fetches** read the instruction word and the constant words (steps 1 and 2 of §5). **Data accesses** are the operand reads, the destination writes, and the vector table reads.
 
@@ -471,7 +471,7 @@ Interrupt entry (§7.2), including `INT`, makes one data access: the read of the
 
 ### 8.3 Input and output
 
-I/O is memory-mapped. There are no I/O instructions. Addresses `0xFFFFFF00`–`0xFFFFFFFF` are reserved for I/O devices. The ISA defines no device. The devices of the emulator and the FPGA implementation are in [SYSTEM.md](SYSTEM.md).
+I/O is memory-mapped. There are no I/O instructions. Addresses `0xFFFFFF00`–`0xFFFFFFFF` are reserved for I/O devices. The ISA defines no device. The devices of the emulator and the FPGA implementation are in [DEVICES.md](DEVICES.md).
 
 Instruction fetches never reach I/O devices. An instruction fetch from `0xFFFFFF00`–`0xFFFFFFFF` reads 0, whatever a data read of the same address returns. The word 0 is a NOP (§2.1), so a program that runs into the I/O range runs through it and wraps to address 0.
 

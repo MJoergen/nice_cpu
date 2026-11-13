@@ -2,15 +2,15 @@
 
 Reviewed on 2026-10-22: the state of the repository at commit 9d8f13d ("ISA: state the memory model"), tagged `RW01`, as a release candidate. The four earlier reviews asked whether the parts fit and what the tests do not reach. This one asked what a release is missing: what a reader on a fresh machine hits first, what an integrator of the core has to know and is not told, what the documents say that is no longer true, and what the tools do that no document states.
 
-**How it was checked.** Seven readers worked in parallel: one each for ISA.md and SYSTEM.md against the emulator, the assembler, the emulator's interface, the runtime and the C library, the translator, the cores, and the documents as a set. Each read its code against its documents rule by rule, and ran the tools on small inputs where it suspected a gap, but ran no test suite: the tests pass at this commit and the benchmark figures are current, which this review takes as given. The readers reported findings with file and line and changed nothing. I checked the release hygiene of the repository myself, reproduced every behavior finding below (§3.2, §4.1, §6.1, §6.2), and re-read the text of every document finding of §1, §2, §5.1, §7.1, §7.4, and §8. Nothing is fixed; each finding says what the fix is.
+**How it was checked.** Seven readers worked in parallel: one each for ISA.md and DEVICES.md against the emulator, the assembler, the emulator's interface, the runtime and the C library, the translator, the cores, and the documents as a set. Each read its code against its documents rule by rule, and ran the tools on small inputs where it suspected a gap, but ran no test suite: the tests pass at this commit and the benchmark figures are current, which this review takes as given. The readers reported findings with file and line and changed nothing. I checked the release hygiene of the repository myself, reproduced every behavior finding below (§3.2, §4.1, §6.1, §6.2), and re-read the text of every document finding of §1, §2, §5.1, §7.1, §7.4, and §8. Nothing is fixed; each finding says what the fix is.
 
 ## Summary
 
-**No behavior bug in the cores, in the emulator's execution, in the assembler's output, in the runtime, or in translated code.** The readers traced every rule of ISA.md §1 to §8 and of SYSTEM.md through `cpu.zig`, recomputed encodings by hand, ran hand-built f32 modules through the whole pipeline against a Python reference, and synthesized both cores with GHDL, and found nothing wrong. Three edges remain. The emulator loses its console output on Ctrl-C (§4.1). The translator prints a Python traceback for a name section that overruns the file, and for an output file it cannot write (§6.1, §6.2); the assembler had the second and was fixed after the fourth review.
+**No behavior bug in the cores, in the emulator's execution, in the assembler's output, in the runtime, or in translated code.** The readers traced every rule of ISA.md §1 to §8 and of DEVICES.md through `cpu.zig`, recomputed encodings by hand, ran hand-built f32 modules through the whole pipeline against a Python reference, and synthesized both cores with GHDL, and found nothing wrong. Three edges remain. The emulator loses its console output on Ctrl-C (§4.1). The translator prints a Python traceback for a name section that overruns the file, and for an output file it cannot write (§6.1, §6.2); the assembler had the second and was fixed after the fourth review.
 
 **What a release is missing is around the code, not in it.** There is no license (§1.1). CI does not run the document checks, though README.md says it runs every test (§1.2). No document names the Python, make, or platform the tests need, and the hdl scripts need Python 3.10 where the tools need 3.7 (§1.3, §1.4). The quick start runs a binary that a fresh clone does not have (§1.5). The rules a system must follow to drive the pipelined core's buses are stated in the formal checker and in a file header, not in MICROARCH.md §8 or hdl/README.md, where an integrator looks (§7.1).
 
-**The documents drifted in small ways while the pipeline changed.** The slides still promise a UART and a first core (§8.1). MICROARCH.md keeps a hazard figure from before the store register (§8.2). HISTORY.md has no entry for the default core changing (§8.3). The runtime README doubles the size of the float library (§5.1). SYSTEM.md cites an ISA.md section for a rule it does not contain (§2.1). Each is a line to fix.
+**The documents drifted in small ways while the pipeline changed.** The slides still promise a UART and a first core (§8.1). MICROARCH.md keeps a hazard figure from before the store register (§8.2). HISTORY.md has no entry for the default core changing (§8.3). The runtime README doubles the size of the float library (§5.1). DEVICES.md cites an ISA.md section for a rule it does not contain (§2.1). Each is a line to fix.
 
 ## 1. Release hygiene
 
@@ -43,9 +43,9 @@ README.md:70–71 run `assembler/niceasm.py` and then `emulator/zig-out/bin/nice
 
 ## 2. The specification
 
-### 2.1 SYSTEM.md cites a rule that ISA.md does not contain
+### 2.1 DEVICES.md cites a rule that ISA.md does not contain
 
-SYSTEM.md:67: "Each 64-bit value takes two words, low word first, as in ISA §9.3." ISA.md §9.3 is two links, to ABI.md and WASM.md, and says nothing about word order. `check_refs.py` passes it because the section exists. The emulator does put the low word first (`Mpu.write` in `cpu.zig`). **Fix:** state the order in SYSTEM.md §2, and cite ABI.md if it states it.
+DEVICES.md:67: "Each 64-bit value takes two words, low word first, as in ISA §9.3." ISA.md §9.3 is two links, to ABI.md and WASM.md, and says nothing about word order. `check_refs.py` passes it because the section exists. The emulator does put the low word first (`Mpu.write` in `cpu.zig`). **Fix:** state the order in DEVICES.md §2, and cite ABI.md if it states it.
 
 ### 2.2 Rules the tools decide and ISA.md does not state
 
@@ -53,13 +53,13 @@ SYSTEM.md:67: "Each 64-bit value takes two words, low word first, as in ISA §9.
 - **A single number of 2³² or more is an error.** ISA.md §10.2 says the value of a constant wraps modulo 2³². `niceasm.py:130` rejects `4294967296` and `0x100000000` with "number too large", and accepts `0xFFFFFFFF+1`. Either wrap, or say in §10.2 that each number must be below 2³².
 - **Symbol syntax.** `IDENT` at `niceasm.py:53` is an ASCII letter or `_`, then ASCII letters, digits, `_`, and `.`. Neither ISA.md §10.1 nor the README says so: `a.b` is a label, and `é` is "bad symbol name".
 - **Which vector a merge keeps.** ISA.md §7.1 says requests of the same kind "may merge". The emulator keeps the older vector when the timer's request meets a pending one (`cpu.zig:501`) and the newer one for `--irq` and `--nmi` (`requestIrq`, `requestNmi`). Say "unspecified", or pick one.
-- **The read counter has no reset value** in SYSTEM.md §1, and `Cpu.reset()` does not clear it. It matters only if reset were called on a running processor, which it is not.
+- **The read counter has no reset value** in DEVICES.md §1, and `Cpu.reset()` does not clear it. It matters only if reset were called on a running processor, which it is not.
 - ISA.md §10.1 says a label cannot be "a register name"; assembler/README.md:55 says it cannot look like one, so `R16` is rejected too. Put the stricter rule in ISA.md.
 - ISA.md §10.1 says a comment starts with `;` or `*`; the assembler takes `*` as a comment only at the start of a word, as the README says. A clause in §10.1.
 
 ### 2.3 Nits
 
-ISA.md:364 lacks the Oxford comma before "and a software interrupt". The console paragraph of SYSTEM.md §1 says a read with no byte waiting returns 0, and then that the emulator never returns 0; "a UART returns 0 when no byte waits; the emulator and the simulation wait for one" says it once.
+ISA.md:364 lacks the Oxford comma before "and a software interrupt". The console paragraph of DEVICES.md §1 says a read with no byte waiting returns 0, and then that the emulator never returns 0; "a UART returns 0 when no byte waits; the emulator and the simulation wait for one" says it once.
 
 ## 3. The assembler
 
@@ -168,7 +168,7 @@ WRITE's `saved_pc`, `saved_sr`, `s0val`, `s1val`, `last`, `m33sum`, `cnt`, `vec`
 
 ### 8.1 Stale statements
 
-- `doc/intro/nice_intro.tex:128` "The FPGA implementation will have a UART at the same address", and emulator/README.md:132 "The FPGA core will have a UART at the same address." SYSTEM.md §1 and MICROARCH.md §8: this repository has no UART, and NiceMonMEGA65 maps one.
+- `doc/intro/nice_intro.tex:128` "The FPGA implementation will have a UART at the same address", and emulator/README.md:132 "The FPGA core will have a UART at the same address." DEVICES.md §1 and MICROARCH.md §8: this repository has no UART, and NiceMonMEGA65 maps one.
 - The slides, line 40: "a first FPGA core -- and next, a faster one"; line 872: "The FPGA implementation will write the same trace"; line 914: "Next comes a faster clock for the pipelined core". Two cores exist, both write the trace, and the core meets 10 ns out of context. The PDF is checked against the `.tex`, so both change.
 - README.md never says the pipelined core is the default. Its introduction and its table give the two cores with no order, where CLAUDE.md:34, hdl/README.md:10, and bench/README.md:136 say it.
 - CLAUDE.md:51 says `make -C translator test` is "test/run.py, then test/errors.py"; translator/Makefile:24–31 also run `fuzz.py` in four modes and `passes.py`.
@@ -197,7 +197,7 @@ The first item asks for "the cost of the waits ... to decide on speculative read
 ## What is correct
 
 - The tests pass at 9d8f13d, as given. This review ran none of them.
-- The emulator agrees with every rule of ISA.md §1 to §8 and of SYSTEM.md that the reader traced: reset values, R0, R14, and R15 in every mode, the order of constants and of side effects, the carry input, the shifts, the control words, interrupt entry and `RTI`, the halts, the I/O range, and every device's addresses, results, and reset values. The worked examples of ISA.md and the five encodings of the slides recompute by hand.
+- The emulator agrees with every rule of ISA.md §1 to §8 and of DEVICES.md that the reader traced: reset values, R0, R14, and R15 in every mode, the order of constants and of side effects, the carry input, the shifts, the control words, interrupt entry and `RTI`, the halts, the I/O range, and every device's addresses, results, and reset values. The worked examples of ISA.md and the five encodings of the slides recompute by hand.
 - The assembler's `encoding.bin` matches twelve hand-computed words, and every option, message, exit status, and finer point of its README matches the code.
 - The emulator's trace writer and `hdl/src/trace_pkg.vhd` agree field by field, including `INT`, `RTI`, skipped instructions, the halts, and the first line after reset. Every option and message of its README matches the code, and every test file is used.
 - ABI.md matches the code in the register roles, the call sequence, the stack, two-word values, the start-up code, the trap vector, and the join order. The two muldiv files have the same 14 labels and the same results, but for the documented division of a negative dividend by zero. Every runtime and C library test file is run, and every header declares what its source defines.

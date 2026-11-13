@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A test of niceemu's Ethernet frames over a UDP socket, doc/SYSTEM.md §7.
+"""A test of niceemu's Ethernet frames over a UDP socket, doc/DEVICES.md §7.
 
 niceemu runs ECHO with --eth-udp and --eth-peer, and this script is the
 peer. The program sets NET_IP, enables the port, and says hello with a

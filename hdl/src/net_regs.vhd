@@ -1,4 +1,4 @@
--- The registers of the network station of SYSTEM.md §6: 16 words of I/O
+-- The registers of the network station of DEVICES.md §6: 16 words of I/O
 -- that hold the station's IP and MAC addresses, and show its counts of
 -- frames and the state of the debug link over TCP.
 --
@@ -11,7 +11,7 @@
 -- other words read their inputs, or 0, and ignore writes. wr_o is high in
 -- the cycle after a write to an address, with ip_o and mac_o already
 -- showing the new value, so that a board's station can break a connection
--- or a reply then, as SYSTEM.md §6 says.
+-- or a reply then, as DEVICES.md §6 says.
 --
 -- The port is a pipelined Wishbone slave. It never stalls, and it
 -- acknowledges each request in the cycle after it accepts it. A read

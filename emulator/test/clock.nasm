@@ -1,4 +1,4 @@
-; The clock of the time of day (SYSTEM.md §10), run with --step-time, so
+; The clock of the time of day (DEVICES.md §10), run with --step-time, so
 ; that it counts one microsecond per step from 0, with "set" 0. A read of
 ; CLOCK_USEC returns the microseconds of the steps before the reading one,
 ; and takes a snapshot of the seconds; CLOCK_SEC_LO and CLOCK_SEC_HI

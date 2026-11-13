@@ -42,7 +42,7 @@ const usage =
     \\                       512-byte sectors. Write-protected if FILE cannot be written.
     \\      --sd1 FILE       The same for slot 1.
     \\      --eth-in FILE    Receive the Ethernet frames of FILE, one per line in
-    \\                       hex, as doc/SYSTEM.md §7 says: at the write that
+    \\                       hex, as doc/DEVICES.md §7 says: at the write that
     \\                       enables the port, and at each frame sent.
     \\      --eth-out FILE   Write the frames sent to FILE, one per line in hex.
     \\      --eth-udp [ADDR:]PORT  Receive frames as UDP datagrams on PORT of ADDR
@@ -88,7 +88,7 @@ const usage =
     \\
 ;
 
-/// The character screen (doc/SYSTEM.md §1). Each word holds a character in
+/// The character screen (doc/DEVICES.md §1). Each word holds a character in
 /// bits 7..0, its background color in bits 31..20, and its foreground color
 /// in bits 19..8, each as 4-bit R, G, and B. The 2004 emulator has it at
 /// 0x400.
@@ -132,7 +132,7 @@ const Options = struct {
     /// The image files of the SD card slots, or "" for an empty slot.
     sd: [2][]const u8 = .{ "", "" },
     /// The files of the Ethernet frames received and sent, or "" for none,
-    /// and the UDP socket's address and its peer (doc/SYSTEM.md §7).
+    /// and the UDP socket's address and its peer (doc/DEVICES.md §7).
     eth_in: []const u8 = "",
     eth_out: []const u8 = "",
     eth_udp: ?std.Io.net.IpAddress = null,
@@ -143,7 +143,7 @@ const Options = struct {
     stack: bool = false,
     /// The address of --link, or null to run the program once.
     link: ?std.Io.net.IpAddress = null,
-    /// Show the screen in a window (doc/SYSTEM.md §1).
+    /// Show the screen in a window (doc/DEVICES.md §1).
     window: bool = false,
     /// Steps a second with the window, or 0 for as fast as the host can,
     /// sleeping in the wait loops that `Idle` finds.
@@ -492,7 +492,7 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
     return opts;
 }
 
-/// An image file of an SD card (doc/SYSTEM.md §5), read and written in place.
+/// An image file of an SD card (doc/DEVICES.md §5), read and written in place.
 const ImageFile = struct {
     io: std.Io,
     file: std.Io.File,
@@ -548,7 +548,7 @@ fn openImage(arena: std.mem.Allocator, io: std.Io, path: []const u8) error{ Load
     };
 }
 
-/// The host's side of the Ethernet frames (doc/SYSTEM.md §7): the file of
+/// The host's side of the Ethernet frames (doc/DEVICES.md §7): the file of
 /// --eth-out, and the UDP socket of --eth-udp with its peer.
 const EthHost = struct {
     io: std.Io,
@@ -700,12 +700,12 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
     cpu.fpu_enabled = opts.fpu;
     cpu.mem.fonts = opts.fonts;
     // The clock counts from here, as a board's from its reset. A halt
-    // stops it, the step limit does not (doc/SYSTEM.md §3).
+    // stops it, the step limit does not (doc/DEVICES.md §3).
     var clock: Clock = .{ .io = io };
     if (!opts.step_time) {
         cpu.clock = &clock;
         clock.start();
-        cpu.tod.useHost(io); // the host's time of day (doc/SYSTEM.md §10)
+        cpu.tod.useHost(io); // the host's time of day (doc/DEVICES.md §10)
     }
     cpu.timer_irq = opts.timer_irq;
     var in_buf: [4096]u8 = undefined;
@@ -735,7 +735,7 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
     }
     cpu.input = .fromReader(&in_r.interface);
     // A step is one instruction, the entry into an interrupt, or a wait
-    // step (doc/SYSTEM.md §3).
+    // step (doc/DEVICES.md §3).
     var steps: u64 = 0;
     var next: usize = 0;
     // The turns of the loop, each a step or a jump over wait steps.
@@ -763,7 +763,7 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
 }
 
 /// Raise the requests of --irq and --nmi for step `steps`, and the
-/// console's of a byte that has come (doc/SYSTEM.md §1.9). `next` is the
+/// console's of a byte that has come (doc/DEVICES.md §1.9). `next` is the
 /// first request of --irq and --nmi not raised yet.
 fn raiseRequests(cpu: *Cpu, opts: Options, steps: u64, next: *usize) void {
     cpu.pollConsole();
@@ -776,12 +776,12 @@ fn raiseRequests(cpu: *Cpu, opts: Options, steps: u64, next: *usize) void {
     }
 }
 
-/// The wait steps (doc/SYSTEM.md §3) that a run counts at once at step
+/// The wait steps (doc/DEVICES.md §3) that a run counts at once at step
 /// `steps`, after the requests of the step: up to the step at which the
 /// timer or the next of --irq and --nmi raises a request, or up to the step
 /// limit. 0 when the next step is not a wait step, and null when no request
 /// can end the wait, which stops a run without the link or the window
-/// (doc/SYSTEM.md §1.6). `next` is the first request not raised yet.
+/// (doc/DEVICES.md §1.6). `next` is the first request not raised yet.
 fn waitJump(cpu: *const Cpu, opts: Options, steps: u64, next: usize) ?u64 {
     if (!cpu.waitStepDue()) return 0;
     const timer = cpu.timerWaitSteps();
@@ -845,7 +845,7 @@ fn nowNs(io: std.Io) i96 {
 
 /// Finds the wait loops of a program under the window without a pace, so
 /// that the run loop sleeps in them rather than keep a host core busy
-/// (doc/SYSTEM.md §1.6): two idle reads of the Cpu within `span` steps of
+/// (doc/DEVICES.md §1.6): two idle reads of the Cpu within `span` steps of
 /// each other mean one. The chunk then ends, and the window waits for an
 /// event, so a key still comes at once: up to `time_wait_ms` when the
 /// loop has read `TIME_LO` within `span` steps, as a wait on the counter
@@ -907,7 +907,7 @@ fn windowOpen(win: *Window, cpu: *const Cpu, opts: Options, wait_ms: u32, steps:
     return open;
 }
 
-/// Run the program with the window (doc/SYSTEM.md §1): the console reads
+/// Run the program with the window (doc/DEVICES.md §1): the console reads
 /// `file`, if given, then the keys. After the halt or the step limit, the
 /// report is printed, and the window stays until it is closed. Closing it
 /// before ends the run.
@@ -1033,14 +1033,14 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
     cpu.fpu_enabled = opts.fpu;
     cpu.mem.fonts = opts.fonts;
     // Stopped while the processor is held, halted, or paused, and set to
-    // 0 by the reset of a start (doc/SYSTEM.md §3).
+    // 0 by the reset of a start (doc/DEVICES.md §3).
     var clock: Clock = .{ .io = io };
     if (!opts.step_time) cpu.clock = &clock;
-    // The clock of the time of day runs on through a start (doc/SYSTEM.md §10).
+    // The clock of the time of day runs on through a start (doc/DEVICES.md §10).
     if (!opts.step_time) cpu.tod.useHost(io);
     cpu.timer_irq = opts.timer_irq;
     // With the window, the console reads do not wait, and the run is paced
-    // (doc/SYSTEM.md §1).
+    // (doc/DEVICES.md §1).
     const windowed = build_options.window and opts.window;
     var win: Window = undefined;
     if (windowed) {

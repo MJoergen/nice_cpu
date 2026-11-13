@@ -7,7 +7,7 @@ One program calls every routine of the float library on special operands,
 each with each, and on random ones: values near the integers, the ties of
 the rounding, and the limits of the conversions. It runs twice, joined
 with float.nasm and then with float_fpu.nasm, which uses the FPU of
-SYSTEM.md §11. The results must be the same, but that a NaN may be any
+DEVICES.md §11. The results must be the same, but that a NaN may be any
 NaN: float.nasm passes the payload of a NaN on, and the FPU gives the
 canonical NaN, which wasm allows. After the calls, the program reads the
 FPU's STATUS, whose depth must be 0 with float_fpu.nasm: a routine leaves

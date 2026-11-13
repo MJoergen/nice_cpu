@@ -1,4 +1,4 @@
-; The colors of the screen words, printed by --color (doc/SYSTEM.md §1).
+; The colors of the screen words, printed by --color (doc/DEVICES.md §1).
 ; Bits 31..20 are the background R, G, and B, and bits 19..8 the foreground,
 ; 4 bits each, 0xF being full intensity (the 2004 IDE inverts the foreground).
 ; "A" and "B" have the same word but for the character, so one escape sequence

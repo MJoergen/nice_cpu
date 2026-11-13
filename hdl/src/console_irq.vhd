@@ -1,4 +1,4 @@
--- The console's receive interrupt of SYSTEM.md §1.9: one word of I/O,
+-- The console's receive interrupt of DEVICES.md §1.9: one word of I/O,
 -- CONSOLE_IRQ, that raises an interrupt request when input comes.
 --
 --   bits 7..0  the vector v   bit 8  the enable   bits 31..9  read 0
@@ -33,7 +33,7 @@
 --    every address bit.
 -- b) entered_i is high for one cycle for each byte that enters an empty
 --    input, and for the end of the input. A system drops the input that
---    comes while the core is held or has halted (SYSTEM.md §8), and then
+--    comes while the core is held or has halted (DEVICES.md §8), and then
 --    raises no entered_i for it.
 --
 -- RESET

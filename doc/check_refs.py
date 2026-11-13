@@ -29,7 +29,7 @@ from typing import Dict, List, Set
 # The documents whose sections are referred to by name, and where they are.
 DOCUMENTS = {
     "ISA.md": "doc/ISA.md",
-    "SYSTEM.md": "doc/SYSTEM.md",
+    "DEVICES.md": "doc/DEVICES.md",
     "DEBUG.md": "doc/DEBUG.md",
     "MICROARCH.md": "doc/MICROARCH.md",
     "HISTORY.md": "doc/HISTORY.md",

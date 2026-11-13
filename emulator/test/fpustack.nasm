@@ -1,4 +1,4 @@
-; The FPU's stack and flags (SYSTEM.md §11.2, §11.4): the depth, the
+; The FPU's stack and flags (DEVICES.md §11.2, §11.4): the depth, the
 ; faults, the sticky flags, a save and a restore of them through STATUS,
 ; an instruction that reads and writes one register, and @R9++ over the
 ; eight words, which reads them all and changes nothing.

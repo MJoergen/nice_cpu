@@ -7,7 +7,7 @@
 -- once VALID is high, it stays high, with the vector unchanged, until
 -- READY takes the request. wb_slave_check watches the bus port. f_enable
 -- follows the enable from the writes, and with it the checks say when a
--- request comes (SYSTEM.md §1.9): in the cycle after entered_i with the
+-- request comes (DEVICES.md §1.9): in the cycle after entered_i with the
 -- enable, or after a write that sets the enable from 0 to 1 while waits_i
 -- is high, and at no other time. A read returns the enable and the
 -- vector. The unit's enable shows only in a read, so f_enable cannot be

@@ -696,7 +696,7 @@ begin
                   -- or frees itself now. A store into memory retires then.
                   -- One into the I/O range retires when the bus accepts it,
                   -- so that a device sees it in the cycle of its step, as
-                  -- the timer's count of steps needs (SYSTEM.md §4).
+                  -- the timer's count of steps needs (DEVICES.md §4).
                   if store_v then
                      done_v := false;
                      if w_r.busy = '1' then

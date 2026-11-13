@@ -1,6 +1,6 @@
 ; The multiply and divide routines of the NICE runtime library
 ; (ABI.md), for one word and for long long, in software, for a system without the math
-; unit of SYSTEM §2, with the bit counts and the square root that the math
+; unit of DEVICES §2, with the bit counts and the square root that the math
 ; unit also has. It goes after lib.nasm, instead of muldiv_mpu.nasm.
 
 ; __mul: R1 = R1 * R2, the low 32 bits. The same result serves signed and
@@ -223,7 +223,7 @@ __popcnt
                 RET
 
 ; _nice_isqrt64: R1 = floor(sqrt(R1:R2)), unsigned, as ISQRT64_Q of the
-; math unit (SYSTEM §2). It takes the radicand 2 bits a pass, from the top,
+; math unit (DEVICES §2). It takes the radicand 2 bits a pass, from the top,
 ; in 32 passes, as src/mpu.vhd does: the remainder R4:R5, shifted left by
 ; 2 with the next 2 bits shifted in, is compared with 4Q + 1, and if it is
 ; not less, 4Q + 1 is subtracted and the next bit of Q, R3, is 1. The

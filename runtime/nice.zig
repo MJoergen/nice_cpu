@@ -34,7 +34,7 @@ pub fn write(s: []const u8) void {
 
 /// Waits for the next input byte. Returns null once the line's input has
 /// ended: the emulator's stdin or the host of the debug link. A keyboard's
-/// bytes may still come after that (SYSTEM.md §1).
+/// bytes may still come after that (DEVICES.md §1).
 pub fn getc() ?u8 {
     const c = nice_getc();
     return if (c < 0) null else @intCast(c);
@@ -69,7 +69,7 @@ pub fn readLine(buf: []u8) ?[]u8 {
     return buf[0..n];
 }
 
-/// The performance counters of SYSTEM.md §3: the clock cycles and the
+/// The performance counters of DEVICES.md §3: the clock cycles and the
 /// instructions since reset. An interrupt routine must not read them while
 /// the code it interrupted is reading one.
 pub fn cycles() u64 {
@@ -85,10 +85,10 @@ pub const screen_cols = 80;
 pub const screen_rows = 25;
 /// The blank that screenClear writes: a space in white on black, the
 /// colors a board's monitor writes in, so that a cursor, which swaps the
-/// colors of its cell, shows on it (doc/SYSTEM.md §1.4).
+/// colors of its cell, shows on it (doc/DEVICES.md §1.4).
 pub const screen_blank: u32 = 0x000FFF20;
 
-/// Writes c, the character in bits 7..0 and its colors above (doc/SYSTEM.md
+/// Writes c, the character in bits 7..0 and its colors above (doc/DEVICES.md
 /// §1), to a column, 0 to 79, of a row, 0 to 24.
 pub fn screenPut(col: u32, row: u32, c: u32) void {
     nice_screen_put(@bitCast(col), @bitCast(row), @bitCast(c));

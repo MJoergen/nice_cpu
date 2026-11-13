@@ -10,18 +10,18 @@
 -- Its console reads the bytes of G_INPUT_FILE, as the emulator's --input
 -- does, or none if it is "".
 -- The data bus decoder, src/wb_dmux.vhd, sends 0xFFFFFF10-0xFFFFFF1F to
--- the timer, src/timer.vhd (SYSTEM.md §4), 0xFFFFFF20-0xFFFFFF3F to the
--- math unit, src/mpu.vhd (SYSTEM.md §2), 0xFFFFFF40-0xFFFFFF5F to the
--- performance counters, src/perf.vhd (SYSTEM.md §3), but for
+-- the timer, src/timer.vhd (DEVICES.md §4), 0xFFFFFF20-0xFFFFFF3F to the
+-- math unit, src/mpu.vhd (DEVICES.md §2), 0xFFFFFF40-0xFFFFFF5F to the
+-- performance counters, src/perf.vhd (DEVICES.md §3), but for
 -- 0xFFFFFF46-0xFFFFFF49, the clock of the time of day, src/tod.vhd
--- (SYSTEM.md §10), 0xFFFFFF60-0xFFFFFF7F
+-- (DEVICES.md §10), 0xFFFFFF60-0xFFFFFF7F
 -- to the fetch statistics, src/fetch_stats.vhd (MICROARCH.md §8.1),
--- 0xFFFFFF88-0xFFFFFF8F to the FPU, src/fpu.vhd (SYSTEM.md §11),
+-- 0xFFFFFF88-0xFFFFFF8F to the FPU, src/fpu.vhd (DEVICES.md §11),
 -- 0xFFFFFFA0-0xFFFFFFAF to the SD card controller, src/sd_regs.vhd
--- (SYSTEM.md §5), 0xFFFFFFB0-0xFFFFFFBF to the network station,
--- src/net_regs.vhd (SYSTEM.md §6), 0xFFFFFFC0-0xFFFFFFCF to the port for
--- Ethernet frames, src/eth_regs.vhd (SYSTEM.md §7), 0xFFFFFF02 to the
--- console's receive interrupt, src/console_irq.vhd (SYSTEM.md §1.9), and
+-- (DEVICES.md §5), 0xFFFFFFB0-0xFFFFFFBF to the network station,
+-- src/net_regs.vhd (DEVICES.md §6), 0xFFFFFFC0-0xFFFFFFCF to the port for
+-- Ethernet frames, src/eth_regs.vhd (DEVICES.md §7), 0xFFFFFF02 to the
+-- console's receive interrupt, src/console_irq.vhd (DEVICES.md §1.9), and
 -- the rest to the memory model. The memory model's console tells the
 -- interrupt when a read takes a byte, and a byte or the end always waits
 -- there. The station has no link over TCP, so its counts and status
@@ -49,7 +49,7 @@
 -- G_FETCH_STATS is the generic G_ENABLE of the fetch statistics. Only the
 -- pipelined core reports the events they count; with the multi-cycle core
 -- every cycle counts as OTHER. With G_FETCH_STATS false, their 32 words at
--- 0xFFFFFF60 read 0 and ignore writes, as in the emulator (SYSTEM.md §3).
+-- 0xFFFFFF60 read 0 and ignore writes, as in the emulator (DEVICES.md §3).
 --
 -- With G_FPU false, the FPU's eight words are memory, as with the
 -- emulator's --no-fpu.
@@ -120,7 +120,7 @@
 -- ready takes both. That is how the emulator merges a request of the
 -- timer with one from --irq. That request, the timer's source, and the
 -- console's go to the core through src/irq_merge.vhd, the timer's first
--- (SYSTEM.md §4). The console's requests are not in the log of
+-- (DEVICES.md §4). The console's requests are not in the log of
 -- G_INTR_LOG, as the emulator raises them itself.
 --
 -- With G_PAUSE = P, p_pause raises pause_i (MICROARCH.md §6.1) in a random

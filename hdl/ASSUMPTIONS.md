@@ -93,7 +93,7 @@ change outside `hdl/` are marked **Outside hdl/**, and are also
    the header of `src/pipeline.vhd`. `wb_mem` and `wb_dmux`, which has no
    buffer, keep it. A refetch after a store into fetched code relies on
    it, and so does FETCH's wait for the store in DBUS (MICROARCH.md §5.5).
-9. **The read of a performance counter.** SYSTEM.md §3 wants a read of
+9. **The read of a performance counter.** DEVICES.md §3 wants a read of
    `INSTR_LO` to count every older instruction, and MICROARCH.md §8 lets
    the core raise `instret_o` early for that. The core raises it in the
    cycle the bus accepts an instruction's last data read, or, for an

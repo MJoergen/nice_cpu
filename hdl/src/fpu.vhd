@@ -1,4 +1,4 @@
--- The floating-point unit, FPU, of SYSTEM.md §11: eight words of I/O
+-- The floating-point unit, FPU, of DEVICES.md §11: eight words of I/O
 -- over a stack of up to 16 binary64 values, which a program pushes,
 -- commands, and reads.
 --
@@ -17,7 +17,7 @@
 -- results, and pushes them, one in a cycle. The arithmetic is that of
 -- src/fpu_unit.vhd, one operation at a time: a state starts an operation,
 -- and UWAIT_ST waits for it and goes on to the state named in RET. The
--- sequences of SYSTEM.md §11.3 are chains of such states:
+-- sequences of DEVICES.md §11.3 are chains of such states:
 -- * ROUND32 rounds through the short format and back. The S bit is the
 --   unit's input SHORT, which rounds the exact result once.
 -- * ISQRT is SQRT toward zero, then INTEGRAL toward zero.

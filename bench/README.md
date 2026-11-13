@@ -72,7 +72,7 @@ left them, and `heapsort` sorts them afterwards.
 ## The output
 
 Each program prints one line per phase: the instructions and the cycles
-of the phase, from the performance counters of SYSTEM.md §3, then the
+of the phase, from the performance counters of DEVICES.md §3, then the
 phase's result and whether it is the expected one. `main` returns the
 number of phases with a wrong result, so R1 is 0 after a good run.
 
@@ -309,7 +309,7 @@ MICROARCH.md §3 to §5:
   write of an operand, and a quotient after one cycle per bit, less the
   runs of eight zero bits that the divider skips, which the model works
   out from the operands in the trace;
-- the FPU of SYSTEM.md §11, `hdl/src/fpu.vhd`, by averages: a command
+- the FPU of DEVICES.md §11, `hdl/src/fpu.vhd`, by averages: a command
   keeps it busy for a cycle if it is a stack command, `--fpu-long`
   cycles (75) for `DIV`, `SQRT`, `ISQRT`, `FMOD`, `SCALE10`, and `DIGITS`,
   and `--fpu-op` cycles (18) for the others, and every access to its words
@@ -591,7 +591,7 @@ counts save most of their steps but few of their cycles. These figures
 are of the float library in software, which `make test` still runs, from
 `build/nofpu/float.bin`.
 
-With the FPU of SYSTEM.md §11 (issue
+With the FPU of DEVICES.md §11 (issue
 [#161](https://github.com/MJoergen/nice_cpu/issues/161)), the float
 library is `runtime/float_fpu.nasm`, 289 words, and the program shrinks
 from 16825 words to 10270. The table from the emulator:
@@ -712,7 +712,7 @@ The port:
   four numbers, or with fewer than 0 iterations, it says so and exits
   with 1.
 - keeps the 2000 bytes of data in a static array, without `malloc`.
-- times with the cycle counter of SYSTEM.md §3, with `EE_TICKS_PER_SEC`
+- times with the cycle counter of DEVICES.md §3, with `EE_TICKS_PER_SEC`
   the clock of a board, 100 MHz unless `NICE_CLOCK_HZ` says otherwise
   at build time. So the seconds and the iterations per second that it
   prints are those of a board at 100 MHz. On the emulator a cycle is an

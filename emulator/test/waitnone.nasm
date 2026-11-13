@@ -1,4 +1,4 @@
-; A WAIT that no request can end (SYSTEM.md §1.6): the timer counts, but
+; A WAIT that no request can end (DEVICES.md §1.6): the timer counts, but
 ; with --no-timer-irq it raises no request, and no --irq or --nmi is to
 ; come. Run with
 ;   --no-timer-irq

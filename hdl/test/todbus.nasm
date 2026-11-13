@@ -1,5 +1,5 @@
 ; The bus decoder of test/tb_core.vhd and the clock of the time of day,
-; src/tod.vhd (SYSTEM.md §10). The emulator runs this on the host's clock,
+; src/tod.vhd (DEVICES.md §10). The emulator runs this on the host's clock,
 ; and the core on its cycles, so the program reads only what is the same
 ; on both: the seconds it set, "set" after a write of CLOCK_USEC and after
 ; a write of CLOCK_STATUS, and READ_LO, the word after the clock, which is

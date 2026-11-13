@@ -1,4 +1,4 @@
-; The instruction counter (SYSTEM.md §3) read right after two-cycle
+; The instruction counter (DEVICES.md §3) read right after two-cycle
 ; destinations, late shifts, stores, skipped instructions, and INT.
 INSTR           .EQU    0xFFFFFF42
                 JMP     start

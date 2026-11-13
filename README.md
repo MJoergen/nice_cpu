@@ -47,7 +47,7 @@ follows a tag.
 
 `niceemu` runs NICE programs on the host. It implements the whole
 instruction set of [doc/ISA.md](doc/ISA.md), the interrupts included,
-and the devices of [doc/SYSTEM.md](doc/SYSTEM.md): the console, the
+and the devices of [doc/DEVICES.md](doc/DEVICES.md): the console, the
 80×25 character screen, the math unit, the performance counters, the
 timer, the SD card controller, the network station's registers, the
 port for Ethernet frames, the clock of the time of day, and the
@@ -225,7 +225,7 @@ test of `doc/intro` does:
 
     $ emulator/zig-out/bin/niceemu --color -i doc/intro/examples/keys.txt keys.bin
 
-[doc/SYSTEM.md §1](doc/SYSTEM.md#1-console-screen-and-read-counter)
+[doc/DEVICES.md §1](doc/DEVICES.md#1-console-screen-and-read-counter)
 describes the screen, the cursor, and the keys.
 
 ## Toolchain
@@ -264,7 +264,7 @@ a source.
 
 | Path | What it is |
 |---|---|
-| [doc/](doc/README.md) | The specification, [ISA.md](doc/ISA.md), and the other documents: the I/O devices ([SYSTEM.md](doc/SYSTEM.md)), the toolchain ([TOOLCHAIN.md](doc/TOOLCHAIN.md)), the design note for the pipelined core, the sources, the history, the reviews, and a beginner's introduction in slides. |
+| [doc/](doc/README.md) | The specification, [ISA.md](doc/ISA.md), and the other documents: the I/O devices ([DEVICES.md](doc/DEVICES.md)), the toolchain ([TOOLCHAIN.md](doc/TOOLCHAIN.md)), the design note for the pipelined core, the sources, the history, the reviews, and a beginner's introduction in slides. |
 | [assembler/](assembler/README.md) | `niceasm`, the assembler, and `nicedis`, the disassembler: Python 3 scripts with no dependencies. |
 | [emulator/](emulator/README.md) | `niceemu`, the emulator, written in Zig. |
 | [debugger/](debugger/README.md) | `nicedbg`, an interactive debugger on the debug link of the emulator or a board, and `nicelink`, the link for other host tools. |

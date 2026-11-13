@@ -1,6 +1,6 @@
 -- Simulation-only station for src/eth_regs.vhd: it gives the frames of
 -- the file G_IN_FILE, and writes the frames sent to G_OUT_FILE, as
--- niceemu's --eth-in and --eth-out do (SYSTEM.md §7, the emulator).
+-- niceemu's --eth-in and --eth-out do (DEVICES.md §7, the emulator).
 --
 -- THEORY OF OPERATION
 -- The file is read at time 0: one frame per line, each byte as two hex
@@ -12,7 +12,7 @@
 -- the port or sent the frame, so it reads the queue as in the emulator.
 --
 -- A line arrives at the station, which serves it as the emulator's does
--- (SYSTEM.md §6, §7): a frame to another MAC address than mac_i, and not
+-- (DEVICES.md §6, §7): a frame to another MAC address than mac_i, and not
 -- to everyone, is dropped. While ip_i is not 0, an ARP request for ip_i
 -- and a ping to it are answered, the reply written to G_OUT_FILE, and TCP
 -- to ip_i and tcp_port_i, if not 0, is kept. Every other frame goes to
@@ -48,7 +48,7 @@ entity eth_sim is
    port (
       clk_i         : in  std_logic;
 
-      -- The station's registers of SYSTEM.md §6
+      -- The station's registers of DEVICES.md §6
       ip_i          : in  std_logic_vector(31 downto 0);
       mac_i         : in  std_logic_vector(47 downto 0);
       tcp_port_i    : in  std_logic_vector(15 downto 0);
@@ -148,7 +148,7 @@ begin
       variable next_v   : natural := 0;
       variable sent_v   : natural := 0;
 
-      -- Read the lines of G_IN_FILE (SYSTEM.md §7).
+      -- Read the lines of G_IN_FILE (DEVICES.md §7).
       procedure load is
          file     f        : text;
          variable status_v : file_open_status;
@@ -273,7 +273,7 @@ begin
          rx_done_o <= '0';
       end procedure enqueue;
 
-      -- Whether the station keeps f, as SYSTEM.md §6 says, with its reply.
+      -- Whether the station keeps f, as DEVICES.md §6 says, with its reply.
       procedure serve(f : t_bytes; kept : out boolean) is
          variable r_v     : t_bytes(0 to 1513);
          variable ihl_v   : natural;

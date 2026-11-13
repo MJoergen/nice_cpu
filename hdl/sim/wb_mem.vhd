@@ -25,19 +25,19 @@
 --   with console_valid_o high, in the cycle the write is accepted, and stores
 --   nothing. A data read returns 0x100 plus the next byte of the file
 --   G_INPUT_FILE, and 0x200 after its end, as the emulator's --input does
---   (SYSTEM.md §1). With G_INPUT_FILE = "", there is no input, and every
+--   (DEVICES.md §1). With G_INPUT_FILE = "", there is no input, and every
 --   read returns 0x200, as for the emulator with stdin from /dev/null.
 --   console_took_o is high in the cycle the port accepts a read that takes
 --   a byte. A read waits for its byte here, so the next byte, or the end,
 --   enters then, which raises the request of the console's receive
---   interrupt (SYSTEM.md §1.9, src/console_irq.vhd).
--- * The read counter is at 0xFFFFFF01, as in the emulator (SYSTEM.md §1).
+--   interrupt (DEVICES.md §1.9, src/console_irq.vhd).
+-- * The read counter is at 0xFFFFFF01, as in the emulator (DEVICES.md §1).
 --   A data read returns the number of data reads of it since the last write,
 --   and then counts itself. A write sets the count and stores nothing. It
 --   lets tests see the number and order of data reads (ISA.md §8.2).
 -- * The rest of the range is plain memory, as in the emulator.
 --
--- The byte windows of SYSTEM.md §9, 0x10000000-0x5FFFFFFF, are as in the
+-- The byte windows of DEVICES.md §9, 0x10000000-0x5FFFFFFF, are as in the
 -- emulator. A data access at A reaches word (A >> 2) and 0x03FFFFFF: the
 -- word, a byte, zero- or sign-extended, or a halfword, by the top four
 -- bits of A. A write through a byte or halfword window changes only that
@@ -102,7 +102,7 @@ architecture simulation of wb_mem is
    -- A byte of the input waits for the next read of the console.
    signal console_more : std_logic := '0';
 
-   -- The byte window of a data address (SYSTEM.md §9), 1 to 5, or 0 if it
+   -- The byte window of a data address (DEVICES.md §9), 1 to 5, or 0 if it
    -- is in none.
    pure function window_of (
       addr : std_logic_vector(31 downto 0)

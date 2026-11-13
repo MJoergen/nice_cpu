@@ -52,7 +52,7 @@ CALLEE_SAVED = [f"R{k}" for k in range(7, 13)]
 WORDS_PER_PAGE = 16384  # 65536 bytes, four to a word
 ZERO_UNROLL = 16        # words cleared per pass of ___wasm_start's loops
 
-# The byte windows of SYSTEM.md §9: a data access at one of these plus a
+# The byte windows of DEVICES.md §9: a data access at one of these plus a
 # byte address b reaches word b / 4, or its byte or halfword.
 WIN_WORD, WIN_BYTE, WIN_SBYTE, WIN_HALF, WIN_SHALF = (k << 28 for k in range(1, 6))
 
@@ -202,7 +202,7 @@ for _t, _first, _suffix in [(F32, 0x5B, "sf"), (F64, 0x61, "df")]:
                                          ("le", "<="), ("ge", ">=")]):
         FLOAT_CMP_OPS[_first + _i] = (_t, f"__{_name}{_suffix}2", _test)
 
-# The FPU's commands (SYSTEM.md §11.3) for the float operations that
+# The FPU's commands (DEVICES.md §11.3) for the float operations that
 # --inline-fpu writes inline, by the routine that FLOAT_OPS or TRUNC_OPS
 # names, and the S bit that rounds a result to binary32.
 FPU_S = 0x10000
@@ -1433,7 +1433,7 @@ def flag_use_def(ins: Ins) -> Tuple[FrozenSet[str], FrozenSet[str]]:
 # The most instructions that a multiplication by a constant may take as
 # shifts, additions, and subtractions (mul_plan). The math unit takes
 # three instructions, and on the FPGA core its product can be read three
-# cycles after the write of the operand (SYSTEM.md §2, hdl/src/mpu.vhd),
+# cycles after the write of the operand (DEVICES.md §2, hdl/src/mpu.vhd),
 # so a read right after the write waits about two. Each of these
 # instructions takes one cycle. Three cover x * 31 and x * 10, and the
 # cycle estimate of bench/ (bench/README.md) finds no gain in more.
@@ -1735,7 +1735,7 @@ class Allocator:
         kind, r = operand_reg(ins.ops[0]) if ins.ops else ("", None)
         if kind != "reg" or r is None or not self.tracked(r):
             return False
-        # A read of the math unit has no side effect (SYSTEM §2).
+        # A read of the math unit has no side effect (DEVICES §2).
         return all(operand_reg(o)[0] in ("reg", "") and not o.startswith("@")
                    or o.startswith("@__mpu.") for o in ins.ops[1:])
 
@@ -2938,10 +2938,10 @@ class Translator:
         self.checks = checks  # bounds checks on memory accesses
         # Trust the alignment hint of an access of 4 or 8 bytes (fast_path)
         self.trust_alignment = trust_alignment
-        # Access linear memory through the byte windows of SYSTEM.md §9
+        # Access linear memory through the byte windows of DEVICES.md §9
         self.windows = windows
-        self.mpu = mpu  # use the math unit of SYSTEM §2 for i32 mul, and div and rem
-        self.inline_fpu = inline_fpu  # write the FPU's accesses of SYSTEM §11 inline
+        self.mpu = mpu  # use the math unit of DEVICES §2 for i32 mul, and div and rem
+        self.inline_fpu = inline_fpu  # write the FPU's accesses of DEVICES §11 inline
         self.library = library  # the name of a library module (WASM.md), or None
         self.prefix = f"WL.{library}." if library else "W."  # of the labels made here
         self.mem = f"WL.{library}.memory" if library else "___wasm_memory"
@@ -3206,7 +3206,7 @@ class Translator:
         out = ["", "; Sets the memory to 0, then calls the start function and",
                "; __wasm_call_ctors, if the module has them.", "___wasm_start"]
         if self.windows and self.m.memory_pages is not None:
-            # The windows reach words 0 to 0x03FFFFFF only (SYSTEM.md §9), and
+            # The windows reach words 0 to 0x03FFFFFF only (DEVICES.md §9), and
             # where the memory lies is the assembler's to decide: so, before
             # any access, a trap with code 8 if its last word has a bit above
             # bit 25. R2 is the address of the check, as no wasm instruction
@@ -3898,7 +3898,7 @@ class FunctionTranslator:
         returned, prep(a) emits code that needs only a, after the start and
         before the compare if a is known by then, so that its registers are
         not written just before the access. With fold_bytes, for an access
-        through a byte window (SYSTEM.md §9), any offset may come back in
+        through a byte window (DEVICES.md §9), any offset may come back in
         k, and the address is then a + k."""
         if const is not None:
             addr = const + offset
@@ -4028,7 +4028,7 @@ class FunctionTranslator:
 
     def window(self, kind: int, k: int, index: Optional[str] = None) -> str:
         """The operand of the byte address index + k, or k without index,
-        through the byte window at kind (SYSTEM.md §9): WIN_WORD and the
+        through the byte window at kind (DEVICES.md §9): WIN_WORD and the
         like."""
         k &= 0xFFFFFFFF
         return (f"@0x{kind:08X}+4*{self.t.mem}" + (f"+{k}" if k else "")
@@ -4424,7 +4424,7 @@ class FunctionTranslator:
 
     def mpu_op(self, word: str, t: int, at: int, what: str,
                dest: Optional[List[str]] = None) -> None:
-        """Pops a and b, writes them to the math unit (SYSTEM §2), A and B for
+        """Pops a and b, writes them to the math unit (DEVICES §2), A and B for
         an i32 and C and D for an i64, and pushes the given result, in
         dest if given. The labels __mpu.* are in runtime/muldiv_mpu.nasm."""
         a, b = self.pop([t, t], at, what)
@@ -4442,7 +4442,7 @@ class FunctionTranslator:
             self.emit("MOVE", dest[1], f"@__mpu.{word}+1")
 
     def fpu_push(self, t: int, v: List[str]) -> None:
-        """Pushes the value v of type t on the FPU's stack (SYSTEM §11.2):
+        """Pushes the value v of type t on the FPU's stack (DEVICES §11.2):
         an f64 or an i64 through X_LO and X_HI, an f32 through X_S, and an
         i32 through X_W, all exact. The labels __fpu.* are in
         runtime/float_fpu.nasm."""
@@ -5692,7 +5692,7 @@ def main() -> None:
                          " bytes whose hint is 2 at a multiple of 2; a misaligned one then gives"
                          " a wrong result (not wasm-conforming)")
     ap.add_argument("--byte-windows", action="store_true",
-                    help="access the memory through the byte windows of SYSTEM.md §9, which the"
+                    help="access the memory through the byte windows of DEVICES.md §9, which the"
                          " system must have")
     ap.add_argument("--memory-pages", metavar="N", type=int,
                     help="pages up to which memory.grow may grow the memory"
@@ -5712,7 +5712,7 @@ def main() -> None:
                     help="call the runtime library for i32 mul, and for div and rem, instead of"
                          " using the math unit")
     ap.add_argument("--inline-fpu", action="store_true",
-                    help="write the accesses of the FPU (SYSTEM.md §11) inline for the float"
+                    help="write the accesses of the FPU (DEVICES.md §11) inline for the float"
                          " operations, instead of calling the float library, for speed")
     args = ap.parse_args()
 

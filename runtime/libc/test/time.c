@@ -3,7 +3,7 @@
 // until the counter moves, at most 100 times, as with --no-cycle-counter
 // its words are memory and never move. Then the readings differ by a
 // little, and the difference is right when taken as unsigned. time reads
-// the clock of the time of day (SYSTEM.md §10), which the emulator sets
+// the clock of the time of day (DEVICES.md §10), which the emulator sets
 // from the host, so it is set, and later than 2023. Set to a time, it
 // reads it back, as the read follows the write by microseconds. main
 // returns the number of checks that fail, 0. With --no-cycle-counter, as

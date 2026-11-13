@@ -21,12 +21,12 @@ Zig, or Rust program by itself ([translator README](../translator/README.md)).
 | `start_mon.nasm`, `start_wasm_mon.nasm`, `start_wasm_trap_mon.nasm` | The same three for a program that a monitor in ROM runs (ABI.md, "Programs under a monitor"): at `0x8000`, above the ROM, on the monitor's stack, with the monitor's putc routine in `___putc_vector`, and returning to the monitor instead of halting. |
 | `lib.nasm` | The runtime routines in assembly, except those below. It holds no word that is written: the vectors it jumps through are in the start-up files. |
 | `trapmsg.nasm` | The trap report below. It goes after `lib.nasm`, and only with `start_wasm_trap.nasm` or `start_wasm_trap_mon.nasm`. |
-| `muldiv_mpu.nasm` | The routines that the math unit of SYSTEM.md §2 does: `__mul`, `__div`, `__mod`, `__udiv`, `__umod`, and their `64` versions, the bit counts `__clz`, `__ctz`, and `__popcnt`, and `_nice_isqrt64`, with the math unit. |
+| `muldiv_mpu.nasm` | The routines that the math unit of DEVICES.md §2 does: `__mul`, `__div`, `__mod`, `__udiv`, `__umod`, and their `64` versions, the bit counts `__clz`, `__ctz`, and `__popcnt`, and `_nice_isqrt64`, with the math unit. |
 | `muldiv_soft.nasm` | The same routines in software, for a system without the math unit. |
 | `float.zig` | The source of the float routines (see below). |
 | `float.wasm` | `float.zig` and parts of Zig's compiler_rt, compiled to wasm. |
 | `float.nasm` | `float.wasm` translated as a library module, for a system without the FPU. It is not checked in: `make float.nasm` makes it, with Python only. |
-| `float_fpu.nasm` | The same routines with the FPU of SYSTEM.md §11 (see below). |
+| `float_fpu.nasm` | The same routines with the FPU of DEVICES.md §11 (see below). |
 | `libc/` | A small C library (see below). |
 | `nice.zig`, `nice.rs` | The device routines, console output, and a heap for Zig and Rust (see below). |
 
@@ -80,7 +80,7 @@ them in its RAM (ABI.md, Start-up).
 | `__udiv`, `__umod` | Unsigned R1 / R2 and R1 % R2. | R3–R6 |
 | `__clz`, `__ctz` | The number of leading or trailing 0 bits in R1, 32 for 0. | R2 |
 | `__popcnt` | The number of 1 bits in R1. | R2 |
-| `_nice_isqrt64` | floor(√(R1:R2)), unsigned, as `ISQRT64_Q` of SYSTEM.md §2. | R2–R6 |
+| `_nice_isqrt64` | floor(√(R1:R2)), unsigned, as `ISQRT64_Q` of DEVICES.md §2. | R2–R6 |
 
 `_nice_isqrt64` has a C name, `nice_isqrt64`, so that the float library,
 a wasm module, can import it from `env` (WASM.md): its f32 square root
@@ -128,7 +128,7 @@ program (ABI.md), so no other file may define these names either.
 Division by zero is undefined in C, so the division routines return some
 value for it and do not trap. The wasm translator checks for 0 before it
 calls them. In `muldiv_mpu.nasm` the quotient is all ones and the
-remainder the dividend (SYSTEM.md §2). `muldiv_soft.nasm` gives the same,
+remainder the dividend (DEVICES.md §2). `muldiv_soft.nasm` gives the same,
 except that `__div` and `__div64` give 1 for a negative dividend. The most
 negative number divided by −1 gives the most negative number.
 
@@ -179,7 +179,7 @@ so their labels are their C names with `_` in front.
 | Label | C declaration | What it does | Changes |
 |---|---|---|---|
 | `_nice_putc` | `void nice_putc(int c)` | Writes bits 7..0 of R1 through `___putc_vector` (below). | none, or what the routine behind the vector changes |
-| `_nice_getc` | `int nice_getc(void)` | Waits for the next input byte and returns it, 0 to 255, or −1 once the line's input has ended (SYSTEM.md §1). | flags |
+| `_nice_getc` | `int nice_getc(void)` | Waits for the next input byte and returns it, 0 to 255, or −1 once the line's input has ended (DEVICES.md §1). | flags |
 | `_nice_pollc` | `int nice_pollc(void)` | Like `nice_getc`, but returns −2 at once if no byte is waiting. | flags |
 | `_nice_print` | `void nice_print(const char *s)` | Writes the string at R1, one character per word, up to its first 0 word, with no newline, through `___putc_vector`. | R1, flags, and what the routine changes |
 | `_nice_cycles` | `unsigned long long nice_cycles(void)` | R1:R2 = the cycle counter. | none |
@@ -205,7 +205,7 @@ flags, as `_nice_putc` and `_nice_print` then may. The vector costs a step
 per character; a UART's rate is the limit on a board anyway. The input
 has no vector, as the console's input is the line and the keyboard both.
 
-The counter routines read the low word first, as SYSTEM.md §3 describes.
+The counter routines read the low word first, as DEVICES.md §3 describes.
 So an interrupt service routine that reads a counter can spoil the reading
 of the code it interrupted. The screen routines write `0xFFFF0000` to
 `0xFFFF07CF`, so with the emulator's `-2004` they miss the screen. On a
@@ -217,14 +217,14 @@ The C library below has the same routines, in `nice.h`.
 
 NICE has no float instructions. The float library does the float
 arithmetic, and comes in two versions, as the multiply and divide
-routines do: `float_fpu.nasm`, with the FPU of SYSTEM.md §11, and
+routines do: `float_fpu.nasm`, with the FPU of DEVICES.md §11, and
 `float.nasm`, in software, for a system without it. A program contains
 one of the two. Their routines are the same, with the same results, but
 for the bits of a NaN.
 
 `float_fpu.nasm` pushes the operands, writes a command, reads the result,
 and pops it, so a routine leaves the FPU's stack as it found it, and uses
-at most two of its values (SYSTEM.md §11.5). An entry sets the command
+at most two of its values (DEVICES.md §11.5). An entry sets the command
 in R5 and jumps to a part that the entries share, so the library is 289
 words. An `f32` goes in and out through the view `FPU_X_S`, and `+`,
 `−`, `×`, `÷`, and the square root set the command's S bit, which
@@ -289,7 +289,7 @@ Zig keeps only the objects of `libc.a` that the program references.
 | `stdlib.h` | `malloc`, `calloc`, `realloc`, `free`, `abs`, `labs`, `llabs`, `atoi`, `atol`, `strtol`, `strtoul`, `atof`, `strtod`, `strtof`, `rand`, `srand`, `abort`, `exit` |
 | `math.h` | In double, and in float with an `f`, such as `sinf`: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `log`, `log10`, `log2`, `pow`, `sqrt`, `fmod`, `frexp`, `ldexp`, `scalbn`, `modf`, `floor`, `ceil`, `trunc`, `round`, `rint`, `nearbyint`, `fabs`, `copysign`, `fmin`, and `fmax`. The macros `fpclassify`, `isfinite`, `isinf`, `isnan`, `isnormal`, `signbit`, `HUGE_VAL`, `HUGE_VALF`, `INFINITY`, `NAN`, and `math_errhandling`, the types `float_t` and `double_t`, and POSIX's constants, such as `M_PI`. See Math functions below. |
 | `assert.h` | `assert` and `static_assert`. A failed `assert` prints `file:line: function: Assertion `expr' failed.` and calls `abort`. `-DNDEBUG` removes the checks. |
-| `time.h` | `clock`, with `CLOCKS_PER_SEC` 1000000 and `clock_t` unsigned, from the microsecond counter of SYSTEM.md §3, which counts the host's time in the emulator, and wraps after 71.6 minutes on a board; `time`, from the clock of the time of day of SYSTEM.md §10, which returns −1 while the clock holds no time; and the types `clock_t` and `time_t`. |
+| `time.h` | `clock`, with `CLOCKS_PER_SEC` 1000000 and `clock_t` unsigned, from the microsecond counter of DEVICES.md §3, which counts the host's time in the emulator, and wraps after 71.6 minutes on a board; `time`, from the clock of the time of day of DEVICES.md §10, which returns −1 while the clock holds no time; and the types `clock_t` and `time_t`. |
 | `errno.h` | `errno`, one for the whole program, 0 at start, and the codes `EINVAL`, `EDOM`, `ERANGE`, and `EILSEQ`. Only the conversions from text set it: `strtol` and `strtoul`, and so `atoi` and `atol`, to `ERANGE` on an overflow and to `EINVAL` for a base other than 0 and 2 to 36, and `strtod` and `strtof`, and so `atof` and `scanf`, to `ERANGE` when a float overflows or underflows, and to `EINVAL` when there is none. |
 | `ctype.h` | `isalnum`, `isalpha`, `iscntrl`, `isdigit`, `isgraph`, `islower`, `isprint`, `ispunct`, `isspace`, `isupper`, `isxdigit`, `tolower`, `toupper` |
 | `nice.h` | The device routines (see above): `nice_putc`, `nice_getc`, `nice_pollc`, `nice_print`, `nice_cycles`, `nice_instructions`, `nice_micros`, `nice_clock`, `nice_clock_isset`, and `nice_clock_set` (C only, with no assembly routine), `nice_screen_put`, and `nice_screen_clear`, with `NICE_SCREEN_COLS`, `NICE_SCREEN_ROWS`, and `NICE_SCREEN_BLANK`, the blank it writes. Also `nice_peek` and `nice_poke`, the `nice` imports of WASM.md, and the devices' addresses, for devices that have no routine. |
@@ -302,11 +302,11 @@ the library's output goes through `___putc_vector`, at the cost of a call
 per byte. `nice_print` writes the
 bytes of a C string in linear memory, where `_nice_print` in `lib.nasm`
 writes one character per word. `fputc`, `fputs`, and `puts` write with `nice_putc` and
-`nice_print`, and `fgetc` reads with `nice_getc` (SYSTEM.md §1).
+`nice_print`, and `fgetc` reads with `nice_getc` (DEVICES.md §1).
 `getchar` waits until a byte is there. It
 returns `EOF` once the line's input has ended, that of the emulator's
 stdin or of the debug link's host; a keyboard's bytes may still come
-after that (SYSTEM.md §1). The emulator reads the input from stdin, or from the file
+after that (DEVICES.md §1). The emulator reads the input from stdin, or from the file
 that `--input` names. Clang's own `stddef.h`,
 `stdint.h`, `stdarg.h`, `stdbool.h`, and `limits.h` complete the headers.
 

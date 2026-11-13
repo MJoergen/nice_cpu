@@ -108,7 +108,7 @@ pub const Link = struct {
     input_len: usize = 0,
     /// The end of the line's input (DEBUG.md §7): the host's bytes are
     /// dropped, and a read of an empty buffer returns 0x200. The keys of
-    /// the window still go in (SYSTEM.md §1).
+    /// the window still go in (DEVICES.md §1).
     input_end: bool = false,
     /// An `o` was sent, and the buffer has had no room since.
     overflow_sent: bool = false,
@@ -157,7 +157,7 @@ pub const Link = struct {
         self.reader.buffer = &self.reader_buf;
         const port = server.socket.address.getPort();
         // NET_STATUS gives the port, and bit 31 while a host is connected
-        // (SYSTEM.md §6).
+        // (DEVICES.md §6).
         cpu.net.status = port;
         return port;
     }
@@ -639,7 +639,7 @@ pub const Link = struct {
         self.overflow_sent = false;
     }
 
-    /// The console's input with the window (doc/SYSTEM.md §1): a read takes
+    /// The console's input with the window (doc/DEVICES.md §1): a read takes
     /// the next byte of the buffer, and returns 0 rather than wait for one.
     /// So no read stops a step, and none is undone.
     pub fn pollInput(self: *Link) cpu_zig.Input {
@@ -662,7 +662,7 @@ pub const Link = struct {
         return .{ .byte = b };
     }
 
-    /// Move the keys typed into the window to the input buffer (doc/SYSTEM.md
+    /// Move the keys typed into the window to the input buffer (doc/DEVICES.md
     /// §1). Keys are dropped while the processor is held or has halted, but
     /// not after the end of the line's input, which ends the host's bytes
     /// only: a program that reads on, as a monitor does, gets the keys. A

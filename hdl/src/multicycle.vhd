@@ -192,7 +192,7 @@ entity multicycle is
       halt_reason_o : out t_halt;
 
       -- '1' for one cycle when an instruction completes, but not an
-      -- interrupt entry, for the instruction counter (SYSTEM.md §3)
+      -- interrupt entry, for the instruction counter (DEVICES.md §3)
       instret_o     : out std_logic;
 
       -- '1' for one cycle for each wait step (ISA.md §7.5), which a timer

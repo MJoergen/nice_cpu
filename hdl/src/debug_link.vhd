@@ -78,7 +78,7 @@
 --    board's bus must give such an access to the console (0xFFFFFF00) and
 --    the read counter (0xFFFFFF01) as the board's own link rule: a read
 --    returns 0 and takes no input byte and counts nothing, and a write is
---    ignored. A read of CYCLE_LO, INSTR_LO, or TIME_LO (SYSTEM.md §3)
+--    ignored. A read of CYCLE_LO, INSTR_LO, or TIME_LO (DEVICES.md §3)
 --    returns the low word, and may take a snapshot, as perf.vhd does
 --    (DEBUG.md §3). The simplest board gives the console and the read
 --    counter a link-only path that these accesses take. The
@@ -147,7 +147,7 @@
 --   rx_break_i is a UART break: it ends the line's input (eoi_o) until
 --   the next start, or until rx_resume_i, which starts the line's input
 --   anew, as a new connection does where the connection is the line
---   (SYSTEM.md §8, DEBUG.md §7). A board whose transport has connections
+--   (DEVICES.md §8, DEBUG.md §7). A board whose transport has connections
 --   pulses rx_resume_i when a host connects, no earlier than the break
 --   of the connection before; one without leaves it open. A resume wins
 --   over a break in the same cycle, and a break after it ends the new
@@ -168,7 +168,7 @@
 -- * eoi_o: '1' from a break until the next start or resume, the end of
 --   the line's input. While it is high, the board drops the host's
 --   console bytes, and the console reads 0x200 once its input buffer is
---   empty. A keyboard's bytes still go into the buffer (SYSTEM.md §8).
+--   empty. A keyboard's bytes still go into the buffer (DEVICES.md §8).
 -- Processor control:
 -- * hold_o: the control register's bit 0. It resets the core and the
 --   devices. The board empties the program's input buffer when it falls,

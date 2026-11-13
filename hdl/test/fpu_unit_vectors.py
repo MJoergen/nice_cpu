@@ -25,7 +25,7 @@ t_fpu_op and t_fpu_rnd of src/fpu_pkg.vhd, SHORT 1 for a result rounded
 to the short format and given in the main one, K the scale of OP_SCALE2,
 in decimal, A, B, and RESULT hex digits, and FLAGS the flags of the model,
 in decimal. With SHORT, ADD, SUB, MUL, DIV, and SQRT round their exact
-result once, to the short format: the S bit of SYSTEM.md §11.3. Those
+result once, to the short format: the S bit of DEVICES.md §11.3. Those
 results are the model's too, of its class Short, at both widths.
 
     fpu_unit_vectors.py [--wide COUNT [--seed S]] FILE"""

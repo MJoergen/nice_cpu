@@ -22,7 +22,7 @@
 ;   5 / M                    0x00000000  0x00000005  0x00000000  0x00000005
 ;
 ; Division by zero: the math unit gives a quotient of all ones and a
-; remainder equal to the dividend, signed and unsigned (SYSTEM.md §2).
+; remainder equal to the dividend, signed and unsigned (DEVICES.md §2).
 ; muldiv_soft.nasm gives the same for __udiv, __umod, and __mod. Its __div
 ; divides the absolute values, which gives all ones, and negates that when
 ; the signs differ. The sign of 0 counts as positive, so for a negative

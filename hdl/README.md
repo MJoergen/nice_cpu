@@ -139,7 +139,7 @@ and the same two generics: a system instantiates `pipeline` of
 | `wch_addr_i`, `wch_en_i`, `wch_hit_o`, `wch_pc_o` | The watchpoints of DEBUG.md §6: `G_WATCHES` addresses, a `t_wch_addrs` of `src/trace_pkg.vhd`, and two enable bits each, of the reads and of the writes; and while paused, those that the step before the pause hit, and the address of that step (below). The inputs default to 0. |
 | `reg_we_i`, `reg_idx_i`, `reg_data_i` | A write of a register while the core is paused, for a debugger (below). They default to 0. |
 | `halted_o`, `halt_reason_o` | 1 once the core has halted and no bus cycle is open, and why, a `t_halt` of `src/trace_pkg.vhd` (below). |
-| `instret_o` | 1 for one cycle for each completed instruction, but not for an interrupt entry, for the instruction counter (SYSTEM.md §3). |
+| `instret_o` | 1 for one cycle for each completed instruction, but not for an interrupt entry, for the instruction counter (DEVICES.md §3). |
 | `wstep_o` | 1 for one cycle for each wait step (ISA.md §7.5), for a timer that counts steps, as the tests' does. A system leaves it open. |
 | `regs_o` | R0 to R15 from the core's registers, a `t_regs`, for a monitor that shows them (below). |
 | `in_service_o`, `after_rti_o`, `saved_pc_o`, `saved_sr_o` | The hidden state of ISA.md §1.4 from the core's registers, as `regs_o`, for bits 7 and 8 and the words `0xFFFFFFD0` and `0xFFFFFFD1` of the debug link (DEBUG.md §6). A system without a debugger leaves them open. |
@@ -328,7 +328,7 @@ WRITE reports what it does without the ACK of the cycle, and the
 pipeline classifies the cycle a cycle later, which wins back most of it.
 
 - `instret_o` has the least. It comes from WRITE's retire, and the counters
-  of SYSTEM.md §3 must see it in that cycle (MICROARCH.md §8), so a system
+  of DEVICES.md §3 must see it in that cycle (MICROARCH.md §8), so a system
   should not register it without changing that rule.
 - `dbus_ack_i` goes into WRITE's retire and so into FETCH, through 10 LUT
   levels. A system should drive it from a register, or from little logic,
@@ -478,7 +478,7 @@ read of a new instruction while `pause_i` is 1, but for the first step
 after a pause (MICROARCH.md §5.3, rule 4). `instret_o`
 counts an instruction in the cycle the bus accepts its last data read, or
 when it retires if it reads nothing. So a read of `INSTR_LO` counts every
-older instruction and not its own (SYSTEM.md §3).
+older instruction and not its own (DEVICES.md §3).
 
 The core reports each step in the cycle it retires. Its process `p_check`
 asserts, in simulation, the invariants that its design relies on.
@@ -606,7 +606,7 @@ header (The formal checks).
 
 `wb_mem` holds all 2³² words sparsely, as the emulator does, and loads a
 `.bin` file (ISA.md §10.4) at time 0. A word never written reads 0.
-It has the byte windows of SYSTEM.md §9, as the emulator does, so a data
+It has the byte windows of DEVICES.md §9, as the emulator does, so a data
 access at `0x10000000`–`0x5FFFFFFF` reaches a word, a byte, or a
 halfword of the first 64M words, and an instruction fetch there reads 0.
 
@@ -643,7 +643,7 @@ enters then.
 
 ## The timer
 
-`timer` holds the timer of SYSTEM.md §4: `TIMER_PERIOD`, `TIMER_COUNT`, and
+`timer` holds the timer of DEVICES.md §4: `TIMER_PERIOD`, `TIMER_COUNT`, and
 `TIMER_VECTOR` at offsets 0, 1, and 2. Its bus port is a pipelined Wishbone
 slave with a 4-bit address, like that of the performance counters. The bus
 decoder selects it for `0xFFFFFF10`–`0xFFFFFF1F`.
@@ -663,7 +663,7 @@ requests of two sources do not merge (ISA.md §7.1).
 
 ## The console's receive interrupt
 
-`console_irq` holds `CONSOLE_IRQ` of SYSTEM.md §1.9, the vector and the
+`console_irq` holds `CONSOLE_IRQ` of DEVICES.md §1.9, the vector and the
 enable, as one word with no address. The system tells it about the
 console's input: `entered_i` for one cycle when a byte enters the empty
 input, or the input ends, and `waits_i` while a byte waits or the input has
@@ -676,7 +676,7 @@ waits for its byte.
 `irq_merge` joins the timer's source, the timer's request and that of
 `--irq` in `tb_core`, and the console's into the core's IRQ port. The
 timer's goes first, and the core's `ready` goes to the source whose vector
-it sees, so the two sources never merge (SYSTEM.md §4). `make test` runs
+it sees, so the two sources never merge (DEVICES.md §4). `make test` runs
 the emulator's `conirq` probe, on a stalling memory too and with held
 pauses. The probe takes each request right after the instruction that
 sets E, which no core can take later, so its runs are compared exactly,
@@ -686,7 +686,7 @@ raises them itself.
 
 ## The math unit
 
-`mpu` is the math unit of SYSTEM.md §2. Offsets 0 to 15 hold A, B, the
+`mpu` is the math unit of DEVICES.md §2. Offsets 0 to 15 hold A, B, the
 signed and unsigned products, quotients, and remainders of A and B, and
 the bit counts of A. Offsets 16 to 31 hold the 64-bit C and D, the signed
 and unsigned quotients and remainders of C and D, and the square root of
@@ -719,7 +719,7 @@ correction is proven by hand, and `tb_mpu` checks the products' values
 
 ## The performance counters
 
-`perf` holds the performance counters of SYSTEM.md §3: `CYCLE_LO` and
+`perf` holds the performance counters of DEVICES.md §3: `CYCLE_LO` and
 `CYCLE_HI` at offsets 0 and 1, `INSTR_LO` and `INSTR_HI` at 2 and 3, and
 `TIME_LO` and `TIME_HI` at 4 and 5, and the event counters at `0x0A`–`0x13`:
 data reads, stores, skips, jumps, and interrupts, a low and a high word
@@ -733,7 +733,7 @@ high. The instruction
 counter counts the core's `instret_o`, which the multi-cycle core raises for
 one cycle in `RETIRE` after each instruction, but not after an interrupt
 entry. An instruction makes its data reads before its own `RETIRE`, so a
-read of `INSTR_LO` returns the number of instructions before it, as SYSTEM.md
+read of `INSTR_LO` returns the number of instructions before it, as DEVICES.md
 §3 requires. A read of a low word copies its 64-bit counter into a
 snapshot, and a read of the high word returns the snapshot's high word.
 
@@ -755,13 +755,13 @@ and no divider. `G_CLK_HZ` defaults to 100 MHz, and a system with another
 clock sets it.
 
 The generic `G_RESET` sets the counters' value after reset. It is 0, as
-SYSTEM.md §3 requires, except in `tb_perf`, which starts near a wrap.
+DEVICES.md §3 requires, except in `tb_perf`, which starts near a wrap.
 `formal/perf.sby` proves the port and the reads against a model of the
 counters for every cycle, and its cover task starts near a wrap too.
 
 ## The clock of the time of day
 
-`tod` holds the clock of SYSTEM.md §10: `CLOCK_USEC`, `CLOCK_SEC_LO`,
+`tod` holds the clock of DEVICES.md §10: `CLOCK_USEC`, `CLOCK_SEC_LO`,
 `CLOCK_SEC_HI`, and `CLOCK_STATUS` at offsets 0 to 3. Its bus port is a
 pipelined Wishbone slave with a 2-bit address. The clock's words,
 `0xFFFFFF46`–`0xFFFFFF49`, lie inside the performance counters' block and
@@ -813,7 +813,7 @@ counters, and the invariants that tie them, with and without `G_ENABLE`.
 ## The SD card controller
 
 `sd_regs` holds the registers and the 512-byte buffer of the SD card
-controller of SYSTEM.md §5. Its bus port is a pipelined Wishbone slave with
+controller of DEVICES.md §5. Its bus port is a pipelined Wishbone slave with
 a 4-bit address. The bus decoder selects it for `0xFFFFFFA0`–`0xFFFFFFAF`.
 It makes the checks of a command that need no card, and passes the rest
 to a protocol engine: `start_o` for one cycle, with the command, the slot,
@@ -833,7 +833,7 @@ as an Init may take hundreds of milliseconds, and adds its own engine.
 
 ## The network station
 
-`net_regs` holds the registers of the network station of SYSTEM.md §6.
+`net_regs` holds the registers of the network station of DEVICES.md §6.
 Its bus port is a pipelined Wishbone slave with a 4-bit address, which
 never stalls. The bus decoder selects it for `0xFFFFFFB0`–`0xFFFFFFBF`.
 The IP and MAC addresses are registers, with their reset values, on
@@ -846,7 +846,7 @@ system: a start of the processor leaves the station as it is.
 
 ## Ethernet frames
 
-`eth_regs` holds the port for Ethernet frames of SYSTEM.md §7: the 16
+`eth_regs` holds the port for Ethernet frames of DEVICES.md §7: the 16
 words, the queue of 4 frames, a RAM of 4 slots of 512 words, and the
 send buffer, a RAM of 512 words. The bus decoder selects it for
 `0xFFFFFFC0`–`0xFFFFFFCF`. A station writes a frame received with
@@ -1232,15 +1232,15 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   last three instructions wrote, and each interrupt vector leads to a
   short routine that ends with `RTI`. A random program may read any address, and now and then one reaches the cycle counter at
   `0xFFFFFF40`, where the core counts cycles and the emulator counts steps
-  (SYSTEM.md §3). The microsecond counter at `0xFFFFFF44` and the clock of
+  (DEVICES.md §3). The microsecond counter at `0xFFFFFF44` and the clock of
   the time of day at `0xFFFFFF46`–`0xFFFFFF49` differ likewise. So these
   runs make the words of the counters and the clock ordinary memory on both
   sides, with the generic `G_CYCLE_COUNTER` and the emulator's
   `--no-cycle-counter`. The emulator's font RAM and character ROM, at
-  `0xFFFE0000`–`0xFFFE3FFF` (SYSTEM.md §1.8), are not in the core's
+  `0xFFFE0000`–`0xFFFE3FFF` (DEVICES.md §1.8), are not in the core's
   memory model, so the emulator makes them ordinary memory with
   `--no-font`. The floating-point unit's eight words,
-  `0xFFFFFF88`–`0xFFFFFF8F` (SYSTEM.md §11), are memory on both sides,
+  `0xFFFFFF88`–`0xFFFFFF8F` (DEVICES.md §11), are memory on both sides,
   with the generic `G_FPU` false and `--no-fpu`, which leaves the FPU to
   its own tests. The generic `G_FETCH_STATS` false makes the
   fetch statistics read 0 and ignore writes, as in the emulator. The
@@ -1455,7 +1455,7 @@ formal/UNIT/TASK` runs one task, for example `make formal/pipe_fetch/prove`.
 | `eth_regs` | The port for Ethernet frames: its bus and station ports, with and without the held ACK. | k-induction of depth 10, Yices | seconds |
 | `perf` | The performance counters, against a model. | PDR | a minute |
 | `fetch_stats` | The fetch statistics: what each cycle does to the counters. | k-induction, Boolector | a few seconds |
-| `fpu` | The FPU's port for every command, and its stack against a model of SYSTEM.md §11.4 for the commands of the stack. | k-induction, Boolector | seconds, and about half an hour for `prove_stack` |
+| `fpu` | The FPU's port for every command, and its stack against a model of DEVICES.md §11.4 for the commands of the stack. | k-induction, Boolector | seconds, and about half an hour for `prove_stack` |
 | `mpu` | The math unit's port, its waits, its quotients and remainders for every pair of operands, its bit counts, and its square root. | k-induction, Boolector | about 2 minutes |
 | `debug_link` | The debug link's ports and the guarantees of its header, with and without a ROM. | k-induction of depth 4, Yices | seconds |
 
@@ -1524,7 +1524,7 @@ device, and, with `wb_slave_check`, that the bus port acknowledges each
 request in the next cycle and never stalls.
 
 `formal_console_irq` checks the console's receive interrupt the same way,
-and with a shadow of the enable, that a request comes exactly when SYSTEM.md
+and with a shadow of the enable, that a request comes exactly when DEVICES.md
 §1.9 says, with the vector written, and that a read returns the enable and
 the vector. The enable shows only in a read, so the shadow cannot be tied
 to it for k-induction: the `prove` task proves the checks of the ports, and
@@ -1860,8 +1860,8 @@ invariant of a restoring divider, with ghosts of the quotient bits found,
 the dividend bits shifted out, and their product, which the ghosts form
 by shift and add. So the solver needs no multiplier, and the proof shows
 for every pair of operands that A = M + R with R < B, where M is Q times
-B by shift and add, and Q and R of SYSTEM.md §2 for B = 0; for the
-signed results, the same on the magnitudes, the signs of SYSTEM.md §2,
+B by shift and add, and Q and R of DEVICES.md §2 for B = 0; for the
+signed results, the same on the magnitudes, the signs of DEVICES.md §2,
 and the special case of the most negative number divided by −1; and the
 same for C and D. The bit counts are checked against their meaning: CLZ
 names a 1 bit with only 0 bits above it, CTZ one with only 0 bits below

@@ -87,7 +87,7 @@ ZIG_TESTS = nicezig zigpoll zigheap zigline zigfloat
 RUST_TESTS = nicers rustpoll rustheap rustline rustfloat
 FLOAT_WASM_TESTS = zigfloat rustfloat
 
-# The float library: float_fpu.nasm, with the FPU of SYSTEM §11, or
+# The float library: float_fpu.nasm, with the FPU of DEVICES §11, or
 # float.nasm with NO_FPU=1, for a system without it.
 FLOAT_LIB = $(if $(NO_FPU),float.nasm,float_fpu.nasm)
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The test of fpu_model.py, the reference model of doc/SYSTEM.md §11.
+"""The test of fpu_model.py, the reference model of doc/DEVICES.md §11.
 
 The model is the oracle of the FPU's tests, so this checks it four ways:
 

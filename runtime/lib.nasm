@@ -52,8 +52,8 @@ __popcnt64
                 MOVE    R2, 0
                 RET
 
-; The device routines of ABI.md: the console (SYSTEM §1), the performance counters
-; (SYSTEM §3), and the emulator's character screen. Unlike the routines above,
+; The device routines of ABI.md: the console (DEVICES §1), the performance counters
+; (DEVICES §3), and the emulator's character screen. Unlike the routines above,
 ; programs call them by their C names. The console output goes through
 ; ___putc_vector, so that a monitor can direct it to its screen.
 __nice.console  .EQU    0xFFFFFF00
@@ -62,7 +62,7 @@ __nice.cycle_hi .EQU    0xFFFFFF41
 __nice.instr_lo .EQU    0xFFFFFF42
 __nice.instr_hi .EQU    0xFFFFFF43
 __nice.screen   .EQU    0xFFFF0000      ; 80 columns, 25 rows
-__nice.blank    .EQU    0x000FFF20      ; a blank in white on black (SYSTEM.md §1.4)
+__nice.blank    .EQU    0x000FFF20      ; a blank in white on black (DEVICES.md §1.4)
 
 ; nice_putc: writes bits 7..0 of R1 through ___putc_vector, the word of the
 ; start-up code that holds the routine that writes one character. The
@@ -78,7 +78,7 @@ ___console_putc
                 RET
 
 ; nice_getc: R1 = the next input byte, waiting until there is one, or -1
-; once the line's input has ended (SYSTEM §1); a keyboard's bytes may still
+; once the line's input has ended (DEVICES §1); a keyboard's bytes may still
 ; come after that. A console read returns the byte with bit 8 set,
 ; 0 if none is waiting, or 0x200 at the end. Steps: 4 for a byte, 8 at the
 ; end, and 6 more for each read that finds no byte. Skipped instructions
@@ -124,7 +124,7 @@ _nice_print.end
 
 ; nice_cycles, nice_instructions: R1:R2 = the counter, low word first.
 ; The read of the low word takes the snapshot that the read of the high
-; word returns (SYSTEM §3). 3 steps.
+; word returns (DEVICES §3). 3 steps.
 _nice_cycles
                 MOVE    R1, @__nice.cycle_lo
                 MOVE    R2, @__nice.cycle_hi
@@ -149,7 +149,7 @@ _nice_screen_put
 ; 2000 words of the screen, from the last down to the first. The colors
 ; are a board's monitor's, so that a cursor, which swaps the colors of its
 ; cell, shows on the blank; on one of color 0 it is black on black too
-; (SYSTEM.md §1.4). 6002 steps. Uses R1.
+; (DEVICES.md §1.4). 6002 steps. Uses R1.
 _nice_screen_clear
                 MOVE    R1, 2000
 :               DEC[M]  R1, R1

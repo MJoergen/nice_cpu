@@ -2,7 +2,7 @@
 """nicetap: join niceemu's UDP socket for Ethernet frames to a TAP device.
 
 niceemu's --eth-udp and --eth-peer carry each Ethernet frame as one UDP
-datagram (doc/SYSTEM.md §7). This tool is the peer: each frame read from
+datagram (doc/DEVICES.md §7). This tool is the peer: each frame read from
 the TAP device goes to niceemu as one datagram, and each datagram from
 niceemu goes to the device. The host bridges the device, or routes and
 NATs it, as for QEMU, and a program in the emulator is on a real network.
@@ -28,7 +28,7 @@ from typing import NoReturn
 TUNSETIFF = 0x400454CA
 IFF_TAP = 0x0002
 IFF_NO_PI = 0x1000
-# The datagrams that niceemu takes, as SYSTEM.md §7 says.
+# The datagrams that niceemu takes, as DEVICES.md §7 says.
 MIN_FRAME = 14
 MAX_FRAME = 1514
 

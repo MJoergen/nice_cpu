@@ -136,7 +136,7 @@ multiple of 4 already, so the option changes only the accesses with
 other offsets.
 
 With `--byte-windows`, an access goes through a byte window of
-[SYSTEM.md §9](../doc/SYSTEM.md#9-byte-windows), which takes the byte
+[DEVICES.md §9](../doc/DEVICES.md#9-byte-windows), which takes the byte
 address itself. The window, the memory's start, and the offset fold into
 one constant, so a byte load is `MOVE R1, @0x20000000+4*___wasm_memory+5[R2]`,
 with no word index, no rotation, and no read and write back for a store.

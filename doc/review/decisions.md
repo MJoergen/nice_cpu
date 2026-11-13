@@ -18,7 +18,7 @@ proposed again. The open items are the
 - **The emulator's `NET_IP` as the address of `--link`** (#124). The
   emulator listens on `127.0.0.1` unless told otherwise, so the word would
   mean little, and a program that wrote it could not move the listener.
-  `NET_IP` is a register that keeps what a program writes (SYSTEM.md §6).
+  `NET_IP` is a register that keeps what a program writes (DEVICES.md §6).
 - **Taking the Vivado path from the environment only** (#61). `hdl/Makefile`
   keeps `/opt/Xilinx/2025.1/Vivado/bin/vivado` as the default of `VIVADO`,
   so `make timing` works as is where Vivado is installed there, and
@@ -197,7 +197,7 @@ proposed again. The open items are the
   words fill the block of 16 and leave no word for the status, the
   lengths, and the chunk. One window with a select bit in `ETH_CHUNK`
   costs a program one write per 8 words when it copies a received frame
-  into a reply (SYSTEM.md §7).
+  into a reply (DEVICES.md §7).
 - **`long double` as wasm32's binary128** (#130). Clang has no
   `-mlong-double-64` for wasm32, so the type is IEEE binary128, and each
   operation is a call such as `__multf3`. A prototype with Zig's
@@ -210,7 +210,7 @@ proposed again. The open items are the
 - **A memory operand that takes a byte address** (#112), such as
   `@c[Rx>>2]` in the C bit of the ALU instructions that ignore it. It
   reaches only the word-index shift of word accesses and byte stores,
-  about a third of the steps that the byte windows of SYSTEM.md §9 save,
+  about a third of the steps that the byte windows of DEVICES.md §9 save,
   and none of the cycles of byte loads, since a byte load is a SHIFT
   instruction, which has no C bit. It would be a further departure from
   the 1997 article, and a mux in PREPARE's address path. A mode bit in SR
@@ -226,7 +226,7 @@ proposed again. The open items are the
   `CLOCK_STATUS` that says the clock keeps local time, or a register of
   the time zone's offset, would change `tod.vhd`, the emulator, and the
   boards, and NiceMonMEGA65 has no place to keep an offset across a
-  reset. The system's documentation says which time it keeps (SYSTEM.md
+  reset. The system's documentation says which time it keeps (DEVICES.md
   §8 and §10). To revisit when a board gets NTP, which needs UTC.
 - **A watchdog device that raises NMI** (#157). A system that runs
   unattended needs one to recover alone, and a NICE system runs with a
@@ -234,4 +234,4 @@ proposed again. The open items are the
   or raises an NMI in it (DEBUG.md §6). It would cost a block of the I/O
   range, a device in the emulator and in `hdl/src` with its tests and
   proofs, and a merge of a second NMI source. A button that raises NMI is
-  a board's (SYSTEM.md §8). To revisit when a system runs unattended.
+  a board's (DEVICES.md §8). To revisit when a system runs unattended.

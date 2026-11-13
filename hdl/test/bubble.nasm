@@ -1,5 +1,5 @@
 ; The bubbles of the pipelined core, measured with the cycle counter
-; (SYSTEM.md §3): the cycles between a read of CYCLE_LO before and one
+; (DEVICES.md §3): the cycles between a read of CYCLE_LO before and one
 ; after each kind of jump, and after a fall-through for comparison. The
 ; values are those of doc/review/third-repository-review.md §1.2, on a
 ; memory that never stalls, with a cycle more for each jump that WRITE

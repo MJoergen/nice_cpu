@@ -1,4 +1,4 @@
--- The registers and the buffer of the SD card controller of SYSTEM.md §5:
+-- The registers and the buffer of the SD card controller of DEVICES.md §5:
 -- 16 words of I/O, and a port to a protocol engine that talks to the card.
 --
 --   0  SD_CSR     2  SD_CHUNK   4  SD_SELECT  6  SD_SLOTS  8-15  SD_BUF0-7
@@ -6,7 +6,7 @@
 --
 -- THEORY OF OPERATION
 -- This unit holds everything a program sees, and makes every check of
--- SYSTEM.md §5 that needs no card: no card (error 1), not ready (2), out of
+-- DEVICES.md §5 that needs no card: no card (error 1), not ready (2), out of
 -- range (7), and write-protected (6), in that order. A command that passes
 -- them goes to the engine, which does the protocol: start_o is high for
 -- one cycle, with the command, the slot, and the sector on cmd_o, slot_o,
@@ -16,12 +16,12 @@
 --
 -- The buffer is 512 bytes in four byte lanes, lane j holding bits
 -- 8j + 7..8j of the 128 words, so that byte 4n + j of the sector is lane j
--- of word n (SYSTEM.md §5). While the engine runs, the buffer is its own,
+-- of word n (DEVICES.md §5). While the engine runs, the buffer is its own,
 -- through buf_addr_i, buf_we_i, and buf_data_i, and buf_data_o, which
 -- holds the byte of buf_addr_i of the cycle before. Otherwise it is the
 -- bus's, through SD_BUF0-7 and SD_CHUNK. The two never share a cycle, as
 -- the bus's writes to the buffer are ignored while busy, and its reads
--- then return what the engine's address selects, which SYSTEM.md §5 allows.
+-- then return what the engine's address selects, which DEVICES.md §5 allows.
 --
 -- "Changed" is one bit per slot, set when present_i of the slot rises.
 -- "Ready" is one bit for the controller: it falls when the selected slot
@@ -45,7 +45,7 @@
 --    write protect switch of each slot, synchronous to clk_i.
 --
 -- RESET
--- Synchronous, as SYSTEM.md §5 says: a Write that runs goes on, and its
+-- Synchronous, as DEVICES.md §5 says: a Write that runs goes on, and its
 -- done_i reports nothing. Any other command is abandoned with abort_o.
 -- Slot 0 is selected, SD_CHUNK, SD_LBA, and SD_ERROR are 0, "ready" is 0,
 -- "changed" is set where a card is present, and any ACK owed is dropped.

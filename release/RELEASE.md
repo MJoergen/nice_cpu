@@ -235,7 +235,7 @@ Tell NiceMonMEGA65 about anything that changes what an integrator sees, and
 record it in the release notes:
 
 - the ports of either core, or of `wb_dmux` and the devices;
-- the I/O address map of [doc/SYSTEM.md](../doc/SYSTEM.md);
+- the I/O address map of [doc/DEVICES.md](../doc/DEVICES.md);
 - `regs_o`, `retire_o`, `stats_o`, or the reset and interrupt behavior;
 - the clock assumptions of the timer and the performance counters;
 - the version and the rules of the debug link (DEBUG.md §9), and the

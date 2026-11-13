@@ -71,7 +71,7 @@ Dhrystone (#143).
 - ISA.md §7.1: requests of different sources do not merge. Each stays
   pending, and they are taken in turn, in an order that the system
   sets (#153).
-- SYSTEM.md §1.9: `CONSOLE_IRQ` at `0xFFFFFF02`, a vector in bits 7–0
+- DEVICES.md §1.9: `CONSOLE_IRQ` at `0xFFFFFF02`, a vector in bits 7–0
   and an enable in bit 8, with which the console raises IRQ on an edge:
   when a byte enters an input where none waits, when the input ends, or
   when the enable is set while input waits. It gives the loop that waits
@@ -84,16 +84,16 @@ Dhrystone (#143).
   needs no label after the jump. It takes an address, a condition, and
   no modifier. §9.2 and Appendix B name it, and `doc/review/decisions.md`
   no longer lists a relative branch as decided against (#154).
-- SYSTEM.md §8: NiceMonMEGA65 has the byte windows of §9, where a read
+- DEVICES.md §8: NiceMonMEGA65 has the byte windows of §9, where a read
   of a byte or a halfword takes a cycle more than one of a word (#152).
-- SYSTEM.md §10: the clock keeps UTC, or local time on a system that
+- DEVICES.md §10: the clock keeps UTC, or local time on a system that
   sets it from a source that keeps local time, such as the MEGA65's
   real-time clock. A system's ROM may set it at its start. `time()`
   then returns local time (#158).
-- SYSTEM.md §8: NiceMonMEGA65 has the clock of §10, on both boards,
+- DEVICES.md §8: NiceMonMEGA65 has the clock of §10, on both boards,
   and "set" stays 0 there until a program sets it. It also wires the 4
   watchpoints of link version 7, where V2.0 said it did not (#155).
-- SYSTEM.md §8 also says what NiceMonMEGA65 has had for some releases,
+- DEVICES.md §8 also says what NiceMonMEGA65 has had for some releases,
   where it said the board planned them: the link's registers from
   `0xFFFFFFD0`, the SD card slots 0 and 1, the network station of §6
   at `0xFFFFFFB0`, and the port for Ethernet frames.
@@ -102,7 +102,7 @@ Dhrystone (#143).
   bits 7–0, and the register reads it back until the processor takes it.
   The link is a source of NMI of its own. A write while the processor is
   held or halted raises nothing, and a hold drops a pending request
-  (#131). SYSTEM.md §8 names the sources of NMI.
+  (#131). DEVICES.md §8 names the sources of NMI.
 
 **Assembler (`niceasm`, `nicedis`)**
 
@@ -114,7 +114,7 @@ Dhrystone (#143).
 
 **Emulator (`niceemu`)**
 
-- The console's receive interrupt of SYSTEM.md §1.9 (#153). IRQ has a
+- The console's receive interrupt of DEVICES.md §1.9 (#153). IRQ has a
   pending request for each source: the timer's, which `--irq` raises
   too, and the console's, taken after it. A `WAIT` with the enable set
   sleeps under `--window` until a key or a byte of the host comes. The
@@ -239,10 +239,10 @@ has watchpoints (#146). niceemu reports the lowest SP with `--stack`
 - The debug link is version 7, a new minor of major 0 (DEBUG.md §9).
   Its registers start at `0xFFFFFFD0`, where they started at
   `0xFFFFFFE0`, so a link request to `0xFFFFFFD0`–`0xFFFFFFDF` reaches
-  the link, where it reached the system's words, which SYSTEM.md
+  the link, where it reached the system's words, which DEVICES.md
   reserved for I/O and no system used. A host of version 6 works
   unchanged.
-- SYSTEM.md has two new parts of the address map: the clock at
+- DEVICES.md has two new parts of the address map: the clock at
   `0xFFFFFF46`–`0xFFFFFF49` (§10), `hdl/src/tod.vhd` on the cores, and
   the byte windows of §9, data addresses with top nibble 1 to 5. The
   windows are a property of the memory, in `hdl/sim/wb_mem.vhd`, and
@@ -273,16 +273,16 @@ has watchpoints (#146). niceemu reports the lowest SP with `--stack`
   to one further (#145). Appendix B has a row for them.
 - ISA §8.2: a store through another address to a word that is fetched,
   as aliasing and the windows allow, leaves undefined which value runs.
-- SYSTEM.md §9: the byte windows. A data access at A with top nibble 1
+- DEVICES.md §9: the byte windows. A data access at A with top nibble 1
   to 5 reaches word (A >> 2) AND `0x03FFFFFF`, whole, as a byte, or as
   a halfword, zero- or sign-extended, and a write through a byte or
   halfword window changes only that part (#112).
-- SYSTEM.md §10: the clock of the time of day, the seconds since the
+- DEVICES.md §10: the clock of the time of day, the seconds since the
   Unix epoch in 64 bits and the microseconds within the second, with a
   snapshot on a read of `CLOCK_USEC` and a set of all three at once. It
   runs while the processor is held, paused, halted, or waiting, and
   only a reset of the system sets it to 0 (#122).
-- SYSTEM.md §3: a waiting processor runs, so the cycle counter, the
+- DEVICES.md §3: a waiting processor runs, so the cycle counter, the
   microsecond counter, and the timer count on.
 - DEBUG.md, version 7: bit 6 of the control register reads the wait;
   bits 7 and 8 `in_service` and `after_rti`; bits 9 and 10 the pending
@@ -310,7 +310,7 @@ has watchpoints (#146). niceemu reports the lowest SP with `--stack`
   that no request can end stops a run with "Stopped: waiting with no
   request to come", exit status 2, unless the run has the window or the
   link (#133).
-- The byte windows of SYSTEM.md §9 (#112), and the clock of §10, on the
+- The byte windows of DEVICES.md §9 (#112), and the clock of §10, on the
   host's time, or with `--step-time` one microsecond per step from 0
   (#122).
 - `--link` serves version 7: the wait, the hidden state, and the
@@ -337,7 +337,7 @@ has watchpoints (#146). niceemu reports the lowest SP with `--stack`
 - `nice_screen_clear`, and `screenClear` and `screen_clear` of the Zig
   and Rust wrappers, write a blank in white on black, `0x000FFF20`,
   where they wrote `0x20`, black on black, on which the cursor of
-  SYSTEM.md §1.4 could not show (#148). `NICE_SCREEN_BLANK`,
+  DEVICES.md §1.4 could not show (#148). `NICE_SCREEN_BLANK`,
   `screen_blank`, and `SCREEN_BLANK` name the word.
 
 **Translator (`nicewasm`)**
@@ -358,7 +358,7 @@ has watchpoints (#146). niceemu reports the lowest SP with `--stack`
   stopped, the multi-cycle core in BOUNDARY. A pause goes first and
   returns to the wait, and a step of a waiting core is one wait step
   (#133).
-- `tod.vhd` is the clock of SYSTEM.md §10, a Wishbone slave of four
+- `tod.vhd` is the clock of DEVICES.md §10, a Wishbone slave of four
   words, proven by `formal/tod.sby` (#122).
 - `debug_link.vhd` is version 7, with the hidden state (#109) and the
   watchpoints (#146). With `G_WATCHES` above 0, each data access is
@@ -419,7 +419,7 @@ MEGA65 again (#141).
 
 **Specification and documents**
 
-- SYSTEM.md §2 has the new words of the math unit: the bit counts of
+- DEVICES.md §2 has the new words of the math unit: the bit counts of
   A, with 32 for `CLZ` and `CTZ` of 0, and `ISQRT64_Q`, `ISQRT64_R_LO`,
   and `ISQRT64_R_HI`, the root of C and its 33-bit remainder (#129).
 - ABI.md and `nice.h` have `nice_isqrt64`, floor(√x) of a 64-bit
@@ -520,7 +520,7 @@ debugger on the link moves here from NiceMonMEGA65, to `debugger/`
 
 **Specification and documents**
 
-- SYSTEM.md §3 has the event counters: the data reads, the stores, the
+- DEVICES.md §3 has the event counters: the data reads, the stores, the
   skipped instructions, the jumps, and the interrupt entries and
   `INT`, each a 64-bit counter with a snapshot. They count what the
   program does, not what the processor does (#126).
@@ -530,12 +530,12 @@ debugger on the link moves here from NiceMonMEGA65, to `debugger/`
 - WASM.md has the rules for a module whose code runs from a ROM: its
   mutable globals and memory go in RAM, and `___wasm_start` copies
   their initial values there at every start (#138).
-- SYSTEM.md §5 says that NiceMonMEGA65 has the font RAM, the character
+- DEVICES.md §5 says that NiceMonMEGA65 has the font RAM, the character
   ROM, and the base from its V1.6 (#136).
 
 **Emulator (`niceemu`)**
 
-- It counts the five events of SYSTEM.md §3. The probe
+- It counts the five events of DEVICES.md §3. The probe
   `test/events.nasm` checks them against hand-worked counts.
 - `--no-font` makes the font RAM and the character ROM ordinary
   memory, to compare a run with a core, whose test memory has
@@ -602,7 +602,7 @@ debugger on the link moves here from NiceMonMEGA65, to `debugger/`
 ## V1.7 (2026-11-05)
 
 The network station and a port for Ethernet frames join the I/O
-range, in SYSTEM.md, the emulator, and as devices of the cores (#124,
+range, in DEVICES.md, the emulator, and as devices of the cores (#124,
 #121). The demo of NiceMonMEGA65's ROM moves here, to `demo/`, and
 runs in `niceemu --window` (#91).
 
@@ -612,7 +612,7 @@ runs in `niceemu --window` (#91).
   `0xFFFFFFC0`–`0xFFFFFFCF` the port for Ethernet frames. Both were
   reserved words, ordinary memory in the emulator. A program that kept
   data there loses it. No program of the repository did.
-- SYSTEM.md's "Systems built on the FPGA core" is §8, from §6. The
+- DEVICES.md's "Systems built on the FPGA core" is §8, from §6. The
   ninth review keeps its references to §6, with a note that says so.
 - The I/O address map changes, and there are two new devices,
   `hdl/src/net_regs.vhd` and `hdl/src/eth_regs.vhd`, for a board to
@@ -623,11 +623,11 @@ runs in `niceemu --window` (#91).
 
 **Specification and documents**
 
-- SYSTEM.md §6 is the network station: the IP and MAC addresses, the
+- DEVICES.md §6 is the network station: the IP and MAC addresses, the
   counts of frames received and sent, and `NET_STATUS`, with the TCP
   port of the debug link and a bit for a connected host. Only a system
   reset sets the addresses, not a start or the link's clear (#124).
-- SYSTEM.md §7 is the port for Ethernet frames: a queue of 4 frames
+- DEVICES.md §7 is the port for Ethernet frames: a queue of 4 frames
   received, one send buffer, and one window of 8 words into them, which
   `ETH_CHUNK` moves. A frame starts at byte 2 of its buffer, so that the
   fields of IPv4 and UDP fall on words. The station keeps ARP for its
@@ -711,12 +711,12 @@ ISA.md §10.1 (#128).
 
 **Specification and documents**
 
-- SYSTEM.md §1.8 is the font: the layout of a glyph, 32 words of 16
+- DEVICES.md §1.8 is the font: the layout of a glyph, 32 words of 16
   pixels with the leftmost in bit 15, the font RAM, the character ROM,
   and the base, whose value 0 shows the ROM and `0xFFFE0000` the RAM.
   The other values are reserved, and show the ROM. The font RAM and the
   base are 0 at the start and after the link's clear (#115).
-- SYSTEM.md's memory map has the two ranges and the base, and §6 says
+- DEVICES.md's memory map has the two ranges and the base, and §6 says
   that a board draws from the same font, and that until
   MJoergen/NiceMonMEGA65#71 the ranges alias NiceMonMEGA65's RAM.
 
@@ -762,7 +762,7 @@ ISA.md §10.1 (#128).
 The emulator and the FPGA have an SD card controller at
 `0xFFFFFFA0`–`0xFFFFFFAF` (#107). A program reads and writes the
 sectors of a card through a buffer of one sector, and `niceemu` gives a
-slot an image file. SYSTEM.md's memory map assigns a block of the I/O
+slot an image file. DEVICES.md's memory map assigns a block of the I/O
 range to each device that is planned (#123).
 
 **Upgrade notes.**
@@ -781,16 +781,16 @@ range to each device that is planned (#123).
 
 **Specification and documents**
 
-- SYSTEM.md §5 is the SD card controller: the registers `SD_CSR`,
+- DEVICES.md §5 is the SD card controller: the registers `SD_CSR`,
   `SD_LBA`, `SD_CHUNK`, `SD_ERROR`, `SD_SELECT`, `SD_LAST`, and
   `SD_SLOTS`, and the buffer of 128 words, read and written 8 at a time
   through `SD_BUF0`–`SD_BUF7`. The commands are Init, Read, and Write.
   No read has a side effect, so the debug link needs no rule for it. It
   says what busy, the slots, reset, the debug link, and interrupts do to
   the controller (#107).
-- SYSTEM.md: the former §5, the systems built on the FPGA core, is §6,
+- DEVICES.md: the former §5, the systems built on the FPGA core, is §6,
   and lists the SD card slots of the MEGA65 and the Nexys4DDR.
-- SYSTEM.md's memory map: `0xFFFFFFA0`–`AF` for the SD card,
+- DEVICES.md's memory map: `0xFFFFFFA0`–`AF` for the SD card,
   `0xFFFFFFB0`–`BF` for the network station, `0xFFFFFFC0`–`CF` for
   Ethernet frames, and `0xFFFFFF46`–`49` for the clock. `0xFFFFFFD0`–`DF`
   stays free (#123).
@@ -849,7 +849,7 @@ word operand (#119), and its random test checks the memory at the end
   any case, so a program that uses one as a label or an `.EQU` name does
   not assemble. No file of the repository did. Nothing else changes: the
   ports of both cores, `wb_dmux`, the devices, the address map of
-  SYSTEM.md, and the debug link are as in V1.3.
+  DEVICES.md, and the debug link are as in V1.3.
 - `*` in an operand that follows a space still starts a comment, so
   `4 * x` assembles as `4`. The assembler now warns about it (#118).
 - Without bounds checks, WASM.md no longer defines an access past the
@@ -966,7 +966,7 @@ host's time (#114), and its window runs as fast as the host can (#116).
   gives it the old pace. A program that waits on the microsecond counter
   runs as before. While a program polls the console or `TIME_LO` in a
   loop, niceemu sleeps, so a wait on the counter may end up to 1 ms late.
-- `wb_dmux`, the devices, and the address map of SYSTEM.md are as in V1.2.
+- `wb_dmux`, the devices, and the address map of DEVICES.md are as in V1.2.
 - Zig 0.17.0, as in V1.2.
 
 **Specification and documents**
@@ -986,12 +986,12 @@ host's time (#114), and its window runs as fast as the host can (#116).
   console byte that finds the input buffer full waits up to 50 ms for
   room before it is lost with `o`, and after that `o` the bytes are lost
   at once until the buffer has room. A packet with no console byte ahead
-  of it is never held. SYSTEM.md §5 says so for a board's FIFO (#110).
-- SYSTEM.md §5 describes the aliasing of a RAM of 2^N words, with 64K
+  of it is never held. DEVICES.md §5 says so for a board's FIFO (#110).
+- DEVICES.md §5 describes the aliasing of a RAM of 2^N words, with 64K
   and 128K words as the examples, and says how a program learns the
   size. ABI.md says what "up to the SP" means under a monitor on such
   a system (#111).
-- SYSTEM.md §3: the emulator's microsecond counter counts the host's
+- DEVICES.md §3: the emulator's microsecond counter counts the host's
   monotonic time while the processor runs, and with `--step-time` one
   microsecond per step (#114). §1.6: the window runs as fast as the host
   can and sleeps in a wait loop, and `--speed` paces it (#116).
@@ -1112,7 +1112,7 @@ rebuild. In the order of who must act:
 - The end of the input is the line's. After a break on a board's UART, or
   a half-close or disconnect on the emulator's link, a keyboard's bytes
   still reach the program, and over TCP a new connection starts the input
-  anew (#89). A board's FIFO should do the same (SYSTEM.md §5).
+  anew (#89). A board's FIFO should do the same (DEVICES.md §5).
 - With `--window`, the emulator runs one step per microsecond, so a
   timer period of P cycles lasts P microseconds, not P/100 as at 100 MHz,
   and `--speed` sets another rate. Without `--window` it runs as fast as
@@ -1123,7 +1123,7 @@ rebuild. In the order of who must act:
   fetches nothing and needs only Zig, as before. Zig 0.17.0, as in V1.1.
 - `--link ADDR:PORT` serves the debug link on another address than
   `127.0.0.1`, so that a host on another computer can connect (#84).
-- For a board: SYSTEM.md §1 now defines the bytes of the keys, which NiceMonMEGA65's
+- For a board: DEVICES.md §1 now defines the bytes of the keys, which NiceMonMEGA65's
   keyboards already send, and the cursor at `0xFFFFFF80`–`0xFFFFFF82`,
   numbered as the board's screen registers. In the emulator these words
   stay ordinary memory. The ports of both cores, `wb_dmux`, and the
@@ -1136,7 +1136,7 @@ rebuild. In the order of who must act:
 
 **Specification and documents**
 
-- SYSTEM.md §1 specifies the window: the screen in 16×32 characters, the
+- DEVICES.md §1 specifies the window: the screen in 16×32 characters, the
   cursor, the keys, and the pace of one step per microsecond. With the
   window, a console read returns 0 while no byte waits, as a board's
   does. With `--link`, the keys and the host's bytes share the input
@@ -1155,7 +1155,7 @@ rebuild. In the order of who must act:
   with. At the return the monitor may rely on SP and R1 only (#87).
   Device routines: `___putc_vector`, which `nice_putc` and `nice_print`
   write through (#88).
-- SYSTEM.md §1 and §5, and DEBUG.md §1 and §7: a break, a half-close, or
+- DEVICES.md §1 and §5, and DEBUG.md §1 and §7: a break, a half-close, or
   a disconnect ends the line's input, not the keyboard's, and over TCP
   the connection is the line (#89).
 - Two documents are new. doc/TOOLCHAIN.md has the tools, what each reads
@@ -1280,7 +1280,7 @@ which a clear ends the halt. The long simulations run in nvc, so
   do not change, and a host of versions 1 to 4 works with it. This is a
   new minor of major 0 (DEBUG.md §9).
 - No other interface change: the ports of both cores, `wb_dmux`, the
-  devices, and the address map of SYSTEM.md are as in V1.0. A system
+  devices, and the address map of DEVICES.md are as in V1.0. A system
   built for V1.0 needs no change in its VHDL.
 - `make slow` and `release.py check` need nvc, tested with 1.20 here
   and 1.23 in CI. `make slow SIM=ghdl` runs them in GHDL instead.
@@ -1370,7 +1370,7 @@ versions.
 - Zig 0.17.0 is now the only supported version. Zig 0.15 no longer builds
   `niceemu` or the Zig runtime modules.
 - No interface changes: the ports of both cores, `wb_dmux`, the devices,
-  `debug_link.vhd`, and the address map of SYSTEM.md are as in RC06. A
+  `debug_link.vhd`, and the address map of DEVICES.md are as in RC06. A
   system built for RC06 needs no change in its VHDL.
 - Releases are now named `Vmajor.minor`. NiceMonMEGA65's release with
   the same name pins this one, and its releases that keep the submodule
@@ -1457,7 +1457,7 @@ versions.
 - DEBUG.md: debug link version 4 adds up to eight breakpoints (#55), the
   notice `x`, and the stop register, which lasts until the next go on. A
   connection clears the breakpoints.
-- SYSTEM.md: the cycle and microsecond counters stop while the core is
+- DEVICES.md: the cycle and microsecond counters stop while the core is
   paused. The microsecond counter is exact for any clock of 1 MHz or more.
 
 **Emulator (`niceemu`)**
@@ -1566,7 +1566,7 @@ versions.
 
 - DEBUG.md specifies the debug link, a byte protocol to load, run, halt,
   and inspect a program over a UART or TCP.
-- SYSTEM.md: the input FIFO of a system drops input that arrives while the
+- DEVICES.md: the input FIFO of a system drops input that arrives while the
   processor is held or halted, and a full FIFO sends the link's `o` notice
   (#47).
 - A `W` request that wraps past `0xFFFFFFFF` is answered with error `02`.
@@ -1614,7 +1614,7 @@ versions.
 
 **Specification and documents**
 
-- SYSTEM.md adds a microsecond counter, `TIME_LO` and `TIME_HI` at
+- DEVICES.md adds a microsecond counter, `TIME_LO` and `TIME_HI` at
   `0xFFFFFF44` and `0xFFFFFF45`.
 - The reserved I/O words are ordinary memory for data accesses in the
   emulator.
@@ -1670,10 +1670,10 @@ versions.
 - ISA.md states that same-kind interrupt requests merge, that each number
   in a program must be below 2^32, the syntax of symbols and the stricter
   rule for labels, that `*` starts a comment only at the start of a word,
-  and that control instructions take no constant words. SYSTEM.md says the
+  and that control instructions take no constant words. DEVICES.md says the
   read counter is 0 at the start of a run, and that a reset does not
   clear it.
-- SYSTEM.md says how a system built on the FPGA core may differ from the
+- DEVICES.md says how a system built on the FPGA core may differ from the
   emulator.
 - The cycle counter and the timer's COUNT stop when the core halts.
 - The repository is under the MIT license. The terms of the 2004 example
@@ -1714,7 +1714,7 @@ The first release candidate. It holds:
 
 - **The specification**, [doc/ISA.md](doc/ISA.md): the programmer's model,
   instruction format, addressing modes, interrupts, memory, assembler
-  syntax, and `.bin` format. [doc/SYSTEM.md](doc/SYSTEM.md) gives the
+  syntax, and `.bin` format. [doc/DEVICES.md](doc/DEVICES.md) gives the
   devices in the I/O range: console, math unit, performance counters, and
   timer.
 - **`niceasm`**, the assembler, one Python 3 script with no dependencies. It

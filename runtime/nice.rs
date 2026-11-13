@@ -69,7 +69,7 @@ pub fn write(s: &[u8]) {
 
 /// Waits for the next input byte. Returns None once the line's input has
 /// ended: the emulator's stdin or the host of the debug link. A keyboard's
-/// bytes may still come after that (SYSTEM.md §1).
+/// bytes may still come after that (DEVICES.md §1).
 pub fn getc() -> Option<u8> {
     let c = unsafe { nice_getc() };
     if c < 0 { None } else { Some(c as u8) }
@@ -128,7 +128,7 @@ pub fn read_line(buf: &mut [u8]) -> Option<&str> {
     })
 }
 
-/// The performance counters of SYSTEM.md §3: the clock cycles and the
+/// The performance counters of DEVICES.md §3: the clock cycles and the
 /// instructions since reset. An interrupt routine must not read them while
 /// the code it interrupted is reading one.
 pub fn cycles() -> u64 {
@@ -144,7 +144,7 @@ pub const SCREEN_COLS: u32 = 80;
 pub const SCREEN_ROWS: u32 = 25;
 /// The blank that screen_clear writes: a space in white on black, the
 /// colors a board's monitor writes in, so that a cursor, which swaps the
-/// colors of its cell, shows on it (doc/SYSTEM.md §1.4).
+/// colors of its cell, shows on it (doc/DEVICES.md §1.4).
 pub const SCREEN_BLANK: u32 = 0x000F_FF20;
 
 /// Writes c, the character in bits 7..0 and its color above, to a column,

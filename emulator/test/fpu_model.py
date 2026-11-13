@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A reference model of the floating-point unit of doc/SYSTEM.md §11, phase 1.
+"""A reference model of the floating-point unit of doc/DEVICES.md §11, phase 1.
 
 The model is the oracle of the FPU's tests: the emulator, tb_fpu, both
 cores, and the board replay what it computes. So it shares nothing with

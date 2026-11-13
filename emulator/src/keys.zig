@@ -1,4 +1,4 @@
-//! The bytes of the window's keys (doc/SYSTEM.md §1), as xterm sends them.
+//! The bytes of the window's keys (doc/DEVICES.md §1), as xterm sends them.
 //! It needs no SDL, so its tests run in every build.
 
 const std = @import("std");
@@ -51,7 +51,7 @@ pub fn typed(b: u8) bool {
 
 /// The console's input with the window: the bytes of `--input`, if given,
 /// and then the keys typed. It has no end, so a read returns 0 while no
-/// byte is waiting (doc/SYSTEM.md §1).
+/// byte is waiting (doc/DEVICES.md §1).
 pub const Queue = struct {
     file: ?*std.Io.Reader,
     buf: [size]u8 = undefined,
@@ -108,7 +108,7 @@ pub const Queue = struct {
 
 const testing = std.testing;
 
-test "the bytes of the keys, as in SYSTEM.md" {
+test "the bytes of the keys, as in DEVICES.md" {
     try testing.expectEqualStrings("\x0d", bytes(.enter));
     try testing.expectEqualStrings("\x7f", bytes(.backspace));
     try testing.expectEqualStrings("\x7f", bytes(.delete));

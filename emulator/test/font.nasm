@@ -1,4 +1,4 @@
-; The font of the window (SYSTEM.md §1.8). The program reads row 6 of A
+; The font of the window (DEVICES.md §1.8). The program reads row 6 of A
 ; from the character ROM, 0x0FF0, writes the row, which the ROM drops, and
 ; reads it again. It copies the 32 rows of A from the ROM to the font RAM,
 ; writes 0xFFFF8001 to row 0 of glyph 1, of which the RAM keeps bits

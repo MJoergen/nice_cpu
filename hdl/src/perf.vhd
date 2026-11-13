@@ -1,4 +1,4 @@
--- The performance counters of SYSTEM.md §3: 32 words of I/O with a 64-bit
+-- The performance counters of DEVICES.md §3: 32 words of I/O with a 64-bit
 -- cycle counter, a 64-bit instruction counter, a 64-bit counter of
 -- microseconds, and the 64-bit counters of five events of the program.
 --
@@ -55,7 +55,7 @@
 --
 -- RESET
 -- Synchronous. It sets all counters and snapshots to G_RESET, which
--- is 0 except in tests, as SYSTEM.md §3 requires, clears the accumulator,
+-- is 0 except in tests, as DEVICES.md §3 requires, clears the accumulator,
 -- and drops any ACK owed.
 
 library ieee;
@@ -67,7 +67,7 @@ library ieee;
 
 entity perf is
    generic (
-      -- The counters' value after reset. SYSTEM.md §3 wants 0. A test sets
+      -- The counters' value after reset. DEVICES.md §3 wants 0. A test sets
       -- it near a wrap of the low word.
       G_RESET  : std_logic_vector(63 downto 0) := (others => '0');
       -- The frequency of clk_i in hertz, at least 1000000. It sets the

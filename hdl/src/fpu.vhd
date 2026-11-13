@@ -18,7 +18,8 @@
 -- src/fpu_unit.vhd, one operation at a time: a state starts an operation,
 -- and UWAIT_ST waits for it and goes on to the state named in RET. The
 -- sequences of SYSTEM.md §11.3 are chains of such states:
--- * The S bit, and ROUND32, round through the short format and back.
+-- * ROUND32 rounds through the short format and back. The S bit is the
+--   unit's input SHORT, which rounds the exact result once.
 -- * ISQRT is SQRT toward zero, then INTEGRAL toward zero.
 -- * SCALE2 and SCALE10 convert X with FTOI and clamp it. SCALE10 then
 --   multiplies or divides by an exact power of ten, or multiplies pairs
@@ -221,7 +222,7 @@ architecture synthesis of fpu is
    );
 
    type t_state is (
-      IDLE_ST, UWAIT_ST, VIEW_ST, WPUSH_ST, CMD_ST, PUSH_ST, ARITH_ST, SHORT_ST, LONG_ST,
+      IDLE_ST, UWAIT_ST, VIEW_ST, WPUSH_ST, CMD_ST, PUSH_ST, ARITH_ST, RESULT_ST, LONG_ST,
       ISQRT_ST, SCALE_ST, SCALE2_ST, SCALE10_ST, S10_ST, S10_SMALL_ST, S10_LOOP_ST,
       MP1_ST, MP2_ST, MP3_ST, MP4_ST, MP5_ST, MP6_ST, MP7_ST, MP8_ST, MP9_ST, MP10_ST,
       S10_FIN_ST, DIGITS_ST, DLOG_ST, DLOOP_ST, DSCALE_ST, DNEAR_ST, DINT_ST, BCD_ST,
@@ -1039,15 +1040,14 @@ begin
                      finish(x_r, y_r, 2, "000");
                   when X"10" | X"11" | X"12" | X"13" | X"14" =>
                      case num_r(2 downto 0) is
-                        when "000"  => ucall(OP_ADD, y_r, x_r, SHORT_ST);
-                        when "001"  => ucall(OP_SUB, y_r, x_r, SHORT_ST);
-                        when "010"  => ucall(OP_MUL, y_r, x_r, SHORT_ST);
-                        when "011"  => ucall(OP_DIV, y_r, x_r, SHORT_ST);
-                        when others => ucall(OP_SQRT, x_r, x_r, SHORT_ST);
+                        when "000"  => ucall(OP_ADD, y_r, x_r, RESULT_ST);
+                        when "001"  => ucall(OP_SUB, y_r, x_r, RESULT_ST);
+                        when "010"  => ucall(OP_MUL, y_r, x_r, RESULT_ST);
+                        when "011"  => ucall(OP_DIV, y_r, x_r, RESULT_ST);
+                        when others => ucall(OP_SQRT, x_r, x_r, RESULT_ST);
                      end case;
                      -- The S bit: the unit rounds once, to binary32.
                      u_short <= sbit_r;
-                     sbit_r  <= '0';
                   when X"15" => finish(not x_r(63) & x_r(62 downto 0), x_r, 1, "000");
                   when X"16" => finish('0' & x_r(62 downto 0), x_r, 1, "000");
                   when X"17" | X"18" =>
@@ -1067,7 +1067,6 @@ begin
                         finish(x_r, x_r, 1, "000");
                      end if;
                   when X"19" =>
-                     sbit_r <= '1';
                      ucall(OP_TOSHORT, x_r, x_r, LONG_ST);
                   when X"1A" =>
                      ucall(OP_SQRT, x_r, x_r, ISQRT_ST);
@@ -1091,9 +1090,9 @@ begin
                      else
                         finish((others => '0'), x_r, 1, "000");
                      end if;
-                  when X"1D" => ucall(OP_FMOD, y_r, x_r, SHORT_ST);
+                  when X"1D" => ucall(OP_FMOD, y_r, x_r, RESULT_ST);
                   when X"20" | X"21" | X"22" | X"23" | X"24" =>
-                     ucall(OP_INTEGRAL, x_r, x_r, SHORT_ST);
+                     ucall(OP_INTEGRAL, x_r, x_r, RESULT_ST);
                      case num_r(2 downto 0) is
                         when "000"  => u_rnd <= RND_FLOOR;
                         when "001"  => u_rnd <= RND_CEIL;
@@ -1101,10 +1100,10 @@ begin
                         when "011"  => u_rnd <= RND_EVEN;
                         when others => u_rnd <= RND_AWAY;
                      end case;
-                  when X"28" => ucall(OP_ITOF, x_r, x_r, SHORT_ST);
-                  when X"29" => ucall(OP_UTOF, x_r, x_r, SHORT_ST);
-                  when X"2A" => ucall(OP_FTOI, x_r, x_r, SHORT_ST);
-                  when X"2B" => ucall(OP_FTOU, x_r, x_r, SHORT_ST);
+                  when X"28" => ucall(OP_ITOF, x_r, x_r, RESULT_ST);
+                  when X"29" => ucall(OP_UTOF, x_r, x_r, RESULT_ST);
+                  when X"2A" => ucall(OP_FTOI, x_r, x_r, RESULT_ST);
+                  when X"2B" => ucall(OP_FTOU, x_r, x_r, RESULT_ST);
                   when X"30" =>
                      if n_r < 16 then
                         finish(C_CONSTS(n_r mod 16), x_r, 1, "000");
@@ -1139,8 +1138,8 @@ begin
                      else
                         finish(C_QNAN, x_r, 1, "001");
                      end if;
-                  when X"3C" => ucall(OP_GETEXP, x_r, x_r, SHORT_ST);
-                  when X"3D" => ucall(OP_GETMANT, x_r, x_r, SHORT_ST);
+                  when X"3C" => ucall(OP_GETEXP, x_r, x_r, RESULT_ST);
+                  when X"3D" => ucall(OP_GETMANT, x_r, x_r, RESULT_ST);
                   when others =>
                      -- The word operators.
                      if not f_fits(x_r) or (num_r /= X"63" and not f_fits(y_r)) then
@@ -1150,26 +1149,16 @@ begin
                      end if;
                end case;
 
-            -- The result of the unit, rounded to binary32 if S is set.
-            when SHORT_ST =>
-               if sbit_r = '1' then
-                  cflags_r <= u_flags;
-                  ucall(OP_TOSHORT, u_result, u_result, LONG_ST);
-               else
-                  finish(u_result, x_r, 1, u_flags);
-               end if;
+            -- The result of the unit is the result of the command.
+            when RESULT_ST =>
+               finish(u_result, x_r, 1, u_flags);
 
+            -- ROUND32: the short value, in the main format again.
             when LONG_ST =>
-               if num_r = X"19" then
-                  cflags_r <= u_flags;
-               else
-                  cflags_r <= cflags_r or u_flags;
-               end if;
-               sbit_r <= '0';
+               cflags_r <= u_flags;
                ucall(OP_FROMSHORT, u_result, u_result, ISQRT_ST);
-               ret_r <= ISQRT_ST;
 
-            -- After ROUND32 and S, the result; after ISQRT's root, TRUNC.
+            -- After ROUND32, the result; after ISQRT's root, TRUNC.
             when ISQRT_ST =>
                if num_r = X"1A" and u_op = OP_SQRT then
                   cflags_r <= u_flags;

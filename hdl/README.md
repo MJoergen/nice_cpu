@@ -914,9 +914,8 @@ short format of 3 and 2, and multiplies 3 bits at a time. It checks every
 operation on every operand or pair of operands of that format: 654062
 results and their flags, with subnormals, overflow, ties, and every
 distance between exponents. ADD, SUB, MUL, DIV, and SQRT run again with
-`short_i`, the S bit, which rounds once to the short format; at this
-width that can differ from the model's two roundings, so the vectors
-round the exact result once. The wide run gives it binary64, binary32,
+`short_i`, the S bit, which rounds the exact result once to the short
+format, as the model's S forms do. The wide run gives it binary64, binary32,
 and 17 bits, as in the FPU, and 3000 random operands or pairs of each
 operation, drawn so that the special values, the subnormals, the limits
 of the exponent, and close exponents come often. `make

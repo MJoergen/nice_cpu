@@ -25,10 +25,8 @@ t_fpu_op and t_fpu_rnd of src/fpu_pkg.vhd, SHORT 1 for a result rounded
 to the short format and given in the main one, K the scale of OP_SCALE2,
 in decimal, A, B, and RESULT hex digits, and FLAGS the flags of the model,
 in decimal. With SHORT, ADD, SUB, MUL, DIV, and SQRT round their exact
-result once, to the short format: the S bit of SYSTEM.md §11.3. The model
-rounds twice, to binary64 and then to binary32, which gives the same,
-as 53 >= 2 * 24 + 2, but at the small width two roundings can differ from
-one, so the vectors round once, as the unit does.
+result once, to the short format: the S bit of SYSTEM.md §11.3. Those
+results are the model's too, of its class Short, at both widths.
 
     fpu_unit_vectors.py [--wide COUNT [--seed S]] FILE"""
 
@@ -44,7 +42,7 @@ from typing import Iterator, List, Tuple
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "emulator", "test"))
 
-from fpu_model import DIVZERO, INVALID, Format, floor_log2, pow2, trunc  # noqa: E402
+from fpu_model import DIVZERO, INVALID, Format, Short, floor_log2, pow2, trunc  # noqa: E402
 
 # The order of t_fpu_op and t_fpu_rnd.
 OPS = ["ADD", "SUB", "MUL", "MULERR", "DIV", "SQRT", "FMOD", "TOSHORT", "FROMSHORT",
@@ -55,6 +53,7 @@ HOW = {"EVEN": "even", "TRUNC": "trunc", "FLOOR": "floor", "CEIL": "ceil", "AWAY
 
 F = Format(4, 3)
 S = Format(3, 2)
+FS = Short(F, S)  # F, with each result rounded once to S: the S bit
 W = F.width
 SCALES: List[int] = list(range(-20, 21))
 
@@ -71,33 +70,6 @@ def fmod(y: int, x: int) -> Tuple[int, int]:
         return y, 0
     vy, vx = F.value(y), F.value(x)
     return F.round(vy - trunc(vy / vx) * vx, zero_neg=F.is_neg(y))
-
-
-def short(op: str, a: int, b: int) -> Tuple[int, int]:
-    """op with the S bit: the exact result rounded once to S, in F. The
-    special cases are F's, whose results S holds."""
-    r, f = F.sqrt(a) if op == "SQRT" else {"ADD": F.add, "SUB": F.sub, "MUL": F.mul,
-                                            "DIV": F.div}[op](a, b)
-    if not F.is_finite(a) or (op != "SQRT" and not F.is_finite(b)):
-        return r, f
-    if (op == "DIV" and F.is_zero(b)) or (op == "SQRT" and (F.is_zero(a) or F.is_neg(a))):
-        return r, f
-    va = F.value(a)
-    vb = F.value(b) if op != "SQRT" else Fraction(0)
-    if op == "ADD":
-        q = va + vb
-    elif op == "SUB":
-        q = va - vb
-    elif op == "MUL":
-        q = va * vb
-    elif op == "DIV":
-        q = va / vb
-    else:
-        q = va
-    if q == 0:
-        return r, f
-    w, f = S.round_sqrt(q) if op == "SQRT" else S.round(q)
-    return F.convert(w, S)[0], f
 
 
 def scale2(y: int, k: int) -> Tuple[int, int]:
@@ -183,11 +155,11 @@ def vectors(wide: int, seed: int) -> Iterator[Line]:
         values = list(range(1 << W))
         pair_list = [(a, b) for a in values for b in values]
     for a, b in pair_list:
-        for op, fn in (("ADD", F.add), ("SUB", F.sub), ("MUL", F.mul), ("DIV", F.div),
-                       ("FMOD", fmod)):
+        for op, fn, short in (("ADD", F.add, FS.add), ("SUB", F.sub, FS.sub), ("MUL", F.mul, FS.mul),
+                              ("DIV", F.div, FS.div), ("FMOD", fmod, None)):
             yield (op, "EVEN", 0, a, b, 0, *fn(a, b))
-            if op != "FMOD":
-                yield (op, "EVEN", 1, a, b, 0, *short(op, a, b))
+            if short is not None:
+                yield (op, "EVEN", 1, a, b, 0, *short(a, b))
         # MULERR is defined for finite operands whose product is finite.
         if F.is_finite(a) and F.is_finite(b):
             p = F.mul(a, b)[0]
@@ -195,7 +167,7 @@ def vectors(wide: int, seed: int) -> Iterator[Line]:
                 yield ("MULERR", "EVEN", 0, a, b, 0, *F.fma(a, b, F.neg(p)))
     for a in values:
         yield ("SQRT", "EVEN", 0, a, 0, 0, *F.sqrt(a))
-        yield ("SQRT", "EVEN", 1, a, 0, 0, *short("SQRT", a, 0))
+        yield ("SQRT", "EVEN", 1, a, 0, 0, *FS.sqrt(a))
         yield ("SQRT", "TRUNC", 0, a, 0, 0, *F.sqrt(a, toward_zero=True))
         yield ("TOSHORT", "EVEN", 0, a, 0, 0, *S.convert(a, F))
         for rnd in RNDS:
@@ -220,7 +192,7 @@ def vectors(wide: int, seed: int) -> Iterator[Line]:
 
 
 def main() -> None:
-    global F, S, W
+    global F, S, FS, W
     ap = argparse.ArgumentParser(description="the vectors of tb_fpu_unit")
     ap.add_argument("--wide", type=int, default=0, metavar="COUNT")
     ap.add_argument("--seed", type=int, default=1)
@@ -228,6 +200,7 @@ def main() -> None:
     args = ap.parse_args()
     if args.wide:
         F, S = Format(11, 52), Format(8, 23)
+        FS = Short(F, S)
         W = F.width
     digits = (W + 3) // 4
     lines: List[str] = []

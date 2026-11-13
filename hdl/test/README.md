@@ -7,6 +7,8 @@ The testbenches, the test programs, and the scripts that run them. [hdl/README.m
 | [tb_mem.vhd](tb_mem.vhd) | A self-checking test of the memory model, which loads [mem.bin](mem.bin) and reads [mem.input](mem.input) as its console input. |
 | [tb_shift.vhd](tb_shift.vhd) | A self-checking test of the ALU and the shifter of `src/nice_pkg.vhd`: the shifter the pipelined core uses, from a prepared count, against the one the multi-cycle core uses, and the ALU against the operations written out. |
 | [tb_mpu.vhd](tb_mpu.vhd) | A self-checking test of the math unit. |
+| [tb_fpu_unit.vhd](tb_fpu_unit.vhd) | A test of the FPU's arithmetic unit, which replays the vectors of [fpu_unit_vectors.py](fpu_unit_vectors.py). |
+| [fpu_unit_vectors.py](fpu_unit_vectors.py) | The vectors of `tb_fpu_unit`, from the model `emulator/test/fpu_model.py`: every operation on every operand or pair of a format of 8 bits, or with `--wide`, random operands of binary64. |
 | [tb_perf.vhd](tb_perf.vhd) | A self-checking test of the performance counters. |
 | [tb_perf_hz.vhd](tb_perf_hz.vhd) | A self-checking test of the microsecond counter at 33333333, 83333333, and 100000000 Hz, against the integer part of N·10⁶/`G_CLK_HZ`. |
 | [tb_tod.vhd](tb_tod.vhd) | A self-checking test of the clock of the time of day, at 2 MHz, so that it counts a microsecond in two cycles. |

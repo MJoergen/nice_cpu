@@ -14,6 +14,8 @@ The synthesizable VHDL: the two cores, their shared packages, and the devices. [
 | [pipe_pkg.vhd](pipe_pkg.vhd) | The micro-operations of the pipelined core, what each reads and writes, and WRITE's state record. |
 | [nice_pkg.vhd](nice_pkg.vhd) | The parts of the ISA that the cores share: the operand fields, the register value rule, the condition, the ALU, the shifter, and the flags. |
 | [mpu.vhd](mpu.vhd) | The math unit of SYSTEM.md §2, a Wishbone slave. |
+| [fpu_pkg.vhd](fpu_pkg.vhd) | The operations of the FPU's arithmetic unit, and the bits of its flags. |
+| [fpu_unit.vhd](fpu_unit.vhd) | The arithmetic unit of the FPU of SYSTEM.md §11: one operation at a time, on a binary format whose widths are generics. |
 | [perf.vhd](perf.vhd) | The performance counters of SYSTEM.md §3, a Wishbone slave. |
 | [tod.vhd](tod.vhd) | The clock of the time of day of SYSTEM.md §10, a Wishbone slave that its own reset, the system's, alone sets to 0. |
 | [timer.vhd](timer.vhd) | The timer of SYSTEM.md §4, a Wishbone slave with an interrupt request port. |

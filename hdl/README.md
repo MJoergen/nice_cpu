@@ -906,6 +906,19 @@ for the computation, exactly as long as it should, that a write restarts
 it, that the two halves and the units in each do not wait for each other, that a write and a read in back-to-back cycles see
 each other in order, and that reset clears the operands.
 
+`tb_fpu_unit` checks the arithmetic unit of the FPU, `src/fpu_unit.vhd`,
+against the model of the emulator, `emulator/test/fpu_model.py`, which
+computes each result exactly with fractions. It runs twice. The small run
+gives the unit a format of 4 bits of exponent and 3 of fraction, and a
+short format of 3 and 2, and multiplies 3 bits at a time. It checks every
+operation on every operand or pair of operands of that format: 391662
+results and their flags, with subnormals, overflow, ties, and every
+distance between exponents. The wide run gives it binary64, binary32,
+and 17 bits, as in the FPU, and 3000 random operands or pairs of each
+operation, drawn so that the special values, the subnormals, the limits
+of the exponent, and close exponents come often. `make
+run/fpu_unit/wide FPU_UNIT_WIDE=20000 FPU_UNIT_SEED=2` runs more.
+
 `tb_perf` starts the counters just below a wrap of their low words. It
 checks that the cycle counter counts every cycle with `run_i` high and
 stands still with it low, that the instruction

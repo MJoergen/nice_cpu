@@ -919,6 +919,20 @@ operation, drawn so that the special values, the subnormals, the limits
 of the exponent, and close exponents come often. `make
 run/fpu_unit/wide FPU_UNIT_WIDE=20000 FPU_UNIT_SEED=2` runs more.
 
+`tb_fpu` checks the FPU, `src/fpu.vhd`, with the vectors of the model,
+`emulator/test/fpu_vectors.py`, which the emulator replays too. A line is
+the state before an access, the access, and the state after it. The test
+sets the state over the bus, with CLEAR 1, the values written to X_LO and
+X_HI from the deepest, and the flags written to STATUS. It does the
+access and compares the word a read returns. Then it reads STATUS, and X
+before a DROP for each value, and compares them with the state after.
+There are some 27800 directed lines, for every register, every command,
+the depths, the special values, the rounding, the conversions, and the
+decimal commands, and a random sequence of 20000 accesses. Last, it
+checks that while a command runs, a read of CMD is acknowledged in the
+next cycle and a read of X waits for the result. `make run/fpu
+FPU_SEED=2 FPU_COUNT=200000` runs a longer sequence.
+
 `tb_perf` starts the counters just below a wrap of their low words. It
 checks that the cycle counter counts every cycle with `run_i` high and
 stands still with it low, that the instruction

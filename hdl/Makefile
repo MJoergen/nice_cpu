@@ -3,9 +3,9 @@ ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
 BUILD = build
 
-SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/fpu_pkg.vhd src/fpu_unit.vhd src/perf.vhd src/tod.vhd src/timer.vhd src/console_irq.vhd src/irq_merge.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd src/sd_regs.vhd src/net_regs.vhd src/eth_regs.vhd
+SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/fpu_pkg.vhd src/fpu_unit.vhd src/fpu.vhd src/perf.vhd src/tod.vhd src/timer.vhd src/console_irq.vhd src/irq_merge.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd src/sd_regs.vhd src/net_regs.vhd src/eth_regs.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd sim/sd_sim.vhd sim/eth_sim.vhd
-TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_fpu_unit.vhd test/tb_perf.vhd test/tb_perf_hz.vhd test/tb_tod.vhd test/tb_timer.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd test/tb_debug_link.vhd test/tb_sd_regs.vhd test/tb_net_regs.vhd test/tb_eth_regs.vhd test/tb_link.vhd \
+TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_fpu_unit.vhd test/tb_fpu.vhd test/tb_perf.vhd test/tb_perf_hz.vhd test/tb_tod.vhd test/tb_timer.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd test/tb_debug_link.vhd test/tb_sd_regs.vhd test/tb_net_regs.vhd test/tb_eth_regs.vhd test/tb_link.vhd \
   test/tb_trace.vhd test/tb_core.vhd
 
 # The runs of make test and make random go in parallel: each
@@ -68,6 +68,19 @@ $(FPU_UNIT_RUNS:%=run/fpu_unit/%): run/fpu_unit/%:
 	  && $(call sim_run,tb_fpu_unit,-gG_VECTORS=vectors $(GENERICS_FPU_UNIT_$*)) > tb_fpu_unit.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS tb_fpu_unit $*"; else echo "FAIL tb_fpu_unit $*"; \
 	  tail -30 $(RUNDIR)/tb_fpu_unit.log; exit 1; fi
+
+# tb_fpu replays the vectors of the FPU's model,
+# emulator/test/fpu_vectors.py, over the FPU's bus: the directed ones and
+# a random sequence from the seed FPU_SEED, FPU_COUNT accesses long.
+FPU_SEED ?= 1
+FPU_COUNT ?= 20000
+
+run/fpu:
+	@($(in_rundir) && $(PYTHON) $(CURDIR)/../emulator/test/fpu_vectors.py --seed $(FPU_SEED) \
+	  --count $(FPU_COUNT) -o vectors > /dev/null \
+	  && $(call sim_run,tb_fpu,-gG_VECTORS=vectors) > tb_fpu.log 2>&1); \
+	if [ $$? -eq 0 ]; then echo "PASS tb_fpu"; else echo "FAIL tb_fpu"; \
+	  tail -30 $(RUNDIR)/tb_fpu.log; exit 1; fi
 
 # tb_trace stands in for the core and runs test/trace.nasm. Each run's output
 # and exit status must equal those of the emulator on the same program, with
@@ -587,7 +600,7 @@ run/irqcompare: emulator
 
 # The runs of make test: the unit tests, tb_link and tb_trace, and those of
 # each core in CORES.
-runs: run/split run/budget run/irqcompare $(UNITS:%=run/unit/%) $(FPU_UNIT_RUNS:%=run/fpu_unit/%) $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
+runs: run/split run/budget run/irqcompare $(UNITS:%=run/unit/%) $(FPU_UNIT_RUNS:%=run/fpu_unit/%) run/fpu $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
 
 # More random programs than make test runs, for example
 #     make random RANDOM_SEEDS="$$(seq 31 90)" RANDOM_STALL=60 RANDOM_STEPS=5000
@@ -663,7 +676,7 @@ analyze-nvc:
 # interrupt, the merge of the IRQ sources, the fetch statistics, the data bus
 # decoder, the debug link, the SD card controller, the network station, and
 # the port for Ethernet frames, with the generics in SYNTH_GENERICS_unit.
-SYNTH = multicycle pipeline mpu fpu_unit perf tod timer console_irq irq_merge fetch_stats wb_dmux debug_link sd_regs net_regs eth_regs
+SYNTH = multicycle pipeline mpu fpu_unit fpu perf tod timer console_irq irq_merge fetch_stats wb_dmux debug_link sd_regs net_regs eth_regs
 SYNTH_GENERICS_wb_dmux = -gG_SLAVES=4
 
 define check_synth

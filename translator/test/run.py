@@ -12,8 +12,7 @@ and the FPU; with --no-mpu and runtime/muldiv_soft.nasm, and with
 runtime/float.wasm translated with --no-mpu as the library module float,
 for a system with neither; and with --inline-fpu. With --no-fpu, the
 first run takes the float library from float.wasm too, for a system
-without the FPU, such as the FPGA cores of hdl/ for now, and the third
-is left out.
+without the FPU, and the third is left out.
 
 The program must halt with HALT and main's result in R1, and print what
 CONSOLE gives on the console, or nothing. A case in TRAPS

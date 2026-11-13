@@ -105,7 +105,7 @@ What you get:
 | `--library NAME` | Translate a library module instead (see [Library modules](#library-modules)). |
 | `--library-memory BYTES` | With `--library`, the size of the library's memory (see Library modules). |
 | `--no-mpu` | For a system without the math unit of SYSTEM.md §2: `i32.mul`, and `div` and `rem` of both widths, then call the runtime library instead of using the math unit, and the program must be joined with `runtime/muldiv_soft.nasm`, not `muldiv_mpu.nasm`. |
-| `--inline-fpu` | For speed on a system with the FPU of SYSTEM.md §11: write the FPU's accesses inline for the float operations, as `runtime/float_fpu.nasm` makes them, instead of calling it (WASM.md, Runtime routines). The conversions of an `i64` to `f32` still call it, and the program must be joined with it, which also names the FPU's words. On `bench/float.c`, the program takes 2.6% more words, and runs 53% fewer instructions and an estimated 54% fewer cycles (bench README, The float benchmark). |
+| `--inline-fpu` | For speed on a system with the FPU of SYSTEM.md §11: write the FPU's accesses inline for the float operations, as `runtime/float_fpu.nasm` makes them, instead of calling it (WASM.md, Runtime routines). The conversions of an `i64` to `f32` still call it, and the program must be joined with it, which also names the FPU's words. On `bench/float.c`, the program takes 2.6% more words, and runs 53% fewer instructions, and 41% fewer cycles on the pipelined core (bench README, The float benchmark). |
 
 Errors are printed as `file:0xOFFSET: error: message`, where OFFSET is the
 byte offset in the module, or as `file: error: message` when there is no

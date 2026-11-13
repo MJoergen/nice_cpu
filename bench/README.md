@@ -603,9 +603,29 @@ from 16825 words to 10270. The table from the emulator:
 That is 5.9 times fewer instructions than with `float.nasm`. No core has
 the FPU yet, so its cycles are the model's estimate: `make cycles` gives
 463441, 4.1 times fewer than the 1916828 without the FPU, at 2.57 per
-instruction. 53644 of them, 17%, wait for the FPU. With the FPU's
+instruction. 53644 of them, 17% of those above one per instruction, wait
+for the FPU. With the FPU's
 estimated times halved or doubled, `--fpu-op 2 --fpu-long 30` and
 `--fpu-op 8 --fpu-long 120`, it gives 436619 and 517085.
+
+`make test` also runs `float.c` as `build/float_inline.bin`, translated
+with nicewasm's `--inline-fpu`, which writes the FPU's accesses in place
+of most calls of the float library. The program takes 10533 words, 263
+more, and the emulator gives:
+
+    phase      instructions       cycles  result
+    convert          28713        28741  97943df8  ok
+    dot32             2704         2732  c0c723f7  ok
+    dot64             3881         3909  ba3319ea  ok
+    mandel           41542        41570  4c25faf9  ok
+    norm              8319         8347  7703cd00  ok
+    total            85159        85299
+
+That is 53% fewer instructions than with the calls. `make cycles`
+estimates 212892 cycles, 54% fewer than 463441, and 183892 and 270892
+with the FPU's times halved and doubled. With fewer instructions between
+the FPU's commands, 59153 cycles, 36% of those above one per
+instruction, wait for it.
 
 ## Dhrystone
 

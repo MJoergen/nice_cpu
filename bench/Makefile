@@ -81,7 +81,8 @@ coremark: $(BUILD)/coremark.bin emulator
 # The same, and checks that every phase has its expected result, that main
 # returns 0 in R1, and that the expected values in bench.c, hand.nasm, and
 # simple.nasm are those of expected.py, and those in float.c are those of
-# floatexpected.py. float.c runs with both float libraries.
+# floatexpected.py. float.c runs with both float libraries, and as
+# float_inline, with the FPU's accesses inline.
 define check
 	@$(EMU) $(BUILD)/$(1).bin < /dev/null > $(BUILD)/$(1).out; sed '/^Halted/,$$d' $(BUILD)/$(1).out
 	@if grep -q ' R1  00000000 ' $(BUILD)/$(1).out && ! grep -q FAIL $(BUILD)/$(1).out; \
@@ -90,14 +91,14 @@ define check
 endef
 
 test: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/float.bin $(BUILD)/dhry.bin \
-  $(BUILD)/coremark.bin $(CORE_BUILD)/float.bin emulator
+  $(BUILD)/coremark.bin $(BUILD)/float_inline.bin $(CORE_BUILD)/float.bin emulator
 	@$(PYTHON) expected.py --check bench.c hand.nasm simple.nasm
 	@$(PYTHON) floatexpected.py --check float.c
 	@$(PYTHON) hazards.py --test
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --test
 	@NICEEMU=$(EMU) $(PYTHON) cycprof.py --test
 	@$(PYTHON) words.py --test
-	$(foreach p,$(PROGRAMS) float,$(call check,$(p)))
+	$(foreach p,$(PROGRAMS) float float_inline,$(call check,$(p)))
 	@$(EMU) $(CORE_BUILD)/float.bin < /dev/null > $(CORE_BUILD)/float.out
 	@if grep -q ' R1  00000000 ' $(CORE_BUILD)/float.out && ! grep -q FAIL $(CORE_BUILD)/float.out; \
 	then echo "PASS float with float.nasm"; else echo "FAIL float with float.nasm"; exit 1; fi
@@ -220,6 +221,16 @@ $(BUILD)/float.full.nasm: ../runtime/start_wasm.nasm $(BUILD)/float.nasm ../runt
   ../runtime/muldiv_mpu.nasm $(FLOAT_LIB)
 	cat $^ > $@
 
+# float.c with nicewasm's --inline-fpu, which needs float_fpu.nasm for the
+# names of the FPU's words and the conversions of an i64 to f32.
+$(BUILD)/float_inline.nasm: float.wasm ../translator/nicewasm.py
+	@mkdir -p $(BUILD)
+	$(NICEWASM) --inline-fpu -o $@ float.wasm
+
+$(BUILD)/float_inline.full.nasm: ../runtime/start_wasm.nasm $(BUILD)/float_inline.nasm \
+  ../runtime/lib.nasm ../runtime/muldiv_mpu.nasm ../runtime/float_fpu.nasm
+	cat $^ > $@
+
 # float.nasm is not checked in; the runtime translates it from float.wasm.
 ../runtime/float.nasm: ../runtime/float.wasm ../translator/nicewasm.py
 	$(MAKE) -C ../runtime float.nasm
@@ -243,9 +254,10 @@ hazards: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
 # Estimates the cycles of the three programs on the pipelined core of
 # doc/MICROARCH.md, from the emulator's traces (README.md, The cycle
 # estimate).
-cycles: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/float.bin emulator
+cycles: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/float.bin \
+  $(BUILD)/float_inline.bin emulator
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin
-	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py $(BUILD)/float.bin
+	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py $(BUILD)/float.bin $(BUILD)/float_inline.bin
 
 # The model's cycles beside the pipelined core's, phase by phase, with the
 # difference in percent, and by cause, from the output and the retire log

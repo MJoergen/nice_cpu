@@ -692,12 +692,13 @@ synth: analyze-ghdl
 # is a target formal/FILE/TASK, and they run in parallel, as the runs of
 # make test do. The work directories go in $(BUILD).
 SBY ?= sby
-FORMAL = nice_pkg multicycle timer console_irq irq_merge tod wb_dmux pipe_fetch pipe_decode pipe_prepare pipe_dbus pipe_write pipeline perf fetch_stats mpu debug_link sd_regs net_regs eth_regs
+FORMAL = nice_pkg multicycle timer console_irq irq_merge tod wb_dmux pipe_fetch pipe_decode pipe_prepare pipe_dbus pipe_write pipeline perf fetch_stats mpu fpu debug_link sd_regs net_regs eth_regs
 FORMAL_TASKS = prove cover
 # The pipelined core is checked for a bounded number of cycles only.
 FORMAL_TASKS_pipeline = bmc cover
 FORMAL_TASKS_console_irq = prove bmc cover
 # The debug link is proven twice, with and without a ROM.
+FORMAL_TASKS_fpu = prove prove_stack cover
 FORMAL_TASKS_debug_link = prove prove_held cover cover_side
 FORMAL_TASKS_sd_regs = prove prove_nohold cover
 FORMAL_TASKS_eth_regs = prove prove_nohold cover

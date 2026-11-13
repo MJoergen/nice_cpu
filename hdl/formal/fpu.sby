@@ -1,0 +1,35 @@
+# The FPU (formal_fpu.vhd, and the properties under G_FORMAL in fpu.vhd),
+# with a free stand-in for its arithmetic unit. "prove" proves the
+# assertions of the bus for every cycle by k-induction, for every
+# command. "prove_stack" proves the bus and the stack against a model of
+# SYSTEM.md §11.4, for the commands of the stack. "cover" reaches each
+# cover statement.
+
+[tasks]
+prove
+prove_stack
+cover
+
+[options]
+prove: mode prove
+prove: depth 4
+prove_stack: mode prove
+prove_stack: depth 5
+cover: mode cover
+cover: depth 20
+
+[engines]
+smtbmc boolector
+
+[script]
+plugin -i ghdl
+prove: ghdl --std=08 -fpsl fpu_pkg.vhd fpu_unit.vhd fpu.vhd formal_fpu.vhd -e formal_fpu
+prove_stack: ghdl --std=08 -fpsl -gG_STACK=true fpu_pkg.vhd fpu_unit.vhd fpu.vhd formal_fpu.vhd -e formal_fpu
+cover: ghdl --std=08 -fpsl fpu_pkg.vhd fpu_unit.vhd fpu.vhd formal_fpu.vhd -e formal_fpu
+prep -top formal_fpu
+
+[files]
+../src/fpu_pkg.vhd
+../src/fpu_unit.vhd
+../src/fpu.vhd
+formal_fpu.vhd

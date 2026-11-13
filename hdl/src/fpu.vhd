@@ -54,6 +54,22 @@
 --    address. The FPU is at 0xFFFFFF88-0xFFFFFF8F, so the offset is
 --    address bits 2..0.
 --
+-- FORMAL
+-- With G_FORMAL, a free stand-in replaces the arithmetic unit: it ends an
+-- operation in any cycle after its start, with any result and any flags,
+-- and formal/formal_fpu.vhd proves the bus for every command. With
+-- G_STACK too, the master writes only the commands of the stack and
+-- neither X_S nor X_W, and the assertions below say that the stack is
+-- that of a model of §11.4. The model shifts its values, X first. It
+-- keeps each request it sees accepted, and applies it when the FPU takes
+-- it: in IDLE_ST, at once or from the register where it waited. So it is
+-- ahead only while a command runs. It must match whenever no command
+-- runs: the depth, the flags, and each value. The invariants that make
+-- that inductive say that the request that waits is the one the model
+-- kept, which states a command of the stack passes through, and that
+-- STALL is high exactly while a request waits or a read waits for the
+-- unit.
+--
 -- RESET
 -- Reset empties the stack, clears the flags, and ends a command.
 
@@ -65,6 +81,10 @@ library work;
    use work.fpu_pkg.all;
 
 entity fpu is
+   generic (
+      G_FORMAL : boolean := false;
+      G_STACK  : boolean := false
+   );
    port (
       clk_i      : in  std_logic;
       rst_i      : in  std_logic;
@@ -229,7 +249,7 @@ architecture synthesis of fpu is
    signal pend_data_r : std_logic_vector(31 downto 0);
 
    signal state_r : t_state := IDLE_ST;
-   signal ret_r   : t_state;
+   signal ret_r   : t_state := IDLE_ST;
 
    -- The command, its operands, and its results.
    signal num_r    : std_logic_vector(7 downto 0);
@@ -263,7 +283,7 @@ architecture synthesis of fpu is
    signal s10_k_r   : unsigned(9 downto 0);
    signal s10_i_r   : natural range 0 to 11;
    signal s10_res_r : t_word64;
-   signal s10_ret_r : t_state;
+   signal s10_ret_r : t_state := SCALE10_ST;
    signal rh_r      : t_word64;
    signal rl_r      : t_word64;
    signal bh_r      : t_word64;
@@ -285,6 +305,14 @@ architecture synthesis of fpu is
    signal dq_r  : unsigned(31 downto 0);
    signal dr_r  : unsigned(32 downto 0);
    signal sum_r : unsigned(63 downto 0);
+
+   function bool_to_int(b : boolean) return natural is
+   begin
+      if b then
+         return 1;
+      end if;
+      return 0;
+   end function bool_to_int;
 
    function bool_to_sl(b : boolean) return std_logic is
    begin
@@ -457,21 +485,249 @@ begin
    pick  <= ram_r(to_integer(top_r - n_r mod 16)) when n_r < depth_r else C_QNAN;
 
 
-   i_fpu_unit : entity work.fpu_unit
-      port map (
-         clk_i    => clk_i,
-         rst_i    => rst_i,
-         start_i  => u_start,
-         op_i     => u_op,
-         rnd_i    => u_rnd,
-         a_i      => u_a,
-         b_i      => u_b,
-         k_i      => u_k,
-         busy_o   => u_busy,
-         done_o   => u_done,
-         result_o => u_result,
-         flags_o  => u_flags
-      ); -- i_fpu_unit
+   gen_unit : if not G_FORMAL generate
+
+      i_fpu_unit : entity work.fpu_unit
+         port map (
+            clk_i    => clk_i,
+            rst_i    => rst_i,
+            start_i  => u_start,
+            op_i     => u_op,
+            rnd_i    => u_rnd,
+            a_i      => u_a,
+            b_i      => u_b,
+            k_i      => u_k,
+            busy_o   => u_busy,
+            done_o   => u_done,
+            result_o => u_result,
+            flags_o  => u_flags
+         ); -- i_fpu_unit
+
+   end generate gen_unit;
+
+   gen_formal : if G_FORMAL generate
+      signal f_busy   : std_logic := '0';
+      signal f_end    : std_logic;
+      signal f_result : t_word64;
+      signal f_flags  : std_logic_vector(2 downto 0);
+
+      attribute anyseq : boolean;
+      attribute anyseq of f_end    : signal is true;
+      attribute anyseq of f_result : signal is true;
+      attribute anyseq of f_flags  : signal is true;
+
+      -- The model: the values, X first, the depth, and the flags.
+      signal f_stk   : t_words64(0 to 15);
+      signal f_dep   : natural range 0 to 16      := 0;
+      signal f_flg   : std_logic_vector(3 downto 0) := (others => '0');
+      signal f_req   : std_logic_vector(35 downto 0);   -- we, addr, data
+      signal f_match : boolean;
+      signal f_quiet : boolean;
+      signal f_view  : boolean;
+      signal f_cmd   : boolean;
+   begin
+
+      -- The stand-in for the unit.
+      u_busy   <= f_busy;
+      u_done   <= f_busy and f_end;
+      u_result <= f_result;
+      u_flags  <= f_flags;
+
+      p_unit : process (clk_i)
+      begin
+         if rising_edge(clk_i) then
+            if u_start = '1' then
+               f_busy <= '1';
+            elsif f_end = '1' then
+               f_busy <= '0';
+            end if;
+            if rst_i = '1' then
+               f_busy <= '0';
+            end if;
+         end if;
+      end process p_unit;
+
+      p_model : process (clk_i)
+         variable stk_v : t_words64(0 to 15);
+         variable dep_v : natural range 0 to 16;
+         variable flg_v : std_logic_vector(3 downto 0);
+         variable n_v   : natural range 0 to 255;
+         variable x_v   : t_word64;
+         variable y_v   : t_word64;
+         variable req_v : std_logic_vector(35 downto 0);
+
+         procedure mpush(v : t_word64) is
+         begin
+            stk_v := v & stk_v(0 to 14);
+            if dep_v = 16 then
+               flg_v(C_STACK) := '1';
+            else
+               dep_v := dep_v + 1;
+            end if;
+         end procedure mpush;
+
+         procedure mpop(k : natural) is
+         begin
+            for i in 1 to 16 loop
+               if i <= k then
+                  stk_v := stk_v(1 to 15) & C_QNAN;
+               end if;
+            end loop;
+            if k > dep_v then
+               flg_v(C_STACK) := '1';
+               dep_v          := 0;
+            else
+               dep_v := dep_v - k;
+            end if;
+         end procedure mpop;
+
+         -- Value i, or the canonical NaN and the fault if it is missing.
+         procedure mget(i : natural;
+                        v : out t_word64) is
+         begin
+            v := C_QNAN;
+            for j in 0 to 15 loop
+               if j = i and j < dep_v then
+                  v := stk_v(j);
+               end if;
+            end loop;
+            if i >= dep_v then
+               flg_v(C_STACK) := '1';
+            end if;
+         end procedure mget;
+
+      begin
+         if rising_edge(clk_i) then
+            stk_v := f_stk;
+            dep_v := f_dep;
+            flg_v := f_flg;
+            req_v := wb_we_i & wb_addr_i & wb_data_i;
+            if pend_r = '1' then
+               req_v := f_req;
+            end if;
+            n_v   := to_integer(unsigned(req_v(15 downto 8)));
+            if state_r = IDLE_ST and (pend_r = '1' or accept = '1') and req_v(35) = '1' then
+               case req_v(34 downto 32) is
+                  when "000" =>
+                     mpush(X"00000000" & req_v(31 downto 0));
+                  when "001" =>
+                     if dep_v = 0 then
+                        flg_v(C_STACK) := '1';
+                     else
+                        stk_v(0)(63 downto 32) := req_v(31 downto 0);
+                     end if;
+                  when "101" =>
+                     flg_v := req_v(11 downto 8);
+                  when "100" =>
+                     case req_v(7 downto 0) is
+                        when X"00" =>
+                           flg_v(C_INVALID) := flg_v(C_INVALID) or bool_to_sl(n_v /= 0);
+                        when X"01" =>
+                           if n_v > 1 then
+                              flg_v(C_INVALID) := '1';
+                           else
+                              dep_v := 0;
+                              if n_v = 1 then
+                                 flg_v := (others => '0');
+                              end if;
+                           end if;
+                        when X"02" | X"05" =>
+                           if n_v /= 0 then
+                              flg_v(C_INVALID) := '1';
+                           else
+                              mget(bool_to_int(req_v(2) = '1'), x_v);
+                              mpush(x_v);
+                           end if;
+                        when X"03" =>
+                           if n_v = 0 then
+                              mpop(1);
+                           else
+                              mpop(n_v);
+                           end if;
+                        when X"04" =>
+                           if n_v /= 0 then
+                              flg_v(C_INVALID) := '1';
+                           else
+                              mget(0, x_v);
+                              mget(1, y_v);
+                              mpop(2);
+                              -- The fault of a missing operand is mpop's.
+                              mpush(x_v);
+                              mpush(y_v);
+                           end if;
+                        when others =>
+                           mget(n_v, x_v);
+                           mpush(x_v);
+                     end case;
+                  when others =>
+                     null;
+               end case;
+            end if;
+            f_stk <= stk_v;
+            f_dep <= dep_v;
+            f_flg <= flg_v;
+            if accept = '1' then
+               f_req <= wb_we_i & wb_addr_i & wb_data_i;
+            end if;
+            if rst_i = '1' then
+               f_dep <= 0;
+               f_flg <= (others => '0');
+            end if;
+         end if;
+      end process p_model;
+
+      f_match <= depth_r = f_dep and flags_r = f_flg and
+                 (f_dep < 1 or ram_r(to_integer(top_r)) = f_stk(0)) and
+                 (f_dep < 2 or ram_r(to_integer(top_r - 1)) = f_stk(1)) and
+                 (f_dep < 3 or ram_r(to_integer(top_r - 2)) = f_stk(2)) and
+                 (f_dep < 4 or ram_r(to_integer(top_r - 3)) = f_stk(3)) and
+                 (f_dep < 5 or ram_r(to_integer(top_r - 4)) = f_stk(4)) and
+                 (f_dep < 6 or ram_r(to_integer(top_r - 5)) = f_stk(5)) and
+                 (f_dep < 7 or ram_r(to_integer(top_r - 6)) = f_stk(6)) and
+                 (f_dep < 8 or ram_r(to_integer(top_r - 7)) = f_stk(7)) and
+                 (f_dep < 9 or ram_r(to_integer(top_r - 8)) = f_stk(8)) and
+                 (f_dep < 10 or ram_r(to_integer(top_r - 9)) = f_stk(9)) and
+                 (f_dep < 11 or ram_r(to_integer(top_r - 10)) = f_stk(10)) and
+                 (f_dep < 12 or ram_r(to_integer(top_r - 11)) = f_stk(11)) and
+                 (f_dep < 13 or ram_r(to_integer(top_r - 12)) = f_stk(12)) and
+                 (f_dep < 14 or ram_r(to_integer(top_r - 13)) = f_stk(13)) and
+                 (f_dep < 15 or ram_r(to_integer(top_r - 14)) = f_stk(14)) and
+                 (f_dep < 16 or ram_r(to_integer(top_r - 15)) = f_stk(15));
+
+      -- No command runs.
+      f_view  <= (state_r = UWAIT_ST and ret_r = VIEW_ST) or state_r = VIEW_ST;
+      f_quiet <= state_r = IDLE_ST or f_view;
+
+      -- The states of a command of the stack.
+      f_cmd <= state_r = CMD_ST or (state_r = ARITH_ST and num_r = X"04") or
+               (state_r = PUSH_ST and num_r = X"04" and npush_r >= 1 and cflags_r = "000");
+
+      -- psl default clock is rising_edge(clk_i);
+
+      -- psl f_state_ok : assert always
+      --    state_r <= t_state'high and ret_r <= t_state'high and
+      --    (s10_ret_r = SCALE10_ST or s10_ret_r = DSCALE_ST);
+      -- psl f_depth_ok : assert always depth_r <= 16 and f_dep <= 16;
+      -- psl f_wait : assert always wait_r = '1' <-> (pend_r = '1' or f_view);
+      -- psl f_view_alone : assert always f_view -> pend_r = '0';
+      -- psl f_pend : assert always
+      --    pend_r = '1' -> f_req = pend_we_r & pend_addr_r & pend_data_r;
+      -- psl f_ack_view : assert always f_view -> wb_ack_o = '0';
+
+      gen_stack : if G_STACK generate
+         -- psl f_stack : assert always f_quiet -> f_match;
+         -- psl f_states : assert always f_quiet or f_cmd;
+         -- psl f_pend_stack : assert always
+         --    (pend_r = '1' and pend_we_r = '1') ->
+         --    (pend_addr_r /= "010" and pend_addr_r /= "011" and
+         --     (pend_addr_r /= "100" or
+         --      (unsigned(pend_data_r(31 downto 16)) = 0 and
+         --       unsigned(pend_data_r(7 downto 0)) <= 6)));
+         -- psl f_cmd_num : assert always
+         --    state_r = CMD_ST -> (unsigned(num_r) <= 6 or num_r = X"FF");
+      end generate gen_stack;
+
+   end generate gen_formal;
 
 
    p_main : process (clk_i)

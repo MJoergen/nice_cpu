@@ -1449,6 +1449,7 @@ formal/UNIT/TASK` runs one task, for example `make formal/pipe_fetch/prove`.
 | `eth_regs` | The port for Ethernet frames: its bus and station ports, with and without the held ACK. | k-induction of depth 10, Yices | seconds |
 | `perf` | The performance counters, against a model. | PDR | a minute |
 | `fetch_stats` | The fetch statistics: what each cycle does to the counters. | k-induction, Boolector | a few seconds |
+| `fpu` | The FPU's port for every command, and its stack against a model of SYSTEM.md §11.4 for the commands of the stack. | k-induction, Boolector | seconds, and about 20 minutes for `prove_stack` |
 | `mpu` | The math unit's port, its waits, its quotients and remainders for every pair of operands, its bit counts, and its square root. | k-induction, Boolector | about 2 minutes |
 | `debug_link` | The debug link's ports and the guarantees of its header, with and without a ROM. | k-induction of depth 4, Yices | seconds |
 
@@ -1893,3 +1894,25 @@ The two lemmas, proven by hand:
   word is the unsigned high word minus B if a = 1 and minus A if b = 1,
   modulo 2³². That is what `p_multiply` computes from `mul_r`, which is
   A·B by the definition of `*` in `numeric_std_unsigned`.
+
+`formal_fpu` checks the FPU with a free stand-in for its arithmetic
+unit, which `src/fpu.vhd` puts in place of `src/fpu_unit.vhd` under
+`G_FORMAL`: it ends an operation in any cycle after the start, with any
+result and any flags. So the proofs cover the bus and the stack, and
+`tb_fpu` and `tb_fpu_unit` check the values. `prove` checks the bus port
+for every command, with a count of the ACKs owed: at most one, an ACK
+only when one is owed, and STALL high exactly while one is owed and not
+acknowledged. Its invariants say that each state, and each state to
+return to, is one there is, and that STALL is high exactly while a
+request waits or a read of X_S or X_W waits for the unit. `prove_stack`
+lets the master write only the commands of the stack, NOP, CLEAR, DUP,
+DROP, SWAP, OVER, and PICK, with any n, and not X_S or X_W. A model of
+§11.4 then keeps the stack as values that shift, X first, with the
+depth and the flags, and takes each request when the FPU takes it, from
+the bus or from the register where it waited. Whenever no command runs,
+the ring must hold the model's values, from X down to the depth, and the
+FPU the model's depth and flags. Invariants tie the request that waits
+to the one the model kept, and name the states a command of the stack
+passes through. Boolector proves `prove` in seconds and `prove_stack` by
+k-induction of depth 5 in about 20 minutes. The covers show a read of
+X_W that waits for the unit, and a write that waits for a command.

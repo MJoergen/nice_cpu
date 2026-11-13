@@ -69,10 +69,22 @@ builds a program for one: it picks the `_mon` start-up file
   and the divisions, or calls `__mul`, `__div`, and the like with
   `--no-mpu`, and traps through `___wasm_trap_vector`. A C compiler for
   NICE would call the same routines.
-- The float routines are themselves translated by `nicewasm`: `runtime/
-  float.zig` and parts of Zig's compiler_rt are compiled to
-  `runtime/float.wasm`, and `nicewasm --library float` turns that into
-  `runtime/float.nasm` (`make -C runtime float.nasm`).
+- Translated code calls the float library for its float operations.
+  There are two, with the same labels. `runtime/float_fpu.nasm`, written
+  by hand, uses the FPU (SYSTEM.md §11), and `nicebuild.py` joins it.
+  `runtime/float.nasm` computes in software, for a system without the
+  FPU, and `nicebuild.py --no-fpu` joins it instead. It is itself
+  translated by `nicewasm`: `runtime/float.zig` and parts of Zig's
+  compiler_rt are compiled to `runtime/float.wasm`, and
+  `nicewasm --library float` turns that into `runtime/float.nasm`
+  (`make -C runtime float.nasm`).
+- With `--inline-fpu`, `nicewasm` writes the FPU's accesses inline, in
+  place of most calls of `float_fpu.nasm`, which is still joined.
+  `nicebuild.py --inline-fpu` passes the option on.
+- The tests of the runtime and the benchmarks join `float_fpu.nasm`, and
+  with `NO_FPU=1` `float.nasm`: `make -C runtime test NO_FPU=1`. The
+  float benchmark runs both ways, and its build with `float.nasm` goes
+  to `bench/build/nofpu/`.
 - The tests of the runtime use `niceasm` and `niceemu`. The tests of
   `nicewasm` use all three other tools: they translate each module, join it
   with the runtime, assemble it, and run it.

@@ -367,7 +367,8 @@ CASES: List[Case] = [
     ("SCALE2 1, a quiet NaN", [d(1.0), QN], 0, "SCALE2", [N], INVALID, None),
     ("SCALE2 a quiet NaN, 1", [QN, d(1.0)], 0, "SCALE2", [N], 0, None),
     ("SCALE2 0, inf is 0", [0, INF], 0, "SCALE2", [0], 0, None),
-    ("SCALE2 1, inf, counted as 2100", [d(1.0), INF], 0, "SCALE2", [INF], OVERFLOW, None),
+    ("SCALE2 1, inf: an infinite X sets no overflow", [d(1.0), INF], 0, "SCALE2", [INF], 0, None),
+    ("SCALE2 -MAX, inf", [MAX | NZ, INF], 0, "SCALE2", [NINF], 0, None),
     ("SCALE2 -1, -inf is -0", [d(-1.0), NINF], 0, "SCALE2", [NZ], 0, None),
     ("SCALE2 inf, -inf is inf", [INF, NINF], 0, "SCALE2", [INF], 0, None),
     ("SCALE2 2^-1074, 2098 is 2^1024", [MINSUB, d(2098.0)], 0, "SCALE2", [INF], OVERFLOW, None),
@@ -385,6 +386,10 @@ CASES: List[Case] = [
     ("SCALE10 -0, 5", [NZ, d(5.0)], 0, "SCALE10", [NZ], 0, None),
     ("SCALE10 0, -inf", [0, NINF], 0, "SCALE10", [0], 0, None),
     ("SCALE10 1, 1e300, counted as 650", [d(1.0), d(1e300)], 0, "SCALE10", [INF], OVERFLOW, None),
+    ("SCALE10 1, inf: an infinite X sets no overflow", [d(1.0), INF], 0, "SCALE10", [INF], 0, None),
+    # 0x7FF00000_00000001 is 2^63 - 2^52 + 1, and the unit in the last
+    # place there is 2^10: 2^63 - 2^52 = (2 - 2^-10) · 2^62.
+    ("ITOF of a signaling NaN's bits converts the integer", [SN], 0, "ITOF", [0x43DFFC0000000000], 0, None),
     ("SCALE10 MAX, -650 is +0", [MAX, d(-650.0)], 0, "SCALE10", [0], 0, None),
     # DIGITS n: the digits in BCD from bit 63 down, then e.
     ("DIGITS 3 of 123.456", [d(123.456)], 0, "DIGITS 3", [0x1230000000000000, d(2.0)], 0, None),

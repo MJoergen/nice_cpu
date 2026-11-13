@@ -14,11 +14,6 @@ binary64, with the binary32 view.
 
 Where §11 leaves a choice open, the model takes the reading below:
 
-- A signaling NaN as an operand sets the invalid flag for every command
-  but NEG, ABS, and the stack commands (§11.2, bit 8).
-- SCALE2 and SCALE10 run their sequence with an infinite X counted as
-  ±2100 and ±650, so a finite nonzero Y gives an infinity with the
-  overflow flag, or a zero.
 - SCALE10 for k > 22 multiplies pairs as mul_pair() does, and adds the
   high and the low part at the end. The table is TEN_PAIRS.
 """
@@ -612,7 +607,9 @@ def scale_cmd(limit: int, finite: Callable[[int, int], Result]) -> Callable[[int
             return F64.nan(y)
         if F64.is_inf(y) or F64.is_zero(y):
             return y, 0
-        return finite(y, k)
+        r, f = finite(y, k)
+        # An infinite X sets no overflow flag (§11.3).
+        return r, 0 if F64.is_inf(x) else f
 
     return run
 

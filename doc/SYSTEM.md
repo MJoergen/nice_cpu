@@ -715,6 +715,7 @@ A command on two values takes Y and X, pops both, and pushes the result. Y is th
 
 - **S.** With bit 16 set, `ADD`, `SUB`, `MUL`, `DIV`, and `SQRT` round their binary64 result to binary32, as `ROUND32` does, and push that. For binary32 operands that is the correctly rounded binary32 result, because 53 ≥ 2 · 24 + 2. So a binary32 computation keeps its intermediate results on the stack and gets wasm's results, with no excess precision. The overflow flag is set when the rounding to binary32 makes an infinity.
 - **`NEG` and `ABS`** change the sign bit only, of a NaN too, and set no flag. They, the stack commands, and the writes of `FPU_X_LO` and `FPU_X_HI` keep the bits of a NaN. Every other command that makes a NaN makes the canonical NaN, `0x7FF80000_00000000`, which is RISC-V's rule.
+- **A signaling NaN** as an operand sets the invalid flag in every command but `NEG`, `ABS`, and the stack commands, as in IEEE 754, where only copy, negate, and abs pass it on quietly. `ITOF`, `UTOF`, and `FROMBCD` read the bits of X as an integer or as digits, and not as a value, so a NaN's bits there are no NaN: `ITOF` of `0x7FF00000_00000001` converts that integer, and sets no flag.
 - **`ISQRT`** is the square root of X rounded toward zero, and then `TRUNC` of that.
   - For X < 2^106 it is the whole part of the exact square root, ⌊√X⌋, for any X ≥ 0, whole or not, since ⌊√X⌋ then fits the 53 bits of a binary64 value.
   - From 2^106 on it is ⌊√X⌋ rounded toward zero. For X = 2^106 + 2^55, ⌊√X⌋ is 2^53 + 1, and `ISQRT` gives 2^53.
@@ -786,7 +787,7 @@ A multiplication by a reciprocal, such as `CONST 9` and `MUL`, is much faster th
 | `0x38` | `SCALE2` | Y · 2^X, for a whole X, rounded once. |
 | `0x39` | `SCALE10` | Y · 10^X, for a whole X, by the sequence below. |
 
-- For both, an X that is a NaN or not whole gives the canonical NaN and sets the invalid flag. An infinite X counts as ±650 for `SCALE10`, and as ±2100 for `SCALE2`, which give the same results as the infinity would, but for 0 · ∞, which is 0.
+- For both, an X that is a NaN or not whole gives the canonical NaN and sets the invalid flag. An infinite X counts as ±650 for `SCALE10`, and as ±2100 for `SCALE2`, which give the same results as the infinity would, but for 0 · ∞, which is 0. That count gives the value only: with an infinite X, an infinite result sets no overflow flag, as the infinity came in as an operand, as in 1 · ∞. A finite X, such as 1e300, sets it.
 - **`SCALE10`'s sequence.** Let k = |X|, at most 650. Beyond that every finite nonzero Y overflows or underflows anyway.
   - If k ≤ 22, the result is Y · 10^k for X ≥ 0 and Y / 10^k for X < 0, rounded once, since 10^k is exact in binary64.
   - If k > 22, the sequence computes in pairs of binary64 values, a high and a low part, whose sum carries about 106 bits. The table holds 10^(2^i) for X > 0, and 10^(−2^i) for X < 0, for i from 0 to 8, each as such a pair: the high part is the binary64 value nearest the power, and the low part the binary64 value nearest the power minus the high part. r starts as the pair (Y, 0). For each bit i of k, from bit 0 to bit 8, if the bit is 1, r becomes r times the pair of bit i. Then, if bit 9 of k is 1, r is multiplied by the pair of bit 8 twice. The result is the high part plus the low part, rounded once.

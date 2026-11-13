@@ -26,9 +26,10 @@ that the depth and the faults take part.
 
 The coverage counts bins: the command, the class of each operand, the
 rounding case (exact, down, up, or a tie, by magnitude), the class of
-the result, and the flags each command sets. It fails if a bin that
-can occur is empty, and if a command sets a flag that its row of FLAGS
-does not allow.
+the result, and the flags each command sets. For each S form it also
+counts the results that the command and then ROUND32 would not give,
+which round twice. It fails if a bin that can occur is empty, and if a
+command sets a flag that its row of FLAGS does not allow.
 
     fpu_vectors.py [-o FILE] [--seed S] [--count N]
 
@@ -67,6 +68,7 @@ from fpu_model import (  # noqa: E402
     X_W,
     Format,
     pow2,
+    round32,
     s64,
 )
 
@@ -152,6 +154,12 @@ def rounding_case(fmt: Format, q: Fraction, r: int) -> str:
     return "down" if r == lo else "up"
 
 
+def tie32(a: int) -> bool:
+    """Whether the binary64 value a lies halfway between two binary32
+    values, so that ROUND32 of it is a tie."""
+    return F64.is_finite(a) and rounding_case(F32, F64.value(a), F32.convert(a, F64)[0]) == "tie"
+
+
 def sqrt_case(fmt: Format, q: Fraction, r: int) -> str:
     """How a finite r is √q rounded in fmt, for q > 0: a tie where √q is
     the midpoint of r and the value on the other side of it."""
@@ -229,6 +237,8 @@ class Coverage:
         self.hit("operands", key, *[klass(a) for a in ops])
         result = after[-1] if after else CANONICAL_NAN
         self.hit("result", key, klass(result))
+        if s and round32(c.run(ops, 0)[0][0])[0] != result:
+            self.hit("once", key)
         case = self.rounding(name, s, ops, result)
         if case is not None:
             self.hit("rounding", key, case)
@@ -296,6 +306,7 @@ class Coverage:
                 req += [("operands", key) + tuple(o) for o in ops]
         for key, cases in ROUNDING.items():
             req += [("rounding", key, case) for case in sorted(cases)]
+        req += [("once", key) for key in FLAGS if key.endswith(".S")]
         for key, classes in RESULT_CLASSES.items():
             req += [("result", key, k) for k in classes]
         return req
@@ -531,6 +542,57 @@ def rounding(g: Generator, rnd: random.Random) -> None:
     g.cmd([0x47EFFFFFE0000000, 0x4000000000000000], "MUL.S")
     g.cmd([0x7E37E43C8800759C], "SQRT.S")
     g.cmd([0x47EFFFFFE0000000, 0x3FE0000000000000], "DIV.S")
+
+    g.comment("The S forms round once: the binary64 result is a tie in binary32, and the exact result is not")
+    # The hand-checked cases of fpu_model_test.py.
+    g.cmd([0x3FF0000010000000, 0x3C90000000000000], "ADD.S")
+    g.cmd([0x3FF0000030000000, 0x3C90000000000000], "SUB.S")
+    g.cmd([0x4008000000000000, 0x433555556AAAAAAB], "MUL.S")
+    g.cmd([0x44B0000030000001, 0x4330000000000001], "DIV.S")
+    g.cmd([0x3FF0000020000011], "SQRT.S")
+    for _ in range(40):
+        # sig is 25 bits and odd: as a binary32 significand, the tie above
+        # that of w. tie is that value in binary64.
+        w = rnd.getrandbits(23) | rnd.randint(1, 254) << 23
+        sig = 2 * (w & 0x7FFFFF | 0x800000) + 1
+        tie = f64_of_32(w) + (1 << 28)
+        # Less than half a binary64 ulp of the tie, added and subtracted.
+        # One of the two sides is not the side of the even neighbor.
+        tiny = ((tie >> 52) - rnd.randint(54, 200)) << 52
+        for sign in (0, NZ):
+            for text in ("ADD.S", "SUB.S"):
+                assert tie32(COMMANDS[NUMBERS[text[:3]]].run([tie | sign, tiny], 0)[0][0])
+                g.cmd([tie | sign, tiny], text)
+        # a · b = sig · 2^80 + delta: the product has 105 bits, so a binary64
+        # ulp of it is 2^52, and a delta below half of that is lost.
+        while True:
+            a = rnd.getrandbits(53) | 1 << 52
+            b = (sig << 80) // a + rnd.randrange(2)
+            delta = a * b - (sig << 80)
+            if b < 1 << 53 and 0 < abs(delta) < 1 << 51:
+                break
+        ops = [d(Fraction(a) * pow2(rnd.randint(-180, -30))), d(Fraction(b))]
+        assert tie32(F64.mul(*ops)[0])
+        g.cmd(ops, "MUL.S")
+        # y is sig · x rounded to binary64, which sig · x, odd and of 77
+        # bits or more, is not. So y / x is not sig, and about half the time
+        # it is near enough for the binary64 quotient to be sig.
+        while True:
+            x = rnd.getrandbits(53) | 1 << 52 | 1
+            y = d(Fraction(sig * x))
+            if F64.div(y, d(Fraction(x)))[0] == d(Fraction(sig)):
+                break
+        ops = [d(F64.value(y) * pow2(rnd.randint(-100, 60))), d(Fraction(x))]
+        assert tie32(F64.div(*ops)[0])
+        g.cmd(ops, "DIV.S")
+        # For an odd root of 25 bits below √2 · 2^24, its square is 49
+        # bits, so a double, and the doubles next to that have a square
+        # root within half a binary64 ulp of root, on either side.
+        root = rnd.randrange(1 << 24, 23726566) | 1
+        k = rnd.randint(-40, 40)
+        sq = d(Fraction(root * root) * pow2(2 * k)) + rnd.choice([-1, 1])
+        assert F64.sqrt(sq)[0] == d(Fraction(root) * pow2(k))
+        g.cmd([sq], "SQRT.S")
 
 
 def conversions(g: Generator, rnd: random.Random) -> None:

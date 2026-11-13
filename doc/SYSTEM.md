@@ -633,7 +633,7 @@ X is the value on the top of the stack, Y the value below it, and the depth the 
 - **Through `FPU_X_W`.** A read gives X rounded toward zero, `0x7FFFFFFF` for a larger X, `0x80000000` for a smaller X, and 0 for a NaN. This is wasm's `i32.trunc_sat_f64_s`. The class of X (§11.2) says whether it fits.
 - **`FPU_REL`** compares as IEEE 754 does, so −0 = +0, and a NaN is unordered with every value. A missing Y or X is the canonical NaN (§11.4), so an empty stack reads 2.
 - **An empty stack** reads as the canonical NaN, `0x7FF80000_00000000`, through `FPU_X_LO` and `FPU_X_HI`.
-- **Waiting.** A command may take many cycles. While it runs, every access to the FPU waits until it ends. So software never needs to wait for a result, and no value read depends on time: a program reads the same values in the emulator, where a command takes no time, and on the FPGA.
+- **Waiting.** A command may take many cycles. While it runs, every access to the FPU waits until it ends, but a read of `FPU_CMD`: that returns 0 whether a command runs or not, so it need not wait. So software never needs to wait for a result, and no value read depends on time: a program reads the same values in the emulator, where a command takes no time, and on the FPGA.
 - Reset sets the depth to 0 and the flags to 0.
 
 ### 11.2 Status

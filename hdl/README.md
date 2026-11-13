@@ -911,9 +911,12 @@ against the model of the emulator, `emulator/test/fpu_model.py`, which
 computes each result exactly with fractions. It runs twice. The small run
 gives the unit a format of 4 bits of exponent and 3 of fraction, and a
 short format of 3 and 2, and multiplies 3 bits at a time. It checks every
-operation on every operand or pair of operands of that format: 391662
+operation on every operand or pair of operands of that format: 654062
 results and their flags, with subnormals, overflow, ties, and every
-distance between exponents. The wide run gives it binary64, binary32,
+distance between exponents. ADD, SUB, MUL, DIV, and SQRT run again with
+`short_i`, the S bit, which rounds once to the short format; at this
+width that can differ from the model's two roundings, so the vectors
+round the exact result once. The wide run gives it binary64, binary32,
 and 17 bits, as in the FPU, and 3000 random operands or pairs of each
 operation, drawn so that the special values, the subnormals, the limits
 of the exponent, and close exponents come often. `make
@@ -1453,7 +1456,7 @@ formal/UNIT/TASK` runs one task, for example `make formal/pipe_fetch/prove`.
 | `eth_regs` | The port for Ethernet frames: its bus and station ports, with and without the held ACK. | k-induction of depth 10, Yices | seconds |
 | `perf` | The performance counters, against a model. | PDR | a minute |
 | `fetch_stats` | The fetch statistics: what each cycle does to the counters. | k-induction, Boolector | a few seconds |
-| `fpu` | The FPU's port for every command, and its stack against a model of SYSTEM.md §11.4 for the commands of the stack. | k-induction, Boolector | seconds, and about 20 minutes for `prove_stack` |
+| `fpu` | The FPU's port for every command, and its stack against a model of SYSTEM.md §11.4 for the commands of the stack. | k-induction, Boolector | seconds, and about half an hour for `prove_stack` |
 | `mpu` | The math unit's port, its waits, its quotients and remainders for every pair of operands, its bit counts, and its square root. | k-induction, Boolector | about 2 minutes |
 | `debug_link` | The debug link's ports and the guarantees of its header, with and without a ROM. | k-induction of depth 4, Yices | seconds |
 
@@ -1918,5 +1921,5 @@ the ring must hold the model's values, from X down to the depth, and the
 FPU the model's depth and flags. Invariants tie the request that waits
 to the one the model kept, and name the states a command of the stack
 passes through. Boolector proves `prove` in seconds and `prove_stack` by
-k-induction of depth 5 in about 20 minutes. The covers show a read of
+k-induction of depth 5 in about half an hour. The covers show a read of
 X_W that waits for the unit, and a write that waits for a command.

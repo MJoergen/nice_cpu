@@ -44,6 +44,7 @@ architecture simulation of tb_fpu_unit is
    signal start : std_logic := '0';
    signal op    : t_fpu_op  := OP_ADD;
    signal rnd   : t_fpu_rnd := RND_EVEN;
+   signal short : std_logic := '0';
    signal a     : std_logic_vector(C_W - 1 downto 0) := (others => '0');
    signal b     : std_logic_vector(C_W - 1 downto 0) := (others => '0');
    signal k     : std_logic_vector(15 downto 0)      := (others => '0');
@@ -73,6 +74,7 @@ begin
          start_i  => start,
          op_i     => op,
          rnd_i    => rnd,
+         short_i  => short,
          a_i      => a,
          b_i      => b,
          k_i      => k,
@@ -88,6 +90,7 @@ begin
       variable l_v      : line;
       variable op_v     : integer;
       variable rnd_v    : integer;
+      variable sh_v     : integer;
       variable a_v      : std_logic_vector(C_W - 1 downto 0);
       variable b_v      : std_logic_vector(C_W - 1 downto 0);
       variable k_v      : integer;
@@ -108,6 +111,7 @@ begin
          readline(vec_f, l_v);
          read(l_v, op_v);
          read(l_v, rnd_v);
+         read(l_v, sh_v);
          hread(l_v, a_v);
          hread(l_v, b_v);
          read(l_v, k_v);
@@ -117,6 +121,7 @@ begin
 
          op    <= t_fpu_op'val(op_v);
          rnd   <= t_fpu_rnd'val(rnd_v);
+         short <= '1' when sh_v = 1 else '0';
          a     <= a_v;
          b     <= b_v;
          k     <= std_logic_vector(to_signed(k_v, 16));
@@ -137,7 +142,8 @@ begin
             if fails_v <= 20 then
                report "tb_fpu_unit: line " & integer'image(lines_v) & ": " &
                       t_fpu_op'image(t_fpu_op'val(op_v)) & " " &
-                      t_fpu_rnd'image(t_fpu_rnd'val(rnd_v)) & " a=" & to_hstring(a_v) &
+                      t_fpu_rnd'image(t_fpu_rnd'val(rnd_v)) & " short=" & integer'image(sh_v) &
+                      " a=" & to_hstring(a_v) &
                       " b=" & to_hstring(b_v) & " k=" & integer'image(k_v) &
                       ": got " & to_hstring(res) & " flags " &
                       integer'image(to_integer(unsigned(flags))) &

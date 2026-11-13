@@ -27,7 +27,11 @@
 -- exponent of the grid is first shifted right to it, which makes it a
 -- subnormal, or on the grid of the whole numbers puts the units in the
 -- last place kept. Then P bits, or the short format's precision, are kept,
--- and the guard bit and the sticky bits decide the increment.
+-- and the guard bit and the sticky bits decide the increment. With SHORT,
+-- the arithmetic rounds on the grid of the short format, with its range,
+-- and gives the result in the main format: the S bit of §11.3, which then
+-- takes one rounding. A result that is a subnormal of the short format is
+-- normalized again for the main format, which is exact.
 --
 -- * ADD and SUB shift the significand of the smaller operand right by the
 --   difference of the exponents, then add or subtract.
@@ -57,7 +61,8 @@
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) START is high for one cycle, while BUSY is low. The operands, the
---    operation, the rounding mode, and K are taken in that cycle.
+--    operation, the rounding mode, SHORT, and K are taken in that cycle.
+--    SHORT is high only for ADD, SUB, MUL, DIV, and SQRT, with RND_EVEN.
 -- b) G_EBITS >= 3, G_FBITS >= 2, and the short format is no wider than the
 --    main one in either field.
 --
@@ -86,6 +91,7 @@ entity fpu_unit is
       start_i  : in  std_logic;
       op_i     : in  t_fpu_op;
       rnd_i    : in  t_fpu_rnd;
+      short_i  : in  std_logic;
       a_i      : in  std_logic_vector(G_EBITS + G_FBITS downto 0);
       b_i      : in  std_logic_vector(G_EBITS + G_FBITS downto 0);
       k_i      : in  std_logic_vector(15 downto 0);
@@ -339,6 +345,7 @@ architecture synthesis of fpu_unit is
    -- The grid and the mode of the rounding, whether the result is then
    -- MULERR's zero, and the sign of the product for it.
    signal grid_r   : t_grid;
+   signal wide_r   : std_logic;
    signal mode_r   : t_fpu_rnd;
    signal zerr_r   : std_logic;
    signal prod_s_r : std_logic;
@@ -410,6 +417,10 @@ begin
                   flags_r <= (others => '0');
                   zerr_r  <= '0';
                   grid_r  <= GRID_MAIN;
+                  wide_r  <= short_i;
+                  if short_i = '1' then
+                     grid_r <= GRID_SHORT;
+                  end if;
                   mode_r  <= RND_EVEN;
                   state_r <= LOAD_ST;
                end if;
@@ -453,12 +464,21 @@ begin
                      elsif ua_v.zero = '1' and ub_v.zero = '1' then
                         res_r   <= zero_of(ua_v.s and ub_v.s);
                         state_r <= DONE_ST;
-                     elsif ua_v.zero = '1' then
+                     elsif ua_v.zero = '1' and wide_r = '0' then
                         res_r   <= ub_v.s & b_r(C_W - 2 downto 0);
                         state_r <= DONE_ST;
-                     elsif ub_v.zero = '1' then
+                     elsif ub_v.zero = '1' and wide_r = '0' then
                         res_r   <= a_r;
                         state_r <= DONE_ST;
+                     elsif ua_v.zero = '1' then
+                        -- With SHORT, the other operand, rounded as TOSHORT
+                        -- rounds it.
+                        sa_r <= ub_v.s;
+                        ea_r <= ub_v.e;
+                        ma_r <= ub_v.m;
+                        op_r <= OP_TOSHORT;
+                     elsif ub_v.zero = '1' then
+                        op_r <= OP_TOSHORT;
                      end if;
 
                   when OP_MUL | OP_MULERR =>
@@ -1077,11 +1097,27 @@ begin
                   when GRID_SHORT =>
                      if e2_v > C_SEMAX then
                         res_r <= short_of(s_r, 2 ** G_SEBITS - 1, to_unsigned(0, G_SFBITS));
+                        if wide_r = '1' then
+                           res_r <= inf_of(s_r);
+                        end if;
                         flags_r(C_FL_OVERFLOW) <= '1';
-                     elsif kept_v(C_SP - 1) = '1' then
+                     elsif wide_r = '0' and kept_v(C_SP - 1) = '1' then
                         res_r <= short_of(s_r, e2_v + C_SBIAS, kept_v);
-                     else
+                     elsif wide_r = '0' then
                         res_r <= short_of(s_r, 0, kept_v);
+                     elsif kept_v(C_SP - 1) = '1' then
+                        res_r <= pack(s_r, e2_v + C_BIAS, shift_left(kept_v, C_P - C_SP));
+                     elsif kept_v = 0 then
+                        res_r <= zero_of(s_r);
+                     else
+                        -- A subnormal of the short format, normalized again
+                        -- for the main format, which is exact.
+                        acc_v := (others => '0');
+                        acc_v(C_N - 1 downto C_N - C_SP) := kept_v(C_SP - 1 downto 0);
+                        acc_r   <= acc_v;
+                        e_r     <= to_signed(e2_v, C_EW);
+                        grid_r  <= GRID_MAIN;
+                        state_r <= NORM_ST;
                      end if;
 
                end case;

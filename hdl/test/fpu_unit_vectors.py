@@ -18,12 +18,17 @@ smallest exponents, and operands of close exponents come often.
 
 A line is
 
-    OP RND A B K RESULT FLAGS
+    OP RND SHORT A B K RESULT FLAGS
 
 OP and RND are the positions of the operation and the rounding mode in
-t_fpu_op and t_fpu_rnd of src/fpu_pkg.vhd, K the scale of OP_SCALE2, in
-decimal, A, B, and RESULT hex digits, and FLAGS the flags of the model,
-in decimal.
+t_fpu_op and t_fpu_rnd of src/fpu_pkg.vhd, SHORT 1 for a result rounded
+to the short format and given in the main one, K the scale of OP_SCALE2,
+in decimal, A, B, and RESULT hex digits, and FLAGS the flags of the model,
+in decimal. With SHORT, ADD, SUB, MUL, DIV, and SQRT round their exact
+result once, to the short format: the S bit of SYSTEM.md §11.3. The model
+rounds twice, to binary64 and then to binary32, which gives the same,
+as 53 >= 2 * 24 + 2, but at the small width two roundings can differ from
+one, so the vectors round once, as the unit does.
 
     fpu_unit_vectors.py [--wide COUNT [--seed S]] FILE"""
 
@@ -53,7 +58,7 @@ S = Format(3, 2)
 W = F.width
 SCALES: List[int] = list(range(-20, 21))
 
-Line = Tuple[str, str, int, int, int, int, int]
+Line = Tuple[str, str, int, int, int, int, int, int]
 
 
 def fmod(y: int, x: int) -> Tuple[int, int]:
@@ -66,6 +71,33 @@ def fmod(y: int, x: int) -> Tuple[int, int]:
         return y, 0
     vy, vx = F.value(y), F.value(x)
     return F.round(vy - trunc(vy / vx) * vx, zero_neg=F.is_neg(y))
+
+
+def short(op: str, a: int, b: int) -> Tuple[int, int]:
+    """op with the S bit: the exact result rounded once to S, in F. The
+    special cases are F's, whose results S holds."""
+    r, f = F.sqrt(a) if op == "SQRT" else {"ADD": F.add, "SUB": F.sub, "MUL": F.mul,
+                                            "DIV": F.div}[op](a, b)
+    if not F.is_finite(a) or (op != "SQRT" and not F.is_finite(b)):
+        return r, f
+    if (op == "DIV" and F.is_zero(b)) or (op == "SQRT" and (F.is_zero(a) or F.is_neg(a))):
+        return r, f
+    va = F.value(a)
+    vb = F.value(b) if op != "SQRT" else Fraction(0)
+    if op == "ADD":
+        q = va + vb
+    elif op == "SUB":
+        q = va - vb
+    elif op == "MUL":
+        q = va * vb
+    elif op == "DIV":
+        q = va / vb
+    else:
+        q = va
+    if q == 0:
+        return r, f
+    w, f = S.round_sqrt(q) if op == "SQRT" else S.round(q)
+    return F.convert(w, S)[0], f
 
 
 def scale2(y: int, k: int) -> Tuple[int, int]:
@@ -153,35 +185,38 @@ def vectors(wide: int, seed: int) -> Iterator[Line]:
     for a, b in pair_list:
         for op, fn in (("ADD", F.add), ("SUB", F.sub), ("MUL", F.mul), ("DIV", F.div),
                        ("FMOD", fmod)):
-            yield (op, "EVEN", a, b, 0, *fn(a, b))
+            yield (op, "EVEN", 0, a, b, 0, *fn(a, b))
+            if op != "FMOD":
+                yield (op, "EVEN", 1, a, b, 0, *short(op, a, b))
         # MULERR is defined for finite operands whose product is finite.
         if F.is_finite(a) and F.is_finite(b):
             p = F.mul(a, b)[0]
             if F.is_finite(p):
-                yield ("MULERR", "EVEN", a, b, 0, *F.fma(a, b, F.neg(p)))
+                yield ("MULERR", "EVEN", 0, a, b, 0, *F.fma(a, b, F.neg(p)))
     for a in values:
-        yield ("SQRT", "EVEN", a, 0, 0, *F.sqrt(a))
-        yield ("SQRT", "TRUNC", a, 0, 0, *F.sqrt(a, toward_zero=True))
-        yield ("TOSHORT", "EVEN", a, 0, 0, *S.convert(a, F))
+        yield ("SQRT", "EVEN", 0, a, 0, 0, *F.sqrt(a))
+        yield ("SQRT", "EVEN", 1, a, 0, 0, *short("SQRT", a, 0))
+        yield ("SQRT", "TRUNC", 0, a, 0, 0, *F.sqrt(a, toward_zero=True))
+        yield ("TOSHORT", "EVEN", 0, a, 0, 0, *S.convert(a, F))
         for rnd in RNDS:
-            yield ("INTEGRAL", rnd, a, 0, 0, *F.to_integral(a, HOW[rnd]))
+            yield ("INTEGRAL", rnd, 0, a, 0, 0, *F.to_integral(a, HOW[rnd]))
         # The model's from_int drops the overflow flag, as no 64-bit integer
         # overflows binary64. Integers of 8 bits overflow this format.
-        yield ("ITOF", "EVEN", a, 0, 0, *F.round(Fraction(signed(a, W))))
-        yield ("UTOF", "EVEN", a, 0, 0, *F.round(Fraction(a)))
-        yield ("FTOI", "EVEN", a, 0, 0, *to_int(a, W, True))
-        yield ("FTOU", "EVEN", a, 0, 0, *to_int(a, W, False))
-        yield ("FTOW", "EVEN", a, 0, 0, *to_int(a, W // 2, True))
+        yield ("ITOF", "EVEN", 0, a, 0, 0, *F.round(Fraction(signed(a, W))))
+        yield ("UTOF", "EVEN", 0, a, 0, 0, *F.round(Fraction(a)))
+        yield ("FTOI", "EVEN", 0, a, 0, 0, *to_int(a, W, True))
+        yield ("FTOU", "EVEN", 0, a, 0, 0, *to_int(a, W, False))
+        yield ("FTOW", "EVEN", 0, a, 0, 0, *to_int(a, W // 2, True))
         for k in (rand.sample(range(-2100, 2101), 4) + [-1, 0, 1] if wide else SCALES):
-            yield ("SCALE2", "EVEN", a, 0, k, *scale2(a, k))
-        yield ("GETEXP", "EVEN", a, 0, 0, *getexp(a))
-        yield ("GETMANT", "EVEN", a, 0, 0, *getmant(a))
+            yield ("SCALE2", "EVEN", 0, a, 0, k, *scale2(a, k))
+        yield ("GETEXP", "EVEN", 0, a, 0, 0, *getexp(a))
+        yield ("GETMANT", "EVEN", 0, a, 0, 0, *getmant(a))
         if F.is_finite(a) and not F.is_zero(a):
             e = floor_log2(abs(F.value(a)))
-            yield "ILOGB", "EVEN", a, 0, 0, e & F.mask, 0
+            yield "ILOGB", "EVEN", 0, a, 0, 0, e & F.mask, 0
     shorts = [rand.randrange(1 << S.width) for _ in range(wide)] if wide else range(1 << S.width)
     for w in shorts:
-        yield ("FROMSHORT", "EVEN", w, 0, 0, *F.convert(w, S))
+        yield ("FROMSHORT", "EVEN", 0, w, 0, 0, *F.convert(w, S))
 
 
 def main() -> None:
@@ -196,8 +231,8 @@ def main() -> None:
         W = F.width
     digits = (W + 3) // 4
     lines: List[str] = []
-    for op, rnd, a, b, k, r, f in vectors(args.wide, args.seed):
-        lines.append(f"{OPS.index(op)} {RNDS.index(rnd)} {a:0{digits}X} {b:0{digits}X} {k} "
+    for op, rnd, sh, a, b, k, r, f in vectors(args.wide, args.seed):
+        lines.append(f"{OPS.index(op)} {RNDS.index(rnd)} {sh} {a:0{digits}X} {b:0{digits}X} {k} "
                      f"{r:0{digits}X} {f}")
     with open(args.file, "w") as out:
         out.write("\n".join(lines) + "\n")

@@ -267,6 +267,7 @@ architecture synthesis of fpu is
    signal u_start  : std_logic := '0';
    signal u_op     : t_fpu_op;
    signal u_rnd    : t_fpu_rnd;
+   signal u_short  : std_logic;
    signal u_a      : t_word64;
    signal u_b      : t_word64;
    signal u_k      : std_logic_vector(15 downto 0);
@@ -346,6 +347,48 @@ architecture synthesis of fpu is
    begin
       return unsigned(v(62 downto 0)) = 0;
    end function f_zero;
+
+   -- Whether a binary32 value w is a binary64 value by moving its bits:
+   -- a normal value, an infinity, or a zero. A NaN and a subnormal value
+   -- go through the unit.
+   function short_direct(w : std_logic_vector(31 downto 0)) return boolean is
+   begin
+      return (w(30 downto 23) /= X"00" and w(30 downto 23) /= X"FF") or
+             unsigned(w(30 downto 0)) = 0 or
+             (w(30 downto 23) = X"FF" and unsigned(w(22 downto 0)) = 0);
+   end function short_direct;
+
+   -- That binary64 value.
+   function widen(w : std_logic_vector(31 downto 0)) return t_word64 is
+   begin
+      if unsigned(w(30 downto 0)) = 0 then
+         return w(31) & (62 downto 0 => '0');
+      elsif w(30 downto 23) = X"FF" then
+         return w(31) & "11111111111" & (51 downto 0 => '0');
+      end if;
+      return w(31) & std_logic_vector(resize(unsigned(w(30 downto 23)), 11) + 896) &
+             w(22 downto 0) & (28 downto 0 => '0');
+   end function widen;
+
+   -- Whether a binary64 value v is a binary32 value by moving its bits, the
+   -- other way.
+   function long_direct(v : t_word64) return boolean is
+   begin
+      return unsigned(v(62 downto 0)) = 0 or
+             (f_exp(v) = 2047 and unsigned(v(51 downto 0)) = 0) or
+             (f_exp(v) >= 897 and f_exp(v) <= 1150 and unsigned(v(28 downto 0)) = 0);
+   end function long_direct;
+
+   -- That binary32 value.
+   function narrow(v : t_word64) return std_logic_vector is
+   begin
+      if unsigned(v(62 downto 0)) = 0 then
+         return v(63) & (30 downto 0 => '0');
+      elsif f_exp(v) = 2047 then
+         return v(63) & X"FF" & (22 downto 0 => '0');
+      end if;
+      return v(63) & std_logic_vector(resize(f_exp(v) - 896, 8)) & v(51 downto 29);
+   end function narrow;
 
    -- Y compared with X: -1, 0, or 1, and 2 if either is a NaN. -0 = +0.
    function f_cmp(y : t_word64;
@@ -494,6 +537,7 @@ begin
             start_i  => u_start,
             op_i     => u_op,
             rnd_i    => u_rnd,
+            short_i  => u_short,
             a_i      => u_a,
             b_i      => u_b,
             k_i      => u_k,
@@ -754,6 +798,7 @@ begin
          u_start <= '1';
          u_op    <= op;
          u_rnd   <= RND_EVEN;
+         u_short <= '0';
          u_a     <= a;
          u_b     <= b;
          ret_r   <= ret;
@@ -822,7 +867,11 @@ begin
                      wdata_v := data & x_val(31 downto 0);
                   end if;
                when "010" =>
-                  ucall(OP_FROMSHORT, X"00000000" & data, C_QNAN, WPUSH_ST);
+                  if short_direct(data) then
+                     push(widen(data));
+                  else
+                     ucall(OP_FROMSHORT, X"00000000" & data, C_QNAN, WPUSH_ST);
+                  end if;
                when "011" =>
                   ucall(OP_ITOF, std_logic_vector(resize(signed(data), 64)), C_QNAN, WPUSH_ST);
                when "100" =>
@@ -853,7 +902,11 @@ begin
                when "110" => wb_data_o <= std_logic_vector(to_signed(rel_v, 32));
                when others => wb_data_o <= (others => '0');
             end case;
-            if addr = "010" or addr = "011" then
+            if addr = "010" and long_direct(x_val) then
+               wb_data_o <= narrow(x_val);
+               wb_ack_o  <= '1';
+               wait_r    <= '0';
+            elsif addr = "010" or addr = "011" then
                -- The views through the unit: STALL stays high until it ends.
                wait_r <= '1';
                if addr = "010" then
@@ -984,11 +1037,17 @@ begin
                case num_r is
                   when X"04" =>
                      finish(x_r, y_r, 2, "000");
-                  when X"10" => ucall(OP_ADD, y_r, x_r, SHORT_ST);
-                  when X"11" => ucall(OP_SUB, y_r, x_r, SHORT_ST);
-                  when X"12" => ucall(OP_MUL, y_r, x_r, SHORT_ST);
-                  when X"13" => ucall(OP_DIV, y_r, x_r, SHORT_ST);
-                  when X"14" => ucall(OP_SQRT, x_r, x_r, SHORT_ST);
+                  when X"10" | X"11" | X"12" | X"13" | X"14" =>
+                     case num_r(2 downto 0) is
+                        when "000"  => ucall(OP_ADD, y_r, x_r, SHORT_ST);
+                        when "001"  => ucall(OP_SUB, y_r, x_r, SHORT_ST);
+                        when "010"  => ucall(OP_MUL, y_r, x_r, SHORT_ST);
+                        when "011"  => ucall(OP_DIV, y_r, x_r, SHORT_ST);
+                        when others => ucall(OP_SQRT, x_r, x_r, SHORT_ST);
+                     end case;
+                     -- The S bit: the unit rounds once, to binary32.
+                     u_short <= sbit_r;
+                     sbit_r  <= '0';
                   when X"15" => finish(not x_r(63) & x_r(62 downto 0), x_r, 1, "000");
                   when X"16" => finish('0' & x_r(62 downto 0), x_r, 1, "000");
                   when X"17" | X"18" =>

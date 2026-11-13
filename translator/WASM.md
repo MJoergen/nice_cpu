@@ -136,7 +136,7 @@ Running out of NICE stack is not detected, unlike in wasm. What happens then is 
 
 Before it converts a float to an integer with `trunc`, it checks that the result fits. A NaN, or a value whose integer part does not fit, traps (code 5).
 
-The routines for `i64` and floating point are in the same library and listed in its README.
+The routines for `i64` and floating point are in the same library and listed in its README. The float instructions call the float routines. With an option, for speed on a system with the FPU of [SYSTEM.md §11](../doc/SYSTEM.md#11-floating-point-unit), the translator writes the FPU's accesses for most of them inline instead: it pushes the operands, writes the command, reads the result, and pops it, as the routine would, so that the results are the routines' and the FPU's stack is left as it was ([SYSTEM.md §11.5](../doc/SYSTEM.md#115-rules-for-programs)). The conversions of an `i64` to `f32` still call their routines, which round through a sticky bit.
 
 **Other differences from NICE.**
 

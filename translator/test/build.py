@@ -36,6 +36,8 @@ ERRORS: List[Tuple[List[str], str]] = [
     (["--asm", "missing.nasm", "a.c"], "nicebuild: missing.nasm: No such file or directory"),
     (["-o", "/nonexistent/x.bin", "a.c"], "nicebuild: /nonexistent/x.bin: No such file or directory"),
     (["--ram-bytes", "16", "a.c"], "nicebuild: --ram-bytes is for --ram only"),
+    (["--inline-fpu", "--no-fpu", "a.c"],
+     "nicebuild: --inline-fpu and --no-fpu do not go together: the inline accesses are to the FPU"),
     (["--ram", "0xFFFFF000", "--monitor", "a.c"],
      "nicebuild: --ram and --monitor do not go together: a monitor loads a program into RAM"),
     (["--ram", "0xFFFFF000", "--memory-pages", "2", "a.c"],
@@ -165,6 +167,7 @@ def test_c_options(tmp: str) -> None:
     for name, extra in (("default", []), ("big stack", ["--stack", "8192", "--memory", "131072"]),
                         ("no mpu", ["--no-mpu"]), ("no fpu", ["--no-fpu"]),
                         ("no mpu and no fpu", ["--no-mpu", "--no-fpu"]),
+                        ("inline fpu", ["--inline-fpu"]),
                         ("trusted alignment", ["--no-bounds-checks", "--trust-alignment"]),
                         ("byte windows", ["--trust-alignment", "--byte-windows"])):
         out = os.path.join(tmp, name.replace(" ", "_") + ".bin")

@@ -7,12 +7,13 @@ with runtime/start_wasm.nasm, any hand-written assembly the case needs,
 runtime/lib.nasm, and runtime/muldiv_mpu.nasm, as ABI.md describes. If
 it calls the float library, runtime/float_fpu.nasm follows, which uses
 the FPU (SYSTEM.md §11). Then it is assembled and run. Each case runs
-twice: as translated by default, with the math unit (SYSTEM.md §2) and
-the FPU, and with --no-mpu and runtime/muldiv_soft.nasm, and with
+three times: as translated by default, with the math unit (SYSTEM.md §2)
+and the FPU; with --no-mpu and runtime/muldiv_soft.nasm, and with
 runtime/float.wasm translated with --no-mpu as the library module float,
-for a system with neither. With --no-fpu, the first run takes the float
-library from float.wasm too, for a system without the FPU, such as the
-FPGA cores of hdl/ for now.
+for a system with neither; and with --inline-fpu. With --no-fpu, the
+first run takes the float library from float.wasm too, for a system
+without the FPU, such as the FPGA cores of hdl/ for now, and the third
+is left out.
 
 The program must halt with HALT and main's result in R1, and print what
 CONSOLE gives on the console, or nothing. A case in TRAPS
@@ -3562,6 +3563,10 @@ def assemble(line: str, tmp: str, labels: Dict[str, int]) -> List[int]:
         return [int(line.split()[1], 16) for line in f]
 
 
+# The suffix of the name of a kept program, by its mode of translation.
+SUFFIX = {"mpu": "", "soft": "_soft", "inline": "_inline"}
+
+
 def float_library(tmp: str, mpu: bool, fpu: bool) -> Tuple[str, Set[str]]:
     """Translates the float library, or takes float_fpu.nasm with the FPU,
     and returns its file and the labels of its routines."""
@@ -3572,15 +3577,17 @@ def float_library(tmp: str, mpu: bool, fpu: bool) -> Tuple[str, Set[str]]:
         run([sys.executable, NICEWASM, "--library", "float", *([] if mpu else ["--no-mpu"]),
              "-o", asm, os.path.join(RUNTIME, "float.wasm")])
     with open(asm) as f:
-        labels = {line.strip() for line in f if line.startswith("__")}
+        labels = {line.split()[0] for line in f if line.startswith("__")}
     return asm, labels
 
 
 def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
-          floats: Tuple[str, Set[str]], mpu: bool, keep: Optional[str]) -> List[str]:
+          floats: Tuple[str, Set[str]], mode: str, keep: Optional[str]) -> List[str]:
+    mpu = mode != "soft"
     trap = name in TRAPS
     asm = os.path.join(tmp, name + ".nasm")
     run([sys.executable, NICEWASM, *OPTIONS.get(name, []), *([] if mpu else ["--no-mpu"]),
+         *(["--inline-fpu"] if mode == "inline" else []),
          "-o", asm, wasm_file])
     hand = os.path.join(HERE, name + ".nasm")
     if os.path.exists(hand):
@@ -3608,7 +3615,7 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
     with open(binary, "w") as f:
         f.writelines(f"{a:08x} {w:08x}\n" for a, w in sorted(image.items()))
     if keep is not None:
-        shutil.copy(binary, os.path.join(keep, name + ("" if mpu else "_soft") + ".bin"))
+        shutil.copy(binary, os.path.join(keep, name + SUFFIX[mode] + ".bin"))
     output = run([NICEEMU, binary])
     # The console output comes before the line that says why it halted.
     at = output.find("Halted (")
@@ -3674,10 +3681,10 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
 
 
 def run_case(tmp: str, keep: Optional[str], index: int, name: str, wasm: Union[bytes, str], extra: str,
-             expected: int, floats: Tuple[str, Set[str]], mpu: bool) -> List[str]:
+             expected: int, floats: Tuple[str, Set[str]], mode: str) -> List[str]:
     """Runs one case in a directory of its own under tmp, so that the
     cases can go in parallel. Returns the problems, as check does."""
-    work = os.path.join(tmp, f"{'mpu' if mpu else 'soft'}{index}")
+    work = os.path.join(tmp, f"{mode}{index}")
     os.mkdir(work)
     if isinstance(wasm, bytes):
         wasm_file = os.path.join(work, FILE_NAMES.get(name, name + ".wasm"))
@@ -3686,14 +3693,15 @@ def run_case(tmp: str, keep: Optional[str], index: int, name: str, wasm: Union[b
     else:
         wasm_file = os.path.join(HERE, wasm + ".wasm")
     try:
-        return check(name, wasm_file, extra, expected, work, floats, mpu, keep)
+        return check(name, wasm_file, extra, expected, work, floats, mode, keep)
     except RuntimeError as e:
         return [str(e)]
 
 
 def main() -> None:
-    # --keep DIR copies each program to DIR/X.bin, or DIR/X_soft.bin with
-    # --no-mpu, for the tests of the FPGA core in hdl/.
+    # --keep DIR copies each program to DIR/X.bin, DIR/X_soft.bin with
+    # --no-mpu, or DIR/X_inline.bin with --inline-fpu, for the tests of the
+    # FPGA core in hdl/.
     keep = None
     args = sys.argv[1:]
     fpu = "--no-fpu" not in args
@@ -3706,16 +3714,16 @@ def main() -> None:
         sys.exit("usage: run.py [--no-fpu] [--keep DIR]")
     failed = 0
     with tempfile.TemporaryDirectory() as tmp:
-        jobs: List[Tuple[int, str, Union[bytes, str], str, int, Tuple[str, Set[str]], bool]] = []
-        for mpu in (True, False):
-            floats = float_library(tmp, mpu, fpu and mpu)
+        jobs: List[Tuple[int, str, Union[bytes, str], str, int, Tuple[str, Set[str]], str]] = []
+        for mode in ["mpu", "soft"] + (["inline"] if fpu else []):
+            floats = float_library(tmp, mode != "soft", fpu and mode != "soft")
             for index, (name, wasm, extra, expected) in enumerate(CASES):
-                jobs.append((index, name, wasm, extra, expected, floats, mpu))
+                jobs.append((index, name, wasm, extra, expected, floats, mode))
         # The cases run in parallel, and are reported in order.
         with concurrent.futures.ThreadPoolExecutor(os.cpu_count()) as pool:
             results = pool.map(lambda job: run_case(tmp, keep, *job), jobs)
-            for (_, name, _, _, _, _, mpu), problems in zip(jobs, results):
-                suffix = "" if mpu else " (--no-mpu)"
+            for (_, name, _, _, _, _, mode), problems in zip(jobs, results):
+                suffix = {"mpu": "", "soft": " (--no-mpu)", "inline": " (--inline-fpu)"}[mode]
                 if problems:
                     failed += 1
                     print(f"FAIL {name}{suffix}")

@@ -7,7 +7,8 @@ files, and the runtime library as runtime/ABI.md describes.
 
 Usage: nicewasm.py [-o output.nasm] [--no-bounds-checks] [--trust-alignment] [--byte-windows]
                    [--memory-pages N] [--ram ADDR [--ram-bytes BYTES]]
-                   [--library NAME [--library-memory BYTES]] [--no-mpu] input.wasm
+                   [--library NAME [--library-memory BYTES]] [--no-mpu] [--inline-fpu]
+                   input.wasm
 
 README.md lists the wasm features it supports. Anything else is rejected
 with an error, never translated wrongly.
@@ -200,6 +201,16 @@ for _t, _first, _suffix in [(F32, 0x5B, "sf"), (F64, 0x61, "df")]:
     for _i, (_name, _test) in enumerate([("eq", "=="), ("ne", "!="), ("lt", "<"), ("gt", ">"),
                                          ("le", "<="), ("ge", ">=")]):
         FLOAT_CMP_OPS[_first + _i] = (_t, f"__{_name}{_suffix}2", _test)
+
+# The FPU's commands (SYSTEM.md §11.3) for the float operations that
+# --inline-fpu writes inline, by the routine that FLOAT_OPS or TRUNC_OPS
+# names, and the S bit that rounds a result to binary32.
+FPU_S = 0x10000
+FPU_COMMANDS = {"add": 0x10, "sub": 0x11, "mul": 0x12, "div": 0x13, "sqrt": 0x14, "min": 0x17,
+                "max": 0x18, "floor": 0x20, "ceil": 0x21, "trunc": 0x22, "nearest": 0x23}
+# The masks of CMD n for the comparisons: bit 0 for Y < X, bit 1 for =,
+# and bit 2 for >. ne is left out: it is true for a NaN, and CMP n false.
+FPU_CMP = {"==": 2, "<": 1, ">": 4, "<=": 3, ">=": 6}
 
 # The constant instruction of each type.
 CONST_OPS = {I32: 0x41, I64: 0x42, F32: 0x43, F64: 0x44}
@@ -2920,7 +2931,8 @@ class Translator:
                  library: Optional[str] = None, library_memory: Optional[int] = None,
                  memory_pages: Optional[int] = None, mpu: bool = True,
                  trust_alignment: bool = False, ram: Optional[int] = None,
-                 ram_bytes: Optional[int] = None, windows: bool = False) -> None:
+                 ram_bytes: Optional[int] = None, windows: bool = False,
+                 inline_fpu: bool = False) -> None:
         self.m = m
         self.data = data
         self.checks = checks  # bounds checks on memory accesses
@@ -2929,6 +2941,7 @@ class Translator:
         # Access linear memory through the byte windows of SYSTEM.md §9
         self.windows = windows
         self.mpu = mpu  # use the math unit of SYSTEM §2 for i32 mul, and div and rem
+        self.inline_fpu = inline_fpu  # write the FPU's accesses of SYSTEM §11 inline
         self.library = library  # the name of a library module (WASM.md), or None
         self.prefix = f"WL.{library}." if library else "W."  # of the labels made here
         self.mem = f"WL.{library}.memory" if library else "___wasm_memory"
@@ -4428,6 +4441,81 @@ class FunctionTranslator:
             self.emit("MOVE", dest[0], f"@__mpu.{word}")
             self.emit("MOVE", dest[1], f"@__mpu.{word}+1")
 
+    def fpu_push(self, t: int, v: List[str]) -> None:
+        """Pushes the value v of type t on the FPU's stack (SYSTEM §11.2):
+        an f64 or an i64 through X_LO and X_HI, an f32 through X_S, and an
+        i32 through X_W, all exact. The labels __fpu.* are in
+        runtime/float_fpu.nasm."""
+        if t in (F64, I64):
+            self.emit("MOVE", "@__fpu.x_lo", v[0])
+            self.emit("MOVE", "@__fpu.x_hi", v[1])
+        else:
+            self.emit("MOVE", "@__fpu.x_s" if t == F32 else "@__fpu.x_w", v[0])
+
+    def fpu_op(self, routine: str, params: List[int], result: int, at: int, what: str) -> bool:
+        """The float operation of the float library's routine, as the
+        accesses of the FPU that runtime/float_fpu.nasm makes for it: the
+        operands pushed, a command, the result read, and a DROP, so that
+        the FPU's stack is as it was. Returns False, with nothing done,
+        for the conversions of an i64 to an f32, which the routines do
+        with a sticky bit, and which the caller then calls."""
+        name = routine[2:]
+        if name in ("floatdisf", "floatundisf"):
+            return False
+        values = self.pop(list(params), at, what)
+        dest = self.push(result)
+        stem = name.rstrip("23").removesuffix("sf").removesuffix("df")
+        if name in ("floatunsisf", "floatunsidf"):
+            # The bits of an unsigned word, pushed through X_LO, and UTOF.
+            self.emit("MOVE", "@__fpu.x_lo", values[0][0])
+            command: Optional[int] = 0x29
+        else:
+            for t, v in zip(params, values):
+                self.fpu_push(t, v)
+            command = None
+            conversion = name.startswith(("float", "fix", "extend")) or name == "truncdfsf2"
+            if not conversion and stem in FPU_COMMANDS:
+                command = FPU_COMMANDS[stem]
+                if result == F32 and stem in ("add", "sub", "mul", "div", "sqrt"):
+                    command |= FPU_S
+            elif name in ("floatdidf", "fixsfdi", "fixdfdi"):
+                command = 0x28 if name == "floatdidf" else 0x2A          # ITOF, FTOI
+            elif name in ("floatundidf", "fixunssfdi", "fixunsdfdi", "fixunssfsi",
+                          "fixunsdfsi"):
+                command = 0x29 if name == "floatundidf" else 0x2B        # UTOF, FTOU
+        if command is not None:
+            self.emit("MOVE", "@__fpu.cmd", str(command))
+        if name in ("fixunssfsi", "fixunsdfsi"):
+            # FTOU, saturated to a word: all ones if the high word is not 0.
+            self.emit("MOVE", dest[0], "@__fpu.x_lo")
+            self.emit("MOVE[M]", "R0", "@__fpu.x_hi")
+            self.emit("?!Z MOVE", dest[0], "0xFFFFFFFF")
+        elif result in (F64, I64):
+            self.emit("MOVE", dest[0], "@__fpu.x_lo")
+            self.emit("MOVE", dest[1], "@__fpu.x_hi")
+        else:
+            self.emit("MOVE", dest[0], "@__fpu.x_s" if result == F32 else "@__fpu.x_w")
+        self.emit("MOVE", "@__fpu.cmd", "3")                             # DROP
+        return True
+
+    def fpu_compare(self, t: int, test: str, at: int, what: str) -> None:
+        """A float comparison through the FPU, inline: CMP n, which gives
+        -1 if the relation holds and 0 if not or for a NaN, and for ne the
+        relation from REL, which reads 2 for a NaN."""
+        a, b = self.pop([t, t], at, what)
+        d = self.push(I32)[0]
+        self.fpu_push(t, a)
+        self.fpu_push(t, b)
+        if test == "!=":
+            self.emit("MOVE[M]", "R0", "@__fpu.rel")
+            self.emit("MOVE", "@__fpu.cmd", "0x0203")                    # DROP 2
+            self.emit("MOVE", d, "0")
+            self.emit("?!Z MOVE", d, "1")
+        else:
+            self.emit("MOVE", "@__fpu.cmd", str(FPU_CMP[test] << 8 | 0x1C))  # CMP n
+            self.emit("AND", d, "@__fpu.x_w", "1")
+            self.emit("MOVE", "@__fpu.cmd", "3")                         # DROP
+
     def mul_const(self, r: Reader, at: int, what: str) -> bool:
         """An i32.mul by a constant as at most MUL_STEPS shifts, additions,
         and subtractions (mul_plan), if it can be. Its result may go
@@ -5224,12 +5312,17 @@ class FunctionTranslator:
                 self.bulk("copy" if op == 0x10A else "fill", at, name)
             elif op in FLOAT_OPS:
                 routine, params, result = FLOAT_OPS[op]
-                self.call(f"_{routine}", FuncType(params, [result]), at, name)
+                if not (self.t.inline_fpu and self.fpu_op(routine, params, result, at, name)):
+                    self.call(f"_{routine}", FuncType(params, [result]), at, name)
             elif op in TRUNC_OPS or op in TRUNC_SAT_OPS:
                 if op in TRUNC_OPS:
                     self.trunc_check(*TRUNC_OPS[op][1:], at, name)
                 routine, src_t, dst_t, _, _ = TRUNC_OPS[TRUNC_SAT_OPS.get(op, op)]
-                self.call(f"_{routine}", FuncType([src_t], [dst_t]), at, name)
+                if not (self.t.inline_fpu and self.fpu_op(routine, [src_t], dst_t, at, name)):
+                    self.call(f"_{routine}", FuncType([src_t], [dst_t]), at, name)
+            elif op in FLOAT_CMP_OPS and self.t.inline_fpu:
+                t, _, test = FLOAT_CMP_OPS[op]
+                self.fpu_compare(t, test, at, name)
             elif op in FLOAT_CMP_OPS:
                 t, routine, test = FLOAT_CMP_OPS[op]
                 self.call(f"_{routine}", FuncType([t, t], [I32]), at, name)
@@ -5579,9 +5672,11 @@ def translate(data: bytes, source: str, checks: bool = True, library: Optional[s
               library_memory: Optional[int] = None,
               memory_pages: Optional[int] = None, mpu: bool = True,
               trust_alignment: bool = False, ram: Optional[int] = None,
-              ram_bytes: Optional[int] = None, windows: bool = False) -> List[str]:
+              ram_bytes: Optional[int] = None, windows: bool = False,
+              inline_fpu: bool = False) -> List[str]:
     return Translator(parse(data), data, checks, library, library_memory,
-                      memory_pages, mpu, trust_alignment, ram, ram_bytes, windows).run(source)
+                      memory_pages, mpu, trust_alignment, ram, ram_bytes, windows,
+                      inline_fpu).run(source)
 
 
 def main() -> None:
@@ -5616,6 +5711,9 @@ def main() -> None:
     ap.add_argument("--no-mpu", action="store_true",
                     help="call the runtime library for i32 mul, and for div and rem, instead of"
                          " using the math unit")
+    ap.add_argument("--inline-fpu", action="store_true",
+                    help="write the accesses of the FPU (SYSTEM.md §11) inline for the float"
+                         " operations, instead of calling the float library, for speed")
     args = ap.parse_args()
 
     out = args.output or os.path.splitext(args.input)[0] + ".nasm"
@@ -5649,7 +5747,7 @@ def main() -> None:
         lines = translate(data, os.path.basename(args.input), not args.no_bounds_checks,
                           args.library, args.library_memory, args.memory_pages,
                           not args.no_mpu, args.trust_alignment, args.ram, args.ram_bytes,
-                          args.byte_windows)
+                          args.byte_windows, args.inline_fpu)
     except WasmError as e:
         where = "" if e.offset is None else f":0x{e.offset:x}"
         print(f"{args.input}{where}: error: {e}", file=sys.stderr)

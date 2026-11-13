@@ -90,7 +90,8 @@ What you get:
 
     ./nicewasm.py [-o output.nasm] [--no-bounds-checks] [--trust-alignment] [--byte-windows]
                   [--memory-pages N] [--ram ADDR [--ram-bytes BYTES]]
-                  [--library NAME [--library-memory BYTES]] [--no-mpu] input.wasm
+                  [--library NAME [--library-memory BYTES]] [--no-mpu] [--inline-fpu]
+                  input.wasm
 
 | Option | Effect |
 |---|---|
@@ -104,6 +105,7 @@ What you get:
 | `--library NAME` | Translate a library module instead (see [Library modules](#library-modules)). |
 | `--library-memory BYTES` | With `--library`, the size of the library's memory (see Library modules). |
 | `--no-mpu` | For a system without the math unit of SYSTEM.md §2: `i32.mul`, and `div` and `rem` of both widths, then call the runtime library instead of using the math unit, and the program must be joined with `runtime/muldiv_soft.nasm`, not `muldiv_mpu.nasm`. |
+| `--inline-fpu` | For speed on a system with the FPU of SYSTEM.md §11: write the FPU's accesses inline for the float operations, as `runtime/float_fpu.nasm` makes them, instead of calling it (WASM.md, Runtime routines). The conversions of an `i64` to `f32` still call it, and the program must be joined with it, which also names the FPU's words. On `bench/float.c`, the program takes 2.6% more words, and runs 53% fewer instructions and an estimated 54% fewer cycles (bench README, The float benchmark). |
 
 Errors are printed as `file:0xOFFSET: error: message`, where OFFSET is the
 byte offset in the module, or as `file: error: message` when there is no
@@ -122,7 +124,8 @@ it compiles the sources, translates, joins, and assembles. The extension
 of the inputs picks the language: `.c`, `.zig`, or `.rs`.
 
     ./nicebuild.py [-o output.bin] [-O LEVEL] [-I DIR] [-D MACRO[=VALUE]]
-                   [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-bounds-checks]
+                   [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-fpu] [--inline-fpu]
+                   [--no-bounds-checks]
                    [--trust-alignment] [--byte-windows] [--memory-pages N] [--asm FILE]...
                    [--no-trap-report] [--monitor] [--ram ADDR [--ram-bytes BYTES]]
                    [--symbols] [--keep]
@@ -135,8 +138,8 @@ of the inputs picks the language: `.c`, `.zig`, or `.rs`.
 | `-I DIR`, `-D MACRO[=VALUE]` | For C: an include directory, and a macro. |
 | `--stack BYTES` | The stack size, 4096 by default, or 16384 for Zig in Debug or ReleaseSafe. It must be positive. |
 | `--memory BYTES` | The initial memory, 65536 by default. It must be positive. The stack is in the memory, so a larger `--stack` needs a larger `--memory` too: `--stack 131072` alone fails with wasm-ld's "initial memory too small", and `--memory 262144` fixes it. |
-| `--no-mpu`, `--no-bounds-checks`, `--trust-alignment`, `--byte-windows`, `--memory-pages N` | Passed on to `nicewasm.py` (above). With `--no-mpu`, the program is joined with `muldiv_soft.nasm`. |
-| `--no-fpu` | For a system without the FPU of SYSTEM.md §11: join the float library in software, `runtime/float.nasm`, instead of `runtime/float_fpu.nasm`. |
+| `--no-mpu`, `--inline-fpu`, `--no-bounds-checks`, `--trust-alignment`, `--byte-windows`, `--memory-pages N` | Passed on to `nicewasm.py` (above). With `--no-mpu`, the program is joined with `muldiv_soft.nasm`. |
+| `--no-fpu` | For a system without the FPU of SYSTEM.md §11: join the float library in software, `runtime/float.nasm`, instead of `runtime/float_fpu.nasm`. Not with `--inline-fpu`. |
 | `--asm FILE` | Join a NICE assembly file after the program, so that the program can call a function that the file defines, as the label `_name` of ABI.md; for C it also lets the link leave the function undefined. The option can repeat. |
 | `--no-trap-report` | Leave out the trap report, so that a trap halts silently (see below). |
 | `--monitor` | Build a program for a monitor in ROM, which loads it at `0x8000` and calls it, and to which it returns (ABI.md, "Programs under a monitor"): the start-up code is `runtime/start_wasm_trap_mon.nasm`, or `start_wasm_mon.nasm` with `--no-trap-report`, and the `.bin` file starts at `0x8000`. The monitor's own routines, if the program calls them, come as stubs in a file of the monitor's, joined with `--asm`. |
@@ -308,7 +311,8 @@ the steps that got the code here.
   the rules of ABI.md. A float value is its bits, as in memory.
 - **Floats:** every `f32` and `f64` instruction. `const`, `load`, `store`,
   and `reinterpret` move the bits, and `abs`, `neg`, and `copysign` change
-  the sign bit inline. Everything else calls the float library,
+  the sign bit inline. Everything else calls the float library, or with
+  `--inline-fpu` most of it writes the FPU's accesses inline,
   `runtime/float_fpu.nasm` or, on a system without the FPU,
   `runtime/float.nasm`, so a program that uses floats must be joined with
   one (runtime README, Joining a program). `float.nasm` is generated; `make -C runtime float.nasm` builds it. `trunc` traps with code 5 for a NaN or a
@@ -496,10 +500,10 @@ has start-up code of its own, which puts them in its RAM.
     make diff        # compare with an older translator, OLD=main, on random modules (minutes)
 
 `test/run.py` translates each test module and joins it with the runtime.
-It then assembles and runs the program. Each case runs twice: with the
-math unit and the float library of the FPU, `float_fpu.nasm`, and with
-`--no-mpu`, `muldiv_soft.nasm`, and `float.nasm`, for a system with
-neither. It checks main's result in R1,
+It then assembles and runs the program. Each case runs three times:
+with the math unit and the float library of the FPU, `float_fpu.nasm`,
+with `--no-mpu`, `muldiv_soft.nasm`, and `float.nasm`, for a system with
+neither, and with `--inline-fpu`. It checks main's result in R1,
 that R7–R13 are unchanged unless it trapped, what it printed on the
 console, and that the memory is not in the `.bin` file. A case for
 code in a ROM, translated with `--ram`, must also leave every word of
@@ -529,10 +533,11 @@ too, and its output must come through the stand-in's putc routine.
 Every `.sym` file must name every function. A language whose compiler is
 missing is skipped, and the PASS line says which; CI has Zig and clang, not Rust.
 `test/run.py --keep DIR` also leaves each
-program in `DIR/X.bin`, or `DIR/X_soft.bin` for the run with `--no-mpu`,
-for `make programs` in `hdl/`, which runs them on the FPGA core. The
-cores have no FPU yet, so `make programs` adds `--no-fpu`, with which
-both runs join `float.nasm`.
+program in `DIR/X.bin`, `DIR/X_soft.bin` for the run with `--no-mpu`, or
+`DIR/X_inline.bin` for the run with `--inline-fpu`, for `make programs`
+in `hdl/`, which runs them on the FPGA core. The cores have no FPU yet,
+so `make programs` adds `--no-fpu`, with which the first two runs join
+`float.nasm`, and the third is left out.
 `test/run.py`, `test/fuzz.py`, and `test/errors.py` run their cases in
 parallel, one per CPU, each with files of its own, and report them
 in order.

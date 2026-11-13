@@ -11,7 +11,14 @@ SYSTEM.md §11. The results must be the same, but that a NaN may be any
 NaN: float.nasm passes the payload of a NaN on, and the FPU gives the
 canonical NaN, which wasm allows. After the calls, the program reads the
 FPU's STATUS, whose depth must be 0 with float_fpu.nasm: a routine leaves
-the stack as it found it. With --keep DIR, the program with float_fpu.nasm
+the stack as it found it.
+
+It runs a third time with the float operations that nicewasm's
+--inline-fpu writes inline: a wasm module has a function for each
+routine, which does the wasm instruction that calls it, trunc_sat for a
+conversion to an integer, translated with --inline-fpu, and the program
+calls those functions instead. A comparison gives 0 or 1 there, which
+must be the test of the routine's result. With --keep DIR, the program with float_fpu.nasm
 is left in DIR/float_fpu.bin for the tests of the FPGA cores.
 """
 
@@ -30,6 +37,11 @@ RUNTIME = os.path.dirname(HERE)
 ROOT = os.path.dirname(RUNTIME)
 NICEASM = os.path.join(ROOT, "assembler", "niceasm.py")
 NICEEMU = os.environ.get("NICEEMU", os.path.join(ROOT, "emulator", "zig-out", "bin", "niceemu"))
+NICEWASM = os.path.join(ROOT, "translator", "nicewasm.py")
+sys.path.insert(0, os.path.join(ROOT, "translator"))
+sys.path.insert(0, os.path.join(ROOT, "translator", "test"))
+import nicewasm  # noqa: E402
+import wasm  # noqa: E402
 
 # The routines: label -> (the types of the operands, the type of the
 # result). f is an f32, d an f64, i a word, and l a long long.
@@ -208,24 +220,58 @@ def program(calls: List[Tuple[str, List[int]]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+# The wasm instruction of each routine, and for a comparison its test.
+WASM_TYPES = {"f": wasm.F32, "d": wasm.F64, "i": wasm.I32, "l": wasm.I64}
+OPCODES: Dict[str, bytes] = {}
+TESTS: Dict[str, str] = {}
+for _op, (_routine, _params, _result) in nicewasm.FLOAT_OPS.items():
+    OPCODES["_" + _routine] = bytes([_op])
+for _sat, _op in nicewasm.TRUNC_SAT_OPS.items():
+    OPCODES["_" + nicewasm.TRUNC_OPS[_op][0]] = b"\xfc" + wasm.u(_sat - 0x100)
+for _op, (_ctype, _routine, _test) in nicewasm.FLOAT_CMP_OPS.items():
+    OPCODES["_" + _routine] = bytes([_op])
+    TESTS["_" + _routine] = _test
+
+
+def inline_module() -> bytes:
+    """A wasm module with the function t_X for each routine ___X, which
+    does the routine's wasm instruction on its parameters."""
+    labels = sorted(ROUTINES)
+    fts = []
+    for label in labels:
+        args, result = ROUTINES[label]
+        res = "i" if label in TESTS else result
+        fts.append(([WASM_TYPES[t] for t in args], [WASM_TYPES[res]]))
+    bodies = []
+    for label in labels:
+        args, _ = ROUTINES[label]
+        body = b"".join(wasm.local_get(i) for i in range(len(args))) + OPCODES[label]
+        bodies.append((0, body))
+    return wasm.module(wasm.types(*fts), wasm.funcs(*range(len(labels))),
+                       wasm.exports(*[("t_" + label[3:], 0, i) for i, label in enumerate(labels)]),
+                       wasm.code(*bodies))
+
+
 def is_nan(t: str, v: int) -> bool:
     if t == "f":
         return (v & 0x7FFFFFFF) > 0x7F800000
     return t == "d" and (v & 0x7FFFFFFFFFFFFFFF) > 0x7FF0000000000000
 
 
-def run(tmp: str, main: str, library: str) -> Tuple[List[int], int]:
-    """Joins, assembles, and runs the program with the library, and returns
-    the results and the address of RESULTS."""
+def run(tmp: str, main: str, library: str, module: str = "") -> Tuple[List[int], int]:
+    """Joins, assembles, and runs the program with the library, and the
+    translated module if given, and returns the results and the address of
+    RESULTS."""
     src = os.path.join(tmp, "prog.nasm")
     with open(src, "w") as f:
-        for part in ["start.nasm", None, "lib.nasm", "muldiv_mpu.nasm", library]:
+        for part in ["start_wasm.nasm" if module else "start.nasm", None, "lib.nasm",
+                     "muldiv_mpu.nasm", library]:
             if part is None:
-                f.write(main)
+                f.write(main + module)
             else:
                 with open(os.path.join(RUNTIME, part)) as p:
                     f.write(p.read())
-    binary = os.path.join(tmp, library + ".bin")
+    binary = os.path.join(tmp, library + (".inline" if module else "") + ".bin")
     subprocess.run([sys.executable, NICEASM, "-o", binary, "--symbols", os.path.join(tmp, "prog.sym"), src],
                    check=True)
     with open(os.path.join(tmp, "prog.sym")) as f:
@@ -262,6 +308,14 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         soft, _ = run(tmp, main_text, "float.nasm")
         fpu, _ = run(tmp, main_text, "float_fpu.nasm")
+        mod = os.path.join(tmp, "inline.wasm")
+        with open(mod, "wb") as wf:
+            wf.write(inline_module())
+        subprocess.run([sys.executable, NICEWASM, "--inline-fpu", "-o", mod + ".nasm", mod], check=True)
+        with open(mod + ".nasm") as nf:
+            module_text = nf.read()
+        inline_text = program([("_t_" + label[3:], w) for label, w in calls])
+        inline, _ = run(tmp, inline_text, "float_fpu.nasm", module_text)
         if args.keep:
             os.makedirs(args.keep, exist_ok=True)
             shutil.copy(os.path.join(tmp, "float_fpu.nasm.bin"), os.path.join(args.keep, "float_fpu.bin"))
@@ -275,15 +329,27 @@ def main() -> None:
         if a != b and not (is_nan(result, a) and is_nan(result, b)):
             ops = ", ".join(f"0x{v:X}" for v in values)
             failures.append(f"{label}({ops}): float.nasm 0x{a:X}, float_fpu.nasm 0x{b:X}")
-    depth = fpu[-1] & 0x1F
-    if depth != 0:
-        failures.append(f"the FPU's depth after the calls is {depth}, STATUS 0x{fpu[-1]:08X}")
+        c = inline[2 * i] | (inline[2 * i + 1] << 32 if WORDS[result] == 2 and label not in TESTS else 0)
+        if label in TESTS:
+            signed = a - (1 << 32) if a >> 31 else a
+            want = int({"==": signed == 0, "!=": signed != 0, "<": signed < 0, "<=": signed <= 0,
+                        ">": signed > 0, ">=": signed >= 0}[TESTS[label]])
+            if c != want:
+                ops = ", ".join(f"0x{v:X}" for v in values)
+                failures.append(f"{label}({ops}) inline: {c}, the routine's test {want}")
+        elif a != c and not (is_nan(result, a) and is_nan(result, c)):
+            ops = ", ".join(f"0x{v:X}" for v in values)
+            failures.append(f"{label}({ops}): float.nasm 0x{a:X}, inline 0x{c:X}")
+    for status, what in ((fpu[-1], "float_fpu.nasm"), (inline[-1], "inline")):
+        if status & 0x1F != 0:
+            failures.append(f"{what}: the FPU's depth after the calls is {status & 0x1F},"
+                            f" STATUS 0x{status:08X}")
     for f in failures[:30]:
         print(f)
     if failures:
         print(f"FAIL float_fpu: {len(failures)} of {len(meta)} calls")
         sys.exit(1)
-    print(f"PASS float_fpu ({len(meta)} calls of {len(ROUTINES)} routines)")
+    print(f"PASS float_fpu ({len(meta)} calls of {len(ROUTINES)} routines, and inline)")
 
 
 if __name__ == "__main__":

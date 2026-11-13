@@ -671,8 +671,12 @@ each, and on 300 random ones: values near the integers and the limits of
 the conversions, ties of the rounding, cancellations, and long longs
 above 2⁵³ whose rounding to `f32` needs the sticky bit. It runs once with
 each library, and the results must be the same, but that any NaN equals
-any other. The FPU's depth must be 0 at the end. `float_fpu.py --seed N
---count N` runs other seeds and sizes.
+any other. It runs a third time with the code of nicewasm's
+`--inline-fpu` in place of the calls: a wasm module with a function for
+each routine, which does its wasm instruction, translated with that
+option. A comparison there gives 0 or 1, which must be the test of the
+routine's result. The FPU's depth must be 0 at the end of each run.
+`float_fpu.py --seed N --count N` runs other seeds and sizes.
 
 `make -C libc fuzz` needs clang. It runs `libc/test/fuzz_printf.py`,
 which writes a C program with 300 random `printf` and `snprintf` calls,

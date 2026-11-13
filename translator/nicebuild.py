@@ -8,8 +8,8 @@ runtime/libc, and Zig gets runtime/nice.zig as the module nice. Zig and Rust
 take one source file, the root of the program.
 
 Usage: nicebuild.py [-o output.bin] [-O LEVEL] [-I DIR] [-D MACRO[=VALUE]]
-                    [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-fpu] [--no-bounds-checks]
-                    [--trust-alignment] [--byte-windows] [--memory-pages N] [--asm FILE]...
+                    [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-fpu] [--inline-fpu]
+                    [--no-bounds-checks] [--trust-alignment] [--byte-windows] [--memory-pages N] [--asm FILE]...
                     [--no-trap-report] [--monitor] [--ram ADDR [--ram-bytes BYTES]]
                     [--symbols] [--keep]
                     input.c... | input.zig | input.rs
@@ -83,8 +83,9 @@ def language(inputs: List[str]) -> str:
 
 
 def float_labels(float_nasm: str) -> Set[str]:
-    """The routines that the float library defines for a program to call."""
-    return set(re.findall(r"^(__[A-Za-z0-9_]+)", float_nasm, re.M))
+    """The labels that the float library defines for a program to use: its
+    routines, and the names of the FPU's words, __fpu.*, for --inline-fpu."""
+    return set(re.findall(r"^(__[A-Za-z0-9_.]+)", float_nasm, re.M))
 
 
 def write_symbols(sym: str, program: str, output: str) -> None:
@@ -159,6 +160,7 @@ def main() -> None:
     ap.add_argument("--no-fpu", action="store_true",
                     help="build for a system without the floating-point unit: join the float library"
                     " in software, runtime/float.nasm, instead of runtime/float_fpu.nasm")
+    ap.add_argument("--inline-fpu", action="store_true", help="pass --inline-fpu to nicewasm")
     ap.add_argument("--no-bounds-checks", action="store_true", help="pass --no-bounds-checks to nicewasm")
     ap.add_argument("--trust-alignment", action="store_true", help="pass --trust-alignment to nicewasm")
     ap.add_argument("--byte-windows", action="store_true", help="pass --byte-windows to nicewasm")
@@ -194,6 +196,9 @@ def main() -> None:
         sys.exit("nicebuild: -I and -D are for C only")
     if args.ram_bytes is not None and args.ram is None:
         sys.exit("nicebuild: --ram-bytes is for --ram only")
+    if args.inline_fpu and args.no_fpu:
+        sys.exit("nicebuild: --inline-fpu and --no-fpu do not go together: the inline accesses"
+                 " are to the FPU")
     if args.ram is not None and args.monitor:
         sys.exit("nicebuild: --ram and --monitor do not go together: a monitor loads a"
                  " program into RAM")
@@ -231,6 +236,8 @@ def main() -> None:
             cmd.append("--no-bounds-checks")
         if args.trust_alignment:
             cmd.append("--trust-alignment")
+        if args.inline_fpu:
+            cmd.append("--inline-fpu")
         if args.byte_windows:
             cmd.append("--byte-windows")
         if args.memory_pages is not None:

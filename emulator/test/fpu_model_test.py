@@ -10,8 +10,11 @@ The model is the oracle of the FPU's tests, so this checks it four ways:
    sign of its CPU.
 3. At a small width, every pair of finite values against a rounding by
    brute force, which searches the list of all values for the nearest.
-   And the S form: that rounding twice, through the wider format, gives
-   the narrow result, which is why 53 >= 2 · 24 + 2 is enough.
+   And the S forms: every pair of values of a wider format, rounded
+   once to the narrow one, against the same search, with a count of
+   the pairs that rounding twice gets wrong. For narrow operands,
+   rounding twice through a format wide enough gives the same, which
+   is the 53 >= 2 · 24 + 2 of §11.3.
 4. In exact arithmetic: the constants against decimal, ISQRT against
    math.isqrt, SCALE10 correctly rounded for k <= 22 and within a bound
    beyond, and constants of 15 digits through FROMBCD, SCALE10, and
@@ -53,6 +56,7 @@ from fpu_model import (  # noqa: E402
     X_S,
     X_W,
     Format,
+    Short,
     floor_log2,
     pow2,
     s64,
@@ -234,6 +238,28 @@ CASES: List[Case] = [
     ("SQRT.S: √2 is 0x3FB504F3", [d(2.0)], 0, "SQRT.S", [0x3FF6A09E60000000], 0, None),
     ("MUL.S: the largest binary32 · 2 overflows", [0x47EFFFFFE0000000, d(2.0)], 0, "MUL.S", [INF], OVERFLOW, None),
     ("SUB.S of a NaN", [QN, d(1.0)], 0, "SUB.S", [N], 0, None),
+    # S rounds once. That differs from the command and then ROUND32 where
+    # the binary64 result is a tie in binary32 and the exact result is
+    # not: the tie goes to even, and the exact result to its own side.
+    # At 1 a binary64 ulp is 2^-52, so 2^-54 is lost: (1 + 2^-24) + 2^-54
+    # is 1 + 2^-24 in binary64, the tie between 1, even, and 1 + 2^-23.
+    ("ADD of (1 + 2^-24) + 2^-54 loses the 2^-54", [0x3FF0000010000000, 0x3C90000000000000], 0, "ADD", [0x3FF0000010000000], 0, None),
+    ("ROUND32 of that sum is a tie, to 1", [0x3FF0000010000000], 0, "ROUND32", [d(1.0)], 0, None),
+    ("ADD.S of them is above the tie: 1 + 2^-23", [0x3FF0000010000000, 0x3C90000000000000], 0, "ADD.S", [0x3FF0000020000000], 0, None),
+    # 1 + 3 · 2^-24 is the tie between 1 + 2^-23 and 1 + 2^-22, even.
+    ("SUB.S: (1 + 3 · 2^-24) - 2^-54 is below the tie", [0x3FF0000030000000, 0x3C90000000000000], 0, "SUB.S", [0x3FF0000020000000], 0, None),
+    # 3 · 6004799861074603 = 2^54 + 2^30 + 1, and the 1 is below half the
+    # binary64 ulp there, 4. A binary32 ulp there is 2^31, so 2^54 + 2^30
+    # is the tie between 2^54, even, and 2^54 + 2^31.
+    ("MUL.S: 2^54 + 2^30 + 1 is above the tie", [d(3.0), d(6004799861074603.0)], 0, "MUL.S", [0x4350000020000000], 0, None),
+    # With T = 2^24 + 3 and x = 2^52 + 1, T · x - 3 = 2^76 + 3 · 2^52 + 2^24
+    # is a double, y, and y / x = T - 3 / x. A binary32 ulp at T is 2, so
+    # T is the tie between 2^24 + 2 and 2^24 + 4, even.
+    ("DIV.S: (2^24 + 3) - 3 / (2^52 + 1) is below the tie", [0x44B0000030000001, 0x4330000000000001], 0, "DIV.S", [0x4170000020000000], 0, None),
+    # With T = 1 + 2^-24, T^2 = 1 + 2^-23 + 2^-48, and √(T^2 + 2^-52) is
+    # above T by less than 2^-53, since (T + 2^-53)^2 > T^2 + 2^-52. T is
+    # the tie between 1, even, and 1 + 2^-23.
+    ("SQRT.S: √((1 + 2^-24)^2 + 2^-52) is above the tie", [0x3FF0000020000011], 0, "SQRT.S", [0x3FF0000020000000], 0, None),
     # NEG, ABS, MIN, MAX.
     ("NEG keeps a NaN's payload", [QN], 0, "NEG", [QN | NZ], 0, None),
     ("NEG of a signaling NaN sets no flag", [SN], 0, "NEG", [SN | NZ], 0, None),
@@ -671,10 +697,55 @@ def exhaustive(fmt: Format) -> None:
             del want
 
 
+def single_rounding(narrow: Format, wide: Format) -> None:
+    """The S forms: an operation on two wide values, rounded once to the
+    narrow format, against the search for the nearest narrow value. It
+    counts the pairs on which rounding twice, to the wide format and then
+    to the narrow one, gives another value: there must be some, or the
+    formats would not tell the two apart."""
+    brute = BruteForce(narrow)
+    short = Short(wide, narrow)
+    finite = wide.finite_values()
+    exact: Dict[str, Callable[[Fraction, Fraction], Fraction]] = {
+        "add": lambda x, y: x + y,
+        "sub": lambda x, y: x - y,
+        "mul": lambda x, y: x * y,
+        "div": lambda x, y: x / y,
+    }
+    differ = {name: 0 for name in list(exact) + ["sqrt"]}
+
+    def check(name: str, why: str, got: Tuple[int, int], q: Fraction, plain: Tuple[int, int], want32: int) -> None:
+        want = wide.convert(want32, narrow)[0]
+        if q == 0:
+            want = plain[0]  # an exact zero has the sign that the wide format gives it
+        over = OVERFLOW if narrow.is_inf(want32) else 0
+        if got != (want, over):
+            fail(f"S {name} from ({wide.ebits}, {wide.fbits}): {why} gives {got[0]:X} {got[1]:X}, brute force {want:X}")
+        r2, f2 = narrow.convert(plain[0], wide)
+        if (wide.convert(r2, narrow)[0], plain[1] | f2) != got:
+            differ[name] += 1
+
+    for a in finite:
+        va = wide.value(a)
+        for b in finite:
+            vb = wide.value(b)
+            for name in exact:
+                if name == "div" and vb == 0:
+                    continue
+                q = exact[name](va, vb)
+                check(name, f"{a:X} {b:X}", getattr(short, name)(a, b), q, getattr(wide, name)(a, b), brute.nearest(q))
+        if va > 0:
+            check("sqrt", f"{a:X}", short.sqrt(a), va, wide.sqrt(a), brute.sqrt(va))
+    for name, count in differ.items():
+        if count == 0:
+            fail(f"S {name} from ({wide.ebits}, {wide.fbits}): rounding twice gives the same on every pair")
+
+
 def double_rounding(narrow: Format, wide: Format) -> None:
-    """The S forms: an operation on two narrow values in the wide format,
-    with p_wide >= 2 · p_narrow + 2, and then rounded to the narrow
-    format, gives the narrow result, with the same flags."""
+    """The S forms on narrow operands: an operation on two narrow values
+    in the wide format, with p_wide >= 2 · p_narrow + 2, and then rounded
+    to the narrow format, gives the narrow result, with the same flags.
+    So there the command and then ROUND32 give what S gives."""
     finite = narrow.finite_values()
     w = {a: wide.convert(a, narrow)[0] for a in finite}
     for a in finite:
@@ -802,8 +873,9 @@ def main() -> None:
     against_host()
     print("the host's doubles")
     exhaustive(Format(4, 3))
+    single_rounding(Format(3, 2), Format(4, 3))
     double_rounding(Format(4, 3), Format(6, 9))
-    print("exhaustive at (4, 3), and through (6, 9)")
+    print("exhaustive at (4, 3), from (4, 3) to (3, 2), and through (6, 9)")
     rnd = random.Random(1612)
     constants()
     isqrt_check(rnd)

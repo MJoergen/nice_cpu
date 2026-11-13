@@ -9,9 +9,9 @@
 ; The FPU computes in binary64. An f32 operand is pushed through X_S,
 ; which is exact, and the result read through X_S, which rounds it to
 ; binary32. For +, -, *, /, and the square root, the command's S bit
-; rounds the result to binary32 on the stack: the result is then wasm's,
-; as 53 >= 2 * 24 + 2. Every NaN that the FPU computes is the canonical
-; NaN, 0x7FF80000_00000000, and 0x7FC00000 through X_S.
+; rounds the exact result once, to binary32, on the stack: the result is
+; then wasm's. Every NaN that the FPU computes is the canonical NaN,
+; 0x7FF80000_00000000, and 0x7FC00000 through X_S.
 
 __fpu.x_lo      .EQU    0xFFFFFF88
 __fpu.x_hi      .EQU    0xFFFFFF89

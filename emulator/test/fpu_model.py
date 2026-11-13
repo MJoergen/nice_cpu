@@ -293,8 +293,26 @@ class Format:
         return i, 0
 
 
+class Short(Format):
+    """The format main with every result rounded once to the format
+    short, and given in main, which holds it exactly: the S bit of
+    §11.3. Each operation of Format rounds its exact result with
+    round(), so the operations here are those of main, with the
+    operands, the special values, and the flags of main."""
+
+    def __init__(self, main: Format, short: Format) -> None:
+        super().__init__(main.ebits, main.fbits)
+        self.main = main
+        self.short = short
+
+    def round(self, x: Fraction, zero_neg: bool = False, toward_zero: bool = False) -> Result:
+        r, f = self.short.round(x, zero_neg, toward_zero)
+        return self.main.convert(r, self.short)[0], f
+
+
 F64 = Format(11, 52)
 F32 = Format(8, 23)
+F64S = Short(F64, F32)
 
 CANONICAL_NAN = F64.qnan  # 0x7FF80000_00000000
 NAN32 = F32.qnan  # 0x7FC00000
@@ -423,10 +441,10 @@ def digits(a: int, n: int) -> Tuple[int, int]:
 
 
 class Command:
-    """A command of §11.3: its number, the bits of n it uses, whether S
-    applies, the values it pops, and what it computes from them, deeper
-    first, with n. It returns the values to push, in the order pushed,
-    and the flags."""
+    """A command of §11.3: its number, the bits of n it uses, the values
+    it pops, and what it computes from them, deeper first, with n. It
+    returns the values to push, in the order pushed, and the flags. short
+    is what it computes with S, for the commands that S applies to."""
 
     def __init__(
         self,
@@ -434,13 +452,14 @@ class Command:
         pops: int,
         run: Callable[[List[int], int], Tuple[List[int], int]],
         nmask: int = 0,
-        s: bool = False,
+        short: Optional[Callable[[List[int], int], Tuple[List[int], int]]] = None,
     ) -> None:
         self.name = name
         self.pops = pops
         self.run = run
         self.nmask = nmask
-        self.s = s
+        self.short = short
+        self.s = short is not None
 
 
 def one(op: Callable[[int], Result]) -> Callable[[List[int], int], Tuple[List[int], int]]:
@@ -676,11 +695,11 @@ COMMANDS: Dict[int, Command] = {
     0x04: Command("SWAP", 2, swap),
     0x05: Command("OVER", 0, keep),  # by FPU.command, a copy
     0x06: Command("PICK", 0, keep, nmask=0xFF),  # by FPU.command, a copy
-    0x10: Command("ADD", 2, two(F64.add), s=True),
-    0x11: Command("SUB", 2, two(F64.sub), s=True),
-    0x12: Command("MUL", 2, two(F64.mul), s=True),
-    0x13: Command("DIV", 2, two(F64.div), s=True),
-    0x14: Command("SQRT", 1, one(F64.sqrt), s=True),
+    0x10: Command("ADD", 2, two(F64.add), short=two(F64S.add)),
+    0x11: Command("SUB", 2, two(F64.sub), short=two(F64S.sub)),
+    0x12: Command("MUL", 2, two(F64.mul), short=two(F64S.mul)),
+    0x13: Command("DIV", 2, two(F64.div), short=two(F64S.div)),
+    0x14: Command("SQRT", 1, one(F64.sqrt), short=one(F64S.sqrt)),
     0x15: Command("NEG", 1, one(lambda a: (F64.neg(a), 0))),
     0x16: Command("ABS", 1, one(lambda a: (F64.abs(a), 0))),
     0x17: Command("MIN", 2, two(lambda y, x: min_max(y, x, False))),
@@ -834,10 +853,8 @@ class FPU:
         if c.name in ("DUP", "OVER", "PICK"):
             self.push(self.copy({"DUP": 0, "OVER": 1}.get(c.name, n)))
             return
-        results, f = c.run(self.pop(c.pops), n)
-        if s:
-            r, f2 = round32(results[0])
-            results, f = [r], f | f2
+        run = c.short if s and c.short is not None else c.run
+        results, f = run(self.pop(c.pops), n)
         self.flags |= f
         for r in results:
             self.push(r)

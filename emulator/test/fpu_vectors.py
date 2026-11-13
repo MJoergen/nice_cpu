@@ -152,9 +152,18 @@ def rounding_case(fmt: Format, q: Fraction, r: int) -> str:
     return "down" if r == lo else "up"
 
 
-def sqrt_case(q: Fraction, r: int) -> str:
-    v = F64.value(r) ** 2
-    return "exact" if v == q else "down" if v < q else "up"
+def sqrt_case(fmt: Format, q: Fraction, r: int) -> str:
+    """How a finite r is √q rounded in fmt, for q > 0: a tie where √q is
+    the midpoint of r and the value on the other side of it."""
+    v = fmt.value(r)
+    if v * v == q:
+        return "exact"
+    low = v * v < q
+    other = r + 1 if low else r - 1
+    mid = (v + (pow2(fmt.emax + 1) if fmt.is_inf(other) else fmt.value(other))) / 2
+    if mid * mid == q:
+        return "tie"
+    return "down" if low else "up"
 
 
 def decode(word: int) -> Tuple[Optional[str], int, int, Optional[str]]:
@@ -227,11 +236,13 @@ class Coverage:
     def rounding(self, name: str, s: int, ops: List[int], r: int) -> Optional[str]:
         if not all(F64.is_finite(a) for a in ops) and name not in ("ITOF", "UTOF", "FROMBCD"):
             return None
+        # With S the exact result is rounded once, to binary32, and r
+        # holds that value.
+        fmt = F32 if s else F64
         if s:
-            r64 = COMMANDS[NUMBERS[name]].run(ops, 0)[0][0]
-            if not F64.is_finite(r64) or not F32.is_finite(F32.convert(r64, F64)[0]):
+            r = F32.convert(r, F64)[0]
+            if not F32.is_finite(r):
                 return None
-            return rounding_case(F32, F64.value(r64), F32.convert(r, F64)[0])
         if name in ("ADD", "SUB", "MUL", "DIV"):
             y, x = F64.value(ops[0]), F64.value(ops[1])
             if name == "DIV" and x == 0:
@@ -239,7 +250,7 @@ class Coverage:
             q = {"ADD": y + x, "SUB": y - x, "MUL": y * x, "DIV": y / x if x else Fraction(0)}[name]
         elif name == "SQRT":
             q = F64.value(ops[0])
-            return sqrt_case(q, r) if q > 0 else None
+            return sqrt_case(fmt, q, r) if q > 0 else None
         elif name == "ROUND32":
             return rounding_case(F32, F64.value(ops[0]), F32.convert(r, F64)[0])
         elif name == "ITOF":
@@ -259,7 +270,7 @@ class Coverage:
             return None
         if q == 0:
             return None
-        return rounding_case(F64, q, r)
+        return rounding_case(fmt, q, r)
 
     def required(self) -> List[Tuple[str, ...]]:
         """The bins that can occur, and so must not be empty."""

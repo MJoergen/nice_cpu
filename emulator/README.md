@@ -367,7 +367,11 @@ instruction counter stays.
 The floating-point unit of SYSTEM.md §11, in `src/fpu.zig`, holds the
 stack of 16 doubles, its depth, and the four flags. It computes with the
 host's doubles, which round to nearest, even on a tie, as §11.1 asks,
-and computes the flags itself, so the host's own flags do not matter. It
+and computes the flags itself, so the host's own flags do not matter.
+With the S bit it rounds the exact result once, to binary32: where the
+host's double is not exact, it first moves it to the neighbor with an
+odd last bit on the side of the exact result, which rounds to binary32
+as the exact result does. It
 writes the canonical NaN for every NaN that it computes. A command runs
 when `CMD` is written, at once, so a read never waits. A read of a word
 changes nothing, so `--dump` and the debug link show the unit as it is,
@@ -724,11 +728,11 @@ are parameters. `make test` runs `test/fpu_model_test.py`, which checks
 the model four ways: a table of hand-checked accesses, each with its
 reason; the model at binary64 against the host's doubles, on special
 and random operands; every pair of values of a format of 8 bits against
-a rounding by brute force, and the rounding twice of the S forms through
-a wider format; and in exact arithmetic, the constants against
-`decimal`, `ISQRT` against `math.isqrt`, `SCALE10`, and constants of 15
-digits through `FROMBCD`, `SCALE10`, and `DIGITS 15`, which must come
-back.
+a rounding by brute force, and the S forms, which round once, on every
+pair of such values against a format of 6 bits; and in exact
+arithmetic, the constants against `decimal`, `ISQRT` against
+`math.isqrt`, `SCALE10`, and constants of 15 digits through `FROMBCD`,
+`SCALE10`, and `DIGITS 15`, which must come back.
 
 `test/fpu_vectors.py` writes the FPU's test vectors from the model, one
 line for each access: the state before it, the access, and the state

@@ -117,6 +117,72 @@ fn round32(a: u64) Result {
     return .{ .v = bits(r), .flags = if (std.math.isInf(s) and isFinite(a)) overflow else 0 };
 }
 
+/// r, the exact result of an operation rounded to binary64, moved so
+/// that rounding it to binary32 rounds the exact result once: the S bit.
+/// `more` has the sign of the exact result less r.
+///
+/// Rounding r itself would round twice, which gives another value where
+/// r lies halfway between two binary32 values and the exact result does
+/// not. So an r that is not exact, and whose last bit is 0, becomes its
+/// neighbor on the side of the exact result, whose last bit is 1. That is
+/// the exact result rounded to odd. Such a value has 53 significant bits,
+/// so it is neither a binary32 value nor halfway between two, and no such
+/// value lies between it and the exact result: both round to the same
+/// binary32 value. A subnormal r stays: it is far below the smallest
+/// binary32 value, and rounds to zero as the exact result does.
+fn toOdd(r: u64, more: f128) u64 {
+    const exp = r >> 52 & 0x7FF;
+    if (more == 0 or exp == 0 or exp == 0x7FF or r & 1 != 0) return r;
+    // The neighbor away from zero is the next bit pattern.
+    return if ((more < 0) == isNeg(r)) r + 1 else r - 1;
+}
+
+/// The sign of the exact result of ADD, SUB, MUL, or DIV less r, its
+/// value rounded to binary64. The operands are finite, and r is finite
+/// and below 2^128, so that no step overflows.
+fn excess(num: u8, y: f64, x: f64, r: f64) f128 {
+    switch (num) {
+        0x10, 0x11 => {
+            // Knuth's TwoSum: the error of a sum is a binary64 value,
+            // and these steps compute it.
+            const b = if (num == 0x10) x else -x;
+            const bb = r - y;
+            return (y - (r - bb)) + (b - bb);
+        },
+        // A product of two binary64 values is exact in binary128.
+        0x12 => return @as(f128, y) * @as(f128, x) - @as(f128, r),
+        else => {
+            // The quotient is above r where y - r · x has the sign of x.
+            const d = @as(f128, y) - @as(f128, r) * @as(f128, x);
+            return if (x < 0) -d else d;
+        },
+    }
+}
+
+/// ADD, SUB, MUL, and DIV with the S bit: the exact result rounded once,
+/// to binary32.
+fn arith32(num: u8, y: u64, x: u64) Result {
+    const r = arith(num, y, x);
+    var v = r.v;
+    if (isFinite(y) and isFinite(x) and isFinite(v) and @abs(f(v)) < 0x1p128) {
+        v = toOdd(v, excess(num, f(y), f(x), f(v)));
+    }
+    const q = round32(v);
+    return .{ .v = q.v, .flags = r.flags | q.flags };
+}
+
+/// SQRT with the S bit. √X is above r where X is above r².
+fn sqrt32(a: u64) Result {
+    const r = sqrt(a);
+    var v = r.v;
+    if (isFinite(a) and isFinite(v) and !isZero(v)) {
+        const s: f128 = f(v);
+        v = toOdd(v, @as(f128, f(a)) - s * s);
+    }
+    const q = round32(v);
+    return .{ .v = q.v, .flags = r.flags | q.flags };
+}
+
 /// ISQRT: √X rounded toward zero, and then TRUNC. The square root to
 /// nearest is one too high where its square exceeds X, and then the
 /// value below it is the one toward zero.
@@ -614,7 +680,7 @@ pub const Fpu = struct {
                 const xv = self.pop();
                 const yv = self.pop();
                 r = switch (num) {
-                    0x10...0x13 => arith(num, yv, xv),
+                    0x10...0x13 => if (s) arith32(num, yv, xv) else arith(num, yv, xv),
                     0x17, 0x18 => minMax(yv, xv, num == 0x18),
                     0x1C => cmpN(yv, xv, n),
                     0x1D => fmod(yv, xv),
@@ -625,7 +691,7 @@ pub const Fpu = struct {
             else => {
                 const a = self.pop();
                 r = switch (num) {
-                    0x14 => sqrt(a),
+                    0x14 => if (s) sqrt32(a) else sqrt(a),
                     0x15 => .{ .v = a ^ sign_bit },
                     0x16 => .{ .v = a & ~sign_bit },
                     0x19 => round32(a),
@@ -642,10 +708,6 @@ pub const Fpu = struct {
                     else => notOp(a),
                 };
             },
-        }
-        if (s) {
-            const q = round32(r.v);
-            r = .{ .v = q.v, .flags = r.flags | q.flags };
         }
         self.flags |= r.flags;
         self.push(r.v);

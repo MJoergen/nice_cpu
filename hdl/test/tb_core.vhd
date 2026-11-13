@@ -16,6 +16,7 @@
 -- 0xFFFFFF46-0xFFFFFF49, the clock of the time of day, src/tod.vhd
 -- (SYSTEM.md §10), 0xFFFFFF60-0xFFFFFF7F
 -- to the fetch statistics, src/fetch_stats.vhd (MICROARCH.md §8.1),
+-- 0xFFFFFF88-0xFFFFFF8F to the FPU, src/fpu.vhd (SYSTEM.md §11),
 -- 0xFFFFFFA0-0xFFFFFFAF to the SD card controller, src/sd_regs.vhd
 -- (SYSTEM.md §5), 0xFFFFFFB0-0xFFFFFFBF to the network station,
 -- src/net_regs.vhd (SYSTEM.md §6), 0xFFFFFFC0-0xFFFFFFCF to the port for
@@ -49,6 +50,9 @@
 -- pipelined core reports the events they count; with the multi-cycle core
 -- every cycle counts as OTHER. With G_FETCH_STATS false, their 32 words at
 -- 0xFFFFFF60 read 0 and ignore writes, as in the emulator (SYSTEM.md §3).
+--
+-- With G_FPU false, the FPU's eight words are memory, as with the
+-- emulator's --no-fpu.
 --
 -- With G_CYCLE_COUNTER false, CYCLE_LO and CYCLE_HI at 0xFFFFFF40 and
 -- 0xFFFFFF41, TIME_LO and TIME_HI at 0xFFFFFF44 and 0xFFFFFF45, and the
@@ -203,6 +207,7 @@ entity tb_core is
       G_INTR_DELAY    : natural  := 0;
       G_CYCLE_COUNTER : boolean  := true;
       G_FETCH_STATS   : boolean  := true;
+      G_FPU           : boolean  := true;
       -- The memory's stall rate in percent, and its seed (sim/wb_mem.vhd).
       G_STALL         : natural  := 0;
       G_SEED          : positive := 1;
@@ -223,8 +228,9 @@ end entity tb_core;
 
 architecture simulation of tb_core is
 
-   -- A step takes far fewer cycles than this.
-   constant C_STEP_TIMEOUT : natural := 1000;
+   -- A step takes far fewer cycles than this, even one that waits for the
+   -- FPU, whose longest command, DIGITS, takes some 3300 cycles.
+   constant C_STEP_TIMEOUT : natural := 10000;
 
    type t_request is record
       step   : natural;
@@ -450,7 +456,8 @@ architecture simulation of tb_core is
    constant C_ETH    : natural := 7;
    constant C_TOD    : natural := 8;
    constant C_CONIRQ : natural := 9;
-   constant C_SLAVES : natural := 10;
+   constant C_FPU    : natural := 10;
+   constant C_SLAVES : natural := 11;
 
    signal dbus_sel    : natural range 0 to C_SLAVES - 1;
    signal slave_stb   : std_logic_vector(C_SLAVES - 1 downto 0);
@@ -693,6 +700,7 @@ begin
                C_ETH when dbus_addr(31 downto 4) = X"FFFFFFC" else
                C_STATS when dbus_addr(31 downto 5) = X"FFFFFF" & "011" else
                C_CONIRQ when dbus_addr = X"FFFFFF02" else
+               C_FPU when G_FPU and dbus_addr(31 downto 3) = X"FFFFFF8" & '1' else
                C_MEM;
 
 
@@ -842,6 +850,21 @@ begin
          wb_data_i  => dbus_data_out,
          wb_data_o  => slave_data(32 * C_MPU + 31 downto 32 * C_MPU)
       ); -- i_mpu
+
+
+   i_fpu : entity work.fpu
+      port map (
+         clk_i      => clk,
+         rst_i      => rst,
+         wb_cyc_i   => dbus_cyc,
+         wb_stb_i   => slave_stb(C_FPU),
+         wb_stall_o => slave_stall(C_FPU),
+         wb_ack_o   => slave_ack(C_FPU),
+         wb_we_i    => dbus_we,
+         wb_addr_i  => dbus_addr(2 downto 0),
+         wb_data_i  => dbus_data_out,
+         wb_data_o  => slave_data(32 * C_FPU + 31 downto 32 * C_FPU)
+      ); -- i_fpu
 
 
    i_perf : entity work.perf

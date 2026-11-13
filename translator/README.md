@@ -535,9 +535,7 @@ missing is skipped, and the PASS line says which; CI has Zig and clang, not Rust
 `test/run.py --keep DIR` also leaves each
 program in `DIR/X.bin`, `DIR/X_soft.bin` for the run with `--no-mpu`, or
 `DIR/X_inline.bin` for the run with `--inline-fpu`, for `make programs`
-in `hdl/`, which runs them on the FPGA core. The cores have no FPU yet,
-so `make programs` adds `--no-fpu`, with which the first two runs join
-`float.nasm`, and the third is left out.
+in `hdl/`, which runs them on the FPGA core, with the FPU.
 `test/run.py`, `test/fuzz.py`, and `test/errors.py` run their cases in
 parallel, one per CPU, each with files of its own, and report them
 in order.

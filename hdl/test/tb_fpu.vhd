@@ -13,6 +13,7 @@
 -- of CMD is acknowledged in the next cycle, and a read of X waits for the
 -- result.
 -- It reports the first 20 lines that differ, then how many differ, and
+-- the most cycles from an accepted request to its ACK, with its line, and
 -- stops with status 0 if none do, and 1 if any do.
 
 library ieee;
@@ -84,12 +85,15 @@ begin
       variable rd_v    : std_logic_vector(31 downto 0);
       variable lo_v    : std_logic_vector(31 downto 0);
       variable t_v     : time;
+      variable most_v  : natural := 0;
+      variable mline_v : natural := 0;
 
       -- One access: the request until it is accepted, then the ack.
       procedure bus_access(w : std_logic;
                        a : natural;
                        d : std_logic_vector(31 downto 0);
                        r : out std_logic_vector(31 downto 0)) is
+         variable n_v : natural;
       begin
          cyc   <= '1';
          stb   <= '1';
@@ -97,13 +101,20 @@ begin
          addr  <= std_logic_vector(to_unsigned(a, 3));
          wdata <= d;
          wait until rising_edge(clk);
+         n_v := 0;
          while stall = '1' loop
             wait until rising_edge(clk);
+            n_v := n_v + 1;
          end loop;
          stb <= '0';
          while ack /= '1' loop
             wait until rising_edge(clk);
+            n_v := n_v + 1;
          end loop;
+         if n_v > most_v then
+            most_v  := n_v;
+            mline_v := lines_v;
+         end if;
          r   := rdata;
          cyc <= '0';
       end procedure bus_access;
@@ -224,7 +235,8 @@ begin
       end if;
 
       report "tb_fpu: " & integer'image(lines_v) & " lines, " & integer'image(fails_v) &
-             " differ"
+             " differ, at most " & integer'image(most_v) & " cycles to an ACK, line " &
+             integer'image(mline_v)
          severity note;
       running <= false;
       if fails_v = 0 then

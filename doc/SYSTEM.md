@@ -609,7 +609,7 @@ To read the time into R3:R2 seconds and R1 microseconds:
 
 ## 11. Floating-point unit
 
-The emulator maps a floating-point unit, the FPU, at `0xFFFFFF88`–`0xFFFFFF8F`, and `--no-fpu` makes its words ordinary memory. The runtime's float library uses it, in `runtime/float_fpu.nasm`. The FPGA implementation does not have it yet: the VHDL is to follow this section. It holds a stack of up to 16 IEEE 754 binary64 values. A program pushes values, writes a command, and reads the result from the top of the stack. This section is phase 1: the stack, the arithmetic, the conversions, and the decimal commands. The functions, such as `SIN` and `LN`, are phase 2, and their command numbers are reserved (§11.3).
+The emulator maps a floating-point unit, the FPU, at `0xFFFFFF88`–`0xFFFFFF8F`, and `--no-fpu` makes its words ordinary memory. The runtime's float library uses it, in `runtime/float_fpu.nasm`. The FPGA implementation has it too, in `hdl/src/fpu.vhd`. It holds a stack of up to 16 IEEE 754 binary64 values. A program pushes values, writes a command, and reads the result from the top of the stack. This section is phase 1: the stack, the arithmetic, the conversions, and the decimal commands. The functions, such as `SIN` and `LN`, are phase 2, and their command numbers are reserved (§11.3).
 
 X is the value on the top of the stack, Y the value below it, and the depth the number of values, 0 to 16. A 64-bit value takes two words, low word first, as in [ABI.md](../runtime/ABI.md) and the math unit (§2).
 

@@ -104,7 +104,7 @@ define check
 endef
 
 # The float library: float_fpu.nasm, or float.nasm with NO_FPU=1, for a
-# system without the FPU, such as the FPGA cores of hdl/ for now.
+# system without the FPU.
 FLOAT_LIB = $(if $(NO_FPU),float.nasm,float_fpu.nasm)
 
 test: emulator

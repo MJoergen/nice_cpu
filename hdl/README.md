@@ -1096,6 +1096,9 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   not list data reads, but `reads` counts them with the read counter, so
   its registers show whether the core made each read exactly once and in
   order (ISA.md §8.2). `mpu`, `mpu64`, and `mpubits` read every word of the math unit.
+  `fpu`, `fpustack`, and `fpudec` use the FPU: the views, a few commands
+  of each group, the stack and its faults, and the decimal commands.
+  `fpu` reads the time, so its counters are memory in both, as for `wait`.
   `perf` reads the instruction counter, with an NMI and an `INT`, and
   checks the cycle counter only through flags, because the emulator counts
   steps, not cycles. `timer` runs the timer, which counts steps here: its
@@ -1202,7 +1205,7 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   as the one for VBASE = 0, and says how many steps it left out: about
   280 of 7444 for NMI, and 75 for IRQ. `make sweep` sweeps the two with
   one request per run instead.
-- `cputest`, `reads`, `mpu`, `mpu64`, `mpubits`, `perf`, `events`, `timer`, and `sd` again, on a memory that
+- `cputest`, `reads`, `mpu`, `mpu64`, `mpubits`, `fpu`, `perf`, `events`, `timer`, and `sd` again, on a memory that
   stalls in 30% of the cycles, and `sd` with pauses held for a random time.
   `sd` runs with an image in slot 0 that `make test` makes in the run's
   directory, and the emulator with a copy of it, which it writes.
@@ -1234,9 +1237,10 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   `--no-cycle-counter`. The emulator's font RAM and character ROM, at
   `0xFFFE0000`–`0xFFFE3FFF` (SYSTEM.md §1.8), are not in the core's
   memory model, so the emulator makes them ordinary memory with
-  `--no-font`, and so it does the floating-point unit's eight words,
-  `0xFFFFFF88`–`0xFFFFFF8F` (SYSTEM.md §11), which the cores do not
-  have yet, with `--no-fpu`. The generic `G_FETCH_STATS` false makes the
+  `--no-font`. The floating-point unit's eight words,
+  `0xFFFFFF88`–`0xFFFFFF8F` (SYSTEM.md §11), are memory on both sides,
+  with the generic `G_FPU` false and `--no-fpu`, which leaves the FPU to
+  its own tests. The generic `G_FETCH_STATS` false makes the
   fetch statistics read 0 and ignore writes, as in the emulator. The
   instruction counter and the math unit stay, because both sides agree
   on them.
@@ -1262,9 +1266,8 @@ top-level `make slow` leaves `make programs` out ([RELEASE.md](../release/RELEAS
 need clang, or the benchmark, which `make core` in `bench/` runs. `make test KEEP=DIR`
 in `runtime/` and `test/run.py --keep DIR` and `test/fuzz.py --keep DIR` in `translator/` run their
 tests and leave the programs in `build/programs`, with the console input
-of those that read one. The cores have no FPU yet (SYSTEM.md §11), so
-the programs that use floats join the float library in software,
-`float.nasm`, with `NO_FPU=1` in `runtime/` and `--no-fpu` for `run.py`. Then `test/programs.py` runs each on the core and
+of those that read one. The programs that use floats use the FPU,
+`src/fpu.vhd`, as on the emulator. Then `test/programs.py` runs each on the core and
 on the emulator and compares them, as `make test` does, with the console
 input on both sides. The runtime's clock reads the cycle counter, so these
 runs make its two words memory, as the random programs do.
@@ -1304,7 +1307,8 @@ the names of the I/O words it knows:
 
 **The generics of `tb_core`.** The generic `G_CYCLE_COUNTER` set to false sends the
 two words of the cycle counter to the memory model instead of `perf`, as
-`--no-cycle-counter` does in the emulator. The generic `G_INTERRUPTS` takes the emulator's options,
+`--no-cycle-counter` does in the emulator. The generic `G_FPU` set to false sends the
+FPU's eight words to the memory model, as `--no-fpu` does. The generic `G_INTERRUPTS` takes the emulator's options,
 for example `--nmi 2:1 --irq 2:2`. A request for step S is raised once S
 steps have retired, as the emulator raises it before step S. A second request
 of the same kind merges with one still pending and leaves its vector, as the emulator

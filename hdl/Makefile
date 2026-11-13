@@ -162,10 +162,13 @@ $(LINK_RUNS): run/link/%: $(BUILD)/linkecho.bin
 # and runs again on a stalling memory, with random and held pauses, and
 # one step at a time, so that pauses and steps fall in the waits. Its
 # cycle and time counts are memory in both, as they count differently.
+# fpu, fpustack, and fpudec use the FPU, src/fpu.vhd, and fpu runs again
+# on a stalling memory. fpu reads the time, which is memory in both.
 EXAMPLES = count replicate print wrap
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest \
   console screen iofetch reads reserved mpu mpu64 mpubits perf events timer input \
-  r15modes r0dest r14mem skipconst carryin shiftc wrapmem smcown sd net eth bytewin wait conirq
+  r15modes r0dest r14mem skipconst carryin shiftc wrapmem smcown sd net eth bytewin wait conirq \
+  fpu fpustack fpudec
 INTR_irq   = --nmi 2:1 --irq 2:2 --nmi 9:1 --irq 17:2 --nmi 17:1 --irq 100:2
 INTR_merge = --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
 INTR_after = --nmi 3:1 --nmi 10:1
@@ -201,6 +204,8 @@ TIMER_wait_hold   = yes
 TIMER_wait_step   = yes
 # The runs that read the cycle counter or the time: memory in both.
 NOCYCLES_wait       = yes
+NOCYCLES_fpu        = yes
+NOCYCLES_fpu_stall  = yes
 NOCYCLES_wait_stall = yes
 NOCYCLES_wait_pause = yes
 NOCYCLES_wait_hold  = yes
@@ -429,8 +434,9 @@ endef
 # percent of the cycles, and compared in the same way. A random program
 # may read any address, so the cycle counter, which the core and the
 # emulator count differently, is memory in both: G_CYCLE_COUNTER=false and
-# --no-cycle-counter. The emulator's fonts and FPU, which the cores do
-# not have, are memory too: --no-font and --no-fpu. The fetch statistics read 0 and
+# --no-cycle-counter. The emulator's fonts, which the cores do not have,
+# are memory too: --no-font. So is the FPU, in both, which leaves it to its
+# own tests: G_FPU=false and --no-fpu. The fetch statistics read 0 and
 # ignore writes in both: G_FETCH_STATS=false. random_prog.py writes the
 # program, and prints the requests, which go in random_N.opts. The seeds
 # of PAUSE_SEEDS run again with random pauses, as random_pause_N, and with
@@ -450,7 +456,7 @@ define check_random
 	@o=$$(cat $(BUILD)/random_$(1).opts); \
 	  ($(in_rundir) && $(call sim_run,tb_core,-gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(BUILD)/random_$(1).bin) \
 	  -gG_TRACE_FILE=core.out -gG_MAX_STEPS=$(RANDOM_STEPS) -gG_STALL=$(RANDOM_STALL) -gG_SEED=$(1) \
-	  -gG_CYCLE_COUNTER=false -gG_FETCH_STATS=false $(2) \
+	  -gG_CYCLE_COUNTER=false -gG_FETCH_STATS=false -gG_FPU=false $(2) \
 	  $${o:+"-gG_INTERRUPTS=$$o"} -gG_INTR_LOG=core.intr) > core.log 2>&1); \
 	  echo "exit $$?" >> $(RUNDIR)/core.out
 	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter --no-font --no-fpu $$(cat $(BUILD)/random_$(1).opts) $(BUILD)/random_$(1).bin \
@@ -523,6 +529,7 @@ $(eval $(call core_run,$(1),reads_stall,../emulator/test/reads.bin,-gG_STALL=30 
 $(eval $(call core_run,$(1),mpu_stall,../emulator/test/mpu.bin,-gG_STALL=30 -gG_SEED=3))
 $(eval $(call core_run,$(1),mpu64_stall,../emulator/test/mpu64.bin,-gG_STALL=30 -gG_SEED=5))
 $(eval $(call core_run,$(1),mpubits_stall,../emulator/test/mpubits.bin,-gG_STALL=30 -gG_SEED=39))
+$(eval $(call core_run,$(1),fpu_stall,../emulator/test/fpu.bin,-gG_STALL=30 -gG_SEED=53))
 $(eval $(call core_run,$(1),perf_stall,../emulator/test/perf.bin,-gG_STALL=30 -gG_SEED=9))
 $(eval $(call core_run,$(1),events_stall,../emulator/test/events.bin,-gG_STALL=30 -gG_SEED=13))
 $(eval $(call core_run,$(1),timer_stall,../emulator/test/timer.bin,-gG_STALL=30 -gG_SEED=11))
@@ -641,8 +648,7 @@ strides: emulator analyze $(BUILD)/pcfx.bin $(BUILD)/sidefx.bin
 # --keep run their tests and leave the programs in $(PROGRAMS), and
 # test/programs.py runs each on the core and on the emulator, in parallel,
 # and compares them. It takes minutes, so make test leaves it out. The
-# cores have no FPU yet (SYSTEM.md §11), so the programs that use floats
-# join the float library in software, float.nasm: NO_FPU=1 and --no-fpu.
+# programs that use floats use the FPU, as on the emulator.
 PROGRAMS = $(BUILD)/programs
 FUZZ_PROGRAMS = 10
 
@@ -651,9 +657,9 @@ SHARD = 1/1
 
 programs: emulator analyze
 	@rm -rf $(PROGRAMS)
-	@$(MAKE) --no-print-directory -C ../runtime test KEEP=$(abspath $(PROGRAMS)/runtime) NO_FPU=1 \
+	@$(MAKE) --no-print-directory -C ../runtime test KEEP=$(abspath $(PROGRAMS)/runtime) \
 	  > $(BUILD)/programs_runtime.log 2>&1 || { cat $(BUILD)/programs_runtime.log; exit 1; }
-	@$(PYTHON) ../translator/test/run.py --no-fpu --keep $(PROGRAMS)/translator \
+	@$(PYTHON) ../translator/test/run.py --keep $(PROGRAMS)/translator \
 	  > $(BUILD)/programs_translator.log 2>&1 || { cat $(BUILD)/programs_translator.log; exit 1; }
 	@for m in "" --no-mpu --unchecked --grow --windows; do \
 	  $(PYTHON) ../translator/test/fuzz.py $$m --keep $(PROGRAMS)/fuzz 1 $(FUZZ_PROGRAMS) \

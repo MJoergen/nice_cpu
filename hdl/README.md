@@ -1271,7 +1271,9 @@ tests and leave the programs in `build/programs`, with the console input
 of those that read one. The programs that use floats use the FPU,
 `src/fpu.vhd`, as on the emulator. Then `test/programs.py` runs each on the core and
 on the emulator and compares them, as `make test` does, with the console
-input on both sides. The runtime's clock reads the cycle counter, so these
+input on both sides. A program that is the same as another, `.bin` and
+`.input`, runs once: many translator cases come out the same in their
+three modes. The runtime's clock reads the cycle counter, so these
 runs make its two words memory, as the random programs do.
 
 `test/programs.py` runs a `.bin` on a core in the simulator and compares its output

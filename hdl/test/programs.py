@@ -28,8 +28,10 @@ describes. The VHDL must be analyzed in BUILD already.
 
 import argparse
 import concurrent.futures
+import hashlib
 import os
 import sys
+from typing import Callable
 
 from core_runs import DEFAULT_BUILD, DEFAULT_CORE, DEFAULT_EMU, Core, add_sim_args, difference, run_emulator
 
@@ -59,6 +61,29 @@ def check(args: argparse.Namespace, core: Core, binfile: str, seed: int) -> str 
     return None if diff is None else f"{name}: {diff}"
 
 
+def contents(binfile: str) -> bytes:
+    """The digests of the .bin file and of its .input file, if it has one."""
+    infile = binfile[: -len(".bin")] + ".input"
+    with open(binfile, "rb") as f:
+        data = hashlib.sha256(f.read()).digest()
+    if os.path.exists(infile):
+        with open(infile, "rb") as f:
+            data += hashlib.sha256(f.read()).digest()
+    return data
+
+
+def distinct(programs: list[str], key: Callable[[str], bytes]) -> list[str]:
+    """The programs in order, without one whose key an earlier one has."""
+    seen: set[bytes] = set()
+    kept = []
+    for p in programs:
+        k = key(p)
+        if k not in seen:
+            seen.add(k)
+            kept.append(p)
+    return kept
+
+
 def split(weights: dict[str, int], count: int) -> list[list[str]]:
     """The programs in COUNT shares of nearly equal total weight: the
     heaviest first, each into the share with the least so far."""
@@ -83,6 +108,8 @@ def self_test() -> None:
     loads = sorted(sum(weight[n] for n in share) for share in split(weight, 3))
     assert loads[1] - loads[0] <= 40 and loads[2] == 1000, loads
     assert split({"a": 5, "b": 5}, 4) == [["a"], ["b"], [], []]
+    key = {"a": b"1", "a_soft": b"1", "b": b"2", "c": b"1", "d": b"3"}
+    assert distinct(sorted(key), key.__getitem__) == ["a", "b", "d"]
     print("PASS programs.py --test")
 
 
@@ -112,6 +139,8 @@ def main() -> None:
     except ValueError:
         sys.exit(f"programs: --shard wants I/N with 1 <= I <= N, not {args.shard}")
     programs.sort()
+    total = len(programs)
+    programs = distinct(programs, contents)
     # The emulator runs every program first, in every shard: it takes
     # seconds, and its steps are what the core's time follows. The shares
     # are of nearly equal total steps. The longest program, libc_mchess,
@@ -132,8 +161,9 @@ def main() -> None:
     for r in failures:
         print("FAIL " + r)
     shard = "" if args.shard == "1/1" else f" shard {args.shard}"
+    same = "" if total == len(weight) else f", and {total - len(weight)} the same as one of them"
     print(f"{'FAIL' if failures else 'PASS'} programs {args.core}{shard}: {len(programs) - len(failures)} of "
-          f"{len(programs)} in {', '.join(args.dirs)}")
+          f"{len(programs)} in {', '.join(args.dirs)}{same}")
     if failures:
         sys.exit(1)
 

@@ -34,7 +34,7 @@ BIGSTACK = -Wl,-z,stack-size=131072 -Wl,--initial-memory=262144
 # The test programs, test/X.c. Their .wasm files are checked in, so make
 # test needs no C compiler; make wasm rebuilds them. A test/X.input file is
 # the console input of test X.
-TESTS = stdio stream string stdlib scanf nice printf strings numbers sscanf malloc abort exit limits assert time math floatio \
+TESTS = stdio stream string stdlib scanf nice printf iprintf strings numbers sscanf malloc abort exit limits assert time math floatio \
   mchess
 # The tests that also run as a program under a monitor, as X_mon: joined
 # after ../test/monitor.nasm, the stand-in for a monitor at 0, with
@@ -115,13 +115,14 @@ test: emulator
 	$(foreach t,$(MON_TESTS),$(call check,$(t)_mon,$(t),../test/monitor.nasm ../start_wasm_mon.nasm,R1  [0-9a-f]* R2  [0-9a-f]*))
 	@rm -f test/*.out test/*.raw test/*.status test/*.out.nasm test/*.full.nasm test/*.out.bin
 
-# A random test of the printf family against a model of C's printf,
-# test/fuzz_printf.py, one of strtod and strtof against exact arithmetic,
+# A random test of the printf family and the i family against a model of
+# C's printf, test/fuzz_printf.py, one of strtod and strtof against exact arithmetic,
 # test/fuzz_strtod.py, and one of the math functions against the same
 # code on the host and the host's libm, test/fuzz_math.py. They compile
 # programs with clang, so make test does not run them.
 fuzz: libc.a emulator
 	@$(PYTHON) test/fuzz_printf.py 1 300
+	@$(PYTHON) test/fuzz_printf.py --integer 1 300
 	@$(PYTHON) test/fuzz_strtod.py 1 1000
 	@$(PYTHON) test/fuzz_math.py 1 1000
 

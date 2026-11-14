@@ -284,7 +284,7 @@ Zig keeps only the objects of `libc.a` that the program references.
 
 | Header | Functions |
 |---|---|
-| `stdio.h` | `FILE`, `stdin`, `stdout`, `stderr`, `putchar`, `puts`, `getchar`, `fputc`, `putc`, `fputs`, `fgetc`, `getc`, `ungetc`, `fgets`, `fflush`, `printf`, `fprintf`, `sprintf`, `snprintf`, `vprintf`, `vfprintf`, `vsprintf`, `vsnprintf`, `scanf`, `fscanf`, `sscanf`, `vscanf`, `vfscanf`, `vsscanf` |
+| `stdio.h` | `FILE`, `stdin`, `stdout`, `stderr`, `putchar`, `puts`, `getchar`, `fputc`, `putc`, `fputs`, `fgetc`, `getc`, `ungetc`, `fgets`, `fflush`, `printf`, `fprintf`, `sprintf`, `snprintf`, `vprintf`, `vfprintf`, `vsprintf`, `vsnprintf`, the same without the float conversions, with newlib's names: `iprintf`, `fiprintf`, `siprintf`, `sniprintf`, `viprintf`, `vfiprintf`, `vsiprintf`, `vsniprintf`, and `scanf`, `fscanf`, `sscanf`, `vscanf`, `vfscanf`, `vsscanf` |
 | `string.h` | `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`, `strnlen`, `strcmp`, `strncmp`, `strcpy`, `strncpy`, `strcat`, `strncat`, `strchr`, `strrchr`, `strstr`, `strcspn` |
 | `stdlib.h` | `malloc`, `calloc`, `realloc`, `free`, `abs`, `labs`, `llabs`, `atoi`, `atol`, `strtol`, `strtoul`, `atof`, `strtod`, `strtof`, `rand`, `srand`, `abort`, `exit` |
 | `math.h` | In double, and in float with an `f`, such as `sinf`: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `log`, `log10`, `log2`, `pow`, `sqrt`, `fmod`, `frexp`, `ldexp`, `scalbn`, `modf`, `floor`, `ceil`, `trunc`, `round`, `rint`, `nearbyint`, `fabs`, `copysign`, `fmin`, and `fmax`. The macros `fpclassify`, `isfinite`, `isinf`, `isnan`, `isnormal`, `signbit`, `HUGE_VAL`, `HUGE_VALF`, `INFINITY`, `NAN`, and `math_errhandling`, the types `float_t` and `double_t`, and POSIX's constants, such as `M_PI`. See Math functions below. |
@@ -362,8 +362,16 @@ The library is small on purpose:
   nearest, ties to even, as glibc does. `%a` prints a 1 before the point,
   also for a subnormal, as musl does, or a 2 when the rounding carries
   into it, such as `0x2p+0` for `%.0a` of 1.5. They cost every program
-  that calls `printf` 3085 words: `printf` with `%d` alone was 4124 words
-  and is now 7209. `%f` of 1e300 takes about 48000 steps.
+  that calls `printf` 3052 words: `printf` with `%d` alone is 7298 words.
+  `%f` of 1e300 takes about 48000 steps.
+- The i family, `iprintf` and its relatives, with newlib's names, is
+  `printf` without the float conversions, for a program that must be
+  small: `iprintf` with `%d` alone is 4246 words. It prints `e E f F g G
+  a A` as they stand, as `printf` prints a conversion that it does not
+  know, and takes their `double` from the arguments, so that those after
+  them stay in place. The two families share one formatter, which calls
+  the float conversions through a pointer that only `printf` and its
+  relatives pass, so a program that calls both gets the formatter once.
 - `strtol` and `strtoul` saturate on overflow and set `errno` to `ERANGE`. A base other than 0 and 2 to 36 converts nothing, as no digits, and sets `errno` to `EINVAL`. `strtod` and `strtof`, and so `atof` and `scanf`, set it for a float, as the `errno.h` row above says. No other function sets `errno`: the math functions report no error (Math functions below), `malloc` returns `NULL` with no code, and `scanf` keeps the low bits of a number too large for its type, as C leaves it undefined.
 - `exit` is the assembly routine `_exit` of the start-up code: with `start_wasm.nasm`, the `HALT` after `main`, with the status in R1, so the emulator exits with status 0, and under a monitor a return to it (ABI.md). `EXIT_SUCCESS` is 0 and `EXIT_FAILURE` 1. There is no `atexit`. `abort` and a failed `assert` trap (WASM.md), so the emulator exits with status 2.
 - `rand` is the linear congruential generator of the C standard's example, `srand(1)` at start.
@@ -682,7 +690,9 @@ routine's result. The FPU's depth must be 0 at the end of each run.
 which writes a C program with 300 random `printf` and `snprintf` calls,
 with every flag, width, precision, length modifier, and conversion, of
 integers and of doubles, and compares the output with a model of C's
-`printf` in Python. `fuzz_printf.py SEED COUNT` runs other seeds and
+`printf` in Python. It runs again with `--integer`, which calls `iprintf`
+and `sniprintf` instead, and expects the float conversions as they
+stand. `fuzz_printf.py [--integer] SEED COUNT` runs other seeds and
 sizes. Then it runs `libc/test/fuzz_strtod.py`, which calls `strtod` and
 `strtof` on 1000 random strings: long decimals, hex floats, exact
 halfway cases between two doubles, subnormals, overflows, and the forms

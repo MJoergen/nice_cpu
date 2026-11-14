@@ -4,6 +4,13 @@
 // and the conversions d i u o x X c s p %, and e E f F g G a A for a
 // double. Any other conversion, such as one with L for a long double, is
 // copied to the output as it stands.
+//
+// The i family, iprintf and its relatives with newlib's names, does the
+// same without the float conversions: it takes the double of e E f F g G
+// a A from the arguments, so that those after it stay in place, and
+// copies the conversion as it stands. Both families share format(), which
+// calls fmt_fp through a pointer that only the printf family passes, so a
+// program that calls only the i family is linked without fmt_fp.
 #include <float.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -394,7 +401,10 @@ __attribute__((minsize, noinline)) static void fmt_fp(struct out *o, double y, i
     fill(o, ' ', w, pl + l, fl ^ LEFT);
 }
 
-static void format(struct out *o, const char *fmt, va_list ap)
+// fmt_fp, or NULL for the i family.
+typedef void fp_fn(struct out *o, double y, int w, int p, int fl, int t);
+
+static void format(struct out *o, const char *fmt, va_list ap, fp_fn *fp)
 {
     while (*fmt) {
         if (*fmt != '%') {
@@ -521,8 +531,12 @@ static void format(struct out *o, const char *fmt, va_list ap)
             emit(o, '%');
             break;
         case 'a': case 'A': case 'e': case 'E': case 'f': case 'F': case 'g': case 'G':
-            fmt_fp(o, va_arg(ap, double), width, prec, flags, c);
-            break;
+            if (fp) {
+                fp(o, va_arg(ap, double), width, prec, flags, c);
+                break;
+            }
+            (void)va_arg(ap, double);
+            __attribute__((fallthrough));
         default:
             while (start < fmt)
                 emit(o, *start++);
@@ -541,7 +555,7 @@ static int finish(struct out *o)
 int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap)
 {
     struct out o = {buf, size, 0, 0};
-    format(&o, fmt, ap);
+    format(&o, fmt, ap, fmt_fp);
     return finish(&o);
 }
 
@@ -553,7 +567,7 @@ int vsprintf(char *buf, const char *fmt, va_list ap)
 int vfprintf(FILE *f, const char *fmt, va_list ap)
 {
     struct out o = {NULL, 0, 0, f};
-    format(&o, fmt, ap);
+    format(&o, fmt, ap, fmt_fp);
     return (int)o.len;
 }
 
@@ -594,6 +608,68 @@ int snprintf(char *buf, size_t size, const char *fmt, ...)
     va_list ap;
     va_start(ap, fmt);
     int n = vsnprintf(buf, size, fmt, ap);
+    va_end(ap);
+    return n;
+}
+
+// The i family, without the float conversions.
+
+int vsniprintf(char *buf, size_t size, const char *fmt, va_list ap)
+{
+    struct out o = {buf, size, 0, 0};
+    format(&o, fmt, ap, NULL);
+    return finish(&o);
+}
+
+int vsiprintf(char *buf, const char *fmt, va_list ap)
+{
+    return vsniprintf(buf, SIZE_MAX, fmt, ap);
+}
+
+int vfiprintf(FILE *f, const char *fmt, va_list ap)
+{
+    struct out o = {NULL, 0, 0, f};
+    format(&o, fmt, ap, NULL);
+    return (int)o.len;
+}
+
+int viprintf(const char *fmt, va_list ap)
+{
+    return vfiprintf(stdout, fmt, ap);
+}
+
+int fiprintf(FILE *f, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vfiprintf(f, fmt, ap);
+    va_end(ap);
+    return n;
+}
+
+int iprintf(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int n = viprintf(fmt, ap);
+    va_end(ap);
+    return n;
+}
+
+int siprintf(char *buf, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsiprintf(buf, fmt, ap);
+    va_end(ap);
+    return n;
+}
+
+int sniprintf(char *buf, size_t size, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsniprintf(buf, size, fmt, ap);
     va_end(ap);
     return n;
 }

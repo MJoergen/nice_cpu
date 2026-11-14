@@ -2,7 +2,7 @@
 """A random test of the C library's printf family against a model of C's
 printf.
 
-Usage: fuzz_printf.py SEED COUNT
+Usage: fuzz_printf.py [--integer] SEED COUNT
 
 It writes a C program with COUNT random calls: a quarter of them
 snprintf into a buffer of a random size, whose return value and contents
@@ -25,6 +25,12 @@ the model writes them itself, as it does %a, which Python lacks. %a
 follows musl's choices where C leaves one: the digit before the point is
 1, also for a subnormal, or 2 when rounding carries into it, and 0 only
 for 0.
+
+With --integer, the calls are iprintf and sniprintf, the i family, which
+prints a float conversion as it stands, its flags, width, precision, and
+length modifier too, and takes its double, and the * before it, from the
+arguments. The program then calls only the i family, so it is linked
+without the float conversions.
 
 Needs clang with the wasm32 target, and ../libc.a from make -C .. libc.a.
 The same seed always gives the same program."""
@@ -201,8 +207,9 @@ def c_double(v: float) -> str:
     return sign + abs(v).hex()
 
 
-def gen_case(rng: random.Random) -> Tuple[str, List[str], str]:
-    """A format, its arguments as C text, and the output C defines."""
+def gen_case(rng: random.Random, integer: bool) -> Tuple[str, List[str], str]:
+    """A format, its arguments as C text, and the output C defines, or with
+    integer the output of the i family."""
     fmt, args, out = "", [], ""
     for _ in range(rng.randrange(1, 4)):
         literal = "".join(rng.choice("abcXYZ,:=()[]_") for _ in range(rng.randrange(0, 4)))
@@ -267,22 +274,24 @@ def gen_case(rng: random.Random) -> Tuple[str, List[str], str]:
         elif conv == "s":
             arg = "".join(rng.choice("abcdefgh") for _ in range(rng.randrange(0, 7)))
             args.append(c_string(arg))
-        out += cfmt(conv, flags, width, prec, length, arg)
+        out += spec if integer and conv in FLOATS else cfmt(conv, flags, width, prec, length, arg)
     return fmt, args, out
 
 
-def program(rng: random.Random, count: int) -> Tuple[str, List[str]]:
-    """The C program and the lines it must print."""
+def program(rng: random.Random, count: int, integer: bool) -> Tuple[str, List[str]]:
+    """The C program and the lines it must print, with integer through the
+    i family."""
     lines, expected = [], []
+    i = "i" if integer else ""
     for _ in range(count):
-        fmt, args, out = gen_case(rng)
+        fmt, args, out = gen_case(rng, integer)
         call = ", ".join([c_string(fmt)] + args)
         if rng.random() < 0.25:
             size = rng.randrange(1, 24)
-            lines.append(f'    n = snprintf(buf, {size}, {call}); printf("%d [%s]\\n", n, buf);')
+            lines.append(f'    n = sn{i}printf(buf, {size}, {call}); {i}printf("%d [%s]\\n", n, buf);')
             expected.append(f"{len(out)} [{out[:size - 1]}]")
         else:
-            lines.append(f"    printf({call}); putchar('\\n');")
+            lines.append(f"    {i}printf({call}); putchar('\\n');")
             expected.append(out)
     text = "#include <stddef.h>\n#include <stdint.h>\n#include <stdio.h>\n\nint main(void)\n{\n"
     text += "    char buf[32];\n    int n;\n" + "\n".join(lines) + "\n    return 0;\n}\n"
@@ -296,10 +305,14 @@ def run(cmd: List[str]) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) != 3:
+    argv = sys.argv[1:]
+    integer = argv[:1] == ["--integer"]
+    if integer:
+        argv = argv[1:]
+    if len(argv) != 2:
         sys.exit(__doc__.split("\n\n")[1])
-    seed, count = int(sys.argv[1]), int(sys.argv[2])
-    text, expected = program(random.Random(seed), count)
+    seed, count = int(argv[0]), int(argv[1])
+    text, expected = program(random.Random(seed), count, integer)
     with tempfile.TemporaryDirectory() as tmp:
         src = os.path.join(tmp, "fuzz.c")
         with open(src, "w") as f:
@@ -329,7 +342,7 @@ def main() -> None:
         bad += 1
         print(f"{len(got)} lines instead of {len(expected)}, exit status {p.returncode}:\n"
               + "\n".join(output.splitlines()[-5:]))
-    print(f"{'FAIL' if bad else 'PASS'} printf fuzz (seed {seed}, {count} calls)")
+    print(f"{'FAIL' if bad else 'PASS'} {'iprintf' if integer else 'printf'} fuzz (seed {seed}, {count} calls)")
     sys.exit(1 if bad else 0)
 
 

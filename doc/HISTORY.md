@@ -739,3 +739,12 @@ and links to both, so it had to say "nice_cpu's SYSTEM.md" each time
 (#166, MJoergen/NiceMonMEGA65#130). The sections kept their numbers. The
 release notes, the reviews, and this file name it DEVICES.md for every
 date, also where the tags of that date have SYSTEM.md.
+
+## The float conversions of `printf`
+
+When `printf` gained the float conversions, musl's `fmt_fp`, every
+program that called it grew by 3085 words: `printf` with `%d` alone went
+from 4124 words to 7209. A small program, such as one under a monitor,
+then wrote its own formatter of integers and strings. On 2026-11-14, the
+i family, `iprintf` and its relatives, gave it `printf` without them, in
+4246 words, and `printf` with `%d` alone became 7298 (#173).

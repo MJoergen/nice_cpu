@@ -35,6 +35,18 @@ int vprintf(const char *fmt, va_list ap);
 int vsprintf(char *buf, const char *fmt, va_list ap);
 int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap);
 
+// The i family, printf and its relatives without the float conversions
+// e E f F g G a A, which take their double and are printed as they stand.
+int iprintf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+int siprintf(char *buf, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+int sniprintf(char *buf, size_t size, const char *fmt, ...)
+    __attribute__((format(printf, 3, 4)));
+int fiprintf(FILE *f, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+int vfiprintf(FILE *f, const char *fmt, va_list ap);
+int viprintf(const char *fmt, va_list ap);
+int vsiprintf(char *buf, const char *fmt, va_list ap);
+int vsniprintf(char *buf, size_t size, const char *fmt, va_list ap);
+
 int scanf(const char *fmt, ...) __attribute__((format(scanf, 1, 2)));
 int sscanf(const char *s, const char *fmt, ...) __attribute__((format(scanf, 2, 3)));
 int fscanf(FILE *f, const char *fmt, ...) __attribute__((format(scanf, 2, 3)));

@@ -3,7 +3,7 @@
 // There are no long double functions: wasm32's long double is a
 // binary128, which the float library does not support.
 //
-// No function sets errno, and NICE has no floating-point exceptions, so
+// No function sets errno, and the C library reads no flag of the FPU, so
 // math_errhandling is 0: a domain error gives a NaN, and a pole or an
 // overflow an infinity, with no other report (runtime/README.md, C
 // library).

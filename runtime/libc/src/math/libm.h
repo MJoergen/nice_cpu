@@ -3,9 +3,9 @@
 // files of this directory are musl's, unchanged (README.md, C library).
 //
 // It differs from musl's in three ways:
-// - NICE has no floating-point exceptions, as the float library raises
-//   none, so FORCE_EVAL and fp_force_eval, which compute a value only to
-//   raise one, compute nothing.
+// - The C library reads no flag of the FPU, and the float library in
+//   software raises none, so FORCE_EVAL and fp_force_eval, which compute
+//   a value only to raise a floating-point exception, compute nothing.
 // - wasm32's long double is a binary128, which the float library does not
 //   support, so there is no ldshape, and LDBL_MAX_EXP is taken as 1024:
 //   __rem_pio2_large then keeps only the digits of 2/pi that double

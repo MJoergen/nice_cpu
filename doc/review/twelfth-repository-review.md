@@ -337,6 +337,8 @@ Line 618: "That is 3.3 times fewer cycles than the 1916828 without the FPU". 191
 
 `runtime/libc/include/math.h:6` and `src/math/libm.h:6` say that NICE has no floating-point exceptions, "as the float library raises none". The FPU has the flags invalid, division by zero, and overflow (DEVICES.md §11.2). What holds is ABI.md's sentence: compiled and translated code never reads them. **Fix, if wanted:** "the C library reads no flag of the FPU" in both.
 
+**Resolved.** Both headers now say that the C library reads no flag of the FPU, and `libm.h` that the float library in software raises no exception.
+
 ## 5. Gaps
 
 ### 5.1 hdl/README.md has no section for the FPU

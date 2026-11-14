@@ -142,7 +142,7 @@ def main() -> None:
         old_lines, new_lines = old.split("\n"), new.split("\n")
         n = next((i for i, (a, b) in enumerate(zip(old_lines, new_lines)) if a != b),
                  min(len(old_lines), len(new_lines)))
-        print(f"{path}:{n + 1}: not in the layout of CLAUDE.md; run nicefmt.py --write", file=sys.stderr)
+        print(f"{path}:{n + 1}: not in the layout of CONTRIBUTING.md; run nicefmt.py --write", file=sys.stderr)
     sys.exit(status)
 
 

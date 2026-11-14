@@ -73,7 +73,7 @@ tools. Item 2 is by hand.
    `doc/intro/nice_intro.tex`, run `make -C doc/intro pdf` and commit both.
 7. American spelling, plain short sentences, the Oxford comma.
 8. [RELEASE_NOTES.md](../RELEASE_NOTES.md) has a section for the new tag,
-   with the date, as CLAUDE.md requires. `release.py notes` drafts its
+   with the date, as CONTRIBUTING.md requires. `release.py notes` drafts its
    Zig version, benchmark cycles, interface changes, and commit subjects;
    the text is yours. It is the message of the tag. It may be committed
    after `release.py check`: `tag` accepts commits since the stamp that
@@ -108,8 +108,8 @@ evidence, but run them locally too. Do not edit `hdl/src` while they run.
 
        make all
 
-Every part must pass. A bug fix or new rule has its test (CLAUDE.md,
-"Conventions"). The 2004 example `.bin` files must be unchanged.
+Every part must pass. A bug fix or new rule has its test (CONTRIBUTING.md,
+"Rules"). The 2004 example `.bin` files must be unchanged.
 
 CI also runs `make -C emulator window-test`, the window on a build with
 SDL (emulator/README.md, Window), in a job of its own. It is not in `make
@@ -150,7 +150,7 @@ benchmark on the multi-cycle core.
 Every line must say `PASS`, and both cores must agree with
 `niceemu`. `hdl make sweep`, with one interrupt per run, takes hours and is
 not part of the release; it is run after a change to the interrupt path
-(CLAUDE.md, Conventions).
+(CONTRIBUTING.md, Rules).
 
 `hdl make programs`, the runtime and translator programs on the core, is
 not part of `make slow`: CI runs it on both cores, in nvc,

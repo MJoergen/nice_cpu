@@ -17,7 +17,7 @@ test:
 	@$(MAKE) --no-print-directory layout
 
 # Checks that every .nasm file of the repository is in the layout of
-# CLAUDE.md. crlf.nasm tests the line ends, so it is not.
+# CONTRIBUTING.md. crlf.nasm tests the line ends, so it is not.
 layout:
 	@cd .. && git ls-files '*.nasm' | grep -v crlf.nasm | xargs $(PYTHON) assembler/nicefmt.py
 	@echo "PASS layout"

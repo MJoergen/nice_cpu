@@ -1,5 +1,5 @@
 # Top-level Makefile: runs the targets of the subdirectories' Makefiles.
-# Each subdirectory can also be used on its own; see CLAUDE.md and README.md.
+# Each subdirectory can also be used on its own; see README.md and CONTRIBUTING.md.
 
 # The quick tests. The hdl tests need GHDL.
 TEST_DIRS      = assembler emulator debugger runtime translator bench demo hdl doc/intro doc release

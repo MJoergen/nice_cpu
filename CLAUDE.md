@@ -4,17 +4,15 @@ NICE is a 32-bit CPU by B. Ulmann; this repo implements it on an FPGA.
 The repo holds the spec, an assembler, an emulator, a debugger, a runtime
 library, a wasm translator, and two FPGA cores. See README.md.
 
+The rules a change follows, and the tests, are in CONTRIBUTING.md:
+
+@CONTRIBUTING.md
+
 ## Layout
 
-- Open items, undecided questions, and ideas are GitHub issues, labeled
-  `bug`, `enhancement`, `documentation`, `question`, or `idea`, with the
-  milestone of the next release when planned. File new ones there, not in
-  files or code comments.
-  `doc/review/decisions.md` lists what was decided against.
-- `CONTRIBUTING.md`: the tests and the rules of Conventions below, for
-  human contributors. Keep the two in sync.
+- `doc/review/decisions.md`: what was decided against.
 - `RELEASE_NOTES.md`: the user-visible changes of each release tag
-  (`Vmajor.minor`, the `RC*` tags before `V1.0`), newest first, by component. Add a section for every new tag when it is created.
+  (`Vmajor.minor`, the `RC*` tags before `V1.0`), newest first, by component.
 - `doc/ISA.md`: the specification. It is authoritative for all code here.
   `doc/review/` records how decisions were reached; ISA.md supersedes it.
 - `doc/DEVICES.md`: the devices that the emulator maps into the I/O range
@@ -130,49 +128,3 @@ library, a wasm translator, and two FPGA cores. See README.md.
     cd release && make typecheck     # mypy --strict
     make wasmcheck                   # rebuild the checked-in .wasm files and compare (clang, zig, rustc)
     make diagrams                    # render the diagrams in doc/ to PNG (pdflatex, pdftoppm)
-
-Run the relevant `make test` after every change.
-
-Vivado 2025.1 is installed at `/opt/Xilinx/2025.1/Vivado/bin/vivado`, not on PATH.
-`hdl/Makefile` defaults `VIVADO` to that path, so `make timing` works as is.
-
-## Conventions
-
-- Nothing in this repository depends on NiceMonMEGA65, and no release waits
-  for it. The pipelined core meeting 100 MHz on the MEGA65 is a goal to keep:
-  a change under `hdl/src/pipe_*` that touches the paths of `timing_groups.rpt`
-  needs `make -C hdl timing` before and after, with both figures in the commit
-  message. One run varies with placement by more than a small change: a
-  difference smaller than the range of `SPREAD` in `hdl/test/timing_budget.py`
-  is noise, so for a small change run `make -C hdl timing-spread` before and
-  after, and compare the medians. `timing_budget.py` holds the budget; a miss
-  warns and never fails (release/RELEASE.md, Timing).
-- A change to the interrupt path of a core (WRITE's interrupt entry, RTI,
-  or the request ports) needs `make -C hdl sweep CORE=...` on that core,
-  with one interrupt per run, which takes hours. No release runs it.
-- Behavior changes start in ISA.md; code follows the spec, never the reverse.
-  Departures from the sources go in ISA.md Appendix B.
-- Every bug fix or new rule gets a test: an `errors.py` case, a line in
-  `assembler/test/encoding.nasm`, or an emulator probe with a hand-checked
-  `.expected` file. Never generate `.expected` or `.bin` files by copying tool
-  output without checking it.
-- The 2004 example `.bin` files are original `NICE.pm` output; do not change them.
-- Keep the READMEs in sync with the tools' options, formats, and error behavior.
-- Docs: plain, short sentences. Use the Oxford comma by default ("a, b, and c").
-- NICE assembly (`.nasm` files, listings in docs, and the output of
-  generators) is laid out in columns, with spaces only and no tabs: the
-  label in column 0, the condition in column 8, the mnemonic in column 16,
-  the operands in column 24, and the comment in column 40. A label of 8 or
-  more characters goes on a line of its own. `assembler/nicefmt.py --write`
-  fixes a file, and `make test` checks every `.nasm` file. Listings in
-  docs and strings in Python are not checked. The labels of a short
-  loop, up to some 10 instructions, are anonymous (`:`, `:-`, and `:+`,
-  ISA.md §10.1), unless something else names them, such as a test by its
-  symbol. Names are for the places reached from afar. The beginner's
-  slides in `doc/intro/` keep their names, and so do the 2004 examples.
-- American spelling everywhere, in docs, comments, and identifiers
-  ("behavior", "color", "analyze", "labeled", "gray").
-- Commit subjects: `niceasm: ...`, `niceemu: ...`, `nicedbg: ...`, `runtime: ...`, `nicewasm: ...`, `nicecc: ...`, `nicehdl: ...`, `bench: ...`, `demo: ...`, `release: ...`, `intro: ...`, `doc: ...`, `ISA: ...`, `Review: ...`.
-- Commit messages follow the 50/72 style: the subject, prefix included, is at
-  most 50 characters. A blank line follows it. The body is wrapped at 70
-  characters per line.

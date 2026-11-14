@@ -67,7 +67,8 @@ from the sources go in ISA.md Appendix B.
 tool output without checking it. The 2004 example `.bin` files are
 original `NICE.pm` output; do not change them.
 
-**Open items go in GitHub issues**, not in files or code comments. Label
+**Open items, undecided questions, and ideas go in GitHub issues**, not
+in files or code comments. Label
 them `bug`, `enhancement`, `documentation`, `question`, or `idea`, with
 the milestone of the next release when planned.
 [doc/review/decisions.md](doc/review/decisions.md) lists what was decided
@@ -82,8 +83,9 @@ both figures in the commit message. One run varies with placement by more
 than a small change: a difference smaller than the range of `SPREAD` in
 `hdl/test/timing_budget.py` is noise, so for a small change run
 `make -C hdl timing-spread` before and after, and compare the medians.
-`timing_budget.py` holds the budget; a miss warns and never fails. A change to the interrupt path of a
-core (WRITE's interrupt entry, RTI, or the request ports) needs
+`timing_budget.py` holds the budget; a miss warns and never fails
+([release/RELEASE.md](release/RELEASE.md#timing)). A change to the
+interrupt path of a core (WRITE's interrupt entry, RTI, or the request ports) needs
 `make -C hdl sweep CORE=...` on that core, with one interrupt per run,
 which takes hours. No release runs it. VHDL follows [hdl/CODING_STYLE.md](hdl/CODING_STYLE.md), which
 `make -C hdl lint` checks.

@@ -1735,6 +1735,30 @@ def test_fpu() -> None:
     e.stop()
 
 
+def test_start_reset() -> None:
+    """A start gives the console's receive interrupt and the FPU their
+    reset values (§6, DEVICES.md §1.9, §11): v and the enable at 0, and
+    an empty stack with no flags."""
+    console_irq, fpu = 0xFFFFFF02, 0xFFFFFF88
+    e = Emu()
+    e.take(len(HELLO))
+    # The enable with v = 5, a push of 7.0, and the invalid flag.
+    e.send(write(console_irq, [0x105]) + write(fpu + 3, [7]) + write(fpu + 5, [0x100]))
+    e.expect("writes while held", ok(console_irq, 1) + ok(fpu + 3, 1) + ok(fpu + 5, 1))
+    # STATUS with depth 1, invalid, and X whole and fitting.
+    e.send(read(console_irq, 1) + read(fpu + 5, 1))
+    e.expect("before the start", answer(console_irq, [0x105]) + answer(fpu + 5, [0x00300101]))
+    e.send(write(CONTROL, [0x18]))
+    e.expect("start paused", ok(CONTROL, 1) + PAUSED)
+    # An empty stack reads as the canonical NaN: X_LO, X_HI, X_S, and X_W
+    # of it, CMD 0, STATUS with depth 0, no flag, and X a NaN, REL 2 as
+    # for a NaN, and 0.
+    e.send(read(console_irq, 1) + read(fpu, 8))
+    e.expect("after the start", answer(console_irq, [0]) +
+             answer(fpu, [0, 0x7FF80000, 0x7FC00000, 0, 0, 0x00080000, 2, 0]))
+    e.stop()
+
+
 def test_address() -> None:
     """--link ADDR:PORT serves on ADDR only. All of 127.0.0.0/8 is
     loopback on Linux, so 127.0.0.2 is an address other than the
@@ -1805,7 +1829,8 @@ def main() -> None:
             lambda: test_write_regs(regs, at20, count), lambda: test_wait(waiter),
             lambda: test_time_skip(skipper),
             lambda: test_hidden(hidden, count), lambda: test_nmi(nmi, wait_nmi),
-            lambda: test_old_host(stop, echo), lambda: test_net(spin), test_fpu, test_address, test_usage,
+            lambda: test_old_host(stop, echo), lambda: test_net(spin), test_fpu, test_start_reset,
+            test_address, test_usage,
         ]
         for t in tests:
             t()

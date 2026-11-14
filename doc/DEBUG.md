@@ -358,10 +358,11 @@ and bit 4 as it reads to stay paused, or at 0 to go on. Bit 5 reads 0, so a
 host that writes back what it read never steps by accident.
 
 - **Start.** When bit 0 goes from 1 to 0, the processor starts at address
-  0, as the emulator starts a run. The math unit, the performance counters,
-  the timer, the SD card controller, and the port for Ethernet frames
-  start from their reset values, but a Write of the SD card that has begun,
-  and a frame being sent, finish first (DEVICES.md §5, §7). The
+  0, as the emulator starts a run. The console's receive interrupt, the
+  math unit, the performance counters, the timer, the SD card controller,
+  the port for Ethernet frames, and the FPU start from their reset values,
+  but a Write of the SD card that has begun, and a frame being sent, finish
+  first (DEVICES.md §5, §7). The
   read counter keeps its value (DEVICES.md §1), the network station its
   addresses and counts (DEVICES.md §6), and the clock of the time of day
   its time and runs on (DEVICES.md §10). The input buffer is emptied,

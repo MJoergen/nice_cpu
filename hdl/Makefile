@@ -164,6 +164,9 @@ $(LINK_RUNS): run/link/%: $(BUILD)/linkecho.bin
 # cycle and time counts are memory in both, as they count differently.
 # fpu, fpustack, and fpudec use the FPU, src/fpu.vhd, and fpu runs again
 # on a stalling memory. fpu reads the time, which is memory in both.
+# fpudec runs again with random pauses, with pauses held for up to 3000
+# cycles, and one step at a time, so that pauses and steps come while
+# the core waits for DIGITS and SCALE10 (DEVICES.md §11.5).
 EXAMPLES = count replicate print wrap
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest \
   console screen iofetch reads reserved mpu mpu64 mpubits perf events timer input \
@@ -351,6 +354,11 @@ IRQ_LATE = $(if $(filter pipeline,$(CORE)),--read-delay)
 SWEEP_DELAYS_multicycle = 0,3,7
 SWEEP_DELAYS_pipeline = 0,1,2,3
 SWEEP_STRIDE = 16
+# test/fpuirq.nasm is swept the same way, with a request before every
+# SWEEP_STRIDE-th step, and also with delays that reach into the FPU's
+# commands, so that requests come while the core waits for FMOD,
+# SCALE10, and DIGITS (DEVICES.md §11.5).
+FPU_SWEEP_DELAYS = 0,40,400,1500
 IRQ_COMPARE = $(PYTHON) test/irq_compare.py --emu $(EMU) $(IRQ_LATE)
 
 # The hazard programs of MICROARCH.md §9, step 4: test/hazard.nasm, the
@@ -521,6 +529,7 @@ $(eval $(call sweep_run,$(1),irqhazard))
 $(eval $(call sweep_run,$(1),latecount))
 $(eval $(call sweep_run,$(1),pcfx,--stride $(SWEEP_STRIDE)))
 $(eval $(call sweep_run,$(1),sidefx,--stride $(SWEEP_STRIDE)))
+$(eval $(call sweep_run,$(1),fpuirq,--stride $(SWEEP_STRIDE) --delays $$(FPU_SWEEP_DELAYS)))
 $(foreach t,$(EXAMPLES),$(eval $(call core_run,$(1),$(t),../assembler/test/$(t).bin)))
 $(foreach t,$(PROBES),$(eval $(call core_run,$(1),$(t),../emulator/test/$(t).bin)))
 $(eval $(call core_run,$(1),shift,$(BUILD)/shift.bin))
@@ -530,6 +539,9 @@ $(eval $(call core_run,$(1),mpu_stall,../emulator/test/mpu.bin,-gG_STALL=30 -gG_
 $(eval $(call core_run,$(1),mpu64_stall,../emulator/test/mpu64.bin,-gG_STALL=30 -gG_SEED=5))
 $(eval $(call core_run,$(1),mpubits_stall,../emulator/test/mpubits.bin,-gG_STALL=30 -gG_SEED=39))
 $(eval $(call core_run,$(1),fpu_stall,../emulator/test/fpu.bin,-gG_STALL=30 -gG_SEED=53))
+$(eval $(call core_run,$(1),fpudec_pause,../emulator/test/fpudec.bin,-gG_PAUSE=40 -gG_SEED=65))
+$(eval $(call core_run,$(1),fpudec_hold,../emulator/test/fpudec.bin,-gG_PAUSE=2 -gG_PAUSE_HOLD=3000 -gG_SEED=67))
+$(eval $(call core_run,$(1),fpudec_step,../emulator/test/fpudec.bin,-gG_SINGLE_STEP=true))
 $(eval $(call core_run,$(1),perf_stall,../emulator/test/perf.bin,-gG_STALL=30 -gG_SEED=9))
 $(eval $(call core_run,$(1),events_stall,../emulator/test/events.bin,-gG_STALL=30 -gG_SEED=13))
 $(eval $(call core_run,$(1),timer_stall,../emulator/test/timer.bin,-gG_STALL=30 -gG_SEED=11))

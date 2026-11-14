@@ -1115,6 +1115,9 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   `fpu`, `fpustack`, and `fpudec` use the FPU: the views, a few commands
   of each group, the stack and its faults, and the decimal commands.
   `fpu` reads the time, so its counters are memory in both, as for `wait`.
+  `fpudec` runs again with random pauses, with pauses held for up to
+  3000 cycles, and one step at a time, so that pauses and steps come
+  while the core waits for `DIGITS` and `SCALE10` (DEVICES.md §11.5).
   `perf` reads the instruction counter, with an NMI and an `INT`, and
   checks the cycle counter only through flags, because the emulator counts
   steps, not cycles. `timer` runs the timer, which counts steps here: its
@@ -1207,6 +1210,10 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   directory under `build/sweep`, because the LLVM and GCC backends of GHDL
   write an executable where they run. `test/irqhazard.nasm` and
   `test/latecount.nasm` are swept the same way, without the delays.
+  `test/fpuirq.nasm`, `fpudec` after an `FMOD`, is swept as below, with
+  `--stride 16`, and with delays of 40, 400, and 1500 cycles too, so that
+  requests come while the core waits for a command of the FPU, which it
+  finishes first.
   For each kind, `irq_sweep.py` says how many steps no request came
   before because it had to wait (ISA.md §7): those of an `INT` routine
   and the step after its `RTI`, and for IRQ, those with E = 0.

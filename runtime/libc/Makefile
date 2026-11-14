@@ -65,10 +65,11 @@ wasm: libc.a
 	@chmod -x test/*.wasm
 
 # Each test/X.wasm is translated and joined with the start-up code,
-# lib.nasm, and muldiv_mpu.nasm, and the float library if the program calls one
-# of its routines, as nicebuild joins it: math, and every test that links
+# lib.nasm, and muldiv_mpu.nasm, and the float library if the program names one
+# of its labels, as nicebuild joins it: math, and every test that links
 # scanf, whose float conversions use floats. The float library is
-# float_fpu.nasm, which uses the FPU, and with NO_FPU=1 float.nasm. It is assembled and run, and
+# float_fpu.nasm, which uses the FPU, and with NO_FPU=1 float.nasm, and
+# the labels are those of the one that is joined. It is assembled and run, and
 # the console output, main's result in R1, and the exit status are compared with
 # test/X.expected. A test that calls the float library runs again with
 # float.nasm, and must give the same output. With KEEP=DIR, an absolute path, each test also leaves
@@ -109,7 +110,7 @@ FLOAT_LIB = $(if $(NO_FPU),float.nasm,float_fpu.nasm)
 
 test: emulator
 	@$(MAKE) -s --no-print-directory -C .. float.nasm
-	@mkdir -p build && grep -oE '^__[A-Za-z0-9_]+' ../float.nasm > build/float.labels
+	@mkdir -p build && grep -oE '^__[A-Za-z0-9_]+' ../$(FLOAT_LIB) > build/float.labels
 	$(foreach t,$(TESTS),$(call check,$(t),$(t),../start_wasm.nasm,R1  [0-9a-f]*))
 	$(foreach t,$(MON_TESTS),$(call check,$(t)_mon,$(t),../test/monitor.nasm ../start_wasm_mon.nasm,R1  [0-9a-f]* R2  [0-9a-f]*))
 	@rm -f test/*.out test/*.raw test/*.status test/*.out.nasm test/*.full.nasm test/*.out.bin

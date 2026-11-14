@@ -1,37 +1,44 @@
-# The out-of-context timing of the pipelined core, as
-# doc/review/pipeline-timing.md measures it: synthesis, placement, and
-# routing of pipeline alone, for the part of a board, with a 10 ns clock,
-# and the worst register-to-register paths. Run it with "make timing" in
-# hdl/, which runs it in the directory of the reports and prints the worst
-# path of each and the groups.
+# The out-of-context timing of a unit, as doc/review/pipeline-timing.md
+# measures it: synthesis, placement, and routing of the unit alone, for
+# the part of a board, with a 10 ns clock, and the worst
+# register-to-register paths. The unit is the pipelined core, pipeline,
+# or the FPU of DEVICES.md §11, fpu, which the system builds beside the
+# core. Run it with "make timing" in hdl/, which runs it in the directory
+# of the reports and prints the worst path of each and the groups.
 #
 # The arguments, all optional, are the part, the flow, the period in ns,
 # the number of breakpoints, G_BREAKS, and of watchpoints, G_WATCHES
-# (doc/DEBUG.md §6), 4 of each by default:
+# (doc/DEBUG.md §6), 4 of each by default, and the unit, pipeline by
+# default. The FPU has no breakpoints or watchpoints. The flows:
 #   default  the directives of Vivado's defaults
 #   timing   the directives that NiceMonMEGA65 builds with: synthesis
 #            PerformanceOptimized with retiming, Explore, ExtraTimingOpt,
 #            AggressiveExplore, and phys_opt_design again after routing
 #
 # The input and output delays are 0, so the slack of a path from an input
-# or to an output is the time left to the system around the core: for the
+# or to an output is the time left to the system around the unit: for the
 # data bus, its address decode, its block RAMs, and its read mux. Those
 # paths go to timing_in.rpt and timing_out.rpt. They leave out retire_o
 # and stats_o, which only the trace and the statistics read. The 50 worst
-# input paths all start at rst_i on some parts, so timing_ack.rpt has the
-# worst paths from dbus_ack_i alone.
+# input paths of the core all start at rst_i on some parts, so
+# timing_ack.rpt has its worst paths from dbus_ack_i alone. The FPU's
+# inputs are its Wishbone port, whose requests come from the system's
+# address decode, and its outputs go to the system's read mux and to the
+# core's stall.
 #
 # timing_groups.rpt counts the endpoints with less than 1 ns of slack, by
 # the register or port they start from and the register or port they end
-# at, with the worst slack of each group. A run takes about 3 minutes
-# with the default flow. A change elsewhere in the design moves the
-# placement, and with it the slacks, by up to 1.4 ns on the MEGA65, so
-# "make timing-spread" runs seven variants (test/timing_budget.py, SPREAD).
+# at, with the worst slack of each group. A run of the core takes about 3
+# minutes with the default flow. A change elsewhere in the design moves
+# the placement, and with it the slacks, by up to 1.4 ns on the MEGA65, so
+# "make timing-spread" runs seven variants of the core
+# (test/timing_budget.py, SPREAD).
 set part   [expr {$argc > 0 ? [lindex $argv 0] : "xc7a200tfbg484-2"}]
 set flow   [expr {$argc > 1 ? [lindex $argv 1] : "default"}]
 set period [expr {$argc > 2 ? [lindex $argv 2] : 10.0}]
 set breaks [expr {$argc > 3 ? [lindex $argv 3] : 4}]
 set watches [expr {$argc > 4 ? [lindex $argv 4] : 4}]
+set unit   [expr {$argc > 5 ? [lindex $argv 5] : "pipeline"}]
 set margin 1.0
 
 if {$flow eq "default"} {
@@ -51,11 +58,18 @@ if {$flow eq "default"} {
 }
 
 set src [file normalize [file join [file dirname [info script]] src]]
-read_vhdl -vhdl2008 [list $src/nice_pkg.vhd $src/trace_pkg.vhd $src/pipe_pkg.vhd \
-  $src/pipe_fetch.vhd $src/pipe_decode.vhd $src/pipe_prepare.vhd $src/pipe_dbus.vhd \
-  $src/pipe_write.vhd $src/pipeline.vhd]
-synth_design -top pipeline -part $part -mode out_of_context -generic G_BREAKS=$breaks \
-  -generic G_WATCHES=$watches {*}$d_synth
+if {$unit eq "pipeline"} {
+  read_vhdl -vhdl2008 [list $src/nice_pkg.vhd $src/trace_pkg.vhd $src/pipe_pkg.vhd \
+    $src/pipe_fetch.vhd $src/pipe_decode.vhd $src/pipe_prepare.vhd $src/pipe_dbus.vhd \
+    $src/pipe_write.vhd $src/pipeline.vhd]
+  synth_design -top pipeline -part $part -mode out_of_context -generic G_BREAKS=$breaks \
+    -generic G_WATCHES=$watches {*}$d_synth
+} elseif {$unit eq "fpu"} {
+  read_vhdl -vhdl2008 [list $src/fpu_pkg.vhd $src/fpu_unit.vhd $src/fpu.vhd]
+  synth_design -top fpu -part $part -mode out_of_context {*}$d_synth
+} else {
+  error "unknown unit $unit, not pipeline or fpu"
+}
 create_clock -period $period -name clk [get_ports clk_i]
 set_input_delay -clock clk 0 [get_ports -filter {DIRECTION == IN && NAME != clk_i}]
 set_output_delay -clock clk 0 [all_outputs]
@@ -75,20 +89,30 @@ report_timing -from [all_inputs] -to [all_registers] -max_paths 50 -nworst 1 \
   -file timing_in.rpt
 report_timing -from [all_registers] -to $outputs -max_paths 50 -nworst 1 \
   -file timing_out.rpt
-report_timing -from [get_ports dbus_ack_i] -to [all_registers] -max_paths 5 -nworst 1 \
-  -file timing_ack.rpt
+if {$unit eq "pipeline"} {
+  report_timing -from [get_ports dbus_ack_i] -to [all_registers] -max_paths 5 -nworst 1 \
+    -file timing_ack.rpt
+}
 
-# The name of a group: a port without its index, or a register as stage
-# and name, such as "write w_r.uop" for i_pipe_write/w_r_reg[uop][src][0][0].
-# The first field of a record stays only for a start, since the fields of
-# an end are many and seldom differ in their paths.
+# The name of a group: a port without its index, or a register as unit
+# and name, such as "write w_r.uop" for i_pipe_write/w_r_reg[uop][src][0][0]
+# or "fpu_unit acc_r" for i_fpu_unit/acc_r_reg[3]. A register of the top
+# has the unit's name. The first field of a record stays only for a start,
+# since the fields of an end are many and seldom differ in their paths.
 proc group_name {pin field} {
+  global unit
   if {[string first / $pin] < 0} {
     return [regsub {\[.*$} $pin {}]
   }
   set cell [file dirname $pin]
-  set stage [regsub {^i_pipe_} [lindex [split $cell /] 0] {}]
-  set reg [join [lrange [split $cell /] 1 end] /]
+  set parts [split $cell /]
+  if {[llength $parts] == 1} {
+    set stage $unit
+    set reg $cell
+  } else {
+    set stage [regsub {^(.*\.)?i_(pipe_)?} [lindex $parts 0] {}]
+    set reg [join [lrange $parts 1 end] /]
+  }
   if {[regexp {^(.*?)_reg} $reg -> name]} {
     if {$field && [regexp {_reg\[([a-z_][a-z0-9_]*)\]} $reg -> first]} {
       set name "$name.$first"
@@ -113,7 +137,7 @@ foreach p $paths {
   set slack [get_property SLACK $p]
   set end_pin [get_property ENDPOINT_PIN $p]
   set key [list [group_name [get_property STARTPOINT_PIN $p] 1] \
-    "[group_name $end_pin 0] [regsub {^.*/} $end_pin {}]"]
+    "[group_name $end_pin 0] [regsub {\[[0-9]+\]$} [regsub {^.*/} $end_pin {}] {}]"]
   if {$slack < 0} { incr failing }
   if {$wns eq "" || $slack < $wns} { set wns $slack }
   if {[dict exists $groups $key]} {
@@ -128,7 +152,7 @@ dict for {key value} $groups {
   lappend rows [concat $value $key]
 }
 set f [open timing_groups.rpt w]
-puts $f "Part $part, flow $flow, period $period ns"
+puts $f "Unit $unit, part $part, flow $flow, period $period ns"
 puts $f "Endpoints with less than $margin ns of slack: [llength $paths],\
   failing: $failing, worst slack: [expr {$wns eq "" ? "none" : "$wns ns"}]"
 puts $f ""

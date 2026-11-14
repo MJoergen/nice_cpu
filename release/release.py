@@ -229,38 +229,62 @@ def make_step(name: str, args: list[str], log: Path) -> dict[str, object]:
 # the directory make -n names.
 TIMING_BREAKS = 4
 TIMING_WATCHES = 4
+# The units that make -C hdl timing builds: the pipelined core and the FPU.
+TIMING_UNITS = ("pipeline", "fpu")
 
 
-def timing_args(board: str) -> list[str]:
-    return [f"BOARD={board}", "FLOW=default", f"BREAKS={TIMING_BREAKS}", f"WATCHES={TIMING_WATCHES}"]
+def timing_args(board: str, unit: str = "pipeline") -> list[str]:
+    return [f"UNIT={unit}", f"BOARD={board}", "FLOW=default", f"BREAKS={TIMING_BREAKS}",
+            f"WATCHES={TIMING_WATCHES}"]
 
 
-def timing_dir(board: str) -> Path:
+def timing_dir(board: str, unit: str = "pipeline") -> Path:
     """The directory make -C hdl timing writes to, its TIMING_DIR."""
-    return ROOT / "hdl" / "build" / "timing" / f"{board}-default-{TIMING_BREAKS}-{TIMING_WATCHES}"
+    name = f"fpu-{board}-default" if unit == "fpu" else f"{board}-default-{TIMING_BREAKS}-{TIMING_WATCHES}"
+    return ROOT / "hdl" / "build" / "timing" / name
 
 
-def timing_budget(board: str = "mega65") -> dict[str, object]:
-    """Runs make -C hdl timing and reads the budget it judged. Never fails
-    the release: a miss, a Vivado error, or a skip is recorded. It prints
-    nothing, as it runs beside make formal; show_timing shows the result."""
-    out_dir = timing_dir(board)
+def timing_log(unit: str) -> Path:
+    return BUILD / ("timing.log" if unit == "pipeline" else f"timing_{unit}.log")
+
+
+def timing_budget(board: str = "mega65", unit: str = "pipeline") -> dict[str, object]:
+    """Runs make -C hdl timing for one unit and reads the budget it judged.
+    Never fails the release: a miss, a Vivado error, or a skip is recorded.
+    It prints nothing, as it runs beside make formal; show_timing shows the
+    result."""
+    out_dir = timing_dir(board, unit)
     (out_dir / "budget.json").unlink(missing_ok=True)
-    log = BUILD / "timing.log"
-    with open(log, "w") as f:
-        p = subprocess.run(["make", "-C", "hdl", "timing", *timing_args(board)],
+    with open(timing_log(unit), "w") as f:
+        p = subprocess.run(["make", "-C", "hdl", "timing", *timing_args(board, unit)],
                            cwd=ROOT, stdout=f, stderr=subprocess.STDOUT)
     try:
         result = json.loads((out_dir / "budget.json").read_text())
     except (OSError, ValueError):
-        result = {"status": "error", "board": board}
+        result = {"status": "error", "board": board, "unit": unit}
     if p.returncode != 0:
         result["status"] = "error"
     return result  # type: ignore[no-any-return]
 
 
+def timing_budgets(board: str = "mega65") -> dict[str, object]:
+    """timing_budget for each unit of TIMING_UNITS, one after the other. The
+    status is met if each unit met its budget, or else the worst of the
+    units: error, then missed, then none."""
+    units = {unit: timing_budget(board, unit) for unit in TIMING_UNITS}
+    statuses = [r["status"] for r in units.values()]
+    status = next((s for s in ("error", "missed", "none") if s in statuses), "met")
+    return {"status": status, "units": units}
+
+
 def show_timing(result: dict[str, object]) -> None:
-    print(f"  timing (not a gate) ... {result['status']} (release/build/timing.log)")
+    units = result.get("units")
+    if not isinstance(units, dict):
+        print(f"  timing (not a gate) ... {result['status']}")
+        return
+    for unit, r in units.items():
+        log = timing_log(unit).relative_to(ROOT)
+        print(f"  timing of {unit} (not a gate) ... {r['status']} ({log})")
 
 
 def cmd_check(a: argparse.Namespace) -> int:
@@ -287,7 +311,7 @@ def cmd_check(a: argparse.Namespace) -> int:
     # slack does not depend on the load, so it runs beside make formal.
     timing: dict[str, object] = {"status": "skipped"}
     with concurrent.futures.ThreadPoolExecutor(1) as pool:
-        timed = None if a.skip_timing else pool.submit(timing_budget)
+        timed = None if a.skip_timing else pool.submit(timing_budgets)
         if not a.skip_formal:
             step("make formal", ["make", "formal"])
         if timed is not None:

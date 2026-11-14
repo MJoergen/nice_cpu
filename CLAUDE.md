@@ -112,7 +112,7 @@ The rules a change follows, and the tests, are in CONTRIBUTING.md:
     cd hdl && make typecheck         # mypy --strict
     cd hdl && make lint              # vsg style check (pip install vsg)
     cd hdl && make formal            # SymbiYosys: the ports of both cores and wb_dmux; proofs of FETCH, DECODE, PREPARE, DBUS, WRITE's halt and pause, the shared functions, the devices, and the debug link
-    cd hdl && make timing            # the pipelined core's worst paths out of context in Vivado, BOARD=mega65 or nexys4ddr, FLOW=default or timing (3 minutes)
+    cd hdl && make timing            # the pipelined core's worst paths out of context in Vivado, UNIT=fpu for the FPU's, BOARD=mega65 or nexys4ddr, FLOW=default or timing (3 minutes)
     cd hdl && make timing-spread     # make timing with seven counts of breakpoints and watchpoints at once, and the median of each slack (11 minutes, 40 with FLOW=timing)
     cd hdl && make programs          # the runtime and translator programs on CORE, or its share SHARD=I/N, SIM=ghdl or nvc (minutes)
     cd hdl && make random-sweep      # random programs, seeds 1 to RANDOM_LAST (1000), on each core of CORES (an hour or more)

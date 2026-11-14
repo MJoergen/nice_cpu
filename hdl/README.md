@@ -48,7 +48,7 @@ timing` found in the release stamp ([release/RELEASE.md](../release/RELEASE.md))
 | [vsg.yml](vsg.yml) | The rules of CODING_STYLE.md for vsg, which `make lint` runs. |
 | [sim.mk](sim.mk) | The commands of the simulators, GHDL and nvc, for the Makefile and `bench/Makefile`. |
 | [ASSUMPTIONS.md](ASSUMPTIONS.md) | Where the pipelined core settles a question that MICROARCH.md leaves open, or departs from it. |
-| [timing.tcl](timing.tcl) | The Vivado script of `make timing`: the pipelined core alone, placed and routed, and its worst paths. |
+| [timing.tcl](timing.tcl) | The Vivado script of `make timing`: the pipelined core or the FPU alone, placed and routed, and its worst paths. |
 | [src/](src/README.md) | The synthesizable VHDL: the two cores, their shared packages, and the devices. |
 | [sim/](sim/README.md) | The trace writer, the memory model, and the SD card engine, for simulation only. |
 | [test/](test/README.md) | The testbenches, the test programs, and the scripts that run them. |
@@ -69,7 +69,7 @@ GHDL 6.0.0-dev and GHDL 4.1.0 (mcode backend). CI installs 4.1.0, the
 | `make test` | The synthesis check, the unit tests, `tb_trace`, and the test programs on both cores, each run compared with the emulator ([What the tests check](#what-the-tests-check)). | 5 minutes in GHDL on 20 CPUs, 15 in nvc |
 | `make lint` | vsg on every VHDL file, with the rules of CODING_STYLE.md. | seconds |
 | `make formal` | The SymbiYosys jobs of `formal/` ([The formal checks](#the-formal-checks)). | 20 minutes on 20 CPUs, most of it the debug link's covers |
-| `make timing` | Vivado on the pipelined core alone, out of context ([Timing](#timing)). | 3 minutes |
+| `make timing` | Vivado on the pipelined core alone, out of context, or with `UNIT=fpu` on the FPU ([Timing](#timing)). | 3 minutes |
 | `make timing-spread` | `make timing` with seven counts of breakpoints and watchpoints at once, and the least, median, and most of each slack ([Timing](#timing)). | 11 minutes on 20 CPUs, 40 with `FLOW=timing` |
 | `make programs` | The runtime's and the translator's test programs, and random modules of `translator/test/fuzz.py`, on `CORE`; `SHARD=I/N` runs the Ith of N shares. | 25 minutes on the pipelined core and 51 on the multi-cycle one in GHDL; 5 and 3 in nvc |
 | `make strides` | `pcfx` and `sidefx` swept with strides 17, 31, and 64 on `CORE`. | 6 minutes on the pipelined core |
@@ -285,11 +285,23 @@ It takes about 3 minutes with the default flow. `VIVADO` names the
 executable, `/opt/Xilinx/2025.1/Vivado/bin/vivado` unless the environment
 or the command line sets it.
 
-At the end it judges the slacks against the budget of the board in
-[test/timing_budget.py](test/timing_budget.py), at a 10 ns clock: the core
-alone must meet the clock, and the inputs and the outputs must leave the
-system 1.5 and 2.2 ns (`mega65` only). The two come from the slack of the
-ports inside NiceMonMEGA65 at `V1.0`, and keep about 0.2 ns of it. It prints the result, writes `budget.json` beside the
+`UNIT=fpu` runs the same on the FPU of DEVICES.md §11
+([src/fpu.vhd](src/fpu.vhd) and [src/fpu_unit.vhd](src/fpu_unit.vhd)),
+which a system builds beside the core, and whose paths the core's run
+does not have (#172). `BREAKS` and `WATCHES` do not apply, and the reports
+go to `build/timing/fpu-BOARD-FLOW/`. Its inputs are its Wishbone port,
+whose requests come from the system's address decode, and its outputs go
+to the system's read mux and to the core's stall. It has no
+`timing_ack.rpt`.
+
+At the end it judges the slacks against the budget of the unit and the
+board in [test/timing_budget.py](test/timing_budget.py), at a 10 ns clock:
+the core alone must meet the clock, and the inputs and the outputs must
+leave the system 1.5 and 2.2 ns (`mega65` only). The two come from the
+slack of the ports inside NiceMonMEGA65 at `V1.0`, and keep about 0.2 ns of
+it. The FPU must leave 1.0 ns on its own paths, as the system took 0.5 to
+1 ns of them in NiceMonMEGA65's build, and the same 1.5 and 2.2 ns at its
+ports. It prints the result, writes `budget.json` beside the
 reports, and says `MISSED` on a miss, but exits 0. `release.py check` puts
 the result in its stamp, and no release waits for it.
 
@@ -298,7 +310,8 @@ same input, but a change elsewhere in the design moves the placement, and
 the slacks with it. `make timing-spread` runs `make timing` for `BOARD` and
 `FLOW` with seven counts of breakpoints and watchpoints, `4-0` to `4-4`,
 `2-0`, and `2-4`, all at once, and prints the least, the median, and the
-most of each slack, and how many runs met the budget. On the MEGA65 at
+most of each slack, and how many runs met the budget. It is for the core
+only, as the FPU has no such variants. On the MEGA65 at
 565b976 (#151):
 
 | MEGA65, 10 ns | core | inputs | outputs | budget met |

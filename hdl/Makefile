@@ -731,19 +731,22 @@ formal:
 emulator:
 	$(if $(PREBUILT),,$(MAKE) -C ../emulator build)
 
-# The out-of-context timing of the pipelined core in Vivado, which timing.tcl
-# describes, for the part of BOARD (mega65 or nexys4ddr) with the directives
-# of FLOW (default, or timing as NiceMonMEGA65 builds), a clock of PERIOD
-# ns, BREAKS breakpoints, and WATCHES watchpoints. The reports go to
-# build/timing/BOARD-FLOW-BREAKS-WATCHES/: the worst
+# The out-of-context timing of UNIT in Vivado, which timing.tcl
+# describes: the pipelined core, pipeline, by default, or the FPU, fpu.
+# For the part of BOARD (mega65 or nexys4ddr) with the directives of FLOW
+# (default, or timing as NiceMonMEGA65 builds), a clock of PERIOD ns, and
+# for the core BREAKS breakpoints and WATCHES watchpoints. The reports go
+# to build/timing/BOARD-FLOW-BREAKS-WATCHES/ for the core, and to
+# build/timing/fpu-BOARD-FLOW/ for the FPU: the worst
 # register-to-register paths to timing.rpt, the worst from an input to
 # timing_in.rpt, the worst to an output to timing_out.rpt, and the endpoints
 # with less than 1 ns of slack, by group, to timing_groups.rpt. The worst of
 # each is printed, and the groups. About 3 minutes with the default flow.
-# Last it compares the slacks with the budget of the board in
+# Last it compares the slacks with the budget of the unit and board in
 # test/timing_budget.py, writes budget.json, and prints "MISSED" on a miss,
 # but still exits 0: a miss is to be seen, not to stop anything.
 VIVADO ?= /opt/Xilinx/2025.1/Vivado/bin/vivado
+UNIT   ?= pipeline
 BOARD  ?= mega65
 FLOW   ?= default
 PERIOD ?= 10.0
@@ -751,36 +754,40 @@ BREAKS ?= 4
 WATCHES ?= 4
 PART_mega65    = xc7a200tfbg484-2
 PART_nexys4ddr = xc7a100tcsg324-1
-TIMING_DIR = $(BUILD)/timing/$(BOARD)-$(FLOW)-$(BREAKS)-$(WATCHES)
+TIMING_DIR_pipeline = $(BUILD)/timing/$(BOARD)-$(FLOW)-$(BREAKS)-$(WATCHES)
+TIMING_DIR_fpu      = $(BUILD)/timing/fpu-$(BOARD)-$(FLOW)
+TIMING_DIR = $(TIMING_DIR_$(UNIT))
 
 timing:
+	@test -n "$(TIMING_DIR)" || { echo "unknown UNIT $(UNIT), not pipeline or fpu"; exit 1; }
 	@test -n "$(PART_$(BOARD))" || { echo "unknown BOARD $(BOARD)"; exit 1; }
 	@mkdir -p $(TIMING_DIR)
 	@cd $(TIMING_DIR) && $(VIVADO) -mode batch -nolog -nojournal -source $(CURDIR)/timing.tcl \
-	  -tclargs $(PART_$(BOARD)) $(FLOW) $(PERIOD) $(BREAKS) $(WATCHES) > timing.log 2>&1 || \
+	  -tclargs $(PART_$(BOARD)) $(FLOW) $(PERIOD) $(BREAKS) $(WATCHES) $(UNIT) > timing.log 2>&1 || \
 	  { tail -20 timing.log; exit 1; }
 	@for r in timing timing_in timing_out; do \
 	  echo "$$r.rpt:"; grep -m1 -E "^Slack" $(TIMING_DIR)/$$r.rpt; \
 	  grep -m2 -E "^  (Source|Destination):" $(TIMING_DIR)/$$r.rpt; done
 	@cat $(TIMING_DIR)/timing_groups.rpt
-	@$(PYTHON) test/timing_budget.py $(TIMING_DIR) $(BOARD) $(PERIOD) $(FLOW)
+	@$(PYTHON) test/timing_budget.py $(TIMING_DIR) $(BOARD) $(PERIOD) $(FLOW) $(UNIT)
 
 # One run of make timing cannot show a change of a few tenths of a ns: a
 # change elsewhere moves the placement, and the slacks with it (#151). This
 # runs make timing for BOARD and FLOW with the seven counts of breakpoints
 # and watchpoints of SPREAD_VARIANTS, all at once, and prints the least,
 # median, and most of each slack. About 11 minutes with the default flow
-# and 40 with the timing flow, on 20 CPUs.
+# and 40 with the timing flow, on 20 CPUs. The FPU has no such variants.
 SPREAD_VARIANTS = 4-0 4-1 4-2 4-3 4-4 2-0 2-4
 SPREAD_DIRS = $(foreach v,$(SPREAD_VARIANTS),$(BUILD)/timing/$(BOARD)-$(FLOW)-$(v))
 
 timing-spread:
+	@test "$(UNIT)" = pipeline || { echo "make timing-spread is for UNIT=pipeline"; exit 1; }
 	@$(MAKE) --no-print-directory -j $(words $(SPREAD_VARIANTS)) \
 	  $(addprefix timing-spread/,$(SPREAD_VARIANTS))
 	@$(PYTHON) test/timing_budget.py --spread $(SPREAD_DIRS)
 
 timing-spread/%:
-	@$(MAKE) --no-print-directory timing BREAKS=$(word 1,$(subst -, ,$*)) \
+	@$(MAKE) --no-print-directory timing UNIT=pipeline BREAKS=$(word 1,$(subst -, ,$*)) \
 	  WATCHES=$(word 2,$(subst -, ,$*)) > /dev/null
 
 # Checks the style of every VHDL file against CODING_STYLE.md. Long lines are

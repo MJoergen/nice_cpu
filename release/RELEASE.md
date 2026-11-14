@@ -123,8 +123,8 @@ diagram check of step 2, and writes the stamp. The slides are checked by
 ## 4. Formal checks
 
 Run these alone, not next to other work, as some proofs take minutes;
-`release.py check` runs only `make timing` beside them, one Vivado run of
-three minutes. CI
+`release.py check` runs only `make timing` beside them, a Vivado run of
+three minutes for the core and one for the FPU. CI
 pins an OSS CAD Suite (hdl/README.md, The formal checks), which may differ
 from a local install, so a proof that passes on one and fails on the
 other is worth a look.
@@ -165,10 +165,13 @@ If a figure in the documents changed, go back to step 2.4.
 ### Timing
 
 `release.py check` also runs `make -C hdl timing` (`BOARD=mega65`, about 3
-minutes) and compares the slacks with the budget in
+minutes), for the core and with `UNIT=fpu` for the FPU, and compares the
+slacks with the budget in
 [hdl/test/timing_budget.py](../hdl/test/timing_budget.py): the core alone must
 meet the 10 ns clock, and the paths from the core's inputs and to its
-outputs must leave the system around it 1.5 and 2.2 ns. This is **not a
+outputs must leave the system around it 1.5 and 2.2 ns. The FPU must keep
+1.0 ns on its own paths, and the same at its ports. The stamp has the
+result of each, and the worst of the two. This is **not a
 gate**. A miss prints a warning and goes into the stamp, and `tag` shows
 it. If it missed, say so in the release notes, with the cause, or the
 commit to blame. The out-of-context figures are a proxy: the memory and

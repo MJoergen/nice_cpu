@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Compares the reports of "make timing" with the budget of the board.
+"""Compares the reports of "make timing" with the budget of the unit and board.
 
-    timing_budget.py DIR BOARD PERIOD [FLOW]   judge the reports in DIR
-    timing_budget.py --spread DIR...           the least, median, and most of
-                                               each slack over several runs
-    timing_budget.py --test                    the self-test of make test
+    timing_budget.py DIR BOARD PERIOD [FLOW [UNIT]]   judge the reports in DIR
+    timing_budget.py --spread DIR...                  the least, median, and most
+                                                      of each slack over several runs
+    timing_budget.py --test                           the self-test of make test
 
+The unit is the pipelined core, pipeline, the default, or the FPU, fpu.
 The budget is the least slack at a 10 ns clock, in ns, of the worst
-register-to-register path (the core alone), of the worst path from an
+register-to-register path (the unit alone), of the worst path from an
 input, and of the worst path to an output. The last two are the time left
-to the system around the core, which takes some of it: the block RAMs, the
+to the system around the unit, which takes some of it: the block RAMs, the
 data bus decode, and the devices of NiceMonMEGA65.
 
 A miss is a warning, never a failure: it prints "MISSED" and exits 0. DIR
@@ -33,15 +34,23 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-# board: (period in ns, least slack of the core, of the inputs, of the outputs).
+# (unit, board): (period in ns, least slack of the unit, of the inputs, of the
+# outputs).
 # The MEGA65's from NiceMonMEGA65 at V1.0: out of context the inputs have 2.25
 # ns and the outputs 2.46 ns, and in the system +0.92 ns and +0.46 ns. So the
 # system takes about 1.3 ns of the inputs and 2.0 ns of the outputs, and each
 # budget keeps about 0.2 ns of in-system slack. The worst output in the system
 # goes to a device, which is not in the core, so this is a calibration, not a
 # promise. The Nexys4DDR has none: the core alone misses 90 MHz there.
-BUDGET: dict[str, tuple[float, float, float, float]] = {
-    "mega65": (10.0, 0.0, 1.5, 2.2),
+#
+# The FPU's (#172): it is placed apart from the core in the system, which took
+# 0.5 to 1 ns of its register-to-register paths in NiceMonMEGA65's build, so
+# its own need 1.0 ns. Its requests come after the same address decode as the
+# core's inputs, and its outputs go to the read mux and the core's stall, so
+# its ports have the core's budgets.
+BUDGET: dict[tuple[str, str], tuple[float, float, float, float]] = {
+    ("pipeline", "mega65"): (10.0, 0.0, 1.5, 2.2),
+    ("fpu", "mega65"): (10.0, 1.0, 1.5, 2.2),
 }
 
 # (board, flow): the range, most less least, of the slack of the core, the
@@ -49,7 +58,8 @@ BUDGET: dict[str, tuple[float, float, float, float]] = {
 # ns. The MEGA65's from 565b976 (#151): in the default flow the core has
 # 0.111 to 0.708, the inputs 1.869 to 2.559, and the outputs 1.554 to 2.963;
 # in the timing flow -0.075 to 0.342, 1.052 to 2.176, and 1.246 to 2.495.
-# So the budget of the outputs lies inside the range of both flows.
+# So the budget of the outputs lies inside the range of both flows. The FPU
+# has no such variants, and no range.
 SPREAD: dict[tuple[str, str], tuple[float, float, float]] = {
     ("mega65", "default"): (0.60, 0.69, 1.41),
     ("mega65", "timing"): (0.42, 1.12, 1.25),
@@ -64,14 +74,16 @@ def first_slack(report: Path) -> Optional[float]:
     return float(m.group(1)) if m else None
 
 
-def judge(d: Path, board: str, period: float, flow: str = "default") -> dict[str, object]:
+def judge(d: Path, board: str, period: float, flow: str = "default",
+          unit: str = "pipeline") -> dict[str, object]:
     slacks = {name: first_slack(d / f"{name}.rpt") for name in ("timing", "timing_in", "timing_out")}
-    out: dict[str, object] = {"board": board, "period": period, "flow": flow, "reg": slacks["timing"],
-                              "in": slacks["timing_in"], "out": slacks["timing_out"]}
-    if board not in BUDGET or BUDGET[board][0] != period:
+    out: dict[str, object] = {"unit": unit, "board": board, "period": period, "flow": flow,
+                              "reg": slacks["timing"], "in": slacks["timing_in"], "out": slacks["timing_out"]}
+    budget = BUDGET.get((unit, board))
+    if budget is None or budget[0] != period:
         out["status"] = "none"
         return out
-    _, reg_min, in_min, out_min = BUDGET[board]
+    _, reg_min, in_min, out_min = budget
     out["budget_reg"] = reg_min
     out["budget_in"] = in_min
     out["budget_out"] = out_min
@@ -81,16 +93,17 @@ def judge(d: Path, board: str, period: float, flow: str = "default") -> dict[str
     else:
         out["status"] = "met" if reg >= reg_min and p_in >= in_min and p_out >= out_min else "missed"
         spread = SPREAD.get((board, flow))
-        if out["status"] == "missed" and spread is not None:
+        if out["status"] == "missed" and spread is not None and unit == "pipeline":
             out["within_spread"] = all(s >= m - w for s, m, w in
                                        zip((reg, p_in, p_out), (reg_min, in_min, out_min), spread))
     return out
 
 
 def describe(r: dict[str, object]) -> str:
+    unit = "core" if r.get("unit", "pipeline") == "pipeline" else str(r["unit"])
     if r["status"] == "none":
-        return f"timing budget: none for {r['board']} at {r['period']} ns"
-    text = (f"timing budget {r['board']} at {r['period']} ns: core {r['reg']} ns (>= {r['budget_reg']}), "
+        return f"timing budget: none for the {unit} on {r['board']} at {r['period']} ns"
+    text = (f"timing budget {r['board']} at {r['period']} ns: {unit} {r['reg']} ns (>= {r['budget_reg']}), "
             f"inputs {r['in']} ns (>= {r['budget_in']}), outputs {r['out']} ns (>= {r['budget_out']})")
     if r["status"] == "met":
         return f"{text}: met"
@@ -123,8 +136,8 @@ def spread(dirs: list[Path]) -> str:
     return "\n".join(lines)
 
 
-def report(d: Path, board: str, period: float, flow: str = "default") -> None:
-    r = judge(d, board, period, flow)
+def report(d: Path, board: str, period: float, flow: str = "default", unit: str = "pipeline") -> None:
+    r = judge(d, board, period, flow, unit)
     (d / "budget.json").write_text(json.dumps(r, indent=2) + "\n")
     print(describe(r))
 
@@ -181,6 +194,15 @@ def self_test() -> None:
         assert "inputs: least 1.000, median 1.600, most 2.000 ns" in text, text
         assert "budget met in 2 of 3" in text, text
         assert median([4.0, 1.0, 3.0, 2.0]) == 2.5
+        fake(d, "0.900", "2.254", "2.456")
+        assert judge(d, "mega65", 10.0)["status"] == "met"
+        assert judge(d, "mega65", 10.0, "default", "fpu")["status"] == "missed"
+        assert "within_spread" not in judge(d, "mega65", 10.0, "default", "fpu")
+        assert "fpu 0.9 ns (>= 1.0)" in describe(judge(d, "mega65", 10.0, "default", "fpu"))
+        fake(d, "1.000", "1.500", "2.200")
+        assert judge(d, "mega65", 10.0, "timing", "fpu")["status"] == "met"
+        assert judge(d, "nexys4ddr", 10.0, "default", "fpu")["status"] == "none"
+        assert judge(d, "mega65", 10.0, "default", "other")["status"] == "none"
     print("timing_budget: ok")
 
 
@@ -191,7 +213,7 @@ def main() -> int:
     if sys.argv[1:2] == ["--spread"] and len(sys.argv) > 2:
         print(spread([Path(a) for a in sys.argv[2:]]))
         return 0
-    if len(sys.argv) not in (4, 5):
+    if len(sys.argv) not in (4, 5, 6):
         print(__doc__, file=sys.stderr)
         return 2
     report(Path(sys.argv[1]), sys.argv[2], float(sys.argv[3]), *sys.argv[4:])

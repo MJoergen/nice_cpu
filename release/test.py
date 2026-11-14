@@ -181,17 +181,42 @@ def test_timing_budget() -> None:
             (out / "budget.json").write_text('{"status": "met"}')
             written = ""
             check(release.timing_budget()["status"] == "error", "a stale budget.json is not read")
+            code = 0
+            written = '{"status": "met"}'
+            fpu = release.timing_dir("mega65", "fpu")
+            fpu.mkdir(parents=True)
+            r = release.timing_budgets()
+            check(r["status"] == "error", "the FPU without a budget.json makes the whole an error")
+            units = r["units"]
+            check(isinstance(units, dict) and units["pipeline"]["status"] == "met"
+                  and units["fpu"]["status"] == "error", "each unit is recorded")
+            out = fpu
+            r = release.timing_budgets()
+            check(r["status"] == "error", "the core without a budget.json is an error")
+            written = ""
+
+            def run_both(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+                for d, text in ((release.timing_dir("mega65"), '{"status": "met"}'), (fpu, written)):
+                    d.joinpath("budget.json").write_text(text)
+                return subprocess.CompletedProcess([], 0)
+
+            with mock.patch.object(subprocess, "run", run_both):
+                written = '{"status": "missed"}'
+                check(release.timing_budgets()["status"] == "missed", "a miss of the FPU is a miss")
+                written = '{"status": "met"}'
+                check(release.timing_budgets()["status"] == "met", "both met")
 
 
 def test_timing_dir() -> None:
     """timing_dir is the directory that make -C hdl timing writes to, as
     make -n prints it from the Makefile's TIMING_DIR."""
     hdl = release.ROOT / "hdl"
-    p = subprocess.run(["make", "-s", "-n", "-C", str(hdl), "timing", *release.timing_args("mega65")],
-                       capture_output=True, text=True, check=True)
-    made = {hdl / w for line in p.stdout.splitlines() if line.startswith("mkdir -p ")
-            for w in line.split()[2:]}
-    check(made == {release.timing_dir("mega65")}, f"make timing writes to {made}")
+    for unit in release.TIMING_UNITS:
+        p = subprocess.run(["make", "-s", "-n", "-C", str(hdl), "timing", *release.timing_args("mega65", unit)],
+                           capture_output=True, text=True, check=True)
+        made = {hdl / w for line in p.stdout.splitlines() if line.startswith("mkdir -p ")
+                for w in line.split()[2:]}
+        check(made == {release.timing_dir("mega65", unit)}, f"make timing UNIT={unit} writes to {made}")
 
 
 for t in (test_timing_dir, test_timing_budget, test_figure_lines, test_bench_totals, test_next_tag, test_ci_status, test_notes_section, test_version, test_stamp_covers):

@@ -65,4 +65,4 @@ The testbenches, the test programs, and the scripts that run them. [hdl/README.m
 | [random_prog.py](random_prog.py) | Writes random programs, and random interrupt requests for them. |
 | [random_stats.py](random_stats.py) | Shows how the random programs spend their steps, and how often they make each hazard. |
 | [trace_reads.py](trace_reads.py) | Finds the first line where two traces differ, and shows the data reads of that instruction. |
-| [timing_budget.py](timing_budget.py) | Compares the reports of `make timing` with the budget of the board, and warns at a miss. With `--spread` it gives the least, the median, and the most of each slack over the runs of `make timing-spread`. |
+| [timing_budget.py](timing_budget.py) | Compares the reports of `make timing` with the budget of the unit and the board, and warns at a miss. With `--spread` it gives the least, the median, and the most of each slack over the runs of `make timing-spread`. |

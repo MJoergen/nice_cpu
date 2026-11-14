@@ -118,13 +118,17 @@ test: emulator
 # A random test of the printf family and the i family against a model of
 # C's printf, test/fuzz_printf.py, one of strtod and strtof against exact arithmetic,
 # test/fuzz_strtod.py, and one of the math functions against the same
-# code on the host and the host's libm, test/fuzz_math.py. They compile
-# programs with clang, so make test does not run them.
+# code on the host and the host's libm, test/fuzz_math.py. The last two
+# run with each float library, float_fpu.nasm and float.nasm; printf
+# needs none. They compile programs with clang, so make test does not run
+# them, and the top-level make slow does.
 fuzz: libc.a emulator
 	@$(PYTHON) test/fuzz_printf.py 1 300
 	@$(PYTHON) test/fuzz_printf.py --integer 1 300
 	@$(PYTHON) test/fuzz_strtod.py 1 1000
+	@$(PYTHON) test/fuzz_strtod.py --no-fpu 1 1000
 	@$(PYTHON) test/fuzz_math.py 1 1000
+	@$(PYTHON) test/fuzz_math.py --no-fpu 1 1000
 
 emulator:
 	$(MAKE) -C ../../emulator build

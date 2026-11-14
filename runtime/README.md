@@ -709,6 +709,8 @@ results with those of the same sources compiled for the host, which
 must match bit for bit, and with the true values, which it takes from
 Python's `decimal` module or the host's libm. `fuzz_math.py SEED COUNT
 [NAME...]` runs other seeds, sizes, and functions, and `--errors` prints
-the largest error of each function. The three join `float_fpu.nasm`;
-`fuzz_strtod.py` and `fuzz_math.py` take `--no-fpu`, which joins
-`float.nasm` instead.
+the largest error of each function. `fuzz_strtod.py` and `fuzz_math.py`
+join `float_fpu.nasm`, and with `--no-fpu` `float.nasm`, and `make -C
+libc fuzz` runs each both ways. `fuzz_printf.py` joins no float library,
+as `printf` calls none. The top-level `make slow` runs `make -C libc
+fuzz`.

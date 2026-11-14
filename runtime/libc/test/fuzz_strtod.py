@@ -312,7 +312,7 @@ def main() -> None:
         bad += 1
         print(f"{len(got)} lines instead of {len(expected)}, exit status {p.returncode}:\n"
               + "\n".join(output.splitlines()[-5:]))
-    print(f"{'FAIL' if bad else 'PASS'} strtod fuzz (seed {seed}, {count} strings)")
+    print(f"{'FAIL' if bad else 'PASS'} strtod fuzz (seed {seed}, {count} strings, {FLOAT_LIB})")
     sys.exit(1 if bad else 0)
 
 

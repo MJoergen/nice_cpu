@@ -57,6 +57,8 @@ TOOLS = {
     "zig": "the emulator",
     "ghdl": "make test",
     "nvc": "make slow",
+    "clang": "make slow, the fuzz of the C library",
+    "llvm-ar": "make slow, the C library",
     "sby": "make formal",
     "yosys": "make formal",
     "vsg": "make lint, at the version of ci.yml",

@@ -538,7 +538,7 @@ def main() -> None:
         for fn, err in worst.items():
             print(f"{fn:8} {err:.3f} ulp")
     print(f"{'FAIL' if bad else 'PASS'} math fuzz (seed {seed}, {count} inputs to each of "
-          f"{2 * len(names)} functions)")
+          f"{2 * len(names)} functions, {FLOAT_LIB})")
     sys.exit(1 if bad else 0)
 
 

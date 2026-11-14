@@ -295,6 +295,8 @@ The last row I ran again for `FPU_X_HI`: bounded to 8 cycles, the stack model fa
 
 **Fix:** `fpu-long` and the fuzz of the C library, both ways, in `make slow`. Float instructions in `fuzz.py` are an issue of their own.
 
+**Resolved.** `make slow` runs `make -C emulator fpu-long`, and `make -C runtime/libc fuzz`, beside the runs on the cores, a CPU each. The fuzz runs `fuzz_strtod.py` and `fuzz_math.py` with each float library, and their PASS lines name it; `fuzz_printf.py` needs no `--no-fpu`, as `printf` calls no routine of the float library, and runs without one. Both passed, in 77 and 40 seconds. RELEASE.md §5 names them, and `release.py preflight` asks for clang and llvm-ar. Float instructions in `fuzz.py` are #180, for `V2.3`.
+
 ### 3.14 `run.py` runs niceemu with no step limit
 
 `translator/test/run.py:3585` runs each program with `subprocess.run` and neither `-n` nor a timeout. A program that runs away hangs `make test`, with no line that says which. `kept_program`, new in this release, adds such runs under `--keep`, which `make programs` gives: it keeps a program translated again with `--memory-bytes` where its run gives the same outcome. It has no test of its own. One of the changes of §3.7 ran away so, and had to be stopped by hand. **Fix:** `-n` with a limit far above the longest case.

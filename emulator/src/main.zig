@@ -64,7 +64,9 @@ const usage =
     \\                       comparing traces with an FPGA core.
     \\      --step-time      Count one microsecond per step in 0xFFFFFF44 and
     \\                       0xFFFFFF45, and in the clock at 0xFFFFFF46-
-    \\                       0xFFFFFF49 from 0, rather than the host's time.
+    \\                       0xFFFFFF49 from 0, rather than the host's time,
+    \\                       and skip N wait steps at a write of N to
+    \\                       0xFFFFFF5F, TIME_SKIP.
     \\      --no-timer-irq   The timer counts, but raises no requests, so that
     \\                       --irq can raise them where an FPGA core took them.
     \\      --link [ADDR:]PORT  Serve the debug link of doc/DEBUG.md on PORT of
@@ -777,17 +779,18 @@ fn raiseRequests(cpu: *Cpu, opts: Options, steps: u64, next: *usize) void {
 }
 
 /// The wait steps (doc/DEVICES.md §3) that a run counts at once at step
-/// `steps`, after the requests of the step: up to the step at which the
-/// timer or the next of --irq and --nmi raises a request, or up to the step
-/// limit. 0 when the next step is not a wait step, and null when no request
-/// can end the wait, which stops a run without the link or the window
-/// (doc/DEVICES.md §1.6). `next` is the first request not raised yet.
+/// `steps`, after the requests of the step: those of a wait, or the rest of
+/// a skip of `TIME_SKIP`, up to the step at which the timer or the next of
+/// --irq and --nmi raises a request, or up to the step limit. 0 when the
+/// next step is not a wait step, and null when no request can end a wait,
+/// which stops a run without the link or the window (doc/DEVICES.md §1.6).
+/// `next` is the first request not raised yet.
 fn waitJump(cpu: *const Cpu, opts: Options, steps: u64, next: usize) ?u64 {
-    if (!cpu.waitStepDue()) return 0;
+    const skip: ?u64 = if (cpu.skipStepDue()) cpu.time_skip else if (cpu.waitStepDue()) null else return 0;
     const timer = cpu.timerWaitSteps();
     const request: ?u64 = if (next < opts.requests.len) opts.requests[next].step - steps else null;
-    if (timer == null and request == null) return null;
-    return @min(timer orelse std.math.maxInt(u64), request orelse std.math.maxInt(u64), opts.max_steps - steps);
+    if (skip == null and timer == null and request == null) return null;
+    return @min(skip orelse std.math.maxInt(u64), timer orelse std.math.maxInt(u64), request orelse std.math.maxInt(u64), opts.max_steps - steps);
 }
 
 /// Jump over the wait steps that `waitJump` counts at step `steps`, but no
@@ -1105,8 +1108,9 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
                 link.pause();
                 break;
             }
-            // The wait steps at once, but a single step of the link is one.
-            if (!link.step_due) {
+            // The wait steps at once, but a single step of the link is one
+            // of a wait. It runs the rest of a skip, and the step after it.
+            if (!link.step_due or cpu.skipStepDue()) {
                 // With the pace of --speed, no further than the chunk's end.
                 const budget = if (pacer.speed != 0) chunk - n else std.math.maxInt(u64);
                 const k = skipWaits(cpu, opts, steps, next, budget) orelse {

@@ -571,6 +571,9 @@ fn perfWord(addr: u32) ?u6 {
     return if (addr -% perf_base < 64) @truncate(addr -% perf_base) else null;
 }
 
+/// The word of the performance counters of `TIME_SKIP`, 0xFFFFFF5F (DEVICES §3).
+const time_skip_word: u6 = 0x1F;
+
 /// Whether word `i` of the performance counters belongs to a clock-driven
 /// counter, the cycle counter, the microsecond counter, or the clock of
 /// the time of day, which `--no-cycle-counter` turns into memory.
@@ -894,6 +897,10 @@ pub const Cpu = struct {
     saved_pc: u32,
     saved_sr: u32,
     halt_reason: HaltReason,
+    /// The wait steps that a write of `TIME_SKIP` left to count, without a
+    /// clock (`--step-time`). A pending request drops them (DEVICES §3).
+    /// Not hidden state of §1.4: a board has no such write.
+    time_skip: u32,
 
     // Pending interrupt requests, holding the vector the device supplies
     // (§7.1). An IRQ is pending for each of its sources, which merge only
@@ -993,6 +1000,7 @@ pub const Cpu = struct {
             .saved_pc = 0,
             .saved_sr = 0,
             .halt_reason = .none,
+            .time_skip = 0,
             .nmi_pending = null,
             .link_nmi_pending = null,
             .irq_pending = null,
@@ -1053,6 +1061,7 @@ pub const Cpu = struct {
         self.after_rti = false;
         self.waiting = false;
         self.halt_reason = .none;
+        self.time_skip = 0;
         self.nmi_pending = null;
         self.link_nmi_pending = null;
         self.irq_pending = null;
@@ -1242,8 +1251,10 @@ pub const Cpu = struct {
             self.fpu.write(i, value);
         } else if (self.todDevice(addr)) |i| {
             self.tod.write(i, value);
-        } else if (self.perfDevice(addr) != null) {
-            // The counters cannot be written (DEVICES §3).
+        } else if (self.perfDevice(addr)) |i| {
+            // The counters cannot be written. Without a clock, a write of
+            // `TIME_SKIP` skips wait steps (DEVICES §3).
+            if (i == time_skip_word and self.clock == null) self.time_skip = value;
         } else if (timerWord(addr)) |i| {
             self.timer.write(i, value);
         } else if (sdWord(addr)) |i| {
@@ -1318,6 +1329,15 @@ pub const Cpu = struct {
             if (!self.nmiPending() and self.irq_pending == null and self.console_pending == null) return;
             self.waiting = false;
         }
+        // DEVICES §3: the rest of a skip of `TIME_SKIP`, a wait step each,
+        // which a pending request drops.
+        if (self.time_skip != 0) {
+            if (!self.nmiPending() and self.irq_pending == null and self.console_pending == null) {
+                self.time_skip -= 1;
+                return;
+            }
+            self.time_skip = 0;
+        }
 
         // §7.1: interrupts are checked before each instruction.
         if (!self.after_rti and !self.in_service) {
@@ -1378,6 +1398,7 @@ pub const Cpu = struct {
         in_service: bool,
         after_rti: bool,
         waiting: bool,
+        time_skip: u32,
         saved_pc: u32,
         saved_sr: u32,
         nmi_pending: ?u8,
@@ -1397,6 +1418,7 @@ pub const Cpu = struct {
             .in_service = self.in_service,
             .after_rti = self.after_rti,
             .waiting = self.waiting,
+            .time_skip = self.time_skip,
             .saved_pc = self.saved_pc,
             .saved_sr = self.saved_sr,
             .nmi_pending = self.nmi_pending,
@@ -1416,6 +1438,7 @@ pub const Cpu = struct {
         self.in_service = s.in_service;
         self.after_rti = s.after_rti;
         self.waiting = s.waiting;
+        self.time_skip = s.time_skip;
         self.saved_pc = s.saved_pc;
         self.saved_sr = s.saved_sr;
         self.nmi_pending = s.nmi_pending;
@@ -1450,7 +1473,13 @@ pub const Cpu = struct {
         return !self.halted() and self.waiting and !self.nmiPending() and !self.irqPending();
     }
 
-    /// While `waitStepDue`, the wait steps until the timer raises a request,
+    /// Whether the next step is a wait step of a skip of `TIME_SKIP`
+    /// (DEVICES §3): a skip has steps left, and no request drops them.
+    pub fn skipStepDue(self: *const Cpu) bool {
+        return !self.halted() and self.time_skip != 0 and !self.nmiPending() and !self.irqPending();
+    }
+
+    /// While `waitStepDue` or `skipStepDue`, the wait steps until the timer raises a request,
     /// or null if it raises none. The timer's request is raised at the end
     /// of the last of them, and ends the wait in the step after.
     pub fn timerWaitSteps(self: *const Cpu) ?u64 {
@@ -1459,8 +1488,10 @@ pub const Cpu = struct {
     }
 
     /// Run `n` wait steps at once, with the same result as `n` calls of
-    /// `step` while `waitStepDue` (DEVICES §3).
+    /// `step` while `waitStepDue` or `skipStepDue`, no more than a skip
+    /// has left (DEVICES §3).
     pub fn skipWait(self: *Cpu, n: u64) void {
+        self.time_skip -= @intCast(@min(n, self.time_skip));
         self.perf.cycles +%= n;
         if (self.clock == null) self.perf.micros +%= n;
         self.tod.tick(n);
@@ -2502,6 +2533,60 @@ test "skipWait is the same as single wait steps (DEVICES §3)" {
             if (n <= count) try testing.expectEqual(a.timer.raised, b.timer.raised);
         }
     }
+}
+
+test "TIME_SKIP: without a clock, a write skips wait steps, which a request drops (DEVICES §3)" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    const write = alu_iw(.always, MOVE, .none, ind(1), reg(2), reg(0)); // MOVE @R1, R2
+    try load(&cpu, 0, &.{ write, write, HALT });
+    cpu.regs[1] = 0xFFFF_FF5F;
+    cpu.regs[2] = 3;
+    try cpu.step(); // the write
+    try testing.expectEqual(3, cpu.time_skip);
+    try testing.expect(cpu.skipStepDue());
+    try testing.expect(!cpu.waitStepDue()); // not a wait of §7.5
+    try cpu.step();
+    try cpu.step(); // two wait steps
+    try testing.expectEqual(1, cpu.time_skip);
+    try testing.expectEqual(1, cpu.regs[15]);
+    try testing.expectEqual(3, cpu.perf.cycles);
+    try testing.expectEqual(3, cpu.perf.micros);
+    try testing.expectEqual(3, cpu.tod.us);
+    try testing.expectEqual(1, cpu.perf.instrs);
+    cpu.requestIrq(5); // E = 0: not taken, but it drops the rest
+    try testing.expect(!cpu.skipStepDue());
+    try cpu.step(); // the second write, in the same step
+    try testing.expectEqual(2, cpu.perf.instrs);
+    try testing.expectEqual(3, cpu.time_skip);
+    try testing.expect(!cpu.skipStepDue()); // the request is still pending
+    try cpu.step(); // the HALT, which drops the skip
+    try testing.expectEqual(.halt, cpu.halt_reason);
+    try testing.expectEqual(0, cpu.time_skip);
+    try testing.expectEqual(5, cpu.perf.cycles);
+}
+
+test "TIME_SKIP: skipWait counts the steps of a skip at once, and reset drops it (DEVICES §3)" {
+    var a = Cpu.init(testing.allocator);
+    defer a.deinit();
+    var b = Cpu.init(testing.allocator);
+    defer b.deinit();
+    for ([_]*Cpu{ &a, &b }) |c| {
+        try load(c, 0, &.{ alu_iw(.always, MOVE, .none, ind(1), reg(2), reg(0)), HALT });
+        c.regs[1] = 0xFFFF_FF5F;
+        c.regs[2] = 7;
+        c.timer.write(0, 100);
+        try c.step();
+    }
+    for (0..4) |_| try a.step();
+    b.skipWait(4);
+    try testing.expectEqual(a.perf.cycles, b.perf.cycles);
+    try testing.expectEqual(a.perf.micros, b.perf.micros);
+    try testing.expectEqual(a.tod.us, b.tod.us);
+    try testing.expectEqual(a.timer.count, b.timer.count);
+    try testing.expectEqual(3, b.time_skip);
+    b.reset();
+    try testing.expectEqual(0, b.time_skip);
 }
 
 test "the whole address space exists and wraps (§1.1)" {

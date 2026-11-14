@@ -23,7 +23,7 @@ OPTS_wrap      = -d 0xffffffff:1
 # are in the comments of each program. Run make bins after changing one.
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge irqtimer after start cputest console screen screencolor screeninvert iofetch \
   reads reserved mpu mpu64 mpubits perf events timer input r15modes r0dest r14mem skipconst carryin shiftc \
-  wrapmem smcown scrbound time trapsym sd font net eth bytewin wait waitnone clock clockhost stack conirq \
+  wrapmem smcown scrbound time trapsym sd font net eth bytewin wait waitnone skip clock clockhost stack conirq \
   fpu fpustack fpudec
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
@@ -57,6 +57,13 @@ OPTS_wait    = --step-time --irq 25:0x42 --nmi 40:0x43 -d 0x200:7
 OPTS_wait_in  = --step-time --max-steps 11 --symbols test/wait.sym
 OPTS_wait_end = --step-time --max-steps 12 --symbols test/wait.sym
 OPTS_waitnone = --no-timer-irq
+OPTS_skip     = --step-time --irq 140:0x42 --irq 146:0x42 -d 0x200:9 -d 0x210:2
+# skip again: without --step-time, where the write is ignored; cut short
+# by the step limit in its first skip; and with the counters' words
+# memory, where TIME_SKIP stays a device.
+OPTS_skip_off   = --max-steps 4 -d 0x200:3
+OPTS_skip_limit = --step-time --max-steps 50 -d 0x200:3
+OPTS_skip_mem   = --step-time --no-cycle-counter --irq 140:0x42 --irq 146:0x42
 OPTS_trapsym = --symbols test/trapsym.sym
 OPTS_stack   = --stack --nmi 5:1
 # The count example with --stack: it never changes R13, and its output is
@@ -134,6 +141,9 @@ programs:
 	$(call check,fpu_mem,test/fpu.bin)
 	$(call check,wait_in,test/wait.bin)
 	$(call check,wait_end,test/wait.bin)
+	$(call check,skip_off,test/skip.bin)
+	$(call check,skip_limit,test/skip.bin)
+	$(call check,skip_mem,test/skip.bin)
 	$(call check,stack_none,$(ASM)/count.bin)
 	@if cmp -s test/eth.frames.out test/eth.frames.expected; then echo "PASS eth frames"; \
 	else echo "FAIL eth frames"; diff test/eth.frames.expected test/eth.frames.out; exit 1; fi

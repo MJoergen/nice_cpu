@@ -120,7 +120,7 @@ goes through these steps on a small program, and a
 | `--no-cycle-counter` | Make the cycle counter, the microsecond counter, and the clock of the time of day, `0xFFFFFF40`, `0xFFFFFF41`, and `0xFFFFFF44`–`0xFFFFFF49`, ordinary memory (see Performance counters below). |
 | `--no-fpu` | Make the floating-point unit, `0xFFFFFF88`–`0xFFFFFF8F`, ordinary memory, as on a system without one (see Floating-point unit below). |
 | `--no-font` | Make the font RAM and the character ROM, `0xFFFE0000`–`0xFFFE3FFF`, ordinary memory, so that a program that reaches them runs as on an FPGA core with none (see Window below). |
-| `--step-time` | Count one microsecond per step in the microsecond counter, and in the clock of the time of day from 0 with "set" 0, rather than the host's time, so that a run counts the same each time (see Performance counters below). |
+| `--step-time` | Count one microsecond per step in the microsecond counter, and in the clock of the time of day from 0 with "set" 0, rather than the host's time, so that a run counts the same each time, and make a write of N to `TIME_SKIP`, `0xFFFFFF5F`, skip N wait steps (see Performance counters and Waiting below). |
 | `--no-timer-irq` | The timer counts, but raises no requests, so that `--irq` can raise them instead (see Timer below). |
 | `--window` | Show the screen in a window while the program runs, and keep it after the halt until it is closed (see Window below). Needs a build with `-Dwindow`. |
 | `--speed N` | With `--window`, run N steps a second, for a program that keeps time by the timer or by counting steps; 1000000 is one step per microsecond. 0, the default, runs as fast as the host can, and sleeps while the program waits for a key or a time (see Window below). |
@@ -267,7 +267,7 @@ address twice and a file with no words are errors.
 | `0xFFFFFF03`–`0xFFFFFF0F` | 13 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (DEVICES.md §4). Raises IRQ once every P steps. |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (DEVICES.md §2). Multiplies and divides A and B and counts the bits of A, and divides C and D and takes the square root of C. |
-| `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (DEVICES.md §3). Cycles, instructions, microseconds, data reads, stores, skips, jumps, and interrupts, 64 bits each. The clock of the time of day, at `0xFFFFFF46`–`0xFFFFFF49` (DEVICES.md §10). The fetch statistics of the FPGA core, at `0xFFFFFF60`–`0xFFFFFF7F`, read 0. |
+| `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (DEVICES.md §3). Cycles, instructions, microseconds, data reads, stores, skips, jumps, and interrupts, 64 bits each. The clock of the time of day, at `0xFFFFFF46`–`0xFFFFFF49` (DEVICES.md §10). `TIME_SKIP` at `0xFFFFFF5F`, for `--step-time`. The fetch statistics of the FPGA core, at `0xFFFFFF60`–`0xFFFFFF7F`, read 0. |
 | `0xFFFFFF80`–`0xFFFFFF87` | 8 | Reserved for I/O, like `0xFFFFFF03`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (DEVICES.md §1.4), and takes its font base from `0xFFFFFF86` (DEVICES.md §1.8). |
 | `0xFFFFFF88`–`0xFFFFFF8F` | 8 | Floating-point unit (DEVICES.md §11): a stack of 16 doubles, the views of X, and the commands. With `--no-fpu`, ordinary memory. |
 | `0xFFFFFF90`–`0xFFFFFF9F` | 16 | Reserved for I/O, like `0xFFFFFF03`–`0xFFFFFF0F`. |
@@ -344,7 +344,7 @@ hand.
 A read of a low word takes a snapshot of
 its counter, and a read of the high word returns the snapshot's high word.
 `--dump` shows the low words and the snapshots without taking a snapshot.
-Writes are ignored. `test/perf.nasm` checks the instruction counter, and
+Writes are ignored, but for `TIME_SKIP` with `--step-time` (below). `test/perf.nasm` checks the instruction counter, and
 `test/time.nasm` the microsecond counter, both with `--step-time`.
 
 The event counters, at `0xFFFFFF4A`–`0xFFFFFF53`, count the data reads,
@@ -634,6 +634,17 @@ come, stops the run with exit status 2, also under `-n`, but not with
 the window or the link. There a key or a byte from the host can raise the
 console's request, and the run sleeps until one comes (DEVICES.md §1.6). The probes `test/wait.nasm` and
 `test/waitnone.nasm` show these rules.
+
+With `--step-time`, a write of N to `TIME_SKIP`, `0xFFFFFF5F`, skips N
+wait steps after the step of the write, without a `WAIT` (DEVICES.md §3).
+niceemu counts them at once, as those of a wait, and a request ends a
+skip early, as it ends a wait: the timer's, the next `--irq` or `--nmi`,
+or the console's. A skip counts nothing while a request is pending, even
+with E = 0, and `-n` cuts it short. Its steps count toward `-n` and the
+steps of the last line. Without `--step-time` the write is ignored, as
+on an FPGA core. Under the link, a single step runs the rest of a skip
+with the next step (DEBUG.md §6). The probe `test/skip.nasm` shows these
+rules.
 
 The console raises its request on an edge (DEVICES.md §1.9). Where a read
 waits for its byte, from stdin, a file, or the link without the window,

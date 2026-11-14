@@ -432,6 +432,13 @@ host that writes back what it read never steps by accident.
   at R15 does not stop a wait. It stops the processor at the step
   boundary where a request ends the wait, before the instruction at R15,
   unless the request's entry goes first, as at any breakpoint.
+- **Skipping time.** The wait steps of a write of `TIME_SKIP` under
+  `--step-time` (DEVICES.md §3) end at step boundaries too. So a pause
+  takes effect during a skip, with R15 the address after the instruction
+  that wrote it, and bit 6 at 0, as the processor does not wait. A go on
+  counts the rest of the skip. A single step counts the rest of the skip
+  and then runs the step that follows it, so a step never hangs. A
+  breakpoint at R15 stops the processor after the skip, as after a wait.
 - **Go on.** A write of 0 to bit 4 of a paused processor, with bit 0 at 0,
   makes it go on from R15.
 - **Step.** A write with bits 4 and 5 set, and bit 0 at 0, to a paused

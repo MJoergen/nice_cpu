@@ -190,9 +190,10 @@ pub const Link = struct {
     /// Whether a breakpoint stops the processor now, before the next step:
     /// R15 is an enabled breakpoint, and the step is not the first after a go
     /// on or a step, nor an interrupt entry, which goes first, nor a wait
-    /// step, as the wait has not ended (DEBUG.md §6).
+    /// step, as the wait or the skip has not ended (DEBUG.md §6).
     pub fn breakDue(self: *const Link) bool {
         return self.running() and !self.after_go and !self.cpu.entryDue() and !self.cpu.waitStepDue() and
+            !self.cpu.skipStepDue() and
             self.breakAt(self.cpu.getReg(15)) != null;
     }
 

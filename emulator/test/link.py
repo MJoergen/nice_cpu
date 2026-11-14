@@ -152,6 +152,13 @@ WAITER = """
                 MOVE    R1, 1
                 HALT
 """
+# Skips 1000 wait steps with --step-time (DEVICES.md §3). The MOVE is at
+# 3, and the HALT at 5.
+TIME_SKIPPER = """
+                MOVE    @0xFFFFFF5F, 1000
+                MOVE    R1, 1
+                HALT
+"""
 # Counts in R2 with E = 0, so no IRQ is taken. Vector 2 leads to a routine
 # at 7 that sets R3 and halts, for the NMI of the link (DEBUG.md §6). The
 # loop's two instructions are at 3 and 5.
@@ -1386,6 +1393,40 @@ def test_wait(waiter: List[int]) -> None:
     e.stop()
 
 
+def test_time_skip(skipper: List[int]) -> None:
+    """A skip of TIME_SKIP with --step-time (§6, DEVICES.md §3): a single
+    step runs the rest of the skip with the step after it, bit 6 stays 0,
+    and a breakpoint at R15 fires after the skip."""
+    e = Emu(["--step-time"])
+    e.take(len(HELLO))
+    e.send(write(0, skipper) + write(CONTROL, [0x18]))
+    e.expect("start paused", ok(0, len(skipper)) + ok(CONTROL, 1) + PAUSED)
+    e.send(write(CONTROL, [0x38]))
+    e.expect("step the write", ok(CONTROL, 1) + PAUSED)
+    expect("control after the write", bytes([word(e, CONTROL)]), bytes([0x18]))
+    expect("R15 after the write", bytes([word(e, 0xFFFFFFEF)]), b"\x03")
+    expect("CYCLE_LO after the write", bytes([word(e, 0xFFFFFF40)]), b"\x01")
+    e.send(write(CONTROL, [0x38]))
+    e.expect("step the skip and the MOVE", ok(CONTROL, 1) + PAUSED)
+    expect("R15 after the skip", bytes([word(e, 0xFFFFFFEF)]), b"\x05")
+    expect("R1 after the skip", bytes([word(e, 0xFFFFFFE1)]), b"\x01")
+    expect("CYCLE_LO after the skip", word(e, 0xFFFFFF40).to_bytes(2, "big"), (1002).to_bytes(2, "big"))
+    e.stop()
+
+    e = Emu(["--step-time"])
+    e.take(len(HELLO))
+    e.send(write(0, skipper) + write(CONTROL, [0x18]))
+    e.expect("start paused again", ok(0, len(skipper)) + ok(CONTROL, 1) + PAUSED)
+    set_breaks(e, [3], 1)
+    e.send(write(CONTROL, [0x8]))
+    e.expect("go on to the end of the skip", ok(CONTROL, 1) + hit(0))
+    expect("R1 at the breakpoint", bytes([word(e, 0xFFFFFFE1)]), b"\x00")
+    expect("CYCLE_LO at the breakpoint", word(e, 0xFFFFFF40).to_bytes(2, "big"), (1001).to_bytes(2, "big"))
+    e.send(write(BREAK_EN, [0]) + write(CONTROL, [0x8]))
+    e.expect("go on to the halt after the skip", ok(BREAK_EN, 1) + ok(CONTROL, 1) + b"\xffh01#C9")
+    e.stop()
+
+
 def test_hidden(hidden: List[int], count: List[int]) -> None:
     """The hidden state and the pending requests (§6), stepped through an
     INT, its RTI, and an NMI that waits for the RTI: bits 7 to 10 of the
@@ -1741,6 +1782,7 @@ def main() -> None:
         regs = assemble(tmp, "regs", REGS)
         hidden = assemble(tmp, "hidden", HIDDEN)
         waiter = assemble(tmp, "waiter", WAITER)
+        skipper = assemble(tmp, "skipper", TIME_SKIPPER)
         nmi = assemble(tmp, "nmi", NMI_PROG)
         wait_nmi = assemble(tmp, "wait_nmi", WAIT_NMI)
         watch = assemble(tmp, "watch", WATCH)
@@ -1761,6 +1803,7 @@ def main() -> None:
             lambda: test_break(at10, load, count, skip, stop, irq),
             lambda: test_watch(watch, write200, irq),
             lambda: test_write_regs(regs, at20, count), lambda: test_wait(waiter),
+            lambda: test_time_skip(skipper),
             lambda: test_hidden(hidden, count), lambda: test_nmi(nmi, wait_nmi),
             lambda: test_old_host(stop, echo), lambda: test_net(spin), test_fpu, test_address, test_usage,
         ]

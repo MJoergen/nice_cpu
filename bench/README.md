@@ -311,13 +311,17 @@ MICROARCH.md §3 to §5:
   out from the operands in the trace;
 - the FPU of DEVICES.md §11, `hdl/src/fpu.vhd`, by averages: a command
   keeps it busy for a cycle if it is a stack command, `--fpu-long`
-  cycles (75) for `DIV`, `SQRT`, `ISQRT`, `FMOD`, `SCALE10`, and `DIGITS`,
-  and `--fpu-op` cycles (18) for the others, and every access to its words
-  but a read of `CMD` waits until then. The FPU's times depend on the
-  operands, and the model leaves out the reads of `X_W`, and of `X_S` for
-  a value that is not binary32, which go through its unit too. The
-  averages give `float.c` and `float_inline` on the pipelined core within
-  1%.
+  cycles (75) for `DIV`, `SQRT`, `ISQRT`, `FMOD`, `SCALE10`, and
+  `DIGITS`, and `--fpu-op` cycles (18) for the others. The FPU takes
+  each access into a register and serves it in the next cycle at the
+  earliest, with its ACK in the cycle after; every access but a read of
+  `CMD` is served once the command ends. One access more is taken while
+  one waits, and the rest wait on the bus, as do accesses to other
+  devices, which the bus decoder holds until the FPU's ACKs are in. The
+  FPU's times depend on the operands, and the model leaves out the reads
+  of `X_W`, and of `X_S` for a value that is not binary32, which go
+  through its unit too. The averages give `float.c` and `float_inline`
+  on the pipelined core within 1%.
 
 Every cycle above one per instruction is
 charged to the rule that caused it, so the output says where the time
@@ -608,15 +612,15 @@ That is 5.9 times fewer instructions than with `float.nasm`. On the
 pipelined core, `make core CORE_PROGRAMS=float` gives:
 
     phase      instructions       cycles  result
-    convert          42793       115031  97943df8  ok
-    dot32             4946        15728  c0c723f7  ok
-    dot64             6569        17940  ba3319ea  ok
-    mandel          114317       393311  4c25faf9  ok
-    norm             11679        39532  7703cd00  ok
-    total           180304       581542
+    convert          42793       117847  97943df8  ok
+    dot32             4946        16240  c0c723f7  ok
+    dot64             6569        18452  ba3319ea  ok
+    mandel          114317       407645  4c25faf9  ok
+    norm             11679        40252  7703cd00  ok
+    total           180304       600436
 
-That is 3.3 times fewer cycles than the 1916828 without the FPU, at 3.23
-per instruction. `make cycles` gives 576315. The FPU's unit takes 14
+That is 3.2 times fewer cycles than the 1916828 without the FPU, at 3.33
+per instruction. `make cycles` gives 595114. The FPU's unit takes 14
 cycles for an `ADD` and 16 for a `MUL`, and the FPU about 4 more for the
 command. Issue [#164](https://github.com/MJoergen/nice_cpu/issues/164)
 lists ways to make it faster.
@@ -635,8 +639,8 @@ more, and the emulator gives:
     total            85159        85299
 
 That is 53% fewer instructions than with the calls. On the pipelined core
-it takes 343753 cycles, 41% fewer than 581542, at 4.04 per instruction,
-and `make cycles` gives 341012.
+it takes 355798 cycles, 41% fewer than 600436, at 4.18 per instruction,
+and `make cycles` gives 352416.
 
 ## Dhrystone
 

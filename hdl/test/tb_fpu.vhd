@@ -10,8 +10,8 @@
 -- returns. It then reads STATUS for the depth and the flags, and reads X
 -- and drops it for each value, and compares those with the state after.
 -- After the vectors, it checks the waits of §11.2: while DIV runs, a read
--- of CMD is acknowledged in the next cycle, and a read of X waits for the
--- result.
+-- of CMD is acknowledged two cycles after it is accepted, as any request
+-- is when it need not wait, and a read of X waits for the result.
 -- It reports the first 20 lines that differ, then how many differ, and
 -- the most cycles from an accepted request to its ACK, with its line, and
 -- stops with status 0 if none do, and 1 if any do.
@@ -224,7 +224,7 @@ begin
       write(4, X"00000013");
       t_v := now;
       read(4, rd_v);
-      if now - t_v > 20 ns or rd_v /= X"00000000" then
+      if now - t_v > 30 ns or rd_v /= X"00000000" then
          fail("a read of CMD took " & time'image(now - t_v) & " and gave " & to_hstring(rd_v));
       end if;
       t_v := now;

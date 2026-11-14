@@ -39,14 +39,18 @@
 -- read at once. X_S and X_W are operations of the unit: a read of them
 -- waits for it.
 --
--- The port is a pipelined Wishbone slave, as src/mpu.vhd is. A request is
--- acknowledged in the cycle after it is accepted, unless it is a read of
--- X_S or X_W, or arrives while a command runs. A command runs after its
--- write is acknowledged. A request accepted while it runs, but a read of
--- CMD, waits in a register with STALL high, so that no other is accepted,
--- and is served when the command ends. A read of X_S or X_W is
--- acknowledged when the unit ends, with STALL high until then. A write of
--- X_S or X_W is acknowledged at once, and its push, an operation of the
+-- The port is a pipelined Wishbone slave, as src/mpu.vhd is. It takes
+-- each request into a register as it comes, so that no logic of the FPU
+-- follows the system's address decode, and serves it in the next cycle,
+-- with its ACK in the cycle after: two cycles after it was accepted. A
+-- request is served only while no command runs, but a read of CMD, which
+-- is served at once unless a read of X_S or X_W waits for the unit before
+-- it. A request that is not served waits in a second register, with
+-- STALL high, so that one more can be taken behind it but no other, and
+-- is served first when the command ends. So the requests are served, and
+-- acknowledged, in order. A command runs after its write is served. A
+-- read of X_S or X_W is acknowledged when the unit ends. A write of X_S
+-- or X_W is acknowledged at once, and its push, an operation of the
 -- unit, runs as a command does.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
@@ -62,14 +66,14 @@
 -- G_STACK too, the master writes only the commands of the stack and
 -- neither X_S nor X_W, and the assertions below say that the stack is
 -- that of a model of §11.4. The model shifts its values, X first. It
--- keeps each request it sees accepted, and applies it when the FPU takes
--- it: in IDLE_ST, at once or from the register where it waited. So it is
--- ahead only while a command runs. It must match whenever no command
--- runs: the depth, the flags, and each value. The invariants that make
--- that inductive say that the request that waits is the one the model
--- kept, which states a command of the stack passes through, and that
--- STALL is high exactly while a request waits or a read waits for the
--- unit.
+-- keeps the requests it sees accepted in a queue, and applies the oldest
+-- when the FPU serves it in IDLE_ST. So it is ahead only while requests
+-- wait. It must match whenever no command runs: the depth, the flags, and
+-- each value. The invariants that make that inductive say that the
+-- model's queue holds the FPU's two registers, in order, that the ACKs
+-- owed are those of the requests held, of the one acknowledged, and of a
+-- read that waits for the unit, and which states a command of the stack
+-- passes through.
 --
 -- RESET
 -- Reset empties the stack, clears the flags, and ends a command.
@@ -242,13 +246,24 @@ architecture synthesis of fpu is
    signal y_val : t_word64;
    signal pick  : t_word64;
 
-   -- The port: a request that waits, and STALL.
+   -- The port: the request taken in the cycle before, the request that
+   -- waits, which is STALL, the head of the two, whether it is served,
+   -- and whether a read of X_S or X_W waits for the unit.
    signal accept      : std_logic;
-   signal wait_r      : std_logic := '0';
+   signal in_r        : std_logic := '0';
+   signal in_we_r     : std_logic;
+   signal in_addr_r   : std_logic_vector(2 downto 0);
+   signal in_data_r   : std_logic_vector(31 downto 0);
    signal pend_r      : std_logic := '0';
    signal pend_we_r   : std_logic;
    signal pend_addr_r : std_logic_vector(2 downto 0);
    signal pend_data_r : std_logic_vector(31 downto 0);
+   signal head_v      : std_logic;
+   signal head_we     : std_logic;
+   signal head_addr   : std_logic_vector(2 downto 0);
+   signal head_data   : std_logic_vector(31 downto 0);
+   signal go          : std_logic;
+   signal view_r      : std_logic := '0';
 
    signal state_r : t_state := IDLE_ST;
    signal ret_r   : t_state := IDLE_ST;
@@ -551,8 +566,16 @@ architecture synthesis of fpu is
 
 begin
 
-   accept     <= wb_cyc_i and wb_stb_i and not wait_r;
-   wb_stall_o <= wait_r;
+   accept     <= wb_cyc_i and wb_stb_i and not pend_r;
+   wb_stall_o <= pend_r;
+
+   head_v    <= in_r or pend_r;
+   head_we   <= pend_we_r when pend_r = '1' else in_we_r;
+   head_addr <= pend_addr_r when pend_r = '1' else in_addr_r;
+   head_data <= pend_data_r when pend_r = '1' else in_data_r;
+   go        <= head_v when state_r = IDLE_ST or
+                            (head_we = '0' and head_addr = "100" and view_r = '0') else
+                '0';
 
    x_val <= ram_r(to_integer(top_r)) when depth_r >= 1 else C_QNAN;
    y_val <= ram_r(to_integer(top_r - 1)) when depth_r >= 2 else C_QNAN;
@@ -592,10 +615,20 @@ begin
       attribute anyseq of f_flags  : signal is true;
 
       -- The model: the values, X first, the depth, and the flags.
-      signal f_stk   : t_words64(0 to 15);
-      signal f_dep   : natural range 0 to 16      := 0;
-      signal f_flg   : std_logic_vector(3 downto 0) := (others => '0');
-      signal f_req   : std_logic_vector(35 downto 0);   -- we, addr, data
+      signal f_stk : t_words64(0 to 15);
+      signal f_dep : natural range 0 to 16      := 0;
+      signal f_flg : std_logic_vector(3 downto 0) := (others => '0');
+      -- The requests accepted and not yet served, oldest first, each we,
+      -- addr, and data, and how many; the requests accepted and not yet
+      -- acknowledged; and whether each of the two is one of the stack.
+      signal f_q0    : std_logic_vector(35 downto 0);
+      signal f_q1    : std_logic_vector(35 downto 0);
+      signal f_qn    : natural range 0 to 3 := 0;
+      signal f_held  : natural range 0 to 2;
+      signal f_owed  : natural range 0 to 7 := 0;
+      signal f_sum   : natural range 0 to 7;
+      signal f_ok0   : boolean;
+      signal f_ok1   : boolean;
       signal f_match : boolean;
       signal f_quiet : boolean;
       signal f_view  : boolean;
@@ -630,6 +663,10 @@ begin
          variable x_v   : t_word64;
          variable y_v   : t_word64;
          variable req_v : std_logic_vector(35 downto 0);
+         variable q0_v  : std_logic_vector(35 downto 0);
+         variable q1_v  : std_logic_vector(35 downto 0);
+         variable qn_v  : natural range 0 to 3;
+         variable pop_v : boolean;
 
          procedure mpush(v : t_word64) is
          begin
@@ -676,12 +713,13 @@ begin
             stk_v := f_stk;
             dep_v := f_dep;
             flg_v := f_flg;
-            req_v := wb_we_i & wb_addr_i & wb_data_i;
-            if pend_r = '1' then
-               req_v := f_req;
-            end if;
+            -- The oldest request, which the FPU serves when no command
+            -- runs, and a read of CMD at once but while a view waits.
+            req_v := f_q0;
             n_v   := to_integer(unsigned(req_v(15 downto 8)));
-            if state_r = IDLE_ST and (pend_r = '1' or accept = '1') and req_v(35) = '1' then
+            pop_v := f_qn > 0 and
+                     (state_r = IDLE_ST or (req_v(35 downto 32) = "0100" and not f_view));
+            if state_r = IDLE_ST and f_qn > 0 and req_v(35) = '1' then
                case req_v(34 downto 32) is
                   when "000" =>
                      mpush(X"00000000" & req_v(31 downto 0));
@@ -741,12 +779,36 @@ begin
             f_stk <= stk_v;
             f_dep <= dep_v;
             f_flg <= flg_v;
-            if accept = '1' then
-               f_req <= wb_we_i & wb_addr_i & wb_data_i;
+            -- The queue: the served request leaves it, an accepted one
+            -- joins it.
+            q0_v := f_q0;
+            q1_v := f_q1;
+            qn_v := f_qn;
+            if pop_v then
+               q0_v := q1_v;
+               qn_v := qn_v - 1;
+            end if;
+            if accept = '1' and qn_v < 3 then
+               if qn_v = 0 then
+                  q0_v := wb_we_i & wb_addr_i & wb_data_i;
+               else
+                  q1_v := wb_we_i & wb_addr_i & wb_data_i;
+               end if;
+               qn_v := qn_v + 1;
+            end if;
+            f_q0 <= q0_v;
+            f_q1 <= q1_v;
+            f_qn <= qn_v;
+            if accept = '1' and wb_ack_o = '0' and f_owed < 7 then
+               f_owed <= f_owed + 1;
+            elsif accept = '0' and wb_ack_o = '1' and f_owed > 0 then
+               f_owed <= f_owed - 1;
             end if;
             if rst_i = '1' then
-               f_dep <= 0;
-               f_flg <= (others => '0');
+               f_dep  <= 0;
+               f_flg  <= (others => '0');
+               f_qn   <= 0;
+               f_owed <= 0;
             end if;
          end if;
       end process p_model;
@@ -769,6 +831,24 @@ begin
                  (f_dep < 15 or ram_r(to_integer(top_r - 14)) = f_stk(14)) and
                  (f_dep < 16 or ram_r(to_integer(top_r - 15)) = f_stk(15));
 
+      -- The requests the FPU holds, and those it owes an ACK: those it
+      -- holds, the one it acknowledges, and a view that waits.
+      f_held <= 2 when in_r = '1' and pend_r = '1' else
+                1 when in_r = '1' or pend_r = '1' else
+                0;
+      f_sum  <= f_held + bool_to_int(wb_ack_o = '1') + bool_to_int(view_r = '1');
+
+      -- A request of the stack task: no write of X_S or X_W, and only
+      -- the commands of the stack.
+      f_ok0 <= f_q0(35) = '0' or
+               (f_q0(34 downto 32) /= "010" and f_q0(34 downto 32) /= "011" and
+                 (f_q0(34 downto 32) /= "100" or
+                    (unsigned(f_q0(31 downto 16)) = 0 and unsigned(f_q0(7 downto 0)) <= 6)));
+      f_ok1 <= f_q1(35) = '0' or
+               (f_q1(34 downto 32) /= "010" and f_q1(34 downto 32) /= "011" and
+                 (f_q1(34 downto 32) /= "100" or
+                    (unsigned(f_q1(31 downto 16)) = 0 and unsigned(f_q1(7 downto 0)) <= 6)));
+
       -- No command runs.
       f_view  <= (state_r = UWAIT_ST and ret_r = VIEW_ST) or state_r = VIEW_ST;
       f_quiet <= state_r = IDLE_ST or f_view;
@@ -783,21 +863,30 @@ begin
       --    state_r <= t_state'high and ret_r <= t_state'high and
       --    (s10_ret_r = SCALE10_ST or s10_ret_r = DSCALE_ST);
       -- psl f_depth_ok : assert always depth_r <= 16 and f_dep <= 16;
-      -- psl f_wait : assert always wait_r = '1' <-> (pend_r = '1' or f_view);
-      -- psl f_view_alone : assert always f_view -> pend_r = '0';
-      -- psl f_pend : assert always
-      --    pend_r = '1' -> f_req = pend_we_r & pend_addr_r & pend_data_r;
+      -- The bus: each request accepted is held, acknowledged, or a view
+      -- that waits, so that each gets one ACK, in order, and the FPU owes
+      -- at most three.
+      -- psl f_owed_sum : assert always f_owed = f_sum;
+      -- psl f_owed_max : assert always f_owed <= 3;
+      -- psl f_ack_reset : assert always rst_i |=> not wb_ack_o and not pend_r;
+      -- psl f_view_r : assert always view_r = '1' <-> f_view;
       -- psl f_ack_view : assert always f_view -> wb_ack_o = '0';
+      -- The model's queue is the FPU's: the head, and the one taken after it.
+      -- psl f_queue : assert always f_qn = f_held;
+      -- psl f_head : assert always
+      --    f_qn >= 1 -> f_q0 = head_we & head_addr & head_data;
+      -- psl f_second : assert always
+      --    f_qn = 2 -> (pend_r = '1' and f_q1 = in_we_r & in_addr_r & in_data_r);
+      -- psl c_view : cover {view_r = '1'; view_r = '1'; view_r = '1'; wb_ack_o = '1'};
+      -- psl c_pending : cover {pend_r = '1' and pend_we_r = '1' and pend_addr_r = "101" and
+      --    state_r /= IDLE_ST; state_r = IDLE_ST; wb_ack_o = '1'};
+      -- psl c_full : cover {f_owed = 3};
 
       gen_stack : if G_STACK generate
          -- psl f_stack : assert always f_quiet -> f_match;
          -- psl f_states : assert always f_quiet or f_cmd;
-         -- psl f_pend_stack : assert always
-         --    (pend_r = '1' and pend_we_r = '1') ->
-         --    (pend_addr_r /= "010" and pend_addr_r /= "011" and
-         --     (pend_addr_r /= "100" or
-         --      (unsigned(pend_data_r(31 downto 16)) = 0 and
-         --       unsigned(pend_data_r(7 downto 0)) <= 6)));
+         -- psl f_queue_stack : assert always
+         --    (f_qn >= 1 -> f_ok0) and (f_qn = 2 -> f_ok1);
          -- psl f_cmd_num : assert always
          --    state_r = CMD_ST -> (unsigned(num_r) <= 6 or num_r = X"FF");
       end generate gen_stack;
@@ -885,7 +974,6 @@ begin
       begin
          if we = '1' then
             wb_ack_o <= '1';
-            wait_r   <= '0';
             case addr is
                when "000" =>
                   push(X"00000000" & data);
@@ -959,15 +1047,13 @@ begin
             if addr = "010" and long_direct(x_val) then
                wb_data_o <= narrow(x_val);
                wb_ack_o  <= '1';
-               wait_r    <= '0';
             elsif addr = "010" or addr = "011" then
-               -- STALL stays high until the unit ends.
-               wait_r  <= '1';
+               -- The ACK waits until the unit ends.
+               view_r  <= '1';
                u_start <= '1';
                state_r <= UWAIT_ST;
             else
                wb_ack_o <= '1';
-               wait_r   <= '0';
             end if;
          end if;
       end procedure serve;
@@ -1004,30 +1090,41 @@ begin
          end loop;
          p_bcd_r   <= ok_v;
 
-         -- A request while a command runs: a read of CMD at once, and
-         -- any other waits.
-         if accept = '1' and (state_r /= IDLE_ST or pend_r = '1') then
-            if wb_we_i = '0' and wb_addr_i = "100" then
-               wb_ack_o  <= '1';
-               wb_data_o <= (others => '0');
-            else
-               pend_r      <= '1';
-               pend_we_r   <= wb_we_i;
-               pend_addr_r <= wb_addr_i;
-               pend_data_r <= wb_data_i;
-               wait_r      <= '1';
+         -- The head is served when no command runs, and a read of CMD
+         -- at once, unless a view waits for the unit, whose ACK comes
+         -- first.
+         if go = '1' then
+            serve(head_we, head_addr, head_data);
+         end if;
+
+         -- The queue: a head that is not served waits, and the request
+         -- taken after it moves up when it is served. While none waits,
+         -- STALL is low, and a request is taken as it comes.
+         if pend_r = '1' then
+            if go = '1' then
+               pend_r      <= in_r;
+               pend_we_r   <= in_we_r;
+               pend_addr_r <= in_addr_r;
+               pend_data_r <= in_data_r;
+               in_r        <= '0';
             end if;
+         else
+            if in_r = '1' and go = '0' then
+               pend_r      <= '1';
+               pend_we_r   <= in_we_r;
+               pend_addr_r <= in_addr_r;
+               pend_data_r <= in_data_r;
+            end if;
+            in_r      <= accept;
+            in_we_r   <= wb_we_i;
+            in_addr_r <= wb_addr_i;
+            in_data_r <= wb_data_i;
          end if;
 
          case state_r is
 
             when IDLE_ST =>
-               if pend_r = '1' then
-                  pend_r <= '0';
-                  serve(pend_we_r, pend_addr_r, pend_data_r);
-               elsif accept = '1' then
-                  serve(wb_we_i, wb_addr_i, wb_data_i);
-               end if;
+               null;
 
             when UWAIT_ST =>
                if u_done = '1' then
@@ -1037,7 +1134,7 @@ begin
             when VIEW_ST =>
                wb_ack_o  <= '1';
                wb_data_o <= u_result(31 downto 0);
-               wait_r    <= '0';
+               view_r    <= '0';
                state_r   <= IDLE_ST;
 
             when WPUSH_ST =>
@@ -1567,8 +1664,9 @@ begin
             depth_r  <= 0;
             top_r    <= (others => '0');
             flags_r  <= (others => '0');
-            wait_r   <= '0';
+            in_r     <= '0';
             pend_r   <= '0';
+            view_r   <= '0';
             wb_ack_o <= '0';
             u_start  <= '0';
          end if;

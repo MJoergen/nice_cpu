@@ -104,12 +104,16 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   values. A read of a bit count of A waits as a product does, and a read
   of the square root of C is accepted in cycle t + 2 + 32 at the earliest.
   The bus is held until then ("MPU wait").
-- The FPU of DEVICES.md §11, hdl/src/fpu.vhd: a command written to CMD,
-  accepted in cycle t, keeps the unit busy until cycle t + n, and a read
-  or a write of any of its words but a read of CMD is accepted then at
-  the earliest ("fpu"). n is 1 for the stack commands, --fpu-long (75)
-  for DIV, SQRT, ISQRT, FMOD, SCALE10, and DIGITS, and --fpu-op (18) for
-  the others. These are averages, which give the cycles of float.c on the
+- The FPU of DEVICES.md §11, hdl/src/fpu.vhd: it takes each request into
+  a register, and serves it in the next cycle at the earliest, in order,
+  with its ACK in the cycle after. A command written to CMD and served in
+  cycle t keeps the unit busy until cycle t + n, and a request but a read
+  of CMD is served then at the earliest. A request that is not served in
+  the cycle after it was taken waits in the FPU with STALL high, so that
+  the next is taken only after it is served. The cycles a read or a store
+  waits for that are "fpu", the cycle of the register included. n is 1
+  for the stack commands, --fpu-long for DIV, SQRT, ISQRT, FMOD, SCALE10,
+  and DIGITS, and --fpu-op for the others. These are averages, which give the cycles of float.c on the
   pipelined core within 1%. The FPU's real times depend on the operands,
   and the reads of X_W, and of X_S for a value that is not binary32,
   take cycles too, which the model leaves out.
@@ -187,7 +191,7 @@ CAUSE_TEXT = {
     "sumwait": "sum operand or store address register just written",
     "bus": "data bus: read after store, two reads in a micro-op",
     "mpu": "math unit result not ready",
-    "fpu": "FPU busy with a command",
+    "fpu": "FPU busy with a command, or its register of requests",
     "readbus": "read data a cycle after the bus (registered request)",
     "readlate": "read data used by more than a register write",
     "shiftlate": "shift count reduced in WRITE (memory, adder, R14, C<C)",
@@ -476,10 +480,26 @@ class Model:
         self.mpu_ops = {0xFFFFFF20: 0, 0xFFFFFF21: 0, 0xFFFFFF30: 0, 0xFFFFFF31: 0,
                         0xFFFFFF32: 0, 0xFFFFFF33: 0}
         self.mpu_ready = {u: -10 for u in MPU_UNITS}
-        # The FPU: the cycle in which it takes the next access, and the
-        # cycle in which the bus took the last write of CMD.
+        # The FPU: the cycle in which it can serve the next request, the
+        # cycle in which it served the last write of CMD, and the cycle
+        # it served its last request in, and whether that one waited.
         self.fpu_ready = -10
         self.fpu_cmd_at = -10
+        self.fpu_served = -10
+        self.fpu_waited = False
+
+    def fpu_take(self, acc: int, cmd_read: bool) -> Tuple[int, int]:
+        """A request to the FPU on the bus from cycle acc: the cycle in
+        which the FPU takes it, after the one before it if that one
+        waits, and the cycle in which it serves it, which for a read of
+        CMD does not wait for a command."""
+        take = max(acc, self.fpu_served + 1) if self.fpu_waited else acc
+        served = max(take + 1, self.fpu_served + 1)
+        if not cmd_read:
+            served = max(served, self.fpu_ready)
+        self.fpu_waited = served > take + 1
+        self.fpu_served = served
+        return take, served
 
     # FETCH: the cycle pair k of the stream is fetched.
     def fetch_time(self, k: int) -> Tuple[int, str]:
@@ -593,13 +613,14 @@ class Model:
                     unit = MPU_RESULTS.get(a)
                     if unit is not None and self.mpu_ready[unit] > acc:
                         acc = self.mpu_ready[unit]
-                    fpu = slave(a) == "fpu" and a != FPU_CMD and self.fpu_ready > acc
+                    fpu = slave(a) == "fpu"
+                    ack = acc
                     if fpu:
-                        acc = self.fpu_ready
+                        acc, ack = self.fpu_take(acc, a == FPU_CMD)
                     late = 0 if u.bypass else self.read_late
-                    if acc + 1 + late > data:
-                        data = acc + 1 + late
-                        dtg = (("fpu" if fpu else "mpu") if acc > t + self.read_bus else
+                    if ack + 1 + late > data:
+                        data = ack + 1 + late
+                        dtg = ("fpu" if fpu else "mpu" if acc > t + self.read_bus else
                                "readlate" if late else "readbus" if self.read_bus else "flow")
                     self.last_bus = acc
                     if a == INSTR_LO:
@@ -654,11 +675,12 @@ class Model:
             if u.store and not skipped:
                 acc = max(done + 1, self.bus_free(store_addr))
                 fpu_wait = 0
-                if slave(store_addr) == "fpu" and self.fpu_ready > acc:
-                    fpu_wait = self.fpu_ready - acc
-                    acc = self.fpu_ready
-                if store_addr == FPU_CMD:
-                    self.fpu_cmd_at = acc
+                if slave(store_addr) == "fpu":
+                    take, served = self.fpu_take(acc, False)
+                    fpu_wait = take - acc
+                    acc = take
+                    if store_addr == FPU_CMD:
+                        self.fpu_cmd_at = served
                 self.last_bus = acc
                 # FETCH makes no request while the store waits in DBUS
                 # after its first cycle there (hdl/src/pipeline.vhd).
@@ -734,6 +756,10 @@ class Model:
         free = self.last_bus + 1
         if sl != self.last_slave:
             free += self.slave_gap
+            # The FPU's ACKs come later than the cycle after it takes a
+            # request: the last of them in the cycle after it served it.
+            if self.last_slave == "fpu":
+                free = max(free, self.fpu_served + 1 + self.slave_gap)
         self.last_slave = sl
         return free
 
@@ -764,6 +790,14 @@ class Model:
     def total(self) -> int:
         return self.done_prev + 1
 
+    def end(self) -> None:
+        """The core halts once no bus cycle is open: after the FPU's last
+        ACK, for a store that waits in the FPU."""
+        tail = self.fpu_served + 1 - self.done_prev
+        if tail > 0:
+            self.gaps["fpu"] += tail
+            self.done_prev += tail
+
 
 def run_model(model: Model, lines: Iterable[str]) -> Model:
     for step in hazards.steps(lines):
@@ -773,6 +807,7 @@ def run_model(model: Model, lines: Iterable[str]) -> Model:
         pc, iw, rest = step
         skipped = bool(rest) and rest[0] == "skipped"
         model.step(pc, iw, skipped, [] if skipped else rest)
+    model.end()
     return model
 
 
@@ -1137,11 +1172,12 @@ next            HALT
                 HALT
 """,
      # As for the math unit: the push through X_W done at 8, the write of
-     # CMD done at 10, when the bus takes it, which starts DIV, busy for
-     # --fpu-long, 60 cycles, to 70. The read is loaded in PREPARE in 10,
-     # accepted at 70, data in WRITE at 71: a gap of 71 - 10 - 1 = 60.
-     # HALT done at 72, so 73 cycles.
-     4, 73, {"startup": 7, "bus": 2, "fpu": 60}),
+     # CMD done at 10, when the FPU takes it. It serves it at 11, which
+     # starts DIV, busy for --fpu-long, 60 cycles, to 71. The read is
+     # loaded in PREPARE in 10, on the bus and taken at 11, served at 71,
+     # data in WRITE at 72: a gap of 72 - 10 - 1 = 61. HALT done at 73, so
+     # 74 cycles.
+     4, 74, {"startup": 7, "bus": 2, "fpu": 61}),
     ("FPU: a push waits for DIV too, and a read of CMD does not",
      """                MOVE    @0xFFFFFF8B, 7
                 MOVE    @0xFFFFFF8C, 0x13
@@ -1149,12 +1185,14 @@ next            HALT
                 MOVE    @0xFFFFFF8B, 2
                 HALT
 """,
-     # DIV starts at 10 and ends at 70, as above. The read of CMD does not
-     # wait: loaded in 10, on the bus in 11, data in 12, done 12, a cycle
-     # of readbus. The push is in WRITE at 13, and the bus would take it
-     # at 14, but takes it at 70: 56 cycles of fpu, and 1 of bus. HALT
-     # done at 71, so 72 cycles.
-     5, 72, {"startup": 7, "bus": 3, "readbus": 1, "fpu": 56}),
+     # DIV is served at 11 and ends at 71, as above. The read of CMD does
+     # not wait for it: loaded in 10, on the bus and taken at 11, served
+     # at 12, data in 13, done 13, 2 cycles of fpu. The push is in WRITE
+     # at 14, and the FPU takes it at 15, done 15, a cycle of bus, but
+     # serves it at 71, with its ACK at 72. HALT is done at 16, but the
+     # core halts after that ACK, at 72: 56 cycles more of fpu. So 73
+     # cycles.
+     5, 73, {"startup": 7, "bus": 3, "fpu": 58}),
     ("math unit: 9 / 7 unsigned skips 24 quotient bits in 3 cycles",
      """                MOVE    @0xFFFFFF20, 9
                 MOVE    @0xFFFFFF21, 7

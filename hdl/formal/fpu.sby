@@ -1,7 +1,7 @@
 # The FPU (formal_fpu.vhd, and the properties under G_FORMAL in fpu.vhd),
 # with a free stand-in for its arithmetic unit. "prove" proves the
-# assertions of the bus for every cycle by k-induction, for every
-# command. "prove_stack" proves the bus and the stack against a model of
+# assertions of the bus, and of the queue of requests, for every cycle by
+# k-induction, for every command. "prove_stack" proves the bus and the stack against a model of
 # DEVICES.md §11.4, for the commands of the stack. "cover" reaches each
 # cover statement.
 

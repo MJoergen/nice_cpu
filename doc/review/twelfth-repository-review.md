@@ -373,6 +373,8 @@ The README has a section for each device of `hdl/src`: the timer, the console's 
 
 Line 811, of `SCALE10` beyond k = 22: "the error has a bound that this section will state once it is proven". CONTRIBUTING.md puts open items in issues. #167, phase 2, asks for the bounds of the functions and does not name this one. The sentence after it says what was measured, which is what is true now. **Fix:** add the proof to #167, or give it an issue, and let §11.3 say that no bound is proven yet.
 
+**Resolved.** §11.3 says that no bound of the error of `SCALE10` beyond k = 22 is proven, with #167, and then what the samples gave. A comment on #167 adds the proof of that bound to phase 2, beside the bounds of the functions.
+
 ### 5.6 HISTORY.md, optional
 
 HISTORY.md has the rename and TODO.md, and nothing else of this release. Two things used to be true and are in no document now: until `V2.2` the float library in software was the only one, and nicewasm had `--library-memory` and `--ram-bytes`, which `translator/test/diff_fuzz.py` still knows. The notes will say both (§1.1). **Fix, if wanted:** a paragraph in "The size and speed of translated code".

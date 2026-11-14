@@ -809,7 +809,7 @@ A multiplication by a reciprocal, such as `CONST 9` and `MUL`, is much faster th
     | l = e − (h − p) | |
 
     The product is (h, l). `emulator/test/fpu_model.py` computes the same steps exactly, and is the reference.
-  - Within k ≤ 22 the result is correctly rounded. Beyond, the error has a bound that this section will state once it is proven, for results that are normal. On the samples of the model's test it was below 0.5 ulp, but for results near 10^−307, where the low parts are subnormal and the errors of the steps are no longer exact: up to 0.63 ulp there. With single binary64 values it was 3.3 ulp (#161).
+  - Within k ≤ 22 the result is correctly rounded. Beyond, no bound of the error is proven (#167). On the samples of the model's test it was below 0.5 ulp, but for results near 10^−307, where the low parts are subnormal and the errors of the steps are no longer exact: up to 0.63 ulp there. With single binary64 values it was 3.3 ulp (#161).
 
 **Decimal digits.**
 

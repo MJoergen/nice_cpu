@@ -731,6 +731,65 @@ that a product is never stale; the signed product's
 correction is proven by hand, and `tb_mpu` checks the products' values
 (The formal checks below).
 
+## The floating-point unit
+
+`fpu` is the FPU of DEVICES.md §11, a stack of 16 binary64 values that a
+program pushes, commands, and reads, with its arithmetic unit `fpu_unit`
+inside it and the package `fpu_pkg`. Offsets 0 to 7 hold `FPU_X_LO`,
+`FPU_X_HI`, `FPU_X_S`, `FPU_X_W`, `FPU_CMD`, `FPU_STATUS`, and `FPU_REL`,
+and a word that reads 0. It is a pipelined Wishbone slave with a 3-bit
+address. The bus decoder selects it for `0xFFFFFF88`–`0xFFFFFF8F` and
+passes address bits 2..0 as the offset.
+
+It takes each request into a register as it comes, so that none of its
+logic follows the system's address decode, and serves it in the next
+cycle at the earliest, with its ACK in the cycle after: two cycles after
+it was accepted. A command runs after its write is served, and while it
+runs the FPU serves no request but a read of `FPU_CMD`. A request that
+waits holds STALL high, one more is taken behind it, and they are served
+and acknowledged in order. A read of `FPU_X_S` or `FPU_X_W` is an
+operation of the arithmetic unit, and is acknowledged when it ends. The
+header of `src/fpu.vhd` explains the sequences of the commands.
+
+So the FPU holds a request for as long as a command runs, up to some
+3400 cycles for `DIGITS`, the longest. A pause, an interrupt, and a step
+of the debug link wait that long, and so must a watchdog of the system:
+`tb_core`'s waits 10000 cycles for a step. Its reset is that of a start
+of the processor, as `tb_core` gives it, so that a start over the debug
+link empties the stack, clears the flags, and ends a command (DEBUG.md
+§6).
+
+The most cycles of each command in `tb_fpu` on 2026-11-14, from its
+request to the ACK of the read of `FPU_STATUS` after it, which adds some
+6 (What the tests check):
+
+| Commands | Cycles at most |
+|---|---|
+| The commands of the stack, `NEG`, `ABS`, `MIN`, `MAX`, `SIGN`, `CMP`, `CONST`, and a number that is not a command | 8 |
+| `ITOF`, `UTOF`, `FTOI`, `FTOU`, `GETEXP`, and `GETMANT` | 24 to 29 |
+| `ADD`, `SUB`, and `MUL` | 32 to 34 |
+| `FLOOR`, `CEIL`, `TRUNC`, `NEAREST`, `ROUND`, `ROUND32`, `FROMBCD`, and `SCALE2` | 35 to 47 |
+| `AND`, `OR`, `XOR`, `NOT`, `SHL`, and `SHR` | 60 to 62 |
+| `DIV` and `SQRT` | 85 and 86 |
+| `IDIV` and `MOD` | 94 and 95 |
+| `ISQRT` | 101 |
+| `SCALE10` | 1235 |
+| `FMOD` | 2117 |
+| `DIGITS` | 3363 |
+
+`make timing UNIT=fpu` places the FPU alone, out of context
+([Timing](#timing)). On the MEGA65, at the commit of #172, it leaves
++1.074 ns on its own paths with the default flow and +1.218 ns with the
+timing flow, more than the budget of 1.0 ns, and +9.502 and +8.087 ns at
+its inputs and +7.958 ns at its outputs. It takes 9239 LUTs, 2626
+registers, and 5 DSPs, more LUTs than the pipelined core.
+
+`tb_fpu_unit` checks the arithmetic unit, and `tb_fpu` the FPU, against
+the model of `emulator/test/fpu_model.py` (What the tests check), and
+`formal/fpu.sby` proves its port for every command and its stack against
+a model, with a free stand-in for the arithmetic unit (The formal
+checks).
+
 ## The performance counters
 
 `perf` holds the performance counters of DEVICES.md §3: `CYCLE_LO` and

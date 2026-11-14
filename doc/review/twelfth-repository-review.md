@@ -385,6 +385,8 @@ The README has a section for each device of `hdl/src`: the timer, the console's 
 
 **Fix:** a section "The floating-point unit" after "The math unit".
 
+**Resolved.** `hdl/README.md` has a section "The floating-point unit" after "The math unit": the registers and the port, the request register and the ACK two cycles after, which requests wait while a command runs and how, that the FPU holds a request for up to some 3400 cycles, so that a pause, an interrupt, a step, and a watchdog wait that long, the reset of a start of the processor (DEBUG.md §6), the most cycles of each command in `tb_fpu`, its timing and size out of context, and its tests.
+
 ### 5.2 MICROARCH.md §8 names neither the FPU nor the clock
 
 §8 lists the devices of `hdl/src` with the rule that a system follows for each, from the console to the Ethernet frames. `fpu.vhd` is not there, and neither is `tod.vhd`, the clock of `V2.0`, whose words lie inside the range of `perf.vhd`. **Fix:** a bullet for each: the address bits the decoder compares, the reset, and for the FPU the wait.

@@ -1358,9 +1358,9 @@ shares. With `--generator`, it measures another version of
 
 `make programs` runs the test programs of the runtime and of the
 translator, and 10 random modules of `translator/test/fuzz.py` in each of
-its five modes (`FUZZ_PROGRAMS`), on the core (MICROARCH.md §9, step 7). It is not part of
-`make test`, because it takes minutes: it makes 868 programs and runs
-611 of them, the others being the same as one of those, with some 9
+six of its modes, `--inline-fpu` among them (`FUZZ_PROGRAMS`), on the core (MICROARCH.md §9, step 7). It is not part of
+`make test`, because it takes minutes: it makes 878 programs and runs
+621 of them, the others being the same as one of those, with some 9
 million steps on the emulator. In nvc, `SIM=nvc`, it took 7 minutes on
 the pipelined core on 20 CPUs on 2026-11-14 (#169), bound by
 `libc_mchess`, and GHDL, at some 3300 steps a second, takes several

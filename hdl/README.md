@@ -940,7 +940,11 @@ run/fpu_unit/wide FPU_UNIT_WIDE=20000 FPU_UNIT_SEED=2` runs more.
 the state before an access, the access, and the state after it. The test
 sets the state over the bus, with CLEAR 1, the values written to X_LO and
 X_HI from the deepest, and the flags written to STATUS. It does the
-access and compares the word a read returns. Then it reads STATUS, and X
+access and compares the word a read returns. After every third command,
+the next access comes at once, so that it waits for the command: a read
+of X_LO, X_HI, X_S, X_W, STATUS, or REL, which must give what it gives
+when read again, or a write of X_LO, X_HI, X_S, or STATUS, which changes
+the state after as the test knows. Then it reads STATUS, and X
 before a DROP for each value, and compares them with the state after.
 There are some 27800 directed lines, for every register, every command,
 the depths, the special values, the rounding, the conversions, and the

@@ -7,8 +7,12 @@
 -- pipelined Wishbone: it sets the state before, with CLEAR 1, a write of
 -- X_LO and of X_HI for each value from the deepest, and a write of STATUS
 -- for the flags. It does the access, and compares the word a read
--- returns. It then reads STATUS for the depth and the flags, and reads X
--- and drops it for each value, and compares those with the state after.
+-- returns. After every third command, the next access comes at once, so
+-- that it waits for the command: a read of X_LO, X_HI, X_S, X_W, STATUS,
+-- or REL, each read again after it, or a write of X_LO, X_HI, X_S, or
+-- STATUS, which changes the state after as the test knows. It then reads
+-- STATUS for the depth and the flags, and reads X and drops it for each
+-- value, and compares those with the state after.
 -- After the vectors, it checks the waits of §11.1: while DIV runs, a read
 -- of CMD is acknowledged two cycles after it is accepted, as any request
 -- is when it need not wait, and a read of X waits for the result.
@@ -155,6 +159,48 @@ begin
          end if;
       end procedure fail;
 
+      -- An access right after a command, which waits for it, and the state
+      -- after the command and that access: k = 0 to 5 reads X_LO, X_HI,
+      -- X_S, X_W, STATUS, or REL, and then again, which must give the
+      -- same, as a read has no side effect (DEVICES.md §11.1). k = 6 to 9
+      -- writes X_LO, X_HI, X_S, or STATUS, where it changes the state
+      -- after as the vectors' state after the command lets it be known:
+      -- X_LO and X_S below 16 values, and X_HI above 0.
+      procedure next_access(k : natural;
+                            f : inout std_logic_vector(3 downto 0);
+                            d : inout std_logic_vector(7 downto 0);
+                            s : inout t_stack) is
+         type     t_regs is array (0 to 5) of natural;
+         constant C_READS : t_regs := (0, 1, 2, 3, 5, 6);
+         variable n_v     : natural;
+         variable r1_v    : std_logic_vector(31 downto 0);
+         variable r2_v    : std_logic_vector(31 downto 0);
+      begin
+         n_v := to_integer(unsigned(d));
+         if k <= 5 then
+            read(C_READS(k), r1_v);
+            read(C_READS(k), r2_v);
+            if r1_v /= r2_v then
+               fail("a read of " & integer'image(C_READS(k)) & " during the command gave " &
+                    to_hstring(r1_v) & ", after it " & to_hstring(r2_v));
+            end if;
+         elsif k = 6 and n_v < 16 then
+            write(0, X"13579BDF");
+            s(n_v) := X"00000000_13579BDF";
+            d      := std_logic_vector(to_unsigned(n_v + 1, 8));
+         elsif k = 7 and n_v > 0 then
+            write(1, X"3FF00000");
+            s(n_v - 1)(63 downto 32) := X"3FF00000";
+         elsif k = 8 and n_v < 16 then
+            write(2, X"3F800000");
+            s(n_v) := X"3FF00000_00000000";
+            d      := std_logic_vector(to_unsigned(n_v + 1, 8));
+         elsif k = 9 then
+            f := f xor "0101";
+            write(5, X"00000" & f & X"00");
+         end if;
+      end procedure next_access;
+
    begin
       file_open(vec_f, G_VECTORS, read_mode);
       wait until rising_edge(clk);
@@ -190,6 +236,11 @@ begin
          -- The access.
          if kind_v = 'W' then
             write(to_integer(unsigned(reg_v(2 downto 0))), word_v);
+            -- After every third command, the next access comes at once,
+            -- so that it waits for the command: each register in turn.
+            if reg_v = X"4" and lines_v mod 3 = 0 then
+               next_access((lines_v / 3) mod 10, af_v, ad_v, as_v);
+            end if;
          else
             read(to_integer(unsigned(reg_v(2 downto 0))), rd_v);
             if rd_v /= word_v then

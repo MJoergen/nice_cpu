@@ -261,6 +261,8 @@ The last row I ran again for `FPU_X_HI`: bounded to 8 cycles, the stack model fa
 
 **Fix:** let `tb_fpu` do the next access without the read of `FPU_STATUS` between, for a share of its vectors, so that each register in turn waits for a command.
 
+**Resolved.** After every third command of the vectors, `tb_fpu` makes the next access at once, so that it waits for the command, in turn: a read of `FPU_X_LO`, `FPU_X_HI`, `FPU_X_S`, `FPU_X_W`, `FPU_STATUS`, or `FPU_REL`, which must give what it gives when read again after, or a write of `FPU_X_LO`, `FPU_X_HI`, `FPU_X_S`, or `FPU_STATUS`, whose effect it adds to the state after. In a copy of `fpu.vhd` where a request that waited returns 0 or is dropped, each of the ten fails `tb_fpu`, by 159 to 23359 lines. `tb_fpu` passes, in 7 minutes in GHDL on a loaded machine.
+
 ### 3.11 A reset during a command
 
 - With the reset of the arithmetic unit removed (`fpu_unit.vhd:1131`–`1134`, "Reset ends an operation"), every simulation of the FPU passes, the two testbenches and the eight runs on the cores, which I ran again. Both testbenches reset once, before the first access, and the proofs use a stand-in for the unit.

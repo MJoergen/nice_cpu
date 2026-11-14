@@ -222,11 +222,12 @@ architecture synthesis of fpu is
    );
 
    type t_state is (
-      IDLE_ST, UWAIT_ST, VIEW_ST, WPUSH_ST, CMD_ST, PUSH_ST, ARITH_ST, RESULT_ST, LONG_ST,
-      ISQRT_ST, SCALE_ST, SCALE2_ST, SCALE10_ST, S10_ST, S10_SMALL_ST, S10_LOOP_ST,
+      IDLE_ST, UWAIT_ST, VIEW_ST, WPUSH_ST, CMD_ST, PUSH_ST, ARITH_ST, ARITH2_ST, RESULT_ST,
+      LONG_ST, ISQRT_ST, SCALE_ST, SCALE2_ST, SCALE10_ST, S10_ST, S10_SMALL_ST, S10_LOOP_ST,
       MP1_ST, MP2_ST, MP3_ST, MP4_ST, MP5_ST, MP6_ST, MP7_ST, MP8_ST, MP9_ST, MP10_ST,
-      S10_FIN_ST, DIGITS_ST, DLOG_ST, DLOOP_ST, DSCALE_ST, DNEAR_ST, DINT_ST, BCD_ST,
-      ALIGN_ST, DPUSH_ST, FROMBCD_ST, UTOF_ST, WORD_ST, WORDY_ST, WORDX_ST, IDIV_ST, WORD_END_ST
+      S10_FIN_ST, DIGITS_ST, DLOG_ST, DMUL_ST, DEXP_ST, DLOOP_ST, DSCALE_ST, DNEAR_ST, DINT_ST,
+      BCD_ST, ALIGN_ST, DPUSH_ST, FROMBCD_ST, UTOF_ST, WORD_ST, WORDY_ST, WORDX_ST, IDIV_ST,
+      WORD_END_ST
    );
 
    -- The stack.
@@ -256,8 +257,8 @@ architecture synthesis of fpu is
    signal num_r    : std_logic_vector(7 downto 0);
    signal n_r      : natural range 0 to 255;
    signal sbit_r   : std_logic;
-   signal x_r      : t_word64;
-   signal y_r      : t_word64;
+   signal x_r      : t_word64 := (others => '0');
+   signal y_r      : t_word64 := (others => '0');
    signal res_r    : t_word64;
    signal res2_r   : t_word64;
    signal npush_r  : natural range 0 to 2;
@@ -294,8 +295,37 @@ architecture synthesis of fpu is
    signal e_r       : t_word64;
    signal h_r       : t_word64;
 
-   -- DIGITS: n, e, |X|, and the conversion to BCD.
+   -- The tests of x_r and y_r, registered in every cycle for ARITH2_ST
+   -- and DIGITS_ST: their comparison, whether each is a NaN, a signaling
+   -- NaN, zero, or infinite, whether X is whole or infinite, whether Y is
+   -- infinite or zero, whether each fits a word, and whether X is 16 BCD
+   -- digits.
+   signal p_cmp_r   : integer range -1 to 2;
+   signal p_xnan_r  : boolean;
+   signal p_xsnan_r : boolean;
+   signal p_xzero_r : boolean;
+   signal p_xinf_r  : boolean;
+   signal p_xwi_r   : boolean;
+   signal p_ynan_r  : boolean;
+   signal p_ysnan_r : boolean;
+   signal p_yiz_r   : boolean;
+   signal p_xfits_r : boolean;
+   signal p_yfits_r : boolean;
+   signal p_bcd_r   : boolean;
+
+   -- DIGITS: n, e, |X|, and the conversion to BCD. n - 1 and 10^(n-1)
+   -- are registers, set when DIGITS starts, and so is the comparison of
+   -- the unit's result with 10^(n-1), a cycle after the result, so that
+   -- none of them is logic in the state that uses it.
    signal dexp_r : signed(15 downto 0);
+   signal elog_r : signed(15 downto 0);
+   signal prod_r : signed(47 downto 0);
+   signal nm1_r  : integer range -1 to 254;
+   signal tens_r : t_word64 := (others => '0');
+   signal ge_r   : std_logic;
+   -- Whether the unit's result is infinite, a cycle after it, for the
+   -- states that UWAIT_ST goes on to.
+   signal uinf_r : boolean;
    signal ax_r   : t_word64;
    signal bin_r  : unsigned(63 downto 0);
    signal bcd_r  : unsigned(63 downto 0);
@@ -420,29 +450,29 @@ architecture synthesis of fpu is
       return 1;
    end function f_cmp;
 
-   -- Whether a finite v is whole: its fraction has as many trailing zeros
-   -- as it has bits below the point.
+   -- Whether a finite v is whole: no bit of its fraction is below the
+   -- point, where bit i is below it if i + E - 1023 < 52 for the exponent
+   -- field E. Each bit is a compare of E with a constant, rather than a
+   -- count of trailing zeros.
    function f_whole(v : t_word64) return boolean is
-      variable tz_v : natural range 0 to 52;
-      variable e_v  : integer;
+      variable ex_v   : natural range 0 to 2047;
+      variable frac_v : boolean;
    begin
-      if f_exp(v) = 2047 then
+      ex_v := to_integer(f_exp(v));
+      if ex_v = 2047 then
          return false;
       end if;
       if f_zero(v) then
          return true;
       end if;
-      e_v := to_integer(f_exp(v)) - 1023;
-      if e_v < 0 then
+      if ex_v < 1023 then
          return false;
       end if;
-      tz_v := 52;
-      for i in 51 downto 0 loop
-         if v(i) = '1' then
-            tz_v := i;
-         end if;
+      frac_v := false;
+      for i in 0 to 51 loop
+         frac_v := frac_v or (v(i) = '1' and ex_v < 1075 - i);
       end loop;
-      return tz_v + e_v >= 52;
+      return not frac_v;
    end function f_whole;
 
    -- Whether v, rounded toward zero, is a signed 32-bit integer.
@@ -784,8 +814,8 @@ begin
       variable n_v     : natural range 0 to 255;
       variable c_v     : integer;
       variable k_v     : integer;
-      variable prod_v  : signed(47 downto 0);
       variable bcd_v   : unsigned(63 downto 0);
+      variable t10_v   : t_word64;
       variable wr_v    : signed(32 downto 0);
       variable ok_v    : boolean;
       variable tr_v    : unsigned(32 downto 0);
@@ -868,10 +898,19 @@ begin
                      wdata_v := data & x_val(31 downto 0);
                   end if;
                when "010" =>
+                  -- The unit's inputs are set for any write, so that only
+                  -- its start depends on the value.
+                  u_op    <= OP_FROMSHORT;
+                  u_rnd   <= RND_EVEN;
+                  u_short <= '0';
+                  u_a     <= X"00000000" & data;
+                  u_b     <= C_QNAN;
+                  ret_r   <= WPUSH_ST;
                   if short_direct(data) then
                      push(widen(data));
                   else
-                     ucall(OP_FROMSHORT, X"00000000" & data, C_QNAN, WPUSH_ST);
+                     u_start <= '1';
+                     state_r <= UWAIT_ST;
                   end if;
                when "011" =>
                   ucall(OP_ITOF, std_logic_vector(resize(signed(data), 64)), C_QNAN, WPUSH_ST);
@@ -903,18 +942,29 @@ begin
                when "110" => wb_data_o <= std_logic_vector(to_signed(rel_v, 32));
                when others => wb_data_o <= (others => '0');
             end case;
+            -- The views through the unit: its inputs are set for any read
+            -- of X_S or X_W, so that only its start depends on X.
+            if addr = "010" or addr = "011" then
+               u_a     <= x_val;
+               u_b     <= C_QNAN;
+               u_rnd   <= RND_EVEN;
+               u_short <= '0';
+               ret_r   <= VIEW_ST;
+               if addr = "010" then
+                  u_op <= OP_TOSHORT;
+               else
+                  u_op <= OP_FTOW;
+               end if;
+            end if;
             if addr = "010" and long_direct(x_val) then
                wb_data_o <= narrow(x_val);
                wb_ack_o  <= '1';
                wait_r    <= '0';
             elsif addr = "010" or addr = "011" then
-               -- The views through the unit: STALL stays high until it ends.
-               wait_r <= '1';
-               if addr = "010" then
-                  ucall(OP_TOSHORT, x_val, C_QNAN, VIEW_ST);
-               else
-                  ucall(OP_FTOW, x_val, C_QNAN, VIEW_ST);
-               end if;
+               -- STALL stays high until the unit ends.
+               wait_r  <= '1';
+               u_start <= '1';
+               state_r <= UWAIT_ST;
             else
                wb_ack_o <= '1';
                wait_r   <= '0';
@@ -929,6 +979,30 @@ begin
          wdata_v  := (others => '0');
          u_start  <= '0';
          wb_ack_o <= '0';
+         -- Positive values compare as their bits do. DNEAR_ST reads it a
+         -- cycle after UWAIT_ST, where the result is the same.
+         ge_r     <= bool_to_sl(unsigned(u_result) >= unsigned(tens_r));
+         uinf_r   <= f_inf(u_result);
+         -- The tests of the operands, for ARITH2_ST and DIGITS_ST, which
+         -- follow ARITH_ST, a cycle after CMD_ST set them.
+         p_cmp_r   <= f_cmp(y_r, x_r);
+         p_xnan_r  <= f_nan(x_r);
+         p_xsnan_r <= f_snan(x_r);
+         p_xzero_r <= f_zero(x_r);
+         p_xinf_r  <= f_inf(x_r);
+         p_xwi_r   <= f_whole(x_r) or f_inf(x_r);
+         p_ynan_r  <= f_nan(y_r);
+         p_ysnan_r <= f_snan(y_r);
+         p_yiz_r   <= f_inf(y_r) or f_zero(y_r);
+         p_xfits_r <= f_fits(x_r);
+         p_yfits_r <= f_fits(y_r);
+         ok_v      := true;
+         for i in 0 to 15 loop
+            if unsigned(x_r(4 * i + 3 downto 4 * i)) > 9 then
+               ok_v := false;
+            end if;
+         end loop;
+         p_bcd_r   <= ok_v;
 
          -- A request while a command runs: a read of CMD at once, and
          -- any other waits.
@@ -1035,6 +1109,16 @@ begin
 
             -- The commands on the popped operands.
             when ARITH_ST =>
+               -- The unit's operands, set for every command, so that only
+               -- its start depends on the command: B is X, and A is Y for
+               -- the operations of two operands, else X.
+               u_b <= x_r;
+               if num_r = X"10" or num_r = X"11" or num_r = X"12" or num_r = X"13" or
+                  num_r = X"1D" then
+                  u_a <= y_r;
+               else
+                  u_a <= x_r;
+               end if;
                case num_r is
                   when X"04" =>
                      finish(x_r, y_r, 2, "000");
@@ -1050,46 +1134,11 @@ begin
                      u_short <= sbit_r;
                   when X"15" => finish(not x_r(63) & x_r(62 downto 0), x_r, 1, "000");
                   when X"16" => finish('0' & x_r(62 downto 0), x_r, 1, "000");
-                  when X"17" | X"18" =>
-                     c_v := f_cmp(y_r, x_r);
-                     if c_v = 2 then
-                        finish(C_QNAN, x_r, 1, "00" & bool_to_sl(f_snan(y_r) or f_snan(x_r)));
-                     elsif c_v = 0 then
-                        -- Equal values differ only as zeros: -0 < +0.
-                        if (num_r = X"18") = (y_r(63) = '0') then
-                           finish(y_r, x_r, 1, "000");
-                        else
-                           finish(x_r, x_r, 1, "000");
-                        end if;
-                     elsif (c_v > 0) = (num_r = X"18") then
-                        finish(y_r, x_r, 1, "000");
-                     else
-                        finish(x_r, x_r, 1, "000");
-                     end if;
                   when X"19" =>
                      ucall(OP_TOSHORT, x_r, x_r, LONG_ST);
                   when X"1A" =>
                      ucall(OP_SQRT, x_r, x_r, ISQRT_ST);
                      u_rnd <= RND_TRUNC;
-                  when X"1B" =>
-                     if f_nan(x_r) then
-                        finish(C_QNAN, x_r, 1, "00" & bool_to_sl(f_snan(x_r)));
-                     elsif f_zero(x_r) then
-                        finish((others => '0'), x_r, 1, "000");
-                     elsif x_r(63) = '1' then
-                        finish(C_MONE, x_r, 1, "000");
-                     else
-                        finish(C_ONE, x_r, 1, "000");
-                     end if;
-                  when X"1C" =>
-                     c_v := f_cmp(y_r, x_r);
-                     if c_v = 2 then
-                        finish((others => '0'), x_r, 1, "001");
-                     elsif to_unsigned(n_r, 8)(c_v + 1) = '1' then
-                        finish(C_MONE, x_r, 1, "000");
-                     else
-                        finish((others => '0'), x_r, 1, "000");
-                     end if;
                   when X"1D" => ucall(OP_FMOD, y_r, x_r, RESULT_ST);
                   when X"20" | X"21" | X"22" | X"23" | X"24" =>
                      ucall(OP_INTEGRAL, x_r, x_r, RESULT_ST);
@@ -1110,39 +1159,77 @@ begin
                      else
                         finish(C_QNAN, x_r, 1, "001");
                      end if;
+                  when X"3A" => state_r <= DIGITS_ST;
+                  when X"3C" => ucall(OP_GETEXP, x_r, x_r, RESULT_ST);
+                  when X"3D" => ucall(OP_GETMANT, x_r, x_r, RESULT_ST);
+                  when others =>
+                     -- The commands that test X or Y, on the tests a cycle later.
+                     state_r <= ARITH2_ST;
+               end case;
+
+            -- The commands that test their operands, with the tests of
+            -- x_r and y_r registered in the cycle before.
+            when ARITH2_ST =>
+               case num_r is
+                  when X"17" | X"18" =>
+                     c_v := p_cmp_r;
+                     if c_v = 2 then
+                        finish(C_QNAN, x_r, 1, "00" & bool_to_sl(p_ysnan_r or p_xsnan_r));
+                     elsif c_v = 0 then
+                        -- Equal values differ only as zeros: -0 < +0.
+                        if (num_r = X"18") = (y_r(63) = '0') then
+                           finish(y_r, x_r, 1, "000");
+                        else
+                           finish(x_r, x_r, 1, "000");
+                        end if;
+                     elsif (c_v > 0) = (num_r = X"18") then
+                        finish(y_r, x_r, 1, "000");
+                     else
+                        finish(x_r, x_r, 1, "000");
+                     end if;
+                  when X"1B" =>
+                     if p_xnan_r then
+                        finish(C_QNAN, x_r, 1, "00" & bool_to_sl(p_xsnan_r));
+                     elsif p_xzero_r then
+                        finish((others => '0'), x_r, 1, "000");
+                     elsif x_r(63) = '1' then
+                        finish(C_MONE, x_r, 1, "000");
+                     else
+                        finish(C_ONE, x_r, 1, "000");
+                     end if;
+                  when X"1C" =>
+                     c_v := p_cmp_r;
+                     if c_v = 2 then
+                        finish((others => '0'), x_r, 1, "001");
+                     elsif to_unsigned(n_r, 8)(c_v + 1) = '1' then
+                        finish(C_MONE, x_r, 1, "000");
+                     else
+                        finish((others => '0'), x_r, 1, "000");
+                     end if;
                   when X"38" | X"39" =>
                      -- X must be whole, or infinite, which counts as the
                      -- largest count.
-                     if f_nan(x_r) or not (f_whole(x_r) or f_inf(x_r)) then
+                     if p_xnan_r or not p_xwi_r then
                         finish(C_QNAN, x_r, 1, "001");
-                     elsif f_nan(y_r) then
-                        finish(C_QNAN, x_r, 1, "00" & bool_to_sl(f_snan(y_r)));
-                     elsif f_inf(y_r) or f_zero(y_r) then
+                     elsif p_ynan_r then
+                        finish(C_QNAN, x_r, 1, "00" & bool_to_sl(p_ysnan_r));
+                     elsif p_yiz_r then
                         finish(y_r, x_r, 1, "000");
                      else
-                        noovf_r <= bool_to_sl(f_inf(x_r));
+                        noovf_r <= bool_to_sl(p_xinf_r);
                         ucall(OP_FTOI, x_r, x_r, SCALE_ST);
                      end if;
-                  when X"3A" => state_r <= DIGITS_ST;
                   when X"3B" =>
-                     ok_v := true;
-                     for i in 0 to 15 loop
-                        if unsigned(x_r(4 * i + 3 downto 4 * i)) > 9 then
-                           ok_v := false;
-                        end if;
-                     end loop;
-                     if ok_v then
+                     if p_bcd_r then
                         sum_r   <= (others => '0');
                         cnt_r   <= 15;
                         state_r <= FROMBCD_ST;
                      else
                         finish(C_QNAN, x_r, 1, "001");
                      end if;
-                  when X"3C" => ucall(OP_GETEXP, x_r, x_r, RESULT_ST);
-                  when X"3D" => ucall(OP_GETMANT, x_r, x_r, RESULT_ST);
                   when others =>
                      -- The word operators.
-                     if not f_fits(x_r) or (num_r /= X"63" and not f_fits(y_r)) then
+                     if not p_xfits_r or (num_r /= X"63" and not p_yfits_r) then
                         finish(C_QNAN, x_r, 1, "001");
                      else
                         ucall(OP_FTOW, y_r, y_r, WORDY_ST);
@@ -1214,11 +1301,13 @@ begin
             -- SCALE10's sequence on s10_y_r, s10_k_r, and s10_neg_r, with
             -- the result in s10_res_r and the flags in cflags_r.
             when S10_ST =>
+               -- A count of at most 22 is its low 5 bits.
                if s10_k_r <= 22 then
+                  t10_v := C_TENS(minimum(to_integer(s10_k_r(4 downto 0)), 22));
                   if s10_neg_r = '1' then
-                     ucall(OP_DIV, s10_y_r, C_TENS(to_integer(s10_k_r) mod 23), S10_SMALL_ST);
+                     ucall(OP_DIV, s10_y_r, t10_v, S10_SMALL_ST);
                   else
-                     ucall(OP_MUL, s10_y_r, C_TENS(to_integer(s10_k_r) mod 23), S10_SMALL_ST);
+                     ucall(OP_MUL, s10_y_r, t10_v, S10_SMALL_ST);
                   end if;
                else
                   rh_r    <= s10_y_r;
@@ -1255,9 +1344,11 @@ begin
             when MP1_ST => ucall(OP_MUL, rh_r, bh_r, MP2_ST);
             when MP2_ST =>
                p_r <= u_result;
-               if f_inf(u_result) then
+               -- The result, set in either case, as it is read only after
+               -- the sequence ends, which sets it again if it goes on.
+               s10_res_r <= u_result;
+               if uinf_r then
                   -- The product is infinite, and so is every later one.
-                  s10_res_r <= u_result;
                   cflags_r  <= "100";
                   state_r   <= s10_ret_r;
                else
@@ -1275,9 +1366,9 @@ begin
                e_r <= u_result;
                ucall(OP_ADD, p_r, u_result, MP8_ST);
             when MP8_ST =>
-               h_r <= u_result;
-               if f_inf(u_result) then
-                  s10_res_r <= u_result;
+               h_r       <= u_result;
+               s10_res_r <= u_result;
+               if uinf_r then
                   cflags_r  <= "100";
                   state_r   <= s10_ret_r;
                else
@@ -1296,9 +1387,12 @@ begin
 
             -- DIGITS n.
             when DIGITS_ST =>
-               if f_nan(x_r) or f_inf(x_r) or n_r = 0 or n_r > 15 then
+               nm1_r  <= n_r - 1;
+               -- n is 1 to 15 where it counts: n - 1 is its low 4 bits.
+               tens_r <= C_TENS((n_r + 15) mod 16);
+               if p_xnan_r or p_xinf_r or n_r = 0 or n_r > 15 then
                   finish(C_QNAN, C_QNAN, 2, "001");
-               elsif f_zero(x_r) then
+               elsif p_xzero_r then
                   finish((others => '0'), (others => '0'), 2, "000");
                else
                   ax_r <= '0' & x_r(62 downto 0);
@@ -1306,15 +1400,22 @@ begin
                end if;
 
             when DLOG_ST =>
+               elog_r  <= signed(u_result(15 downto 0)) + 1;
+               state_r <= DMUL_ST;
+
+            when DMUL_ST =>
                -- e = ceil((E + 1) log10 2): the floor of the product
                -- plus 2^32 - 1, over 2^32.
-               prod_v  := (signed(u_result(15 downto 0)) + 1) * C_LOG10_2 + C_CEIL;
-               dexp_r  <= prod_v(47 downto 32);
+               prod_r  <= elog_r * C_LOG10_2 + C_CEIL;
+               state_r <= DEXP_ST;
+
+            when DEXP_ST =>
+               dexp_r  <= prod_r(47 downto 32);
                state_r <= DLOOP_ST;
 
             when DLOOP_ST =>
                s10_y_r   <= ax_r;
-               k_v       := n_r - 1 - to_integer(dexp_r);
+               k_v       := nm1_r - to_integer(dexp_r);
                s10_neg_r <= bool_to_sl(k_v < 0);
                s10_k_r   <= magnitude(k_v);
                s10_ret_r <= DSCALE_ST;
@@ -1324,8 +1425,7 @@ begin
                ucall(OP_INTEGRAL, s10_res_r, s10_res_r, DNEAR_ST);
 
             when DNEAR_ST =>
-               -- Positive values compare as their bits do.
-               if unsigned(u_result) >= unsigned(C_TENS((n_r - 1) mod 23)) then
+               if ge_r = '1' then
                   ucall(OP_FTOU, u_result, u_result, DINT_ST);
                else
                   dexp_r  <= dexp_r - 1;

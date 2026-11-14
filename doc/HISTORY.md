@@ -500,12 +500,13 @@ until it halts or is killed, and `-n` sets a limit when one is wanted.
 
 ## TODO.md
 
-Until V1.0 (2026-10-27) [TODO.md](../TODO.md) was the single list of open
-items, ideas, and what was decided against
-([as at V1.0](https://github.com/MJoergen/nice_cpu/blob/V1.0/TODO.md)).
+Until V1.0 (2026-10-27)
+[TODO.md](https://github.com/MJoergen/nice_cpu/blob/V1.0/TODO.md) was the
+single list of open items, ideas, and what was decided against.
 Its open items became the issues #57 to #75, and its section "Decided
 against" became [review/decisions.md](review/decisions.md). The reviews
-before then name TODO.md for their open items.
+before then name TODO.md for their open items. From then until V2.2 it
+only pointed to the issues and to decisions.md, and V2.2 removed it.
 
 ## Release names
 

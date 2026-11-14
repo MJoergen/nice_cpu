@@ -9,7 +9,7 @@ library, a wasm translator, and two FPGA cores. See README.md.
 - Open items, undecided questions, and ideas are GitHub issues, labeled
   `bug`, `enhancement`, `documentation`, `question`, or `idea`, with the
   milestone of the next release when planned. File new ones there, not in
-  files or code comments. `TODO.md` only points there.
+  files or code comments.
   `doc/review/decisions.md` lists what was decided against.
 - `CONTRIBUTING.md`: the tests and the rules of Conventions below, for
   human contributors. Keep the two in sync.

@@ -143,9 +143,9 @@ def test_stamp_covers() -> None:
         return changed
 
     with mock.patch.object(release, "git", git):
-        changed = "RELEASE_NOTES.md\nTODO.md"
+        changed = "RELEASE_NOTES.md"
         check(release.stamp_covers("aaa", "aaa"), "the same commit")
-        check(release.stamp_covers("aaa", "bbb"), "only the notes and the TODO changed")
+        check(release.stamp_covers("aaa", "bbb"), "only the notes changed")
         check(not release.stamp_covers("zzz", "bbb"), "not an ancestor")
         changed = "RELEASE_NOTES.md\nhdl/src/pipeline.vhd"
         check(not release.stamp_covers("aaa", "bbb"), "code changed")

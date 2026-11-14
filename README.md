@@ -275,7 +275,6 @@ a source.
 | [hdl/](hdl/README.md) | The FPGA implementation in VHDL: a multi-cycle core and a pipelined core, the memory model and trace writer they are tested with, and the formal checks. |
 | [release/](release/README.md) | `release.py`, which scripts the mechanical parts of [RELEASE.md](release/RELEASE.md). |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to run the tests, what they cover, and the rules a change follows. |
-| [TODO.md](TODO.md) | Where the open items are: the [issues](https://github.com/MJoergen/nice_cpu/issues), and [doc/review/decisions.md](doc/review/decisions.md) for what was decided against. |
 | [RELEASE_NOTES.md](RELEASE_NOTES.md) | The changes in each release, newest first. |
 
 ## License

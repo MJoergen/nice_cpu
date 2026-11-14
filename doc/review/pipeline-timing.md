@@ -7,7 +7,7 @@ what each fix is worth in time and in cycles, the plan, and, in the
 second measurement at the end, what the re-timing of the same day did:
 the core alone now meets 10 ns. The first measurement was on
 2026-10-19, at commit 0009a54. The open items are in
-[TODO.md](../../TODO.md).
+[TODO.md](https://github.com/MJoergen/nice_cpu/blob/V1.0/TODO.md).
 
 ## Method
 

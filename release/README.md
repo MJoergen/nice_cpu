@@ -28,7 +28,7 @@ Each command stops at the first failure and exits with status 1.
 
 The stamp is what makes "do not go on while one fails" hold: a new commit
 makes it stale, and `tag` will not use it, unless the commits since the stamp changed
-only RELEASE_NOTES.md and TODO.md. `release/build/` is not committed.
+only RELEASE_NOTES.md. `release/build/` is not committed.
 
 `make test` and `make typecheck` in this directory test the parts of
 `release.py` that need no repository, tools, or network.

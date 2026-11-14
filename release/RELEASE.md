@@ -77,7 +77,7 @@ tools. Item 2 is by hand.
    Zig version, benchmark cycles, interface changes, and commit subjects;
    the text is yours. It is the message of the tag. It may be committed
    after `release.py check`: `tag` accepts commits since the stamp that
-   change only RELEASE_NOTES.md and TODO.md. A new debug link version
+   change only RELEASE_NOTES.md. A new debug link version
    says whether it is a new minor or a new major, and a change in a new
    minor follows the rules of DEBUG.md §9. Its row in the table of
    versions of DEBUG.md §9 names the new tag before `release.py check`,

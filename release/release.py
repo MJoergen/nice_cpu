@@ -44,7 +44,7 @@ ZON_FILE = ROOT / "emulator" / "build.zig.zon"
 CORES = ["pipeline", "multicycle"]
 
 # The files that may change between check and tag: they are no code.
-STAMP_FREE = {"RELEASE_NOTES.md", "TODO.md"}
+STAMP_FREE = {"RELEASE_NOTES.md"}
 
 # The 2004 programs, whose .bin files are the original NICE.pm output.
 ORIGINAL_BINS = ["assembler/test/count.bin", "assembler/test/print.bin", "assembler/test/replicate.bin"]

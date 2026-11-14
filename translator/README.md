@@ -89,8 +89,8 @@ What you get:
 ### nicewasm
 
     ./nicewasm.py [-o output.nasm] [--no-bounds-checks] [--trust-alignment] [--byte-windows]
-                  [--memory-pages N] [--ram ADDR [--ram-bytes BYTES]]
-                  [--library NAME [--library-memory BYTES]] [--no-mpu] [--inline-fpu]
+                  [--memory-pages N] [--memory-bytes BYTES] [--ram ADDR]
+                  [--library NAME] [--no-mpu] [--inline-fpu]
                   input.wasm
 
 | Option | Effect |
@@ -100,10 +100,9 @@ What you get:
 | `--trust-alignment` | Take an access of 4 or 8 bytes whose alignment hint is 4 bytes or more to be at a multiple of 4, without the test of DESIGN.md, as WASM.md allows. The code is then smaller and faster, mostly without bounds checks, but a misaligned access reads or writes the word that holds its first byte. With `--byte-windows`, it also takes an access of 2 bytes whose hint is 2 to be at a multiple of 2. The hint is exact in the code of clang, Zig, and rustc. |
 | `--byte-windows` | Access the memory through the byte windows of [DEVICES.md §9](../doc/DEVICES.md#9-byte-windows), so that a byte load or store is one `MOVE` (see DESIGN.md). Halfwords take a window with `--trust-alignment` and the hint 2, and words with the hint 4 or when the address is known to be at a multiple of 4. The program then runs only on a system that has the windows, such as the emulator, and the memory must lie in words below `0x04000000`: nicewasm refuses a memory of more than 4096 pages, checks where the memory lies with `--ram`, and otherwise has `___wasm_start` check it and trap with code 8 if it lies beyond. |
 | `--memory-pages N` | Let `memory.grow` grow the memory up to N pages, the cap of WASM.md. N may not be below the memory's initial size or above its maximum, if it declares one, and it must be below 65536. Without the option, the cap is the initial size. |
+| `--memory-bytes BYTES` | Reserve only the first BYTES bytes of the memory, rounded up to a word, or with `auto` as much as the module needs (see [A program's memory in part](#a-programs-memory-in-part)). BYTES may not be negative, or more than the memory's initial size. Without the option, a program's module reserves all of its initial memory, and a library module and code in a ROM take `auto`. Not with `--memory-pages`. |
 | `--ram ADDR` | For code that runs from a ROM: put the words that the module writes in RAM from ADDR, a NICE address in decimal or with `0x` (see [Code in a ROM](#code-in-a-rom)). Not with `--library` or `--memory-pages`. |
-| `--ram-bytes BYTES` | With `--ram`, the size of the memory in RAM (see Code in a ROM). |
 | `--library NAME` | Translate a library module instead (see [Library modules](#library-modules)). |
-| `--library-memory BYTES` | With `--library`, the size of the library's memory (see Library modules). |
 | `--no-mpu` | For a system without the math unit of DEVICES.md §2: `i32.mul`, and `div` and `rem` of both widths, then call the runtime library instead of using the math unit, and the program must be joined with `runtime/muldiv_soft.nasm`, not `muldiv_mpu.nasm`. |
 | `--inline-fpu` | For speed on a system with the FPU of DEVICES.md §11: write the FPU's accesses inline for the float operations, as `runtime/float_fpu.nasm` makes them, instead of calling it (WASM.md, Runtime routines). The conversions of an `i64` to `f32` still call it, and the program must be joined with it, which also names the FPU's words. On `bench/float.c`, the program takes 2.6% more words, and runs 53% fewer instructions, and 41% fewer cycles on the pipelined core (bench README, The float benchmark). |
 
@@ -127,7 +126,7 @@ of the inputs picks the language: `.c`, `.zig`, or `.rs`.
                    [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-fpu] [--inline-fpu]
                    [--no-bounds-checks]
                    [--trust-alignment] [--byte-windows] [--memory-pages N] [--asm FILE]...
-                   [--no-trap-report] [--monitor] [--ram ADDR [--ram-bytes BYTES]]
+                   [--memory-bytes BYTES] [--no-trap-report] [--monitor] [--ram ADDR]
                    [--symbols] [--keep]
                    input.c... | input.zig | input.rs
 
@@ -139,12 +138,12 @@ of the inputs picks the language: `.c`, `.zig`, or `.rs`.
 | `--stack BYTES` | The stack size, 4096 by default, or 16384 for Zig in Debug or ReleaseSafe. It must be positive. |
 | `--memory BYTES` | The initial memory, 65536 by default. It must be positive. The stack is in the memory, so a larger `--stack` needs a larger `--memory` too: `--stack 131072` alone fails with wasm-ld's "initial memory too small", and `--memory 262144` fixes it. |
 | `--no-mpu`, `--inline-fpu`, `--no-bounds-checks`, `--trust-alignment`, `--byte-windows`, `--memory-pages N` | Passed on to `nicewasm.py` (above). With `--no-mpu`, the program is joined with `muldiv_soft.nasm`. |
+| `--memory-bytes BYTES` | Passed on to `nicewasm.py`, with BYTES a number or `auto`. The module is then linked with `--export=__heap_base`, so that `auto` reserves the memory up to the end of the static data. Not with `--memory-pages`. |
 | `--no-fpu` | For a system without the FPU of DEVICES.md §11: join the float library in software, `runtime/float.nasm`, instead of `runtime/float_fpu.nasm`. Not with `--inline-fpu`. |
 | `--asm FILE` | Join a NICE assembly file after the program, so that the program can call a function that the file defines, as the label `_name` of ABI.md; for C it also lets the link leave the function undefined. The option can repeat. |
 | `--no-trap-report` | Leave out the trap report, so that a trap halts silently (see below). |
 | `--monitor` | Build a program for a monitor in ROM, which loads it at `0x8000` and calls it, and to which it returns (ABI.md, "Programs under a monitor"): the start-up code is `runtime/start_wasm_trap_mon.nasm`, or `start_wasm_mon.nasm` with `--no-trap-report`, and the `.bin` file starts at `0x8000`. The monitor's own routines, if the program calls them, come as stubs in a file of the monitor's, joined with `--asm`. |
 | `--ram ADDR` | Build a program whose code runs from a ROM, as nicewasm's `--ram ADDR` does (see [Code in a ROM](#code-in-a-rom)): the words that it writes are in RAM from ADDR, and `___wasm_start` gives them their initial values. The module is linked with `--export=__heap_base`, so that nicewasm reserves the memory up to the end of the static data. The start-up code is the same as without the option, and the `.bin` file starts at 0, for a ROM there. With `--no-fpu`, a program that uses floats is an error, since the float library in software keeps its words in the image. Not with `--monitor` or `--memory-pages`. |
-| `--ram-bytes BYTES` | With `--ram`, passed on to `nicewasm.py`. |
 | `--symbols` | Also write the labels to `output.sym`, with the functions of the program by their names, for `niceemu --symbols`, which then names the function of a trap. A Zig program is then built with `-fno-strip`, because ReleaseSmall leaves the names out of the wasm; the `.bin` is the same. |
 | `--keep` | Leave the `.wasm`, `.nasm`, and joined `.full.nasm` files next to the output. |
 
@@ -454,8 +453,32 @@ module in these ways:
   image, with the data segments in it. By default, that is up to the end of
   the last data segment or the highest initial value of a mutable `i32`
   global, which for compiler output is the stack pointer. With
-  `--library-memory BYTES`, it is BYTES, which may not be negative, rounded up to a word. An access
+  `--memory-bytes BYTES`, it is BYTES, which may not be negative, rounded up to a word. An access
   past it traps with code 2.
+
+## A program's memory in part
+
+A wasm memory is a whole number of pages of 64 KiB, and wasm-ld's
+`--initial-memory` is a multiple of 65536. So a program's module reserves
+at least 16384 words, which `___wasm_start` sets to 0 at every start,
+though a small program uses far fewer. `--memory-bytes BYTES` reserves
+only the start of a program's memory, as WASM.md allows under Linear
+memory:
+
+- With `--memory-bytes auto`, the reserved part ends at the end of the
+  last data segment, the highest initial value of a mutable `i32`
+  global, or the value of the global `__heap_base`, whichever is
+  highest, as for code in a ROM (below). The module must export
+  `__heap_base`: link with `--export=__heap_base`, as
+  `nicebuild.py --memory-bytes` does.
+- With a number, the reserved part is that many bytes, rounded up to a
+  word. The data segments must lie in it.
+- Only the reserved part is cleared at the start. An access past it
+  traps with code 2, unless the bounds checks are left out, though a
+  wasm runtime would let it be.
+- `memory.size` and `memory.grow` are errors, so the C library's `malloc`
+  is not available, and neither are the allocators of `nice.zig` and
+  `nice.rs`.
 
 ## Code in a ROM
 
@@ -479,7 +502,7 @@ writes go in RAM, and the rest stays in the image:
   start, such as C's `.bss`, in no data segment, and ends it at
   `__heap_base`, so the module must export that global: link with
   `--export=__heap_base`, as `nicebuild.py --ram` does. Without it, give
-  `--ram-bytes BYTES`, which may not be negative, rounded up to a word.
+  `--memory-bytes BYTES`, which may not be negative, rounded up to a word.
   An access past the reserved part traps with code 2, unless the bounds
   checks are left out.
 - `memory.size` and `memory.grow` are errors, so the C library's

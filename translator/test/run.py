@@ -26,8 +26,10 @@ operand of the translated code may be the constant 0, which R0 reads
 without a constant word (DESIGN.md, Register allocation). A case in
 RAM_END is translated with --ram, for code that runs from a ROM: after
 the run, every word of the program image must be as it was, and
-___wasm_ram_end must be the word that RAM_END gives. The expected
-results were worked out by hand from the sources."""
+___wasm_ram_end must be the word that RAM_END gives. A case in RESERVED
+is translated with --memory-bytes, and must say that it reserves the
+bytes that RESERVED gives. The expected results were worked out by hand
+from the sources."""
 
 from __future__ import annotations
 
@@ -319,6 +321,7 @@ TRAPS = {"reachtrap": "AND[M] R0, W.end-1, 0xFC000000",
          "libfoldtrap": "SUB[M] R0, R1, 8",
          "foldteetrap": "MOVE @___wasm_memory+2121[R8], R1",
          "boundtrap": "SUB[M] R0, R1, 256",
+         "smalltrap": "SUB[M] R0, R5, 60",
          "divzero_dyn": "MOVE[M] R0, R2",
          "divzero64_dyn": "OR[M] R0, R3, R4",
          "overflow_dyn": "MOVE[M] R0, R2",
@@ -392,13 +395,13 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "foldform_grow": ["--memory-pages", "2"],
            "bound_grow": ["--memory-pages", "2"],
            "bound_unchecked": ["--no-bounds-checks"],
-           "libfold": ["--library", "lib", "--library-memory", "64"],
-           "libfoldtrap": ["--library", "lib", "--library-memory", "64"],
+           "libfold": ["--library", "lib", "--memory-bytes", "64"],
+           "libfoldtrap": ["--library", "lib", "--memory-bytes", "64"],
            "narrow_grow": ["--memory-pages", "2"],
            "memend_grow": ["--memory-pages", "2"],
            "library": ["--library", "lib"],
            "libtrap": ["--library", "lib"],
-           "libmem": ["--library", "lib", "--library-memory", "128"],
+           "libmem": ["--library", "lib", "--memory-bytes", "128"],
            "offfold_unchecked": ["--no-bounds-checks"],
            "growneg": ["--memory-pages", "2"],
            "bulk_unchecked": ["--no-bounds-checks"],
@@ -413,9 +416,20 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "memory_dyn_trust": ["--no-bounds-checks", "--trust-alignment"],
            "narrow_trust": ["--no-bounds-checks", "--trust-alignment"],
            "rom": ["--ram", ROM_RAM],
-           "romfresh": ["--ram", ROM_RAM, "--ram-bytes", "32"],
-           "data_c_rom": ["--ram", ROM_RAM, "--ram-bytes", "8192"],
-           "memory_c_rom": ["--ram", ROM_RAM, "--ram-bytes", "8192"]}
+           "romfresh": ["--ram", ROM_RAM, "--memory-bytes", "32"],
+           "data_c_rom": ["--ram", ROM_RAM, "--memory-bytes", "8192"],
+           "memory_c_rom": ["--ram", ROM_RAM, "--memory-bytes", "8192"],
+           "small": ["--memory-bytes", "64"],
+           "smalltrap": ["--memory-bytes", "64"],
+           "rom_small": ["--memory-bytes", "auto"],
+           "data_c_small": ["--memory-bytes", "8192"],
+           "memory_c_small": ["--memory-bytes", "8192"]}
+
+# The cases of a program's module with only the start of its memory
+# reserved (WASM.md, Linear memory), and the bytes reserved. rom.c's
+# __heap_base is 4400 (RAM_END).
+RESERVED = {"small": 64, "smalltrap": 64, "rom_small": 4400, "data_c_small": 8192,
+            "memory_c_small": 8192}
 
 # The cases for code that runs from a ROM (WASM.md, Code in a ROM), and
 # the word after their words in RAM, ___wasm_ram_end: ROM_RAM plus the
@@ -3494,6 +3508,29 @@ CASES += [(name + "_trust", wasm, extra, expected) for name, wasm, extra, expect
 CASES += [("rom", "rom", "_get ADD R1, R1, 100\n MOVE R15, @R13++\n", 0x8B0)]
 CASES += [(name + "_rom", wasm, extra, expected) for name, wasm, extra, expected in CASES
           if name in ("data_c", "memory_c")]
+# The same programs with only the start of the memory reserved, not in a
+# ROM. rom.c exports __heap_base, so auto reserves up to it.
+CASES += [(name + "_small", wasm, extra, expected) for name, wasm, extra, expected in CASES
+          if name in ("rom", "data_c", "memory_c")]
+# With 64 bytes reserved, word 15, at byte 60, is the last. small stores
+# 0x12345678 there and loads it back. smalltrap loads it, and then the
+# word at byte 61, which passes the end and traps.
+CASES += [
+    ("small", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, i32_const(60) + local_set(0) + local_get(0) + i32_const(0x12345678)
+              + mem(I32_STORE) + local_get(0) + mem(I32_LOAD)))), "", 0x12345678),
+    ("smalltrap", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, i32_const(60) + local_set(0) + local_get(0) + mem(I32_LOAD) + DROP
+              + local_get(0) + mem(I32_LOAD, offset=1)))), "", 2),
+]
 # ___wasm_start sets the words in RAM to their initial values, so a
 # second call starts the module fresh. Global 0 is an i64, 0x1_00000002,
 # global 1 the immutable seven = 7, in the image, and global 2 count = 5,
@@ -3644,6 +3681,8 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
     mem = assembler.labels.get("___wasm_memory")
     if mem is not None and all(a in image for a in range(mem, mem + 16384)):
         problems.append("the memory is in the program image")
+    if name in RESERVED and f"; Linear memory: the first {RESERVED[name]} bytes of" not in text:
+        problems.append(f"the memory is not {RESERVED[name]} bytes")
     if name in RAM_END:
         end = int(assembler.equs.get("___wasm_ram_end", "0"), 0)
         if end != RAM_END[name]:

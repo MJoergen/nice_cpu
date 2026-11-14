@@ -323,11 +323,11 @@ OPTION_CASES: List[Tuple[List[str], bytes, str]] = [
      "function 0: a library module may not use memory.size"),
     (LIB, module(MAIN, funcs(0), memory(1), code((0, i32_const(0) + b"\x40\x00"))),
      "function 0: a library module may not use memory.grow"),
-    (LIB + ["--library-memory", "70000"], module(memory(1)),
-     "the library memory of 70000 bytes is larger than the module's memory of 65536"),
-    (LIB + ["--library-memory", "16"], module(MAIN), "--library-memory: the module has no memory"),
+    (LIB + ["--memory-bytes", "70000"], module(memory(1)),
+     "the reserved memory of 70000 bytes is larger than the module's memory of 65536"),
+    (LIB + ["--memory-bytes", "16"], module(MAIN), "--memory-bytes: the module has no memory"),
     # Only the reserved part of the memory is there for data.
-    (LIB + ["--library-memory", "8"],
+    (LIB + ["--memory-bytes", "8"],
      module(memory(1), section(11, vec([b"\0" + i32_const(8) + b"\x0b" + vec([b"x"])]))),
      "data segment 0 does not fit in the memory"),
 ]
@@ -362,23 +362,46 @@ OPTION_CASES += [
     # start is not known.
     (ROM, module(memory(1)),
      "--ram: the module does not export __heap_base, so give the bytes of its memory with"
-     " --ram-bytes"),
-    (ROM + ["--ram-bytes", "70000"], module(memory(1)),
-     "the memory of 70000 bytes in RAM is larger than the module's memory of 65536"),
-    (ROM + ["--ram-bytes", "16"], module(MAIN), "--ram-bytes: the module has no memory"),
-    (["--ram", "0xFFFFFFF0", "--ram-bytes", "128"], module(memory(1)),
+     " --memory-bytes"),
+    (ROM + ["--memory-bytes", "70000"], module(memory(1)),
+     "the reserved memory of 70000 bytes is larger than the module's memory of 65536"),
+    (ROM + ["--memory-bytes", "16"], module(MAIN), "--memory-bytes: the module has no memory"),
+    (["--ram", "0xFFFFFFF0", "--memory-bytes", "128"], module(memory(1)),
      "--ram: the 32 words from 0xFFFFFFF0 pass the end of the address space"),
     # The byte windows reach only words 0 to 0x03FFFFFF (DEVICES.md §9).
-    (["--ram", "0x03FFFFF0", "--ram-bytes", "128", "--byte-windows"], module(memory(1)),
+    (["--ram", "0x03FFFFF0", "--memory-bytes", "128", "--byte-windows"], module(memory(1)),
      "--byte-windows: the memory in RAM from 0x03FFFFF0 passes word 0x03FFFFFF, the last that"
      " the windows reach"),
-    (ROM + ["--ram-bytes", "16"], module(MAIN, funcs(0), memory(1), code((0, b"\x3f\x00"))),
+    (ROM + ["--memory-bytes", "16"], module(MAIN, funcs(0), memory(1), code((0, b"\x3f\x00"))),
      "function 0: a module that runs from a ROM (--ram) may not use memory.size"),
-    (ROM + ["--ram-bytes", "16"],
+    (ROM + ["--memory-bytes", "16"],
      module(MAIN, funcs(0), memory(1), code((0, i32_const(0) + b"\x40\x00"))),
      "function 0: a module that runs from a ROM (--ram) may not use memory.grow"),
     # Only the reserved part of the memory is there for data.
-    (ROM + ["--ram-bytes", "8"],
+    (ROM + ["--memory-bytes", "8"],
+     module(memory(1), section(11, vec([b"\0" + i32_const(8) + b"\x0b" + vec([b"x"])]))),
+     "data segment 0 does not fit in the memory"),
+]
+
+# A program's module with only the start of its memory reserved (WASM.md,
+# Linear memory).
+SMALL = ["--memory-bytes", "16"]
+OPTION_CASES += [
+    # The reserved part has no page count.
+    (SMALL, module(MAIN, funcs(0), memory(1), code((0, b"\x3f\x00"))),
+     "function 0: a module with only the start of its memory reserved (--memory-bytes) may not"
+     " use memory.size"),
+    (SMALL, module(MAIN, funcs(0), memory(1), code((0, i32_const(0) + b"\x40\x00"))),
+     "function 0: a module with only the start of its memory reserved (--memory-bytes) may not"
+     " use memory.grow"),
+    (["--memory-bytes", "auto"], module(memory(1)),
+     "--memory-bytes auto: the module does not export __heap_base, so give the bytes of its"
+     " memory with --memory-bytes"),
+    (["--memory-bytes", "70000"], module(memory(1)),
+     "the reserved memory of 70000 bytes is larger than the module's memory of 65536"),
+    (SMALL, module(MAIN), "--memory-bytes: the module has no memory"),
+    # Only the reserved part of the memory is there for data.
+    (["--memory-bytes", "8"],
      module(memory(1), section(11, vec([b"\0" + i32_const(8) + b"\x0b" + vec([b"x"])]))),
      "data segment 0 does not fit in the memory"),
 ]
@@ -387,9 +410,10 @@ OPTION_CASES += [
 # a valid one.
 COMMAND_CASES: List[Tuple[List[str], str]] = [
     (["--library", "1x"], "--library: '1x' is not a C identifier"),
-    (["--library-memory", "16"], "--library-memory: only a library module (--library) takes it"),
-    (["--library", "lib", "--library-memory", "-4"],
-     "--library-memory: the number of bytes must not be negative"),
+    (["--memory-bytes", "-4"], "--memory-bytes: the number of bytes must not be negative"),
+    (["--memory-bytes", "all"], "--memory-bytes: 'all' is neither a number nor auto"),
+    (["--memory-bytes", "16", "--memory-pages", "2"],
+     "--memory-bytes: a memory reserved only in part cannot grow (--memory-pages)"),
     (["--library", "lib", "--memory-pages", "2"],
      "--memory-pages: a library module (--library) cannot grow its memory"),
     (["--ram", "0x100000000"], "--ram: 4294967296 is not a NICE address"),
@@ -397,8 +421,6 @@ COMMAND_CASES: List[Tuple[List[str], str]] = [
     (["--ram", "0", "--library", "lib"], "--ram: a library module (--library) cannot run from a ROM"),
     (["--ram", "0", "--memory-pages", "2"],
      "--ram: the memory of code that runs from a ROM cannot grow (--memory-pages)"),
-    (["--ram-bytes", "16"], "--ram-bytes: only code that runs from a ROM (--ram) takes it"),
-    (["--ram", "0", "--ram-bytes", "-4"], "--ram-bytes: the number of bytes must not be negative"),
 ]
 
 

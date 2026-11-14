@@ -35,7 +35,11 @@ ERRORS: List[Tuple[List[str], str]] = [
     (["--memory", "0", "a.c"], "nicebuild: --memory must be positive, not 0"),
     (["--asm", "missing.nasm", "a.c"], "nicebuild: missing.nasm: No such file or directory"),
     (["-o", "/nonexistent/x.bin", "a.c"], "nicebuild: /nonexistent/x.bin: No such file or directory"),
-    (["--ram-bytes", "16", "a.c"], "nicebuild: --ram-bytes is for --ram only"),
+    (["--memory-bytes", "-4", "a.c"],
+     "nicebuild: --memory-bytes must be auto or a number of bytes, not -4"),
+    (["--memory-bytes", "16", "--memory-pages", "2", "a.c"],
+     "nicebuild: --memory-bytes and --memory-pages do not go together: a memory reserved only"
+     " in part cannot grow"),
     (["--inline-fpu", "--no-fpu", "a.c"],
      "nicebuild: --inline-fpu and --no-fpu do not go together: the inline accesses are to the FPU"),
     (["--ram", "0xFFFFF000", "--monitor", "a.c"],
@@ -153,8 +157,8 @@ TWICE_NASM = "_twice          ADD     R1, R1, R1\n                MOVE    R15, @
 
 
 def test_c_options(tmp: str) -> None:
-    """-D, -I, two C files, --asm, --stack, --memory, the float library, and
-    --no-mpu and --no-fpu give the same program; a compiler that fails, and an output
+    """-D, -I, two C files, --asm, --stack, --memory, the float library,
+    --no-mpu and --no-fpu, and --memory-bytes give the same program; a compiler that fails, and an output
     that cannot be written, are reported."""
     src = os.path.join(tmp, "opts")
     os.makedirs(os.path.join(src, "inc"))
@@ -169,7 +173,8 @@ def test_c_options(tmp: str) -> None:
                         ("no mpu and no fpu", ["--no-mpu", "--no-fpu"]),
                         ("inline fpu", ["--inline-fpu"]),
                         ("trusted alignment", ["--no-bounds-checks", "--trust-alignment"]),
-                        ("byte windows", ["--trust-alignment", "--byte-windows"])):
+                        ("byte windows", ["--trust-alignment", "--byte-windows"]),
+                        ("small memory", ["--memory-bytes", "auto"])):
         out = os.path.join(tmp, name.replace(" ", "_") + ".bin")
         if check_build("C options, " + name, ["-o", out] + extra + base, out):
             check_run("C options, " + name, run(out), 0, ["42 6 hi 4"])

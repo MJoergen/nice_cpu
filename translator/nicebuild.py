@@ -10,7 +10,7 @@ take one source file, the root of the program.
 Usage: nicebuild.py [-o output.bin] [-O LEVEL] [-I DIR] [-D MACRO[=VALUE]]
                     [--stack BYTES] [--memory BYTES] [--no-mpu] [--no-fpu] [--inline-fpu]
                     [--no-bounds-checks] [--trust-alignment] [--byte-windows] [--memory-pages N] [--asm FILE]...
-                    [--no-trap-report] [--monitor] [--ram ADDR [--ram-bytes BYTES]]
+                    [--memory-bytes BYTES] [--no-trap-report] [--monitor] [--ram ADDR]
                     [--symbols] [--keep]
                     input.c... | input.zig | input.rs
 """
@@ -104,10 +104,11 @@ def write_symbols(sym: str, program: str, output: str) -> None:
 
 
 def compile_wasm(lang: str, args: argparse.Namespace, wasm: str) -> None:
-    """Compiles the inputs to the wasm module in the file wasm. With --ram,
-    the module exports __heap_base, the end of its static data, so that
-    nicewasm --ram reserves the memory up to there (README.md)."""
-    heap = ["--export=__heap_base"] if args.ram is not None else []
+    """Compiles the inputs to the wasm module in the file wasm. With --ram
+    or --memory-bytes, the module exports __heap_base, the end of its
+    static data, so that nicewasm can reserve the memory up to there
+    (README.md)."""
+    heap = ["--export=__heap_base"] if args.ram is not None or args.memory_bytes is not None else []
     if lang == "c":
         run([os.environ.get("CLANG", "clang"), "--target=wasm32", "-mbulk-memory", "-mtail-call",
              f"-O{args.opt or '2'}", "-ffreestanding",
@@ -165,6 +166,9 @@ def main() -> None:
     ap.add_argument("--trust-alignment", action="store_true", help="pass --trust-alignment to nicewasm")
     ap.add_argument("--byte-windows", action="store_true", help="pass --byte-windows to nicewasm")
     ap.add_argument("--memory-pages", type=int, metavar="N", help="pass --memory-pages to nicewasm")
+    ap.add_argument("--memory-bytes", metavar="BYTES",
+                    help="pass --memory-bytes to nicewasm: reserve only the first BYTES bytes of "
+                    "the memory, or with auto up to the end of the static data, __heap_base")
     ap.add_argument("--asm", action="append", default=[], metavar="FILE",
                     help="join the NICE assembly FILE after the program, so that it can define "
                     "the functions that the program declares and does not define; repeatable")
@@ -178,9 +182,6 @@ def main() -> None:
     ap.add_argument("--ram", type=lambda v: int(v, 0), metavar="ADDR",
                     help="build a program whose code runs from a ROM: pass --ram ADDR to "
                     "nicewasm, which puts the words the program writes in RAM from ADDR")
-    ap.add_argument("--ram-bytes", type=int, metavar="BYTES",
-                    help="with --ram, pass --ram-bytes to nicewasm (default: up to the end "
-                    "of the static data, __heap_base)")
     ap.add_argument("--symbols", action="store_true",
                     help="write the labels to a .sym file next to the output, with the "
                     "functions of the program by name, for niceemu --symbols")
@@ -194,8 +195,13 @@ def main() -> None:
             sys.exit(f"nicebuild: {name} must be positive, not {value}")
     if lang != "c" and (args.includes or args.defines):
         sys.exit("nicebuild: -I and -D are for C only")
-    if args.ram_bytes is not None and args.ram is None:
-        sys.exit("nicebuild: --ram-bytes is for --ram only")
+    if args.memory_bytes is not None and args.memory_bytes != "auto" \
+            and not re.fullmatch(r"[0-9]+", args.memory_bytes):
+        sys.exit(f"nicebuild: --memory-bytes must be auto or a number of bytes, not"
+                 f" {args.memory_bytes}")
+    if args.memory_bytes is not None and args.memory_pages is not None:
+        sys.exit("nicebuild: --memory-bytes and --memory-pages do not go together: a memory"
+                 " reserved only in part cannot grow")
     if args.inline_fpu and args.no_fpu:
         sys.exit("nicebuild: --inline-fpu and --no-fpu do not go together: the inline accesses"
                  " are to the FPU")
@@ -244,8 +250,8 @@ def main() -> None:
             cmd += ["--memory-pages", str(args.memory_pages)]
         if args.ram is not None:
             cmd += ["--ram", str(args.ram)]
-        if args.ram_bytes is not None:
-            cmd += ["--ram-bytes", str(args.ram_bytes)]
+        if args.memory_bytes is not None:
+            cmd += ["--memory-bytes", args.memory_bytes]
         run(cmd + [wasm])
 
         # The order of ABI.md: start-up, program, runtime, muldiv, and float

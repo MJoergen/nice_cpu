@@ -26,7 +26,7 @@ unreachable; and, with --grow, memory.grow and accesses to the new page.
 So the trap paths are compared too, which fuzz.py cannot check.
 
 --no-mpu, --grow (--memory-pages 2), --unchecked (--no-bounds-checks),
-and --library (--library lib --library-memory 65536) are the modes of
+and --library (--library lib --memory-bytes 65536) are the modes of
 nicewasm that both versions run in. A module whose translations differ
 is written to diff_SEED.wasm in the current directory.
 
@@ -294,7 +294,7 @@ def compare(seed: int, mod: bytes, old: str, tmp: str, nompu: bool, opts: List[s
     runs: Dict[str, Run] = {}
     for tag, tool in (("old", old), ("new", NEW)):
         asm = os.path.join(tmp, f"m{seed}_{tag}.nasm")
-        err = translate(tool, wasm_file, asm, (["--no-mpu"] if nompu else []) + opts)
+        err = translate(tool, wasm_file, asm, (["--no-mpu"] if nompu else []) + own(tool, opts))
         if err is not None:
             return f"seed {seed}: the {tag} translator: {err.strip()}", None
         try:
@@ -340,6 +340,15 @@ def compare(seed: int, mod: bytes, old: str, tmp: str, nompu: bool, opts: List[s
     return None, n
 
 
+def own(tool: str, opts: List[str]) -> List[str]:
+    """The options in the names that the translator in the file tool
+    takes: one from before --memory-bytes took --library-memory."""
+    with open(tool) as f:
+        if "--memory-bytes" in f.read():
+            return opts
+    return ["--library-memory" if o == "--memory-bytes" else o for o in opts]
+
+
 def old_translator(rev: str, tmp: str) -> str:
     """The older nicewasm.py: a file, or the one of a git revision."""
     if os.path.exists(rev):
@@ -377,7 +386,7 @@ def main() -> None:
     if "--unchecked" in args:
         opts += ["--no-bounds-checks"]
     if "--library" in args:
-        opts += ["--library", "lib", "--library-memory", str(PAGE)]
+        opts += ["--library", "lib", "--memory-bytes", str(PAGE)]
     halts: Dict[str, int] = {}
     failures = 0
     with tempfile.TemporaryDirectory() as tmp:

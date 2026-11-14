@@ -209,6 +209,8 @@ So these pass every test of `make -C runtime test`: `DROP 2` in place of `DROP` 
 
 **Fix:** a program with floats in each language, built with `--no-fpu` and run with `niceemu --no-fpu`; a look for an access to `0xFFFFFF8C` in the `.nasm` of `--inline-fpu`; and the words reserved with `--memory-bytes`.
 
+**Resolved.** `build.py` builds a program with floats in each language, C, Zig, and Rust, four ways, and each run must return 13, 3 · 3 · 1.5 rounded toward zero: by default; with `--inline-fpu`, whose module must write the FPU's `CMD`, which the other modules must not; with `--no-fpu`, run on `niceemu --no-fpu`, which is the case of §1.2 from end to end; and with `--memory-bytes 8190`, whose module must reserve 2048 words, the bytes rounded up to a word. Each of the three changes of this section fails it, in each language.
+
 ### 3.7 `--memory-bytes` at its edges
 
 - No case gives a number of bytes that is not a multiple of 4: without the rounding up to a word, `run.py` and `errors.py` pass.

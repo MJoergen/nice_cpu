@@ -64,9 +64,11 @@ def build(args: List[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run([sys.executable, NICEBUILD] + args, capture_output=True, text=True)
 
 
-def run(program: str, sym: Optional[str] = None) -> subprocess.CompletedProcess[str]:
-    """Runs a .bin file on the emulator with no input, with its .sym file if given."""
-    cmd = [NICEEMU] + (["--symbols", sym] if sym else []) + [program]
+def run(program: str, sym: Optional[str] = None,
+        options: Optional[List[str]] = None) -> subprocess.CompletedProcess[str]:
+    """Runs a .bin file on the emulator with no input, with its .sym file if
+    given, and the emulator's options."""
+    cmd = [NICEEMU] + (options or []) + (["--symbols", sym] if sym else []) + [program]
     return subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True)
 
 
@@ -369,6 +371,70 @@ def test_rom(tmp: str, lang: str) -> None:
             fail("C with floats for a ROM, --no-fpu", f"exit status {p.returncode}\n{p.stderr}")
 
 
+# A program with floats in each language: 3 * 3 * 1.5, through memory
+# that the compiler must read, so that the arithmetic is the program's,
+# rounded toward zero, 13.
+FLOATS = {
+    "c": "int main(void) { volatile float f = 3; return (int)(f * f * 1.5f); }\n",
+    "zig": """export fn main() i32 {
+    var f: f32 = 3;
+    const p: *volatile f32 = &f;
+    return @intFromFloat(p.* * p.* * 1.5);
+}
+""",
+    "rs": """#![no_std]
+
+#[no_mangle]
+pub extern "C" fn main() -> i32 {
+    let f = 3.0f32;
+    let v = unsafe { core::ptr::read_volatile(&f) };
+    (v * v * 1.5) as i32
+}
+
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo) -> ! {
+    core::arch::wasm32::unreachable()
+}
+""",
+}
+FLOATS_RESULT = "~R0  00000000 R1  0000000d .*"
+
+
+def reserved_words(nasm: str) -> Optional[int]:
+    """The words that the translated module reserves for its linear memory."""
+    with open(nasm) as f:
+        m = re.search(r"^___wasm_memory\n +\.RES +(\d+)$", f.read(), re.M)
+    return int(m.group(1)) if m else None
+
+
+def test_floats(tmp: str, lang: str) -> None:
+    """A program with floats gives its result when built by default, which
+    joins the float library of the FPU, with --inline-fpu, whose module
+    writes the FPU's CMD itself, and with --no-fpu, which joins the float
+    library in software and runs on an emulator without the FPU. The
+    module of --memory-bytes reserves the bytes given, rounded up to a
+    word."""
+    what = {"c": "C", "zig": "Zig", "rs": "Rust"}[lang] + " with floats"
+    source = os.path.join(tmp, f"floats.{lang}")
+    with open(source, "w") as f:
+        f.write(FLOATS[lang])
+    for i, (name, extra, options) in enumerate((("", [], []), (", --inline-fpu", ["--inline-fpu"], []),
+                                                (", --no-fpu", ["--no-fpu"], ["--no-fpu"]),
+                                                (", --memory-bytes 8190", ["--memory-bytes", "8190"], []))):
+        out = os.path.join(tmp, f"floats_{lang}_{i}.bin")
+        if not check_build(what + name, ["--keep", "-o", out] + extra + [source], out):
+            continue
+        check_run(what + name + (" on niceemu --no-fpu" if options else ""), run(out, None, options),
+                  0, [FLOATS_RESULT])
+        with open(out[:-4] + ".nasm") as f:
+            inline = "@__fpu.cmd," in f.read()
+        if inline != (extra == ["--inline-fpu"]):
+            fail(what + name, f"the module {'writes' if inline else 'does not write'} the FPU's CMD")
+        words = reserved_words(out[:-4] + ".nasm")
+        if "--memory-bytes" in extra and words != 2048:
+            fail(what + name, f"the module reserves {words} words for its memory, not 2048")
+
+
 def test_unwritable(tmp: str) -> None:
     """An output directory without write permission is found before the build.
     Root writes anywhere, so the test is skipped for root."""
@@ -451,6 +517,7 @@ def main() -> None:
             test_c_monitor(tmp)
             test_rom(tmp, "c")
             test_tail(tmp, "c")
+            test_floats(tmp, "c")
             ran.append("C")
         else:
             skipped.append("C (no clang, wasm-ld, or llvm-ar for wasm32)")
@@ -459,6 +526,7 @@ def main() -> None:
             test_zig_monitor(tmp)
             test_rom(tmp, "zig")
             test_tail(tmp, "zig")
+            test_floats(tmp, "zig")
             ran.append("Zig")
         else:
             skipped.append("Zig (no zig)")
@@ -466,6 +534,7 @@ def main() -> None:
         if rustc and rustc_for_wasm32(rustc):
             test_rust(tmp)
             test_rom(tmp, "rs")
+            test_floats(tmp, "rs")
             ran.append("Rust")
         else:
             skipped.append("Rust (no rustc for wasm32)")

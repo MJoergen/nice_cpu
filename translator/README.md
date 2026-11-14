@@ -553,7 +553,12 @@ status in R1. `hello.zig` is built with and without
 `--symbols`, which must give the same `.bin`, and `hellors.rs` with it.
 A Zig program that prints through `nice.zig` is built with `--monitor`
 too, and its output must come through the stand-in's putc routine.
-Every `.sym` file must name every function. A language whose compiler is
+Every `.sym` file must name every function. In each language a program
+with floats is built four ways, and each run must give its result: by
+default; with `--inline-fpu`, whose module must write the FPU's `CMD`,
+which the others must not; with `--no-fpu`, run on `niceemu --no-fpu`;
+and with `--memory-bytes 8190`, whose module must reserve 2048 words for
+its memory. A language whose compiler is
 missing is skipped, and the PASS line says which; CI has Zig and clang, not Rust.
 `test/run.py --keep DIR` also leaves each
 program in `DIR/X.bin`, `DIR/X_soft.bin` for the run with `--no-mpu`, or

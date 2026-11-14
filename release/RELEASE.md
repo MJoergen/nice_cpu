@@ -141,9 +141,13 @@ They run on both cores at once, in parallel:
 
 That is, for each core, `bench make core` (the benchmark's two programs,
 each a run of its own), `bench make core-dhry` (Dhrystone), `bench make
-core-coremark` (one iteration of CoreMark), and `hdl make strides` (the
-interrupt sweeps with strides 17, 31, and 64). Each benchmark run,
-Dhrystone, and CoreMark takes one CPU, and the sweeps share the rest.
+core-coremark` (one iteration of CoreMark), `bench make core
+CORE_PROGRAMS="float float_inline"` (the float benchmark, with the FPU's
+accesses called and inline, one run for both), and `hdl make strides`
+(the interrupt sweeps with strides 17, 31, and 64). Each benchmark run,
+Dhrystone, CoreMark, and the float run takes one CPU, and the sweeps
+share the rest. `release.py figures` then checks that `bench/README.md`
+quotes the cycles of `float` and `float_inline` on the pipelined core.
 On 20 CPUs, `make slow` took 5 minutes on 2026-11-11. `SIM=ghdl` runs
 them in GHDL instead, which took 33 minutes on 2026-10-27, bound by the
 benchmark on the multi-cycle core.

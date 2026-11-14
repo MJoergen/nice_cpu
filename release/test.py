@@ -47,6 +47,15 @@ def check(cond: bool, what: str) -> None:
         raise SystemExit(f"FAIL: {what}")
 
 
+def test_core_total() -> None:
+    out = ("phase      instructions       cycles  result\n"
+           "norm             11679        40812  7703cd00  ok\n"
+           "total           180304       617442\n")
+    check(release.core_total(out) == "617442", "the cycles of the total row")
+    check(release.core_total(out.replace("total", "sum")) is None, "no total row")
+    check(release.core_total("total 1 2 1.0\n") is None, "a row of make cycles is not a core's")
+
+
 def test_figure_lines() -> None:
     f = release.figure_lines(CYCLES)
     check(sorted(f) == ["bench.bin", "hand.bin", "simple.bin"], "one entry per program")
@@ -219,6 +228,6 @@ def test_timing_dir() -> None:
         check(made == {release.timing_dir("mega65", unit)}, f"make timing UNIT={unit} writes to {made}")
 
 
-for t in (test_timing_dir, test_timing_budget, test_figure_lines, test_bench_totals, test_next_tag, test_ci_status, test_notes_section, test_version, test_stamp_covers):
+for t in (test_timing_dir, test_timing_budget, test_core_total, test_figure_lines, test_bench_totals, test_next_tag, test_ci_status, test_notes_section, test_version, test_stamp_covers):
     t()
 print("release tests passed")

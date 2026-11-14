@@ -166,6 +166,8 @@ The FPU is not untested on the cores: `make -C hdl test` runs `fpu`, `fpustack`,
 
 **Fix:** `slow/%/float` beside `slow/%/coremark`, with `CORE_PROGRAMS="float float_inline"`, a line in RELEASE.md §5, and the two cycle counts among the figures that `release.py figures` checks.
 
+**Resolved.** `make slow` runs `slow/<core>/float`, `make core CORE_PROGRAMS="float float_inline"`, on each core beside CoreMark, which took 53 seconds on the pipelined core in nvc. RELEASE.md §5 names it. `release.py figures` checks that bench/README.md quotes the cycles of the two on the pipelined core, from `hdl/build/float_pipeline.out` and `float_inline_pipeline.out`; `release.py check` requires the two files after its `make slow`, and `release.py figures` alone skips a program that `make slow` has not run. A changed figure in the README fails it, and `release/test.py` checks the reading of the total row.
+
 ### 3.3 `NO_FPU=1` in `bench/` runs the other build's programs
 
 bench/README.md line 39 says that the float programs are joined "with `NO_FPU=1` with the one in software". The Makefile's `NO_FPU` changes `FLOAT_LIB` only, a prerequisite, and not `BUILD`. So in a build directory that has the programs, as after any `make test`, make finds them up to date:

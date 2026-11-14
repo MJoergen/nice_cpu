@@ -66,6 +66,9 @@ TOOLS = {
 
 # Where the benchmark figures are quoted, and what make -C bench cycles prints.
 FIGURES_FILE = ROOT / "bench" / "README.md"
+# The programs whose cycles on the pipelined core bench/README.md quotes,
+# from the outputs that make slow leaves in hdl/build.
+CORE_FIGURES = ("float", "float_inline")
 
 
 class Failure(Exception):
@@ -182,7 +185,37 @@ def figure_lines(text: str) -> dict[str, tuple[str, str]]:
     return figures
 
 
-def cmd_figures(_: argparse.Namespace) -> int:
+def core_total(text: str) -> Optional[str]:
+    """The cycles of the total row of a program's output on a core."""
+    m = re.search(r"^total\s+\d+\s+(\d+)\s*$", text, re.M)
+    return m.group(1) if m else None
+
+
+def core_figures(readme: str, required: bool) -> bool:
+    """Whether bench/README.md quotes the cycles of each program of
+    CORE_FIGURES on the pipelined core. Without required, a program that
+    make slow has not run is skipped."""
+    ok = True
+    for name in CORE_FIGURES:
+        out = ROOT / "hdl" / "build" / f"{name}_pipeline.out"
+        if not out.exists():
+            if required:
+                ok &= say(False, f"make slow left {out.relative_to(ROOT)}")
+            else:
+                print(f"  skipped {name} on the pipelined core: make slow has not run")
+            continue
+        cycles = core_total(out.read_text())
+        if cycles is None:
+            ok &= say(False, f"{out.relative_to(ROOT)} has a total row")
+            continue
+        quoted = re.search(rf"\b{cycles}\b", readme) is not None
+        ok &= say(quoted, f"bench/README.md quotes {cycles}, {name} on the pipelined core")
+    return ok
+
+
+def cmd_figures(a: argparse.Namespace, core: bool = False) -> int:
+    """With core, the outputs of make slow on the pipelined core must be
+    there, as cmd_check has just run it."""
     print("Figures (RELEASE.md step 2.4)")
     out = run(["make", "--no-print-directory", "-C", "bench", "cycles"])
     measured = figure_lines(out)
@@ -196,6 +229,7 @@ def cmd_figures(_: argparse.Namespace) -> int:
     ok = say(summary in flat, f"bench/README.md has '{summary}'")
     cycles = total.split()[2]
     ok &= say(cycles in readme, f"bench/README.md quotes {cycles} ({total})")
+    ok &= core_figures(readme, core)
     return 0 if ok else 1
 
 
@@ -327,7 +361,7 @@ def cmd_check(a: argparse.Namespace) -> int:
     if not tree_is_clean():
         print(git("status", "--short"))
         raise Failure("make diagrams changed a file, or a step edited the tree: commit it and start again")
-    if cmd_figures(a) != 0:
+    if cmd_figures(a, core=not a.skip_slow and "pipeline" in a.cores) != 0:
         raise Failure("a figure in bench/README.md is out of date")
 
     if head() != sha:

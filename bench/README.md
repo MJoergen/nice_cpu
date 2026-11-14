@@ -645,7 +645,9 @@ more, and the emulator gives:
 
 That is 53% fewer instructions than with the calls. On the pipelined core
 it takes 355798 cycles, 42% fewer than 617442, at 4.18 per instruction,
-and `make cycles` gives 352416.
+and `make cycles` gives 352416. The top-level `make slow` runs `float`
+and `float_inline` on both cores, and `release.py figures` checks that
+this section quotes their cycles on the pipelined core.
 
 ## Dhrystone
 

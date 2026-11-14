@@ -20,6 +20,10 @@
 -- After the vectors, it checks the waits of §11.1: while DIV runs, a read
 -- of CMD is acknowledged two cycles after it is accepted, as any request
 -- is when it need not wait, and a read of X waits for the result.
+-- Every 1000th command of the vectors is reset while it runs, and so are
+-- DIV, and DIV with two reads of X waiting, whose ACKs the master gives
+-- up as it drops CYC. A reset must leave no ACK, no value, and no flag,
+-- and the command after it must run.
 -- It reports the first 20 lines that differ, the most cycles of each
 -- command that takes more than a few, with its line and its bound, and a
 -- command over its bound, then how many lines differ or commands are over
@@ -132,8 +136,21 @@ begin
       variable cmost_v : t_counts := (others => 0);
       variable cline_v : t_counts := (others => 0);
       variable timed_v : boolean;
+      variable reset_v : boolean;
+      variable ncmd_v  : natural := 0;
 
-      -- One access: the request until it is accepted, then the ack.
+      procedure hung(n : natural) is
+      begin
+         if n = 10000 then
+            report "tb_fpu: line " & integer'image(lines_v) & ": no ACK in 10000 cycles"
+               severity note;
+            stop(1);
+         end if;
+      end procedure hung;
+
+      -- One access: the request until it is accepted, then the ack. An
+      -- access that waits 10000 cycles, more than any command takes, ends
+      -- the test, as the FPU will not answer it.
       procedure bus_access(w : std_logic;
                        a : natural;
                        d : std_logic_vector(31 downto 0);
@@ -150,11 +167,13 @@ begin
          while stall = '1' loop
             wait until rising_edge(clk);
             n_v := n_v + 1;
+            hung(n_v);
          end loop;
          stb <= '0';
          while ack /= '1' loop
             wait until rising_edge(clk);
             n_v := n_v + 1;
+            hung(n_v);
          end loop;
          if n_v > most_v then
             most_v  := n_v;
@@ -242,6 +261,33 @@ begin
          end if;
       end procedure next_access;
 
+      -- A reset of n cycles, and then the state that it leaves: no
+      -- ACK, no value, no flag, and X the canonical NaN of an empty
+      -- stack.
+      procedure reset_check(what : string; n : positive := 2) is
+         variable r_v : std_logic_vector(31 downto 0);
+      begin
+         rst <= '1';
+         for i in 1 to n loop
+            wait until rising_edge(clk);
+         end loop;
+         rst <= '0';
+         for i in 1 to 4 loop
+            wait until rising_edge(clk);
+            if ack = '1' then
+               fail(what & ": an ACK after a reset");
+            end if;
+         end loop;
+         read(5, r_v);
+         if r_v(11 downto 0) /= X"000" then
+            fail(what & ": STATUS " & to_hstring(r_v) & " after a reset");
+         end if;
+         read(1, r_v);
+         if r_v /= X"7FF80000" then
+            fail(what & ": X_HI " & to_hstring(r_v) & " after a reset");
+         end if;
+      end procedure reset_check;
+
    begin
       file_open(vec_f, G_VECTORS, read_mode);
       wait until rising_edge(clk);
@@ -276,12 +322,21 @@ begin
 
          -- The access.
          timed_v := false;
+         reset_v := false;
          if kind_v = 'W' then
             t_cmd_v := now;
             write(to_integer(unsigned(reg_v(2 downto 0))), word_v);
+            if reg_v = X"4" then
+               ncmd_v := ncmd_v + 1;
+            end if;
+            -- Every 1000th command is reset while it runs, which leaves
+            -- no state after to compare; the next line sets its own.
             -- After every third command, the next access comes at once,
             -- so that it waits for the command: each register in turn.
-            if reg_v = X"4" and lines_v mod 3 = 0 then
+            if reg_v = X"4" and ncmd_v mod 1000 = 500 then
+               reset_v := true;
+               reset_check("a command");
+            elsif reg_v = X"4" and lines_v mod 3 = 0 then
                next_access((lines_v / 3) mod 10, af_v, ad_v, as_v);
             else
                timed_v := reg_v = X"4";
@@ -295,6 +350,9 @@ begin
          end if;
 
          -- The state after. A command's time ends with this read.
+         if reset_v then
+            next;
+         end if;
          read(5, rd_v);
          if timed_v then
             cyc_v := (now - t_cmd_v) / 10 ns;
@@ -360,9 +418,46 @@ begin
          end if;
       end loop;
 
+      -- A reset while DIV runs, and while two reads of X wait for it. Then the
+      -- unit must run a command again: SQRT of 9 is 3.
+      write(4, X"00000101");
+      write(3, X"00000007");
+      write(3, X"00000002");
+      write(4, X"00000013");
+      reset_check("DIV");
+      write(4, X"00000101");
+      write(3, X"00000007");
+      write(3, X"00000002");
+      write(4, X"00000013");
+      cyc   <= '1';
+      stb   <= '1';
+      we    <= '0';
+      addr  <= "001";
+      -- Two reads taken on two edges, the second one waiting behind the
+      -- first, and both dropped by the reset.
+      wait until rising_edge(clk);
+      wait until rising_edge(clk);
+      stb <= '0';
+      wait until rising_edge(clk);
+      if stall /= '1' then
+         fail("the second read of X_HI during DIV does not wait");
+      end if;
+      wait until rising_edge(clk);
+      cyc <= '0';
+      -- One cycle, as two would serve the waiting read during the reset.
+      reset_check("two reads of X_HI during DIV", 1);
+      write(3, X"00000009");
+      write(4, X"00000014");
+      t_v := now;
+      read(1, rd_v);
+      if now - t_v > 2 us or rd_v /= X"40080000" then
+         fail("SQRT after a reset took " & time'image(now - t_v) & " and gave " &
+              to_hstring(rd_v));
+      end if;
+
       report "tb_fpu: " & integer'image(lines_v) & " lines, " & integer'image(fails_v) &
              " differ, at most " & integer'image(most_v) & " cycles to an ACK, line " &
-             integer'image(mline_v)
+             integer'image(mline_v) & ", " & integer'image((ncmd_v + 500) / 1000 + 2) & " resets"
          severity note;
       running <= false;
       if fails_v = 0 then

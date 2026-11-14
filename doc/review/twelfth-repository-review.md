@@ -272,6 +272,8 @@ The last row I ran again for `FPU_X_HI`: bounded to 8 cycles, the stack model fa
 
 **Fix:** a reset in `tb_fpu` while `DIV` runs, then an access, and a second reset between two sequences of the vectors.
 
+**Resolved.** `tb_fpu` now resets every 1000th command of the vectors while it runs, 38 resets in `make test`, then `DIV` while it runs, and `DIV` with two reads of X waiting, whose ACKs the master gives up as it drops CYC. Each reset must leave no ACK, `FPU_STATUS` with no value and no flag, and X the canonical NaN, and the command after it must run: `SQRT` of 9 must give 3 within 2 µs. A watchdog in its bus access stops it if an ACK does not come in 10000 cycles. Each reset taken out fails it: that of `fpu_unit.vhd` ("SQRT after a reset … gave 3FFDEEEA"), and in `fpu.vhd` those of the state, of the flags, and of the waiting request. The last needs a reset of one cycle, as in two the waiting read is served, and its ACK dropped, during the reset. `tb_link` still has no FPU, so the reset at a start of DEBUG.md §6 is tested on the emulator only.
+
 ### 3.12 Nothing checks the cycles of the commands
 
 `tb_fpu` and `tb_fpu_unit` report the most cycles from a request to its ACK, 2153 in `make test`, and compare it with nothing. The only bound is the watchdog of `tb_core`, 10000 cycles for a step. DEVICES.md §11.5 gives the cycles of eight commands, and the cycle model of `bench/` takes two averages from them. With a `tb_fpu` that reports the cycles of each write of a command and of the read of `FPU_STATUS` after it, the vectors of `make test` give:

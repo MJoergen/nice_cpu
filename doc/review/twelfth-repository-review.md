@@ -359,6 +359,8 @@ The README has a section for each device of `hdl/src`: the timer, the console's 
 - `doc/README.md:9` lists the devices of DEVICES.md down to "and clock". **Fix:** "clock, and floating-point unit".
 - The usage text of niceemu, `emulator/src/main.zig:23`, gives the range of each device, and not the FPU's, which only the line of `--no-fpu` has. **Fix, if wanted:** "the floating-point unit at 0xFFFFFF88-0xFFFFFF8F".
 
+**Resolved.** doc/README.md lists the floating-point unit among the devices of DEVICES.md, and the usage text of niceemu gives its range beside the others.
+
 ### 5.5 DEVICES.md §11.3 holds an open item
 
 Line 811, of `SCALE10` beyond k = 22: "the error has a bound that this section will state once it is proven". CONTRIBUTING.md puts open items in issues. #167, phase 2, asks for the bounds of the functions and does not name this one. The sentence after it says what was measured, which is what is true now. **Fix:** add the proof to #167, or give it an issue, and let §11.3 say that no bound is proven yet.

@@ -21,10 +21,11 @@ const usage =
     \\the end of the input. The read counter is at 0xFFFFFF01, and the
     \\console's receive interrupt at 0xFFFFFF02.
     \\The timer is at 0xFFFFFF10-0xFFFFFF1F, the math unit at 0xFFFFFF20-
-    \\0xFFFFFF3F, the performance counters at 0xFFFFFF40-0xFFFFFF7F, the SD
-    \\card controller at 0xFFFFFFA0-0xFFFFFFAF, the network station's
-    \\registers at 0xFFFFFFB0-0xFFFFFFBF, and the port for Ethernet frames
-    \\at 0xFFFFFFC0-0xFFFFFFCF.
+    \\0xFFFFFF3F, the performance counters at 0xFFFFFF40-0xFFFFFF7F, the
+    \\floating-point unit at 0xFFFFFF88-0xFFFFFF8F, the SD card controller
+    \\at 0xFFFFFFA0-0xFFFFFFAF, the network station's registers at
+    \\0xFFFFFFB0-0xFFFFFFBF, and the port for Ethernet frames at
+    \\0xFFFFFFC0-0xFFFFFFCF.
     \\
     \\Options:
     \\  -t, --trace          Print one line per instruction.

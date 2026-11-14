@@ -279,19 +279,23 @@ a source.
 
 ## License
 
-The code and the documents are under the [MIT license](LICENSE), `mchess.c`
-included. Dhrystone 2.1 in `bench/dhrystone/` is not covered by it; it is
-R. P. Weicker's, and its files state no terms (bench/README.md, Dhrystone).
-CoreMark in `bench/coremark/` is EEMBC's, under the Apache License 2.0 and
-the trademark agreement of its `LICENSE.md` (bench/README.md, CoreMark). The three
-2004 example programs (`count`, `replicate`, and `print`), their sources and
-their `.bin` files in `assembler/test/`, are by B. Ulmann and T. Kratz and
-are not covered by it; see
-[doc/REFERENCES.md](doc/REFERENCES.md). The font of the emulator's window,
-`emulator/src/font.zig`, is generated from Spleen 16×32, which is under
-the BSD 2-Clause license in `emulator/font/LICENSE.spleen`, and a build
-with `-Dwindow` compiles SDL 3 in, which is under the zlib license.
-The math functions of the C library, in `runtime/libc/src/math/`, are
-musl's, under musl's MIT license and the notices in their files,
-collected in `COPYRIGHT` there. So are the C library's `floatscan.c`
-and the float conversions of its `printf.c`, both changed.
+The code and the documents are under the [MIT license](LICENSE),
+`mchess.c` included, but for these:
+
+- **Dhrystone 2.1** in `bench/dhrystone/` is R. P. Weicker's, and its
+  files state no terms (bench/README.md, Dhrystone).
+- **CoreMark** in `bench/coremark/` is EEMBC's, under the Apache License
+  2.0 and the trademark agreement of its `LICENSE.md` (bench/README.md,
+  CoreMark).
+- **The three 2004 example programs** (`count`, `replicate`, and
+  `print`), their sources and their `.bin` files in `assembler/test/`,
+  are by B. Ulmann and T. Kratz (see [doc/REFERENCES.md](doc/REFERENCES.md)).
+- **The font of the emulator's window**, `emulator/src/font.zig`, is
+  generated from Spleen 16×32, under the BSD 2-Clause license in
+  `emulator/font/LICENSE.spleen`.
+- **SDL 3**, which a build with `-Dwindow` compiles in, is under the zlib
+  license.
+- **The math functions of the C library**, in `runtime/libc/src/math/`,
+  are musl's, under musl's MIT license and the notices in their files,
+  collected in `COPYRIGHT` there. So are the C library's `floatscan.c`
+  and the float conversions of its `printf.c`, both changed.

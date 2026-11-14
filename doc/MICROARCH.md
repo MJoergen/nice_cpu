@@ -918,7 +918,8 @@ system built from them must follow these rules:
   A read of a result holds off its ACK until the result is ready, so the
   data bus must allow a slave to take many cycles.
 - **Performance counters.** At `0xFFFFFF40`–`0xFFFFFF7F` (DEVICES §3), in
-  two devices. The cycle, instruction, microsecond, and event counters are
+  two devices, with the clock below inside the range of the first. The
+  cycle, instruction, microsecond, and event counters are
   `hdl/src/perf.vhd` at `0xFFFFFF40`–`0xFFFFFF5F`, 32 words, so the
   decoder compares address bits 31..5. Its generic `G_CLK_HZ`
   is the clock frequency, for the microsecond counter. The core raises `instret_o` for one cycle
@@ -934,6 +935,14 @@ system built from them must follow these rules:
   cycle of its retire report, which is no later than its `instret_o`, so a
   read of a counter counts the same events as in the emulator.
   `emulator/test/events.nasm` checks this on both cores.
+- **Clock.** `hdl/src/tod.vhd` at `0xFFFFFF46`–`0xFFFFFF49` (DEVICES §10),
+  4 words inside the range of `perf.vhd` and across a boundary of four.
+  So the decoder compares address bits 31..4 with `0xFFFFFF4` and bits
+  3..0 with 6 to 9, gives the clock bits 1..0 xor "10", and gives the
+  other words of `0xFFFFFF40`–`0xFFFFFF5F` to `perf.vhd`. The clock
+  counts in every cycle, also while the core is held, paused, or halted.
+  It takes the reset of the system, and not that of a start of the
+  processor, which must leave its time (DEBUG.md §6).
 - **Counter run input.** A system drives `run_i` of `perf.vhd` and
   `fetch_stats.vhd` with "the core is running": 0 while it holds the core,
   and while `paused_o` or `halted_o` is 1, and 1 otherwise. A device that
@@ -946,6 +955,17 @@ system built from them must follow these rules:
   it: the cause of each cycle, the flushes by cause, the stalls of both
   buses, and the jumps that DECODE resolves. They show where the cycles
   of a program go.
+- **FPU.** `hdl/src/fpu.vhd` at `0xFFFFFF88`–`0xFFFFFF8F` (DEVICES §11),
+  8 aligned words, so the decoder compares address bits 31..3, and gives
+  the FPU bits 2..0. It takes the reset of a start of the processor,
+  which empties its stack and ends a command (DEBUG.md §6). It takes each
+  request into a register and acknowledges it two cycles after it is
+  accepted at the earliest. While a command runs it holds every request
+  but a read of `FPU_CMD`, for up to some 3300 cycles (DEVICES §11.5),
+  so a pause, an interrupt, and a single step wait that long, and a
+  watchdog of the system must allow for it. Its arithmetic unit,
+  `hdl/src/fpu_unit.vhd`, is inside it
+  ([hdl/README.md](../hdl/README.md#the-floating-point-unit)).
 - **Timer.** `hdl/src/timer.vhd` at `0xFFFFFF10`–`0xFFFFFF1F` (DEVICES §4),
   with its request on the core's IRQ port, through the merge below.
 - **Console's receive interrupt.** `hdl/src/console_irq.vhd` at

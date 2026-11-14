@@ -391,6 +391,8 @@ The README has a section for each device of `hdl/src`: the timer, the console's 
 
 §8 lists the devices of `hdl/src` with the rule that a system follows for each, from the console to the Ethernet frames. `fpu.vhd` is not there, and neither is `tod.vhd`, the clock of `V2.0`, whose words lie inside the range of `perf.vhd`. **Fix:** a bullet for each: the address bits the decoder compares, the reset, and for the FPU the wait.
 
+**Resolved.** MICROARCH.md §8 has a bullet for the clock, `tod.vhd` inside the range of `perf.vhd`, with the compare of address bits 31..4 and 3..0 that this needs, the address bits it gets, and the reset of the system that it takes, and one for the FPU: its 8 aligned words and the compare of bits 31..3, the reset of a start of the processor, the ACK two cycles after, and the requests it holds while a command runs, which a pause, an interrupt, a step, and a watchdog must allow for. The bullet of the performance counters says that the clock is inside their range.
+
 ### 5.3 The lists of the synthesis check, and two comments
 
 `hdl/README.md:96` lists what `ghdl --synth` checks, and leaves out the FPU and its arithmetic unit, which `SYNTH` in `hdl/Makefile:685` has. The comment above `SYNTH` names the arithmetic unit and not the FPU. The eleventh review found the same of the two units of `V2.1` (its §3.2). **Fix:** both names in both.

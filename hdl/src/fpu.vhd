@@ -27,10 +27,14 @@
 -- * DIGITS takes the binary exponent with ILOGB, and from it the decimal
 --   exponent e = ceil((E + 1) log10 2), which a 32-bit constant gives
 --   exactly for every binary64 value. That e is the largest that can give
---   n digits, so the loop of the model, SCALE10, NEAREST, and a comparison
---   with 10^(n-1), lowering e until there are n digits, ends with the
---   model's e. The digits go to BCD by shifting and adding 3 to each digit
---   of 5 or more, then left to the top.
+--   n digits, so a loop of SCALE10, NEAREST, and a comparison with
+--   10^(n-1), lowering e until there are n digits, ends with the largest
+--   e for which D >= 10^(n-1). Where D is then exactly 10^(n-1), the
+--   digits may have rounded up to it, so the loop tries the e below once:
+--   if its D is below 10^n, that e and D are the model's, the smallest e
+--   for which D < 10^n; if not, 10^(n-1) and the e above are. The digits
+--   go to BCD by shifting and adding 3 to each digit of 5 or more, then
+--   left to the top.
 -- * FROMBCD multiplies by 10 and adds a digit, 16 times, then UTOF.
 -- * The word operators convert their operands with FTOW, compute in 32
 --   bits, IDIV and MOD with a restoring divider of the magnitudes, and
@@ -338,6 +342,13 @@ architecture synthesis of fpu is
    signal nm1_r  : integer range -1 to 254;
    signal tens_r : t_word64 := (others => '0');
    signal ge_r   : std_logic;
+   -- 10^n, whether the unit's result is 10^(n-1), and whether it is
+   -- below 10^n, a cycle after it as ge_r, and whether the loop tries
+   -- the e below one whose D is 10^(n-1).
+   signal tenn_r : t_word64 := (others => '0');
+   signal eq_r   : std_logic;
+   signal lt_r   : std_logic;
+   signal dtry_r : boolean;
    -- Whether the unit's result is infinite, a cycle after it, for the
    -- states that UWAIT_ST goes on to.
    signal uinf_r : boolean;
@@ -1068,6 +1079,8 @@ begin
          -- Positive values compare as their bits do. DNEAR_ST reads it a
          -- cycle after UWAIT_ST, where the result is the same.
          ge_r     <= bool_to_sl(unsigned(u_result) >= unsigned(tens_r));
+         eq_r     <= bool_to_sl(u_result = tens_r);
+         lt_r     <= bool_to_sl(unsigned(u_result) < unsigned(tenn_r));
          uinf_r   <= f_inf(u_result);
          -- The tests of the operands, for ARITH2_ST and DIGITS_ST, which
          -- follow ARITH_ST, a cycle after CMD_ST set them.
@@ -1487,6 +1500,8 @@ begin
                nm1_r  <= n_r - 1;
                -- n is 1 to 15 where it counts: n - 1 is its low 4 bits.
                tens_r <= C_TENS((n_r + 15) mod 16);
+               tenn_r <= C_TENS(n_r mod 16);
+               dtry_r <= false;
                if p_xnan_r or p_xinf_r or n_r = 0 or n_r > 15 then
                   finish(C_QNAN, C_QNAN, 2, "001");
                elsif p_xzero_r then
@@ -1522,7 +1537,19 @@ begin
                ucall(OP_INTEGRAL, s10_res_r, s10_res_r, DNEAR_ST);
 
             when DNEAR_ST =>
-               if ge_r = '1' then
+               if dtry_r then
+                  -- The e below one whose D is 10^(n-1).
+                  if lt_r = '1' then
+                     ucall(OP_FTOU, u_result, u_result, DINT_ST);
+                  else
+                     dexp_r <= dexp_r + 1;
+                     ucall(OP_FTOU, tens_r, tens_r, DINT_ST);
+                  end if;
+               elsif ge_r = '1' and eq_r = '1' then
+                  dtry_r  <= true;
+                  dexp_r  <= dexp_r - 1;
+                  state_r <= DLOOP_ST;
+               elsif ge_r = '1' then
                   ucall(OP_FTOU, u_result, u_result, DINT_ST);
                else
                   dexp_r  <= dexp_r - 1;

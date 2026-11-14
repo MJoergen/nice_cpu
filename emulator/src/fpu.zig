@@ -501,16 +501,24 @@ fn frombcd(a: u64) Result {
 
 /// DIGITS n of a finite nonzero X, n from 1 to 15: the digits D and the
 /// exponent e. D is NEAREST of SCALE10 of |X| by n - 1 - e, and e the
-/// largest whole number for which D >= 10^(n-1). No e above
-/// floor(log10 |X|) + 1 has one, so the search starts at or above it.
+/// smallest whole number for which D < 10^n. The search finds the
+/// largest e with D >= 10^(n-1), as no e above floor(log10 |X|) + 1 has
+/// one, and that D is below 10^n. Where it is exactly 10^(n-1), the
+/// first n digits may have rounded up to it, and then the e below gives
+/// a D below 10^n.
 fn digits(a: u64, n: u8) struct { d: u64, e: i32 } {
     const ax = a & ~sign_bit;
-    const lowest = std.math.pow(u64, 10, @as(u64, n) - 1);
+    const lowest: f64 = @floatFromInt(std.math.pow(u64, 10, @as(u64, n) - 1));
     // log10 2 < 0.30103, so this is at least floor(log10 |X|) + 1.
     var e: i32 = @divFloor((exponent(ax) + 1) * 30103, 100000) + 2;
     while (true) : (e -= 1) {
         const d = nearest(f(scale10(ax, @as(i32, n) - 1 - e)));
-        if (d >= @as(f64, @floatFromInt(lowest))) return .{ .d = @intFromFloat(d), .e = e };
+        if (d < lowest) continue;
+        if (d == lowest) {
+            const below = nearest(f(scale10(ax, @as(i32, n) - e)));
+            if (below < 10 * lowest) return .{ .d = @intFromFloat(below), .e = e - 1 };
+        }
+        return .{ .d = @intFromFloat(d), .e = e };
     }
 }
 

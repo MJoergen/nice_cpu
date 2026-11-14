@@ -126,6 +126,8 @@ DEVICES.md §11.3, line 822: "D, the digits as a whole number, is `NEAREST` of `
 
 **Fix:** DEVICES.md first: e is the smallest whole number for which D < 10^n. D then has n digits always. On the model that rule agrees with Python's `'%.*e'` on 4000 random values for each of n = 1, 2, 3, and 6, and for n = 15 it differs only by one in the last digit, 163 times, as the old rule does, which is `SCALE10`'s rounding before `NEAREST`. Then the model, with a test against `'%.*e'` and the cases of the table among the directed vectors, the emulator, and `fpu.vhd`: its loop may stop where it does now, and try the e below only when D is exactly 10^(n−1). Nothing prints through `DIGITS` yet but `fpudec.nasm`, and BASIC on the board is to, so the change costs least before `V2.2`.
 
+**Resolved.** DEVICES.md §11.3 says that e is the smallest whole number for which D < 10^n, so that D has n digits, with `DIGITS 1` and `DIGITS 2` of 9.6 as the example. The model searches down from floor(log10 |X|) + 1 by that rule. The emulator and `fpu.vhd` keep their loop, and where it ends on a D of exactly 10^(n−1) they try the e below once, and take it if its D is below 10^n. The model's test compares `DIGITS n` with Python's `'%.*e'` on 300 random values for each n from 1 to 15: the same up to 6 digits, and within one in the last digit beyond. Its constants of 15 digits now include 999999999999995 to 999999999999999 at six exponents, which come back. The hand cases and the directed vectors have the three lines of the table, and 9.6, 95.1, 9.96, and 99.6 on each side of the carry. With the old rule, each of these checks fails.
+
 ## 3. Test coverage
 
 ### 3.1 Nothing measures the FPU's timing, and it misses 100 MHz

@@ -428,16 +428,24 @@ def floor_log10(x: Fraction) -> int:
 def digits(a: int, n: int) -> Tuple[int, int]:
     """DIGITS n of a finite nonzero a: the digits as a whole number D,
     and the exponent e. D is NEAREST of SCALE10 of |a| by n - 1 - e, and
-    e is the largest whole number for which D >= 10^(n-1)."""
+    e is the smallest whole number for which D < 10^n. At e =
+    floor(log10 |a|) + 1, |a| is scaled below 10^(n-1), so D < 10^n, and
+    D only grows as e falls."""
     ax = F64.abs(a)
-    e = floor_log10(F64.value(ax)) + 1
-    while True:
+
+    def d_at(e: int) -> int:
         d = F64.to_integral(scale10(ax, n - 1 - e)[0], "even")[0]
-        dv = trunc(F64.value(d))
-        if dv >= 10 ** (n - 1):
-            assert dv < 10**n, "DIGITS: more than n digits"
+        return trunc(F64.value(d))
+
+    e = floor_log10(F64.value(ax)) + 1
+    dv = d_at(e)
+    assert dv < 10**n, "DIGITS: more than n digits at the start"
+    while True:
+        below = d_at(e - 1)
+        if below >= 10**n:
+            assert dv >= 10 ** (n - 1), "DIGITS: fewer than n digits"
             return dv, e
-        e -= 1
+        e, dv = e - 1, below
 
 
 class Command:

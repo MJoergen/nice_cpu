@@ -659,6 +659,13 @@ def decimal_cmds(g: Generator, rnd: random.Random) -> None:
     for v in values:
         for n in list(range(17)) + [255]:
             g.cmd([v], f"DIGITS {n}")
+    # Where the first n digits round up to 10^n, e is one higher and the
+    # digits are 10^(n-1); just below, they are not: 8 and 95.1 keep
+    # their e, 9.96 and 99.6 do not.
+    for text, ns in (("8", (1, 2)), ("95.1", (1, 2, 3)), ("9.96", (1, 2, 3)), ("99.6", (2, 3)),
+                     ("99.9999999999999", (14, 15)), ("9.99999999999995e-300", (15,))):
+        for n in ns:
+            g.cmd([d(Fraction(text))], f"DIGITS {n}")
     for _ in range(30):
         digits = str(rnd.randint(10**14, 10**15 - 1))
         g.cmd([bcd(digits)], "FROMBCD")

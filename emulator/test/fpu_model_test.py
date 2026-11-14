@@ -17,8 +17,8 @@ The model is the oracle of the FPU's tests, so this checks it four ways:
    is the 53 >= 2 · 24 + 2 of §11.3.
 4. In exact arithmetic: the constants against decimal, ISQRT against
    math.isqrt, SCALE10 correctly rounded for k <= 22 and within a bound
-   beyond, and constants of 15 digits through FROMBCD, SCALE10, and
-   DIGITS 15, which must come back.
+   beyond, DIGITS against Python's '%.*e', and constants of 15 digits
+   through FROMBCD, SCALE10, and DIGITS 15, which must come back.
 
 The random cases have fixed seeds. It exits 1 on the first failure."""
 
@@ -60,6 +60,7 @@ from fpu_model import (  # noqa: E402
     floor_log2,
     pow2,
     s64,
+    digits,
     scale10,
 )
 
@@ -420,6 +421,12 @@ CASES: List[Case] = [
     # DIGITS n: the digits in BCD from bit 63 down, then e.
     ("DIGITS 3 of 123.456", [d(123.456)], 0, "DIGITS 3", [0x1230000000000000, d(2.0)], 0, None),
     ("DIGITS 1 of 9.6 carries to 1e1", [d(9.6)], 0, "DIGITS 1", [0x1000000000000000, d(1.0)], 0, None),
+    ("DIGITS 2 of 9.6 is 9.6e0, not 1.0e1", [d(9.6)], 0, "DIGITS 2", [0x9600000000000000, 0], 0, None),
+    ("DIGITS 1 of 8 is 8e0, not 1e1", [d(8.0)], 0, "DIGITS 1", [0x8000000000000000, 0], 0, None),
+    ("DIGITS 2 of 95.1 is 9.5e1, not 1.0e2", [d(95.1)], 0, "DIGITS 2", [0x9500000000000000, d(1.0)], 0, None),
+    ("DIGITS 2 of 99.6 carries to 1.0e2", [d(99.6)], 0, "DIGITS 2", [0x1000000000000000, d(2.0)], 0, None),
+    ("DIGITS 15 of 99.9999999999999 keeps its digits", [d(99.9999999999999)], 0, "DIGITS 15",
+     [0x9999999999999990, d(1.0)], 0, None),
     ("DIGITS 3 of -9.996 carries to 1.00e1", [d(-9.996)], 0, "DIGITS 3", [0x1000000000000000, d(1.0)], 0, None),
     ("DIGITS 15 of 0.1", [d(0.1)], 0, "DIGITS 15", [0x1000000000000000, d(-1.0)], 0, None),
     # π = 3.14159265358979|32...
@@ -845,12 +852,44 @@ def scale10_check(rnd: random.Random) -> None:
                 return
 
 
+def digits_check(rnd: random.Random) -> None:
+    """DIGITS n against Python's '%.*e', which rounds the exact value
+    once, on random finite values, 300 for each n. Up to 6 digits they
+    are the same; SCALE10 rounds before NEAREST, so beyond 6 the digits
+    may differ by one in the last place. D has n digits always."""
+    for n in range(1, 16):
+        for _ in range(300):
+            a = rnd.getrandbits(63)
+            if not F64.is_finite(a) or a == 0:
+                continue
+            dv, e = digits(a, n)
+            if not 10 ** (n - 1) <= dv < 10**n:
+                fail(f"DIGITS {n} of {a:016X}: {dv} has not {n} digits")
+                return
+            mant, exp = f"{h(a):.{n - 1}e}".split("e")
+            pv, pe = int(mant.replace(".", "")), int(exp)
+            if (dv, e) == (pv, pe):
+                continue
+            # The two as whole numbers of units in the last place of the
+            # larger exponent.
+            top = max(e, pe)
+            off = abs(dv * 10 ** (e - top + 10) - pv * 10 ** (pe - top + 10))
+            if n <= 6 or off > 10**10:
+                fail(f"DIGITS {n} of {a:016X}: {dv}e{e}, '%.{n - 1}e' gives {pv}e{pe}")
+                return
+
+
 def fifteen_digits(rnd: random.Random) -> None:
     """A constant of 15 digits, read through FROMBCD and SCALE10, and
-    printed through DIGITS 15, comes back."""
-    for _ in range(1500):
+    printed through DIGITS 15, comes back. The random ones are joined by
+    the digits 999999999999995 and above, which round up to 10^15 one
+    place higher."""
+    nines = [(10**15 - i, e) for i in range(1, 6) for e in (-300, -20, 1, 2, 15, 300)]
+    for i in range(1500 + len(nines)):
         digs = rnd.randint(10**14, 10**15 - 1)
         e = rnd.randint(-307, 307)
+        if i >= 1500:
+            digs, e = nines[i - 1500]
         fpu = FPU()
         bcd = int(str(digs), 16) << 4
         fpu.write(X_LO, bcd & 0xFFFFFFFF)
@@ -880,6 +919,7 @@ def main() -> None:
     constants()
     isqrt_check(rnd)
     scale10_check(rnd)
+    digits_check(rnd)
     fifteen_digits(rnd)
     print("exact arithmetic")
     if FAILURES:

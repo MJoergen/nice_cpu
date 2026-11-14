@@ -318,6 +318,35 @@ architecture synthesis of fpu_unit is
       end if;
    end procedure shl_step;
 
+   -- Whether the magnitude m of an integer is out of range: above
+   -- 2^k - 1, or with neg above 2^k. Each is a test of bits, and needs no
+   -- comparison. A loop, as a slice above the top of m would be null.
+   function over(m   : unsigned;
+                 k   : natural;
+                 neg : boolean) return boolean is
+      variable mv : unsigned(m'length - 1 downto 0);
+      variable hi : boolean;
+      variable at : boolean;
+      variable lo : boolean;
+   begin
+      mv := m;
+      hi := false;
+      at := false;
+      lo := false;
+      for i in mv'range loop
+         if mv(i) = '1' then
+            if i > k then
+               hi := true;
+            elsif i = k then
+               at := true;
+            else
+               lo := true;
+            end if;
+         end if;
+      end loop;
+      return hi or (at and (lo or not neg));
+   end function over;
+
    signal state_r : t_state := IDLE_ST;
    signal op_r    : t_fpu_op;
    signal rnd_r   : t_fpu_rnd;
@@ -327,17 +356,17 @@ architecture synthesis of fpu_unit is
 
    -- The unpacked operands.
    signal sa_r : std_logic;
-   signal ea_r : t_exp;
-   signal ma_r : t_sig;
+   signal ea_r : t_exp := (others => '0');
+   signal ma_r : t_sig := (others => '0');
    signal sb_r : std_logic;
-   signal eb_r : t_exp;
-   signal mb_r : t_sig;
+   signal eb_r : t_exp := (others => '0');
+   signal mb_r : t_sig := (others => '0');
 
    -- The result being formed: its sign, the exponent of the top bit of ACC,
    -- ACC, and the second addend of ADD.
-   signal s_r   : std_logic;
-   signal e_r   : t_exp;
-   signal acc_r : t_acc;
+   signal s_r   : std_logic := '0';
+   signal e_r   : t_exp     := (others => '0');
+   signal acc_r : t_acc     := (others => '0');
    signal opb_r : t_acc;
    signal amt_r : integer range 0 to 2 ** C_EW;
    signal sub_r : std_logic;
@@ -356,6 +385,46 @@ architecture synthesis of fpu_unit is
    signal pp_r  : unsigned(C_P + G_CHUNK - 1 downto 0);
    signal hi_r  : unsigned(C_P - 1 downto 0);
    signal lo_r  : unsigned(G_CHUNK * C_NCH - 1 downto 0);
+   signal mbs_r : t_sig;
+
+   -- The rounding of ACC, formed in every cycle from ACC, E, the grid,
+   -- and the mode, for ROUND_ST in the next: the bits kept, the guard and
+   -- sticky bits, whether to add one, whether that carries out of the
+   -- precision, whether the result is 0, whether its top bit is set, and
+   -- whether its exponent is above the grid's largest. ROUND_ST follows
+   -- DENORM_ST in a cycle that changes none of them, so that only the
+   -- addition and the packing are left to it.
+   signal rk_r    : unsigned(C_P downto 0);
+   signal rg_r    : std_logic;
+   signal rs_r    : std_logic;
+   signal ri_r    : std_logic;
+   signal rc_r    : std_logic;
+   signal rz_r    : std_logic;
+   signal rn_r    : std_logic;
+   signal rover_r : std_logic;
+
+   -- The comparisons that DISPATCH_ST chooses by, formed in every cycle:
+   -- whether A is at least B in magnitude, and whether its exponent is
+   -- below B's, at least F, 0, below 0, and at least W. DISPATCH_ST comes
+   -- after NORMB_ST only, in a cycle that changes neither operand.
+   signal dge_r    : boolean;
+   signal dlt_r    : boolean;
+   signal dwhole_r : boolean;
+   signal dzero_r  : boolean;
+   signal dneg_r   : boolean;
+   signal dbig_r   : boolean;
+
+   -- The sum of the exponents of a product, and whether it, and it plus
+   -- 1, are at least EMIN, formed in every cycle for MUL_FIN_ST, which
+   -- comes after MUL_ST, which changes neither exponent.
+   signal esum_r  : integer range -2 ** (C_EW - 1) to 2 ** (C_EW - 1) - 1 := 0;
+   signal emin0_r : boolean;
+   signal emin1_r : boolean;
+
+   -- The largest magnitudes of a conversion to an integer, positive and
+   -- negative, which depend on the operation only, formed in every cycle.
+   signal lim_p_r : unsigned(C_N downto 0);
+   signal lim_n_r : unsigned(C_N downto 0);
 
    -- The divider, the root, and FMOD: the remainder, the quotient or the
    -- root, and the bits of the radicand still to take.
@@ -389,21 +458,85 @@ begin
       variable low_v   : unsigned(C_P downto 0);
       variable up_v    : std_logic;
       variable en_v    : integer;
+      variable eok_v   : boolean;
       variable tr_v    : unsigned(C_P + 3 downto 0);
       variable prec_v  : natural;
       variable emin_v  : integer;
       variable kept_v  : unsigned(C_P downto 0);
+      variable half_v  : unsigned(C_P downto 0);
       variable guard_v : std_logic;
       variable stk_v   : std_logic;
       variable inc_v   : std_logic;
+      variable carry_v : std_logic;
+      variable emax_v  : integer;
       variable e2_v    : integer;
       variable m_v     : unsigned(C_N - 1 downto 0);
       variable bits_v  : natural;
       variable lim_v   : unsigned(C_N downto 0);
+      variable ovf_v   : boolean;
       variable int_v   : signed(C_N downto 0);
    begin
       if rising_edge(clk_i) then
          done_r <= '0';
+
+         dge_r    <= ea_r > eb_r or (ea_r = eb_r and ma_r >= mb_r);
+         dlt_r    <= ea_r < eb_r;
+         dwhole_r <= ea_r >= C_F;
+         dzero_r  <= ea_r = 0;
+         dneg_r   <= ea_r < 0;
+         dbig_r   <= ea_r >= C_W;
+         esum_r   <= to_integer(ea_r + eb_r);
+         emin0_r  <= to_integer(ea_r + eb_r) >= C_EMIN;
+         emin1_r  <= to_integer(ea_r + eb_r) + 1 >= C_EMIN;
+
+         if op_r = OP_FTOW then
+            bits_v := C_W / 2;
+         else
+            bits_v := C_W;
+         end if;
+         if op_r = OP_FTOU then
+            lim_p_r <= shift_left(to_unsigned(1, C_N + 1), bits_v) - 1;
+            lim_n_r <= (others => '0');
+         else
+            lim_p_r <= shift_left(to_unsigned(1, C_N + 1), bits_v - 1) - 1;
+            lim_n_r <= shift_left(to_unsigned(1, C_N + 1), bits_v - 1);
+         end if;
+
+         -- The rounding, a cycle ahead of ROUND_ST.
+         if grid_r = GRID_SHORT then
+            prec_v := C_SP;
+            emax_v := C_SEMAX;
+         else
+            prec_v := C_P;
+            emax_v := C_EMAX;
+         end if;
+         kept_v  := resize(shift_right(acc_r, C_N - prec_v), C_P + 1);
+         guard_v := acc_r(C_N - prec_v - 1);
+         acc_v   := shift_left(acc_r, prec_v + 1);
+         stk_v   := bool_to_sl(acc_v /= 0);
+         case mode_r is
+            when RND_EVEN  => inc_v := guard_v and (stk_v or kept_v(0));
+            when RND_TRUNC => inc_v := '0';
+            when RND_FLOOR => inc_v := (guard_v or stk_v) and s_r;
+            when RND_CEIL  => inc_v := (guard_v or stk_v) and not s_r;
+            when RND_AWAY  => inc_v := guard_v;
+         end case;
+         -- Adding one carries out of the precision only from all ones,
+         -- and sets the top bit, below it, only from all ones below it.
+         carry_v := inc_v and bool_to_sl(kept_v = shift_left(to_unsigned(1, C_P + 1), prec_v) - 1);
+         rk_r    <= kept_v;
+         rg_r    <= guard_v;
+         rs_r    <= stk_v;
+         ri_r    <= inc_v;
+         rc_r    <= carry_v;
+         rz_r    <= bool_to_sl(kept_v = 0 and inc_v = '0');
+         half_v  := shift_left(to_unsigned(1, C_P + 1), prec_v - 1);
+         rn_r    <= carry_v or kept_v(prec_v - 1) or (inc_v and bool_to_sl(kept_v = half_v - 1));
+         if carry_v = '1' then
+            rover_r <= bool_to_sl(e_r >= emax_v);
+         else
+            rover_r <= bool_to_sl(e_r > emax_v);
+         end if;
 
          case state_r is
 
@@ -613,9 +746,11 @@ begin
                         res_r                 <= (others => '0');
                         flags_r(C_FL_INVALID) <= '1';
                         if ua_v.inf = '1' then
-                           ea_r <= to_signed(C_N, C_EW);
-                           ma_r <= shift_left(to_unsigned(1, C_P), C_P - 1);
-                           state_r <= DISPATCH_ST;
+                           -- All ones saturates, as in DISPATCH_ST for a
+                           -- value out of range of every width.
+                           amt_r   <= 0;
+                           acc_r   <= (others => '1');
+                           state_r <= TOINT_ST;
                         else
                            state_r <= DONE_ST;
                         end if;
@@ -681,7 +816,7 @@ begin
                   when OP_ADD | OP_SUB =>
                      -- ACC gets the operand of the larger magnitude.
                      opb_v := (others => '0');
-                     if ea_r > eb_r or (ea_r = eb_r and ma_r >= mb_r) then
+                     if dge_r then
                         opb_v(C_N - 1 downto C_N - C_P) := mb_r;
                         amt_r <= to_integer(ea_r - eb_r);
                      else
@@ -698,6 +833,7 @@ begin
 
                   when OP_MUL | OP_MULERR =>
                      cnt_r   <= 0;
+                     mbs_r   <= mb_r;
                      hi_r    <= (others => '0');
                      lo_r    <= (others => '0');
                      state_r <= MUL_ST;
@@ -724,7 +860,7 @@ begin
                      state_r <= SQRT_ST;
 
                   when OP_FMOD =>
-                     if ea_r < eb_r then
+                     if dlt_r then
                         res_r   <= a_r;
                         state_r <= DONE_ST;
                      else
@@ -748,7 +884,7 @@ begin
                      state_r <= NORM_ST;
 
                   when OP_INTEGRAL =>
-                     if ea_r >= C_F then
+                     if dwhole_r then
                         res_r   <= a_r;
                         state_r <= DONE_ST;
                      else
@@ -758,7 +894,7 @@ begin
                      end if;
 
                   when OP_GETEXP =>
-                     if ea_r = 0 then
+                     if dzero_r then
                         res_r   <= zero_of('0');
                         state_r <= DONE_ST;
                      else
@@ -774,11 +910,11 @@ begin
 
                   when OP_FTOI | OP_FTOU | OP_FTOW =>
                      -- The units of the integer go to bit 0 of ACC.
-                     if ea_r < 0 then
+                     if dneg_r then
                         acc_r   <= (others => '0');
                         amt_r   <= 0;
                         state_r <= TOINT_ST;
-                     elsif ea_r >= C_W then
+                     elsif dbig_r then
                         -- Out of range of every width: all ones saturates.
                         amt_r                 <= 0;
                         acc_r                 <= (others => '1');
@@ -833,8 +969,11 @@ begin
             -- low end, is registered, and the product of step i - 1 is
             -- added to the sum.
             when MUL_ST =>
+               -- The chunks of B are shifted down, rather than chosen by the
+               -- step, so that the multiplier's input is a register.
                if cnt_r < C_NCH then
-                  pp_r <= ma_r * resize(shift_right(mb_r, G_CHUNK * cnt_r), G_CHUNK);
+                  pp_r  <= ma_r * resize(mbs_r, G_CHUNK);
+                  mbs_r <= shift_right(mbs_r, G_CHUNK);
                end if;
                if cnt_r > 0 then
                   t_v  := ('0' & resize(hi_r, C_P + G_CHUNK)) + ('0' & pp_r);
@@ -854,18 +993,22 @@ begin
                -- The product normalized, with the exponent of its top bit.
                if prod_v(2 * C_P - 1) = '0' then
                   prod_v := shift_left(prod_v, 1);
-                  en_v   := to_integer(ea_r + eb_r);
+                  en_v   := esum_r;
+                  eok_v := emin0_r;
                else
-                  en_v := to_integer(ea_r + eb_r) + 1;
+                  en_v   := esum_r + 1;
+                  eok_v := emin1_r;
                end if;
-               if op_r = OP_MULERR and en_v >= C_EMIN then
+               if op_r = OP_MULERR and eok_v then
                   low_v := resize(prod_v(C_P - 1 downto 0), C_P + 1);
                   up_v  := prod_v(C_P - 1) and
                            (prod_v(C_P) or bool_to_sl(prod_v(C_P - 2 downto 0) /= 0));
                   if up_v = '1' then
                      low_v := shift_left(to_unsigned(1, C_P + 1), C_P) - low_v;
                   end if;
-                  if low_v = 0 then
+                  -- The error is 0 if the low bits are, which needs no
+                  -- subtraction: if they round up, their top bit is 1.
+                  if prod_v(C_P - 1 downto 0) = 0 then
                      res_r   <= zero_of('0');
                      state_r <= DONE_ST;
                   else
@@ -945,7 +1088,9 @@ begin
                   else
                      tr_v := rem_r;
                   end if;
-                  if tr_v = 0 then
+                  -- The remainder is 0 if it was B or 0, which needs no
+                  -- subtraction.
+                  if rem_r = mb_r or rem_r = 0 then
                      res_r   <= zero_of(sa_r);
                      state_r <= DONE_ST;
                   else
@@ -973,31 +1118,34 @@ begin
                   acc_r <= acc_v;
                   amt_r <= amt_r - step_v;
                else
-                  if op_r = OP_FTOW then
-                     bits_v := C_W / 2;
-                  else
-                     bits_v := C_W;
-                  end if;
                   m_v := acc_r;
-                  -- The largest magnitude for the sign.
-                  if op_r = OP_FTOU then
-                     if sa_r = '1' then
-                        lim_v := (others => '0');
-                     else
-                        lim_v := shift_left(to_unsigned(1, C_N + 1), bits_v) - 1;
-                     end if;
-                  elsif sa_r = '1' then
-                     lim_v := shift_left(to_unsigned(1, C_N + 1), bits_v - 1);
+                  -- The largest magnitude for the sign, and whether the
+                  -- value is above it.
+                  if sa_r = '1' then
+                     lim_v := lim_n_r;
                   else
-                     lim_v := shift_left(to_unsigned(1, C_N + 1), bits_v - 1) - 1;
+                     lim_v := lim_p_r;
                   end if;
-                  if ('0' & m_v) > lim_v then
-                     m_v                   := lim_v(C_N - 1 downto 0);
-                     flags_r(C_FL_INVALID) <= '1';
-                  end if;
+                  case op_r is
+                     when OP_FTOU =>
+                        ovf_v := over(m_v, C_W, false) or (sa_r = '1' and m_v /= 0);
+                     when OP_FTOW =>
+                        ovf_v := over(m_v, C_W / 2 - 1, sa_r = '1');
+                     when others =>
+                        ovf_v := over(m_v, C_W - 1, sa_r = '1');
+                  end case;
+                  -- The value and the limit are negated apart from the
+                  -- comparison, so that it only chooses between them.
                   int_v := signed('0' & m_v);
                   if sa_r = '1' then
                      int_v := -int_v;
+                  end if;
+                  if ovf_v then
+                     int_v := signed(lim_v);
+                     if sa_r = '1' then
+                        int_v := -int_v;
+                     end if;
+                     flags_r(C_FL_INVALID) <= '1';
                   end if;
                   res_r   <= std_logic_vector(int_v(C_W - 1 downto 0));
                   state_r <= DONE_ST;
@@ -1031,27 +1179,12 @@ begin
                end if;
 
             when ROUND_ST =>
-               if grid_r = GRID_SHORT then
-                  prec_v := C_SP;
-               else
-                  prec_v := C_P;
-               end if;
-               kept_v  := resize(shift_right(acc_r, C_N - prec_v), C_P + 1);
-               guard_v := acc_r(C_N - prec_v - 1);
-               acc_v   := shift_left(acc_r, prec_v + 1);
-               stk_v   := bool_to_sl(acc_v /= 0);
-               case mode_r is
-                  when RND_EVEN  => inc_v := guard_v and (stk_v or kept_v(0));
-                  when RND_TRUNC => inc_v := '0';
-                  when RND_FLOOR => inc_v := (guard_v or stk_v) and s_r;
-                  when RND_CEIL  => inc_v := (guard_v or stk_v) and not s_r;
-                  when RND_AWAY  => inc_v := guard_v;
-               end case;
-               if inc_v = '1' then
+               kept_v := rk_r;
+               if ri_r = '1' then
                   kept_v := kept_v + 1;
                end if;
                e2_v   := to_integer(e_r);
-               if kept_v(prec_v) = '1' then
+               if rc_r = '1' then
                   kept_v := shift_right(kept_v, 1);
                   e2_v   := e2_v + 1;
                end if;
@@ -1062,7 +1195,7 @@ begin
                   when GRID_WHOLE =>
                      -- The whole number, rounded again in the main format,
                      -- which is exact.
-                     if kept_v = 0 then
+                     if rz_r = '1' then
                         res_r <= zero_of(s_r);
                      else
                         acc_v := (others => '0');
@@ -1075,14 +1208,14 @@ begin
                      end if;
 
                   when GRID_MAIN =>
-                     if e2_v > C_EMAX then
+                     if rover_r = '1' then
                         if mode_r = RND_TRUNC then
                            res_r <= pack(s_r, 2 ** G_EBITS - 2, (C_F - 1 downto 0 => '1'));
                         else
                            res_r                  <= inf_of(s_r);
                            flags_r(C_FL_OVERFLOW) <= '1';
                         end if;
-                     elsif kept_v(C_P - 1) = '1' then
+                     elsif rn_r = '1' then
                         res_r <= pack(s_r, e2_v + C_BIAS, kept_v);
                      else
                         res_r <= pack(s_r, 0, kept_v);
@@ -1091,23 +1224,23 @@ begin
                         -- MULERR below the normal range: a zero with the sign
                         -- of the error, which is that of the product if it
                         -- was rounded down, or the other if up.
-                        res_r <= zero_of((guard_v or stk_v) and (prod_s_r xor inc_v));
+                        res_r <= zero_of((rg_r or rs_r) and (prod_s_r xor ri_r));
                      end if;
 
                   when GRID_SHORT =>
-                     if e2_v > C_SEMAX then
+                     if rover_r = '1' then
                         res_r <= short_of(s_r, 2 ** G_SEBITS - 1, to_unsigned(0, G_SFBITS));
                         if wide_r = '1' then
                            res_r <= inf_of(s_r);
                         end if;
                         flags_r(C_FL_OVERFLOW) <= '1';
-                     elsif wide_r = '0' and kept_v(C_SP - 1) = '1' then
+                     elsif wide_r = '0' and rn_r = '1' then
                         res_r <= short_of(s_r, e2_v + C_SBIAS, kept_v);
                      elsif wide_r = '0' then
                         res_r <= short_of(s_r, 0, kept_v);
-                     elsif kept_v(C_SP - 1) = '1' then
+                     elsif rn_r = '1' then
                         res_r <= pack(s_r, e2_v + C_BIAS, shift_left(kept_v, C_P - C_SP));
-                     elsif kept_v = 0 then
+                     elsif rz_r = '1' then
                         res_r <= zero_of(s_r);
                      else
                         -- A subnormal of the short format, normalized again

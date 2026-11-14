@@ -299,6 +299,8 @@ The last row I ran again for `FPU_X_HI`: bounded to 8 cycles, the stack model fa
 
 `translator/test/run.py:3585` runs each program with `subprocess.run` and neither `-n` nor a timeout. A program that runs away hangs `make test`, with no line that says which. `kept_program`, new in this release, adds such runs under `--keep`, which `make programs` gives: it keeps a program translated again with `--memory-bytes` where its run gives the same outcome. It has no test of its own. One of the changes of §3.7 ran away so, and had to be stopped by hand. **Fix:** `-n` with a limit far above the longest case.
 
+**Resolved.** `run.py` runs niceemu with `-n 10000000`, 35 times the longest case, `recursion`, of some 285000 steps, the runs of `kept_program` included, and a case that stops at the limit fails with "ran away". A case made to loop forever failed so in each of the three modes, and `run.py` went on.
+
 ## 4. Stale statements
 
 ### 4.1 DEVICES.md §8: the board sets its clock from the real-time clock

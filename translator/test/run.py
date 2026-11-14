@@ -29,7 +29,8 @@ the run, every word of the program image must be as it was, and
 ___wasm_ram_end must be the word that RAM_END gives. A case in RESERVED
 is translated with --memory-bytes, and must say that it reserves the
 bytes that RESERVED gives, and have their words, in .RES and .DAT. The expected results were worked out by hand
-from the sources.
+from the sources. niceemu stops a program after STEP_LIMIT steps, so
+that one that runs away fails its case.
 
 With --keep DIR, each program is left in DIR for make programs in hdl/,
 with a smaller memory where that gives the same result (kept_program)."""
@@ -3598,7 +3599,14 @@ SHAPES["hoistagen_win"] = SHAPES["hoistagen"]
 SHAPES["trust_win"] = (r"^ +SHR +R\d+, R\d+, 2$|AND\[M\] +R0, R\d+, 3$|@___wasm_memory\["
                        r"|W\.(load|store)[48]", False)
 
+# The steps after which niceemu stops a program that runs away. The
+# longest case, recursion, takes some 285000 steps.
+STEP_LIMIT = 10_000_000
+
+
 def run(cmd: List[str]) -> str:
+    if cmd[0] == NICEEMU:
+        cmd = [NICEEMU, "-n", str(STEP_LIMIT), *cmd[1:]]
     p = subprocess.run(cmd, capture_output=True, text=True)
     if p.returncode != 0 and not cmd[0].endswith("niceemu"):
         raise RuntimeError(f"{' '.join(cmd)} failed:\n{p.stderr}")
@@ -3746,6 +3754,8 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
         wanted.update({f"R{i}": 0 for i in range(7, 12)})
         wanted.update({"R12": 0, "R13": 0xFFFFFF00})
     problems = []
+    if "Stopped at the step limit" in output:
+        problems.append(f"ran away: stopped after {STEP_LIMIT} steps")
     if name in SHAPES:
         pattern, must = SHAPES[name]
         bare = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith(";"))

@@ -50,6 +50,8 @@ The newest section is `V2.1`. The 92 lines that the file changed since then are 
 
 **Fix:** write the section, with the line "The version is 2.2.0." under the emulator's heading, and the row of the table.
 
+**Resolved.** RELEASE_NOTES.md has a section for `V2.2`, with the upgrade notes that this finding lists, those of the changes after the review (#172, #173, #178), and the fixes of this review, and a row `V2.2`, "none yet", in the table of board tags. The emulator's heading says that the version is 2.2.0.
+
 ### 1.2 A program built for the FPU runs without it, and is wrong
 
 `bench/build/float.bin`, as `nicebuild.py` and the Makefiles now build a program with floats, on an emulator without the FPU:

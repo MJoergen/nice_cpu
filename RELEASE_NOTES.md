@@ -14,6 +14,7 @@ pin each are:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|
+| `V2.2` | none yet |
 | `V2.1` | none yet |
 | `V2.0` | `V2.0`, `V2.0.1` |
 | `V1.9` | `V1.9`, `V1.9.1` |
@@ -35,6 +36,171 @@ pin each are:
 
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
+
+## V2.2 (2026-11-14)
+
+A floating-point unit, the FPU of DEVICES.md §11, holds a stack of 16
+binary64 values, in the emulator and in `hdl/src/fpu.vhd`, and the float
+library and nicewasm use it (#161). It meets 100 MHz on the MEGA65 out of
+context (#172). A program may reserve only the start of its memory, with
+`--memory-bytes` (#165). `doc/SYSTEM.md` is `doc/DEVICES.md` (#166). The
+emulator has `TIME_SKIP` (#170), and the C library printf without floats
+(#173).
+
+**Upgrade notes.**
+
+- **`nicebuild.py` joins `runtime/float_fpu.nasm`**, where it joined
+  `float.nasm`. A program that uses floats now needs the FPU. It does not
+  look for it, and on a system without one it computes wrong results and
+  reports nothing (DEVICES.md §8, #179). `--no-fpu` joins the float
+  library in software, as before. NiceMonMEGA65 has no FPU yet
+  (MJoergen/NiceMonMEGA65#136), so a program for it with floats is built
+  with `--no-fpu`. The tests of the runtime and the benchmarks take
+  `NO_FPU=1` for the same.
+- **`0xFFFFFF88`–`0xFFFFFF8F` are the FPU**, where they were words
+  reserved for I/O that the emulator kept as memory. `niceemu --no-fpu`
+  makes them memory again. With `--step-time`, a write to `0xFFFFFF5F`,
+  `TIME_SKIP`, skips time, where it was ignored.
+- **nicewasm's `--library-memory` and `--ram-bytes` are gone**, and so is
+  nicebuild's `--ram-bytes`: `--memory-bytes` replaces all three.
+  `nicebuild.py --ram` now takes a program that uses floats, unless with
+  `--no-fpu`.
+- **`doc/SYSTEM.md` is `doc/DEVICES.md`** (#166), with the same section
+  numbers. A link to the old name on `main` breaks at this release.
+  NiceMonMEGA65 follows in MJoergen/NiceMonMEGA65#130.
+- **niceemu refuses a program that loads no word at 0** (#178), with
+  status 1 and a hint at `--monitor`. Such a program, built with
+  `nicebuild.py --monitor`, ran through the empty words up to `0x8000`
+  and never stopped. With `--link` it loads as before.
+- A start over the debug link resets the FPU. The link stays version 8.
+- `hdl/src` has three new files, `fpu.vhd`, `fpu_unit.vhd`, and
+  `fpu_pkg.vhd`, a device beside the cores, which do not change. The FPU
+  acknowledges a request two cycles after it takes it, and holds STALL
+  for up to some 3300 cycles while a command runs. `tb_core` has the
+  generic `G_FPU`, and its watchdog waits 10000 cycles for a step.
+- `make slow`, and so `release.py check`, runs `float.c` on both cores,
+  `make -C emulator fpu-long`, and the fuzz of the C library, which needs
+  clang and llvm-ar; `release.py preflight` asks for them.
+- TODO.md is gone, and the rules for a change are in CONTRIBUTING.md
+  only.
+- Zig 0.17.0, as in V2.1.
+
+**Specification and documents**
+
+- DEVICES.md §11: the FPU at `0xFFFFFF88`–`0xFFFFFF8F`, a stack of up to
+  16 IEEE 754 binary64 values, with views of the top as binary64,
+  binary32, and a word, a status with the depth and sticky flags, and
+  commands: the arithmetic, correctly rounded, with an S bit for binary32
+  results; comparisons, `MIN`, `MAX`, `FMOD`, `ISQRT`, the roundings,
+  the word operators, `SCALE2`, `SCALE10`, 16 constants, and the decimal
+  commands `DIGITS n` and `FROMBCD`, which print and read 15 digits. The
+  functions, such as `SIN`, are phase 2, their numbers reserved (#167).
+  A request waits while a command runs, but a read of `FPU_CMD`. §11.5
+  gives the rule for calls and the times in the FPGA implementation
+  (#161).
+- DEVICES.md §11.3: `DIGITS n` takes the smallest e for which the digits
+  are below 10^n, so that it gives n digits always. `DIGITS 1` of 8 gave
+  `1 · 10^1`, and `DIGITS 2` of 9.6 gave `1.0 · 10^1`; the 15 digits
+  999999999999995 and above did not come back.
+- DEVICES.md §3: `TIME_SKIP` at `0xFFFFFF5F` (#170). With `--step-time`
+  a write of N counts N wait steps, as a wait does, ended early by a
+  request. On a board a write is ignored.
+- DEVICES.md §8: a system may leave out the FPU; NiceMonMEGA65 does not
+  have it yet (MJoergen/NiceMonMEGA65#136). NiceMonMEGA65 sets the clock
+  from the MEGA65's real-time clock in its ROM since its `V2.0.1`, and
+  its `time` writes the real-time clock.
+- WASM.md, Linear memory: a translator may reserve only the start of a
+  program's memory, which then uses neither `memory.size` nor
+  `memory.grow`, and an access past it traps (#165).
+- DEBUG.md §6: a start resets the FPU.
+- ABI.md: a float routine leaves the FPU's depth as it found it, so that
+  a caller may keep 8 values there across a call.
+- TOOLCHAIN.md gives the two float libraries, and the format of the
+  `.sym` file and which tools write and read it.
+
+**Emulator (`niceemu`)**
+
+- The FPU of DEVICES.md §11, in `src/fpu.zig`, on the host's binary64
+  values, with the same bits as `fpu.vhd`. `--no-fpu` makes its words
+  memory. Its unit test replays the vectors of a reference model in
+  exact arithmetic, `test/fpu_model.py`, on the host's CPU and on the
+  baseline x86_64 CPU, and `make fpu-long` a million random accesses.
+  `ISQRT`, `SCALE10`, and `DIGITS` use no `fma`, which Zig 0.17.0 gets
+  wrong without the FMA instruction, so the emulators of a release give
+  the same results: `ISQRT` of m², with m of 2^26 or more, gave m − 1
+  there. `make dist` replays the vectors on its build.
+- `TIME_SKIP`, with `--step-time` (#170). The probes `skip.nasm` and
+  `skipreq.nasm` show its rules.
+- `DIGITS` gives n digits always (DEVICES.md §11.3), as `fpu.vhd` does.
+- A program that loads no word at 0 is refused (#178).
+- The version is 2.2.0.
+
+**Runtime (`runtime/`)**
+
+- `float_fpu.nasm`, the 52 routines of `float.nasm` on the FPU, in 289
+  words where `float.nasm` takes 6580. `test/float_fpu.py` compares the
+  two on 41080 calls, with values kept on the FPU's stack across them.
+- The C library has newlib's i family, `iprintf`, `siprintf`,
+  `sniprintf`, and the others, which print no floats, so that a program
+  that calls only them is linked without the float formatter: 4246 words
+  for `iprintf` with `%d`, where `printf` takes 7298 (#173).
+
+**Translator (`nicewasm`, `nicebuild`)**
+
+- `--inline-fpu` writes the FPU's accesses inline, for speed: on
+  `bench/float.c` 2.5% more words and 42% fewer cycles on the pipelined
+  core.
+- `--memory-bytes BYTES` reserves only the first BYTES bytes of the
+  memory, or with `auto` as much as the module needs, so that
+  `___wasm_start` clears less (#165).
+- nicebuild joins `float_fpu.nasm`, or with `--no-fpu` `float.nasm`, and
+  takes `--inline-fpu` and `--memory-bytes`.
+- `run.py --keep` keeps a test program translated again with less
+  memory where it runs the same, and `run.py` stops a program that runs
+  away at 10 million steps.
+
+**FPGA cores (`hdl/`)**
+
+- `src/fpu.vhd`, the FPU of DEVICES.md §11, on its arithmetic unit
+  `src/fpu_unit.vhd` (#161). `tb_fpu` and `tb_fpu_unit` replay the
+  model's vectors, and `tb_core` runs the probes `fpu`, `fpustack`, and
+  `fpudec` on both cores, compared with niceemu. Proofs cover its bus and
+  its stack.
+- The FPU meets 100 MHz on the MEGA65 out of context, in both flows,
+  with 1.0 ns to spare (#172), and with the `DIGITS` of §11.3 by +1.276
+  ns in the default flow and +1.097 ns in the `timing` flow. `make timing UNIT=fpu` times it, and
+  `release.py check` runs it beside the core's. It registers each
+  request.
+- `make programs` runs each distinct program once, and a translator
+  case with less memory where it runs the same: 610 programs of 8.7
+  million steps, where it ran 867 of 14.9 million (#169).
+- `tb_fpu` makes a request to each register wait for a command, resets
+  the FPU while commands run, and bounds the cycles of each command, with
+  the slowest values of a scan. `fpudec` runs on both cores with pauses,
+  held pauses, and single steps, and the probe `fpuirq` is swept with
+  interrupts during the FPU's commands. hdl/README.md has a section for
+  the FPU.
+
+**Benchmarks**
+
+- `bench.c` runs the same instructions in its phases. The C library's
+  i family moves its code, and the estimate is 2338771 cycles, 500 fewer
+  than in V2.1.
+- `float.c` with the FPU, and with `--inline-fpu`: on the pipelined
+  core 617442 and 355798 cycles, 3.1 times and 5.3 times fewer than the
+  1902079 of the float library in software. The cycle model takes the
+  FPU's times, `--fpu-op` and `--fpu-long`, and `make compare` covers
+  the two programs.
+- `NO_FPU=1` builds in `build/nofpu/`.
+
+**Release**
+
+- `make slow` runs `float` and `float_inline` on both cores, `fpu-long`,
+  and the fuzz of the C library with each float library.
+  `release.py figures` checks the cycles of the two float programs on
+  the pipelined core.
+- `release.py check` runs `make timing` on the FPU too, and stamps each
+  unit.
 
 ## V2.1 (2026-11-11)
 

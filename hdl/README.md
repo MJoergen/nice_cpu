@@ -68,10 +68,10 @@ GHDL 6.0.0-dev and GHDL 4.1.0 (mcode backend). CI installs 4.1.0, the
 |---|---|---|
 | `make test` | The synthesis check, the unit tests, `tb_trace`, and the test programs on both cores, each run compared with the emulator ([What the tests check](#what-the-tests-check)). | 5 minutes in GHDL on 20 CPUs, 15 in nvc |
 | `make lint` | vsg on every VHDL file, with the rules of CODING_STYLE.md. | seconds |
-| `make formal` | The SymbiYosys jobs of `formal/` ([The formal checks](#the-formal-checks)). | 20 minutes on 20 CPUs, most of it the debug link's covers |
+| `make formal` | The SymbiYosys jobs of `formal/` ([The formal checks](#the-formal-checks)). | 28 minutes on 20 CPUs at the release check of `V2.1` (2026-11-11), most of it the debug link's `cover`, and 31 in CI (2026-11-14); the FPU's `prove_stack` runs beside it, 12 minutes alone (2026-11-14) |
 | `make timing` | Vivado on the pipelined core alone, out of context, or with `UNIT=fpu` on the FPU ([Timing](#timing)). | 3 minutes |
 | `make timing-spread` | `make timing` with seven counts of breakpoints and watchpoints at once, and the least, median, and most of each slack ([Timing](#timing)). | 11 minutes on 20 CPUs, 40 with `FLOW=timing` |
-| `make programs` | The runtime's and the translator's test programs, and random modules of `translator/test/fuzz.py`, on `CORE`; `SHARD=I/N` runs the Ith of N shares. | 25 minutes on the pipelined core and 51 on the multi-cycle one in GHDL; 5 and 3 in nvc |
+| `make programs` | The runtime's and the translator's test programs, and random modules of `translator/test/fuzz.py`, on `CORE`; `SHARD=I/N` runs the Ith of N shares. | 7 minutes on the pipelined core in nvc on 20 CPUs (2026-11-14), and 13 on each core in CI; several times longer in GHDL |
 | `make strides` | `pcfx` and `sidefx` swept with strides 17, 31, and 64 on `CORE`. | 6 minutes on the pipelined core |
 | `make random` | More random programs, with `RANDOM_SEEDS`, `RANDOM_STEPS`, and `RANDOM_STALL`. | |
 | `make random-sweep` | Seeds 1 to `RANDOM_LAST` (1000) of `make random` on each core of `CORES`. | an hour or more |
@@ -1279,12 +1279,14 @@ shares. With `--generator`, it measures another version of
 
 `make programs` runs the test programs of the runtime and of the
 translator, and 10 random modules of `translator/test/fuzz.py` in each of
-its four modes (`FUZZ_PROGRAMS`), on the core (MICROARCH.md §9, step 7). It is not part of
-`make test`, because it takes 25 minutes on the pipelined core and 51 on the
-multi-cycle one, on 20 CPUs: some 2 million steps in 490
-programs, at GHDL's 3300 steps a second. In nvc, `SIM=nvc`, it took 5
-and 3 minutes on 2026-10-28. CI runs it in nvc on
-both cores, a job for each. `SHARD=I/N` runs the Ith of N shares of the
+its five modes (`FUZZ_PROGRAMS`), on the core (MICROARCH.md §9, step 7). It is not part of
+`make test`, because it takes minutes: it makes 868 programs and runs
+611 of them, the others being the same as one of those, with some 9
+million steps on the emulator. In nvc, `SIM=nvc`, it took 7 minutes on
+the pipelined core on 20 CPUs on 2026-11-14 (#169), bound by
+`libc_mchess`, and GHDL, at some 3300 steps a second, takes several
+times as long. CI runs it in nvc on both cores, a job for each, of 13
+minutes on 2026-11-14. `SHARD=I/N` runs the Ith of N shares of the
 programs, of nearly equal steps, longest first. That run is the release's: the
 top-level `make slow` leaves `make programs` out ([RELEASE.md](../release/RELEASE.md)). It does not run `runtime/libc/test/fuzz_printf.py`, `fuzz_strtod.py`, or `fuzz_math.py`, which
 need clang, or the benchmark, which `make core` in `bench/` runs. `make test KEEP=DIR`

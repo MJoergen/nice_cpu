@@ -327,6 +327,8 @@ The **Clock** bullet, line 535, says of the MEGA65's real-time clock: "NiceMonME
 
 **Fix:** measure both at the release check, and write the figures with their date.
 
+**Resolved.** The table and the paragraph give dated figures. `make formal`: 28 minutes on 20 CPUs at the release check of `V2.1`, most of it the debug link's `cover`, 31 minutes in CI on 2026-11-14, and the FPU's `prove_stack` beside it, about 12 minutes alone. `make programs`: 7 minutes on the pipelined core in nvc (#169), and 13 minutes for each core's job in CI, with no figure for GHDL, which nobody has measured since #169. The paragraph names the five modes of `fuzz.py`, and the 868 programs made and 611 run of CI's jobs. The release check of `V2.2` is to measure `make formal` again.
+
 ### 4.3 MICROARCH.md §8: the math unit is no longer the slave that waits longest
 
 - Line 904, **Bus decoder**: "since the math unit holds an ACK for up to 65 cycles". The FPU holds one for up to some 3300 (DEVICES.md §11.5).

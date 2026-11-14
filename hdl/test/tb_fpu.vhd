@@ -58,7 +58,7 @@ architecture simulation of tb_fpu is
    -- ACK of the read of STATUS after it, which adds some 6 cycles: the
    -- times of DEVICES.md §11.5 with a margin, and for the commands that it
    -- gives no time, some twice what they take. DIGITS, which §11.5 gives up
-   -- to some 3300, takes at most 3363 on the slowest values that a scan
+   -- to some 3400, takes at most 3363 on the slowest values that a scan
    -- found (test/fpu_slow_vectors.py), and its bound is 20% above that.
    -- A command of the stack, and a number that is not a command, takes a
    -- few cycles.

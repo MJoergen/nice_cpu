@@ -229,7 +229,7 @@ end entity tb_core;
 architecture simulation of tb_core is
 
    -- A step takes far fewer cycles than this, even one that waits for the
-   -- FPU, whose longest command, DIGITS, takes some 3300 cycles.
+   -- FPU, whose longest command, DIGITS, takes some 3400 cycles.
    constant C_STEP_TIMEOUT : natural := 10000;
 
    type t_request is record

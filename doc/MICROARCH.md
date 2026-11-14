@@ -902,7 +902,7 @@ system built from them must follow these rules:
   forever.
 - **Bus decoder.** The data bus decoder keeps the ACKs in order when
   requests to different slaves are in flight, since the FPU holds an ACK
-  for up to some 3300 cycles while a command runs (DEVICES §11.5), and
+  for up to some 3400 cycles while a command runs (DEVICES §11.5), and
   the math unit for up to 65: a request to one slave waits while a
   request to another is still owed its ACK. `hdl/src/wb_dmux.vhd` does this, and the
   testbench `tb_core` uses it. So a data read may wait on the bus.
@@ -961,7 +961,7 @@ system built from them must follow these rules:
   which empties its stack and ends a command (DEBUG.md §6). It takes each
   request into a register and acknowledges it two cycles after it is
   accepted at the earliest. While a command runs it holds every request
-  but a read of `FPU_CMD`, for up to some 3300 cycles (DEVICES §11.5),
+  but a read of `FPU_CMD`, for up to some 3400 cycles (DEVICES §11.5),
   so a pause, an interrupt, and a single step wait that long, and a
   watchdog of the system must allow for it. Its arithmetic unit,
   `hdl/src/fpu_unit.vhd`, is inside it

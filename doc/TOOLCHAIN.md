@@ -6,14 +6,14 @@ is joined into every program. Each follows one part of
 
 | Tool | Where | Written in | Reads | Writes | Follows |
 |---|---|---|---|---|---|
-| `niceasm`, the assembler | [assembler/niceasm.py](../assembler/niceasm.py) | Python 3, standard library only | `.nasm` | `.bin` | ISA.md §10 |
+| `niceasm`, the assembler | [assembler/niceasm.py](../assembler/niceasm.py) | Python 3, standard library only | `.nasm` | `.bin`, and `.sym` with `--symbols` | ISA.md §10 |
 | `nicedis`, the disassembler | [assembler/nicedis.py](../assembler/nicedis.py) | Python 3, standard library only | `.bin` and `.sym` | `.nasm` | ISA.md §10 |
-| `niceemu`, the emulator | [emulator/](../emulator/) | Zig 0.17 | `.bin` | Console output, the registers, memory dumps, and a trace | ISA.md §1–8, DEVICES.md, DEBUG.md |
+| `niceemu`, the emulator | [emulator/](../emulator/) | Zig 0.17 | `.bin` and `.sym` | Console output, the registers, memory dumps, and a trace | ISA.md §1–8, DEVICES.md, DEBUG.md |
 | `nicetap`, the TAP bridge | [emulator/tools/nicetap.py](../emulator/tools/nicetap.py) | Python 3, standard library only | Frames from a TAP device and niceemu's UDP socket | The same frames, the other way | DEVICES.md §7 |
 | `nicedbg`, the debugger | [debugger/nicedbg.py](../debugger/nicedbg.py) | Python 3, standard library only | `.bin` and `.sym` | Commands to a system on the debug link | DEBUG.md |
 | The runtime library | [runtime/](../runtime/) | NICE assembly | | | ABI.md and WASM.md |
 | `nicewasm`, the wasm translator | [translator/nicewasm.py](../translator/nicewasm.py) | Python 3, standard library only | `.wasm` | `.nasm` | WASM.md |
-| `nicebuild`, the build script | [translator/nicebuild.py](../translator/nicebuild.py) | Python 3, standard library only | `.c`, `.zig`, or `.rs` | `.bin` | translator README |
+| `nicebuild`, the build script | [translator/nicebuild.py](../translator/nicebuild.py) | Python 3, standard library only | `.c`, `.zig`, or `.rs` | `.bin`, and `.sym` with `--symbols` | translator README |
 
 A program is built in these steps. There is no linker. The pieces are
 assembly files, joined with `cat` in the order the runtime README gives
@@ -100,6 +100,15 @@ builds a program for one: it picks the `_mon` start-up file
   uses `niceasm`, `niceemu`, `unshare`, and `ip`.
 - The `.bin` format is the text format of the 2004 `NICE.pm` assembler, so
   its example binaries can be compared directly.
+- A `.sym` file holds the labels of a program, one line per label: the
+  8-digit hex address, a space, and the name, sorted by address and then
+  by name. `niceasm --symbols FILE` writes every label of an instruction
+  or data, but not the anonymous labels or the `.EQU` names.
+  `nicebuild.py --symbols` writes the same, but names each wasm function
+  by its name in the source, in place of its label `W.fN`, and leaves out
+  the labels inside the functions. `niceemu`, `nicedis`, and `nicedbg`
+  read a line as 1 to 8 hex digits and a name, with spaces or tabs
+  between, and skip blank lines. Several names may share an address.
 - The FPGA cores take the place of `niceemu` at the end of the pipeline.
   `hdl/` runs the same programs on them in simulation, in GHDL or nvc, and
   compares their traces with the emulator's: `emulator/test/cputest.nasm`

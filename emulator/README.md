@@ -67,7 +67,10 @@ niceemu that `NICEEMU` in the environment names, if set.
     niceemu --link [ADDR:]PORT [options] [program.bin]
 
 The program is loaded, the processor is reset (PC = 0) and it runs until it
-halts. Then the emulator prints why it stopped, the number of steps, and the
+halts. A program that loads no word at 0 is refused with status 1, unless
+`--link` is given: a program of `nicebuild.py --monitor`, at `0x8000`,
+runs behind a monitor, such as the stand-in `runtime/test/monitor.nasm`
+(runtime/ABI.md, "Programs under a monitor"). Then the emulator prints why it stopped, the number of steps, and the
 registers. A step is one instruction, the entry into an interrupt, or a
 wait step of `WAIT` (Interrupts below), so an
 NMI followed by `RTI` and `HALT` is 3 steps. The PC printed after a halt is

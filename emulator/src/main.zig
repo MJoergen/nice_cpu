@@ -626,7 +626,9 @@ fn openEth(arena: std.mem.Allocator, io: std.Io, opts: Options, cpu: *Cpu, host:
 
 /// Load a `.bin` file (doc/ISA.md §10.4): one "address word" line per word,
 /// each field 1 to 8 hex digits.
-fn load(arena: std.mem.Allocator, cpu: *Cpu, path: []const u8, text: []const u8) error{ Load, OutOfMemory }!void {
+/// Load the .bin file `text` into memory, and return the lowest address
+/// that it loads.
+fn load(arena: std.mem.Allocator, cpu: *Cpu, path: []const u8, text: []const u8) error{ Load, OutOfMemory }!u32 {
     // The line that loaded each address, to report duplicates.
     var loaded: std.AutoHashMapUnmanaged(u32, usize) = .empty;
     var lines = std.mem.splitScalar(u8, text, '\n');
@@ -653,6 +655,10 @@ fn load(arena: std.mem.Allocator, cpu: *Cpu, path: []const u8, text: []const u8)
         std.debug.print("{s}: error: no words to load\n", .{path});
         return error.Load;
     }
+    var lowest: u32 = std.math.maxInt(u32);
+    var keys = loaded.keyIterator();
+    while (keys.next()) |addr| lowest = @min(lowest, addr.*);
+    return lowest;
 }
 
 fn parseHex(path: []const u8, line_no: usize, s: []const u8) error{Load}!u32 {
@@ -685,7 +691,16 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
             std.debug.print("niceemu: cannot read {s}: {s}\n", .{ opts.path, @errorName(err) });
             return error.Load;
         };
-        try load(arena, &cpu, opts.path, text);
+        const lowest = try load(arena, &cpu, opts.path, text);
+        // The processor starts at 0. A program that loads nothing there,
+        // such as one of nicebuild --monitor at 0x8000, would run through
+        // the empty words up to it, return to nowhere, and never stop. With
+        // --link the processor starts held, and the host starts it.
+        if (lowest != 0 and opts.link == null) {
+            std.debug.print("niceemu: {s} loads nothing at 0, where the processor starts; its lowest word is at {x:0>8}, and" ++
+                " a program of nicebuild --monitor runs behind a monitor (runtime/ABI.md)\n", .{ opts.path, lowest });
+            return error.Load;
+        }
     }
     for (opts.sd, 0..) |path, slot| {
         if (path.len != 0) cpu.sd.insert(@intCast(slot), try openImage(arena, io, path));

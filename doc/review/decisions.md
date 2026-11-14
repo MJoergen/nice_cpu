@@ -237,7 +237,9 @@ proposed again. The open items are the
   a board's (DEVICES.md §8). To revisit when a system runs unattended.
 - **`--monitor` as nicebuild's default** (#176), with `--standalone` to
   turn it off. A program built for a monitor starts at `0x8000`, so the
-  first build of README.md, run in `niceemu`, would run from an empty 0
-  with no message. niceasm, the debugger's loader, and the runtime's
-  start-up code all take a program at 0, and the debugger loads one
-  there on a board too. NiceMonMEGA65's builds pass `--monitor` already.
+  first build of README.md, run in `niceemu`, would run through the
+  empty words up to it, print its output again and again, and never
+  stop, with no message. niceemu now refuses such a program (#178).
+  niceasm, the debugger's loader, and the runtime's start-up code all
+  take a program at 0, and the debugger loads one there on a board too.
+  NiceMonMEGA65's builds pass `--monitor` already.

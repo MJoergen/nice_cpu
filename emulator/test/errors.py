@@ -105,6 +105,11 @@ CASES: List[Tuple[List[str], Optional[str], str]] = [
     # Loader
     (["BIN"], "", "BIN: error: no words to load"),
     (["BIN"], "\n  \n", "BIN: error: no words to load"),
+    # The processor starts at 0, so a program with nothing there, such as
+    # one of nicebuild --monitor, is refused, but for --link (test/link.py).
+    (["BIN"], "00008000 0c000000",
+     "niceemu: BIN loads nothing at 0, where the processor starts; its lowest word is at 00008000,"
+     " and a program of nicebuild --monitor runs behind a monitor (runtime/ABI.md)"),
     (["BIN"], "hello world", "BIN:1: error: 'hello' is not a hex number"),
     (["BIN"], "00000000", "BIN:1: error: expected 'address word', found only '00000000'"),
     (["BIN"], "00000000 0c000000 extra", "BIN:1: error: unexpected 'extra' after the word"),

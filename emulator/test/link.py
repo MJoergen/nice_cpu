@@ -1784,6 +1784,20 @@ def test_address() -> None:
         expect(f"exit status of {addr}", bytes([status]), b"\x00")
 
 
+def test_not_at_0(tmp: str) -> None:
+    """A program with nothing at 0, which niceemu refuses to run on its own,
+    is loaded with --link, as the processor starts held."""
+    path = os.path.join(tmp, "at8000.bin")
+    with open(path, "w") as f:
+        f.write("00008000 12345678\n")
+    e = Emu([path])
+    expect("b on connect", e.take(len(HELLO)), HELLO)
+    e.send(read(0x8000, 1))
+    e.expect("word at 0x8000", answer(0x8000, [0x12345678]))
+    status, _, _ = e.stop()
+    expect("exit status", bytes([status]), b"\x00")
+
+
 def test_usage() -> None:
     proc = subprocess.run([NICEEMU, "--link", "0", "--input", "x"], capture_output=True, text=True)
     want = "niceemu: --input cannot be given with --link\n"
@@ -1830,7 +1844,7 @@ def main() -> None:
             lambda: test_time_skip(skipper),
             lambda: test_hidden(hidden, count), lambda: test_nmi(nmi, wait_nmi),
             lambda: test_old_host(stop, echo), lambda: test_net(spin), test_fpu, test_start_reset,
-            test_address, test_usage,
+            test_address, test_usage, lambda: test_not_at_0(tmp),
         ]
         for t in tests:
             t()

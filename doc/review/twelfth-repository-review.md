@@ -74,6 +74,8 @@ Three things are missing:
 
 **Fix:** a bullet **FPU** in DEVICES.md §8: a system may leave out the FPU, then has nothing at `0xFFFFFF88`–`0xFFFFFF8F`, and a program for it is built with `--no-fpu`; NiceMonMEGA65 does not have it yet, with the number of a new issue there, which also names `--no-fpu` for its users until then. A check at the start, as for the byte windows, is a question for an issue here: a push and a read of the depth in `FPU_STATUS` take a few words.
 
+**Resolved.** DEVICES.md §8 has a bullet **FPU**: a system may leave out the FPU, then has nothing at `0xFFFFFF88`–`0xFFFFFF8F`, and a program for it that uses floats is built with `--no-fpu`; a program built for the FPU does not look for it. NiceMonMEGA65 has had an issue for the FPU since this review, MJoergen/NiceMonMEGA65#136, opened for #172; the bullet names it, and a comment there names `--no-fpu` for the board's users until it has the FPU. The **Reserved words** bullet points to the new one. Whether the start-up code should look for the FPU is #179, for `V2.3`. The notes are §1.1.
+
 ### 1.3 `emulator/build.zig.zon` still says `2.1.0`
 
 RELEASE.md step 2.9 asks for the new tag's version there before `release.py check`. **Fix:** `2.2.0`.

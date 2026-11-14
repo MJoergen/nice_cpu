@@ -369,6 +369,8 @@ Line 811, of `SCALE10` beyond k = 22: "the error has a bound that this section w
 
 HISTORY.md has the rename and TODO.md, and nothing else of this release. Two things used to be true and are in no document now: until `V2.2` the float library in software was the only one, and nicewasm had `--library-memory` and `--ram-bytes`, which `translator/test/diff_fuzz.py` still knows. The notes will say both (§1.1). **Fix, if wanted:** a paragraph in "The size and speed of translated code".
 
+**Resolved.** HISTORY.md says, at the end of "The size and speed of translated code", that the float library in software was the only one until the FPU, and that `--memory-bytes` took the place of nicewasm's `--library-memory` and `--ram-bytes` and of nicebuild's `--ram-bytes`.
+
 ### 5.7 emulator/README.md: the other runs of `skip.nasm`, optional
 
 The README says that `fpu_mem` runs `fpu.nasm` again with `--no-fpu`. It does not say that `skip.nasm` runs three more times, as `skip_off`, `skip_limit`, and `skip_mem`: without `--step-time`, cut short by the step limit, and with `--no-cycle-counter`. **Fix, if wanted:** one sentence after "The probe `test/skip.nasm` shows these rules."

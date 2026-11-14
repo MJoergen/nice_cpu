@@ -313,6 +313,17 @@ register or for a second read on the bus. `test/safe.zig` became 5171
 words, not 5182, the float library stayed 7083 words, and the
 benchmark's module became 8560, not 8623.
 
+Until 2026-11-13 the float library in software, `runtime/float.nasm`, was
+the only one, and `nicebuild.py` joined it to every program with floats.
+Then the FPU of DEVICES.md §11 came, with `runtime/float_fpu.nasm` on it
+(#161), and nicebuild joins that one unless with `--no-fpu`. Until
+2026-11-14 nicewasm reserved only the start of a library module's
+memory with `--library-memory`, and of a program's in a ROM with
+`--ram-bytes`, and nicebuild had `--ram-bytes` too. `--memory-bytes`
+took the place of all three, for any module (#165).
+`translator/test/diff_fuzz.py` still knows the old name, for a
+translator from before.
+
 ## The benchmark
 
 - The list of improvements from a look at the translated test programs on

@@ -291,6 +291,8 @@ The last row I ran again for `FPU_X_HI`: bounded to 8 cycles, the stack model fa
 
 **Fix:** a bound for each command in `tb_fpu`, the figures of §11.5 with a margin, and vectors of `DIGITS` that take its longest path.
 
+**Resolved.** `tb_fpu` counts the cycles of each command that the next access does not follow at once, from its request to the ACK of the read of `FPU_STATUS` after it, and fails if the most of a command is over its bound: the times of §11.5 with a margin, and for the commands that §11.5 gives no time, some twice what they take. The new `hdl/test/fpu_slow_vectors.py` adds the slowest values of a scan, which `--scan` writes: `DIGITS` 1 to 15 of the values next to each power of ten, and `SCALE10` by every count from −660 to 660, 31097 lines, run with `tb_fpu`'s new generic `G_SLOW`. With `DIGITS` as §2.2's fix left it, the slowest `DIGITS` took 3363 cycles, near §11.5's "up to some 3300", where the vectors reach 2155, and the slowest `SCALE10`, of 10^300 by −511, 1235. So the bound of `DIGITS` is 4000, 20% above its slowest. Before that fix the slowest took 2325, and a bound of 2800 failed a copy of `fpu.vhd` whose `DIGITS` started one round too high, at 3364; no such copy was tried after it. With the lines of `fpu_slow_vectors.py`, `tb_fpu` checks 51345 lines.
+
 ### 3.13 What runs in no gate
 
 - `make -C emulator fpu-long`, the vectors with a million random accesses, is in neither `make slow`, nor `release.py check`, nor CI. It passes at this commit with `SEED=1`, in 77 seconds.

@@ -954,6 +954,16 @@ cycles after it is accepted, as any request is that need not wait, and a
 read of X waits for the result. `make run/fpu
 FPU_SEED=2 FPU_COUNT=200000` runs a longer sequence.
 
+`test/fpu_slow_vectors.py` adds the slowest `DIGITS`, `SCALE10`, and
+`FMOD` that a scan found, with `--scan` the lines of that scan, and
+`tb_fpu`'s generic `G_SLOW` reports each command slower than it. For each
+command that the next access does not follow at once, `tb_fpu` counts
+the cycles from its request to the ACK of the read of STATUS after it,
+which adds some 6, and fails if the most of a command is over its bound:
+the times of DEVICES.md §11.5 with a margin, and for `DIGITS` 4000, 20%
+above its slowest. It reports
+the most of each command that takes more than a few cycles.
+
 `tb_perf` starts the counters just below a wrap of their low words. It
 checks that the cycle counter counts every cycle with `run_i` high and
 stands still with it low, that the instruction

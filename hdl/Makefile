@@ -71,13 +71,16 @@ $(FPU_UNIT_RUNS:%=run/fpu_unit/%): run/fpu_unit/%:
 
 # tb_fpu replays the vectors of the FPU's model,
 # emulator/test/fpu_vectors.py, over the FPU's bus: the directed ones and
-# a random sequence from the seed FPU_SEED, FPU_COUNT accesses long.
+# a random sequence from the seed FPU_SEED, FPU_COUNT accesses long, and
+# then the slowest commands of test/fpu_slow_vectors.py, whose cycles it
+# bounds.
 FPU_SEED ?= 1
 FPU_COUNT ?= 20000
 
 run/fpu:
 	@($(in_rundir) && $(PYTHON) $(CURDIR)/../emulator/test/fpu_vectors.py --seed $(FPU_SEED) \
 	  --count $(FPU_COUNT) -o vectors > /dev/null \
+	  && $(PYTHON) $(CURDIR)/test/fpu_slow_vectors.py >> vectors \
 	  && $(call sim_run,tb_fpu,-gG_VECTORS=vectors) > tb_fpu.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS tb_fpu"; else echo "FAIL tb_fpu"; \
 	  tail -30 $(RUNDIR)/tb_fpu.log; exit 1; fi

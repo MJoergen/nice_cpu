@@ -12,13 +12,19 @@
 -- or REL, each read again after it, or a write of X_LO, X_HI, X_S, or
 -- STATUS, which changes the state after as the test knows. It then reads
 -- STATUS for the depth and the flags, and reads X and drops it for each
--- value, and compares those with the state after.
+-- value, and compares those with the state after. For each other command
+-- it counts the cycles from the command's request to the ACK of that
+-- read of STATUS, and keeps the most for each command, which must not
+-- exceed its bound below. test/fpu_slow_vectors.py adds the slowest
+-- commands to the vectors.
 -- After the vectors, it checks the waits of §11.1: while DIV runs, a read
 -- of CMD is acknowledged two cycles after it is accepted, as any request
 -- is when it need not wait, and a read of X waits for the result.
--- It reports the first 20 lines that differ, then how many differ, and
--- the most cycles from an accepted request to its ACK, with its line, and
--- stops with status 0 if none do, and 1 if any do.
+-- It reports the first 20 lines that differ, the most cycles of each
+-- command that takes more than a few, with its line and its bound, and a
+-- command over its bound, then how many lines differ or commands are over
+-- their bounds, and the most cycles from an accepted request to its ACK,
+-- with its line, and stops with status 0 if none, and 1 if any.
 
 library ieee;
    use ieee.std_logic_1164.all;
@@ -29,7 +35,10 @@ library ieee;
 
 entity tb_fpu is
    generic (
-      G_VECTORS : string := "fpu.vectors"
+      G_VECTORS : string  := "fpu.vectors";
+      -- With G_SLOW > 0, each command of the vectors that takes more
+      -- cycles than this is reported, for a search of the slow ones.
+      G_SLOW    : natural := 0
    );
 end entity tb_fpu;
 
@@ -38,6 +47,32 @@ architecture simulation of tb_fpu is
    subtype t_word64 is std_logic_vector(63 downto 0);
 
    type t_stack is array (0 to 15) of t_word64;
+
+   type t_counts is array (0 to 255) of natural;
+
+   -- The most cycles that each command may take, from its request to the
+   -- ACK of the read of STATUS after it, which adds some 6 cycles: the
+   -- times of DEVICES.md §11.5 with a margin, and for the commands that it
+   -- gives no time, some twice what they take. DIGITS, which §11.5 gives up
+   -- to some 3300, takes at most 3363 on the slowest values that a scan
+   -- found (test/fpu_slow_vectors.py), and its bound is 20% above that.
+   -- A command of the stack, and a number that is not a command, takes a
+   -- few cycles.
+   function bound (num : natural) return natural is
+   begin
+      case num is
+         when 16#10# to 16#12# => return 60;
+         when 16#13# | 16#14# => return 120;
+         when 16#1A# => return 150;
+         when 16#1D# => return 2400;
+         when 16#39# => return 1500;
+         when 16#3A# => return 4000;
+         when 16#17# to 16#19# | 16#1B# | 16#1C# | 16#20# to 16#24# | 16#28# to 16#2B# | 16#38# |
+              16#3B# to 16#3D# | 16#60# to 16#65# => return 120;
+         when 16#66# | 16#67# => return 200;
+         when others => return 30;
+      end case;
+   end function bound;
 
    signal clk     : std_logic := '0';
    signal rst     : std_logic := '1';
@@ -91,6 +126,12 @@ begin
       variable t_v     : time;
       variable most_v  : natural := 0;
       variable mline_v : natural := 0;
+      variable t_cmd_v : time;
+      variable cyc_v   : natural;
+      variable num_v   : natural;
+      variable cmost_v : t_counts := (others => 0);
+      variable cline_v : t_counts := (others => 0);
+      variable timed_v : boolean;
 
       -- One access: the request until it is accepted, then the ack.
       procedure bus_access(w : std_logic;
@@ -234,12 +275,16 @@ begin
          write(5, X"00000" & bf_v & X"00");
 
          -- The access.
+         timed_v := false;
          if kind_v = 'W' then
+            t_cmd_v := now;
             write(to_integer(unsigned(reg_v(2 downto 0))), word_v);
             -- After every third command, the next access comes at once,
             -- so that it waits for the command: each register in turn.
             if reg_v = X"4" and lines_v mod 3 = 0 then
                next_access((lines_v / 3) mod 10, af_v, ad_v, as_v);
+            else
+               timed_v := reg_v = X"4";
             end if;
          else
             read(to_integer(unsigned(reg_v(2 downto 0))), rd_v);
@@ -249,8 +294,21 @@ begin
             end if;
          end if;
 
-         -- The state after.
+         -- The state after. A command's time ends with this read.
          read(5, rd_v);
+         if timed_v then
+            cyc_v := (now - t_cmd_v) / 10 ns;
+            num_v := to_integer(unsigned(word_v(7 downto 0)));
+            if cyc_v > cmost_v(num_v) then
+               cmost_v(num_v) := cyc_v;
+               cline_v(num_v) := lines_v;
+            end if;
+            if G_SLOW > 0 and cyc_v > G_SLOW then
+               report "tb_fpu: line " & integer'image(lines_v) & ": command " &
+                      to_hstring(word_v) & " took " & integer'image(cyc_v) & " cycles"
+                  severity note;
+            end if;
+         end if;
          if rd_v(11 downto 8) /= af_v or unsigned(rd_v(4 downto 0)) /= unsigned(ad_v) then
             fail("STATUS " & to_hstring(rd_v) & ", want flags " & to_hstring(af_v) &
                  " depth " & to_hstring(ad_v));
@@ -284,6 +342,23 @@ begin
          fail("a read of X_HI after DIV took " & time'image(now - t_v) & " and gave " &
               to_hstring(rd_v));
       end if;
+
+      -- The most cycles of each command, against its bound, and of those
+      -- that take more than a few, reported.
+      for i in 0 to 255 loop
+         if cmost_v(i) > 10 then
+            report "tb_fpu: command " & to_hstring(to_unsigned(i, 8)) & " took at most " &
+                   integer'image(cmost_v(i)) & " cycles, line " & integer'image(cline_v(i)) &
+                   ", bound " & integer'image(bound(i))
+               severity note;
+         end if;
+         if cmost_v(i) > bound(i) then
+            fails_v := fails_v + 1;
+            report "tb_fpu: command " & to_hstring(to_unsigned(i, 8)) & " took " &
+                   integer'image(cmost_v(i)) & " cycles, more than its bound"
+               severity note;
+         end if;
+      end loop;
 
       report "tb_fpu: " & integer'image(lines_v) & " lines, " & integer'image(fails_v) &
              " differ, at most " & integer'image(most_v) & " cycles to an ACK, line " &

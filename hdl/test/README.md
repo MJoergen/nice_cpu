@@ -9,6 +9,7 @@ The testbenches, the test programs, and the scripts that run them. [hdl/README.m
 | [tb_mpu.vhd](tb_mpu.vhd) | A self-checking test of the math unit. |
 | [tb_fpu.vhd](tb_fpu.vhd) | A test of the FPU, which replays the vectors of `emulator/test/fpu_vectors.py` over its bus. |
 | [tb_fpu_unit.vhd](tb_fpu_unit.vhd) | A test of the FPU's arithmetic unit, which replays the vectors of [fpu_unit_vectors.py](fpu_unit_vectors.py). |
+| [fpu_slow_vectors.py](fpu_slow_vectors.py) | The vectors of the slowest `DIGITS`, `SCALE10`, and `FMOD` that a scan found, which `tb_fpu` adds to those of `emulator/test/fpu_vectors.py` for its bounds on cycles. |
 | [fpu_unit_vectors.py](fpu_unit_vectors.py) | The vectors of `tb_fpu_unit`, from the model `emulator/test/fpu_model.py`: every operation on every operand or pair of a format of 8 bits, or with `--wide`, random operands of binary64. |
 | [tb_perf.vhd](tb_perf.vhd) | A self-checking test of the performance counters. |
 | [tb_perf_hz.vhd](tb_perf_hz.vhd) | A self-checking test of the microsecond counter at 33333333, 83333333, and 100000000 Hz, against the integer part of N·10⁶/`G_CLK_HZ`. |

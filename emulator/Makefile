@@ -111,10 +111,13 @@ endef
 # The unit tests run in Debug, for its safety checks; niceemu itself is
 # built ReleaseSafe, which keeps the checks but runs much faster. The
 # FPU's unit test replays the vectors of its model, test/fpu_vectors.py,
-# which also checks their coverage.
+# which also checks their coverage, once for this machine's CPU and once
+# for the baseline x86_64 CPU of make dist, which has no FMA instruction,
+# so that the software floating point of Zig's library is tested too.
 test: build bincheck fmtcheck
 	@$(PYTHON) test/fpu_vectors.py -o test/fpu.vectors.out
 	$(ZIG) build test -Dfpu-vectors=$(abspath test/fpu.vectors.out) --summary all
+	$(ZIG) build test -Dcpu=baseline -Dfpu-vectors=$(abspath test/fpu.vectors.out) --summary all
 	@$(MAKE) --no-print-directory programs
 	@NICEEMU=$(abspath $(EMU)) $(PYTHON) test/errors.py
 	@$(PYTHON) test/fpu_model_test.py
@@ -175,9 +178,10 @@ window-test: window
 # without the window (static, musl) and with it (glibc 2.31 or later, as
 # SDL loads X11 or Wayland at run time), each packed with the README, the
 # license, and, with the window, the licenses of SDL. A named target
-# builds for the baseline x86_64 CPU, not the CPU of this machine. Each
-# build runs the tests of make test, the window one those of window-test
-# instead of errors.py. TAG is V and the first two numbers of the version
+# builds for the baseline x86_64 CPU, not the CPU of this machine. The
+# FPU's vectors are replayed on the target and the optimization of the
+# first, and each build runs the programs of make test, and errors.py or,
+# with the window, window.py. TAG is V and the first two numbers of the version
 # in build.zig.zon.
 VERSION := $(shell sed -n 's/^ *\.version = "\(.*\)",$$/\1/p' build.zig.zon)
 TAG ?= V$(word 1,$(subst ., ,$(VERSION))).$(word 2,$(subst ., ,$(VERSION)))
@@ -187,6 +191,8 @@ WINDOW = niceemu-window-$(TAG)-x86_64-linux
 
 dist: bincheck
 	rm -rf $(DIST)
+	@$(PYTHON) test/fpu_vectors.py -o test/fpu.vectors.out
+	$(ZIG) build test -Doptimize=ReleaseSafe -Dtarget=x86_64-linux-musl -Dfpu-vectors=$(abspath test/fpu.vectors.out) --summary all
 	$(ZIG) build -Doptimize=ReleaseSafe -Dtarget=x86_64-linux-musl -p $(DIST)/$(PLAIN)
 	$(ZIG) build -Doptimize=ReleaseSafe -Dtarget=x86_64-linux-gnu.2.31 -Dwindow -p $(DIST)/$(WINDOW)
 	@$(MAKE) --no-print-directory programs EMU=$(DIST)/$(PLAIN)/bin/niceemu

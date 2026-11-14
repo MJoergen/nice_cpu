@@ -185,12 +185,15 @@ fn sqrt32(a: u64) Result {
 
 /// ISQRT: √X rounded toward zero, and then TRUNC. The square root to
 /// nearest is one too high where its square exceeds X, and then the
-/// value below it is the one toward zero.
+/// value below it is the one toward zero. The square is exact in
+/// binary128. It is not taken with @mulAdd: on a CPU without the FMA
+/// instruction Zig 0.17.0's software fma returns 2^-1022 for an exact 0.
 fn isqrt(a: u64) Result {
     const r = sqrt(a);
     if (!isFinite(r.v) or isZero(r.v)) return r;
     var s = f(r.v);
-    if (@mulAdd(f64, s, s, -f(a)) > 0) s = f(r.v - 1);
+    const s2: f128 = s;
+    if (s2 * s2 > @as(f128, f(a))) s = f(r.v - 1);
     return .{ .v = bits(@trunc(s)) };
 }
 
@@ -435,7 +438,9 @@ fn mulPair(a: Pair, b: [2]u64) Pair {
     const bl = f(b[1]);
     const p = a.h * bh;
     if (std.math.isInf(p)) return .{ .h = p, .l = 0 };
-    var e = @mulAdd(f64, a.h, bh, -p);
+    // The error of p, exact in binary128 and rounded once, as fma
+    // would give it (see isqrt for why not @mulAdd).
+    var e: f64 = @floatCast(@as(f128, a.h) * @as(f128, bh) - @as(f128, p));
     e = e + a.h * bl;
     e = e + a.l * bh;
     const h = p + e;

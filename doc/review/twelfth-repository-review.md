@@ -107,6 +107,8 @@ RELEASE.md step 2.9 asks for the new tag's version there before `release.py chec
 
 **Fix:** compare s · s with X without `fma`, in integers or in `f128`, and do the same for the error of `mulPair`'s product, so that no result depends on which `fma` the build has. Replay the vectors on the baseline CPU too, in `make test` and in `make dist`. Tell Zig of `ldexp`.
 
+**Resolved.** `isqrt` compares s · s with X in `f128`, where the square is exact, and `mulPair` takes the error of its product as the `f128` product less p, rounded once to binary64, as a correct `fma` gives it. Neither uses `@mulAdd` now. `make test` replays the vectors a second time in a unit test built for the baseline CPU, and `make dist` replays them in a build for `x86_64-linux-musl` with ReleaseSafe, as its first emulator is built. Both fail with the old `isqrt`, and pass now, as does `make fpu-long` on the baseline CPU. The report to Zig of `ldexp` is not filed from here.
+
 ### 2.2 `DIGITS` gives the next power of ten for a value just below it
 
 DEVICES.md §11.3, line 822: "D, the digits as a whole number, is `NEAREST` of `SCALE10` of |X| by n − 1 − e, and e is the largest whole number for which D ≥ 10^(n−1)." With an e that is one too large, the scaled |X| lies just below 10^(n−1), `NEAREST` rounds it up to 10^(n−1), and the test passes. So the rule takes that e whenever the first n digits of |X| round up to 10^(n−1) one place higher:

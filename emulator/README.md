@@ -54,7 +54,8 @@ runs is under [Tests](#tests), at the end.
 release workflow, `.github/workflows/release.yml`, runs it on each tag.
 It builds niceemu for `x86_64-linux-musl` without the window, and for
 `x86_64-linux-gnu.2.31` with it, as SDL loads the libraries of X11 or
-Wayland at run time, which a static build cannot. It runs the programs of
+Wayland at run time, which a static build cannot. It first replays the FPU's vectors in a unit test built for
+`x86_64-linux-musl` with ReleaseSafe. It runs the programs of
 `make test` and `test/link.py` on both, `test/errors.py` on the first, and
 `test/window.py` on the second. Their names take the tag from the version
 in `build.zig.zon`, or from `TAG`. `make programs EMU=PATH` runs the
@@ -689,7 +690,9 @@ line.
 `make test` first checks with `zig fmt --check` that the Zig sources are
 laid out as `zig fmt` lays them out. It then writes the FPU's vectors
 with `test/fpu_vectors.py`, runs the unit tests in `src/cpu.zig` and the
-other sources, which replay the vectors, then the example programs
+other sources, which replay the vectors, for this machine's CPU and again
+for the baseline x86_64 CPU of the release files (Download), which has
+no FMA instruction, then the example programs
 in `../assembler/test/` (the three 2004 programs and `wrap`) and the
 probes: the programs `test/*.nasm`, each of which exercises one feature
 and has a hand-checked `test/X.expected`. The output and exit status of

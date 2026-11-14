@@ -179,6 +179,8 @@ That is the program with the FPU, and nothing says so. The other way round is wo
 
 **Fix:** let `NO_FPU=1` choose the build directory, `BUILD = build$(if $(NO_FPU),/nofpu)`, so that the two never share files, and say in the README where the programs go.
 
+**Resolved.** `NO_FPU=1` now chooses the build directory, `build/nofpu/`, so the two builds never share a file, and a core's run of that build has `_nofpu` in the names of its files in `hdl/build/`, as `float_nofpu_pipeline.out`. `make test NO_FPU=1` in a clean tree leaves nothing in `build/` itself, and `make core CORE_PROGRAMS=float NO_FPU=1` runs `build/nofpu/float.bin`. The README says where the programs go.
+
 ### 3.4 The cycle model's FPU, and `float_inline`, are checked by their results only
 
 - `pipecycles.py --test` has two snippets for the FPU, run with `fpu_op=4` and `fpu_long=60`, not the defaults. These changes pass `make -C bench test`: the default `--fpu-op` 30 where it is 18, `SQRT` taken out of the long commands, and a stack command of 3 cycles where it is 1.

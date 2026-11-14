@@ -4,7 +4,6 @@ NICEWASM = $(PYTHON) ../translator/nicewasm.py
 ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
 LIBC = ../runtime/libc
-BUILD = build
 
 CFLAGS = --target=wasm32 -mbulk-memory -O2 -ffreestanding -nostdlibinc -isystem $(LIBC)/include \
   -Wall -Wextra
@@ -22,13 +21,16 @@ CORE_PROGRAMS = bench hand
 # from float.wasm and joined with the float library. make core runs it with
 # CORE_PROGRAMS=float. The float library is ../runtime/float_fpu.nasm,
 # which uses the FPU of DEVICES.md §11, or with NO_FPU=1 float.nasm, in
-# software.
+# software. The files of the two builds have the same names, so NO_FPU=1
+# builds in SOFT_BUILD, build/nofpu, and its runs on a core are named
+# with _nofpu.
 FLOAT_LIB = ../runtime/$(if $(NO_FPU),float.nasm,float_fpu.nasm)
+SOFT_BUILD = build/nofpu
+BUILD = $(if $(NO_FPU),$(SOFT_BUILD),build)
+RUN_SUFFIX = $(if $(NO_FPU),_nofpu)
 
 # make test runs float.c with float.nasm too, from SOFT_BUILD, built with
-# NO_FPU=1 by a make of its own, as the files of the two builds have the
-# same names.
-SOFT_BUILD = $(BUILD)/nofpu
+# NO_FPU=1 by a make of its own.
 
 # Dhrystone 2.1, ported in dhrystone/ (README.md, Dhrystone), and its
 # console input, the number of runs. The 1988 C of its sources is compiled
@@ -151,15 +153,17 @@ mkdir -p $(HDL_BUILD)/bench_run/$(1)_$(CORE) && cd $(HDL_BUILD)/bench_run/$(1)_$
 endef
 
 define core_run
-	@echo "$(1) on the $(CORE) core:"
-	@$(call sim_core,$(1),$(BUILD)/$(1).bin,-gG_RETIRE_LOG=$(HDL_BUILD)/$(1)_$(CORE).retires); \
-	  grep '^Read waits:' $(HDL_BUILD)/$(1)_$(CORE).log; \
-	  if [ $$status -ne 0 ]; then cat $(HDL_BUILD)/$(1)_$(CORE).log; exit 1; fi
+	@echo "$(1)$(RUN_SUFFIX) on the $(CORE) core:"
+	@$(call sim_core,$(1)$(RUN_SUFFIX),$(BUILD)/$(1).bin,-gG_RETIRE_LOG=$(HDL_BUILD)/$(1)$(RUN_SUFFIX)_$(CORE).retires); \
+	  grep '^Read waits:' $(HDL_BUILD)/$(1)$(RUN_SUFFIX)_$(CORE).log; \
+	  if [ $$status -ne 0 ]; then cat $(HDL_BUILD)/$(1)$(RUN_SUFFIX)_$(CORE).log; exit 1; fi
 
 endef
 
+ifeq ($(NO_FPU),)
 $(SOFT_BUILD)/%.bin: FORCE
-	@$(MAKE) --no-print-directory BUILD=$(SOFT_BUILD) NO_FPU=1 $@
+	@$(MAKE) --no-print-directory NO_FPU=1 $@
+endif
 
 FORCE:
 
@@ -170,20 +174,20 @@ core: $(CORE_PROGRAMS:%=$(BUILD)/%.bin)
 # Dhrystone on a core in the simulator, CORE and SIM as above, with its output checked.
 core-dhry: $(BUILD)/dhry.bin
 	$(ANALYZE)
-	@$(call sim_core,dhry,$(BUILD)/dhry.bin,-gG_INPUT_FILE=$(abspath $(DHRY_RUNS))); \
-	  if [ $$status -ne 0 ]; then cat $(HDL_BUILD)/dhry_$(CORE).log; exit 1; fi
-	@$(PYTHON) dhrycheck.py --runs $$(cat $(DHRY_RUNS)) ../hdl/build/dhry_$(CORE).out
+	@$(call sim_core,dhry$(RUN_SUFFIX),$(BUILD)/dhry.bin,-gG_INPUT_FILE=$(abspath $(DHRY_RUNS))); \
+	  if [ $$status -ne 0 ]; then cat $(HDL_BUILD)/dhry$(RUN_SUFFIX)_$(CORE).log; exit 1; fi
+	@$(PYTHON) dhrycheck.py --runs $$(cat $(DHRY_RUNS)) ../hdl/build/dhry$(RUN_SUFFIX)_$(CORE).out
 
 # CoreMark on a core in the simulator, CORE and SIM as above, with
 # CM_CORE_ITERATIONS and the seeds of CM_SEEDS, and its output checked.
 core-coremark: $(BUILD)/coremark.bin
 	$(ANALYZE)
 	@mkdir -p $(HDL_BUILD)
-	@echo "$(CM_$(CM_SEEDS)) $(CM_CORE_ITERATIONS)" > $(HDL_BUILD)/coremark_$(CORE).input
-	@$(call sim_core,coremark,$(BUILD)/coremark.bin,-gG_INPUT_FILE=$(HDL_BUILD)/coremark_$(CORE).input); \
-	  if [ $$status -ne 0 ]; then cat $(HDL_BUILD)/coremark_$(CORE).log; exit 1; fi
+	@echo "$(CM_$(CM_SEEDS)) $(CM_CORE_ITERATIONS)" > $(HDL_BUILD)/coremark$(RUN_SUFFIX)_$(CORE).input
+	@$(call sim_core,coremark$(RUN_SUFFIX),$(BUILD)/coremark.bin,-gG_INPUT_FILE=$(HDL_BUILD)/coremark$(RUN_SUFFIX)_$(CORE).input); \
+	  if [ $$status -ne 0 ]; then cat $(HDL_BUILD)/coremark$(RUN_SUFFIX)_$(CORE).log; exit 1; fi
 	@$(PYTHON) coremarkcheck.py --seeds $(CM_SEEDS) --iterations $(CM_CORE_ITERATIONS) \
-	  ../hdl/build/coremark_$(CORE).out
+	  ../hdl/build/coremark$(RUN_SUFFIX)_$(CORE).out
 
 $(BUILD)/bench.nasm: bench.wasm ../translator/nicewasm.py
 	@mkdir -p $(BUILD)
@@ -329,6 +333,6 @@ emulator:
 	$(MAKE) -C ../emulator build
 
 clean:
-	rm -rf $(BUILD)
+	rm -rf build
 
 .PHONY: run dhry coremark test core core-dhry core-coremark hazards cycles compare profile words typecheck wasm native emulator clean

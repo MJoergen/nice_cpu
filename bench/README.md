@@ -36,10 +36,13 @@ library (see The float benchmark below).
 
 The programs that use floats, `float.c`, Dhrystone, and CoreMark, are
 joined with the float library of the FPU, `runtime/float_fpu.nasm`, and
-with `NO_FPU=1` with the one in software, `runtime/float.nasm`. `make
-test` runs `float.c` with `float.nasm` too, built by a make of its own in
-`build/nofpu/`. `make core`, `core-dhry`, and `core-coremark` run the
-programs with the FPU, `hdl/src/fpu.vhd`.
+with `NO_FPU=1` with the one in software, `runtime/float.nasm`. The
+programs go to `build/`, and with `NO_FPU=1` to `build/nofpu/`, so that
+the two builds never share a file. `make test` runs `float.c` with
+`float.nasm` too, from `build/nofpu/`. `make core`, `core-dhry`, and
+`core-coremark` run the programs with the FPU, `hdl/src/fpu.vhd`, and
+with `NO_FPU=1` those of `build/nofpu/`, their files in `hdl/build/`
+named with `_nofpu`, as `float_nofpu_pipeline.out`.
 
 `bench.wasm`, `float.wasm`, `dhrystone/dhry.wasm`, and `coremark/coremark.wasm` are checked in, so `make` and
 `make test` need only Python 3 and the emulator, as the translator's

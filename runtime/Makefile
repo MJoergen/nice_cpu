@@ -116,6 +116,7 @@ test: emulator float.nasm
 	$(foreach t,$(ZIG_TESTS) $(RUST_TESTS),$(call check_wasm,$(t),$(t),$(FLOAT_LIB)))
 	$(if $(NO_FPU),,$(foreach t,$(FLOAT_WASM_TESTS),$(call check_wasm,$(t),$(t)_soft_float,float.nasm)))
 	@$(PYTHON) test/float_fpu.py
+	@$(PYTHON) test/colors.py
 	@rm -f test/*.out test/*.out.nasm test/*.out.bin test/*.full.nasm test/*.raw test/*.status
 	@$(MAKE) --no-print-directory -C libc test
 
@@ -173,7 +174,7 @@ emulator:
 # Needs mypy (pip install mypy).
 typecheck:
 	cd libc/test && $(PYTHON) -m mypy --strict fuzz_printf.py fuzz_strtod.py fuzz_math.py
-	cd test && MYPYPATH=../../translator:../../translator/test:../../assembler $(PYTHON) -m mypy --strict float_fpu.py
+	cd test && MYPYPATH=../../translator:../../translator/test:../../assembler $(PYTHON) -m mypy --strict float_fpu.py colors.py
 
 clean:
 	rm -f test/*.out test/*.out.nasm test/*.out.bin test/*.full.nasm test/*.raw test/*.status float.nasm

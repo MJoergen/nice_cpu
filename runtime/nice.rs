@@ -145,7 +145,43 @@ pub const SCREEN_ROWS: u32 = 25;
 /// The blank that screen_clear writes: a space in white on black, the
 /// colors a board's monitor writes in, so that a cursor, which swaps the
 /// colors of its cell, shows on it (doc/DEVICES.md §1.4).
-pub const SCREEN_BLANK: u32 = 0x000F_FF20;
+pub const SCREEN_BLANK: u32 = FG_WHITE | BG_BLACK | ' ' as u32;
+
+/// The colors of a screen word (doc/DEVICES.md §1.1): FG_* in bits 19..8, the
+/// foreground, and BG_* in bits 31..20, the background. A color is a
+/// foreground, a background, and a character or-ed, and a color left out is
+/// black: FG_YELLOW | BG_BLUE | 'A' as u32. nice.h, nice.zig, and
+/// colors.nasm have the same colors.
+pub const FG_BLACK: u32 = 0x0000_0000;
+pub const FG_RED: u32 = 0x000F_0000;
+pub const FG_GREEN: u32 = 0x0000_F000;
+pub const FG_YELLOW: u32 = 0x000F_F000;
+pub const FG_BLUE: u32 = 0x0000_0F00;
+pub const FG_MAGENTA: u32 = 0x000F_0F00;
+pub const FG_CYAN: u32 = 0x0000_FF00;
+pub const FG_WHITE: u32 = 0x000F_FF00;
+pub const FG_GRAY: u32 = 0x0008_8800;
+pub const FG_LIGHT_GRAY: u32 = 0x000C_CC00;
+pub const FG_LIGHT_RED: u32 = 0x000F_6600;
+pub const FG_LIGHT_GREEN: u32 = 0x0008_E800;
+pub const FG_LIGHT_BLUE: u32 = 0x0000_DF00;
+pub const FG_NAVY: u32 = 0x0000_0A00;
+pub const FG_DARK_BLUE: u32 = 0x0000_3600;
+pub const BG_BLACK: u32 = 0x0000_0000;
+pub const BG_RED: u32 = 0xF000_0000;
+pub const BG_GREEN: u32 = 0x0F00_0000;
+pub const BG_YELLOW: u32 = 0xFF00_0000;
+pub const BG_BLUE: u32 = 0x00F0_0000;
+pub const BG_MAGENTA: u32 = 0xF0F0_0000;
+pub const BG_CYAN: u32 = 0x0FF0_0000;
+pub const BG_WHITE: u32 = 0xFFF0_0000;
+pub const BG_GRAY: u32 = 0x8880_0000;
+pub const BG_LIGHT_GRAY: u32 = 0xCCC0_0000;
+pub const BG_LIGHT_RED: u32 = 0xF660_0000;
+pub const BG_LIGHT_GREEN: u32 = 0x8E80_0000;
+pub const BG_LIGHT_BLUE: u32 = 0x0DF0_0000;
+pub const BG_NAVY: u32 = 0x00A0_0000;
+pub const BG_DARK_BLUE: u32 = 0x0360_0000;
 
 /// Writes c, the character in bits 7..0 and its color above, to a column,
 /// 0 to 79, of a row, 0 to 24.

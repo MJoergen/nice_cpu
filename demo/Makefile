@@ -12,8 +12,9 @@
 #               and compares the screens with test.expected
 # make clean    removes build/
 #
-# The assembler has no include, so the text, TEXT, and build/version.nasm,
-# which defines the label VERSION, are joined to demo.nasm. A board gives
+# The assembler has no include, so the names of the colors, COLORS, the
+# text, TEXT, and build/version.nasm, which defines the label VERSION, are
+# joined to demo.nasm. A board gives
 # its own text with TEXT=, and its tag with VERSION=. The stand-in,
 # ../runtime/test/monitor_console.nasm, sets SP, calls the demo at 0x8000,
 # and halts when it returns, with its status in R1.
@@ -26,6 +27,7 @@ STANDIN  = ../runtime/test/monitor_console.nasm
 BUILD    = build
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
 TEXT    ?= text.nasm
+COLORS   = ../runtime/colors.nasm
 
 .PHONY: all window test clean FORCE
 
@@ -34,8 +36,8 @@ all: $(BUILD)/demo.bin $(BUILD)/emu.bin
 $(EMU):
 	$(MAKE) -C ../emulator build
 
-$(BUILD)/demo.bin: demo.nasm $(TEXT) $(BUILD)/version.nasm $(ASM_PY)
-	@cat demo.nasm $(TEXT) $(BUILD)/version.nasm > $(BUILD)/demo_all.nasm
+$(BUILD)/demo.bin: demo.nasm $(COLORS) $(TEXT) $(BUILD)/version.nasm $(ASM_PY)
+	@cat demo.nasm $(COLORS) $(TEXT) $(BUILD)/version.nasm > $(BUILD)/demo_all.nasm
 	$(ASM) -o $@ $(BUILD)/demo_all.nasm
 
 # The stand-in, assembled once, at 0
@@ -61,8 +63,8 @@ window: $(BUILD)/emu.bin
 
 # The test has a version of its own, so that its screen does not change
 # with every commit, and the default text.
-$(BUILD)/demo_test.bin: demo.nasm text.nasm $(ASM_PY) | $(BUILD)
-	@(cat demo.nasm text.nasm; echo "VERSION .ASCII_L 'V9.9'") > $(BUILD)/demo_test_all.nasm
+$(BUILD)/demo_test.bin: demo.nasm $(COLORS) text.nasm $(ASM_PY) | $(BUILD)
+	@(cat demo.nasm $(COLORS) text.nasm; echo "VERSION .ASCII_L 'V9.9'") > $(BUILD)/demo_test_all.nasm
 	@$(ASM) -o $@ $(BUILD)/demo_test_all.nasm
 
 # The same with a wrong word in the script of the math unit's test, the

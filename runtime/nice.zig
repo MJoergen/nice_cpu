@@ -86,7 +86,43 @@ pub const screen_rows = 25;
 /// The blank that screenClear writes: a space in white on black, the
 /// colors a board's monitor writes in, so that a cursor, which swaps the
 /// colors of its cell, shows on it (doc/DEVICES.md §1.4).
-pub const screen_blank: u32 = 0x000FFF20;
+pub const screen_blank: u32 = fg_white | bg_black | ' ';
+
+/// The colors of a screen word (doc/DEVICES.md §1.1): fg_* in bits 19..8, the
+/// foreground, and bg_* in bits 31..20, the background. A color is a
+/// foreground, a background, and a character or-ed, and a color left out is
+/// black: fg_yellow | bg_blue | 'A'. nice.h, nice.rs, and colors.nasm have
+/// the same colors.
+pub const fg_black: u32 = 0x00000000;
+pub const fg_red: u32 = 0x000F0000;
+pub const fg_green: u32 = 0x0000F000;
+pub const fg_yellow: u32 = 0x000FF000;
+pub const fg_blue: u32 = 0x00000F00;
+pub const fg_magenta: u32 = 0x000F0F00;
+pub const fg_cyan: u32 = 0x0000FF00;
+pub const fg_white: u32 = 0x000FFF00;
+pub const fg_gray: u32 = 0x00088800;
+pub const fg_light_gray: u32 = 0x000CCC00;
+pub const fg_light_red: u32 = 0x000F6600;
+pub const fg_light_green: u32 = 0x0008E800;
+pub const fg_light_blue: u32 = 0x0000DF00;
+pub const fg_navy: u32 = 0x00000A00;
+pub const fg_dark_blue: u32 = 0x00003600;
+pub const bg_black: u32 = 0x00000000;
+pub const bg_red: u32 = 0xF0000000;
+pub const bg_green: u32 = 0x0F000000;
+pub const bg_yellow: u32 = 0xFF000000;
+pub const bg_blue: u32 = 0x00F00000;
+pub const bg_magenta: u32 = 0xF0F00000;
+pub const bg_cyan: u32 = 0x0FF00000;
+pub const bg_white: u32 = 0xFFF00000;
+pub const bg_gray: u32 = 0x88800000;
+pub const bg_light_gray: u32 = 0xCCC00000;
+pub const bg_light_red: u32 = 0xF6600000;
+pub const bg_light_green: u32 = 0x8E800000;
+pub const bg_light_blue: u32 = 0x0DF00000;
+pub const bg_navy: u32 = 0x00A00000;
+pub const bg_dark_blue: u32 = 0x03600000;
 
 /// Writes c, the character in bits 7..0 and its colors above (doc/DEVICES.md
 /// §1), to a column, 0 to 79, of a row, 0 to 24.

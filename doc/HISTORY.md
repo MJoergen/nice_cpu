@@ -790,3 +790,12 @@ float library 289 more with the FPU and 6578 without. On 2026-11-14, the
 i family, `iscanf` and its relatives, gave it `scanf` without them, in
 4307 words and without the float library, and `sscanf` with `%d` alone
 became 9190 (#177).
+
+## The names of the screen's colors
+
+Until 2026-11-14, each program gave the colors of the screen as numbers
+and named them anew: the demo had `BAR`, `TEXT`, and five more as hex
+words, and `nice.h` had only `NICE_SCREEN_BLANK`. NiceMonMEGA65 named
+13 of them for its monitor, as `MON_FG_*` and `MON_BG_*`. Then the
+runtime named 15 colors in `colors.nasm`, `nice.h`, `nice.zig`, and
+`nice.rs`, and the demo joined `colors.nasm` for its seven (#175).

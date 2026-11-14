@@ -55,10 +55,11 @@
 ; again. So the halt is on purpose: no key could come, and the tools and
 ; the tests end on the halt.
 ;
-; It is assembled with two files joined after it (demo/Makefile): the
-; text of the system it runs on, text.nasm or the system's own, which
-; defines NAME, T1 to T4, URL, KEYS, P3, and P4, and build/version.nasm,
-; which defines VERSION, the version string of the title bar.
+; It is assembled with three files joined after it (demo/Makefile): the
+; names of the colors, ../runtime/colors.nasm, the text of the system it
+; runs on, text.nasm or the system's own, which defines NAME, T1 to T4,
+; URL, KEYS, P3, and P4, and build/version.nasm, which defines VERSION,
+; the version string of the title bar.
 
 SP              .EQU    R13
 
@@ -154,14 +155,15 @@ E_BAD           .EQU    0xFFFFFFB4      ; the bad frames received, and the dropp
 E_SENT          .EQU    0xFFFFFFB5      ; the frames sent
 E_STAT          .EQU    0xFFFFFFB6      ; bit 31 while a host is connected, the port in 15..0
 
-; The colors: the background in bits 31..20, the foreground in bits 19..8
-BAR             .EQU    0x00AFFF00      ; white on blue
-TEXT            .EQU    0x000CCC00      ; light gray on black
-LINK            .EQU    0x000FF000      ; yellow on black
-MENU_ON         .EQU    0xFFF00000      ; black on white, the running demo in the menu
-TYPED           .EQU    0x000FFF00      ; white on black
-TAIL            .EQU    0x0000F000      ; green on black
-RED             .EQU    0x000F0000      ; red on black
+; The colors, from ../runtime/colors.nasm: the background in bits 31..20, the
+; foreground in bits 19..8, and black where one is left out
+BAR             .EQU    NICE_FG_WHITE + NICE_BG_NAVY
+TEXT            .EQU    NICE_FG_LIGHT_GRAY
+LINK            .EQU    NICE_FG_YELLOW
+MENU_ON         .EQU    NICE_BG_WHITE   ; black on white, the running demo in the menu
+TYPED           .EQU    NICE_FG_WHITE
+TAIL            .EQU    NICE_FG_GREEN
+RED             .EQU    NICE_FG_RED
 
 TOP             .EQU    10              ; the first row of the typewriter
 LAST            .EQU    24              ; and its last

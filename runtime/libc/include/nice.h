@@ -66,7 +66,43 @@ void nice_screen_clear(void);
 // colors a board's monitor writes in, so that the cursor of DEVICES.md §1.4,
 // which swaps the colors of its cell, shows on it. A blank of color 0 is
 // black on black, and so is the cursor on it.
-#define NICE_SCREEN_BLANK 0x000FFF20u
+#define NICE_SCREEN_BLANK (NICE_FG_WHITE | NICE_BG_BLACK | ' ')
+
+// The colors of a screen word (DEVICES.md §1.1): NICE_FG_* in bits 19..8, the
+// foreground, and NICE_BG_* in bits 31..20, the background. A color is a
+// foreground, a background, and a character or-ed, and a color left out is
+// black: NICE_FG_YELLOW | NICE_BG_BLUE | 'A'. runtime/colors.nasm, nice.zig, and
+// nice.rs have the same colors.
+#define NICE_FG_BLACK 0x00000000u
+#define NICE_FG_RED 0x000F0000u
+#define NICE_FG_GREEN 0x0000F000u
+#define NICE_FG_YELLOW 0x000FF000u
+#define NICE_FG_BLUE 0x00000F00u
+#define NICE_FG_MAGENTA 0x000F0F00u
+#define NICE_FG_CYAN 0x0000FF00u
+#define NICE_FG_WHITE 0x000FFF00u
+#define NICE_FG_GRAY 0x00088800u
+#define NICE_FG_LIGHT_GRAY 0x000CCC00u
+#define NICE_FG_LIGHT_RED 0x000F6600u
+#define NICE_FG_LIGHT_GREEN 0x0008E800u
+#define NICE_FG_LIGHT_BLUE 0x0000DF00u
+#define NICE_FG_NAVY 0x00000A00u
+#define NICE_FG_DARK_BLUE 0x00003600u
+#define NICE_BG_BLACK 0x00000000u
+#define NICE_BG_RED 0xF0000000u
+#define NICE_BG_GREEN 0x0F000000u
+#define NICE_BG_YELLOW 0xFF000000u
+#define NICE_BG_BLUE 0x00F00000u
+#define NICE_BG_MAGENTA 0xF0F00000u
+#define NICE_BG_CYAN 0x0FF00000u
+#define NICE_BG_WHITE 0xFFF00000u
+#define NICE_BG_GRAY 0x88800000u
+#define NICE_BG_LIGHT_GRAY 0xCCC00000u
+#define NICE_BG_LIGHT_RED 0xF6600000u
+#define NICE_BG_LIGHT_GREEN 0x8E800000u
+#define NICE_BG_LIGHT_BLUE 0x0DF00000u
+#define NICE_BG_NAVY 0x00A00000u
+#define NICE_BG_DARK_BLUE 0x03600000u
 
 // The devices' addresses and bits (DEVICES.md §1, §3, §10), for nice.c. The
 // console is read here; it is written through nice_putc.

@@ -21,6 +21,7 @@ Zig, or Rust program by itself ([translator README](../translator/README.md)).
 | `start_mon.nasm`, `start_wasm_mon.nasm`, `start_wasm_trap_mon.nasm` | The same three for a program that a monitor in ROM runs (ABI.md, "Programs under a monitor"): at `0x8000`, above the ROM, on the monitor's stack, with the monitor's putc routine in `___putc_vector`, and returning to the monitor instead of halting. |
 | `lib.nasm` | The runtime routines in assembly, except those below. It holds no word that is written: the vectors it jumps through are in the start-up files. |
 | `trapmsg.nasm` | The trap report below. It goes after `lib.nasm`, and only with `start_wasm_trap.nasm` or `start_wasm_trap_mon.nasm`. |
+| `colors.nasm` | The names of the screen's colors (below), `.EQU`s with no code. A program that wants them joins it, before or after itself. `lib.nasm` does not have them, as the demo and other programs do not join it. |
 | `muldiv_mpu.nasm` | The routines that the math unit of DEVICES.md §2 does: `__mul`, `__div`, `__mod`, `__udiv`, `__umod`, and their `64` versions, the bit counts `__clz`, `__ctz`, and `__popcnt`, and `_nice_isqrt64`, with the math unit. |
 | `muldiv_soft.nasm` | The same routines in software, for a system without the math unit. |
 | `float.zig` | The source of the float routines (see below). |
@@ -213,6 +214,39 @@ system without a screen, those words are RAM or nothing.
 
 The C library below has the same routines, in `nice.h`.
 
+### Screen colors
+
+A word of the screen has the background color in bits 31..20 and the
+foreground in bits 19..8 (DEVICES.md §1.1). The runtime names 15
+colors, each as a foreground and as a background:
+
+| Name | Red, green, blue |
+|---|---|
+| `BLACK` | `000` |
+| `RED` | `F00` |
+| `GREEN` | `0F0` |
+| `YELLOW` | `FF0` |
+| `BLUE` | `00F` |
+| `MAGENTA` | `F0F` |
+| `CYAN` | `0FF` |
+| `WHITE` | `FFF` |
+| `GRAY` | `888` |
+| `LIGHT_GRAY` | `CCC` |
+| `LIGHT_RED` | `F66` |
+| `LIGHT_GREEN` | `8E8` |
+| `LIGHT_BLUE` | `0DF` |
+| `NAVY` | `00A` |
+| `DARK_BLUE` | `036` |
+
+The first eight are the full intensities, and the others the shades
+that the demo and NiceMonMEGA65's displays use. A color is a foreground
+and a background added or or-ed, and a color left out is black. The
+names are `NICE_FG_YELLOW` and `NICE_BG_BLUE` in `colors.nasm` and
+`nice.h`, `fg_yellow` and `bg_blue` in `nice.zig`, and `FG_YELLOW` and
+`BG_BLUE` in `nice.rs`. In assembly, the demo writes its title bar as
+`NICE_FG_WHITE + NICE_BG_NAVY`. `test/colors.py`, which `make test`
+runs, checks that the four files give every name the same value.
+
 ## Floating point
 
 NICE has no float instructions. The float library does the float
@@ -292,7 +326,7 @@ Zig keeps only the objects of `libc.a` that the program references.
 | `time.h` | `clock`, with `CLOCKS_PER_SEC` 1000000 and `clock_t` unsigned, from the microsecond counter of DEVICES.md §3, which counts the host's time in the emulator, and wraps after 71.6 minutes on a board; `time`, from the clock of the time of day of DEVICES.md §10, which returns −1 while the clock holds no time; and the types `clock_t` and `time_t`. |
 | `errno.h` | `errno`, one for the whole program, 0 at start, and the codes `EINVAL`, `EDOM`, `ERANGE`, and `EILSEQ`. Only the conversions from text set it: `strtol` and `strtoul`, and so `atoi` and `atol`, to `ERANGE` on an overflow and to `EINVAL` for a base other than 0 and 2 to 36, and `strtod` and `strtof`, and so `atof` and `scanf`, to `ERANGE` when a float overflows or underflows, and to `EINVAL` when there is none. |
 | `ctype.h` | `isalnum`, `isalpha`, `iscntrl`, `isdigit`, `isgraph`, `islower`, `isprint`, `ispunct`, `isspace`, `isupper`, `isxdigit`, `tolower`, `toupper` |
-| `nice.h` | The device routines (see above): `nice_putc`, `nice_getc`, `nice_pollc`, `nice_print`, `nice_cycles`, `nice_instructions`, `nice_micros`, `nice_clock`, `nice_clock_isset`, and `nice_clock_set` (C only, with no assembly routine), `nice_screen_put`, and `nice_screen_clear`, with `NICE_SCREEN_COLS`, `NICE_SCREEN_ROWS`, and `NICE_SCREEN_BLANK`, the blank it writes. Also `nice_peek` and `nice_poke`, the `nice` imports of WASM.md, and the devices' addresses, for devices that have no routine. |
+| `nice.h` | The device routines (see above): `nice_putc`, `nice_getc`, `nice_pollc`, `nice_print`, `nice_cycles`, `nice_instructions`, `nice_micros`, `nice_clock`, `nice_clock_isset`, and `nice_clock_set` (C only, with no assembly routine), `nice_screen_put`, and `nice_screen_clear`, with `NICE_SCREEN_COLS`, `NICE_SCREEN_ROWS`, and `NICE_SCREEN_BLANK`, the blank it writes, and the names of the colors, `NICE_FG_*` and `NICE_BG_*` (Screen colors, below). Also `nice_peek` and `nice_poke`, the `nice` imports of WASM.md, and the devices' addresses, for devices that have no routine. |
 
 The device routines, in `src/nice.c`, are the only functions that touch
 hardware. They use `nice_peek` and `nice_poke`. `nice_putc` is not among
@@ -521,7 +555,7 @@ prints a byte slice instead.
 | Output | `putc(c)`, `write(bytes)`, `print(fmt, args)` with `std.fmt`, and `writer`, a `std.Io.Writer` | `putc(c)`, `write(bytes)`, `print!` and `println!` with `core::fmt`, and `Console`, a `core::fmt::Write` |
 | Input | `getc()`, a `?u8`, `pollc()`, a `Poll`: `.byte`, `.empty`, or `.end`, and `readLine(buf)`, a `?[]u8` | `getc()`, an `Option<u8>`, `pollc()`, a `Poll`: `Byte`, `Empty`, or `End`, and `read_line(buf)`, an `Option<&str>` |
 | Counters | `cycles()`, `instructions()` | `cycles()`, `instructions()` |
-| Screen | `screenPut(col, row, c)`, `screenClear()`, `screen_cols`, `screen_rows`, `screen_blank` | `screen_put(col, row, c)`, `screen_clear()`, `SCREEN_COLS`, `SCREEN_ROWS`, `SCREEN_BLANK` |
+| Screen | `screenPut(col, row, c)`, `screenClear()`, `screen_cols`, `screen_rows`, `screen_blank`, and the colors `fg_*` and `bg_*` | `screen_put(col, row, c)`, `screen_clear()`, `SCREEN_COLS`, `SCREEN_ROWS`, `SCREEN_BLANK`, and the colors `FG_*` and `BG_*` |
 | Heap | `heap`, a `std.mem.Allocator` | `Heap`, a `GlobalAlloc` for the `alloc` crate |
 | Math | none needed: `@sqrt`, `@sin`, and `std.math` | `Float`, std's math methods for `f64` and `f32` |
 
@@ -681,6 +715,9 @@ translated with `--memory-pages 2`, so that their heap can grow by one
 page, and no more. Their `.wasm`
 files are checked in; `make wasm` rebuilds them, with Zig 0.17 and rustc
 with the `wasm32-unknown-unknown` target.
+
+`test/colors.py` checks that `colors.nasm`, `nice.h`, `nice.zig`, and
+`nice.rs` give each color of Screen colors the same value.
 
 Last, `test/float_fpu.py` checks `float_fpu.nasm` against `float.nasm`.
 One program calls each of the 52 routines on special operands, each with

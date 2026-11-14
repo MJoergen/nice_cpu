@@ -683,7 +683,10 @@ any other. It runs a third time with the code of nicewasm's
 `--inline-fpu` in place of the calls: a wasm module with a function for
 each routine, which does its wasm instruction, translated with that
 option. A comparison there gives 0 or 1, which must be the test of the
-routine's result. The FPU's depth must be 0 at the end of each run.
+routine's result. Each run pushes 14 values onto the FPU's stack before
+the calls, as a caller may keep values there across a call. After the
+calls the depth must be 14, with no stack fault, and the values must be
+those it pushed.
 `float_fpu.py --seed N --count N` runs other seeds and sizes.
 
 `make -C libc fuzz` needs clang. It runs `libc/test/fuzz_printf.py`,

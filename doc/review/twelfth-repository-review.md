@@ -201,6 +201,8 @@ So these pass every test of `make -C runtime test`: `DROP 2` in place of `DROP` 
 
 **Fix:** push some values before the calls in `float_fpu.py`, and compare them, the depth, and the stack fault after.
 
+**Resolved.** `float_fpu.py` pushes 14 values onto the FPU's stack before the calls, a NaN with a payload among them, and after the calls reads `FPU_STATUS`, whose depth must be 14 with no stack fault, pops the values, which must be those it pushed, and reads `FPU_STATUS` again, whose depth must be 0. It does so in all three runs, with `float.nasm`, `float_fpu.nasm`, and the inline code. Each of the four changes of this section now fails it: `DROP 2` for `DROP` in `__fpu.drop` with 32 failures, and the other three with 16.
+
 ### 3.6 nicebuild's new options are not checked to do anything
 
 `translator/test/build.py:171` builds one C program with each option and compares its output, `42 6 hi 4`, which is the same with every option. So these pass: `--inline-fpu` not passed on to nicewasm, `float_fpu.nasm` joined in spite of `--no-fpu`, and `--memory-bytes` not passed on. No test runs a program built with `--no-fpu` on `niceemu --no-fpu`, so that such a program runs on a system without the FPU is tested nowhere from end to end, which is the case of §1.2. The three options are tried for C only.

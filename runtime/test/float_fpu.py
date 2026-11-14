@@ -9,9 +9,15 @@ the rounding, and the limits of the conversions. It runs twice, joined
 with float.nasm and then with float_fpu.nasm, which uses the FPU of
 DEVICES.md §11. The results must be the same, but that a NaN may be any
 NaN: float.nasm passes the payload of a NaN on, and the FPU gives the
-canonical NaN, which wasm allows. After the calls, the program reads the
-FPU's STATUS, whose depth must be 0 with float_fpu.nasm: a routine leaves
-the stack as it found it.
+canonical NaN, which wasm allows.
+
+A routine leaves the FPU's stack as it found it, so that a caller may
+keep values there across a call (DEVICES.md §11.5, ABI.md). So the
+program pushes the 14 values of KEPT before the calls, the most that
+leaves a routine room for its two operands. After the calls it reads the
+FPU's STATUS, whose depth must be 14, with no stack fault, and then pops
+the values, which must be those it pushed, and reads STATUS again, whose
+depth must be 0.
 
 It runs a third time with the float operations that nicewasm's
 --inline-fpu writes inline: a wasm module has a function for each
@@ -63,6 +69,11 @@ for _s, _t in (("sf", "f"), ("df", "d")):
 ROUTINES["___extendsfdf2"] = ("f", "d")
 ROUTINES["___truncdfsf2"] = ("d", "f")
 WORDS = {"f": 1, "i": 1, "d": 2, "l": 2}
+
+# The values that the program keeps on the FPU's stack across the calls,
+# pushed in this order as raw bits, a NaN with a payload among them.
+KEPT = [0x3FF0000000000000 + (i << 44) + 0x0123456789 * i for i in range(13)] + [0x7FF4000000000BAD]
+STACK_FAULT = 1 << 11
 
 F32_SPECIALS = [0x00000000, 0x80000000, 0x00000001, 0x80000001, 0x007FFFFF, 0x00800000,
                 0x7F7FFFFF, 0xFF7FFFFF, 0x7F800000, 0xFF800000, 0x7FC00000, 0xFFC00000,
@@ -194,11 +205,21 @@ def words(args: str, values: Tuple[int, ...]) -> List[int]:
     return out + [0] * (4 - len(out))
 
 
+# The words after the results of the calls: STATUS, the kept values, and
+# STATUS again.
+TAIL = 2 + 2 * len(KEPT)
+
+
 def program(calls: List[Tuple[str, List[int]]]) -> str:
-    """The test's main: for each call, R1 to R4 from the table, the call,
-    and R1 and R2 to the results; then STATUS."""
+    """The test's main: the values of KEPT pushed; for each call, R1 to R4
+    from the table, the call, and R1 and R2 to the results; then STATUS,
+    the kept values, popped, and STATUS again."""
     lines = ["_main          MOVE    R10, TABLE",
-             "                MOVE    R11, RESULTS",
+             "                MOVE    R11, RESULTS"]
+    for v in KEPT:
+        lines += [f"                MOVE    @0xFFFFFF88, 0x{v & 0xFFFFFFFF:08X}  ; X_LO",
+                  f"                MOVE    @0xFFFFFF89, 0x{v >> 32:08X}  ; X_HI"]
+    lines += [
              f"                MOVE    R9, {len(calls)}",
              ":               MOVE    R1, @R10++",
              "                MOVE    R2, @R10++",
@@ -210,13 +231,18 @@ def program(calls: List[Tuple[str, List[int]]]) -> str:
              "                MOVE    @R11++, R2",
              "                DEC[M]  R9, R9",
              "        ?!Z     JMP     :-",
-             "                MOVE    @R11++, @0xFFFFFF8D  ; STATUS",
-             "                MOVE    R1, R0",
-             "                RET",
-             "TABLE"]
+             "                MOVE    @R11++, @0xFFFFFF8D  ; STATUS"]
+    for _ in KEPT:
+        lines += ["                MOVE    @R11++, @0xFFFFFF88  ; X_LO",
+                  "                MOVE    @R11++, @0xFFFFFF89  ; X_HI",
+                  "                MOVE    @0xFFFFFF8C, 3  ; DROP"]
+    lines += ["                MOVE    @R11++, @0xFFFFFF8D  ; STATUS",
+              "                MOVE    R1, R0",
+              "                RET",
+              "TABLE"]
     for label, w in calls:
         lines.append("                .DAT    " + ", ".join(f"0x{x:08X}" for x in w) + f", {label}")
-    lines.append("RESULTS         .RES    " + str(2 * len(calls) + 1))
+    lines.append("RESULTS         .RES    " + str(2 * len(calls) + TAIL))
     return "\n".join(lines) + "\n"
 
 
@@ -278,7 +304,7 @@ def run(tmp: str, main: str, library: str, module: str = "") -> Tuple[List[int],
         sym = dict((p[1], int(p[0], 16)) for p in (line.split() for line in f) if len(p) == 2)
     count = main.count(".DAT")
     base = sym["RESULTS"]
-    proc = subprocess.run([NICEEMU, "-n", "200000000", "-d", f"0x{base:x}:{2 * count + 1}", binary],
+    proc = subprocess.run([NICEEMU, "-n", "200000000", "-d", f"0x{base:x}:{2 * count + TAIL}", binary],
                           capture_output=True, text=True, stdin=subprocess.DEVNULL)
     if proc.returncode != 0:
         raise RuntimeError(f"{library}: exit {proc.returncode}\n{proc.stdout[-2000:]}{proc.stderr}")
@@ -288,6 +314,23 @@ def run(tmp: str, main: str, library: str, module: str = "") -> Tuple[List[int],
         if rest and len(head) == 8 and int(head, 16) >= base:
             out += [int(w, 16) for w in rest.split()]
     return out, base
+
+
+def kept_failures(what: str, tail: List[int]) -> List[str]:
+    """What is wrong with the FPU's stack after the calls: tail is STATUS,
+    the kept values popped from the top, and STATUS again."""
+    out: List[str] = []
+    status, popped, last = tail[0], tail[1:-1], tail[-1]
+    if status & 0x1F != len(KEPT) or status & STACK_FAULT:
+        out.append(f"{what}: after the calls, the FPU's depth is {status & 0x1F}, not {len(KEPT)},"
+                   f" or the stack fault is set: STATUS 0x{status:08X}")
+    for i, v in enumerate(reversed(KEPT)):
+        got = popped[2 * i] | popped[2 * i + 1] << 32
+        if got != v:
+            out.append(f"{what}: kept value {len(KEPT) - 1 - i} is 0x{got:016X}, not 0x{v:016X}")
+    if last & 0x1F != 0 or last & STACK_FAULT:
+        out.append(f"{what}: after the pops, STATUS 0x{last:08X}")
+    return out
 
 
 def main() -> None:
@@ -340,10 +383,8 @@ def main() -> None:
         elif a != c and not (is_nan(result, a) and is_nan(result, c)):
             ops = ", ".join(f"0x{v:X}" for v in values)
             failures.append(f"{label}({ops}): float.nasm 0x{a:X}, inline 0x{c:X}")
-    for status, what in ((fpu[-1], "float_fpu.nasm"), (inline[-1], "inline")):
-        if status & 0x1F != 0:
-            failures.append(f"{what}: the FPU's depth after the calls is {status & 0x1F},"
-                            f" STATUS 0x{status:08X}")
+    for out, what in ((soft, "float.nasm"), (fpu, "float_fpu.nasm"), (inline, "inline")):
+        failures += kept_failures(what, out[2 * len(meta):])
     for f in failures[:30]:
         print(f)
     if failures:

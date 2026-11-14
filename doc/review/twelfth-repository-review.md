@@ -334,6 +334,8 @@ The **Clock** bullet, line 535, says of the MEGA65's real-time clock: "NiceMonME
 
 **Fix:** name the FPU in both, with its figure.
 
+**Resolved.** The **Bus decoder** bullet names the FPU first, with its some 3300 cycles, and the math unit with its 65. Since the FPU takes each request into a register (#172), a read of it while a command runs is accepted and waits for its ACK, so its cycles count as READ, and the table now says so; STALL names the FPU and the bus decoder for a request held behind one that waits for a command.
+
 ### 4.4 runtime/README.md: the size of `float.nasm`
 
 Line 267: "Assembled, `float.nasm` is about 6900 words, 7150 with its stack." As a program joins it, it is 6844 words, 264 of them its memory, the stack and 8 words of data: the float benchmark shrinks by 6555 words, 6844 less the 289 of `float_fpu.nasm`. The sentence dates from 2026-10-27. The 6578 words that the other documents quote are `make -C bench words`, the module without `--no-mpu` and without its memory. **Fix:** 6580 and 6844.

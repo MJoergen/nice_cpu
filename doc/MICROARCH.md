@@ -901,9 +901,10 @@ system built from them must follow these rules:
   read with 0 and drops a write (ISA §8.2). Without one, the core would wait
   forever.
 - **Bus decoder.** The data bus decoder keeps the ACKs in order when
-  requests to different slaves are in flight, since the math unit holds an
-  ACK for up to 65 cycles: a request to one slave waits while a request to
-  another is still owed its ACK. `hdl/src/wb_dmux.vhd` does this, and the
+  requests to different slaves are in flight, since the FPU holds an ACK
+  for up to some 3300 cycles while a command runs (DEVICES §11.5), and
+  the math unit for up to 65: a request to one slave waits while a
+  request to another is still owed its ACK. `hdl/src/wb_dmux.vhd` does this, and the
   testbench `tb_core` uses it. So a data read may wait on the bus.
 - **I/O.** Only the data bus reaches I/O. The instruction bus returns 0 for
   the I/O range (ISA §8.3).
@@ -1024,8 +1025,8 @@ flush by WRITE, or a jump that DECODE resolved; or else FETCH.
 | 4 | REG | PREPARE waited for a register that an older micro-operation writes, for an address or an operand |
 | 5 | ORDER | PREPARE's data read waited for rule 1, 2, or 4 of §5.3, or for a pause |
 | 6 | BUS | PREPARE's data read waited for an older store (rule 3), or for room among the requests in flight, or PREPARE loaded the first of two reads |
-| 7 | STALL | a data read of the core was stalled on the bus: a slow memory, or the math unit with a result not ready (DEVICES §2) |
-| 8 | READ | WRITE waits for read data that has no ACK yet |
+| 7 | STALL | a data read of the core was stalled on the bus: a slow memory, the math unit with a result not ready (DEVICES §2), or the FPU or the bus decoder with a request held while a command of the FPU runs |
+| 8 | READ | WRITE waits for read data that has no ACK yet, such as a read of the FPU while a command runs (DEVICES §11.1) |
 | 9 | LATE | WRITE waits a cycle for read data that came, from DBUS's FIFO (§5.3) |
 | 10 | SHIFT | WRITE reduces a shift count in a cycle of its own (§7.3) |
 | 11 | ADJUST | WRITE writes a destination adjusted by 1, or a computed jump, in a second cycle |

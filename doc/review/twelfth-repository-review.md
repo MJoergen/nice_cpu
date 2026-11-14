@@ -293,6 +293,8 @@ The **Clock** bullet, line 535, says of the MEGA65's real-time clock: "NiceMonME
 
 **Fix:** say what the board does, as the other bullets do. The table of board tags in RELEASE_NOTES.md also lacks `V2.0.1` in the row of `V2.0`, which it pins (RELEASE.md step 8.5).
 
+**Resolved.** The **Clock** bullet says what the board does: the monitor in its ROM sets the clock from the real-time clock at its start, when the clock is not set and the chip has not lost its time, and `time` writes the real-time clock, so on the MEGA65 "set" is 1 after the ROM's start, and on the Nexys4DDR it stays 0. The table of board tags in RELEASE_NOTES.md has `V2.0.1` in the row of `V2.0`.
+
 ### 4.2 hdl/README.md: the times of `make formal` and `make programs`
 
 - Line 71 says that `make formal` takes "20 minutes on 20 CPUs, most of it the debug link's covers". Line 1463 of the same file gives the FPU's `prove_stack` "about half an hour", alone. The release check of `V2.1` took 1699 seconds for `make formal`, 28 minutes, before the FPU's tasks.

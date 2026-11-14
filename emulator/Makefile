@@ -23,8 +23,8 @@ OPTS_wrap      = -d 0xffffffff:1
 # are in the comments of each program. Run make bins after changing one.
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge irqtimer after start cputest console screen screencolor screeninvert iofetch \
   reads reserved mpu mpu64 mpubits perf events timer input r15modes r0dest r14mem skipconst carryin shiftc \
-  wrapmem smcown scrbound time trapsym sd font net eth bytewin wait waitnone skip clock clockhost stack conirq \
-  fpu fpustack fpudec
+  wrapmem smcown scrbound time trapsym sd font net eth bytewin wait waitnone skip skipreq clock clockhost stack \
+  conirq fpu fpustack fpudec
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
@@ -64,6 +64,7 @@ OPTS_skip     = --step-time --irq 140:0x42 --irq 146:0x42 -d 0x200:9 -d 0x210:2
 OPTS_skip_off   = --max-steps 4 -d 0x200:3
 OPTS_skip_limit = --step-time --max-steps 50 -d 0x200:3
 OPTS_skip_mem   = --step-time --no-cycle-counter --irq 140:0x42 --irq 146:0x42
+OPTS_skipreq    = --step-time --nmi 20:0x80 --input test/input.txt -d 0x200:7
 OPTS_trapsym = --symbols test/trapsym.sym
 OPTS_stack   = --stack --nmi 5:1
 # The count example with --stack: it never changes R13, and its output is

@@ -648,7 +648,8 @@ with E = 0, and `-n` cuts it short. Its steps count toward `-n` and the
 steps of the last line. Without `--step-time` the write is ignored, as
 on an FPGA core. Under the link, a single step runs the rest of a skip
 with the next step (DEBUG.md §6). The probe `test/skip.nasm` shows these
-rules.
+rules, with the timer and `--irq`, and `test/skipreq.nasm` with `--nmi`
+and the console.
 
 The console raises its request on an edge (DEVICES.md §1.9). Where a read
 waits for its byte, from stdin, a file, or the link without the window,

@@ -84,7 +84,7 @@ SPECIALS = [
     0x4000000000000000, 0x4008000000000000, 0xC004000000000000, 0x3FB999999999999A, 0x7E37E43C8800759C,
     0x81A56E1FC2F8F359, 0x7FEFFFFFFFFFFFFF, 0xFFEFFFFFFFFFFFFF, F64.inf, F64.inf | NZ, 0x7FF8000000000123,
     0xFFF8000000000000, 0x7FF0000000000001, 0xFFF4000000000000, 0x41DFFFFFFFE00000, 0xC1E0000000000000,
-    0x4340000000000000, 0x43E0000000000000,
+    0x4340000000000000, 0x43E0000000000000, 0x41E0000000000000, 0xC1E0000000200000,
 ]
 
 # The flags each command may set, but the stack fault: a command that
@@ -646,6 +646,10 @@ def conversions(g: Generator, rnd: random.Random) -> None:
     for k in ks + [-k for k in ks]:
         for y in (0x3FF0000000000000, 0xC00921FB54442D18, random_finite(rnd, 900, 1150), 1, 0x7FEFFFFFFFFFFFFF):
             g.cmd([y, d(Fraction(k))], "SCALE10")
+    # k = 23 takes the pairs, where one product by the binary64 value
+    # nearest 10^23 would give another result for these two.
+    g.cmd([0x3EBA6A3A6513270E, d(Fraction(23))], "SCALE10")
+    g.cmd([0x40AD23F0128B2F33, d(Fraction(-23))], "SCALE10")
 
 
 def bcd(digits: str) -> int:
@@ -749,6 +753,24 @@ def random_run(g: Generator, seed: int, count: int) -> None:
             g.access(fpu, "W", CMD, random_word(rnd))
 
 
+def hand_cases(g: Generator) -> None:
+    """The hand-checked cases of fpu_model_test.py, which the model
+    passes, so that the emulator and the cores replay them too."""
+    from fpu_model_test import CASES, REGS, command_word
+
+    g.comment("The hand-checked cases of fpu_model_test.py")
+    for why, before, flags, access, _after, _flags_after, _want in CASES:
+        parts = access.split()
+        if parts[0] == "r":
+            g.on(list(before), "R", REGS[parts[1]], flags=flags)
+        elif parts[0] == "w":
+            g.on(list(before), "W", REGS[parts[1]], int(parts[2], 0), flags)
+        elif parts[0] == "cmd":
+            g.on(list(before), "W", CMD, int(parts[1], 0), flags)
+        else:
+            g.on(list(before), "W", CMD, command_word(access), flags)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Write and check the FPU's test vectors.")
     p.add_argument("-o", "--output", help="the file to write the vectors to")
@@ -757,6 +779,7 @@ def main() -> None:
     a = p.parse_args()
     g = Generator()
     directed(g, random.Random(a.seed))
+    hand_cases(g)
     directed_count = len(g.lines)
     random_run(g, a.seed, a.count)
     failed = False

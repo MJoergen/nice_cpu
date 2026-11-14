@@ -29,6 +29,7 @@ import decimal
 import math
 import os
 import random
+import re
 import struct
 import sys
 from fractions import Fraction
@@ -61,6 +62,7 @@ from fpu_model import (  # noqa: E402
     pow2,
     s64,
     digits,
+    TEN_PAIRS,
     scale10,
 )
 
@@ -879,6 +881,28 @@ def digits_check(rnd: random.Random) -> None:
                 return
 
 
+def tables() -> None:
+    """SCALE10's table in src/fpu.zig and in ../hdl/src/fpu.vhd against
+    TEN_PAIRS. A wrong last bit of a low part changes so few results that
+    no vector need show it, so the tables are compared as text."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(here, "..", "src", "fpu.zig"), encoding="utf-8") as f:
+        zig = f.read()
+    for name, row in (("ten_up", TEN_PAIRS[0]), ("ten_down", TEN_PAIRS[1])):
+        body = zig.split(f"const {name} = [9][2]u64{{", 1)[1].split("};", 1)[0]
+        got = [tuple(int(w, 16) for w in pair) for pair in re.findall(r"0x([0-9A-F]+), 0x([0-9A-F]+)", body)]
+        if got != [tuple(p) for p in row]:
+            fail(f"SCALE10: {name} of src/fpu.zig is not TEN_PAIRS")
+    vhd_path = os.path.join(here, "..", "..", "hdl", "src", "fpu.vhd")
+    with open(vhd_path, encoding="utf-8") as f:
+        vhd = f.read()
+    for name, sign, part in (("C_TEN_HI", 0, 0), ("C_TENTH_HI", 1, 0), ("C_TEN_LO", 0, 1), ("C_TENTH_LO", 1, 1)):
+        body = vhd.split(f"constant {name} :", 1)[1].split(");", 1)[0]
+        got_v = [int(w, 16) for w in re.findall(r'X"([0-9A-F]{16})"', body)]
+        if got_v != [p[part] for p in TEN_PAIRS[sign]]:
+            fail(f"SCALE10: {name} of fpu.vhd is not TEN_PAIRS")
+
+
 def fifteen_digits(rnd: random.Random) -> None:
     """A constant of 15 digits, read through FROMBCD and SCALE10, and
     printed through DIGITS 15, comes back. The random ones are joined by
@@ -919,6 +943,7 @@ def main() -> None:
     constants()
     isqrt_check(rnd)
     scale10_check(rnd)
+    tables()
     digits_check(rnd)
     fifteen_digits(rnd)
     print("exact arithmetic")

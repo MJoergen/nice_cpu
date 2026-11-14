@@ -244,6 +244,8 @@ def main() -> None:
             cmd.append("--trust-alignment")
         if args.inline_fpu:
             cmd.append("--inline-fpu")
+        if args.no_fpu:
+            cmd.append("--no-fpu")
         if args.byte_windows:
             cmd.append("--byte-windows")
         if args.memory_pages is not None:

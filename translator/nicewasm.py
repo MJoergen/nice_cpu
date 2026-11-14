@@ -7,7 +7,7 @@ files, and the runtime library as runtime/ABI.md describes.
 
 Usage: nicewasm.py [-o output.nasm] [--no-bounds-checks] [--trust-alignment] [--byte-windows]
                    [--memory-pages N] [--memory-bytes BYTES] [--ram ADDR]
-                   [--library NAME] [--no-mpu] [--inline-fpu]
+                   [--library NAME] [--no-mpu] [--inline-fpu] [--no-fpu]
                    input.wasm
 
 README.md lists the wasm features it supports. Anything else is rejected
@@ -1321,7 +1321,7 @@ for _n in (4, 8):
             instr("MOVE", "R15", f"W.{_op}{_n}")]
 HELPERS["W.ctrap"] = ["; W.ctrap: traps with code 2 and R2 = the word at R4.", "W.ctrap",
                       instr("MOVE", "R2", "@R4"), instr("MOVE", "R15", "W.trap2")]
-for _code in range(1, 9):
+for _code in range(1, 10):
     HELPERS[f"W.trap{_code}"] = [f"; W.trap{_code}: traps with code {_code}, and R2 as it is.",
                                  f"W.trap{_code}", instr("MOVE", "R1", str(_code)),
                                  instr("MOVE", "R15", "@___wasm_trap_vector")]
@@ -2932,7 +2932,7 @@ class Translator:
                  memory_pages: Optional[int] = None, mpu: bool = True,
                  trust_alignment: bool = False, ram: Optional[int] = None,
                  windows: bool = False,
-                 inline_fpu: bool = False) -> None:
+                 inline_fpu: bool = False, fpu: bool = True) -> None:
         self.m = m
         self.data = data
         self.checks = checks  # bounds checks on memory accesses
@@ -2942,6 +2942,10 @@ class Translator:
         self.windows = windows
         self.mpu = mpu  # use the math unit of DEVICES §2 for i32 mul, and div and rem
         self.inline_fpu = inline_fpu  # write the FPU's accesses of DEVICES §11 inline
+        # Whether the float library uses the FPU, so that ___wasm_start
+        # checks for it (fpu_check): false with --no-fpu, for float.nasm.
+        self.fpu = fpu
+        self.uses_fpu = False  # a float operation calls the float library, or is inline
         self.library = library  # the name of a library module (WASM.md), or None
         self.prefix = f"WL.{library}." if library else "W."  # of the labels made here
         self.mem = f"WL.{library}.memory" if library else "___wasm_memory"
@@ -3066,12 +3070,15 @@ class Translator:
         if self.library:
             out.append(f"; Library module {self.library}.")
         runs = self.memory_runs()
-        if not self.library:
-            out += self.start(runs)
+        start_at = len(out)
         n_imports = len(self.m.imports)
         for i, code in enumerate(self.m.codes):
             out.append("")
             out += FunctionTranslator(self, n_imports + i, code).run()
+        # ___wasm_start goes first, but is made after the functions, which
+        # tell whether the module uses the FPU (fpu_check).
+        if not self.library:
+            out[start_at:start_at] = self.start(runs)
         for name in list(self.helpers):
             self.helpers.update(HELPER_DEPS.get(name, []))
         limit = {f"W.LIMIT{n}": f"@W.limit{n}" if self.growable or self.mem_bytes is None
@@ -3215,6 +3222,7 @@ class Translator:
                     instr("?!Z MOVE", "R2", "W.reach"),
                     instr("?!Z MOVE", "R15", "W.trap8")]
             self.helpers.add("W.trap8")
+        out += self.fpu_check()
         # The words that data segments set are in the program image. The
         # rest of the memory is reserved with .RES, so it is not, and is
         # set to 0 here. Each pass of a loop clears ZERO_UNROLL words.
@@ -3239,6 +3247,27 @@ class Translator:
                     for name, v in self.limits(self.m.memory_pages)]
         return out + self.start_calls()
 
+    def fpu_check(self) -> List[str]:
+        """The check for the FPU of DEVICES.md §11 at the start of
+        ___wasm_start, if the module uses it and the float library is not
+        the one in software (WASM.md, Start-up): after CLEAR 1, a write of
+        0 to FPU_STATUS, and a push of +0, FPU_STATUS reads 0x00320001,
+        a depth of 1 and X zero, whole, and fitting, or the check traps
+        with code 9, R2 at the check. Then CLEAR 1 empties the stack again.
+        The addresses are numbers, as the program may be joined with
+        float.nasm, which does not define the names __fpu.*."""
+        if not (self.uses_fpu and self.fpu):
+            return []
+        self.helpers.add("W.trap9")
+        return ["; A trap with code 9 if the system lacks the FPU (WASM.md).",
+                "W.fpucheck", instr("MOVE", "@0xFFFFFF8C", "0x101"),  # FPU_CMD: CLEAR 1
+                instr("MOVE", "@0xFFFFFF8D", "R0"),                 # FPU_STATUS
+                instr("MOVE", "@0xFFFFFF88", "R0"),                 # FPU_X_LO: push +0
+                instr("SUB[M]", "R0", "@0xFFFFFF8D", "0x00320001"),
+                instr("?!Z MOVE", "R2", "W.fpucheck"),
+                instr("?!Z MOVE", "R15", "W.trap9"),
+                instr("MOVE", "@0xFFFFFF8C", "0x101")]              # CLEAR 1
+
     def start_calls(self) -> List[str]:
         """The end of ___wasm_start: the calls of the start function and of
         __wasm_call_ctors, if the module has them, and the return."""
@@ -3261,6 +3290,7 @@ class Translator:
         out = ["", "; Copies the initial values of the globals and the memory to RAM, sets",
                "; the rest of the memory to 0, then calls the start function and",
                "; __wasm_call_ctors, if the module has them.", "___wasm_start"]
+        out += self.fpu_check()
         seq: List[Tuple[bool, int]] = []  # (copied, words) in RAM order
         for copy, n in ([(True, self.ram_globals())]
                         + [(isinstance(v, list), len(v) if isinstance(v, list) else v)
@@ -5312,19 +5342,23 @@ class FunctionTranslator:
             elif op in (0x10A, 0x10B):  # memory.copy, memory.fill
                 self.bulk("copy" if op == 0x10A else "fill", at, name)
             elif op in FLOAT_OPS:
+                self.t.uses_fpu = True
                 routine, params, result = FLOAT_OPS[op]
                 if not (self.t.inline_fpu and self.fpu_op(routine, params, result, at, name)):
                     self.call(f"_{routine}", FuncType(params, [result]), at, name)
             elif op in TRUNC_OPS or op in TRUNC_SAT_OPS:
+                self.t.uses_fpu = True
                 if op in TRUNC_OPS:
                     self.trunc_check(*TRUNC_OPS[op][1:], at, name)
                 routine, src_t, dst_t, _, _ = TRUNC_OPS[TRUNC_SAT_OPS.get(op, op)]
                 if not (self.t.inline_fpu and self.fpu_op(routine, [src_t], dst_t, at, name)):
                     self.call(f"_{routine}", FuncType([src_t], [dst_t]), at, name)
             elif op in FLOAT_CMP_OPS and self.t.inline_fpu:
+                self.t.uses_fpu = True
                 t, _, test = FLOAT_CMP_OPS[op]
                 self.fpu_compare(t, test, at, name)
             elif op in FLOAT_CMP_OPS:
+                self.t.uses_fpu = True
                 t, routine, test = FLOAT_CMP_OPS[op]
                 self.call(f"_{routine}", FuncType([t, t], [I32]), at, name)
                 (res,) = self.pop([I32], at, name)
@@ -5674,10 +5708,10 @@ def translate(data: bytes, source: str, checks: bool = True, library: Optional[s
               memory_pages: Optional[int] = None, mpu: bool = True,
               trust_alignment: bool = False, ram: Optional[int] = None,
               windows: bool = False,
-              inline_fpu: bool = False) -> List[str]:
+              inline_fpu: bool = False, fpu: bool = True) -> List[str]:
     return Translator(parse(data), data, checks, library, memory_bytes,
                       memory_pages, mpu, trust_alignment, ram, windows,
-                      inline_fpu).run(source)
+                      inline_fpu, fpu).run(source)
 
 
 def main() -> None:
@@ -5713,6 +5747,9 @@ def main() -> None:
     ap.add_argument("--inline-fpu", action="store_true",
                     help="write the accesses of the FPU (DEVICES.md §11) inline for the float"
                          " operations, instead of calling the float library, for speed")
+    ap.add_argument("--no-fpu", action="store_true",
+                    help="the float library is the one in software, runtime/float.nasm, so"
+                         " ___wasm_start does not check for the FPU (DEVICES.md §11)")
     args = ap.parse_args()
 
     out = args.output or os.path.splitext(args.input)[0] + ".nasm"
@@ -5745,10 +5782,12 @@ def main() -> None:
             sys.exit("--ram: a library module (--library) cannot run from a ROM")
         if args.ram is not None and args.memory_pages is not None:
             sys.exit("--ram: the memory of code that runs from a ROM cannot grow (--memory-pages)")
+        if args.inline_fpu and args.no_fpu:
+            sys.exit("--inline-fpu: the inline accesses are to the FPU, which --no-fpu leaves out")
         lines = translate(data, os.path.basename(args.input), not args.no_bounds_checks,
                           args.library, memory_bytes, args.memory_pages,
                           not args.no_mpu, args.trust_alignment, args.ram,
-                          args.byte_windows, args.inline_fpu)
+                          args.byte_windows, args.inline_fpu, not args.no_fpu)
     except WasmError as e:
         where = "" if e.offset is None else f":0x{e.offset:x}"
         print(f"{args.input}{where}: error: {e}", file=sys.stderr)

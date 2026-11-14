@@ -277,6 +277,8 @@ LIB_ASM = "___wasm_start MOVE R15, @R13++\n_main {}\n ADD @--R13, 2, R15\n MOVE 
 # that only traps starts with MOVE R2 of its own address. A label of the
 # program, such as ___wasm_memory, has its value in the program.
 TRAPS = {"reachtrap": "AND[M] R0, W.end-1, 0xFC000000",
+         "nofputrap": "MOVE @0xFFFFFF8C, 0x101",
+         "nofputrap_rom": "MOVE @0xFFFFFF8C, 0x101",
          "growtrap": "MOVE R1, 65536",
          "trunc_big": "MOVE R1, 0x4F000000",
          "trunc_small": "MOVE R2, 0x41E00000",
@@ -386,6 +388,8 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "grow": ["--memory-pages", "3"],
            "growtrap": ["--memory-pages", "2"],
            "reachtrap": ["--byte-windows", "--memory-pages", "4096"],
+           "nofputrap_rom": ["--ram", ROM_RAM],
+           "nofpu": ["--no-fpu"],
            "growdyn": ["--memory-pages", "2"],
            "growdyntrap": ["--memory-pages", "2"],
            "sharetrap2_grow": ["--memory-pages", "2"],
@@ -2934,6 +2938,17 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
         code((0, i32_const(4) + mem(I32_LOAD)))), "", 8),
     # Page 1 is reserved, but not part of the memory until it grows, so a
     # load from it traps.
+    # A module that uses the FPU checks for it in ___wasm_start: on niceemu
+    # --no-fpu, whose FPU words are ordinary memory, the check traps with
+    # code 9 before main, with R2 at the check (WASM.md, Start-up), also in
+    # the ___wasm_start of code in a ROM. With --no-fpu, the module has no
+    # check, and 1 + 2 = 3 runs on the FPU of the emulator (EMULATOR).
+    ("nofputrap", main_of(f32(0x3F800000) + f32(0x40000000) + fop(0x92) + I32_REINTERPRET_F32),
+     "", 9),
+    ("nofputrap_rom", main_of(f32(0x3F800000) + f32(0x40000000) + fop(0x92) + I32_REINTERPRET_F32),
+     "", 9),
+    ("nofpu", main_of(f32(0x3F800000) + f32(0x40000000) + fop(0x92) + I32_REINTERPRET_F32),
+     "", 0x40400000),
     ("growtrap", module(
         types(MAIN_TYPE),
         funcs(0),
@@ -3594,10 +3609,16 @@ CASES += [(name + suffix, wasm, extra, expected) for name, wasm, extra, expected
 # 4 * (i + c) keeps the operand of word c with i as its index, as
 # without the windows (hoistagen_win).
 SHAPES["hoistagen_win"] = SHAPES["hoistagen"]
+SHAPES["nofpu"] = (r"W\.fpucheck", False)
+SHAPES["float32"] = (r"^W\.fpucheck$", True)
 # A trusted word access through the window needs no word index, no test
 # of the alignment, and no helper (trust_win).
 SHAPES["trust_win"] = (r"^ +SHR +R\d+, R\d+, 2$|AND\[M\] +R0, R\d+, 3$|@___wasm_memory\["
                        r"|W\.(load|store)[48]", False)
+
+# The options for niceemu, for the cases that run without the FPU. Such
+# a case is not kept for make programs, as a core has the FPU.
+EMULATOR = {"nofputrap": ["--no-fpu"], "nofputrap_rom": ["--no-fpu"]}
 
 # The steps after which niceemu stops a program that runs away. The
 # longest case, recursion, takes some 285000 steps.
@@ -3735,8 +3756,8 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
     trap = name in TRAPS
     text, assembler, image, binary = build(name, wasm_file, extra, tmp, floats, mode, name,
                                            OPTIONS.get(name, []))
-    output = run([NICEEMU, binary])
-    if keep is not None:
+    output = run([NICEEMU, *EMULATOR.get(name, []), binary])
+    if keep is not None and name not in EMULATOR:
         shutil.copy(kept_program(name, wasm_file, extra, tmp, floats, mode, binary, output),
                     os.path.join(keep, name + SUFFIX[mode] + ".bin"))
     # The console output comes before the line that says why it halted.
@@ -3865,6 +3886,8 @@ def main() -> None:
         for mode in ["mpu", "soft"] + (["inline"] if fpu else []):
             floats = float_library(tmp, mode != "soft", fpu and mode != "soft")
             for index, (name, wasm, extra, expected) in enumerate(CASES):
+                if mode == "inline" and "--no-fpu" in OPTIONS.get(name, []):
+                    continue  # nicewasm takes not both
                 jobs.append((index, name, wasm, extra, expected, floats, mode))
         # The cases run in parallel, and are reported in order.
         with concurrent.futures.ThreadPoolExecutor(os.cpu_count()) as pool:

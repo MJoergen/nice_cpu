@@ -90,7 +90,7 @@ What you get:
 
     ./nicewasm.py [-o output.nasm] [--no-bounds-checks] [--trust-alignment] [--byte-windows]
                   [--memory-pages N] [--memory-bytes BYTES] [--ram ADDR]
-                  [--library NAME] [--no-mpu] [--inline-fpu]
+                  [--library NAME] [--no-mpu] [--inline-fpu] [--no-fpu]
                   input.wasm
 
 | Option | Effect |
@@ -105,6 +105,7 @@ What you get:
 | `--library NAME` | Translate a library module instead (see [Library modules](#library-modules)). |
 | `--no-mpu` | For a system without the math unit of DEVICES.md §2: `i32.mul`, and `div` and `rem` of both widths, then call the runtime library instead of using the math unit, and the program must be joined with `runtime/muldiv_soft.nasm`, not `muldiv_mpu.nasm`. |
 | `--inline-fpu` | For speed on a system with the FPU of DEVICES.md §11: write the FPU's accesses inline for the float operations, as `runtime/float_fpu.nasm` makes them, instead of calling it (WASM.md, Runtime routines). The conversions of an `i64` to `f32` still call it, and the program must be joined with it, which also names the FPU's words. On `bench/float.c`, the program takes 2.5% more words, and runs 53% fewer instructions, and 42% fewer cycles on the pipelined core (bench README, The float benchmark). |
+| `--no-fpu` | The program is joined with the float library in software, `runtime/float.nasm`, for a system without the FPU of DEVICES.md §11. Without it, `___wasm_start` of a module that uses floats checks for the FPU and traps with code 9 when it finds none (WASM.md, Start-up). Not with `--inline-fpu`. |
 
 Errors are printed as `file:0xOFFSET: error: message`, where OFFSET is the
 byte offset in the module, or as `file: error: message` when there is no
@@ -139,7 +140,7 @@ of the inputs picks the language: `.c`, `.zig`, or `.rs`.
 | `--memory BYTES` | The initial memory, 65536 by default. It must be positive. The stack is in the memory, so a larger `--stack` needs a larger `--memory` too: `--stack 131072` alone fails with wasm-ld's "initial memory too small", and `--memory 262144` fixes it. |
 | `--no-mpu`, `--inline-fpu`, `--no-bounds-checks`, `--trust-alignment`, `--byte-windows`, `--memory-pages N` | Passed on to `nicewasm.py` (above). With `--no-mpu`, the program is joined with `muldiv_soft.nasm`. |
 | `--memory-bytes BYTES` | Passed on to `nicewasm.py`, with BYTES a number or `auto`. The module is then linked with `--export=__heap_base`, so that `auto` reserves the memory up to the end of the static data. Not with `--memory-pages`. |
-| `--no-fpu` | For a system without the FPU of DEVICES.md §11: join the float library in software, `runtime/float.nasm`, instead of `runtime/float_fpu.nasm`. Not with `--inline-fpu`. |
+| `--no-fpu` | For a system without the FPU of DEVICES.md §11: join the float library in software, `runtime/float.nasm`, instead of `runtime/float_fpu.nasm`, and pass `--no-fpu` to `nicewasm.py`. Not with `--inline-fpu`. |
 | `--asm FILE` | Join a NICE assembly file after the program, so that the program can call a function that the file defines, as the label `_name` of ABI.md; for C it also lets the link leave the function undefined. The option can repeat. |
 | `--no-trap-report` | Leave out the trap report, so that a trap halts silently (see below). |
 | `--monitor` | Build a program for a monitor in ROM, which loads it at `0x8000` and calls it, and to which it returns (ABI.md, "Programs under a monitor"): the start-up code is `runtime/start_wasm_trap_mon.nasm`, or `start_wasm_mon.nasm` with `--no-trap-report`, and the `.bin` file starts at `0x8000`. The monitor's own routines, if the program calls them, come as stubs in a file of the monitor's, joined with `--asm`. niceemu runs such a program only behind a monitor, as it has no word at 0 ([emulator README](../emulator/README.md#usage)). |

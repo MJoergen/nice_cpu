@@ -228,6 +228,7 @@ fn trapName(code: u32) []const u8 {
         6 => "call_indirect: bad index",
         7 => "call_indirect: type mismatch",
         8 => "memory beyond the byte windows",
+        9 => "no FPU",
         else => "unknown code",
     };
 }

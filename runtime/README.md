@@ -158,7 +158,7 @@ to the console and then jumps to `___wasm_trap`:
   `start_wasm_trap_mon.nasm` under a monitor.
 - The line is such as `trap 2: memory access out of bounds at 00003dc9`,
   with the code of R1 and the address of R2, a NICE address, naming the
-  trap as `niceemu --symbols` does (a code above 7 is `trap ?: unknown
+  trap as `niceemu --symbols` does (a code above 9 is `trap ?: unknown
   trap`). It prints with `nice_print` and `nice_putc`, so through
   `___putc_vector` (below), and under a monitor on the monitor's output.
   With `niceasm.py --symbols` or `nicebuild.py --symbols`, and `niceemu

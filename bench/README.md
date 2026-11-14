@@ -608,7 +608,7 @@ are of the float library in software, which `make test` still runs, from
 With the FPU of DEVICES.md §11 (issue
 [#161](https://github.com/MJoergen/nice_cpu/issues/161)), the float
 library is `runtime/float_fpu.nasm`, 289 words, and the program shrinks
-from 16890 words to 10335. The table from the emulator:
+from 16890 words to 10356. The table from the emulator:
 
     phase      instructions       cycles  result
     convert          42793        42821  97943df8  ok
@@ -638,7 +638,7 @@ lists ways to make it faster.
 
 `make test` also runs `float.c` as `build/float_inline.bin`, translated
 with nicewasm's `--inline-fpu`, which writes the FPU's accesses in place
-of most calls of the float library. The program takes 10598 words, 263
+of most calls of the float library. The program takes 10619 words, 263
 more, and the emulator gives:
 
     phase      instructions       cycles  result

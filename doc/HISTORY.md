@@ -759,3 +759,13 @@ from 4124 words to 7209. A small program, such as one under a monitor,
 then wrote its own formatter of integers and strings. On 2026-11-14, the
 i family, `iprintf` and its relatives, gave it `printf` without them, in
 4246 words, and `printf` with `%d` alone became 7298 (#173).
+
+## A program for the FPU on a system without it
+
+From V2.2, nicebuild joined `float_fpu.nasm` to a program that uses
+floats, so the program needed the FPU of DEVICES.md §11. On a system
+without it, such as NiceMonMEGA65, the program read what the system had
+at `0xFFFFFF88`–`0xFFFFFF8F`, computed wrong results, and halted with
+`HALT` and exit status 0. On 2026-11-14, `___wasm_start` began to check
+for the FPU and trap with code 9 when it finds none, and nicewasm gained
+`--no-fpu` to leave the check out (#179).

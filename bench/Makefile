@@ -1,6 +1,8 @@
 PYTHON ?= python3
 CLANG ?= clang
 NICEWASM = $(PYTHON) ../translator/nicewasm.py
+# With NO_FPU=1, nicewasm leaves out the check for the FPU (WASM.md).
+NO_FPU_OPT = $(if $(NO_FPU),--no-fpu)
 ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
 LIBC = ../runtime/libc
@@ -204,7 +206,7 @@ $(BUILD)/bench.full.nasm: ../runtime/start_wasm.nasm $(BUILD)/bench.nasm ../runt
 
 $(BUILD)/dhry.nasm: $(DHRY)/dhry.wasm ../translator/nicewasm.py
 	@mkdir -p $(BUILD)
-	$(NICEWASM) -o $@ $(DHRY)/dhry.wasm
+	$(NICEWASM) $(NO_FPU_OPT) -o $@ $(DHRY)/dhry.wasm
 
 # Dhrystone reads its number of runs with scanf, whose float conversions
 # use the float library, so it is joined with it.
@@ -214,7 +216,7 @@ $(BUILD)/dhry.full.nasm: ../runtime/start_wasm.nasm $(BUILD)/dhry.nasm ../runtim
 
 $(BUILD)/coremark.nasm: $(CM)/coremark.wasm ../translator/nicewasm.py
 	@mkdir -p $(BUILD)
-	$(NICEWASM) -o $@ $(CM)/coremark.wasm
+	$(NICEWASM) $(NO_FPU_OPT) -o $@ $(CM)/coremark.wasm
 
 # CoreMark prints its seconds with %f, and reads its seeds with scanf,
 # so it is joined with the float library too.
@@ -224,7 +226,7 @@ $(BUILD)/coremark.full.nasm: ../runtime/start_wasm.nasm $(BUILD)/coremark.nasm .
 
 $(BUILD)/float.nasm: float.wasm ../translator/nicewasm.py
 	@mkdir -p $(BUILD)
-	$(NICEWASM) -o $@ float.wasm
+	$(NICEWASM) $(NO_FPU_OPT) -o $@ float.wasm
 
 $(BUILD)/float.full.nasm: ../runtime/start_wasm.nasm $(BUILD)/float.nasm ../runtime/lib.nasm \
   ../runtime/muldiv_mpu.nasm $(FLOAT_LIB)

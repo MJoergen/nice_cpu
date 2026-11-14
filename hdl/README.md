@@ -93,12 +93,13 @@ the synthesis check of `make test` and for `make formal`. The top-level
 for `SIM`.
 
 `make test` builds the emulator, analyzes the VHDL, checks that GHDL can
-synthesize both cores, the math unit, the performance counters, the clock
-of the time of day, the timer, the console's receive interrupt, the merge
-of the IRQ sources, the fetch statistics, the data bus decoder, the debug
-link, the SD card controller, the network station, and the port for
-Ethernet frames (`ghdl --synth`), and runs the tests, those of
-the cores once for each core. Everything it makes goes in `build/`.
+synthesize both cores, the math unit, the FPU and its arithmetic unit,
+the performance counters, the clock of the time of day, the timer, the
+console's receive interrupt, the merge of the IRQ sources, the fetch
+statistics, the data bus decoder, the debug link, the SD card
+controller, the network station, and the port for Ethernet frames
+(`ghdl --synth`), and runs the tests, those of the cores once for each
+core. Everything it makes goes in `build/`.
 `make clean` removes it.
 
 The runs go in parallel, one per CPU, or as many as `-j` gives, and

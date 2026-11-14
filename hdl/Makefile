@@ -689,11 +689,12 @@ analyze-nvc:
 	@mkdir -p $(BUILD)
 	$(if $(PREBUILT),,$(NVC) $(NVCOPTS) -a $(SOURCES) $(SIM_SOURCES) $(TEST_SOURCES))
 
-# Checks that GHDL can synthesize both cores, the math unit, the FPU's arithmetic unit, the performance
-# counters, the clock of the time of day, the timer, the console's receive
-# interrupt, the merge of the IRQ sources, the fetch statistics, the data bus
-# decoder, the debug link, the SD card controller, the network station, and
-# the port for Ethernet frames, with the generics in SYNTH_GENERICS_unit.
+# Checks that GHDL can synthesize both cores, the math unit, the FPU and
+# its arithmetic unit, the performance counters, the clock of the time of
+# day, the timer, the console's receive interrupt, the merge of the IRQ
+# sources, the fetch statistics, the data bus decoder, the debug link, the
+# SD card controller, the network station, and the port for Ethernet
+# frames, with the generics in SYNTH_GENERICS_unit.
 SYNTH = multicycle pipeline mpu fpu_unit fpu perf tod timer console_irq irq_merge fetch_stats wb_dmux debug_link sd_regs net_regs eth_regs
 SYNTH_GENERICS_wb_dmux = -gG_SLAVES=4
 
@@ -715,8 +716,10 @@ FORMAL_TASKS = prove cover
 # The pipelined core is checked for a bounded number of cycles only.
 FORMAL_TASKS_pipeline = bmc cover
 FORMAL_TASKS_console_irq = prove bmc cover
-# The debug link is proven twice, with and without a ROM.
+# The FPU's bus is proven for every command, and its stack against a
+# model for the commands of the stack.
 FORMAL_TASKS_fpu = prove prove_stack cover
+# The debug link is proven twice, with and without a ROM.
 FORMAL_TASKS_debug_link = prove prove_held cover cover_side
 FORMAL_TASKS_sd_regs = prove prove_nohold cover
 FORMAL_TASKS_eth_regs = prove prove_nohold cover

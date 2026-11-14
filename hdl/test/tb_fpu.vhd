@@ -9,7 +9,7 @@
 -- for the flags. It does the access, and compares the word a read
 -- returns. It then reads STATUS for the depth and the flags, and reads X
 -- and drops it for each value, and compares those with the state after.
--- After the vectors, it checks the waits of §11.2: while DIV runs, a read
+-- After the vectors, it checks the waits of §11.1: while DIV runs, a read
 -- of CMD is acknowledged two cycles after it is accepted, as any request
 -- is when it need not wait, and a read of X waits for the result.
 -- It reports the first 20 lines that differ, then how many differ, and

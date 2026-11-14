@@ -388,6 +388,8 @@ The README has a section for each device of `hdl/src`: the timer, the console's 
 - `hdl/Makefile:706`: the comment "The debug link is proven twice, with and without a ROM" now stands above `FORMAL_TASKS_fpu`, and the line of the debug link below that. **Fix:** the comment back above its line, and one for the FPU's three tasks.
 - `hdl/test/tb_fpu.vhd:12` names §11.2 for the waits that it checks. The rule of a read of `FPU_CMD` is in §11.1, **Waiting**. **Fix:** §11.1.
 
+**Resolved.** hdl/README.md and the comment above `SYNTH` name the FPU and its arithmetic unit among what `ghdl --synth` checks. The comment of the debug link is back above its line, and the FPU's three tasks have one of their own. `tb_fpu.vhd` names §11.1 for the waits.
+
 ### 5.4 Two lists of the devices
 
 - `doc/README.md:9` lists the devices of DEVICES.md down to "and clock". **Fix:** "clock, and floating-point unit".

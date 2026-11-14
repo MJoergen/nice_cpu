@@ -136,6 +136,15 @@ CASES: List[Tuple[str, str]] = [
     ("add HALT", "1: error: ADD takes 3 operands, got 1"),
     ("X .EQU", "1: error: .EQU takes one value"),
     ("X .EQU 1 2", "1: error: .EQU takes one value"),
+    ("X .EQU 1 + 2 3", "1: error: .EQU takes one value"),
+    # A line with a comma separates its operands with commas only, and an
+    # operand with spaces needs one, unless it is the only operand.
+    (" ADD R1 R2, R3", "1: error: no comma between 'R1' and 'R2': on a line with commas, only"
+     " commas separate the operands"),
+    (" .DAT 1 2,3", "1: error: no comma between '1' and '2': on a line with commas, only"
+     " commas separate the operands"),
+    (" MOVE R1 a + b", "1: error: MOVE takes 2 operands, got 4"),
+    (" JMP a b", "1: error: JMP takes 1 operand, got 2"),
     ("S .EQU 'ab'", "1: error: a string ('ab') is only allowed after .ASCII_L and .ASCII_B"),
     ("A .EQU R1\n .DAT A", "2: error: 'A' is a register where a number is expected"),
     ("A .EQU R1\n .ORG A", "2: error: 'A' is a register where a number is expected"),
@@ -284,7 +293,14 @@ def chain(n: int, reverse: bool, step: str = "") -> str:
 # (source, expected output)
 GOOD: List[Tuple[str, str]] = [
     ("X: .EQU 5\n .DAT X", "00000000 00000005\n"),
-    (" ADD R1 R2, R3", "00000000 00604103\n"),
+    # Spaces in an operand (ISA.md 10.1): on a line with a comma, an
+    # operand runs to the next comma; one operand takes all of its words.
+    # ADD is 3<<21, R1 1<<14, a constant source 0x30<<7, R3 3: 00605803.
+    (" ADD R1, 2 + 1, R3", "00000000 00605803\n00000001 00000003\n"),
+    ("N .EQU 2 + 3\n .DAT 4*N, N - 1", "00000000 00000014\n00000001 00000004\n"),
+    (" .DAT 1 +5", "00000000 00000001\n00000001 00000005\n"),
+    (" .DAT 1 +5, 3", "00000000 00000006\n00000001 00000003\n"),
+    (" INT 1 + 2", "00000000 0c400003\n"),
     (" .ORG 0xFFFFFFFE\n .BLK 2\n HALT",
      "00000000 0c000000\nfffffffe 00000000\nffffffff 00000000\n"),
     (" .ORG 0xFFFFFFFE\n .RES 2\n HALT", "00000000 0c000000\n"),
@@ -297,7 +313,6 @@ GOOD: List[Tuple[str, str]] = [
     (" .ORG 0xFFFFFFFF+2\n HALT", "00000001 0c000000\n"),
     (" .ORG 5\n HALT\n .ORG 2\n HALT", "00000002 0c000000\n00000005 0c000000\n"),
     (" .ORG 0xFFFFFFFF\n .DAT 1, 2", "00000000 00000002\nffffffff 00000001\n"),
-    (" .DAT 1 2,3", "00000000 00000001\n00000001 00000002\n00000002 00000003\n"),
     # Symbols are case-sensitive.
     ("x .EQU 1\nX .EQU 2\n .DAT x, X", "00000000 00000001\n00000001 00000002\n"),
     # One word that is not a mnemonic is a label, even when indented (with
@@ -349,6 +364,10 @@ WARN: List[Tuple[str, str, str]] = [
     # meant as '4*x' would give silently: a warning, also on an .EQU (#118)
     (" .DAT 4 *x",
      "00000000 00000004\n",
+     "{src}:1: warning: '*' after '4' starts a comment; a product has no spaces, "
+     "as in '4*x'\n"),
+    (" MOVE R1, 4 * x",
+     "00000000 00005800\n00000001 00000004\n",
      "{src}:1: warning: '*' after '4' starts a comment; a product has no spaces, "
      "as in '4*x'\n"),
     ("N .EQU 2\n .DAT N * 3",

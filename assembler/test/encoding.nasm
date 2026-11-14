@@ -251,3 +251,20 @@ pl              .DAT    4*pl, 2+3*4, 2*3-1, -2*3, 3*PR, PR*PR-1, 0xFFFFFFFF*2
         ?C      jmpr    :+              ; 4a6: 2063c7b0, 4a7: A8-4a8 = 2
 jr              JMPR    jr              ; 4a8: 0063c7b0, 4a9: 4a8-4aa = fffffffe
 :               JMPR    0               ; A8, 4aa: 0063c7b0, 4ab: 0-4ac = fffffb54
+; spaces in an operand (ISA.md 10.1): on a line with a comma, an operand
+; runs to the next comma, and an instruction or directive that takes one
+; operand takes all of its words. Without a comma, each word is an operand,
+; so .DAT 1 +5 is two words. sa is at 4b0, se at 4b2, and A9 at 4b6.
+                .ORG    0x4b0
+sa              .DAT    1, 2            ; 4b0: 1, 4b1: 2
+se              MOVE    R1, se - sa     ; 4b2: 00005800, 4b3: 4b2-4b0 = 2
+                MOVE    R1, TEN + se    ; 4b4: 00005800, 4b5: 10+4b2 = 4bc
+:               MOVE    R2, 2 + :-      ; A9, 4b6: 00009800, 4b7: 2+4b6 = 4b8
+                MOVE    R3, TEN + 1[R2]  ; 4b8: 3<<14 | 0x32<<7 = 0000d900, 4b9: b
+                .DAT    1 +5            ; 4ba: 1, 4bb: 5
+                .DAT    1 + 5, - 2      ; 4bc: 6, 4bd: fffffffe
+                JMP     se + 2          ; 4be: 0003d800, 4bf: 4b4
+                .BLK    TEN - 9         ; 4c0: 0
+SPACED          .EQU    2 + 3
+                .DAT    4*SPACED        ; 4c1: 4*5 = 14
+                INT     SPACED + 1      ; 4c2: 0x62<<21 | 6 = 0c400006

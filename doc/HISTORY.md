@@ -769,3 +769,14 @@ at `0xFFFFFF88`–`0xFFFFFF8F`, computed wrong results, and halted with
 `HALT` and exit status 0. On 2026-11-14, `___wasm_start` began to check
 for the FPU and trap with code 9 when it finds none, and nicewasm gained
 `--no-fpu` to leave the check out (#179).
+
+## Spaces in an operand
+
+Until 2026-11-14, operands were separated by whitespace or by one comma,
+as in `NICE.pm`, and both could separate the operands of one line, as in
+`ADD R1 R2, R3`. So an operand had no spaces: `MOVE R1, a + b` had
+four operands, and `N .EQU 2 + 3` was an error. Then a line with a comma
+began to separate its operands with commas only, and an instruction or
+directive with one operand to take all of its words, so that a sum or a
+difference may have spaces. `ADD R1 R2, R3` became an error, and
+`.DAT 1 +5, 3` two words, 6 and 3, not three (#174).

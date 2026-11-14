@@ -131,13 +131,19 @@ This section lists what the assembler does beyond it.
 
 **Syntax.**
 
-- Operands are separated by whitespace or by one comma. A comma anywhere
-  else, such as after the mnemonic or two in a row, is an error.
+- Operands are separated by commas, or on a line without a comma between
+  its operands by whitespace (ISA.md §10.1). With commas, an operand may
+  hold spaces, as in `end - data`; two of its words with no `+`, `-`, or
+  `*` between them are an error, which says that a line with commas
+  separates its operands with commas only. An instruction or directive
+  that takes one operand takes all of its words, as in `JMP end + 2`, or
+  if they are not one expression, reports the count of them. A comma
+  anywhere else, such as after the mnemonic or two in a row, is an error.
 - `;` starts a comment anywhere outside a string. `*` starts one only at
   the start of a word, so `R2 *note` is `R2` and a comment, but `R2*note`
   is a product, and an error, as a register is not a number. A `*`
   comment after a constant, as in `4 * x`, gives a warning, since a
-  product has no spaces: `4*x`.
+  product has no spaces: `4*x`. A sum or difference may have them.
 - A line with one word that is not a mnemonic or a directive is a label,
   even when it is indented. When it is indented and has no `:`, as a
   misspelled `HALT` or `RTI` alone on a line would be, the assembler prints

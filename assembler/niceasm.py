@@ -623,6 +623,43 @@ class Assembler:
                 raise AsmError(f"',' after '{tokens[i - 1]}': a comma only separates operands")
 
     @staticmethod
+    def joins(left: str, right: str) -> bool:
+        """Whether two words are parts of one expression: a '+', '-', or
+        '*' ends the left one, or a '+' or '-' starts the right one. A
+        string is never part of one."""
+        if left[:1] in QUOTES or right[:1] in QUOTES:
+            return False
+        return left[-1] in "+-*" or right[0] in "+-"
+
+    @classmethod
+    def operands(cls, words: List[str], commas: List[bool], one: bool) -> List[str]:
+        """The operands of a line from its words after the mnemonic or
+        directive, and for each word whether a comma comes before it
+        (ISA.md section 10.1). If a comma separates them, an operand runs
+        to the next comma, and its words are joined. An instruction or
+        directive that takes one operand takes all of its words as that
+        operand. Otherwise each word is an operand, as before. Words are
+        joined only where an operator stands between them, so that a word
+        that is not part of an expression stays an operand of its own,
+        and a wrong count is reported as such."""
+        if any(commas[1:]):
+            groups: List[List[str]] = []
+            for word, comma in zip(words, commas):
+                if comma or not groups:
+                    groups.append([word])
+                else:
+                    groups[-1].append(word)
+            for g in groups:
+                for a, b in zip(g, g[1:]):
+                    if not cls.joins(a, b):
+                        raise AsmError(f"no comma between '{a}' and '{b}': on a line with "
+                                       f"commas, only commas separate the operands")
+            return ["".join(g) for g in groups]
+        if one and len(words) > 1 and all(cls.joins(a, b) for a, b in zip(words, words[1:])):
+            return ["".join(words)]
+        return words
+
+    @staticmethod
     def strip_colon(name: str) -> str:
         """Drops the ':' that may end a label. '::' keeps it, so that it is
         an error, not the anonymous label ':'."""
@@ -658,7 +695,7 @@ class Assembler:
         if len(tok) >= 2 and tok[1].upper() == ".EQU":  # handled before pass 1
             if self.pass_no == 0:
                 self.check_commas(tok, commas, 2)
-                if len(tok) != 3:
+                if len(tok) < 3 or len(self.operands(tok[2:], commas[2:], True)) != 1:
                     raise AsmError(".EQU takes one value")
                 if tok[0] == ":":
                     raise AsmError("an anonymous label cannot be an .EQU name")
@@ -667,7 +704,7 @@ class Assembler:
                     raise AsmError(f"symbol '{name}' is already defined on line "
                                    f"{self.early_labels[name]}")
                 self.check_name(name)
-                self.equs[name] = tok[2]
+                self.equs[name] = "".join(tok[2:])
                 self.defined_on[name] = line_no
             return
         if self.pass_no == 0:
@@ -715,7 +752,15 @@ class Assembler:
             cond = (m.group(1) == "!") << 3 | CONDITION_FLAGS.index(flag)
             if not tok:
                 raise AsmError("condition without an instruction")
-        self.check_commas(all_tok, commas, len(all_tok) - len(tok) + 1)
+        first = len(all_tok) - len(tok)
+        self.check_commas(all_tok, commas, first + 1)
+        # A modifier after a space is left to instruction(), which says so.
+        if tok[1:] and not tok[1].startswith("["):
+            if tok[0].startswith("."):
+                one = tok[0].upper() in (".ORG", ".BLK", ".RES")
+            else:
+                one = MNEMONICS.get(tok[0].split("[")[0].upper(), (0, 0, 0))[2] == 1
+            tok[1:] = self.operands(tok[1:], commas[first + 1:], one)
 
         if tok[0].startswith("."):
             d = tok[0].upper()

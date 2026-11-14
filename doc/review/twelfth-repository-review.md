@@ -80,6 +80,8 @@ Three things are missing:
 
 RELEASE.md step 2.9 asks for the new tag's version there before `release.py check`. **Fix:** `2.2.0`.
 
+**Resolved.** `build.zig.zon` says `2.2.0`, and the notes of `V2.2` say so under the emulator (§1.1).
+
 ### 1.4 The rest of the checklist
 
 - The milestone `V2.2` has 5 closed issues and none open: #161, #165, #166, #169, and #170.

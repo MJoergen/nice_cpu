@@ -780,3 +780,13 @@ began to separate its operands with commas only, and an instruction or
 directive with one operand to take all of its words, so that a sum or a
 difference may have spaces. `ADD R1 R2, R3` became an error, and
 `.DAT 1 +5, 3` two words, 6 and 3, not three (#174).
+
+## The float conversions of `scanf`
+
+Every program that called `scanf` or one of its relatives got its float
+conversions, and with them the float library, also when it read only
+integers and strings: `sscanf` with `%d` alone was 9103 words, and the
+float library 289 more with the FPU and 6578 without. On 2026-11-14, the
+i family, `iscanf` and its relatives, gave it `scanf` without them, in
+4307 words and without the float library, and `sscanf` with `%d` alone
+became 9190 (#177).

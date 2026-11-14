@@ -284,7 +284,7 @@ Zig keeps only the objects of `libc.a` that the program references.
 
 | Header | Functions |
 |---|---|
-| `stdio.h` | `FILE`, `stdin`, `stdout`, `stderr`, `putchar`, `puts`, `getchar`, `fputc`, `putc`, `fputs`, `fgetc`, `getc`, `ungetc`, `fgets`, `fflush`, `printf`, `fprintf`, `sprintf`, `snprintf`, `vprintf`, `vfprintf`, `vsprintf`, `vsnprintf`, the same without the float conversions, with newlib's names: `iprintf`, `fiprintf`, `siprintf`, `sniprintf`, `viprintf`, `vfiprintf`, `vsiprintf`, `vsniprintf`, and `scanf`, `fscanf`, `sscanf`, `vscanf`, `vfscanf`, `vsscanf` |
+| `stdio.h` | `FILE`, `stdin`, `stdout`, `stderr`, `putchar`, `puts`, `getchar`, `fputc`, `putc`, `fputs`, `fgetc`, `getc`, `ungetc`, `fgets`, `fflush`, `printf`, `fprintf`, `sprintf`, `snprintf`, `vprintf`, `vfprintf`, `vsprintf`, `vsnprintf`, the same without the float conversions, with newlib's names: `iprintf`, `fiprintf`, `siprintf`, `sniprintf`, `viprintf`, `vfiprintf`, `vsiprintf`, `vsniprintf`, and `scanf`, `fscanf`, `sscanf`, `vscanf`, `vfscanf`, `vsscanf`, and the same without the float conversions: `iscanf`, `fiscanf`, `siscanf`, `viscanf`, `vfiscanf`, `vsiscanf` |
 | `string.h` | `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`, `strnlen`, `strcmp`, `strncmp`, `strcpy`, `strncpy`, `strcat`, `strncat`, `strchr`, `strrchr`, `strstr`, `strcspn` |
 | `stdlib.h` | `malloc`, `calloc`, `realloc`, `free`, `abs`, `labs`, `llabs`, `atoi`, `atol`, `strtol`, `strtoul`, `atof`, `strtod`, `strtof`, `rand`, `srand`, `abort`, `exit` |
 | `math.h` | In double, and in float with an `f`, such as `sinf`: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `log`, `log10`, `log2`, `pow`, `sqrt`, `fmod`, `frexp`, `ldexp`, `scalbn`, `modf`, `floor`, `ceil`, `trunc`, `round`, `rint`, `nearbyint`, `fabs`, `copysign`, `fmin`, and `fmax`. The macros `fpclassify`, `isfinite`, `isinf`, `isnan`, `isnormal`, `signbit`, `HUGE_VAL`, `HUGE_VALF`, `INFINITY`, `NAN`, and `math_errhandling`, the types `float_t` and `double_t`, and POSIX's constants, such as `M_PI`. See Math functions below. |
@@ -346,9 +346,18 @@ The library is small on purpose:
   a missing `ERANGE`. `fuzz_strtod.py` (below) checks the result against
   exact arithmetic. The float arithmetic is the float library's, so a
   program that calls `scanf`, even only for integers, is joined with
-  the float library. `sscanf` with `%d` alone was 4166 words; it is now 9082,
-  and the float library comes with it: 289 words with the FPU, and 6578
-  without.
+  the float library. `sscanf` with `%d` alone is 9190 words, and the float
+  library comes with it: 289 words with the FPU, and 6578 without.
+- The i family, `iscanf` and its relatives, with newlib's names, is
+  `scanf` without the float conversions: `siscanf` with `%d` alone is
+  4307 words, and is joined without the float library. A float
+  conversion, `%*f` too, is a matching failure, as a conversion that
+  `scanf` does not know is: it reads no input, ends the scan, and the
+  call returns the number of values stored so far. The two families share
+  one scanner, which reads a float through a pointer that only `scanf` and
+  its relatives pass, so a program that calls both gets the scanner once.
+  `make test` checks that `test/iscanf.c` and `test/iprintf.c` name no
+  label of the float library.
 - `printf` supports the flags `- + space # 0`, with `+` and space for the
   signed and float conversions, as C defines them, a width and a
   precision (either may be `*`), the length modifiers `hh h l ll z t j`,
@@ -465,7 +474,7 @@ the range each function is most used in, such as −10 to 10 for `sin`,
 and with the few steps of the loop around the call. They were measured
 on 2026-11-13. Each also brings the words below into the
 program: its own and those of the routines it calls, the float library
-not counted. A program that uses all of them gets 23392 words, as
+not counted. A program that uses all of them gets 23413 words, as
 `make words` in `bench/` prints. The reduction of a huge argument, past
 2²⁰·π/2, costs `sin` up to 43000 steps and `sinf` up to 26000. `frexp`,
 `ldexp`, and `modf` are 199, 82, and 261 words, and their float versions

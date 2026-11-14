@@ -1,10 +1,14 @@
-// scanf and sscanf. The format may hold white space, which skips any white
-// space in the input, ordinary characters, which must match, and
-// conversions. A conversion may have * to read without storing, a width,
-// and the length modifiers hh h l ll z t j. The conversions are d i u o x X
-// p c s [ n and %, and e E f F g G a A, which read a float as strtod does,
-// into a float, or into a double with l. A set in [ may hold ranges such
-// as a-z, and ^ first negates it.
+// scanf and sscanf, and the i family, iscanf and siscanf. The format may
+// hold white space, which skips any white space in the input, ordinary
+// characters, which must match, and conversions. A conversion may have *
+// to read without storing, a width, and the length modifiers hh h l ll z t
+// j. The conversions are d i u o x X p c s [ n and %, and e E f F g G a A,
+// which read a float as strtod does, into a float, or into a double with
+// l. A set in [ may hold ranges such as a-z, and ^ first negates it. The i
+// family has no float conversions: there, they are a matching failure, as
+// a conversion that scanf does not know is. Only the scanf family passes
+// scan() the function that reads a float, so a program that calls only the
+// i family is linked without __floatscan and the float library.
 #include <ctype.h>
 #include <limits.h>
 #include <stdio.h>
@@ -110,7 +114,33 @@ static int in_set(int c, const char *set, const char *end)
     return neg;
 }
 
-static int scan(struct in *in, const char *fmt, va_list ap)
+// The float conversions: reads a float of at most width bytes, and if p is
+// not NULL stores it there, as a double for size 1, else as a float.
+// Returns the number of values stored, or -1 for a matching failure.
+static int scan_float(struct in *in, int width, int size, void *p)
+{
+    // Within the width. A float cut off, such as "1e+" before a letter, is
+    // a matching failure, as C says.
+    struct fscan f = {in->s, in->f, width, 0, 0, 0};
+    double y = __floatscan(&f, size == 1, 0);
+    if (in->s)
+        in->s += f.n;
+    in->count += f.n;
+    if (f.fail || !f.n)
+        return -1;
+    if (!p)
+        return 0;
+    if (size == 1)
+        *(double *)p = y;
+    else
+        *(float *)p = (float)y;
+    return 1;
+}
+
+typedef int scan_float_fn(struct in *in, int width, int size, void *p);
+
+// floats is scan_float for the scanf family, and NULL for the i family.
+static int scan(struct in *in, const char *fmt, va_list ap, scan_float_fn *floats)
 {
     int n = 0;                  // the number of values stored
     int c = 0;                  // the byte that ended the scan
@@ -259,24 +289,12 @@ static int scan(struct in *in, const char *fmt, va_list ap)
             break;
         }
         case 'e': case 'E': case 'f': case 'F': case 'g': case 'G': case 'a': case 'A': {
-            // Within the width. A float cut off, such as "1e+" before a
-            // letter, is a matching failure, as C says.
-            struct fscan f = {in->s, in->f, width, 0, 0, 0};
-            double y = __floatscan(&f, size == 1, 0);
-            if (in->s)
-                in->s += f.n;
-            in->count += f.n;
-            if (f.fail || !f.n) {
+            int r = floats ? floats(in, width, size, store ? va_arg(ap, void *) : NULL) : -1;
+            if (r < 0) {
                 c = 0;
                 goto done;
             }
-            if (store) {
-                if (size == 1)
-                    *va_arg(ap, double *) = y;
-                else
-                    *va_arg(ap, float *) = (float)y;
-                n++;
-            }
+            n += r;
             break;
         }
         default:
@@ -294,13 +312,13 @@ done:
 int vsscanf(const char *s, const char *fmt, va_list ap)
 {
     struct in in = {s, NULL, 0};
-    return scan(&in, fmt, ap);
+    return scan(&in, fmt, ap, scan_float);
 }
 
 int vfscanf(FILE *f, const char *fmt, va_list ap)
 {
     struct in in = {NULL, f, 0};
-    return scan(&in, fmt, ap);
+    return scan(&in, fmt, ap, scan_float);
 }
 
 int vscanf(const char *fmt, va_list ap)
@@ -331,6 +349,50 @@ int scanf(const char *fmt, ...)
     va_list ap;
     va_start(ap, fmt);
     int n = vscanf(fmt, ap);
+    va_end(ap);
+    return n;
+}
+
+int vsiscanf(const char *s, const char *fmt, va_list ap)
+{
+    struct in in = {s, NULL, 0};
+    return scan(&in, fmt, ap, NULL);
+}
+
+int vfiscanf(FILE *f, const char *fmt, va_list ap)
+{
+    struct in in = {NULL, f, 0};
+    return scan(&in, fmt, ap, NULL);
+}
+
+int viscanf(const char *fmt, va_list ap)
+{
+    return vfiscanf(stdin, fmt, ap);
+}
+
+int fiscanf(FILE *f, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vfiscanf(f, fmt, ap);
+    va_end(ap);
+    return n;
+}
+
+int siscanf(const char *s, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsiscanf(s, fmt, ap);
+    va_end(ap);
+    return n;
+}
+
+int iscanf(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int n = viscanf(fmt, ap);
     va_end(ap);
     return n;
 }

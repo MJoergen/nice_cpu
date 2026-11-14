@@ -54,4 +54,13 @@ int vfscanf(FILE *f, const char *fmt, va_list ap);
 int vscanf(const char *fmt, va_list ap);
 int vsscanf(const char *s, const char *fmt, va_list ap);
 
+// The i family, scanf and its relatives without the float conversions
+// e E f F g G a A, which are a matching failure.
+int iscanf(const char *fmt, ...) __attribute__((format(scanf, 1, 2)));
+int siscanf(const char *s, const char *fmt, ...) __attribute__((format(scanf, 2, 3)));
+int fiscanf(FILE *f, const char *fmt, ...) __attribute__((format(scanf, 2, 3)));
+int vfiscanf(FILE *f, const char *fmt, va_list ap);
+int viscanf(const char *fmt, va_list ap);
+int vsiscanf(const char *s, const char *fmt, va_list ap);
+
 #endif

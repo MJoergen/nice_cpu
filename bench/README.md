@@ -494,11 +494,11 @@ and `make test` runs it.
 nicewasm, the measure that [translator/README.md](../translator/README.md)
 quotes for `test/safe.zig` and the float library. `make words` prints it
 for `bench.wasm`, `translator/test/safe.wasm`, `coremark/coremark.wasm`,
-and `runtime/float.wasm`: 11588, 5903, 30138, and 6578 words. 3052 of the benchmark's words are the
+and `runtime/float.wasm`: 11588, 5903, 30239, and 6578 words. 3052 of the benchmark's words are the
 float conversions of `printf`, which every program that calls it gets,
 and `iprintf` leaves out (runtime/README.md). It also builds `build/math.wasm`, with
 clang, a module of all the math functions of the C library in double
-and float, and prints its size, 23392 words, which runtime/README.md
+and float, and prints its size, 23413 words, which runtime/README.md
 quotes. Each module is translated and
 assembled on its own, with the labels it uses but does not define, such
 as the runtime's routines, defined as 0 first; a constant takes a whole

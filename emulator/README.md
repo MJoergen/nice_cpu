@@ -649,7 +649,9 @@ steps of the last line. Without `--step-time` the write is ignored, as
 on an FPGA core. Under the link, a single step runs the rest of a skip
 with the next step (DEBUG.md §6). The probe `test/skip.nasm` shows these
 rules, with the timer and `--irq`, and `test/skipreq.nasm` with `--nmi`
-and the console.
+and the console. `make test` runs `skip.nasm` three more times:
+`skip_off` without `--step-time`, `skip_limit` with a step limit that
+cuts its first skip short, and `skip_mem` with `--no-cycle-counter`.
 
 The console raises its request on an edge (DEVICES.md §1.9). Where a read
 waits for its byte, from stdin, a file, or the link without the window,

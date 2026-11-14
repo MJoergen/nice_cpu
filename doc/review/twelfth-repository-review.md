@@ -385,6 +385,8 @@ HISTORY.md has the rename and TODO.md, and nothing else of this release. Two thi
 
 The README says that `fpu_mem` runs `fpu.nasm` again with `--no-fpu`. It does not say that `skip.nasm` runs three more times, as `skip_off`, `skip_limit`, and `skip_mem`: without `--step-time`, cut short by the step limit, and with `--no-cycle-counter`. **Fix, if wanted:** one sentence after "The probe `test/skip.nasm` shows these rules."
 
+**Resolved.** That paragraph now names `test/skipreq.nasm` (§3.8) beside `skip.nasm`, and says that `make test` runs `skip.nasm` three more times, as `skip_off`, `skip_limit`, and `skip_mem`, with what each changes.
+
 ## 6. What was checked, and found right
 
 These are recorded so that the next review need not repeat them.

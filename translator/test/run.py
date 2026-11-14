@@ -29,7 +29,10 @@ the run, every word of the program image must be as it was, and
 ___wasm_ram_end must be the word that RAM_END gives. A case in RESERVED
 is translated with --memory-bytes, and must say that it reserves the
 bytes that RESERVED gives. The expected results were worked out by hand
-from the sources."""
+from the sources.
+
+With --keep DIR, each program is left in DIR for make programs in hdl/,
+with a smaller memory where that gives the same result (kept_program)."""
 
 from __future__ import annotations
 
@@ -3617,12 +3620,14 @@ def float_library(tmp: str, mpu: bool, fpu: bool) -> Tuple[str, Set[str]]:
     return asm, labels
 
 
-def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
-          floats: Tuple[str, Set[str]], mode: str, keep: Optional[str]) -> List[str]:
+def build(name: str, wasm_file: str, extra: str, tmp: str, floats: Tuple[str, Set[str]], mode: str,
+          stem: str, options: List[str]) -> Tuple[str, niceasm.Assembler, Dict[int, int], str]:
+    """Translates the case with OPTIONS, joins and assembles it as STEM in
+    tmp, and returns the translation, the assembler, the image, and the
+    .bin file."""
     mpu = mode != "soft"
-    trap = name in TRAPS
-    asm = os.path.join(tmp, name + ".nasm")
-    run([sys.executable, NICEWASM, *OPTIONS.get(name, []), *([] if mpu else ["--no-mpu"]),
+    asm = os.path.join(tmp, stem + ".nasm")
+    run([sys.executable, NICEWASM, *options, *([] if mpu else ["--no-mpu"]),
          *(["--inline-fpu"] if mode == "inline" else []),
          "-o", asm, wasm_file])
     hand = os.path.join(HERE, name + ".nasm")
@@ -3643,16 +3648,73 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
             with open(part) as f:
                 lines += f.readlines()
     assembler = niceasm.Assembler()
-    errors = assembler.run(lines, name + ".full.nasm")
+    errors = assembler.run(lines, stem + ".full.nasm")
     if errors:
         raise RuntimeError("\n".join(errors))
     image = dict(assembler.output())
-    binary = os.path.join(tmp, name + ".bin")
+    binary = os.path.join(tmp, stem + ".bin")
     with open(binary, "w") as f:
         f.writelines(f"{a:08x} {w:08x}\n" for a, w in sorted(image.items()))
-    if keep is not None:
-        shutil.copy(binary, os.path.join(keep, name + SUFFIX[mode] + ".bin"))
+    return text, assembler, image, binary
+
+
+# The sizes in bytes that a kept program's memory is tried with, smallest
+# first (kept_program).
+KEEP_BYTES = [4096, 16384]
+
+
+# The options that set the size of the memory themselves, with which a
+# kept program keeps its memory (kept_program).
+MEMORY_OPTIONS = {"--memory-pages", "--memory-bytes", "--ram", "--library"}
+
+
+def outcome(output: str, trap: bool) -> Tuple[str, ...]:
+    """What a run gives, from the emulator's output: the console output, why
+    it halted, R1, and the exit status, and for a trap R2 too, where it
+    trapped. The steps, the PC, and the other registers may differ with the
+    size of the memory."""
+    at = output.find("Halted (")
+    if at < 0:
+        return (output,)
+    lines = output[at:].splitlines()
+    regs = dict(re.findall(r"\b(R\d+) +([0-9a-f]{8})", output[at:]))
+    return (output[:at], lines[0].split(" after ")[0], regs.get("R1", ""), lines[-1],
+            regs.get("R2", "") if trap else "")
+
+
+def kept_program(name: str, wasm_file: str, extra: str, tmp: str, floats: Tuple[str, Set[str]], mode: str,
+                 binary: str, output: str) -> str:
+    """The program to keep for make programs in hdl/. That compares the
+    core with the emulator only, so the module may reserve less of its
+    memory than the case, which ___wasm_start then clears in fewer steps.
+    The first size of KEEP_BYTES whose run gives the same outcome is kept,
+    or else the case as it is. So a case that needs the whole page, such
+    as one that reads near its end, keeps it. A case whose OPTIONS set the
+    size of the memory is kept as it is."""
+    options = OPTIONS.get(name, [])
+    if MEMORY_OPTIONS & set(options):
+        return binary
+    trap = name in TRAPS
+    for size in KEEP_BYTES:
+        try:
+            small = build(name, wasm_file, extra, tmp, floats, mode, f"{name}_{size}",
+                          [*options, "--memory-bytes", str(size)])[3]
+        except RuntimeError:
+            continue
+        if outcome(run([NICEEMU, small]), trap) == outcome(output, trap):
+            return small
+    return binary
+
+
+def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
+          floats: Tuple[str, Set[str]], mode: str, keep: Optional[str]) -> List[str]:
+    trap = name in TRAPS
+    text, assembler, image, binary = build(name, wasm_file, extra, tmp, floats, mode, name,
+                                           OPTIONS.get(name, []))
     output = run([NICEEMU, binary])
+    if keep is not None:
+        shutil.copy(kept_program(name, wasm_file, extra, tmp, floats, mode, binary, output),
+                    os.path.join(keep, name + SUFFIX[mode] + ".bin"))
     # The console output comes before the line that says why it halted.
     at = output.find("Halted (")
     console, output = output[:max(at, 0)], output[max(at, 0):]

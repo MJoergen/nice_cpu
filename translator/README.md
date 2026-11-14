@@ -558,7 +558,14 @@ missing is skipped, and the PASS line says which; CI has Zig and clang, not Rust
 `test/run.py --keep DIR` also leaves each
 program in `DIR/X.bin`, `DIR/X_soft.bin` for the run with `--no-mpu`, or
 `DIR/X_inline.bin` for the run with `--inline-fpu`, for `make programs`
-in `hdl/`, which runs them on the FPGA core, with the FPU.
+in `hdl/`, which runs them on the FPGA core, with the FPU. That compares
+the core with the emulator only, so a kept program may differ from the
+case: it is translated again with `--memory-bytes 4096`, and then
+16384, after the case's own options, and the first whose run gives the
+same console output, halt, R1, exit status, and for a trap R2, is kept.
+`___wasm_start` then clears fewer words. A case that needs the whole page,
+such as one that reads near its end, keeps it, and so does a case whose
+options set the memory's size.
 `test/run.py`, `test/fuzz.py`, and `test/errors.py` run their cases in
 parallel, one per CPU, each with files of its own, and report them
 in order.

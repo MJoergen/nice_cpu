@@ -18,9 +18,12 @@ what each does. `wb_dmux` is [the data bus decoder](#the-data-bus-decoder),
 which puts the memory and the devices on the core's data bus. The debug
 link's side port is for a client inside the system, such as a debugger on
 the board ([The debug link](#the-debug-link)). `make slow` in the top
-directory runs the benchmark, Dhrystone, CoreMark, and the stride sweeps
-on both cores at once, and `release.py check` records what it and `make
-timing` found in the release stamp ([release/RELEASE.md](../release/RELEASE.md)).
+directory runs the benchmark, Dhrystone, CoreMark, the float benchmark
+(`float` and `float_inline`), and the stride sweeps on both cores at
+once, and with them `make -C emulator fpu-long` and the C library's
+fuzz, `make -C runtime/libc fuzz`. `release.py check` records what it
+and `make timing` found in the release stamp
+([release/RELEASE.md](../release/RELEASE.md)).
 
 - [Folder contents](#folder-contents)
 - [Running the tests](#running-the-tests)
@@ -1364,8 +1367,11 @@ the pipelined core on 20 CPUs on 2026-11-14 (#169), bound by
 times as long. CI runs it in nvc on both cores, a job for each, of 13
 minutes on 2026-11-14. `SHARD=I/N` runs the Ith of N shares of the
 programs, of nearly equal steps, longest first. That run is the release's: the
-top-level `make slow` leaves `make programs` out ([RELEASE.md](../release/RELEASE.md)). It does not run `runtime/libc/test/fuzz_printf.py`, `fuzz_strtod.py`, or `fuzz_math.py`, which
-need clang, or the benchmark, which `make core` in `bench/` runs. `make test KEEP=DIR`
+top-level `make slow` leaves `make programs` out ([RELEASE.md](../release/RELEASE.md)).
+`make programs` does not run `runtime/libc/test/fuzz_printf.py`,
+`fuzz_strtod.py`, or `fuzz_math.py`, which need clang and run on the
+emulator in the top-level `make slow`, or the benchmark, which `make
+core` in `bench/` runs. `make test KEEP=DIR`
 in `runtime/` and `test/run.py --keep DIR` and `test/fuzz.py --keep DIR` in `translator/` run their
 tests and leave the programs in `build/programs`, with the console input
 of those that read one. `test/run.py --keep` keeps a case translated

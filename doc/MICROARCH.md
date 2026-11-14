@@ -499,7 +499,7 @@ the condition is known. These are the shares of all instructions:
 
 | | `bench.c` through nicewasm | `hand.nasm` |
 |---|---|---|
-| Instructions | 1697021 | 493964 |
+| Instructions | 1697010 | 493964 |
 | Skipped | 19.1% | 18.4% |
 | Words per instruction, mean | 1.85 | 1.66 |
 | Micro-ops per instruction, mean | 1.00 | 1.14 |

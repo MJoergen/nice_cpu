@@ -185,7 +185,9 @@ emulator has `TIME_SKIP` (#170), and the C library printf without floats
 
 - `bench.c` runs the same instructions in its phases. The C library's
   i family moves its code, and the estimate is 2338771 cycles, 500 fewer
-  than in V2.1.
+  than in V2.1, and the pipelined core takes 2339110. Dhrystone takes
+  2276 cycles a run on the pipelined core, 0.250 DMIPS/MHz, where it
+  took 2302.
 - `float.c` with the FPU, and with `--inline-fpu`: on the pipelined
   core 617442 and 355798 cycles, 3.1 times and 5.3 times fewer than the
   1902079 of the float library in software. The cycle model takes the

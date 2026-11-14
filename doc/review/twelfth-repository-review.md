@@ -320,6 +320,8 @@ The **Clock** bullet, line 535, says of the MEGA65's real-time clock: "NiceMonME
 
 Line 267: "Assembled, `float.nasm` is about 6900 words, 7150 with its stack." As a program joins it, it is 6844 words, 264 of them its memory, the stack and 8 words of data: the float benchmark shrinks by 6555 words, 6844 less the 289 of `float_fpu.nasm`. The sentence dates from 2026-10-27. The 6578 words that the other documents quote are `make -C bench words`, the module without `--no-mpu` and without its memory. **Fix:** 6580 and 6844.
 
+**Resolved.** runtime/README.md gives 6844 words joined to a program, 6580 without its stack and its 8 words of data. Measured again: `bench/build/nofpu/float.bin` is 6555 words larger than `float.bin`, and `float_fpu.nasm` is 289.
+
 ### 4.5 bench/README.md: "the 1916828 without the FPU"
 
 Line 618: "That is 3.3 times fewer cycles than the 1916828 without the FPU". 1916828 is the estimate of `make cycles` in the table above it. The pipelined core takes 1917617, as line 584 says, and as it does at this commit. The factor is 3.3 either way. **Fix:** 1917617.

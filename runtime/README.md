@@ -264,8 +264,8 @@ bit, as its radicand needs 128 bits.
 | The same with `df` | For f64. |
 
 The routines use the words `WL.float.memory` as their own stack, 256
-words that are part of the program image. Assembled, `float.nasm` is about
-6900 words, 7150 with its stack.
+words that are part of the program image, followed by 8 words of data.
+Joined to a program, `float.nasm` is 6844 words, 6580 without those 264.
 
 `make float` rebuilds `float.wasm` from `float.zig`. It needs Zig 0.17,
 whose compiler_rt sources it copies next to `float.zig`. The routines must

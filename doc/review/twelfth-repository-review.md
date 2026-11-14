@@ -219,6 +219,8 @@ So these pass every test of `make -C runtime test`: `DROP 2` in place of `DROP` 
 
 **Fix:** three cases: 62 bytes, 65536 bytes, and a count of the `.BLK` words.
 
+**Resolved.** `run.py` has two cases more: `small62`, `small` with 62 bytes, which reads its word at byte 60 only if the bytes are rounded up to a word, and `smallfull`, which reserves 65536 bytes, as many as the memory has, and stores and loads its last word. Each case of `RESERVED` must also have the words of its bytes after `___wasm_memory`, counted in its `.RES`, `.BLK`, and `.DAT` lines. Without the rounding, with `>=` for `>`, or with one word too many reserved, `run.py` now fails.
+
 ### 3.8 The emulator: the edges at 2^31, and the ends of a skip
 
 38 changes to `fpu.zig` and `cpu.zig` were tried, and 26 fail a test. Two of the rest change nothing that can be seen. These pass every test:

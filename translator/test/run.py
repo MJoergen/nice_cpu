@@ -28,7 +28,7 @@ RAM_END is translated with --ram, for code that runs from a ROM: after
 the run, every word of the program image must be as it was, and
 ___wasm_ram_end must be the word that RAM_END gives. A case in RESERVED
 is translated with --memory-bytes, and must say that it reserves the
-bytes that RESERVED gives. The expected results were worked out by hand
+bytes that RESERVED gives, and have their words, in .RES and .DAT. The expected results were worked out by hand
 from the sources.
 
 With --keep DIR, each program is left in DIR for make programs in hdl/,
@@ -424,6 +424,8 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "memory_c_rom": ["--ram", ROM_RAM, "--memory-bytes", "8192"],
            "small": ["--memory-bytes", "64"],
            "smalltrap": ["--memory-bytes", "64"],
+           "small62": ["--memory-bytes", "62"],
+           "smallfull": ["--memory-bytes", "65536"],
            "rom_small": ["--memory-bytes", "auto"],
            "data_c_small": ["--memory-bytes", "8192"],
            "memory_c_small": ["--memory-bytes", "8192"]}
@@ -432,7 +434,7 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
 # reserved (WASM.md, Linear memory), and the bytes reserved. rom.c's
 # __heap_base is 4400 (RAM_END).
 RESERVED = {"small": 64, "smalltrap": 64, "rom_small": 4400, "data_c_small": 8192,
-            "memory_c_small": 8192}
+            "memory_c_small": 8192, "small62": 64, "smallfull": 65536}
 
 # The cases for code that runs from a ROM (WASM.md, Code in a ROM), and
 # the word after their words in RAM, ___wasm_ram_end: ROM_RAM plus the
@@ -3534,6 +3536,20 @@ CASES += [
         code((1, i32_const(60) + local_set(0) + local_get(0) + mem(I32_LOAD) + DROP
               + local_get(0) + mem(I32_LOAD, offset=1)))), "", 2),
 ]
+# small62 is small with 62 bytes, which nicewasm rounds up to a word, so
+# that word 15 is there. smallfull stores and loads the last word of a
+# page with the whole page reserved, as many bytes as the memory has.
+CASES += [("small62", wasm, extra, expected) for name, wasm, extra, expected in CASES
+          if name == "small"]
+CASES += [
+    ("smallfull", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code((1, i32_const(65532) + local_set(0) + local_get(0) + i32_const(0x12345678)
+              + mem(I32_STORE) + local_get(0) + mem(I32_LOAD)))), "", 0x12345678),
+]
 # ___wasm_start sets the words in RAM to their initial values, so a
 # second call starts the module fresh. Global 0 is an i64, 0x1_00000002,
 # global 1 the immutable seven = 7, in the image, and global 2 count = 5,
@@ -3745,6 +3761,8 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
         problems.append("the memory is in the program image")
     if name in RESERVED and f"; Linear memory: the first {RESERVED[name]} bytes of" not in text:
         problems.append(f"the memory is not {RESERVED[name]} bytes")
+    if name in RESERVED and memory_words(text) != RESERVED[name] // 4:
+        problems.append(f"the memory has {memory_words(text)} words, not {RESERVED[name] // 4}")
     if name in RAM_END:
         end = int(assembler.equs.get("___wasm_ram_end", "0"), 0)
         if end != RAM_END[name]:
@@ -3778,6 +3796,25 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
     if problems:
         problems.append(output)
     return problems
+
+
+def memory_words(text: str) -> Optional[int]:
+    """The words of the linear memory in a translated module: those of the
+    .RES and .DAT lines after ___wasm_memory, up to the next label or
+    empty line."""
+    lines = text.splitlines()
+    if "___wasm_memory" not in lines:
+        return None
+    words = 0
+    for line in lines[lines.index("___wasm_memory") + 1:]:
+        if not line.strip() or not line[0].isspace():
+            break
+        parts = line.split(None, 1)
+        if parts[0] in (".RES", ".BLK"):
+            words += int(parts[1].split(";")[0], 0)
+        elif parts[0] == ".DAT":
+            words += len(parts[1].split(";")[0].split(","))
+    return words
 
 
 def run_case(tmp: str, keep: Optional[str], index: int, name: str, wasm: Union[bytes, str], extra: str,

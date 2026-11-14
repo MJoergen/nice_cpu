@@ -602,7 +602,7 @@ are of the float library in software, which `make test` still runs, from
 With the FPU of DEVICES.md §11 (issue
 [#161](https://github.com/MJoergen/nice_cpu/issues/161)), the float
 library is `runtime/float_fpu.nasm`, 289 words, and the program shrinks
-from 16825 words to 10270. The table from the emulator:
+from 16890 words to 10335. The table from the emulator:
 
     phase      instructions       cycles  result
     convert          42793        42821  97943df8  ok
@@ -616,22 +616,23 @@ That is 5.9 times fewer instructions than with `float.nasm`. On the
 pipelined core, `make core CORE_PROGRAMS=float` gives:
 
     phase      instructions       cycles  result
-    convert          42793       117847  97943df8  ok
-    dot32             4946        16240  c0c723f7  ok
-    dot64             6569        18452  ba3319ea  ok
-    mandel          114317       407645  4c25faf9  ok
-    norm             11679        40252  7703cd00  ok
-    total           180304       600436
+    convert          42793       119127  97943df8  ok
+    dot32             4946        16752  c0c723f7  ok
+    dot64             6569        18964  ba3319ea  ok
+    mandel          114317       421787  4c25faf9  ok
+    norm             11679        40812  7703cd00  ok
+    total           180304       617442
 
-That is 3.2 times fewer cycles than the 1916828 without the FPU, at 3.33
-per instruction. `make cycles` gives 595114. The FPU's unit takes 14
+That is 3.1 times fewer cycles than the 1902079 that the program takes
+without the FPU (`make core CORE_PROGRAMS=float NO_FPU=1`), at 3.42 per
+instruction. `make cycles` gives 612025. The FPU's unit takes 14
 cycles for an `ADD` and 16 for a `MUL`, and the FPU about 4 more for the
 command. Issue [#164](https://github.com/MJoergen/nice_cpu/issues/164)
 lists ways to make it faster.
 
 `make test` also runs `float.c` as `build/float_inline.bin`, translated
 with nicewasm's `--inline-fpu`, which writes the FPU's accesses in place
-of most calls of the float library. The program takes 10533 words, 263
+of most calls of the float library. The program takes 10598 words, 263
 more, and the emulator gives:
 
     phase      instructions       cycles  result
@@ -643,7 +644,7 @@ more, and the emulator gives:
     total            85159        85299
 
 That is 53% fewer instructions than with the calls. On the pipelined core
-it takes 355798 cycles, 41% fewer than 600436, at 4.18 per instruction,
+it takes 355798 cycles, 42% fewer than 617442, at 4.18 per instruction,
 and `make cycles` gives 352416.
 
 ## Dhrystone

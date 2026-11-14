@@ -328,6 +328,8 @@ Line 267: "Assembled, `float.nasm` is about 6900 words, 7150 with its stack." As
 
 Line 618: "That is 3.3 times fewer cycles than the 1916828 without the FPU". 1916828 is the estimate of `make cycles` in the table above it. The pipelined core takes 1917617, as line 584 says, and as it does at this commit. The factor is 3.3 either way. **Fix:** 1917617.
 
+**Resolved.** The figures were measured again, as `float.wasm` changed after this review with the printf of the i family, and the FPU's register of requests changed the core's cycles. The pipelined core now takes 617442 cycles for `float`, 355798 for `float_inline`, and 1902079 for `float` with `float.nasm`, all in nvc. bench/README.md compares the first with the third, 3.1 times, at 3.42 per instruction, and gives the words, 16890, 10335, and 10598, the 42% of `float_inline`, and `make cycles`, 612025. translator/README.md has the 2.5% and the 42%.
+
 ### 4.6 DEVICES.md §11: the time of `ISQRT`
 
 - §11.5, line 895: "`DIV`, `SQRT`, and `ISQRT` some 70" cycles. In `fpu.vhd`, `ISQRT` is `SQRT` toward zero and then the rounding to a whole number, two operations of the arithmetic unit. Of finite operands it takes 78 to 98 cycles, with a median of 92, where `SQRT` takes 70 to 75 (§3.12).

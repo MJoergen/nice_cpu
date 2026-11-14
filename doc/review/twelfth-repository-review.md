@@ -331,6 +331,8 @@ Line 618: "That is 3.3 times fewer cycles than the 1916828 without the FPU". 191
 
 **Fix:** "`DIV` and `SQRT` some 70, and `ISQRT` some 90" in §11.5, and "`ISQRT` is one command" in §11.3. The cycle model's `--fpu-long`, 75, counts `ISQRT` with `DIV`; no benchmark uses `ISQRT`, so no figure changes.
 
+**Resolved.** §11.5 gives `DIV` and `SQRT` some 70 cycles, and `ISQRT`, `SQRT` toward zero and then a rounding, some 90. §11.3 says that `ISQRT` is one command where `SQRT` and a correction would be several, and no longer that it takes the time of `SQRT`.
+
 ### 4.7 `math.h` and `libm.h`: "NICE has no floating-point exceptions", optional
 
 `runtime/libc/include/math.h:6` and `src/math/libm.h:6` say that NICE has no floating-point exceptions, "as the float library raises none". The FPU has the flags invalid, division by zero, and overflow (DEVICES.md §11.2). What holds is ABI.md's sentence: compiled and translated code never reads them. **Fix, if wanted:** "the C library reads no flag of the FPU" in both.

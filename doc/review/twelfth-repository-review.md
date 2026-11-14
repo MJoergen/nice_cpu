@@ -31,7 +31,7 @@ Where this review ran the case that is missing, the code is right: the figures o
 
 **The documents of the FPU agree with each other and with the code** (§6): DEVICES.md §11, the READMEs, ABI.md, WASM.md, TOOLCHAIN.md, the usage texts, and every figure that they quote but three. What is stale is small (§4): the board's clock, which it sets from its real-time clock since its `V2.0.1`, the times and the counts of `make formal` and `make programs`, the math unit as the slave that waits longest, the size of `float.nasm`, one cycle count, and the time of `ISQRT`, which is some 90 cycles and not 70. What is missing is in `hdl/` (§5): its README has no section for the FPU, as it has for every other device, and MICROARCH.md §8 names neither the FPU nor the clock.
 
-**Nothing is fixed, and no issue is filed.** `make all` passes on the unchanged tree, and CI passed every job on 7593bbc. Before the tag: §2.1, §2.2, and §1.1 to §1.3. The findings of §3 are tests to add, and those of §3.1, §3.9, and §3.13 may be issues for `V2.3` beside #164.
+**Every finding is closed** on `dev-V2.2`, with a commit for each and a **Resolved** paragraph under each. The two bugs are fixed: `ISQRT` and `SCALE10` no longer use `fma`, and the vectors are replayed on the baseline CPU in `make test` and `make dist` (§2.1); `DIGITS` takes the smallest e for which the digits are below 10^n, in DEVICES.md, the model, the emulator, and `fpu.vhd`, and is checked against Python's `%e` (§2.2). The release steps are done: the notes of `V2.2` (§1.1), DEVICES.md §8 for a system without the FPU (§1.2), and the version (§1.3). #172 met 100 MHz for the FPU (§3.1). The tests of §3 are in `make test` or `make slow`, and each was seen to fail on the change it is for. The stale statements of §4 and the gaps of §5 are fixed, with the figures measured again where af029f1 and #172 changed them. Three things became issues: a check for the FPU at the start is #179, the float instructions in `fuzz.py` are #180, and the bound of `SCALE10` beyond k = 22 joins phase 2 in #167. `make test` passes on the result, with 1632 lines of `PASS`, and so do the type checks and the lint. What is left: `DIGITS` now takes up to 3363 cycles, where a scan found 3145 before, the bound of `tb_fpu` is no longer shown to catch a `DIGITS` that starts one round too high, a pause during a skip is still untested, `tb_link` has no FPU, and Zig's `ldexp` is not yet reported upstream. The figures of `bench.c` in bench/README.md changed with af029f1, by 500 cycles, and are release step 2.4.
 
 ## 1. The release
 
@@ -92,6 +92,8 @@ RELEASE.md step 2.9 asks for the new tag's version there before `release.py chec
 - `make all` passes here, and `make -C doc test` and `pdfcheck` with it.
 - CI passed every job on 7593bbc.
 
+**Resolved.** Nothing here needed a fix. The milestone `V2.2` now holds #172 too, closed by its commits on `dev-V2.2`. `fpu.vhd` changed for §2.2, which is not the interrupt path, and `make timing UNIT=fpu` ran before and after it.
+
 ## 2. Two bugs that every test passes
 
 ### 2.1 `ISQRT` is wrong in the emulators of a release
@@ -151,6 +153,8 @@ DEVICES.md §11.3, line 822: "D, the digits as a whole number, is `NEAREST` of `
 No rule is broken: CONTRIBUTING.md keeps 100 MHz for the pipelined core, the FPU is off its paths, and no release waits for the board. But the documents read as if the FPU ran at the board's clock. DEVICES.md §11.5 gives its times "at 100 MHz", and §8 says that NiceMonMEGA65 "is to give up" the FPU's words to it. A board that takes `fpu.vhd` as it is fails its timing.
 
 **Fix:** an issue, with #164 or beside it, for the paths and for a target that measures the FPU: the two scripts of this review are `fpu_timing.tcl` and `fpu_timing2.tcl`, to become `make timing UNIT=fpu` or a file beside `timing.tcl`. Until the paths are fixed, a sentence in the `V2.2` notes, in hdl/README.md (§5.1), and in the board's issue (§1.2) that says the FPU does not meet 10 ns yet, with the figures above.
+
+**Resolved.** By #172, after this review was written. `make timing UNIT=fpu` places the FPU alone, out of context, with a budget of 1.0 ns on its own paths in `timing_budget.py`, and `release.py check` runs it beside the core's. The unit's decisions are precomputed, and the FPU registers each request. On the MEGA65 it meets in both flows, with the `DIGITS` of §2.2 by +1.276 ns in the default flow and +1.097 ns in the `timing` flow, and hdl/README.md gives its timing and size (§5.1).
 
 ### 3.2 `float.c` on the cores is in no gate
 

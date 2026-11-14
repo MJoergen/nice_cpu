@@ -594,21 +594,34 @@ every width at constant and dynamic addresses, the addresses of array
 elements as `(i << s) + c`, among them, at the start of `main`, loads
 and stores whose index has high bits that the shift drops, so that the
 address wraps modulo 2^32, groups of word accesses at offsets from one
-address, and `memory.fill` and `memory.copy`. That covers the rules for
+address, and `memory.fill` and `memory.copy`. The modules of odd seeds also have
+`f32` and `f64` locals, globals, loads, and stores, every float
+operation and comparison, and every conversion, `trunc_sat` among them,
+nested in the integers and the integers in them, so that values stay
+live across the calls of the float library and the FPU's accesses. The
+model's float arithmetic is that of `emulator/test/fpu_model.py`. A NaN
+that an operation makes may be any NaN, so the module makes every NaN a
+constant by `select` before it reaches the memory or `main`'s result.
+That covers the rules for
 deferred values, fused comparisons, the flags, forwarded results, and
 register allocation of DESIGN.md. In 40% of the modules, statements may trap:
 `unreachable`, divisions by 0 and of the most negative value by −1,
-`call_indirect` past the table or of the wrong type, and accesses,
-`memory.fill`, and `memory.copy` past the end of the memory. About a
-fifth of the modules trap. The modes of nicewasm are `--no-mpu`,
+`call_indirect` past the table or of the wrong type, accesses,
+`memory.fill`, and `memory.copy` past the end of the memory, and `trunc`
+of a NaN or of a float out of range. About a
+fifth of the modules trap. A program that calls the float library is
+joined with `runtime/float_fpu.nasm`, or with `--no-mpu` with
+`runtime/float.wasm` translated with `--no-mpu`, as `test/run.py` does.
+The modes of nicewasm are `--no-mpu`,
 `--unchecked` for `--no-bounds-checks`, whose modules make no access out
 of bounds, `--grow` for `--memory-pages 2`, and `--trust` for
 `--trust-alignment` with `--no-bounds-checks`, whose modules give the
 alignment hint 4 to each access of 4 or 8 bytes at an address known to
 be a multiple of 4, and `--windows` for `--byte-windows` with
-`--trust-alignment` and the bounds checks, with the hints of `--trust`.
+`--trust-alignment` and the bounds checks, with the hints of `--trust`,
+and `--inline-fpu`, whose modules all have floats.
 `make test` runs 40 seeds with the math unit, 40
-with `--no-mpu`, and 20 each with `--unchecked`, `--grow`, `--trust`,
+with `--no-mpu`, 40 with `--inline-fpu`, and 20 each with `--unchecked`, `--grow`, `--trust`,
 and `--windows`, and says how many of them trap;
 `test/fuzz.py 1 1000` runs more, and `test/fuzz.py --reduce SEED 1`
 shrinks a failing module and writes it with its translation. With `--keep DIR`, `fuzz.py` copies each program to

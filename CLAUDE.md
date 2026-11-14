@@ -92,7 +92,7 @@ The rules a change follows, and the tests, are in CONTRIBUTING.md:
     cd debugger  && make typecheck   # mypy --strict
     cd runtime   && make test        # join, assemble, and run each test/*.nasm, the Zig and Rust tests, float_fpu.nasm against float.nasm, then the C library tests
     cd runtime   && make typecheck   # mypy --strict
-    cd translator && make test       # test/run.py, errors.py, fuzz.py in four modes, passes.py, and build.py
+    cd translator && make test       # test/run.py, errors.py, fuzz.py in seven modes, passes.py, and build.py
     cd translator && make typecheck  # mypy --strict
     cd bench     && make test        # the benchmark on the emulator, with its results checked
     cd bench     && make core        # the benchmark on a core in simulation, CORE=pipeline or multicycle, SIM=ghdl or nvc (minutes)

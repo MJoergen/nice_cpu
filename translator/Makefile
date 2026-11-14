@@ -21,9 +21,10 @@ ZIG_SAFE_TESTS = safe safetrap
 RUST_TESTS = rust rusttrap hellors
 
 # Translate, assemble, and run each module in test/run.py, then random
-# modules with test/fuzz.py: 40 with the math unit, 40 without, and 20 each
-# without bounds checks, with a memory that can grow, with the alignment
-# trusted, and through the byte windows. Then the passes on
+# modules with test/fuzz.py: 40 with the math unit, 40 without, 40 with
+# the FPU's accesses inline, and 20 each without bounds checks, with a
+# memory that can grow, with the alignment trusted, and through the byte
+# windows. Then the passes on
 # code built by hand in test/passes.py, then check the error messages in
 # test/errors.py, and run nicebuild.py in test/build.py, for each language
 # whose compiler is installed.
@@ -31,6 +32,7 @@ test: emulator
 	@$(PYTHON) test/run.py
 	@$(PYTHON) test/fuzz.py 1 40
 	@$(PYTHON) test/fuzz.py --no-mpu 1 40
+	@$(PYTHON) test/fuzz.py --inline-fpu 1 40
 	@$(PYTHON) test/fuzz.py --unchecked 1 20
 	@$(PYTHON) test/fuzz.py --grow 1 20
 	@$(PYTHON) test/fuzz.py --trust 1 20
@@ -57,7 +59,7 @@ diff: emulator
 
 # Needs mypy (pip install mypy).
 typecheck:
-	cd test && MYPYPATH=../../assembler:.. $(PYTHON) -m mypy --strict ../nicewasm.py ../nicebuild.py run.py errors.py \
+	cd test && MYPYPATH=../../assembler:..:../../emulator/test $(PYTHON) -m mypy --strict ../nicewasm.py ../nicebuild.py run.py errors.py \
 	  wasm.py fuzz.py passes.py diff_fuzz.py build.py
 
 wasm:

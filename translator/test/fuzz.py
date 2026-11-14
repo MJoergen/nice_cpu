@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """A random test of nicewasm against a model of wasm written in Python.
 
-Usage: fuzz.py [--no-mpu] [--unchecked] [--grow] [--trust] [--windows] [--keep DIR] [--reduce]
-               FIRST COUNT
+Usage: fuzz.py [--no-mpu] [--unchecked] [--grow] [--trust] [--windows] [--inline-fpu]
+               [--keep DIR] [--reduce] FIRST COUNT
 
 Each case is a module built from a random syntax tree. Every node of the
 tree emits its wasm bytes and evaluates itself in Python with the
@@ -52,16 +52,41 @@ allocation in DESIGN.md. main returns a fold of every local, of 18 memory
 words, and of the globals, so a wrong value anywhere shows. Two locals of each function are
 loop counters that nothing else touches, so every loop ends.
 
+The modules of odd seeds, and with --inline-fpu all, have floats too
+(#180): f32 and f64 locals in each function, so that with the integers
+some live in registers and some are spilled, a mutable f32 and f64
+global, every float operation and comparison, the conversions between
+the floats and to and from the integers, trunc and trunc_sat among them,
+promote and demote, the reinterpretations, f32 and f64 loads and stores,
+and floats in select, if, block, local.tee, and br. Integers are made from
+floats and floats from integers inside one another, so that values stay
+live across the calls of the float library and across the FPU's accesses
+that --inline-fpu writes. The operands are biased to the special values:
+the zeros of both signs, the infinities, NaNs, subnormals, ties of
+nearest, and the limits of the conversions. The model takes the
+arithmetic of emulator/test/fpu_model.py, which is exact. A NaN that an
+operation makes may be any NaN (WASM.md): the float library in software
+passes a payload on, and the FPU gives the canonical NaN. So no such NaN
+reaches the memory, main's result, or the sign of copysign, but through
+select(K, x, x != x), which makes every NaN the constant K. The modules of
+even seeds are as they were before floats, seed for seed.
+
 In 40% of the modules, statements and divisions may trap: an unreachable
 under a condition, divisions by a value that may be 0, div_s of a value
 that may be the most negative by -1 or -2, call_indirect with an index
 that a condition chooses, the right one, one past the table, or that of
-a function of another type, and loads, stores, memory.fill, and
-memory.copy near the end of the memory that may pass it. About a fifth
-of the modules trap, with each code of WASM.md but 5, which needs floats.
+a function of another type, loads, stores, memory.fill, and
+memory.copy near the end of the memory that may pass it, and with
+floats, trunc of a NaN or of a value out of range. About a fifth of the
+modules trap, with each code of WASM.md from 1 to 7.
 
-With --no-mpu, nicewasm is run with that option and the program is joined
-with muldiv_soft.nasm instead of muldiv_mpu.nasm. With --unchecked,
+A program that calls the float library is joined with
+runtime/float_fpu.nasm, which uses the FPU. With --no-mpu, nicewasm is
+run with that option and the program is joined with muldiv_soft.nasm
+instead of muldiv_mpu.nasm, and with runtime/float.wasm translated with
+--no-mpu as the float library, for a system with neither, as run.py
+does. With --inline-fpu, nicewasm writes the FPU's accesses inline, and
+every module has floats. With --unchecked,
 nicewasm is run with --no-bounds-checks, and with --grow with
 --memory-pages 2, so that the bounds checks compare with the words that
 memory.grow keeps. With --unchecked, no access is out of bounds; the other
@@ -71,8 +96,9 @@ whose address it knows to be a multiple of 4 the alignment hint 4; the
 other accesses keep the hint 0. With --windows, nicewasm is run with
 --byte-windows and --trust-alignment, with the bounds checks, and the
 hints are as with --trust. With --keep DIR, each program is copied to
-DIR/fuzzSEED.bin, with _nompu, _unchecked, _grow, _unchecked_trust, or
-_trust_windows added for the mode, for hdl/test/programs.py.
+DIR/fuzzSEED.bin, with _nompu, _unchecked, _grow, _unchecked_trust,
+_trust_windows, or _inlinefpu added for the mode, for
+hdl/test/programs.py.
 With --reduce, FIRST is
 a failing seed: statements are removed from the functions while the
 mismatch persists, and the reduced module and its translation, if
@@ -82,9 +108,9 @@ the current directory.
 This test does not replace run.py, whose cases are checked by hand, and
 which also checks a trap's R2. It is cheap to run on many seeds, and it
 found three bugs while it was written, all three in the model. make test
-runs 40 seeds with the math unit and 40 with --no-mpu, and 20 each with
---unchecked, --grow, --trust, and --windows. Each run prints how many of its modules
-trap."""
+runs 40 seeds with the math unit, 40 with --no-mpu, and 40 with
+--inline-fpu, and 20 each with --unchecked, --grow, --trust, and
+--windows. Each run prints how many of its modules trap."""
 
 from __future__ import annotations
 
@@ -95,19 +121,23 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from typing import Callable, Dict, List, Optional, Tuple
+from fractions import Fraction
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
-from wasm import (ADD, AND, DROP, ELSE, END, EXTEND_S, EXTEND_U, I32, I64, LT_U, MEMORY_COPY,
+from wasm import (ADD, AND, DROP, ELSE, END, EXTEND_S, EXTEND_U, F32, F64, I32, I64, LT_U, MEMORY_COPY,
                   MEMORY_FILL, NOP, OR, RETURN, SELECT, SHR_U64, UNREACHABLE, WRAP, block, br, br_if,
                   br_table, call, call_indirect, code, data, elems, exports, funcs, global_get,
                   global_set, i32_const, i64_const, if_, local_get, local_set, local_tee, loop, mem,
                   memory, module, return_call, return_call_indirect, select_t, table,
                   typed_globals, typeidx, types)
+from wasm import const as wasm_const
 
 sys.setrecursionlimit(5000)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, os.path.join(REPO, "emulator", "test"))
+import fpu_model  # noqa: E402
 RUNTIME = os.path.join(REPO, "runtime")
 NICEWASM = os.path.join(HERE, "..", "nicewasm.py")
 NICEASM = os.path.join(REPO, "assembler", "niceasm.py")
@@ -132,11 +162,11 @@ def sgn(t: int, x: int) -> int:
 
 
 def mask(t: int) -> int:
-    return M32 if t == I32 else M64
+    return M32 if t in (I32, F32) else M64
 
 
 def bits(t: int) -> int:
-    return 32 if t == I32 else 64
+    return 32 if t in (I32, F32) else 64
 
 
 def tdiv(a: int, b: int) -> int:
@@ -212,6 +242,153 @@ LOADS: Dict[int, Tuple[int, int, bool]] = {
 STORES: Dict[int, Tuple[int, int]] = {
     0x36: (I32, 4), 0x37: (I64, 8), 0x3A: (I32, 1), 0x3B: (I32, 2), 0x3C: (I64, 1),
     0x3D: (I64, 2), 0x3E: (I64, 4)}
+FLOADS: Dict[int, Tuple[int, int, bool]] = {0x2A: (F32, 4, False), 0x2B: (F64, 8, False)}
+FSTORES: Dict[int, Tuple[int, int]] = {0x38: (F32, 4), 0x39: (F64, 8)}
+ALL_LOADS = {**LOADS, **FLOADS}
+ALL_STORES = {**STORES, **FSTORES}
+
+# The floats. A value of f32 or f64 is its bits, as an i32 or i64 is, but
+# for ANY_NAN: the NaN that an operation makes, whose bits wasm leaves
+# open. The float library in software passes a NaN's payload on, and the
+# FPU gives the canonical NaN. So no value that may be ANY_NAN leaves the
+# floats but through guard(), which makes every NaN a constant, or
+# through a comparison or a conversion to an integer, which give the same
+# for every NaN. The arithmetic is that of emulator/test/fpu_model.py,
+# exact and with no host floats.
+ANY_NAN = -1
+
+# Binary operations, unary operations, and comparisons: name -> (f32
+# opcode, f64 opcode).
+FBIN: Dict[str, Tuple[int, int]] = {
+    "add": (0x92, 0xA0), "sub": (0x93, 0xA1), "mul": (0x94, 0xA2), "div": (0x95, 0xA3),
+    "min": (0x96, 0xA4), "max": (0x97, 0xA5), "copysign": (0x98, 0xA6)}
+FUNARY: Dict[str, Tuple[int, int]] = {
+    "abs": (0x8B, 0x99), "neg": (0x8C, 0x9A), "ceil": (0x8D, 0x9B), "floor": (0x8E, 0x9C),
+    "trunc": (0x8F, 0x9D), "nearest": (0x90, 0x9E), "sqrt": (0x91, 0x9F)}
+FCMP: Dict[str, Tuple[int, int]] = {
+    "eq": (0x5B, 0x61), "ne": (0x5C, 0x62), "lt": (0x5D, 0x63), "gt": (0x5E, 0x64),
+    "le": (0x5F, 0x65), "ge": (0x60, 0x66)}
+# The conversions: (to, from, signed) -> opcode. trunc traps, and
+# trunc_sat, 0xFC and the second opcode of TRUNC_SAT, saturates.
+TRUNC: Dict[Tuple[int, int, bool], int] = {
+    (I32, F32, True): 0xA8, (I32, F32, False): 0xA9, (I32, F64, True): 0xAA, (I32, F64, False): 0xAB,
+    (I64, F32, True): 0xAE, (I64, F32, False): 0xAF, (I64, F64, True): 0xB0, (I64, F64, False): 0xB1}
+TRUNC_SAT: Dict[Tuple[int, int, bool], int] = {
+    (I32, F32, True): 0, (I32, F32, False): 1, (I32, F64, True): 2, (I32, F64, False): 3,
+    (I64, F32, True): 4, (I64, F32, False): 5, (I64, F64, True): 6, (I64, F64, False): 7}
+CONVERT: Dict[Tuple[int, int, bool], int] = {
+    (F32, I32, True): 0xB2, (F32, I32, False): 0xB3, (F32, I64, True): 0xB4, (F32, I64, False): 0xB5,
+    (F64, I32, True): 0xB7, (F64, I32, False): 0xB8, (F64, I64, True): 0xB9, (F64, I64, False): 0xBA}
+DEMOTE, PROMOTE = b"\xb6", b"\xbb"
+# reinterpret: the type it gives -> opcode.
+REINTERPRET: Dict[int, int] = {I32: 0xBC, I64: 0xBD, F32: 0xBE, F64: 0xBF}
+INTEGRAL = {"ceil": "ceil", "floor": "floor", "trunc": "trunc", "nearest": "even"}
+
+
+def fmt(t: int) -> fpu_model.Format:
+    return fpu_model.F32 if t == F32 else fpu_model.F64
+
+
+def is_float(t: int) -> bool:
+    return t in (F32, F64)
+
+
+def is_nan(t: int, a: int) -> bool:
+    return a == ANY_NAN or fmt(t).is_nan(a)
+
+
+def made(t: int, r: int) -> int:
+    """The result r of an operation, ANY_NAN if it is a NaN."""
+    return ANY_NAN if fmt(t).is_nan(r) else r
+
+
+def fbin(name: str, t: int, a: int, b: int) -> int:
+    """The binary operation name of a and b. The sign of copysign's b is
+    never that of ANY_NAN (guard)."""
+    f = fmt(t)
+    if name == "copysign":
+        assert b != ANY_NAN
+        return ANY_NAN if a == ANY_NAN else (a & ~f.sign) | (b & f.sign)
+    if is_nan(t, a) or is_nan(t, b):
+        return ANY_NAN
+    if name in ("min", "max"):
+        if f.is_zero(a) and f.is_zero(b):
+            return a | b if name == "min" else a & b  # -0 is below +0
+        c = f.compare(a, b)
+        assert c is not None
+        return a if (c < 0) == (name == "min") else b
+    op: Callable[[int, int], Tuple[int, int]] = getattr(f, name)
+    return made(t, op(a, b)[0])
+
+
+def funary(name: str, t: int, a: int) -> int:
+    """The unary operation name of a. abs and neg change the sign bit
+    alone, also of a NaN."""
+    f = fmt(t)
+    if name in ("abs", "neg"):
+        return a if a == ANY_NAN else a & ~f.sign if name == "abs" else a ^ f.sign
+    if is_nan(t, a):
+        return ANY_NAN
+    if name == "sqrt":
+        return made(t, f.sqrt(a)[0])
+    return made(t, f.to_integral(a, INTEGRAL[name])[0])
+
+
+def fcmp(name: str, t: int, a: int, b: int) -> int:
+    """The comparison name of a and b: false for a NaN, but for ne."""
+    c = None if is_nan(t, a) or is_nan(t, b) else fmt(t).compare(a, b)
+    if c is None:
+        return int(name == "ne")
+    return int({"eq": c == 0, "ne": c != 0, "lt": c < 0, "gt": c > 0, "le": c <= 0, "ge": c >= 0}[name])
+
+
+def ftrunc(to: int, t: int, signed: bool, a: int, sat: bool) -> int:
+    """a of type t rounded toward zero, as an integer of type to. A NaN, or
+    a value out of range, traps with code 5, or with sat saturates, and a
+    NaN gives 0."""
+    f = fmt(t)
+    v, flags = f.to_int(f.qnan if a == ANY_NAN else a, bits(to), signed)
+    if flags and not sat:
+        raise Trap(5)
+    return v & mask(to)
+
+
+def fconvert(to: int, t: int, signed: bool, x: int) -> int:
+    """The integer x of type t, signed or not, rounded to the float type to."""
+    return fmt(to).from_int(sgn(t, x) if signed else x)
+
+
+def fresize(to: int, t: int, a: int) -> int:
+    """f32.demote_f64 or f64.promote_f32 of a."""
+    if is_nan(t, a):
+        return ANY_NAN
+    return fmt(to).convert(a, fmt(t))[0]
+
+
+def float_specials(t: int) -> List[int]:
+    """Values of type t at the edges of the operations: the zeros, the
+    infinities, NaNs, the smallest subnormal and the largest value, the
+    ties of nearest, and the limits of the conversions to integers."""
+    f = fmt(t)
+    numbers = [Fraction(1), Fraction(-1), Fraction(1, 2), Fraction(-1, 2), Fraction(3, 2),
+               Fraction(5, 2), Fraction(-5, 2), Fraction(7, 4), Fraction(-3, 4)]
+    numbers += [Fraction(n) for n in (2**31 - 1, -2**31, -2**31 - 1, 2**31, 2**32 - 1, 2**32, 2**63, -2**63,
+                                      2**64, -2**63 - 2**11, 2**64 - 2**11)]
+    return [0, f.sign, f.inf, f.sign | f.inf, f.qnan, f.sign | f.qnan | 5, f.inf | 1, 1, f.sign | 1,
+            f.max_finite, f.sign | f.max_finite] + [f.round(x)[0] for x in numbers]
+
+
+def random_float(rng: random.Random, t: int) -> int:
+    """A value of type t: often one of float_specials, or a short number,
+    whole or with a few bits of fraction, and sometimes random bits."""
+    r = rng.random()
+    if r < 0.1:
+        return rng.choice([0, fmt(t).sign])
+    if r < 0.35:
+        return rng.choice(float_specials(t))
+    if r < 0.8:
+        return fmt(t).round(Fraction(rng.randrange(-1 << 20, 1 << 20), 1 << rng.randrange(0, 12)))[0]
+    return rng.getrandbits(bits(t))
 
 # Addresses: the memory is one page, and the data segment is at DATA.
 ADDR_MASK, DATA, DATA_SIZE, PAGE = 0x7FF8, 0x100, 256, 0x10000
@@ -234,6 +411,13 @@ def initial_memory(segment: bytes) -> bytearray:
 # The globals: (type, mutable, initial value). The last one is immutable.
 GLOBALS: List[Tuple[int, bool, int]] = [(I32, True, 0x12345678), (I32, True, 0xFFFFFFFB),
                                         (I64, True, 0x1_00000002), (I32, False, 0x7FFF0001)]
+# And in a module with floats, an f32 and an f64 after them, both mutable:
+# pi in each.
+FLOAT_GLOBALS: List[Tuple[int, bool, int]] = [(F32, True, 0x40490FDB), (F64, True, 0x400921FB_54442D18)]
+
+
+def module_globals(floats: bool) -> List[Tuple[int, bool, int]]:
+    return GLOBALS + (FLOAT_GLOBALS if floats else [])
 
 
 # The types of the module: those of the four functions, then those that
@@ -272,11 +456,12 @@ class Trap(Exception):
 class State:
     """The model's state while a function runs."""
 
-    def __init__(self, fns: List[Func], memory: bytearray) -> None:
+    def __init__(self, fns: List[Func], memory: bytearray, globals_: Optional[List[Tuple[int, bool, int]]] = None
+                 ) -> None:
         self.fns = fns
         self.mem = memory
         self.locals: List[int] = []
-        self.globals = [v for _, _, v in GLOBALS]
+        self.globals = [v for _, _, v in (GLOBALS if globals_ is None else globals_)]
 
     def call(self, idx: int, args: List[int]) -> int:
         fn = self.fns[idx]
@@ -339,12 +524,14 @@ class Ctx:
     branch to each carries, and the locals it may use. With risky, it makes
     statements that may trap, and with bounds, among them accesses out of
     bounds. With trust, an access of 4 or 8 bytes at an address known to
-    be a multiple of 4 gets the alignment hint 4 (hint)."""
+    be a multiple of 4 gets the alignment hint 4 (hint). With floats, it
+    makes float values and instructions too."""
 
     def __init__(self, rng: random.Random, fn: Func, fidx: int, fns: List[Func], risky: bool = False,
-                 bounds: bool = True, trust: bool = False) -> None:
+                 bounds: bool = True, trust: bool = False, floats: bool = False) -> None:
         self.rng, self.fn, self.fidx, self.fns = rng, fn, fidx, fns
-        self.risky, self.bounds, self.trust = risky, bounds, trust
+        self.risky, self.bounds, self.trust, self.floats = risky, bounds, trust, floats
+        self.globals = module_globals(floats)
         self.labels: List[Tuple[str, List[int]]] = [("func", [fn.result])]
         self.loop_depth = 0
         # The last two locals are loop counters, which nothing else touches.
@@ -363,7 +550,7 @@ class Ctx:
 
 def konst(t: int, v: int) -> Expr:
     v &= mask(t)
-    c = i32_const(s32(v)) if t == I32 else i64_const(s64(v))
+    c = i32_const(s32(v)) if t == I32 else i64_const(s64(v)) if t == I64 else wasm_const(t, v)
     return Expr(t, c, lambda st: v)
 
 
@@ -401,6 +588,8 @@ def gen_local_get(ctx: Ctx, t: int, depth: int) -> Expr:
 
 
 def gen_const(ctx: Ctx, t: int, depth: int) -> Expr:
+    if is_float(t):
+        return konst(t, random_float(ctx.rng, t))
     r = ctx.rng.random()
     if r < 0.3:
         v = ctx.rng.randrange(64)
@@ -546,7 +735,10 @@ def gen_select(ctx: Ctx, t: int, depth: int) -> Expr:
 def gen_condition(ctx: Ctx, depth: int) -> Expr:
     """An i32 for if, br_if, or select: mostly a comparison, so that the
     flags are used directly, sometimes kept in a local by local.tee, so
-    that a later condition may be the local, else any i32."""
+    that a later condition may be the local, else any i32. With floats,
+    sometimes a comparison of floats."""
+    if ctx.floats and ctx.rng.random() < 0.1:
+        return gen_fcmp(ctx, ctx.rng.choice([F32, F64]), depth)
     r = ctx.rng.random()
     if r < 0.5:
         return gen_cmp(ctx, ctx.rng.choice([I32, I64]), depth)
@@ -702,7 +894,7 @@ def gen_load(ctx: Ctx, t: int, depth: int) -> Expr:
 def load(op: int, offset: int, a: Expr, align: int = 0) -> Expr:
     """The load op at the address a plus offset, with the alignment hint
     align."""
-    t, n, signed = LOADS[op]
+    t, n, signed = ALL_LOADS[op]
 
     def ev(st: State) -> int:
         addr = in_bounds(a.ev(st) + offset, n)
@@ -724,7 +916,7 @@ def gen_store(ctx: Ctx, depth: int) -> Stmt:
 def store(op: int, offset: int, a: Expr, v: Expr, align: int = 0) -> Stmt:
     """The store op of the value v at the address a plus offset, with the
     alignment hint align."""
-    n = STORES[op][1]
+    n = ALL_STORES[op][1]
 
     def run(st: State) -> None:
         addr = a.ev(st) + offset
@@ -877,7 +1069,7 @@ def gen_br_table_expr(ctx: Ctx, t: int, depth: int) -> Expr:
 
 def gen_global_get(ctx: Ctx, t: int, depth: int) -> Expr:
     """global.get of a global of type t, mutable or not."""
-    k = ctx.rng.choice([k for k, (gt, _, _) in enumerate(GLOBALS) if gt == t])
+    k = ctx.rng.choice([k for k, (gt, _, _) in enumerate(ctx.globals) if gt == t])
     return Expr(t, global_get(k), lambda st: st.globals[k])
 
 
@@ -929,8 +1121,10 @@ def gen_expr(ctx: Ctx, t: int, depth: int) -> Expr:
     """A random expression of type t, with nested expressions up to depth."""
     if depth <= 0:
         return gen_local_get(ctx, t, 0) if ctx.rng.random() < 0.65 else gen_const(ctx, t, 0)
+    if ctx.floats and not is_float(t) and ctx.rng.random() < 0.12:
+        return gen_from_float(ctx, t, depth - 1)
     x = ctx.rng.random()
-    for fn, p in EXPRS:
+    for fn, p in (FEXPRS if is_float(t) else EXPRS):
         x -= p
         if x < 0:
             return fn(ctx, t, depth - 1)
@@ -1323,8 +1517,10 @@ def gen_trap(ctx: Ctx, depth: int) -> Stmt:
     division that may be by 0 or overflow, a call_indirect whose index may
     be past the table or name a function of another type, and with bounds,
     an access, memory.fill, or memory.copy that may pass the end of the
-    memory. Sometimes under a condition of its own."""
+    memory, and with floats, trunc of any float. Sometimes under a
+    condition of its own."""
     kinds = ["unreachable", "div", "indirect"] + (["load", "store", "bulk"] if ctx.bounds else [])
+    kinds += ["trunc"] if ctx.floats else []
     kind = ctx.rng.choice(kinds)
     if kind == "unreachable" or (kind == "indirect" and ctx.fidx == len(ctx.fns) - 1):
         return maybe_unreachable(ctx, depth)
@@ -1338,6 +1534,8 @@ def gen_trap(ctx: Ctx, depth: int) -> Stmt:
         st_ = set_local(ctx.rng.choice(ctx.locals_of(t)), binop(name, t, a, b))
     elif kind == "indirect":
         st_ = risky_indirect(ctx, depth)
+    elif kind == "trunc":
+        st_ = risky_trunc(ctx, depth)
     elif kind == "load":
         op = ctx.rng.choice(list(LOADS))
         offset = ctx.rng.choice([0, 0, 3, 8])
@@ -1427,6 +1625,208 @@ def gen_drop(ctx: Ctx, depth: int) -> Stmt:
     return Stmt(e.code + DROP, run)
 
 
+def fop(table: Dict[str, Tuple[int, int]], name: str, t: int) -> bytes:
+    op32, op64 = table[name]
+    return bytes([op64 if t == F64 else op32])
+
+
+def guard_value(t: int) -> int:
+    """What guard gives for a NaN of type t: a NaN of its own payload, so
+    that one guard that is left out shows."""
+    return fmt(t).qnan | 0x5A
+
+
+def guard(ctx: Ctx, x: Expr) -> Expr:
+    """select(K, x, x != x): x, or K = guard_value if x is a NaN, whose bits
+    are then known. x goes through a local by local.tee."""
+    t, k = x.t, guard_value(x.t)
+    i = ctx.rng.choice(ctx.locals_of(t))
+
+    def ev(st: State) -> int:
+        v = x.ev(st)
+        st.locals[i] = v
+        return k if is_nan(t, v) else v
+    code_ = konst(t, k).code + x.code + local_tee(i) + local_get(i) + local_get(i) + fop(FCMP, "ne", t) + SELECT
+    return Expr(t, code_, ev)
+
+
+def guarded_bits(t: int, code_: bytes, value: Callable[[State], int]) -> Expr:
+    """The bits of a float of type t that code_ reads, a local.get or a
+    global.get without side effects, as an integer of the same width, with
+    a NaN made guard_value."""
+    k, it = guard_value(t), I32 if t == F32 else I64
+
+    def ev(st: State) -> int:
+        v = value(st)
+        return k if is_nan(t, v) else v
+    return Expr(it, konst(t, k).code + code_ * 3 + fop(FCMP, "ne", t) + SELECT + bytes([REINTERPRET[it]]), ev)
+
+
+def gen_fbinop(ctx: Ctx, t: int, depth: int) -> Expr:
+    name = ctx.rng.choice(list(FBIN))
+    a, b = gen_expr(ctx, t, depth), gen_expr(ctx, t, depth)
+    if name in ("min", "max") and ctx.rng.random() < 0.3:
+        # A zero of either sign, which min and max order: -0 below +0.
+        z = ctx.rng.choice([0, fmt(t).sign])
+        b = konst(t, z) if ctx.rng.random() < 0.5 else select(konst(t, z ^ fmt(t).sign), b, gen_condition(ctx, depth))
+    if name == "copysign":
+        b = guard(ctx, b)  # the sign of a NaN that an operation made is open
+
+    def ev(st: State) -> int:
+        x = a.ev(st)
+        y = b.ev(st)
+        return fbin(name, t, x, y)
+    return Expr(t, a.code + b.code + fop(FBIN, name, t), ev)
+
+
+def gen_funop(ctx: Ctx, t: int, depth: int) -> Expr:
+    """A unary operation. A rounding to a whole number is often of
+    floor(x) + 0.5, a tie of nearest if x is not too large."""
+    name = ctx.rng.choice(list(FUNARY))
+    a = gen_expr(ctx, t, depth)
+    if name in INTEGRAL and ctx.rng.random() < 0.3:
+        x, half = a, fmt(t).round(Fraction(1, 2))[0]
+        a = Expr(t, x.code + fop(FUNARY, "floor", t) + konst(t, half).code + fop(FBIN, "add", t),
+                 lambda st: fbin("add", t, funary("floor", t, x.ev(st)), half))
+    return Expr(t, a.code + fop(FUNARY, name, t), lambda st: funary(name, t, a.ev(st)))
+
+
+def gen_fconvert(ctx: Ctx, t: int, depth: int) -> Expr:
+    """A float of type t from an integer, signed or not, from the other
+    float type, or from the bits of an integer by reinterpret."""
+    r = ctx.rng.random()
+    if r < 0.5:
+        src, signed = ctx.rng.choice([I32, I64]), ctx.rng.random() < 0.5
+        a = gen_expr(ctx, src, depth)
+        return Expr(t, a.code + bytes([CONVERT[(t, src, signed)]]), lambda st: fconvert(t, src, signed, a.ev(st)))
+    if r < 0.75:
+        other = F64 if t == F32 else F32
+        a = gen_expr(ctx, other, depth)
+        return Expr(t, a.code + (DEMOTE if t == F32 else PROMOTE), lambda st: fresize(t, other, a.ev(st)))
+    a = gen_expr(ctx, I32 if t == F32 else I64, depth)
+    return Expr(t, a.code + bytes([REINTERPRET[t]]), a.ev)
+
+
+def gen_fload(ctx: Ctx, t: int, depth: int) -> Expr:
+    op = 0x2A if t == F32 else 0x2B
+    n = FLOADS[op][1]
+    offset = ctx.rng.choice([0, 0, 1, 4, 8, 13])
+    a = gen_address(ctx, depth, offset + n)
+    return load(op, offset, a, ctx.hint(a, offset, n))
+
+
+def gen_fcmp(ctx: Ctx, t: int, depth: int) -> Expr:
+    """An i32 that is 0 or 1: a comparison of two floats of type t,
+    sometimes with eqz after it."""
+    name = ctx.rng.choice(list(FCMP))
+    a, b = gen_expr(ctx, t, depth), gen_expr(ctx, t, depth)
+
+    def ev(st: State) -> int:
+        x = a.ev(st)
+        y = b.ev(st)
+        return fcmp(name, t, x, y)
+    e = Expr(I32, a.code + b.code + fop(FCMP, name, t), ev)
+    if ctx.rng.random() < 0.2:
+        inner = e
+        e = Expr(I32, inner.code + b"\x45", lambda st: int(inner.ev(st) == 0))
+    return e
+
+
+def trunc_expr(to: int, t: int, signed: bool, a: Expr, sat: bool) -> Expr:
+    """trunc or trunc_sat of the float a of type t to the integer type to."""
+    op = b"\xfc" + bytes([TRUNC_SAT[(to, t, signed)]]) if sat else bytes([TRUNC[(to, t, signed)]])
+    return Expr(to, a.code + op, lambda st: ftrunc(to, t, signed, a.ev(st), sat))
+
+
+def safe_float(ctx: Ctx, t: int, signed: bool, depth: int) -> Expr:
+    """A float of type t whose integer part fits an i32, signed or not, so
+    that trunc of it does not trap: an i32 of 24 bits converted, often
+    scaled or with a fraction added, so that some are ties of nearest, and
+    then often rounded to a whole number."""
+    x = gen_expr(ctx, I32, depth)
+    x = binop("shr_s", I32, x, konst(I32, 8)) if signed else binop("and", I32, x, konst(I32, 0xFFFFFF))
+    e = Expr(t, x.code + bytes([CONVERT[(t, I32, signed)]]), lambda st: fconvert(t, I32, signed, x.ev(st)))
+    if ctx.rng.random() < 0.5:
+        name, k = ctx.rng.choice([("mul", Fraction(1, 2)), ("mul", Fraction(1, 2)), ("mul", Fraction(3, 2)),
+                                  ("mul", Fraction(3, 8)), ("add", Fraction(1, 2)), ("add", Fraction(3, 4))])
+        c = konst(t, fmt(t).round(k)[0])
+        inner = e
+        e = Expr(t, inner.code + c.code + fop(FBIN, name, t),
+                 lambda st: fbin(name, t, inner.ev(st), c.ev(st)))
+    if ctx.rng.random() < 0.4:
+        op = ctx.rng.choice(["floor", "ceil", "nearest", "nearest", "trunc"])
+        rounded = e
+        e = Expr(t, rounded.code + fop(FUNARY, op, t), lambda st: funary(op, t, rounded.ev(st)))
+    return e
+
+
+def gen_from_float(ctx: Ctx, t: int, depth: int) -> Expr:
+    """An integer of type t made from floats: a comparison, trunc_sat,
+    trunc of a value that fits, or in a risky module sometimes of any
+    value, or the bits of a float by reinterpret, guarded."""
+    ft = ctx.rng.choice([F32, F64])
+    r = ctx.rng.random()
+    if r < 0.3:
+        e = gen_fcmp(ctx, ft, depth)
+        return Expr(I64, e.code + EXTEND_U, e.ev) if t == I64 else e
+    signed = ctx.rng.random() < 0.5
+    if r < 0.55:
+        return trunc_expr(t, ft, signed, gen_expr(ctx, ft, depth), True)
+    if r < 0.8:
+        if ctx.risky and ctx.rng.random() < 0.2:
+            return trunc_expr(t, ft, signed, gen_expr(ctx, ft, depth), False)  # may trap
+        return trunc_expr(t, ft, signed, safe_float(ctx, ft, signed, depth), False)
+    ft = F32 if t == I32 else F64
+    a = guard(ctx, gen_expr(ctx, ft, depth))
+    return Expr(t, a.code + bytes([REINTERPRET[t]]), a.ev)
+
+
+def gen_fstmt(ctx: Ctx, depth: int) -> Stmt:
+    """A statement with floats: local.set, a store, guarded, global.set,
+    or a drop."""
+    t = ctx.rng.choice([F32, F64])
+    r = ctx.rng.random()
+    if r < 0.5:
+        return set_local(ctx.rng.choice(ctx.locals_of(t)), gen_expr(ctx, t, max(depth, 1)))
+    if r < 0.75:
+        op = 0x38 if t == F32 else 0x39
+        n = FSTORES[op][1]
+        offset = ctx.rng.choice([0, 0, 2, 4, 9])
+        a = gen_address(ctx, max(depth, 1), offset + n)
+        v = guard(ctx, gen_expr(ctx, t, max(depth, 1)))
+        return store(op, offset, a, v, ctx.hint(a, offset, n))
+    if r < 0.85:
+        k = next(k for k, (gt, _, _) in enumerate(ctx.globals) if gt == t)
+        v = gen_expr(ctx, t, max(depth, 1))
+
+        def run(st: State) -> None:
+            st.globals[k] = v.ev(st)
+        return Stmt(v.code + global_set(k), run)
+    e = gen_expr(ctx, t, max(depth, 1))
+
+    def drop(st: State) -> None:
+        e.ev(st)
+    return Stmt(e.code + DROP, drop)
+
+
+def risky_trunc(ctx: Ctx, depth: int) -> Stmt:
+    """trunc of any float, which traps with code 5 for a NaN or a value out
+    of range, half the time of one that a condition chooses: a value at the
+    edges of the conversions (float_specials), or any value. Its result
+    goes to a local."""
+    t, ft, signed = ctx.rng.choice([I32, I64]), ctx.rng.choice([F32, F64]), ctx.rng.random() < 0.5
+    a = gen_expr(ctx, ft, depth)
+    if ctx.rng.random() < 0.5:
+        a = select(konst(ft, ctx.rng.choice(float_specials(ft))), a, gen_condition(ctx, depth))
+    return set_local(ctx.rng.choice(ctx.locals_of(t)), trunc_expr(t, ft, signed, a, False))
+
+
+FEXPRS: List[Tuple[Callable[[Ctx, int, int], Expr], float]] = [
+    (gen_local_get, 0.18), (gen_global_get, 0.04), (gen_const, 0.12), (gen_fbinop, 0.22), (gen_funop, 0.08),
+    (gen_fconvert, 0.12), (gen_select, 0.05), (gen_fload, 0.07), (gen_tee, 0.05), (gen_if_expr, 0.04),
+    (gen_block_expr, 0.03)]
+
+
 EXPRS: List[Tuple[Callable[[Ctx, int, int], Expr], float]] = [
     (gen_local_get, 0.15), (gen_global_get, 0.03), (gen_const, 0.10), (gen_binop, 0.23), (gen_cmp_value, 0.05),
     (gen_unop, 0.04), (gen_convert, 0.06), (gen_select, 0.05), (gen_load, 0.08),
@@ -1437,6 +1837,8 @@ EXPRS: List[Tuple[Callable[[Ctx, int, int], Expr], float]] = [
 def gen_stmt(ctx: Ctx, depth: int) -> Stmt:
     if ctx.risky and ctx.rng.random() < 0.04:
         return gen_trap(ctx, max(depth, 1))
+    if ctx.floats and ctx.rng.random() < 0.25:
+        return gen_fstmt(ctx, depth)
     r = ctx.rng.random()
     if depth <= 0:
         # Only statements that nest nothing.
@@ -1474,9 +1876,9 @@ def gen_stmt(ctx: Ctx, depth: int) -> Stmt:
     return gen_drop(ctx, depth)
 
 
-def checksum(fn: Func) -> Expr:
+def checksum(fn: Func, globals_: List[Tuple[int, bool, int]]) -> Expr:
     """main's result: a fold of every local, of 18 memory words, and of
-    the globals."""
+    the globals. A float goes in as its bits, guarded."""
     def low(i: int) -> Expr:
         return Expr(I32, local_get(i) + WRAP, lambda st: st.locals[i] & M32)
 
@@ -1493,12 +1895,33 @@ def checksum(fn: Func) -> Expr:
     def word(a: int) -> Expr:
         return Expr(I32, i32_const(a) + mem(I32_LOAD), lambda st: int.from_bytes(st.mem[a:a + 4], "little"))
 
+    def halves(e: Expr) -> List[Expr]:
+        """An i64 as its low and its high word."""
+        return [Expr(I32, e.code + WRAP, lambda st: e.ev(st) & M32),
+                Expr(I32, e.code + i64_const(32) + SHR_U64 + WRAP, lambda st: e.ev(st) >> 32)]
+
+    def floats(t: int, code_: bytes, value: Callable[[State], int]) -> List[Expr]:
+        e = guarded_bits(t, code_, value)
+        return [e] if t == F32 else halves(e)
+
+    def local(i: int) -> Callable[[State], int]:
+        return lambda st: st.locals[i]
+
+    def global_(k: int) -> Callable[[State], int]:
+        return lambda st: st.globals[k]
+
     parts: List[Expr] = []
     for i, t in enumerate(fn.local_types):
-        parts += [get(I32, i)] if t == I32 else [low(i), high(i)]
+        if is_float(t):
+            parts += floats(t, local_get(i), local(i))
+        else:
+            parts += [get(I32, i)] if t == I32 else [low(i), high(i)]
     parts += [word(a) for a in range(0, 0x400, 0x3C)]
-    for k, (t, _, _) in enumerate(GLOBALS):
-        parts += [glow(k)] if t == I32 else [glow(k), ghigh(k)]
+    for k, (t, _, _) in enumerate(globals_):
+        if is_float(t):
+            parts += floats(t, global_get(k), global_(k))
+        else:
+            parts += [glow(k)] if t == I32 else [glow(k), ghigh(k)]
     code = i32_const(0)
     for p in parts:
         code += i32_const(31) + b"\x6c" + p.code + ADD
@@ -1511,20 +1934,23 @@ def checksum(fn: Func) -> Expr:
     return Expr(I32, code, ev)
 
 
-def build(seed: int, bounds: bool = True, tails: bool = True, trust: bool = False) -> Tuple[List[Func], bytes]:
+def build(seed: int, bounds: bool = True, tails: bool = True, trust: bool = False, floats: bool = False
+          ) -> Tuple[List[Func], bytes]:
     """The four functions, with random bodies, and the data segment. In 40%
     of the modules, the bodies have statements and divisions that may trap,
     and with bounds, among them accesses out of bounds. With tails, a
     function may end in a tail call. With trust, the accesses have
-    alignment hints (Ctx)."""
+    alignment hints (Ctx). With floats, each function has f32 and f64
+    locals too, before the loop counters, and the bodies use floats."""
     rng = random.Random(seed)
     risky = rng.random() < 0.4
-    fns = [Func(0, [], I32, [I32] * 7 + [I64] * 3 + [I32, I32]),
-           Func(1, [I32, I64, I32, I32], I32, [I32, I64, I32, I32] + [I32] * 3 + [I64] * 2 + [I32, I32]),
-           Func(2, [I64, I32], I64, [I64, I32] + [I32] * 2 + [I64] * 2 + [I32, I32]),
-           Func(3, [I32, I32], I32, [I32, I32] + [I32] * 6 + [I64] + [I32, I32])]
+    more = ([F64, F32, F64, F32, F64], [F64, F32, F32]) if floats else ([], [])
+    fns = [Func(0, [], I32, [I32] * 7 + [I64] * 3 + more[0] + [I32, I32]),
+           Func(1, [I32, I64, I32, I32], I32, [I32, I64, I32, I32] + [I32] * 3 + [I64] * 2 + more[1] + [I32, I32]),
+           Func(2, [I64, I32], I64, [I64, I32] + [I32] * 2 + [I64] * 2 + more[1] + [I32, I32]),
+           Func(3, [I32, I32], I32, [I32, I32] + [I32] * 6 + [I64] + more[1] + [I32, I32])]
     for idx, fn in enumerate(fns):
-        ctx = Ctx(rng, fn, idx, fns, risky, bounds, trust)
+        ctx = Ctx(rng, fn, idx, fns, risky, bounds, trust, floats)
         count = rng.randrange(8, 20) if idx == 0 else rng.randrange(3, 10)
         # Half of the other functions start with a br_if out of the
         # function, an early exit before the prologue (DESIGN.md).
@@ -1535,7 +1961,7 @@ def build(seed: int, bounds: bool = True, tails: bool = True, trust: bool = Fals
         # Half of those that can, f, end in a tail call of h, which gives
         # the same value as a call and a return.
         tail = tails and any(g.result == fn.result for g in fns[idx + 1:]) and rng.random() < 0.5
-        fn.value = (checksum(fn) if idx == 0 else gen_call(ctx, fn.result, 3, tail=True) if tail
+        fn.value = (checksum(fn, ctx.globals) if idx == 0 else gen_call(ctx, fn.result, 3, tail=True) if tail
                     else gen_expr(ctx, fn.result, 3))
     return fns, bytes(rng.getrandbits(8) for _ in range(DATA_SIZE))
 
@@ -1550,22 +1976,23 @@ def show(o: Optional[Outcome]) -> str:
     return f"{o[1]:#010x}" if o[0] == "value" else f"trap {o[1]}"
 
 
-def finish(fns: List[Func], segment: bytes) -> Tuple[bytes, Outcome, bytes]:
+def finish(fns: List[Func], segment: bytes, floats: bool = False) -> Tuple[bytes, Outcome, bytes]:
     """The module, the outcome the model gives for it, and the memory at
-    the end, or when it traps."""
+    the end, or when it traps. With floats, it has the float globals."""
+    globals_ = module_globals(floats)
     mod = module(
         types(*TYPES),
         funcs(*[fn.type_idx for fn in fns]),
         table(3),
         memory(1),
-        typed_globals(*[(t, m, s32(v) if t == I32 else s64(v)) for t, m, v in GLOBALS]),
+        typed_globals(*[(t, m, s32(v) if t == I32 else s64(v) if t == I64 else v) for t, m, v in globals_]),
         exports(("main", 0, 0)),
         elems((0, [1, 2, 3])),
         code(*[(fn.local_types[len(fn.params):], fn.body().code) for fn in fns]),
         data((0, bytes(initial_memory(segment)))))
     memory_ = initial_memory(segment)
     try:
-        return mod, ("value", State(fns, memory_).call(0, [])), bytes(memory_)
+        return mod, ("value", State(fns, memory_, globals_).call(0, [])), bytes(memory_)
     except Trap as t:
         return mod, ("trap", t.code), bytes(memory_)
 
@@ -1576,10 +2003,30 @@ def run(cmd: List[str]) -> None:
         raise RuntimeError(" ".join(cmd) + "\n" + p.stdout + p.stderr)
 
 
-def pipeline(mod: bytes, tmp: str, opts: List[str], name: str
+# The float library: its file, and the labels of its routines.
+Library = Tuple[str, Set[str]]
+
+
+def float_library(tmp: str, opts: List[str]) -> Library:
+    """float_fpu.nasm, which uses the FPU, or with --no-mpu float.wasm
+    translated with --no-mpu, for a system with neither, as run.py takes
+    them."""
+    if "--no-mpu" in opts:
+        asm = os.path.join(tmp, "float_soft.nasm")
+        run([sys.executable, NICEWASM, "--library", "float", "--no-mpu", "-o", asm,
+             os.path.join(RUNTIME, "float.wasm")])
+    else:
+        asm = os.path.join(RUNTIME, "float_fpu.nasm")
+    with open(asm) as f:
+        labels = {line.split()[0] for line in f if line.startswith("__")}
+    return asm, labels
+
+
+def pipeline(mod: bytes, tmp: str, opts: List[str], name: str, floats: Library
              ) -> Tuple[Optional[Outcome], str, Optional[bytes]]:
     """Translates the module with the options opts of nicewasm, joins,
-    assembles, and runs it. Returns the outcome, R1 after a HALT, or the
+    assembles, and runs it, with the float library if it calls it.
+    Returns the outcome, R1 after a HALT, or the
     code in R1 after a halt at ___wasm_trap, or None after any other halt,
     the emulator's output, and the linear memory at the halt, or None
     after a halt with no outcome."""
@@ -1591,6 +2038,10 @@ def pipeline(mod: bytes, tmp: str, opts: List[str], name: str
     run([sys.executable, NICEWASM, *opts, "-o", asm, wasm_file])
     parts = [os.path.join(RUNTIME, "start_wasm.nasm"), asm, os.path.join(RUNTIME, "lib.nasm"),
              os.path.join(RUNTIME, "muldiv_soft.nasm" if nompu else "muldiv_mpu.nasm")]
+    with open(asm) as f:
+        text = f.read()
+    if any(label in text for label in floats[1]):
+        parts.append(floats[0])
     full = os.path.join(tmp, name + ".full.nasm")
     with open(full, "w") as out:
         for part in parts:
@@ -1630,14 +2081,29 @@ def first_difference(want: bytes, got: Optional[bytes]) -> Optional[str]:
     return None
 
 
-def check(seed: int, tmp: str, opts: List[str], keep: Optional[str] = None) -> Tuple[Optional[str], Outcome]:
+def has_floats(seed: int, opts: List[str]) -> bool:
+    """Whether the module of the seed has floats: those of odd seeds, and
+    with --inline-fpu all."""
+    return seed % 2 == 1 or "--inline-fpu" in opts
+
+
+def make(seed: int, opts: List[str]) -> Tuple[List[Func], bytes, bool]:
+    """The functions and the data segment of the seed in the mode of opts,
+    and whether they have floats."""
+    floats = has_floats(seed, opts)
+    fns, segment = build(seed, "--no-bounds-checks" not in opts, trust="--trust-alignment" in opts, floats=floats)
+    return fns, segment, floats
+
+
+def check(seed: int, tmp: str, opts: List[str], library: Library, keep: Optional[str] = None
+          ) -> Tuple[Optional[str], Outcome]:
     """Runs one seed. Returns a description of the failure, or None, and
     the outcome the model expected. With keep, the program is copied to
     keep/fuzzSEED.bin, with the mode in the name."""
-    fns, segment = build(seed, "--no-bounds-checks" not in opts, trust="--trust-alignment" in opts)
-    mod, expected, want = finish(fns, segment)
+    fns, segment, floats = make(seed, opts)
+    mod, expected, want = finish(fns, segment, floats)
     try:
-        got, output, memory_ = pipeline(mod, tmp, opts, f"fuzz{seed}")
+        got, output, memory_ = pipeline(mod, tmp, opts, f"fuzz{seed}", library)
     except RuntimeError as e:
         return f"seed {seed}: " + str(e).replace("\n", "\n  "), expected
     if keep is not None:
@@ -1652,15 +2118,15 @@ def check(seed: int, tmp: str, opts: List[str], keep: Optional[str] = None) -> T
     return f"seed {seed}: expected {show(expected)}, got {show(got)}\n  {first}", expected
 
 
-def reduce(seed: int, tmp: str, opts: List[str]) -> None:
+def reduce(seed: int, tmp: str, opts: List[str], library: Library) -> None:
     """Removes statements while the mismatch persists, and writes the
     reduced module and its translation to the current directory."""
-    fns, segment = build(seed, "--no-bounds-checks" not in opts, trust="--trust-alignment" in opts)
+    fns, segment, floats = make(seed, opts)
 
     def mismatch() -> bool:
-        mod, expected, want = finish(fns, segment)
+        mod, expected, want = finish(fns, segment, floats)
         try:
-            got, _, memory_ = pipeline(mod, tmp, opts, "reduce")
+            got, _, memory_ = pipeline(mod, tmp, opts, "reduce", library)
         except RuntimeError:
             return True
         return got != expected or first_difference(want, memory_) is not None
@@ -1676,11 +2142,11 @@ def reduce(seed: int, tmp: str, opts: List[str]) -> None:
                     changed = True
                 else:
                     fn.stmts.insert(i, saved)
-    mod, expected, _ = finish(fns, segment)
+    mod, expected, _ = finish(fns, segment, floats)
     with open(f"fuzz_{seed}.wasm", "wb") as f:
         f.write(mod)
     try:
-        got, _, _ = pipeline(mod, tmp, opts, "reduce")
+        got, _, _ = pipeline(mod, tmp, opts, "reduce", library)
     except RuntimeError as e:
         # The translator rejected the module, or the assembler the translation.
         print(f"reduced to {[len(fn.stmts) for fn in fns]} statements: {str(e).strip().splitlines()[-1]}; "
@@ -1694,7 +2160,7 @@ def reduce(seed: int, tmp: str, opts: List[str]) -> None:
 # The modes: fuzz.py's option -> nicewasm's options.
 MODES = {"--no-mpu": ["--no-mpu"], "--unchecked": ["--no-bounds-checks"],
          "--grow": ["--memory-pages", "2"], "--trust": ["--trust-alignment", "--no-bounds-checks"],
-         "--windows": ["--byte-windows", "--trust-alignment"]}
+         "--windows": ["--byte-windows", "--trust-alignment"], "--inline-fpu": ["--inline-fpu"]}
 
 
 def main() -> None:
@@ -1714,14 +2180,16 @@ def main() -> None:
         sys.exit(__doc__.split("\n\n")[1])
     first, count = int(numbers[0]), int(numbers[1])
     with tempfile.TemporaryDirectory() as tmp:
+        library = float_library(tmp, opts)
         if do_reduce:
-            reduce(first, tmp, opts)
+            reduce(first, tmp, opts, library)
             return
         # The seeds run in parallel, each with files of its own name.
         failures = []
         traps = 0
         with concurrent.futures.ThreadPoolExecutor(os.cpu_count()) as pool:
-            for problem, expected in pool.map(lambda seed: check(seed, tmp, opts, keep), range(first, first + count)):
+            for problem, expected in pool.map(lambda seed: check(seed, tmp, opts, library, keep),
+                                                range(first, first + count)):
                 traps += expected[0] == "trap"
                 if problem is not None:
                     failures.append(problem)

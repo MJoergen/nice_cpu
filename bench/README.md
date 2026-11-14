@@ -324,7 +324,11 @@ MICROARCH.md §3 to §5:
   FPU's times depend on the operands, and the model leaves out the reads
   of `X_W`, and of `X_S` for a value that is not binary32, which go
   through its unit too. The averages give `float.c` and `float_inline`
-  on the pipelined core within 1%.
+  on the pipelined core within 1%, which `make compare` shows after the
+  top-level `make slow`. `pipecycles.py --test` checks the times by
+  default on a command of each kind, and that the defaults of its
+  `Model`, which `cycprof.py` uses, are those of the options. `make
+  test` checks that `float_inline` runs fewer instructions than `float`.
 
 Every cycle above one per instruction is
 charged to the rule that caused it, so the output says where the time
@@ -394,7 +398,9 @@ phases.
 
 `make compare` prints the model's cycles beside the pipelined core's,
 phase by phase, with the difference in percent, from the output of `make
-core`, which must have run first, on the same `.bin`. With the core that
+core`, which must have run first, on the same `.bin`: for `bench` and
+`hand`, and for `float` and `float_inline` when `make core` has run them,
+as the top-level `make slow` does. With the core that
 predicts backward jumps (MICROARCH.md §5.4), and both programs closing
 their loops with them:
 

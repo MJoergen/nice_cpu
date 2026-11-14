@@ -191,6 +191,8 @@ That is the program with the FPU, and nothing says so. The other way round is wo
 
 **Fix:** with §3.2, `make compare` on the two float programs after `make slow`, and in `make test` a check that `float_inline.bin` has fewer instructions than `float.bin`.
 
+**Resolved.** `pipecycles.py --test` runs the snippet of a read of `X_LO` after a command with the times of the options by default, for ADD, MUL, FLOOR, SCALE2, DIV, SQRT, ISQRT, FMOD, SCALE10, `DIGITS 15`, DUP, and `DROP 2`, worked out by hand, and checks that the defaults of `Model`, which `cycprof.py` uses, are those of the options. Each of the three changes of this section fails it, and so does a default of `Model` other than the option's. `make test` checks that `float_inline` runs fewer instructions than `float`, which fails with `--inline-fpu` left out of its rule. `make compare` compares `float` and `float_inline` too, when `make core` has run them, as `make slow` does (§3.2): the model is 0.9% below the core on `float`, 612025 against 617442.
+
 ### 3.5 The float library's stack rule is tested from an empty stack only
 
 DEVICES.md §11.5 and ABI.md say that a routine leaves the FPU's depth as it found it, so that a caller may keep 8 values across a call. `runtime/test/float_fpu.py` starts each of its three runs with an empty stack, reads `FPU_STATUS` once at the end (line 213), and looks at the depth alone (line 344). A routine that pops one value too many on an empty stack leaves the depth 0, and sets only the stack fault, which the test does not read.

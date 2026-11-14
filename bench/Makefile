@@ -104,6 +104,11 @@ test: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/float.bi
 	@$(EMU) $(SOFT_BUILD)/float.bin < /dev/null > $(SOFT_BUILD)/float.out
 	@if grep -q ' R1  00000000 ' $(SOFT_BUILD)/float.out && ! grep -q FAIL $(SOFT_BUILD)/float.out; \
 	then echo "PASS float with float.nasm"; else echo "FAIL float with float.nasm"; exit 1; fi
+	@calls=$$(awk '$$1 == "total" { print $$2 }' $(BUILD)/float.out); \
+	  inline=$$(awk '$$1 == "total" { print $$2 }' $(BUILD)/float_inline.out); \
+	  if [ -n "$$calls" ] && [ -n "$$inline" ] && [ $$inline -lt $$calls ]; \
+	  then echo "PASS float_inline runs fewer instructions than float, $$inline and $$calls"; \
+	  else echo "FAIL float_inline runs $$inline instructions, float $$calls"; exit 1; fi
 	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --phases 6 $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin \
 	  > /dev/null \
 	  && echo "PASS pipecycles.py --phases 6"
@@ -265,12 +270,18 @@ cycles: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/float.
 
 # The model's cycles beside the pipelined core's, phase by phase, with the
 # difference in percent, and by cause, from the output and the retire log
-# of make core, which must have run first (README.md, The cycle estimate).
-compare: $(BUILD)/bench.bin $(BUILD)/hand.bin emulator
-	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --against ../hdl/build/bench_pipeline.out \
-	  --causes ../hdl/build/bench_pipeline.retires $(BUILD)/bench.bin
-	@NICEEMU=$(EMU) $(PYTHON) pipecycles.py --against ../hdl/build/hand_pipeline.out \
-	  --causes ../hdl/build/hand_pipeline.retires $(BUILD)/hand.bin
+# of make core, which must have run first (README.md, The cycle estimate):
+# for bench and hand, and for float and float_inline if make core has run
+# them, as the top-level make slow does.
+COMPARE_FLOAT = float float_inline
+compare: $(BUILD)/bench.bin $(BUILD)/hand.bin $(COMPARE_FLOAT:%=$(BUILD)/%.bin) emulator
+	@$(foreach p,bench hand,NICEEMU=$(EMU) $(PYTHON) pipecycles.py \
+	  --against ../hdl/build/$(p)$(RUN_SUFFIX)_pipeline.out \
+	  --causes ../hdl/build/$(p)$(RUN_SUFFIX)_pipeline.retires $(BUILD)/$(p).bin &&) true
+	@$(foreach p,$(COMPARE_FLOAT),if [ -f ../hdl/build/$(p)$(RUN_SUFFIX)_pipeline.out ]; then \
+	  NICEEMU=$(EMU) $(PYTHON) pipecycles.py --against ../hdl/build/$(p)$(RUN_SUFFIX)_pipeline.out \
+	  --causes ../hdl/build/$(p)$(RUN_SUFFIX)_pipeline.retires $(BUILD)/$(p).bin || exit 1; \
+	  else echo "$(p): no run on the pipelined core; make core CORE_PROGRAMS=\"$(COMPARE_FLOAT)\""; fi;)
 
 # The same, charged to the source lines of each program: the listings
 # build/bench.cyc.txt, build/hand.cyc.txt, and build/float.cyc.txt.

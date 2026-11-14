@@ -165,6 +165,7 @@ bound a micro-op and the core to what WRITE did in it.
 """
 
 import argparse
+import inspect
 import os
 import subprocess
 import sys
@@ -1399,27 +1400,79 @@ a       ?!Z     ADD     R15, R3, 2
 ]
 
 
+# The FPU's times as the options give them by default, 18 and 75, on the
+# snippet "FPU: a read of X_LO waits for DIV" with other commands. As
+# there, the FPU serves the command at 11, and the read of X_LO, taken at
+# 11, is served when the command ends, with its data in WRITE a cycle
+# later, at 12 + c for a command of c cycles: a gap of c + 1, and c + 14
+# cycles in all.
+def fpu_snippet(cmd: int) -> str:
+    return ("                MOVE    @0xFFFFFF8B, 7\n"
+            f"                MOVE    @0xFFFFFF8C, {cmd:#x}\n"
+            "                MOVE    R1, @0xFFFFFF88\n"
+            "                HALT\n")
+
+
+def fpu_default(what: str, cmd: int, c: int) -> Tuple[str, str, int, int, Dict[str, int]]:
+    return (f"FPU by default: {what} takes {c} cycles", fpu_snippet(cmd), 4, c + 14,
+            {"startup": 7, "bus": 2, "fpu": c + 1})
+
+
+DEFAULT_TESTS = [
+    # --fpu-op, 18 cycles, for the commands but the stack and the long ones.
+    fpu_default("ADD", 0x10, 18),
+    fpu_default("MUL", 0x12, 18),
+    fpu_default("FLOOR", 0x20, 18),
+    fpu_default("SCALE2", 0x38, 18),
+    # --fpu-long, 75, for DIV, SQRT, ISQRT, FMOD, SCALE10, and DIGITS.
+    fpu_default("DIV", 0x13, 75),
+    fpu_default("SQRT", 0x14, 75),
+    fpu_default("ISQRT", 0x1A, 75),
+    fpu_default("FMOD", 0x1D, 75),
+    fpu_default("SCALE10", 0x39, 75),
+    fpu_default("DIGITS 15", 0x0F3A, 75),
+    # The stack commands, a cycle.
+    fpu_default("DUP", 0x02, 1),
+    fpu_default("DROP 2", 0x0203, 1),
+]
+
+
 def test() -> None:
     bad = 0
     with tempfile.TemporaryDirectory() as tmp:
         none: Dict[str, int] = {}
-        tests = [(what, src, none, n, cycles, gaps) for what, src, n, cycles, gaps in TESTS]
-        for i, (what, src, opts, n, cycles, gaps) in enumerate(tests + OPTION_TESTS):
+        all_tests: List[Tuple[str, str, Optional[Dict[str, int]], int, int, Dict[str, int]]] = [
+            (what, src, none, n, cycles, gaps) for what, src, n, cycles, gaps in TESTS]
+        all_tests += OPTION_TESTS
+        all_tests += [(what, src, None, n, cycles, gaps) for what, src, n, cycles, gaps in DEFAULT_TESTS]
+        for i, (what, src, opts, n, cycles, gaps) in enumerate(all_tests):
             nasm, binp = os.path.join(tmp, f"t{i}.nasm"), os.path.join(tmp, f"t{i}.bin")
             with open(nasm, "w") as f:
                 f.write(src)
             subprocess.run([sys.executable, os.path.join(HERE, "..", "assembler", "niceasm.py"),
                             "-o", binp, nasm], check=True, stdout=subprocess.DEVNULL)
-            # The snippets of the FPU were worked out with its times 4 and 60.
-            m = Model(load_bin(binp), fpu_op=4, fpu_long=60)
-            for option, value in opts.items():
-                setattr(m, option, value)
+            if opts is None:
+                # The times of the options by default, as main gives them.
+                m = model(parser().parse_args([]), load_bin(binp))
+            else:
+                # The snippets of the FPU were worked out with its times 4 and 60.
+                m = Model(load_bin(binp), fpu_op=4, fpu_long=60)
+                for option, value in opts.items():
+                    setattr(m, option, value)
             run_model(m, hazards.trace_lines(binp))
             have = {k: v for k, v in dict(m.gaps, multi=m.multi).items() if v}
             ok = (m.instructions, m.total(), have) == (n, cycles, gaps)
             bad += not ok
             print(f"{'PASS' if ok else 'FAIL'} {what}: {m.instructions} instructions, "
                   f"{m.total()} cycles" + ("" if ok else f" {have}, expected {n}, {cycles}, {gaps}"))
+    # Model's defaults, which cycprof.py uses, are those of the options.
+    a = vars(parser().parse_args([]))
+    differ = [f"{k} {p.default} where the option gives {a[k]}"
+              for k, p in inspect.signature(Model.__init__).parameters.items()
+              if k in a and p.default != a[k]]
+    bad += bool(differ)
+    print(("FAIL Model's defaults: " + ", ".join(differ)) if differ else
+          "PASS Model's defaults are those of the options")
     # The causes of a retire log: two phases, each between two reads at its
     # address. The first has the letters of the two steps after its first
     # read, the second those of the two after its own.
@@ -1432,11 +1485,11 @@ def test() -> None:
     bad += not ok
     print(f"{'PASS' if ok else 'FAIL'} the causes of a retire log" + ("" if ok else f": {got}"))
     if bad:
-        sys.exit(f"FAIL pipecycles.py --test: {bad} of {len(tests + OPTION_TESTS) + 1}")
+        sys.exit(f"FAIL pipecycles.py --test: {bad} of {len(all_tests) + 2}")
     print("PASS pipecycles.py --test")
 
 
-def main() -> None:
+def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("files", nargs="*")
     ap.add_argument("--test", action="store_true")
@@ -1488,6 +1541,18 @@ def main() -> None:
                          "hdl/test/tb_core.vhd), to compare step by step")
     ap.add_argument("--top", type=int, default=20, metavar="N",
                     help="with --retires, the N addresses that differ most (20)")
+    return ap
+
+
+def model(a: argparse.Namespace, mem: Dict[int, int]) -> Model:
+    """The model with the times of the options."""
+    return Model(mem, a.ibuf, a.flush, a.early, a.agen, a.sidefx_fast, a.mul,
+                 a.div_skip, a.shift_late, a.shift_reg, a.sum_wait, a.dest_adjust, a.read_late,
+                 a.read_bus, a.slave_gap, a.fpu_op, a.fpu_long)
+
+
+def main() -> None:
+    ap = parser()
     a = ap.parse_args()
     if a.test:
         test()
@@ -1498,9 +1563,7 @@ def main() -> None:
         binp = path if path.endswith(".bin") else a.bin
         if not binp:
             sys.exit("pipecycles.py: a trace needs --bin")
-        m = Model(load_bin(binp), a.ibuf, a.flush, a.early, a.agen, a.sidefx_fast, a.mul,
-                  a.div_skip, a.shift_late, a.shift_reg, a.sum_wait, a.dest_adjust, a.read_late,
-                  a.read_bus, a.slave_gap, a.fpu_op, a.fpu_long)
+        m = model(a, load_bin(binp))
         if a.retires:
             print(retires(m, hazards.trace_lines(path), a.retires, a.top))
             continue

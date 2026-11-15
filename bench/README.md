@@ -488,8 +488,8 @@ and `make test` runs it.
 `words.py` gives the size in words of a wasm module translated by
 nicewasm, the measure that [translator/README.md](../translator/README.md)
 quotes for `test/safe.zig`. `make words` prints it for `bench.wasm`,
-`translator/test/safe.wasm`, and `coremark/coremark.wasm`: 11588, 5903,
-and 29824 words. 3052 of the benchmark's words are the
+`translator/test/safe.wasm`, and `coremark/coremark.wasm`: 11604, 5903,
+and 29891 words. 3052 of the benchmark's words are the
 float conversions of `printf`, which every program that calls it gets,
 and `iprintf` leaves out (runtime/README.md). It also builds `build/math.wasm`, with
 clang, a module of the math functions of the C library that are C, in

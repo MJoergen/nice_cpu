@@ -331,6 +331,11 @@ per byte. `nice_print` writes the
 bytes of a C string in linear memory, where `_nice_print` in `lib.nasm`
 writes one character per word. `fputc`, `fputs`, and `puts` write with `nice_putc` and
 `nice_print`, and `fgetc` reads with `nice_getc` (DEVICES.md §1).
+`stdin` is a text stream, whose line ends C lets the library translate:
+`fgetc`, and so `getchar`, `fgets`, and `scanf`, return a CR, which the
+Enter key sends (DEVICES.md §1), as `'\n'`, and a CR LF as one `'\n'`.
+After a CR it does not wait for an LF, which a keyboard never sends: the
+next read drops one. `nice_getc` returns the bytes as they come.
 `getchar` waits until a byte is there. It
 returns `EOF` once the line's input has ended, that of the emulator's
 stdin or of the debug link's host; a keyboard's bytes may still come
@@ -583,9 +588,12 @@ prints a byte slice instead.
 line's input has ended, as `nice_getc` returns −1.
 
 `readLine` and `read_line` read a line into a buffer and return it,
-without the `\n`, and without a `\r` just before it. A line longer than
+without its end: `\n`, `\r`, which the Enter key sends (DEVICES.md §1),
+or `\r\n`. After a `\r` they do not wait for a `\n`, which a keyboard
+never sends: the next call drops one. `getc` and `pollc` return the
+bytes as they come. A line longer than
 the buffer is cut off: the bytes that fit are returned, and the rest of
-the line is read and dropped. A last line with no `\n` before the end of
+the line is read and dropped. A last line with no end before the end of
 the input is returned too, and after it null or `None`. In Rust, bytes
 that are not UTF-8, such as a character cut in two by the buffer's end,
 end the string at the last whole character. There is no `scanf`; a

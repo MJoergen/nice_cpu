@@ -1,6 +1,9 @@
 [12 34 -5] 8
 [hello] 5
-[a\x0db] 3
+[a] 1
+[b] 1
+[] 0
+[] 0
 [] 0
 [abcdefghijklmnop] 16
 [abcdefghijklmno\xc3] 16
@@ -9,5 +12,5 @@
 [abcdefghijklmno] 15
 [last] 4
 sum 41 true true
-R1  0000000a
+R1  0000000d
 exit 0

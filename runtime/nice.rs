@@ -96,19 +96,33 @@ pub fn pollc() -> Poll {
     }
 }
 
-/// Reads a line of console input into buf and returns it, without the
-/// "\n", and without a "\r" just before it. A line longer than buf is cut
-/// off: its first buf.len() bytes are kept, and the rest is read and
-/// dropped. Bytes that are not UTF-8, as a character cut in two, end the
-/// string at the last whole character. A last line with no "\n" before the
-/// end of the input is returned too. Returns None once the input has ended
-/// with no byte read.
+/// Whether the last line that read_line read ended at a "\r", whose "\n",
+/// if one comes, the next call drops.
+static AFTER_CR: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// Reads a line of console input into buf and returns it, without its end:
+/// "\n", "\r", the Enter key (DEVICES.md §1), or "\r\n". A line longer
+/// than buf is cut off: its first buf.len() bytes are kept, and the rest
+/// is read and dropped. Bytes that are not UTF-8, as a character cut in
+/// two, end the string at the last whole character. A last line with no
+/// end before the end of the input is returned too. Returns None once the
+/// input has ended with no byte read. After a "\r" it does not wait for a
+/// "\n", which a keyboard never sends: the next call drops it.
 pub fn read_line(buf: &mut [u8]) -> Option<&str> {
+    use core::sync::atomic::Ordering::Relaxed;
     let mut n = 0;
     let mut cut = false;
+    let mut next = getc();
+    if AFTER_CR.swap(false, Relaxed) && next == Some(b'\n') {
+        next = getc();
+    }
     loop {
-        match getc() {
+        match next {
             Some(b'\n') => break,
+            Some(b'\r') => {
+                AFTER_CR.store(true, Relaxed);
+                break;
+            }
             Some(c) => {
                 if n < buf.len() {
                     buf[n] = c;
@@ -120,9 +134,7 @@ pub fn read_line(buf: &mut [u8]) -> Option<&str> {
             None if n == 0 && !cut => return None,
             None => break,
         }
-    }
-    if !cut && n > 0 && buf[n - 1] == b'\r' {
-        n -= 1;
+        next = getc();
     }
     let line = &buf[..n];
     Some(match core::str::from_utf8(line) {

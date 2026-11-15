@@ -813,3 +813,14 @@ words, and `nice.h` had only `NICE_SCREEN_BLANK`. NiceMonMEGA65 named
 13 of them for its monitor, as `MON_FG_*` and `MON_BG_*`. Then the
 runtime named 15 colors in `colors.nasm`, `nice.h`, `nice.zig`, and
 `nice.rs`, and the demo joined `colors.nasm` for its seven (#175).
+
+## The line ends of the console input
+
+Until 2026-11-15, the runtime's line reading ended a line only at LF:
+`readLine`, `read_line`, and `fgets`. `readLine` and `read_line` dropped
+a CR just before the LF, and kept a lone one in the line, and `fgetc`
+returned the bytes as they came. The Enter key sends CR in the
+emulator's window and on a board, so a program there never saw a line
+end, and nicedbg's console sent LF for it, by the terminal's `ICRNL`,
+until the same day (#189). Then a CR and a CR LF ended a line too, and
+`fgetc` returned both as `'\n'` (#191).

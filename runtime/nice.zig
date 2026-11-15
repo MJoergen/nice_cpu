@@ -55,22 +55,34 @@ pub fn pollc() Poll {
     return if (c == -2) .empty else .end;
 }
 
-/// Reads a line of console input into buf and returns it, without the
-/// "\n", and without a "\r" just before it. A line longer than buf is cut
-/// off: its first buf.len bytes are returned, and the rest is read and
-/// dropped. A last line with no "\n" before the end of the input is
-/// returned too. Returns null once the input has ended with no byte read.
+/// Whether the last line that readLine read ended at a "\r", whose "\n",
+/// if one comes, the next call drops.
+var after_cr = false;
+
+/// Reads a line of console input into buf and returns it, without its end:
+/// "\n", "\r", the Enter key (DEVICES.md §1), or "\r\n". A line longer
+/// than buf is cut off: its first buf.len bytes are returned, and the rest
+/// is read and dropped. A last line with no end before the end of the
+/// input is returned too. Returns null once the input has ended with no
+/// byte read. After a "\r" it does not wait for a "\n", which a keyboard
+/// never sends: the next call drops it.
 pub fn readLine(buf: []u8) ?[]u8 {
     var n: usize = 0;
     var cut = false;
-    while (getc()) |c| {
+    var next = getc();
+    if (after_cr and next != null and next.? == '\n') next = getc();
+    after_cr = false;
+    while (next) |c| : (next = getc()) {
         if (c == '\n') break;
+        if (c == '\r') {
+            after_cr = true;
+            break;
+        }
         if (n < buf.len) {
             buf[n] = c;
             n += 1;
         } else cut = true;
     } else if (n == 0 and !cut) return null;
-    if (!cut and n > 0 and buf[n - 1] == '\r') n -= 1;
     return buf[0..n];
 }
 

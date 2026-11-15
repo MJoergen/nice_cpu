@@ -5,14 +5,15 @@
 #include <stdio.h>
 
 // back is the byte that ungetc or scanf gave back, for the next read, or
-// EOF if there is none.
+// EOF if there is none. cr is set when the last byte read was a CR.
 struct _FILE {
     int back;
+    int cr;
 };
 
-static FILE in = {EOF};
-static FILE out = {EOF};
-static FILE err = {EOF};
+static FILE in = {EOF, 0};
+static FILE out = {EOF, 0};
+static FILE err = {EOF, 0};
 
 FILE *stdin = &in;
 FILE *stdout = &out;
@@ -50,15 +51,23 @@ int puts(const char *s)
 }
 
 // Waits for the next input byte. nice_getc returns -1, which is EOF, once
-// the line's input has ended.
+// the line's input has ended. stdin is a text stream, whose line ends C
+// lets the library translate (C11 7.21.2): a CR, the Enter key (DEVICES.md
+// §1), is '\n', and so is a CR LF. After a CR it does not wait for an LF,
+// which a keyboard never sends: the next read drops one.
 int fgetc(FILE *f)
 {
+    int c;
     if (f->back != EOF) {
-        int c = f->back;
+        c = f->back;
         f->back = EOF;
         return c;
     }
-    return nice_getc();
+    c = nice_getc();
+    if (f->cr && c == '\n')
+        c = nice_getc();
+    f->cr = c == '\r';
+    return f->cr ? '\n' : c;
 }
 
 int getc(FILE *f)

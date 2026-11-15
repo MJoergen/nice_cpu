@@ -4,7 +4,7 @@
 // the numbers of the first line, parsed with core. The output is that of
 // zigline.zig, but for two lines that are not UTF-8: the line with "é"
 // cut in two after its first byte, and the one with the byte 0xFF, end
-// before the bad byte. main returns the number of lines read, 10.
+// before the bad byte. main returns the number of lines read, 13.
 #![no_std]
 
 #[path = "../nice.rs"]

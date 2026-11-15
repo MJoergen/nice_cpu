@@ -36,7 +36,7 @@ BIGSTACK = -Wl,-z,stack-size=131072 -Wl,--initial-memory=262144
 # The test programs, test/X.c. Their .wasm files are checked in, so make
 # test needs no C compiler; make wasm rebuilds them. A test/X.input file is
 # the console input of test X.
-TESTS = stdio stream string stdlib scanf iscanf nice printf iprintf strings numbers sscanf malloc abort exit limits assert time math floatio \
+TESTS = stdio stream lines string stdlib scanf iscanf nice printf iprintf strings numbers sscanf malloc abort exit limits assert time math floatio \
   mchess
 # The tests of the i families, which must name no label of the float
 # library, so that a program that calls only them is joined without it.

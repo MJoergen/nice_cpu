@@ -1,0 +1,12 @@
+[one\n]
+[two\n]
+[three\n]
+[\n]
+[\n]
+getchar 4
+scanf 2 12 34 10
+nice_getc 88 13
+[end\n]
+1
+R1  00000000
+exit 0

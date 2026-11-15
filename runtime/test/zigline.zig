@@ -1,11 +1,12 @@
 // nice.zig: readLine, with a buffer of 16 bytes, on test/zigline.input.
 // It prints each line in brackets, with the bytes outside 0x20 to 0x7E as
 // \xNN, and its length, then the sum of the numbers of the first line,
-// parsed with std. The input checks a "\r" before the "\n" (dropped) and
-// inside the line (kept), an empty line, lines cut off at 16 bytes, with
-// a "\r" past the cut and one just inside it, and a last line with no
-// "\n". After it, readLine returns null, twice. test/rustline.rs reads
-// the same input. main returns the number of lines read, 10.
+// parsed with std. The input checks the line ends "\n", "\r\n", and a
+// lone "\r" inside the text, empty lines ended by each of the three,
+// lines cut off at 16 bytes, ended by "\r" and "\n", with a "\r\n" past
+// the cut and one just inside it, and a last line with no end. After it,
+// readLine returns null, twice. test/rustline.rs reads the same input.
+// main returns the number of lines read, 13.
 const std = @import("std");
 const nice = @import("nice");
 

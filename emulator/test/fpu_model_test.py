@@ -420,6 +420,46 @@ CASES: List[Case] = [
     ("EXP -1000 is +0", [d(-1000.0)], 0, "EXP", [0], 0, None),
     ("EXP inf", [INF], 0, "EXP", [INF], 0, None),
     ("EXP -inf is +0", [NINF], 0, "EXP", [0], 0, None),
+    # POW is Y^X, C's pow(Y, X). A whole power of whole numbers is
+    # exact, and 10^-5 is 1 ulp below 1e-5 rounded, as FreeBSD's pow
+    # gives it.
+    ("POW 3^4 is 81", [d(3.0), d(4.0)], 0, "POW", [d(81.0)], 0, None),
+    ("POW 10^22 is exact", [d(10.0), d(22.0)], 0, "POW", [d(1e22)], 0, None),
+    ("POW 10^-5", [d(10.0), d(-5.0)], 0, "POW", [0x3EE4F8B588E368F0], 0, None),
+    ("POW 2^0.5 is SQRT 2", [d(2.0), d(0.5)], 0, "POW", [0x3FF6A09E667F3BCD], 0, None),
+    ("POW (-2)^3 is -8", [d(-2.0), d(3.0)], 0, "POW", [d(-8.0)], 0, None),
+    ("POW (-2)^0.5: invalid", [d(-2.0), d(0.5)], 0, "POW", [N], INVALID, None),
+    ("POW (-1)^inf is 1", [d(-1.0), INF], 0, "POW", [d(1.0)], 0, None),
+    ("POW 0^-1: inf, a pole", [0, d(-1.0)], 0, "POW", [INF], DIVZERO, None),
+    ("POW (-0)^-3: -inf, a pole", [NZ, d(-3.0)], 0, "POW", [NINF], DIVZERO, None),
+    ("POW (-0)^3 is -0", [NZ, d(3.0)], 0, "POW", [NZ], 0, None),
+    ("POW (-0)^-2: inf, a pole", [NZ, d(-2.0)], 0, "POW", [INF], DIVZERO, None),
+    ("POW 0.5^inf is +0", [d(0.5), INF], 0, "POW", [0], 0, None),
+    ("POW 2^inf is inf", [d(2.0), INF], 0, "POW", [INF], 0, None),
+    ("POW 10^400 overflows", [d(10.0), d(400.0)], 0, "POW", [INF], OVERFLOW, None),
+    ("POW (-10)^401 overflows to -inf", [d(-10.0), d(401.0)], 0, "POW", [NINF], OVERFLOW, None),
+    ("POW 10^-400 is +0", [d(10.0), d(-400.0)], 0, "POW", [0], 0, None),
+    # C gives 1 for 1^NaN and NaN^0; a NaN operand gives the NaN here.
+    ("POW 1^NaN is the NaN", [d(1.0), QN], 0, "POW", [N], 0, None),
+    ("POW NaN^0 is the NaN", [QN, 0], 0, "POW", [N], 0, None),
+    ("POW2 10 is 1024", [d(10.0)], 0, "POW2", [d(1024.0)], 0, None),
+    ("POW2 0.5 is SQRT 2", [d(0.5)], 0, "POW2", [0x3FF6A09E667F3BCD], 0, None),
+    ("POW2 1023", [d(1023.0)], 0, "POW2", [0x7FE0000000000000], 0, None),
+    ("POW2 -1074 is 2^-1074", [d(-1074.0)], 0, "POW2", [MINSUB], 0, None),
+    ("POW2 -1075 is +0", [d(-1075.0)], 0, "POW2", [0], 0, None),
+    ("POW2 1024 overflows", [d(1024.0)], 0, "POW2", [INF], OVERFLOW, None),
+    ("POW2 -inf is +0", [NINF], 0, "POW2", [0], 0, None),
+    ("HYPOT 3, 4 is 5", [d(3.0), d(4.0)], 0, "HYPOT", [d(5.0)], 0, None),
+    ("HYPOT -3, -4 is 5", [d(-3.0), d(-4.0)], 0, "HYPOT", [d(5.0)], 0, None),
+    ("HYPOT 1, 1 is SQRT 2", [d(1.0), d(1.0)], 0, "HYPOT", [0x3FF6A09E667F3BCD], 0, None),
+    ("HYPOT 1e308, 1e308 does not overflow", [d(1e308), d(1e308)], 0, "HYPOT", [0x7FE92C80954C51F5], 0, None),
+    ("HYPOT MAX, MAX overflows", [MAX, MAX], 0, "HYPOT", [INF], OVERFLOW, None),
+    # 2^-1074 times SQRT 2 rounds to 2^-1074.
+    ("HYPOT 2^-1074, 2^-1074", [MINSUB, MINSUB], 0, "HYPOT", [MINSUB], 0, None),
+    ("HYPOT +0, -0 is +0", [0, NZ], 0, "HYPOT", [0], 0, None),
+    ("HYPOT -inf, 1 is inf", [NINF, d(1.0)], 0, "HYPOT", [INF], 0, None),
+    # C gives inf for an infinity and a NaN; a NaN operand gives the NaN.
+    ("HYPOT inf, NaN is the NaN", [INF, QN], 0, "HYPOT", [N], 0, None),
     # XMUL: p as Y, the error as X.
     ("XMUL 3, 3 is exact: the error is +0", [d(3.0), d(3.0)], 0, "XMUL", [d(9.0), 0], 0, None),
     # (1 + 2^-52)^2 = 1 + 2^-51 + 2^-104.
@@ -1007,6 +1047,15 @@ def exact_function(name: str, ops: List[Fraction], pi: decimal.Decimal) -> decim
         return dec(ops[0]).log10()
     if name == "EXP":
         return dec(ops[0]).exp()
+    if name == "POW2":
+        return (dec(ops[0]) * decimal.Decimal(2).ln()).exp()
+    if name == "POW":
+        # Y^X, of a negative Y for a whole X only
+        b, e = ops
+        r = (dec(e) * dec(abs(b)).ln()).exp()
+        return -r if b < 0 and e.denominator == 1 and e.numerator % 2 else r
+    if name == "HYPOT":
+        return (dec(ops[0]) ** 2 + dec(ops[1]) ** 2).sqrt()
     y, x = dec(ops[0]), dec(ops[1])
     a = exact_atan(y / x, pi)
     if x > 0:
@@ -1018,8 +1067,10 @@ def function_operands(name: str, rnd: random.Random, pi: Fraction) -> List[int]:
     """Random finite operands of the function name, within its domain:
     for SIN, COS, and TAN up to 2^20 pi/2, some next to a multiple of
     pi/2, for ATAN2 also pairs whose exponents are far apart, for the
-    logarithms also next to 1, and for EXP those whose result is finite
-    and not zero."""
+    logarithms also next to 1, for EXP, POW2, and POW those whose result
+    is finite and not zero, for POW also a negative Y with a whole X,
+    and for HYPOT pairs whose exponents are far apart, some of them huge
+    or tiny."""
 
     def binade(lo: int, hi: int) -> int:
         return rnd.getrandbits(52) | rnd.randint(lo, hi) << 52 | rnd.getrandbits(1) << 63
@@ -1044,6 +1095,32 @@ def function_operands(name: str, rnd: random.Random, pi: Fraction) -> List[int]:
             a = binade(1023 - 30, 1023 + 9)
             if -745 < F64.value(a) < 709:
                 return [a]
+    if name == "POW2":
+        if rnd.randrange(4) == 0:
+            return [d(float(rnd.randint(-1074, 1023)))]
+        while True:
+            a = binade(1023 - 30, 1023 + 9)
+            if -1074 < F64.value(a) < 1024:
+                return [a]
+    if name == "POW":
+        while True:
+            y = binade(1023 - 30, 1023 + 30) & ~(1 << 63)
+            ly = math.log2(float(F64.value(y)))
+            if ly == 0:
+                continue
+            if rnd.randrange(4) == 0:
+                # A whole X, of a negative Y too.
+                x = float(rnd.randint(-60, 60))
+                y |= rnd.getrandbits(1) << 63
+            else:
+                x = rnd.uniform(-1, 1) * rnd.choice([1, 30, 1000]) / ly
+            if abs(x * ly) < 1020:
+                return [y, d(x)]
+    if name == "HYPOT":
+        # Below 2^1022, so that the result is finite.
+        y = binade(1, 2044)
+        ey = y >> 52 & 0x7FF
+        return [y, binade(max(1, ey - rnd.choice([0, 3, 30, 70])), min(2044, ey + rnd.choice([0, 3, 30, 70])))]
     y = binade(1023 - 40, 1023 + 40)
     ey = y >> 52 & 0x7FF
     return [y, binade(ey - rnd.choice([0, 3, 30, 63]), ey + rnd.choice([0, 3, 30, 63]))]

@@ -298,11 +298,11 @@ architecture synthesis of fpu is
    -- whether POLE ran. fn_r and fn2_r say, from CMD_ST on, whether the
    -- command is a function, and one of two operands, so that ARITH2_ST
    -- does not decode num_r on its way to the stack.
-   signal pc_r     : natural range 0 to C_SEQ_STEPS'length - 1 := 0;
-   signal fn_r     : boolean;
-   signal fn2_r    : boolean;
-   signal step_r   : std_logic_vector(19 downto 0);
-   signal kval_r   : t_word64;
+   signal pc_r   : natural range 0 to C_SEQ_STEPS'length - 1 := 0;
+   signal fn_r   : boolean;
+   signal fn2_r  : boolean;
+   signal step_r : std_logic_vector(19 downto 0);
+   signal kval_r : t_word64;
 
    -- The table of constants is a block RAM, as step_r, which addresses
    -- it, comes from one: in LUTs, the decode of step_r's fan-out takes

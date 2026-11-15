@@ -100,7 +100,7 @@ OPTS_fpu     = --step-time -d 0x200:24 -d 0xffffff88:8
 # last value written there, or 0.
 OPTS_fpu_mem = --step-time --no-fpu -d 0x200:24 -d 0xffffff88:8
 OPTS_fpustack = -d 0x200:18 -d 0xffffff88:8
-OPTS_fpufunc = -d 0x200:17
+OPTS_fpufunc = -d 0x200:22
 OPTS_bytewin = -d 0x202:3 -d 0x03ffffff:1 -d 0x60000000:1 -d 0x20000809:1 -d 0x5000080e:1
 
 define check

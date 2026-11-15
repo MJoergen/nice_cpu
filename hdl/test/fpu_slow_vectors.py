@@ -25,13 +25,16 @@ the operands:
   slowest SIN took 1533 cycles, COS 1552, and TAN 2043.
 - ASIN, ACOS, ATAN, and ATAN2, of 4 random values in each binade from
   2^-70 to 2^70 and of the values next to the bounds where their paths
-  part. In the scan of 2026-11-15 the slowest ASIN took 1104 cycles,
-  ACOS 952, ATAN 940, and ATAN2 1319.
+  part. In the scan of 2026-11-15 the slowest ASIN took 1106 cycles,
+  ACOS 954, ATAN 944, and ATAN2 1323.
 - LN, LOG2, LOG10, and EXP, of 4 random values in every third binade,
   and for EXP of each binade from 2^-40 to 2^9 and 400 random values
   from -745 to 709, and of the values next to the bounds where their
-  paths part. In the scan of 2026-11-15 the slowest LN took 918 cycles,
-  LOG2 1133, LOG10 1204, and EXP 820.
+  paths part. In the scan of 2026-11-15 the slowest LN took 922 cycles,
+  LOG2 1144, LOG10 1214, and EXP 822.
+- POW2, POW, and HYPOT, of random values and pairs over the whole range
+  (scan_pow). In the scan of 2026-11-15 the slowest POW2 took 1053
+  cycles, POW 3018, of a negative Y to a whole X, and HYPOT 542.
 
 A change to DIGITS or SCALE10 in src/fpu.vhd may make other values the
 slowest, so such a change runs the scan again."""
@@ -94,12 +97,24 @@ SLOW_FUNCTIONS = [
     (0xBFE00375C03F6FEC, "ATAN"),
     (0x0B46A6213E555974, "LN"),
     (0x0000000000001F31, "LOG2"),
+    (0x6546A161E061BBCA, "LN"),
+    (0x07BF9A6A3B2A6245, "LOG2"),
     (0x15FF9D36E26866A7, "LOG10"),
     (0xC087491000000000, "EXP"),
+    (0xC087491000000001, "EXP"),
+    (0xC045770A3D70A3D7, "POW2"),
+    (0xC04207CED916872B, "POW2"),
 ]
 
-# The slowest ATAN2 of the scan: Y and X.
-SLOW_ATAN2 = [(0x3FDF86339515FA52, 0xBFF0000000000000), (0x3FE00375C03F6FEC, 0xBFF0000000000000)]
+# The slowest functions of two operands of the scan: Y, X, and the function.
+SLOW_PAIRS = [
+    (0x3FDF86339515FA52, 0xBFF0000000000000, "ATAN2"),
+    (0x3FE00375C03F6FEC, 0xBFF0000000000000, "ATAN2"),
+    (0xB4662E58066BB43C, 0xC000000000000000, "POW"),
+    (0xC5E92B7562233FCD, 0xC026000000000000, "POW"),
+    (0x8000044EFFA30F84, 0x800002329496D03F, "HYPOT"),
+    (0x80000085AE49137B, 0x8000007D44CBCA66, "HYPOT"),
+]
 
 
 def ten(p: int) -> int:
@@ -131,6 +146,37 @@ def scan(g: Generator) -> None:
             g.cmd([v | 1 << 63], name)
     scan_inverse(g, rnd)
     scan_log(g, rnd)
+    scan_pow(g, rnd)
+
+
+def scan_pow(g: Generator, rnd: random.Random) -> None:
+    """POW2, POW, and HYPOT: POW2 of 4 random values in each binade
+    from 2^-40 to 2^10, and of 400 random values from -1075 to 1024;
+    POW of random bases, near 1 too, of each sign, to random powers,
+    whole ones too, and huge ones; HYPOT of pairs in every third binade,
+    whose exponents are near or far apart. Each goes twice, as tb_fpu
+    does not time every third line."""
+    values = [F64.round(Fraction(2) ** e * (1 + Fraction(rnd.random())))[0] for e in range(-40, 11) for _ in range(4)]
+    values += [F64.round(Fraction(rnd.randint(-1075000, 1024000), 1000))[0] for _ in range(400)]
+    for v in values:
+        for _ in range(2):
+            g.cmd([v], "POW2")
+            g.cmd([v ^ 1 << 63], "POW2")
+    bases = [F64.round(Fraction(2) ** e * (1 + Fraction(rnd.random())))[0] for e in range(-1074, 1024, 7)]
+    bases += [0x3FF0000000000000 + rnd.randint(-2**33, 2**33) for _ in range(100)]
+    for i, b in enumerate(bases):
+        for x in (F64.from_int(rnd.randint(-40, 40)), F64.round(Fraction(rnd.randint(-10**6, 10**6), 1000))[0],
+                  F64.round(Fraction(2) ** rnd.randint(-60, 70) * (1 + Fraction(rnd.random())))[0]):
+            for _ in range(2):
+                g.cmd([b | (i & 1) << 63, x | (i >> 1 & 1) << 63], "POW")
+    for e in range(-1074, 1024, 3):
+        y = F64.round(Fraction(2) ** e * (1 + Fraction(rnd.random())))[0]
+        for d in (0, 1, 30, 64, 65):
+            ex = min(max(e - d, -1074), 1022)
+            x = F64.round(Fraction(2) ** ex * (1 + Fraction(rnd.random())))[0]
+            ops = [y | rnd.getrandbits(1) << 63, x | rnd.getrandbits(1) << 63]
+            g.cmd(ops, "HYPOT")
+            g.cmd(ops, "HYPOT")
 
 
 def scan_log(g: Generator, rnd: random.Random) -> None:
@@ -196,8 +242,8 @@ def main() -> None:
         g.cmd([0x7FEFFFFFFFFFFFFF, 0x0010000000000000], "FMOD")
         for v, name in SLOW_FUNCTIONS:
             g.cmd([v], name)
-        for y, x in SLOW_ATAN2:
-            g.cmd([y, x], "ATAN2")
+        for y, x, name in SLOW_PAIRS:
+            g.cmd([y, x], name)
     print("\n".join(g.lines))
 
 

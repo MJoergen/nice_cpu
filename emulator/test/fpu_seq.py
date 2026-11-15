@@ -22,7 +22,10 @@ The program's values live on the FPU's stack, in a frame above the
 operands: a variable has a slot, PICK reads it and PUT writes it, and an
 expression computes on top of the frame. The functions of the program
 that the function calls, such as sin_k, are inlined, each with a frame
-of its own that ends when it returns. A parameter given a constant is
+of its own that ends when it returns. A variable that is first given a
+value by a statement of its function's own body, not in an if, gets its
+slot there: the slot of a variable that no later statement mentions,
+or a new one on top. Such slots on top are dropped after the statement. A parameter given a constant is
 that constant where the callee tests it, so that `if iy == 0` costs no
 step.
 
@@ -30,8 +33,9 @@ The program may use: assignments, also of a tuple from a call; if, elif,
 and else; return; + - * / and unary -; comparisons, also as values,
 -1 for true and 0 for false, as CMP gives them; and, or, and not in a
 test; and the calls abs, sqrt, nearest, trunc, getexp, getmant, chop,
-itof, band (the command AND), scale2 (SCALE2), and nan(), the canonical
-NaN, and pole(), the step POLE.
+itof, band (the command AND), scale2 (SCALE2), fmax and fmin (MAX and
+MIN), xmul (XMUL), whose two results go to a tuple, and nan(), the
+canonical NaN, and pole(), the step POLE.
 A name that is not a variable is a constant, and H(0x...) is the value
 whose high word that is and whose low word is 0, so that a test of
 fdlibm's high word ix, such as ix < 0x3e500000, is the test of the value
@@ -156,6 +160,25 @@ CONSTANTS: Dict[str, int] = {
     "ivln10lo": bits(2.50829467116452752298e-11),
     "log10_2hi": bits(3.01029995663611771306e-01),
     "log10_2lo": bits(3.69423907715893078616e-13),
+    # FreeBSD's e_pow.c; its P1 to P5 are e_exp.c's, and its ivln2 is invln2
+    "dp_h1": bits(5.84962487220764160156e-01),
+    "dp_l1": bits(1.35003920212974897128e-08),
+    "thrd": bits(3.3333333333333331e-01),
+    "pL1": bits(5.99999999999994648725e-01),
+    "pL2": bits(4.28571428578550184252e-01),
+    "pL3": bits(3.33333329818377432918e-01),
+    "pL4": bits(2.72728123808534006489e-01),
+    "pL5": bits(2.30660745775561754067e-01),
+    "pL6": bits(2.06975017800338417784e-01),
+    "lg2": bits(6.93147180559945286227e-01),
+    "lg2_h": bits(6.93147182464599609375e-01),
+    "lg2_l": bits(-1.90465429995776804525e-09),
+    "ovt": bits(8.0085662595372944372e-17),
+    "cp": bits(9.61796693925975554329e-01),
+    "cp_h": bits(9.61796700954437255859e-01),
+    "cp_l": bits(-7.02846165095275826516e-09),
+    "ivln2_h": bits(1.44269502162933349609e00),
+    "ivln2_l": bits(1.92596299112661746887e-08),
 }
 
 # The constants that the C code writes as hex, against their decimal.
@@ -182,6 +205,19 @@ assert CONSTANTS["ivln10hi"] == 0x3FDBCB7B15200000
 assert CONSTANTS["ivln10lo"] == 0x3DBB9438CA9AADD5
 assert CONSTANTS["log10_2hi"] == 0x3FD34413509F6000
 assert CONSTANTS["log10_2lo"] == 0x3D59FEF311F12B36
+assert CONSTANTS["dp_h1"] == 0x3FE2B80340000000
+assert CONSTANTS["dp_l1"] == 0x3E4CFDEB43CFD006
+assert CONSTANTS["thrd"] == 0x3FD5555555555555
+assert CONSTANTS["pL1"] == 0x3FE3333333333303
+assert CONSTANTS["pL6"] == 0x3FCA7E284A454EEF
+assert CONSTANTS["lg2"] == 0x3FE62E42FEFA39EF
+assert CONSTANTS["lg2_h"] == 0x3FE62E4300000000
+assert CONSTANTS["lg2_l"] == 0xBE205C610CA86C39
+assert CONSTANTS["cp"] == 0x3FEEC709DC3A03FD
+assert CONSTANTS["cp_h"] == 0x3FEEC709E0000000
+assert CONSTANTS["cp_l"] == 0xBE3E2FE0145B01F5
+assert CONSTANTS["ivln2_h"] == 0x3FF7154760000000
+assert CONSTANTS["ivln2_l"] == 0x3E54AE0BF85DDF44
 
 # The programs. The names of the functions of §11.3 are in capitals; the
 # others are the helpers they call.
@@ -660,7 +696,210 @@ def EXP(x):
     if k == 0.0:
         return 1.0 - ((x*c)/(c - 2.0) - x)
     return scale2(1.0 - ((lo - (x*c)/(2.0 - c)) - hi), k)
+
+def pow_log(ax):
+    # The log2 of ax of FreeBSD's e_pow.c, as t1 + t2, where |y| is at
+    # most 2^31. GETEXP and GETMANT give its n and ax, as they give the
+    # k and x' of the logarithms. Its k is 0 or 1, bp[k] is 1 + 0.5*k,
+    # and dp_h[k] and dp_l[k] are (bp - 1)*2*dp_h1 and (bp - 1)*2*dp_l1,
+    # which are +0 for k = 0, as C's are. C's first t_h, which it makes
+    # from the bits of ax, is chop(chop(ax) + bp), as that sum is exact.
+    # The values that C gives a name it has used are named anew, s2_h,
+    # t_h3, u_h, and v_l, so that the first ones' slots are free.
+    n = getexp(ax)
+    ax = getmant(ax)
+    if ax >= H(0x3ffbb67a):
+        n = n + 1.0
+        ax = 0.5*ax
+    bp = 1.0 - 0.5*(ax >= H(0x3ff3988f))
+    u = ax - bp
+    v = 1.0/(ax + bp)
+    ss = u*v
+    s_h = chop(ss)
+    t_h = chop(chop(ax) + bp)
+    s_l = v*((u - s_h*t_h) - s_h*(ax - (t_h - bp)))
+    s2 = ss*ss
+    r = s2*s2*(pL1 + s2*(pL2 + s2*(pL3 + s2*(pL4 + s2*(pL5 + s2*pL6))))) + s_l*(s_h + ss)
+    s2_h = s_h*s_h
+    t_h3 = chop(3.0 + s2_h + r)
+    u_h = s_h*t_h3
+    v_l = s_l*t_h3 + (r - ((t_h3 - 3.0) - s2_h))*ss
+    p_h = chop(u_h + v_l)
+    p_l = v_l - (p_h - u_h)
+    z_h = cp_h*p_h
+    z_l = cp_l*p_h + p_l*cp + (bp - 1.0)*(2.0*dp_l1)
+    t1 = chop(((z_h + z_l) + (bp - 1.0)*(2.0*dp_h1)) + n)
+    return t1, z_l - (((t1 - n) - (bp - 1.0)*(2.0*dp_h1)) - z_h)
+
+
+def pow_log1(ax):
+    # The log2 of an ax within 2^-20 of 1 of FreeBSD's e_pow.c, as
+    # t1 + t2, where |y| is above 2^31.
+    t = ax - 1.0
+    w = (t*t)*(0.5 - t*(thrd - t*0.25))
+    u = ivln2_h*t
+    v = t*ivln2_l - w*invln2
+    t1 = chop(u + v)
+    return t1, v - (t1 - u)
+
+
+def pow_exp2(p_h, p_l):
+    # 2^(p_h + p_l), the end of FreeBSD's e_pow.c. Its n, the nearest
+    # whole number to z with halves away from 0, which it finds in the
+    # bits of z where |z| > 0.5 by the high word, is trunc(z + 0.5)
+    # there, or trunc(z - 0.5) for a negative z: z + 0.5 rounds only
+    # where it is a power of two or more, and then not to the next
+    # whole number. Its change of z's exponent by n is SCALE2, exact as
+    # C's is, and the one rounding of scalbn for a subnormal result.
+    z = p_l + p_h
+    if z >= 1024.0:
+        if z > 1024.0:
+            return H(0x7ff00000)
+        if p_l + ovt > z - p_h:
+            return H(0x7ff00000)
+    elif z <= -1075.0:
+        if z < -1075.0:
+            return 0.0
+        if p_l <= z - p_h:
+            return 0.0
+    n = 0.0
+    if abs(z) >= H(0x3fe00001):
+        if z < 0.0:
+            n = trunc(z - 0.5)
+        else:
+            n = trunc(z + 0.5)
+        p_h = p_h - n
+    t = chop(p_l + p_h)
+    u = t*lg2_h
+    v = (p_l - (t - p_h))*lg2 + t*lg2_l
+    z = u + v
+    w = v - (z - u)
+    t = z*z
+    t1 = z - t*(P1 + t*(P2 + t*(P3 + t*(P4 + t*P5))))
+    return scale2(1.0 - (((z*t1)/(t1 - 2.0) - (w + z*w)) - z), n)
+
+
+def pow_sign(x, y):
+    # C's s, for a y that is a whole number where x < 0: -1 for an odd
+    # y there, and 1 if not.
+    if x < 0.0 and 0.5*y != trunc(0.5*y):
+        return -1.0
+    return 1.0
+
+
+def POW2(y):
+    # FreeBSD's pow(2, y). Its tests of x are left out, as 2 passes
+    # them, and so are its shortcuts for y of +-1 and 2, which the
+    # general path gives exactly too. Its log2 of 2 is t1 = 1 and
+    # t2 = +0, so p_h is y1 and p_l is y - y1.
+    if y == 0.5:
+        return sqrt(2.0)
+    if abs(y) >= H(0x41e00001):
+        if y > 0.0:
+            return H(0x7ff00000)
+        return 0.0
+    y1 = chop(y)
+    return pow_exp2(y1, y - y1)
+
+
+def POW(x, y):
+    # FreeBSD's e_pow.c, which is fdlibm's with fixes, with C's x and y
+    # as Y and X: x^y. Its yisint is found where it is used: y is a
+    # whole number where y == trunc(y), and odd where 0.5*y is not. The
+    # sign of x is tested as x < 0 or 1/x < 0, which holds for -0.
+    if y == 0.0:
+        return 1.0
+    if x == 1.0:
+        return 1.0
+    if abs(y) == H(0x7ff00000):
+        if abs(x) == 1.0:
+            return 1.0
+        if abs(x) >= 1.0:
+            if y > 0.0:
+                return y
+            return 0.0
+        if y < 0.0:
+            return -y
+        return 0.0
+    if y == 1.0:
+        return x
+    if y == -1.0:
+        if x == 0.0:
+            pole()
+        return 1.0/x
+    if y == 2.0:
+        return x*x
+    if y == 0.5:
+        if x > 0.0 or 1.0/x > 0.0:
+            return sqrt(x)
+    if abs(x) == H(0x7ff00000) or x == 0.0 or abs(x) == 1.0:
+        if x < 0.0 or 1.0/x < 0.0:
+            if x == -1.0 and y != trunc(y):
+                return nan()
+            if y == trunc(y) and 0.5*y != trunc(0.5*y):
+                if y < 0.0:
+                    if x == 0.0:
+                        pole()
+                    return -(1.0/abs(x))
+                return -abs(x)
+        if y < 0.0:
+            if x == 0.0:
+                pole()
+            return 1.0/abs(x)
+        return abs(x)
+    if x < 0.0 and y != trunc(y):
+        return nan()
+    if abs(y) >= H(0x41e00001):
+        if abs(y) >= H(0x43f00001):
+            if abs(x) < 1.0:
+                if y < 0.0:
+                    return H(0x7ff00000)
+                return 0.0
+            if y > 0.0:
+                return H(0x7ff00000)
+            return 0.0
+        if abs(x) < H(0x3fefffff):
+            if y < 0.0:
+                return pow_sign(x, y)*H(0x7ff00000)
+            return pow_sign(x, y)*0.0
+        if abs(x) >= H(0x3ff00001):
+            if y > 0.0:
+                return pow_sign(x, y)*H(0x7ff00000)
+            return pow_sign(x, y)*0.0
+        t1, t2 = pow_log1(abs(x))
+    else:
+        t1, t2 = pow_log(abs(x))
+    return pow_exp2(chop(y)*t1, (y - chop(y))*t1 + y*t2)*pow_sign(x, y)
+
+
+def HYPOT(x, y):
+    # musl's hypot.c. Its |x| >= |y| by their bits is MAX and MIN of
+    # the absolute values, and its test ex - ey > 64 of the exponent
+    # fields is one of GETEXP, with -1023 for a subnormal's field of 0.
+    # Its sq is XMUL: musl's Dekker product is exact here, and so is
+    # the error of XMUL.
+    a = fmax(abs(x), abs(y))
+    b = fmin(abs(x), abs(y))
+    if b == H(0x7ff00000):
+        return b
+    if a == H(0x7ff00000) or b == 0.0:
+        return a
+    if getexp(a) - fmax(getexp(b), -1023.0) > 64.0:
+        return a + b
+    z = 1.0
+    if a >= H(0x5fe00000):
+        z = H(0x6bb00000)
+        a = a*H(0x14300000)
+        b = b*H(0x14300000)
+    elif b < H(0x23d00000):
+        z = H(0x14300000)
+        a = a*H(0x6bb00000)
+        b = b*H(0x6bb00000)
+    hx, lx = xmul(a, a)
+    hy, ly = xmul(b, b)
+    return z*sqrt(ly + lx + hy + hx)
 '''
+
 
 # The functions of §11.3 that have a sequence: their number, and the
 # number of operands they pop.
@@ -676,6 +915,9 @@ FUNCTIONS: Dict[str, Tuple[int, int]] = {
     "LOG2": (0x49, 1),
     "LOG10": (0x4A, 1),
     "EXP": (0x4C, 1),
+    "POW2": (0x4D, 1),
+    "POW": (0x4E, 2),
+    "HYPOT": (0x4F, 2),
 }
 
 # The calls that are one command, and the operands they take.
@@ -690,7 +932,12 @@ COMMAND_CALLS: Dict[str, Tuple[str, int]] = {
     "getmant": ("GETMANT", 1),
     "band": ("AND", 2),
     "scale2": ("SCALE2", 2),
+    "fmax": ("MAX", 2),
+    "fmin": ("MIN", 2),
 }
+
+# The calls of two operands whose order does not matter.
+SYMMETRIC = ("AND", "MAX", "MIN")
 
 BINOPS = {ast.Add: "ADD", ast.Sub: "SUB", ast.Mult: "MUL", ast.Div: "DIV"}
 
@@ -712,12 +959,31 @@ class Frame:
     their places, the slots its results go to, the label after it, and
     the depth to which its return drops the stack."""
 
-    def __init__(self, places: Dict[str, Place], results: List[int], end: str, base: int, later: List[str]) -> None:
+    def __init__(
+        self, places: Dict[str, Place], results: List[int], end: str, base: int, later: List[str], stmts: Sequence[ast.stmt]
+    ) -> None:
         self.places = places
         self.results = results
         self.end = end
         self.base = base
         self.later = later
+        self.stmts = stmts
+
+    def dead(self, node: ast.stmt, keep: List[str]) -> Optional[Tuple[int, str]]:
+        """A slot of the frame's own, and its variable, which no
+        statement after node, of the function's own body, mentions:
+        the deepest such."""
+        if not any(node is s for s in self.stmts):
+            return None
+        rest = self.stmts[[id(s) for s in self.stmts].index(id(node)) + 1:]
+        mentioned = {sub.id for s in rest for sub in ast.walk(s) if isinstance(sub, ast.Name)}
+        free = [
+            (p, n) for n, p in self.places.items()
+            if isinstance(p, int) and p >= self.base and n not in mentioned and n not in keep
+        ]
+        if not free:
+            return None
+        return min(free)
 
 
 def assigned(body: Sequence[ast.stmt]) -> List[str]:
@@ -732,8 +998,9 @@ def assigned(body: Sequence[ast.stmt]) -> List[str]:
 
 def late(body: Sequence[ast.stmt]) -> List[str]:
     """The names that an assignment of the function's own body assigns
-    first, not one in an if. Such a name gets its slot there, on top of
-    the frame, so that the frame holds it only from there on."""
+    first, not one in an if. Such a name gets its slot there, a dead
+    variable's or one on top of the frame, so that the frame holds it
+    only from there on."""
     seen: List[str] = []
     out: List[str] = []
     for node in body:
@@ -922,7 +1189,7 @@ class Compiler:
                 if len(node.args) != n:
                     raise CompileError(f"{name} takes {n}")
                 if n == 2:
-                    if self.pair(node.args[0], node.args[1], frame) and cmd != "AND":
+                    if self.pair(node.args[0], node.args[1], frame) and cmd not in SYMMETRIC:
                         self.emit("SWAP", 0)
                 else:
                     self.expr(node.args[0], frame)
@@ -994,6 +1261,25 @@ class Compiler:
     def body(self, stmts: Sequence[ast.stmt], frame: Frame) -> None:
         for s in stmts:
             self.statement(s, frame)
+            if stmts is frame.stmts and self.reachable:
+                self.trim(s, frame)
+
+    def trim(self, node: ast.stmt, frame: Frame) -> None:
+        """Drops the slots on top of the frame whose variables no
+        statement after node, of the function's own body, mentions."""
+        rest = frame.stmts[[id(s) for s in frame.stmts].index(id(node)) + 1:]
+        mentioned = {sub.id for s in rest for sub in ast.walk(s) if isinstance(sub, ast.Name)}
+        drop = 0
+        while True:
+            slot = self.depth - 1 - drop
+            names = [n for n, p in frame.places.items() if p == slot and isinstance(p, int)]
+            if slot < frame.base or not names or any(n in mentioned for n in names):
+                break
+            drop += 1
+            for n in names:
+                del frame.places[n]
+        if drop:
+            self.emit(f"DROP {drop}", -drop)
 
     def leave(self, frame: Frame) -> None:
         """Drops the frame of the function, and jumps past it."""
@@ -1017,23 +1303,18 @@ class Compiler:
             value_node = node.value
             names = [target] if isinstance(target, ast.Name) else target.elts if isinstance(target, ast.Tuple) else []
             new = [e.id for e in names if isinstance(e, ast.Name) and e.id in frame.later and e.id not in frame.places]
-            if isinstance(target, ast.Name) and new and not self.is_call(value_node):
-                # The value stays where it is pushed, as the new slot.
-                self.expr(value_node, frame)
-                frame.places[target.id] = self.depth - 1
-                return
+            reused: Dict[str, str] = {}
             for name in new:
-                self.emit("DUP" if self.depth > 0 else "K nan", 1)
-                frame.places[name] = self.depth - 1
-            slots = [self.slot(frame, e.id) for e in names if isinstance(e, ast.Name)]
-            if self.is_call(value_node):
-                assert isinstance(value_node, ast.Call)
-                self.call(value_node, frame, slots)
-                return
-            if len(slots) == 1:
-                self.expr(value_node, frame)
-                self.put(slots[0])
-                return
+                # The slot of a variable that is dead after this
+                # statement, which the statement may still read.
+                found = frame.dead(node, [e.id for e in names if isinstance(e, ast.Name)] + list(reused.values()))
+                if found is not None:
+                    frame.places[name] = found[0]
+                    reused[name] = found[1]
+            self.assign(node, [n for n in new if n not in reused], frame)
+            for name in reused.values():
+                del frame.places[name]
+            return
         if isinstance(node, ast.If):
             known = self.static(node.test, frame)
             if known is not None:
@@ -1072,6 +1353,43 @@ class Compiler:
             for slot in reversed(frame.results):
                 self.put(slot)
             self.leave(frame)
+            return
+        raise CompileError(f"cannot compile {ast.dump(node)}")
+
+    def assign(self, node: ast.Assign, new: List[str], frame: Frame) -> None:
+        """An assignment, which gives the names of new a slot on top."""
+        target = node.targets[0]
+        value_node = node.value
+        names = [target] if isinstance(target, ast.Name) else target.elts if isinstance(target, ast.Tuple) else []
+        if isinstance(target, ast.Name) and new and not self.is_call(value_node):
+            # The value stays where it is pushed, as the new slot.
+            self.expr(value_node, frame)
+            frame.places[target.id] = self.depth - 1
+            return
+        for name in new:
+            self.emit("DUP" if self.depth > 0 else "K nan", 1)
+            frame.places[name] = self.depth - 1
+        slots = [self.slot(frame, e.id) for e in names if isinstance(e, ast.Name)]
+        if (
+            isinstance(value_node, ast.Call)
+            and isinstance(value_node.func, ast.Name)
+            and value_node.func.id == "xmul"
+            and len(value_node.args) == 2
+            and len(slots) == 2
+        ):
+            # The product and its error, the command XMUL.
+            self.pair(value_node.args[0], value_node.args[1], frame)
+            self.emit("XMUL", 0)
+            self.put(slots[1])
+            self.put(slots[0])
+            return
+        if self.is_call(value_node):
+            assert isinstance(value_node, ast.Call)
+            self.call(value_node, frame, slots)
+            return
+        if len(slots) == 1:
+            self.expr(value_node, frame)
+            self.put(slots[0])
             return
         raise CompileError(f"cannot compile {ast.dump(node)}")
 
@@ -1115,7 +1433,7 @@ class Compiler:
                 self.emit("DUP", 1)
                 places[name] = self.depth - 1
         end = self.label()
-        self.body(fn.body, Frame(places, targets, end, base, later))
+        self.body(fn.body, Frame(places, targets, end, base, later, fn.body))
         if self.reachable:
             raise CompileError(f"{fn.name} can end without a return")
         self.place(end)
@@ -1140,7 +1458,7 @@ def compile_program(name: str, compiler: Optional[Compiler] = None) -> List[str]
         c.emit("DUP", 1)
         places[v] = c.depth - 1
     end = c.label()
-    c.body(fn.body, Frame(places, [0], end, 1, later))
+    c.body(fn.body, Frame(places, [0], end, 1, later, fn.body))
     if c.reachable:
         raise CompileError(f"{name} can end without a return")
     c.place(end)

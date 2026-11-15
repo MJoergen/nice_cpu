@@ -1,5 +1,5 @@
 ; The FPU's functions (DEVICES.md §11.3): SIN, COS, TAN, ATAN2, EXP,
-; and LN of a value each, an operand beyond its bound, and a function
+; LN, POW, HYPOT, and POW2 of a value each, an operand beyond its bound, and a function
 ; whose frame does not fit above the stack. The values are those of the
 ; hand-checked cases of test/fpu_model_test.py, the exact ones rounded
 ; once but for EXP's. The results go to 0x200 on:
@@ -28,8 +28,16 @@
 ;   0x20D  CLEAR 1, EXP 1: fdlibm's e, the double
 ;          above e rounded                          0x8B14576A 0x4005BF0A
 ;   0x20F  LN 2, pushed above it: ln 2 rounded     0xFEFA39EF 0x3FE62E42
+;   0x211  CLEAR 1, POW of Y = 3 and X = 4: 3^4,
+;          exact: X_W                               0x00000051
+;   0x212  CLEAR 1, HYPOT of Y = 3 and X = 4: 5,
+;          exact: X_W                               0x00000005
+;   0x213  STATUS: depth 1, no flag, X whole and
+;          fits                                     0x00300001
+;   0x214  POW2 -1074, pushed above it: 2^-1074,
+;          the smallest subnormal, exact            0x00000001 0x00000000
 ;
-; 90 steps, and PC = 0x77 after the HALT at 0x76. R6 = 0x200 + 17 = 0x211.
+; 105 steps, and PC = 0x9F after the HALT at 0x9E. R6 = 0x200 + 22 = 0x216.
 FPU_X_LO        .EQU    0xFFFFFF88
 FPU_X_HI        .EQU    0xFFFFFF89
 FPU_X_S         .EQU    0xFFFFFF8A
@@ -82,6 +90,21 @@ FPU_STATUS      .EQU    0xFFFFFF8D
                 MOVE    @R6++, @FPU_X_HI
                 MOVE    @FPU_X_W, 2
                 MOVE    @FPU_CMD, 0x48  ; LN
+                MOVE    @R6++, @FPU_X_LO
+                MOVE    @R6++, @FPU_X_HI
+                MOVE    @FPU_CMD, 0x0101  ; CLEAR 1
+                MOVE    @FPU_X_W, 3
+                MOVE    @FPU_X_W, 4
+                MOVE    @FPU_CMD, 0x4E  ; POW
+                MOVE    @R6++, @FPU_X_W
+                MOVE    @FPU_CMD, 0x0101  ; CLEAR 1
+                MOVE    @FPU_X_W, 3
+                MOVE    @FPU_X_W, 4
+                MOVE    @FPU_CMD, 0x4F  ; HYPOT
+                MOVE    @R6++, @FPU_X_W
+                MOVE    @R6++, @FPU_STATUS
+                MOVE    @FPU_X_W, -1074
+                MOVE    @FPU_CMD, 0x4D  ; POW2
                 MOVE    @R6++, @FPU_X_LO
                 MOVE    @R6++, @FPU_X_HI
                 HALT

@@ -133,7 +133,7 @@ pub const constants = [_]u64{
     0x3FF0000100000000, // H3FF00001
     0x3FE62E42FEE00000, // ln2_hi
     0x3DEA39EF35793C76, // ln2_lo
-    0x3FD5555555555555, // 0.3333333333333333
+    0x3FD5555555555555, // thrd
     0x3FC39A09D078C69F, // Lg6
     0x3FCC71C51D8E78AF, // Lg4
     0x3FD999999997FA04, // Lg2
@@ -163,6 +163,38 @@ pub const constants = [_]u64{
     0x3F11566AAF25DE2C, // P3
     0xBF66C16C16BEBD93, // P2
     0x3FC555555555553E, // P1
+    0x41E0000100000000, // H41E00001
+    0x4090000000000000, // 1024.0
+    0x3C971547652B82FE, // ovt
+    0xC090CC0000000000, // -1075.0
+    0x3FE0000100000000, // H3FE00001
+    0x3FE62E4300000000, // lg2_h
+    0x3FE62E42FEFA39EF, // lg2
+    0xBE205C610CA86C39, // lg2_l
+    0x43F0000100000000, // H43F00001
+    0x3FEFFFFF00000000, // H3FEFFFFF
+    0x3FD0000000000000, // 0.25
+    0x3FF7154760000000, // ivln2_h
+    0x3E54AE0BF85DDF44, // ivln2_l
+    0x3FFBB67A00000000, // H3FFBB67A
+    0x3FF3988F00000000, // H3FF3988F
+    0x3FCA7E284A454EEF, // pL6
+    0x3FCD864A93C9DB65, // pL5
+    0x3FD17460A91D4101, // pL4
+    0x3FD55555518F264D, // pL3
+    0x3FDB6DB6DB6FABFF, // pL2
+    0x3FE3333333333303, // pL1
+    0x3FEEC709E0000000, // cp_h
+    0xBE3E2FE0145B01F5, // cp_l
+    0x3FEEC709DC3A03FD, // cp
+    0x3E5CFDEB43CFD006, // 2.0*dp_l1
+    0x3FF2B80340000000, // 2.0*dp_h1
+    0xC08FF80000000000, // -1023.0
+    0x4050000000000000, // 64.0
+    0x5FE0000000000000, // H5FE00000
+    0x6BB0000000000000, // H6BB00000
+    0x1430000000000000, // H14300000
+    0x23D0000000000000, // H23D00000
 };
 
 const sin_steps = [_]Step{
@@ -170,7 +202,7 @@ const sin_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 0 }, // H3FE921FC
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
-    .{ .op = .jz, .n = 54 },
+    .{ .op = .jz, .n = 55 },
     .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 1 }, // H3E500000
@@ -178,7 +210,7 @@ const sin_steps = [_]Step{
     .{ .op = .jz, .n = 13 },
     .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .put, .n = 0 },
-    .{ .op = .jmp, .n = 698 },
+    .{ .op = .jmp, .n = 701 },
     .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0012 }, // MUL
@@ -204,30 +236,31 @@ const sin_steps = [_]Step{
     .{ .op = .k, .n = 6 }, // S2
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
-    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
-    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .put, .n = 0 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .k, .n = 7 }, // S1
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .put, .n = 4 },
-    .{ .op = .cmd, .n = 0x0403 }, // DROP 4
-    .{ .op = .jmp, .n = 53 },
-    .{ .op = .jmp, .n = 698 },
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 54 },
+    .{ .op = .jmp, .n = 701 },
     .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 8 }, // H413921FB
     .{ .op = .cmd, .n = 0x061C }, // CMP 6
-    .{ .op = .jz, .n = 62 },
+    .{ .op = .jz, .n = 63 },
     .{ .op = .k, .n = 9 }, // nan
     .{ .op = .put, .n = 0 },
-    .{ .op = .jmp, .n = 698 },
+    .{ .op = .jmp, .n = 701 },
     .{ .op = .cmd, .n = 0x0002 }, // DUP
     .{ .op = .cmd, .n = 0x0002 }, // DUP
     .{ .op = .cmd, .n = 0x0002 }, // DUP
@@ -238,38 +271,38 @@ const sin_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 10 }, // H400F6A7B
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
-    .{ .op = .jz, .n = 188 },
+    .{ .op = .jz, .n = 189 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 11 }, // H3FF921FB
     .{ .op = .cmd, .n = 0x061C }, // CMP 6
-    .{ .op = .jz, .n = 84 },
+    .{ .op = .jz, .n = 85 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 12 }, // H3FF921FC
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
-    .{ .op = .jz, .n = 84 },
-    .{ .op = .jmp, .n = 94 },
+    .{ .op = .jz, .n = 85 },
+    .{ .op = .jmp, .n = 95 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 13 }, // H400921FB
     .{ .op = .cmd, .n = 0x061C }, // CMP 6
-    .{ .op = .jz, .n = 95 },
+    .{ .op = .jz, .n = 96 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 14 }, // H400921FC
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
-    .{ .op = .jz, .n = 95 },
-    .{ .op = .jmp, .n = 188 },
+    .{ .op = .jz, .n = 96 },
+    .{ .op = .jmp, .n = 189 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 15 }, // H4002D97D
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
-    .{ .op = .jz, .n = 144 },
+    .{ .op = .jz, .n = 145 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x041C }, // CMP 4
-    .{ .op = .jz, .n = 124 },
+    .{ .op = .jz, .n = 125 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .k, .n = 17 }, // pio2_1
     .{ .op = .cmd, .n = 0x0011 }, // SUB
@@ -289,7 +322,7 @@ const sin_steps = [_]Step{
     .{ .op = .put, .n = 5 },
     .{ .op = .put, .n = 5 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 458 },
+    .{ .op = .jmp, .n = 459 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .k, .n = 17 }, // pio2_1
     .{ .op = .cmd, .n = 0x0010 }, // ADD
@@ -309,11 +342,11 @@ const sin_steps = [_]Step{
     .{ .op = .put, .n = 5 },
     .{ .op = .put, .n = 5 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 458 },
+    .{ .op = .jmp, .n = 459 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x041C }, // CMP 4
-    .{ .op = .jz, .n = 168 },
+    .{ .op = .jz, .n = 169 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .k, .n = 21 }, // 2*pio2_1
     .{ .op = .cmd, .n = 0x0011 }, // SUB
@@ -333,7 +366,7 @@ const sin_steps = [_]Step{
     .{ .op = .put, .n = 5 },
     .{ .op = .put, .n = 5 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 458 },
+    .{ .op = .jmp, .n = 459 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .k, .n = 21 }, // 2*pio2_1
     .{ .op = .cmd, .n = 0x0010 }, // ADD
@@ -353,32 +386,32 @@ const sin_steps = [_]Step{
     .{ .op = .put, .n = 5 },
     .{ .op = .put, .n = 5 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 458 },
+    .{ .op = .jmp, .n = 459 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 10 }, // H400F6A7B
     .{ .op = .cmd, .n = 0x061C }, // CMP 6
-    .{ .op = .jz, .n = 253 },
+    .{ .op = .jz, .n = 254 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 25 }, // H4015FDBD
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
-    .{ .op = .jz, .n = 253 },
+    .{ .op = .jz, .n = 254 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 26 }, // H4012D97C
     .{ .op = .cmd, .n = 0x061C }, // CMP 6
-    .{ .op = .jz, .n = 209 },
+    .{ .op = .jz, .n = 210 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 27 }, // H4012D97D
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
-    .{ .op = .jz, .n = 209 },
-    .{ .op = .jmp, .n = 253 },
+    .{ .op = .jz, .n = 210 },
+    .{ .op = .jmp, .n = 254 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x041C }, // CMP 4
-    .{ .op = .jz, .n = 233 },
+    .{ .op = .jz, .n = 234 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .k, .n = 28 }, // 3*pio2_1
     .{ .op = .cmd, .n = 0x0011 }, // SUB
@@ -398,7 +431,7 @@ const sin_steps = [_]Step{
     .{ .op = .put, .n = 5 },
     .{ .op = .put, .n = 5 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 458 },
+    .{ .op = .jmp, .n = 459 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .k, .n = 28 }, // 3*pio2_1
     .{ .op = .cmd, .n = 0x0010 }, // ADD
@@ -418,32 +451,32 @@ const sin_steps = [_]Step{
     .{ .op = .put, .n = 5 },
     .{ .op = .put, .n = 5 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 458 },
+    .{ .op = .jmp, .n = 459 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 25 }, // H4015FDBD
     .{ .op = .cmd, .n = 0x061C }, // CMP 6
-    .{ .op = .jz, .n = 318 },
+    .{ .op = .jz, .n = 319 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 32 }, // H401C463C
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
-    .{ .op = .jz, .n = 318 },
+    .{ .op = .jz, .n = 319 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 33 }, // H401921FB
     .{ .op = .cmd, .n = 0x061C }, // CMP 6
-    .{ .op = .jz, .n = 274 },
+    .{ .op = .jz, .n = 275 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 34 }, // H401921FC
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
-    .{ .op = .jz, .n = 274 },
-    .{ .op = .jmp, .n = 318 },
+    .{ .op = .jz, .n = 275 },
+    .{ .op = .jmp, .n = 319 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x041C }, // CMP 4
-    .{ .op = .jz, .n = 298 },
+    .{ .op = .jz, .n = 299 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .k, .n = 35 }, // 4*pio2_1
     .{ .op = .cmd, .n = 0x0011 }, // SUB
@@ -463,7 +496,7 @@ const sin_steps = [_]Step{
     .{ .op = .put, .n = 5 },
     .{ .op = .put, .n = 5 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 458 },
+    .{ .op = .jmp, .n = 459 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .k, .n = 35 }, // 4*pio2_1
     .{ .op = .cmd, .n = 0x0010 }, // ADD
@@ -483,7 +516,7 @@ const sin_steps = [_]Step{
     .{ .op = .put, .n = 5 },
     .{ .op = .put, .n = 5 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 458 },
+    .{ .op = .jmp, .n = 459 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .k, .n = 39 }, // invpio2
     .{ .op = .cmd, .n = 0x0012 }, // MUL
@@ -503,7 +536,7 @@ const sin_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .k, .n = 40 }, // -pio4
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
-    .{ .op = .jz, .n = 354 },
+    .{ .op = .jz, .n = 355 },
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .k, .n = 19 }, // 1.0
     .{ .op = .cmd, .n = 0x0011 }, // SUB
@@ -519,13 +552,13 @@ const sin_steps = [_]Step{
     .{ .op = .k, .n = 18 }, // pio2_1t
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .put, .n = 0 },
-    .{ .op = .jmp, .n = 376 },
+    .{ .op = .jmp, .n = 377 },
     .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .k, .n = 41 }, // pio4
     .{ .op = .cmd, .n = 0x041C }, // CMP 4
-    .{ .op = .jz, .n = 376 },
+    .{ .op = .jz, .n = 377 },
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .k, .n = 19 }, // 1.0
     .{ .op = .cmd, .n = 0x0010 }, // ADD
@@ -541,7 +574,7 @@ const sin_steps = [_]Step{
     .{ .op = .k, .n = 18 }, // pio2_1t
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .put, .n = 0 },
-    .{ .op = .jmp, .n = 376 },
+    .{ .op = .jmp, .n = 377 },
     .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0011 }, // SUB
@@ -553,7 +586,7 @@ const sin_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .k, .n = 42 }, // 16.0
     .{ .op = .cmd, .n = 0x041C }, // CMP 4
-    .{ .op = .jz, .n = 446 },
+    .{ .op = .jz, .n = 447 },
     .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
@@ -585,7 +618,7 @@ const sin_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .k, .n = 45 }, // 49.0
     .{ .op = .cmd, .n = 0x041C }, // CMP 4
-    .{ .op = .jz, .n = 445 },
+    .{ .op = .jz, .n = 446 },
     .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
@@ -610,8 +643,8 @@ const sin_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .put, .n = 3 },
-    .{ .op = .jmp, .n = 445 },
     .{ .op = .jmp, .n = 446 },
+    .{ .op = .jmp, .n = 447 },
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
@@ -623,7 +656,7 @@ const sin_steps = [_]Step{
     .{ .op = .put, .n = 7 },
     .{ .op = .put, .n = 7 },
     .{ .op = .cmd, .n = 0x0503 }, // DROP 5
-    .{ .op = .jmp, .n = 458 },
+    .{ .op = .jmp, .n = 459 },
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .k, .n = 30 }, // 3.0
     .{ .op = .cmd, .n = 0x0060 }, // AND
@@ -631,7 +664,7 @@ const sin_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x021C }, // CMP 2
-    .{ .op = .jz, .n = 517 },
+    .{ .op = .jz, .n = 519 },
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0012 }, // MUL
@@ -657,36 +690,37 @@ const sin_steps = [_]Step{
     .{ .op = .k, .n = 6 }, // S2
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
-    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .put, .n = 0 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .k, .n = 48 }, // 0.5
-    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .k, .n = 7 }, // S1
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .put, .n = 7 },
-    .{ .op = .cmd, .n = 0x0403 }, // DROP 4
-    .{ .op = .jmp, .n = 515 },
+    .{ .op = .put, .n = 6 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 698 },
+    .{ .op = .jmp, .n = 517 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 701 },
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .k, .n = 19 }, // 1.0
     .{ .op = .cmd, .n = 0x021C }, // CMP 2
-    .{ .op = .jz, .n = 579 },
+    .{ .op = .jz, .n = 581 },
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0012 }, // MUL
@@ -742,13 +776,13 @@ const sin_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .put, .n = 7 },
     .{ .op = .cmd, .n = 0x0403 }, // DROP 4
-    .{ .op = .jmp, .n = 577 },
+    .{ .op = .jmp, .n = 579 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 698 },
+    .{ .op = .jmp, .n = 701 },
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .k, .n = 23 }, // 2.0
     .{ .op = .cmd, .n = 0x021C }, // CMP 2
-    .{ .op = .jz, .n = 637 },
+    .{ .op = .jz, .n = 640 },
     .{ .op = .cmd, .n = 0x0002 }, // DUP
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
@@ -775,34 +809,35 @@ const sin_steps = [_]Step{
     .{ .op = .k, .n = 6 }, // S2
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .put, .n = 0 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .k, .n = 48 }, // 0.5
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .k, .n = 7 }, // S1
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0706 }, // PICK 7
+    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .put, .n = 4 },
-    .{ .op = .cmd, .n = 0x0403 }, // DROP 4
-    .{ .op = .jmp, .n = 633 },
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 636 },
     .{ .op = .cmd, .n = 0x0015 }, // NEG
     .{ .op = .put, .n = 3 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 698 },
+    .{ .op = .jmp, .n = 701 },
     .{ .op = .cmd, .n = 0x0002 }, // DUP
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
@@ -859,11 +894,11 @@ const sin_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .put, .n = 4 },
     .{ .op = .cmd, .n = 0x0403 }, // DROP 4
-    .{ .op = .jmp, .n = 694 },
+    .{ .op = .jmp, .n = 697 },
     .{ .op = .cmd, .n = 0x0015 }, // NEG
     .{ .op = .put, .n = 3 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 698 },
+    .{ .op = .jmp, .n = 701 },
 };
 
 const cos_steps = [_]Step{
@@ -879,7 +914,7 @@ const cos_steps = [_]Step{
     .{ .op = .jz, .n = 13 },
     .{ .op = .k, .n = 19 }, // 1.0
     .{ .op = .put, .n = 0 },
-    .{ .op = .jmp, .n = 714 },
+    .{ .op = .jmp, .n = 716 },
     .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0012 }, // MUL
@@ -936,7 +971,7 @@ const cos_steps = [_]Step{
     .{ .op = .put, .n = 4 },
     .{ .op = .cmd, .n = 0x0403 }, // DROP 4
     .{ .op = .jmp, .n = 69 },
-    .{ .op = .jmp, .n = 714 },
+    .{ .op = .jmp, .n = 716 },
     .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 8 }, // H413921FB
@@ -944,7 +979,7 @@ const cos_steps = [_]Step{
     .{ .op = .jz, .n = 78 },
     .{ .op = .k, .n = 9 }, // nan
     .{ .op = .put, .n = 0 },
-    .{ .op = .jmp, .n = 714 },
+    .{ .op = .jmp, .n = 716 },
     .{ .op = .cmd, .n = 0x0002 }, // DUP
     .{ .op = .cmd, .n = 0x0002 }, // DUP
     .{ .op = .cmd, .n = 0x0002 }, // DUP
@@ -1406,11 +1441,11 @@ const cos_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0403 }, // DROP 4
     .{ .op = .jmp, .n = 538 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 714 },
+    .{ .op = .jmp, .n = 716 },
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .k, .n = 19 }, // 1.0
     .{ .op = .cmd, .n = 0x021C }, // CMP 2
-    .{ .op = .jz, .n = 598 },
+    .{ .op = .jz, .n = 599 },
     .{ .op = .cmd, .n = 0x0002 }, // DUP
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
@@ -1437,38 +1472,39 @@ const cos_steps = [_]Step{
     .{ .op = .k, .n = 6 }, // S2
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .put, .n = 0 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .k, .n = 48 }, // 0.5
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .k, .n = 7 }, // S1
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0706 }, // PICK 7
+    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .put, .n = 4 },
-    .{ .op = .cmd, .n = 0x0403 }, // DROP 4
-    .{ .op = .jmp, .n = 594 },
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 595 },
     .{ .op = .cmd, .n = 0x0015 }, // NEG
     .{ .op = .put, .n = 3 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 714 },
+    .{ .op = .jmp, .n = 716 },
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .k, .n = 23 }, // 2.0
     .{ .op = .cmd, .n = 0x021C }, // CMP 2
-    .{ .op = .jz, .n = 663 },
+    .{ .op = .jz, .n = 664 },
     .{ .op = .cmd, .n = 0x0002 }, // DUP
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
@@ -1525,11 +1561,11 @@ const cos_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .put, .n = 4 },
     .{ .op = .cmd, .n = 0x0403 }, // DROP 4
-    .{ .op = .jmp, .n = 659 },
+    .{ .op = .jmp, .n = 660 },
     .{ .op = .cmd, .n = 0x0015 }, // NEG
     .{ .op = .put, .n = 3 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 714 },
+    .{ .op = .jmp, .n = 716 },
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0012 }, // MUL
@@ -1555,32 +1591,33 @@ const cos_steps = [_]Step{
     .{ .op = .k, .n = 6 }, // S2
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
-    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .put, .n = 0 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .k, .n = 48 }, // 0.5
-    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .k, .n = 7 }, // S1
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .put, .n = 7 },
-    .{ .op = .cmd, .n = 0x0403 }, // DROP 4
-    .{ .op = .jmp, .n = 712 },
+    .{ .op = .put, .n = 6 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
     .{ .op = .jmp, .n = 714 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 716 },
 };
 
 const tan_steps = [_]Step{
@@ -2356,16 +2393,16 @@ const asin_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 225 },
+    .{ .op = .jmp, .n = 227 },
     .{ .op = .k, .n = 9 }, // nan
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 225 },
+    .{ .op = .jmp, .n = 227 },
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 48 }, // 0.5
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
-    .{ .op = .jz, .n = 100 },
+    .{ .op = .jz, .n = 101 },
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 1 }, // H3E500000
@@ -2379,7 +2416,7 @@ const asin_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 225 },
+    .{ .op = .jmp, .n = 227 },
     .{ .op = .cmd, .n = 0x0002 }, // DUP
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0406 }, // PICK 4
@@ -2424,19 +2461,20 @@ const asin_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .k, .n = 19 }, // 1.0
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .put, .n = 1 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0013 }, // DIV
-    .{ .op = .put, .n = 3 },
-    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 93 },
+    .{ .op = .put, .n = 2 },
+    .{ .op = .cmd, .n = 0x0203 }, // DROP 2
+    .{ .op = .jmp, .n = 94 },
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 225 },
+    .{ .op = .jmp, .n = 227 },
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
@@ -2494,12 +2532,12 @@ const asin_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0013 }, // DIV
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 158 },
+    .{ .op = .jmp, .n = 159 },
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 85 }, // H3FEF3333
     .{ .op = .cmd, .n = 0x061C }, // CMP 6
-    .{ .op = .jz, .n = 177 },
+    .{ .op = .jz, .n = 178 },
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0012 }, // MUL
@@ -2513,7 +2551,7 @@ const asin_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .put, .n = 6 },
-    .{ .op = .jmp, .n = 214 },
+    .{ .op = .jmp, .n = 215 },
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x001F }, // CHOP
     .{ .op = .put, .n = 5 },
@@ -2551,17 +2589,18 @@ const asin_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .put, .n = 6 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .jz, .n = 223 },
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
-    .{ .op = .jz, .n = 221 },
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .cmd, .n = 0x0015 }, // NEG
-    .{ .op = .put, .n = 6 },
-    .{ .op = .cmd, .n = 0x0603 }, // DROP 6
-    .{ .op = .jmp, .n = 225 },
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
-    .{ .op = .put, .n = 6 },
-    .{ .op = .cmd, .n = 0x0603 }, // DROP 6
-    .{ .op = .jmp, .n = 225 },
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 227 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .put, .n = 0 },
+    .{ .op = .jmp, .n = 227 },
 };
 
 const acos_steps = [_]Step{
@@ -2585,20 +2624,20 @@ const acos_steps = [_]Step{
     .{ .op = .k, .n = 87 }, // pi
     .{ .op = .put, .n = 3 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 264 },
+    .{ .op = .jmp, .n = 266 },
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .put, .n = 3 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 264 },
+    .{ .op = .jmp, .n = 266 },
     .{ .op = .k, .n = 9 }, // nan
     .{ .op = .put, .n = 3 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 264 },
+    .{ .op = .jmp, .n = 266 },
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 48 }, // 0.5
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
-    .{ .op = .jz, .n = 107 },
+    .{ .op = .jz, .n = 108 },
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 88 }, // H3C600001
@@ -2607,7 +2646,7 @@ const acos_steps = [_]Step{
     .{ .op = .k, .n = 72 }, // pio2_hi
     .{ .op = .put, .n = 3 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 264 },
+    .{ .op = .jmp, .n = 266 },
     .{ .op = .cmd, .n = 0x0002 }, // DUP
     .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0506 }, // PICK 5
@@ -2652,12 +2691,13 @@ const acos_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .k, .n = 19 }, // 1.0
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .put, .n = 1 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0013 }, // DIV
-    .{ .op = .put, .n = 3 },
-    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 93 },
+    .{ .op = .put, .n = 2 },
+    .{ .op = .cmd, .n = 0x0203 }, // DROP 2
+    .{ .op = .jmp, .n = 94 },
     .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .k, .n = 86 }, // pio2_lo
@@ -2671,11 +2711,11 @@ const acos_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .put, .n = 3 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 264 },
+    .{ .op = .jmp, .n = 266 },
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
-    .{ .op = .jz, .n = 183 },
+    .{ .op = .jz, .n = 184 },
     .{ .op = .k, .n = 19 }, // 1.0
     .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0010 }, // ADD
@@ -2731,7 +2771,7 @@ const acos_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0013 }, // DIV
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 167 },
+    .{ .op = .jmp, .n = 168 },
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .k, .n = 86 }, // pio2_lo
@@ -2747,7 +2787,7 @@ const acos_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .put, .n = 3 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 264 },
+    .{ .op = .jmp, .n = 266 },
     .{ .op = .k, .n = 19 }, // 1.0
     .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0011 }, // SUB
@@ -2815,20 +2855,21 @@ const acos_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0013 }, // DIV
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 251 },
+    .{ .op = .jmp, .n = 252 },
     .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .put, .n = 2 },
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
-    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0103 }, // DROP 1
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .k, .n = 23 }, // 2.0
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .put, .n = 5 },
-    .{ .op = .cmd, .n = 0x0503 }, // DROP 5
-    .{ .op = .jmp, .n = 264 },
+    .{ .op = .put, .n = 4 },
+    .{ .op = .cmd, .n = 0x0403 }, // DROP 4
+    .{ .op = .jmp, .n = 266 },
 };
 
 const atan_steps = [_]Step{
@@ -2847,11 +2888,11 @@ const atan_steps = [_]Step{
     .{ .op = .k, .n = 90 }, // -pio2_hi+tiny
     .{ .op = .put, .n = 3 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 195 },
+    .{ .op = .jmp, .n = 197 },
     .{ .op = .k, .n = 72 }, // pio2_hi
     .{ .op = .put, .n = 3 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 195 },
+    .{ .op = .jmp, .n = 197 },
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
@@ -2868,7 +2909,7 @@ const atan_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .put, .n = 4 },
     .{ .op = .cmd, .n = 0x0403 }, // DROP 4
-    .{ .op = .jmp, .n = 195 },
+    .{ .op = .jmp, .n = 197 },
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .put, .n = 3 },
     .{ .op = .jmp, .n = 108 },
@@ -2988,46 +3029,48 @@ const atan_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0706 }, // PICK 7
+    .{ .op = .put, .n = 1 },
+    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x021C }, // CMP 2
-    .{ .op = .jz, .n = 171 },
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .jz, .n = 172 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0906 }, // PICK 9
+    .{ .op = .cmd, .n = 0x0806 }, // PICK 8
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0906 }, // PICK 9
+    .{ .op = .cmd, .n = 0x0806 }, // PICK 8
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .put, .n = 8 },
-    .{ .op = .cmd, .n = 0x0803 }, // DROP 8
-    .{ .op = .jmp, .n = 195 },
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .put, .n = 7 },
+    .{ .op = .cmd, .n = 0x0703 }, // DROP 7
+    .{ .op = .jmp, .n = 197 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0906 }, // PICK 9
+    .{ .op = .cmd, .n = 0x0806 }, // PICK 8
     .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0806 }, // PICK 8
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
-    .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0906 }, // PICK 9
-    .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0706 }, // PICK 7
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .put, .n = 3 },
-    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
-    .{ .op = .jz, .n = 191 },
-    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .put, .n = 2 },
+    .{ .op = .cmd, .n = 0x0203 }, // DROP 2
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .jz, .n = 193 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .cmd, .n = 0x0015 }, // NEG
-    .{ .op = .put, .n = 8 },
-    .{ .op = .cmd, .n = 0x0803 }, // DROP 8
-    .{ .op = .jmp, .n = 195 },
-    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
-    .{ .op = .put, .n = 8 },
-    .{ .op = .cmd, .n = 0x0803 }, // DROP 8
-    .{ .op = .jmp, .n = 195 },
-    .{ .op = .jmp, .n = 196 },
+    .{ .op = .put, .n = 5 },
+    .{ .op = .cmd, .n = 0x0503 }, // DROP 5
+    .{ .op = .jmp, .n = 197 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .put, .n = 5 },
+    .{ .op = .cmd, .n = 0x0503 }, // DROP 5
+    .{ .op = .jmp, .n = 197 },
+    .{ .op = .jmp, .n = 198 },
 };
 
 const atan2_steps = [_]Step{
@@ -3056,15 +3099,15 @@ const atan2_steps = [_]Step{
     .{ .op = .k, .n = 111 }, // -pi
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
     .{ .op = .k, .n = 87 }, // pi
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x021C }, // CMP 2
@@ -3076,11 +3119,11 @@ const atan2_steps = [_]Step{
     .{ .op = .k, .n = 112 }, // -pi/2
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
     .{ .op = .k, .n = 72 }, // pio2_hi
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .k, .n = 113 }, // H7FF00000
@@ -3102,11 +3145,11 @@ const atan2_steps = [_]Step{
     .{ .op = .k, .n = 114 }, // -3*pi/4
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
     .{ .op = .k, .n = 115 }, // 3*pi/4
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
@@ -3114,11 +3157,11 @@ const atan2_steps = [_]Step{
     .{ .op = .k, .n = 116 }, // -pi/4
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
     .{ .op = .k, .n = 41 }, // pio4
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
@@ -3130,11 +3173,11 @@ const atan2_steps = [_]Step{
     .{ .op = .k, .n = 111 }, // -pi
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
     .{ .op = .k, .n = 87 }, // pi
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
@@ -3142,11 +3185,11 @@ const atan2_steps = [_]Step{
     .{ .op = .k, .n = 117 }, // -0.0
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0016 }, // ABS
     .{ .op = .cmd, .n = 0x001F }, // CHOP
@@ -3172,11 +3215,11 @@ const atan2_steps = [_]Step{
     .{ .op = .k, .n = 112 }, // -pi/2
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
     .{ .op = .k, .n = 72 }, // pio2_hi
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
@@ -3195,7 +3238,7 @@ const atan2_steps = [_]Step{
     .{ .op = .jz, .n = 165 },
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .put, .n = 0 },
-    .{ .op = .jmp, .n = 364 },
+    .{ .op = .jmp, .n = 366 },
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0013 }, // DIV
@@ -3215,11 +3258,11 @@ const atan2_steps = [_]Step{
     .{ .op = .k, .n = 112 }, // -pi/2
     .{ .op = .put, .n = 4 },
     .{ .op = .cmd, .n = 0x0403 }, // DROP 4
-    .{ .op = .jmp, .n = 364 },
+    .{ .op = .jmp, .n = 366 },
     .{ .op = .k, .n = 72 }, // pio2_hi
     .{ .op = .put, .n = 4 },
     .{ .op = .cmd, .n = 0x0403 }, // DROP 4
-    .{ .op = .jmp, .n = 364 },
+    .{ .op = .jmp, .n = 366 },
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
@@ -3236,7 +3279,7 @@ const atan2_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .put, .n = 5 },
     .{ .op = .cmd, .n = 0x0503 }, // DROP 5
-    .{ .op = .jmp, .n = 364 },
+    .{ .op = .jmp, .n = 366 },
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .put, .n = 3 },
     .{ .op = .jmp, .n = 277 },
@@ -3356,53 +3399,55 @@ const atan2_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0706 }, // PICK 7
+    .{ .op = .put, .n = 1 },
+    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x021C }, // CMP 2
-    .{ .op = .jz, .n = 340 },
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .jz, .n = 341 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0906 }, // PICK 9
+    .{ .op = .cmd, .n = 0x0806 }, // PICK 8
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0906 }, // PICK 9
+    .{ .op = .cmd, .n = 0x0806 }, // PICK 8
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .put, .n = 9 },
-    .{ .op = .cmd, .n = 0x0903 }, // DROP 9
-    .{ .op = .jmp, .n = 364 },
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .put, .n = 8 },
+    .{ .op = .cmd, .n = 0x0803 }, // DROP 8
+    .{ .op = .jmp, .n = 366 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0906 }, // PICK 9
+    .{ .op = .cmd, .n = 0x0806 }, // PICK 8
     .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0806 }, // PICK 8
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .cmd, .n = 0x0606 }, // PICK 6
-    .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0906 }, // PICK 9
-    .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0706 }, // PICK 7
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .put, .n = 3 },
-    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
-    .{ .op = .jz, .n = 360 },
-    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .put, .n = 2 },
+    .{ .op = .cmd, .n = 0x0203 }, // DROP 2
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .jz, .n = 362 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .cmd, .n = 0x0015 }, // NEG
-    .{ .op = .put, .n = 9 },
-    .{ .op = .cmd, .n = 0x0903 }, // DROP 9
-    .{ .op = .jmp, .n = 364 },
-    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
-    .{ .op = .put, .n = 9 },
-    .{ .op = .cmd, .n = 0x0903 }, // DROP 9
-    .{ .op = .jmp, .n = 364 },
+    .{ .op = .put, .n = 6 },
+    .{ .op = .cmd, .n = 0x0603 }, // DROP 6
+    .{ .op = .jmp, .n = 366 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .put, .n = 6 },
+    .{ .op = .cmd, .n = 0x0603 }, // DROP 6
+    .{ .op = .jmp, .n = 366 },
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
-    .{ .op = .jz, .n = 389 },
+    .{ .op = .jz, .n = 391 },
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
-    .{ .op = .jz, .n = 380 },
+    .{ .op = .jz, .n = 382 },
     .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .k, .n = 119 }, // pi_lo
     .{ .op = .cmd, .n = 0x0011 }, // SUB
@@ -3410,7 +3455,7 @@ const atan2_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
     .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .k, .n = 119 }, // pi_lo
     .{ .op = .cmd, .n = 0x0011 }, // SUB
@@ -3419,20 +3464,20 @@ const atan2_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
-    .{ .op = .jz, .n = 398 },
+    .{ .op = .jz, .n = 400 },
     .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .cmd, .n = 0x0015 }, // NEG
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
     .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 402 },
+    .{ .op = .jmp, .n = 404 },
 };
 
 const ln_steps = [_]Step{
@@ -3450,11 +3495,11 @@ const ln_steps = [_]Step{
     .{ .op = .k, .n = 120 }, // -H7FF00000
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 252 },
+    .{ .op = .jmp, .n = 254 },
     .{ .op = .k, .n = 9 }, // nan
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 252 },
+    .{ .op = .jmp, .n = 254 },
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .k, .n = 113 }, // H7FF00000
     .{ .op = .cmd, .n = 0x021C }, // CMP 2
@@ -3462,7 +3507,7 @@ const ln_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0203 }, // DROP 2
-    .{ .op = .jmp, .n = 252 },
+    .{ .op = .jmp, .n = 254 },
     .{ .op = .cmd, .n = 0x0002 }, // DUP
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x003D }, // GETMANT
@@ -3510,7 +3555,7 @@ const ln_steps = [_]Step{
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .put, .n = 4 },
     .{ .op = .cmd, .n = 0x0403 }, // DROP 4
-    .{ .op = .jmp, .n = 252 },
+    .{ .op = .jmp, .n = 254 },
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .k, .n = 124 }, // ln2_hi
     .{ .op = .cmd, .n = 0x0012 }, // MUL
@@ -3520,11 +3565,11 @@ const ln_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .put, .n = 4 },
     .{ .op = .cmd, .n = 0x0403 }, // DROP 4
-    .{ .op = .jmp, .n = 252 },
+    .{ .op = .jmp, .n = 254 },
     .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .k, .n = 126 }, // 0.3333333333333333
+    .{ .op = .k, .n = 126 }, // thrd
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .k, .n = 48 }, // 0.5
@@ -3541,7 +3586,7 @@ const ln_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .put, .n = 4 },
     .{ .op = .cmd, .n = 0x0403 }, // DROP 4
-    .{ .op = .jmp, .n = 252 },
+    .{ .op = .jmp, .n = 254 },
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .k, .n = 124 }, // ln2_hi
     .{ .op = .cmd, .n = 0x0012 }, // MUL
@@ -3556,7 +3601,7 @@ const ln_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .put, .n = 4 },
     .{ .op = .cmd, .n = 0x0403 }, // DROP 4
-    .{ .op = .jmp, .n = 252 },
+    .{ .op = .jmp, .n = 254 },
     .{ .op = .k, .n = 23 }, // 2.0
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0010 }, // ADD
@@ -3595,99 +3640,101 @@ const ln_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .put, .n = 8 },
-    .{ .op = .cmd, .n = 0x0906 }, // PICK 9
+    .{ .op = .put, .n = 7 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
     .{ .op = .k, .n = 134 }, // H3FF6147A
     .{ .op = .cmd, .n = 0x061C }, // CMP 6
-    .{ .op = .jz, .n = 168 },
-    .{ .op = .jmp, .n = 172 },
-    .{ .op = .cmd, .n = 0x0906 }, // PICK 9
+    .{ .op = .jz, .n = 170 },
+    .{ .op = .jmp, .n = 174 },
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
     .{ .op = .k, .n = 135 }, // H3FE6B852
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
-    .{ .op = .jz, .n = 218 },
+    .{ .op = .jz, .n = 220 },
     .{ .op = .k, .n = 48 }, // 0.5
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .put, .n = 7 },
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x021C }, // CMP 2
-    .{ .op = .jz, .n = 196 },
-    .{ .op = .cmd, .n = 0x0706 }, // PICK 7
-    .{ .op = .cmd, .n = 0x0906 }, // PICK 9
-    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .jz, .n = 198 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0806 }, // PICK 8
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .put, .n = 9 },
-    .{ .op = .cmd, .n = 0x0903 }, // DROP 9
-    .{ .op = .jmp, .n = 252 },
-    .{ .op = .cmd, .n = 0x0706 }, // PICK 7
-    .{ .op = .cmd, .n = 0x0906 }, // PICK 9
-    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .put, .n = 5 },
+    .{ .op = .cmd, .n = 0x0503 }, // DROP 5
+    .{ .op = .jmp, .n = 254 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0706 }, // PICK 7
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .k, .n = 125 }, // ln2_lo
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0806 }, // PICK 8
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0706 }, // PICK 7
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .k, .n = 124 }, // ln2_hi
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .put, .n = 9 },
-    .{ .op = .cmd, .n = 0x0903 }, // DROP 9
-    .{ .op = .jmp, .n = 252 },
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .put, .n = 5 },
+    .{ .op = .cmd, .n = 0x0503 }, // DROP 5
+    .{ .op = .jmp, .n = 254 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x021C }, // CMP 2
-    .{ .op = .jz, .n = 233 },
+    .{ .op = .jz, .n = 235 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0506 }, // PICK 5
-    .{ .op = .cmd, .n = 0x0906 }, // PICK 9
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .put, .n = 9 },
-    .{ .op = .cmd, .n = 0x0903 }, // DROP 9
-    .{ .op = .jmp, .n = 252 },
+    .{ .op = .put, .n = 5 },
+    .{ .op = .cmd, .n = 0x0503 }, // DROP 5
+    .{ .op = .jmp, .n = 254 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0506 }, // PICK 5
-    .{ .op = .cmd, .n = 0x0906 }, // PICK 9
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0706 }, // PICK 7
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .k, .n = 125 }, // ln2_lo
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0706 }, // PICK 7
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .k, .n = 124 }, // ln2_hi
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .put, .n = 9 },
-    .{ .op = .cmd, .n = 0x0903 }, // DROP 9
-    .{ .op = .jmp, .n = 252 },
+    .{ .op = .put, .n = 5 },
+    .{ .op = .cmd, .n = 0x0503 }, // DROP 5
+    .{ .op = .jmp, .n = 254 },
 };
 
 const log2_steps = [_]Step{
@@ -3702,17 +3749,17 @@ const log2_steps = [_]Step{
     .{ .op = .pole, .n = 0 },
     .{ .op = .k, .n = 120 }, // -H7FF00000
     .{ .op = .put, .n = 0 },
-    .{ .op = .jmp, .n = 146 },
+    .{ .op = .jmp, .n = 150 },
     .{ .op = .k, .n = 9 }, // nan
     .{ .op = .put, .n = 0 },
-    .{ .op = .jmp, .n = 146 },
+    .{ .op = .jmp, .n = 150 },
     .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .k, .n = 113 }, // H7FF00000
     .{ .op = .cmd, .n = 0x021C }, // CMP 2
     .{ .op = .jz, .n = 22 },
     .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .put, .n = 0 },
-    .{ .op = .jmp, .n = 146 },
+    .{ .op = .jmp, .n = 150 },
     .{ .op = .cmd, .n = 0x0002 }, // DUP
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x003D }, // GETMANT
@@ -3808,35 +3855,39 @@ const log2_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .k, .n = 136 }, // ivln2hi
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .put, .n = 2 },
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .k, .n = 137 }, // ivln2lo
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .k, .n = 136 }, // ivln2hi
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0706 }, // PICK 7
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0203 }, // DROP 2
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0806 }, // PICK 8
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
-    .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .put, .n = 1 },
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .put, .n = 2 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .put, .n = 9 },
-    .{ .op = .cmd, .n = 0x0903 }, // DROP 9
-    .{ .op = .jmp, .n = 146 },
+    .{ .op = .put, .n = 4 },
+    .{ .op = .cmd, .n = 0x0403 }, // DROP 4
+    .{ .op = .jmp, .n = 150 },
 };
 
 const log10_steps = [_]Step{
@@ -3851,17 +3902,17 @@ const log10_steps = [_]Step{
     .{ .op = .pole, .n = 0 },
     .{ .op = .k, .n = 120 }, // -H7FF00000
     .{ .op = .put, .n = 0 },
-    .{ .op = .jmp, .n = 152 },
+    .{ .op = .jmp, .n = 157 },
     .{ .op = .k, .n = 9 }, // nan
     .{ .op = .put, .n = 0 },
-    .{ .op = .jmp, .n = 152 },
+    .{ .op = .jmp, .n = 157 },
     .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .k, .n = 113 }, // H7FF00000
     .{ .op = .cmd, .n = 0x021C }, // CMP 2
     .{ .op = .jz, .n = 22 },
     .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .put, .n = 0 },
-    .{ .op = .jmp, .n = 152 },
+    .{ .op = .jmp, .n = 157 },
     .{ .op = .cmd, .n = 0x0002 }, // DUP
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x003D }, // GETMANT
@@ -3956,42 +4007,47 @@ const log10_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .put, .n = 2 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .k, .n = 139 }, // ivln10hi
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .put, .n = 1 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .k, .n = 140 }, // log10_2hi
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .k, .n = 141 }, // log10_2lo
     .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
-    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .k, .n = 142 }, // ivln10lo
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .k, .n = 139 }, // ivln10hi
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .put, .n = 4 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
-    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .put, .n = 1 },
+    .{ .op = .put, .n = 4 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0010 }, // ADD
-    .{ .op = .put, .n = 9 },
-    .{ .op = .cmd, .n = 0x0903 }, // DROP 9
-    .{ .op = .jmp, .n = 152 },
+    .{ .op = .put, .n = 2 },
+    .{ .op = .cmd, .n = 0x0203 }, // DROP 2
+    .{ .op = .jmp, .n = 157 },
 };
 
 const exp_steps = [_]Step{
@@ -4015,11 +4071,11 @@ const exp_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .put, .n = 3 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 186 },
+    .{ .op = .jmp, .n = 187 },
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .put, .n = 3 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 186 },
+    .{ .op = .jmp, .n = 187 },
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .k, .n = 144 }, // o_threshold
     .{ .op = .cmd, .n = 0x041C }, // CMP 4
@@ -4027,7 +4083,7 @@ const exp_steps = [_]Step{
     .{ .op = .k, .n = 113 }, // H7FF00000
     .{ .op = .put, .n = 3 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 186 },
+    .{ .op = .jmp, .n = 187 },
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .k, .n = 145 }, // u_threshold
     .{ .op = .cmd, .n = 0x011C }, // CMP 1
@@ -4035,7 +4091,7 @@ const exp_steps = [_]Step{
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .put, .n = 3 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 186 },
+    .{ .op = .jmp, .n = 187 },
     .{ .op = .jmp, .n = 42 },
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0016 }, // ABS
@@ -4114,7 +4170,7 @@ const exp_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0010 }, // ADD
     .{ .op = .put, .n = 3 },
     .{ .op = .cmd, .n = 0x0303 }, // DROP 3
-    .{ .op = .jmp, .n = 186 },
+    .{ .op = .jmp, .n = 187 },
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .put, .n = 0 },
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
@@ -4142,45 +4198,1179 @@ const exp_steps = [_]Step{
     .{ .op = .cmd, .n = 0x0506 }, // PICK 5
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .put, .n = 0 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 167 },
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 23 }, // 2.0
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0013 }, // DIV
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .put, .n = 4 },
+    .{ .op = .cmd, .n = 0x0403 }, // DROP 4
+    .{ .op = .jmp, .n = 187 },
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 23 }, // 2.0
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0013 }, // DIV
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0038 }, // SCALE2
+    .{ .op = .put, .n = 4 },
+    .{ .op = .cmd, .n = 0x0403 }, // DROP 4
+    .{ .op = .jmp, .n = 187 },
+};
+
+const pow2_steps = [_]Step{
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 8 },
+    .{ .op = .k, .n = 23 }, // 2.0
+    .{ .op = .cmd, .n = 0x0014 }, // SQRT
+    .{ .op = .put, .n = 0 },
+    .{ .op = .jmp, .n = 189 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .k, .n = 156 }, // H41E00001
+    .{ .op = .cmd, .n = 0x061C }, // CMP 6
+    .{ .op = .jz, .n = 23 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x041C }, // CMP 4
+    .{ .op = .jz, .n = 20 },
+    .{ .op = .k, .n = 113 }, // H7FF00000
+    .{ .op = .put, .n = 0 },
+    .{ .op = .jmp, .n = 189 },
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .put, .n = 0 },
+    .{ .op = .jmp, .n = 189 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x001F }, // CHOP
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .k, .n = 157 }, // 1024.0
+    .{ .op = .cmd, .n = 0x061C }, // CMP 6
+    .{ .op = .jz, .n = 56 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .k, .n = 157 }, // 1024.0
+    .{ .op = .cmd, .n = 0x041C }, // CMP 4
+    .{ .op = .jz, .n = 43 },
+    .{ .op = .k, .n = 113 }, // H7FF00000
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0203 }, // DROP 2
+    .{ .op = .jmp, .n = 187 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 158 }, // ovt
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x041C }, // CMP 4
+    .{ .op = .jz, .n = 55 },
+    .{ .op = .k, .n = 113 }, // H7FF00000
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0203 }, // DROP 2
+    .{ .op = .jmp, .n = 187 },
+    .{ .op = .jmp, .n = 79 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .k, .n = 159 }, // -1075.0
+    .{ .op = .cmd, .n = 0x031C }, // CMP 3
+    .{ .op = .jz, .n = 79 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .k, .n = 159 }, // -1075.0
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 68 },
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0203 }, // DROP 2
+    .{ .op = .jmp, .n = 187 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x061C }, // CMP 6
+    .{ .op = .jz, .n = 78 },
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0203 }, // DROP 2
+    .{ .op = .jmp, .n = 187 },
+    .{ .op = .jmp, .n = 79 },
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .k, .n = 160 }, // H3FE00001
+    .{ .op = .cmd, .n = 0x061C }, // CMP 6
+    .{ .op = .jz, .n = 105 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 95 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0022 }, // TRUNC
+    .{ .op = .put, .n = 0 },
+    .{ .op = .jmp, .n = 100 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0022 }, // TRUNC
+    .{ .op = .put, .n = 0 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .put, .n = 3 },
+    .{ .op = .jmp, .n = 105 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x001F }, // CHOP
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .k, .n = 161 }, // lg2_h
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .k, .n = 162 }, // lg2
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 163 }, // lg2_l
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .put, .n = 4 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .put, .n = 4 },
+    .{ .op = .cmd, .n = 0x0103 }, // DROP 1
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .put, .n = 0 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .k, .n = 151 }, // P5
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 152 }, // P4
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 153 }, // P3
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 154 }, // P2
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 155 }, // P1
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .put, .n = 0 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 23 }, // 2.0
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0013 }, // DIV
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0038 }, // SCALE2
+    .{ .op = .put, .n = 5 },
+    .{ .op = .cmd, .n = 0x0403 }, // DROP 4
+    .{ .op = .jmp, .n = 187 },
+    .{ .op = .cmd, .n = 0x0103 }, // DROP 1
+    .{ .op = .jmp, .n = 189 },
+};
+
+const pow_steps = [_]Step{
+    .{ .op = .cmd, .n = 0x0002 }, // DUP
+    .{ .op = .cmd, .n = 0x0002 }, // DUP
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .k, .n = 16 }, // 0.0
     .{ .op = .cmd, .n = 0x021C }, // CMP 2
-    .{ .op = .jz, .n = 166 },
+    .{ .op = .jz, .n = 10 },
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 18 },
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .k, .n = 113 }, // H7FF00000
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 62 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 32 },
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x061C }, // CMP 6
+    .{ .op = .jz, .n = 49 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x041C }, // CMP 4
+    .{ .op = .jz, .n = 45 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 58 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0015 }, // NEG
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 70 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 20 }, // -1.0
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 86 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 80 },
+    .{ .op = .pole, .n = 0 },
+    .{ .op = .jmp, .n = 80 },
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0013 }, // DIV
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 23 }, // 2.0
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 96 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 117 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x041C }, // CMP 4
+    .{ .op = .jz, .n = 105 },
+    .{ .op = .jmp, .n = 111 },
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0013 }, // DIV
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x041C }, // CMP 4
+    .{ .op = .jz, .n = 116 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0014 }, // SQRT
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .jmp, .n = 117 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .k, .n = 113 }, // H7FF00000
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 123 },
+    .{ .op = .jmp, .n = 133 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 128 },
+    .{ .op = .jmp, .n = 133 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 218 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 138 },
+    .{ .op = .jmp, .n = 144 },
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0013 }, // DIV
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 196 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .k, .n = 20 }, // -1.0
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 157 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0022 }, // TRUNC
+    .{ .op = .cmd, .n = 0x051C }, // CMP 5
+    .{ .op = .jz, .n = 157 },
+    .{ .op = .k, .n = 9 }, // nan
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0022 }, // TRUNC
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 195 },
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0022 }, // TRUNC
+    .{ .op = .cmd, .n = 0x051C }, // CMP 5
+    .{ .op = .jz, .n = 195 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 189 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 181 },
+    .{ .op = .pole, .n = 0 },
+    .{ .op = .jmp, .n = 181 },
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .cmd, .n = 0x0013 }, // DIV
+    .{ .op = .cmd, .n = 0x0015 }, // NEG
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .cmd, .n = 0x0015 }, // NEG
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .jmp, .n = 196 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 213 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 206 },
+    .{ .op = .pole, .n = 0 },
+    .{ .op = .jmp, .n = 206 },
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .cmd, .n = 0x0013 }, // DIV
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 231 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0022 }, // TRUNC
+    .{ .op = .cmd, .n = 0x051C }, // CMP 5
+    .{ .op = .jz, .n = 231 },
+    .{ .op = .k, .n = 9 }, // nan
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .k, .n = 156 }, // H41E00001
+    .{ .op = .cmd, .n = 0x061C }, // CMP 6
+    .{ .op = .jz, .n = 437 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .k, .n = 164 }, // H43F00001
+    .{ .op = .cmd, .n = 0x061C }, // CMP 6
+    .{ .op = .jz, .n = 270 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 258 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 254 },
+    .{ .op = .k, .n = 113 }, // H7FF00000
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x041C }, // CMP 4
+    .{ .op = .jz, .n = 266 },
+    .{ .op = .k, .n = 113 }, // H7FF00000
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .k, .n = 165 }, // H3FEFFFFF
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 329 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 304 },
+    .{ .op = .cmd, .n = 0x0002 }, // DUP
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 296 },
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 48 }, // 0.5
     .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0022 }, // TRUNC
+    .{ .op = .cmd, .n = 0x051C }, // CMP 5
+    .{ .op = .jz, .n = 296 },
+    .{ .op = .k, .n = 20 }, // -1.0
+    .{ .op = .put, .n = 0 },
+    .{ .op = .jmp, .n = 299 },
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .put, .n = 0 },
+    .{ .op = .jmp, .n = 299 },
+    .{ .op = .k, .n = 113 }, // H7FF00000
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0002 }, // DUP
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 321 },
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0022 }, // TRUNC
+    .{ .op = .cmd, .n = 0x051C }, // CMP 5
+    .{ .op = .jz, .n = 321 },
+    .{ .op = .k, .n = 20 }, // -1.0
+    .{ .op = .put, .n = 0 },
+    .{ .op = .jmp, .n = 324 },
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .put, .n = 0 },
+    .{ .op = .jmp, .n = 324 },
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .k, .n = 123 }, // H3FF00001
+    .{ .op = .cmd, .n = 0x061C }, // CMP 6
+    .{ .op = .jz, .n = 388 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x041C }, // CMP 4
+    .{ .op = .jz, .n = 363 },
+    .{ .op = .cmd, .n = 0x0002 }, // DUP
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 355 },
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0022 }, // TRUNC
+    .{ .op = .cmd, .n = 0x051C }, // CMP 5
+    .{ .op = .jz, .n = 355 },
+    .{ .op = .k, .n = 20 }, // -1.0
+    .{ .op = .put, .n = 0 },
+    .{ .op = .jmp, .n = 358 },
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .put, .n = 0 },
+    .{ .op = .jmp, .n = 358 },
+    .{ .op = .k, .n = 113 }, // H7FF00000
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0002 }, // DUP
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 380 },
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0022 }, // TRUNC
+    .{ .op = .cmd, .n = 0x051C }, // CMP 5
+    .{ .op = .jz, .n = 380 },
+    .{ .op = .k, .n = 20 }, // -1.0
+    .{ .op = .put, .n = 0 },
+    .{ .op = .jmp, .n = 383 },
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .put, .n = 0 },
+    .{ .op = .jmp, .n = 383 },
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .put, .n = 0 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .cmd, .n = 0x0106 }, // PICK 1
-    .{ .op = .k, .n = 23 }, // 2.0
-    .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0013 }, // DIV
-    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
-    .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .k, .n = 166 }, // 0.25
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 126 }, // thrd
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .put, .n = 5 },
-    .{ .op = .cmd, .n = 0x0503 }, // DROP 5
-    .{ .op = .jmp, .n = 186 },
-    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
-    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0012 }, // MUL
-    .{ .op = .k, .n = 23 }, // 2.0
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 167 }, // ivln2_h
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 168 }, // ivln2_l
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 149 }, // invln2
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .put, .n = 2 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x001F }, // CHOP
+    .{ .op = .put, .n = 1 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0013 }, // DIV
     .{ .op = .cmd, .n = 0x0406 }, // PICK 4
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .put, .n = 4 },
+    .{ .op = .put, .n = 4 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 436 },
+    .{ .op = .jmp, .n = 631 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x003C }, // GETEXP
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x003D }, // GETMANT
+    .{ .op = .put, .n = 1 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 169 }, // H3FFBB67A
+    .{ .op = .cmd, .n = 0x061C }, // CMP 6
+    .{ .op = .jz, .n = 457 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .put, .n = 0 },
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .put, .n = 1 },
+    .{ .op = .jmp, .n = 457 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 170 }, // H3FF3988F
+    .{ .op = .cmd, .n = 0x061C }, // CMP 6
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0013 }, // DIV
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x001F }, // CHOP
+    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x001F }, // CHOP
     .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x001F }, // CHOP
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0706 }, // PICK 7
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0906 }, // PICK 9
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .put, .n = 7 },
+    .{ .op = .cmd, .n = 0x0103 }, // DROP 1
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .k, .n = 171 }, // pL6
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 172 }, // pL5
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 173 }, // pL4
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 174 }, // pL3
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 175 }, // pL2
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 176 }, // pL1
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0806 }, // PICK 8
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .put, .n = 2 },
+    .{ .op = .k, .n = 30 }, // 3.0
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x001F }, // CHOP
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .put, .n = 1 },
+    .{ .op = .cmd, .n = 0x0706 }, // PICK 7
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 30 }, // 3.0
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .put, .n = 7 },
+    .{ .op = .cmd, .n = 0x0103 }, // DROP 1
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0706 }, // PICK 7
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x001F }, // CHOP
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0706 }, // PICK 7
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .put, .n = 6 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .k, .n = 177 }, // cp_h
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 178 }, // cp_l
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .k, .n = 179 }, // cp
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .k, .n = 180 }, // 2.0*dp_l1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .put, .n = 4 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .k, .n = 181 }, // 2.0*dp_h1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x001F }, // CHOP
+    .{ .op = .put, .n = 1 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .k, .n = 181 }, // 2.0*dp_h1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .put, .n = 6 },
+    .{ .op = .put, .n = 6 },
+    .{ .op = .cmd, .n = 0x0503 }, // DROP 5
+    .{ .op = .jmp, .n = 631 },
+    .{ .op = .cmd, .n = 0x0002 }, // DUP
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x001F }, // CHOP
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x001F }, // CHOP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .k, .n = 157 }, // 1024.0
+    .{ .op = .cmd, .n = 0x061C }, // CMP 6
+    .{ .op = .jz, .n = 674 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .k, .n = 157 }, // 1024.0
+    .{ .op = .cmd, .n = 0x041C }, // CMP 4
+    .{ .op = .jz, .n = 661 },
+    .{ .op = .k, .n = 113 }, // H7FF00000
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 806 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 158 }, // ovt
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x041C }, // CMP 4
+    .{ .op = .jz, .n = 673 },
+    .{ .op = .k, .n = 113 }, // H7FF00000
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 806 },
+    .{ .op = .jmp, .n = 697 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .k, .n = 159 }, // -1075.0
+    .{ .op = .cmd, .n = 0x031C }, // CMP 3
+    .{ .op = .jz, .n = 697 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .k, .n = 159 }, // -1075.0
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 686 },
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 806 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x061C }, // CMP 6
+    .{ .op = .jz, .n = 696 },
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 806 },
+    .{ .op = .jmp, .n = 697 },
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .k, .n = 160 }, // H3FE00001
+    .{ .op = .cmd, .n = 0x061C }, // CMP 6
+    .{ .op = .jz, .n = 723 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 713 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0022 }, // TRUNC
+    .{ .op = .put, .n = 0 },
+    .{ .op = .jmp, .n = 718 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0022 }, // TRUNC
+    .{ .op = .put, .n = 0 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .put, .n = 3 },
+    .{ .op = .jmp, .n = 723 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x001F }, // CHOP
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .k, .n = 161 }, // lg2_h
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .k, .n = 162 }, // lg2
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 163 }, // lg2_l
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .put, .n = 5 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .put, .n = 5 },
+    .{ .op = .cmd, .n = 0x0103 }, // DROP 1
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .put, .n = 0 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .k, .n = 151 }, // P5
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 152 }, // P4
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 153 }, // P3
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 154 }, // P2
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 155 }, // P1
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0103 }, // DROP 1
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .k, .n = 23 }, // 2.0
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0013 }, // DIV
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
     .{ .op = .cmd, .n = 0x0011 }, // SUB
     .{ .op = .k, .n = 19 }, // 1.0
     .{ .op = .cmd, .n = 0x0004 }, // SWAP
     .{ .op = .cmd, .n = 0x0011 }, // SUB
-    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
     .{ .op = .cmd, .n = 0x0038 }, // SCALE2
+    .{ .op = .put, .n = 4 },
+    .{ .op = .cmd, .n = 0x0403 }, // DROP 4
+    .{ .op = .jmp, .n = 806 },
+    .{ .op = .cmd, .n = 0x0002 }, // DUP
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 823 },
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .k, .n = 48 }, // 0.5
+    .{ .op = .cmd, .n = 0x0606 }, // PICK 6
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .cmd, .n = 0x0022 }, // TRUNC
+    .{ .op = .cmd, .n = 0x051C }, // CMP 5
+    .{ .op = .jz, .n = 823 },
+    .{ .op = .k, .n = 20 }, // -1.0
+    .{ .op = .put, .n = 0 },
+    .{ .op = .jmp, .n = 826 },
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .put, .n = 0 },
+    .{ .op = .jmp, .n = 826 },
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .put, .n = 3 },
+    .{ .op = .cmd, .n = 0x0303 }, // DROP 3
+    .{ .op = .jmp, .n = 830 },
+};
+
+const hypot_steps = [_]Step{
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .cmd, .n = 0x0018 }, // MAX
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0016 }, // ABS
+    .{ .op = .cmd, .n = 0x0017 }, // MIN
+    .{ .op = .put, .n = 1 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 113 }, // H7FF00000
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 19 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .put, .n = 2 },
+    .{ .op = .cmd, .n = 0x0203 }, // DROP 2
+    .{ .op = .jmp, .n = 105 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .k, .n = 113 }, // H7FF00000
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 24 },
+    .{ .op = .jmp, .n = 28 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 16 }, // 0.0
+    .{ .op = .cmd, .n = 0x021C }, // CMP 2
+    .{ .op = .jz, .n = 32 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .put, .n = 2 },
+    .{ .op = .cmd, .n = 0x0203 }, // DROP 2
+    .{ .op = .jmp, .n = 105 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x003C }, // GETEXP
+    .{ .op = .k, .n = 182 }, // -1023.0
+    .{ .op = .cmd, .n = 0x0018 }, // MAX
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .cmd, .n = 0x003C }, // GETEXP
+    .{ .op = .cmd, .n = 0x0004 }, // SWAP
+    .{ .op = .cmd, .n = 0x0011 }, // SUB
+    .{ .op = .k, .n = 183 }, // 64.0
+    .{ .op = .cmd, .n = 0x041C }, // CMP 4
+    .{ .op = .jz, .n = 49 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .put, .n = 2 },
+    .{ .op = .cmd, .n = 0x0203 }, // DROP 2
+    .{ .op = .jmp, .n = 105 },
+    .{ .op = .k, .n = 19 }, // 1.0
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 184 }, // H5FE00000
+    .{ .op = .cmd, .n = 0x061C }, // CMP 6
+    .{ .op = .jz, .n = 65 },
+    .{ .op = .k, .n = 185 }, // H6BB00000
+    .{ .op = .put, .n = 0 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 186 }, // H14300000
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .put, .n = 1 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 186 }, // H14300000
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .put, .n = 2 },
+    .{ .op = .jmp, .n = 80 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 187 }, // H23D00000
+    .{ .op = .cmd, .n = 0x011C }, // CMP 1
+    .{ .op = .jz, .n = 80 },
+    .{ .op = .k, .n = 186 }, // H14300000
+    .{ .op = .put, .n = 0 },
+    .{ .op = .cmd, .n = 0x0106 }, // PICK 1
+    .{ .op = .k, .n = 185 }, // H6BB00000
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .put, .n = 1 },
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .k, .n = 185 }, // H6BB00000
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
+    .{ .op = .put, .n = 2 },
+    .{ .op = .jmp, .n = 80 },
+    .{ .op = .cmd, .n = 0x0002 }, // DUP
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x001E }, // XMUL
+    .{ .op = .put, .n = 1 },
+    .{ .op = .put, .n = 2 },
+    .{ .op = .cmd, .n = 0x0002 }, // DUP
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x001E }, // XMUL
+    .{ .op = .put, .n = 1 },
+    .{ .op = .put, .n = 4 },
+    .{ .op = .cmd, .n = 0x0006 }, // PICK 0
+    .{ .op = .cmd, .n = 0x0206 }, // PICK 2
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0506 }, // PICK 5
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0406 }, // PICK 4
+    .{ .op = .cmd, .n = 0x0010 }, // ADD
+    .{ .op = .cmd, .n = 0x0014 }, // SQRT
+    .{ .op = .cmd, .n = 0x0306 }, // PICK 3
+    .{ .op = .cmd, .n = 0x0012 }, // MUL
     .{ .op = .put, .n = 5 },
     .{ .op = .cmd, .n = 0x0503 }, // DROP 5
-    .{ .op = .jmp, .n = 186 },
+    .{ .op = .jmp, .n = 105 },
 };
 
 pub const programs = [_]Program{
@@ -4195,4 +5385,7 @@ pub const programs = [_]Program{
     .{ .num = 0x49, .pops = 1, .steps = &log2_steps },
     .{ .num = 0x4A, .pops = 1, .steps = &log10_steps },
     .{ .num = 0x4C, .pops = 1, .steps = &exp_steps },
+    .{ .num = 0x4D, .pops = 1, .steps = &pow2_steps },
+    .{ .num = 0x4E, .pops = 2, .steps = &pow_steps },
+    .{ .num = 0x4F, .pops = 2, .steps = &hypot_steps },
 };

@@ -87,22 +87,46 @@ wasm: libc.a
 # the input it leaves. mchess.core.input has no "perft 3", which takes 11
 # million steps and, in GHDL, hours. The step count and the other registers are left out, so
 # that the expected files do not change with the compiler.
+#
+# hdl/ compares the core with the emulator only, so a kept program may
+# reserve less of its memory, which ___wasm_start then clears in fewer
+# steps (WASM.md, Linear memory). Unless the run has nicewasm options of
+# its own, the test is translated again with --memory-bytes, with each
+# size of KEEP_BYTES in turn, and the first whose output is the expected
+# one is kept. Otherwise the program is kept as it is: mchess, whose
+# stack alone is 128 KB, and a test that its data or its heap does not
+# let fit.
+KEEP_BYTES = 8192 16384 32768
+
+# Translates test/$(2).wasm with the options $(5), joins it after the
+# files $(3), assembles it, and runs it, as the run $(1): test/$(1).out
+# gets the console output, the registers $(4), and the exit status. One
+# shell command, for check and keep.
+define run
+$(NICEWASM) $(5) -o test/$(1).out.nasm test/$(2).wasm && \
+	  cat $(3) test/$(1).out.nasm ../lib.nasm ../muldiv_mpu.nasm > test/$(1).full.nasm && \
+	  { if grep -qwFf build/float.labels test/$(1).out.nasm; then cat ../$(FLOAT_LIB) >> test/$(1).full.nasm; fi; } && \
+	  $(ASM) -o test/$(1).out.bin test/$(1).full.nasm && \
+	  { $(EMU) $(if $(wildcard test/$(2).input),--input test/$(2).input) test/$(1).out.bin < /dev/null > test/$(1).raw; \
+	    echo "exit $$?" > test/$(1).status; } && \
+	  sed '/^\(Halted\|Stopped\)/,$$d' test/$(1).raw > test/$(1).out && \
+	  { grep -o ' $(4)' test/$(1).raw | cut -c2- >> test/$(1).out; cat test/$(1).status >> test/$(1).out; }
+endef
+
 # $(1) is the name of the run, $(2) the test, $(3) the files before the
 # program, $(4) the registers to show, and $(5) nicewasm's options.
 define check
-	@$(NICEWASM) $(5) -o test/$(1).out.nasm test/$(2).wasm
+	@$(call run,$(1),$(2),$(3),$(4),$(5))
 	$(if $(filter $(2),$(NOFLOAT_TESTS)),@if grep -qwFf build/float.labels test/$(1).out.nasm; then \
 	  echo "FAIL libc/$(1): it names a label of the float library"; exit 1; fi)
-	@cat $(3) test/$(1).out.nasm ../lib.nasm ../muldiv_mpu.nasm > test/$(1).full.nasm
-	@if grep -qwFf build/float.labels test/$(1).out.nasm; then cat ../$(FLOAT_LIB) >> test/$(1).full.nasm; fi
-	@$(ASM) -o test/$(1).out.bin test/$(1).full.nasm
-	@$(EMU) $(if $(wildcard test/$(2).input),--input test/$(2).input) test/$(1).out.bin < /dev/null > test/$(1).raw; echo "exit $$?" > test/$(1).status
-	$(if $(KEEP),@mkdir -p $(KEEP) && cp test/$(1).out.bin $(KEEP)/libc_$(1).bin)
-	$(if $(KEEP),$(if $(wildcard test/$(2).input),@cp $(or $(wildcard test/$(2).core.input),test/$(2).input) $(KEEP)/libc_$(1).input))
-	@sed '/^\(Halted\|Stopped\)/,$$d' test/$(1).raw > test/$(1).out
-	@grep -o ' $(4)' test/$(1).raw | cut -c2- >> test/$(1).out; cat test/$(1).status >> test/$(1).out
 	@if cmp -s test/$(1).out test/$(1).expected; then echo "PASS libc/$(1)"; \
 	else echo "FAIL libc/$(1)"; diff test/$(1).expected test/$(1).out; exit 1; fi
+	$(if $(KEEP),@mkdir -p $(KEEP) && cp test/$(1).out.bin $(KEEP)/libc_$(1).bin)
+	$(if $(KEEP),$(if $(wildcard test/$(2).input),@cp $(or $(wildcard test/$(2).core.input),test/$(2).input) $(KEEP)/libc_$(1).input))
+	$(if $(KEEP),$(if $(5),,@for n in $(KEEP_BYTES); do \
+	  if { $(call run,$(1)_keep,$(2),$(3),$(4),--memory-bytes $$n); } 2>/dev/null && \
+	    cmp -s test/$(1)_keep.out test/$(1).expected; then cp test/$(1)_keep.out.bin $(KEEP)/libc_$(1).bin; break; fi; \
+	done))
 	$(if $(NO_FPU),,@if grep -qwFf build/float.labels test/$(1).out.nasm; then \
 	  cat $(3) test/$(1).out.nasm ../lib.nasm ../muldiv_mpu.nasm ../float.nasm > test/$(1).full.nasm && \
 	  $(ASM) -o test/$(1).out.bin test/$(1).full.nasm && \

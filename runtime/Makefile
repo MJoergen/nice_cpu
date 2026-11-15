@@ -95,18 +95,37 @@ FLOAT_LIB = $(if $(NO_FPU),float.nasm,float_fpu.nasm)
 WASM_OPTS_rustheap = --memory-pages 2
 WASM_OPTS_zigheap = --memory-pages 2
 
+# Translates test/$(1).wasm with the options $(4), joins it with the
+# float library $(3) if the test needs it, assembles it, and runs it, as
+# the run $(2): test/$(2).out gets the console output, R1, and the exit
+# status. One shell command, for check_wasm and its keep.
+define run_wasm
+$(PYTHON) ../translator/nicewasm.py $(4) -o test/$(2).out.nasm test/$(1).wasm && \
+	  cat start_wasm.nasm test/$(2).out.nasm lib.nasm muldiv_mpu.nasm \
+	    $(if $(filter $(1),$(FLOAT_WASM_TESTS)),$(3)) > test/$(2).full.nasm && \
+	  $(ASM) -o test/$(2).out.bin test/$(2).full.nasm && \
+	  { $(EMU) $(if $(wildcard test/$(1).input),--input test/$(1).input) test/$(2).out.bin < /dev/null > test/$(2).raw; \
+	    echo "exit $$?" > test/$(2).status; } && \
+	  sed '/^\(Halted\|Stopped\)/,$$d' test/$(2).raw > test/$(2).out && \
+	  { grep -o ' R1  [0-9a-f]*' test/$(2).raw | cut -c2- >> test/$(2).out; cat test/$(2).status >> test/$(2).out; }
+endef
+
+# A kept program may reserve less of its memory, as in libc/Makefile:
+# unless the test has options of its own, it is translated again with
+# --memory-bytes, with each size of KEEP_BYTES in turn, and the first
+# whose output is the expected one is kept.
+KEEP_BYTES = 8192 16384 32768
+
 # $(1) is the test, $(2) the name of the run, and $(3) the float library.
 define check_wasm
-	@$(PYTHON) ../translator/nicewasm.py $(WASM_OPTS_$(1)) -o test/$(2).out.nasm test/$(1).wasm
-	@cat start_wasm.nasm test/$(2).out.nasm lib.nasm muldiv_mpu.nasm \
-	  $(if $(filter $(1),$(FLOAT_WASM_TESTS)),$(3)) > test/$(2).full.nasm
-	@$(ASM) -o test/$(2).out.bin test/$(2).full.nasm
-	@$(EMU) $(if $(wildcard test/$(1).input),--input test/$(1).input) test/$(2).out.bin < /dev/null > test/$(2).raw; echo "exit $$?" > test/$(2).status
-	$(call keep,test/$(2).out.bin,$(wildcard test/$(1).input),$(2))
-	@sed '/^\(Halted\|Stopped\)/,$$d' test/$(2).raw > test/$(2).out
-	@grep -o ' R1  [0-9a-f]*' test/$(2).raw | cut -c2- >> test/$(2).out; cat test/$(2).status >> test/$(2).out
+	@$(call run_wasm,$(1),$(2),$(3),$(WASM_OPTS_$(1)))
 	@if cmp -s test/$(2).out test/$(1).expected; then echo "PASS $(2)"; \
 	else echo "FAIL $(2)"; diff test/$(1).expected test/$(2).out; exit 1; fi
+	$(call keep,test/$(2).out.bin,$(wildcard test/$(1).input),$(2))
+	$(if $(KEEP),$(if $(WASM_OPTS_$(1)),,@for n in $(KEEP_BYTES); do \
+	  if { $(call run_wasm,$(1),$(2)_keep,$(3),--memory-bytes $$n); } 2>/dev/null && \
+	    cmp -s test/$(2)_keep.out test/$(1).expected; then cp test/$(2)_keep.out.bin $(KEEP)/$(2).bin; break; fi; \
+	done))
 
 endef
 

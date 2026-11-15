@@ -1376,7 +1376,9 @@ in `runtime/` and `test/run.py --keep DIR` and `test/fuzz.py --keep DIR` in `tra
 tests and leave the programs in `build/programs`, with the console input
 of those that read one. `test/run.py --keep` keeps a case translated
 with a smaller memory when that gives the same result, so that
-`___wasm_start` clears less of it ([translator/README.md](../translator/README.md)).
+`___wasm_start` clears less of it ([translator/README.md](../translator/README.md)),
+and so do the runtime's tests that are translated from wasm
+([runtime/README.md](../runtime/README.md)).
 The programs that use floats use the FPU,
 `src/fpu.vhd`, as on the emulator. Then `test/programs.py` runs each on the core and
 on the emulator and compares them, as `make test` does, with the console

@@ -683,6 +683,12 @@ With `make test KEEP=DIR`, where DIR is an absolute path, each test also
 leaves its program in `DIR/X.bin`, and its console input, if any, in
 `DIR/X.input`. The C library's tests leave `DIR/libc_X.bin`. `make
 programs` in `hdl/` uses them to run the same programs on the FPGA core.
+That compares the core with the emulator only, so a kept program that
+is translated from wasm may reserve less of its memory than the test:
+unless the test has nicewasm options of its own, it is translated again
+with `--memory-bytes 8192`, then 16384, then 32768, and the first whose
+output is the expected one is kept. `___wasm_start` then clears fewer
+words. `mchess`, whose stack alone is 128 KB, keeps its four pages.
 
 Then it runs the C library's tests, `libc/test/X.c`, with
 `libc/test/X.input` as the console input if there is one. Their `.wasm` files

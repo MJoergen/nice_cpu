@@ -772,7 +772,8 @@ class Debugger(cmd.Cmd):
 
     def do_console(self, arg: str) -> None:
         """console (c): passes the terminal through to the program, the keys
-        to its input and its output to the screen, until Ctrl-]. Keys that
+        to its input and its output to the screen, until Ctrl-]. The Enter
+        key is CR, as in the emulator's window (DEVICES.md §1). Keys that
         its input buffer has no room for wait until the program reads."""
         fd = sys.stdin.fileno()
         if not os.isatty(fd):
@@ -780,7 +781,10 @@ class Debugger(cmd.Cmd):
                              "text without one")
         old = termios.tcgetattr(fd)
         new = termios.tcgetattr(fd)
-        new[0] &= ~termios.IXON
+        # The keys as typed: no flow control, and no change of CR or LF,
+        # so that Enter is CR
+        new[0] &= ~(termios.IXON | termios.ICRNL | termios.INLCR |
+                    termios.IGNCR)
         new[3] &= ~(termios.ICANON | termios.ECHO | termios.ISIG |
                     termios.IEXTEN)
         new[6][termios.VMIN] = 1

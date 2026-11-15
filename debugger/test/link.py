@@ -13,7 +13,8 @@ connects to it as the host. The groups check:
 - nicedbg.py's commands, as they are typed at its prompt, on
   test/break.nasm with its labels, and its watchpoints on
   test/watch.nasm;
-- nicedbg.py as a program, with its commands on stdin.
+- nicedbg.py as a program, with its commands on stdin;
+- its console on a pseudo-terminal, which passes the Enter key as CR.
 
 The expected values come from the programs and DEBUG.md, not from the
 tools' output. It prints one line for each check, and exits with status
@@ -27,7 +28,9 @@ import argparse
 import contextlib
 import io
 import os
+import pty
 import re
+import select
 import subprocess
 import sys
 import tempfile
@@ -572,6 +575,58 @@ def test_program(port: str, prog: str) -> None:
           "R6  00000007" in out and "R7  00001234" in out, repr(out))
 
 
+def read_until(fd: int, want: bytes, seen: bytearray, start: int = 0) -> bool:
+    """Reads fd into seen until seen[start:] holds want, at most WAIT
+    seconds."""
+    end = time.monotonic() + WAIT
+    while want not in seen[start:] and time.monotonic() < end:
+        ready, _, _ = select.select([fd], [], [], end - time.monotonic())
+        if ready:
+            try:
+                seen += os.read(fd, 1024)
+            except OSError:     # EIO: the other side has closed
+                break
+    return want in seen[start:]
+
+
+def test_console(port: str, echo: str) -> None:
+    """nicedbg.py's console on a pseudo-terminal, which starts with the
+    default modes, ICRNL among them, as a terminal does, on
+    test/echo.nasm. The keys a, CR, and b must reach the program as
+    typed, and come back from it: a CR made LF would come back as CR LF,
+    by the terminal's output modes."""
+    master, slave = pty.openpty()
+    p = subprocess.Popen([sys.executable, os.path.join(TOOLS, "nicedbg.py"),
+                          "--tcp", port, echo],
+                         stdin=slave, stdout=slave, stderr=slave)
+    os.close(slave)
+    seen = bytearray()
+    try:
+        os.write(master, b"g\nc\n")
+        # The keys go after the console has set the modes, as the line
+        # discipline changes them as they arrive
+        started = read_until(master, b"returns to the prompt", seen)
+        check("console: started", started, repr(bytes(seen)))
+        os.write(master, b"a\rb")
+        echoed = read_until(master, b"a\rb", seen)
+        check("console: Enter reaches the program as CR",
+              echoed and b"a\r\nb" not in seen, repr(bytes(seen)))
+        # The keys after Ctrl-] in the same read are dropped, so q waits
+        # for the prompt
+        mark = len(seen)
+        os.write(master, bytes([nicedbg.CONSOLE_END]))
+        read_until(master, b"dbg> ", seen, mark)
+        os.write(master, b"q\n")
+        p.wait(timeout=10)
+        check("console: Ctrl-] and q", p.returncode == 0,
+              f"{p.returncode} {bytes(seen)!r}")
+    finally:
+        if p.poll() is None:
+            p.kill()
+            p.wait()
+        os.close(master)
+
+
 def main() -> None:
     argparse.ArgumentParser(
         description=__doc__,
@@ -595,6 +650,7 @@ def main() -> None:
             test_hidden(port, hidden)
             test_watch(port, watch, watch_at)
             test_program(port, prog)
+            test_console(port, echo)
     passed = sum(results)
     print(f"{passed}/{len(results)} passed")
     sys.exit(0 if passed == len(results) else 1)

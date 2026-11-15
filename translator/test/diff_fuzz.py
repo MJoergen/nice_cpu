@@ -10,7 +10,8 @@ console output, the halt reason, the exit status, R1, R7 to R13 after a
 normal halt, and every word of the linear memory. A trap's R2 may differ
 between versions, so it is not compared. REV is a git revision whose
 nicewasm.py is the older version, main by default, or the path of a
-nicewasm.py. Seeds FIRST to FIRST + COUNT - 1 are tried.
+nicewasm.py. Seeds FIRST to FIRST + COUNT - 1 are tried, in parallel, a
+process for each CPU, and reported in order.
 
 The modules are those of fuzz.py without its tail calls, which a
 version before them rejects. Without --trap, the new
@@ -46,6 +47,8 @@ of 2026-10-19 on 1300 modules; it is for the next change."""
 
 from __future__ import annotations
 
+import concurrent.futures
+import functools
 import os
 import random
 import subprocess
@@ -391,6 +394,24 @@ def old_translator(rev: str, tmp: str) -> str:
     return path
 
 
+def one(seed: int, args: List[str], tool: str, tmp: str, opts: List[str], pages: int,
+        library: fuzz.Library) -> Tuple[Optional[str], Optional[str]]:
+    """Builds and compares the module of one seed, in a process of its own.
+    Returns what differs, or None, and how the new translation's run
+    ended, or None."""
+    trap, nompu, grow = "--trap" in args, "--no-mpu" in args, "--grow" in args
+    floats = "--floats" in args or "--inline-fpu" in args
+    if trap:
+        mod, expected = trap_module(seed, grow, floats), None
+    else:
+        fns, segment = fuzz.build(seed, "--unchecked" not in args, tails=False, floats=floats)
+        mod, expected, _ = fuzz.finish(fns, segment, floats)
+    problem, run = compare(seed, mod, tool, tmp, nompu, opts, pages, expected, library)
+    if run is None:
+        return problem, None
+    return problem, run.halt if not run.halt.startswith("Halted (reserved") else f"trap {run.regs.get('R1')}"
+
+
 def main() -> None:
     args = sys.argv[1:]
     flags = {"--trap", "--no-mpu", "--grow", "--unchecked", "--library", "--floats", "--inline-fpu"}
@@ -405,7 +426,7 @@ def main() -> None:
     if len(numbers) != 2 or any(a not in flags for a in args if a.startswith("--")):
         sys.exit(__doc__.split("\n\n")[1])
     first, count = int(numbers[0]), int(numbers[1])
-    trap, nompu, grow = "--trap" in args, "--no-mpu" in args, "--grow" in args
+    nompu, grow = "--no-mpu" in args, "--grow" in args
     floats = "--floats" in args or "--inline-fpu" in args
     if floats and "--library" in args:
         sys.exit("diff_fuzz.py: --library takes no floats: a library module may not call the float library")
@@ -425,19 +446,16 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         tool = old_translator(old, tmp)
         library = fuzz.float_library(tmp, ["--no-mpu"] if nompu else [])
-        for seed in range(first, first + count):
-            if trap:
-                mod, expected = trap_module(seed, grow, floats), None
-            else:
-                fns, segment = fuzz.build(seed, "--unchecked" not in args, tails=False, floats=floats)
-                mod, expected, _ = fuzz.finish(fns, segment, floats)
-            problem, run = compare(seed, mod, tool, tmp, nompu, opts, pages, expected, library)
-            if problem is not None:
-                failures += 1
-                print("FAIL " + problem, flush=True)
-            if run is not None:
-                key = run.halt if not run.halt.startswith("Halted (reserved") else f"trap {run.regs.get('R1')}"
-                halts[key] = halts.get(key, 0) + 1
+        # The seeds run in processes of their own, as they build and assemble
+        # in Python, each with files of its own name, and report in order.
+        work = functools.partial(one, args=args, tool=tool, tmp=tmp, opts=opts, pages=pages, library=library)
+        with concurrent.futures.ProcessPoolExecutor(os.cpu_count()) as pool:
+            for problem, key in pool.map(work, range(first, first + count)):
+                if problem is not None:
+                    failures += 1
+                    print("FAIL " + problem, flush=True)
+                if key is not None:
+                    halts[key] = halts.get(key, 0) + 1
     modes = " ".join(a for a in args if a.startswith("--"))
     ends = ", ".join(f"{v} {k}" for k, v in sorted(halts.items()))
     print(f"{'FAIL' if failures else 'PASS'} diff_fuzz against {old} ({count} cases{', ' + modes if modes else ''}): "

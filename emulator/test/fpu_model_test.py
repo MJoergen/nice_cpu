@@ -321,6 +321,31 @@ CASES: List[Case] = [
     # 0.1 = 0x1999999999999A · 2^-56, 1e300 / 0.1 is not whole; the
     # remainder is exact, so this is C's fmod, which Python's math has.
     ("FMOD 1e300, 0.1", [d(1e300), d(0.1)], 0, "FMOD", [d(math.fmod(1e300, 0.1))], 0, None),
+    # XMUL: p as Y, the error as X.
+    ("XMUL 3, 3 is exact: the error is +0", [d(3.0), d(3.0)], 0, "XMUL", [d(9.0), 0], 0, None),
+    # (1 + 2^-52)^2 = 1 + 2^-51 + 2^-104.
+    ("XMUL (1 + 2^-52)^2", [0x3FF0000000000001, 0x3FF0000000000001], 0, "XMUL",
+     [0x3FF0000000000002, 0x3970000000000000], 0, None),
+    # (1 + 2^-52)(1 - 2^-53) = 1 + 2^-53 - 2^-105, below the tie: p is 1,
+    # and the error 2^-53 - 2^-105 = (2 - 2^-51) · 2^-54, a double.
+    ("XMUL (1 + 2^-52)(1 - 2^-53): p rounds down", [0x3FF0000000000001, 0x3FEFFFFFFFFFFFFF], 0, "XMUL",
+     [0x3FF0000000000000, 0x3C9FFFFFFFFFFFFE], 0, None),
+    ("XMUL -3, 0: -0 and +0", [d(-3.0), 0], 0, "XMUL", [NZ, 0], 0, None),
+    # 3 · 2^-1074 / 2 = 1.5 · 2^-1074, a tie, to the even 2 · 2^-1074; the
+    # error, -2^-1075, rounds to a zero, which is +0.
+    ("XMUL 3 · 2^-1074, 0.5: a subnormal p", [0x0000000000000003, d(0.5)], 0, "XMUL", [0x0000000000000002, 0], 0, None),
+    ("XMUL MAX, 2 overflows: the error is +0", [MAX, d(2.0)], 0, "XMUL", [INF, 0], OVERFLOW, None),
+    ("XMUL -inf, 2", [NINF, d(2.0)], 0, "XMUL", [NINF, 0], 0, None),
+    ("XMUL 0, inf", [0, INF], 0, "XMUL", [N, N], INVALID, None),
+    ("XMUL sNaN, 1", [SN, d(1.0)], 0, "XMUL", [N, N], INVALID, None),
+    ("XMUL with one value", [d(2.0)], 0, "XMUL", [N, N], STACK, None),
+    # CHOP: the low word cleared.
+    ("CHOP 1 + 2^-52", [0x3FF0000000000001], 0, "CHOP", [d(1.0)], 0, None),
+    ("CHOP pi", [d(math.pi)], 0, "CHOP", [0x400921FB00000000], 0, None),
+    ("CHOP -2^-1074 is -0", [0x8000000000000001], 0, "CHOP", [NZ], 0, None),
+    ("CHOP -inf", [NINF], 0, "CHOP", [NINF], 0, None),
+    ("CHOP of a quiet NaN", [QN], 0, "CHOP", [N], 0, None),
+    ("CHOP of a signaling NaN, not an infinity", [SN], 0, "CHOP", [N], INVALID, None),
     # Whole numbers.
     ("FLOOR -0.5", [d(-0.5)], 0, "FLOOR", [d(-1.0)], 0, None),
     ("CEIL -0.5 is -0", [d(-0.5)], 0, "CEIL", [NZ], 0, None),

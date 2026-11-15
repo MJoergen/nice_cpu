@@ -96,6 +96,7 @@ FLAGS: Dict[str, int] = {
     "ADD": I | O, "SUB": I | O, "MUL": I | O, "DIV": I | Z | O, "SQRT": I,
     "ADD.S": I | O, "SUB.S": I | O, "MUL.S": I | O, "DIV.S": I | Z | O, "SQRT.S": I | O,
     "NEG": 0, "ABS": 0, "MIN": I, "MAX": I, "ROUND32": I | O, "ISQRT": I, "SIGN": I, "CMP": I, "FMOD": I,
+    "XMUL": I | O, "CHOP": I,
     "FLOOR": I, "CEIL": I, "TRUNC": I, "NEAREST": I, "ROUND": I,
     "ITOF": 0, "UTOF": 0, "FTOI": I, "FTOU": I, "CONST": I, "SCALE2": I | O, "SCALE10": I | O,
     "DIGITS": I, "FROMBCD": I, "GETEXP": I | Z, "GETMANT": I,
@@ -103,7 +104,7 @@ FLAGS: Dict[str, int] = {
 }
 
 # The values each command pushes. The others push one.
-PUSHES = {"NOP": 0, "CLEAR": 0, "DROP": 0, "SWAP": 2, "DIGITS": 2}
+PUSHES = {"NOP": 0, "CLEAR": 0, "DROP": 0, "SWAP": 2, "DIGITS": 2, "XMUL": 2}
 
 # The commands that copy a value and pop none, with the n they copy.
 COPIES = {"DUP": 0, "OVER": 1}

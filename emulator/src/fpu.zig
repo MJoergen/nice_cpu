@@ -98,6 +98,25 @@ fn arith(num: u8, y: u64, x: u64) Result {
     return .{ .v = bits(r), .flags = fl };
 }
 
+/// XMUL: the product p of Y and X, rounded as MUL rounds it, and its
+/// error rounded once, +0 for a zero. An infinite p has the error +0,
+/// and a NaN p the canonical NaN.
+fn xmul(y: u64, x: u64) struct { p: u64, e: u64, flags: u4 } {
+    const r = arith(0x12, y, x);
+    if (isNan(r.v)) return .{ .p = canonical_nan, .e = canonical_nan, .flags = r.flags };
+    if (!isFinite(r.v)) return .{ .p = r.v, .e = 0, .flags = r.flags };
+    // The product is exact in binary128, and so is its difference from
+    // p, which is then rounded once (see isqrt for why not @mulAdd).
+    const e: f64 = @floatCast(@as(f128, f(y)) * @as(f128, f(x)) - @as(f128, f(r.v)));
+    return .{ .p = r.v, .e = if (e == 0) 0 else bits(e), .flags = r.flags };
+}
+
+/// CHOP: X with the low 32 bits of its encoding cleared.
+fn chop(a: u64) Result {
+    if (isNan(a)) return nan1(a);
+    return .{ .v = a & 0xFFFF_FFFF_0000_0000 };
+}
+
 fn sqrt(a: u64) Result {
     if (isNan(a)) return nan1(a);
     if (isZero(a)) return .{ .v = a };
@@ -622,7 +641,7 @@ pub const Fpu = struct {
             0x03, 0x06, 0x30, 0x3A => .{ .nmask = 0xFF },
             0x1C => .{ .nmask = 0x07 },
             0x10...0x14 => .{ .s = true },
-            0x00, 0x02, 0x04, 0x05, 0x15...0x1B, 0x1D, 0x20...0x24, 0x28...0x2B, 0x38...0x39, 0x3B...0x3D, 0x60...0x67 => .{},
+            0x00, 0x02, 0x04, 0x05, 0x15...0x1B, 0x1D...0x1F, 0x20...0x24, 0x28...0x2B, 0x38...0x39, 0x3B...0x3D, 0x60...0x67 => .{},
             else => null,
         };
     }
@@ -689,6 +708,15 @@ pub const Fpu = struct {
                 }
                 return;
             },
+            0x1E => {
+                const xv = self.pop();
+                const yv = self.pop();
+                const m = xmul(yv, xv);
+                self.flags |= m.flags;
+                self.push(m.p);
+                self.push(m.e);
+                return;
+            },
             0x10...0x13, 0x17, 0x18, 0x1C, 0x1D, 0x38, 0x39, 0x60...0x62, 0x64...0x67 => {
                 const xv = self.pop();
                 const yv = self.pop();
@@ -710,6 +738,7 @@ pub const Fpu = struct {
                     0x19 => round32(a),
                     0x1A => isqrt(a),
                     0x1B => sign(a),
+                    0x1F => chop(a),
                     0x20...0x24 => integral(num, a),
                     0x28 => .{ .v = fromInt(@bitCast(a)) },
                     0x29 => .{ .v = bits(@floatFromInt(a)) },

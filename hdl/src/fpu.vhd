@@ -21,6 +21,7 @@
 -- * ROUND32 rounds through the short format and back. The S bit is the
 --   unit's input SHORT, which rounds the exact result once.
 -- * ISQRT is SQRT toward zero, then INTEGRAL toward zero.
+-- * XMUL is MUL, then MULERR of the same operands for the error.
 -- * SCALE2 and SCALE10 convert X with FTOI and clamp it. SCALE10 then
 --   multiplies or divides by an exact power of ten, or multiplies pairs
 --   of values by Dekker's steps, with MULERR for the error of a product.
@@ -233,6 +234,7 @@ architecture synthesis of fpu is
       IDLE_ST, UWAIT_ST, VIEW_ST, WPUSH_ST, CMD_ST, PUSH_ST, ARITH_ST, ARITH2_ST, RESULT_ST,
       LONG_ST, ISQRT_ST, SCALE_ST, SCALE2_ST, SCALE10_ST, S10_ST, S10_SMALL_ST, S10_LOOP_ST,
       MP1_ST, MP2_ST, MP3_ST, MP4_ST, MP5_ST, MP6_ST, MP7_ST, MP8_ST, MP9_ST, MP10_ST,
+      XMUL_ST, XMUL2_ST,
       S10_FIN_ST, DIGITS_ST, DLOG_ST, DMUL_ST, DEXP_ST, DLOOP_ST, DSCALE_ST, DNEAR_ST, DINT_ST,
       BCD_ST, ALIGN_ST, DPUSH_ST, FROMBCD_ST, UTOF_ST, WORD_ST, WORDY_ST, WORDX_ST, IDIV_ST,
       WORD_END_ST
@@ -349,13 +351,15 @@ architecture synthesis of fpu is
    signal eq_r   : std_logic;
    signal lt_r   : std_logic;
    signal dtry_r : boolean;
-   -- Whether the unit's result is infinite, a cycle after it, for the
-   -- states that UWAIT_ST goes on to.
-   signal uinf_r : boolean;
-   signal ax_r   : t_word64;
-   signal bin_r  : unsigned(63 downto 0);
-   signal bcd_r  : unsigned(63 downto 0);
-   signal cnt_r  : natural range 0 to 63;
+   -- Whether the unit's result is infinite, a NaN, or a zero, a cycle
+   -- after it, for the states that UWAIT_ST goes on to.
+   signal uinf_r  : boolean;
+   signal unan_r  : boolean;
+   signal uzero_r : boolean;
+   signal ax_r    : t_word64;
+   signal bin_r   : unsigned(63 downto 0);
+   signal bcd_r   : unsigned(63 downto 0);
+   signal cnt_r   : natural range 0 to 63;
 
    -- The word operators, and FROMBCD's sum.
    signal wy_r  : signed(31 downto 0);
@@ -560,14 +564,14 @@ architecture synthesis of fpu is
             return (true, 2, X"00", true);
          when X"14" =>
             return (true, 1, X"00", true);
-         when X"04" | X"17" | X"18" | X"1D" | X"38" | X"39" |
+         when X"04" | X"17" | X"18" | X"1D" | X"1E" | X"38" | X"39" |
               X"60" | X"61" | X"62" | X"64" | X"65" | X"66" | X"67" =>
             return (true, 2, X"00", false);
          when X"1C" =>
             return (true, 2, X"07", false);
          when X"3A" =>
             return (true, 1, X"FF", false);
-         when X"15" | X"16" | X"19" | X"1A" | X"1B" | X"20" | X"21" | X"22" | X"23" | X"24" |
+         when X"15" | X"16" | X"19" | X"1A" | X"1B" | X"1F" | X"20" | X"21" | X"22" | X"23" | X"24" |
               X"28" | X"29" | X"2A" | X"2B" | X"3B" | X"3C" | X"3D" | X"63" =>
             return (true, 1, X"00", false);
          when others =>
@@ -1082,6 +1086,8 @@ begin
          eq_r     <= bool_to_sl(u_result = tens_r);
          lt_r     <= bool_to_sl(unsigned(u_result) < unsigned(tenn_r));
          uinf_r   <= f_inf(u_result);
+         unan_r   <= f_nan(u_result);
+         uzero_r  <= f_zero(u_result);
          -- The tests of the operands, for ARITH2_ST and DIGITS_ST, which
          -- follow ARITH_ST, a cycle after CMD_ST set them.
          p_cmp_r   <= f_cmp(y_r, x_r);
@@ -1224,7 +1230,7 @@ begin
                -- the operations of two operands, else X.
                u_b <= x_r;
                if num_r = X"10" or num_r = X"11" or num_r = X"12" or num_r = X"13" or
-                  num_r = X"1D" then
+                  num_r = X"1D" or num_r = X"1E" then
                   u_a <= y_r;
                else
                   u_a <= x_r;
@@ -1250,6 +1256,7 @@ begin
                      ucall(OP_SQRT, x_r, x_r, ISQRT_ST);
                      u_rnd <= RND_TRUNC;
                   when X"1D" => ucall(OP_FMOD, y_r, x_r, RESULT_ST);
+                  when X"1E" => ucall(OP_MUL, y_r, x_r, XMUL_ST);
                   when X"20" | X"21" | X"22" | X"23" | X"24" =>
                      ucall(OP_INTEGRAL, x_r, x_r, RESULT_ST);
                      case num_r(2 downto 0) is
@@ -1296,6 +1303,13 @@ begin
                         finish(y_r, x_r, 1, "000");
                      else
                         finish(x_r, x_r, 1, "000");
+                     end if;
+                  -- CHOP: the low word cleared, the canonical NaN for a NaN.
+                  when X"1F" =>
+                     if p_xnan_r then
+                        finish(C_QNAN, x_r, 1, "00" & bool_to_sl(p_xsnan_r));
+                     else
+                        finish(x_r(63 downto 32) & X"00000000", x_r, 1, "000");
                      end if;
                   when X"1B" =>
                      if p_xnan_r then
@@ -1349,6 +1363,25 @@ begin
             -- The result of the unit is the result of the command.
             when RESULT_ST =>
                finish(u_result, x_r, 1, u_flags);
+
+            -- XMUL: p, then its error by MULERR, +0 for a zero. An infinite
+            -- p has the error +0, and a NaN p the canonical NaN.
+            when XMUL_ST =>
+               p_r      <= u_result;
+               cflags_r <= u_flags;
+               if unan_r then
+                  finish(C_QNAN, C_QNAN, 2, u_flags);
+               elsif uinf_r then
+                  finish(u_result, X"0000000000000000", 2, u_flags);
+               else
+                  ucall(OP_MULERR, y_r, x_r, XMUL2_ST);
+               end if;
+            when XMUL2_ST =>
+               if uzero_r then
+                  finish(p_r, X"0000000000000000", 2, cflags_r);
+               else
+                  finish(p_r, u_result, 2, cflags_r);
+               end if;
 
             -- ROUND32: the short value, in the main format again.
             when LONG_ST =>

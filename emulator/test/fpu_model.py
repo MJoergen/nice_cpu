@@ -525,6 +525,27 @@ def cmp_cmd(v: List[int], n: int) -> Tuple[List[int], int]:
     return [F64.from_int(-1) if n >> (c + 1) & 1 else 0], 0
 
 
+def xmul(v: List[int], n: int) -> Tuple[List[int], int]:
+    """XMUL: the product p = Y · X rounded, as MUL gives it, and its
+    error rounded once, +0 when that is a zero. An infinite p has the
+    error +0, and a NaN p the canonical NaN."""
+    y, x = v
+    p, f = F64.mul(y, x)
+    if F64.is_nan(p):
+        return [F64.qnan, F64.qnan], f
+    if F64.is_inf(p):
+        return [p, 0], f
+    e = F64.round(F64.value(y) * F64.value(x) - F64.value(p))[0]
+    return [p, 0 if F64.is_zero(e) else e], f
+
+
+def chop(a: int) -> Result:
+    """CHOP: X with the low 32 bits of its encoding cleared."""
+    if F64.is_nan(a):
+        return F64.nan(a)
+    return a & ~0xFFFFFFFF, 0
+
+
 def fmod(y: int, x: int) -> Result:
     if F64.is_nan(y) or F64.is_nan(x):
         return F64.nan(y, x)
@@ -717,6 +738,8 @@ COMMANDS: Dict[int, Command] = {
     0x1B: Command("SIGN", 1, one(sign_cmd)),
     0x1C: Command("CMP", 2, cmp_cmd, nmask=0x07),
     0x1D: Command("FMOD", 2, two(fmod)),
+    0x1E: Command("XMUL", 2, xmul),
+    0x1F: Command("CHOP", 1, one(chop)),
     0x20: Command("FLOOR", 1, one(lambda a: F64.to_integral(a, "floor"))),
     0x21: Command("CEIL", 1, one(lambda a: F64.to_integral(a, "ceil"))),
     0x22: Command("TRUNC", 1, one(lambda a: F64.to_integral(a, "trunc"))),

@@ -66,7 +66,7 @@ architecture simulation of tb_fpu is
    begin
       case num is
          when 16#10# to 16#12# => return 60;
-         when 16#13# | 16#14# => return 120;
+         when 16#13# | 16#14# | 16#1E# => return 120;
          when 16#1A# => return 150;
          when 16#1D# => return 2400;
          when 16#39# => return 1500;

@@ -762,17 +762,19 @@ of the processor, as `tb_core` gives it, so that a start over the debug
 link empties the stack, clears the flags, and ends a command (DEBUG.md
 §6).
 
-The most cycles of each command in `tb_fpu` on 2026-11-14, from its
+The most cycles of each command in `tb_fpu` on 2026-11-14, and of `XMUL`
+and `CHOP` on 2026-11-15, from its
 request to the ACK of the read of `FPU_STATUS` after it, which adds some
 6 (What the tests check):
 
 | Commands | Cycles at most |
 |---|---|
-| The commands of the stack, `NEG`, `ABS`, `MIN`, `MAX`, `SIGN`, `CMP`, `CONST`, and a number that is not a command | 8 |
+| The commands of the stack, `NEG`, `ABS`, `MIN`, `MAX`, `SIGN`, `CMP`, `CHOP`, `CONST`, and a number that is not a command | 8 |
 | `ITOF`, `UTOF`, `FTOI`, `FTOU`, `GETEXP`, and `GETMANT` | 24 to 29 |
 | `ADD`, `SUB`, and `MUL` | 32 to 34 |
 | `FLOOR`, `CEIL`, `TRUNC`, `NEAREST`, `ROUND`, `ROUND32`, `FROMBCD`, and `SCALE2` | 35 to 47 |
 | `AND`, `OR`, `XOR`, `NOT`, `SHL`, and `SHR` | 60 to 62 |
+| `XMUL` | 62 |
 | `DIV` and `SQRT` | 85 and 86 |
 | `IDIV` and `MOD` | 94 and 95 |
 | `ISQRT` | 101 |

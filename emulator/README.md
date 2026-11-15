@@ -391,8 +391,9 @@ depth, the stack faults, the sticky flags, a save and a restore of
 `STATUS`, an instruction that reads and writes one register of the unit,
 and a read of the eight words through `@R9++`. `test/fpudec.nasm` prints
 numbers through `DIGITS 15`, and reads one back through `FROMBCD` and
-`SCALE10`. `test/fpufunc.nasm` runs `SIN`, `COS`, `TAN`, and `ATAN2`,
-one beyond its bound, and one whose frame does not fit above the stack.
+`SCALE10`. `test/fpufunc.nasm` runs `SIN`, `COS`, `TAN`, `ATAN2`,
+`EXP`, and `LN`, one beyond its bound, and one whose frame does not fit
+above the stack.
 
 ### Clock
 

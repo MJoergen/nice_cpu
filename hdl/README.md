@@ -791,18 +791,20 @@ request to the ACK of the read of `FPU_STATUS` after it, which adds some
 | `SCALE10` | 1235 |
 | `FMOD` | 2117 |
 | `DIGITS` | 3363 |
-| `SIN` and `COS` | 1561 and 1576 |
-| `TAN` | 2079 |
-| `ASIN` and `ACOS` | 1124 and 871 |
-| `ATAN` and `ATAN2` | 946 and 1329 |
+| `SIN` and `COS` | 1533 and 1552 |
+| `TAN` | 2043 |
+| `ASIN` and `ACOS` | 1104 and 952 |
+| `ATAN` and `ATAN2` | 940 and 1319 |
+| `LN`, `LOG2`, and `LOG10` | 918, 1133, and 1204 |
+| `EXP` | 820 |
 
 `make timing UNIT=fpu` places the FPU alone, out of context
-([Timing](#timing)). On the MEGA65, with `ASIN`, `ACOS`, `ATAN`, and
-`ATAN2` (#182), it leaves +1.090 ns on its own paths with the default
+([Timing](#timing)). On the MEGA65, with `LN`, `LOG2`, `LOG10`, and
+`EXP` (#182), it leaves +1.41 ns on its own paths with the default
 flow, more than the budget of 1.0 ns, and +9.502 ns at its inputs and
-+7.958 ns at its outputs; at the commit of #172, +1.218 ns with the
-timing flow. It takes 9507 LUTs, 2696 registers, 5 DSPs, and 3 block
-RAMs, the ROMs of the functions: more LUTs than the pipelined core.
++7.958 ns at its outputs; with the timing flow, +1.000 ns. It takes
+9495 LUTs, 2691 registers, 5 DSPs, and 3 block RAMs, the ROMs of the
+functions and their constants: more LUTs than the pipelined core.
 
 `tb_fpu_unit` checks the arithmetic unit, and `tb_fpu` the FPU, against
 the model of `emulator/test/fpu_model.py` (What the tests check), and

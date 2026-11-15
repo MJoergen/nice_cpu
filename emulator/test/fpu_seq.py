@@ -29,8 +29,9 @@ step.
 The program may use: assignments, also of a tuple from a call; if, elif,
 and else; return; + - * / and unary -; comparisons, also as values,
 -1 for true and 0 for false, as CMP gives them; and, or, and not in a
-test; and the calls abs, sqrt, nearest, trunc, getexp, chop, itof, band
-(the command AND), and nan(), the canonical NaN, and pole(), the step POLE.
+test; and the calls abs, sqrt, nearest, trunc, getexp, getmant, chop,
+itof, band (the command AND), scale2 (SCALE2), and nan(), the canonical
+NaN, and pole(), the step POLE.
 A name that is not a variable is a constant, and H(0x...) is the value
 whose high word that is and whose low word is 0, so that a test of
 fdlibm's high word ix, such as ix < 0x3e500000, is the test of the value
@@ -129,6 +130,32 @@ CONSTANTS: Dict[str, int] = {
     # atan2.c
     "pi": bits(3.1415926535897931160e00),
     "pi_lo": bits(1.2246467991473531772e-16),
+    # fdlibm's e_log.c and e_exp.c
+    "ln2_hi": bits(6.93147180369123816490e-01),
+    "ln2_lo": bits(1.90821492927058770002e-10),
+    "Lg1": bits(6.666666666666735130e-01),
+    "Lg2": bits(3.999999999940941908e-01),
+    "Lg3": bits(2.857142874366239149e-01),
+    "Lg4": bits(2.222219843214978396e-01),
+    "Lg5": bits(1.818357216161805012e-01),
+    "Lg6": bits(1.531383769920937332e-01),
+    "Lg7": bits(1.479819860511658591e-01),
+    "o_threshold": bits(7.09782712893383973096e02),
+    "u_threshold": bits(-7.45133219101941108420e02),
+    "invln2": bits(1.44269504088896338700e00),
+    "P1": bits(1.66666666666666019037e-01),
+    "P2": bits(-2.77777777770155933842e-03),
+    "P3": bits(6.61375632143793436117e-05),
+    "P4": bits(-1.65339022054652515390e-06),
+    "P5": bits(4.13813679705723846039e-08),
+    # FreeBSD's e_log2.c
+    "ivln2hi": bits(1.44269504072144627571e00),
+    "ivln2lo": bits(1.67517131648865118353e-10),
+    # musl's log10.c
+    "ivln10hi": bits(4.34294481878168880939e-01),
+    "ivln10lo": bits(2.50829467116452752298e-11),
+    "log10_2hi": bits(3.01029995663611771306e-01),
+    "log10_2lo": bits(3.69423907715893078616e-13),
 }
 
 # The constants that the C code writes as hex, against their decimal.
@@ -141,6 +168,20 @@ assert CONSTANTS["aT10"] == 0x3F90AD3AE322DA11
 assert CONSTANTS["pio2_lo"] == 0x3C91A62633145C07
 assert CONSTANTS["qS4"] == 0x3FB3B8C5B12E9282
 assert CONSTANTS["pi_lo"] == 0x3CA1A62633145C07
+assert CONSTANTS["ln2_hi"] == 0x3FE62E42FEE00000
+assert CONSTANTS["ln2_lo"] == 0x3DEA39EF35793C76
+assert CONSTANTS["Lg1"] == 0x3FE5555555555593
+assert CONSTANTS["Lg7"] == 0x3FC2F112DF3E5244
+assert CONSTANTS["o_threshold"] == 0x40862E42FEFA39EF
+assert CONSTANTS["u_threshold"] == 0xC0874910D52D3051
+assert CONSTANTS["invln2"] == 0x3FF71547652B82FE
+assert CONSTANTS["P5"] == 0x3E66376972BEA4D0
+assert CONSTANTS["ivln2hi"] == 0x3FF7154765200000
+assert CONSTANTS["ivln2lo"] == 0x3DE705FC2EEFA200
+assert CONSTANTS["ivln10hi"] == 0x3FDBCB7B15200000
+assert CONSTANTS["ivln10lo"] == 0x3DBB9438CA9AADD5
+assert CONSTANTS["log10_2hi"] == 0x3FD34413509F6000
+assert CONSTANTS["log10_2lo"] == 0x3D59FEF311F12B36
 
 # The programs. The names of the functions of §11.3 are in capitals; the
 # others are the helpers they call.
@@ -468,6 +509,157 @@ def ATAN2(y, x):
     if y < 0.0:
         return -z
     return z
+
+
+def log_red(x, t):
+    # The reduction of the logarithms: k and x' with x = 2^k x', where x'
+    # is from about sqrt(2)/2 to sqrt(2). C takes the high word's
+    # exponent, and halves x' if its fraction bits are t or more, after
+    # it scales a subnormal x by 2^54. GETEXP and GETMANT give the same
+    # k and x' for a subnormal x without it.
+    m = getmant(x)
+    if m >= t:
+        return getexp(x) + 1.0, 0.5*m
+    return getexp(x), m
+
+
+def log1p_k(f):
+    # k_log1p of FreeBSD's k_log.h, with its t1, t2, R, and hfsq in the
+    # expression
+    s = f/(2.0 + f)
+    z = s*s
+    w = z*z
+    return s*(0.5*f*f + (z*(Lg1 + w*(Lg3 + w*(Lg5 + w*Lg7))) + w*(Lg2 + w*(Lg4 + w*Lg6))))
+
+
+def LN(x):
+    # fdlibm's e_log.c. Its tests of the fraction bits hx of x, which
+    # are of x', are of the value x': hx < 3 after adding 2 is x' from
+    # H(0x3feffffe) to H(0x3ff00001), and i | j > 0 is x' from the
+    # fractions 0x6147a to 0x6b851, which is x' >= H(0x3ff6147a) or
+    # x' < H(0x3fe6b852) where x' is halved.
+    if x <= 0.0:
+        if x == 0.0:
+            pole()
+            return -H(0x7ff00000)
+        return nan()
+    if x == H(0x7ff00000):
+        return x
+    k, x = log_red(x, H(0x3ff6a09c))
+    f = x - 1.0
+    if x >= H(0x3feffffe) and x < H(0x3ff00001):
+        if f == 0.0:
+            if k == 0.0:
+                return 0.0
+            return k*ln2_hi + k*ln2_lo
+        r = f*f*(0.5 - 0.33333333333333333*f)
+        if k == 0.0:
+            return f - r
+        return k*ln2_hi - ((r - k*ln2_lo) - f)
+    s = f/(2.0 + f)
+    z = s*s
+    w = z*z
+    t1 = w*(Lg2 + w*(Lg4 + w*Lg6))
+    t2 = z*(Lg1 + w*(Lg3 + w*(Lg5 + w*Lg7)))
+    r = t2 + t1
+    if x >= H(0x3ff6147a) or x < H(0x3fe6b852):
+        hfsq = 0.5*f*f
+        if k == 0.0:
+            return f - (hfsq - s*(hfsq + r))
+        return k*ln2_hi - ((hfsq - (s*(hfsq + r) + k*ln2_lo)) - f)
+    if k == 0.0:
+        return f - s*(f - r)
+    return k*ln2_hi - ((s*(f - r) - k*ln2_lo) - f)
+
+
+def LOG2(x):
+    # FreeBSD's e_log2.c and k_log.h. Its log2(1) = +0 is left out, as
+    # the general path gives +0 there too.
+    if x <= 0.0:
+        if x == 0.0:
+            pole()
+            return -H(0x7ff00000)
+        return nan()
+    if x == H(0x7ff00000):
+        return x
+    k, x = log_red(x, H(0x3ff6a09c))
+    f = x - 1.0
+    hfsq = 0.5*f*f
+    r = log1p_k(f)
+    hi = chop(f - hfsq)
+    lo = (f - hi) - hfsq + r
+    val_hi = hi*ivln2hi
+    val_lo = (lo + hi)*ivln2lo + lo*ivln2hi
+    w = k + val_hi
+    val_lo = val_lo + ((k - w) + val_hi)
+    return val_lo + w
+
+
+def LOG10(x):
+    # musl's log10.c, which reduces x at the fraction 0x6a09e, not at
+    # 0x6a09c as the others do. Its log10(1) = +0 is left out, as the
+    # general path gives +0 there too, and s*(hfsq+R) is log1p_k(f).
+    if x <= 0.0:
+        if x == 0.0:
+            pole()
+            return -H(0x7ff00000)
+        return nan()
+    if x == H(0x7ff00000):
+        return x
+    k, x = log_red(x, H(0x3ff6a09e))
+    f = x - 1.0
+    hfsq = 0.5*f*f
+    hi = chop(f - hfsq)
+    lo = f - hi - hfsq + log1p_k(f)
+    val_hi = hi*ivln10hi
+    y = k*log10_2hi
+    val_lo = k*log10_2lo + (lo + hi)*ivln10lo + lo*ivln10hi
+    w = y + val_hi
+    val_lo = val_lo + ((y - w) + val_hi)
+    return val_lo + w
+
+
+def EXP(x):
+    # fdlibm's e_exp.c. ln2HI[xsb] and halF[xsb] of a negative x are
+    # -ln2_hi and -0.5, which are added where C subtracts them. C's
+    # change of y's exponent by k is SCALE2, exact as C's is, and the
+    # one rounding of y*twom1000 where k < -1021.
+    if abs(x) >= H(0x40862e42):
+        if abs(x) == H(0x7ff00000):
+            if x > 0.0:
+                return x
+            return 0.0
+        if x > o_threshold:
+            return H(0x7ff00000)
+        if x < u_threshold:
+            return 0.0
+    if abs(x) > H(0x3fd62e42):
+        if abs(x) < H(0x3ff0a2b2):
+            if x < 0.0:
+                hi = x + ln2_hi
+                lo = -ln2_lo
+                k = -1.0
+            else:
+                hi = x - ln2_hi
+                lo = ln2_lo
+                k = 1.0
+        else:
+            if x < 0.0:
+                k = trunc(invln2*x - 0.5)
+            else:
+                k = trunc(invln2*x + 0.5)
+            hi = x - k*ln2_hi
+            lo = k*ln2_lo
+        x = hi - lo
+    elif abs(x) < H(0x3e300000):
+        return 1.0 + x
+    else:
+        k = 0.0
+    t = x*x
+    c = x - t*(P1 + t*(P2 + t*(P3 + t*(P4 + t*P5))))
+    if k == 0.0:
+        return 1.0 - ((x*c)/(c - 2.0) - x)
+    return scale2(1.0 - ((lo - (x*c)/(2.0 - c)) - hi), k)
 '''
 
 # The functions of §11.3 that have a sequence: their number, and the
@@ -480,6 +672,10 @@ FUNCTIONS: Dict[str, Tuple[int, int]] = {
     "ACOS": (0x44, 1),
     "ATAN": (0x45, 1),
     "ATAN2": (0x46, 2),
+    "LN": (0x48, 1),
+    "LOG2": (0x49, 1),
+    "LOG10": (0x4A, 1),
+    "EXP": (0x4C, 1),
 }
 
 # The calls that are one command, and the operands they take.
@@ -491,7 +687,9 @@ COMMAND_CALLS: Dict[str, Tuple[str, int]] = {
     "getexp": ("GETEXP", 1),
     "chop": ("CHOP", 1),
     "itof": ("ITOF", 1),
+    "getmant": ("GETMANT", 1),
     "band": ("AND", 2),
+    "scale2": ("SCALE2", 2),
 }
 
 BINOPS = {ast.Add: "ADD", ast.Sub: "SUB", ast.Mult: "MUL", ast.Div: "DIV"}
@@ -514,11 +712,12 @@ class Frame:
     their places, the slots its results go to, the label after it, and
     the depth to which its return drops the stack."""
 
-    def __init__(self, places: Dict[str, Place], results: List[int], end: str, base: int) -> None:
+    def __init__(self, places: Dict[str, Place], results: List[int], end: str, base: int, later: List[str]) -> None:
         self.places = places
         self.results = results
         self.end = end
         self.base = base
+        self.later = later
 
 
 def assigned(body: Sequence[ast.stmt]) -> List[str]:
@@ -528,6 +727,20 @@ def assigned(body: Sequence[ast.stmt]) -> List[str]:
         for sub in ast.walk(node):
             if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store) and sub.id not in out:
                 out.append(sub.id)
+    return out
+
+
+def late(body: Sequence[ast.stmt]) -> List[str]:
+    """The names that an assignment of the function's own body assigns
+    first, not one in an if. Such a name gets its slot there, on top of
+    the frame, so that the frame holds it only from there on."""
+    seen: List[str] = []
+    out: List[str] = []
+    for node in body:
+        names = assigned([node])
+        if isinstance(node, ast.Assign):
+            out.extend(n for n in names if n not in seen)
+        seen.extend(n for n in names if n not in seen)
     return out
 
 
@@ -626,6 +839,8 @@ class Compiler:
         H and the 8 hex digits of h."""
         if isinstance(node, ast.Name):
             return node.id
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+            return "-" + Compiler.const_name(node.operand)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "H":
             arg = node.args[0]
             assert isinstance(arg, ast.Constant) and isinstance(arg.value, int)
@@ -707,9 +922,8 @@ class Compiler:
                 if len(node.args) != n:
                     raise CompileError(f"{name} takes {n}")
                 if n == 2:
-                    # The commands of two operands here are AND, which
-                    # does not care for their order.
-                    self.pair(node.args[0], node.args[1], frame)
+                    if self.pair(node.args[0], node.args[1], frame) and cmd != "AND":
+                        self.emit("SWAP", 0)
                 else:
                     self.expr(node.args[0], frame)
                 self.emit(cmd, 1 - n)
@@ -802,8 +1016,18 @@ class Compiler:
             target = node.targets[0]
             value_node = node.value
             names = [target] if isinstance(target, ast.Name) else target.elts if isinstance(target, ast.Tuple) else []
+            new = [e.id for e in names if isinstance(e, ast.Name) and e.id in frame.later and e.id not in frame.places]
+            if isinstance(target, ast.Name) and new and not self.is_call(value_node):
+                # The value stays where it is pushed, as the new slot.
+                self.expr(value_node, frame)
+                frame.places[target.id] = self.depth - 1
+                return
+            for name in new:
+                self.emit("DUP" if self.depth > 0 else "K nan", 1)
+                frame.places[name] = self.depth - 1
             slots = [self.slot(frame, e.id) for e in names if isinstance(e, ast.Name)]
-            if isinstance(value_node, ast.Call) and isinstance(value_node.func, ast.Name) and value_node.func.id in self.defs:
+            if self.is_call(value_node):
+                assert isinstance(value_node, ast.Call)
                 self.call(value_node, frame, slots)
                 return
             if len(slots) == 1:
@@ -851,6 +1075,10 @@ class Compiler:
             return
         raise CompileError(f"cannot compile {ast.dump(node)}")
 
+    def is_call(self, node: ast.expr) -> bool:
+        """Whether node is a call of a function of the program."""
+        return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in self.defs
+
     def call(self, node: ast.Call, frame: Frame, targets: Optional[List[int]], tail: bool = False) -> None:
         """Inlines a function of the program. Its results go to the
         slots of targets, or, if None, its one result to the top. In a
@@ -881,12 +1109,13 @@ class Compiler:
             else:
                 self.expr(arg, frame)
                 places[name] = self.depth - 1
+        later = late(fn.body)
         for name in written:
-            if name not in places:
+            if name not in places and name not in later:
                 self.emit("DUP", 1)
                 places[name] = self.depth - 1
         end = self.label()
-        self.body(fn.body, Frame(places, targets, end, base))
+        self.body(fn.body, Frame(places, targets, end, base, later))
         if self.reachable:
             raise CompileError(f"{fn.name} can end without a return")
         self.place(end)
@@ -903,14 +1132,15 @@ def compile_program(name: str, compiler: Optional[Compiler] = None) -> List[str]
     c.depth = len(params)
     c.most = c.depth
     written = assigned(fn.body)
+    later = late(fn.body)
     places: Dict[str, Place] = {p: i for i, p in enumerate(params)}
     for v in written:
-        if v in places:
+        if v in places or v in later:
             continue
         c.emit("DUP", 1)
         places[v] = c.depth - 1
     end = c.label()
-    c.body(fn.body, Frame(places, [0], end, 1))
+    c.body(fn.body, Frame(places, [0], end, 1, later))
     if c.reachable:
         raise CompileError(f"{name} can end without a return")
     c.place(end)

@@ -335,11 +335,11 @@ CASES: List[Case] = [
     ("SIN of a quiet NaN", [QN], 0, "SIN", [N], 0, None),
     ("SIN of a signaling NaN", [SN], 0, "SIN", [N], INVALID, None),
     ("SIN of nothing: X is a NaN", [], 0, "SIN", [N], STACK, None),
-    # The frame of SIN 0 takes five values above a full stack: the three
-    # variables of SIN, and |X| and its bound for the first test. So the
-    # five deepest go.
+    # The frame of SIN 0 takes two values above a full stack, |X| and its
+    # bound for the first test, as SIN returns before the steps that give
+    # its variables their slots. So the two deepest go.
     ("SIN at the depth 16", [d(float(i)) for i in range(1, 16)] + [0], 0, "SIN",
-     [d(float(i)) for i in range(6, 16)] + [0], STACK, None),
+     [d(float(i)) for i in range(3, 16)] + [0], STACK, None),
     ("COS 0.5", [d(0.5)], 0, "COS", [0x3FEC1528065B7D50], 0, None),
     ("COS pi", [d(math.pi)], 0, "COS", [d(-1.0)], 0, None),
     ("COS 0", [0], 0, "COS", [d(1.0)], 0, None),
@@ -382,6 +382,44 @@ CASES: List[Case] = [
     ("ATAN2 1e300, 1e-300: pi/2", [d(1e300), d(1e-300)], 0, "ATAN2", [0x3FF921FB54442D18], 0, None),
     ("ATAN2 2^-70, -1: pi", [d(2.0**-70), d(-1.0)], 0, "ATAN2", [0x400921FB54442D18], 0, None),
     ("ATAN2 of a NaN", [d(1.0), QN], 0, "ATAN2", [N], 0, None),
+    # The logarithms: of 2, ln 2 rounded; the subnormals as GETEXP and
+    # GETMANT see them; 0 is a pole; below 0 a NaN; +inf is itself.
+    ("LN 2: ln 2", [d(2.0)], 0, "LN", [0x3FE62E42FEFA39EF], 0, None),
+    ("LN 0.5: -ln 2", [d(0.5)], 0, "LN", [0xBFE62E42FEFA39EF], 0, None),
+    ("LN 1 is +0", [d(1.0)], 0, "LN", [0], 0, None),
+    # ln(1 + 2^-30) = 2^-30 - 2^-61 + ..., which rounds to
+    # 2^-30 (1 - 2^-31), as the path for |f| < 2^-20 gives it.
+    ("LN 1 + 2^-30", [d(1.0 + 2.0**-30)], 0, "LN", [0x3E0FFFFFFFC00000], 0, None),
+    ("LN 2^-1074: -744.44", [MINSUB], 0, "LN", [0xC0874385446D71C3], 0, None),
+    ("LN 0: -inf, a pole", [0], 0, "LN", [NINF], DIVZERO, None),
+    ("LN -0: -inf, a pole", [NZ], 0, "LN", [NINF], DIVZERO, None),
+    ("LN -1", [d(-1.0)], 0, "LN", [N], INVALID, None),
+    ("LN -inf", [NINF], 0, "LN", [N], INVALID, None),
+    ("LN inf", [INF], 0, "LN", [INF], 0, None),
+    ("LOG2 2^-20 is -20", [d(2.0**-20)], 0, "LOG2", [d(-20.0)], 0, None),
+    ("LOG2 2^-1074 is -1074", [MINSUB], 0, "LOG2", [d(-1074.0)], 0, None),
+    ("LOG2 10", [d(10.0)], 0, "LOG2", [0x400A934F0979A371], 0, None),
+    ("LOG2 1 is +0", [d(1.0)], 0, "LOG2", [0], 0, None),
+    ("LOG2 0: -inf, a pole", [0], 0, "LOG2", [NINF], DIVZERO, None),
+    ("LOG2 -2", [d(-2.0)], 0, "LOG2", [N], INVALID, None),
+    ("LOG10 1000 is 3", [d(1000.0)], 0, "LOG10", [d(3.0)], 0, None),
+    ("LOG10 1e-300 is -300", [d(1e-300)], 0, "LOG10", [d(-300.0)], 0, None),
+    ("LOG10 2", [d(2.0)], 0, "LOG10", [0x3FD34413509F79FF], 0, None),
+    ("LOG10 1 is +0", [d(1.0)], 0, "LOG10", [0], 0, None),
+    ("LOG10 -0: -inf, a pole", [NZ], 0, "LOG10", [NINF], DIVZERO, None),
+    ("LOG10 inf", [INF], 0, "LOG10", [INF], 0, None),
+    # EXP 1: e rounded is 0x4005BF0A8B145769, and fdlibm's exp gives the
+    # double above it, within 1 ulp.
+    ("EXP 1: e, 1 ulp above", [d(1.0)], 0, "EXP", [0x4005BF0A8B14576A], 0, None),
+    ("EXP -1", [d(-1.0)], 0, "EXP", [0x3FD78B56362CEF38], 0, None),
+    ("EXP 0 is 1", [0], 0, "EXP", [d(1.0)], 0, None),
+    ("EXP 2^-1074 is 1", [MINSUB], 0, "EXP", [d(1.0)], 0, None),
+    # e^-740 = 4.2e-322, subnormal: 85 times 2^-1074.
+    ("EXP -740: subnormal", [d(-740.0)], 0, "EXP", [0x55], 0, None),
+    ("EXP 1000 overflows", [d(1000.0)], 0, "EXP", [INF], OVERFLOW, None),
+    ("EXP -1000 is +0", [d(-1000.0)], 0, "EXP", [0], 0, None),
+    ("EXP inf", [INF], 0, "EXP", [INF], 0, None),
+    ("EXP -inf is +0", [NINF], 0, "EXP", [0], 0, None),
     # XMUL: p as Y, the error as X.
     ("XMUL 3, 3 is exact: the error is +0", [d(3.0), d(3.0)], 0, "XMUL", [d(9.0), 0], 0, None),
     # (1 + 2^-52)^2 = 1 + 2^-51 + 2^-104.
@@ -961,6 +999,14 @@ def exact_function(name: str, ops: List[Fraction], pi: decimal.Decimal) -> decim
         return a if name == "ASIN" else pi / 2 - a
     if name == "ATAN":
         return exact_atan(dec(ops[0]), pi)
+    if name == "LN":
+        return dec(ops[0]).ln()
+    if name == "LOG2":
+        return dec(ops[0]).ln() / decimal.Decimal(2).ln()
+    if name == "LOG10":
+        return dec(ops[0]).log10()
+    if name == "EXP":
+        return dec(ops[0]).exp()
     y, x = dec(ops[0]), dec(ops[1])
     a = exact_atan(y / x, pi)
     if x > 0:
@@ -971,7 +1017,9 @@ def exact_function(name: str, ops: List[Fraction], pi: decimal.Decimal) -> decim
 def function_operands(name: str, rnd: random.Random, pi: Fraction) -> List[int]:
     """Random finite operands of the function name, within its domain:
     for SIN, COS, and TAN up to 2^20 pi/2, some next to a multiple of
-    pi/2, and for ATAN2 also pairs whose exponents are far apart."""
+    pi/2, for ATAN2 also pairs whose exponents are far apart, for the
+    logarithms also next to 1, and for EXP those whose result is finite
+    and not zero."""
 
     def binade(lo: int, hi: int) -> int:
         return rnd.getrandbits(52) | rnd.randint(lo, hi) << 52 | rnd.getrandbits(1) << 63
@@ -985,6 +1033,17 @@ def function_operands(name: str, rnd: random.Random, pi: Fraction) -> List[int]:
         return [binade(1023 - rnd.choice([1, 2, 5, 30]), 1022)]
     if name == "ATAN":
         return [binade(1023 - 30, 1023 + 30)]
+    if name in ("LN", "LOG2", "LOG10"):
+        if rnd.randrange(3) == 0:
+            # Next to 1, above or below it.
+            near = rnd.getrandbits(rnd.randint(1, 40))
+            return [1023 << 52 | near if rnd.randrange(2) else (1023 << 52) - 1 - near]
+        return [binade(0, 2046) & ~(1 << 63)]
+    if name == "EXP":
+        while True:
+            a = binade(1023 - 30, 1023 + 9)
+            if -745 < F64.value(a) < 709:
+                return [a]
     y = binade(1023 - 40, 1023 + 40)
     ey = y >> 52 & 0x7FF
     return [y, binade(ey - rnd.choice([0, 3, 30, 63]), ey + rnd.choice([0, 3, 30, 63]))]
@@ -1017,6 +1076,10 @@ def function_bounds(rnd: random.Random) -> None:
                     fail(f"{name} of {' '.join(f'{a:016X}' for a in ops)}: {got:016X}")
                     continue
                 exact = Fraction(exact_function(name, [F64.value(a) for a in ops], pi))
+                if exact == 0:
+                    if got != 0:
+                        fail(f"{name} of {' '.join(f'{a:016X}' for a in ops)}: {got:016X}, not 0")
+                    continue
                 ulp = pow2(max(floor_log2(abs(exact)), F64.emin) - 52)
                 err = abs(F64.value(got) - exact) / ulp
                 worst[name] = max(worst.get(name, 0.0), float(err))

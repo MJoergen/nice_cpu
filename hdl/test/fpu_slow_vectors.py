@@ -22,11 +22,16 @@ the operands:
   multiple of pi/2. The scan has them of the values next to k pi/2 for
   the k of HARD_K, of 1 to 9, and of 40 random k, and of 4 random values
   in each binade from 2^-30 to 2^20. In the scan of 2026-11-15 the
-  slowest SIN took 1561 cycles, COS 1576, and TAN 2079.
+  slowest SIN took 1533 cycles, COS 1552, and TAN 2043.
 - ASIN, ACOS, ATAN, and ATAN2, of 4 random values in each binade from
   2^-70 to 2^70 and of the values next to the bounds where their paths
-  part. In the scan of 2026-11-15 the slowest ASIN took 1124 cycles,
-  ACOS 871, ATAN 946, and ATAN2 1329.
+  part. In the scan of 2026-11-15 the slowest ASIN took 1104 cycles,
+  ACOS 952, ATAN 940, and ATAN2 1319.
+- LN, LOG2, LOG10, and EXP, of 4 random values in every third binade,
+  and for EXP of each binade from 2^-40 to 2^9 and 400 random values
+  from -745 to 709, and of the values next to the bounds where their
+  paths part. In the scan of 2026-11-15 the slowest LN took 918 cycles,
+  LOG2 1133, LOG10 1204, and EXP 820.
 
 A change to DIGITS or SCALE10 in src/fpu.vhd may make other values the
 slowest, so such a change runs the scan again."""
@@ -77,16 +82,24 @@ PI = Fraction(314159265358979323846264338327950288419716939937510582097494, 10**
 # The slowest function of the scan: the value and the function.
 SLOW_FUNCTIONS = [
     (0x4116FF6B1357E177, "SIN"),
+    (0xC137C1DC0A55002A, "SIN"),
     (0xC00921FB54442D18, "COS"),
+    (0x400921FB54442D18, "COS"),
     (0x4107B5820700A668, "TAN"),
     (0xC133287FA423FC65, "TAN"),
     (0xBFEF3332FFFFFFFF, "ASIN"),
     (0xBFEFFFFFFFFFFFFF, "ACOS"),
+    (0x3FEF3332FFFFFFFF, "ACOS"),
     (0x3FDF86339515FA52, "ATAN"),
+    (0xBFE00375C03F6FEC, "ATAN"),
+    (0x0B46A6213E555974, "LN"),
+    (0x0000000000001F31, "LOG2"),
+    (0x15FF9D36E26866A7, "LOG10"),
+    (0xC087491000000000, "EXP"),
 ]
 
 # The slowest ATAN2 of the scan: Y and X.
-SLOW_ATAN2 = [(0x3FDF86339515FA52, 0xBFF0000000000000)]
+SLOW_ATAN2 = [(0x3FDF86339515FA52, 0xBFF0000000000000), (0x3FE00375C03F6FEC, 0xBFF0000000000000)]
 
 
 def ten(p: int) -> int:
@@ -117,6 +130,32 @@ def scan(g: Generator) -> None:
             g.cmd([v], name)
             g.cmd([v | 1 << 63], name)
     scan_inverse(g, rnd)
+    scan_log(g, rnd)
+
+
+def scan_log(g: Generator, rnd: random.Random) -> None:
+    """LN, LOG2, LOG10, and EXP: 4 random values in each binade, of
+    each sign, and the values next to the bounds where their paths
+    part."""
+    bounds = [0x3FF6147A, 0x3FF6B852, 0x3FE6B852, 0x3FF6A09C, 0x3FF6A09E, 0x3FE6A09C, 0x3FEFFFFE,
+              0x3FF00001, 0x3FF00000, 0x00100000]
+    values = [(h << 32) + i for h in bounds for i in (-1, 0, 1)]
+    for e in range(-1074, 1024, 3):
+        values += [F64.round(Fraction(2) ** e * (1 + Fraction(rnd.random())))[0] for _ in range(4)]
+    # tb_fpu does not time every third line, so the order turns.
+    names = ["LN", "LOG2", "LOG10"]
+    for i, v in enumerate(values):
+        for name in names[i % 3:] + names[:i % 3]:
+            g.cmd([v], name)
+            g.cmd([v ^ 1 << 63], name)
+    bounds = [0x40862E42, 0x3FD62E42, 0x3FF0A2B2, 0x3E300000, 0x40874910, 0x40862000]
+    values = [(h << 32) + i for h in bounds for i in (-1, 0, 1)]
+    for e in range(-40, 10):
+        values += [F64.round(Fraction(2) ** e * (1 + Fraction(rnd.random())))[0] for _ in range(4)]
+    values += [F64.round(Fraction(rnd.randint(-745000, 709000), 1000))[0] for _ in range(400)]
+    for v in values:
+        g.cmd([v], "EXP")
+        g.cmd([v ^ 1 << 63], "EXP")
 
 
 def scan_inverse(g: Generator, rnd: random.Random) -> None:

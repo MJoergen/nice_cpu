@@ -303,6 +303,12 @@ architecture synthesis of fpu is
    signal fn2_r    : boolean;
    signal step_r   : std_logic_vector(19 downto 0);
    signal kval_r   : t_word64;
+
+   -- The table of constants is a block RAM, as step_r, which addresses
+   -- it, comes from one: in LUTs, the decode of step_r's fan-out takes
+   -- most of the cycle.
+   attribute rom_style : string;
+   attribute rom_style of kval_r : signal is "block";
    signal seq_r    : std_logic := '0';
    signal fsave_r  : std_logic_vector(3 downto 0);
    signal finite_r : boolean;

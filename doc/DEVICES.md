@@ -809,7 +809,11 @@ A multiplication by a reciprocal, such as `CONST 9` and `MUL`, is much faster th
     | l = e − (h − p) | |
 
     The product is (h, l). `emulator/test/fpu_model.py` computes the same steps exactly, and is the reference.
-  - Within k ≤ 22 the result is correctly rounded. Beyond, no bound of the error is proven (#167). On the samples of the model's test it was below 0.5 ulp, but for results near 10^−307, where the low parts are subnormal and the errors of the steps are no longer exact: up to 0.63 ulp there. With single binary64 values it was 3.3 ulp (#161).
+  - Within k ≤ 22 the result is correctly rounded. Beyond, the error has the bounds below, which [review/scale10-bound.md](review/scale10-bound.md) proves, and which the model's test checks. Let x be the exact Y · 10^X, with 2^E ≤ |x| < 2^(E+1). For a finite result:
+    - For X > 0, every step is exact or rounds a normal result, and the error is at most 0.5 + 2^−46 ulp of x.
+    - For X < 0 and E ≥ −1021, it is at most 0.5 + 1.5 · 2^(−1022−E) + 2^−46 ulp of x. The middle term comes from the steps of the last product whose results are subnormal: at most three, each off by up to half of 2^−1074. It is below 2^−52 from E = −969 on, about 2 · 10^−292, and 0.1875, 0.375, and 0.75 ulp for E = −1019, −1020, and −1021.
+    - For X < 0 and E ≤ −1022, the error is at most (1.5 + 2^−46) · 2^−1074, but (2.5 + 2^−46) · 2^−1074 where the result rounds up past 2^−1021.
+    - A search of 800,000 samples aimed at the lowest binades found 1.48 · 2^−1074 for E = −1022, none past 2^−1021, and 1.21, 0.86, and 0.68 ulp for E = −1021, −1020, and −1019. With single binary64 values the error was 3.3 ulp (#161).
 
 **Decimal digits.**
 
@@ -823,7 +827,7 @@ A multiplication by a reciprocal, such as `CONST 9` and `MUL`, is much faster th
 - **`DIGITS n`**, for n from 1 to 15, is the step from a value to its printed form, as Forth's `REPRESENT`. After it, X is the exponent e, a whole number, and Y holds the digits d₁ to dₙ, with d₁ in bits 63..60 and each next digit in the next 4 bits, and 0 in the bits after dₙ. Then |X| ≈ d₁.d₂…dₙ · 10^e. Read as a 16-digit whole number by `FROMBCD`, Y is |X| · 10^(15 − e), and exactly so for n ≤ 15, since that number is D · 10^(16 − n) = 2^(16 − n) · D · 5^(16 − n), and D · 5^(16 − n) < 2^53. So `FROMBCD` and then `SCALE10` by e − 15 is the inverse of `DIGITS`, and only `SCALE10` rounds. BASIC keeps the typed digits of a constant in this format, so that `PRINT`, `STR$`, and `LIST` share one routine that writes digits. D, the digits as a whole number, is `NEAREST` of `SCALE10` of |X| by n − 1 − e, and e is the smallest whole number for which D < 10^n. So D has n digits, 10^(n−1) ≤ D < 10^n, and where the first n digits of |X| round up to 10^n, as 9.6 does for n = 1, D is 10^(n−1) with the e one higher: `DIGITS 1` of 9.6 is 1 · 10^1, and `DIGITS 2` of 9.6 is 9.6 · 10^0. The sign of X is not among the digits: the class of X has it before the command.
 - An X of zero gives the digits 0 and e = 0. An infinite X or a NaN, and an n of 0 or above 15, give the canonical NaN for both and set the invalid flag.
 - **`FROMBCD`** reads d₁ in bits 63..60 as the most significant digit, so a whole number of up to 16 digits is its own BCD, right-aligned. A digit above 9 gives the canonical NaN and sets the invalid flag. With `SCALE10`, it reads a decimal number: the digits, then the exponent, then `SCALE10`.
-- 15 digits come back. A constant of up to 15 digits, read and printed with 15 digits, gives the same digits while each conversion is within 1.126 ulp. 17 digits would be needed to read back every binary64 value, and the datapath does not have the width for them.
+- 15 digits come back. A constant of up to 15 digits, read and printed with 15 digits, gives the same digits while each conversion is within 1.126 ulp. `DIGITS` scales to a D below 10^15, where `SCALE10` is within 0.5 + 2^−46 ulp, and the read is within 0.875 + 2^−46 ulp from 2^−1020 up, about 8.9 · 10^−308. So every such constant from there up comes back. 17 digits would be needed to read back every binary64 value, and the datapath does not have the width for them.
 
 - `GETEXP` and `GETMANT` together are C's `frexp`, up to a factor of 2: `frexp` gives `GETMANT` / 2 and E + 1. With `SCALE2` they are `ldexp`, `scalbn`, `logb`, and `ilogb`.
 

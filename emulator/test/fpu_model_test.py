@@ -16,8 +16,8 @@ The model is the oracle of the FPU's tests, so this checks it four ways:
    rounding twice through a format wide enough gives the same, which
    is the 53 >= 2 · 24 + 2 of §11.3.
 4. In exact arithmetic: the constants against decimal, ISQRT against
-   math.isqrt, SCALE10 correctly rounded for k <= 22 and within a bound
-   beyond, DIGITS against Python's '%.*e', and constants of 15 digits
+   math.isqrt, SCALE10 correctly rounded for k <= 22 and within its
+   proven bound beyond, DIGITS against Python's '%.*e', and constants of 15 digits
    through FROMBCD, SCALE10, and DIGITS 15, which must come back.
 
 The random cases have fixed seeds. It exits 1 on the first failure."""
@@ -828,29 +828,65 @@ def isqrt_check(rnd: random.Random) -> None:
             fail(f"ISQRT of {a:016X}: {got:016X} against {want}")
 
 
-def ulps(r: int, exact: Fraction) -> Fraction:
-    e = max(floor_log2(abs(exact)), F64.emin)
-    return abs(F64.value(r) - exact) / pow2(e - 52)
+def scale10_bound(k: int, r: int, exact: Fraction) -> Fraction:
+    """The bound of §11.3 of the error of SCALE10 for k > 22, in units of
+    2^-1074, for a finite result r and the exact result."""
+    tiny = pow2(-46)
+    e = floor_log2(abs(exact))
+    if k > 0 or e >= -1021:
+        # In ulps of the exact result, 2^(e - 52) = 2^(e + 1022) units.
+        under = Fraction(0) if k > 0 else Fraction(3, 2) * pow2(-1022 - e)
+        return (Fraction(1, 2) + under + tiny) * pow2(e + 1022)
+    if abs(F64.value(r)) > pow2(-1021):
+        return Fraction(5, 2) + tiny
+    return Fraction(3, 2) + tiny
+
+
+# The worst cases of a search of 480,000 samples, for E = -1022 to -1019
+# and below: 1.476 units of 2^-1074, 1.214, 0.858, and 0.679 ulp, and
+# 1.097 units. Each is within a few percent of its bound.
+SCALE10_WORST = [
+    (0x2BEE5EFCBAA4299F, -211),
+    (0x1C28476DC6D8FFDC, -135),
+    (0x797548F2ED9517CE, -584),
+    (0x3DF5B26F274E5280, -297),
+    (0x2DBC471A63E2A3FC, -220),
+]
 
 
 def scale10_check(rnd: random.Random) -> None:
-    """SCALE10 is correctly rounded for k <= 22, and within a bound
-    beyond, for normal results. The bound is what the samples here give,
-    0.63 ulp near 10^-307, where the low parts are subnormal: §11.3 will
-    state a proven one."""
-    worst = Fraction(0)
-    for _ in range(3000):
-        y = rnd.getrandbits(52) | rnd.randint(900, 1150) << 52 | rnd.getrandbits(1) << 63
-        k = rnd.randint(-22, 22) if rnd.randrange(3) == 0 else rnd.randint(-650, 650)
+    """SCALE10 is correctly rounded for k <= 22, and within the bound of
+    §11.3 beyond (doc/review/scale10-bound.md). The worst cases of the
+    search come first. A third of the random samples beyond are aimed at
+    the bound: a negative k with an exact result in the lowest binades,
+    where the steps underflow, or a positive k with a subnormal or small
+    Y."""
+    q = pow2(-1074)
+    for i in range(-len(SCALE10_WORST), 4500):
+        if i < 0:
+            y, k = SCALE10_WORST[i]
+        elif i < 3000:
+            y = rnd.getrandbits(52) | rnd.randint(900, 1150) << 52 | rnd.getrandbits(1) << 63
+            k = rnd.randint(-22, 22) if rnd.randrange(3) == 0 else rnd.randint(-650, 650)
+        elif i % 2:
+            k = -rnd.randint(23, 615)
+            want = Fraction(rnd.getrandbits(53) | 1 << 52, 1 << 52) * pow2(rnd.randint(-1030, -1015))
+            y = F64.round(want * Fraction(10) ** -k)[0]
+        else:
+            k = rnd.randint(23, 650)
+            y = rnd.getrandbits(52) | rnd.randint(0, 200) << 52
+        if not F64.is_finite(y) or y & ~(1 << 63) == 0:
+            continue
         r, _ = scale10(y, k)
         exact = F64.value(y) * Fraction(10) ** k
         if abs(k) <= 22:
             if r != F64.round(exact)[0]:
                 fail(f"SCALE10 {y:016X}, {k}: not correctly rounded")
-        elif F64.is_finite(r) and abs(exact) >= pow2(-1022):
-            worst = max(worst, ulps(r, exact))
-            if worst > Fraction(65, 100):
-                fail(f"SCALE10 {y:016X}, {k}: {float(ulps(r, exact)):.3f} ulp")
+        elif F64.is_finite(r):
+            err = abs(F64.value(r) - exact) / q
+            bound = scale10_bound(k, r, exact)
+            if err > bound:
+                fail(f"SCALE10 {y:016X}, {k}: the error is {float(err / bound):.4f} times the bound")
                 return
 
 

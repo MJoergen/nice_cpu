@@ -101,7 +101,7 @@ FLAGS: Dict[str, int] = {
     "ITOF": 0, "UTOF": 0, "FTOI": I, "FTOU": I, "CONST": I, "SCALE2": I | O, "SCALE10": I | O,
     "DIGITS": I, "FROMBCD": I, "GETEXP": I | Z, "GETMANT": I,
     "AND": I, "OR": I, "XOR": I, "NOT": I, "SHL": I, "SHR": I, "IDIV": I, "MOD": I,
-    "SIN": I, "COS": I, "TAN": I,
+    "SIN": I, "COS": I, "TAN": I, "ASIN": I, "ACOS": I, "ATAN": I, "ATAN2": I,
 }
 
 # The values each command pushes. The others push one.

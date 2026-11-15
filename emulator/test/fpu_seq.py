@@ -29,8 +29,8 @@ step.
 The program may use: assignments, also of a tuple from a call; if, elif,
 and else; return; + - * / and unary -; comparisons, also as values,
 -1 for true and 0 for false, as CMP gives them; and, or, and not in a
-test; and the calls abs, sqrt, nearest, trunc, getexp, chop, band (the
-command AND), and nan(), the canonical NaN, and pole(), the step POLE.
+test; and the calls abs, sqrt, nearest, trunc, getexp, chop, itof, band
+(the command AND), and nan(), the canonical NaN, and pole(), the step POLE.
 A name that is not a variable is a constant, and H(0x...) is the value
 whose high word that is and whose low word is 0, so that a test of
 fdlibm's high word ix, such as ix < 0x3e500000, is the test of the value
@@ -95,12 +95,52 @@ CONSTANTS: Dict[str, int] = {
     "pio2_2t": bits(2.02226624879595063154e-21),
     "pio2_3": bits(2.02226624871116645580e-21),
     "pio2_3t": bits(8.47842766036889956997e-32),
+    # atan.c; atanhi[1] and atanlo[1] are pio4 and pio4lo
+    "atanhi0": bits(4.63647609000806093515e-01),
+    "atanhi2": bits(9.82793723247329054082e-01),
+    "atanlo0": bits(2.26987774529616870924e-17),
+    "atanlo2": bits(1.39033110312309984516e-17),
+    "aT0": bits(3.33333333333329318027e-01),
+    "aT1": bits(-1.99999999998764832476e-01),
+    "aT2": bits(1.42857142725034663711e-01),
+    "aT3": bits(-1.11111104054623557880e-01),
+    "aT4": bits(9.09088713343650656196e-02),
+    "aT5": bits(-7.69187620504482999495e-02),
+    "aT6": bits(6.66107313738753120669e-02),
+    "aT7": bits(-5.83357013379057348645e-02),
+    "aT8": bits(4.97687799461593236017e-02),
+    "aT9": bits(-3.65315727442169155270e-02),
+    "aT10": bits(1.62858201153657823623e-02),
+    # asin.c and acos.c; atanhi[3] and atanlo[3] are pio2_hi and pio2_lo
+    "pio2_hi": bits(1.57079632679489655800e00),
+    "pio2_lo": bits(6.12323399573676603587e-17),
+    "pS0": bits(1.66666666666666657415e-01),
+    "pS1": bits(-3.25565818622400915405e-01),
+    "pS2": bits(2.01212532134862925881e-01),
+    "pS3": bits(-4.00555345006794114027e-02),
+    "pS4": bits(7.91534994289814532176e-04),
+    "pS5": bits(3.47933107596021167570e-05),
+    "qS1": bits(-2.40339491173441421878e00),
+    "qS2": bits(2.02094576023350569471e00),
+    "qS3": bits(-6.88283971605453293030e-01),
+    "qS4": bits(7.70381505559019352791e-02),
+    # 0x1p-120f, which C adds to raise the inexact flag
+    "tiny": bits(2.0**-120),
+    # atan2.c
+    "pi": bits(3.1415926535897931160e00),
+    "pi_lo": bits(1.2246467991473531772e-16),
 }
 
 # The constants that the C code writes as hex, against their decimal.
 assert CONSTANTS["pio4"] == 0x3FE921FB54442D18
 assert CONSTANTS["pio2_1"] == 0x3FF921FB54400000
 assert CONSTANTS["pio2_3t"] == 0x397B839A252049C1
+assert CONSTANTS["atanhi0"] == 0x3FDDAC670561BB4F
+assert CONSTANTS["atanlo2"] == 0x3C7007887AF0CBBD
+assert CONSTANTS["aT10"] == 0x3F90AD3AE322DA11
+assert CONSTANTS["pio2_lo"] == 0x3C91A62633145C07
+assert CONSTANTS["qS4"] == 0x3FB3B8C5B12E9282
+assert CONSTANTS["pi_lo"] == 0x3CA1A62633145C07
 
 # The programs. The names of the functions of §11.3 are in capitals; the
 # others are the helpers they call.
@@ -274,6 +314,160 @@ def TAN(x):
     n, y0, y1 = rem_pio2(x)
     n = band(n, 1.0)
     return tan_k(y0, y1, n)
+
+def atan_k(x):
+    # musl's atan.c. id is red, hi, and lo: red is 0 where id < 0, and
+    # hi and lo are atanhi[id] and atanlo[id] where not
+    if abs(x) >= H(0x44100000):
+        if x < 0.0:
+            return -(pio2_hi + tiny)
+        return pio2_hi + tiny
+    neg = x < 0.0
+    if abs(x) < H(0x3fdc0000):
+        if abs(x) < H(0x3e400000):
+            return x
+        red = 0.0
+    else:
+        red = 1.0
+        x = abs(x)
+        if x < H(0x3ff30000):
+            if x < H(0x3fe60000):
+                hi = atanhi0
+                lo = atanlo0
+                x = (2.0*x - 1.0)/(2.0 + x)
+            else:
+                hi = pio4
+                lo = pio4lo
+                x = (x - 1.0)/(x + 1.0)
+        elif x < H(0x40038000):
+            hi = atanhi2
+            lo = atanlo2
+            x = (x - 1.5)/(1.0 + 1.5*x)
+        else:
+            hi = pio2_hi
+            lo = pio2_lo
+            x = -1.0/x
+    z = x*x
+    w = z*z
+    s1 = z*(aT0 + w*(aT2 + w*(aT4 + w*(aT6 + w*(aT8 + w*aT10)))))
+    s2 = w*(aT1 + w*(aT3 + w*(aT5 + w*(aT7 + w*aT9))))
+    if red == 0.0:
+        return x - x*(s1 + s2)
+    z = hi - ((x*(s1 + s2) - lo) - x)
+    if neg:
+        return -z
+    return z
+
+
+def asin_r(z):
+    # R of musl's asin.c and acos.c
+    p = z*(pS0 + z*(pS1 + z*(pS2 + z*(pS3 + z*(pS4 + z*pS5)))))
+    q = 1.0 + z*(qS1 + z*(qS2 + z*(qS3 + z*qS4)))
+    return p/q
+
+
+def ASIN(x):
+    # musl's asin.c; 0/(x-x) is nan()
+    if abs(x) >= 1.0:
+        if abs(x) == 1.0:
+            return x*pio2_hi + tiny
+        return nan()
+    if abs(x) < 0.5:
+        if abs(x) < H(0x3e500000) and abs(x) >= H(0x00100000):
+            return x
+        return x + x*asin_r(x*x)
+    neg = x < 0.0
+    z = (1.0 - abs(x))*0.5
+    s = sqrt(z)
+    r = asin_r(z)
+    if abs(x) >= H(0x3fef3333):
+        x = pio2_hi - (2.0*(s + s*r) - pio2_lo)
+    else:
+        f = chop(s)
+        c = (z - f*f)/(s + f)
+        x = 0.5*pio2_hi - ((2.0*s*r - (pio2_lo - 2.0*c)) - (0.5*pio2_hi - 2.0*f))
+    if neg:
+        return -x
+    return x
+
+
+def ACOS(x):
+    # musl's acos.c; 0/(x-x) is nan()
+    if abs(x) >= 1.0:
+        if abs(x) == 1.0:
+            if x < 0.0:
+                return 2.0*pio2_hi + tiny
+            return 0.0
+        return nan()
+    if abs(x) < 0.5:
+        if abs(x) < H(0x3c600001):
+            return pio2_hi + tiny
+        return pio2_hi - (x - (pio2_lo - x*asin_r(x*x)))
+    if x < 0.0:
+        z = (1.0 + x)*0.5
+        s = sqrt(z)
+        w = asin_r(z)*s - pio2_lo
+        return 2.0*(pio2_hi - (s + w))
+    z = (1.0 - x)*0.5
+    s = sqrt(z)
+    df = chop(s)
+    c = (z - df*df)/(s + df)
+    w = asin_r(z)*s + c
+    return 2.0*(df + w)
+
+
+def ATAN(x):
+    return atan_k(x)
+
+
+def ATAN2(y, x):
+    # musl's atan2.c. Its m is the signs of y and x, which x < 0.0 and
+    # y < 0.0 test where they are not zero, and 1.0/x < 0.0 where they
+    # are. A test of the high words, such as ix + (64 << 20) < iy, is one
+    # of itof(chop(abs(x))), which is the high word times 2^32, exactly.
+    # musl's atan(y) for x = 1 is left out: the general path gives the
+    # same bits there, as atan(y) is -atan(-y) and y/1 is y.
+    if y == 0.0:
+        if x < 0.0 or 1.0/x < 0.0:
+            if 1.0/y < 0.0:
+                return -pi
+            return pi
+        return y
+    if x == 0.0:
+        if y < 0.0:
+            return -pi/2
+        return pi/2
+    if abs(x) == H(0x7ff00000):
+        if abs(y) == H(0x7ff00000):
+            if x < 0.0:
+                if y < 0.0:
+                    return -3*pi/4
+                return 3*pi/4
+            if y < 0.0:
+                return -pi/4
+            return pi/4
+        if x < 0.0:
+            if y < 0.0:
+                return -pi
+            return pi
+        if y < 0.0:
+            return -0.0
+        return 0.0
+    if itof(chop(abs(x))) + 288230376151711744.0 < itof(chop(abs(y))) or abs(y) == H(0x7ff00000):
+        if y < 0.0:
+            return -pi/2
+        return pi/2
+    if x < 0.0 and itof(chop(abs(y))) + 288230376151711744.0 < itof(chop(abs(x))):
+        z = 0.0
+    else:
+        z = atan_k(abs(y/x))
+    if x < 0.0:
+        if y < 0.0:
+            return (z - pi_lo) - pi
+        return pi - (z - pi_lo)
+    if y < 0.0:
+        return -z
+    return z
 '''
 
 # The functions of §11.3 that have a sequence: their number, and the
@@ -282,6 +476,10 @@ FUNCTIONS: Dict[str, Tuple[int, int]] = {
     "SIN": (0x40, 1),
     "COS": (0x41, 1),
     "TAN": (0x42, 1),
+    "ASIN": (0x43, 1),
+    "ACOS": (0x44, 1),
+    "ATAN": (0x45, 1),
+    "ATAN2": (0x46, 2),
 }
 
 # The calls that are one command, and the operands they take.
@@ -292,6 +490,7 @@ COMMAND_CALLS: Dict[str, Tuple[str, int]] = {
     "trunc": ("TRUNC", 1),
     "getexp": ("GETEXP", 1),
     "chop": ("CHOP", 1),
+    "itof": ("ITOF", 1),
     "band": ("AND", 2),
 }
 

@@ -23,6 +23,10 @@ the operands:
   the k of HARD_K, of 1 to 9, and of 40 random k, and of 4 random values
   in each binade from 2^-30 to 2^20. In the scan of 2026-11-15 the
   slowest SIN took 1561 cycles, COS 1576, and TAN 2079.
+- ASIN, ACOS, ATAN, and ATAN2, of 4 random values in each binade from
+  2^-70 to 2^70 and of the values next to the bounds where their paths
+  part. In the scan of 2026-11-15 the slowest ASIN took 1124 cycles,
+  ACOS 871, ATAN 946, and ATAN2 1329.
 
 A change to DIGITS or SCALE10 in src/fpu.vhd may make other values the
 slowest, so such a change runs the scan again."""
@@ -76,7 +80,13 @@ SLOW_FUNCTIONS = [
     (0xC00921FB54442D18, "COS"),
     (0x4107B5820700A668, "TAN"),
     (0xC133287FA423FC65, "TAN"),
+    (0xBFEF3332FFFFFFFF, "ASIN"),
+    (0xBFEFFFFFFFFFFFFF, "ACOS"),
+    (0x3FDF86339515FA52, "ATAN"),
 ]
+
+# The slowest ATAN2 of the scan: Y and X.
+SLOW_ATAN2 = [(0x3FDF86339515FA52, 0xBFF0000000000000)]
 
 
 def ten(p: int) -> int:
@@ -106,6 +116,26 @@ def scan(g: Generator) -> None:
         for name in ("SIN", "COS", "TAN"):
             g.cmd([v], name)
             g.cmd([v | 1 << 63], name)
+    scan_inverse(g, rnd)
+
+
+def scan_inverse(g: Generator, rnd: random.Random) -> None:
+    """ASIN, ACOS, ATAN, and ATAN2, whose paths part at the bounds of
+    their high words: 4 random values in each binade, of each sign, and
+    the values next to each bound."""
+    bounds = [0x3E400000, 0x3E500000, 0x3C600000, 0x3FDC0000, 0x3FE00000, 0x3FE60000, 0x3FEF3333,
+              0x3FF00000, 0x3FF30000, 0x40038000, 0x44100000]
+    values = [(h << 32) + i for h in bounds for i in (-1, 0, 1)]
+    for e in range(-70, 71):
+        values += [F64.round(Fraction(2) ** e * (1 + Fraction(rnd.random())))[0] for _ in range(4)]
+    for v in values:
+        for name in ("ASIN", "ACOS", "ATAN"):
+            g.cmd([v], name)
+            g.cmd([v | 1 << 63], name)
+    for v in values[::3]:
+        for x in (values[rnd.randrange(len(values))], 0x3FF0000000000000):
+            for signs in range(4):
+                g.cmd([v | (signs & 1) << 63, x | (signs >> 1) << 63], "ATAN2")
 
 
 def main() -> None:
@@ -127,6 +157,8 @@ def main() -> None:
         g.cmd([0x7FEFFFFFFFFFFFFF, 0x0010000000000000], "FMOD")
         for v, name in SLOW_FUNCTIONS:
             g.cmd([v], name)
+        for y, x in SLOW_ATAN2:
+            g.cmd([y, x], "ATAN2")
     print("\n".join(g.lines))
 
 

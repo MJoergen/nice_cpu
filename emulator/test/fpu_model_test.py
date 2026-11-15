@@ -17,8 +17,9 @@ The model is the oracle of the FPU's tests, so this checks it four ways:
    is the 53 >= 2 · 24 + 2 of §11.3.
 4. In exact arithmetic: the constants against decimal, ISQRT against
    math.isqrt, SCALE10 correctly rounded for k <= 22 and within its
-   proven bound beyond, DIGITS against Python's '%.*e', and constants of 15 digits
-   through FROMBCD, SCALE10, and DIGITS 15, which must come back.
+   proven bound beyond, DIGITS against Python's '%.*e', constants of 15 digits
+   through FROMBCD, SCALE10, and DIGITS 15, which must come back, and the
+   functions within their bounds, against series in decimal.
 
 The random cases have fixed seeds. It exits 1 on the first failure."""
 
@@ -65,6 +66,7 @@ from fpu_model import (  # noqa: E402
     TEN_PAIRS,
     scale10,
 )
+import fpu_seq  # noqa: E402
 
 FAILURES = 0
 
@@ -345,6 +347,41 @@ CASES: List[Case] = [
     ("TAN pi/4: the double below 1", [d(math.pi / 4)], 0, "TAN", [0x3FEFFFFFFFFFFFFF], 0, None),
     ("TAN 1.5", [d(1.5)], 0, "TAN", [0x402C33ED50B88777], 0, None),
     ("TAN -0", [NZ], 0, "TAN", [NZ], 0, None),
+    ("ASIN 0.5: pi/6", [d(0.5)], 0, "ASIN", [0x3FE0C152382D7366], 0, None),
+    ("ASIN 0.7, below 0.975", [d(0.7)], 0, "ASIN", [0x3FE8D00E692AFD95], 0, None),
+    ("ASIN 0.9875, above 0.975", [d(0.9875)], 0, "ASIN", [0x3FF699ABB753123D], 0, None),
+    ("ASIN -1: -pi/2", [d(-1.0)], 0, "ASIN", [0xBFF921FB54442D18], 0, None),
+    ("ASIN 2^-30 is itself", [d(2.0**-30)], 0, "ASIN", [d(2.0**-30)], 0, None),
+    ("ASIN 1.5, beyond 1", [d(1.5)], 0, "ASIN", [N], INVALID, None),
+    ("ACOS 0.5: pi/3", [d(0.5)], 0, "ACOS", [0x3FF0C152382D7366], 0, None),
+    ("ACOS -0.5: 2 pi/3", [d(-0.5)], 0, "ACOS", [0x4000C152382D7366], 0, None),
+    ("ACOS 0.7", [d(0.7)], 0, "ACOS", [0x3FE973E83F5D5C9B], 0, None),
+    ("ACOS 1 is +0", [d(1.0)], 0, "ACOS", [0], 0, None),
+    ("ACOS -1: pi", [d(-1.0)], 0, "ACOS", [0x400921FB54442D18], 0, None),
+    ("ACOS -0: pi/2", [NZ], 0, "ACOS", [0x3FF921FB54442D18], 0, None),
+    ("ACOS -inf", [NINF], 0, "ACOS", [N], INVALID, None),
+    ("ATAN 1: pi/4", [d(1.0)], 0, "ATAN", [0x3FE921FB54442D18], 0, None),
+    ("ATAN 0.5", [d(0.5)], 0, "ATAN", [0x3FDDAC670561BB4F], 0, None),
+    ("ATAN 0.25, below 0.4375", [d(0.25)], 0, "ATAN", [0x3FCF5B75F92C80DD], 0, None),
+    ("ATAN -2", [d(-2.0)], 0, "ATAN", [0xBFF1B6E192EBBE44], 0, None),
+    ("ATAN 10", [d(10.0)], 0, "ATAN", [0x3FF789BD2C160054], 0, None),
+    ("ATAN -inf: -pi/2", [NINF], 0, "ATAN", [0xBFF921FB54442D18], 0, None),
+    ("ATAN -0", [NZ], 0, "ATAN", [NZ], 0, None),
+    # ATAN2 is Y, X: the angle of (X, Y), and C's atan2(Y, X), whose
+    # zeros and infinities are those of C's Annex F.
+    ("ATAN2 1, -1: 3 pi/4", [d(1.0), d(-1.0)], 0, "ATAN2", [0x4002D97C7F3321D2], 0, None),
+    ("ATAN2 1, 2: atan 0.5", [d(1.0), d(2.0)], 0, "ATAN2", [0x3FDDAC670561BB4F], 0, None),
+    ("ATAN2 -1, 0: -pi/2", [d(-1.0), 0], 0, "ATAN2", [0xBFF921FB54442D18], 0, None),
+    ("ATAN2 -0, -1: -pi", [NZ, d(-1.0)], 0, "ATAN2", [0xC00921FB54442D18], 0, None),
+    ("ATAN2 +0, -0: pi", [0, NZ], 0, "ATAN2", [0x400921FB54442D18], 0, None),
+    ("ATAN2 -0, +0: -0", [NZ, 0], 0, "ATAN2", [NZ], 0, None),
+    ("ATAN2 inf, -inf: 3 pi/4", [INF, NINF], 0, "ATAN2", [0x4002D97C7F3321D2], 0, None),
+    ("ATAN2 -1, inf: -0", [d(-1.0), INF], 0, "ATAN2", [NZ], 0, None),
+    ("ATAN2 1, -inf: pi", [d(1.0), NINF], 0, "ATAN2", [0x400921FB54442D18], 0, None),
+    # |Y / X| beyond 2^64, and below 2^-64 with X < 0.
+    ("ATAN2 1e300, 1e-300: pi/2", [d(1e300), d(1e-300)], 0, "ATAN2", [0x3FF921FB54442D18], 0, None),
+    ("ATAN2 2^-70, -1: pi", [d(2.0**-70), d(-1.0)], 0, "ATAN2", [0x400921FB54442D18], 0, None),
+    ("ATAN2 of a NaN", [d(1.0), QN], 0, "ATAN2", [N], 0, None),
     # XMUL: p as Y, the error as X.
     ("XMUL 3, 3 is exact: the error is +0", [d(3.0), d(3.0)], 0, "XMUL", [d(9.0), 0], 0, None),
     # (1 + 2^-52)^2 = 1 + 2^-51 + 2^-104.
@@ -862,6 +899,132 @@ def machin_pi() -> decimal.Decimal:
     return 16 * atan_inv(5) - 4 * atan_inv(239)
 
 
+# The functions in exact arithmetic, to the precision of the context: a
+# Decimal from a Fraction, and sin, cos, and atan by their series after a
+# reduction.
+def dec(q: Fraction) -> decimal.Decimal:
+    return decimal.Decimal(q.numerator) / q.denominator
+
+
+def series(x: decimal.Decimal, k: int, sign: int) -> decimal.Decimal:
+    """The sum of sign^n x^(2n + k) / (2n + k)! for n from 0, which is
+    sin x for k = 1 and sign = -1, and cos x for k = 0."""
+    term = x**k / math.factorial(k)
+    total = term
+    n = k
+    while True:
+        term = sign * term * x * x / ((n + 1) * (n + 2))
+        n += 2
+        nxt = total + term
+        if nxt == total:
+            return total
+        total = nxt
+
+
+def exact_sin_cos(x: Fraction, pi: decimal.Decimal) -> Tuple[decimal.Decimal, decimal.Decimal]:
+    """sin x and cos x, with x reduced by the nearest multiple of pi/2."""
+    v = dec(x)
+    q = (v / (pi / 2)).to_integral_value(decimal.ROUND_HALF_EVEN)
+    r = v - q * (pi / 2)
+    s, c = series(r, 1, -1), series(r, 0, -1)
+    return [(s, c), (c, -s), (-s, -c), (-c, s)][int(q) % 4]
+
+
+def exact_atan(x: decimal.Decimal, pi: decimal.Decimal) -> decimal.Decimal:
+    """atan x, by atan x = pi/2 - atan(1/x) above 1, and then by halving
+    the angle, atan x = 2 atan(x / (1 + sqrt(1 + x^2))), below 1/8."""
+    if x < 0:
+        return -exact_atan(-x, pi)
+    if x > 1:
+        return pi / 2 - exact_atan(1 / x, pi)
+    halvings = 0
+    while x > decimal.Decimal(1) / 8:
+        x = x / (1 + (1 + x * x).sqrt())
+        halvings += 1
+    total = term = x
+    k = 1
+    while True:
+        term = -term * x * x
+        nxt = total + term / (2 * k + 1)
+        if nxt == total:
+            return total * (1 << halvings)
+        total, k = nxt, k + 1
+
+
+def exact_function(name: str, ops: List[Fraction], pi: decimal.Decimal) -> decimal.Decimal:
+    if name in ("SIN", "COS", "TAN"):
+        s, c = exact_sin_cos(ops[0], pi)
+        return {"SIN": s, "COS": c, "TAN": s / c}[name]
+    if name in ("ASIN", "ACOS"):
+        x = dec(ops[0])
+        a = pi / 2 if x == 1 else -pi / 2 if x == -1 else exact_atan(x / (1 - x * x).sqrt(), pi)
+        return a if name == "ASIN" else pi / 2 - a
+    if name == "ATAN":
+        return exact_atan(dec(ops[0]), pi)
+    y, x = dec(ops[0]), dec(ops[1])
+    a = exact_atan(y / x, pi)
+    if x > 0:
+        return a
+    return a + pi if y > 0 else a - pi
+
+
+def function_operands(name: str, rnd: random.Random, pi: Fraction) -> List[int]:
+    """Random finite operands of the function name, within its domain:
+    for SIN, COS, and TAN up to 2^20 pi/2, some next to a multiple of
+    pi/2, and for ATAN2 also pairs whose exponents are far apart."""
+
+    def binade(lo: int, hi: int) -> int:
+        return rnd.getrandbits(52) | rnd.randint(lo, hi) << 52 | rnd.getrandbits(1) << 63
+
+    if name in ("SIN", "COS", "TAN"):
+        if rnd.randrange(3) == 0:
+            k = rnd.randint(1, 1 << rnd.randint(1, 20))
+            return [(F64.round(k * pi / 2)[0] + rnd.randint(-20, 20)) | rnd.getrandbits(1) << 63]
+        return [binade(1023 - 30, 1023 + 19)]
+    if name in ("ASIN", "ACOS"):
+        return [binade(1023 - rnd.choice([1, 2, 5, 30]), 1022)]
+    if name == "ATAN":
+        return [binade(1023 - 30, 1023 + 30)]
+    y = binade(1023 - 40, 1023 + 40)
+    ey = y >> 52 & 0x7FF
+    return [y, binade(ey - rnd.choice([0, 3, 30, 63]), ey + rnd.choice([0, 3, 30, 63]))]
+
+
+# The bounds of §11.3 in ulps, which are 1 but for these. musl's atan2
+# rounds y / x before atan, which takes it past 1 ulp: 1.35 is the worst
+# of 320,000 samples.
+BOUNDS = {"ATAN2": Fraction(3, 2)}
+COUNT = 400
+
+
+def function_bounds(rnd: random.Random) -> None:
+    """The functions of §11.3 are within their bounds, BOUNDS ulps of the
+    exact value: each on COUNT random operands, against its value in 90
+    digits. SIN, COS, and TAN reduce by pi/2 to 90 digits, which leaves
+    some 75 below 2^20 pi/2."""
+    worst: Dict[str, float] = {}
+    with decimal.localcontext() as ctx:
+        ctx.prec = 90
+        pi = machin_pi()
+        pi_q = Fraction(pi)
+        for name in fpu_seq.FUNCTIONS:
+            for _ in range(COUNT):
+                ops = function_operands(name, rnd, pi_q)
+                fpu = FPU(list(ops))
+                fpu.command(NUMBERS[name])
+                got = fpu.stack[-1]
+                if not F64.is_finite(got):
+                    fail(f"{name} of {' '.join(f'{a:016X}' for a in ops)}: {got:016X}")
+                    continue
+                exact = Fraction(exact_function(name, [F64.value(a) for a in ops], pi))
+                ulp = pow2(max(floor_log2(abs(exact)), F64.emin) - 52)
+                err = abs(F64.value(got) - exact) / ulp
+                worst[name] = max(worst.get(name, 0.0), float(err))
+                if err >= BOUNDS.get(name, 1):
+                    fail(f"{name} of {' '.join(f'{a:016X}' for a in ops)}: {got:016X}, {float(err):.3f} ulp off")
+    print("the functions' worst errors in ulps:", ", ".join(f"{n} {w:.3f}" for n, w in worst.items()))
+
+
 def isqrt_check(rnd: random.Random) -> None:
     run = COMMANDS[NUMBERS["ISQRT"]].run
     for _ in range(3000):
@@ -1031,6 +1194,7 @@ def main() -> None:
     tables()
     digits_check(rnd)
     fifteen_digits(rnd)
+    function_bounds(rnd)
     print("exact arithmetic")
     if FAILURES:
         sys.exit(1)

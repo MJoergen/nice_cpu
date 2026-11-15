@@ -1,8 +1,8 @@
-; The FPU's functions (DEVICES.md §11.3): SIN, COS, and TAN of a value
-; each, an operand beyond their bound, and a function whose frame does
-; not fit above the stack. The values are those of the hand-checked cases
-; of test/fpu_model_test.py, from Taylor series. The results go to 0x200
-; on:
+; The FPU's functions (DEVICES.md §11.3): SIN, COS, TAN, and ATAN2 of a
+; value each, an operand beyond its bound, and a function whose frame
+; does not fit above the stack. The values are those of the hand-checked
+; cases of test/fpu_model_test.py, the exact ones rounded once. The
+; results go to 0x200 on:
 ;
 ;   0x200  SIN 0.5, X_LO and X_HI                   0x744B05F0 0x3FDEAEE8
 ;   0x202  COS 0.5                                  0x065B7D50 0x3FEC1528
@@ -22,8 +22,11 @@
 ;          depth 11, X zero (bit 17), whole, and
 ;          fits                                     0x0032080B
 ;   0x209  PICK 10, the deepest: X_W                0x0000000A
+;   0x20A  CLEAR 1, ATAN2 of Y = 1 and X = -1, the
+;          one function of two operands: 3 pi/4    0x7F3321D2 0x4002D97C
+;   0x20C  STATUS: depth 1, no flag, X fits         0x00200001
 ;
-; 74 steps, and PC = 0x4E after the HALT at 0x4D. R6 = 0x200 + 10 = 0x20A.
+; 81 steps, and PC = 0x60 after the HALT at 0x5F. R6 = 0x200 + 13 = 0x20D.
 FPU_X_LO        .EQU    0xFFFFFF88
 FPU_X_HI        .EQU    0xFFFFFF89
 FPU_X_S         .EQU    0xFFFFFF8A
@@ -62,4 +65,11 @@ FPU_STATUS      .EQU    0xFFFFFF8D
                 MOVE    @R6++, @FPU_STATUS
                 MOVE    @FPU_CMD, 0x0A06  ; PICK 10
                 MOVE    @R6++, @FPU_X_W
+                MOVE    @FPU_CMD, 0x0101  ; CLEAR 1
+                MOVE    @FPU_X_W, 1
+                MOVE    @FPU_X_W, -1
+                MOVE    @FPU_CMD, 0x46  ; ATAN2
+                MOVE    @R6++, @FPU_X_LO
+                MOVE    @R6++, @FPU_X_HI
+                MOVE    @R6++, @FPU_STATUS
                 HALT

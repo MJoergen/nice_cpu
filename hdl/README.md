@@ -793,14 +793,16 @@ request to the ACK of the read of `FPU_STATUS` after it, which adds some
 | `DIGITS` | 3363 |
 | `SIN` and `COS` | 1561 and 1576 |
 | `TAN` | 2079 |
+| `ASIN` and `ACOS` | 1124 and 871 |
+| `ATAN` and `ATAN2` | 946 and 1329 |
 
 `make timing UNIT=fpu` places the FPU alone, out of context
-([Timing](#timing)). On the MEGA65, at the commit of #183, it leaves
-+1.046 ns on its own paths with the default flow, more than the budget
-of 1.0 ns, and +9.502 ns at its inputs and +7.958 ns at its outputs; at
-that of #172, +1.218 ns with the timing flow. It takes 9464 LUTs, 2748
-registers, 5 DSPs, and 2 block RAMs, the ROMs of the functions: more
-LUTs than the pipelined core.
+([Timing](#timing)). On the MEGA65, with `ASIN`, `ACOS`, `ATAN`, and
+`ATAN2` (#182), it leaves +1.090 ns on its own paths with the default
+flow, more than the budget of 1.0 ns, and +9.502 ns at its inputs and
++7.958 ns at its outputs; at the commit of #172, +1.218 ns with the
+timing flow. It takes 9507 LUTs, 2696 registers, 5 DSPs, and 3 block
+RAMs, the ROMs of the functions: more LUTs than the pipelined core.
 
 `tb_fpu_unit` checks the arithmetic unit, and `tb_fpu` the FPU, against
 the model of `emulator/test/fpu_model.py` (What the tests check), and
@@ -1035,7 +1037,7 @@ leave no ACK, no value, and no flag, and the command after it must run.
 `make run/fpu FPU_SEED=2 FPU_COUNT=200000` runs a longer sequence.
 
 `test/fpu_slow_vectors.py` adds the slowest `DIGITS`, `SCALE10`, `FMOD`,
-`SIN`, `COS`, and `TAN` that a scan found, with `--scan` the lines of that scan, and
+and functions that a scan found, with `--scan` the lines of that scan, and
 `tb_fpu`'s generic `G_SLOW` reports each command slower than it. For each
 command that the next access does not follow at once, `tb_fpu` counts
 the cycles from its request to the ACK of the read of STATUS after it,

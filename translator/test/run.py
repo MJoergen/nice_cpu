@@ -7,12 +7,9 @@ with runtime/start_wasm.nasm, any hand-written assembly the case needs,
 runtime/lib.nasm, and runtime/muldiv_mpu.nasm, as ABI.md describes. If
 it calls the float library, runtime/float_fpu.nasm follows, which uses
 the FPU (DEVICES.md §11). Then it is assembled and run. Each case runs
-three times: as translated by default, with the math unit (DEVICES.md §2)
-and the FPU; with --no-mpu and runtime/muldiv_soft.nasm, and with
-runtime/float.wasm translated with --no-mpu as the library module float,
-for a system with neither; and with --inline-fpu. With --no-fpu, the
-first run takes the float library from float.wasm too, for a system
-without the FPU, and the third is left out.
+three times: as translated by default, with the math unit (DEVICES.md §2);
+with --no-mpu and runtime/muldiv_soft.nasm, for a system without it;
+and with --inline-fpu.
 
 The program must halt with HALT and main's result in R1, and print what
 CONSOLE gives on the console, or nothing. A case in TRAPS
@@ -279,6 +276,7 @@ LIB_ASM = "___wasm_start MOVE R15, @R13++\n_main {}\n ADD @--R13, 2, R15\n MOVE 
 TRAPS = {"reachtrap": "AND[M] R0, W.end-1, 0xFC000000",
          "nofputrap": "MOVE @0xFFFFFF8C, 0x101",
          "nofputrap_rom": "MOVE @0xFFFFFF8C, 0x101",
+         "nofputrap_math": "MOVE @0xFFFFFF8C, 0x101",
          "growtrap": "MOVE R1, 65536",
          "trunc_big": "MOVE R1, 0x4F000000",
          "trunc_small": "MOVE R2, 0x41E00000",
@@ -389,7 +387,6 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "growtrap": ["--memory-pages", "2"],
            "reachtrap": ["--byte-windows", "--memory-pages", "4096"],
            "nofputrap_rom": ["--ram", ROM_RAM],
-           "nofpu": ["--no-fpu"],
            "growdyn": ["--memory-pages", "2"],
            "growdyntrap": ["--memory-pages", "2"],
            "sharetrap2_grow": ["--memory-pages", "2"],
@@ -824,6 +821,14 @@ def dyn64(a: int, op: bytes, b: int, want: int) -> bytes:
 
 # The locals of the cases that use dyn32 and dyn64: local 0 for bits().
 DYN_LOCALS = [I32, I32, I32, I64, I64]
+
+
+def math_import() -> bytes:
+    """A module whose main returns the bits of exp2f(2), a function of
+    math.h imported from env, with no float operation of its own."""
+    return module(types(MAIN_TYPE, ([F32], [F32])), imports(("env", "exp2f", 1)), funcs(0),
+                  exports(("main", 0, 1)),
+                  code((0, f32(0x40000000) + call(0) + I32_REINTERPRET_F32)))
 
 
 def main_of(body: bytes, mem: bool = False) -> bytes:
@@ -2773,7 +2778,7 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
             bits32(f32(0x00800000) + f32(0x40000000) + fop(0x95), 0x00400000),
             # A check that fails.
             bits32(f32(0x3F800000) + f32(0x40000000) + fop(0x92), 0x40000000))))), "", 0xFFFFFFFE),
-    # More f32 quotients, for the remainder of the u64 divide in float.zig.
+    # More f32 quotients.
     ("float32div", module(
         types(MAIN_TYPE),
         funcs(0),
@@ -2945,14 +2950,15 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # A module that uses the FPU checks for it in ___wasm_start: on niceemu
     # --no-fpu, whose FPU words are ordinary memory, the check traps with
     # code 9 before main, with R2 at the check (WASM.md, Start-up), also in
-    # the ___wasm_start of code in a ROM. With --no-fpu, the module has no
-    # check, and 1 + 2 = 3 runs on the FPU of the emulator (EMULATOR).
+    # the ___wasm_start of code in a ROM, and in a module whose only use of
+    # the FPU is a function of math.h, exp2f(2) = 4, a routine of the float
+    # library (mathimport).
     ("nofputrap", main_of(f32(0x3F800000) + f32(0x40000000) + fop(0x92) + I32_REINTERPRET_F32),
      "", 9),
     ("nofputrap_rom", main_of(f32(0x3F800000) + f32(0x40000000) + fop(0x92) + I32_REINTERPRET_F32),
      "", 9),
-    ("nofpu", main_of(f32(0x3F800000) + f32(0x40000000) + fop(0x92) + I32_REINTERPRET_F32),
-     "", 0x40400000),
+    ("nofputrap_math", math_import(), "", 9),
+    ("mathimport", math_import(), "", 0x40800000),
     ("growtrap", module(
         types(MAIN_TYPE),
         funcs(0),
@@ -3650,7 +3656,7 @@ CASES += [(name + suffix, wasm, extra, expected) for name, wasm, extra, expected
 # 4 * (i + c) keeps the operand of word c with i as its index, as
 # without the windows (hoistagen_win).
 SHAPES["hoistagen_win"] = SHAPES["hoistagen"]
-SHAPES["nofpu"] = (r"W\.fpucheck", False)
+SHAPES["mathimport"] = (r"^W\.fpucheck$", True)
 SHAPES["float32"] = (r"^W\.fpucheck$", True)
 # A trusted word access through the window needs no word index, no test
 # of the alignment, and no helper (trust_win).
@@ -3659,7 +3665,8 @@ SHAPES["trust_win"] = (r"^ +SHR +R\d+, R\d+, 2$|AND\[M\] +R0, R\d+, 3$|@___wasm_
 
 # The options for niceemu, for the cases that run without the FPU. Such
 # a case is not kept for make programs, as a core has the FPU.
-EMULATOR = {"nofputrap": ["--no-fpu"], "nofputrap_rom": ["--no-fpu"]}
+EMULATOR = {"nofputrap": ["--no-fpu"], "nofputrap_rom": ["--no-fpu"],
+            "nofputrap_math": ["--no-fpu"]}
 
 # The steps after which niceemu stops a program that runs away. The
 # longest case, recursion, takes some 285000 steps.
@@ -3692,17 +3699,13 @@ def assemble(line: str, tmp: str, labels: Dict[str, int]) -> List[int]:
 SUFFIX = {"mpu": "", "soft": "_soft", "inline": "_inline"}
 
 
-def float_library(tmp: str, mpu: bool, fpu: bool) -> Tuple[str, Set[str]]:
-    """Translates the float library, or takes float_fpu.nasm with the FPU,
-    and returns its file and the labels of its routines."""
-    if fpu:
-        asm = os.path.join(RUNTIME, "float_fpu.nasm")
-    else:
-        asm = os.path.join(tmp, "float.nasm" if mpu else "float_soft.nasm")
-        run([sys.executable, NICEWASM, "--library", "float", *([] if mpu else ["--no-mpu"]),
-             "-o", asm, os.path.join(RUNTIME, "float.wasm")])
+def float_library() -> Tuple[str, Set[str]]:
+    """The float library, float_fpu.nasm, and its labels: ___name for the
+    float operations, _name for the functions of math.h, and __fpu.* for
+    the FPU's words, which --inline-fpu names."""
+    asm = os.path.join(RUNTIME, "float_fpu.nasm")
     with open(asm) as f:
-        labels = {line.split()[0] for line in f if line.startswith("__")}
+        labels = {line.split()[0] for line in f if line.startswith("_")}
     return asm, labels
 
 
@@ -3913,22 +3916,17 @@ def main() -> None:
     # FPGA core in hdl/.
     keep = None
     args = sys.argv[1:]
-    fpu = "--no-fpu" not in args
-    if not fpu:
-        args.remove("--no-fpu")
     if args[:1] == ["--keep"] and len(args) == 2:
         keep = args[1]
         os.makedirs(keep, exist_ok=True)
     elif args:
-        sys.exit("usage: run.py [--no-fpu] [--keep DIR]")
+        sys.exit("usage: run.py [--keep DIR]")
     failed = 0
     with tempfile.TemporaryDirectory() as tmp:
         jobs: List[Tuple[int, str, Union[bytes, str], str, int, Tuple[str, Set[str]], str]] = []
-        for mode in ["mpu", "soft"] + (["inline"] if fpu else []):
-            floats = float_library(tmp, mode != "soft", fpu and mode != "soft")
+        floats = float_library()
+        for mode in ["mpu", "soft", "inline"]:
             for index, (name, wasm, extra, expected) in enumerate(CASES):
-                if mode == "inline" and "--no-fpu" in OPTIONS.get(name, []):
-                    continue  # nicewasm takes not both
                 jobs.append((index, name, wasm, extra, expected, floats, mode))
         # The cases run in parallel, and are reported in order.
         with concurrent.futures.ThreadPoolExecutor(os.cpu_count()) as pool:

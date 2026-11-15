@@ -83,9 +83,8 @@ modules trap, with each code of WASM.md from 1 to 7.
 A program that calls the float library is joined with
 runtime/float_fpu.nasm, which uses the FPU. With --no-mpu, nicewasm is
 run with that option and the program is joined with muldiv_soft.nasm
-instead of muldiv_mpu.nasm, and with runtime/float.wasm translated with
---no-mpu as the float library, for a system with neither, as run.py
-does. With --inline-fpu, nicewasm writes the FPU's accesses inline, and
+instead of muldiv_mpu.nasm, for a system without the math unit, as
+run.py does. With --inline-fpu, nicewasm writes the FPU's accesses inline, and
 every module has floats. With --unchecked,
 nicewasm is run with --no-bounds-checks, and with --grow with
 --memory-pages 2, so that the bounds checks compare with the words that
@@ -2007,18 +2006,11 @@ def run(cmd: List[str]) -> None:
 Library = Tuple[str, Set[str]]
 
 
-def float_library(tmp: str, opts: List[str]) -> Library:
-    """float_fpu.nasm, which uses the FPU, or with --no-mpu float.wasm
-    translated with --no-mpu, for a system with neither, as run.py takes
-    them."""
-    if "--no-mpu" in opts:
-        asm = os.path.join(tmp, "float_soft.nasm")
-        run([sys.executable, NICEWASM, "--library", "float", "--no-mpu", "-o", asm,
-             os.path.join(RUNTIME, "float.wasm")])
-    else:
-        asm = os.path.join(RUNTIME, "float_fpu.nasm")
+def float_library() -> Library:
+    """float_fpu.nasm, which uses the FPU, as run.py takes it."""
+    asm = os.path.join(RUNTIME, "float_fpu.nasm")
     with open(asm) as f:
-        labels = {line.split()[0] for line in f if line.startswith("__")}
+        labels = {line.split()[0] for line in f if line.startswith("_")}
     return asm, labels
 
 
@@ -2180,7 +2172,7 @@ def main() -> None:
         sys.exit(__doc__.split("\n\n")[1])
     first, count = int(numbers[0]), int(numbers[1])
     with tempfile.TemporaryDirectory() as tmp:
-        library = float_library(tmp, opts)
+        library = float_library()
         if do_reduce:
             reduce(first, tmp, opts, library)
             return

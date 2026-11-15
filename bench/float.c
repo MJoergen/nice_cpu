@@ -1,6 +1,6 @@
 // A benchmark of floating-point code that reaches NICE through wasm
-// (WASM.md), and so of the float library (runtime/float.zig), which does
-// the arithmetic in software.
+// (WASM.md), and so of the float library (runtime/float_fpu.nasm), which
+// does the arithmetic with the FPU.
 //
 // Five phases, each a small kernel with a known result. Each phase is timed
 // with the performance counters of DEVICES.md §3, and main prints one line

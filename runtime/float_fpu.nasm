@@ -1,9 +1,9 @@
-; The float routines of the NICE runtime library (README.md, Floating
+; The float library of the NICE runtime library (README.md, Floating
 ; point), with the floating-point unit of DEVICES §11. It goes after
-; lib.nasm and the muldiv file, instead of float.nasm, and has the same
-; labels. Each routine pushes its operands, writes a command, and reads the
-; result, so it leaves the FPU's stack as it found it, and uses at most two
-; of its values (DEVICES §11.5). An entry sets the command in R5 and jumps
+; lib.nasm and the muldiv file. Each routine pushes its operands, writes a
+; command, and reads the result, so it leaves the FPU's stack as it found
+; it. A routine of a float operation uses at most two of its values
+; (DEVICES §11.5). An entry sets the command in R5 and jumps
 ; to a shared part.
 ;
 ; The FPU computes in binary64. An f32 operand is pushed through X_S,
@@ -266,3 +266,160 @@ ___truncdfsf2
                 MOVE    @__fpu.x_lo, R1
                 MOVE    @__fpu.x_hi, R2
                 JMP     __fpu.pop32
+
+; The functions of the C library's math.h (README.md, Math functions), on
+; the FPU's functions of DEVICES §11.3. math.h declares each as an import
+; from env, at the label _name (WASM.md). A function pushes its operands,
+; and leaves the stack as it found it, but needs k values above them
+; (DEVICES §11.5): POW uses 15 values, so a caller keeps at most one
+; value on the stack across these. The float versions compute in
+; binary64, and the read of X_S rounds the result to binary32 once.
+; sin, cos, and tan are the C library's, which calls these for an
+; argument below 2^20 * pi/2, where SIN, COS, and TAN are defined.
+_nice_sin
+                MOVE    R5, 0x40        ; SIN
+                JMP     __fpu.op1_64
+_nice_cos
+                MOVE    R5, 0x41        ; COS
+                JMP     __fpu.op1_64
+_nice_tan
+                MOVE    R5, 0x42        ; TAN
+                JMP     __fpu.op1_64
+_asin
+                MOVE    R5, 0x43        ; ASIN
+                JMP     __fpu.op1_64
+_acos
+                MOVE    R5, 0x44        ; ACOS
+                JMP     __fpu.op1_64
+_atan
+                MOVE    R5, 0x45        ; ATAN
+                JMP     __fpu.op1_64
+_log
+                MOVE    R5, 0x48        ; LN
+                JMP     __fpu.op1_64
+_log2
+                MOVE    R5, 0x49        ; LOG2
+                JMP     __fpu.op1_64
+_log10
+                MOVE    R5, 0x4A        ; LOG10
+                JMP     __fpu.op1_64
+_exp
+                MOVE    R5, 0x4C        ; EXP
+                JMP     __fpu.op1_64
+_exp2
+                MOVE    R5, 0x4D        ; POW2
+                JMP     __fpu.op1_64
+_round
+                MOVE    R5, 0x24        ; ROUND
+                JMP     __fpu.op1_64
+; atan2(y, x), pow(x, y), fmod(x, y), and hypot(x, y): the first operand
+; is Y, and the second X.
+_atan2
+                MOVE    R5, 0x46        ; ATAN2
+                JMP     __fpu.op2_64
+_fmod
+                MOVE    R5, 0x1D        ; FMOD
+                JMP     __fpu.op2_64
+; C gives 1 for pow(x, +-0) and pow(1, y), with a NaN as the other
+; operand too, where POW gives a NaN.
+_pow
+                SHL     R5, R4, 1       ; y without its sign
+                OR[M]   R0, R5, R3
+        ?Z      JMP     __fpu.one64
+                SUB[M]  R0, R2, 0x3FF00000
+        ?Z      MOVE[M] R0, R1
+        ?Z      JMP     __fpu.one64
+                MOVE    R5, 0x4E        ; POW
+                JMP     __fpu.op2_64
+__fpu.one64
+                MOVE    R1, 0
+                MOVE    R2, 0x3FF00000
+                RET
+; C gives +inf for hypot of an infinity, with a NaN as the other operand
+; too, where HYPOT gives a NaN.
+_hypot
+                SHL     R5, R2, 1       ; x without its sign
+                SUB[M]  R0, R5, 0xFFE00000
+        ?Z      MOVE[M] R0, R1
+        ?Z      JMP     __fpu.inf64
+                SHL     R5, R4, 1       ; y without its sign
+                SUB[M]  R0, R5, 0xFFE00000
+        ?Z      MOVE[M] R0, R3
+        ?Z      JMP     __fpu.inf64
+                MOVE    R5, 0x4F        ; HYPOT
+                JMP     __fpu.op2_64
+__fpu.inf64
+                MOVE    R1, 0
+                MOVE    R2, 0x7FF00000
+                RET
+; ldexp(x, n) and scalbn(x, n): x in R1:R2, and n in R3.
+_ldexp
+_scalbn
+                MOVE    @__fpu.x_lo, R1
+                MOVE    @__fpu.x_hi, R2
+                MOVE    @__fpu.x_w, R3
+                MOVE    R5, 0x38        ; SCALE2
+                JMP     __fpu.cmd64
+
+; The float versions.
+_asinf
+                MOVE    R5, 0x43        ; ASIN
+                JMP     __fpu.op1_32
+_acosf
+                MOVE    R5, 0x44        ; ACOS
+                JMP     __fpu.op1_32
+_atanf
+                MOVE    R5, 0x45        ; ATAN
+                JMP     __fpu.op1_32
+_logf
+                MOVE    R5, 0x48        ; LN
+                JMP     __fpu.op1_32
+_log2f
+                MOVE    R5, 0x49        ; LOG2
+                JMP     __fpu.op1_32
+_log10f
+                MOVE    R5, 0x4A        ; LOG10
+                JMP     __fpu.op1_32
+_expf
+                MOVE    R5, 0x4C        ; EXP
+                JMP     __fpu.op1_32
+_exp2f
+                MOVE    R5, 0x4D        ; POW2
+                JMP     __fpu.op1_32
+_roundf
+                MOVE    R5, 0x24        ; ROUND
+                JMP     __fpu.op1_32
+_atan2f
+                MOVE    R5, 0x46        ; ATAN2
+                JMP     __fpu.op2_32
+_fmodf
+                MOVE    R5, 0x1D        ; FMOD
+                JMP     __fpu.op2_32
+_powf
+                SHL[M]  R0, R2, 1       ; y without its sign
+        ?Z      JMP     __fpu.one32
+                SUB[M]  R0, R1, 0x3F800000
+        ?Z      JMP     __fpu.one32
+                MOVE    R5, 0x4E        ; POW
+                JMP     __fpu.op2_32
+__fpu.one32
+                MOVE    R1, 0x3F800000
+                RET
+_hypotf
+                SHL     R5, R1, 1
+                SUB[M]  R0, R5, 0xFF000000
+        ?Z      JMP     __fpu.inf32
+                SHL     R5, R2, 1
+                SUB[M]  R0, R5, 0xFF000000
+        ?Z      JMP     __fpu.inf32
+                MOVE    R5, 0x4F        ; HYPOT
+                JMP     __fpu.op2_32
+__fpu.inf32
+                MOVE    R1, 0x7F800000
+                RET
+_ldexpf
+_scalbnf
+                MOVE    @__fpu.x_s, R1
+                MOVE    @__fpu.x_w, R2
+                MOVE    R5, 0x38        ; SCALE2
+                JMP     __fpu.cmd32

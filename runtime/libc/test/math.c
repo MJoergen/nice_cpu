@@ -139,6 +139,16 @@ static void trig(void)
     CD(tan(-zero), N0);
     CD(tan(inf), NANBITS);
     CD(tan(p / 4), 0x3FEFFFFFFFFFFFFFull);
+    // From 2^20 * pi/2 on, the high word 0x413921FB, the reduction is
+    // musl's __rem_pio2_large, and below it the FPU's SIN. The results are
+    // the correctly rounded ones, glibc's, but that of tan(1e22), which is
+    // 0.54 ulp off, as musl's tan gives it.
+    CD(sin(1e22 * one), 0xBFEB453AB76BF397ull);
+    CD(cos(1e22 * one), 0x3FE0BE2CEF01C8F4ull);
+    CD(tan(1e22 * one), 0xBFFA0F79C1B6B258ull);
+    CD(sin(D(0x413921FB00000000ull)), 0xBFD4B02E5BE91E9Eull);
+    CD(sin(D(0x413921FAFFFFFFFFull)), 0xBFD4B02E5C25AF00ull);
+    CF(sinf(1e10f * onef), 0xBEF99A64u);
     CF(sinf(-zf), FN0);
     CF(sinf(inff), NANFBITS);
     CF(sinf(pf), 0xB3BBBD2Eu);
@@ -161,14 +171,14 @@ static void trig(void)
     CD(atan(-inf), PI2 | N0);
     CF(asinf(onef), FPI2);
     CF(asinf(twof), NANFBITS);
-    // musl's acosf(-1), acosf(0), and atanf of an infinity return pio2_hi,
-    // the float below pi/2, or twice it, 0x3FC90FDA and 0x40490FDA, 0.63
-    // ulp below the true value: within the bound, but not the nearest.
-    CF(acosf(-onef), 0x40490FDAu);
-    CF(acosf(zf), 0x3FC90FDAu);
+    // The float functions round the binary64 result once, so acosf(-1),
+    // acosf(0), and atanf of an infinity are the floats nearest pi and
+    // pi/2.
+    CF(acosf(-onef), FPI);
+    CF(acosf(zf), FPI2);
     CF(acosf(onef), FP0);
     CF(atanf(onef), FPI4);
-    CF(atanf(-inff), 0xBFC90FDAu);
+    CF(atanf(-inff), FPI2 | FN0);
 
     // C17 F.10.1.4, in its order.
     CD(atan2(zero, -zero), PIB);
@@ -209,7 +219,8 @@ static void explog(void)
     CD(exp(inf), PINF);
     CD(exp(1000 * one), PINF);
     CD(exp(-1000 * one), P0);
-    CD(exp(one), 0x4005BF0A8B145769ull);
+    // fdlibm's exp(1) is the double above e, 0.67 ulp off.
+    CD(exp(one), 0x4005BF0A8B14576Aull);
     CD(log(one), P0);
     CD(log(-zero), NINF);
     CD(log(zero), NINF);
@@ -282,6 +293,23 @@ static void powers(void)
     CF(powf(twof, 10 * onef), 0x44800000u);       // 1024
     CF(powf(twof, 0.5f * onef), 0x3FB504F3u);     // √2
     CF(powf(twof, 128 * onef), FPINF);
+    // exp2, and C's hypot: an infinity gives +inf, with a NaN too.
+    CD(exp2(10 * one), 0x4090000000000000ull);    // 1024
+    CD(exp2(-1074 * one), 0x0000000000000001ull); // the least subnormal
+    CD(exp2(1024 * one), PINF);
+    CD(exp2(-inf), P0);
+    CD(exp2(0.5 * one), 0x3FF6A09E667F3BCDull);   // √2
+    CF(exp2f(-149 * onef), 0x00000001u);
+    CF(exp2f(128 * onef), FPINF);
+    CF(exp2f(0.5f * onef), 0x3FB504F3u);
+    CD(hypot(3 * one, -4 * one), 0x4014000000000000ull); // 5
+    CD(hypot(-zero, zero), P0);
+    CD(hypot(inf, nan_), PINF);
+    CD(hypot(nan_, -inf), PINF);
+    CD(hypot(nan_, one), NANBITS);
+    CD(hypot(D(0x7FEFFFFFFFFFFFFFull), D(0x7FEFFFFFFFFFFFFFull)), PINF);
+    CF(hypotf(3 * onef, 4 * onef), 0x40A00000u);
+    CF(hypotf(nanf_, -inff), FPINF);
 }
 
 static void parts(void)
@@ -412,7 +440,8 @@ static void classify(void)
     CI(math_errhandling, 0);
 }
 
-// The functions that math.h maps to built-ins, called through pointers.
+// The functions that math.h maps to built-ins, called through pointers,
+// and two routines of the float library.
 static double (*const dfn[])(double) = {sqrt, fabs, floor, ceil, trunc, rint, nearbyint};
 static float (*const ffn[])(float) = {sqrtf, fabsf, floorf, ceilf, truncf, rintf, nearbyintf};
 
@@ -434,6 +463,11 @@ static void pointers(void)
     }
     double (*cs)(double, double) = copysign;
     CD(cs(two, -one), 0xC000000000000000ull);
+    // A routine of the float library, an import, through a pointer.
+    double (*pw)(double, double) = pow;
+    CD(pw(two, 10 * one), 0x4090000000000000ull);
+    float (*hf)(float, float) = hypotf;
+    CF(hf(3 * onef, 4 * onef), 0x40A00000u);
 }
 
 int main(void)

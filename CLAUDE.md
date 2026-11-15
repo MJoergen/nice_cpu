@@ -90,7 +90,7 @@ The rules a change follows, and the tests, are in CONTRIBUTING.md:
     cd emulator  && make window-test # build with -Dwindow (SDL from source), run test/window.py headless
     cd debugger  && make test        # test/errors.py, then test/link.py: the link, the loader, and nicedbg's commands on niceemu --link
     cd debugger  && make typecheck   # mypy --strict
-    cd runtime   && make test        # join, assemble, and run each test/*.nasm, the Zig and Rust tests, float_fpu.nasm against float.nasm, then the C library tests
+    cd runtime   && make test        # join, assemble, and run each test/*.nasm, the Zig and Rust tests, float_fpu.nasm against exact arithmetic, then the C library tests
     cd runtime   && make typecheck   # mypy --strict
     cd translator && make test       # test/run.py, errors.py, fuzz.py in seven modes, passes.py, and build.py
     cd translator && make typecheck  # mypy --strict

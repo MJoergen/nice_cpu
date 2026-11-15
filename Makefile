@@ -84,7 +84,6 @@ slow:
 	$(MAKE) -C hdl analyze build/pcfx.bin build/sidefx.bin SIM=$(SIM)
 	$(MAKE) -C bench build/bench.bin build/hand.bin build/dhry.bin build/coremark.bin build/float.bin \
 	  build/float_inline.bin
-	$(MAKE) -C runtime float.nasm
 	$(MAKE) -C runtime/libc libc.a
 	@$(MAKE) --no-print-directory -j$(words $(SLOW_RUNS)) -O $(SLOW_RUNS)
 

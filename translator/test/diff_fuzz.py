@@ -30,9 +30,8 @@ fuzz.py cannot check.
 
 With --floats, every module has the floats of fuzz.py's odd seeds, and
 a program that calls the float library is joined with it, as fuzz.py
-joins it: float_fpu.nasm, or with --no-mpu float.wasm translated with
---no-mpu. Both versions run with the same library, so a NaN's bits are
-the same in both, and are compared too.
+joins it: float_fpu.nasm. Both versions run with the same library, so a
+NaN's bits are the same in both, and are compared too.
 
 --no-mpu, --grow (--memory-pages 2), --unchecked (--no-bounds-checks),
 --library (--library lib --memory-bytes 65536), and --inline-fpu, which
@@ -445,7 +444,7 @@ def main() -> None:
     failures = 0
     with tempfile.TemporaryDirectory() as tmp:
         tool = old_translator(old, tmp)
-        library = fuzz.float_library(tmp, ["--no-mpu"] if nompu else [])
+        library = fuzz.float_library()
         # The seeds run in processes of their own, as they build and assemble
         # in Python, each with files of its own name, and report in order.
         work = functools.partial(one, args=args, tool=tool, tmp=tmp, opts=opts, pages=pages, library=library)

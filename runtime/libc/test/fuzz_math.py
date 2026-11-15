@@ -1,42 +1,39 @@
 #!/usr/bin/env python3
-"""A random test of the C library's math functions, against the same code
-on the host and against the host's own libm.
+"""A random test of the C library's math functions, against the host's
+own libm and exact arithmetic.
 
-Usage: fuzz_math.py [--errors] [--no-fpu] SEED COUNT [NAME...]
+Usage: fuzz_math.py [--errors] SEED COUNT [NAME...]
 
 It writes a C program that calls each function of math.h, or each NAME,
 on COUNT inputs: the special values (zeros, infinities, NaNs, the limits,
 and subnormals), random bits, and random numbers in the range where the
 function is most used. The program prints the bits of each result. It is
 compiled with clang and the library, translated, joined with the float
-library, assembled, and run. The same program is compiled for the host,
-with the library's math sources, and run there. Two checks follow:
+library, float_fpu.nasm, assembled, and run. Then:
 
-- The two must give the same bits, but that any NaN equals any other: the
-  float library rounds as the host does, so a difference is a fault of
-  the float library, nicewasm, or the runtime.
 - The exact functions (sqrt, fmod, frexp, ldexp, scalbn, modf, fmin,
   fmax, the roundings, fabs, and copysign) must give the host libm's
-  result, through ctypes. The others must be within 1 ulp of the true
-  value, the bound that the C library's README states, and give the
-  host libm's result where that is not finite. The true value of a float
-  function is the host's double function, rounded to double. That of exp,
-  log, log2, log10, and pow comes from Python's decimal module, which
-  rounds them correctly, and that of the other double functions is the
-  host libm's, as glibc's are correctly rounded. A result is compared
-  with the true value in units of the last place of the true value
-  rounded to the result's type.
+  result, through ctypes.
+- The others must be within their bound of the true value, the bound
+  that the C library's README states: 1 ulp, but 1.5 for atan2. Where
+  the host libm's result is not finite, they must give it, as C gives
+  the special values. The true value of a float function is the host's
+  double function, rounded to double. That of exp, exp2, log, log2,
+  log10, pow, and hypot comes from Python's decimal module, which rounds
+  them correctly, and that of the other double functions is the host
+  libm's, as glibc's are correctly rounded. A result is compared with
+  the true value in units of the last place of the true value rounded to
+  the result's type.
 
-Needs clang with the wasm32 target and a host target, the host's libm,
-and ../libc.a from make -C .. libc.a. The same seed always gives the same
-program."""
+--errors prints the largest error of each function. Needs clang with the
+wasm32 target, the host's libm, and ../libc.a from make -C .. libc.a.
+The same seed always gives the same program."""
 
 from __future__ import annotations
 
 import ctypes
 import ctypes.util
 import decimal
-import glob
 import math
 import os
 import random
@@ -53,22 +50,12 @@ RUNTIME = os.path.join(REPO, "runtime")
 NICEWASM = os.path.join(REPO, "translator", "nicewasm.py")
 NICEASM = os.path.join(REPO, "assembler", "niceasm.py")
 NICEEMU = os.path.join(REPO, "emulator", "zig-out", "bin", "niceemu")
-# The float library: float_fpu.nasm, with the FPU of DEVICES.md §11, or
-# float.nasm, in software, with --no-fpu.
-FLOAT_LIB = "float_fpu.nasm"
 INCLUDE = os.path.join(LIBC, "include")
-MATH = os.path.join(LIBC, "src", "math")
 
 CFLAGS = ["--target=wasm32", "-mbulk-memory", "-O2", "-ffreestanding", "-nostdlibinc",
           "-isystem", INCLUDE, "-Wall"]
 LDFLAGS = ["-nostdlib", "-Wl,--no-entry", "-Wl,--export=main", "-Wl,--stack-first",
            "-Wl,-z,stack-size=65536"]
-# The host build: no fused multiply-add, which wasm does not have, and
-# SSE4.1, so that floor and the other roundings are instructions rather
-# than calls of the functions that use them.
-HOST_CFLAGS = ["-O2", "-ffp-contract=off", "-fno-math-errno", "-msse4.1", "-ffreestanding", "-nostdlibinc",
-               "-isystem", INCLUDE, "-w"]
-
 # The kinds of function: the argument types, then what it returns. d is a
 # double, f a float, i an int; "pi" and "pd" a result through a pointer.
 KINDS = {"d": ("d",), "dd": ("d", "d"), "di": ("d", "i"), "dpi": ("d",), "dpd": ("d",)}
@@ -132,10 +119,12 @@ FUNCS: Dict[str, Tuple[str, bool, Gen]] = {
     "atan": ("d", False, one(logu(-30, 60), logu(-1074, 1023))),
     "atan2": ("dd", False, two(logu(-30, 30), logu(-30, 30))),
     "exp": ("d", False, one(uniform(-760, 720), uniform(-1, 1), uniform(-110, 95))),
+    "exp2": ("d", False, one(uniform(-1080, 1030), uniform(-1, 1), uniform(-150, 130))),
     "log": ("d", False, one(logu(-1074, 1023, False), uniform(0.99, 1.01))),
     "log10": ("d", False, one(logu(-1074, 1023, False), uniform(0.99, 1.01))),
     "log2": ("d", False, one(logu(-1074, 1023, False), uniform(0.99, 1.01))),
     "pow": ("dd", False, pow_args),
+    "hypot": ("dd", False, two(logu(-1074, 1023), logu(-1074, 1023))),
     "sqrt": ("d", True, one(logu(-1074, 1023, False))),
     "fmod": ("dd", True, two(logu(-20, 60), logu(-20, 60))),
     "frexp": ("dpi", True, one(logu(-1074, 1023))),
@@ -154,10 +143,9 @@ FUNCS: Dict[str, Tuple[str, bool, Gen]] = {
     "copysign": ("dd", True, two(logu(-1074, 1023), logu(-1074, 1023))),
 }
 
-# The functions whose bound is more than 1 ulp: atan2f's errors reach
-# 1.23 ulp on 1.1 million inputs, measured with --errors, and glibc's
-# atan2f gives the same results there.
-BOUNDS: Dict[str, float] = {"atan2f": 1.5}
+# The functions whose bound is more than 1 ulp: atan2's, which rounds
+# y / x before its atan, as musl's does (DEVICES.md §11.3).
+BOUNDS: Dict[str, float] = {"atan2": 1.5}
 
 SPECIALS = [0.0, -0.0, math.inf, -math.inf, math.nan, 1.0, -1.0, 0.5, -0.5, 2.0, -2.0,
             5e-324, -5e-324, 2.2250738585072014e-308, 1.7976931348623157e308,
@@ -283,11 +271,9 @@ def nice_lines(src: str, tmp: str, count: int) -> List[str]:
          os.path.join(LIBC, "libc.a")])
     asm = os.path.join(tmp, "fuzz.nasm")
     run([sys.executable, NICEWASM, "--memory-pages", str(pages), "-o", asm, wasm])
-    if FLOAT_LIB == "float.nasm":
-        run(["make", "-s", "-C", RUNTIME, "float.nasm"])
     full = os.path.join(tmp, "fuzz.full.nasm")
     with open(full, "w") as out:
-        for part in ["start_wasm.nasm", asm, "lib.nasm", "muldiv_mpu.nasm", FLOAT_LIB]:
+        for part in ["start_wasm.nasm", asm, "lib.nasm", "muldiv_mpu.nasm", "float_fpu.nasm"]:
             with open(part if os.path.isabs(part) else os.path.join(RUNTIME, part)) as f:
                 out.write(f.read() + "\n")
     binary = os.path.join(tmp, "fuzz.bin")
@@ -297,19 +283,6 @@ def nice_lines(src: str, tmp: str, count: int) -> List[str]:
     if p.returncode != 0 or "Halted" not in output:
         sys.exit(f"niceemu exit status {p.returncode}:\n" + "\n".join(output.splitlines()[-5:]))
     return output[:output.index("Halted")].splitlines()
-
-
-def host_lines(src: str, tmp: str) -> List[str]:
-    """The output of the same program, with the same math sources, on the
-    host."""
-    objs = []
-    for c in sorted(glob.glob(os.path.join(MATH, "*.c"))) + [src]:
-        o = os.path.join(tmp, "h_" + os.path.basename(c)[:-2] + ".o")
-        run(["clang", *HOST_CFLAGS, "-I", MATH, "-c", "-o", o, c])
-        objs.append(o)
-    exe = os.path.join(tmp, "host")
-    run(["clang", "-o", exe, *objs])
-    return run([exe]).splitlines()
 
 
 def libm() -> ctypes.CDLL:
@@ -364,7 +337,7 @@ def truth(lib: ctypes.CDLL, name: str, single: bool,
         fn.argtypes = [ctypes.c_double] * len(args)
         r = fn(*args)
         return D(r) if math.isfinite(r) else None
-    if name not in ("exp", "log", "log2", "log10", "pow"):
+    if name not in ("exp", "exp2", "log", "log2", "log10", "pow", "hypot"):
         r = reference_value(lib, name, args)
         return D(r) if math.isfinite(r) else None
     with decimal.localcontext() as ctx:
@@ -374,6 +347,11 @@ def truth(lib: ctypes.CDLL, name: str, single: bool,
             return None
         if name == "exp":
             return x.exp()
+        if name == "exp2":
+            return (x * D(2).ln()).exp()
+        if name == "hypot":
+            y = D(args[1])
+            return (x * x + y * y).sqrt() if y.is_finite() else None
         if x <= 0 and name != "pow":
             return None
         if name == "log":
@@ -480,12 +458,9 @@ def same(a: str, b: str, single: bool, ulps: int) -> bool:
 
 
 def main() -> None:
-    global FLOAT_LIB
     argv = sys.argv[1:]
-    errors = "--errors" in argv[:2]
-    if "--no-fpu" in argv[:2]:
-        FLOAT_LIB = "float.nasm"
-    argv = [a for a in argv[:2] if a not in ("--errors", "--no-fpu")] + argv[2:]
+    errors = "--errors" in argv[:1]
+    argv = [a for a in argv[:1] if a != "--errors"] + argv[1:]
     if len(argv) < 2:
         sys.exit(__doc__.split("\n\n")[1])
     seed, count = int(argv[0]), int(argv[1])
@@ -501,22 +476,21 @@ def main() -> None:
         with open(src, "w") as f:
             f.write(src_text)
         got = nice_lines(src, tmp, count)
-        host = host_lines(src, tmp)
     lib = libm()
     bad = 0
     line = 0
     worst: Dict[str, float] = {}
     total = sum(len(a) for _, _, a in cases)
-    if len(got) != total or len(host) != total:
-        print(f"{len(got)} lines on NICE, {len(host)} on the host, instead of {total}")
+    if len(got) != total:
+        print(f"{len(got)} lines on NICE instead of {total}")
         bad += 1
     for name, single, args in cases:
         exact = FUNCS[name][1]
         fn = name + ("f" if single else "")
         for a in args:
-            if line >= min(len(got), len(host)):
+            if line >= len(got):
                 break
-            g, h = got[line], host[line]
+            g = got[line]
             line += 1
             if name in ("fmin", "fmax"):
                 ref = c_minmax(name, single, a)
@@ -527,18 +501,17 @@ def main() -> None:
             else:
                 ok, want, err = accurate(lib, name, single, a, g, ref)
                 worst[fn] = max(worst.get(fn, 0.0), err)
-            for what, good, shown in (("host", same(g, h, single, 0), h), ("true", ok, want)):
-                if not good:
-                    bad += 1
-                    if bad <= 20:
-                        arg = ", ".join(f"{bits(x, single) if FUNCS[name][0] != 'di' or i == 0 else int(x):#x}"
-                                        for i, x in enumerate(a))
-                        print(f"MISMATCH {fn}({arg}): NICE {g}, {what} {shown}")
+            if not ok:
+                bad += 1
+                if bad <= 20:
+                    arg = ", ".join(f"{bits(x, single) if FUNCS[name][0] != 'di' or i == 0 else int(x):#x}"
+                                    for i, x in enumerate(a))
+                    print(f"MISMATCH {fn}({arg}): NICE {g}, true {want}")
     if errors:
         for fn, err in worst.items():
             print(f"{fn:8} {err:.3f} ulp")
     print(f"{'FAIL' if bad else 'PASS'} math fuzz (seed {seed}, {count} inputs to each of "
-          f"{2 * len(names)} functions, {FLOAT_LIB})")
+          f"{2 * len(names)} functions)")
     sys.exit(1 if bad else 0)
 
 

@@ -75,34 +75,28 @@ endef
 
 # The tests of nice.zig and nice.rs, test/X.zig and test/X.rs, as in
 # libc/Makefile: each test/X.wasm is translated, joined with
-# start_wasm.nasm, lib.nasm, and muldiv_mpu.nasm, and the float library if it is
-# in FLOAT_WASM_TESTS, and run with test/X.input, if there is one, as the
-# console input. The console output, main's result in R1, and the
-# exit status are compared with test/X.expected. The float library is
-# float_fpu.nasm, or float.nasm with NO_FPU=1, as in libc/Makefile, and a
-# test of FLOAT_WASM_TESTS runs again with float.nasm, as X_soft_float,
-# compared with the same file. The .wasm files are
-# checked in, so make test needs no Zig or Rust; make wasm rebuilds them.
+# start_wasm.nasm, lib.nasm, and muldiv_mpu.nasm, and the float library,
+# float_fpu.nasm, if it is in FLOAT_WASM_TESTS, and run with test/X.input,
+# if there is one, as the console input. The console output, main's
+# result in R1, and the exit status are compared with test/X.expected.
+# The .wasm files are checked in, so make test needs no Zig or Rust; make
+# wasm rebuilds them.
 ZIG_TESTS = nicezig zigpoll zigheap zigline zigfloat
 RUST_TESTS = nicers rustpoll rustheap rustline rustfloat
 FLOAT_WASM_TESTS = zigfloat rustfloat
-
-# The float library: float_fpu.nasm, with the FPU of DEVICES §11, or
-# float.nasm with NO_FPU=1, for a system without it.
-FLOAT_LIB = $(if $(NO_FPU),float.nasm,float_fpu.nasm)
 
 # The options for nicewasm.py of a test, if any.
 WASM_OPTS_rustheap = --memory-pages 2
 WASM_OPTS_zigheap = --memory-pages 2
 
-# Translates test/$(1).wasm with the options $(4), joins it with the
-# float library $(3) if the test needs it, assembles it, and runs it, as
+# Translates test/$(1).wasm with the options $(3), joins it with the
+# float library if the test needs it, assembles it, and runs it, as
 # the run $(2): test/$(2).out gets the console output, R1, and the exit
 # status. One shell command, for check_wasm and its keep.
 define run_wasm
-$(PYTHON) ../translator/nicewasm.py $(4) -o test/$(2).out.nasm test/$(1).wasm && \
+$(PYTHON) ../translator/nicewasm.py $(3) -o test/$(2).out.nasm test/$(1).wasm && \
 	  cat start_wasm.nasm test/$(2).out.nasm lib.nasm muldiv_mpu.nasm \
-	    $(if $(filter $(1),$(FLOAT_WASM_TESTS)),$(3)) > test/$(2).full.nasm && \
+	    $(if $(filter $(1),$(FLOAT_WASM_TESTS)),float_fpu.nasm) > test/$(2).full.nasm && \
 	  $(ASM) -o test/$(2).out.bin test/$(2).full.nasm && \
 	  { $(EMU) $(if $(wildcard test/$(1).input),--input test/$(1).input) test/$(2).out.bin < /dev/null > test/$(2).raw; \
 	    echo "exit $$?" > test/$(2).status; } && \
@@ -116,60 +110,27 @@ endef
 # whose output is the expected one is kept.
 KEEP_BYTES = 8192 16384 32768
 
-# $(1) is the test, $(2) the name of the run, and $(3) the float library.
+# $(1) is the test, and $(2) the name of the run.
 define check_wasm
-	@$(call run_wasm,$(1),$(2),$(3),$(WASM_OPTS_$(1)))
+	@$(call run_wasm,$(1),$(2),$(WASM_OPTS_$(1)))
 	@if cmp -s test/$(2).out test/$(1).expected; then echo "PASS $(2)"; \
 	else echo "FAIL $(2)"; diff test/$(1).expected test/$(2).out; exit 1; fi
 	$(call keep,test/$(2).out.bin,$(wildcard test/$(1).input),$(2))
 	$(if $(KEEP),$(if $(WASM_OPTS_$(1)),,@for n in $(KEEP_BYTES); do \
-	  if { $(call run_wasm,$(1),$(2)_keep,$(3),--memory-bytes $$n); } 2>/dev/null && \
+	  if { $(call run_wasm,$(1),$(2)_keep,--memory-bytes $$n); } 2>/dev/null && \
 	    cmp -s test/$(2)_keep.out test/$(1).expected; then cp test/$(2)_keep.out.bin $(KEEP)/$(2).bin; break; fi; \
 	done))
 
 endef
 
-test: emulator float.nasm
+test: emulator
 	$(foreach t,$(TESTS),$(call check,$(t),$(t),muldiv_mpu.nasm))
 	$(foreach t,$(SOFT_TESTS),$(call check,$(t)_soft,$(t),muldiv_soft.nasm))
-	$(foreach t,$(ZIG_TESTS) $(RUST_TESTS),$(call check_wasm,$(t),$(t),$(FLOAT_LIB)))
-	$(if $(NO_FPU),,$(foreach t,$(FLOAT_WASM_TESTS),$(call check_wasm,$(t),$(t)_soft_float,float.nasm)))
+	$(foreach t,$(ZIG_TESTS) $(RUST_TESTS),$(call check_wasm,$(t),$(t)))
 	@$(PYTHON) test/float_fpu.py
 	@$(PYTHON) test/colors.py
 	@rm -f test/*.out test/*.out.nasm test/*.out.bin test/*.full.nasm test/*.raw test/*.status
 	@$(MAKE) --no-print-directory -C libc test
-
-# The float library, translated from float.wasm as the library module float
-# (WASM.md). Only float.wasm is checked in. It is translated with --no-mpu,
-# so that it calls __udiv64 rather than using the math unit, and so joins
-# with muldiv_mpu.nasm and muldiv_soft.nasm alike.
-float.nasm: float.wasm ../translator/nicewasm.py
-	$(PYTHON) ../translator/nicewasm.py --library float --no-mpu -o float.nasm float.wasm
-
-# Rebuilds float.wasm from float.zig and parts of Zig's compiler_rt. This
-# needs Zig 0.17. Each compiler_rt file imports compiler_rt.zig, whose
-# first top-level comptime block exports all of compiler_rt. The copy
-# leaves that block out, so that only the files float.zig imports export
-# their routines.
-FLOAT_EXPORTS = __addsf3 __subsf3 __mulsf3 __divsf3 __adddf3 __subdf3 __muldf3 __divdf3 \
-  __eqsf2 __nesf2 __ltsf2 __lesf2 __gtsf2 __gesf2 __eqdf2 __nedf2 __ltdf2 __ledf2 __gtdf2 __gedf2 \
-  __floatsisf __floatunsisf __floatdisf __floatundisf __floatsidf __floatunsidf __floatdidf \
-  __floatundidf __extendsfdf2 __truncdfsf2 __fixsfsi __fixunssfsi __fixsfdi __fixunssfdi \
-  __fixdfsi __fixunsdfsi __fixdfdi __fixunsdfdi __ceilsf __floorsf __truncsf __nearestsf \
-  __ceildf __floordf __truncdf __nearestdf __minsf __maxsf __mindf __maxdf __sqrtsf __sqrtdf
-
-float:
-	rm -rf build && mkdir build
-	lib=$$($(ZIG) env | sed -n 's/.*\.lib_dir = "\(.*\)".*/\1/p'); \
-	cp -r "$$lib/compiler_rt" build/ && \
-	awk '!done && /^comptime \{/ { skip = 1 } skip { if (/^\}/) { skip = 0; done = 1 } next } { print } \
-	  END { if (!done) exit 1 }' "$$lib/compiler_rt.zig" > build/compiler_rt.zig
-	cp float.zig build/
-	$(ZIG) build-exe -target wasm32-freestanding -fno-entry -fno-compiler-rt -O ReleaseSmall \
-	  -fstrip --stack 1024 --initial-memory=65536 $(FLOAT_EXPORTS:%=--export=%) \
-	  -femit-bin=float.wasm build/float.zig
-	chmod -x float.wasm
-	rm -rf build float.wasm.o
 
 # Rebuilds the .wasm files of the Zig and Rust tests. This needs Zig 0.17
 # and rustc with the wasm32-unknown-unknown target.
@@ -193,10 +154,10 @@ emulator:
 # Needs mypy (pip install mypy).
 typecheck:
 	cd libc/test && $(PYTHON) -m mypy --strict fuzz_printf.py fuzz_strtod.py fuzz_math.py
-	cd test && MYPYPATH=../../translator:../../translator/test:../../assembler $(PYTHON) -m mypy --strict float_fpu.py colors.py
+	cd test && MYPYPATH=../../translator:../../translator/test:../../assembler:../../emulator/test $(PYTHON) -m mypy --strict float_fpu.py colors.py
 
 clean:
-	rm -f test/*.out test/*.out.nasm test/*.out.bin test/*.full.nasm test/*.raw test/*.status float.nasm
+	rm -f test/*.out test/*.out.nasm test/*.out.bin test/*.full.nasm test/*.raw test/*.status
 	$(MAKE) -C libc clean
 
-.PHONY: test emulator typecheck clean float wasm
+.PHONY: test emulator typecheck clean wasm

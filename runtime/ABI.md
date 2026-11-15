@@ -115,7 +115,7 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 - A routine may be written in assembly, or translated from a library module ([WASM.md](../translator/WASM.md)).
 - The labels of its routines start with `__`. Their C names start with `_`, which C reserves for the implementation at file scope. The labels inside a translated library module start with `WL.` ([WASM.md](../translator/WASM.md)), which no C name can produce.
 - The multiply and divide routines, for one-word integers and for `long long`, the bit counts, and `nice_isqrt64` (below) come in two versions: one that uses the math unit of [DEVICES.md §2](../doc/DEVICES.md#2-math-unit), and one in software for systems without it. A program contains exactly one of the two.
-- So do the float routines: one version uses the FPU of [DEVICES.md §11](../doc/DEVICES.md#11-floating-point-unit), and one is in software. A program contains exactly one of the two.
+- The float routines use the FPU of [DEVICES.md §11](../doc/DEVICES.md#11-floating-point-unit), so a program that uses floats runs only on a system that has it. The same library holds most functions of the C library's `math.h`, at the labels `_name` of their C names, such as `_pow`.
 - The table lists the routines for one-word integers. The runtime library's README lists all routines, including those for `long long`, floating point, and conversions between them.
 
 | Label | Result in R1 |
@@ -126,7 +126,7 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 
 Division by zero is undefined in C, so these routines may return any value for it.
 
-**The FPU.** A routine may use 8 values of the FPU's stack ([DEVICES.md §11.5](../doc/DEVICES.md#115-rules-for-programs)), and leaves the depth as it found it, so a caller may keep up to 8 values on the stack across a call. The FPU's flags are not preserved, and compiled and translated code never reads them. An interrupt service routine does not use the FPU.
+**The FPU.** A routine may use 8 values of the FPU's stack ([DEVICES.md §11.5](../doc/DEVICES.md#115-rules-for-programs)), and leaves the depth as it found it, so a caller may keep up to 8 values on the stack across a call. The routines of the float library for the functions of `math.h` that run a function of DEVICES.md §11.3, such as `_pow`, use up to 15, so a caller keeps at most one value across those. The FPU's flags are not preserved, and compiled and translated code never reads them. An interrupt service routine does not use the FPU.
 
 **Device routines.** The runtime library also has routines for the devices of the emulator and the FPGA implementation, so that programs need not use their addresses. They are the console ([DEVICES.md §1](../doc/DEVICES.md#1-console-screen-and-read-counter)), the performance counters ([DEVICES.md §3](../doc/DEVICES.md#3-performance-counters)), and the emulator's character screen at `0xFFFF0000` ([DEVICES.md §1](../doc/DEVICES.md#1-console-screen-and-read-counter)). Unlike the routines above, a program calls them by name, so they are ordinary C functions: `nice_putc` has the label `_nice_putc`. External C names that start with `nice_` are reserved for them.
 

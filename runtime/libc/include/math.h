@@ -1,12 +1,16 @@
-// The math functions of C, in double and float. The functions are musl's
-// (src/math/COPYRIGHT), and so are the classification macros, adapted.
-// There are no long double functions: wasm32's long double is a
-// binary128, which the float library does not support.
+// The math functions of C, in double and float. Most are routines of the
+// float library, on the functions of the FPU (DEVICES.md §11.3), and are
+// declared here as imports from env, at the labels _name (WASM.md). sin,
+// cos, and tan are C, on the FPU's functions, and musl's code for a huge
+// argument. frexp, modf, fmin, and fmax are musl's (src/math/COPYRIGHT),
+// and so are the classification macros, adapted. There are no long double
+// functions: wasm32's long double is a binary128, which the float library
+// does not support.
 //
 // No function sets errno, and the C library reads no flag of the FPU, so
 // math_errhandling is 0: a domain error gives a NaN, and a pole or an
-// overflow an infinity, with no other report (runtime/README.md, C
-// library).
+// overflow an infinity, with no other report (runtime/README.md, Math
+// functions).
 #ifndef _MATH_H
 #define _MATH_H
 
@@ -93,22 +97,47 @@ static __inline int __fpclassify(double __x)
     sizeof(x) == sizeof(float) ? (int)(__FLOAT_BITS(x) >> 31) : \
     (int)(__DOUBLE_BITS(x) >> 63))
 
-double acos(double);
-float acosf(float);
-double asin(double);
-float asinf(float);
-double atan(double);
-float atanf(float);
-double atan2(double, double);
-float atan2f(float, float);
+// The routines of the float library.
+#define __NICE_FPU(name) __attribute__((import_module("env"), import_name(#name)))
+__NICE_FPU(acos) double acos(double);
+__NICE_FPU(acosf) float acosf(float);
+__NICE_FPU(asin) double asin(double);
+__NICE_FPU(asinf) float asinf(float);
+__NICE_FPU(atan) double atan(double);
+__NICE_FPU(atanf) float atanf(float);
+__NICE_FPU(atan2) double atan2(double, double);
+__NICE_FPU(atan2f) float atan2f(float, float);
+__NICE_FPU(exp) double exp(double);
+__NICE_FPU(expf) float expf(float);
+__NICE_FPU(exp2) double exp2(double);
+__NICE_FPU(exp2f) float exp2f(float);
+__NICE_FPU(fmod) double fmod(double, double);
+__NICE_FPU(fmodf) float fmodf(float, float);
+__NICE_FPU(hypot) double hypot(double, double);
+__NICE_FPU(hypotf) float hypotf(float, float);
+__NICE_FPU(ldexp) double ldexp(double, int);
+__NICE_FPU(ldexpf) float ldexpf(float, int);
+__NICE_FPU(log) double log(double);
+__NICE_FPU(logf) float logf(float);
+__NICE_FPU(log10) double log10(double);
+__NICE_FPU(log10f) float log10f(float);
+__NICE_FPU(log2) double log2(double);
+__NICE_FPU(log2f) float log2f(float);
+__NICE_FPU(pow) double pow(double, double);
+__NICE_FPU(powf) float powf(float, float);
+__NICE_FPU(round) double round(double);
+__NICE_FPU(roundf) float roundf(float);
+__NICE_FPU(scalbn) double scalbn(double, int);
+__NICE_FPU(scalbnf) float scalbnf(float, int);
+#undef __NICE_FPU
+
+// The functions in C.
 double ceil(double);
 float ceilf(float);
 double copysign(double, double);
 float copysignf(float, float);
 double cos(double);
 float cosf(float);
-double exp(double);
-float expf(float);
 double fabs(double);
 float fabsf(float);
 double floor(double);
@@ -117,30 +146,14 @@ double fmax(double, double);
 float fmaxf(float, float);
 double fmin(double, double);
 float fminf(float, float);
-double fmod(double, double);
-float fmodf(float, float);
 double frexp(double, int *);
 float frexpf(float, int *);
-double ldexp(double, int);
-float ldexpf(float, int);
-double log(double);
-float logf(float);
-double log10(double);
-float log10f(float);
-double log2(double);
-float log2f(float);
 double modf(double, double *);
 float modff(float, float *);
 double nearbyint(double);
 float nearbyintf(float);
-double pow(double, double);
-float powf(float, float);
 double rint(double);
 float rintf(float);
-double round(double);
-float roundf(float);
-double scalbn(double, int);
-float scalbnf(float, int);
 double sin(double);
 float sinf(float);
 double sqrt(double);

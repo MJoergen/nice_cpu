@@ -13,11 +13,13 @@ LDFLAGS = -nostdlib -Wl,--no-entry -Wl,--export=main -Wl,--stack-first -Wl,-z,st
 SRCS = $(wildcard src/*.c)
 OBJS = $(SRCS:src/%.c=build/%.o)
 
-# The math functions of math.h, musl's but for libm.h, features.h, and
-# builtin.c (src/math/COPYRIGHT). They include their own headers with
-# angle brackets, as in musl. -Os keeps clang from unrolling the loops of
-# __rem_pio2_large, the reduction of a huge argument of sin, cos, and tan,
-# which saves 2200 words and no step on other arguments.
+# The math functions of math.h that are C (README.md, Math functions):
+# sin, cos, and tan, on the FPU's functions and musl's reduction of a
+# huge argument, and musl's frexp, modf, fmin, and fmax, but for libm.h,
+# features.h, and builtin.c (src/math/COPYRIGHT). They include their own
+# headers with angle brackets, as in musl. -Os keeps clang from unrolling
+# the loops of __rem_pio2_large, which saves 2200 words and no step on
+# other arguments.
 MATH_CFLAGS = $(filter-out -O2,$(CFLAGS)) -Os -I src/math
 MATH_SRCS = $(wildcard src/math/*.c)
 MATH_OBJS = $(MATH_SRCS:src/math/%.c=build/math/%.o)
@@ -74,14 +76,11 @@ wasm: libc.a
 	@chmod -x test/*.wasm
 
 # Each test/X.wasm is translated and joined with the start-up code,
-# lib.nasm, and muldiv_mpu.nasm, and the float library if the program names one
-# of its labels, as nicebuild joins it: math, and every test that links
-# scanf, whose float conversions use floats. The float library is
-# float_fpu.nasm, which uses the FPU, and with NO_FPU=1 float.nasm, and
-# the labels are those of the one that is joined. It is assembled and run, and
-# the console output, main's result in R1, and the exit status are compared with
-# test/X.expected. A test that calls the float library runs again with
-# float.nasm, and must give the same output. With KEEP=DIR, an absolute path, each test also leaves
+# lib.nasm, and muldiv_mpu.nasm, and the float library, float_fpu.nasm, if
+# the program names one of its labels, as nicebuild joins it: math, and
+# every test that links scanf, whose float conversions use floats. It is
+# assembled and run, and the console output, main's result in R1, and the
+# exit status are compared with test/X.expected. With KEEP=DIR, an absolute path, each test also leaves
 # its program in DIR/libc_X.bin, and its console input in DIR/libc_X.input,
 # for the tests of the FPGA core in hdl/. If test/X.core.input exists, that is
 # the input it leaves. mchess.core.input has no "perft 3", which takes 11
@@ -105,7 +104,7 @@ KEEP_BYTES = 8192 16384 32768
 define run
 $(NICEWASM) $(5) -o test/$(1).out.nasm test/$(2).wasm && \
 	  cat $(3) test/$(1).out.nasm ../lib.nasm ../muldiv_mpu.nasm > test/$(1).full.nasm && \
-	  { if grep -qwFf build/float.labels test/$(1).out.nasm; then cat ../$(FLOAT_LIB) >> test/$(1).full.nasm; fi; } && \
+	  { if grep -qwFf build/float.labels test/$(1).out.nasm; then cat ../float_fpu.nasm >> test/$(1).full.nasm; fi; } && \
 	  $(ASM) -o test/$(1).out.bin test/$(1).full.nasm && \
 	  { $(EMU) $(if $(wildcard test/$(2).input),--input test/$(2).input) test/$(1).out.bin < /dev/null > test/$(1).raw; \
 	    echo "exit $$?" > test/$(1).status; } && \
@@ -127,25 +126,13 @@ define check
 	  if { $(call run,$(1)_keep,$(2),$(3),$(4),--memory-bytes $$n); } 2>/dev/null && \
 	    cmp -s test/$(1)_keep.out test/$(1).expected; then cp test/$(1)_keep.out.bin $(KEEP)/libc_$(1).bin; break; fi; \
 	done))
-	$(if $(NO_FPU),,@if grep -qwFf build/float.labels test/$(1).out.nasm; then \
-	  cat $(3) test/$(1).out.nasm ../lib.nasm ../muldiv_mpu.nasm ../float.nasm > test/$(1).full.nasm && \
-	  $(ASM) -o test/$(1).out.bin test/$(1).full.nasm && \
-	  { $(EMU) $(if $(wildcard test/$(2).input),--input test/$(2).input) test/$(1).out.bin < /dev/null > test/$(1).raw; \
-	    echo "exit $$?" > test/$(1).status; } && \
-	  sed '/^\(Halted\|Stopped\)/,$$d' test/$(1).raw > test/$(1).out && \
-	  { grep -o ' $(4)' test/$(1).raw | cut -c2- >> test/$(1).out; cat test/$(1).status >> test/$(1).out; } && \
-	  if cmp -s test/$(1).out test/$(1).expected; then echo "PASS libc/$(1) with float.nasm"; \
-	  else echo "FAIL libc/$(1) with float.nasm"; diff test/$(1).expected test/$(1).out; exit 1; fi; fi)
 
 endef
 
-# The float library: float_fpu.nasm, or float.nasm with NO_FPU=1, for a
-# system without the FPU.
-FLOAT_LIB = $(if $(NO_FPU),float.nasm,float_fpu.nasm)
-
+# build/float.labels holds the labels of the float library's routines:
+# ___name for the float operations, and _name for the functions of math.h.
 test: emulator
-	@$(MAKE) -s --no-print-directory -C .. float.nasm
-	@mkdir -p build && grep -oE '^__[A-Za-z0-9_]+' ../$(FLOAT_LIB) > build/float.labels
+	@mkdir -p build && grep -oE '^_[A-Za-z0-9_]+$$' ../float_fpu.nasm > build/float.labels
 	$(foreach t,$(TESTS),$(call check,$(t),$(t),../start_wasm.nasm,R1  [0-9a-f]*))
 	$(foreach t,$(MON_TESTS),$(call check,$(t)_mon,$(t),../test/monitor.nasm ../start_wasm_mon.nasm,R1  [0-9a-f]* R2  [0-9a-f]*))
 	$(foreach t,$(SMALL_TESTS),$(call check,$(t)_small,$(t),../start_wasm.nasm,R1  [0-9a-f]*,--memory-bytes 32768))
@@ -153,18 +140,14 @@ test: emulator
 
 # A random test of the printf family and the i family against a model of
 # C's printf, test/fuzz_printf.py, one of strtod and strtof against exact arithmetic,
-# test/fuzz_strtod.py, and one of the math functions against the same
-# code on the host and the host's libm, test/fuzz_math.py. The last two
-# run with each float library, float_fpu.nasm and float.nasm; printf
-# needs none. They compile programs with clang, so make test does not run
+# test/fuzz_strtod.py, and one of the math functions against the host's
+# libm and exact arithmetic, test/fuzz_math.py. They compile programs with clang, so make test does not run
 # them, and the top-level make slow does.
 fuzz: libc.a emulator
 	@$(PYTHON) test/fuzz_printf.py 1 300
 	@$(PYTHON) test/fuzz_printf.py --integer 1 300
 	@$(PYTHON) test/fuzz_strtod.py 1 1000
-	@$(PYTHON) test/fuzz_strtod.py --no-fpu 1 1000
 	@$(PYTHON) test/fuzz_math.py 1 1000
-	@$(PYTHON) test/fuzz_math.py --no-fpu 1 1000
 
 emulator:
 	$(MAKE) -C ../../emulator build

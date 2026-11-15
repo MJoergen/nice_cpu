@@ -316,7 +316,21 @@ benchmark's module became 8560, not 8623.
 Until 2026-11-13 the float library in software, `runtime/float.nasm`, was
 the only one, and `nicebuild.py` joined it to every program with floats.
 Then the FPU of DEVICES.md §11 came, with `runtime/float_fpu.nasm` on it
-(#161), and nicebuild joins that one unless with `--no-fpu`. Until
+(#161), and nicebuild joined that one unless with `--no-fpu`. On
+2026-11-15 the float library in software went, with `--no-fpu` of
+nicewasm and nicebuild and the `NO_FPU=1` builds (#184): a program with
+floats needs the FPU since. It was `runtime/float.zig` and parts of
+Zig's compiler_rt, compiled to `runtime/float.wasm` and translated as
+the library module `float`, 6844 words joined to a program, of which
+256 were its stack. The same day, the functions of `math.h` became
+routines of `float_fpu.nasm` on the FPU's functions, in place of
+musl's code, but for the reduction of a huge argument of `sin`, `cos`,
+and `tan`. A program that used all of them had 23413 words of them,
+and now has 7268. musl's `exp(1)` was the double nearest e; the FPU's
+is the double above, as fdlibm's. musl's `acosf(-1)`, `acosf(0)`, and
+`atanf` of an infinity were the float below π or π/2; they are now the
+nearest. On the emulator, `sin` took some 670 steps and `pow` 1500, and
+6500 and 15000 without the FPU. Until
 2026-11-14 nicewasm reserved only the start of a library module's
 memory with `--library-memory`, and of a program's in a ROM with
 `--ram-bytes`, and nicebuild had `--ram-bytes` too. `--memory-bytes`

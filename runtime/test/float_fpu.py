@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Checks float_fpu.nasm against float.nasm, the float library in software.
+"""Checks float_fpu.nasm, the float library, against exact arithmetic.
 
 Usage: float_fpu.py [--seed N] [--count N] [--keep DIR]
 
-One program calls every routine of the float library on special operands,
-each with each, and on random ones: values near the integers, the ties of
-the rounding, and the limits of the conversions. It runs twice, joined
-with float.nasm and then with float_fpu.nasm, which uses the FPU of
-DEVICES.md §11. The results must be the same, but that a NaN may be any
-NaN: float.nasm passes the payload of a NaN on, and the FPU gives the
-canonical NaN, which wasm allows.
+One program calls every routine of the float library for a float
+operation on special operands, each with each, and on random ones:
+values near the integers, the ties of the rounding, and the limits of
+the conversions. Each result must be the one that the operation gives
+in wasm, which reference() computes exactly with emulator/test/
+fpu_model.py's formats, but that a NaN may be any NaN: the FPU gives
+the canonical NaN, which wasm allows. A comparison must give libgcc's
+result, -1, 0, or 1, and for a NaN the value that makes its test fail.
 
 A routine leaves the FPU's stack as it found it, so that a caller may
 keep values there across a call (DEVICES.md §11.5, ABI.md). So the
@@ -19,13 +20,20 @@ FPU's STATUS, whose depth must be 14, with no stack fault, and then pops
 the values, which must be those it pushed, and reads STATUS again, whose
 depth must be 0.
 
-It runs a third time with the float operations that nicewasm's
+It runs a second time with the float operations that nicewasm's
 --inline-fpu writes inline: a wasm module has a function for each
 routine, which does the wasm instruction that calls it, trunc_sat for a
 conversion to an integer, translated with --inline-fpu, and the program
 calls those functions instead. A comparison gives 0 or 1 there, which
-must be the test of the routine's result. With --keep DIR, the program with float_fpu.nasm
-is left in DIR/float_fpu.bin for the tests of the FPGA cores.
+must be the test of the routine's result. With --keep DIR, the first
+program is left in DIR/float_fpu.bin for the tests of the FPGA cores.
+
+A second program calls the routines of the functions of math.h in the
+same way, with one value kept, as they use up to 15 (ABI.md). Their
+results must be those of fpu_model.py's FPU, which runs the commands
+that DEVICES.md §11.3 defines, with the special cases of C: pow of a
+zero exponent or of 1 is 1, and hypot of an infinity is +inf, with a
+NaN as the other operand too.
 """
 
 import argparse
@@ -36,7 +44,8 @@ import struct
 import subprocess
 import sys
 import tempfile
-from typing import Dict, List, Tuple
+from fractions import Fraction
+from typing import Callable, Dict, List, Tuple
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUNTIME = os.path.dirname(HERE)
@@ -46,8 +55,11 @@ NICEEMU = os.environ.get("NICEEMU", os.path.join(ROOT, "emulator", "zig-out", "b
 NICEWASM = os.path.join(ROOT, "translator", "nicewasm.py")
 sys.path.insert(0, os.path.join(ROOT, "translator"))
 sys.path.insert(0, os.path.join(ROOT, "translator", "test"))
+sys.path.insert(0, os.path.join(ROOT, "emulator", "test"))
+import fpu_model  # noqa: E402
 import nicewasm  # noqa: E402
 import wasm  # noqa: E402
+from fpu_model import F32, F64, Format  # noqa: E402
 
 # The routines: label -> (the types of the operands, the type of the
 # result). f is an f32, d an f64, i a word, and l a long long.
@@ -70,9 +82,26 @@ ROUTINES["___extendsfdf2"] = ("f", "d")
 ROUTINES["___truncdfsf2"] = ("d", "f")
 WORDS = {"f": 1, "i": 1, "d": 2, "l": 2}
 
+# The routines of the functions of math.h: label -> (the types of the
+# operands, the type of the result, the command). The float version of
+# each has the label with f, and the types with f for d.
+MATH: Dict[str, Tuple[str, str, int]] = {}
+for _name, _cmd in (("_nice_sin", 0x40), ("_nice_cos", 0x41), ("_nice_tan", 0x42), ("_asin", 0x43),
+                    ("_acos", 0x44), ("_atan", 0x45), ("_log", 0x48), ("_log2", 0x49),
+                    ("_log10", 0x4A), ("_exp", 0x4C), ("_exp2", 0x4D), ("_round", 0x24),
+                    ("_atan2", 0x46), ("_fmod", 0x1D), ("_pow", 0x4E), ("_hypot", 0x4F),
+                    ("_ldexp", 0x38), ("_scalbn", 0x38)):
+    _args = "di" if _cmd == 0x38 else "dd" if _cmd in (0x46, 0x1D, 0x4E, 0x4F) else "d"
+    MATH[_name] = (_args, "d", _cmd)
+    if not _name.startswith("_nice"):
+        MATH[_name + "f"] = (_args.replace("d", "f"), "f", _cmd)
+M32 = 0xFFFFFFFF
+
 # The values that the program keeps on the FPU's stack across the calls,
-# pushed in this order as raw bits, a NaN with a payload among them.
+# pushed in this order as raw bits, a NaN with a payload among them, and
+# the one value that the program of the functions keeps.
 KEPT = [0x3FF0000000000000 + (i << 44) + 0x0123456789 * i for i in range(13)] + [0x7FF4000000000BAD]
+KEPT_MATH = [0x7FF4000000000BAD]
 STACK_FAULT = 1 << 11
 
 F32_SPECIALS = [0x00000000, 0x80000000, 0x00000001, 0x80000001, 0x007FFFFF, 0x00800000,
@@ -205,18 +234,13 @@ def words(args: str, values: Tuple[int, ...]) -> List[int]:
     return out + [0] * (4 - len(out))
 
 
-# The words after the results of the calls: STATUS, the kept values, and
-# STATUS again.
-TAIL = 2 + 2 * len(KEPT)
-
-
-def program(calls: List[Tuple[str, List[int]]]) -> str:
-    """The test's main: the values of KEPT pushed; for each call, R1 to R4
+def program(calls: List[Tuple[str, List[int]]], kept: List[int]) -> str:
+    """The test's main: the values of kept pushed; for each call, R1 to R4
     from the table, the call, and R1 and R2 to the results; then STATUS,
     the kept values, popped, and STATUS again."""
     lines = ["_main          MOVE    R10, TABLE",
              "                MOVE    R11, RESULTS"]
-    for v in KEPT:
+    for v in kept:
         lines += [f"                MOVE    @0xFFFFFF88, 0x{v & 0xFFFFFFFF:08X}  ; X_LO",
                   f"                MOVE    @0xFFFFFF89, 0x{v >> 32:08X}  ; X_HI"]
     lines += [
@@ -232,7 +256,7 @@ def program(calls: List[Tuple[str, List[int]]]) -> str:
              "                DEC[M]  R9, R9",
              "        ?!Z     JMP     :-",
              "                MOVE    @R11++, @0xFFFFFF8D  ; STATUS"]
-    for _ in KEPT:
+    for _ in kept:
         lines += ["                MOVE    @R11++, @0xFFFFFF88  ; X_LO",
                   "                MOVE    @R11++, @0xFFFFFF89  ; X_HI",
                   "                MOVE    @0xFFFFFF8C, 3  ; DROP"]
@@ -242,7 +266,7 @@ def program(calls: List[Tuple[str, List[int]]]) -> str:
               "TABLE"]
     for label, w in calls:
         lines.append("                .DAT    " + ", ".join(f"0x{x:08X}" for x in w) + f", {label}")
-    lines.append("RESULTS         .RES    " + str(2 * len(calls) + TAIL))
+    lines.append("RESULTS         .RES    " + str(2 * len(calls) + 2 + 2 * len(kept)))
     return "\n".join(lines) + "\n"
 
 
@@ -278,66 +302,172 @@ def inline_module() -> bytes:
                        wasm.code(*bodies))
 
 
+def fmt(t: str) -> Format:
+    return F32 if t == "f" else F64
+
+
+def min_max(f: Format, a: int, b: int, want_max: bool) -> int:
+    """wasm's min and max: a NaN gives a NaN, and -0 is below +0."""
+    if f.is_nan(a) or f.is_nan(b):
+        return f.qnan
+    c = f.compare(a, b)
+    assert c is not None
+    if c == 0:  # equal, or zeros of either sign: the sign bits ANDed or ORed
+        return a & b if want_max else a | b
+    return a if (c > 0) == want_max else b
+
+
+def signed(v: int, bits: int) -> int:
+    return v - (1 << bits) if v >> (bits - 1) else v
+
+
+def reference(label: str, values: Tuple[int, ...]) -> int:
+    """The result of the float operation of a routine of ROUTINES, exact,
+    as the bits of its type."""
+    args, result = ROUTINES[label]
+    name = label[3:]
+    f = fmt(args[0])
+    a = values[0]
+    b = values[1] if len(values) > 1 else 0
+    for op in ("add", "sub", "mul", "div"):
+        if name == f"{op}{name[3:5]}3":
+            r: int = getattr(f, op)(a, b)[0]
+            return r
+    if name[:3] in ("min", "max"):
+        return min_max(f, a, b, name[:3] == "max")
+    if name[:-2] in ("sqrt", "ceil", "floor", "trunc", "nearest"):
+        how = name[:-2]
+        if how == "sqrt":
+            return f.sqrt(a)[0]
+        return f.to_integral(a, "even" if how == "nearest" else how)[0]
+    if len(name) == 5 and name[:2] in ("eq", "ne", "lt", "le", "gt", "ge"):
+        c = f.compare(a, b)
+        if c is None:  # a NaN: the value that makes the test fail
+            c = -1 if name[0] == "g" else 1
+        return c & M32
+    if name.startswith("float"):
+        bits = 32 if args == "i" else 64
+        i = a if "un" in name else signed(a, bits)
+        return fmt(result).round(Fraction(i))[0]
+    if name.startswith("fix"):
+        bits = 32 if result == "i" else 64
+        return f.to_int(a, bits, "uns" not in name)[0] & ((1 << bits) - 1)
+    if name == "extendsfdf2":
+        return F64.convert(a, F32)[0]
+    assert name == "truncdfsf2"
+    return F32.convert(a, F64)[0]
+
+
+def is_inf(t: str, v: int) -> bool:
+    return fmt(t).is_inf(v)
+
+
+def math_reference(label: str, values: Tuple[int, ...]) -> int:
+    """The result of a routine of MATH: the special cases of C, and
+    otherwise the command on fpu_model.py's FPU, with the operands pushed
+    and the result read as the routine does."""
+    args, result, cmd = MATH[label]
+    t = args[0]
+    one = 0x3F800000 if t == "f" else 0x3FF0000000000000
+    if label.startswith("_pow"):
+        x, y = values
+        if fmt(t).is_zero(y) or x == one:
+            return one
+    if label.startswith("_hypot") and (is_inf(t, values[0]) or is_inf(t, values[1])):
+        return fmt(t).inf
+    fpu = fpu_model.FPU()
+    for ty, v in zip(args, values):
+        if ty == "d":
+            fpu.write(fpu_model.X_LO, v & M32)
+            fpu.write(fpu_model.X_HI, v >> 32)
+        else:
+            fpu.write(fpu_model.X_S if ty == "f" else fpu_model.X_W, v)
+    fpu.write(fpu_model.CMD, cmd)
+    return fpu.read(fpu_model.X_S) if result == "f" else fpu.x()
+
+
 def is_nan(t: str, v: int) -> bool:
     if t == "f":
         return (v & 0x7FFFFFFF) > 0x7F800000
     return t == "d" and (v & 0x7FFFFFFFFFFFFFFF) > 0x7FF0000000000000
 
 
-def run(tmp: str, main: str, library: str, module: str = "") -> Tuple[List[int], int]:
-    """Joins, assembles, and runs the program with the library, and the
-    translated module if given, and returns the results and the address of
-    RESULTS."""
-    src = os.path.join(tmp, "prog.nasm")
+def run(tmp: str, main: str, kept: List[int], name: str, module: str = "") -> List[int]:
+    """Joins the program with float_fpu.nasm, and the translated module if
+    given, assembles it as tmp/name.bin, runs it, and returns the
+    results."""
+    src = os.path.join(tmp, name + ".nasm")
     with open(src, "w") as f:
         for part in ["start_wasm.nasm" if module else "start.nasm", None, "lib.nasm",
-                     "muldiv_mpu.nasm", library]:
+                     "muldiv_mpu.nasm", "float_fpu.nasm"]:
             if part is None:
                 f.write(main + module)
             else:
                 with open(os.path.join(RUNTIME, part)) as p:
                     f.write(p.read())
-    binary = os.path.join(tmp, library + (".inline" if module else "") + ".bin")
-    subprocess.run([sys.executable, NICEASM, "-o", binary, "--symbols", os.path.join(tmp, "prog.sym"), src],
-                   check=True)
-    with open(os.path.join(tmp, "prog.sym")) as f:
+    binary = os.path.join(tmp, name + ".bin")
+    sym_file = os.path.join(tmp, name + ".sym")
+    subprocess.run([sys.executable, NICEASM, "-o", binary, "--symbols", sym_file, src], check=True)
+    with open(sym_file) as f:
         sym = dict((p[1], int(p[0], 16)) for p in (line.split() for line in f) if len(p) == 2)
     count = main.count(".DAT")
     base = sym["RESULTS"]
-    proc = subprocess.run([NICEEMU, "-n", "200000000", "-d", f"0x{base:x}:{2 * count + TAIL}", binary],
-                          capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    proc = subprocess.run([NICEEMU, "-n", "200000000", "-d", f"0x{base:x}:{2 * count + 2 + 2 * len(kept)}",
+                           binary], capture_output=True, text=True, stdin=subprocess.DEVNULL)
     if proc.returncode != 0:
-        raise RuntimeError(f"{library}: exit {proc.returncode}\n{proc.stdout[-2000:]}{proc.stderr}")
+        raise RuntimeError(f"{name}: exit {proc.returncode}\n{proc.stdout[-2000:]}{proc.stderr}")
     out: List[int] = []
     for line in proc.stdout.splitlines():
         head, _, rest = line.partition(":")
         if rest and len(head) == 8 and int(head, 16) >= base:
             out += [int(w, 16) for w in rest.split()]
-    return out, base
+    return out
 
 
-def kept_failures(what: str, tail: List[int]) -> List[str]:
+def kept_failures(what: str, tail: List[int], kept: List[int]) -> List[str]:
     """What is wrong with the FPU's stack after the calls: tail is STATUS,
     the kept values popped from the top, and STATUS again."""
     out: List[str] = []
     status, popped, last = tail[0], tail[1:-1], tail[-1]
-    if status & 0x1F != len(KEPT) or status & STACK_FAULT:
-        out.append(f"{what}: after the calls, the FPU's depth is {status & 0x1F}, not {len(KEPT)},"
+    if status & 0x1F != len(kept) or status & STACK_FAULT:
+        out.append(f"{what}: after the calls, the FPU's depth is {status & 0x1F}, not {len(kept)},"
                    f" or the stack fault is set: STATUS 0x{status:08X}")
-    for i, v in enumerate(reversed(KEPT)):
+    for i, v in enumerate(reversed(kept)):
         got = popped[2 * i] | popped[2 * i + 1] << 32
         if got != v:
-            out.append(f"{what}: kept value {len(KEPT) - 1 - i} is 0x{got:016X}, not 0x{v:016X}")
+            out.append(f"{what}: kept value {len(kept) - 1 - i} is 0x{got:016X}, not 0x{v:016X}")
     if last & 0x1F != 0 or last & STACK_FAULT:
         out.append(f"{what}: after the pops, STATUS 0x{last:08X}")
     return out
 
 
+def result_of(out: List[int], i: int, t: str) -> int:
+    """The result of call i, of type t, from the words that the program
+    stored."""
+    return out[2 * i] | (out[2 * i + 1] << 32 if WORDS[t] == 2 else 0)
+
+
+def ops_text(values: Tuple[int, ...]) -> str:
+    return ", ".join(f"0x{v:X}" for v in values)
+
+
+def check_results(what: str, meta: List[Tuple[str, str, Tuple[int, ...]]], out: List[int],
+                  ref: Callable[[str, Tuple[int, ...]], int]) -> List[str]:
+    """The calls whose results differ from ref's, but that a NaN may be
+    any NaN."""
+    failures = []
+    for i, (label, result, values) in enumerate(meta):
+        got, want = result_of(out, i, result), ref(label, values)
+        if got != want and not (is_nan(result, got) and is_nan(result, want)):
+            failures.append(f"{label}({ops_text(values)}){what}: 0x{got:X}, want 0x{want:X}")
+    return failures
+
+
 def main() -> None:
-    ap = argparse.ArgumentParser(description="float_fpu.nasm against float.nasm")
+    ap = argparse.ArgumentParser(description="float_fpu.nasm against exact arithmetic")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--count", type=int, default=300, help="random cases for each routine")
-    ap.add_argument("--keep", help="leave the program with float_fpu.nasm in DIR/float_fpu.bin")
+    ap.add_argument("--keep", help="leave the program of the float operations in DIR/float_fpu.bin")
     args = ap.parse_args()
     r = random.Random(args.seed)
     calls: List[Tuple[str, List[int]]] = []
@@ -347,50 +477,51 @@ def main() -> None:
         for values in cases(r, types, args.count):
             calls.append((label, words(types, values)))
             meta.append((label, result, values))
-    main_text = program(calls)
+    math_calls: List[Tuple[str, List[int]]] = []
+    math_meta: List[Tuple[str, str, Tuple[int, ...]]] = []
+    for label in sorted(MATH):
+        types, result, _ = MATH[label]
+        for values in cases(r, types, args.count // 3):
+            math_calls.append((label, words(types, values)))
+            math_meta.append((label, result, values))
     with tempfile.TemporaryDirectory() as tmp:
-        soft, _ = run(tmp, main_text, "float.nasm")
-        fpu, _ = run(tmp, main_text, "float_fpu.nasm")
+        fpu = run(tmp, program(calls, KEPT), KEPT, "float_fpu")
         mod = os.path.join(tmp, "inline.wasm")
         with open(mod, "wb") as wf:
             wf.write(inline_module())
         subprocess.run([sys.executable, NICEWASM, "--inline-fpu", "-o", mod + ".nasm", mod], check=True)
         with open(mod + ".nasm") as nf:
             module_text = nf.read()
-        inline_text = program([("_t_" + label[3:], w) for label, w in calls])
-        inline, _ = run(tmp, inline_text, "float_fpu.nasm", module_text)
+        inline_text = program([("_t_" + label[3:], w) for label, w in calls], KEPT)
+        inline = run(tmp, inline_text, KEPT, "inline", module_text)
         if args.keep:
             os.makedirs(args.keep, exist_ok=True)
-            shutil.copy(os.path.join(tmp, "float_fpu.nasm.bin"), os.path.join(args.keep, "float_fpu.bin"))
-    failures: List[str] = []
+            shutil.copy(os.path.join(tmp, "float_fpu.bin"), os.path.join(args.keep, "float_fpu.bin"))
+        math = run(tmp, program(math_calls, KEPT_MATH), KEPT_MATH, "math")
+    failures = check_results("", meta, fpu, reference)
     for i, (label, result, values) in enumerate(meta):
-        if WORDS[result] == 2:
-            a = soft[2 * i] | soft[2 * i + 1] << 32
-            b = fpu[2 * i] | fpu[2 * i + 1] << 32
-        else:
-            a, b = soft[2 * i], fpu[2 * i]
-        if a != b and not (is_nan(result, a) and is_nan(result, b)):
-            ops = ", ".join(f"0x{v:X}" for v in values)
-            failures.append(f"{label}({ops}): float.nasm 0x{a:X}, float_fpu.nasm 0x{b:X}")
-        c = inline[2 * i] | (inline[2 * i + 1] << 32 if WORDS[result] == 2 and label not in TESTS else 0)
+        want = reference(label, values)
+        c = result_of(inline, i, "i" if label in TESTS else result)
         if label in TESTS:
-            signed = a - (1 << 32) if a >> 31 else a
-            want = int({"==": signed == 0, "!=": signed != 0, "<": signed < 0, "<=": signed <= 0,
-                        ">": signed > 0, ">=": signed >= 0}[TESTS[label]])
-            if c != want:
-                ops = ", ".join(f"0x{v:X}" for v in values)
-                failures.append(f"{label}({ops}) inline: {c}, the routine's test {want}")
-        elif a != c and not (is_nan(result, a) and is_nan(result, c)):
-            ops = ", ".join(f"0x{v:X}" for v in values)
-            failures.append(f"{label}({ops}): float.nasm 0x{a:X}, inline 0x{c:X}")
-    for out, what in ((soft, "float.nasm"), (fpu, "float_fpu.nasm"), (inline, "inline")):
-        failures += kept_failures(what, out[2 * len(meta):])
+            v = signed(want, 32)
+            passes = int({"==": v == 0, "!=": v != 0, "<": v < 0, "<=": v <= 0, ">": v > 0,
+                          ">=": v >= 0}[TESTS[label]])
+            if c != passes:
+                failures.append(f"{label}({ops_text(values)}) inline: {c}, the routine's test {passes}")
+        elif c != want and not (is_nan(result, c) and is_nan(result, want)):
+            failures.append(f"{label}({ops_text(values)}) inline: 0x{c:X}, want 0x{want:X}")
+    failures += check_results("", math_meta, math, math_reference)
+    for out, what, kept, n in ((fpu, "float_fpu.nasm", KEPT, len(meta)), (inline, "inline", KEPT, len(meta)),
+                               (math, "math", KEPT_MATH, len(math_meta))):
+        failures += kept_failures(what, out[2 * n:], kept)
     for f in failures[:30]:
         print(f)
+    total = len(meta) + len(math_meta)
     if failures:
-        print(f"FAIL float_fpu: {len(failures)} of {len(meta)} calls")
+        print(f"FAIL float_fpu: {len(failures)} of {total} calls")
         sys.exit(1)
-    print(f"PASS float_fpu ({len(meta)} calls of {len(ROUTINES)} routines, and inline)")
+    print(f"PASS float_fpu ({len(meta)} calls of {len(ROUTINES)} routines, and inline, and"
+          f" {len(math_meta)} of the {len(MATH)} routines of math.h)")
 
 
 if __name__ == "__main__":

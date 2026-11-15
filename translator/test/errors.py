@@ -427,8 +427,6 @@ COMMAND_CASES: List[Tuple[List[str], str]] = [
      "--memory-pages: a library module (--library) cannot grow its memory"),
     (["--ram", "0x100000000"], "--ram: 4294967296 is not a NICE address"),
     (["--ram", "-1"], "--ram: -1 is not a NICE address"),
-    (["--inline-fpu", "--no-fpu"],
-     "--inline-fpu: the inline accesses are to the FPU, which --no-fpu leaves out"),
     (["--ram", "0", "--library", "lib"], "--ram: a library module (--library) cannot run from a ROM"),
     (["--ram", "0", "--memory-pages", "2"],
      "--ram: the memory of code that runs from a ROM cannot grow (--memory-pages)"),

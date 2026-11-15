@@ -40,8 +40,6 @@ ERRORS: List[Tuple[List[str], str]] = [
     (["--memory-bytes", "16", "--memory-pages", "2", "a.c"],
      "nicebuild: --memory-bytes and --memory-pages do not go together: a memory reserved only"
      " in part cannot grow"),
-    (["--inline-fpu", "--no-fpu", "a.c"],
-     "nicebuild: --inline-fpu and --no-fpu do not go together: the inline accesses are to the FPU"),
     (["--ram", "0xFFFFF000", "--monitor", "a.c"],
      "nicebuild: --ram and --monitor do not go together: a monitor loads a program into RAM"),
     (["--ram", "0xFFFFF000", "--memory-pages", "2", "a.c"],
@@ -160,7 +158,7 @@ TWICE_NASM = "_twice          ADD     R1, R1, R1\n                MOVE    R15, @
 
 def test_c_options(tmp: str) -> None:
     """-D, -I, two C files, --asm, --stack, --memory, the float library,
-    --no-mpu and --no-fpu, and --memory-bytes give the same program; a compiler that fails, and an output
+    --no-mpu, and --memory-bytes give the same program; a compiler that fails, and an output
     that cannot be written, are reported."""
     src = os.path.join(tmp, "opts")
     os.makedirs(os.path.join(src, "inc"))
@@ -171,8 +169,7 @@ def test_c_options(tmp: str) -> None:
     base = ["-I", os.path.join(src, "inc"), "-D", 'NAME="hi"', "--asm", os.path.join(src, "twice.nasm"),
             os.path.join(src, "main.c"), os.path.join(src, "helper.c")]
     for name, extra in (("default", []), ("big stack", ["--stack", "8192", "--memory", "131072"]),
-                        ("no mpu", ["--no-mpu"]), ("no fpu", ["--no-fpu"]),
-                        ("no mpu and no fpu", ["--no-mpu", "--no-fpu"]),
+                        ("no mpu", ["--no-mpu"]),
                         ("inline fpu", ["--inline-fpu"]),
                         ("trusted alignment", ["--no-bounds-checks", "--trust-alignment"]),
                         ("byte windows", ["--trust-alignment", "--byte-windows"]),
@@ -337,8 +334,7 @@ def test_rom(tmp: str, lang: str) -> None:
     """A program built with --ram, for code that runs from a ROM, runs
     from the image at 0 with its words in RAM at 0xFFFFF000, below the
     stack, and leaves every word of the image as it was. In C, so does a
-    program that uses floats, whose library uses the FPU; with --no-fpu,
-    whose library keeps its words in the image, that is an error."""
+    program that uses floats, whose library uses the FPU."""
     what = {"c": "C", "zig": "Zig", "rs": "Rust"}[lang] + " for a ROM"
     if lang == "c":
         source = os.path.join(tmp, "rom.c")
@@ -364,11 +360,6 @@ def test_rom(tmp: str, lang: str) -> None:
             changed = image_changes(out)
             if changed:
                 fail("C with floats for a ROM", f"{len(changed)} words of the image changed")
-        p = build(["--ram", "0xFFFFF000", "--no-fpu", "-o", os.path.join(tmp, "float.bin"), source])
-        message = ("nicebuild: the program uses floats, and with --no-fpu the float library keeps the"
-                   " words it writes in the image, so it cannot run from a ROM (--ram)")
-        if p.returncode != 1 or message not in p.stderr.splitlines():
-            fail("C with floats for a ROM, --no-fpu", f"exit status {p.returncode}\n{p.stderr}")
 
 
 # A program with floats in each language: 3 * 3 * 1.5, through memory
@@ -409,23 +400,19 @@ def reserved_words(nasm: str) -> Optional[int]:
 
 def test_floats(tmp: str, lang: str) -> None:
     """A program with floats gives its result when built by default, which
-    joins the float library of the FPU, with --inline-fpu, whose module
-    writes the FPU's CMD itself, and with --no-fpu, which joins the float
-    library in software and runs on an emulator without the FPU. The
-    module of --memory-bytes reserves the bytes given, rounded up to a
-    word."""
+    joins the float library of the FPU, and with --inline-fpu, whose module
+    writes the FPU's CMD itself. The module of --memory-bytes reserves the
+    bytes given, rounded up to a word."""
     what = {"c": "C", "zig": "Zig", "rs": "Rust"}[lang] + " with floats"
     source = os.path.join(tmp, f"floats.{lang}")
     with open(source, "w") as f:
         f.write(FLOATS[lang])
-    for i, (name, extra, options) in enumerate((("", [], []), (", --inline-fpu", ["--inline-fpu"], []),
-                                                (", --no-fpu", ["--no-fpu"], ["--no-fpu"]),
-                                                (", --memory-bytes 8190", ["--memory-bytes", "8190"], []))):
+    for i, (name, extra) in enumerate((("", []), (", --inline-fpu", ["--inline-fpu"]),
+                                       (", --memory-bytes 8190", ["--memory-bytes", "8190"]))):
         out = os.path.join(tmp, f"floats_{lang}_{i}.bin")
         if not check_build(what + name, ["--keep", "-o", out] + extra + [source], out):
             continue
-        check_run(what + name + (" on niceemu --no-fpu" if options else ""), run(out, None, options),
-                  0, [FLOATS_RESULT])
+        check_run(what + name, run(out), 0, [FLOATS_RESULT])
         with open(out[:-4] + ".nasm") as f:
             inline = "@__fpu.cmd," in f.read()
         if inline != (extra == ["--inline-fpu"]):

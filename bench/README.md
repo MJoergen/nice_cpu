@@ -23,7 +23,7 @@ NICE with other processors.
     make cycles     # estimate the cycles of the three on the pipelined core of MICROARCH.md
     make profile    # the same, charged to the source lines, in build/*.cyc.txt
     make compare    # the model's cycles beside the pipelined core's, phase by phase and by cause, with the difference in percent, after make core
-    make words      # the size in words of the benchmark, safe.zig, CoreMark, float, and math modules
+    make words      # the size in words of the benchmark, safe.zig, CoreMark, and math modules
     make native     # build and run bench.c, float.c, and CoreMark on the host, as a check
     make wasm       # rebuild bench.wasm, float.wasm, dhrystone/dhry.wasm, and coremark/coremark.wasm (needs clang)
 
@@ -35,14 +35,9 @@ below).
 library (see The float benchmark below).
 
 The programs that use floats, `float.c`, Dhrystone, and CoreMark, are
-joined with the float library of the FPU, `runtime/float_fpu.nasm`, and
-with `NO_FPU=1` with the one in software, `runtime/float.nasm`. The
-programs go to `build/`, and with `NO_FPU=1` to `build/nofpu/`, so that
-the two builds never share a file. `make test` runs `float.c` with
-`float.nasm` too, from `build/nofpu/`. `make core`, `core-dhry`, and
-`core-coremark` run the programs with the FPU, `hdl/src/fpu.vhd`, and
-with `NO_FPU=1` those of `build/nofpu/`, their files in `hdl/build/`
-named with `_nofpu`, as `float_nofpu_pipeline.out`.
+joined with the float library, `runtime/float_fpu.nasm`, which uses the
+FPU, and go to `build/`. `make core`, `core-dhry`, and `core-coremark`
+run them with the FPU, `hdl/src/fpu.vhd`.
 
 `bench.wasm`, `float.wasm`, `dhrystone/dhry.wasm`, and `coremark/coremark.wasm` are checked in, so `make` and
 `make test` need only Python 3 and the emulator, as the translator's
@@ -492,14 +487,14 @@ and `make test` runs it.
 
 `words.py` gives the size in words of a wasm module translated by
 nicewasm, the measure that [translator/README.md](../translator/README.md)
-quotes for `test/safe.zig` and the float library. `make words` prints it
-for `bench.wasm`, `translator/test/safe.wasm`, `coremark/coremark.wasm`,
-and `runtime/float.wasm`: 11588, 5903, 30239, and 6578 words. 3052 of the benchmark's words are the
+quotes for `test/safe.zig`. `make words` prints it for `bench.wasm`,
+`translator/test/safe.wasm`, and `coremark/coremark.wasm`: 11588, 5903,
+and 29824 words. 3052 of the benchmark's words are the
 float conversions of `printf`, which every program that calls it gets,
 and `iprintf` leaves out (runtime/README.md). It also builds `build/math.wasm`, with
-clang, a module of all the math functions of the C library in double
-and float, and prints its size, 23413 words, which runtime/README.md
-quotes. Each module is translated and
+clang, a module of the math functions of the C library that are C, in
+double and float, and prints its size, 7268 words, which
+runtime/README.md quotes. The others are routines of the float library. Each module is translated and
 assembled on its own, with the labels it uses but does not define, such
 as the runtime's routines, defined as 0 first; a constant takes a whole
 word whatever its value (ISA.md §3), so that changes no size. The count
@@ -527,8 +522,7 @@ to a shorter run on the core.
 
 `float.c` measures floating-point code, which the float library does,
 as nicewasm turns each float instruction of wasm into a call to it
-(WASM.md): with the FPU, `runtime/float_fpu.nasm`, or in software,
-`runtime/float.zig`. It keeps to the rules
+(WASM.md), `runtime/float_fpu.nasm`, with the FPU. It keeps to the rules
 of `bench.c`: phases with known results, timed with the counters, and
 the same table. It is a program of its own, not more phases of
 `bench.c`, so that the figures of `bench.c` stay comparable across
@@ -602,13 +596,13 @@ A read of a bit count waits for the math unit's multiplier count, two
 cycles, and the bus passes to the math unit and back to RAM a cycle
 late (see The cycle estimate above), so on the pipelined core the bit
 counts save most of their steps but few of their cycles. These figures
-are of the float library in software, which `make test` still runs, from
-`build/nofpu/float.bin`.
+are of the float library in software, which V2.3 removed (HISTORY.md).
 
 With the FPU of DEVICES.md §11 (issue
 [#161](https://github.com/MJoergen/nice_cpu/issues/161)), the float
-library is `runtime/float_fpu.nasm`, 289 words, and the program shrinks
-from 16890 words to 10356. The table from the emulator:
+library is `runtime/float_fpu.nasm`, and the program shrinks from 16890
+words to 10550, with the functions of `math.h` that the library holds
+too. The table from the emulator:
 
     phase      instructions       cycles  result
     convert          42793        42821  97943df8  ok
@@ -618,7 +612,8 @@ from 16890 words to 10356. The table from the emulator:
     norm             11679        11707  7703cd00  ok
     total           180304       180444
 
-That is 5.9 times fewer instructions than with `float.nasm`. On the
+That is 5.9 times fewer instructions than with the float library in
+software. On the
 pipelined core, `make core CORE_PROGRAMS=float` gives:
 
     phase      instructions       cycles  result
@@ -630,7 +625,7 @@ pipelined core, `make core CORE_PROGRAMS=float` gives:
     total           180304       617442
 
 That is 3.1 times fewer cycles than the 1902079 that the program takes
-without the FPU (`make core CORE_PROGRAMS=float NO_FPU=1`), at 3.42 per
+with the float library in software, at 3.42 per
 instruction. `make cycles` gives 612025. The FPU's unit takes 14
 cycles for an `ADD` and 16 for a `MUL`, and the FPU about 4 more for the
 command. Issue [#164](https://github.com/MJoergen/nice_cpu/issues/164)
@@ -638,7 +633,7 @@ lists ways to make it faster.
 
 `make test` also runs `float.c` as `build/float_inline.bin`, translated
 with nicewasm's `--inline-fpu`, which writes the FPU's accesses in place
-of most calls of the float library. The program takes 10619 words, 263
+of most calls of the float library. The program takes 10813 words, 263
 more, and the emulator gives:
 
     phase      instructions       cycles  result

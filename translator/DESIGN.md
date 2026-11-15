@@ -164,11 +164,12 @@ them ([WASM.md](WASM.md), Traps).
 A module that uses the FPU checks for it at the start of `___wasm_start`
 too, and traps with code 9 without it ([WASM.md](WASM.md), Start-up).
 Whether it uses the FPU is known only after its functions are
-translated, so `___wasm_start` is made last and put first. The check
-names the FPU's words by their addresses, not by the names `__fpu.*`
-of `float_fpu.nasm`, as a program translated without `--no-fpu` may
-still be joined with `float.nasm`, which runs on a system with the FPU
-as well.
+translated, so `___wasm_start` is made last and put first. An import of
+a function of `math.h` that the float library holds, such as `pow`,
+counts as a use too (`MATH_IMPORTS`). The check names the FPU's words by
+their addresses, not by the names `__fpu.*` of `float_fpu.nasm`, as a
+module whose float operations are all inline is joined without the
+float library.
 
 Without bounds checks, an offset that is a multiple of 4 goes into the
 word operand, as offset / 4, and the word index and the byte in the

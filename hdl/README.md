@@ -738,7 +738,8 @@ correction is proven by hand, and `tb_mpu` checks the products' values
 
 `fpu` is the FPU of DEVICES.md §11, a stack of 16 binary64 values that a
 program pushes, commands, and reads, with its arithmetic unit `fpu_unit`
-inside it and the package `fpu_pkg`. Offsets 0 to 7 hold `FPU_X_LO`,
+inside it, the package `fpu_pkg`, and the package `fpu_seq_pkg`, the
+ROMs of the functions. Offsets 0 to 7 hold `FPU_X_LO`,
 `FPU_X_HI`, `FPU_X_S`, `FPU_X_W`, `FPU_CMD`, `FPU_STATUS`, and `FPU_REL`,
 and a word that reads 0. It is a pipelined Wishbone slave with a 3-bit
 address. The bus decoder selects it for `0xFFFFFF88`–`0xFFFFFF8F` and
@@ -754,6 +755,15 @@ and acknowledged in order. A read of `FPU_X_S` or `FPU_X_W` is an
 operation of the arithmetic unit, and is acknowledged when it ends. The
 header of `src/fpu.vhd` explains the sequences of the commands.
 
+The functions of DEVICES.md §11.3 run on a microcode engine in
+`fpu.vhd`. Their steps are in a ROM, and the constants of their `K`
+steps in a second, both in `src/fpu_seq_pkg.vhd`, which
+`emulator/test/fpu_seq.py --vhdl` writes from the programs that the model
+and the emulator run. `make test` checks that it is current
+(`make seqcheck`). A step that is a command runs the states of that
+command, so that a function gives the bits of the model by construction
+of its steps.
+
 So the FPU holds a request for as long as a command runs, up to some
 3400 cycles for `DIGITS`, the longest. A pause, an interrupt, and a step
 of the debug link wait that long, and so must a watchdog of the system:
@@ -762,8 +772,8 @@ of the processor, as `tb_core` gives it, so that a start over the debug
 link empties the stack, clears the flags, and ends a command (DEBUG.md
 §6).
 
-The most cycles of each command in `tb_fpu` on 2026-11-14, and of `XMUL`
-and `CHOP` on 2026-11-15, from its
+The most cycles of each command in `tb_fpu` on 2026-11-14, and of `XMUL`,
+`CHOP`, and the functions on 2026-11-15, from its
 request to the ACK of the read of `FPU_STATUS` after it, which adds some
 6 (What the tests check):
 
@@ -781,13 +791,16 @@ request to the ACK of the read of `FPU_STATUS` after it, which adds some
 | `SCALE10` | 1235 |
 | `FMOD` | 2117 |
 | `DIGITS` | 3363 |
+| `SIN` and `COS` | 1561 and 1576 |
+| `TAN` | 2079 |
 
 `make timing UNIT=fpu` places the FPU alone, out of context
-([Timing](#timing)). On the MEGA65, at the commit of #172, it leaves
-+1.074 ns on its own paths with the default flow and +1.218 ns with the
-timing flow, more than the budget of 1.0 ns, and +9.502 and +8.087 ns at
-its inputs and +7.958 ns at its outputs. It takes 9239 LUTs, 2626
-registers, and 5 DSPs, more LUTs than the pipelined core.
+([Timing](#timing)). On the MEGA65, at the commit of #183, it leaves
++1.046 ns on its own paths with the default flow, more than the budget
+of 1.0 ns, and +9.502 ns at its inputs and +7.958 ns at its outputs; at
+that of #172, +1.218 ns with the timing flow. It takes 9464 LUTs, 2748
+registers, 5 DSPs, and 2 block RAMs, the ROMs of the functions: more
+LUTs than the pipelined core.
 
 `tb_fpu_unit` checks the arithmetic unit, and `tb_fpu` the FPU, against
 the model of `emulator/test/fpu_model.py` (What the tests check), and
@@ -1021,14 +1034,14 @@ two reads of X waiting, whose ACKs the master gives up. Each reset must
 leave no ACK, no value, and no flag, and the command after it must run.
 `make run/fpu FPU_SEED=2 FPU_COUNT=200000` runs a longer sequence.
 
-`test/fpu_slow_vectors.py` adds the slowest `DIGITS`, `SCALE10`, and
-`FMOD` that a scan found, with `--scan` the lines of that scan, and
+`test/fpu_slow_vectors.py` adds the slowest `DIGITS`, `SCALE10`, `FMOD`,
+`SIN`, `COS`, and `TAN` that a scan found, with `--scan` the lines of that scan, and
 `tb_fpu`'s generic `G_SLOW` reports each command slower than it. For each
 command that the next access does not follow at once, `tb_fpu` counts
 the cycles from its request to the ACK of the read of STATUS after it,
 which adds some 6, and fails if the most of a command is over its bound:
-the times of DEVICES.md §11.5 with a margin, and for `DIGITS` 4000, 20%
-above its slowest. It reports
+the times of DEVICES.md §11.5 with a margin, and for `DIGITS` and the
+functions 20% above the slowest. It reports
 the most of each command that takes more than a few cycles.
 
 `tb_perf` starts the counters just below a wrap of their low words. It
@@ -1194,8 +1207,9 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   not list data reads, but `reads` counts them with the read counter, so
   its registers show whether the core made each read exactly once and in
   order (ISA.md §8.2). `mpu`, `mpu64`, and `mpubits` read every word of the math unit.
-  `fpu`, `fpustack`, and `fpudec` use the FPU: the views, a few commands
-  of each group, the stack and its faults, and the decimal commands.
+  `fpu`, `fpustack`, `fpudec`, and `fpufunc` use the FPU: the views, a
+  few commands of each group, the stack and its faults, the decimal
+  commands, and the functions.
   `fpu` reads the time, so its counters are memory in both, as for `wait`.
   `fpudec` runs again with random pauses, with pauses held for up to
   3000 cycles, and one step at a time, so that pauses and steps come

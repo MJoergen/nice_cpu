@@ -16,6 +16,7 @@ The synthesizable VHDL: the two cores, their shared packages, and the devices. [
 | [mpu.vhd](mpu.vhd) | The math unit of DEVICES.md §2, a Wishbone slave. |
 | [fpu.vhd](fpu.vhd) | The FPU of DEVICES.md §11, a Wishbone slave: the stack, the views, and the commands, as sequences of operations of `fpu_unit.vhd`. |
 | [fpu_pkg.vhd](fpu_pkg.vhd) | The operations of the FPU's arithmetic unit, and the bits of its flags. |
+| [fpu_seq_pkg.vhd](fpu_seq_pkg.vhd) | The steps and constants of the FPU's functions, written by `emulator/test/fpu_seq.py --vhdl`. |
 | [fpu_unit.vhd](fpu_unit.vhd) | The arithmetic unit of the FPU of DEVICES.md §11: one operation at a time, on a binary format whose widths are generics. |
 | [perf.vhd](perf.vhd) | The performance counters of DEVICES.md §3, a Wishbone slave. |
 | [tod.vhd](tod.vhd) | The clock of the time of day of DEVICES.md §10, a Wishbone slave that its own reset, the system's, alone sets to 0. |

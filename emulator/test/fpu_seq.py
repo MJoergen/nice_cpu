@@ -765,17 +765,23 @@ def listing() -> str:
     return "\n".join(lines) + "\n"
 
 
+def constant_names() -> Tuple[List[str], Dict[str, int]]:
+    """The names of the constants of every program, in the order they are
+    first used, and their bits."""
+    names: List[str] = []
+    used: Dict[str, int] = {}
+    for prog in PROGRAMS.values():
+        names.extend(n for n in prog.constants if n not in names)
+        used.update(prog.constants)
+    return names, used
+
+
 def zig() -> str:
     """src/fpu_seq.zig: the steps of each function, and the constants, as
     the emulator runs them. A step is an operation and a number: the
     command word for a command, the index of the constant for K, n for
     PUT, and the index of the step for JZ and JMP."""
-    names: List[str] = []
-    for prog in PROGRAMS.values():
-        names.extend(n for n in prog.constants if n not in names)
-    used: Dict[str, int] = {}
-    for prog in PROGRAMS.values():
-        used.update(prog.constants)
+    names, used = constant_names()
     out = [
         "// The sequences of the FPU's functions, DEVICES.md §11.3. Written by",
         "// test/fpu_seq.py --zig from its programs; make test checks that it is",
@@ -817,7 +823,128 @@ def zig() -> str:
     return "\n".join(out) + "\n"
 
 
+# The operations of a step in src/fpu_seq_pkg.vhd, bits 19..17.
+VHDL_OPS = {"cmd": 0, "K": 1, "PUT": 2, "JZ": 3, "JMP": 4, "POLE": 5, "END": 6}
+
+
+def vhdl() -> str:
+    """hdl/src/fpu_seq_pkg.vhd: the steps of every function in one ROM,
+    each program followed by END, and the constants, as src/fpu.vhd runs
+    them. A step is its operation in bits 19..17 and a number in bits
+    16..0: the command word for a command, the index of the constant for
+    K, n for PUT, and the address of the step for JZ and JMP. The table
+    of constants has a power of two of entries, so that the low bits of
+    any step index it."""
+    from fpu_model import NUMBERS  # here, as the model imports this module
+
+    names, used = constant_names()
+    kbits = max(1, (len(names) - 1).bit_length())
+    bases: Dict[str, int] = {}
+    steps: List[str] = []
+    base = 0
+    for name, prog in PROGRAMS.items():
+        bases[name] = base
+        num, _ = FUNCTIONS[name]
+        for i, step in enumerate(prog.code):
+            parts = step.split()
+            if parts[0] == "K":
+                op, n = "K", names.index(parts[1])
+            elif parts[0] == "PUT":
+                op, n = "PUT", int(parts[1])
+            elif parts[0] in ("JZ", "JMP"):
+                op, n = parts[0], base + prog.targets[parts[1]]
+            elif parts[0] == "POLE":
+                op, n = "POLE", 0
+            else:
+                op, n = "cmd", NUMBERS[parts[0]] | (int(parts[1]) if len(parts) > 1 else 0) << 8
+            head = f"-- {name} 0x{num:02X}" if i == 0 else ""
+            if head:
+                steps.append(head)
+            steps.append(f'X"{VHDL_OPS[op] << 17 | n:05X}", -- {base + i}: {step}')
+        steps.append(f'X"{VHDL_OPS["END"] << 17:05X}", -- {base + len(prog.code)}: END')
+        base += len(prog.code) + 1
+    steps[-1] = steps[-1].replace(",", " ", 1)
+    count = base
+    out = [
+        "-- The sequences of the FPU's functions, DEVICES.md §11.3, for",
+        "-- src/fpu.vhd. Written by emulator/test/fpu_seq.py --vhdl from its",
+        "-- programs; make test checks that it is current. Do not edit.",
+        "--",
+        "-- A step is its operation in bits 19..17 and a number in bits 16..0:",
+        "-- the command word for a command, the index of the constant for K,",
+        "-- n for PUT, and the address of the step for JZ and JMP. END ends",
+        "-- the program. The table of constants has 2^C_SEQ_KBITS entries, so",
+        "-- that the low bits of any step index it.",
+        "",
+        "library ieee;",
+        "   use ieee.std_logic_1164.all;",
+        "",
+        "package fpu_seq_pkg is",
+        "",
+    ]
+    for op, v in VHDL_OPS.items():
+        out.append(f'   constant C_SEQ_{op.upper():<4} : std_logic_vector(2 downto 0) := "{v:03b}";')
+    out += [
+        "",
+        f"   constant C_SEQ_KBITS : natural := {kbits};",
+        "",
+        "   type t_seq_steps is array (natural range <>) of std_logic_vector(19 downto 0);",
+        "   type t_seq_consts is array (natural range <>) of std_logic_vector(63 downto 0);",
+        "",
+        f"   constant C_SEQ_CONSTS : t_seq_consts(0 to {2 ** kbits - 1}) := (",
+    ]
+    rows = [f'X"{used[n]:016X}", -- {i}: {n}' for i, n in enumerate(names)]
+    rows += [f'X"{0:016X}", -- {i}: unused' for i in range(len(names), 2**kbits)]
+    rows[-1] = rows[-1].replace(",", " ", 1)
+    out.extend("      " + r for r in rows)
+    out += ["   );", "", f"   constant C_SEQ_STEPS : t_seq_steps(0 to {count - 1}) := ("]
+    out.extend("      " + s for s in steps)
+    out += [
+        "   );",
+        "",
+        "   -- The operands a function pops, 1 or 2, or 0 for a number that is",
+        "   -- not a function, and the address of its first step.",
+        "   function seq_pops (num : std_logic_vector(7 downto 0)) return natural;",
+        "",
+        "   function seq_base (num : std_logic_vector(7 downto 0)) return natural;",
+        "",
+        "end package fpu_seq_pkg;",
+        "",
+        "package body fpu_seq_pkg is",
+        "",
+        "   function seq_pops (num : std_logic_vector(7 downto 0)) return natural is",
+        "   begin",
+        "      case num is",
+    ]
+    for name, (num, pops) in FUNCTIONS.items():
+        out.append(f'         when X"{num:02X}" => return {pops}; -- {name}')
+    out += [
+        "         when others => return 0;",
+        "      end case;",
+        "   end function seq_pops;",
+        "",
+        "   function seq_base (num : std_logic_vector(7 downto 0)) return natural is",
+        "   begin",
+        "      case num is",
+    ]
+    for name, (num, _) in FUNCTIONS.items():
+        out.append(f'         when X"{num:02X}" => return {bases[name]}; -- {name}')
+    out += [
+        "         when others => return 0;",
+        "      end case;",
+        "   end function seq_base;",
+        "",
+        "end package body fpu_seq_pkg;",
+    ]
+    return "\n".join(out) + "\n"
+
+
 if __name__ == "__main__":
     import sys
 
-    print(zig() if sys.argv[1:] == ["--zig"] else listing(), end="")
+    if sys.argv[1:] == ["--zig"]:
+        print(zig(), end="")
+    elif sys.argv[1:] == ["--vhdl"]:
+        print(vhdl(), end="")
+    else:
+        print(listing(), end="")

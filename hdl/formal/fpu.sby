@@ -23,13 +23,14 @@ smtbmc boolector
 
 [script]
 plugin -i ghdl
-prove: ghdl --std=08 -fpsl fpu_pkg.vhd fpu_unit.vhd fpu.vhd formal_fpu.vhd -e formal_fpu
-prove_stack: ghdl --std=08 -fpsl -gG_STACK=true fpu_pkg.vhd fpu_unit.vhd fpu.vhd formal_fpu.vhd -e formal_fpu
-cover: ghdl --std=08 -fpsl fpu_pkg.vhd fpu_unit.vhd fpu.vhd formal_fpu.vhd -e formal_fpu
+prove: ghdl --std=08 -fpsl fpu_pkg.vhd fpu_seq_pkg.vhd fpu_unit.vhd fpu.vhd formal_fpu.vhd -e formal_fpu
+prove_stack: ghdl --std=08 -fpsl -gG_STACK=true fpu_pkg.vhd fpu_seq_pkg.vhd fpu_unit.vhd fpu.vhd formal_fpu.vhd -e formal_fpu
+cover: ghdl --std=08 -fpsl fpu_pkg.vhd fpu_seq_pkg.vhd fpu_unit.vhd fpu.vhd formal_fpu.vhd -e formal_fpu
 prep -top formal_fpu
 
 [files]
 ../src/fpu_pkg.vhd
+../src/fpu_seq_pkg.vhd
 ../src/fpu_unit.vhd
 ../src/fpu.vhd
 formal_fpu.vhd

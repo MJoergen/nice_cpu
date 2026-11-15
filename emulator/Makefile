@@ -24,7 +24,7 @@ OPTS_wrap      = -d 0xffffffff:1
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge irqtimer after start cputest console screen screencolor screeninvert iofetch \
   reads reserved mpu mpu64 mpubits perf events timer input r15modes r0dest r14mem skipconst carryin shiftc \
   wrapmem smcown scrbound time trapsym sd font net eth bytewin wait waitnone skip skipreq clock clockhost stack \
-  conirq fpu fpustack fpudec
+  conirq fpu fpustack fpudec fpufunc
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
@@ -100,6 +100,7 @@ OPTS_fpu     = --step-time -d 0x200:24 -d 0xffffff88:8
 # last value written there, or 0.
 OPTS_fpu_mem = --step-time --no-fpu -d 0x200:24 -d 0xffffff88:8
 OPTS_fpustack = -d 0x200:18 -d 0xffffff88:8
+OPTS_fpufunc = -d 0x200:10
 OPTS_bytewin = -d 0x202:3 -d 0x03ffffff:1 -d 0x60000000:1 -d 0x20000809:1 -d 0x5000080e:1
 
 define check

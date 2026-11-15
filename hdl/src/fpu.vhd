@@ -40,6 +40,20 @@
 -- * The word operators convert their operands with FTOW, compute in 32
 --   bits, IDIV and MOD with a restoring divider of the magnitudes, and
 --   convert back with ITOF.
+--
+-- The functions of §11.3 run on a microcode engine: the steps of each,
+-- from src/fpu_seq_pkg.vhd, in a ROM with a ROM of their constants. A
+-- function starts as a command does, and on operands that are not NaNs
+-- pushes them again and runs its steps from STEP_ST, which reads the
+-- step that the ROM gave for pc_r. A step that is a command runs the
+-- states of a command, which go back to STEP_ST at the end in place of
+-- IDLE_ST. K pushes its constant from the second ROM a cycle later,
+-- PUT pops X and writes it n below the new top, JZ pops X and jumps if
+-- it is zero, JMP jumps, and POLE notes that an infinite result is a
+-- pole. A step that does not run a command waits a cycle in FETCH_ST for
+-- the ROM. END sets the flags of the function, those from before it and
+-- a stack fault of its steps, as the emulator's src/fpu.zig does.
+--
 -- The class of X, REL, and the views X_LO and X_HI are logic on the stack,
 -- read at once. X_S and X_W are operations of the unit: a read of them
 -- waits for it.
@@ -67,7 +81,8 @@
 -- FORMAL
 -- With G_FORMAL, a free stand-in replaces the arithmetic unit: it ends an
 -- operation in any cycle after its start, with any result and any flags,
--- and formal/formal_fpu.vhd proves the bus for every command. With
+-- and free values replace the ROMs of the functions, so that
+-- formal/formal_fpu.vhd proves the bus for every command and any step. With
 -- G_STACK too, the master writes only the commands of the stack and
 -- neither X_S nor X_W, and the assertions below say that the stack is
 -- that of a model of §11.4. The model shifts its values, X first. It
@@ -89,6 +104,7 @@ library ieee;
 
 library work;
    use work.fpu_pkg.all;
+   use work.fpu_seq_pkg.all;
 
 entity fpu is
    generic (
@@ -237,7 +253,7 @@ architecture synthesis of fpu is
       XMUL_ST, XMUL2_ST,
       S10_FIN_ST, DIGITS_ST, DLOG_ST, DMUL_ST, DEXP_ST, DLOOP_ST, DSCALE_ST, DNEAR_ST, DINT_ST,
       BCD_ST, ALIGN_ST, DPUSH_ST, FROMBCD_ST, UTOF_ST, WORD_ST, WORDY_ST, WORDX_ST, IDIV_ST,
-      WORD_END_ST
+      WORD_END_ST, STEP_ST, FETCH_ST, K_ST
    );
 
    -- The stack.
@@ -273,6 +289,20 @@ architecture synthesis of fpu is
 
    signal state_r : t_state := IDLE_ST;
    signal ret_r   : t_state := IDLE_ST;
+   -- Where a command goes when it ends: STEP_ST in a function.
+   signal cmd_end : t_state;
+
+   -- The functions: the address of the step, the step a cycle after it,
+   -- and the constant of that step a cycle after that; whether a function
+   -- runs, the flags from before it, whether its operands are finite, and
+   -- whether POLE ran.
+   signal pc_r     : natural range 0 to C_SEQ_STEPS'length - 1 := 0;
+   signal step_r   : std_logic_vector(19 downto 0);
+   signal kval_r   : t_word64;
+   signal seq_r    : std_logic := '0';
+   signal fsave_r  : std_logic_vector(3 downto 0);
+   signal finite_r : boolean;
+   signal pole_r   : std_logic;
 
    -- The command, its operands, and its results.
    signal num_r    : std_logic_vector(7 downto 0);
@@ -329,6 +359,7 @@ architecture synthesis of fpu is
    signal p_xwi_r   : boolean;
    signal p_ynan_r  : boolean;
    signal p_ysnan_r : boolean;
+   signal p_yinf_r  : boolean;
    signal p_yiz_r   : boolean;
    signal p_xfits_r : boolean;
    signal p_yfits_r : boolean;
@@ -575,7 +606,8 @@ architecture synthesis of fpu is
               X"28" | X"29" | X"2A" | X"2B" | X"3B" | X"3C" | X"3D" | X"63" =>
             return (true, 1, X"00", false);
          when others =>
-            return (false, 0, X"00", false);
+            -- A function, or a number that is not defined.
+            return (seq_pops(num) /= 0, seq_pops(num), X"00", false);
       end case;
    end function info;
 
@@ -595,6 +627,8 @@ begin
    x_val <= ram_r(to_integer(top_r)) when depth_r >= 1 else C_QNAN;
    y_val <= ram_r(to_integer(top_r - 1)) when depth_r >= 2 else C_QNAN;
    pick  <= ram_r(to_integer(top_r - n_r mod 16)) when n_r < depth_r else C_QNAN;
+
+   cmd_end <= STEP_ST when seq_r = '1' else IDLE_ST;
 
 
    gen_unit : if not G_FORMAL generate
@@ -616,6 +650,15 @@ begin
             flags_o  => u_flags
          ); -- i_fpu_unit
 
+      -- The ROMs of the functions, read in every cycle.
+      p_rom : process (clk_i)
+      begin
+         if rising_edge(clk_i) then
+            step_r <= C_SEQ_STEPS(pc_r);
+            kval_r <= C_SEQ_CONSTS(to_integer(unsigned(step_r(C_SEQ_KBITS - 1 downto 0))));
+         end if;
+      end process p_rom;
+
    end generate gen_unit;
 
    gen_formal : if G_FORMAL generate
@@ -623,11 +666,15 @@ begin
       signal f_end    : std_logic;
       signal f_result : t_word64;
       signal f_flags  : std_logic_vector(2 downto 0);
+      signal f_step   : std_logic_vector(19 downto 0);
+      signal f_kval   : t_word64;
 
       attribute anyseq : boolean;
       attribute anyseq of f_end    : signal is true;
       attribute anyseq of f_result : signal is true;
       attribute anyseq of f_flags  : signal is true;
+      attribute anyseq of f_step   : signal is true;
+      attribute anyseq of f_kval   : signal is true;
 
       -- The model: the values, X first, the depth, and the flags.
       signal f_stk : t_words64(0 to 15);
@@ -655,6 +702,8 @@ begin
       u_done   <= f_busy and f_end;
       u_result <= f_result;
       u_flags  <= f_flags;
+      step_r   <= f_step;
+      kval_r   <= f_kval;
 
       p_unit : process (clk_i)
       begin
@@ -904,6 +953,7 @@ begin
          --    (f_qn >= 1 -> f_ok0) and (f_qn = 2 -> f_ok1);
          -- psl f_cmd_num : assert always
          --    state_r = CMD_ST -> (unsigned(num_r) <= 6 or num_r = X"FF");
+         -- psl f_no_function : assert always seq_r = '0';
       end generate gen_stack;
 
    end generate gen_formal;
@@ -1098,6 +1148,7 @@ begin
          p_xwi_r   <= f_whole(x_r) or f_inf(x_r);
          p_ynan_r  <= f_nan(y_r);
          p_ysnan_r <= f_snan(y_r);
+         p_yinf_r  <= f_inf(y_r);
          p_yiz_r   <= f_inf(y_r) or f_zero(y_r);
          p_xfits_r <= f_fits(x_r);
          p_yfits_r <= f_fits(y_r);
@@ -1170,7 +1221,7 @@ begin
                      push(res_r);
                   end if;
                   flags_r(2 downto 0) <= flags_r(2 downto 0) or cflags_r;
-                  state_r             <= IDLE_ST;
+                  state_r             <= cmd_end;
                end if;
 
             -- A command: the word checked, the operands popped.
@@ -1181,7 +1232,7 @@ begin
                x_r    <= x_val;
                y_r    <= y_val;
                noovf_r <= '0';
-               state_r <= IDLE_ST;
+               state_r <= cmd_end;
                if not info_v.valid or (sbit_r = '1' and not info_v.s_ok) or
                   (std_logic_vector(to_unsigned(n_v, 8)) and not info_v.nmask) /= X"00" then
                   flags_r(C_INVALID) <= '1';
@@ -1352,8 +1403,26 @@ begin
                         finish(C_QNAN, x_r, 1, "001");
                      end if;
                   when others =>
+                     if seq_pops(num_r) /= 0 then
+                        -- A function: the canonical NaN for a NaN operand,
+                        -- else its operands pushed again and its steps.
+                        if p_xnan_r or (seq_pops(num_r) = 2 and p_ynan_r) then
+                           finish(C_QNAN, x_r, 1,
+                                  "00" & bool_to_sl(p_xsnan_r or (seq_pops(num_r) = 2 and p_ysnan_r)));
+                        else
+                           fsave_r  <= flags_r;
+                           finite_r <= not p_xinf_r and (seq_pops(num_r) = 1 or not p_yinf_r);
+                           pole_r   <= '0';
+                           seq_r    <= '1';
+                           pc_r     <= seq_base(num_r);
+                           if seq_pops(num_r) = 2 then
+                              finish(y_r, x_r, 2, "000");
+                           else
+                              finish(x_r, x_r, 1, "000");
+                           end if;
+                        end if;
                      -- The word operators.
-                     if not p_xfits_r or (num_r /= X"63" and not p_yfits_r) then
+                     elsif not p_xfits_r or (num_r /= X"63" and not p_yfits_r) then
                         finish(C_QNAN, x_r, 1, "001");
                      else
                         ucall(OP_FTOW, y_r, y_r, WORDY_ST);
@@ -1713,6 +1782,61 @@ begin
             when WORD_END_ST =>
                finish(u_result, x_r, 1, "000");
 
+            -- A step of a function, from the ROM.
+            when STEP_ST =>
+               state_r <= FETCH_ST;
+               case step_r(19 downto 17) is
+                  when C_SEQ_CMD =>
+                     num_r   <= step_r(7 downto 0);
+                     n_r     <= to_integer(unsigned(step_r(15 downto 8)));
+                     sbit_r  <= step_r(16);
+                     pc_r    <= pc_r + 1;
+                     state_r <= CMD_ST;
+                  when C_SEQ_K =>
+                     pc_r    <= pc_r + 1;
+                     state_r <= K_ST;
+                  when C_SEQ_PUT =>
+                     pop(1);
+                     we_v    := true;
+                     waddr_v := top_r - 1 - unsigned(step_r(3 downto 0));
+                     wdata_v := x_val;
+                     pc_r    <= pc_r + 1;
+                  when C_SEQ_JZ =>
+                     pop(1);
+                     if f_zero(x_val) then
+                        pc_r <= to_integer(unsigned(step_r(16 downto 0)));
+                     else
+                        pc_r <= pc_r + 1;
+                     end if;
+                  when C_SEQ_JMP =>
+                     pc_r <= to_integer(unsigned(step_r(16 downto 0)));
+                  when C_SEQ_POLE =>
+                     pole_r <= '1';
+                     pc_r   <= pc_r + 1;
+                  when others =>
+                     -- END: the flags of the function.
+                     seq_r   <= '0';
+                     state_r <= IDLE_ST;
+                     flags_r <= fsave_r or (flags_r and "1000");
+                     if f_nan(x_val) then
+                        flags_r(C_INVALID) <= '1';
+                     elsif f_inf(x_val) and finite_r then
+                        if pole_r = '1' then
+                           flags_r(C_DIVZERO) <= '1';
+                        else
+                           flags_r(C_OVERFLOW) <= '1';
+                        end if;
+                     end if;
+               end case;
+
+            -- The ROM gives the step at the new address.
+            when FETCH_ST =>
+               state_r <= STEP_ST;
+
+            when K_ST =>
+               push(kval_r);
+               state_r <= STEP_ST;
+
          end case;
 
          if we_v then
@@ -1727,6 +1851,7 @@ begin
             in_r     <= '0';
             pend_r   <= '0';
             view_r   <= '0';
+            seq_r    <= '0';
             wb_ack_o <= '0';
             u_start  <= '0';
          end if;

@@ -65,7 +65,7 @@ if {$unit eq "pipeline"} {
   synth_design -top pipeline -part $part -mode out_of_context -generic G_BREAKS=$breaks \
     -generic G_WATCHES=$watches {*}$d_synth
 } elseif {$unit eq "fpu"} {
-  read_vhdl -vhdl2008 [list $src/fpu_pkg.vhd $src/fpu_unit.vhd $src/fpu.vhd]
+  read_vhdl -vhdl2008 [list $src/fpu_pkg.vhd $src/fpu_seq_pkg.vhd $src/fpu_unit.vhd $src/fpu.vhd]
   synth_design -top fpu -part $part -mode out_of_context {*}$d_synth
 } else {
   error "unknown unit $unit, not pipeline or fpu"

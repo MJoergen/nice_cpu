@@ -3,7 +3,7 @@ ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
 BUILD = build
 
-SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/fpu_pkg.vhd src/fpu_unit.vhd src/fpu.vhd src/perf.vhd src/tod.vhd src/timer.vhd src/console_irq.vhd src/irq_merge.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd src/sd_regs.vhd src/net_regs.vhd src/eth_regs.vhd
+SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/fpu_pkg.vhd src/fpu_seq_pkg.vhd src/fpu_unit.vhd src/fpu.vhd src/perf.vhd src/tod.vhd src/timer.vhd src/console_irq.vhd src/irq_merge.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd src/sd_regs.vhd src/net_regs.vhd src/eth_regs.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd sim/sd_sim.vhd sim/eth_sim.vhd
 TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_fpu_unit.vhd test/tb_fpu.vhd test/tb_perf.vhd test/tb_perf_hz.vhd test/tb_tod.vhd test/tb_timer.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd test/tb_debug_link.vhd test/tb_sd_regs.vhd test/tb_net_regs.vhd test/tb_eth_regs.vhd test/tb_link.vhd \
   test/tb_trace.vhd test/tb_core.vhd
@@ -73,14 +73,13 @@ $(FPU_UNIT_RUNS:%=run/fpu_unit/%): run/fpu_unit/%:
 # emulator/test/fpu_vectors.py, over the FPU's bus: the directed ones and
 # a random sequence from the seed FPU_SEED, FPU_COUNT accesses long, and
 # then the slowest commands of test/fpu_slow_vectors.py, whose cycles it
-# bounds. The vectors leave out the functions of phase 2 until fpu.vhd
-# has them (#183).
+# bounds.
 FPU_SEED ?= 1
 FPU_COUNT ?= 20000
 
 run/fpu:
 	@($(in_rundir) && $(PYTHON) $(CURDIR)/../emulator/test/fpu_vectors.py --seed $(FPU_SEED) \
-	  --count $(FPU_COUNT) --no-functions -o vectors > /dev/null \
+	  --count $(FPU_COUNT) -o vectors > /dev/null \
 	  && $(PYTHON) $(CURDIR)/test/fpu_slow_vectors.py >> vectors \
 	  && $(call sim_run,tb_fpu,-gG_VECTORS=vectors) > tb_fpu.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS tb_fpu"; else echo "FAIL tb_fpu"; \
@@ -166,7 +165,7 @@ $(LINK_RUNS): run/link/%: $(BUILD)/linkecho.bin
 # and runs again on a stalling memory, with random and held pauses, and
 # one step at a time, so that pauses and steps fall in the waits. Its
 # cycle and time counts are memory in both, as they count differently.
-# fpu, fpustack, and fpudec use the FPU, src/fpu.vhd, and fpu runs again
+# fpu, fpustack, fpudec, and fpufunc use the FPU, src/fpu.vhd, and fpu runs again
 # on a stalling memory. fpu reads the time, which is memory in both.
 # fpudec runs again with random pauses, with pauses held for up to 3000
 # cycles, and one step at a time, so that pauses and steps come while
@@ -175,7 +174,7 @@ EXAMPLES = count replicate print wrap
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest \
   console screen iofetch reads reserved mpu mpu64 mpubits perf events timer input \
   r15modes r0dest r14mem skipconst carryin shiftc wrapmem smcown sd net eth bytewin wait conirq \
-  fpu fpustack fpudec
+  fpu fpustack fpudec fpufunc
 INTR_irq   = --nmi 2:1 --irq 2:2 --nmi 9:1 --irq 17:2 --nmi 17:1 --irq 100:2
 INTR_merge = --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
 INTR_after = --nmi 3:1 --nmi 10:1
@@ -606,8 +605,15 @@ endef
 
 $(foreach c,$(sort $(CORES) $(CORE)),$(eval $(call core_runs,$(c))))
 
-test: emulator analyze synth
+test: emulator seqcheck analyze synth
 	@$(MAKE) --no-print-directory $(PARALLEL) runs
+
+# The ROM of the FPU's functions must be that of their programs,
+# emulator/test/fpu_seq.py.
+seqcheck:
+	@$(PYTHON) ../emulator/test/fpu_seq.py --vhdl | cmp -s - src/fpu_seq_pkg.vhd \
+	  || { echo "src/fpu_seq_pkg.vhd is stale: ../emulator/test/fpu_seq.py --vhdl > src/fpu_seq_pkg.vhd"; exit 1; }; \
+	echo "PASS seqcheck"
 
 # How test/programs.py divides the programs into shards.
 run/split:
@@ -823,4 +829,4 @@ lint:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: test runs programs random sweep strides analyze analyze-ghdl analyze-nvc synth formal emulator timing timing-spread typecheck lint clean
+.PHONY: test seqcheck runs programs random sweep strides analyze analyze-ghdl analyze-nvc synth formal emulator timing timing-spread typecheck lint clean

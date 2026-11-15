@@ -115,7 +115,7 @@ endef
 # which also checks their coverage, once for this machine's CPU and once
 # for the baseline x86_64 CPU of make dist, which has no FMA instruction,
 # so that the software floating point of Zig's library is tested too.
-test: build bincheck fmtcheck
+test: build bincheck fmtcheck seqcheck
 	@$(PYTHON) test/fpu_vectors.py -o test/fpu.vectors.out
 	$(ZIG) build test -Dfpu-vectors=$(abspath test/fpu.vectors.out) --summary all
 	$(ZIG) build test -Dcpu=baseline -Dfpu-vectors=$(abspath test/fpu.vectors.out) --summary all
@@ -225,12 +225,19 @@ bincheck:
 	  cmp -s $$d/$$t.bin test/$$t.bin || { echo "STALE test/$$t.bin: run make bins"; exit 1; }; \
 	done; echo "PASS bincheck"
 
+# Fail if src/fpu_seq.zig is not what test/fpu_seq.py writes from the
+# sequences of the FPU's functions.
+seqcheck:
+	@$(PYTHON) test/fpu_seq.py --zig | cmp -s - src/fpu_seq.zig \
+	  || { echo "STALE src/fpu_seq.zig: run $(PYTHON) test/fpu_seq.py --zig > src/fpu_seq.zig"; exit 1; }; \
+	echo "PASS seqcheck"
+
 # Needs mypy (pip install mypy).
 typecheck:
-	$(PYTHON) -m mypy --strict test/errors.py test/link.py test/udp.py test/tap.py test/window.py test/fpu_model.py test/fpu_model_test.py test/fpu_vectors.py \
+	$(PYTHON) -m mypy --strict test/errors.py test/link.py test/udp.py test/tap.py test/window.py test/fpu_model.py test/fpu_model_test.py test/fpu_vectors.py test/fpu_seq.py \
 	  tools/nicetap.py font/gen_font.py
 
 clean:
 	rm -rf zig-out .zig-cache zig-pkg dist test/*.out
 
-.PHONY: test fpu-long programs dist build window window-test bins bincheck fmtcheck typecheck clean
+.PHONY: test fpu-long programs dist build window window-test bins bincheck seqcheck fmtcheck typecheck clean

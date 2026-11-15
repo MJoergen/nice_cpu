@@ -22,6 +22,8 @@ from __future__ import annotations
 
 from fractions import Fraction
 from math import isqrt
+
+import fpu_seq
 from typing import Callable, Dict, List, Optional, Tuple
 
 # The flags, as bits 11..8 of FPU_STATUS hold them, shifted down by 8.
@@ -461,7 +463,9 @@ class Command:
         run: Callable[[List[int], int], Tuple[List[int], int]],
         nmask: int = 0,
         short: Optional[Callable[[List[int], int], Tuple[List[int], int]]] = None,
+        seq: bool = False,
     ) -> None:
+        self.seq = seq
         self.name = name
         self.pops = pops
         self.run = run
@@ -756,6 +760,10 @@ COMMANDS: Dict[int, Command] = {
     0x3B: Command("FROMBCD", 1, one(frombcd)),
     0x3C: Command("GETEXP", 1, one(getexp)),
     0x3D: Command("GETMANT", 1, one(getmant)),
+    **{
+        num: Command(name, pops, keep, seq=True)  # by FPU.function, a sequence of fpu_seq.py
+        for name, (num, pops) in fpu_seq.FUNCTIONS.items()
+    },
     0x60: Command("AND", 2, two(word_op(lambda y, x: s32(y & x)))),
     0x61: Command("OR", 2, two(word_op(lambda y, x: s32(y | x)))),
     0x62: Command("XOR", 2, two(word_op(lambda y, x: s32(y ^ x)))),
@@ -884,8 +892,53 @@ class FPU:
         if c.name in ("DUP", "OVER", "PICK"):
             self.push(self.copy({"DUP": 0, "OVER": 1}.get(c.name, n)))
             return
+        if c.seq:
+            self.function(c)
+            return
         run = c.short if s and c.short is not None else c.run
         results, f = run(self.pop(c.pops), n)
         self.flags |= f
         for r in results:
             self.push(r)
+
+    def function(self, c: Command) -> None:
+        """A function of phase 2: its operands popped as any command pops
+        them, then pushed again, and its sequence run on the stack. The
+        flags of its steps are not kept but for the stack fault: a
+        function sets its own, as §11.3 gives them."""
+        prog = fpu_seq.PROGRAMS[c.name]
+        ops = self.pop(c.pops)
+        flags = self.flags
+        if any(F64.is_nan(v) for v in ops):
+            self.push(CANONICAL_NAN)
+            self.flags |= INVALID if any(F64.is_snan(v) for v in ops) else 0
+            return
+        for v in ops:
+            self.push(v)
+        pole = False
+        pc = 0
+        while pc < len(prog.code):
+            step = prog.code[pc].split()
+            pc += 1
+            if step[0] == "K":
+                self.push(prog.constants[step[1]])
+            elif step[0] == "PUT":
+                v = self.stack.pop()
+                self.stack[-1 - int(step[1])] = v
+            elif step[0] == "JZ":
+                if F64.is_zero(self.pop(1)[0]):
+                    pc = prog.targets[step[1]]
+            elif step[0] == "JMP":
+                pc = prog.targets[step[1]]
+            elif step[0] == "POLE":
+                pole = True
+            else:
+                n = int(step[1]) if len(step) > 1 else 0
+                self.command(NUMBERS[step[0]] | n << 8)
+        r = self.x()
+        fl = 0
+        if F64.is_nan(r):
+            fl = INVALID
+        elif F64.is_inf(r) and all(F64.is_finite(v) for v in ops):
+            fl = DIVZERO if pole else OVERFLOW
+        self.flags = flags | (self.flags & STACK) | fl

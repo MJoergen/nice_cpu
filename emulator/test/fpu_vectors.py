@@ -31,7 +31,7 @@ counts the results that the command and then ROUND32 would not give,
 which round twice. It fails if a bin that can occur is empty, and if a
 command sets a flag that its row of FLAGS does not allow.
 
-    fpu_vectors.py [-o FILE] [--seed S] [--count N]
+    fpu_vectors.py [-o FILE] [--seed S] [--count N] [--no-functions]
 
 writes the vectors to FILE, if given, checks the coverage, and parses
 each line back and replays it on the model. It exits 1 on a failure."""
@@ -101,6 +101,7 @@ FLAGS: Dict[str, int] = {
     "ITOF": 0, "UTOF": 0, "FTOI": I, "FTOU": I, "CONST": I, "SCALE2": I | O, "SCALE10": I | O,
     "DIGITS": I, "FROMBCD": I, "GETEXP": I | Z, "GETMANT": I,
     "AND": I, "OR": I, "XOR": I, "NOT": I, "SHL": I, "SHR": I, "IDIV": I, "MOD": I,
+    "SIN": I, "COS": I, "TAN": I,
 }
 
 # The values each command pushes. The others push one.
@@ -777,7 +778,16 @@ def main() -> None:
     p.add_argument("-o", "--output", help="the file to write the vectors to")
     p.add_argument("--seed", type=int, default=161, help="the seed of the random sequence (161)")
     p.add_argument("--count", type=int, default=20000, help="the accesses of the random sequence (20000)")
+    p.add_argument(
+        "--no-functions",
+        action="store_true",
+        help="leave out the functions of phase 2, whose numbers are then not commands, for the VHDL until #183",
+    )
     a = p.parse_args()
+    if a.no_functions:
+        for num in [num for num, c in COMMANDS.items() if c.seq]:
+            FLAGS.pop(COMMANDS[num].name, None)
+            del COMMANDS[num]
     g = Generator()
     directed(g, random.Random(a.seed))
     hand_cases(g)

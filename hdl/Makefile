@@ -73,13 +73,14 @@ $(FPU_UNIT_RUNS:%=run/fpu_unit/%): run/fpu_unit/%:
 # emulator/test/fpu_vectors.py, over the FPU's bus: the directed ones and
 # a random sequence from the seed FPU_SEED, FPU_COUNT accesses long, and
 # then the slowest commands of test/fpu_slow_vectors.py, whose cycles it
-# bounds.
+# bounds. The vectors leave out the functions of phase 2 until fpu.vhd
+# has them (#183).
 FPU_SEED ?= 1
 FPU_COUNT ?= 20000
 
 run/fpu:
 	@($(in_rundir) && $(PYTHON) $(CURDIR)/../emulator/test/fpu_vectors.py --seed $(FPU_SEED) \
-	  --count $(FPU_COUNT) -o vectors > /dev/null \
+	  --count $(FPU_COUNT) --no-functions -o vectors > /dev/null \
 	  && $(PYTHON) $(CURDIR)/test/fpu_slow_vectors.py >> vectors \
 	  && $(call sim_run,tb_fpu,-gG_VECTORS=vectors) > tb_fpu.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS tb_fpu"; else echo "FAIL tb_fpu"; \

@@ -9,6 +9,7 @@
 //! replays its vectors.
 
 const std = @import("std");
+const seq = @import("fpu_seq.zig");
 
 /// The flags, bits 11..8 of `FPU_STATUS`, shifted down by 8.
 pub const invalid: u4 = 1;
@@ -633,6 +634,69 @@ pub const Fpu = struct {
         }
     }
 
+    /// The sequence of the function num, or null.
+    fn program(num: u8) ?*const seq.Program {
+        for (&seq.programs) |*p| {
+            if (p.num == num) return p;
+        }
+        return null;
+    }
+
+    /// A function of phase 2: its operands popped as any command pops
+    /// them, then pushed again, and its sequence run on the stack. The
+    /// flags of its steps are not kept but for the stack fault: the
+    /// function sets its own (DEVICES.md §11.3).
+    fn function(self: *Fpu, p: *const seq.Program) void {
+        var ops: [2]u64 = undefined;
+        var i: usize = p.pops;
+        while (i > 0) {
+            i -= 1;
+            ops[i] = self.pop();
+        }
+        const flags = self.flags;
+        var any_nan = false;
+        var all_finite = true;
+        for (ops[0..p.pops]) |v| {
+            if (isNan(v)) {
+                any_nan = true;
+                if (isSnan(v)) self.flags |= invalid;
+            }
+            if (!isFinite(v)) all_finite = false;
+        }
+        if (any_nan) {
+            self.push(canonical_nan);
+            return;
+        }
+        for (ops[0..p.pops]) |v| self.push(v);
+        var pole = false;
+        var pc: usize = 0;
+        while (pc < p.steps.len) {
+            const s = p.steps[pc];
+            pc += 1;
+            switch (s.op) {
+                .cmd => self.command(s.n),
+                .k => self.push(seq.constants[s.n]),
+                .put => {
+                    const v = self.pop();
+                    self.stack[self.depth - 1 - s.n] = v;
+                },
+                .jz => if (isZero(self.pop())) {
+                    pc = s.n;
+                },
+                .jmp => pc = s.n,
+                .pole => pole = true,
+            }
+        }
+        const r = self.x();
+        var fl: u4 = 0;
+        if (isNan(r)) {
+            fl = invalid;
+        } else if (std.math.isInf(f(r)) and all_finite) {
+            fl = if (pole) divzero else overflow;
+        }
+        self.flags = flags | (self.flags & stack_fault) | fl;
+    }
+
     /// The bits of n that a command uses, and whether S applies, or null
     /// for a number that is not defined.
     fn spec(num: u8) ?struct { nmask: u8 = 0, s: bool = false } {
@@ -642,7 +706,7 @@ pub const Fpu = struct {
             0x1C => .{ .nmask = 0x07 },
             0x10...0x14 => .{ .s = true },
             0x00, 0x02, 0x04, 0x05, 0x15...0x1B, 0x1D...0x1F, 0x20...0x24, 0x28...0x2B, 0x38...0x39, 0x3B...0x3D, 0x60...0x67 => .{},
-            else => null,
+            else => if (program(num) != null) .{} else null,
         };
     }
 
@@ -656,6 +720,10 @@ pub const Fpu = struct {
         };
         if (w >> 17 != 0 or (s and !sp.s) or n & ~sp.nmask != 0) {
             self.flags |= invalid;
+            return;
+        }
+        if (program(num)) |p| {
+            self.function(p);
             return;
         }
         var r: Result = undefined;

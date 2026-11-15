@@ -615,7 +615,7 @@ To read the time into R3:R2 seconds and R1 microseconds:
 
 ## 11. Floating-point unit
 
-The emulator maps a floating-point unit, the FPU, at `0xFFFFFF88`–`0xFFFFFF8F`, and `--no-fpu` makes its words ordinary memory. The runtime's float library uses it, in `runtime/float_fpu.nasm`. The FPGA implementation has it too, in `hdl/src/fpu.vhd`. It holds a stack of up to 16 IEEE 754 binary64 values. A program pushes values, writes a command, and reads the result from the top of the stack. This section is phase 1: the stack, the arithmetic, the conversions, and the decimal commands. The functions, such as `SIN` and `LN`, are phase 2, and their command numbers are reserved (§11.3).
+The emulator maps a floating-point unit, the FPU, at `0xFFFFFF88`–`0xFFFFFF8F`, and `--no-fpu` makes its words ordinary memory. The runtime's float library uses it, in `runtime/float_fpu.nasm`. The FPGA implementation has it too, in `hdl/src/fpu.vhd`. It holds a stack of up to 16 IEEE 754 binary64 values. A program pushes values, writes a command, and reads the result from the top of the stack. Phase 1 is the stack, the arithmetic, the conversions, and the decimal commands. Phase 2 is the functions, such as `SIN` and `LN`, of which `SIN`, `COS`, and `TAN` are defined, in the emulator but not yet in `fpu.vhd` (§11.3).
 
 X is the value on the top of the stack, Y the value below it, and the depth the number of values, 0 to 16. A 64-bit value takes two words, low word first, as in [ABI.md](../runtime/ABI.md) and the math unit (§2).
 
@@ -835,37 +835,22 @@ A multiplication by a reciprocal, such as `CONST 9` and `MUL`, is much faster th
 
 - `GETEXP` and `GETMANT` together are C's `frexp`, up to a factor of 2: `frexp` gives `GETMANT` / 2 and E + 1. With `SCALE2` they are `ldexp`, `scalbn`, `logb`, and `ilogb`.
 
-**Functions, phase 2.** The numbers `0x40` to `0x5F` are reserved for the functions. Until phase 2 they are undefined, and set the invalid flag. Their sequences and their bounds will be part of this section, from fdlibm where it has the function. Each is a sequence of the commands above on the same datapath, with constants from the same ROM, and changes X and Y only as the table says.
+**Functions.** The numbers `0x40` to `0x5F` are the functions of phase 2. `SIN`, `COS`, and `TAN` are defined. The others of the table below are being added (#182), and until then, as the numbers that the table leaves out, they are undefined and set the invalid flag.
 
-- **For C's `math.h`.** The C library's functions use these commands, and are then a few words each in place of musl's code (§11.5). So each function covers the whole range of binary64 that C defines, and its error stays within the bounds that runtime/README.md states for the C library today, 1 ulp for most.
-- **The whole range.** `SIN`, `COS`, and `TAN` reduce any finite argument by π/2 exactly, as musl's `__rem_pio2_large` does in software: the FPU holds 2/π to some 1200 bits in its constant ROM, and multiplies the significand of X by the bits of it that matter, in its integer multiplier. An infinite argument gives the canonical NaN and sets the invalid flag.
+- **A sequence of steps.** Each function is a sequence of steps on the stack: commands of this section, and five steps that only the sequences have. `K` pushes a constant of the sequences, `PUT n` pops X and writes it in place of the value n below the new X, `JZ` pops X and jumps if it is zero, `JMP` jumps, and `POLE` marks an infinite result as a division by zero. The steps are in [`emulator/test/fpu_seq.py`](../emulator/test/fpu_seq.py), which is the reference. Its programs follow the C code that the table names operation by operation, in the order C gives them, and it compiles them to the steps. The emulator's table, `emulator/src/fpu_seq.zig`, is written from them, and `make test` checks that it is current.
+- **The stack.** A function pops its operands, as any command does (§11.4), and pushes them again. Its steps then keep their values in a frame above them, and end with the result in place of the operands. The frame takes k values above the operands, which the table gives. Where fewer than k are free, its pushes drop the deepest values and set the stack fault, as any push does.
+- **Special operands.** A NaN operand gives the canonical NaN, and a signaling one sets the invalid flag, before any step runs.
+- **Flags.** The flags that the steps set are not kept, but the stack fault. A function sets its own: the invalid flag for a NaN result, and for an infinite result of finite operands the division-by-zero flag where the steps say `POLE`, and the overflow flag where not.
+- **For C's `math.h`.** #184 makes the C library's functions use these commands, in place of musl's code. Where a sequence follows musl's code, its results are musl's, bit for bit: the C library's float operations round as the FPU's do, and it has no fused multiply-add.
 
-| Number | Name | What it gives |
-|---|---|---|
-| `0x40` | `SIN` | sin X |
-| `0x41` | `COS` | cos X |
-| `0x42` | `TAN` | tan X |
-| `0x43` | `ASIN` | arcsin X |
-| `0x44` | `ACOS` | arccos X |
-| `0x45` | `ATAN` | arctan X |
-| `0x46` | `ATAN2` | the angle of the point (X, Y), from −π to π, which is arctan(Y / X) in the right quadrant, as C's `atan2(Y, X)` |
-| `0x48` | `LN` | ln X |
-| `0x49` | `LOG2` | log₂ X |
-| `0x4A` | `LOG10` | log₁₀ X |
-| `0x4C` | `EXP` | e^X |
-| `0x4D` | `POW2` | 2^X |
-| `0x4E` | `POW` | Y^X |
-| `0x4F` | `HYPOT` | √(Y² + X²), without an overflow or an underflow on the way |
-| `0x50` | `SINH` | sinh X |
-| `0x51` | `COSH` | cosh X |
-| `0x52` | `TANH` | tanh X |
-| `0x53` | `ASINH` | arsinh X |
-| `0x54` | `ACOSH` | arcosh X |
-| `0x55` | `ATANH` | artanh X |
+| Number | Name | What it gives | From | k |
+|---|---|---|---|---|
+| `0x40` | `SIN` | sin X | musl's `sin.c`, `__sin.c`, `__cos.c`, and `__rem_pio2.c` | 12 |
+| `0x41` | `COS` | cos X | musl's `cos.c`, `__sin.c`, `__cos.c`, and `__rem_pio2.c` | 12 |
+| `0x42` | `TAN` | tan X | musl's `tan.c`, `__tan.c`, and `__rem_pio2.c` | 14 |
 
-- `ATAN2`, `POW`, and `HYPOT` take Y and X, pop both, and push the result. The others replace X.
-- `POW` squares and multiplies for a whole X within a bound. `POW2` of a whole X is `SCALE2` of 1, and exact.
-- The numbers between are kept for more functions.
+- **`SIN`, `COS`, and `TAN`** reduce X by π/2 as musl's `__rem_pio2` does for |X| below 2^20 · π/2, in up to three steps of 33 bits of π/2 each, and are within 1 ulp, the bound of musl's code that runtime/README.md states. From the value whose high word is `0x413921FB` and whose low word is 0, just below 2^20 · π/2, an argument gives the canonical NaN and sets the invalid flag, and so does an infinite one. musl reduces such an argument with `__rem_pio2_large`, which the C library keeps; #185 is that reduction in the FPU.
+- The other numbers are kept for more functions.
 
 ### 11.4 Stack faults
 
@@ -898,7 +883,7 @@ The fault is a flag for a bug, and not a way to a deeper stack.
 
 ### 11.5 Rules for programs
 
-- **Calls.** A routine may use 8 values of the stack, and leaves the depth as it found it. So a caller may keep up to 8 values on the stack across a call. [ABI.md](../runtime/ABI.md) takes this rule with nicewasm's use of the FPU.
+- **Calls.** A routine may use 8 values of the stack, and leaves the depth as it found it. So a caller may keep up to 8 values on the stack across a call. A function of §11.3 needs more: its operands, and k values above them. [ABI.md](../runtime/ABI.md) takes this rule with nicewasm's use of the FPU.
 - **C.** Program size comes before speed. So nicewasm translates a float operation of wasm as a call of a short routine of the float library, which writes the FPU's registers, and not as the accesses themselves, which take some 20 words at every use for a binary64 operation. The library shrinks from 6578 words to 289. nicewasm's `--inline-fpu` writes the accesses inline, for speed: on `bench/float.c` it costs 2.5% more words and saves 42% of the cycles on the pipelined core. The functions of `math.h` are to be such routines too, with the functions of phase 2. A smaller variant of the C library may print and read numbers through `DIGITS`, `FROMBCD`, and `SCALE10`, exact to 15 digits only, in place of musl's exact `printf` and `strtod`; the default stays exact.
 - **Interrupts.** An interrupt service routine does not use the FPU. Its state is up to 16 values, the depth, and the flags, which is far more than the math unit's operands. This rule goes if #162 removes the interrupts.
 - **Time.** In phase 1 the longest commands are `FMOD`, which takes one step for each bit of the difference of the exponents, up to some 2100, and the decimal ones. `DIGITS n` runs `SCALE10` more than once, so it may take some thousands of cycles, some tens of microseconds at 100 MHz. An interrupt, and the pause and the step of the debug link, wait for it. In the FPGA implementation, `hdl/src/fpu.vhd`, `ADD`, `SUB`, and `MUL` take some 20 cycles, and `DIV` and `SQRT` some 70, so the sequences multiply by the constants of `CONST` where a correctly rounded quotient is not needed. `XMUL`, a product and then its error, takes some 60 cycles, `ISQRT`, which is `SQRT` toward zero and then a rounding, some 90, `FMOD` up to some 2100, and `DIGITS` up to some 3400.

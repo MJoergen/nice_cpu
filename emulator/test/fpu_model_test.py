@@ -165,7 +165,7 @@ CASES: List[Case] = [
     ("NEG with S is not valid", [d(1.0)], 0, "cmd 0x10015", [d(1.0)], INVALID, None),
     ("bit 17 is not valid", [d(1.0)], 0, "cmd 0x20000", [d(1.0)], INVALID, None),
     ("0x07 is not defined", [], 0, "cmd 0x07", [], INVALID, None),
-    ("SIN is phase 2, so not defined, and no stack fault", [], 0, "cmd 0x40", [], INVALID, None),
+    ("0x5F is kept for more functions, so not defined, and no stack fault", [], 0, "cmd 0x5F", [], INVALID, None),
     ("0xFF is not defined", [], STACK, "cmd 0xFF", [], STACK | INVALID, None),
     # The stack.
     ("NOP", [d(1.0)], 0, "NOP", [d(1.0)], 0, None),
@@ -321,6 +321,30 @@ CASES: List[Case] = [
     # 0.1 = 0x1999999999999A · 2^-56, 1e300 / 0.1 is not whole; the
     # remainder is exact, so this is C's fmod, which Python's math has.
     ("FMOD 1e300, 0.1", [d(1e300), d(0.1)], 0, "FMOD", [d(math.fmod(1e300, 0.1))], 0, None),
+    # The functions. Each value is the exact one rounded once, from Taylor
+    # series in exact arithmetic, which the sequences of musl's code give
+    # here.
+    ("SIN 0.5", [d(0.5)], 0, "SIN", [0x3FDEAEE8744B05F0], 0, None),
+    ("SIN pi: pi less the double nearest it", [d(math.pi)], 0, "SIN", [0x3CA1A62633145C07], 0, None),
+    ("SIN -0: below 2^-26, sin x is x", [NZ], 0, "SIN", [NZ], 0, None),
+    ("SIN 2^-30 is itself", [d(2.0**-30)], 0, "SIN", [d(2.0**-30)], 0, None),
+    ("SIN inf", [INF], 0, "SIN", [N], INVALID, None),
+    ("SIN 2^21, beyond 2^20 pi/2", [d(2.0**21)], 0, "SIN", [N], INVALID, None),
+    ("SIN of a quiet NaN", [QN], 0, "SIN", [N], 0, None),
+    ("SIN of a signaling NaN", [SN], 0, "SIN", [N], INVALID, None),
+    ("SIN of nothing: X is a NaN", [], 0, "SIN", [N], STACK, None),
+    # The frame of SIN 0 takes five values above a full stack: the three
+    # variables of SIN, and |X| and its bound for the first test. So the
+    # five deepest go.
+    ("SIN at the depth 16", [d(float(i)) for i in range(1, 16)] + [0], 0, "SIN",
+     [d(float(i)) for i in range(6, 16)] + [0], STACK, None),
+    ("COS 0.5", [d(0.5)], 0, "COS", [0x3FEC1528065B7D50], 0, None),
+    ("COS pi", [d(math.pi)], 0, "COS", [d(-1.0)], 0, None),
+    ("COS 0", [0], 0, "COS", [d(1.0)], 0, None),
+    ("COS -inf", [NINF], 0, "COS", [N], INVALID, None),
+    ("TAN pi/4: the double below 1", [d(math.pi / 4)], 0, "TAN", [0x3FEFFFFFFFFFFFFF], 0, None),
+    ("TAN 1.5", [d(1.5)], 0, "TAN", [0x402C33ED50B88777], 0, None),
+    ("TAN -0", [NZ], 0, "TAN", [NZ], 0, None),
     # XMUL: p as Y, the error as X.
     ("XMUL 3, 3 is exact: the error is +0", [d(3.0), d(3.0)], 0, "XMUL", [d(9.0), 0], 0, None),
     # (1 + 2^-52)^2 = 1 + 2^-51 + 2^-104.

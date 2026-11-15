@@ -243,3 +243,13 @@ proposed again. The open items are the
   niceasm, the debugger's loader, and the runtime's start-up code all
   take a program at 0, and the debugger loads one there on a board too.
   NiceMonMEGA65's builds pass `--monitor` already.
+- **`--memory-bytes` as nicebuild's default** (#168), so that a program
+  reserves only the start of its memory. A valid module may access any
+  byte below its memory's size, so WASM.md lets the translator reserve
+  less only when it is asked to; a program would trap with code 2
+  instead. With `auto`, the reserved part ends at `__heap_base`, so the
+  heap of `malloc`, `nice.zig`, and `nice.rs` would be empty, and every
+  program with one would need a size. The whole page costs some 16,000
+  steps of clearing at the start, and no word of the `.bin`, as it is
+  `.RES`. Where those steps added up, in the simulations of the cores,
+  the kept test programs reserve less already.

@@ -36,7 +36,7 @@ A program may contain any number of library modules. They go with the runtime li
 - Byte address *b* is bits 8·(*b* mod 4) + 7 to 8·(*b* mod 4) of the word at `MEMBASE` + ⌊*b* / 4⌋. Byte 0 of a word is its least significant byte, as in `.ASCII_B` (ISA §10.3).
 - Wasm is little-endian, so an `i32` at a byte address that is a multiple of 4 is exactly one NICE word. An `i64` there is two words, low word first, as in [ABI.md](../runtime/ABI.md).
 - A page is 65536 bytes, or 16384 words. The translator reserves words for the memory up to a cap. The cap is at least the module's initial size and at most its maximum size, if it declares one. The translator chooses it, for example by an option, because a module may declare a maximum that no NICE system has room for. `memory.grow` returns −1 if the new size would pass the cap.
-- A translator may offer to reserve only the start of a program's memory, as it does for a library module and for code in a ROM (below). A memory is a whole number of pages, so a small program would otherwise reserve 16384 words, though it uses far fewer. The reserved part has no page count, so the module then uses neither `memory.size` nor `memory.grow`, and the translator rejects one that does. An access past the reserved part traps as out of bounds (code 2), unless the bounds checks are left out. A valid module may access any byte below its memory's size, so the translator does this only when it is asked to.
+- A translator may offer to reserve only the start of a program's memory, as it does for a library module and for code in a ROM (below). A memory is a whole number of pages, so a small program would otherwise reserve 16384 words, though it uses far fewer. The reserved part has no page count, so the module then uses neither `memory.size` nor `memory.grow`, and the translator rejects one that does. Its allocator finds the end of the memory with `nice.heap_end` instead, and `nice.grow` fails (The module `nice`, below). An access past the reserved part traps as out of bounds (code 2), unless the bounds checks are left out. A valid module may access any byte below its memory's size, so the translator does this only when it is asked to.
 - The words that active data segments set are part of the program image, like C static data ([ABI.md](../runtime/ABI.md)), unless the code runs from a ROM (Code in a ROM). The translator reserves the rest of the memory with `.RES` (ISA §10.3), so it is not in the image. Wasm requires new memory to be 0, so `___wasm_start` sets the initial pages, or their reserved part, to 0, except the words that data segments set, and `memory.grow` sets each new page to 0.
 - The label `___wasm_memory` is `MEMBASE`, so C code can declare the memory as `extern unsigned __wasm_memory[];`.
 
@@ -53,22 +53,26 @@ Memory accesses must give the results wasm defines:
 - The label `___wasm_ram_end` is the word after the last, so that the system can check that the words fit where it put them.
 - Their initial values are in the image, as a copy: the mutable globals' values, and the words that active data segments set. `___wasm_start` copies them to RAM and sets the rest of the memory to 0 (Start-up). RAM does not keep its words over a power cycle, so the system calls `___wasm_start` at every start, also after a reset that leaves RAM alone, so that the module starts fresh.
 - As for a library module, the translator reserves only the start of the memory, as much as the module needs. Static data that is 0 at the start, such as C's `.bss`, is in no data segment, so the translator may need to be told the size, or the end of that data. An access past the reserved part traps as out of bounds (code 2), unless the bounds checks are left out.
-- The module uses neither `memory.size` nor `memory.grow`. The translator rejects one that does.
+- The module uses neither `memory.size` nor `memory.grow`. The translator rejects one that does. `nice.heap_end` and `nice.grow` take their place (The module `nice`).
 - The immutable globals, the table of `call_indirect`, and the code are only read, so they stay in the image.
 - A library module keeps its memory and its globals in the image, so a program whose module runs from a ROM contains no library module.
 
 The start-up code of [ABI.md](../runtime/ABI.md) holds the vectors that the runtime library jumps through, so a system that runs code from a ROM has start-up code of its own, which puts them in its RAM.
 
-**Hardware access.** Linear memory cannot reach I/O devices or the rest of NICE memory. A module reaches them through these imports from the module `nice`. The translator replaces each call with code that performs the access shown:
+**The module `nice`.** Linear memory cannot reach I/O devices or the rest of NICE memory, and a module with only the start of its memory reserved has no page count to ask for. A module does both through these imports from the module `nice`. The translator replaces each call with the code shown:
 
 | Import | Wasm type | Code |
 |---|---|---|
 | `nice.peek` | `(i32) -> i32` | `MOVE R1, @R1`: read the NICE word at the given word address. |
 | `nice.poke` | `(i32, i32) -> ()` | `MOVE @R1, R2`: write the second argument to the NICE word at the first. |
+| `nice.heap_end` | `() -> i32` | The end of the memory in bytes: its size in pages times 65536, or the size of the reserved part where only the start is reserved. |
+| `nice.grow` | `(i32) -> i32` | `memory.grow` by the given pages, or −1 where only the start of the memory is reserved, also for 0 pages. |
 
-These exist to reach devices, so the ISA §8.2 rule for data accesses applies to them as to any instruction. Each call is performed exactly once and in program order, even when the result of a `peek` is not used.
+`peek` and `poke` exist to reach devices, so the ISA §8.2 rule for data accesses applies to them as to any instruction. Each call is performed exactly once and in program order, even when the result of a `peek` is not used.
 
 In Rust, they are declared in an `extern "C"` block with `#[link(wasm_import_module = "nice")]`. In Zig, they are `extern "nice" fn peek(addr: u32) u32` and `extern "nice" fn poke(addr: u32, val: u32) void`. Zig must use `u32`, because the I/O addresses `0xFFFFFF00`–`0xFFFFFFFF` do not fit in an `i32`. Both types become `i32` in wasm.
+
+`heap_end` and `grow` exist for allocators, which then work wherever the memory lies: in a whole memory, in a reserved part, and in RAM for code in a ROM. The translator rejects a call of either in a module that has no memory.
 
 **Functions and calls.** A wasm function is a [ABI.md](../runtime/ABI.md) function whose parameter and result types are the C types in the table above:
 
@@ -119,7 +123,7 @@ Running out of NICE stack is not detected, unlike in wasm. What happens then is 
 - An exported function or global whose name is a C identifier gets the label `_name`, as in [ABI.md](../runtime/ABI.md). So C code calls an exported wasm function `sum` as `sum`. Names that start with `_` are reserved for the runtime library ([ABI.md](../runtime/ABI.md)), so they get no label, and neither do names that are not C identifiers.
 - A function imported from the module `env` is the [ABI.md](../runtime/ABI.md) function `name`, at the label `_name`. So the C library's `exit` is the start-up code's `_exit`, which ends the program as a return from `main` does, and its `nice_putc` is the runtime's `_nice_putc`. Rust, Zig, and clang put their `extern` functions in `env` unless told otherwise.
 - The translator rejects an import from `env` whose name starts with `_`. Such names are reserved for the runtime library ([ABI.md](../runtime/ABI.md)), and the translator calls the routines it needs itself. Clang imports them for routines that the runtime library does not have, such as `__multi3` for `__int128` and `__addtf3` for `long double`.
-- The translator accepts only function imports from `env`, and only `peek` and `poke` from `nice`. It rejects every other import. This includes imported globals, memories, and tables, such as those that `--import-memory` or position-independent code produce.
+- The translator accepts only function imports from `env`, and only `peek`, `poke`, `heap_end`, and `grow` from `nice`. It rejects every other import. This includes imported globals, memories, and tables, such as those that `--import-memory` or position-independent code produce.
 - Labels that the translator makes for itself start with `W.`, for example `W.f12` for function 12. They cannot clash with C names, or with the C compiler's labels, which start with `L.`.
 
 **Pointers at the boundary with C.** A wasm pointer is a byte address in linear memory. A C pointer is a word address. Wasm has no pointer type, so the translator cannot tell a pointer from a number, and it converts nothing. A pointer from wasm reaches C as an integer that holds a byte address, and the C code converts it:

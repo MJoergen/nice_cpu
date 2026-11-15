@@ -326,7 +326,7 @@ Zig keeps only the objects of `libc.a` that the program references.
 | `time.h` | `clock`, with `CLOCKS_PER_SEC` 1000000 and `clock_t` unsigned, from the microsecond counter of DEVICES.md §3, which counts the host's time in the emulator, and wraps after 71.6 minutes on a board; `time`, from the clock of the time of day of DEVICES.md §10, which returns −1 while the clock holds no time; and the types `clock_t` and `time_t`. |
 | `errno.h` | `errno`, one for the whole program, 0 at start, and the codes `EINVAL`, `EDOM`, `ERANGE`, and `EILSEQ`. Only the conversions from text set it: `strtol` and `strtoul`, and so `atoi` and `atol`, to `ERANGE` on an overflow and to `EINVAL` for a base other than 0 and 2 to 36, and `strtod` and `strtof`, and so `atof` and `scanf`, to `ERANGE` when a float overflows or underflows, and to `EINVAL` when there is none. |
 | `ctype.h` | `isalnum`, `isalpha`, `iscntrl`, `isdigit`, `isgraph`, `islower`, `isprint`, `ispunct`, `isspace`, `isupper`, `isxdigit`, `tolower`, `toupper` |
-| `nice.h` | The device routines (see above): `nice_putc`, `nice_getc`, `nice_pollc`, `nice_print`, `nice_cycles`, `nice_instructions`, `nice_micros`, `nice_clock`, `nice_clock_isset`, and `nice_clock_set` (C only, with no assembly routine), `nice_screen_put`, and `nice_screen_clear`, with `NICE_SCREEN_COLS`, `NICE_SCREEN_ROWS`, and `NICE_SCREEN_BLANK`, the blank it writes, and the names of the colors, `NICE_FG_*` and `NICE_BG_*` (Screen colors, below). Also `nice_peek` and `nice_poke`, the `nice` imports of WASM.md, and the devices' addresses, for devices that have no routine. |
+| `nice.h` | The device routines (see above): `nice_putc`, `nice_getc`, `nice_pollc`, `nice_print`, `nice_cycles`, `nice_instructions`, `nice_micros`, `nice_clock`, `nice_clock_isset`, and `nice_clock_set` (C only, with no assembly routine), `nice_screen_put`, and `nice_screen_clear`, with `NICE_SCREEN_COLS`, `NICE_SCREEN_ROWS`, and `NICE_SCREEN_BLANK`, the blank it writes, and the names of the colors, `NICE_FG_*` and `NICE_BG_*` (Screen colors, below). Also `nice_peek`, `nice_poke`, `nice_heap_end`, and `nice_grow`, the `nice` imports of WASM.md, and the devices' addresses, for devices that have no routine. |
 
 The device routines, in `src/nice.c`, are the only functions that touch
 hardware. They use `nice_peek` and `nice_poke`. `nice_putc` is not among
@@ -421,10 +421,11 @@ The library is small on purpose:
 - `malloc` is first fit, with an 8-byte header on each block, and merges
   neighboring free blocks. `realloc` to a smaller size, 0 included,
   keeps the block. The heap starts at wasm-ld's `__heap_base`
-  and grows with `memory.grow`, so only up to nicewasm's
-  `--memory-pages`. Code that runs from a ROM, translated with `--ram`,
-  may use neither `memory.size` nor `memory.grow`, so it has no `malloc`
-  (translator README, Code in a ROM).
+  and ends at `nice_heap_end()`. It grows with `nice_grow`, which is
+  `memory.grow`, so only up to nicewasm's `--memory-pages`. Where only
+  the start of the memory is reserved, with nicewasm's `--memory-bytes`
+  or `--ram`, the heap ends there, and cannot grow (WASM.md, The module
+  `nice`).
 
 Compile with the library's headers and link with `libc.a`, for example:
 
@@ -642,8 +643,10 @@ size, or a larger one that still fits the block, keeps the block, as
 Zig's `resize` and Rust's `realloc` ask. Blocks are 8-aligned; a larger
 alignment costs that many bytes more. The heap starts at the linker's
 `__heap_base`, using the rest of the initial memory first, and grows
-with `memory.grow` by the pages a block needs, so a heap larger than the
-initial memory needs `--memory-pages` (translator README). When the memory cannot grow, an allocation fails: Zig returns
+with `nice.grow`, which is `memory.grow`, by the pages a block needs, so
+a heap larger than the initial memory needs `--memory-pages` (translator
+README). Where only the start of the memory is reserved, the heap ends
+there. When the memory cannot grow, an allocation fails: Zig returns
 `error.OutOfMemory`, and Rust's `alloc` crate panics, except in calls
 such as `Vec::try_reserve`, which return an error. An interrupt routine
 must not use the heap. `test/zigheap.zig` and `test/rustheap.rs` are
@@ -693,7 +696,10 @@ test that calls it runs again with `float.nasm`, with the same expected
 output. With `NO_FPU=1`, every test joins `float.nasm` and runs once. `exit.c` also runs as `libc/exit_mon`, joined
 after `test/monitor.nasm` with `start_wasm_mon.nasm`, and its
 `exit_mon.expected` shows R2 too, the bytes that went through the
-stand-in's putc routine. The exception is `mchess.expected`, 600 lines of
+stand-in's putc routine. `malloc.c` also runs as `libc/malloc_small`,
+translated with `--memory-bytes 32768`, so that its heap ends in the
+middle of the page, and fewer blocks fit before `malloc` fails. Its
+output is the same. The exception is `mchess.expected`, 600 lines of
 board output. It was checked against a native build of `mchess.c` on the
 same input, and the perft counts 20, 400, and 8902 are the known ones for
 the start position. The test runs perft only, so the search of `mchess`,

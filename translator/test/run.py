@@ -433,13 +433,16 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "smallfull": ["--memory-bytes", "65536"],
            "rom_small": ["--memory-bytes", "auto"],
            "data_c_small": ["--memory-bytes", "8192"],
-           "memory_c_small": ["--memory-bytes", "8192"]}
+           "memory_c_small": ["--memory-bytes", "8192"],
+           "nicemem_grow": ["--memory-pages", "3"],
+           "nicemem_small": ["--memory-bytes", "64"],
+           "nicemem_rom": ["--ram", ROM_RAM, "--memory-bytes", "64"]}
 
 # The cases of a program's module with only the start of its memory
 # reserved (WASM.md, Linear memory), and the bytes reserved. rom.c's
 # __heap_base is 4400 (RAM_END).
 RESERVED = {"small": 64, "smalltrap": 64, "rom_small": 4400, "data_c_small": 8192,
-            "memory_c_small": 8192, "small62": 64, "smallfull": 65536}
+            "memory_c_small": 8192, "small62": 64, "smallfull": 65536, "nicemem_small": 64}
 
 # The cases for code that runs from a ROM (WASM.md, Code in a ROM), and
 # the word after their words in RAM, ___wasm_ram_end: ROM_RAM plus the
@@ -447,7 +450,8 @@ RESERVED = {"small": 64, "smalltrap": 64, "rom_small": 4400, "data_c_small": 819
 RAM_END = {"rom": 0xFFFFF000 + 1 + 4400 // 4,       # __stack_pointer, to __heap_base
            "romfresh": 0xFFFFF000 + 2 + 1 + 32 // 4,  # an i64 and an i32 global
            "data_c_rom": 0xFFFFF000 + 1 + 8192 // 4,
-           "memory_c_rom": 0xFFFFF000 + 1 + 8192 // 4}
+           "memory_c_rom": 0xFFFFF000 + 1 + 8192 // 4,
+           "nicemem_rom": 0xFFFFF000 + 64 // 4}
 
 # What a case must print on the console (DEVICES.md §1). Every other case
 # must print nothing.
@@ -3565,6 +3569,43 @@ CASES += [
         exports(("main", 0, 0)),
         code((1, i32_const(65532) + local_set(0) + local_get(0) + i32_const(0x12345678)
               + mem(I32_STORE) + local_get(0) + mem(I32_LOAD)))), "", 0x12345678),
+]
+# nice.heap_end and nice.grow (WASM.md, Linear memory), imported as
+# functions 0 and 1, one bit each. nicemem has a whole page that cannot
+# grow: the end is 65536, grow 0 returns the size, 1, and grow 1 fails,
+# 1111. nicemem_grow may grow to 3 pages: grow 1 returns the old size, 1,
+# and moves the end to 131072, where the last word works; grow 5 fails,
+# grow 0 returns 2, and grow 1 returns 2 and ends at the cap, 196608,
+# where grow 1 fails, nine ones. nicemem_small and nicemem_rom reserve 64
+# bytes, which have no page count: the end is 64, and every grow fails,
+# also by 0, 1111.
+def nicemem(*checks: bytes) -> bytes:
+    return module(
+        types(MAIN_TYPE, ([I32], [I32])),
+        imports(("nice", "heap_end", 0), ("nice", "grow", 1)),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 2)),
+        code((1, bits(0, *checks))))
+
+
+def heap_end(want: int) -> bytes:
+    return call(0) + i32_const(want) + EQ
+
+
+def grow(n: int, want: int) -> bytes:
+    return i32_const(n) + call(1) + i32_const(want) + EQ
+
+
+NICEMEM_SMALL = nicemem(heap_end(64), grow(0, -1), grow(1, -1), heap_end(64))
+CASES += [
+    ("nicemem", nicemem(heap_end(65536), grow(0, 1), grow(1, -1), heap_end(65536)), "", 0xF),
+    ("nicemem_grow", nicemem(
+        heap_end(65536), grow(1, 1), heap_end(131072),
+        st(I32_STORE, 131068, 77) + ld(I32_LOAD, 131068, 77),
+        grow(5, -1), grow(0, 2), grow(1, 2), heap_end(196608), grow(1, -1)), "", 0x1FF),
+    ("nicemem_small", NICEMEM_SMALL, "", 0xF),
+    ("nicemem_rom", NICEMEM_SMALL, "", 0xF),
 ]
 # ___wasm_start sets the words in RAM to their initial values, so a
 # second call starts the module fresh. Global 0 is an i64, 0x1_00000002,

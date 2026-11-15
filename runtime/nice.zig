@@ -11,6 +11,11 @@ const std = @import("std");
 pub extern "nice" fn peek(addr: u32) u32;
 /// Writes val to the NICE word at a word address.
 pub extern "nice" fn poke(addr: u32, val: u32) void;
+// The end of the linear memory in bytes, and memory.grow, also where only
+// its start is reserved, which has no page count (WASM.md). The heap uses
+// them.
+extern "nice" fn heap_end() u32;
+extern "nice" fn grow(pages: i32) i32;
 
 // The device routines of ABI.md. nice_print is left out: it takes a
 // string of one character per word, and wasm strings are bytes.
@@ -160,8 +165,10 @@ pub fn print(comptime fmt: []const u8, args: anytype) void {
 
 // The heap: first fit, as the C library's malloc.c. It starts at
 // __heap_base, which the linker puts after the stack and the data, and
-// grows with memory.grow, up to nicewasm's --memory-pages. Each block has
-// an 8-byte header, and its address and size are multiples of 8. Free
+// ends at nice.heap_end. It grows with nice.grow, which works as
+// memory.grow, up to nicewasm's --memory-pages, where the memory can grow,
+// and fails where only its start is reserved. Each block has an 8-byte
+// header, and its address and size are multiples of 8. Free
 // blocks are kept in a list sorted by address, and neighbors are merged
 // when a block is freed. NICE has no threads, and an interrupt routine
 // must not use the heap.
@@ -177,21 +184,22 @@ extern var __heap_base: u8;
 
 var free_list: ?*Block = null;
 var brk: usize = 0;
-var heap_end: usize = 0;
+var end: usize = 0;
 
-// size bytes of new heap, or null if memory.grow fails.
+// size bytes of new heap, or null if the memory cannot grow.
 fn more(size: usize) ?*Block {
     if (brk == 0) {
         brk = std.mem.alignForward(usize, @intFromPtr(&__heap_base), 8);
-        heap_end = @wasmMemorySize(0) * page;
+        // A reserved part that ends before the heap leaves it empty.
+        end = @max(heap_end(), brk);
     }
-    if (size > heap_end - brk) {
-        const need = size - (heap_end - brk);
+    if (size > end - brk) {
+        const need = size - (end - brk);
         // The page count would wrap: more than all of memory
         if (need > std.math.maxInt(usize) - (page - 1)) return null;
         const pages = (need + page - 1) / page;
-        if (@wasmMemoryGrow(0, pages) == -1) return null;
-        heap_end += pages * page;
+        if (grow(@intCast(pages)) == -1) return null;
+        end += pages * page;
     }
     const b: *Block = @ptrFromInt(brk);
     brk += size;

@@ -250,7 +250,8 @@ class FuncType:
 
 # The imports from the module nice and their types (WASM.md). A call to one
 # is replaced by the access it performs.
-NICE_TYPES = {"peek": FuncType([I32], [I32]), "poke": FuncType([I32, I32], [])}
+NICE_TYPES = {"peek": FuncType([I32], [I32]), "poke": FuncType([I32, I32], []),
+              "heap_end": FuncType([], [I32]), "grow": FuncType([I32], [I32])}
 
 
 @dataclass
@@ -597,7 +598,8 @@ def parse_section(m: Module, sec_id: int, s: Reader, sec_start: int) -> None:
             type_idx = func_type_idx(m, s)
             if module == "nice":
                 if name not in NICE_TYPES:
-                    raise WasmError(f"{what}: the module 'nice' has only peek and poke", at)
+                    raise WasmError(f"{what}: the module 'nice' has only peek, poke, heap_end,"
+                                    " and grow", at)
                 if m.types[type_idx] != NICE_TYPES[name]:
                     want = NICE_TYPES[name]
                     raise WasmError(f"{what} must have the type ({', '.join(map(type_name, want.params))})"
@@ -2956,6 +2958,8 @@ class Translator:
         # --memory-bytes (WASM.md, Linear memory). A library module and
         # code in a ROM always reserve only the start.
         self.partial = memory_bytes is not None and not library and ram is None
+        # Whether only the start of the memory is reserved, for any reason.
+        self.reserved_part = bool(library) or ram is not None or memory_bytes is not None
         # The bytes of the memory that are reserved: all of the initial
         # pages, or only the start (WASM.md).
         self.mem_bytes: Optional[int] = None
@@ -4728,6 +4732,45 @@ class FunctionTranslator:
             self.call(routine + ("64" if t == I64 else ""), FuncType([t, t], [t]), at, what,
                       dest=result)
 
+    def memory_grow(self, at: int, name: str) -> None:
+        """memory.grow, with its operand on the stack."""
+        assert self.t.m.memory_pages is not None
+        if self.t.growable:
+            self.t.helpers.add("W.grow")
+            self.call("W.grow", FuncType([I32], [I32]), at, name)
+        else:
+            # The memory is at its cap, so only growing by 0 pages
+            # succeeds. It returns the size, and anything else -1.
+            (delta,) = self.pop([I32], at, name)
+            d = self.push(I32)[0]
+            self.emit("MOVE[M]", "R0", delta[0])
+            self.emit("MOVE", d, "-1")
+            self.emit("?Z MOVE", d, str(self.t.m.memory_pages))
+
+    def nice_memory(self, nice: str, at: int) -> None:
+        """nice.heap_end and nice.grow (WASM.md, Linear memory): the end of
+        the memory in bytes, and memory.grow, also where only the start of
+        the memory is reserved, which has no page count."""
+        name = f"nice.{nice}"
+        if self.t.m.memory_pages is None:
+            raise WasmError(f"function {self.idx}: {name} needs a memory, and the module has"
+                            " none", at)
+        if nice == "heap_end":
+            d = self.push(I32)[0]
+            if self.t.growable:
+                p = self.new_vreg()
+                self.emit("MOVE", p, "@W.pages")
+                self.emit("SHL", d, p, "16")
+            else:
+                assert self.t.mem_bytes is not None
+                self.emit("MOVE", d, words(self.t.mem_bytes, I32)[0] if self.t.mem_bytes else "R0")
+        elif self.t.reserved_part:
+            # The reserved part cannot grow.
+            self.pop([I32], at, name)
+            self.emit("MOVE", self.push(I32)[0], "-1")
+        else:
+            self.memory_grow(at, name)
+
     def memarg(self, n: int, align: int, at: int, what: str) -> None:
         """Checks a load's or store's memory and alignment."""
         if self.t.m.memory_pages is None:
@@ -5165,13 +5208,17 @@ class FunctionTranslator:
                     self.check_tail(ft, at, name)
                     reachable = False
                 if imm < len(self.t.m.imports) and self.t.m.imports[imm].module == "nice":
-                    # One access, even if a peek's result is not used (WASM.md).
-                    p = self.new_vreg()
-                    if self.t.m.imports[imm].name == "peek":
+                    nice = self.t.m.imports[imm].name
+                    if nice in ("heap_end", "grow"):
+                        self.nice_memory(nice, at)
+                    elif nice == "peek":
+                        # One access, even if the result is not used (WASM.md).
+                        p = self.new_vreg()
                         (addr,) = self.pop([I32], at, "nice.peek")
                         self.emit("MOVE", p, addr[0])
                         self.emit("MOVE", self.push(I32)[0], f"@{p}")
                     else:
+                        p = self.new_vreg()
                         addr, value = self.pop([I32, I32], at, "nice.poke")
                         self.emit("MOVE", p, addr[0])
                         self.emit("MOVE", f"@{p}", value[0])
@@ -5251,18 +5298,7 @@ class FunctionTranslator:
                 size = "@W.pages" if self.t.growable else str(self.t.m.memory_pages)
                 self.emit("MOVE", self.push(I32)[0], size)
             elif op == 0x40:  # memory.grow
-                assert self.t.m.memory_pages is not None
-                if self.t.growable:
-                    self.t.helpers.add("W.grow")
-                    self.call("W.grow", FuncType([I32], [I32]), at, name)
-                else:
-                    # The memory is at its cap, so only growing by 0 pages
-                    # succeeds. It returns the size, and anything else -1.
-                    (delta,) = self.pop([I32], at, name)
-                    d = self.push(I32)[0]
-                    self.emit("MOVE[M]", "R0", delta[0])
-                    self.emit("MOVE", d, "-1")
-                    self.emit("?Z MOVE", d, str(self.t.m.memory_pages))
+                self.memory_grow(at, name)
             elif op in SHIFT_OPS:
                 count = self.const_value(1)
                 fwd = self.forward(r, at, I32, 2)

@@ -139,7 +139,7 @@ of the inputs picks the language: `.c`, `.zig`, or `.rs`.
 | `--stack BYTES` | The stack size, 4096 by default, or 16384 for Zig in Debug or ReleaseSafe. It must be positive. |
 | `--memory BYTES` | The initial memory, 65536 by default. It must be positive. The stack is in the memory, so a larger `--stack` needs a larger `--memory` too: `--stack 131072` alone fails with wasm-ld's "initial memory too small", and `--memory 262144` fixes it. |
 | `--no-mpu`, `--inline-fpu`, `--no-bounds-checks`, `--trust-alignment`, `--byte-windows`, `--memory-pages N` | Passed on to `nicewasm.py` (above). With `--no-mpu`, the program is joined with `muldiv_soft.nasm`. |
-| `--memory-bytes BYTES` | Passed on to `nicewasm.py`, with BYTES a number or `auto`. The module is then linked with `--export=__heap_base`, so that `auto` reserves the memory up to the end of the static data. Not with `--memory-pages`. |
+| `--memory-bytes BYTES` | Passed on to `nicewasm.py`, with BYTES a number or `auto`. The module is then linked with `--export=__heap_base`, so that `auto` reserves the memory up to the end of the static data. That leaves no room for a heap, so `malloc` fails: a number leaves the bytes past `__heap_base` for it. Not with `--memory-pages`. |
 | `--no-fpu` | For a system without the FPU of DEVICES.md §11: join the float library in software, `runtime/float.nasm`, instead of `runtime/float_fpu.nasm`, and pass `--no-fpu` to `nicewasm.py`. Not with `--inline-fpu`. |
 | `--asm FILE` | Join a NICE assembly file after the program, so that the program can call a function that the file defines, as the label `_name` of ABI.md; for C it also lets the link leave the function undefined. The option can repeat. |
 | `--no-trap-report` | Leave out the trap report, so that a trap halts silently (see below). |
@@ -370,13 +370,19 @@ the steps that got the code here.
 - **Imports:** functions from `env`, whose names must be C identifiers
   that do not start with `_` (WASM.md). Each becomes a call to the
   label `_name`.
-- **Hardware access:** `nice.peek`, of type `(i32) -> i32`, and `nice.poke`,
+- **The module `nice`:** `nice.peek`, of type `(i32) -> i32`, and `nice.poke`,
   of type `(i32, i32) -> ()`, as WASM.md says. Each call makes exactly
   one data access, a `MOVE` that reads or writes the NICE word at the given
   word address, after the code that puts the address in a register. A
   `peek` whose result is not used still makes its access. So `poke(0xFFFFFF00, c)` prints `c` on
-  the console (DEVICES.md §1). They have no address, so they cannot be in a
-  table.
+  the console (DEVICES.md §1). `nice.heap_end`, of type `() -> i32`, is
+  the end of the memory in bytes: a constant, or the page count times
+  65536 when the memory can grow. `nice.grow`, of type `(i32) -> i32`, is
+  `memory.grow`, or -1 where only the start of the memory is reserved
+  (`--memory-bytes`, a library module, and `--ram`). The allocators of the
+  runtime use these two, so they work in each of those. A call of either
+  in a module without a memory is an error. None of the four has an
+  address, so they cannot be in a table.
 - **Exports:** functions and globals get the label `_name`, as WASM.md says.
   A name that is not a C identifier gets no label, in a library module
   too, and in a program a name that starts with `_` gets none either. Exports of the memory and of the table are ignored: the memory is at
@@ -477,9 +483,12 @@ memory:
 - Only the reserved part is cleared at the start. An access past it
   traps with code 2, unless the bounds checks are left out, though a
   wasm runtime would let it be.
-- `memory.size` and `memory.grow` are errors, so the C library's `malloc`
-  is not available, and neither are the allocators of `nice.zig` and
-  `nice.rs`.
+- `memory.size` and `memory.grow` are errors. The C library's `malloc`
+  and the allocators of `nice.zig` and `nice.rs` use `nice.heap_end`
+  and `nice.grow` instead, so their heap ends where the reserved part
+  ends, and an allocation past it fails. With `auto`, the reserved part
+  ends at `__heap_base`, so the heap is empty: give a number to make
+  room for one.
 
 ## Code in a ROM
 
@@ -506,8 +515,10 @@ writes go in RAM, and the rest stays in the image:
   `--memory-bytes BYTES`, which may not be negative, rounded up to a word.
   An access past the reserved part traps with code 2, unless the bounds
   checks are left out.
-- `memory.size` and `memory.grow` are errors, so the C library's
-  `malloc` is not available.
+- `memory.size` and `memory.grow` are errors. `malloc` works, through
+  `nice.heap_end` and `nice.grow`, in the reserved part, as with
+  `--memory-bytes` above, so it needs a number that leaves room past
+  `__heap_base`.
 - The words must fit below 2³²: ADDR plus their number may not pass it.
   Whether they fit in the system's RAM is for the system to check, with
   `___wasm_ram_end`.

@@ -30,6 +30,10 @@ extern "C" {
     fn nice_peek(addr: u32) -> u32;
     #[link_name = "poke"]
     fn nice_poke(addr: u32, val: u32);
+    #[link_name = "heap_end"]
+    fn nice_heap_end() -> u32;
+    #[link_name = "grow"]
+    fn nice_grow(pages: i32) -> i32;
 }
 
 // The device routines of ABI.md. nice_print is left out: it takes a
@@ -196,8 +200,10 @@ pub fn screen_clear() {
 }
 
 // The heap: first fit, as the C library's malloc.c. It starts at
-// __heap_base, which wasm-ld puts after the stack and the data, and grows
-// with memory.grow, up to nicewasm's --memory-pages. Each block has an
+// __heap_base, which wasm-ld puts after the stack and the data, and ends
+// at nice.heap_end. It grows with nice.grow, which works as memory.grow,
+// up to nicewasm's --memory-pages, where the memory can grow, and fails
+// where only its start is reserved (WASM.md). Each block has an
 // 8-byte header, and its address and size are multiples of 8. Free blocks
 // are kept in a list sorted by address, and neighbors are merged when a
 // block is freed. NICE has no threads, and an interrupt routine must not
@@ -219,11 +225,12 @@ static mut FREE_LIST: *mut Block = core::ptr::null_mut();
 static mut BRK: usize = 0;
 static mut HEAP_END: usize = 0;
 
-// size bytes of new heap, or null if memory.grow fails.
+// size bytes of new heap, or null if the memory cannot grow.
 unsafe fn more(size: usize) -> *mut Block {
     if BRK == 0 {
         BRK = (core::ptr::addr_of!(__heap_base) as usize + 7) & !7;
-        HEAP_END = core::arch::wasm32::memory_size(0) * PAGE;
+        // A reserved part that ends before the heap leaves it empty.
+        HEAP_END = core::cmp::max(nice_heap_end() as usize, BRK);
     }
     if size > HEAP_END - BRK {
         let need = size - (HEAP_END - BRK);
@@ -232,7 +239,7 @@ unsafe fn more(size: usize) -> *mut Block {
             return core::ptr::null_mut();
         }
         let pages = (need + PAGE - 1) / PAGE;
-        if core::arch::wasm32::memory_grow(0, pages) == usize::MAX {
+        if nice_grow(pages as i32) == -1 {
             return core::ptr::null_mut();
         }
         HEAP_END += pages * PAGE;

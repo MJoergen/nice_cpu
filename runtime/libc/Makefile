@@ -44,6 +44,12 @@ NOFLOAT_TESTS = iprintf iscanf
 # ../start_wasm_mon.nasm, and compared with test/X_mon.expected, which also
 # shows R2, the number of bytes the stand-in's putc routine wrote.
 MON_TESTS = exit
+# The tests that also run with only the start of their memory reserved, as
+# X_small: translated with --memory-bytes 32768, half of the page, and
+# compared with test/X_small.expected. malloc's heap then ends there, so
+# fewer of its blocks fit before malloc fails, with the same output. A
+# block past the end would trap (code 2).
+SMALL_TESTS = malloc
 
 libc.a: $(OBJS) $(MATH_OBJS)
 	rm -f $@
@@ -82,9 +88,9 @@ wasm: libc.a
 # million steps and, in GHDL, hours. The step count and the other registers are left out, so
 # that the expected files do not change with the compiler.
 # $(1) is the name of the run, $(2) the test, $(3) the files before the
-# program, and $(4) the registers to show.
+# program, $(4) the registers to show, and $(5) nicewasm's options.
 define check
-	@$(NICEWASM) -o test/$(1).out.nasm test/$(2).wasm
+	@$(NICEWASM) $(5) -o test/$(1).out.nasm test/$(2).wasm
 	$(if $(filter $(2),$(NOFLOAT_TESTS)),@if grep -qwFf build/float.labels test/$(1).out.nasm; then \
 	  echo "FAIL libc/$(1): it names a label of the float library"; exit 1; fi)
 	@cat $(3) test/$(1).out.nasm ../lib.nasm ../muldiv_mpu.nasm > test/$(1).full.nasm
@@ -118,6 +124,7 @@ test: emulator
 	@mkdir -p build && grep -oE '^__[A-Za-z0-9_]+' ../$(FLOAT_LIB) > build/float.labels
 	$(foreach t,$(TESTS),$(call check,$(t),$(t),../start_wasm.nasm,R1  [0-9a-f]*))
 	$(foreach t,$(MON_TESTS),$(call check,$(t)_mon,$(t),../test/monitor.nasm ../start_wasm_mon.nasm,R1  [0-9a-f]* R2  [0-9a-f]*))
+	$(foreach t,$(SMALL_TESTS),$(call check,$(t)_small,$(t),../start_wasm.nasm,R1  [0-9a-f]*,--memory-bytes 32768))
 	@rm -f test/*.out test/*.raw test/*.status test/*.out.nasm test/*.full.nasm test/*.out.bin
 
 # A random test of the printf family and the i family against a model of

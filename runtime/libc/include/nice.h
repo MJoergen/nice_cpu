@@ -129,4 +129,14 @@ unsigned nice_peek(unsigned addr);
 __attribute__((import_module("nice"), import_name("poke")))
 void nice_poke(unsigned addr, unsigned val);
 
+// The end of the linear memory in bytes, also where only its start is
+// reserved, which has no page count (WASM.md, Linear memory).
+__attribute__((import_module("nice"), import_name("heap_end")))
+unsigned nice_heap_end(void);
+
+// memory.grow by pages: the old size in pages, or -1. Where only the
+// start of the memory is reserved, always -1.
+__attribute__((import_module("nice"), import_name("grow")))
+int nice_grow(int pages);
+
 #endif

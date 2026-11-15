@@ -1,7 +1,10 @@
 // A first-fit allocator. The heap starts at __heap_base, which wasm-ld
-// puts after the data and the stack, and grows with memory.grow. Each
+// puts after the data and the stack, and ends at nice_heap_end. It grows
+// with nice_grow, which works as memory.grow where the memory can grow,
+// and fails where only its start is reserved (WASM.md). Each
 // block has an 8-byte header. Free blocks are kept in a list sorted by
 // address, and neighbors are merged when a block is freed.
+#include <nice.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,19 +22,22 @@ extern unsigned char __heap_base;
 static struct block *free_list;
 static uintptr_t brk_, heap_end;
 
-// size bytes of new heap, or NULL if memory.grow fails.
+// size bytes of new heap, or NULL if the memory cannot grow.
 static struct block *more(size_t size)
 {
     if (!brk_) {
         brk_ = ((uintptr_t)&__heap_base + 7) & ~(uintptr_t)7;
-        heap_end = __builtin_wasm_memory_size(0) * PAGE;
+        heap_end = nice_heap_end();
+        // A reserved part that ends before the heap leaves it empty
+        if (heap_end < brk_)
+            heap_end = brk_;
     }
     if (size > heap_end - brk_) {
         // The page count would wrap: more than all of memory
         if (size - (heap_end - brk_) > SIZE_MAX - (PAGE - 1))
             return NULL;
         size_t pages = (size - (heap_end - brk_) + PAGE - 1) / PAGE;
-        if (__builtin_wasm_memory_grow(0, pages) == SIZE_MAX)
+        if (nice_grow((int)pages) == -1)
             return NULL;
         heap_end += pages * PAGE;
     }

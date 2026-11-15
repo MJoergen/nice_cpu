@@ -2,7 +2,7 @@
 """A random test of nicewasm against an older version of itself.
 
 Usage: diff_fuzz.py [--old REV] [--trap] [--no-mpu] [--grow] [--unchecked]
-                    [--library] FIRST COUNT
+                    [--library] [--floats] [--inline-fpu] FIRST COUNT
 
 Each case is a module that both versions translate. The two programs are
 joined with the runtime, assembled, and run, and they must agree on the
@@ -22,12 +22,22 @@ groups of word accesses from one local near the end of the memory;
 divisions and remainders by zero and by masked divisors, and of the most
 negative value by -1; call_indirect with a bad index or a bad type;
 memory.fill and memory.copy past the end and wrapping; a conditional
-unreachable; and, with --grow, memory.grow and accesses to the new page.
-So the trap paths are compared too, which fuzz.py cannot check.
+unreachable; with --grow, memory.grow and accesses to the new page; and
+with floats, trunc of a NaN or of a value out of range, and float loads
+and stores among the others. So the trap paths are compared too, which
+fuzz.py cannot check.
+
+With --floats, every module has the floats of fuzz.py's odd seeds, and
+a program that calls the float library is joined with it, as fuzz.py
+joins it: float_fpu.nasm, or with --no-mpu float.wasm translated with
+--no-mpu. Both versions run with the same library, so a NaN's bits are
+the same in both, and are compared too.
 
 --no-mpu, --grow (--memory-pages 2), --unchecked (--no-bounds-checks),
-and --library (--library lib --memory-bytes 65536) are the modes of
-nicewasm that both versions run in. A module whose translations differ
+--library (--library lib --memory-bytes 65536), and --inline-fpu, which
+implies --floats, are the modes of nicewasm that both versions run in.
+--library takes no floats, as a library module may not call the float
+library (WASM.md). A module whose translations differ
 is written to diff_SEED.wasm in the current directory.
 
 make diff runs a few hundred modules against OLD, main by default. This
@@ -44,7 +54,7 @@ import tempfile
 from typing import Dict, List, Optional, Tuple
 
 import fuzz
-from wasm import (ADD, END, I32, I64, MEMORY_COPY, MEMORY_FILL, MEMORY_GROW, MEMORY_SIZE, SHL,
+from wasm import (ADD, END, F32, F64, I32, I64, MEMORY_COPY, MEMORY_FILL, MEMORY_GROW, MEMORY_SIZE, SHL,
                   UNREACHABLE, call_indirect, if_, local_get, local_set, local_tee, mem)
 from wasm import i32_const as _i32_const
 from wasm import i64_const as _i64_const
@@ -84,6 +94,8 @@ def trap_stmt(ctx: fuzz.Ctx, rng: random.Random, grow: bool) -> fuzz.Stmt:
              "unreachable", "group"]
     if grow:
         kinds += ["grow", "grow", "growload"]
+    if ctx.floats:
+        kinds += ["trunc", "trunc"]
     kind = rng.choice(kinds)
     top = 2 * PAGE if grow else PAGE
 
@@ -117,12 +129,14 @@ def trap_stmt(ctx: fuzz.Ctx, rng: random.Random, grow: bool) -> fuzz.Stmt:
 
     if kind in ("load", "store"):
         offset = rng.choice([0, 0, 1, 4, 8, 13, 0xFFFC, PAGE, 0xFFFFFFF0])
+        loads = fuzz.ALL_LOADS if ctx.floats else fuzz.LOADS
+        stores = fuzz.ALL_STORES if ctx.floats else fuzz.STORES
         if kind == "load":
-            op = rng.choice(list(fuzz.LOADS))
-            j = rng.choice(ctx.locals_of(fuzz.LOADS[op][0]))
+            op = rng.choice(list(loads))
+            j = rng.choice(ctx.locals_of(loads[op][0]))
             return fuzz.Stmt(addr_expr() + mem(op, offset) + local_set(j), nop)
-        op = rng.choice(list(fuzz.STORES))
-        v = fuzz.gen_expr(ctx, fuzz.STORES[op][0], 2)
+        op = rng.choice(list(stores))
+        v = fuzz.gen_expr(ctx, stores[op][0], 2)
         return fuzz.Stmt(addr_expr() + v.code + mem(op, offset), nop)
     if kind == "group":
         # Several word accesses from one local, as share_checks groups them.
@@ -188,6 +202,14 @@ def trap_stmt(ctx: fuzz.Ctx, rng: random.Random, grow: bool) -> fuzz.Stmt:
             return fuzz.Stmt(i32_const(d) + fuzz.gen_expr(ctx, I32, 1).code + i32_const(n) + MEMORY_FILL, nop)
         s2 = rng.choice([0, 7, top - 16, top - 5, top, 0xFFFFFFFE])
         return fuzz.Stmt(i32_const(d) + i32_const(s2) + i32_const(n) + MEMORY_COPY, nop)
+    if kind == "trunc":
+        # trunc of a value at the edges of the conversions or of any value,
+        # which traps for a NaN or a value out of range.
+        t, ft, signed = rng.choice([I32, I64]), rng.choice([F32, F64]), rng.random() < 0.5
+        a = (fuzz.konst(ft, rng.choice(fuzz.float_specials(ft))) if rng.random() < 0.5
+             else fuzz.gen_expr(ctx, ft, 2))
+        conv = fuzz.trunc_expr(t, ft, signed, a, False)
+        return fuzz.Stmt(conv.code + local_set(rng.choice(ctx.locals_of(t))), nop)
     if kind == "unreachable":
         return fuzz.Stmt(fuzz.gen_condition(ctx, 2).code + if_() + UNREACHABLE + END, nop)
     if kind == "grow":
@@ -207,13 +229,13 @@ def trap_stmt(ctx: fuzz.Ctx, rng: random.Random, grow: bool) -> fuzz.Stmt:
     return fuzz.Stmt(e, nop)
 
 
-def trap_module(seed: int, grow: bool) -> bytes:
+def trap_module(seed: int, grow: bool, floats: bool) -> bytes:
     """fuzz.py's module for the seed, with statements that may trap put
     into its functions."""
-    fns, segment = fuzz.build(seed, tails=False)
+    fns, segment = fuzz.build(seed, tails=False, floats=floats)
     rng = random.Random(seed * 7919 + 1)
     for idx, fn in enumerate(fns):
-        ctx = fuzz.Ctx(rng, fn, idx, fns)
+        ctx = fuzz.Ctx(rng, fn, idx, fns, floats=floats)
         for _ in range(rng.randrange(1, 4) if idx == 0 else rng.randrange(0, 3)):
             # Sometimes under a condition, so that some paths do not trap.
             # Its label is in scope while the statement is made, so that a
@@ -226,7 +248,7 @@ def trap_module(seed: int, grow: bool) -> bytes:
                 ctx.labels.pop()
                 st = fuzz.Stmt(cond.code + if_() + st.code + END, st.run)
             fn.stmts.insert(rng.randrange(0, len(fn.stmts) + 1), st)
-    mod, _, _ = fuzz.finish(fns, segment)
+    mod, _, _ = fuzz.finish(fns, segment, floats)
     return mod
 
 
@@ -246,12 +268,18 @@ class Run:
         self.console, self.halt, self.regs, self.words, self.status = console, halt, regs, words, status
 
 
-def build_and_run(asm: str, name: str, tmp: str, nompu: bool, pages: int, library: bool) -> Run:
-    """Joins a translation with the runtime as run.py does, assembles it,
-    and runs it with the linear memory dumped."""
+def build_and_run(asm: str, name: str, tmp: str, nompu: bool, pages: int, library: bool,
+                  floats: fuzz.Library) -> Run:
+    """Joins a translation with the runtime as run.py does, and with the
+    float library if it calls it, assembles it, and runs it with the
+    linear memory dumped."""
     parts = [os.path.join(RUNTIME, "start.nasm" if library else "start_wasm.nasm"), asm,
              os.path.join(RUNTIME, "lib.nasm"),
              os.path.join(RUNTIME, "muldiv_soft.nasm" if nompu else "muldiv_mpu.nasm")]
+    with open(asm) as f:
+        text = f.read()
+    if any(label in text for label in floats[1]):
+        parts.append(floats[0])
     lines: List[str] = []
     for part in parts:
         with open(part) as f:
@@ -285,7 +313,7 @@ def build_and_run(asm: str, name: str, tmp: str, nompu: bool, pages: int, librar
 
 
 def compare(seed: int, mod: bytes, old: str, tmp: str, nompu: bool, opts: List[str], pages: int,
-            expected: Optional[fuzz.Outcome]) -> Tuple[Optional[str], Optional[Run]]:
+            expected: Optional[fuzz.Outcome], floats: fuzz.Library) -> Tuple[Optional[str], Optional[Run]]:
     """Translates the module with both versions and compares the runs.
     Returns what differs, or None, and the new translation's run."""
     wasm_file = os.path.join(tmp, f"m{seed}.wasm")
@@ -298,7 +326,7 @@ def compare(seed: int, mod: bytes, old: str, tmp: str, nompu: bool, opts: List[s
         if err is not None:
             return f"seed {seed}: the {tag} translator: {err.strip()}", None
         try:
-            runs[tag] = build_and_run(asm, f"m{seed}_{tag}", tmp, nompu, pages, "--library" in opts)
+            runs[tag] = build_and_run(asm, f"m{seed}_{tag}", tmp, nompu, pages, "--library" in opts, floats)
         except RuntimeError as e:
             return f"seed {seed}: the {tag} translation: {e}", None
     o, n = runs["old"], runs["new"]
@@ -365,7 +393,7 @@ def old_translator(rev: str, tmp: str) -> str:
 
 def main() -> None:
     args = sys.argv[1:]
-    flags = {"--trap", "--no-mpu", "--grow", "--unchecked", "--library"}
+    flags = {"--trap", "--no-mpu", "--grow", "--unchecked", "--library", "--floats", "--inline-fpu"}
     old = "main"
     if "--old" in args:
         k = args.index("--old")
@@ -378,6 +406,9 @@ def main() -> None:
         sys.exit(__doc__.split("\n\n")[1])
     first, count = int(numbers[0]), int(numbers[1])
     trap, nompu, grow = "--trap" in args, "--no-mpu" in args, "--grow" in args
+    floats = "--floats" in args or "--inline-fpu" in args
+    if floats and "--library" in args:
+        sys.exit("diff_fuzz.py: --library takes no floats: a library module may not call the float library")
     opts: List[str] = []
     pages = 1
     if grow:
@@ -387,17 +418,20 @@ def main() -> None:
         opts += ["--no-bounds-checks"]
     if "--library" in args:
         opts += ["--library", "lib", "--memory-bytes", str(PAGE)]
+    if "--inline-fpu" in args:
+        opts += ["--inline-fpu"]
     halts: Dict[str, int] = {}
     failures = 0
     with tempfile.TemporaryDirectory() as tmp:
         tool = old_translator(old, tmp)
+        library = fuzz.float_library(tmp, ["--no-mpu"] if nompu else [])
         for seed in range(first, first + count):
             if trap:
-                mod, expected = trap_module(seed, grow), None
+                mod, expected = trap_module(seed, grow, floats), None
             else:
-                fns, segment = fuzz.build(seed, "--unchecked" not in args, tails=False)
-                mod, expected, _ = fuzz.finish(fns, segment)
-            problem, run = compare(seed, mod, tool, tmp, nompu, opts, pages, expected)
+                fns, segment = fuzz.build(seed, "--unchecked" not in args, tails=False, floats=floats)
+                mod, expected, _ = fuzz.finish(fns, segment, floats)
+            problem, run = compare(seed, mod, tool, tmp, nompu, opts, pages, expected, library)
             if problem is not None:
                 failures += 1
                 print("FAIL " + problem, flush=True)

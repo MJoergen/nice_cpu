@@ -644,6 +644,10 @@ which a version before them rejects, and, with `--trap`,
 the same with statements that may trap: accesses out of bounds,
 divisions by zero and of the most negative value by −1, bad
 `call_indirect`s, `memory.fill` and `memory.copy` past the end,
-`unreachable`, and `memory.grow`. So it checks a trap's R2, and
+`unreachable`, `memory.grow`, and with floats, `trunc` of a NaN or of a
+value out of range. With `--floats`, every module has floats, and the
+programs are joined with the float library as `fuzz.py` joins them, and
+`--inline-fpu` implies it. So it compares the trap paths,
 `memory.grow`, which `fuzz.py`'s model does not know, and each mode of
-the translator. It is not part of `make test`, since it takes minutes and needs git.
+the translator, with floats and without. `--library` takes no floats,
+as a library module may not call the float library. It is not part of `make test`, since it takes minutes and needs git.

@@ -46,8 +46,9 @@ emulator:
 
 # Compares the translator with an older version of itself, OLD, a git
 # revision, on random modules: fuzz.py's, and modules with accesses,
-# divisions, and indirect calls that may trap, in each mode (README.md,
-# Test). Not part of make test: it takes minutes and needs git.
+# divisions, indirect calls, and with floats trunc that may trap, in each
+# mode, with and without floats (README.md, Test). Not part of make test:
+# it takes minutes and needs git.
 OLD ?= main
 diff: emulator
 	@$(PYTHON) test/diff_fuzz.py --old $(OLD) 1 60
@@ -56,6 +57,11 @@ diff: emulator
 	@$(PYTHON) test/diff_fuzz.py --old $(OLD) --trap --no-mpu 1 40
 	@$(PYTHON) test/diff_fuzz.py --old $(OLD) --trap --library 1 40
 	@$(PYTHON) test/diff_fuzz.py --old $(OLD) --unchecked 1 30
+	@$(PYTHON) test/diff_fuzz.py --old $(OLD) --floats 1 40
+	@$(PYTHON) test/diff_fuzz.py --old $(OLD) --floats --no-mpu 1 40
+	@$(PYTHON) test/diff_fuzz.py --old $(OLD) --inline-fpu 1 40
+	@$(PYTHON) test/diff_fuzz.py --old $(OLD) --trap --floats 1 60
+	@$(PYTHON) test/diff_fuzz.py --old $(OLD) --trap --inline-fpu 1 40
 
 # Needs mypy (pip install mypy).
 typecheck:

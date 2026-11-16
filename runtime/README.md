@@ -80,10 +80,10 @@ them in its RAM (ABI.md, Start-up).
 | `__popcnt` | The number of 1 bits in R1. | R2 |
 | `_nice_isqrt64` | floor(√(R1:R2)), unsigned, as `ISQRT64_Q` of DEVICES.md §2. | R2–R6 |
 
-`_nice_isqrt64` has a C name, `nice_isqrt64`, so that the float library,
-a wasm module, can import it from `env` (WASM.md): its f32 square root
-calls it. The other routines of the first table are in the muldiv files,
-since the math unit computes them too.
+`_nice_isqrt64` has a C name, `nice_isqrt64`, so that a wasm module can
+import it from `env` (WASM.md), as `nice.h` of the C library does for a
+C program. It and the other routines of the first table are in the muldiv
+files, since the math unit computes them too.
 
 The `long long` routines take their operands in R1:R2 and R3:R4, and
 return the result in R1:R2, each pair low word first (ABI.md):

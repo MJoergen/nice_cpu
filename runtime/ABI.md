@@ -138,7 +138,7 @@ Division by zero is undefined in C, so these routines may return any value for i
 | `void nice_print(const char *s)` | Writes the characters of `s` up to its first 0 to the console, with no newline, through `___putc_vector`. In assembly, one character per word. The C library's `nice_print` takes the bytes of a C string instead (runtime/README.md). |
 | `unsigned long long nice_cycles(void)` | The cycle counter. |
 | `unsigned long long nice_instructions(void)` | The instruction counter. |
-| `unsigned nice_isqrt64(unsigned long long x)` | floor(√x), with `ISQRT64_Q` of the math unit ([DEVICES.md §2](../doc/DEVICES.md#2-math-unit)), or in software without it. The square root of the float library in software calls it. |
+| `unsigned nice_isqrt64(unsigned long long x)` | floor(√x), with `ISQRT64_Q` of the math unit ([DEVICES.md §2](../doc/DEVICES.md#2-math-unit)), or in software without it. |
 | `void nice_screen_put(int col, int row, int c)` | Writes `c`, the character in bits 7..0 and its colors above ([DEVICES.md](../doc/DEVICES.md) §1), to column `col`, 0 to 79, of row `row`, 0 to 24. |
 | `void nice_screen_clear(void)` | Writes a blank in white on black, `0x000FFF20`, to each of the screen's 2000 words: the colors a board's monitor writes in, so that a cursor, which swaps the colors of its cell, shows on the blank ([DEVICES.md §1.4](../doc/DEVICES.md#14-cursor)). `nice.h` names the word `NICE_SCREEN_BLANK`. |
 

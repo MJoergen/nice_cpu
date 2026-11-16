@@ -453,9 +453,10 @@ parameters or results.
 ## Library modules
 
 `--library NAME` translates a library module of the runtime library, as
-WASM.md describes. The float library is one: see
-[runtime/README.md](../runtime/README.md). It differs from a program's
-module in these ways:
+WASM.md describes. The runtime library of this repository has none: its
+routines are written in assembly
+([runtime/README.md](../runtime/README.md)). A library module differs
+from a program's module in these ways:
 
 - The labels nicewasm makes start with `WL.NAME.`, and its memory is at
   `WL.NAME.memory`. Every exported function gets the label `_name`, also

@@ -12,13 +12,13 @@ The WebAssembly specification defines what each wasm instruction does. A transla
 
 **Library modules.** Runtime routines ([ABI.md](../runtime/ABI.md)) may be compiled to wasm, for example from compiler-rt, and translated as a library module. A library module differs from a program's module in these ways:
 
-- The translator is given a name for it, which is a C identifier. The labels the translator makes for itself start with `WL.name.` instead of `W.`, for example `WL.float.f3`, so that the labels of two library modules cannot clash.
+- The translator is given a name for it, which is a C identifier. The labels the translator makes for itself start with `WL.name.` instead of `W.`, for example `WL.lib.f3`, so that the labels of two library modules cannot clash.
 - Each exported function gets the label `_name`, including when the name starts with `_`. So the export `__divdi3` gets the label `___divdi3`.
 - It has no start function, it does not export `__wasm_call_ctors`, and it uses neither `memory.size` nor `memory.grow`. The translator rejects one that does, and it emits no `___wasm_start`.
 - Its memory and its globals are its own, separate from those of the program's module. Compilers use them for a stack, for example to pass 128-bit values. The memory is at the label `WL.name.memory`. Its words are part of the program image, with the values that its data segments give and 0 elsewhere, like C static data ([ABI.md](../runtime/ABI.md)).
 - The translator reserves only the start of the memory, as much as the module's stack and data need. It chooses the size, for example from the initial value of the stack pointer. A whole page of 16384 words would cost more RAM than the routines themselves. An access past the reserved part traps as out of bounds (code 2), unless the bounds checks are left out.
 
-Its imports follow the rules of a program's module (Imports and exports, below). The float library, for example, imports `nice_isqrt64` from `env`.
+Its imports follow the rules of a program's module (Imports and exports, below). It may, for example, import `nice_isqrt64` from `env`.
 
 A program may contain any number of library modules. They go with the runtime library, after the program's module.
 

@@ -304,6 +304,8 @@ The same run had two more changes, which pass too:
 
 **Fix:** a case for each where it is one line: `--ram` and a library module with a call of `nice.grow` in `run.py`, `--memory-bytes` just below `__heap_base` in the C library's tests, a probe that writes 2 to the mode word under `--no-screen-mode`, `chunky_screen` with `-2004` and with a pixel whose lower 20 bits only are set, and a `.bin` file with CR LF in `errors.py`. The others are for an issue, or to leave.
 
+**Resolved.** The first two bullets. `run.py` has `nicemem_ram`, code in a ROM with `--ram` alone, whose memory ends at its `__heap_base`, 64, and `nicemem_lib`, a library module, whose memory ends at the initial value of its stack pointer, 64. In each, `nice.heap_end` gives 64 and `nice.grow` gives −1, for 0 pages and for 1. With `--ram` or a library module out of `reserved_part`, its case fails. For the heap's clamp, `libc/test/noheap.c` runs with the whole page, where `malloc`, `calloc`, and `realloc` each give a block, and as `noheap_cut` with `--memory-bytes 4108`, the 4096 bytes of the stack and `malloc`'s three words, 4 below `__heap_base`. There the memory must end below `__heap_base`, and the three must return `NULL`. `test/zignoheap.zig` and `test/rustnoheap.rs` check the same of the heaps of `nice.zig` and `nice.rs`, with `--memory-bytes 4132` and `4108`, the end of their static data. Without the clamp in `malloc.c`, in `nice.zig`, or in `nice.rs`, its test traps with code 2.
+
 ## 4. Stale statements
 
 ### 4.1 hdl/README.md: three counts

@@ -84,13 +84,20 @@ endef
 # result in R1, and the exit status are compared with test/X.expected.
 # The .wasm files are checked in, so make test needs no Zig or Rust; make
 # wasm rebuilds them.
-ZIG_TESTS = nicezig zigpoll zigheap zigline zigfloat
-RUST_TESTS = nicers rustpoll rustheap rustline rustfloat
+ZIG_TESTS = nicezig zigpoll zigheap zignoheap zigline zigfloat
+RUST_TESTS = nicers rustpoll rustheap rustnoheap rustline rustfloat
 FLOAT_WASM_TESTS = zigfloat rustfloat
 
-# The options for nicewasm.py of a test, if any.
+# The options for nicewasm.py of a test, if any. zignoheap and rustnoheap
+# get a memory that ends before their heap starts, at the end of their
+# static data: the 4096 bytes of the stack, for Zig the 24 of the heap's
+# Allocator and of its table of four functions, and the 12 of the heap's
+# three words. __heap_base is the next multiple of 16. With fewer bytes
+# the data does not fit, or the heap's use of its words traps (code 2).
 WASM_OPTS_rustheap = --memory-pages 2
 WASM_OPTS_zigheap = --memory-pages 2
+WASM_OPTS_rustnoheap = --memory-bytes 4108
+WASM_OPTS_zignoheap = --memory-bytes 4132
 
 # Translates test/$(1).wasm with the options $(3), joins it with the
 # float library if the test needs it, assembles it, and runs it, as

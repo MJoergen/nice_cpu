@@ -734,7 +734,10 @@ after `test/monitor.nasm` with `start_wasm_mon.nasm`, and its
 stand-in's putc routine. `malloc.c` also runs as `libc/malloc_small`,
 translated with `--memory-bytes 32768`, so that its heap ends in the
 middle of the page, and fewer blocks fit before `malloc` fails. Its
-output is the same. The exception is `mchess.expected`, 600 lines of
+output is the same. `noheap.c` also runs as `libc/noheap_cut`,
+translated with `--memory-bytes 4108`, which ends the memory after
+`malloc`'s own three words, 4 bytes below `__heap_base`: the heap is
+empty, and `malloc` must return `NULL`. The exception is `mchess.expected`, 600 lines of
 board output. It was checked against a native build of `mchess.c` on the
 same input, and the perft counts 20, 400, and 8902 are the known ones for
 the start position. The test runs perft only, so the search of `mchess`,
@@ -743,15 +746,18 @@ which needs the 128 KB stack, is not exercised. The core's runs (`make test KEEP
 GHDL hours.
 
 Then it runs the tests of `nice.zig` and `nice.rs`, `test/nicezig.zig`,
-`test/zigpoll.zig`, `test/zigheap.zig`, `test/zigline.zig`,
+`test/zigpoll.zig`, `test/zigheap.zig`, `test/zignoheap.zig`, `test/zigline.zig`,
 `test/zigfloat.zig`, `test/nicers.rs`, `test/rustpoll.rs`,
-`test/rustheap.rs`, `test/rustline.rs`, and `test/rustfloat.rs`, the same
+`test/rustheap.rs`, `test/rustnoheap.rs`, `test/rustline.rs`, and `test/rustfloat.rs`, the same
 way, with `test/X.input`, if there is one, as the console input and
 `test/X.expected`, written by hand from the source. `zigfloat` and
 `rustfloat` are joined with the float library, and their expected values were checked with Python's `math` and `fractions`
 modules. `test/zigheap.zig` and `test/rustheap.rs` are
 translated with `--memory-pages 2`, so that their heap can grow by one
-page, and no more. Their `.wasm`
+page, and no more. `test/zignoheap.zig` and `test/rustnoheap.rs` are
+translated with `--memory-bytes`, so that the memory ends after their
+static data, below `__heap_base`: the heap is empty, and an allocation
+must fail. Their `.wasm`
 files are checked in; `make wasm` rebuilds them, with Zig 0.17 and rustc
 with the `wasm32-unknown-unknown` target.
 

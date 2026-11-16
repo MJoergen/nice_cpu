@@ -439,7 +439,9 @@ OPTIONS = {"unchecked": ["--no-bounds-checks"],
            "memory_c_small": ["--memory-bytes", "8192"],
            "nicemem_grow": ["--memory-pages", "3"],
            "nicemem_small": ["--memory-bytes", "64"],
-           "nicemem_rom": ["--ram", ROM_RAM, "--memory-bytes", "64"]}
+           "nicemem_rom": ["--ram", ROM_RAM, "--memory-bytes", "64"],
+           "nicemem_ram": ["--ram", ROM_RAM],
+           "nicemem_lib": ["--library", "lib"]}
 
 # The cases of a program's module with only the start of its memory
 # reserved (WASM.md, Linear memory), and the bytes reserved. rom.c's
@@ -454,7 +456,8 @@ RAM_END = {"rom": 0xFFFFF000 + 1 + 4400 // 4,       # __stack_pointer, to __heap
            "romfresh": 0xFFFFF000 + 2 + 1 + 32 // 4,  # an i64 and an i32 global
            "data_c_rom": 0xFFFFF000 + 1 + 8192 // 4,
            "memory_c_rom": 0xFFFFF000 + 1 + 8192 // 4,
-           "nicemem_rom": 0xFFFFF000 + 64 // 4}
+           "nicemem_rom": 0xFFFFF000 + 64 // 4,
+           "nicemem_ram": 0xFFFFF000 + 64 // 4}
 
 # What a case must print on the console (DEVICES.md §1). Every other case
 # must print nothing.
@@ -3610,14 +3613,19 @@ CASES += [
 # grow 0 returns 2, and grow 1 returns 2 and ends at the cap, 196608,
 # where grow 1 fails, nine ones. nicemem_small and nicemem_rom reserve 64
 # bytes, which have no page count: the end is 64, and every grow fails,
-# also by 0, 1111.
-def nicemem(*checks: bytes) -> bytes:
+# also by 0, 1111. So do nicemem_ram, code in a ROM with no
+# --memory-bytes, whose memory ends at its __heap_base, 64, and
+# nicemem_lib, a library module, whose memory ends at the initial value
+# of its stack pointer, 64, and whose check the program's main calls.
+def nicemem(*checks: bytes, globals_section: bytes = b"",
+            exported: Tuple[Tuple[str, int, int], ...] = (("main", 0, 2),)) -> bytes:
     return module(
         types(MAIN_TYPE, ([I32], [I32])),
         imports(("nice", "heap_end", 0), ("nice", "grow", 1)),
         funcs(0),
         memory(1),
-        exports(("main", 0, 2)),
+        globals_section,
+        exports(*exported),
         code((1, bits(0, *checks))))
 
 
@@ -3629,7 +3637,8 @@ def grow(n: int, want: int) -> bytes:
     return i32_const(n) + call(1) + i32_const(want) + EQ
 
 
-NICEMEM_SMALL = nicemem(heap_end(64), grow(0, -1), grow(1, -1), heap_end(64))
+NICEMEM_CHECKS = (heap_end(64), grow(0, -1), grow(1, -1), heap_end(64))
+NICEMEM_SMALL = nicemem(*NICEMEM_CHECKS)
 CASES += [
     ("nicemem", nicemem(heap_end(65536), grow(0, 1), grow(1, -1), heap_end(65536)), "", 0xF),
     ("nicemem_grow", nicemem(
@@ -3638,6 +3647,11 @@ CASES += [
         grow(5, -1), grow(0, 2), grow(1, 2), heap_end(196608), grow(1, -1)), "", 0x1FF),
     ("nicemem_small", NICEMEM_SMALL, "", 0xF),
     ("nicemem_rom", NICEMEM_SMALL, "", 0xF),
+    ("nicemem_ram", nicemem(*NICEMEM_CHECKS, globals_section=typed_globals((I32, False, 64)),
+                            exported=(("main", 0, 2), ("__heap_base", 3, 0))), "", 0xF),
+    ("nicemem_lib", nicemem(*NICEMEM_CHECKS, globals_section=globals_(64),
+                            exported=(("check", 0, 2),)),
+     LIB_ASM.format("MOVE R0, R0", "_check", "MOVE R0, R0"), 0xF),
 ]
 # ___wasm_start sets the words in RAM to their initial values, so a
 # second call starts the module fresh. Global 0 is an i64, 0x1_00000002,

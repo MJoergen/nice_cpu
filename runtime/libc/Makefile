@@ -36,7 +36,7 @@ BIGSTACK = -Wl,-z,stack-size=131072 -Wl,--initial-memory=262144
 # The test programs, test/X.c. Their .wasm files are checked in, so make
 # test needs no C compiler; make wasm rebuilds them. A test/X.input file is
 # the console input of test X.
-TESTS = stdio stream lines string stdlib scanf iscanf nice printf iprintf strings numbers sscanf malloc abort exit limits assert time math floatio \
+TESTS = stdio stream lines string stdlib scanf iscanf nice printf iprintf strings numbers sscanf malloc noheap abort exit limits assert time math floatio \
   mchess
 # The tests of the i families, which must name no label of the float
 # library, so that a program that calls only them is joined without it.
@@ -52,6 +52,15 @@ MON_TESTS = exit
 # fewer of its blocks fit before malloc fails, with the same output. A
 # block past the end would trap (code 2).
 SMALL_TESTS = malloc
+# The tests that also run with a memory that ends before their heap
+# starts, as X_cut: translated with --memory-bytes $(CUT_BYTES), and
+# compared with test/X_cut.expected. malloc must take such a heap as
+# empty. The bytes are the 4096 of the stack (LDFLAGS) and the 12 of
+# malloc.c's three words, which are all the static data of such a test.
+# They end 4 below __heap_base, which the linker puts at a multiple of 16.
+# With fewer bytes, malloc's use of its words traps (code 2).
+CUT_TESTS = noheap
+CUT_BYTES = 4108
 
 libc.a: $(OBJS) $(MATH_OBJS)
 	rm -f $@
@@ -136,6 +145,7 @@ test: emulator
 	$(foreach t,$(TESTS),$(call check,$(t),$(t),../start_wasm.nasm,R1  [0-9a-f]*))
 	$(foreach t,$(MON_TESTS),$(call check,$(t)_mon,$(t),../test/monitor.nasm ../start_wasm_mon.nasm,R1  [0-9a-f]* R2  [0-9a-f]*))
 	$(foreach t,$(SMALL_TESTS),$(call check,$(t)_small,$(t),../start_wasm.nasm,R1  [0-9a-f]*,--memory-bytes 32768))
+	$(foreach t,$(CUT_TESTS),$(call check,$(t)_cut,$(t),../start_wasm.nasm,R1  [0-9a-f]*,--memory-bytes $(CUT_BYTES)))
 	@rm -f test/*.out test/*.raw test/*.status test/*.out.nasm test/*.full.nasm test/*.out.bin
 
 # A random test of the printf family and the i family against a model of

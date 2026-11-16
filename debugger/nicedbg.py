@@ -829,12 +829,14 @@ class Debugger(cmd.Cmd):
                     termios.IEXTEN)
         new[6][termios.VMIN] = 1
         new[6][termios.VTIME] = 0
-        print("console; Ctrl-] returns to the prompt")
         link = self.link
         line_open = False
         queue = b""     # the keys that the input buffer had no room for
         try:
             termios.tcsetattr(fd, termios.TCSANOW, new)
+            # After the modes are set: a key typed at this line is passed
+            # as typed, not changed and echoed by the terminal
+            print("console; Ctrl-] returns to the prompt", flush=True)
             while True:
                 data = self.pending(line_open)
                 if data:

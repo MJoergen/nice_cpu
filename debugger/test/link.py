@@ -618,7 +618,8 @@ def test_console(port: str, echo: str) -> None:
     try:
         os.write(master, b"g\nc\n")
         # The keys go after the console has set the modes, as the line
-        # discipline changes them as they arrive
+        # discipline changes them as they arrive: the console prints its
+        # line once they are set
         started = read_until(master, b"returns to the prompt", seen)
         check("console: started", started, repr(bytes(seen)))
         os.write(master, b"a\rb")

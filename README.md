@@ -295,7 +295,17 @@ The code and the documents are under the [MIT license](LICENSE),
   `emulator/font/LICENSE.spleen`.
 - **SDL 3**, which a build with `-Dwindow` compiles in, is under the zlib
   license.
-- **The math functions of the C library**, in `runtime/libc/src/math/`,
-  are musl's, under musl's MIT license and the notices in their files,
-  collected in `COPYRIGHT` there. So are the C library's `floatscan.c`
-  and the float conversions of its `printf.c`, both changed.
+- **Math functions of the C library**, in `runtime/libc/src/math/`:
+  `frexp`, `modf`, `fmin`, and `fmax`, the reduction of a huge argument,
+  and the kernels of `sin`, `cos`, and `tan` are musl's, under musl's
+  MIT license and the notices in their files, collected in `COPYRIGHT`
+  there. `sin.c`, `cos.c`, and `tan.c`, which call them, are this
+  library's own (runtime/README.md, Math functions). The C library's
+  `floatscan.c` and the float conversions of its `printf.c` are musl's
+  too, both changed.
+- **The sequences of the FPU's functions**, `emulator/test/fpu_seq.py`
+  and the two tables written from it, `emulator/src/fpu_seq.zig` and
+  `hdl/src/fpu_seq_pkg.vhd`, follow C code of fdlibm, FreeBSD, and musl
+  operation by operation, with its constants. What they have of that
+  code is under Sun's notices and musl's MIT license, which the header
+  of `fpu_seq.py` gives.

@@ -1,6 +1,9 @@
 // The sequences of the FPU's functions, DEVICES.md §11.3. Written by
 // test/fpu_seq.py --zig from its programs; make test checks that it is
 // current. Do not edit.
+//
+// The programs follow C code of fdlibm, FreeBSD, and musl, whose notices
+// are in the header of test/fpu_seq.py.
 
 pub const Op = enum { cmd, k, put, jz, jmp, pole };
 pub const Step = struct { op: Op, n: u32 };

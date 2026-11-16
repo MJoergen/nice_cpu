@@ -43,6 +43,76 @@ fdlibm's high word ix, such as ix < 0x3e500000, is the test of the value
 which gives the same bits as the operation.
 """
 
+# The sources. The programs of SOURCE follow C code of others, operation
+# by operation and with its constants, as their comments say: fdlibm's
+# e_log.c and e_exp.c; FreeBSD's e_log2.c, k_log.h, and e_pow.c; and
+# musl's __sin.c, __cos.c, __tan.c, __rem_pio2.c, sin.c, cos.c, tan.c,
+# atan.c, asin.c, acos.c, atan2.c, log10.c, and hypot.c, of musl 1.2.5.
+# The two tables that this file writes, emulator/src/fpu_seq.zig and
+# hdl/src/fpu_seq_pkg.vhd, are these programs as steps, and point here.
+# The notices of that code follow.
+#
+# fdlibm's e_log.c, FreeBSD's e_log2.c and k_log.h, and musl's __sin.c,
+# __cos.c, __rem_pio2.c, asin.c, acos.c, atan2.c, and log10.c, which
+# musl has from FreeBSD:
+#
+#     ====================================================
+#     Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+#
+#     Developed at SunSoft, a Sun Microsystems, Inc. business.
+#     Permission to use, copy, modify, and distribute this
+#     software is freely granted, provided that this notice
+#     is preserved.
+#     ====================================================
+#
+# __rem_pio2.c adds "Optimized by Bruce D. Evans." musl's sin.c, cos.c,
+# tan.c, and atan.c have the same notice with "Developed at SunPro".
+#
+# fdlibm's e_exp.c and FreeBSD's e_pow.c:
+#
+#     ====================================================
+#     Copyright (C) 2004 by Sun Microsystems, Inc. All rights reserved.
+#
+#     Permission to use, copy, modify, and distribute this
+#     software is freely granted, provided that this notice
+#     is preserved.
+#     ====================================================
+#
+# musl's __tan.c:
+#
+#     ====================================================
+#     Copyright 2004 Sun Microsystems, Inc.  All Rights Reserved.
+#
+#     Permission to use, copy, modify, and distribute this
+#     software is freely granted, provided that this notice
+#     is preserved.
+#     ====================================================
+#
+# musl's hypot.c has no notice of its own. musl as a whole, and so
+# hypot.c and what musl changed in the files above, is under this
+# license:
+#
+#     Copyright © 2005-2020 Rich Felker, et al.
+#
+#     Permission is hereby granted, free of charge, to any person obtaining
+#     a copy of this software and associated documentation files (the
+#     "Software"), to deal in the Software without restriction, including
+#     without limitation the rights to use, copy, modify, merge, publish,
+#     distribute, sublicense, and/or sell copies of the Software, and to
+#     permit persons to whom the Software is furnished to do so, subject to
+#     the following conditions:
+#
+#     The above copyright notice and this permission notice shall be
+#     included in all copies or substantial portions of the Software.
+#
+#     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#     EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+#     MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+#     IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+#     CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+#     TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+#     SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 from __future__ import annotations
 
 import ast
@@ -1525,6 +1595,9 @@ def zig() -> str:
         "// The sequences of the FPU's functions, DEVICES.md §11.3. Written by",
         "// test/fpu_seq.py --zig from its programs; make test checks that it is",
         "// current. Do not edit.",
+        "//",
+        "// The programs follow C code of fdlibm, FreeBSD, and musl, whose notices",
+        "// are in the header of test/fpu_seq.py.",
         "",
         "pub const Op = enum { cmd, k, put, jz, jmp, pole };",
         "pub const Step = struct { op: Op, n: u32 };",
@@ -1608,6 +1681,9 @@ def vhdl() -> str:
         "-- The sequences of the FPU's functions, DEVICES.md §11.3, for",
         "-- src/fpu.vhd. Written by emulator/test/fpu_seq.py --vhdl from its",
         "-- programs; make test checks that it is current. Do not edit.",
+        "--",
+        "-- The programs follow C code of fdlibm, FreeBSD, and musl, whose",
+        "-- notices are in the header of emulator/test/fpu_seq.py.",
         "--",
         "-- A step is its operation in bits 19..17 and a number in bits 16..0:",
         "-- the command word for a command, the index of the constant for K,",

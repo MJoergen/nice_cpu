@@ -2,6 +2,9 @@
 -- src/fpu.vhd. Written by emulator/test/fpu_seq.py --vhdl from its
 -- programs; make test checks that it is current. Do not edit.
 --
+-- The programs follow C code of fdlibm, FreeBSD, and musl, whose
+-- notices are in the header of emulator/test/fpu_seq.py.
+--
 -- A step is its operation in bits 19..17 and a number in bits 16..0:
 -- the command word for a command, the index of the constant for K,
 -- n for PUT, and the address of the step for JZ and JMP. END ends

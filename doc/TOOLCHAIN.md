@@ -107,9 +107,9 @@ builds a program for one: it picks the `_mon` start-up file
   simulates a core running the runtime's and the translator's test
   programs. No test runs on an FPGA board.
 
-**Compilers.** No compiler targets NICE directly
-[yet](https://github.com/MJoergen/nice_cpu/issues/66). ABI.md defines the C ABI for one, with a
-one-word `char` and `CHAR_BIT` = 32. Until there is one, compiled code
+**Compilers.** No compiler targets NICE directly, and none is planned
+([review/decisions.md](review/decisions.md)). ABI.md defines the C ABI
+that hand-written assembly follows. Compiled code
 reaches NICE through WebAssembly: clang (with `wasm-ld`), Zig, and Rust
 all have a wasm32 target, and `nicewasm` translates the compiler's
 `.wasm` output into NICE assembly. That gives C code the 8-bit bytes of

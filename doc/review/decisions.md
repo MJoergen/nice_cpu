@@ -100,7 +100,7 @@ proposed again. The open items are the
   - `@Rx++` for a pointer walk, as `hand.nasm` does, and range analysis
     to drop the bounds checks of counted loops. Both need loop analysis
     on an intermediate form, which nicewasm does not have. They belong
-    in a compiler (#66).
+    in a compiler, which was decided against too (#66, below).
   - Overlapping the partial products of `__mul64` in
     `runtime/muldiv_mpu.nasm`. The math unit has one multiplier, and the
     routine is nine instructions, so it would save a cycle or two.
@@ -266,3 +266,20 @@ proposed again. The open items are the
   steps on usual values, and Zig and Rust format numbers themselves.
   #67 would shrink every program instead. To revisit when a program
   runs out of memory on a board.
+- **A C compiler that targets NICE directly** (#66), as
+  [c-compiler-plan.md](c-compiler-plan.md) planned it: our own front
+  end in Python, SSA, `CHAR_BIT` = 32, and the C library compiled
+  natively. nicewasm's options have since reached what a simple
+  compiler was expected to reach. On `bench.c` at 889c202, by
+  `pipecycles.py`, the phases take 2351155 cycles by default, 2045296
+  with `--trust-alignment --byte-windows` (13% fewer), and 1839157 with
+  `--no-bounds-checks` as well (22% fewer), which a native compiler
+  would not check either. The plan's estimate for a simple compiler is
+  1.75 to 1.9 million. Only a good compiler would gain, some 10 to 25%
+  of the cycles, for a project several times the size of nicewasm, a C
+  library ported to `CHAR_BIT` = 32, a second code generator to carry
+  through every change of the ISA, and none of the C that reads bytes,
+  such as the board's FAT32 and network code. Zig and Rust would not
+  gain at all. Code where size or speed matters most, as the board's
+  monitor and BASIC, is written in assembly by hand, and #192 gives
+  every program 17 to 20% fewer words.

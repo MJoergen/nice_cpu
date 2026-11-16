@@ -224,6 +224,14 @@ So such a compiler would take 1.62 times fewer cycles than nicewasm in
 what `hand.nasm` saves. `make test` checks its results as it checks the
 others'. `make core` does not run it.
 
+Such a compiler was decided against (#66,
+[doc/review/decisions.md](../doc/review/decisions.md)). nicewasm with
+`--trust-alignment --byte-windows --no-bounds-checks` takes 1839157
+cycles in the six phases of `bench.c` at 889c202, by `make cycles`,
+which is within the plan's estimate of 1.75 to 1.9 million for a whole
+simple compiler. `simple.nasm` itself takes fewer, 1480786, as its other
+four phases are those of `hand.nasm`.
+
 ## The hazard profile
 
 `hazards.py` counts how often the pipeline hazards of

@@ -81,8 +81,7 @@ What you get:
   function.
 - C has an 8-bit `char`, and its memory is wasm's byte-addressed linear
   memory, as the compiler's wasm32 target gives. The one-word `char` of
-  ABI.md is for hand-written assembly and a compiler that targets NICE
-  directly.
+  ABI.md is for hand-written assembly.
 
 ## Usage
 
@@ -162,6 +161,17 @@ says so and exits with status 1. It also checks the output directory and
 the `--asm` files before it compiles. A step that fails ends the script
 with "nicebuild: NAME failed with status N", where NAME is the compiler or
 the Python script.
+
+A program that runs on a system with the byte windows, such as the
+emulator, is smaller and faster with `--trust-alignment --byte-windows`.
+On `bench/bench.c` the translated code then takes 23% fewer words, and
+the phases 13% fewer cycles on the pipelined core, by `pipecycles.py` at
+889c202. With `--no-bounds-checks` as well, which gives up the traps of
+an access out of bounds, it takes 48% fewer words and 22% fewer cycles.
+A C program that prints no floats saves another 3052 words with
+`iprintf` in place of `printf` (runtime README). Code where every word
+or cycle counts is best written in assembly by hand: `bench/hand.nasm`
+takes 47% fewer cycles than the default.
 
 ### What nicebuild runs
 

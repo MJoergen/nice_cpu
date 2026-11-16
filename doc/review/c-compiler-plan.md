@@ -7,6 +7,14 @@ what such a compiler can be expected to gain, measured on commit 22eacce,
 and the decisions taken before any code is written. The open items are in
 TODO.md, under Toolchain.
 
+**Decided against on 2026-11-16** (#66, [decisions.md](decisions.md)).
+nicewasm's options `--trust-alignment`, `--byte-windows`, and
+`--no-bounds-checks` came later, and with them `bench.c` takes 1839157
+cycles in its phases at 889c202, inside the estimate for a simple
+compiler below. With the byte windows, `--no-bounds-checks` now saves
+cycles, 10%, where the measurement below found it cost 1.1%. The rest of
+this file is the plan as it stood.
+
 ## Where the translated code loses
 
 [bench/README.md](../../bench/README.md) compares `bench.c` through nicewasm

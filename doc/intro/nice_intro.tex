@@ -949,8 +949,8 @@ $ emulator/zig-out/bin/niceemu --window keys.bin
     \item The \textbf{pipelined core} runs at 100 MHz, on its own and on
      the MEGA65. The system around it, with RAM and a UART, is built in
      the separate NiceMonMEGA65 repository.
-    \item A C compiler that targets NICE directly would be great, too.
-     The calling convention for one is already in \code{runtime/ABI.md}.
+    \item C, Zig, and Rust reach NICE through WebAssembly. A compiler
+     that targets NICE directly was weighed, and would gain too little.
    \end{itemize}
   \end{frame}
 %

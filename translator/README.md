@@ -150,7 +150,7 @@ the module `nice`. Zig and Rust take one source file, the root of the
 program, and a Rust program that wants `nice.rs` mounts it itself (runtime
 README). The float library, `runtime/float_fpu.nasm`, which uses the FPU
 of DEVICES.md §11, is joined if the program calls it, for a float
-operation or a function of `math.h`. A wasm trap
+operation or a function of `math.h`: all of it, 483 words. A wasm trap
 writes a line with its code and address to the console before the
 processor halts, as `trapmsg.nasm` of the runtime README does, unless
 `--no-trap-report` leaves the report out. The defaults are the options of
@@ -303,7 +303,7 @@ pointers. nicewasm supports all of them. A Rust program uses a table and
 
 The optimizations change nothing in WASM.md. The size of translated code
 is measured in words (`make words` in `bench/`): `test/safe.zig` is 5903
-words and the float library in software 6578; with the FPU it is 289. The benchmark of [bench/](../bench/)
+words. The benchmark of [bench/](../bench/)
 runs 1652811 instructions in its phases, from a module of 11604 words,
 3052 of them the float conversions of the C library's `printf`.
 [doc/review/code-size-plan.md](../doc/review/code-size-plan.md) has the

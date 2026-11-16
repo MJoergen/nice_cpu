@@ -256,7 +256,9 @@ A routine pushes the operands, writes a command, reads the result, and
 pops it, so it leaves the FPU's stack as it found it. A routine of the
 table below uses at most two of its values (DEVICES.md §11.5). An entry
 sets the command in R5 and jumps to a part that the entries share, so
-the library is 483 words, 289 of them for the float operations. An
+the library is 483 words, 289 of them for the float operations and the
+rest for the functions of `math.h` (Math functions, below). A program
+that calls any routine of it is joined with all of it. An
 `f32` goes in and out through the view `FPU_X_S`, and `+`, `−`, `×`,
 `÷`, and the square root set the command's S bit, which rounds the
 result to binary32 on the stack: that is the correctly rounded `f32`
@@ -378,11 +380,11 @@ The library is small on purpose:
   a missing `ERANGE`. `fuzz_strtod.py` (below) checks the result against
   exact arithmetic. The float arithmetic is the float library's, so a
   program that calls `scanf`, even only for integers, is joined with
-  the float library. `sscanf` with `%d` alone is 9190 words, and the float
-  library comes with it: 289 words with the FPU, and 6578 without.
+  the float library. `sscanf` with `%d` alone is 8816 words, and the float
+  library comes with it, 483 words more.
 - The i family, `iscanf` and its relatives, with newlib's names, is
   `scanf` without the float conversions: `siscanf` with `%d` alone is
-  4307 words, and is joined without the float library. A float
+  4374 words, and is joined without the float library. A float
   conversion, `%*f` too, is a matching failure, as a conversion that
   `scanf` does not know is: it reads no input, ends the scan, and the
   call returns the number of values stored so far. The two families share

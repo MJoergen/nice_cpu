@@ -38,5 +38,10 @@ pub fn build(b: *std.Build) void {
     b.step("run", "Run the emulator").dependOn(&run_cmd.step);
 
     const tests = b.addTest(.{ .root_module = mod });
-    b.step("test", "Run the unit tests").dependOn(&b.addRunArtifact(tests).step);
+    const run_tests = b.addRunArtifact(tests);
+    // The test reads the vectors as it runs. Zig keeps the result of a run
+    // and runs the test again only when an input changed, so the file is
+    // named as one: otherwise new vectors would not be replayed.
+    if (fpu_vectors) |path| run_tests.addFileInput(.{ .cwd_relative = path });
+    b.step("test", "Run the unit tests").dependOn(&run_tests.step);
 }

@@ -318,6 +318,14 @@ The emulator's `errors.py` assembles and runs four more programs. One writes 2 a
 
 Left as they are: the window's choice between the text and the pixels, which `window.py` cannot see; `JZ` of −0, which no operand reaches; the colors, which the four files and the demo's screens agree on; and "bit for bit", which the comparison of this review showed, against C sources that the repository does not hold.
 
+### 3.8 The emulator replays new vectors only when its own code changed
+
+Found while fixing §3.1. `make -C emulator test` writes the vectors to `test/fpu.vectors.out` and runs `zig build test -Dfpu-vectors=` with that path, for this machine's CPU and for the baseline one. Zig keeps the result of a run of the unit tests, and runs them again only when an input of the run changed. The build knew the file's name and not its contents, so the file was no input. After a change of the vectors alone, in `fpu_vectors.py`, `fpu_model.py`, or `fpu_seq.py`, both runs print "run test cached" and pass, and they do so with a wrong result in the file, and with the file removed. A change under `src/` builds a new test, which runs, so the vectors of a commit that changes both were replayed. CI keeps Zig's cache between its runs (`ci.yml`), so it may skip the replay as well. `tb_fpu` reads the file in each simulation.
+
+**Fix:** the file as an input of the run in `build.zig`, and a run in `make test` on the vectors with a wrong line, which must fail.
+
+**Resolved.** `build.zig` names the file of `-Dfpu-vectors` as an input of the run of the unit tests, which `make test`, `make fpu-long`, and `make dist` all use. `make test` then adds a line to the file, a read of `FPU_X_LO` that gives 1 for the model's 0, and runs the unit test a third time, which must fail with "1 of … vectors failed". With the old `build.zig` that run passes from the cache, and `make test` fails. The vectors of §2.1, §2.2, and §3.1 were replayed on the emulator with the fix, for both CPUs: 117 of 117 tests pass.
+
 ## 4. Stale statements
 
 ### 4.1 hdl/README.md: three counts

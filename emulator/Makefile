@@ -119,10 +119,21 @@ endef
 # which also checks their coverage, once for this machine's CPU and once
 # for the baseline x86_64 CPU of make dist, which has no FMA instruction,
 # so that the software floating point of Zig's library is tested too.
+# Zig keeps the result of a run of the unit tests, and runs them again
+# only when an input changed, so build.zig names the vectors as one.
+# The last run checks that: the file gets a line that is wrong, a read
+# of FPU_X_LO that gives 1 for the model's 0, and the unit test must fail.
 test: build bincheck fmtcheck seqcheck
 	@$(PYTHON) test/fpu_vectors.py -o test/fpu.vectors.out
 	$(ZIG) build test -Dfpu-vectors=$(abspath test/fpu.vectors.out) --summary all
 	$(ZIG) build test -Dcpu=baseline -Dfpu-vectors=$(abspath test/fpu.vectors.out) --summary all
+	@echo "0 02 3FF0000000000000 0000000000000000 : R 0 00000001 : 0 02 3FF0000000000000 0000000000000000" \
+	  >> test/fpu.vectors.out
+	@if $(ZIG) build test -Dfpu-vectors=$(abspath test/fpu.vectors.out) > test/fpu.wrong.out 2>&1; \
+	  then echo "FAIL the unit test passes with a wrong vector: it did not read the file"; exit 1; \
+	  elif grep -Eq '(^| )1 of [0-9]+ vectors failed' test/fpu.wrong.out; \
+	  then echo "PASS a wrong vector fails the unit test"; \
+	  else echo "FAIL the unit test with a wrong vector:"; cat test/fpu.wrong.out; exit 1; fi
 	@$(MAKE) --no-print-directory programs
 	@NICEEMU=$(abspath $(EMU)) $(PYTHON) test/errors.py
 	@$(PYTHON) test/fpu_model_test.py

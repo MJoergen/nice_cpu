@@ -733,7 +733,10 @@ above). It then writes the FPU's vectors
 with `test/fpu_vectors.py`, runs the unit tests in `src/cpu.zig` and the
 other sources, which replay the vectors, for this machine's CPU and again
 for the baseline x86_64 CPU of the release files (Download), which has
-no FMA instruction, then the example programs
+no FMA instruction. Zig keeps the result of a run of the unit tests, and
+runs them again only when an input changed, so `build.zig` names the
+file of the vectors as an input; `make test` then adds a wrong line to
+the file, and the unit test must fail. Then come the example programs
 in `../assembler/test/` (the three 2004 programs and `wrap`) and the
 probes: the programs `test/*.nasm`, each of which exercises one feature
 and has a hand-checked `test/X.expected`. The output and exit status of

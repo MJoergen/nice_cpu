@@ -148,6 +148,11 @@ static void trig(void)
     CD(tan(1e22 * one), 0xBFFA0F79C1B6B258ull);
     CD(sin(D(0x413921FB00000000ull)), 0xBFD4B02E5BE91E9Eull);
     CD(sin(D(0x413921FAFFFFFFFFull)), 0xBFD4B02E5C25AF00ull);
+    // cos.c and tan.c each compare with the limit by themselves.
+    CD(cos(D(0x413921FB00000000ull)), 0x3FEE4831257A62DAull);
+    CD(cos(D(0x413921FAFFFFFFFFull)), 0x3FEE483125700AC3ull);
+    CD(tan(D(0x413921FB00000000ull)), 0xBFD5DCA6BD170C6Full);
+    CD(tan(D(0x413921FAFFFFFFFFull)), 0xBFD5DCA6BD5E8435ull);
     CF(sinf(1e10f * onef), 0xBEF99A64u);
     CF(sinf(-zf), FN0);
     CF(sinf(inff), NANFBITS);
@@ -283,6 +288,9 @@ static void powers(void)
     CD(pow(2 * one, -one), 0x3FE0000000000000ull);      // 0.5
     CD(pow(4 * one, 0.5 * one), 0x4000000000000000ull); // 2
     CD(pow(2 * one, 0.5 * one), 0x3FF6A09E667F3BCDull); // √2
+    // A base above 1 with the high word of 1, which is not pow's 1:
+    // (1 + 2^-52)^10 is 1 + 10 * 2^-52, to within 45 * 2^-104.
+    CD(pow(D(0x3FF0000000000001ull), 10 * one), 0x3FF000000000000Aull);
     CD(pow(2 * one, 1024 * one), PINF);
     CD(pow(nan_, one), NANBITS);
     CF(powf(-zf, -3 * onef), FNINF);

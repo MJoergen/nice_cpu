@@ -260,6 +260,8 @@ So for six commands `make test` measures less than the table of hdl/README.md gi
 
 **Fix:** `pow` of 1 + 2^−52 in `float_fpu.py` or `math.c`, and the two values for `cos` and `tan` beside those of `sin`.
 
+**Resolved.** `libc/test/math.c` checks `pow(1 + 2^−52, 10)`, which is 1 + 10 · 2^−52 to within 45 · 2^−104, `3FF000000000000A`, and `cos` and `tan` at `0x413921FB00000000` and at the double below it, against the correctly rounded values, which mpmath at 1000 bits and the host's libm both give: `3FEE4831257A62DA` and `3FEE483125700AC3` for `cos`, and `BFD5DCA6BD170C6F` and `BFD5DCA6BD5E8435` for `tan`. The test now has 285 checks. Without the test of the low word in `_pow` the first fails, with 1 as the result, and with `<=` for `<` in `cos.c` or in `tan.c` the check at the limit fails, with a NaN.
+
 ### 3.5 Trap 9: its report, its name, and three of its checks
 
 `translator/test/run.py` checks that a module with floats traps with code 9 on `niceemu --no-fpu`: three cases, each by R1. These pass every test of the runtime, the translator, the benchmarks, and the demo:

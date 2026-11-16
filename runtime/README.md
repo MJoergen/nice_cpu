@@ -565,7 +565,7 @@ their float versions 189 and 187.
 `libc/test/math.c` checks each function and macro on the cases whose
 results C17 Annex F gives, on exact results, on a few known values, on
 huge arguments of `sin`, `cos`, and `tan`, and on two routines of the
-float library called through a pointer, 280 checks in all.
+float library called through a pointer, 285 checks in all.
 `libc/test/fuzz_math.py` (Test, below) checks them on random arguments.
 
 ## Zig and Rust

@@ -130,6 +130,7 @@ ETH_FILES = {
     "hex.eth": "z" + FRAME[1:] + "\n",
     "count.eth": "-1: " + FRAME + "\n",
     "big.eth": "18446744073709551616: " + FRAME + "\n",
+    "crlf.eth": "# A file with CR LF line ends\r\n" + FRAME + "\r\n",
 }
 
 # Runs that succeed: (contents of the .bin file, arguments before it, exit
@@ -152,6 +153,9 @@ RUNS: List[Tuple[str, List[str], int, List[str]]] = [
      ["Stopped at the step limit after 5 steps, PC=00000005"]),
     ("00000000 00000000", ["-n", "5", "--no-fpu"], 3,
      ["Stopped at the step limit after 5 steps, PC=00000005"]),
+    # The lines of a .bin file and of an --eth-in file may end with CR LF.
+    ("00000000 00000000\r\n00000001 0c000000\r", [], 0, ["Halted (HALT) after 2 steps, PC=00000002"]),
+    ("00000000 0c000000", ["--eth-in", "crlf.eth"], 0, ["Halted (HALT) after 1 steps, PC=00000001"]),
     # A WAIT that no request can end stops the run, also under a step limit
     # (DEVICES.md §1.6). A timer that raises requests can end it, so the step
     # limit stops that one: MOVE @TIMER_PERIOD, 100 and WAIT are steps 0 and
@@ -187,6 +191,62 @@ RUNS: List[Tuple[str, List[str], int, List[str]]] = [
      ["fffffffe: 00000000 00000000 0c000000", "!00000005:"]),
 ]
 
+
+# Programs in assembly, run as those of RUNS: (source, arguments, exit
+# status, lines that stdout must have, or must not have if they start with
+# "!"). ESC is the escape of a color, and BLOCK the upper half block.
+ESC = "\x1b"
+BLOCK = "\u2580"
+# The screen's mode word (DEVICES.md §1.10) keeps 0 and 1, and a write of
+# another value writes 0: R1 = 0 for 2, and R2 = 0 for 0x10001, whose low
+# half is 1. The text shows, as the mode is 0.
+MODE_WORD = """
+ MOVE @0xFFFFFF87, 2
+ MOVE R1, @0xFFFFFF87
+ MOVE @0xFFFFFF87, 0x10001
+ MOVE R2, @0xFFFFFF87
+ MOVE @0xFFFF0000, 0x41
+ HALT
+"""
+# The chunky mode at the screen of -2004, 0x400: pixel (0, 0) red, and
+# (3, 0) with bits 19..0 only, which is black, as bits 31..20 color a
+# pixel. --color prints one line: a red block over black, with the black
+# pixels after it left out, as the 49 black lines below are.
+CHUNKY_2004 = """
+ MOVE @0xFFFFFF87, 1
+ MOVE @0x400, 0xF0000000
+ MOVE @0x403, 0x000FFFFF
+ HALT
+"""
+ASM_RUNS: List[Tuple[str, List[str], int, List[str]]] = [
+    (MODE_WORD, ["-s"], 0, ["R0  00000000 R1  00000000 R2  00000000 R3  00000000", "Screen:", "|A"]),
+    # With --no-screen-mode the word is memory, and keeps both values. Only
+    # 1 is the chunky mode, so the text shows.
+    (MODE_WORD, ["--no-screen-mode", "-s"], 0,
+     ["R0  00000000 R1  00000002 R2  00010001 R3  00000000", "Screen:", "|A"]),
+    (CHUNKY_2004, ["-2004", "--color"], 0,
+     ["Screen: 160x100 pixels", f"|{ESC}[38;2;255;0;0;48;2;0;0;0m{BLOCK}{ESC}[0m", f"!|{ESC}[0m"]),
+]
+
+# The name of each trap code of translator/WASM.md, as the trap report of
+# runtime/trapmsg.nasm has it, and of a number that is no code. TRAP is the
+# program of test/trapsym.nasm with the code in R1, and its symbols.
+TRAP_NAMES: List[Tuple[int, str]] = [
+    (1, "unreachable"),
+    (2, "memory access out of bounds"),
+    (3, "division by zero"),
+    (4, "integer overflow"),
+    (5, "float to integer conversion"),
+    (6, "call_indirect: bad index"),
+    (7, "call_indirect: type mismatch"),
+    (8, "memory beyond the byte windows"),
+    (9, "no FPU"),
+    (0, "unknown code"),
+    (10, "unknown code"),
+]
+TRAP = ("00000000 00005800\n00000001 {:08x}\n00000002 00009800\n00000003 00000013\n"
+        "00000004 0003d800\n00000005 00000006\n00000006 0fe00000\n00000010 0c000000")
+TRAP_SYMBOLS = "00000000 start\n00000006 ___wasm_trap\n00000010 body\n"
 
 # Files for --symbols: (contents, expected stderr line, with SYM for the
 # file's path, or None for a file in order). The program is a reserved
@@ -274,6 +334,16 @@ def main() -> None:
             failed += 1
             print(f"FAIL --symbols in a wait: exit status {p.returncode}, output:\n{p.stdout}")
 
+        # The name of each trap code, after a halt at ___wasm_trap.
+        with open(sym, "w") as f:
+            f.write(TRAP_SYMBOLS)
+        for code, name in TRAP_NAMES:
+            p = run(tmp, ["--symbols", sym, "BIN"], TRAP.format(code))
+            want = f"Trap {code} ({name}) at body+0x3"
+            if p.returncode != 2 or want not in p.stdout.splitlines() or p.stderr:
+                failed += 1
+                print(f"FAIL trap {code}: exit status {p.returncode}, expected '{want}', got:\n{p.stdout}{p.stderr}")
+
         # Help goes to stdout, with exit status 0.
         p = run(tmp, ["-h"], None)
         if p.returncode != 0 or not p.stdout.startswith("Usage: niceemu") or p.stderr:
@@ -301,6 +371,32 @@ def main() -> None:
                 print(f"FAIL {args} {text!r}")
                 for msg in problems:
                     print("    " + msg.replace("\n", "\n    "))
+
+        # The same for the programs in assembly.
+        asm = os.path.join(tmp, "t.nasm")
+        for source, args, status, lines in ASM_RUNS:
+            with open(asm, "w") as f:
+                f.write(source)
+            subprocess.run([sys.executable, NICEASM, "-o", path, asm], check=True)
+            p = run(tmp, args + ["BIN"], None)
+            out = p.stdout.splitlines()
+            problems = []
+            if p.returncode != status:
+                problems.append(f"exit status {p.returncode}, expected {status}")
+            for line in lines:
+                if line.startswith("!"):
+                    if any(o.startswith(line[1:]) for o in out):
+                        problems.append(f"unexpected '{line[1:]}'")
+                elif line not in out:
+                    problems.append(f"expected '{line}'")
+            if p.stderr:
+                problems.append(f"unexpected stderr:\n{p.stderr}")
+            if problems:
+                failed += 1
+                print(f"FAIL {args} {source!r}")
+                for msg in problems:
+                    print("    " + msg.replace("\n", "\n    "))
+                print("    got:\n    " + p.stdout.replace("\n", "\n    "))
 
         # A pipe closed early ends the trace quietly, with status 141.
         with open(path, "w") as f:
@@ -386,7 +482,7 @@ def main() -> None:
                 failed += 1
                 print(f"FAIL {sig.name} in a console read: output {out_b!r}, "
                       f"exit status {waiting.returncode}, stderr {err_b!r}")
-    total = len(CASES) + len(SYMBOL_FILES) + len(RUNS) + 10
+    total = len(CASES) + len(SYMBOL_FILES) + len(RUNS) + len(ASM_RUNS) + len(TRAP_NAMES) + 10
     print(f"PASS errors ({total} cases)" if not failed else f"FAIL errors ({failed} of {total})")
     sys.exit(1 if failed else 0)
 

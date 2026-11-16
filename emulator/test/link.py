@@ -1735,6 +1735,27 @@ def test_fpu() -> None:
     e.stop()
 
 
+def test_screen_mode() -> None:
+    """The screen's mode word over the link (DEVICES.md §1.10): it keeps 0
+    and 1, and a write of another value writes 0. With --no-screen-mode it
+    is ordinary memory, and stays so over a clear (§6)."""
+    mode = 0xFFFFFF87
+    e = Emu()
+    e.take(len(HELLO))
+    e.send(write(mode, [1]) + read(mode, 1) + write(mode, [2]) + read(mode, 1))
+    e.expect("the mode word", ok(mode, 1) + answer(mode, [1]) + ok(mode, 1) + answer(mode, [0]))
+    e.stop()
+    e = Emu(["--no-screen-mode"])
+    e.take(len(HELLO))
+    e.send(write(mode, [2]) + read(mode, 1))
+    e.expect("--no-screen-mode: memory", ok(mode, 1) + answer(mode, [2]))
+    # 0x5 clears and stays held. The memory is new, and the word is 0.
+    e.send(write(CONTROL, [0x5]) + read(mode, 1) + write(mode, [2]) + read(mode, 1))
+    e.expect("--no-screen-mode: memory after a clear",
+             ok(CONTROL, 1) + answer(mode, [0]) + ok(mode, 1) + answer(mode, [2]))
+    e.stop()
+
+
 def test_start_reset() -> None:
     """A start gives the console's receive interrupt and the FPU their
     reset values (§6, DEVICES.md §1.9, §11): v and the enable at 0, and
@@ -1843,7 +1864,8 @@ def main() -> None:
             lambda: test_write_regs(regs, at20, count), lambda: test_wait(waiter),
             lambda: test_time_skip(skipper),
             lambda: test_hidden(hidden, count), lambda: test_nmi(nmi, wait_nmi),
-            lambda: test_old_host(stop, echo), lambda: test_net(spin), test_fpu, test_start_reset,
+            lambda: test_old_host(stop, echo), lambda: test_net(spin), test_fpu, test_screen_mode,
+            test_start_reset,
             test_address, test_usage, lambda: test_not_at_0(tmp),
         ]
         for t in tests:

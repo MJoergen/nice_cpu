@@ -720,7 +720,10 @@ each run must be those of its `.expected` file.
 Finally `test/errors.py` checks the error messages and exit statuses of the
 command line and the loader, and the exit status and some output lines of
 runs that stop in each way: `HALT`, the other halts, the step limit,
-`-n 0` included, and a wait that no request can end. The probes are
+`-n 0` included, and a wait that no request can end. It checks the name
+of each trap code with a symbol file, input files with CR LF lines, the
+screen's mode word with and without `--no-screen-mode`, and the pixels
+with `-2004`. The probes are
 assembled with niceasm, and `make bins` reassembles them after a change.
 Then `test/link.py` runs niceemu with `--link 0` and checks the debug link
 over TCP (Debug link above). It checks the packets of DEBUG.md §8 byte for
@@ -752,7 +755,8 @@ stop the run. And it checks the hidden state: bits 7 to 10, `saved_pc`,
 and `saved_sr`, step by step through an `INT`, its `RTI`, and an NMI
 that waits for the `RTI`, at a halt and a hold, and that the read-only
 words of `0xFFFFFFD0`–`0xFFFFFFDF` take no write, and that the range
-answers while the program runs.
+answers while the program runs. And it checks the screen's mode word over
+the link, and that `--no-screen-mode` holds after a clear.
 Last, `test/udp.py` checks the frames over the socket of `--eth-udp`
 (Ethernet frames above), and `test/tap.py` the same through
 `tools/nicetap.py` and a TAP device (A real network above).

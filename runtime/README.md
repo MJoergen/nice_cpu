@@ -324,7 +324,7 @@ Zig keeps only the objects of `libc.a` that the program references.
 | `time.h` | `clock`, with `CLOCKS_PER_SEC` 1000000 and `clock_t` unsigned, from the microsecond counter of DEVICES.md §3, which counts the host's time in the emulator, and wraps after 71.6 minutes on a board; `time`, from the clock of the time of day of DEVICES.md §10, which returns −1 while the clock holds no time; and the types `clock_t` and `time_t`. |
 | `errno.h` | `errno`, one for the whole program, 0 at start, and the codes `EINVAL`, `EDOM`, `ERANGE`, and `EILSEQ`. Only the conversions from text set it: `strtol` and `strtoul`, and so `atoi` and `atol`, to `ERANGE` on an overflow and to `EINVAL` for a base other than 0 and 2 to 36, and `strtod` and `strtof`, and so `atof` and `scanf`, to `ERANGE` when a float overflows or underflows, and to `EINVAL` when there is none. |
 | `ctype.h` | `isalnum`, `isalpha`, `iscntrl`, `isdigit`, `isgraph`, `islower`, `isprint`, `ispunct`, `isspace`, `isupper`, `isxdigit`, `tolower`, `toupper` |
-| `nice.h` | The device routines (see above): `nice_putc`, `nice_getc`, `nice_pollc`, `nice_print`, `nice_cycles`, `nice_instructions`, `nice_micros`, `nice_clock`, `nice_clock_isset`, and `nice_clock_set` (C only, with no assembly routine), `nice_screen_put`, and `nice_screen_clear`, with `NICE_SCREEN_COLS`, `NICE_SCREEN_ROWS`, and `NICE_SCREEN_BLANK`, the blank it writes, and the names of the colors, `NICE_FG_*` and `NICE_BG_*` (Screen colors, below). Also `nice_peek`, `nice_poke`, `nice_heap_end`, and `nice_grow`, the `nice` imports of WASM.md, and the devices' addresses, for devices that have no routine, among them `NICE_SCREEN_MODE`, the screen's mode word, with `NICE_MODE_TEXT`, `NICE_MODE_CHUNKY`, `NICE_PIXEL_COLS`, and `NICE_PIXEL_ROWS` (DEVICES.md §1.10). |
+| `nice.h` | The device routines (see above): `nice_putc`, `nice_getc`, `nice_pollc`, `nice_print`, `nice_cycles`, `nice_instructions`, `nice_micros`, `nice_clock`, `nice_clock_isset`, and `nice_clock_set` (C only, with no assembly routine), `nice_screen_put`, and `nice_screen_clear`, with `NICE_SCREEN_COLS`, `NICE_SCREEN_ROWS`, and `NICE_SCREEN_BLANK`, the blank it writes, and the names of the colors, `NICE_FG_*` and `NICE_BG_*` (Screen colors, above). Also `nice_peek`, `nice_poke`, `nice_heap_end`, and `nice_grow`, the `nice` imports of WASM.md, and the devices' addresses, for devices that have no routine, among them `NICE_SCREEN_MODE`, the screen's mode word, with `NICE_MODE_TEXT`, `NICE_MODE_CHUNKY`, `NICE_PIXEL_COLS`, and `NICE_PIXEL_ROWS` (DEVICES.md §1.10). |
 
 The device routines, in `src/nice.c`, are the only functions that touch
 hardware. They use `nice_peek` and `nice_poke`. `nice_putc` is not among
@@ -536,31 +536,38 @@ on other arguments.
 A call costs, on the emulator with the math unit, the steps below,
 averaged over 32 arguments in the range each function is most used in,
 such as −10 to 10 for `sin`, and with the few steps of the loop around
-the call. They were measured on 2026-11-15. A write of a function's
-command to `FPU_CMD` is one step, and the processor then waits for the
-FPU: on the FPGA, up to the cycles of hdl/README.md (The floating-point
-unit), such as 1552 for `COS` and 3018 for `POW`. The emulator counts no
-such wait. Each function in C also brings the words below into the
-program: its own and those of the routines it calls, the float library
-not counted, which has the others. A program that uses all of them gets
-7268 words, as `make words` in `bench/` prints, almost all of them the
-reduction of a huge argument, which costs `sin` up to some 6000 steps
-and `sinf` up to 5500. `frexp` and `modf` are 199 and 261 words, and
-their float versions 189 and 187.
+the call, which reads each argument from a `volatile` array of the
+function's own type and stores the result. They were measured on
+2026-11-16, with `nice_instructions` before and after the loop. A float
+function passes one word for each operand, so it takes fewer steps than
+the double one, but for `sinf`, `cosf`, and `tanf`, which call the
+double function. `fmin` and `fmax` look at the signs first: for two
+arguments of one sign they take 75 and 73 steps, and 52 and 51 in float,
+and for two of different signs 57, and 36 in float. The table has half
+of each. A write of a function's command to `FPU_CMD` is one step, and
+the processor then waits for the FPU: on the FPGA, up to the cycles of
+hdl/README.md (The floating-point unit), such as 1552 for `COS` and 3018
+for `POW`. The emulator counts no such wait. Each function in C also
+brings the words below into the program: its own and those of the
+routines it calls, the float library not counted, which has the others.
+A program that uses all of them gets 7268 words, as `make words` in
+`bench/` prints, almost all of them the reduction of a huge argument,
+which costs `sin` up to some 6000 steps and `sinf` up to 5500. `frexp`
+and `modf` are 199 and 261 words, and their float versions 189 and 187.
 
 | Function | Steps, double | Steps, float | Words, double | Words, float |
 |---|---|---|---|---|
-| `sin`, `cos` | 44 | 70 | 5529 | 5539 |
-| `tan` | 45 | 71 | 5569 | 5579 |
-| `asin`, `acos`, `atan`, `exp`, `log`, `log10`, `log2` | 21 | 28 | 0 | 0 |
-| `exp2` | 20 | 27 | 0 | 0 |
-| `atan2`, `fmod` | 33 | 48 | 0 | 0 |
-| `pow` | 38 | 51 | 0 | 0 |
-| `hypot` | 41 | 54 | 0 | 0 |
-| `sqrt`, `floor` | 20 | 27 | 2 | 2 |
-| `round` | 20 | 28 | 0 | 0 |
-| `fmin`, `fmax` | 68 | 68 | 72 | 46 |
-| `fabs` | 10 | 18 | 2 | 2 |
+| `sin`, `cos` | 43 | 59 | 5529 | 5539 |
+| `tan` | 45 | 61 | 5569 | 5579 |
+| `asin`, `acos`, `atan`, `exp`, `log`, `log10`, `log2` | 21 | 18 | 0 | 0 |
+| `exp2` | 19 | 16 | 0 | 0 |
+| `atan2`, `fmod` | 33 | 26 | 0 | 0 |
+| `pow` | 37 | 28 | 0 | 0 |
+| `hypot` | 41 | 32 | 0 | 0 |
+| `sqrt`, `floor` | 19 | 16 | 2 | 2 |
+| `round` | 19 | 18 | 0 | 0 |
+| `fmin`, `fmax` | 66, 65 | 44 | 72 | 46 |
+| `fabs` | 9 | 7 | 2 | 2 |
 
 `libc/test/math.c` checks each function and macro on the cases whose
 results C17 Annex F gives, on exact results, on a few known values, on

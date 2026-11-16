@@ -344,6 +344,8 @@ Line 325 of the same file says "(Screen colors, below)" in the row of `nice.h`; 
 
 **Fix:** the column, and "above".
 
+**Resolved.** Both columns are measured again, on 2026-11-16, by one C program, built with `nicebuild.py` and run on the emulator. For each function it has a loop of 32 calls, which reads each argument from a `volatile` array of the function's own type and stores the result in a `volatile` variable, between two reads of `nice_instructions`. The 14 steps of two such reads with nothing between them are taken off, and the rest is divided by 32 and rounded. The arguments are spread evenly over −10 to 10, but −1 to 1 for `asin` and `acos`, 0.1 to 100 for the logarithms, 0.1 to 10 with a power of −5 to 5 for `pow`, −100 to 100 with a divisor of 1 to 10 for `fmod`, 0 to 100 for `sqrt`, and −100 to 100 for `floor` and `round`. The float column is now that of the table above. The double column is its last column, one step below the README's old one in six rows: the old figures are what the loop gives with the 14 steps left in. `fmin` and `fmax` are 66 and 65 for 68, and 44 in float: they depend on the signs of the arguments, which the README now says, with the steps for each case. The row of `nice.h` says "above".
+
 ### 4.4 Small ones
 
 - CLAUDE.md line 107: `make words` gives the size of "the benchmark, safe.zig, CoreMark, float, and math modules". There is no float module now, and `bench/words.py` keeps a `--library NAME` that no Makefile passes.

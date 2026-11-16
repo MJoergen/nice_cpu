@@ -158,6 +158,8 @@ C's `hypot` and `atan2` give the same bits, on the first and the fourth line.
 
 **Fix:** in DEVICES.md §11.3 and runtime/README.md, bounds with some room, such as 1.1 ulp for `HYPOT` and 1.6 for `ATAN2`, each with its reason and the worst that is known, and the same in `BOUNDS` of `fpu_model_test.py` and of `fuzz_math.py`. Operands of both kinds among those of `function_bounds`, and the lines of the table in the directed vectors.
 
+**Resolved.** The bounds are 1.1 ulp for `HYPOT` and 1.6 for `ATAN2`, in DEVICES.md §11.3 and runtime/README.md, each with its reason and the worst that is known, 1.03 and 1.52 ulp, and in `BOUNDS` of `fpu_model_test.py` and of `fuzz_math.py`. The six lines of the table are hand-checked cases, and so directed vectors. Their results are musl's bits, which its `hypot` and `atan2` compiled for the host give, and their errors are mpmath's. `function_bounds` checks the bounds on the six pairs too, so a bound below them fails, and draws a third of its operands of the two functions from the kinds above. `fuzz_math.py` draws three in ten of its doubles for `hypot` and `atan2` from them. It took the true value of `atan2` from the host's `atan2`, which gave every error as a whole number of ulps, and now computes it to 40 digits. With 20,000 inputs it finds a `hypot` 1.02 ulp off and an `atan2` 1.44 ulp off.
+
 ### 2.3 A program without floats that exports `log` does not build
 
 `nicebuild.py` joins the float library when the program holds one of the library's labels (line 258). A label that the program defines itself counts too. So a Zig, Rust, or C program that exports a function with the name of a routine of `math.h` gets the library, though it calls nothing of it, and the label is then defined twice:

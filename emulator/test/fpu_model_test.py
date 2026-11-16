@@ -382,6 +382,14 @@ CASES: List[Case] = [
     ("ATAN2 1e300, 1e-300: pi/2", [d(1e300), d(1e-300)], 0, "ATAN2", [0x3FF921FB54442D18], 0, None),
     ("ATAN2 2^-70, -1: pi", [d(2.0**-70), d(-1.0)], 0, "ATAN2", [0x400921FB54442D18], 0, None),
     ("ATAN2 of a NaN", [d(1.0), QN], 0, "ATAN2", [N], 0, None),
+    # The worst errors of ATAN2 that are known, 1.523, 1.523, and 1.522
+    # ulp by mpmath. Y / X is just above 2^-5 or 2^-4 and the result just
+    # below it, so the rounding of the quotient is a whole ulp of the
+    # result (DEVICES.md §11.3). These are the bits of musl's atan2,
+    # compiled for the host, 2 units from the correctly rounded values.
+    ("ATAN2 1.523 ulp off, below -2^-5", [0xBFA003DEC75DA384, 0x3FF003A708A81F8C], 0, "ATAN2", [0xBF9FFDC503D47312], 0, None),
+    ("ATAN2 1.523 ulp off, below 2^-4", [0x3FA00268B443C6CF, 0x3FDFFB347A586826], 0, "ATAN2", [0x3FAFFEF07EABD502], 0, None),
+    ("ATAN2 1.522 ulp off, an X below 1", [0xBFA00024D41534F8, 0x3FEFFFDBEF75879D], 0, "ATAN2", [0xBF9FFDC359723161], 0, None),
     # The logarithms: of 2, ln 2 rounded; the subnormals as GETEXP and
     # GETMANT see them; 0 is a pole; below 0 a NaN; +inf is itself.
     ("LN 2: ln 2", [d(2.0)], 0, "LN", [0x3FE62E42FEFA39EF], 0, None),
@@ -477,6 +485,14 @@ CASES: List[Case] = [
     ("HYPOT -inf, 1 is inf", [NINF, d(1.0)], 0, "HYPOT", [INF], 0, None),
     # C gives inf for an infinity and a NaN; a NaN operand gives the NaN.
     ("HYPOT inf, NaN is the NaN", [INF, QN], 0, "HYPOT", [N], 0, None),
+    # The worst errors of HYPOT that are known, 1.028, 1.027, and 1.020
+    # ulp by mpmath. Both operands are just above the same power of two,
+    # where the two sums of the squares round the most (DEVICES.md
+    # §11.3). These are the bits of musl's hypot, compiled for the host,
+    # 1 unit from the correctly rounded values.
+    ("HYPOT 1.028 ulp off, above 2^-300", [0x2D3000001617B6BC, 0x2D3000000023FEDA], 0, "HYPOT", [0x2D36A09E7637E144], 0, None),
+    ("HYPOT 1.027 ulp off, above 2^-600", [0x1A700000AC11E529, 0x1A7000000021B5D9], 0, "HYPOT", [0x1A76A09EE0430E13], 0, None),
+    ("HYPOT 1.020 ulp off, above 1", [0x3FF0000109CBF173, 0x3FF000000008C4D0], 0, "HYPOT", [0x3FF6A09F2277C793], 0, None),
     # XMUL: p as Y, the error as X.
     ("XMUL 3, 3 is exact: the error is +0", [d(3.0), d(3.0)], 0, "XMUL", [d(9.0), 0], 0, None),
     # (1 + 2^-52)^2 = 1 + 2^-51 + 2^-104.
@@ -1083,12 +1099,13 @@ def exact_function(name: str, ops: List[Fraction], pi: decimal.Decimal) -> decim
 def function_operands(name: str, rnd: random.Random, pi: Fraction) -> List[int]:
     """Random finite operands of the function name, within its domain:
     for SIN, COS, and TAN up to 2^20 pi/2, some next to a multiple of
-    pi/2, for ATAN2 also pairs whose exponents are far apart, for the
-    logarithms also next to 1, for EXP, POW2, and POW those whose result
-    is finite and not zero, for POW also a negative Y with a whole X,
-    and a Y within 2^-20 of 1 with an |X| above 2^31,
+    pi/2, for ATAN2 also pairs whose exponents are far apart, and pairs
+    whose quotient is just above a power of two with the result just
+    below it, for the logarithms also next to 1, for EXP, POW2, and POW
+    those whose result is finite and not zero, for POW also a negative Y
+    with a whole X, and a Y within 2^-20 of 1 with an |X| above 2^31,
     and for HYPOT pairs whose exponents are far apart, some of them huge
-    or tiny."""
+    or tiny, and pairs just above the same power of two."""
 
     def binade(lo: int, hi: int) -> int:
         return rnd.getrandbits(52) | rnd.randint(lo, hi) << 52 | rnd.getrandbits(1) << 63
@@ -1147,34 +1164,58 @@ def function_operands(name: str, rnd: random.Random, pi: Fraction) -> List[int]:
                 return [y, d(x)]
     if name == "HYPOT":
         # Below 2^1022, so that the result is finite.
+        if rnd.randrange(3) == 0:
+            # Both just above the same power of two, where the error is
+            # the largest (DEVICES.md §11.3).
+            ey = rnd.randint(1, 2044) << 52
+            return [ey | rnd.getrandbits(rnd.randint(1, 34)) | rnd.getrandbits(1) << 63,
+                    ey | rnd.getrandbits(rnd.randint(1, 34)) | rnd.getrandbits(1) << 63]
         y = binade(1, 2044)
         ey = y >> 52 & 0x7FF
         return [y, binade(max(1, ey - rnd.choice([0, 3, 30, 70])), min(2044, ey + rnd.choice([0, 3, 30, 70])))]
+    if rnd.randrange(3) == 0:
+        # Y / X just above 2^-k and its atan just below, where the error
+        # is the largest (DEVICES.md §11.3): atan q is some q - q^3/3.
+        k = rnd.randint(3, 6)
+        x = binade(1023 - 40, 1023 + 40) & ~(1 << 63)
+        q = pow2(-k) * (1 + Fraction(rnd.getrandbits(40), 3 << 40) * pow2(-2 * k))
+        return [F64.round(F64.value(x) * q)[0] | rnd.getrandbits(1) << 63, x]
     y = binade(1023 - 40, 1023 + 40)
     ey = y >> 52 & 0x7FF
     return [y, binade(ey - rnd.choice([0, 3, 30, 63]), ey + rnd.choice([0, 3, 30, 63]))]
 
 
 # The bounds of §11.3 in ulps, which are 1 but for these. musl's atan2
-# rounds y / x before atan, which takes it past 1 ulp: 1.35 is the worst
-# of 320,000 samples.
-BOUNDS = {"ATAN2": Fraction(3, 2)}
+# rounds y / x before atan, which is a whole ulp of the result where the
+# quotient is just above a power of two and the result just below it,
+# and musl's hypot rounds two sums of the squares before the root. The
+# worst that are known, 1.523 and 1.028 ulp, are among the CASES, and
+# function_bounds takes their operands, WORST, before its random ones,
+# so a bound below them fails.
+BOUNDS = {"ATAN2": Fraction(8, 5), "HYPOT": Fraction(11, 10)}
+WORST = {
+    "ATAN2": [[0xBFA003DEC75DA384, 0x3FF003A708A81F8C], [0x3FA00268B443C6CF, 0x3FDFFB347A586826],
+              [0xBFA00024D41534F8, 0x3FEFFFDBEF75879D]],
+    "HYPOT": [[0x2D3000001617B6BC, 0x2D3000000023FEDA], [0x1A700000AC11E529, 0x1A7000000021B5D9],
+              [0x3FF0000109CBF173, 0x3FF000000008C4D0]],
+}
 COUNT = 400
 
 
 def function_bounds(rnd: random.Random) -> None:
     """The functions of §11.3 are within their bounds, BOUNDS ulps of the
-    exact value: each on COUNT random operands, against its value in 90
-    digits. SIN, COS, and TAN reduce by pi/2 to 90 digits, which leaves
-    some 75 below 2^20 pi/2."""
+    exact value: each on its WORST operands and on COUNT random ones,
+    against its value in 90 digits. SIN, COS, and TAN reduce by pi/2 to
+    90 digits, which leaves some 75 below 2^20 pi/2."""
     worst: Dict[str, float] = {}
     with decimal.localcontext() as ctx:
         ctx.prec = 90
         pi = machin_pi()
         pi_q = Fraction(pi)
         for name in fpu_seq.FUNCTIONS:
-            for _ in range(COUNT):
-                ops = function_operands(name, rnd, pi_q)
+            known = WORST.get(name, [])
+            for i in range(len(known) + COUNT):
+                ops = known[i] if i < len(known) else function_operands(name, rnd, pi_q)
                 fpu = FPU(list(ops))
                 fpu.command(NUMBERS[name])
                 got = fpu.stack[-1]

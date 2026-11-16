@@ -497,14 +497,18 @@ The library compiles them with `-Os`, which keeps clang from unrolling
 the loops of `__rem_pio2_large`. That saves 2200 words and costs no step
 on other arguments.
 
-- **Accuracy.** Each result is within 1 ulp of the true value, but that
-  of `atan2`, within 1.5: musl's `atan2`, which the FPU's follows,
-  rounds y / x before its `atan`, and its error reaches 1.35 ulp
-  (DEVICES.md §11.3). A float function rounds a binary64 result once,
-  so its error is at most some 0.5 ulp, and `acosf(-1)` and `atanf(∞)`
-  are the floats nearest π and π/2. `sqrt`, `fmod`, `frexp`, `ldexp`,
-  `scalbn`, `modf`, `fmin`, `fmax`, the roundings, `fabs`, and
-  `copysign` are exact.
+- **Accuracy.** Each result is within 1 ulp of the true value, but
+  those of `hypot`, within 1.1, and of `atan2`, within 1.6. Both follow
+  musl's code, as the FPU's functions do, and round before their last
+  step. `hypot` rounds the sum of the squares, and its error reaches
+  1.03 ulp where both arguments are just above the same power of two.
+  `atan2` rounds y / x before its `atan`, and its error reaches 1.52
+  ulp where the quotient is just above a power of two and the result
+  just below it (DEVICES.md §11.3). A float function rounds a binary64
+  result once, so its error is at most some 0.5 ulp, and `acosf(-1)`
+  and `atanf(∞)` are the floats nearest π and π/2. `sqrt`, `fmod`,
+  `frexp`, `ldexp`, `scalbn`, `modf`, `fmin`, `fmax`, the roundings,
+  `fabs`, and `copysign` are exact.
 - **The bits.** `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`,
   `log10`, and `hypot` follow musl's code, so their results are musl's,
   bit for bit, on a host with IEEE 754 doubles and no fused

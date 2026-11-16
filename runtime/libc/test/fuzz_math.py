@@ -15,15 +15,15 @@ library, float_fpu.nasm, assembled, and run. Then:
   fmax, the roundings, fabs, and copysign) must give the host libm's
   result, through ctypes.
 - The others must be within their bound of the true value, the bound
-  that the C library's README states: 1 ulp, but 1.5 for atan2. Where
-  the host libm's result is not finite, they must give it, as C gives
-  the special values. The true value of a float function is the host's
-  double function, rounded to double. That of exp, exp2, log, log2,
-  log10, pow, and hypot comes from Python's decimal module, which rounds
-  them correctly, and that of the other double functions is the host
-  libm's, as glibc's are correctly rounded. A result is compared with
-  the true value in units of the last place of the true value rounded to
-  the result's type.
+  that the C library's README states: 1 ulp, but 1.1 for hypot and 1.6
+  for atan2. Where the host libm's result is not finite, they must give
+  it, as C gives the special values. The true value of a float function
+  is the host's double function, rounded to double. That of exp, exp2,
+  log, log2, log10, pow, hypot, and atan2 is computed to 40 digits with
+  Python's decimal module, and that of the other double functions is
+  the host libm's, as glibc's are correctly rounded. A result is
+  compared with the true value in units of the last place of the true
+  value rounded to the result's type.
 
 --errors prints the largest error of each function. Needs clang with the
 wasm32 target, the host's libm, and ../libc.a from make -C .. libc.a.
@@ -110,6 +110,29 @@ def pow_args(rng: random.Random, single: bool) -> Tuple[float, ...]:
     return (logu(-1074, 1023)(rng, single), logu(-30, 30)(rng, single))
 
 
+def atan2_args(rng: random.Random, single: bool) -> Tuple[float, ...]:
+    """Three doubles in ten with y / x just above a power of two, 2^-3 to
+    2^-6, and the result just below it, where the error of atan2 is the
+    largest (DEVICES.md §11.3): atan q is some q - q^3/3."""
+    if not single and rng.random() < 0.3:
+        k = rng.randint(3, 6)
+        x = logu(-30, 30, False)(rng, single)
+        y = x * math.ldexp(1 + rng.random() * 4.0 ** -k / 3, -k)
+        return (-y if rng.random() < 0.5 else y, x)
+    return (logu(-30, 30)(rng, single), logu(-30, 30)(rng, single))
+
+
+def hypot_args(rng: random.Random, single: bool) -> Tuple[float, ...]:
+    """Three doubles in ten with both just above the same power of two,
+    where the error of hypot is the largest (DEVICES.md §11.3)."""
+    if not single and rng.random() < 0.3:
+        e = rng.randint(-1021, 1020)
+        x, y = (math.ldexp(1 + math.ldexp(rng.getrandbits(rng.randint(1, 34)), -52), e)
+                for _ in range(2))
+        return (x, y)
+    return (logu(-1074, 1023)(rng, single), logu(-1074, 1023)(rng, single))
+
+
 def ldexp_args(rng: random.Random, single: bool) -> Tuple[float, ...]:
     return (logu(-1074, 1023)(rng, single), float(rng.randint(-2200, 2200)))
 
@@ -126,14 +149,14 @@ FUNCS: Dict[str, Tuple[str, bool, Gen]] = {
     "asin": ("d", False, one(uniform(-1, 1), uniform(-1.1, 1.1), logu(-60, 0))),
     "acos": ("d", False, one(uniform(-1, 1), uniform(-1.1, 1.1), logu(-60, 0))),
     "atan": ("d", False, one(logu(-30, 60), logu(-1074, 1023))),
-    "atan2": ("dd", False, two(logu(-30, 30), logu(-30, 30))),
+    "atan2": ("dd", False, atan2_args),
     "exp": ("d", False, one(uniform(-760, 720), uniform(-1, 1), uniform(-110, 95))),
     "exp2": ("d", False, one(uniform(-1080, 1030), uniform(-1, 1), uniform(-150, 130))),
     "log": ("d", False, one(logu(-1074, 1023, False), uniform(0.99, 1.01))),
     "log10": ("d", False, one(logu(-1074, 1023, False), uniform(0.99, 1.01))),
     "log2": ("d", False, one(logu(-1074, 1023, False), uniform(0.99, 1.01))),
     "pow": ("dd", False, pow_args),
-    "hypot": ("dd", False, two(logu(-1074, 1023), logu(-1074, 1023))),
+    "hypot": ("dd", False, hypot_args),
     "sqrt": ("d", True, one(logu(-1074, 1023, False))),
     "fmod": ("dd", True, two(logu(-20, 60), logu(-20, 60))),
     "frexp": ("dpi", True, one(logu(-1074, 1023))),
@@ -152,9 +175,10 @@ FUNCS: Dict[str, Tuple[str, bool, Gen]] = {
     "copysign": ("dd", True, two(logu(-1074, 1023), logu(-1074, 1023))),
 }
 
-# The functions whose bound is more than 1 ulp: atan2's, which rounds
-# y / x before its atan, as musl's does (DEVICES.md §11.3).
-BOUNDS: Dict[str, float] = {"atan2": 1.5}
+# The functions whose bound is more than 1 ulp: atan2, which rounds
+# y / x before its atan, and hypot, which rounds two sums of the squares
+# before the root, as musl's do (DEVICES.md §11.3).
+BOUNDS: Dict[str, float] = {"atan2": 1.6, "hypot": 1.1}
 
 SPECIALS = [0.0, -0.0, math.inf, -math.inf, math.nan, 1.0, -1.0, 0.5, -0.5, 2.0, -2.0,
             5e-324, -5e-324, 2.2250738585072014e-308, 1.7976931348623157e308,
@@ -335,6 +359,37 @@ def value(h: str, single: bool) -> float:
     return float(struct.unpack("<d", struct.pack("<Q", int(h, 16)))[0])
 
 
+def dec_atan(x: decimal.Decimal) -> decimal.Decimal:
+    """atan x for an x from 0 to 1, to the precision of the context. It
+    halves the angle four times, as atan x = 2 atan(x / (1 + sqrt(1 +
+    x^2))), and sums the series of what is left."""
+    for _ in range(4):
+        x = x / (1 + (1 + x * x).sqrt())
+    total = term = x
+    k = 1
+    while True:
+        term = -term * x * x
+        nxt = total + term / (2 * k + 1)
+        if nxt == total:
+            return 16 * total
+        total, k = nxt, k + 1
+
+
+def dec_atan2(y: float, x: float) -> decimal.Decimal:
+    """atan2(y, x) of two finite numbers, to the precision of the
+    context, with C's results for the zeros."""
+    D = decimal.Decimal
+    pi = 4 * dec_atan(D(1))
+    ay, ax = abs(D(y)), abs(D(x))
+    if ay <= ax:
+        a = dec_atan(ay / ax) if ax else D(0)
+    else:
+        a = pi / 2 - dec_atan(ax / ay)
+    if math.copysign(1.0, x) < 0:
+        a = pi - a
+    return a if math.copysign(1.0, y) > 0 else -a
+
+
 def truth(lib: ctypes.CDLL, name: str, single: bool,
           args: Tuple[float, ...]) -> Optional[decimal.Decimal]:
     """The true value of a function that is not exact, if it is finite and
@@ -346,7 +401,7 @@ def truth(lib: ctypes.CDLL, name: str, single: bool,
         fn.argtypes = [ctypes.c_double] * len(args)
         r = fn(*args)
         return D(r) if math.isfinite(r) else None
-    if name not in ("exp", "exp2", "log", "log2", "log10", "pow", "hypot"):
+    if name not in ("exp", "exp2", "log", "log2", "log10", "pow", "hypot", "atan2"):
         r = reference_value(lib, name, args)
         return D(r) if math.isfinite(r) else None
     with decimal.localcontext() as ctx:
@@ -361,6 +416,8 @@ def truth(lib: ctypes.CDLL, name: str, single: bool,
         if name == "hypot":
             y = D(args[1])
             return (x * x + y * y).sqrt() if y.is_finite() else None
+        if name == "atan2":
+            return dec_atan2(args[0], args[1]) if math.isfinite(args[1]) else None
         if x <= 0 and name != "pow":
             return None
         if name == "log":

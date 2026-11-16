@@ -153,7 +153,7 @@ pub const constants = [_]u64{
     0x40862E4200000000, // H40862E42
     0x40862E42FEFA39EF, // o_threshold
     0xC0874910D52D3051, // u_threshold
-    0x3FD62E4200000000, // H3FD62E42
+    0x3FD62E4300000000, // H3FD62E43
     0x3FF0A2B200000000, // H3FF0A2B2
     0xBDEA39EF35793C76, // -ln2_lo
     0x3FF71547652B82FE, // invln2
@@ -4095,8 +4095,8 @@ const exp_steps = [_]Step{
     .{ .op = .jmp, .n = 42 },
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0016 }, // ABS
-    .{ .op = .k, .n = 146 }, // H3FD62E42
-    .{ .op = .cmd, .n = 0x041C }, // CMP 4
+    .{ .op = .k, .n = 146 }, // H3FD62E43
+    .{ .op = .cmd, .n = 0x061C }, // CMP 6
     .{ .op = .jz, .n = 109 },
     .{ .op = .cmd, .n = 0x0306 }, // PICK 3
     .{ .op = .cmd, .n = 0x0016 }, // ABS

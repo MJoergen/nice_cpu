@@ -669,7 +669,7 @@ def EXP(x):
             return H(0x7ff00000)
         if x < u_threshold:
             return 0.0
-    if abs(x) > H(0x3fd62e42):
+    if abs(x) >= H(0x3fd62e43):
         if abs(x) < H(0x3ff0a2b2):
             if x < 0.0:
                 hi = x + ln2_hi

@@ -420,6 +420,14 @@ CASES: List[Case] = [
     ("EXP -1000 is +0", [d(-1000.0)], 0, "EXP", [0], 0, None),
     ("EXP inf", [INF], 0, "EXP", [INF], 0, None),
     ("EXP -inf is +0", [NINF], 0, "EXP", [0], 0, None),
+    # e_exp.c tests the high word of |X| alone, and reduces X from
+    # 0x3FD62E43 on, a little above 0.5 ln 2: by ln 2 for a positive X,
+    # and by -ln 2 for a negative one. These are the nearest operands on
+    # each side whose result tells: the other path gives its neighbor.
+    ("EXP below the high word 0x3FD62E43: no reduction", [0x3FD62E42FFFFFFED], 0, "EXP", [0x3FF6A09E66DBC8D3], 0, None),
+    ("EXP from the high word 0x3FD62E43: less ln 2", [0x3FD62E4300000004], 0, "EXP", [0x3FF6A09E66DBC8DA], 0, None),
+    ("EXP above the high word 0xBFD62E43: no reduction", [0xBFD62E42FFFFFFEC], 0, "EXP", [0x3FE6A09E6622AEC6], 0, None),
+    ("EXP from the high word 0xBFD62E43: plus ln 2", [0xBFD62E430000001F], 0, "EXP", [0x3FE6A09E6622AEB5], 0, None),
     # POW is Y^X, C's pow(Y, X). A whole power of whole numbers is
     # exact, and 10^-5 is 1 ulp below 1e-5 rounded, as FreeBSD's pow
     # gives it.

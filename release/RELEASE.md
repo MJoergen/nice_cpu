@@ -147,8 +147,7 @@ accesses called and inline, one run for both), and `hdl make strides`
 (the interrupt sweeps with strides 17, 31, and 64), and once beside
 them `emulator make fpu-long` (the FPU's vectors with a million random
 accesses) and `runtime/libc make fuzz` (the random tests of `printf`,
-`strtod`, and `math.h`, the last two with each float library, which need
-clang). Each benchmark run, Dhrystone, CoreMark, the float run,
+`strtod`, and `math.h`, which need clang). Each benchmark run, Dhrystone, CoreMark, the float run,
 `fpu-long`, and the fuzz takes one CPU, and the sweeps share the rest. `release.py figures` then checks that `bench/README.md`
 quotes the cycles of `float` and `float_inline` on the pipelined core.
 On 20 CPUs, `make slow` took 5 minutes on 2026-11-11. `SIM=ghdl` runs

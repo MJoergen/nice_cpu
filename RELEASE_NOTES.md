@@ -14,8 +14,8 @@ pin each are:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|
-| `V2.2` | none yet |
-| `V2.1` | none yet |
+| `V2.2` | `V2.2` |
+| `V2.1` | `V2.1` |
 | `V2.0` | `V2.0`, `V2.0.1` |
 | `V1.9` | `V1.9`, `V1.9.1` |
 | `V1.8` | none |

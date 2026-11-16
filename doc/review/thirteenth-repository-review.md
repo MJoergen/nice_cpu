@@ -61,6 +61,8 @@ RELEASE_NOTES.md lines 17 and 18. NiceMonMEGA65 has both tags: its `V2.1`, of 20
 
 **Fix:** `V2.2` and `V2.1` in the two rows, with the row of §1.1.
 
+**Resolved.** The two rows name the board's tags. The row of `V2.3` comes with the notes (§1.1).
+
 ### 1.3 `emulator/build.zig.zon` still says `2.2.0`
 
 RELEASE.md step 2.9 asks for the new tag's version there before `release.py check`. **Fix:** `2.3.0`.

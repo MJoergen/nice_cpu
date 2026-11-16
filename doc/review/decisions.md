@@ -253,3 +253,16 @@ proposed again. The open items are the
   steps of clearing at the start, and no word of the `.bin`, as it is
   `.RES`. Where those steps added up, in the simulations of the cores,
   the kept test programs reserve less already.
+- **A smaller C library with 15-digit conversions** (#186), whose
+  `printf` and `strtod` would print and read numbers with `DIGITS`,
+  `FROMBCD`, and `SCALE10` (DEVICES.md §11.3) in place of musl's
+  `fmt_fp` and `floatscan`. Those two take some 7500 words, so it would
+  save some 6000, 6.5% of the 92K words a program has on the MEGA65,
+  and no program is short of them. It would give up Annex F's exact
+  conversions: `%.17g` would no longer read back as the same double,
+  and `strtod` would be within 0.875 ulp. It would take a second build
+  of the library, an option of nicebuild, the three commands made
+  callable from C, and the library's tests run twice. It saves no
+  steps on usual values, and Zig and Rust format numbers themselves.
+  #67 would shrink every program instead. To revisit when a program
+  runs out of memory on a board.

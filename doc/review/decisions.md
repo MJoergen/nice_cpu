@@ -292,3 +292,9 @@ proposed again. The open items are the
   would save a few hundred words at most, about 1% of the board's
   monitor. The full split needed #66. A program that prints no floats
   saves 3052 words with `iprintf` in place of `printf` (runtime/README.md).
+- **A step counter on the debug link** (#147), so that a host can tell
+  that a step ran when both its `k` and its `p` were lost. The cycle
+  counter already tells it: it counts every step, and stops at the pause
+  (DEBUG.md §6, DEVICES.md §3), so a host reads `CYCLE_LO` before and
+  after the step. Neither `mon.py` nor the board's debugger asked for it,
+  and `0xFFFFFFD2`–`0xFFFFFFD3` stay free for a later minor.

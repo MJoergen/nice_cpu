@@ -264,8 +264,8 @@ proposed again. The open items are the
   of the library, an option of nicebuild, the three commands made
   callable from C, and the library's tests run twice. It saves no
   steps on usual values, and Zig and Rust format numbers themselves.
-  #67 would shrink every program instead. To revisit when a program
-  runs out of memory on a board.
+  #192, a jump and a call in one word, would shrink every program
+  instead. To revisit when a program runs out of memory on a board.
 - **A C compiler that targets NICE directly** (#66), as
   [c-compiler-plan.md](c-compiler-plan.md) planned it: our own front
   end in Python, SSA, `CHAR_BIT` = 32, and the C library compiled
@@ -283,3 +283,12 @@ proposed again. The open items are the
   gain at all. Code where size or speed matters most, as the board's
   monitor and BASIC, is written in assembly by hand, and #192 gives
   every program 17 to 20% fewer words.
+- **A linker, or the C library split into one file per function** (#67),
+  so that a program is joined only with the functions it uses. On the
+  wasm path, `wasm-ld` already takes only the functions of `libc.a`
+  that a program uses. The files joined whole are the hand-written
+  runtime: `lib.nasm` (131 words), `muldiv_mpu.nasm` (128), and
+  `float_fpu.nasm` (483, only if the program calls it), so a split
+  would save a few hundred words at most, about 1% of the board's
+  monitor. The full split needed #66. A program that prints no floats
+  saves 3052 words with `iprintf` in place of `printf` (runtime/README.md).

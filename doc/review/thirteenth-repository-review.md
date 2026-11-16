@@ -336,7 +336,7 @@ Found while fixing §3.1. `make -C emulator test` writes the vectors to `test/fp
 
 **Fix:** the figures. DEVICES.md §11.5 says "some 60" for `XMUL`, which may stay.
 
-**Resolved.** The second: hdl/README.md says some 35800 directed lines, which are 35812 with the vectors of §3.1, and its list of what they are for has the steps of the functions and the hand-checked cases of the model's test.
+**Resolved.** hdl/README.md says that `make programs` makes 911 programs and runs 643, which both cores pass in nvc: the 900 and 634 of this finding, and the 11 and 9 that the tests of §3.5 and §3.7 add. It says some 35800 directed lines, which are 35812 with the vectors of §3.1, and its list of what they are for has the steps of the functions and the hand-checked cases of the model's test. Its table of cycles has `XMUL` at 64, with what `tb_fpu` measures for each command now (§3.3).
 
 ### 4.2 emulator/README.md: the tests of the FPU are those of `V2.2`
 

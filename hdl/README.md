@@ -780,7 +780,7 @@ request to the ACK of the read of `FPU_STATUS` after it, which adds some
 |---|---|
 | The commands of the stack, `NEG`, `ABS`, `MIN`, `MAX`, `SIGN`, `CMP`, `CHOP`, `CONST`, and a number that is not a command | 8 |
 | `ITOF`, `UTOF`, `FTOI`, `FTOU`, `GETEXP`, and `GETMANT` | 24 to 29 |
-| `ADD`, `SUB`, and `MUL` | 34 |
+| `ADD`, `SUB`, and `MUL` | 34 to 35 |
 | `FLOOR`, `CEIL`, `TRUNC`, `NEAREST`, `ROUND`, `ROUND32`, `FROMBCD`, and `SCALE2` | 35 to 47 |
 | `AND`, `OR`, `XOR`, `NOT`, `SHL`, and `SHR` | 60 to 62 |
 | `XMUL` | 64 |
@@ -1389,8 +1389,8 @@ shares. With `--generator`, it measures another version of
 `make programs` runs the test programs of the runtime and of the
 translator, and 10 random modules of `translator/test/fuzz.py` in each of
 six of its modes, `--inline-fpu` among them (`FUZZ_PROGRAMS`), on the core (MICROARCH.md §9, step 7). It is not part of
-`make test`, because it takes minutes: it makes 878 programs and runs
-621 of them, the others being the same as one of those, with some 9
+`make test`, because it takes minutes: it makes 911 programs and runs
+643 of them, the others being the same as one of those, with some 9
 million steps on the emulator. In nvc, `SIM=nvc`, it took 7 minutes on
 the pipelined core on 20 CPUs on 2026-11-14 (#169), bound by
 `libc_mchess`, and GHDL, at some 3300 steps a second, takes several

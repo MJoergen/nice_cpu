@@ -591,7 +591,7 @@ prints a byte slice instead.
 | Output | `putc(c)`, `write(bytes)`, `print(fmt, args)` with `std.fmt`, and `writer`, a `std.Io.Writer` | `putc(c)`, `write(bytes)`, `print!` and `println!` with `core::fmt`, and `Console`, a `core::fmt::Write` |
 | Input | `getc()`, a `?u8`, `pollc()`, a `Poll`: `.byte`, `.empty`, or `.end`, and `readLine(buf)`, a `?[]u8` | `getc()`, an `Option<u8>`, `pollc()`, a `Poll`: `Byte`, `Empty`, or `End`, and `read_line(buf)`, an `Option<&str>` |
 | Counters | `cycles()`, `instructions()` | `cycles()`, `instructions()` |
-| Screen | `screenPut(col, row, c)`, `screenClear()`, `screen_cols`, `screen_rows`, `screen_blank`, and the colors `fg_*` and `bg_*` | `screen_put(col, row, c)`, `screen_clear()`, `SCREEN_COLS`, `SCREEN_ROWS`, `SCREEN_BLANK`, and the colors `FG_*` and `BG_*` |
+| Screen | `screenPut(col, row, c)`, `screenClear()`, `screen_cols`, `screen_rows`, `screen_blank`, the colors `fg_*` and `bg_*`, and for the chunky mode of DEVICES.md §1.10 `screen_mode`, the address of the mode word, `mode_text`, `mode_chunky`, `pixel_cols`, and `pixel_rows` | `screen_put(col, row, c)`, `screen_clear()`, `SCREEN_COLS`, `SCREEN_ROWS`, `SCREEN_BLANK`, the colors `FG_*` and `BG_*`, and for the chunky mode `SCREEN_MODE`, `MODE_TEXT`, `MODE_CHUNKY`, `PIXEL_COLS`, and `PIXEL_ROWS` |
 | Heap | `heap`, a `std.mem.Allocator` | `Heap`, a `GlobalAlloc` for the `alloc` crate |
 | Math | none needed: `@sqrt`, `@sin`, and `std.math` | `Float`, std's math methods for `f64` and `f32` |
 
@@ -769,7 +769,9 @@ files are checked in; `make wasm` rebuilds them, with Zig 0.17 and rustc
 with the `wasm32-unknown-unknown` target.
 
 `test/colors.py` checks that `colors.nasm`, `nice.h`, `nice.zig`, and
-`nice.rs` give each color of Screen colors the same value.
+`nice.rs` give each color of Screen colors the same value, and that the
+last three give the screen's mode word, its two modes, and the size in
+pixels the values of DEVICES.md §1.10.
 
 Last, `test/float_fpu.py` checks `float_fpu.nasm` against exact
 arithmetic. One program calls each of the 52 routines of the float

@@ -383,6 +383,8 @@ Whether steps written from C code are that code is not for a review to settle. T
 
 `nice.h` has `NICE_SCREEN_MODE`, the two modes, and the size in pixels. A Zig or Rust program writes `0xFFFFFF87` by its number. runtime/README.md says that the two files give "the device routines that `nice.h` gives C code". Optional: #187 asked for the mode in the emulator, and the board has not followed (MJoergen/NiceMonMEGA65#144).
 
+**Resolved.** `nice.zig` has `screen_mode`, `mode_text`, `mode_chunky`, `pixel_cols`, and `pixel_rows`, and `nice.rs` the same in capitals. `test/colors.py` checks that `nice.h`, `nice.zig`, and `nice.rs` each have the five names with the values of DEVICES.md §1.10, which answers the bullet of §3.7 on the names too, as far as the values go: a wrong value or a missing name in any of the three fails it. No program uses the names. No checked-in `.wasm` file changes, as `make wasmcheck` shows.
+
 ## 6. What was checked, and found right
 
 - **The tests.** `make all` passes with 1668 lines of `PASS`, and CI passes every job on 611498b. `make wasmcheck` has no note, on 54 files (the agent's run).

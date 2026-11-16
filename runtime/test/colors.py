@@ -7,12 +7,16 @@ the colors of a screen word (DEVICES.md §1.1): a foreground, FG, in bits
 colors with the same values, each color must have both, the background
 the foreground's components 12 bits higher, and the blank of the screen
 must be a space in white on black, 0x000FFF20.
+
+nice.h, nice.zig, and nice.rs also name the screen's mode word, its two
+modes, and the size of the screen in pixels (DEVICES.md §1.10). Each must
+have the five names, with the values of DEVICES.md.
 """
 
 import os
 import re
 import sys
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUNTIME = os.path.dirname(HERE)
@@ -32,6 +36,31 @@ BLANKS = {
     "nice.zig": "pub const screen_blank: u32 = fg_white | bg_black | ' ';",
     "nice.rs": "pub const SCREEN_BLANK: u32 = FG_WHITE | BG_BLACK | ' ' as u32;",
 }
+
+
+# The names of the screen's mode word, of its modes, and of the size in
+# pixels, with their values (DEVICES.md §1.10), and the pattern of a
+# name's line in each file. Zig names them in lower case.
+MODE = {"SCREEN_MODE": 0xFFFFFF87, "MODE_TEXT": 0, "MODE_CHUNKY": 1,
+        "PIXEL_COLS": 160, "PIXEL_ROWS": 100}
+MODE_FILES = {
+    "libc/include/nice.h": r"^#define NICE_(\w+) (0x[0-9A-F]+|\d+)u?$",
+    "nice.zig": r"^pub const (\w+)(?:: u32)? = (0x[0-9A-F_]+|\d+);$",
+    "nice.rs": r"^pub const (\w+): u32 = (0x[0-9A-F_]+|\d+);$",
+}
+
+
+def mode_problems(path: str, pattern: str) -> List[str]:
+    """What is wrong with the names of MODE in a file."""
+    found: Dict[str, int] = {}
+    with open(os.path.join(RUNTIME, path), encoding="utf-8") as f:
+        for line in f:
+            m = re.match(pattern, line.rstrip("\n"))
+            if m and m.group(1).upper() in MODE:
+                found[m.group(1).upper()] = int(m.group(2).replace("_", ""), 0)
+    return [f"{path}: {name} is {'missing' if name not in found else hex(found[name])},"
+            f" and DEVICES.md §1.10 has {value:#x}"
+            for name, value in MODE.items() if found.get(name) != value]
 
 
 def colors(path: str, pattern: str) -> Dict[str, int]:
@@ -80,10 +109,13 @@ def main() -> None:
         with open(os.path.join(RUNTIME, path), encoding="utf-8") as f:
             if line not in f.read().splitlines():
                 problems.append(f"{path}: the blank is not {line}")
+    for path, pattern in MODE_FILES.items():
+        problems += mode_problems(path, pattern)
     for p in problems:
         print("  " + p)
     n = len(first[1]) // 2 if first else 0
-    print(f"{'FAIL' if problems else 'PASS'} colors.py ({n} colors in {len(FILES)} files)")
+    print(f"{'FAIL' if problems else 'PASS'} colors.py ({n} colors in {len(FILES)} files,"
+          f" and the {len(MODE)} names of the screen's mode in {len(MODE_FILES)})")
     if problems:
         sys.exit(1)
 

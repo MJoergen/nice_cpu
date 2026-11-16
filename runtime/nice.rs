@@ -163,6 +163,15 @@ pub const SCREEN_ROWS: u32 = 25;
 /// colors of its cell, shows on it (doc/DEVICES.md §1.4).
 pub const SCREEN_BLANK: u32 = FG_WHITE | BG_BLACK | ' ' as u32;
 
+/// The screen's mode word (doc/DEVICES.md §1.10): poke MODE_CHUNKY to it
+/// and peek it back, to find out whether the system has 160x100 pixels,
+/// one word each at 0xFFFF0000 + 160 * y + x, colored as a BG_* color.
+pub const SCREEN_MODE: u32 = 0xFFFF_FF87;
+pub const MODE_TEXT: u32 = 0;
+pub const MODE_CHUNKY: u32 = 1;
+pub const PIXEL_COLS: u32 = 160;
+pub const PIXEL_ROWS: u32 = 100;
+
 /// The colors of a screen word (doc/DEVICES.md §1.1): FG_* in bits 19..8, the
 /// foreground, and BG_* in bits 31..20, the background. A color is a
 /// foreground, a background, and a character or-ed, and a color left out is

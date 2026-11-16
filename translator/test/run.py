@@ -277,6 +277,12 @@ TRAPS = {"reachtrap": "AND[M] R0, W.end-1, 0xFC000000",
          "nofputrap": "MOVE @0xFFFFFF8C, 0x101",
          "nofputrap_rom": "MOVE @0xFFFFFF8C, 0x101",
          "nofputrap_math": "MOVE @0xFFFFFF8C, 0x101",
+         "nofputrap_status": "MOVE @0xFFFFFF8C, 0x101",
+         "nofputrap_trunc": "MOVE @0xFFFFFF8C, 0x101",
+         "nofputrap_cmp": "MOVE @0xFFFFFF8C, 0x101",
+         "nofputrap_sin": "MOVE @0xFFFFFF8C, 0x101",
+         "nofputrap_cos": "MOVE @0xFFFFFF8C, 0x101",
+         "nofputrap_tan": "MOVE @0xFFFFFF8C, 0x101",
          "growtrap": "MOVE R1, 65536",
          "trunc_big": "MOVE R1, 0x4F000000",
          "trunc_small": "MOVE R2, 0x41E00000",
@@ -823,12 +829,15 @@ def dyn64(a: int, op: bytes, b: int, want: int) -> bytes:
 DYN_LOCALS = [I32, I32, I32, I64, I64]
 
 
-def math_import() -> bytes:
+def math_import(name: str = "exp2f", t: int = F32) -> bytes:
     """A module whose main returns the bits of exp2f(2), a function of
-    math.h imported from env, with no float operation of its own."""
-    return module(types(MAIN_TYPE, ([F32], [F32])), imports(("env", "exp2f", 1)), funcs(0),
+    math.h imported from env, with no float operation of its own, or
+    the low word of the bits of another such function of 2, of type t."""
+    two = f32(0x40000000) if t == F32 else f64(0x4000000000000000)
+    bits = I32_REINTERPRET_F32 if t == F32 else I64_REINTERPRET_F64 + WRAP
+    return module(types(MAIN_TYPE, ([t], [t])), imports(("env", name, 1)), funcs(0),
                   exports(("main", 0, 1)),
-                  code((0, f32(0x40000000) + call(0) + I32_REINTERPRET_F32)))
+                  code((0, two + call(0) + bits)))
 
 
 def main_of(body: bytes, mem: bool = False) -> bytes:
@@ -2952,13 +2961,30 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # code 9 before main, with R2 at the check (WASM.md, Start-up), also in
     # the ___wasm_start of code in a ROM, and in a module whose only use of
     # the FPU is a function of math.h, exp2f(2) = 4, a routine of the float
-    # library (mathimport).
+    # library (mathimport). So does a module whose only float instruction
+    # is a conversion to an integer, i32.trunc_f32_s of 1, or a
+    # comparison, 1 < 2, which is a call of the library or, with
+    # --inline-fpu, inline; and one whose only use of the FPU is the
+    # FPU's SIN, COS, or TAN, which the C library's sin, cos, and tan
+    # import as nice_sin, nice_cos, and nice_tan.
     ("nofputrap", main_of(f32(0x3F800000) + f32(0x40000000) + fop(0x92) + I32_REINTERPRET_F32),
      "", 9),
     ("nofputrap_rom", main_of(f32(0x3F800000) + f32(0x40000000) + fop(0x92) + I32_REINTERPRET_F32),
      "", 9),
     ("nofputrap_math", math_import(), "", 9),
+    ("nofputrap_trunc", main_of(f32(0x3F800000) + fop(0xA8)), "", 9),
+    ("nofputrap_cmp", main_of(f32(0x3F800000) + f32(0x40000000) + fop(0x5D)), "", 9),
+    ("nofputrap_sin", math_import("nice_sin", F64), "", 9),
+    ("nofputrap_cos", math_import("nice_cos", F64), "", 9),
+    ("nofputrap_tan", math_import("nice_tan", F64), "", 9),
     ("mathimport", math_import(), "", 0x40800000),
+    # The check writes 0 to FPU_STATUS before it reads it, as a system
+    # without the FPU may have memory there that holds the value of the
+    # check (WASM.md, Start-up). The hand-written lines put that value,
+    # 0x00320001, at 0xFFFFFF8D in the program's image, and the check
+    # still traps.
+    ("nofputrap_status", main_of(f32(0x3F800000) + f32(0x40000000) + fop(0x92) + I32_REINTERPRET_F32),
+     "W.status_back\n .ORG 0xFFFFFF8D\n .DAT 0x00320001\n .ORG W.status_back\n", 9),
     ("growtrap", module(
         types(MAIN_TYPE),
         funcs(0),
@@ -3665,8 +3691,9 @@ SHAPES["trust_win"] = (r"^ +SHR +R\d+, R\d+, 2$|AND\[M\] +R0, R\d+, 3$|@___wasm_
 
 # The options for niceemu, for the cases that run without the FPU. Such
 # a case is not kept for make programs, as a core has the FPU.
-EMULATOR = {"nofputrap": ["--no-fpu"], "nofputrap_rom": ["--no-fpu"],
-            "nofputrap_math": ["--no-fpu"]}
+EMULATOR = {name: ["--no-fpu"] for name in (
+    "nofputrap", "nofputrap_rom", "nofputrap_math", "nofputrap_trunc", "nofputrap_cmp",
+    "nofputrap_sin", "nofputrap_cos", "nofputrap_tan", "nofputrap_status")}
 
 # The steps after which niceemu stops a program that runs away. The
 # longest case, recursion, takes some 285000 steps.

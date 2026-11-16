@@ -585,6 +585,9 @@ its own that has the name of one of the float library's, `round` and
 `log`, must build and run: the library, which defines the same label,
 is not joined. The C program with a float operation added must fail
 with the assembler's error, that `_round` is already defined.
+A C program whose only use of the float library is `pow` must name no
+routine of a float operation, give 2¹⁰, and with `--no-fpu` print the
+trap report of code 9.
 A language whose compiler is
 missing is skipped, and the PASS line says which; CI has Zig and clang, not Rust.
 `test/run.py --keep DIR` also leaves each

@@ -477,6 +477,44 @@ def test_own_names(tmp: str, lang: str) -> None:
         fail(what + ", and a float", "a .bin file of a program that does not assemble")
 
 
+# A C program whose only use of the float library is pow, a function of
+# math.h, with no float operation of its own. 2^10 is 1024, whose bits are
+# 0x4090000000000000, and main returns the high 12, 0x409.
+POW_C = """#include <math.h>
+#include <string.h>
+volatile double base = 2, exponent = 10;
+int main(void) {
+    double r = pow(base, exponent);
+    unsigned long long bits;
+    memcpy(&bits, &r, sizeof bits);
+    return (int)(bits >> 52);
+}
+"""
+
+
+def test_pow(tmp: str) -> None:
+    """A program that names only a function of math.h, _pow, and no
+    routine of a float operation, is joined with the float library, and
+    runs. Without the FPU it traps with code 9 at its start, and the
+    trap report names the code."""
+    what = "C with pow as its only float"
+    source = os.path.join(tmp, "pow.c")
+    with open(source, "w") as f:
+        f.write(POW_C)
+    out = os.path.join(tmp, "pow.bin")
+    if not check_build(what, ["--keep", "-o", out, source], out):
+        return
+    with open(os.path.join(ROOT, "runtime", "float_fpu.nasm")) as f:
+        operations = set(re.findall(r"^(__[A-Za-z0-9_.]+)", f.read(), re.M))
+    with open(out[:-4] + ".nasm") as f:
+        named = operations & set(re.findall(r"[A-Za-z0-9_.]+", f.read()))
+    if named:
+        fail(what, f"the program also names {' '.join(sorted(named))}")
+    check_run(what, run(out), 0, ["~R0  00000000 R1  00000409 .*"])
+    check_run(what + ", without the FPU", run(out, options=["--no-fpu"]), 2,
+              ["~trap 9: no FPU at [0-9a-f]{8}", "~R0  00000000 R1  00000009 .*"])
+
+
 def test_unwritable(tmp: str) -> None:
     """An output directory without write permission is found before the build.
     Root writes anywhere, so the test is skipped for root."""
@@ -561,6 +599,7 @@ def main() -> None:
             test_tail(tmp, "c")
             test_floats(tmp, "c")
             test_own_names(tmp, "c")
+            test_pow(tmp)
             ran.append("C")
         else:
             skipped.append("C (no clang, wasm-ld, or llvm-ar for wasm32)")

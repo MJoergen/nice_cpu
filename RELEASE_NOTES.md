@@ -94,7 +94,7 @@ nicedbg's console and ends a line in the runtime (#189, #191).
   the top of the stack to the data of a read, is none that the
   functions touch: the same ROM with one function at another address
   leaves +0.898 ns, so the figure follows the placement
-  (hdl/README.md). A board checks its own build.
+  (hdl/README.md, #194). A board checks its own build.
 - `0x1E` and `0x1F` of the FPU are `XMUL` and `CHOP`, and `0x40`–`0x4F`
   the functions, where they set the invalid flag. `SINH` to `ATANH`,
   `0x50`–`0x55`, which DEVICES.md named in `V2.2`, are not defined.

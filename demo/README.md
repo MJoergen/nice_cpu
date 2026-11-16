@@ -221,8 +221,9 @@ so the demo runs until F12 or until the window is closed.
 
 The version in the title bar is `git describe --tags --always --dirty`, or
 `VERSION=` on the command line, which a board's release sets to its tag.
-The assembler has no include, so the Makefile joins `demo.nasm`, the text
-of `TEXT`, and a line that defines `VERSION` into `build/demo.bin`, from
+The assembler has no include, so the Makefile joins `demo.nasm`,
+`runtime/colors.nasm`, the text of `TEXT`, and a line that defines
+`VERSION` into `build/demo.bin`, from
 `0x8000`. `TEXT` is `text.nasm` by default: the name in the title bar,
 the welcome, the keys of the third bar, and a note under the counters. A
 board gives a file of its own with `TEXT=`, with the same labels, and so

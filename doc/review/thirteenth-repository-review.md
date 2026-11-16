@@ -67,6 +67,8 @@ RELEASE_NOTES.md lines 17 and 18. NiceMonMEGA65 has both tags: its `V2.1`, of 20
 
 RELEASE.md step 2.9 asks for the new tag's version there before `release.py check`. **Fix:** `2.3.0`.
 
+**Resolved.** `build.zig.zon` says `2.3.0`. The notes of `V2.3` say so under the emulator (§1.1).
+
 ### 1.4 `release.py figures` fails: the cycles of `bench.c` are those of `V2.2`
 
     $ python3 release/release.py figures

@@ -824,3 +824,60 @@ emulator's window and on a board, so a program there never saw a line
 end, and nicedbg's console sent LF for it, by the terminal's `ICRNL`,
 until the same day (#189). Then a CR and a CR LF ended a line too, and
 `fgetc` returned both as `'\n'` (#191).
+
+## The float benchmark in software
+
+Until 2026-11-15, `bench/float.c` could be joined with the float library
+in software (The size and speed of translated code, above), and until
+2026-11-13 it always was. With the translator and float library of V1.8,
+the emulator gave:
+
+    phase      instructions       cycles  result
+    convert         361670       361698  97943df8  ok
+    dot32            24866        24894  c0c723f7  ok
+    dot64            62211        62239  ba3319ea  ok
+    mandel          677081       677109  4c25faf9  ok
+    norm            124005       124033  7703cd00  ok
+    total          1249833      1249973
+
+`make cycles` estimated 2301198 cycles on the pipelined core, and
+`make core CORE_PROGRAMS=float` measured 2301987 there, 1.84 per
+instruction, more than the 1.42 of `bench.c`, because the float
+routines branched often. `make profile` charged the instructions of the
+whole run to the routines of the float library:
+
+| Routine | Share |
+|---|---|
+| `___subsf3`, which `___addsf3` calls | 25% |
+| `___divdf3` | 16% |
+| `___mulsf3` | 15% |
+| `__clz` | 8% |
+| `___divsf3` | 7% |
+| the comparisons `___gesf2` and `___lesf2` | 6% |
+| `___sqrtsf` | 3% |
+
+The rest were the f64 multiply and add, the conversions, `__mul64`,
+the start-up code, and the phases' own loops.
+
+The changes of issue [#129](https://github.com/MJoergen/nice_cpu/issues/129)
+followed in V1.9, each with the figures of the whole program after it:
+
+| Change | Instructions | Cycles by `make cycles` |
+|---|---|---|
+| none, V1.8 | 1249833 | 2301198 |
+| `__clz` searches by halves, in 19 steps rather than up to 100 | 1175454 (−6.0%) | 2017960 (−12.3%) |
+| and the f32 quotient is one u64 divide, not 26 steps of a loop | 1116682 (−10.7%) | 1957917 (−14.9%) |
+| and `__clz`, `__ctz`, and `__popcnt` read the math unit, in 3 steps | 1095649 (−12.3%) | 1957336 (−14.9%) |
+| and the f32 square root reads `ISQRT64` of the math unit | 1058329 (−15.3%) | 1916828 (−16.7%) |
+
+On the pipelined core the program then took 1917617 cycles, 1.81 per
+instruction, from 2301987 in V1.8 (−16.7%). A read of a bit count waits
+for the math unit's multiplier count, two cycles, and the bus passes to
+the math unit and back to RAM a cycle late, so on the pipelined core the
+bit counts saved most of their steps but few of their cycles.
+
+With the FPU (#161), the program shrank from 16890 words to 10356, and
+to 10550 when the float library got the functions of `math.h`. It ran
+180304 instructions, 5.9 times fewer than with the float library in
+software, and took 617442 cycles on the pipelined core, 3.1 times fewer
+than the 1902079 that it took in V2.2 with that library.

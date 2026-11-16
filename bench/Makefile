@@ -75,8 +75,8 @@ coremark: $(BUILD)/coremark.bin emulator
 # The same, and checks that every phase has its expected result, that main
 # returns 0 in R1, and that the expected values in bench.c, hand.nasm, and
 # simple.nasm are those of expected.py, and those in float.c are those of
-# floatexpected.py. float.c runs with both float libraries, and as
-# float_inline, with the FPU's accesses inline.
+# floatexpected.py. float.c runs as float, with the calls of the float
+# library, and as float_inline, with the FPU's accesses inline.
 define check
 	@$(EMU) $(BUILD)/$(1).bin < /dev/null > $(BUILD)/$(1).out; sed '/^Halted/,$$d' $(BUILD)/$(1).out
 	@if grep -q ' R1  00000000 ' $(BUILD)/$(1).out && ! grep -q FAIL $(BUILD)/$(1).out; \

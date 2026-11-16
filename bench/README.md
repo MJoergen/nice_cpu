@@ -556,61 +556,8 @@ values, and runs the program; `make native` runs it on the host. To
 change a size, edit its define, run `python3 floatexpected.py`, put its
 values in `float.c`, and run `make wasm`.
 
-The table from the emulator, with the translator and float library of V1.8:
-
-    phase      instructions       cycles  result
-    convert         361670       361698  97943df8  ok
-    dot32            24866        24894  c0c723f7  ok
-    dot64            62211        62239  ba3319ea  ok
-    mandel          677081       677109  4c25faf9  ok
-    norm            124005       124033  7703cd00  ok
-    total          1249833      1249973
-
-`make cycles` estimates 2301198 cycles on the pipelined core, and
-`make core CORE_PROGRAMS=float` measures 2301987 there, 1.84 per
-instruction, more than the 1.42 of `bench.c`, because the float
-routines branch often. `make profile` charges the instructions of the
-whole run to the routines of the float library:
-
-| Routine | Share |
-|---|---|
-| `___subsf3`, which `___addsf3` calls | 25% |
-| `___divdf3` | 16% |
-| `___mulsf3` | 15% |
-| `__clz` | 8% |
-| `___divsf3` | 7% |
-| the comparisons `___gesf2` and `___lesf2` | 6% |
-| `___sqrtsf` | 3% |
-
-The rest are the f64 multiply and add, the conversions, `__mul64`,
-the start-up code, and the phases' own loops. `make core
-CORE_PROGRAMS=float` runs the program on a core.
-
-The changes of issue [#129](https://github.com/MJoergen/nice_cpu/issues/129)
-since then, each with the figures of the whole program after it:
-
-| Change | Instructions | Cycles by `make cycles` |
-|---|---|---|
-| none, V1.8 | 1249833 | 2301198 |
-| `__clz` searches by halves, in 19 steps rather than up to 100 | 1175454 (−6.0%) | 2017960 (−12.3%) |
-| and the f32 quotient is one u64 divide, not 26 steps of a loop | 1116682 (−10.7%) | 1957917 (−14.9%) |
-| and `__clz`, `__ctz`, and `__popcnt` read the math unit, in 3 steps | 1095649 (−12.3%) | 1957336 (−14.9%) |
-| and the f32 square root reads `ISQRT64` of the math unit | 1058329 (−15.3%) | 1916828 (−16.7%) |
-
-On the pipelined core the program then takes 1917617 cycles, 1.81 per
-instruction, from 2301987 in V1.8 (−16.7%).
-
-A read of a bit count waits for the math unit's multiplier count, two
-cycles, and the bus passes to the math unit and back to RAM a cycle
-late (see The cycle estimate above), so on the pipelined core the bit
-counts save most of their steps but few of their cycles. These figures
-are of the float library in software, which V2.3 removed (HISTORY.md).
-
-With the FPU of DEVICES.md §11 (issue
-[#161](https://github.com/MJoergen/nice_cpu/issues/161)), the float
-library is `runtime/float_fpu.nasm`, and the program shrinks from 16890
-words to 10550, with the functions of `math.h` that the library holds
-too. The table from the emulator:
+The program is 10550 words, the float library among them. The table
+from the emulator:
 
     phase      instructions       cycles  result
     convert          42793        42821  97943df8  ok
@@ -620,9 +567,7 @@ too. The table from the emulator:
     norm             11679        11707  7703cd00  ok
     total           180304       180444
 
-That is 5.9 times fewer instructions than with the float library in
-software. On the
-pipelined core, `make core CORE_PROGRAMS=float` gives:
+On the pipelined core, `make core CORE_PROGRAMS=float` gives:
 
     phase      instructions       cycles  result
     convert          42793       119127  97943df8  ok
@@ -632,12 +577,11 @@ pipelined core, `make core CORE_PROGRAMS=float` gives:
     norm             11679        40812  7703cd00  ok
     total           180304       617442
 
-That is 3.1 times fewer cycles than the 1902079 that the program takes
-with the float library in software, at 3.42 per
-instruction. `make cycles` gives 612025. The FPU's unit takes 14
-cycles for an `ADD` and 16 for a `MUL`, and the FPU about 4 more for the
-command. Issue [#164](https://github.com/MJoergen/nice_cpu/issues/164)
-lists ways to make it faster.
+That is 3.42 cycles per instruction. `make cycles` gives 612025. The
+FPU's unit takes 14 cycles for an `ADD` and 16 for a `MUL`, and the FPU
+about 4 more for the command. Issue
+[#164](https://github.com/MJoergen/nice_cpu/issues/164) lists ways to
+make it faster.
 
 `make test` also runs `float.c` as `build/float_inline.bin`, translated
 with nicewasm's `--inline-fpu`, which writes the FPU's accesses in place

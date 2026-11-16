@@ -347,6 +347,8 @@ The file names neither `test/fpu_seq.py` nor `src/fpu_seq.zig`, which is generat
 
 It is the one file of `doc/review/` that REFERENCES.md leaves out. DEVICES.md §11.3 links it. **Fix:** a sentence with the other reviews. This review is linked there already.
 
+**Resolved:** REFERENCES.md has a sentence for it, after the reviews, which says what it proves.
+
 ### 5.3 The sequences carry no notice of their sources
 
 `emulator/test/fpu_seq.py` follows the C code of musl, fdlibm, and FreeBSD "operation by operation", with their constants, and `emulator/src/fpu_seq.zig` and `hdl/src/fpu_seq_pkg.vhd` are written from it. The comments name each source file. None of the three files has a copyright notice. `e_pow.c`, `e_log.c`, `e_exp.c`, `e_log2.c`, and `k_log.h` have Sun's notice, which grants the use "provided that this notice is preserved", and musl's files of the same origin have it too. `runtime/libc/src/math/COPYRIGHT` collects musl's notices for the C library, and README.md's License section covers `runtime/libc/src/math/` only.

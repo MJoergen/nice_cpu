@@ -235,6 +235,8 @@ The operands, in hex:
 
 **Fix:** in `tb_fpu`, after the vectors: a reset some cycles into a function, at several distances, and then a command and a function, whose results must be the model's. An assertion for `formal/fpu.sby` that a reset leaves `seq_r` at 0.
 
+**Resolved.** `tb_fpu` runs `POW` of 1.5 and 2.5 alone, which takes 2340 cycles, and then resets it at 50 distances from its request: each of the first 32 cycles, six further in, and the last 12 before its end. After each reset, `SQRT` of 9 and then `HYPOT` of the result and 4 must give 5, with no flag. `fpu.vhd` without the reset of `seq_r` fails 49 of the 50, all but the reset in the cycle of the request. `f_seq_reset` in `fpu.vhd` asserts that the cycle after a reset the FPU is idle and `seq_r` is 0; all three tasks of `formal/fpu.sby` pass with it, and `prove` fails its induction without the reset of `seq_r`.
+
 ### 3.3 `tb_fpu` does not time a third of the slow vectors
 
 `test/fpu_slow_vectors.py` adds the 46 slowest operands that a scan found, so that `tb_fpu` bounds their cycles (`hdl/Makefile`: "whose cycles it bounds"). But `tb_fpu` follows every third line with an access that waits for the command, and takes no time of those lines. 15 of the 46 fall there: four of `DIGITS`, two of `SCALE10`, and one each of `SIN`, `COS`, `ASIN`, `ATAN`, `ATAN2`, `LOG2`, `LOG10`, `POW2`, and `HYPOT`.
@@ -242,6 +244,8 @@ The operands, in hex:
 So for six commands `make test` measures less than the table of hdl/README.md gives, on some random line instead: `SCALE10` 1223 against 1235, `ASIN` 1102 against 1106, `ATAN2` 1313 against 1323, `LOG10` 1203 against 1214, `POW2` 1051 against 1053, and `HYPOT` 541 against 542. The bounds are 20% above the table, so nothing fails, but the slowest `ASIN` and `LOG10` that the scan found are never timed.
 
 **Fix:** time every line of the slow vectors, by a mark in the file or by their place after the others.
+
+**Resolved.** `fpu_slow_vectors.py` writes a line `#timed` before its own, and from that line on `tb_fpu` times every command, follows none at once, and resets none. The scan had the same gap, as `tb_fpu` timed two of three of its lines too. A scan with every line timed found a slower `DIGITS`, 3365 cycles for 3363, and a slower `SCALE10`, 1243 for 1235, of 1.5 by −511, and both are among the slow vectors now. `SIN` takes 1537 cycles on its slow vector, which was one of the 15, where the table had 1533. The table of hdl/README.md has what `tb_fpu` measures now.
 
 ### 3.4 `pow` just above 1, and `cos` and `tan` at the limit of the reduction
 
@@ -347,7 +351,7 @@ The file names neither `test/fpu_seq.py` nor `src/fpu_seq.zig`, which is generat
 
 It is the one file of `doc/review/` that REFERENCES.md leaves out. DEVICES.md §11.3 links it. **Fix:** a sentence with the other reviews. This review is linked there already.
 
-**Resolved:** REFERENCES.md has a sentence for it, after the reviews, which says what it proves.
+**Resolved.** REFERENCES.md has a sentence for it, after the reviews, which says what it proves.
 
 ### 5.3 The sequences carry no notice of their sources
 

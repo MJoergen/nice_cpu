@@ -943,6 +943,8 @@ begin
       -- psl f_owed_sum : assert always f_owed = f_sum;
       -- psl f_owed_max : assert always f_owed <= 3;
       -- psl f_ack_reset : assert always rst_i |=> not wb_ack_o and not pend_r;
+      -- A reset ends a function too: the command after it is no step of one.
+      -- psl f_seq_reset : assert always rst_i |=> seq_r = '0' and state_r = IDLE_ST;
       -- psl f_view_r : assert always view_r = '1' <-> f_view;
       -- psl f_ack_view : assert always f_view -> wb_ack_o = '0';
       -- The model's queue is the FPU's: the head, and the one taken after it.

@@ -5,24 +5,26 @@ Usage: fpu_slow_vectors.py [--scan]
 
 Writes to standard output lines of the format of
 emulator/test/fpu_vectors.py, from its model, so that the results are
-checked too, for the commands whose time in src/fpu.vhd depends most on
-the operands:
+checked too, after a line "#timed", from which on tb_fpu times every
+command, for the commands whose time in src/fpu.vhd depends most on the
+operands:
 
 - DIGITS n of the values below, which took longest in a scan: tb_fpu
   with G_SLOW, on the lines that --scan writes, which are DIGITS 1 to 15
   of the values next to each power of ten, and SCALE10 by every count
   from -660 to 660. DIGITS lowers its exponent until the digits come
   out, and each round runs SCALE10, whose time grows with the bits of
-  its count. In the scan of 2026-11-14 the slowest DIGITS took 3363
-  cycles from its request to the ACK of the read of STATUS after it,
-  and the slowest SCALE10, of 10^300 by -511, 1235.
+  its count. In the scan of 2026-11-16, the first that timed every
+  line, the slowest DIGITS took 3365 cycles from its request to the ACK
+  of the read of STATUS after it, and the slowest SCALE10, of 1.5 by
+  -511, 1243.
 - SCALE10 by counts with many bits set, 255, 511, and 639, both ways.
 - FMOD with the largest difference of the exponents.
 - SIN, COS, and TAN, which take the most rounds of the reduction near a
   multiple of pi/2. The scan has them of the values next to k pi/2 for
   the k of HARD_K, of 1 to 9, and of 40 random k, and of 4 random values
-  in each binade from 2^-30 to 2^20. In the scan of 2026-11-15 the
-  slowest SIN took 1533 cycles, COS 1552, and TAN 2043.
+  in each binade from 2^-30 to 2^20. In the scan of 2026-11-16 the
+  slowest SIN took 1537 cycles, COS 1552, and TAN 2043.
 - ASIN, ACOS, ATAN, and ATAN2, of 4 random values in each binade from
   2^-70 to 2^70 and of the values next to the bounds where their paths
   part. In the scan of 2026-11-15 the slowest ASIN took 1106 cycles,
@@ -54,6 +56,7 @@ from fpu_vectors import Generator  # noqa: E402
 
 # The slowest of the scan: the value and n.
 SLOW_DIGITS = [
+    (0x75154FDD7F73BF3B, 3),
     (0x7580A6650B926D66, 5),
     (0x754AA3D4DF50AF0C, 4),
     (0x7620427EAD4CFED7, 8),
@@ -229,6 +232,9 @@ def main() -> None:
     args = p.parse_args()
 
     g = Generator()
+    # tb_fpu times every command after this line: it follows none at once
+    # and resets none, as it does every third and every 1000th before it.
+    g.lines.append("#timed")
     if args.scan:
         scan(g)
     else:
@@ -238,6 +244,7 @@ def main() -> None:
         for k in (255, 511, 639):
             g.cmd([ten(-300), F64.from_int(k)], "SCALE10")
             g.cmd([ten(300), F64.from_int(-k)], "SCALE10")
+        g.cmd([0x3FF8000000000000, F64.from_int(-511)], "SCALE10")
         g.cmd([0x7FEFFFFFFFFFFFFF, 1], "FMOD")
         g.cmd([0x7FEFFFFFFFFFFFFF, 0x0010000000000000], "FMOD")
         for v, name in SLOW_FUNCTIONS:

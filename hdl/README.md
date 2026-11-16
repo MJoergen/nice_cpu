@@ -772,8 +772,7 @@ of the processor, as `tb_core` gives it, so that a start over the debug
 link empties the stack, clears the flags, and ends a command (DEBUG.md
 §6).
 
-The most cycles of each command in `tb_fpu` on 2026-11-14, and of `XMUL`,
-`CHOP`, and the functions on 2026-11-15, from its
+The most cycles of each command in `tb_fpu` on 2026-11-16, from its
 request to the ACK of the read of `FPU_STATUS` after it, which adds some
 6 (What the tests check):
 
@@ -781,17 +780,17 @@ request to the ACK of the read of `FPU_STATUS` after it, which adds some
 |---|---|
 | The commands of the stack, `NEG`, `ABS`, `MIN`, `MAX`, `SIGN`, `CMP`, `CHOP`, `CONST`, and a number that is not a command | 8 |
 | `ITOF`, `UTOF`, `FTOI`, `FTOU`, `GETEXP`, and `GETMANT` | 24 to 29 |
-| `ADD`, `SUB`, and `MUL` | 32 to 34 |
+| `ADD`, `SUB`, and `MUL` | 34 |
 | `FLOOR`, `CEIL`, `TRUNC`, `NEAREST`, `ROUND`, `ROUND32`, `FROMBCD`, and `SCALE2` | 35 to 47 |
 | `AND`, `OR`, `XOR`, `NOT`, `SHL`, and `SHR` | 60 to 62 |
-| `XMUL` | 62 |
-| `DIV` and `SQRT` | 85 and 86 |
-| `IDIV` and `MOD` | 94 and 95 |
+| `XMUL` | 64 |
+| `DIV` and `SQRT` | 86 |
+| `IDIV` and `MOD` | 95 and 94 |
 | `ISQRT` | 101 |
-| `SCALE10` | 1235 |
+| `SCALE10` | 1243 |
 | `FMOD` | 2117 |
-| `DIGITS` | 3363 |
-| `SIN` and `COS` | 1533 and 1552 |
+| `DIGITS` | 3365 |
+| `SIN` and `COS` | 1537 and 1552 |
 | `TAN` | 2043 |
 | `ASIN` and `ACOS` | 1106 and 954 |
 | `ATAN` and `ATAN2` | 944 and 1323 |
@@ -1039,11 +1038,17 @@ cycles after it is accepted, as any request is that need not wait, and a
 read of X waits for the result. Then it resets `DIV`, and `DIV` with
 two reads of X waiting, whose ACKs the master gives up. Each reset must
 leave no ACK, no value, and no flag, and the command after it must run.
+Those resets come as a command starts, and a function runs for thousands
+of cycles. So it resets `POW` at 50 distances from its request: each of
+the first 32 cycles, six further in, and the last 12 before its end.
+After each, `SQRT` and then `HYPOT` must give their results.
 `make run/fpu FPU_SEED=2 FPU_COUNT=200000` runs a longer sequence.
 
 `test/fpu_slow_vectors.py` adds the slowest `DIGITS`, `SCALE10`, `FMOD`,
 and functions that a scan found, with `--scan` the lines of that scan, and
-`tb_fpu`'s generic `G_SLOW` reports each command slower than it. For each
+`tb_fpu`'s generic `G_SLOW` reports each command slower than it. Its
+lines come after a line `#timed`: from there on `tb_fpu` times every
+command, and neither follows one at once nor resets one. For each
 command that the next access does not follow at once, `tb_fpu` counts
 the cycles from its request to the ACK of the read of STATUS after it,
 which adds some 6, and fails if the most of a command is over its bound:
@@ -2049,7 +2054,8 @@ acknowledges, and of a read of X_S or X_W that waits for the unit, so at
 most three, and each request gets one ACK, in order. A queue of the
 requests accepted and not yet served must hold what the two registers
 hold. Its invariants say that each state, and each state to return to,
-is one there is. The properties are in `src/fpu.vhd`, as they name its
+is one there is. A reset leaves no function running: the cycle after it,
+the FPU is idle and runs no steps. The properties are in `src/fpu.vhd`, as they name its
 registers; `formal_fpu` has the assumptions on the master. `prove_stack`
 lets the master write only the commands of the stack, NOP, CLEAR, DUP,
 DROP, SWAP, OVER, and PICK, with any n, and not X_S or X_W. A model of

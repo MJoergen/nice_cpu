@@ -16,7 +16,8 @@
 -- it counts the cycles from the command's request to the ACK of that
 -- read of STATUS, and keeps the most for each command, which must not
 -- exceed its bound below. test/fpu_slow_vectors.py adds the slowest
--- commands to the vectors.
+-- commands to the vectors, after a line "#timed": from that line on,
+-- every command is timed, and none is followed at once or reset.
 -- After the vectors, it checks the waits of §11.1: while DIV runs, a read
 -- of CMD is acknowledged two cycles after it is accepted, as any request
 -- is when it need not wait, and a read of X waits for the result.
@@ -24,6 +25,10 @@
 -- DIV, and DIV with two reads of X waiting, whose ACKs the master gives
 -- up as it drops CYC. A reset must leave no ACK, no value, and no flag,
 -- and the command after it must run.
+-- Those resets come as the command starts. A function runs for
+-- thousands of cycles, so POW is reset at 50 distances from its
+-- request: each of the first 32 cycles, six further in, and the last 12
+-- before its end. After each, a command and a function must run.
 -- It reports the first 20 lines that differ, the most cycles of each
 -- command that takes more than a few, with its line and its bound, and a
 -- command over its bound, then how many lines differ or commands are over
@@ -58,7 +63,7 @@ architecture simulation of tb_fpu is
    -- ACK of the read of STATUS after it, which adds some 6 cycles: the
    -- times of DEVICES.md §11.5 with a margin, and for the commands that it
    -- gives no time, some twice what they take. DIGITS, which §11.5 gives up
-   -- to some 3400, takes at most 3363 on the slowest values that a scan
+   -- to some 3400, takes at most 3365 on the slowest values that a scan
    -- found (test/fpu_slow_vectors.py), and its bound is 20% above that,
    -- as are those of SIN and COS, at most 1552, TAN, at most 2043, ASIN,
    -- 1106, ACOS, 954, ATAN, 944, ATAN2, 1323, LN, 922, LOG2, 1144, LOG10,
@@ -154,6 +159,14 @@ begin
       variable timed_v : boolean;
       variable reset_v : boolean;
       variable ncmd_v  : natural := 0;
+      variable every_v : boolean := false;
+      variable nrst_v  : natural := 0;
+      variable pow_v   : natural;
+      variable dist_v  : natural;
+
+      -- The distances of a reset from POW's request, after the first 32.
+      type     t_dists is array (0 to 5) of natural;
+      constant C_FAR : t_dists := (40, 57, 100, 333, 700, 1001);
 
       procedure hung(n : natural) is
       begin
@@ -283,7 +296,8 @@ begin
       procedure reset_check(what : string; n : positive := 2) is
          variable r_v : std_logic_vector(31 downto 0);
       begin
-         rst <= '1';
+         nrst_v := nrst_v + 1;
+         rst    <= '1';
          for i in 1 to n loop
             wait until rising_edge(clk);
          end loop;
@@ -314,6 +328,9 @@ begin
       while not endfile(vec_f) loop
          readline(vec_f, l_v);
          if l_v'length = 0 or l_v(l_v'left) = '#' then
+            if l_v'length >= 6 and l_v(l_v'left to l_v'left + 5) = "#timed" then
+               every_v := true;
+            end if;
             next;
          end if;
          lines_v := lines_v + 1;
@@ -349,10 +366,11 @@ begin
             -- no state after to compare; the next line sets its own.
             -- After every third command, the next access comes at once,
             -- so that it waits for the command: each register in turn.
-            if reg_v = X"4" and ncmd_v mod 1000 = 500 then
+            -- After a line "#timed", every command is timed instead.
+            if reg_v = X"4" and ncmd_v mod 1000 = 500 and not every_v then
                reset_v := true;
                reset_check("a command");
-            elsif reg_v = X"4" and lines_v mod 3 = 0 then
+            elsif reg_v = X"4" and lines_v mod 3 = 0 and not every_v then
                next_access((lines_v / 3) mod 10, af_v, ad_v, as_v);
             else
                timed_v := reg_v = X"4";
@@ -471,9 +489,60 @@ begin
               to_hstring(rd_v));
       end if;
 
+      -- A reset while a function runs. 1.5 to the power 2.5 first, for
+      -- its cycles: the model gives 40060B9FD68A4554, which is the true
+      -- value rounded. Then the same with a reset dist_v cycles after its
+      -- request is acknowledged, and after the reset SQRT of 9, which is
+      -- 3, and HYPOT of that and 4, which is 5.
+      write(4, X"00000101");
+      write(2, X"3FC00000");
+      write(2, X"40200000");
+      write(4, X"0000004E");
+      t_v := now;
+      read(5, rd_v);
+      pow_v := (now - t_v) / 10 ns;
+      read(0, lo_v);
+      read(1, word_v);
+      if rd_v(11 downto 0) /= X"001" or word_v & lo_v /= X"40060B9FD68A4554" then
+         fail("POW of 1.5 and 2.5 gave " & to_hstring(word_v & lo_v) & ", STATUS " &
+              to_hstring(rd_v));
+      end if;
+      if pow_v < C_FAR(C_FAR'high) + 20 then
+         fail("POW took " & integer'image(pow_v) & " cycles, too few for the resets within it");
+      end if;
+      for i in 0 to 49 loop
+         if i < 32 then
+            dist_v := i;
+         elsif i < 38 then
+            dist_v := C_FAR(i - 32);
+         else
+            dist_v := pow_v - 8 - (i - 38);
+         end if;
+         write(4, X"00000101");
+         write(2, X"3FC00000");
+         write(2, X"40200000");
+         write(4, X"0000004E");
+         for j in 1 to dist_v loop
+            wait until rising_edge(clk);
+         end loop;
+         reset_check("POW after " & integer'image(dist_v) & " cycles");
+         write(3, X"00000009");
+         write(4, X"00000014");
+         write(3, X"00000004");
+         write(4, X"0000004F");
+         read(5, rd_v);
+         read(0, lo_v);
+         read(1, word_v);
+         if rd_v(11 downto 0) /= X"001" or word_v & lo_v /= X"4014000000000000" then
+            fail("SQRT and HYPOT after a reset of POW at " & integer'image(dist_v) &
+                 " cycles gave " & to_hstring(word_v & lo_v) & ", STATUS " & to_hstring(rd_v));
+         end if;
+      end loop;
+
       report "tb_fpu: " & integer'image(lines_v) & " lines, " & integer'image(fails_v) &
              " differ, at most " & integer'image(most_v) & " cycles to an ACK, line " &
-             integer'image(mline_v) & ", " & integer'image((ncmd_v + 500) / 1000 + 2) & " resets"
+             integer'image(mline_v) & ", " & integer'image(nrst_v) & " resets, POW alone " &
+             integer'image(pow_v) & " cycles"
          severity note;
       running <= false;
       if fails_v = 0 then

@@ -1,5 +1,6 @@
-//! The floating-point unit of doc/DEVICES.md §11, phase 1: a stack of up
-//! to 16 binary64 values, eight registers, and the commands.
+//! The floating-point unit of doc/DEVICES.md §11: a stack of up to 16
+//! binary64 values, eight registers, the commands, and the functions of
+//! §11.3, which run the steps of fpu_seq.zig.
 //!
 //! It computes with the host's binary64 values, which are IEEE 754's, so
 //! it gives the same bits as the FPGA implementation. It works out the

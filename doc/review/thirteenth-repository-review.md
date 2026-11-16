@@ -328,9 +328,13 @@ Left as they are: the window's choice between the text and the pixels, which `wi
 
 **Fix:** the figures. DEVICES.md §11.5 says "some 60" for `XMUL`, which may stay.
 
+**Resolved.** The second: hdl/README.md says some 35800 directed lines, which are 35812 with the vectors of §3.1, and its list of what they are for has the steps of the functions and the hand-checked cases of the model's test.
+
 ### 4.2 emulator/README.md: the tests of the FPU are those of `V2.2`
 
 Lines 760 to 795. "Some 28000 lines are directed" is 35754 now. The groups of the vectors leave out `XMUL`, `CHOP`, and the functions, and so does the docstring of `fpu_vectors.py`. The four ways in which `fpu_model_test.py` checks the model end with the constants of 15 digits; the test's own docstring adds the bound of `SCALE10` and "the functions within their bounds, against series in decimal". See §5.1 for what the section does not have at all.
+
+**Resolved.** The README says some 35800 directed lines, which are 35812 with the vectors of §3.1. Its groups say that the special values run on `XMUL`, `CHOP`, and the functions as on the other commands, and they have the operands of §3.1 and the hand-checked accesses of `fpu_model_test.py`; the docstring of `fpu_vectors.py` says the same. The paragraph on the model's test has `SCALE10` with its bound, `DIGITS`, and the functions within their bounds against series in decimal, on 400 operands each and the worst known ones of §2.2.
 
 ### 4.3 runtime/README.md: the steps of the float functions
 
@@ -367,7 +371,7 @@ Line 325 of the same file says "(Screen colors, below)" in the row of `nice.h`; 
 - translator/README.md line 465 and `nicewasm.py` line 5034: a library module may not use a float instruction, as it "would call the float library, which a library module could be part of", "which would then call itself". The float library is no module now. The rule stands; its reason is that a library module has no start-up code to check for the FPU.
 - README.md, License: "the math functions of the C library, in `runtime/libc/src/math/`, are musl's". `sin.c`, `cos.c`, and `tan.c` there are the library's own now (runtime/README.md, Math functions).
 
-**Resolved.** CLAUDE.md lists the benchmark, safe.zig, CoreMark, and math modules for `make words`, as bench/README.md does, and demo/README.md names `runtime/colors.nasm` among the files joined. `trapreport_big.nasm` says "a code above 9". translator/README.md and the comment in `nicewasm.py` give the reason that stands: a library module has no `___wasm_start`, which checks for the FPU. The README's section on `diff_fuzz.py`, and that script's docstring and message, said that a library module "may not call the float library", and say now that it may not use the FPU. `bench/words.py` has no `--library`: no Makefile passed it, and no document named it. `make words` prints the figures of bench/README.md as before.
+**Resolved.** CLAUDE.md lists the benchmark, safe.zig, CoreMark, and math modules for `make words`, as bench/README.md does, and demo/README.md names `runtime/colors.nasm` among the files joined. `trapreport_big.nasm` says "a code above 9". translator/README.md and the comment in `nicewasm.py` give the reason that stands: a library module has no `___wasm_start`, which checks for the FPU. The README's section on `diff_fuzz.py`, and that script's docstring and message, said that a library module "may not call the float library", and say now that it may not use the FPU. `bench/words.py` has no `--library`: no Makefile passed it, and no document named it. `make words` prints the figures of bench/README.md as before. The first lines of `emulator/src/fpu.zig` and of `emulator/test/fpu_model.py` name the commands and the functions of §11.3, and no phase.
 
 ## 5. Gaps
 
@@ -376,6 +380,8 @@ Line 325 of the same file says "(Screen colors, below)" in the row of `nice.h`; 
 The file names neither `test/fpu_seq.py` nor `src/fpu_seq.zig`, which is generated and checked in, nor `make seqcheck`, which `make test` runs. Its section on the floating-point unit does not say how a function runs, and its section on the tests does not say how the functions are checked (§4.2). hdl/README.md has all of it for the ROM, and DEVICES.md §11.3 names the three files. A reader who changes a sequence finds in the emulator's README no word that `fpu_seq.zig` must be written again.
 
 **Fix:** a paragraph in the README's Floating-point unit section: the table, where it comes from, the command that writes it, and `seqcheck`; and the functions in the paragraphs on the model's test and on the vectors.
+
+**Resolved.** The Floating-point unit section of emulator/README.md has a paragraph on the sequences: how a function runs, the tables of `src/fpu_seq.zig`, `test/fpu_seq.py`, which writes them and the ROM of the cores, the two commands that do it, and `make seqcheck`. The Tests section names `seqcheck` in what `make test` runs, says that the model runs a function as the steps of `fpu_seq.py`, and has the functions in the paragraphs on the model's test and on the vectors (§4.2).
 
 ### 5.2 doc/REFERENCES.md does not link `review/scale10-bound.md`
 

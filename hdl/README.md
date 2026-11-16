@@ -1030,9 +1030,10 @@ when read again, or a write of X_LO, X_HI, X_S, or STATUS, which changes
 the state after as the test knows. Every 1000th command is reset while
 it runs instead. Then it reads STATUS, and X before a DROP for each
 value, and compares them with the state after.
-There are some 31300 directed lines, for every register, every command,
-the depths, the special values, the rounding, the conversions, and the
-decimal commands, and a random sequence of 20000 accesses. Last, it
+There are some 35800 directed lines, for every register, every command,
+the depths, the special values, the rounding, the conversions, the
+decimal commands, every step of the functions, and the hand-checked
+cases of the model's test, and a random sequence of 20000 accesses. Last, it
 checks that while a command runs, a read of CMD is acknowledged two
 cycles after it is accepted, as any request is that need not wait, and a
 read of X waits for the result. Then it resets `DIV`, and `DIV` with

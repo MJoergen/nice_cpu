@@ -397,8 +397,27 @@ changes nothing, so `--dump` and the debug link show the unit as it is,
 and a fetch from its words reads 0, a `NOP`. `--no-fpu` makes its eight
 words ordinary memory, as on a system without the unit.
 
-Its unit test replays the vectors of `test/fpu_vectors.py` (Tests
-below): it sets each line's state, makes the access, and compares the
+A function of DEVICES.md §11.3, `SIN` to `HYPOT`, runs as a sequence of
+steps on the unit's own stack: commands of the unit, and the five steps
+that only a sequence has, which push a constant, write a value of the
+stack, jump, and mark a pole. It runs when `CMD` is written, at once,
+as a command does. The steps and the constants are the tables of
+`src/fpu_seq.zig`.
+`test/fpu_seq.py` writes that file from its programs, one for each
+function, and from the same programs the ROM of the cores,
+`../hdl/src/fpu_seq_pkg.vhd`:
+
+    python3 test/fpu_seq.py --zig > src/fpu_seq.zig
+    python3 test/fpu_seq.py --vhdl > ../hdl/src/fpu_seq_pkg.vhd
+
+Both files are checked in, so a change of a program writes both again.
+`make seqcheck`, which `make test` runs, fails if `src/fpu_seq.zig` is
+not what the generator writes, and `make -C ../hdl seqcheck` does the
+same for the ROM. Without an option, `test/fpu_seq.py` lists the steps
+of each function and the constants.
+
+The unit test of `src/fpu.zig` replays the vectors of
+`test/fpu_vectors.py` (Tests below): it sets each line's state, makes the access, and compares the
 state after it and the value read. `test/fpu.nasm` uses the views and a
 few commands of each group, and the two examples of DEVICES.md §11.5, and
 `fpu_mem` runs it again with `--no-fpu`. `test/fpustack.nasm` checks the
@@ -708,7 +727,9 @@ line.
 ## Tests
 
 `make test` first checks with `zig fmt --check` that the Zig sources are
-laid out as `zig fmt` lays them out. It then writes the FPU's vectors
+laid out as `zig fmt` lays them out, and with `make seqcheck` that
+`src/fpu_seq.zig` is what `test/fpu_seq.py` writes (Floating-point unit
+above). It then writes the FPU's vectors
 with `test/fpu_vectors.py`, runs the unit tests in `src/cpu.zig` and the
 other sources, which replay the vectors, for this machine's CPU and again
 for the baseline x86_64 CPU of the release files (Download), which has
@@ -764,7 +785,8 @@ Last, `test/udp.py` checks the frames over the socket of `--eth-udp`
 `test/fpu_model.py` is a reference model of the floating-point unit of
 DEVICES.md §11. It computes every result exactly, with Python's
 fractions, and rounds it itself, so it shares nothing with the host's
-doubles, which the emulator uses. Its widths
+doubles, which the emulator uses. It runs a function as the steps of
+`test/fpu_seq.py`, which the emulator's table repeats. Its widths
 are parameters. `make test` runs `test/fpu_model_test.py`, which checks
 the model four ways: a table of hand-checked accesses, each with its
 reason; the model at binary64 against the host's doubles, on special
@@ -772,18 +794,27 @@ and random operands; every pair of values of a format of 8 bits against
 a rounding by brute force, and the S forms, which round once, on every
 pair of such values against a format of 6 bits; and in exact
 arithmetic, the constants against `decimal`, `ISQRT` against
-`math.isqrt`, `SCALE10`, and constants of 15 digits through `FROMBCD`,
-`SCALE10`, and `DIGITS 15`, which must come back.
+`math.isqrt`, `SCALE10`, correctly rounded for k up to 22 and within its
+bound beyond, `DIGITS` against Python's `%e`, constants of 15 digits
+through `FROMBCD`, `SCALE10`, and `DIGITS 15`, which must come back, and
+the functions within the bounds of DEVICES.md §11.3, against series in
+`decimal` to 90 digits. Each function is checked on 400 random operands,
+some of them from where its error is the largest, and `ATAN2` and
+`HYPOT` on the operands of their worst errors that are known.
 
 `test/fpu_vectors.py` writes the FPU's test vectors from the model, one
 line for each access: the state before it, the access, and the state
 after it, with the value a read returns. The state is the flags and the
 whole stack, so each line stands alone. Its docstring gives the format.
-Some 28000 lines are directed, by group: the registers, every command
+Some 35800 lines are directed, by group: the registers, every command
 number and the words that are not valid, every command at the depths
-0, 1, 2, 15, and 16, the special values each with each, the rounding,
-the S forms where rounding once and rounding twice differ, the
-conversions, and the decimal commands. A random sequence from a seed
+0, 1, 2, 15, and 16, the special values each with each, for `XMUL`,
+`CHOP`, and the functions as for the other commands, the rounding, the
+S forms where rounding once and rounding twice differ, the conversions,
+the decimal commands, the operands of the functions that run the steps
+of their sequences which the other groups leave out, and the
+hand-checked accesses of `fpu_model_test.py`, so that the emulator and
+the cores replay those too. A random sequence from a seed
 adds 20000 more, in which the depth and the faults take part. The
 coverage counts bins: the class of each operand of each command, the
 rounding case, exact, down, up, or a tie, the class of the result, the
@@ -795,11 +826,12 @@ the seed is, and the emulator and the cores are checked on it.
 `make test` runs it, and it fails if a bin that can occur is empty, if
 a command sets a flag that its row of `FLAGS` does not allow, if a step
 of `DEAD_STEPS` runs, the 11 steps that no operand reaches, or if a
-line does not parse back and replay on the model. With `-o FILE` it writes the vectors. `make test` writes them
-to `test/fpu.vectors.out`, and the unit test of `src/fpu.zig` replays
-them on the emulator's unit (Floating-point unit above); `tb_fpu` in
-`hdl/` replays them on the FPU of the cores. `make fpu-long` writes and replays a
-random sequence of a million accesses, from `SEED`, 1 by default.
+line does not parse back and replay on the model. With `-o FILE` it
+writes the vectors. `make test` writes them to `test/fpu.vectors.out`,
+and the unit test of `src/fpu.zig` replays them on the emulator's unit
+(Floating-point unit above); `tb_fpu` in `hdl/` replays them on the FPU
+of the cores. `make fpu-long` writes and replays a random sequence of a
+million accesses, from `SEED`, 1 by default.
 
 `test/cputest.nasm` is a self-checking test of the whole instruction set:
 every opcode, shift, addressing mode, and condition, the flags, R0, R14, and

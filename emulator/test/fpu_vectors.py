@@ -20,10 +20,12 @@ A line that starts with # is a comment.
 The vectors are of two kinds. The directed ones come from the lists
 below, by group: the registers, every command number and the command
 words that are not valid, the depths 0, 1, 2, 15, and 16, the special
-values each with each, the rounding, the conversions, the decimal
-commands, and the operands of the functions that run the steps which
-the other groups leave out. The random ones are a sequence of accesses
-from a seed, so that the depth and the faults take part.
+values each with each, for XMUL, CHOP, and the functions as for the
+other commands, the rounding, the conversions, the decimal commands,
+and the operands of the functions that run the steps which the other
+groups leave out. The hand-checked cases of fpu_model_test.py follow
+them. The random ones are a sequence of accesses from a seed, so that
+the depth and the faults take part.
 
 The coverage counts bins: the command, the class of each operand, the
 rounding case (exact, down, up, or a tie, by magnitude), the class of
